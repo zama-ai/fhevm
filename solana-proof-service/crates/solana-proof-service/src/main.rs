@@ -133,6 +133,10 @@ fn spawn_ingest_writer(
         let health = Arc::clone(&ingest_health);
         Arc::new(move |slot: u64| health.mark_progress(slot))
     };
+    let on_recovered_progress: Arc<dyn Fn(u64) + Send + Sync> = {
+        let health = Arc::clone(&ingest_health);
+        Arc::new(move |slot: u64| health.mark_recovered_progress(slot))
+    };
     let on_disconnected: Arc<dyn Fn() + Send + Sync> = {
         let health = Arc::clone(&ingest_health);
         Arc::new(move || health.mark_disconnected())
@@ -151,6 +155,7 @@ fn spawn_ingest_writer(
             cancel,
             IngestHooks {
                 on_progress: Some(on_progress.as_ref()),
+                on_recovered_progress: Some(on_recovered_progress.as_ref()),
                 on_disconnected: Some(on_disconnected.as_ref()),
                 on_recovery: Some(on_recovery.as_ref()),
             },

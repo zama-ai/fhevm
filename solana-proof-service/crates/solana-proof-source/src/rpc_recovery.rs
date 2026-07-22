@@ -11,6 +11,8 @@
 //! bound leaves history incomplete / `RecoveryRequired` — never silently marks
 //! history complete. TODO(prod): tune horizons for archive depth and lag SLOs.
 
+use std::time::Duration;
+
 use serde::Deserialize;
 use serde_json::json;
 use tokio_util::sync::CancellationToken;
@@ -22,6 +24,9 @@ use zama_solana_transaction::{
 use crate::{BlockCheckpoint, CanonicalTransaction, CompletedBlock, RawInstruction};
 
 const SOLANA_PROOF_COMMITMENT: &str = "confirmed";
+/// Match the proof-path RPC client: stay well inside ingest budgets.
+const RPC_CONNECT_TIMEOUT_SECS: u64 = 3;
+const RPC_REQUEST_TIMEOUT_SECS: u64 = 10;
 
 /// Well-known Solana vote program (`Vote111111111111111111111111111111111111111`).
 fn vote_program_id() -> [u8; 32] {
@@ -102,8 +107,13 @@ impl RpcRecoveryClient {
                 "recovery.rpc_url must not be empty".to_owned(),
             ));
         }
+        let client = reqwest::Client::builder()
+            .connect_timeout(Duration::from_secs(RPC_CONNECT_TIMEOUT_SECS))
+            .timeout(Duration::from_secs(RPC_REQUEST_TIMEOUT_SECS))
+            .build()
+            .map_err(|err| RecoveryError::Invalid(format!("failed to build RPC client: {err}")))?;
         Ok(Self {
-            client: reqwest::Client::new(),
+            client,
             config,
             program_id,
         })
@@ -120,8 +130,8 @@ impl RpcRecoveryClient {
     /// Fetches and normalizes completed blocks for every existing slot in
     /// `[from_slot, to_slot]` (inclusive), enforcing lean attempt bounds.
     ///
-    /// Polls `cancel` before `getBlocks` and before each `getBlock` so long
-    /// recovery loops remain cancellation-safe.
+    /// Polls `cancel` before each RPC and selects in-flight `send` / body reads
+    /// against cancellation. Connect/request timeouts match the proof RPC client.
     pub async fn fetch_completed_blocks(
         &self,
         from_slot: u64,
@@ -147,7 +157,7 @@ impl RpcRecoveryClient {
             )));
         }
 
-        let slots = self.get_blocks(from_slot, to_slot).await?;
+        let slots = self.get_blocks(from_slot, to_slot, cancel).await?;
         if slots.len() as u64 > self.config.bounds.max_blocks {
             return Err(RecoveryError::BoundExhausted(format!(
                 "{} existing slots in [{from_slot}, {to_slot}] exceed max_blocks {}",
@@ -161,7 +171,7 @@ impl RpcRecoveryClient {
             if cancel.is_cancelled() {
                 return Err(RecoveryError::Cancelled);
             }
-            let Some(block) = self.get_block(slot).await? else {
+            let Some(block) = self.get_block(slot, cancel).await? else {
                 return Err(RecoveryError::HistoryUnavailable(format!(
                     "getBlock returned null for slot {slot} (pruned or unavailable at confirmed)"
                 )));
@@ -173,11 +183,15 @@ impl RpcRecoveryClient {
 
     /// Confirmed tip slot (`getSlot`), used to bound catch-up when Yellowstone
     /// inclusive replay is unavailable.
-    pub async fn get_confirmed_slot(&self) -> Result<u64, RecoveryError> {
+    pub async fn get_confirmed_slot(
+        &self,
+        cancel: &CancellationToken,
+    ) -> Result<u64, RecoveryError> {
         let result = self
             .call(
                 "getSlot",
                 json!([{ "commitment": SOLANA_PROOF_COMMITMENT }]),
+                cancel,
             )
             .await?;
         result
@@ -185,11 +199,17 @@ impl RpcRecoveryClient {
             .ok_or_else(|| RecoveryError::Invalid("malformed getSlot result".to_owned()))
     }
 
-    async fn get_blocks(&self, from_slot: u64, to_slot: u64) -> Result<Vec<u64>, RecoveryError> {
+    async fn get_blocks(
+        &self,
+        from_slot: u64,
+        to_slot: u64,
+        cancel: &CancellationToken,
+    ) -> Result<Vec<u64>, RecoveryError> {
         let result = self
             .call(
                 "getBlocks",
                 json!([from_slot, to_slot, { "commitment": SOLANA_PROOF_COMMITMENT }]),
+                cancel,
             )
             .await?;
         let slots: Vec<u64> = serde_json::from_value(result)
@@ -210,7 +230,11 @@ impl RpcRecoveryClient {
         Ok(slots)
     }
 
-    async fn get_block(&self, slot: u64) -> Result<Option<CompletedBlock>, RecoveryError> {
+    async fn get_block(
+        &self,
+        slot: u64,
+        cancel: &CancellationToken,
+    ) -> Result<Option<CompletedBlock>, RecoveryError> {
         let result = self
             .call(
                 "getBlock",
@@ -224,6 +248,7 @@ impl RpcRecoveryClient {
                         "commitment": SOLANA_PROOF_COMMITMENT,
                     }
                 ]),
+                cancel,
             )
             .await?;
         if result.is_null() {
@@ -239,6 +264,7 @@ impl RpcRecoveryClient {
         &self,
         method: &str,
         params: serde_json::Value,
+        cancel: &CancellationToken,
     ) -> Result<serde_json::Value, RecoveryError> {
         let body = json!({
             "jsonrpc": "2.0",
@@ -246,17 +272,19 @@ impl RpcRecoveryClient {
             "method": method,
             "params": params,
         });
-        let response = self
-            .client
-            .post(&self.config.rpc_url)
-            .json(&body)
-            .send()
-            .await
-            .map_err(|err| RecoveryError::Transport(err.to_string()))?;
-        let value: serde_json::Value = response
-            .json()
-            .await
-            .map_err(|err| RecoveryError::Transport(err.to_string()))?;
+        let request = self.client.post(&self.config.rpc_url).json(&body);
+        let response = tokio::select! {
+            _ = cancel.cancelled() => return Err(RecoveryError::Cancelled),
+            result = request.send() => {
+                result.map_err(|err| RecoveryError::Transport(err.to_string()))?
+            }
+        };
+        let value: serde_json::Value = tokio::select! {
+            _ = cancel.cancelled() => return Err(RecoveryError::Cancelled),
+            result = response.json() => {
+                result.map_err(|err| RecoveryError::Transport(err.to_string()))?
+            }
+        };
         if let Some(error) = value.get("error") {
             let message = error.to_string();
             // Solana archive nodes often use -32007 / BlockCleanedUp / SlotSkipped.
@@ -284,9 +312,10 @@ impl RpcRecoveryClient {
 /// - durable tip extending that start
 /// - durable tip equal to the confirmed tip this recovery established
 ///
-/// Single-slot bootstrap alone is not enough when the chain tip is ahead:
-/// `durable_tip.slot == confirmed_tip_slot` fails until catch-up proves the
-/// full range. Empty recovery must never call this with a vacuous tip match.
+/// Single-slot durable tip matching bootstrap is not enough when the confirmed
+/// tip is ahead: `durable_tip.slot == confirmed_tip_slot` fails until recovery
+/// (or catch-up) proves the full range. Empty recovery must never call this
+/// with a vacuous tip match.
 pub fn history_complete_justified(
     bootstrap_slot: Option<u64>,
     history_start: Option<&BlockCheckpoint>,
@@ -367,8 +396,11 @@ struct RpcCompiledIx {
 struct RpcMeta {
     #[serde(default)]
     err: Option<serde_json::Value>,
+    /// Solana permits null; unrelated / failed / vote txs must not fail closed
+    /// solely because this field is absent. Successful host txs treat null as
+    /// an empty list (no CPI).
     #[serde(rename = "innerInstructions", default)]
-    inner_instructions: Vec<RpcInnerIxGroup>,
+    inner_instructions: Option<Vec<RpcInnerIxGroup>>,
     #[serde(rename = "loadedAddresses", default)]
     loaded_addresses: Option<RpcLoadedAddresses>,
 }
@@ -477,12 +509,13 @@ fn normalize_rpc_transaction(
     let instructions = if !succeeded || is_vote {
         Vec::new()
     } else {
+        let inner = meta.inner_instructions.as_deref().unwrap_or(&[]);
         resolve_rpc_instructions(
             &static_keys,
             &loaded_writable,
             &loaded_readonly,
             &tx.transaction.message.instructions,
-            &meta.inner_instructions,
+            inner,
         )?
     };
 
@@ -762,6 +795,56 @@ mod tests {
         assert!(!block.transactions[0].is_vote);
         assert_eq!(block.transactions[0].instructions.len(), 1);
         assert_eq!(block.transactions[0].instructions[0].program_id, host);
+    }
+
+    #[test]
+    fn null_inner_instructions_on_unrelated_tx_does_not_reject_block() {
+        let digest = Sha256::digest(b"global:make_handle_public");
+        let data = b58(&digest[..8]);
+        let host = program();
+        let other = pk(0x99);
+        let value = json!({
+            "blockhash": b58(&pk(7)),
+            "previousBlockhash": b58(&pk(6)),
+            "parentSlot": 6,
+            "blockTime": null,
+            "blockHeight": null,
+            "transactions": [
+                {
+                    "transaction": {
+                        "signatures": [sig(1)],
+                        "message": {
+                            "accountKeys": [b58(&other), b58(&pk(1))],
+                            "instructions": [{
+                                "programIdIndex": 0,
+                                "accounts": [1],
+                                "data": data,
+                            }],
+                        },
+                    },
+                    "meta": { "err": null, "innerInstructions": null },
+                },
+                {
+                    "transaction": {
+                        "signatures": [sig(2)],
+                        "message": {
+                            "accountKeys": [b58(&host), b58(&pk(2)), b58(&pk(3))],
+                            "instructions": [{
+                                "programIdIndex": 0,
+                                "accounts": [1, 2],
+                                "data": data,
+                            }],
+                        },
+                    },
+                    "meta": { "err": null, "innerInstructions": null },
+                },
+            ],
+        });
+        let block = normalize_rpc_block_json(7, value, &host).unwrap();
+        assert_eq!(block.executed_transaction_count, 2);
+        assert_eq!(block.transactions.len(), 1);
+        assert_eq!(block.transactions[0].index, 1);
+        assert!(block.transactions[0].succeeded);
     }
 
     #[test]

@@ -81,12 +81,12 @@ Errors are distinguished:
 - **Empty recovery range** → `recovery_required` (never `Filled`, never marks complete)
 - **Cancelled** mid-fetch / mid-apply → clean shutdown
 
-Bootstrap **A**: first applied block keeps `history_complete=false`.
-`history_complete=true` only after an explicit recovery pass proves continuity
-from configured `recovery.bootstrap_slot` through the **confirmed tip** that
-recovery established (`durable_tip.slot == confirmed_tip`). Single-slot
-bootstrap alone does not flip the flag when the chain tip is ahead. Empty
-recovery never marks complete.
+Bootstrap **A**: with `recovery.bootstrap_slot` set, the first recovery attempt
+fetches the bounded inclusive range from that slot through the observed
+confirmed tip (`getSlot`), then may flip `history_complete=true` only when
+durable `history_start` matches the configured bootstrap and the durable tip
+equals that confirmed tip. Bound exhaustion stays fail-closed. Empty recovery
+never marks complete.
 
 ## PoC gaps (non-prod TODOs)
 

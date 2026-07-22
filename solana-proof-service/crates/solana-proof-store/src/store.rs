@@ -41,8 +41,12 @@ pub enum ApplyOutcome {
     /// Contiguous parent link is missing (typical after a program-filtered
     /// Yellowstone gap). No domain writes; bounded RPC recovery must fill
     /// intermediate blocks before ingest can continue.
+    ///
+    /// `gap_end_slot` is the observed block slot that could not be applied
+    /// (`UntilExclusive` fill target).
     RecoveryRequired {
         reason: String,
+        gap_end_slot: u64,
     },
     IntegrityHalted {
         reason: String,
@@ -419,7 +423,10 @@ impl SqlProofStore {
                     block.slot, block.parent_slot, checkpoint_slot
                 );
                 tx.commit().await?;
-                return Ok(ApplyOutcome::RecoveryRequired { reason });
+                return Ok(ApplyOutcome::RecoveryRequired {
+                    reason,
+                    gap_end_slot: block.slot,
+                });
             }
             if block.parent_hash != checkpoint_hash {
                 let reason = format!(

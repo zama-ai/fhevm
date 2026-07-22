@@ -13,6 +13,7 @@ reqwest = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
 thiserror = { workspace = true }
+tokio = { workspace = true }
 tokio-util = { workspace = true }
 tonic = { workspace = true }
 tracing = { workspace = true }
@@ -21,4 +22,3 @@ zama-solana-transaction = { workspace = true }
 
 [dev-dependencies]
 sha2 = { workspace = true }
-tokio = { workspace = true }

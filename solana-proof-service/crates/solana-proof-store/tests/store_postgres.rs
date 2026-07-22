@@ -438,9 +438,13 @@ async fn parent_slot_mismatch_is_recovery_required_without_domain_writes() {
         .unwrap();
     let gap = block(12, 11, pk(0xA1), pk(0xA2), Vec::new());
     match store.apply_completed_block(&gap).await.unwrap() {
-        ApplyOutcome::RecoveryRequired { reason } => {
+        ApplyOutcome::RecoveryRequired {
+            reason,
+            gap_end_slot,
+        } => {
             assert!(reason.contains("recovery required"));
             assert!(reason.contains("contiguous ingest gap"));
+            assert_eq!(gap_end_slot, 12);
         }
         other => panic!("expected RecoveryRequired, got {other:?}"),
     }
@@ -686,8 +690,12 @@ async fn recovered_gap_fill_applies_contiguous_parents() {
     // Program-filtered gap: next observed would be slot 12 with parent 11.
     let observed = block(12, 11, pk(0xB0), pk(0xC0), Vec::new());
     match store.apply_completed_block(&observed).await.unwrap() {
-        ApplyOutcome::RecoveryRequired { reason } => {
+        ApplyOutcome::RecoveryRequired {
+            reason,
+            gap_end_slot,
+        } => {
             assert!(reason.contains("contiguous ingest gap"));
+            assert_eq!(gap_end_slot, 12);
         }
         other => panic!("expected RecoveryRequired, got {other:?}"),
     }
