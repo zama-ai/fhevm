@@ -44,10 +44,6 @@ spec:
             - "--accounts"
             - "{{ .Values.network.accounts }}"
             {{- with .Values.network.slotsInAnEpoch }}
-            # Lower = the `finalized`/`safe` block tags advance sooner (anvil
-            # defaults to 32 slots/epoch, so `finalized` lags ~2 epochs behind
-            # head). Consumers that wait on finalized events (e.g. kms-connector)
-            # otherwise pay that full lag on every cycle.
             - "--slots-in-an-epoch"
             - "{{ . }}"
             {{- end }}
