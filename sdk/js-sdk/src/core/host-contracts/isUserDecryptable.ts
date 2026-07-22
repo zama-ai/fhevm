@@ -13,7 +13,7 @@ type Context = {
 };
 
 type Parameters = {
-  readonly address: ChecksummedAddress;
+  readonly aclAddress: ChecksummedAddress;
   readonly userAddress: ChecksummedAddress;
   readonly handleContractPairs: ReadonlyArray<{
     readonly handle: Handle;
@@ -33,7 +33,7 @@ type ReturnType = ReadonlyArray<{
  * See FHE.sol : isUserDecryptable()
  */
 export async function isUserDecryptable(context: Context, parameters: Parameters): Promise<ReturnType> {
-  const { address, userAddress, handleContractPairs } = parameters;
+  const { aclAddress, userAddress, handleContractPairs } = parameters;
 
   function getKey(addr: string, handleBytes32Hex: string): string {
     return `${addr}:${handleBytes32Hex}`.toLowerCase();
@@ -63,7 +63,7 @@ export async function isUserDecryptable(context: Context, parameters: Parameters
   }
 
   const dedupedResults = await persistAllowed(context, {
-    address,
+    aclAddress,
     pairs: dedupedChecks,
   });
 

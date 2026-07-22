@@ -19,7 +19,7 @@ In `sdk/js-sdk/test/.env.mainnet`, set:
 RPC_URL="https://ethereum-rpc.publicnode.com"
 ```
 
-In `sdk/js-sdk/test/.env.localhost` and `sdk/js-sdk/test/.env.localhostFhevm`, set:
+In `sdk/js-sdk/test/.env.localcleartext` and `sdk/js-sdk/test/.env.localstack`, set:
 
 ```
 RPC_URL="http://localhost:8545"
@@ -105,6 +105,59 @@ npm run test:full:testnet
 npm run test
 ```
 
+## Localstack (per protocol version)
+
+Each command runs the suite against a localstack started with a specific
+protocol version (a `--chain` + `--fhevm-cli-profile` pair). The runner
+restarts localstack via `fhevm-cli` before the tests and stops it afterwards,
+so these share a single stack and must be run **one at a time** (sequentially),
+not in parallel.
+
+```sh
+# Latest / default
+npm run test:localstack
+
+# A specific protocol version
+npm run test:localstack:v11   # localstack_v11 + v0.11.0-mainnet.json
+npm run test:localstack:v12   # localstack_v12 + v0.12.0-testnet.json
+npm run test:localstack:v13   # localstack_v13 + v0.13.0.json
+
+# All versions, sequentially (stops at the first failure)
+npm run test:localstack:v11 && \
+  npm run test:localstack:v12 && \
+  npm run test:localstack:v13 && \
+  npm run test:localstack
+```
+
+Prerequisites: the Solidity dependencies must be installed once
+(`cd contracts && forge soldeer install`, see [Setup](#setup)), and `forge`
+must be available on `PATH`.
+
+> Note (macOS): the test scripts require Bash. The default `/bin/bash` (3.2) is
+> fine; the scripts avoid Bash 4-only syntax.
+
+## Definition of Done (run everything)
+
+`dod` runs the full Definition-of-Done gate. Use `--help` to print the exact
+command list.
+
+```sh
+# Standard gate: clean, codegen, prettier, lint, unit tests, dev + prod builds,
+# browser test, and cleartext suites (v12, v13, latest).
+npm run dod
+
+# Everything above PLUS the long suites: testnet, devnet, and every localstack
+# version (v11, v12, v13, latest), run sequentially.
+npm run dod:full
+
+# List the exact commands without running them.
+node test/scripts/dod.mjs --help
+```
+
+`dod` stops at the first failing command. `dod:full` additionally requires
+testnet/devnet credentials (`ZAMA_FHEVM_API_KEY`, `RPC_URL`) and a Playwright
+browser for the browser test.
+
 ## Addresses
 
 ```sh
@@ -147,6 +200,30 @@ INPUT_VERIFIER=0x36772142b74871f255CbD7A3e89B401d3e45825f
 HCU_LIMIT=0x233ff88A48c172d29F675403e6A8e302b0F032D9
 ```
 
+# @fhevm/solidity
+
+```
+    // chainId = 31337
+    function _getLocalConfig() private pure returns (CoprocessorConfig memory) {
+        return
+            CoprocessorConfig({
+                ACLAddress: 0x50157CFfD6bBFA2DECe204a89ec419c23ef5755D,
+                CoprocessorAddress: 0xe3a9105a3a932253A70F126eb1E3b589C643dD24,
+                KMSVerifierAddress: 0x901F8942346f7AB3a01F6D7613119Bca447Bb030
+            });
+    }
+
+    // chainId = 31337
+    function _getLocalstackConfig() private pure returns (CoprocessorConfig memory) {
+        return
+            CoprocessorConfig({
+                ACLAddress: 0x05fD9B5EFE0a996095f42Ed7e77c390810CF660c,
+                CoprocessorAddress: 0xcCAe95fF1d11656358E782570dF0418F59fA40e1,
+                KMSVerifierAddress: 0xa1880e99d86F081E8D3868A8C4732C8f65dfdB11
+            });
+    }
+```
+
 # fhevm-cli
 
 Run e2e tests using @fhevm/sdk:
@@ -176,10 +253,6 @@ bun install
 
 # Rebuild test suite (if needed)
 ./fhevm-cli upgrade test-suite
-
-# With a specific old relayer-sdk
-RELAYER_SDK_VERSION=0.4.2 ./fhevm-cli upgrade test-suite
-RELAYER_SDK_VERSION=0.5.0-rc.1 ./fhevm-cli upgrade test-suite
 
 # Run full test suite
 ./fhevm-cli test standard

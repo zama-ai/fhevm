@@ -1,6 +1,7 @@
 import { setFhevmRuntimeConfig, createFhevmClient } from '../../../src/ethers/index.js';
 import { sepolia } from '../../../src/core/chains/index.js';
 import { ethers } from 'ethers';
+import { createLogger } from './common.js';
 
 const logEl = document.getElementById('log')!;
 const t0 = performance.now();
@@ -23,15 +24,7 @@ async function run() {
   try {
     log('Setting runtime config (base64 WASM)...');
     setFhevmRuntimeConfig({
-      logger: {
-        debug: (message: string) => log(`  [debug] ${message}`),
-        error: (message: string, cause: unknown) => {
-          log(`  [error] ${message}`);
-          if (cause !== undefined) {
-            log(`  [error] ${cause}`);
-          }
-        },
-      },
+      logger: createLogger(log),
     });
     log('[PASS] Runtime config set');
 
@@ -55,7 +48,9 @@ async function run() {
     //
     // 3. Display TFHE module infos
     //
-    const tfheInfo = client.runtime.encrypt.getTfheModuleInfo();
+    const tfheVersion = client.tfheVersion;
+    log(`TfheVersion=${tfheVersion}`);
+    const tfheInfo = await client.runtime.encrypt.getTfheModuleInfo({ tfheVersion });
     if (!tfheInfo) {
       throw new Error('TFHE module not initialized after client.init()');
     }
@@ -66,7 +61,9 @@ async function run() {
     //
     // 4. Display TKMS module infos
     //
-    const tkmsInfo = client.runtime.decrypt.getTkmsModuleInfo();
+    const tkmsVersion = client.tkmsVersion;
+    log(`TkmsVersion=${tkmsVersion}`);
+    const tkmsInfo = await client.runtime.decrypt.getTkmsModuleInfo({ tkmsVersion });
     if (!tkmsInfo) {
       throw new Error('TKMS module not initialized after client.init()');
     }

@@ -2,8 +2,9 @@ import type { Bytes65Hex } from '../../../types/primitives.js';
 import type { RelayerFetchPublicDecryptPayload } from '../../../types/relayer-p.js';
 import type { FetchPublicDecryptResult } from '../../../types/relayer.js';
 import type { FetchPublicDecryptParameters, FetchPublicDecryptReturnType, RelayerClientWithRuntime } from '../types.js';
-import { ensure0x, removeSuffix } from '../../../base/string.js';
+import { ensure0x } from '../../../base/string.js';
 import { RelayerAsyncRequest } from './RelayerAsyncRequest.js';
+import { buildRelayerUrlString, validateRelayerBaseUrl } from './relayerUrl.js';
 
 //////////////////////////////////////////////////////////////////////////////
 // fetchPublicDecrypt
@@ -23,9 +24,13 @@ export async function fetchPublicDecrypt(
     extraData: payload.extraData,
   };
 
+  const hasAuth: boolean = options?.auth !== undefined;
+  const relayerBaseUrl: URL = validateRelayerBaseUrl(relayerClient.chain.fhevm.relayerUrl, hasAuth);
+  const url = buildRelayerUrlString(relayerBaseUrl, 'v2/public-decrypt');
+
   const request = new RelayerAsyncRequest({
     relayerOperation: 'PUBLIC_DECRYPT',
-    url: `${removeSuffix(relayerClient.chain.fhevm.relayerUrl, '/')}/v2/public-decrypt`,
+    url,
     payload: p,
     options,
   });
@@ -34,7 +39,7 @@ export async function fetchPublicDecrypt(
 
   return {
     orderedAbiEncodedClearValues: ensure0x(result.decryptedValue),
-    kmsPublicDecryptEIP712Signatures: result.signatures.map(ensure0x) as Bytes65Hex[],
+    kmsPublicDecryptEip712Signatures: result.signatures.map(ensure0x) as Bytes65Hex[],
     extraData: result.extraData,
   };
 }

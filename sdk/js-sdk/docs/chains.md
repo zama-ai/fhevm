@@ -1,134 +1,143 @@
 # Chains
 
-Every FHEVM client is bound to a **chain** — a configuration object that tells the SDK which smart contracts to use and where the Relayer lives. The SDK ships with definitions for the currently supported chains, and you can define your own.
+A chain definition tells the SDK which FHEVM contracts and Relayer to talk to. It
+is the first argument to every client factory. Definitions come from
+`@fhevm/sdk/chains`.
+
+```ts
+import { mainnet, sepolia, defineFhevmChain } from '@fhevm/sdk/chains';
+```
 
 ## Built-in chains
 
-### Ethereum mainnet
+| Export    | Chain            | `id`       | Status     | Relayer                            |
+| --------- | ---------------- | ---------- | ---------- | ---------------------------------- |
+| `mainnet` | Ethereum mainnet | `1`        | Production | `https://relayer.mainnet.zama.org` |
+| `sepolia` | Ethereum Sepolia | `11155111` | Testnet    | `https://relayer.testnet.zama.org` |
 
-The production FHEVM deployment on Ethereum.
-
-```ts
-import { mainnet } from "@fhevm/sdk/chains";
-```
-
-| Property | Value |
-| --- | --- |
-| Chain ID | `1` |
-| ACL | `0xcA2E8f1F656CD25C01F05d0b243Ab1ecd4a8ffb6` |
-| Input Verifier | `0xCe0FC2e05CFff1B719EFF7169f7D80Af770c8EA2` |
-| KMS Verifier | `0x77627828a55156b04Ac0DC0eb30467f1a552BB03` |
-| Relayer URL | `https://relayer.mainnet.zama.org` |
-| Gateway ID | `261131` |
-| Gateway Decryption | `0x0f6024a97684f7d90ddb0fAAD79cB15F2C888D24` |
-| Gateway Input Verification | `0xcB1bB072f38bdAF0F328CdEf1Fc6eDa1DF029287` |
-
-### Sepolia testnet
-
-The test deployment. Use this for development and testing.
+Use them directly:
 
 ```ts
-import { sepolia } from "@fhevm/sdk/chains";
+const client = createFhevmClient({ chain: sepolia, provider });
 ```
 
-| Property | Value |
-| --- | --- |
-| Chain ID | `11155111` |
-| ACL | `0xf0Ffdc93b7E186bC2f8CB3dAA75D86d1930A433D` |
-| Input Verifier | `0xBBC1fFCdc7C316aAAd72E807D9b0272BE8F84DA0` |
-| KMS Verifier | `0xbE0E383937d564D7FF0BC3b46c51f0bF8d5C311A` |
-| Relayer URL | `https://relayer.testnet.zama.org` |
-| Gateway ID | `10901` |
-| Gateway Decryption | `0x5D8BD78e2ea6bbE41f26dFe9fdaEAa349e077478` |
-| Gateway Input Verification | `0x483b9dE06E4E4C7D35CCf5837A1668487406D955` |
+Each definition bundles the host-chain contract addresses, the Relayer URL, and
+the gateway coordinates the SDK needs. You never assemble these by hand for a
+supported chain.
 
----
+## The `FhevmChain` shape
 
-## What's in a chain definition
-
-A chain definition tells the SDK everything it needs to talk to the FHEVM infrastructure on a specific network:
+A chain definition is a plain, deeply-frozen object:
 
 ```ts
 type FhevmChain = {
-  readonly id: number;                   // The EVM chain ID (e.g., 1 for mainnet)
+  readonly id: number; // host chain id
   readonly fhevm: {
     readonly contracts: {
-      readonly acl: { address: string };           // Who can decrypt what
-      readonly inputVerifier: { address: string }; // Verifies encrypted input proofs
-      readonly kmsVerifier: { address: string };   // Verifies KMS signatures
+      readonly acl: ChainContract;
+      readonly inputVerifier: ChainContract;
+      readonly kmsVerifier: ChainContract;
+      readonly protocolConfig: ChainContract | undefined;
     };
-    readonly relayerUrl: string;                   // The Relayer HTTP endpoint
+    readonly relayerUrl: string;
     readonly gateway: {
-      readonly id: number;                         // The Gateway chain ID
+      readonly id: number; // gateway chain id
       readonly contracts: {
-        readonly decryption: { address: string };         // Routes decryption requests
-        readonly inputVerification: { address: string };  // Routes input verification
+        readonly decryption: ChainContract;
+        readonly inputVerification: ChainContract;
       };
     };
   };
 };
+
+type ChainContract = {
+  readonly address: `0x${string}`;
+  readonly blockCreated?: number | undefined;
+};
 ```
 
-**What are these contracts?**
+| Field                                   | Purpose                                                      |
+| --------------------------------------- | ----------------------------------------------------------- |
+| `id`                                    | The host chain's EVM chain id.                              |
+| `fhevm.contracts.acl`                   | Access Control List — tracks who may decrypt what.          |
+| `fhevm.contracts.inputVerifier`         | Verifies encrypted inputs and their proofs.                 |
+| `fhevm.contracts.kmsVerifier`           | Holds the authorized KMS signer set and quorum threshold.   |
+| `fhevm.contracts.protocolConfig`        | Optional aggregate config contract; may be `undefined`.     |
+| `fhevm.relayerUrl`                       | The Relayer the SDK sends proof and decryption requests to. |
+| `fhevm.gateway.id`                       | The gateway rollup's chain id.                              |
+| `fhevm.gateway.contracts.decryption`     | Gateway decryption contract.                                 |
+| `fhevm.gateway.contracts.inputVerification` | Gateway input-verification contract.                     |
 
-| Contract | What it does |
-| --- | --- |
-| **ACL** | The Access Control List — tracks which users and contracts can decrypt which handles |
-| **Input Verifier** | Verifies that encrypted inputs were created correctly (checks ZK proofs and coprocessor signatures) |
-| **KMS Verifier** | Verifies that decryption responses are authentic (checks KMS signatures) |
-| **Gateway Decryption** | Routes decryption requests between the chain and the KMS |
-| **Gateway Input Verification** | Routes input verification between the chain and the coprocessor |
+### Built-in addresses
 
----
+{% tabs %}
+{% tab title="mainnet (id 1)" %}
 
-## Custom chains
+| Contract                 | Address                                        |
+| ------------------------ | ---------------------------------------------- |
+| ACL                      | `0xcA2E8f1F656CD25C01F05d0b243Ab1ecd4a8ffb6`   |
+| Input Verifier           | `0xCe0FC2e05CFff1B719EFF7169f7D80Af770c8EA2`   |
+| KMS Verifier             | `0x77627828a55156b04Ac0DC0eb30467f1a552BB03`   |
+| Gateway decryption       | `0x0f6024a97684f7d90ddb0fAAD79cB15F2C888D24`   |
+| Gateway input verification | `0xcB1bB072f38bdAF0F328CdEf1Fc6eDa1DF029287` |
 
-If you're running your own FHEVM deployment (e.g., a private testnet), you can define a custom chain:
+Gateway chain id: `261131`.
+
+{% endtab %}
+{% tab title="sepolia (id 11155111)" %}
+
+| Contract                 | Address                                        |
+| ------------------------ | ---------------------------------------------- |
+| ACL                      | `0xf0Ffdc93b7E186bC2f8CB3dAA75D86d1930A433D`   |
+| Input Verifier           | `0xBBC1fFCdc7C316aAAd72E807D9b0272BE8F84DA0`   |
+| KMS Verifier             | `0xbE0E383937d564D7FF0BC3b46c51f0bF8d5C311A`   |
+| Gateway decryption       | `0x5D8BD78e2ea6bbE41f26dFe9fdaEAa349e077478`   |
+| Gateway input verification | `0x483b9dE06E4E4C7D35CCf5837A1668487406D955` |
+
+Gateway chain id: `10901`.
+
+{% endtab %}
+{% endtabs %}
+
+## Defining a custom chain
+
+For a local devnet or a host chain the SDK doesn't ship, build a definition with
+`defineFhevmChain`. It validates the shape, deep-freezes the object, and preserves
+its exact type:
 
 ```ts
-import { defineFhevmChain } from "@fhevm/sdk/chains";
+import { defineFhevmChain } from '@fhevm/sdk/chains';
 
-const myChain = defineFhevmChain({
-  id: 8453,
+export const myDevnet = defineFhevmChain({
+  id: 12345,
   fhevm: {
     contracts: {
-      acl: { address: "0x..." },
-      inputVerifier: { address: "0x..." },
-      kmsVerifier: { address: "0x..." },
+      acl: { address: '0x…' },
+      inputVerifier: { address: '0x…' },
+      kmsVerifier: { address: '0x…' },
+      protocolConfig: { address: '0x…' },
     },
-    relayerUrl: "https://relayer.mychain.example.com",
+    relayerUrl: 'http://localhost:9000',
     gateway: {
-      id: 99999,
+      id: 54321,
       contracts: {
-        decryption: { address: "0x..." },
-        inputVerification: { address: "0x..." },
+        decryption: { address: '0x…' },
+        inputVerification: { address: '0x…' },
       },
     },
   },
 });
+
+const client = createFhevmClient({ chain: myDevnet, provider });
 ```
 
-`defineFhevmChain()` deep-freezes the chain object so it can't be accidentally mutated at runtime.
+Set `protocolConfig` to `undefined` if your deployment doesn't have one — the
+built-in `mainnet` and `sepolia` definitions currently leave it `undefined`.
 
----
+## Related
 
-## Reading chain configuration at runtime
-
-The SDK also provides functions to read FHEVM contract state directly from the chain. This is useful for debugging or building tooling — most applications don't need these.
-
-```ts
-import {
-  readFhevmExecutorContractData,
-  readInputVerifierContractData,
-  readKmsVerifierContractData,
-  resolveFhevmConfig,
-} from "@fhevm/sdk/viem"; // or "@fhevm/sdk/ethers"
+- [Clients](clients.md) — passing the chain to a factory.
+- [Runtime configuration](runtime-configuration.md) — everything not chain-specific.
+- [API reference](api-reference.md) — the `FhevmChain` type and `defineFhevmChain` signature.
 ```
 
-These functions return structured data about the on-chain contracts:
-
-**`FhevmExecutorContractData`** — ACL address, handle version, input verifier address
-
-**`InputVerifierContractData`** — coprocessor signers, signature threshold, EIP-712 domain
-
-**`KmsVerifierContractData`** — KMS signers, signature threshold, Gateway chain ID

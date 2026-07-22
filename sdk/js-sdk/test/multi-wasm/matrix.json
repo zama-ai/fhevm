@@ -1,0 +1,34 @@
+{
+  "$schema": "./matrix.schema.json",
+  "schemaVersion": 1,
+  "defaults": {
+    "roundTrip": {
+      "clearType": "uint8",
+      "contractMethod": "setEuint8",
+      "makePublic": true,
+      "value": 42
+    }
+  },
+  "supportedVersionPairs": [
+    { "tfhe": "1.5.3", "kms": "0.13.10" },
+    { "tfhe": "1.6.2", "kms": "0.13.20-0" },
+    { "tfhe": "1.6.0-dev", "kms": "0.13.20-0", "cdns": ["local"] }
+  ],
+  "assetUrlSets": {
+    "local": {
+      "tfheWasm": "/src/wasm/tfhe/v{tfhe}/tfhe_bg.wasm",
+      "tfheWorker": "/__raw_wasm/src/wasm/tfhe/v{tfhe}/tfhe-worker.mjs",
+      "kmsWasm": "/src/wasm/tkms/v{kms}/kms_lib_bg.wasm"
+    },
+    "jsdelivr": {
+      "tfheWasm": "https://cdn.jsdelivr.net/npm/tfhe@{tfhe}/tfhe_bg.wasm",
+      "tfheWorker": "/__raw_wasm/src/wasm/tfhe/v{tfhe}/tfhe-worker.mjs",
+      "kmsWasm": "https://cdn.jsdelivr.net/npm/tkms@{kms}/kms_lib_bg.wasm"
+    },
+    "unpkg": {
+      "tfheWasm": "https://unpkg.com/tfhe@{tfhe}/tfhe_bg.wasm",
+      "tfheWorker": "/__raw_wasm/src/wasm/tfhe/v{tfhe}/tfhe-worker.mjs",
+      "kmsWasm": "https://unpkg.com/tkms@{kms}/kms_lib_bg.wasm"
+    }
+  }
+}

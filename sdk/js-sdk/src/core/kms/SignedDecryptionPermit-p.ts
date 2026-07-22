@@ -1,215 +1,109 @@
-import type {
-  SignedDecryptionPermit,
-  SignedDelegatedDecryptionPermit,
-  SignedSelfDecryptionPermit,
-} from '../types/signedDecryptionPermit.js';
-import type { KmsDelegatedUserDecryptEip712, KmsUserDecryptEip712 } from '../types/kms.js';
-import type {
-  Bytes65Hex,
-  BytesHex,
-  ChecksummedAddress,
-  Uint256BigInt,
-  Uint8Number,
-  UintNumber,
-} from '../types/primitives.js';
+import type { SignedDecryptionPermit } from '../types/signedDecryptionPermit.js';
+import type { Eip712Like } from '../types/kms.js';
 import type { FhevmChain } from '../types/fhevmChain.js';
 import type { FhevmRuntime } from '../types/coreFhevmRuntime.js';
 import type { ErrorMetadataParams } from '../base/errors/ErrorBase.js';
 import type { NativeSigner } from '../modules/ethereum/types.js';
-import type { KmsSignersContext } from '../types/kmsSignersContext.js';
-import { verifyKmsUserDecryptEip712 } from '../utils-p/decrypt/verifyKmsUserDecryptEip712.js';
-import { verifyKmsDelegatedUserDecryptEip712 } from '../utils-p/decrypt/verifyKmsDelegatedUserDecryptEip712.js';
-import { assertRecordNonNullableProperty } from '../base/record.js';
-import { assertRecordBytes65HexProperty } from '../base/bytes.js';
+import type { TransportKeyPair } from './TransportKeyPair-p.js';
+import type { FhevmClientFrozenContext } from '../types/fhevmClientFrozenContext-p.js';
+import type { BytesHex } from '../types/primitives.js';
 import { InvalidTypeError } from '../base/errors/InvalidTypeError.js';
-import { addressToChecksummedAddress, assertIsAddress, assertRecordAddressProperty } from '../base/address.js';
-import { assertIsKmsUserDecryptEip712, createKmsUserDecryptEip712 } from './createKmsUserDecryptEip712.js';
 import {
-  assertIsKmsDelegatedUserDecryptEip712,
-  createKmsDelegatedUserDecryptEip712,
-} from './createKmsDelegatedUserDecryptEip712.js';
-import { assertRecordStringProperty } from '../base/string.js';
-import { assertIsTransportKeyPair, type TransportKeyPair } from './TransportKeyPair-p.js';
-import { assertKmsEIP712DeadlineValidity } from './utils.js';
-import { readKmsSignersContext } from '../host-contracts/readKmsSignersContext-p.js';
-import { kmsSignersContextToExtraData } from '../host-contracts/KmsSignersContext-p.js';
-import { fromKmsExtraData } from './kmsExtraData.js';
-
-////////////////////////////////////////////////////////////////////////////////
-
-const PRIVATE_TOKEN = Symbol('SignedDecryptionPermit.token');
-const MAX_USER_DECRYPT_DURATION_DAYS = 365 as UintNumber;
-const MAX_USER_DECRYPT_CONTRACT_ADDRESSES = 10 as Uint8Number;
+  isSignedDecryptionPermitV1,
+  parseSignedDecryptionPermitV1,
+  signDecryptionPermitV1,
+} from './SignedDecryptionPermitV1-p.js';
+import {
+  isSignedDecryptionPermitV2,
+  parseSignedDecryptionPermitV2,
+  signDecryptionPermitV2,
+} from './SignedDecryptionPermitV2-p.js';
+import { isRecordUintNumberProperty, isUintNumber } from '../base/uint.js';
+import { SDK_PROTOCOL_API_MAJOR_VERSION, SDK_PROTOCOL_API_MINOR_VERSION } from '../runtime/sdkProtocolApiVersion.js';
+import { createKmsExtraDataFromBytesHex, EXTRA_DATA_V2 } from './kmsExtraData-p.js';
 
 ////////////////////////////////////////////////////////////////////////////////
 
 /**
- * Private implementation of {@link SignedDecryptionPermit}.
- * Immutable by design — all fields are stored as private properties
- * and exposed via readonly getters. Instances are only created through
- * SDK-internal factory functions that guarantee the signature has been verified.
- *
- * **Invariant:** Every instance of this class has a verified signature.
- * Construction is only possible through factory functions that validate the
- * signature against the on-chain verifier before returning. If the EIP-712
- * format has changed (e.g. loading a permit serialized by an older SDK version),
- * verification will fail and construction will throw.
- *
- * As a consequence, any code within the SDK that receives a
- * `SignedDecryptionPermit` (verified via `instanceof`) can safely trust
- * its contents without re-verification.
+ * Returns a JSON-safe copy of the permit's EIP-712 typed data: the domain's
+ * `chainId` (a bigint internally) is emitted as a decimal string so the result
+ * survives `JSON.stringify()`. Everything else in the typed data is already
+ * made of JSON-safe primitives. `parseSignedDecryptionPermit` converts the
+ * string back to a bigint (see `_normalizeSerializedPermitDomainChainId`).
  */
-abstract class SignedDecryptionPermitBaseImpl {
-  readonly #eip712: KmsUserDecryptEip712 | KmsDelegatedUserDecryptEip712;
-  readonly #signature: Bytes65Hex;
-  readonly #signerAddress: ChecksummedAddress;
-
-  constructor(
-    privateToken: symbol,
-    parameters: {
-      readonly eip712: KmsUserDecryptEip712 | KmsDelegatedUserDecryptEip712;
-      readonly signature: Bytes65Hex;
-      readonly signerAddress: ChecksummedAddress;
-    },
-  ) {
-    if (privateToken !== PRIVATE_TOKEN) {
-      throw new Error('Unauthorized');
-    }
-    this.#eip712 = parameters.eip712;
-    this.#signature = parameters.signature;
-    this.#signerAddress = parameters.signerAddress;
-  }
-
-  public get eip712(): KmsUserDecryptEip712 | KmsDelegatedUserDecryptEip712 {
-    return this.#eip712;
-  }
-
-  public get signature(): Bytes65Hex {
-    return this.#signature;
-  }
-
-  public get signerAddress(): ChecksummedAddress {
-    return this.#signerAddress;
-  }
-
-  public abstract get encryptedDataOwnerAddress(): ChecksummedAddress;
-  public abstract get isDelegated(): boolean;
-
-  public assertNotExpired(): void {
-    assertKmsEIP712DeadlineValidity(this.#eip712.message, MAX_USER_DECRYPT_DURATION_DAYS);
-  }
-
-  /**
-   * Asserts that this permit was signed against the given {@link KmsSignersContext}.
-   *
-   * Compares the `extraData` embedded in the permit's EIP-712 message with the
-   * `extraData` derived from the provided context. A mismatch indicates the permit
-   * was created for a different KMS context (e.g. different context ID or version)
-   * and must not be used for decryption.
-   *
-   * @todo The current check is a strict byte-level comparison. A permit signed
-   *   with the correct `kmsContextId` but a different `extraData` encoding format
-   *   (e.g. a version change in the serialization scheme) will be rejected even
-   *   though the context ID matches. Consider comparing the decoded `kmsContextId`
-   *   instead of the raw `extraData` bytes.
-   *
-   * @param kmsSignersContext - The current KMS signers context to validate against.
-   * @throws If the permit's `extraData` does not match the context's `extraData`.
-   */
-  public assertMatchesKmsContext(kmsSignersContext: KmsSignersContext): void {
-    const expectedExtraData = kmsSignersContextToExtraData(kmsSignersContext);
-    if (expectedExtraData !== this.#eip712.message.extraData) {
-      throw new Error(
-        `Invalid permit: extraData "${this.#eip712.message.extraData}" does not match expected "${expectedExtraData}" from KmsSignersContext.`,
-      );
-    }
-  }
-
-  public get transportPublicKey(): BytesHex {
-    return this.#eip712.message.publicKey;
-  }
-
-  public get kmsContextId(): Uint256BigInt {
-    return fromKmsExtraData(this.#eip712.message.extraData).kmsContextId;
-  }
+function _toJsonSafeEip712(eip712: {
+  readonly domain: Record<string, unknown>;
+  readonly types: Eip712Like['types'];
+  readonly primaryType?: string | undefined;
+  readonly message: Record<string, unknown>;
+}): Eip712Like {
+  const chainId = eip712.domain.chainId;
+  const domain = {
+    ...eip712.domain,
+    chainId: typeof chainId === 'bigint' ? chainId.toString() : chainId,
+  };
+  const jsonSafe = { ...eip712, domain };
+  Object.freeze(jsonSafe);
+  Object.freeze(domain);
+  return jsonSafe;
 }
-
-////////////////////////////////////////////////////////////////////////////////
 
 /**
  * Serializes a signed decryption permit to a plain object suitable for
- * JSON serialization. Uses the public getters — does not access private fields.
+ * JSON serialization (all values are JSON-safe primitives — the domain's
+ * bigint `chainId` is emitted as a decimal string). The result can be passed
+ * through `JSON.stringify()`/`JSON.parse()` (e.g. localStorage) and restored
+ * with `parseSignedDecryptionPermit`. Uses the public getters — does not
+ * access private fields.
  *
  * `toJSON()` is intentionally not on the class to prevent accidental
  * serialization of sensitive data via `JSON.stringify(permit)`.
  */
-export function serializeSignedDecryptionPermitToJSON(permit: SignedDecryptionPermit): {
-  eip712: KmsUserDecryptEip712 | KmsDelegatedUserDecryptEip712;
-  signature: string;
-  signerAddress: string;
-} {
+export function serializeSignedDecryptionPermitToJSON(permit: SignedDecryptionPermit):
+  | {
+      version: 1;
+      eip712: Eip712Like;
+      signature: string;
+      signerAddress: string;
+    }
+  | {
+      version: 2;
+      eip712: Eip712Like;
+      signature: string;
+      signerAddress: string;
+    } {
   assertIsSignedDecryptionPermit(permit, {});
+
+  // Defensive check
+  const version = permit.version as unknown as number;
+  if (version !== 1 && version !== 2) {
+    throw new Error(`Unsupported permit version: ${version}. Supported versions are 1 and 2.`);
+  }
+
+  // This if branch is needed for tsc
+  if (permit.version === 1) {
+    return {
+      version: 1,
+      eip712: _toJsonSafeEip712(permit.eip712),
+      signature: permit.signature,
+      signerAddress: permit.signerAddress,
+    };
+  }
+
   return {
-    eip712: permit.eip712,
+    version: 2,
+    eip712: _toJsonSafeEip712(permit.eip712),
     signature: permit.signature,
     signerAddress: permit.signerAddress,
   };
 }
 
 ////////////////////////////////////////////////////////////////////////////////
-// SignedUserDecryptionPermitImpl
-////////////////////////////////////////////////////////////////////////////////
-
-class SignedSelfDecryptionPermitImpl extends SignedDecryptionPermitBaseImpl implements SignedSelfDecryptionPermit {
-  public override get eip712(): KmsUserDecryptEip712 {
-    return super.eip712 as KmsUserDecryptEip712;
-  }
-
-  public override get encryptedDataOwnerAddress(): ChecksummedAddress {
-    return this.signerAddress;
-  }
-
-  public override get isDelegated(): false {
-    return false;
-  }
-}
-
-////////////////////////////////////////////////////////////////////////////////
-// SignedDelegatedDecryptionPermitImpl
-////////////////////////////////////////////////////////////////////////////////
-
-class SignedDelegatedDecryptionPermitImpl
-  extends SignedDecryptionPermitBaseImpl
-  implements SignedDelegatedDecryptionPermit
-{
-  public override get eip712(): KmsDelegatedUserDecryptEip712 {
-    return super.eip712 as KmsDelegatedUserDecryptEip712;
-  }
-
-  public override get encryptedDataOwnerAddress(): ChecksummedAddress {
-    return this.eip712.message.delegatorAddress;
-  }
-
-  public override get isDelegated(): true {
-    return true;
-  }
-}
-
-////////////////////////////////////////////////////////////////////////////////
-
-Object.freeze(SignedDecryptionPermitBaseImpl);
-Object.freeze(SignedDecryptionPermitBaseImpl.prototype);
-Object.freeze(SignedSelfDecryptionPermitImpl);
-Object.freeze(SignedSelfDecryptionPermitImpl.prototype);
-Object.freeze(SignedDelegatedDecryptionPermitImpl);
-Object.freeze(SignedDelegatedDecryptionPermitImpl.prototype);
-
-////////////////////////////////////////////////////////////////////////////////
 // isSignedDecryptionPermit
 ////////////////////////////////////////////////////////////////////////////////
 
 export function isSignedDecryptionPermit(value: unknown): value is SignedDecryptionPermit {
-  return value instanceof SignedDecryptionPermitBaseImpl;
+  return isSignedDecryptionPermitV1(value) || isSignedDecryptionPermitV2(value);
 }
 
 /** Throws {@link InvalidTypeError} if value is not a valid {@link SignedDecryptionPermit}. */
@@ -229,92 +123,23 @@ export function assertIsSignedDecryptionPermit(
   }
 }
 
-/**
- * Asserts that every address in {@link contractAddresses} is listed in the
- * permit's `contractAddresses` (case-insensitive comparison).
- */
-export function assertPermitIncludesContractAddresses(
-  permit: SignedDecryptionPermit,
-  contractAddresses: readonly string[],
-): void {
-  const permitAddresses = permit.eip712.message.contractAddresses;
-  for (const address of contractAddresses) {
-    if (!permitAddresses.some((a) => a.toLowerCase() === address.toLowerCase())) {
-      throw Error(`contract address ${address} is not listed in the permit's contractAddresses`);
-    }
-  }
-}
-
-////////////////////////////////////////////////////////////////////////////////
-// createSignedDecryptionPermit
-////////////////////////////////////////////////////////////////////////////////
-
-async function _createSignedDecryptionPermit(
-  context: { readonly chain: FhevmChain; readonly runtime: FhevmRuntime },
-  parameters: {
-    readonly signerAddress: ChecksummedAddress;
-    readonly eip712: KmsUserDecryptEip712 | KmsDelegatedUserDecryptEip712;
-    readonly signature: Bytes65Hex;
-  },
-): Promise<SignedDecryptionPermit> {
-  const { signerAddress, eip712, signature } = parameters;
-
-  if (eip712.message.contractAddresses.length === 0) {
-    throw Error('contractAddresses is empty');
-  }
-
-  if (eip712.message.contractAddresses.length > MAX_USER_DECRYPT_CONTRACT_ADDRESSES) {
-    throw Error(`contractAddresses max length of ${MAX_USER_DECRYPT_CONTRACT_ADDRESSES} exceeded`);
-  }
-
-  if (Number(eip712.message.durationDays) > MAX_USER_DECRYPT_DURATION_DAYS) {
-    throw Error(`durationDays is above max duration of ${MAX_USER_DECRYPT_DURATION_DAYS}`);
-  }
-
-  if (eip712.primaryType === 'UserDecryptRequestVerification') {
-    await verifyKmsUserDecryptEip712(context, {
-      signer: signerAddress,
-      message: eip712.message,
-      signature,
-    });
-    return new SignedSelfDecryptionPermitImpl(PRIVATE_TOKEN, parameters);
-  } else {
-    await verifyKmsDelegatedUserDecryptEip712(context, {
-      signer: signerAddress,
-      message: eip712.message,
-      signature,
-    });
-    return new SignedDelegatedDecryptionPermitImpl(PRIVATE_TOKEN, parameters);
-  }
-}
-
-export type SignDecryptionPermitContext = {
+export type KmsSignDecryptionPermitContext = {
   readonly chain: FhevmChain;
   readonly runtime: FhevmRuntime;
   readonly client: NonNullable<object>;
   readonly options: { readonly batchRpcCalls: boolean };
 };
 
-type SignDecryptionPermitCommonParameters = {
+export type KmsSignDecryptionPermitParameters = {
   readonly contractAddresses: readonly string[];
   readonly startTimestamp: number;
-  readonly durationDays: number;
+  readonly durationSeconds: number;
   readonly signerAddress: string;
   readonly signer: NativeSigner;
+  readonly delegatorAddress?: string | undefined;
   readonly transportKeyPair: TransportKeyPair;
+  readonly fhevmContext: FhevmClientFrozenContext;
 };
-
-export type SignSelfDecryptionPermitParameters = SignDecryptionPermitCommonParameters & {
-  readonly delegatorAddress?: undefined;
-};
-
-export type SignDelegatedDecryptionPermitParameters = SignDecryptionPermitCommonParameters & {
-  readonly delegatorAddress: string;
-};
-
-export type SignDecryptionPermitParameters =
-  | SignSelfDecryptionPermitParameters
-  | SignDelegatedDecryptionPermitParameters;
 
 /**
  * Creates a signed decryption permit by constructing the EIP-712 typed data
@@ -331,123 +156,144 @@ export type SignDecryptionPermitParameters =
  * @throws If the signature verification fails.
  */
 export async function signDecryptionPermit(
-  context: SignDecryptionPermitContext,
-  parameters: SignSelfDecryptionPermitParameters,
-): Promise<SignedSelfDecryptionPermit>;
-export async function signDecryptionPermit(
-  context: SignDecryptionPermitContext,
-  parameters: SignDelegatedDecryptionPermitParameters,
-): Promise<SignedDelegatedDecryptionPermit>;
-export async function signDecryptionPermit(
-  context: SignDecryptionPermitContext,
-  parameters: SignDecryptionPermitParameters,
+  context: KmsSignDecryptionPermitContext,
+  parameters: KmsSignDecryptionPermitParameters,
 ): Promise<SignedDecryptionPermit> {
-  const kmsSignersContext = await readKmsSignersContext(context, {
-    address: context.chain.fhevm.contracts.kmsVerifier.address as ChecksummedAddress,
-  });
-
-  const extraData: BytesHex = kmsSignersContextToExtraData(kmsSignersContext);
-
-  const {
-    contractAddresses,
-    startTimestamp,
-    durationDays,
-    signerAddress: signerAddressArg,
-    transportKeyPair: transportKeyPair,
-    signer,
-    delegatorAddress,
-  } = parameters;
-
-  assertIsTransportKeyPair(transportKeyPair, {});
-  assertIsAddress(signerAddressArg, {});
-
-  if (delegatorAddress !== undefined) {
-    assertIsAddress(delegatorAddress, {});
-    if (signerAddressArg.toLowerCase() === delegatorAddress.toLowerCase()) {
-      throw new Error(
-        'signerAddress and delegatorAddress must be different. ' +
-          'Use a non-delegated permit to decrypt your own values.',
-      );
-    }
+  // V1 permits are always created here: the current protocol API version this
+  // SDK is using is 0.13.0, so the SDK does not know the 0.14.0 API (which is
+  // what introduces V2 permits). Once the SDK adopts API 0.14.0, this branch
+  // falls through to signDecryptionPermitV2 below.
+  if (SDK_PROTOCOL_API_MAJOR_VERSION === 0 && SDK_PROTOCOL_API_MINOR_VERSION <= 13) {
+    return await signDecryptionPermitV1(context, parameters);
   }
 
-  const signerAddress = addressToChecksummedAddress(signerAddressArg);
-
-  const commonMessage = {
-    verifyingContractAddressDecryption: context.chain.fhevm.gateway.contracts.decryption.address as ChecksummedAddress,
-    chainId: context.chain.id,
-    contractAddresses,
-    durationDays,
-    startTimestamp,
-    extraData,
-    publicKey: transportKeyPair.publicKey,
-  };
-
-  const eip712 =
-    delegatorAddress !== undefined
-      ? createKmsDelegatedUserDecryptEip712({
-          ...commonMessage,
-          delegatorAddress,
-        })
-      : createKmsUserDecryptEip712(commonMessage);
-
-  const signature = await context.runtime.ethereum.signTypedData(signer, {
-    account: signerAddress,
-    ...eip712,
-  });
-
-  return await _createSignedDecryptionPermit(context, {
-    signature,
-    signerAddress,
-    eip712,
-  });
+  return await signDecryptionPermitV2(context, parameters);
 }
 
 ////////////////////////////////////////////////////////////////////////////////
 // parseSignedDecryptionPermit
 ////////////////////////////////////////////////////////////////////////////////
 
+/**
+ * Restores the bigint `eip712.domain.chainId` on a serialized permit.
+ *
+ * `serializeSignedDecryptionPermitToJSON` emits `chainId` as a decimal string
+ * so the permit survives `JSON.stringify()`/`JSON.parse()` (e.g. localStorage).
+ * Internally the domain is validated and stored with a bigint `chainId`, so a
+ * string (or number) is converted back here before validation. Returns a new
+ * object — the caller's input is never mutated. Anything that does not look
+ * like a permit-with-domain-chainId is returned as-is and left to the
+ * downstream validation to report.
+ */
+function _normalizeSerializedPermitDomainChainId(permit: unknown): unknown {
+  if (permit === null || typeof permit !== 'object') {
+    return permit;
+  }
+  const eip712 = (permit as Record<string, unknown>).eip712;
+  if (eip712 === null || typeof eip712 !== 'object') {
+    return permit;
+  }
+  const domain = (eip712 as Record<string, unknown>).domain;
+  if (domain === null || typeof domain !== 'object') {
+    return permit;
+  }
+  const chainId = (domain as Record<string, unknown>).chainId;
+  if (typeof chainId !== 'string' && typeof chainId !== 'number') {
+    return permit;
+  }
+
+  let chainIdBigInt: bigint;
+  try {
+    chainIdBigInt = BigInt(chainId);
+  } catch {
+    // Not a valid uint string/number — leave the permit untouched so the
+    // domain validation reports the malformed chainId with proper context.
+    return permit;
+  }
+
+  return {
+    ...(permit as Record<string, unknown>),
+    eip712: {
+      ...(eip712 as Record<string, unknown>),
+      domain: {
+        ...(domain as Record<string, unknown>),
+        chainId: chainIdBigInt,
+      },
+    },
+  };
+}
+
+/**
+ * Reads the `extraData` version carried by a serialized permit, or `undefined` when
+ * the permit exposes no decodable `extraData` (missing, wrong type, or malformed —
+ * left to the downstream permit validation to report with proper context).
+ *
+ * Navigates `permit.eip712.message.extraData` defensively (the permit is untrusted
+ * input). Used to enforce the SDK protocol-API cap at parse time — see the CRITICAL
+ * RULE in `readKmsSignersContext-p.ts`.
+ */
+function _parsePermitExtraDataVersion(permit: unknown): number | undefined {
+  const extraData = (
+    permit as { readonly eip712?: { readonly message?: { readonly extraData?: unknown } } } | null | undefined
+  )?.eip712?.message?.extraData;
+  if (typeof extraData !== 'string') {
+    return undefined;
+  }
+  try {
+    return createKmsExtraDataFromBytesHex(extraData as BytesHex).version;
+  } catch {
+    return undefined;
+  }
+}
+
 export async function parseSignedDecryptionPermit(
-  context: {
-    readonly chain: FhevmChain;
-    readonly runtime: FhevmRuntime;
-    readonly client: NonNullable<object>;
-    readonly options: { readonly batchRpcCalls: boolean };
+  context: KmsSignDecryptionPermitContext,
+  parameters: {
+    readonly transportKeyPair: TransportKeyPair;
+    readonly permit: unknown;
+    readonly fhevmContext: FhevmClientFrozenContext;
   },
-  transportKeyPair: TransportKeyPair,
-  permit: unknown,
 ): Promise<SignedDecryptionPermit> {
-  assertIsTransportKeyPair(transportKeyPair, {});
+  const { transportKeyPair, permit, fhevmContext } = parameters;
+  // Accept permits revived from a JSON string (chainId serialized as a string).
+  const sanitizedPermit = _normalizeSerializedPermitDomainChainId(permit);
 
-  const permitName = 'permit';
-  const options = {};
+  const hasVersion = isRecordUintNumberProperty(sanitizedPermit, 'version');
 
-  assertRecordNonNullableProperty(permit, 'eip712', permitName, options);
-  assertRecordBytes65HexProperty(permit, 'signature', permitName, options);
-  assertRecordAddressProperty(permit, 'signerAddress', permitName, options);
+  // if no version, interpret as permit v1
+  const sanitizedVersion: number = hasVersion ? sanitizedPermit.version : 1;
 
-  const eip712 = permit.eip712;
-  assertRecordStringProperty(eip712, 'primaryType', `${permitName}.eip712`, options);
-  const primaryType = (eip712 as Record<string, unknown>).primaryType;
-
-  if (primaryType === 'UserDecryptRequestVerification') {
-    assertIsKmsUserDecryptEip712(eip712, `${permitName}.eip712`, options);
-  } else if (primaryType === 'DelegatedUserDecryptRequestVerification') {
-    assertIsKmsDelegatedUserDecryptEip712(eip712, `${permitName}.eip712`, options);
-  } else {
-    throw new Error(`Unknown permit primaryType: ${primaryType}`);
+  // check valid version number
+  if (!isUintNumber(sanitizedVersion) || sanitizedVersion > 2 || sanitizedVersion === 0) {
+    throw new Error(`Unsupported permit version: ${sanitizedVersion}. Supported versions are 1 and 2.`);
   }
 
-  if (eip712.message.publicKey.toLowerCase() !== transportKeyPair.publicKey.toLowerCase()) {
-    throw new Error(
-      "The permit's publicKey does not match the TransportKeyPairKeyPair's publicKey. " +
-        'Ensure the permit was signed with the same key pair.',
-    );
+  // version is 1 or 2
+  const version: 1 | 2 = sanitizedVersion as 1 | 2;
+
+  // Enforce the SDK protocol-API cap (see the CRITICAL RULE in readKmsSignersContext-p.ts):
+  // a v13-capped SDK must never accept a v2 permit, because a v13 relayer rejects it.
+  // A v2 can arrive two independent ways; each is rejected here with its own message,
+  // up front, instead of an opaque relayer 400 later (mirrors decryptValuesFromPairs).
+  if (SDK_PROTOCOL_API_MAJOR_VERSION === 0 && SDK_PROTOCOL_API_MINOR_VERSION <= 13) {
+    // (a) A V2-format permit.
+    if (version > 1) {
+      throw new Error(
+        `Refusing to parse a V2-format decryption permit (version ${version}): this SDK is capped at protocol API v0.${SDK_PROTOCOL_API_MINOR_VERSION} and only supports V1 permits. V2 permits require an SDK on protocol API v0.14.0 or later.`,
+      );
+    }
+    const extraDataVersion = _parsePermitExtraDataVersion(sanitizedPermit);
+    // (b) A v2 extraData — including one carried inside a V1-format permit.
+    if (extraDataVersion !== undefined && extraDataVersion >= EXTRA_DATA_V2) {
+      throw new Error(
+        `Refusing to parse a permit carrying extraData v2: this SDK is capped at protocol API v0.${SDK_PROTOCOL_API_MINOR_VERSION} and only accepts extraData v0/v1 (a v13 relayer rejects extraData v2). Use an SDK on protocol API v0.14.0 or later.`,
+      );
+    }
   }
 
-  return await _createSignedDecryptionPermit(context, {
-    signature: permit.signature,
-    eip712,
-    signerAddress: addressToChecksummedAddress(permit.signerAddress),
-  });
+  if (version === 1) {
+    return await parseSignedDecryptionPermitV1(context, { transportKeyPair, permit: sanitizedPermit, fhevmContext });
+  }
+
+  return await parseSignedDecryptionPermitV2(context, { transportKeyPair, permit: sanitizedPermit, fhevmContext });
 }

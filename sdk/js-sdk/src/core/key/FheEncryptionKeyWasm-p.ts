@@ -1,4 +1,5 @@
 import type { FhevmRuntime } from '../types/coreFhevmRuntime.js';
+import type { TfheVersion } from '../../wasm/tfhe/TfheApi.js';
 import type {
   FheEncryptionCrs,
   FheEncryptionKeyMetadata,
@@ -21,6 +22,7 @@ class FheEncryptionKeyWasmImpl implements FheEncryptionKeyWasm {
   readonly #crs: FheEncryptionCrs;
   readonly #publicKey: FheEncryptionPublicKey;
   readonly #metadata: FheEncryptionKeyMetadata;
+  readonly #tfheVersion: TfheVersion;
 
   constructor(
     privateToken: symbol,
@@ -29,6 +31,7 @@ class FheEncryptionKeyWasmImpl implements FheEncryptionKeyWasm {
       readonly publicKey: FheEncryptionPublicKey;
       readonly crs: FheEncryptionCrs;
       readonly metadata: FheEncryptionKeyMetadata;
+      readonly tfheVersion: TfheVersion;
     },
   ) {
     if (privateToken !== PRIVATE_TOKEN) {
@@ -38,6 +41,7 @@ class FheEncryptionKeyWasmImpl implements FheEncryptionKeyWasm {
     this.#publicKey = parameters.publicKey;
     this.#crs = parameters.crs;
     this.#metadata = Object.freeze({ ...parameters.metadata });
+    this.#tfheVersion = parameters.tfheVersion;
 
     Object.freeze(this);
   }
@@ -50,16 +54,28 @@ class FheEncryptionKeyWasmImpl implements FheEncryptionKeyWasm {
     return this.#crs;
   }
 
+  public get tfheVersion(): TfheVersion {
+    return this.#tfheVersion;
+  }
+
   public get metadata(): FheEncryptionKeyMetadata {
     return this.#metadata;
   }
 
-  public static [VERIFY_FUNC](privateToken: symbol, instance: unknown, owner: FhevmRuntime): void {
+  public static [VERIFY_FUNC](
+    privateToken: symbol,
+    instance: unknown,
+    owner: FhevmRuntime,
+    tfheVersion: TfheVersion,
+  ): void {
     if (privateToken !== PRIVATE_TOKEN) {
       throw new Error('Unauthorized');
     }
     if (!(instance instanceof FheEncryptionKeyWasmImpl)) {
       throw new Error('Invalid FheEncryptionKey instance');
+    }
+    if (tfheVersion !== instance.#tfheVersion) {
+      throw new Error('TfheVersion mismatch');
     }
     assertOwnedBy({
       actualOwner: instance.#owner,
@@ -81,6 +97,7 @@ export function createFheEncryptionKeyWasm(
     readonly publicKey: FheEncryptionPublicKey;
     readonly crs: FheEncryptionCrs;
     readonly metadata: FheEncryptionKeyMetadata;
+    readonly tfheVersion: TfheVersion;
   },
 ): FheEncryptionKeyWasm {
   return new FheEncryptionKeyWasmImpl(PRIVATE_TOKEN, owner, parameters);
@@ -92,6 +109,10 @@ export function createFheEncryptionKeyWasm(
  * Verifies that the given `FheEncryptionKeyWasm` instance is owned
  * by the given runtime. Throws if not.
  */
-export function assertFheEncryptionKeyWasmOwnedBy(data: FheEncryptionKeyWasm, owner: FhevmRuntime): void {
-  FheEncryptionKeyWasmImpl[VERIFY_FUNC](PRIVATE_TOKEN, data, owner);
+export function assertFheEncryptionKeyWasmOwnedBy(
+  data: FheEncryptionKeyWasm,
+  owner: FhevmRuntime,
+  tfheVersion: TfheVersion,
+): void {
+  FheEncryptionKeyWasmImpl[VERIFY_FUNC](PRIVATE_TOKEN, data, owner, tfheVersion);
 }

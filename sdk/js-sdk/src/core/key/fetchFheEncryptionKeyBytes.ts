@@ -3,6 +3,7 @@ import type { FhevmChain } from '../types/fhevmChain.js';
 import type { FheEncryptionKeyBytes, FheEncryptionKeyWasm } from '../types/fheEncryptionKey.js';
 import type { RelayerKeyUrlOptions } from '../types/relayer.js';
 import type { FetchFheEncryptionKeyBytesParameters } from '../modules/relayer/types.js';
+import type { FhevmClientFrozenContext } from '../types/fhevmClientFrozenContext-p.js';
 import { globalFheEncryptionKeyCache } from './FheEncryptionKeyCache-p.js';
 import { serializeFheEncryptionKeyWasm } from './serializeFheEncryptionKey.js';
 import { asFhevmRuntimeWith } from '../runtime/CoreFhevmRuntime-p.js';
@@ -10,8 +11,12 @@ import { asFhevmRuntimeWith } from '../runtime/CoreFhevmRuntime-p.js';
 ////////////////////////////////////////////////////////////////////////////////
 
 export async function fetchFheEncryptionKeyBytes(
-  context: { readonly chain: FhevmChain; readonly runtime: FhevmRuntime },
-  parameters?: {
+  context: {
+    readonly chain: FhevmChain;
+    readonly runtime: FhevmRuntime;
+  },
+  parameters: {
+    readonly fhevmContext: FhevmClientFrozenContext;
     readonly options?: RelayerKeyUrlOptions | undefined;
     readonly ignoreCache?: boolean | undefined;
   },
@@ -22,7 +27,7 @@ export async function fetchFheEncryptionKeyBytes(
   // Caller-provided options override runtime config defaults (e.g. auth)
   const relayerParameters: FetchFheEncryptionKeyBytesParameters = {
     ...parameters,
-    options: { auth: context.runtime.config.auth, ...parameters?.options },
+    options: { auth: context.runtime.config.auth, ...parameters.options },
   };
 
   // Ensure a fetch is in-flight
@@ -51,7 +56,6 @@ export async function fetchFheEncryptionKeyBytes(
  * or `undefined` if the encrypt module is not available on the runtime.
  */
 function _getSerializeFn(context: {
-  readonly chain: FhevmChain;
   readonly runtime: FhevmRuntime;
 }): ((args: FheEncryptionKeyWasm) => Promise<FheEncryptionKeyBytes>) | undefined {
   // Try to get a serialize fn if the encrypt module is available

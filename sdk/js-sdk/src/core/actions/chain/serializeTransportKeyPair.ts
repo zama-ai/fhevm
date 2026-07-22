@@ -6,6 +6,7 @@ import {
   serializeTransportKeyPair as serializeTransportKeyPair_,
   type TransportKeyPair,
 } from '../../kms/TransportKeyPair-p.js';
+import { initPublicAction } from '../../runtime/CoreFhevm-p.js';
 
 ////////////////////////////////////////////////////////////////////////////////
 
@@ -16,11 +17,13 @@ export type SerializeTransportKeyPairParameters = {
 export type SerializeTransportKeyPairReturnType = {
   publicKey: BytesHex;
   privateKey: BytesHex;
+  tkmsVersion?: string;
 };
 
-export function serializeTransportKeyPair(
-  _fhevm: Fhevm<FhevmChain, FhevmRuntime, OptionalNativeClient>,
+export async function serializeTransportKeyPair(
+  fhevm: Fhevm<FhevmChain, FhevmRuntime, OptionalNativeClient>,
   parameters: SerializeTransportKeyPairParameters,
-): SerializeTransportKeyPairReturnType {
-  return serializeTransportKeyPair_(parameters.transportKeyPair);
+): Promise<SerializeTransportKeyPairReturnType> {
+  const fhevmContext = await initPublicAction(fhevm);
+  return serializeTransportKeyPair_({ transportKeyPair: parameters.transportKeyPair, fhevmContext });
 }

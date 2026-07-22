@@ -1,19 +1,12 @@
 import type { Fhevm, FhevmBase, FhevmExtension } from '../../types/coreFhevmClient.js';
 import type { FhevmChain } from '../../types/fhevmChain.js';
-import type {
-  SignedSelfDecryptionPermit,
-  SignedDelegatedDecryptionPermit,
-} from '../../types/signedDecryptionPermit.js';
+import type { SignedDecryptionPermit } from '../../types/signedDecryptionPermit.js';
 import type {
   SerializeTransportKeyPairParameters,
   SerializeTransportKeyPairReturnType,
 } from '../../actions/chain/serializeTransportKeyPair.js';
 import { assertIsFhevmBaseClient } from '../../runtime/CoreFhevm-p.js';
-import {
-  signDecryptionPermit,
-  type SignSelfDecryptionPermitParameters,
-  type SignDelegatedDecryptionPermitParameters,
-} from '../../actions/base/signDecryptionPermit.js';
+import { signDecryptionPermit, type SignDecryptionPermitParameters } from '../../actions/base/signDecryptionPermit.js';
 import {
   parseTransportKeyPair,
   type ParseTransportKeyPairParameters,
@@ -50,6 +43,12 @@ import {
   type DecryptPublicValuesWithSignaturesParameters,
   type DecryptPublicValuesWithSignaturesReturnType,
 } from '../../actions/base/decryptPublicValuesWithSignatures.js';
+import { ensureFrozenContext } from '../../frozenContext/ensureFrozenContext-p.js';
+import {
+  signLegacyDecryptionPermit,
+  type SignLegacyDecryptionPermitParameters,
+  type SignLegacyDecryptionPermitReturnType,
+} from '../../actions/base/signLegacyDecryptionPermit.js';
 
 ////////////////////////////////////////////////////////////////////////////////
 
@@ -126,27 +125,26 @@ export type BaseActions = {
   readonly decryptPublicValuesWithSignatures: (
     parameters: DecryptPublicValuesWithSignaturesParameters,
   ) => Promise<DecryptPublicValuesWithSignaturesReturnType>;
-  readonly signDecryptionPermit: {
-    /**
-     * Signs a self decryption permit — Alice decrypts her own encrypted values.
-     *
-     * 1. Alice signs a permit saying "I, Alice, want to decrypt my own handles."
-     * 2. Alice calls `decrypt` with this permit.
-     * 3. The KMS verifies Alice's signature and releases decrypted shares to her.
-     *
-     * No `delegatorAddress` needed — the signer is the owner.
-     */
-    (parameters: SignSelfDecryptionPermitParameters): Promise<SignedSelfDecryptionPermit>;
-    /**
-     * Signs a delegated decryption permit — Bob decrypts Alice's (`delegatorAddress`) encrypted values.
-     *
-     * 1. Alice calls `FHE.delegateUserDecryption()` on-chain, giving Bob permission to decrypt her handles.
-     * 2. Bob signs a permit with `delegatorAddress: Alice`, saying "I, Bob, want to decrypt Alice's handles."
-     * 3. Bob calls `decrypt` with this permit.
-     * 4. The KMS authenticates Bob via his signature, then checks the on-chain ACL to verify Alice delegated to Bob.
-     */
-    (parameters: SignDelegatedDecryptionPermitParameters): Promise<SignedDelegatedDecryptionPermit>;
-  };
+  /**
+   * Signs a decryption permit.
+   *
+   * @deprecated Will be deprecated in the next version. Use
+   * {@link signLegacyDecryptionPermit} instead, which pins the V1 permit shape
+   * and stays stable across SDK protocol-API upgrades.
+   */
+  readonly signDecryptionPermit: (parameters: SignDecryptionPermitParameters) => Promise<SignedDecryptionPermit>;
+  /**
+   * Signs a legacy decryption permit.
+   *
+   * - Without `delegatorAddress`: Alice signs to decrypt her own encrypted values.
+   * - With `delegatorAddress`: Bob signs to decrypt values belonging to `delegatorAddress` (Alice),
+   *   after Alice has granted permission via `FHE.delegateUserDecryption()` on-chain.
+   *
+   * Inspect `isDelegated` on the returned permit to distinguish the two cases.
+   */
+  readonly signLegacyDecryptionPermit: (
+    parameters: SignLegacyDecryptionPermitParameters,
+  ) => Promise<SignLegacyDecryptionPermitReturnType>;
   /** Deserializes a previously serialized e2e transport key pair back into a usable key pair. */
   readonly parseTransportKeyPair: (
     parameters: ParseTransportKeyPairParameters,
@@ -154,11 +152,11 @@ export type BaseActions = {
   /** Serializes an e2e transport key pair to hex strings for storage. */
   readonly serializeTransportKeyPair: (
     parameters: SerializeTransportKeyPairParameters,
-  ) => SerializeTransportKeyPairReturnType;
+  ) => Promise<SerializeTransportKeyPairReturnType>;
   /** Serializes a signed decryption permit to a plain object for storage or transmission. */
   readonly serializeSignedDecryptionPermit: (
     parameters: SerializeSignedDecryptionPermitParameters,
-  ) => SerializeSignedDecryptionPermitReturnType;
+  ) => Promise<SerializeSignedDecryptionPermitReturnType>;
   /** Parses and verifies a previously serialized signed decryption permit. */
   readonly parseSignedDecryptionPermit: (
     parameters: ParseSignedDecryptionPermitParameters,
@@ -176,13 +174,8 @@ function _baseActions(fhevm: Fhevm<FhevmChain>): BaseActions {
     decryptPublicValue: (parameters) => decryptPublicValue(fhevm, parameters),
     decryptPublicValues: (parameters) => decryptPublicValues(fhevm, parameters),
     decryptPublicValuesWithSignatures: (parameters) => decryptPublicValuesWithSignatures(fhevm, parameters),
-    // Preserve the original action overloads on the decorated client API.
-    // Runtime behavior is unchanged: this is a direct pass-through wrapper.
-    signDecryptionPermit: ((parameters: SignSelfDecryptionPermitParameters | SignDelegatedDecryptionPermitParameters) =>
-      signDecryptionPermit(
-        fhevm,
-        parameters as SignSelfDecryptionPermitParameters,
-      )) as BaseActions['signDecryptionPermit'],
+    signDecryptionPermit: (parameters) => signDecryptionPermit(fhevm, parameters),
+    signLegacyDecryptionPermit: (parameters) => signLegacyDecryptionPermit(fhevm, parameters),
     parseTransportKeyPair: (parameters) => parseTransportKeyPair(fhevm, parameters),
     serializeTransportKeyPair: (parameters) => serializeTransportKeyPair(fhevm, parameters),
     serializeSignedDecryptionPermit: (parameters) => serializeSignedDecryptionPermit(fhevm, parameters),
@@ -193,11 +186,18 @@ function _baseActions(fhevm: Fhevm<FhevmChain>): BaseActions {
 
 ////////////////////////////////////////////////////////////////////////////////
 
+async function _initBase(fhevm: FhevmBase<FhevmChain>): Promise<void> {
+  // Resolve the frozen version basis once and cache it on the client.
+  await ensureFrozenContext(fhevm);
+}
+
+////////////////////////////////////////////////////////////////////////////////
+
 export function baseActions(fhevm: FhevmBase<FhevmChain>): FhevmExtension<BaseActions> {
   assertIsFhevmBaseClient(fhevm);
   return {
     actions: _baseActions(fhevm),
     runtime: fhevm.runtime,
-    // no init required, no prefetch of the FheEncryptionKey. This is the whole purpose of the fetchFheEncryptionKeyBytes action
+    init: _initBase,
   };
 }

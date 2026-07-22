@@ -6,11 +6,13 @@ import type { FhevmRuntime } from '../types/coreFhevmRuntime.js';
 import type { ClearValueType, SolidityPrimitiveTypeName } from '../types/fheType.js';
 import type { NonEmptyReadonlyArray } from '../types/utils.js';
 import type { ClearValue, Handle } from '../types/encryptedTypes-p.js';
+import type { KmsExtraData } from '../types/kms-p.js';
 import { concatBytesHex } from '../base/bytes.js';
 import { abiEncodeClearValues, createClearValueArray } from '../handle/ClearValue.js';
 import { toClearValueType } from '../handle/FheType.js';
 import { kmsSignersContextToExtraData } from '../host-contracts/KmsSignersContext-p.js';
 import { verifyKmsPublicDecryptEip712 } from './verifyKmsPublicDecryptEip712-p.js';
+import { toKmsSignedExtraDataBytesHex } from './kmsExtraData-p.js';
 
 //////////////////////////////////////////////////////////////////////////////
 
@@ -89,7 +91,7 @@ type Parameters = {
   readonly originToken: symbol;
   readonly orderedHandles: readonly Handle[];
   readonly orderedAbiEncodedClearValues: BytesHex;
-  readonly kmsPublicDecryptEIP712Signatures: readonly Bytes65Hex[];
+  readonly kmsPublicDecryptEip712Signatures: readonly Bytes65Hex[];
   readonly kmsSignersContext: KmsSignersContext;
 };
 
@@ -108,7 +110,7 @@ export async function createPublicDecryptionProof(
   const {
     orderedHandles: orderedEncryptedValues,
     orderedAbiEncodedClearValues,
-    kmsPublicDecryptEIP712Signatures,
+    kmsPublicDecryptEip712Signatures,
     kmsSignersContext,
     originToken,
   } = parameters;
@@ -117,7 +119,7 @@ export async function createPublicDecryptionProof(
   // Compute extraData using KmsSignersContext
   //////////////////////////////////////////////////////////////////////////////
 
-  const extraData = kmsSignersContextToExtraData(kmsSignersContext);
+  const extraData: KmsExtraData = kmsSignersContextToExtraData(kmsSignersContext);
 
   ////////////////////////////////////////////////////////////////////////////
   //
@@ -125,7 +127,7 @@ export async function createPublicDecryptionProof(
   //
   ////////////////////////////////////////////////////////////////////////////
 
-  const signedExtraData = extraData === ('0x00' as BytesHex) ? ('0x' as BytesHex) : extraData;
+  const signedExtraDataBytesHex = toKmsSignedExtraDataBytesHex(extraData);
 
   //////////////////////////////////////////////////////////////////////////////
   // Compute the proof as numSigners + KMS signatures + extraData
@@ -133,15 +135,15 @@ export async function createPublicDecryptionProof(
 
   const packedNumSigners: BytesHex = context.runtime.ethereum.encodePacked({
     types: ['uint8'],
-    values: [kmsPublicDecryptEIP712Signatures.length],
+    values: [kmsPublicDecryptEip712Signatures.length],
   });
 
   const packedSignatures = context.runtime.ethereum.encodePacked({
-    types: Array(kmsPublicDecryptEIP712Signatures.length).fill('bytes') as string[],
-    values: kmsPublicDecryptEIP712Signatures,
+    types: Array(kmsPublicDecryptEip712Signatures.length).fill('bytes') as string[],
+    values: kmsPublicDecryptEip712Signatures,
   });
 
-  const decryptionProof: BytesHex = concatBytesHex([packedNumSigners, packedSignatures, signedExtraData]);
+  const decryptionProof: BytesHex = concatBytesHex([packedNumSigners, packedSignatures, signedExtraDataBytesHex]);
 
   //////////////////////////////////////////////////////////////////////////////
   // Deserialize ordered decrypted result
@@ -176,6 +178,6 @@ export async function createPublicDecryptionProof(
     decryptionProof: decryptionProof,
     orderedClearValues: orderedDecryptedFhevmHandles,
     orderedAbiEncodedClearValues: orderedAbiEncodedDecryptedFhevmHandles.abiEncodedClearValues,
-    extraData: signedExtraData,
+    extraData: signedExtraDataBytesHex,
   });
 }

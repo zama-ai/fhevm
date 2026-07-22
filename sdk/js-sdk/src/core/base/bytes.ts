@@ -37,6 +37,7 @@ import { is0x, isNo0x, remove0x } from './string.js';
 import { InvalidPropertyError } from './errors/InvalidPropertyError.js';
 import { InvalidTypeError } from './errors/InvalidTypeError.js';
 import { isUintForByteLength } from './uint.js';
+import { Sha256VerificationError } from './errors/Sha256VerificationError.js';
 
 ////////////////////////////////////////////////////////////////////////////////
 
@@ -1427,6 +1428,26 @@ export function bytesToHexLarge(bytes: Uint8Array, no0x?: boolean): BytesHex | B
     return txt as BytesHexNo0x;
   } else {
     return txt as BytesHex;
+  }
+}
+
+export async function verifySha256(
+  bytes: BufferSource,
+  expectedSha256: string,
+  options?: { subject?: string },
+): Promise<void> {
+  const expected = asBytes32HexNo0x(remove0x(expectedSha256.trim()).toLowerCase(), { subject: 'SHA-256 digest' });
+
+  if (typeof crypto === 'undefined' || typeof crypto.subtle === 'undefined') {
+    throw new Error('Web Crypto API is not available');
+  }
+
+  const digest = await crypto.subtle.digest('SHA-256', bytes);
+  const actual = bytesToHexLarge(new Uint8Array(digest), true) as Bytes32HexNo0x;
+
+  if (actual !== expected) {
+    const subject = options?.subject ?? 'bytes';
+    throw new Sha256VerificationError({ subject, expected, actual }, {});
   }
 }
 

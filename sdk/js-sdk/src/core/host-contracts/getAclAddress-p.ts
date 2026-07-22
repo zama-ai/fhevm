@@ -12,7 +12,7 @@ type Context = {
 };
 
 type Parameters = {
-  readonly address: ChecksummedAddress;
+  readonly fhevmExecutorAddress: ChecksummedAddress;
 };
 
 type ReturnType = ChecksummedAddress;
@@ -26,10 +26,9 @@ type ReturnType = ChecksummedAddress;
  */
 export async function getAclAddress(context: Context, parameters: Parameters): Promise<ReturnType> {
   const trustedClient = getTrustedClient(context);
-  const address = parameters.address;
 
   const res = await context.runtime.ethereum.readContract(trustedClient, {
-    address: address,
+    address: parameters.fhevmExecutorAddress,
     abi: getACLAddressAbi,
     args: [],
     functionName: getACLAddressAbi[0].name,
