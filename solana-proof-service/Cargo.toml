@@ -40,11 +40,11 @@ tokio-util = "0.7.18"
 # tls-webpki-roots: Channel::connect must accept https:// Yellowstone endpoints
 # (plaintext still works for local geyser).
 tonic = { version = "0.12.3", features = ["tls-webpki-roots"] }
-tower-http = { version = "0.6.6", features = ["trace"] }
+tower-http = { version = "0.6.6", features = ["trace", "timeout", "request-id", "util", "uuid"] }
 tracing = "0.1.44"
 tracing-subscriber = { version = "0.3.20", features = ["env-filter", "json"] }
 utoipa = { version = "5.4.0", features = ["axum_extras"] }
-utoipa-swagger-ui = { version = "9.0.2", features = ["axum"] }
+utoipa-swagger-ui = { version = "9.0.2", features = ["axum", "vendored"] }
 yellowstone-grpc-proto = { git = "https://github.com/rpcpool/yellowstone-grpc", tag = "v5.0.1+solana.2.1.21", default-features = false, features = ["tonic", "tonic-compression"] }
 zama-host = { path = "../solana/programs/zama-host", features = ["no-entrypoint"] }
 zama-solana-acl = { path = "../solana/crates/zama-solana-acl" }

@@ -41,11 +41,15 @@ pub struct RpcChainFetcher {
 }
 
 impl RpcChainFetcher {
+    /// Confirmed JSON-RPC client with explicit connect/request timeouts so a
+    /// stalled RPC cannot retain proof handlers indefinitely.
     pub fn new(rpc_url: String) -> Self {
-        Self {
-            client: reqwest::Client::new(),
-            rpc_url,
-        }
+        let client = reqwest::Client::builder()
+            .connect_timeout(std::time::Duration::from_secs(5))
+            .timeout(std::time::Duration::from_secs(30))
+            .build()
+            .expect("reqwest client");
+        Self { client, rpc_url }
     }
 
     async fn call(

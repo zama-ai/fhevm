@@ -47,8 +47,9 @@ impl IngestHealth {
         self.writer_running.store(true, Ordering::SeqCst);
         let mut inner = self.inner.lock().expect("ingest health lock");
         inner.terminal = None;
-        // Do not advance last_progress_at here: Ready requires a real apply
-        // (mark_progress). Start alone must not look like ingest progress.
+        // Do not advance last_progress_at here: progress tracks applied/replayed
+        // blocks for observability. After catch-up, readiness does not require a
+        // recent DB mutation (program-filtered streams can be idle).
     }
 
     pub fn mark_progress(&self, slot: u64) {
@@ -91,11 +92,16 @@ impl IngestHealth {
         self.inner.lock().expect("ingest health lock").last_slot
     }
 
+    /// True when no apply/replay heartbeat has been observed within `max_silence`.
+    ///
+    /// `None` (no progress yet) is **not** treated as immediately stale: a writer
+    /// may have restarted against a complete history and be waiting for the next
+    /// program-relevant block. Do not use silence alone as the readiness gate.
     pub fn silence_exceeded(&self, max_silence: Duration) -> bool {
         let inner = self.inner.lock().expect("ingest health lock");
         match inner.last_progress_at {
             Some(at) => at.elapsed() > max_silence,
-            None => true,
+            None => false,
         }
     }
 }

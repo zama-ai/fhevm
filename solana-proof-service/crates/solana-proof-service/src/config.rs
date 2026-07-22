@@ -11,7 +11,20 @@ const CONFIG_PATH_ENV: &str = "SOLANA_PROOF_CONFIG_PATH";
 const ENV_PREFIX: &str = "SOLANA_PROOF";
 const ENV_SEPARATOR: &str = "__";
 
+/// Known `SOLANA_PROOF__*` override paths (lowercase segments). Typos fail fast.
+const KNOWN_ENV_PATHS: &[&[&str]] = &[
+    &["server", "bind_address"],
+    &["database", "connection_string"],
+    &["database", "max_connections"],
+    &["solana", "program_id"],
+    &["solana", "rpc_url"],
+    &["yellowstone", "grpc_url"],
+    &["yellowstone", "x_token"],
+    &["readiness", "max_ingest_silence_secs"],
+];
+
 #[derive(Clone, Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct ServiceConfig {
     pub server: ServerConfig,
     pub database: DatabaseConfig,
@@ -22,11 +35,13 @@ pub struct ServiceConfig {
 }
 
 #[derive(Clone, Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct ServerConfig {
     pub bind_address: SocketAddr,
 }
 
 #[derive(Clone, Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct DatabaseConfig {
     pub connection_string: String,
     #[serde(default = "default_max_connections")]
@@ -38,6 +53,7 @@ fn default_max_connections() -> u32 {
 }
 
 #[derive(Clone, Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct SolanaConfig {
     /// Base58 host program id.
     pub program_id: String,
@@ -46,6 +62,7 @@ pub struct SolanaConfig {
 }
 
 #[derive(Clone, Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct YellowstoneConfig {
     pub grpc_url: String,
     #[serde(default)]
@@ -53,8 +70,10 @@ pub struct YellowstoneConfig {
 }
 
 #[derive(Clone, Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct ReadinessConfig {
-    /// Max silence between ingest progress heartbeats before `source_lagging`.
+    /// Reserved for future checkpoint-lag / source-liveness gating (bounded recovery).
+    /// Not used to fail readiness on program-filtered idle streams after catch-up.
     #[serde(default = "default_max_ingest_silence_secs")]
     pub max_ingest_silence_secs: u64,
 }
@@ -137,13 +156,46 @@ fn apply_env_overrides(value: &mut serde_yaml::Value) -> anyhow::Result<()> {
         let Some(path) = key.strip_prefix(&format!("{ENV_PREFIX}{ENV_SEPARATOR}")) else {
             continue;
         };
+        // Config file path is a separate top-level env, not a YAML override.
+        if path.eq_ignore_ascii_case("CONFIG_PATH") {
+            continue;
+        }
         let segments: Vec<&str> = path.split(ENV_SEPARATOR).collect();
         if segments.is_empty() || segments.iter().any(|s| s.is_empty()) {
-            continue;
+            anyhow::bail!("invalid {ENV_PREFIX}{ENV_SEPARATOR}* path `{key}`");
+        }
+        if !is_known_env_path(&segments) {
+            anyhow::bail!(
+                "unknown config env override `{key}`; expected one of {}",
+                known_env_override_names().join(", ")
+            );
         }
         set_path(value, &segments, parse_env_value(&raw))?;
     }
     Ok(())
+}
+
+fn is_known_env_path(segments: &[&str]) -> bool {
+    let lower: Vec<String> = segments.iter().map(|s| s.to_ascii_lowercase()).collect();
+    KNOWN_ENV_PATHS.iter().any(|known| {
+        known.len() == lower.len() && known.iter().zip(lower.iter()).all(|(a, b)| a == b)
+    })
+}
+
+fn known_env_override_names() -> Vec<String> {
+    KNOWN_ENV_PATHS
+        .iter()
+        .map(|parts| {
+            format!(
+                "{ENV_PREFIX}{ENV_SEPARATOR}{}",
+                parts
+                    .iter()
+                    .map(|p| p.to_ascii_uppercase())
+                    .collect::<Vec<_>>()
+                    .join(ENV_SEPARATOR)
+            )
+        })
+        .collect()
 }
 
 fn parse_env_value(raw: &str) -> serde_yaml::Value {
@@ -197,9 +249,22 @@ fn set_path(
 mod tests {
     use super::*;
     use std::io::Write;
+    use std::sync::{Mutex, OnceLock};
+
+    fn env_lock() -> &'static Mutex<()> {
+        static LOCK: OnceLock<Mutex<()>> = OnceLock::new();
+        LOCK.get_or_init(|| Mutex::new(()))
+    }
+
+    fn clear_test_env_overrides() {
+        std::env::remove_var("SOLANA_PROOF__READINESS__TYPO_SECS");
+        std::env::remove_var("SOLANA_PROOF__READINESS__MAX_INGEST_SILENCE_SECS");
+    }
 
     #[test]
     fn loads_minimal_yaml() {
+        let _guard = env_lock().lock().unwrap();
+        clear_test_env_overrides();
         let file = tempfile_config(
             r#"
 server:
@@ -216,6 +281,60 @@ yellowstone:
         let config = ServiceConfig::load_from_path(file.path()).unwrap();
         assert_eq!(config.server.bind_address.port(), 8080);
         assert_eq!(config.readiness.max_ingest_silence_secs, 60);
+        file.close().ok();
+    }
+
+    #[test]
+    fn rejects_unknown_yaml_fields() {
+        let _guard = env_lock().lock().unwrap();
+        clear_test_env_overrides();
+        let file = tempfile_config(
+            r#"
+server:
+  bind_address: 127.0.0.1:8080
+  typo_field: true
+database:
+  connection_string: postgres://localhost/solana_proof
+solana:
+  program_id: TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA
+  rpc_url: http://127.0.0.1:8899
+yellowstone:
+  grpc_url: http://127.0.0.1:10000
+"#,
+        );
+        let err = ServiceConfig::load_from_path(file.path()).unwrap_err();
+        assert!(
+            err.to_string().contains("unknown field") || err.to_string().contains("typo_field"),
+            "unexpected error: {err}"
+        );
+        file.close().ok();
+    }
+
+    #[test]
+    fn rejects_unknown_env_override_paths() {
+        let _guard = env_lock().lock().unwrap();
+        clear_test_env_overrides();
+        let file = tempfile_config(
+            r#"
+server:
+  bind_address: 127.0.0.1:8080
+database:
+  connection_string: postgres://localhost/solana_proof
+solana:
+  program_id: TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA
+  rpc_url: http://127.0.0.1:8899
+yellowstone:
+  grpc_url: http://127.0.0.1:10000
+"#,
+        );
+        // SAFETY: test-only process-local env; serialized by env_lock.
+        std::env::set_var("SOLANA_PROOF__READINESS__TYPO_SECS", "5");
+        let err = ServiceConfig::load_from_path(file.path()).unwrap_err();
+        clear_test_env_overrides();
+        assert!(
+            err.to_string().contains("unknown config env override"),
+            "unexpected error: {err}"
+        );
         file.close().ok();
     }
 

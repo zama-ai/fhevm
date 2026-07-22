@@ -169,17 +169,11 @@ pub fn classify_readiness(
         );
     }
 
-    if ingest.silence_exceeded(max_ingest_silence) {
-        return report(
-            ReadinessClass::SourceLagging,
-            Some(format!(
-                "no ingest progress for more than {}s",
-                max_ingest_silence.as_secs()
-            )),
-            checkpoint_slot,
-            ingest.last_slot(),
-        );
-    }
+    // After history is complete, program-filtered Yellowstone may omit intermediate
+    // blocks for long stretches. Time-since-last-DB-apply is not source liveness;
+    // idle writer + complete history is healthy. Real checkpoint-lag vs RPC tip
+    // lands with bounded recovery; retain `max_ingest_silence` for that signal.
+    let _ = max_ingest_silence;
 
     report(
         ReadinessClass::Ready,
@@ -323,7 +317,7 @@ mod tests {
     }
 
     #[test]
-    fn mark_started_alone_is_not_ready_when_history_complete() {
+    fn mark_started_alone_is_ready_when_history_complete() {
         let ingest = IngestHealth::new();
         ingest.mark_started();
         let report = classify_readiness(
@@ -332,12 +326,12 @@ mod tests {
             &ingest,
             Duration::from_secs(60),
         );
-        assert_eq!(report.status, ReadinessClass::SourceLagging);
-        assert!(!report.ready);
+        assert_eq!(report.status, ReadinessClass::Ready);
+        assert!(report.ready);
     }
 
     #[test]
-    fn source_lagging_when_silence_exceeded_after_progress() {
+    fn idle_after_progress_stays_ready_when_history_complete() {
         let ingest = IngestHealth::new();
         ingest.mark_started();
         ingest.mark_progress(7);
@@ -348,8 +342,8 @@ mod tests {
             &ingest,
             Duration::from_millis(1),
         );
-        assert_eq!(report.status, ReadinessClass::SourceLagging);
-        assert!(!report.ready);
+        assert_eq!(report.status, ReadinessClass::Ready);
+        assert!(report.ready);
         assert_eq!(report.last_ingest_slot, Some(7));
     }
 }

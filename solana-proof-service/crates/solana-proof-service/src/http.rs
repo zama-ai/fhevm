@@ -1,6 +1,7 @@
 //! Axum HTTP surface: liveness, readiness, metrics, OpenAPI, and MMR proof.
 
 use std::sync::Arc;
+use std::time::Duration;
 
 use axum::extract::{Query, State};
 use axum::http::StatusCode;
@@ -8,6 +9,10 @@ use axum::response::{IntoResponse, Response};
 use axum::routing::get;
 use axum::{Json, Router};
 use serde::{Deserialize, Serialize};
+use tower::limit::ConcurrencyLimitLayer;
+use tower_http::request_id::{MakeRequestUuid, PropagateRequestIdLayer, SetRequestIdLayer};
+use tower_http::timeout::TimeoutLayer;
+use tower_http::trace::TraceLayer;
 use utoipa::{OpenApi, ToSchema};
 use utoipa_swagger_ui::SwaggerUi;
 
@@ -16,6 +21,11 @@ use crate::ingest_health::IngestHealth;
 use crate::metrics::{self, metrics_handler};
 use crate::proof::{build_proof, ProofError, ProofSnapshotSource};
 use crate::readiness::{evaluate_readiness, ReadinessClass, ReadinessQueryable, ReadinessReport};
+
+/// Hard ceiling for a single HTTP request (includes RPC peak check).
+const HTTP_REQUEST_TIMEOUT: Duration = Duration::from_secs(30);
+/// Soft concurrency bound so stalled handlers cannot exhaust the process.
+const HTTP_MAX_CONCURRENT_REQUESTS: usize = 128;
 
 /// Shared application state. Generic over the chain fetcher and snapshot source
 /// so handler tests can inject fakes without a live RPC node or Postgres.
@@ -57,6 +67,17 @@ pub struct MmrProofResponse {
     pub proof_slot: u64,
     pub verified: bool,
     pub status: &'static str,
+}
+
+/// Typed JSON error envelope for non-proof-shaped failures.
+#[derive(Debug, Serialize, ToSchema)]
+pub struct ErrorResponse {
+    pub error: String,
+    pub code: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub leaf_index: Option<u64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub leaf_count: Option<u64>,
 }
 
 #[derive(Debug, Serialize, ToSchema)]
@@ -105,25 +126,50 @@ impl IntoResponse for HttpError {
                     .into_response()
             }
             other => {
-                let (status, label) = match &other {
-                    HttpError::InvalidAddress(_) => (StatusCode::BAD_REQUEST, "invalid_address"),
+                let (status, code, leaf_index, leaf_count) = match &other {
+                    HttpError::InvalidAddress(_) => {
+                        (StatusCode::BAD_REQUEST, "invalid_address", None, None)
+                    }
                     HttpError::Proof(ProofError::LineageNotFound) => {
-                        (StatusCode::NOT_FOUND, "lineage_not_found")
+                        (StatusCode::NOT_FOUND, "lineage_not_found", None, None)
                     }
-                    HttpError::Proof(ProofError::LeafIndexOutOfRange { .. }) => {
-                        (StatusCode::BAD_REQUEST, "leaf_index_out_of_range")
+                    HttpError::Proof(ProofError::LeafIndexOutOfRange {
+                        leaf_index,
+                        leaf_count,
+                    }) => (
+                        StatusCode::BAD_REQUEST,
+                        "leaf_index_out_of_range",
+                        Some(*leaf_index),
+                        Some(*leaf_count),
+                    ),
+                    HttpError::Proof(ProofError::Chain(err)) => {
+                        tracing::error!(error = %err, "proof chain fetch failed");
+                        (StatusCode::INTERNAL_SERVER_ERROR, "chain_error", None, None)
                     }
-                    HttpError::Proof(ProofError::Chain(_))
-                    | HttpError::Proof(ProofError::Store(_)) => {
-                        (StatusCode::INTERNAL_SERVER_ERROR, "proof_error")
+                    HttpError::Proof(ProofError::Store(err)) => {
+                        tracing::error!(error = %err, "proof store read failed");
+                        (StatusCode::INTERNAL_SERVER_ERROR, "store_error", None, None)
                     }
                     HttpError::Proof(ProofError::Lagging { .. })
                     | HttpError::Proof(ProofError::CorruptStore { .. }) => {
                         unreachable!("lagging/corrupt handled above")
                     }
                 };
-                metrics::record_proof(label);
-                (status, other.to_string()).into_response()
+                metrics::record_proof(code);
+                let public_error = match status {
+                    StatusCode::INTERNAL_SERVER_ERROR => "internal error".to_owned(),
+                    _ => other.to_string(),
+                };
+                (
+                    status,
+                    Json(ErrorResponse {
+                        error: public_error,
+                        code: code.to_owned(),
+                        leaf_index,
+                        leaf_count,
+                    }),
+                )
+                    .into_response()
             }
         }
     }
@@ -150,8 +196,8 @@ fn decode_solana_address(address: &str) -> Result<[u8; 32], String> {
         (status = 200, description = "Verified proof", body = MmrProofResponse),
         (status = 503, description = "Store lagging chain", body = MmrProofResponse),
         (status = 500, description = "Corrupt cache / integrity", body = MmrProofResponse),
-        (status = 400, description = "Invalid address or leaf index"),
-        (status = 404, description = "Lineage not found on chain"),
+        (status = 400, description = "Invalid address or leaf index", body = ErrorResponse),
+        (status = 404, description = "Lineage not found on chain", body = ErrorResponse),
     ),
     tag = "Proof"
 )]
@@ -219,6 +265,7 @@ pub async fn readiness_handler<C: ChainFetcher, S: ProofSnapshotSource + Readine
         MmrProofQuery,
         MmrProofDto,
         MmrProofResponse,
+        ErrorResponse,
     )),
     tags(
         (name = "Health", description = "Liveness and derived readiness"),
@@ -226,11 +273,26 @@ pub async fn readiness_handler<C: ChainFetcher, S: ProofSnapshotSource + Readine
     ),
     info(
         title = "Solana proof service",
-        description = "Internal-only PoC API. TODO(prod): add auth / mTLS / rate limits before any public exposure.",
+        description = "Internal-only PoC API. TODO(prod): add auth / mTLS / rate limits before any public exposure. Proof construction currently loads the full lineage leaf history (O(n)); production needs persisted MMR nodes or checkpoints.",
         version = "0.1.0"
     )
 )]
 pub struct ApiDoc;
+
+fn http_layers<S>(router: Router<S>) -> Router<S>
+where
+    S: Clone + Send + Sync + 'static,
+{
+    router
+        .layer(TimeoutLayer::with_status_code(
+            StatusCode::REQUEST_TIMEOUT,
+            HTTP_REQUEST_TIMEOUT,
+        ))
+        .layer(ConcurrencyLimitLayer::new(HTTP_MAX_CONCURRENT_REQUESTS))
+        .layer(TraceLayer::new_for_http())
+        .layer(PropagateRequestIdLayer::x_request_id())
+        .layer(SetRequestIdLayer::x_request_id(MakeRequestUuid))
+}
 
 /// Builds the HTTP router. Mounts OpenAPI + swagger UI.
 pub fn router<C, S>(state: Arc<AppState<C, S>>) -> Router
@@ -245,9 +307,11 @@ where
         .route("/internal/solana/mmr-proof", get(mmr_proof_handler::<C, S>))
         .with_state(state);
 
-    Router::new()
-        .merge(SwaggerUi::new("/swagger-ui").url("/api-docs/openapi.json", ApiDoc::openapi()))
-        .merge(api)
+    http_layers(
+        Router::new()
+            .merge(SwaggerUi::new("/swagger-ui").url("/api-docs/openapi.json", ApiDoc::openapi()))
+            .merge(api),
+    )
 }
 
 /// Proof-only router for unit tests (no readiness / Postgres dependency).
@@ -257,9 +321,11 @@ where
     C: ChainFetcher + 'static,
     S: ProofSnapshotSource + 'static,
 {
-    Router::new()
-        .route("/internal/solana/mmr-proof", get(mmr_proof_handler::<C, S>))
-        .with_state(state)
+    http_layers(
+        Router::new()
+            .route("/internal/solana/mmr-proof", get(mmr_proof_handler::<C, S>))
+            .with_state(state),
+    )
 }
 
 #[cfg(test)]
@@ -541,7 +607,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn handler_lineage_missing_is_404() {
+    async fn handler_lineage_missing_is_404_json_error() {
         let lineage = pk(0x15);
         let chain = FakeChain::new();
         let store = FakeStore::new();
@@ -556,6 +622,40 @@ mod tests {
             .await
             .unwrap();
         assert_eq!(response.status(), StatusCode::NOT_FOUND);
+        assert!(response.headers().get("x-request-id").is_some());
+        let json = json_body(response).await;
+        assert_eq!(json["code"], "lineage_not_found");
+        assert!(json["error"].is_string());
+    }
+
+    #[tokio::test]
+    async fn handler_leaf_index_out_of_range_is_400_json_error() {
+        let lineage = pk(0x17);
+        let leaf = zama_solana_acl::public_decrypt_leaf_commitment(lineage, 0, pk(0x10));
+        let mut peaks = Vec::new();
+        let mut leaf_count = 0u64;
+        mmr_append(&mut peaks, &mut leaf_count, leaf).unwrap();
+
+        let chain = FakeChain::new();
+        chain.set(lineage, OnChainLineageState { peaks, leaf_count });
+        let store = FakeStore::new();
+        store.insert(snapshot_with_leaves(lineage, vec![leaf]));
+
+        let app = proof_test_router(app_state(chain, store));
+        let response = app
+            .oneshot(
+                Request::builder()
+                    .uri(proof_uri(lineage, 100))
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(response.status(), StatusCode::BAD_REQUEST);
+        let json = json_body(response).await;
+        assert_eq!(json["code"], "leaf_index_out_of_range");
+        assert_eq!(json["leaf_index"], 100);
+        assert_eq!(json["leaf_count"], 1);
     }
 
     #[tokio::test]

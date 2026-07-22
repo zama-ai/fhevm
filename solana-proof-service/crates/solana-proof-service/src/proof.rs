@@ -63,8 +63,11 @@ pub async fn build_proof<C: ChainFetcher, S: ProofSnapshotSource>(
         .await?
         .ok_or(ProofError::LineageNotFound)?;
 
+    // Invalid indices are client errors, not retryable lag. Lagging is reserved for
+    // a valid on-chain index that the local snapshot has not caught up to yet.
     if leaf_index >= on_chain.leaf_count {
-        return Err(ProofError::Lagging {
+        return Err(ProofError::LeafIndexOutOfRange {
+            leaf_index,
             leaf_count: on_chain.leaf_count,
         });
     }
@@ -259,6 +262,30 @@ mod tests {
         assert!(result.verified);
         assert_eq!(result.leaf_count, 1);
         assert!(result.mmr_proof.is_some());
+    }
+
+    #[tokio::test]
+    async fn build_proof_rejects_leaf_index_out_of_range_before_store_read() {
+        let lineage = pk(0x01);
+        let leaf = zama_solana_acl::public_decrypt_leaf_commitment(lineage, 0, pk(0x10));
+        let mut peaks = Vec::new();
+        let mut leaf_count = 0u64;
+        mmr_append(&mut peaks, &mut leaf_count, leaf).unwrap();
+
+        let chain = FakeChain::new();
+        chain.set(lineage, OnChainLineageState { peaks, leaf_count });
+        let store = FakeStore::new();
+
+        let err = build_proof(&chain, &store, lineage, 100).await.unwrap_err();
+        assert!(matches!(
+            err,
+            ProofError::LeafIndexOutOfRange {
+                leaf_index: 100,
+                leaf_count: 1
+            }
+        ));
+        assert_eq!(store.reads.load(Ordering::SeqCst), 0);
+        assert_eq!(chain.fetches.load(Ordering::SeqCst), 1);
     }
 
     #[test]
