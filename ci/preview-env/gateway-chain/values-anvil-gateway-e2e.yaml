@@ -13,6 +13,10 @@ network:
   # on top of every low-index account already used by the gateway-contracts/
   # relayer values files - matches anvil-host's own headroom for the same reason.
   accounts: "120"
+  # Same rationale as anvil-host: the gw-listener consumes *finalized* gateway
+  # events, so shrink the epoch to make finalization near-instant instead of
+  # lagging anvil's default ~2 epochs.
+  slotsInAnEpoch: "1"
   mnemonic: "test test test test test test test test test test test junk"
 port: 8546
 storage:
