@@ -12,8 +12,8 @@ services:
       interval: 10s
       timeout: 5s
       retries: 5
-    ports:
-      - "5434:5432"
+    # Intentionally not published: only solana-proof-service reaches this DB
+    # on the compose network (default credentials; localhost PoC stack).
     volumes:
       - solana_proof_postgres_data:/var/lib/postgresql/data
 
@@ -27,7 +27,8 @@ services:
     env_file:
       - ${FHEVM_STATE_DIR:-../../../.fhevm}/runtime/env/solana-proof-service.env
     ports:
-      - "8088:8088"
+      # Loopback-only: unauthenticated PoC HTTP stays on the documented localhost boundary.
+      - "127.0.0.1:8088:8088"
     # Reaches the host-native validator RPC (:8899) and Yellowstone gRPC (:10000).
     extra_hosts:
       - "host.docker.internal:host-gateway"
