@@ -12,10 +12,12 @@ import type {
 } from '../../core/modules/ethereum/types-ct.js';
 import type { BytesHex, ChecksummedAddress } from '../../core/types/primitives.js';
 import {
+  call,
   decode,
   encode,
   encodePacked,
   getChainId,
+  hashTypedData,
   readContract,
   recoverTypedDataAddress,
   signTypedData,
@@ -32,9 +34,11 @@ export const cleartextEthereumModule: CleartextEthereumModuleFactory = () => {
       encode,
       encodePacked,
       recoverTypedDataAddress,
+      hashTypedData,
       signTypedData,
       getChainId,
       readContract,
+      call,
       mnemonicToAccount: (parameters: MnemonicToAccountParameters): MnemonicToAccountReturnType => {
         const signer = HDNodeWallet.fromPhrase(parameters.mnemonic, undefined, parameters.path);
         return {

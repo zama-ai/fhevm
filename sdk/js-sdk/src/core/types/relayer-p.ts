@@ -114,8 +114,10 @@ export type FetchUserDecryptPayloadV2 = {
     // Hex encoded bytes with 0x prefix. Default: 0x00
     readonly extraData: BytesHex;
   };
-  // Hex encoded signature with 0x prefix.
-  readonly signature: Bytes65Hex;
+  // Hex encoded signature with 0x prefix. Variable length: a 65-byte EOA ECDSA
+  // signature, an ERC-1271 smart-contract-wallet blob, or the empty `0x`
+  // pre-approved-hash flow. The relayer /v3 route forwards it verbatim.
+  readonly signature: BytesHex;
 };
 
 export type FetchDelegatedUserDecryptPayload = {

@@ -6,8 +6,12 @@ import type {
   EncodePackedReturnType,
   EncodeParameters,
   EncodeReturnType,
+  EthCallParameters,
+  EthCallResult,
   EthereumModuleFactory,
   GetChainIdReturnType,
+  HashTypedDataParameters,
+  HashTypedDataReturnType,
   TrustedClient,
   ReadContractParameters,
   RecoverTypedDataAddressParameters,
@@ -16,7 +20,8 @@ import type {
   SignTypedDataReturnType,
   NativeSigner,
 } from '../../core/modules/ethereum/types.js';
-import type { BytesHex } from '../../core/types/primitives.js';
+import type { Bytes32Hex, BytesHex } from '../../core/types/primitives.js';
+import { BaseError, ExecutionRevertedError, hashTypedData as viemHashTypedData } from 'viem';
 import { recoverTypedDataAddress as viemRecoverTypedDataAddress } from 'viem';
 import { encodePacked as viemEncodePacked, encodeAbiParameters, decodeAbiParameters } from 'viem';
 import { asChecksummedAddress } from '../../core/base/address.js';
@@ -60,6 +65,19 @@ export function decode(parameters: DecodeParameters): DecodeReturnType {
 }
 
 ////////////////////////////////////////////////////////////////////////////////
+// hashTypedData
+////////////////////////////////////////////////////////////////////////////////
+
+export function hashTypedData(parameters: HashTypedDataParameters): HashTypedDataReturnType {
+  return viemHashTypedData({
+    domain: parameters.domain,
+    types: parameters.types,
+    primaryType: parameters.primaryType,
+    message: parameters.message,
+  }) as Bytes32Hex;
+}
+
+////////////////////////////////////////////////////////////////////////////////
 // readContract
 ////////////////////////////////////////////////////////////////////////////////
 
@@ -69,6 +87,33 @@ export async function readContract(
 ): Promise<unknown> {
   const publicClient = trustedClientToViemPublicClient(hostPublicClient);
   return publicClient.readContract(parameters);
+}
+
+////////////////////////////////////////////////////////////////////////////////
+// call (raw eth_call / STATICCALL)
+////////////////////////////////////////////////////////////////////////////////
+
+export async function call(
+  hostPublicClient: TrustedClient<PublicClient>,
+  parameters: EthCallParameters,
+): Promise<EthCallResult> {
+  const publicClient = trustedClientToViemPublicClient(hostPublicClient);
+  try {
+    const { data } = await publicClient.call({
+      to: parameters.to,
+      data: parameters.data,
+      ...(parameters.gas !== undefined ? { gas: parameters.gas } : {}),
+    });
+    return { success: true, data: (data ?? '0x') as BytesHex };
+  } catch (err) {
+    // A clean EVM revert is a definitive on-chain rejection; anything else
+    // (network, timeout, rate limit, …) is transport-level and rethrown so the
+    // precautionary caller can degrade gracefully.
+    if (err instanceof BaseError && err.walk((e) => e instanceof ExecutionRevertedError) !== null) {
+      return { success: false, reason: err.shortMessage };
+    }
+    throw err;
+  }
 }
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -137,9 +182,11 @@ export const ethereumModule: EthereumModuleFactory = () => {
       encode,
       encodePacked,
       recoverTypedDataAddress,
+      hashTypedData,
       signTypedData,
       getChainId,
       readContract,
+      call,
     }),
   });
 };
