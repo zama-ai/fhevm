@@ -23,6 +23,8 @@ library ZamaConfig {
             config = _getPolygonAmoyConfig();
         } else if (block.chainid == 31337) {
             config = _getLocalConfig();
+        } else if (block.chainid == 80002) {
+            config = _getPolygonAmoyConfig();
         } else {
             revert ZamaProtocolUnsupported();
         }
