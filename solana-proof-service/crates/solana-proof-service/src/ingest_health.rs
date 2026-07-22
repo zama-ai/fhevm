@@ -57,6 +57,7 @@ struct Inner {
 #[derive(Debug)]
 pub struct IngestHealth {
     writer_running: AtomicBool,
+    recovery_in_progress: AtomicBool,
     inner: Mutex<Inner>,
 }
 
@@ -64,6 +65,7 @@ impl IngestHealth {
     pub fn new() -> Arc<Self> {
         Arc::new(Self {
             writer_running: AtomicBool::new(false),
+            recovery_in_progress: AtomicBool::new(false),
             inner: Mutex::new(Inner {
                 last_slot: None,
                 terminal: None,
@@ -75,9 +77,19 @@ impl IngestHealth {
     /// Writer task entered the ingest loop (not yet continuity-proven).
     pub fn mark_started(&self) {
         self.writer_running.store(true, Ordering::SeqCst);
+        self.recovery_in_progress.store(false, Ordering::SeqCst);
         let mut inner = self.inner.lock().expect("ingest health lock");
         inner.terminal = None;
         inner.source_link = SourceLinkState::Connecting;
+    }
+
+    /// Gates readiness to `recovery_required` while bounded RPC recovery runs.
+    pub fn set_recovery_in_progress(&self, active: bool) {
+        self.recovery_in_progress.store(active, Ordering::SeqCst);
+    }
+
+    pub fn recovery_in_progress(&self) -> bool {
+        self.recovery_in_progress.load(Ordering::SeqCst)
     }
 
     /// Live stream dropped; reconnect/backoff is in progress.
@@ -99,6 +111,7 @@ impl IngestHealth {
 
     pub fn mark_finished(&self, result: Result<(), RunnerError>) {
         self.writer_running.store(false, Ordering::SeqCst);
+        self.recovery_in_progress.store(false, Ordering::SeqCst);
         let mut inner = self.inner.lock().expect("ingest health lock");
         inner.source_link = SourceLinkState::Idle;
         inner.terminal = Some(match result {
@@ -119,6 +132,7 @@ impl IngestHealth {
     /// Unexpected writer exit (panic / missed finish / shutdown deadline).
     pub fn mark_crashed(&self, reason: impl Into<String>) {
         self.writer_running.store(false, Ordering::SeqCst);
+        self.recovery_in_progress.store(false, Ordering::SeqCst);
         let mut inner = self.inner.lock().expect("ingest health lock");
         inner.source_link = SourceLinkState::Idle;
         inner.terminal = Some(IngestTerminal::Crashed {

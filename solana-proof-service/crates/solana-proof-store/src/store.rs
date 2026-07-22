@@ -238,13 +238,11 @@ impl SqlProofStore {
 
     /// Bootstrap A / recovery seam: completeness becomes true only after an
     /// explicit bounded recovery pass proves continuity from the configured
-    /// start. The recovery adapter itself lands in a later slice.
+    /// start (`bootstrap_slot`). Called by the sequential runner when justified.
     pub async fn set_history_complete_after_recovery(
         &self,
         complete: bool,
     ) -> Result<(), StoreError> {
-        // TODO(solana-proof-service): call only from bounded RPC recovery once
-        // continuity from the configured start is proven.
         sqlx::query!(
             r#"
             UPDATE solana_proof_progress

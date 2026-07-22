@@ -1,13 +1,15 @@
 //! Cancellation-safe sequential completed-block runner.
 //!
 //! Pulls [`YellowstoneSubscription::next_block`] and applies each block through
-//! [`SqlProofStore`]. The source never owns persistence; reconnect resumes from
-//! the durable checkpoint. Bounded RPC recovery is intentionally not here.
+//! [`SqlProofStore`]. On a contiguous parent-chain gap, bounded RPC recovery
+//! fills missing blocks into the same store boundary, then ingest resumes from
+//! the durable checkpoint (inclusive replay). Recovery is never the live source.
 
 use std::time::Duration;
 
 use solana_proof_source::{
-    YellowstoneBlockSource, YellowstoneSourceError, YellowstoneSubscription,
+    history_complete_justified, RecoveryError, RpcRecoveryClient, YellowstoneBlockSource,
+    YellowstoneSourceError, YellowstoneSubscription,
 };
 use tokio_util::sync::CancellationToken;
 use tracing::{info, warn};
@@ -22,28 +24,38 @@ pub enum RunnerError {
     Source(#[from] YellowstoneSourceError),
     #[error("ingest integrity halted: {0}")]
     IntegrityHalted(String),
-    /// Contiguous parent link missing (filtered-stream gap). Bounded RPC
-    /// recovery must fill intermediate blocks; this is not a silent skip.
+    /// Contiguous parent link missing, or recovery could not prove/fill history.
+    /// Proofs/readiness stay fail-closed while this is outstanding.
     #[error("contiguous ingest gap requires recovery: {0}")]
     RecoveryRequired(String),
 }
 
-/// Optional hooks for HTTP readiness (disconnect / apply-or-replay progress).
+/// Optional hooks for HTTP readiness (disconnect / apply-or-replay progress / recovery).
 #[derive(Default)]
 pub struct IngestHooks<'a> {
-    /// Fired after a block is applied or recognized as an exact replay no-op.
-    /// That is the continuity proof: subscription + durable cursor are usable.
+    /// Fired after a block is applied or recognized as an exact replay no-op
+    /// (including recovered blocks). That is the continuity proof: subscription
+    /// + durable cursor are usable.
     pub on_progress: Option<&'a (dyn Fn(u64) + Send + Sync)>,
     pub on_disconnected: Option<&'a (dyn Fn() + Send + Sync)>,
+    /// Fired with `true` when bounded RPC recovery starts and `false` when it
+    /// ends, so readiness can return `recovery_required` while a fill is in flight.
+    pub on_recovery: Option<&'a (dyn Fn(bool) + Send + Sync)>,
 }
 
 /// Runs until `cancel` is cancelled or a durable integrity halt is observed.
 ///
 /// Progress hooks fire only after Applied / AlreadyApplied so readiness never
 /// treats a bare gRPC subscribe as a live, continuity-checked source.
+///
+/// When `recovery` is `Some`, [`RunnerError::RecoveryRequired`] and Yellowstone
+/// ancestry / replay-unavailable signals invoke a bounded RPC fill, then the
+/// loop resubscribes from the durable checkpoint. When `recovery` is `None`,
+/// gaps surface as [`RunnerError::RecoveryRequired`] immediately (fail closed).
 pub async fn run_sequential_ingest(
     source: &YellowstoneBlockSource,
     store: &SqlProofStore,
+    recovery: Option<&RpcRecoveryClient>,
     cancel: CancellationToken,
     hooks: IngestHooks<'_>,
 ) -> Result<(), RunnerError> {
@@ -65,6 +77,34 @@ pub async fn run_sequential_ingest(
             ));
         }
 
+        // Bootstrap A: empty store + configured start → recover from bootstrap
+        // before the first Yellowstone subscribe so history_start can match.
+        if checkpoint.is_none() {
+            if let Some(client) = recovery {
+                if let Some(bootstrap_slot) = client.config().bootstrap_slot {
+                    match with_recovery_gate(hooks.on_recovery, async {
+                        recover_bootstrap_from_start(
+                            client,
+                            store,
+                            bootstrap_slot,
+                            &cancel,
+                            hooks.on_progress,
+                        )
+                        .await
+                    })
+                    .await
+                    {
+                        Ok(Recovered::Filled { confirmed_tip }) => {
+                            maybe_mark_history_complete(client, store, confirmed_tip).await?;
+                            continue;
+                        }
+                        Ok(Recovered::Cancelled) => return Ok(()),
+                        Err(error) => return Err(error),
+                    }
+                }
+            }
+        }
+
         // Do not reset backoff on subscribe alone: a flaky stream that
         // connects then dies immediately would otherwise spin at 200ms forever.
         // Select on cancel so connect/subscribe cannot outlive shutdown.
@@ -80,6 +120,29 @@ pub async fn run_sequential_ingest(
                     }
                     backoff = (backoff * 2).min(MAX_BACKOFF);
                     continue;
+                }
+                Err(YellowstoneSourceError::ReplayUnavailable(message)) => {
+                    warn!(%message, "yellowstone inclusive replay unavailable; attempting RPC recovery");
+                    match with_recovery_gate(hooks.on_recovery, async {
+                        attempt_recovery(
+                            recovery,
+                            store,
+                            GapHint::FromCheckpointForward,
+                            &cancel,
+                            hooks.on_progress,
+                        )
+                        .await
+                    })
+                    .await?
+                    {
+                        Recovered::Filled { confirmed_tip } => {
+                            if let Some(client) = recovery {
+                                maybe_mark_history_complete(client, store, confirmed_tip).await?;
+                            }
+                            continue;
+                        }
+                        Recovered::Cancelled => return Ok(()),
+                    }
                 }
                 Err(error) => return Err(RunnerError::Source(error)),
             },
@@ -98,9 +161,327 @@ pub async fn run_sequential_ingest(
                 }
                 backoff = (backoff * 2).min(MAX_BACKOFF);
             }
+            Err(RunnerError::RecoveryRequired(reason)) => {
+                warn!(%reason, "ingest gap requires bounded RPC recovery");
+                let gap_end = parse_gap_end_slot(&reason);
+                match with_recovery_gate(hooks.on_recovery, async {
+                    attempt_recovery(
+                        recovery,
+                        store,
+                        GapHint::UntilExclusive(gap_end),
+                        &cancel,
+                        hooks.on_progress,
+                    )
+                    .await
+                })
+                .await?
+                {
+                    Recovered::Filled { confirmed_tip } => {
+                        if let Some(client) = recovery {
+                            maybe_mark_history_complete(client, store, confirmed_tip).await?;
+                        }
+                        // Resubscribe from durable checkpoint (inclusive replay).
+                        continue;
+                    }
+                    Recovered::Cancelled => return Ok(()),
+                }
+            }
             Err(error) => return Err(error),
         }
     }
+}
+
+enum GapHint {
+    /// Recover `(checkpoint, tip]` is not available without a tip RPC; recover
+    /// nothing beyond signaling unavailability when no checkpoint exists.
+    FromCheckpointForward,
+    /// Fill `[checkpoint+1, gap_end_slot)` when `gap_end_slot` is known.
+    UntilExclusive(Option<u64>),
+}
+
+#[derive(Debug, PartialEq, Eq)]
+enum Recovered {
+    /// Non-empty apply succeeded. `confirmed_tip` is the tip used to justify
+    /// (or refuse) `history_complete`.
+    Filled {
+        confirmed_tip: u64,
+    },
+    Cancelled,
+}
+
+struct RecoveryGate<'a> {
+    on_recovery: Option<&'a (dyn Fn(bool) + Send + Sync)>,
+}
+
+impl<'a> RecoveryGate<'a> {
+    fn enter(on_recovery: Option<&'a (dyn Fn(bool) + Send + Sync)>) -> Self {
+        if let Some(cb) = on_recovery {
+            cb(true);
+        }
+        Self { on_recovery }
+    }
+}
+
+impl Drop for RecoveryGate<'_> {
+    fn drop(&mut self) {
+        if let Some(cb) = self.on_recovery {
+            cb(false);
+        }
+    }
+}
+
+async fn with_recovery_gate<T>(
+    on_recovery: Option<&(dyn Fn(bool) + Send + Sync)>,
+    fut: impl std::future::Future<Output = T>,
+) -> T {
+    let _gate = RecoveryGate::enter(on_recovery);
+    fut.await
+}
+
+async fn attempt_recovery(
+    recovery: Option<&RpcRecoveryClient>,
+    store: &SqlProofStore,
+    hint: GapHint,
+    cancel: &CancellationToken,
+    on_progress: Option<&(dyn Fn(u64) + Send + Sync)>,
+) -> Result<Recovered, RunnerError> {
+    let Some(client) = recovery else {
+        return Err(RunnerError::RecoveryRequired(
+            "bounded RPC recovery is not configured".to_owned(),
+        ));
+    };
+    if cancel.is_cancelled() {
+        return Ok(Recovered::Cancelled);
+    }
+
+    let checkpoint = store.checkpoint().await?.ok_or_else(|| {
+        RunnerError::RecoveryRequired("recovery requested without a durable checkpoint".to_owned())
+    })?;
+
+    let (to_slot, confirmed_tip) = match hint {
+        GapHint::UntilExclusive(Some(gap_end)) if gap_end > checkpoint.slot + 1 => {
+            let confirmed_tip = read_confirmed_tip(client).await?;
+            (gap_end - 1, confirmed_tip)
+        }
+        GapHint::UntilExclusive(Some(gap_end)) if gap_end <= checkpoint.slot + 1 => {
+            return Err(RunnerError::RecoveryRequired(format!(
+                "recovery gap end slot {gap_end} does not extend past checkpoint {}",
+                checkpoint.slot
+            )));
+        }
+        GapHint::FromCheckpointForward => {
+            let tip = read_confirmed_tip(client).await?;
+            if tip <= checkpoint.slot {
+                return Err(RunnerError::RecoveryRequired(format!(
+                    "confirmed tip {tip} is not ahead of checkpoint {}; cannot catch up after replay-unavailable",
+                    checkpoint.slot
+                )));
+            }
+            let span = tip - checkpoint.slot;
+            if span > client.config().bounds.max_slots {
+                return Err(RunnerError::RecoveryRequired(format!(
+                    "recovery bound exhausted: tip catch-up span {span} exceeds max_slots {}",
+                    client.config().bounds.max_slots
+                )));
+            }
+            (tip, tip)
+        }
+        GapHint::UntilExclusive(None) => {
+            return Err(RunnerError::RecoveryRequired(
+                "RPC recovery requires a bounded gap end slot".to_owned(),
+            ));
+        }
+        GapHint::UntilExclusive(_) => unreachable!(),
+    };
+
+    let from_slot = checkpoint.slot + 1;
+    info!(
+        from_slot,
+        to_slot, "fetching bounded RPC recovery blocks at confirmed commitment"
+    );
+
+    let blocks = match client
+        .fetch_completed_blocks(from_slot, to_slot, cancel)
+        .await
+    {
+        Ok(blocks) => blocks,
+        Err(RecoveryError::Cancelled) => return Ok(Recovered::Cancelled),
+        Err(RecoveryError::BoundExhausted(message)) => {
+            return Err(RunnerError::RecoveryRequired(format!(
+                "recovery bound exhausted: {message}"
+            )));
+        }
+        Err(RecoveryError::HistoryUnavailable(message)) => {
+            return Err(RunnerError::RecoveryRequired(format!(
+                "RPC history unavailable: {message}"
+            )));
+        }
+        Err(RecoveryError::Transport(message)) => {
+            return Err(RunnerError::RecoveryRequired(format!(
+                "RPC recovery transport failure: {message}"
+            )));
+        }
+        Err(RecoveryError::Invalid(message)) => {
+            return Err(RunnerError::RecoveryRequired(format!(
+                "invalid RPC recovery data: {message}"
+            )));
+        }
+    };
+
+    apply_recovered_blocks(store, &blocks, cancel, on_progress, confirmed_tip).await
+}
+
+async fn read_confirmed_tip(client: &RpcRecoveryClient) -> Result<u64, RunnerError> {
+    match client.get_confirmed_slot().await {
+        Ok(tip) => Ok(tip),
+        Err(RecoveryError::Transport(message)) => Err(RunnerError::RecoveryRequired(format!(
+            "RPC recovery transport failure while reading tip: {message}"
+        ))),
+        Err(RecoveryError::Cancelled) => Err(RunnerError::RecoveryRequired(
+            "RPC recovery cancelled while reading tip".to_owned(),
+        )),
+        Err(err) => Err(RunnerError::RecoveryRequired(format!(
+            "failed to read confirmed tip for recovery: {err}"
+        ))),
+    }
+}
+
+async fn recover_bootstrap_from_start(
+    client: &RpcRecoveryClient,
+    store: &SqlProofStore,
+    bootstrap_slot: u64,
+    cancel: &CancellationToken,
+    on_progress: Option<&(dyn Fn(u64) + Send + Sync)>,
+) -> Result<Recovered, RunnerError> {
+    if cancel.is_cancelled() {
+        return Ok(Recovered::Cancelled);
+    }
+    // Confirmed tip anchors completeness: single-slot bootstrap alone must not
+    // flip history_complete when the chain tip is ahead.
+    let confirmed_tip = read_confirmed_tip(client).await?;
+    // Lean PoC bootstrap: recover a single-slot window at the configured start.
+    // Further continuity to tip is proven by later gap fills / catch-up.
+    // TODO(prod): optional tip-bounded bootstrap catch-up horizon.
+    let blocks = match client
+        .fetch_completed_blocks(bootstrap_slot, bootstrap_slot, cancel)
+        .await
+    {
+        Ok(blocks) => blocks,
+        Err(RecoveryError::Cancelled) => return Ok(Recovered::Cancelled),
+        Err(RecoveryError::BoundExhausted(message)) => {
+            return Err(RunnerError::RecoveryRequired(format!(
+                "bootstrap recovery bound exhausted from slot {bootstrap_slot}: {message}"
+            )));
+        }
+        Err(RecoveryError::HistoryUnavailable(message)) => {
+            return Err(RunnerError::RecoveryRequired(format!(
+                "bootstrap RPC history unavailable at slot {bootstrap_slot}: {message}"
+            )));
+        }
+        Err(RecoveryError::Transport(message)) => {
+            return Err(RunnerError::RecoveryRequired(format!(
+                "bootstrap RPC transport failure at slot {bootstrap_slot}: {message}"
+            )));
+        }
+        Err(RecoveryError::Invalid(message)) => {
+            return Err(RunnerError::RecoveryRequired(format!(
+                "bootstrap recovery invalid data at slot {bootstrap_slot}: {message}"
+            )));
+        }
+    };
+    if blocks.is_empty() {
+        return Err(RunnerError::RecoveryRequired(format!(
+            "bootstrap slot {bootstrap_slot} has no confirmed block"
+        )));
+    }
+    if blocks[0].slot != bootstrap_slot {
+        return Err(RunnerError::RecoveryRequired(format!(
+            "bootstrap recovery expected slot {bootstrap_slot}, got {}",
+            blocks[0].slot
+        )));
+    }
+    apply_recovered_blocks(store, &blocks, cancel, on_progress, confirmed_tip).await
+}
+
+/// Empty successful fetches must fail closed — never `Filled`, never mark complete.
+fn reject_empty_recovery(
+    blocks: &[solana_proof_source::CompletedBlock],
+) -> Result<(), RunnerError> {
+    if blocks.is_empty() {
+        Err(RunnerError::RecoveryRequired(
+            "RPC recovery returned no blocks for the requested range".to_owned(),
+        ))
+    } else {
+        Ok(())
+    }
+}
+
+async fn apply_recovered_blocks(
+    store: &SqlProofStore,
+    blocks: &[solana_proof_source::CompletedBlock],
+    cancel: &CancellationToken,
+    on_progress: Option<&(dyn Fn(u64) + Send + Sync)>,
+    confirmed_tip: u64,
+) -> Result<Recovered, RunnerError> {
+    reject_empty_recovery(blocks)?;
+    for block in blocks {
+        if cancel.is_cancelled() {
+            return Ok(Recovered::Cancelled);
+        }
+        match store.apply_completed_block(block).await? {
+            ApplyOutcome::Applied | ApplyOutcome::AlreadyApplied => {
+                info!(slot = block.slot, "applied recovered completed block");
+                if let Some(on_progress) = on_progress {
+                    on_progress(block.slot);
+                }
+            }
+            ApplyOutcome::RecoveryRequired { reason } => {
+                return Err(RunnerError::RecoveryRequired(format!(
+                    "recovered block still requires recovery: {reason}"
+                )));
+            }
+            ApplyOutcome::IntegrityHalted { reason } => {
+                return Err(RunnerError::IntegrityHalted(format!(
+                    "conflicting recovered ancestry: {reason}"
+                )));
+            }
+        }
+    }
+    Ok(Recovered::Filled { confirmed_tip })
+}
+
+async fn maybe_mark_history_complete(
+    client: &RpcRecoveryClient,
+    store: &SqlProofStore,
+    confirmed_tip: u64,
+) -> Result<(), RunnerError> {
+    let status = store.integrity_status().await?;
+    if status.history_complete || status.integrity_halted {
+        return Ok(());
+    }
+    if history_complete_justified(
+        client.config().bootstrap_slot,
+        status.history_start.as_ref(),
+        status.checkpoint.as_ref(),
+        confirmed_tip,
+    ) {
+        store.set_history_complete_after_recovery(true).await?;
+        info!(
+            bootstrap_slot = ?client.config().bootstrap_slot,
+            confirmed_tip,
+            "history_complete set after recovery proved continuity from configured start through confirmed tip"
+        );
+    }
+    Ok(())
+}
+
+fn parse_gap_end_slot(reason: &str) -> Option<u64> {
+    // Reasons look like:
+    // "contiguous ingest gap at slot N: parent slot ..."
+    const PREFIX: &str = "contiguous ingest gap at slot ";
+    let rest = reason.strip_prefix(PREFIX)?;
+    let digits: String = rest.chars().take_while(|c| c.is_ascii_digit()).collect();
+    digits.parse().ok()
 }
 
 async fn drive_subscription(
@@ -158,5 +539,114 @@ async fn drive_subscription(
                 return Err(RunnerError::IntegrityHalted(reason));
             }
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use solana_proof_source::{history_complete_justified, BlockCheckpoint, CompletedBlock};
+
+    fn cp(slot: u64) -> BlockCheckpoint {
+        BlockCheckpoint {
+            slot,
+            block_hash: [slot as u8; 32],
+        }
+    }
+
+    #[test]
+    fn parses_gap_end_slot_from_store_reason() {
+        let reason = "contiguous ingest gap at slot 42: parent slot 40 does not extend checkpoint 39; recovery required";
+        assert_eq!(parse_gap_end_slot(reason), Some(42));
+    }
+
+    #[test]
+    fn parses_gap_end_slot_from_ancestry_reason() {
+        let reason = "contiguous ingest gap at slot 100: parent slot 99 does not extend previous applied slot 90; recovery required";
+        assert_eq!(parse_gap_end_slot(reason), Some(100));
+    }
+
+    #[test]
+    fn parse_gap_end_rejects_unrelated_reason() {
+        assert_eq!(parse_gap_end_slot("something else"), None);
+    }
+
+    #[test]
+    fn empty_recovery_is_not_filled() {
+        let err = reject_empty_recovery(&[]).unwrap_err();
+        assert!(
+            matches!(err, RunnerError::RecoveryRequired(reason) if reason.contains("no blocks"))
+        );
+    }
+
+    #[test]
+    fn nonempty_recovery_passes_empty_guard() {
+        let block = CompletedBlock {
+            slot: 1,
+            block_hash: [1; 32],
+            parent_slot: 0,
+            parent_hash: [0; 32],
+            block_time: None,
+            block_height: None,
+            executed_transaction_count: 0,
+            transactions: vec![],
+        };
+        assert!(reject_empty_recovery(&[block]).is_ok());
+    }
+
+    #[test]
+    fn bootstrap_single_slot_with_tip_ahead_does_not_justify_complete() {
+        let start = cp(10);
+        assert!(!history_complete_justified(
+            Some(10),
+            Some(&start),
+            Some(&start),
+            50
+        ));
+    }
+
+    #[test]
+    fn catch_up_to_confirmed_tip_justifies_complete() {
+        let start = cp(10);
+        let tip = cp(50);
+        assert!(history_complete_justified(
+            Some(10),
+            Some(&start),
+            Some(&tip),
+            50
+        ));
+    }
+
+    #[test]
+    fn bound_exhaustion_never_justifies_complete_without_tip_match() {
+        // After a partial fill, durable tip behind confirmed tip must not flip.
+        let start = cp(10);
+        let partial = cp(20);
+        assert!(!history_complete_justified(
+            Some(10),
+            Some(&start),
+            Some(&partial),
+            100
+        ));
+    }
+
+    #[test]
+    fn recovery_gate_toggles_callback() {
+        use std::sync::atomic::{AtomicUsize, Ordering};
+        let starts = AtomicUsize::new(0);
+        let ends = AtomicUsize::new(0);
+        let cb = |active: bool| {
+            if active {
+                starts.fetch_add(1, Ordering::SeqCst);
+            } else {
+                ends.fetch_add(1, Ordering::SeqCst);
+            }
+        };
+        {
+            let _gate = RecoveryGate::enter(Some(&cb));
+            assert_eq!(starts.load(Ordering::SeqCst), 1);
+            assert_eq!(ends.load(Ordering::SeqCst), 0);
+        }
+        assert_eq!(ends.load(Ordering::SeqCst), 1);
     }
 }

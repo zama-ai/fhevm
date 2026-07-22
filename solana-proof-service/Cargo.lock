@@ -3054,10 +3054,15 @@ version = "0.1.0"
 dependencies = [
  "bs58",
  "futures",
+ "reqwest",
+ "serde",
+ "serde_json",
  "sha2 0.10.9",
  "thiserror 2.0.19",
  "tokio",
+ "tokio-util",
  "tonic",
+ "tracing",
  "yellowstone-grpc-proto",
  "zama-solana-transaction",
 ]

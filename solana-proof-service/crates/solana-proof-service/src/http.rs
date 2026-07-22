@@ -317,7 +317,7 @@ impl<B> MakeSpan<B> for RequestIdMakeSpan {
 /// Proof-only: shed when saturated (no unbounded queue) and enforce a typed timeout.
 ///
 /// Admission capacity is sized to leave reserved DB connections for ingest and
-/// readiness on the shared pool (see [`crate::lifecycle::proof_admission_limit`]).
+/// readiness on the shared pool (see [`crate::config::DatabaseConfig::proof_admission_limit`]).
 async fn proof_admission<C: ChainFetcher, S: ProofSnapshotSource>(
     State(state): State<Arc<AppState<C, S>>>,
     req: Request,

@@ -12,8 +12,8 @@
 //! slots are omitted. Consecutive filtered updates therefore may not satisfy
 //! `parent_slot == previous.slot`. This adapter still requires contiguous
 //! parent links between observed blocks and returns [`YellowstoneSourceError::Ancestry`]
-//! on a gap (never silently skips). Bounded RPC recovery (later slice) must
-//! fill missing blocks before ingest can continue.
+//! on a gap (never silently skips). Bounded RPC recovery fills missing blocks
+//! before ingest can continue.
 
 use futures::{Stream, StreamExt};
 use std::collections::HashMap;
@@ -225,15 +225,34 @@ where
         let block = normalize_block(block)?;
         if !*replay_observed {
             let expected = expected_replay.expect("cursor exists when replay is unobserved");
-            if block.slot != expected.slot || block.block_hash != expected.block_hash {
+            if block.slot == expected.slot && block.block_hash == expected.block_hash {
+                // Exact inclusive replay of the durable checkpoint.
+                *replay_observed = true;
+            } else if block.parent_slot == expected.slot && block.parent_hash == expected.block_hash
+            {
+                // Filtered-stream resume after recovery: empty / non-program
+                // checkpoint blocks are not re-emitted by account_include, but a
+                // contiguous parent link still proves continuity from the durable
+                // checkpoint. Do not invent a synthetic CompletedBlock.
+                *replay_observed = true;
+                *last_observed = Some(block.clone());
+                return Ok(block);
+            } else if block.slot == expected.slot {
                 return Err(YellowstoneSourceError::CheckpointChanged {
                     expected_slot: expected.slot,
                     expected_hash: expected.block_hash,
                     observed_slot: block.slot,
                     observed_hash: block.block_hash,
                 });
+            } else {
+                return Err(YellowstoneSourceError::Ancestry {
+                    slot: block.slot,
+                    parent_slot: block.parent_slot,
+                    parent_hash: block.parent_hash,
+                    expected_parent_slot: expected.slot,
+                    expected_parent_hash: expected.block_hash,
+                });
             }
-            *replay_observed = true;
         }
         if let Some(previous) = last_observed.as_ref() {
             if block.slot == previous.slot {
@@ -683,6 +702,59 @@ mod tests {
     }
 
     #[test]
+    fn rpc_simple_vote_matches_yellowstone_is_vote_stripping() {
+        // Yellowstone path trusts geyser `is_vote` (Solana simple-vote).
+        let ys = normalize_block(block(7, vec![vote(0)])).unwrap();
+        assert!(ys.transactions[0].is_vote);
+        assert!(ys.transactions[0].instructions.is_empty());
+
+        // RPC recovery must use the same simple-vote rule, not "vote key present".
+        let vote_program = bs58::decode("Vote111111111111111111111111111111111111111")
+            .into_vec()
+            .expect("vote program");
+        let vote_program: [u8; 32] = vote_program.try_into().expect("32 bytes");
+        let host = hash(0x42);
+        let rpc = crate::normalize_rpc_block_json(
+            7,
+            serde_json::json!({
+                "blockhash": bs58::encode(hash(7)).into_string(),
+                "previousBlockhash": bs58::encode(hash(6)).into_string(),
+                "parentSlot": 6,
+                "transactions": [{
+                    "transaction": {
+                        "signatures": [bs58::encode([1u8; 64]).into_string()],
+                        "message": {
+                            "accountKeys": [
+                                bs58::encode(vote_program).into_string(),
+                                bs58::encode(host).into_string(),
+                                bs58::encode(hash(2)).into_string(),
+                            ],
+                            "instructions": [{
+                                "programIdIndex": 0,
+                                "accounts": [2],
+                                "data": bs58::encode([9u8]).into_string(),
+                            }],
+                        },
+                    },
+                    "meta": { "err": null, "innerInstructions": [] },
+                    "version": "legacy",
+                }],
+            }),
+            &host,
+        )
+        .unwrap();
+        assert_eq!(rpc.transactions.len(), 1);
+        assert!(rpc.transactions[0].is_vote);
+        assert!(rpc.transactions[0].instructions.is_empty());
+        // Parity: both paths strip instructions for vote identities.
+        assert_eq!(
+            ys.transactions[0].instructions.is_empty(),
+            rpc.transactions[0].instructions.is_empty()
+        );
+        assert_eq!(ys.transactions[0].is_vote, rpc.transactions[0].is_vote);
+    }
+
+    #[test]
     fn rejects_malformed_hash_signature_metadata_and_message() {
         let mut malformed = block(7, vec![]);
         malformed.blockhash = "not-base58-0".to_owned();
@@ -740,12 +812,17 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn inclusive_replay_must_be_first_and_match_hash() {
+    async fn inclusive_replay_or_contiguous_resume_from_checkpoint() {
         let checkpoint = BlockCheckpoint {
             slot: 7,
             block_hash: hash(7),
         };
-        let mut stream = futures::stream::iter([Ok(update(block(8, vec![])))]);
+
+        // Gap that does not parent-link to the checkpoint → Ancestry (recovery).
+        let mut gap = block(9, vec![]);
+        gap.parent_slot = 8;
+        gap.parent_blockhash = bs58::encode(hash(8)).into_string();
+        let mut stream = futures::stream::iter([Ok(update(gap))]);
         let mut replay_observed = false;
         let mut last_observed = None;
         let result = next_block(
@@ -757,13 +834,14 @@ mod tests {
         .await;
         assert!(matches!(
             result,
-            Err(YellowstoneSourceError::CheckpointChanged {
-                expected_slot: 7,
-                observed_slot: 8,
+            Err(YellowstoneSourceError::Ancestry {
+                slot: 9,
+                expected_parent_slot: 7,
                 ..
             })
         ));
 
+        // Same slot, wrong hash → CheckpointChanged.
         let mut wrong_hash = block(7, vec![]);
         wrong_hash.blockhash = bs58::encode(hash(9)).into_string();
         let mut stream = futures::stream::iter([Ok(update(wrong_hash))]);
@@ -786,6 +864,7 @@ mod tests {
             }
         );
 
+        // Exact inclusive replay.
         let mut stream = futures::stream::iter([Ok(update(block(7, vec![])))]);
         let mut replay_observed = false;
         let mut last_observed = None;
@@ -798,6 +877,24 @@ mod tests {
         .await
         .unwrap();
         assert_eq!(replay.checkpoint(), checkpoint);
+
+        // Filtered-stream resume: next block parents to checkpoint without
+        // re-emitting the (possibly empty) checkpoint block itself.
+        let mut stream = futures::stream::iter([Ok(update(block(8, vec![])))]);
+        let mut replay_observed = false;
+        let mut last_observed = None;
+        let resumed = next_block(
+            &mut stream,
+            Some(&checkpoint),
+            &mut replay_observed,
+            &mut last_observed,
+        )
+        .await
+        .unwrap();
+        assert_eq!(resumed.slot, 8);
+        assert_eq!(resumed.parent_slot, 7);
+        assert_eq!(resumed.parent_hash, hash(7));
+        assert!(replay_observed);
     }
 
     #[test]

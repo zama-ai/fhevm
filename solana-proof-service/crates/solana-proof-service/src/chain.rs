@@ -1,7 +1,7 @@
 //! Confirmed JSON-RPC chain access for on-chain `EncryptedValue` peak checks.
 //!
-//! Deliberately thin: proof serving only needs `getAccountInfo`. Signature /
-//! transaction catch-up belongs to the future bounded recovery adapter, not the
+//! Deliberately thin: proof serving only needs `getAccountInfo`. Gap fill uses
+//! the separate bounded recovery adapter in `solana-proof-source`, not this
 //! read-only proof path.
 //!
 //! Account payloads travel as Base64 (Base58 is for addresses only). The RPC

@@ -6,11 +6,12 @@ proofs (RFC-024 / fhevm-internal #1682).
 This workspace holds:
 
 - Yellowstone completed-block source (`solana-proof-source`)
+- Bounded confirmed RPC recovery into the same `CompletedBlock` boundary
 - Atomic PostgreSQL store + sequential ingest runner (`solana-proof-store`)
 - Service binary with typed internal proof HTTP API + derived readiness
   (`solana-proof-service`)
 
-Bounded RPC recovery and multi-replica wiring land in later slices.
+Multi-replica wiring and embedded-relayer deletion land in later slices.
 
 ## HTTP surface
 
@@ -53,13 +54,39 @@ typed `chain_error` inside the HTTP window.
 
 **Readiness vs proof trust:** `/health/readiness` is the bootstrap / ingest gate
 (history complete + writer live + at least one Applied / AlreadyApplied on the
-live stream). A bare Yellowstone subscribe is not enough; cursor continuity must
-be proven by progress. After that, program-filtered idle streams are healthy;
-never-proven or reconnecting sources are `source_lagging`. Per-request proof
+live stream, and not mid-recovery). A bare Yellowstone subscribe is not enough;
+cursor continuity must be proven by progress. After that, program-filtered idle
+streams are healthy; never-proven or reconnecting sources are `source_lagging`.
+In-flight bounded RPC recovery reports `recovery_required`. Per-request proof
 trust is peak-equality against confirmed chain state, not the readiness probe.
 
 Readiness classifications: `database_unavailable`, `writer_missing`,
 `source_lagging`, `history_incomplete`, `recovery_required`, `integrity_halted`.
+
+## Recovery
+
+Live ingest remains **filtered confirmed Yellowstone**. When the store or source
+signals a contiguous parent-chain gap (`RecoveryRequired` / `Ancestry`), the
+runner invokes bounded RPC `getBlocks`/`getBlock` (confirmed), normalizes into
+the same `CompletedBlock` shape (program-filtered txs, sparse indexes), applies
+through `SqlProofStore::apply_completed_block`, then **resubscribes from the
+durable checkpoint** (inclusive replay). Cancellation during recovery is safe.
+
+Errors are distinguished:
+
+- **Transport** → `recovery_required` (retryable externally; fail closed for proofs)
+- **History unavailable** (pruned / cleaned) → `recovery_required`, history stays incomplete
+- **Bound exhaustion** (`max_slots_per_attempt` / `max_blocks_per_attempt`) → same; never silent complete
+- **Ancestry conflict** on a recovered block apply → integrity halt
+- **Empty recovery range** → `recovery_required` (never `Filled`, never marks complete)
+- **Cancelled** mid-fetch / mid-apply → clean shutdown
+
+Bootstrap **A**: first applied block keeps `history_complete=false`.
+`history_complete=true` only after an explicit recovery pass proves continuity
+from configured `recovery.bootstrap_slot` through the **confirmed tip** that
+recovery established (`durable_tip.slot == confirmed_tip`). Single-slot
+bootstrap alone does not flip the flag when the chain tip is ahead. Empty
+recovery never marks complete.
 
 ## PoC gaps (non-prod TODOs)
 
@@ -72,19 +99,10 @@ Readiness classifications: `database_unavailable`, `writer_missing`,
 - **Internal only:** intended for localhost / Tailscale-class networks. No
   app auth, mTLS, or rate limits in v1. **TODO(prod):** add auth before any
   broader exposure.
-- **Bootstrap A incomplete until recovery:** a fresh empty Postgres starts
-  with `history_complete=false` on the first applied block. Continuity from
-  the configured start is proven only by an explicit bounded recovery pass
-  (`SqlProofStore::set_history_complete_after_recovery` is the seam; recovery
-  itself is not implemented yet). Readiness stays `history_incomplete` /
-  `recovery_required` until then.
-- **Program-filtered Yellowstone gaps:** the source subscribes with
-  `account_include` for the host program, so empty intermediate slots are
-  omitted. Consecutive filtered blocks may not satisfy
-  `parent_slot == previous applied slot`. Ingest still requires contiguous
-  parent links and surfaces a gap as `RecoveryRequired` / source `Ancestry`
-  (never a silent skip). **TODO:** bounded RPC recovery must fill missing
-  blocks before live ingest can continue across gaps.
+- **Recovery horizon:** default `max_slots_per_attempt=256` /
+  `max_blocks_per_attempt=128` are lean PoC bounds. Exhaustion fails closed
+  (`recovery_required` / incomplete history). **TODO(prod):** size horizons
+  against archive retention and catch-up SLOs; optional longer tip chase.
 - **Ops:** schema is service-owned. Apply migrations via
   `SqlProofStore::migrate` (or `sqlx migrate`) before ingest. Compile-checked
   queries require committed `.sqlx` metadata (`make sqlx-prepare` against a

@@ -18,17 +18,6 @@ use crate::ingest_health::IngestHealth;
 /// Bound how long shutdown waits for the ingest writer after cancel.
 pub const INGEST_SHUTDOWN_DEADLINE: Duration = Duration::from_secs(15);
 
-/// Connections reserved for ingest writer + readiness (not available to proofs).
-pub const RESERVED_DB_CONNECTIONS: u32 = 2;
-
-/// Proof admission slots so the shared pool always keeps
-/// [`RESERVED_DB_CONNECTIONS`] free for writer/readiness.
-pub fn proof_admission_limit(max_connections: u32) -> usize {
-    max_connections
-        .saturating_sub(RESERVED_DB_CONNECTIONS)
-        .max(1) as usize
-}
-
 /// Runs HTTP server, ingest writer, and shutdown signal together.
 ///
 /// - Writer panic/exit while serving cancels the shared token and fails after
@@ -172,14 +161,6 @@ mod tests {
     use crate::ingest_health::IngestTerminal;
     use std::sync::Arc;
     use std::time::Duration;
-
-    #[test]
-    fn proof_admission_reserves_ops_slots() {
-        assert_eq!(proof_admission_limit(10), 8);
-        assert_eq!(proof_admission_limit(3), 1);
-        assert_eq!(proof_admission_limit(2), 1);
-        assert_eq!(proof_admission_limit(1), 1);
-    }
 
     #[tokio::test]
     async fn writer_panic_cancels_and_fails_supervision() {
