@@ -31,6 +31,8 @@ jobs:
               - .github/workflows/solana-proof-service-cargo-fmt-clippy.yml
               - solana-proof-service/**
               - solana/crates/zama-solana-transaction/**
+              - solana/crates/zama-solana-acl/**
+              - solana/programs/zama-host/**
 
   fmt-clippy:
     name: solana-proof-service-cargo-fmt-clippy/fmt-clippy

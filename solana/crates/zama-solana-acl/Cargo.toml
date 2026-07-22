@@ -17,7 +17,7 @@ unexpected_cfgs = { level = "warn", check-cfg = ['cfg(target_os, values("solana"
 
 [dependencies]
 # Pure-Rust, solana-version-agnostic so the on-chain programs (solana 3.x), the
-# relayer proof service, and the KMS connector (solana 2.x) can depend on this
+# solana-proof-service, and the KMS connector (solana 2.x) can depend on this
 # one crate. SHA-256 via `sha2` is byte-identical to the on-chain syscall hasher.
 borsh = { version = "1", features = ["derive"] }
 

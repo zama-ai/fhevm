@@ -21,6 +21,7 @@ Cargo `--features poc` (compile-gated test shims).
 | Path | Role |
 |---|---|
 | `check_solana_abi.py` | Called by `check-` / `sync-zama-host-idl.sh` |
+| `check_proof_store_idl.py` | Called by `check-zama-host-idl.sh` + `solana-proof-service-tests`; partitions proof-store decode.rs against vendored `zama_host` IDL |
 | `e2e/setup-solana-side.sh` | Called by `e2e/clean-e2e.sh` after `fhevm-cli up` |
 | `e2e/live-client/` | Helper crate used by the live vertical scripts |
 | `e2e/test-keypairs/` | Well-known local program keypairs for reproducible deploys |

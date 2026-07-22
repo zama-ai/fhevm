@@ -72,6 +72,11 @@ const relayerOverrideState: State = {
   overrides: [{ group: "relayer" }],
 };
 
+const solanaProofServiceOverrideState: State = {
+  ...state,
+  overrides: [{ group: "solana-proof-service" }],
+};
+
 const listenerCoreOverrideState: State = {
   ...state,
   overrides: [{ group: "listener-core" }],
@@ -264,6 +269,33 @@ describe("render-compose", () => {
       );
       expect(doc.services["relayer"]?.image).toContain(":fhevm-local");
       expect(doc.services["relayer"]?.build?.dockerfile).toContain("relayer/docker/relayer/Dockerfile");
+
+      // Relayer override must not piggyback the standalone proof image.
+      await expect(readFile(composePath("solana-proof-service"), "utf8")).rejects.toMatchObject({
+        code: "ENOENT",
+      });
+    });
+  });
+
+  test("retags solana-proof-service for local builds when its override group is set", async () => {
+    await withTempStateDir(async () => {
+      await mkdir(path.dirname(envPath("coprocessor")), { recursive: true });
+      await writeFile(envPath("coprocessor"), "\n");
+      await writeFile(envPath("coprocessor.1"), "\n");
+      await generateComposeOverrides(
+        solanaProofServiceOverrideState,
+        stackSpecForState(solanaProofServiceOverrideState),
+      );
+      const proofDoc = YAML.parse(await readFile(composePath("solana-proof-service"), "utf8")) as {
+        services: Record<string, { image?: string; build?: { context?: string; dockerfile?: string } }>;
+      };
+      expect(proofDoc.services["solana-proof-service"]?.image).toBe(
+        "${SOLANA_PROOF_SERVICE_IMAGE_REPOSITORY:-solana-proof-service}:fhevm-local",
+      );
+      expect(proofDoc.services["solana-proof-service"]?.build?.dockerfile).toContain(
+        "solana-proof-service/Dockerfile",
+      );
+      expect(proofDoc.services["solana-proof-db"]).toBeUndefined();
     });
   });
 

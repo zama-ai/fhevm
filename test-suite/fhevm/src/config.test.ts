@@ -36,7 +36,7 @@ describe("config", () => {
     ]);
   });
 
-  test("boots the Solana MMR proof service when a Solana host chain is declared", () => {
+  test("omits relayer solana_proof even when a Solana host chain is declared", () => {
     const rendered = renderRelayerConfig(
       {
         versions: { env: { RELAYER_VERSION: "v0.11.0" } } as never,
@@ -51,14 +51,8 @@ describe("config", () => {
         hostChains: [{ key: "solana", type: "solana", chainId: "9223372036854788153", rpcPort: 8899 }],
       },
     );
-    const parsed = YAML.parse(rendered) as {
-      solana_proof?: { rpc_url: string; program_id: string; leaf_store_path: string };
-    };
-    expect(parsed.solana_proof).toEqual({
-      rpc_url: "http://host.docker.internal:8899",
-      program_id: "SoLaNaProgram111",
-      leaf_store_path: "/tmp/solana-mmr-leaves.json",
-    });
+    const parsed = YAML.parse(rendered) as { solana_proof?: unknown };
+    expect(parsed.solana_proof).toBeUndefined();
   });
 
   test("omits solana_proof for an EVM-only topology", () => {

@@ -64,9 +64,13 @@ const overriddenServicesForComponent = (
     }),
   );
 
-/** Rewrites the tag portion of an image reference. */
+/**
+ * Rewrites the tag portion of an image reference.
+ * Handles plain tags (`repo:tag`), compose vars (`${REPO}:${TAG}`), and defaults
+ * (`${REPO:-name}:${TAG:-local}`) — the naive `:([^:]+)$` form breaks on `:-`.
+ */
 const rewriteImageTag = (image: unknown, tag: string) =>
-  typeof image === "string" ? image.replace(/:([^:]+)$/, `:${tag}`) : image;
+  typeof image === "string" ? image.replace(/:(\$\{[^}]+\}|[A-Za-z0-9._-]+)$/, `:${tag}`) : image;
 
 /** Retags an image reference with the default local build tag. */
 const retagLocal = (image: unknown, tag = LOCAL_BUILD_TAG) => rewriteImageTag(image, tag);
@@ -154,6 +158,9 @@ const COMPONENT_BUILD_SPECS: Record<string, Record<string, Record<string, unknow
   relayer: {
     "relayer-db-migration": buildSpec("../../..", "relayer/docker/relayer-migrate/Dockerfile"),
     relayer: buildSpec("../../..", "relayer/docker/relayer/Dockerfile"),
+  },
+  "solana-proof-service": {
+    "solana-proof-service": buildSpec("../../..", "solana-proof-service/Dockerfile"),
   },
   "gateway-mocked-payment": {
     "gateway-deploy-mocked-zama-oft": buildSpec("../../../gateway-contracts", "Dockerfile"),

@@ -17,7 +17,7 @@ anchor-lang = "1.0.2"
 anchor-client = "1.0.2"
 borsh = "1"
 solana-keypair = "3.1.2"
-# Blocking HTTP client for the relayer MMR-proof endpoint.
+# Blocking HTTP client for solana-proof-service (`PROOF_SERVICE_URL` / MMR-proof endpoint).
 ureq = { version = "2", features = ["json"] }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"

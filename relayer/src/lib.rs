@@ -8,7 +8,6 @@ pub mod logging;
 pub mod metrics;
 pub mod orchestrator;
 pub mod readiness;
-pub mod solana_proof;
 pub mod startup;
 pub mod startup_recovery;
 pub mod store;

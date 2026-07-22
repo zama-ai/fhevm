@@ -11,10 +11,13 @@ name: solana-e2e
 # kept so the job/artifact names keep their `-reconstruct` suffix; setup-solana-side.sh no longer
 # keys off it.
 on:
-  # Auto-run on PRs targeting the Solana feature branch (the vertical never ran on
-  # workflow_dispatch-only). Also keep manual dispatch with a custom cleartext.
+  # Auto-run on PRs targeting the Solana feature branch *or* the stacked recovery
+  # base used by vertical cutover PRs (#3214/#3215). workflow_dispatch remains for
+  # manual re-runs with a custom cleartext at an arbitrary head.
   pull_request:
-    branches: [feature/solana]
+    branches:
+      - feature/solana
+      - elias/solana-proof-service-recovery
   workflow_dispatch:
     inputs:
       te-value:

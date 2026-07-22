@@ -22,7 +22,7 @@ use solana_keypair::{read_keypair_file, Keypair};
 
 const EVENT_AUTHORITY_SEED: &[u8] = b"__event_authority";
 const HISTORICAL_LABEL_MARKER: u8 = 3;
-const RELAYER_LAGGING_PREFIX: &str = "relayer proof lagging:";
+const PROOF_SERVICE_LAGGING_PREFIX: &str = "proof service lagging:";
 const MMR_MODE_HISTORICAL: u8 = 0x01;
 const MMR_MODE_PUBLIC: u8 = 0x02;
 
@@ -761,14 +761,14 @@ fn proof_blob(
     Ok(proof_bytes)
 }
 
-fn relayer_url() -> String {
-    std::env::var("RELAYER_URL").unwrap_or_else(|_| "http://127.0.0.1:3000".to_string())
+fn proof_service_url() -> String {
+    std::env::var("PROOF_SERVICE_URL").unwrap_or_else(|_| "http://127.0.0.1:8088".to_string())
 }
 
-/// JSON mirror of `relayer::solana_proof::http::MmrProofResponse`.
+/// JSON mirror of `solana_proof_service::http::MmrProofResponse` (DTO preserved until #1721).
 #[derive(Deserialize)]
-struct RelayerMmrProofResponse {
-    mmr_proof: Option<RelayerMmrProofDto>,
+struct ProofServiceMmrProofResponse {
+    mmr_proof: Option<ProofServiceMmrProofDto>,
     leaf_count: u64,
     #[allow(dead_code)]
     proof_slot: u64,
@@ -777,63 +777,63 @@ struct RelayerMmrProofResponse {
 }
 
 #[derive(Deserialize)]
-struct RelayerMmrProofDto {
+struct ProofServiceMmrProofDto {
     leaf_index: u64,
     siblings: Vec<String>,
 }
 
-/// Fetches a verified MMR inclusion proof from the relayer proof service, retrying a bounded number
-/// of times while the service's ingestion is still catching up to chain (`503 lagging`). REQUIRES
+/// Fetches a verified MMR inclusion proof from the standalone solana-proof-service, retrying a
+/// bounded number of times while ingestion is still catching up to chain (`503 lagging`). REQUIRES
 /// `verified == true`; every other response, including `500 corrupt_cache`, fails loudly at once.
 /// Retrying HERE (not by re-invoking the client) keeps the caller idempotent — the historical
 /// `supersede` step appends on-chain leaves, so re-running it would corrupt the lineage.
-fn fetch_relayer_mmr_proof(
+fn fetch_mmr_proof(
     encrypted_value: &Pubkey,
     leaf_index: u64,
 ) -> Result<zama_solana_acl::MmrProof, Box<dyn std::error::Error>> {
     const MAX_ATTEMPTS: u32 = 15;
     for attempt in 1..MAX_ATTEMPTS {
-        match fetch_relayer_mmr_proof_once(encrypted_value, leaf_index) {
+        match fetch_mmr_proof_once(encrypted_value, leaf_index) {
             Ok(proof) => return Ok(proof),
-            Err(e) if is_relayer_lagging(&e.to_string()) => {
+            Err(e) if is_proof_service_lagging(&e.to_string()) => {
                 eprintln!(
-                    "relayer proof lagging (attempt {attempt}/{MAX_ATTEMPTS}); retrying in 2s"
+                    "proof service lagging (attempt {attempt}/{MAX_ATTEMPTS}); retrying in 2s"
                 );
                 std::thread::sleep(std::time::Duration::from_secs(2));
             }
             Err(e) => return Err(e),
         }
     }
-    fetch_relayer_mmr_proof_once(encrypted_value, leaf_index)
+    fetch_mmr_proof_once(encrypted_value, leaf_index)
 }
 
-fn is_relayer_lagging(message: &str) -> bool {
-    message.starts_with(RELAYER_LAGGING_PREFIX)
+fn is_proof_service_lagging(message: &str) -> bool {
+    message.starts_with(PROOF_SERVICE_LAGGING_PREFIX)
 }
 
-fn fetch_relayer_mmr_proof_once(
+fn fetch_mmr_proof_once(
     encrypted_value: &Pubkey,
     leaf_index: u64,
 ) -> Result<zama_solana_acl::MmrProof, Box<dyn std::error::Error>> {
-    let base = relayer_url();
+    let base = proof_service_url();
     let url = format!(
         "{}/internal/solana/mmr-proof?encrypted_value={}&leaf_index={}",
         base.trim_end_matches('/'),
         encrypted_value,
         leaf_index
     );
-    let body: RelayerMmrProofResponse = match ureq::get(&url).call() {
+    let body: ProofServiceMmrProofResponse = match ureq::get(&url).call() {
         Ok(resp) => resp.into_json()?,
         Err(ureq::Error::Status(code, resp)) => {
             let mut raw_body = Vec::new();
             resp.into_reader().read_to_end(&mut raw_body)?;
-            return Err(relayer_http_error(code, &raw_body).into());
+            return Err(proof_service_http_error(code, &raw_body).into());
         }
-        Err(e) => return Err(format!("relayer proof request to {url} failed: {e}").into()),
+        Err(e) => return Err(format!("proof service request to {url} failed: {e}").into()),
     };
     if !body.verified || body.mmr_proof.is_none() {
         return Err(format!(
-            "relayer proof not verified (status={}, leaf_count={})",
+            "proof service not verified (status={}, leaf_count={})",
             body.status, body.leaf_count
         )
         .into());
@@ -841,7 +841,7 @@ fn fetch_relayer_mmr_proof_once(
     let dto = body.mmr_proof.expect("checked is_some above");
     if dto.leaf_index != leaf_index {
         return Err(format!(
-            "relayer proof leaf_index {} does not match requested {leaf_index}",
+            "proof service leaf_index {} does not match requested {leaf_index}",
             dto.leaf_index
         )
         .into());
@@ -851,7 +851,9 @@ fn fetch_relayer_mmr_proof_once(
         .iter()
         .map(|h| {
             hexdec(h).try_into().map_err(|_| {
-                Box::<dyn std::error::Error>::from(format!("relayer sibling {h} is not 32 bytes"))
+                Box::<dyn std::error::Error>::from(format!(
+                    "solana-proof-service sibling {h} is not 32 bytes"
+                ))
             })
         })
         .collect::<Result<Vec<[u8; 32]>, _>>()?;
@@ -861,16 +863,16 @@ fn fetch_relayer_mmr_proof_once(
     })
 }
 
-fn relayer_http_error(code: u16, raw_body: &[u8]) -> String {
-    if let Ok(error_body) = serde_json::from_slice::<RelayerMmrProofResponse>(raw_body) {
+fn proof_service_http_error(code: u16, raw_body: &[u8]) -> String {
+    if let Ok(error_body) = serde_json::from_slice::<ProofServiceMmrProofResponse>(raw_body) {
         if code == 503 && error_body.status == "lagging" {
             return format!(
-                "{RELAYER_LAGGING_PREFIX} HTTP {code}, leaf_count={}",
+                "{PROOF_SERVICE_LAGGING_PREFIX} HTTP {code}, leaf_count={}",
                 error_body.leaf_count
             );
         }
         return format!(
-            "relayer proof HTTP {code}: status={}, leaf_count={}",
+            "proof service HTTP {code}: status={}, leaf_count={}",
             error_body.status, error_body.leaf_count
         );
     }
@@ -881,7 +883,7 @@ fn relayer_http_error(code: u16, raw_body: &[u8]) -> String {
     } else {
         body.as_ref()
     };
-    format!("relayer proof HTTP {code}: {body}")
+    format!("proof service HTTP {code}: {body}")
 }
 
 fn public_decrypt_proof_step(
@@ -892,19 +894,19 @@ fn public_decrypt_proof_step(
     let value_account = fetch_encrypted_value(host, encrypted_value)?;
     let value_key = value_account.value_key();
     // Chain facts (peaks/leaf_count/current handle) come from the live account; the proof itself
-    // comes from the relayer. The public-decrypt leaf is the lineage's last leaf.
+    // comes from solana-proof-service. The public-decrypt leaf is the lineage's last leaf.
     let leaf_index = value_account
         .leaf_count
         .checked_sub(1)
         .ok_or("public-decrypt lineage has no leaves")?;
-    let proof = fetch_relayer_mmr_proof(&encrypted_value, leaf_index)?;
-    // Fail-fast: the relayer proof must authorize this handle against the live lineage before it is
+    let proof = fetch_mmr_proof(&encrypted_value, leaf_index)?;
+    // Fail-fast: the proof service must authorize this handle against the live lineage before it is
     // handed to the KMS / on-chain consume steps.
     let shared = value_account.to_shared();
     zama_solana_acl::authorize_public(encrypted_value.to_bytes(), &shared, handle, &proof)
         .map_err(|e| {
             Box::<dyn std::error::Error>::from(format!(
-                "relayer public-decrypt proof did not verify against live lineage: {e:?}"
+                "solana-proof-service public-decrypt proof did not verify against live lineage: {e:?}"
             ))
         })?;
     let proof_bytes = proof_blob(MMR_MODE_PUBLIC, &proof)?;
@@ -982,8 +984,8 @@ fn historical_supersede_step(
             let value_account = fetch_encrypted_value(host, target.encrypted_value)?;
             let subject = payer.pubkey().to_bytes();
             // The e2e historical lineage has exactly one historical leaf, at index 0.
-            let proof = fetch_relayer_mmr_proof(&target.encrypted_value, 0)?;
-            // Fail-fast: the relayer proof must verify against the live peaks for the
+            let proof = fetch_mmr_proof(&target.encrypted_value, 0)?;
+            // Fail-fast: the proof service must verify against the live peaks for the
             // historical-access leaf (old handle bound to this subject).
             let leaf = zama_solana_acl::historical_access_leaf_commitment(
                 target.encrypted_value.to_bytes(),
@@ -998,7 +1000,7 @@ fn historical_supersede_step(
                 &proof,
             ) {
                 return Err(format!(
-                    "relayer historical proof did not verify against live leaf_count={}",
+                    "solana-proof-service historical proof did not verify against live leaf_count={}",
                     value_account.leaf_count
                 )
                 .into());
@@ -1239,8 +1241,8 @@ fn consume_disclose(
         .try_into()
         .expect("KMS_SIG 65 bytes");
     let extra = hexdec(&std::env::var("EXTRA")?);
-    // Borsh-serialized host MmrInclusionProof for the handle's public-decrypt leaf, produced by the
-    // relayer proof service. Empty env yields an empty proof, which fails on-chain by design.
+    // Borsh-serialized host MmrInclusionProof for the handle's public-decrypt leaf, produced by
+    // solana-proof-service. Empty env yields an empty proof, which fails on-chain by design.
     let proof = zama_host::instructions::MmrInclusionProof::try_from_slice(&hexdec(
         &std::env::var("PROOF").unwrap_or_default(),
     ))
@@ -1582,7 +1584,7 @@ fn consume_redeem(
         .expect("KMS_SIG 65 bytes");
     let extra = hexdec(&std::env::var("EXTRA")?);
     // Borsh-serialized host MmrInclusionProof (leaf_index + siblings) for the burned handle's
-    // public-decrypt leaf, produced by the relayer proof service. Empty env yields an empty proof,
+    // public-decrypt leaf, produced by solana-proof-service. Empty env yields an empty proof,
     // which fails on-chain in the verifier CPI by design.
     let proof = zama_host::instructions::MmrInclusionProof::try_from_slice(&hexdec(
         &std::env::var("PROOF").unwrap_or_default(),
@@ -2757,40 +2759,40 @@ fn initialize_mint(
 
 #[cfg(test)]
 mod tests {
-    use super::{is_relayer_lagging, relayer_http_error};
+    use super::{is_proof_service_lagging, proof_service_http_error};
 
     #[test]
     fn retries_only_structured_lagging_response() {
         let lagging = br#"{"mmr_proof":null,"leaf_count":7,"proof_slot":42,"verified":false,"status":"lagging"}"#;
-        let lagging_error = relayer_http_error(503, lagging);
+        let lagging_error = proof_service_http_error(503, lagging);
         assert_eq!(
             lagging_error,
-            "relayer proof lagging: HTTP 503, leaf_count=7"
+            "proof service lagging: HTTP 503, leaf_count=7"
         );
-        assert!(is_relayer_lagging(&lagging_error));
+        assert!(is_proof_service_lagging(&lagging_error));
 
         let wrong_status = br#"{"mmr_proof":null,"leaf_count":7,"proof_slot":42,"verified":false,"status":"corrupt_cache"}"#;
-        let fatal_error = relayer_http_error(503, wrong_status);
+        let fatal_error = proof_service_http_error(503, wrong_status);
         assert_eq!(
             fatal_error,
-            "relayer proof HTTP 503: status=corrupt_cache, leaf_count=7"
+            "proof service HTTP 503: status=corrupt_cache, leaf_count=7"
         );
-        assert!(!is_relayer_lagging(&fatal_error));
+        assert!(!is_proof_service_lagging(&fatal_error));
     }
 
     #[test]
     fn preserves_non_json_error_body_for_diagnostics() {
         assert_eq!(
-            relayer_http_error(502, b"upstream unavailable"),
-            "relayer proof HTTP 502: upstream unavailable"
+            proof_service_http_error(502, b"upstream unavailable"),
+            "proof service HTTP 502: upstream unavailable"
         );
         assert_eq!(
-            relayer_http_error(500, &[b'b', 0xff]),
-            "relayer proof HTTP 500: b\u{fffd}"
+            proof_service_http_error(500, &[b'b', 0xff]),
+            "proof service HTTP 500: b\u{fffd}"
         );
         assert_eq!(
-            relayer_http_error(500, b""),
-            "relayer proof HTTP 500: <empty response body>"
+            proof_service_http_error(500, b""),
+            "proof service HTTP 500: <empty response body>"
         );
     }
 }

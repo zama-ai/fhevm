@@ -51,12 +51,12 @@ run_public_decrypt_with_proof() {
   local acl="$3"
   local expected_leaf_count="${4:-}"
   local expected_leaf_index="${5:-}"
-  # The e2e sources MMR proofs from the running relayer proof service. The client retries a transient
-  # `503 lagging` internally (re-invoking here would be unsafe for stateful steps).
+  # The e2e sources MMR proofs from the standalone solana-proof-service. The client retries a
+  # transient `503 lagging` internally (re-invoking here would be unsafe for stateful steps).
   local proof
   proof="$(cd "$ROOT/solana/scripts/e2e/live-client" && \
     PUBLIC_DECRYPT_PROOF=1 PUB_HANDLE="$handle" PUB_ACL="$acl" \
-    RELAYER_URL=http://127.0.0.1:3000 \
+    PROOF_SERVICE_URL=http://127.0.0.1:8088 \
     ./target/debug/poc-live-client 2>&1)" \
     || fail "$label public proof: $proof"
   echo "$proof" | grep -E 'PUB H|PUB mmrProofBytes' >/dev/null || fail "$label public proof missing fields: $proof"
@@ -117,6 +117,38 @@ GW_RPC="${GW_RPC:-http://127.0.0.1:8546}"
 # shellcheck disable=SC1091
 source "$ROOT/.fhevm/runtime/addresses/gateway/.env.gateway"
 COPROCESSOR_SIGNER="$(cast call "$GATEWAY_CONFIG_ADDRESS" 'getCoprocessorSigners()(address[])' --rpc-url "$GW_RPC" | tr -d '[]' | tr ',' '\n' | head -1 | tr -d ' ')"
+
+PROOF_URL="${PROOF_SERVICE_URL:-http://127.0.0.1:8088}"
+
+wait_proof_ready() {
+  local label="$1"
+  local i body
+  for i in $(seq 1 60); do
+    body="$(curl -sS -m3 "$PROOF_URL/health/readiness" 2>/dev/null || true)"
+    if printf '%s' "$body" | grep -Eq '"ready"[[:space:]]*:[[:space:]]*true'; then
+      echo "    $label: ready ($body)"
+      return 0
+    fi
+    sleep 2
+  done
+  fail "$label: timed out waiting for proof readiness (last=$body)"
+}
+
+echo "==> [proof-service] decisive vertical gates"
+# Adoption matrix for standalone solana-proof-service (#1682 / #3215):
+#   [x] readiness becomes true (requires recovery.bootstrap_slot; e2e uses 0 on --reset)
+#   [x] exact inclusive replay after process restart (container restart below)
+#   [x] proof serving + consumption (public/user decrypt legs later in this script)
+#   [~] empty-block delivery: pinned geyser emits every block; store applies empty tx vectors
+#   [~] bounded recovery + exhaustion fail-closed: covered by solana-proof-* unit/Postgres tests
+#       (full RPC chaos inject not in this script yet)
+wait_proof_ready "pre-restart"
+docker restart fhevm-solana-proof-service >/dev/null
+for _ in $(seq 1 30); do
+  [ "$(docker inspect -f '{{.State.Running}}' fhevm-solana-proof-service 2>/dev/null)" = "true" ] && break
+  sleep 1
+done
+wait_proof_ready "post-restart exact-replay"
 
 echo "==> [input] REAL ZK proof via public @fhevm/sdk/solana client -> relayer /v2/input-proof -> zama-host secp256k1 bind"
 # The relayer was just restarted with the Solana host chain (clean-e2e step 4b); wait until it
@@ -207,11 +239,12 @@ for i in $(seq 1 30); do
   [ "$i" = 30 ] && fail "historical old-handle SNS commit timed out"; sleep 6
 done
 
-# Sole-sourced from the relayer proof service (leaf_index 0). The supersede tx runs exactly once
-# here; the client retries a transient `503 lagging` internally, so this is not re-invoked on lag.
+# Sole-sourced from solana-proof-service via PROOF_SERVICE_URL (leaf_index 0). The supersede tx
+# runs exactly once here; the client retries a transient `503 lagging` internally, so this is not
+# re-invoked on lag.
 hist_proof="$(cd "$ROOT/solana/scripts/e2e/live-client" && \
   HISTORICAL_STEP=supersede TE_VALUE="$VALUE" \
-  RELAYER_URL=http://127.0.0.1:3000 \
+  PROOF_SERVICE_URL=http://127.0.0.1:8088 \
   ./target/debug/poc-live-client 2>&1)" || fail "historical supersede/proof command failed: $hist_proof"
 echo "$hist_proof" | grep -E 'HIST H_new|HIST mmrProofBytes' || fail "historical supersede/proof: $hist_proof"
 HIST_H_OLD2="$(hist_field "$hist_proof" H_old)"

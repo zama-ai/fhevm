@@ -2,6 +2,11 @@
 //! data (Anchor discriminator + borsh args), independent of transaction/RPC
 //! shape so it can be unit-tested against synthetic data.
 //!
+//! The instruction/event names matched below are the ingest allowlist. CI keeps
+//! that catalog partitioned against the vendored host IDL via
+//! `solana/scripts/check_proof_store_idl.py` (decoded ∪ ignored = all host
+//! instructions; required lifecycle events must stay wired).
+//!
 //! One exception needs sibling context: a born-public (`make_public=true`)
 //! `fhe_eval` durable output commits a public-decrypt leaf to the eval OUTPUT
 //! handle, which is derived on-chain from slot entropy and appears in no
@@ -136,13 +141,14 @@ struct BornPublicOutput {
 
 const ENCRYPTED_VALUE_ACCOUNT_INDEX: usize = 2;
 const REMOVE_SUBJECT_ACCOUNT_INDEX: usize = 1;
-/// `remaining_accounts` follow the 10 named `fhe_eval` accounts — payer,
+/// `remaining_accounts` follow the 9 named `fhe_eval` accounts — payer,
 /// compute_subject, app_account_authority, host_config, system_program,
-/// hcu_authority, hcu_block_meter, hcu_trusted_app_record, then `#[event_cpi]`'s
+/// hcu_block_meter, hcu_trusted_app_record, then `#[event_cpi]`'s
 /// event_authority + program (see `FheEval` in fhe_eval.rs). The two optional HCU
 /// accounts are always present as program-id placeholders when `None`, so the base
-/// is fixed. Must stay in lockstep with the host-listener's `FHE_EVAL_REMAINING_BASE`.
-const FHE_EVAL_REMAINING_BASE: usize = 10;
+/// is fixed. Must stay in lockstep with the host-listener's `FHE_EVAL_REMAINING_BASE`
+/// and the vendored IDL named-account count (enforced by `check_proof_store_idl.py`).
+const FHE_EVAL_REMAINING_BASE: usize = 9;
 
 #[derive(thiserror::Error, Debug, Clone, PartialEq, Eq)]
 pub enum DecodeError {
@@ -275,7 +281,7 @@ fn fhe_eval_durable_output_account(
     remaining_index: u16,
 ) -> Result<[u8; 32], DecodeError> {
     // `remaining_index` is the plan's `output_encrypted_value_index`, relative to
-    // `remaining_accounts`. Those always start at a fixed offset past the 10 named
+    // `remaining_accounts`. Those always start at a fixed offset past the 9 named
     // `fhe_eval` accounts (the optional HCU accounts are program-id placeholders
     // when absent, so the offset never shifts). Any deny record lives inside
     // `remaining_accounts` and is already accounted for by the plan index.
@@ -614,10 +620,10 @@ mod tests {
         Pubkey::new_from_array(pk(tag))
     }
 
-    /// The 10 named `fhe_eval` accounts (payer, compute_subject,
-    /// app_account_authority, host_config, system_program, hcu_authority,
-    /// hcu_block_meter, hcu_trusted_app_record, event_authority, program) followed
-    /// by `remaining_accounts` — matching the real anchor account layout so the
+    /// The 9 named `fhe_eval` accounts (payer, compute_subject,
+    /// app_account_authority, host_config, system_program, hcu_block_meter,
+    /// hcu_trusted_app_record, event_authority, program) followed by
+    /// `remaining_accounts` — matching the real anchor account layout so the
     /// durable output resolves at `FHE_EVAL_REMAINING_BASE`.
     fn fhe_eval_accounts(remaining: &[[u8; 32]]) -> Vec<[u8; 32]> {
         let mut accounts = vec![
@@ -626,11 +632,10 @@ mod tests {
             pk(0xA2),     // 2 app_account_authority
             pk(0xA3),     // 3 host_config
             pk(0xA4),     // 4 system_program
-            pk(0xA5),     // 5 hcu_authority
-            program_id(), // 6 hcu_block_meter (None placeholder)
-            program_id(), // 7 hcu_trusted_app_record (None placeholder)
-            pk(0xA8),     // 8 event_authority
-            program_id(), // 9 program (event_cpi)
+            program_id(), // 5 hcu_block_meter (None placeholder)
+            program_id(), // 6 hcu_trusted_app_record (None placeholder)
+            pk(0xA8),     // 7 event_authority
+            program_id(), // 8 program (event_cpi)
         ];
         accounts.extend_from_slice(remaining);
         accounts

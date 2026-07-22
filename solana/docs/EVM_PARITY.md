@@ -115,10 +115,10 @@ fromExternal** — all implemented. The confidential token is therefore **op-com
   ACL before plaintext release (DD-025/DD-033/DD-034). `cargo check -p host-listener` → exit 0.
   The adapter maps the merged `fhe_eval` operator surface: binary catalog, ternary select, trivial,
   rand/rand-bounded, unary, sum, isIn, and mulDiv.
-- **Relayer MMR proof service** (`relayer/src/solana_proof`): untrusted, relayer-colocated
-  instruction-replay ingestion + MMR proof builder for historical/public decrypt (DD-035). Interim
-  internal HTTP endpoint (`GET /internal/solana/mmr-proof`); the relayer's own Solana user-decrypt flow
-  does not yet call it in-process.
+- **Solana MMR proof service** (`solana-proof-service/`): untrusted standalone Yellowstone ingest +
+  PostgreSQL store + MMR proof builder for historical/public decrypt (DD-035). Internal HTTP endpoint
+  (`GET /internal/solana/mmr-proof`); the relayer's Solana user-decrypt flow does not call it
+  in-process — clients fetch proofs via `PROOF_SERVICE_URL` before submitting.
 - **KMS connector** (`kms-connector/crates/kms-worker/src/core/solana_*.rs` and
   `kms-connector/crates/tx-sender/src/core/solana_native.rs`): witness decoders +
   `SolanaAclVerifier`, now dual-path against `EncryptedValue` (live confirmed-account read, or an MMR
