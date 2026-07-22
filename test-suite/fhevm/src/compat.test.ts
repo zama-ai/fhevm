@@ -131,6 +131,38 @@ describe("compat", () => {
     expect(policy.coprocessorDropFlags["host-listener-poller"]).toContain("--kms-generation-address");
   });
 
+  test("drops seed-start-block for host listener images below v0.13.2", () => {
+    const policy = compatPolicyForState({
+      versions: {
+        target: "latest-supported",
+        lockName: "latest-supported.json",
+        env: {
+          COPROCESSOR_HOST_LISTENER_VERSION: "v0.11.0",
+        } as Record<string, string>,
+        sources: [],
+      },
+      overrides: [],
+      scenario: testDefaultScenario(),
+    });
+    expect(policy.coprocessorDropFlags["host-listener-poller"]).toContain("--seed-start-block");
+  });
+
+  test("keeps seed-start-block for host listener images at v0.13.2", () => {
+    const policy = compatPolicyForState({
+      versions: {
+        target: "latest-main",
+        lockName: "latest-main.json",
+        env: {
+          COPROCESSOR_HOST_LISTENER_VERSION: "v0.13.2-0",
+        } as Record<string, string>,
+        sources: [],
+      },
+      overrides: [],
+      scenario: testDefaultScenario(),
+    });
+    expect(policy.coprocessorDropFlags["host-listener-poller"] ?? []).not.toContain("--seed-start-block");
+  });
+
   test("treats sha-style gateway bundles as modern kms-generation sourcing", () => {
     expect(
       requiresLegacyGatewayKmsGenerationAddress({
