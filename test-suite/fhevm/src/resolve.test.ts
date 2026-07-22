@@ -15,7 +15,9 @@ import {
   SIMPLE_ACL_MIN_SHA,
   SHA_RUNTIME_COMPAT_MIN_SHA,
   applyVersionEnvOverrides,
+  findPublishedAncestorTag,
   presetBundle,
+  resolveMissingRepoTagFallbacks,
   selectSupportedMainSha,
   shaRuntimeCompatFloor,
   simpleAclFloor,
@@ -111,6 +113,50 @@ describe("resolve", () => {
     expect("COPROCESSOR_CONSENSUS_DETECTOR_VERSION" in bundle.env).toBe(false);
     const next = applyVersionEnvOverrides(bundle, { COPROCESSOR_CONSENSUS_DETECTOR_VERSION: "v0.14.0" });
     expect(next.env.COPROCESSOR_CONSENSUS_DETECTOR_VERSION).toBe("v0.14.0");
+  });
+
+  test("finds the nearest ancestor with a published image tag", () => {
+    const commits = [
+      "d77a0417aa5d928063181454756ebb73cdbadc24",
+      "2cde6c960c24405015ab03959a2d9053cde31f23",
+      "8e2f724d4000000000000000000000000000000",
+    ];
+    expect(findPublishedAncestorTag(commits, new Set(["2cde6c9", "8e2f724"]))).toBe("2cde6c9");
+    expect(findPublishedAncestorTag(commits, new Set(["fffffff"]))).toBeUndefined();
+    expect(findPublishedAncestorTag([], new Set(["2cde6c9"]))).toBeUndefined();
+  });
+
+  test("falls back to the newest published ancestor tag for missing images", () => {
+    const { overrides, sources } = resolveMissingRepoTagFallbacks({
+      requestedTag: "d77a041",
+      missingKeys: ["CONNECTOR_GW_LISTENER_VERSION"],
+      commitShas: ["d77a0417aa5d928063181454756ebb73cdbadc24", "2cde6c960c24405015ab03959a2d9053cde31f23"],
+      packageTagsMap: { CONNECTOR_GW_LISTENER_VERSION: new Set(["2cde6c9"]) },
+    });
+    expect(overrides).toEqual({ CONNECTOR_GW_LISTENER_VERSION: "2cde6c9" });
+    expect(sources).toEqual(["CONNECTOR_GW_LISTENER_VERSION=2cde6c9 (fallback: d77a041 unpublished)"]);
+  });
+
+  test("keeps the unverified pin when no published ancestor is reachable", () => {
+    const { overrides, sources } = resolveMissingRepoTagFallbacks({
+      requestedTag: "d77a041",
+      missingKeys: ["CONNECTOR_GW_LISTENER_VERSION"],
+      commitShas: ["d77a0417aa5d928063181454756ebb73cdbadc24"],
+      packageTagsMap: { CONNECTOR_GW_LISTENER_VERSION: new Set<string>() },
+    });
+    expect(overrides).toEqual({});
+    expect(sources).toEqual([
+      "CONNECTOR_GW_LISTENER_VERSION=d77a041 (unverified: no published tag within 1 commits)",
+    ]);
+  });
+
+  test("applies per-component fallback overrides to a sha preset bundle", () => {
+    const bundle = presetBundle("sha", "d77a041", "sha-d77a041.json", [], new Set(), {
+      CONNECTOR_GW_LISTENER_VERSION: "2cde6c9",
+    });
+    expect(bundle.env.CONNECTOR_GW_LISTENER_VERSION).toBe("2cde6c9");
+    expect(bundle.env.CONNECTOR_TX_SENDER_VERSION).toBe("d77a041");
+    expect(bundle.env.COPROCESSOR_HOST_LISTENER_VERSION).toBe("d77a041");
   });
 
   test("only caches immutable sha targets", () => {

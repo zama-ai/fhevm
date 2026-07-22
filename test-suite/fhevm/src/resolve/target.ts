@@ -11,7 +11,7 @@ import {
   MODERN_RELAYER_MIGRATE_IMAGE_REPOSITORY,
 } from "../compat/compat";
 import { GitHubApiError } from "../errors";
-import { gitopsFile, mainCommits, packageTags } from "./github";
+import { commitsFrom, gitopsFile, mainCommits, packageTags } from "./github";
 import { NON_NETWORK_COMPANIONS } from "./presets";
 import { LATEST_SUPPORTED_PROFILE } from "../layout";
 import type { VersionBundle, VersionTarget } from "../types";
@@ -114,6 +114,8 @@ const PACKAGE_REPOSITORY_CANDIDATES: Partial<Record<keyof typeof PACKAGE_TO_REPO
   RELAYER_MIGRATE_VERSION: [MODERN_RELAYER_MIGRATE_IMAGE_REPOSITORY, LEGACY_RELAYER_MIGRATE_IMAGE_REPOSITORY],
 };
 
+const SHA_FALLBACK_COMMIT_WINDOW = 500;
+
 export const REPO_TAG = /^[0-9a-f]{7}$/;
 export const SHA_REF = /^(?:[0-9a-f]{7}|[0-9a-f]{40})$/i;
 export const SIMPLE_ACL_MIN_SHA = COMPAT_MATRIX.anchors.SIMPLE_ACL_MIN_SHA;
@@ -174,6 +176,44 @@ const findImageTag = (
 /** Normalizes a full SHA into the short tag form used by repo-owned images. */
 export const shortSha = (value: string) => value.toLowerCase().slice(0, 7);
 
+/** Finds the newest commit in an ancestry walk (newest first) that has a published image tag. */
+export const findPublishedAncestorTag = (commitShas: string[], publishedTags: Set<string>) =>
+  commitShas.map(shortSha).find((sha) => publishedTags.has(sha));
+
+/**
+ * Resolves per-component fallback tags for repo-owned images with no published image at the
+ * requested sha.
+ *
+ * A missing tag is an exceptional state: on every push the docker-build workflows either build a
+ * changed component or re-tag the previous image with the new sha, so a gap means one of those
+ * jobs failed or has not finished. Each affected component independently falls back to its
+ * newest published tag on the requested sha's ancestry, and the substitution is recorded in
+ * `sources`. Components with no published tag in the walked window (brand-new or
+ * feature-branch-only packages) keep the requested sha, matching how latest-main skips gating
+ * on such packages.
+ */
+export const resolveMissingRepoTagFallbacks = (options: {
+  requestedTag: string;
+  missingKeys: string[];
+  commitShas: string[];
+  packageTagsMap: Record<string, Set<string>>;
+}): { overrides: Record<string, string>; sources: string[] } => {
+  const overrides: Record<string, string> = {};
+  const sources: string[] = [];
+  for (const key of options.missingKeys) {
+    const ancestor = findPublishedAncestorTag(options.commitShas, options.packageTagsMap[key] ?? new Set());
+    if (!ancestor) {
+      sources.push(
+        `${key}=${options.requestedTag} (unverified: no published tag within ${options.commitShas.length} commits)`,
+      );
+      continue;
+    }
+    overrides[key] = ancestor;
+    sources.push(`${key}=${ancestor} (fallback: ${options.requestedTag} unpublished)`);
+  }
+  return { overrides, sources };
+};
+
 /** Locates the simple-ACL support floor in fetched main history. */
 export const simpleAclFloor = (commits: string[]) => {
   const floor = commits.indexOf(SIMPLE_ACL_MIN_SHA);
@@ -203,6 +243,7 @@ export const presetBundle = (
   lockName: string,
   sources: string[] = [],
   publishedOptionalKeys?: ReadonlySet<string>,
+  repoKeyOverrides?: Record<string, string>,
 ): VersionBundle => ({
   target,
   lockName,
@@ -213,7 +254,7 @@ export const presetBundle = (
         return [];
       }
       const version = REPO_KEYS.has(key)
-        ? repoVersion
+        ? repoKeyOverrides?.[key] ?? repoVersion
         : NON_NETWORK_COMPANIONS[target][key as keyof (typeof NON_NETWORK_COMPANIONS)[typeof target]];
       if (!version) {
         throw new Error(`Missing ${target} preset for ${key}`);
@@ -362,7 +403,42 @@ export const resolveTarget = async (
       throw new GitHubApiError(`Invalid sha ${requested}; expected 7 or 40 hex characters`);
     }
     const tag = shortSha(requested);
-    return presetBundle(target, tag, `sha-${tag}.json`, [`requested-sha=${requested.toLowerCase()}`], new Set());
+    const lockName = `sha-${tag}.json`;
+    const baseSources = [`requested-sha=${requested.toLowerCase()}`];
+
+    // The docker-build workflows re-tag unchanged components on every push, so normally every
+    // repo-owned image is published at the requested sha. Verify that instead of trusting it: a
+    // flaked re-tag or failed build otherwise only surfaces as `manifest unknown` at pull time.
+    let packageTagsMap: Record<string, Set<string>>;
+    try {
+      packageTagsMap = await repoPackageTags(tag);
+    } catch (error) {
+      // GitHub metadata is unavailable (offline, missing scopes): keep the historical unverified
+      // pin so `--target sha` still resolves, and record that the check was skipped.
+      const reason = error instanceof Error ? error.message.split("\n")[0] : String(error);
+      console.log(`[resolve] sha ${tag}: skipping published-image check (${reason})`);
+      return presetBundle(target, tag, lockName, [...baseSources, "published-image-check=skipped"], new Set());
+    }
+    const missingKeys = Object.keys(REPO_PACKAGES).filter(
+      (key) => !OPTIONAL_REPO_KEYS.has(key) && !packageTagsMap[key]?.has(tag),
+    );
+    if (!missingKeys.length) {
+      return presetBundle(target, tag, lockName, baseSources, new Set());
+    }
+    console.log(
+      `[resolve] sha ${tag}: no published image for ${missingKeys.join(", ")}; looking for published ancestor tags`,
+    );
+    const commitShas = await commitsFrom(requested, SHA_FALLBACK_COMMIT_WINDOW);
+    const { overrides, sources } = resolveMissingRepoTagFallbacks({
+      requestedTag: tag,
+      missingKeys,
+      commitShas,
+      packageTagsMap,
+    });
+    for (const source of sources) {
+      console.log(`[resolve] ${source}`);
+    }
+    return presetBundle(target, tag, lockName, [...baseSources, ...sources], new Set(), overrides);
   }
 
   const [packageTagsMap, commits] = await Promise.all([repoPackageTags(), mainCommits(5000)]);
