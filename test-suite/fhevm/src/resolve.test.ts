@@ -153,7 +153,7 @@ describe("resolve", () => {
     ).toThrow("beyond the 50-commit fallback limit");
   });
 
-  test("keeps the unverified pin when no published ancestor is reachable", () => {
+  test("keeps the unverified pin when the package has no visible published tags", () => {
     const { overrides, sources } = resolveMissingRepoTagFallbacks({
       requestedTag: "d77a041",
       missingKeys: ["CONNECTOR_GW_LISTENER_VERSION"],
@@ -162,8 +162,19 @@ describe("resolve", () => {
     });
     expect(overrides).toEqual({});
     expect(sources).toEqual([
-      "CONNECTOR_GW_LISTENER_VERSION=d77a041 (unverified: no published tag within 1 commits)",
+      "CONNECTOR_GW_LISTENER_VERSION=d77a041 (unverified: package has no visible published tags)",
     ]);
+  });
+
+  test("fails resolution when a published package has no tag anywhere on the ancestry", () => {
+    expect(() =>
+      resolveMissingRepoTagFallbacks({
+        requestedTag: "d77a041",
+        missingKeys: ["CONNECTOR_GW_LISTENER_VERSION"],
+        commitShas: ["d77a0417aa5d928063181454756ebb73cdbadc24"],
+        packageTagsMap: { CONNECTOR_GW_LISTENER_VERSION: new Set(["0000000"]) },
+      }),
+    ).toThrow("nor for any of the 1 commits behind it");
   });
 
   test("applies per-component fallback overrides to a sha preset bundle", () => {

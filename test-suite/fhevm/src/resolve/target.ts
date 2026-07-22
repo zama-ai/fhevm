@@ -212,10 +212,20 @@ export const resolveMissingRepoTagFallbacks = (options: {
   for (const key of options.missingKeys) {
     const ancestorIndex = findPublishedAncestorIndex(options.commitShas, options.packageTagsMap[key] ?? new Set());
     if (ancestorIndex < 0) {
-      sources.push(
-        `${key}=${options.requestedTag} (unverified: no published tag within ${options.commitShas.length} commits)`,
+      // An empty tag set can mean the GitHub token simply cannot see the package (the versions
+      // API 404s on inaccessible packages), so the registry pull may still succeed with the
+      // runtime's own credentials; keep the pin and record that it is unverified.
+      if (!options.packageTagsMap[key]?.size) {
+        sources.push(`${key}=${options.requestedTag} (unverified: package has no visible published tags)`);
+        continue;
+      }
+      // A non-empty tag set with no tag anywhere on the ancestry proves the lock would be
+      // unpullable; failing here beats the guaranteed `manifest unknown` at e2e time.
+      throw new GitHubApiError(
+        `${key} has no published image for ${options.requestedTag} nor for any of the ` +
+          `${options.commitShas.length} commits behind it. Its docker builds look broken; fix or re-run them ` +
+          `before resolving this baseline, or pin ${key} explicitly to a published tag.`,
       );
-      continue;
     }
     if (ancestorIndex > MAX_FALLBACK_COMMIT_DEPTH) {
       throw new GitHubApiError(
@@ -445,7 +455,19 @@ export const resolveTarget = async (
     console.log(
       `[resolve] sha ${tag}: no published image for ${missingKeys.join(", ")}; looking for published ancestor tags`,
     );
-    const commitShas = await commitsFrom(requested, SHA_FALLBACK_COMMIT_WINDOW);
+    // Unlike the tag fetch above, an ancestry failure here is not skippable: missingKeys proves
+    // the unverified pin would produce an unpullable lock, so resolution must not fall back to it.
+    let commitShas: string[];
+    try {
+      commitShas = await commitsFrom(requested, SHA_FALLBACK_COMMIT_WINDOW);
+    } catch (error) {
+      const reason = error instanceof Error ? error.message.split("\n")[0] : String(error);
+      throw new GitHubApiError(
+        `${missingKeys.join(", ")} have no published image for ${tag}, and the ancestry lookup for ` +
+          `fallback tags failed (${reason}). Retry once GitHub is reachable, or pin the affected ` +
+          `versions explicitly.`,
+      );
+    }
     const { overrides, sources } = resolveMissingRepoTagFallbacks({
       requestedTag: tag,
       missingKeys,
