@@ -1,5 +1,6 @@
 //! Solana proof service binary: config → migrate → validate → ingest + HTTP.
 
+use std::future::IntoFuture;
 use std::sync::Arc;
 use std::time::Duration;
 
@@ -7,6 +8,7 @@ use anyhow::{Context, Result};
 use solana_proof_source::{YellowstoneBlockSource, YellowstoneSourceConfig};
 use solana_proof_store::{run_sequential_ingest, IngestHooks, SqlProofStore};
 use sqlx::postgres::PgPoolOptions;
+use tokio::sync::oneshot;
 use tokio::task::JoinHandle;
 use tokio_util::sync::CancellationToken;
 use tracing_subscriber::EnvFilter;
@@ -51,7 +53,7 @@ async fn main() -> Result<()> {
     })
     .context("invalid yellowstone source config")?;
 
-    let ingest_handle =
+    let mut ingest_handle =
         spawn_ingest_writer(source, store.clone(), Arc::clone(&ingest), cancel.clone());
 
     let fetcher = Arc::new(RpcChainFetcher::new(config.solana.rpc_url.clone()));
@@ -67,22 +69,57 @@ async fn main() -> Result<()> {
         .with_context(|| format!("failed to bind {}", config.server.bind_address))?;
     tracing::info!(%config.server.bind_address, "HTTP listening");
 
-    let shutdown = cancel.clone();
-    axum::serve(listener, app)
-        .with_graceful_shutdown(async move {
-            shutdown_signal().await;
-            shutdown.cancel();
-        })
-        .await
-        .context("HTTP server error")?;
+    let (force_shutdown_tx, force_shutdown_rx) = oneshot::channel::<()>();
+    let shutdown_cancel = cancel.clone();
+    let server = axum::serve(listener, app).with_graceful_shutdown(async move {
+        tokio::select! {
+            _ = shutdown_signal() => {}
+            _ = force_shutdown_rx => {
+                tracing::error!("forcing HTTP shutdown after ingest writer exit");
+            }
+        }
+        shutdown_cancel.cancel();
+    });
+    // axum Serve implements IntoFuture; pin the future for select! polling.
+    let mut server = std::pin::pin!(server.into_future());
 
-    // Cancel is already signalled by graceful shutdown; await the writer with a
-    // deadline so panics / stuck connects cannot leave readiness stale forever.
-    if !cancel.is_cancelled() {
-        cancel.cancel();
+    // Supervise HTTP and the ingest writer concurrently so a panic/exit during
+    // steady state cannot leave readiness Ready indefinitely.
+    enum Stopped {
+        Server(std::io::Result<()>),
+        Ingest(Result<(), tokio::task::JoinError>),
     }
-    await_ingest_writer(ingest_handle, &ingest).await;
 
+    let stopped = tokio::select! {
+        result = &mut server => Stopped::Server(result),
+        join = &mut ingest_handle => Stopped::Ingest(join),
+    };
+
+    let mut unexpected_ingest_exit = false;
+    let server_result = match stopped {
+        Stopped::Server(result) => {
+            // Always cancel/join the writer, even when the server returned Err.
+            cancel.cancel();
+            await_ingest_writer(ingest_handle, &ingest).await;
+            result
+        }
+        Stopped::Ingest(join) => {
+            unexpected_ingest_exit = !cancel.is_cancelled();
+            record_ingest_join(join, &ingest, unexpected_ingest_exit);
+            if unexpected_ingest_exit {
+                let _ = force_shutdown_tx.send(());
+            } else {
+                drop(force_shutdown_tx);
+            }
+            // Writer already joined; wait for HTTP to finish after force/signal.
+            server.as_mut().await
+        }
+    };
+
+    server_result.context("HTTP server error")?;
+    if unexpected_ingest_exit {
+        anyhow::bail!("ingest writer exited while HTTP server was still running");
+    }
     Ok(())
 }
 
@@ -120,22 +157,43 @@ fn spawn_ingest_writer(
     })
 }
 
-async fn await_ingest_writer(mut handle: JoinHandle<()>, ingest: &IngestHealth) {
-    match tokio::time::timeout(INGEST_SHUTDOWN_DEADLINE, &mut handle).await {
-        Ok(Ok(())) => {
-            tracing::info!("ingest writer stopped");
+fn record_ingest_join(
+    join: Result<(), tokio::task::JoinError>,
+    ingest: &IngestHealth,
+    unexpected: bool,
+) {
+    match join {
+        Ok(()) => {
+            if unexpected {
+                tracing::error!(
+                    terminal = ?ingest.terminal(),
+                    "ingest writer exited while HTTP server was still running"
+                );
+            } else {
+                tracing::info!("ingest writer stopped");
+            }
         }
-        Ok(Err(join_err)) => {
+        Err(join_err) => {
             let reason = if join_err.is_panic() {
                 format!("ingest writer panicked: {join_err}")
             } else {
                 format!("ingest writer join failed: {join_err}")
             };
             tracing::error!(%reason, "ingest writer supervision failure");
-            // mark_finished may have been skipped on panic.
             if ingest.writer_running() || ingest.terminal().is_none() {
                 ingest.mark_crashed(reason);
             }
+        }
+    }
+}
+
+async fn await_ingest_writer(mut handle: JoinHandle<()>, ingest: &IngestHealth) {
+    match tokio::time::timeout(INGEST_SHUTDOWN_DEADLINE, &mut handle).await {
+        Ok(Ok(())) => {
+            tracing::info!("ingest writer stopped");
+        }
+        Ok(Err(join_err)) => {
+            record_ingest_join(Err(join_err), ingest, false);
         }
         Err(_) => {
             tracing::error!(
