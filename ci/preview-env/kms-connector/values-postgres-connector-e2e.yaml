@@ -11,7 +11,7 @@
 # test credentials) and the statefulset.volumeClaimTemplates note (PVC so data
 # survives pod restarts).
 #
-# One dedicated instance PER kms-connector/kms-core party (pr-preview-deploy.yml's
+# One dedicated instance PER kms-connector/kms-core party (preview-env-deploy.yml's
 # "Deploy in-cluster Postgres for kms-connector" loops this over NB_KMS_CORE
 # releases, one per party, overriding fullnameOverride below to
 # postgres-connector-<i> each time) - mirrors kms's own production topology

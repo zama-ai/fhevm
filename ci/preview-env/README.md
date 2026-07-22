@@ -17,13 +17,13 @@ coprocessor, listener, kms-connector, and relayer/relayer-migrate — see `copro
 coprocessor-e2e.yaml`'s header for why this isn't RDS, or Bitnami's postgresql chart), and a
 dedicated real 4-party threshold+enclave KMS reused directly from `zama-ai/kms`'s own
 `ci/scripts/deploy.sh` (no vendored `kms-core` chart usage here at all). See
-[`../../.github/workflows/pr-preview-deploy.yml`](../../.github/workflows/pr-preview-deploy.yml).
+[`../../.github/workflows/preview-env-deploy.yml`](../../.github/workflows/preview-env-deploy.yml).
 Torn down automatically when the PR closes
-([`pr-preview-destroy.yml`](../../.github/workflows/pr-preview-destroy.yml)).
+([`preview-env-destroy.yml`](../../.github/workflows/preview-env-destroy.yml)).
 
 There is no local Kind/laptop-based variant of this path anymore — a full stack (dedicated
 4-party enclave KMS + coprocessor + kms-connector + relayer + test-suite) doesn't fit in a
-reasonable local resource budget, so `pr-preview-deploy.yml`'s remote `zws-dev` cluster is the
+reasonable local resource budget, so `preview-env-deploy.yml`'s remote `zws-dev` cluster is the
 only supported way to run this. The default docker-compose path (`test-suite/fhevm`) remains
 the right choice for local iteration.
 
@@ -62,7 +62,7 @@ ci/preview-env/
 
 Every file here is a **values overlay for a chart**. `anvil-node`/`contracts`/`coprocessor`/
 `kms-connector` target the real, published production charts directly via
-`oci://hub.zama.org/ghcr/zama-ai/fhevm/charts/*` refs (see `pr-preview-deploy.yml`).
+`oci://hub.zama.org/ghcr/zama-ai/fhevm/charts/*` refs (see `preview-env-deploy.yml`).
 `relayer`/`test-suite`/the three `values-postgres-*-e2e.yaml` files all target the generic
 `oci://hub.zama.org/ghcr/zama-zws/helm-charts/common` chart (the same one `zama-zws/gitops`'s
 `fhevm-dev` environment uses for `relayer`/`test-suite`), not a fhevm-specific chart - there's
@@ -73,7 +73,7 @@ image tag off `docker.io/bitnami` into the unsupported, no-longer-updated `docke
 bitnamilegacy` archive, breaking fresh installs of that chart (see values-postgres-coprocessor-
 e2e.yaml's header for the full story). This also sidesteps Crossplane/RDS entirely for these
 three throwaway databases. `kms-core` (KMS itself) is never deployed from this repo at all — the
-CI path reuses `zama-ai/kms`'s own deploy pipeline as-is (see `pr-preview-deploy.yml`).
+CI path reuses `zama-ai/kms`'s own deploy pipeline as-is (see `preview-env-deploy.yml`).
 
 Note this path's own images (contracts/kms-connector/relayer/test-suite) are addressed via
 `hub.zama.org/ghcr/zama-ai/fhevm/...` (the Harbor pull-through-cache mirror of `ghcr.io`), not
@@ -136,7 +136,7 @@ Caveats if you ever do want the live path against anvil:
 
 ## Multi-coprocessor (`nb_coprocessor`) and shared Redis
 
-`pr-preview-deploy.yml` takes an `nb_coprocessor` input (default `1`, mirroring
+`preview-env-deploy.yml` takes an `nb_coprocessor` input (default `1`, mirroring
 `NB_KMS_CORE`) that deploys **N independent coprocessor stacks**. For party `i` (1..N):
 
 - its own in-cluster Postgres `postgres-coprocessor-<i>`,

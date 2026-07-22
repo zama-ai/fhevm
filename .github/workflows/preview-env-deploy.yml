@@ -48,7 +48,7 @@ on:
       coprocessor_version:
         description: "Image tag for coprocessor images (same override rule as host_contracts_version above)"
         required: true
-        default: "v0.13.0"
+        default: "v0.13.1"
       coprocessor_chart_version:
         description: "Version of the coprocessor Helm chart"
         required: true
@@ -117,7 +117,7 @@ on:
       listener_version:
         description: "Image tag for the listener/listener-core image (external dep, not built here - pair with the coprocessor's host-listener-consumer)"
         required: true
-        default: "cc8fc16-dev"
+        default: "v0.13.3"
 
 concurrency:
   # pull_request: one preview per PR, new pushes cancel the in-flight run.
@@ -147,7 +147,7 @@ env:
   COPROCESSOR_VERSION: "v0.13.1"
   COPROCESSOR_CHART: oci://hub.zama.org/ghcr/zama-ai/fhevm/charts/coprocessor
   COPROCESSOR_CHART_VERSION: "0.13.0"
-  NB_COPROCESSOR: "3"
+  NB_COPROCESSOR: "1"
   #=====KMS CONNECTOR=========================================================
   KMS_CONNECTOR_VERSION: "v0.13.1-hotfix.kmsconnector.1"
   KMS_CONNECTOR_CHART: oci://hub.zama.org/ghcr/zama-ai/fhevm/charts/kms-connector
@@ -1054,7 +1054,7 @@ jobs:
             > Note: each coprocessor party requests substantial `tfhe`/`sns` worker capacity on the `coprocessor` nodepool, so `nb_coprocessor` > 1 multiplies the cluster resources needed. Default stays 1.
 
             This environment is destroyed automatically when the PR is closed
-            (see pr-preview-destroy.yml), or on the next push to this PR.
+            (see preview-env-destroy.yml), or on the next push to this PR.
 
       - name: Write connection info to summary
         if: success() && github.event_name == 'workflow_dispatch'
@@ -1073,5 +1073,5 @@ jobs:
             echo '```'
             echo
             echo "This environment is **not** tied to a PR, so it is only destroyed"
-            echo "manually - see pr-preview-destroy.yml or clean up the namespace directly."
+            echo "manually - see preview-env-destroy.yml or clean up the namespace directly."
           } >> "$GITHUB_STEP_SUMMARY"

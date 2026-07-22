@@ -9,7 +9,7 @@
 #
 # This is a one-shot test run (not a long-running service), so it's deployed
 # as a Job rather than a Deployment. image.tag is overridden at deploy time
-# via --set-string in pr-preview-deploy.yml with the real per-PR
+# via --set-string in preview-env-deploy.yml with the real per-PR
 # short-SHA tag.
 #
 # Deployed as:
@@ -26,7 +26,7 @@ imagePullSecrets:
 
 image:
   repository: hub.zama.org/ghcr/zama-ai/fhevm/test-suite/e2e
-  # This tag is only used when pr-preview-deploy.yml's build_images=false
+  # This tag is only used when preview-env-deploy.yml's build_images=false
   # (or the workflow isn't run at all, e.g. a raw `helm upgrade` like this
   # file's own header example) - see env.TEST_SUITE_VERSION's comment there
   # for why NEITHER this pinned v0.13.0 NOR the older v0.11.5-0 actually work

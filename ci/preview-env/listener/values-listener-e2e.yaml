@@ -7,7 +7,7 @@
 # ../coprocessor/values-coprocessor-e2e.yaml, where the built-in hostListener +
 # poller are disabled in favour of this producer + the consumer).
 #
-# Topology per party i (all wired at deploy time in pr-preview-deploy.yml):
+# Topology per party i (all wired at deploy time in preview-env-deploy.yml):
 #   listener-<i>  --(publishes)-->  coprocessor-redis-<i>  --(consumed by)-->  coprocessor-<i> host-listener-consumer
 #
 # The listener is a GENERIC EVM indexer: it takes NO FHEVM contract addresses

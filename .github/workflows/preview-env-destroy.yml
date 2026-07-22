@@ -2,7 +2,7 @@ name: pr-preview-destroy
 
 ##############################################################################
 # Tears down the per-PR e2e preview namespace created by
-# pr-preview-deploy.yml. Mirrors zama-ai/kms's ci/.github/workflows/
+# preview-env-deploy.yml. Mirrors zama-ai/kms's ci/.github/workflows/
 # pr-preview-destroy.yml: same Tailscale cluster, same "helm uninstall
 # everything, then delete the namespace" approach so Crossplane claims
 # (coprocessor-infra's S3 bucket, tkms-infra's S3 vaults/enclave nodegroups)
@@ -11,7 +11,7 @@ name: pr-preview-destroy
 # StatefulSets, not a Crossplane claim, so it's already gone the moment the
 # namespace is - see coprocessor-infra/values-postgres-coprocessor-e2e.yaml.
 #
-# Triggers (the pull_request ones mirror pr-preview-deploy.yml's labels:
+# Triggers (the pull_request ones mirror preview-env-deploy.yml's labels:
 # pr-preview-e2e / pr-preview-e2e-build / pr-preview-e2e-tests):
 #   - closed:    PR merged/closed -> always attempt teardown (no-op if none).
 #   - unlabeled: a preview label was removed AND no preview label remains, i.e.
@@ -58,18 +58,38 @@ jobs:
     permissions:
       pull-requests: write # for the comment step
     env:
-      # pull_request: MUST match pr-preview-deploy.yml's namespace derivation.
-      # Both use the PR AUTHOR (pull_request.user.login), not github.actor: on
-      # deploy github.actor is whoever pushed/labeled, and on the closed/unlabeled
-      # event here it's whoever closed the PR or removed the label - those can
-      # differ, which would target a namespace that was never created and leak the
-      # real one. The PR author is identical across all those events, so teardown
-      # always hits the namespace deploy created.
-      # workflow_dispatch: no PR to derive from, so take the exact namespace the
-      # operator pasted from the manual deploy run's summary.
-      NAMESPACE: ${{ github.event_name == 'workflow_dispatch' && inputs.namespace || format('fhevm-ci-{0}-{1}', github.event.pull_request.user.login, github.event.pull_request.number) }}
       TAILSCALE_HOSTNAME: tailscale-operator-zws-dev.diplodocus-boa.ts.net
     steps:
+      - name: Resolve target namespace
+        # pull_request: MUST match preview-env-deploy.yml's namespace derivation
+        # (resolve-tags.cjs). Both use the PR AUTHOR (pull_request.user.login), not
+        # github.actor: on the closed/unlabeled event github.actor is whoever closed
+        # the PR or removed the label - that can differ from the author and would
+        # target a namespace that was never created (leaking the real one). The PR
+        # author is identical across all those events, so teardown always hits the
+        # namespace deploy created. k8s namespaces are RFC-1123 labels, so lowercase
+        # + strip exactly like resolve-tags.cjs's sanitizeNs (uppercase logins like
+        # `Simon-Eudeline` and bot logins like `dependabot[bot]` would otherwise be
+        # invalid). The untrusted login is read via env, never interpolated inline
+        # into the script, to avoid injection.
+        # workflow_dispatch: no PR to derive from - take the operator's pasted
+        # namespace verbatim (the destroy step guards the fhevm-ci- prefix).
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          DISPATCH_NAMESPACE: ${{ inputs.namespace }}
+          PR_AUTHOR: ${{ github.event.pull_request.user.login }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+        run: |
+          if [[ "${EVENT_NAME}" == "workflow_dispatch" ]]; then
+            ns="${DISPATCH_NAMESPACE}"
+          else
+            ns=$(printf 'fhevm-ci-%s-%s' "${PR_AUTHOR}" "${PR_NUMBER}" \
+              | tr '[:upper:]' '[:lower:]' \
+              | tr -c 'a-z0-9-' '-' \
+              | sed -E 's/-+/-/g; s/^-+|-+$//g')
+          fi
+          echo "NAMESPACE=${ns}" >> "$GITHUB_ENV"
+
       - name: Setup tailscale
         uses: tailscale/github-action@84a3f23bb4d843bcf4da6cf824ec1be473daf4de # v3.2.3
         with:
@@ -110,16 +130,32 @@ jobs:
             echo "::warning::Namespace ${NAMESPACE} did not finish terminating within 5m (likely stuck on Crossplane finalizers releasing AWS resources) - check manually."
           }
 
-      - name: Comment on PR
+      # Report success and failure separately so we never tell the PR an env is
+      # "torn down" when teardown actually failed (a false all-clear masks leaked
+      # Crossplane-managed AWS resources - S3 buckets, enclave nodegroups).
+      - name: Comment teardown success on PR
         # No PR to comment on for workflow_dispatch - result goes to the summary.
-        if: always() && github.event_name == 'pull_request'
+        if: success() && github.event_name == 'pull_request'
         uses: peter-evans/create-or-update-comment@e8674b075228eee787fea43ef493e45ece1004c9 # v5.0.0
         with:
           issue-number: ${{ github.event.pull_request.number }}
           body: |
             :broom: e2e preview environment (namespace `${{ env.NAMESPACE }}`) has been torn down.
 
-      - name: Write teardown result to summary
-        if: always() && github.event_name == 'workflow_dispatch'
+      - name: Comment teardown failure on PR
+        if: failure() && github.event_name == 'pull_request'
+        uses: peter-evans/create-or-update-comment@e8674b075228eee787fea43ef493e45ece1004c9 # v5.0.0
+        with:
+          issue-number: ${{ github.event.pull_request.number }}
+          body: |
+            :warning: **Teardown of e2e preview environment (namespace `${{ env.NAMESPACE }}`) FAILED.** Crossplane-managed AWS resources (S3 buckets, enclave nodegroups) may still be leaking - see the [workflow run](${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}) and clean up manually.
+
+      - name: Write teardown success to summary
+        if: success() && github.event_name == 'workflow_dispatch'
         run: |
           echo ":broom: e2e preview environment (namespace \`${NAMESPACE}\`) teardown finished." >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Write teardown failure to summary
+        if: failure() && github.event_name == 'workflow_dispatch'
+        run: |
+          echo ":warning: Teardown of namespace \`${NAMESPACE}\` FAILED - Crossplane-managed AWS resources may still be leaking; check the run and clean up manually." >> "$GITHUB_STEP_SUMMARY"

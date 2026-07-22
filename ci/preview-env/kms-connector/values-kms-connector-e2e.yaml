@@ -1,6 +1,6 @@
 # kms-connector chart values overlay for the fhevm e2e preview namespace.
 #
-# ONE RELEASE PER kms-core PARTY: pr-preview-deploy.yml's "Deploy kms-connector"
+# ONE RELEASE PER kms-core PARTY: preview-env-deploy.yml's "Deploy kms-connector"
 # step installs this file NB_KMS_CORE times (kms-connector-<i>, i=1..N), each
 # --set-string-overriding the 3 per-party fields below (databaseUrl,
 # kmsCoreEndpoints, wallet.secret.name) to point at that party's own DB/kms-core/
@@ -16,7 +16,7 @@
 # can't be wired live from the gw-sc-addresses / host-sc-addresses
 # ConfigMaps the way coprocessor's are via YAML alone. Real values are
 # discovered from those ConfigMaps and injected via --set-string in
-# pr-preview-deploy.yml's "Deploy kms-connector" step instead - nothing
+# preview-env-deploy.yml's "Deploy kms-connector" step instead - nothing
 # to fill in here.
 #
 # kmsWorker's config.kmsCoreEndpoints (below) points at the dedicated per-PR
@@ -44,7 +44,7 @@ commonConfig:
   gatewayChainId: "54321"
   ethereumChainId: "12345"
   # gatewayContractAddresses.* / ethereumContractAddresses.* are injected via
-  # --set-string in pr-preview-deploy.yml (see header note above).
+  # --set-string in preview-env-deploy.yml (see header note above).
 
 # kmsWorker's default hostChains entries reference $(KMS_CONNECTOR_POLYGON_*)
 # placeholders that don't apply to this single-host-chain scenario; pin it to
@@ -61,7 +61,7 @@ kmsConnectorKmsWorker:
 
 # kmsConnectorTxSender.wallet.secret defaults to {name: kms-connector-tx-sender, key: kms-wallet}
 # - overridden per-release by the workflow to kms-connector-tx-sender-<i>. The
-# Secret itself is created out-of-band by pr-preview-deploy.yml's "Create
+# Secret itself is created out-of-band by preview-env-deploy.yml's "Create
 # kms-connector-tx-sender secrets" step (must run before this chart installs,
 # unlike coprocessor's txSender which has a wallet.secret.value literal option
 # and needs no such out-of-band step).

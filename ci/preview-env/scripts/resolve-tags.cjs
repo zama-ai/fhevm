@@ -46,10 +46,22 @@ module.exports = async ({ core, context }) => {
   };
 
   // Actor segment is the PR AUTHOR (pull_request.user.login), not github.actor,
-  // so it matches pr-preview-destroy.yml (which runs on `closed`). Keep in sync.
+  // so it matches preview-env-destroy.yml (which runs on `closed`). Keep in sync.
+  //
+  // k8s namespaces must be RFC-1123 labels (lowercase [a-z0-9-], no leading/
+  // trailing '-'), but GitHub logins are case-preserving (e.g. `Simon-Eudeline`)
+  // and bot logins contain brackets (`dependabot[bot]`), so a raw login would
+  // make `kubectl create namespace` fail. Sanitize identically to the destroy
+  // workflow's shell derivation so both sides always agree on the name.
+  const sanitizeNs = (s) =>
+    String(s)
+      .toLowerCase()
+      .replace(/[^a-z0-9-]/g, '-')
+      .replace(/-+/g, '-')
+      .replace(/^-+|-+$/g, '');
   const namespace = isDispatch
-    ? `fhevm-ci-${env.ACTOR}-${inputs.namespace_suffix || context.runId}`
-    : `fhevm-ci-${context.payload.pull_request.user.login}-${context.payload.pull_request.number}`;
+    ? sanitizeNs(`fhevm-ci-${env.ACTOR}-${inputs.namespace_suffix || context.runId}`)
+    : sanitizeNs(`fhevm-ci-${context.payload.pull_request.user.login}-${context.payload.pull_request.number}`);
 
   // Chart/ref versions: env on pull_request, matching input on dispatch.
   const chartVersions = {

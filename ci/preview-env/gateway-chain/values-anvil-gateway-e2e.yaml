@@ -8,7 +8,7 @@ network:
   blockTime: "1"
   host: "0.0.0.0"
   chainId: "54321"
-  # 120 (not the default 10) to pre-fund pr-preview-deploy.yml's "Derive KMS
+  # 120 (not the default 10) to pre-fund preview-env-deploy.yml's "Derive KMS
   # tx-sender wallets" step's HD indices 10..10+NB_KMS_CORE-1 (up to 13 parties)
   # on top of every low-index account already used by the gateway-contracts/
   # relayer values files - matches anvil-host's own headroom for the same reason.

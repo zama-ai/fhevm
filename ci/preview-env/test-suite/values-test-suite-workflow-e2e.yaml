@@ -7,7 +7,7 @@
 # instance.ts sets useFhevmSdk=true). The @zama-fhe/relayer-sdk half lives in the
 # companion file values-test-suite-workflow-relayer-sdk-e2e.yaml (a near-duplicate
 # with RELAYER_SDK_VERSION set). They are deployed as TWO separate helm releases,
-# one after another, by pr-preview-deploy.yml (this fhevm-sdk release first), which
+# one after another, by preview-env-deploy.yml (this fhevm-sdk release first), which
 # then posts a combined report to the PR. Running them serially as independent
 # releases avoids them contending on the shared contracts/KMS/relayer at once, and
 # sidesteps the WorkflowTemplate-ordering bug that broke the earlier single-file
@@ -16,12 +16,12 @@
 # This release ALSO owns the shared RBAC (workflow-runner ServiceAccount/Role/
 # RoleBinding) that the relayer-sdk release reuses - so it must deploy first.
 #
-# Deployed only when pr-preview-deploy.yml is run with automated_tests=true, as:
+# Deployed only when preview-env-deploy.yml is run with automated_tests=true, as:
 #   helm upgrade --install test-suite-workflow \
 #     oci://hub.zama.org/ghcr/zama-zws/helm-charts/common \
 #     -n <namespace> -f this-file
 #
-# Two dynamic bits are patched with yq at deploy time (see pr-preview-deploy.yml):
+# Two dynamic bits are patched with yq at deploy time (see preview-env-deploy.yml):
 #   - the run-test image tag (per-PR short-SHA / pinned test_suite tag)
 #   - the RoleBinding subject namespace (the per-PR namespace)
 # Every additionalResources object omits metadata.namespace so helm places it in
@@ -122,7 +122,7 @@ additionalResources:
           sdk: fhevm-sdk
       spec:
         serviceAccountName: workflow-runner
-        # Kept under the deploy job's own timeout budget (see pr-preview-deploy.yml):
+        # Kept under the deploy job's own timeout budget (see preview-env-deploy.yml):
         # 8 tests run sequentially and each recompiles the contracts, so this is
         # generous but bounded rather than the reference's 2h.
         activeDeadlineSeconds: 7800  # 130m

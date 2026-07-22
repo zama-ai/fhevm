@@ -14,7 +14,7 @@
 # fails "Missing keys: No keys found in database" - so no FHE op, no input
 # verification, and the e2e tests time out.
 #
-# Deployed as (per party i, see pr-preview-deploy.yml):
+# Deployed as (per party i, see preview-env-deploy.yml):
 #   helm upgrade --install coprocessor-poller-<i> \
 #     oci://hub.zama.org/ghcr/zama-ai/fhevm/charts/coprocessor \
 #     -n <namespace> -f this-file \

@@ -5,13 +5,13 @@
 # instead of @fhevm/sdk.
 #
 # Deployed as its OWN helm release (test-suite-workflow-relayer), one after the
-# fhevm-sdk release, by pr-preview-deploy.yml. It intentionally declares NO RBAC:
+# fhevm-sdk release, by preview-env-deploy.yml. It intentionally declares NO RBAC:
 # it reuses the workflow-runner ServiceAccount/Role/RoleBinding created by the
 # fhevm-sdk release (values-test-suite-workflow-e2e.yaml), which always deploys
 # first into the same namespace. Running the two suites as separate, sequential
 # releases avoids them contending on the shared contracts/KMS/relayer at once.
 #
-# One dynamic bit is patched with yq at deploy time (see pr-preview-deploy.yml):
+# One dynamic bit is patched with yq at deploy time (see preview-env-deploy.yml):
 #   - the run-test image tag (per-PR short-SHA / pinned test_suite tag)
 # There is no RoleBinding here, so no namespace placeholder to patch.
 fullnameOverride: test-suite-workflow-relayer

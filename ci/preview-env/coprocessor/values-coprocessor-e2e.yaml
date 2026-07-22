@@ -8,7 +8,7 @@
 # file works unchanged under any per-PR namespace.
 #
 # All image tags are overridden at deploy time via --set-string in
-# pr-preview-deploy.yml (real per-PR short-SHA image tags) - the values here
+# preview-env-deploy.yml (real per-PR short-SHA image tags) - the values here
 # are just fallback defaults so this file stays valid standalone.
 #
 # databaseUser/databasePassword/databaseEndpoint below are already real, not
@@ -60,7 +60,7 @@ commonConfig:
     # txSender.disabledArgs below drops the corresponding legacy CLI arg.
 
 #=======================================================
-# Image tags below are placeholders - pr-preview-deploy.yml overrides
+# Image tags below are placeholders - preview-env-deploy.yml overrides
 # every one of them via --set-string with the real per-PR short-SHA tag
 # (or `latest` when this component didn't change in the PR).
 dbMigration:
