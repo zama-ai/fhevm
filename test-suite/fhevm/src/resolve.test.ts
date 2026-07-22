@@ -12,10 +12,11 @@ import {
   shouldStopPackageTagScan,
 } from "./resolve/github";
 import {
+  MAX_FALLBACK_COMMIT_DEPTH,
   SIMPLE_ACL_MIN_SHA,
   SHA_RUNTIME_COMPAT_MIN_SHA,
   applyVersionEnvOverrides,
-  findPublishedAncestorTag,
+  findPublishedAncestorIndex,
   presetBundle,
   resolveMissingRepoTagFallbacks,
   selectSupportedMainSha,
@@ -121,9 +122,9 @@ describe("resolve", () => {
       "2cde6c960c24405015ab03959a2d9053cde31f23",
       "8e2f724d4000000000000000000000000000000",
     ];
-    expect(findPublishedAncestorTag(commits, new Set(["2cde6c9", "8e2f724"]))).toBe("2cde6c9");
-    expect(findPublishedAncestorTag(commits, new Set(["fffffff"]))).toBeUndefined();
-    expect(findPublishedAncestorTag([], new Set(["2cde6c9"]))).toBeUndefined();
+    expect(findPublishedAncestorIndex(commits, new Set(["2cde6c9", "8e2f724"]))).toBe(1);
+    expect(findPublishedAncestorIndex(commits, new Set(["fffffff"]))).toBe(-1);
+    expect(findPublishedAncestorIndex([], new Set(["2cde6c9"]))).toBe(-1);
   });
 
   test("falls back to the newest published ancestor tag for missing images", () => {
@@ -135,6 +136,21 @@ describe("resolve", () => {
     });
     expect(overrides).toEqual({ CONNECTOR_GW_LISTENER_VERSION: "2cde6c9" });
     expect(sources).toEqual(["CONNECTOR_GW_LISTENER_VERSION=2cde6c9 (fallback: d77a041 unpublished)"]);
+  });
+
+  test("fails resolution when the newest published image lags beyond the fallback limit", () => {
+    const commits = Array.from(
+      { length: MAX_FALLBACK_COMMIT_DEPTH + 2 },
+      (_, index) => index.toString(16).padEnd(40, "f"),
+    );
+    expect(() =>
+      resolveMissingRepoTagFallbacks({
+        requestedTag: commits[0].slice(0, 7),
+        missingKeys: ["CONNECTOR_GW_LISTENER_VERSION"],
+        commitShas: commits,
+        packageTagsMap: { CONNECTOR_GW_LISTENER_VERSION: new Set([commits.at(-1)!.slice(0, 7)]) },
+      }),
+    ).toThrow("beyond the 50-commit fallback limit");
   });
 
   test("keeps the unverified pin when no published ancestor is reachable", () => {

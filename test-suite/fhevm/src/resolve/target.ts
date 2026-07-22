@@ -115,6 +115,11 @@ const PACKAGE_REPOSITORY_CANDIDATES: Partial<Record<keyof typeof PACKAGE_TO_REPO
 };
 
 const SHA_FALLBACK_COMMIT_WINDOW = 500;
+// A missing tag from a flaked re-tag, an in-flight push pipeline, or an is-latest-commit skip
+// sits a handful of commits behind the requested sha (a merge train at most). A published image
+// lagging further than this means the component's publishing is genuinely broken, which a
+// fallback must not paper over.
+export const MAX_FALLBACK_COMMIT_DEPTH = 50;
 
 export const REPO_TAG = /^[0-9a-f]{7}$/;
 export const SHA_REF = /^(?:[0-9a-f]{7}|[0-9a-f]{40})$/i;
@@ -176,9 +181,11 @@ const findImageTag = (
 /** Normalizes a full SHA into the short tag form used by repo-owned images. */
 export const shortSha = (value: string) => value.toLowerCase().slice(0, 7);
 
-/** Finds the newest commit in an ancestry walk (newest first) that has a published image tag. */
-export const findPublishedAncestorTag = (commitShas: string[], publishedTags: Set<string>) =>
-  commitShas.map(shortSha).find((sha) => publishedTags.has(sha));
+/** Finds the position of the newest commit in an ancestry walk (newest first) that has a
+ * published image tag; -1 when none does. The position is the commit distance behind the walk's
+ * starting sha. */
+export const findPublishedAncestorIndex = (commitShas: string[], publishedTags: Set<string>) =>
+  commitShas.findIndex((sha) => publishedTags.has(shortSha(sha)));
 
 /**
  * Resolves per-component fallback tags for repo-owned images with no published image at the
@@ -186,9 +193,11 @@ export const findPublishedAncestorTag = (commitShas: string[], publishedTags: Se
  *
  * A missing tag is an exceptional state: on every push the docker-build workflows either build a
  * changed component or re-tag the previous image with the new sha, so a gap means one of those
- * jobs failed or has not finished. Each affected component independently falls back to its
- * newest published tag on the requested sha's ancestry, and the substitution is recorded in
- * `sources`. Components with no published tag in the walked window (brand-new or
+ * jobs failed, has not finished, or was skipped for a superseded branch tip. Each affected
+ * component independently falls back to its newest published tag on the requested sha's
+ * ancestry, and the substitution is recorded in `sources`. A fallback deeper than
+ * MAX_FALLBACK_COMMIT_DEPTH fails resolution instead — that lag means the component's publishing
+ * is broken, not flaked. Components with no published tag in the walked window (brand-new or
  * feature-branch-only packages) keep the requested sha, matching how latest-main skips gating
  * on such packages.
  */
@@ -201,13 +210,21 @@ export const resolveMissingRepoTagFallbacks = (options: {
   const overrides: Record<string, string> = {};
   const sources: string[] = [];
   for (const key of options.missingKeys) {
-    const ancestor = findPublishedAncestorTag(options.commitShas, options.packageTagsMap[key] ?? new Set());
-    if (!ancestor) {
+    const ancestorIndex = findPublishedAncestorIndex(options.commitShas, options.packageTagsMap[key] ?? new Set());
+    if (ancestorIndex < 0) {
       sources.push(
         `${key}=${options.requestedTag} (unverified: no published tag within ${options.commitShas.length} commits)`,
       );
       continue;
     }
+    if (ancestorIndex > MAX_FALLBACK_COMMIT_DEPTH) {
+      throw new GitHubApiError(
+        `${key} has no published image for ${options.requestedTag}, and its newest published image is ` +
+          `${ancestorIndex} commits behind — beyond the ${MAX_FALLBACK_COMMIT_DEPTH}-commit fallback limit. ` +
+          `Its docker builds look broken rather than flaked; fix or re-run them before resolving this baseline.`,
+      );
+    }
+    const ancestor = shortSha(options.commitShas[ancestorIndex]);
     overrides[key] = ancestor;
     sources.push(`${key}=${ancestor} (fallback: ${options.requestedTag} unpublished)`);
   }
