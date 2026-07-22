@@ -1061,17 +1061,112 @@ contract ProtocolConfigTest is HostContractsDeployerTestUtils {
         protocolConfig.destroyKmsEpoch(invalidEpochId);
     }
 
-    function test_revertDestroyPendingEpoch() public {
+    function test_destroyPendingEpochOfActiveContext() public {
+        _setupEpochLifecycle();
+        uint256 contextId = KMS_CONTEXT_COUNTER_BASE + 1;
+        uint256 pendingEpochId = EPOCH_COUNTER_BASE + 2;
+        (, uint256 activeEpochId) = protocolConfig.getCurrentKmsContextAndEpoch();
+
+        // A Pending epoch under the Active context (same-set rotation) is abortable.
+        vm.prank(owner);
+        protocolConfig.defineNewEpochForCurrentKmsContext();
+
+        vm.expectEmit(true, false, false, true, address(protocolConfig));
+        emit IProtocolConfig.KmsEpochDestroyed(pendingEpochId);
+        vm.prank(owner);
+        protocolConfig.destroyKmsEpoch(pendingEpochId);
+
+        assertFalse(protocolConfig.isValidEpochForContext(contextId, pendingEpochId));
+        (, uint256 epochAfter) = protocolConfig.getCurrentKmsContextAndEpoch();
+        assertEq(epochAfter, activeEpochId);
+
+        // Governance can re-trigger the rotation and complete it.
+        uint256 retriedEpochId = EPOCH_COUNTER_BASE + 3;
+        vm.prank(owner);
+        protocolConfig.defineNewEpochForCurrentKmsContext();
+        _confirmEpoch(contextId, retriedEpochId, kmsPk0, kmsTxSender0);
+        _confirmEpoch(contextId, retriedEpochId, kmsPk1, kmsTxSender1);
+        (, uint256 epochFinal) = protocolConfig.getCurrentKmsContextAndEpoch();
+        assertEq(epochFinal, retriedEpochId);
+    }
+
+    function test_destroyPendingEpochAfterDivergentVotes() public {
+        _setupEpochLifecycle();
+        uint256 contextId = KMS_CONTEXT_COUNTER_BASE + 1;
+        uint256 pendingEpochId = EPOCH_COUNTER_BASE + 2;
+
+        vm.prank(owner);
+        protocolConfig.defineNewEpochForCurrentKmsContext();
+        (uint256 completedKeyId, uint256 completedCrsId) = _completeKmsGenerationMaterial();
+
+        // Divergent votes: one signer confirms an empty result, the other confirms material.
+        _confirmEpoch(contextId, pendingEpochId, kmsPk0, kmsTxSender0);
+        _confirmEpochWithMaterial(contextId, pendingEpochId, kmsPk1, kmsTxSender1, completedKeyId, completedCrsId);
+
+        // Confirmations are one-shot per signer: the split vote can never converge.
+        vm.prank(kmsTxSender0);
+        vm.expectRevert(
+            abi.encodeWithSelector(
+                IProtocolConfig.EpochActivationAlreadyConfirmed.selector,
+                vm.addr(kmsPk0),
+                pendingEpochId
+            )
+        );
+        protocolConfig.confirmEpochActivation(
+            pendingEpochId,
+            new IProtocolConfig.EpochKeyResult[](0),
+            new IProtocolConfig.EpochCrsResult[](0)
+        );
+        (, uint256 epochBefore) = protocolConfig.getCurrentKmsContextAndEpoch();
+        assertEq(epochBefore, EPOCH_COUNTER_BASE + 1);
+
+        // Governance aborts the stuck epoch and re-runs the rotation to completion.
+        vm.prank(owner);
+        protocolConfig.destroyKmsEpoch(pendingEpochId);
+
+        uint256 retriedEpochId = EPOCH_COUNTER_BASE + 3;
+        vm.prank(owner);
+        protocolConfig.defineNewEpochForCurrentKmsContext();
+        _confirmEpochWithMaterial(contextId, retriedEpochId, kmsPk0, kmsTxSender0, completedKeyId, completedCrsId);
+        _confirmEpochWithMaterial(contextId, retriedEpochId, kmsPk1, kmsTxSender1, completedKeyId, completedCrsId);
+        (, uint256 epochFinal) = protocolConfig.getCurrentKmsContextAndEpoch();
+        assertEq(epochFinal, retriedEpochId);
+    }
+
+    function test_revertDestroyPendingEpochOfPendingContext() public {
         _setupEpochLifecycle();
         uint256 pendingEpochId = EPOCH_COUNTER_BASE + 2;
 
-        // In-flight (Pending) epochs are not destroyable: destroy is Active-only.
+        // A pending context switch is settled by destroyKmsContext, not destroyKmsEpoch.
         vm.prank(owner);
-        protocolConfig.defineNewEpochForCurrentKmsContext();
+        _defineNewKmsContextAndEpoch(_makeKmsNodeParams(2), _defaultThresholds());
 
         vm.prank(owner);
         vm.expectRevert(abi.encodeWithSelector(IProtocolConfig.InvalidKmsEpoch.selector, pendingEpochId));
         protocolConfig.destroyKmsEpoch(pendingEpochId);
+    }
+
+    function test_destroyPendingContextClearsPairedEpoch() public {
+        _setupEpochLifecycle();
+        uint256 pendingContextId = KMS_CONTEXT_COUNTER_BASE + 2;
+        uint256 pendingEpochId = EPOCH_COUNTER_BASE + 2;
+        (uint256 activeContextId, uint256 activeEpochId) = protocolConfig.getCurrentKmsContextAndEpoch();
+
+        // A pending context switch is never stuck: destroying the pending context settles the
+        // whole pair, clearing the paired pending epoch with it.
+        vm.prank(owner);
+        _defineNewKmsContextAndEpoch(_makeKmsNodeParams(2), _defaultThresholds());
+
+        vm.expectEmit(true, false, false, true, address(protocolConfig));
+        emit IProtocolConfig.KmsContextDestroyed(pendingContextId);
+        vm.prank(owner);
+        protocolConfig.destroyKmsContext(pendingContextId);
+
+        assertFalse(protocolConfig.isValidKmsContext(pendingContextId));
+        assertFalse(protocolConfig.isValidEpochForContext(pendingContextId, pendingEpochId));
+        (uint256 contextAfter, uint256 epochAfter) = protocolConfig.getCurrentKmsContextAndEpoch();
+        assertEq(contextAfter, activeContextId);
+        assertEq(epochAfter, activeEpochId);
     }
 
     function test_revertDestroyEpochNotOwner() public {

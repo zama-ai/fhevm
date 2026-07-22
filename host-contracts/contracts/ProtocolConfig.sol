@@ -289,7 +289,8 @@ contract ProtocolConfig is IProtocolConfig, UUPSUpgradeableEmptyProxy, ACLOwnabl
     /// @dev Context-switch: governance opens a new signer set + epoch, both Pending.
     /// @dev The DAO must not open a switch while another is in flight: at most one context and one
     ///      epoch may be non-active (Pending/Created) at a time. Settle the in-flight one first by
-    ///      completing it (confirmKmsContextCreation then confirmEpochActivation).
+    ///      completing it (confirmKmsContextCreation then confirmEpochActivation) or aborting it
+    ///      (destroyKmsContext).
     function defineNewKmsContextAndEpoch(
         KmsNodeParams[] calldata kmsNodeParams,
         KmsThresholds calldata thresholds,
@@ -329,7 +330,7 @@ contract ProtocolConfig is IProtocolConfig, UUPSUpgradeableEmptyProxy, ACLOwnabl
     /// @dev Same-set resharing: governance opens a new Pending epoch under the active context, no signer change.
     /// @dev The DAO must not open a switch while another is in flight: at most one context and one
     ///      epoch may be non-active (Pending/Created) at a time. Settle the in-flight one first by
-    ///      completing it (confirmEpochActivation).
+    ///      completing it (confirmEpochActivation) or aborting it (destroyKmsEpoch).
     function defineNewEpochForCurrentKmsContext() external virtual onlyACLOwner {
         ProtocolConfigStorage storage $ = _getProtocolConfigStorage();
         uint256 latestActiveKmsContextId = $.latestActiveKmsContextId;
@@ -451,8 +452,9 @@ contract ProtocolConfig is IProtocolConfig, UUPSUpgradeableEmptyProxy, ACLOwnabl
 
         // Confirm epoch activation: add this signer's vote under that hash, activate the epoch once all signers agree.
         // Record one confirmation per signer, counted by data hash so quorum requires all signers on the same result.
-        // Unanimity is required by design: a single divergent dataHash splits the vote so no hash reaches quorum,
-        // leaving the epoch Pending until the signers converge on a single result.
+        // Unanimity is required by design: a single divergent dataHash splits the vote so no hash reaches quorum.
+        // Confirmations are one-shot per signer, so a divergent vote can never converge — the epoch stays
+        // Pending until governance settles it with destroyKmsEpoch() and re-triggers the rotation.
         if ($.epochActivationConfirmedBySigner[epochId][signer]) {
             revert EpochActivationAlreadyConfirmed(signer, epochId);
         }
@@ -511,7 +513,21 @@ contract ProtocolConfig is IProtocolConfig, UUPSUpgradeableEmptyProxy, ACLOwnabl
         if (epochId == $.latestActiveEpochId) {
             revert LatestActiveKmsEpochCannotBeDestroyed(epochId);
         }
-        if ($.epochState[epochId] != EpochState.Active) {
+
+        // Destroyable cases, everything else reverts:
+        // - Active: retire a superseded epoch so its old shares stop being served.
+        // - Pending under an Active context: abort a stuck same-set rotation. Activation
+        //   confirmations are one-shot per signer, so a divergent vote can never reach unanimity
+        //   and the epoch would otherwise stay Pending forever — with its context still current,
+        //   neither destroyKmsContext() (reverts for the latest-active context) nor completion
+        //   could ever settle it. The pending epoch of an in-flight context switch (context
+        //   Pending/Created) is settled by destroyKmsContext() instead, which clears its paired
+        //   epoch itself.
+        EpochState state = $.epochState[epochId];
+        bool isEpochActive = state == EpochState.Active;
+        bool isEpochPendingUnderActiveContext = state == EpochState.Pending &&
+            $.contextState[$.contextForEpoch[epochId]] == ContextState.Active;
+        if (!isEpochActive && !isEpochPendingUnderActiveContext) {
             revert InvalidKmsEpoch(epochId);
         }
 
