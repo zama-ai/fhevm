@@ -239,12 +239,60 @@ export function computeUnifiedDigest(cfg: UnifiedConfig, req: UnifiedDecryptRequ
 }
 
 /**
- * Build a Safe-style static multisig signature: each owner signs the unified
- * EIP-712 struct, and the 65-byte parts are concatenated sorted ascending by
- * signer address (Safe's canonical encoding — the ordering doubles as dedup).
- * Submit the result via SignMode `{kind: 'raw'}`. `order: 'descending'`
- * deliberately reverses the part order for ordering negatives; passing the same
- * signer twice yields a duplicated-part blob (sorting is a no-op on equal keys).
+ * One 65-byte {r,s,v} signature part of a Safe-style multisig blob, keyed by
+ * the owner address the wallet will attribute it to (lowercase hex).
+ */
+export interface SignaturePart {
+  readonly address: string;
+  readonly signature: string;
+}
+
+/**
+ * Sort parts ascending by owner address — Safe's canonical encoding, where the
+ * ordering doubles as dedup. Code-point comparison on lowercase fixed-length
+ * hex equals numeric address order (deliberately NOT localeCompare, whose ICU
+ * collation is locale-dependent).
+ */
+export function sortSignatureParts(parts: readonly SignaturePart[]): SignaturePart[] {
+  return [...parts].sort((a, b) => (a.address < b.address ? -1 : 1));
+}
+
+/**
+ * Concatenate 65-byte parts into one blob, optionally followed by trailing
+ * bytes (raw hex, no `0x`) — Safe ignores anything past the static
+ * `threshold * 65` section, so valid blobs need not be a multiple of 65 bytes.
+ */
+export function concatSignatureParts(parts: readonly SignaturePart[], trailingHex = ''): string {
+  return `0x${parts.map((p) => p.signature.slice(2)).join('')}${trailingHex}`;
+}
+
+/**
+ * Each owner signs the unified EIP-712 struct — one plain ECDSA (v=27/28)
+ * part per owner, UNSORTED (callers arrange/sort/concat as the scenario
+ * needs; see `sortSignatureParts` / `concatSignatureParts`).
+ */
+export async function collectOwnerParts(
+  cfg: UnifiedConfig,
+  req: UnifiedDecryptRequest,
+  owners: readonly Signer[],
+): Promise<SignaturePart[]> {
+  const chainId = requestChainId(req);
+  const domain = domainOf(cfg, chainId);
+  const message = messageOf(req);
+  return Promise.all(
+    owners.map(async (owner) => ({
+      address: (await owner.getAddress()).toLowerCase(),
+      signature: await owner.signTypedData(domain, UNIFIED_USER_DECRYPT_TYPES, message),
+    })),
+  );
+}
+
+/**
+ * Build a Safe-style multisig signature: each owner signs the unified EIP-712
+ * struct, and the 65-byte parts are concatenated sorted ascending by owner
+ * address. Submit the result via SignMode `{kind: 'raw'}`. `order:
+ * 'descending'` deliberately reverses the part order for ordering negatives;
+ * passing the same signer twice yields a duplicated-part blob.
  */
 export async function buildMultisigSignature(
   cfg: UnifiedConfig,
@@ -252,21 +300,11 @@ export async function buildMultisigSignature(
   owners: readonly Signer[],
   opts?: { readonly order?: 'ascending' | 'descending' },
 ): Promise<string> {
-  const chainId = requestChainId(req);
-  const domain = domainOf(cfg, chainId);
-  const message = messageOf(req);
-  const parts = await Promise.all(
-    owners.map(async (owner) => ({
-      address: (await owner.getAddress()).toLowerCase(),
-      signature: await owner.signTypedData(domain, UNIFIED_USER_DECRYPT_TYPES, message),
-    })),
-  );
-  // Lowercase-hex string order equals numeric address order for equal-length hex.
-  parts.sort((a, b) => a.address.localeCompare(b.address));
+  const parts = sortSignatureParts(await collectOwnerParts(cfg, req, owners));
   if (opts?.order === 'descending') {
     parts.reverse();
   }
-  return `0x${parts.map((p) => p.signature.slice(2)).join('')}`;
+  return concatSignatureParts(parts);
 }
 
 async function signRequest(cfg: UnifiedConfig, req: UnifiedDecryptRequest, mode: SignMode): Promise<string> {

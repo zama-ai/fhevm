@@ -1,4 +1,6 @@
 import { expect } from 'chai';
+import type { Signer } from 'ethers';
+import { getBytes, zeroPadValue } from 'ethers';
 import { ethers } from 'hardhat';
 
 import {
@@ -9,15 +11,19 @@ import {
   UserDecrypt,
 } from '../../types';
 import { createInstances, relayerApiKey, relayerUrl, verifyingContractAddressDecryption } from '../instance';
-import type { UnifiedConfig, UnifiedDecryptRequest } from '../sdk/unified/unifiedUserDecrypt';
+import type { SignaturePart, UnifiedConfig, UnifiedDecryptRequest } from '../sdk/unified/unifiedUserDecrypt';
 import {
   backdatedStartTimestamp,
   buildMultisigSignature,
+  chainIdFromHandle,
+  collectOwnerParts,
   computeUnifiedDigest,
+  concatSignatureParts,
   directHandle,
   isSignatureRejection,
   pollJob,
   requestUnifiedUserDecrypt,
+  sortSignatureParts,
   submitUnifiedRequest,
 } from '../sdk/unified/unifiedUserDecrypt';
 import { Signers, getSigners, initSigners } from '../signers';
@@ -422,13 +428,146 @@ describe('ERC-1271 user decryption', function () {
     expect(isSignatureRejection(post), JSON.stringify(post.raw)).to.equal(true);
   });
 
-  it('test erc1271 user decrypt multisig rejects a garbage blob that is not 65-byte aligned', async function () {
+  it('test erc1271 user decrypt multisig rejects a garbage blob below the threshold minimum length', async function () {
     const req = await freshMultisigRequest(multisig2of3, multisig2of3Address);
-    // 100 bytes: not a valid ECDSA signature and not 65-byte aligned — every
-    // layer must hand it to the wallet without choking, and the wallet's
-    // alignment guard must answer with a non-magic value (no revert).
+    // 100 bytes of junk: neither a valid ECDSA signature nor enough bytes for
+    // two 65-byte parts (Safe's length rule) — every layer must hand it to
+    // the wallet without choking, and the wallet must answer with a non-magic
+    // value (no revert).
     const signature = `0x${'11'.repeat(100)}`;
     const { post } = await submitUnifiedRequest(cfg, req, { kind: 'raw', signature });
     expect(isSignatureRejection(post), JSON.stringify(post.raw)).to.equal(true);
+  });
+
+  // Safe overloads the `v` byte of each 65-byte part as a type selector; the
+  // mock mirrors the two additional static types (the dynamic v=0
+  // contract-signature type is deferred to a real-Safe interop follow-up).
+
+  /** Safe pre-approved-hash part (v=1): `r` carries the approving owner's address, `s` is unused. */
+  function approvedHashPart(ownerAddress: string): SignaturePart {
+    return {
+      address: ownerAddress.toLowerCase(),
+      signature: `${zeroPadValue(ownerAddress, 32)}${'00'.repeat(32)}01`,
+    };
+  }
+
+  /** Safe eth_sign part (v > 30): the owner eth_signs the digest and `v` is stored shifted by +4. */
+  async function ethSignPart(digest: string, owner: Signer & { address: string }): Promise<SignaturePart> {
+    const sig = await owner.signMessage(getBytes(digest));
+    const v = parseInt(sig.slice(-2), 16) + 4;
+    return { address: owner.address.toLowerCase(), signature: `${sig.slice(0, -2)}${v.toString(16)}` };
+  }
+
+  it('test erc1271 user decrypt multisig accepts a blob with trailing bytes (length not a multiple of 65)', async function () {
+    this.timeout(POSITIVE_TIMEOUT_MS + TIMEOUT_MARGIN_MS);
+    const req = await freshMultisigRequest(multisig2of3, multisig2of3Address);
+    const parts = sortSignatureParts(await collectOwnerParts(cfg, req, [signers.bob, signers.carol]));
+    // Two valid parts + 35 junk bytes = 165 bytes, NOT a multiple of 65:
+    // every layer must forward the unusual length untouched, and the wallet
+    // must ignore anything past the static threshold*65 section — exactly
+    // where real Safe appends dynamic data for contract-signature parts.
+    const signature = concatSignatureParts(parts, '11'.repeat(35));
+    expect(signature.length).to.equal(2 + 165 * 2);
+    const { post, poll } = await requestUnifiedUserDecrypt(
+      cfg,
+      req,
+      { kind: 'raw', signature },
+      { waitForTerminal: true, timeoutMs: POSITIVE_TIMEOUT_MS },
+    );
+    expect(post.httpStatus, JSON.stringify(post.raw)).to.equal(202);
+    expect(poll?.status, JSON.stringify(poll?.raw)).to.equal('succeeded');
+  });
+
+  it('test erc1271 user decrypt multisig accepts a mixed blob (ECDSA part + pre-approved-hash part)', async function () {
+    this.timeout(POSITIVE_TIMEOUT_MS + TIMEOUT_MARGIN_MS);
+    const req = await freshMultisigRequest(multisig2of3, multisig2of3Address);
+    const digest = computeUnifiedDigest(cfg, req);
+    // bob pre-approves the digest on-chain (Safe's approveHash flow); carol
+    // signs normally. The blob mixes a v=1 part (r = bob's address) with a
+    // plain ECDSA part — a realistic Safe part-type combination.
+    await (await multisig2of3.connect(signers.bob).approveHash(digest)).wait();
+    const [carolPart] = await collectOwnerParts(cfg, req, [signers.carol]);
+    const signature = concatSignatureParts(sortSignatureParts([approvedHashPart(signers.bob.address), carolPart]));
+    const { post, poll } = await requestUnifiedUserDecrypt(
+      cfg,
+      req,
+      { kind: 'raw', signature },
+      { waitForTerminal: true, timeoutMs: POSITIVE_TIMEOUT_MS },
+    );
+    expect(post.httpStatus, JSON.stringify(post.raw)).to.equal(202);
+    expect(poll?.status, JSON.stringify(poll?.raw)).to.equal('succeeded');
+  });
+
+  it('test erc1271 user decrypt multisig accepts eth_sign parts (v shifted by 4)', async function () {
+    this.timeout(POSITIVE_TIMEOUT_MS + TIMEOUT_MARGIN_MS);
+    const req = await freshMultisigRequest(multisig2of3, multisig2of3Address);
+    const digest = computeUnifiedDigest(cfg, req);
+    // Safe's eth_sign encoding: owners sign the eth_sign wrap of the digest
+    // and the part stores v+4 (31/32) as the type selector.
+    const parts = sortSignatureParts([
+      await ethSignPart(digest, signers.bob),
+      await ethSignPart(digest, signers.carol),
+    ]);
+    const signature = concatSignatureParts(parts);
+    const { post, poll } = await requestUnifiedUserDecrypt(
+      cfg,
+      req,
+      { kind: 'raw', signature },
+      { waitForTerminal: true, timeoutMs: POSITIVE_TIMEOUT_MS },
+    );
+    expect(post.httpStatus, JSON.stringify(post.raw)).to.equal(202);
+    expect(poll?.status, JSON.stringify(poll?.raw)).to.equal('succeeded');
+  });
+
+  it('test erc1271 user decrypt multisig rejects a 130-byte blob below a threshold of three', async function () {
+    const req = await freshMultisigRequest(multisig3of3, multisig3of3Address);
+    // Two valid owner parts (130 bytes — genuinely longer than one ECDSA
+    // signature) still below the 3-of-3 threshold: pins the part-count rule
+    // for >65-byte blobs (the 1-of-3 negative only covers a single part).
+    const signature = await buildMultisigSignature(cfg, req, [signers.bob, signers.carol]);
+    const { post } = await submitUnifiedRequest(cfg, req, { kind: 'raw', signature });
+    expect(isSignatureRejection(post), JSON.stringify(post.raw)).to.equal(true);
+  });
+
+  it('test erc1271 user decrypt multisig rejects a 3-part blob with one out-of-place part', async function () {
+    const req = await freshMultisigRequest(multisig3of3, multisig3of3Address);
+    const sorted = sortSignatureParts(await collectOwnerParts(cfg, req, [signers.bob, signers.carol, signers.dave]));
+    // Swap the last two parts: the first pair stays ascending, the second
+    // violates the rule — pins that ordering is checked PAIRWISE (the
+    // descending 2-part negative cannot distinguish pairwise from
+    // first-vs-last checking).
+    const signature = concatSignatureParts([sorted[0], sorted[2], sorted[1]]);
+    const { post } = await submitUnifiedRequest(cfg, req, { kind: 'raw', signature });
+    expect(isSignatureRejection(post), JSON.stringify(post.raw)).to.equal(true);
+  });
+
+  it('test erc1271 user decrypt legacy v2 route rejects signatures longer than 65 bytes', async function () {
+    // 'Both v2 and v3 should work' cannot hold for ERC-1271: /v2 validates
+    // the signature as EXACTLY 130 raw-hex chars and the legacy gateway path
+    // verifies with on-chain ecrecover only — multisig ERC-1271 is v3-only by
+    // design. Pin the v2 wire-level rejection as executable documentation.
+    const req = await freshMultisigRequest(multisig2of3, multisig2of3Address);
+    const blob = (await buildMultisigSignature(cfg, req, [signers.bob, signers.carol])).slice(2); // 260 hex chars
+    const body = {
+      handleContractPairs: [{ handle: req.handles[0].ctHandle, contractAddress: req.handles[0].contractAddress }],
+      requestValidity: { startTimestamp: String(req.startTimestamp), durationDays: '7' },
+      contractsChainId: String(chainIdFromHandle(req.handles[0].ctHandle)),
+      contractAddresses: [multisig2of3Address],
+      userAddress: multisig2of3Address,
+      signature: blob,
+      publicKey: req.publicKey.replace(/^0x/, ''),
+      extraData: '0x00',
+    };
+    const baseUrl = relayerUrl.replace(/\/(v[0-9]+)\/?$/, '').replace(/\/$/, '');
+    const resp = await fetch(`${baseUrl}/v2/user-decrypt`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json', ...(relayerApiKey ? { 'x-api-key': relayerApiKey } : {}) },
+      body: JSON.stringify(body),
+    });
+    const raw = JSON.stringify(await resp.json().catch(() => ({})));
+    expect(resp.status, raw).to.equal(400);
+    // The rejection must be the signature-length rule, not an unrelated field.
+    expect(raw, raw).to.match(/signature/i);
+    expect(raw, raw).to.match(/130/);
   });
 });
