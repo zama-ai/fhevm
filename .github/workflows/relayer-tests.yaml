@@ -48,11 +48,10 @@ jobs:
           token: ${{ secrets.BLOCKCHAIN_ACTIONS_TOKEN }}
           submodules: recursive
 
-      - name: Setup Rust toolchain file
-        run: cp relayer/rust-toolchain.toml .
-
-      - name: Rust setup
-        uses: dsherret/rust-toolchain-file@3551321aa44dd44a0393eb3b6bdfbc5d25ecf621 # v1
+      - name: Setup Rust
+        uses: ./.github/actions/setup_rust
+        with:
+          toolchain-dir: relayer
 
       - name: Cache Rust dependencies and build artifacts
         uses: Swatinem/rust-cache@779680da715d629ac1d338a641029a2f4372abb5 # v2.8.2
@@ -90,11 +89,10 @@ jobs:
           token: ${{ secrets.BLOCKCHAIN_ACTIONS_TOKEN }}
           submodules: recursive
 
-      - name: Setup Rust toolchain file
-        run: cp relayer/rust-toolchain.toml .
-
       - name: Setup Rust
-        uses: dsherret/rust-toolchain-file@3551321aa44dd44a0393eb3b6bdfbc5d25ecf621 # v1
+        uses: ./.github/actions/setup_rust
+        with:
+          toolchain-dir: relayer
 
       - name: Cache Rust dependencies
         uses: Swatinem/rust-cache@779680da715d629ac1d338a641029a2f4372abb5 # v2.8.2
@@ -157,11 +155,10 @@ jobs:
             echo "TEST_DATABASE_URL=postgres://${DB_USER}:${DB_PASSWORD}@localhost:${DB_PORT}/${DB_NAME}"
           } >> "$GITHUB_ENV"
 
-      - name: Setup Rust toolchain file
-        run: cp relayer/rust-toolchain.toml .
-
       - name: Setup Rust
-        uses: dsherret/rust-toolchain-file@3551321aa44dd44a0393eb3b6bdfbc5d25ecf621 # v1
+        uses: ./.github/actions/setup_rust
+        with:
+          toolchain-dir: relayer
 
       - name: Cache Rust dependencies and build artifacts
         uses: Swatinem/rust-cache@779680da715d629ac1d338a641029a2f4372abb5 # v2.8.2
@@ -176,8 +173,7 @@ jobs:
           if ! command -v sqlx &> /dev/null; then
             echo "Installing sqlx-cli..."
             # Pin to the same series as the relayer's `sqlx` dependency
-            # (0.8.6 in relayer/Cargo.toml). sqlx-cli 0.9.0 raised its
-            # MSRV to rustc 1.94; rust-toolchain.toml pins 1.91.1.
+            # (0.8.6 in relayer/Cargo.toml).
             cargo install sqlx-cli --version 0.8.6 --no-default-features --features postgres --locked
           else
             echo "sqlx-cli found in cache."

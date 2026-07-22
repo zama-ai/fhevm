@@ -15,7 +15,7 @@ long-running-tests = []
 integration-tests = ["dep:ethereum_rpc_mock"]
 
 [dependencies]
-alloy = { version = "1.7.3", features = [
+alloy = { version = "2.2.0", features = [
   "consensus",
   "json-rpc",
   "provider-ws",
@@ -88,7 +88,7 @@ built = { version = "0.8", features = [
 [dev-dependencies]
 # `signer-local` (PrivateKeySigner) is needed to forge EOA signatures in pre-check tests;
 # the mock provider used there is already available via the `json-rpc` feature above.
-alloy = { version = "1.7.3", features = ["signer-local"] }
+alloy = { version = "2.2.0", features = ["signer-local"] }
 tempfile = "3.25.0"
 rand = "0.10.0"
 rstest = "0.26.1"

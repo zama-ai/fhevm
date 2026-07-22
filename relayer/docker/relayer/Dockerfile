@@ -1,11 +1,13 @@
 # syntax=docker/dockerfile:1
-# Base from https://docs.docker.com/guides/rust/develop/
-ARG RUST_VERSION=1.93
+# RUST_IMAGE_VERSION is intentionally left without a default so the Rust toolchain
+# version has a single source of truth: relayer/rust-toolchain.toml.
+ARG RUST_IMAGE_VERSION
 ARG APP_NAME=fhevm-relayer
 
-FROM cgr.dev/zama.ai/rust:${RUST_VERSION}-dev AS build
+FROM ghcr.io/zama-ai/fhevm/gci/rust-glibc:${RUST_IMAGE_VERSION} AS build
 ARG APP_NAME
 WORKDIR /app
+USER root
 
 # Build the application.
 # Leverage a cache mount to /usr/local/cargo/registry/
@@ -14,9 +16,6 @@ WORKDIR /app
 # Leverage a bind mount to the src directory to avoid having to copy the
 # source code into the container. Once built, copy the executable to an
 # output directory before the cache mounted /app/target is unmounted.
-USER root
-RUN apk add --no-cache openssl-dev=3.6.1-r4
-
 RUN --mount=type=bind,source=relayer/Cargo.toml,target=Cargo.toml \
     --mount=type=bind,source=relayer/Cargo.lock,target=Cargo.lock \
     --mount=type=bind,source=relayer/build.rs,target=build.rs \
