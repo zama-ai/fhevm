@@ -58,11 +58,11 @@ pub use fhevm_engine_common::versioning::EVENT_STACK_VERSION_UPGRADED;
 /// for now; expected to become configurable.
 const READINESS_CONFIRMATIONS: i64 = 100;
 
-/// PostgreSQL advisory-lock key used to serialize cutover against in-flight
-/// BCS writes. `execute_cutover` takes the exclusive form; every BCS-mode
-/// compute worker takes the shared form inside its write tx via
-/// [`fhevm_engine_common::versioning::cutover_gate`]. Re-exported from the common
-/// crate so the controller and all workers agree on one canonical value.
+/// PostgreSQL advisory-lock key used to serialize controller changes against
+/// writes. Cutover and rollback take the exclusive form; write transactions take
+/// the shared form through [`fhevm_engine_common::versioning::begin_write_guarded`].
+/// Re-exported from the common crate so the controller and all writers agree on
+/// one canonical value.
 pub use fhevm_engine_common::versioning::CUTOVER_LOCK_ID;
 
 /// Returns the `upgrade_state.stack_role` value for a given `gcs_mode` flag:
@@ -1036,10 +1036,19 @@ async fn try_cutover_if_consensus(pool: &Pool<Postgres>) -> Result<(), Error> {
     execute_cutover(pool).await
 }
 
-/// Roll back a dry-run: PAUSED/failed, reset schema, wake workers. Scoped to the
-/// `end_block` window so a stale re-emitted timeout can't reset a newer attempt. Returns whether it acted.
+/// Roll back a dry-run under the write lock: PAUSED/failed, reset schema, wake workers.
+/// Scoped to `end_block` so a stale timeout cannot reset a newer attempt. Returns whether it acted.
 async fn rollback_dry_run(pool: &Pool<Postgres>, end_block: i64) -> Result<bool, Error> {
     let mut tx = pool.begin().await?;
+    sqlx::query("SELECT pg_advisory_xact_lock($1)")
+        .bind(CUTOVER_LOCK_ID)
+        .execute(&mut *tx)
+        .await?;
+    info!(
+        lock_id = CUTOVER_LOCK_ID,
+        "rollback acquired exclusive advisory lock"
+    );
+
     let claimed = sqlx::query(
         r#"
         UPDATE upgrade_state
@@ -1951,5 +1960,90 @@ mod tests {
             .await
             .expect("gw transition");
         assert!(gw_flag(pool.clone()).await, "matching proposal releases gw");
+    }
+
+    #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+    async fn gcs_rollback_policy_distinguishes_derived_and_raw_writes() {
+        use fhevm_engine_common::versioning::{begin_write_guarded, GcsRollbackPolicy, WriteGuard};
+        let (_instance, pool) = test_pool().await;
+
+        seed_gcs_row(&pool, "DryRunStarted", "in_progress").await;
+        assert!(
+            matches!(
+                begin_write_guarded(&pool, true, GcsRollbackPolicy::Skip)
+                    .await
+                    .expect("guard"),
+                WriteGuard::Proceed(_)
+            ),
+            "write proceeds while dry-running"
+        );
+
+        seed_gcs_row(&pool, "PAUSED", "failed").await;
+        assert!(
+            matches!(
+                begin_write_guarded(&pool, true, GcsRollbackPolicy::Skip)
+                    .await
+                    .expect("guard"),
+                WriteGuard::Skip
+            ),
+            "derived output is skipped after rollback"
+        );
+        assert!(
+            matches!(
+                begin_write_guarded(&pool, true, GcsRollbackPolicy::Continue)
+                    .await
+                    .expect("guard"),
+                WriteGuard::Proceed(_)
+            ),
+            "raw ingestion continues after rollback"
+        );
+    }
+
+    #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+    async fn rollback_waits_for_in_flight_guarded_write() {
+        use fhevm_engine_common::versioning::{begin_write_guarded, GcsRollbackPolicy, WriteGuard};
+        use tokio::time::{timeout, Duration};
+
+        let (_instance, pool) = test_pool().await;
+        seed_gcs_row(&pool, "DryRunStarted", "in_progress").await;
+        create_gcs_schema(&pool).await.expect("create gcs schema");
+        create_marker(&pool).await;
+
+        let guarded_tx = match begin_write_guarded(&pool, true, GcsRollbackPolicy::Continue)
+            .await
+            .expect("guard")
+        {
+            WriteGuard::Proceed(tx) => tx,
+            WriteGuard::Stop | WriteGuard::Skip => panic!("write unexpectedly blocked"),
+        };
+
+        let rollback_pool = pool.clone();
+        let mut rollback = tokio::spawn(async move { rollback_dry_run(&rollback_pool, 200).await });
+
+        assert!(
+            timeout(Duration::from_millis(200), &mut rollback)
+                .await
+                .is_err(),
+            "rollback must block while a writer holds the shared advisory lock"
+        );
+        assert!(
+            marker_exists(&pool).await,
+            "schema must not reset while the guarded write is in flight"
+        );
+
+        guarded_tx.commit().await.expect("release write guard");
+        assert!(
+            timeout(Duration::from_secs(10), rollback)
+                .await
+                .expect("rollback remained blocked")
+                .expect("rollback task panicked")
+                .expect("rollback failed"),
+            "rollback should claim the active dry-run"
+        );
+        assert!(
+            !marker_exists(&pool).await,
+            "schema should reset after the guarded write commits"
+        );
+        assert_eq!(gcs_state(&pool).await, ("PAUSED".into(), "failed".into()));
     }
 }

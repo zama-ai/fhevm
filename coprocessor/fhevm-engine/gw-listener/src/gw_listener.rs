@@ -481,17 +481,18 @@ impl<P: Provider<Ethereum> + Clone + 'static> GatewayListener<P> {
             .transpose()
             .map_err(|err| anyhow::anyhow!("block_number does not fit in i64: {err}"))?;
 
-        // Cutover safety: fence this write behind the shared cutover lock +
-        // retirement re-check. `verify_proofs` is not a merge target, but this
-        // makes every BCS write uniformly stop the instant a cutover retires the
-        // stack. GCS-mode listeners skip the gate (they write the gcs schema).
+        // Fence this write against cutover and schema reset. Retired BCS
+        // listeners stop, while GCS raw ingestion continues after rollback.
+        // `verify_proofs` is not merged, but follows the same write boundary as
+        // the other listener tables.
         let Some(mut tx) = fhevm_engine_common::versioning::begin_write_guarded(
             db_pool,
             self.stack_mode.gcs_mode(),
+            fhevm_engine_common::versioning::GcsRollbackPolicy::Continue,
         )
         .await?
-        else {
-            info!("Cutover completed — gw-listener skipping verify_proofs insert (retired stack)");
+        .into_tx() else {
+            info!("Cutover completed — gw-listener skipping verify_proofs insert on retired stack");
             return Ok(());
         };
         // TODO: check if we can avoid the cast from u256 to i64
@@ -567,16 +568,17 @@ impl<P: Provider<Ethereum> + Clone + 'static> GatewayListener<P> {
             .earliest_open_ct_commits_block
             .map(i64::try_from)
             .transpose()?;
-        // Cutover safety: gate the watermark write (+ its notify) behind the
-        // shared cutover lock + retirement re-check, so a retired BCS listener
-        // stops advancing the watermark the instant a cutover flips the stack.
+        // Fence the watermark and notification against cutover and schema reset.
+        // Retired BCS listeners stop; GCS raw ingestion continues after rollback.
+        // This keeps the stored progress aligned with the listener's writes.
         let Some(mut tx) = fhevm_engine_common::versioning::begin_write_guarded(
             db_pool,
             self.stack_mode.gcs_mode(),
+            fhevm_engine_common::versioning::GcsRollbackPolicy::Continue,
         )
         .await?
-        else {
-            info!("Cutover completed — gw-listener skipping watermark update (retired stack)");
+        .into_tx() else {
+            info!("Cutover completed — gw-listener skipping watermark update on retired stack");
             return Ok(());
         };
         sqlx::query(

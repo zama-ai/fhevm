@@ -42,7 +42,7 @@ use alloy::providers::Provider;
 use fhevm_engine_common::database::GCS_SCHEMA_QUOTED;
 use fhevm_engine_common::utils::DatabaseURL;
 use serde::{Deserialize, Serialize};
-use sqlx::{postgres::PgListener, Pool, Postgres};
+use sqlx::{postgres::PgListener, Executor, Pool, Postgres};
 use thiserror::Error;
 use tokio::select;
 use tokio::sync::RwLock;
@@ -241,14 +241,15 @@ fn all_slots_filled(slots: &[Option<Vec<u8>>]) -> bool {
 /// Returns `(start_block, end_block)` for the GCS dry-run when it's active.
 /// `None` otherwise. Scoped to `stack_role = 'GCS'` because BCS also stays
 /// `status='in_progress'` during the upgrade and doesn't own the replay window.
-pub(crate) async fn active_upgrade_window(
-    pool: &Pool<Postgres>,
-) -> Result<Option<(i64, i64)>, Error> {
+pub(crate) async fn active_upgrade_window<'e, E>(executor: E) -> Result<Option<(i64, i64)>, Error>
+where
+    E: Executor<'e, Database = Postgres>,
+{
     let row: Option<(String, Option<i64>, Option<i64>)> = sqlx::query_as(
         "SELECT state, start_block, end_block FROM upgrade_state
           WHERE stack_role = 'GCS' AND status = 'in_progress'",
     )
-    .fetch_optional(pool)
+    .fetch_optional(executor)
     .await?;
 
     let Some((state, start_block, end_block)) = row else {
