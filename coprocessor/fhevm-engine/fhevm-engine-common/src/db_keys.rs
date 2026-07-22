@@ -489,9 +489,8 @@ async fn read_large_object_in_chunks(
         if timestamp.elapsed().as_secs() > 10 {
             // calculate the bandwidth of the read operation
             let elapsed = started_at.elapsed().as_secs();
-            let bandwidth = (bytes.len() as u64)
-                .checked_div(elapsed)
-                .unwrap_or(bytes.len() as u64);
+            let total_bytes = bytes.len() as u64;
+            let bandwidth = total_bytes.checked_div(elapsed).unwrap_or(total_bytes);
 
             info!(
                 "Read {} bytes so far from large object (Oid: {:?}), bandwidth: {}/s",
