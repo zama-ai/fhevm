@@ -139,38 +139,16 @@ env:
   ANVIL_NODE_CHART: oci://hub.zama.org/ghcr/zama-ai/fhevm/charts/anvil-node
   ANVIL_NODE_CHART_VERSION: "0.4.1"
   #=====CONTRACTS============================================================
-  # gateway/host-contracts version independently but are both published from
-  # every repo tag, so pinning both to v0.13.0 (matching the zws-testnet
-  # pairing) is valid. MUST be >= v0.13.0: this is the RFC013
-  # KMSGeneration-to-host-chain migration boundary, and every downstream step
-  # (kms-connector wiring, keygen trigger) assumes the post-migration topology
-  # (KMSGeneration + ProtocolConfig on the host chain). Older tags lack deploy
-  # tasks/args these steps need.
   GATEWAY_CONTRACTS_VERSION: "v0.13.0"
   HOST_CONTRACTS_VERSION: "v0.13.0"
   CONTRACTS_CHART: oci://hub.zama.org/ghcr/zama-ai/fhevm/charts/contracts
   CONTRACTS_CHART_VERSION: "0.8.2"
   #=====COPROCESSOR==========================================================
-  # Must be >= v0.13.0 to match contracts' RFC013 migration above (older
-  # binaries lack the ciphertext-commits/kms-generation args and still require
-  # since-removed ones). Pinned v0.13.0 to match the zws-testnet pairing.
   COPROCESSOR_VERSION: "v0.13.1"
   COPROCESSOR_CHART: oci://hub.zama.org/ghcr/zama-ai/fhevm/charts/coprocessor
   COPROCESSOR_CHART_VERSION: "0.13.0"
-  # Number of independent coprocessor parties to deploy (own Postgres, S3
-  # bucket and tx-sender/signer identity each; registered on the gateway with a
-  # majority threshold). Mirrors NB_KMS_CORE's per-party loops below. Default 1
-  # keeps the single-coprocessor topology; workflow_dispatch overrides it via
-  # the nb_coprocessor input.
   NB_COPROCESSOR: "3"
   #=====KMS CONNECTOR=========================================================
-  # v0.13.1-hotfix.kmsconnector.1 + chart 1.5.2 is the known-good pairing
-  # confirmed running in production (zama-zws/gitops's mpc-testnet). Deliberate
-  # downgrade from v0.14.0-4/chart 1.5.3 (whose chart stopped rendering the
-  # kms_verifier_address that gw-listener's Config still requires). At chart
-  # 1.5.2, kmsGeneration lives under commonConfig.gatewayContractAddresses and
-  # kmsVerifier under ethereumContractAddresses (see the --set-string calls
-  # below); both route to the same env vars regardless of chain topology.
   KMS_CONNECTOR_VERSION: "v0.13.1-hotfix.kmsconnector.1"
   KMS_CONNECTOR_CHART: oci://hub.zama.org/ghcr/zama-ai/fhevm/charts/kms-connector
   KMS_CONNECTOR_CHART_VERSION: "1.5.2"
@@ -178,53 +156,19 @@ env:
   COPROCESSOR_INFRA_CHART: oci://hub.zama.org/ghcr/zama-zws/crossplane/coprocessor-infra
   COPROCESSOR_INFRA_CHART_VERSION: "0.6.5"
   #=====COMMON===============================================================
-  # RELAYER_VERSION/TEST_SUITE_VERSION back the relayer(+migrate) and
-  # test-suite images, both via the generic `common` chart. v0.13.0 is
-  # confirmed present + running in production (zama-zws/gitops relayer values);
-  # relayer's own v0.11.x tags 404 on pull.
   RELAYER_VERSION: "v0.13.0"
-  # The pinned test-suite tags (v0.13.0, v0.11.5-0) bundle a tfhe/node-tfhe
-  # that can't deserialize kms-core v0.13.20's tfhe-rs-1.6.1 public keys
-  # ("expected variant index 0 <= i < 1"). Test path uses @zama-fhe/relayer-sdk
-  # (node-tfhe 1.5.4), so the key format must match: pair with a kms-core on
-  # tfhe-rs 1.5.x (e.g. v0.13.10). This pinned fallback only matters when
-  # build_images is off.
   TEST_SUITE_VERSION: "b858525"
-  # PR-trigger default for the relayer-sdk e2e run (dispatch uses the
-  # relayer_sdk_version input). Non-empty: deploy the @zama-fhe/relayer-sdk
-  # suite too (patched into values-test-suite-workflow-relayer-sdk-e2e.yaml's
-  # RELAYER_SDK_VERSION); empty: run the @fhevm/sdk suite only.
-  RELAYER_SDK_VERSION: ""
+  RELAYER_SDK_VERSION: ""  # If RELAYER_SDK_VERSION is empty: run the @fhevm/sdk suite only.
   COMMON_CHART: oci://hub.zama.org/ghcr/zama-zws/helm-charts/common
   COMMON_CHART_VERSION: "0.3.3"
   #=====KMS==================================================================
-  # Pinned to v0.13.20 (was v0.13.22): v0.13.21/.22 landed the PRSS-Mask
-  # counter-schedule change (kms #663 "non-overlapping counters in batched
-  # PRSS-Mask" + breaking #712 "backward compatible PRSS hotfix", Issue#3089),
-  # which alters the masking noise added during threshold decryption. Runtime
-  # evidence showed FheRand (oblivious-PRNG) ciphertexts decrypting to a
-  # constant 0xAAAA..AAAA on v0.13.22 while ordinary ciphertexts decrypted
-  # correctly (see gateway Decryption PublicDecryptionResponse events). v0.13.20
-  # is the last tag before that schedule change and the version this preview's
-  # coprocessor (v0.13.1) + kms-connector (v0.13.1-hotfix.kmsconnector.1) pairing
-  # was already validated against.
   KMS_REPO_REF: "v0.13.20"
   KMS_CORE_TAG: "v0.13.20"
   NB_KMS_CORE: "4"
   #=====REDIS================================================================
-  # In-cluster Redis used as each coprocessor party's host-listener-consumer
-  # broker (redis://coprocessor-redis-<i>-master:6379), one per party. Same
-  # iamguarded chart the gitops coprocessor-redis app uses
-  # (values/coproc/coprocessor-redis).
   REDIS_CHART: oci://hub.zama.org/cgr/zama.ai/iamguarded-charts/redis
   REDIS_CHART_VERSION: "25.3.8"
   #=====LISTENER=============================================================
-  # Dedicated blockchain-event producer (listener/listener-core), one release
-  # per coprocessor party (listener-<i>). Indexes the host chain and publishes
-  # to that party's Redis; the coprocessor host-listener-consumer reads it. Same
-  # chart + role as gitops's eth-blockchain/eth-listener. LISTENER_VERSION is
-  # the image tag (pinned to the tag gitops's eth-listener runs); it must pair
-  # with COPROCESSOR_VERSION's host_listener_consumer (matching broker payload).
   LISTENER_CHART: oci://hub.zama.org/ghcr/zama-ai/fhevm/charts/listener
   LISTENER_CHART_VERSION: "0.1.1"
   LISTENER_VERSION: "v0.13.3"
@@ -324,9 +268,6 @@ jobs:
       packages: 'write' # Required to publish Docker images
       id-token: 'write' # Required for OIDC authentication
     # Explicit secrets (not `secrets: inherit`): every reusable *-docker-build
-    # workflow declares exactly these six required secrets, so we forward only
-    # those (via the &docker_secrets anchor reused by the other build jobs)
-    # instead of handing the called workflow every parent secret.
     secrets: &docker_secrets
       AWS_ACCESS_KEY_S3_USER: ${{ secrets.AWS_ACCESS_KEY_S3_USER }}
       AWS_SECRET_KEY_S3_USER: ${{ secrets.AWS_SECRET_KEY_S3_USER }}
@@ -395,14 +336,6 @@ jobs:
       - build-coprocessor
       - build-relayer
       - build-test-suite
-    # !cancelled() (not always()): build-* jobs are legitimately skipped when
-    # build_images is off, which would otherwise skip this job too via GitHub's
-    # implicit success() over the needs graph (actions/runner#2205). Any status
-    # function disables that implicit success() - but always() also forces the
-    # job to run through a workflow CANCEL, so a UI/queue cancel wasn't honored.
-    # !cancelled() keeps the skipped-needs behavior while letting a cancel stop
-    # this job. The check-labels.result guard still keeps it from masking a real
-    # upstream failure.
     if: >-
       !cancelled() &&
       needs.check-labels.outputs.should_deploy == 'true' &&
@@ -459,14 +392,6 @@ jobs:
   deploy:
     name: deploy
     needs: [check-labels, resolve-tags]
-    # !cancelled() (not always()): without a status function GitHub ANDs
-    # success() across the whole needs graph (actions/runner#2205), including
-    # build-* jobs that are skipped when build_images is off, silently no-oping
-    # deploy. always() would fix that but also forces deploy to run through a
-    # workflow CANCEL - so a UI/queue cancel started (or kept) this long job
-    # anyway. !cancelled() keeps the skipped-needs behavior yet lets a cancel
-    # stop it. Requiring resolve-tags' own success keeps a real failure from
-    # slipping through.
     if: >-
       !cancelled() &&
       needs.check-labels.outputs.should_deploy == 'true' &&
@@ -541,7 +466,7 @@ jobs:
 
       ######################################################################
       # DEDICATED KMS: reuse zama-ai/kms's own deploy pipeline
-      # (thresholdWithEnclave, 4 parties) instead of re-deriving the wiring.
+      # (thresholdWithEnclave, 4 or 13 parties) instead of re-deriving the wiring.
       # Side effect: deploy.sh also installs the namespace's
       # "registry-credentials" Secret (the name every fhevm chart's
       # imagePullSecrets hardcodes), so we don't install sync-secrets ourselves.
