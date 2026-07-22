@@ -99,7 +99,7 @@ const snapshotPriorityMode = async (
   inputVerifier: ReturnType<typeof getInputVerifier>,
 ): Promise<PriorityModeSnapshot> => ({
   gatewayWasPaused: await gatewayInputVerification.asOwner.paused(),
-  hostSigners: Array.from(await inputVerifier.getCoprocessorSigners(), (signer) => ethers.getAddress(signer)),
+  hostSigners: Array.from(await inputVerifier.getCoprocessorSigners(), (signer: string) => ethers.getAddress(signer)),
   hostThreshold: await inputVerifier.getThreshold(),
   priorityCoprocessorTxSender: await gatewayConfig.getPriorityCoprocessorTxSender(),
 });
@@ -137,7 +137,7 @@ const restorePriorityMode = async (
   await pauseGatewayInputVerification(gatewayInputVerification);
 
   try {
-    const currentHostSigners = Array.from(await inputVerifier.getCoprocessorSigners(), (signer) =>
+    const currentHostSigners = Array.from(await inputVerifier.getCoprocessorSigners(), (signer: string) =>
       ethers.getAddress(signer),
     );
     const currentHostThreshold = await inputVerifier.getThreshold();

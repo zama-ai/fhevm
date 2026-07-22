@@ -157,7 +157,6 @@ describe("rollout", () => {
       "11-coprocessor-sns-worker.lock.json",
     ]);
     expect(locks[0].env.TEST_SUITE_VERSION).toBe("to-test_suite_version");
-    expect(locks[0].env.RELAYER_SDK_VERSION).toBe("0.5.0-alpha.1");
     expect(locks[1].env.RELAYER_VERSION).toBe("to-relayer_version");
     expect(locks[2].env.GATEWAY_VERSION).toBe("to-gateway_version");
     expect(locks[3].env.CORE_VERSION).toBe("to-core_version");

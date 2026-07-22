@@ -52,7 +52,6 @@ const compatContractsFromSources = (test: CompatTestDefinition) =>
 const compatClientEnv = (test: CompatTestDefinition): Record<string, string> =>
   ({
     TEST_SUITE_VERSION: test.harness!.testSuiteVersion,
-    RELAYER_SDK_VERSION: test.harness!.relayerSdkVersion,
   });
 
 const validateStepName = (kind: string, value: unknown) => {

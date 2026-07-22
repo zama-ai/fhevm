@@ -1,3 +1,4 @@
+export type { Auth, AuthType, AuthApiKeyCookie, AuthBearerToken, AuthApiKeyHeader } from './auth.js';
 export type { TypedValue } from './primitives.js';
 export type { EncryptedValue, EncryptedValueLike } from './encryptedTypes.js';
 export type { Eip712Like } from './kms.js';

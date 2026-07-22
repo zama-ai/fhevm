@@ -96,6 +96,7 @@ export class FhevmSdk implements SdkInstance {
         singleThread: false,
         logger: {
           debug: (message: string) => console.log(message),
+          warn: (message: string) => console.log(message),
           error: (message: string, _cause: unknown) => console.error(message),
         },
       });
@@ -149,9 +150,9 @@ export class FhevmSdk implements SdkInstance {
       transportKeyPair = await this.#fullClient.generateTransportKeyPair();
     }
 
-    const signedPermit = await this.#fullClient.signDecryptionPermit({
+    const signedPermit = await this.#fullClient.signLegacyDecryptionPermit({
       contractAddresses: [contractAddress],
-      durationDays: 10,
+      durationSeconds: 10 * 86400,
       startTimestamp: parameters.startTimestamp ?? Math.floor(Date.now() / 1000),
       transportKeyPair,
       signer,
@@ -189,9 +190,9 @@ export class FhevmSdk implements SdkInstance {
       transportKeyPair = await this.#fullClient.generateTransportKeyPair();
     }
 
-    const signedPermit = await this.#fullClient.signDecryptionPermit({
+    const signedPermit = await this.#fullClient.signLegacyDecryptionPermit({
       contractAddresses: [contractAddress],
-      durationDays: 10,
+      durationSeconds: 10 * 86400,
       startTimestamp: parameters.startTimestamp ?? Math.floor(Date.now() / 1000),
       transportKeyPair,
       signer,
