@@ -3,7 +3,7 @@ import { TypedDataEncoder, getAddress } from 'ethers';
 import type { Signer } from 'ethers';
 import { ethers } from 'hardhat';
 
-import { ERC1271ApproveHashWallet, ERC1271MultisigWallet } from '../../types';
+import { ERC1271ApproveHashWallet, ERC1271MultisigWallet, EncryptedValueHolder } from '../../types';
 import { createInstances } from '../instance';
 import { FhevmSdk } from '../sdk/fhevm-sdk/sdk';
 import { Signers, getSigners, initSigners } from '../signers';
@@ -34,6 +34,15 @@ import { FhevmInstances } from '../types';
 // `parseSignedDecryptionPermit`. The signing path (`signDecryptionPermit`) is
 // deliberately unchanged and stays EOA/self-only: it hard-wires `userAddress`
 // to the connected signer (asserted below).
+//
+// Decrypt shape: each wallet's handle lives on a separate EncryptedValueHolder
+// contract with `FHE.allow(handle, wallet)`, and the wallet is only the
+// userAddress — the realistic setup (a wallet holding confidential tokens) and
+// the only one expressible through the SDK: both `checkPersistAllowed`
+// (`userAddress != contractAddress`) and the KMS connector (`userAddress`
+// listed in `allowedContracts`) reject a wallet decrypting a handle held by
+// itself. That shape stays covered by the raw-envelope protocol suite via
+// permissive `allowedContracts: []`.
 //
 // The suite skips itself when the legacy `@zama-fhe/relayer-sdk` adapter is
 // active (RELAYER_SDK_VERSION set): the surface exercised here is @fhevm/sdk's.
@@ -73,14 +82,8 @@ describe('ERC-1271 user decryption via the SDK client', function () {
   let multisigWalletAddress: string;
   let approveWallet: ERC1271ApproveHashWallet;
   let approveWalletAddress: string;
-
-  /**
-   * A permit legitimately signed by bob for HIMSELF, used as the authoritative
-   * template for the SDK's exact EIP-712 shape (domain incl. chainId and
-   * verifying contract, struct types, message field encoding). The gap tests
-   * clone it and re-point `message.userAddress` at a wallet.
-   */
-  let templateEip712: MutableEip712;
+  /** One holder per wallet: the dapp-side contract carrying that wallet's handle. */
+  let holders: Map<string, { holder: EncryptedValueHolder; holderAddress: string }>;
 
   // Captured once so the multisig parts (signed over the template's EIP-712)
   // match the digest the SDK rebuilds from the same parameters (the
@@ -102,38 +105,59 @@ describe('ERC-1271 user decryption via the SDK client', function () {
     transportKeyPair = await client.generateTransportKeyPair();
 
     // 2-of-3 multisig wallet (owners bob/carol/dave) and a Safe-style
-    // approveHash wallet (owner bob) — the userAddress targets of the tests
-    // and, via initValue, the handles for the commented happy paths.
+    // approveHash wallet (owner bob) — the userAddress targets of the tests.
     const multisigFactory = await ethers.getContractFactory('ERC1271MultisigWallet');
     multisigWallet = await multisigFactory
       .connect(signers.alice)
       .deploy([signers.bob.address, signers.carol.address, signers.dave.address], 2);
     await multisigWallet.waitForDeployment();
     multisigWalletAddress = await multisigWallet.getAddress();
-    await (await multisigWallet.connect(signers.alice).initValue(KNOWN_VALUE)).wait();
 
     const approveFactory = await ethers.getContractFactory('ERC1271ApproveHashWallet');
     approveWallet = await approveFactory.connect(signers.alice).deploy(signers.bob.address);
     await approveWallet.waitForDeployment();
     approveWalletAddress = await approveWallet.getAddress();
-    await (await approveWallet.connect(signers.alice).initValue(KNOWN_VALUE)).wait();
+
+    // One value holder per wallet, granting THAT wallet decrypt access.
+    const holderFactory = await ethers.getContractFactory('EncryptedValueHolder');
+    holders = new Map();
+    for (const walletAddress of [multisigWalletAddress, approveWalletAddress]) {
+      const holder = await holderFactory.connect(signers.alice).deploy();
+      await holder.waitForDeployment();
+      const holderAddress = await holder.getAddress();
+      await (await holder.connect(signers.alice).initValueFor(KNOWN_VALUE, walletAddress)).wait();
+      holders.set(walletAddress, { holder, holderAddress });
+    }
 
     startTimestamp = Math.floor(Date.now() / 1000);
+  });
 
-    const legitPermit = await client.signDecryptionPermit({
-      contractAddresses: [multisigWalletAddress],
+  function holderOf(walletAddress: string): { holder: EncryptedValueHolder; holderAddress: string } {
+    const entry = holders.get(walletAddress);
+    if (!entry) {
+      throw new Error(`no holder deployed for wallet ${walletAddress}`);
+    }
+    return entry;
+  }
+
+  /**
+   * The SDK's exact EIP-712 permit payload for a wallet userAddress: sign a
+   * legitimate self-permit (bob) against the wallet's HOLDER contract — the
+   * authoritative source of the SDK's domain/types/message encoding, with the
+   * holder in `allowedContracts` — then re-point `message.userAddress` at the
+   * wallet.
+   */
+  async function eip712ForWallet(walletAddress: string): Promise<MutableEip712> {
+    const { holderAddress } = holderOf(walletAddress);
+    const selfPermit = await client.signDecryptionPermit({
+      contractAddresses: [holderAddress as `0x${string}`],
       durationSeconds: DURATION_SECONDS,
       startTimestamp,
       transportKeyPair,
       signer: signers.bob,
       signerAddress: signers.bob.address as `0x${string}`,
     });
-    templateEip712 = structuredClone(legitPermit.eip712) as unknown as MutableEip712;
-  });
-
-  /** Clone the template eip712 and re-point its userAddress at `walletAddress`. */
-  function eip712ForWallet(walletAddress: string): MutableEip712 {
-    const eip712 = structuredClone(templateEip712);
+    const eip712 = structuredClone(selfPermit.eip712) as unknown as MutableEip712;
     eip712.message.userAddress = getAddress(walletAddress);
     return eip712;
   }
@@ -158,13 +182,14 @@ describe('ERC-1271 user decryption via the SDK client', function () {
   /** Safe-style static multisig blob: 65-byte parts sorted ascending by signer address. */
   async function multisigBlob(eip712: MutableEip712, owners: readonly Signer[]): Promise<string> {
     const parts = await Promise.all(owners.map((owner) => ownerPart(eip712, owner)));
-    parts.sort((a, b) => a.address.localeCompare(b.address));
+    // Code-point order on lowercase fixed-length hex equals numeric address order.
+    parts.sort((a, b) => (a.address < b.address ? -1 : 1));
     return `0x${parts.map((p) => p.signature.slice(2)).join('')}`;
   }
 
   it('parses and decrypts with a 130-byte multisig blob for a wallet userAddress (gate 1 + gate 2)', async function () {
     this.timeout(120_000);
-    const eip712 = eip712ForWallet(multisigWalletAddress);
+    const eip712 = await eip712ForWallet(multisigWalletAddress);
     const signature = await multisigBlob(eip712, [signers.bob, signers.carol]);
     // Two valid owner parts, 130 bytes — opaque per ERC-1271 and forwarded verbatim.
     expect(signature.length).to.equal(2 + 130 * 2);
@@ -178,18 +203,19 @@ describe('ERC-1271 user decryption via the SDK client', function () {
       },
       transportKeyPair,
     });
+    const { holder, holderAddress } = holderOf(multisigWalletAddress);
     const res = await client.decryptValue({
-      contractAddress: multisigWalletAddress as `0x${string}`,
+      contractAddress: holderAddress as `0x${string}`,
       transportKeyPair,
       signedPermit,
-      encryptedValue: (await multisigWallet.value()) as `0x${string}`,
+      encryptedValue: (await holder.value()) as `0x${string}`,
     });
     expect(BigInt(res.value as bigint | number)).to.equal(KNOWN_VALUE);
   });
 
   it('definitively rejects a single 65-byte owner signature below the wallet threshold (gate 2)', async function () {
     this.timeout(120_000);
-    const eip712 = eip712ForWallet(multisigWalletAddress);
+    const eip712 = await eip712ForWallet(multisigWalletAddress);
     const { signature } = await ownerPart(eip712, signers.bob);
     // Exactly 65 bytes, but a single owner is below the 2-of-3 threshold. The
     // 65-byte EOA fast-path recovers bob (!= the wallet userAddress), so verify
@@ -217,7 +243,7 @@ describe('ERC-1271 user decryption via the SDK client', function () {
 
   it('parses and decrypts with the empty approveHash signature (gate 1 + gate 2)', async function () {
     this.timeout(120_000);
-    const eip712 = eip712ForWallet(approveWalletAddress);
+    const eip712 = await eip712ForWallet(approveWalletAddress);
 
     // Pre-approve the exact digest on-chain, then decrypt with an empty signature.
     const { EIP712Domain: _d, ...structTypes } = eip712.types;
@@ -233,11 +259,12 @@ describe('ERC-1271 user decryption via the SDK client', function () {
       },
       transportKeyPair,
     });
+    const { holder, holderAddress } = holderOf(approveWalletAddress);
     const res = await client.decryptValue({
-      contractAddress: approveWalletAddress as `0x${string}`,
+      contractAddress: holderAddress as `0x${string}`,
       transportKeyPair,
       signedPermit,
-      encryptedValue: (await approveWallet.value()) as `0x${string}`,
+      encryptedValue: (await holder.value()) as `0x${string}`,
     });
     expect(BigInt(res.value as bigint | number)).to.equal(KNOWN_VALUE);
   });
