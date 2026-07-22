@@ -1,4 +1,4 @@
-use clap::{command, Parser};
+use clap::Parser;
 use fhevm_engine_common::database::resolve_database_url_from_option;
 use fhevm_engine_common::telemetry::{self, MetricsConfig};
 use fhevm_engine_common::{

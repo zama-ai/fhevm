@@ -570,7 +570,7 @@ jobs:
   build-consensus-detector:
     needs: build-decisions
     if: always() && needs.build-decisions.outputs.consensus_detector == 'build'
-    uses: zama-ai/ci-templates/.github/workflows/common-docker.yml@f3ad2e177a5247777349447608ba20f0977a824f # v1.0.7
+    uses: zama-ai/ci-templates/.github/workflows/common-docker.yml@cc49b4b7f41819757c6b3999c9cadb8e27be8ab3 # v1.0.11
     permissions: *docker_permissions
     secrets: *docker_secrets
     with:
@@ -579,6 +579,9 @@ jobs:
       image-name: "fhevm/coprocessor/consensus-detector"
       docker-file: "coprocessor/fhevm-engine/consensus-detector/Dockerfile"
       app-cache-dir: "fhevm-coprocessor-consensus-detector"
+      # 16 vCPUs to match runs-on-arm; the ubuntu-latest default (2 vCPUs) makes
+      # cache-miss Rust builds the longest job on the merge-queue critical path.
+      runs-on-amd: runs-on=${{ github.run_id }}/runner=16cpu-linux-x64/extras=s3-cache
       rust-toolchain-file-path: coprocessor/fhevm-engine/rust-toolchain.toml
 
   re-tag-consensus-detector-image:
@@ -597,7 +600,7 @@ jobs:
   build-upgrade-controller:
     needs: build-decisions
     if: always() && needs.build-decisions.outputs.upgrade_controller == 'build'
-    uses: zama-ai/ci-templates/.github/workflows/common-docker.yml@f3ad2e177a5247777349447608ba20f0977a824f # v1.0.7
+    uses: zama-ai/ci-templates/.github/workflows/common-docker.yml@cc49b4b7f41819757c6b3999c9cadb8e27be8ab3 # v1.0.11
     permissions: *docker_permissions
     secrets: *docker_secrets
     with:
@@ -606,6 +609,9 @@ jobs:
       image-name: "fhevm/coprocessor/upgrade-controller"
       docker-file: "coprocessor/fhevm-engine/upgrade-controller/Dockerfile"
       app-cache-dir: "fhevm-coprocessor-upgrade-controller"
+      # 16 vCPUs to match runs-on-arm; the ubuntu-latest default (2 vCPUs) makes
+      # cache-miss Rust builds the longest job on the merge-queue critical path.
+      runs-on-amd: runs-on=${{ github.run_id }}/runner=16cpu-linux-x64/extras=s3-cache
       rust-toolchain-file-path: coprocessor/fhevm-engine/rust-toolchain.toml
 
   re-tag-upgrade-controller-image:
