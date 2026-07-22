@@ -1321,9 +1321,7 @@ components:
           example: '1'
         extraData:
           type: string
-          description: |-
-            Extra data forwarded verbatim to the gateway contract. Accepts `"0x00"`, version `0x01`
-            (`0x01` + 32-byte contextId), or version `0x02` (`0x02` + 32-byte contextId + 32-byte epochId).
+          description: Extra data forwarded verbatim to the gateway contract. Accepts `"0x00"`, version `0x01` (`0x01` + 32-byte contextId), or version `0x02` (`0x02` + 32-byte contextId + 32-byte epochId). contextId must be 0x07-tagged and epochId must be 0x08-tagged (first byte of each).
           example: '0x00'
         handleContractPairs:
           type: array
@@ -1367,10 +1365,7 @@ components:
           - "0x1234567890123456789012345678901234567890"
         extraData:
           type: string
-          description: |-
-            Extra data forwarded verbatim to the gateway contract. Accepts `"0x00"`,
-            version `0x01` (`0x01` + 32-byte contextId), or version `0x02`
-            (`0x02` + 32-byte contextId + 32-byte epochId).
+          description: Extra data forwarded verbatim to the gateway contract. Accepts `"0x00"`, version `0x01` (`0x01` + 32-byte contextId), or version `0x02` (`0x02` + 32-byte contextId + 32-byte epochId). contextId must be 0x07-tagged and epochId must be 0x08-tagged (first byte of each).
           example: '0x00'
         handles:
           type: array
@@ -1634,9 +1629,7 @@ components:
           minItems: 1
         extraData:
           type: string
-          description: |-
-            Extra data forwarded verbatim to the gateway contract. Accepts `"0x00"`, version `0x01`
-            (`0x01` + 32-byte contextId), or version `0x02` (`0x02` + 32-byte contextId + 32-byte epochId).
+          description: Extra data forwarded verbatim to the gateway contract. Accepts `"0x00"`, version `0x01` (`0x01` + 32-byte contextId), or version `0x02` (`0x02` + 32-byte contextId + 32-byte epochId). contextId must be 0x07-tagged and epochId must be 0x08-tagged (first byte of each).
           example: '0x00'
     PublicDecryptResponseJson:
       type: object
@@ -1798,9 +1791,7 @@ components:
           $ref: '#/components/schemas/ChainId'
         extraData:
           type: string
-          description: |-
-            Extra data forwarded verbatim to the gateway contract. Accepts `"0x00"`, version `0x01`
-            (`0x01` + 32-byte contextId), or version `0x02` (`0x02` + 32-byte contextId + 32-byte epochId).
+          description: Extra data forwarded verbatim to the gateway contract. Accepts `"0x00"`, version `0x01` (`0x01` + 32-byte contextId), or version `0x02` (`0x02` + 32-byte contextId + 32-byte epochId). contextId must be 0x07-tagged and epochId must be 0x08-tagged (first byte of each).
           example: '0x00'
         handleContractPairs:
           type: array
