@@ -16,8 +16,7 @@ export interface KmsSigncryptedSharesMetadata {
   readonly kmsSignersContext: KmsSignersContext;
   readonly eip712ExtraData: BytesHex;
   readonly eip712Domain: KmsEip712Domain;
-  // Variable length on the unified /v3 route: 65-byte EOA signature or an
-  // ERC-1271 smart-contract-wallet blob.
+  // Variable length: 65-byte EOA, ERC-1271 blob, or empty `0x`.
   readonly eip712Signature: BytesHex;
   readonly eip712SignerAddress: ChecksummedAddress;
   readonly handles: readonly Handle[];

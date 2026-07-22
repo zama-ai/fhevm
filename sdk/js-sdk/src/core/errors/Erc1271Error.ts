@@ -6,10 +6,9 @@ import { FhevmErrorBase } from './FhevmErrorBase.js';
 // Erc1271VerificationError
 //
 // Definitive, client-side rejections of a user-decryption signature, mirroring
-// the shared `user-decryption-signature` crate's error taxonomy. These are
-// thrown fail-fast (matching the relayer's sync 400). Inconclusive outcomes
-// (no read provider / transport error) do NOT throw — the caller degrades
-// gracefully and forwards to the KMS, which is authoritative.
+// the shared `user-decryption-signature` crate's error taxonomy. Thrown
+// fail-fast (matching the relayer's sync 400). Only definitive failures throw;
+// see `verifyErc1271UserDecrypt` for how inconclusive outcomes are handled.
 ////////////////////////////////////////////////////////////////////////////////
 
 export type Erc1271VerificationErrorParams = Prettify<Omit<FhevmErrorBaseParams, 'name' | 'message'>>;
