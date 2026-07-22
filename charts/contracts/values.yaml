@@ -213,7 +213,6 @@ scDeploy:
     - npx hardhat task:deployAllHostContracts --with-kms-generation true
 
     # Non-canonical host chains instead mirror the canonical ProtocolConfig
-    # ('migration' source was removed in 0.14.0):
     # - npx hardhat task:deployAllHostContracts --with-kms-generation false --protocol-config-source canonical --canonical-rpc-url <url> --canonical-protocol-config-address <address>
 
     # Add pausers to the host contracts
