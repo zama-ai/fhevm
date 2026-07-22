@@ -418,9 +418,10 @@ struct RpcCompiledIx {
 struct RpcMeta {
     #[serde(default)]
     err: Option<serde_json::Value>,
-    /// Solana permits null; unrelated / failed / vote txs must not fail closed
-    /// solely because this field is absent. Successful host txs treat null as
-    /// an empty list (no CPI).
+    /// Solana permits null (`innerInstructions` recording disabled). Unrelated /
+    /// failed / vote txs must not fail closed solely because this field is
+    /// absent. Successful host-related txs require `Some(...)` — null is not
+    /// proof that no CPI occurred.
     #[serde(rename = "innerInstructions", default)]
     inner_instructions: Option<Vec<RpcInnerIxGroup>>,
     #[serde(rename = "loadedAddresses", default)]
@@ -531,7 +532,12 @@ fn normalize_rpc_transaction(
     let instructions = if !succeeded || is_vote {
         Vec::new()
     } else {
-        let inner = meta.inner_instructions.as_deref().unwrap_or(&[]);
+        let Some(inner) = meta.inner_instructions.as_deref() else {
+            return Err(RecoveryError::Invalid(format!(
+                "successful host-related transaction {index} has null innerInstructions; \
+                 CPI recording was disabled — cannot faithfully reconstruct"
+            )));
+        };
         resolve_rpc_instructions(
             &static_keys,
             &loaded_writable,
@@ -846,6 +852,40 @@ mod tests {
                     },
                     "meta": { "err": null, "innerInstructions": null },
                 },
+            ],
+        });
+        let block = normalize_rpc_block_json(7, value, &host).unwrap();
+        assert_eq!(block.executed_transaction_count, 1);
+        assert!(block.transactions.is_empty());
+    }
+
+    #[test]
+    fn null_inner_instructions_on_successful_host_tx_rejects_block() {
+        let digest = Sha256::digest(b"global:make_handle_public");
+        let data = b58(&digest[..8]);
+        let host = program();
+        let other = pk(0x99);
+        let value = json!({
+            "blockhash": b58(&pk(7)),
+            "previousBlockhash": b58(&pk(6)),
+            "parentSlot": 6,
+            "blockTime": null,
+            "blockHeight": null,
+            "transactions": [
+                {
+                    "transaction": {
+                        "signatures": [sig(1)],
+                        "message": {
+                            "accountKeys": [b58(&other), b58(&pk(1))],
+                            "instructions": [{
+                                "programIdIndex": 0,
+                                "accounts": [1],
+                                "data": data,
+                            }],
+                        },
+                    },
+                    "meta": { "err": null, "innerInstructions": null },
+                },
                 {
                     "transaction": {
                         "signatures": [sig(2)],
@@ -862,11 +902,9 @@ mod tests {
                 },
             ],
         });
-        let block = normalize_rpc_block_json(7, value, &host).unwrap();
-        assert_eq!(block.executed_transaction_count, 2);
-        assert_eq!(block.transactions.len(), 1);
-        assert_eq!(block.transactions[0].index, 1);
-        assert!(block.transactions[0].succeeded);
+        let err = normalize_rpc_block_json(7, value, &host).unwrap_err();
+        assert!(matches!(err, RecoveryError::Invalid(_)));
+        assert!(err.to_string().contains("null innerInstructions"));
     }
 
     #[test]
