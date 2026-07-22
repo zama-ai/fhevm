@@ -1,6 +1,7 @@
 /**
  * Generates compose overrides for local builds, scenario instances, and compatibility-adjusted service commands.
  */
+import { readFileSync } from "node:fs";
 import fs from "node:fs/promises";
 import path from "node:path";
 import YAML from "yaml";
@@ -19,6 +20,7 @@ import {
   GROUP_BUILD_COMPONENTS,
   GROUP_BUILD_SERVICES,
   GROUP_SERVICE_SUFFIXES,
+  REPO_ROOT,
   TEMPLATE_COMPOSE_DIR,
   composePath,
   envPath,
@@ -86,6 +88,20 @@ const buildSpec = (context: string, dockerfile: string, extra: Record<string, un
   dockerfile: resolveComposePath(dockerfile),
   ...extra,
 });
+
+/**
+ * Reads the Rust toolchain channel from a `rust-toolchain.toml` (relative to the
+ * repo root) and returns it.
+ */
+const rustImageVersion = (toolchainRepoPath: string): string => {
+  const filePath = path.join(REPO_ROOT, toolchainRepoPath);
+  const match = readFileSync(filePath, "utf8").match(/^\s*channel\s*=\s*"([^"]+)"/m);
+  if (!match) {
+    throw new Error(`Could not read Rust toolchain channel from ${toolchainRepoPath}`);
+  }
+  return match[1];
+};
+
 const COMPONENT_BUILD_SPECS: Record<string, Record<string, Record<string, unknown>>> = {
   coprocessor: {
     "coprocessor-db-migration": buildSpec("../../..", "coprocessor/fhevm-engine/Dockerfile.workspace", {
@@ -124,27 +140,31 @@ const COMPONENT_BUILD_SPECS: Record<string, Record<string, Record<string, unknow
   },
   "kms-connector": {
     "kms-connector-db-migration": buildSpec("../../..", "kms-connector/connector-db/Dockerfile", {
-      args: { RUST_IMAGE_VERSION: "1.91.0" },
+      args: { RUST_IMAGE_VERSION: rustImageVersion("kms-connector/rust-toolchain.toml") },
     }),
     "kms-connector-gw-listener": buildSpec("../../..", "kms-connector/Dockerfile.workspace", {
       target: "gw-listener",
-      args: { RUST_IMAGE_VERSION: "1.91.0" },
+      args: { RUST_IMAGE_VERSION: rustImageVersion("kms-connector/rust-toolchain.toml") },
     }),
     "kms-connector-kms-worker": buildSpec("../../..", "kms-connector/Dockerfile.workspace", {
       target: "kms-worker",
-      args: { RUST_IMAGE_VERSION: "1.91.0" },
+      args: { RUST_IMAGE_VERSION: rustImageVersion("kms-connector/rust-toolchain.toml") },
     }),
     "kms-connector-tx-sender": buildSpec("../../..", "kms-connector/Dockerfile.workspace", {
       target: "tx-sender",
-      args: { RUST_IMAGE_VERSION: "1.91.0" },
+      args: { RUST_IMAGE_VERSION: rustImageVersion("kms-connector/rust-toolchain.toml") },
     }),
   },
   "listener-core": {
     "listener-publisher-for-anvil": buildSpec("../../../listener", "Dockerfile"),
   },
   relayer: {
-    "relayer-db-migration": buildSpec("../../..", "relayer/docker/relayer-migrate/Dockerfile"),
-    relayer: buildSpec("../../..", "relayer/docker/relayer/Dockerfile"),
+    "relayer-db-migration": buildSpec("../../..", "relayer/docker/relayer-migrate/Dockerfile", {
+      args: { RUST_IMAGE_VERSION: rustImageVersion("relayer/rust-toolchain.toml") },
+    }),
+    relayer: buildSpec("../../..", "relayer/docker/relayer/Dockerfile", {
+      args: { RUST_IMAGE_VERSION: rustImageVersion("relayer/rust-toolchain.toml") },
+    }),
   },
   "gateway-mocked-payment": {
     "gateway-deploy-mocked-zama-oft": buildSpec("../../../gateway-contracts", "Dockerfile"),
