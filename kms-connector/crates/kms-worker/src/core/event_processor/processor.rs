@@ -263,7 +263,7 @@ impl<GP: Provider + Clone + 'static, HP: Provider, C: ContextManager> DbEventPro
 
             // Invalidate epochs associated to destroyed context returned by the KMS Core.
             // A failure must not prevent the event from completing, as retrying would result in an
-            // `AlreadyExists` from KMS Core with no epoch IDs.
+            // `NotFound` from KMS Core with no epoch IDs.
             if let SendResponse::DestroyedEpochs(epoch_ids) = send_response {
                 for epoch_id in epoch_ids {
                     if let Err(e) = invalidate_kms_epoch(&self.db_pool, epoch_id).await {

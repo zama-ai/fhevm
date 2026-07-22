@@ -415,6 +415,7 @@ mod tests {
         let db = test_instance.db();
         clear_context_cache(db).await;
 
+        // Arbitrary context/epoch IDs chosen to test the revalidation logic.
         let destroyed_context = U256::from(1_u64);
         let destroyed_context_epoch = U256::from(10_u64);
         let valid_context = U256::from(2_u64);
@@ -426,9 +427,14 @@ mod tests {
             .await
             .unwrap();
 
-        // Rows are audited in `ORDER BY id` order: `isValidKmsContext(#1)` -> false,
-        // `isValidKmsContext(#2)` -> true, then `isValidEpochForContext(#2, #20)` -> true.
-        // Epoch #10 must not trigger a call, as its context is already known destroyed.
+        // The `Asserter` replies to each on-chain `.call()` with the next queued response, in
+        // order. `revalidate_context_cache` audits contexts first (both are cached as valid, so
+        // both are checked), then epochs, each `ORDER BY id`. So the calls happen in this order:
+        //   1. `isValidKmsContext(#1)`         -> false: context #1 is destroyed on-chain
+        //   2. `isValidKmsContext(#2)`         -> true:  context #2 is still valid on-chain
+        //   3. `isValidEpochForContext(#2,#20)`-> true:  epoch #20 (of valid ctx #2) still valid
+        // Note there is no call for epoch #10: its context (#1) was just found destroyed, so the
+        // audit invalidates the epoch without an on-chain check.
         let asserter = Asserter::new();
         asserter.push_success(&false.abi_encode());
         asserter.push_success(&true.abi_encode());
@@ -457,7 +463,10 @@ mod tests {
             .await
             .unwrap();
 
-        // `isValidKmsContext(#1)` -> true, `isValidEpochForContext(#1, #10)` -> false
+        // The `Asserter` replies to each on-chain `.call()` with the next queued response, in
+        // order. In this scenario, the context is still valid but its epoch has been destroyed:
+        //   1. `isValidKmsContext(#1)`          -> true:  context #1 is still valid
+        //   2. `isValidEpochForContext(#1,#10)` -> false: epoch #10 is destroyed, so invalidated
         let asserter = Asserter::new();
         asserter.push_success(&true.abi_encode());
         asserter.push_success(&false.abi_encode());
