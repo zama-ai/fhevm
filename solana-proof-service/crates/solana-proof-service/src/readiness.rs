@@ -135,7 +135,8 @@ pub fn classify_readiness(
             }
             IngestTerminal::Cancelled
             | IngestTerminal::SourceFailed { .. }
-            | IngestTerminal::StoreFailed { .. } => {
+            | IngestTerminal::StoreFailed { .. }
+            | IngestTerminal::Crashed { .. } => {
                 return report(
                     ReadinessClass::WriterMissing,
                     Some(format!("ingest writer stopped: {terminal:?}")),
@@ -176,7 +177,10 @@ pub fn classify_readiness(
         ),
         SourceLinkState::Connecting => report(
             ReadinessClass::SourceLagging,
-            Some("yellowstone subscribe has not succeeded yet".to_owned()),
+            Some(
+                "waiting for first applied or replayed block to prove Yellowstone continuity"
+                    .to_owned(),
+            ),
             checkpoint_slot,
             ingest.last_slot(),
         ),
@@ -292,7 +296,7 @@ mod tests {
     }
 
     #[test]
-    fn connecting_before_subscribe_is_source_lagging() {
+    fn connecting_before_progress_is_source_lagging() {
         let ingest = IngestHealth::new();
         ingest.mark_started();
         let report = classify_readiness(true, Some(&status(true, false)), &ingest);
@@ -301,20 +305,23 @@ mod tests {
     }
 
     #[test]
-    fn ready_when_subscribed_even_without_progress() {
+    fn ready_only_after_first_apply_or_replay_progress() {
         let ingest = IngestHealth::new();
         ingest.mark_started();
-        ingest.mark_subscribed();
+        let before = classify_readiness(true, Some(&status(true, false)), &ingest);
+        assert_eq!(before.status, ReadinessClass::SourceLagging);
+
+        ingest.mark_progress(42);
         let report = classify_readiness(true, Some(&status(true, false)), &ingest);
         assert_eq!(report.status, ReadinessClass::Ready);
         assert!(report.ready);
+        assert_eq!(report.last_ingest_slot, Some(42));
     }
 
     #[test]
-    fn ready_when_history_complete_subscribed_and_writer_live() {
+    fn ready_when_history_complete_progress_and_writer_live() {
         let ingest = IngestHealth::new();
         ingest.mark_started();
-        ingest.mark_subscribed();
         ingest.mark_progress(42);
         let report = classify_readiness(true, Some(&status(true, false)), &ingest);
         assert_eq!(report.status, ReadinessClass::Ready);
@@ -326,10 +333,21 @@ mod tests {
     fn disconnected_is_source_lagging() {
         let ingest = IngestHealth::new();
         ingest.mark_started();
-        ingest.mark_subscribed();
+        ingest.mark_progress(7);
         ingest.mark_disconnected();
         let report = classify_readiness(true, Some(&status(true, false)), &ingest);
         assert_eq!(report.status, ReadinessClass::SourceLagging);
+        assert!(!report.ready);
+    }
+
+    #[test]
+    fn crashed_writer_is_missing() {
+        let ingest = IngestHealth::new();
+        ingest.mark_started();
+        ingest.mark_progress(1);
+        ingest.mark_crashed("panic");
+        let report = classify_readiness(true, Some(&status(true, false)), &ingest);
+        assert_eq!(report.status, ReadinessClass::WriterMissing);
         assert!(!report.ready);
     }
 }

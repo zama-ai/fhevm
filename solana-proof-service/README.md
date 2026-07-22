@@ -50,10 +50,11 @@ probes cannot be starved. Upstream RPC uses a shorter 10s budget so chain
 failures surface as typed `chain_error` inside the HTTP window.
 
 **Readiness vs proof trust:** `/health/readiness` is the bootstrap / ingest gate
-(history complete + writer live + Yellowstone successfully subscribed). After a
-successful subscribe, program-filtered idle streams are healthy; never-connected
-or reconnecting sources are `source_lagging`. Per-request proof trust is
-peak-equality against confirmed chain state, not the readiness probe.
+(history complete + writer live + at least one Applied / AlreadyApplied on the
+live stream). A bare Yellowstone subscribe is not enough; cursor continuity must
+be proven by progress. After that, program-filtered idle streams are healthy;
+never-proven or reconnecting sources are `source_lagging`. Per-request proof
+trust is peak-equality against confirmed chain state, not the readiness probe.
 
 Readiness classifications: `database_unavailable`, `writer_missing`,
 `source_lagging`, `history_incomplete`, `recovery_required`, `integrity_halted`.

@@ -1,11 +1,13 @@
 //! Solana proof service binary: config → migrate → validate → ingest + HTTP.
 
 use std::sync::Arc;
+use std::time::Duration;
 
 use anyhow::{Context, Result};
 use solana_proof_source::{YellowstoneBlockSource, YellowstoneSourceConfig};
 use solana_proof_store::{run_sequential_ingest, IngestHooks, SqlProofStore};
 use sqlx::postgres::PgPoolOptions;
+use tokio::task::JoinHandle;
 use tokio_util::sync::CancellationToken;
 use tracing_subscriber::EnvFilter;
 
@@ -15,6 +17,9 @@ use solana_proof_service::http::{router, AppState};
 use solana_proof_service::ingest_health::IngestHealth;
 use solana_proof_service::metrics;
 use solana_proof_service::startup_validation::validate_startup_dependencies;
+
+/// Bound how long shutdown waits for the ingest writer after cancel.
+const INGEST_SHUTDOWN_DEADLINE: Duration = Duration::from_secs(15);
 
 #[tokio::main]
 async fn main() -> Result<()> {
@@ -46,45 +51,14 @@ async fn main() -> Result<()> {
     })
     .context("invalid yellowstone source config")?;
 
-    let ingest_store = store.clone();
-    let ingest_health = Arc::clone(&ingest);
-    let ingest_cancel = cancel.clone();
-    let on_progress: Arc<dyn Fn(u64) + Send + Sync> = {
-        let health = Arc::clone(&ingest);
-        Arc::new(move |slot: u64| health.mark_progress(slot))
-    };
-    let on_subscribed: Arc<dyn Fn() + Send + Sync> = {
-        let health = Arc::clone(&ingest);
-        Arc::new(move || health.mark_subscribed())
-    };
-    let on_disconnected: Arc<dyn Fn() + Send + Sync> = {
-        let health = Arc::clone(&ingest);
-        Arc::new(move || health.mark_disconnected())
-    };
-    tokio::spawn(async move {
-        ingest_health.mark_started();
-        let result = run_sequential_ingest(
-            &source,
-            &ingest_store,
-            ingest_cancel,
-            IngestHooks {
-                on_progress: Some(on_progress.as_ref()),
-                on_subscribed: Some(on_subscribed.as_ref()),
-                on_disconnected: Some(on_disconnected.as_ref()),
-            },
-        )
-        .await;
-        if let Err(err) = &result {
-            tracing::error!(%err, "ingest task stopped");
-        }
-        ingest_health.mark_finished(result);
-    });
+    let ingest_handle =
+        spawn_ingest_writer(source, store.clone(), Arc::clone(&ingest), cancel.clone());
 
     let fetcher = Arc::new(RpcChainFetcher::new(config.solana.rpc_url.clone()));
     let state = Arc::new(AppState {
         store,
         fetcher,
-        ingest,
+        ingest: Arc::clone(&ingest),
     });
     let app = router(state);
 
@@ -102,7 +76,79 @@ async fn main() -> Result<()> {
         .await
         .context("HTTP server error")?;
 
+    // Cancel is already signalled by graceful shutdown; await the writer with a
+    // deadline so panics / stuck connects cannot leave readiness stale forever.
+    if !cancel.is_cancelled() {
+        cancel.cancel();
+    }
+    await_ingest_writer(ingest_handle, &ingest).await;
+
     Ok(())
+}
+
+fn spawn_ingest_writer(
+    source: YellowstoneBlockSource,
+    store: SqlProofStore,
+    ingest_health: Arc<IngestHealth>,
+    cancel: CancellationToken,
+) -> JoinHandle<()> {
+    let on_progress: Arc<dyn Fn(u64) + Send + Sync> = {
+        let health = Arc::clone(&ingest_health);
+        Arc::new(move |slot: u64| health.mark_progress(slot))
+    };
+    let on_disconnected: Arc<dyn Fn() + Send + Sync> = {
+        let health = Arc::clone(&ingest_health);
+        Arc::new(move || health.mark_disconnected())
+    };
+
+    tokio::spawn(async move {
+        ingest_health.mark_started();
+        let result = run_sequential_ingest(
+            &source,
+            &store,
+            cancel,
+            IngestHooks {
+                on_progress: Some(on_progress.as_ref()),
+                on_disconnected: Some(on_disconnected.as_ref()),
+            },
+        )
+        .await;
+        if let Err(err) = &result {
+            tracing::error!(%err, "ingest task stopped");
+        }
+        ingest_health.mark_finished(result);
+    })
+}
+
+async fn await_ingest_writer(mut handle: JoinHandle<()>, ingest: &IngestHealth) {
+    match tokio::time::timeout(INGEST_SHUTDOWN_DEADLINE, &mut handle).await {
+        Ok(Ok(())) => {
+            tracing::info!("ingest writer stopped");
+        }
+        Ok(Err(join_err)) => {
+            let reason = if join_err.is_panic() {
+                format!("ingest writer panicked: {join_err}")
+            } else {
+                format!("ingest writer join failed: {join_err}")
+            };
+            tracing::error!(%reason, "ingest writer supervision failure");
+            // mark_finished may have been skipped on panic.
+            if ingest.writer_running() || ingest.terminal().is_none() {
+                ingest.mark_crashed(reason);
+            }
+        }
+        Err(_) => {
+            tracing::error!(
+                deadline_secs = INGEST_SHUTDOWN_DEADLINE.as_secs(),
+                "ingest writer did not exit within shutdown deadline; aborting"
+            );
+            handle.abort();
+            match handle.await {
+                Ok(()) | Err(_) => {}
+            }
+            ingest.mark_crashed("ingest writer shutdown deadline exceeded");
+        }
+    }
 }
 
 fn init_tracing() {

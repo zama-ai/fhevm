@@ -11,23 +11,39 @@ use solana_proof_store::RunnerError;
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum IngestTerminal {
     Cancelled,
-    RecoveryRequired { reason: String },
-    IntegrityHalted { reason: String },
-    SourceFailed { reason: String },
-    StoreFailed { reason: String },
+    RecoveryRequired {
+        reason: String,
+    },
+    IntegrityHalted {
+        reason: String,
+    },
+    SourceFailed {
+        reason: String,
+    },
+    StoreFailed {
+        reason: String,
+    },
+    /// Writer task panicked or missed an orderly `mark_finished`.
+    Crashed {
+        reason: String,
+    },
 }
 
-/// Yellowstone subscription lifecycle (independent of DB apply heartbeats).
+/// Yellowstone link lifecycle for readiness.
+///
+/// `Connected` means at least one block was Applied or AlreadyApplied on the
+/// live stream (subscription + durable cursor continuity proven). A bare gRPC
+/// subscribe is still `Connecting`.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum SourceLinkState {
     /// Writer task has not started.
     Idle,
-    /// Writer is running but has not completed a successful subscribe yet,
-    /// or is reconnecting after a disconnect.
+    /// Writer is running but has not yet proven cursor continuity via progress,
+    /// or is reconnecting after a disconnect before the next apply/replay.
     Connecting,
-    /// At least one successful subscribe is active (idle filtered streams are OK).
+    /// At least one Applied / AlreadyApplied observed; filtered-stream idle is OK.
     Connected,
-    /// Stream dropped; reconnect in progress.
+    /// Stream dropped after a prior Connected; reconnect in progress.
     Disconnected,
 }
 
@@ -56,18 +72,12 @@ impl IngestHealth {
         })
     }
 
-    /// Writer task entered the ingest loop (not yet subscribed).
+    /// Writer task entered the ingest loop (not yet continuity-proven).
     pub fn mark_started(&self) {
         self.writer_running.store(true, Ordering::SeqCst);
         let mut inner = self.inner.lock().expect("ingest health lock");
         inner.terminal = None;
         inner.source_link = SourceLinkState::Connecting;
-    }
-
-    /// Yellowstone subscribe succeeded; filtered-stream idle is healthy after this.
-    pub fn mark_subscribed(&self) {
-        let mut inner = self.inner.lock().expect("ingest health lock");
-        inner.source_link = SourceLinkState::Connected;
     }
 
     /// Live stream dropped; reconnect/backoff is in progress.
@@ -80,10 +90,10 @@ impl IngestHealth {
         }
     }
 
+    /// Applied or exact-replay no-op: subscription + cursor continuity proven.
     pub fn mark_progress(&self, slot: u64) {
         let mut inner = self.inner.lock().expect("ingest health lock");
         inner.last_slot = Some(slot);
-        // An applied block implies the subscription is live.
         inner.source_link = SourceLinkState::Connected;
     }
 
@@ -103,6 +113,16 @@ impl IngestHealth {
             Err(RunnerError::Store(err)) => IngestTerminal::StoreFailed {
                 reason: err.to_string(),
             },
+        });
+    }
+
+    /// Unexpected writer exit (panic / missed finish / shutdown deadline).
+    pub fn mark_crashed(&self, reason: impl Into<String>) {
+        self.writer_running.store(false, Ordering::SeqCst);
+        let mut inner = self.inner.lock().expect("ingest health lock");
+        inner.source_link = SourceLinkState::Idle;
+        inner.terminal = Some(IngestTerminal::Crashed {
+            reason: reason.into(),
         });
     }
 

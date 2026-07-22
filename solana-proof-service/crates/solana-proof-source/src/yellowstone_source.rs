@@ -17,6 +17,7 @@
 
 use futures::{Stream, StreamExt};
 use std::collections::HashMap;
+use std::time::Duration;
 use tonic::metadata::{Ascii, MetadataValue};
 use tonic::transport::Channel;
 use yellowstone_grpc_proto::geyser::geyser_client::GeyserClient;
@@ -32,6 +33,8 @@ use zama_solana_transaction::{
 use crate::RawInstruction;
 
 const MAX_DECODING_MESSAGE_SIZE: usize = 64 * 1024 * 1024;
+/// Bound Yellowstone dial so a hung peer cannot pin the ingest task forever.
+const CONNECT_TIMEOUT: Duration = Duration::from_secs(10);
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct BlockCheckpoint {
@@ -139,9 +142,9 @@ impl YellowstoneBlockSource {
         &self,
         cursor: Option<BlockCheckpoint>,
     ) -> Result<YellowstoneSubscription, YellowstoneSourceError> {
-        let endpoint = Channel::from_shared(self.config.grpc_url.clone()).map_err(|error| {
-            YellowstoneSourceError::Invalid(format!("invalid gRPC URL: {error}"))
-        })?;
+        let endpoint = Channel::from_shared(self.config.grpc_url.clone())
+            .map_err(|error| YellowstoneSourceError::Invalid(format!("invalid gRPC URL: {error}")))?
+            .connect_timeout(CONNECT_TIMEOUT);
         let channel = endpoint.connect().await.map_err(|error| {
             YellowstoneSourceError::Retryable(format!("connect gRPC endpoint: {error}"))
         })?;

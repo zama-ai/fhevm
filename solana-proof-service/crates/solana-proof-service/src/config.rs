@@ -136,7 +136,7 @@ fn apply_env_overrides(value: &mut serde_yaml::Value) -> anyhow::Result<()> {
                 known_env_override_names().join(", ")
             );
         }
-        set_path(value, &segments, parse_env_value(&raw))?;
+        set_path(value, &segments, parse_env_value(&segments, &raw))?;
     }
     Ok(())
 }
@@ -164,17 +164,25 @@ fn known_env_override_names() -> Vec<String> {
         .collect()
 }
 
-fn parse_env_value(raw: &str) -> serde_yaml::Value {
-    if let Ok(v) = serde_yaml::from_str::<serde_yaml::Value>(raw) {
-        match v {
-            serde_yaml::Value::String(_) | serde_yaml::Value::Null => {
-                serde_yaml::Value::String(raw.to_owned())
+/// Env values for string fields stay strings (tokens like `12345` / `true` must
+/// not become YAML integers/bools). Only known numeric fields are typed.
+fn parse_env_value(segments: &[&str], raw: &str) -> serde_yaml::Value {
+    if is_numeric_env_path(segments) {
+        if let Ok(v) = serde_yaml::from_str::<serde_yaml::Value>(raw) {
+            if matches!(v, serde_yaml::Value::Number(_)) {
+                return v;
             }
-            other => other,
         }
-    } else {
-        serde_yaml::Value::String(raw.to_owned())
     }
+    serde_yaml::Value::String(raw.to_owned())
+}
+
+fn is_numeric_env_path(segments: &[&str]) -> bool {
+    let lower: Vec<String> = segments.iter().map(|s| s.to_ascii_lowercase()).collect();
+    matches!(
+        lower.as_slice(),
+        [a, b] if a == "database" && b == "max_connections"
+    )
 }
 
 fn set_path(
@@ -225,6 +233,7 @@ mod tests {
     fn clear_test_env_overrides() {
         std::env::remove_var("SOLANA_PROOF__READINESS__TYPO_SECS");
         std::env::remove_var("SOLANA_PROOF__DATABASE__MAX_CONNECTIONS");
+        std::env::remove_var("SOLANA_PROOF__YELLOWSTONE__X_TOKEN");
     }
 
     #[test]
@@ -246,6 +255,57 @@ yellowstone:
         );
         let config = ServiceConfig::load_from_path(file.path()).unwrap();
         assert_eq!(config.server.bind_address.port(), 8080);
+        file.close().ok();
+    }
+
+    #[test]
+    fn string_shaped_env_secrets_stay_strings() {
+        let _guard = env_lock().lock().unwrap();
+        clear_test_env_overrides();
+        let file = tempfile_config(
+            r#"
+server:
+  bind_address: 127.0.0.1:8080
+database:
+  connection_string: postgres://localhost/solana_proof
+solana:
+  program_id: TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA
+  rpc_url: http://127.0.0.1:8899
+yellowstone:
+  grpc_url: http://127.0.0.1:10000
+"#,
+        );
+        // SAFETY: test-only process-local env; serialized by env_lock.
+        std::env::set_var("SOLANA_PROOF__YELLOWSTONE__X_TOKEN", "12345");
+        std::env::set_var("SOLANA_PROOF__DATABASE__MAX_CONNECTIONS", "7");
+        let config = ServiceConfig::load_from_path(file.path()).unwrap();
+        clear_test_env_overrides();
+        assert_eq!(config.yellowstone.x_token.as_deref(), Some("12345"));
+        assert_eq!(config.database.max_connections, 7);
+        file.close().ok();
+    }
+
+    #[test]
+    fn boolean_looking_string_env_stays_string() {
+        let _guard = env_lock().lock().unwrap();
+        clear_test_env_overrides();
+        let file = tempfile_config(
+            r#"
+server:
+  bind_address: 127.0.0.1:8080
+database:
+  connection_string: postgres://localhost/solana_proof
+solana:
+  program_id: TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA
+  rpc_url: http://127.0.0.1:8899
+yellowstone:
+  grpc_url: http://127.0.0.1:10000
+"#,
+        );
+        std::env::set_var("SOLANA_PROOF__YELLOWSTONE__X_TOKEN", "true");
+        let config = ServiceConfig::load_from_path(file.path()).unwrap();
+        clear_test_env_overrides();
+        assert_eq!(config.yellowstone.x_token.as_deref(), Some("true"));
         file.close().ok();
     }
 

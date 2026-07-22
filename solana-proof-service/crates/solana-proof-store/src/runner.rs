@@ -28,18 +28,19 @@ pub enum RunnerError {
     RecoveryRequired(String),
 }
 
-/// Optional hooks for HTTP readiness (subscribe / disconnect / apply progress).
+/// Optional hooks for HTTP readiness (disconnect / apply-or-replay progress).
 #[derive(Default)]
 pub struct IngestHooks<'a> {
+    /// Fired after a block is applied or recognized as an exact replay no-op.
+    /// That is the continuity proof: subscription + durable cursor are usable.
     pub on_progress: Option<&'a (dyn Fn(u64) + Send + Sync)>,
-    pub on_subscribed: Option<&'a (dyn Fn() + Send + Sync)>,
     pub on_disconnected: Option<&'a (dyn Fn() + Send + Sync)>,
 }
 
 /// Runs until `cancel` is cancelled or a durable integrity halt is observed.
 ///
-/// Hooks report Yellowstone link lifecycle and apply progress so readiness can
-/// distinguish "never connected" from "connected and idle on a filtered stream".
+/// Progress hooks fire only after Applied / AlreadyApplied so readiness never
+/// treats a bare gRPC subscribe as a live, continuity-checked source.
 pub async fn run_sequential_ingest(
     source: &YellowstoneBlockSource,
     store: &SqlProofStore,
@@ -66,23 +67,22 @@ pub async fn run_sequential_ingest(
 
         // Do not reset backoff on subscribe alone: a flaky stream that
         // connects then dies immediately would otherwise spin at 200ms forever.
-        let subscription = match source.subscribe(checkpoint).await {
-            Ok(subscription) => {
-                if let Some(on_subscribed) = hooks.on_subscribed {
-                    on_subscribed();
+        // Select on cancel so connect/subscribe cannot outlive shutdown.
+        let subscription = tokio::select! {
+            _ = cancel.cancelled() => return Ok(()),
+            result = source.subscribe(checkpoint) => match result {
+                Ok(subscription) => subscription,
+                Err(YellowstoneSourceError::Retryable(message)) => {
+                    warn!(%message, ?backoff, "yellowstone subscribe failed; backing off");
+                    tokio::select! {
+                        _ = cancel.cancelled() => return Ok(()),
+                        _ = tokio::time::sleep(backoff) => {}
+                    }
+                    backoff = (backoff * 2).min(MAX_BACKOFF);
+                    continue;
                 }
-                subscription
-            }
-            Err(YellowstoneSourceError::Retryable(message)) => {
-                warn!(%message, ?backoff, "yellowstone subscribe failed; backing off");
-                tokio::select! {
-                    _ = cancel.cancelled() => return Ok(()),
-                    _ = tokio::time::sleep(backoff) => {}
-                }
-                backoff = (backoff * 2).min(MAX_BACKOFF);
-                continue;
-            }
-            Err(error) => return Err(RunnerError::Source(error)),
+                Err(error) => return Err(RunnerError::Source(error)),
+            },
         };
 
         match drive_subscription(subscription, store, &cancel, &mut backoff, &hooks).await {
