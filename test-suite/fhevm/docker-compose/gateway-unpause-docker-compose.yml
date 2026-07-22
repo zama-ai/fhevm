@@ -2,6 +2,7 @@ services:
   gateway-sc-unpause:
     container_name: gateway-sc-unpause
     image: ghcr.io/zama-ai/fhevm/gateway-contracts:${GATEWAY_VERSION}
+    platform: linux/amd64
     build:
       context: ../../../gateway-contracts
       dockerfile: Dockerfile
