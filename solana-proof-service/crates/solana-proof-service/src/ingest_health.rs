@@ -1,11 +1,10 @@
-//! Live ingest heartbeat and recovery/halt classification for readiness.
+//! Live ingest writer + Yellowstone link state for readiness.
 //!
 //! Readiness must never persist `ready=true`. This process-local state is one
 //! input, combined with DB reachability and integrity status on each probe.
 
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
-use std::time::{Duration, Instant};
 
 use solana_proof_store::RunnerError;
 
@@ -18,11 +17,25 @@ pub enum IngestTerminal {
     StoreFailed { reason: String },
 }
 
+/// Yellowstone subscription lifecycle (independent of DB apply heartbeats).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum SourceLinkState {
+    /// Writer task has not started.
+    Idle,
+    /// Writer is running but has not completed a successful subscribe yet,
+    /// or is reconnecting after a disconnect.
+    Connecting,
+    /// At least one successful subscribe is active (idle filtered streams are OK).
+    Connected,
+    /// Stream dropped; reconnect in progress.
+    Disconnected,
+}
+
 #[derive(Debug)]
 struct Inner {
-    last_progress_at: Option<Instant>,
     last_slot: Option<u64>,
     terminal: Option<IngestTerminal>,
+    source_link: SourceLinkState,
 }
 
 #[derive(Debug)]
@@ -36,31 +49,48 @@ impl IngestHealth {
         Arc::new(Self {
             writer_running: AtomicBool::new(false),
             inner: Mutex::new(Inner {
-                last_progress_at: None,
                 last_slot: None,
                 terminal: None,
+                source_link: SourceLinkState::Idle,
             }),
         })
     }
 
+    /// Writer task entered the ingest loop (not yet subscribed).
     pub fn mark_started(&self) {
         self.writer_running.store(true, Ordering::SeqCst);
         let mut inner = self.inner.lock().expect("ingest health lock");
         inner.terminal = None;
-        // Do not advance last_progress_at here: progress tracks applied/replayed
-        // blocks for observability. After catch-up, readiness does not require a
-        // recent DB mutation (program-filtered streams can be idle).
+        inner.source_link = SourceLinkState::Connecting;
+    }
+
+    /// Yellowstone subscribe succeeded; filtered-stream idle is healthy after this.
+    pub fn mark_subscribed(&self) {
+        let mut inner = self.inner.lock().expect("ingest health lock");
+        inner.source_link = SourceLinkState::Connected;
+    }
+
+    /// Live stream dropped; reconnect/backoff is in progress.
+    pub fn mark_disconnected(&self) {
+        let mut inner = self.inner.lock().expect("ingest health lock");
+        if matches!(inner.source_link, SourceLinkState::Connected) {
+            inner.source_link = SourceLinkState::Disconnected;
+        } else {
+            inner.source_link = SourceLinkState::Connecting;
+        }
     }
 
     pub fn mark_progress(&self, slot: u64) {
         let mut inner = self.inner.lock().expect("ingest health lock");
-        inner.last_progress_at = Some(Instant::now());
         inner.last_slot = Some(slot);
+        // An applied block implies the subscription is live.
+        inner.source_link = SourceLinkState::Connected;
     }
 
     pub fn mark_finished(&self, result: Result<(), RunnerError>) {
         self.writer_running.store(false, Ordering::SeqCst);
         let mut inner = self.inner.lock().expect("ingest health lock");
+        inner.source_link = SourceLinkState::Idle;
         inner.terminal = Some(match result {
             Ok(()) => IngestTerminal::Cancelled,
             Err(RunnerError::RecoveryRequired(reason)) => {
@@ -80,6 +110,10 @@ impl IngestHealth {
         self.writer_running.load(Ordering::SeqCst)
     }
 
+    pub fn source_link(&self) -> SourceLinkState {
+        self.inner.lock().expect("ingest health lock").source_link
+    }
+
     pub fn terminal(&self) -> Option<IngestTerminal> {
         self.inner
             .lock()
@@ -90,18 +124,5 @@ impl IngestHealth {
 
     pub fn last_slot(&self) -> Option<u64> {
         self.inner.lock().expect("ingest health lock").last_slot
-    }
-
-    /// True when no apply/replay heartbeat has been observed within `max_silence`.
-    ///
-    /// `None` (no progress yet) is **not** treated as immediately stale: a writer
-    /// may have restarted against a complete history and be waiting for the next
-    /// program-relevant block. Do not use silence alone as the readiness gate.
-    pub fn silence_exceeded(&self, max_silence: Duration) -> bool {
-        let inner = self.inner.lock().expect("ingest health lock");
-        match inner.last_progress_at {
-            Some(at) => at.elapsed() > max_silence,
-            None => false,
-        }
     }
 }

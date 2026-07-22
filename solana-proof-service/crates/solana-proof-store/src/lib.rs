@@ -15,5 +15,5 @@ pub use reduce::{
     StagedLineage,
 };
 pub use replay::{apply_instruction, LineageReplayState, ReplayError};
-pub use runner::{run_sequential_ingest, RunnerError};
+pub use runner::{run_sequential_ingest, IngestHooks, RunnerError};
 pub use store::{ApplyOutcome, IntegrityStatus, ProofSnapshot, SqlProofStore, StoreError};

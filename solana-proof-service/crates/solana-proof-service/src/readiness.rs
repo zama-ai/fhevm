@@ -1,21 +1,20 @@
 //! Derived live readiness for proof serving.
 //!
 //! Never stores `ready=true`. Combines database reachability, persisted
-//! integrity / history completeness, and process-local ingest heartbeat /
-//! recovery state on each probe.
+//! integrity / history completeness, and process-local Yellowstone link /
+//! writer / recovery state on each probe.
 //!
 //! Readiness is the bootstrap / ingest gate. Per-request proof trust is
 //! peak-equality against confirmed chain state (see `proof`), not this probe.
 
 use std::sync::Arc;
-use std::time::Duration;
 
 use async_trait::async_trait;
 use serde::Serialize;
 use solana_proof_store::{IntegrityStatus, SqlProofStore, StoreError};
 use utoipa::ToSchema;
 
-use crate::ingest_health::{IngestHealth, IngestTerminal};
+use crate::ingest_health::{IngestHealth, IngestTerminal, SourceLinkState};
 
 /// DB reachability + integrity inputs for [`evaluate_readiness`].
 #[async_trait]
@@ -86,7 +85,6 @@ pub fn classify_readiness(
     db_ok: bool,
     integrity: Option<&IntegrityStatus>,
     ingest: &IngestHealth,
-    max_ingest_silence: Duration,
 ) -> ReadinessReport {
     if !db_ok {
         return report(
@@ -169,18 +167,32 @@ pub fn classify_readiness(
         );
     }
 
-    // After history is complete, program-filtered Yellowstone may omit intermediate
-    // blocks for long stretches. Time-since-last-DB-apply is not source liveness;
-    // idle writer + complete history is healthy. Real checkpoint-lag vs RPC tip
-    // lands with bounded recovery; retain `max_ingest_silence` for that signal.
-    let _ = max_ingest_silence;
-
-    report(
-        ReadinessClass::Ready,
-        None,
-        checkpoint_slot,
-        ingest.last_slot(),
-    )
+    match ingest.source_link() {
+        SourceLinkState::Connected => report(
+            ReadinessClass::Ready,
+            None,
+            checkpoint_slot,
+            ingest.last_slot(),
+        ),
+        SourceLinkState::Connecting => report(
+            ReadinessClass::SourceLagging,
+            Some("yellowstone subscribe has not succeeded yet".to_owned()),
+            checkpoint_slot,
+            ingest.last_slot(),
+        ),
+        SourceLinkState::Disconnected => report(
+            ReadinessClass::SourceLagging,
+            Some("yellowstone stream disconnected; reconnecting".to_owned()),
+            checkpoint_slot,
+            ingest.last_slot(),
+        ),
+        SourceLinkState::Idle => report(
+            ReadinessClass::WriterMissing,
+            Some("ingest writer source link is idle".to_owned()),
+            checkpoint_slot,
+            ingest.last_slot(),
+        ),
+    }
 }
 
 fn report(
@@ -202,15 +214,14 @@ fn report(
 pub async fn evaluate_readiness<S: ReadinessQueryable>(
     store: &S,
     ingest: &Arc<IngestHealth>,
-    max_ingest_silence: Duration,
 ) -> ReadinessReport {
     if !store.database_reachable().await {
-        return classify_readiness(false, None, ingest, max_ingest_silence);
+        return classify_readiness(false, None, ingest);
     }
 
     match store.integrity_status().await {
-        Ok(status) => classify_readiness(true, Some(&status), ingest, max_ingest_silence),
-        Err(_) => classify_readiness(false, None, ingest, max_ingest_silence),
+        Ok(status) => classify_readiness(true, Some(&status), ingest),
+        Err(_) => classify_readiness(false, None, ingest),
     }
 }
 
@@ -238,7 +249,7 @@ mod tests {
     #[test]
     fn database_unavailable_wins() {
         let ingest = IngestHealth::new();
-        let report = classify_readiness(false, None, &ingest, Duration::from_secs(60));
+        let report = classify_readiness(false, None, &ingest);
         assert_eq!(report.status, ReadinessClass::DatabaseUnavailable);
         assert!(!report.ready);
     }
@@ -247,12 +258,7 @@ mod tests {
     fn integrity_halt_before_history() {
         let ingest = IngestHealth::new();
         ingest.mark_started();
-        let report = classify_readiness(
-            true,
-            Some(&status(false, true)),
-            &ingest,
-            Duration::from_secs(60),
-        );
+        let report = classify_readiness(true, Some(&status(false, true)), &ingest);
         assert_eq!(report.status, ReadinessClass::IntegrityHalted);
     }
 
@@ -263,12 +269,7 @@ mod tests {
         ingest.mark_finished(Err(solana_proof_store::RunnerError::RecoveryRequired(
             "gap".into(),
         )));
-        let report = classify_readiness(
-            true,
-            Some(&status(true, false)),
-            &ingest,
-            Duration::from_secs(60),
-        );
+        let report = classify_readiness(true, Some(&status(true, false)), &ingest);
         assert_eq!(report.status, ReadinessClass::RecoveryRequired);
         assert_eq!(report.reason.as_deref(), Some("gap"));
     }
@@ -277,12 +278,7 @@ mod tests {
     fn history_incomplete_until_recovery_seam() {
         let ingest = IngestHealth::new();
         ingest.mark_started();
-        let report = classify_readiness(
-            true,
-            Some(&status(false, false)),
-            &ingest,
-            Duration::from_secs(60),
-        );
+        let report = classify_readiness(true, Some(&status(false, false)), &ingest);
         assert_eq!(report.status, ReadinessClass::HistoryIncomplete);
     }
 
@@ -291,59 +287,49 @@ mod tests {
         let ingest = IngestHealth::new();
         ingest.mark_started();
         ingest.mark_finished(Ok(()));
-        let report = classify_readiness(
-            true,
-            Some(&status(true, false)),
-            &ingest,
-            Duration::from_secs(60),
-        );
+        let report = classify_readiness(true, Some(&status(true, false)), &ingest);
         assert_eq!(report.status, ReadinessClass::WriterMissing);
     }
 
     #[test]
-    fn ready_when_history_complete_and_writer_live() {
+    fn connecting_before_subscribe_is_source_lagging() {
         let ingest = IngestHealth::new();
         ingest.mark_started();
+        let report = classify_readiness(true, Some(&status(true, false)), &ingest);
+        assert_eq!(report.status, ReadinessClass::SourceLagging);
+        assert!(!report.ready);
+    }
+
+    #[test]
+    fn ready_when_subscribed_even_without_progress() {
+        let ingest = IngestHealth::new();
+        ingest.mark_started();
+        ingest.mark_subscribed();
+        let report = classify_readiness(true, Some(&status(true, false)), &ingest);
+        assert_eq!(report.status, ReadinessClass::Ready);
+        assert!(report.ready);
+    }
+
+    #[test]
+    fn ready_when_history_complete_subscribed_and_writer_live() {
+        let ingest = IngestHealth::new();
+        ingest.mark_started();
+        ingest.mark_subscribed();
         ingest.mark_progress(42);
-        let report = classify_readiness(
-            true,
-            Some(&status(true, false)),
-            &ingest,
-            Duration::from_secs(60),
-        );
+        let report = classify_readiness(true, Some(&status(true, false)), &ingest);
         assert_eq!(report.status, ReadinessClass::Ready);
         assert!(report.ready);
         assert_eq!(report.last_ingest_slot, Some(42));
     }
 
     #[test]
-    fn mark_started_alone_is_ready_when_history_complete() {
+    fn disconnected_is_source_lagging() {
         let ingest = IngestHealth::new();
         ingest.mark_started();
-        let report = classify_readiness(
-            true,
-            Some(&status(true, false)),
-            &ingest,
-            Duration::from_secs(60),
-        );
-        assert_eq!(report.status, ReadinessClass::Ready);
-        assert!(report.ready);
-    }
-
-    #[test]
-    fn idle_after_progress_stays_ready_when_history_complete() {
-        let ingest = IngestHealth::new();
-        ingest.mark_started();
-        ingest.mark_progress(7);
-        std::thread::sleep(Duration::from_millis(5));
-        let report = classify_readiness(
-            true,
-            Some(&status(true, false)),
-            &ingest,
-            Duration::from_millis(1),
-        );
-        assert_eq!(report.status, ReadinessClass::Ready);
-        assert!(report.ready);
-        assert_eq!(report.last_ingest_slot, Some(7));
+        ingest.mark_subscribed();
+        ingest.mark_disconnected();
+        let report = classify_readiness(true, Some(&status(true, false)), &ingest);
+        assert_eq!(report.status, ReadinessClass::SourceLagging);
+        assert!(!report.ready);
     }
 }

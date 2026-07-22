@@ -28,16 +28,23 @@ pub enum RunnerError {
     RecoveryRequired(String),
 }
 
+/// Optional hooks for HTTP readiness (subscribe / disconnect / apply progress).
+#[derive(Default)]
+pub struct IngestHooks<'a> {
+    pub on_progress: Option<&'a (dyn Fn(u64) + Send + Sync)>,
+    pub on_subscribed: Option<&'a (dyn Fn() + Send + Sync)>,
+    pub on_disconnected: Option<&'a (dyn Fn() + Send + Sync)>,
+}
+
 /// Runs until `cancel` is cancelled or a durable integrity halt is observed.
 ///
-/// `on_progress` is invoked after each successful apply / exact-replay no-op so
-/// the HTTP readiness layer can derive a live ingest heartbeat without storing
-/// a stale `ready=true` flag.
+/// Hooks report Yellowstone link lifecycle and apply progress so readiness can
+/// distinguish "never connected" from "connected and idle on a filtered stream".
 pub async fn run_sequential_ingest(
     source: &YellowstoneBlockSource,
     store: &SqlProofStore,
     cancel: CancellationToken,
-    on_progress: Option<&(dyn Fn(u64) + Send + Sync)>,
+    hooks: IngestHooks<'_>,
 ) -> Result<(), RunnerError> {
     let mut backoff = Duration::from_millis(200);
     const MAX_BACKOFF: Duration = Duration::from_secs(5);
@@ -60,7 +67,12 @@ pub async fn run_sequential_ingest(
         // Do not reset backoff on subscribe alone: a flaky stream that
         // connects then dies immediately would otherwise spin at 200ms forever.
         let subscription = match source.subscribe(checkpoint).await {
-            Ok(subscription) => subscription,
+            Ok(subscription) => {
+                if let Some(on_subscribed) = hooks.on_subscribed {
+                    on_subscribed();
+                }
+                subscription
+            }
             Err(YellowstoneSourceError::Retryable(message)) => {
                 warn!(%message, ?backoff, "yellowstone subscribe failed; backing off");
                 tokio::select! {
@@ -73,9 +85,12 @@ pub async fn run_sequential_ingest(
             Err(error) => return Err(RunnerError::Source(error)),
         };
 
-        match drive_subscription(subscription, store, &cancel, &mut backoff, on_progress).await {
+        match drive_subscription(subscription, store, &cancel, &mut backoff, &hooks).await {
             Ok(()) => return Ok(()),
             Err(RunnerError::Source(YellowstoneSourceError::Retryable(message))) => {
+                if let Some(on_disconnected) = hooks.on_disconnected {
+                    on_disconnected();
+                }
                 warn!(%message, ?backoff, "yellowstone stream failed; reconnecting");
                 tokio::select! {
                     _ = cancel.cancelled() => return Ok(()),
@@ -93,7 +108,7 @@ async fn drive_subscription(
     store: &SqlProofStore,
     cancel: &CancellationToken,
     backoff: &mut Duration,
-    on_progress: Option<&(dyn Fn(u64) + Send + Sync)>,
+    hooks: &IngestHooks<'_>,
 ) -> Result<(), RunnerError> {
     const INITIAL_BACKOFF: Duration = Duration::from_millis(200);
     loop {
@@ -125,14 +140,14 @@ async fn drive_subscription(
                 // Meaningful stream progress — safe to collapse reconnect delay.
                 *backoff = INITIAL_BACKOFF;
                 info!(slot = block.slot, "applied completed block");
-                if let Some(on_progress) = on_progress {
+                if let Some(on_progress) = hooks.on_progress {
                     on_progress(block.slot);
                 }
             }
             ApplyOutcome::AlreadyApplied => {
                 *backoff = INITIAL_BACKOFF;
                 info!(slot = block.slot, "exact replay no-op");
-                if let Some(on_progress) = on_progress {
+                if let Some(on_progress) = hooks.on_progress {
                     on_progress(block.slot);
                 }
             }

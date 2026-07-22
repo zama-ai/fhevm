@@ -18,7 +18,3 @@ solana:
 yellowstone:
   grpc_url: http://127.0.0.1:10000
   # x_token: optional
-
-readiness:
-  # Max silence between ingest progress heartbeats before source_lagging.
-  max_ingest_silence_secs: 60

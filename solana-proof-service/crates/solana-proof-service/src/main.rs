@@ -4,7 +4,7 @@ use std::sync::Arc;
 
 use anyhow::{Context, Result};
 use solana_proof_source::{YellowstoneBlockSource, YellowstoneSourceConfig};
-use solana_proof_store::{run_sequential_ingest, SqlProofStore};
+use solana_proof_store::{run_sequential_ingest, IngestHooks, SqlProofStore};
 use sqlx::postgres::PgPoolOptions;
 use tokio_util::sync::CancellationToken;
 use tracing_subscriber::EnvFilter;
@@ -53,13 +53,25 @@ async fn main() -> Result<()> {
         let health = Arc::clone(&ingest);
         Arc::new(move |slot: u64| health.mark_progress(slot))
     };
+    let on_subscribed: Arc<dyn Fn() + Send + Sync> = {
+        let health = Arc::clone(&ingest);
+        Arc::new(move || health.mark_subscribed())
+    };
+    let on_disconnected: Arc<dyn Fn() + Send + Sync> = {
+        let health = Arc::clone(&ingest);
+        Arc::new(move || health.mark_disconnected())
+    };
     tokio::spawn(async move {
         ingest_health.mark_started();
         let result = run_sequential_ingest(
             &source,
             &ingest_store,
             ingest_cancel,
-            Some(on_progress.as_ref()),
+            IngestHooks {
+                on_progress: Some(on_progress.as_ref()),
+                on_subscribed: Some(on_subscribed.as_ref()),
+                on_disconnected: Some(on_disconnected.as_ref()),
+            },
         )
         .await;
         if let Err(err) = &result {
@@ -73,7 +85,6 @@ async fn main() -> Result<()> {
         store,
         fetcher,
         ingest,
-        max_ingest_silence: config.readiness.max_ingest_silence(),
     });
     let app = router(state);
 

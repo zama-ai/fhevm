@@ -43,19 +43,20 @@ briefly ahead of** a different confirmed RPC) → HTTP 503 with
 `status: "lagging"`. Equal-count peak divergence or snapshot inconsistency →
 HTTP 500 with `status: "corrupt_cache"` (fail closed; wire name preserved for
 relayer DTO parity until #1721). Other client/server failures use the same
-`ErrorResponse` JSON envelope. Requests get an `x-request-id` and a 30s HTTP
-timeout with a concurrency bound.
+`ErrorResponse` JSON envelope. Proof routes get an `x-request-id`, a 30s typed
+timeout (`code: timeout`), and a shed-on-saturate concurrency limit
+(`code: overloaded`). Liveness / readiness / metrics are outside that gate so
+probes cannot be starved. Upstream RPC uses a shorter 10s budget so chain
+failures surface as typed `chain_error` inside the HTTP window.
 
 **Readiness vs proof trust:** `/health/readiness` is the bootstrap / ingest gate
-(history complete + writer live). Program-filtered Yellowstone may omit blocks
-for long stretches after catch-up; idle ingest is **not** treated as
-`source_lagging`. Real checkpoint-lag vs RPC tip lands with bounded recovery.
-Per-request proof trust is peak-equality against confirmed chain state, not the
-readiness probe.
+(history complete + writer live + Yellowstone successfully subscribed). After a
+successful subscribe, program-filtered idle streams are healthy; never-connected
+or reconnecting sources are `source_lagging`. Per-request proof trust is
+peak-equality against confirmed chain state, not the readiness probe.
 
 Readiness classifications: `database_unavailable`, `writer_missing`,
-`source_lagging` (reserved for future checkpoint-lag), `history_incomplete`,
-`recovery_required`, `integrity_halted`.
+`source_lagging`, `history_incomplete`, `recovery_required`, `integrity_halted`.
 
 ## PoC gaps (non-prod TODOs)
 

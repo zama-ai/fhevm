@@ -2,7 +2,6 @@
 
 use std::net::SocketAddr;
 use std::path::Path;
-use std::time::Duration;
 
 use serde::Deserialize;
 
@@ -20,7 +19,6 @@ const KNOWN_ENV_PATHS: &[&[&str]] = &[
     &["solana", "rpc_url"],
     &["yellowstone", "grpc_url"],
     &["yellowstone", "x_token"],
-    &["readiness", "max_ingest_silence_secs"],
 ];
 
 #[derive(Clone, Debug, Deserialize)]
@@ -30,8 +28,6 @@ pub struct ServiceConfig {
     pub database: DatabaseConfig,
     pub solana: SolanaConfig,
     pub yellowstone: YellowstoneConfig,
-    #[serde(default)]
-    pub readiness: ReadinessConfig,
 }
 
 #[derive(Clone, Debug, Deserialize)]
@@ -69,33 +65,6 @@ pub struct YellowstoneConfig {
     pub x_token: Option<String>,
 }
 
-#[derive(Clone, Debug, Deserialize)]
-#[serde(deny_unknown_fields)]
-pub struct ReadinessConfig {
-    /// Reserved for future checkpoint-lag / source-liveness gating (bounded recovery).
-    /// Not used to fail readiness on program-filtered idle streams after catch-up.
-    #[serde(default = "default_max_ingest_silence_secs")]
-    pub max_ingest_silence_secs: u64,
-}
-
-fn default_max_ingest_silence_secs() -> u64 {
-    60
-}
-
-impl Default for ReadinessConfig {
-    fn default() -> Self {
-        Self {
-            max_ingest_silence_secs: default_max_ingest_silence_secs(),
-        }
-    }
-}
-
-impl ReadinessConfig {
-    pub fn max_ingest_silence(&self) -> Duration {
-        Duration::from_secs(self.max_ingest_silence_secs)
-    }
-}
-
 impl ServiceConfig {
     pub fn load() -> anyhow::Result<Self> {
         let path =
@@ -130,9 +99,6 @@ impl ServiceConfig {
             anyhow::bail!("yellowstone.grpc_url must not be empty");
         }
         decode_program_id(&self.solana.program_id)?;
-        if self.readiness.max_ingest_silence_secs == 0 {
-            anyhow::bail!("readiness.max_ingest_silence_secs must be >= 1");
-        }
         Ok(())
     }
 
@@ -258,7 +224,7 @@ mod tests {
 
     fn clear_test_env_overrides() {
         std::env::remove_var("SOLANA_PROOF__READINESS__TYPO_SECS");
-        std::env::remove_var("SOLANA_PROOF__READINESS__MAX_INGEST_SILENCE_SECS");
+        std::env::remove_var("SOLANA_PROOF__DATABASE__MAX_CONNECTIONS");
     }
 
     #[test]
@@ -280,7 +246,6 @@ yellowstone:
         );
         let config = ServiceConfig::load_from_path(file.path()).unwrap();
         assert_eq!(config.server.bind_address.port(), 8080);
-        assert_eq!(config.readiness.max_ingest_silence_secs, 60);
         file.close().ok();
     }
 

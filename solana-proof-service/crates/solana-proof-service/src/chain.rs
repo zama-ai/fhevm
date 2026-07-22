@@ -45,8 +45,10 @@ impl RpcChainFetcher {
     /// stalled RPC cannot retain proof handlers indefinitely.
     pub fn new(rpc_url: String) -> Self {
         let client = reqwest::Client::builder()
-            .connect_timeout(std::time::Duration::from_secs(5))
-            .timeout(std::time::Duration::from_secs(30))
+            // Stay inside the outer HTTP proof budget (30s) so timeouts surface as
+            // typed `chain_error` rather than racing an empty HTTP 408.
+            .connect_timeout(std::time::Duration::from_secs(3))
+            .timeout(std::time::Duration::from_secs(10))
             .build()
             .expect("reqwest client");
         Self { client, rpc_url }

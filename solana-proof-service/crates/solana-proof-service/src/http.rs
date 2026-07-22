@@ -1,18 +1,22 @@
 //! Axum HTTP surface: liveness, readiness, metrics, OpenAPI, and MMR proof.
 
 use std::sync::Arc;
+use std::sync::OnceLock;
 use std::time::Duration;
 
-use axum::extract::{Query, State};
+use axum::extract::{Query, Request, State};
 use axum::http::StatusCode;
+use axum::middleware::{from_fn, Next};
 use axum::response::{IntoResponse, Response};
 use axum::routing::get;
 use axum::{Json, Router};
 use serde::{Deserialize, Serialize};
-use tower::limit::ConcurrencyLimitLayer;
-use tower_http::request_id::{MakeRequestUuid, PropagateRequestIdLayer, SetRequestIdLayer};
-use tower_http::timeout::TimeoutLayer;
-use tower_http::trace::TraceLayer;
+use tokio::sync::Semaphore;
+use tower_http::request_id::{
+    MakeRequestUuid, PropagateRequestIdLayer, RequestId, SetRequestIdLayer,
+};
+use tower_http::trace::{MakeSpan, TraceLayer};
+use tracing::Span;
 use utoipa::{OpenApi, ToSchema};
 use utoipa_swagger_ui::SwaggerUi;
 
@@ -22,10 +26,15 @@ use crate::metrics::{self, metrics_handler};
 use crate::proof::{build_proof, ProofError, ProofSnapshotSource};
 use crate::readiness::{evaluate_readiness, ReadinessClass, ReadinessQueryable, ReadinessReport};
 
-/// Hard ceiling for a single HTTP request (includes RPC peak check).
-const HTTP_REQUEST_TIMEOUT: Duration = Duration::from_secs(30);
-/// Soft concurrency bound so stalled handlers cannot exhaust the process.
-const HTTP_MAX_CONCURRENT_REQUESTS: usize = 128;
+/// Hard ceiling for a single proof HTTP request (includes RPC peak check).
+const PROOF_REQUEST_TIMEOUT: Duration = Duration::from_secs(30);
+/// Soft concurrency bound for proof handlers only (ops endpoints stay independent).
+const PROOF_MAX_CONCURRENT_REQUESTS: usize = 128;
+
+fn proof_semaphore() -> &'static Semaphore {
+    static SEM: OnceLock<Semaphore> = OnceLock::new();
+    SEM.get_or_init(|| Semaphore::new(PROOF_MAX_CONCURRENT_REQUESTS))
+}
 
 /// Shared application state. Generic over the chain fetcher and snapshot source
 /// so handler tests can inject fakes without a live RPC node or Postgres.
@@ -33,7 +42,6 @@ pub struct AppState<C: ChainFetcher, S: ProofSnapshotSource> {
     pub store: S,
     pub fetcher: Arc<C>,
     pub ingest: Arc<IngestHealth>,
-    pub max_ingest_silence: std::time::Duration,
 }
 
 #[derive(Debug, Deserialize, ToSchema)]
@@ -78,6 +86,19 @@ pub struct ErrorResponse {
     pub leaf_index: Option<u64>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub leaf_count: Option<u64>,
+}
+
+fn error_json(status: StatusCode, code: &'static str, error: impl Into<String>) -> Response {
+    (
+        status,
+        Json(ErrorResponse {
+            error: error.into(),
+            code: code.to_owned(),
+            leaf_index: None,
+            leaf_count: None,
+        }),
+    )
+        .into_response()
 }
 
 #[derive(Debug, Serialize, ToSchema)]
@@ -194,8 +215,9 @@ fn decode_solana_address(address: &str) -> Result<[u8; 32], String> {
     ),
     responses(
         (status = 200, description = "Verified proof", body = MmrProofResponse),
-        (status = 503, description = "Store lagging chain", body = MmrProofResponse),
+        (status = 503, description = "Store lagging chain (MmrProofResponse) or proof overloaded (ErrorResponse)"),
         (status = 500, description = "Corrupt cache / integrity", body = MmrProofResponse),
+        (status = 408, description = "Proof request timed out", body = ErrorResponse),
         (status = 400, description = "Invalid address or leaf index", body = ErrorResponse),
         (status = 404, description = "Lineage not found on chain", body = ErrorResponse),
     ),
@@ -246,7 +268,7 @@ pub async fn liveness_handler() -> Json<LivenessResponse> {
 pub async fn readiness_handler<C: ChainFetcher, S: ProofSnapshotSource + ReadinessQueryable>(
     State(state): State<Arc<AppState<C, S>>>,
 ) -> Result<Json<ReadinessReport>, (StatusCode, Json<ReadinessReport>)> {
-    let report = evaluate_readiness(&state.store, &state.ingest, state.max_ingest_silence).await;
+    let report = evaluate_readiness(&state.store, &state.ingest).await;
     metrics::record_readiness(report.status.as_str());
     if report.ready {
         Ok(Json(report))
@@ -279,38 +301,86 @@ pub async fn readiness_handler<C: ChainFetcher, S: ProofSnapshotSource + Readine
 )]
 pub struct ApiDoc;
 
-fn http_layers<S>(router: Router<S>) -> Router<S>
+#[derive(Clone, Copy, Debug)]
+struct RequestIdMakeSpan;
+
+impl<B> MakeSpan<B> for RequestIdMakeSpan {
+    fn make_span(&mut self, request: &Request<B>) -> Span {
+        let request_id = request
+            .extensions()
+            .get::<RequestId>()
+            .and_then(|id| id.header_value().to_str().ok())
+            .unwrap_or("");
+        tracing::info_span!(
+            "http_request",
+            method = %request.method(),
+            uri = %request.uri(),
+            request_id = %request_id,
+        )
+    }
+}
+
+/// Proof-only: shed when saturated (no unbounded queue) and enforce a typed timeout.
+async fn proof_admission(req: Request, next: Next) -> Response {
+    let Ok(permit) = proof_semaphore().try_acquire() else {
+        metrics::record_proof("overloaded");
+        return error_json(
+            StatusCode::SERVICE_UNAVAILABLE,
+            "overloaded",
+            "proof concurrency limit reached",
+        );
+    };
+
+    let response = match tokio::time::timeout(PROOF_REQUEST_TIMEOUT, next.run(req)).await {
+        Ok(response) => response,
+        Err(_) => {
+            metrics::record_proof("timeout");
+            error_json(
+                StatusCode::REQUEST_TIMEOUT,
+                "timeout",
+                "proof request timed out",
+            )
+        }
+    };
+    drop(permit);
+    response
+}
+
+fn request_id_layers<S>(router: Router<S>) -> Router<S>
 where
     S: Clone + Send + Sync + 'static,
 {
     router
-        .layer(TimeoutLayer::with_status_code(
-            StatusCode::REQUEST_TIMEOUT,
-            HTTP_REQUEST_TIMEOUT,
-        ))
-        .layer(ConcurrencyLimitLayer::new(HTTP_MAX_CONCURRENT_REQUESTS))
-        .layer(TraceLayer::new_for_http())
+        .layer(TraceLayer::new_for_http().make_span_with(RequestIdMakeSpan))
         .layer(PropagateRequestIdLayer::x_request_id())
         .layer(SetRequestIdLayer::x_request_id(MakeRequestUuid))
 }
 
 /// Builds the HTTP router. Mounts OpenAPI + swagger UI.
+///
+/// Operational endpoints (liveness / readiness / metrics) are outside the proof
+/// concurrency and timeout gate so health probes cannot be starved by O(n) proofs.
 pub fn router<C, S>(state: Arc<AppState<C, S>>) -> Router
 where
     C: ChainFetcher + 'static,
     S: ProofSnapshotSource + ReadinessQueryable + 'static,
 {
-    let api = Router::new()
+    let ops = Router::new()
         .route("/health/liveness", get(liveness_handler))
         .route("/health/readiness", get(readiness_handler::<C, S>))
         .route("/metrics", get(metrics_handler))
+        .with_state(Arc::clone(&state));
+
+    let proof = Router::new()
         .route("/internal/solana/mmr-proof", get(mmr_proof_handler::<C, S>))
+        .layer(from_fn(proof_admission))
         .with_state(state);
 
-    http_layers(
+    request_id_layers(
         Router::new()
             .merge(SwaggerUi::new("/swagger-ui").url("/api-docs/openapi.json", ApiDoc::openapi()))
-            .merge(api),
+            .merge(ops)
+            .merge(proof),
     )
 }
 
@@ -321,9 +391,10 @@ where
     C: ChainFetcher + 'static,
     S: ProofSnapshotSource + 'static,
 {
-    http_layers(
+    request_id_layers(
         Router::new()
             .route("/internal/solana/mmr-proof", get(mmr_proof_handler::<C, S>))
+            .layer(from_fn(proof_admission))
             .with_state(state),
     )
 }
@@ -334,7 +405,6 @@ mod tests {
     use std::collections::HashMap;
     use std::sync::atomic::{AtomicUsize, Ordering};
     use std::sync::Mutex;
-    use std::time::Duration;
 
     use async_trait::async_trait;
     use axum::body::Body;
@@ -457,7 +527,6 @@ mod tests {
             store,
             fetcher: Arc::new(chain),
             ingest: IngestHealth::new(),
-            max_ingest_silence: Duration::from_secs(60),
         })
     }
 
