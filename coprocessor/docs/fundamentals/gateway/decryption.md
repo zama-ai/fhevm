@@ -23,6 +23,50 @@ We allow explicit decryption requests for any encrypted type. The values are dec
 
 ![](asyncDecrypt.png)
 
+## Interface changes in v0.12.0
+
+> ⚠️ **Breaking changes in v0.12.0** — the `IDecryption` interface has been updated. Off-chain clients and contracts that call these functions must be updated.
+
+### `isUserDecryptionReady`
+
+A new overload without the `userAddress` parameter is now the canonical signature:
+
+```solidity
+// New (canonical) — v0.12.0+
+function isUserDecryptionReady(
+    CtHandleContractPair[] calldata ctHandleContractPairs,
+    bytes calldata extraData
+) external view returns (bool);
+
+// Old (deprecated, kept for backward compatibility)
+function isUserDecryptionReady(
+    address userAddress,           // unused — kept only for ABI backward compatibility
+    CtHandleContractPair[] calldata ctHandleContractPairs,
+    bytes calldata extraData
+) external view returns (bool);
+```
+
+The `userAddress` parameter was not used by the implementation and has been removed from the primary overload. The old signature remains callable but is marked `@custom:deprecated`.
+
+### `isDelegatedUserDecryptionReady`
+
+The `delegationAccounts` parameter has been removed:
+
+```solidity
+// New — v0.12.0+
+function isDelegatedUserDecryptionReady(
+    CtHandleContractPair[] calldata ctHandleContractPairs,
+    bytes calldata extraData
+) external view returns (bool);
+```
+
+### New errors
+
+| Error | Description |
+|---|---|
+| `InvalidExtraDataLength(uint256 length, uint256 minimumLength)` | The `extraData` bytes payload is shorter than required |
+| `UnsupportedExtraDataVersion(uint8 version)` | The version byte in `extraData` is not recognised |
+
 
 
 
