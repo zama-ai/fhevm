@@ -97,8 +97,16 @@ impl std::fmt::Debug for YellowstoneSourceConfig {
 pub enum YellowstoneSourceError {
     #[error("retryable Yellowstone transport failure: {0}")]
     Retryable(String),
-    #[error("inclusive Yellowstone replay is unavailable: {0}")]
-    ReplayUnavailable(String),
+    /// Provider does not support `from_slot` at all. Advancing the durable
+    /// checkpoint cannot fix this; do not RPC-catch-up and resubscribe with
+    /// `from_slot` in a loop. Fail closed until a replay-capable geyser is
+    /// configured or cursorless staging lands (fhevm-internal #1823).
+    #[error("Yellowstone inclusive replay is unsupported by this provider: {0}")]
+    ReplayUnsupported(String),
+    /// Inclusive replay is supported, but the requested cursor is no longer
+    /// available. Bounded RPC catch-up may recover, then resubscribe.
+    #[error("Yellowstone inclusive replay cursor expired: {0}")]
+    ReplayCursorExpired(String),
     #[error("invalid Yellowstone data or configuration: {0}")]
     Invalid(String),
     #[error(
@@ -476,11 +484,13 @@ fn decode_hash(name: &str, encoded: &str) -> Result<[u8; 32], YellowstoneSourceE
 
 fn classify_status(status: tonic::Status, is_replay: bool) -> YellowstoneSourceError {
     let message = status.message();
-    if is_replay
-        && (message == "from_slot is not supported"
-            || (message.starts_with("broadcast from ") && message.contains(" is not available")))
+    if is_replay && message == "from_slot is not supported" {
+        YellowstoneSourceError::ReplayUnsupported(status.to_string())
+    } else if is_replay
+        && message.starts_with("broadcast from ")
+        && message.contains(" is not available")
     {
-        YellowstoneSourceError::ReplayUnavailable(status.to_string())
+        YellowstoneSourceError::ReplayCursorExpired(status.to_string())
     } else {
         YellowstoneSourceError::Retryable(status.to_string())
     }
@@ -898,20 +908,23 @@ mod tests {
     }
 
     #[test]
-    fn replay_unavailable_is_terminal_but_transport_is_retryable() {
-        for message in [
-            "from_slot is not supported",
-            "broadcast from 7 is not available, last available: 12",
-        ] {
-            assert!(matches!(
-                classify_status(tonic::Status::internal(message), true),
-                YellowstoneSourceError::ReplayUnavailable(_)
-            ));
-        }
+    fn replay_unsupported_and_cursor_expired_are_distinct() {
+        assert!(matches!(
+            classify_status(tonic::Status::internal("from_slot is not supported"), true),
+            YellowstoneSourceError::ReplayUnsupported(_)
+        ));
+        assert!(matches!(
+            classify_status(
+                tonic::Status::internal("broadcast from 7 is not available, last available: 12"),
+                true
+            ),
+            YellowstoneSourceError::ReplayCursorExpired(_)
+        ));
         for status in [
             tonic::Status::unavailable("connection reset"),
             tonic::Status::internal("failed to send replay update"),
             tonic::Status::internal("broadcast from 7 is not available"),
+            tonic::Status::internal("from_slot is not supported"),
         ] {
             assert!(matches!(
                 classify_status(status, false),

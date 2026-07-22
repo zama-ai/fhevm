@@ -130,14 +130,31 @@ impl RpcRecoveryClient {
     /// Fetches and normalizes completed blocks for every existing slot in
     /// `[from_slot, to_slot]` (inclusive), enforcing lean attempt bounds.
     ///
-    /// Polls `cancel` before each RPC and selects in-flight `send` / body reads
-    /// against cancellation. Connect/request timeouts match the proof RPC client.
+    /// Prefer [`Self::list_existing_slots`] + [`Self::fetch_completed_block`] in
+    /// the ingest runner so each applied block advances the durable checkpoint
+    /// before the next `getBlock` (fhevm-internal #1823 tracks parallel staging).
     pub async fn fetch_completed_blocks(
         &self,
         from_slot: u64,
         to_slot: u64,
         cancel: &CancellationToken,
     ) -> Result<Vec<CompletedBlock>, RecoveryError> {
+        let slots = self.list_existing_slots(from_slot, to_slot, cancel).await?;
+        let mut blocks = Vec::with_capacity(slots.len());
+        for slot in slots {
+            blocks.push(self.fetch_completed_block(slot, cancel).await?);
+        }
+        Ok(blocks)
+    }
+
+    /// Existing confirmed slots in `[from_slot, to_slot]` (inclusive), with
+    /// attempt bounds enforced before any `getBlock`.
+    pub async fn list_existing_slots(
+        &self,
+        from_slot: u64,
+        to_slot: u64,
+        cancel: &CancellationToken,
+    ) -> Result<Vec<u64>, RecoveryError> {
         if cancel.is_cancelled() {
             return Err(RecoveryError::Cancelled);
         }
@@ -165,20 +182,25 @@ impl RpcRecoveryClient {
                 self.config.bounds.max_blocks
             )));
         }
+        Ok(slots)
+    }
 
-        let mut blocks = Vec::with_capacity(slots.len());
-        for slot in slots {
-            if cancel.is_cancelled() {
-                return Err(RecoveryError::Cancelled);
-            }
-            let Some(block) = self.get_block(slot, cancel).await? else {
-                return Err(RecoveryError::HistoryUnavailable(format!(
-                    "getBlock returned null for slot {slot} (pruned or unavailable at confirmed)"
-                )));
-            };
-            blocks.push(block);
+    /// Fetch and normalize one confirmed block. Prefer this over buffering an
+    /// entire recovery range so the durable checkpoint can advance per block.
+    pub async fn fetch_completed_block(
+        &self,
+        slot: u64,
+        cancel: &CancellationToken,
+    ) -> Result<CompletedBlock, RecoveryError> {
+        if cancel.is_cancelled() {
+            return Err(RecoveryError::Cancelled);
         }
-        Ok(blocks)
+        let Some(block) = self.get_block(slot, cancel).await? else {
+            return Err(RecoveryError::HistoryUnavailable(format!(
+                "getBlock returned null for slot {slot} (pruned or unavailable at confirmed)"
+            )));
+        };
+        Ok(block)
     }
 
     /// Confirmed tip slot (`getSlot`), used to bound catch-up when Yellowstone

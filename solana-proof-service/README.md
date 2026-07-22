@@ -66,11 +66,17 @@ Readiness classifications: `database_unavailable`, `writer_missing`,
 ## Recovery
 
 Live ingest remains **filtered confirmed Yellowstone**. When the store or source
-signals a contiguous parent-chain gap (`RecoveryRequired` / `Ancestry`), the
-runner invokes bounded RPC `getBlocks`/`getBlock` (confirmed), normalizes into
-the same `CompletedBlock` shape (program-filtered txs, sparse indexes), applies
-through `SqlProofStore::apply_completed_block`, then **resubscribes from the
+signals a contiguous parent-chain gap (`RecoveryRequired` / `Ancestry`), or when
+a replay-capable geyser reports an **expired** inclusive cursor
+(`ReplayCursorExpired`), the runner invokes bounded RPC `getBlocks`/`getBlock`
+(confirmed), applies each normalized block **before** fetching the next (so the
+durable checkpoint advances during catch-up), then **resubscribes from the
 durable checkpoint** (inclusive replay). Cancellation during recovery is safe.
+
+A geyser that rejects `from_slot` entirely (`ReplayUnsupported`) fails closed:
+RPC catch-up cannot invent replay support, and resubscribing with `from_slot`
+would loop forever. Cursorless live intake + ordered staging is tracked in
+fhevm-internal #1823.
 
 Errors are distinguished:
 

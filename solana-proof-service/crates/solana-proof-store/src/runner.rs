@@ -68,9 +68,12 @@ pub struct IngestHooks<'a> {
 /// treats a bare gRPC subscribe as a live, continuity-checked source.
 ///
 /// When `recovery` is `Some`, [`RunnerError::RecoveryRequired`] and Yellowstone
-/// ancestry / replay-unavailable signals invoke a bounded RPC fill, then the
-/// loop resubscribes from the durable checkpoint. When `recovery` is `None`,
-/// gaps surface as [`RunnerError::RecoveryRequired`] immediately (fail closed).
+/// [`YellowstoneSourceError::ReplayCursorExpired`] invoke a bounded RPC fill,
+/// then the loop resubscribes from the durable checkpoint. Providers that
+/// reject `from_slot` entirely ([`YellowstoneSourceError::ReplayUnsupported`])
+/// fail closed — RPC catch-up cannot change that capability (see
+/// fhevm-internal #1823 for cursorless staging). When `recovery` is `None`,
+/// gaps surface as [`RunnerError::RecoveryRequired`] immediately.
 pub async fn run_sequential_ingest(
     source: &YellowstoneBlockSource,
     store: &SqlProofStore,
@@ -140,8 +143,16 @@ pub async fn run_sequential_ingest(
                     backoff = (backoff * 2).min(MAX_BACKOFF);
                     continue;
                 }
-                Err(YellowstoneSourceError::ReplayUnavailable(message)) => {
-                    warn!(%message, "yellowstone inclusive replay unavailable; attempting RPC recovery");
+                Err(YellowstoneSourceError::ReplayUnsupported(message)) => {
+                    return Err(RunnerError::Source(
+                        YellowstoneSourceError::ReplayUnsupported(message),
+                    ));
+                }
+                Err(YellowstoneSourceError::ReplayCursorExpired(message)) => {
+                    warn!(
+                        %message,
+                        "Yellowstone inclusive replay cursor expired; attempting RPC catch-up"
+                    );
                     match with_recovery_gate(hooks.on_recovery, async {
                         attempt_recovery(
                             recovery,
@@ -179,6 +190,37 @@ pub async fn run_sequential_ingest(
                     _ = tokio::time::sleep(backoff) => {}
                 }
                 backoff = (backoff * 2).min(MAX_BACKOFF);
+            }
+            Err(RunnerError::Source(YellowstoneSourceError::ReplayUnsupported(message))) => {
+                return Err(RunnerError::Source(
+                    YellowstoneSourceError::ReplayUnsupported(message),
+                ));
+            }
+            Err(RunnerError::Source(YellowstoneSourceError::ReplayCursorExpired(message))) => {
+                warn!(
+                    %message,
+                    "Yellowstone stream reported expired replay cursor; attempting RPC catch-up"
+                );
+                match with_recovery_gate(hooks.on_recovery, async {
+                    attempt_recovery(
+                        recovery,
+                        store,
+                        GapHint::FromCheckpointForward,
+                        &cancel,
+                        hooks.on_recovered_progress,
+                    )
+                    .await
+                })
+                .await?
+                {
+                    Recovered::Filled { confirmed_tip } => {
+                        if let Some(client) = recovery {
+                            maybe_mark_history_complete(client, store, confirmed_tip).await?;
+                        }
+                        continue;
+                    }
+                    Recovered::Cancelled => return Ok(()),
+                }
             }
             Err(RunnerError::RecoveryRequired {
                 reason,
@@ -321,35 +363,17 @@ async fn attempt_recovery(
         to_slot, "fetching bounded RPC recovery blocks at confirmed commitment"
     );
 
-    let blocks = match client
-        .fetch_completed_blocks(from_slot, to_slot, cancel)
-        .await
-    {
-        Ok(blocks) => blocks,
-        Err(RecoveryError::Cancelled) => return Ok(Recovered::Cancelled),
-        Err(RecoveryError::BoundExhausted(message)) => {
-            return Err(recovery_required(format!(
-                "recovery bound exhausted: {message}"
-            )));
-        }
-        Err(RecoveryError::HistoryUnavailable(message)) => {
-            return Err(recovery_required(format!(
-                "RPC history unavailable: {message}"
-            )));
-        }
-        Err(RecoveryError::Transport(message)) => {
-            return Err(recovery_required(format!(
-                "RPC recovery transport failure: {message}"
-            )));
-        }
-        Err(RecoveryError::Invalid(message)) => {
-            return Err(recovery_required(format!(
-                "invalid RPC recovery data: {message}"
-            )));
-        }
-    };
-
-    apply_recovered_blocks(store, &blocks, cancel, on_recovered_progress, confirmed_tip).await
+    recover_range_incremental(RecoverRange {
+        client,
+        store,
+        from_slot,
+        to_slot,
+        cancel,
+        on_recovered_progress,
+        confirmed_tip,
+        expect_first_slot: None,
+    })
+    .await
 }
 
 async fn read_confirmed_tip(
@@ -388,45 +412,102 @@ async fn recover_bootstrap_from_start(
     }
     // Recover the bounded inclusive range through the observed confirmed tip.
     // Bound exhaustion stays fail-closed (history_incomplete / recovery_required).
-    let blocks = match client
-        .fetch_completed_blocks(bootstrap_slot, confirmed_tip, cancel)
-        .await
-    {
-        Ok(blocks) => blocks,
-        Err(RecoveryError::Cancelled) => return Ok(Recovered::Cancelled),
-        Err(RecoveryError::BoundExhausted(message)) => {
-            return Err(recovery_required(format!(
-                "bootstrap recovery bound exhausted from slot {bootstrap_slot} through tip {confirmed_tip}: {message}"
-            )));
-        }
-        Err(RecoveryError::HistoryUnavailable(message)) => {
-            return Err(recovery_required(format!(
-                "bootstrap RPC history unavailable from slot {bootstrap_slot}: {message}"
-            )));
-        }
-        Err(RecoveryError::Transport(message)) => {
-            return Err(recovery_required(format!(
-                "bootstrap RPC transport failure from slot {bootstrap_slot}: {message}"
-            )));
-        }
-        Err(RecoveryError::Invalid(message)) => {
-            return Err(recovery_required(format!(
-                "bootstrap recovery invalid data from slot {bootstrap_slot}: {message}"
-            )));
-        }
+    recover_range_incremental(RecoverRange {
+        client,
+        store,
+        from_slot: bootstrap_slot,
+        to_slot: confirmed_tip,
+        cancel,
+        on_recovered_progress,
+        confirmed_tip,
+        expect_first_slot: Some(bootstrap_slot),
+    })
+    .await
+}
+
+fn map_recovery_list_error(err: RecoveryError, context: &str) -> Result<Recovered, RunnerError> {
+    match err {
+        RecoveryError::Cancelled => Ok(Recovered::Cancelled),
+        RecoveryError::BoundExhausted(message) => Err(recovery_required(format!(
+            "{context} bound exhausted: {message}"
+        ))),
+        RecoveryError::HistoryUnavailable(message) => Err(recovery_required(format!(
+            "{context} RPC history unavailable: {message}"
+        ))),
+        RecoveryError::Transport(message) => Err(recovery_required(format!(
+            "{context} RPC transport failure: {message}"
+        ))),
+        RecoveryError::Invalid(message) => Err(recovery_required(format!(
+            "{context} invalid RPC data: {message}"
+        ))),
+    }
+}
+
+struct RecoverRange<'a> {
+    client: &'a RpcRecoveryClient,
+    store: &'a SqlProofStore,
+    from_slot: u64,
+    to_slot: u64,
+    cancel: &'a CancellationToken,
+    on_recovered_progress: Option<&'a (dyn Fn(u64) + Send + Sync)>,
+    confirmed_tip: u64,
+    expect_first_slot: Option<u64>,
+}
+
+/// List slots, then fetch+apply each block before the next `getBlock` so the
+/// durable checkpoint advances during catch-up (not only after a full Vec).
+async fn recover_range_incremental(range: RecoverRange<'_>) -> Result<Recovered, RunnerError> {
+    let RecoverRange {
+        client,
+        store,
+        from_slot,
+        to_slot,
+        cancel,
+        on_recovered_progress,
+        confirmed_tip,
+        expect_first_slot,
+    } = range;
+    let slots = match client.list_existing_slots(from_slot, to_slot, cancel).await {
+        Ok(slots) => slots,
+        Err(err) => return map_recovery_list_error(err, "recovery"),
     };
-    if blocks.is_empty() {
+    if slots.is_empty() {
         return Err(recovery_required(format!(
-            "bootstrap range [{bootstrap_slot}, {confirmed_tip}] has no confirmed blocks"
+            "RPC recovery returned no blocks for range [{from_slot}, {to_slot}]"
         )));
     }
-    if blocks[0].slot != bootstrap_slot {
-        return Err(recovery_required(format!(
-            "bootstrap recovery expected first slot {bootstrap_slot}, got {}",
-            blocks[0].slot
-        )));
+    if let Some(expected) = expect_first_slot {
+        if slots[0] != expected {
+            return Err(recovery_required(format!(
+                "bootstrap recovery expected first slot {expected}, got {}",
+                slots[0]
+            )));
+        }
     }
-    apply_recovered_blocks(store, &blocks, cancel, on_recovered_progress, confirmed_tip).await
+
+    for slot in slots {
+        if cancel.is_cancelled() {
+            return Ok(Recovered::Cancelled);
+        }
+        let block = match client.fetch_completed_block(slot, cancel).await {
+            Ok(block) => block,
+            Err(RecoveryError::Cancelled) => return Ok(Recovered::Cancelled),
+            Err(err) => return map_recovery_list_error(err, "recovery"),
+        };
+        match apply_recovered_blocks(
+            store,
+            std::slice::from_ref(&block),
+            cancel,
+            on_recovered_progress,
+            confirmed_tip,
+        )
+        .await?
+        {
+            Recovered::Cancelled => return Ok(Recovered::Cancelled),
+            Recovered::Filled { .. } => {}
+        }
+    }
+    Ok(Recovered::Filled { confirmed_tip })
 }
 
 /// Empty successful fetches must fail closed — never `Filled`, never mark complete.
@@ -535,6 +616,12 @@ async fn drive_subscription(
                         ),
                         slot,
                     ));
+                }
+                // Stream-level replay rejection must take the same path as a
+                // subscribe-time rejection (classify_status on gRPC status).
+                Err(error @ YellowstoneSourceError::ReplayUnsupported(_))
+                | Err(error @ YellowstoneSourceError::ReplayCursorExpired(_)) => {
+                    return Err(RunnerError::Source(error));
                 }
                 Err(error) => return Err(RunnerError::Source(error)),
             },
