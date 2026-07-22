@@ -94,3 +94,15 @@ impl TryFrom<(RequestId, Response<UserDecryptionResponse>)> for KmsGrpcResponse 
         })
     }
 }
+
+/// The outcome of sending a GRPC request to the KMS Core.
+///
+/// Most requests only yield an acknowledgement (`Empty`). Context destruction additionally
+/// returns the list of epochs destroyed as a side effect, which the caller invalidates locally.
+#[derive(Clone, Debug, PartialEq)]
+pub enum SendResponse {
+    /// The send was acknowledged, with no meaningful payload to act on.
+    Empty,
+    /// Epoch IDs destroyed as part of a context destruction, to be invalidated locally.
+    DestroyedEpochs(Vec<U256>),
+}
