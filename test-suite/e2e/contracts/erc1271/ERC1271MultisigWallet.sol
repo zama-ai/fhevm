@@ -65,7 +65,7 @@ contract ERC1271MultisigWallet is IERC1271, E2ECoprocessorConfig {
             uint8 v = uint8(signature[offset + 64]);
             (address recovered, ECDSA.RecoverError err, ) = ECDSA.tryRecover(hash, v, r, s);
             // Strictly ascending: `==` rejects a duplicated owner part, `<`
-            // rejects mis-ordered parts (Safe's canonical-ordering rule).
+            // rejects out-of-order parts (Safe's canonical-ordering rule).
             if (err != ECDSA.RecoverError.NoError || recovered <= lastOwner || !isOwner[recovered]) {
                 return INVALID;
             }

@@ -243,7 +243,7 @@ export function computeUnifiedDigest(cfg: UnifiedConfig, req: UnifiedDecryptRequ
  * EIP-712 struct, and the 65-byte parts are concatenated sorted ascending by
  * signer address (Safe's canonical encoding — the ordering doubles as dedup).
  * Submit the result via SignMode `{kind: 'raw'}`. `order: 'descending'`
- * deliberately mis-orders the parts for ordering negatives; passing the same
+ * deliberately reverses the part order for ordering negatives; passing the same
  * signer twice yields a duplicated-part blob (sorting is a no-op on equal keys).
  */
 export async function buildMultisigSignature(
