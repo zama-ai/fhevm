@@ -102,57 +102,49 @@ const rustImageVersion = (toolchainRepoPath: string): string => {
   return match[1];
 };
 
+// Single-sourced from each component's rust-toolchain.toml, matching how CI's
+// common-docker.yml derives RUST_IMAGE_VERSION. This lets the local
+// (docker-compose) builds inject the arg instead of the Dockerfiles hardcoding
+// a default that drifts.
+const COPROCESSOR_RUST_IMAGE_VERSION = rustImageVersion("coprocessor/fhevm-engine/rust-toolchain.toml");
+const KMS_CONNECTOR_RUST_IMAGE_VERSION = rustImageVersion("kms-connector/rust-toolchain.toml");
+const RELAYER_RUST_IMAGE_VERSION = rustImageVersion("relayer/rust-toolchain.toml");
+
+const coprocessorBuildSpec = (target: string) =>
+  buildSpec("../../..", "coprocessor/fhevm-engine/Dockerfile.workspace", {
+    target,
+    args: { RUST_IMAGE_VERSION: COPROCESSOR_RUST_IMAGE_VERSION },
+  });
+
 const COMPONENT_BUILD_SPECS: Record<string, Record<string, Record<string, unknown>>> = {
   coprocessor: {
-    "coprocessor-db-migration": buildSpec("../../..", "coprocessor/fhevm-engine/Dockerfile.workspace", {
-      target: "db-migration",
-    }),
-    "coprocessor-host-listener": buildSpec("../../..", "coprocessor/fhevm-engine/Dockerfile.workspace", {
-      target: "host-listener",
-    }),
-    "coprocessor-host-listener-poller": buildSpec("../../..", "coprocessor/fhevm-engine/Dockerfile.workspace", {
-      target: "host-listener",
-    }),
-    "coprocessor-host-listener-consumer": buildSpec("../../..", "coprocessor/fhevm-engine/Dockerfile.workspace", {
-      target: "host-listener",
-    }),
-    "coprocessor-gw-listener": buildSpec("../../..", "coprocessor/fhevm-engine/Dockerfile.workspace", {
-      target: "gw-listener",
-    }),
-    "coprocessor-tfhe-worker": buildSpec("../../..", "coprocessor/fhevm-engine/Dockerfile.workspace", {
-      target: "tfhe-worker",
-    }),
-    "coprocessor-zkproof-worker": buildSpec("../../..", "coprocessor/fhevm-engine/Dockerfile.workspace", {
-      target: "zkproof-worker",
-    }),
-    "coprocessor-sns-worker": buildSpec("../../..", "coprocessor/fhevm-engine/Dockerfile.workspace", {
-      target: "sns-worker",
-    }),
-    "coprocessor-transaction-sender": buildSpec("../../..", "coprocessor/fhevm-engine/Dockerfile.workspace", {
-      target: "transaction-sender",
-    }),
-    "coprocessor-consensus-detector": buildSpec("../../..", "coprocessor/fhevm-engine/Dockerfile.workspace", {
-      target: "consensus-detector",
-    }),
-    "coprocessor-upgrade-controller": buildSpec("../../..", "coprocessor/fhevm-engine/Dockerfile.workspace", {
-      target: "upgrade-controller",
-    }),
+    "coprocessor-db-migration": coprocessorBuildSpec("db-migration"),
+    "coprocessor-host-listener": coprocessorBuildSpec("host-listener"),
+    "coprocessor-host-listener-poller": coprocessorBuildSpec("host-listener"),
+    "coprocessor-host-listener-consumer": coprocessorBuildSpec("host-listener"),
+    "coprocessor-gw-listener": coprocessorBuildSpec("gw-listener"),
+    "coprocessor-tfhe-worker": coprocessorBuildSpec("tfhe-worker"),
+    "coprocessor-zkproof-worker": coprocessorBuildSpec("zkproof-worker"),
+    "coprocessor-sns-worker": coprocessorBuildSpec("sns-worker"),
+    "coprocessor-transaction-sender": coprocessorBuildSpec("transaction-sender"),
+    "coprocessor-consensus-detector": coprocessorBuildSpec("consensus-detector"),
+    "coprocessor-upgrade-controller": coprocessorBuildSpec("upgrade-controller"),
   },
   "kms-connector": {
     "kms-connector-db-migration": buildSpec("../../..", "kms-connector/connector-db/Dockerfile", {
-      args: { RUST_IMAGE_VERSION: rustImageVersion("kms-connector/rust-toolchain.toml") },
+      args: { RUST_IMAGE_VERSION: KMS_CONNECTOR_RUST_IMAGE_VERSION },
     }),
     "kms-connector-gw-listener": buildSpec("../../..", "kms-connector/Dockerfile.workspace", {
       target: "gw-listener",
-      args: { RUST_IMAGE_VERSION: rustImageVersion("kms-connector/rust-toolchain.toml") },
+      args: { RUST_IMAGE_VERSION: KMS_CONNECTOR_RUST_IMAGE_VERSION },
     }),
     "kms-connector-kms-worker": buildSpec("../../..", "kms-connector/Dockerfile.workspace", {
       target: "kms-worker",
-      args: { RUST_IMAGE_VERSION: rustImageVersion("kms-connector/rust-toolchain.toml") },
+      args: { RUST_IMAGE_VERSION: KMS_CONNECTOR_RUST_IMAGE_VERSION },
     }),
     "kms-connector-tx-sender": buildSpec("../../..", "kms-connector/Dockerfile.workspace", {
       target: "tx-sender",
-      args: { RUST_IMAGE_VERSION: rustImageVersion("kms-connector/rust-toolchain.toml") },
+      args: { RUST_IMAGE_VERSION: KMS_CONNECTOR_RUST_IMAGE_VERSION },
     }),
   },
   "listener-core": {
@@ -160,10 +152,10 @@ const COMPONENT_BUILD_SPECS: Record<string, Record<string, Record<string, unknow
   },
   relayer: {
     "relayer-db-migration": buildSpec("../../..", "relayer/docker/relayer-migrate/Dockerfile", {
-      args: { RUST_IMAGE_VERSION: rustImageVersion("relayer/rust-toolchain.toml") },
+      args: { RUST_IMAGE_VERSION: RELAYER_RUST_IMAGE_VERSION },
     }),
     relayer: buildSpec("../../..", "relayer/docker/relayer/Dockerfile", {
-      args: { RUST_IMAGE_VERSION: rustImageVersion("relayer/rust-toolchain.toml") },
+      args: { RUST_IMAGE_VERSION: RELAYER_RUST_IMAGE_VERSION },
     }),
   },
   "gateway-mocked-payment": {
