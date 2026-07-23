@@ -71,16 +71,60 @@ pub struct RpcRecoveryConfig {
 
 #[derive(thiserror::Error, Clone, Debug, PartialEq, Eq)]
 pub enum RecoveryError {
+    /// Transport-layer failure reaching the RPC endpoint: connection refused,
+    /// DNS failure, connect/request timeout on `send()`, or a body that dropped
+    /// mid-read or exceeded the body timeout. The endpoint may simply not exist
+    /// yet (startup bring-up) or be flapping, so callers retry with backoff
+    /// rather than failing closed. Born only from a `reqwest` `send()`/body-read
+    /// error — never from a body the endpoint fully returned.
     #[error("RPC transport error: {0}")]
     Transport(String),
+    /// The endpoint responded but returned a JSON-RPC `error` object that is not
+    /// a known history-unavailable code. A reachable node rejecting the call is
+    /// a logical/protocol failure, not unreachability — fail closed.
+    #[error("RPC returned an error: {0}")]
+    RpcError(String),
     #[error("RPC history unavailable: {0}")]
     HistoryUnavailable(String),
+    /// A fully-read body that failed to parse, or a well-formed response missing
+    /// its `result` field: the node answered with garbage. Terminal.
     #[error("invalid RPC block or configuration: {0}")]
     Invalid(String),
     #[error("recovery cancelled")]
     Cancelled,
     #[error("recovery bound exhausted: {0}")]
     BoundExhausted(String),
+}
+
+/// Solana archive nodes signal pruned/absent history with these codes/messages.
+fn is_history_unavailable(message: &str) -> bool {
+    message.contains("Block cleaned up")
+        || message.contains("Block not available")
+        || message.contains("Slot skipped")
+        || message.contains("-32007")
+        || message.contains("-32009")
+}
+
+/// Interpret an already-parsed JSON-RPC response into its `result` field, or a
+/// typed error. Only reached once the body was fully read and parsed, so it
+/// never sees a transport failure.
+///
+/// A present `error` object means the endpoint is reachable but rejected the
+/// call: it is either typed history-unavailability or a logical
+/// [`RecoveryError::RpcError`] — never [`RecoveryError::Transport`], so a node
+/// that answers with an error is not mistaken for an unreachable endpoint.
+fn interpret_rpc_response(value: serde_json::Value) -> Result<serde_json::Value, RecoveryError> {
+    if let Some(error) = value.get("error") {
+        let message = error.to_string();
+        if is_history_unavailable(&message) {
+            return Err(RecoveryError::HistoryUnavailable(message));
+        }
+        return Err(RecoveryError::RpcError(message));
+    }
+    value
+        .get("result")
+        .cloned()
+        .ok_or_else(|| RecoveryError::Invalid("missing result field".to_owned()))
 }
 
 pub struct RpcRecoveryClient {
@@ -301,29 +345,21 @@ impl RpcRecoveryClient {
                 result.map_err(|err| RecoveryError::Transport(err.to_string()))?
             }
         };
-        let value: serde_json::Value = tokio::select! {
+        // Split the body read from the parse. `reqwest::Response::json` folds a
+        // dropped-mid-body / body-timeout failure into `is_decode()`, which would
+        // misclassify those transport conditions as terminal. Read raw bytes
+        // (any error here is transport/IO/timeout — retryable) then parse the
+        // buffered bytes (a parse error is a node that answered with garbage —
+        // terminal `Invalid`).
+        let bytes = tokio::select! {
             _ = cancel.cancelled() => return Err(RecoveryError::Cancelled),
-            result = response.json() => {
+            result = response.bytes() => {
                 result.map_err(|err| RecoveryError::Transport(err.to_string()))?
             }
         };
-        if let Some(error) = value.get("error") {
-            let message = error.to_string();
-            // Solana archive nodes often use -32007 / BlockCleanedUp / SlotSkipped.
-            if message.contains("Block cleaned up")
-                || message.contains("Block not available")
-                || message.contains("Slot skipped")
-                || message.contains("-32007")
-                || message.contains("-32009")
-            {
-                return Err(RecoveryError::HistoryUnavailable(message));
-            }
-            return Err(RecoveryError::Transport(message));
-        }
-        value
-            .get("result")
-            .cloned()
-            .ok_or_else(|| RecoveryError::Invalid("missing result field".to_owned()))
+        let value: serde_json::Value = serde_json::from_slice(&bytes)
+            .map_err(|err| RecoveryError::Invalid(format!("malformed RPC response body: {err}")))?;
+        interpret_rpc_response(value)
     }
 }
 
@@ -1090,6 +1126,116 @@ mod tests {
             Some(&single),
             10
         ));
+    }
+
+    #[test]
+    fn rpc_error_object_is_logical_not_transport() {
+        // A reachable node that answers with a JSON-RPC error object must never
+        // be classified as an unreachable transport failure (which would retry
+        // forever): it is a terminal logical/protocol failure.
+        let err = interpret_rpc_response(json!({
+            "error": { "code": -32601, "message": "Method not found" }
+        }))
+        .unwrap_err();
+        assert!(matches!(err, RecoveryError::RpcError(_)));
+    }
+
+    #[test]
+    fn history_unavailable_codes_stay_typed() {
+        for value in [
+            json!({ "error": { "code": -32007, "message": "Block cleaned up" } }),
+            json!({ "error": { "code": -32009, "message": "Slot skipped" } }),
+        ] {
+            let err = interpret_rpc_response(value).unwrap_err();
+            assert!(matches!(err, RecoveryError::HistoryUnavailable(_)));
+        }
+    }
+
+    #[test]
+    fn missing_result_field_is_invalid() {
+        let err = interpret_rpc_response(json!({ "jsonrpc": "2.0", "id": 1 })).unwrap_err();
+        assert!(matches!(err, RecoveryError::Invalid(_)));
+    }
+
+    /// Accept exactly one connection on an ephemeral port, read the request,
+    /// then write `response` verbatim and close. Blocking `std::net` keeps this
+    /// self-contained without pulling extra tokio features into the workspace.
+    fn spawn_one_shot_server(response: &'static [u8]) -> u16 {
+        use std::io::{Read, Write};
+        let listener = std::net::TcpListener::bind("127.0.0.1:0").expect("bind test server");
+        let port = listener.local_addr().unwrap().port();
+        std::thread::spawn(move || {
+            if let Ok((mut socket, _)) = listener.accept() {
+                let mut buf = [0u8; 2048];
+                let _ = socket.read(&mut buf);
+                let _ = socket.write_all(response);
+                let _ = socket.flush();
+                // socket dropped here: the connection closes.
+            }
+        });
+        port
+    }
+
+    fn client_for_port(port: u16) -> RpcRecoveryClient {
+        RpcRecoveryClient::new(RpcRecoveryConfig {
+            rpc_url: format!("http://127.0.0.1:{port}"),
+            program_id: b58(&program()),
+            bounds: RecoveryBounds::default(),
+            bootstrap_slot: None,
+        })
+        .expect("valid recovery client")
+    }
+
+    #[tokio::test]
+    async fn body_dropped_mid_read_is_transport() {
+        // Server promises 100 bytes then sends 5 and closes: the body read fails
+        // partway through. reqwest folds this into `is_decode()`, so it must be
+        // classified from the raw body-read error, not the parse — Transport,
+        // retryable. (A large getBlock body on a busy node hits this same path
+        // via the body timeout.)
+        let port = spawn_one_shot_server(b"HTTP/1.1 200 OK\r\nContent-Length: 100\r\n\r\nshort");
+        let client = client_for_port(port);
+        let cancel = CancellationToken::new();
+        let err = client.get_confirmed_slot(&cancel).await.unwrap_err();
+        assert!(
+            matches!(err, RecoveryError::Transport(_)),
+            "dropped-mid-body must be retryable Transport, got {err:?}"
+        );
+    }
+
+    #[tokio::test]
+    async fn fully_read_non_json_body_is_invalid() {
+        // Server returns a complete 200 whose body is not JSON: the node
+        // answered, so this is a terminal parse failure, never Transport.
+        let port =
+            spawn_one_shot_server(b"HTTP/1.1 200 OK\r\nContent-Length: 15\r\n\r\nnot-json-at-all");
+        let client = client_for_port(port);
+        let cancel = CancellationToken::new();
+        let err = client.get_confirmed_slot(&cancel).await.unwrap_err();
+        assert!(
+            matches!(err, RecoveryError::Invalid(_)),
+            "garbage body from a responding node must be terminal Invalid, got {err:?}"
+        );
+    }
+
+    #[tokio::test]
+    async fn connection_refused_tip_read_is_transport() {
+        // Reproduces the e2e bring-up window: the validator/RPC does not exist
+        // yet, so the request itself is refused. That must surface as the
+        // retryable `Transport` class, never a terminal error.
+        let client = RpcRecoveryClient::new(RpcRecoveryConfig {
+            rpc_url: "http://127.0.0.1:1".to_owned(),
+            program_id: b58(&program()),
+            bounds: RecoveryBounds::default(),
+            bootstrap_slot: None,
+        })
+        .expect("valid recovery client");
+        let cancel = CancellationToken::new();
+        let err = client.get_confirmed_slot(&cancel).await.unwrap_err();
+        assert!(
+            matches!(err, RecoveryError::Transport(_)),
+            "expected Transport, got {err:?}"
+        );
     }
 
     #[test]
