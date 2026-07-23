@@ -469,7 +469,7 @@ describe("render-compose", () => {
       });
     });
 
-    test("adds a per-image registry cache_from only for per-image Dockerfile builds", async () => {
+    test("adds the shared workspace cache_from for coprocessor and per-image refs elsewhere", async () => {
       await withTempStateDir(async () => {
         await mkdir(path.dirname(envPath("coprocessor")), { recursive: true });
         await writeFile(envPath("coprocessor"), "\n");
@@ -478,17 +478,24 @@ describe("render-compose", () => {
         const withEnv = await renderOverrides({ ...BUILDCACHE_ENV });
 
         type BuildDoc = { services: Record<string, { build?: { cache_from?: string[] } }> };
+        const coprocessor = YAML.parse(withEnv.coprocessor) as BuildDoc;
         const connector = YAML.parse(withEnv.connector) as BuildDoc;
 
-        // The publish workflow exports per-image build caches; those cannot hit against the
-        // branch-local workspace Dockerfiles, so workspace-built services get no cache_from and
-        // a set FHEVM_BUILDCACHE_TAG stays harmless.
-        expect(withEnv.coprocessor).not.toContain("cache_from");
+        // Every coprocessor workspace service shares one builder stage (its cargo-chef cook layer
+        // holds the whole dependency compile), so they all point at the SINGLE shared workspace
+        // manifest that solana-images-publish.yml's workspace-cache job exports.
+        const workspaceRef = ["ghcr.io/zama-ai/fhevm/coprocessor/workspace:buildcache-test"];
+        for (const service of ["coprocessor-host-listener", "coprocessor-tfhe-worker", "coprocessor-db-migration"]) {
+          expect(coprocessor.services[service]?.build?.cache_from).toEqual(workspaceRef);
+        }
+
+        // The kms-connector workspace Dockerfile has no cache writer, so its workspace-built
+        // services get no cache_from and a set FHEVM_BUILDCACHE_TAG stays harmless there.
         expect(connector.services["kms-connector-kms-worker"]?.build?.cache_from).toBeUndefined();
 
         // connector-db still builds from its per-image Dockerfile, so its cache ref is the
         // service's own image repository at the cache tag, matching what
-        // solana-images-publish.yml exports.
+        // solana-images-publish.yml's per-image publish job exports.
         expect(connector.services["kms-connector-db-migration"]?.build?.cache_from).toEqual([
           "ghcr.io/zama-ai/fhevm/kms-connector/db-migration:buildcache-test",
         ]);

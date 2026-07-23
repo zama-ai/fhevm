@@ -214,3 +214,84 @@ jobs:
             --tag "ghcr.io/zama-ai/$IMAGE:feature-solana" \
             --tag "ghcr.io/zama-ai/$IMAGE:feature-solana-$SHA" \
             --push "$CONTEXT"
+
+  # Cache WRITER for the BRANCH-LOCAL coprocessor workspace Dockerfile
+  # (coprocessor/fhevm-engine/Dockerfile.workspace). Separate from the per-image
+  # `publish` job above: that job builds the per-binary Dockerfiles (like main's
+  # release CI); this one builds the single-cargo-pass workspace Dockerfile that
+  # solana-e2e's --override compose builds use, and exports its layers so the
+  # ~28-min cold dependency compile (tfhe-rs dominates) is paid once per branch
+  # tip instead of on every PR run. READERS are solana-e2e's compose builds,
+  # which add the shared cache ref via FHEVM_BUILDCACHE_TAG (see
+  # withRegistryBuildCache + WORKSPACE_BUILDCACHE_IMAGE in test-suite/fhevm). This
+  # job is BRANCH-LOCAL and dies at merge-back to main, alongside the Dockerfile.
+  #
+  # mode=max exports intermediate (builder-stage) layers — the cargo-chef `cook`
+  # layer that holds the compiled dependencies, which is the whole point. The
+  # cook layer is keyed only on recipe.json (+ the chef layer + CARGO_PROFILE),
+  # all of which precede the per-PR-varying source/contract COPYs, so a PR that
+  # touches no Cargo manifest reuses it. A SINGLE `--target db-migration` build
+  # covers everything: db-migration's stage graph COPYs from both `builder`
+  # (/out/resolve_database_url) and `sqlx_builder`, so building it pulls the full
+  # chef -> planner -> builder (cook) chain plus sqlx_builder, and mode=max
+  # exports every one of those layers under the one shared cache ref — which is
+  # what the worker services (target tfhe-worker/host-listener/...) then read.
+  # CARGO_PROFILE is left at the Dockerfile default (release) — fhevm-cli passes
+  # none, so writer and reader must match by both defaulting. No sccache args are
+  # passed: sccache sits AFTER the cook layer in the Dockerfile, so the exported
+  # cook layer is credential-independent and shared with the credential-bearing
+  # e2e reads.
+  workspace-cache:
+    name: publish/coprocessor-workspace-cache
+    # volume=160gb: the workspace target dir plus the exported mode=max layers need headroom.
+    runs-on: runs-on=${{ github.run_id }}/runner=16cpu-linux-x64/volume=160gb/extras=s3-cache
+    timeout-minutes: 90
+    permissions:
+      contents: "read" # checkout
+      packages: "write" # push the cache manifest to ghcr.io
+    steps:
+      - name: Checkout
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          persist-credentials: "false"
+
+      - name: Setup Docker Buildx
+        uses: docker/setup-buildx-action@d70bba72b1f3fd22344832f00baa16ece964efeb # v3.3.0
+
+      - name: Login to ghcr.io
+        # GITHUB_TOKEN with packages:write pushes the repo-owned cache manifest (same pattern as
+        # the publish job above). Also covers pulling the gci base images.
+        uses: zama-ai/ci-templates/.github/actions/retry@542103e14b9ae6a9aea27787b8724b3b35bb3918 # v1.0.9
+        env:
+          GHCR_USERNAME: ${{ github.actor }}
+          GHCR_PASSWORD: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          command: |
+            echo "$GHCR_PASSWORD" | docker login ghcr.io -u "$GHCR_USERNAME" --password-stdin
+
+      - name: Login to cgr.dev
+        # Chainguard base images (glibc-dynamic, postgres, rust) used by the runtime + db stages.
+        uses: docker/login-action@9780b0c442fbb1117ed29e0efdff1e18412f7567 # v3.3.0
+        with:
+          registry: cgr.dev
+          username: ${{ secrets.CGR_USERNAME }} # zizmor: ignore[secrets-outside-env] registry creds, same pattern as solana-e2e.yml
+          password: ${{ secrets.CGR_PASSWORD }} # zizmor: ignore[secrets-outside-env] registry creds, same pattern as solana-e2e.yml
+
+      - name: Build and export workspace cache
+        env:
+          DOCKERFILE: coprocessor/fhevm-engine/Dockerfile.workspace
+          # Single shared cache ref for every coprocessor workspace target (they share the builder
+          # stage). Matches WORKSPACE_BUILDCACHE_IMAGE + FHEVM_BUILDCACHE_TAG on the reader side.
+          CACHE_REF: ghcr.io/zama-ai/fhevm/coprocessor/workspace:buildcache-feature-solana
+        run: |
+          set -euo pipefail
+          # db-migration depends on builder + sqlx_builder, so this one build exports the whole
+          # chef -> planner -> builder (cook) chain AND sqlx_builder under the shared ref.
+          # Cache-only: no --tag, no --push. A missing cache ref on the first run is a non-fatal
+          # BuildKit warning.
+          docker buildx build \
+            --file "$DOCKERFILE" \
+            --target db-migration \
+            --cache-from "type=registry,ref=$CACHE_REF" \
+            --cache-to "type=registry,ref=$CACHE_REF,mode=max,image-manifest=true,oci-mediatypes=true" \
+            .

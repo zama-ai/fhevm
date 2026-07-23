@@ -25,7 +25,7 @@ import { type StackSpec, topologyForState } from "../stack-spec/stack-spec";
 import { buildKmsThresholdOverride, kmsRenderOptionsFor } from "./kms-core";
 import type { HostChainScenario, ResolvedCoprocessorScenarioInstance, State } from "../types";
 import { ensureDir, exists, mergeArgs, readEnvFile, remove, toServiceName } from "../utils/fs";
-import { buildCacheEnabled, buildCacheTag } from "../utils/build-cache";
+import { WORKSPACE_BUILDCACHE_IMAGE, buildCacheEnabled, buildCacheTag } from "../utils/build-cache";
 import {
   sccacheBuildArgs,
   sccacheBuildSecretIds,
@@ -217,26 +217,37 @@ const withSccacheBuild = (component: string, build: Record<string, unknown> | un
 };
 
 /**
- * Adds a registry `cache_from` entry (the per-image BuildKit cache manifest that
- * solana-images-publish.yml exports) when FHEVM_BUILDCACHE_TAG is set. The cache ref is the
- * service's own image repository at the cache tag, so the compose reader and the publish-workflow
- * writer stay aligned without a name map. Scoped to the same Rust components as sccache (the
- * builds the publish workflow exports caches for), and within those to the specs that still build
- * from a per-binary Dockerfile: the publish workflow's caches are per-binary build graphs, so
- * they cannot hit against the branch-local workspace Dockerfiles — injecting them there would
- * only add a guaranteed cache miss (harmless but pointless). A no-op otherwise, so the generated
+ * Adds a registry `cache_from` entry (the BuildKit cache manifest that
+ * solana-images-publish.yml exports) when FHEVM_BUILDCACHE_TAG is set. Scoped to the same Rust
+ * components as sccache (the builds the publish workflow exports caches for). Two cases:
+ *
+ *   - Per-binary Dockerfile builds (e.g. kms-connector-db-migration): the cache ref is the
+ *     service's own image repository at the cache tag, so the compose reader and the publish
+ *     writer's per-image job stay aligned without a name map.
+ *   - coprocessor workspace builds (Dockerfile.workspace): every coprocessor workspace target
+ *     shares one `builder` stage (its cargo-chef cook layer holds the whole dependency compile),
+ *     so ONE shared manifest — WORKSPACE_BUILDCACHE_IMAGE at the cache tag — serves every service.
+ *     This is exported by solana-images-publish.yml's workspace-cache job.
+ *
+ * The kms-connector workspace Dockerfile has no cache writer, so those builds stay uncached
+ * (injecting a ref there would only add a guaranteed miss). A no-op otherwise, so the generated
  * compose is byte-identical when FHEVM_BUILDCACHE_TAG is unset.
  */
 const withRegistryBuildCache = (component: string, image: unknown, build: Record<string, unknown> | undefined) => {
   if (!build || !buildCacheEnabled() || !SCCACHE_BUILD_COMPONENTS.has(component) || typeof image !== "string") {
     return build;
   }
-  if (typeof build.dockerfile === "string" && build.dockerfile.endsWith("Dockerfile.workspace")) {
+  const isWorkspace = typeof build.dockerfile === "string" && build.dockerfile.endsWith("Dockerfile.workspace");
+  if (isWorkspace && component !== "coprocessor") {
+    // No writer exports the kms-connector workspace cache; leave those builds uncached.
     return build;
   }
+  const cacheRef = isWorkspace
+    ? `${WORKSPACE_BUILDCACHE_IMAGE}:${buildCacheTag()}`
+    : rewriteImageTag(image, buildCacheTag());
   const next = structuredClone(build);
   const existing = Array.isArray(next.cache_from) ? (next.cache_from as string[]) : [];
-  next.cache_from = [...existing, rewriteImageTag(image, buildCacheTag())];
+  next.cache_from = [...existing, cacheRef];
   return next;
 };
 
