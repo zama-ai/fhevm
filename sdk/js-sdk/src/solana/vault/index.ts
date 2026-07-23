@@ -14,6 +14,28 @@ export { buildClaimInstruction, type SolanaVaultClaimParameters } from './claim.
 export { decryptPosition } from './decryptPosition.js';
 export { openBatch, type SolanaVaultOpenBatchParameters, type SolanaVaultOpenBatchResult } from './openBatch.js';
 
+// One-time provisioning builders the demo seeder drives (fhevm-internal#1760). Kept on the vault
+// surface — the seeder is their only caller — and shaped as thin, root-taking actions: each derives
+// its lineage/event PDAs internally so the seeder passes semantic roots, never hand-rolled accounts.
+export {
+  buildInitializeVaultInstruction,
+  type SolanaVaultInitializeVaultParameters,
+} from './initializeVault.js';
+export {
+  buildInitializeBatcherInstruction,
+  BatchDirection,
+  type SolanaVaultInitializeBatcherParameters,
+} from './initializeBatcher.js';
+export {
+  buildInitializeMintInstruction,
+  type SolanaVaultInitializeMintParameters,
+} from './initializeMint.js';
+export {
+  buildInitializeTokenAccountInstruction,
+  type SolanaVaultInitializeTokenAccountParameters,
+} from './initializeTokenAccount.js';
+export { buildWrapUsdcInstruction, type SolanaVaultWrapUsdcParameters } from './wrapUsdc.js';
+
 export {
   deriveBatchAddresses,
   deriveJoinRecordAddress,
