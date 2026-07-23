@@ -45,6 +45,14 @@ export type VaultDemoRoots = {
 /** Where `demo-seed` writes the artifact and every consumer reads it from, unless overridden. */
 export const DEMO_CONFIG_DEFAULT_PATH = ".fhevm/runtime/solana-demo.json";
 
+/**
+ * The config path every producer/consumer honors: `DEMO_CONFIG_PATH` if set, else the CWD-relative
+ * default. demo-up.sh and the acceptance workflow export an ABSOLUTE `DEMO_CONFIG_PATH` ($ROOT-based)
+ * so the path is stable regardless of which directory a step runs from (the seed runs from
+ * test-suite/fhevm, later steps from the repo root). Resolved at call time so the env is read live.
+ */
+export const resolveDemoConfigPath = (): string => process.env.DEMO_CONFIG_PATH ?? DEMO_CONFIG_DEFAULT_PATH;
+
 /** Roots for one batcher instance: its account plus the settle lookup table `open_batch` created. */
 export type DemoBatcher = {
   /** The `Batcher` account address (`initialize_batcher`). */
@@ -192,13 +200,13 @@ export const parseDemoConfig = (raw: unknown): SolanaDemoConfig => {
 };
 
 /** Reads and validates the demo-config JSON from disk. */
-export const readDemoConfig = async (configPath = DEMO_CONFIG_DEFAULT_PATH): Promise<SolanaDemoConfig> => {
+export const readDemoConfig = async (configPath = resolveDemoConfigPath()): Promise<SolanaDemoConfig> => {
   const text = await fs.readFile(configPath, "utf8");
   return parseDemoConfig(JSON.parse(text));
 };
 
 /** Writes the demo-config JSON to disk, creating the runtime directory. Round-trips through the parser. */
-export const writeDemoConfig = async (config: SolanaDemoConfig, configPath = DEMO_CONFIG_DEFAULT_PATH): Promise<void> => {
+export const writeDemoConfig = async (config: SolanaDemoConfig, configPath = resolveDemoConfigPath()): Promise<void> => {
   const validated = parseDemoConfig(config); // never persist an artifact that would not re-load
   await fs.mkdir(path.dirname(configPath), { recursive: true });
   await fs.writeFile(configPath, `${JSON.stringify(validated, null, 2)}\n`, "utf8");

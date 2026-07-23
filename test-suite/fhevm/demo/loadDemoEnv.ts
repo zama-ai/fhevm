@@ -9,7 +9,7 @@
 import path from "node:path";
 
 import { resolveEnv, type TestEnv } from "../e2e/harness/loadEnv";
-import { DEMO_CONFIG_DEFAULT_PATH, readDemoConfig, type SolanaDemoConfig } from "./config";
+import { readDemoConfig, resolveDemoConfigPath, type SolanaDemoConfig } from "./config";
 
 /** Repo root, resolved from this file's location (test-suite/fhevm/demo → repo root). */
 const REPO_ROOT = path.resolve(import.meta.dir, "../../..");
@@ -40,7 +40,7 @@ const toOverrides = (config: SolanaDemoConfig) => ({
 
 /** Loads the demo runtime: the harness `TestEnv` (source "demo-config") plus the full vault config. */
 export const loadDemoEnv = async (
-  configPath = DEMO_CONFIG_DEFAULT_PATH,
+  configPath = resolveDemoConfigPath(),
 ): Promise<{ env: TestEnv; config: SolanaDemoConfig }> => {
   const config = await readDemoConfig(configPath);
   const env = resolveEnv(toOverrides(config), "demo-config");

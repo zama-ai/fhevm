@@ -53,7 +53,7 @@ import { resolveEnv } from "../e2e/harness/loadEnv";
 import { until } from "../e2e/harness/until";
 import { DEMO_KEYPAIRS } from "./loadDemoEnv";
 import {
-  DEMO_CONFIG_DEFAULT_PATH,
+  resolveDemoConfigPath,
   writeDemoConfig,
   type SolanaDemoConfig,
   type VaultDemoRoots,
@@ -219,7 +219,13 @@ const LAMPORTS_PER_SOL = 1_000_000_000n;
 
 const main = async (): Promise<void> => {
   const env = resolveEnv();
-  const configPath = process.env.DEMO_CONFIG_PATH ?? DEMO_CONFIG_DEFAULT_PATH;
+  const configPath = resolveDemoConfigPath();
+
+  // Remove any prior config up front: it is written only at the very end (step 7), so its presence
+  // means a completed prior seed. Deleting it now guarantees that if this run crashes mid-seed, no
+  // stale config survives pointing consumers at half-provisioned / now-defunct roots — the absence
+  // of the file is the honest signal that no usable stack was seeded.
+  await fs.rm(configPath, { force: true });
 
   const rpc = createSolanaRpc(env.rpcUrl);
   const rpcSubscriptions = createSolanaRpcSubscriptions(env.wsUrl);
@@ -290,6 +296,10 @@ const main = async (): Promise<void> => {
   });
   const kmsContextId = new Uint8Array(8);
   new DataView(kmsContextId.buffer).setBigUint64(0, BRINGUP_KMS_CONTEXT_ID, true);
+  // NOTE: kmsContext is DERIVED here (and recorded into the config), not confirmed on-chain — the
+  // seed never fetches the account to check it exists/was initialized. It is provisioned by the host
+  // bring-up (clean-e2e.sh), so its existence is that step's contract, not this seeder's. A settle
+  // against a missing kms-context would fail on-chain at the boundary the smoke does not yet reach.
   const [kmsContext] = await getProgramDerivedAddress({
     programAddress: vault.ZAMA_HOST_PROGRAM_ADDRESS,
     seeds: [new TextEncoder().encode("kms-context"), kmsContextId],
