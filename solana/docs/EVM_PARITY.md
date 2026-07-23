@@ -116,8 +116,8 @@ fromExternal** — all implemented. The confidential token is therefore **op-com
   The adapter maps the merged `fhe_eval` operator surface: binary catalog, ternary select, trivial,
   rand/rand-bounded, unary, sum, isIn, and mulDiv.
 - **Solana MMR proof service** (`solana-proof-service/`): untrusted standalone Yellowstone ingest +
-  PostgreSQL store + MMR proof builder for historical/public decrypt (DD-035). Internal HTTP endpoint
-  (`GET /internal/solana/mmr-proof`); the relayer's Solana user-decrypt flow does not call it
+  PostgreSQL store + MMR proof builder for historical/public decrypt (DD-035). Internal semantic HTTP
+  endpoints (`GET /internal/solana/access-proof`, `/internal/solana/public-proof`); the relayer's Solana user-decrypt flow does not call it
   in-process — clients fetch proofs via `PROOF_SERVICE_URL` before submitting.
 - **KMS connector** (`kms-connector/crates/kms-worker/src/core/solana_*.rs` and
   `kms-connector/crates/tx-sender/src/core/solana_native.rs`): witness decoders +

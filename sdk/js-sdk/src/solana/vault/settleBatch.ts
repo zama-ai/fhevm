@@ -28,7 +28,7 @@ import {
   findBatchAuthorityPda,
   tokenAccountAddress,
 } from './internal/batcherPdas.js';
-import { fetchSolanaMmrProof, type SolanaProofServiceConfig } from './internal/proofService.js';
+import { fetchSolanaPublicDecryptProof, type SolanaProofServiceConfig } from './internal/proofService.js';
 import { settleTotalFromCleartext } from './internal/cleartext.js';
 import { buildAndSignSettleTransaction } from './internal/settleMessage.js';
 
@@ -103,11 +103,17 @@ export async function settleBatch(parameters: SolanaVaultSettleParameters): Prom
   const batchJoinTokenAccount = await tokenAccountAddress(accounts.joinConfidentialMint, batchAuthority);
   const burned = await burnedAmountLineage(accounts.joinConfidentialMint, batchJoinTokenAccount);
 
-  // Leg 1: MMR proof (the batch burned lineage always holds one leaf → depth-0 proof).
-  const proof = await fetchSolanaMmrProof(parameters.proofService, burned.encryptedValueAddress, 0n);
-  // The proof is verified against the service's own live peaks; cross-check that those peaks
-  // describe the same lineage state the caller read for the certificate, so a proof-service/account
-  // mismatch fails fast here instead of at on-chain verify.
+  // Leg 1: the settle burns to a born-public handle, so its proof is a public-decrypt leaf. The
+  // service resolves the leaf from (encryptedValue, burnedTotalHandle); the SDK never supplies a
+  // leaf index, and the resolved index comes back on the proof.
+  const proof = await fetchSolanaPublicDecryptProof(
+    parameters.proofService,
+    burned.encryptedValueAddress,
+    parameters.burnedTotalHandle,
+  );
+  // The proof is verified against the service's own live peaks; cross-check that the service's
+  // leaf count matches the lineage state the caller read for the certificate, so a
+  // proof-service/account mismatch fails fast here instead of at on-chain verify.
   if (proof.leafCount !== parameters.leafCount) {
     throw new Error(
       `proof-service leaf count ${proof.leafCount} does not match the lineage leaf count ${parameters.leafCount} supplied for verification`,
@@ -121,7 +127,9 @@ export async function settleBatch(parameters: SolanaVaultSettleParameters): Prom
       handle: bytesToHex(parameters.burnedTotalHandle),
       contextId: parameters.contextId,
       aclValueKey: burned.aclValueKey,
-      proofSlot: proof.proofSlot,
+      // proofSlot is the leaf-count diagnostic baked into extraData; it is the service's leaf
+      // count passed through (must equal the pinned lineage leaf count, asserted in the cert leg).
+      proofSlot: proof.leafCount,
       encryptedValueAccount: base58.decode(burned.encryptedValueAddress),
       peaks: parameters.peaks,
       leafCount: parameters.leafCount,

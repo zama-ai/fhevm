@@ -21,14 +21,29 @@ vertical. Multi-replica / prod auth remain later slices.
 | `GET /health/liveness` | Process responds |
 | `GET /health/readiness` | Derived live proof readiness (never stores `ready=true`) |
 | `GET /metrics` | Prometheus metrics (bounded labels only) |
-| `GET /internal/solana/mmr-proof?encrypted_value=<base58>&leaf_index=<u64>` | Verified MMR proof |
+| `GET /internal/solana/access-proof?encrypted_value=<base58>&handle=<hex32>&subject=<base58>` | Verified historical-access proof |
+| `GET /internal/solana/public-proof?encrypted_value=<base58>&handle=<hex32>` | Verified public-decrypt proof |
 | `GET /swagger-ui` / `GET /api-docs/openapi.json` | Generated OpenAPI |
+
+Both proof endpoints are **semantic**: the caller asks the product question — "prove `subject`
+had historical access to `handle`" or "prove `handle` is publicly decryptable" — and the service
+resolves `(lineage, handle[, subject], kind) → leaf_index` internally via one indexed lookup. A
+historical-access key maps to a unique leaf by construction (a handle is superseded at most once
+per lineage, sealing one leaf per subject). A public-decrypt key may match several leaves for one
+handle (a born-public output plus later `make_handle_public` re-releases, which have no
+already-public guard); the service resolves to the earliest — any public leaf proves publicness,
+and the earliest is deterministic and append-stable. Clients never compute, assume, or supply a
+leaf index; `leaf_index` and `leaf_count` are OUTPUTS they pass through from the response.
+
+`access-proof` serves `ZAMA_HIST_ACCESS_LEAF_V1` leaves (lineage ‖ leaf_index ‖ handle ‖ subject);
+`public-proof` serves `ZAMA_PUBLIC_DECRYPT_LEAF_V1` leaves (lineage ‖ leaf_index ‖ handle).
 
 Success proof DTO:
 
 ```json
 {
   "mmr_proof": { "leaf_index": 0, "siblings": ["<hex>", "..."] },
+  "leaf_index": 0,
   "leaf_count": 1,
   "rpc_context_slot": 1234,
   "lineage_last_slot": 1230,
@@ -38,6 +53,9 @@ Success proof DTO:
   "status": "verified"
 }
 ```
+
+`leaf_index` is the resolved output (top-level, and inside `mmr_proof`); it is present only on a
+verified proof.
 
 Chain-context fields bind the served proof to observed state so a consumer can
 reason about staleness when the store and the RPC provider see different
@@ -59,14 +77,35 @@ The `lagging` (503) and `corrupt_cache` (500) envelopes reuse this shape and
 carry `leaf_count` + `rpc_context_slot` (the two tips being compared);
 `lineage_last_slot` appears only when a snapshot was in hand.
 
-The proof path is **read-only**: SQL `proof_snapshot` + confirmed on-chain peak
-check; no request-triggered catch-up writer.
+The proof path is **read-only**: SQL `proof_snapshot_for_leaf` (one consistent snapshot read that
+also resolves the semantic key to its leaf index) + confirmed on-chain peak check; no
+request-triggered catch-up writer.
 
-Invalid `leaf_index` (≥ on-chain `leaf_count`) → HTTP 400 with typed
-`ErrorResponse` (`code: leaf_index_out_of_range`). Lagging store (behind **or
-briefly ahead of** a different confirmed RPC) → HTTP 503 with
-`status: "lagging"`. Equal-count peak divergence or snapshot inconsistency →
-HTTP 500 with `status: "corrupt_cache"` (fail closed). Other client/server failures use the same
+**Operational rule — rebuild a pre-semantic store from genesis.** The semantic leaf columns
+(`leaf_kind`, `handle`, `subject`) arrived in the `20260723120000` migration. A store whose leaf
+rows were written before that migration carries NULL semantics on those rows, yet they still count
+in `leaf_count`; a semantic query for a leaf that genuinely exists on chain would then resolve to
+nothing and, at parity with chain, serve a terminal `404 leaf_not_found` instead of a proof. Such a
+store MUST be rebuilt from genesis (drop + re-ingest from slot 0) — there is no backfill, because
+the semantics cannot be recovered from a leaf hash. This build's ingest always populates the
+columns, and startup validation fails closed if any NULL-semantic leaf row is found in a nonempty
+store, so the trap surfaces as a loud boot failure rather than silent wrong 404s. (POC has no
+persistent deployments today; the rule is written down against future ones.)
+
+Invalid address / handle → HTTP 400 with typed `ErrorResponse`
+(`code: invalid_address` / `invalid_handle`). Lagging store (behind **or briefly
+ahead of** a different confirmed RPC) → HTTP 503 with `status: "lagging"`.
+Equal-count peak divergence or snapshot inconsistency → HTTP 500 with
+`status: "corrupt_cache"` (fail closed).
+
+A semantic key that resolves to **no leaf** is classified against chain: while the snapshot's
+`leaf_count` is still behind the live on-chain `leaf_count`, the miss is a retryable `503`
+`status: "lagging"` (ingest has not caught up to a just-sealed leaf); once the snapshot is at
+parity with chain, the miss is terminal — `404` with `status: "leaf_not_found"` (same proof
+envelope, carrying the chain-context fields, `mmr_proof: null`). A lineage with no on-chain
+account at all is `404` `code: lineage_not_found` (`ErrorResponse`).
+
+Other client/server failures use the same
 `ErrorResponse` JSON envelope. Proof routes get an `x-request-id`, a 30s typed
 timeout (`code: timeout`), and a shed-on-saturate concurrency limit sized to
 `max_connections - 2` so ingest and readiness keep reserved DB pool slots

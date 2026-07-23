@@ -21,12 +21,38 @@ pub struct PriorLineageState {
     pub peaks: Vec<[u8; 32]>,
 }
 
+/// Which semantic leaf a staged row is, so the proof service can resolve
+/// `(lineage, handle[, subject], kind) -> leaf_index` without recomputing hashes.
+/// Persisted as the `leaf_kind` SMALLINT (0 / 1).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum LeafKind {
+    /// `ZAMA_HIST_ACCESS_LEAF_V1`, keyed by (handle, subject).
+    HistoricalAccess,
+    /// `ZAMA_PUBLIC_DECRYPT_LEAF_V1`, keyed by (handle); no subject.
+    PublicDecrypt,
+}
+
+impl LeafKind {
+    pub fn as_i16(self) -> i16 {
+        match self {
+            LeafKind::HistoricalAccess => 0,
+            LeafKind::PublicDecrypt => 1,
+        }
+    }
+}
+
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct StagedLeaf {
     pub lineage: [u8; 32],
     pub leaf_index: u64,
     pub commitment: [u8; 32],
     pub transaction_index: u64,
+    /// Semantic classification of the leaf, persisted for indexed resolution.
+    pub kind: LeafKind,
+    /// The ciphertext handle sealed into the leaf preimage.
+    pub handle: [u8; 32],
+    /// The authorized subject (historical-access leaves only; `None` for public-decrypt).
+    pub subject: Option<[u8; 32]>,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -100,6 +126,9 @@ fn append_events(
                         leaf_index: *leaf_count - 1,
                         commitment,
                         transaction_index: *tx_index,
+                        kind: LeafKind::HistoricalAccess,
+                        handle: *previous_handle,
+                        subject: Some(*subject),
                     });
                 }
             }
@@ -113,6 +142,9 @@ fn append_events(
                     leaf_index: *leaf_count - 1,
                     commitment,
                     transaction_index: *tx_index,
+                    kind: LeafKind::PublicDecrypt,
+                    handle: *handle,
+                    subject: None,
                 });
             }
         }

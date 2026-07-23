@@ -13,10 +13,12 @@ use sha2::{Digest, Sha256};
 use solana_proof_source::{CanonicalTransaction, CompletedBlock, RawInstruction};
 use solana_proof_store::{
     apply_instruction, decode_program_instructions, reduce_completed_block, ApplyOutcome,
-    DecodedInstruction, LineageReplayState, PriorLineageState, SqlProofStore, SubjectGrant,
+    DecodedInstruction, LeafKind, LineageReplayState, PriorLineageState, SemanticLeafKey,
+    SqlProofStore, SubjectGrant,
 };
 use zama_solana_acl::lineage::reconstruct;
-use zama_solana_acl::mmr::mmr_peaks_from_leaves;
+use zama_solana_acl::mmr::{mmr_build_proof, mmr_peaks_from_leaves, mmr_verify};
+use zama_solana_acl::public_decrypt_leaf_commitment;
 
 fn database_url() -> String {
     std::env::var("SOLANA_PROOF_TEST_DATABASE_URL")
@@ -262,6 +264,229 @@ async fn deterministic_leaf_order_and_mmr_reconstruction() {
     let reconstructed = reconstruct(ev, &events).unwrap();
     assert_eq!(reconstructed.leaves, snap.leaves);
     assert_eq!(reconstructed.peaks, snap.peaks);
+}
+
+/// Exercises the semantic columns + `solana_proof_leaves_semantic_idx` resolution at the SQL
+/// layer: a supersede seals a historical-access leaf (old handle + subject) at index 0, then a
+/// make-public seals a public-decrypt leaf (new handle, no subject) at index 1.
+#[ignore = "requires DATABASE_URL / SOLANA_PROOF_TEST_DATABASE_URL"]
+#[tokio::test]
+async fn semantic_leaf_resolution_maps_handle_and_subject_to_index() {
+    let store = fresh_store().await;
+    let ev = pk(0xE7);
+    let owner = pk(0x30);
+    let old_handle = pk(0x10);
+    let new_handle = pk(0x11);
+    let create = create_ix(ev, old_handle, owner);
+    let update = update_ix(ev, new_handle, old_handle, vec![owner]);
+    let make_public = make_public_ix(ev, new_handle);
+    let b = block(
+        10,
+        9,
+        pk(0x90),
+        pk(0xA0),
+        vec![CanonicalTransaction {
+            signature: sig(7),
+            index: 1,
+            succeeded: true,
+            is_vote: false,
+            instructions: vec![create, update, make_public],
+        }],
+    );
+    assert_eq!(
+        store.apply_completed_block(&b).await.unwrap(),
+        ApplyOutcome::Applied
+    );
+
+    // Historical-access leaf: (old_handle, owner) resolves to index 0.
+    let access = store
+        .proof_snapshot_for_leaf(
+            ev,
+            &SemanticLeafKey {
+                kind: LeafKind::HistoricalAccess,
+                handle: old_handle,
+                subject: Some(owner),
+            },
+        )
+        .await
+        .unwrap()
+        .expect("lineage ingested");
+    assert_eq!(access.leaf_index, Some(0));
+    assert_eq!(access.snapshot.leaf_count, 2);
+
+    // Public-decrypt leaf: (new_handle, no subject) resolves to index 1.
+    let public = store
+        .proof_snapshot_for_leaf(
+            ev,
+            &SemanticLeafKey {
+                kind: LeafKind::PublicDecrypt,
+                handle: new_handle,
+                subject: None,
+            },
+        )
+        .await
+        .unwrap()
+        .expect("lineage ingested");
+    assert_eq!(public.leaf_index, Some(1));
+
+    // A public-decrypt query for the historical (superseded) handle finds no leaf: the kinds
+    // never collide on a shared handle, and the subject binding is enforced.
+    let miss_kind = store
+        .proof_snapshot_for_leaf(
+            ev,
+            &SemanticLeafKey {
+                kind: LeafKind::PublicDecrypt,
+                handle: old_handle,
+                subject: None,
+            },
+        )
+        .await
+        .unwrap()
+        .expect("lineage ingested");
+    assert_eq!(miss_kind.leaf_index, None);
+
+    // Wrong subject on the access key also misses.
+    let miss_subject = store
+        .proof_snapshot_for_leaf(
+            ev,
+            &SemanticLeafKey {
+                kind: LeafKind::HistoricalAccess,
+                handle: old_handle,
+                subject: Some(pk(0x31)),
+            },
+        )
+        .await
+        .unwrap()
+        .expect("lineage ingested");
+    assert_eq!(miss_subject.leaf_index, None);
+
+    // An un-ingested lineage resolves to no snapshot at all.
+    assert!(store
+        .proof_snapshot_for_leaf(
+            pk(0xEF),
+            &SemanticLeafKey {
+                kind: LeafKind::PublicDecrypt,
+                handle: new_handle,
+                subject: None,
+            },
+        )
+        .await
+        .unwrap()
+        .is_none());
+}
+
+/// Regression (PR #3303): a handle can legitimately carry TWO public-decrypt leaves — a born-public
+/// output seals one, and a later `make_handle_public` re-release seals another (on-chain
+/// `make_handle_public` has no already-public guard). The public semantic key must resolve to the
+/// EARLIEST such leaf (index 0) deterministically, and that leaf's proof must verify.
+#[ignore = "requires DATABASE_URL / SOLANA_PROOF_TEST_DATABASE_URL"]
+#[tokio::test]
+async fn public_decrypt_resolves_duplicate_leaves_to_earliest() {
+    let store = fresh_store().await;
+    let ev = pk(0xE9);
+    let owner = pk(0x30);
+    let handle = pk(0x10);
+    // create sets current_handle=handle (no leaf); then two public seals of that SAME handle mirror
+    // a born-public lifecycle leaf at index 0 followed by an explicit make_handle_public re-release
+    // at index 1 — both append a public-decrypt leaf for the one handle.
+    let create = create_ix(ev, handle, owner);
+    let seal_born_public = make_public_ix(ev, handle);
+    let seal_make_public = make_public_ix(ev, handle);
+    let b = block(
+        10,
+        9,
+        pk(0x90),
+        pk(0xA0),
+        vec![CanonicalTransaction {
+            signature: sig(9),
+            index: 1,
+            succeeded: true,
+            is_vote: false,
+            instructions: vec![create, seal_born_public, seal_make_public],
+        }],
+    );
+    assert_eq!(
+        store.apply_completed_block(&b).await.unwrap(),
+        ApplyOutcome::Applied
+    );
+
+    let resolved = store
+        .proof_snapshot_for_leaf(
+            ev,
+            &SemanticLeafKey {
+                kind: LeafKind::PublicDecrypt,
+                handle,
+                subject: None,
+            },
+        )
+        .await
+        .unwrap()
+        .expect("lineage ingested");
+    // Two public-decrypt leaves for the one handle; resolution returns the EARLIEST.
+    assert_eq!(resolved.snapshot.leaf_count, 2);
+    assert_eq!(resolved.leaf_index, Some(0));
+
+    // The resolved leaf's inclusion proof verifies against the lineage peaks.
+    let leaf_index = resolved.leaf_index.unwrap();
+    let commitment = public_decrypt_leaf_commitment(ev, leaf_index, handle);
+    assert_eq!(resolved.snapshot.leaves[leaf_index as usize], commitment);
+    let proof = mmr_build_proof(&resolved.snapshot.leaves, leaf_index).expect("inclusion proof");
+    assert!(mmr_verify(
+        &resolved.snapshot.peaks,
+        resolved.snapshot.leaf_count,
+        commitment,
+        &proof,
+    ));
+}
+
+/// The startup guard (`has_pre_semantic_leaf_rows`) detects a store populated before the #1721
+/// migration: NULL `leaf_kind` / `handle` on a nonempty leaf table.
+#[ignore = "requires DATABASE_URL / SOLANA_PROOF_TEST_DATABASE_URL"]
+#[tokio::test]
+async fn detects_pre_semantic_leaf_rows() {
+    let store = fresh_store().await;
+    // Empty store: nothing pre-semantic.
+    assert!(!store.has_pre_semantic_leaf_rows().await.unwrap());
+
+    let ev = pk(0xE8);
+    let owner = pk(0x30);
+    let create = create_ix(ev, pk(0x10), owner);
+    let update = update_ix(ev, pk(0x11), pk(0x10), vec![owner]);
+    let make_public = make_public_ix(ev, pk(0x11));
+    let b = block(
+        10,
+        9,
+        pk(0x90),
+        pk(0xA0),
+        vec![CanonicalTransaction {
+            signature: sig(8),
+            index: 1,
+            succeeded: true,
+            is_vote: false,
+            instructions: vec![create, update, make_public],
+        }],
+    );
+    assert_eq!(
+        store.apply_completed_block(&b).await.unwrap(),
+        ApplyOutcome::Applied
+    );
+    // Leaves written by this build always carry semantics.
+    assert!(!store.has_pre_semantic_leaf_rows().await.unwrap());
+
+    // Simulate a legacy row: insert a leaf with NULL leaf_kind/handle (as a pre-migration ingest
+    // would have). The lineage FK is satisfied by the block above; leaf_index 99 is free.
+    sqlx::query(
+        r#"
+        INSERT INTO solana_proof_leaves (lineage, leaf_index, commitment, block_slot, transaction_index)
+        VALUES ($1, 99, $2, 10, 1)
+        "#,
+    )
+    .bind(ev.as_slice())
+    .bind(pk(0xCC).as_slice())
+    .execute(store.pool())
+    .await
+    .unwrap();
+    assert!(store.has_pre_semantic_leaf_rows().await.unwrap());
 }
 
 #[ignore = "requires DATABASE_URL / SOLANA_PROOF_TEST_DATABASE_URL"]

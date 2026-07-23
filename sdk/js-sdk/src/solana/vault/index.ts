@@ -16,7 +16,7 @@ export { openBatch, type SolanaVaultOpenBatchParameters, type SolanaVaultOpenBat
 
 export { settleTotalFromCleartext } from './internal/cleartext.js';
 export {
-  fetchSolanaMmrProof,
+  fetchSolanaPublicDecryptProof,
   type SolanaProofServiceConfig,
   type SolanaMmrProofResult,
 } from './internal/proofService.js';

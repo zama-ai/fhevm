@@ -8,18 +8,29 @@ use async_trait::async_trait;
 use zama_solana_acl::mmr::{mmr_build_proof, mmr_peaks_from_leaves, MmrProof};
 
 use crate::chain::{ChainFetcher, OnChainLineageState};
-use solana_proof_store::{ProofSnapshot, SqlProofStore, StoreError};
+use solana_proof_store::{
+    LeafKind, ProofSnapshot, ResolvedProofSnapshot, SemanticLeafKey, SqlProofStore, StoreError,
+};
 
-/// Read-only snapshot source for proof construction (no catch-up / writes).
+/// Read-only snapshot source for proof construction (no catch-up / writes). Resolution of a
+/// semantic key to a leaf index happens inside the same consistent snapshot read.
 #[async_trait]
 pub trait ProofSnapshotSource: Send + Sync {
-    async fn proof_snapshot(&self, lineage: [u8; 32]) -> Result<Option<ProofSnapshot>, StoreError>;
+    async fn proof_snapshot_for_leaf(
+        &self,
+        lineage: [u8; 32],
+        key: &SemanticLeafKey,
+    ) -> Result<Option<ResolvedProofSnapshot>, StoreError>;
 }
 
 #[async_trait]
 impl ProofSnapshotSource for SqlProofStore {
-    async fn proof_snapshot(&self, lineage: [u8; 32]) -> Result<Option<ProofSnapshot>, StoreError> {
-        SqlProofStore::proof_snapshot(self, lineage).await
+    async fn proof_snapshot_for_leaf(
+        &self,
+        lineage: [u8; 32],
+        key: &SemanticLeafKey,
+    ) -> Result<Option<ResolvedProofSnapshot>, StoreError> {
+        SqlProofStore::proof_snapshot_for_leaf(self, lineage, key).await
     }
 }
 
@@ -58,34 +69,83 @@ pub enum ProofError {
         rpc_context_slot: u64,
         lineage_last_slot: Option<u64>,
     },
-    #[error("leaf index {leaf_index} out of range for leaf_count {leaf_count}")]
-    LeafIndexOutOfRange { leaf_index: u64, leaf_count: u64 },
+    /// Terminal: the lineage exists and the store is caught up to chain
+    /// (snapshot `leaf_count` == on-chain `leaf_count`), but no leaf matches the
+    /// requested semantic key. Distinct from `Lagging`, which is the same miss
+    /// while the store is still behind a just-sealed leaf.
+    #[error("no leaf found for the requested semantic key (leaf_count {leaf_count})")]
+    LeafNotFound {
+        leaf_count: u64,
+        rpc_context_slot: u64,
+        lineage_last_slot: Option<u64>,
+    },
 }
 
-/// Builds a verified proof for `(lineage, leaf_index)` using one SQL snapshot and
-/// the confirmed on-chain account. Read-only: never writes to the store.
-pub async fn build_proof<C: ChainFetcher, S: ProofSnapshotSource>(
+/// Builds a verified historical-access proof: the leaf for `(lineage, handle, subject)`
+/// (`ZAMA_HIST_ACCESS_LEAF_V1`). Read-only.
+pub async fn build_access_proof<C: ChainFetcher, S: ProofSnapshotSource>(
     fetcher: &C,
     store: &S,
     lineage: [u8; 32],
-    leaf_index: u64,
+    handle: [u8; 32],
+    subject: [u8; 32],
+) -> Result<MmrProofResult, ProofError> {
+    build_semantic_proof(
+        fetcher,
+        store,
+        lineage,
+        SemanticLeafKey {
+            kind: LeafKind::HistoricalAccess,
+            handle,
+            subject: Some(subject),
+        },
+    )
+    .await
+}
+
+/// Builds a verified public-decrypt proof: the earliest public-decrypt leaf for `(lineage, handle)`
+/// (`ZAMA_PUBLIC_DECRYPT_LEAF_V1`). A handle can carry several public-decrypt leaves (born-public
+/// plus later `make_handle_public` re-releases); any one proves publicness, and resolving to the
+/// earliest is deterministic and append-stable. Read-only.
+pub async fn build_public_proof<C: ChainFetcher, S: ProofSnapshotSource>(
+    fetcher: &C,
+    store: &S,
+    lineage: [u8; 32],
+    handle: [u8; 32],
+) -> Result<MmrProofResult, ProofError> {
+    build_semantic_proof(
+        fetcher,
+        store,
+        lineage,
+        SemanticLeafKey {
+            kind: LeafKind::PublicDecrypt,
+            handle,
+            subject: None,
+        },
+    )
+    .await
+}
+
+/// Resolves `key` to a leaf index inside one consistent SQL snapshot and builds a proof for it,
+/// verified against the confirmed on-chain account. Read-only: never writes to the store.
+///
+/// A key that resolves to no leaf is classified against chain: while the snapshot is still
+/// behind the on-chain leaf count, the miss is retryable [`ProofError::Lagging`] (ingest has not
+/// caught up to a just-sealed leaf); once the snapshot is at parity with chain, the miss is
+/// terminal [`ProofError::LeafNotFound`].
+async fn build_semantic_proof<C: ChainFetcher, S: ProofSnapshotSource>(
+    fetcher: &C,
+    store: &S,
+    lineage: [u8; 32],
+    key: SemanticLeafKey,
 ) -> Result<MmrProofResult, ProofError> {
     let on_chain = fetcher
         .get_lineage_state(lineage)
         .await?
         .ok_or(ProofError::LineageNotFound)?;
 
-    // Invalid indices are client errors, not retryable lag. Lagging is reserved for
-    // a valid on-chain index that the local snapshot has not caught up to yet.
-    if leaf_index >= on_chain.leaf_count {
-        return Err(ProofError::LeafIndexOutOfRange {
-            leaf_index,
-            leaf_count: on_chain.leaf_count,
-        });
-    }
-
-    let snapshot = match store.proof_snapshot(lineage).await {
-        Ok(snapshot) => snapshot,
+    let resolved = match store.proof_snapshot_for_leaf(lineage, &key).await {
+        Ok(resolved) => resolved,
         Err(StoreError::SnapshotInconsistent { .. }) => {
             // Fail closed with the same wire envelope as peak divergence. The torn
             // snapshot never surfaced a durable slot, so there is no checkpoint to report.
@@ -97,13 +157,43 @@ pub async fn build_proof<C: ChainFetcher, S: ProofSnapshotSource>(
         }
         Err(err) => return Err(ProofError::Store(err)),
     };
-    let Some(snapshot) = snapshot else {
+    let Some(ResolvedProofSnapshot {
+        snapshot,
+        leaf_index,
+    }) = resolved
+    else {
         // Chain has the lineage but the store has not ingested it yet, so this
         // lineage has no durable slot to report.
         return Err(ProofError::Lagging {
             leaf_count: on_chain.leaf_count,
             rpc_context_slot: on_chain.rpc_context_slot,
             lineage_last_slot: None,
+        });
+    };
+
+    let Some(leaf_index) = leaf_index else {
+        // The leaf for this key is not (yet) in the store. If the snapshot is still behind
+        // chain, ingest may not have appended a just-sealed leaf — retryable lag. At parity the
+        // store is caught up, so the key genuinely has no leaf — terminal.
+        //
+        // Liveness caveat: the terminal `LeafNotFound` is only reached AT parity. A nonexistent
+        // key queried against a lineage that keeps appending leaves stays perpetually behind
+        // parity and returns `Lagging` on every attempt — it never becomes terminal server-side.
+        // Bounding retries for a wrong key is therefore the client's job (its retry cap), not the
+        // server's; the server cannot distinguish "just-sealed, not yet ingested" from "will never
+        // exist" without waiting for the store to catch up to that exact chain tip.
+        let lineage_last_slot = Some(snapshot.last_slot);
+        return Err(match snapshot.leaf_count.cmp(&on_chain.leaf_count) {
+            std::cmp::Ordering::Equal => ProofError::LeafNotFound {
+                leaf_count: on_chain.leaf_count,
+                rpc_context_slot: on_chain.rpc_context_slot,
+                lineage_last_slot,
+            },
+            _ => ProofError::Lagging {
+                leaf_count: on_chain.leaf_count,
+                rpc_context_slot: on_chain.rpc_context_slot,
+                lineage_last_slot,
+            },
         });
     };
 
@@ -156,11 +246,13 @@ fn try_build_from_snapshot(
         });
     }
 
-    let proof =
-        mmr_build_proof(&snapshot.leaves, leaf_index).ok_or(ProofError::LeafIndexOutOfRange {
-            leaf_index,
-            leaf_count: snapshot.leaf_count,
-        })?;
+    // `leaf_index` was resolved from a real leaf row in this same snapshot, so it is always in
+    // range; a build failure here means the snapshot's leaves diverge from its metadata.
+    let proof = mmr_build_proof(&snapshot.leaves, leaf_index).ok_or(ProofError::CorruptStore {
+        leaf_count: on_chain.leaf_count,
+        rpc_context_slot: on_chain.rpc_context_slot,
+        lineage_last_slot,
+    })?;
 
     Ok(MmrProofResult {
         mmr_proof: Some(proof),
@@ -228,9 +320,11 @@ mod tests {
         }
     }
 
-    /// Read-only fake: exposes snapshots only; no write / catch-up API.
+    /// Read-only fake: resolves a pre-registered `(snapshot, leaf_index)` per lineage; no write /
+    /// catch-up API. Semantic-key → index resolution itself is exercised by the SQL integration
+    /// tests; these unit tests pin the resolved outcome and assert the classification logic.
     struct FakeStore {
-        snapshots: Mutex<HashMap<[u8; 32], ProofSnapshot>>,
+        resolved: Mutex<HashMap<[u8; 32], ResolvedProofSnapshot>>,
         reads: AtomicUsize,
         inconsistent: Mutex<HashMap<[u8; 32], (u64, u64)>>,
     }
@@ -238,17 +332,26 @@ mod tests {
     impl FakeStore {
         fn new() -> Self {
             Self {
-                snapshots: Mutex::new(HashMap::new()),
+                resolved: Mutex::new(HashMap::new()),
                 reads: AtomicUsize::new(0),
                 inconsistent: Mutex::new(HashMap::new()),
             }
         }
 
+        /// Registers a snapshot whose key resolves to `leaf_index`.
+        fn insert_resolved(&self, snapshot: ProofSnapshot, leaf_index: Option<u64>) {
+            self.resolved.lock().unwrap().insert(
+                snapshot.lineage,
+                ResolvedProofSnapshot {
+                    snapshot,
+                    leaf_index,
+                },
+            );
+        }
+
+        /// Registers a snapshot whose key resolves to leaf 0 (the single-leaf case).
         fn insert(&self, snapshot: ProofSnapshot) {
-            self.snapshots
-                .lock()
-                .unwrap()
-                .insert(snapshot.lineage, snapshot);
+            self.insert_resolved(snapshot, Some(0));
         }
 
         fn mark_inconsistent(&self, lineage: [u8; 32], leaf_count: u64, leaf_rows: u64) {
@@ -261,10 +364,11 @@ mod tests {
 
     #[async_trait]
     impl ProofSnapshotSource for FakeStore {
-        async fn proof_snapshot(
+        async fn proof_snapshot_for_leaf(
             &self,
             lineage: [u8; 32],
-        ) -> Result<Option<ProofSnapshot>, StoreError> {
+            _key: &SemanticLeafKey,
+        ) -> Result<Option<ResolvedProofSnapshot>, StoreError> {
             self.reads.fetch_add(1, Ordering::SeqCst);
             if let Some(&(leaf_count, leaf_rows)) = self.inconsistent.lock().unwrap().get(&lineage)
             {
@@ -273,7 +377,7 @@ mod tests {
                     leaf_rows,
                 });
             }
-            Ok(self.snapshots.lock().unwrap().get(&lineage).cloned())
+            Ok(self.resolved.lock().unwrap().get(&lineage).cloned())
         }
     }
 
@@ -302,9 +406,83 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn build_proof_rejects_leaf_index_out_of_range_before_store_read() {
+    async fn build_public_proof_returns_lineage_not_found_without_store_read() {
         let lineage = pk(0x01);
+        let chain = FakeChain::new();
+        let store = FakeStore::new();
+        let err = build_public_proof(&chain, &store, lineage, pk(0x10))
+            .await
+            .unwrap_err();
+        assert!(matches!(err, ProofError::LineageNotFound));
+        assert_eq!(store.reads.load(Ordering::SeqCst), 0);
+        assert_eq!(chain.fetches.load(Ordering::SeqCst), 1);
+    }
+
+    #[tokio::test]
+    async fn build_public_proof_missing_leaf_at_parity_is_terminal_not_found() {
+        let lineage = pk(0x0A);
         let leaf = zama_solana_acl::public_decrypt_leaf_commitment(lineage, 0, pk(0x10));
+        let mut peaks = Vec::new();
+        let mut leaf_count = 0u64;
+        mmr_append(&mut peaks, &mut leaf_count, leaf).unwrap();
+
+        let chain = FakeChain::new();
+        chain.set(
+            lineage,
+            OnChainLineageState {
+                peaks,
+                leaf_count, // == snapshot leaf_count below: store is caught up
+                rpc_context_slot: 55,
+            },
+        );
+        let store = FakeStore::new();
+        // Snapshot at parity with chain (1 leaf) but the requested key resolves to nothing.
+        store.insert_resolved(snapshot_with_leaves(lineage, vec![leaf]), None);
+
+        let err = build_public_proof(&chain, &store, lineage, pk(0xEE))
+            .await
+            .unwrap_err();
+        assert!(matches!(
+            err,
+            ProofError::LeafNotFound { leaf_count: 1, .. }
+        ));
+    }
+
+    #[tokio::test]
+    async fn build_public_proof_missing_leaf_behind_chain_is_lagging() {
+        let lineage = pk(0x0B);
+        let leaf0 = zama_solana_acl::public_decrypt_leaf_commitment(lineage, 0, pk(0x10));
+        let leaf1 = zama_solana_acl::public_decrypt_leaf_commitment(lineage, 1, pk(0x11));
+        let mut peaks = Vec::new();
+        let mut leaf_count = 0u64;
+        mmr_append(&mut peaks, &mut leaf_count, leaf0).unwrap();
+        mmr_append(&mut peaks, &mut leaf_count, leaf1).unwrap();
+
+        let chain = FakeChain::new();
+        chain.set(
+            lineage,
+            OnChainLineageState {
+                peaks,
+                leaf_count, // 2 on chain
+                rpc_context_slot: 55,
+            },
+        );
+        let store = FakeStore::new();
+        // Store has only leaf 0 (behind chain) and the just-sealed key isn't ingested yet.
+        store.insert_resolved(snapshot_with_leaves(lineage, vec![leaf0]), None);
+
+        let err = build_public_proof(&chain, &store, lineage, pk(0x11))
+            .await
+            .unwrap_err();
+        assert!(matches!(err, ProofError::Lagging { leaf_count: 2, .. }));
+    }
+
+    #[tokio::test]
+    async fn build_access_proof_resolves_and_verifies() {
+        let lineage = pk(0x0C);
+        let handle = pk(0x10);
+        let subject = pk(0x30);
+        let leaf = zama_solana_acl::historical_access_leaf_commitment(lineage, 0, handle, subject);
         let mut peaks = Vec::new();
         let mut leaf_count = 0u64;
         mmr_append(&mut peaks, &mut leaf_count, leaf).unwrap();
@@ -319,17 +497,14 @@ mod tests {
             },
         );
         let store = FakeStore::new();
+        store.insert_resolved(snapshot_with_leaves(lineage, vec![leaf]), Some(0));
 
-        let err = build_proof(&chain, &store, lineage, 100).await.unwrap_err();
-        assert!(matches!(
-            err,
-            ProofError::LeafIndexOutOfRange {
-                leaf_index: 100,
-                leaf_count: 1
-            }
-        ));
-        assert_eq!(store.reads.load(Ordering::SeqCst), 0);
-        assert_eq!(chain.fetches.load(Ordering::SeqCst), 1);
+        let result = build_access_proof(&chain, &store, lineage, handle, subject)
+            .await
+            .unwrap();
+        assert!(result.verified);
+        assert_eq!(result.leaf_count, 1);
+        assert!(result.mmr_proof.is_some());
     }
 
     #[test]
@@ -440,7 +615,9 @@ mod tests {
         let store = FakeStore::new();
         store.mark_inconsistent(lineage, 1, 0);
 
-        let err = build_proof(&chain, &store, lineage, 0).await.unwrap_err();
+        let err = build_public_proof(&chain, &store, lineage, pk(0x10))
+            .await
+            .unwrap_err();
         assert!(matches!(
             err,
             ProofError::CorruptStore { leaf_count: 1, .. }
@@ -469,7 +646,9 @@ mod tests {
         let store = FakeStore::new();
         store.insert(snapshot_with_leaves(lineage, vec![leaf]));
 
-        let result = build_proof(&chain, &store, lineage, 0).await.unwrap();
+        let result = build_public_proof(&chain, &store, lineage, pk(0x10))
+            .await
+            .unwrap();
         assert!(result.verified);
         // FakeStore has no write/catch-up API; only one snapshot read occurred.
         assert_eq!(store.reads.load(Ordering::SeqCst), 1);

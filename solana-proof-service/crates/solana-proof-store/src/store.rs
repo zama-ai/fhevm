@@ -11,7 +11,7 @@ use sqlx::{PgPool, Postgres, Transaction};
 use zama_solana_acl::mmr::mmr_peaks_from_leaves;
 
 use crate::decode::decode_program_instructions;
-use crate::reduce::{reduce_completed_block, PriorLineageState, StagedBlockReduction};
+use crate::reduce::{reduce_completed_block, LeafKind, PriorLineageState, StagedBlockReduction};
 use crate::replay::LineageReplayState;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -32,6 +32,24 @@ pub struct ProofSnapshot {
     pub peaks: Vec<[u8; 32]>,
     pub leaves: Vec<[u8; 32]>,
     pub last_slot: u64,
+}
+
+/// Semantic key the proof service resolves to a leaf index. `subject` distinguishes a
+/// historical-access leaf (`Some`) from a public-decrypt leaf (`None`); `kind` is carried
+/// explicitly so the two never collide on a shared handle.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct SemanticLeafKey {
+    pub kind: LeafKind,
+    pub handle: [u8; 32],
+    pub subject: Option<[u8; 32]>,
+}
+
+/// A consistent proof snapshot plus the leaf index a [`SemanticLeafKey`] resolved to within
+/// that same snapshot read. `leaf_index` is `None` when no such leaf exists in the snapshot.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ResolvedProofSnapshot {
+    pub snapshot: ProofSnapshot,
+    pub leaf_index: Option<u64>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -240,6 +258,25 @@ impl SqlProofStore {
         })
     }
 
+    /// Detects leaf rows written before the #1721 semantic-columns migration: a nonempty
+    /// `solana_proof_leaves` with any NULL `leaf_kind` / `handle`. Such rows still count in
+    /// `leaf_count` but resolve to no semantic key, so at parity with chain they would serve a
+    /// terminal 404 for a leaf that genuinely exists on chain. Startup validation fails closed on
+    /// this so the store is rebuilt from genesis rather than serving silent wrong 404s.
+    pub async fn has_pre_semantic_leaf_rows(&self) -> Result<bool, StoreError> {
+        let exists = sqlx::query_scalar!(
+            r#"
+            SELECT EXISTS (
+                SELECT 1 FROM solana_proof_leaves
+                WHERE leaf_kind IS NULL OR handle IS NULL
+            ) AS "exists!"
+            "#
+        )
+        .fetch_one(&self.pool)
+        .await?;
+        Ok(exists)
+    }
+
     /// Bootstrap A / recovery seam: completeness becomes true only after an
     /// explicit bounded recovery pass proves continuity from the configured
     /// start (`bootstrap_slot`). Called by the sequential runner when justified.
@@ -271,6 +308,93 @@ impl SqlProofStore {
         sqlx::query("SET TRANSACTION ISOLATION LEVEL REPEATABLE READ")
             .execute(&mut *tx)
             .await?;
+        let snapshot = Self::read_snapshot_in_tx(&mut tx, lineage).await?;
+        tx.commit().await?;
+        Ok(snapshot)
+    }
+
+    /// Resolves a [`SemanticLeafKey`] to its leaf index and returns it alongside the proof
+    /// snapshot, both read under one REPEATABLE READ transaction so the resolved index and the
+    /// leaves the proof is built from cannot tear against a concurrent apply.
+    ///
+    /// `Ok(None)` means the lineage has not been ingested at all;
+    /// `Ok(Some(ResolvedProofSnapshot { leaf_index: None, .. }))` means the lineage exists but
+    /// carries no leaf for this key (the caller distinguishes a terminal miss from ingest lag by
+    /// comparing snapshot `leaf_count` against chain).
+    pub async fn proof_snapshot_for_leaf(
+        &self,
+        lineage: [u8; 32],
+        key: &SemanticLeafKey,
+    ) -> Result<Option<ResolvedProofSnapshot>, StoreError> {
+        let mut tx = self.pool.begin().await?;
+        sqlx::query("SET TRANSACTION ISOLATION LEVEL REPEATABLE READ")
+            .execute(&mut *tx)
+            .await?;
+        let Some(snapshot) = Self::read_snapshot_in_tx(&mut tx, lineage).await? else {
+            tx.commit().await?;
+            return Ok(None);
+        };
+        // One indexed lookup on solana_proof_leaves_semantic_idx.
+        //
+        // Historical-access keys are unique by construction: a handle is superseded at most once
+        // per lineage, and each supersession seals one leaf per subject.
+        //
+        // Public-decrypt keys are NOT unique — a handle can carry several public-decrypt leaves
+        // (a born-public `fhe_eval` output seals one, and a later `make_handle_public` re-release
+        // seals another; on-chain `make_handle_public` has no already-public guard). Any such leaf
+        // is sufficient proof of publicness, so `ORDER BY leaf_index ASC LIMIT 1` resolves to the
+        // earliest sealing: it is deterministic and append-stable (the same query returns the same
+        // leaf forever, regardless of later re-sealings).
+        let leaf_index = match key.subject {
+            Some(subject) => {
+                sqlx::query_scalar!(
+                    r#"
+                SELECT leaf_index
+                FROM solana_proof_leaves
+                WHERE lineage = $1 AND leaf_kind = $2 AND handle = $3 AND subject = $4
+                ORDER BY leaf_index ASC
+                LIMIT 1
+                "#,
+                    lineage.as_slice(),
+                    key.kind.as_i16(),
+                    key.handle.as_slice(),
+                    subject.as_slice()
+                )
+                .fetch_optional(&mut *tx)
+                .await?
+            }
+            None => {
+                sqlx::query_scalar!(
+                    r#"
+                SELECT leaf_index
+                FROM solana_proof_leaves
+                WHERE lineage = $1 AND leaf_kind = $2 AND handle = $3 AND subject IS NULL
+                ORDER BY leaf_index ASC
+                LIMIT 1
+                "#,
+                    lineage.as_slice(),
+                    key.kind.as_i16(),
+                    key.handle.as_slice()
+                )
+                .fetch_optional(&mut *tx)
+                .await?
+            }
+        };
+        tx.commit().await?;
+
+        Ok(Some(ResolvedProofSnapshot {
+            snapshot,
+            leaf_index: leaf_index.map(|index| index as u64),
+        }))
+    }
+
+    /// Reads a lineage's metadata + ordered leaf commitments into a [`ProofSnapshot`] within a
+    /// caller-managed transaction. Returns `SnapshotInconsistent` if persisted `leaf_count`
+    /// disagrees with the leaf rows (torn snapshot).
+    async fn read_snapshot_in_tx(
+        tx: &mut Transaction<'_, Postgres>,
+        lineage: [u8; 32],
+    ) -> Result<Option<ProofSnapshot>, StoreError> {
         let row = sqlx::query!(
             r#"
             SELECT
@@ -284,11 +408,10 @@ impl SqlProofStore {
             "#,
             lineage.as_slice()
         )
-        .fetch_optional(&mut *tx)
+        .fetch_optional(&mut **tx)
         .await?;
 
         let Some(row) = row else {
-            tx.commit().await?;
             return Ok(None);
         };
 
@@ -301,9 +424,8 @@ impl SqlProofStore {
             "#,
             lineage.as_slice()
         )
-        .fetch_all(&mut *tx)
+        .fetch_all(&mut **tx)
         .await?;
-        tx.commit().await?;
 
         let leaf_commitments = leaves
             .into_iter()
@@ -817,6 +939,7 @@ impl SqlProofStore {
         }
 
         for leaf in &staged.leaves {
+            let subject = leaf.subject.as_ref().map(|subject| subject.as_slice());
             sqlx::query!(
                 r#"
                 INSERT INTO solana_proof_leaves (
@@ -824,14 +947,20 @@ impl SqlProofStore {
                     leaf_index,
                     commitment,
                     block_slot,
-                    transaction_index
-                ) VALUES ($1, $2, $3, $4, $5)
+                    transaction_index,
+                    leaf_kind,
+                    handle,
+                    subject
+                ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
                 "#,
                 leaf.lineage.as_slice(),
                 as_i64(leaf.leaf_index)?,
                 leaf.commitment.as_slice(),
                 as_i64(slot)?,
-                as_i64(leaf.transaction_index)?
+                as_i64(leaf.transaction_index)?,
+                leaf.kind.as_i16(),
+                leaf.handle.as_slice(),
+                subject
             )
             .execute(&mut **tx)
             .await?;

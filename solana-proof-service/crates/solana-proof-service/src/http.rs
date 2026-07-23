@@ -22,7 +22,7 @@ use utoipa_swagger_ui::SwaggerUi;
 use crate::chain::ChainFetcher;
 use crate::ingest_health::IngestHealth;
 use crate::metrics::{self, metrics_handler};
-use crate::proof::{build_proof, ProofError, ProofSnapshotSource};
+use crate::proof::{build_access_proof, build_public_proof, ProofError, ProofSnapshotSource};
 use crate::readiness::{evaluate_readiness, ReadinessClass, ReadinessQueryable, ReadinessReport};
 
 /// Hard ceiling for a single proof HTTP request (includes RPC peak check).
@@ -42,11 +42,25 @@ pub struct AppState<C: ChainFetcher, S: ProofSnapshotSource> {
     pub proof_permits: Arc<Semaphore>,
 }
 
+/// Query for a historical-access proof: the leaf sealing `handle` for `subject` under `lineage`.
 #[derive(Debug, Deserialize, ToSchema)]
-pub struct MmrProofQuery {
+pub struct AccessProofQuery {
     /// Base58 lineage (`EncryptedValue` PDA) address.
     pub encrypted_value: String,
-    pub leaf_index: u64,
+    /// Hex-encoded 32-byte ciphertext handle (optional `0x` prefix).
+    pub handle: String,
+    /// Base58 subject address authorized for the historical access.
+    pub subject: String,
+}
+
+/// Query for a public-decrypt proof: the earliest leaf marking `handle` publicly decryptable under
+/// `lineage` (a handle may carry several such leaves; the earliest is deterministic and stable).
+#[derive(Debug, Deserialize, ToSchema)]
+pub struct PublicProofQuery {
+    /// Base58 lineage (`EncryptedValue` PDA) address.
+    pub encrypted_value: String,
+    /// Hex-encoded 32-byte ciphertext handle (optional `0x` prefix).
+    pub handle: String,
 }
 
 /// Serializable mirror of `zama_solana_acl::mmr::MmrProof` (borsh-only on-chain),
@@ -69,6 +83,10 @@ impl From<&zama_solana_acl::mmr::MmrProof> for MmrProofDto {
 #[derive(Debug, Serialize, ToSchema)]
 pub struct MmrProofResponse {
     pub mmr_proof: Option<MmrProofDto>,
+    /// The leaf index the semantic key resolved to. Present only on a verified proof; the client
+    /// passes it through as an output and never supplies it. Omitted on non-proof responses.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub leaf_index: Option<u64>,
     /// Lineage leaf count the proof was built against.
     pub leaf_count: u64,
     /// Confirmed Solana RPC context slot of the on-chain peak comparison.
@@ -116,8 +134,10 @@ pub struct LivenessResponse {
 
 #[derive(Debug, thiserror::Error)]
 pub enum HttpError {
-    #[error("invalid encrypted_value address: {0}")]
+    #[error("invalid address: {0}")]
     InvalidAddress(String),
+    #[error("invalid handle: {0}")]
+    InvalidHandle(String),
     #[error(transparent)]
     Proof(#[from] ProofError),
 }
@@ -135,6 +155,7 @@ impl IntoResponse for HttpError {
                     StatusCode::SERVICE_UNAVAILABLE,
                     Json(MmrProofResponse {
                         mmr_proof: None,
+                        leaf_index: None,
                         leaf_count,
                         rpc_context_slot,
                         lineage_last_slot,
@@ -156,6 +177,7 @@ impl IntoResponse for HttpError {
                     StatusCode::INTERNAL_SERVER_ERROR,
                     Json(MmrProofResponse {
                         mmr_proof: None,
+                        leaf_index: None,
                         leaf_count,
                         rpc_context_slot,
                         lineage_last_slot,
@@ -167,23 +189,42 @@ impl IntoResponse for HttpError {
                 )
                     .into_response()
             }
+            // Terminal: the store is caught up to chain and the semantic key genuinely has no
+            // leaf. Reuses the proof envelope (chain-context fields) but is a 404 the client must
+            // not retry, distinct from the 503 `lagging` miss.
+            HttpError::Proof(ProofError::LeafNotFound {
+                leaf_count,
+                rpc_context_slot,
+                lineage_last_slot,
+            }) => {
+                metrics::record_proof("leaf_not_found");
+                (
+                    StatusCode::NOT_FOUND,
+                    Json(MmrProofResponse {
+                        mmr_proof: None,
+                        leaf_index: None,
+                        leaf_count,
+                        rpc_context_slot,
+                        lineage_last_slot,
+                        commitment: crate::chain::SOLANA_PROOF_COMMITMENT,
+                        proof_format_version: PROOF_FORMAT_VERSION,
+                        verified: false,
+                        status: "leaf_not_found",
+                    }),
+                )
+                    .into_response()
+            }
             other => {
                 let (status, code, leaf_index, leaf_count) = match &other {
                     HttpError::InvalidAddress(_) => {
                         (StatusCode::BAD_REQUEST, "invalid_address", None, None)
                     }
+                    HttpError::InvalidHandle(_) => {
+                        (StatusCode::BAD_REQUEST, "invalid_handle", None, None)
+                    }
                     HttpError::Proof(ProofError::LineageNotFound) => {
                         (StatusCode::NOT_FOUND, "lineage_not_found", None, None)
                     }
-                    HttpError::Proof(ProofError::LeafIndexOutOfRange {
-                        leaf_index,
-                        leaf_count,
-                    }) => (
-                        StatusCode::BAD_REQUEST,
-                        "leaf_index_out_of_range",
-                        Some(*leaf_index),
-                        Some(*leaf_count),
-                    ),
                     HttpError::Proof(ProofError::Chain(err)) => {
                         tracing::error!(error = %err, "proof chain fetch failed");
                         (StatusCode::INTERNAL_SERVER_ERROR, "chain_error", None, None)
@@ -193,8 +234,9 @@ impl IntoResponse for HttpError {
                         (StatusCode::INTERNAL_SERVER_ERROR, "store_error", None, None)
                     }
                     HttpError::Proof(ProofError::Lagging { .. })
-                    | HttpError::Proof(ProofError::CorruptStore { .. }) => {
-                        unreachable!("lagging/corrupt handled above")
+                    | HttpError::Proof(ProofError::CorruptStore { .. })
+                    | HttpError::Proof(ProofError::LeafNotFound { .. }) => {
+                        unreachable!("lagging/corrupt/leaf_not_found handled above")
                     }
                 };
                 metrics::record_proof(code);
@@ -226,40 +268,21 @@ fn decode_solana_address(address: &str) -> Result<[u8; 32], String> {
         .map_err(|bytes: Vec<u8>| format!("address must decode to 32 bytes, got {}", bytes.len()))
 }
 
-/// GET `/internal/solana/mmr-proof?encrypted_value=<base58>&leaf_index=<u64>`
-#[utoipa::path(
-    get,
-    path = "/internal/solana/mmr-proof",
-    params(
-        ("encrypted_value" = String, Query, description = "Base58 EncryptedValue PDA"),
-        ("leaf_index" = u64, Query, description = "MMR leaf index")
-    ),
-    responses(
-        (status = 200, description = "Verified proof", body = MmrProofResponse),
-        (status = 503, description = "Store lagging chain (MmrProofResponse) or proof overloaded (ErrorResponse)"),
-        (status = 500, description = "Corrupt cache / integrity", body = MmrProofResponse),
-        (status = 408, description = "Proof request timed out", body = ErrorResponse),
-        (status = 400, description = "Invalid address or leaf index", body = ErrorResponse),
-        (status = 404, description = "Lineage not found on chain", body = ErrorResponse),
-    ),
-    tag = "Proof"
-)]
-pub async fn mmr_proof_handler<C: ChainFetcher, S: ProofSnapshotSource>(
-    State(state): State<Arc<AppState<C, S>>>,
-    Query(query): Query<MmrProofQuery>,
-) -> Result<Json<MmrProofResponse>, HttpError> {
-    let lineage =
-        decode_solana_address(&query.encrypted_value).map_err(HttpError::InvalidAddress)?;
-    let result = build_proof(
-        state.fetcher.as_ref(),
-        &state.store,
-        lineage,
-        query.leaf_index,
-    )
-    .await?;
+fn decode_handle(handle: &str) -> Result<[u8; 32], String> {
+    let hex_str = handle.strip_prefix("0x").unwrap_or(handle);
+    let bytes = hex::decode(hex_str).map_err(|err| format!("invalid hex: {err}"))?;
+    bytes
+        .try_into()
+        .map_err(|bytes: Vec<u8>| format!("handle must decode to 32 bytes, got {}", bytes.len()))
+}
+
+/// Assembles the verified-proof success envelope shared by both semantic endpoints.
+fn verified_response(result: crate::proof::MmrProofResult) -> Json<MmrProofResponse> {
     metrics::record_proof("verified");
-    Ok(Json(MmrProofResponse {
-        mmr_proof: result.mmr_proof.as_ref().map(MmrProofDto::from),
+    let proof = result.mmr_proof.as_ref();
+    Json(MmrProofResponse {
+        mmr_proof: proof.map(MmrProofDto::from),
+        leaf_index: proof.map(|proof| proof.leaf_index),
         leaf_count: result.leaf_count,
         rpc_context_slot: result.rpc_context_slot,
         lineage_last_slot: result.lineage_last_slot,
@@ -267,7 +290,80 @@ pub async fn mmr_proof_handler<C: ChainFetcher, S: ProofSnapshotSource>(
         proof_format_version: PROOF_FORMAT_VERSION,
         verified: result.verified,
         status: "verified",
-    }))
+    })
+}
+
+/// GET `/internal/solana/access-proof?encrypted_value=<base58>&handle=<hex32>&subject=<base58>`
+///
+/// Resolves the historical-access leaf sealing `handle` for `subject` under the lineage and
+/// returns its verified inclusion proof.
+#[utoipa::path(
+    get,
+    path = "/internal/solana/access-proof",
+    params(
+        ("encrypted_value" = String, Query, description = "Base58 EncryptedValue PDA"),
+        ("handle" = String, Query, description = "Hex-encoded 32-byte ciphertext handle"),
+        ("subject" = String, Query, description = "Base58 authorized subject address")
+    ),
+    responses(
+        (status = 200, description = "Verified proof", body = MmrProofResponse),
+        (status = 503, description = "Store lagging chain (MmrProofResponse) or proof overloaded (ErrorResponse)"),
+        (status = 500, description = "Corrupt cache / integrity", body = MmrProofResponse),
+        (status = 408, description = "Proof request timed out", body = ErrorResponse),
+        (status = 400, description = "Invalid address or handle", body = ErrorResponse),
+        (status = 404, description = "Lineage not found on chain (ErrorResponse) or no such leaf at parity (MmrProofResponse)"),
+    ),
+    tag = "Proof"
+)]
+pub async fn access_proof_handler<C: ChainFetcher, S: ProofSnapshotSource>(
+    State(state): State<Arc<AppState<C, S>>>,
+    Query(query): Query<AccessProofQuery>,
+) -> Result<Json<MmrProofResponse>, HttpError> {
+    let lineage =
+        decode_solana_address(&query.encrypted_value).map_err(HttpError::InvalidAddress)?;
+    let handle = decode_handle(&query.handle).map_err(HttpError::InvalidHandle)?;
+    let subject = decode_solana_address(&query.subject).map_err(HttpError::InvalidAddress)?;
+    let result = build_access_proof(
+        state.fetcher.as_ref(),
+        &state.store,
+        lineage,
+        handle,
+        subject,
+    )
+    .await?;
+    Ok(verified_response(result))
+}
+
+/// GET `/internal/solana/public-proof?encrypted_value=<base58>&handle=<hex32>`
+///
+/// Resolves the earliest public-decrypt leaf marking `handle` publicly decryptable under the
+/// lineage (a handle may carry several such leaves) and returns its verified inclusion proof.
+#[utoipa::path(
+    get,
+    path = "/internal/solana/public-proof",
+    params(
+        ("encrypted_value" = String, Query, description = "Base58 EncryptedValue PDA"),
+        ("handle" = String, Query, description = "Hex-encoded 32-byte ciphertext handle")
+    ),
+    responses(
+        (status = 200, description = "Verified proof", body = MmrProofResponse),
+        (status = 503, description = "Store lagging chain (MmrProofResponse) or proof overloaded (ErrorResponse)"),
+        (status = 500, description = "Corrupt cache / integrity", body = MmrProofResponse),
+        (status = 408, description = "Proof request timed out", body = ErrorResponse),
+        (status = 400, description = "Invalid address or handle", body = ErrorResponse),
+        (status = 404, description = "Lineage not found on chain (ErrorResponse) or no such leaf at parity (MmrProofResponse)"),
+    ),
+    tag = "Proof"
+)]
+pub async fn public_proof_handler<C: ChainFetcher, S: ProofSnapshotSource>(
+    State(state): State<Arc<AppState<C, S>>>,
+    Query(query): Query<PublicProofQuery>,
+) -> Result<Json<MmrProofResponse>, HttpError> {
+    let lineage =
+        decode_solana_address(&query.encrypted_value).map_err(HttpError::InvalidAddress)?;
+    let handle = decode_handle(&query.handle).map_err(HttpError::InvalidHandle)?;
+    let result = build_public_proof(state.fetcher.as_ref(), &state.store, lineage, handle).await?;
+    Ok(verified_response(result))
 }
 
 #[utoipa::path(
@@ -303,19 +399,25 @@ pub async fn readiness_handler<C: ChainFetcher, S: ProofSnapshotSource + Readine
 
 #[derive(OpenApi)]
 #[openapi(
-    paths(liveness_handler, readiness_handler, mmr_proof_handler),
+    paths(
+        liveness_handler,
+        readiness_handler,
+        access_proof_handler,
+        public_proof_handler
+    ),
     components(schemas(
         LivenessResponse,
         ReadinessReport,
         ReadinessClass,
-        MmrProofQuery,
+        AccessProofQuery,
+        PublicProofQuery,
         MmrProofDto,
         MmrProofResponse,
         ErrorResponse,
     )),
     tags(
         (name = "Health", description = "Liveness and derived readiness"),
-        (name = "Proof", description = "Internal MMR proof API")
+        (name = "Proof", description = "Internal semantic MMR proof API")
     ),
     info(
         title = "Solana proof service",
@@ -404,7 +506,14 @@ where
         .with_state(Arc::clone(&state));
 
     let proof = Router::new()
-        .route("/internal/solana/mmr-proof", get(mmr_proof_handler::<C, S>))
+        .route(
+            "/internal/solana/access-proof",
+            get(access_proof_handler::<C, S>),
+        )
+        .route(
+            "/internal/solana/public-proof",
+            get(public_proof_handler::<C, S>),
+        )
         .layer(from_fn_with_state(
             Arc::clone(&state),
             proof_admission::<C, S>,
@@ -428,7 +537,14 @@ where
 {
     request_id_layers(
         Router::new()
-            .route("/internal/solana/mmr-proof", get(mmr_proof_handler::<C, S>))
+            .route(
+                "/internal/solana/access-proof",
+                get(access_proof_handler::<C, S>),
+            )
+            .route(
+                "/internal/solana/public-proof",
+                get(public_proof_handler::<C, S>),
+            )
             .layer(from_fn_with_state(
                 Arc::clone(&state),
                 proof_admission::<C, S>,
@@ -447,7 +563,7 @@ mod tests {
     use async_trait::async_trait;
     use axum::body::Body;
     use axum::http::{Request, StatusCode};
-    use solana_proof_store::{ProofSnapshot, StoreError};
+    use solana_proof_store::{ProofSnapshot, ResolvedProofSnapshot, SemanticLeafKey, StoreError};
     use tower::ServiceExt;
     use zama_solana_acl::mmr::{mmr_append, mmr_peaks_from_leaves};
 
@@ -496,9 +612,11 @@ mod tests {
         }
     }
 
-    /// Read-only fake store: no write / catch-up surface.
+    /// Read-only fake store: no write / catch-up surface. Resolution of the semantic key to a
+    /// leaf index is pinned per lineage (SQL resolution is covered by the store integration
+    /// tests); the fake asserts the handler's envelope + classification wiring.
     struct FakeStore {
-        snapshots: Mutex<HashMap<[u8; 32], ProofSnapshot>>,
+        resolved: Mutex<HashMap<[u8; 32], ResolvedProofSnapshot>>,
         reads: AtomicUsize,
         inconsistent: Mutex<HashMap<[u8; 32], (u64, u64)>>,
     }
@@ -506,17 +624,25 @@ mod tests {
     impl FakeStore {
         fn new() -> Self {
             Self {
-                snapshots: Mutex::new(HashMap::new()),
+                resolved: Mutex::new(HashMap::new()),
                 reads: AtomicUsize::new(0),
                 inconsistent: Mutex::new(HashMap::new()),
             }
         }
 
+        fn insert_resolved(&self, snapshot: ProofSnapshot, leaf_index: Option<u64>) {
+            self.resolved.lock().unwrap().insert(
+                snapshot.lineage,
+                ResolvedProofSnapshot {
+                    snapshot,
+                    leaf_index,
+                },
+            );
+        }
+
+        /// Registers a snapshot whose key resolves to leaf 0 (the single-leaf case).
         fn insert(&self, snapshot: ProofSnapshot) {
-            self.snapshots
-                .lock()
-                .unwrap()
-                .insert(snapshot.lineage, snapshot);
+            self.insert_resolved(snapshot, Some(0));
         }
 
         fn mark_inconsistent(&self, lineage: [u8; 32], leaf_count: u64, leaf_rows: u64) {
@@ -529,10 +655,11 @@ mod tests {
 
     #[async_trait]
     impl ProofSnapshotSource for FakeStore {
-        async fn proof_snapshot(
+        async fn proof_snapshot_for_leaf(
             &self,
             lineage: [u8; 32],
-        ) -> Result<Option<ProofSnapshot>, StoreError> {
+            _key: &SemanticLeafKey,
+        ) -> Result<Option<ResolvedProofSnapshot>, StoreError> {
             self.reads.fetch_add(1, Ordering::SeqCst);
             if let Some(&(leaf_count, leaf_rows)) = self.inconsistent.lock().unwrap().get(&lineage)
             {
@@ -541,7 +668,7 @@ mod tests {
                     leaf_rows,
                 });
             }
-            Ok(self.snapshots.lock().unwrap().get(&lineage).cloned())
+            Ok(self.resolved.lock().unwrap().get(&lineage).cloned())
         }
     }
 
@@ -552,11 +679,20 @@ mod tests {
         serde_json::from_slice(&body).unwrap()
     }
 
-    fn proof_uri(lineage: [u8; 32], leaf_index: u64) -> String {
+    fn public_proof_uri(lineage: [u8; 32], handle: [u8; 32]) -> String {
         format!(
-            "/internal/solana/mmr-proof?encrypted_value={}&leaf_index={}",
+            "/internal/solana/public-proof?encrypted_value={}&handle={}",
             bs58::encode(lineage).into_string(),
-            leaf_index
+            hex::encode(handle)
+        )
+    }
+
+    fn access_proof_uri(lineage: [u8; 32], handle: [u8; 32], subject: [u8; 32]) -> String {
+        format!(
+            "/internal/solana/access-proof?encrypted_value={}&handle={}&subject={}",
+            bs58::encode(lineage).into_string(),
+            hex::encode(handle),
+            bs58::encode(subject).into_string()
         )
     }
 
@@ -611,7 +747,7 @@ mod tests {
         let response = app
             .oneshot(
                 Request::builder()
-                    .uri(proof_uri(lineage, 0))
+                    .uri(public_proof_uri(lineage, pk(0x10)))
                     .body(Body::empty())
                     .unwrap(),
             )
@@ -621,6 +757,8 @@ mod tests {
         let json = json_body(response).await;
         assert_eq!(json["status"], "verified");
         assert_eq!(json["verified"], true);
+        // The resolved leaf index is a top-level output the client passes through.
+        assert_eq!(json["leaf_index"], 0);
         assert_eq!(json["leaf_count"], 1);
         assert_eq!(json["rpc_context_slot"], 4242);
         // snapshot_with_leaves pins last_slot = 1.
@@ -629,6 +767,7 @@ mod tests {
         assert_eq!(json["proof_format_version"], "v1");
         assert!(json.get("proof_slot").is_none());
         assert!(json["mmr_proof"].is_object());
+        assert_eq!(json["mmr_proof"]["leaf_index"], 0);
     }
 
     #[tokio::test]
@@ -657,7 +796,7 @@ mod tests {
         let response = app
             .oneshot(
                 Request::builder()
-                    .uri(proof_uri(lineage, 0))
+                    .uri(public_proof_uri(lineage, pk(0x10)))
                     .body(Body::empty())
                     .unwrap(),
             )
@@ -696,7 +835,7 @@ mod tests {
         let response = app
             .oneshot(
                 Request::builder()
-                    .uri(proof_uri(lineage, 0))
+                    .uri(public_proof_uri(lineage, pk(0x10)))
                     .body(Body::empty())
                     .unwrap(),
             )
@@ -734,7 +873,7 @@ mod tests {
         let response = app
             .oneshot(
                 Request::builder()
-                    .uri(proof_uri(lineage, 0))
+                    .uri(public_proof_uri(lineage, pk(0x10)))
                     .body(Body::empty())
                     .unwrap(),
             )
@@ -756,7 +895,7 @@ mod tests {
         let response = app
             .oneshot(
                 Request::builder()
-                    .uri(proof_uri(lineage, 0))
+                    .uri(public_proof_uri(lineage, pk(0x10)))
                     .body(Body::empty())
                     .unwrap(),
             )
@@ -770,9 +909,90 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn handler_leaf_index_out_of_range_is_400_json_error() {
+    async fn handler_leaf_not_found_at_parity_is_404_proof_envelope() {
         let lineage = pk(0x17);
         let leaf = zama_solana_acl::public_decrypt_leaf_commitment(lineage, 0, pk(0x10));
+        let mut peaks = Vec::new();
+        let mut leaf_count = 0u64;
+        mmr_append(&mut peaks, &mut leaf_count, leaf).unwrap();
+
+        let chain = FakeChain::new();
+        chain.set(
+            lineage,
+            OnChainLineageState {
+                peaks,
+                leaf_count, // 1 on chain == snapshot leaf_count: store is caught up
+                rpc_context_slot: 4242,
+            },
+        );
+        let store = FakeStore::new();
+        // Lineage exists at parity, but the requested handle resolves to no leaf → terminal.
+        store.insert_resolved(snapshot_with_leaves(lineage, vec![leaf]), None);
+
+        let app = proof_test_router(app_state(chain, store));
+        let response = app
+            .oneshot(
+                Request::builder()
+                    .uri(public_proof_uri(lineage, pk(0xEE)))
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(response.status(), StatusCode::NOT_FOUND);
+        let json = json_body(response).await;
+        assert_eq!(json["status"], "leaf_not_found");
+        assert_eq!(json["verified"], false);
+        assert_eq!(json["leaf_count"], 1);
+        assert!(json["mmr_proof"].is_null());
+        assert!(json.get("leaf_index").is_none());
+    }
+
+    #[tokio::test]
+    async fn handler_leaf_not_found_below_parity_is_503_lagging() {
+        let lineage = pk(0x18);
+        let leaf0 = zama_solana_acl::public_decrypt_leaf_commitment(lineage, 0, pk(0x10));
+        let leaf1 = zama_solana_acl::public_decrypt_leaf_commitment(lineage, 1, pk(0x11));
+        let mut peaks = Vec::new();
+        let mut leaf_count = 0u64;
+        mmr_append(&mut peaks, &mut leaf_count, leaf0).unwrap();
+        mmr_append(&mut peaks, &mut leaf_count, leaf1).unwrap();
+
+        let chain = FakeChain::new();
+        chain.set(
+            lineage,
+            OnChainLineageState {
+                peaks,
+                leaf_count, // 2 on chain
+                rpc_context_slot: 4242,
+            },
+        );
+        let store = FakeStore::new();
+        // Store still behind chain (1 leaf) and the just-sealed handle isn't ingested yet.
+        store.insert_resolved(snapshot_with_leaves(lineage, vec![leaf0]), None);
+
+        let app = proof_test_router(app_state(chain, store));
+        let response = app
+            .oneshot(
+                Request::builder()
+                    .uri(public_proof_uri(lineage, pk(0x11)))
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(response.status(), StatusCode::SERVICE_UNAVAILABLE);
+        let json = json_body(response).await;
+        assert_eq!(json["status"], "lagging");
+        assert_eq!(json["leaf_count"], 2);
+    }
+
+    #[tokio::test]
+    async fn handler_access_proof_verified_json_body() {
+        let lineage = pk(0x19);
+        let handle = pk(0x20);
+        let subject = pk(0x30);
+        let leaf = zama_solana_acl::historical_access_leaf_commitment(lineage, 0, handle, subject);
         let mut peaks = Vec::new();
         let mut leaf_count = 0u64;
         mmr_append(&mut peaks, &mut leaf_count, leaf).unwrap();
@@ -793,17 +1013,37 @@ mod tests {
         let response = app
             .oneshot(
                 Request::builder()
-                    .uri(proof_uri(lineage, 100))
+                    .uri(access_proof_uri(lineage, handle, subject))
                     .body(Body::empty())
                     .unwrap(),
             )
             .await
             .unwrap();
+        assert_eq!(response.status(), StatusCode::OK);
+        let json = json_body(response).await;
+        assert_eq!(json["status"], "verified");
+        assert_eq!(json["verified"], true);
+        assert_eq!(json["leaf_index"], 0);
+        assert_eq!(json["leaf_count"], 1);
+    }
+
+    #[tokio::test]
+    async fn handler_invalid_handle_is_400_json_error() {
+        let lineage = pk(0x1A);
+        let chain = FakeChain::new();
+        let store = FakeStore::new();
+        let app = proof_test_router(app_state(chain, store));
+        let uri = format!(
+            "/internal/solana/public-proof?encrypted_value={}&handle=not-hex",
+            bs58::encode(lineage).into_string()
+        );
+        let response = app
+            .oneshot(Request::builder().uri(uri).body(Body::empty()).unwrap())
+            .await
+            .unwrap();
         assert_eq!(response.status(), StatusCode::BAD_REQUEST);
         let json = json_body(response).await;
-        assert_eq!(json["code"], "leaf_index_out_of_range");
-        assert_eq!(json["leaf_index"], 100);
-        assert_eq!(json["leaf_count"], 1);
+        assert_eq!(json["code"], "invalid_handle");
     }
 
     #[tokio::test]
@@ -831,7 +1071,7 @@ mod tests {
         let response = app
             .oneshot(
                 Request::builder()
-                    .uri(proof_uri(lineage, 0))
+                    .uri(public_proof_uri(lineage, pk(0x10)))
                     .body(Body::empty())
                     .unwrap(),
             )
@@ -891,7 +1131,8 @@ mod tests {
     fn openapi_documents_proof_route() {
         let doc = ApiDoc::openapi();
         let json = serde_json::to_value(doc).unwrap();
-        assert!(json["paths"]["/internal/solana/mmr-proof"].is_object());
+        assert!(json["paths"]["/internal/solana/access-proof"].is_object());
+        assert!(json["paths"]["/internal/solana/public-proof"].is_object());
         assert!(json["paths"]["/health/readiness"].is_object());
     }
 }
