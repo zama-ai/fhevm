@@ -9,8 +9,10 @@ application programs such as `confidential-token`.
 ```text
 HostConfig
   PDA("host-config")
-  stores chain id, protocol authorities, pause state, HCU limits,
-  and the persistent-grant deny-list policy
+  stores chain id, gateway chain id, protocol authorities (admin, coprocessor signer set +
+  threshold, decryption contract, input verification contract), current KMS context pointer,
+  pause state, HCU limits (per-tx, per-depth, per-app-per-slot block cap), and the
+  persistent-grant deny-list policy
 
 EncryptedValue
   PDA("encrypted-value", value_key)
@@ -46,8 +48,8 @@ this handle" — current membership, or an MMR-proven historical/public-decrypt 
 
 ## Instruction-Local Transients
 
-`fhe_eval` composes mixed FHE steps in one host instruction: **Binary / Ternary / TrivialEncrypt /
-Rand / RandBounded** (no `Input` step — DD-007/DD-023). Binary scratch results can feed ternary
+`fhe_eval` composes mixed FHE steps in one host instruction: **Binary / Ternary / Unary /
+TrivialEncrypt / Rand / RandBounded / Sum / IsIn / MulDiv** (no `Input` step — DD-007/DD-023). Binary scratch results can feed ternary
 `if_then_else`, and trivial-encrypt / random births can participate in the same frame. Outputs
 produced earlier in the eval can be referenced as transient operands by later operations.
 Durable operands must still be authorized by a live or historically-proven `EncryptedValue`. Transient
