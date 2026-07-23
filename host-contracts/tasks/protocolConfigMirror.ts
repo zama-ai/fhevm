@@ -149,7 +149,7 @@ export async function buildCanonicalUpgradeProposal(
 
   return buildUpgradeProposal(hre, {
     proxyAddress,
-    contractName: 'ProtocolConfig',
+    contractName: 'contracts/ProtocolConfig.sol:ProtocolConfig',
     innerFunctionName: 'initializeFromCanonical',
     decodedArgs: [snapshot.currentKmsContextId, snapshot.currentEpochId, kmsNodeParams, snapshot.thresholds],
   });

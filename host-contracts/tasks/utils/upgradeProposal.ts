@@ -25,12 +25,14 @@ export const UPGRADE_TO_AND_CALL_INTERFACE = new Interface([
 
 export type UpgradeProposal = {
   proxyAddress: string;
+  contractName: string;
   newImplementationAddress: string;
   innerFunctionSignature: string;
   decodedArgs: unknown[];
   innerCalldata: string;
   outerCalldata: string;
   constructorArgs: unknown[];
+  unsafeAllow: string[];
 };
 
 export async function buildUpgradeProposal(
@@ -71,12 +73,14 @@ export async function buildUpgradeProposal(
 
   return {
     proxyAddress: params.proxyAddress,
+    contractName: params.contractName,
     newImplementationAddress,
     innerFunctionSignature,
     decodedArgs: params.decodedArgs,
     innerCalldata,
     outerCalldata,
     constructorArgs: params.constructorArgs ?? [],
+    unsafeAllow: [...(params.unsafeAllow ?? [])],
   };
 }
 
@@ -95,20 +99,22 @@ export async function executeUpgradeProposal(hre: HardhatRuntimeEnvironment, pre
 export async function verifyProposalImplementation(
   hre: HardhatRuntimeEnvironment,
   data: UpgradeProposal,
-  contract: string,
 ): Promise<void> {
   console.log('Waiting 2 minutes before contract verification... Please wait...');
   await new Promise((resolve) => setTimeout(resolve, 2 * 60 * 1000));
   await hre.run('verify:verify', {
     address: data.newImplementationAddress,
-    contract,
+    contract: data.contractName,
     constructorArguments: data.constructorArgs,
   });
 }
 
 export function printUpgradeProposal(data: UpgradeProposal): void {
+  console.log('contractName:', data.contractName);
   console.log('proxyAddress:', data.proxyAddress);
   console.log('newImplementationAddress:', data.newImplementationAddress);
+  console.log('constructorArgs:', toJsonString(data.constructorArgs));
+  console.log('unsafeAllow:', data.unsafeAllow.length > 0 ? data.unsafeAllow.join(', ') : '(none)');
   console.log('innerFunctionSignature:', data.innerFunctionSignature);
   console.log('decodedArgs:', toJsonString(data.decodedArgs));
   console.log(`${data.innerFunctionSignature} calldata:`, data.innerCalldata);
