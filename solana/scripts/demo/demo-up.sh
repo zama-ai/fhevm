@@ -14,8 +14,10 @@ ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../../.." && pwd)"
 FHEVM="$ROOT/test-suite/fhevm"
 VALIDATOR_RPC="http://127.0.0.1:8899"
 
-# Opt-in permissive CORS for the demo dApp origin (relayer defaults OFF). Export before bring-up so
-# the relayer container inherits it; harmless on a re-run against an already-running stack.
+# Opt-in permissive CORS for the demo dApp origin (relayer defaults OFF). Exported before bring-up so
+# the relayer compose service picks it up via its ${RELAYER_PERMISSIVE_CORS:-} passthrough (see
+# docker-compose/relayer-docker-compose.yml) and the container comes up with the demo CORS layer on;
+# harmless on a re-run against an already-running stack.
 export RELAYER_PERMISSIVE_CORS="${RELAYER_PERMISSIVE_CORS:-1}"
 
 if curl -s -m2 "$VALIDATOR_RPC" -X POST -H 'Content-Type: application/json' \
