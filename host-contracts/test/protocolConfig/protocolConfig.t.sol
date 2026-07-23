@@ -14,7 +14,7 @@ import {KmsNode, KmsNodeParams, PcrValues, ChainUpgradeWindow} from "@fhevm-host
 import {EmptyUUPSProxy} from "@fhevm-host-contracts/contracts/emptyProxy/EmptyUUPSProxy.sol";
 import {UUPSUpgradeableEmptyProxy} from "@fhevm-host-contracts/contracts/shared/UUPSUpgradeableEmptyProxy.sol";
 import {ACLOwnable} from "@fhevm-host-contracts/contracts/shared/ACLOwnable.sol";
-import {KMS_CONTEXT_COUNTER_BASE, EPOCH_COUNTER_BASE, PREP_KEYGEN_COUNTER_BASE} from "@fhevm-host-contracts/contracts/shared/Constants.sol";
+import {KMS_CONTEXT_COUNTER_BASE, EPOCH_COUNTER_BASE, PREP_KEYGEN_COUNTER_BASE, KEY_COUNTER_BASE} from "@fhevm-host-contracts/contracts/shared/Constants.sol";
 import {protocolConfigAdd} from "@fhevm-host-contracts/addresses/FHEVMHostAddresses.sol";
 import {ProtocolConfigV010TestDouble} from "./ProtocolConfigV010TestDouble.sol";
 
@@ -156,9 +156,24 @@ contract ProtocolConfigTest is HostContractsDeployerTestUtils {
         protocolConfig.defineNewKmsContextAndEpoch(nodes, thresholds, softwareVersion, pcrValues);
     }
 
-    function _confirmEpoch(uint256, /* contextId */ uint256 epochId, uint256, /* pk */ address txSender) internal {
-        IProtocolConfig.EpochKeyResult[] memory keys = new IProtocolConfig.EpochKeyResult[](0);
+    function _confirmEpoch(uint256 contextId, uint256 epochId, uint256 pk, address txSender) internal {
+        // Supply one self-signed key attestation with deterministic constant material so both signers of a
+        // two-node context produce the identical dataHash and reach unanimity. The keyId/prepKeygenId need not
+        // exist in KMSGeneration: `_requireExpectedSigner` only checks the signature recovers to the signer.
+        bytes memory extraData = abi.encodePacked(uint8(0x02), contextId, epochId);
+        uint256 keyId = KEY_COUNTER_BASE + 1;
+        uint256 prepKeygenId = _prepKeygenIdForKeyId(keyId);
+        IKMSGeneration.KeyDigest[] memory keyDigests = _mockKeyDigests();
+
+        IProtocolConfig.EpochKeyResult[] memory keys = new IProtocolConfig.EpochKeyResult[](1);
+        keys[0] = IProtocolConfig.EpochKeyResult({
+            prepKeygenId: prepKeygenId,
+            keyId: keyId,
+            keyDigests: keyDigests,
+            signature: _computeSignature(pk, _hashProtocolConfigKeygen(prepKeygenId, keyId, keyDigests, extraData))
+        });
         IProtocolConfig.EpochCrsResult[] memory crsList = new IProtocolConfig.EpochCrsResult[](0);
+
         vm.prank(txSender);
         protocolConfig.confirmEpochActivation(epochId, keys, crsList);
     }
@@ -1463,7 +1478,7 @@ contract ProtocolConfigTest is HostContractsDeployerTestUtils {
 
     /// @dev Trigger events are independent from activation payloads; material is read by Connectors
     ///      from KMSGeneration at the emitted historical block.
-    function test_emptyEpochActivationStillEmitsMaterialBlockNumber() public {
+    function test_epochActivationEmitsMaterialBlockNumber() public {
         _setupEpochLifecycle();
         uint256 materialEpochId = EPOCH_COUNTER_BASE + 2;
         vm.prank(owner);
@@ -1486,21 +1501,30 @@ contract ProtocolConfigTest is HostContractsDeployerTestUtils {
             completedCrsId
         );
 
-        uint256 emptyEpochId = EPOCH_COUNTER_BASE + 3;
+        uint256 nextEpochId = EPOCH_COUNTER_BASE + 3;
         vm.prank(owner);
         protocolConfig.defineNewEpochForCurrentKmsContext();
 
-        IProtocolConfig.EpochKeyResult[] memory keys = new IProtocolConfig.EpochKeyResult[](0);
-        IProtocolConfig.EpochCrsResult[] memory crsList = new IProtocolConfig.EpochCrsResult[](0);
-
-        vm.prank(kmsTxSender0);
-        protocolConfig.confirmEpochActivation(emptyEpochId, keys, crsList);
-        vm.prank(kmsTxSender1);
-        protocolConfig.confirmEpochActivation(emptyEpochId, keys, crsList);
+        _confirmEpochWithMaterial(
+            KMS_CONTEXT_COUNTER_BASE + 1,
+            nextEpochId,
+            kmsPk0,
+            kmsTxSender0,
+            completedKeyId,
+            completedCrsId
+        );
+        _confirmEpochWithMaterial(
+            KMS_CONTEXT_COUNTER_BASE + 1,
+            nextEpochId,
+            kmsPk1,
+            kmsTxSender1,
+            completedKeyId,
+            completedCrsId
+        );
 
         (uint256 activeContextId, uint256 activeEpochId) = protocolConfig.getCurrentKmsContextAndEpoch();
         assertEq(activeContextId, KMS_CONTEXT_COUNTER_BASE + 1);
-        assertEq(activeEpochId, emptyEpochId);
+        assertEq(activeEpochId, nextEpochId);
 
         vm.recordLogs();
         vm.prank(owner);
@@ -1513,7 +1537,7 @@ contract ProtocolConfigTest is HostContractsDeployerTestUtils {
         );
 
         assertEq(previousContextId, KMS_CONTEXT_COUNTER_BASE + 1);
-        assertEq(previousEpochId, emptyEpochId);
+        assertEq(previousEpochId, nextEpochId);
         assertEq(materialBlockNumber, block.number - 1);
     }
 
@@ -1542,11 +1566,77 @@ contract ProtocolConfigTest is HostContractsDeployerTestUtils {
             completedCrsId
         );
 
+        // Replay with the same material the first confirm used. The signer check passes, so the call reaches
+        // the already-confirmed check. Empty arrays would revert earlier with EmptyEpochActivationPayload.
+        bytes memory replayExtraData = abi.encodePacked(uint8(0x02), KMS_CONTEXT_COUNTER_BASE + 1, epochId);
+        IKMSGeneration.KeyDigest[] memory replayKeyDigests = _mockKeyDigests();
+        IProtocolConfig.EpochKeyResult[] memory replayKeys = new IProtocolConfig.EpochKeyResult[](1);
+        replayKeys[0] = IProtocolConfig.EpochKeyResult({
+            prepKeygenId: PREP_KEYGEN_COUNTER_BASE + 1,
+            keyId: completedKeyId,
+            keyDigests: replayKeyDigests,
+            signature: _computeSignature(
+                kmsPk0,
+                _hashProtocolConfigKeygen(PREP_KEYGEN_COUNTER_BASE + 1, completedKeyId, replayKeyDigests, replayExtraData)
+            )
+        });
+        IProtocolConfig.EpochCrsResult[] memory replayCrsList = new IProtocolConfig.EpochCrsResult[](0);
+
         vm.prank(kmsTxSender0);
         vm.expectRevert(
             abi.encodeWithSelector(IProtocolConfig.EpochActivationAlreadyConfirmed.selector, vm.addr(kmsPk0), epochId)
         );
+        protocolConfig.confirmEpochActivation(epochId, replayKeys, replayCrsList);
+    }
+
+    function test_revertConfirmEpochActivationEmptyPayload() public {
+        _setupEpochLifecycle();
+        uint256 epochId = EPOCH_COUNTER_BASE + 2;
+        vm.prank(owner);
+        protocolConfig.defineNewEpochForCurrentKmsContext();
+
+        // An authorized tx sender on a live pending epoch passes the auth and context checks, so the empty
+        // payload reaches the dedicated revert.
+        IProtocolConfig.EpochKeyResult[] memory keys = new IProtocolConfig.EpochKeyResult[](0);
+        IProtocolConfig.EpochCrsResult[] memory crsList = new IProtocolConfig.EpochCrsResult[](0);
+        vm.prank(kmsTxSender0);
+        vm.expectRevert(abi.encodeWithSelector(IProtocolConfig.EmptyEpochActivationPayload.selector, epochId));
         protocolConfig.confirmEpochActivation(epochId, keys, crsList);
+    }
+
+    function test_confirmEpochActivationActivatesAtFullSignerCount() public {
+        _setupEpochLifecycle();
+        uint256 epochId = EPOCH_COUNTER_BASE + 2;
+        vm.prank(owner);
+        protocolConfig.defineNewEpochForCurrentKmsContext();
+        (uint256 completedKeyId, uint256 completedCrsId) = _completeKmsGenerationMaterial();
+
+        (, uint256 epochBeforeQuorum) = protocolConfig.getCurrentKmsContextAndEpoch();
+
+        // First signer confirms: the epoch is not yet active because quorum is not reached.
+        _confirmEpochWithMaterial(
+            KMS_CONTEXT_COUNTER_BASE + 1,
+            epochId,
+            kmsPk0,
+            kmsTxSender0,
+            completedKeyId,
+            completedCrsId
+        );
+        (, uint256 epochAfterFirst) = protocolConfig.getCurrentKmsContextAndEpoch();
+        assertEq(epochAfterFirst, epochBeforeQuorum);
+
+        // Second (final) signer confirms with the identical material: quorum is reached and the epoch activates.
+        _confirmEpochWithMaterial(
+            KMS_CONTEXT_COUNTER_BASE + 1,
+            epochId,
+            kmsPk1,
+            kmsTxSender1,
+            completedKeyId,
+            completedCrsId
+        );
+        (uint256 activeContextId, uint256 activeEpochId) = protocolConfig.getCurrentKmsContextAndEpoch();
+        assertEq(activeContextId, KMS_CONTEXT_COUNTER_BASE + 1);
+        assertEq(activeEpochId, epochId);
     }
 
     function test_confirmEpochActivationAcceptsActiveEpochMaterial() public {

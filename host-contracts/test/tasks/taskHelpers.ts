@@ -188,6 +188,54 @@ export async function buildControllableKmsCommittee(): Promise<ControllableKmsCo
   };
 }
 
+// Builds a single self-signed key attestation for confirmEpochActivation. The contract only checks that
+// the EIP-712 signature recovers to the node's signer, so constant key material is valid. The material is
+// identical across signers, so every signer produces the same consensus dataHash and quorum is reachable.
+// `signerSigner` is the node's SIGNER account (not its tx-sender). `contextId`/`epochId` are the pair being
+// activated and must match the values the contract packs into extraData.
+export async function buildSingleKeyActivationPayload(
+  signerSigner: Signer,
+  proxyAddress: string,
+  contextId: bigint,
+  epochId: bigint,
+): Promise<{
+  keys: Array<{ prepKeygenId: bigint; keyId: bigint; keyDigests: Array<{ keyType: number; digest: string }>; signature: string }>;
+  crsList: never[];
+}> {
+  const chainId = (await ethers.provider.getNetwork()).chainId;
+  const domain = {
+    name: 'ProtocolConfig',
+    version: '1',
+    chainId,
+    verifyingContract: proxyAddress,
+  };
+  const types = {
+    KeygenVerification: [
+      { name: 'prepKeygenId', type: 'uint256' },
+      { name: 'keyId', type: 'uint256' },
+      { name: 'keyDigests', type: 'KeyDigest[]' },
+      { name: 'extraData', type: 'bytes' },
+    ],
+    KeyDigest: [
+      { name: 'keyType', type: 'uint8' },
+      { name: 'digest', type: 'bytes' },
+    ],
+  };
+  // Single source of truth for the key material, so the signed digest matches the submitted payload.
+  const prepKeygenId = 1n;
+  const keyId = 1n;
+  const keyDigests = [{ keyType: 0, digest: '0x01020304' }];
+  // extraData mirrors abi.encodePacked(EXTRA_DATA_V2, contextId, epochId) with EXTRA_DATA_V2 = 0x02.
+  const extraData = ethers.solidityPacked(['uint8', 'uint256', 'uint256'], [2, contextId, epochId]);
+  const signature = await (signerSigner as unknown as {
+    signTypedData: (d: typeof domain, t: typeof types, v: Record<string, unknown>) => Promise<string>;
+  }).signTypedData(domain, types, { prepKeygenId, keyId, keyDigests, extraData });
+  return {
+    keys: [{ prepKeygenId, keyId, keyDigests, signature }],
+    crsList: [],
+  };
+}
+
 function findEventArg(
   contract: ProtocolConfig,
   logs: readonly { topics: string[]; data: string }[],
@@ -210,7 +258,7 @@ function findEventArg(
 
 // Rotates the canonical ProtocolConfig to a fresh KMS context that reuses `committee`, driving the full
 // epoch lifecycle (define -> confirm creation -> confirm activation) so getCurrentKmsContextId advances.
-// Empty key/CRS material is sufficient for a context switch; only same-set resharing needs attestations.
+// Activation requires at least one attestation, so each signer submits a single self-signed key attestation.
 export async function rotateToNewKmsContext(
   proxyAddress: string,
   ownerSigner: Signer,
@@ -243,13 +291,19 @@ export async function rotateToNewKmsContext(
     throw new Error('Context creation quorum did not emit NewKmsEpoch');
   }
 
-  for (const txSenderSigner of committee.txSenderSigners) {
+  for (let i = 0; i < committee.txSenderSigners.length; i++) {
     const asTxSender = (await ethers.getContractAt(
       'ProtocolConfig',
       proxyAddress,
-      txSenderSigner,
+      committee.txSenderSigners[i],
     )) as unknown as ProtocolConfig;
-    await (await asTxSender.confirmEpochActivation(epochId, [], [])).wait();
+    const { keys, crsList } = await buildSingleKeyActivationPayload(
+      committee.signerSigners[i],
+      proxyAddress,
+      contextId,
+      epochId,
+    );
+    await (await asTxSender.confirmEpochActivation(epochId, keys, crsList)).wait();
   }
 
   return contextId;
