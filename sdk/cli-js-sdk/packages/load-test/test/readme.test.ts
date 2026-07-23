@@ -10,7 +10,9 @@ describe("README capability contract", () => {
     expect(readme).toContain("scenarios/my-scenario.json");
     expect(readme).toContain("not relative to a referring suite file");
     expect(readme).toContain("`SEPOLIA_RPC_URL` for `testnet` and `devnet`");
-    expect(readme).toContain("`POLYGON_AMOY_RPC_URL` for `devnet-amoy`");
+    expect(readme).toContain(
+      "`POLYGON_AMOY_RPC_URL` for `testnet-amoy` and `devnet-amoy`",
+    );
     expect(readme).toContain("`MAINNET_RPC_URL` for");
     expect(readme).not.toContain("when the DB collector is on");
   });

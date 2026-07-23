@@ -19,6 +19,20 @@ describe("custom FHEVM network definitions", () => {
     ).toBe("0x4CcF009Aba90D04f52b31fc7aDdE240578aFe10F");
   });
 
+  it("configures the Polygon Amoy testnet from the SDK preset", () => {
+    const config = resolveNetworkConfig("testnet-amoy");
+
+    expect(config.fhevmChain.fhevm.contracts.protocolConfig?.address).toBe(
+      "0x4CcF009Aba90D04f52b31fc7aDdE240578aFe10F",
+    );
+    expect(config.fhevmChain.fhevm.relayerUrl).toBe(
+      "https://relayer.testnet.zama.org",
+    );
+    expect(config.fheTestAddress).toBe(
+      "0xa66bCEd74D1Df0736d0eb8E52371b1b1AAA1F0F0",
+    );
+  });
+
   it("does not carry per-network runtime version overrides", () => {
     for (const network of NETWORKS) {
       expect(resolveNetworkConfig(network)).not.toHaveProperty("runtime");

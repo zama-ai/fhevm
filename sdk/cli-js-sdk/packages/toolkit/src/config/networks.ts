@@ -1,6 +1,7 @@
 import {
   defineFhevmChain,
   mainnet,
+  polygonAmoy as sdkPolygonAmoy,
   sepolia,
 } from "@fhevm/sdk/chains";
 import {
@@ -15,8 +16,7 @@ import type { NetworkConfig } from "./types";
 
 export const DEFAULT_MAINNET_RPC_URL = "https://eth.drpc.org";
 export const DEFAULT_SEPOLIA_RPC_URL = "https://sepolia.drpc.org";
-export const DEFAULT_POLYGON_AMOY_RPC_URL =
-  "https://rpc-amoy.polygon.technology";
+export const DEFAULT_POLYGON_AMOY_RPC_URL = "https://polygon-amoy.drpc.org";
 
 const devnet = defineFhevmChain({
   id: 11_155_111,
@@ -79,6 +79,13 @@ const NETWORK_CONFIGS = {
     defaultRpcUrl: DEFAULT_SEPOLIA_RPC_URL,
     envRpcUrl: "SEPOLIA_RPC_URL",
     fheTestAddress: "0x94B9d3aF050687D1F76251aD7D09a1F216a19845",
+  },
+  "testnet-amoy": {
+    fhevmChain: sdkPolygonAmoy,
+    hostChain: polygonAmoy,
+    defaultRpcUrl: DEFAULT_POLYGON_AMOY_RPC_URL,
+    envRpcUrl: "POLYGON_AMOY_RPC_URL",
+    fheTestAddress: "0xa66bCEd74D1Df0736d0eb8E52371b1b1AAA1F0F0",
   },
   "devnet": {
     fhevmChain: devnet,

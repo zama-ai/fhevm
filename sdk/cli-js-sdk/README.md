@@ -137,6 +137,7 @@ fhevm-sdk delegated-user-decrypt stored --delegator 0x... --type uint16 --type u
 | Option                      | Meaning                                                                                              |
 | --------------------------- | ---------------------------------------------------------------------------------------------------- |
 | `-n, --network testnet`     | FHETest `0x94B9d3aF050687D1F76251aD7D09a1F216a19845` on Ethereum Sepolia. Default.                   |
+| `-n, --network testnet-amoy` | FHETest `0xa66bCEd74D1Df0736d0eb8E52371b1b1AAA1F0F0` on Polygon Amoy with testnet relayer config.   |
 | `-n, --network devnet`      | FHETest `0xf56a7990E63a63eC75aD9Aa07De8cB6bF7baa805` on Ethereum Sepolia with devnet relayer config. |
 | `-n, --network devnet-amoy` | FHETest `0x7553CB9124f974Ee475E5cE45482F90d5B6076BC` on Polygon Amoy with devnet relayer config.     |
 | `-n, --network mainnet`     | FHeTest `0xf56a7990E63a63eC75aD9Aa07De8cB6bF7baa805`on Ethereum Mainnet with mainnet relayer config. |
@@ -152,7 +153,7 @@ Supported FHETest value types are `bool`, `uint8`, `uint16`, `uint32`, `uint64`,
 | ----------------------- | -------------------------------------------------------------------------------------------------------------- |
 | `MAINNET_RPC_URL`       | RPC for `mainnet`.                                                                                             |
 | `SEPOLIA_RPC_URL`       | RPC for `testnet` and `devnet`.                                                                                |
-| `POLYGON_AMOY_RPC_URL`  | RPC for `devnet-amoy`.                                                                                         |
+| `POLYGON_AMOY_RPC_URL`  | RPC for `testnet-amoy` and `devnet-amoy`.                                                                     |
 | `ZAMA_FHEVM_API_KEY`    | Optional SDK relayer auth when the target environment requires an API key.                                     |
 | `PRIVATE_KEY`           | Default wallet private key. Used by transaction commands, user decrypt, and delegated decrypt as the delegate. |
 | `MNEMONIC`              | Default wallet mnemonic when `PRIVATE_KEY` is not set.                                                         |

@@ -29,7 +29,7 @@ Put credentials in the workspace-root `.env` (`sdk/cli-js-sdk/.env`):
 | `PRIVATE_KEY` | handle pools | alternative; single lane only |
 | `DELEGATE_PRIVATE_KEY` | delegated pools without `MNEMONIC` | sign-only, needs no funds |
 | `SEPOLIA_RPC_URL` | `testnet`, `devnet` handle pools | Ethereum Sepolia host-chain RPC for FHETest transactions |
-| `POLYGON_AMOY_RPC_URL` | `devnet-amoy` handle pools | Polygon Amoy host-chain RPC for FHETest transactions |
+| `POLYGON_AMOY_RPC_URL` | `testnet-amoy` and `devnet-amoy` handle pools | Polygon Amoy host-chain RPC for FHETest transactions |
 | `MAINNET_RPC_URL` | `mainnet` handle pools | Ethereum Mainnet host-chain RPC for FHETest transactions |
 | `LOAD_TEST_RELAYER_URL` | everything | or pass `--relayer-url` |
 | `LOAD_TEST_RELAYER_CONFIG` | config snapshot | optional; path to the relayer YAML in effect |

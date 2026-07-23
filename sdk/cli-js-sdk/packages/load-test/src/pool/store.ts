@@ -496,7 +496,13 @@ const VALUE_TYPES = [
   "uint256",
   "address",
 ] as const;
-const NETWORKS = ["testnet", "devnet", "devnet-amoy", "mainnet"] as const;
+const NETWORKS = [
+  "testnet",
+  "testnet-amoy",
+  "devnet",
+  "devnet-amoy",
+  "mainnet",
+] as const;
 
 const safeInteger = z.number().int().safe();
 const nonNegative = safeInteger.nonnegative();
