@@ -71,14 +71,14 @@ Global options such as `-n devnet`, `--rpc-url`, and `--relayer-url` can be plac
 | Command                              | What it does                                                                                                              | Needs wallet?                                       |
 | ------------------------------------ | ------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------- |
 | `input-proof`                        | Encrypts clear values and requests a verified input proof. Does not write to FHETest.                                     | No                                                  |
-| `public-decrypt --handle`            | Public decrypts existing `--handle` values from any contract (`--contract` sets the ACL pairing, default FHETest).        | Only when the pairing contract needs a caller       |
+| `public-decrypt direct`              | Public decrypts existing `--handle` values from any contract (`--contract` sets the ACL pairing, default FHETest).        | Only when the pairing contract needs a caller       |
 | `public-decrypt fresh`               | Encrypts a value, stores it in FHETest with `makePublic=true`, then public decrypts it.                                   | Yes                                                 |
 | `public-decrypt stored`              | Public decrypts the FHETest handles stored in explicit `--account`/`--type` slots, or the wallet's default slot.          | Only when using the wallet default                  |
 | `public-decrypt make-public`         | Marks the caller's stored FHETest handle public, then public decrypts it.                                                 | Yes                                                 |
-| `user-decrypt --handle`              | User decrypts existing `--handle` values from any contract (`--contract` sets the ACL pairing, default FHETest).          | Yes                                                 |
+| `user-decrypt direct`                | User decrypts existing `--handle` values from any contract (`--contract` sets the ACL pairing, default FHETest).          | Yes                                                 |
 | `user-decrypt fresh`                 | Encrypts a value, stores it in FHETest with `makePublic=false`, then decrypts it as the owner.                            | Yes                                                 |
 | `user-decrypt stored`                | User decrypts the caller's stored FHETest handles for `--type` slots.                                                     | Yes                                                 |
-| `delegated-user-decrypt --handle`    | Delegate decrypts existing `--handle` values from any contract (`--contract` sets the ACL pairing, default FHETest).      | Delegate; delegator only if creating ACL permission |
+| `delegated-user-decrypt direct`      | Delegate decrypts existing `--handle` values from any contract (`--contract` sets the ACL pairing, default FHETest).      | Delegate; delegator only if creating ACL permission |
 | `delegated-user-decrypt fresh`       | Delegator creates a private handle; delegate gets ACL permission and decrypts it.                                         | Delegate and delegator                              |
 | `delegated-user-decrypt stored`      | Delegate decrypts a delegator's stored FHETest handles for `--type` slots.                                                | Delegate; delegator only if creating ACL permission |
 | `relayer-result verify-user-decrypt` | Decrypts and compares a relayer user-decrypt GET response using a saved validation artifact.                              | No wallet; needs RPC                                |
@@ -101,17 +101,17 @@ fhevm-sdk fhe-test op --help
 
 ## Decrypting Existing Handles
 
-Each decrypt family has a root command that decrypts existing handles directly, plus `fresh` and `stored` FHETest demo subcommands.
+Each decrypt family has a `direct` subcommand that decrypts existing handles directly, plus `fresh` and `stored` FHETest demo subcommands.
 
-Direct mode lives on the family root itself. It accepts repeated `--handle` flags and sends all provided handles in one SDK decrypt request. It works for **any** contract's handles, not just FHETest, so you can decrypt token handles or handles from your own contracts:
+Direct mode lives in the family's `direct` subcommand. It accepts repeated `--handle` flags and sends all provided handles in one SDK decrypt request. It works for **any** contract's handles, not just FHETest, so you can decrypt token handles or handles from your own contracts:
 
 ```bash
-fhevm-sdk public-decrypt --handle 0x... --handle 0x...
-fhevm-sdk user-decrypt --handle 0x... --handle 0x...
-fhevm-sdk delegated-user-decrypt --delegator 0x... --handle 0x... --handle 0x...
+fhevm-sdk public-decrypt direct --handle 0x... --handle 0x...
+fhevm-sdk user-decrypt direct --handle 0x... --handle 0x...
+fhevm-sdk delegated-user-decrypt direct --delegator 0x... --handle 0x... --handle 0x...
 ```
 
-`--contract <address>` is the contract paired with the handles for ACL verification; it defaults to the FHETest contract. All handles in one command must belong to the same pairing contract, so pass `--contract` explicitly when decrypting handles that belong to a token or another contract. For user decrypt the handles must be decryptable by the wallet owner; for delegated user decrypt they must be decryptable through the same delegator/delegate relationship. Running a family root with no `--handle` prints its help.
+`--contract <address>` is the contract paired with the handles for ACL verification; it defaults to the FHETest contract. All handles in one command must belong to the same pairing contract, so pass `--contract` explicitly when decrypting handles that belong to a token or another contract. For user decrypt the handles must be decryptable by the wallet owner; for delegated user decrypt they must be decryptable through the same delegator/delegate relationship. Running a family root with no subcommand prints its help.
 
 Stored slot mode is the `stored` subcommand. It accepts repeated `--type` flags, reads one FHETest handle per account/type slot, and sends those handles in one SDK decrypt request. When no `--type` is given it defaults to the `bool` stored slot:
 
@@ -177,11 +177,11 @@ fhevm-sdk public-decrypt fresh --type uint8
 fhevm-sdk public-decrypt fresh --type uint64 --value 42
 ```
 
-Decrypt an existing public handle directly on the root command, or read FHETest slots with `stored`:
+Decrypt an existing public handle with the `direct` subcommand, or read FHETest slots with `stored`:
 
 ```bash
-fhevm-sdk public-decrypt --handle 0x... --handle 0x...
-fhevm-sdk public-decrypt --handle 0x... --contract 0x<token or other contract>
+fhevm-sdk public-decrypt direct --handle 0x... --handle 0x...
+fhevm-sdk public-decrypt direct --handle 0x... --contract 0x<token or other contract>
 fhevm-sdk public-decrypt stored --type uint8
 fhevm-sdk public-decrypt stored --account 0x... --type uint8
 fhevm-sdk public-decrypt stored --type uint16 --type uint32
@@ -203,11 +203,11 @@ fhevm-sdk user-decrypt fresh --type uint64 --value 42 --duration-days 7
 fhevm-sdk user-decrypt fresh --type uint64 --value 42 --artifact ./artifacts/user-decrypt.json
 ```
 
-Decrypt an existing private handle owned by the wallet directly on the root command, or read FHETest slots with `stored`:
+Decrypt an existing private handle owned by the wallet with the `direct` subcommand, or read FHETest slots with `stored`:
 
 ```bash
-fhevm-sdk user-decrypt --handle 0x... --handle 0x...
-fhevm-sdk user-decrypt --handle 0x... --contract 0x<token or other contract>
+fhevm-sdk user-decrypt direct --handle 0x... --handle 0x...
+fhevm-sdk user-decrypt direct --handle 0x... --contract 0x<token or other contract>
 fhevm-sdk user-decrypt stored --type uint8
 fhevm-sdk user-decrypt stored --type uint16 --type uint32
 ```
@@ -228,10 +228,10 @@ fhevm-sdk delegated-user-decrypt fresh --type uint64 --value 42 --duration-days 
 fhevm-sdk delegated-user-decrypt fresh --type uint64 --artifact ./artifacts/delegated-user-decrypt.json
 ```
 
-Decrypt raw handles directly on the root command, or read the delegator's FHETest slots with `stored`:
+Decrypt raw handles with the `direct` subcommand, or read the delegator's FHETest slots with `stored`:
 
 ```bash
-fhevm-sdk delegated-user-decrypt --delegator 0x... --handle 0x... --handle 0x...
+fhevm-sdk delegated-user-decrypt direct --delegator 0x... --handle 0x... --handle 0x...
 fhevm-sdk delegated-user-decrypt stored --delegator 0x... --type uint8
 fhevm-sdk delegated-user-decrypt stored --delegator 0x... --type uint16 --type uint32
 ```
@@ -310,10 +310,10 @@ Add `--from` to spend an existing operator allowance via `confidentialTransferFr
 fhevm-sdk token transfer --contract 0x... --from 0x... --to 0x... --amount 1000
 ```
 
-Because ERC-7984 does not revert on insufficient balance, the transfer result includes `transferredHandle`, the encrypted amount actually moved. The token's ACL grants decryption of this handle to the recipient (and any account the token authorizes), not to the sender, so the recipient can decrypt it with the user-decrypt root command, pairing the handle with the **token** contract via `--contract` (the default pairing is FHETest, which is wrong for token handles):
+Because ERC-7984 does not revert on insufficient balance, the transfer result includes `transferredHandle`, the encrypted amount actually moved. The token's ACL grants decryption of this handle to the recipient (and any account the token authorizes), not to the sender, so the recipient can decrypt it with `user-decrypt direct`, pairing the handle with the **token** contract via `--contract` (the default pairing is FHETest, which is wrong for token handles):
 
 ```bash
-fhevm-sdk user-decrypt --handle <transferredHandle> --contract 0x<token address>
+fhevm-sdk user-decrypt direct --handle <transferredHandle> --contract 0x<token address>
 ```
 
 To confirm a transfer from the sender's side, add `--verify`. It decrypts the sender balance before and after the transfer, then adds `balanceBefore`, `balanceAfter`, and a `deltaMatches` boolean (`balanceBefore - balanceAfter === <requested amount>`) to the JSON output. Only the sender's own balance is decryptable by the sender under ACL, so `--verify` is rejected together with `--from` (the operator wallet cannot decrypt the `--from` account's balance). It adds two user-decrypt rounds:
@@ -333,7 +333,7 @@ Pipe the returned `balanceHandle` into user-decrypt to see the plaintext balance
 
 ```bash
 TOKEN=0x<token address>
-fhevm-sdk user-decrypt --contract "$TOKEN" --handle "$(fhevm-sdk token balance --contract "$TOKEN" | jq -r .balanceHandle)"
+fhevm-sdk user-decrypt direct --contract "$TOKEN" --handle "$(fhevm-sdk token balance --contract "$TOKEN" | jq -r .balanceHandle)"
 ```
 
 ## Shell Completion
