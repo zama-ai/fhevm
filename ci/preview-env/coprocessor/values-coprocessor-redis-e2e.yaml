@@ -1,0 +1,58 @@
+# iamguarded Redis overlay for the fhevm e2e preview namespace. One Redis PER
+# COPROCESSOR PARTY (coprocessor-redis-<i>), used as that party's broker between
+# its listener producer (listener-<i>, see ../listener/values-listener-e2e.yaml)
+# and its coprocessor host-listener-consumer (coprocessor-<i>). Per-party (not
+# shared) mirrors zama-zws/gitops, where each eth-listener instance has its OWN
+# ElastiCache (cache-credentials-<i>). Same chart the gitops coprocessor-redis
+# app uses, copied from values/coproc/coprocessor-redis/values.yaml.
+#
+# Chart:
+#   oci://hub.zama.org/cgr/zama.ai/iamguarded-charts/redis (version 25.3.8)
+#
+# Deployed as (per party i):
+#   helm upgrade --install coprocessor-redis-<i> \
+#     oci://hub.zama.org/cgr/zama.ai/iamguarded-charts/redis \
+#     -n <namespace> -f this-file --set-string fullnameOverride=coprocessor-redis-<i>
+#
+# fullnameOverride is set per-party at deploy time so the Service name is
+# deterministic (standalone architecture exposes the "<fullname>-master"
+# Service, e.g. coprocessor-redis-<i>-master:6379). The default below is the
+# single-party (N=1) shape for standalone use. auth is disabled: an ephemeral,
+# namespace-local broker with no secret data, torn down with the namespace.
+fullnameOverride: coprocessor-redis
+
+architecture: standalone
+
+auth:
+  enabled: false
+
+image:
+  registry: hub.zama.org
+  repository: cgr/zama.ai/redis-server-iamguarded
+  tag: "8.6.2"
+  pullPolicy: IfNotPresent
+  pullSecrets:
+    - registry-credentials
+
+master:
+  persistence:
+    # Smaller than gitops' 10Gi: this broker only holds transient host-listener
+    # events for a short-lived per-PR namespace.
+    enabled: true
+    size: 2Gi
+  # Pin onto the zws-pool Karpenter node pool - same convention as the
+  # in-cluster Postgres releases (../coprocessor-infra/values-postgres-coprocessor-e2e.yaml).
+  affinity:
+    nodeAffinity:
+      requiredDuringSchedulingIgnoredDuringExecution:
+        nodeSelectorTerms:
+          - matchExpressions:
+              - key: karpenter.sh/nodepool
+                operator: In
+                values:
+                  - zws-pool
+  tolerations:
+    - key: karpenter.sh/nodepool
+      operator: Equal
+      value: zws-pool
+      effect: NoSchedule

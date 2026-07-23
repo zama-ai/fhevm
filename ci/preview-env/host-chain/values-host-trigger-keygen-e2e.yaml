@@ -1,0 +1,186 @@
+# charts/contracts overlay that triggers the real FHE key generation + CRS generation
+# ceremony against the canonical host chain's KMSGeneration contract, once the dedicated
+# KMS + coprocessor + kms-connector are all up and listening for the resulting on-chain
+# events.
+#
+# This is the ON-CHAIN trigger mechanism (as opposed to kms's own off-chain
+# `kmsGenKeys` Helm hook / core-client-gen-keys.sh, which talks to kms-core directly
+# and is meant for testing KMS in isolation, with no gateway/coprocessor involved).
+# Mirrors fhevm-cli's "bootstrap" step (test-suite/fhevm/src/flow/up-flow.ts) and the
+# reference pattern in ../../../charts/contracts/values-kmsgen.yaml.
+#
+# Our images are built at each PR's HEAD (or fall back to `latest`, see resolve-tags
+# in preview-env-deploy.yml), i.e. well past the v0.13 KMSGeneration migration: the
+# KMSGeneration contract now lives on the canonical HOST chain, not the Gateway (RFC013)
+# - host-contracts' task:deployAllHostContracts --with-kms-generation true (see
+# values-host-contracts-e2e.yaml) already deployed it there. Concretely,
+# gateway-contracts no longer even ships task:triggerKeygen/task:triggerCrsgen at this
+# version (they moved to host-contracts/tasks/generateKmsMaterials.ts), so this MUST
+# target the host-contracts image, not gateway-contracts'.
+#
+# Deployed as:
+#   helm install host-trigger-keygen charts/contracts -n <namespace> -f this-file
+#
+# Reuses host-contracts' own PVC (create: false): --use-internal-proxy-address true reads
+# KMS_GENERATION_CONTRACT_ADDRESS straight from the addresses/.env.host file
+# host-contracts' own deploy already wrote there - no address needs passing as a Hardhat
+# task flag. That said, the Hardhat tasks read it via direct file access inside their own
+# process, which does NOT populate the shell's actual environment - the consensus-polling
+# step below still needs it explicitly exported into the shell env for its own separate
+# `node -e` process to see (see that step's own comment for the confirmed failure mode).
+scDeploy:
+  enabled: true
+  image:
+    name: hub.zama.org/ghcr/zama-ai/fhevm/host-contracts
+    tag: latest
+  # Reuses host-contracts' own ConfigMap - keygen/crsgen triggers don't write any new
+  # addresses of note.
+  configmap:
+    name: host-sc-addresses
+  env:
+    - {name: HARDHAT_NETWORK, value: "staging"}
+    - {name: MNEMONIC, value: "test test test test test test test test test test test junk"}
+    - {name: RPC_URL, value: "http://anvil-host-anvil-node:8545"}
+    # Deployer AND final ACL owner: Hardhat account #9. Deploys the host contracts,
+    # triggers keygen/crsgen (onlyACLOwner), and STAYS the owner - there is deliberately
+    # no post-crsgen ownership transfer. Keep in sync with values-host-contracts-e2e.yaml's
+    # DEPLOYER_PRIVATE_KEY and the test-suite workflow's DEPLOYER_PRIVATE_KEY, so
+    # this.deployer == ACL owner == #9: the HCU owner-only setters (signed by #9) succeed,
+    # while the "reject setHCUPerBlock from non-owner" subtest - signed by alice (account
+    # #0) != owner - correctly reverts with NotHostOwner. (The final-owner choice does not
+    # affect keygen, which already ran under #9, so random-subset's keys are unchanged.)
+    - {name: DEPLOYER_PRIVATE_KEY, value: "0x2a871d0798f97d79848a013d4936a73bf4cc922c825d33c1cf7073dff6d409c6"}
+  deployCommands:
+    # task:triggerKeygen/triggerCrsgen below resolve KMS_GENERATION_CONTRACT_ADDRESS by
+    # reading addresses/.env.host directly inside their own Hardhat/Node process (see
+    # host-contracts/tasks/taskDeploy.ts's readExistingHostEnv()) - that never touches the
+    # actual shell environment of this deployCommands script. The polling scripts below run
+    # as their own separate `node -e` processes afterward and only see real OS env vars, so
+    # without this explicit export they'd read KMS_GENERATION_CONTRACT_ADDRESS as undefined
+    # (confirmed via runtime debug logging: address was present and correct on disk in
+    # addresses/.env.host, but undefined in process.env at the point the script needed it -
+    # same gap values-gateway-contracts-e2e.yaml already works around for ZAMA_OFT_ADDRESS).
+    - |
+      export KMS_GENERATION_CONTRACT_ADDRESS=$(grep --color=never '^KMS_GENERATION_CONTRACT_ADDRESS=' addresses/.env.host | cut -d'=' -f2 | tr -d '[:space:]')
+      if [[ -z "${KMS_GENERATION_CONTRACT_ADDRESS}" ]]; then
+        echo "::error::KMS_GENERATION_CONTRACT_ADDRESS could not be extracted from addresses/.env.host - refusing to start the consensus poll with a broken address"
+        exit 1
+      fi
+      echo "Resolved KMS_GENERATION_CONTRACT_ADDRESS=${KMS_GENERATION_CONTRACT_ADDRESS}"
+    # --params-type 1 ("test" FHE parameters, not production-grade) - a real 4-party
+    # enclave DKG against full production parameters is far too slow for a per-PR e2e
+    # smoke check. Matches ../../../charts/contracts/values-kmsgen.yaml's own recommendation.
+    - npx hardhat task:triggerKeygen --params-type 1 --use-internal-proxy-address true
+    # (kms-keygen-wait) task:triggerKeygen only waits for its *request* tx to be mined
+    # (keygenTx.wait()) - the actual 4-party enclave preprocessing + DKG consensus
+    # (ActivateKey on KMSGeneration.sol) can take several more minutes.
+    #
+    # CRITICAL: crsgen MUST NOT be triggered until keygen's preprocessing has finished.
+    # kms-core can only run one heavy ceremony at a time; confirmed via kms-connector's
+    # kms-worker logs firing both requests back-to-back: the CrsgenRequest was rejected
+    # every ~60s with `code: 'Some resource has been exhausted', metric: crs_gen_request`
+    # while PrepKeygenRequest was still in flight, and the repeated contention eventually
+    # made the PrepKeygenRequest's own result-polling fail irrecoverably (`Internal error`
+    # on metric keygen_preproc_result) - i.e. it doesn't just delay crsgen, it can outright
+    # kill the keygen ceremony. Matches ../../../charts/contracts/values-kmsgen.yaml, which
+    # models keygen/crsgen as two fully separate jobs for the same reason. So: wait here for
+    # ActivateKey before moving on to crsgen at all.
+    - |
+      echo "Waiting for KMS keygen ceremony to reach on-chain consensus..."
+      node -e "
+      const { ethers } = require('ethers');
+      const ABI = ['event ActivateKey(uint256 keyId, string[] kmsNodeStorageUrls, tuple(uint8 keyType, bytes digest)[] keyDigests)'];
+      async function waitForEvent(contract, eventName, timeoutMs) {
+        const deadline = Date.now() + timeoutMs;
+        while (Date.now() < deadline) {
+          const events = await contract.queryFilter(eventName, 0, 'latest');
+          if (events.length > 0) return events[events.length - 1];
+          console.log('  still waiting for ' + eventName + '...');
+          await new Promise((r) => setTimeout(r, 10000));
+        }
+        throw new Error('Timed out waiting for ' + eventName);
+      }
+      (async () => {
+        const provider = new ethers.JsonRpcProvider(process.env.RPC_URL);
+        const contract = new ethers.Contract(process.env.KMS_GENERATION_CONTRACT_ADDRESS, ABI, provider);
+        const keyEvent = await waitForEvent(contract, 'ActivateKey', 15 * 60 * 1000);
+        // KMS_ACTIVE_KEY_ID must be the 64-hex-char zero-padded form (NOT decimal) - the
+        // KMS nodes publish key/CRS blobs to S3 under their raw uint256 request ID
+        // rendered as hex with no 0x prefix (confirmed by listing the actual bucket:
+        // .../PUB-p4/CRS/<id> objects are literally named e.g.
+        // '0500000000000000000000000000000000000000000000000000000000000001', which is
+        // exactly (2261564242916331941866620800950935700259179388000792266395655937654553313281n)
+        // .toString(16).padStart(64,'0') - using .toString() (decimal) here 404s downstream
+        // when the relayer builds the PublicKey/CRS fetch URL from this value.
+        const keyId = keyEvent.args.keyId.toString(16).padStart(64, '0');
+        const keyStorageUrl = keyEvent.args.kmsNodeStorageUrls[0];
+        if (!keyStorageUrl) {
+          throw new Error('kmsNodeStorageUrls[0] is empty - party 0 never registered a storage URL in ProtocolConfig');
+        }
+        console.log('Discovered active key_id=' + keyId);
+        console.log('key storage url: ' + keyStorageUrl);
+        require('fs').writeFileSync('addresses/.env.keymaterial',
+          'KMS_ACTIVE_KEY_ID=' + keyId + '\n' +
+          'KMS_ACTIVE_KEY_STORAGE_URL=' + keyStorageUrl + '\n'
+        );
+      })().catch((e) => { console.error(e); process.exit(1); });
+      "
+    - npx hardhat task:triggerCrsgen --params-type 1 --max-bit-length 2048 --use-internal-proxy-address true
+    # kmsNodeStorageUrls[i] comes straight from KMSGeneration.sol's
+    # _buildConsensusStorageUrls -> ProtocolConfig.getKmsNodeForContext(...).storageUrl -
+    # i.e. each party's own registered public-vault base URL (same one discovered per
+    # party in "Discover KMS party signer addresses" above), NOT re-derived here.
+    # Party index 0 is used as the one source of truth for /v2/keyurl - all 4 parties
+    # publish the same key/CRS blob to their own PUB-p<i>/ prefix, so any one works.
+    # Appended to addresses/.env.keymaterial (already holding the key vars from the
+    # previous step) so the loop below (which promotes every addresses/.env.* line into
+    # ${CONFIGMAP_NAME}, i.e. host-sc-addresses) picks it up automatically as
+    # kms_active_key_id / kms_active_crs_id / ..._storage_url - no separate kubectl call needed.
+    - |
+      echo "Waiting for KMS CRS generation ceremony to reach on-chain consensus..."
+      node -e "
+      const { ethers } = require('ethers');
+      const ABI = ['event ActivateCrs(uint256 crsId, string[] kmsNodeStorageUrls, bytes crsDigest)'];
+      async function waitForEvent(contract, eventName, timeoutMs) {
+        const deadline = Date.now() + timeoutMs;
+        while (Date.now() < deadline) {
+          const events = await contract.queryFilter(eventName, 0, 'latest');
+          if (events.length > 0) return events[events.length - 1];
+          console.log('  still waiting for ' + eventName + '...');
+          await new Promise((r) => setTimeout(r, 10000));
+        }
+        throw new Error('Timed out waiting for ' + eventName);
+      }
+      (async () => {
+        const provider = new ethers.JsonRpcProvider(process.env.RPC_URL);
+        const contract = new ethers.Contract(process.env.KMS_GENERATION_CONTRACT_ADDRESS, ABI, provider);
+        const crsEvent = await waitForEvent(contract, 'ActivateCrs', 15 * 60 * 1000);
+        // See the matching comment on keyId above - same hex-padded (not decimal) S3
+        // object-key requirement applies here.
+        const crsId = crsEvent.args.crsId.toString(16).padStart(64, '0');
+        const crsStorageUrl = crsEvent.args.kmsNodeStorageUrls[0];
+        if (!crsStorageUrl) {
+          throw new Error('kmsNodeStorageUrls[0] is empty - party 0 never registered a storage URL in ProtocolConfig');
+        }
+        console.log('Discovered active crs_id=' + crsId);
+        console.log('crs storage url: ' + crsStorageUrl);
+        require('fs').appendFileSync('addresses/.env.keymaterial',
+          'KMS_ACTIVE_CRS_ID=' + crsId + '\n' +
+          'KMS_ACTIVE_CRS_STORAGE_URL=' + crsStorageUrl + '\n'
+        );
+      })().catch((e) => { console.error(e); process.exit(1); });
+      "
+    # NOTE: no post-crsgen ACL ownership transfer. #9 deployed the contracts and ran
+    # keygen/crsgen and remains the owner, so this.deployer (#9 in the test-suite workflow)
+    # == ACL owner. This keeps every HCU block-cap subtest green (owner-only setters signed
+    # by #9 succeed; the non-owner reject reverts because alice/#0 != owner).
+  verifyContracts: false
+persistence:
+  enabled: true
+  mountPath: /app/addresses
+  volumeClaim:
+    # Reuse host-contracts' own PVC - do NOT create a new one.
+    name: host-sc-deploy-workdir
+    create: false
+scUpgrade:
+  enabled: false

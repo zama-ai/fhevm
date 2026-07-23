@@ -1,0 +1,67 @@
+name: setup-preview-tooling
+description: >-
+  Join the Tailscale tailnet, install helm/kubectl/yq, point kubeconfig at the
+  cluster, and log in to Harbor. Secrets are passed as inputs (a composite can't
+  read them itself).
+
+inputs:
+  ts-oauth-client-id:
+    description: Tailscale OAuth client id
+    required: true
+  ts-oauth-secret:
+    description: Tailscale OAuth secret
+    required: true
+  ts-tags:
+    description: Tailscale ACL tags to advertise
+    required: false
+    default: tag:fhevm-ci
+  tailscale-hostname:
+    description: Tailscale hostname of the cluster's kube API operator
+    required: true
+  harbor-url:
+    description: zws Harbor registry URL
+    required: true
+  harbor-username:
+    description: Harbor read-only login
+    required: true
+  harbor-token:
+    description: Harbor read-only token
+    required: true
+
+runs:
+  using: composite
+  steps:
+    - name: Setup tailscale
+      uses: tailscale/github-action@84a3f23bb4d843bcf4da6cf824ec1be473daf4de # v3.2.3
+      with:
+        oauth-client-id: ${{ inputs.ts-oauth-client-id }}
+        oauth-secret: ${{ inputs.ts-oauth-secret }}
+        tags: ${{ inputs.ts-tags }}
+
+    - name: Setup helm
+      shell: bash
+      run: |
+        curl -fsSL https://raw.githubusercontent.com/helm/helm/main/scripts/get-helm-3 | bash
+
+    - name: Setup kubectl
+      uses: azure/setup-kubectl@776406bce94f63e41d621b960d78ee25c8b76ede # v4.0.1
+
+    - name: Setup yq
+      shell: bash
+      run: |
+        sudo wget -qO /usr/local/bin/yq https://github.com/mikefarah/yq/releases/latest/download/yq_linux_amd64
+        sudo chmod +x /usr/local/bin/yq
+
+    - name: Configure kubeconfig for the Tailscale cluster
+      shell: bash
+      # Via env, not inline ${{ }}, so the hostname can't be treated as code.
+      env:
+        TAILSCALE_HOSTNAME: ${{ inputs.tailscale-hostname }}
+      run: tailscale configure kubeconfig "${TAILSCALE_HOSTNAME}"
+
+    - name: Login to zws GitHub Container Registry
+      uses: docker/login-action@4907a6ddec9925e35a0a9e82d7399ccc52663121 # v4.1.0
+      with:
+        registry: ${{ inputs.harbor-url }}
+        username: ${{ inputs.harbor-username }}
+        password: ${{ inputs.harbor-token }}
