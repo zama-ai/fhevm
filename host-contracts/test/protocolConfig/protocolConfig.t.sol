@@ -1203,10 +1203,11 @@ contract ProtocolConfigTest is HostContractsDeployerTestUtils {
         vm.prank(owner);
         _defineNewKmsContextAndEpoch(nodes, _defaultThresholds());
 
-        uint256 newContextId = KMS_CONTEXT_COUNTER_BASE + 2;
+        // The switch's epoch is only created once creation is confirmed, so activating the
+        // would-be epoch ID before that reverts as an unknown epoch.
         uint256 newEpochId = EPOCH_COUNTER_BASE + 2;
         vm.prank(kmsTxSender0);
-        vm.expectRevert(abi.encodeWithSelector(IProtocolConfig.KmsContextNotCreated.selector, newContextId));
+        vm.expectRevert(abi.encodeWithSelector(IProtocolConfig.InvalidKmsEpoch.selector, newEpochId));
         IProtocolConfig.EpochKeyResult[] memory keys = new IProtocolConfig.EpochKeyResult[](0);
         IProtocolConfig.EpochCrsResult[] memory crsList = new IProtocolConfig.EpochCrsResult[](0);
         protocolConfig.confirmEpochActivation(newEpochId, keys, crsList);
@@ -1226,6 +1227,133 @@ contract ProtocolConfigTest is HostContractsDeployerTestUtils {
         vm.prank(owner);
         protocolConfig.destroyKmsContext(createdContextId);
         assertFalse(protocolConfig.isValidKmsContext(createdContextId));
+    }
+
+    function test_revertDefineSecondContextSwitchWhileSwitchPending() public {
+        _setupEpochLifecycle();
+
+        vm.prank(owner);
+        _defineNewKmsContextAndEpoch(_makeKmsNodeParams(2), _defaultThresholds());
+
+        vm.prank(owner);
+        vm.expectRevert(
+            abi.encodeWithSelector(
+                IProtocolConfig.KmsLifecycleOperationInFlight.selector,
+                KMS_CONTEXT_COUNTER_BASE + 2,
+                EPOCH_COUNTER_BASE + 1
+            )
+        );
+        _defineNewKmsContextAndEpoch(_makeKmsNodeParams(2), _defaultThresholds());
+    }
+
+    function test_revertDefineSecondContextSwitchWhileSwitchCreated() public {
+        _setupEpochLifecycle();
+
+        vm.prank(owner);
+        _defineNewKmsContextAndEpoch(_makeKmsNodeParams(2), _defaultThresholds());
+        _confirmContextCreationWithTwoSigners(KMS_CONTEXT_COUNTER_BASE + 2);
+
+        // The Created context and the epoch created at its confirmation are both still settling.
+        vm.prank(owner);
+        vm.expectRevert(
+            abi.encodeWithSelector(
+                IProtocolConfig.KmsLifecycleOperationInFlight.selector,
+                KMS_CONTEXT_COUNTER_BASE + 2,
+                EPOCH_COUNTER_BASE + 2
+            )
+        );
+        _defineNewKmsContextAndEpoch(_makeKmsNodeParams(2), _defaultThresholds());
+    }
+
+    function test_revertDefineNewEpochWhileContextSwitchPending() public {
+        _setupEpochLifecycle();
+
+        vm.prank(owner);
+        _defineNewKmsContextAndEpoch(_makeKmsNodeParams(2), _defaultThresholds());
+
+        vm.prank(owner);
+        vm.expectRevert(
+            abi.encodeWithSelector(
+                IProtocolConfig.KmsLifecycleOperationInFlight.selector,
+                KMS_CONTEXT_COUNTER_BASE + 2,
+                EPOCH_COUNTER_BASE + 1
+            )
+        );
+        protocolConfig.defineNewEpochForCurrentKmsContext();
+    }
+
+    function test_revertDefineContextSwitchWhileReshareEpochPending() public {
+        _setupEpochLifecycle();
+
+        vm.prank(owner);
+        protocolConfig.defineNewEpochForCurrentKmsContext();
+
+        vm.prank(owner);
+        vm.expectRevert(
+            abi.encodeWithSelector(
+                IProtocolConfig.KmsLifecycleOperationInFlight.selector,
+                KMS_CONTEXT_COUNTER_BASE + 1,
+                EPOCH_COUNTER_BASE + 2
+            )
+        );
+        _defineNewKmsContextAndEpoch(_makeKmsNodeParams(2), _defaultThresholds());
+    }
+
+    function test_revertDefineSecondReshareEpochWhileReshareEpochPending() public {
+        _setupEpochLifecycle();
+
+        vm.prank(owner);
+        protocolConfig.defineNewEpochForCurrentKmsContext();
+
+        vm.prank(owner);
+        vm.expectRevert(
+            abi.encodeWithSelector(
+                IProtocolConfig.KmsLifecycleOperationInFlight.selector,
+                KMS_CONTEXT_COUNTER_BASE + 1,
+                EPOCH_COUNTER_BASE + 2
+            )
+        );
+        protocolConfig.defineNewEpochForCurrentKmsContext();
+    }
+
+    function test_defineNewContextSwitchAfterDestroyingPendingSwitch() public {
+        _setupEpochLifecycle();
+
+        vm.prank(owner);
+        _defineNewKmsContextAndEpoch(_makeKmsNodeParams(2), _defaultThresholds());
+
+        // Destroying the pending switch must reopen the gate: destroyed entries are None,
+        // not in flight.
+        vm.prank(owner);
+        protocolConfig.destroyKmsContext(KMS_CONTEXT_COUNTER_BASE + 2);
+
+        // The active pair is untouched: no epoch existed for the destroyed switch yet.
+        (uint256 activeContextId, uint256 activeEpochId) = protocolConfig.getCurrentKmsContextAndEpoch();
+        assertEq(activeContextId, KMS_CONTEXT_COUNTER_BASE + 1);
+        assertEq(activeEpochId, EPOCH_COUNTER_BASE + 1);
+        assertTrue(protocolConfig.isValidEpochForContext(KMS_CONTEXT_COUNTER_BASE + 1, EPOCH_COUNTER_BASE + 1));
+
+        vm.prank(owner);
+        _defineNewKmsContextAndEpoch(_makeKmsNodeParams(2), _defaultThresholds());
+        (uint256 emissionBlockNumber, ) = protocolConfig.getKmsContextAnchor(KMS_CONTEXT_COUNTER_BASE + 3);
+        assertEq(emissionBlockNumber, block.number);
+    }
+
+    function test_defineNewContextSwitchAfterDestroyingCreatedSwitch() public {
+        _setupEpochLifecycle();
+
+        vm.prank(owner);
+        _defineNewKmsContextAndEpoch(_makeKmsNodeParams(2), _defaultThresholds());
+        _confirmContextCreationWithTwoSigners(KMS_CONTEXT_COUNTER_BASE + 2);
+
+        // Destroying the created switch clears the epoch created at its confirmation and reopens the gate.
+        vm.prank(owner);
+        protocolConfig.destroyKmsContext(KMS_CONTEXT_COUNTER_BASE + 2);
+
+        vm.prank(owner);
+        _defineNewKmsContextAndEpoch(_makeKmsNodeParams(2), _defaultThresholds());
+        (uint256 emissionBlockNumber, ) = protocolConfig.getKmsContextAnchor(KMS_CONTEXT_COUNTER_BASE + 3);
+        assertEq(emissionBlockNumber, block.number);
     }
 
     function test_fullContextSwitchFlow() public {
