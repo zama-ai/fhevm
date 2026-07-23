@@ -673,6 +673,11 @@ contract Decryption is
         }
         _checkUserDecryptionRequestValiditySeconds(requestValidity);
 
+        // Reject an unknown or destroyed context before charging the fee, so a request that could
+        // never be answered is not opened and paid for.
+        uint256 contextId = _extractContextId(extraData);
+        _validateContextId(contextId);
+
         // Pack the signed EIP-712 fields and the signature into a single memory struct. Doing so
         // consolidates six calldata refs into one memory pointer and keeps the subsequent emit
         // under Solidity's stack-depth limit without requiring `viaIR`.
@@ -683,8 +688,6 @@ contract Decryption is
         payload.requestValidity = requestValidity;
         payload.extraData = extraData;
         payload.signature = signature;
-
-        uint256 contextId = _extractContextId(extraData);
 
         _collectUserDecryptionFee(msg.sender);
 

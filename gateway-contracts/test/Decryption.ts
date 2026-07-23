@@ -220,7 +220,12 @@ describe("Decryption", function () {
       // Sign the message with all KMS signers
       const kmsSignatures = await getSignaturesPublicDecrypt(eip712Message, kmsSigners);
 
-      return { ...fixtureData, eip712Message, kmsSignatures, decryptionAddress };
+      return {
+        ...fixtureData,
+        eip712Message,
+        kmsSignatures,
+        decryptionAddress,
+      };
     }
 
     beforeEach(async function () {
@@ -598,7 +603,9 @@ describe("Decryption", function () {
       const tokenFundedTxSenderBalance = await mockedZamaOFT.balanceOf(tokenFundedTxSender.address);
       const feesSenderToBurnerBalance = await mockedZamaOFT.balanceOf(mockedFeesSenderToBurnerAddress);
 
-      await expect(decryption.connect(tokenFundedTxSender).publicDecryptionRequest(ctHandles, invalidContextV2ExtraData))
+      await expect(
+        decryption.connect(tokenFundedTxSender).publicDecryptionRequest(ctHandles, invalidContextV2ExtraData),
+      )
         .to.be.revertedWithCustomError(gatewayConfig, "InvalidKmsContext")
         .withArgs(invalidContextId);
 
@@ -1554,15 +1561,7 @@ describe("Decryption", function () {
           .connect(tokenFundedTxSender)
           [
             "userDecryptionRequest((bytes32,address)[],(uint256,uint256),(uint256,address[]),address,bytes,bytes,bytes)"
-          ](
-            ctHandleContractPairs,
-            requestValidity,
-            contractsInfo,
-            user.address,
-            publicKey,
-            nullContextUserSignature,
-            nullContextExtraData,
-          ),
+          ](ctHandleContractPairs, requestValidity, contractsInfo, user.address, publicKey, nullContextUserSignature, nullContextExtraData),
       ).to.be.revertedWithCustomError(decryption, "InvalidNullContextId");
     });
 
@@ -1587,15 +1586,7 @@ describe("Decryption", function () {
           .connect(tokenFundedTxSender)
           [
             "userDecryptionRequest((bytes32,address)[],(uint256,uint256),(uint256,address[]),address,bytes,bytes,bytes)"
-          ](
-            ctHandleContractPairs,
-            requestValidity,
-            contractsInfo,
-            user.address,
-            publicKey,
-            invalidContextUserSignature,
-            invalidContextExtraData,
-          ),
+          ](ctHandleContractPairs, requestValidity, contractsInfo, user.address, publicKey, invalidContextUserSignature, invalidContextExtraData),
       )
         .to.be.revertedWithCustomError(gatewayConfig, "InvalidKmsContext")
         .withArgs(invalidContextId);
@@ -1608,15 +1599,7 @@ describe("Decryption", function () {
           .connect(tokenFundedTxSender)
           [
             "userDecryptionRequest((bytes32,address)[],(uint256,uint256),(uint256,address[]),address,bytes,bytes,bytes)"
-          ](
-            ctHandleContractPairs,
-            requestValidity,
-            contractsInfo,
-            user.address,
-            publicKey,
-            userSignature,
-            extraDataV0,
-          ),
+          ](ctHandleContractPairs, requestValidity, contractsInfo, user.address, publicKey, userSignature, extraDataV0),
       )
         .to.emit(decryption, "UserDecryptionRequest(uint256,(bytes32,uint256,bytes32,address[])[],address,bytes,bytes)")
         .withArgs(decryptionId, toValues(snsCiphertextMaterials), user.address, publicKey, extraDataV0);
@@ -1640,15 +1623,7 @@ describe("Decryption", function () {
           .connect(tokenFundedTxSender)
           [
             "userDecryptionRequest((bytes32,address)[],(uint256,uint256),(uint256,address[]),address,bytes,bytes,bytes)"
-          ](
-            ctHandleContractPairs,
-            requestValidity,
-            contractsInfo,
-            user.address,
-            publicKey,
-            nullContextUserSignature,
-            nullContextV2ExtraData,
-          ),
+          ](ctHandleContractPairs, requestValidity, contractsInfo, user.address, publicKey, nullContextUserSignature, nullContextV2ExtraData),
       ).to.be.revertedWithCustomError(decryption, "InvalidNullContextId");
     });
 
@@ -1673,15 +1648,7 @@ describe("Decryption", function () {
           .connect(tokenFundedTxSender)
           [
             "userDecryptionRequest((bytes32,address)[],(uint256,uint256),(uint256,address[]),address,bytes,bytes,bytes)"
-          ](
-            ctHandleContractPairs,
-            requestValidity,
-            contractsInfo,
-            user.address,
-            publicKey,
-            invalidContextUserSignature,
-            invalidContextV2ExtraData,
-          ),
+          ](ctHandleContractPairs, requestValidity, contractsInfo, user.address, publicKey, invalidContextUserSignature, invalidContextV2ExtraData),
       )
         .to.be.revertedWithCustomError(gatewayConfig, "InvalidKmsContext")
         .withArgs(invalidContextId);
@@ -1699,16 +1666,18 @@ describe("Decryption", function () {
 
       const fakeContextId = 999_999n;
       const responseV2ExtraData = extraDataV2(fakeContextId, 1n);
-      const [responseEip712] = userDecryptedShares.slice(0, 1).map((share) =>
-        createEIP712ResponseUserDecrypt(
-          gatewayChainId,
-          decryptionAddress,
-          publicKey,
-          ctHandles,
-          share,
-          responseV2ExtraData,
-        ),
-      );
+      const [responseEip712] = userDecryptedShares
+        .slice(0, 1)
+        .map((share) =>
+          createEIP712ResponseUserDecrypt(
+            gatewayChainId,
+            decryptionAddress,
+            publicKey,
+            ctHandles,
+            share,
+            responseV2ExtraData,
+          ),
+        );
       const [responseSig] = await getSignaturesUserDecryptResponse([responseEip712], [kmsSigners[0]]);
 
       await expect(
@@ -2645,10 +2614,9 @@ describe("Decryption", function () {
         durationDays.toString(),
         nullContextExtraData,
       );
-      const [nullContextDelegateSignature] = await getSignaturesDelegatedUserDecryptRequest(
-        nullContextRequestMessage,
-        [delegateAccount],
-      );
+      const [nullContextDelegateSignature] = await getSignaturesDelegatedUserDecryptRequest(nullContextRequestMessage, [
+        delegateAccount,
+      ]);
 
       await expect(
         decryption
@@ -2733,10 +2701,9 @@ describe("Decryption", function () {
         durationDays.toString(),
         nullContextV2ExtraData,
       );
-      const [nullContextDelegateSignature] = await getSignaturesDelegatedUserDecryptRequest(
-        nullContextRequestMessage,
-        [delegateAccount],
-      );
+      const [nullContextDelegateSignature] = await getSignaturesDelegatedUserDecryptRequest(nullContextRequestMessage, [
+        delegateAccount,
+      ]);
 
       await expect(
         decryption
@@ -2956,14 +2923,20 @@ describe("Decryption", function () {
     const opaqueSignature = hre.ethers.hexlify(hre.ethers.randomBytes(65));
 
     let decryption: Decryption;
+    let gatewayConfig: GatewayConfig;
     let snsCiphertextMaterials: SnsCiphertextMaterialStruct[];
     let tokenFundedTxSender: HardhatEthersSigner;
+    let mockedZamaOFT: ZamaOFT;
+    let mockedFeesSenderToBurnerAddress: string;
 
     beforeEach(async function () {
       const fixtureData = await loadFixture(prepareAddCiphertextFixture);
       decryption = fixtureData.decryption;
+      gatewayConfig = fixtureData.gatewayConfig;
       snsCiphertextMaterials = fixtureData.snsCiphertextMaterials;
       tokenFundedTxSender = fixtureData.tokenFundedTxSender;
+      mockedZamaOFT = fixtureData.mockedZamaOFT;
+      mockedFeesSenderToBurnerAddress = fixtureData.mockedFeesSenderToBurnerAddress;
     });
 
     it("Should request a unified user decryption with all direct handles", async function () {
@@ -2977,12 +2950,14 @@ describe("Decryption", function () {
 
       await expect(tx)
         .to.emit(decryption, UNIFIED_EVENT_SIG)
-        .withArgs(
-          decryptionId,
-          toValues(snsCiphertextMaterials),
-          toValues(directHandles),
-          [user.address, publicKey, allowedContracts, toValues(requestValidity), extraDataV0, opaqueSignature],
-        );
+        .withArgs(decryptionId, toValues(snsCiphertextMaterials), toValues(directHandles), [
+          user.address,
+          publicKey,
+          allowedContracts,
+          toValues(requestValidity),
+          extraDataV0,
+          opaqueSignature,
+        ]);
     });
 
     it("Should accept a mixed batch (some direct, some delegated) without checking delegation on-chain", async function () {
@@ -2991,7 +2966,11 @@ describe("Decryption", function () {
       // regardless of whether delegation actually exists on the ACL.
       const mixedHandles = [
         { handle: ctHandles[0], contractAddress, ownerAddress: user.address }, // direct
-        { handle: ctHandles[1], contractAddress, ownerAddress: delegator.address }, // delegated
+        {
+          handle: ctHandles[1],
+          contractAddress,
+          ownerAddress: delegator.address,
+        }, // delegated
         { handle: ctHandles[2], contractAddress, ownerAddress: user.address }, // direct
       ];
       const allowedContracts = [contractAddress];
@@ -3004,12 +2983,14 @@ describe("Decryption", function () {
 
       await expect(tx)
         .to.emit(decryption, UNIFIED_EVENT_SIG)
-        .withArgs(
-          decryptionId,
-          toValues(snsCiphertextMaterials),
-          toValues(mixedHandles),
-          [user.address, publicKey, allowedContracts, toValues(requestValidity), extraDataV0, opaqueSignature],
-        );
+        .withArgs(decryptionId, toValues(snsCiphertextMaterials), toValues(mixedHandles), [
+          user.address,
+          publicKey,
+          allowedContracts,
+          toValues(requestValidity),
+          extraDataV0,
+          opaqueSignature,
+        ]);
     });
 
     it("Should accept permissive mode (empty allowedContracts)", async function () {
@@ -3021,12 +3002,14 @@ describe("Decryption", function () {
 
       await expect(tx)
         .to.emit(decryption, UNIFIED_EVENT_SIG)
-        .withArgs(
-          decryptionId,
-          toValues(snsCiphertextMaterials),
-          toValues(directHandles),
-          [user.address, publicKey, [], toValues(requestValidity), extraDataV0, opaqueSignature],
-        );
+        .withArgs(decryptionId, toValues(snsCiphertextMaterials), toValues(directHandles), [
+          user.address,
+          publicKey,
+          [],
+          toValues(requestValidity),
+          extraDataV0,
+          opaqueSignature,
+        ]);
     });
 
     it("Should accept a specific allowedContracts with multiple entries", async function () {
@@ -3040,12 +3023,14 @@ describe("Decryption", function () {
 
       await expect(tx)
         .to.emit(decryption, UNIFIED_EVENT_SIG)
-        .withArgs(
-          decryptionId,
-          toValues(snsCiphertextMaterials),
-          toValues(directHandles),
-          [user.address, publicKey, allowedContracts, toValues(requestValidity), extraDataV0, opaqueSignature],
-        );
+        .withArgs(decryptionId, toValues(snsCiphertextMaterials), toValues(directHandles), [
+          user.address,
+          publicKey,
+          allowedContracts,
+          toValues(requestValidity),
+          extraDataV0,
+          opaqueSignature,
+        ]);
     });
 
     it("Should accept any opaque bytes as the signature (no on-chain verification)", async function () {
@@ -3061,12 +3046,14 @@ describe("Decryption", function () {
 
       await expect(tx)
         .to.emit(decryption, UNIFIED_EVENT_SIG)
-        .withArgs(
-          decryptionId,
-          toValues(snsCiphertextMaterials),
-          toValues(directHandles),
-          [user.address, publicKey, [contractAddress], toValues(requestValidity), extraDataV0, bogusSignature],
-        );
+        .withArgs(decryptionId, toValues(snsCiphertextMaterials), toValues(directHandles), [
+          user.address,
+          publicKey,
+          [contractAddress],
+          toValues(requestValidity),
+          extraDataV0,
+          bogusSignature,
+        ]);
     });
 
     it("Should not emit the legacy-signature UserDecryptionRequest event", async function () {
@@ -3164,7 +3151,11 @@ describe("Decryption", function () {
     it("Should revert when handles carry mismatched chain IDs", async function () {
       const mismatchedHandles = [
         { handle: ctHandles[0], contractAddress, ownerAddress: user.address },
-        { handle: fakeChainIdCtHandle, contractAddress, ownerAddress: user.address },
+        {
+          handle: fakeChainIdCtHandle,
+          contractAddress,
+          ownerAddress: user.address,
+        },
       ];
 
       await expect(
@@ -3177,7 +3168,13 @@ describe("Decryption", function () {
     });
 
     it("Should revert when handles belong to an unregistered host chain", async function () {
-      const unregisteredHandles = [{ handle: fakeChainIdCtHandle, contractAddress, ownerAddress: user.address }];
+      const unregisteredHandles = [
+        {
+          handle: fakeChainIdCtHandle,
+          contractAddress,
+          ownerAddress: user.address,
+        },
+      ];
 
       await expect(
         decryption
@@ -3265,6 +3262,29 @@ describe("Decryption", function () {
             UNIFIED_REQUEST_SIG
           ](directHandles, user.address, publicKey, [contractAddress], requestValidity, opaqueSignature, nullContextV2ExtraData),
       ).to.be.revertedWithCustomError(decryption, "InvalidNullContextId");
+    });
+
+    it("Should revert when extraData pins an invalid (unregistered) contextId, without charging the fee", async function () {
+      // The unified path must reject a non-zero context that was never created or has been
+      // destroyed at request time, so a request that could never be answered is not opened and
+      // paid for. Matches the legacy and public request paths.
+      const invalidContextId = 999_999n;
+      const invalidContextExtraData = extraDataV1(invalidContextId);
+      const tokenFundedTxSenderBalance = await mockedZamaOFT.balanceOf(tokenFundedTxSender.address);
+      const feesSenderToBurnerBalance = await mockedZamaOFT.balanceOf(mockedFeesSenderToBurnerAddress);
+
+      await expect(
+        decryption
+          .connect(tokenFundedTxSender)
+          [
+            UNIFIED_REQUEST_SIG
+          ](directHandles, user.address, publicKey, [contractAddress], requestValidity, opaqueSignature, invalidContextExtraData),
+      )
+        .to.be.revertedWithCustomError(gatewayConfig, "InvalidKmsContext")
+        .withArgs(invalidContextId);
+
+      expect(await mockedZamaOFT.balanceOf(tokenFundedTxSender.address)).to.equal(tokenFundedTxSenderBalance);
+      expect(await mockedZamaOFT.balanceOf(mockedFeesSenderToBurnerAddress)).to.equal(feesSenderToBurnerBalance);
     });
 
     it("Should revert when a response uses extraData v2 with a contextId that differs from the one pinned at request time", async function () {
