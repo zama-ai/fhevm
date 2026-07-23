@@ -406,7 +406,7 @@ describe("user-decrypt result verification", () => {
       requestId: "request-1",
       status: "succeeded",
       valuesMatch: true,
-      responseIdentity: { requestId: "unbound", jobId: "url-artifact-matched" },
+      responseIdentity: { jobId: "url-artifact-matched" },
     });
     expect(fetchMock).toHaveBeenCalledWith(
       new URL("https://relayer.example/v2/user-decrypt/job-1"),
@@ -425,7 +425,7 @@ describe("user-decrypt result verification", () => {
       artifact: { ...artifact(), relayer: undefined },
     });
 
-    expect(result.responseIdentity).toEqual({ requestId: "unbound", jobId: "unbound" });
+    expect(result.responseIdentity).toEqual({ jobId: "unbound" });
   });
 
   it("reports response identifiers that match the artifact", async () => {
@@ -442,25 +442,34 @@ describe("user-decrypt result verification", () => {
     });
 
     expect(result.responseIdentity).toEqual({
-      requestId: "artifact-matched",
       jobId: "response-artifact-matched",
     });
   });
 
-  it("rejects response and URL identities that disagree with the artifact", async () => {
+  it("treats the GET's fresh requestId as informational, never as binding", async () => {
     const response = (requestId: string, jobId?: string) => new Response(JSON.stringify({
       requestId,
       ...(jobId ? { jobId } : {}),
       status: "succeeded",
       result: [share],
     }));
-    vi.stubGlobal("fetch", vi.fn().mockResolvedValue(response("wrong-request", "job-1")));
-    await expect(verifyUserDecryptResult({
+    // The relayer issues a new requestId per HTTP request, so the GET's id
+    // never equals the POST-time id saved in the artifact.
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue(response("get-request-id", "job-1")));
+    const result = await verifyUserDecryptResult({
       url: "https://relayer.example/v2/user-decrypt/job-1",
-      artifact: { ...artifact(), relayer: { requestId: "request-1", jobId: "job-1" } },
-    })).rejects.toThrow("requestId does not match");
+      artifact: { ...artifact(), relayer: { requestId: "post-request-id", jobId: "job-1" } },
+    });
+    expect(result.requestId).toBe("get-request-id");
+    expect(result.responseIdentity).toEqual({ jobId: "response-artifact-matched" });
+  });
 
-    vi.stubGlobal("fetch", vi.fn().mockResolvedValue(response("request-1")));
+  it("rejects a URL job id that disagrees with the artifact", async () => {
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue(new Response(JSON.stringify({
+      requestId: "request-1",
+      status: "succeeded",
+      result: [share],
+    }))));
     await expect(verifyUserDecryptResult({
       url: "https://relayer.example/v2/user-decrypt/wrong-job",
       artifact: { ...artifact(), relayer: { requestId: "request-1", jobId: "job-1" } },

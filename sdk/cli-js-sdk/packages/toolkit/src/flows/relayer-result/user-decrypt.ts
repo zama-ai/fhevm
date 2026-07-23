@@ -118,7 +118,6 @@ export type VerifyUserDecryptResult = Readonly<{
   requestId?: string;
   status?: string;
   responseIdentity: Readonly<{
-    requestId: "artifact-matched" | "unbound";
     jobId: "response-artifact-matched" | "url-artifact-matched" | "unbound";
   }>;
 }> &
@@ -544,11 +543,10 @@ export const verifyUserDecryptResult = async (
   const responseJobId = typeof envelope?.jobId === "string"
     ? envelope.jobId
     : undefined;
-  const artifactRequestId = options.artifact.relayer?.requestId;
+  // The relayer echoes a fresh requestId per HTTP request (the GET's own id,
+  // not the original POST's), so it can never bind a response to the artifact.
+  // Only the jobId — via the response body or the URL path — is job identity.
   const artifactJobId = options.artifact.relayer?.jobId;
-  if (artifactRequestId && responseRequestId && artifactRequestId !== responseRequestId) {
-    throw new Error("Relayer response requestId does not match the validation artifact.");
-  }
   if (artifactJobId && responseJobId && artifactJobId !== responseJobId) {
     throw new Error("Relayer response jobId does not match the validation artifact.");
   }
@@ -579,7 +577,6 @@ export const verifyUserDecryptResult = async (
     requestId: responseRequestId,
     status: typeof envelope?.status === "string" ? envelope.status : undefined,
     responseIdentity: {
-      requestId: artifactRequestId && responseRequestId ? "artifact-matched" : "unbound",
       jobId: artifactJobId && responseJobId
         ? "response-artifact-matched"
         : artifactJobId && urlJobId
