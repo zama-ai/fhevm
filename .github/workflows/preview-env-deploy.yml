@@ -101,7 +101,7 @@ on:
       test_suite_version:
         description: "Image tag for the test-suite image (same override rule as host_contracts_version above)"
         required: true
-        default: "b858525"
+        default: "v0.13.2"
       common_chart_version:
         description: "Version of the generic `common` Helm chart, used for postgres-*, relayer-migrate, relayer and test-suite alike"
         required: true
@@ -163,7 +163,7 @@ env:
   COPROCESSOR_INFRA_CHART_VERSION: "0.6.5"
   #=====COMMON===============================================================
   RELAYER_VERSION: "v0.13.0"
-  TEST_SUITE_VERSION: "032a262"
+  TEST_SUITE_VERSION: "v0.13.2"
   RELAYER_SDK_VERSION: ""  # If RELAYER_SDK_VERSION is empty: run the @fhevm/sdk suite only.
   COMMON_CHART: oci://hub.zama.org/ghcr/zama-zws/helm-charts/common
   COMMON_CHART_VERSION: "0.3.3"
