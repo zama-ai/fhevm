@@ -6,6 +6,7 @@ use alloy::rpc::types::Log;
 use alloy::sol_types::SolEventInterface;
 use fhevm_engine_common::branch::{
     advance_settled_height, read_settled_height,
+    read_settled_height_updated_epoch,
 };
 use fhevm_engine_common::bridge::chain_id_from_handle;
 use fhevm_engine_common::chain_id::ChainId;
@@ -998,6 +999,31 @@ pub async fn update_finalized_blocks_aux<GetBlockHash, GetBlockHashFuture>(
                 settled_height,
                 "Updated coprocessor branch settlement frontier"
             );
+            // Frontier observability: settlement freezes by design, but a
+            // frozen frontier is operator-attention state (branch tables
+            // grow while it lasts). Best-effort: a failed read only skips
+            // this pass's gauge update.
+            match read_settled_height_updated_epoch(
+                &mut tx,
+                db.chain_id.as_i64(),
+            )
+            .await
+            {
+                Ok(updated_at_epoch) => {
+                    crate::database::metrics::record_settlement_frontier(
+                        db.chain_id.as_i64(),
+                        settled_height,
+                        settlement_candidate_height as i64,
+                        updated_at_epoch,
+                    );
+                }
+                Err(err) => {
+                    warn!(
+                        ?err,
+                        "Failed to read settlement frontier age for metrics"
+                    );
+                }
+            }
         }
         Err(err) => {
             error!(
@@ -1193,6 +1219,29 @@ mod tests {
         assert_eq!(
             settled_height, 6,
             "settlement should use the stricter settlement_finality_lag"
+        );
+
+        let chain_label = chain_id.as_i64().to_string();
+        assert_eq!(
+            crate::database::metrics::SETTLED_HEIGHT
+                .with_label_values(&[chain_label.as_str()])
+                .get(),
+            6,
+            "frontier gauge must track settled_height"
+        );
+        assert_eq!(
+            crate::database::metrics::SETTLEMENT_FRONTIER_LAG_BLOCKS
+                .with_label_values(&[chain_label.as_str()])
+                .get(),
+            0,
+            "frontier lag gauge must be zero when fully settled"
+        );
+        assert!(
+            crate::database::metrics::SETTLEMENT_FRONTIER_UPDATED_SECONDS
+                .with_label_values(&[chain_label.as_str()])
+                .get()
+                > 0,
+            "frontier age gauge must carry the durable updated_at"
         );
     }
 
