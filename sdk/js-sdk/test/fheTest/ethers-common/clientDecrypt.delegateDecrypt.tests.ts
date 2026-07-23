@@ -99,18 +99,20 @@ export function defineClientDecryptDelegateDecryptTests(parameters: {
     'Decrypt client — delegated decrypt',
     () => {
       let config: FheTestEthersConfig;
+      let logger: ReturnType<typeof createLogger>;
 
       beforeAll(async () => {
         config = getEthersTestConfig();
+        logger = createLogger(console.log, `${config.fhevmChain.id}`);
         setFhevmRuntimeConfig({
           auth: {
             type: 'ApiKeyHeader',
             value: config.zamaApiKey,
           },
-          logger: createLogger(console.log),
+          logger,
         });
-        console.log(`  Alice: ${config.alice.wallet.address}`);
-        console.log(`  Bob:   ${config.bob.wallet.address}`);
+        logger.debug?.(`Alice: ${config.alice.wallet.address}`);
+        logger.debug?.(`Bob:   ${config.bob.wallet.address}`);
 
         // Check if delegation already exists
         const existingExpiration = await getUserDecryptionDelegationExpirationDate({
@@ -126,9 +128,9 @@ export function defineClientDecryptDelegateDecryptTests(parameters: {
         const block = await config.provider.getBlock('latest');
         const blockTimestamp = BigInt(block!.timestamp);
         if (existingExpiration > blockTimestamp) {
-          console.log(`  Delegation already active (expires ${existingExpiration}), skipping tx`);
+          logger.debug?.(`Delegation already active (expires ${existingExpiration}), skipping tx`);
         } else {
-          console.log(`  Delegation not yet active, calling delegateForUserDecryption()...`);
+          logger.debug?.(`Delegation not yet active, calling delegateForUserDecryption()...`);
           // Alice delegates decryption to Bob
           const receipt = await delegateForUserDecryption({
             aclAddress: config.fhevmChain.fhevm.contracts.acl.address,
@@ -140,7 +142,7 @@ export function defineClientDecryptDelegateDecryptTests(parameters: {
           if (receipt.status !== 1) {
             throw new Error(`Delegation tx failed: ${receipt.hash}`);
           }
-          console.log(`  Delegation tx: ${receipt.hash}`);
+          logger.debug?.(`Delegation tx: ${receipt.hash}`);
           // Wait for the delegation to propagate to the gateway's MultichainACL.
           // On v0.11.0 stacks the gateway contract checks MultichainACL (a gateway-side
           // mirror of host ACL delegations) before accepting a delegated decrypt request.
@@ -160,7 +162,7 @@ export function defineClientDecryptDelegateDecryptTests(parameters: {
         const keyPair = await client.generateTransportKeyPair();
 
         // Bob signs a delegated permit to decrypt Alice's handles
-        const signedPermit = await client.signDecryptionPermit({
+        const legacySignedPermit = await client.signLegacyDecryptionPermit({
           transportKeyPair: keyPair,
           contractAddresses: [config.fheTestAddress],
           durationSeconds: 24 * 3600,
@@ -170,16 +172,18 @@ export function defineClientDecryptDelegateDecryptTests(parameters: {
           delegatorAddress: config.alice.wallet.address,
         });
 
-        expect(signedPermit).toBeDefined();
-        const [major, minor] = client.protocolVersion!.version.split('.').map(Number);
-        const expectedPermitVersion = major! * 1000 + minor! < 14 ? 1 : 2;
-        expect(signedPermit.version).toBe(expectedPermitVersion);
+        expect(legacySignedPermit).toBeDefined();
+        expect(legacySignedPermit.version).toBe(1);
         const expectedPrimaryType =
-          signedPermit.version === 1 ? 'DelegatedUserDecryptRequestVerification' : 'UserDecryptRequestVerification';
-        expect(signedPermit.eip712.primaryType).toBe(expectedPrimaryType);
-        expect(signedPermit.isDelegated).toBe(true);
-        expect(signedPermit.signerAddress.toLowerCase()).toBe(config.bob.wallet.address.toLowerCase());
-        expect(signedPermit.encryptedDataOwnerAddress.toLowerCase()).toBe(config.alice.wallet.address.toLowerCase());
+          legacySignedPermit.version === 1
+            ? 'DelegatedUserDecryptRequestVerification'
+            : 'UserDecryptRequestVerification';
+        expect(legacySignedPermit.eip712.primaryType).toBe(expectedPrimaryType);
+        expect(legacySignedPermit.isDelegated).toBe(true);
+        expect(legacySignedPermit.signerAddress.toLowerCase()).toBe(config.bob.wallet.address.toLowerCase());
+        expect(legacySignedPermit.encryptedDataOwnerAddress.toLowerCase()).toBe(
+          config.alice.wallet.address.toLowerCase(),
+        );
       });
 
       // ┌─────────────────────────────────────────────────────────────────────┐
@@ -204,7 +208,7 @@ export function defineClientDecryptDelegateDecryptTests(parameters: {
 
           // Read expected clear value from FHETest._db
           const expectedRaw: bigint = await fheTest.getClearText!(aliceHandle);
-          console.log(`  ${fheType}: handle=${aliceHandle.slice(0, 20)}... expected=${expectedRaw}`);
+          logger.debug?.(`${fheType}: handle=${aliceHandle.slice(0, 20)}... expected=${expectedRaw}`);
 
           // Bob decrypts Alice's handle via delegated permit
           const client = parameters.createFhevmDecryptClient({
@@ -214,7 +218,7 @@ export function defineClientDecryptDelegateDecryptTests(parameters: {
           await client.ready;
 
           const transportKeyPair = await client.generateTransportKeyPair();
-          const bobSignedPermit = await client.signDecryptionPermit({
+          const bobSignedPermit = await client.signLegacyDecryptionPermit({
             transportKeyPair: transportKeyPair,
             contractAddresses: [config.fheTestAddress],
             durationSeconds: 24 * 3600,
@@ -233,7 +237,7 @@ export function defineClientDecryptDelegateDecryptTests(parameters: {
 
           expect(typedValue.type).toBe(clearTypeFromHandle(aliceHandle));
 
-          console.log(`  ${fheType}: decrypted=${typedValue.value} expected=${expectedRaw}`);
+          logger.debug?.(`${fheType}: decrypted=${typedValue.value} expected=${expectedRaw}`);
 
           if (fheType === 'ebool') {
             expect(typedValue.value).toBe(expectedRaw !== 0n);
@@ -269,7 +273,7 @@ export function defineClientDecryptDelegateDecryptTests(parameters: {
           expect(fheTypeIdFromHandle(aliceHandle)).toBe(fheTypeIdFromName(fheType));
           const aliceClearValue: bigint = await fheTest.getClearText!(aliceHandle);
           aliceEntries.push({ aliceHandle, aliceClearValue });
-          console.log(`  ${fheType}: handle=${aliceHandle.slice(0, 20)}... expected=${aliceClearValue}`);
+          logger.debug?.(`${fheType}: handle=${aliceHandle.slice(0, 20)}... expected=${aliceClearValue}`);
         }
 
         // Bob decrypts all of Alice's handles in a single call
@@ -304,8 +308,8 @@ export function defineClientDecryptDelegateDecryptTests(parameters: {
         for (let i = 0; i < aliceEntries.length; i++) {
           const { aliceHandle, aliceClearValue } = aliceEntries[i]!;
           const bobDecrypted = bobDecryptedValues[i]!;
-          console.log(
-            `  ${clearTypeFromHandle(aliceHandle)}: bobDecrypted=${bobDecrypted.value} aliceExpected=${aliceClearValue}`,
+          logger.debug?.(
+            `${clearTypeFromHandle(aliceHandle)}: bobDecrypted=${bobDecrypted.value} aliceExpected=${aliceClearValue}`,
           );
 
           expect(bobDecrypted.type).toBe(clearTypeFromHandle(aliceHandle));

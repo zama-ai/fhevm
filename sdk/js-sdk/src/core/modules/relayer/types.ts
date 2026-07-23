@@ -18,6 +18,7 @@ import type { ZkProof } from '../../types/zkProof-p.js';
 import type { Handle, InputHandle } from '../../types/encryptedTypes-p.js';
 import type { FhevmChain } from '../../types/fhevmChain.js';
 import type { FhevmRuntime } from '../../types/coreFhevmRuntime.js';
+import type { FhevmClientFrozenContext } from '../../types/fhevmClientFrozenContext-p.js';
 
 ////////////////////////////////////////////////////////////////////////////////
 //
@@ -79,6 +80,7 @@ export type FetchCoprocessorSignaturesParameters = {
   readonly payload: {
     readonly zkProof: ZkProof;
   };
+  readonly fhevmContext: FhevmClientFrozenContext;
   readonly options?: RelayerInputProofOptions | undefined;
 };
 
@@ -104,6 +106,7 @@ export type FetchPublicDecryptParameters = {
     readonly orderedHandles: readonly Handle[];
     readonly extraData: BytesHex;
   };
+  readonly fhevmContext: FhevmClientFrozenContext;
   readonly options?: RelayerPublicDecryptOptions | undefined;
 };
 
@@ -125,6 +128,7 @@ export type FetchPublicDecryptModuleFunction = {
 ////////////////////////////////////////////////////////////////////////////////
 
 export type FetchUserDecryptParametersV1 = {
+  readonly version: 1;
   readonly payload: {
     readonly handleContractPairs: ReadonlyArray<{
       readonly handle: Handle;
@@ -134,19 +138,23 @@ export type FetchUserDecryptParametersV1 = {
     readonly kmsDecryptEip712Message: KmsUserDecryptEip712V1Message;
     readonly kmsDecryptEip712Signature: Bytes65Hex;
   };
+  readonly fhevmContext: FhevmClientFrozenContext;
   readonly options?: RelayerUserDecryptOptions | undefined;
 };
 
 export type FetchUserDecryptParametersV2 = {
+  readonly version: 2;
   readonly payload: {
     readonly handleContractPairs: ReadonlyArray<{
       readonly handle: Handle;
       readonly contractAddress: ChecksummedAddress;
       readonly ownerAddress: ChecksummedAddress;
     }>;
+    readonly kmsDecryptEip712Signer: ChecksummedAddress;
     readonly kmsDecryptEip712Message: KmsUserDecryptEip712V2Message;
     readonly kmsDecryptEip712Signature: Bytes65Hex;
   };
+  readonly fhevmContext: FhevmClientFrozenContext;
   readonly options?: RelayerUserDecryptOptions | undefined;
 };
 
@@ -166,6 +174,7 @@ export type FetchUserDecryptModuleFunction = {
 ////////////////////////////////////////////////////////////////////////////////
 
 export type FetchDelegatedUserDecryptParameters = {
+  readonly version: 1;
   readonly payload: {
     readonly handleContractPairs: ReadonlyArray<{
       readonly handle: Handle;
@@ -175,6 +184,7 @@ export type FetchDelegatedUserDecryptParameters = {
     readonly kmsDecryptEip712Message: KmsDelegatedUserDecryptEip712V1Message;
     readonly kmsDecryptEip712Signature: Bytes65Hex;
   };
+  readonly fhevmContext: FhevmClientFrozenContext;
   readonly options?: RelayerDelegatedUserDecryptOptions | undefined;
 };
 

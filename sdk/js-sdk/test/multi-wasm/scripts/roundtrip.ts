@@ -226,7 +226,7 @@ async function run() {
 
     log('Private decrypting value...');
     const transportKeyPair = await client.generateTransportKeyPair();
-    const signedPermit = await client.signDecryptionPermit({
+    const signedPermit = await client.signLegacyDecryptionPermit({
       transportKeyPair,
       contractAddresses: [fheTestAddress],
       durationSeconds: 24 * 3600,
