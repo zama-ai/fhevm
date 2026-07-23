@@ -2,6 +2,7 @@ import { expect } from 'chai';
 import { ethers } from 'hardhat';
 
 import { createInstances } from '../instance';
+import { bitFlipPayload, corruptSignature, expectCorruptedShareDecryptToFail } from '../sdk/corruption/interceptShares';
 import { getSigners, initSigners } from '../signers';
 
 describe('User decryption', function () {
@@ -95,6 +96,36 @@ describe('User decryption', function () {
       signer: this.signers.alice,
     });
     expect(decryptedValue).to.equal(74285495974541385002137713624115238327312291047062397922780925695323480915729n);
+  });
+
+  describe('corrupted shares', function () {
+    // Observe how the SDK behaves when the KMS signcrypted shares it receives
+    // are corrupted before client-side reconstruction. The corruption is
+    // injected at the SDK's HTTP input boundary (see interceptShares).
+    // For now we assert only that decryption fails and print the error; whether
+    // 2 bad shares are always enough to break reconstruction is exactly the
+    // open question this test is meant to surface.
+    it('case 1: bit-flipped payload makes user decryption fail', async function () {
+      const handle = await this.contract.xUint64();
+      await expectCorruptedShareDecryptToFail('direct/payload', bitFlipPayload, () =>
+        this.instances.alice.userDecryptSingleHandle({
+          handle,
+          contractAddress: this.contractAddress,
+          signer: this.signers.alice,
+        }),
+      );
+    });
+
+    it('case 2: corrupted signature makes user decryption fail', async function () {
+      const handle = await this.contract.xUint64();
+      await expectCorruptedShareDecryptToFail('direct/signature', corruptSignature, () =>
+        this.instances.alice.userDecryptSingleHandle({
+          handle,
+          contractAddress: this.contractAddress,
+          signer: this.signers.alice,
+        }),
+      );
+    });
   });
 
   describe('negative-acl', function () {
