@@ -1274,7 +1274,8 @@ between the chain and the KMS connector.
 Decision:
 
 Serve proofs from the standalone `solana-proof-service` workspace (Yellowstone completed-block
-ingest + PostgreSQL store + `GET /internal/solana/mmr-proof`) rather than colocating leaf ownership
+ingest + PostgreSQL store + semantic `GET /internal/solana/access-proof` and
+`/internal/solana/public-proof`) rather than colocating leaf ownership
 inside the relayer. The service stays in the same trust class the relayer already occupies —
 availability-critical, but never an authorization anchor. The KMS connector re-verifies every proof
 against live confirmed on-chain peaks (DD-032), so a bad or compromised proof service can only cause
@@ -1288,7 +1289,7 @@ signed user-decrypt requests.
 
 Consequences:
 
-The relayer no longer mounts `/internal/solana/mmr-proof` and has no leaf/checkpoint/proof DB. Solana
+The relayer no longer mounts the internal Solana proof endpoints and has no leaf/checkpoint/proof DB. Solana
 user-decrypt still does **not** call the proof service in-process — clients (e2e live-client /
 test-suite vertical) fetch proofs via `PROOF_SERVICE_URL` before submitting to `/v3/user-decrypt`.
 That optional in-process integration remains a known product gap.

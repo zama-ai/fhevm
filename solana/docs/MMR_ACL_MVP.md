@@ -78,7 +78,7 @@ this note records the operational model in one place.
 - Materiality is not Solana host state. DD-031 moved ciphertext material commitments to the gateway
   `CiphertextCommits`; Solana ACL state answers only who may use or decrypt a handle.
 - The standalone `solana-proof-service` is an untrusted helper (DD-035). The end-to-end decrypt flow
-  fetches historical and public MMR proofs from this service (`GET /internal/solana/mmr-proof`); the
+  fetches historical and public MMR proofs from this service (semantic `GET /internal/solana/access-proof` and `/internal/solana/public-proof`); the
   KMS re-verifies each proof against confirmed on-chain peaks before releasing plaintext. One case is
   still built by the test client rather than the service: the amount burned during an unwrap, whose
   handle comes from block randomness and appears only in an event, so the events-off build has nothing

@@ -782,18 +782,52 @@ struct ProofServiceMmrProofDto {
     siblings: Vec<String>,
 }
 
-/// Fetches a verified MMR inclusion proof from the standalone solana-proof-service, retrying a
-/// bounded number of times while ingestion is still catching up to chain (`503 lagging`). REQUIRES
-/// `verified == true`; every other response, including `500 corrupt_cache`, fails loudly at once.
-/// Retrying HERE (not by re-invoking the client) keeps the caller idempotent — the historical
-/// `supersede` step appends on-chain leaves, so re-running it would corrupt the lineage.
-fn fetch_mmr_proof(
+/// Fetches a verified public-decrypt inclusion proof for `handle` from the standalone
+/// solana-proof-service. The service resolves the leaf from `(encrypted_value, handle)`; this
+/// client never computes or supplies a leaf index.
+fn fetch_public_proof(
     encrypted_value: &Pubkey,
-    leaf_index: u64,
+    handle: [u8; 32],
+) -> Result<zama_solana_acl::MmrProof, Box<dyn std::error::Error>> {
+    let base = proof_service_url();
+    let url = format!(
+        "{}/internal/solana/public-proof?encrypted_value={}&handle={}",
+        base.trim_end_matches('/'),
+        encrypted_value,
+        hex(&handle)
+    );
+    fetch_proof_with_retry(&url)
+}
+
+/// Fetches a verified historical-access inclusion proof for `(handle, subject)` from the
+/// standalone solana-proof-service. The service resolves the leaf; no client-side leaf index.
+fn fetch_access_proof(
+    encrypted_value: &Pubkey,
+    handle: [u8; 32],
+    subject: [u8; 32],
+) -> Result<zama_solana_acl::MmrProof, Box<dyn std::error::Error>> {
+    let base = proof_service_url();
+    let url = format!(
+        "{}/internal/solana/access-proof?encrypted_value={}&handle={}&subject={}",
+        base.trim_end_matches('/'),
+        encrypted_value,
+        hex(&handle),
+        Pubkey::new_from_array(subject)
+    );
+    fetch_proof_with_retry(&url)
+}
+
+/// Retries a bounded number of times while ingestion is still catching up to chain
+/// (`503 lagging`). REQUIRES `verified == true`; every other response, including `500
+/// corrupt_cache` and `404 leaf_not_found`, fails loudly at once. Retrying HERE (not by
+/// re-invoking the client) keeps the caller idempotent — the historical `supersede` step appends
+/// on-chain leaves, so re-running it would corrupt the lineage.
+fn fetch_proof_with_retry(
+    url: &str,
 ) -> Result<zama_solana_acl::MmrProof, Box<dyn std::error::Error>> {
     const MAX_ATTEMPTS: u32 = 15;
     for attempt in 1..MAX_ATTEMPTS {
-        match fetch_mmr_proof_once(encrypted_value, leaf_index) {
+        match fetch_proof_once(url) {
             Ok(proof) => return Ok(proof),
             Err(e) if is_proof_service_lagging(&e.to_string()) => {
                 eprintln!(
@@ -804,25 +838,15 @@ fn fetch_mmr_proof(
             Err(e) => return Err(e),
         }
     }
-    fetch_mmr_proof_once(encrypted_value, leaf_index)
+    fetch_proof_once(url)
 }
 
 fn is_proof_service_lagging(message: &str) -> bool {
     message.starts_with(PROOF_SERVICE_LAGGING_PREFIX)
 }
 
-fn fetch_mmr_proof_once(
-    encrypted_value: &Pubkey,
-    leaf_index: u64,
-) -> Result<zama_solana_acl::MmrProof, Box<dyn std::error::Error>> {
-    let base = proof_service_url();
-    let url = format!(
-        "{}/internal/solana/mmr-proof?encrypted_value={}&leaf_index={}",
-        base.trim_end_matches('/'),
-        encrypted_value,
-        leaf_index
-    );
-    let body: ProofServiceMmrProofResponse = match ureq::get(&url).call() {
+fn fetch_proof_once(url: &str) -> Result<zama_solana_acl::MmrProof, Box<dyn std::error::Error>> {
+    let body: ProofServiceMmrProofResponse = match ureq::get(url).call() {
         Ok(resp) => resp.into_json()?,
         Err(ureq::Error::Status(code, resp)) => {
             let mut raw_body = Vec::new();
@@ -838,14 +862,9 @@ fn fetch_mmr_proof_once(
         )
         .into());
     }
+    // leaf_index is a service output read from the response — never asserted against a
+    // client-computed index.
     let dto = body.mmr_proof.expect("checked is_some above");
-    if dto.leaf_index != leaf_index {
-        return Err(format!(
-            "proof service leaf_index {} does not match requested {leaf_index}",
-            dto.leaf_index
-        )
-        .into());
-    }
     let siblings = dto
         .siblings
         .iter()
@@ -894,12 +913,8 @@ fn public_decrypt_proof_step(
     let value_account = fetch_encrypted_value(host, encrypted_value)?;
     let value_key = value_account.value_key();
     // Chain facts (peaks/leaf_count/current handle) come from the live account; the proof itself
-    // comes from solana-proof-service. The public-decrypt leaf is the lineage's last leaf.
-    let leaf_index = value_account
-        .leaf_count
-        .checked_sub(1)
-        .ok_or("public-decrypt lineage has no leaves")?;
-    let proof = fetch_mmr_proof(&encrypted_value, leaf_index)?;
+    // comes from solana-proof-service, which resolves the public-decrypt leaf from the handle.
+    let proof = fetch_public_proof(&encrypted_value, handle)?;
     // Fail-fast: the proof service must authorize this handle against the live lineage before it is
     // handed to the KMS / on-chain consume steps.
     let shared = value_account.to_shared();
@@ -983,13 +998,14 @@ fn historical_supersede_step(
             )?;
             let value_account = fetch_encrypted_value(host, target.encrypted_value)?;
             let subject = payer.pubkey().to_bytes();
-            // The e2e historical lineage has exactly one historical leaf, at index 0.
-            let proof = fetch_mmr_proof(&target.encrypted_value, 0)?;
+            // The proof service resolves the historical-access leaf from (old handle, subject);
+            // the resolved leaf index comes back on the proof.
+            let proof = fetch_access_proof(&target.encrypted_value, old_handle, subject)?;
             // Fail-fast: the proof service must verify against the live peaks for the
             // historical-access leaf (old handle bound to this subject).
             let leaf = zama_solana_acl::historical_access_leaf_commitment(
                 target.encrypted_value.to_bytes(),
-                0,
+                proof.leaf_index,
                 old_handle,
                 subject,
             );

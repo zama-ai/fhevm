@@ -10,7 +10,8 @@
 //! handler since the response schema is unchanged.
 //!
 //! TODO(#1682): Solana clients currently fetch MMR proofs from the standalone
-//! `solana-proof-service` (`GET /internal/solana/mmr-proof`) and embed them in
+//! `solana-proof-service` (semantic `GET /internal/solana/access-proof` and
+//! `/internal/solana/public-proof`) and embed them in
 //! `extraData` before calling this route. The relayer does not own proof
 //! construction; optional in-process proof fetch remains a product gap.
 

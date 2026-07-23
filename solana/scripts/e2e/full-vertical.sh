@@ -239,9 +239,10 @@ for i in $(seq 1 30); do
   [ "$i" = 30 ] && fail "historical old-handle SNS commit timed out"; sleep 6
 done
 
-# Sole-sourced from solana-proof-service via PROOF_SERVICE_URL (leaf_index 0). The supersede tx
-# runs exactly once here; the client retries a transient `503 lagging` internally, so this is not
-# re-invoked on lag.
+# Sole-sourced from solana-proof-service via PROOF_SERVICE_URL: the service resolves the
+# historical-access leaf from (old handle, subject) — the client supplies no leaf index. The
+# supersede tx runs exactly once here; the client retries a transient `503 lagging` internally, so
+# this is not re-invoked on lag.
 hist_proof="$(cd "$ROOT/solana/scripts/e2e/live-client" && \
   HISTORICAL_STEP=supersede TE_VALUE="$VALUE" \
   PROOF_SERVICE_URL=http://127.0.0.1:8088 \
