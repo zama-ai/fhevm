@@ -6,9 +6,9 @@ resolution = true
 skip-lint = false
 
 [programs.localnet]
-confidential_batcher = "415fK9iaJJzMHbwkGD4pWgAmDkMvp7Wbd9TTPUtyRX1g"
+confidential_batcher = "Cr1Tyzov2Jq9AYVn5zLSLQdyd8CkZJLemHYkj6qDqFmG"
 confidential_token = "pS2gMMq6PNZKpjxiANeoN5XxJgwaFsUR6xaJkpUHcDg"
-demo_vault = "C6TBzPBWPJYY3fbsDV63nnT3s9vEjaWQAqdeAZpzowH7"
+demo_vault = "6JJTCTipqMjhq5djroouMgi1XZ1Rtc3RMp483F8Bz8b9"
 zama_host = "6AtbvED1rfX68aCT1tYgU1aeu4kFksPDxZG9gtB1Fgtu"
 
 [provider]

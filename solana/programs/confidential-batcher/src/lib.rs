@@ -52,7 +52,7 @@ pub use instructions::{Claim, Dispatch, InitializeBatcher, Join, OpenBatch, Quit
 /// Re-export account layouts, PDA helpers, and payout math.
 pub use state::*;
 
-declare_id!("415fK9iaJJzMHbwkGD4pWgAmDkMvp7Wbd9TTPUtyRX1g");
+declare_id!("Cr1Tyzov2Jq9AYVn5zLSLQdyd8CkZJLemHYkj6qDqFmG");
 
 /// Anchor entrypoint module for the confidential batcher.
 #[program]

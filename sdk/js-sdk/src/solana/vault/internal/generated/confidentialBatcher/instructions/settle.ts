@@ -87,7 +87,7 @@ export type SettleInstruction<
   TAccountZamaProgram extends string | AccountMeta<string> = '6AtbvED1rfX68aCT1tYgU1aeu4kFksPDxZG9gtB1Fgtu',
   TAccountConfidentialTokenEventAuthority extends string | AccountMeta<string> = string,
   TAccountConfidentialTokenProgram extends string | AccountMeta<string> = 'pS2gMMq6PNZKpjxiANeoN5XxJgwaFsUR6xaJkpUHcDg',
-  TAccountDemoVaultProgram extends string | AccountMeta<string> = 'C6TBzPBWPJYY3fbsDV63nnT3s9vEjaWQAqdeAZpzowH7',
+  TAccountDemoVaultProgram extends string | AccountMeta<string> = '6JJTCTipqMjhq5djroouMgi1XZ1Rtc3RMp483F8Bz8b9',
   TAccountTokenProgram extends string | AccountMeta<string> = 'TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA',
   TAccountSystemProgram extends string | AccountMeta<string> = '11111111111111111111111111111111',
   TRemainingAccounts extends readonly AccountMeta<string>[] = [],
@@ -591,7 +591,7 @@ export async function getSettleInstructionAsync<
   }
   if (!accounts.demoVaultProgram.value) {
     accounts.demoVaultProgram.value =
-      'C6TBzPBWPJYY3fbsDV63nnT3s9vEjaWQAqdeAZpzowH7' as Address<'C6TBzPBWPJYY3fbsDV63nnT3s9vEjaWQAqdeAZpzowH7'>;
+      '6JJTCTipqMjhq5djroouMgi1XZ1Rtc3RMp483F8Bz8b9' as Address<'6JJTCTipqMjhq5djroouMgi1XZ1Rtc3RMp483F8Bz8b9'>;
   }
   if (!accounts.tokenProgram.value) {
     accounts.tokenProgram.value =
@@ -1025,7 +1025,7 @@ export function getSettleInstruction<
   }
   if (!accounts.demoVaultProgram.value) {
     accounts.demoVaultProgram.value =
-      'C6TBzPBWPJYY3fbsDV63nnT3s9vEjaWQAqdeAZpzowH7' as Address<'C6TBzPBWPJYY3fbsDV63nnT3s9vEjaWQAqdeAZpzowH7'>;
+      '6JJTCTipqMjhq5djroouMgi1XZ1Rtc3RMp483F8Bz8b9' as Address<'6JJTCTipqMjhq5djroouMgi1XZ1Rtc3RMp483F8Bz8b9'>;
   }
   if (!accounts.tokenProgram.value) {
     accounts.tokenProgram.value =

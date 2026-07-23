@@ -23,7 +23,7 @@ export async function findBatchAuthorityPda(
   config: { programAddress?: Address | undefined } = {},
 ): Promise<ProgramDerivedAddress> {
   const {
-    programAddress = '415fK9iaJJzMHbwkGD4pWgAmDkMvp7Wbd9TTPUtyRX1g' as Address<'415fK9iaJJzMHbwkGD4pWgAmDkMvp7Wbd9TTPUtyRX1g'>,
+    programAddress = 'Cr1Tyzov2Jq9AYVn5zLSLQdyd8CkZJLemHYkj6qDqFmG' as Address<'Cr1Tyzov2Jq9AYVn5zLSLQdyd8CkZJLemHYkj6qDqFmG'>,
   } = config;
   return await getProgramDerivedAddress({
     programAddress,
