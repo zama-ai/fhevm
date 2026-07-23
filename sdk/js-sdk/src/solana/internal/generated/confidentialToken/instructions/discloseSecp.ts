@@ -21,8 +21,6 @@ import {
   getStructEncoder,
   getU32Decoder,
   getU32Encoder,
-  getU64Decoder,
-  getU64Encoder,
   SOLANA_ERROR__PROGRAM_CLIENTS__INSUFFICIENT_ACCOUNT_METAS,
   SolanaError,
   transformEncoder,
@@ -39,6 +37,12 @@ import {
 } from '@solana/kit';
 import { getAccountMetaFactory, type ResolvedInstructionAccount } from '@solana/program-client-core';
 import { CONFIDENTIAL_TOKEN_PROGRAM_ADDRESS } from '../programAddress.js';
+import {
+  getMmrInclusionProofDecoder,
+  getMmrInclusionProofEncoder,
+  type MmrInclusionProof,
+  type MmrInclusionProofArgs,
+} from '../types/index.js';
 
 export const DISCLOSE_SECP_DISCRIMINATOR: ReadonlyUint8Array = new Uint8Array([151, 135, 187, 69, 92, 159, 136, 128]);
 
@@ -77,10 +81,7 @@ export type DiscloseSecpInstructionData = {
   cleartext: ReadonlyUint8Array;
   signatures: Array<ReadonlyUint8Array>;
   extraData: ReadonlyUint8Array;
-  /** Index of the proven leaf within the lineage's MMR. */
-  leafIndex: bigint;
-  /** Authentication path from the leaf up to its mountain peak. */
-  siblings: Array<ReadonlyUint8Array>;
+  proof: MmrInclusionProof;
 };
 
 export type DiscloseSecpInstructionDataArgs = {
@@ -88,10 +89,7 @@ export type DiscloseSecpInstructionDataArgs = {
   cleartext: ReadonlyUint8Array;
   signatures: Array<ReadonlyUint8Array>;
   extraData: ReadonlyUint8Array;
-  /** Index of the proven leaf within the lineage's MMR. */
-  leafIndex: number | bigint;
-  /** Authentication path from the leaf up to its mountain peak. */
-  siblings: Array<ReadonlyUint8Array>;
+  proof: MmrInclusionProofArgs;
 };
 
 export function getDiscloseSecpInstructionDataEncoder(): Encoder<DiscloseSecpInstructionDataArgs> {
@@ -102,8 +100,7 @@ export function getDiscloseSecpInstructionDataEncoder(): Encoder<DiscloseSecpIns
       ['cleartext', fixEncoderSize(getBytesEncoder(), 32)],
       ['signatures', getArrayEncoder(fixEncoderSize(getBytesEncoder(), 65))],
       ['extraData', addEncoderSizePrefix(getBytesEncoder(), getU32Encoder())],
-      ['leafIndex', getU64Encoder()],
-      ['siblings', getArrayEncoder(fixEncoderSize(getBytesEncoder(), 32))],
+      ['proof', getMmrInclusionProofEncoder()],
     ]),
     (value) => ({ ...value, discriminator: DISCLOSE_SECP_DISCRIMINATOR }),
   );
@@ -116,8 +113,7 @@ export function getDiscloseSecpInstructionDataDecoder(): Decoder<DiscloseSecpIns
     ['cleartext', fixDecoderSize(getBytesDecoder(), 32)],
     ['signatures', getArrayDecoder(fixDecoderSize(getBytesDecoder(), 65))],
     ['extraData', addDecoderSizePrefix(getBytesDecoder(), getU32Decoder())],
-    ['leafIndex', getU64Decoder()],
-    ['siblings', getArrayDecoder(fixDecoderSize(getBytesDecoder(), 32))],
+    ['proof', getMmrInclusionProofDecoder()],
   ]);
 }
 
@@ -146,7 +142,10 @@ export type DiscloseSecpAsyncInput<
   encryptedValue: Address<TAccountEncryptedValue>;
   /** Host config carrying the current KMS context id and gateway EIP-712 domain. */
   hostConfig?: Address<TAccountHostConfig>;
-  /** KMS context PDA for the host's current context id (validated by the verifier CPI). */
+  /**
+   * KMS context PDA for the id the certificate commits to (any live context; validated by the
+   * verifier CPI).
+   */
   kmsContext: Address<TAccountKmsContext>;
   /** ZamaHost program used for the stateless verifier CPI. */
   zamaProgram?: Address<TAccountZamaProgram>;
@@ -156,8 +155,7 @@ export type DiscloseSecpAsyncInput<
   cleartext: DiscloseSecpInstructionDataArgs['cleartext'];
   signatures: DiscloseSecpInstructionDataArgs['signatures'];
   extraData: DiscloseSecpInstructionDataArgs['extraData'];
-  leafIndex: DiscloseSecpInstructionDataArgs['leafIndex'];
-  siblings: DiscloseSecpInstructionDataArgs['siblings'];
+  proof: DiscloseSecpInstructionDataArgs['proof'];
 };
 
 export async function getDiscloseSecpInstructionAsync<
@@ -266,7 +264,10 @@ export type DiscloseSecpInput<
   encryptedValue: Address<TAccountEncryptedValue>;
   /** Host config carrying the current KMS context id and gateway EIP-712 domain. */
   hostConfig: Address<TAccountHostConfig>;
-  /** KMS context PDA for the host's current context id (validated by the verifier CPI). */
+  /**
+   * KMS context PDA for the id the certificate commits to (any live context; validated by the
+   * verifier CPI).
+   */
   kmsContext: Address<TAccountKmsContext>;
   /** ZamaHost program used for the stateless verifier CPI. */
   zamaProgram?: Address<TAccountZamaProgram>;
@@ -276,8 +277,7 @@ export type DiscloseSecpInput<
   cleartext: DiscloseSecpInstructionDataArgs['cleartext'];
   signatures: DiscloseSecpInstructionDataArgs['signatures'];
   extraData: DiscloseSecpInstructionDataArgs['extraData'];
-  leafIndex: DiscloseSecpInstructionDataArgs['leafIndex'];
-  siblings: DiscloseSecpInstructionDataArgs['siblings'];
+  proof: DiscloseSecpInstructionDataArgs['proof'];
 };
 
 export function getDiscloseSecpInstruction<
@@ -374,7 +374,10 @@ export type ParsedDiscloseSecpInstruction<
     encryptedValue: TAccountMetas[1];
     /** Host config carrying the current KMS context id and gateway EIP-712 domain. */
     hostConfig: TAccountMetas[2];
-    /** KMS context PDA for the host's current context id (validated by the verifier CPI). */
+    /**
+     * KMS context PDA for the id the certificate commits to (any live context; validated by the
+     * verifier CPI).
+     */
     kmsContext: TAccountMetas[3];
     /** ZamaHost program used for the stateless verifier CPI. */
     zamaProgram: TAccountMetas[4];

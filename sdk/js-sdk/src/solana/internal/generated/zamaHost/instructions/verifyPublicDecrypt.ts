@@ -135,7 +135,10 @@ export type VerifyPublicDecryptAsyncInput<
    * EIP-712 domain (chain id + `Decryption` verifying contract).
    */
   hostConfig?: Address<TAccountHostConfig>;
-  /** KMS context PDA; must be the canonical PDA for `host_config.current_kms_context_id`. */
+  /**
+   * KMS context PDA; must be the canonical PDA for the id the certificate commits to in its
+   * signed `extra_data`, and must not be destroyed. Verified in the handler.
+   */
   kmsContext: Address<TAccountKmsContext>;
   /** The lineage whose peaks the inclusion proof is checked against. */
   encryptedValue: Address<TAccountEncryptedValue>;
@@ -199,7 +202,10 @@ export type VerifyPublicDecryptInput<
    * EIP-712 domain (chain id + `Decryption` verifying contract).
    */
   hostConfig: Address<TAccountHostConfig>;
-  /** KMS context PDA; must be the canonical PDA for `host_config.current_kms_context_id`. */
+  /**
+   * KMS context PDA; must be the canonical PDA for the id the certificate commits to in its
+   * signed `extra_data`, and must not be destroyed. Verified in the handler.
+   */
   kmsContext: Address<TAccountKmsContext>;
   /** The lineage whose peaks the inclusion proof is checked against. */
   encryptedValue: Address<TAccountEncryptedValue>;
@@ -257,7 +263,10 @@ export type ParsedVerifyPublicDecryptInstruction<
      * EIP-712 domain (chain id + `Decryption` verifying contract).
      */
     hostConfig: TAccountMetas[0];
-    /** KMS context PDA; must be the canonical PDA for `host_config.current_kms_context_id`. */
+    /**
+     * KMS context PDA; must be the canonical PDA for the id the certificate commits to in its
+     * signed `extra_data`, and must not be destroyed. Verified in the handler.
+     */
     kmsContext: TAccountMetas[1];
     /** The lineage whose peaks the inclusion proof is checked against. */
     encryptedValue: TAccountMetas[2];

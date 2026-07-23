@@ -6,5 +6,6 @@
  * @see https://github.com/codama-idl/codama
  */
 
-export * from './batchDirection.js';
-export * from './batchStatus.js';
+export * from './batch.js';
+export * from './batcher.js';
+export * from './joinRecord.js';

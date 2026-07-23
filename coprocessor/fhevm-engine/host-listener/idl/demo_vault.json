@@ -1,0 +1,813 @@
+{
+  "address": "C6TBzPBWPJYY3fbsDV63nnT3s9vEjaWQAqdeAZpzowH7",
+  "metadata": {
+    "name": "demo_vault",
+    "version": "0.1.0",
+    "spec": "0.1.0",
+    "description": "Solana PoC public share-mint vault fronted by the confidential batcher"
+  },
+  "docs": [
+    "Anchor entrypoint module for the demo vault."
+  ],
+  "instructions": [
+    {
+      "name": "deposit",
+      "docs": [
+        "Deposits `amount` underlying assets and mints shares at the current price",
+        "(rounded down). Permissionless."
+      ],
+      "discriminator": [
+        242,
+        35,
+        198,
+        137,
+        82,
+        225,
+        242,
+        182
+      ],
+      "accounts": [
+        {
+          "name": "depositor",
+          "docs": [
+            "Depositor and transfer authority over `depositor_underlying`."
+          ],
+          "writable": true,
+          "signer": true
+        },
+        {
+          "name": "vault",
+          "docs": [
+            "Vault whose share price the deposit is measured against."
+          ]
+        },
+        {
+          "name": "vault_authority",
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  97,
+                  117,
+                  116,
+                  104,
+                  111,
+                  114,
+                  105,
+                  116,
+                  121
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "vault"
+              }
+            ]
+          }
+        },
+        {
+          "name": "underlying_mint",
+          "docs": [
+            "Underlying SPL mint, read for its decimals."
+          ],
+          "relations": [
+            "vault"
+          ]
+        },
+        {
+          "name": "share_mint",
+          "docs": [
+            "Share mint, whose supply is the total shares outstanding."
+          ],
+          "writable": true,
+          "relations": [
+            "vault"
+          ]
+        },
+        {
+          "name": "depositor_underlying",
+          "docs": [
+            "Depositor's underlying token account (source)."
+          ],
+          "writable": true
+        },
+        {
+          "name": "vault_token_account",
+          "docs": [
+            "Vault token account whose balance is the total assets under management."
+          ],
+          "writable": true,
+          "relations": [
+            "vault"
+          ]
+        },
+        {
+          "name": "depositor_shares",
+          "docs": [
+            "Depositor's share token account (destination for minted shares)."
+          ],
+          "writable": true
+        },
+        {
+          "name": "token_program",
+          "docs": [
+            "SPL token program."
+          ],
+          "address": "TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA"
+        }
+      ],
+      "args": [
+        {
+          "name": "amount",
+          "type": "u64"
+        }
+      ]
+    },
+    {
+      "name": "harvest",
+      "docs": [
+        "Donates `amount` underlying to the vault without minting shares, raising",
+        "the share price for existing holders. Permissionless (demo-only; a real",
+        "vault gates this behind a keeper/strategy role)."
+      ],
+      "discriminator": [
+        228,
+        241,
+        31,
+        182,
+        53,
+        169,
+        59,
+        199
+      ],
+      "accounts": [
+        {
+          "name": "donor",
+          "docs": [
+            "Donor and transfer authority over `donor_underlying`."
+          ],
+          "writable": true,
+          "signer": true
+        },
+        {
+          "name": "vault",
+          "docs": [
+            "Vault receiving the donation."
+          ]
+        },
+        {
+          "name": "underlying_mint",
+          "docs": [
+            "Underlying SPL mint, read for its decimals."
+          ],
+          "relations": [
+            "vault"
+          ]
+        },
+        {
+          "name": "donor_underlying",
+          "docs": [
+            "Donor's underlying token account (source)."
+          ],
+          "writable": true
+        },
+        {
+          "name": "vault_token_account",
+          "docs": [
+            "Vault token account whose balance is increased by the donation."
+          ],
+          "writable": true,
+          "relations": [
+            "vault"
+          ]
+        },
+        {
+          "name": "token_program",
+          "docs": [
+            "SPL token program."
+          ],
+          "address": "TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA"
+        }
+      ],
+      "args": [
+        {
+          "name": "amount",
+          "type": "u64"
+        }
+      ]
+    },
+    {
+      "name": "initialize_vault",
+      "docs": [
+        "Creates the vault state account, its PDA-owned share mint, and its",
+        "PDA-owned underlying token account. Permissionless; no admin role beyond",
+        "this one-time setup."
+      ],
+      "discriminator": [
+        48,
+        191,
+        163,
+        44,
+        71,
+        129,
+        63,
+        164
+      ],
+      "accounts": [
+        {
+          "name": "payer",
+          "docs": [
+            "Rent payer and the account that submits the initialization."
+          ],
+          "writable": true,
+          "signer": true
+        },
+        {
+          "name": "vault",
+          "docs": [
+            "Vault state account, created here. A fresh keypair signs its own creation."
+          ],
+          "writable": true,
+          "signer": true
+        },
+        {
+          "name": "underlying_mint",
+          "docs": [
+            "Underlying SPL mint the vault accepts."
+          ]
+        },
+        {
+          "name": "vault_authority",
+          "docs": [
+            "signing authority, never deserialized."
+          ],
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  97,
+                  117,
+                  116,
+                  104,
+                  111,
+                  114,
+                  105,
+                  116,
+                  121
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "vault"
+              }
+            ]
+          }
+        },
+        {
+          "name": "share_mint",
+          "docs": [
+            "Share mint created here, with the same decimals as the underlying and the",
+            "vault authority PDA as its mint authority."
+          ],
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  115,
+                  104,
+                  97,
+                  114,
+                  101,
+                  115
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "vault"
+              }
+            ]
+          }
+        },
+        {
+          "name": "vault_token_account",
+          "docs": [
+            "Vault token account created here, owned by the vault authority PDA."
+          ],
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  117,
+                  110,
+                  100,
+                  101,
+                  114,
+                  108,
+                  121,
+                  105,
+                  110,
+                  103
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "vault"
+              }
+            ]
+          }
+        },
+        {
+          "name": "token_program",
+          "docs": [
+            "SPL token program."
+          ],
+          "address": "TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA"
+        },
+        {
+          "name": "system_program",
+          "docs": [
+            "System program used for account creation."
+          ],
+          "address": "11111111111111111111111111111111"
+        }
+      ],
+      "args": []
+    },
+    {
+      "name": "withdraw",
+      "docs": [
+        "Burns `shares` and returns underlying assets at the current price",
+        "(rounded down). Permissionless."
+      ],
+      "discriminator": [
+        183,
+        18,
+        70,
+        156,
+        148,
+        109,
+        161,
+        34
+      ],
+      "accounts": [
+        {
+          "name": "owner",
+          "docs": [
+            "Share owner and burn authority over `owner_shares`."
+          ],
+          "writable": true,
+          "signer": true
+        },
+        {
+          "name": "vault",
+          "docs": [
+            "Vault whose share price the withdraw is measured against."
+          ]
+        },
+        {
+          "name": "vault_authority",
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  97,
+                  117,
+                  116,
+                  104,
+                  111,
+                  114,
+                  105,
+                  116,
+                  121
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "vault"
+              }
+            ]
+          }
+        },
+        {
+          "name": "underlying_mint",
+          "docs": [
+            "Underlying SPL mint, read for its decimals."
+          ],
+          "relations": [
+            "vault"
+          ]
+        },
+        {
+          "name": "share_mint",
+          "docs": [
+            "Share mint, whose supply is the total shares outstanding."
+          ],
+          "writable": true,
+          "relations": [
+            "vault"
+          ]
+        },
+        {
+          "name": "owner_shares",
+          "docs": [
+            "Owner's share token account (burn source)."
+          ],
+          "writable": true
+        },
+        {
+          "name": "vault_token_account",
+          "docs": [
+            "Vault token account whose balance is the total assets under management."
+          ],
+          "writable": true,
+          "relations": [
+            "vault"
+          ]
+        },
+        {
+          "name": "owner_underlying",
+          "docs": [
+            "Owner's underlying token account (destination for returned assets)."
+          ],
+          "writable": true
+        },
+        {
+          "name": "token_program",
+          "docs": [
+            "SPL token program."
+          ],
+          "address": "TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA"
+        }
+      ],
+      "args": [
+        {
+          "name": "shares",
+          "type": "u64"
+        }
+      ]
+    }
+  ],
+  "accounts": [
+    {
+      "name": "Vault",
+      "discriminator": [
+        211,
+        8,
+        232,
+        43,
+        2,
+        152,
+        117,
+        119
+      ]
+    }
+  ],
+  "events": [
+    {
+      "name": "Deposited",
+      "discriminator": [
+        111,
+        141,
+        26,
+        45,
+        161,
+        35,
+        100,
+        57
+      ]
+    },
+    {
+      "name": "Harvested",
+      "discriminator": [
+        249,
+        229,
+        78,
+        151,
+        106,
+        185,
+        149,
+        11
+      ]
+    },
+    {
+      "name": "VaultInitialized",
+      "discriminator": [
+        180,
+        43,
+        207,
+        2,
+        18,
+        71,
+        3,
+        75
+      ]
+    },
+    {
+      "name": "Withdrawn",
+      "discriminator": [
+        20,
+        89,
+        223,
+        198,
+        194,
+        124,
+        219,
+        13
+      ]
+    }
+  ],
+  "errors": [
+    {
+      "code": 6000,
+      "name": "ZeroAmount",
+      "msg": "amount must be greater than zero"
+    },
+    {
+      "code": 6001,
+      "name": "ZeroShares",
+      "msg": "deposit is too small to mint any shares"
+    },
+    {
+      "code": 6002,
+      "name": "ZeroAssets",
+      "msg": "redeem is too small to return any assets"
+    },
+    {
+      "code": 6003,
+      "name": "InsufficientShares",
+      "msg": "insufficient share balance for this withdraw"
+    },
+    {
+      "code": 6004,
+      "name": "MathOverflow",
+      "msg": "share-price arithmetic overflowed"
+    },
+    {
+      "code": 6005,
+      "name": "UnderlyingMintMismatch",
+      "msg": "underlying mint does not match the vault"
+    },
+    {
+      "code": 6006,
+      "name": "ShareMintMismatch",
+      "msg": "share mint does not match the vault"
+    },
+    {
+      "code": 6007,
+      "name": "VaultTokenAccountMismatch",
+      "msg": "vault token account does not match the vault"
+    },
+    {
+      "code": 6008,
+      "name": "OwnerMismatch",
+      "msg": "token account owner does not match signer"
+    },
+    {
+      "code": 6009,
+      "name": "MintMismatch",
+      "msg": "token account mint does not match"
+    }
+  ],
+  "types": [
+    {
+      "name": "Deposited",
+      "docs": [
+        "Emitted when underlying assets are deposited for freshly minted shares."
+      ],
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "version",
+            "docs": [
+              "Event schema version."
+            ],
+            "type": "u8"
+          },
+          {
+            "name": "vault",
+            "docs": [
+              "Vault state account."
+            ],
+            "type": "pubkey"
+          },
+          {
+            "name": "depositor",
+            "docs": [
+              "Depositor and transfer authority."
+            ],
+            "type": "pubkey"
+          },
+          {
+            "name": "assets",
+            "docs": [
+              "Underlying assets moved into the vault."
+            ],
+            "type": "u64"
+          },
+          {
+            "name": "shares",
+            "docs": [
+              "Shares minted to the depositor."
+            ],
+            "type": "u64"
+          }
+        ]
+      }
+    },
+    {
+      "name": "Harvested",
+      "docs": [
+        "Emitted when underlying assets are donated to the vault without minting shares.",
+        "",
+        "This is the demo's simulated yield: the donation raises the share price for",
+        "every existing holder. A real vault would gate this behind a keeper/strategy",
+        "role; here it is permissionless."
+      ],
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "version",
+            "docs": [
+              "Event schema version."
+            ],
+            "type": "u8"
+          },
+          {
+            "name": "vault",
+            "docs": [
+              "Vault state account."
+            ],
+            "type": "pubkey"
+          },
+          {
+            "name": "donor",
+            "docs": [
+              "Donor and transfer authority."
+            ],
+            "type": "pubkey"
+          },
+          {
+            "name": "assets",
+            "docs": [
+              "Underlying assets donated to the vault."
+            ],
+            "type": "u64"
+          }
+        ]
+      }
+    },
+    {
+      "name": "Vault",
+      "docs": [
+        "Public share-mint vault state.",
+        "",
+        "Deliberately minimal: totals are never mirrored here. Total assets are read",
+        "live from the vault token account balance and total shares from the share",
+        "mint supply, so a permissionless `harvest` (a plain donation transfer) is",
+        "accounted for by construction — the donation just increases the token",
+        "account balance, and every share-price read picks it up."
+      ],
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "underlying_mint",
+            "docs": [
+              "Underlying token mint the vault accepts."
+            ],
+            "type": "pubkey"
+          },
+          {
+            "name": "share_mint",
+            "docs": [
+              "Share mint issued 1:1 in decimals with the underlying."
+            ],
+            "type": "pubkey"
+          },
+          {
+            "name": "vault_token_account",
+            "docs": [
+              "Token account holding the vault's underlying assets, owned by the authority PDA."
+            ],
+            "type": "pubkey"
+          },
+          {
+            "name": "authority_bump",
+            "docs": [
+              "Bump for the vault authority PDA that owns assets and the share mint."
+            ],
+            "type": "u8"
+          }
+        ]
+      }
+    },
+    {
+      "name": "VaultInitialized",
+      "docs": [
+        "Emitted when a vault is created."
+      ],
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "version",
+            "docs": [
+              "Event schema version."
+            ],
+            "type": "u8"
+          },
+          {
+            "name": "vault",
+            "docs": [
+              "Vault state account."
+            ],
+            "type": "pubkey"
+          },
+          {
+            "name": "underlying_mint",
+            "docs": [
+              "Underlying token mint the vault accepts."
+            ],
+            "type": "pubkey"
+          },
+          {
+            "name": "share_mint",
+            "docs": [
+              "Share mint the vault issues."
+            ],
+            "type": "pubkey"
+          },
+          {
+            "name": "vault_token_account",
+            "docs": [
+              "Token account holding the vault's underlying assets."
+            ],
+            "type": "pubkey"
+          },
+          {
+            "name": "vault_authority",
+            "docs": [
+              "PDA authority owning the underlying token account and the share mint."
+            ],
+            "type": "pubkey"
+          }
+        ]
+      }
+    },
+    {
+      "name": "Withdrawn",
+      "docs": [
+        "Emitted when shares are burned for underlying assets."
+      ],
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "version",
+            "docs": [
+              "Event schema version."
+            ],
+            "type": "u8"
+          },
+          {
+            "name": "vault",
+            "docs": [
+              "Vault state account."
+            ],
+            "type": "pubkey"
+          },
+          {
+            "name": "owner",
+            "docs": [
+              "Share owner and burn authority."
+            ],
+            "type": "pubkey"
+          },
+          {
+            "name": "shares",
+            "docs": [
+              "Shares burned."
+            ],
+            "type": "u64"
+          },
+          {
+            "name": "assets",
+            "docs": [
+              "Underlying assets returned to the owner."
+            ],
+            "type": "u64"
+          }
+        ]
+      }
+    }
+  ]
+}

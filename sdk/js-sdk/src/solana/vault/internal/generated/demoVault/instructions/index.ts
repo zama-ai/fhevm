@@ -6,5 +6,4 @@
  * @see https://github.com/codama-idl/codama
  */
 
-export * from './batchDirection.js';
-export * from './batchStatus.js';
+export * from './initializeVault.js';

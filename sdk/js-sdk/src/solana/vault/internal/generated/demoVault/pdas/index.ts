@@ -6,5 +6,6 @@
  * @see https://github.com/codama-idl/codama
  */
 
-export * from './batchDirection.js';
-export * from './batchStatus.js';
+export * from './shareMint.js';
+export * from './vaultAuthority.js';
+export * from './vaultTokenAccount.js';

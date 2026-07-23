@@ -53,7 +53,6 @@ export async function buildDiscloseSecpInstruction(
     cleartext: args.cleartext,
     signatures: [...args.signatures],
     extraData: args.extraData,
-    leafIndex: args.leafIndex,
-    siblings: [...args.siblings],
+    proof: { leafIndex: args.leafIndex, siblings: [...args.siblings] },
   });
 }
