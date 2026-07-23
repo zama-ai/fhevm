@@ -23,6 +23,12 @@ export const registerUserDecryptCommands = (program: Command): void => {
     .command("user-decrypt")
     .description(
       `Decrypt existing private handles as the signing wallet, from any contract. Supported types: ${supportedValueTypes}`,
+    );
+
+  userDecryptCommand
+    .command("direct")
+    .description(
+      "Decrypt handles passed directly via --handle as the signing wallet",
     )
     .option(
       "--handle <handle>",

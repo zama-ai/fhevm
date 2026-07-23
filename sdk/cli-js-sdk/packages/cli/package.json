@@ -12,6 +12,7 @@
     "build": "tsdown",
     "cli": "node dist/index.mjs",
     "cli:dev": "node --import tsx index.ts",
+    "test": "node --import tsx --test test/*.test.ts",
     "typecheck": "tsc --noEmit"
   },
   "devDependencies": {

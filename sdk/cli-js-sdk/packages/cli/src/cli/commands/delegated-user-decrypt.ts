@@ -29,6 +29,12 @@ export const registerDelegatedUserDecryptCommands = (program: Command): void => 
     .command("delegated-user-decrypt")
     .description(
       `Decrypt existing handles as a delegate, from any contract. Supported types: ${supportedValueTypes}`,
+    );
+
+  delegatedCommand
+    .command("direct")
+    .description(
+      "Decrypt handles passed directly via --handle as a delegate",
     )
     .option(
       "--handle <handle>",

@@ -20,7 +20,11 @@ export const registerPublicDecryptCommands = (program: Command): void => {
     .command("public-decrypt")
     .description(
       `Public decrypt existing ciphertext handles from any contract. Supported types: ${supportedValueTypes}`,
-    )
+    );
+
+  publicDecryptCommand
+    .command("direct")
+    .description("Public decrypt handles passed directly via --handle")
     .option(
       "--handle <handle>",
       "encrypted handle to decrypt directly; repeat for multiple",

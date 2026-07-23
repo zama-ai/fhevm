@@ -28,7 +28,7 @@ export const registerRelayerResultCommands = (program: Command): void => {
     .requiredOption("--url <url>", "relayer GET result URL")
     .requiredOption(
       "--artifact <path>",
-      "sensitive validation artifact written by user-decrypt --artifact",
+      "sensitive validation artifact written by user-decrypt direct --artifact",
     )
     .action(async (options, command) => {
       const { verifyUserDecryptResult } = await import(

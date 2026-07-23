@@ -82,12 +82,13 @@ const root = command(
     command(
       "public-decrypt",
       `Public decrypt existing ciphertext handles from any contract. Supported types: ${FHE_VALUE_TYPES.join(", ")}`,
+      [],
       [
-        opt("--handle", "encrypted handle to decrypt directly; repeat for multiple"),
-        opt("--contract", "contract address paired with the handles for ACL verification; defaults to the FHETest contract"),
-        ...walletOptions,
-      ],
-      [
+        command("direct", "Public decrypt handles passed directly via --handle", [
+          opt("--handle", "encrypted handle to decrypt directly; repeat for multiple"),
+          opt("--contract", "contract address paired with the handles for ACL verification; defaults to the FHETest contract"),
+          ...walletOptions,
+        ]),
         command("stored", "Demo: public decrypt FHETest handles stored in an account's type slots", [
           valueTypeOption("stored value type to read; repeat for multiple"),
           opt("--account", "account used for FHETest.getHandleOf"),
@@ -110,14 +111,15 @@ const root = command(
     command(
       "user-decrypt",
       `Decrypt existing private handles as the signing wallet, from any contract. Supported types: ${FHE_VALUE_TYPES.join(", ")}`,
+      [],
       [
-        opt("--handle", "encrypted handle to decrypt directly; repeat for multiple"),
-        opt("--contract", "contract address paired with the handles for ACL verification; defaults to the FHETest contract"),
-        opt("--duration-days", "decryption permit duration in days"),
-        opt("--artifact", "write a sensitive user-decrypt validation artifact"),
-        ...walletOptions,
-      ],
-      [
+        command("direct", "Decrypt handles passed directly via --handle as the signing wallet", [
+          opt("--handle", "encrypted handle to decrypt directly; repeat for multiple"),
+          opt("--contract", "contract address paired with the handles for ACL verification; defaults to the FHETest contract"),
+          opt("--duration-days", "decryption permit duration in days"),
+          opt("--artifact", "write a sensitive user-decrypt validation artifact"),
+          ...walletOptions,
+        ]),
         command("stored", "Demo: user decrypt FHETest handles stored in the wallet's type slots", [
           valueTypeOption("stored value type to read; repeat for multiple"),
           contractOption,
@@ -138,19 +140,20 @@ const root = command(
     command(
       "delegated-user-decrypt",
       `Decrypt existing handles as a delegate, from any contract. Supported types: ${FHE_VALUE_TYPES.join(", ")}`,
+      [],
       [
-        opt("--handle", "encrypted handle to decrypt directly; repeat for multiple"),
-        opt("--contract", "contract address paired with the handles for ACL verification; defaults to the FHETest contract"),
-        opt("--delegator", "encrypted data owner"),
-        opt("--duration-days", "decryption permit duration in days"),
-        opt("--delegation-duration-days", "ACL delegation duration in days when creating delegation"),
-        opt("--artifact", "write a sensitive user-decrypt validation artifact"),
-        opt("--private-key", "delegate private key; falls back to PRIVATE_KEY"),
-        opt("--mnemonic", "delegate mnemonic; falls back to MNEMONIC"),
-        opt("--delegator-private-key", "delegator private key; falls back to DELEGATOR_PRIVATE_KEY"),
-        opt("--delegator-mnemonic", "delegator mnemonic; falls back to DELEGATOR_MNEMONIC"),
-      ],
-      [
+        command("direct", "Decrypt handles passed directly via --handle as a delegate", [
+          opt("--handle", "encrypted handle to decrypt directly; repeat for multiple"),
+          opt("--contract", "contract address paired with the handles for ACL verification; defaults to the FHETest contract"),
+          opt("--delegator", "encrypted data owner"),
+          opt("--duration-days", "decryption permit duration in days"),
+          opt("--delegation-duration-days", "ACL delegation duration in days when creating delegation"),
+          opt("--artifact", "write a sensitive user-decrypt validation artifact"),
+          opt("--private-key", "delegate private key; falls back to PRIVATE_KEY"),
+          opt("--mnemonic", "delegate mnemonic; falls back to MNEMONIC"),
+          opt("--delegator-private-key", "delegator private key; falls back to DELEGATOR_PRIVATE_KEY"),
+          opt("--delegator-mnemonic", "delegator mnemonic; falls back to DELEGATOR_MNEMONIC"),
+        ]),
         command("stored", "Demo: delegated user decrypt FHETest handles stored in the delegator's type slots", [
           valueTypeOption("stored value type to read; repeat for multiple"),
           contractOption,
@@ -185,7 +188,7 @@ const root = command(
       [
         command("verify-user-decrypt", "Decrypt and compare a user-decrypt GET result", [
           opt("--url", "relayer GET result URL"),
-          opt("--artifact", "sensitive validation artifact written by user-decrypt --artifact"),
+          opt("--artifact", "sensitive validation artifact written by user-decrypt direct --artifact"),
         ]),
       ],
     ),
