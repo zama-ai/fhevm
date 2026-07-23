@@ -60,6 +60,14 @@ pub use fhevm_engine_common::versioning::EVENT_STACK_VERSION_UPGRADED;
 const READINESS_CONFIRMATIONS: i64 = 100;
 const NO_READINESS_ATTEMPT: i64 = -2;
 
+struct GcsReadinessAttempt {
+    proposal_id: Vec<u8>,
+    proposal_block: i64,
+    chain_id: i64,
+    start_block: i64,
+    gw_start_block: i64,
+}
+
 /// PostgreSQL advisory-lock key used to serialize controller changes against
 /// writes. Cutover and rollback take the exclusive form; write transactions take
 /// the shared form through [`fhevm_engine_common::versioning::begin_write_guarded`].
@@ -179,12 +187,16 @@ fn spawn_gcs_dry_run_readiness(
     pool: &Pool<Postgres>,
     cancel: &CancellationToken,
     readiness: &Arc<AtomicI64>,
-    proposal_id: Vec<u8>,
-    proposal_block: i64,
-    chain_id: i64,
-    start_block: i64,
-    gw_start_block: i64,
+    attempt: GcsReadinessAttempt,
 ) {
+    let GcsReadinessAttempt {
+        proposal_id,
+        proposal_block,
+        chain_id,
+        start_block,
+        gw_start_block,
+    } = attempt;
+
     let mut active = readiness.load(Ordering::SeqCst);
     loop {
         if active >= proposal_block {
@@ -1133,11 +1145,13 @@ async fn reconcile(
                     pool,
                     cancel,
                     readiness,
-                    proposal_id,
-                    proposal_block,
-                    chain_id,
-                    start,
-                    gw_start,
+                    GcsReadinessAttempt {
+                        proposal_id,
+                        proposal_block,
+                        chain_id,
+                        start_block: start,
+                        gw_start_block: gw_start,
+                    },
                 );
             }
         }
