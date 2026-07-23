@@ -12,6 +12,7 @@ use std::time::Duration;
 use fhevm_engine_common::database::GCS_SCHEMA_QUOTED;
 use fhevm_engine_common::gcs_activation::EVENT_DRY_RUN_ROLLED_BACK;
 use fhevm_engine_common::utils::DatabaseURL;
+use fhevm_engine_common::versioning::{begin_write_guarded, GcsRollbackPolicy, WriteGuard};
 use serde::Deserialize;
 use sqlx::{postgres::PgListener, Pool, Postgres, Transaction};
 use thiserror::Error;
@@ -380,11 +381,11 @@ async fn prune_gcs_computations_before_start(
     chain_id: i64,
     start_block: i64,
 ) -> Result<u64, Error> {
-    let mut tx = pool.begin().await?;
-    sqlx::query("SELECT pg_advisory_xact_lock_shared($1)")
-        .bind(CUTOVER_LOCK_ID)
-        .execute(&mut *tx)
-        .await?;
+    let WriteGuard::Proceed(mut tx) =
+        begin_write_guarded(pool, true, GcsRollbackPolicy::Skip).await?
+    else {
+        return Ok(0);
+    };
 
     let sql = format!(
         "WITH current_attempt AS (
@@ -766,11 +767,13 @@ async fn prune_gcs_verify_proofs_before_start(
     proposal_block: i64,
     gw_start_block: i64,
 ) -> Result<u64, Error> {
-    let mut tx = pool.begin().await?;
-    sqlx::query("SELECT pg_advisory_xact_lock_shared($1)")
-        .bind(CUTOVER_LOCK_ID)
-        .execute(&mut *tx)
-        .await?;
+    // Skip policy: a rollback that paused the GCS row means there is no
+    // attempt left to prune for.
+    let WriteGuard::Proceed(mut tx) =
+        begin_write_guarded(pool, true, GcsRollbackPolicy::Skip).await?
+    else {
+        return Ok(0);
+    };
 
     let sql = format!(
         "WITH current_attempt AS (
