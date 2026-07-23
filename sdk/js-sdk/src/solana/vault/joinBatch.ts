@@ -34,9 +34,7 @@ import { getJoinInstructionAsync } from './internal/generated/confidentialBatche
 import { findComputeSignerPda } from '../internal/generated/confidentialToken/pdas/computeSigner.js';
 import { ZAMA_HOST_PROGRAM_ADDRESS } from '../internal/generated/confidentialToken/programAddress.js';
 import { CONFIDENTIAL_TOKEN_PROGRAM_ADDRESS } from '../internal/generated/confidentialToken/programAddress.js';
-import { findBatchAuthorityPda, tokenAccountAddress } from './internal/batcherPdas.js';
-
-const EVENT_AUTHORITY_SEED = new TextEncoder().encode('__event_authority');
+import { EVENT_AUTHORITY_SEED, findBatchAuthorityPda, tokenAccountAddress } from './internal/batcherPdas.js';
 
 /**
  * Joins a batch with a coprocessor-attested confidential amount of the batcher's join token. This

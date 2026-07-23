@@ -23,6 +23,7 @@ import {
 } from '../internal/generated/confidentialToken/programAddress.js';
 import { getSettleInstructionAsync } from './internal/generated/confidentialBatcher/instructions/settle.js';
 import {
+  EVENT_AUTHORITY_SEED,
   burnRedemptionAddress,
   burnedAmountLineage,
   findBatchAuthorityPda,
@@ -152,14 +153,13 @@ export async function settleBatch(parameters: SolanaVaultSettleParameters): Prom
       `lookupTableAddresses must not contain the settle redemption_record (${redemptionRecord}); it is underivable at open_batch and must remain a static account`,
     );
   }
-  const eventAuthoritySeed = new TextEncoder().encode('__event_authority');
   const [zamaEventAuthority] = await getProgramDerivedAddress({
     programAddress: ZAMA_HOST_PROGRAM_ADDRESS,
-    seeds: [eventAuthoritySeed],
+    seeds: [EVENT_AUTHORITY_SEED],
   });
   const [confidentialTokenEventAuthority] = await getProgramDerivedAddress({
     programAddress: CONFIDENTIAL_TOKEN_PROGRAM_ADDRESS,
-    seeds: [eventAuthoritySeed],
+    seeds: [EVENT_AUTHORITY_SEED],
   });
 
   const settleInstruction = await getSettleInstructionAsync({

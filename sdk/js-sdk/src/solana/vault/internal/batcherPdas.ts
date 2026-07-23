@@ -14,6 +14,12 @@ const BURN_REDEMPTION_SEED = encoder.encode('burn-redemption');
 const ENCRYPTED_VALUE_SEED = encoder.encode('encrypted-value');
 /** Fixed confidential-token label for the all-or-zero burned amount (`burned_amount_label`). */
 const BURNED_AMOUNT_LABEL = encoder.encode('burned_amount___________________');
+/**
+ * Anchor event-CPI authority seed (`__event_authority`). Both the zama-host and confidential-token
+ * programs derive their event authority from this seed, so the vault builders that emit through
+ * those programs (join, settle) share this one constant instead of re-encoding the literal.
+ */
+export const EVENT_AUTHORITY_SEED = encoder.encode('__event_authority');
 
 async function pda(programAddress: Address, seeds: Uint8Array[]): Promise<Address> {
   return (await getProgramDerivedAddress({ programAddress, seeds }))[0];
