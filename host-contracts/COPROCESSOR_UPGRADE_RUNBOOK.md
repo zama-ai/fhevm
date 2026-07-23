@@ -12,25 +12,38 @@ A hex string (calldata) intended for submission as the action of an Aragon DAO p
 - The wall-clock start time for the dry-run evaluation window has been finalized.
 - The start time is far enough in the future for the DAO to vote first (the `--buffer` value, typically `2h` on mainnet).
 
-## Step 1 — Run the workflow
+## Step 1 — Run the prepare task
 
-Navigate to **Actions** → **host-contracts-prepare-coprocessor-upgrade** → **Run workflow** and provide:
+Run `task:buildProposeCoprocessorUpgradeCalldata` (DAO path — computes block windows and prints the Aragon
+proposal action; never broadcasts). Set the per-chain RPC env vars for the environment first
+(`SEPOLIA_ETH_RPC_URL`, `POLYGON_AMOY_RPC_URL`, `GATEWAY_<ENV>_RPC_URL`, etc. — see
+[`tasks/utils/environments.ts`](tasks/utils/environments.ts)).
 
-| Input                | Value                                        |
+```sh
+cd host-contracts
+npx hardhat task:buildProposeCoprocessorUpgradeCalldata \
+  --environment testnet \
+  --start-time 2026-07-01T12:00:00Z \
+  --duration 30m \
+  --buffer 2h \
+  --proposal-id 1 \
+  --software-version v0.14.0
+```
+
+| Flag                 | Value                                        |
 | -------------------- | -------------------------------------------- |
-| **Environment**      | `devnet`, `testnet`, or `mainnet`.           |
-| **Start time**       | ISO 8601 UTC, e.g. `2026-07-01T12:00:00Z`.   |
-| **Duration**         | Window length, e.g. `30m`.                   |
-| **Buffer**           | DAO lead time, e.g. `2h`.                    |
-| **Proposal id**      | Any positive integer (operator-chosen).      |
-| **Software version** | The coprocessor release tag, e.g. `v0.14.0`. |
+| `--environment`      | `devnet`, `testnet`, or `mainnet`.           |
+| `--start-time`       | ISO 8601 UTC, e.g. `2026-07-01T12:00:00Z`.   |
+| `--duration`         | Window length, e.g. `30m`.                   |
+| `--buffer`           | DAO lead time, e.g. `2h`.                    |
+| `--proposal-id`      | Any positive integer (operator-chosen).      |
+| `--software-version` | The coprocessor release tag, e.g. `v0.14.0`. |
 
-Click **Run workflow** and wait for completion.
+## Step 2 — Copy the proposal action
 
-## Step 2 — Copy the calldata
-
-Open the logs of the **"Prepare upgrade proposal"** step. Scroll to the end. The last block under `## Calldata` is a hex string starting with `0xccbf8199…`.
-Copy the entire string.
+Scroll to the end of the output. The `## Aragon proposal action` block prints the `target` (the
+`ProtocolConfig` address) and the `calldata` hex. Copy both. Pass `--use-internal-proxy-address` to
+resolve the target from the `/addresses` directory if `PROTOCOL_CONFIG_CONTRACT_ADDRESS` is unset.
 
 ## Step 3 — Submit to the DAO
 
@@ -51,28 +64,13 @@ Once the DAO vote passes and the proposal executes, the on-chain `proposeCoproce
 | Error in the logs                                        | Resolution                                                                                   |
 | -------------------------------------------------------- | -------------------------------------------------------------------------------------------- |
 | `DAO buffer violated for: chain X — short by 22m`        | Re-run with `--start-time` pushed forward by at least that amount.                           |
-| `env var RPC_URL_X is not set`                           | Add the missing secret to repo settings. The workflow file header lists the secrets per env. |
-| `--environment must be one of: devnet, testnet, mainnet` | Select a valid environment from the dropdown.                                                |
+| `env var <CHAIN>_RPC_URL is not set`                     | Export the RPC env var for that chain (names in `tasks/utils/environments.ts`).              |
+| `--environment must be one of: devnet, testnet, mainnet` | Pass a valid `--environment`.                                                                |
 | `duration too short for chain block time`                | Use at least `1m` for `--duration`.                                                          |
 
-## Local rehearsal
-
-For dry runs or development, run the `task:prepareCoprocessorUpgrade` hardhat task directly:
-
-```sh
-cd host-contracts
-npx hardhat task:prepareCoprocessorUpgrade \
-  --environment testnet \
-  --start-time "$(date -u -v+2H '+%Y-%m-%dT%H:%M:%SZ')" \
-  --duration 30m \
-  --buffer 1h \
-  --proposal-id 1 \
-  --software-version v0.14.0
-```
-
-Output and calldata are identical to the workflow run. The task exits non-zero (and prints the
-calldata for inspection) if any chain's `startBlock` is closer to its tip than `--buffer`.
-`npx hardhat help task:prepareCoprocessorUpgrade` prints the full flag reference.
+The task exits non-zero (and prints the calldata for inspection) if any chain's `startBlock` is
+closer to its tip than `--buffer`. `npx hardhat help task:buildProposeCoprocessorUpgradeCalldata` prints the full
+flag reference.
 
 ## Direct (no-DAO) path — devnet / test-suite
 

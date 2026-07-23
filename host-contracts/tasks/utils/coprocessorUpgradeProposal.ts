@@ -252,7 +252,7 @@ function bufferShortageHint(leadSeconds: number, bufferSeconds: number): string 
   return `lead ${formatDuration(lead)}, need ${formatDuration(bufferSeconds)}, short by ${formatDuration(shortBy)}`;
 }
 
-export function printCoprocessorUpgradeProposal(proposal: CoprocessorUpgradeProposal): void {
+export function printCoprocessorUpgradeProposal(proposal: CoprocessorUpgradeProposal, target?: string): void {
   const { inputs } = proposal;
   console.log('# proposeCoprocessorUpgrade — computed block windows');
   console.log('');
@@ -329,6 +329,9 @@ export function printCoprocessorUpgradeProposal(proposal: CoprocessorUpgradeProp
     console.log(`    ${s.label.padEnd(15)}: ${isoUtc(s.ts)} (${tag})`);
   }
   console.log('');
-  console.log('## Calldata');
-  console.log(proposal.calldata);
+  console.log('## Aragon proposal action');
+  console.log(
+    `  target   : ${target ?? '<unresolved — set PROTOCOL_CONFIG_CONTRACT_ADDRESS or pass --use-internal-proxy-address>'}`,
+  );
+  console.log(`  calldata : ${proposal.calldata}`);
 }
