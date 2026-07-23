@@ -10,11 +10,9 @@ import type {
   OptionalNativeClient,
   ProtocolVersionResolution,
   ResolvedFhevmOptions,
-  WithProtocolVersion,
-  WithTfheVersion,
-  WithTkmsVersion,
 } from '../types/coreFhevmClient.js';
 import type { FhevmRuntime, WithModule, WithModuleMap } from '../types/coreFhevmRuntime.js';
+import type { FhevmClientFrozenContext } from '../types/fhevmClientFrozenContext-p.js';
 import type { TfheVersion } from '../../wasm/tfhe/TfheApi.js';
 import type { TkmsVersion } from '../../wasm/tkms/KmsLibApi.js';
 import { InvalidTypeError } from '../base/errors/InvalidTypeError.js';
@@ -24,30 +22,22 @@ import { createTrustedClient } from '../modules/ethereum/createTrustedClient.js'
 import { asFhevmRuntimeWith, assertIsFhevmRuntime, assertIsFhevmRuntimeWith } from './CoreFhevmRuntime-p.js';
 import { globalFheEncryptionKeyCache } from '../key/FheEncryptionKeyCache-p.js';
 import { cloneModuleVersions } from '../runtimeConfig-p.js';
+import { cloneFhevmClientFrozenContext } from '../frozenContext/fhevmClientFrozenContext-p.js';
 
 ////////////////////////////////////////////////////////////////////////////////
 
 const PRIVATE_TOKEN = Symbol('CoreFhevmHostClient.token');
-const GET_PROTOCOL_VERSION = Symbol('CoreFhevmHostClient.getProtocolVersion');
-const GET_TFHE_VERSION = Symbol('CoreFhevmHostClient.getTfheVersion');
-const GET_TKMS_VERSION = Symbol('CoreFhevmHostClient.getTkmsVersion');
-const SET_PROTOCOL_VERSION = Symbol('CoreFhevmHostClient.setProtocolVersion');
-const SET_TFHE_VERSION = Symbol('CoreFhevmHostClient.setTfheVersion');
-const SET_TKMS_VERSION = Symbol('CoreFhevmHostClient.setTkmsVersion');
+const GET_FROZEN_CONTEXT = Symbol('CoreFhevmHostClient.getFrozenContext');
+const SET_FROZEN_CONTEXT = Symbol('CoreFhevmHostClient.setFrozenContext');
+const GET_FROZEN_CONTEXT_PROMISE = Symbol('CoreFhevmHostClient.getFrozenContextPromise');
+const SET_FROZEN_CONTEXT_PROMISE = Symbol('CoreFhevmHostClient.setFrozenContextPromise');
 
-const UNRESOLVED_PROTOCOL_VERSION_MESSAGE =
-  'Protocol version has not been resolved. Await client.ready before reading protocolVersion.';
-const UNRESOLVED_TFHE_VERSION_MESSAGE =
-  'TFHE version has not been resolved. Await client.ready before reading tfheVersion.';
-const UNRESOLVED_TKMS_VERSION_MESSAGE =
-  'TKMS version has not been resolved. Await client.ready before reading tkmsVersion.';
+const UNRESOLVED_FHEVM_CONTEXT_MESSAGE = 'Fhevm context has not been resolved. Await client.ready before.';
 
-type GetProtocolVersionFn = () => ProtocolVersionResolution | undefined;
-type GetTfheVersionFn = () => TfheVersion | undefined;
-type GetTkmsVersionFn = () => TkmsVersion | undefined;
-type SetProtocolVersionFn = (protocolVersion: ProtocolVersionResolution) => void;
-type SetTfheVersionFn = (tfheVersion: TfheVersion) => void;
-type SetTkmsVersionFn = (tkmsVersion: TkmsVersion) => void;
+type GetFrozenContextFn = () => FhevmClientFrozenContext | undefined;
+type SetFrozenContextFn = (frozenContext: FhevmClientFrozenContext) => void;
+type GetFrozenContextPromiseFn = () => Promise<FhevmClientFrozenContext> | undefined;
+type SetFrozenContextPromiseFn = (frozenContextPromise: Promise<FhevmClientFrozenContext> | undefined) => void;
 
 ////////////////////////////////////////////////////////////////////////////////
 // CoreFhevmImpl
@@ -60,9 +50,8 @@ class CoreFhevmImpl<
 > implements Fhevm<chain, FhevmRuntime, client> {
   // Private fields (truly inaccessible from outside)
   readonly #uid: string;
-  #protocolVersion: ProtocolVersionResolution | undefined;
-  #tfheVersion: TfheVersion | undefined;
-  #tkmsVersion: TkmsVersion | undefined;
+  #frozenContext: FhevmClientFrozenContext | undefined;
+  #frozenContextPromise: Promise<FhevmClientFrozenContext> | undefined;
   readonly #runtime: runtime;
   readonly #trustedClient: TrustedClient<client> | undefined;
   readonly #chain: chain | undefined;
@@ -104,9 +93,8 @@ class CoreFhevmImpl<
 
     this.#runtime = parameters.runtime;
     this.#uid = uid();
-    this.#protocolVersion = undefined;
-    this.#tfheVersion = undefined;
-    this.#tkmsVersion = undefined;
+    this.#frozenContext = undefined;
+    this.#frozenContextPromise = undefined;
     this.#trustedClient =
       parameters.client !== undefined ? createTrustedClient(parameters.client, ownerToken) : undefined;
     this.#chain = parameters.chain;
@@ -126,30 +114,30 @@ class CoreFhevmImpl<
       },
       protocolVersion: {
         get: () => {
-          if (this.#protocolVersion === undefined) {
-            throw new Error(UNRESOLVED_PROTOCOL_VERSION_MESSAGE);
+          if (this.#frozenContext === undefined) {
+            throw new Error(UNRESOLVED_FHEVM_CONTEXT_MESSAGE);
           }
-          return this.#protocolVersion;
+          return this.#frozenContext.protocolVersion;
         },
         configurable: false,
         enumerable: true,
       },
       tfheVersion: {
         get: () => {
-          if (this.#tfheVersion === undefined) {
-            throw new Error(UNRESOLVED_TFHE_VERSION_MESSAGE);
+          if (this.#frozenContext === undefined) {
+            throw new Error(UNRESOLVED_FHEVM_CONTEXT_MESSAGE);
           }
-          return this.#tfheVersion;
+          return this.#frozenContext.tfheVersion;
         },
         configurable: false,
         enumerable: true,
       },
       tkmsVersion: {
         get: () => {
-          if (this.#tkmsVersion === undefined) {
-            throw new Error(UNRESOLVED_TKMS_VERSION_MESSAGE);
+          if (this.#frozenContext === undefined) {
+            throw new Error(UNRESOLVED_FHEVM_CONTEXT_MESSAGE);
           }
-          return this.#tkmsVersion;
+          return this.#frozenContext.tkmsVersion;
         },
         configurable: false,
         enumerable: true,
@@ -195,59 +183,92 @@ class CoreFhevmImpl<
         enumerable: false,
         writable: false,
       },
-      [GET_PROTOCOL_VERSION]: {
-        value: (): ProtocolVersionResolution | undefined => this.#protocolVersion,
+      // [GET_PROTOCOL_VERSION]: {
+      //   value: (): ProtocolVersionResolution | undefined => this.#protocolVersion,
+      //   configurable: false,
+      //   enumerable: false,
+      //   writable: false,
+      // },
+      // [GET_TFHE_VERSION]: {
+      //   value: (): TfheVersion | undefined => this.#tfheVersion,
+      //   configurable: false,
+      //   enumerable: false,
+      //   writable: false,
+      // },
+      // [GET_TKMS_VERSION]: {
+      //   value: (): TkmsVersion | undefined => this.#tkmsVersion,
+      //   configurable: false,
+      //   enumerable: false,
+      //   writable: false,
+      // },
+      // [SET_PROTOCOL_VERSION]: {
+      //   value: (protocolVersion: ProtocolVersionResolution): void => {
+      //     if (
+      //       this.#protocolVersion !== undefined &&
+      //       !_sameProtocolVersionResolution(this.#protocolVersion, protocolVersion)
+      //     ) {
+      //       throw new Error(
+      //         `Protocol version already resolved as ${_formatProtocolVersionResolution(
+      //           this.#protocolVersion,
+      //         )}; cannot set ${_formatProtocolVersionResolution(protocolVersion)}.`,
+      //       );
+      //     }
+      //     this.#protocolVersion = protocolVersion;
+      //   },
+      //   configurable: false,
+      //   enumerable: false,
+      //   writable: false,
+      // },
+      // [SET_TFHE_VERSION]: {
+      //   value: (tfheVersion: TfheVersion): void => {
+      //     if (this.#tfheVersion !== undefined && this.#tfheVersion !== tfheVersion) {
+      //       throw new Error(`TFHE version already resolved as ${this.#tfheVersion}; cannot set ${tfheVersion}.`);
+      //     }
+      //     this.#tfheVersion = tfheVersion;
+      //   },
+      //   configurable: false,
+      //   enumerable: false,
+      //   writable: false,
+      // },
+      // [SET_TKMS_VERSION]: {
+      //   value: (tkmsVersion: TkmsVersion): void => {
+      //     if (this.#tkmsVersion !== undefined && this.#tkmsVersion !== tkmsVersion) {
+      //       throw new Error(`TKMS version already resolved as ${this.#tkmsVersion}; cannot set ${tkmsVersion}.`);
+      //     }
+      //     this.#tkmsVersion = tkmsVersion;
+      //   },
+      //   configurable: false,
+      //   enumerable: false,
+      //   writable: false,
+      // },
+      [GET_FROZEN_CONTEXT]: {
+        value: (): FhevmClientFrozenContext | undefined => this.#frozenContext,
         configurable: false,
         enumerable: false,
         writable: false,
       },
-      [GET_TFHE_VERSION]: {
-        value: (): TfheVersion | undefined => this.#tfheVersion,
-        configurable: false,
-        enumerable: false,
-        writable: false,
-      },
-      [GET_TKMS_VERSION]: {
-        value: (): TkmsVersion | undefined => this.#tkmsVersion,
-        configurable: false,
-        enumerable: false,
-        writable: false,
-      },
-      [SET_PROTOCOL_VERSION]: {
-        value: (protocolVersion: ProtocolVersionResolution): void => {
-          if (
-            this.#protocolVersion !== undefined &&
-            !_sameProtocolVersionResolution(this.#protocolVersion, protocolVersion)
-          ) {
-            throw new Error(
-              `Protocol version already resolved as ${_formatProtocolVersionResolution(
-                this.#protocolVersion,
-              )}; cannot set ${_formatProtocolVersionResolution(protocolVersion)}.`,
-            );
-          }
-          this.#protocolVersion = protocolVersion;
+      [SET_FROZEN_CONTEXT]: {
+        // Plain overwrite (no conflict guard): the frozen context is resolved once
+        // at init and later replaced wholesale by an atomic refresh.
+        value: (frozenContext: FhevmClientFrozenContext): void => {
+          this.#frozenContext = frozenContext;
         },
         configurable: false,
         enumerable: false,
         writable: false,
       },
-      [SET_TFHE_VERSION]: {
-        value: (tfheVersion: TfheVersion): void => {
-          if (this.#tfheVersion !== undefined && this.#tfheVersion !== tfheVersion) {
-            throw new Error(`TFHE version already resolved as ${this.#tfheVersion}; cannot set ${tfheVersion}.`);
-          }
-          this.#tfheVersion = tfheVersion;
-        },
+      [GET_FROZEN_CONTEXT_PROMISE]: {
+        value: (): Promise<FhevmClientFrozenContext> | undefined => this.#frozenContextPromise,
         configurable: false,
         enumerable: false,
         writable: false,
       },
-      [SET_TKMS_VERSION]: {
-        value: (tkmsVersion: TkmsVersion): void => {
-          if (this.#tkmsVersion !== undefined && this.#tkmsVersion !== tkmsVersion) {
-            throw new Error(`TKMS version already resolved as ${this.#tkmsVersion}; cannot set ${tkmsVersion}.`);
-          }
-          this.#tkmsVersion = tkmsVersion;
+      [SET_FROZEN_CONTEXT_PROMISE]: {
+        // Transient: holds the single in-flight resolution so concurrent init fns
+        // dedupe onto one promise; cleared once it settles (the resolved context
+        // is kept as data in #frozenContext).
+        value: (frozenContextPromise: Promise<FhevmClientFrozenContext> | undefined): void => {
+          this.#frozenContextPromise = frozenContextPromise;
         },
         configurable: false,
         enumerable: false,
@@ -377,64 +398,58 @@ export function asFhevmClientWith<
 
 ////////////////////////////////////////////////////////////////////////////////
 
-export function asFhevmWithProtocolVersion<
-  chain extends FhevmChain | undefined = FhevmChain | undefined,
-  runtime extends FhevmRuntime = FhevmRuntime,
-  client extends OptionalNativeClient = NativeClient,
->(
-  fhevm: FhevmBase<chain, runtime, client>,
-): Fhevm<chain & FhevmChain, runtime, client & NativeClient> & WithProtocolVersion {
-  assertIsFhevmBaseClient(fhevm);
-  const f = fhevm as Fhevm<chain & FhevmChain, runtime, client & NativeClient> & WithProtocolVersion;
-  if (getResolvedProtocolVersion(f) === undefined) {
-    throw new Error(UNRESOLVED_PROTOCOL_VERSION_MESSAGE);
-  }
-  return f;
-}
+// export function asFhevmWithProtocolVersion<
+//   chain extends FhevmChain | undefined = FhevmChain | undefined,
+//   runtime extends FhevmRuntime = FhevmRuntime,
+//   client extends OptionalNativeClient = NativeClient,
+// >(
+//   fhevm: FhevmBase<chain, runtime, client>,
+// ): Fhevm<chain & FhevmChain, runtime, client & NativeClient> & WithProtocolVersion {
+//   assertIsFhevmBaseClient(fhevm);
+//   const f = fhevm as Fhevm<chain & FhevmChain, runtime, client & NativeClient> & WithProtocolVersion;
+//   if (getResolvedProtocolVersion(f) === undefined) {
+//     throw new Error(UNRESOLVED_PROTOCOL_VERSION_MESSAGE);
+//   }
+//   return f;
+// }
 
-export function asFhevmWithTfheVersion<
-  chain extends FhevmChain | undefined = FhevmChain | undefined,
-  runtime extends FhevmRuntime = FhevmRuntime,
-  client extends OptionalNativeClient = NativeClient,
->(
-  fhevm: FhevmBase<chain, runtime, client>,
-): Fhevm<chain & FhevmChain, runtime & WithModule<'encrypt'>, client & NativeClient> & WithTfheVersion {
-  const f = asFhevmClientWith(fhevm, 'encrypt') as Fhevm<
-    chain & FhevmChain,
-    runtime & WithModule<'encrypt'>,
-    client & NativeClient
-  > &
-    WithTfheVersion;
-  if (getResolvedProtocolVersion(f) === undefined) {
-    throw new Error(UNRESOLVED_PROTOCOL_VERSION_MESSAGE);
-  }
-  if (getResolvedTfheVersion(f) === undefined) {
-    throw new Error(UNRESOLVED_TFHE_VERSION_MESSAGE);
-  }
-  return f;
-}
+// export function asFhevmWithTfheVersion<
+//   chain extends FhevmChain | undefined = FhevmChain | undefined,
+//   runtime extends FhevmRuntime = FhevmRuntime,
+//   client extends OptionalNativeClient = NativeClient,
+// >(
+//   fhevm: FhevmBase<chain, runtime, client>,
+// ): Fhevm<chain & FhevmChain, runtime & WithModule<'encrypt'>, client & NativeClient> & WithTfheVersion {
+//   const f = asFhevmClientWith(fhevm, 'encrypt') as Fhevm<
+//     chain & FhevmChain,
+//     runtime & WithModule<'encrypt'>,
+//     client & NativeClient
+//   > &
+//     WithTfheVersion;
+//   if (getFrozenContext(f) === undefined) {
+//     throw new Error(UNRESOLVED_FHEVM_CONTEXT_MESSAGE);
+//   }
+//   return f;
+// }
 
-export function asFhevmWithTkmsVersion<
-  chain extends FhevmChain | undefined = FhevmChain | undefined,
-  runtime extends FhevmRuntime = FhevmRuntime,
-  client extends OptionalNativeClient = NativeClient,
->(
-  fhevm: FhevmBase<chain, runtime, client>,
-): Fhevm<chain & FhevmChain, runtime & WithModule<'decrypt'>, client & NativeClient> & WithTkmsVersion {
-  const f = asFhevmClientWith(fhevm, 'decrypt') as Fhevm<
-    chain & FhevmChain,
-    runtime & WithModule<'decrypt'>,
-    client & NativeClient
-  > &
-    WithTkmsVersion;
-  if (getResolvedProtocolVersion(f) === undefined) {
-    throw new Error(UNRESOLVED_PROTOCOL_VERSION_MESSAGE);
-  }
-  if (getResolvedTkmsVersion(f) === undefined) {
-    throw new Error(UNRESOLVED_TKMS_VERSION_MESSAGE);
-  }
-  return f;
-}
+// export function asFhevmWithTkmsVersion<
+//   chain extends FhevmChain | undefined = FhevmChain | undefined,
+//   runtime extends FhevmRuntime = FhevmRuntime,
+//   client extends OptionalNativeClient = NativeClient,
+// >(
+//   fhevm: FhevmBase<chain, runtime, client>,
+// ): Fhevm<chain & FhevmChain, runtime & WithModule<'decrypt'>, client & NativeClient> & WithTkmsVersion {
+//   const f = asFhevmClientWith(fhevm, 'decrypt') as Fhevm<
+//     chain & FhevmChain,
+//     runtime & WithModule<'decrypt'>,
+//     client & NativeClient
+//   > &
+//     WithTkmsVersion;
+//   if (getFrozenContext(f) === undefined) {
+//     throw new Error(UNRESOLVED_FHEVM_CONTEXT_MESSAGE);
+//   }
+//   return f;
+// }
 
 ////////////////////////////////////////////////////////////////////////////////
 
@@ -587,48 +602,78 @@ function resolveOptions(options: FhevmOptions | undefined): ResolvedFhevmOptions
   });
 }
 
+/**
+ * Standard prologue that **every public API action must run first**, before it
+ * touches the runtime or reads any resolved version.
+ *
+ * The three steps make an action safe to call at any time, in any order, on a
+ * shared client:
+ *
+ * 1. **Lazy, idempotent init** — `await fhevm.ready`. Init is lazy and shared:
+ *    the first public call triggers it and every later `ready` awaits the same
+ *    in-flight promise, so this is safe regardless of prior `init()`/action calls.
+ * 2. **Resolve the frozen context** — the on-chain-resolved version snapshot
+ *    (protocol / PubKey-CRS / TFHE / TKMS / host-contract versions) is resolved
+ *    exactly once during init (via `ensureFrozenContext`) and stored on the
+ *    client; this reads it back. Being client-cached, it survives repeated calls
+ *    across different actions.
+ * 3. **Return a deep clone** — the caller gets an independent
+ *    {@link cloneFhevmClientFrozenContext | deep copy}, not the live instance, so
+ *    the action runs against a stable version view for its whole async duration,
+ *    immune to any future in-flight replacement of the client's stored context.
+ *
+ * @param fhevm - Any SDK client; validated/narrowed via {@link asCoreFhevm}.
+ * @returns A deep-cloned {@link FhevmClientFrozenContext} — never `undefined`.
+ *   Pass it to the action's internal implementation as its `fhevmContext`.
+ * @throws If `fhevm` is not a valid SDK client (from {@link asCoreFhevm}).
+ * @throws If no frozen context is stored after `ready` — an internal invariant
+ *   violation: a client built via `createFhevm*Client()` always resolves and
+ *   stores its context during init, so this means the client was constructed
+ *   outside the SDK or init did not complete.
+ */
+export async function initPublicAction(fhevm: unknown): Promise<FhevmClientFrozenContext> {
+  const f = asCoreFhevm(fhevm);
+
+  // 1. Lazy, idempotent init — safe regardless of prior calls / call order.
+  await f.ready;
+
+  // 2. Read the frozen context resolved and stored during init.
+  const fhevmClientContext = getFrozenContext(f);
+  if (fhevmClientContext === undefined) {
+    throw new Error(
+      'initPublicAction: no resolved FhevmClientFrozenContext after "ready". A client created via ' +
+        'createFhevm*Client() always resolves and stores its context during init, so this is an ' +
+        'internal invariant violation (client not built through the SDK, or init did not complete).',
+    );
+  }
+
+  // 3. Return a deep, independent snapshot the action can safely rely on.
+  return cloneFhevmClientFrozenContext(fhevmClientContext);
+}
+
 ////////////////////////////////////////////////////////////////////////////////
 
-function _sameProtocolVersionResolution(a: ProtocolVersionResolution, b: ProtocolVersionResolution): boolean {
-  return a.version === b.version && a.comparator === b.comparator;
+export function setFrozenContext(fhevm: FhevmBase, frozenContext: FhevmClientFrozenContext): void {
+  const f = asCoreFhevm(fhevm) as CoreFhevm & { readonly [SET_FROZEN_CONTEXT]: SetFrozenContextFn };
+  f[SET_FROZEN_CONTEXT](frozenContext);
 }
 
-function _formatProtocolVersionResolution(protocolVersion: ProtocolVersionResolution): string {
-  return `${protocolVersion.comparator}:${protocolVersion.version}`;
+export function getFrozenContext(fhevm: unknown): FhevmClientFrozenContext | undefined {
+  const f = asCoreFhevm(fhevm) as CoreFhevm & { readonly [GET_FROZEN_CONTEXT]: GetFrozenContextFn };
+  return f[GET_FROZEN_CONTEXT]();
 }
 
-////////////////////////////////////////////////////////////////////////////////
-
-export function setResolvedProtocolVersion(fhevm: FhevmBase, protocolVersion: ProtocolVersionResolution): void {
-  const f = asCoreFhevm(fhevm) as CoreFhevm & { readonly [SET_PROTOCOL_VERSION]: SetProtocolVersionFn };
-  f[SET_PROTOCOL_VERSION](protocolVersion);
+export function setFrozenContextPromise(
+  fhevm: FhevmBase,
+  frozenContextPromise: Promise<FhevmClientFrozenContext> | undefined,
+): void {
+  const f = asCoreFhevm(fhevm) as CoreFhevm & { readonly [SET_FROZEN_CONTEXT_PROMISE]: SetFrozenContextPromiseFn };
+  f[SET_FROZEN_CONTEXT_PROMISE](frozenContextPromise);
 }
 
-export function setResolvedTfheVersion(fhevm: FhevmBase, tfheVersion: TfheVersion): void {
-  const f = asCoreFhevm(fhevm) as CoreFhevm & { readonly [SET_TFHE_VERSION]: SetTfheVersionFn };
-  f[SET_TFHE_VERSION](tfheVersion);
-}
-
-export function setResolvedTkmsVersion(fhevm: FhevmBase, tkmsVersion: TkmsVersion): void {
-  const f = asCoreFhevm(fhevm) as CoreFhevm & { readonly [SET_TKMS_VERSION]: SetTkmsVersionFn };
-  f[SET_TKMS_VERSION](tkmsVersion);
-}
-
-////////////////////////////////////////////////////////////////////////////////
-
-export function getResolvedProtocolVersion(fhevm: unknown): ProtocolVersionResolution | undefined {
-  const f = asCoreFhevm(fhevm) as CoreFhevm & { readonly [GET_PROTOCOL_VERSION]: GetProtocolVersionFn };
-  return f[GET_PROTOCOL_VERSION]();
-}
-
-export function getResolvedTfheVersion(fhevm: unknown): TfheVersion | undefined {
-  const f = asCoreFhevm(fhevm) as CoreFhevm & { readonly [GET_TFHE_VERSION]: GetTfheVersionFn };
-  return f[GET_TFHE_VERSION]();
-}
-
-export function getResolvedTkmsVersion(fhevm: unknown): TkmsVersion | undefined {
-  const f = asCoreFhevm(fhevm) as CoreFhevm & { readonly [GET_TKMS_VERSION]: GetTkmsVersionFn };
-  return f[GET_TKMS_VERSION]();
+export function getFrozenContextPromise(fhevm: unknown): Promise<FhevmClientFrozenContext> | undefined {
+  const f = asCoreFhevm(fhevm) as CoreFhevm & { readonly [GET_FROZEN_CONTEXT_PROMISE]: GetFrozenContextPromiseFn };
+  return f[GET_FROZEN_CONTEXT_PROMISE]();
 }
 
 ////////////////////////////////////////////////////////////////////////////////

@@ -68,6 +68,26 @@ export function isCleartext(chainName: FheTestChainName) {
   return chainName === 'localcleartext' || chainName.startsWith('localcleartext_') || chainName.endsWith('_cleartext');
 }
 
+/**
+ * Protocol era (the minor version of the protocol: 11, 12, 13, 14) a test
+ * chain runs on, derived from its name. Used to gate migration tests that only
+ * make sense on chains at or above a given protocol version.
+ *
+ * `localstack` (latest) tracks the newest protocol (v0.14 era today).
+ */
+export function protocolEraOf(chainName: FheTestChainName): 11 | 12 | 13 | 14 {
+  if (chainName === 'localstack_v11') {
+    return 11;
+  }
+  if (chainName === 'localstack_v12' || chainName === 'localcleartext_v12') {
+    return 12;
+  }
+  if (chainName === 'localstack' || chainName === 'localstack_v14') {
+    return 14;
+  }
+  return 13;
+}
+
 // ---------------------------------------------------------------------------
 // Protocol version per chain
 // ---------------------------------------------------------------------------
@@ -85,7 +105,7 @@ const PROTOCOL_VERSION_BY_CHAIN: Readonly<Record<FheTestChainName, ProtocolVersi
   localstack_v12: '0.12.0',
   localstack_v13: '0.13.0',
   localstack_v14: '0.14.0',
-  devnet: '0.13.0',
+  devnet: '0.14.0',
   polygon_devnet: '0.13.0',
   ingen_trex_cleartext: '0.12.0',
   hoodi_cleartext: '0.11.0',
@@ -146,14 +166,19 @@ export function getFheEncryptionKeyTfheVersion(chainName: FheTestChainName): str
 // createLogger
 // ---------------------------------------------------------------------------
 
-export function createLogger(log: (msg: string) => void): Logger {
+export function createLogger(log: (msg: string) => void, chainName?: string): Logger {
+  // Prefix every line with the chain under test so interleaved multi-chain /
+  // multi-suite output stays attributable. Defaults to the CHAIN env var
+  // (e.g. `[testnet]`); pass `config.chainName` for exact per-config tagging.
+  const chain = chainName ?? process.env.CHAIN ?? 'sepolia';
+  const prefix = `[${chain}]`;
   return {
-    debug: (message: string) => log(`[debug] ${message}`),
-    warn: (message: string) => log(`[warn] ${message}`),
+    debug: (message: string) => log(`${prefix}[debug] ${message}`),
+    warn: (message: string) => log(`${prefix}[warn] ${message}`),
     error: (message: string, cause: unknown) => {
-      log(`[error] ${message}`);
+      log(`${prefix}[error] ${message}`);
       if (cause !== undefined) {
-        log(`[error] ${String(cause)}`);
+        log(`${prefix}[error] ${String(cause)}`);
       }
     },
   };
