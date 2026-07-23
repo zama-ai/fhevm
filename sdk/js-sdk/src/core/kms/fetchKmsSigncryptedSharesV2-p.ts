@@ -7,16 +7,16 @@ import type { FhevmChain } from '../types/fhevmChain.js';
 import type { RelayerUserDecryptOptions } from '../types/relayer.js';
 import type { SignedDecryptionPermit, SignedDecryptionPermitV2 } from '../types/signedDecryptionPermit.js';
 import type { Handle } from '../types/encryptedTypes-p.js';
+import type { FhevmClientFrozenContext } from '../types/fhevmClientFrozenContext-p.js';
 import { assertHandlesBelongToSameChainId } from '../handle/FhevmHandle.js';
 import { createKmsSigncryptedShares } from './KmsSigncryptedShares-p.js';
-import { readCurrentKmsSignersContext } from '../host-contracts/readKmsSignersContext-p.js';
+import { readKmsSignersContextFromPermitExtraData } from '../host-contracts/readKmsSignersContext-p.js';
 import { assertIsSignedDecryptionPermit } from './SignedDecryptionPermit-p.js';
 import { assertKmsDecryptionBitLimit } from './utils.js';
 import { checkPersistAllowed } from '../host-contracts/checkPersistAllowed.js';
 import { checkDelegation } from '../host-contracts/checkDelegation.js';
-import { assertExtraDataMatchesKmsSingersContext } from '../host-contracts/KmsSignersContext-p.js';
 import { createKmsEip712Domain } from './createKmsEip712Domain.js';
-import { resolveFhevmTkmsVersion } from '../runtime/resolveFhevmVersions-p.js';
+import { EXTRA_DATA_V2, createKmsExtraDataFromBytesHex } from './kmsExtraData-p.js';
 
 ////////////////////////////////////////////////////////////////////////////////
 
@@ -36,6 +36,7 @@ type Parameters = {
     readonly ownerAddress?: ChecksummedAddress | undefined;
   }>;
   readonly signedPermit: SignedDecryptionPermit;
+  readonly fhevmContext: FhevmClientFrozenContext;
   readonly options?: RelayerUserDecryptOptions | undefined;
 };
 
@@ -46,10 +47,10 @@ type ReturnType = KmsSigncryptedShares;
 ////////////////////////////////////////////////////////////////////////////////
 
 export async function fetchKmsSigncryptedSharesV2(context: Context, parameters: Parameters): Promise<ReturnType> {
-  const { options, pairs } = parameters;
+  const { options, pairs, fhevmContext } = parameters;
   const signedPermit = parameters.signedPermit as SignedDecryptionPermitV2;
 
-  const tkmsVersion = await resolveFhevmTkmsVersion(context);
+  const tkmsVersion = fhevmContext.tkmsVersion;
 
   const relayerOptions = {
     auth: context.runtime.config.auth,
@@ -57,6 +58,22 @@ export async function fetchKmsSigncryptedSharesV2(context: Context, parameters: 
   };
 
   assertIsSignedDecryptionPermit(signedPermit, {});
+
+  /*
+    it should not be possible to produce a unified eip712 
+    (protocol v14+) with an extraData coming from an 
+    old protocol v11/12/13.
+  */
+  const signedPermitVersion: number = signedPermit.version;
+  if (signedPermitVersion !== 2) {
+    throw Error(`fetchKmsSigncryptedSharesV2 requires a v2 permit, got v${signedPermitVersion}`);
+  }
+  const signedPermitExtraData = createKmsExtraDataFromBytesHex(signedPermit.eip712.message.extraData);
+  if (signedPermitExtraData.lt(EXTRA_DATA_V2)) {
+    throw new Error(
+      `fetchKmsSigncryptedSharesV2 error: Invalid extraData version (< 2) extraData=${signedPermitExtraData.bytesHex}`,
+    );
+  }
 
   const { signerAddress, signature } = signedPermit;
   const userAddress = signedPermit.eip712.message.userAddress;
@@ -123,34 +140,27 @@ export async function fetchKmsSigncryptedSharesV2(context: Context, parameters: 
   // Not required because a signedPermit is guaranteed to be verified.
 
   // 7. Fetch `KmsSignersContext` on-chain (cached)
-  // Reject the permit early if it was signed against a different KMS context.
-  //
-  // TODO: The current check is a strict byte-level comparison. A permit signed
-  // with the correct `kmsContextId` but a different `extraData` encoding format
-  // (e.g. a version change in the serialization scheme) will be rejected even
-  // though the context ID matches. Consider comparing the decoded `kmsContextId`
-  // instead of the raw `extraData` bytes.
-  const requestedKmsSignersContext: KmsSignersContext = await readCurrentKmsSignersContext(context, {
+  // It is critical to fetch the exact kms signers associated with the extra data
+  //  - extraData.version = 0 -> the context is TTL cached
+  //  - extraData.version != 0 -> the context is Permanently cached
+  const requestedKmsSignersContext: KmsSignersContext = await readKmsSignersContextFromPermitExtraData(context, {
     kmsVerifierAddress: context.chain.fhevm.contracts.kmsVerifier.address as ChecksummedAddress,
     protocolConfigAddress: context.chain.fhevm.contracts.protocolConfig?.address as ChecksummedAddress | undefined,
+    extraData: signedPermitExtraData,
+    fhevmContext,
   });
-
-  assertExtraDataMatchesKmsSingersContext(
-    {
-      extraData: signedPermit.eip712.message.extraData,
-      kmsSignersContext: requestedKmsSignersContext,
-    },
-    { subject: 'Invalid permit' },
-  );
 
   // 8. Fetch `KmsSigncryptedShares` from the relayer (unified V2 route)
   const shares: readonly KmsSigncryptedShare[] = await context.runtime.relayer.fetchUserDecrypt(context, {
+    version: 2,
     payload: {
       handleContractPairs: resolvedPairs,
+      kmsDecryptEip712Signer: signerAddress,
       kmsDecryptEip712Message: signedPermit.eip712.message,
       kmsDecryptEip712Signature: signature,
     },
     options: relayerOptions,
+    fhevmContext,
   });
 
   // 9. Build and verify the sealed validated `KmsSigncryptedShares` object
@@ -160,17 +170,38 @@ export async function fetchKmsSigncryptedSharesV2(context: Context, parameters: 
       chainId: context.chain.fhevm.gateway.id,
       verifyingContractAddressDecryption: context.chain.fhevm.gateway.contracts.decryption.address,
     }),
+    eip712ExtraData: signedPermit.eip712.message.extraData,
     eip712Signature: signature,
     eip712SignerAddress: signerAddress,
     handles,
     tkmsVersion,
   };
 
-  // 10. The returned KmsSigncryptedShares is guaranteed to be fully verified:
-  // uniform extraData across shares, valid extraData format, and consistency
-  // with the KmsSignersContext (see KmsSigncryptedSharesImpl invariants).
-  return await createKmsSigncryptedShares(context, {
-    metadata: sharesMetadata,
-    shares,
-  });
+  /*
+
+    ----------------------------------------------------------------------------
+    KMS response-signature verification.
+
+    Each share's signature is an EIP-712 signature over the
+    `UserDecryptResponseVerification` struct (see `verifyKmsSigncryptedShare` and
+    gateway `Decryption.sol`). This check is already performed inside the tkms WASM
+    during reconstruction (verify=true); the call below is an equivalent JS-only
+    pass, kept for testing / debugging. To fully check, loop over every share.
+    ----------------------------------------------------------------------------
+
+    for (const share of shares) {
+      await verifyKmsSigncryptedShare(
+        context, 
+        {
+          metadata: sharesMetadata,
+          share,
+          transportPublicKey: signedPermit.transportPublicKey,
+        }
+      );
+    }
+
+  */
+
+  // 10. The returned KmsSigncryptedShares as sent by the relayer
+  return createKmsSigncryptedShares({ metadata: sharesMetadata, shares });
 }

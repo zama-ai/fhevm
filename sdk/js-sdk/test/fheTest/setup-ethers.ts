@@ -1,4 +1,9 @@
 import type { FhevmChain } from '@fhevm/sdk/chains';
+import type {
+  createFhevmBaseClient as createEthersFhevmBaseClient,
+  createFhevmDecryptClient as createEthersFhevmDecryptClient,
+  createFhevmEncryptClient as createEthersFhevmEncryptClient,
+} from '@fhevm/sdk/ethers';
 import type { FhevmDecryptOptions, FhevmEncryptOptions, FhevmOptions } from '../../src/core/types/coreFhevmClient.js';
 import type { FhevmModuleVersions } from '../../src/core/types/moduleVersions.js';
 import type { FheTestBaseEnv, FheTestChainName } from './setupCommon.js';
@@ -61,19 +66,19 @@ export type CreateEthersBaseClientFn = (
   params: CreateEthersClientParameters & {
     readonly options?: FhevmOptions | undefined;
   },
-) => any;
+) => ReturnType<typeof createEthersFhevmBaseClient>;
 
 export type CreateEthersEncryptClientFn = (
   params: CreateEthersClientParameters & {
     readonly options?: FhevmEncryptOptions | undefined;
   },
-) => any;
+) => ReturnType<typeof createEthersFhevmEncryptClient>;
 
 export type CreateEthersDecryptClientFn = (
   params: CreateEthersClientParameters & {
     readonly options?: FhevmDecryptOptions | undefined;
   },
-) => any;
+) => ReturnType<typeof createEthersFhevmDecryptClient>;
 
 // ---------------------------------------------------------------------------
 // Build config

@@ -1,22 +1,21 @@
 import type { KmsSignersContext } from '../types/kmsSignersContext.js';
-import type { BytesHex, ChecksummedAddress, Uint256BigInt } from '../types/primitives.js';
+import type { ChecksummedAddress, Uint256BigInt } from '../types/primitives.js';
 import type { FhevmRuntime } from '../types/coreFhevmRuntime.js';
 import type { KmsExtraData } from '../types/kms-p.js';
-import { assertIsKmsSignersContext, createKmsSignersContext } from './KmsSignersContext-p.js';
+import type { FhevmClientFrozenContext } from '../types/fhevmClientFrozenContext-p.js';
+import { createKmsSignersContext } from './KmsSignersContext-p.js';
 import { getCurrentKmsContextId } from './getCurrentKmsContextId-p.js';
 import { getCurrentKmsContextAndEpoch } from './getCurrentKmsContextAndEpoch-p.js';
-import { getHostContractVersion, isVersionStrictlyBefore } from './HostContractVersion-p.js';
+import { isVersionStrictlyBefore } from './HostContractVersion-p.js';
 import {
   assertIsKmsExtraData,
-  createKmsExtraData,
   createKmsExtraDataV1,
   createKmsExtraDataV2,
-  equalsKmsExtraData,
-  fromKmsExtraDataBytesHex,
   isKmsExtraDataCompatibleWithKmsVerifier,
 } from '../kms/kmsExtraData-p.js';
 import { getKmsContextSignersAndThresholdFromExtraData } from './getKmsContextSignersAndThresholdFromExtraData-p.js';
 import { getKmsSignersAndThreshold } from './getKmsContextSignersAndThreshold-p.js';
+import { SDK_PROTOCOL_API_MAJOR_VERSION, SDK_PROTOCOL_API_MINOR_VERSION } from '../runtime/sdkProtocolApiVersion.js';
 
 ////////////////////////////////////////////////////////////////////////////////
 
@@ -29,6 +28,7 @@ type Context = {
 type Parameters = {
   readonly kmsVerifierAddress: ChecksummedAddress;
   readonly protocolConfigAddress: ChecksummedAddress | undefined;
+  readonly fhevmContext: FhevmClientFrozenContext;
   readonly forceRefresh?: boolean | undefined;
 };
 
@@ -36,75 +36,208 @@ type ParametersWithExtraData = Parameters & {
   readonly extraData: KmsExtraData;
 };
 
-type ParametersWithOptionalExtraData = Parameters & {
-  readonly extraData?: KmsExtraData | undefined;
-};
-
 type ReturnType = KmsSignersContext;
 
 ////////////////////////////////////////////////////////////////////////////////
+//
+// Invariant — a KmsSignersContext carries the key it was indexed by.
+//
+// CRITICAL RULE — a v13-capped SDK must NEVER produce extraData v2.
+// The extraData version the SDK emits is gated by the RELAYER, not by the host
+// contracts: a v13 relayer rejects an unknown v2 `extraData` in its request
+// validation (HTTP 400 `validation_failed`), so the request never reaches the KMS.
+// This matters most during a v13 -> v14 rollout: the host contracts can already
+// support v2 while the relayer is still v13, so "the chain accepts v2" is NOT
+// sufficient — the SDK stays at v1 until the relayer is known to accept v2.
+// Hence the per-version cap enforced below.
+//
+////////////////////////////////////////////////////////////////////////////////
 
+/**
+ * Resolves the **current** on-chain KMS context into a {@link KmsSignersContext},
+ * indexed on the **best `extraData` this SDK can produce** for that context.
+ *
+ * This is the read used when *creating* a permit: the returned context's `extraData`
+ * is what the permit embeds and the user signs. So "best" is bounded by **two**
+ * limits, not one:
+ *   - the on-chain KMSVerifier version (which encodings the contract supports), and
+ *   - this SDK's protocol-API cap ({@link SDK_PROTOCOL_API_MINOR_VERSION}) — the most
+ *     recent `extraData` version the SDK knows how to build and sign.
+ *
+ * The returned encoding is therefore `min(chain capability, SDK capability)`:
+ *   - v11 (KMSVerifier < 0.2.0)                         → v0 (no context concept)
+ *   - >= 0.2.0 but a v13-capped SDK, or KMSVerifier < 0.4.0,
+ *     or no `protocolConfigAddress`                     → v1 (`contextId` only)
+ *   - v14 chain (KMSVerifier >= 0.4.0, `protocolConfigAddress`
+ *     set) **and** a v14-capable SDK                    → v2 (`contextId` + `epochId`)
+ *
+ * NOTE — the meaning is subtly different from a plain "read the current context at
+ * full chain precision": a v13-capped SDK deliberately returns a **v1** context on a
+ * **v14** chain (dropping the epoch), because it must produce a v1 permit. It also
+ * differs from {@link readKmsSignersContextFromPermitExtraData}, which resolves an
+ * *already-chosen* permit `extraData` to the most precise context available — here we
+ * instead choose the most precise encoding we are *allowed to produce*.
+ */
 export async function readCurrentKmsSignersContext(context: Context, parameters: Parameters): Promise<ReturnType> {
-  return _readKmsSignersContext(context, parameters);
+  // This version comes from the frozen context — a snapshot, NOT necessarily the
+  // live on-chain version, which may have been bumped by an upgrade since the
+  // context was resolved. Because on-chain versions only ever increase, treat it
+  // as a lower bound: the deployed KMSVerifier is *at least* this version. That
+  // minimum is enough to select the matching protocol-API read path (view
+  // function) below.
+  const kmsVerifierVersion = parameters.fhevmContext.hostContractVersion('KMSVerifier');
+
+  // KMSVerifier.version < 0.2.0, use only Protocol API v11
+  if (isVersionStrictlyBefore(kmsVerifierVersion, { major: 0, minor: 2 })) {
+    // -> KmsSignersContext.extraData.version == 0
+    return _readCurrentKmsSignersContext_ProtocolApi_11(context, parameters);
+  }
+
+  // If SDK is restricted to protocol API v13 then the best extraData
+  // we can get it must be v1
+  // KMSVerifier.version >= 0.2.0, it supports at least API Protocol 13
+  if (SDK_PROTOCOL_API_MAJOR_VERSION === 0 && SDK_PROTOCOL_API_MINOR_VERSION <= 13) {
+    // -> KmsSignersContext.extraData.version == 1
+    return _readCurrentKmsSignersContext_ProtocolApi_12_13(context, parameters);
+  }
+
+  // API Protocol 14+
+
+  // KMSVerifier.version < 0.4.0, use only Protocol API v13
+  if (
+    isVersionStrictlyBefore(kmsVerifierVersion, { major: 0, minor: 4 }) ||
+    parameters.protocolConfigAddress === undefined
+  ) {
+    // -> KmsSignersContext.extraData.version == 1
+    return _readCurrentKmsSignersContext_ProtocolApi_12_13(context, parameters);
+  }
+
+  // -> KmsSignersContext.extraData.version == 2
+  return _readCurrentKmsSignersContext_ProtocolApi_14_or_higher(context, parameters);
 }
 
 ////////////////////////////////////////////////////////////////////////////////
 
 /**
- * Reads the {@link KmsSignersContext} for a caller-provided `extraData`.
+ * Reads the {@link KmsSignersContext} for a caller-provided `extraData` — the exact
+ * `extraData` a user signed into a permit — resolving it against the on-chain
+ * KMSVerifier **as given**. It never re-encodes, upgrades, or substitutes the
+ * `extraData`: the read is deliberately faithful to the signed permit, so the signer
+ * set it returns is the one that permit committed to.
  *
- * Accepts an `extraData` of any version (v0, v1, v2, …); the underlying resolver
- * selects the right protocol path and verifies the version is compatible with
- * the on-chain KMSVerifier, throwing if it is not.
+ * 1. Reject an `extraData` whose version the on-chain KMSVerifier cannot accept
+ *    ({@link isKmsExtraDataCompatibleWithKmsVerifier}), throwing.
+ * 2. KMSVerifier `< 0.2.0` has no context concept: return the single global signer
+ *    set (`contextId`/`epochId` = 0) via the v11 read path.
+ * 3. KMSVerifier `>= 0.2.0`: resolve through the shared, version-agnostic reader
+ *    ({@link getKmsContextSignersAndThresholdFromExtraData}), which keys the signer
+ *    set on the `extraData`'s own `contextId`. A v0 sentinel is accepted here and
+ *    passed through verbatim — the on-chain view understands it as "current context" —
+ *    so the result is indexed on the `extraData` as provided (`contextId` 0 for v0),
+ *    not on a re-derived concrete context.
+ *
+ * The result is self-describing (see the invariant above): its `kmsContextId` (plus
+ * `kmsEpochId` on v2) identify the `extraData` it was indexed by — the value the caller
+ * passed in, never a "more precise" one chosen by this function.
  */
-export async function readKmsSignersContextFromExtraData(
+export async function readKmsSignersContextFromPermitExtraData(
   context: Context,
   parameters: ParametersWithExtraData,
 ): Promise<ReturnType> {
   assertIsKmsExtraData(parameters.extraData, {});
-  return _readKmsSignersContext(context, parameters);
+
+  // This version comes from the frozen context — a snapshot, NOT necessarily the
+  // live on-chain version, which may have been bumped by an upgrade since the
+  // context was resolved. Because on-chain versions only ever increase, treat it
+  // as a lower bound: the deployed KMSVerifier is *at least* this version. That
+  // minimum is enough to select the matching protocol-API read path (view
+  // function) below.
+  const kmsVerifierVersion = parameters.fhevmContext.hostContractVersion('KMSVerifier');
+
+  if (!isKmsExtraDataCompatibleWithKmsVerifier(parameters.extraData, kmsVerifierVersion)) {
+    throw new Error(
+      `KmsExtraData ${parameters.extraData.bytesHex} is not compatible with ${kmsVerifierVersion.contractName} ${kmsVerifierVersion.version}`,
+    );
+  }
+
+  // KMSVerifier.version < 0.2.0, use only Protocol API v11
+  if (isVersionStrictlyBefore(kmsVerifierVersion, { major: 0, minor: 2 })) {
+    return _readKmsSignersContext_ProtocolApi_11(context, parameters);
+  }
+
+  // KMSVerifier.version >= 0.2.0, use only Protocol API v11
+  // use the general purpose `getKmsContextSignersAndThresholdFromExtraData`
+  return _readKmsSignersContextFromExtraData_ProtocolApi_12_13_14(context, parameters);
 }
 
 ////////////////////////////////////////////////////////////////////////////////
 
-async function _readKmsSignersContext(
+// eslint-disable-next-line @typescript-eslint/naming-convention
+async function _readCurrentKmsSignersContext_ProtocolApi_11(
   context: Context,
-  parameters: ParametersWithOptionalExtraData,
+  parameters: Parameters,
 ): Promise<ReturnType> {
-  // TTL-cached
-  const kmsVerifierVersion = await getHostContractVersion(context, {
-    address: parameters.kmsVerifierAddress,
+  return _readKmsSignersContext_ProtocolApi_11(context, parameters);
+}
+
+////////////////////////////////////////////////////////////////////////////////
+
+// eslint-disable-next-line @typescript-eslint/naming-convention
+async function _readCurrentKmsSignersContext_ProtocolApi_12_13(
+  context: Context,
+  parameters: Parameters,
+): Promise<ReturnType> {
+  // TTL-Cached (available in KMSVerifier.sol >= v0.2.0)
+  const kmsContextId = await getCurrentKmsContextId(context, parameters);
+  const extraDataV1 = createKmsExtraDataV1({
+    kmsContextId,
   });
 
-  if (parameters.extraData !== undefined) {
-    if (!isKmsExtraDataCompatibleWithKmsVerifier(parameters.extraData, kmsVerifierVersion)) {
-      throw new Error(
-        `KmsExtraData ${parameters.extraData.toBytesHex()} is not compatible with ${kmsVerifierVersion.contractName} ${kmsVerifierVersion.version}`,
-      );
-    }
-  }
-
-  if (isVersionStrictlyBefore(kmsVerifierVersion, { major: 0, minor: 2 })) {
-    // extraData.version = 0 only
-    return _readKmsSignersContext_Protocol_11(context, parameters);
-  }
-
-  if (isVersionStrictlyBefore(kmsVerifierVersion, { major: 0, minor: 4 })) {
-    // extraData.version = 0 or 1 only
-    return _readKmsSignersContext_Protocol_12_13(context, parameters);
-  }
-
-  // any extraData.version
-  return _readKmsSignersContext_Protocol_14_or_higher(context, parameters);
+  return _readKmsSignersContextFromExtraData_ProtocolApi_12_13_14(context, { ...parameters, extraData: extraDataV1 });
 }
 
 ////////////////////////////////////////////////////////////////////////////////
 
-// Protocol v0.11.0 (KMSVerifier < v0.2.0) had no context ID support, so the only valid
-// context ID is 0. Any other value is invalid and should throw.
 // eslint-disable-next-line @typescript-eslint/naming-convention
-async function _readKmsSignersContext_Protocol_11(context: Context, parameters: Parameters): Promise<ReturnType> {
-  // TTL-Cached
+async function _readCurrentKmsSignersContext_ProtocolApi_14_or_higher(
+  context: Context,
+  parameters: Parameters,
+): Promise<ReturnType> {
+  // Defense-in-depth for the CRITICAL RULE above: this is the only function that
+  // MINTS an extraData v2. It must never run under a v13-capped SDK. The caller
+  // (readCurrentKmsSignersContext) already gates on SDK_PROTOCOL_API_MINOR_VERSION,
+  // so reaching here with a capped SDK means that gate was bypassed/refactored away
+  // — fail loudly rather than silently emit a v2 the relayer would reject.
+  if (SDK_PROTOCOL_API_MAJOR_VERSION === 0 && SDK_PROTOCOL_API_MINOR_VERSION <= 13) {
+    throw new Error(
+      `Refusing to produce extraData v2: this SDK is capped at protocol API v0.${SDK_PROTOCOL_API_MINOR_VERSION} and must only emit extraData v1 (a v13 relayer rejects v2).`,
+    );
+  }
+
+  if (parameters.protocolConfigAddress === undefined) {
+    throw new Error('protocolConfigAddress is required on protocol v0.14.0+');
+  }
+  const protocolConfigAddress = parameters.protocolConfigAddress;
+
+  // TTL-Cached (available in KMSVerifier.sol >= v0.4.0)
+  const { contextId, epochId } = await getCurrentKmsContextAndEpoch(context, {
+    ...parameters,
+    protocolConfigAddress,
+  });
+
+  const extraDataV2 = createKmsExtraDataV2({
+    kmsContextId: contextId,
+    kmsEpochId: epochId,
+  });
+
+  return _readKmsSignersContextFromExtraData_ProtocolApi_12_13_14(context, { ...parameters, extraData: extraDataV2 });
+}
+
+////////////////////////////////////////////////////////////////////////////////
+
+// eslint-disable-next-line @typescript-eslint/naming-convention
+async function _readKmsSignersContext_ProtocolApi_11(context: Context, parameters: Parameters): Promise<ReturnType> {
+  // TTL-Cached (available in KMSVerifier.sol >= v0.1.0)
   const c = await getKmsSignersAndThreshold(context, parameters);
 
   const data = createKmsSignersContext(new WeakRef(context.runtime), {
@@ -113,6 +246,7 @@ async function _readKmsSignersContext_Protocol_11(context: Context, parameters: 
     kmsEpochId: 0n as Uint256BigInt,
     kmsSigners: c.signers,
     kmsSignerThreshold: c.threshold,
+    kmsMpcThreshold: undefined,
   });
 
   return data;
@@ -120,233 +254,25 @@ async function _readKmsSignersContext_Protocol_11(context: Context, parameters: 
 
 ////////////////////////////////////////////////////////////////////////////////
 
-// Protocol v0.12.0 / v0.13.0 (KMSVerifier = v0.2.0 / v0.3.0)
 // eslint-disable-next-line @typescript-eslint/naming-convention
-async function _readKmsSignersContext_Protocol_12_13(
+async function _readKmsSignersContextFromExtraData_ProtocolApi_12_13_14(
   context: Context,
-  parameters: ParametersWithOptionalExtraData,
+  parameters: ParametersWithExtraData,
 ): Promise<ReturnType> {
-  // On protocol v0.12/v0.13, the KMS signers and threshold are looked up by
-  // `extraData` (which encodes the KMS context id). The caller may pass one in;
-  // if not, we derive it from the chain's current KMS context id using the v1
-  // extraData encoding (version byte + context id, no epoch).
-  let extraData: KmsExtraData;
-
-  if (parameters.extraData === undefined) {
-    // TTL-Cached
-    const kmsContextId = await getCurrentKmsContextId(context, parameters);
-    extraData = createKmsExtraDataV1({
-      kmsContextId,
-    });
-  } else {
-    // v0 or v1
-    extraData = parameters.extraData;
-  }
-
-  // Permanent-Cached
-  // On protocol v0.12/v0.13, getKmsContextSignersAndThresholdFromExtraData
-  // supports extraData v0 and v1 only.
+  // TTL-Cached (available in KMSVerifier.sol >= v0.2.0)
   const { signers: kmsSigners, threshold: kmsSignerThreshold } = await getKmsContextSignersAndThresholdFromExtraData(
     context,
-    {
-      ...parameters,
-      extraData,
-    },
+    parameters,
   );
 
   return createKmsSignersContext(new WeakRef(context.runtime), {
     ...parameters,
-    kmsContextId: extraData.kmsContextId,
-    kmsEpochId: 0n as Uint256BigInt,
+    kmsContextId: parameters.extraData.kmsContextId,
+    kmsEpochId: parameters.extraData.kmsEpochId,
     kmsSigners,
     kmsSignerThreshold,
+    kmsMpcThreshold: undefined,
   });
 }
 
 ////////////////////////////////////////////////////////////////////////////////
-
-// Protocol v0.14.0+ (KMSVerifier = v0.4.0+)
-// eslint-disable-next-line @typescript-eslint/naming-convention
-async function _readKmsSignersContext_Protocol_14_or_higher(
-  context: Context,
-  parameters: ParametersWithOptionalExtraData,
-): Promise<ReturnType> {
-  if (parameters.protocolConfigAddress === undefined) {
-    throw new Error('protocolConfigAddress is required on protocol v0.14.0+');
-  }
-  const protocolConfigAddress = parameters.protocolConfigAddress;
-
-  let extraData: KmsExtraData;
-
-  if (parameters.extraData === undefined) {
-    // TTL-Cached
-    const { contextId, epochId } = await getCurrentKmsContextAndEpoch(context, { protocolConfigAddress });
-    extraData = createKmsExtraDataV2({
-      kmsContextId: contextId,
-      kmsEpochId: epochId,
-    });
-  } else {
-    // any version: v0, v1, v2, ... vn
-    extraData = parameters.extraData;
-  }
-
-  // Permanent-Cached
-  // May revert if extraData.version is incompatible (see `getKmsContextSignersAndThresholdFromExtraData` comments)
-  const { signers: kmsSigners, threshold: kmsSignerThreshold } = await getKmsContextSignersAndThresholdFromExtraData(
-    context,
-    {
-      ...parameters,
-      extraData,
-    },
-  );
-
-  return createKmsSignersContext(new WeakRef(context.runtime), {
-    ...parameters,
-    kmsContextId: extraData.kmsContextId,
-    kmsEpochId: extraData.kmsEpochId,
-    kmsSigners,
-    kmsSignerThreshold,
-  });
-}
-
-////////////////////////////////////////////////////////////////////////////////
-
-////////////////////////////////////////////////////////////////////////////////
-
-export type ReconcileMode = 'exact' | 'strict' | 'loose';
-
-/**
- * Reconciles the KMS signers context used by the SDK with the one the relayer
- * actually used when forwarding the decryption request to KMS nodes.
- *
- * The returned {@link KmsSignersContext} provides the signers and threshold
- * needed to verify the KMS signcrypted shares and reconstruct the decrypted values.
- *
- * ### Assumptions
- *
- * - The relayer **cannot be trusted**.
- * - On-chain data is the **source of truth**.
- *
- * ### Nomenclature
- *
- * - `requestedKmsExtraData` — `createKmsExtraData({ kmsContextId, kmsEpochId })`
- *   derived from `requestedKmsSignersContext`.
- * - `relayerKmsExtraData` — `fromKmsExtraDataBytesHex(relayerKmsExtraDataBytesHex)`
- *   (its `.kmsContextId` / `.kmsEpochId`).
- *
- * ### Host-Contract Compatibility
- *
- * `extraData` is versioned independently from the host-contract package. The
- * currently supported combinations are:
- *
- * - host-contracts v11 support `extraData` v0.
- * - host-contracts v12 and v13 support `extraData` v0 and v1.
- * - host-contracts v14 support `extraData` v0, v1, and v2.
- *
- * ### Resolution (checked in order, then by `mode`)
- *
- * 1. `relayerKmsExtraData` equals `requestedKmsExtraData` → return
- *    `requestedKmsSignersContext`. This is the **only** path that trusts cached
- *    data, and it applies in every mode.
- * 2. Otherwise, in `'exact'` mode → **throw**. This mode never parses, refreshes,
- *    or reconciles differing `extraData`.
- * 3. `extraData` serialization version mismatch → **throw** (`'strict'`/`'loose'`).
- *    The SDK and relayer must agree on the encoding format, even for the same context ID.
- * 4. Versions match but context/epoch differ → force a **full on-chain refetch**
- *    (cached data is never reused, since a mismatch means on-chain state may have
- *    diverged: rotation, destruction, signer/epoch changes). The accept criterion
- *    then depends on `mode`:
- *    - `'strict'` → accept **only** if the relayer's context equals the *current*
- *      on-chain context (both `kmsContextId` and `kmsEpochId`); otherwise throw.
- *    - `'loose'` → accept **any** on-chain-valid context (non-destroyed, in range),
- *      current or not; throw only if destroyed / out of range.
- *
- * ### Modes
- *
- * - `'exact'` — Accept only step 1 (`extraData` equality). Rejects any
- *   relayer/context drift without parsing or on-chain recovery.
- * - `'strict'` — Accept step 1, or a relayer context whose `kmsContextId` **and**
- *   `kmsEpochId` equal the current on-chain values. Rejects valid-but-not-current
- *   contexts. The epoch check is required because RFC 005 introduces same-context
- *   epoch rotations (new shares, same party set) — a stale epoch must be rejected
- *   even when the context ID matches.
- * - `'loose'` — Accept any on-chain valid context (non-destroyed, in range),
- *   regardless of whether it is current. Covers context rotations in either direction.
- */
-export async function reconcileKmsSignersContext(
-  context: Context,
-  parameters: {
-    readonly kmsVerifierAddress: ChecksummedAddress;
-    readonly protocolConfigAddress: ChecksummedAddress | undefined;
-    readonly requestedKmsSignersContext: KmsSignersContext;
-    readonly relayerKmsExtraDataBytesHex: BytesHex;
-    readonly mode: ReconcileMode;
-  },
-): Promise<KmsSignersContext> {
-  const { kmsVerifierAddress, protocolConfigAddress, requestedKmsSignersContext, relayerKmsExtraDataBytesHex, mode } =
-    parameters;
-
-  const relayerKmsExtraData = fromKmsExtraDataBytesHex(relayerKmsExtraDataBytesHex);
-
-  assertIsKmsSignersContext(requestedKmsSignersContext, {});
-
-  const requestedKmsExtraData = createKmsExtraData({
-    kmsContextId: requestedKmsSignersContext.id,
-    kmsEpochId: requestedKmsSignersContext.epochId,
-  });
-
-  // 1. Exact match — the relayer used the same context as the SDK.
-  if (equalsKmsExtraData(relayerKmsExtraData, requestedKmsExtraData)) {
-    return requestedKmsSignersContext;
-  }
-
-  if (mode === 'exact') {
-    throw new Error(
-      `Exact reconciliation failed: relayer extraData ${relayerKmsExtraData.toBytesHex()} ` +
-        `does not match requested extraData ${requestedKmsExtraData.toBytesHex()}.`,
-    );
-  }
-
-  // Reject if extraData serialization version differs.
-  if (relayerKmsExtraData.version !== 0 && relayerKmsExtraData.version !== requestedKmsExtraData.version) {
-    throw new Error(
-      `ExtraData serialization version mismatch: SDK uses v${requestedKmsExtraData.version}, ` +
-        `relayer returned v${relayerKmsExtraData.version}. ` +
-        `The SDK and relayer must agree on the extraData encoding format.`,
-    );
-  }
-
-  // Versions match but context IDs differ — verify the relayer's context on-chain.
-  const relayerKmsContextId = relayerKmsExtraData.kmsContextId;
-  const relayerKmsEpochId = relayerKmsExtraData.kmsEpochId;
-
-  // 2. In strict mode, only accept if the relayer used the current on-chain context.
-  if (mode === 'strict') {
-    // `readKmsSignersContext` with `forceRefresh` fetches the current context.
-    // If `relayerKmsContextId` matches current, we're good.
-    const currentContext = await readCurrentKmsSignersContext(context, {
-      kmsVerifierAddress,
-      protocolConfigAddress,
-      forceRefresh: true,
-    });
-
-    if (currentContext.id !== relayerKmsContextId || currentContext.epochId !== relayerKmsEpochId) {
-      throw new Error(
-        `Strict reconciliation failed: relayer used context ${relayerKmsContextId}, ` +
-          `but the current on-chain context is ${currentContext.id}.`,
-      );
-    }
-
-    return currentContext;
-  }
-
-  // 3. Loose mode — accept any valid (non-destroyed, in-range) context.
-  //    `readKmsSignersContext` with `forceRefresh` + specific `kmsContextId`/`kmsEpochId` will
-  //    throw if the context is destroyed or out of range.
-  return readKmsSignersContextFromExtraData(context, {
-    kmsVerifierAddress,
-    protocolConfigAddress,
-    forceRefresh: true,
-    extraData: relayerKmsExtraData,
-  });
-}

@@ -14,6 +14,7 @@ import type {
 
 export interface KmsSigncryptedSharesMetadata {
   readonly kmsSignersContext: KmsSignersContext;
+  readonly eip712ExtraData: BytesHex;
   readonly eip712Domain: KmsEip712Domain;
   readonly eip712Signature: Bytes65Hex;
   readonly eip712SignerAddress: ChecksummedAddress;
@@ -28,8 +29,13 @@ export interface KmsSigncryptedShare {
 }
 
 export interface KmsExtraData {
-  readonly version: Uint8Number;
+  readonly version: Uint8Number | undefined;
   readonly kmsContextId: Uint256BigInt;
   readonly kmsEpochId: Uint256BigInt;
-  toBytesHex(): BytesHex;
+  readonly bytesHex: BytesHex;
+  readonly isFutureVersion: boolean;
+  lt(version: number): boolean;
+  le(version: number): boolean;
+  gt(version: number): boolean;
+  ge(version: number): boolean;
 }
