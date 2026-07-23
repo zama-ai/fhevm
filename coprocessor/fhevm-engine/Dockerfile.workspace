@@ -6,6 +6,16 @@
 # `--override` compose builds compile all coprocessor binaries in ONE cargo
 # pass instead of eight sequential full-workspace compilations (measured:
 # ~41 min of cargo, 71 min run vs 44 min baseline).
+#
+# CACHING (CI): the Rust build is split into cargo-chef stages. A `planner`
+# emits recipe.json (dependency graph only); `builder` COPYs it and runs
+# `cargo chef cook`, compiling every dependency (tfhe-rs dominates) in a layer
+# keyed only on recipe.json (plus the chef layer + CARGO_PROFILE). That cook
+# layer is exported to a registry BuildKit cache by solana-images-publish.yml's
+# workspace-cache job (the WRITER) and read back by solana-e2e's --override
+# compose builds via FHEVM_BUILDCACHE_TAG. This replaces the old
+# `--mount=type=cache` target/registry mounts, which were always empty on the
+# fresh spot runners CI provisions per job.
 # =============================================================================
 # =============================================================================
 # UNIFIED COPROCESSOR DOCKERFILE (LOCAL BUILDS)
@@ -66,12 +76,122 @@ RUN npm ci && \
     DOTENV_CONFIG_PATH=.env.example npx hardhat task:deployAllGatewayContracts
 
 # =============================================================================
+# Stage 1-chef: install cargo-chef (shared base for planner + builder)
+# =============================================================================
+FROM ghcr.io/zama-ai/fhevm/gci/rust-glibc:1.91.0 AS chef
+
+USER root
+WORKDIR /app
+
+# Pinned to an exact version so the cook layer's cache key is stable across e2e
+# runs, fork PRs, and the publish writer (a version bump reshapes the cook layer).
+RUN cargo install cargo-chef --locked --version 0.1.77
+
+# =============================================================================
+# Stage 1-planner: emit the cargo-chef recipe (dependency graph only)
+# =============================================================================
+FROM chef AS planner
+
+# The full Rust source set. `cargo chef prepare` runs `cargo metadata`, which
+# reads every manifest in the dependency graph (so the non-member path-dep crates
+# must be present), but records ONLY the workspace-member manifests into
+# recipe.json -- it never captures non-member path deps. That is why the builder
+# re-supplies those path-dep sources itself before cook. prepare compiles nothing,
+# so the contract artifacts are not needed here.
+COPY listener ./listener
+COPY coprocessor/fhevm-engine ./coprocessor/fhevm-engine
+COPY coprocessor/proto ./coprocessor/proto
+COPY gateway-contracts/rust_bindings ./gateway-contracts/rust_bindings
+COPY gateway-contracts/contracts ./gateway-contracts/contracts
+COPY host-contracts/contracts ./host-contracts/contracts
+COPY solana ./solana
+COPY shared/ciphertext-attestation ./shared/ciphertext-attestation
+
+WORKDIR /app/coprocessor/fhevm-engine
+RUN cargo chef prepare --recipe-path recipe.json
+
+# =============================================================================
 # Stage 1: Build ALL Rust workspace binaries
 # =============================================================================
-FROM ghcr.io/zama-ai/fhevm/gci/rust-glibc:1.91.0 AS builder
+FROM chef AS builder
 
+# CARGO_PROFILE is the ONLY build arg referenced before the cook layer, so the
+# cook cache key stays identical between the e2e reader and the publish writer
+# (fhevm-cli passes no CARGO_PROFILE; both sides fall back to this default).
 ARG CARGO_PROFILE=release
-ARG BUILD_ID=unknown
+
+# cargo chef cook compiles every dependency (tfhe-rs dominates) in one layer.
+# recipe.json captures the workspace MEMBER manifests only; cargo-chef never
+# stubs non-member path dependencies, so the workspace's out-of-tree path deps
+# must be present as real source before cook or cargo cannot read their manifests
+# (the missing confidential-token/scheduler/etc. manifests are what broke the
+# first CI run). These are: coprocessor/fhevm-engine/scheduler (a non-member crate
+# that lives inside the workspace dir but is pulled in by tfhe-worker), the
+# listener crates, the solana crates/programs, the gateway rust_bindings, and
+# ciphertext-attestation. They are COPYed here, ahead of cook, so cook resolves
+# and pre-compiles them alongside the registry deps; none of them carries a
+# build.rs, so no solc install is triggered here.
+#
+# Cook cache key = chef layer + CARGO_PROFILE + recipe.json + these path-dep
+# source trees. It is byte-identical between the publish writer (workspace-cache
+# job) and every e2e reader: all build this Dockerfile from the same commit, so
+# the COPYed trees and recipe.json match exactly. Nothing credential-bearing
+# appears before cook (no sccache), so cred-holding internal runners share the
+# layer too. A PR that touches none of these manifests/sources reuses the cached
+# cook (tfhe-rs stays cooked) even though the planner re-ran; a PR that changes
+# them re-cooks. (Keying on the path-dep source, not manifests alone, is forced
+# by cargo-chef's member-only capture -- non-member path deps compile from real
+# source, so their source must key the layer for the cache to stay sound.)
+#
+# cargo-chef stubs member sources AND their build.rs during cook, so the solc
+# installers in gw-listener/transaction-sender/host-listener do NOT run here (the
+# serial guard below still installs solc once for the real build). --profile (not
+# --release) is used so ${CARGO_PROFILE} flows through unchanged; the two flags
+# are mutually exclusive. On a cache MISS deps compile here WITHOUT sccache, by
+# design: sccache measured flat on this branch (#1766: 756s -> 844s), and keeping
+# cook credential-independent is what lets writer and every reader share the layer.
+#
+# rust-toolchain.toml (channel 1.91.1) is COPYed into this workdir BEFORE cook
+# runs, and this is required. tfhe 1.6.2 and aws-smithy-async 1.2.14 declare
+# rust-version 1.91.1, and modern cargo enforces that at BUILD time: it hard-errors
+# ("rustc 1.91.0 is not supported by the following packages") whenever the running
+# rustc is older, independently of dependency resolution -- so --locked alone does
+# NOT suppress it. The rust-glibc image's default toolchain is 1.91.0; the rustup
+# shim only selects 1.91.1 when it sees rust-toolchain.toml in the workdir at the
+# instant `cargo chef cook` is launched. cargo-chef does capture the toolchain file
+# into the recipe and rewrite it during cook, but by then it has already bound
+# $CARGO to whatever toolchain the shim resolved at launch, so the file must be
+# present up front rather than left to the recipe's write-back. That write-back is
+# byte-identical to what we COPY here, so there is no mid-build toolchain flip. The
+# final workspace build gets 1.91.1 the same way (from the full fhevm-engine COPY
+# below), so cook and the final build run the identical rustc -- their fingerprints
+# match and the final build reuses cook's compiled tfhe instead of rebuilding it.
+# The toolchain file is thus a deliberate cook-layer cache input: a toolchain bump
+# reshapes this layer and correctly invalidates the cooked dependencies.
+#
+# --locked is kept: prepare embeds Cargo.lock into recipe.json and cook writes it
+# back, and --locked forbids any re-resolution, so cook builds exactly the recipe's
+# locked versions -- no silent drift as crates.io moves, i.e. the cook layer stays
+# byte-identical for the writer and every reader.
+WORKDIR /app
+COPY coprocessor/fhevm-engine/scheduler ./coprocessor/fhevm-engine/scheduler
+COPY listener ./listener
+COPY gateway-contracts/rust_bindings ./gateway-contracts/rust_bindings
+COPY solana ./solana
+COPY shared/ciphertext-attestation ./shared/ciphertext-attestation
+WORKDIR /app/coprocessor/fhevm-engine
+COPY coprocessor/fhevm-engine/rust-toolchain.toml ./
+COPY --from=planner /app/coprocessor/fhevm-engine/recipe.json recipe.json
+RUN cargo chef cook --locked --profile=${CARGO_PROFILE} --recipe-path recipe.json
+
+# sccache is used ONLY by the final build RUN below, so its args/ENV and install
+# live AFTER the cook layer. This keeps cook independent of the sccache args, so
+# fork PRs (empty bucket) and the publish writer (which passes no sccache args)
+# still share the cooked-dependencies layer with credential-bearing e2e runs.
+# TODO(sccache): temporary inline install for testing; remove once sccache
+# ships in the rust-glibc golden image and rely on that instead.
+# Skipped entirely (no network fetch) when SCCACHE_BUCKET is unset, the same
+# signal the build hook below uses, so the disabled path stays a plain build.
 ARG SCCACHE_BUCKET
 ARG SCCACHE_REGION=eu-west-3
 ARG SCCACHE_S3_PREFIX
@@ -81,14 +201,6 @@ ENV SCCACHE_BUCKET=${SCCACHE_BUCKET}
 ENV SCCACHE_REGION=${SCCACHE_REGION}
 ENV SCCACHE_S3_KEY_PREFIX=${SCCACHE_S3_PREFIX}
 ENV AWS_REGION=${SCCACHE_REGION}
-
-USER root
-WORKDIR /app
-
-# TODO(sccache): temporary inline install for testing; remove once sccache
-# ships in the rust-glibc golden image and rely on that instead.
-# Skipped entirely (no network fetch) when SCCACHE_BUCKET is unset, the same
-# signal the build hook below uses, so the disabled path stays a plain build.
 RUN set -eux; \
     if [ -z "${SCCACHE_BUCKET}" ]; then echo "SCCACHE_BUCKET unset; skipping sccache install"; exit 0; fi; \
     arch="$(uname -m)"; \
@@ -102,39 +214,44 @@ RUN set -eux; \
     chmod +x /usr/local/bin/sccache; \
     sccache --version
 
-# Copy contract artifacts from contract_builder stage
+# Copy contract artifacts from contract_builder stage (per-PR-varying: kept AFTER
+# the cook layer so it never perturbs the cook cache key).
 COPY --from=contract_builder /app/host-contracts/artifacts/contracts /app/host-contracts/artifacts/contracts
 COPY --from=contract_builder /app/gateway-contracts/artifacts/contracts /app/gateway-contracts/artifacts/contracts
 
-# Copy Rust sources and dependencies
-# TODO fix
-COPY listener ./listener
+# Copy the workspace member sources (these overwrite the cook stubs) plus proto
+# and the Solidity contract source dirs the member build references. The
+# non-member path deps (listener, solana, gateway rust_bindings,
+# ciphertext-attestation, scheduler) are already present from the pre-cook COPY
+# above, so they are not re-copied. The cooked target/ and cargo registry stay in
+# the layer (COPY only adds/overwrites). .dockerignore excludes solana/target.
+WORKDIR /app
 COPY coprocessor/fhevm-engine ./coprocessor/fhevm-engine
 COPY coprocessor/proto ./coprocessor/proto
-COPY gateway-contracts/rust_bindings ./gateway-contracts/rust_bindings
 COPY gateway-contracts/contracts ./gateway-contracts/contracts
 COPY host-contracts/contracts ./host-contracts/contracts
-# The Solana branch adds tfhe-worker dev-deps on solana/programs/{zama-host,
-# confidential-token}; the whole-workspace build must resolve their manifests, so
-# the Solana sources must be present. .dockerignore excludes solana/target.
-COPY solana ./solana
-COPY shared/ciphertext-attestation ./shared/ciphertext-attestation
 
 WORKDIR /app/coprocessor/fhevm-engine
 
-# Build entire workspace - tfhe compiles ONCE here
-# NOTE: We use cache mounts for incremental compilation. Because cache mounts
-# are NOT committed to the image layer, we must copy binaries to /out during
-# the same RUN instruction for COPY --from to work in later stages.
+# BUILD_ID is referenced only by the final workspace build, so it is declared
+# after the cook layer (kept adjacent to its use).
+ARG BUILD_ID=unknown
+
+# Build entire workspace - tfhe is already cooked, so this compiles only the
+# workspace members. The old --mount=type=cache registry/target mounts are gone:
+# they were always empty on CI's fresh spot runners, and they would now SHADOW
+# the cooked target/ and registry that live in this layer. Cross-run caching is
+# instead the registry BuildKit cache (writer: solana-images-publish.yml; reader:
+# solana-e2e via FHEVM_BUILDCACHE_TAG). The sccache secret mounts stay; cargo
+# fetch is a cheap no-op now; binaries are copied to /out so the runtime stages'
+# COPY --from=builder /out/... paths are unchanged.
 #
 # gw-listener, transaction-sender, and host-listener each call Solc::find_or_install(0.8.28) in
 # their build script. Under the parallel `cargo build --workspace` they race on svm's shared solc
 # binary (one writes it while another execs it -> ETXTBSY, "Text file busy"). So build gw-listener
 # first, serially, to install solc 0.8.28 once; the workspace build then finds it already present
 # instead of re-downloading. gw-listener does not depend on tfhe, so this serial step stays small.
-RUN --mount=type=cache,target=/usr/local/cargo/registry,sharing=locked \
-    --mount=type=cache,target=/app/coprocessor/fhevm-engine/target,sharing=locked \
-    --mount=type=secret,id=sccache_aws_access_key_id \
+RUN --mount=type=secret,id=sccache_aws_access_key_id \
     --mount=type=secret,id=sccache_aws_secret_access_key \
     if [ -n "${SCCACHE_BUCKET}" ] && command -v sccache >/dev/null 2>&1; then \
       export RUSTC_WRAPPER=sccache; \
@@ -161,48 +278,18 @@ RUN --mount=type=cache,target=/usr/local/cargo/registry,sharing=locked \
 # =============================================================================
 FROM ghcr.io/zama-ai/fhevm/gci/rust-glibc:1.91.0 AS sqlx_builder
 
-ARG SCCACHE_BUCKET
-ARG SCCACHE_REGION=eu-west-3
-ARG SCCACHE_S3_PREFIX
-ARG SCCACHE_VERSION=v0.15.0
-ENV SCCACHE_IDLE_TIMEOUT=0
-ENV SCCACHE_BUCKET=${SCCACHE_BUCKET}
-ENV SCCACHE_REGION=${SCCACHE_REGION}
-ENV SCCACHE_S3_KEY_PREFIX=${SCCACHE_S3_PREFIX}
-ENV AWS_REGION=${SCCACHE_REGION}
-
 USER root
 WORKDIR /app
 
-# TODO(sccache): temporary inline install for testing; remove once sccache
-# ships in the rust-glibc golden image and rely on that instead.
-# Skipped entirely (no network fetch) when SCCACHE_BUCKET is unset, the same
-# signal the build hook below uses, so the disabled path stays a plain build.
-RUN set -eux; \
-    if [ -z "${SCCACHE_BUCKET}" ]; then echo "SCCACHE_BUCKET unset; skipping sccache install"; exit 0; fi; \
-    arch="$(uname -m)"; \
-    case "$arch" in \
-        x86_64)  triple=x86_64-unknown-linux-musl ;; \
-        aarch64) triple=aarch64-unknown-linux-musl ;; \
-        *) echo "unsupported arch: $arch" >&2; exit 1 ;; \
-    esac; \
-    curl -fsSL "https://github.com/mozilla/sccache/releases/download/${SCCACHE_VERSION}/sccache-${SCCACHE_VERSION}-${triple}.tar.gz" \
-        | tar -xz --strip-components=1 -C /usr/local/bin "sccache-${SCCACHE_VERSION}-${triple}/sccache"; \
-    chmod +x /usr/local/bin/sccache; \
-    sccache --version
-
+# No sccache in this stage: sccache measured flat on this branch's builds, and
+# this sqlx layer must be credential-independent so the publish writer's export
+# and every reader (incl. cred-bearing internal e2e runners) share it. The
+# registry mount only speeds fresh downloads; the compiled sqlx binary lands in
+# /usr/local/cargo/bin and is committed to the layer regardless.
 # Install sqlx-cli
 RUN --mount=type=cache,target=/usr/local/cargo/registry,sharing=locked \
-    --mount=type=secret,id=sccache_aws_access_key_id \
-    --mount=type=secret,id=sccache_aws_secret_access_key \
-    if [ -n "${SCCACHE_BUCKET}" ] && command -v sccache >/dev/null 2>&1; then \
-      export RUSTC_WRAPPER=sccache; \
-      export AWS_ACCESS_KEY_ID="$(cat /run/secrets/sccache_aws_access_key_id)"; \
-      export AWS_SECRET_ACCESS_KEY="$(cat /run/secrets/sccache_aws_secret_access_key)"; \
-    fi && \
     cargo install sqlx-cli --version 0.7.2 \
-    --no-default-features --features postgres,rustls --locked && \
-    if [ -n "${SCCACHE_BUCKET}" ] && command -v sccache >/dev/null 2>&1; then sccache --show-stats; fi
+    --no-default-features --features postgres,rustls --locked
 
 # =============================================================================
 # Stage 2a: tfhe-worker runtime
