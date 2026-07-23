@@ -1,0 +1,30 @@
+{
+  "name": "@cli-fhevm-sdk/load-test",
+  "version": "0.1.0",
+  "type": "module",
+  "private": true,
+  "engines": {
+    "node": ">=22.0.0"
+  },
+  "scripts": {
+    "load-test": "node --import tsx index.ts",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run"
+  },
+  "dependencies": {
+    "@cli-fhevm-sdk/toolkit": "workspace:*",
+    "@commander-js/extra-typings": "^15.0.0",
+    "@fhevm/sdk": "0.13.2",
+    "commander": "^15.0.0",
+    "consola": "^3.4.2",
+    "hdr-histogram-js": "^3.0.0",
+    "piscina": "^5.1.3",
+    "undici": "^7.16.0",
+    "viem": "^2.50.4",
+    "zod": "^4.1.12"
+  },
+  "devDependencies": {
+    "tsx": "^4.21.0",
+    "vitest": "^3.2.4"
+  }
+}
