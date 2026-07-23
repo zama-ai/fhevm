@@ -53,12 +53,24 @@ export async function getCurrentBatch(
  * The subset of an `EncryptedValue` lineage the settle legs need: the live handle, the MMR leaf
  * count, and the live peaks that a proof is verified against.
  *
- * `EncryptedValue` is defined in the `zama-solana-acl` crate and used as an Anchor `Account` with a
- * manually-computed discriminator; it is NOT declared in any program's `#[program]`, so it never
- * appears in an Anchor IDL and cannot be a Codama-generated decoder. This declarative codec mirrors
- * the crate's `#[derive(BorshDeserialize)]` field order exactly (see
- * `solana/crates/zama-solana-acl/src/lib.rs::EncryptedValue`); the 8-byte account discriminator is
- * skipped before the borsh body. `subjects` is decoded and discarded — the settle legs never read it.
+ * (a) DELIBERATE, REVIEWED DEVIATION — hand-rolled, not generated. Every other account decoder in
+ *     this module is Codama-generated, but `EncryptedValue` cannot be: it is defined in the
+ *     `zama-solana-acl` crate and used as an Anchor `Account` with a manually-computed discriminator,
+ *     and is NOT declared in any program's `#[program]`, so it never appears in an Anchor IDL and
+ *     Codama has nothing to generate from. This declarative codec is therefore maintained by hand.
+ *
+ * (b) ASSUMED ON-CHAIN LAYOUT (borsh, after the 8-byte account discriminator), mirroring the crate's
+ *     `#[derive(BorshDeserialize)]` field order in `solana/crates/zama-solana-acl/src/lib.rs`:
+ *       [8-byte discriminator][aclDomainKey: 32][appAccount: 32][encryptedValueLabel: 32]
+ *       [currentHandle: 32][subjects: Vec<32-byte grant>][leafCount: u64][peaks: Vec<32>][bump: u8]
+ *     The discriminator is sliced off before this decoder runs; `subjects` is decoded and discarded
+ *     (the settle legs never read it — only its length matters, to advance the cursor).
+ *
+ * (c) FRAGILITY — each `subjects` element is decoded as a bare 32-byte grant. If the crate's
+ *     `EncryptedValueSubjectGrant` ever gains a field, its element size stops being 32 and THIS
+ *     decoder silently misaligns everything after it (`leafCount`, `peaks`, `bump` decode from the
+ *     wrong offsets) with no error — just wrong values. Anyone who changes that struct MUST update
+ *     the `subjects` element decoder here in lockstep. Do not treat 32 as incidental.
  */
 const encryptedValueBodyDecoder = getStructDecoder([
   ['aclDomainKey', fixDecoderSize(getBytesDecoder(), 32)],

@@ -1,4 +1,4 @@
-import type { Address, TransactionSigner } from '@solana/kit';
+import type { TransactionSigner } from '@solana/kit';
 
 import { findComputeSignerPda } from '../internal/generated/confidentialToken/pdas/computeSigner.js';
 import { openBatch, type SolanaVaultOpenBatchResult } from './openBatch.js';

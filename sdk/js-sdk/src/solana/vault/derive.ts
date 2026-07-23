@@ -1,4 +1,4 @@
-import { getAddressEncoder, getProgramDerivedAddress, type Address } from '@solana/kit';
+import type { Address } from '@solana/kit';
 
 import type { Bytes32 } from '../../core/types/primitives.js';
 import { findComputeSignerPda } from '../internal/generated/confidentialToken/pdas/computeSigner.js';
@@ -20,6 +20,9 @@ import {
   encryptedValueAddress,
   tokenAccountAddress,
 } from './internal/batcherPdas.js';
+// Confidential-field lineages and the SPL associated-token derivation are owned by tokenLineage;
+// import them rather than re-declaring the balance/total-supply labels and a second ATA helper here.
+import { associatedTokenAddress, balanceValueAddress, totalSupplyValueAddress } from './internal/tokenLineage.js';
 
 /**
  * The immutable roots of one batcher's demo topology — the addresses a real integrator (or the
@@ -66,32 +69,6 @@ export interface BatchAddresses {
   readonly batchPayoutBalanceValue: Address;
 }
 
-/** Fixed 32-byte confidential-token field labels (padded to 32 with `_`), from `state/mod.rs`. */
-const BALANCE_LABEL = new TextEncoder().encode('balance_________________________');
-const TOTAL_SUPPLY_LABEL = new TextEncoder().encode('total_supply____________________');
-
-/** Program ids for the classic SPL token + associated-token programs the confidential mints wrap. */
-const SPL_TOKEN_PROGRAM_ADDRESS = 'TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA' as Address;
-const ASSOCIATED_TOKEN_PROGRAM_ADDRESS = 'ATokenGPvbdGVxr1b2hvZbsiqW5xWH25efTNsLJA8knL' as Address;
-
-const addressEncoder = getAddressEncoder();
-function encodeAddress(value: Address): Uint8Array {
-  return new Uint8Array(addressEncoder.encode(value));
-}
-
-/**
- * The canonical associated token account for one owner and SPL mint on the classic token program
- * (`get_associated_token_address_with_program_id`). The confidential mint's underlying-token vault
- * is this ATA owned by the mint's vault authority.
- */
-async function associatedTokenAddress(owner: Address, mint: Address): Promise<Address> {
-  const [address] = await getProgramDerivedAddress({
-    programAddress: ASSOCIATED_TOKEN_PROGRAM_ADDRESS,
-    seeds: [encodeAddress(owner), encodeAddress(SPL_TOKEN_PROGRAM_ADDRESS), encodeAddress(mint)],
-  });
-  return address;
-}
-
 /**
  * Derives every batch-scoped address for a batcher and zero-based batch index. Pure: it seeds PDAs
  * and hashes labels, never touching the RPC. The join-side underlying accounts, the payout-side
@@ -120,11 +97,7 @@ export async function deriveBatchAddresses(roots: VaultDemoRoots, batchIndex: bi
       batchJoinTokenAccount,
       new TextEncoder().encode('burned_amount___________________'),
     ),
-    batchPayoutBalanceValue: await encryptedValueAddress(
-      roots.payoutConfidentialMint,
-      batchPayoutTokenAccount,
-      BALANCE_LABEL,
-    ),
+    batchPayoutBalanceValue: await balanceValueAddress(roots.payoutConfidentialMint, batchPayoutTokenAccount),
   };
 }
 
@@ -228,10 +201,6 @@ export async function deriveSettleAccounts(
     batchPayoutBalanceValue: batch.batchPayoutBalanceValue,
     // Total supply: acl domain = payout mint, app account = its total-supply authority, label =
     // `total_supply`.
-    payoutTotalSupplyValue: await encryptedValueAddress(
-      roots.payoutConfidentialMint,
-      payoutTotalSupplyAuthority,
-      TOTAL_SUPPLY_LABEL,
-    ),
+    payoutTotalSupplyValue: await totalSupplyValueAddress(roots.payoutConfidentialMint, payoutTotalSupplyAuthority),
   };
 }

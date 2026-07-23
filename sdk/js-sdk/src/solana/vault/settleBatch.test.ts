@@ -64,13 +64,13 @@ function roots(): VaultDemoRoots {
   };
 }
 
-function claim(cleartext: string) {
+function claim(cleartext: string, siblings: Uint8Array[] = []) {
   return {
     handle: `0x${hex(BURNED_HANDLE)}`,
     abiEncodedCleartext: cleartext,
     signatures: [hex(new Uint8Array(65).fill(0x11))],
     extraData: '0x00',
-    inclusionProof: { leafIndex: 0n, siblings: [] as Uint8Array[] },
+    inclusionProof: { leafIndex: 0n, siblings },
   };
 }
 
@@ -190,6 +190,40 @@ describe('settleBatch', () => {
     expect(data.cleartextTotal).toBe(800n);
     expect(data.leafIndex).toBe(0n);
     expect(data.siblings).toEqual([]);
+  });
+
+  it('keeps a realistic-depth settle (14 MMR siblings) within the 1232-byte v0 wire limit', async () => {
+    // A live settle carries a real MMR inclusion proof: one 32-byte sibling per mountain level, the
+    // load-bearing growth term in the settle instruction data (`siblings: [...claim.inclusionProof.
+    // siblings]`). The happy-path test above used an EMPTY proof, which would not have caught an ALT
+    // that left the tx too full to absorb a real proof. This re-asserts the size bound with a deep
+    // proof.
+    //
+    // 14 is the MEASURED ceiling for the current ALT design: the settle v0 message keeps four
+    // accounts static (fee payer, redemption_record, and the two event-CPI authorities) plus the
+    // invoked program ids; at 14 siblings the wire is ~1212 bytes and 15 overflows 1232. This is far
+    // above any realistic depth here — the burned_amount lineage is a PER-BATCH EncryptedValue whose
+    // MMR gains ~one leaf per batch (depth ~0-1), so 14 is generous headroom, not a live expectation.
+    // Raising the ceiling would mean moving the two derivable event authorities out of the static set
+    // and into the ALT (the only movable accounts; the fee payer, redemption_record and invoked
+    // programs cannot move) — that buys ~2 more levels and is a deliberate ALT-membership change, not
+    // made here.
+    const siblings = Array.from({ length: 14 }, (_, level) => new Uint8Array(32).fill(0xa0 + level));
+    certificate.mockResolvedValue(claim(cleartextHex(800n), siblings));
+    const { chain, proofConfig, keeper, opts } = await options();
+    await expect(settleBatch(chain, proofConfig, keeper, opts)).resolves.toEqual(expect.any(String));
+
+    const simulate = opts.rpc.simulateTransaction as unknown as ReturnType<typeof vi.fn>;
+    const wire = simulate.mock.calls[0]![0] as string;
+    expect(getBase64Encoder().encode(wire).length).toBeLessThanOrEqual(1232);
+
+    // The proof really did ride in the settle instruction (guards against the siblings being dropped,
+    // which would make the size check meaningless).
+    const transaction = getTransactionDecoder().decode(getBase64Encoder().encode(wire));
+    const compiled = getCompiledTransactionMessageDecoder().decode(transaction.messageBytes);
+    const compiledInstructions = (compiled as unknown as { instructions: { data?: Uint8Array }[] }).instructions;
+    const data = getSettleInstructionDataDecoder().decode(compiledInstructions[1]!.data!);
+    expect(data.siblings).toHaveLength(14);
   });
 
   it('rejects a batch that has not been dispatched (zero burned handle) before any leg', async () => {
