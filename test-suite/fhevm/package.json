@@ -12,8 +12,8 @@
     "demo:seed": "bun run demo/seed.ts",
     "demo:faucet": "bun run demo/faucet-server.ts",
     "demo:check-cors": "bun run demo/checkBrowserReality.ts",
-    "demo:smoke": "bun test e2e/scenarios/deposit-arc.scenario.test.ts",
-    "demo:smoke-boundary": "bun test e2e/scenarios/deposit-arc-boundary.scenario.test.ts",
+    "demo:smoke": "RUN_DEMO_SCENARIOS=1 bun test e2e/scenarios/deposit-arc.scenario.test.ts",
+    "demo:smoke-boundary": "RUN_DEMO_SCENARIOS=1 bun test e2e/scenarios/deposit-arc-boundary.scenario.test.ts",
     "start": "bun run src/cli.ts"
   },
   "dependencies": {

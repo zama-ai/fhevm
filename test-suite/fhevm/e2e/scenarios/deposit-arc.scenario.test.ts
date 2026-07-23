@@ -91,7 +91,12 @@ const loadSigner = async (keypairPath: string): Promise<TransactionSigner> => {
   return createKeyPairSignerFromBytes(bytes);
 };
 
-describe("solana deposit-arc scenario", () => {
+// Demo-lane gate: `test:e2e` sweeps this directory on a stack that never ran `demo:seed`, so the
+// seeded demo-config cannot exist there. The `demo:smoke` script sets RUN_DEMO_SCENARIOS=1; under
+// it the test runs unconditionally, so a missing config still fails the acceptance gate loudly.
+const runsDemoScenarios = process.env.RUN_DEMO_SCENARIOS === "1";
+
+describe.skipIf(!runsDemoScenarios)("solana deposit-arc scenario", () => {
   test(
     "deposit arc (wrap leg): alice funds, initializes cUSDC, and wraps mock USDC into a confidential cUSDC balance",
     async () => {

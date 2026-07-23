@@ -37,7 +37,12 @@ const loadVaultModule = async (): Promise<VaultArcSurface> => {
   return (await import(vaultModule)) as unknown as VaultArcSurface;
 };
 
-describe("solana deposit-arc boundary", () => {
+// Demo-lane gate: `test:e2e` sweeps this directory on a stack that never ran `demo:seed`, so the
+// seeded demo-config cannot exist there. The `demo:smoke-boundary` script sets RUN_DEMO_SCENARIOS=1;
+// under it the test runs unconditionally, so a missing config still fails loudly in the demo lane.
+const runsDemoScenarios = process.env.RUN_DEMO_SCENARIOS === "1";
+
+describe.skipIf(!runsDemoScenarios)("solana deposit-arc boundary", () => {
   test("documents the join -> settle -> claim -> decrypt gap: downstream actions and roots exist; only the coprocessor input-proof and settle FhevmRuntime remain to wire", async () => {
     const { config } = await loadDemoEnv();
 
