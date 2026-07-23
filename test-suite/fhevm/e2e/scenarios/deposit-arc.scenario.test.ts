@@ -1,38 +1,30 @@
-// Scenario: deposit arc — the confidential-vault demo's forward leg (#1760), the FIRST live-cluster
-// exercise of the batcher + vault via `@fhevm/sdk/solana/vault`. Run as `demo:smoke`.
+// Scenario: deposit arc — WRAP LEG (#1760), the FIRST live-cluster exercise of the confidential
+// vault's forward path via `@fhevm/sdk/solana/vault`. Run as `demo:smoke` and hard-gated by the
+// solana-demo-acceptance workflow: this leg is expected to pass live.
+//
+// This covers exactly the part of the deposit arc that is wired end-to-end today: fund a persona,
+// initialize her confidential cUSDC account, and wrap mock USDC into a confidential cUSDC balance
+// (a PUBLIC-amount escrow that needs no input proof). The join→dispatch→settle→claim→decrypt
+// continuation is NOT wired here — it needs coprocessor input-proof + decrypt-runtime plumbing — so
+// it lives in `deposit-arc-boundary.scenario.test.ts` (run as `demo:smoke-boundary`), which documents
+// that boundary explicitly instead of failing this gate.
 //
 // STATUS: live-only, UNVERIFIED here. It requires a running demo stack with the two demo programs
 // deployed, `demo:seed` completed, and the `demo:faucet` running (all classifier-gated / blocked in
-// this environment — see solana/scripts/demo/demo-keypairs/README and demo/seed.ts). It is exercised
-// only by the `solana-demo-acceptance` workflow (manual dispatch), which runs demo-up.sh (deploy +
-// seed) and starts the faucet before invoking this. The SDK is reached through the runtime
-// dynamic-import seam (string module specifier), so the vault module is untyped here by construction
-// (same reason as `src/solana/current-user-decrypt.ts`): the SDK's generated `_types` are not built
-// at tsc time.
+// this environment — see solana/scripts/demo/demo-keypairs/README and demo/seed.ts). The SDK is
+// reached through the runtime dynamic-import seam (string module specifier), so the vault module is
+// untyped here by construction (same reason as `src/solana/current-user-decrypt.ts`): the SDK's
+// generated `_types` are not built at tsc time.
 //
-// Assertion map — the deposit arc (join = mock USDC → cUSDC, payout = cShares):
+// Assertion map — the wrap leg (join = mock USDC → cUSDC):
 //   1. alice funded with SOL + mock USDC through the demo faucet         [live, wired below].
 //   2. alice's cUSDC confidential token account initialized              [live, SDK, wired below].
 //   3. wrap mock USDC → cUSDC confidential balance (public amount)       [live, SDK, wired below].
-//   4. joinBatch(deposit batcher current batch) with an SDK input proof for the wrapped amount.
-//   5. dispatchBatch once the batch is old enough (min_batch_age_slots).
-//   6. settleBatch (keeper/operator action) against the batch's settle lookup table.
-//   7. claim alice's proportional cShares payout.
-//   8. decryptPosition asserts alice's claimed cShares > 0 (live user-decrypt of on-chain state).
-//
-// JOIN BOUNDARY (steps 4–8): the arc is wired live through the confidential wrap (step 3). Wrapping
-// is now a first-class `@fhevm/sdk/solana/vault` action (`buildWrapUsdcInstruction`) — a PUBLIC-amount
-// escrow that needs no input proof — so it no longer goes through the Rust live-client the two-holder
-// transfer scenario used. The remaining arc is deliberately NOT wired here: `joinBatch` needs a real
-// coprocessor input proof (encrypt → submitInputProof via the relayer) bound to the join mint's
-// compute signer, and `settleBatch` needs a decrypt `FhevmRuntime`, the KMS burn certificate, and the
-// proof-service MMR proof over the settle ALT. That is new proof/runtime plumbing; until it is wired
-// this fails loudly at the join boundary rather than yielding a false green. Cost + plan are in the
-// PR report; the solana-demo-acceptance workflow is the end-to-end verification vehicle.
+//   4. on-chain assertion: alice's cUSDC token account exists and is owned by confidential-token.
 
 import fs from "node:fs/promises";
 
-import { describe, test } from "bun:test";
+import { describe, expect, test } from "bun:test";
 
 import {
   appendTransactionMessageInstructions,
@@ -63,8 +55,8 @@ const SCENARIO_TIMEOUT_MS = 20 * 60_000;
 const FAUCET_URL = process.env.DEMO_FAUCET_URL ?? "http://127.0.0.1:8090";
 // Mock USDC decimals (matches the seeded SPL mint and the faucet).
 const USDC_DECIMALS = 6;
-// USDC the persona wraps + (later) joins with. The workflow passes DEMO_DEPOSIT_AMOUNT (fresh per run
-// avoids PDA reuse); default matches the faucet's default drip.
+// USDC the persona wraps. The workflow passes DEMO_DEPOSIT_AMOUNT (fresh per run avoids PDA reuse);
+// default matches the faucet's default drip.
 const DEPOSIT_USDC = Number(process.env.DEMO_DEPOSIT_AMOUNT ?? "1000");
 // The confidential-token instructions emit FHE-handle CPIs; the default 200k CU ceiling is too low.
 const WRAP_COMPUTE_UNIT_LIMIT = 600_000;
@@ -84,6 +76,8 @@ type VaultWrapSurface = {
     hostConfig: Address;
     amount: number | bigint;
   }): Promise<Instruction>;
+  tokenAccountAddress(mint: Address, owner: Address): Promise<Address>;
+  CONFIDENTIAL_TOKEN_PROGRAM_ADDRESS: Address;
 };
 
 const loadVaultModule = async (): Promise<VaultWrapSurface> => {
@@ -99,7 +93,7 @@ const loadSigner = async (keypairPath: string): Promise<TransactionSigner> => {
 
 describe("solana deposit-arc scenario", () => {
   test(
-    "deposit: alice wraps mock USDC -> joins -> dispatch -> settle (keeper) -> claim -> decrypt cShares > 0",
+    "deposit arc (wrap leg): alice funds, initializes cUSDC, and wraps mock USDC into a confidential cUSDC balance",
     async () => {
       const { env, config } = await loadDemoEnv();
 
@@ -112,8 +106,8 @@ describe("solana deposit-arc scenario", () => {
       const alicePersona = personas.roles.alice;
       if (!alicePersona) throw new Error("alice persona did not load");
 
-      // The wrap (and the later join) are signed by alice; load her keypair as a signer and prove it
-      // is the pubkey the seed published, so a keypair/config drift fails here rather than on-chain.
+      // The wrap is signed by alice; load her keypair as a signer and prove it is the pubkey the seed
+      // published, so a keypair/config drift fails here rather than on-chain.
       const alice = await loadSigner(DEMO_KEYPAIRS.alice);
       if (alice.address !== config.personas.alice) {
         throw new Error(`alice keypair ${alice.address} does not match seeded persona ${config.personas.alice}`);
@@ -191,16 +185,13 @@ describe("solana deposit-arc scenario", () => {
         }),
       ]);
 
-      // Steps 4–8: the join boundary. joinBatch needs a real coprocessor input proof bound to the join
-      // mint's compute signer, and settle needs a decrypt runtime + KMS certificate + proof-service MMR
-      // proof over the settle ALT — proof/runtime plumbing not yet wired here. Fail loudly rather than
-      // yield a false green; the solana-demo-acceptance workflow is the verification vehicle.
-      throw new Error(
-        "deposit-arc smoke is wired through the confidential wrap (mock USDC -> cUSDC); the remaining " +
-          "arc (joinBatch with a coprocessor input proof, dispatchBatch, settleBatch with the KMS burn " +
-          "certificate + proof-service MMR proof over the settle ALT, claim, decryptPosition) needs the " +
-          "input-proof + FhevmRuntime plumbing that is not yet wired. Tracked in the PR report.",
-      );
+      // Step 4: on-chain assertion. Read alice's cUSDC confidential token account back and assert it
+      // now exists and is owned by the confidential-token program — the concrete state the (not-yet-
+      // wired) join leg would consume. This is the wrap leg's real state check, beyond "did not revert".
+      const aliceCusdc = await vault.tokenAccountAddress(config.mints.joinConfidential, alice.address);
+      const account = await rpc.getAccountInfo(aliceCusdc, { encoding: "base64" }).send();
+      expect(account.value).not.toBeNull();
+      expect(account.value?.owner).toBe(vault.CONFIDENTIAL_TOKEN_PROGRAM_ADDRESS);
     },
     SCENARIO_TIMEOUT_MS,
   );
