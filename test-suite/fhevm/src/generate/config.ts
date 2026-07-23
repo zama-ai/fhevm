@@ -11,7 +11,7 @@ import {
 import { hostChainRuntimes, MINIO_INTERNAL_URL } from "../layout";
 import type { StackSpec } from "../stack-spec/stack-spec";
 import type { HostChainScenario, State } from "../types";
-import { hostReachableMaterialUrl, predictedCrsId, predictedKeyId } from "../utils/fs";
+import { predictedCrsId, predictedKeyId } from "../utils/fs";
 
 /** Rewrites relayer readiness config into the legacy shape when required. */
 const rewriteRelayerConfig = (
@@ -53,21 +53,20 @@ const rewriteRelayerKeyUrlConfig = (
     return config;
   }
   const keyPrefix = state.discovery?.minioKeyPrefix ?? "PUB";
-  const materialBase = `${(
-    state.discovery?.endpoints?.minioExternal ??
-    state.discovery?.endpoints?.minioInternal ??
-    MINIO_INTERNAL_URL
-  ).replace(/\/$/, "")}/kms-public/${keyPrefix}`;
+  const materialBase = `${(state.discovery?.endpoints?.minioInternal ?? MINIO_INTERNAL_URL).replace(/\/$/, "")}/kms-public/${keyPrefix}`;
   const fheKeyId = state.discovery?.actualFheKeyId ?? state.discovery?.fheKeyId ?? predictedKeyId();
   const crsKeyId = state.discovery?.actualCrsKeyId ?? state.discovery?.crsKeyId ?? predictedCrsId();
   config.keyurl = {
     fhe_public_key: {
       data_id: fheKeyId,
-      url: hostReachableMaterialUrl(`${materialBase}/PublicKey/${fheKeyId}`),
+      // The legacy relayer returns this URL to the e2e container. Keep the
+      // compose-internal MinIO hostname so that the separate test container
+      // can fetch the material; localhost would point at the test container.
+      url: `${materialBase}/PublicKey/${fheKeyId}`,
     },
     crs: {
       data_id: crsKeyId,
-      url: hostReachableMaterialUrl(`${materialBase}/CRS/${crsKeyId}`),
+      url: `${materialBase}/CRS/${crsKeyId}`,
     },
   };
   return config;

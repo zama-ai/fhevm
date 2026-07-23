@@ -28,11 +28,11 @@ describe("config", () => {
     expect(parsed.keyurl).toEqual({
       fhe_public_key: {
         data_id: fheKeyId,
-        url: `http://localhost:9000/kms-public/PUB/PublicKey/${fheKeyId}`,
+        url: `http://minio:9000/kms-public/PUB/PublicKey/${fheKeyId}`,
       },
       crs: {
         data_id: crsKeyId,
-        url: `http://localhost:9000/kms-public/PUB/CRS/${crsKeyId}`,
+        url: `http://minio:9000/kms-public/PUB/CRS/${crsKeyId}`,
       },
     });
   });
@@ -67,11 +67,11 @@ describe("config", () => {
     expect(parsed.keyurl).toEqual({
       fhe_public_key: {
         data_id: "a".repeat(64),
-        url: `http://localhost:9000/kms-public/PUB-p1/PublicKey/${"a".repeat(64)}`,
+        url: `http://minio:9000/kms-public/PUB-p1/PublicKey/${"a".repeat(64)}`,
       },
       crs: {
         data_id: "b".repeat(64),
-        url: `http://localhost:9000/kms-public/PUB-p1/CRS/${"b".repeat(64)}`,
+        url: `http://minio:9000/kms-public/PUB-p1/CRS/${"b".repeat(64)}`,
       },
     });
   });
