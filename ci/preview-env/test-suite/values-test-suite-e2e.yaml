@@ -9,7 +9,7 @@
 #
 # This is a one-shot test run (not a long-running service), so it's deployed
 # as a Job rather than a Deployment. image.tag is overridden at deploy time
-# via --set-string in pr-preview-deploy.yml with the real per-PR
+# via --set-string in preview-env-deploy.yml with the real per-PR
 # short-SHA tag.
 #
 # Deployed as:
@@ -26,15 +26,15 @@ imagePullSecrets:
 
 image:
   repository: hub.zama.org/ghcr/zama-ai/fhevm/test-suite/e2e
-  # This tag is only used when pr-preview-deploy.yml's build_images=false
-  # (or the workflow isn't run at all, e.g. a raw `helm upgrade` like this
-  # file's own header example) - see env.TEST_SUITE_VERSION's comment there
-  # for why NEITHER this pinned v0.13.0 NOR the older v0.11.5-0 actually work
-  # against kms-core v0.13.20 without a build from this branch (both bundle a
-  # tfhe/node-tfhe build that can't deserialize its tfhe-rs-1.6.1-format
-  # public keys - confirmed live under both SDKs). If deploying by hand like
-  # this against a real v0.13.20 KMS, either build+push your own test-suite
-  # image from this branch first, or downgrade KMS_CORE_TAG.
+  # preview-env-deploy.yml ALWAYS overrides image.tag at deploy time via
+  # --set-string (this run's short-SHA build, or env.TEST_SUITE_VERSION's pinned
+  # fallback when build_images=false), so this value only applies to a raw manual
+  # `helm upgrade` like this file's own header example. Even then, NEITHER this
+  # pinned v0.13.0 NOR the older v0.11.5-0 actually work against kms-core v0.13.20
+  # (both bundle a tfhe/node-tfhe build that can't deserialize its
+  # tfhe-rs-1.6.1-format public keys - confirmed live under both SDKs). If
+  # deploying by hand against a real v0.13.20 KMS, either build+push your own
+  # test-suite image from this branch first, or downgrade KMS_CORE_TAG.
   tag: v0.13.0
 
 job:

@@ -27,7 +27,7 @@
 # NUM_KMS_NODES / KMS_TX_SENDER_ADDRESS_x / KMS_SIGNER_ADDRESS_x / KMS_NODE_IP_ADDRESS_x /
 # KMS_NODE_STORAGE_URL_x / the 4 threshold fields are all generated dynamically for
 # NB_KMS_CORE real parties (not a fixed 4) by the "Wire real KMS node info into
-# gateway-contracts values" step in pr-preview-deploy.yml, from:
+# gateway-contracts values" step in preview-env-deploy.yml, from:
 #   - "Discover KMS party signer addresses" (real kms-core operator identities + S3
 #     public vault endpoint)
 #   - "Derive KMS tx-sender wallets" (one real, funded, per-party wallet - previously a
@@ -74,7 +74,7 @@ scDeploy:
     # COPROCESSOR_SIGNER_ADDRESS_x / COPROCESSOR_S3_BUCKET_URL_x are appended
     # dynamically for the NB_COPROCESSOR independent coprocessor parties by the
     # "Wire real KMS node info into gateway-contracts values" step in
-    # pr-preview-deploy.yml: each party's tx-sender/signer comes from the derived
+    # preview-env-deploy.yml: each party's tx-sender/signer comes from the derived
     # coprocessor wallets and its S3 bucket ROOT url from that party's
     # coprocessor-<i> ConfigMap (S3_BUCKET_NAME key, written by
     # crossplane/coprocessor-infra-<i>). Threshold is a simple majority of N.

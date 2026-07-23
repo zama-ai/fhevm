@@ -17,13 +17,13 @@ coprocessor, listener, kms-connector, and relayer/relayer-migrate — see `copro
 coprocessor-e2e.yaml`'s header for why this isn't RDS, or Bitnami's postgresql chart), and a
 dedicated real 4-party threshold+enclave KMS reused directly from `zama-ai/kms`'s own
 `ci/scripts/deploy.sh` (no vendored `kms-core` chart usage here at all). See
-[`../../.github/workflows/pr-preview-deploy.yml`](../../.github/workflows/pr-preview-deploy.yml).
+[`../../.github/workflows/preview-env-deploy.yml`](../../.github/workflows/preview-env-deploy.yml).
 Torn down automatically when the PR closes
-([`pr-preview-destroy.yml`](../../.github/workflows/pr-preview-destroy.yml)).
+([`preview-env-destroy.yml`](../../.github/workflows/preview-env-destroy.yml)).
 
 There is no local Kind/laptop-based variant of this path anymore — a full stack (dedicated
 4-party enclave KMS + coprocessor + kms-connector + relayer + test-suite) doesn't fit in a
-reasonable local resource budget, so `pr-preview-deploy.yml`'s remote `zws-dev` cluster is the
+reasonable local resource budget, so `preview-env-deploy.yml`'s remote `zws-dev` cluster is the
 only supported way to run this. The default docker-compose path (`test-suite/fhevm`) remains
 the right choice for local iteration.
 
@@ -70,7 +70,7 @@ ci/preview-env/
 
 Every file here is a **values overlay for a chart**. `anvil-node`/`contracts`/`coprocessor`/
 `kms-connector` target the real, published production charts directly via
-`oci://hub.zama.org/ghcr/zama-ai/fhevm/charts/*` refs (see `pr-preview-deploy.yml`).
+`oci://hub.zama.org/ghcr/zama-ai/fhevm/charts/*` refs (see `preview-env-deploy.yml`).
 `relayer`/`test-suite`/the three `values-postgres-*-e2e.yaml` files all target the generic
 `oci://hub.zama.org/ghcr/zama-zws/helm-charts/common` chart (the same one `zama-zws/gitops`'s
 `fhevm-dev` environment uses for `relayer`/`test-suite`), not a fhevm-specific chart - there's
@@ -81,7 +81,7 @@ image tag off `docker.io/bitnami` into the unsupported, no-longer-updated `docke
 bitnamilegacy` archive, breaking fresh installs of that chart (see values-postgres-coprocessor-
 e2e.yaml's header for the full story). This also sidesteps Crossplane/RDS entirely for these
 three throwaway databases. `kms-core` (KMS itself) is never deployed from this repo at all — the
-CI path reuses `zama-ai/kms`'s own deploy pipeline as-is (see `pr-preview-deploy.yml`).
+CI path reuses `zama-ai/kms`'s own deploy pipeline as-is (see `preview-env-deploy.yml`).
 
 Note this path's own images (contracts/kms-connector/relayer/test-suite) are addressed via
 `hub.zama.org/ghcr/zama-ai/fhevm/...` (the Harbor pull-through-cache mirror of `ghcr.io`), not
@@ -105,7 +105,8 @@ name** it is run with, via `isLiveNetwork()`:
 ```ts
 // test-suite/e2e/test/network.ts
 const LIVE_NETWORKS = new Set(['devnet', 'devnetNative', 'zwsDev', 'sepolia', 'mainnet', 'polygonAmoy']);
-export const isLiveNetwork = () => LIVE_NETWORKS.has(network.name);
+export const activeNetworkName = () => network.name;
+export const isLiveNetwork = () => LIVE_NETWORKS.has(activeNetworkName());
 ```
 
 This preview runs the host chain as **`staging`** (chainId `12345`), which is **not**
@@ -144,16 +145,18 @@ Caveats if you ever do want the live path against anvil:
 
 ## Multi-coprocessor (`nb_coprocessor`) and shared Redis
 
-`pr-preview-deploy.yml` takes an `nb_coprocessor` input (default `1`, mirroring
-`NB_KMS_CORE`) that deploys **N independent coprocessor stacks**. For party `i` (1..N):
+`preview-env-deploy.yml` takes an `nb_coprocessor` input (default `1`) that deploys
+**N independent coprocessor stacks** — the same per-party fan-out pattern used for the
+`nb_kms_core` KMS parties. For party `i` (1..N):
 
 - its own in-cluster Postgres `postgres-coprocessor-<i>`,
 - its own `coprocessor-infra-<i>` release → dedicated S3 bucket, IRSA ServiceAccount
   `coprocessor-<i>`, and bucket ConfigMap `coprocessor-<i>` (holding `S3_BUCKET_NAME`),
 - its own tx-sender/signer identity (derived from the shared Foundry/Hardhat mnemonic
-  at HD indices `20..20+N-1`, chosen to avoid the test signers `#0-4`, host owner `#9`,
-  and KMS tx-senders `#10..`), reused for both the on-chain registration and the
-  `txSender` wallet,
+  at HD indices `(10+nb_kms_core)..(10+nb_kms_core)+N-1` — starting right after the KMS
+  tx-sender range `#10..10+nb_kms_core-1` so the two never collide for any party count,
+  and clear of the test signers `#0-4` and host owner `#9`), reused for both the
+  on-chain registration and the `txSender` wallet,
 - a `coprocessor-<i>` chart release wired to all of the above.
 
 The gateway is told `NUM_COPROCESSORS=N` and `COPROCESSOR_THRESHOLD=floor(N/2)+1`, and

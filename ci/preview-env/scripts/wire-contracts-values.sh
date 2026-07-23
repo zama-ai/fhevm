@@ -42,7 +42,6 @@ esac
 
 n="${NB_KMS_CORE}"
 t=$(kms_t "${n}")
-majority=$(kms_majority "${n}")
 reconstruct=$(kms_reconstruct "${n}")
 
 cp "${src}" "${generated}"
@@ -91,12 +90,17 @@ for i in $(seq 1 "${nc}"); do
   fi
 done
 
+# Key/CRS *generation* consensus threshold: both reference configs
+# (gateway-contracts/.env.example, charts/contracts/values.yaml) set it equal to
+# the decryption threshold (reconstruct = n-t), NOT the MPC majority (t+1). Using
+# t+1 would let key/CRS activation fire after fewer node agreements than
+# production and silently weaken keygen e2e coverage.
 yq -i "
   .scDeploy.env += [
     {\"name\": \"NUM_KMS_NODES\", \"value\": \"${n}\"},
     {\"name\": \"PUBLIC_DECRYPTION_THRESHOLD\", \"value\": \"${reconstruct}\"},
     {\"name\": \"USER_DECRYPTION_THRESHOLD\", \"value\": \"${reconstruct}\"},
-    {\"name\": \"${kms_gen_threshold_key}\", \"value\": \"${majority}\"},
+    {\"name\": \"${kms_gen_threshold_key}\", \"value\": \"${reconstruct}\"},
     {\"name\": \"MPC_THRESHOLD\", \"value\": \"${t}\"}
   ]
 " "${generated}"

@@ -7,7 +7,7 @@ it to exercise a PR end-to-end against real charts and a real KMS.
 
 This page is the **usage** guide. For what's inside and why, see
 [`README.md`](./README.md); the workflow itself is
-[`pr-preview-deploy.yml`](../../.github/workflows/pr-preview-deploy.yml).
+[`preview-env-deploy.yml`](../../.github/workflows/preview-env-deploy.yml).
 
 There are two ways to launch: **from a PR** (add a label) or **manually**
 (`workflow_dispatch`, for full control over versions/topology).
@@ -39,7 +39,7 @@ branch **and** auto-run the suite.
   per-test SDK-matrix report comment (see [See test results](#see-test-results)).
 - **Teardown:** automatic when the PR is **closed**, or when you **remove** the
   preview label(s) (handled by
-  [`pr-preview-destroy.yml`](../../.github/workflows/pr-preview-destroy.yml)).
+  [`preview-env-destroy.yml`](../../.github/workflows/preview-env-destroy.yml)).
 
 ---
 
@@ -103,7 +103,7 @@ Teardown means: `helm uninstall` every release in the namespace (so Crossplane
 claims — coprocessor S3 buckets, KMS S3 vaults/enclave nodegroups — are released
 and their AWS resources deprovisioned instead of leaking) then delete the
 namespace. All handled by
-[`pr-preview-destroy.yml`](../../.github/workflows/pr-preview-destroy.yml).
+[`preview-env-destroy.yml`](../../.github/workflows/preview-env-destroy.yml).
 
 **PR env (automatic).** Nothing to do — the env is torn down when you:
 - **close/merge** the PR, or

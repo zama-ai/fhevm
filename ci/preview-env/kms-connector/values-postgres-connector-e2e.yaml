@@ -4,7 +4,14 @@
 # (../relayer/values-postgres-relayer-e2e.yaml) - kms-connector's data has
 # nothing to do with either of theirs.
 #
-# One dedicated instance PER kms-connector/kms-core party (pr-preview-deploy.yml's
+# Uses the SAME generic `common` chart directly, same as
+# ../coprocessor-infra/values-postgres-coprocessor-e2e.yaml - see that file's
+# header for the full rationale (why not Bitnami's postgresql chart,
+# fullnameOverride -> deterministic Service name, plain non-secret ephemeral
+# test credentials) and the statefulset.volumeClaimTemplates note (PVC so data
+# survives pod restarts).
+#
+# One dedicated instance PER kms-connector/kms-core party (preview-env-deploy.yml's
 # "Deploy in-cluster Postgres for kms-connector" loops this over NB_KMS_CORE
 # releases, one per party, overriding fullnameOverride below to
 # postgres-connector-<i> each time) - mirrors kms's own production topology

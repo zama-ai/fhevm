@@ -19,14 +19,14 @@
 # true` (the canonical host chain owns the real KMSGeneration implementation;
 # gateway's own KMSGeneration proxy stays an empty, unused stand-in in that
 # case) - followed here. Requires HOST_CONTRACTS_VERSION >= v0.13.0 (see
-# pr-preview-deploy.yml's env block) - the flag/ProtocolConfig split doesn't
+# preview-env-deploy.yml's env block) - the flag/ProtocolConfig split doesn't
 # exist before that ("HH305: Unrecognized param" if pinned older).
 #
 # NUM_KMS_NODES / KMS_TX_SENDER_ADDRESS_x / KMS_SIGNER_ADDRESS_x / KMS_NODE_IP_x /
 # KMS_NODE_STORAGE_URL_x / KMS_NODE_PARTY_ID_x / KMS_NODE_MPC_IDENTITY_x /
 # KMS_NODE_CA_CERT_x / KMS_NODE_STORAGE_PREFIX_x / the 4 threshold fields are all
 # generated dynamically for NB_KMS_CORE real parties by the "Wire real KMS node info
-# into host-contracts values" step in pr-preview-deploy.yml - see
+# into host-contracts values" step in preview-env-deploy.yml - see
 # values-gateway-contracts-e2e.yaml's header for the full rationale (same source data,
 # just a different, host-contracts-specific field-naming scheme - note the several
 # naming inconsistencies flagged inline in that workflow step).
@@ -79,7 +79,7 @@ scDeploy:
     # NUM_COPROCESSORS / COPROCESSOR_THRESHOLD / COPROCESSOR_SIGNER_ADDRESS_x are
     # appended dynamically for the NB_COPROCESSOR coprocessor parties by the
     # "Wire real KMS node info into host-contracts values" step in
-    # pr-preview-deploy.yml, from the SAME derived coprocessor wallets registered
+    # preview-env-deploy.yml, from the SAME derived coprocessor wallets registered
     # on the gateway (COPROCESSOR_SIGNER_ADDRESS_<idx>). The host InputVerifier
     # verifies the coprocessor's input-proof signatures against these, so they
     # MUST match the wallet the coprocessor tx-sender actually signs with - not a

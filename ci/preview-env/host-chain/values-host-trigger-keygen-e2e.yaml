@@ -10,7 +10,7 @@
 # reference pattern in ../../../charts/contracts/values-kmsgen.yaml.
 #
 # Our images are built at each PR's HEAD (or fall back to `latest`, see resolve-tags
-# in pr-preview-deploy.yml), i.e. well past the v0.13 KMSGeneration migration: the
+# in preview-env-deploy.yml), i.e. well past the v0.13 KMSGeneration migration: the
 # KMSGeneration contract now lives on the canonical HOST chain, not the Gateway (RFC013)
 # - host-contracts' task:deployAllHostContracts --with-kms-generation true (see
 # values-host-contracts-e2e.yaml) already deployed it there. Concretely,

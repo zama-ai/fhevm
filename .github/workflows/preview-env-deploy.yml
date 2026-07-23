@@ -48,7 +48,7 @@ on:
       coprocessor_version:
         description: "Image tag for coprocessor images (same override rule as host_contracts_version above)"
         required: true
-        default: "v0.13.0"
+        default: "v0.13.1"
       coprocessor_chart_version:
         description: "Version of the coprocessor Helm chart"
         required: true
@@ -99,7 +99,7 @@ on:
         required: false
         default: "0.4.4"
       test_suite_version:
-        description: "Image tag for the test-suite image (same override rule as host_contracts_version above) - only matters when build_images=false, see env.TEST_SUITE_VERSION's comment"
+        description: "Image tag for the test-suite image (same override rule as host_contracts_version above)"
         required: true
         default: "b858525"
       common_chart_version:
@@ -117,7 +117,7 @@ on:
       listener_version:
         description: "Image tag for the listener/listener-core image (external dep, not built here - pair with the coprocessor's host-listener-consumer)"
         required: true
-        default: "cc8fc16-dev"
+        default: "v0.13.3"
       deploy_polygon:
         description: "Also deploy a SECOND (Polygon Amoy, 80002) host chain: a fresh local anvil, its own host-contracts (reusing the ETH KMS key via canonical ProtocolConfig mirror), a per-party listener + coprocessor consumer/poller, and - when automated_tests is on - a Polygon e2e run. Roughly doubles the host-side stack."
         required: true
@@ -145,17 +145,21 @@ env:
   # gitops's fhevm-dev environment runs.
   #=====ANVIL NODE===========================================================
   ANVIL_NODE_CHART: oci://hub.zama.org/ghcr/zama-ai/fhevm/charts/anvil-node
-  ANVIL_NODE_CHART_VERSION: "0.4.1"
+  # 0.6.0 adds network.slotsInAnEpoch (see charts/anvil-node): the host/gateway
+  # anvil values set it to "1" so `finalized` events fire near-instantly for the
+  # kms-connector. NOTE: 0.6.0 is only published once that chart change lands on
+  # main (charts-helm-release.yml), so this pin resolves after that merge.
+  ANVIL_NODE_CHART_VERSION: "0.6.0"
   #=====CONTRACTS============================================================
   GATEWAY_CONTRACTS_VERSION: "v0.13.0"
-  HOST_CONTRACTS_VERSION: "v0.13.0"
+  HOST_CONTRACTS_VERSION: "v0.13.1"
   CONTRACTS_CHART: oci://hub.zama.org/ghcr/zama-ai/fhevm/charts/contracts
   CONTRACTS_CHART_VERSION: "0.8.2"
   #=====COPROCESSOR==========================================================
   COPROCESSOR_VERSION: "v0.13.1"
   COPROCESSOR_CHART: oci://hub.zama.org/ghcr/zama-ai/fhevm/charts/coprocessor
   COPROCESSOR_CHART_VERSION: "0.13.0"
-  NB_COPROCESSOR: "3"
+  NB_COPROCESSOR: "1"
   #=====KMS CONNECTOR=========================================================
   KMS_CONNECTOR_VERSION: "v0.13.1-hotfix.kmsconnector.1"
   KMS_CONNECTOR_CHART: oci://hub.zama.org/ghcr/zama-ai/fhevm/charts/kms-connector
@@ -165,6 +169,13 @@ env:
   COPROCESSOR_INFRA_CHART_VERSION: "0.6.5"
   #=====COMMON===============================================================
   RELAYER_VERSION: "v0.13.0"
+  # resolve-tags fallback tag for the test-suite/e2e image when build_images=false
+  # (when true it uses this run's short-SHA build instead). Deliberately NOT a
+  # semver: neither the published v0.13.0 nor v0.11.5-0 tags can deserialize
+  # kms-core v0.13.20's tfhe-rs-1.6.1-format public keys, so this is a working
+  # short-SHA build from this branch. NB: the test-suite deploy step ALWAYS
+  # --set-string overrides image.tag, so values-test-suite-e2e.yaml's own `tag:`
+  # is only a manual-helm default and is never used by this workflow.
   TEST_SUITE_VERSION: "b858525"
   RELAYER_SDK_VERSION: ""  # If RELAYER_SDK_VERSION is empty: run the @fhevm/sdk suite only.
   COMMON_CHART: oci://hub.zama.org/ghcr/zama-zws/helm-charts/common
@@ -506,12 +517,21 @@ jobs:
         env:
           IMAGE_REPO: hub.zama.org/ghcr/zama-ai/kms
         run: |
-          docker pull "${IMAGE_REPO}/core-service-enclave:${KMS_CORE_TAG}"
-          {
-            echo "PCR0=$(docker inspect "${IMAGE_REPO}/core-service-enclave:${KMS_CORE_TAG}" | jq -r '.[0].Config.Labels["zama.kms.eif_pcr0"]')"
-            echo "PCR1=$(docker inspect "${IMAGE_REPO}/core-service-enclave:${KMS_CORE_TAG}" | jq -r '.[0].Config.Labels["zama.kms.eif_pcr1"]')"
-            echo "PCR2=$(docker inspect "${IMAGE_REPO}/core-service-enclave:${KMS_CORE_TAG}" | jq -r '.[0].Config.Labels["zama.kms.eif_pcr2"]')"
-          } >> "$GITHUB_ENV"
+          image="${IMAGE_REPO}/core-service-enclave:${KMS_CORE_TAG}"
+          docker pull "${image}"
+          inspect=$(docker inspect "${image}")
+          for n in 0 1 2; do
+            pcr=$(jq -r ".[0].Config.Labels[\"zama.kms.eif_pcr${n}\"]" <<<"${inspect}")
+            # jq emits the literal "null" for a missing label and command
+            # substitution never trips the step's -e, so an absent/empty PCR would
+            # otherwise be written verbatim to GITHUB_ENV and only blow up far
+            # later inside deploy.sh's --pcr${n} attestation wiring. Validate hex.
+            if [[ ! "${pcr}" =~ ^[0-9a-fA-F]+$ ]]; then
+              echo "::error::PCR${n} label zama.kms.eif_pcr${n} missing or non-hex on ${image} (got '${pcr}')"
+              exit 1
+            fi
+            echo "PCR${n}=${pcr}" >> "$GITHUB_ENV"
+          done
 
       ######################################################################
       # IN-CLUSTER DATABASES: plain Postgres StatefulSets via the generic
@@ -646,16 +666,23 @@ jobs:
 
       - name: Derive coprocessor tx-sender wallets
         id: coproc-wallets
-        # Per-party coprocessor identity (tx-sender = signer). Offset 20 so they
-        # never collide with the test signers (#0..#4), the ACL owner (#9), or
-        # the KMS tx-senders (#10..).
+        # Per-party coprocessor identity (tx-sender = signer).
         env:
           NODE_PATH: /tmp/wallet-tools/node_modules
           COUNT: ${{ env.NB_COPROCESSOR }}
-          HD_OFFSET: "20"
           OUTPUT_KEY: wallets_json
           LABEL: coprocessor tx-sender
-        run: node ci/preview-env/scripts/derive-wallets.cjs
+        run: |
+          # Start immediately after the KMS tx-sender range (10 .. 10+NB_KMS_CORE-1)
+          # so it never overlaps them for ANY party count - a fixed offset (e.g. 20)
+          # collides once nb_kms_core > 10 (the 13-party option spans 10..22),
+          # reusing a KMS wallet as a coprocessor tx-sender/signer. This also stays
+          # clear of the test signers (#0..#4) and the ACL owner (#9). GitHub
+          # expressions have no arithmetic, so compute the offset here.
+          HD_OFFSET=$((10 + NB_KMS_CORE))
+          export HD_OFFSET
+          echo "Coprocessor HD offset: ${HD_OFFSET} (KMS parties: ${NB_KMS_CORE})"
+          node ci/preview-env/scripts/derive-wallets.cjs
 
       ######################################################################
       # BLOCKCHAIN: per-PR anvil host + gateway chains, fully isolated.
@@ -1046,21 +1073,34 @@ jobs:
 
       - name: Deploy relayer
         run: |
-          values_file=ci/preview-env/relayer/values-relayer-e2e.yaml
+          source ci/preview-env/scripts/lib.sh
+          # user_decrypt share reconstruction threshold MUST match the deployed
+          # KMS party count (n-t), same math wire-contracts-values.sh registers
+          # on-chain. The static value in values-relayer-e2e.yaml is only a
+          # placeholder: the relayer pre-seeds the default context (id 0) from it,
+          # so a hardcoded mismatch (e.g. a 13-party 9 against the default 4
+          # parties) would make context-0 user-decrypt wait for more shares than
+          # exist and hang to timeout. Override via the relayer's APP_ env
+          # (config-rs coerces the numeric string, same as CHAIN_ID below).
+          reconstruct=$(kms_reconstruct "${NB_KMS_CORE}")
+          relayer_values=$(mktemp --suffix=.yaml)
+          cp ci/preview-env/relayer/values-relayer-e2e.yaml "${relayer_values}"
+          UDST="${reconstruct}" yq -i \
+            '.env += [{"name": "APP_GATEWAY__CONTRACTS__USER_DECRYPT_SHARES_THRESHOLD", "value": strenv(UDST)}]' \
+            "${relayer_values}"
+          echo "Relayer user_decrypt_shares_threshold=${reconstruct} (KMS parties: ${NB_KMS_CORE})"
           # deploy_polygon: add the Polygon host chain (host_chains[1]) so the
           # relayer's host ACL readiness check covers Polygon ciphertexts. env is a
-          # list Helm replaces wholesale, so append to a temp copy (not an overlay).
+          # list Helm replaces wholesale, so append to the same temp copy.
           if [[ "${DEPLOY_POLYGON}" == "true" ]]; then
-            values_file=$(mktemp --suffix=.yaml)
-            cp ci/preview-env/relayer/values-relayer-e2e.yaml "${values_file}"
             yq -i '.env += [
               {"name": "APP_HOST_CHAINS__1__CHAIN_ID", "value": "80002"},
               {"name": "APP_HOST_CHAINS__1__URL", "value": "http://anvil-host-polygon-anvil-node:8545"},
               {"name": "APP_HOST_CHAINS__1__ACL_ADDRESS", "valueFrom": {"configMapKeyRef": {"name": "polygon-sc-addresses", "key": "acl.address"}}}
-            ] | (.env[] | select(has("value")) | .value) style="double"' "${values_file}"
+            ] | (.env[] | select(has("value")) | .value) style="double"' "${relayer_values}"
           fi
           helm upgrade --install relayer "${COMMON_CHART}" --version "${COMMON_CHART_VERSION}" \
-            -n "${NAMESPACE}" -f "${values_file}" \
+            -n "${NAMESPACE}" -f "${relayer_values}" \
             --set-string "image.tag=$(jq -r .relayer <<<"${TAGS_JSON}")"
 
       - name: Deploy test-suite
@@ -1192,7 +1232,7 @@ jobs:
             > Note: each coprocessor party requests substantial `tfhe`/`sns` worker capacity on the `coprocessor` nodepool, so `nb_coprocessor` > 1 multiplies the cluster resources needed. Default stays 1.
 
             This environment is destroyed automatically when the PR is closed
-            (see pr-preview-destroy.yml), or on the next push to this PR.
+            (see preview-env-destroy.yml), or on the next push to this PR.
 
       - name: Write connection info to summary
         if: success() && github.event_name == 'workflow_dispatch'
@@ -1211,5 +1251,5 @@ jobs:
             echo '```'
             echo
             echo "This environment is **not** tied to a PR, so it is only destroyed"
-            echo "manually - see pr-preview-destroy.yml or clean up the namespace directly."
+            echo "manually - see preview-env-destroy.yml or clean up the namespace directly."
           } >> "$GITHUB_STEP_SUMMARY"

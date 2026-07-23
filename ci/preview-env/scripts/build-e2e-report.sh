@@ -37,7 +37,14 @@ for wf in "${wfs[@]}"; do
   # ~always Succeeded; per-test pass/fail comes from the node statuses below.
   phase=$(bash "${script_dir}/wait-workflow.sh" "${wf}")
 
-  wf_json=$(kubectl get workflow "${wf}" -n "${NAMESPACE}" -o json 2>/dev/null || echo '{}')
+  # A failed fetch (RBAC, missing workflow, apiserver hiccup) must NOT be
+  # silently reported as "all 0 passed" - track it so it maps to a warning below.
+  if wf_json=$(kubectl get workflow "${wf}" -n "${NAMESPACE}" -o json 2>/dev/null); then
+    fetch_ok=1
+  else
+    wf_json='{}'
+    fetch_ok=0
+  fi
 
   # Per-test phase table from the run-test pod nodes.
   rows=$(jq -r '
@@ -56,6 +63,11 @@ for wf in "${wfs[@]}"; do
 
   if [[ "${phase}" != "Succeeded" && "${phase}" != "Failed" && "${phase}" != "Error" ]]; then
     sub="### :warning: $(sdk_label "${wf}") - timed out after ${max_wait}s"
+    overall_failed=$((overall_failed + 1))
+  elif [[ "${fetch_ok}" -eq 0 || "${total}" -eq 0 ]]; then
+    # Terminal phase but no run-test nodes: either the status fetch failed or the
+    # workflow never produced test pods. Either way we can't claim a pass.
+    sub="### :warning: $(sdk_label "${wf}") - could not retrieve results (0 test nodes)"
     overall_failed=$((overall_failed + 1))
   elif [[ "${failed}" -gt 0 ]]; then
     sub="### :x: $(sdk_label "${wf}") - ${failed}/${total} failed"
