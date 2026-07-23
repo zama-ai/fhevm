@@ -43,6 +43,12 @@ export {
   createUnsignedLegacyDecryptionPermitEip712,
 } from './createUnsignedLegacyDecryptionPermitEip712.js';
 
+export {
+  type CanUseUnifiedDecryptionPermitParameters,
+  type CanUseUnifiedDecryptionPermitReturnType,
+  canUseUnifiedDecryptionPermit,
+} from './canUseUnifiedDecryptionPermit.js';
+
 // v13: Only the Legacy version is exported
 export {
   type SignLegacyDecryptionPermitParameters,

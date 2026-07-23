@@ -240,6 +240,7 @@ export function cloneFhevmClientFrozenContext(value: FhevmClientFrozenContext): 
     readonly pubKeyCrsVersion?: PubKeyCrsVersionResolution | undefined;
     readonly tfheVersion?: TfheVersion | undefined;
     readonly tkmsVersion?: TkmsVersion | undefined;
+    readonly relayerSupportsRouteV3: boolean;
   };
 
   const hostContractVersions: Partial<Record<HostContractName, HostContractVersion>> = {};

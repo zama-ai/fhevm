@@ -1,9 +1,12 @@
 import type { UintNumber } from '../../../types/primitives.js';
 import type {
+  FetchFeaturesParameters,
+  FetchFeaturesReturnType,
   FetchFheEncryptionKeyBytesParameters,
   FetchFheEncryptionKeyBytesReturnType,
   FetchFheEncryptionKeySourceParameters,
   RelayerClient,
+  RelayerClientWithRuntime,
   RelayerModuleFactory,
 } from '../types.js';
 import { createDeadbeefBytes } from '../../../base/bytes.js';
@@ -49,6 +52,14 @@ export const relayerModule: RelayerModuleFactory = () => {
       fetchPublicDecrypt,
       fetchUserDecrypt,
       fetchDelegatedUserDecrypt,
+      fetchFeatures: (
+        _relayerClient: RelayerClientWithRuntime,
+        _parameters: FetchFeaturesParameters,
+      ): Promise<FetchFeaturesReturnType> => {
+        return Promise.resolve({
+          supportsRouteV3: true,
+        });
+      },
     }),
   });
 };

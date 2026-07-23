@@ -19,6 +19,7 @@ import type { Handle, InputHandle } from '../../types/encryptedTypes-p.js';
 import type { FhevmChain } from '../../types/fhevmChain.js';
 import type { FhevmRuntime } from '../../types/coreFhevmRuntime.js';
 import type { FhevmClientFrozenContext } from '../../types/fhevmClientFrozenContext-p.js';
+import type { Auth } from '../../types/auth.js';
 
 ////////////////////////////////////////////////////////////////////////////////
 //
@@ -198,6 +199,27 @@ export type FetchDelegatedUserDecryptModuleFunction = {
 };
 
 ////////////////////////////////////////////////////////////////////////////////
+// 6. fetchFeatures
+////////////////////////////////////////////////////////////////////////////////
+
+export type FetchFeaturesParameters = {
+  readonly options?:
+    | {
+        readonly auth?: Auth | undefined;
+      }
+    | undefined;
+};
+
+export type FetchFeaturesReturnType = { readonly supportsRouteV3: boolean };
+
+export type FetchFeaturesModuleFunction = {
+  fetchFeatures(
+    relayerClient: RelayerClientWithRuntime,
+    parameters: FetchFeaturesParameters,
+  ): Promise<FetchFeaturesReturnType>;
+};
+
+////////////////////////////////////////////////////////////////////////////////
 // RelayerModule
 ////////////////////////////////////////////////////////////////////////////////
 
@@ -207,7 +229,8 @@ export type RelayerModule = Prettify<
     FetchCoprocessorSignaturesModuleFunction &
     FetchUserDecryptModuleFunction &
     FetchPublicDecryptModuleFunction &
-    FetchDelegatedUserDecryptModuleFunction
+    FetchDelegatedUserDecryptModuleFunction &
+    FetchFeaturesModuleFunction
 >;
 
 // Relayer is a base module. It does not take any runtime argument

@@ -17,6 +17,7 @@ import { checkPersistAllowed } from '../host-contracts/checkPersistAllowed.js';
 import { checkDelegation } from '../host-contracts/checkDelegation.js';
 import { createKmsEip712Domain } from './createKmsEip712Domain.js';
 import { EXTRA_DATA_V2, createKmsExtraDataFromBytesHex } from './kmsExtraData-p.js';
+import { ensureRelayerFeatures } from '../relayerFeatures/ensureRelayerFeatures-p.js';
 
 ////////////////////////////////////////////////////////////////////////////////
 
@@ -48,6 +49,20 @@ type ReturnType = KmsSigncryptedShares;
 
 export async function fetchKmsSigncryptedSharesV2(context: Context, parameters: Parameters): Promise<ReturnType> {
   const { options, pairs, fhevmContext } = parameters;
+
+  // The v3 / unified user-decrypt route only exists on relayers that advertise it. Guard here — not
+  // only at callers — so any direct caller of this V2 path is protected too. Resolved once per client
+  // (cached), using the same effective auth this function uses for the actual relayer request.
+  const features = await ensureRelayerFeatures(context, {
+    auth: options?.auth ?? context.runtime.config.auth,
+  });
+  if (!features.supportsRouteV3) {
+    throw new Error(
+      'The relayer does not support unified (V2) decryption permits. Call `canUseUnifiedDecryptionPermit` up ' +
+        'front to check support, and use a legacy (V1) decryption permit against this relayer instead.',
+    );
+  }
+
   const signedPermit = parameters.signedPermit as SignedDecryptionPermitV2;
 
   const tkmsVersion = fhevmContext.tkmsVersion;
