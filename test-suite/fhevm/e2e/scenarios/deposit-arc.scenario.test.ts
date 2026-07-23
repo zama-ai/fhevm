@@ -1,26 +1,34 @@
-// Scenario: deposit arc — WRAP LEG (#1760), the FIRST live-cluster exercise of the confidential
+// Scenario: deposit arc — WRAP + JOIN LEGS (#1760), the live-cluster exercise of the confidential
 // vault's forward path via `@fhevm/sdk/solana/vault`. Run as `demo:smoke` and hard-gated by the
-// solana-demo-acceptance workflow: this leg is expected to pass live.
+// solana-demo-acceptance workflow: these legs are expected to pass live.
 //
-// This covers exactly the part of the deposit arc that is wired end-to-end today: fund a persona,
-// initialize her confidential cUSDC account, and wrap mock USDC into a confidential cUSDC balance
-// (a PUBLIC-amount escrow that needs no input proof). The join→dispatch→settle→claim→decrypt
-// continuation is NOT wired here — it needs coprocessor input-proof + decrypt-runtime plumbing — so
-// it lives in `deposit-arc-boundary.scenario.test.ts` (run as `demo:smoke-boundary`), which documents
-// that boundary explicitly instead of failing this gate.
+// This covers the part of the deposit arc that is wired end-to-end today: fund a persona,
+// initialize her confidential cUSDC account, wrap mock USDC into a confidential cUSDC balance
+// (a PUBLIC-amount escrow that needs no input proof), then JOIN the pending deposit batch with a
+// coprocessor-attested amount — a real input proof built by the SDK's local TFHE prover, submitted
+// to the relayer, and consumed by `joinBatch`. The dispatch -> settle -> claim -> decrypt
+// continuation is NOT wired here — it still needs the settle `FhevmRuntime` plus the
+// dispatch/claim/decrypt orchestration — so it lives in `deposit-arc-boundary.scenario.test.ts`
+// (run as `demo:smoke-boundary`), which documents that remaining boundary explicitly instead of
+// failing this gate.
 //
 // STATUS: live-only, UNVERIFIED here. It requires a running demo stack with the two demo programs
 // deployed, `demo:seed` completed, and the `demo:faucet` running (all classifier-gated / blocked in
 // this environment — see solana/scripts/demo/demo-keypairs/README and demo/seed.ts). The SDK is
-// reached through the runtime dynamic-import seam (string module specifier), so the vault module is
-// untyped here by construction (same reason as `src/solana/current-user-decrypt.ts`): the SDK's
-// generated `_types` are not built at tsc time.
+// reached through the runtime dynamic-import seam (string module specifier), so the vault and
+// solana modules are untyped here by construction (same reason as
+// `src/solana/current-user-decrypt.ts`): the SDK's generated `_types` are not built at tsc time.
 //
-// Assertion map — the wrap leg (join = mock USDC → cUSDC):
+// Assertion map — wrap + join legs (deposit direction: join mint = cUSDC):
 //   1. alice funded with SOL + mock USDC through the demo faucet         [live, wired below].
 //   2. alice's cUSDC confidential token account initialized              [live, SDK, wired below].
 //   3. wrap mock USDC → cUSDC confidential balance (public amount)       [live, SDK, wired below].
 //   4. on-chain assertion: alice's cUSDC token account exists and is owned by confidential-token.
+//   5. precondition: the seeded deposit batcher's current batch is still Pending (joinable).
+//   6. input proof for the join amount built locally and verified by the relayer [live, SDK].
+//   7. joinBatch: alice joins the pending batch with the attested amount [live, SDK, wired below].
+//   8. on-chain assertions: the (batch, alice) join record exists under the batcher program, and
+//      the batch's join count incremented by exactly one.
 
 import fs from "node:fs/promises";
 
@@ -33,6 +41,7 @@ import {
   createSolanaRpc,
   createSolanaRpcSubscriptions,
   createTransactionMessage,
+  getProgramDerivedAddress,
   sendAndConfirmTransactionFactory,
   setTransactionMessageComputeUnitLimit,
   setTransactionMessageFeePayerSigner,
@@ -44,6 +53,13 @@ import {
 } from "@solana/kit";
 
 import { loadPersonas, until } from "../harness";
+import { depositRoots, type VaultDemoRoots } from "../../demo/config";
+import {
+  addressBytes,
+  BALANCE_LABEL,
+  encryptedValueAddress,
+  TRANSFERRED_AMOUNT_LABEL,
+} from "../../demo/encryptedValueLineage";
 import { DEMO_KEYPAIRS, loadDemoEnv } from "../../demo/loadDemoEnv";
 
 // A live batcher arc waits on slot age + SNS commit + settle certificate: allow well beyond the
@@ -60,9 +76,20 @@ const USDC_DECIMALS = 6;
 const DEPOSIT_USDC = Number(process.env.DEMO_DEPOSIT_AMOUNT ?? "1000");
 // The confidential-token instructions emit FHE-handle CPIs; the default 200k CU ceiling is too low.
 const WRAP_COMPUTE_UNIT_LIMIT = 600_000;
+// join measures ~353k CU under mollusk (solana/runtime-tests/cost-snapshots/batcher_mollusk.json),
+// but live runs of the confidential-transfer CPI alone were observed above 400k against a ~330k
+// mollusk baseline (~1.2x live/mollusk — the reason the SDK's confidentialTransfer action uses
+// 800k), and join is that CPI plus batcher evaluation. Match the SDK's 800k; headroom is free.
+const JOIN_COMPUTE_UNIT_LIMIT = 800_000;
+// `BatchStatus::Pending` in the batcher's generated enum encoding; join.rs rejects anything else.
+const BATCH_STATUS_PENDING = 0;
 
-/** The vault provisioning/wrap surface the scenario drives (untyped: runtime dynamic-import seam). */
-type VaultWrapSurface = {
+/** Opaque coprocessor proof artifacts: built/submitted by the SDK encrypt client, consumed whole by `joinBatch`. */
+type SolanaInputProof = unknown;
+type SolanaInputProofSubmission = unknown;
+
+/** The vault surface the scenario drives — wrap provisioning + batch join (untyped: runtime dynamic-import seam). */
+type VaultDepositArcSurface = {
   buildInitializeTokenAccountInstruction(parameters: {
     owner: TransactionSigner;
     mint: Address;
@@ -77,12 +104,70 @@ type VaultWrapSurface = {
     amount: number | bigint;
   }): Promise<Instruction>;
   tokenAccountAddress(mint: Address, owner: Address): Promise<Address>;
+  getCurrentBatch(
+    rpc: unknown,
+    roots: VaultDemoRoots,
+  ): Promise<{
+    index: bigint;
+    addresses: { batch: Address; batchAuthority: Address; batchJoinTokenAccount: Address };
+    state: { status: number; joinCount: bigint };
+  }>;
+  pendingJoinLineage(
+    batch: Address,
+    batchAuthority: Address,
+    user: Address,
+  ): Promise<{ encryptedValueAddress: Address }>;
+  deriveJoinRecordAddress(batch: Address, user: Address): Promise<Address>;
+  joinBatch(
+    fhevm: { solanaChain: unknown; aclProgramAddress: `0x${string}` },
+    parameters: {
+      rpc: unknown;
+      rpcSubscriptions: unknown;
+      inputProof: SolanaInputProof;
+      inputProofResult: SolanaInputProofSubmission;
+      inputIndex: number;
+      user: TransactionSigner;
+      payer: TransactionSigner;
+      batcher: Address;
+      batch: Address;
+      joinConfidentialMint: Address;
+      userBalanceValue: Address;
+      batchBalanceValue: Address;
+      userTransferredValue: Address;
+      pendingJoinValue: Address;
+      hostConfig: Address;
+      computeUnitLimit?: number;
+    },
+  ): Promise<string>;
   CONFIDENTIAL_TOKEN_PROGRAM_ADDRESS: Address;
+  CONFIDENTIAL_BATCHER_PROGRAM_ADDRESS: Address;
 };
 
-const loadVaultModule = async (): Promise<VaultWrapSurface> => {
+/** The SDK encrypt surface the join leg drives (untyped: runtime dynamic-import seam). */
+type SolanaEncryptSurface = {
+  setFhevmRuntimeConfig(config: { auth: { type: "ApiKeyHeader"; value: string } }): void;
+  defineFhevmSolanaChain(definition: {
+    id: bigint;
+    fhevm: { relayerUrl: string; acl: { domainKeys: readonly `0x${string}`[] } };
+  }): unknown;
+  createFhevmEncryptClient(parameters: { chain: unknown; aclProgramAddress: `0x${string}` }): {
+    buildInputProof(parameters: {
+      contractAddress: `0x${string}`;
+      userAddress: `0x${string}`;
+      values: readonly { type: "uint64"; value: bigint }[];
+    }): Promise<SolanaInputProof>;
+    submitInputProof(parameters: { inputProof: SolanaInputProof }): Promise<SolanaInputProofSubmission>;
+  };
+};
+
+const loadVaultModule = async (): Promise<VaultDepositArcSurface> => {
   const vaultModule = "@fhevm/sdk/solana/vault";
-  return (await import(vaultModule)) as unknown as VaultWrapSurface;
+  return (await import(vaultModule)) as unknown as VaultDepositArcSurface;
+};
+
+const loadSolanaSdkModule = async (): Promise<SolanaEncryptSurface> => {
+  const solanaModule = "@fhevm/sdk/solana";
+  return (await import(solanaModule)) as unknown as SolanaEncryptSurface;
 };
 
 /** Loads a 64-byte Solana keypair file into a kit `TransactionSigner`. */
@@ -91,6 +176,15 @@ const loadSigner = async (keypairPath: string): Promise<TransactionSigner> => {
   return createKeyPairSignerFromBytes(bytes);
 };
 
+// EncryptedValue lineage derivation lives in demo/encryptedValueLineage.ts, pinned against the
+// Rust golden vectors by its unit test so drift fails in the cheap sweep, not the live gate. Only
+// the confidential-token `fhe-compute` compute-signer PDA seed remains restated here.
+const COMPUTE_SIGNER_SEED = new TextEncoder().encode("fhe-compute");
+
+/** A base58 address as the bytes32 hex identity the RFC-021 proof binding uses. */
+const asBytes32Hex = (value: Address): `0x${string}` =>
+  `0x${Buffer.from(addressBytes(value)).toString("hex")}` as `0x${string}`;
+
 // Demo-lane gate: `test:e2e` sweeps this directory on a stack that never ran `demo:seed`, so the
 // seeded demo-config cannot exist there. The `demo:smoke` script sets RUN_DEMO_SCENARIOS=1; under
 // it the test runs unconditionally, so a missing config still fails the acceptance gate loudly.
@@ -98,7 +192,7 @@ const runsDemoScenarios = process.env.RUN_DEMO_SCENARIOS === "1";
 
 describe.skipIf(!runsDemoScenarios)("solana deposit-arc scenario", () => {
   test(
-    "deposit arc (wrap leg): alice funds, initializes cUSDC, and wraps mock USDC into a confidential cUSDC balance",
+    "deposit arc (wrap + join legs): alice funds, initializes cUSDC, wraps mock USDC, and joins the pending deposit batch with a coprocessor-attested amount",
     async () => {
       const { env, config } = await loadDemoEnv();
 
@@ -190,13 +284,120 @@ describe.skipIf(!runsDemoScenarios)("solana deposit-arc scenario", () => {
         }),
       ]);
 
-      // Step 4: on-chain assertion. Read alice's cUSDC confidential token account back and assert it
-      // now exists and is owned by the confidential-token program — the concrete state the (not-yet-
-      // wired) join leg would consume. This is the wrap leg's real state check, beyond "did not revert".
+      // Step 4: on-chain assertion for the wrap leg. Read alice's cUSDC confidential token account
+      // back and assert it now exists and is owned by the confidential-token program — the concrete
+      // state the join leg consumes next. This is the wrap leg's real state check, beyond "did not
+      // revert".
+      // Read at the same commitment `send` confirmed at: the RPC default is `finalized`, which lags
+      // `confirmed` by ~31 slots on the test validator and would race a just-confirmed wrap.
       const aliceCusdc = await vault.tokenAccountAddress(config.mints.joinConfidential, alice.address);
-      const account = await rpc.getAccountInfo(aliceCusdc, { encoding: "base64" }).send();
+      const account = await rpc.getAccountInfo(aliceCusdc, { encoding: "base64", commitment: "confirmed" }).send();
       expect(account.value).not.toBeNull();
       expect(account.value?.owner).toBe(vault.CONFIDENTIAL_TOKEN_PROGRAM_ADDRESS);
+
+      // Step 5: precondition for the join leg — join targets the batcher's current batch, which
+      // must still be Pending (the seeder opens batch 0 that way). Fail here with a reason instead
+      // of an opaque on-chain BatchNotPending revert; re-running against a stack whose batch already
+      // dispatched/settled is a dispatch/settle-stage concern (CI always seeds a fresh stack).
+      const roots = depositRoots(config);
+      const batchBeforeJoin = await vault.getCurrentBatch(rpc, roots);
+      if (batchBeforeJoin.state.status !== BATCH_STATUS_PENDING) {
+        throw new Error(
+          `deposit batch ${batchBeforeJoin.index} (${batchBeforeJoin.addresses.batch}) is not joinable: ` +
+            `status ${batchBeforeJoin.state.status} != Pending(${BATCH_STATUS_PENDING}); the stack has ` +
+            "moved past the seeded pending batch — rerun demo:seed on a fresh stack.",
+        );
+      }
+
+      // The relayer's key-material URLs point at the docker-internal host `minio:9000`; rewrite to
+      // the host-published endpoint (same same-machine boundary as solana-two-holder-transfer.ts).
+      // Restored in the finally below so the patch cannot leak into other files of the same sweep.
+      const originalFetch = globalThis.fetch;
+      globalThis.fetch = ((url: string | URL | Request, options?: RequestInit) =>
+        originalFetch(typeof url === "string" ? url.replace("//minio:9000", "//127.0.0.1:9000") : url, options)) as typeof fetch;
+
+      try {
+        // Step 6: build + submit the coprocessor input proof for the join amount. Binding tuple per
+        // joinBatch's own checks: contract identity = the join mint's compute-signer PDA (NOT the
+        // batcher), user identity = alice, value = euint64 amount, chain id + ACL program from the
+        // seeded config. Verification is purely cryptographic — no allowlist.
+        const solanaSdk = await loadSolanaSdkModule();
+        solanaSdk.setFhevmRuntimeConfig({
+          auth: { type: "ApiKeyHeader", value: process.env.ZAMA_FHEVM_API_KEY ?? "local" },
+        });
+        const chain = solanaSdk.defineFhevmSolanaChain({
+          id: BigInt(config.chainId),
+          fhevm: { relayerUrl: env.relayerUrl, acl: { domainKeys: [asBytes32Hex(config.mints.joinConfidential)] } },
+        });
+        const encryptClient = solanaSdk.createFhevmEncryptClient({ chain, aclProgramAddress: config.aclProgram });
+        const [joinComputeSigner] = await getProgramDerivedAddress({
+          programAddress: vault.CONFIDENTIAL_TOKEN_PROGRAM_ADDRESS,
+          seeds: [COMPUTE_SIGNER_SEED, addressBytes(config.mints.joinConfidential)],
+        });
+        console.log("deposit-arc join: building input proof (local TFHE prover)...");
+        const inputProof = await encryptClient.buildInputProof({
+          contractAddress: asBytes32Hex(joinComputeSigner),
+          userAddress: asBytes32Hex(alice.address),
+          values: [{ type: "uint64", value: wrapBaseUnits }],
+        });
+        console.log("deposit-arc join: submitting input proof to the relayer...");
+        const inputProofResult = await encryptClient.submitInputProof({ inputProof });
+
+        // Step 7: join. joinBatch simulates, sends, and confirms; every account is derived from the
+        // seeded roots (lineages via demo/encryptedValueLineage + pendingJoinLineage, records via
+        // the SDK PDA helpers) — nothing comes from an address dump. Alice pays her own join rent.
+        const { batch, batchAuthority, batchJoinTokenAccount } = batchBeforeJoin.addresses;
+        const joinMint = config.mints.joinConfidential;
+        const hostProgram = config.programs.host;
+        console.log(`deposit-arc join: calling joinBatch on batch ${batchBeforeJoin.index} (${batch})...`);
+        await vault.joinBatch(
+          { solanaChain: chain, aclProgramAddress: config.aclProgram },
+          {
+            rpc,
+            rpcSubscriptions,
+            inputProof,
+            inputProofResult,
+            inputIndex: 0,
+            user: alice,
+            payer: alice,
+            batcher: roots.batcher,
+            batch,
+            joinConfidentialMint: joinMint,
+            userBalanceValue: await encryptedValueAddress(hostProgram, joinMint, aliceCusdc, BALANCE_LABEL),
+            batchBalanceValue: await encryptedValueAddress(hostProgram, joinMint, batchJoinTokenAccount, BALANCE_LABEL),
+            userTransferredValue: await encryptedValueAddress(hostProgram, joinMint, aliceCusdc, TRANSFERRED_AMOUNT_LABEL),
+            pendingJoinValue: (await vault.pendingJoinLineage(batch, batchAuthority, alice.address)).encryptedValueAddress,
+            hostConfig: config.hostConfig,
+            computeUnitLimit: JOIN_COMPUTE_UNIT_LIMIT,
+          },
+        );
+
+        // Step 8: on-chain assertions for the join leg. The join handler `init`s the (batch, alice)
+        // join record, so its existence under the batcher program proves THIS join executed — not
+        // merely that a transaction landed; the join-count increment pins it to the same batch.
+        console.log("deposit-arc join: asserting join record + join count on-chain...");
+        // joinBatch confirms at `confirmed`; read the record at that same commitment (the RPC
+        // default `finalized` lags ~31 slots and would near-deterministically miss a fresh join).
+        const joinRecord = await vault.deriveJoinRecordAddress(batch, alice.address);
+        const joinRecordAccount = await rpc
+          .getAccountInfo(joinRecord, { encoding: "base64", commitment: "confirmed" })
+          .send();
+        expect(joinRecordAccount.value).not.toBeNull();
+        expect(joinRecordAccount.value?.owner).toBe(vault.CONFIDENTIAL_BATCHER_PROGRAM_ADDRESS);
+        // getCurrentBatch exposes no commitment parameter (it reads at the RPC default), so poll
+        // until the finalized view catches up with the confirmed join instead of racing it.
+        const batchAfterJoin = await until(
+          async () => {
+            const snapshot = await vault.getCurrentBatch(rpc, roots);
+            return snapshot.state.joinCount === batchBeforeJoin.state.joinCount + 1n ? snapshot : false;
+          },
+          { description: "batch join count reflects the confirmed join", timeoutMs: 60_000 },
+        );
+        expect(batchAfterJoin.addresses.batch).toBe(batch);
+        expect(batchAfterJoin.state.joinCount).toBe(batchBeforeJoin.state.joinCount + 1n);
+      } finally {
+        globalThis.fetch = originalFetch;
+      }
     },
     SCENARIO_TIMEOUT_MS,
   );
