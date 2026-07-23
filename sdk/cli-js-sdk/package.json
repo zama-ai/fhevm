@@ -1,0 +1,22 @@
+{
+  "name": "cli-fhevm-sdk-workspace",
+  "type": "module",
+  "private": true,
+  "packageManager": "pnpm@11.9.0",
+  "engines": {
+    "node": ">=22.0.0",
+    "pnpm": ">=10.0.0"
+  },
+  "scripts": {
+    "build": "pnpm -r run build",
+    "cli": "pnpm --filter cli-fhevm-sdk run cli",
+    "cli:dev": "pnpm --filter cli-fhevm-sdk run cli:dev",
+    "load-test": "pnpm --filter @cli-fhevm-sdk/load-test run load-test",
+    "test": "pnpm -r run test",
+    "typecheck": "pnpm -r run typecheck"
+  },
+  "devDependencies": {
+    "@types/node": "^22.0.0",
+    "typescript": "^5.9.3"
+  }
+}
