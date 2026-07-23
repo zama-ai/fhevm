@@ -8,6 +8,7 @@ import {
   deriveJoinRecordAddress,
   deriveSettleAccounts,
   deriveSettleLookupTableAddresses,
+  SETTLE_ALT_FIELD_ORDER,
   settleAccountsToLookupTableAddresses,
   type VaultDemoRoots,
 } from './derive.js';
@@ -74,16 +75,27 @@ describe('settle lookup-table addresses', () => {
     expect(fromAccounts).not.toContain(accounts.redemptionRecord);
     expect(fromAccounts).toContain(accounts.batchBurnedAmountValue);
     expect(fromAccounts.length).toBe(Object.keys(accounts).length - 1);
+
+    // The ALT ordering is driven by the explicit SETTLE_ALT_FIELD_ORDER tuple, not by object-key
+    // insertion order. Pin that the tuple is exactly the settle account keys minus redemptionRecord,
+    // so a field added to the struct without being placed in the tuple fails here rather than
+    // silently dropping out of the table.
+    expect(SETTLE_ALT_FIELD_ORDER).not.toContain('redemptionRecord');
+    expect([...SETTLE_ALT_FIELD_ORDER].sort()).toEqual(
+      Object.keys(accounts)
+        .filter((name) => name !== 'redemptionRecord')
+        .sort(),
+    );
   });
 
   // CONSENSUS-CRITICAL GOLDEN. The settle v0 message compresses its accounts against the on-chain
   // ALT by POSITION: the on-chain table is extended in exactly this order at open_batch, and
   // `settleBatch` looks each account up by its index in the same list. The ordering is produced by
-  // `Object.entries` over the `SolanaVaultSettleAccounts` struct — i.e. it depends on the object-key
-  // INSERTION ORDER in `deriveSettleAccounts`. Reordering those fields (or renaming/removing one)
-  // silently shifts every downstream index and corrupts settle. This golden pins both the exact
-  // ordered address list and a couple of derived PDAs for the fixed `roots()` fixture; if it breaks,
-  // a settle-account field was reordered/changed and the on-chain ALT builder must change in lockstep.
+  // the explicit `SETTLE_ALT_FIELD_ORDER` tuple in derive.ts (not by object-key insertion order).
+  // Reordering that tuple (or renaming/removing an entry) silently shifts every downstream index and
+  // corrupts settle. This golden pins both the exact ordered address list and a couple of derived
+  // PDAs for the fixed `roots()` fixture; if it breaks, the ALT field order was changed and the
+  // on-chain ALT builder must change in lockstep.
   it('matches the golden ordered ALT list + golden PDA derivations (fixed roots fixture)', async () => {
     const r = roots();
     const batch = await deriveBatchAddresses(r, 0n);

@@ -158,11 +158,42 @@ export async function deriveSettleLookupTableAddresses(
   return settleAccountsToLookupTableAddresses(accounts);
 }
 
+/**
+ * The ALT field order, stated explicitly rather than inferred from `Object.entries` insertion order.
+ * This tuple — not the runtime key order of a `SolanaVaultSettleAccounts` object — is the single
+ * source of truth the on-chain table and the `settleBatch` compression both index against, so a field
+ * reorder in the interface can never silently shift the table without also editing this list (which
+ * the golden test in `derive.test.ts` pins). It is every settle account except `redemptionRecord`
+ * (seeded post-dispatch, so absent when the table is frozen), in the on-chain table's exact order.
+ */
+export const SETTLE_ALT_FIELD_ORDER = [
+  'batcher',
+  'batch',
+  'joinConfidentialMint',
+  'batchJoinTokenAccount',
+  'joinUnderlyingMint',
+  'joinMintVaultUnderlying',
+  'joinMintVaultAuthority',
+  'batchBurnedAmountValue',
+  'hostConfig',
+  'kmsContext',
+  'vault',
+  'vaultAuthority',
+  'vaultTokenAccount',
+  'payoutConfidentialMint',
+  'payoutUnderlyingMint',
+  'batchPayoutTokenAccount',
+  'payoutMintVaultUnderlying',
+  'payoutMintVaultAuthority',
+  'payoutComputeSigner',
+  'payoutTotalSupplyAuthority',
+  'batchPayoutBalanceValue',
+  'payoutTotalSupplyValue',
+] as const satisfies readonly Exclude<keyof SolanaVaultSettleAccounts, 'redemptionRecord'>[];
+
 /** Flattens a settle account set into its ALT ordering (every field except `redemptionRecord`). */
 export function settleAccountsToLookupTableAddresses(accounts: SolanaVaultSettleAccounts): Address[] {
-  return Object.entries(accounts)
-    .filter(([name]) => name !== 'redemptionRecord')
-    .map(([, address]) => address);
+  return SETTLE_ALT_FIELD_ORDER.map((name) => accounts[name]);
 }
 
 export async function deriveSettleAccounts(
