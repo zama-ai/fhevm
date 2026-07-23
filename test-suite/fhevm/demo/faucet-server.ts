@@ -4,14 +4,10 @@
 // recipient's associated token account (creating that ATA idempotently first).
 //
 // The SPL instructions are hand-built with `@solana/kit` primitives on purpose: the test-suite
-// carries no `@solana-program/token` dependency, and the two instructions the faucet needs are
-// small and stable. Layouts cited inline:
+// carries no `@solana-program/token` dependency. The ATA derivation + `CreateIdempotent` are shared
+// with the seed via `./tokenAccounts`; only `MintTo` is faucet-local. Layouts cited inline:
 //   - SPL Token `MintTo` (tag 7): data = [7, amount:u64-le]; accounts [mint(w), destination(w), authority(s)].
 //     https://github.com/solana-program/token — processor `Instruction::MintTo`.
-//   - Associated-Token `CreateIdempotent` (tag 1): no data args beyond the tag; accounts
-//     [payer(ws), ata(w), owner, mint, systemProgram, tokenProgram]. Idempotent = a no-op if the ATA
-//     already exists, so repeat drips to the same recipient don't error.
-//     https://github.com/solana-program/associated-token-account.
 //
 // This process holds a live validator connection and cannot be unit-tested offline; it is exercised
 // only by the `solana-demo-acceptance` workflow (manual dispatch), which starts it and funds the
@@ -28,8 +24,6 @@ import {
   createSolanaRpc,
   createSolanaRpcSubscriptions,
   createTransactionMessage,
-  getAddressEncoder,
-  getProgramDerivedAddress,
   getSignatureFromTransaction,
   sendAndConfirmTransactionFactory,
   setTransactionMessageFeePayerSigner,
@@ -43,42 +37,10 @@ import {
 import { readDemoConfig } from "./config";
 import { DEMO_KEYPAIRS } from "./loadDemoEnv";
 import { serveFaucet, type UsdcMinter } from "./faucet";
+import { associatedTokenAddress, createIdempotentAtaInstruction } from "./tokenAccounts";
 
-// Well-known SPL program ids (same literals the SDK's vault `derive.ts` uses).
+// Mock USDC is minted on the classic token program.
 const SPL_TOKEN_PROGRAM_ADDRESS = "TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA" as Address;
-const ASSOCIATED_TOKEN_PROGRAM_ADDRESS = "ATokenGPvbdGVxr1b2hvZbsiqW5xWH25efTNsLJA8knL" as Address;
-const SYSTEM_PROGRAM_ADDRESS = "11111111111111111111111111111111" as Address;
-
-const addressEncoder = getAddressEncoder();
-const encodeAddress = (value: Address): Uint8Array => new Uint8Array(addressEncoder.encode(value));
-
-/** Derives a recipient's associated token account for `mint` (canonical ATA seeds). */
-const associatedTokenAddress = async (owner: Address, mint: Address): Promise<Address> => {
-  const [ata] = await getProgramDerivedAddress({
-    programAddress: ASSOCIATED_TOKEN_PROGRAM_ADDRESS,
-    seeds: [encodeAddress(owner), encodeAddress(SPL_TOKEN_PROGRAM_ADDRESS), encodeAddress(mint)],
-  });
-  return ata;
-};
-
-/** Associated-Token `CreateIdempotent` (tag 1): a no-op when the ATA already exists. */
-const createIdempotentAtaInstruction = (params: {
-  readonly payer: TransactionSigner;
-  readonly ata: Address;
-  readonly owner: Address;
-  readonly mint: Address;
-}): Instruction => ({
-  programAddress: ASSOCIATED_TOKEN_PROGRAM_ADDRESS,
-  accounts: [
-    { address: params.payer.address, role: AccountRole.WRITABLE_SIGNER },
-    { address: params.ata, role: AccountRole.WRITABLE },
-    { address: params.owner, role: AccountRole.READONLY },
-    { address: params.mint, role: AccountRole.READONLY },
-    { address: SYSTEM_PROGRAM_ADDRESS, role: AccountRole.READONLY },
-    { address: SPL_TOKEN_PROGRAM_ADDRESS, role: AccountRole.READONLY },
-  ],
-  data: new Uint8Array([1]),
-});
 
 /** SPL Token `MintTo` (tag 7): mints `baseUnits` to `destination`, signed by the mint authority. */
 const mintToInstruction = (params: {

@@ -17,6 +17,10 @@
 //      program-owned underlying token account.
 //   3. `initialize_mint` ×2 (confidential_token): cUSDC wrapping mock USDC, cShares wrapping the share
 //      mint. Same decimals as their underlyings.
+//   3b. create each confidential mint's underlying-token escrow — the `vault_usdc` account
+//      `wrap_usdc`/`redeem_burned_amount` require to pre-exist (ATA of the mint's `vault_authority`
+//      PDA holding the underlying). `initialize_mint` does NOT create it; a missing escrow fails wrap
+//      on-chain with 3012 AccountNotInitialized. Both directions' escrows are created up front.
 //   4. `initialize_batcher` ×2 (confidential_batcher): the deposit batcher (join cUSDC → payout
 //      cShares) and the redeem batcher (the reverse), each with a slot-denominated min batch age.
 //   5. `open_batch` ×2 (via `openBatchForBatcher`): opens each batcher's first batch and stands up its
@@ -51,6 +55,7 @@ import {
 
 import { resolveEnv } from "../e2e/harness/loadEnv";
 import { until } from "../e2e/harness/until";
+import { buildVaultUnderlyingEscrowAtaInstruction } from "./tokenAccounts";
 import { DEMO_KEYPAIRS } from "./loadDemoEnv";
 import {
   resolveDemoConfigPath,
@@ -353,6 +358,25 @@ const main = async (): Promise<void> => {
       hostConfig,
     }),
   ]);
+
+  // 3b. Underlying-token escrows. `wrap_usdc` and `redeem_burned_amount` both take the confidential
+  // mint's `vault_usdc` = ATA(vault_authority(mint), underlyingMint) and require it to already exist
+  // (neither instruction inits it). Create both mints' escrows up front — cUSDC/mock-USDC is exercised
+  // by the wrap-leg smoke; cShares/share-mint is the redeem-direction mirror — so a later redeem does
+  // not fail the same way one step past what the smoke covers.
+  const cUsdcEscrow = await buildVaultUnderlyingEscrowAtaInstruction({
+    payer: deployer,
+    tokenProgram: vault.CONFIDENTIAL_TOKEN_PROGRAM_ADDRESS,
+    confidentialMint: cUsdcMint.address,
+    underlyingMint: mockUsdcMint.address,
+  });
+  const cSharesEscrow = await buildVaultUnderlyingEscrowAtaInstruction({
+    payer: deployer,
+    tokenProgram: vault.CONFIDENTIAL_TOKEN_PROGRAM_ADDRESS,
+    confidentialMint: cSharesMint.address,
+    underlyingMint: shareMint,
+  });
+  await send(deployer, [cUsdcEscrow.instruction, cSharesEscrow.instruction]);
 
   // 4. Batchers: deposit (join cUSDC → payout cShares) and redeem (the reverse).
   await send(deployer, [
