@@ -293,7 +293,7 @@ impl Drop for RedisPublisher {
         // Cancel all trimmer tasks on drop.
         // We can't async here, but CancellationToken::cancel() is sync.
         if let Ok(trimmers) = self.trimmers.try_lock() {
-            for (_, token) in trimmers.iter() {
+            for token in trimmers.values() {
                 token.cancel();
             }
         }

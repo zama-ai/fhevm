@@ -168,9 +168,9 @@ impl SerializedFhevmKeys {
         println!("Creating file {}", Self::FULL_SKS);
         std::fs::write(Self::FULL_SKS, self.server_key).expect("write sns_pk");
 
-        if self.client_key.is_some() {
+        if let Some(client_key) = self.client_key {
             println!("Creating file {}", Self::CKS);
-            std::fs::write(Self::CKS, self.client_key.unwrap()).expect("write cks");
+            std::fs::write(Self::CKS, client_key).expect("write cks");
         }
 
         println!("Creating file {}", Self::PKS);
