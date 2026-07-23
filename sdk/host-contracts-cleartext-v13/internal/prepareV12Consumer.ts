@@ -1,5 +1,5 @@
 import { execFileSync, spawnSync } from 'node:child_process';
-import { mkdirSync, readdirSync, rmSync } from 'node:fs';
+import { existsSync, mkdirSync, readdirSync, rmSync } from 'node:fs';
 import { join, resolve } from 'node:path';
 import { pathToFileURL } from 'node:url';
 import { PACKAGE_ROOT } from './createPackageTarball.ts';
@@ -47,18 +47,39 @@ function packV12(): string {
 }
 
 export function prepareV12Consumer(): void {
-  // Build the v12 package (contracts → templates → TS) so its tarball ships a ready-to-import `ts/`.
-  run('npm', ['run', 'build:templates'], V12_PACKAGE_ROOT);
-  run('npm', ['run', 'build'], V12_PACKAGE_ROOT);
+  // The upgrade-e2e test is optional: it needs the sibling cleartext-v12 package to deploy the
+  // "before" stack. When that package isn't checked out, skip fixture prep — the library and every
+  // other test build/run without it, and the upgrade e2e self-skips (see internal/runUpgradeE2e.ts).
+  if (!existsSync(V12_PACKAGE_ROOT)) {
+    console.log(
+      `[v12-consumer] sibling host-contracts-cleartext-v12 not found at ${V12_PACKAGE_ROOT} — skipping upgrade-e2e fixture.`,
+    );
+    return;
+  }
 
-  const tarballPath = packV12();
-  rmSync(V12_CONSUMER_PACKAGE_DIR, { recursive: true, force: true });
-  mkdirSync(V12_CONSUMER_PACKAGE_DIR, { recursive: true });
-  execFileSync('tar', ['-xzf', tarballPath, '--strip-components', '1', '-C', V12_CONSUMER_PACKAGE_DIR], {
-    encoding: 'utf8',
-    stdio: 'pipe',
-  });
-  console.log(`[v12-consumer] installed v12 fixture from ${tarballPath}`);
+  // Preparing the fixture requires the sibling package to be fully set up (its deps installed so
+  // forge + tsc can build it). If anything fails — deps not installed, forge/tsc error — treat the
+  // fixture as unavailable and skip: the upgrade e2e is optional and self-skips (runUpgradeE2e.ts).
+  try {
+    // Build the v12 package (contracts → templates → TS) so its tarball ships a ready-to-import `ts/`.
+    run('npm', ['run', 'build:templates'], V12_PACKAGE_ROOT);
+    run('npm', ['run', 'build'], V12_PACKAGE_ROOT);
+
+    const tarballPath = packV12();
+    rmSync(V12_CONSUMER_PACKAGE_DIR, { recursive: true, force: true });
+    mkdirSync(V12_CONSUMER_PACKAGE_DIR, { recursive: true });
+    execFileSync('tar', ['-xzf', tarballPath, '--strip-components', '1', '-C', V12_CONSUMER_PACKAGE_DIR], {
+      encoding: 'utf8',
+      stdio: 'pipe',
+    });
+    console.log(`[v12-consumer] installed v12 fixture from ${tarballPath}`);
+  } catch (error) {
+    console.warn(
+      `[v12-consumer] could not prepare the host-contracts-cleartext-v12 fixture — skipping upgrade-e2e. ` +
+        `If you need the v12→v13 upgrade test, install + build the sibling package first ` +
+        `(cd ../host-contracts-cleartext-v12 && npm ci). Reason: ${error instanceof Error ? error.message : String(error)}`,
+    );
+  }
 }
 
 if (process.argv[1] !== undefined && import.meta.url === pathToFileURL(resolve(process.argv[1])).href) {

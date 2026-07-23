@@ -18,7 +18,7 @@
     "clean:tarball-consumer": "rm -rf test/ts/.consumer test/ts/.tarballs test/ts/.vitest-cache test/ts/node_modules",
     "prepare:tarball-consumer": "node internal/prepareTarballConsumer.ts",
     "test": "npm run test:templates && npm run test:tarball && npm run test:upgrade-e2e",
-    "test:upgrade-e2e": "npm run clean:tarball-consumer && npm run build:templates && npm run build && npm run prepare:tarball-consumer && node internal/prepareV12Consumer.ts && tsc --project test/ts/tsconfig.e2e.json --noEmit && vitest run --config test/ts/vitest.e2e.config.ts",
+    "test:upgrade-e2e": "node internal/runUpgradeE2e.ts",
     "test:templates": "npm run clean:tarball-consumer && npm run build:templates && node --test --test-concurrency=1 test/*.test.ts",
     "test:tarball": "npm run clean:tarball-consumer && npm run build:templates && npm run build && npm run prepare:tarball-consumer && npm run lint:tarball-consumer && vitest run --config test/ts/vitest.config.ts",
     "lint": "eslint --config ./eslint.config.lint.js && tsc -b ./tsconfig.json --noEmit",
