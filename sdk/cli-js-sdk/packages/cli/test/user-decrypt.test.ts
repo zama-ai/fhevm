@@ -1,14 +1,14 @@
-import assert from "node:assert/strict";
-import { test } from "node:test";
-
 import { Command } from "@commander-js/extra-typings";
+import { expect, test } from "vitest";
 
 import { registerUserDecryptCommands } from "../src/cli/commands/user-decrypt";
 
 /** Finds a direct child command by name. */
 const child = (parent: Command, name: string): Command => {
   const found = parent.commands.find((command) => command.name() === name);
-  assert.ok(found, `expected subcommand "${name}"`);
+  if (found === undefined) {
+    throw new Error(`expected subcommand "${name}"`);
+  }
   return found as unknown as Command;
 };
 
@@ -31,7 +31,7 @@ test("stored subcommand receives --artifact now that no parent shadows it", asyn
     { from: "user" },
   );
 
-  assert.equal(captured?.artifact, "out.json");
+  expect(captured?.artifact).toBe("out.json");
 });
 
 test("user-decrypt parent is a pure dispatcher over direct/stored/fresh", () => {
@@ -42,12 +42,10 @@ test("user-decrypt parent is a pure dispatcher over direct/stored/fresh", () => 
 
   // The parent declares no options of its own, so none can shadow subcommand
   // flags such as --artifact.
-  assert.deepEqual(
-    userDecrypt.options.map((option) => option.long),
-    [],
-  );
-  assert.deepEqual(
-    userDecrypt.commands.map((command) => command.name()).sort(),
-    ["direct", "fresh", "stored"],
-  );
+  expect(userDecrypt.options.map((option) => option.long)).toEqual([]);
+  expect(userDecrypt.commands.map((command) => command.name()).sort()).toEqual([
+    "direct",
+    "fresh",
+    "stored",
+  ]);
 });
