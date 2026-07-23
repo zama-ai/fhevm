@@ -1,5 +1,6 @@
 //! Tests for the confidential-bridge association worker.
 
+use crate::bridge::drain_associations;
 use serial_test::serial;
 use sqlx::PgPool;
 use test_harness::instance::{setup_test_db, DBInstance, ImportMode};
@@ -223,7 +224,7 @@ async fn associates_ready_pair() {
     let dst = handle(2);
     insert_ready_pair(&pool, &src, &dst).await;
 
-    let associated = crate::bridge::drain_associations(&pool, 128, &CancellationToken::new())
+    let associated = drain_associations(&pool, 128, &CancellationToken::new(), false)
         .await
         .unwrap();
     assert_eq!(associated, 1);
@@ -265,6 +266,32 @@ async fn associates_ready_pair() {
 
 #[tokio::test]
 #[serial]
+async fn gcs_bridge_does_not_fall_back_to_public() {
+    let (_db, pool) = fresh_db().await;
+    let src = handle(3);
+    let dst = handle(4);
+    insert_ready_pair(&pool, &src, &dst).await;
+    sqlx::query(
+        "INSERT INTO upgrade_state
+            (stack_role, state, status, proposal_id, version, start_block, end_block, updated_at)
+         VALUES ('GCS', 'UpgradeActivated', 'in_progress', '\\x02', 'v0.15', 1, 2, NOW())
+         ON CONFLICT (stack_role) DO UPDATE
+         SET state = EXCLUDED.state, status = EXCLUDED.status",
+    )
+    .execute(&pool)
+    .await
+    .expect("seed GCS state");
+
+    let associated = drain_associations(&pool, 128, &CancellationToken::new(), true)
+        .await
+        .unwrap();
+
+    assert_eq!(associated, 0);
+    assert!(!is_associated(&pool, &dst).await);
+}
+
+#[tokio::test]
+#[serial]
 async fn skips_when_source_approval_missing() {
     let (_db, pool) = fresh_db().await;
     let src = handle(1);
@@ -282,7 +309,7 @@ async fn skips_when_source_approval_missing() {
     .await;
     insert_dst_event(&pool, &src, &dst, DST_CHAIN).await;
 
-    let associated = crate::bridge::drain_associations(&pool, 128, &CancellationToken::new())
+    let associated = drain_associations(&pool, 128, &CancellationToken::new(), false)
         .await
         .unwrap();
     assert_eq!(associated, 0);
@@ -310,7 +337,7 @@ async fn associates_when_source_event_arrives_last() {
     .await;
     insert_dst_event(&pool, &src, &dst, DST_CHAIN).await;
     assert_eq!(
-        crate::bridge::drain_associations(&pool, 128, &CancellationToken::new())
+        drain_associations(&pool, 128, &CancellationToken::new(), false)
             .await
             .unwrap(),
         0
@@ -320,7 +347,7 @@ async fn associates_when_source_event_arrives_last() {
     // The source `BridgeHandle` approval arrives last -> the pair associates.
     insert_src_event(&pool, &src, SRC_CHAIN, DST_CHAIN).await;
     assert_eq!(
-        crate::bridge::drain_associations(&pool, 128, &CancellationToken::new())
+        drain_associations(&pool, 128, &CancellationToken::new(), false)
             .await
             .unwrap(),
         1
@@ -350,7 +377,7 @@ async fn skips_events_from_orphaned_bridge_blocks() {
     insert_src_event_with_block_hash(&pool, &src, SRC_CHAIN, DST_CHAIN, SRC_BLOCK_HASH).await;
     insert_dst_event_with_block_hash(&pool, &src, &dst, DST_CHAIN, DST_BLOCK_HASH).await;
     assert_eq!(
-        crate::bridge::drain_associations(&pool, 128, &CancellationToken::new())
+        drain_associations(&pool, 128, &CancellationToken::new(), false)
             .await
             .unwrap(),
         0
@@ -367,7 +394,7 @@ async fn skips_events_from_orphaned_bridge_blocks() {
     .await
     .unwrap();
     assert_eq!(
-        crate::bridge::drain_associations(&pool, 128, &CancellationToken::new())
+        drain_associations(&pool, 128, &CancellationToken::new(), false)
             .await
             .unwrap(),
         0
@@ -394,7 +421,7 @@ async fn skips_events_from_orphaned_bridge_blocks() {
     .await
     .unwrap();
     assert_eq!(
-        crate::bridge::drain_associations(&pool, 128, &CancellationToken::new())
+        drain_associations(&pool, 128, &CancellationToken::new(), false)
             .await
             .unwrap(),
         0
@@ -413,7 +440,7 @@ async fn skips_events_from_orphaned_bridge_blocks() {
     .await
     .unwrap();
     assert_eq!(
-        crate::bridge::drain_associations(&pool, 128, &CancellationToken::new())
+        drain_associations(&pool, 128, &CancellationToken::new(), false)
             .await
             .unwrap(),
         1
@@ -446,7 +473,7 @@ async fn associates_pending_destination_block() {
 
     // Destination finality is not awaited: the pair associates immediately.
     assert_eq!(
-        crate::bridge::drain_associations(&pool, 128, &CancellationToken::new())
+        drain_associations(&pool, 128, &CancellationToken::new(), false)
             .await
             .unwrap(),
         1
@@ -466,7 +493,7 @@ async fn associates_only_when_source_fully_materialized() {
     insert_src_event(&pool, &src, SRC_CHAIN, DST_CHAIN).await;
     insert_dst_event(&pool, &src, &dst, DST_CHAIN).await;
     assert_eq!(
-        crate::bridge::drain_associations(&pool, 128, &CancellationToken::new())
+        drain_associations(&pool, 128, &CancellationToken::new(), false)
             .await
             .unwrap(),
         0
@@ -475,7 +502,7 @@ async fn associates_only_when_source_fully_materialized() {
     // ct64 blob present, but no digest row yet.
     insert_ciphertext(&pool, &src, CT64).await;
     assert_eq!(
-        crate::bridge::drain_associations(&pool, 128, &CancellationToken::new())
+        drain_associations(&pool, 128, &CancellationToken::new(), false)
             .await
             .unwrap(),
         0
@@ -484,7 +511,7 @@ async fn associates_only_when_source_fully_materialized() {
     // Digest row present but ct128 digest still missing.
     insert_digest(&pool, &src, Some(CT64_DIGEST), None, SRC_CHAIN).await;
     assert_eq!(
-        crate::bridge::drain_associations(&pool, 128, &CancellationToken::new())
+        drain_associations(&pool, 128, &CancellationToken::new(), false)
             .await
             .unwrap(),
         0
@@ -499,7 +526,7 @@ async fn associates_only_when_source_fully_materialized() {
         .await
         .unwrap();
     assert_eq!(
-        crate::bridge::drain_associations(&pool, 128, &CancellationToken::new())
+        drain_associations(&pool, 128, &CancellationToken::new(), false)
             .await
             .unwrap(),
         1
@@ -516,14 +543,14 @@ async fn associates_only_once() {
     insert_ready_pair(&pool, &src, &dst).await;
 
     assert_eq!(
-        crate::bridge::drain_associations(&pool, 128, &CancellationToken::new())
+        drain_associations(&pool, 128, &CancellationToken::new(), false)
             .await
             .unwrap(),
         1
     );
     // A second run finds nothing new: the associated row is skipped.
     assert_eq!(
-        crate::bridge::drain_associations(&pool, 128, &CancellationToken::new())
+        drain_associations(&pool, 128, &CancellationToken::new(), false)
             .await
             .unwrap(),
         0
@@ -546,7 +573,7 @@ async fn skips_pair_when_destination_already_materialized() {
 
     // The pair is skipped: the destination already has a ciphertext, so there is
     // nothing to copy.
-    let associated = crate::bridge::drain_associations(&pool, 128, &CancellationToken::new())
+    let associated = drain_associations(&pool, 128, &CancellationToken::new(), false)
         .await
         .unwrap();
     assert_eq!(associated, 0);
@@ -614,7 +641,7 @@ async fn drains_across_multiple_batches() {
         insert_ready_pair(&pool, src, dst).await;
     }
 
-    let associated = crate::bridge::drain_associations(&pool, 2, &CancellationToken::new())
+    let associated = drain_associations(&pool, 2, &CancellationToken::new(), false)
         .await
         .unwrap();
     assert_eq!(associated, 3);
@@ -648,7 +675,7 @@ async fn associates_same_chain_pair() {
     insert_src_event(&pool, &src, SAME_CHAIN, SAME_CHAIN).await;
     insert_dst_event(&pool, &src, &dst, SAME_CHAIN).await;
 
-    let associated = crate::bridge::drain_associations(&pool, 128, &CancellationToken::new())
+    let associated = drain_associations(&pool, 128, &CancellationToken::new(), false)
         .await
         .unwrap();
     assert_eq!(associated, 1);
