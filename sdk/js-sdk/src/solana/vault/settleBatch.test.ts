@@ -87,8 +87,11 @@ function proofServiceResponse(): Response {
     status: 200,
     json: async () => ({
       mmr_proof: { leaf_index: 0, siblings: [] },
+      leaf_index: 0,
       leaf_count: 1,
-      proof_slot: 1,
+      rpc_context_slot: 1234,
+      commitment: 'confirmed',
+      proof_format_version: 'v1',
       verified: true,
       status: 'verified',
     }),
