@@ -6,7 +6,8 @@ use std::time::Duration;
 use aws_sdk_s3::primitives::ByteStream;
 use fhevm_engine_common::database::{GCS_SCHEMA, GCS_SCHEMA_QUOTED};
 use fhevm_engine_common::gcs_activation::EVENT_GW_NEW_BLOCK;
-use sqlx::{postgres::PgListener, Pool, Postgres, Row};
+use fhevm_engine_common::versioning::{begin_write_guarded, GcsRollbackPolicy, WriteGuard};
+use sqlx::{postgres::PgListener, Pool, Postgres, Row, Transaction};
 use tokio::select;
 use tokio_util::sync::CancellationToken;
 use tracing::{debug, error, info, warn};
@@ -27,12 +28,44 @@ pub fn state_hash_key(chain_id: i64, block_number: i64) -> String {
     format!("state_hash/chain={chain_id}/block={block_number}.bin")
 }
 
+/// Outcome of a guarded state-hash insert.
+enum HashInsert {
+    /// Inserted a new row.
+    Wrote,
+    /// The row already exists.
+    Noop,
+}
+
+/// Inserts a state hash in the guarded transaction.
+async fn insert_state_hash(
+    tx: &mut Transaction<'_, Postgres>,
+    chain_id: i64,
+    block_number: i64,
+    hash: &str,
+) -> Result<HashInsert, sqlx::Error> {
+    let affected = sqlx::query(&format!(
+        "INSERT INTO {GCS_SCHEMA_QUOTED}.state_hash (chain_id, block_number, state_hash)
+         VALUES ($1, $2, $3) ON CONFLICT (chain_id, block_number) DO NOTHING"
+    ))
+    .bind(chain_id)
+    .bind(block_number)
+    .bind(hash)
+    .execute(&mut **tx)
+    .await?
+    .rows_affected();
+    Ok(if affected > 0 {
+        HashInsert::Wrote
+    } else {
+        HashInsert::Noop
+    })
+}
+
 /// GCS path: stamp the GCS `state_hash` for blocks in `[start, end]` that don't
 /// already have an entry. Empty blocks (`fhe_event_count = 0`) get
 /// [`EMPTY_BLOCK_STATE_HASH`]; non-empty blocks get the SHA-256 over their
 /// GCS `ciphertexts`.
 async fn compute_and_insert_gcs(
-    pool: &Pool<Postgres>,
+    tx: &mut Transaction<'_, Postgres>,
     start: i64,
     end: i64,
     batch_limit: i64,
@@ -73,14 +106,9 @@ async fn compute_and_insert_gcs(
         .bind(start)
         .bind(end)
         .bind(batch_limit)
-        .fetch_all(pool)
+        .fetch_all(&mut **tx)
         .await?;
 
-    let insert_sql = format!(
-        "INSERT INTO {GCS_SCHEMA_QUOTED}.state_hash (chain_id, block_number, state_hash)
-         VALUES ($1, $2, $3)
-         ON CONFLICT (chain_id, block_number) DO NOTHING"
-    );
     for row in pending {
         let chain_id: i64 = row.try_get("chain_id")?;
         let block_number: i64 = row.try_get("block_number")?;
@@ -88,18 +116,12 @@ async fn compute_and_insert_gcs(
         let hash = if is_empty {
             Some(EMPTY_BLOCK_STATE_HASH.to_string())
         } else {
-            compute_gcs_hash(pool, chain_id, block_number).await?
+            compute_gcs_hash(tx, chain_id, block_number).await?
         };
         let Some(hash) = hash else { continue };
-        let affected = sqlx::query(&insert_sql)
-            .bind(chain_id)
-            .bind(block_number)
-            .bind(&hash)
-            .execute(pool)
-            .await?
-            .rows_affected();
-        if affected > 0 {
-            info!(chain_id, block_number, "gcs.state_hash inserted");
+        match insert_state_hash(tx, chain_id, block_number, &hash).await? {
+            HashInsert::Wrote => info!(chain_id, block_number, "gcs.state_hash inserted"),
+            HashInsert::Noop => {}
         }
     }
     Ok(())
@@ -115,7 +137,7 @@ async fn compute_and_insert_gcs(
 /// read public. Runtime `sqlx::query` because the schema name is only known at
 /// runtime.
 async fn compute_gcs_hash(
-    pool: &Pool<Postgres>,
+    tx: &mut Transaction<'_, Postgres>,
     chain_id: i64,
     block_number: i64,
 ) -> anyhow::Result<Option<String>> {
@@ -140,7 +162,7 @@ async fn compute_gcs_hash(
     let Some(row) = sqlx::query(&sql)
         .bind(chain_id)
         .bind(block_number)
-        .fetch_optional(pool)
+        .fetch_optional(&mut **tx)
         .await?
     else {
         return Ok(None);
@@ -165,7 +187,7 @@ async fn compute_gcs_hash(
 /// Like [`compute_and_insert_gcs`], every table is explicitly qualified with the
 /// versioned GCS schema and never falls back to `public`.
 async fn compute_and_insert_gw_input_hashes(
-    pool: &Pool<Postgres>,
+    tx: &mut Transaction<'_, Postgres>,
     gw_chain_id: i64,
     gw_start_block: i64,
     gw_tip: i64,
@@ -192,33 +214,24 @@ async fn compute_and_insert_gw_input_hashes(
         .bind(gw_tip)
         .bind(gw_chain_id)
         .bind(batch_limit)
-        .fetch_all(pool)
+        .fetch_all(&mut **tx)
         .await?;
 
-    let insert_sql = format!(
-        "INSERT INTO {GCS_SCHEMA_QUOTED}.state_hash (chain_id, block_number, state_hash)
-         VALUES ($1, $2, $3)
-         ON CONFLICT (chain_id, block_number) DO NOTHING"
-    );
     for row in pending {
         let block_number: i64 = row.try_get("block_number")?;
         // `None` when the input ciphertexts aren't all present yet (handle exists
         // in input_handles but its ciphertext row hasn't landed) — retry later.
-        let Some(hash) = compute_gw_input_hash(pool, block_number).await? else {
+        let Some(hash) = compute_gw_input_hash(tx, block_number).await? else {
             continue;
         };
-        let affected = sqlx::query(&insert_sql)
-            .bind(gw_chain_id)
-            .bind(block_number)
-            .bind(&hash)
-            .execute(pool)
-            .await?
-            .rows_affected();
-        if affected > 0 {
-            info!(
-                gw_chain_id,
-                block_number, "gcs.state_hash (gw inputs) inserted"
-            );
+        match insert_state_hash(tx, gw_chain_id, block_number, &hash).await? {
+            HashInsert::Wrote => {
+                info!(
+                    gw_chain_id,
+                    block_number, "gcs.state_hash (gw inputs) inserted"
+                )
+            }
+            HashInsert::Noop => {}
         }
     }
     Ok(())
@@ -231,7 +244,7 @@ async fn compute_and_insert_gw_input_hashes(
 /// two tracks are byte-compatible, but the source is `input_handles` joined to
 /// `is_input` ciphertexts rather than `computations` outputs.
 async fn compute_gw_input_hash(
-    pool: &Pool<Postgres>,
+    tx: &mut Transaction<'_, Postgres>,
     block_number: i64,
 ) -> anyhow::Result<Option<String>> {
     let sql = format!(
@@ -249,7 +262,7 @@ async fn compute_gw_input_hash(
     );
     let Some(row) = sqlx::query(&sql)
         .bind(block_number)
-        .fetch_optional(pool)
+        .fetch_optional(&mut **tx)
         .await?
     else {
         return Ok(None);
@@ -261,22 +274,28 @@ async fn compute_gw_input_hash(
 /// The Gateway tip = the GCS gw-listener watermark. `None` when the watermark
 /// row is absent/NULL (listener hasn't ingested any Gateway block yet), which
 /// disables Gateway hashing until it does.
-pub(crate) async fn gw_listener_tip(pool: &Pool<Postgres>) -> Result<Option<i64>, sqlx::Error> {
+pub(crate) async fn gw_listener_tip<'e, E>(executor: E) -> Result<Option<i64>, sqlx::Error>
+where
+    E: sqlx::Executor<'e, Database = Postgres>,
+{
     let sql = format!(
         "SELECT last_block_num FROM {GCS_SCHEMA_QUOTED}.gw_listener_last_block
           WHERE dummy_id = true"
     );
-    let row: Option<(Option<i64>,)> = sqlx::query_as(&sql).fetch_optional(pool).await?;
+    let row: Option<(Option<i64>,)> = sqlx::query_as(&sql).fetch_optional(executor).await?;
     Ok(row.and_then(|(v,)| v))
 }
 
 /// `gw_start_block` of the active GCS upgrade row, or `None` when unset.
-pub(crate) async fn gw_start_block(pool: &Pool<Postgres>) -> Result<Option<i64>, sqlx::Error> {
+pub(crate) async fn gw_start_block<'e, E>(executor: E) -> Result<Option<i64>, sqlx::Error>
+where
+    E: sqlx::Executor<'e, Database = Postgres>,
+{
     let row: Option<(Option<i64>,)> = sqlx::query_as(
         "SELECT gw_start_block FROM upgrade_state
           WHERE stack_role = 'GCS' AND status = 'in_progress'",
     )
-    .fetch_optional(pool)
+    .fetch_optional(executor)
     .await?;
     Ok(row.and_then(|(v,)| v))
 }
@@ -429,12 +448,12 @@ async fn upload_pending_gw_state_hashes(
 /// Checked against `information_schema.schemata` by exact (unquoted) name, so the
 /// hyphen/dots in the schema name need no identifier quoting. See
 /// [`compute_and_upload_state_hashes`] for why the pass is gated on this.
-async fn gcs_schema_exists(pool: &Pool<Postgres>) -> anyhow::Result<bool> {
+async fn gcs_schema_exists(tx: &mut Transaction<'_, Postgres>) -> anyhow::Result<bool> {
     let (exists,): (bool,) = sqlx::query_as(
         "SELECT EXISTS (SELECT 1 FROM information_schema.schemata WHERE schema_name = $1)",
     )
     .bind(GCS_SCHEMA)
-    .fetch_one(pool)
+    .fetch_one(&mut **tx)
     .await?;
     Ok(exists)
 }
@@ -450,6 +469,11 @@ async fn compute_and_upload_state_hashes(
     batch_limit: i64,
     gw_chain_id: i64,
 ) -> anyhow::Result<()> {
+    let mut tx = match begin_write_guarded(pool, true, GcsRollbackPolicy::Skip).await? {
+        WriteGuard::Proceed(tx) => tx,
+        WriteGuard::Stop | WriteGuard::Skip => return Ok(()),
+    };
+
     // Every branch below touches the versioned GCS schema — the compute paths and
     // the GW-inputs upload explicitly via GCS_SCHEMA_QUOTED, the host-chain upload
     // implicitly through the gcs-first search_path. That schema is created by the
@@ -459,28 +483,31 @@ async fn compute_and_upload_state_hashes(
     // schema is absent, and the hard-qualified GW upload would fail every pass with
     // `relation "gcs-<ver>.state_hash" does not exist`. There is nothing to compute
     // or upload without the schema, so skip the whole pass cleanly.
-    if !gcs_schema_exists(pool).await? {
+    if !gcs_schema_exists(&mut tx).await? {
         debug!(
             schema = GCS_SCHEMA,
             "GCS schema absent — skipping state_hash pass"
         );
+        tx.rollback().await?;
         return Ok(());
     }
 
     // GCS hashes are only produced during an active upgrade window; BCS hashes
     // are not produced because they would never be uploaded or consumed.
-    if let Some((start, end)) = crate::active_upgrade_window(pool).await? {
-        compute_and_insert_gcs(pool, start, end, batch_limit).await?;
+    if let Some((_, start, end)) = crate::active_upgrade_window(&mut *tx).await? {
+        compute_and_insert_gcs(&mut tx, start, end, batch_limit).await?;
 
         // Gateway-inputs track: only once the GCS gw-listener has a watermark and
         // gw_start_block is set. Bounded to sealed blocks (< gw_tip).
-        if let (Some(gw_start), Some(gw_tip)) =
-            (gw_start_block(pool).await?, gw_listener_tip(pool).await?)
-        {
-            compute_and_insert_gw_input_hashes(pool, gw_chain_id, gw_start, gw_tip, batch_limit)
+        if let (Some(gw_start), Some(gw_tip)) = (
+            gw_start_block(&mut *tx).await?,
+            gw_listener_tip(&mut *tx).await?,
+        ) {
+            compute_and_insert_gw_input_hashes(&mut tx, gw_chain_id, gw_start, gw_tip, batch_limit)
                 .await?;
         }
     }
+    tx.commit().await?;
 
     // S3 upload: drains pending rows; runs every pass so failed PUTs retry.
     if let Some(s3) = s3 {

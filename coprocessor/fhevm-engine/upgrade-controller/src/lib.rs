@@ -5,6 +5,8 @@
 //! `unanimity_consensus` channel is produced by `consensus-detector` once every
 //! operator publishes the same state commitment at the upgrade's `end_block`.
 
+use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::Arc;
 use std::time::Duration;
 
 use fhevm_engine_common::database::GCS_SCHEMA_QUOTED;
@@ -23,6 +25,8 @@ pub const UPGRADE_ACTIVATED_CHANNEL: &str =
     fhevm_engine_common::gcs_activation::EVENT_UPGRADE_ACTIVATED;
 /// Must stay in sync with `consensus_detector::UNANIMITY_CONSENSUS_CHANNEL`.
 pub const UNANIMITY_CONSENSUS_CHANNEL: &str = "event_unanimity_consensus";
+/// Sent when a dry-run never reached agreement; triggers the rollback.
+pub const UNANIMITY_CONSENSUS_TIMEOUT_CHANNEL: &str = "event_unanimity_consensus_timeout";
 /// Re-triggers the GCS dry-run readiness check. Must stay in sync with the
 /// names emitted by `host-listener::ingest_block_logs` and the FHE workers.
 pub const NEW_BLOCK_CHANNEL: &str = "event_new_block";
@@ -54,11 +58,11 @@ pub use fhevm_engine_common::versioning::EVENT_STACK_VERSION_UPGRADED;
 /// for now; expected to become configurable.
 const READINESS_CONFIRMATIONS: i64 = 100;
 
-/// PostgreSQL advisory-lock key used to serialize cutover against in-flight
-/// BCS writes. `execute_cutover` takes the exclusive form; every BCS-mode
-/// compute worker takes the shared form inside its write tx via
-/// [`fhevm_engine_common::versioning::cutover_gate`]. Re-exported from the common
-/// crate so the controller and all workers agree on one canonical value.
+/// PostgreSQL advisory-lock key used to serialize controller changes against
+/// writes. Cutover and rollback take the exclusive form; write transactions take
+/// the shared form through [`fhevm_engine_common::versioning::begin_write_guarded`].
+/// Re-exported from the common crate so the controller and all writers agree on
+/// one canonical value.
 pub use fhevm_engine_common::versioning::CUTOVER_LOCK_ID;
 
 /// Returns the `upgrade_state.stack_role` value for a given `gcs_mode` flag:
@@ -122,11 +126,10 @@ pub struct UpgradeActivatedPayload {
 
 /// Payload published over `unanimity_consensus` by `consensus-detector`.
 ///
-/// `block_height` is matched against the in-DB FSM row's `end_block` to ensure
-/// the event belongs to the upgrade currently in flight — otherwise a late or
-/// replayed event could trigger a cutover for the wrong block window.
+/// `proposal_id` identifies the active upgrade.
 #[derive(Debug, Clone, Deserialize)]
 pub struct UnanimityConsensusPayload {
+    pub proposal_id: Vec<u8>,
     pub chain_id: i64,
     pub block_height: i64,
     pub block_hash: String,
@@ -175,6 +178,7 @@ fn decode_hex(s: &str) -> Result<Vec<u8>, Error> {
 pub async fn handle_upgrade_activated(
     pool: &Pool<Postgres>,
     cancel: &CancellationToken,
+    readiness: &Arc<AtomicBool>,
     gcs_mode: bool,
     raw_payload: &str,
 ) -> Result<(), Error> {
@@ -250,95 +254,109 @@ pub async fn handle_upgrade_activated(
     // Only GCS gates on the pre-snapshot completeness check; BCS keeps
     // serving live traffic untouched until cutover.
     if gcs_mode {
-        let chain_id = payload.chain_id;
-        let start_block = payload.start_block;
-
-        // Gateway-side gate for the zkproof-worker, run concurrently with the
-        // host-chain readiness loop below. The zkproof-worker switches its
-        // re-randomization strategy at `gw_start_block` (a Gateway block), which
-        // is a different clock from the host-chain `start_block` that releases
-        // the tfhe-/sns-workers — so it gets its own readiness task and its own
-        // release notify. Spawned (not awaited) so it makes progress while the
-        // host-chain loop blocks this handler.
-        {
-            let pool = pool.clone();
-            let cancel = cancel.child_token();
-            let gw_start_block = payload.gw_start_block;
-            tokio::spawn(async move {
-                match wait_until_gw_dry_run_ready(pool.clone(), cancel, gw_start_block).await {
-                    Ok(true) => {
-                        // Prune pre-start proofs so the dry-run snapshot starts
-                        // cleanly at gw_start_block, then release the worker.
-                        match prune_gcs_verify_proofs_before_start(&pool, gw_start_block).await {
-                            Ok(deleted) => info!(
-                                gw_start_block,
-                                deleted, "pruned pre-gw_start_block rows from gcs.verify_proofs"
-                            ),
-                            Err(e) => {
-                                error!(error = %e, "failed to prune gcs.verify_proofs; skipping gw release");
-                                return;
-                            }
-                        }
-                        if let Err(e) = transition_to_gw_dry_run_started(&pool).await {
-                            error!(error = %e, "failed to transition GCS gw_dry_run_started");
-                        }
-                    }
-                    Ok(false) => info!(
-                        gw_start_block,
-                        "gw readiness loop exited without satisfying readiness — skipping prune and release"
-                    ),
-                    Err(e) => error!(error = %e, "GCS gateway dry-run readiness loop failed"),
-                }
-            });
-        }
-
-        // 1. Wait until BCS has fully settled every computation up to start_block.
-        match wait_until_dry_run_ready(pool.clone(), cancel.child_token(), chain_id, start_block)
-            .await
-        {
-            Ok(true) => {
-                // 2. Prune: the GCS stack tails the chain before activation, so
-                //    gcs.computations may hold rows for blocks below start_block.
-                //    Clear them — after readiness, before the internal
-                //    upgrade-activated spawn — so the dry-run snapshot begins
-                //    cleanly at start_block.
-                let deleted =
-                    prune_gcs_computations_before_start(pool, chain_id, start_block).await?;
-                info!(
-                    chain_id,
-                    start_block, deleted, "pruned pre-start_block rows from gcs.computations"
-                );
-
-                // 3. Spawn upgrade_activated internally: flip the GCS row to
-                //    DryRunStarted, releasing the GCS stack into the dry-run.
-                transition_to_dry_run_started(pool).await?;
-            }
-            Ok(false) => {
-                info!(
-                    chain_id,
-                    start_block,
-                    "readiness loop exited without satisfying readiness — skipping prune and transition"
-                );
-            }
-            Err(e) => {
-                error!(error = %e, "GCS dry-run readiness loop failed");
-            }
-        }
+        spawn_gcs_dry_run_readiness(
+            pool,
+            cancel,
+            readiness,
+            proposal_id_bytes,
+            payload.chain_id,
+            payload.start_block,
+            payload.gw_start_block,
+        );
     }
 
     Ok(())
 }
 
-/// Create the versioned GCS schema (e.g. `"gcs-0.14.0"`) and a
-/// `CREATE TABLE <schema>.X (LIKE public.X INCLUDING ALL)` for every
-/// [`COPROCESSOR_TABLES`] entry with `duplicated = true`. The schema name is
-/// [`GCS_SCHEMA_QUOTED`] so it stays in lockstep with the GCS services'
-/// `search_path`. Idempotent.
-pub async fn create_gcs_schema(pool: &Pool<Postgres>) -> Result<(), Error> {
-    let mut tx = pool.begin().await?;
+/// Spawn the GCS readiness gates (gateway + host) that release the workers and flip
+/// the row to `DryRunStarted`. `readiness` keeps one attempt running at a time, so a
+/// re-arm recovers a stopped task without piling up tasks.
+fn spawn_gcs_dry_run_readiness(
+    pool: &Pool<Postgres>,
+    cancel: &CancellationToken,
+    readiness: &Arc<AtomicBool>,
+    proposal_id: Vec<u8>,
+    chain_id: i64,
+    start_block: i64,
+    gw_start_block: i64,
+) {
+    if readiness
+        .compare_exchange(false, true, Ordering::SeqCst, Ordering::SeqCst)
+        .is_err()
+    {
+        return; // already running
+    }
+    info!(
+        chain_id,
+        start_block, gw_start_block, "arming GCS dry-run readiness"
+    );
+    let pool = pool.clone();
+    let gw_cancel = cancel.child_token();
+    let host_cancel = cancel.child_token();
+    let readiness = readiness.clone();
+    tokio::spawn(async move {
+        // Gateway gate for the zkproof-worker: gw_start_block is a Gateway block,
+        // a separate clock from the host start_block.
+        let gw_gate = async {
+            match wait_until_gw_dry_run_ready(pool.clone(), gw_cancel, gw_start_block).await {
+                Ok(true) => {
+                    match prune_gcs_verify_proofs_before_start(&pool, gw_start_block).await {
+                        Ok(deleted) => info!(
+                            gw_start_block,
+                            deleted, "pruned pre-gw_start_block rows from gcs.verify_proofs"
+                        ),
+                        Err(e) => {
+                            error!(error = %e, "failed to prune gcs.verify_proofs; skipping gw release");
+                            return;
+                        }
+                    }
+                    if let Err(e) = transition_to_gw_dry_run_started(&pool, &proposal_id).await {
+                        error!(error = %e, "failed to transition GCS gw_dry_run_started");
+                    }
+                }
+                Ok(false) => info!(
+                    gw_start_block,
+                    "gw readiness loop exited without satisfying readiness — skipping prune and release"
+                ),
+                Err(e) => error!(error = %e, "GCS gateway dry-run readiness loop failed"),
+            }
+        };
+        // Host gate: wait until BCS settles up to start_block, prune, then flip to DryRunStarted.
+        let host_gate = async {
+            match wait_until_dry_run_ready(pool.clone(), host_cancel, chain_id, start_block).await {
+                Ok(true) => {
+                    match prune_gcs_computations_before_start(&pool, chain_id, start_block).await {
+                        Ok(deleted) => info!(
+                            chain_id,
+                            start_block, deleted, "pruned pre-start_block rows from gcs.computations"
+                        ),
+                        Err(e) => {
+                            error!(error = %e, "failed to prune gcs.computations; skipping transition");
+                            return;
+                        }
+                    }
+                    if let Err(e) = transition_to_dry_run_started(&pool, &proposal_id).await {
+                        error!(error = %e, "failed to transition GCS to DryRunStarted");
+                    }
+                }
+                Ok(false) => info!(
+                    chain_id,
+                    start_block,
+                    "readiness loop exited without satisfying readiness — skipping prune and transition"
+                ),
+                Err(e) => error!(error = %e, "GCS dry-run readiness loop failed"),
+            }
+        };
+        tokio::join!(gw_gate, host_gate);
+        readiness.store(false, Ordering::SeqCst);
+    });
+}
 
+/// Create the GCS schema with an empty copy of each duplicated table. Returns
+/// their names.
+async fn create_gcs_tables(tx: &mut Transaction<'_, Postgres>) -> Result<Vec<&'static str>, Error> {
     let create_schema = format!("CREATE SCHEMA IF NOT EXISTS {GCS_SCHEMA_QUOTED}");
-    sqlx::query(&create_schema).execute(&mut *tx).await?;
+    sqlx::query(&create_schema).execute(&mut **tx).await?;
 
     let duplicated: Vec<&str> = COPROCESSOR_TABLES
         .iter()
@@ -351,14 +369,37 @@ pub async fn create_gcs_schema(pool: &Pool<Postgres>) -> Result<(), Error> {
             "CREATE TABLE IF NOT EXISTS {GCS_SCHEMA_QUOTED}.{name} \
              (LIKE public.{name} INCLUDING ALL)"
         );
-        sqlx::query(&sql).execute(&mut *tx).await?;
+        sqlx::query(&sql).execute(&mut **tx).await?;
     }
 
+    Ok(duplicated)
+}
+
+/// Idempotently create the versioned GCS schema ([`GCS_SCHEMA_QUOTED`]) and clone every
+/// `duplicated = true` [`COPROCESSOR_TABLES`] table into it with `LIKE public.X INCLUDING ALL`.
+pub async fn create_gcs_schema(pool: &Pool<Postgres>) -> Result<(), Error> {
+    let mut tx = pool.begin().await?;
+    let duplicated = create_gcs_tables(&mut tx).await?;
     tx.commit().await?;
     info!(
         schema = GCS_SCHEMA_QUOTED,
         tables = ?duplicated,
         "GCS schema created with empty table duplicates"
+    );
+    Ok(())
+}
+
+/// Drop the GCS schema and recreate it empty, on `tx` — discards the dry-run's
+/// writes while leaving the still-tailing GCS listeners a valid write target, so
+/// the upgrade can be rerun without restarting the GCS stack.
+async fn reset_gcs_schema(tx: &mut Transaction<'_, Postgres>) -> Result<(), Error> {
+    let drop_sql = format!("DROP SCHEMA IF EXISTS {GCS_SCHEMA_QUOTED} CASCADE");
+    sqlx::query(&drop_sql).execute(&mut **tx).await?;
+    let duplicated = create_gcs_tables(tx).await?;
+    info!(
+        schema = GCS_SCHEMA_QUOTED,
+        tables = ?duplicated,
+        "GCS schema dropped and recreated empty (rollback)"
     );
     Ok(())
 }
@@ -550,21 +591,27 @@ async fn wait_until_dry_run_ready(
     }
 }
 
-/// Conditional UPDATE: only flips if the GCS row is still in `UpgradeActivated`.
-async fn transition_to_dry_run_started(pool: &Pool<Postgres>) -> Result<(), Error> {
+/// Conditional UPDATE: only flips if the GCS row is still in `UpgradeActivated`
+/// for `proposal_id`. The `proposal_id` match stops a readiness task left over
+/// from an earlier proposal from advancing a newer one with stale block bounds.
+async fn transition_to_dry_run_started(
+    pool: &Pool<Postgres>,
+    proposal_id: &[u8],
+) -> Result<(), Error> {
     let result = sqlx::query(
         r#"
         UPDATE upgrade_state
         SET state = 'DryRunStarted', updated_at = NOW()
-        WHERE stack_role = 'GCS' AND state = 'UpgradeActivated'
+        WHERE stack_role = 'GCS' AND state = 'UpgradeActivated' AND proposal_id = $1
         "#,
     )
+    .bind(proposal_id)
     .execute(pool)
     .await?;
 
     if result.rows_affected() == 0 {
         warn!(
-            "transition_to_dry_run_started: GCS not in UpgradeActivated — skipping unpause notify"
+            "transition_to_dry_run_started: GCS not in UpgradeActivated for this proposal — skipping unpause notify"
         );
         return Ok(());
     }
@@ -734,7 +781,10 @@ async fn prune_gcs_verify_proofs_before_start(
 /// Conditional UPDATE: marks the GCS row's `gw_dry_run_started` and notifies the
 /// zkproof-worker. Only flips a GCS row still in the gw-gateable window with the
 /// flag unset, so a duplicate firing is a no-op.
-async fn transition_to_gw_dry_run_started(pool: &Pool<Postgres>) -> Result<(), Error> {
+async fn transition_to_gw_dry_run_started(
+    pool: &Pool<Postgres>,
+    proposal_id: &[u8],
+) -> Result<(), Error> {
     let result = sqlx::query(
         r#"
         UPDATE upgrade_state
@@ -742,14 +792,16 @@ async fn transition_to_gw_dry_run_started(pool: &Pool<Postgres>) -> Result<(), E
         WHERE stack_role = 'GCS'
           AND gw_dry_run_started = FALSE
           AND state IN ('UpgradeActivated', 'DryRunStarted')
+          AND proposal_id = $1
         "#,
     )
+    .bind(proposal_id)
     .execute(pool)
     .await?;
 
     if result.rows_affected() == 0 {
         warn!(
-            "transition_to_gw_dry_run_started: GCS row not eligible (already set or past window) — skipping notify"
+            "transition_to_gw_dry_run_started: GCS row not eligible (already set, past window, or other proposal) — skipping notify"
         );
         return Ok(());
     }
@@ -836,8 +888,8 @@ async fn merge_gcs_table(
     Ok(merged.rows_affected())
 }
 
-/// Cutover routine — invoked when `event_unanimity_consensus` fires and the
-/// FSM has been transitioned from `DryRunStarted` to `UpgradeAuthorized`.
+/// Cutover routine — run once the GCS row is `UpgradeAuthorized`, from the
+/// unanimity handler or from `reconcile`. Idempotent via the under-lock re-read.
 ///
 /// Runs atomically inside one transaction holding `pg_advisory_xact_lock(CUTOVER_LOCK_ID)`
 /// in exclusive mode. The exclusive lock blocks until every BCS write tx
@@ -846,7 +898,7 @@ async fn merge_gcs_table(
 /// until cutover commits.
 ///
 /// Sequence:
-///   1. Read `start_block` and `version` from the GCS upgrade row.
+///   1. Re-read state under the lock; no-op unless `UpgradeAuthorized`, else take its `version`.
 ///   2. UPDATE `versioning` to the new stack_version.
 ///   3. Merge `gcs.ciphertexts` → `public.ciphertexts`.
 ///   4. DROP SCHEMA gcs CASCADE.
@@ -856,28 +908,6 @@ async fn merge_gcs_table(
 /// acquires it, re-reads its FSM state, sees `PAUSED`, and exits cleanly.
 pub async fn execute_cutover(pool: &Pool<Postgres>) -> Result<(), Error> {
     info!("execute_cutover() starting");
-
-    let row: Option<(Option<i64>, Option<String>)> = sqlx::query_as(
-        "SELECT start_block, version
-         FROM upgrade_state
-         WHERE stack_role = 'GCS'",
-    )
-    .fetch_optional(pool)
-    .await?;
-
-    let (_start_block, stack_version) = match row {
-        Some((Some(s), version)) => (s, version.unwrap_or_default()),
-        Some((s, _)) => {
-            return Err(Error::Payload(format!(
-                "GCS upgrade_state row is missing required fields: start_block={s:?}"
-            )));
-        }
-        None => {
-            return Err(Error::Payload(
-                "no GCS row in upgrade_state — cannot run cutover".to_string(),
-            ));
-        }
-    };
 
     let mut tx = pool.begin().await?;
 
@@ -889,6 +919,30 @@ pub async fn execute_cutover(pool: &Pool<Postgres>) -> Result<(), Error> {
         lock_id = CUTOVER_LOCK_ID,
         "cutover acquired exclusive advisory lock"
     );
+
+    // Re-read under the lock: a concurrent cutover may have already promoted this row.
+    let row: Option<(String, Option<i64>, Option<String>)> = sqlx::query_as(
+        "SELECT state, start_block, version FROM upgrade_state WHERE stack_role = 'GCS'",
+    )
+    .fetch_optional(&mut *tx)
+    .await?;
+    let stack_version = match row {
+        None => {
+            return Err(Error::Payload(
+                "no GCS row in upgrade_state — cannot run cutover".to_string(),
+            ));
+        }
+        Some((state, _, _)) if state != "UpgradeAuthorized" => {
+            info!(state = %state, "cutover: GCS row is not UpgradeAuthorized — skipping (already cut over)");
+            return Ok(());
+        }
+        Some((_, None, _)) => {
+            return Err(Error::Payload(
+                "GCS upgrade_state row is missing start_block".to_string(),
+            ));
+        }
+        Some((_, Some(_start_block), version)) => version.unwrap_or_default(),
+    };
 
     // 2. Promote the new stack version inside the cutover tx. This is the
     //    source of truth read by `resolve_gcs_mode` / `reconcile_stack_mode`:
@@ -961,6 +1015,131 @@ pub async fn execute_cutover(pool: &Pool<Postgres>) -> Result<(), Error> {
     Ok(())
 }
 
+/// Flip to `UpgradeAuthorized` and cut over once both latches are set; guarded UPDATE, so duplicates no-op.
+async fn try_cutover_if_consensus(pool: &Pool<Postgres>) -> Result<(), Error> {
+    let result = sqlx::query(
+        r#"
+        UPDATE upgrade_state
+        SET state = 'UpgradeAuthorized', updated_at = NOW()
+        WHERE stack_role = 'GCS' AND state = 'DryRunStarted'
+          AND host_consensus_reached AND gw_consensus_reached
+        "#,
+    )
+    .execute(pool)
+    .await?;
+    if result.rows_affected() == 0 {
+        debug!("cutover deferred — both consensus latches not yet set");
+        return Ok(());
+    }
+    info!("both host and gateway consensus reached — transitioning to UpgradeAuthorized and running cutover");
+    execute_cutover(pool).await
+}
+
+/// Roll back a dry-run under the write lock: PAUSED/failed, reset schema, wake workers.
+/// Scoped to the proposal and end block. Returns whether it acted.
+async fn rollback_dry_run(
+    pool: &Pool<Postgres>,
+    proposal_id: &[u8],
+    end_block: i64,
+) -> Result<bool, Error> {
+    let mut tx = pool.begin().await?;
+    sqlx::query("SELECT pg_advisory_xact_lock($1)")
+        .bind(CUTOVER_LOCK_ID)
+        .execute(&mut *tx)
+        .await?;
+    info!(
+        lock_id = CUTOVER_LOCK_ID,
+        "rollback acquired exclusive advisory lock"
+    );
+
+    let claimed = sqlx::query(
+        r#"
+        UPDATE upgrade_state
+           SET state = 'PAUSED', status = 'failed',
+               last_error = 'unanimity_consensus_timeout',
+               host_consensus_reached = FALSE, gw_consensus_reached = FALSE,
+               gw_dry_run_started = FALSE, updated_at = NOW()
+         WHERE stack_role = 'GCS' AND state IN ('UpgradeActivated', 'DryRunStarted')
+           AND proposal_id = $1 AND end_block = $2
+        "#,
+    )
+    .bind(proposal_id)
+    .bind(end_block)
+    .execute(&mut *tx)
+    .await?;
+    if claimed.rows_affected() == 0 {
+        tx.rollback().await?;
+        return Ok(false);
+    }
+    reset_gcs_schema(&mut tx).await?;
+    sqlx::query("SELECT pg_notify($1, '')")
+        .bind(fhevm_engine_common::gcs_activation::EVENT_DRY_RUN_ROLLED_BACK)
+        .execute(&mut *tx)
+        .await?;
+    tx.commit().await?;
+    Ok(true)
+}
+
+/// GCS row fields reconcile reads: (state, proposal_id, host_chain_id, start_block, gw_start_block).
+type ReconcileRow = (
+    String,
+    Option<Vec<u8>>,
+    Option<i64>,
+    Option<i64>,
+    Option<i64>,
+);
+
+/// Advance the upgrade from durable state: re-arm readiness, resume a cutover, or
+/// cut over once both consensus signals are in. A stopped readiness task is
+/// recovered on the next tick (`readiness` keeps it to one attempt at a time).
+async fn reconcile(
+    pool: &Pool<Postgres>,
+    cancel: &CancellationToken,
+    readiness: &Arc<AtomicBool>,
+    gcs_mode: bool,
+) -> Result<(), Error> {
+    if !gcs_mode {
+        return Ok(());
+    }
+    let row: Option<ReconcileRow> = sqlx::query_as(
+        "SELECT state, proposal_id, host_chain_id, start_block, gw_start_block
+           FROM upgrade_state WHERE stack_role = 'GCS' AND status = 'in_progress'",
+    )
+    .fetch_optional(pool)
+    .await?;
+    let Some((state, proposal_id, host_chain_id, start_block, gw_start_block)) = row else {
+        return Ok(());
+    };
+    match state.as_str() {
+        // Re-arm readiness (no-op if already running).
+        "UpgradeActivated" => {
+            if let (Some(proposal_id), Some(chain_id), Some(start), Some(gw_start)) =
+                (proposal_id, host_chain_id, start_block, gw_start_block)
+            {
+                spawn_gcs_dry_run_readiness(
+                    pool,
+                    cancel,
+                    readiness,
+                    proposal_id,
+                    chain_id,
+                    start,
+                    gw_start,
+                );
+            }
+        }
+        "UpgradeAuthorized" => {
+            info!("reconcile: GCS in UpgradeAuthorized — resuming cutover");
+            execute_cutover(pool).await?;
+        }
+        // Guarded on both latches, so it no-ops until they're set.
+        "DryRunStarted" => {
+            try_cutover_if_consensus(pool).await?;
+        }
+        _ => {}
+    }
+    Ok(())
+}
+
 /// Handle an `event_unanimity_consensus` notification. consensus-detector emits
 /// this for TWO independent tracks, distinguished by the payload `chain_id`:
 ///   - the **host chain** (`chain_id == upgrade_state.host_chain_id`), over the
@@ -1020,6 +1199,11 @@ pub async fn handle_unanimity_consensus(
         Some((state, start_block, end_block, proposal_id, host_chain_id, gw_start_block))
             if state == "UpgradeActivated" || state == "DryRunStarted" =>
         {
+            if proposal_id.as_deref() != Some(payload.proposal_id.as_slice()) {
+                warn!("event_unanimity_consensus: proposal does not match — ignoring");
+                return Ok(());
+            }
+
             // Classify the event. Host track iff chain_id matches the stored
             // host_chain_id; everything else is the Gateway track. For a legacy
             // row predating host_chain_id, fall back to window membership.
@@ -1036,22 +1220,27 @@ pub async fn handle_unanimity_consensus(
                 // against late/replayed events for a prior upgrade window.
                 match (start_block, end_block) {
                     (Some(start), Some(end)) if (start..=end).contains(&payload.block_height) => {
-                        info!(
-                            chain_id = payload.chain_id,
-                            block_height = payload.block_height,
-                            block_hash = %payload.block_hash,
-                            start_block = start,
-                            end_block = end,
-                            proposal_id = ?proposal_id.as_deref().map(hex_encode),
-                            "event_unanimity_consensus: host-track unanimity within window — setting host_consensus_reached"
-                        );
-                        sqlx::query(
+                        // `AND NOT host_consensus_reached` so a re-emitted anchor no-ops.
+                        let set = sqlx::query(
                             "UPDATE upgrade_state SET host_consensus_reached = TRUE, updated_at = NOW()
                               WHERE stack_role = 'GCS'
-                                AND state IN ('UpgradeActivated', 'DryRunStarted')",
+                                AND state IN ('UpgradeActivated', 'DryRunStarted')
+                                AND proposal_id = $1
+                                AND NOT host_consensus_reached",
                         )
+                        .bind(&payload.proposal_id)
                         .execute(pool)
                         .await?;
+                        if set.rows_affected() > 0 {
+                            info!(
+                                chain_id = payload.chain_id,
+                                block_height = payload.block_height,
+                                start_block = start,
+                                end_block = end,
+                                proposal_id = ?proposal_id.as_deref().map(hex_encode),
+                                "event_unanimity_consensus: host-track unanimity — host_consensus_reached set"
+                            );
+                        }
                     }
                     (Some(start), Some(end)) => {
                         warn!(
@@ -1079,19 +1268,25 @@ pub async fn handle_unanimity_consensus(
                 // misclassified as Gateway when host_chain_id is NULL (legacy row).
                 match gw_start_block {
                     Some(gw_start) if payload.block_height >= gw_start => {
-                        info!(
-                            chain_id = payload.chain_id,
-                            block_height = payload.block_height,
-                            gw_start_block = gw_start,
-                            "event_unanimity_consensus: gateway-track unanimity at/after gw_start_block — setting gw_consensus_reached"
-                        );
-                        sqlx::query(
+                        // `AND NOT gw_consensus_reached` so a re-emitted anchor no-ops.
+                        let set = sqlx::query(
                             "UPDATE upgrade_state SET gw_consensus_reached = TRUE, updated_at = NOW()
                               WHERE stack_role = 'GCS'
-                                AND state IN ('UpgradeActivated', 'DryRunStarted')",
+                                AND state IN ('UpgradeActivated', 'DryRunStarted')
+                                AND proposal_id = $1
+                                AND NOT gw_consensus_reached",
                         )
+                        .bind(&payload.proposal_id)
                         .execute(pool)
                         .await?;
+                        if set.rows_affected() > 0 {
+                            info!(
+                                chain_id = payload.chain_id,
+                                block_height = payload.block_height,
+                                gw_start_block = gw_start,
+                                "event_unanimity_consensus: gateway-track unanimity — gw_consensus_reached set"
+                            );
+                        }
                     }
                     Some(gw_start) => {
                         warn!(
@@ -1111,32 +1306,7 @@ pub async fn handle_unanimity_consensus(
                 }
             }
 
-            // Cutover only once BOTH tracks have been observed AND the row is in
-            // DryRunStarted. The `state = 'DryRunStarted'` guard keeps a Gateway
-            // latch recorded early (during UpgradeActivated) from firing cutover
-            // before the host stack has even entered the dry-run; the later host
-            // anchor, which arrives in DryRunStarted, is what completes the pair.
-            // The WHERE reads the freshly-updated latches atomically, so this
-            // flips (and fires cutover) exactly once — whichever track completed
-            // the pair while in DryRunStarted.
-            let result = sqlx::query(
-                r#"
-                UPDATE upgrade_state
-                SET state = 'UpgradeAuthorized', updated_at = NOW()
-                WHERE stack_role = 'GCS' AND state = 'DryRunStarted'
-                  AND host_consensus_reached AND gw_consensus_reached
-                "#,
-            )
-            .execute(pool)
-            .await?;
-            if result.rows_affected() == 0 {
-                info!(
-                    "event_unanimity_consensus: waiting for both host and gateway consensus before cutover"
-                );
-                return Ok(());
-            }
-            info!("event_unanimity_consensus: both host and gateway consensus reached — transitioning to UpgradeAuthorized and running cutover");
-            execute_cutover(pool).await?;
+            try_cutover_if_consensus(pool).await?;
         }
         Some((state, _, _, _, _, _)) => {
             warn!(
@@ -1147,6 +1317,42 @@ pub async fn handle_unanimity_consensus(
         None => {
             warn!("event_unanimity_consensus: no GCS row in upgrade_state — skipping cutover");
         }
+    }
+
+    Ok(())
+}
+
+/// The dry-run timed out without agreement: reset the GCS stack so the upgrade
+/// can be rerun. Rolls back the failed dry-run and wipes its schema. Only acts
+/// while still dry-running, so a late timeout can't undo a cutover. BCS is
+/// untouched.
+pub async fn handle_unanimity_consensus_timeout(
+    pool: &Pool<Postgres>,
+    gcs_mode: bool,
+    raw_payload: &str,
+) -> Result<(), Error> {
+    info!("event_unanimity_consensus_timeout received — evaluating rollback");
+
+    if !gcs_mode {
+        debug!("event_unanimity_consensus_timeout: service not in gcs mode, ignoring");
+        return Ok(());
+    }
+
+    let payload: UnanimityConsensusPayload =
+        serde_json::from_str(raw_payload).map_err(|e| Error::Payload(e.to_string()))?;
+
+    if rollback_dry_run(pool, &payload.proposal_id, payload.block_height).await? {
+        warn!(
+            chain_id = payload.chain_id,
+            block_height = payload.block_height,
+            "event_unanimity_consensus_timeout: rolled back GCS dry-run — schema reset, upgrade may be rerun"
+        );
+    } else {
+        info!(
+            chain_id = payload.chain_id,
+            block_height = payload.block_height,
+            "event_unanimity_consensus_timeout: GCS row not in a rollback-eligible state — skipping rollback"
+        );
     }
 
     Ok(())
@@ -1189,13 +1395,21 @@ pub async fn run(
     }
 
     let mut listener = PgListener::connect_with(&pool).await?;
-    listener
-        .listen_all([UPGRADE_ACTIVATED_CHANNEL, UNANIMITY_CONSENSUS_CHANNEL])
-        .await?;
-    info!(
-        channels = ?[UPGRADE_ACTIVATED_CHANNEL, UNANIMITY_CONSENSUS_CHANNEL],
-        "Listening for notifications"
-    );
+    let channels = [
+        UPGRADE_ACTIVATED_CHANNEL,
+        UNANIMITY_CONSENSUS_CHANNEL,
+        UNANIMITY_CONSENSUS_TIMEOUT_CHANNEL,
+    ];
+    listener.listen_all(channels).await?;
+    info!(?channels, "Listening for notifications");
+
+    // Keeps readiness to one attempt at a time.
+    let readiness = Arc::new(AtomicBool::new(false));
+
+    // Boot reconcile: recover an upgrade whose NOTIFY was missed while down (LISTEN already registered).
+    if let Err(e) = reconcile(&pool, &cancel, &readiness, config.gcs_mode).await {
+        error!(error = %e, "boot reconcile failed");
+    }
 
     let mut poll = tokio::time::interval(config.poll_interval);
     // First tick fires immediately; skip it so we don't double-trigger on startup.
@@ -1216,12 +1430,17 @@ pub async fn run(
 
                         let result = match channel {
                             UPGRADE_ACTIVATED_CHANNEL => {
-                                handle_upgrade_activated(&pool, &cancel, config.gcs_mode, payload).await
+                                handle_upgrade_activated(&pool, &cancel, &readiness, config.gcs_mode, payload).await
                             }
                             UNANIMITY_CONSENSUS_CHANNEL => {
                                 // Emitted by consensus-detector when every operator publishes
                                 // the same state commitment at the upgrade's end_block.
                                 handle_unanimity_consensus(&pool, config.gcs_mode, payload).await
+                            }
+                            UNANIMITY_CONSENSUS_TIMEOUT_CHANNEL => {
+                                // Window never reached unanimity — roll back the dry-run.
+                                handle_unanimity_consensus_timeout(&pool, config.gcs_mode, payload)
+                                    .await
                             }
                             other => {
                                 warn!(channel = other, "ignoring notification on unexpected channel");
@@ -1240,7 +1459,10 @@ pub async fn run(
                 }
             }
             _ = poll.tick() => {
-                debug!("poll tick — no notification activity");
+                // Fallback for a missed NOTIFY: re-derive the next step from the row.
+                if let Err(e) = reconcile(&pool, &cancel, &readiness, config.gcs_mode).await {
+                    error!(error = %e, "poll reconcile failed");
+                }
             }
         }
     }
@@ -1271,11 +1493,13 @@ mod tests {
     #[test]
     fn parses_unanimity_consensus_payload() {
         let json = r#"{
+            "proposal_id": [2],
             "chain_id": 12345,
             "block_height": 200,
             "block_hash": "0xabc0000000000000000000000000000000000000000000000000000000000001"
         }"#;
         let p: UnanimityConsensusPayload = serde_json::from_str(json).unwrap();
+        assert_eq!(p.proposal_id, vec![2]);
         assert_eq!(p.chain_id, 12345);
         assert_eq!(p.block_height, 200);
         assert_eq!(
@@ -1294,18 +1518,9 @@ mod tests {
 
     #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
     async fn handle_upgrade_activated_accepts_new_proposal_after_paused_cutover() {
-        use sqlx::postgres::PgPoolOptions;
         use sqlx::Row;
-        use test_harness::instance::{setup_test_db, ImportMode};
 
-        let instance = setup_test_db(ImportMode::WithKeysNoSns)
-            .await
-            .expect("test db");
-        let pool = PgPoolOptions::new()
-            .max_connections(4)
-            .connect(instance.db_url())
-            .await
-            .expect("pool");
+        let (_instance, pool) = test_pool().await;
 
         sqlx::query(
             r#"
@@ -1335,7 +1550,8 @@ mod tests {
         .to_string();
 
         let cancel = CancellationToken::new();
-        handle_upgrade_activated(&pool, &cancel, false, &payload)
+        let readiness = Arc::new(AtomicBool::new(false));
+        handle_upgrade_activated(&pool, &cancel, &readiness, false, &payload)
             .await
             .expect("handler ok");
 
@@ -1368,18 +1584,9 @@ mod tests {
     /// also keeps the test stable as the merged tables' columns evolve).
     #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
     async fn execute_cutover_merges_match_live_unique_keys() {
-        use sqlx::postgres::PgPoolOptions;
         use sqlx::Row;
-        use test_harness::instance::{setup_test_db, ImportMode};
 
-        let instance = setup_test_db(ImportMode::WithKeysNoSns)
-            .await
-            .expect("test db");
-        let pool = PgPoolOptions::new()
-            .max_connections(4)
-            .connect(instance.db_url())
-            .await
-            .expect("pool");
+        let (_instance, pool) = test_pool().await;
 
         // The GCS row's `version` drives the cutover's stack_version bump.
         sqlx::query(
@@ -1428,5 +1635,490 @@ mod tests {
         .await
         .expect("schema lookup");
         assert!(!schema_exists, "cutover should drop the gcs schema");
+    }
+
+    async fn test_pool() -> (test_harness::instance::DBInstance, Pool<Postgres>) {
+        use sqlx::postgres::PgPoolOptions;
+        use test_harness::instance::{setup_test_db, ImportMode};
+        let instance = setup_test_db(ImportMode::WithKeysNoSns)
+            .await
+            .expect("test db");
+        let pool = PgPoolOptions::new()
+            .max_connections(4)
+            .connect(instance.db_url())
+            .await
+            .expect("pool");
+        (instance, pool)
+    }
+
+    fn timeout_payload() -> String {
+        serde_json::json!({ "proposal_id": [2], "chain_id": 1_i64, "block_height": 200_i64, "block_hash": "0x00" })
+            .to_string()
+    }
+
+    /// Seed a GCS row with all latches + `gw_dry_run_started`.
+    async fn seed_gcs_row(pool: &Pool<Postgres>, state: &str, status: &str) {
+        sqlx::query(
+            r#"
+            INSERT INTO upgrade_state (
+                stack_role, state, status, proposal_id, version,
+                start_block, end_block, gw_start_block, host_chain_id,
+                host_consensus_reached, gw_consensus_reached, gw_dry_run_started,
+                updated_at
+            )
+            VALUES ('GCS', $1, $2, $3, 'v0.15', 100, 200, 1, 1,
+                    TRUE, TRUE, TRUE, NOW())
+            ON CONFLICT (stack_role) DO UPDATE
+            SET state = EXCLUDED.state, status = EXCLUDED.status,
+                host_consensus_reached = EXCLUDED.host_consensus_reached,
+                gw_consensus_reached   = EXCLUDED.gw_consensus_reached,
+                gw_dry_run_started     = EXCLUDED.gw_dry_run_started,
+                updated_at = NOW()
+            "#,
+        )
+        .bind(state)
+        .bind(status)
+        .bind(&[0x02u8][..])
+        .execute(pool)
+        .await
+        .expect("seed GCS row");
+    }
+
+    /// A `gcs` table NOT in `COPROCESSOR_TABLES`: only `DROP SCHEMA … CASCADE`
+    /// removes it (the recreate won't restore it), so it proves the reset ran.
+    async fn create_marker(pool: &Pool<Postgres>) {
+        sqlx::query(&format!(
+            "CREATE TABLE {GCS_SCHEMA_QUOTED}.rollback_marker (x int)"
+        ))
+        .execute(pool)
+        .await
+        .expect("create marker");
+    }
+
+    async fn marker_exists(pool: &Pool<Postgres>) -> bool {
+        let (exists,): (bool,) = sqlx::query_as(
+            "SELECT EXISTS (SELECT 1 FROM information_schema.tables
+                             WHERE table_schema = $1 AND table_name = 'rollback_marker')",
+        )
+        .bind(fhevm_engine_common::database::GCS_SCHEMA)
+        .fetch_one(pool)
+        .await
+        .expect("marker lookup");
+        exists
+    }
+
+    /// A timeout mid dry-run resets the schema and flips the GCS row to PAUSED/failed; a second timeout is a no-op.
+    #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+    async fn handle_timeout_rolls_back_dry_run_and_is_idempotent() {
+        use sqlx::Row;
+
+        let (_instance, pool) = test_pool().await;
+
+        seed_gcs_row(&pool, "DryRunStarted", "in_progress").await;
+        create_gcs_schema(&pool).await.expect("create gcs schema");
+        create_marker(&pool).await;
+        assert!(marker_exists(&pool).await, "marker present before rollback");
+
+        let payload = timeout_payload();
+
+        handle_unanimity_consensus_timeout(&pool, true, &payload)
+            .await
+            .expect("rollback ok");
+
+        // Marker gone and schema dropped
+        assert!(
+            !marker_exists(&pool).await,
+            "rollback should DROP SCHEMA CASCADE, removing the marker"
+        );
+        // the duplicated tables recreated empty
+        let (ct_exists,): (bool,) = sqlx::query_as(
+            "SELECT EXISTS (SELECT 1 FROM information_schema.tables
+                             WHERE table_schema = $1 AND table_name = 'computations')",
+        )
+        .bind(fhevm_engine_common::database::GCS_SCHEMA)
+        .fetch_one(&pool)
+        .await
+        .expect("computations lookup");
+        assert!(ct_exists, "rollback should recreate the empty gcs schema");
+
+        // Rerunnable state: PAUSED/failed.
+        let row = sqlx::query(
+            "SELECT state, status, last_error, host_consensus_reached,
+                    gw_consensus_reached, gw_dry_run_started
+               FROM upgrade_state WHERE stack_role = 'GCS'",
+        )
+        .fetch_one(&pool)
+        .await
+        .expect("GCS row");
+        assert_eq!(row.try_get::<String, _>("state").unwrap(), "PAUSED");
+        assert_eq!(row.try_get::<String, _>("status").unwrap(), "failed");
+        assert_eq!(
+            row.try_get::<String, _>("last_error").unwrap(),
+            "unanimity_consensus_timeout"
+        );
+        assert!(!row.try_get::<bool, _>("host_consensus_reached").unwrap());
+        assert!(!row.try_get::<bool, _>("gw_consensus_reached").unwrap());
+        assert!(!row.try_get::<bool, _>("gw_dry_run_started").unwrap());
+
+        // Second timeout is a no-op: the marker survives (no second reset).
+        create_marker(&pool).await;
+        handle_unanimity_consensus_timeout(&pool, true, &payload)
+            .await
+            .expect("second timeout no-op");
+        assert!(
+            marker_exists(&pool).await,
+            "a duplicate timeout must not reset the schema again"
+        );
+    }
+
+    /// A late timeout must never undo a cutover: rollback is refused once the row is `UpgradeAuthorized`.
+    #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+    async fn handle_timeout_does_not_undo_authorized_cutover() {
+        use sqlx::Row;
+
+        let (_instance, pool) = test_pool().await;
+
+        seed_gcs_row(&pool, "UpgradeAuthorized", "in_progress").await;
+        create_gcs_schema(&pool).await.expect("create gcs schema");
+        create_marker(&pool).await;
+
+        let payload = timeout_payload();
+
+        handle_unanimity_consensus_timeout(&pool, true, &payload)
+            .await
+            .expect("handler ok");
+
+        assert!(
+            marker_exists(&pool).await,
+            "a timeout must not reset the schema once the row is UpgradeAuthorized"
+        );
+        let row = sqlx::query("SELECT state, status FROM upgrade_state WHERE stack_role = 'GCS'")
+            .fetch_one(&pool)
+            .await
+            .expect("GCS row");
+        assert_eq!(
+            row.try_get::<String, _>("state").unwrap(),
+            "UpgradeAuthorized",
+            "the FSM state must be left intact"
+        );
+        assert_eq!(row.try_get::<String, _>("status").unwrap(), "in_progress");
+    }
+
+    /// A timeout on a BCS-mode controller is ignored (BCS never left LIVE).
+    #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+    async fn handle_timeout_bcs_mode_is_noop() {
+        let (_instance, pool) = test_pool().await;
+
+        seed_gcs_row(&pool, "DryRunStarted", "in_progress").await;
+        let payload = timeout_payload();
+
+        handle_unanimity_consensus_timeout(&pool, false, &payload)
+            .await
+            .expect("bcs no-op");
+
+        let (state,): (String,) =
+            sqlx::query_as("SELECT state FROM upgrade_state WHERE stack_role = 'GCS'")
+                .fetch_one(&pool)
+                .await
+                .expect("GCS row");
+        assert_eq!(
+            state, "DryRunStarted",
+            "BCS-mode timeout must not mutate state"
+        );
+    }
+
+    async fn gcs_state(pool: &Pool<Postgres>) -> (String, String) {
+        sqlx::query_as("SELECT state, status FROM upgrade_state WHERE stack_role = 'GCS'")
+            .fetch_one(pool)
+            .await
+            .expect("GCS row")
+    }
+
+    /// Boot/poll reconcile resumes a cutover interrupted in `UpgradeAuthorized`.
+    #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+    async fn reconcile_resumes_interrupted_cutover() {
+        let (_instance, pool) = test_pool().await;
+        seed_gcs_row(&pool, "UpgradeAuthorized", "in_progress").await;
+        create_gcs_schema(&pool).await.expect("create gcs schema");
+
+        reconcile(
+            &pool,
+            &CancellationToken::new(),
+            &Arc::new(AtomicBool::new(false)),
+            true,
+        )
+        .await
+        .expect("reconcile");
+
+        assert_eq!(gcs_state(&pool).await, ("LIVE".into(), "completed".into()));
+        let (sv,): (String,) =
+            sqlx::query_as("SELECT stack_version FROM versioning WHERE singleton = TRUE")
+                .fetch_one(&pool)
+                .await
+                .expect("versioning");
+        assert_eq!(sv, "v0.15");
+    }
+
+    /// Reconcile cuts over on both latches when the unanimity NOTIFY was missed.
+    #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+    async fn reconcile_cuts_over_when_both_latches_set() {
+        let (_instance, pool) = test_pool().await;
+        seed_gcs_row(&pool, "DryRunStarted", "in_progress").await; // latches TRUE
+        create_gcs_schema(&pool).await.expect("create gcs schema");
+
+        reconcile(
+            &pool,
+            &CancellationToken::new(),
+            &Arc::new(AtomicBool::new(false)),
+            true,
+        )
+        .await
+        .expect("reconcile");
+
+        assert_eq!(gcs_state(&pool).await, ("LIVE".into(), "completed".into()));
+    }
+
+    /// A BCS-mode controller never reconciles GCS state.
+    #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+    async fn reconcile_bcs_mode_is_noop() {
+        let (_instance, pool) = test_pool().await;
+        seed_gcs_row(&pool, "UpgradeAuthorized", "in_progress").await;
+
+        reconcile(
+            &pool,
+            &CancellationToken::new(),
+            &Arc::new(AtomicBool::new(false)),
+            false,
+        )
+        .await
+        .expect("reconcile");
+
+        assert_eq!(gcs_state(&pool).await.0, "UpgradeAuthorized");
+    }
+
+    /// A stale timeout from a different window must not roll back the current dry-run.
+    #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+    async fn handle_timeout_ignores_other_window() {
+        let (_instance, pool) = test_pool().await;
+        seed_gcs_row(&pool, "DryRunStarted", "in_progress").await; // end_block = 200
+        create_gcs_schema(&pool).await.expect("create gcs schema");
+        create_marker(&pool).await;
+
+        // Timeout for a different window (block_height 999 != end_block 200).
+        let payload =
+            serde_json::json!({ "proposal_id": [2], "chain_id": 1_i64, "block_height": 999_i64, "block_hash": "0x00" })
+                .to_string();
+        handle_unanimity_consensus_timeout(&pool, true, &payload)
+            .await
+            .expect("handler ok");
+
+        assert!(
+            marker_exists(&pool).await,
+            "a timeout for another window must not reset the schema"
+        );
+        assert_eq!(
+            gcs_state(&pool).await,
+            ("DryRunStarted".into(), "in_progress".into())
+        );
+    }
+
+    #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+    async fn handle_timeout_ignores_other_proposal() {
+        let (_instance, pool) = test_pool().await;
+        seed_gcs_row(&pool, "DryRunStarted", "in_progress").await;
+        create_gcs_schema(&pool).await.expect("create gcs schema");
+        create_marker(&pool).await;
+
+        let payload = serde_json::json!({
+            "proposal_id": [0x99],
+            "chain_id": 1_i64,
+            "block_height": 200_i64,
+            "block_hash": "0x00"
+        })
+        .to_string();
+        handle_unanimity_consensus_timeout(&pool, true, &payload)
+            .await
+            .expect("handler ok");
+
+        assert!(marker_exists(&pool).await);
+        assert_eq!(
+            gcs_state(&pool).await,
+            ("DryRunStarted".into(), "in_progress".into())
+        );
+    }
+
+    #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+    async fn handle_consensus_ignores_other_proposal() {
+        let (_instance, pool) = test_pool().await;
+        seed_gcs_row(&pool, "UpgradeActivated", "in_progress").await;
+        sqlx::query(
+            "UPDATE upgrade_state
+                SET host_consensus_reached = FALSE, gw_consensus_reached = FALSE
+              WHERE stack_role = 'GCS'",
+        )
+        .execute(&pool)
+        .await
+        .expect("reset latches");
+
+        let payload = serde_json::json!({
+            "proposal_id": [0x99],
+            "chain_id": 1_i64,
+            "block_height": 150_i64,
+            "block_hash": "0x00"
+        })
+        .to_string();
+        handle_unanimity_consensus(&pool, true, &payload)
+            .await
+            .expect("handler ok");
+
+        let latches: (bool, bool) = sqlx::query_as(
+            "SELECT host_consensus_reached, gw_consensus_reached
+               FROM upgrade_state WHERE stack_role = 'GCS'",
+        )
+        .fetch_one(&pool)
+        .await
+        .expect("latches");
+        assert_eq!(latches, (false, false));
+    }
+
+    /// A readiness task left over from an old proposal must not advance a newer one.
+    #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+    async fn transition_ignores_other_proposal() {
+        let (_instance, pool) = test_pool().await;
+        seed_gcs_row(&pool, "UpgradeActivated", "in_progress").await; // proposal_id = [0x02]
+
+        // Stale proposal: no-op.
+        transition_to_dry_run_started(&pool, &[0x99])
+            .await
+            .expect("transition");
+        assert_eq!(gcs_state(&pool).await.0, "UpgradeActivated");
+
+        // Matching proposal: advances.
+        transition_to_dry_run_started(&pool, &[0x02])
+            .await
+            .expect("transition");
+        assert_eq!(gcs_state(&pool).await.0, "DryRunStarted");
+    }
+
+    /// Same guard on the gateway track: a stale proposal must not set gw_dry_run_started.
+    #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+    async fn gw_transition_ignores_other_proposal() {
+        let (_instance, pool) = test_pool().await;
+        seed_gcs_row(&pool, "UpgradeActivated", "in_progress").await; // proposal_id = [0x02]
+        sqlx::query("UPDATE upgrade_state SET gw_dry_run_started = FALSE WHERE stack_role = 'GCS'")
+            .execute(&pool)
+            .await
+            .expect("reset flag");
+
+        let gw_flag = |pool: Pool<Postgres>| async move {
+            let (g,): (bool,) = sqlx::query_as(
+                "SELECT gw_dry_run_started FROM upgrade_state WHERE stack_role = 'GCS'",
+            )
+            .fetch_one(&pool)
+            .await
+            .expect("gw flag");
+            g
+        };
+
+        // Stale proposal: no-op.
+        transition_to_gw_dry_run_started(&pool, &[0x99])
+            .await
+            .expect("gw transition");
+        assert!(
+            !gw_flag(pool.clone()).await,
+            "stale proposal must not release gw"
+        );
+
+        // Matching proposal: releases.
+        transition_to_gw_dry_run_started(&pool, &[0x02])
+            .await
+            .expect("gw transition");
+        assert!(gw_flag(pool.clone()).await, "matching proposal releases gw");
+    }
+
+    #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+    async fn gcs_rollback_policy_distinguishes_derived_and_raw_writes() {
+        use fhevm_engine_common::versioning::{begin_write_guarded, GcsRollbackPolicy, WriteGuard};
+        let (_instance, pool) = test_pool().await;
+
+        seed_gcs_row(&pool, "DryRunStarted", "in_progress").await;
+        assert!(
+            matches!(
+                begin_write_guarded(&pool, true, GcsRollbackPolicy::Skip)
+                    .await
+                    .expect("guard"),
+                WriteGuard::Proceed(_)
+            ),
+            "write proceeds while dry-running"
+        );
+
+        seed_gcs_row(&pool, "PAUSED", "failed").await;
+        assert!(
+            matches!(
+                begin_write_guarded(&pool, true, GcsRollbackPolicy::Skip)
+                    .await
+                    .expect("guard"),
+                WriteGuard::Skip
+            ),
+            "derived output is skipped after rollback"
+        );
+        assert!(
+            matches!(
+                begin_write_guarded(&pool, true, GcsRollbackPolicy::Continue)
+                    .await
+                    .expect("guard"),
+                WriteGuard::Proceed(_)
+            ),
+            "raw ingestion continues after rollback"
+        );
+    }
+
+    #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+    async fn rollback_waits_for_in_flight_guarded_write() {
+        use fhevm_engine_common::versioning::{begin_write_guarded, GcsRollbackPolicy, WriteGuard};
+        use tokio::time::{timeout, Duration};
+
+        let (_instance, pool) = test_pool().await;
+        seed_gcs_row(&pool, "DryRunStarted", "in_progress").await;
+        create_gcs_schema(&pool).await.expect("create gcs schema");
+        create_marker(&pool).await;
+
+        let guarded_tx = match begin_write_guarded(&pool, true, GcsRollbackPolicy::Continue)
+            .await
+            .expect("guard")
+        {
+            WriteGuard::Proceed(tx) => tx,
+            WriteGuard::Stop | WriteGuard::Skip => panic!("write unexpectedly blocked"),
+        };
+
+        let rollback_pool = pool.clone();
+        let mut rollback =
+            tokio::spawn(async move { rollback_dry_run(&rollback_pool, &[0x02], 200).await });
+
+        assert!(
+            timeout(Duration::from_millis(200), &mut rollback)
+                .await
+                .is_err(),
+            "rollback must block while a writer holds the shared advisory lock"
+        );
+        assert!(
+            marker_exists(&pool).await,
+            "schema must not reset while the guarded write is in flight"
+        );
+
+        guarded_tx.commit().await.expect("release write guard");
+        assert!(
+            timeout(Duration::from_secs(10), rollback)
+                .await
+                .expect("rollback remained blocked")
+                .expect("rollback task panicked")
+                .expect("rollback failed"),
+            "rollback should claim the active dry-run"
+        );
+        assert!(
+            !marker_exists(&pool).await,
+            "schema should reset after the guarded write commits"
+        );
+        assert_eq!(gcs_state(&pool).await, ("PAUSED".into(), "failed".into()));
     }
 }
