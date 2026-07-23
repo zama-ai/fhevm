@@ -4,7 +4,12 @@ import path from "node:path";
 
 import { address, createKeyPairSignerFromBytes, getAddressEncoder } from "@solana/kit";
 
-import { COPROCESSOR_DB_CONTAINER, REPO_ROOT } from "../layout";
+import {
+  COPROCESSOR_DB_CONTAINER,
+  REPO_ROOT,
+  SOLANA_ACL_PROGRAM,
+  SOLANA_DEFAULT_USER_DECRYPT_CONTEXT,
+} from "../layout";
 import { runSolanaCurrentUserDecrypt } from "./current-user-decrypt";
 import { run } from "../utils/process";
 
@@ -15,9 +20,8 @@ export const SOLANA_TWO_HOLDER_TRANSFER_DESCRIPTION =
 const RPC_URL = "http://127.0.0.1:8899";
 const WS_URL = "ws://127.0.0.1:8900";
 const RELAYER_URL = "http://127.0.0.1:3000";
-const ACL_PROGRAM = "0x4cd3022dff504a675caf2d9b4f4014d0b3dc3ea17ffb97ba355cec5a933a30ee";
-const DEFAULT_USER_DECRYPT_CONTEXT =
-  "3166189940082864718613269121331309980362851143201109172953918312716374638593";
+const ACL_PROGRAM = SOLANA_ACL_PROGRAM;
+const DEFAULT_USER_DECRYPT_CONTEXT = SOLANA_DEFAULT_USER_DECRYPT_CONTEXT;
 const LIVE_CLIENT = path.join(REPO_ROOT, "solana/scripts/e2e/live-client/target/debug/poc-live-client");
 const LIVE_CLIENT_DIR = path.join(REPO_ROOT, "solana/scripts/e2e/live-client");
 const SDK_WORKER = path.join(REPO_ROOT, "test-suite/fhevm/solana-two-holder-transfer.ts");
@@ -43,6 +47,19 @@ export type TwoHolderScenario = {
   computeSigner: string;
   alice: Holder;
   bob: Holder;
+};
+
+/**
+ * The stack endpoints and identities the real transfer arc binds to. Defaults reproduce the local
+ * clean-e2e stack (the constants above); the e2e harness injects these from `loadEnv()` so the same
+ * arc can target another environment without editing this file.
+ */
+export type TwoHolderConfig = {
+  readonly rpcUrl: string;
+  readonly wsUrl: string;
+  readonly relayerUrl: string;
+  readonly aclProgram: string;
+  readonly userDecryptContext: string;
 };
 
 export type TwoHolderDependencies = {
@@ -154,7 +171,16 @@ const captureAddress = (output: string, label: string): string => {
   return match[1];
 };
 
-const realDependencies = (): TwoHolderDependencies => {
+const resolveConfig = (config: Partial<TwoHolderConfig>): TwoHolderConfig => ({
+  rpcUrl: config.rpcUrl ?? RPC_URL,
+  wsUrl: config.wsUrl ?? WS_URL,
+  relayerUrl: config.relayerUrl ?? RELAYER_URL,
+  aclProgram: config.aclProgram ?? ACL_PROGRAM,
+  userDecryptContext: config.userDecryptContext ?? solanaUserDecryptContext(),
+});
+
+export const createRealTwoHolderDependencies = (config: Partial<TwoHolderConfig> = {}): TwoHolderDependencies => {
+  const cfg = resolveConfig(config);
   let bobHome: string | undefined;
   return {
     async provision() {
@@ -168,12 +194,12 @@ const realDependencies = (): TwoHolderDependencies => {
       await run(["solana-keygen", "new", "--no-bip39-passphrase", "--silent", "--force", "--outfile", bobKeypair]);
       const bobOwner = (await run(["solana", "address", "-k", bobKeypair])).stdout.trim();
       if (!BASE58.test(bobOwner) || bobOwner === aliceOwner) throw new Error("Bob must have a distinct valid address");
-      await run(["solana", "airdrop", "5", bobOwner, "--url", RPC_URL]);
+      await run(["solana", "airdrop", "5", bobOwner, "--url", cfg.rpcUrl]);
 
-      const underlyingOutput = await run(["spl-token", "create-token", "--decimals", "9", "--url", RPC_URL]);
+      const underlyingOutput = await run(["spl-token", "create-token", "--decimals", "9", "--url", cfg.rpcUrl]);
       const underlying = captureAddress(`${underlyingOutput.stdout}\n${underlyingOutput.stderr}`, "Creating token");
-      await run(["spl-token", "create-account", underlying, "--url", RPC_URL]);
-      await run(["spl-token", "mint", underlying, "1000000", "--url", RPC_URL]);
+      await run(["spl-token", "create-account", underlying, "--url", cfg.rpcUrl]);
+      await run(["spl-token", "mint", underlying, "1000000", "--url", cfg.rpcUrl]);
       const mintOutput = await runLiveClient({ UNDERLYING_MINT: underlying });
       const mintText = `${mintOutput.stdout}\n${mintOutput.stderr}`;
       const mint = captureAddress(mintText, "confidential mint");
@@ -217,10 +243,10 @@ const realDependencies = (): TwoHolderDependencies => {
       const result = await run(["node", SDK_WORKER], {
         cwd: CLI_DIR,
         env: {
-          TRANSFER_RPC_URL: RPC_URL,
-          TRANSFER_WS_URL: WS_URL,
-          TRANSFER_RELAYER_URL: RELAYER_URL,
-          TRANSFER_ACL_PROGRAM: ACL_PROGRAM,
+          TRANSFER_RPC_URL: cfg.rpcUrl,
+          TRANSFER_WS_URL: cfg.wsUrl,
+          TRANSFER_RELAYER_URL: cfg.relayerUrl,
+          TRANSFER_ACL_PROGRAM: cfg.aclProgram,
           TRANSFER_CHAIN_ID: alice.chainId,
           TRANSFER_OWNER_KEYPAIR: scenario.alice.keypairPath,
           TRANSFER_OWNER: scenario.alice.owner,
@@ -237,11 +263,11 @@ const realDependencies = (): TwoHolderDependencies => {
     },
     decrypt: (scenario, holder, state, expected) =>
       runSolanaCurrentUserDecrypt({
-        UD_RELAYER_URL: RELAYER_URL,
+        UD_RELAYER_URL: cfg.relayerUrl,
         UD_CONTRACTS_CHAIN_ID: state.chainId,
         UD_HANDLE: state.currentHandle,
         UD_SECRET_KEY: holder.secretKey,
-        UD_CONTEXT_ID: solanaUserDecryptContext(),
+        UD_CONTEXT_ID: cfg.userDecryptContext,
         UD_ALLOWED_DOMAIN_KEYS: `0x${Buffer.from(getAddressEncoder().encode(address(scenario.mint))).toString("hex")}`,
         UD_ACL_VALUE_KEY: state.aclValueKey,
         UD_EXPECTED: expected.toString(),
@@ -254,7 +280,7 @@ const realDependencies = (): TwoHolderDependencies => {
 };
 
 /** Runs one real two-holder transfer and proves both current balances through independent SDK decrypts. */
-export const runSolanaTwoHolderTransfer = async (dependencies: TwoHolderDependencies = realDependencies()) => {
+export const runSolanaTwoHolderTransfer = async (dependencies: TwoHolderDependencies = createRealTwoHolderDependencies()) => {
   let scenario: TwoHolderScenario | undefined;
   try {
     scenario = await dependencies.provision();

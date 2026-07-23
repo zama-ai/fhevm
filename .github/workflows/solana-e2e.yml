@@ -197,6 +197,14 @@ jobs:
       - name: Drive the Solana decrypt vertical (full-vertical.sh)
         run: bash solana/scripts/e2e/full-vertical.sh
 
+      - name: Run the Solana e2e scenario suite (SDK-driven, against the up stack)
+        # The stack from clean-e2e is still up. These bun:test scenarios drive product arcs through
+        # @fhevm/sdk Solana actions only; the confidential-transfer arc (encrypt input ->
+        # submitInputProof -> confidentialTransfer -> current user-decrypt) was moved here from
+        # full-vertical.sh's [sdk-transfer] leg. See solana/docs/TESTING.md ("Scenario layer").
+        working-directory: test-suite/fhevm
+        run: bun run test:e2e
+
       - name: Collect stack logs on failure
         if: ${{ failure() }}
         run: |

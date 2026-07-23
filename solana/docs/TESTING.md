@@ -21,6 +21,7 @@ been exercised. Commands are run from `solana/` unless a row changes directory.
 | Direct real-TFHE conformance | `cd ../coprocessor/fhevm-engine && SQLX_OFFLINE=true cargo test --profile local -p fhevm-engine-common --test real_tfhe_conformance` | CPU/default-feature `perform_fhe_operation` consumes real encrypted inputs and produces typed ciphertexts that decrypt to explicit deterministic Bool, Uint8, and Uint64 oracles. It covers every operator removed from the full vertical, while grouping sibling operators into compact family tests. | Solana admission, listener/database behavior, GPU execution, random known-answer claims, or high-width scheduled coverage. | Coprocessor workspace dependencies. Warm: about 20 seconds; a cold optimized build can take minutes. |
 | Manual real-TFHE worker boundary | `cd ../coprocessor/fhevm-engine && SQLX_OFFLINE=true cargo test -p tfhe-worker tests::solana_poc::solana_confidential_transfer_with_real_ciphertexts_computes_and_decrypts -- --ignored --exact --nocapture` | A Solana confidential transfer can feed the real TFHE worker through the database and decrypt the computed ciphertexts. | Yellowstone/RPC ingestion, solana-proof-service delivery, KMS networking, or the complete deployed flow. | Intentionally ignored: testcontainers starts disposable migrated Postgres; test keys and built PoC programs are also required. Heavy and manual. |
 | Full vertical | `bash scripts/e2e/clean-e2e.sh` then `bash scripts/e2e/full-vertical.sh` | The local-validator path across SDK/input proof, programs, reconstruction, coprocessor, solana-proof-service MMR proofs, and public/user decrypt. It retains one live example for each distinct eval wiring shape: encrypted/encrypted and encrypted/scalar binary, unary type conversion, ternary, bounded randomness, `Sum`, `IsIn`, and `MulDiv`. | Exhaustive operator semantics (the pure layer owns the full contract; Mollusk and direct real-TFHE supply representative SBF and cryptographic evidence), production reliability, scale, or mainnet readiness. | Docker, Solana tools, Node/Rust toolchains, ports, and a clean local stack. Before operator thinning, four successful CI samples on July 13–14, 2026 ran `full-vertical.sh` in 4m15s–4m29s; complete jobs took 44m49s–53m53s because stack setup dominated. These are observations, not SLOs. |
+| Scenario layer (SDK-driven) | `cd ../test-suite/fhevm && bun run test:e2e` (stack already up) | Product arcs composed **only** through `@fhevm/sdk` Solana actions, against the live stack. Currently the confidential-transfer arc: encrypt input → `submitInputProof` → `confidentialTransfer` → current user-decrypt of both rotated balances (Alice 1000→600, Bob 0→400). | Instruction admission / guards / arithmetic / cost (Mollusk owns those), operator semantics, and provisioning correctness (mint / wrap / balance-state reads still run through the Rust live-client — see the SDK gaps below). | A stack from `clean-e2e.sh` already up, plus `bun` and the built `@fhevm/sdk`. In CI it runs as its own step right after `full-vertical.sh` (same up stack). |
 
 The cleartext evaluator used by `operator_conformance` and `operator_mollusk_conformance` is a
 test-owned model/mock. It is deliberately independent evidence for operator intent; it is not an
@@ -107,6 +108,57 @@ cd ../solana-proof-service     && make test
 > Note on a green test run: the suites print many `Program ... failed: custom program error: 0x...`
 > lines. Those are **negative tests** asserting expected reverts, not test failures. The
 > authoritative signal is the `test result: ok` summary lines and the process exit code.
+
+## Scenario layer (SDK-driven e2e)
+
+Lives in `test-suite/fhevm/e2e/` — a small harness (three files, not a framework) plus scenario
+files. It sits **on top of** the Mollusk ladder and the full vertical, and owns only what
+composition can break (proofs vs live state, KMS round-trips, relayer seams, timing) — never what
+the lower layers already prove.
+
+Runner: `bun:test`, not vitest. The standing plan (#1656) names vitest, but these scenarios reuse
+`test-suite/fhevm/src/solana/*` orchestrators whose `layout.ts` is bun-native (`import.meta.dir`),
+and node-based vitest workers do not provide it; vitest remains the target if/when `layout.ts` is
+ported off bun APIs.
+
+Two rules the layer holds itself to:
+
+1. **Each behavior is tested at exactly one layer.** Mollusk owns instruction admission, guards,
+   arithmetic and cost; scenarios never re-test that territory. When a leg moves here, it is
+   deleted from `full-vertical.sh` in the same change — no double coverage.
+2. **The harness carries zero protocol knowledge.** Scenarios reach the protocol only through
+   `@fhevm/sdk` Solana actions, and assertion reads go through SDK read paths. A missing SDK
+   read/action is an SDK gap to file, never something to hand-roll in the harness.
+
+The harness (`e2e/harness/`):
+
+- `loadEnv()` → a `TestEnv` (RPC/WS/relayer/proof-service/gateway URLs, the RFC-021 chain id, the
+  zama-host ACL identity, the user-decrypt context, the coprocessor DB container, the deployer
+  keypair root, and capability flags `faucet` / `freshMints` / `fastSlots`). Its source today is the
+  local `clean-e2e` stack (env-var overridable); it is structured so a demo-config JSON or a
+  devnet/mainnet manifest slots in as a second source without touching scenarios.
+- `personas` → named actors backed by on-disk keypairs, with a capability-gated `fund()` (local
+  airdrop).
+- `until(condition, { timeoutMs, intervalMs })` → a generic readiness-polling helper.
+
+Scenarios (`e2e/scenarios/`) are environment-blind: they read `TestEnv`, gate on readiness with
+`until`, and drive SDK actions. `confidential-transfer.scenario.test.ts` is the confidential-transfer
+arc ported from the `[sdk-transfer]` leg of `full-vertical.sh`; its assertion-to-bash mapping is in
+the file header.
+
+Run it locally against a stack that is already up (do **not** re-run `clean-e2e.sh` just for this):
+
+```bash
+# from repo root, after `bash solana/scripts/e2e/clean-e2e.sh` has left the stack up
+cd test-suite/fhevm
+bun run test:e2e            # the scenario suite (needs the live stack)
+bun run test:e2e:harness    # the harness unit tests (until / loadEnv — no stack needed)
+```
+
+Not yet portable to this layer (SDK gaps, tracked): the disclose / redeem consume arc, whose
+provisioning (wrap, burn, seal `make_handle_public`, `redeem_burned_amount`) and MMR-proof sourcing
+have no SDK actions/reads yet, so it stays in `full-vertical.sh`. Confidential-mint init, wrap, and
+balance-state reads used by the transfer arc's setup likewise still run through the Rust live-client.
 
 ## Traps & gotchas (read before you lose an afternoon)
 

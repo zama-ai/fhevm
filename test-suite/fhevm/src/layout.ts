@@ -129,6 +129,12 @@ export const MINIO_INTERNAL_URL = `http://minio:${MINIO_PORT}`;
 export const MINIO_EXTERNAL_URL = `http://localhost:${MINIO_PORT}`;
 export const POSTGRES_HOST = `db:${POSTGRES_PORT}`;
 export const COPROCESSOR_DB_CONTAINER = "coprocessor-and-kms-db";
+// Solana host program id as bytes32 — the Solana ACL identity. Single source for the transfer
+// orchestrator and the e2e harness's loadEnv default.
+export const SOLANA_ACL_PROGRAM = "0x4cd3022dff504a675caf2d9b4f4014d0b3dc3ea17ffb97ba355cec5a933a30ee";
+// Default KMS/gateway user-decrypt context id, as an unsigned decimal string.
+export const SOLANA_DEFAULT_USER_DECRYPT_CONTEXT =
+  "3166189940082864718613269121331309980362851143201109172953918312716374638593";
 export const KMS_CORE_CONTAINER = "kms-core";
 export const TEST_SUITE_CONTAINER = "fhevm-test-suite-e2e-debug";
 export const KEYGEN_ID_SELECTOR = "0xd52f10eb";
