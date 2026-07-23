@@ -310,19 +310,51 @@ pub async fn begin_guarded_conn(
     Ok(tx)
 }
 
-/// PostgreSQL advisory-lock key serializing BCS writes against `execute_cutover`.
-/// `execute_cutover` (upgrade-controller) takes the **exclusive** form; every BCS
-/// write transaction takes the **shared** form via [`cutover_gate`]. Chosen to be
+/// PostgreSQL advisory-lock key serializing writes against cutover and rollback.
+/// The upgrade-controller takes the **exclusive** form; every guarded write
+/// transaction takes the **shared** form via [`cutover_gate`]. Chosen to be
 /// recognizable in logs (`0x4648_4556_4355_5456` ~ ASCII "FHEVCUTV").
 pub const CUTOVER_LOCK_ID: i64 = 0x4648_4556_4355_5456;
 
-/// Cutover safety gate for a BCS write transaction.
+/// Result of opening a guarded write transaction.
+pub enum WriteGuard<'a> {
+    Proceed(Transaction<'a, Postgres>),
+    Stop,
+    Skip,
+}
+
+impl<'a> WriteGuard<'a> {
+    /// Returns the transaction when the write can proceed.
+    pub fn into_tx(self) -> Option<Transaction<'a, Postgres>> {
+        match self {
+            WriteGuard::Proceed(tx) => Some(tx),
+            WriteGuard::Stop | WriteGuard::Skip => None,
+        }
+    }
+}
+
+/// Controls GCS writes after a rollback.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum GcsRollbackPolicy {
+    /// Used by raw chain ingestion.
+    Continue,
+    /// Used by derived output workers.
+    Skip,
+}
+
+#[derive(Clone, Copy)]
+enum GateBlock {
+    Stop,
+    Skip,
+}
+
+/// Cutover and rollback safety gate for a write transaction.
 ///
-/// Takes the **shared** cutover advisory lock on `tx`, then re-checks the
-/// retirement fence ([`is_retired`]) now that this transaction is ordered
-/// against `execute_cutover` (which holds the **exclusive** form). Returns `true`
-/// if a committed cutover has retired this stack — the caller must roll back and
-/// stop, having written nothing into the now-live tables.
+/// Takes the **shared** advisory lock on `tx`, then checks the stack state while
+/// ordered against controller changes, which take the **exclusive** form.
+/// Returns `Stop` when cutover has retired a BCS writer and `Skip` when rollback
+/// has paused derived GCS writes. The caller rolls back either blocked
+/// transaction before returning it.
 ///
 /// Why the lock, not just [`begin_guarded_pool`]'s BEGIN-time check:
 /// `assert_not_retired` runs only at BEGIN, so a transaction opened before
@@ -334,49 +366,64 @@ pub const CUTOVER_LOCK_ID: i64 = 0x4648_4556_4355_5456;
 /// compatible, so this does **not** serialize BCS worker replicas against each
 /// other — only against the one-shot cutover.
 ///
-/// GCS-mode (green) workers also take the shared lock: their writes land in the
-/// `gcs` schema, which `execute_cutover` merges into the live tables and then
-/// drops. Without the lock a green write committing between cutover's merge read
-/// and its `DROP SCHEMA gcs CASCADE` would be neither merged nor preserved (a
-/// silent-loss window); holding the shared lock makes cutover's exclusive request
-/// block until the write commits, so it is merged before the drop. They skip only
-/// the [`is_retired`] re-check: a green binary is strictly newer than the live
-/// stack, so it can never be retired (`is_retired` is always `false` for it).
-pub async fn cutover_gate(
+/// GCS-mode (green) writers also take the shared lock: their writes land in the
+/// `gcs` schema, which cutover merges and rollback resets. Without the lock a
+/// green write could be lost during cutover or land in the recreated schema after
+/// rollback. Holding the shared lock makes either exclusive request wait until
+/// the write commits. Raw ingestion continues after rollback, while derived
+/// workers skip when the GCS row is `PAUSED`. GCS writers skip only the
+/// [`is_retired`] re-check because a green binary is newer than the live stack
+/// and cannot be retired.
+async fn cutover_gate(
     tx: &mut Transaction<'_, Postgres>,
     gcs_mode: bool,
-) -> Result<bool, sqlx::Error> {
+    rollback_policy: GcsRollbackPolicy,
+) -> Result<Option<GateBlock>, sqlx::Error> {
     sqlx::query("SELECT pg_advisory_xact_lock_shared($1)")
         .bind(CUTOVER_LOCK_ID)
         .execute(&mut **tx)
         .await?;
     if gcs_mode {
-        return Ok(false);
+        if rollback_policy == GcsRollbackPolicy::Skip {
+            let paused: bool = sqlx::query_scalar(
+                "SELECT EXISTS(SELECT 1 FROM upgrade_state WHERE stack_role = 'GCS' AND state = 'PAUSED')",
+            )
+            .fetch_one(&mut **tx)
+            .await?;
+            return Ok(paused.then_some(GateBlock::Skip));
+        }
+        return Ok(None);
     }
-    is_retired(tx).await
+    Ok(is_retired(tx).await?.then_some(GateBlock::Stop))
 }
 
-/// Begin a **write** transaction fenced against cutover, in one call.
+/// Begin a **write** transaction fenced against cutover and rollback, in one call.
 ///
 /// Combines [`begin_guarded_pool`] (BEGIN-time `assert_not_retired`) with
-/// [`cutover_gate`] (shared cutover lock + retirement re-check). Returns
-/// `Ok(None)` if a committed cutover has retired this stack — the caller should
-/// skip the write and stop cleanly, having written nothing.
+/// [`cutover_gate`] (shared advisory lock plus the relevant state check). Returns
+/// [`WriteGuard::Stop`] for a retired BCS stack and [`WriteGuard::Skip`] for a
+/// derived GCS write after rollback.
 ///
-/// Use this for every BCS write transaction. Keep [`begin_guarded_pool`] for
-/// **read-only** transactions: reads cannot corrupt merged state, so they should
-/// not take the shared cutover lock (which would make `execute_cutover` block
-/// behind every in-flight read).
+/// Use this for every BCS or GCS write transaction. Keep [`begin_guarded_pool`]
+/// for **read-only** transactions: reads cannot corrupt merged or reset state,
+/// so they should not take the shared lock, which would delay cutover or
+/// rollback behind every in-flight read.
 pub async fn begin_write_guarded(
     pool: &Pool<Postgres>,
     gcs_mode: bool,
-) -> Result<Option<Transaction<'static, Postgres>>, sqlx::Error> {
+    rollback_policy: GcsRollbackPolicy,
+) -> Result<WriteGuard<'static>, sqlx::Error> {
     let mut tx = begin_guarded_pool(pool).await?;
-    if cutover_gate(&mut tx, gcs_mode).await? {
-        tx.rollback().await?;
-        return Ok(None);
+    match cutover_gate(&mut tx, gcs_mode, rollback_policy).await? {
+        None => Ok(WriteGuard::Proceed(tx)),
+        Some(block) => {
+            tx.rollback().await?;
+            Ok(match block {
+                GateBlock::Stop => WriteGuard::Stop,
+                GateBlock::Skip => WriteGuard::Skip,
+            })
+        }
     }
-    Ok(Some(tx))
 }
 
 /// Like [`begin_write_guarded`] but begins on an already-acquired connection
@@ -384,13 +431,19 @@ pub async fn begin_write_guarded(
 pub async fn begin_write_guarded_conn(
     conn: &mut PgConnection,
     gcs_mode: bool,
-) -> Result<Option<Transaction<'_, Postgres>>, sqlx::Error> {
+    rollback_policy: GcsRollbackPolicy,
+) -> Result<WriteGuard<'_>, sqlx::Error> {
     let mut tx = begin_guarded_conn(conn).await?;
-    if cutover_gate(&mut tx, gcs_mode).await? {
-        tx.rollback().await?;
-        return Ok(None);
+    match cutover_gate(&mut tx, gcs_mode, rollback_policy).await? {
+        None => Ok(WriteGuard::Proceed(tx)),
+        Some(block) => {
+            tx.rollback().await?;
+            Ok(match block {
+                GateBlock::Stop => WriteGuard::Stop,
+                GateBlock::Skip => WriteGuard::Skip,
+            })
+        }
     }
-    Ok(Some(tx))
 }
 
 #[cfg(test)]

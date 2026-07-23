@@ -24,11 +24,13 @@ use std::sync::LazyLock;
 use std::time::Duration;
 
 use fhevm_engine_common::database::{
-    connect_pool_with_options, resolve_database_url_from_option, EVENT_CIPHERTEXTS_UPLOADED,
+    apply_gcs_mode_search_path, connect_pool_with_options_and_connect_options,
+    resolve_database_url_from_option, EVENT_CIPHERTEXTS_UPLOADED, GCS_SCHEMA,
 };
+use fhevm_engine_common::versioning::{begin_write_guarded, GcsRollbackPolicy, WriteGuard};
 use prometheus::{register_int_counter, register_int_gauge, IntCounter, IntGauge};
 use sqlx::postgres::PgPoolOptions;
-use sqlx::{PgPool, Postgres, Transaction};
+use sqlx::{PgConnection, PgPool, Postgres, Transaction};
 use tokio_util::sync::CancellationToken;
 use tracing::{error, info};
 
@@ -65,11 +67,13 @@ pub async fn run_confidential_bridge(
     cancel_token: CancellationToken,
 ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
     let db_url = resolve_database_url_from_option(args.database_url.clone())?;
+    let gcs_mode = fhevm_engine_common::versioning::resolve_gcs_mode(db_url.as_str()).await?;
     // A single connection suffices: the worker polls and associates sequentially.
-    let (pool, _pool_refresh_handle) = connect_pool_with_options(
+    let (pool, _pool_refresh_handle) = connect_pool_with_options_and_connect_options(
         &db_url,
         PgPoolOptions::new().max_connections(1),
         Some(&cancel_token),
+        apply_gcs_mode_search_path(gcs_mode),
     )
     .await?;
 
@@ -84,7 +88,14 @@ pub async fn run_confidential_bridge(
         if cancel_token.is_cancelled() {
             break;
         }
-        match drain_associations(&pool, args.bridge_associate_batch_size, &cancel_token).await {
+        match drain_associations(
+            &pool,
+            args.bridge_associate_batch_size,
+            &cancel_token,
+            gcs_mode,
+        )
+        .await
+        {
             Ok(associated) if associated > 0 => {
                 info!(target: "bridge", associated, "Associated bridged handles")
             }
@@ -114,13 +125,14 @@ pub(crate) async fn drain_associations(
     pool: &PgPool,
     batch_size: i64,
     cancel_token: &CancellationToken,
+    gcs_mode: bool,
 ) -> Result<u64, sqlx::Error> {
     let mut total = 0;
     loop {
         if cancel_token.is_cancelled() {
             break;
         }
-        let associated = associate_batch(pool, batch_size).await?;
+        let associated = associate_batch(pool, batch_size, gcs_mode).await?;
         total += associated;
         if associated < batch_size as u64 {
             break;
@@ -155,8 +167,47 @@ async fn count_unassociated_handles(pool: &PgPool) -> Result<i64, sqlx::Error> {
     .await
 }
 
-async fn associate_batch(pool: &PgPool, batch_size: i64) -> Result<u64, sqlx::Error> {
-    let mut txn = pool.begin().await?;
+async fn bridge_writes_enabled(
+    conn: &mut PgConnection,
+    gcs_mode: bool,
+) -> Result<bool, sqlx::Error> {
+    if !gcs_mode {
+        return Ok(true);
+    }
+
+    let state: Option<String> =
+        sqlx::query_scalar("SELECT state FROM upgrade_state WHERE stack_role = 'GCS'")
+            .fetch_optional(&mut *conn)
+            .await?;
+    match state.as_deref() {
+        Some("LIVE") => Ok(true),
+        // Without this schema, unqualified bridge writes would use public.
+        Some("UpgradeActivated" | "DryRunStarted") => {
+            sqlx::query_scalar(
+                "SELECT EXISTS (SELECT 1 FROM information_schema.schemata WHERE schema_name = $1)",
+            )
+            .bind(GCS_SCHEMA)
+            .fetch_one(conn)
+            .await
+        }
+        _ => Ok(false),
+    }
+}
+
+async fn associate_batch(
+    pool: &PgPool,
+    batch_size: i64,
+    gcs_mode: bool,
+) -> Result<u64, sqlx::Error> {
+    let mut txn = match begin_write_guarded(pool, gcs_mode, GcsRollbackPolicy::Skip).await? {
+        WriteGuard::Proceed(txn) => txn,
+        WriteGuard::Stop | WriteGuard::Skip => return Ok(0),
+    };
+
+    if !bridge_writes_enabled(txn.as_mut(), gcs_mode).await? {
+        txn.rollback().await?;
+        return Ok(0);
+    }
 
     // A pair is ready to associate when:
     // - the destination handle is not already materialized by another path
