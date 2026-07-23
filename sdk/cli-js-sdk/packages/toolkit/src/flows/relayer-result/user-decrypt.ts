@@ -8,9 +8,9 @@ import {
 } from "../../config";
 import {
   decryptSavedUserDecryptResult,
-  parseAlpha8TransportKeyPair,
+  parseSavedTransportKeyPair,
   type SavedUserDecryptShare,
-} from "../../sdk-alpha8-saved-user-decrypt-adapter";
+} from "../../sdk-saved-user-decrypt-adapter";
 import type {
   DecryptedValue,
   UserDecryptValidationArtifact,
@@ -393,7 +393,7 @@ export const verifyUserDecryptShares = async (
     );
   }
 
-  const transportKeyPair = await parseAlpha8TransportKeyPair(context.fhevm, {
+  const transportKeyPair = await parseSavedTransportKeyPair(context.fhevm, {
     publicKey: options.artifact.transportKeyPair.publicKey,
     privateKey: options.artifact.transportKeyPair.privateKey,
     tkmsVersion,

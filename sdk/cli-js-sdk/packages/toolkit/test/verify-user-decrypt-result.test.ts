@@ -5,7 +5,7 @@ const mocks = vi.hoisted(() => ({
   createDecryptClientContext: vi.fn(),
   decryptSavedUserDecryptResult: vi.fn(),
   parseSignedDecryptionPermit: vi.fn(),
-  parseAlpha8TransportKeyPair: vi.fn(),
+  parseSavedTransportKeyPair: vi.fn(),
 }));
 
 vi.mock("../src/config", () => ({
@@ -16,9 +16,9 @@ vi.mock("@fhevm/sdk/actions/chain", () => ({
   parseSignedDecryptionPermit: mocks.parseSignedDecryptionPermit,
 }));
 
-vi.mock("../src/sdk-alpha8-saved-user-decrypt-adapter", () => ({
+vi.mock("../src/sdk-saved-user-decrypt-adapter", () => ({
   decryptSavedUserDecryptResult: mocks.decryptSavedUserDecryptResult,
-  parseAlpha8TransportKeyPair: mocks.parseAlpha8TransportKeyPair,
+  parseSavedTransportKeyPair: mocks.parseSavedTransportKeyPair,
 }));
 
 import type { UserDecryptValidationArtifact } from "../src/types";
@@ -81,7 +81,7 @@ describe("user-decrypt result verification", () => {
         fhevm: { client: true, ready: Promise.resolve(), tkmsVersion },
       }),
     );
-    mocks.parseAlpha8TransportKeyPair.mockResolvedValue({
+    mocks.parseSavedTransportKeyPair.mockResolvedValue({
       publicKey: "0x1234",
     });
     mocks.parseSignedDecryptionPermit.mockResolvedValue({
@@ -116,13 +116,13 @@ describe("user-decrypt result verification", () => {
     vi.unstubAllGlobals();
   });
 
-  it("uses the isolated alpha.8 adapter and reports verification metadata", async () => {
+  it("uses the isolated saved-user-decrypt adapter and reports verification metadata", async () => {
     const result = await verifyUserDecryptShares({
       artifact: artifact(),
       shares: [share],
     });
 
-    expect(mocks.parseAlpha8TransportKeyPair).toHaveBeenCalledWith(
+    expect(mocks.parseSavedTransportKeyPair).toHaveBeenCalledWith(
       expect.objectContaining({ client: true }),
       {
         publicKey: "0x1234",
@@ -183,7 +183,7 @@ describe("user-decrypt result verification", () => {
         shares: [share],
       });
 
-      expect(mocks.parseAlpha8TransportKeyPair).toHaveBeenCalledWith(
+      expect(mocks.parseSavedTransportKeyPair).toHaveBeenCalledWith(
         expect.objectContaining({ client: true }),
         expect.objectContaining({ tkmsVersion }),
       );
@@ -234,7 +234,7 @@ describe("user-decrypt result verification", () => {
     await expect(
       verifyUserDecryptShares({ artifact: artifact(), shares: [share] }),
     ).rejects.toBe(readinessError);
-    expect(mocks.parseAlpha8TransportKeyPair).not.toHaveBeenCalled();
+    expect(mocks.parseSavedTransportKeyPair).not.toHaveBeenCalled();
     expect(mocks.parseSignedDecryptionPermit).not.toHaveBeenCalled();
     expect(mocks.decryptSavedUserDecryptResult).not.toHaveBeenCalled();
   });
@@ -263,7 +263,7 @@ describe("user-decrypt result verification", () => {
     ).rejects.toThrow(
       "Saved transport key TKMS version 0.13.10 does not match the resolved decrypt client version 0.13.20-0",
     );
-    expect(mocks.parseAlpha8TransportKeyPair).not.toHaveBeenCalled();
+    expect(mocks.parseSavedTransportKeyPair).not.toHaveBeenCalled();
     expect(mocks.decryptSavedUserDecryptResult).not.toHaveBeenCalled();
   });
 

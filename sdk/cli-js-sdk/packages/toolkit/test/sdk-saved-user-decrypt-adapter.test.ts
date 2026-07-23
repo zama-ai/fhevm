@@ -2,9 +2,9 @@ import { describe, expect, it, vi } from "vitest";
 import { execFileSync } from "node:child_process";
 
 import {
-  assertAlpha8SavedUserDecryptAdapterAvailable,
-  createAlpha8SavedUserDecryptAdapter,
-} from "../src/sdk-alpha8-saved-user-decrypt-adapter";
+  assertSavedUserDecryptAdapterAvailable,
+  createSavedUserDecryptAdapter,
+} from "../src/sdk-saved-user-decrypt-adapter";
 
 const parameters = () => ({
   fhevm: {
@@ -30,15 +30,37 @@ const parameters = () => ({
   signedPermit: {
     signature: `0x${"22".repeat(65)}`,
     signerAddress: "0x0000000000000000000000000000000000000003",
+    eip712: { message: { extraData: "0x00" } },
   },
-  transportKeyPair: { tkmsVersion: "0.13.20-0" },
+  transportKeyPair: { parsed: "transport-key" },
   shares: [{ payload: "0xaabb", signature: "0xccdd", extraData: "0x00" }],
 });
 
-describe("alpha.8 saved user-decrypt adapter", () => {
-  it("resolves the guarded internal seam from the installed alpha.8 package", async () => {
+// Private SDK modules the adapter resolves, paired with the export it needs from
+// each. Kept in lockstep with `loadSdkInternals` in the adapter.
+const SEAM_PATHS = [
+  "_esm/core/kms/kmsExtraData-p.js",
+  "_esm/core/host-contracts/readKmsSignersContext-p.js",
+  "_esm/core/handle/FhevmHandle.js",
+  "_esm/core/kms/createKmsEip712Domain.js",
+  "_esm/core/kms/KmsSigncryptedShares-p.js",
+  "_esm/core/kms/decryptKmsSigncryptedShares-p.js",
+  "_esm/core/runtime/CoreFhevm-p.js",
+];
+const SEAM_NAMES = [
+  "createKmsExtraDataFromBytesHex",
+  "readKmsSignersContextFromPermitExtraData",
+  "toFhevmHandle",
+  "createKmsEip712Domain",
+  "createKmsSigncryptedShares",
+  "decryptKmsSigncryptedShares",
+  "initPublicAction",
+];
+
+describe("saved user-decrypt adapter", () => {
+  it("resolves the guarded internal seam from the installed package", async () => {
     await expect(
-      assertAlpha8SavedUserDecryptAdapterAvailable(),
+      assertSavedUserDecryptAdapterAvailable(),
     ).resolves.toBeUndefined();
   });
 
@@ -52,8 +74,8 @@ describe("alpha.8 saved user-decrypt adapter", () => {
           `import { createRequire } from "node:module";`,
           `import { pathToFileURL } from "node:url";`,
           `const root = pathToFileURL(createRequire(import.meta.url).resolve("@fhevm/sdk/package.json"));`,
-          `const paths = ["_esm/core/kms/kmsExtraData-p.js", "_esm/core/host-contracts/readKmsSignersContext-p.js", "_esm/core/handle/FhevmHandle.js", "_esm/core/kms/KmsSigncryptedShares-p.js", "_esm/core/kms/decryptKmsSigncryptedShares-p.js"];`,
-          `const names = ["fromKmsExtraDataBytesHex", "readKmsSignersContextFromExtraData", "toFhevmHandle", "createKmsSigncryptedShares", "decryptKmsSigncryptedShares"];`,
+          `const paths = ${JSON.stringify(SEAM_PATHS)};`,
+          `const names = ${JSON.stringify(SEAM_NAMES)};`,
           `const modules = await Promise.all(paths.map((path) => import(new URL(path, root).href)));`,
           `if (!modules.every((module, index) => typeof module[names[index]] === "function")) process.exit(1);`,
         ].join("\n"),
@@ -62,7 +84,7 @@ describe("alpha.8 saved user-decrypt adapter", () => {
     );
   });
 
-  it("composes the alpha.8 internals and exposes verified context metadata", async () => {
+  it("composes the internals and exposes verified context metadata", async () => {
     const kmsSignersContext = {
       id: 7n,
       epochId: 9n,
@@ -70,49 +92,69 @@ describe("alpha.8 saved user-decrypt adapter", () => {
       signers: ["one", "two", "three"],
     };
     const internals = {
-      fromKmsExtraDataBytesHex: vi.fn().mockReturnValue({ parsed: true }),
-      readKmsSignersContextFromExtraData: vi.fn().mockResolvedValue(kmsSignersContext),
+      createKmsExtraDataFromBytesHex: vi.fn().mockReturnValue({ parsed: true }),
+      readKmsSignersContextFromPermitExtraData: vi
+        .fn()
+        .mockResolvedValue(kmsSignersContext),
       toFhevmHandle: vi.fn().mockReturnValue({ handle: true }),
-      createKmsSigncryptedShares: vi.fn().mockResolvedValue({ sealed: true }),
-      decryptKmsSigncryptedShares: vi.fn().mockResolvedValue([
-        { type: "uint64", value: 42n },
-      ]),
+      createKmsEip712Domain: vi.fn().mockReturnValue({ domain: true }),
+      createKmsSigncryptedShares: vi.fn().mockReturnValue({ sealed: true }),
+      decryptKmsSigncryptedShares: vi
+        .fn()
+        .mockResolvedValue([{ type: "uint64", value: 42n }]),
+      initPublicAction: vi
+        .fn()
+        .mockResolvedValue({ tkmsVersion: "0.13.20-0" }),
     };
-    const decrypt = createAlpha8SavedUserDecryptAdapter({
-      sdkVersion: "1.1.0-alpha.8",
+    const decrypt = createSavedUserDecryptAdapter({
+      sdkVersion: "0.13.2-1",
       loadInternals: vi.fn().mockResolvedValue(internals),
     });
 
-    const result = await decrypt(parameters());
+    const input = parameters();
+    const result = await decrypt(input);
 
-    expect(internals.fromKmsExtraDataBytesHex).toHaveBeenCalledWith("0x00");
-    expect(internals.readKmsSignersContextFromExtraData).toHaveBeenCalledWith(
-      expect.anything(),
+    expect(internals.initPublicAction).toHaveBeenCalledWith(input.fhevm);
+    // The permit's signed extraData drives context resolution — not the shares.
+    expect(internals.createKmsExtraDataFromBytesHex).toHaveBeenCalledWith("0x00");
+    expect(
+      internals.readKmsSignersContextFromPermitExtraData,
+    ).toHaveBeenCalledWith(
+      input.fhevm,
       expect.objectContaining({
         kmsVerifierAddress: "0x0000000000000000000000000000000000000001",
         protocolConfigAddress: "0x0000000000000000000000000000000000000002",
         extraData: { parsed: true },
+        fhevmContext: { tkmsVersion: "0.13.20-0" },
       }),
     );
+    expect(internals.createKmsEip712Domain).toHaveBeenCalledWith({
+      chainId: 5_432,
+      verifyingContractAddressDecryption:
+        "0x0000000000000000000000000000000000000004",
+    });
     expect(internals.createKmsSigncryptedShares).toHaveBeenCalledWith(
-      expect.anything(),
       expect.objectContaining({
         metadata: expect.objectContaining({
           kmsSignersContext,
+          // Locked to the resolved client's frozen context, not the saved key.
           tkmsVersion: "0.13.20-0",
+          eip712ExtraData: "0x00",
+          eip712Domain: { domain: true },
           eip712Signature: `0x${"22".repeat(65)}`,
           eip712SignerAddress:
             "0x0000000000000000000000000000000000000003",
           handles: [{ handle: true }],
-          eip712Domain: {
-            name: "Decryption",
-            version: "1",
-            chainId: 5_432n,
-            verifyingContract:
-              "0x0000000000000000000000000000000000000004",
-          },
         }),
         shares: [{ payload: "aabb", signature: "ccdd", extraData: "00" }],
+      }),
+    );
+    expect(internals.decryptKmsSigncryptedShares).toHaveBeenCalledWith(
+      input.fhevm,
+      expect.objectContaining({
+        kmsSigncryptedShares: { sealed: true },
+        transportKeyPair: { parsed: "transport-key" },
+        fhevmContext: { tkmsVersion: "0.13.20-0" },
       }),
     );
     expect(result).toEqual({
@@ -134,8 +176,8 @@ describe("alpha.8 saved user-decrypt adapter", () => {
       resolveReady = resolve;
     });
     const loadInternals = vi.fn().mockResolvedValue({});
-    const decrypt = createAlpha8SavedUserDecryptAdapter({
-      sdkVersion: "1.1.0-alpha.8",
+    const decrypt = createSavedUserDecryptAdapter({
+      sdkVersion: "0.13.2-1",
       loadInternals,
     });
 
@@ -148,23 +190,36 @@ describe("alpha.8 saved user-decrypt adapter", () => {
     expect(loadInternals).toHaveBeenCalledTimes(1);
   });
 
-  it("fails closed for a different SDK version before loading internals", async () => {
+  it("fails closed for an unsupported SDK version before loading internals", async () => {
     const loadInternals = vi.fn();
-    const decrypt = createAlpha8SavedUserDecryptAdapter({
+    const decrypt = createSavedUserDecryptAdapter({
       sdkVersion: "1.1.0-alpha.9",
       loadInternals,
     });
 
     await expect(decrypt(parameters())).rejects.toThrow(
-      "supports @fhevm/sdk 1.1.0-alpha.8 only",
+      "supports @fhevm/sdk 0.13.2-1 only",
     );
     expect(loadInternals).not.toHaveBeenCalled();
   });
 
-  it("rejects mismatched KMS contexts before loading private modules", async () => {
+  it("fails closed for the prior alpha.8 SDK version", async () => {
     const loadInternals = vi.fn();
-    const decrypt = createAlpha8SavedUserDecryptAdapter({
+    const decrypt = createSavedUserDecryptAdapter({
       sdkVersion: "1.1.0-alpha.8",
+      loadInternals,
+    });
+
+    await expect(decrypt(parameters())).rejects.toThrow(
+      "supports @fhevm/sdk 0.13.2-1 only",
+    );
+    expect(loadInternals).not.toHaveBeenCalled();
+  });
+
+  it("rejects mismatched KMS shares before loading private modules", async () => {
+    const loadInternals = vi.fn();
+    const decrypt = createSavedUserDecryptAdapter({
+      sdkVersion: "0.13.2-1",
       loadInternals,
     });
     const input = parameters();
@@ -173,10 +228,7 @@ describe("alpha.8 saved user-decrypt adapter", () => {
     await expect(
       decrypt({
         ...input,
-        shares: [
-          firstShare,
-          { ...firstShare, extraData: "0x01" },
-        ],
+        shares: [firstShare, { ...firstShare, extraData: "0x01" }],
       }),
     ).rejects.toThrow("mismatched KMS extraData");
     expect(loadInternals).not.toHaveBeenCalled();
