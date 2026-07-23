@@ -141,14 +141,8 @@ permissions: {}
 # inherits these via the top-level env.
 ##############################################################################
 env:
-  # Chart refs/versions pinned to the same known-good releases zama-zws/
-  # gitops's fhevm-dev environment runs.
   #=====ANVIL NODE===========================================================
   ANVIL_NODE_CHART: oci://hub.zama.org/ghcr/zama-ai/fhevm/charts/anvil-node
-  # 0.6.0 adds network.slotsInAnEpoch (see charts/anvil-node): the host/gateway
-  # anvil values set it to "1" so `finalized` events fire near-instantly for the
-  # kms-connector. NOTE: 0.6.0 is only published once that chart change lands on
-  # main (charts-helm-release.yml), so this pin resolves after that merge.
   ANVIL_NODE_CHART_VERSION: "0.6.0"
   #=====CONTRACTS============================================================
   GATEWAY_CONTRACTS_VERSION: "v0.13.0"
@@ -169,13 +163,6 @@ env:
   COPROCESSOR_INFRA_CHART_VERSION: "0.6.5"
   #=====COMMON===============================================================
   RELAYER_VERSION: "v0.13.0"
-  # resolve-tags fallback tag for the test-suite/e2e image when build_images=false
-  # (when true it uses this run's short-SHA build instead). Deliberately NOT a
-  # semver: neither the published v0.13.0 nor v0.11.5-0 tags can deserialize
-  # kms-core v0.13.20's tfhe-rs-1.6.1-format public keys, so this is a working
-  # short-SHA build from this branch. NB: the test-suite deploy step ALWAYS
-  # --set-string overrides image.tag, so values-test-suite-e2e.yaml's own `tag:`
-  # is only a manual-helm default and is never used by this workflow.
   TEST_SUITE_VERSION: "b858525"
   RELAYER_SDK_VERSION: ""  # If RELAYER_SDK_VERSION is empty: run the @fhevm/sdk suite only.
   COMMON_CHART: oci://hub.zama.org/ghcr/zama-zws/helm-charts/common
@@ -192,8 +179,6 @@ env:
   LISTENER_CHART_VERSION: "0.1.1"
   LISTENER_VERSION: "v0.13.3"
   #=====POLYGON=============================================================
-  # PR-trigger default: single-host (ETH only). Set true on a manual dispatch to
-  # also spin up the Polygon host chain (dispatch uses the deploy_polygon input).
   DEPLOY_POLYGON: "true"
   #=====TAILSCALE============================================================
   TAILSCALE_HOSTNAME: tailscale-operator-zws-dev.diplodocus-boa.ts.net
