@@ -1,0 +1,17 @@
+{
+  "extends": "../tsconfig.base.json",
+  "compilerOptions": {
+    "composite": true,
+    "rootDir": ".",
+    "types": ["node"],
+    "noEmit": true,
+    "allowImportingTsExtensions": true,
+    "module": "nodenext",
+    "moduleResolution": "nodenext"
+  },
+  "include": ["./**/*.ts"],
+  // deploy-local imports the package's own built output ('@fhevm/host-contracts-cleartext/ts'), which
+  // `npm run clean` removes right before this project is checked — same story as test/ts's excluded
+  // files. It has its own tsconfig and is checked post-build by `lint:tarball-consumer` instead.
+  "exclude": ["./deploy-local/**"]
+}

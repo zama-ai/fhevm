@@ -37,7 +37,7 @@ import { setupACLOwner, toACLOwnerOps } from './aclOwner.js';
 import type { ContractUpgradeSpec, DeployedImplementation, UpgradeTarget } from './types/private.js';
 import { deployPauserSet } from './pauserSet.js';
 import { precomputeAddresses } from './addresses.js';
-import { DEFAUT_BOOTSTRAP_CONFIG_V13 } from './constants.js';
+import { DEFAULT_BOOTSTRAP_CONFIG_V13 } from './constants.js';
 
 ////////////////////////////////////////////////////////////////////////////////
 
@@ -67,7 +67,7 @@ export async function deploy(parameters: {
 }): Promise<DeployedV13> {
   const precomputed = parameters.precomputed ?? (await precomputeFromDeployerNonce(parameters));
   const { fhevmAddresses, cleartextAddresses } = precomputed;
-  const config = parameters.config ?? DEFAUT_BOOTSTRAP_CONFIG_V13;
+  const config = parameters.config ?? DEFAULT_BOOTSTRAP_CONFIG_V13;
 
   // 1. Deploy the 7 core empty proxies, then the 2 cleartext-infra proxies (on the shared impl).
   const { emptyUUPSProxyAddress } = await deployEmptyProxiesV13({
@@ -153,7 +153,7 @@ async function precomputeFromDeployerNonce(parameters: {
 ////////////////////////////////////////////////////////////////////////////////
 
 /**
- * Phase 1 for a fresh v13 stack: deploys all 7 real implementations (patched with v13 host addresses)
+ * Phase 1 for a fresh v13 stack: deploys all 9 real implementations (patched with v13 host addresses)
  * and encodes their `upgradeToAndCall` calldata. Sends no owner-gated transaction.
  */
 async function buildBootstrapPlanV13(parameters: {

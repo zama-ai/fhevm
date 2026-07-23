@@ -1,0 +1,12 @@
+{
+  "extends": "../../tsconfig.base.json",
+  "compilerOptions": {
+    "noEmit": true,
+    "rootDir": ".",
+    "types": ["node"]
+  },
+  // This project imports the package's own built output ('@fhevm/host-contracts-cleartext/ts'), so —
+  // like test/ts — it can only be type-checked AFTER `npm run build`. It is deliberately NOT referenced
+  // by the root tsconfig; `lint:tarball-consumer` checks it once the build exists.
+  "include": ["./*.ts"]
+}

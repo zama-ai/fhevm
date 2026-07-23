@@ -1,0 +1,21 @@
+{
+  "extends": "../tsconfig.base.json",
+  "compilerOptions": {
+    "allowImportingTsExtensions": true,
+    "composite": true,
+    "noEmit": true,
+    "rootDir": "..",
+    "types": ["node"]
+  },
+  "include": ["./**/*.ts", "../internal/**/*.ts"],
+  "exclude": [
+    "../internal/deploy-local/**",
+    "./ts/tarball-consumer.test.ts",
+    "./ts/acl-owner-upgrade.test.ts",
+    "./ts/deploy-v14.test.ts",
+    "./ts/deploy-at.test.ts",
+    "./ts/upgrade-e2e.test.ts",
+    "./ts/viemEthereumLib.ts",
+    "./ts/ethUtils.ts"
+  ]
+}

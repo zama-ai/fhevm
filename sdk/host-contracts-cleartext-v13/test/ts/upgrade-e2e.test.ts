@@ -314,7 +314,7 @@ test('e2e: updateV12ToV13 with no migration config — defaults resolved from th
         cleartextAddresses: precomputed.cleartextAddresses,
         pauserSetAddress: precomputed.pauserSetAddress,
       },
-      // No config → deployV12 uses DEFAUT_BOOTSTRAP_CONFIG_V12, whose KMS signer set is the package
+      // No config → deployV12 uses DEFAULT_BOOTSTRAP_CONFIG_V12, whose KMS signer set is the package
       // defaults. That is exactly the stack the no-migration upgrade path assumes (and the reason it
       // works: v12's default KMS signers ARE v13's default KMS signers).
     });

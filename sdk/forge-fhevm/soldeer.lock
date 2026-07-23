@@ -1,0 +1,34 @@
+[[dependencies]]
+name = "@encrypted-types"
+version = "0.0.4"
+url = "https://soldeer-revisions.s3.amazonaws.com/@encrypted-types/0_0_4_17-03-2026_15:04:04_encrypted-types.zip"
+checksum = "bd52cab2aaeb7083892adab700e292a5b93d9a7f321f1eb1e3aef6d7f86f2977"
+integrity = "443255d91dbfb920c9fabf76338db99ae2a60f6aefcff5cd79c21fda8c504707"
+
+[[dependencies]]
+name = "@fhevm-solidity"
+version = "0.11.1"
+url = "https://soldeer-revisions.s3.amazonaws.com/@fhevm-solidity/0_11_1_23-03-2026_15:50:59_library-solidity.zip"
+checksum = "09f78377b1e0429b09669e5f78bffa2cfb98b641a64a349dea0776ec68379dc6"
+integrity = "67f415709d30b01d3876addb7e5bbaf3efc119cebe81dda10fb495163297b763"
+
+[[dependencies]]
+name = "@openzeppelin-contracts"
+version = "5.1.0"
+url = "https://soldeer-revisions.s3.amazonaws.com/@openzeppelin-contracts/5_1_0_19-10-2024_10:28:52_contracts.zip"
+checksum = "fd3d1ea561cb27897008aee18ada6e85f248eb161c86e4435272fc2b5777574f"
+integrity = "cb6cf6e878f2943b2291d5636a9d72ac51d43d8135896ceb6cf88d36c386f212"
+
+[[dependencies]]
+name = "@openzeppelin-contracts-upgradeable"
+version = "5.1.0"
+url = "https://soldeer-revisions.s3.amazonaws.com/@openzeppelin-contracts-upgradeable/5_1_0_19-10-2024_10:28:58_contracts-upgradeable.zip"
+checksum = "87854223d14941d6fda3d78d900217e79e25755ea5bc48beca035766fa6a4e7e"
+integrity = "826fb621339dcee4261f848b283ec86364743d3c289d61f621747d95e315215a"
+
+[[dependencies]]
+name = "forge-std"
+version = "1.14.0"
+url = "https://soldeer-revisions.s3.amazonaws.com/forge-std/1_14_0_05-01-2026_15:24:39_forge-std-1.14.zip"
+checksum = "d10079d1b7aac1a36dd2eeb4c5d042e8ed27b00f4ef89530b7f0a6ecd18cada3"
+integrity = "64133846def1b04b1726d2bf1292c19050a0e8cb832b60c6104c19595b9699f8"
