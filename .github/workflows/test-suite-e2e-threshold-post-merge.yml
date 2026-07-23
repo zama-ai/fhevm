@@ -43,7 +43,7 @@ jobs:
       orchestrated: false
       build: false
       scenario: four-party-threshold-kms
-      test-profile: kms-generation
+      test-profile: kms-generation-random
 
   threshold-kms-context-switch:
     uses: ./.github/workflows/test-suite-e2e-tests.yml

@@ -71,6 +71,7 @@ const TEST_PROFILE_NAMES = [
   "heavy",
   "kms-context-switch",
   "kms-generation",
+  "kms-generation-random",
   "kms-generation-abort",
   "light",
   "rollout-standard",
@@ -133,6 +134,8 @@ const TEST_PROFILE_DESCRIPTIONS: Partial<Record<(typeof TEST_PROFILE_NAMES)[numb
   "coprocessor-db-state-revert": "Run coprocessor DB state revert checks.",
   "kms-generation":
     "Audit the on-chain key/CRS generation state (KMSGeneration contract) and prove the 2t+1 decryption quorum (threshold-mode KMS).",
+  "kms-generation-random":
+    "Run the threshold KMS generation/quorum audit, then run the 64-bit Rand subset on the same recovered Test-parameter stack.",
   "kms-generation-abort":
     "Abort an in-flight keygen and crsgen, prove the contract and every kms-connector retire the requests, then prove the pipeline recovers with a fresh keygen/crsgen to full activation. Disruptive: rotates the active key/CRS — run last or re-up afterwards.",
   "kms-context-switch":
@@ -1480,6 +1483,16 @@ export const test = async (testName: string | undefined, options: TestOptions) =
   const runProfile = async (name: string) => {
     if (name === "kms-generation") {
       return runKmsGenerationProfile(state, runUserDecryption);
+    }
+    if (name === "kms-generation-random") {
+      await runKmsGenerationProfile(state, runUserDecryption);
+      const grep = TEST_GREP["random-subset"];
+      if (!grep) {
+        throw new PreflightError("kms-generation-random: missing random-subset grep pattern");
+      }
+      await runNamedE2e(options, grep, "kms-generation-random: random-subset");
+      console.log("[kms-generation-random] PASS — threshold KMS audit and Rand repro completed on one stack");
+      return;
     }
     if (name === "kms-generation-abort") {
       return runKmsGenerationAbortProfile(state);

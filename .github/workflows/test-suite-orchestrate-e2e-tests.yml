@@ -336,14 +336,14 @@ jobs:
       test-suite-version: ${{ needs.create-e2e-tests-input.outputs.test-suite-version }}
 
   # Same orchestrated PR-built images and base-sha lock as run-e2e-tests, exercised against a real
-  # 4-party threshold-mode KMS (secure keygen, Test params) via the kms-generation acceptance profile.
+  # 4-party threshold-mode KMS (secure keygen, Test params) via the combined KMS/Rand repro profile.
   # NOT a merge-queue gate, and since it competes with the gating shards for the same runner pool it
   # deliberately does NOT run on mergify merge-queue PRs — the same coverage runs post-merge on every
   # main push via test-suite-e2e-threshold-post-merge.yml. It still runs here for release branches and
   # PRs labeled `e2e orchestrate test`. For a standalone threshold run (no full image build), dispatch
   # the reusable workflow directly:
   #   gh workflow run test-suite-e2e-tests.yml -f scenario=four-party-threshold-kms \
-  #     -f test-profile=kms-generation -f build=false
+  #     -f test-profile=kms-generation-random -f build=false
   run-e2e-tests-threshold-kms:
     needs: [create-e2e-tests-input]
     if: &threshold-trigger-condition |
@@ -380,7 +380,7 @@ jobs:
       relayer-migrate-version: ${{ needs.create-e2e-tests-input.outputs.relayer-migrate-version }}
       relayer-version: ${{ needs.create-e2e-tests-input.outputs.relayer-version }}
       scenario: four-party-threshold-kms
-      test-profile: kms-generation
+      test-profile: kms-generation-random
       test-suite-version: ${{ needs.create-e2e-tests-input.outputs.test-suite-version }}
 
   # Same orchestrated images/lock, exercised against the kms-context-switch acceptance profile on the
