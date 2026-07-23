@@ -7,3 +7,6 @@
  */
 
 export * from './computeSigner.js';
+export * from './tokenAccount.js';
+export * from './totalSupplyAuthority.js';
+export * from './vaultAuthority.js';

@@ -14,6 +14,7 @@ export default [
       'src/wasm/**',
       'src/solana/internal/generated/confidentialToken/**',
       'src/solana/internal/generated/zamaHost/**',
+      'src/solana/vault/internal/generated/confidentialBatcher/**',
       'node_modules/**',
       'coverage/**',
       '**/*.test.ts',

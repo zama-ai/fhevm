@@ -6,8 +6,10 @@
  * @see https://github.com/codama-idl/codama
  */
 
-export * from './confidentialTransfer.js';
-export * from './confidentialTransferFromValue.js';
-export * from './discloseSecp.js';
-export * from './initializeTokenAccount.js';
-export * from './wrapUsdc.js';
+export * from './claim.js';
+export * from './dispatch.js';
+export * from './initializeBatcher.js';
+export * from './join.js';
+export * from './openBatch.js';
+export * from './quit.js';
+export * from './settle.js';
