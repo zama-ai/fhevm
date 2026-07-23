@@ -455,45 +455,28 @@ abstract contract HostContractsDeployerTestUtils is Test {
         protocolConfig.confirmKmsContextCreation(contextId);
     }
 
-    function _confirmEpochActivation(
-        uint256 contextId,
-        uint256 epochId,
-        uint256 pk,
-        address txSender,
-        uint256 keyId,
-        uint256 crsId
-    ) internal {
+    /// @dev Setup helper that drives a pending epoch to Active for suites that need a usable KMS context.
+    ///      Callers need only the active epoch, not a specific payload, so this submits constant material.
+    ///      Tests that assert on the payload use `_confirmEpochWithMaterial` in the ProtocolConfig suite instead.
+    function _confirmEpochActivation(uint256 contextId, uint256 epochId, uint256 pk, address txSender) internal {
         bytes memory extraData = abi.encodePacked(uint8(0x02), contextId, epochId);
 
-        // A fully empty payload now reverts with EmptyEpochActivationPayload. When callers request no material
-        // (both ids 0), supply one deterministic self-signed key attestation with a constant keyId so the payload
-        // is non-empty and every signer produces the identical dataHash. The keyId need not exist in KMSGeneration:
-        // signer recovery is all that confirmEpochActivation checks.
-        if (keyId == 0 && crsId == 0) {
-            keyId = KEY_COUNTER_BASE + 1;
-        }
+        // An empty payload reverts with EmptyEpochActivationPayload, so supply one deterministic self-signed
+        // key attestation with a constant keyId. Every signer produces the same dataHash. The keyId need not
+        // exist in KMSGeneration because confirmEpochActivation checks only signer recovery.
+        IKMSGeneration.KeyDigest[] memory keyDigests = _mockKeyDigests();
+        uint256 keyId = KEY_COUNTER_BASE + 1;
+        uint256 prepKeygenId = _prepKeygenIdForKeyId(keyId);
 
-        IProtocolConfig.EpochKeyResult[] memory keys = new IProtocolConfig.EpochKeyResult[](keyId == 0 ? 0 : 1);
-        if (keyId != 0) {
-            IKMSGeneration.KeyDigest[] memory keyDigests = _mockKeyDigests();
-            uint256 prepKeygenId = _prepKeygenIdForKeyId(keyId);
-            keys[0] = IProtocolConfig.EpochKeyResult({
-                prepKeygenId: prepKeygenId,
-                keyId: keyId,
-                keyDigests: keyDigests,
-                signature: _computeSignature(pk, _hashProtocolConfigKeygen(prepKeygenId, keyId, keyDigests, extraData))
-            });
-        }
+        IProtocolConfig.EpochKeyResult[] memory keys = new IProtocolConfig.EpochKeyResult[](1);
+        keys[0] = IProtocolConfig.EpochKeyResult({
+            prepKeygenId: prepKeygenId,
+            keyId: keyId,
+            keyDigests: keyDigests,
+            signature: _computeSignature(pk, _hashProtocolConfigKeygen(prepKeygenId, keyId, keyDigests, extraData))
+        });
 
-        IProtocolConfig.EpochCrsResult[] memory crsList = new IProtocolConfig.EpochCrsResult[](crsId == 0 ? 0 : 1);
-        if (crsId != 0) {
-            crsList[0] = IProtocolConfig.EpochCrsResult({
-                crsId: crsId,
-                maxBitLength: 4096,
-                crsDigest: hex"deadbeef",
-                signature: _computeSignature(pk, _hashProtocolConfigCrsgen(crsId, 4096, hex"deadbeef", extraData))
-            });
-        }
+        IProtocolConfig.EpochCrsResult[] memory crsList = new IProtocolConfig.EpochCrsResult[](0);
 
         vm.prank(txSender);
         protocolConfig.confirmEpochActivation(epochId, keys, crsList);

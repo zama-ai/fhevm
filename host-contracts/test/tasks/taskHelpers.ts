@@ -199,7 +199,12 @@ export async function buildSingleKeyActivationPayload(
   contextId: bigint,
   epochId: bigint,
 ): Promise<{
-  keys: Array<{ prepKeygenId: bigint; keyId: bigint; keyDigests: Array<{ keyType: number; digest: string }>; signature: string }>;
+  keys: Array<{
+    prepKeygenId: bigint;
+    keyId: bigint;
+    keyDigests: Array<{ keyType: number; digest: string }>;
+    signature: string;
+  }>;
   crsList: never[];
 }> {
   const chainId = (await ethers.provider.getNetwork()).chainId;
@@ -227,9 +232,11 @@ export async function buildSingleKeyActivationPayload(
   const keyDigests = [{ keyType: 0, digest: '0x01020304' }];
   // extraData mirrors abi.encodePacked(EXTRA_DATA_V2, contextId, epochId) with EXTRA_DATA_V2 = 0x02.
   const extraData = ethers.solidityPacked(['uint8', 'uint256', 'uint256'], [2, contextId, epochId]);
-  const signature = await (signerSigner as unknown as {
-    signTypedData: (d: typeof domain, t: typeof types, v: Record<string, unknown>) => Promise<string>;
-  }).signTypedData(domain, types, { prepKeygenId, keyId, keyDigests, extraData });
+  const signature = await (
+    signerSigner as unknown as {
+      signTypedData: (d: typeof domain, t: typeof types, v: Record<string, unknown>) => Promise<string>;
+    }
+  ).signTypedData(domain, types, { prepKeygenId, keyId, keyDigests, extraData });
   return {
     keys: [{ prepKeygenId, keyId, keyDigests, signature }],
     crsList: [],
