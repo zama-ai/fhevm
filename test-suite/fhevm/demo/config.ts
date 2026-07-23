@@ -61,7 +61,7 @@ export type DemoBatcher = {
   readonly lookupTable: Address;
 };
 
-/** Persona pubkeys, labelled by demo role. Keys sign from committed keypairs, not from this file. */
+/** Persona pubkeys, labeled by demo role. Keys sign from committed keypairs, not from this file. */
 export type DemoPersonas = {
   /** The operator/keeper — plays dispatch + settle. #1761 must present settle as an operator action. */
   readonly keeper: Address;

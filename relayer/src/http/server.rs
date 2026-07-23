@@ -21,11 +21,11 @@ use axum::{
     routing::{get, post},
     Extension, Router,
 };
-use tower_http::cors::CorsLayer;
 use std::collections::HashMap;
 use std::net::SocketAddr;
 use std::sync::Arc;
 use std::time::Duration;
+use tower_http::cors::CorsLayer;
 use tracing::info;
 
 async fn wait_for_ready(addr: SocketAddr) -> anyhow::Result<()> {
