@@ -1,0 +1,283 @@
+# coprocessor chart values overlay for the fhevm e2e preview namespace.
+#
+# Contract addresses are wired from the real addresses emitted by the
+# `contracts` chart's deploy Jobs (host-contracts / gateway-contracts), via
+# valueFrom.configMapKeyRef against the host-sc-addresses / gw-sc-addresses
+# ConfigMaps - the same pattern production GitOps uses. Service DNS names
+# below are unqualified (no ".<namespace>.svc.cluster.local" suffix) so this
+# file works unchanged under any per-PR namespace.
+#
+# All image tags are overridden at deploy time via --set-string in
+# preview-env-deploy.yml (real per-PR short-SHA image tags) - the values here
+# are just fallback defaults so this file stays valid standalone.
+#
+# databaseUser/databasePassword/databaseEndpoint below are already real, not
+# placeholders: they point at the in-cluster Postgres release deployed by
+# ../coprocessor-infra/values-postgres-coprocessor-e2e.yaml, whose Service
+# name + fixed ephemeral test credentials are known ahead of deploy time (see
+# that file's header) - no --set-string/secret discovery needed for the DB.
+#
+# Deployed as:
+#   helm upgrade --install coprocessor oci://hub.zama.org/ghcr/zama-ai/fhevm/charts/coprocessor \
+#     -n <namespace> -f this-file
+commonConfig:
+  databaseUser: {value: "zama"}
+  databasePassword: {value: "zama"}
+  databaseEndpoint: {value: "postgres-coprocessor:5432"}
+  databaseUrl: "postgresql://$(DATABASE_USER):$(DATABASE_PASSWORD)@$(DATABASE_ENDPOINT)/fhevm_e2e"
+  databaseAuthMode: password
+  hostChainWsUrl: "ws://anvil-host-anvil-node:8545"
+  hostChainHttpUrl: "http://anvil-host-anvil-node:8545"
+  aclContractAddress:
+    valueFrom: {configMapKeyRef: {name: host-sc-addresses, key: acl.address}}
+  fhevmExecutorContractAddress:
+    valueFrom: {configMapKeyRef: {name: host-sc-addresses, key: fhevm_executor.address}}
+  kmsGenerationContractAddress:
+    valueFrom: {configMapKeyRef: {name: host-sc-addresses, key: kms_generation.address}}
+  protocolConfigContractAddress:
+    valueFrom: {configMapKeyRef: {name: host-sc-addresses, key: protocol_config.address}}
+  # Must be ws:// (not http://): both gwListener's --gw-url and txSender's
+  # --gateway-url alloy providers use ProviderBuilder::connect_ws/WsConnect
+  # (confirmed via coprocessor/fhevm-engine/{gw-listener/src/bin/gw_listener.rs,
+  # transaction-sender/src/bin/transaction_sender.rs}) - there's no separate
+  # ws/http split field here the way commonConfig.hostChain{Ws,Http}Url has for
+  # the host chain, since neither consumer needs an HTTP connection to the
+  # gateway. anvil serves both HTTP and WS on the same port (see
+  # ../gateway-chain/values-anvil-gateway-e2e.yaml's single `port: 8546`), so
+  # only the scheme changes, not the host:port.
+  gatewayUrl: {value: "ws://anvil-gateway-anvil-node:8546"}
+  gatewayContractAddresses:
+    inputVerification:
+      valueFrom: {configMapKeyRef: {name: gw-sc-addresses, key: input_verification.address}}
+    ciphertextCommits:
+      valueFrom: {configMapKeyRef: {name: gw-sc-addresses, key: ciphertext_commits.address}}
+    gatewayConfig:
+      valueFrom: {configMapKeyRef: {name: gw-sc-addresses, key: gateway_config.address}}
+    # multichainAcl intentionally omitted: task:deployAllGatewayContracts (see
+    # ../gateway-chain/values-gateway-contracts-e2e.yaml) doesn't deploy a
+    # MultichainAcl contract at this contracts version, so gw-sc-addresses has
+    # no multichain_acl.address key - confirmed via `kubectl get configmap`.
+    # txSender.disabledArgs below drops the corresponding legacy CLI arg.
+
+#=======================================================
+# Image tags below are placeholders - preview-env-deploy.yml overrides
+# every one of them via --set-string with the real per-PR short-SHA tag
+# (or `latest` when this component didn't change in the PR).
+dbMigration:
+  image: {name: hub.zama.org/ghcr/zama-ai/fhevm/coprocessor/db-migration, tag: latest}
+
+#=======================================================
+hostListenerShared:
+  image: {name: hub.zama.org/ghcr/zama-ai/fhevm/coprocessor/host-listener, tag: latest}
+  # host-listener also downloads key material (ServerKey/PublicKey) straight
+  # from S3 on ActivateKey events (see its "Downloading failed" /
+  # "failed to load region from IMDS" errors when this was unset - same
+  # `default` SA / no-IAM-role gap as tfheWorker/zkProofWorker/snsWorker
+  # below, just not caught until the KMS keygen ceremony actually fired an
+  # ActivateKey event this far into the pipeline).
+  serviceAccountName: coprocessor
+
+#=======================================================
+hostListenerPollerShared:
+  image: {name: hub.zama.org/ghcr/zama-ai/fhevm/coprocessor/host-listener, tag: latest}
+  # NOTE: the poller is NOT run inside this coprocessor release. It is the
+  # DB-side background processor that downloads key/CRS material from the KMS
+  # public-vault S3 on pending kms_key_activation_events (the consumer only
+  # records the event; only the poller does the S3 download that fills the
+  # `keys`/`crs` tables). It is deployed as its OWN release per party
+  # (coprocessor-poller-<i>, ../coprocessor/values-coprocessor-poller-e2e.yaml),
+  # mirroring zama-zws/gitops's eth-coproc-listener-poller app - so it stays
+  # disabled in chains[] below.
+  serviceAccountName: coprocessor
+hostListenerCatchupOnlyShared:
+  image: {name: hub.zama.org/ghcr/zama-ai/fhevm/coprocessor/host-listener, tag: latest}
+  serviceAccountName: coprocessor
+hostListenerConsumerShared:
+  image: {name: hub.zama.org/ghcr/zama-ai/fhevm/coprocessor/host-listener, tag: latest}
+  serviceAccountName: coprocessor
+  config:
+    # Broker URL for the host-listener-consumer, rendered as BROKER_URL /
+    # --broker-url (see charts/coprocessor/templates/coprocessor-host-listener-
+    # consumer-deployment.yaml). Points at THIS party's Redis
+    # (coprocessor-redis-<i>-master, standalone -> "<fullname>-master" Service),
+    # which the party's listener producer (listener-<i>) publishes to. The
+    # workflow overrides .value per party via --set; the default below is the
+    # single-party (N=1) shape. Unlike the old built-in hostListener (which read
+    # the chain directly and wrote the DB), the producer here is the dedicated
+    # `listener` chart, so this consumer is the ONLY host-chain event path (the
+    # built-in hostListener + poller are disabled in chains[] below).
+    brokerUrl: {value: "redis://coprocessor-redis-1-master:6379"}
+
+#=======================================================
+gwListener:
+  enabled: true
+  image: {name: hub.zama.org/ghcr/zama-ai/fhevm/coprocessor/gw-listener, tag: latest}
+
+#=======================================================
+tfheWorker:
+  enabled: true
+  replicas: 1
+  image: {name: hub.zama.org/ghcr/zama-ai/fhevm/coprocessor/tfhe-worker, tag: latest}
+  # IRSA-annotated SA created by coprocessor-infra's Crossplane chart (see
+  # ../coprocessor-infra/values-coprocessor-infra-e2e.yaml's
+  # coprocessorBucket.irsa block) - matches zama-zws/gitops's
+  # values-zws-testnet.yaml pairing (all 3 S3-touching workers use it).
+  serviceAccountName: coprocessor
+  # --run-bg-worker is what actually starts the background compute loop; without
+  # it the tfhe_worker process comes up idle and never polls the `computations`
+  # table, so FHE ops (incl. trivial encrypts) never produce ct64 -> no SnS ->
+  # ciphertexts never reach the gateway -> every decrypt readiness-check times
+  # out. Chart default extraArgs is [], so it must be set here. Mirrors
+  # zama-zws/gitops coproc-workers/values-zws-dev.yaml's tfheWorker.
+  extraArgs:
+    - --run-bg-worker
+    - --worker-polling-interval-ms=10000
+    - --work-items-batch-size=100
+    - --dependence-chains-per-batch=100
+    - --key-cache-size=32
+    - --coprocessor-fhe-threads=64
+    - --tokio-threads=16
+    - --pg-pool-max-connections=10
+    - --log-level=INFO
+  # Chart default (512Mi) OOMs once --run-bg-worker loads the FHE ServerKey
+  # (tfhe-rs 1.6.x). Pinned to the hpc7a `coprocessor` karpenter nodepool with
+  # dev-like sizing (see zama-zws/gitops coproc-workers/values-zws-dev.yaml).
+  resources:
+    requests: {cpu: "16", memory: 32Gi}
+    limits: {cpu: "16", memory: 32Gi}
+  affinity:
+    nodeAffinity:
+      requiredDuringSchedulingIgnoredDuringExecution:
+        nodeSelectorTerms:
+          - matchExpressions:
+              - {key: karpenter.sh/nodepool, operator: In, values: [coprocessor]}
+  tolerations:
+    - {key: karpenter.sh/nodepool, effect: NoSchedule, operator: Equal, value: coprocessor}
+
+#=======================================================
+zkProofWorker:
+  enabled: true
+  replicas: 1
+  image: {name: hub.zama.org/ghcr/zama-ai/fhevm/coprocessor/zkproof-worker, tag: latest}
+  serviceAccountName: coprocessor
+  # --pg-listen-channel/--pg-notify-channel aren't chart-templated (see
+  # charts/coprocessor/values.yaml's zkProofWorker.extraArgs comment) - the
+  # binary refuses to start without them ("required arguments were not
+  # provided"). Channel names match test-suite/fhevm/docker-compose's
+  # coprocessor-docker-compose.yml reference topology.
+  extraArgs:
+    - --pg-listen-channel=event_zkpok_new_work
+    - --pg-notify-channel=event_zkpok_computed
+  affinity:
+    nodeAffinity:
+      requiredDuringSchedulingIgnoredDuringExecution:
+        nodeSelectorTerms:
+          - matchExpressions:
+              - {key: karpenter.sh/nodepool, operator: In, values: [coprocessor]}
+  tolerations:
+    - {key: karpenter.sh/nodepool, effect: NoSchedule, operator: Equal, value: coprocessor}
+
+#=======================================================
+snsWorker:
+  enabled: true
+  replicas: 1
+  image: {name: hub.zama.org/ghcr/zama-ai/fhevm/coprocessor/sns-worker, tag: latest}
+  # Without this, the pod runs as the namespace's `default` SA (no IAM role
+  # bound at all) - confirmed live: `kubectl get pod ... -o jsonpath='{.spec.
+  # serviceAccountName}'` returned "default", while a real "coprocessor" SA
+  # with an eks.amazonaws.com/role-arn annotation (from coprocessor-infra's
+  # Crossplane chart, see values-coprocessor-infra-e2e.yaml) sat unused in
+  # the same namespace. Without it, the AWS SDK has no credentials at all -
+  # "Failed to check bucket existence" / "dispatch failure".
+  serviceAccountName: coprocessor
+  config:
+    # Chart default is empty (see charts/coprocessor/values.yaml's
+    # snsWorker.config.s3BucketName comment) - matches zama-zws/gitops's
+    # values-zws-testnet.yaml pairing. coprocessor-infra's Crossplane chart
+    # (../coprocessor-infra/values-coprocessor-infra-e2e.yaml) writes this
+    # ConfigMap (name overridden there to "coprocessor", not the chart's
+    # release-derived default) - confirmed live via `kubectl get configmap
+    # coprocessor -o yaml`: S3_BUCKET_NAME/S3_ENDPOINT/S3_URI_KEY keys.
+    s3BucketName:
+      valueFrom: {configMapKeyRef: {name: coprocessor, key: S3_BUCKET_NAME}}
+  # Same as zkProofWorker.extraArgs above - required, not chart-templated.
+  # --pg-listen-channels takes multiple positional values.
+  extraArgs:
+    - --pg-listen-channels
+    - event_pbs_computations
+    - event_ciphertext_computed
+    - --pg-notify-channel
+    - event_ciphertext128_computed
+  # SnS (switch-and-squash) is the most memory-heavy step - it loads the SnS key
+  # and squashes ct64 -> ct128 before commit to the gateway. Chart default 512Mi
+  # OOMs here. Pinned to the hpc7a `coprocessor` nodepool with dev-like sizing
+  # (see zama-zws/gitops coproc-workers/values-zws-dev.yaml's snsWorker).
+  resources:
+    requests: {cpu: "16", memory: 32Gi}
+    limits: {cpu: "16", memory: 32Gi}
+  affinity:
+    nodeAffinity:
+      requiredDuringSchedulingIgnoredDuringExecution:
+        nodeSelectorTerms:
+          - matchExpressions:
+              - {key: karpenter.sh/nodepool, operator: In, values: [coprocessor]}
+  tolerations:
+    - {key: karpenter.sh/nodepool, effect: NoSchedule, operator: Equal, value: coprocessor}
+
+#=======================================================
+txSender:
+  enabled: true
+  image: {name: hub.zama.org/ghcr/zama-ai/fhevm/coprocessor/tx-sender, tag: latest}
+  # Hardhat/anvil account #4 (addr 0x15d34AAf54267DB7D7c367839AAf71A00a2C6A65).
+  # MUST match the coprocessor identity registered on-chain in GatewayConfig -
+  # see ../gateway-chain/values-gateway-contracts-e2e.yaml's
+  # COPROCESSOR_TX_SENDER_ADDRESS_0 / COPROCESSOR_SIGNER_ADDRESS_0. The tx-sender
+  # both signs the InputVerification EIP-712 response and sends the tx with this
+  # one key; if it differs, verifyProofResponse reverts with
+  # NotCoprocessorTxSender(<addr>) (non-retryable) and input proofs never verify,
+  # so the relayer polls forever and the e2e input test times out.
+  wallet: {secret: {value: "0x47e179ec197488593b187f80a00eb0da91f1b9d0b13f8733639f19c30a34926a"}}
+  # --multichain-acl-address (see charts/coprocessor/values.yaml's
+  # txSender.disabledArgs comment) would reference a nonexistent
+  # gw-sc-addresses key: gateway-contracts still doesn't deploy a
+  # MultichainAcl contract even at v0.13.0 (see commonConfig.
+  # gatewayContractAddresses above; confirmed via `kubectl get configmap
+  # gw-sc-addresses` - no multichain_acl.address key) - caused
+  # CreateContainerConfigError without this.
+  disabledArgs: ["multichain-acl-address"]
+  affinity:
+    nodeAffinity:
+      requiredDuringSchedulingIgnoredDuringExecution:
+        nodeSelectorTerms:
+          - matchExpressions:
+              - {key: karpenter.sh/nodepool, operator: In, values: [coprocessor]}
+  tolerations:
+    - {key: karpenter.sh/nodepool, effect: NoSchedule, operator: Equal, value: coprocessor}
+
+#=======================================================
+chains:
+  - name: host
+    chainId: "12345"
+    wsUrl: "ws://anvil-host-anvil-node:8545"
+    httpUrl: "http://anvil-host-anvil-node:8545"
+    aclContractAddressValueFrom: {configMapKeyRef: {name: host-sc-addresses, key: acl.address}}
+    fhevmExecutorContractAddressValueFrom: {configMapKeyRef: {name: host-sc-addresses, key: fhevm_executor.address}}
+    kmsGenerationContractAddressValueFrom: {configMapKeyRef: {name: host-sc-addresses, key: kms_generation.address}}
+    protocolConfigContractAddressValueFrom: {configMapKeyRef: {name: host-sc-addresses, key: protocol_config.address}}
+    # Built-in real-time (WebSocket) producer DISABLED: the dedicated `listener`
+    # chart (listener-<i>, ../listener/values-listener-e2e.yaml) is the producer
+    # now. It indexes the host chain and publishes to coprocessor-redis-<i>, and
+    # the hostListenerConsumer below ingests those events into the DB. This
+    # mirrors zama-zws/gitops's producer(listener)/broker(redis)/consumer/poller
+    # split (eth-listener + eth-coproc-listener-{consumer,poller}).
+    hostListener: {enabled: false, useLegacyName: true}
+    # Poller runs as its OWN release (coprocessor-poller-<i>), not here - see the
+    # hostListenerPollerShared note above and values-coprocessor-poller-e2e.yaml.
+    hostListenerPoller: {enabled: false, useLegacyName: true}
+    # Catchup-only stays off: it backfills historical blocks on a live chain
+    # (prod mainnet); a fresh per-PR anvil has no history to catch up on.
+    hostListenerCatchupOnly: {enabled: false, useLegacyName: true}
+    # Real-time host-chain event path: reads this party's Redis broker (filled by
+    # listener-<i>) and writes decoded ACL/executor/kms-generation events to the
+    # coprocessor DB. brokerUrl is set in hostListenerConsumerShared above.
+    hostListenerConsumer: {enabled: true, useLegacyName: true}

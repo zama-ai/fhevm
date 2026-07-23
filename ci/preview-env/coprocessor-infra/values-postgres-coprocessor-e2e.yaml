@@ -1,0 +1,121 @@
+# In-cluster Postgres for coprocessor, for the fhevm e2e preview namespace.
+# Dedicated to coprocessor alone - relayer/relayer-migrate and kms-connector
+# each get their own separate Postgres release instead of sharing this one
+# (see ../relayer/values-postgres-relayer-e2e.yaml and
+# ../kms-connector/values-postgres-connector-e2e.yaml), mirroring
+# zama-zws/gitops's production topology: coprocessor-infra's own RDS
+# ("fhevm_e2e"/"coprocessor" db) is a separate instance from relayer-infra's
+# ("relayer" db) - see values/relayer/relayer-infra/values-relayer-dev.yaml.
+#
+# Uses the SAME generic `common` chart as relayer/test-suite below (see
+# ../relayer/values-relayer-e2e.yaml), NOT Bitnami's postgresql chart:
+# Bitnami restructured its free container catalog on 2025-08-28 and moved
+# every pinned/versioned image tag (including the one this chart's 13.0.0
+# release pins, docker.io/bitnami/postgresql:16.0.0-debian-11-r3) off
+# docker.io/bitnami into the unsupported, no-longer-updated docker.io/
+# bitnamilegacy archive - so a fresh `helm install` of that chart now fails
+# with ErrImagePull. The official docker.io/library/postgres image below has
+# no such catalog-restructuring risk: it's a Docker Official Image, built +
+# maintained by the PostgreSQL project itself, and there's nothing
+# fhevm-specific about a plain Postgres instance anyway.
+#
+# fullnameOverride pins the release's Service to a deterministic name
+# ("postgres-coprocessor:5432", confirmed via `helm template`) so dependent
+# charts (coprocessor, relayer-migrate) can hardcode it instead of discovering
+# it live. POSTGRES_USER/PASSWORD are fixed, non-secret, ephemeral test-only
+# credentials (same reasoning as DEPLOYER_PRIVATE_KEY/mnemonic elsewhere in
+# this environment) - not worth indirecting through a Secret lookup for a
+# namespace that's destroyed within hours.
+#
+# Deployed as:
+#   helm upgrade --install postgres-coprocessor \
+#     oci://hub.zama.org/ghcr/zama-zws/helm-charts/common \
+#     -n <namespace> -f this-file
+fullnameOverride: postgres-coprocessor
+
+statefulset:
+  enabled: true
+  # PVC (not emptyDir) so the coprocessor DB - inserted ciphertexts/handles,
+  # the "fhevm_e2e" schema - survives a Postgres pod restart or reschedule
+  # instead of coming back empty (which orphans on-chain handles that can no
+  # longer be decrypted). The claim is namespaced, so it's still torn down with
+  # the preview namespace; it only persists across pod restarts, not teardown.
+  # NOTE: volumeClaimTemplates is immutable on an existing StatefulSet, so
+  # flipping this on requires a fresh deploy (delete the sts/namespace first),
+  # not just an in-place `helm upgrade`.
+  volumeClaimTemplates:
+    - metadata:
+        name: data
+      # The common chart auto-adds the matching container volumeMount from this
+      # name + mountPath (see charts/common/templates/statefulset.yaml), so no
+      # separate volumeMounts block is needed. Mounts the dir that holds PGDATA
+      # (.../pgdata subdir), same path the emptyDir used to cover.
+      mountPath: /var/lib/postgresql/data
+      spec:
+        accessModes: ["ReadWriteOnce"]
+        # storageClassName omitted on purpose: bind the cluster default SC,
+        # same as charts/anvil-node's chain-data PVC.
+        resources:
+          requests:
+            storage: 10Gi
+
+image:
+  repository: postgres
+  tag: "17-alpine"
+  pullPolicy: IfNotPresent
+
+env:
+  - {name: POSTGRES_USER, value: "zama"}
+  - {name: POSTGRES_PASSWORD, value: "zama"}
+  - {name: POSTGRES_DB, value: "fhevm_e2e"}
+  # Subdirectory, not the mount root: avoids initdb's "directory exists but
+  # is not empty" complaint on volume backends that seed a lost+found dir.
+  - {name: PGDATA, value: "/var/lib/postgresql/data/pgdata"}
+
+service:
+  enabled: true
+  ports:
+    - {name: tcp-postgresql, port: 5432}
+
+readinessProbe:
+  exec: {command: ["pg_isready", "-U", "zama"]}
+  initialDelaySeconds: 5
+  periodSeconds: 5
+  timeoutSeconds: 5
+# Liveness hardened so a busy-but-alive DB is not silently restarted: the
+# default probe (timeoutSeconds 1, failureThreshold 3) kills Postgres after
+# ~3 slow pg_isready replies, which is exactly what happens when the pod is
+# CPU-throttled at its limit under a heavy ciphertext/key-write load - looking
+# like a spurious "went down and restarted" with no crash in the logs. Wider
+# timeout + more failures before restart tolerate those transient stalls.
+livenessProbe:
+  exec: {command: ["pg_isready", "-U", "zama"]}
+  initialDelaySeconds: 10
+  periodSeconds: 10
+  timeoutSeconds: 5
+  failureThreshold: 6
+
+# Sized for the coprocessor DB specifically: it stores the FHE key material
+# (ServerKey/PublicKey/SNS) as Postgres large objects, streamed in 128MB
+# chunks by the host-listener poller, plus the ciphertext/handle rows the
+# workers read. The old 1Gi limit OOM-killed the pod mid key-write (silent
+# restart, empty-looking DB on recovery). Memory is the binding constraint
+# here, so the limit is raised well above the working set; CPU is bumped so
+# the liveness probe is not throttled into a false failure during those writes.
+resources:
+  requests:
+    cpu: "500m"
+    memory: "1Gi"
+  limits:
+    cpu: "2"
+    memory: "4Gi"
+
+# Pins onto the zws-pool Karpenter node pool - same convention as
+# ../../charts/anvil-node/values.yaml's commented-out example.
+nodeSelector:
+  karpenter.sh/nodepool: zws-pool
+tolerations:
+  - key: "karpenter.sh/nodepool"
+    operator: "Equal"
+    value: "zws-pool"
+    effect: "NoSchedule"
