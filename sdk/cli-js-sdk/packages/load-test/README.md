@@ -30,7 +30,7 @@ SDK-driven flows pass the run `AbortSignal`, timeout, and per-request
 retry, submit, poll, timeout, and error metadata for the request record.
 User-decrypt permit lifetime is derived from the request timeout plus a
 two-minute clock-skew allowance, rounded up to the smallest whole-day duration
-accepted by both alpha.8 protocol paths. SDK verification/reconstruction
+the v13 SDK accepts. SDK verification/reconstruction
 failures after a successful relayer GET are recorded as `verify_failed`, not
 ordinary transport failures.
 
@@ -337,5 +337,5 @@ pnpm typecheck
 pnpm test        # vitest unit tests (scheduler, pools, parser, verification, reports)
 ```
 
-The input-proof worker uses the public alpha.8 `generateZkProof` action and
+The input-proof worker uses the public `generateZkProof` action and
 keeps one initialized SDK context per worker thread.

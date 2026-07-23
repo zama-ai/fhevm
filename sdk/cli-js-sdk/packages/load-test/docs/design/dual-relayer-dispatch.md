@@ -21,7 +21,7 @@ and signed permit in each leg, so the relayer request hashes can differ. The
 comparison answers “how did each target serve the same logical workload item?”
 rather than “how did each target serve the same request bytes?”.
 
-This distinction is deliberate. `@fhevm/sdk@1.1.0-alpha.8` publicly supports
+This distinction is deliberate. `@fhevm/sdk@0.13.2-1` publicly supports
 the complete user-decrypt journey, including cancellation, progress, KMS share
 verification, and clear-value reconstruction. It does not expose a supported
 raw request builder. Recreating private wire structures in the load tool would

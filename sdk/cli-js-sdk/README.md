@@ -227,7 +227,7 @@ duplicated relayer responses and protect it like key material.
 
 Permit summaries report the SDK permit `version` and `durationSeconds`.
 Validation artifacts use schema version 2 so protocol-versioned permits from
-`@fhevm/sdk` 1.1.0-alpha.8 are not confused with older request material. The
+`@fhevm/sdk` 0.13.2-1 are not confused with older request material. The
 CLI keeps `--duration-days` as a convenience and converts it to seconds before
 calling the toolkit.
 
@@ -290,7 +290,7 @@ returned `responseIdentity` field explicitly reports any identity dimension that
 the available artifact, response, and URL could not bind as `unbound`.
 
 Saved-response reconstruction uses an exact-version compatibility seam for
-`@fhevm/sdk@1.1.0-alpha.8` private branded objects. It is supported only in the
+`@fhevm/sdk@0.13.2-1` private branded objects. It is supported only in the
 repository's unbundled Node ESM execution model; bundling it or mixing CJS and
 ESM SDK instances is unsupported and may fail the brand checks.
 
