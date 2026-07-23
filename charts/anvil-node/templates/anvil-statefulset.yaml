@@ -43,6 +43,10 @@ spec:
             - "{{ .Values.network.chainId }}"
             - "--accounts"
             - "{{ .Values.network.accounts }}"
+            {{- with .Values.network.slotsInAnEpoch }}
+            - "--slots-in-an-epoch"
+            - "{{ . }}"
+            {{- end }}
             - "--mnemonic"
             - "$(MNEMONIC)"
           ports:

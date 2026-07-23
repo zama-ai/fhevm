@@ -7,6 +7,18 @@
 # ("fhevm_e2e"/"coprocessor" db) is a separate instance from relayer-infra's
 # ("relayer" db) - see values/relayer/relayer-infra/values-relayer-dev.yaml.
 #
+# Uses the SAME generic `common` chart as relayer/test-suite below (see
+# ../relayer/values-relayer-e2e.yaml), NOT Bitnami's postgresql chart:
+# Bitnami restructured its free container catalog on 2025-08-28 and moved
+# every pinned/versioned image tag (including the one this chart's 13.0.0
+# release pins, docker.io/bitnami/postgresql:16.0.0-debian-11-r3) off
+# docker.io/bitnami into the unsupported, no-longer-updated docker.io/
+# bitnamilegacy archive - so a fresh `helm install` of that chart now fails
+# with ErrImagePull. The official docker.io/library/postgres image below has
+# no such catalog-restructuring risk: it's a Docker Official Image, built +
+# maintained by the PostgreSQL project itself, and there's nothing
+# fhevm-specific about a plain Postgres instance anyway.
+#
 # fullnameOverride pins the release's Service to a deterministic name
 # ("postgres-coprocessor:5432", confirmed via `helm template`) so dependent
 # charts (coprocessor, relayer-migrate) can hardcode it instead of discovering

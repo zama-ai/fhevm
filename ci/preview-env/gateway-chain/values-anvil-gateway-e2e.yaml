@@ -8,24 +8,12 @@ network:
   blockTime: "1"
   host: "0.0.0.0"
   chainId: "54321"
-  # 120 (not the default 10) to pre-fund preview-env-deploy.yml's "Derive KMS
-  # tx-sender wallets" step's HD indices 10..10+NB_KMS_CORE-1 (up to 13 parties)
-  # on top of every low-index account already used by the gateway-contracts/
-  # relayer values files - matches anvil-host's own headroom for the same reason.
   accounts: "120"
-  # Same rationale as anvil-host: the gw-listener consumes *finalized* gateway
-  # events, so shrink the epoch to make finalization near-instant instead of
-  # lagging anvil's default ~2 epochs.
   slotsInAnEpoch: "1"
   mnemonic: "test test test test test test test test test test test junk"
 port: 8546
 storage:
   size: 1Gi
-# See ../host-chain/values-anvil-host-e2e.yaml's matching comment - anvil-host
-# was confirmed OOMKilled at this same 512Mi limit under sustained e2e load,
-# dropping every live WS subscription across the stack. Bumped identically
-# here as a preventive measure (gateway chain sees less traffic than host but
-# shares the same unbounded in-memory accumulation).
 resources:
   requests:
     cpu: 250m

@@ -141,8 +141,14 @@ permissions: {}
 # inherits these via the top-level env.
 ##############################################################################
 env:
+  # Chart refs/versions pinned to the same known-good releases zama-zws/
+  # gitops's fhevm-dev environment runs.
   #=====ANVIL NODE===========================================================
   ANVIL_NODE_CHART: oci://hub.zama.org/ghcr/zama-ai/fhevm/charts/anvil-node
+  # 0.6.0 adds network.slotsInAnEpoch (see charts/anvil-node): the host/gateway
+  # anvil values set it to "1" so `finalized` events fire near-instantly for the
+  # kms-connector. NOTE: 0.6.0 is only published once that chart change lands on
+  # main (charts-helm-release.yml), so this pin resolves after that merge.
   ANVIL_NODE_CHART_VERSION: "0.6.0"
   #=====CONTRACTS============================================================
   GATEWAY_CONTRACTS_VERSION: "v0.13.0"

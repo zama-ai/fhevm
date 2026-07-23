@@ -1,0 +1,15 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "INSERT INTO kms_epoch(id, context_id, is_valid, created_at, updated_at)\n            VALUES ($1, NULL, TRUE, $2, $2)",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Bytea",
+        "Timestamptz"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "64eaca4589792a8aba4523df31c5fe5d188de85bf598f1f7dbb049b77a885b5a"
+}

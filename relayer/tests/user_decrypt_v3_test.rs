@@ -21,6 +21,7 @@ use fhevm_relayer::http::endpoints::v2::types::error::ApiResponseStatus;
 use fhevm_relayer::http::endpoints::v2::types::user_decrypt::{
     UserDecryptPostResponseJson, UserDecryptStatusResponseJson,
 };
+use fhevm_relayer::http::validation_messages as constants_validation;
 use rand::{rng, RngExt};
 use serde_json::json;
 use std::str::FromStr;
@@ -410,6 +411,55 @@ async fn v3_rejects_expired_request_validity_window() {
         expect_v2_validation_error(
             "attestedPayload.requestValidity",
             "requestValidity window has already expired",
+        ),
+    )
+    .await;
+
+    setup.shutdown().await;
+}
+
+/// `extraData` id-tag validation: a `contextId` missing its type-tag first
+/// byte (`0x07`) must be rejected as an invalid extraData format.
+#[tokio::test]
+async fn v3_rejects_untagged_context_id_extra_data() {
+    let setup = TestSetup::new().await.expect("Failed to create test setup");
+    let url = helpers::v3_user_decrypt_post_url(&setup);
+
+    test_endpoint(
+        &url,
+        helpers::create_v3_envelope(),
+        |p: &mut serde_json::Value| {
+            p["attestedPayload"]["extraData"] =
+                json!("0x010000000000000000000000000000000000000000000000000000000000000001");
+        },
+        expect_v2_validation_error(
+            "attestedPayload.extraData",
+            constants_validation::INVALID_EXTRA_DATA_FORMAT,
+        ),
+    )
+    .await;
+
+    setup.shutdown().await;
+}
+
+/// `extraData` id-tag validation: an `epochId` missing its type-tag first
+/// byte (`0x08`) must be rejected as an invalid extraData format.
+#[tokio::test]
+async fn v3_rejects_untagged_epoch_id_extra_data() {
+    let setup = TestSetup::new().await.expect("Failed to create test setup");
+    let url = helpers::v3_user_decrypt_post_url(&setup);
+
+    test_endpoint(
+        &url,
+        helpers::create_v3_envelope(),
+        |p: &mut serde_json::Value| {
+            p["attestedPayload"]["extraData"] = json!(
+                "0x0207000000000000000000000000000000000000000000000000000000000000010000000000000000000000000000000000000000000000000000000000000002"
+            );
+        },
+        expect_v2_validation_error(
+            "attestedPayload.extraData",
+            constants_validation::INVALID_EXTRA_DATA_FORMAT,
         ),
     )
     .await;

@@ -5,7 +5,10 @@ use alloy::{
 use anyhow::anyhow;
 use connector_utils::{
     monitoring::otlp::PropagationContext,
-    types::{ProtocolEvent, ProtocolEventKind, db::ParamsTypeDb},
+    types::{
+        ProtocolEvent, ProtocolEventKind,
+        db::{ParamsTypeDb, invalidate_kms_context, invalidate_kms_epoch},
+    },
 };
 // Handle-only overloaded decryption events (authoritative ct-commits verifier, v0.15).
 use fhevm_gateway_bindings::decryption::Decryption::{
@@ -408,7 +411,7 @@ pub async fn update_last_block_polled<'e>(
 }
 
 /// Persists the `(context_id, epoch_id)` pair fetched at startup via
-/// `ProtocolConfig::getActiveKmsContextAndEpoch()`.
+/// `ProtocolConfig::getCurrentKmsContextAndEpoch()`.
 pub async fn publish_context_and_epoch(
     db_pool: &Pool<Postgres>,
     context_id: U256,
@@ -550,49 +553,4 @@ async fn publish_kms_epoch_destroyed<'e>(
     .execute(executor)
     .await
     .map_err(anyhow::Error::from)
-}
-
-/// Marks a destroyed KMS context as invalid in the `kms_context` validation cache.
-///
-/// The invalidation is upserted so the destruction is recorded even if the context was not cached.
-async fn invalidate_kms_context<'e>(
-    executor: impl PgExecutor<'e>,
-    context_id: U256,
-) -> anyhow::Result<()> {
-    let now = Utc::now();
-    sqlx::query!(
-        "INSERT INTO kms_context(id, is_valid, created_at, updated_at)
-        VALUES ($1, FALSE, $2, $2)
-        ON CONFLICT (id) DO UPDATE SET is_valid = FALSE, updated_at = $2",
-        context_id.as_le_slice(),
-        now,
-    )
-    .execute(executor)
-    .await?;
-
-    info!("KMS context #{context_id} marked as destroyed in DB");
-    Ok(())
-}
-
-/// Marks a destroyed KMS epoch as invalid in the `kms_epoch` validation cache.
-///
-/// The invalidation is upserted so the destruction is recorded even if the epoch was never cached;
-/// `context_id` stays NULL in that case, as the event does not carry it.
-async fn invalidate_kms_epoch<'e>(
-    executor: impl PgExecutor<'e>,
-    epoch_id: U256,
-) -> anyhow::Result<()> {
-    let now = Utc::now();
-    sqlx::query!(
-        "INSERT INTO kms_epoch(id, is_valid, created_at, updated_at)
-        VALUES ($1, FALSE, $2, $2)
-        ON CONFLICT (id) DO UPDATE SET is_valid = FALSE, updated_at = $2",
-        epoch_id.as_le_slice(),
-        now,
-    )
-    .execute(executor)
-    .await?;
-
-    info!("KMS epoch #{epoch_id} marked as destroyed in DB");
-    Ok(())
 }

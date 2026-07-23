@@ -963,6 +963,16 @@ async fn test_error_invalid_fields_set_2(
 #[case::empty_extra_data("extraData", json!(""), constants_validation::INVALID_EXTRA_DATA_FORMAT)]
 #[case::wrong_extra_data("extraData", json!("0x01"), constants_validation::INVALID_EXTRA_DATA_FORMAT)]
 #[case::invalid_extra_data("extraData", json!("invalid"), constants_validation::INVALID_EXTRA_DATA_FORMAT)]
+#[case::untagged_context_id_extra_data(
+    "extraData",
+    json!("0x010000000000000000000000000000000000000000000000000000000000000001"),
+    constants_validation::INVALID_EXTRA_DATA_FORMAT
+)]
+#[case::untagged_epoch_id_extra_data(
+    "extraData",
+    json!("0x0207000000000000000000000000000000000000000000000000000000000000010000000000000000000000000000000000000000000000000000000000000002"),
+    constants_validation::INVALID_EXTRA_DATA_FORMAT
+)]
 #[tokio::test]
 async fn test_error_invalid_fields_set_3(
     #[case] field: &str,
