@@ -1,0 +1,25 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n                SELECT leaf_index\n                FROM solana_proof_leaves\n                WHERE lineage = $1 AND leaf_kind = $2 AND handle = $3 AND subject = $4\n                ORDER BY leaf_index ASC\n                LIMIT 1\n                ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "leaf_index",
+        "type_info": "Int8"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Bytea",
+        "Int2",
+        "Bytea",
+        "Bytea"
+      ]
+    },
+    "nullable": [
+      false
+    ]
+  },
+  "hash": "688ddba2d3463d7daef5dac4741ef2672c1788d3b4756927ce59e3573ed737c8"
+}
