@@ -522,8 +522,9 @@ where
         .with_state(state);
 
     // Permissive CORS so a browser dApp (Vite origin) can call the loopback proof service directly
-    // during the local confidential-vault demo (#1760/#1761). Unconditional is acceptable on the
-    // PoC branch: the service binds loopback-only, so there is no cross-origin exposure to guard.
+    // during the local confidential-vault demo (#1760/#1761). Unconditional is acceptable here: this
+    // crate is branch-local (absent from origin/main) and binds loopback-only by design, so there is
+    // no cross-origin exposure to guard and nothing merges back toward prod.
     request_id_layers(
         Router::new()
             .merge(SwaggerUi::new("/swagger-ui").url("/api-docs/openapi.json", ApiDoc::openapi()))
