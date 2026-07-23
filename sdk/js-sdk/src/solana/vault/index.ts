@@ -35,6 +35,19 @@ export {
   type SolanaVaultInitializeTokenAccountParameters,
 } from './initializeTokenAccount.js';
 export { buildWrapUsdcInstruction, type SolanaVaultWrapUsdcParameters } from './wrapUsdc.js';
+export {
+  openBatchForBatcher,
+  type SolanaVaultOpenBatchForBatcherParameters,
+} from './openBatchForBatcher.js';
+
+// Program ids the seeder records into the demo-config `programs` block. `CONFIDENTIAL_BATCHER_PROGRAM_ADDRESS`
+// is already exported below with the batcher internals; the other three come from the generated
+// confidential-token / demo-vault program-address modules.
+export {
+  CONFIDENTIAL_TOKEN_PROGRAM_ADDRESS,
+  ZAMA_HOST_PROGRAM_ADDRESS,
+} from '../internal/generated/confidentialToken/programAddress.js';
+export { DEMO_VAULT_PROGRAM_ADDRESS } from './internal/generated/demoVault/programAddress.js';
 
 export {
   deriveBatchAddresses,

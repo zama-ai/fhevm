@@ -7,6 +7,8 @@ import { buildInitializeBatcherInstruction, BatchDirection } from './initializeB
 import { buildInitializeMintInstruction } from './initializeMint.js';
 import { buildInitializeTokenAccountInstruction } from './initializeTokenAccount.js';
 import { buildWrapUsdcInstruction } from './wrapUsdc.js';
+import { openBatchForBatcher } from './openBatchForBatcher.js';
+import type { VaultDemoRoots } from './derive.js';
 import {
   INITIALIZE_VAULT_DISCRIMINATOR,
   getInitializeVaultInstructionDataDecoder,
@@ -109,5 +111,35 @@ describe('vault provisioning builders', () => {
     const decoded = getWrapUsdcInstructionDataDecoder().decode(instruction.data!);
     expect(Array.from(decoded.discriminator)).toEqual(Array.from(WRAP_USDC_DISCRIMINATOR));
     expect(decoded.amount).toBe(1_000_000n);
+  });
+
+  it('openBatchForBatcher: assembles the [open_batch, create_alt, extend_alt] set from roots', async () => {
+    const roots: VaultDemoRoots = {
+      batcherProgram: addr(10),
+      tokenProgram: addr(11),
+      vaultProgram: addr(12),
+      hostProgram: addr(13),
+      batcher: addr(14),
+      vault: addr(15),
+      joinConfidentialMint: addr(16),
+      payoutConfidentialMint: addr(17),
+      joinUnderlyingMint: addr(18),
+      payoutUnderlyingMint: addr(19),
+      hostConfig: addr(20),
+      kmsContext: addr(21),
+    };
+    const result = await openBatchForBatcher({
+      roots,
+      batchIndex: 0n,
+      payer: signer(addr(1)),
+      recentSlot: 100n,
+      authorityFundingLamports: 100_000_000n,
+    });
+    // open_batch + create_lookup_table + extend_lookup_table, in submission order.
+    expect(result.instructions).toHaveLength(3);
+    // The first (open_batch) targets the batcher program; the ALT pair targets the ALT program.
+    expect(result.instructions[0]!.programAddress).toBe(CONFIDENTIAL_BATCHER_PROGRAM_ADDRESS);
+    // Every settle-table entry is derived (no fee payer, no post-dispatch redemption record).
+    expect(result.lookupTableAddresses.length).toBeGreaterThan(0);
   });
 });
