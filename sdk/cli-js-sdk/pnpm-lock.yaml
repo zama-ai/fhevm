@@ -24,8 +24,8 @@ importers:
         specifier: ^15.0.0
         version: 15.0.0(commander@15.0.0)
       '@fhevm/sdk':
-        specifier: 0.13.2-1
-        version: 0.13.2-1(typescript@5.9.3)(viem@2.50.4(typescript@5.9.3)(zod@4.4.3))
+        specifier: 0.13.2
+        version: 0.13.2(typescript@5.9.3)(viem@2.50.4(typescript@5.9.3)(zod@4.4.3))
       '@pnpm/tabtab':
         specifier: ^0.5.4
         version: 0.5.4
@@ -58,8 +58,8 @@ importers:
         specifier: ^15.0.0
         version: 15.0.0(commander@15.0.0)
       '@fhevm/sdk':
-        specifier: 0.13.2-1
-        version: 0.13.2-1(typescript@5.9.3)(viem@2.50.4(typescript@5.9.3)(zod@4.4.3))
+        specifier: 0.13.2
+        version: 0.13.2(typescript@5.9.3)(viem@2.50.4(typescript@5.9.3)(zod@4.4.3))
       commander:
         specifier: ^15.0.0
         version: 15.0.0
@@ -92,8 +92,8 @@ importers:
   packages/toolkit:
     dependencies:
       '@fhevm/sdk':
-        specifier: 0.13.2-1
-        version: 0.13.2-1(typescript@5.9.3)(viem@2.50.4(typescript@5.9.3)(zod@4.4.3))
+        specifier: 0.13.2
+        version: 0.13.2(typescript@5.9.3)(viem@2.50.4(typescript@5.9.3)(zod@4.4.3))
       viem:
         specifier: ^2.50.4
         version: 2.50.4(typescript@5.9.3)(zod@4.4.3)
@@ -301,8 +301,8 @@ packages:
     cpu: [x64]
     os: [win32]
 
-  '@fhevm/sdk@0.13.2-1':
-    resolution: {integrity: sha512-p+iyE5BZj/qMQguhZaybhfGUqAZNvl02p1/m50+mtN44yIh6j76cbjnL2RVJoRUxPe0Zh/BPKmsB42ga90/5SA==}
+  '@fhevm/sdk@0.13.2':
+    resolution: {integrity: sha512-M1ZUKdRJedxRa57bVeQ7jrzVP6hKAXjS8WabvMNJKBui7C2ZXDsvoyb7qpLqYib85obA+OQTwcPZV/oxWfciWA==}
     engines: {node: '>=22.0'}
     peerDependencies:
       ethers: '>=6.8.0'
@@ -1359,7 +1359,7 @@ snapshots:
   '@esbuild/win32-x64@0.28.0':
     optional: true
 
-  '@fhevm/sdk@0.13.2-1(typescript@5.9.3)(viem@2.50.4(typescript@5.9.3)(zod@4.4.3))':
+  '@fhevm/sdk@0.13.2(typescript@5.9.3)(viem@2.50.4(typescript@5.9.3)(zod@4.4.3))':
     dependencies:
       '@noble/curves': 2.0.1
       '@noble/hashes': 2.0.1

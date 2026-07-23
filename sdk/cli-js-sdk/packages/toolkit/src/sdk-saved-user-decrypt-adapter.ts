@@ -22,7 +22,7 @@ import { pathToFileURL } from "node:url";
  * is intentionally Node ESM and unbundled-only: a bundler or CJS facade may
  * duplicate SDK modules and invalidate their private brands.
  */
-const SUPPORTED_SDK_VERSION = "0.13.2-1";
+const SUPPORTED_SDK_VERSION = "0.13.2";
 
 export type SavedTkmsVersion = "0.13.10" | "0.13.20-0";
 

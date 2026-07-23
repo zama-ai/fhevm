@@ -14,7 +14,7 @@
   "dependencies": {
     "@cli-fhevm-sdk/toolkit": "workspace:*",
     "@commander-js/extra-typings": "^15.0.0",
-    "@fhevm/sdk": "0.13.2-1",
+    "@fhevm/sdk": "0.13.2",
     "commander": "^15.0.0",
     "consola": "^3.4.2",
     "hdr-histogram-js": "^3.0.0",

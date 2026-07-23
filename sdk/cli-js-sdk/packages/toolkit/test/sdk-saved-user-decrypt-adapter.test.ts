@@ -107,7 +107,7 @@ describe("saved user-decrypt adapter", () => {
         .mockResolvedValue({ tkmsVersion: "0.13.20-0" }),
     };
     const decrypt = createSavedUserDecryptAdapter({
-      sdkVersion: "0.13.2-1",
+      sdkVersion: "0.13.2",
       loadInternals: vi.fn().mockResolvedValue(internals),
     });
 
@@ -177,7 +177,7 @@ describe("saved user-decrypt adapter", () => {
     });
     const loadInternals = vi.fn().mockResolvedValue({});
     const decrypt = createSavedUserDecryptAdapter({
-      sdkVersion: "0.13.2-1",
+      sdkVersion: "0.13.2",
       loadInternals,
     });
 
@@ -198,7 +198,7 @@ describe("saved user-decrypt adapter", () => {
     });
 
     await expect(decrypt(parameters())).rejects.toThrow(
-      "supports @fhevm/sdk 0.13.2-1 only",
+      "supports @fhevm/sdk 0.13.2 only",
     );
     expect(loadInternals).not.toHaveBeenCalled();
   });
@@ -211,7 +211,20 @@ describe("saved user-decrypt adapter", () => {
     });
 
     await expect(decrypt(parameters())).rejects.toThrow(
-      "supports @fhevm/sdk 0.13.2-1 only",
+      "supports @fhevm/sdk 0.13.2 only",
+    );
+    expect(loadInternals).not.toHaveBeenCalled();
+  });
+
+  it("fails closed for the 0.13.2-1 prerelease", async () => {
+    const loadInternals = vi.fn();
+    const decrypt = createSavedUserDecryptAdapter({
+      sdkVersion: "0.13.2-1",
+      loadInternals,
+    });
+
+    await expect(decrypt(parameters())).rejects.toThrow(
+      "supports @fhevm/sdk 0.13.2 only",
     );
     expect(loadInternals).not.toHaveBeenCalled();
   });
@@ -219,7 +232,7 @@ describe("saved user-decrypt adapter", () => {
   it("rejects mismatched KMS shares before loading private modules", async () => {
     const loadInternals = vi.fn();
     const decrypt = createSavedUserDecryptAdapter({
-      sdkVersion: "0.13.2-1",
+      sdkVersion: "0.13.2",
       loadInternals,
     });
     const input = parameters();

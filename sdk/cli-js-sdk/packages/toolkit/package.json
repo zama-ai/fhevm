@@ -27,7 +27,7 @@
     "vitest": "^3.2.4"
   },
   "dependencies": {
-    "@fhevm/sdk": "0.13.2-1",
+    "@fhevm/sdk": "0.13.2",
     "viem": "^2.50.4"
   }
 }
