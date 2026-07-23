@@ -126,9 +126,16 @@ jobs:
 
           echo "Deleting namespace ${NAMESPACE}..."
           kubectl delete namespace "${NAMESPACE}" --grace-period=1 --timeout=5s --wait=false
-          kubectl wait --for=delete "namespace/${NAMESPACE}" --timeout=300s || {
-            echo "::warning::Namespace ${NAMESPACE} did not finish terminating within 5m (likely stuck on Crossplane finalizers releasing AWS resources) - check manually."
-          }
+          # A wait timeout means the namespace is stuck Terminating (typically on
+          # Crossplane finalizers still releasing AWS resources - S3 buckets,
+          # enclave nodegroups). That is NOT a clean teardown, so fail the step:
+          # otherwise the job stays green and the success() step below would post a
+          # false ":broom: torn down", masking the leak. Failing here routes to the
+          # failure() comment/summary instead.
+          if ! kubectl wait --for=delete "namespace/${NAMESPACE}" --timeout=300s; then
+            echo "::error::Namespace ${NAMESPACE} did not finish terminating within 5m (likely stuck on Crossplane finalizers releasing AWS resources) - check and clean up manually."
+            exit 1
+          fi
 
       # Report success and failure separately so we never tell the PR an env is
       # "torn down" when teardown actually failed (a false all-clear masks leaked
