@@ -15,7 +15,6 @@ use fhevm_engine_common::types::{
 };
 use fhevm_engine_common::utils::DatabaseURL;
 use fhevm_engine_common::utils::{to_hex, HeartBeat};
-use fhevm_engine_common::versioning::StackMode;
 use prometheus::{register_int_counter_vec, IntCounterVec};
 use sqlx::postgres::PgConnectOptions;
 use sqlx::postgres::PgPoolOptions;
@@ -316,9 +315,6 @@ pub struct Database {
     /// When true, every connection in this pool sets
     /// `search_path = gcs,public` so writes resolve to the GCS schema.
     gcs_mode: bool,
-    /// Runtime role; when set, `gcs_mode()` reads it so `stack_role` follows a
-    /// cutover instead of the fixed startup value.
-    stack_mode: Option<Arc<StackMode>>,
     /// Host-chain height at which wave-1 branch dual-writes activate
     /// (`FHEVM_BRANCH_ACTIVATION_BLOCK`, default 0 = from genesis). Below
     /// it, ingestion writes legacy state only and producers resolve as
@@ -414,7 +410,6 @@ impl Database {
             dependence_chain: bucket_cache,
             tick: HeartBeat::default(),
             gcs_mode,
-            stack_mode: None,
             branch_activation_block,
         };
         // Wave-1 deploy safety: a binary may start before the branch-context
@@ -425,19 +420,6 @@ impl Database {
         // migrate-first step and in tests (migrations run before construction).
         db.wait_for_branch_schema().await?;
         Ok(db)
-    }
-
-    /// Attach the runtime role read by `gcs_mode()`.
-    pub fn set_stack_mode(&mut self, stack_mode: Arc<StackMode>) {
-        self.stack_mode = Some(stack_mode);
-    }
-
-    /// Whether this listener runs as the green (GCS) stack (sets the
-    /// upgrade_state `stack_role`); reflects the runtime role once attached.
-    pub fn gcs_mode(&self) -> bool {
-        self.stack_mode
-            .as_ref()
-            .map_or(self.gcs_mode, |m| m.gcs_mode())
     }
 
     /// Block until the wave-1 branch-context schema is present (the `*_branch`
