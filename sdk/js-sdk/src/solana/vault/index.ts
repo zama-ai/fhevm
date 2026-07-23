@@ -9,10 +9,28 @@
 export { joinBatch, type SolanaVaultJoinParameters } from './joinBatch.js';
 export { buildQuitInstruction, type SolanaVaultQuitParameters } from './quit.js';
 export { buildDispatchBatchInstruction, type SolanaVaultDispatchParameters } from './dispatchBatch.js';
-export { settleBatch, type SolanaVaultSettleParameters, type SolanaVaultSettleAccounts } from './settleBatch.js';
+export { settleBatch, type SolanaVaultSettleOptions } from './settleBatch.js';
 export { buildClaimInstruction, type SolanaVaultClaimParameters } from './claim.js';
 export { decryptPosition } from './decryptPosition.js';
 export { openBatch, type SolanaVaultOpenBatchParameters, type SolanaVaultOpenBatchResult } from './openBatch.js';
+
+export {
+  deriveBatchAddresses,
+  deriveJoinRecordAddress,
+  deriveSettleAccounts,
+  deriveSettleLookupTableAddresses,
+  settleAccountsToLookupTableAddresses,
+  type VaultDemoRoots,
+  type BatchAddresses,
+  type SolanaVaultSettleAccounts,
+} from './derive.js';
+export {
+  getBatcher,
+  getCurrentBatch,
+  getEncryptedValueState,
+  type BatcherState,
+  type BatchState,
+} from './reads.js';
 
 export { settleTotalFromCleartext } from './internal/cleartext.js';
 export {

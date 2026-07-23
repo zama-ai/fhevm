@@ -29,6 +29,22 @@ function addressBytes(value: Address): Uint8Array {
   return base58.decode(value);
 }
 
+/**
+ * The canonical `EncryptedValue` PDA for one confidential-value lineage
+ * (`zama_host::encrypted_value_address(value_key(acl_domain, app_account, label))`). The value key
+ * carries the lineage's app metadata (never the opaque handle), so the address is derivable without
+ * reading chain state. All the confidential-token/batcher field lineages (balance, total supply,
+ * burned amount, batcher pending/claim) are this same derivation under different labels.
+ */
+export async function encryptedValueAddress(
+  aclDomain: Address,
+  appAccount: Address,
+  label: Uint8Array,
+): Promise<Address> {
+  const valueKey = deriveValueKey(addressBytes(aclDomain), addressBytes(appAccount), label);
+  return pda(ZAMA_HOST_PROGRAM_ADDRESS, [ENCRYPTED_VALUE_SEED, valueKey]);
+}
+
 /** The batch PDA for a batcher config and zero-based index (`batch_address`). */
 export async function batchAddress(batcher: Address, index: bigint): Promise<Address> {
   return pda(CONFIDENTIAL_BATCHER_PROGRAM_ADDRESS, [
