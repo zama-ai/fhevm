@@ -1,42 +1,93 @@
-# ADDITIVE overlay for the coprocessor-poller-<i> release, passed as an EXTRA `-f`
-# AFTER values-coprocessor-poller-e2e.yaml ONLY when deploy_polygon=true (see
-# preview-env-deploy.yml). Adds a Polygon (80002) poller alongside the ETH one so
-# Polygon blocks get finalized (the block_status='finalized' gate the consumer's
-# event processing depends on). Polygon triggers no keygen, so this poller does no
-# S3 key download for it - only block finalization.
+# coprocessor chart values overlay deploying ONLY the Polygon (80002) host-listener
+# POLLER, as a dedicated release per coprocessor party (coprocessor-poller-polygon-<i>).
+# It finalizes Polygon blocks (the block_status='finalized' gate the Polygon
+# consumer's event processing depends on). Polygon triggers no keygen, so this
+# poller does no S3 key download - only block finalization.
 #
-# Same full-chains-list / useLegacyName / gating rationale as
-# values-coprocessor-polygon-e2e.yaml; the `host` entry MUST mirror
-# values-coprocessor-poller-e2e.yaml chains[0].
+# WHY A SEPARATE RELEASE (not a second enabled chains[] entry in
+# coprocessor-poller-<i>): identical to values-coprocessor-polygon-consumer-e2e.yaml
+# - the chart glues consecutive per-chain documents (the range `---` separator
+# lacks a leading newline), so an ETH+Polygon poller pair in one render collapses
+# into a single YAML document and the second overwrites the first. A single-chain
+# release renders exactly one poller document.
+#
+# dbMigration disabled: coprocessor-<i> already seeded host_chains for both ETH and
+# Polygon (values-coprocessor-polygon-e2e.yaml). Shares postgres-coprocessor-<i>.
+#
+# Deployed as (per party i, see preview-env-deploy.yml):
+#   helm upgrade --install coprocessor-poller-polygon-<i> \
+#     oci://hub.zama.org/ghcr/zama-ai/fhevm/charts/coprocessor \
+#     -n <namespace> -f this-file \
+#     --set-string commonConfig.databaseEndpoint.value=postgres-coprocessor-<i>:5432 \
+#     --set-string hostListenerPollerShared.serviceAccountName=coprocessor-<i> \
+#     --set-string hostListenerPollerShared.image.tag=<coprocessor_host_listener tag>
 commonConfig:
+  # Same in-cluster Postgres the coprocessor-<i> release uses (overridden per
+  # party via --set). Shared DB: the poller finalizes the same host_chain_blocks
+  # rows the Polygon consumer reads.
+  databaseUser: {value: "zama"}
+  databasePassword: {value: "zama"}
+  databaseEndpoint: {value: "postgres-coprocessor:5432"}
+  databaseUrl: "postgresql://$(DATABASE_USER):$(DATABASE_PASSWORD)@$(DATABASE_ENDPOINT)/fhevm_e2e"
+  databaseAuthMode: password
+  # The poller reads the Polygon chain over HTTP RPC (not WebSocket).
+  hostChainWsUrl: "ws://anvil-host-polygon-anvil-node:8545"
+  hostChainHttpUrl: "http://anvil-host-polygon-anvil-node:8545"
+  aclContractAddress:
+    valueFrom: {configMapKeyRef: {name: polygon-sc-addresses, key: acl.address}}
+  fhevmExecutorContractAddress:
+    valueFrom: {configMapKeyRef: {name: polygon-sc-addresses, key: fhevm_executor.address}}
+  # Polygon has no KMSGeneration; point at the canonical ETH contract.
+  kmsGenerationContractAddress:
+    valueFrom: {configMapKeyRef: {name: host-sc-addresses, key: kms_generation.address}}
+  protocolConfigContractAddress:
+    valueFrom: {configMapKeyRef: {name: polygon-sc-addresses, key: protocol_config.address}}
   canonicalProtocolConfigChainId: "12345"
 
+# Migration + every other role are owned by the coprocessor-<i> /
+# coprocessor-poller-<i> releases; keep them off here.
+dbMigration: {enabled: false}
+hostListenerShared: {enabled: false}
+hostListenerConsumerShared: {enabled: false}
+hostListenerCatchupOnlyShared: {enabled: false}
+gwListener: {enabled: false}
+tfheWorker: {enabled: false}
+zkProofWorker: {enabled: false}
+snsWorker: {enabled: false}
+txSender: {enabled: false}
+
+hostListenerPollerShared:
+  image: {name: hub.zama.org/ghcr/zama-ai/fhevm/coprocessor/host-listener, tag: latest}
+  replicas: 1
+  # IRSA SA (coprocessor-<i>); overridden per party. Polygon triggers no keygen so
+  # no S3 download happens, but the SA is harmless and keeps parity with the ETH
+  # poller.
+  serviceAccountName: coprocessor
+  # Same flags as the ETH poller (values-coprocessor-poller-e2e.yaml): single-node
+  # anvil never reorgs, so finality-lag stays small.
+  extraArgs:
+    - --log-level=INFO
+    - --dependence-cross-block
+    - --finality-lag=1
+  resources:
+    requests: {cpu: "500m", memory: 1Gi}
+    limits: {cpu: "1", memory: 2Gi}
+  nodeSelector:
+    karpenter.sh/nodepool: zws-pool
+  tolerations:
+    - {key: karpenter.sh/nodepool, operator: Equal, value: zws-pool, effect: NoSchedule}
+
 chains:
-  # --- ETH host chain: MUST mirror values-coprocessor-poller-e2e.yaml chains[0] ---
-  - name: host
-    chainId: "12345"
-    wsUrl: "ws://anvil-host-anvil-node:8545"
-    httpUrl: "http://anvil-host-anvil-node:8545"
-    aclContractAddressValueFrom: {configMapKeyRef: {name: host-sc-addresses, key: acl.address}}
-    fhevmExecutorContractAddressValueFrom: {configMapKeyRef: {name: host-sc-addresses, key: fhevm_executor.address}}
-    kmsGenerationContractAddressValueFrom: {configMapKeyRef: {name: host-sc-addresses, key: kms_generation.address}}
-    protocolConfigContractAddressValueFrom: {configMapKeyRef: {name: host-sc-addresses, key: protocol_config.address}}
-    hostListener: {enabled: false, useLegacyName: true}
-    hostListenerPoller: {enabled: true, useLegacyName: true}
-    hostListenerCatchupOnly: {enabled: false, useLegacyName: true}
-    hostListenerConsumer: {enabled: false, useLegacyName: true}
-  # --- Polygon host chain (80002): block finalization only ---
+  # Single chain => single poller document => no separator collision.
   - name: polygon
     chainId: "80002"
     wsUrl: "ws://anvil-host-polygon-anvil-node:8545"
     httpUrl: "http://anvil-host-polygon-anvil-node:8545"
     aclContractAddressValueFrom: {configMapKeyRef: {name: polygon-sc-addresses, key: acl.address}}
     fhevmExecutorContractAddressValueFrom: {configMapKeyRef: {name: polygon-sc-addresses, key: fhevm_executor.address}}
-    # See values-coprocessor-polygon-e2e.yaml: canonical ETH KMSGeneration, no
-    # events on the Polygon RPC.
     kmsGenerationContractAddressValueFrom: {configMapKeyRef: {name: host-sc-addresses, key: kms_generation.address}}
     protocolConfigContractAddressValueFrom: {configMapKeyRef: {name: polygon-sc-addresses, key: protocol_config.address}}
-    hostListener: {enabled: false, useLegacyName: false}
-    hostListenerPoller: {enabled: true, useLegacyName: false}
-    hostListenerCatchupOnly: {enabled: false, useLegacyName: false}
-    hostListenerConsumer: {enabled: false, useLegacyName: false}
+    hostListener: {enabled: false, useLegacyName: true}
+    hostListenerPoller: {enabled: true, useLegacyName: true}
+    hostListenerCatchupOnly: {enabled: false, useLegacyName: true}
+    hostListenerConsumer: {enabled: false, useLegacyName: true}

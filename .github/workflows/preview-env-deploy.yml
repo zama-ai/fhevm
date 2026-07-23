@@ -163,7 +163,7 @@ env:
   COPROCESSOR_INFRA_CHART_VERSION: "0.6.5"
   #=====COMMON===============================================================
   RELAYER_VERSION: "v0.13.0"
-  TEST_SUITE_VERSION: "b858525"
+  TEST_SUITE_VERSION: "032a262"
   RELAYER_SDK_VERSION: ""  # If RELAYER_SDK_VERSION is empty: run the @fhevm/sdk suite only.
   COMMON_CHART: oci://hub.zama.org/ghcr/zama-zws/helm-charts/common
   COMMON_CHART_VERSION: "0.3.3"
@@ -874,8 +874,13 @@ jobs:
         env:
           COPROC_WALLETS_JSON: ${{ steps.coproc-wallets.outputs.wallets_json }}
         run: |
-          # deploy_polygon: append the multichain overlay (full chains[] list with
-          # the added Polygon 80002 consumer). Extra -f applied after the base file.
+          # deploy_polygon: append the Polygon SEED overlay. It adds Polygon (80002)
+          # to this release's chains[] so dbMigration seeds its host_chains row, with
+          # ALL Polygon roles DISABLED - the actual Polygon consumer/poller run in
+          # their own single-chain releases (deployed in the steps below), because
+          # the chart glues consecutive per-chain documents and two enabled consumers
+          # in one render collapse into one (see values-coprocessor-polygon-e2e.yaml).
+          # Extra -f applied after the base file.
           polygon_args=()
           if [[ "${DEPLOY_POLYGON}" == "true" ]]; then
             polygon_args=(-f ci/preview-env/coprocessor/values-coprocessor-polygon-e2e.yaml)
@@ -913,6 +918,28 @@ jobs:
           done
           sleep 60
 
+      - name: Deploy polygon coprocessor consumer (per-party Polygon consumer)
+        # One Polygon host-listener-consumer PER COPROCESSOR PARTY
+        # (coprocessor-polygon-<i>), as its OWN single-chain release. Deployed
+        # SEPARATELY from the ETH consumer (coprocessor-<i>) because the coprocessor
+        # chart glues consecutive per-chain YAML documents together, so two enabled
+        # consumers in one render collapse into one and the ETH consumer is silently
+        # dropped (see values-coprocessor-polygon-consumer-e2e.yaml). Shares this
+        # party's Postgres (host_chains already seeded by coprocessor-<i>'s
+        # dbMigration) and Redis; ingests chain-80002 events published by
+        # listener-polygon-<i>.
+        if: env.DEPLOY_POLYGON == 'true'
+        run: |
+          for i in $(seq 1 "${NB_COPROCESSOR}"); do
+            helm upgrade --install "coprocessor-polygon-${i}" "${COPROCESSOR_CHART}" --version "${COPROCESSOR_CHART_VERSION}" \
+              -n "${NAMESPACE}" -f ci/preview-env/coprocessor/values-coprocessor-polygon-consumer-e2e.yaml \
+              --set-string "commonConfig.databaseEndpoint.value=postgres-coprocessor-${i}:5432" \
+              --set-string "hostListenerConsumerShared.serviceAccountName=coprocessor-${i}" \
+              --set-string "hostListenerConsumerShared.config.brokerUrl.value=redis://coprocessor-redis-${i}-master:6379" \
+              --set-string "hostListenerConsumerShared.image.tag=$(jq -r .coprocessor_host_listener <<<"${TAGS_JSON}")" &
+          done
+          wait
+
       - name: Deploy coprocessor-poller (per-party key/CRS activation)
         # One poller release PER COPROCESSOR PARTY (coprocessor-poller-<i>), the
         # DB-side background processor that, on a pending kms_key_activation /
@@ -935,16 +962,26 @@ jobs:
         # the coprocessor-<i> release, which already ran dbMigration (this release
         # has dbMigration disabled).
         run: |
-          # deploy_polygon: append the multichain overlay (adds a Polygon 80002
-          # poller for block finalization alongside the ETH one).
-          polygon_args=()
-          if [[ "${DEPLOY_POLYGON}" == "true" ]]; then
-            polygon_args=(-f ci/preview-env/coprocessor/values-coprocessor-poller-polygon-e2e.yaml)
-          fi
           for i in $(seq 1 "${NB_COPROCESSOR}"); do
             helm upgrade --install "coprocessor-poller-${i}" "${COPROCESSOR_CHART}" --version "${COPROCESSOR_CHART_VERSION}" \
               -n "${NAMESPACE}" -f ci/preview-env/coprocessor/values-coprocessor-poller-e2e.yaml \
-              "${polygon_args[@]}" \
+              --set-string "commonConfig.databaseEndpoint.value=postgres-coprocessor-${i}:5432" \
+              --set-string "hostListenerPollerShared.serviceAccountName=coprocessor-${i}" \
+              --set-string "hostListenerPollerShared.image.tag=$(jq -r .coprocessor_host_listener <<<"${TAGS_JSON}")" &
+          done
+          wait
+
+      - name: Deploy polygon coprocessor-poller (per-party Polygon finalization)
+        # One Polygon poller PER COPROCESSOR PARTY (coprocessor-poller-polygon-<i>),
+        # as its OWN single-chain release (same separator-collision reason as the
+        # Polygon consumer above). Finalizes Polygon blocks so the Polygon consumer's
+        # block_status='finalized' gate is met. dbMigration disabled - coprocessor-<i>
+        # already seeded host_chains for both chains.
+        if: env.DEPLOY_POLYGON == 'true'
+        run: |
+          for i in $(seq 1 "${NB_COPROCESSOR}"); do
+            helm upgrade --install "coprocessor-poller-polygon-${i}" "${COPROCESSOR_CHART}" --version "${COPROCESSOR_CHART_VERSION}" \
+              -n "${NAMESPACE}" -f ci/preview-env/coprocessor/values-coprocessor-poller-polygon-e2e.yaml \
               --set-string "commonConfig.databaseEndpoint.value=postgres-coprocessor-${i}:5432" \
               --set-string "hostListenerPollerShared.serviceAccountName=coprocessor-${i}" \
               --set-string "hostListenerPollerShared.image.tag=$(jq -r .coprocessor_host_listener <<<"${TAGS_JSON}")" &
