@@ -32,7 +32,7 @@ import { createClearValue } from '../../../handle/ClearValue.js';
 import { bytesToClearValueType } from '../../../handle/FheType.js';
 import { ensure0x, remove0x } from '../../../base/string.js';
 import { assertIsKmsExtraData } from '../../../kms/kmsExtraData.js';
-import { bytesToHexLarge } from '../../../base/bytes.js';
+import { bytesToHexLarge, isBytes65Hex } from '../../../base/bytes.js';
 import { initTkmsModule } from './init-p.js';
 import { getMetadata, getShares } from '../../../kms/KmsSigncryptedShares-p.js';
 
@@ -328,7 +328,10 @@ export async function decryptAndReconstruct(
   ) as ClientWasmType;
 
   const requestWasmArg = {
-    signature: remove0x(metadata.eip712Signature),
+    // The tkms request parser accepts only a strict 65-byte ECDSA signature
+    // here and documents the field as optional — ERC-1271 permits (multisig
+    // blobs, empty approved-hash signatures) must omit it.
+    signature: isBytes65Hex(metadata.eip712Signature) ? remove0x(metadata.eip712Signature) : undefined,
     client_address: clientAddress,
     enc_key: remove0x(publicEncKeyMlKem512WasmBytesHex),
     ciphertext_handles: metadata.handles.map((h) => h.bytes32HexNo0x),
