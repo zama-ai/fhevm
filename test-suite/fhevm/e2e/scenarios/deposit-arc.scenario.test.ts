@@ -1,17 +1,18 @@
-// Scenario: deposit arc — WRAP + JOIN + DISPATCH + SETTLE LEGS (#1760), the live-cluster exercise
-// of the confidential vault's forward path via `@fhevm/sdk/solana/vault`. Run as `demo:smoke` and
-// hard-gated by the solana-demo-acceptance workflow: these legs are expected to pass live.
+// Scenario: deposit arc — FULL ARC (#1760): wrap -> join -> dispatch -> settle -> claim ->
+// decrypt, the live-cluster exercise of the confidential vault's forward path via
+// `@fhevm/sdk/solana/vault`. Run as `demo:smoke` and hard-gated by the solana-demo-acceptance
+// workflow: every leg is expected to pass live.
 //
-// This covers the deposit arc up to a settled batch: fund a persona, initialize her confidential
-// cUSDC account, wrap mock USDC into a confidential cUSDC balance (a PUBLIC-amount escrow that
-// needs no input proof), JOIN the pending deposit batch with a coprocessor-attested amount (a real
-// input proof built by the SDK's local TFHE prover and verified by the relayer), then have the
-// keeper DISPATCH the aged batch (burning its encrypted balance to a born-public handle) and
-// SETTLE it (MMR inclusion proof from the solana-proof-service + KMS burn certificate from the
-// relayer + the on-chain settle in one `settleBatch` call). The claim -> decrypt continuation is
-// NOT wired here — it still needs the claim/decryptPosition orchestration — so it lives in
-// `deposit-arc-boundary.scenario.test.ts` (run as `demo:smoke-boundary`), which documents that
-// remaining boundary explicitly instead of failing this gate.
+// The arc: fund a persona, initialize her confidential token accounts, wrap mock USDC into a
+// confidential cUSDC balance (a PUBLIC-amount escrow that needs no input proof), JOIN the pending
+// deposit batch with a coprocessor-attested amount (a real input proof built by the SDK's local
+// TFHE prover and verified by the relayer), have the keeper DISPATCH the aged batch (burning its
+// encrypted balance to a born-public handle) and SETTLE it (MMR inclusion proof from the
+// solana-proof-service + KMS burn certificate from the relayer + the on-chain settle in one
+// `settleBatch` call), then have alice CLAIM her confidential cShares payout (permissionless pull:
+// one MulDiv eval + a confidential transfer) and DECRYPT her claimed amount through the KMS
+// user-decrypt path (`decryptPosition`: ed25519-signed request -> relayer -> signcrypted shares ->
+// in-SDK de-signcryption).
 //
 // STATUS: live-only, UNVERIFIED here. It requires a running demo stack with the two demo programs
 // deployed, `demo:seed` completed, and the `demo:faucet` running (all classifier-gated / blocked in
@@ -20,9 +21,9 @@
 // solana modules are untyped here by construction (same reason as
 // `src/solana/current-user-decrypt.ts`): the SDK's generated `_types` are not built at tsc time.
 //
-// Assertion map — wrap + join + dispatch + settle legs (deposit direction: join mint = cUSDC):
+// Assertion map — full deposit arc (deposit direction: join mint = cUSDC, payout mint = cShares):
 //   1. alice funded with SOL + mock USDC through the demo faucet         [live, wired below].
-//   2. alice's cUSDC confidential token account initialized              [live, SDK, wired below].
+//   2. alice's cUSDC + cShares confidential token accounts initialized   [live, SDK, wired below].
 //   3. wrap mock USDC → cUSDC confidential balance (public amount)       [live, SDK, wired below].
 //   4. on-chain assertion: alice's cUSDC token account exists and is owned by confidential-token.
 //   5. precondition: the seeded deposit batcher's current batch is still Pending (joinable).
@@ -39,6 +40,12 @@
 //  13. settleBatch: MMR proof + KMS burn certificate + on-chain settle, keeper-signed [live, SDK].
 //  14. on-chain assertions: batch status Settled, certified totalJoined equals the joined amount
 //      (a single-join batch's total is public by construction), payoutReceived recorded.
+//  15. claim: alice pulls her payout from the settled batch              [live, SDK, wired below].
+//  16. on-chain assertions: the join record's claimed flag is set, and the claim-amount lineage
+//      account exists with a nonzero current handle (the claim eval's created output). The payout
+//      VALUE is encrypted on-chain by design; reading it is the decrypt leg's job.
+//  17. decryptPosition: alice user-decrypts her claimed amount; the cleartext equals the batch's
+//      payoutReceived exactly (sole joiner: floor(joined x payout / total) = payout) [live, SDK].
 
 import fs from "node:fs/promises";
 
@@ -75,9 +82,13 @@ import {
 } from "../../demo/encryptedValueLineage";
 import { DEMO_KEYPAIRS, loadDemoEnv } from "../../demo/loadDemoEnv";
 
-// A live batcher arc waits on slot age + SNS commit + settle certificate: allow well beyond the
-// transfer scenario's budget.
-const SCENARIO_TIMEOUT_MS = 20 * 60_000;
+// A live batcher arc waits on slot age + SNS commit + settle certificate + the decrypt roundtrip.
+// The bounded waits below sum to ~17.5 min worst case (health 3.5 + join visibility 1 + slot age 2
+// + dispatch visibility 1 + SNS proof 5 + settle visibility 1 + claim visibility 1 + decrypt 3),
+// so 30 min keeps ~12 min for the unwaited work. The HTTP probes fail on their own per-request +
+// until() bounds; the RPC-backed waits carry no per-request bound (they rely on the transport), so
+// a hung RPC read is ultimately caught by this scenario timeout.
+const SCENARIO_TIMEOUT_MS = 30 * 60_000;
 
 // The demo faucet binds loopback by default (same-machine demo boundary); the acceptance workflow
 // starts it on 8090 and waits for /health before invoking this. Overridable for a non-default run.
@@ -97,6 +108,17 @@ const JOIN_COMPUTE_UNIT_LIMIT = 800_000;
 // dispatch measures ~304k CU under mollusk (batcher_mollusk.json `dispatch`); the same ~1.2x
 // live/mollusk factor observed on the transfer CPI puts it near ~365k, so 600k is ample headroom.
 const DISPATCH_COMPUTE_UNIT_LIMIT = 600_000;
+// claim measures ~311k CU under mollusk (batcher_mollusk.json `claim`); the same ~1.2x factor puts
+// it near ~373k, so 600k is ample headroom.
+const CLAIM_COMPUTE_UNIT_LIMIT = 600_000;
+// Bound for the user-decrypt relayer roundtrip: the SDK's default request timeout is one hour
+// (RelayerAsyncRequest), which would let a stuck decrypt eat the whole scenario budget silently.
+const DECRYPT_ROUNDTRIP_TIMEOUT_MS = 180_000;
+// JoinRecord account layout (confidential-batcher state.rs): 8-byte Anchor discriminator +
+// batch(32) + user(32) + joined_encrypted_value(32), then the `claimed` boolean byte. The SDK
+// generates a typed `fetchJoinRecord` but does not export it from the vault surface yet; this raw
+// read gets replaced by that fetch once it is exported.
+const JOIN_RECORD_CLAIMED_OFFSET = 104;
 // `BatchStatus` in the batcher's generated enum encoding (Pending=0, Dispatched=1, Settled=2).
 const BATCH_STATUS_PENDING = 0;
 const BATCH_STATUS_DISPATCHED = 1;
@@ -106,7 +128,7 @@ const BATCH_STATUS_SETTLED = 2;
 type SolanaInputProof = unknown;
 type SolanaInputProofSubmission = unknown;
 
-/** The vault surface the scenario drives — wrap provisioning + batch join (untyped: runtime dynamic-import seam). */
+/** The vault surface the scenario drives — provisioning, batch legs, claim + decrypt (untyped: runtime dynamic-import seam). */
 type VaultDepositArcSurface = {
   buildInitializeTokenAccountInstruction(parameters: {
     owner: TransactionSigner;
@@ -148,6 +170,13 @@ type VaultDepositArcSurface = {
     batchAuthority: Address,
     user: Address,
   ): Promise<{ encryptedValueAddress: Address }>;
+  claimAmountLineage(
+    batch: Address,
+    batchAuthority: Address,
+    user: Address,
+  ): Promise<{ aclValueKey: Uint8Array; encryptedValueAddress: Address }>;
+  /** Throws while the lineage account does not exist; reads at the RPC default commitment. */
+  getEncryptedValueState(rpc: unknown, encryptedValue: Address): Promise<{ currentHandle: Uint8Array }>;
   deriveJoinRecordAddress(batch: Address, user: Address): Promise<Address>;
   joinBatch(
     fhevm: { solanaChain: unknown; aclProgramAddress: `0x${string}` },
@@ -185,6 +214,36 @@ type VaultDepositArcSurface = {
     hostConfig: Address;
     confidentialTokenEventAuthority: Address;
   }): Promise<Instruction>;
+  buildClaimInstruction(parameters: {
+    payer: TransactionSigner;
+    user: Address;
+    batcher: Address;
+    batch: Address;
+    pendingJoinValue: Address;
+    claimAmountValue: Address;
+    payoutConfidentialMint: Address;
+    payoutComputeSigner: Address;
+    batchPayoutTokenAccount: Address;
+    userPayoutTokenAccount: Address;
+    batchPayoutBalanceValue: Address;
+    userPayoutBalanceValue: Address;
+    batchPayoutTransferredValue: Address;
+    zamaEventAuthority: Address;
+    hostConfig: Address;
+    confidentialTokenEventAuthority: Address;
+  }): Promise<Instruction>;
+  /** The vault alias of the SDK's `userDecrypt` action; the context mirrors the decrypt client's own call shape. */
+  decryptPosition(
+    context: { chain: unknown; runtime: unknown; options: unknown },
+    signer: unknown,
+    parameters: {
+      handles: readonly `0x${string}`[];
+      allowedAclDomainKeys: readonly `0x${string}`[];
+      contextId: Uint8Array;
+      aclValueKey: Uint8Array;
+      options?: { timeout?: number };
+    },
+  ): Promise<readonly { value: bigint | number | boolean | string }[]>;
   settleBatch(
     chain: unknown,
     proofConfig: { proofServiceUrl: string },
@@ -204,8 +263,8 @@ type VaultDepositArcSurface = {
   CONFIDENTIAL_BATCHER_PROGRAM_ADDRESS: Address;
 };
 
-/** The SDK encrypt surface the join leg drives (untyped: runtime dynamic-import seam). */
-type SolanaEncryptSurface = {
+/** The SDK solana surface the join + decrypt legs drive (untyped: runtime dynamic-import seam). */
+type SolanaSdkSurface = {
   setFhevmRuntimeConfig(config: { auth: { type: "ApiKeyHeader"; value: string } }): void;
   defineFhevmSolanaChain(definition: {
     id: bigint;
@@ -221,6 +280,18 @@ type SolanaEncryptSurface = {
   };
   /** Settle's certificate leg consumes exactly `runtime.config.auth` (set via setFhevmRuntimeConfig). */
   createFhevmPublicDecryptClient(parameters: { chain: unknown }): { runtime: unknown };
+  /** Wraps a raw 32-byte ed25519 seed into the SDK's user-decrypt signer identity. */
+  solanaSignerFromSecretKey(secretKey: Uint8Array): unknown;
+  /**
+   * `ready` resolves once the TKMS decrypt WASM is initialized (loaded from local package assets,
+   * no fetch); `runtime`/`options` are exactly the context the client's own decorator would pass
+   * to `userDecrypt`, which `decryptPosition` aliases.
+   */
+  createFhevmDecryptClient(parameters: { chain: unknown; signer: unknown }): {
+    runtime: unknown;
+    options: unknown;
+    ready: Promise<unknown>;
+  };
 };
 
 const loadVaultModule = async (): Promise<VaultDepositArcSurface> => {
@@ -228,9 +299,9 @@ const loadVaultModule = async (): Promise<VaultDepositArcSurface> => {
   return (await import(vaultModule)) as unknown as VaultDepositArcSurface;
 };
 
-const loadSolanaSdkModule = async (): Promise<SolanaEncryptSurface> => {
+const loadSolanaSdkModule = async (): Promise<SolanaSdkSurface> => {
   const solanaModule = "@fhevm/sdk/solana";
-  return (await import(solanaModule)) as unknown as SolanaEncryptSurface;
+  return (await import(solanaModule)) as unknown as SolanaSdkSurface;
 };
 
 /** Loads a 64-byte Solana keypair file into a kit `TransactionSigner`. */
@@ -248,7 +319,7 @@ const COMPUTE_SIGNER_SEED = new TextEncoder().encode("fhe-compute");
 const asBytes32Hex = (value: Address): `0x${string}` =>
   `0x${Buffer.from(addressBytes(value)).toString("hex")}` as `0x${string}`;
 
-/** An unsigned decimal string as big-endian bytes32 — the shape the settle certificate's contextId takes. */
+/** An unsigned decimal string as big-endian bytes32 — the shape the settle certificate's and the user-decrypt request's contextId take. */
 const asBytes32BigEndian = (decimal: string): Uint8Array => {
   const bytes = new Uint8Array(32);
   let value = BigInt(decimal);
@@ -267,7 +338,7 @@ const runsDemoScenarios = process.env.RUN_DEMO_SCENARIOS === "1";
 
 describe.skipIf(!runsDemoScenarios)("solana deposit-arc scenario", () => {
   test(
-    "deposit arc (wrap + join + dispatch + settle legs): alice funds, initializes cUSDC, wraps mock USDC, and joins the pending deposit batch with a coprocessor-attested amount; the keeper dispatches the aged batch and settles it with the KMS burn certificate",
+    "deposit arc (full arc): alice funds, initializes her confidential accounts, wraps mock USDC, and joins the pending deposit batch with a coprocessor-attested amount; the keeper dispatches the aged batch and settles it with the KMS burn certificate; alice claims her payout and user-decrypts the exact amount",
     async () => {
       const { env, config } = await loadDemoEnv();
 
@@ -280,10 +351,15 @@ describe.skipIf(!runsDemoScenarios)("solana deposit-arc scenario", () => {
       const alicePersona = personas.roles.alice;
       if (!alicePersona) throw new Error("alice persona did not load");
 
-      // The wrap + join are signed by alice, dispatch + settle by the keeper; load both keypairs as
-      // signers and prove they are the pubkeys the seed published, so a keypair/config drift fails
-      // here rather than on-chain.
-      const alice = await loadSigner(DEMO_KEYPAIRS.alice);
+      // Wrap + join + claim + decrypt are signed by alice, dispatch + settle by the keeper; load
+      // both keypairs as signers and prove they are the pubkeys the seed published, so a
+      // keypair/config drift fails here rather than on-chain. Alice's raw bytes are kept: the
+      // decrypt leg signs the user-decrypt request with her 32-byte ed25519 seed (the first half of
+      // the 64-byte keypair file) through the SDK's own signer wrapper.
+      const aliceKeypairBytes = Uint8Array.from(
+        JSON.parse(await fs.readFile(DEMO_KEYPAIRS.alice, "utf8")) as number[],
+      );
+      const alice = await createKeyPairSignerFromBytes(aliceKeypairBytes);
       if (alice.address !== config.personas.alice) {
         throw new Error(`alice keypair ${alice.address} does not match seeded persona ${config.personas.alice}`);
       }
@@ -349,12 +425,20 @@ describe.skipIf(!runsDemoScenarios)("solana deposit-arc scenario", () => {
 
       const vault = await loadVaultModule();
 
-      // Step 2: create alice's confidential token account on the join mint (cUSDC). initialize +
-      // wrap both revert on failure, so their confirmation IS the assertion for these legs.
+      // Step 2: create alice's confidential token accounts — cUSDC (join mint) for the wrap, and
+      // cShares (payout mint) for the claim leg: claim.rs requires the user's payout account to
+      // ALREADY exist (nothing creates it on the fly), so it is provisioned here with the same
+      // one-time initialization the join mint gets, keeping the claim leg a pure claim. initialize
+      // + wrap both revert on failure, so their confirmation IS the assertion for these legs.
       await send(alice, [
         await vault.buildInitializeTokenAccountInstruction({
           owner: alice,
           mint: config.mints.joinConfidential,
+          hostConfig: config.hostConfig,
+        }),
+        await vault.buildInitializeTokenAccountInstruction({
+          owner: alice,
+          mint: config.mints.payoutConfidential,
           hostConfig: config.hostConfig,
         }),
       ]);
@@ -625,6 +709,111 @@ describe.skipIf(!runsDemoScenarios)("solana deposit-arc scenario", () => {
       expect(batchAfterSettle.addresses.batch).toBe(batch);
       expect(batchAfterSettle.state.totalJoined).toBe(wrapBaseUnits);
       expect(batchAfterSettle.state.payoutReceived > 0n).toBe(true);
+
+      // Step 15: claim. On-chain claims are permissionless pulls per join record (the payout can
+      // only land in the record's user), but the demo has alice play her own: she signs, pays the
+      // claim lineage + transfer output rent, and receives the cShares in the account initialized
+      // back in step 2. One MulDiv eval computes her exact proportional payout
+      // (encrypted(joined) x payoutReceived / totalJoined) and a confidential transfer moves it
+      // from the batch's payout account to hers. Every account is derived from the seeded roots,
+      // same as join and dispatch.
+      const payoutMint = config.mints.payoutConfidential;
+      const [payoutComputeSigner] = await getProgramDerivedAddress({
+        programAddress: vault.CONFIDENTIAL_TOKEN_PROGRAM_ADDRESS,
+        seeds: [COMPUTE_SIGNER_SEED, addressBytes(payoutMint)],
+      });
+      const batchPayoutTokenAccount = await vault.tokenAccountAddress(payoutMint, batchAuthority);
+      const alicePayoutTokenAccount = await vault.tokenAccountAddress(payoutMint, alice.address);
+      const claimLineage = await vault.claimAmountLineage(batch, batchAuthority, alice.address);
+      console.log(`deposit-arc claim: alice claiming her payout from batch ${batchBeforeJoin.index} (${batch})...`);
+      await send(
+        alice,
+        [
+          await vault.buildClaimInstruction({
+            payer: alice,
+            user: alice.address,
+            batcher: roots.batcher,
+            batch,
+            pendingJoinValue: (await vault.pendingJoinLineage(batch, batchAuthority, alice.address)).encryptedValueAddress,
+            claimAmountValue: claimLineage.encryptedValueAddress,
+            payoutConfidentialMint: payoutMint,
+            payoutComputeSigner,
+            batchPayoutTokenAccount,
+            userPayoutTokenAccount: alicePayoutTokenAccount,
+            batchPayoutBalanceValue: await encryptedValueAddress(hostProgram, payoutMint, batchPayoutTokenAccount, BALANCE_LABEL),
+            userPayoutBalanceValue: await encryptedValueAddress(hostProgram, payoutMint, alicePayoutTokenAccount, BALANCE_LABEL),
+            batchPayoutTransferredValue: await encryptedValueAddress(
+              hostProgram,
+              payoutMint,
+              batchPayoutTokenAccount,
+              TRANSFERRED_AMOUNT_LABEL,
+            ),
+            zamaEventAuthority: await eventAuthorityAddress(hostProgram),
+            hostConfig: config.hostConfig,
+            confidentialTokenEventAuthority: await eventAuthorityAddress(config.programs.token),
+          }),
+        ],
+        CLAIM_COMPUTE_UNIT_LIMIT,
+      );
+
+      // Step 16: on-chain assertions for the claim leg. The join record's claimed flag is the
+      // program's own "this claim executed" marker, and the claim-amount lineage is the account the
+      // claim eval created for alice's payout handle. The payout VALUE is encrypted on-chain by
+      // design, so existence + the flag are the honest cheap checks here; reading the value is the
+      // decrypt leg's job.
+      console.log("deposit-arc claim: asserting claimed flag + claim lineage on-chain...");
+      // `send` confirmed at `confirmed`; read the record at the same commitment.
+      const joinRecordAfterClaim = await rpc
+        .getAccountInfo(await vault.deriveJoinRecordAddress(batch, alice.address), {
+          encoding: "base64",
+          commitment: "confirmed",
+        })
+        .send();
+      expect(joinRecordAfterClaim.value).not.toBeNull();
+      const joinRecordData = Buffer.from(joinRecordAfterClaim.value?.data[0] ?? "", "base64");
+      expect(joinRecordData[JOIN_RECORD_CLAIMED_OFFSET]).toBe(1);
+      // getEncryptedValueState throws while the account is missing and reads at the RPC default
+      // `finalized`; until() swallows probe errors until its deadline, so poll it.
+      const claimValueState = await until(
+        async () => {
+          const state = await vault.getEncryptedValueState(rpc, claimLineage.encryptedValueAddress);
+          return state.currentHandle.some((byte) => byte !== 0) ? state : false;
+        },
+        { description: "claim-amount lineage exists with a nonzero current handle", timeoutMs: 60_000 },
+      );
+
+      // Step 17: decrypt. claim.rs grants `owner(alice)` on the claim-amount lineage — "the user
+      // decrypts their claimed amount" — so alice user-decrypts her fresh claim handle through the
+      // SDK's KMS path (`decryptPosition`): an ed25519-signed request to the relayer, signcrypted
+      // KMS shares back, de-signcrypted in the SDK against a per-request transport key. The TKMS
+      // WASM loads from local package assets, so this leg needs no minio fetch rewrite (verified
+      // against the SDK's userDecrypt action + decrypt module init). The decrypt CONTEXT is
+      // assembled from the decrypt client's public surface exactly as its own decorator would.
+      console.log("deposit-arc decrypt: alice user-decrypting her claimed payout (KMS roundtrip)...");
+      const aliceDecryptSigner = solanaSdk.solanaSignerFromSecretKey(aliceKeypairBytes.slice(0, 32));
+      const decryptClient = solanaSdk.createFhevmDecryptClient({ chain, signer: aliceDecryptSigner });
+      await decryptClient.ready;
+      const clearValues = await vault.decryptPosition(
+        { chain, runtime: decryptClient.runtime, options: decryptClient.options },
+        aliceDecryptSigner,
+        {
+          handles: [`0x${Buffer.from(claimValueState.currentHandle).toString("hex")}` as `0x${string}`],
+          // Batcher lineages live in the BATCH's ACL domain (their PDA seeds hang off the batch
+          // address), so the allowed domain key here is the batch — not the chain default (the
+          // join mint's domain, which serves the token-account lineages).
+          allowedAclDomainKeys: [asBytes32Hex(batch)],
+          contextId: asBytes32BigEndian(config.userDecryptContextId),
+          aclValueKey: claimLineage.aclValueKey,
+          options: { timeout: DECRYPT_ROUNDTRIP_TIMEOUT_MS },
+        },
+      );
+
+      // Alice is the batch's sole joiner, so totalJoined == her joined amount and the claim's
+      // floor(joined x payoutReceived / totalJoined) is EXACTLY payoutReceived: assert equality,
+      // not just "> 0" — this is the one place the arc proves the encrypted plumbing carried the
+      // right number end to end.
+      expect(clearValues.length).toBe(1);
+      expect(BigInt(clearValues[0].value)).toBe(batchAfterSettle.state.payoutReceived);
     },
     SCENARIO_TIMEOUT_MS,
   );

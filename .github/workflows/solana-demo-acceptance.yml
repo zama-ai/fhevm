@@ -5,10 +5,8 @@ name: solana-demo-acceptance
 # solana-e2e.yml does, then exercises the demo-specific criteria that cannot be checked offline:
 #   - demo-up.sh bring-up: deploy the two demo programs, re-seed fresh, write the config JSON (when a
 #     stack is already up it re-seeds against it rather than re-bringing it up — see demo-up.sh)
-#   - deposit-arc WRAP-LEG smoke (bun run demo:smoke): the first live-cluster exercise of the vault
-#     forward path (fund -> init cUSDC -> wrap), hard-gated
-#   - deposit-arc BOUNDARY (bun run demo:smoke-boundary): documents the not-yet-wired
-#     join->settle->claim->decrypt continuation as an asserted fact (non-gating)
+#   - deposit-arc smoke (bun run demo:smoke): the live-cluster exercise of the vault's full forward
+#     path (fund -> init accounts -> wrap -> join -> dispatch -> settle -> claim -> decrypt), hard-gated
 #   - browser-reality: CORS preflight against relayer (with RELAYER_PERMISSIVE_CORS set) + proof
 #     service, and the faucet endpoints callable from a browser origin
 # Any hard-gated leg fails the job non-zero; the same failure logs solana-e2e.yml collects are uploaded.
@@ -48,7 +46,7 @@ jobs:
       SOLANA_PROOF_PERMISSIVE_CORS: "1"
       DEMO_ORIGIN: "http://localhost:5173"
       # Absolute demo-config path so every producer/consumer agrees regardless of the step's working
-      # directory (the seed runs from test-suite/fhevm, the smoke/boundary from there too, but the
+      # directory (the seed runs from test-suite/fhevm, the smoke from there too, but the
       # path resolves to the same repo-root file demo-up.sh advertises). See demo/config.ts.
       DEMO_CONFIG_PATH: ${{ github.workspace }}/.fhevm/runtime/solana-demo.json
     steps:
@@ -161,21 +159,13 @@ jobs:
           done
           echo "faucet did not become healthy" >&2; cat /tmp/solana-demo-faucet.log >&2; exit 1
 
-      - name: Deposit-arc WRAP-LEG smoke (bun run demo:smoke) — live vault wrap via the SDK, hard gate
+      - name: Deposit-arc smoke (bun run demo:smoke) — full arc live via the SDK, hard gate
         working-directory: test-suite/fhevm
         run: bun run demo:smoke
 
-      - name: Deposit-arc BOUNDARY (bun run demo:smoke-boundary) — documents the unwired continuation
-        # Non-gating on the arc continuation itself: it asserts the downstream actions + config roots
-        # exist and logs the exact join/settle plumbing still to wire. Runs regardless of the smoke's
-        # outcome so the boundary is always recorded; a genuine assertion failure here still fails.
-        if: ${{ always() }}
-        working-directory: test-suite/fhevm
-        run: bun run demo:smoke-boundary
-
       - name: Browser-reality checks (CORS preflight + faucet endpoints) — acceptance #5
         # Runs regardless of the smoke's outcome (browser-reality is an independent acceptance
-        # criterion; a wrap-leg failure must not mask a CORS regression).
+        # criterion; an arc failure must not mask a CORS regression).
         if: ${{ always() }}
         working-directory: test-suite/fhevm
         # fetch() OPTIONS preflights (relayer with RELAYER_PERMISSIVE_CORS on, proof service, faucet)
