@@ -156,28 +156,6 @@ contract ProtocolConfigTest is HostContractsDeployerTestUtils {
         protocolConfig.defineNewKmsContextAndEpoch(nodes, thresholds, softwareVersion, pcrValues);
     }
 
-    function _confirmEpoch(uint256 contextId, uint256 epochId, uint256 pk, address txSender) internal {
-        // Supply one self-signed key attestation with deterministic constant material so both signers of a
-        // two-node context produce the identical dataHash and reach unanimity. The keyId/prepKeygenId need not
-        // exist in KMSGeneration: `_requireExpectedSigner` only checks the signature recovers to the signer.
-        bytes memory extraData = abi.encodePacked(uint8(0x02), contextId, epochId);
-        uint256 keyId = KEY_COUNTER_BASE + 1;
-        uint256 prepKeygenId = _prepKeygenIdForKeyId(keyId);
-        IKMSGeneration.KeyDigest[] memory keyDigests = _mockKeyDigests();
-
-        IProtocolConfig.EpochKeyResult[] memory keys = new IProtocolConfig.EpochKeyResult[](1);
-        keys[0] = IProtocolConfig.EpochKeyResult({
-            prepKeygenId: prepKeygenId,
-            keyId: keyId,
-            keyDigests: keyDigests,
-            signature: _computeSignature(pk, _hashProtocolConfigKeygen(prepKeygenId, keyId, keyDigests, extraData))
-        });
-        IProtocolConfig.EpochCrsResult[] memory crsList = new IProtocolConfig.EpochCrsResult[](0);
-
-        vm.prank(txSender);
-        protocolConfig.confirmEpochActivation(epochId, keys, crsList);
-    }
-
     function _confirmEpochWithMaterial(
         uint256 contextId,
         uint256 epochId,
@@ -243,13 +221,13 @@ contract ProtocolConfigTest is HostContractsDeployerTestUtils {
     function _activatePendingContextWithOneKmsNode(uint256 contextId, uint256 epochId) internal {
         vm.prank(kmsTxSender0);
         protocolConfig.confirmKmsContextCreation(contextId);
-        _confirmEpoch(contextId, epochId, kmsPk0, kmsTxSender0);
+        _confirmEpochActivation(contextId, epochId, kmsPk0, kmsTxSender0);
     }
 
     function _activatePendingContextWithTwoKmsNodes(uint256 contextId, uint256 epochId) internal {
         _confirmContextCreationWithTwoSigners(contextId);
-        _confirmEpoch(contextId, epochId, kmsPk0, kmsTxSender0);
-        _confirmEpoch(contextId, epochId, kmsPk1, kmsTxSender1);
+        _confirmEpochActivation(contextId, epochId, kmsPk0, kmsTxSender0);
+        _confirmEpochActivation(contextId, epochId, kmsPk1, kmsTxSender1);
     }
 
     function _completeKmsGenerationMaterial() internal returns (uint256 keyId, uint256 crsId) {
@@ -1577,7 +1555,12 @@ contract ProtocolConfigTest is HostContractsDeployerTestUtils {
             keyDigests: replayKeyDigests,
             signature: _computeSignature(
                 kmsPk0,
-                _hashProtocolConfigKeygen(PREP_KEYGEN_COUNTER_BASE + 1, completedKeyId, replayKeyDigests, replayExtraData)
+                _hashProtocolConfigKeygen(
+                    PREP_KEYGEN_COUNTER_BASE + 1,
+                    completedKeyId,
+                    replayKeyDigests,
+                    replayExtraData
+                )
             )
         });
         IProtocolConfig.EpochCrsResult[] memory replayCrsList = new IProtocolConfig.EpochCrsResult[](0);
