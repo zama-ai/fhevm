@@ -284,6 +284,11 @@ interface IProtocolConfig {
     /// @param kmsContextId The context ID.
     error KmsContextNotCreated(uint256 kmsContextId);
 
+    /// @notice A context switch or epoch rotation is still settling; settle it before opening another.
+    /// @param kmsContextId The latest-issued context ID.
+    /// @param epochId The latest-issued epoch ID.
+    error KmsLifecycleOperationInFlight(uint256 kmsContextId, uint256 epochId);
+
     /// @notice The caller cannot confirm creation for the KMS context.
     /// @param caller The unauthorized caller.
     /// @param kmsContextId The context ID.
