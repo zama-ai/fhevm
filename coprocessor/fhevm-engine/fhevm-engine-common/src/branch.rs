@@ -91,6 +91,27 @@ pub async fn read_settled_height(
     .unwrap_or(INITIAL_SETTLED_HEIGHT))
 }
 
+/// Unix epoch seconds of the last settlement-frontier advance, or `None`
+/// until the chain's first explicit settlement row exists. `updated_at` is a
+/// timezone-naive column written with `CURRENT_TIMESTAMP`; deployments run
+/// UTC, matching the assumption made for every other timestamp column.
+pub async fn read_settled_height_updated_epoch(
+    tx: &mut Transaction<'_, Postgres>,
+    chain_id: i64,
+) -> Result<Option<i64>, sqlx::Error> {
+    Ok(sqlx::query_scalar!(
+        r#"
+        SELECT updated_at AS "updated_at!"
+         FROM coprocessor_settlement
+         WHERE chain_id = $1
+        "#,
+        chain_id,
+    )
+    .fetch_optional(tx.as_mut())
+    .await?
+    .map(|updated_at| updated_at.assume_utc().unix_timestamp()))
+}
+
 pub async fn advance_settled_height(
     tx: &mut Transaction<'_, Postgres>,
     chain_id: i64,
