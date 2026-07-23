@@ -81,7 +81,7 @@ Global options such as `-n devnet`, `--rpc-url`, and `--relayer-url` can be plac
 | `delegated-user-decrypt direct`      | Delegate decrypts existing `--handle` values from any contract (`--contract` sets the ACL pairing, default FHETest).      | Delegate; delegator only if creating ACL permission |
 | `delegated-user-decrypt fresh`       | Delegator creates a private handle; delegate gets ACL permission and decrypts it.                                         | Delegate and delegator                              |
 | `delegated-user-decrypt stored`      | Delegate decrypts a delegator's stored FHETest handles for `--type` slots.                                                | Delegate; delegator only if creating ACL permission |
-| `relayer-result verify-user-decrypt` | Decrypts and compares a relayer user-decrypt GET response using a saved validation artifact.                              | No wallet; needs RPC                                |
+| `verify-user-decrypt`                | Decrypts and compares a relayer user-decrypt GET response using a saved validation artifact; derives the GET URL from the artifact. | No wallet; needs RPC                                |
 | `fhe-test info`                      | Shows resolved network, host chain, relayer, and FHETest metadata.                                                        | No                                                  |
 | `fhe-test inspect`                   | Reads FHETest state for a raw handle, an explicit account/type slot, or the wallet's default account/type slot.           | Only when using the wallet default                  |
 | `fhe-test init`                      | Creates public FHETest handles for one, several, or all supported types.                                                  | Yes                                                 |
@@ -242,10 +242,16 @@ Use a validation artifact from `user-decrypt` or `delegated-user-decrypt` to
 verify a terminal relayer GET response later:
 
 ```bash
-fhevm-sdk relayer-result verify-user-decrypt \
-  --url https://relayer.example/v2/user-decrypt/<job-id> \
-  --artifact ./artifacts/user-decrypt.json
+fhevm-sdk verify-user-decrypt --artifact ./artifacts/user-decrypt.json
 ```
+
+The GET URL is derived from the artifact: the relayer base URL from its
+`network`, the path segment from its `flow` (`v2/user-decrypt` or
+`v2/delegated-user-decrypt`), and the job id from its `relayer.jobId`. Override
+the base with the global `--relayer-url`, the job with `--job-id <id>`, or the
+whole URL with `--url <full-url>` for exotic relayers. When
+`ZAMA_FHEVM_API_KEY` is set it is sent as the `x-api-key` GET header (devnet is
+keyless; mainnet requires it).
 
 The verifier fetches the GET URL, restores the transport key pair, validates the
 saved permit, decrypts the KMS signcrypted shares, and compares plaintexts when

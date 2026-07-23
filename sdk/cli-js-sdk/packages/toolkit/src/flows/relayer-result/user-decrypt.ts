@@ -5,7 +5,7 @@ import {
 } from "@fhevm/sdk/actions/chain";
 import type { Hex } from "viem";
 
-import { createClientContext, type ClientOptions } from "../../config";
+import { createClientContext, resolveChain, type ClientOptions } from "../../config";
 import type {
   DecryptedValue,
   UserDecryptValidationArtifact,
@@ -35,14 +35,61 @@ type DecryptKmsSignedcryptedShares = (
   },
 ) => Promise<readonly unknown[]>;
 
+/** Auth header provider invoked per GET; must not be logged or persisted. */
+export type AuthHeaders = () => Record<string, string>;
+
 export type VerifyUserDecryptResultOptions = Pick<
   ClientOptions,
   "rpcUrl"
 > &
+  BuildUserDecryptResultUrlOptions &
   Readonly<{
-    url: string;
     artifact: UserDecryptValidationArtifact;
+    authHeaders?: AuthHeaders;
   }>;
+
+/** Overrides for deriving the relayer GET result URL from an artifact. */
+export type BuildUserDecryptResultUrlOptions = Readonly<{
+  /** Full URL override; wins over every derived component. */
+  url?: string;
+  /** Relayer base URL override; falls back to the artifact network config. */
+  relayerUrl?: string;
+  /** Job id override; falls back to the artifact's relayer.jobId. */
+  jobId?: string;
+}>;
+
+const FLOW_RESULT_PATHS = {
+  "user-decrypt": "v2/user-decrypt",
+  "delegated-user-decrypt": "v2/delegated-user-decrypt",
+} as const satisfies Record<UserDecryptValidationArtifact["flow"], string>;
+
+/**
+ * Derives the relayer GET result URL for a user-decrypt artifact.
+ *
+ * `url` short-circuits everything for exotic relayers. Otherwise the base comes
+ * from `relayerUrl` or the artifact network config, the path segment from the
+ * artifact flow, and the job id from `jobId` or the artifact. The job id is the
+ * only binding identifier for a relayer job.
+ */
+export const buildUserDecryptResultUrl = (
+  artifact: UserDecryptValidationArtifact,
+  options: BuildUserDecryptResultUrlOptions = {},
+): string => {
+  if (options.url) return options.url;
+
+  const jobId = options.jobId ?? artifact.relayer?.jobId;
+  if (!jobId) {
+    throw new Error(
+      "Artifact has no relayer.jobId; pass --job-id <id> or --url <full-url> to target the relayer result.",
+    );
+  }
+
+  const base = resolveChain({
+    network: artifact.network,
+    relayerUrl: options.relayerUrl,
+  }).fhevm.relayerUrl;
+  return `${base}/${FLOW_RESULT_PATHS[artifact.flow]}/${encodeURIComponent(jobId)}`;
+};
 
 type VerifyUserDecryptSharesOptions = Pick<
   ClientOptions,
@@ -67,6 +114,9 @@ export type VerifyUserDecryptSharesResult = Readonly<{
 export type VerifyUserDecryptResult = Readonly<{
   url: string;
   httpStatus: number;
+  /** Binding relayer job identity the result was fetched for. */
+  jobId?: string;
+  /** Request-scoped provenance echoed by the relayer; informational only. */
   requestId?: string;
   status?: string;
 }> &
@@ -315,7 +365,13 @@ const verifyUserDecryptShares = async (
 export const verifyUserDecryptResult = async (
   options: VerifyUserDecryptResultOptions,
 ): Promise<VerifyUserDecryptResult> => {
-  const response = await fetch(options.url);
+  const url = buildUserDecryptResultUrl(options.artifact, {
+    url: options.url,
+    relayerUrl: options.relayerUrl,
+    jobId: options.jobId,
+  });
+  const headers = options.authHeaders?.();
+  const response = await fetch(url, headers ? { headers } : undefined);
   const body = (await response.json()) as unknown;
   const envelope = asOptionalRecord(body);
   if (!response.ok) {
@@ -333,8 +389,9 @@ export const verifyUserDecryptResult = async (
 
   return {
     ...verification,
-    url: options.url,
+    url,
     httpStatus: response.status,
+    jobId: options.jobId ?? options.artifact.relayer?.jobId,
     requestId:
       typeof envelope?.requestId === "string" ? envelope.requestId : undefined,
     status: typeof envelope?.status === "string" ? envelope.status : undefined,

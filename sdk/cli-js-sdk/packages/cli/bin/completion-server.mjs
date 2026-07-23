@@ -181,17 +181,11 @@ const root = command(
         ]),
       ],
     ),
-    command(
-      "relayer-result",
-      "Validate relayer GET results using saved request artifacts",
-      [],
-      [
-        command("verify-user-decrypt", "Decrypt and compare a user-decrypt GET result", [
-          opt("--url", "relayer GET result URL"),
-          opt("--artifact", "sensitive validation artifact written by user-decrypt direct --artifact"),
-        ]),
-      ],
-    ),
+    command("verify-user-decrypt", "Decrypt and compare a relayer user-decrypt GET result using a saved validation artifact", [
+      opt("--artifact", "sensitive validation artifact written by user-decrypt/delegated-user-decrypt --artifact"),
+      opt("--job-id", "relayer job id override; defaults to the artifact's relayer.jobId"),
+      opt("--url", "full relayer GET result URL override; wins over the derived URL"),
+    ]),
     command(
       "fhe-test",
       "FHETest contract utilities",

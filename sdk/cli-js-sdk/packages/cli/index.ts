@@ -10,9 +10,9 @@ import { registerDelegatedUserDecryptCommands } from "./src/cli/commands/delegat
 import { registerFheTestCommands } from "./src/cli/commands/fhe-test";
 import { registerInputProofCommand } from "./src/cli/commands/input-proof";
 import { registerPublicDecryptCommands } from "./src/cli/commands/public-decrypt";
-import { registerRelayerResultCommands } from "./src/cli/commands/relayer-result";
 import { registerTokenCommands } from "./src/cli/commands/token";
 import { registerUserDecryptCommands } from "./src/cli/commands/user-decrypt";
+import { registerVerifyUserDecryptCommand } from "./src/cli/commands/verify-user-decrypt";
 import { DEFAULT_NETWORK, NETWORKS } from "@cli-fhevm-sdk/toolkit/types";
 
 const program = new Command()
@@ -34,7 +34,7 @@ registerInputProofCommand(program);
 registerPublicDecryptCommands(program);
 registerUserDecryptCommands(program);
 registerDelegatedUserDecryptCommands(program);
-registerRelayerResultCommands(program);
+registerVerifyUserDecryptCommand(program);
 registerFheTestCommands(program);
 registerTokenCommands(program);
 registerCompletionCommands(program);
