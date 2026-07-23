@@ -99,15 +99,16 @@ jobs:
 
       - name: Setup helm
         run: |
-          curl https://raw.githubusercontent.com/helm/helm/main/scripts/get-helm-3 | bash
+          curl -fsSL https://raw.githubusercontent.com/helm/helm/main/scripts/get-helm-3 | bash
 
       - name: Setup kubectl
-        uses: azure/setup-kubectl@776406bce94f63e41d621b960d78ee25c8b76ede
+        uses: azure/setup-kubectl@776406bce94f63e41d621b960d78ee25c8b76ede # v4.0.1
 
       - name: Configure kubeconfig for the Tailscale cluster
         run: tailscale configure kubeconfig "${TAILSCALE_HOSTNAME}"
 
       - name: Destroy preview namespace
+        id: destroy
         run: |
           # Guard against a typo'd dispatch input nuking an unrelated namespace:
           # all preview envs are fhevm-ci-*, so refuse anything else.
@@ -116,8 +117,12 @@ jobs:
             exit 1
           fi
 
+          # `closed` fires on every PR, most of which never had a preview env.
+          # Emit deleted=false and no-op so the success comment/summary (gated on
+          # deleted == 'true') doesn't spam unrelated PRs with a false "torn down".
           if ! kubectl get namespace "${NAMESPACE}" > /dev/null 2>&1; then
             echo "Namespace ${NAMESPACE} does not exist, nothing to destroy."
+            echo "deleted=false" >> "$GITHUB_OUTPUT"
             exit 0
           fi
 
@@ -136,13 +141,16 @@ jobs:
             echo "::error::Namespace ${NAMESPACE} did not finish terminating within 5m (likely stuck on Crossplane finalizers releasing AWS resources) - check and clean up manually."
             exit 1
           fi
+          echo "deleted=true" >> "$GITHUB_OUTPUT"
 
       # Report success and failure separately so we never tell the PR an env is
       # "torn down" when teardown actually failed (a false all-clear masks leaked
       # Crossplane-managed AWS resources - S3 buckets, enclave nodegroups).
       - name: Comment teardown success on PR
         # No PR to comment on for workflow_dispatch - result goes to the summary.
-        if: success() && github.event_name == 'pull_request'
+        # deleted == 'true' only when a namespace actually existed and was torn
+        # down, so we never comment on the many closed PRs that had no env.
+        if: success() && github.event_name == 'pull_request' && steps.destroy.outputs.deleted == 'true'
         uses: peter-evans/create-or-update-comment@e8674b075228eee787fea43ef493e45ece1004c9 # v5.0.0
         with:
           issue-number: ${{ github.event.pull_request.number }}
@@ -158,9 +166,14 @@ jobs:
             :warning: **Teardown of e2e preview environment (namespace `${{ env.NAMESPACE }}`) FAILED.** Crossplane-managed AWS resources (S3 buckets, enclave nodegroups) may still be leaking - see the [workflow run](${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}) and clean up manually.
 
       - name: Write teardown success to summary
-        if: success() && github.event_name == 'workflow_dispatch'
+        if: success() && github.event_name == 'workflow_dispatch' && steps.destroy.outputs.deleted == 'true'
         run: |
           echo ":broom: e2e preview environment (namespace \`${NAMESPACE}\`) teardown finished." >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Write no-op to summary
+        if: success() && github.event_name == 'workflow_dispatch' && steps.destroy.outputs.deleted != 'true'
+        run: |
+          echo ":information_source: Namespace \`${NAMESPACE}\` did not exist - nothing to tear down." >> "$GITHUB_STEP_SUMMARY"
 
       - name: Write teardown failure to summary
         if: failure() && github.event_name == 'workflow_dispatch'

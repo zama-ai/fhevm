@@ -41,10 +41,10 @@ runs:
     - name: Setup helm
       shell: bash
       run: |
-        curl https://raw.githubusercontent.com/helm/helm/main/scripts/get-helm-3 | bash
+        curl -fsSL https://raw.githubusercontent.com/helm/helm/main/scripts/get-helm-3 | bash
 
     - name: Setup kubectl
-      uses: azure/setup-kubectl@776406bce94f63e41d621b960d78ee25c8b76ede
+      uses: azure/setup-kubectl@776406bce94f63e41d621b960d78ee25c8b76ede # v4.0.1
 
     - name: Setup yq
       shell: bash

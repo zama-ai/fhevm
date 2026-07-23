@@ -14,8 +14,23 @@ module.exports = async ({ core, context }) => {
     ? context.sha.substring(0, 7)
     : context.payload.pull_request.head.sha.substring(0, 7);
 
-  // 'success' = this run built+pushed shortSha; else fall back to the pin.
-  const pick = (result, pinnedVersion) => (result === 'success' ? shortSha : pinnedVersion);
+  // Map a build job's result to the tag to deploy:
+  //   'success'                 -> the freshly built+pushed shortSha
+  //   'skipped' / '' / undefined -> the pinned version. Either this run didn't
+  //     build the component (build_images=false, or build_test_suite_only so the
+  //     other build jobs are skipped -> empty output) or its build path was
+  //     unchanged ('skipped') - falling back to the pin is correct.
+  //   'failure' / 'cancelled' / anything else -> FATAL. A genuinely failed build
+  //     must NOT silently fall back to the stale pinned image and deploy old code
+  //     under a green check; fail resolve-tags so the whole deploy is gated.
+  const pick = (result, pinnedVersion, component) => {
+    if (result === 'success') return shortSha;
+    if (result === undefined || result === '' || result === 'skipped') return pinnedVersion;
+    throw new Error(
+      `build for '${component}' did not succeed (result='${result}'); refusing to fall back to ` +
+        `the pinned image '${pinnedVersion}' and deploy stale code`,
+    );
+  };
 
   // Pinned version: env on pull_request, matching input on dispatch.
   const pinned = (envVar, dispatchInput) => (isDispatch ? dispatchInput : envVar);
@@ -27,22 +42,22 @@ module.exports = async ({ core, context }) => {
   const testSuitePin = pinned(env.TEST_SUITE_VERSION, inputs.test_suite_version);
 
   const tags = {
-    host_contracts: pick(needs['build-host-contracts'].outputs.build_result, hostContractsPin),
-    gateway_contracts: pick(needs['build-gateway-contracts'].outputs.build_result, gatewayContractsPin),
-    kms_connector_db_migration: pick(needs['build-kms-connector'].outputs.db_migration_build_result, kmsConnectorPin),
-    kms_connector_gw_listener: pick(needs['build-kms-connector'].outputs.gw_listener_build_result, kmsConnectorPin),
-    kms_connector_kms_worker: pick(needs['build-kms-connector'].outputs.kms_worker_build_result, kmsConnectorPin),
-    kms_connector_tx_sender: pick(needs['build-kms-connector'].outputs.tx_sender_build_result, kmsConnectorPin),
-    coprocessor_db_migration: pick(needs['build-coprocessor'].outputs.db_migration_build_result, coprocessorPin),
-    coprocessor_gw_listener: pick(needs['build-coprocessor'].outputs.gw_listener_build_result, coprocessorPin),
-    coprocessor_host_listener: pick(needs['build-coprocessor'].outputs.host_listener_build_result, coprocessorPin),
-    coprocessor_sns_worker: pick(needs['build-coprocessor'].outputs.sns_worker_build_result, coprocessorPin),
-    coprocessor_tfhe_worker: pick(needs['build-coprocessor'].outputs.tfhe_worker_build_result, coprocessorPin),
-    coprocessor_tx_sender: pick(needs['build-coprocessor'].outputs.tx_sender_build_result, coprocessorPin),
-    coprocessor_zkproof_worker: pick(needs['build-coprocessor'].outputs.zkproof_worker_build_result, coprocessorPin),
-    relayer_migrate: pick(needs['build-relayer'].outputs.relayer_migrate_build_result, relayerPin),
-    relayer: pick(needs['build-relayer'].outputs.relayer_build_result, relayerPin),
-    test_suite: pick(needs['build-test-suite'].outputs.build_result, testSuitePin),
+    host_contracts: pick(needs['build-host-contracts'].outputs.build_result, hostContractsPin, 'host-contracts'),
+    gateway_contracts: pick(needs['build-gateway-contracts'].outputs.build_result, gatewayContractsPin, 'gateway-contracts'),
+    kms_connector_db_migration: pick(needs['build-kms-connector'].outputs.db_migration_build_result, kmsConnectorPin, 'kms-connector/db-migration'),
+    kms_connector_gw_listener: pick(needs['build-kms-connector'].outputs.gw_listener_build_result, kmsConnectorPin, 'kms-connector/gw-listener'),
+    kms_connector_kms_worker: pick(needs['build-kms-connector'].outputs.kms_worker_build_result, kmsConnectorPin, 'kms-connector/kms-worker'),
+    kms_connector_tx_sender: pick(needs['build-kms-connector'].outputs.tx_sender_build_result, kmsConnectorPin, 'kms-connector/tx-sender'),
+    coprocessor_db_migration: pick(needs['build-coprocessor'].outputs.db_migration_build_result, coprocessorPin, 'coprocessor/db-migration'),
+    coprocessor_gw_listener: pick(needs['build-coprocessor'].outputs.gw_listener_build_result, coprocessorPin, 'coprocessor/gw-listener'),
+    coprocessor_host_listener: pick(needs['build-coprocessor'].outputs.host_listener_build_result, coprocessorPin, 'coprocessor/host-listener'),
+    coprocessor_sns_worker: pick(needs['build-coprocessor'].outputs.sns_worker_build_result, coprocessorPin, 'coprocessor/sns-worker'),
+    coprocessor_tfhe_worker: pick(needs['build-coprocessor'].outputs.tfhe_worker_build_result, coprocessorPin, 'coprocessor/tfhe-worker'),
+    coprocessor_tx_sender: pick(needs['build-coprocessor'].outputs.tx_sender_build_result, coprocessorPin, 'coprocessor/tx-sender'),
+    coprocessor_zkproof_worker: pick(needs['build-coprocessor'].outputs.zkproof_worker_build_result, coprocessorPin, 'coprocessor/zkproof-worker'),
+    relayer_migrate: pick(needs['build-relayer'].outputs.relayer_migrate_build_result, relayerPin, 'relayer/migrate'),
+    relayer: pick(needs['build-relayer'].outputs.relayer_build_result, relayerPin, 'relayer'),
+    test_suite: pick(needs['build-test-suite'].outputs.build_result, testSuitePin, 'test-suite'),
   };
 
   // Actor segment is the PR AUTHOR (pull_request.user.login), not github.actor,

@@ -97,7 +97,8 @@ name** it is run with, via `isLiveNetwork()`:
 ```ts
 // test-suite/e2e/test/network.ts
 const LIVE_NETWORKS = new Set(['devnet', 'devnetNative', 'zwsDev', 'sepolia', 'mainnet', 'polygonAmoy']);
-export const isLiveNetwork = () => LIVE_NETWORKS.has(network.name);
+export const activeNetworkName = () => network.name;
+export const isLiveNetwork = () => LIVE_NETWORKS.has(activeNetworkName());
 ```
 
 This preview runs the host chain as **`staging`** (chainId `12345`), which is **not**
@@ -136,16 +137,18 @@ Caveats if you ever do want the live path against anvil:
 
 ## Multi-coprocessor (`nb_coprocessor`) and shared Redis
 
-`preview-env-deploy.yml` takes an `nb_coprocessor` input (default `1`, mirroring
-`NB_KMS_CORE`) that deploys **N independent coprocessor stacks**. For party `i` (1..N):
+`preview-env-deploy.yml` takes an `nb_coprocessor` input (default `1`) that deploys
+**N independent coprocessor stacks** — the same per-party fan-out pattern used for the
+`nb_kms_core` KMS parties. For party `i` (1..N):
 
 - its own in-cluster Postgres `postgres-coprocessor-<i>`,
 - its own `coprocessor-infra-<i>` release → dedicated S3 bucket, IRSA ServiceAccount
   `coprocessor-<i>`, and bucket ConfigMap `coprocessor-<i>` (holding `S3_BUCKET_NAME`),
 - its own tx-sender/signer identity (derived from the shared Foundry/Hardhat mnemonic
-  at HD indices `20..20+N-1`, chosen to avoid the test signers `#0-4`, host owner `#9`,
-  and KMS tx-senders `#10..`), reused for both the on-chain registration and the
-  `txSender` wallet,
+  at HD indices `(10+nb_kms_core)..(10+nb_kms_core)+N-1` — starting right after the KMS
+  tx-sender range `#10..10+nb_kms_core-1` so the two never collide for any party count,
+  and clear of the test signers `#0-4` and host owner `#9`), reused for both the
+  on-chain registration and the `txSender` wallet,
 - a `coprocessor-<i>` chart release wired to all of the above.
 
 The gateway is told `NUM_COPROCESSORS=N` and `COPROCESSOR_THRESHOLD=floor(N/2)+1`, and
