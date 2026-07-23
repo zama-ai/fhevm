@@ -22,11 +22,13 @@ VALIDATOR_RPC="http://127.0.0.1:8899"
 # path — the mismatch the unified DEMO_CONFIG_PATH contract closes.
 export DEMO_CONFIG_PATH="${DEMO_CONFIG_PATH:-$ROOT/.fhevm/runtime/solana-demo.json}"
 
-# Opt-in permissive CORS for the demo dApp origin (relayer defaults OFF). Exported before bring-up so
-# the relayer compose service picks it up via its ${RELAYER_PERMISSIVE_CORS:-} passthrough (see
-# docker-compose/relayer-docker-compose.yml) and the container comes up with the demo CORS layer on;
+# Opt-in permissive CORS for the demo dApp origin (relayer + proof service default OFF). Exported
+# before bring-up so the relayer and solana-proof-service compose services pick these up via their
+# ${..._PERMISSIVE_CORS:-} passthroughs (see docker-compose/relayer-docker-compose.yml and
+# solana-proof-service-docker-compose.yml) and both containers come up with the demo CORS layer on;
 # harmless on a re-run against an already-running stack.
 export RELAYER_PERMISSIVE_CORS="${RELAYER_PERMISSIVE_CORS:-1}"
+export SOLANA_PROOF_PERMISSIVE_CORS="${SOLANA_PROOF_PERMISSIVE_CORS:-1}"
 
 if curl -s -m2 "$VALIDATOR_RPC" -X POST -H 'Content-Type: application/json' \
     -d '{"jsonrpc":"2.0","id":1,"method":"getHealth"}' 2>/dev/null | grep -q '"ok"'; then

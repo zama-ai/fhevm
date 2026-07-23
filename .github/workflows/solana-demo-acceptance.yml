@@ -41,8 +41,11 @@ jobs:
       packages: "read" # pull repo-owned images from ghcr.io
     env:
       DEMO_DEPOSIT_AMOUNT: ${{ inputs.deposit-amount || '1000' }}
-      # Opt-in permissive CORS for the demo dApp origin (relayer defaults OFF; only demo mode sets it).
+      # Opt-in permissive CORS for the demo dApp origin (relayer + proof service default OFF; only demo
+      # mode sets these). Each is delivered to its container via a ${..._PERMISSIVE_CORS:-} passthrough
+      # in the respective compose file.
       RELAYER_PERMISSIVE_CORS: "1"
+      SOLANA_PROOF_PERMISSIVE_CORS: "1"
       DEMO_ORIGIN: "http://localhost:5173"
       # Absolute demo-config path so every producer/consumer agrees regardless of the step's working
       # directory (the seed runs from test-suite/fhevm, the smoke/boundary from there too, but the
