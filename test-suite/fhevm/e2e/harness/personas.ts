@@ -6,10 +6,12 @@
 
 import fs from "node:fs/promises";
 
-import { createKeyPairSignerFromBytes } from "@solana/kit";
+import { address, createKeyPairSignerFromBytes, createSolanaRpc, lamports } from "@solana/kit";
 
-import { run } from "../../src/utils/process";
 import type { TestEnv } from "./loadEnv";
+import { until } from "./until";
+
+const LAMPORTS_PER_SOL = 1_000_000_000n;
 
 export type Persona = {
   readonly name: string;
@@ -47,7 +49,22 @@ export const loadPersonas = async (env: TestEnv): Promise<Personas> => {
       if (!env.capabilities.faucet) {
         throw new Error(`cannot fund ${persona.name}: environment "${env.source}" has no faucet capability`);
       }
-      await run(["solana", "airdrop", String(sol), persona.address, "--url", env.rpcUrl]);
+      // Airdrop over the validator RPC (kit's requestAirdrop), not the `solana` CLI: no PATH or
+      // ambient-config dependency, and the confirmation wait is explicit rather than the CLI's.
+      const rpc = createSolanaRpc(env.rpcUrl);
+      const signature = await rpc
+        .requestAirdrop(address(persona.address), lamports(BigInt(sol) * LAMPORTS_PER_SOL), { commitment: "confirmed" })
+        .send();
+      await until(
+        async () => {
+          const { value } = await rpc.getSignatureStatuses([signature]).send();
+          const status = value[0];
+          if (status?.err) throw new Error(`airdrop for ${persona.name} failed: ${JSON.stringify(status.err)}`);
+          const level = status?.confirmationStatus;
+          return level === "confirmed" || level === "finalized";
+        },
+        { description: `airdrop confirmation for ${persona.name}`, timeoutMs: 30_000 },
+      );
     },
   };
 };
