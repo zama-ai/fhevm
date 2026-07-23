@@ -42,7 +42,27 @@ export const createClients = (options: ClientOptions) => {
   return { chain, fhevm, publicClient, rpcUrl, transport };
 };
 
-export type DecryptClientTkmsVersion = "0.13.10" | "0.13.20-0";
+const DECRYPT_CLIENT_TKMS_VERSIONS = ["0.13.10", "0.13.20-0"] as const;
+
+export type DecryptClientTkmsVersion =
+  (typeof DECRYPT_CLIENT_TKMS_VERSIONS)[number];
+
+/**
+ * Narrows the SDK's open `tkmsVersion: string` to a supported literal, throwing
+ * when the generated transport key pair reports a version this CLI cannot pin.
+ */
+export const asDecryptClientTkmsVersion = (
+  tkmsVersion: string,
+): DecryptClientTkmsVersion => {
+  if (
+    (DECRYPT_CLIENT_TKMS_VERSIONS as readonly string[]).includes(tkmsVersion)
+  ) {
+    return tkmsVersion as DecryptClientTkmsVersion;
+  }
+  throw new Error(
+    `Unsupported TKMS version ${tkmsVersion}; expected one of ${DECRYPT_CLIENT_TKMS_VERSIONS.join(", ")}.`,
+  );
+};
 
 /** Creates read-only host-chain and version-pinned decrypt-only SDK clients. */
 export const createDecryptClients = (

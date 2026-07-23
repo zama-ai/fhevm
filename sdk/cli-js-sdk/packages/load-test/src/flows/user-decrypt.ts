@@ -40,7 +40,7 @@ type UserDecryptProgress =
 export type UserDecryptSdkClient = Readonly<{
   ready: Promise<void>;
   generateTransportKeyPair: () => Promise<unknown>;
-  signDecryptionPermit: (parameters: Record<string, unknown>) => Promise<unknown>;
+  signLegacyDecryptionPermit: (parameters: Record<string, unknown>) => Promise<unknown>;
   decryptValues: (parameters: Record<string, unknown>) => Promise<
     readonly Readonly<{ type: string; value: unknown }>[]
   >;
@@ -346,11 +346,11 @@ export class UserDecryptExecutor implements FlowExecutor {
       signal.throwIfAborted();
       const transportKeyPair = await target.generateTransportKeyPair();
       signal.throwIfAborted();
-      const signedPermit = await target.signDecryptionPermit({
+      const signedPermit = await target.signLegacyDecryptionPermit({
         transportKeyPair,
         contractAddresses: [this.meta!.contractAddress],
         // Protocol v13 permits require whole days; round the request-derived
-        // lifetime up to the smallest duration accepted by every alpha.8 path.
+        // lifetime up to the smallest duration the v13 SDK accepts.
         durationSeconds: permitDurationSeconds(this.requestTimeoutMs),
         startTimestamp: Math.floor(Date.now() / 1000),
         signerAddress: signer.address,
@@ -380,7 +380,7 @@ export class UserDecryptExecutor implements FlowExecutor {
           },
         },
       });
-      // Alpha.8 increments retryCount when scheduling each GET after the
+      // The v13 SDK increments retryCount when scheduling each GET after the
       // initial POST, so it is the number of polls issued, not a zero-based index.
       const pollCount = lastProgress?.retryCount ?? 0;
       const common = {

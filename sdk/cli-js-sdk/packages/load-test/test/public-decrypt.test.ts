@@ -100,7 +100,7 @@ describe("publicValuesMatch", () => {
       fhevm: {
         decryptPublicValuesWithSignatures,
         generateTransportKeyPair: vi.fn().mockResolvedValue({ key: Symbol("key") }),
-        signDecryptionPermit: vi.fn().mockResolvedValue({ permit: Symbol("permit") }),
+        signLegacyDecryptionPermit: vi.fn().mockResolvedValue({ permit: Symbol("permit") }),
       },
     });
     mocks.openIfExists.mockResolvedValue({
@@ -150,7 +150,7 @@ describe("publicValuesMatch", () => {
       fhevm: {
         decryptPublicValuesWithSignatures,
         generateTransportKeyPair: vi.fn().mockResolvedValue({ key: Symbol("key") }),
-        signDecryptionPermit: vi.fn().mockRejectedValue(protocolError),
+        signLegacyDecryptionPermit: vi.fn().mockRejectedValue(protocolError),
       },
     });
     mocks.openIfExists.mockResolvedValue({

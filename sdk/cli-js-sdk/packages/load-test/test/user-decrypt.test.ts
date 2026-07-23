@@ -109,7 +109,7 @@ const progress = {
 const sdkClient = (value = 42n): UserDecryptSdkClient => ({
   ready: Promise.resolve(),
   generateTransportKeyPair: vi.fn().mockResolvedValue({ key: Symbol("key") }),
-  signDecryptionPermit: vi.fn().mockResolvedValue({ permit: Symbol("permit") }),
+  signLegacyDecryptionPermit: vi.fn().mockResolvedValue({ permit: Symbol("permit") }),
   decryptValues: vi.fn().mockImplementation(async (parameters) => {
     const onProgress = (
       parameters.options as { onProgress: (value: unknown) => void }
@@ -180,14 +180,14 @@ describe("UserDecryptExecutor", () => {
       2,
       expect.objectContaining({ relayerUrl: "https://b.example" }),
     );
-    expect(targetA.signDecryptionPermit).toHaveBeenCalledWith(
+    expect(targetA.signLegacyDecryptionPermit).toHaveBeenCalledWith(
       expect.objectContaining({ durationSeconds: 86_400 }),
     );
-    expect(targetA.signDecryptionPermit).toHaveBeenCalledWith(
+    expect(targetA.signLegacyDecryptionPermit).toHaveBeenCalledWith(
       expect.not.objectContaining({ delegatorAddress: expect.anything() }),
     );
     // One preflight call at prepare() plus one per executed request.
-    expect(targetB.signDecryptionPermit).toHaveBeenCalledTimes(2);
+    expect(targetB.signLegacyDecryptionPermit).toHaveBeenCalledTimes(2);
     expect(targetA.decryptValues).toHaveBeenCalledWith(
       expect.objectContaining({
         options: expect.objectContaining({ signal: controller.signal }),
@@ -203,10 +203,10 @@ describe("UserDecryptExecutor", () => {
       verifiedB: true,
     });
     const targetAKey = (
-      targetA.signDecryptionPermit as ReturnType<typeof vi.fn>
+      targetA.signLegacyDecryptionPermit as ReturnType<typeof vi.fn>
     ).mock.calls[0]?.[0].transportKeyPair;
     const targetBKey = (
-      targetB.signDecryptionPermit as ReturnType<typeof vi.fn>
+      targetB.signLegacyDecryptionPermit as ReturnType<typeof vi.fn>
     ).mock.calls[0]?.[0].transportKeyPair;
     expect(targetAKey).not.toBe(targetBKey);
   });
@@ -261,7 +261,7 @@ describe("UserDecryptExecutor", () => {
     );
     const target = {
       ...sdkClient(),
-      signDecryptionPermit: vi.fn().mockRejectedValue(protocolError),
+      signLegacyDecryptionPermit: vi.fn().mockRejectedValue(protocolError),
     };
     const executor = new UserDecryptExecutor(
       env(),
@@ -303,7 +303,7 @@ describe("UserDecryptExecutor", () => {
       executor.execute(0, new AbortController().signal),
     ).rejects.toThrow("Executor not prepared");
     expect(target.generateTransportKeyPair).not.toHaveBeenCalled();
-    expect(target.signDecryptionPermit).not.toHaveBeenCalled();
+    expect(target.signLegacyDecryptionPermit).not.toHaveBeenCalled();
     expect(target.decryptValues).not.toHaveBeenCalled();
   });
 
@@ -325,7 +325,7 @@ describe("UserDecryptExecutor", () => {
 
     const result = await executor.execute(0, new AbortController().signal);
 
-    expect(target.signDecryptionPermit).toHaveBeenCalledWith(
+    expect(target.signLegacyDecryptionPermit).toHaveBeenCalledWith(
       expect.objectContaining({
         delegatorAddress: OWNER,
         signerAddress: DELEGATE,

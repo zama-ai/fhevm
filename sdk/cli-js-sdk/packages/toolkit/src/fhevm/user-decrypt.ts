@@ -10,7 +10,7 @@ import { createFhevmDecryptClient } from "@fhevm/sdk/viem";
 import type { Hex } from "viem";
 import type { Account } from "viem/accounts";
 
-import type { ClientContext } from "../config";
+import { asDecryptClientTkmsVersion, type ClientContext } from "../config";
 import {
   describeDecryptedValues,
   type ProgressReporter,
@@ -100,7 +100,7 @@ export const decryptUserValues = async (
   const isSelfDecrypt =
     options.ownerAddress.toLowerCase() === options.signer.address.toLowerCase();
   const signedPermit = isSelfDecrypt
-    ? await client.signDecryptionPermit({
+    ? await client.signLegacyDecryptionPermit({
         transportKeyPair,
         contractAddresses: [context.contractAddress],
         durationSeconds: options.durationSeconds,
@@ -108,7 +108,7 @@ export const decryptUserValues = async (
         signerAddress: options.signer.address,
         signer: options.signer,
       })
-    : await client.signDecryptionPermit({
+    : await client.signLegacyDecryptionPermit({
         transportKeyPair,
         contractAddresses: [context.contractAddress],
         durationSeconds: options.durationSeconds,
@@ -173,10 +173,10 @@ export const decryptUserValues = async (
             contractAddress: context.contractAddress,
           })),
           transportKeyPair: {
-            ...serializeTransportKeyPair(client, { transportKeyPair }),
-            tkmsVersion: transportKeyPair.tkmsVersion,
+            ...(await serializeTransportKeyPair(client, { transportKeyPair })),
+            tkmsVersion: asDecryptClientTkmsVersion(transportKeyPair.tkmsVersion),
           },
-          serializedPermit: serializeSignedDecryptionPermit(client, {
+          serializedPermit: await serializeSignedDecryptionPermit(client, {
             signedPermit,
           }),
           permit: summarizePermit(signedPermit, {

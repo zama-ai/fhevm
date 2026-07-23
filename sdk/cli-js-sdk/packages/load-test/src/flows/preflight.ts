@@ -3,7 +3,7 @@ import type { Account } from "viem/accounts";
 /** Minimal SDK surface exercised by the pre-submission preflight. */
 export type PreflightSdkClient = Readonly<{
   generateTransportKeyPair: () => Promise<unknown>;
-  signDecryptionPermit: (parameters: Record<string, unknown>) => Promise<unknown>;
+  signLegacyDecryptionPermit: (parameters: Record<string, unknown>) => Promise<unknown>;
 }>;
 
 /**
@@ -29,7 +29,7 @@ export const assertSdkPreflight = async (options: {
 }): Promise<void> => {
   try {
     const transportKeyPair = await options.client.generateTransportKeyPair();
-    await options.client.signDecryptionPermit({
+    await options.client.signLegacyDecryptionPermit({
       transportKeyPair,
       contractAddresses: [options.contractAddress],
       durationSeconds: options.durationSeconds,

@@ -6,7 +6,7 @@ const sdk = vi.hoisted(() => {
     ready: Promise.resolve(),
     decryptValues: vi.fn(),
     generateTransportKeyPair: vi.fn(),
-    signDecryptionPermit: vi.fn(),
+    signLegacyDecryptionPermit: vi.fn(),
   };
   return {
     client,
@@ -41,7 +41,7 @@ describe("decryptUserValues", () => {
       key: "transport",
       tkmsVersion: "0.13.20-0",
     });
-    sdk.client.signDecryptionPermit.mockResolvedValue({
+    sdk.client.signLegacyDecryptionPermit.mockResolvedValue({
       version: 2,
       isDelegated: false,
       signerAddress: ownerAddress,
@@ -50,11 +50,11 @@ describe("decryptUserValues", () => {
       signature,
     });
     sdk.client.decryptValues.mockResolvedValue([{ type: "uint64", value: 42n }]);
-    sdk.serializeTransportKeyPair.mockReturnValue({
+    sdk.serializeTransportKeyPair.mockResolvedValue({
       publicKey: "0x1234",
       privateKey: "0x5678",
     });
-    sdk.serializeSignedDecryptionPermit.mockReturnValue({
+    sdk.serializeSignedDecryptionPermit.mockResolvedValue({
       version: 2,
       eip712: {},
       signature,
@@ -62,7 +62,7 @@ describe("decryptUserValues", () => {
     });
   });
 
-  it("passes canonical seconds to alpha.8 and reports the permit version", async () => {
+  it("passes canonical seconds to the SDK and reports the permit version", async () => {
     const result = await decryptUserValues(
       {
         chain: {} as never,
@@ -79,13 +79,13 @@ describe("decryptUserValues", () => {
       },
     );
 
-    expect(sdk.client.signDecryptionPermit).toHaveBeenCalledWith(
+    expect(sdk.client.signLegacyDecryptionPermit).toHaveBeenCalledWith(
       expect.objectContaining({
         durationSeconds: 604_800,
         signerAddress: ownerAddress,
       }),
     );
-    expect(sdk.client.signDecryptionPermit.mock.calls[0]?.[0]).not.toHaveProperty(
+    expect(sdk.client.signLegacyDecryptionPermit.mock.calls[0]?.[0]).not.toHaveProperty(
       "durationDays",
     );
     expect(result.permit).toMatchObject({
@@ -155,7 +155,7 @@ describe("decryptUserValues", () => {
   });
 
   it("passes the encrypted-data owner for delegated permits", async () => {
-    sdk.client.signDecryptionPermit.mockResolvedValue({
+    sdk.client.signLegacyDecryptionPermit.mockResolvedValue({
       version: 2,
       isDelegated: true,
       signerAddress: ownerAddress,
@@ -179,7 +179,7 @@ describe("decryptUserValues", () => {
       },
     );
 
-    expect(sdk.client.signDecryptionPermit).toHaveBeenCalledWith(
+    expect(sdk.client.signLegacyDecryptionPermit).toHaveBeenCalledWith(
       expect.objectContaining({
         delegatorAddress,
         durationSeconds: 86_400,
@@ -214,7 +214,7 @@ describe("decryptUserValues", () => {
     );
     await vi.waitFor(() => expect(sdk.createFhevmDecryptClient).toHaveBeenCalled());
     expect(sdk.client.generateTransportKeyPair).not.toHaveBeenCalled();
-    expect(sdk.client.signDecryptionPermit).not.toHaveBeenCalled();
+    expect(sdk.client.signLegacyDecryptionPermit).not.toHaveBeenCalled();
     expect(sdk.client.decryptValues).not.toHaveBeenCalled();
 
     resolveReady();
@@ -243,7 +243,7 @@ describe("decryptUserValues", () => {
       ),
     ).rejects.toBe(readinessError);
     expect(sdk.client.generateTransportKeyPair).not.toHaveBeenCalled();
-    expect(sdk.client.signDecryptionPermit).not.toHaveBeenCalled();
+    expect(sdk.client.signLegacyDecryptionPermit).not.toHaveBeenCalled();
     expect(sdk.client.decryptValues).not.toHaveBeenCalled();
   });
 });
