@@ -170,7 +170,9 @@ export async function confidentialTransfer(
     createTransactionMessage({ version: 0 }),
     (m) => setTransactionMessageFeePayerSigner(feePayer, m),
     (m) => setTransactionMessageLifetimeUsingBlockhash(latestBlockhash, m),
-    (m) => setTransactionMessageComputeUnitLimit(400_000, m),
+    // A live transfer has been observed to exceed 400k CU (PDA bump search and
+    // emit_cpi! overhead vary per run); 800k keeps headroom under the 1.4M/tx cap.
+    (m) => setTransactionMessageComputeUnitLimit(800_000, m),
     (m) => appendTransactionMessageInstructions([instruction], m),
   );
   const transaction = await signTransactionMessageWithSigners(message);
