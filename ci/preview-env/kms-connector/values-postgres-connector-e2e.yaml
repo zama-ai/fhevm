@@ -1,0 +1,97 @@
+# In-cluster Postgres dedicated to kms-connector, for the fhevm e2e preview
+# namespace. Kept separate from coprocessor's instance
+# (../coprocessor-infra/values-postgres-coprocessor-e2e.yaml) and relayer's
+# (../relayer/values-postgres-relayer-e2e.yaml) - kms-connector's data has
+# nothing to do with either of theirs.
+#
+# Uses the SAME generic `common` chart directly, same as
+# ../coprocessor-infra/values-postgres-coprocessor-e2e.yaml - see that file's
+# header for the full rationale (why not Bitnami's postgresql chart,
+# fullnameOverride -> deterministic Service name, plain non-secret ephemeral
+# test credentials) and the statefulset.volumeClaimTemplates note (PVC so data
+# survives pod restarts).
+#
+# One dedicated instance PER kms-connector/kms-core party (preview-env-deploy.yml's
+# "Deploy in-cluster Postgres for kms-connector" loops this over NB_KMS_CORE
+# releases, one per party, overriding fullnameOverride below to
+# postgres-connector-<i> each time) - mirrors kms's own production topology
+# where every mpc-party namespace gets its own connector DB.
+#
+# Deployed as:
+#   helm upgrade --install postgres-connector-<i> \
+#     oci://hub.zama.org/ghcr/zama-zws/helm-charts/common \
+#     -n <namespace> -f this-file --set-string fullnameOverride=postgres-connector-<i>
+fullnameOverride: postgres-connector
+
+statefulset:
+  enabled: true
+  # PVC (not emptyDir) so each per-party connector DB survives a Postgres pod
+  # restart or reschedule instead of coming back empty. Each per-party release
+  # (postgres-connector-<i>) is its own StatefulSet, so each gets its own
+  # independent PVC. Namespaced, so still torn down with the preview namespace;
+  # only persists across pod restarts.
+  # NOTE: volumeClaimTemplates is immutable on an existing StatefulSet, so
+  # flipping this on requires a fresh deploy (delete the sts/namespace first),
+  # not just an in-place `helm upgrade`. See
+  # ../coprocessor-infra/values-postgres-coprocessor-e2e.yaml for the full note.
+  volumeClaimTemplates:
+    - metadata:
+        name: data
+      mountPath: /var/lib/postgresql/data
+      spec:
+        accessModes: ["ReadWriteOnce"]
+        resources:
+          requests:
+            storage: 5Gi
+
+image:
+  repository: postgres
+  tag: "17-alpine"
+  pullPolicy: IfNotPresent
+
+env:
+  - {name: POSTGRES_USER, value: "zama"}
+  - {name: POSTGRES_PASSWORD, value: "zama"}
+  - {name: POSTGRES_DB, value: "connector"}
+  - {name: PGDATA, value: "/var/lib/postgresql/data/pgdata"}
+
+service:
+  enabled: true
+  ports:
+    - {name: tcp-postgresql, port: 5432}
+
+readinessProbe:
+  exec: {command: ["pg_isready", "-U", "zama"]}
+  initialDelaySeconds: 5
+  periodSeconds: 5
+  timeoutSeconds: 5
+# Liveness hardened (wider timeout + more failures before restart) so a
+# busy-but-alive DB is not silently killed by a throttled pg_isready - see
+# ../coprocessor-infra/values-postgres-coprocessor-e2e.yaml for the full note.
+livenessProbe:
+  exec: {command: ["pg_isready", "-U", "zama"]}
+  initialDelaySeconds: 10
+  periodSeconds: 10
+  timeoutSeconds: 5
+  failureThreshold: 6
+
+# Bumped off the old 250m/256Mi..1/1Gi, which OOM-killed under load (silent
+# restart). Lighter than the coprocessor DB (this one holds no key material),
+# but still given real headroom.
+resources:
+  requests:
+    cpu: "250m"
+    memory: "512Mi"
+  limits:
+    cpu: "1"
+    memory: "2Gi"
+
+# Pins onto the zws-pool Karpenter node pool - see
+# ../coprocessor-infra/values-postgres-coprocessor-e2e.yaml's matching note.
+nodeSelector:
+  karpenter.sh/nodepool: zws-pool
+tolerations:
+  - key: "karpenter.sh/nodepool"
+    operator: "Equal"
+    value: "zws-pool"
+    effect: "NoSchedule"

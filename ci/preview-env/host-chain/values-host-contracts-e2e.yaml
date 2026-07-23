@@ -1,0 +1,107 @@
+# charts/contracts overlay for deploying host-contracts against anvil-host,
+# for the fhevm e2e preview namespace (single canonical host chain, 4-party
+# dedicated threshold+enclave KMS, single coprocessor).
+#
+# Deployed as:
+#   helm upgrade --install host-contracts oci://hub.zama.org/ghcr/zama-ai/fhevm/charts/contracts \
+#     -n <namespace> -f this-file
+#   (requires gateway-contracts to already be deployed — DECRYPTION_ADDRESS/
+#   INPUT_VERIFICATION_ADDRESS below are wired directly from its gw-sc-addresses
+#   ConfigMap via valueFrom.configMapKeyRef, so there's nothing to substitute
+#   at deploy time.)
+#
+# HARDHAT_NETWORK/MNEMONIC set explicitly to avoid the in-memory-network
+# fallback (host-contracts' "staging" profile is chainId 12345 - matches
+# anvil-host's chain id).
+#
+# This chart's own values.yaml documents the canonical reference command for
+# a single-host scenario as `task:deployAllHostContracts --with-kms-generation
+# true` (the canonical host chain owns the real KMSGeneration implementation;
+# gateway's own KMSGeneration proxy stays an empty, unused stand-in in that
+# case) - followed here. Requires HOST_CONTRACTS_VERSION >= v0.13.0 (see
+# preview-env-deploy.yml's env block) - the flag/ProtocolConfig split doesn't
+# exist before that ("HH305: Unrecognized param" if pinned older).
+#
+# NUM_KMS_NODES / KMS_TX_SENDER_ADDRESS_x / KMS_SIGNER_ADDRESS_x / KMS_NODE_IP_x /
+# KMS_NODE_STORAGE_URL_x / KMS_NODE_PARTY_ID_x / KMS_NODE_MPC_IDENTITY_x /
+# KMS_NODE_CA_CERT_x / KMS_NODE_STORAGE_PREFIX_x / the 4 threshold fields are all
+# generated dynamically for NB_KMS_CORE real parties by the "Wire real KMS node info
+# into host-contracts values" step in preview-env-deploy.yml - see
+# values-gateway-contracts-e2e.yaml's header for the full rationale (same source data,
+# just a different, host-contracts-specific field-naming scheme - note the several
+# naming inconsistencies flagged inline in that workflow step).
+scDeploy:
+  enabled: true
+  image:
+    name: hub.zama.org/ghcr/zama-ai/fhevm/host-contracts
+    tag: latest
+  # Chart default (512Mi limit) OOMKills on this suite's size - Hardhat compiling
+  # + deploying the full set of host contracts (ACL, TFHEExecutor, KMSVerifier,
+  # InputVerifier, HCULimit, ProtocolConfig, ...) under ts-node needs real headroom.
+  resources:
+    requests:
+      cpu: 500m
+      memory: 1Gi
+    limits:
+      cpu: "2"
+      memory: 4Gi
+  configmap:
+    name: host-sc-addresses
+  env:
+    - {name: HARDHAT_NETWORK, value: "staging"}
+    - {name: MNEMONIC, value: "test test test test test test test test test test test junk"}
+    - {name: RPC_URL, value: "http://anvil-host-anvil-node:8545"}
+    # Hardhat account #9 — deploy the host contracts (and, in host-trigger-keygen,
+    # trigger keygen/crsgen) with this account, so ACL.owner() = #9 at deploy/keygen
+    # time and the onlyACLOwner keygen()/crsgen() calls succeed. #9 STAYS the owner:
+    # there is no post-crsgen ownership transfer, so this.deployer (#9 in the test-suite
+    # workflow) == ACL.owner() (#9). This keeps every HCU block-cap subtest green - the
+    # owner-only setters signed by #9 succeed, and "reject setHCUPerBlock from non-owner"
+    # reverts because it signs as alice (account #0) != owner. Keep in sync with
+    # host-trigger-keygen's and the test-suite workflow's DEPLOYER_PRIVATE_KEY. Separate
+    # chain from gateway-contracts (#0), no collision.
+    - {name: DEPLOYER_PRIVATE_KEY, value: "0x2a871d0798f97d79848a013d4936a73bf4cc922c825d33c1cf7073dff6d409c6"}
+    # Gateway's chain id + the two gateway contract addresses KMSVerifier/InputVerifier verify
+    # signatures against. Read directly from gateway-contracts' output ConfigMap instead of
+    # being hardcoded — these addresses are non-deterministic (depend on deploy order/nonces)
+    # so a static value here would go stale on every gateway-contracts redeploy.
+    - {name: CHAIN_ID_GATEWAY, value: "54321"}
+    - name: DECRYPTION_ADDRESS
+      valueFrom:
+        configMapKeyRef:
+          name: gw-sc-addresses
+          key: decryption.address
+    - name: INPUT_VERIFICATION_ADDRESS
+      valueFrom:
+        configMapKeyRef:
+          name: gw-sc-addresses
+          key: input_verification.address
+    # NUM_COPROCESSORS / COPROCESSOR_THRESHOLD / COPROCESSOR_SIGNER_ADDRESS_x are
+    # appended dynamically for the NB_COPROCESSOR coprocessor parties by the
+    # "Wire real KMS node info into host-contracts values" step in
+    # preview-env-deploy.yml, from the SAME derived coprocessor wallets registered
+    # on the gateway (COPROCESSOR_SIGNER_ADDRESS_<idx>). The host InputVerifier
+    # verifies the coprocessor's input-proof signatures against these, so they
+    # MUST match the wallet the coprocessor tx-sender actually signs with - not a
+    # static mock, or host-chain input verification rejects every proof. Not set
+    # statically here so the two never duplicate/conflict.
+    # NUM_KMS_NODES / KMS_TX_SENDER_ADDRESS_x / KMS_SIGNER_ADDRESS_x / KMS_NODE_IP_x /
+    # KMS_NODE_STORAGE_URL_x / KMS_NODE_PARTY_ID_x / KMS_NODE_MPC_IDENTITY_x /
+    # KMS_NODE_CA_CERT_x / KMS_NODE_STORAGE_PREFIX_x / the 4 threshold fields are
+    # appended dynamically for NB_KMS_CORE parties - see header note.
+    - {name: KMS_SOFTWARE_VERSION, value: "0.1.0"}
+    - {name: KMS_PCR_VALUES, value: '[{"pcr0":"0x00","pcr1":"0x00","pcr2":"0x00"}]'}
+  deployCommands:
+    - npx hardhat task:deployAllHostContracts --with-kms-generation true
+    # task:addHostPausers intentionally omitted — deferred to a follow-up step, same reasoning
+    # as gateway-contracts' deferred task:addHostChainsToGatewayConfig.
+  verifyContracts: false
+persistence:
+  enabled: true
+  volumeClaim:
+    name: host-sc-deploy-workdir
+    create: true
+    storageCapacity: 1Gi
+    storageClassName: ""
+scUpgrade:
+  enabled: false
