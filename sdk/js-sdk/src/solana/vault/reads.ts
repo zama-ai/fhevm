@@ -91,7 +91,20 @@ export async function getEncryptedValueState(
 ): Promise<{ currentHandle: Bytes32; leafCount: bigint; peaks: Uint8Array[] }> {
   const account = await fetchEncodedAccount(rpc, address);
   if (!account.exists) throw new Error(`EncryptedValue account ${address} does not exist`);
-  const decoded = encryptedValueBodyDecoder.decode(account.data.slice(ENCRYPTED_VALUE_DISCRIMINATOR_SIZE));
+  const body = account.data.slice(ENCRYPTED_VALUE_DISCRIMINATOR_SIZE);
+  // Structural guard against the layout drift this decoder is explicitly fragile to (see the header
+  // comment on the crate's `EncryptedValue` struct, esp. the bare 32-byte `subjects` element). `read`
+  // returns the offset it consumed to; if it is not exactly the account body length the on-chain
+  // layout no longer matches what we decode, so every field past the divergence is silently wrong.
+  // Fail loudly here rather than return misaligned `leafCount`/`peaks` that corrupt a settle proof.
+  const [decoded, offset] = encryptedValueBodyDecoder.read(body, 0);
+  if (offset !== body.length) {
+    throw new Error(
+      `EncryptedValue account ${address}: decoder consumed ${offset} of ${body.length} body bytes ` +
+        `(after the ${ENCRYPTED_VALUE_DISCRIMINATOR_SIZE}-byte discriminator) — the on-chain layout ` +
+        `has drifted from this decoder. Re-check the crate's EncryptedValue struct and update reads.ts.`,
+    );
+  }
   return {
     currentHandle: new Uint8Array(decoded.currentHandle) as Bytes32,
     leafCount: decoded.leafCount,
