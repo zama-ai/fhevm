@@ -33,8 +33,9 @@ all fail closed (see the `*_rejects_*` mollusk tests).
    rejection surfaced from the host, and mint-domain binding. The verifier's own negatives (destroyed
    context, sub-threshold cert, handle/proof mismatch, non-canonical context, survives-supersede) live
    in `host_mollusk` (#3220). There are no more `request_disclose_*` / `disclose_*_secp` witness-bound
-   disclosure tests. Because Mollusk
-   enforces the 1.4M CU budget, every passing test is also an implicit CU-fits assertion.
+   disclosure tests. The token and batcher Mollusk suites explicitly set `compute_unit_limit = 1_400_000`;
+   the host suite uses Mollusk's default per-instruction budget (stricter than 1.4M). In all cases,
+   every passing test is an implicit CU-fits assertion at the configured budget.
 3. **Handle-derivation / lifecycle transport** (`zama-host` lib unit): the maximum 16-record batch's
     exact 1,077-byte CPI envelope and signer/readonly event-authority metadata, plus handle-derivation
     determinism.

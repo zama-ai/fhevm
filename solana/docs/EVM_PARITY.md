@@ -76,7 +76,7 @@ fromExternal** — all implemented. The confidential token is therefore **op-com
 | handle byte-layout (ver/type/chainid/computed-marker) + entropy-seeded derivation | symbolic-exec handle; no per-output nonce (only `fheRand`'s global `counterRand`, folded into the rand seed) | identical layout; `hash(domain, op, operands, programID, chainid, prev_bank_hash, ts, context_id, op_index)`. Durable outputs use the same base handle as local outputs; `value_key` remains only the `EncryptedValue` PDA seed (DD-015). | **MET** (DIVERGENCE: sha256/keccak vs keccak, bankhash vs blockhash → handles not cross-chain-interoperable) |
 | compute identity = `msg.sender` | implicit caller | explicit `compute_subject: Signer` checked `is_signer && is_allowed` | **DIVERGENCE** (no `msg.sender`; RFC 024 compute-signer) |
 | `FHEVMExecutor` op breadth: Mul/Div/Rem/BitAnd/Or/Xor/Shl/Shr/Rotl/Rotr/Eq/Ne/Gt/Lt/Le/Min/Max, Neg/Not, cast, Sum/IsIn, MulDiv | full opcode catalog | implemented in `fhe_eval` as the binary catalog, unary ops, `Sum`, `IsIn`, and `MulDiv`; constrained by the supported `FheType` set below | **MET** for the modeled operator surface; remaining breadth is type support, not dispatch shape |
-| `HCULimit` (per-op/tx/block/depth homomorphic-compute caps) | gas-like metering | `HostConfig::max_hcu_per_tx` / `max_hcu_depth_per_tx` summed over an `fhe_eval` plan (`0` = off), plus Solana compute-budget + op-count/collection caps | **DIVERGENCE** (per-plan cap + compute-budget vs per-block metering) — see fragility #3 |
+| `HCULimit` (per-op/tx/block/depth homomorphic-compute caps) | gas-like metering | `HostConfig::max_hcu_per_tx` / `max_hcu_depth_per_tx` summed over an `fhe_eval` plan (`0` = off), plus per-app per-slot block cap (`hcu_block_cap_per_app`, DD-039), plus Solana compute-budget + op-count/collection caps | **DIVERGENCE** (per-plan + per-app-per-slot cap vs global per-block metering) — see fragility #3 |
 | `KMSVerifier` (on-chain decrypt-sig threshold verify) | verify KMS sigs on-chain | on-chain secp256k1: `eip712::verify_kms_public_decrypt` recovers EVM KMS signers and threshold-checks them against the witness-pinned `KmsContext` (rejects high-s) | **MET** (DD-021: mirrors EVM `KMSVerifier`) |
 | `ProtocolConfig` / `KMSGeneration` / `PauserSet` (role set) | KMS node/threshold registry, keygen, pauser role set | none (subset in `HostConfig`: authorities/chain_id/flags) | **PRODUCT-OPEN** |
 | `FheType` (86 variants) | type enum | supported set Bool/Uint8..Uint256 (covers token + shipped ops) | **MET (partial)** / **SCOPE** (signed/large/string types) |
@@ -165,9 +165,12 @@ connector's canonical-PDA + MMR-proof verification (DD-032; materiality now live
 2. **No host-side test/mock bypass remains.** The former `mock_input_verified_and_bind` input
    short-circuit, admin toggles, zero birth-entropy fallback, and event-only `test_emit_*`
    instructions were removed entirely (DD-014).
-3. **No per-block HCU / complexity metering.** The host caps total and critical-path HCU per
-   `fhe_eval` plan (`HostConfig::max_hcu_per_tx` / `max_hcu_depth_per_tx`, `0` = off) plus the Solana
-   compute budget, but there is no EVM-style per-block `HCULimit` plane. Relevant to DoS/cost-bounding.
+3. **No *global* per-block HCU plane.** The host enforces a per-app, per-slot HCU block cap
+   (`HostConfig::hcu_block_cap_per_app`, DD-039) plus per-plan total and critical-path caps
+   (`max_hcu_per_tx` / `max_hcu_depth_per_tx`, `0` = off) and the Solana compute budget.
+   There is no EVM-style *global* per-block `HCULimit` aggregating across all apps; the per-app
+   cap is the Solana analog. Costs are uncalibrated placeholders and limits ship disabled
+   (`u64::MAX` = unrestricted). Relevant to DoS/cost-bounding.
 4. **On-chain disclosure/redemption uses secp256k1 KMS-cert verification.** Both disclosure and
    burn-redemption are now stateless consumers of the host `verify_public_decrypt` verifier (no
    request-witness accounts): `disclose_secp` (DD-040) and `redeem_burned_amount`
