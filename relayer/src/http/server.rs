@@ -21,6 +21,7 @@ use axum::{
     routing::{get, post},
     Extension, Router,
 };
+use tower_http::cors::CorsLayer;
 use std::collections::HashMap;
 use std::net::SocketAddr;
 use std::sync::Arc;
@@ -194,7 +195,11 @@ pub async fn run_http_server(
         .route("/admin/config", post(admin::update_config))
         .route("/admin/config", get(admin::get_config))
         .layer(Extension(admin_registry_option))
-        .layer(Extension(retry_after_option));
+        .layer(Extension(retry_after_option))
+        // Permissive CORS so a browser dApp (Vite origin) can call the relayer directly during the
+        // local confidential-vault demo (#1760/#1761). Unconditional is acceptable on the PoC
+        // branch; the portable artifact for the relayer team is the spec, not this layer.
+        .layer(CorsLayer::permissive());
 
     // Setup TCP listener and start server
     let listener = tokio::net::TcpListener::bind(http_endpoint).await.unwrap();

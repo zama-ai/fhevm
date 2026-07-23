@@ -2662,6 +2662,7 @@ dependencies = [
  "thiserror 2.0.18",
  "tokio",
  "tokio-util",
+ "tower-http",
  "tracing",
  "tracing-chrome",
  "tracing-subscriber",
