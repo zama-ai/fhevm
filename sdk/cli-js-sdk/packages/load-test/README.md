@@ -251,7 +251,7 @@ Planning and preparation evidence uses the same stable names:
 The shared operator summary keeps units explicit: finite workloads show a
 request budget, duration-bound closed decrypt workloads show a reusable-handle
 target instead of inventing a request count, and deficits are pool creation
-units. Planned actions are labelled `[LOCAL CPU]` or `[ON-CHAIN]`; handle
+units. Planned actions are labeled `[LOCAL CPU]` or `[ON-CHAIN]`; handle
 actions state the funded setter-transaction count, while delegated ACL costs
 are identified separately. Dedicated `scenario prepare` and `suite prepare`
 still write no-op preparation evidence when pools are ready, but the readiness

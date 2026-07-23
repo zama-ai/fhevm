@@ -49,7 +49,7 @@ export type SavedUserDecryptShare = Readonly<{
 /**
  * The `extraData`-indexed KMS signer snapshot returned by
  * `readKmsSignersContextFromPermitExtraData`. Only the fields this adapter
- * reports on are modelled; `.kmsVerifierAddress` and `.mpcThreshold` exist but
+ * reports on are modeled; `.kmsVerifierAddress` and `.mpcThreshold` exist but
  * are unused here.
  */
 type KmsSignersContext = Readonly<{

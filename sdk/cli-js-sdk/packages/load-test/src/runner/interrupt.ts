@@ -1,7 +1,7 @@
 /**
  * Interruption primitives shared by the runner and every layer above it.
  *
- * A user interruption is signalled exactly one of two ways: the controlling
+ * A user interruption is signaled exactly one of two ways: the controlling
  * `AbortSignal` has fired, or the surfaced error is (or equals) the runner's
  * distinctive `RunInterruptedError` abort reason. Classifying by
  * `error.name === "AbortError"` is unsafe above `executeRun`: undici's

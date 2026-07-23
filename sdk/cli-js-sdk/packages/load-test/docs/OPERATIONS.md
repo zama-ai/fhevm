@@ -145,7 +145,7 @@ run does not repeat readiness or preparation work.
 Plan summaries distinguish finite request budgets from duration-bound closed
 decrypt workloads, for which they show the reusable-handle target rather than
 a fictional request count. Inventory, availability, and deficit creation units
-are separate. Every planned action is labelled `[LOCAL CPU]` or `[ON-CHAIN]`;
+are separate. Every planned action is labeled `[LOCAL CPU]` or `[ON-CHAIN]`;
 handle actions disclose funded setter transactions and delegated ACL work is
 listed separately. Dedicated `scenario prepare` and `suite prepare` always
 write preparation evidence, including ready no-op results, while the readiness
@@ -340,7 +340,7 @@ and stage semantics; v2 families retain their native transaction, recovery,
 wallet-lease, database-error, and HTTP semantics. Missing families remain
 unavailable rather than being guessed across implementations. If a cumulative
 counter resets, affected deltas and derived HTTP totals or rates are
-conservative lower bounds and are labelled as such.
+conservative lower bounds and are labeled as such.
 
 **Blessing new baselines after an accepted perf change:** run the suite to a
 completed output, review it, then use
