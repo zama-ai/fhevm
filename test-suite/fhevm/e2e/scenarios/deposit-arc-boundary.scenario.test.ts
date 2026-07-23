@@ -1,20 +1,20 @@
-// Scenario: deposit arc — BOUNDARY (#1760). The explicit companion to the wrap+join smoke
+// Scenario: deposit arc — BOUNDARY (#1760). The explicit companion to the deposit-arc smoke
 // (deposit-arc.scenario.test.ts). Run as `demo:smoke-boundary`. This is NOT a hard gate: it exists
 // to DOCUMENT, in executable form, exactly where the live deposit arc stops today and what remains
 // to wire — so the gap is a recorded, asserted fact instead of a silent hole in the smoke.
 //
-// Where the arc stops today: wrap AND join are live — the smoke builds a real coprocessor input
-// proof (SDK local TFHE prover, verified by the relayer) and drives `joinBatch` on-chain. The
-// remaining boundary is the dispatch -> settle -> claim -> decrypt continuation:
-//   `settleBatch` requires an `FhevmRuntime` for the KMS burn-certificate leg (settleBatch.ts:47),
-//   and the dispatch/claim/decrypt orchestration is not yet driven by the demo. That boundary is
-//   proven structurally, not theatrically:
-//     1. every downstream arc action (join → settle → claim → decrypt) EXISTS and is exported/wired;
-//     2. the seeded config already carries every ROOT those actions consume (batcher, its per-batch
-//        settle lookup table, kmsContext, the proof-service endpoint, both confidential mints);
-//     3. the ONLY missing pieces are the settle FhevmRuntime plus the dispatch/claim/decrypt
-//        orchestration named above.
-//   If a future change wires dispatch/settle, this test's console log is the checklist to delete.
+// Where the arc stops today: wrap, join, dispatch AND settle are live — the smoke drives the full
+// batch lifecycle through a real coprocessor input proof (join), the keeper's dispatch, and
+// `settleBatch` (MMR inclusion proof + KMS burn certificate + on-chain settle). The remaining
+// boundary is the claim -> decrypt continuation: the demo does not yet drive
+// `buildClaimInstruction` (alice claiming her cShares payout from the settled batch) or
+// `decryptPosition` (reading her confidential position back). That boundary is proven
+// structurally, not theatrically:
+//   1. every downstream arc action (claim, decryptPosition) EXISTS and is exported/wired;
+//   2. the seeded config already carries every ROOT those actions consume (the batcher, the payout
+//      confidential mint, the relayer endpoint for user-decrypt);
+//   3. the ONLY missing piece is the claim/decrypt orchestration named above.
+//   If a future change wires claim/decrypt, this test's console log is the checklist to delete.
 //
 // STATUS: reads the seeded demo-config (produced by `demo:seed`); the SDK surface is reached through
 // the runtime dynamic-import seam (untyped by construction). No transactions are submitted.
@@ -42,36 +42,34 @@ const loadVaultModule = async (): Promise<VaultArcSurface> => {
 const runsDemoScenarios = process.env.RUN_DEMO_SCENARIOS === "1";
 
 describe.skipIf(!runsDemoScenarios)("solana deposit-arc boundary", () => {
-  test("documents the dispatch -> settle -> claim -> decrypt gap: join is live; downstream actions and roots exist; only the settle FhevmRuntime and dispatch/claim/decrypt orchestration remain to wire", async () => {
+  test("documents the claim -> decrypt gap: wrap/join/dispatch/settle are live; the claim and decrypt actions and their roots exist; only their orchestration remains to wire", async () => {
     const { config } = await loadDemoEnv();
 
     // (1) The downstream arc actions are all present and exported from the vault surface — the demo
-    // drives joinBatch live already and is missing producers/orchestration, not the code path.
+    // drives joinBatch/settleBatch live already and is missing orchestration, not the code path.
     const vault = await loadVaultModule();
     expect(typeof vault.joinBatch).toBe("function");
     expect(typeof vault.settleBatch).toBe("function");
     expect(typeof vault.buildClaimInstruction).toBe("function");
     expect(typeof vault.decryptPosition).toBe("function");
 
-    // (2) The seeded config already carries every root those actions consume. If any were absent the
-    // gap would be "not seeded"; asserting they are present pins the gap to the two producers in (3).
+    // (2) The seeded config already carries every root the claim/decrypt legs consume. If any were
+    // absent the gap would be "not seeded"; asserting they are present pins the gap to (3).
     expect(config.batchers.deposit.batcher).toBeTruthy();
-    expect(config.batchers.deposit.lookupTable).toBeTruthy(); // settle's v0-tx address lookup table
-    expect(config.kmsContext).toBeTruthy(); // certificate leg's context id
-    expect(config.proofServiceUrl).toBeTruthy(); // MMR inclusion-proof source for settle
-    expect(config.mints.joinConfidential).toBeTruthy(); // cUSDC (join)
-    expect(config.mints.payoutConfidential).toBeTruthy(); // cShares (payout)
+    expect(config.mints.payoutConfidential).toBeTruthy(); // cShares — what a claim pays out in
+    expect(config.relayerUrl).toBeTruthy(); // user-decrypt endpoint for decryptPosition
+    expect(config.userDecryptContextId).toBeTruthy(); // user-decrypt context id
 
-    // (3) The remaining, unwired pieces — the checklist that turns this boundary into the full arc.
+    // (3) The remaining, unwired piece — the checklist that turns this boundary into the full arc.
     console.log(
       [
-        "deposit-arc boundary: wrap + join legs are live (join runs with a real coprocessor input",
-        "proof in deposit-arc.scenario.test.ts); dispatch -> settle -> claim -> decrypt is NOT yet wired.",
-        "Remaining to wire:",
-        "  1. settleBatch: an FhevmRuntime for the KMS burn-certificate leg (the MMR inclusion proof",
-        "     from proofServiceUrl and the batcher/lookupTable/kmsContext roots are already seeded).",
-        "  2. dispatch/claim/decrypt orchestration: the actions (buildClaimInstruction, decryptPosition)",
-        "     are exported and root-complete; the demo does not drive them yet.",
+        "deposit-arc boundary: wrap + join + dispatch + settle legs are live (the smoke settles the",
+        "batch with a real KMS burn certificate in deposit-arc.scenario.test.ts); claim -> decrypt is",
+        "NOT yet wired. Remaining to wire:",
+        "  1. claim orchestration: drive buildClaimInstruction so alice claims her cShares payout",
+        "     from the settled batch (the action is exported and root-complete).",
+        "  2. decrypt orchestration: drive decryptPosition so alice reads her confidential position",
+        "     back through user-decrypt (the action is exported and root-complete).",
       ].join("\n"),
     );
   });

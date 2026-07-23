@@ -87,6 +87,12 @@ export type SolanaDemoConfig = {
   readonly aclProgram: `0x${string}`;
   /** KMS/gateway user-decrypt context id, unsigned decimal string. */
   readonly userDecryptContextId: string;
+  /**
+   * Lamports the settle caller funds the batch authority with (unsigned decimal string). The amount
+   * must suffice to cover the rent settle's CPIs charge to this batch's authority; the seed records
+   * the `open_batch` value as a known-good amount.
+   */
+  readonly authorityFundingLamports: string;
   readonly programs: {
     readonly batcher: Address;
     readonly token: Address;
@@ -171,6 +177,7 @@ export const parseDemoConfig = (raw: unknown): SolanaDemoConfig => {
     gatewayRpcUrl: asString(o.gatewayRpcUrl, "gatewayRpcUrl"),
     aclProgram: asBytes32Hex(o.aclProgram, "aclProgram"),
     userDecryptContextId: asDecimal(o.userDecryptContextId, "userDecryptContextId"),
+    authorityFundingLamports: asDecimal(o.authorityFundingLamports, "authorityFundingLamports"),
     programs: {
       batcher: asAddress(programs.batcher, "programs.batcher"),
       token: asAddress(programs.token, "programs.token"),

@@ -23,6 +23,16 @@ const ENCRYPTED_VALUE_SEED = utf8("encrypted-value");
 export const BALANCE_LABEL = utf8("balance_________________________");
 /** `confidential_token::state` transferred-amount lineage label — fixed 32 bytes, underscore-padded. */
 export const TRANSFERRED_AMOUNT_LABEL = utf8("transferred_amount______________");
+/** `confidential_token::state` total-supply lineage label — fixed 32 bytes, underscore-padded. */
+export const TOTAL_SUPPLY_LABEL = utf8("total_supply____________________");
+
+/** Confidential-token total-supply authority PDA seed (generated `findTotalSupplyAuthorityPda`). */
+const TOTAL_SUPPLY_AUTHORITY_SEED = utf8("total-supply");
+/**
+ * Anchor's event-CPI authority seed (`__event_authority`). Both the zama-host and confidential-token
+ * programs derive their event authority from it (the SDK's internal `EVENT_AUTHORITY_SEED`).
+ */
+const EVENT_AUTHORITY_SEED = utf8("__event_authority");
 
 /** The raw 32 bytes of a base58 Solana address. */
 export const addressBytes = (value: Address): Uint8Array => new Uint8Array(getAddressEncoder().encode(value));
@@ -44,5 +54,20 @@ export const encryptedValueAddress = async (
     programAddress: hostProgram,
     seeds: [ENCRYPTED_VALUE_SEED, deriveValueKey(addressBytes(aclDomain), addressBytes(appAccount), label)],
   });
+  return pda;
+};
+
+/** The mint's total-supply authority PDA: PDA(tokenProgram, ["total-supply", mint]). */
+export const totalSupplyAuthorityAddress = async (tokenProgram: Address, mint: Address): Promise<Address> => {
+  const [pda] = await getProgramDerivedAddress({
+    programAddress: tokenProgram,
+    seeds: [TOTAL_SUPPLY_AUTHORITY_SEED, addressBytes(mint)],
+  });
+  return pda;
+};
+
+/** A program's Anchor event-CPI authority PDA: PDA(program, ["__event_authority"]). */
+export const eventAuthorityAddress = async (program: Address): Promise<Address> => {
+  const [pda] = await getProgramDerivedAddress({ programAddress: program, seeds: [EVENT_AUTHORITY_SEED] });
   return pda;
 };
