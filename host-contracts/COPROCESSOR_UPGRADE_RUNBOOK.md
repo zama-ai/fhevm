@@ -61,12 +61,12 @@ Once the DAO vote passes and the proposal executes, the on-chain `proposeCoproce
 
 ## Failure modes
 
-| Error in the logs                                        | Resolution                                                                                   |
-| -------------------------------------------------------- | -------------------------------------------------------------------------------------------- |
-| `DAO buffer violated for: chain X — short by 22m`        | Re-run with `--start-time` pushed forward by at least that amount.                           |
-| `env var <CHAIN>_RPC_URL is not set`                     | Export the RPC env var for that chain (names in `tasks/utils/environments.ts`).              |
-| `--environment must be one of: devnet, testnet, mainnet` | Pass a valid `--environment`.                                                                |
-| `duration too short for chain block time`                | Use at least `1m` for `--duration`.                                                          |
+| Error in the logs                                        | Resolution                                                                      |
+| -------------------------------------------------------- | ------------------------------------------------------------------------------- |
+| `DAO buffer violated for: chain X — short by 22m`        | Re-run with `--start-time` pushed forward by at least that amount.              |
+| `env var <CHAIN>_RPC_URL is not set`                     | Export the RPC env var for that chain (names in `tasks/utils/environments.ts`). |
+| `--environment must be one of: devnet, testnet, mainnet` | Pass a valid `--environment`.                                                   |
+| `duration too short for chain block time`                | Use at least `1m` for `--duration`.                                             |
 
 The task exits non-zero (and prints the calldata for inspection) if any chain's `startBlock` is
 closer to its tip than `--buffer`. `npx hardhat help task:buildProposeCoprocessorUpgradeCalldata` prints the full
