@@ -14,9 +14,10 @@
 //     `.fhevm/runtime/addresses/gateway/.env.gateway`.
 // Env vars override any field so a run can point at a non-default local stack.
 //
-// A second source (a demo-config JSON for local, or a devnet/mainnet manifest) will be added later.
-// `resolveEnv` is written as `defaults <- overrides` so that second source only has to produce a
-// `Partial<TestEnvOverrides>`; nothing else here changes.
+// A second source (the confidential-vault demo-config JSON, #1760) plugs in here: it reads the
+// runtime artifact and calls `resolveEnv(overrides, "demo-config")` with a `Partial<TestEnvOverrides>`
+// mapped from the file (see `demo/loadDemoEnv.ts`). The mapping lives with the demo package, not
+// here, so this module keeps its zero-protocol-knowledge stance — it only learns a new source label.
 
 import os from "node:os";
 import path from "node:path";
@@ -37,8 +38,8 @@ export type Capabilities = {
 };
 
 export type TestEnv = {
-  /** The only source implemented today. Future: "demo-config" | "devnet" | "mainnet". */
-  readonly source: "local";
+  /** Which runtime the env was assembled from. Future: "devnet" | "mainnet". */
+  readonly source: "local" | "demo-config";
   readonly rpcUrl: string;
   readonly wsUrl: string;
   readonly relayerUrl: string;
@@ -86,6 +87,10 @@ const LOCAL_DEFAULTS = {
 
 const CAPABILITIES_BY_SOURCE: Record<TestEnv["source"], Capabilities> = {
   local: { faucet: true, freshMints: true, fastSlots: true },
+  // The demo-config artifact only ever describes a local validator stack, so the same capabilities
+  // hold. It differs from "local" solely in provenance: mints/batchers are pre-seeded, not created
+  // per scenario — the demo smoke reuses the seeded mints rather than minting fresh ones.
+  "demo-config": { faucet: true, freshMints: false, fastSlots: true },
 };
 
 const bytes32Hex = (value: string): `0x${string}` => {
@@ -126,12 +131,15 @@ const envOverrides = (env: NodeJS.ProcessEnv): Partial<TestEnvOverrides> => {
 };
 
 /** Assembles a validated TestEnv from `defaults <- overrides`. Exported for the scenario tests. */
-export const resolveEnv = (overrides: Partial<TestEnvOverrides> = {}): TestEnv => {
+export const resolveEnv = (
+  overrides: Partial<TestEnvOverrides> = {},
+  source: TestEnv["source"] = "local",
+): TestEnv => {
   const merged = { ...LOCAL_DEFAULTS, ...overrides };
   const deployerKeypairPath =
     overrides.deployerKeypairPath ?? path.join(os.homedir(), ".config/solana/id.json");
   return {
-    source: "local",
+    source,
     rpcUrl: merged.rpcUrl,
     wsUrl: merged.wsUrl,
     relayerUrl: merged.relayerUrl,
@@ -142,7 +150,7 @@ export const resolveEnv = (overrides: Partial<TestEnvOverrides> = {}): TestEnv =
     userDecryptContextId: decimalString(merged.userDecryptContextId, "userDecryptContextId"),
     coprocessorDbContainer: merged.coprocessorDbContainer,
     roots: { deployerKeypairPath },
-    capabilities: CAPABILITIES_BY_SOURCE.local,
+    capabilities: CAPABILITIES_BY_SOURCE[source],
   };
 };
 

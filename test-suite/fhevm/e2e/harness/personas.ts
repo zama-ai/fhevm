@@ -34,17 +34,35 @@ export type Personas = {
   /** The stack deployer wallet — the actor whose ACL grants the default handle authorizations. */
   readonly deployer: Persona;
   /**
+   * Named actors loaded from disk beyond the deployer. The confidential-vault demo (#1760) uses this
+   * to load its `keeper` (the operator who plays dispatch + settle — settle must read as an operator
+   * action, not a user button) alongside the end-user personas that deposit and redeem.
+   */
+  readonly roles: Readonly<Record<string, Persona>>;
+  /**
    * Tops a persona up with SOL. Gated on the `faucet` capability: on a live network (no faucet) it
    * throws rather than silently no-op, so a scenario that assumes funding fails loudly.
    */
   fund(persona: Persona, sol?: number): Promise<void>;
 };
 
-/** Resolves the personas available in this environment. Only the deployer is loaded from disk. */
-export const loadPersonas = async (env: TestEnv): Promise<Personas> => {
+/**
+ * Resolves the personas available in this environment. The deployer is always loaded from disk;
+ * `extraRoles` (name → keypair path) loads any additional named actors a scenario needs — e.g. the
+ * demo's `{ keeper, alice, bob }`.
+ */
+export const loadPersonas = async (
+  env: TestEnv,
+  extraRoles: Readonly<Record<string, string>> = {},
+): Promise<Personas> => {
   const deployer = await readKeypair("deployer", env.roots.deployerKeypairPath);
+  const roles: Record<string, Persona> = {};
+  for (const [name, keypairPath] of Object.entries(extraRoles)) {
+    roles[name] = await readKeypair(name, keypairPath);
+  }
   return {
     deployer,
+    roles,
     async fund(persona, sol = 5) {
       if (!env.capabilities.faucet) {
         throw new Error(`cannot fund ${persona.name}: environment "${env.source}" has no faucet capability`);
