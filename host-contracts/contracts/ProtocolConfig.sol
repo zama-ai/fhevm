@@ -416,6 +416,12 @@ contract ProtocolConfig is IProtocolConfig, UUPSUpgradeableEmptyProxy, ACLOwnabl
             revert InvalidKmsContext(contextId);
         }
 
+        // An empty payload skips both attestation loops below, so no signature would be verified before the vote is
+        // recorded. Reject it so `_requireExpectedSigner` always checks at least one attestation from the signer.
+        if (keys.length == 0 && crsList.length == 0) {
+            revert EmptyEpochActivationPayload(epochId);
+        }
+
         address signer = $.kmsNodeByTxSenderForContext[contextId][msg.sender].signerAddress;
         bytes32 dataHash;
         {

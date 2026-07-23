@@ -465,6 +465,14 @@ abstract contract HostContractsDeployerTestUtils is Test {
     ) internal {
         bytes memory extraData = abi.encodePacked(uint8(0x02), contextId, epochId);
 
+        // A fully empty payload now reverts with EmptyEpochActivationPayload. When callers request no material
+        // (both ids 0), supply one deterministic self-signed key attestation with a constant keyId so the payload
+        // is non-empty and every signer produces the identical dataHash. The keyId need not exist in KMSGeneration:
+        // signer recovery is all that confirmEpochActivation checks.
+        if (keyId == 0 && crsId == 0) {
+            keyId = KEY_COUNTER_BASE + 1;
+        }
+
         IProtocolConfig.EpochKeyResult[] memory keys = new IProtocolConfig.EpochKeyResult[](keyId == 0 ? 0 : 1);
         if (keyId != 0) {
             IKMSGeneration.KeyDigest[] memory keyDigests = _mockKeyDigests();
