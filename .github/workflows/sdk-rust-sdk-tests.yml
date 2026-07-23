@@ -79,10 +79,7 @@ jobs:
             echo "$GHCR_PASSWORD" | docker login ghcr.io -u "$GHCR_USERNAME" --password-stdin
 
       - name: Setup Rust
-        uses: dtolnay/rust-toolchain@b3b07ba8b418998c39fb20f53e8b695cdcc8de1b
-        with:
-          toolchain: stable
-          components: rustfmt, clippy
+        uses: ./.github/actions/setup_rust
 
       - name: Install Protoc
         uses: arduino/setup-protoc@c65c819552d16ad3c9b72d9dfd5ba5237b9c906b # v3.0.0
