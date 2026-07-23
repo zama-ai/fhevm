@@ -1,0 +1,29 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        SELECT publisher, s3_bucket_url\n          FROM block_consensus_peer_download\n         WHERE target_id = $1\n           AND completed_attempt < $2\n         ORDER BY publisher\n        ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "publisher",
+        "type_info": "Bytea"
+      },
+      {
+        "ordinal": 1,
+        "name": "s3_bucket_url",
+        "type_info": "Text"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Int8",
+        "Int4"
+      ]
+    },
+    "nullable": [
+      false,
+      false
+    ]
+  },
+  "hash": "39209c0d7c2b064fdb8c6f569460e84e86038810bac41d99432ea415207d642d"
+}

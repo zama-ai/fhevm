@@ -1,4 +1,5 @@
 mod aws_upload;
+mod consensus;
 mod executor;
 mod keyset;
 mod s3_migration;
@@ -57,6 +58,9 @@ use tracing::{error, info, warn, Level};
 
 use crate::{
     aws_upload::{check_is_ready, spawn_resubmit_task, spawn_uploader},
+    consensus::{
+        peer_downloader::spawn_peer_manifest_downloader, publisher::spawn_manifest_publisher,
+    },
     executor::SwitchNSquashService,
     metrics::spawn_gauge_update_routine,
     s3_migration::{run_startup_migrations, S3MigrationConfig},
@@ -140,6 +144,27 @@ pub struct HealthCheckConfig {
     pub port: u16,
 }
 
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct ConsensusConfig {
+    pub publish_manifest: bool,
+    pub verify_others_party_manifests: bool,
+    pub verification_delay: Duration,
+    pub verification_retry_delay: Duration,
+    pub verification_retry_count: u32,
+}
+
+impl Default for ConsensusConfig {
+    fn default() -> Self {
+        Self {
+            publish_manifest: false,
+            verify_others_party_manifests: false,
+            verification_delay: Duration::from_secs(5 * 60),
+            verification_retry_delay: Duration::from_secs(60),
+            verification_retry_count: 5,
+        }
+    }
+}
+
 #[derive(Clone)]
 pub struct Config {
     pub service_name: String,
@@ -161,6 +186,7 @@ pub struct Config {
     pub s3_migration: S3MigrationMode,
     pub s3_migration_sleep_duration: Duration,
     pub s3_migration_max_retries: i32,
+    pub consensus: ConsensusConfig,
 }
 
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
@@ -1035,6 +1061,10 @@ pub async fn run_all(
             "Starting gauge update routine"
         );
         spawn_gauge_update_routine(Duration::from_secs(interval_secs.into()), pg_mngr.pool());
+        consensus::metrics::spawn_consensus_gauge_updates(
+            Duration::from_secs(interval_secs.into()),
+            pg_mngr.pool(),
+        );
     }
     let signer: CoproSigner = match conf.signer_type {
         SignerType::PrivateKey => {
@@ -1159,6 +1189,28 @@ pub async fn run_all(
         return Ok(());
     }
 
+    let manifest_publisher = if conf.consensus.publish_manifest {
+        Some(
+            spawn_manifest_publisher(
+                &pool_mngr,
+                conf.clone(),
+                client.clone(),
+                signer.clone(),
+                stack_mode.clone(),
+            )
+            .await?,
+        )
+    } else {
+        info!("Consensus manifest publication is disabled");
+        None
+    };
+    let peer_manifest_downloader = if conf.consensus.verify_others_party_manifests {
+        Some(spawn_peer_manifest_downloader(&pool_mngr, client.clone(), stack_mode.clone()).await?)
+    } else {
+        info!("Consensus peer manifest verification is disabled");
+        None
+    };
+
     // Spawns a task to handle S3 uploads. In GCS mode the loop parks until the
     // cutover flips `stack_mode` out of GCS mode, so nothing is uploaded during
     // the dry-run window. Keep the uploader's handle so its failure exits the
@@ -1192,6 +1244,8 @@ pub async fn run_all(
             Ok(inner) => inner,
             Err(join_err) => Err(join_err.into()),
         },
+        res = wait_for_consensus_task(manifest_publisher) => res,
+        res = wait_for_consensus_task(peer_manifest_downloader) => res,
     };
     token.cancel();
 
@@ -1208,5 +1262,15 @@ pub async fn run_all(
     }
 
     info!("Worker stopped");
+    Ok(())
+}
+
+async fn wait_for_consensus_task(
+    handle: Option<tokio::task::JoinHandle<Result<(), ServiceError>>>,
+) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
+    let Some(handle) = handle else {
+        return std::future::pending().await;
+    };
+    handle.await??;
     Ok(())
 }

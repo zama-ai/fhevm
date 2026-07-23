@@ -1,0 +1,21 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        INSERT INTO block_consensus_range (\n            host_chain_id,\n            range_start,\n            range_end,\n            scale,\n            range_start_block_hash,\n            range_start_parent_block_hash,\n            range_end_block_hash,\n            range_digest\n        )\n        VALUES ($1, $2, $3, $4, $5, $6, $7, $8)\n        ON CONFLICT DO NOTHING\n        ",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Int8",
+        "Int8",
+        "Int8",
+        "Int4",
+        "Bytea",
+        "Bytea",
+        "Bytea",
+        "Bytea"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "a631d2d759d8e39842b29062b340dff4755c397dc7d01acafbf05c849819c29a"
+}

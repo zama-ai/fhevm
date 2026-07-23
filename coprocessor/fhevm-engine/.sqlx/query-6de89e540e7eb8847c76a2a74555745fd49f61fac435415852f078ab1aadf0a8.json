@@ -1,0 +1,28 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        SELECT key_id_gw, key_id\n          FROM keys\n         WHERE chain_id = $1\n         ORDER BY sequence_number\n        ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "key_id_gw",
+        "type_info": "Bytea"
+      },
+      {
+        "ordinal": 1,
+        "name": "key_id",
+        "type_info": "Bytea"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Int8"
+      ]
+    },
+    "nullable": [
+      false,
+      false
+    ]
+  },
+  "hash": "6de89e540e7eb8847c76a2a74555745fd49f61fac435415852f078ab1aadf0a8"
+}

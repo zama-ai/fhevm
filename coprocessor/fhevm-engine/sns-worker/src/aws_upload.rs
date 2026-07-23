@@ -1,3 +1,4 @@
+use crate::consensus::block_detection::ensure_block_consensus_row;
 use crate::metrics::{
     AWS_UPLOAD_FAILURE_COUNTER, AWS_UPLOAD_SUCCESS_COUNTER,
     S3_CANONICAL_RECONCILER_MISMATCH_COUNTER, S3_CANONICAL_REPAIR_COMPLETED_COUNTER,
@@ -132,6 +133,8 @@ async fn run_uploader_loop(
     signer: CoproSigner,
 ) -> Result<(), ExecutionError> {
     let gcs_mode = conf.gcs_mode;
+    let consensus_enabled =
+        conf.consensus.publish_manifest || conf.consensus.verify_others_party_manifests;
     let conf = conf.s3;
     let mut ongoing_upload_tasks: JoinSet<anyhow::Result<()>> = JoinSet::new();
     let max_concurrent_uploads = conf.max_concurrent_uploads as usize;
@@ -376,7 +379,14 @@ async fn run_uploader_loop(
                             return Ok(());
                         }
                         Ok(true) => {
-                            upload_ciphertexts(&mut trx, item, &client, &conf, signer)
+                            upload_ciphertexts(
+                                &mut trx,
+                                item,
+                                &client,
+                                &conf,
+                                consensus_enabled,
+                                signer,
+                            )
                                 .instrument(upload_span.clone())
                                 .await
                         }
@@ -980,6 +990,7 @@ async fn upload_ciphertexts(
     task: HandleItem,
     client: &Client,
     conf: &S3Config,
+    consensus_enabled: bool,
     signer: CoproSigner,
 ) -> anyhow::Result<()> {
     let context_id = COPROCESSOR_CONTEXT_ID_1;
@@ -1290,6 +1301,9 @@ async fn upload_ciphertexts(
         STALE_S3_UPLOAD_AFTER_CLEANUP_COUNTER.inc();
         return Ok(());
     }
+
+    ensure_block_consensus_row(trx, &task, consensus_enabled).await?;
+
     if repair_attempt {
         S3_CANONICAL_REPAIR_COMPLETED_COUNTER.inc();
     }
@@ -3294,6 +3308,7 @@ mod tests {
             task,
             &client,
             &conf,
+            false,
             Arc::new(PrivateKeySigner::random()),
         )
         .await?;

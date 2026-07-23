@@ -146,6 +146,18 @@ jobs:
         cargo llvm-cov test -p "$TEST_PACKAGE" --profile coverage
       working-directory: coprocessor/fhevm-engine
 
+    - name: Run sns-worker consensus integration regressions
+      if: ${{ matrix.package == 'sns-worker' }}
+      env:
+        SQLX_OFFLINE: 'true'
+        TEST_GLOBAL_LOCALSTACK: '1'
+        SNS_MANIFEST_SIMULATED_BLOCKS: '96'
+        SNS_MANIFEST_MISSING_PREVIOUS_SIMULATED_BLOCKS: '96'
+        SNS_MANIFEST_SIMULATED_WORKERS: '8'
+        SNS_MANIFEST_SOAK_CADENCE: '3'
+      run: cargo test -p sns-worker consensus:: --lib -- --ignored
+      working-directory: coprocessor/fhevm-engine
+
     - name: Export LCOV coverage data
       if: ${{ !cancelled() }}
       run: cargo llvm-cov report --lcov --profile coverage --output-path /tmp/lcov.info || true

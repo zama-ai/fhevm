@@ -15,10 +15,14 @@ use sqlx::{postgres::PgPoolOptions, Pool, Postgres};
 use tokio_util::sync::CancellationToken;
 use tracing::{debug, error, info};
 
+use crate::coprocessor_registry::{
+    refresh_coprocessor_registry, refresh_coprocessor_registry_at_block,
+};
 use crate::drift_detector::{DriftDetector, EventContext};
 use crate::metrics::{
     GET_BLOCK_NUM_FAIL_COUNTER, GET_BLOCK_NUM_SUCCESS_COUNTER, GET_LOGS_FAIL_COUNTER,
-    GET_LOGS_SUCCESS_COUNTER, VERIFY_PROOF_FAIL_COUNTER, VERIFY_PROOF_SUCCESS_COUNTER,
+    GET_LOGS_SUCCESS_COUNTER, REGISTRY_REFRESH_FAILURE_COUNTER, VERIFY_PROOF_FAIL_COUNTER,
+    VERIFY_PROOF_SUCCESS_COUNTER,
 };
 use crate::ConfigSettings;
 use crate::HealthStatus;
@@ -31,6 +35,12 @@ use fhevm_gateway_bindings::input_verification::InputVerification;
 struct ListenerProgress {
     last_processed_block_num: Option<u64>,
     earliest_open_ct_commits_block: Option<u64>,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+struct RegistryRefreshBlock {
+    number: u64,
+    hash: alloy::primitives::B256,
 }
 
 #[derive(Clone)]
@@ -119,6 +129,15 @@ impl<P: Provider<Ethereum> + Clone + 'static> GatewayListener<P> {
         sleep_duration: &mut u64,
     ) -> anyhow::Result<()> {
         let mut ticker = tokio::time::interval(self.conf.get_logs_poll_interval);
+        if let Some(gateway_config_address) = self.conf.gateway_config_address {
+            if let Err(error) =
+                refresh_coprocessor_registry(&self.provider, gateway_config_address, db_pool).await
+            {
+                REGISTRY_REFRESH_FAILURE_COUNTER.inc();
+                error!(%error, "Initial GatewayConfig registry refresh failed; listener will continue");
+            }
+        }
+        let mut next_registry_refresh = Instant::now() + self.conf.gateway_config_refresh_interval;
         let progress = self.get_listener_progress(db_pool).await?;
         let mut last_processed_block_num = progress.last_processed_block_num;
         let mut number_of_last_processed_updates: u64 = 0;
@@ -183,6 +202,8 @@ impl<P: Provider<Ethereum> + Clone + 'static> GatewayListener<P> {
                     if self.stack_mode.is_paused() {
                         continue;
                     }
+
+                    self.refresh_registry_if_due(db_pool, &mut next_registry_refresh).await;
 
                     let current_block = self.provider.get_block_number().await.inspect(|_| {
                         GET_BLOCK_NUM_SUCCESS_COUNTER.inc();
@@ -251,7 +272,14 @@ impl<P: Provider<Ethereum> + Clone + 'static> GatewayListener<P> {
                                 }
                             }
                             a if Some(a) == self.conf.gateway_config_address => {
-                                if let Err(e) = self.process_gateway_config_log(&mut drift_detector, log) {
+                                if let Err(e) = self
+                                    .process_gateway_config_update(
+                                        db_pool,
+                                        &mut drift_detector,
+                                        &log,
+                                    )
+                                    .await
+                                {
                                     error!(error = %e, "Failed to process GatewayConfig log");
                                 }
                             }
@@ -289,6 +317,54 @@ impl<P: Provider<Ethereum> + Clone + 'static> GatewayListener<P> {
                 }
             }
             self.reset_sleep_duration(sleep_duration);
+        }
+        Ok(())
+    }
+
+    async fn refresh_registry_if_due(&self, db_pool: &Pool<Postgres>, next_refresh: &mut Instant) {
+        if Instant::now() < *next_refresh {
+            return;
+        }
+        *next_refresh = Instant::now() + self.conf.gateway_config_refresh_interval;
+        if let Some(gateway_config_address) = self.conf.gateway_config_address {
+            if let Err(error) =
+                refresh_coprocessor_registry(&self.provider, gateway_config_address, db_pool).await
+            {
+                REGISTRY_REFRESH_FAILURE_COUNTER.inc();
+                error!(%error, "Periodic GatewayConfig registry refresh failed; listener will retry");
+            }
+        }
+    }
+
+    async fn process_gateway_config_update(
+        &self,
+        db_pool: &Pool<Postgres>,
+        drift_detector: &mut DriftDetector,
+        log: &Log,
+    ) -> anyhow::Result<()> {
+        let Some(block) = apply_gateway_config_event(drift_detector, log)? else {
+            return Ok(());
+        };
+        let gateway_config_address = self
+            .conf
+            .gateway_config_address
+            .expect("called only for the configured GatewayConfig address");
+        if let Err(error) = refresh_coprocessor_registry_at_block(
+            &self.provider,
+            gateway_config_address,
+            db_pool,
+            block.number,
+            block.hash,
+        )
+        .await
+        {
+            REGISTRY_REFRESH_FAILURE_COUNTER.inc();
+            error!(
+                %error,
+                block_number = block.number,
+                block_hash = %block.hash,
+                "Failed to refresh coprocessor registry after GatewayConfig update"
+            );
         }
         Ok(())
     }
@@ -381,7 +457,9 @@ impl<P: Provider<Ethereum> + Clone + 'static> GatewayListener<P> {
                     self.process_ciphertext_commits_log(drift_detector, log, batch_to, db_pool)
                         .await?;
                 } else if Some(log.address()) == self.conf.gateway_config_address {
-                    self.process_gateway_config_log(drift_detector, log)?;
+                    // The complete registry was refreshed before replay. Rebuild only
+                    // replays sender membership into the in-memory drift detector.
+                    apply_gateway_config_event(drift_detector, &log)?;
                 } else {
                     error!(log = ?log, "Unexpected log address while rebuilding drift detector");
                 }
@@ -422,37 +500,6 @@ impl<P: Provider<Ethereum> + Clone + 'static> GatewayListener<P> {
         } else {
             error!(log = ?log, "Failed to decode CiphertextCommits event log");
         }
-        Ok(())
-    }
-
-    fn process_gateway_config_log(
-        &self,
-        drift_detector: &mut DriftDetector,
-        log: Log,
-    ) -> anyhow::Result<()> {
-        let Ok(event) = GatewayConfig::GatewayConfigEvents::decode_log(&log.inner) else {
-            error!(log = ?log, "Failed to decode GatewayConfig event log");
-            return Ok(());
-        };
-
-        if let GatewayConfig::GatewayConfigEvents::UpdateCoprocessors(update) = event.data {
-            let expected_senders = update
-                .newCoprocessors
-                .into_iter()
-                .map(|coprocessor| coprocessor.txSenderAddress)
-                .collect::<Vec<_>>();
-            if expected_senders.is_empty() {
-                anyhow::bail!("GatewayConfig update removed all coprocessor tx-senders");
-            }
-            info!(
-                block_number = ?log.block_number,
-                tx_hash = ?log.transaction_hash,
-                expected_senders = ?expected_senders,
-                "Refreshing expected coprocessor tx-senders from GatewayConfig"
-            );
-            drift_detector.set_current_expected_senders(expected_senders);
-        }
-
         Ok(())
     }
 
@@ -620,6 +667,50 @@ impl<P: Provider<Ethereum> + Clone + 'static> GatewayListener<P> {
     }
 }
 
+fn apply_gateway_config_event(
+    drift_detector: &mut DriftDetector,
+    log: &Log,
+) -> anyhow::Result<Option<RegistryRefreshBlock>> {
+    let Ok(event) = GatewayConfig::GatewayConfigEvents::decode_log(&log.inner) else {
+        error!(log = ?log, "Failed to decode GatewayConfig event log");
+        return Ok(None);
+    };
+
+    let registry_changed = match event.data {
+        GatewayConfig::GatewayConfigEvents::UpdateCoprocessors(update) => {
+            let expected_senders = update
+                .newCoprocessors
+                .into_iter()
+                .map(|coprocessor| coprocessor.txSenderAddress)
+                .collect::<Vec<_>>();
+            if expected_senders.is_empty() {
+                anyhow::bail!("GatewayConfig update removed all coprocessor tx-senders");
+            }
+            info!(
+                block_number = ?log.block_number,
+                tx_hash = ?log.transaction_hash,
+                expected_senders = ?expected_senders,
+                "Refreshing expected coprocessor tx-senders from GatewayConfig"
+            );
+            drift_detector.set_current_expected_senders(expected_senders);
+            true
+        }
+        GatewayConfig::GatewayConfigEvents::UpdateCoprocessorThreshold(_) => true,
+        _ => false,
+    };
+    if !registry_changed {
+        return Ok(None);
+    }
+
+    let number = log
+        .block_number
+        .ok_or_else(|| anyhow::anyhow!("GatewayConfig update log has no block number"))?;
+    let hash = log
+        .block_hash
+        .ok_or_else(|| anyhow::anyhow!("GatewayConfig update log has no block hash"))?;
+    Ok(Some(RegistryRefreshBlock { number, hash }))
+}
+
 async fn update_listener_progress(
     db_pool: &Pool<Postgres>,
     conf: &ConfigSettings,
@@ -712,10 +803,86 @@ async fn get_listener_progress(db_pool: &Pool<Postgres>) -> anyhow::Result<Liste
 
 #[cfg(test)]
 mod tests {
+    use alloy::primitives::{Log as PrimitiveLog, B256, U256};
+    use alloy::sol_types::SolEvent;
     use serial_test::serial;
     use test_harness::instance::ImportMode;
 
     use super::*;
+
+    fn drift_detector() -> DriftDetector {
+        DriftDetector::new(
+            Vec::new(),
+            Duration::from_secs(5),
+            Duration::from_secs(2),
+            false,
+        )
+    }
+
+    fn gateway_config_log<E: SolEvent>(event: &E, block_number: u64, block_hash: B256) -> Log {
+        Log {
+            inner: PrimitiveLog {
+                address: Address::repeat_byte(0x10),
+                data: event.encode_log_data(),
+            },
+            block_number: Some(block_number),
+            block_hash: Some(block_hash),
+            ..Default::default()
+        }
+    }
+
+    #[test]
+    fn coprocessor_updates_request_registry_refresh_at_event_block() {
+        let block_hash = B256::repeat_byte(0x42);
+        let mut detector = drift_detector();
+        let update = GatewayConfig::UpdateCoprocessors {
+            newCoprocessors: vec![GatewayConfig::Coprocessor {
+                txSenderAddress: Address::repeat_byte(0x20),
+                signerAddress: Address::repeat_byte(0x21),
+                s3BucketUrl: "https://operator.example".to_owned(),
+            }],
+            newCoprocessorThreshold: U256::from(1),
+        };
+        let log = gateway_config_log(&update, 42, block_hash);
+
+        assert_eq!(
+            apply_gateway_config_event(&mut detector, &log).unwrap(),
+            Some(RegistryRefreshBlock {
+                number: 42,
+                hash: block_hash,
+            })
+        );
+    }
+
+    #[test]
+    fn threshold_updates_request_registry_refresh_at_event_block() {
+        let block_hash = B256::repeat_byte(0x43);
+        let mut detector = drift_detector();
+        let update = GatewayConfig::UpdateCoprocessorThreshold {
+            newCoprocessorThreshold: U256::from(2),
+        };
+        let log = gateway_config_log(&update, 43, block_hash);
+
+        assert_eq!(
+            apply_gateway_config_event(&mut detector, &log).unwrap(),
+            Some(RegistryRefreshBlock {
+                number: 43,
+                hash: block_hash,
+            })
+        );
+    }
+
+    #[test]
+    fn registry_update_without_block_identity_is_rejected() {
+        let mut detector = drift_detector();
+        let update = GatewayConfig::UpdateCoprocessorThreshold {
+            newCoprocessorThreshold: U256::from(2),
+        };
+        let mut log = gateway_config_log(&update, 43, B256::repeat_byte(0x43));
+        log.block_hash = None;
+
+        assert!(apply_gateway_config_event(&mut detector, &log).is_err());
+    }
 
     #[tokio::test]
     #[serial(db)]

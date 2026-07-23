@@ -1,0 +1,15 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        UPDATE block_consensus_verification_target\n           SET next_attempt_at = GREATEST(\n                   eligible_at,\n                   NOW() + retry_delay_micros * INTERVAL '1 microsecond'\n               ),\n               last_error = $2,\n               updated_at = NOW()\n         WHERE id = $1\n        ",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Int8",
+        "Text"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "d708ce4fed95a00b1ab94454b8b8e1d10d8efea82648f2e79460e495ecf2ec62"
+}
