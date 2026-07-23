@@ -27,10 +27,13 @@ vertical. Multi-replica / prod auth remain later slices.
 
 Both proof endpoints are **semantic**: the caller asks the product question — "prove `subject`
 had historical access to `handle`" or "prove `handle` is publicly decryptable" — and the service
-resolves `(lineage, handle[, subject], kind) → leaf_index` internally via one indexed lookup. The
-mapping is unique by construction (a handle is sealed into history once per supersession). Clients
-never compute, assume, or supply a leaf index; `leaf_index` and `leaf_count` are OUTPUTS they pass
-through from the response.
+resolves `(lineage, handle[, subject], kind) → leaf_index` internally via one indexed lookup. A
+historical-access key maps to a unique leaf by construction (a handle is superseded at most once
+per lineage, sealing one leaf per subject). A public-decrypt key may match several leaves for one
+handle (a born-public output plus later `make_handle_public` re-releases, which have no
+already-public guard); the service resolves to the earliest — any public leaf proves publicness,
+and the earliest is deterministic and append-stable. Clients never compute, assume, or supply a
+leaf index; `leaf_index` and `leaf_count` are OUTPUTS they pass through from the response.
 
 `access-proof` serves `ZAMA_HIST_ACCESS_LEAF_V1` leaves (lineage ‖ leaf_index ‖ handle ‖ subject);
 `public-proof` serves `ZAMA_PUBLIC_DECRYPT_LEAF_V1` leaves (lineage ‖ leaf_index ‖ handle).

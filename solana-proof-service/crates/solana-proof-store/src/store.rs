@@ -334,9 +334,17 @@ impl SqlProofStore {
             tx.commit().await?;
             return Ok(None);
         };
-        // One indexed lookup on solana_proof_leaves_semantic_idx. The mapping is unique by
-        // construction (a handle is sealed into history once per supersession); LIMIT 1 keeps a
-        // hypothetical duplicate from panicking the read.
+        // One indexed lookup on solana_proof_leaves_semantic_idx.
+        //
+        // Historical-access keys are unique by construction: a handle is superseded at most once
+        // per lineage, and each supersession seals one leaf per subject.
+        //
+        // Public-decrypt keys are NOT unique — a handle can carry several public-decrypt leaves
+        // (a born-public `fhe_eval` output seals one, and a later `make_handle_public` re-release
+        // seals another; on-chain `make_handle_public` has no already-public guard). Any such leaf
+        // is sufficient proof of publicness, so `ORDER BY leaf_index ASC LIMIT 1` resolves to the
+        // earliest sealing: it is deterministic and append-stable (the same query returns the same
+        // leaf forever, regardless of later re-sealings).
         let leaf_index = match key.subject {
             Some(subject) => {
                 sqlx::query_scalar!(

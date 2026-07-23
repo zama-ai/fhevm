@@ -53,7 +53,8 @@ pub struct AccessProofQuery {
     pub subject: String,
 }
 
-/// Query for a public-decrypt proof: the leaf marking `handle` publicly decryptable under `lineage`.
+/// Query for a public-decrypt proof: the earliest leaf marking `handle` publicly decryptable under
+/// `lineage` (a handle may carry several such leaves; the earliest is deterministic and stable).
 #[derive(Debug, Deserialize, ToSchema)]
 pub struct PublicProofQuery {
     /// Base58 lineage (`EncryptedValue` PDA) address.
@@ -335,8 +336,8 @@ pub async fn access_proof_handler<C: ChainFetcher, S: ProofSnapshotSource>(
 
 /// GET `/internal/solana/public-proof?encrypted_value=<base58>&handle=<hex32>`
 ///
-/// Resolves the public-decrypt leaf marking `handle` publicly decryptable under the lineage and
-/// returns its verified inclusion proof.
+/// Resolves the earliest public-decrypt leaf marking `handle` publicly decryptable under the
+/// lineage (a handle may carry several such leaves) and returns its verified inclusion proof.
 #[utoipa::path(
     get,
     path = "/internal/solana/public-proof",

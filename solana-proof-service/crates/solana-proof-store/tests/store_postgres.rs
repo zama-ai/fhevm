@@ -17,7 +17,8 @@ use solana_proof_store::{
     SqlProofStore, SubjectGrant,
 };
 use zama_solana_acl::lineage::reconstruct;
-use zama_solana_acl::mmr::mmr_peaks_from_leaves;
+use zama_solana_acl::mmr::{mmr_build_proof, mmr_peaks_from_leaves, mmr_verify};
+use zama_solana_acl::public_decrypt_leaf_commitment;
 
 fn database_url() -> String {
     std::env::var("SOLANA_PROOF_TEST_DATABASE_URL")
@@ -372,6 +373,70 @@ async fn semantic_leaf_resolution_maps_handle_and_subject_to_index() {
         .await
         .unwrap()
         .is_none());
+}
+
+/// Regression (PR #3303): a handle can legitimately carry TWO public-decrypt leaves — a born-public
+/// output seals one, and a later `make_handle_public` re-release seals another (on-chain
+/// `make_handle_public` has no already-public guard). The public semantic key must resolve to the
+/// EARLIEST such leaf (index 0) deterministically, and that leaf's proof must verify.
+#[ignore = "requires DATABASE_URL / SOLANA_PROOF_TEST_DATABASE_URL"]
+#[tokio::test]
+async fn public_decrypt_resolves_duplicate_leaves_to_earliest() {
+    let store = fresh_store().await;
+    let ev = pk(0xE9);
+    let owner = pk(0x30);
+    let handle = pk(0x10);
+    // create sets current_handle=handle (no leaf); then two public seals of that SAME handle mirror
+    // a born-public lifecycle leaf at index 0 followed by an explicit make_handle_public re-release
+    // at index 1 — both append a public-decrypt leaf for the one handle.
+    let create = create_ix(ev, handle, owner);
+    let seal_born_public = make_public_ix(ev, handle);
+    let seal_make_public = make_public_ix(ev, handle);
+    let b = block(
+        10,
+        9,
+        pk(0x90),
+        pk(0xA0),
+        vec![CanonicalTransaction {
+            signature: sig(9),
+            index: 1,
+            succeeded: true,
+            is_vote: false,
+            instructions: vec![create, seal_born_public, seal_make_public],
+        }],
+    );
+    assert_eq!(
+        store.apply_completed_block(&b).await.unwrap(),
+        ApplyOutcome::Applied
+    );
+
+    let resolved = store
+        .proof_snapshot_for_leaf(
+            ev,
+            &SemanticLeafKey {
+                kind: LeafKind::PublicDecrypt,
+                handle,
+                subject: None,
+            },
+        )
+        .await
+        .unwrap()
+        .expect("lineage ingested");
+    // Two public-decrypt leaves for the one handle; resolution returns the EARLIEST.
+    assert_eq!(resolved.snapshot.leaf_count, 2);
+    assert_eq!(resolved.leaf_index, Some(0));
+
+    // The resolved leaf's inclusion proof verifies against the lineage peaks.
+    let leaf_index = resolved.leaf_index.unwrap();
+    let commitment = public_decrypt_leaf_commitment(ev, leaf_index, handle);
+    assert_eq!(resolved.snapshot.leaves[leaf_index as usize], commitment);
+    let proof = mmr_build_proof(&resolved.snapshot.leaves, leaf_index).expect("inclusion proof");
+    assert!(mmr_verify(
+        &resolved.snapshot.peaks,
+        resolved.snapshot.leaf_count,
+        commitment,
+        &proof,
+    ));
 }
 
 /// The startup guard (`has_pre_semantic_leaf_rows`) detects a store populated before the #1721

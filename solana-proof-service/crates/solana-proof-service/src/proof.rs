@@ -103,8 +103,10 @@ pub async fn build_access_proof<C: ChainFetcher, S: ProofSnapshotSource>(
     .await
 }
 
-/// Builds a verified public-decrypt proof: the leaf for `(lineage, handle)`
-/// (`ZAMA_PUBLIC_DECRYPT_LEAF_V1`). Read-only.
+/// Builds a verified public-decrypt proof: the earliest public-decrypt leaf for `(lineage, handle)`
+/// (`ZAMA_PUBLIC_DECRYPT_LEAF_V1`). A handle can carry several public-decrypt leaves (born-public
+/// plus later `make_handle_public` re-releases); any one proves publicness, and resolving to the
+/// earliest is deterministic and append-stable. Read-only.
 pub async fn build_public_proof<C: ChainFetcher, S: ProofSnapshotSource>(
     fetcher: &C,
     store: &S,
