@@ -19,7 +19,7 @@ interface IProtocolConfig {
      * @param publicDecryption Minimum signatures required for public decryption verification.
      * @param userDecryption Minimum signatures required for user decryption verification.
      * @param kmsGen Minimum signatures required for key/CRS generation consensus.
-     * @param mpc Minimum signatures required for MPC computation quorums.
+     * @param mpc MPC fault threshold `t`: max faulty or malicious MPC nodes tolerated.
      */
     struct KmsThresholds {
         uint256 publicDecryption;
