@@ -1,0 +1,190 @@
+name: solana-demo-acceptance
+
+# Manual live acceptance for the confidential-vault demo stack (#1760). NOT in the PR-blocking
+# vertical (acceptance #7): this is workflow_dispatch only, brings the whole stack up the same way
+# solana-e2e.yml does, then exercises the demo-specific criteria that cannot be checked offline:
+#   - demo-up.sh cold/idempotent bring-up: deploy the two demo programs, seed, write the config JSON
+#   - deposit-arc smoke (bun run demo:smoke): the first live-cluster exercise of batcher+vault
+#   - browser-reality: CORS preflight against relayer (with RELAYER_PERMISSIVE_CORS set) + proof
+#     service, and the faucet endpoints callable from a browser origin
+# Any leg fails the job non-zero; the same failure logs solana-e2e.yml collects are uploaded.
+#
+# The two demo programs (demo_vault, confidential_batcher) deploy from committed keypairs under
+# solana/scripts/demo/demo-keypairs/ (see its README); anchor build + deploy mirror
+# setup-solana-side.sh's zama_host/confidential_token pattern (explicit -k, --program-id).
+
+on:
+  workflow_dispatch:
+    inputs:
+      deposit-amount:
+        description: "USDC the deposit-arc persona wraps + joins with (fresh per run avoids PDA reuse)."
+        default: "1000"
+        type: string
+
+permissions: {}
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  demo-acceptance:
+    name: solana-demo-acceptance
+    runs-on: runs-on=${{ github.run_id }}/runner=32cpu-linux-x64/volume=160gb/extras=s3-cache
+    timeout-minutes: 120
+    permissions:
+      contents: "read" # checkout
+      packages: "read" # pull repo-owned images from ghcr.io
+    env:
+      DEMO_DEPOSIT_AMOUNT: ${{ inputs.deposit-amount || '1000' }}
+      # Opt-in permissive CORS for the demo dApp origin (relayer defaults OFF; only demo mode sets it).
+      RELAYER_PERMISSIVE_CORS: "1"
+      DEMO_ORIGIN: "http://localhost:5173"
+    steps:
+      - name: Checkout
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          persist-credentials: "false"
+
+      - name: Setup Node
+        uses: actions/setup-node@395ad3262231945c25e8478fd5baf05154b1d79f # v6.1.0
+        with:
+          node-version: 24
+
+      - name: Setup Bun
+        uses: oven-sh/setup-bun@ecf28ddc73e819eb6fa29df6b34ef8921c743461 # v2.1.3
+
+      - name: Setup Foundry
+        uses: foundry-rs/foundry-toolchain@82dee4ba654bd2146511f85f0d013af94670c4de # v1.4.0
+
+      - name: Setup Docker Buildx
+        uses: docker/setup-buildx-action@d70bba72b1f3fd22344832f00baa16ece964efeb # v3.3.0
+
+      - name: Setup Solana + Anchor toolchain
+        run: |
+          set -euo pipefail
+          rustup target add wasm32-unknown-unknown
+          retry() { local n; for n in 1 2 3; do "$@" && return 0; echo "attempt $n failed; retrying in 5s" >&2; sleep 5; done; return 1; }
+          retry curl -sSfL https://release.anza.xyz/v2.1.21/install -o /tmp/anza-install.sh
+          sh /tmp/anza-install.sh
+          echo "$HOME/.local/share/solana/install/active_release/bin" >> "$GITHUB_PATH"
+          mkdir -p "$HOME/.cargo/bin"
+          retry curl -sSfL https://github.com/coral-xyz/anchor/releases/download/v1.0.2/anchor-1.0.2-x86_64-unknown-linux-gnu -o "$HOME/.cargo/bin/anchor"
+          chmod +x "$HOME/.cargo/bin/anchor"
+          anchor --version
+
+      - name: Setup protoc (host-listener builds fhevm-engine-common via prost-build)
+        uses: arduino/setup-protoc@c65c819552d16ad3c9b72d9dfd5ba5237b9c906b # v3.0.0
+        with:
+          version: "26.x"
+
+      - name: Login to ghcr.io
+        uses: zama-ai/ci-templates/.github/actions/retry@542103e14b9ae6a9aea27787b8724b3b35bb3918 # v1.0.9
+        env:
+          GHCR_USERNAME: ${{ github.actor }}
+          GHCR_PASSWORD: ${{ secrets.GHCR_READ_TOKEN }} # zizmor: ignore[secrets-outside-env] registry read token, same pattern as solana-e2e.yml
+        with:
+          command: |
+            echo "$GHCR_PASSWORD" | docker login ghcr.io -u "$GHCR_USERNAME" --password-stdin
+
+      - name: Login to cgr.dev
+        uses: docker/login-action@9780b0c442fbb1117ed29e0efdff1e18412f7567 # v3.3.0
+        with:
+          registry: cgr.dev
+          username: ${{ secrets.CGR_USERNAME }} # zizmor: ignore[secrets-outside-env] registry creds, same pattern as solana-e2e.yml
+          password: ${{ secrets.CGR_PASSWORD }} # zizmor: ignore[secrets-outside-env] registry creds, same pattern as solana-e2e.yml
+
+      - name: Build the @fhevm/sdk ESM (the demo seed + smoke import @fhevm/sdk/solana/vault)
+        run: cd sdk/js-sdk && npm ci && npm run build:esm
+
+      - name: Install fhevm-cli deps (demo-up.sh + demo scripts drive ./fhevm-cli and bun)
+        working-directory: test-suite/fhevm
+        run: bun install --frozen-lockfile
+
+      - name: Cache host-side cargo builds (host-listener + live-client)
+        uses: actions/cache@1bd1e32a3bdc45362d1e726936510720a7c30a57 # v4.2.0
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            coprocessor/fhevm-engine/target
+            solana/scripts/e2e/live-client/target
+          key: ${{ runner.os }}-cargo-solana-e2e-host-${{ hashFiles('coprocessor/fhevm-engine/Cargo.lock', 'solana/scripts/e2e/live-client/Cargo.lock') }}
+          restore-keys: ${{ runner.os }}-cargo-solana-e2e-host-
+
+      - name: Bring up fresh stack + Solana side (clean-e2e.sh)
+        # Same bring-up as solana-e2e.yml's "Bring up fresh stack" step. RELAYER_PERMISSIVE_CORS is
+        # exported at the job level so the relayer container comes up with the demo CORS layer on.
+        env:
+          SCCACHE_BUCKET: ${{ secrets.AWS_ACCESS_KEY_S3_USER != '' && secrets.AWS_SECRET_KEY_S3_USER != '' && 'gh-actions-cache-eu-west-3' || '' }} # zizmor: ignore[secrets-outside-env] gates the bucket on both creds being present, scoped to this step's env below
+          SCCACHE_REGION: eu-west-3
+          SCCACHE_S3_PREFIX: sccache/fhevm-coprocessor
+          AWS_ACCESS_KEY_S3_USER: ${{ secrets.AWS_ACCESS_KEY_S3_USER }} # zizmor: ignore[secrets-outside-env] sccache S3 cache creds scoped to this step's env, same pattern as solana-e2e.yml
+          AWS_SECRET_KEY_S3_USER: ${{ secrets.AWS_SECRET_KEY_S3_USER }} # zizmor: ignore[secrets-outside-env] sccache S3 cache creds scoped to this step's env, same pattern as solana-e2e.yml
+          FHEVM_BUILDCACHE_TAG: buildcache-feature-solana
+        run: bash solana/scripts/e2e/clean-e2e.sh
+
+      - name: Ensure @fhevm/sdk runtime deps resolve for the demo scripts
+        # Mirrors solana-e2e.yml: clean-e2e perturbs the SDK's resolved runtime deps; reinstall them
+        # into src/node_modules and assert the vault subpath imports before driving the demo.
+        run: |
+          ( cd "$GITHUB_WORKSPACE/sdk/js-sdk/src" && npm install --no-save --no-package-lock --install-strategy=shallow --workspaces=false )
+          cd "$GITHUB_WORKSPACE/test-suite/fhevm"
+          node --input-type=module -e "await import('@fhevm/sdk/solana/vault'); console.log('@fhevm/sdk/solana/vault imports OK')"
+
+      - name: Demo bring-up (deploy demo programs, seed, write config JSON) — demo-up.sh
+        # The stack from clean-e2e is still up; demo-up.sh detects that and skips re-bringup
+        # (idempotent re-run, acceptance #6), then deploys the two demo programs and seeds.
+        run: bash solana/scripts/demo/demo-up.sh
+
+      - name: Start the demo faucet (background; the smoke funds its persona through it)
+        working-directory: test-suite/fhevm
+        run: |
+          bun run demo:faucet > /tmp/solana-demo-faucet.log 2>&1 &
+          echo "FAUCET_PID=$!" >> "$GITHUB_ENV"
+          # Wait for the faucet health endpoint before proceeding.
+          for _ in $(seq 1 30); do
+            if curl -fsS http://127.0.0.1:8090/health >/dev/null 2>&1; then echo "faucet up"; exit 0; fi
+            sleep 1
+          done
+          echo "faucet did not become healthy" >&2; cat /tmp/solana-demo-faucet.log >&2; exit 1
+
+      - name: Deposit-arc smoke (bun run demo:smoke) — live batcher + vault via the SDK
+        working-directory: test-suite/fhevm
+        run: bun run demo:smoke
+
+      - name: Browser-reality checks (CORS preflight + faucet endpoints) — acceptance #5
+        working-directory: test-suite/fhevm
+        # fetch() OPTIONS preflights (relayer with RELAYER_PERMISSIVE_CORS on, proof service, faucet)
+        # from a browser Origin, asserting permissive CORS headers come back. TS, not bash: the
+        # header assertions are logic (repo policy keeps bash to zero-logic glue).
+        run: DEMO_ORIGIN="$DEMO_ORIGIN" bun run demo:check-cors
+
+      - name: Stop the demo faucet
+        if: ${{ always() }}
+        run: kill "${FAUCET_PID:-0}" 2>/dev/null || true
+
+      - name: Collect stack logs on failure
+        if: ${{ failure() }}
+        run: |
+          mkdir -p /tmp/solana-demo-logs
+          cp /tmp/solana-*.log /tmp/solana-demo-logs/ 2>/dev/null || true
+          docker ps -a > /tmp/solana-demo-logs/docker-ps.txt 2>&1 || true
+          for c in $(docker ps -aq); do
+            n="$(docker inspect -f '{{.Name}}' "$c" 2>/dev/null | sed 's#^/##')"
+            docker logs "$c" > "/tmp/solana-demo-logs/container-${n:-$c}.log" 2>&1 || true
+          done
+
+      - name: Upload failure logs
+        if: ${{ failure() }}
+        uses: actions/upload-artifact@65c4c4a1ddee5b72f698fdd19549f0f0fb45cf08 # v4.6.0
+        with:
+          name: solana-demo-acceptance-logs
+          path: /tmp/solana-demo-logs
+
+      - name: Tear down the stack
+        if: ${{ always() }}
+        working-directory: test-suite/fhevm
+        run: |
+          pkill -f solana-test-validator || true
+          ./fhevm-cli clean || true
