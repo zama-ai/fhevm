@@ -378,7 +378,7 @@ export const requiresLegacyGatewayKmsGenerationAddress = (state: Pick<CompatStat
 
 /** Detects when contract tasks still expect the legacy internal PauserSet flag name. */
 const requiresLegacyHostPauserTaskFlag = (version: string) =>
-  versionBeforeReleaseFamily(version, [0, 13, 0], { unparsed: "modern" });
+  versionBeforeReleaseFamily(version, [0, 12, 1], { unparsed: "modern" });
 
 const requiresLegacyGatewayPauserTaskFlag = (version: string) =>
   versionBeforeReleaseFamily(version, [0, 13, 0], { unparsed: "modern" });
