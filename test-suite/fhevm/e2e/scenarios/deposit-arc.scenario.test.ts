@@ -1,6 +1,6 @@
-// Scenario: deposit arc — WRAP LEG (#1760), the FIRST live-cluster exercise of the confidential
+// Scenario: deposit arc — WRAP PHASE (#1760), the FIRST live-cluster exercise of the confidential
 // vault's forward path via `@fhevm/sdk/solana/vault`. Run as `demo:smoke` and hard-gated by the
-// solana-demo-acceptance workflow: this leg is expected to pass live.
+// solana-demo-acceptance workflow: this phase is expected to pass live.
 //
 // This covers exactly the part of the deposit arc that is wired end-to-end today: fund a persona,
 // initialize her confidential cUSDC account, and wrap mock USDC into a confidential cUSDC balance
@@ -16,7 +16,7 @@
 // untyped here by construction (same reason as `src/solana/current-user-decrypt.ts`): the SDK's
 // generated `_types` are not built at tsc time.
 //
-// Assertion map — the wrap leg (join = mock USDC → cUSDC):
+// Assertion map — the wrap phase (join = mock USDC → cUSDC):
 //   1. alice funded with SOL + mock USDC through the demo faucet         [live, wired below].
 //   2. alice's cUSDC confidential token account initialized              [live, SDK, wired below].
 //   3. wrap mock USDC → cUSDC confidential balance (public amount)       [live, SDK, wired below].
@@ -98,7 +98,7 @@ const runsDemoScenarios = process.env.RUN_DEMO_SCENARIOS === "1";
 
 describe.skipIf(!runsDemoScenarios)("solana deposit-arc scenario", () => {
   test(
-    "deposit arc (wrap leg): alice funds, initializes cUSDC, and wraps mock USDC into a confidential cUSDC balance",
+    "deposit arc (wrap phase): alice funds, initializes cUSDC, and wraps mock USDC into a confidential cUSDC balance",
     async () => {
       const { env, config } = await loadDemoEnv();
 
@@ -168,7 +168,7 @@ describe.skipIf(!runsDemoScenarios)("solana deposit-arc scenario", () => {
       const vault = await loadVaultModule();
 
       // Step 2: create alice's confidential token account on the join mint (cUSDC). initialize +
-      // wrap both revert on failure, so their confirmation IS the assertion for these legs.
+      // wrap both revert on failure, so their confirmation IS the assertion for these phases.
       await send(alice, [
         await vault.buildInitializeTokenAccountInstruction({
           owner: alice,
@@ -192,7 +192,7 @@ describe.skipIf(!runsDemoScenarios)("solana deposit-arc scenario", () => {
 
       // Step 4: on-chain assertion. Read alice's cUSDC confidential token account back and assert it
       // now exists and is owned by the confidential-token program — the concrete state the (not-yet-
-      // wired) join leg would consume. This is the wrap leg's real state check, beyond "did not revert".
+      // wired) join phase would consume. This is the wrap phase's real state check, beyond "did not revert".
       const aliceCusdc = await vault.tokenAccountAddress(config.mints.joinConfidential, alice.address);
       const account = await rpc.getAccountInfo(aliceCusdc, { encoding: "base64" }).send();
       expect(account.value).not.toBeNull();

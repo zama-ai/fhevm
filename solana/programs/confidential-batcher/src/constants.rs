@@ -32,10 +32,10 @@ pub const JOIN_RECORD_SEED: &[u8] = b"join-record";
 
 /// PDA seed for the batch's plain SPL account in the JOIN mint's underlying
 /// (vault underlying for deposit batchers, vault shares for redeem batchers),
-/// holding the redeemed batch total between settle's redeem and vault legs.
+/// holding the redeemed batch total between settle's redeem and vault phases.
 pub const BATCH_JOIN_UNDERLYING_SEED: &[u8] = b"batch-join-underlying";
 
 /// PDA seed for the batch's plain SPL account in the PAYOUT mint's underlying
 /// (vault shares for deposit batchers, vault underlying for redeem batchers),
-/// holding the vault leg's output between settle's vault and wrap legs.
+/// holding the vault phase's output between settle's vault and wrap phases.
 pub const BATCH_PAYOUT_UNDERLYING_SEED: &[u8] = b"batch-payout-underlying";

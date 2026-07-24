@@ -362,7 +362,7 @@ const main = async (): Promise<void> => {
   // 3b. Underlying-token escrows. `wrap_usdc` and `redeem_burned_amount` both take the confidential
   // mint's `vault_usdc` = ATA(vault_authority(mint), underlyingMint) and require it to already exist
   // (neither instruction inits it). Create both mints' escrows up front — cUSDC/mock-USDC is exercised
-  // by the wrap-leg smoke; cShares/share-mint is the redeem-direction mirror — so a later redeem does
+  // by the wrap-phase smoke; cShares/share-mint is the redeem-direction mirror — so a later redeem does
   // not fail the same way one step past what the smoke covers.
   const cUsdcEscrow = await buildVaultUnderlyingEscrowAtaInstruction({
     payer: deployer,

@@ -376,14 +376,14 @@ disclosure. Balance disclosure remains a separate path.
 
 Status: superseded (issue #1593; supersedes DD-018)
 
-Was: a ported multi-leg transfer-and-call callback flow (`confidential_transfer` →
+Was: a ported multi-phase transfer-and-call callback flow (`confidential_transfer` →
 `confidential_call_transfer_receiver` → `confidential_prepare_transfer_callback` →
 `confidential_finalize_transfer_callback`) plus a `confidential-token-receiver` program + SDK.
 
 Replaced because it transliterated an EVM workaround Solana doesn't need: a contract can't observe an
 incoming transfer on EVM, so the token calls it back. On Solana signer authority propagates through
 CPI, so a receiving app drives its **own** atomic `deposit` that CPIs `confidential_transfer` — the
-user signs once, no operator, no callback, no refund leg (the all-or-zero transferred amount is the
+user signs once, no operator, no callback, no refund phase (the all-or-zero transferred amount is the
 accept signal). See `confidential-batcher::join`, which evolved the `confidential-deposit-app`
 reference this decision introduced. Token-2022 transfer hooks were
 rejected as a substitute: they are privilege-stripped veto tools, not receiver callbacks
@@ -680,10 +680,10 @@ and should not resurrect unsigned `authorized_app_accounts[]`.
 
 Status: superseded (with DD-011, issue #1593)
 
-Was: the split refund legs (`confidential_prepare_transfer_callback` /
+Was: the split refund phases (`confidential_prepare_transfer_callback` /
 `confidential_finalize_transfer_callback`) of the transfer-and-call flow, with a recoverable
 (non-atomic) sender credit from a durable refund snapshot. Removed with the whole callback flow — apps
-now compose deposits by CPI (DD-011), so there is no refund leg.
+now compose deposits by CPI (DD-011), so there is no refund phase.
 
 ## DD-019: Confidential Transfer Persists Only Final Balance And Transferred-Amount ACL Records
 
@@ -1414,7 +1414,7 @@ in [`FUTURE_DESIGN.md`](./FUTURE_DESIGN.md); this list is the short index.
 - Proof-service high availability (DD-035): a single standalone instance with Yellowstone ingest +
   PostgreSQL durable store (plus bounded confirmed RPC recovery) is the whole story today;
   replication/failover is unaddressed.
-- The old 4-leg receiver-callback flow was deleted with the legacy model, but a Solana-native
+- The old 4-phase receiver-callback flow was deleted with the legacy model, but a Solana-native
   composition pattern for contract-to-contract confidential calls has not been designed to replace
   it.
 - Subject-list overflow beyond `MAX_ENCRYPTED_VALUE_SUBJECTS` (8 subjects per `EncryptedValue`) is
@@ -1812,7 +1812,7 @@ being folded into `dispatch` (keeps each instruction inside one transaction enve
 is fixed-point at `RATE_SCALE = 10^9` with both divisions rounding down, so the sum of claims can
 never exceed the wrapped shares (the claim MulDiv's 128-bit intermediate and euint64 result are
 bounded by `shares * RATE_SCALE`). Settle prices and wraps only the vault-minted share DELTA across
-its deposit leg — never the share account's raw balance — because SPL destinations cannot refuse
+its deposit phase — never the share account's raw balance — because SPL destinations cannot refuse
 incoming transfers: a preloaded share balance stays inert instead of inflating the rate past u64 and
 bricking the batch (pinned by `mollusk_preloaded_shares_do_not_poison_the_rate`).
 
@@ -1834,7 +1834,7 @@ never blocks a redeem batch (each batcher serializes only its own batches), yet 
 layout and every instruction is shared. The vocabulary is direction-neutral — a JOIN confidential
 mint (what users batch in: cUnderlying for deposits, cShares for redeems) and a PAYOUT confidential
 mint (what claims pay: cShares for deposits, cUnderlying for redeems) — and the batch lifecycle's
-only direction branch is settle's vault leg (`demo_vault::deposit` vs `demo_vault::withdraw`);
+only direction branch is settle's vault phase (`demo_vault::deposit` vs `demo_vault::withdraw`);
 `initialize_batcher` additionally validates the mint wiring per direction at setup, and join, quit,
 dispatch, claim, and open_batch are direction-free. The
 alternative (a duplicated instruction set) was rejected because the two flows differ in exactly one
@@ -1855,7 +1855,7 @@ only and SATURATES at u64::MAX instead of failing settle (a redeem batch of few 
 large payout can legitimately exceed the u64 rate domain — a display number must not brick funds).
 
 Settle's delta accounting is preserved as a security invariant on the redeem direction's
-underlying-received leg: the payout is the batch payout account's SPL balance DELTA across the
+underlying-received phase: the payout is the batch payout account's SPL balance DELTA across the
 vault CPI, never its raw balance, so preloaded tokens (which SPL destinations cannot refuse) stay
 inert (pinned by `mollusk_redeem_preloaded_underlying_stays_inert` alongside the deposit-side
 test). The dust-brick limitation above is deposit-only: the vault's share price never drops below

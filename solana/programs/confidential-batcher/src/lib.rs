@@ -75,7 +75,7 @@ pub mod confidential_batcher {
 
     /// Opens the next batch: creates the `Batch` account, its per-batch
     /// authority PDA, its own confidential join and payout token accounts,
-    /// and its plain SPL accounts for settle's legs. Permissionless; requires
+    /// and its plain SPL accounts for settle's phases. Permissionless; requires
     /// the previous batch of the same batcher to have been dispatched (a
     /// batcher's batches never overlap while pending; the other direction's
     /// batcher is independent). `authority_funding_lamports` is moved from

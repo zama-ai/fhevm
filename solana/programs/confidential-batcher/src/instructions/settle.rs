@@ -1,28 +1,28 @@
 //! Settles a dispatched batch with the KMS certificate for its burned total.
 //!
-//! Four legs, one instruction, all permissionless — and the batch lifecycle's
+//! Four phases, one instruction, all permissionless — and the batch lifecycle's
 //! only direction branch (the vault CPI; `initialize_batcher` additionally
 //! validates the mint wiring per direction at setup):
 //! 1. `redeem_burned_amount` — the host verifies the KMS certificate on-chain
 //!    (current context + exact-handle MMR public-decrypt proof) and releases
 //!    the certified plain tokens (vault underlying for deposit batchers,
 //!    vault shares for redeem batchers) to the batch authority.
-//! 2. The vault leg — `demo_vault::deposit` for deposit batchers,
+//! 2. The vault phase — `demo_vault::deposit` for deposit batchers,
 //!    `demo_vault::withdraw` for redeem batchers. The one public number goes
 //!    through the vault; the payout units come back.
 //! 3. `wrap_usdc` on the payout mint — the received payout becomes
 //!    confidential (the wrapped amount is the already-public aggregate,
-//!    nothing new leaks). "Received" is the balance DELTA across leg 2, never
+//!    nothing new leaks). "Received" is the balance DELTA across phase 2, never
 //!    the account's raw balance: SPL destinations cannot refuse transfers, so
 //!    a preloaded balance must stay unpriced and unwrapped (inert).
 //! 4. Record `payout_rate = payout_received * RATE_SCALE / total_joined`
 //!    (informational, saturating). Claims use exact proportional division —
 //!    `joined * payout_received / total_joined` — never this rate.
 //!
-//! A zero-total batch cancels after leg 1: the certificate still proves the
+//! A zero-total batch cancels after phase 1: the certificate still proves the
 //! total (so cancellation is trustless), and the division never happens.
 //!
-//! The wrap and rate legs assume `grant_deny_list_enabled = false` and no
+//! The wrap and rate phases assume `grant_deny_list_enabled = false` and no
 //! binding HCU cap: every token/host CPI passes `deny_subject_record`,
 //! `hcu_block_meter`, and `hcu_trusted_app_record` as hardcoded `None` (the
 //! PoC host fixtures never enable them).
@@ -31,7 +31,7 @@
 //! Dispatched forever
 //!
 //! If a DEPOSIT batch's certified total is small enough that the vault floors
-//! it to zero shares (`total < ~1 share's worth` at the current price), leg 2
+//! it to zero shares (`total < ~1 share's worth` at the current price), phase 2
 //! reverts with the vault's `ZeroShares` and the whole settle reverts
 //! atomically — retryable, but never to success: the demo vault's share price
 //! only rises (floor rounding favors the vault, `harvest` only donates, there
@@ -69,14 +69,14 @@ pub struct Settle<'info> {
     #[account(mut, seeds = [BATCH_AUTHORITY_SEED, batch.key().as_ref()], bump = batch.authority_bump)]
     pub batch_authority: UncheckedAccount<'info>,
 
-    // --- leg 1: redeem the KMS-certified burned total ---
+    // --- phase 1: redeem the KMS-certified burned total ---
     /// Confidential mint the batch total was burned on.
     pub join_confidential_mint: Box<Account<'info, ct::ConfidentialMint>>,
     /// CHECK: batch's confidential join token account; validated by the token CPI.
     pub batch_join_token_account: UncheckedAccount<'info>,
     /// SPL mint the join confidential mint wraps (vault underlying for deposit
     /// batchers, vault shares for redeem batchers). Mutable because it is the
-    /// vault share mint on the redeem direction (leg 2 burns from it).
+    /// vault share mint on the redeem direction (phase 2 burns from it).
     #[account(mut)]
     pub join_underlying_mint: Box<Account<'info, SplMint>>,
     /// CHECK: join mint's underlying-token vault (canonical ATA); validated
@@ -99,7 +99,7 @@ pub struct Settle<'info> {
     /// verifier CPI.
     pub kms_context: UncheckedAccount<'info>,
 
-    // --- leg 2: move the public total through the vault ---
+    // --- phase 2: move the public total through the vault ---
     /// Public vault the batcher fronts.
     pub vault: Box<Account<'info, demo_vault::Vault>>,
     /// CHECK: demo-vault authority PDA; validated by the vault CPI.
@@ -107,17 +107,17 @@ pub struct Settle<'info> {
     /// CHECK: vault's underlying token account; validated by the vault CPI.
     #[account(mut)]
     pub vault_token_account: UncheckedAccount<'info>,
-    /// Batch's plain SPL account receiving the vault leg's output.
+    /// Batch's plain SPL account receiving the vault phase's output.
     #[account(mut, seeds = [BATCH_PAYOUT_UNDERLYING_SEED, batch.key().as_ref()], bump)]
     pub batch_payout_underlying: Box<Account<'info, TokenAccount>>,
 
-    // --- leg 3: wrap the received payout into confidential payout tokens ---
+    // --- phase 3: wrap the received payout into confidential payout tokens ---
     /// Confidential mint claims pay out in.
     #[account(mut)]
     pub payout_confidential_mint: Box<Account<'info, ct::ConfidentialMint>>,
     /// SPL mint the payout confidential mint wraps (vault shares for deposit
     /// batchers, vault underlying for redeem batchers). Mutable because it is
-    /// the vault share mint on the deposit direction (leg 2 mints to it).
+    /// the vault share mint on the deposit direction (phase 2 mints to it).
     #[account(mut)]
     pub payout_underlying_mint: Box<Account<'info, SplMint>>,
     /// CHECK: batch's confidential payout token account; validated by the token CPI.
@@ -205,7 +205,7 @@ pub fn settle(
         authority_funding_lamports,
     )?;
 
-    // Leg 1: on-chain KMS certificate verification + plain token release. The
+    // Phase 1: on-chain KMS certificate verification + plain token release. The
     // token program asserts the certified cleartext equals `cleartext_total`
     // and writes the permanent per-handle redemption marker.
     let authority = BatchAuthoritySeeds::new(batch_key, ctx.accounts.batch.authority_bump);
@@ -257,7 +257,7 @@ pub fn settle(
         return Ok(());
     }
 
-    // Leg 2: the one public number goes through the vault; the payout comes
+    // Phase 2: the one public number goes through the vault; the payout comes
     // back. The received payout is the batch payout account's balance DELTA
     // across this CPI, never its raw balance: SPL token destinations cannot
     // refuse incoming transfers, so anyone can preload `batch_payout_underlying`
@@ -311,7 +311,7 @@ pub fn settle(
         .checked_sub(payout_balance_before)
         .ok_or(BatcherError::PayoutBalanceUnderflow)?;
 
-    // Leg 3: wrap only the vault-produced payout delta into the batch's
+    // Phase 3: wrap only the vault-produced payout delta into the batch's
     // confidential payout account. The wrapped amount is the already-public
     // aggregate's payout value; any preloaded balance stays behind.
     ct::cpi::wrap_usdc(
@@ -350,7 +350,7 @@ pub fn settle(
         payout_received,
     )?;
 
-    // Leg 4: record the batch's informational public rate (saturating) — the
+    // Phase 4: record the batch's informational public rate (saturating) — the
     // one plaintext division of the whole flow, display-only.
     let payout_rate = payout_rate(payout_received, cleartext_total)?;
     let batch = &mut ctx.accounts.batch;

@@ -10,7 +10,7 @@
 //     CTX) and `test-suite/fhevm/src/solana/two-holder-transfer.ts` (RPC/WS/relayer/ACL constants).
 //   - coprocessor DB container: `test-suite/fhevm/src/layout.ts` (COPROCESSOR_DB_CONTAINER).
 //   - deployer keypair: `~/.config/solana/id.json`, the wallet full-vertical.sh derives USER from.
-//   - gateway addresses (optional, for future legs): generated at `fhevm-cli up` time into
+//   - gateway addresses (optional, for future phases): generated at `fhevm-cli up` time into
 //     `.fhevm/runtime/addresses/gateway/.env.gateway`.
 // Env vars override any field so a run can point at a non-default local stack.
 //

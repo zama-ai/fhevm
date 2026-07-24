@@ -50,7 +50,7 @@ export async function getCurrentBatch(
 }
 
 /**
- * The subset of an `EncryptedValue` lineage the settle legs need: the live handle, the MMR leaf
+ * The subset of an `EncryptedValue` lineage the settle phases need: the live handle, the MMR leaf
  * count, and the live peaks that a proof is verified against.
  *
  * (a) DELIBERATE, REVIEWED DEVIATION — hand-rolled, not generated. Every other account decoder in
@@ -64,7 +64,7 @@ export async function getCurrentBatch(
  *       [8-byte discriminator][aclDomainKey: 32][appAccount: 32][encryptedValueLabel: 32]
  *       [currentHandle: 32][subjects: Vec<32-byte grant>][leafCount: u64][peaks: Vec<32>][bump: u8]
  *     The discriminator is sliced off before this decoder runs; `subjects` is decoded and discarded
- *     (the settle legs never read it — only its length matters, to advance the cursor).
+ *     (the settle phases never read it — only its length matters, to advance the cursor).
  *
  * (c) FRAGILITY — each `subjects` element is decoded as a bare 32-byte grant. If the crate's
  *     `EncryptedValueSubjectGrant` ever gains a field, its element size stops being 32 and THIS

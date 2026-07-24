@@ -152,7 +152,7 @@ describe('settleBatch', () => {
 
     // The batch was resolved from chain state, not supplied.
     expect(getCurrentBatch).toHaveBeenCalledTimes(1);
-    // The proof leg fed the certificate leg: mmrProofBytes + proofSlot from the service.
+    // The proof phase fed the certificate phase: mmrProofBytes + proofSlot from the service.
     expect(certificate).toHaveBeenCalledTimes(1);
     const certParams = certificate.mock.calls[0]![1] as { proofSlot: bigint; mmrProofBytes: Uint8Array };
     expect(certParams.proofSlot).toBe(1n);
@@ -226,7 +226,7 @@ describe('settleBatch', () => {
     expect(data.siblings).toHaveLength(14);
   });
 
-  it('rejects a batch that has not been dispatched (zero burned handle) before any leg', async () => {
+  it('rejects a batch that has not been dispatched (zero burned handle) before any phase', async () => {
     certificate.mockResolvedValue(claim(cleartextHex(800n)));
     const { chain, proofConfig, keeper, opts } = await options({ burnedHandle: new Uint8Array(32) });
     await expect(settleBatch(chain, proofConfig, keeper, opts)).rejects.toThrow('no burned total handle');
@@ -242,7 +242,7 @@ describe('settleBatch', () => {
     expect(sendAndConfirm).not.toHaveBeenCalled();
   });
 
-  it('rejects a proof-service leaf count that disagrees with the on-chain lineage before the certificate leg', async () => {
+  it('rejects a proof-service leaf count that disagrees with the on-chain lineage before the certificate phase', async () => {
     certificate.mockResolvedValue(claim(cleartextHex(800n)));
     const { chain, proofConfig, keeper, opts } = await options({ leafCount: 2n }); // service returns leaf_count 1
     await expect(settleBatch(chain, proofConfig, keeper, opts)).rejects.toThrow('does not match the on-chain lineage');

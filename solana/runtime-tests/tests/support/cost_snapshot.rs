@@ -6,7 +6,7 @@
 //! against the committed snapshot under `cost-snapshots/`.
 //! Drift in either direction fails the dedicated `cost_snapshot_*` tests:
 //! costlier is a regression, cheaper invalidates design assumptions derived
-//! from the old number (transaction packing, per-leg budgets), and both
+//! from the old number (transaction packing, per-phase budgets), and both
 //! deserve a reviewed snapshot update in the same diff. Behavior tests never
 //! depend on these numbers.
 //!

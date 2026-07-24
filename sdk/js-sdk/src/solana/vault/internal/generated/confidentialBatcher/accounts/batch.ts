@@ -71,7 +71,7 @@ export type Batch = {
   burnedTotalHandle: ReadonlyUint8Array;
   /** KMS-certified batch join total (set at settle; public by design). */
   totalJoined: bigint;
-  /** Payout units the vault leg produced for the batch total (set at settle). */
+  /** Payout units the vault phase produced for the batch total (set at settle). */
   payoutReceived: bigint;
   /**
    * Informational rate `payout_received * RATE_SCALE / total_joined`,
@@ -100,7 +100,7 @@ export type BatchArgs = {
   burnedTotalHandle: ReadonlyUint8Array;
   /** KMS-certified batch join total (set at settle; public by design). */
   totalJoined: number | bigint;
-  /** Payout units the vault leg produced for the batch total (set at settle). */
+  /** Payout units the vault phase produced for the batch total (set at settle). */
   payoutReceived: number | bigint;
   /**
    * Informational rate `payout_received * RATE_SCALE / total_joined`,
