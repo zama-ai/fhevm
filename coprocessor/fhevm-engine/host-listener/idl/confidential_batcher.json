@@ -637,7 +637,7 @@
       "docs": [
         "Opens the next batch: creates the `Batch` account, its per-batch",
         "authority PDA, its own confidential join and payout token accounts,",
-        "and its plain SPL accounts for settle's legs. Permissionless; requires",
+        "and its plain SPL accounts for settle's phases. Permissionless; requires",
         "the previous batch of the same batcher to have been dispatched (a",
         "batcher's batches never overlap while pending; the other direction's",
         "batcher is independent). `authority_funding_lamports` is moved from",
@@ -837,7 +837,7 @@
         {
           "name": "batch_payout_underlying",
           "docs": [
-            "Batch's plain SPL account receiving the vault leg's output at settle."
+            "Batch's plain SPL account receiving the vault phase's output at settle."
           ],
           "writable": true,
           "pda": {
@@ -1207,7 +1207,7 @@
           "docs": [
             "SPL mint the join confidential mint wraps (vault underlying for deposit",
             "batchers, vault shares for redeem batchers). Mutable because it is the",
-            "vault share mint on the redeem direction (leg 2 burns from it)."
+            "vault share mint on the redeem direction (phase 2 burns from it)."
           ],
           "writable": true
         },
@@ -1294,7 +1294,7 @@
         {
           "name": "batch_payout_underlying",
           "docs": [
-            "Batch's plain SPL account receiving the vault leg's output."
+            "Batch's plain SPL account receiving the vault phase's output."
           ],
           "writable": true,
           "pda": {
@@ -1346,7 +1346,7 @@
           "docs": [
             "SPL mint the payout confidential mint wraps (vault shares for deposit",
             "batchers, vault underlying for redeem batchers). Mutable because it is",
-            "the vault share mint on the deposit direction (leg 2 mints to it)."
+            "the vault share mint on the deposit direction (phase 2 mints to it)."
           ],
           "writable": true
         },
@@ -1706,7 +1706,7 @@
     {
       "code": 6020,
       "name": "PayoutBalanceUnderflow",
-      "msg": "batch payout balance decreased across the vault leg"
+      "msg": "batch payout balance decreased across the vault phase"
     }
   ],
   "types": [
@@ -1794,7 +1794,7 @@
           {
             "name": "payout_received",
             "docs": [
-              "Payout units the vault leg produced for the batch total (set at settle)."
+              "Payout units the vault phase produced for the batch total (set at settle)."
             ],
             "type": "u64"
           },
@@ -1981,7 +1981,7 @@
           {
             "name": "payout_received",
             "docs": [
-              "Payout units the vault leg produced for the batch total."
+              "Payout units the vault phase produced for the batch total."
             ],
             "type": "u64"
           },

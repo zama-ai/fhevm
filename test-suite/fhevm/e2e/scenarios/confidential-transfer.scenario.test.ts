@@ -1,5 +1,5 @@
-// Scenario: confidential-transfer arc — the "portable now" token-flow leg ported from
-// `solana/scripts/e2e/full-vertical.sh` (the `==> [sdk-transfer]` leg).
+// Scenario: confidential-transfer arc — the "portable now" token-flow phase ported from
+// `solana/scripts/e2e/full-vertical.sh` (the `==> [sdk-transfer]` phase).
 //
 // It drives the product arc entirely through `@fhevm/sdk` Solana actions:
 //   encrypt input -> submitInputProof -> confidentialTransfer -> userDecrypt (current handle).
@@ -7,7 +7,7 @@
 // the environment (via loadEnv), the readiness preconditions (via until), and the actor funding
 // (via personas), then runs the arc and lets its assertions stand.
 //
-// Assertion map — bash `[sdk-transfer]` leg  ->  this scenario (all in runSolanaTwoHolderTransfer):
+// Assertion map — bash `[sdk-transfer]` phase  ->  this scenario (all in runSolanaTwoHolderTransfer):
 //   bash: "Alice 1000 -> confidentialTransfer(400) -> Alice 600, Bob 400"
 //     - Alice initial balance == 1000  (userDecrypt of Alice's current handle)
 //     - Bob   initial balance == 0      (userDecrypt of Bob's current handle)
@@ -15,9 +15,9 @@
 //     - Alice final balance   == 600    (userDecrypt of Alice's rotated handle)
 //     - Bob   final balance   == 400    (userDecrypt of Bob's rotated handle)
 // Every assertion is a live SDK current user-decrypt of a real on-chain balance — nothing is
-// hard-coded, so the leg cannot pass on a trivial value. Provisioning (confidential mint, wrap,
+// hard-coded, so the phase cannot pass on a trivial value. Provisioning (confidential mint, wrap,
 // balance-state reads) still goes through the Rust live-client: those are SDK gaps (see the PR
-// report), not part of this leg's assertions.
+// report), not part of this phase's assertions.
 
 import { describe, test } from "bun:test";
 
@@ -58,7 +58,7 @@ describe("solana confidential-transfer scenario", () => {
       if (env.capabilities.faucet) await personas.fund(personas.deployer);
 
       // Run the SDK-driven arc against the injected environment. Its internal assertions (mapped
-      // above) throw on any mismatch; reaching the end means the leg is green.
+      // above) throw on any mismatch; reaching the end means the phase is green.
       await runSolanaTwoHolderTransfer(
         createRealTwoHolderDependencies({
           rpcUrl: env.rpcUrl,

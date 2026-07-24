@@ -79,7 +79,7 @@ pub struct Batch {
     pub burned_total_handle: [u8; 32],
     /// KMS-certified batch join total (set at settle; public by design).
     pub total_joined: u64,
-    /// Payout units the vault leg produced for the batch total (set at settle).
+    /// Payout units the vault phase produced for the batch total (set at settle).
     pub payout_received: u64,
     /// Informational rate `payout_received * RATE_SCALE / total_joined`,
     /// saturating at u64::MAX (settle). Claims use exact proportional division

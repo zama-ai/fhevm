@@ -96,7 +96,7 @@ pub struct BatchSettled {
     pub batch: Pubkey,
     /// KMS-certified batch join total (public by design).
     pub total_joined: u64,
-    /// Payout units the vault leg produced for the batch total.
+    /// Payout units the vault phase produced for the batch total.
     pub payout_received: u64,
     /// Informational rate `payout_received * RATE_SCALE / total_joined`,
     /// saturating at u64::MAX. Claims use exact proportional division.

@@ -70,8 +70,8 @@ pub enum BatcherError {
     /// requires (shares for deposit batchers, underlying for redeem batchers).
     #[msg("payout confidential mint does not wrap the vault mint this direction requires")]
     PayoutMintVaultMismatch,
-    /// The batch payout account's balance decreased across the vault leg
+    /// The batch payout account's balance decreased across the vault phase
     /// (unreachable; guards the delta computation).
-    #[msg("batch payout balance decreased across the vault leg")]
+    #[msg("batch payout balance decreased across the vault phase")]
     PayoutBalanceUnderflow,
 }

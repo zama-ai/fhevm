@@ -309,7 +309,7 @@ const main = async (): Promise<void> => {
   });
   // The kms-context account is provisioned by the HOST BRING-UP, not by this seeder — the seeder
   // must never create it (it has neither the authority nor the key material to). But the smoke's
-  // settle leg consumes it on-chain, so a missing account is a bring-up failure this seed can catch
+  // settle phase consumes it on-chain, so a missing account is a bring-up failure this seed can catch
   // NOW, at provisioning time, instead of ~15 minutes later inside the live settle. Fail loudly.
   const kmsContextAccount = await rpc.getAccountInfo(kmsContext, { encoding: "base64", commitment: "confirmed" }).send();
   if (kmsContextAccount.value === null) {

@@ -5,7 +5,7 @@ import { removeSuffix } from '../../../core/base/string.js';
 import { MAX_MMR_SIBLINGS, MMR_MODE_PUBLIC, type MmrProof } from '../../proof.js';
 
 /**
- * Leg 1 of a settle: fetch the burned lineage's public-decrypt inclusion proof from the standalone
+ * Phase 1 of a settle: fetch the burned lineage's public-decrypt inclusion proof from the standalone
  * solana-proof-service. The service resolves the leaf semantically from `(encrypted_value, handle)`
  * — the SDK asks the product question ("prove this handle is publicly decryptable") and never
  * computes, assumes, or supplies a leaf index (fhevm-internal#1721). The leaf index and leaf count
@@ -17,7 +17,7 @@ import { MAX_MMR_SIBLINGS, MMR_MODE_PUBLIC, type MmrProof } from '../../proof.js
  * Everything else in the vault module consumes the normalized {@link SolanaMmrProofResult}.
  */
 
-/** Vault-module config for the proof-service leg. Isolated here, never threaded into the shared SDK config. */
+/** Vault-module config for the proof-service phase. Isolated here, never threaded into the shared SDK config. */
 export type SolanaProofServiceConfig = {
   /** Base URL of the standalone solana-proof-service (e.g. `http://localhost:8080`). */
   readonly proofServiceUrl: string;
@@ -27,7 +27,7 @@ export type SolanaProofServiceConfig = {
   readonly retryDelayMs?: number | undefined;
 };
 
-/** The normalized proof leg, ready to feed the public-decrypt certificate request (leg 2). */
+/** The normalized proof phase, ready to feed the public-decrypt certificate request (phase 2). */
 export type SolanaMmrProofResult = {
   /** The decoded inclusion proof (leaf index + sibling path); `leafIndex` is a service output. */
   readonly proof: MmrProof;
