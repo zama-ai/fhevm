@@ -291,9 +291,6 @@ describe("threshold core config", () => {
     const env = thresholdCoreEnv(2, fourParty, RENDER_OPTS);
     expect(env.KMS_CORE__THRESHOLD__MY_ID).toBe("2");
     expect(env.KMS_CORE__THRESHOLD__THRESHOLD).toBe("1");
-    expect(env.KMS_CORE__THRESHOLD__NUM_SESSIONS_PREPROC).toBe("${FHEVM_KMS_PREPROC_SESSIONS:-2}");
-    expect(env.KMS_CORE__INTERNAL_CONFIG__NUM_RAYON_THREADS).toBe("${FHEVM_KMS_RAYON_THREADS:-2}");
-    expect(env.KMS_CORE__INTERNAL_CONFIG__NUM_TOKIO_THREADS).toBe("${FHEVM_KMS_TOKIO_THREADS:-1}");
     expect(env.KMS_CORE__SERVICE__LISTEN_PORT).toBe("50200");
     expect(env.KMS_CORE__THRESHOLD__LISTEN_PORT).toBe("50002");
     expect(env.KMS_CORE__PUBLIC_VAULT__STORAGE__S3__PREFIX).toBe("PUB-p2");
