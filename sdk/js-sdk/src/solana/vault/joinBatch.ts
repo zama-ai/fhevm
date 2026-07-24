@@ -60,13 +60,13 @@ export type SolanaVaultJoinParameters = {
   readonly batch: Address;
   /** Confidential mint the batcher joins with (`batcher.join_confidential_mint`). */
   readonly joinConfidentialMint: Address;
-  /** User's stable balance lineage on the join mint. */
+  /** User's stable balance encrypted value account on the join mint. */
   readonly userBalanceValue: Address;
-  /** Batch account's stable balance lineage on the join mint. */
+  /** Batch account's stable balance encrypted value account on the join mint. */
   readonly batchBalanceValue: Address;
-  /** User's stable transferred-amount lineage (the batcher eval's operand). */
+  /** User's stable transferred-amount encrypted value account (the batcher eval's operand). */
   readonly userTransferredValue: Address;
-  /** User's joined lineage for this batch (`pending_join_value`; see `pendingJoinLineage`). */
+  /** User's joined encrypted value account for this batch (`pending_join_value`; see `pendingJoinValueAccount`). */
   readonly pendingJoinValue: Address;
   readonly hostConfig: Address;
   readonly computeUnitLimit?: number | undefined;

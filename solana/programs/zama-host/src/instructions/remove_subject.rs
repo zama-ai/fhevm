@@ -8,7 +8,7 @@ use crate::{errors::ZamaHostError, state::*};
 /// Accounts for `remove_subject`.
 #[derive(Accounts)]
 pub struct RemoveEncryptedValueSubject<'info> {
-    /// Current allowed subject on the lineage.
+    /// Current allowed subject on the encrypted value account.
     pub authority: Signer<'info>,
     /// CHECK: layout and ownership are validated inside the handler via `read_canonical_encrypted_value`.
     #[account(mut)]

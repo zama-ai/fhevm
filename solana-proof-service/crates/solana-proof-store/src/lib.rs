@@ -12,7 +12,7 @@ pub use decode::{
 };
 pub use reduce::{
     reduce_completed_block, LeafKind, PriorLineageState, ReduceError, StagedBlockReduction,
-    StagedLeaf, StagedLineage,
+    StagedEncryptedValueAccount, StagedLeaf,
 };
 pub use replay::{apply_instruction, LineageReplayState, ReplayError};
 pub use runner::{run_sequential_ingest, IngestHooks, RunnerError};

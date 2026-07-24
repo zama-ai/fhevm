@@ -40,10 +40,10 @@ pub enum BatcherError {
     /// Dispatch was attempted before the batch reached its minimum age.
     #[msg("batch is younger than the minimum batch age")]
     BatchTooYoung,
-    /// A derived token or lineage account did not match its canonical address.
+    /// A derived token or encrypted value account did not match its canonical address.
     #[msg("account does not match its canonical derived address")]
     DerivedAccountMismatch,
-    /// An encrypted-value account was malformed or not owned by the host.
+    /// An encrypted-encrypted value account was malformed or not owned by the host.
     #[msg("encrypted value account is invalid")]
     EncryptedValueInvalid,
     /// The batcher produced an invalid FHE eval plan (internal invariant).

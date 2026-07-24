@@ -25,7 +25,7 @@ pub struct IntegrityStatus {
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ProofSnapshot {
-    pub lineage: [u8; 32],
+    pub encrypted_value_account: [u8; 32],
     pub current_handle: Option<[u8; 32]>,
     pub subjects: Vec<[u8; 32]>,
     pub leaf_count: u64,
@@ -77,9 +77,9 @@ pub enum StoreError {
     Database(#[from] sqlx::Error),
     #[error("migrate error: {0}")]
     Migrate(#[from] sqlx::migrate::MigrateError),
-    /// Persisted lineage metadata disagrees with leaf rows (torn / corrupt snapshot).
+    /// Persisted encrypted_value_account metadata disagrees with leaf rows (torn / corrupt snapshot).
     #[error(
-        "snapshot inconsistent for lineage (leaf_count {leaf_count} vs {leaf_rows} leaf rows)"
+        "snapshot inconsistent for encrypted_value_account (leaf_count {leaf_count} vs {leaf_rows} leaf rows)"
     )]
     SnapshotInconsistent { leaf_count: u64, leaf_rows: u64 },
 }
@@ -116,7 +116,7 @@ fn peaks_from_sql(peaks: Vec<Vec<u8>>) -> Result<Vec<[u8; 32]>, StoreError> {
         .map(|peak| {
             bytes32(&peak).ok_or_else(|| {
                 StoreError::Database(sqlx::Error::Protocol(
-                    "invalid peak length in solana_proof_lineages".into(),
+                    "invalid peak length in solana_proof_encrypted_value_accounts".into(),
                 ))
             })
         })
@@ -133,7 +133,7 @@ fn subjects_from_sql(subjects: Vec<Vec<u8>>) -> Result<Vec<[u8; 32]>, StoreError
         .map(|subject| {
             bytes32(&subject).ok_or_else(|| {
                 StoreError::Database(sqlx::Error::Protocol(
-                    "invalid subject length in solana_proof_lineages".into(),
+                    "invalid subject length in solana_proof_encrypted_value_accounts".into(),
                 ))
             })
         })
@@ -300,15 +300,15 @@ impl SqlProofStore {
 
     pub async fn proof_snapshot(
         &self,
-        lineage: [u8; 32],
+        encrypted_value_account: [u8; 32],
     ) -> Result<Option<ProofSnapshot>, StoreError> {
-        // REPEATABLE READ so lineage metadata and leaf rows are one snapshot;
+        // REPEATABLE READ so encrypted_value_account metadata and leaf rows are one snapshot;
         // under READ COMMITTED a concurrent apply can tear leaf_count vs leaves.
         let mut tx = self.pool.begin().await?;
         sqlx::query("SET TRANSACTION ISOLATION LEVEL REPEATABLE READ")
             .execute(&mut *tx)
             .await?;
-        let snapshot = Self::read_snapshot_in_tx(&mut tx, lineage).await?;
+        let snapshot = Self::read_snapshot_in_tx(&mut tx, encrypted_value_account).await?;
         tx.commit().await?;
         Ok(snapshot)
     }
@@ -317,27 +317,28 @@ impl SqlProofStore {
     /// snapshot, both read under one REPEATABLE READ transaction so the resolved index and the
     /// leaves the proof is built from cannot tear against a concurrent apply.
     ///
-    /// `Ok(None)` means the lineage has not been ingested at all;
-    /// `Ok(Some(ResolvedProofSnapshot { leaf_index: None, .. }))` means the lineage exists but
+    /// `Ok(None)` means the encrypted_value_account has not been ingested at all;
+    /// `Ok(Some(ResolvedProofSnapshot { leaf_index: None, .. }))` means the encrypted_value_account exists but
     /// carries no leaf for this key (the caller distinguishes a terminal miss from ingest lag by
     /// comparing snapshot `leaf_count` against chain).
     pub async fn proof_snapshot_for_leaf(
         &self,
-        lineage: [u8; 32],
+        encrypted_value_account: [u8; 32],
         key: &SemanticLeafKey,
     ) -> Result<Option<ResolvedProofSnapshot>, StoreError> {
         let mut tx = self.pool.begin().await?;
         sqlx::query("SET TRANSACTION ISOLATION LEVEL REPEATABLE READ")
             .execute(&mut *tx)
             .await?;
-        let Some(snapshot) = Self::read_snapshot_in_tx(&mut tx, lineage).await? else {
+        let Some(snapshot) = Self::read_snapshot_in_tx(&mut tx, encrypted_value_account).await?
+        else {
             tx.commit().await?;
             return Ok(None);
         };
         // One indexed lookup on solana_proof_leaves_semantic_idx.
         //
         // Historical-access keys are unique by construction: a handle is superseded at most once
-        // per lineage, and each supersession seals one leaf per subject.
+        // per encrypted_value_account, and each supersession seals one leaf per subject.
         //
         // Public-decrypt keys are NOT unique — a handle can carry several public-decrypt leaves
         // (a born-public `fhe_eval` output seals one, and a later `make_handle_public` re-release
@@ -351,11 +352,11 @@ impl SqlProofStore {
                     r#"
                 SELECT leaf_index
                 FROM solana_proof_leaves
-                WHERE lineage = $1 AND leaf_kind = $2 AND handle = $3 AND subject = $4
+                WHERE encrypted_value_account = $1 AND leaf_kind = $2 AND handle = $3 AND subject = $4
                 ORDER BY leaf_index ASC
                 LIMIT 1
                 "#,
-                    lineage.as_slice(),
+                    encrypted_value_account.as_slice(),
                     key.kind.as_i16(),
                     key.handle.as_slice(),
                     subject.as_slice()
@@ -368,11 +369,11 @@ impl SqlProofStore {
                     r#"
                 SELECT leaf_index
                 FROM solana_proof_leaves
-                WHERE lineage = $1 AND leaf_kind = $2 AND handle = $3 AND subject IS NULL
+                WHERE encrypted_value_account = $1 AND leaf_kind = $2 AND handle = $3 AND subject IS NULL
                 ORDER BY leaf_index ASC
                 LIMIT 1
                 "#,
-                    lineage.as_slice(),
+                    encrypted_value_account.as_slice(),
                     key.kind.as_i16(),
                     key.handle.as_slice()
                 )
@@ -388,12 +389,12 @@ impl SqlProofStore {
         }))
     }
 
-    /// Reads a lineage's metadata + ordered leaf commitments into a [`ProofSnapshot`] within a
+    /// Reads a encrypted_value_account's metadata + ordered leaf commitments into a [`ProofSnapshot`] within a
     /// caller-managed transaction. Returns `SnapshotInconsistent` if persisted `leaf_count`
     /// disagrees with the leaf rows (torn snapshot).
     async fn read_snapshot_in_tx(
         tx: &mut Transaction<'_, Postgres>,
-        lineage: [u8; 32],
+        encrypted_value_account: [u8; 32],
     ) -> Result<Option<ProofSnapshot>, StoreError> {
         let row = sqlx::query!(
             r#"
@@ -403,10 +404,10 @@ impl SqlProofStore {
                 leaf_count,
                 peaks,
                 last_slot
-            FROM solana_proof_lineages
-            WHERE lineage = $1
+            FROM solana_proof_encrypted_value_accounts
+            WHERE encrypted_value_account = $1
             "#,
-            lineage.as_slice()
+            encrypted_value_account.as_slice()
         )
         .fetch_optional(&mut **tx)
         .await?;
@@ -419,10 +420,10 @@ impl SqlProofStore {
             r#"
             SELECT commitment
             FROM solana_proof_leaves
-            WHERE lineage = $1
+            WHERE encrypted_value_account = $1
             ORDER BY leaf_index ASC
             "#,
-            lineage.as_slice()
+            encrypted_value_account.as_slice()
         )
         .fetch_all(&mut **tx)
         .await?;
@@ -458,7 +459,7 @@ impl SqlProofStore {
         }
 
         Ok(Some(ProofSnapshot {
-            lineage,
+            encrypted_value_account,
             current_handle,
             subjects,
             leaf_count,
@@ -565,7 +566,9 @@ impl SqlProofStore {
         }
 
         // Stage reduction before any domain writes.
-        let existing = self.load_prior_lineages(&mut tx, block).await?;
+        let existing = self
+            .load_prior_encrypted_value_accounts(&mut tx, block)
+            .await?;
 
         let staged = match reduce_completed_block(self.program_id, block, &existing) {
             Ok(staged) => staged,
@@ -753,36 +756,36 @@ impl SqlProofStore {
         }))
     }
 
-    async fn load_prior_lineages(
+    async fn load_prior_encrypted_value_accounts(
         &self,
         tx: &mut Transaction<'_, Postgres>,
         block: &CompletedBlock,
     ) -> Result<BTreeMap<[u8; 32], PriorLineageState>, StoreError> {
-        let mut lineages = BTreeMap::new();
+        let mut encrypted_value_accounts = BTreeMap::new();
         for tx_info in &block.transactions {
             if tx_info.instructions.is_empty() {
                 continue;
             }
-            // Decode only to discover lineage keys; reduce re-decodes.
+            // Decode only to discover encrypted_value_account keys; reduce re-decodes.
             let decoded = match decode_program_instructions(self.program_id, &tx_info.instructions)
             {
                 Ok(decoded) => decoded,
                 Err(_) => continue, // reduce will halt on decode failure
             };
             for instruction in decoded {
-                lineages.insert(instruction.encrypted_value(), ());
+                encrypted_value_accounts.insert(instruction.encrypted_value(), ());
             }
         }
 
         let mut existing = BTreeMap::new();
-        for lineage in lineages.keys() {
+        for encrypted_value_account in encrypted_value_accounts.keys() {
             let row = sqlx::query!(
                 r#"
                 SELECT current_handle, subjects, leaf_count, peaks
-                FROM solana_proof_lineages
-                WHERE lineage = $1
+                FROM solana_proof_encrypted_value_accounts
+                WHERE encrypted_value_account = $1
                 "#,
-                lineage.as_slice()
+                encrypted_value_account.as_slice()
             )
             .fetch_optional(&mut **tx)
             .await?;
@@ -798,7 +801,7 @@ impl SqlProofStore {
                 None => None,
             };
             existing.insert(
-                *lineage,
+                *encrypted_value_account,
                 PriorLineageState {
                     replay: LineageReplayState {
                         current_handle,
@@ -813,27 +816,31 @@ impl SqlProofStore {
     }
 
     fn validate_staged_mmr(&self, staged: &StagedBlockReduction) -> Result<(), String> {
-        for lineage in &staged.lineages {
-            if lineage.peaks.len() != lineage.leaf_count.count_ones() as usize {
+        for encrypted_value_account in &staged.encrypted_value_accounts {
+            if encrypted_value_account.peaks.len()
+                != encrypted_value_account.leaf_count.count_ones() as usize
+            {
                 return Err(format!(
-                    "inconsistent MMR peaks for lineage {:02x?}",
-                    &lineage.lineage[..4]
+                    "inconsistent MMR peaks for encrypted_value_account {:02x?}",
+                    &encrypted_value_account.encrypted_value_account[..4]
                 ));
             }
             let new_leaves: Vec<[u8; 32]> = staged
                 .leaves
                 .iter()
-                .filter(|leaf| leaf.lineage == lineage.lineage)
+                .filter(|leaf| {
+                    leaf.encrypted_value_account == encrypted_value_account.encrypted_value_account
+                })
                 .map(|leaf| leaf.commitment)
                 .collect();
-            // When this block holds the lineage's full leaf list, peaks must
+            // When this block holds the encrypted_value_account's full leaf list, peaks must
             // match an independent fold over those leaves.
-            if lineage.leaf_count == new_leaves.len() as u64 {
+            if encrypted_value_account.leaf_count == new_leaves.len() as u64 {
                 let recomputed = mmr_peaks_from_leaves(&new_leaves);
-                if recomputed != lineage.peaks {
+                if recomputed != encrypted_value_account.peaks {
                     return Err(format!(
                         "persisted peaks diverge from independent MMR reconstruction for {:02x?}",
-                        &lineage.lineage[..4]
+                        &encrypted_value_account.encrypted_value_account[..4]
                     ));
                 }
             }
@@ -905,33 +912,33 @@ impl SqlProofStore {
         slot: u64,
         staged: &StagedBlockReduction,
     ) -> Result<(), StoreError> {
-        for lineage in &staged.lineages {
-            let current_handle = lineage
+        for encrypted_value_account in &staged.encrypted_value_accounts {
+            let current_handle = encrypted_value_account
                 .current_handle
                 .as_ref()
                 .map(|handle| handle.as_slice());
             sqlx::query!(
                 r#"
-                INSERT INTO solana_proof_lineages (
-                    lineage,
+                INSERT INTO solana_proof_encrypted_value_accounts (
+                    encrypted_value_account,
                     current_handle,
                     subjects,
                     leaf_count,
                     peaks,
                     last_slot
                 ) VALUES ($1, $2, $3, $4, $5, $6)
-                ON CONFLICT (lineage) DO UPDATE SET
+                ON CONFLICT (encrypted_value_account) DO UPDATE SET
                     current_handle = EXCLUDED.current_handle,
                     subjects = EXCLUDED.subjects,
                     leaf_count = EXCLUDED.leaf_count,
                     peaks = EXCLUDED.peaks,
                     last_slot = EXCLUDED.last_slot
                 "#,
-                lineage.lineage.as_slice(),
+                encrypted_value_account.encrypted_value_account.as_slice(),
                 current_handle,
-                &subjects_to_sql(&lineage.subjects) as &[Vec<u8>],
-                as_i64(lineage.leaf_count)?,
-                &peaks_to_sql(&lineage.peaks) as &[Vec<u8>],
+                &subjects_to_sql(&encrypted_value_account.subjects) as &[Vec<u8>],
+                as_i64(encrypted_value_account.leaf_count)?,
+                &peaks_to_sql(&encrypted_value_account.peaks) as &[Vec<u8>],
                 as_i64(slot)?
             )
             .execute(&mut **tx)
@@ -943,7 +950,7 @@ impl SqlProofStore {
             sqlx::query!(
                 r#"
                 INSERT INTO solana_proof_leaves (
-                    lineage,
+                    encrypted_value_account,
                     leaf_index,
                     commitment,
                     block_slot,
@@ -953,7 +960,7 @@ impl SqlProofStore {
                     subject
                 ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
                 "#,
-                leaf.lineage.as_slice(),
+                leaf.encrypted_value_account.as_slice(),
                 as_i64(leaf.leaf_index)?,
                 leaf.commitment.as_slice(),
                 as_i64(slot)?,

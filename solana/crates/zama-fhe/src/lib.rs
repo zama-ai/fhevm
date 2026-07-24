@@ -357,8 +357,8 @@ pub struct Encrypted<T> {
 }
 
 impl<T: FheTyped> Encrypted<T> {
-    /// Builds a durable operand from a stable `EncryptedValue` lineage. `handle`
-    /// must be that lineage's current handle; the host re-verifies this on-chain.
+    /// Builds a durable operand from a stable `EncryptedValue` encrypted value account. `handle`
+    /// must be that encrypted value account's current handle; the host re-verifies this on-chain.
     pub fn durable(handle: [u8; 32], slot: DurableSlot) -> Result<Self> {
         validate_durable_slot(&slot)?;
         if handle_fhe_type(handle) != T::FHE_TYPE.byte() {
@@ -609,7 +609,7 @@ impl DurableLabel {
     }
 }
 
-/// App-domain address of a stable `EncryptedValue` lineage.
+/// App-domain address of a stable `EncryptedValue` encrypted value account.
 ///
 /// Addressing is stable per `(namespace, account, label)` — it does not rotate
 /// on handle updates, unlike the old nonce-keyed ACL records.
@@ -747,9 +747,9 @@ impl AccessPolicy {
 }
 
 /// Previous on-chain state a durable output supersedes. `None` means this bind
-/// is the lineage's first (the `EncryptedValue` PDA is created).
+/// is the encrypted value account's first (the `EncryptedValue` PDA is created).
 #[derive(Debug, Clone, PartialEq, Eq)]
-struct PreviousLineageState {
+struct PreviousEncryptedEncryptedValueAccountState {
     handle: [u8; 32],
     subjects: Vec<Pubkey>,
 }
@@ -759,12 +759,12 @@ struct PreviousLineageState {
 pub struct DurableOutput {
     slot: DurableSlot,
     access: AccessPolicy,
-    previous: Option<PreviousLineageState>,
+    previous: Option<PreviousEncryptedEncryptedValueAccountState>,
     make_public: bool,
 }
 
 impl DurableOutput {
-    /// First bind for a lineage: creates the `EncryptedValue` PDA.
+    /// First bind for a encrypted value account: creates the `EncryptedValue` PDA.
     pub fn create(slot: DurableSlot, access: AccessPolicy) -> Self {
         Self {
             slot,
@@ -774,7 +774,7 @@ impl DurableOutput {
         }
     }
 
-    /// Supersedes an existing lineage. `previous_handle`/`previous_subjects`
+    /// Supersedes an existing encrypted value account. `previous_handle`/`previous_subjects`
     /// must be read from the on-chain `EncryptedValue` account in the same
     /// instruction; the host verifies them exactly.
     pub fn supersede(
@@ -786,7 +786,7 @@ impl DurableOutput {
         Self {
             slot,
             access,
-            previous: Some(PreviousLineageState {
+            previous: Some(PreviousEncryptedEncryptedValueAccountState {
                 handle: previous_handle,
                 subjects: previous_subjects,
             }),
@@ -817,7 +817,7 @@ impl DurableOutput {
     }
 }
 
-/// Host-ready metadata for creating or superseding a durable `EncryptedValue` lineage.
+/// Host-ready metadata for creating or superseding a durable `EncryptedValue` encrypted value account.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct DurableOutputBirth {
     encrypted_value: Pubkey,
@@ -825,7 +825,7 @@ pub struct DurableOutputBirth {
     app_account: Pubkey,
     encrypted_value_label: [u8; 32],
     subjects: Vec<AccessSubject>,
-    previous: Option<PreviousLineageState>,
+    previous: Option<PreviousEncryptedEncryptedValueAccountState>,
     make_public: bool,
 }
 
@@ -934,7 +934,7 @@ impl Output {
         Self(OutputKind::Transient)
     }
 
-    /// First bind for a lineage (creates the `EncryptedValue` PDA).
+    /// First bind for a encrypted value account (creates the `EncryptedValue` PDA).
     pub fn durable(slot: DurableSlot, access: AccessPolicy) -> Self {
         Self(OutputKind::Durable(DurableOutput::create(slot, access)))
     }
@@ -1236,7 +1236,7 @@ impl EvalPlan {
     }
 
     /// Subjects this plan grants through a supersede that were not already on the
-    /// stored lineage — `output_subjects \ previous_subjects` for each durable
+    /// stored encrypted value account — `output_subjects \ previous_subjects` for each durable
     /// output that rotates its audience. The host deny-list-checks each of these
     /// exactly like `allow_subjects`, so an app forwarding deny-record witnesses
     /// must cover them alongside the output authorities.

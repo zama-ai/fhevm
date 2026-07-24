@@ -1,6 +1,6 @@
 {
   "db_name": "PostgreSQL",
-  "query": "\n                SELECT current_handle, subjects, leaf_count, peaks\n                FROM solana_proof_lineages\n                WHERE lineage = $1\n                ",
+  "query": "\n                SELECT current_handle, subjects, leaf_count, peaks\n                FROM solana_proof_encrypted_value_accounts\n                WHERE encrypted_value_account = $1\n                ",
   "describe": {
     "columns": [
       {

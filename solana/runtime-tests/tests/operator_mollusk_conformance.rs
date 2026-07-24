@@ -274,7 +274,7 @@ impl EvalFlow {
         let handle = handle_for_chain(seed, fhe_type);
         self.cleartext
             .insert(handle, TypedClearValue::from_u64(fhe_type, plaintext));
-        let (address, value) = new_lineage(self.authority, [seed; 32], handle);
+        let (address, value) = new_value_account(self.authority, [seed; 32], handle);
         let encrypted_value_index = self.remaining.len() as u16;
         self.remaining
             .push(AccountMeta::new_readonly(address, false));
@@ -502,7 +502,7 @@ fn host_config_account(admin: Pubkey) -> (Pubkey, Account) {
     )
 }
 
-fn new_lineage(
+fn new_value_account(
     authority: Pubkey,
     label: [u8; 32],
     handle: [u8; 32],

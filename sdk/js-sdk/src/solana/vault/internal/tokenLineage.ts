@@ -24,11 +24,11 @@ const encodeAddress = (value: Address): Uint8Array => new Uint8Array(addressEnco
 const pda = async (programAddress: Address, seeds: Uint8Array[]): Promise<Address> =>
   (await getProgramDerivedAddress({ programAddress, seeds }))[0];
 
-/** The confidential balance lineage account for `tokenAccount` under `mint` (label `balance`). */
+/** The confidential balance encrypted value account for `tokenAccount` under `mint` (label `balance`). */
 export const balanceValueAddress = (mint: Address, tokenAccount: Address): Promise<Address> =>
   encryptedValueAddress(mint, tokenAccount, BALANCE_LABEL);
 
-/** The encrypted total-supply lineage account for `mint` (app account = its total-supply authority). */
+/** The encrypted total-supply encrypted value account for `mint` (app account = its total-supply authority). */
 export const totalSupplyValueAddress = (mint: Address, totalSupplyAuthority: Address): Promise<Address> =>
   encryptedValueAddress(mint, totalSupplyAuthority, TOTAL_SUPPLY_LABEL);
 

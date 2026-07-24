@@ -88,7 +88,7 @@ pub struct Settle<'info> {
     /// Batch's plain SPL account receiving the redeemed batch total.
     #[account(mut, seeds = [BATCH_JOIN_UNDERLYING_SEED, batch.key().as_ref()], bump)]
     pub batch_join_underlying: Box<Account<'info, TokenAccount>>,
-    /// CHECK: batch's burned-amount lineage; validated by the token CPI.
+    /// CHECK: batch's burned-amount encrypted value account; validated by the token CPI.
     pub batch_burned_amount_value: UncheckedAccount<'info>,
     /// CHECK: per-handle redemption replay marker; created by the token CPI.
     #[account(mut)]
@@ -133,10 +133,10 @@ pub struct Settle<'info> {
     pub payout_compute_signer: UncheckedAccount<'info>,
     /// CHECK: payout mint total-supply authority PDA; validated by the token CPI.
     pub payout_total_supply_authority: UncheckedAccount<'info>,
-    /// CHECK: batch's confidential payout balance lineage; superseded by the wrap.
+    /// CHECK: batch's confidential payout balance encrypted value account; superseded by the wrap.
     #[account(mut)]
     pub batch_payout_balance_value: UncheckedAccount<'info>,
-    /// CHECK: payout mint's total-supply lineage; superseded by the wrap.
+    /// CHECK: payout mint's total-supply encrypted value account; superseded by the wrap.
     #[account(mut)]
     pub payout_total_supply_value: UncheckedAccount<'info>,
 

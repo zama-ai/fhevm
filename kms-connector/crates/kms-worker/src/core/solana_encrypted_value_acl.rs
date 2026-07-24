@@ -16,7 +16,7 @@ use super::solana_acl::{
     HandleBytes, SolanaAclVerificationError, SolanaAclVerifier, SolanaPubkeyBytes,
 };
 
-/// KMS-local decoded lineage.
+/// KMS-local decoded encrypted value account.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct DecodedEncryptedValueAcl {
     pub acl: EncryptedValue,
@@ -29,7 +29,7 @@ impl DecodedEncryptedValueAcl {
     }
 }
 
-/// Canonical lineage PDA for a value key under `host_program_id`.
+/// Canonical encrypted value account PDA for a value key under `host_program_id`.
 pub fn encrypted_value_acl_address(
     host_program_id: SolanaPubkeyBytes,
     value_key: [u8; 32],
@@ -40,7 +40,7 @@ pub fn encrypted_value_acl_address(
     (address.to_bytes(), bump)
 }
 
-/// Decodes a fetched `EncryptedValue` lineage account.
+/// Decodes a fetched `EncryptedValue` encrypted value account.
 pub fn decode_encrypted_value_acl(
     data: &[u8],
 ) -> Result<DecodedEncryptedValueAcl, SolanaAclVerificationError> {
@@ -68,7 +68,7 @@ fn map_acl_error(error: AclError) -> SolanaAclVerificationError {
     }
 }
 
-/// The fetched lineage account plus the handle a request wants to decrypt against it. Groups the
+/// The fetched encrypted value account plus the handle a request wants to decrypt against it. Groups the
 /// inputs common to the historical and public MMR-proof paths so the verifier methods stay below
 /// the argument-count lint without a suppression.
 pub struct EncryptedValueTarget<'a> {
@@ -187,17 +187,20 @@ mod tests {
         [tag; 32]
     }
 
-    /// A lineage whose account bytes and proofs are produced by the shared crate.
-    struct Lineage {
+    /// A encrypted value account whose account bytes and proofs are produced by the shared crate.
+    struct EncryptedValueAccount {
         acl: EncryptedValue,
         account: SolanaPubkeyBytes,
         leaves: Vec<[u8; 32]>,
     }
 
-    fn lineage(handle: HandleBytes, subjects: &[SolanaPubkeyBytes]) -> Lineage {
+    fn encrypted_value_account(
+        handle: HandleBytes,
+        subjects: &[SolanaPubkeyBytes],
+    ) -> EncryptedValueAccount {
         let value_key = derive_value_key(DOMAIN, APP, LABEL);
         let (account, bump) = encrypted_value_acl_address(HOST, value_key);
-        Lineage {
+        EncryptedValueAccount {
             acl: EncryptedValue {
                 acl_domain_key: DOMAIN,
                 app_account: APP,
@@ -213,7 +216,7 @@ mod tests {
         }
     }
 
-    impl Lineage {
+    impl EncryptedValueAccount {
         fn append(&mut self, commitment: [u8; 32]) {
             mmr_append(&mut self.acl.peaks, &mut self.acl.leaf_count, commitment).unwrap();
             self.leaves.push(commitment);
@@ -248,11 +251,11 @@ mod tests {
         SolanaAclVerifier::new(HOST)
     }
 
-    fn decoded(l: &Lineage) -> DecodedEncryptedValueAcl {
+    fn decoded(l: &EncryptedValueAccount) -> DecodedEncryptedValueAcl {
         DecodedEncryptedValueAcl::from_acl(l.acl.clone())
     }
 
-    /// Encodes a lineage using the on-chain layout exactly as `zama-host` writes it.
+    /// Encodes a encrypted value account using the on-chain layout exactly as `zama-host` writes it.
     fn encode_on_chain(acl: &EncryptedValue) -> Vec<u8> {
         let mut data = zama_solana_acl::encrypted_value_discriminator().to_vec();
         data.extend_from_slice(&borsh::to_vec(acl).unwrap());
@@ -261,7 +264,7 @@ mod tests {
 
     #[test]
     fn current_and_rejections() {
-        let l = lineage(h(10), &[OWNER]);
+        let l = encrypted_value_account(h(10), &[OWNER]);
         let decoded = decoded(&l);
         let v = verifier();
         assert!(
@@ -291,7 +294,7 @@ mod tests {
 
     #[test]
     fn current_requires_membership() {
-        let l = lineage(h(10), &[STRANGER]);
+        let l = encrypted_value_account(h(10), &[STRANGER]);
         let decoded_stranger = decoded(&l);
         assert_eq!(
             verifier()
@@ -307,7 +310,7 @@ mod tests {
             SolanaAclVerificationError::EncryptedValueSubjectMissing
         );
 
-        let l = lineage(h(10), &[OWNER]);
+        let l = encrypted_value_account(h(10), &[OWNER]);
         let decoded = decoded(&l);
         verifier()
             .verify_current_user_decrypt(l.account, HOST, &decoded, h(10), OWNER, &[DOMAIN])
@@ -316,7 +319,7 @@ mod tests {
 
     #[test]
     fn rejects_non_canonical_acl_account() {
-        let l = lineage(h(10), &[OWNER]);
+        let l = encrypted_value_account(h(10), &[OWNER]);
         let decoded = decoded(&l);
         let wrong_account: SolanaPubkeyBytes = [0xab; 32];
         assert_ne!(wrong_account, l.account);
@@ -330,7 +333,7 @@ mod tests {
 
     #[test]
     fn rejects_bump_mismatch() {
-        let mut l = lineage(h(10), &[OWNER]);
+        let mut l = encrypted_value_account(h(10), &[OWNER]);
         l.acl.bump ^= 1;
         let decoded = decoded(&l);
         assert_eq!(
@@ -346,7 +349,7 @@ mod tests {
         let subjects: Vec<SolanaPubkeyBytes> = (0..MAX_ENCRYPTED_VALUE_SUBJECTS as u8)
             .map(|i| [i + 1; 32])
             .collect();
-        let mut l = lineage(h(10), &subjects);
+        let mut l = encrypted_value_account(h(10), &subjects);
         l.rotate(h(11));
         assert_eq!(l.acl.leaf_count, MAX_ENCRYPTED_VALUE_SUBJECTS as u64);
 
@@ -369,7 +372,7 @@ mod tests {
 
     #[test]
     fn post_rotation_then_historical_proof() {
-        let mut l = lineage(h(10), &[OWNER]);
+        let mut l = encrypted_value_account(h(10), &[OWNER]);
         l.rotate(h(11));
         let v = verifier();
         let decoded = decoded(&l);
@@ -412,7 +415,7 @@ mod tests {
 
     #[test]
     fn historical_proof_path_uses_sealed_subject_not_current_membership() {
-        let mut l = lineage(h(10), &[OWNER]);
+        let mut l = encrypted_value_account(h(10), &[OWNER]);
         l.rotate(h(11));
         l.acl.subjects = vec![STRANGER];
         let data = encode_on_chain(&l.acl);
@@ -438,7 +441,7 @@ mod tests {
 
     #[test]
     fn exact_public_no_roll_forward() {
-        let mut l = lineage(h(10), &[OWNER]);
+        let mut l = encrypted_value_account(h(10), &[OWNER]);
         l.mark_public();
         l.rotate(h(11));
         let v = verifier();
@@ -462,7 +465,7 @@ mod tests {
     /// in-memory value.
     #[test]
     fn decodes_real_on_chain_layout_and_authorizes_end_to_end() {
-        let mut l = lineage(h(10), &[OWNER]);
+        let mut l = encrypted_value_account(h(10), &[OWNER]);
         l.rotate(h(11));
         let data = encode_on_chain(&l.acl);
 

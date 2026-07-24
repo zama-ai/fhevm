@@ -14,7 +14,7 @@ import { sha256 } from '@noble/hashes/sha2.js';
  * - `ZAMA_MMR_LEAF_V1` / `ZAMA_MMR_NODE_V1`     — MMR leaf/internal node hashing (`mmr.rs`).
  * - `ZAMA_HIST_ACCESS_LEAF_V1`                  — historical-access leaf commitment.
  * - `ZAMA_PUBLIC_DECRYPT_LEAF_V1`               — public-decrypt leaf commitment.
- * - `zama-encrypted-value-key-v1`               — the lineage value-key derivation.
+ * - `zama-encrypted-value-key-v1`               — the encrypted value account value-key derivation.
  * - `leaf_index` is encoded big-endian (8 bytes) everywhere it is hashed.
  * - Leaf commitment preimages are `(account key ‖ leaf_index ‖ handle [‖ subject])`.
  */
@@ -81,7 +81,7 @@ export function hexToBytes(hex: string): Uint8Array {
   return out;
 }
 
-/** The lineage's PDA seed / identity. Matches `zama_solana_acl::derive_value_key`. */
+/** The encrypted value account's PDA seed / identity. Matches `zama_solana_acl::derive_value_key`. */
 export function deriveValueKey(
   aclDomainKey: Uint8Array,
   appAccount: Uint8Array,
@@ -224,7 +224,7 @@ function popcount64(value: bigint): number {
 }
 
 /**
- * Verifies an MMR inclusion proof for `commitment` against `peaks` (the lineage's live MMR
+ * Verifies an MMR inclusion proof for `commitment` against `peaks` (the encrypted value account's live MMR
  * peaks) and `leafCount` (the live leaf count). Port of `zama_solana_acl::mmr::mmr_verify`,
  * line-for-line: mountains correspond to the set bits of `leafCount`, most-significant first;
  * `leafIndex` selects which mountain (and thus which peak / expected proof height) the proof
@@ -279,9 +279,9 @@ function bytesEqual(a: Uint8Array, b: Uint8Array): boolean {
 
 /**
  * Verifies a historical-access MMR proof: `subject` held access to `handle` at some point in
- * the lineage's history, provable against the LIVE peaks. Matches
+ * the encrypted value account's history, provable against the LIVE peaks. Matches
  * `zama_solana_acl::authorize_historical`'s proof-verification step (membership/handle checks
- * on the current lineage state are the caller/KMS's job, not this client-side pre-check's).
+ * on the current encrypted value account state are the caller/KMS's job, not this client-side pre-check's).
  */
 export function verifyHistoricalAccessProof(
   encryptedValueAccount: Uint8Array,

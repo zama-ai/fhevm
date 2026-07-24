@@ -3,7 +3,7 @@
 //! The batcher drives its own ZamaHost evals (join re-materialization, the
 //! quit reset, and the claim MulDiv) with one identity: the per-batch
 //! authority PDA is simultaneously the eval's `compute_subject` (it reads the
-//! deposit lineages it is a subject of) and its `app_account_authority` (it
+//! deposit encrypted value accounts it is a subject of) and its `app_account_authority` (it
 //! authorizes the batcher-owned durable outputs), both signed through a single
 //! `invoke_signed`.
 
@@ -26,7 +26,7 @@ pub(crate) fn read_encrypted_value(info: &AccountInfo) -> Result<EncryptedValue>
         .map_err(|_| BatcherError::EncryptedValueInvalid.into())
 }
 
-/// A durable eval output bound to the exact `EncryptedValue` lineage it may
+/// A durable eval output bound to the exact `EncryptedValue` encrypted value account it may
 /// create or supersede, mirroring the confidential-token pattern: create when
 /// the PDA does not exist yet, supersede (pinning the stored previous handle
 /// and subjects) when it does.
@@ -81,12 +81,12 @@ impl<'info> DurableBinding<'info> {
         self.account.clone()
     }
 
-    /// The lineage's handle before this eval, when the lineage already existed.
+    /// The encrypted value account's handle before this eval, when the encrypted value account already existed.
     pub(crate) fn previous_handle(&self) -> Option<[u8; 32]> {
         self.previous_handle
     }
 
-    /// Reads the handle the host bound into the lineage. Call only after the
+    /// Reads the handle the host bound into the encrypted value account. Call only after the
     /// eval CPI carrying this output has executed.
     pub(crate) fn handle_after_eval(&self) -> Result<[u8; 32]> {
         Ok(read_encrypted_value(&self.account)?.current_handle)
@@ -152,7 +152,7 @@ pub(crate) fn invalid_eval_plan(error: zama_fhe::EvalBuildError) -> anchor_lang:
     error!(BatcherError::InvalidFheEvalPlan)
 }
 
-/// Builds a euint64 durable operand from a lineage's own canonical fields, so
+/// Builds a euint64 durable operand from a encrypted value account's own canonical fields, so
 /// the operand slot always matches the account the host re-validates.
 pub(crate) fn uint64_operand(value: &EncryptedValue) -> Result<zama_fhe::Uint64Handle> {
     zama_fhe::Uint64Handle::durable(

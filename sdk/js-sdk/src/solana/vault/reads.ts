@@ -50,7 +50,7 @@ export async function getCurrentBatch(
 }
 
 /**
- * The subset of an `EncryptedValue` lineage the settle legs need: the live handle, the MMR leaf
+ * The subset of an `EncryptedValue` encrypted value account the settle legs need: the live handle, the MMR leaf
  * count, and the live peaks that a proof is verified against.
  *
  * (a) DELIBERATE, REVIEWED DEVIATION — hand-rolled, not generated. Every other account decoder in

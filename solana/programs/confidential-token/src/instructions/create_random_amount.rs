@@ -16,7 +16,7 @@ pub struct CreateRandomAmount<'info> {
     /// CHECK: Program-controlled compute signer PDA.
     #[account(seeds = [b"fhe-compute", mint.key().as_ref()], bump)]
     pub compute_signer: UncheckedAccount<'info>,
-    /// CHECK: stable per-owner amount lineage; created on first use, superseded thereafter.
+    /// CHECK: stable per-owner amount encrypted value account; created on first use, superseded thereafter.
     #[account(mut)]
     pub amount_value: UncheckedAccount<'info>,
     /// CHECK: Anchor event CPI authority for the Zama host program.
@@ -25,7 +25,7 @@ pub struct CreateRandomAmount<'info> {
     pub zama_program: Program<'info, ZamaHost>,
     /// ZamaHost config used for handle derivation.
     pub host_config: Box<Account<'info, zama_host::HostConfig>>,
-    /// System program used for lineage creation/growth.
+    /// System program used for encrypted value account creation/growth.
     pub system_program: Program<'info, System>,
     /// CHECK: forwarded verbatim into the ZamaHost `fhe_eval` CPI, which validates it against the
     /// canonical `["hcu-block-meter", compute_signer]` PDA. Supplied by an untrusted mint under a

@@ -269,14 +269,14 @@ fn token_idl_drops_transfer_and_call_callback_surface() {
 }
 
 #[test]
-fn token_redeem_consumes_stateless_verifier_with_lineage_and_deny_binding() {
+fn token_redeem_consumes_stateless_verifier_with_value_account_and_deny_binding() {
     // The BurnRedemptionRequest witness lifecycle was dissolved (fhevm-internal#1763): redeem is now
-    // a single thin consumer that binds the burned lineage (`assert_burned_amount_lineage`), CPIs the
+    // a single thin consumer that binds the burned encrypted value account (`assert_burned_amount_value_account`), CPIs the
     // stateless host `verify_public_decrypt` against the live KMS context the cert names, asserts the certified
     // cleartext equals the claimed amount, consults the deny-list explicitly at payout, and writes
     // the permanent per-handle replay marker.
     for required in [
-        "assert_burned_amount_lineage",
+        "assert_burned_amount_value_account",
         "fhe::verify_public_decrypt",
         "assert_redeem_subject_not_denied",
         "kms_decrypted_result_bytes(cleartext_amount)",
@@ -439,7 +439,7 @@ fn abi_golden_drift_checks_cover_host_token_listener_and_kms_layouts() {
         "confidential_token.json",
         "HostConfig",
         "KmsContext",
-        // The ACL rewrite's lineage account replaces AclRecord/HandleMaterialCommitment.
+        // The ACL rewrite's encrypted value account replaces AclRecord/HandleMaterialCommitment.
         "EncryptedValue",
     ] {
         assert!(

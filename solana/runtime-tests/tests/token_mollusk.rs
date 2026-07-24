@@ -3,7 +3,7 @@
 //!
 //! Migrated from the old keyed-nonce `AclRecord`/`AclPermission` model (deleted along with
 //! `balance_acl_record`/`next_balance_nonce_sequence`-style per-birth PDAs, `assert_acl_record`,
-//! and the single-op `fhe_*` instructions) to the new stateless-indexing `EncryptedValue` lineage:
+//! and the single-op `fhe_*` instructions) to the new stateless-indexing `EncryptedValue` encrypted value account:
 //! `ConfidentialTokenAccount`/`ConfidentialMint` now each point at one stable
 //! `EncryptedValue` PDA per encrypted field (`balance_encrypted_value`,
 //! `total_supply_encrypted_value`) that is *superseded in place* on every update instead of
@@ -13,16 +13,16 @@
 //! Scope note: this migration focuses the suite on the surface that changed with the ACL rewrite
 //! (mint/token-account creation and `confidential_transfer`'s durable-output supersession), plus
 //! the token-level end-to-end coverage requested for this pass (stable addressing across a
-//! transfer, a `transferred_amount` lineage entry, and self-transfer no-op). It also covers the
+//! transfer, a `transferred_amount` encrypted value account entry, and self-transfer no-op). It also covers the
 //! two consume paths that are now thin consumers of the stateless host `verify_public_decrypt`
 //! (DD-040): `redeem_burned_amount` and `disclose_secp` authorize by an MMR public-decrypt proof
-//! against the pinned handle rather than the live lineage handle, so their after-supersession,
+//! against the pinned handle rather than the live encrypted value account handle, so their after-supersession,
 //! foreign-proof, live/destroyed-context, and (for redeem) deny/marker/destination behaviour is
 //! exercised directly here. The old suite's coverage of `wrap_usdc`, `confidential_burn`,
 //! `request_disclose_balance`/`request_disclose_amount`, and the `poc`-gated `create_random_amount`
 //! was not ported 1:1 for this pass: none
 //! of that instruction logic changed shape from the ACL rewrite itself (it still reads/writes one
-//! `EncryptedValue` lineage per amount the same way `confidential_transfer` does), and each needs
+//! `EncryptedValue` encrypted value account per amount the same way `confidential_transfer` does), and each needs
 //! its own multi-account Mollusk fixture that was not feasible to rebuild faithfully here. Every
 //! dropped test's instruction still compiles and is exercised indirectly by `mollusk_initialize_*`
 //! and `mollusk_confidential_transfer_*` (same durable-output machinery); a follow-up pass should
@@ -350,8 +350,8 @@ fn deny_subject_record_account(subject: Pubkey, denied: bool) -> (Pubkey, Accoun
     )
 }
 
-/// Builds a canonical `EncryptedValue` lineage account for direct account-map seeding, mirroring
-/// `host_mollusk.rs::new_lineage` for the token program's ACL domain (the mint).
+/// Builds a canonical `EncryptedValue` encrypted value account for direct account-map seeding, mirroring
+/// `host_mollusk.rs::new_value_account` for the token program's ACL domain (the mint).
 fn new_encrypted_value(
     acl_domain_key: Pubkey,
     app_account: Pubkey,
@@ -877,7 +877,7 @@ fn confidential_transfer_from_value_ix(
     )
 }
 
-/// Seeds a spendable amount lineage (a stand-in for a computed/received `euint64` handle) at the
+/// Seeds a spendable amount encrypted value account (a stand-in for a computed/received `euint64` handle) at the
 /// canonical PDA `(mint, app_account, label)` with the given subjects and current handle, and
 /// returns its address.
 fn seed_amount_value(
@@ -1126,7 +1126,7 @@ fn mollusk_confidential_transfer_self_transfer_is_no_op() {
 }
 
 #[test]
-fn mollusk_confidential_transfer_updates_lineages_and_cleartext_balances() {
+fn mollusk_confidential_transfer_updates_value_accounts_and_cleartext_balances() {
     let fixture = TokenFixture::new();
     let context = mollusk().with_context(fixture.base_accounts());
     let amount_handle = handle_for_chain(21, BALANCE_FHE_TYPE);
@@ -1157,7 +1157,7 @@ fn mollusk_confidential_transfer_updates_lineages_and_cleartext_balances() {
     );
 
     // Token account addresses and their balance `EncryptedValue` PDAs stay stable across the
-    // transfer: no new balance account is created, the existing lineages are superseded in place.
+    // transfer: no new balance account is created, the existing encrypted value accounts are superseded in place.
     let alice_token = read_token_account(&context, fixture.alice_token);
     let bob_token = read_token_account(&context, fixture.bob_token);
     assert_eq!(
@@ -1198,7 +1198,7 @@ fn mollusk_confidential_transfer_updates_lineages_and_cleartext_balances() {
         )
     );
 
-    // A lineage entry for the transferred amount was created (first bind) at the canonical PDA.
+    // A encrypted value account entry for the transferred amount was created (first bind) at the canonical PDA.
     let transferred = read_encrypted_value(&context, transferred_value_address);
     assert_eq!(transferred.acl_domain_key, fixture.mint);
     assert_eq!(transferred.app_account, fixture.alice_token);
@@ -1252,9 +1252,9 @@ fn mollusk_confidential_transfer_updates_lineages_and_cleartext_balances() {
 }
 
 #[test]
-fn mollusk_confidential_transfer_to_second_recipient_rotates_transferred_lineage_subjects() {
+fn mollusk_confidential_transfer_to_second_recipient_rotates_transferred_value_account_subjects() {
     // Regression: a sender's second transfer to a DIFFERENT recipient must succeed. The
-    // per-sender transferred-amount lineage rotates its audience to the new recipient, sealing
+    // per-sender transferred-amount encrypted value account rotates its audience to the new recipient, sealing
     // the first receipt's audience into historical leaves (previously reverted 6053).
     let fixture = TokenFixture::new();
     let charlie_owner = Pubkey::new_unique();
@@ -1284,7 +1284,7 @@ fn mollusk_confidential_transfer_to_second_recipient_rotates_transferred_lineage
 
     let transferred_value_address = fixture.transferred_amount_value_address(fixture.alice_token);
 
-    // First transfer Alice -> Bob: births the transferred lineage with audience
+    // First transfer Alice -> Bob: births the transferred encrypted value account with audience
     // {alice_owner, bob_owner, compute_signer}.
     let first_amount = handle_for_chain(21, BALANCE_FHE_TYPE);
     let first = confidential_transfer_ix(
@@ -1307,7 +1307,7 @@ fn mollusk_confidential_transfer_to_second_recipient_rotates_transferred_lineage
     );
     let first_receipt_handle = first_receipt.current_handle;
 
-    // Second transfer Alice -> Charlie: must now SUCCEED and rotate the lineage audience.
+    // Second transfer Alice -> Charlie: must now SUCCEED and rotate the encrypted value account audience.
     let second_amount = handle_for_chain(22, BALANCE_FHE_TYPE);
     let second = confidential_transfer_ix(
         &fixture,
@@ -1338,7 +1338,7 @@ fn mollusk_confidential_transfer_to_second_recipient_rotates_transferred_lineage
     );
 }
 
-/// Seeds Charlie's token account + balance lineage into `accounts` and returns
+/// Seeds Charlie's token account + balance encrypted value account into `accounts` and returns
 /// (charlie_owner, charlie_token, charlie_balance_value).
 fn seed_third_account(
     fixture: &TokenFixture,
@@ -1370,7 +1370,7 @@ fn seed_third_account(
 
 #[test]
 fn mollusk_confidential_transfer_rotates_back_to_previous_recipient() {
-    // Alice -> Bob, Alice -> Charlie, Alice -> Bob: the per-sender transferred lineage rotates its
+    // Alice -> Bob, Alice -> Charlie, Alice -> Bob: the per-sender transferred encrypted value account rotates its
     // audience each time and seals every outgoing audience into historical leaves.
     let fixture = TokenFixture::new();
     let mut accounts = fixture.base_accounts();
@@ -2166,7 +2166,7 @@ fn mollusk_confidential_transfer_rejects_balance_wrong_token_account_app_account
 //
 // Vector 2 (burn-stranding) fix, unchanged: every burn is born publicly decryptable at the burn
 // instant (ERC-7984 `unwrap` parity, DD-036), so a historical burned handle stays redeemable even
-// after a later burn supersedes the shared `burned_amount` lineage.
+// after a later burn supersedes the shared `burned_amount` encrypted value account.
 // ---------------------------------------------------------------------------
 
 use anchor_spl::token::spl_token;
@@ -2564,7 +2564,7 @@ fn confidential_burn_from_value_ix(
     )
 }
 
-/// Seeds a spendable amount lineage (a stand-in for a computed/received `euint64` handle) at the
+/// Seeds a spendable amount encrypted value account (a stand-in for a computed/received `euint64` handle) at the
 /// canonical PDA `(mint, app_account, label)` with the given subjects and current handle into the
 /// burn fixture's account map, returning its address.
 fn seed_burn_amount_value(
@@ -2582,7 +2582,7 @@ fn seed_burn_amount_value(
 
 /// Builds a single-leaf public-decrypt inclusion proof for `fixture.burned_amount_value` after one
 /// burn (the sole leaf, at index 0, is `burned_handle`'s public-decrypt commitment), returning it
-/// with the lineage peaks the burn wrote. Mirrors `two_burn_lineage_proof` for the one-burn case.
+/// with the encrypted value account peaks the burn wrote. Mirrors `two_burn_value_account_proof` for the one-burn case.
 fn single_burn_public_decrypt_proof(
     fixture: &BurnRedeemFixture,
     burned_handle: [u8; 32],
@@ -2643,7 +2643,7 @@ fn redeem_burned_amount_ix(
 }
 
 /// Burns `amount_seed`'s attested amount and returns the resulting burned handle
-/// (the lineage's new current handle) read back from the superseded lineage.
+/// (the encrypted value account's new current handle) read back from the superseded encrypted value account.
 fn run_burn(
     context: &mollusk_svm::MolluskContext<HashMap<Pubkey, Account>>,
     fixture: &BurnRedeemFixture,
@@ -2663,31 +2663,31 @@ fn mollusk_confidential_burn_makes_burned_amount_publicly_decryptable() {
 
     let burned_handle = run_burn(&context, &fixture, 41);
 
-    // First burn creates the lineage (no create leaf) and then appends exactly one
+    // First burn creates the encrypted value account (no create leaf) and then appends exactly one
     // public-decrypt leaf for the just-bound burned handle.
-    let lineage = read_encrypted_value(&context, fixture.burned_amount_value);
-    assert_eq!(lineage.current_handle, burned_handle);
+    let encrypted_value_account = read_encrypted_value(&context, fixture.burned_amount_value);
+    assert_eq!(encrypted_value_account.current_handle, burned_handle);
     assert_eq!(
-        lineage.subjects,
+        encrypted_value_account.subjects,
         vec![fixture.owner, fixture.compute_signer]
     );
-    assert_eq!(lineage.leaf_count, 1);
+    assert_eq!(encrypted_value_account.leaf_count, 1);
     let public_leaf = zama_solana_acl::public_decrypt_leaf_commitment(
         fixture.burned_amount_value.to_bytes(),
         0,
         burned_handle,
     );
     assert_eq!(
-        lineage.peaks,
+        encrypted_value_account.peaks,
         zama_solana_acl::mmr_peaks_from_leaves(&[public_leaf])
     );
 }
 
-/// Reconstructs the burned_amount lineage's four leaves after two burns
+/// Reconstructs the burned_amount encrypted value account's four leaves after two burns
 /// (public(H1)@0, hist(H1,owner)@1, hist(H1,compute)@2, public(H2)@3) and builds a
 /// public-decrypt inclusion proof for the leaf at `leaf_index`, returning it with the
-/// lineage peaks. Leaf 0 proves the historical first burn; leaf 3 proves the current second.
-fn two_burn_lineage_proof(
+/// encrypted value account peaks. Leaf 0 proves the historical first burn; leaf 3 proves the current second.
+fn two_burn_value_account_proof(
     fixture: &BurnRedeemFixture,
     first_handle: [u8; 32],
     second_handle: [u8; 32],
@@ -2721,44 +2721,45 @@ fn two_burn_lineage_proof(
     )
 }
 
-/// Seeds `fixture.burned_amount_value` with the post-two-burn lineage state (current handle
+/// Seeds `fixture.burned_amount_value` with the post-two-burn encrypted value account state (current handle
 /// `second_handle`, four leaves) into `accounts`, returning the peaks it wrote.
-fn seed_two_burn_lineage(
+fn seed_two_burn_value_account(
     fixture: &BurnRedeemFixture,
     accounts: &mut HashMap<Pubkey, Account>,
     second_handle: [u8; 32],
     peaks: Vec<[u8; 32]>,
 ) {
-    let (_, mut lineage) = new_encrypted_value(
+    let (_, mut encrypted_value_account) = new_encrypted_value(
         fixture.mint,
         fixture.token_account,
         token::burned_amount_label(),
         second_handle,
         &[fixture.owner, fixture.compute_signer],
     );
-    lineage.leaf_count = 4;
-    lineage.peaks = peaks;
+    encrypted_value_account.leaf_count = 4;
+    encrypted_value_account.peaks = peaks;
     accounts.insert(
         fixture.burned_amount_value,
-        encrypted_value_account(&lineage),
+        encrypted_value_account(&value_account),
     );
 }
 
-/// Redeem the historical first-burn handle H1 after a later burn superseded the lineage to H2,
+/// Redeem the historical first-burn handle H1 after a later burn superseded the encrypted value account to H2,
 /// then reject the double-redeem via the permanent per-handle marker PDA. This drives the exact
 /// consumer path the dissolution added: redeem accepting a HISTORICAL handle authorized by the
 /// burn-appended public-decrypt MMR proof through the `verify_public_decrypt` CPI, with no request
 /// witness. (The two real burns overflow the 32 KiB per-tx heap in Mollusk, so the seeded
-/// post-supersession lineage stands in for them; the burn-execution path is the burn test above.)
+/// post-supersession encrypted value account stands in for them; the burn-execution path is the burn test above.)
 #[test]
 fn mollusk_redeem_historical_burned_handle_after_supersession_then_rejects_double_redeem() {
     let fixture = BurnRedeemFixture::new();
     let first_handle = handle_for_chain(41, BALANCE_FHE_TYPE);
     let second_handle = handle_for_chain(42, BALANCE_FHE_TYPE);
-    let (proof, expected_peaks) = two_burn_lineage_proof(&fixture, first_handle, second_handle, 0);
+    let (proof, expected_peaks) =
+        two_burn_value_account_proof(&fixture, first_handle, second_handle, 0);
 
     let mut accounts = fixture.accounts(1_000);
-    seed_two_burn_lineage(&fixture, &mut accounts, second_handle, expected_peaks);
+    seed_two_burn_value_account(&fixture, &mut accounts, second_handle, expected_peaks);
     let context = burn_redeem_mollusk().with_context(accounts);
 
     // redeem(H1) with the real public-decrypt proof + KMS cert releases H1's amount even though
@@ -2831,10 +2832,10 @@ fn mollusk_redeem_rejects_foreign_public_decrypt_proof() {
     let first_handle = handle_for_chain(41, BALANCE_FHE_TYPE);
     let second_handle = handle_for_chain(42, BALANCE_FHE_TYPE);
     let (mut proof, expected_peaks) =
-        two_burn_lineage_proof(&fixture, first_handle, second_handle, 0);
+        two_burn_value_account_proof(&fixture, first_handle, second_handle, 0);
 
     let mut accounts = fixture.accounts(1_000);
-    seed_two_burn_lineage(&fixture, &mut accounts, second_handle, expected_peaks);
+    seed_two_burn_value_account(&fixture, &mut accounts, second_handle, expected_peaks);
     let context = burn_redeem_mollusk().with_context(accounts);
 
     proof.leaf_index = 3; // H2's public-decrypt leaf, not H1's.
@@ -2874,10 +2875,11 @@ fn mollusk_redeem_accepts_live_rotated_out_kms_context() {
     let fixture = BurnRedeemFixture::new();
     let first_handle = handle_for_chain(41, BALANCE_FHE_TYPE);
     let second_handle = handle_for_chain(42, BALANCE_FHE_TYPE);
-    let (proof, expected_peaks) = two_burn_lineage_proof(&fixture, first_handle, second_handle, 0);
+    let (proof, expected_peaks) =
+        two_burn_value_account_proof(&fixture, first_handle, second_handle, 0);
 
     let mut accounts = fixture.accounts(1_000);
-    seed_two_burn_lineage(&fixture, &mut accounts, second_handle, expected_peaks);
+    seed_two_burn_value_account(&fixture, &mut accounts, second_handle, expected_peaks);
     // Rotate the host's current context id to 10; the fixture's context-9 account stays live in the
     // account set. The cert commits id 9, so verification binds to that still-live context.
     accounts.insert(
@@ -2929,10 +2931,11 @@ fn mollusk_redeem_rejects_destroyed_kms_context() {
     let fixture = BurnRedeemFixture::new();
     let first_handle = handle_for_chain(41, BALANCE_FHE_TYPE);
     let second_handle = handle_for_chain(42, BALANCE_FHE_TYPE);
-    let (proof, expected_peaks) = two_burn_lineage_proof(&fixture, first_handle, second_handle, 0);
+    let (proof, expected_peaks) =
+        two_burn_value_account_proof(&fixture, first_handle, second_handle, 0);
 
     let mut accounts = fixture.accounts(1_000);
-    seed_two_burn_lineage(&fixture, &mut accounts, second_handle, expected_peaks);
+    seed_two_burn_value_account(&fixture, &mut accounts, second_handle, expected_peaks);
     // The fixture's context 9 has been destroyed (rotated for compromise, then revoked).
     accounts.insert(
         fixture.kms_context,
@@ -2971,10 +2974,11 @@ fn mollusk_redeem_rejects_destination_not_owned_by_signer() {
     let fixture = BurnRedeemFixture::new();
     let first_handle = handle_for_chain(41, BALANCE_FHE_TYPE);
     let second_handle = handle_for_chain(42, BALANCE_FHE_TYPE);
-    let (proof, expected_peaks) = two_burn_lineage_proof(&fixture, first_handle, second_handle, 0);
+    let (proof, expected_peaks) =
+        two_burn_value_account_proof(&fixture, first_handle, second_handle, 0);
 
     let mut accounts = fixture.accounts(1_000);
-    seed_two_burn_lineage(&fixture, &mut accounts, second_handle, expected_peaks);
+    seed_two_burn_value_account(&fixture, &mut accounts, second_handle, expected_peaks);
     // Re-own the destination account by a stranger (right mint, wrong owner).
     let stranger = Pubkey::new_unique();
     accounts.insert(
@@ -3014,10 +3018,11 @@ fn mollusk_redeem_rejects_denied_subject() {
     let fixture = BurnRedeemFixture::new();
     let first_handle = handle_for_chain(41, BALANCE_FHE_TYPE);
     let second_handle = handle_for_chain(42, BALANCE_FHE_TYPE);
-    let (proof, expected_peaks) = two_burn_lineage_proof(&fixture, first_handle, second_handle, 0);
+    let (proof, expected_peaks) =
+        two_burn_value_account_proof(&fixture, first_handle, second_handle, 0);
 
     let mut accounts = fixture.accounts(1_000);
-    seed_two_burn_lineage(&fixture, &mut accounts, second_handle, expected_peaks);
+    seed_two_burn_value_account(&fixture, &mut accounts, second_handle, expected_peaks);
     // Enable the grant deny-list on the host config (keeping the fixture's current KMS context)
     // and mark the signer denied.
     accounts.insert(
@@ -3059,7 +3064,7 @@ fn mollusk_redeem_rejects_denied_subject() {
     assert_eq!(read_spl_amount(&context, fixture.vault_usdc), 1_000);
 }
 
-/// Two concurrent burns from one account produce a lineage where both H1 (leaf 0) and H2 (leaf 3)
+/// Two concurrent burns from one account produce a encrypted value account where both H1 (leaf 0) and H2 (leaf 3)
 /// carry public-decrypt leaves. Each is redeemable exactly once: redeem(H1) and redeem(H2) both
 /// succeed against their own per-handle marker PDA, and re-redeeming either fails on the marker.
 #[test]
@@ -3068,11 +3073,11 @@ fn mollusk_two_concurrent_burns_each_redeemable_exactly_once() {
     let first_handle = handle_for_chain(41, BALANCE_FHE_TYPE);
     let second_handle = handle_for_chain(42, BALANCE_FHE_TYPE);
     let (proof_h1, expected_peaks) =
-        two_burn_lineage_proof(&fixture, first_handle, second_handle, 0);
-    let (proof_h2, _) = two_burn_lineage_proof(&fixture, first_handle, second_handle, 3);
+        two_burn_value_account_proof(&fixture, first_handle, second_handle, 0);
+    let (proof_h2, _) = two_burn_value_account_proof(&fixture, first_handle, second_handle, 3);
 
     let mut accounts = fixture.accounts(1_000);
-    seed_two_burn_lineage(&fixture, &mut accounts, second_handle, expected_peaks);
+    seed_two_burn_value_account(&fixture, &mut accounts, second_handle, expected_peaks);
     let context = burn_redeem_mollusk().with_context(accounts);
 
     // redeem(H1): 300 from leaf 0.
@@ -3168,10 +3173,11 @@ fn mollusk_redeem_deny_enabled_missing_record_rejected() {
     let fixture = BurnRedeemFixture::new();
     let first_handle = handle_for_chain(41, BALANCE_FHE_TYPE);
     let second_handle = handle_for_chain(42, BALANCE_FHE_TYPE);
-    let (proof, expected_peaks) = two_burn_lineage_proof(&fixture, first_handle, second_handle, 0);
+    let (proof, expected_peaks) =
+        two_burn_value_account_proof(&fixture, first_handle, second_handle, 0);
 
     let mut accounts = fixture.accounts(1_000);
-    seed_two_burn_lineage(&fixture, &mut accounts, second_handle, expected_peaks);
+    seed_two_burn_value_account(&fixture, &mut accounts, second_handle, expected_peaks);
     accounts.insert(
         fixture.host_config,
         deny_enabled_redeem_host_config(&fixture),
@@ -3210,10 +3216,11 @@ fn mollusk_redeem_deny_disabled_unexpected_record_rejected() {
     let fixture = BurnRedeemFixture::new();
     let first_handle = handle_for_chain(41, BALANCE_FHE_TYPE);
     let second_handle = handle_for_chain(42, BALANCE_FHE_TYPE);
-    let (proof, expected_peaks) = two_burn_lineage_proof(&fixture, first_handle, second_handle, 0);
+    let (proof, expected_peaks) =
+        two_burn_value_account_proof(&fixture, first_handle, second_handle, 0);
 
     let mut accounts = fixture.accounts(1_000);
-    seed_two_burn_lineage(&fixture, &mut accounts, second_handle, expected_peaks);
+    seed_two_burn_value_account(&fixture, &mut accounts, second_handle, expected_peaks);
     // Default fixture host config has the deny-list DISABLED. Supply a (non-denied) record anyway.
     let (deny_record, record_account) = deny_subject_record_account(fixture.owner, false);
     accounts.insert(deny_record, record_account);
@@ -3252,10 +3259,11 @@ fn mollusk_redeem_deny_wrong_subject_record_rejected() {
     let fixture = BurnRedeemFixture::new();
     let first_handle = handle_for_chain(41, BALANCE_FHE_TYPE);
     let second_handle = handle_for_chain(42, BALANCE_FHE_TYPE);
-    let (proof, expected_peaks) = two_burn_lineage_proof(&fixture, first_handle, second_handle, 0);
+    let (proof, expected_peaks) =
+        two_burn_value_account_proof(&fixture, first_handle, second_handle, 0);
 
     let mut accounts = fixture.accounts(1_000);
-    seed_two_burn_lineage(&fixture, &mut accounts, second_handle, expected_peaks);
+    seed_two_burn_value_account(&fixture, &mut accounts, second_handle, expected_peaks);
     accounts.insert(
         fixture.host_config,
         deny_enabled_redeem_host_config(&fixture),
@@ -3298,10 +3306,11 @@ fn mollusk_redeem_rejected_when_host_paused() {
     let fixture = BurnRedeemFixture::new();
     let first_handle = handle_for_chain(41, BALANCE_FHE_TYPE);
     let second_handle = handle_for_chain(42, BALANCE_FHE_TYPE);
-    let (proof, expected_peaks) = two_burn_lineage_proof(&fixture, first_handle, second_handle, 0);
+    let (proof, expected_peaks) =
+        two_burn_value_account_proof(&fixture, first_handle, second_handle, 0);
 
     let mut accounts = fixture.accounts(1_000);
-    seed_two_burn_lineage(&fixture, &mut accounts, second_handle, expected_peaks);
+    seed_two_burn_value_account(&fixture, &mut accounts, second_handle, expected_peaks);
     accounts.insert(fixture.host_config, paused_redeem_host_config(&fixture));
     let context = burn_redeem_mollusk().with_context(accounts);
 
@@ -3330,18 +3339,19 @@ fn mollusk_redeem_rejected_when_host_paused() {
     assert_eq!(read_spl_amount(&context, fixture.destination_usdc), 0);
 }
 
-/// A balance-lineage account passed as `burned_amount_value` is rejected by the burned-amount
-/// label / canonical-PDA pin in `assert_burned_amount_lineage` (`AmountAclMismatch`), before the
+/// A balance-encrypted value account passed as `burned_amount_value` is rejected by the burned-amount
+/// label / canonical-PDA pin in `assert_burned_amount_value_account` (`AmountAclMismatch`), before the
 /// verifier CPI and before any payout.
 #[test]
-fn mollusk_redeem_rejects_wrong_lineage_label() {
+fn mollusk_redeem_rejects_wrong_value_account_label() {
     let fixture = BurnRedeemFixture::new();
     let first_handle = handle_for_chain(41, BALANCE_FHE_TYPE);
     let second_handle = handle_for_chain(42, BALANCE_FHE_TYPE);
-    let (proof, expected_peaks) = two_burn_lineage_proof(&fixture, first_handle, second_handle, 0);
+    let (proof, expected_peaks) =
+        two_burn_value_account_proof(&fixture, first_handle, second_handle, 0);
 
     let mut accounts = fixture.accounts(1_000);
-    seed_two_burn_lineage(&fixture, &mut accounts, second_handle, expected_peaks);
+    seed_two_burn_value_account(&fixture, &mut accounts, second_handle, expected_peaks);
     let context = burn_redeem_mollusk().with_context(accounts);
 
     let (signatures, extra_data) = kms_public_decrypt_cert(first_handle, 500);
@@ -3350,7 +3360,7 @@ fn mollusk_redeem_rejects_wrong_lineage_label() {
         .account_store
         .borrow_mut()
         .insert(redemption_record, system_account(0));
-    // Substitute the balance lineage (balance label) for the burned_amount lineage account.
+    // Substitute the balance encrypted value account (balance label) for the burned_amount encrypted value account.
     let mut ix = redeem_burned_amount_ix(
         &fixture,
         first_handle,
@@ -3365,7 +3375,7 @@ fn mollusk_redeem_rejects_wrong_lineage_label() {
         .accounts
         .iter_mut()
         .find(|meta| meta.pubkey == fixture.burned_amount_value)
-        .expect("burned_amount_value account meta");
+        .expect("burned_amount_encrypted value account meta");
     burned_meta.pubkey = fixture.balance_value;
     context.process_and_validate_instruction(
         &ix,
@@ -3391,7 +3401,7 @@ fn mollusk_redeem_rejects_wrong_lineage_label() {
 // ---------------------------------------------------------------------------
 
 /// Self-contained fixture for the disclose consume vertical: one owner, one
-/// confidential mint, a balance lineage, and one token-scoped amount lineage.
+/// confidential mint, a balance encrypted value account, and one token-scoped amount encrypted value account.
 /// The fixture's v0 certs resolve to the host's current KMS context, so the fixture's
 /// `current_kms_context_id` and seeded `kms_context` share `kms_context_id`.
 struct DiscloseFixture {
@@ -3414,7 +3424,7 @@ impl DiscloseFixture {
         let host_config = host::host_config_address().0;
         let token_account = token::token_account_address(mint, owner).0;
         let balance_value = token::balance_encrypted_value_address(mint, token_account).0;
-        // Any token-scoped amount lineage discloses the same way; use the burned_amount slot.
+        // Any token-scoped amount encrypted value account discloses the same way; use the burned_amount slot.
         let amount_value =
             token::encrypted_value_address(mint, token_account, token::burned_amount_label()).0;
         let kms_context_id = 9;
@@ -3471,12 +3481,12 @@ impl DiscloseFixture {
     }
 }
 
-/// Builds a lineage carrying a public-decrypt leaf (leaf 0) for `pinned`, and the inclusion
-/// proof for it. With `supersede_to = Some(h2)` the lineage is grown into a post-supersession
+/// Builds a encrypted value account carrying a public-decrypt leaf (leaf 0) for `pinned`, and the inclusion
+/// proof for it. With `supersede_to = Some(h2)` the encrypted value account is grown into a post-supersession
 /// state (public(pinned)@0, hist(pinned,subj0)@1, hist(pinned,subj1)@2, public(h2)@3, current
 /// handle h2), modeling the pinned handle becoming historical after it was sealed public.
 /// `subjects` must hold at least two entries when superseding.
-fn public_leaf_lineage(
+fn public_leaf_value_account(
     account: Pubkey,
     app_account: Pubkey,
     mint: Pubkey,
@@ -3509,7 +3519,7 @@ fn public_leaf_lineage(
         None => pinned,
     };
     let (address, mut value) = new_encrypted_value(mint, app_account, label, current, subjects);
-    assert_eq!(address, account, "lineage account address mismatch");
+    assert_eq!(address, account, "encrypted value account address mismatch");
     value.leaf_count = leaves.len() as u64;
     value.peaks = zama_solana_acl::mmr_peaks_from_leaves(&leaves);
     let proof = zama_solana_acl::mmr_build_proof(&leaves, 0).expect("proof for leaf 0");
@@ -3579,7 +3589,7 @@ fn assert_disclosed(
 fn mollusk_disclose_secp_amount_happy_path() {
     let fixture = DiscloseFixture::new();
     let pinned = handle_for_chain(43, BALANCE_FHE_TYPE);
-    let (lineage, proof) = public_leaf_lineage(
+    let (encrypted_value_account, proof) = public_leaf_value_account(
         fixture.amount_value,
         fixture.token_account,
         fixture.mint,
@@ -3588,10 +3598,13 @@ fn mollusk_disclose_secp_amount_happy_path() {
         pinned,
         None,
     );
-    assert_eq!(lineage.current_handle, pinned);
+    assert_eq!(encrypted_value_account.current_handle, pinned);
 
     let mut accounts = fixture.base();
-    accounts.insert(fixture.amount_value, encrypted_value_account(&lineage));
+    accounts.insert(
+        fixture.amount_value,
+        encrypted_value_account(&value_account),
+    );
     let context = mollusk().with_context(accounts);
 
     let cleartext_amount = 500;
@@ -3621,7 +3634,7 @@ fn mollusk_disclose_secp_amount_happy_path() {
 fn mollusk_disclose_secp_balance_happy_path() {
     let fixture = DiscloseFixture::new();
     let pinned = handle_for_chain(33, BALANCE_FHE_TYPE);
-    let (lineage, proof) = public_leaf_lineage(
+    let (encrypted_value_account, proof) = public_leaf_value_account(
         fixture.balance_value,
         fixture.token_account,
         fixture.mint,
@@ -3632,7 +3645,10 @@ fn mollusk_disclose_secp_balance_happy_path() {
     );
 
     let mut accounts = fixture.base();
-    accounts.insert(fixture.balance_value, encrypted_value_account(&lineage));
+    accounts.insert(
+        fixture.balance_value,
+        encrypted_value_account(&value_account),
+    );
     let context = mollusk().with_context(accounts);
 
     let cleartext_amount = 700;
@@ -3661,13 +3677,13 @@ fn mollusk_disclose_secp_balance_happy_path() {
 #[test]
 fn mollusk_disclose_secp_after_supersession_consumes_with_public_proof() {
     // The griefing case preserved end-to-end: the handle is sealed public while current, then the
-    // lineage is superseded to H2 (e.g. an inbound transfer) before the consume lands. The pinned
+    // encrypted value account is superseded to H2 (e.g. an inbound transfer) before the consume lands. The pinned
     // handle must still disclose, authorized by its permanent public-decrypt leaf, not the live
     // handle. This is the host verifier's survives-supersede property observed one layer up.
     let fixture = DiscloseFixture::new();
     let pinned = handle_for_chain(41, BALANCE_FHE_TYPE);
     let superseded = handle_for_chain(42, BALANCE_FHE_TYPE);
-    let (lineage, proof) = public_leaf_lineage(
+    let (encrypted_value_account, proof) = public_leaf_value_account(
         fixture.amount_value,
         fixture.token_account,
         fixture.mint,
@@ -3676,10 +3692,13 @@ fn mollusk_disclose_secp_after_supersession_consumes_with_public_proof() {
         pinned,
         Some(superseded),
     );
-    assert_ne!(lineage.current_handle, pinned);
+    assert_ne!(encrypted_value_account.current_handle, pinned);
 
     let mut accounts = fixture.base();
-    accounts.insert(fixture.amount_value, encrypted_value_account(&lineage));
+    accounts.insert(
+        fixture.amount_value,
+        encrypted_value_account(&value_account),
+    );
     let context = mollusk().with_context(accounts);
 
     let cleartext_amount = 500;
@@ -3713,7 +3732,7 @@ fn mollusk_disclose_secp_is_idempotent_no_replay_marker() {
     // their own state.
     let fixture = DiscloseFixture::new();
     let pinned = handle_for_chain(44, BALANCE_FHE_TYPE);
-    let (lineage, proof) = public_leaf_lineage(
+    let (encrypted_value_account, proof) = public_leaf_value_account(
         fixture.amount_value,
         fixture.token_account,
         fixture.mint,
@@ -3724,7 +3743,10 @@ fn mollusk_disclose_secp_is_idempotent_no_replay_marker() {
     );
 
     let mut accounts = fixture.base();
-    accounts.insert(fixture.amount_value, encrypted_value_account(&lineage));
+    accounts.insert(
+        fixture.amount_value,
+        encrypted_value_account(&value_account),
+    );
     let context = mollusk().with_context(accounts);
 
     let cleartext_amount = 500;
@@ -3752,7 +3774,7 @@ fn mollusk_disclose_secp_rejects_foreign_public_decrypt_proof() {
     let fixture = DiscloseFixture::new();
     let pinned = handle_for_chain(46, BALANCE_FHE_TYPE);
     let superseded = handle_for_chain(47, BALANCE_FHE_TYPE);
-    let (lineage, mut proof) = public_leaf_lineage(
+    let (encrypted_value_account, mut proof) = public_leaf_value_account(
         fixture.amount_value,
         fixture.token_account,
         fixture.mint,
@@ -3764,7 +3786,10 @@ fn mollusk_disclose_secp_rejects_foreign_public_decrypt_proof() {
     proof.leaf_index = 3; // H2's public-decrypt leaf, not H1's.
 
     let mut accounts = fixture.base();
-    accounts.insert(fixture.amount_value, encrypted_value_account(&lineage));
+    accounts.insert(
+        fixture.amount_value,
+        encrypted_value_account(&value_account),
+    );
     let context = mollusk().with_context(accounts);
 
     let cleartext_amount = 500;
@@ -3787,15 +3812,15 @@ fn mollusk_disclose_secp_rejects_foreign_public_decrypt_proof() {
 
 #[test]
 fn mollusk_disclose_secp_rejects_foreign_mint_domain() {
-    // The disclosed lineage must belong to this mint's ACL domain: the token layer binds
+    // The disclosed encrypted value account must belong to this mint's ACL domain: the token layer binds
     // encrypted_value.acl_domain_key to the mint so the emitted event is genuinely token-scoped.
-    // A lineage under a different domain is rejected before the verifier CPI.
+    // A encrypted value account under a different domain is rejected before the verifier CPI.
     let fixture = DiscloseFixture::new();
     let pinned = handle_for_chain(48, BALANCE_FHE_TYPE);
     let foreign_mint = Pubkey::new_unique();
-    // A public lineage whose acl_domain_key is a different mint, but whose canonical address is
+    // A public encrypted value account whose acl_domain_key is a different mint, but whose canonical address is
     // computed under that foreign domain so the account still deserializes as a valid EncryptedValue.
-    let (foreign_value, proof) = public_leaf_lineage(
+    let (foreign_value, proof) = public_leaf_value_account(
         token::encrypted_value_address(
             foreign_mint,
             fixture.token_account,
@@ -3840,12 +3865,12 @@ fn mollusk_disclose_secp_rejects_foreign_mint_domain() {
 
 #[test]
 fn mollusk_disclose_secp_rejects_cleartext_wider_than_u64() {
-    // Token lineages are euint64, so the certified 32-byte uint256 cleartext must fit in 64 bits.
+    // Token encrypted value accounts are euint64, so the certified 32-byte uint256 cleartext must fit in 64 bits.
     // The host verifier accepts any 32-byte cleartext its cert signs over; the token layer then
     // rejects a value with nonzero high bytes rather than silently truncating it to the low 64 bits.
     let fixture = DiscloseFixture::new();
     let pinned = handle_for_chain(49, BALANCE_FHE_TYPE);
-    let (lineage, proof) = public_leaf_lineage(
+    let (encrypted_value_account, proof) = public_leaf_value_account(
         fixture.amount_value,
         fixture.token_account,
         fixture.mint,
@@ -3856,7 +3881,10 @@ fn mollusk_disclose_secp_rejects_cleartext_wider_than_u64() {
     );
 
     let mut accounts = fixture.base();
-    accounts.insert(fixture.amount_value, encrypted_value_account(&lineage));
+    accounts.insert(
+        fixture.amount_value,
+        encrypted_value_account(&value_account),
+    );
     let context = mollusk().with_context(accounts);
 
     // A cleartext whose value exceeds u64::MAX: a nonzero byte in the high 24 (here index 8).
@@ -4018,7 +4046,7 @@ fn mollusk_confidential_transfer_metering_band_charges_meter_through_cpi() {
 
     context.process_and_validate_instruction(&ix, &[Check::success()]);
 
-    // The transfer completed: the sender's balance lineage moved off its initial handle.
+    // The transfer completed: the sender's balance encrypted value account moved off its initial handle.
     let alice_balance = read_encrypted_value(&context, fixture.alice_balance_value);
     assert_ne!(alice_balance.current_handle, fixture.alice_initial);
     // The meter was lazy-created through the CPI, keyed on the mint's compute signer, and
@@ -4041,7 +4069,7 @@ fn mollusk_confidential_transfer_metering_band_charges_meter_through_cpi() {
 // ---------------------------------------------------------------------------
 
 /// Done-when 1: a transfer spends a computed handle produced under the same mint, with no
-/// attestation attached. Here the amount is an existing lineage carrying the sender + compute
+/// attestation attached. Here the amount is an existing encrypted value account carrying the sender + compute
 /// subjects; the balances move through the same `ge -> sub -> select` debit and `add` credit, and
 /// the amount value itself is read-only (never superseded, never consumed).
 #[test]
@@ -4077,7 +4105,7 @@ fn mollusk_transfer_from_value_spends_existing_amount() {
     let result = context.process_and_validate_instruction(&transfer, &[Check::success()]);
     let durable_outputs = cleartext.evaluate_fhe_cpi(&context, &result);
 
-    // Only the two balance lineages and the sender's transferred_amount rotate — the amount is not
+    // Only the two balance encrypted value accounts and the sender's transferred_amount rotate — the amount is not
     // an output.
     assert_eq!(durable_outputs, 3);
     assert_eq!(cleartext.balance(&context, fixture.alice_token), 750);
@@ -4109,7 +4137,7 @@ fn mollusk_transfer_from_value_recipient_forwards_received_amount() {
     cleartext.seed_amount(fixture.bob_initial, 0);
     cleartext.seed_amount(carol_initial, 0);
 
-    // Alice -> Bob (fresh attested): produces Alice's transferred_amount lineage whose subjects
+    // Alice -> Bob (fresh attested): produces Alice's transferred_amount encrypted value account whose subjects
     // include Bob, so Bob may now spend that received handle.
     let alice_amount = handle_for_chain(50, BALANCE_FHE_TYPE);
     cleartext.seed_amount(alice_amount, 300);
@@ -4146,7 +4174,7 @@ fn mollusk_transfer_from_value_recipient_forwards_received_amount() {
     assert_eq!(cleartext.balance(&context, fixture.bob_token), 0);
     assert_eq!(cleartext.balance(&context, carol_token), 300);
 
-    // Alice's transferred_amount lineage — the forwarded amount — is untouched by Bob's spend.
+    // Alice's transferred_amount encrypted value account — the forwarded amount — is untouched by Bob's spend.
     let received_after = read_encrypted_value(&context, received);
     assert_eq!(
         received_after.current_handle,
@@ -4353,12 +4381,12 @@ fn mollusk_transfer_from_value_rejects_non_euint64_amount() {
     );
 }
 
-/// Spending the entire balance: the amount lineage is the sender's own balance value, so
+/// Spending the entire balance: the amount encrypted value account is the sender's own balance value, so
 /// `amount_value` aliases the `from_balance` output account. The eval plan merges them into one
 /// account slot, and the transfer debits the whole balance without tripping duplicate-account
 /// resolution.
 #[test]
-fn mollusk_transfer_from_value_spends_full_balance_with_balance_lineage_as_amount() {
+fn mollusk_transfer_from_value_spends_full_balance_with_balance_value_account_as_amount() {
     let fixture = TokenFixture::new();
     let accounts = fixture.base_accounts();
     let context = mollusk().with_context(accounts);
@@ -4374,7 +4402,7 @@ fn mollusk_transfer_from_value_spends_full_balance_with_balance_lineage_as_amoun
         fixture.bob_token,
         fixture.alice_balance_value,
         fixture.bob_balance_value,
-        // Amount aliased to the sender's own balance lineage: transfer the whole balance.
+        // Amount aliased to the sender's own balance encrypted value account: transfer the whole balance.
         fixture.alice_balance_value,
     );
     let result = context.process_and_validate_instruction(&transfer, &[Check::success()]);
@@ -4385,7 +4413,7 @@ fn mollusk_transfer_from_value_spends_full_balance_with_balance_lineage_as_amoun
     assert_eq!(cleartext.balance(&context, fixture.bob_token), 1_100);
 }
 
-/// Re-sending a received amount: the sender spends their own `transferred_amount` lineage, which is
+/// Re-sending a received amount: the sender spends their own `transferred_amount` encrypted value account, which is
 /// also this transfer's `transferred_amount` output account. `amount_value` aliases an output the
 /// eval frame writes, and the merged account slot lets the transfer settle.
 #[test]
@@ -4398,7 +4426,7 @@ fn mollusk_transfer_from_value_resends_transferred_amount_that_is_also_this_outp
     cleartext.seed_amount(fixture.alice_initial, 1_000);
     cleartext.seed_amount(fixture.bob_initial, 0);
 
-    // First transfer (attested, 300) creates Alice's transferred_amount lineage.
+    // First transfer (attested, 300) creates Alice's transferred_amount encrypted value account.
     let alice_amount = handle_for_chain(90, BALANCE_FHE_TYPE);
     cleartext.seed_amount(alice_amount, 300);
     let first = confidential_transfer_ix(
@@ -4413,7 +4441,7 @@ fn mollusk_transfer_from_value_resends_transferred_amount_that_is_also_this_outp
     cleartext.evaluate_fhe_cpi(&context, &first_result);
     assert_eq!(cleartext.balance(&context, fixture.bob_token), 300);
 
-    // Alice sends the same amount again by spending her own transferred_amount lineage, which is
+    // Alice sends the same amount again by spending her own transferred_amount encrypted value account, which is
     // also this transfer's transferred_amount output account.
     let own_transferred = fixture.transferred_amount_value_address(fixture.alice_token);
     let again = confidential_transfer_from_value_ix(
@@ -4504,7 +4532,7 @@ fn cost_snapshot_confidential_transfer_direct() {
 
     // Steady state: the first transfer birthed the transferred-amount
     // `EncryptedValue` at its canonical per-(mint, source) PDA; later
-    // transfers supersede every touched lineage in place and create no
+    // transfers supersede every touched encrypted value account in place and create no
     // accounts. Snapshot the second transfer separately.
     //
     // Both profiles share this fixture/context on purpose, so a mismatch on
@@ -4603,7 +4631,7 @@ fn disclose_secp_seven_of_thirteen_verifies_and_bounds_compute() {
     let fixture = DiscloseFixture::new();
     let pinned = handle_for_chain(85, BALANCE_FHE_TYPE);
     let superseded = handle_for_chain(86, BALANCE_FHE_TYPE);
-    let (lineage, proof) = public_leaf_lineage(
+    let (encrypted_value_account, proof) = public_leaf_value_account(
         fixture.amount_value,
         fixture.token_account,
         fixture.mint,
@@ -4620,7 +4648,10 @@ fn disclose_secp_seven_of_thirteen_verifies_and_bounds_compute() {
     let registered: Vec<[u8; 20]> = keys.iter().map(secp_evm_address).collect();
 
     let mut accounts = fixture.base();
-    accounts.insert(fixture.amount_value, encrypted_value_account(&lineage));
+    accounts.insert(
+        fixture.amount_value,
+        encrypted_value_account(&value_account),
+    );
     accounts.insert(
         fixture.kms_context,
         kms_context_account_with_signers(fixture.kms_context_id, &registered, 7),
@@ -4660,7 +4691,7 @@ fn disclose_secp_seven_of_thirteen_verifies_and_bounds_compute() {
 // The burn-side analog of confidential_transfer_from_value (#1680 / #3238): burn an amount given as
 // an existing durable handle the owner may use, instead of a fresh coprocessor attestation. The
 // burned-amount output shape is byte-identical to the attestation path (born publicly decryptable at
-// its canonical burned_amount lineage), so redeem_burned_amount consumes it unchanged.
+// its canonical burned_amount encrypted value account), so redeem_burned_amount consumes it unchanged.
 // ---------------------------------------------------------------------------
 
 /// Happy path: burn part of a balance from an existing computed/received `euint64` handle, no
@@ -4700,7 +4731,7 @@ fn mollusk_burn_from_value_burns_existing_amount() {
         4_750
     );
 
-    // The burned delta is born publicly decryptable: the first burn creates the lineage and appends
+    // The burned delta is born publicly decryptable: the first burn creates the encrypted value account and appends
     // exactly one public-decrypt leaf for the just-bound burned handle (DD-036 / Vector 2), identical
     // to the attestation path.
     let burned = read_encrypted_value(&context, fixture.burned_amount_value);
@@ -4728,7 +4759,7 @@ fn mollusk_burn_from_value_burns_existing_amount() {
 }
 
 /// Whole-balance alias regression (the #3238 aliasing class): burning the entire balance uses the
-/// account's own balance lineage AS the amount, so `amount_value` aliases the `balance` output. The
+/// account's own balance encrypted value account AS the amount, so `amount_value` aliases the `balance` output. The
 /// eval plan merges them into one slot, and the dedup skips pushing the amount a second time, so the
 /// burn settles without tripping duplicate-account resolution.
 #[test]
@@ -4741,7 +4772,7 @@ fn mollusk_burn_from_value_whole_balance_alias() {
     cleartext.seed_amount(fixture.initial_balance, 1_000);
     cleartext.seed_amount(fixture.initial_total_supply, 5_000);
 
-    // Amount aliased to the account's own balance lineage: burn the whole balance.
+    // Amount aliased to the account's own balance encrypted value account: burn the whole balance.
     let burn = confidential_burn_from_value_ix(
         &fixture,
         fixture.owner,
@@ -4763,11 +4794,11 @@ fn mollusk_burn_from_value_whole_balance_alias() {
     );
 }
 
-/// Re-burning the burned-amount lineage (the second alias branch): the second burn spends the
-/// `burned_amount` lineage itself as the amount, so `amount_value` aliases the `burned_amount` output
+/// Re-burning the burned-amount encrypted value account (the second alias branch): the second burn spends the
+/// `burned_amount` encrypted value account itself as the amount, so `amount_value` aliases the `burned_amount` output
 /// this frame writes. The eval plan merges the aliased slot (read at the old handle, superseded to
 /// the new delta), and the dedup skips pushing the amount a second time — the `amount == burned_amount
-/// lineage` branch. Mirrors `mollusk_transfer_from_value_resends_transferred_amount_that_is_also_this_output`.
+/// encrypted value account` branch. Mirrors `mollusk_transfer_from_value_resends_transferred_amount_that_is_also_this_output`.
 #[test]
 fn mollusk_burn_from_value_reburns_burned_amount_that_is_also_this_output() {
     let fixture = BurnRedeemFixture::new();
@@ -4788,7 +4819,7 @@ fn mollusk_burn_from_value_reburns_burned_amount_that_is_also_this_output() {
     cleartext.seed_amount(fixture.initial_total_supply, 5_000);
     cleartext.seed_amount(amount_handle, 250);
 
-    // First burn (250) creates the burned_amount lineage: balance 750, total_supply 4750, burned 250.
+    // First burn (250) creates the burned_amount encrypted value account: balance 750, total_supply 4750, burned 250.
     let first =
         confidential_burn_from_value_ix(&fixture, fixture.owner, fixture.owner, amount_value);
     let first_result = context.process_and_validate_instruction(&first, &[Check::success()]);
@@ -4796,7 +4827,7 @@ fn mollusk_burn_from_value_reburns_burned_amount_that_is_also_this_output() {
     let first_burned = read_encrypted_value(&context, fixture.burned_amount_value).current_handle;
     assert_eq!(cleartext.u64_at(&context, fixture.burned_amount_value), 250);
 
-    // Second burn spends the burned_amount lineage itself as the amount — which is also this burn's
+    // Second burn spends the burned_amount encrypted value account itself as the amount — which is also this burn's
     // burned_amount output account (the alias the dedup must merge, not double-push).
     let again = confidential_burn_from_value_ix(
         &fixture,
@@ -4817,15 +4848,16 @@ fn mollusk_burn_from_value_reburns_burned_amount_that_is_also_this_output() {
     );
     assert_eq!(cleartext.u64_at(&context, fixture.burned_amount_value), 250);
 
-    // The burned_amount lineage stays a well-formed two-burn MMR: both burns' handles are present as
+    // The burned_amount encrypted value account stays a well-formed two-burn MMR: both burns' handles are present as
     // public-decrypt leaves (public(H1)@0 and public(H2)@3), so each remains permanently redeemable
     // (DD-036 / Vector 2) even though the second burn also read H1 as its amount operand.
     let second_burned = read_encrypted_value(&context, fixture.burned_amount_value).current_handle;
-    let lineage = read_encrypted_value(&context, fixture.burned_amount_value);
-    assert_eq!(lineage.current_handle, second_burned);
-    assert_eq!(lineage.leaf_count, 4);
-    let (_proof, expected_peaks) = two_burn_lineage_proof(&fixture, first_burned, second_burned, 0);
-    assert_eq!(lineage.peaks, expected_peaks);
+    let encrypted_value_account = read_encrypted_value(&context, fixture.burned_amount_value);
+    assert_eq!(encrypted_value_account.current_handle, second_burned);
+    assert_eq!(encrypted_value_account.leaf_count, 4);
+    let (_proof, expected_peaks) =
+        two_burn_value_account_proof(&fixture, first_burned, second_burned, 0);
+    assert_eq!(encrypted_value_account.peaks, expected_peaks);
 }
 
 /// PDA-owner CPI driver: the batcher path burns as a program PDA that owns the token account and
@@ -4869,7 +4901,7 @@ fn mollusk_burn_from_value_pda_owner_via_invoke_signed() {
 
     assert_eq!(cleartext.balance(&context, fixture.token_account), 600);
     assert_eq!(cleartext.u64_at(&context, fixture.burned_amount_value), 400);
-    // The burned lineage is owned by the PDA owner and the compute signer.
+    // The burned encrypted value account is owned by the PDA owner and the compute signer.
     assert_eq!(
         read_encrypted_value(&context, fixture.burned_amount_value).subjects,
         vec![pda_owner, fixture.compute_signer]
@@ -4878,7 +4910,7 @@ fn mollusk_burn_from_value_pda_owner_via_invoke_signed() {
 
 /// Downstream compatibility: a burned handle produced by the from-value path feeds
 /// `redeem_burned_amount` unchanged. The burned output shape (born-public, canonical `burned_amount`
-/// lineage, audience owner + compute) is identical to the attestation path, so the KMS-cert +
+/// encrypted value account, audience owner + compute) is identical to the attestation path, so the KMS-cert +
 /// single-leaf public-decrypt-proof redeem consumes it and pays out the vault.
 #[test]
 fn mollusk_burn_from_value_burned_handle_redeems() {
@@ -4895,7 +4927,7 @@ fn mollusk_burn_from_value_burned_handle_redeems() {
     );
     let context = burn_redeem_mollusk().with_context(accounts);
 
-    // Burn 500 from the existing amount handle; the born-public burned handle is the new lineage handle.
+    // Burn 500 from the existing amount handle; the born-public burned handle is the new encrypted value account handle.
     let mut cleartext = CleartextLedger::default();
     cleartext.seed_amount(fixture.initial_balance, 1_000);
     cleartext.seed_amount(fixture.initial_total_supply, 5_000);

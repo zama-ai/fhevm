@@ -18,10 +18,10 @@ product-open
 ## DD-001: Store Handles In ACL Records, Not PDA Seeds
 
 Status: **superseded** — the keyed-nonce `AclRecord` was replaced by the stable
-`EncryptedValue` + MMR lineage (DD-032), and both handle-binding components (the
+`EncryptedValue` + MMR encrypted value account (DD-032), and both handle-binding components (the
 `nonce_sequence` leaf-count and the `value_key`) were **deleted from
 durable-output handle derivation** (DD-015): a durable output handle is now the
-plain base handle, matching EVM `FHEVMExecutor` (no per-slot/per-caller/per-lineage
+plain base handle, matching EVM `FHEVMExecutor` (no per-slot/per-caller/per-encrypted value account
 binding). `value_key` survives only as the `EncryptedValue` PDA seed. The
 description below is retained for historical context only.
 
@@ -349,7 +349,7 @@ Note: the per-instruction label-scoping described here was dissolved in fhevm-in
 DD-040). The `request_disclose_amount` / `disclose_amount` (and balance) instructions no longer exist;
 disclosure is now the single generic `disclose_secp` consumer of the host `verify_public_decrypt`
 verifier. In place of per-instruction label-scoping, the token binds the disclosed `EncryptedValue`
-lineage to the mint's ACL domain.
+encrypted value account to the mint's ACL domain.
 
 Context:
 
@@ -412,7 +412,7 @@ Gateway V2 path (RFC-016) rather than a parallel native stack:
   Solana auth through `extraData`. The payload carries `bytes32 userIdentity`, `bytes32[]
   allowedAclDomainKeys`, `bytes32 nonce` as typed fields (plus shared publicKey, requestValidity,
   signature). `extraData` carries either the context-only `0x01 ‖ contextId` form or the versioned
-  `0x03` MMR-proof tail for a named ACL lineage. A chain-aware validator branches on
+  `0x03` MMR-proof tail for a named ACL encrypted value account. A chain-aware validator branches on
   `contracts_chain_id` (see DD-027) so EVM stays strict and Solana is relaxed. The bytes32 handle
   surface still admits both EVM and Solana. (See DD-026 for the typed-vs-extraData boundary.)
 - **Public-decrypt** certificates are verified **on-chain** via secp256k1: `zama_host` recovers EVM
@@ -508,15 +508,15 @@ grind offline for an extreme adversary. Computed handles therefore mix per-block
 digest (`previous_bank_hash` + `clock.unix_timestamp` on Solana). EVM does the identical thing via
 `blockhash(block.number - 1)` (and `block.timestamp`) in `FHEVMExecutor._binaryOp` /
 `_ternaryOp` / `_mulDivOp` / `_naryOp`. Durable outputs derive **the same base handle** as transient
-outputs — no per-output binding. The former durable-output binding (the lineage `value_key`, plus an
-even earlier per-update `output_nonce_sequence` = the lineage's MMR `leaf_count` read at execution)
+outputs — no per-output binding. The former durable-output binding (the encrypted value account `value_key`, plus an
+even earlier per-update `output_nonce_sequence` = the encrypted value account's MMR `leaf_count` read at execution)
 was **removed** entirely — see "Binding removal" below.
 
 Decision:
 
 Keep the per-block-entropy-seeded derivation. The alternative — widening `bytes32` → `bytes` (full
 hash) to remove the collision concern without entropy — was rejected. Durable outputs derive the
-plain base handle; do not mix a per-output sequence or a per-lineage `value_key` into the handle.
+plain base handle; do not mix a per-output sequence or a per-encrypted value account `value_key` into the handle.
 
 Why:
 
@@ -541,7 +541,7 @@ back to zero entropy (DD-014).
 Binding removal (durable-output handle binding deleted entirely):
 
 The durable-output binding once folded two components into the handle hash: `output_nonce_sequence`
-(the lineage's MMR `leaf_count` read at execution) and the `value_key` (the lineage identity). Both
+(the encrypted value account's MMR `leaf_count` read at execution) and the `value_key` (the encrypted value account identity). Both
 were vestiges of the retired keyed-nonce `AclRecord` (DD-001) and the root of the off-chain
 reconstruction complexity (leaf-count tracking + "hints"). Both are now **deleted**. A durable output
 handle is now the plain `base_handle = computed_eval_handle(op, operands, scalar, fhe_type, chain_id,
@@ -557,7 +557,7 @@ outputs with different material already differ in `base_handle` (birthday resist
 non-grindable by per-block entropy, unchanged by this deletion). The binding only made *repeated
 identical* computations produce distinct handles; removing it means an identical recomputation now
 yields the identical handle — which is exactly EVM's behavior (`FHEVMExecutor` binds **no**
-per-output nonce, and **no** per-slot/per-caller/per-lineage value, for
+per-output nonce, and **no** per-slot/per-caller/per-encrypted value account value, for
 binary/ternary/trivial/unary/cast; its only counter is the global `counterRand` folded into the rand
 *seed*), so the deletion **improves** EVM parity. The recorded collision-case analysis:
 
@@ -572,9 +572,9 @@ same slot, different txs, same op/operands/ctx   Solana write-lock serializes th
                                                  recompute byte-identically, the material is identical
                                                  (deterministic) → sharing a handle is correct, not a
                                                  distinct-material collision (= EVM same-block behavior)
-cross-lineage, same computation, same slot       not a collision: identical op/operands/type/ctx is
+cross-value_account, same computation, same slot       not a collision: identical op/operands/type/ctx is
                                                  identical ciphertext material, so a shared handle is
-                                                 correct (exactly EVM's behavior). The lineages are
+                                                 correct (exactly EVM's behavior). The encrypted value accounts are
                                                  still distinct on-chain accounts (distinct value_key
                                                  PDA seed); only the handle is shared, as on EVM
 fhe_rand / trivial / ternary outputs             same as above; rand within-slot distinctness comes
@@ -584,7 +584,7 @@ fhe_rand / trivial / ternary outputs             same as above; rand within-slot
 
 Verdict: SAFE-TO-DELETE. Both handle-binding components (the `value_key` and the sequence) are gone;
 the durable handle is the plain base handle, matching EVM's shape. `value_key` remains only as the
-`EncryptedValue` PDA seed, so lineages are still distinct accounts. The IDL/wire is unchanged — the
+`EncryptedValue` PDA seed, so encrypted value accounts are still distinct accounts. The IDL/wire is unchanged — the
 binding was never an instruction argument (the sequence was the on-chain `leaf_count` read at
 execution; the `value_key` is derived from args already present), so `FheEvalArgs` and the
 durable-output args (including Option-2 `make_public`) are unaffected.
@@ -972,7 +972,7 @@ Decision:
   A current, historical, or public ACL decrypt instead uses the versioned `0x03` form:
   `0x03 ‖ contextId(32) ‖ aclValueKey(32) ‖ proofSlot(8) ‖ proofLength(4) ‖ mmrProof`.
   The signed user-decrypt preimage commits to that tail verbatim, so the relayer cannot substitute
-  lineage or proof data.
+  encrypted value account or proof data.
 - The relayer builds the typed call (`SolanaUnifiedV1` core variant → `userDecryptionRequestSolanaCall`);
   the js-sdk `buildSolanaUserDecryptRequest` emits the typed identity/auth fields and the matching
   `0x01` or `0x03` extraData form. The KMS connector routes Solana requests by their typed event and
@@ -985,14 +985,14 @@ Why:
 
 A bytes32 identity + high-bit chain id keeps one input ABI for EVM and non-EVM hosts. For user-decrypt,
 typed gateway fields make the Solana identity/auth request self-describing. The signed, versioned
-`extraData` tail remains the current transport for optional lineage and MMR proof evidence.
+`extraData` tail remains the current transport for optional encrypted value account and MMR proof evidence.
 
 Decision history (RESOLVED):
 
 The 2026/06/12 Solana guild weekly (Manoranjith + Jad) objected that identity and authorization scope
 were being smuggled through `extraData` and should be a proper request type. That is resolved by the
 typed `userDecryptionRequestSolana` / `UserDecryptionRequestSolanaPayload` entrypoint. `0x03` remains
-on the wire only as a versioned, signed transport for lineage/MMR evidence; it is not used for identity,
+on the wire only as a versioned, signed transport for encrypted value account/MMR evidence; it is not used for identity,
 nonce, or allowed-domain-key authorization.
 
 ## DD-027: Chain-Aware V2 User-Decrypt Validation (didn't-work-then-fixed)
@@ -1191,7 +1191,7 @@ stored set). Order is load-bearing: the outgoing audience is sealed into histori
 the new set replaces current membership, so past authorization stays exactly as sealed. Every subject a
 rotation adds passes the grant deny-list exactly as `allow_subjects` does (so rotation is not a
 deny-list bypass); `previous_handle`/`previous_subjects` still pin the outgoing state exactly, keeping
-supersedes stateless-replayable (DD-033). This lets a per-sender lineage (e.g. confidential-token's
+supersedes stateless-replayable (DD-033). This lets a per-sender encrypted value account (e.g. confidential-token's
 `transferred_amount`) re-target its audience across recipients instead of reverting.
 
 ## DD-033: No ACL-Lifecycle Events — Self-Describing Args + Instruction-Replay Indexing
@@ -1300,12 +1300,12 @@ Status: adopted
 
 Context:
 
-`burned_amount` is one stable `EncryptedValue` lineage per token account (DD-019/DD-032),
+`burned_amount` is one stable `EncryptedValue` encrypted value account per token account (DD-019/DD-032),
 superseded in place on every burn to that burn's own delta handle. The secp redeem path
 (`redeem_burned_amount_secp`) required `current_handle == burned_handle`. That stranded funds: a
 redemption requested against handle `H1` (still `PENDING`, awaiting the off-chain KMS round-trip)
-becomes unredeemable the moment a second burn supersedes the lineage to `H2` — the redeem reverts
-forever even though `H1`'s public-decrypt leaf and KMS cert are still valid. The lineage was reusing
+becomes unredeemable the moment a second burn supersedes the encrypted value account to `H2` — the redeem reverts
+forever even though `H1`'s public-decrypt leaf and KMS cert are still valid. The encrypted value account was reusing
 one shared, in-place-superseded slot as an implicit "pending operation" record.
 
 Decision:
@@ -1313,8 +1313,8 @@ Decision:
 The consume authorizes the *pinned* handle by an MMR public-decrypt proof rather than by live-handle
 equality. `redeem_burned_amount_secp` gains a `proof` argument and calls
 `zama_solana_acl::authorize_public(encrypted_value_account, value, burned_handle, proof)` against the
-lineage's current peaks (the same primitive and leaf commitments the KMS connector re-verifies,
-DD-032/DD-035). A redemption therefore stays valid after later burns supersede the lineage. The
+encrypted value account's current peaks (the same primitive and leaf commitments the KMS connector re-verifies,
+DD-032/DD-035). A redemption therefore stays valid after later burns supersede the encrypted value account. The
 `request` path is unchanged — it still requires the live handle, because that is where the
 public-decrypt leaf is appended (while the handle is current). Double-redeem is still prevented by the
 per-handle `burn-redemption` marker PDA (DD-022), independent of the dropped equality check. The proof
@@ -1349,7 +1349,7 @@ burn owns the public-decrypt leaf. Authorization: the output binder already auth
 app-account-authority to bind the output; that same authority is what authorizes making it public
 (the binder is *creating* the value), so no separate subject check is required — consistent with, and
 gated by the same deny-list path as, the rest of the binding. This is the opt-in relaxation of the
-"created lineages cannot be born public-decryptable" invariant: it holds for all outputs except those
+"created encrypted value accounts cannot be born public-decryptable" invariant: it holds for all outputs except those
 that explicitly set `make_public`.
 
 Addendum (disclose consume — now the host verifier; superseded by DD-040):
@@ -1365,7 +1365,7 @@ The survives-supersession property this addendum secured is preserved — now on
 host verifier itself. The public-decrypt leaf is sealed permanently (via `make_handle_public`) and the
 KMS honors historical public leaves, so `verify_public_decrypt` authorizes the caller-pinned exact
 handle by its MMR public-decrypt inclusion proof plus a KMS cert, never reading the live
-`current_handle`. An OLD sealed handle therefore stays disclosable after its lineage is superseded
+`current_handle`. An OLD sealed handle therefore stays disclosable after its encrypted value account is superseded
 during the off-chain KMS round-trip, matching EVM's permanent public-decryptability. This closes the
 same TOCTOU (including balance mode's third-party griefability) without a witness.
 
@@ -1393,8 +1393,8 @@ in [`FUTURE_DESIGN.md`](./FUTURE_DESIGN.md); this list is the short index.
   low-63-bit allocation for canonical MAINNET/DEVNET Solana host chain ids remains a deployment-config
   decision, tracked separately.
 - Rent/archival policy for the `EncryptedValue` MMR itself (DD-032): the account no longer needs
-  per-supersession PDA closes (one stable PDA is reused for a lineage's whole life), but growth of
-  `peaks`/`subjects` over a long-lived lineage's history still needs a compaction story if rent becomes
+  per-supersession PDA closes (one stable PDA is reused for a encrypted value account's whole life), but growth of
+  `peaks`/`subjects` over a long-lived encrypted value account's history still needs a compaction story if rent becomes
   a product issue.
 - General `HostConfig` config-version rotation semantics beyond the KMS-context pointer.
 - Full production KMS-connector wiring and real ZKPoK / transciphering behind the input attestation
@@ -1510,7 +1510,7 @@ something the caller cannot freely re-pick:
   only via the program's CPI seeds, so a caller cannot swap it for a fresh key — the per-mint meter is
   unforgeable.
 - Any frame consuming a durable or verified input: the subject must be an allowed member of the input
-  lineage's ACL (durable), or match the attestation's bound contract (verified), so substituting an
+  encrypted value account's ACL (durable), or match the attestation's bound contract (verified), so substituting an
   unrelated key loses input access. No other account the caller controls (`payer`,
   `app_account_authority`, output authorities) yields a fresh meter.
 
@@ -1531,7 +1531,7 @@ This is #1744's Option 1 broadened by a durable-output allowance to preserve the
 trivial-encrypt/`Rand` -> durable-output bootstrap/mint path. That allowance is not a full close: a
 durable output does NOT pin `compute_subject` (output binding authorizes against
 `app_account_authority`, never the subject), so a caller can still rotate the subject while binding a
-throwaway output lineage and get a fresh per-slot meter each time. That vector remains open but is
+throwaway output encrypted value account and get a fresh per-slot meter each time. That vector remains open but is
 now rent-bounded — each rotation costs ~one `HcuBlockMeter` PDA rent rather than being free —
 whereas the persist-nothing rotation was free. Closing it fully requires a host-registered app
 identity an input-free frame must present to be metered (#1708 Option B / #1744 Option 2), still
@@ -1644,7 +1644,7 @@ the events `BalanceDisclosureRequestedEvent`, `AmountDisclosureRequestedEvent`, 
 Added: ONE generic thin instruction `disclose_secp(handle, cleartext, signatures, extra_data, proof)`
 (`instructions/disclose_secp.rs`) that CPIs `zama_host::verify_public_decrypt`, reads its return_data
 via `get_return_data` (asserting the program id is `zama_host` and the returned handle equals the
-caller-pinned `handle`), binds the disclosed `EncryptedValue` lineage to the mint's ACL domain, and
+caller-pinned `handle`), binds the disclosed `EncryptedValue` encrypted value account to the mint's ACL domain, and
 emits ONE new event `HandleDisclosedEvent { version, mint, handle, encrypted_value, cleartext_amount }`.
 
 Request side is no longer a token instruction: an allowed subject (balance owner / amount subject)
@@ -1673,12 +1673,12 @@ deferral above. Deleted: `request_burn_redemption`, both `close_*_burn_redemptio
 instructions, the `BurnRedemptionRequest` account (and its address / request-hash helpers), the
 `assert_burn_redemption_request_witness` + `assert_kms_public_decrypt_cert_for_request` helpers, and
 the `BurnRedemptionRequestedEvent`. Added: ONE thin `redeem_burned_amount(burned_handle,
-cleartext_amount, signatures, extra_data, proof)` that binds the burned lineage
-(`assert_burned_amount_lineage`, unchanged), CPIs `zama_host::verify_public_decrypt`, asserts the
+cleartext_amount, signatures, extra_data, proof)` that binds the burned encrypted value account
+(`assert_burned_amount_value_account`, unchanged), CPIs `zama_host::verify_public_decrypt`, asserts the
 proven handle equals `burned_handle` and the certified cleartext equals `cleartext_amount`, then
 pays out and writes the marker. Every field the witness pinned is carried elsewhere (destination
 integrity by the redeem-time signer check, handle binding by the born-public MMR leaf sealed in the
-burn per DD-036, owner/mint by the lineage), so the witness was pure scaffolding.
+burn per DD-036, owner/mint by the value_account), so the witness was pure scaffolding.
 
 The stateless verifier replaces the request-time KMS pin: the cert is verified against the context it
 names inside the verifier, not the witness's pinned `kms_context_id`. (This note originally said the
@@ -1734,7 +1734,7 @@ real token account list) serializes to **989 bytes**, well inside the 1232-byte
 (`solana_packet::PACKET_DATA_SIZE`) single-packet limit.
 
 Public-decrypt **consume** transactions additionally carry an MMR inclusion proof whose size scales
-with lineage depth (depth x 32B), so high threshold x deep lineage is the binding corner. After
+with encrypted value account depth (depth x 32B), so high threshold x deep encrypted value account is the binding corner. After
 fhevm-internal#1704 the consume path is the thin `disclose_secp` (CPIing the stateless
 `verify_public_decrypt`); its transaction is ~24B **larger** than the retired `disclose_amount_secp`
 (dropping the DisclosureRequest witness account is offset by the added `zama_program` account, and the
@@ -1771,9 +1771,9 @@ the burn certificate *is* the aggregate decrypt, no separate reveal instruction.
 Load-bearing mechanics, all pre-existing host semantics (verified, no host changes): the transfer's
 recipient rule already places the receiving account's owner in the `transferred_amount` output
 audience, so the batcher PDA gains read admission on the deposit handle **by construction**; the
-batcher re-materializes each deposit into its own batcher-owned lineage in the same join transaction
+batcher re-materializes each deposit into its own batcher-owned encrypted value account in the same join transaction
 (audience `{user, batcher}`) because input admission pins `current_handle` and the user's
-`transferred_amount` lineage is superseded by their next transfer. Each batch gets its **own token
+`transferred_amount` encrypted value account is superseded by their next transfer. Each batch gets its **own token
 account**, so the burned/revealed total is exactly that batch's sum (the EVM code documents the
 inter-batch dust leak this prevents). Lifecycle is Pending -> Dispatched -> Finalized/Canceled with
 permissionless dispatch/settle/claim and an exact-refund `quit` — no operator custody of principal.
@@ -1791,7 +1791,7 @@ compatibility means matching the prevailing shape, not importing a program.
 The only confidential-token addition the flow needs is `confidential_burn_from_value` (burn an
 existing handle; today burn only accepts a fresh coprocessor attestation) — the burn-side analog of
 the existing-handle transfer, with the same aliased-account dedup applied from day one (burning an
-entire balance aliases the amount lineage with the balance lineage).
+entire balance aliases the amount encrypted value account with the balance value_account).
 
 Didactic companion: `CONFIDENTIAL_VAULTS.md`. Relates to DD-039 (HCU metering identity), DD-040
 (pull-oracle public decrypt), DD-041 (packet envelope — batch transactions stay within the measured
@@ -1805,7 +1805,7 @@ eval `compute_subject` AND `app_account_authority`, and signs every token CPI vi
 `join` moves the amount with the ATTESTED `confidential_transfer` arm (a wallet user's fresh
 encryption is a fromExternal input; `confidential_transfer_from_value` remains the mechanism for
 `quit` refunds and `claim` payouts, whose amounts ARE existing computed handles); deposit/claim
-lineages carry the relevant mint's compute signer in their audience from birth, so the token's eval
+encrypted value accounts carry the relevant mint's compute signer in their audience from birth, so the token's eval
 can read them with no `allow_subjects` round trip; "next batch opens immediately" is a
 permissionless `open_batch` gated only on the previous batch no longer being pending, rather than
 being folded into `dispatch` (keeps each instruction inside one transaction envelope); and the rate

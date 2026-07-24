@@ -54,7 +54,7 @@ export type SolanaVerifyPublicDecryptAccounts = {
   readonly hostConfig?: Address | undefined;
   /** KMS context PDA for the id the certificate commits to (any live, non-destroyed context). */
   readonly kmsContext: Address;
-  /** The `EncryptedValue` lineage the inclusion proof is checked against. */
+  /** The `EncryptedValue` encrypted value account the inclusion proof is checked against. */
   readonly encryptedValue: Address;
 };
 

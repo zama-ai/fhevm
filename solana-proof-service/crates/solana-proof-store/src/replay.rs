@@ -1,8 +1,8 @@
-//! Tracks per-lineage current state (`current_handle`, subjects) across a
+//! Tracks per-encrypted_value_account current state (`current_handle`, subjects) across a
 //! chronological instruction replay, turning `DecodedInstruction`s into the
-//! `zama_solana_acl::lineage::LineageEvent`s the shared crate's MMR math consumes.
+//! `zama_solana_acl::value_account::EncryptedValueAccountEvent`s the shared crate's MMR math consumes.
 //!
-//! Active lineage birth/supersession comes from durable `fhe_eval` outputs.
+//! Active encrypted_value_account birth/supersession comes from durable `fhe_eval` outputs.
 //! `allow_subjects` mutates current subjects but appends no MMR leaf. Raw
 //! `create_encrypted_value` / `update_encrypted_value` are retained here only
 //! for already-finalized legacy PoC data; current failed raw transactions are
@@ -14,27 +14,29 @@
 //! handle) followed by `MarkedPublic` (new output handle) — matching the
 //! on-chain leaf append order.
 
-use zama_solana_acl::lineage::LineageEvent;
+use zama_solana_acl::value_account::EncryptedValueAccountEvent;
 
 use crate::decode::DecodedInstruction;
 
 #[derive(thiserror::Error, Debug, Clone, PartialEq, Eq)]
 pub enum ReplayError {
-    #[error("supersession previous_handle/previous_subjects do not match tracked state for lineage {0:x?}")]
+    #[error("supersession previous_handle/previous_subjects do not match tracked state for encrypted_value_account {0:x?}")]
     PreviousStateMismatch([u8; 32]),
-    #[error("instruction referenced a lineage that was never created: {0:x?}")]
+    #[error("instruction referenced a encrypted_value_account that was never created: {0:x?}")]
     UnknownLineage([u8; 32]),
-    #[error("remove_subject referenced a subject that is not allowed on lineage {0:x?}")]
+    #[error(
+        "remove_subject referenced a subject that is not allowed on encrypted_value_account {0:x?}"
+    )]
     SubjectNotFound([u8; 32]),
-    #[error("remove_subject would remove the last subject from lineage {0:x?}")]
+    #[error("remove_subject would remove the last subject from encrypted_value_account {0:x?}")]
     LastSubjectRemoval([u8; 32]),
 }
 
-/// Per-lineage state tracked across a replay: the live handle and the full
+/// Per-encrypted_value_account state tracked across a replay: the live handle and the full
 /// allowed subject list.
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
 pub struct LineageReplayState {
-    /// `None` means the lineage advanced through `fhe_eval` and this proof
+    /// `None` means the encrypted_value_account advanced through `fhe_eval` and this proof
     /// service did not have slot entropy to recompute the output handle. That
     /// is still enough to reconstruct later historical leaves because eval and
     /// update instructions carry the outgoing `previous_handle`.
@@ -88,9 +90,9 @@ fn validate_previous_state(
     Ok(())
 }
 
-/// Applies one decoded instruction to `state`, returning the `LineageEvent`s it
+/// Applies one decoded instruction to `state`, returning the `EncryptedValueAccountEvent`s it
 /// produces, in append order. `state` must be the tracked state for the
-/// instruction's `encrypted_value` lineage (created on `CreateEncryptedValue`,
+/// instruction's `encrypted_value` encrypted_value_account (created on `CreateEncryptedValue`,
 /// looked up by the caller for the others).
 ///
 /// Most instructions produce zero or one event. A born-public `fhe_eval`
@@ -100,7 +102,7 @@ fn validate_previous_state(
 pub fn apply_instruction(
     state: &mut Option<LineageReplayState>,
     instruction: &DecodedInstruction,
-) -> Result<Vec<LineageEvent>, ReplayError> {
+) -> Result<Vec<EncryptedValueAccountEvent>, ReplayError> {
     match instruction {
         DecodedInstruction::CreateEncryptedValue {
             handle, subjects, ..
@@ -133,7 +135,8 @@ pub fn apply_instruction(
                 .as_mut()
                 .ok_or(ReplayError::UnknownLineage(*encrypted_value))?;
             validate_previous_state(state, *encrypted_value, *previous_handle, previous_subjects)?;
-            let event = LineageEvent::handle_superseded(*previous_handle, &state.subjects);
+            let event =
+                EncryptedValueAccountEvent::handle_superseded(*previous_handle, &state.subjects);
             state.current_handle = Some(*new_handle);
             Ok(vec![event])
         }
@@ -164,7 +167,7 @@ pub fn apply_instruction(
             let events = match make_public_handle {
                 Some(handle) => {
                     new_state.current_handle = Some(*handle);
-                    vec![LineageEvent::MarkedPublic { handle: *handle }]
+                    vec![EncryptedValueAccountEvent::MarkedPublic { handle: *handle }]
                 }
                 None => Vec::new(),
             };
@@ -185,7 +188,7 @@ pub fn apply_instruction(
             // Historical leaves seal against the pre-rotation audience. On-chain
             // `fhe_eval` may rotate subjects on the durable output; adopt
             // `output_subjects` only after emitting the superseded leaf set.
-            let mut events = vec![LineageEvent::handle_superseded(
+            let mut events = vec![EncryptedValueAccountEvent::handle_superseded(
                 *previous_handle,
                 &state.subjects,
             )];
@@ -193,7 +196,7 @@ pub fn apply_instruction(
             match make_public_handle {
                 Some(handle) => {
                     state.current_handle = Some(*handle);
-                    events.push(LineageEvent::MarkedPublic { handle: *handle });
+                    events.push(EncryptedValueAccountEvent::MarkedPublic { handle: *handle });
                 }
                 None => state.current_handle = None,
             }
@@ -206,7 +209,9 @@ pub fn apply_instruction(
             state
                 .as_mut()
                 .ok_or(ReplayError::UnknownLineage(*encrypted_value))?;
-            Ok(vec![LineageEvent::MarkedPublic { handle: *handle }])
+            Ok(vec![EncryptedValueAccountEvent::MarkedPublic {
+                handle: *handle,
+            }])
         }
     }
 }
@@ -216,8 +221,8 @@ mod tests {
     use super::*;
     use crate::decode::SubjectGrant;
     use zama_solana_acl::{
-        historical_access_leaf_commitment, lineage::reconstruct, mmr::mmr_verify,
-        public_decrypt_leaf_commitment,
+        historical_access_leaf_commitment, mmr::mmr_verify, public_decrypt_leaf_commitment,
+        value_account::reconstruct,
     };
 
     fn pk(tag: u8) -> [u8; 32] {
@@ -226,7 +231,7 @@ mod tests {
 
     fn replay(
         instructions: &[DecodedInstruction],
-    ) -> Result<(Option<LineageReplayState>, Vec<LineageEvent>), ReplayError> {
+    ) -> Result<(Option<LineageReplayState>, Vec<EncryptedValueAccountEvent>), ReplayError> {
         let mut state = None;
         let mut events = Vec::new();
         for instruction in instructions {
@@ -258,7 +263,10 @@ mod tests {
         let events = apply_instruction(&mut state, &update).unwrap();
         assert_eq!(
             events,
-            vec![LineageEvent::handle_superseded(pk(0x10), &[owner])]
+            vec![EncryptedValueAccountEvent::handle_superseded(
+                pk(0x10),
+                &[owner]
+            )]
         );
         assert_eq!(state.as_ref().unwrap().current_handle, Some(pk(0x11)));
 
@@ -269,7 +277,7 @@ mod tests {
         let events = apply_instruction(&mut state, &make_public).unwrap();
         assert_eq!(
             events,
-            vec![LineageEvent::MarkedPublic { handle: pk(0x11) }]
+            vec![EncryptedValueAccountEvent::MarkedPublic { handle: pk(0x11) }]
         );
     }
 
@@ -299,7 +307,10 @@ mod tests {
         let events = apply_instruction(&mut state, &update).unwrap();
         assert_eq!(
             events,
-            vec![LineageEvent::handle_superseded(pk(0x10), &[s1, s2])]
+            vec![EncryptedValueAccountEvent::handle_superseded(
+                pk(0x10),
+                &[s1, s2]
+            )]
         );
     }
 
@@ -335,7 +346,10 @@ mod tests {
 
         assert_eq!(
             eval_events,
-            vec![LineageEvent::handle_superseded(pk(0x10), &[owner, spender])]
+            vec![EncryptedValueAccountEvent::handle_superseded(
+                pk(0x10),
+                &[owner, spender]
+            )]
         );
         let update_reconstructed = reconstruct(ev, &update_events).unwrap();
         let eval_reconstructed = reconstruct(ev, &eval_events).unwrap();
@@ -376,7 +390,10 @@ mod tests {
         assert_eq!(state.unwrap().current_handle, None);
         assert_eq!(
             events,
-            vec![LineageEvent::handle_superseded(pk(0x10), &[owner])]
+            vec![EncryptedValueAccountEvent::handle_superseded(
+                pk(0x10),
+                &[owner]
+            )]
         );
     }
 
@@ -402,7 +419,10 @@ mod tests {
             .unwrap();
 
         assert_eq!(state.unwrap().current_handle, None);
-        assert_eq!(events, vec![LineageEvent::MarkedPublic { handle }]);
+        assert_eq!(
+            events,
+            vec![EncryptedValueAccountEvent::MarkedPublic { handle }]
+        );
         assert_eq!(
             reconstructed.leaves,
             vec![public_decrypt_leaf_commitment(ev, 0, handle)]
@@ -445,8 +465,8 @@ mod tests {
         assert_eq!(
             events,
             vec![
-                LineageEvent::handle_superseded(pk(0x10), &[owner]),
-                LineageEvent::handle_superseded(pk(0x11), &[owner]),
+                EncryptedValueAccountEvent::handle_superseded(pk(0x10), &[owner]),
+                EncryptedValueAccountEvent::handle_superseded(pk(0x11), &[owner]),
             ]
         );
         assert_eq!(
@@ -550,7 +570,10 @@ mod tests {
 
         assert_eq!(
             events,
-            vec![LineageEvent::handle_superseded(pk(0x10), &[owner])]
+            vec![EncryptedValueAccountEvent::handle_superseded(
+                pk(0x10),
+                &[owner]
+            )]
         );
         let state = state.unwrap();
         assert_eq!(state.current_handle, None);
@@ -583,7 +606,7 @@ mod tests {
     }
 
     #[test]
-    fn instruction_on_unknown_lineage_is_rejected() {
+    fn instruction_on_unknown_encrypted_value_account_is_rejected() {
         let ev = pk(4);
         let mut state: Option<LineageReplayState> = None;
         let make_public = DecodedInstruction::MakeHandlePublic {

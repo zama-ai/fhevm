@@ -8,7 +8,7 @@ use super::*;
 pub struct ConfidentialTransfer<'info> {
     /// Sender and transfer authority.
     pub owner: Signer<'info>,
-    /// Pays rent for the transferred-amount lineage on its first bind.
+    /// Pays rent for the transferred-amount encrypted value account on its first bind.
     #[account(mut)]
     pub payer: Signer<'info>,
     /// Confidential mint.
@@ -23,14 +23,14 @@ pub struct ConfidentialTransfer<'info> {
     /// CHECK: Program-controlled compute signer PDA.
     #[account(seeds = [b"fhe-compute", mint.key().as_ref()], bump)]
     pub compute_signer: UncheckedAccount<'info>,
-    /// Sender's stable balance `EncryptedValue` lineage; read for the current
+    /// Sender's stable balance `EncryptedValue` encrypted value account; read for the current
     /// handle and superseded in place by this eval's CPI.
     #[account(mut, address = from_account.balance_encrypted_value)]
     pub from_balance_value: Box<Account<'info, zama_host::EncryptedValue>>,
-    /// Recipient's stable balance `EncryptedValue` lineage.
+    /// Recipient's stable balance `EncryptedValue` encrypted value account.
     #[account(mut, dup, address = to_account.balance_encrypted_value)]
     pub to_balance_value: Box<Account<'info, zama_host::EncryptedValue>>,
-    /// CHECK: stable `transferred_amount` lineage for `from_account`; created on
+    /// CHECK: stable `transferred_amount` encrypted value account for `from_account`; created on
     /// the sender's first transfer, superseded thereafter.
     #[account(mut, address = encrypted_value_address(mint.key(), from_account.key(), transferred_amount_label()).0)]
     pub transferred_amount_value: UncheckedAccount<'info>,
@@ -141,14 +141,14 @@ pub fn confidential_transfer<'info>(
 ///
 /// Identical to [`ConfidentialTransfer`] except the 190-byte attestation argument is gone and one
 /// account is added: `amount_value`, the encrypted amount to spend. It is read-only — the durable
-/// operand the eval reads — and is never superseded or consumed; only the two balance lineages
+/// operand the eval reads — and is never superseded or consumed; only the two balance encrypted value accounts
 /// change through the same `ge -> sub -> select` debit and `add` credit.
 #[derive(Accounts)]
 #[event_cpi]
 pub struct ConfidentialTransferFromValue<'info> {
     /// Sender and transfer authority. Must be in `amount_value`'s subject set (the spend gate).
     pub owner: Signer<'info>,
-    /// Pays rent for the transferred-amount lineage on its first bind.
+    /// Pays rent for the transferred-amount encrypted value account on its first bind.
     #[account(mut)]
     pub payer: Signer<'info>,
     /// Confidential mint.
@@ -163,20 +163,20 @@ pub struct ConfidentialTransferFromValue<'info> {
     /// CHECK: Program-controlled compute signer PDA.
     #[account(seeds = [b"fhe-compute", mint.key().as_ref()], bump)]
     pub compute_signer: UncheckedAccount<'info>,
-    /// Sender's stable balance `EncryptedValue` lineage; read for the current
+    /// Sender's stable balance `EncryptedValue` encrypted value account; read for the current
     /// handle and superseded in place by this eval's CPI.
     #[account(mut, address = from_account.balance_encrypted_value)]
     pub from_balance_value: Box<Account<'info, zama_host::EncryptedValue>>,
-    /// Recipient's stable balance `EncryptedValue` lineage.
+    /// Recipient's stable balance `EncryptedValue` encrypted value account.
     #[account(mut, dup, address = to_account.balance_encrypted_value)]
     pub to_balance_value: Box<Account<'info, zama_host::EncryptedValue>>,
-    /// CHECK: stable `transferred_amount` lineage for `from_account`; created on
+    /// CHECK: stable `transferred_amount` encrypted value account for `from_account`; created on
     /// the sender's first transfer, superseded thereafter.
     #[account(mut, address = encrypted_value_address(mint.key(), from_account.key(), transferred_amount_label()).0)]
     pub transferred_amount_value: UncheckedAccount<'info>,
     /// The existing encrypted amount to spend: a computed or received `euint64` handle. Read-only
     /// durable operand — never superseded, never consumed. Its address is the canonical PDA of its
-    /// own `(acl_domain_key, app_account, encrypted_value_label)` fields, so a lineage from any app
+    /// own `(acl_domain_key, app_account, encrypted_value_label)` fields, so a encrypted value account from any app
     /// may be passed here once its owner has granted the mint's compute subject via `allow_subjects`.
     pub amount_value: Box<Account<'info, zama_host::EncryptedValue>>,
     /// CHECK: Anchor event CPI authority for the Zama host program.

@@ -80,7 +80,7 @@ describe('getEncryptedValueState', () => {
     expect(state.peaks.map((p) => Array.from(p))).toEqual([Array.from(peakA), Array.from(peakB)]);
   });
 
-  it('handles an empty lineage (no subjects, no peaks)', async () => {
+  it('handles an empty encrypted value account (no subjects, no peaks)', async () => {
     const data = encryptedValueAccount({
       currentHandle: new Uint8Array(32),
       subjects: [],
