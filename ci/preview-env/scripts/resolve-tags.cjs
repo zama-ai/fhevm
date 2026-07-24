@@ -93,6 +93,16 @@ module.exports = async ({ core, context }) => {
     coprocessor_chart_version: isDispatch ? inputs.coprocessor_chart_version : env.COPROCESSOR_CHART_VERSION,
     coprocessor_infra_chart_version: isDispatch ? inputs.coprocessor_infra_chart_version : env.COPROCESSOR_INFRA_CHART_VERSION,
     kms_connector_chart_version: isDispatch ? inputs.kms_connector_chart_version : env.KMS_CONNECTOR_CHART_VERSION,
+    // Chart REFERENCE for the fhevm-owned charts that render the components
+    // whose images track HEAD on a PR (contracts/coprocessor/kms-connector): use
+    // the in-repo chart (the deploy job checks out fhevm) so chart templates
+    // match the HEAD images, instead of a pinned published OCI release. On
+    // dispatch, keep the pinned OCI chart. helm ignores --version for a local
+    // path, so the *_chart_version flag stays inert on PR and authoritative on
+    // dispatch - the helm commands need no change.
+    contracts_chart: isDispatch ? env.CONTRACTS_CHART : 'charts/contracts',
+    coprocessor_chart: isDispatch ? env.COPROCESSOR_CHART : 'charts/coprocessor',
+    kms_connector_chart: isDispatch ? env.KMS_CONNECTOR_CHART : 'charts/kms-connector',
     // Backs postgres-*/relayer-migrate/relayer/test-suite.
     common_chart_version: isDispatch ? inputs.common_chart_version : env.COMMON_CHART_VERSION,
     relayer_sdk_version: isDispatch ? inputs.relayer_sdk_version : env.RELAYER_SDK_VERSION,
@@ -127,9 +137,9 @@ module.exports = async ({ core, context }) => {
     .addTable([
       [{ data: 'Component', header: true }, { data: 'Chart', header: true }, { data: 'Version', header: true }],
       ['anvil-node (host + gateway chains)', env.ANVIL_NODE_CHART, env.ANVIL_NODE_CHART_VERSION],
-      ['contracts (host/gateway/keygen)', env.CONTRACTS_CHART, chartVersions.contracts_chart_version],
-      ['coprocessor', env.COPROCESSOR_CHART, chartVersions.coprocessor_chart_version],
-      ['kms-connector', env.KMS_CONNECTOR_CHART, chartVersions.kms_connector_chart_version],
+      ['contracts (host/gateway/keygen)', chartVersions.contracts_chart, isDispatch ? chartVersions.contracts_chart_version : '(in-repo HEAD)'],
+      ['coprocessor', chartVersions.coprocessor_chart, isDispatch ? chartVersions.coprocessor_chart_version : '(in-repo HEAD)'],
+      ['kms-connector', chartVersions.kms_connector_chart, isDispatch ? chartVersions.kms_connector_chart_version : '(in-repo HEAD)'],
       ['coprocessor-infra (Crossplane S3)', env.COPROCESSOR_INFRA_CHART, chartVersions.coprocessor_infra_chart_version],
       ['coprocessor-redis (per-party broker)', env.REDIS_CHART, chartVersions.redis_chart_version],
       ['listener (per-party host-chain producer)', env.LISTENER_CHART, `${chartVersions.listener_chart_version} (image ${chartVersions.listener_version})`],

@@ -372,6 +372,10 @@ jobs:
       coprocessor_chart_version: ${{ steps.resolve.outputs.coprocessor_chart_version }}
       coprocessor_infra_chart_version: ${{ steps.resolve.outputs.coprocessor_infra_chart_version }}
       kms_connector_chart_version: ${{ steps.resolve.outputs.kms_connector_chart_version }}
+      # Chart refs: in-repo path on PR, pinned OCI ref on dispatch.
+      contracts_chart: ${{ steps.resolve.outputs.contracts_chart }}
+      coprocessor_chart: ${{ steps.resolve.outputs.coprocessor_chart }}
+      kms_connector_chart: ${{ steps.resolve.outputs.kms_connector_chart }}
       common_chart_version: ${{ steps.resolve.outputs.common_chart_version }}
       relayer_sdk_version: ${{ steps.resolve.outputs.relayer_sdk_version }}
       redis_chart_version: ${{ steps.resolve.outputs.redis_chart_version }}
@@ -434,6 +438,14 @@ jobs:
       COPROCESSOR_CHART_VERSION: ${{ needs.resolve-tags.outputs.coprocessor_chart_version }}
       COPROCESSOR_INFRA_CHART_VERSION: ${{ needs.resolve-tags.outputs.coprocessor_infra_chart_version }}
       KMS_CONNECTOR_CHART_VERSION: ${{ needs.resolve-tags.outputs.kms_connector_chart_version }}
+      # Chart REF for the fhevm-owned component charts: on a PR these resolve to
+      # the in-repo chart path (charts/<name>, matching the HEAD images we deploy)
+      # and override the workflow-level OCI pins below; on dispatch they stay the
+      # pinned OCI ref. helm ignores --version for a local path, so the *_VERSION
+      # flags above stay inert on PR. See ci/preview-env/scripts/resolve-tags.cjs.
+      CONTRACTS_CHART: ${{ needs.resolve-tags.outputs.contracts_chart }}
+      COPROCESSOR_CHART: ${{ needs.resolve-tags.outputs.coprocessor_chart }}
+      KMS_CONNECTOR_CHART: ${{ needs.resolve-tags.outputs.kms_connector_chart }}
       COMMON_CHART_VERSION: ${{ needs.resolve-tags.outputs.common_chart_version }}
       RELAYER_SDK_VERSION: ${{ needs.resolve-tags.outputs.relayer_sdk_version }}
       REDIS_CHART_VERSION: ${{ needs.resolve-tags.outputs.redis_chart_version }}
