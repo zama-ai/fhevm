@@ -19,6 +19,24 @@ sol! {
     }
 }
 
+// RFC-016 unified user-decryption signing struct. Field names/order AND the struct name MUST match
+// the KMS connector's off-chain verifier (`shared/user-decryption-signature`) exactly: the struct
+// name feeds the EIP-712 `typeHash`, so this must stay `UserDecryptRequestVerification` even though
+// the legacy struct above shares that name (with different fields). It lives in its own module
+// purely to avoid the Rust type-name clash.
+mod v2 {
+    alloy::sol! {
+        struct UserDecryptRequestVerification {
+            address userAddress;
+            bytes publicKey;
+            address[] allowedContracts;
+            uint256 startTimestamp;
+            uint256 durationSeconds;
+            bytes extraData;
+        }
+    }
+}
+
 /// Generates the EIP-712 signature of a `UserDecryptRequestVerification` message.
 #[allow(clippy::too_many_arguments)]
 pub async fn user_decrypt_eip712_signature(
@@ -44,6 +62,47 @@ pub async fn user_decrypt_eip712_signature(
         contractAddresses: vec![allowed_contract],
         startTimestamp: U256::from(start_timestamp),
         durationDays: U256::from(duration_days),
+        extraData: extra_data.into(),
+    };
+    let hash = message.eip712_signing_hash(&domain);
+
+    let signer = PrivateKeySigner::from_str(private_key.strip_prefix("0x").unwrap_or(private_key))
+        .map_err(|e| anyhow!("Invalid private key: {e}"))?;
+    let signature = signer
+        .sign_hash(&hash)
+        .await
+        .map_err(|e| anyhow!("Failed to sign: {e}"))?;
+
+    Ok(Bytes::from(signature.as_bytes().to_vec()))
+}
+
+/// Generates the EIP-712 signature of a RFC-016 `UserDecryptRequestVerificationV2` message.
+#[allow(clippy::too_many_arguments)]
+pub async fn user_decrypt_v2_eip712_signature(
+    decryption_contract: Address,
+    contracts_chain_id: u64,
+    user_address: Address,
+    public_key: &str,
+    allowed_contracts: Vec<Address>,
+    start_timestamp: u64,
+    duration_seconds: u64,
+    extra_data: Vec<u8>,
+    private_key: &str,
+) -> anyhow::Result<Bytes> {
+    let domain = eip712_domain! {
+        name: "Decryption",
+        version: "1",
+        chain_id: contracts_chain_id,
+        verifying_contract: decryption_contract,
+    };
+    let message = v2::UserDecryptRequestVerification {
+        userAddress: user_address,
+        publicKey: Bytes::from(alloy::hex::decode(
+            public_key.strip_prefix("0x").unwrap_or(public_key),
+        )?),
+        allowedContracts: allowed_contracts,
+        startTimestamp: U256::from(start_timestamp),
+        durationSeconds: U256::from(duration_seconds),
         extraData: extra_data.into(),
     };
     let hash = message.eip712_signing_hash(&domain);

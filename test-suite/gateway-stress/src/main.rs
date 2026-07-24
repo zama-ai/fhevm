@@ -10,7 +10,7 @@ use crate::{
     blockchain::GatewayTestManager,
     cli::{Cli, Subcommands},
     config::Config,
-    db::manager::DatabaseTestManager,
+    db::manager::{DatabaseTestManager, ensure_db_supported},
 };
 use clap::Parser;
 use std::process::ExitCode;
@@ -43,6 +43,7 @@ async fn run() -> anyhow::Result<()> {
             test_manager.decryption_benchmark(args).await?
         }
         Subcommands::Db(args) => {
+            ensure_db_supported(args.decryption_type)?;
             let test_manager = DatabaseTestManager::connect(config).await?;
             test_manager.stress_test(args).await?
         }

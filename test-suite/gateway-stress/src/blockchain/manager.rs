@@ -10,7 +10,7 @@ use crate::{
         EVENT_LISTENER_POLLING, init_public_decryption_response_listener,
         init_user_decryption_response_listener, public::PublicDecryptThresholdEvent,
         public_decryption_burst, types::DecryptionType, user::UserDecryptThresholdEvent,
-        user_decryption_burst,
+        user_decryption_burst, user_decryption_v2_burst,
     },
 };
 use alloy::{
@@ -131,6 +131,15 @@ impl GatewayTestManager {
                     requests_pb,
                     responses_pb,
                 )),
+                DecryptionType::UserV2 => burst_tasks.spawn(user_decryption_v2_burst(
+                    burst_index,
+                    self.config.clone(),
+                    self.decryption_contract.clone(),
+                    self.wallet.address(),
+                    user_response_listener.clone(),
+                    requests_pb,
+                    responses_pb,
+                )),
             };
 
             burst_index += 1;
@@ -145,7 +154,7 @@ impl GatewayTestManager {
         let elapsed = session_start.elapsed().as_secs_f64();
         let handle_batch_size = match args.decryption_type {
             DecryptionType::Public => self.config.public_ct.len() as u32,
-            DecryptionType::User => self.config.user_ct.len() as u32,
+            DecryptionType::User | DecryptionType::UserV2 => self.config.user_ct.len() as u32,
         };
         let total_decryption =
             self.config.parallel_requests * handle_batch_size * (burst_index - 1) as u32;
@@ -239,6 +248,18 @@ impl GatewayTestManager {
                 }
                 DecryptionType::User => {
                     user_decryption_burst(
+                        *burst_index,
+                        config.clone(),
+                        self.decryption_contract.clone(),
+                        self.wallet.address(),
+                        user_response_listener.clone(),
+                        requests_pb,
+                        responses_pb,
+                    )
+                    .await
+                }
+                DecryptionType::UserV2 => {
+                    user_decryption_v2_burst(
                         *burst_index,
                         config.clone(),
                         self.decryption_contract.clone(),

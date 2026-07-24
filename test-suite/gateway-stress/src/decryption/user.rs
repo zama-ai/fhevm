@@ -5,7 +5,7 @@ use crate::{
         BURST_WAIT_TIMEOUT, BurstResult, EVENT_LISTENER_POLLING, extract_id_from_receipt,
         send_tx_with_retries,
     },
-    eip712::user_decrypt_eip712_signature,
+    eip712::{user_decrypt_eip712_signature, user_decrypt_v2_eip712_signature},
 };
 use alloy::{
     hex,
@@ -17,14 +17,16 @@ use alloy::{
 use anyhow::anyhow;
 use fhevm_gateway_bindings::decryption::{
     Decryption::{
-        self, CtHandleContractPair, DecryptionInstance, UserDecryptionResponseThresholdReached,
+        self, CtHandleContractPair, DecryptionInstance, HandleEntry,
+        UserDecryptionResponseThresholdReached,
     },
-    IDecryption::{ContractsInfo, RequestValidity},
+    IDecryption::{ContractsInfo, RequestValidity, RequestValiditySeconds},
 };
 use futures::{Stream, StreamExt};
 use indicatif::ProgressBar;
 use std::{
     collections::HashSet,
+    future::Future,
     sync::{Arc, LazyLock},
     time::SystemTime,
 };
@@ -41,7 +43,7 @@ use tracing::{Instrument, debug, error, trace};
 pub type UserDecryptThresholdEvent =
     sol_types::Result<(UserDecryptionResponseThresholdReached, Log)>;
 
-/// Sends a burst of UserDecryptionRequest.
+/// Sends a burst of legacy `UserDecryptionRequest` transactions to the Gateway.
 #[allow(clippy::too_many_arguments)]
 #[tracing::instrument(skip(
     config,
@@ -63,6 +65,79 @@ pub async fn user_decryption_burst<S>(
 where
     S: Stream<Item = UserDecryptThresholdEvent> + Unpin + Send + 'static,
 {
+    run_user_burst(
+        burst_index,
+        config.clone(),
+        response_listener,
+        requests_pb,
+        responses_pb,
+        move |_index, id_sender| {
+            send_user_decryption(
+                decryption_contract.clone(),
+                user_addr,
+                config.clone(),
+                id_sender,
+            )
+        },
+    )
+    .await
+}
+
+/// Sends a burst of RFC-016 `UserDecryptionRequest` (V2) transactions to the Gateway.
+#[allow(clippy::too_many_arguments)]
+#[tracing::instrument(skip(
+    config,
+    decryption_contract,
+    user_addr,
+    response_listener,
+    requests_pb,
+    responses_pb
+))]
+pub async fn user_decryption_v2_burst<S>(
+    burst_index: usize,
+    config: Config,
+    decryption_contract: DecryptionInstance<AppProvider>,
+    user_addr: Address,
+    response_listener: Arc<Mutex<S>>,
+    requests_pb: ProgressBar,
+    responses_pb: ProgressBar,
+) -> anyhow::Result<BurstResult>
+where
+    S: Stream<Item = UserDecryptThresholdEvent> + Unpin + Send + 'static,
+{
+    run_user_burst(
+        burst_index,
+        config.clone(),
+        response_listener,
+        requests_pb,
+        responses_pb,
+        move |_index, id_sender| {
+            send_user_decryption_v2(
+                decryption_contract.clone(),
+                user_addr,
+                config.clone(),
+                id_sender,
+            )
+        },
+    )
+    .await
+}
+
+/// Shared burst orchestration for both user decryption flows. `send_fn` produces the future
+/// sending a single request; everything else (response waiting, progress bars) is common.
+async fn run_user_burst<S, F, Fut>(
+    burst_index: usize,
+    config: Config,
+    response_listener: Arc<Mutex<S>>,
+    requests_pb: ProgressBar,
+    responses_pb: ProgressBar,
+    send_fn: F,
+) -> anyhow::Result<BurstResult>
+where
+    S: Stream<Item = UserDecryptThresholdEvent> + Unpin + Send + 'static,
+    F: Fn(u32, UnboundedSender<U256>) -> Fut,
+    Fut: Future<Output = ()> + Send + 'static,
+{
     debug!("Start of the burst...");
     let (id_sender, id_receiver) = mpsc::unbounded_channel();
     let wait_response_task = tokio::spawn(
@@ -81,16 +156,7 @@ where
 
     let mut requests_tasks = JoinSet::new();
     for index in 0..config.parallel_requests {
-        requests_tasks.spawn(
-            send_user_decryption(
-                index,
-                decryption_contract.clone(),
-                user_addr,
-                config.clone(),
-                id_sender.clone(),
-            )
-            .in_current_span(),
-        );
+        requests_tasks.spawn(send_fn(index, id_sender.clone()).in_current_span());
     }
 
     for _ in 0..config.parallel_requests {
@@ -110,10 +176,9 @@ where
     Ok(res)
 }
 
-/// Sends a UserDecryptionRequest transaction to the Gateway.
+/// Sends a legacy `UserDecryptionRequest` transaction to the Gateway.
 #[tracing::instrument(skip(decryption_contract, user_addr, config, id_sender))]
 async fn send_user_decryption(
-    index: u32,
     decryption_contract: DecryptionInstance<AppProvider>,
     user_addr: Address,
     config: Config,
@@ -186,12 +251,104 @@ async fn send_user_decryption_inner(
     .await
 }
 
+/// Sends a RFC-016 `UserDecryptionRequest` (V2) transaction to the Gateway.
+#[tracing::instrument(skip(decryption_contract, user_addr, config, id_sender))]
+async fn send_user_decryption_v2(
+    decryption_contract: DecryptionInstance<AppProvider>,
+    user_addr: Address,
+    config: Config,
+    id_sender: UnboundedSender<U256>,
+) {
+    if let Err(e) =
+        send_user_decryption_v2_inner(decryption_contract, user_addr, config, id_sender).await
+    {
+        error!("{e}");
+    }
+}
+
+async fn send_user_decryption_v2_inner(
+    decryption_contract: DecryptionInstance<AppProvider>,
+    user_addr: Address,
+    config: Config,
+    id_sender: UnboundedSender<U256>,
+) -> anyhow::Result<()> {
+    let blockchain_config = config
+        .blockchain
+        .as_ref()
+        .expect("Missing [blockchain] section in config file"); // Should be unreachable
+
+    let timestamp = SystemTime::now()
+        .duration_since(SystemTime::UNIX_EPOCH)?
+        .as_secs();
+
+    // The wallet plays every role of the RFC-016 direct-ownership path: `userAddress` and each
+    // handle's `ownerAddress` are the wallet, so the connector's ACL check resolves to a direct
+    // `isAllowed(handle, wallet)` — the same authorization the stress handles are generated with.
+    let allowed_contracts = vec![config.allowed_contract];
+    let signature = user_decrypt_v2_eip712_signature(
+        blockchain_config.decryption_address,
+        blockchain_config.host_chain_id,
+        user_addr,
+        RAND_PUBLIC_KEY,
+        allowed_contracts.clone(),
+        timestamp,
+        DURATION_SECONDS,
+        EXTRA_DATA.to_vec(),
+        &blockchain_config.private_key,
+    )
+    .await?;
+    let decryption_call = decryption_contract
+        .userDecryptionRequest_0(
+            config
+                .user_ct
+                .iter()
+                .map(|ct| HandleEntry {
+                    handle: ct.handle,
+                    contractAddress: config.allowed_contract,
+                    ownerAddress: user_addr,
+                })
+                .collect(),
+            user_addr,
+            hex::decode(RAND_PUBLIC_KEY)?.into(),
+            allowed_contracts,
+            RequestValiditySeconds {
+                startTimestamp: U256::from(timestamp),
+                durationSeconds: U256::from(DURATION_SECONDS),
+            },
+            signature.clone(),
+            EXTRA_DATA.into(),
+        )
+        .into_transaction_request();
+
+    send_tx_with_retries(
+        decryption_contract.provider(),
+        decryption_call,
+        id_sender,
+        extract_user_decryption_v2_id_from_receipt,
+    )
+    .await
+}
+
 fn extract_user_decryption_id_from_receipt(receipt: &TransactionReceipt) -> anyhow::Result<U256> {
     extract_id_from_receipt(
         receipt,
         Decryption::UserDecryptionRequest_2::SIGNATURE_HASH,
         |log| {
             Decryption::UserDecryptionRequest_2::decode_log_data(log)
+                .map(|event| event.decryptionId)
+                .map_err(|e| anyhow!("Failed to decode event data {e}"))
+        },
+    )
+}
+
+fn extract_user_decryption_v2_id_from_receipt(
+    receipt: &TransactionReceipt,
+) -> anyhow::Result<U256> {
+    extract_id_from_receipt(
+        receipt,
+        Decryption::UserDecryptionRequest_3::SIGNATURE_HASH,
+        |log| {
+            Decryption::UserDecryptionRequest_3::decode_log_data(log)
                 .map(|event| event.decryptionId)
                 .map_err(|e| anyhow!("Failed to decode event data {e}"))
         },
@@ -291,6 +448,8 @@ static RECEIVED_RESPONSES_IDS: LazyLock<Arc<Mutex<HashSet<U256>>>> =
     LazyLock::new(|| Arc::new(Mutex::new(HashSet::new())));
 
 pub const DURATION_DAYS: u64 = 10;
+/// Validity window for RFC-016 requests, which express duration in seconds (`DURATION_DAYS`).
+pub const DURATION_SECONDS: u64 = DURATION_DAYS * 24 * 60 * 60;
 pub const RAND_PUBLIC_KEY: &str = "0x0300000000000000302e35000000000300000000000000302e311300000000000000556e69666965645075626c6963456e634b65790000000000000000200300000000000014ea3e413024ff622b2a29974a7418a0c0b5d3fb5d93f83a414384386701e7895646cc83ff289216007c4a7821ec4291d4e92e5fa3a8e96cbd11491696407336d6a03bb971a4207f90b35958191ac69599d8337fa114cb607552e4113253c875f824c027e15e5ee2c73f5c4885d66f5324915f94c1dd1a0c4d226f9967c56db99bf81c3bfbb273e1fcc41f01639f754f13f8c62ec4cb6af14c373bc2d97955b1f50b66124ea38757b41c21191135c304b2b9223e2067cd4691c5ee840bbc3a382037c0ea611f8e0a6f6cb22afdf0a61f6aa11dc28691cb41d9b5a13eb94a3aea4e8e7c07c9f467949acac6bca98f720754485de7b95568495e0c90c9e73175db850a63d3cf45189846d20894e633636621b8107dbc132b9a281dbf382231697f67249a6b177db34c5b4639bc605424ab23cc186b00d0430e9efba3b6e8c07c615df7e0cf2c8082ffe640f6d4173b2c0b42f0c57e0a7b29a886b0808427f46cd0359e68a54bc783a684b95fe1859373d636e812524ee42a4ac8c8bab03a421cb8c8734ede914d8d221a4e258485f5415fe15d8aebcf0225ce87451402170d97a21313789750f794ca064129b1b3c8fb452c2b1d8d7a5bc514638362b952362c06536906000b08551e3087336869c2cb2190741a58c6171e6a562e83389042cb844cd3c2bf8365e36168fbe1bcfc2b1b281863dbe62fbb620f4683c3dcd34f22647f6d583950f834bf69cb3a9c790c049a7ec2cdfcfcaefd2b0281969913ca2ed134acbb917f36e3bf8fa8818a8a146a518ef00346d91469de68b495200a50d205735a781c650319f953c62255c8f93cd931387da3b2eb474f3bd9431641c2f62b6ddae95e34d01dc8510382e925610228508b30d5271ec74a01b9b0c6ceb07250565055369af2577bbae08b9bb61c38acac6ac6bb65494d2b5846fe345556252deecb6c8c2629e8a67585fcbb9c992266f6a739fc8d45269acb0c5250f4990f899982493a50d23d9228cdbf726bdcf250d19705f5991ee966077e58b04cb0023a9984431828e9085b34c959cfeb838d4507d4d1b8704c5f6ce7b1298c89a984196fec71df209828e693510719ef86d5740906b94a86aa52b57b955b4ffb9c1cc5";
 
 #[rustfmt::skip]

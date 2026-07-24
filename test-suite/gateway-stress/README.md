@@ -2,8 +2,9 @@
 
 ## Introduction
 
-A simple tool to send a configurable number of parallel decryption requests (public or user
-decrypts at the time of writing), at a given frequency and for a specified duration.
+A simple tool to send a configurable number of parallel decryption requests (public, user, or
+RFC-016 user-v2 decrypts at the time of writing), at a given frequency and for a specified
+duration.
 
 ## Table of Contents
 - [Introduction](#introduction)
@@ -52,14 +53,21 @@ Once the `gateway-stress` binary has been built, you can run the following comma
 # Run user decryption stress test using the Gateway chain
 ./gateway-stress -c config/config.toml gw -t user
 
+# Run RFC-016 user-v2 decryption stress test using the Gateway chain
+./gateway-stress -c config/config.toml gw -t user-v2
+
 # Override number of parallel requests during the stress tests session
 ./gateway-stress -c config/config.toml -p 10 gw public
 
 # Run public decryption stress test by inserting requests in Connectors' DBs
 ./gateway-stress -c config/config.toml db -t public
 
-# Run user decryption stress test by inserting requests in Connectors' DBs
-./gateway-stress -c config/config.toml db -t user
+# Run RFC-016 user-v2 decryption stress test by inserting requests in Connectors' DBs
+./gateway-stress -c config/config.toml db -t user-v2
+
+# NOTE: legacy `user` decryption is NOT supported over the `db`/`bench-db` path. The KMS connector
+# needs the request's on-chain tx_hash to run the ACL check, which direct DB inserts can't provide.
+# Use `-t user-v2` (RFC-016, verified straight from the payload) or the `gw` path for legacy `user`.
 
 # Don't clear Connectors' DBs before and after running stress tests (not recommended)
 ./gateway-stress -c config/config.toml db -t public --skip_clear-db
@@ -78,7 +86,7 @@ The `benchmark` command take a CSV file in input (and the global config file as 
 Each line of this CSV represent a burst of decryption to benchmark, which is composed of:
 - The number of parallel requests in the burst (1st column)
 - The number of time we must measure this burst (2nd column)
-- The type of decryption in the burst (`public` or `user`)
+- The type of decryption in the burst (`public`, `user`, or `user_v2`)
 
 See the [templates](./templates) folder for examples.
 

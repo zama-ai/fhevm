@@ -52,7 +52,12 @@ impl DatabaseTestManager {
             response_trackers.push(Arc::new(Mutex::new(tracker)));
         }
 
-        let request_builder = RequestBuilder::new(config.user_ct.clone(), config.public_ct.clone());
+        let request_builder = RequestBuilder::new(
+            config.user_ct.clone(),
+            config.public_ct.clone(),
+            config.allowed_contract,
+            config.blockchain.clone(),
+        );
         let manager = DatabaseTestManager {
             config,
             db_connectors,
@@ -114,7 +119,8 @@ impl DatabaseTestManager {
 
             let requests = self
                 .request_builder
-                .build_requests(args.decryption_type, self.config.parallel_requests)?;
+                .build_requests(args.decryption_type, self.config.parallel_requests)
+                .await?;
             burst_tasks.spawn(handle_burst(
                 burst_index,
                 self.db_connectors.clone(),
@@ -134,7 +140,7 @@ impl DatabaseTestManager {
         let elapsed = session_start.elapsed().as_secs_f64();
         let handle_batch_size = match args.decryption_type {
             DecryptionType::Public => self.config.public_ct.len() as u32,
-            DecryptionType::User => self.config.user_ct.len() as u32,
+            DecryptionType::User | DecryptionType::UserV2 => self.config.user_ct.len() as u32,
         };
         let total_decryption =
             self.config.parallel_requests * handle_batch_size * (burst_index - 1) as u32;
@@ -169,6 +175,7 @@ impl DatabaseTestManager {
         let mut burst_index = 1;
         for csv_row in csv_reader.deserialize::<BenchRecordInput>() {
             let bench_record = csv_row.map_err(|e| anyhow!("Invalid row: {e}"))?;
+            ensure_db_supported(bench_record.decryption_type)?;
             info!("Starting benchmark with parameters: {bench_record:?}");
 
             let results = self
@@ -201,7 +208,8 @@ impl DatabaseTestManager {
         for _ in 0..bench_record.number_of_measures {
             let requests = self
                 .request_builder
-                .build_requests(bench_record.decryption_type, bench_record.parallel_requests)?;
+                .build_requests(bench_record.decryption_type, bench_record.parallel_requests)
+                .await?;
 
             let burst_result = handle_burst(
                 *burst_index,
@@ -224,6 +232,24 @@ impl DatabaseTestManager {
 
         Ok(results)
     }
+}
+
+/// Rejects decryption types that can't be driven through the direct DB-insertion path.
+///
+/// Legacy user decryption (`user`) is unsupported over the DB: the connector needs the request's
+/// on-chain `tx_hash` to fetch its calldata for the ACL check, and direct DB inserts have no real
+/// transaction to reference (the connector fails with "No `tx_hash` found for user decryption").
+/// RFC-016 `user-v2` doesn't have this limitation — it verifies straight from the stored payload —
+/// so use `user-v2` instead.
+pub fn ensure_db_supported(decryption_type: DecryptionType) -> anyhow::Result<()> {
+    if matches!(decryption_type, DecryptionType::User) {
+        return Err(anyhow!(
+            "Legacy `user` decryption is not supported over the `db`/`bench-db` path (the KMS \
+             connector requires an on-chain tx_hash for the ACL check, which direct DB inserts \
+             cannot provide). Use `-t user-v2` (RFC-016) or the `gw`/`bench-gw` path instead."
+        ));
+    }
+    Ok(())
 }
 
 #[tracing::instrument(skip(db_connectors, requests, response_trackers))]

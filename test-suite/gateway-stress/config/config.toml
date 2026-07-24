@@ -1,5 +1,5 @@
 # The contract allowed for user decrytion on user_ct_handles
-allowed_contract = "0x1ceFA8E3F3271358218B52c33929Cf76078004c1"
+allowed_contract = "0x5ffdaAB0373E62E2ea2944776209aEf29E631A64"
 
 # The time during which the tool will send request bursts to the Gateway/Connectors' DBs
 # Format documentation: https://docs.rs/humantime/latest/humantime/
@@ -19,12 +19,12 @@ parallel_requests = 1
 # The ciphertexts to use for public decryptions
 [[public_ct]]
 # The handle used of the ciphertext
-handle = "0x73e704874e9b312b8a7f7c8f2e8571cafbd2e71ddfff00000000000030390500"
+handle = "0x84fe648695b6f8251a92675067f8e437a024836a54ff00000000000030390500"
 
 # The ciphertexts to use for user decryptions
 [[user_ct]]
 # The handle used of the ciphertext
-handle = "0x7fe6b11dd17115a80fbe145febd7237adbda569030ff00000000000030390500"
+handle = "0x1997819803c369e72efb00320b868f16983c8541c4ff00000000000030390500"
 
 # Configuration section for stress test using the Gateway chain
 [blockchain]

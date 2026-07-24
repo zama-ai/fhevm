@@ -1,14 +1,14 @@
 use alloy::primitives::U256;
-use sqlx::{Row, postgres::PgRow, types::time::PrimitiveDateTime};
+use sqlx::{Row, postgres::PgRow, types::time::OffsetDateTime};
 
 pub struct DecryptionRequestDbMetadata {
     pub id: U256,
-    pub created_at: PrimitiveDateTime,
+    pub created_at: OffsetDateTime,
 }
 
 pub struct DecryptionResponseDbMetadata {
     pub id: U256,
-    pub created_at: PrimitiveDateTime,
+    pub created_at: OffsetDateTime,
     pub handle_batch_size: usize,
 }
 
