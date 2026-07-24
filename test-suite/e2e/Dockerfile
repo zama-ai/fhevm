@@ -55,6 +55,26 @@ WORKDIR /app/test-suite/e2e
 
 RUN npx hardhat compile
 
+# --- CLI Builder Stage ---
+# sdk/cli-js-sdk is a standalone pnpm workspace (not part of the root npm
+# workspaces), so it gets its own stage. `pnpm deploy` produces a
+# self-contained folder (package + resolved prod node_modules, no store
+# symlinks) suitable for copying into the runtime stage.
+FROM node:${NODE_VERSION} AS cli-builder
+
+# pnpm prompts before purging an out-of-sync modules dir; CI=true makes it
+# non-interactive.
+ENV CI=true
+
+RUN npm install -g pnpm@11.9.0
+
+WORKDIR /cli
+COPY sdk/cli-js-sdk ./
+
+RUN pnpm install --frozen-lockfile --filter cli-fhevm-sdk... && \
+    pnpm --filter cli-fhevm-sdk build && \
+    pnpm --filter cli-fhevm-sdk deploy --prod --legacy /out/fhevm-cli
+
 # --- Runtime Stage ---
 FROM node:${NODE_VERSION} AS prod
 ARG RELAYER_SDK_VERSION=""
@@ -73,6 +93,11 @@ COPY --from=builder /etc/group /etc/group
 COPY --from=builder /etc/passwd /etc/passwd
 COPY --from=builder --chown=fhevm:fhevm /home/fhevm /home/fhevm
 COPY --from=builder --chown=fhevm:fhevm /app /app
+
+# fhevm-sdk CLI: wallet/API key/RPC URL are injected at runtime via env vars
+# (PRIVATE_KEY, MNEMONIC, ZAMA_FHEVM_API_KEY, SEPOLIA_RPC_URL, ...).
+COPY --from=cli-builder --chown=fhevm:fhevm /out/fhevm-cli /app/fhevm-cli
+RUN ln -s /app/fhevm-cli/bin/fhevm-sdk.mjs /usr/local/bin/fhevm-sdk
 
 USER fhevm:fhevm
 
