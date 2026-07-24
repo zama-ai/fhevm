@@ -35,8 +35,10 @@ describe("progressive KMS core rollout", () => {
       async upgradeKmsNodes(nodeIds: readonly number[], options: { lockFile: string }) {
         calls.push(`upgrade:${nodeIds.join(",")}:${options.lockFile}`);
       },
-      async test(profile: string, options?: { grep?: string }) {
-        calls.push(`test:${profile}${options?.grep ? `:${options.grep}` : ""}`);
+      async test(profile: string, options?: { grep?: string; noHardhatCompile?: boolean }) {
+        calls.push(
+          `test:${profile}:${options?.noHardhatCompile === false ? "compile" : "no-compile"}${options?.grep ? `:${options.grep}` : ""}`,
+        );
       },
       async withRequiredKmsNode(nodeId: number, task: () => Promise<void>) {
         calls.push(`require:${nodeId}`);
@@ -50,24 +52,24 @@ describe("progressive KMS core rollout", () => {
       "lock:00-kms-core-baseline:v0.13.20",
       "lock:01-kms-core-target:v0.13.22",
       "up:four-party-threshold-kms:/tmp/00-kms-core-baseline.lock.json",
-      "test:rollout-standard",
+      "test:rollout-standard:compile",
       "state",
       "upgrade:1:/tmp/01-kms-core-target.lock.json",
       "require:1",
-      "test:user-decryption:test user decrypt ebool$",
-      "test:rollout-standard",
+      "test:user-decryption:compile:test user decrypt ebool$",
+      "test:rollout-standard:compile",
       "upgrade:2:/tmp/01-kms-core-target.lock.json",
       "require:2",
-      "test:user-decryption:test user decrypt ebool$",
-      "test:rollout-standard",
+      "test:user-decryption:compile:test user decrypt ebool$",
+      "test:rollout-standard:compile",
       "upgrade:3:/tmp/01-kms-core-target.lock.json",
       "require:3",
-      "test:user-decryption:test user decrypt ebool$",
-      "test:rollout-standard",
+      "test:user-decryption:compile:test user decrypt ebool$",
+      "test:rollout-standard:compile",
       "upgrade:4:/tmp/01-kms-core-target.lock.json",
       "require:4",
-      "test:user-decryption:test user decrypt ebool$",
-      "test:rollout-standard",
+      "test:user-decryption:compile:test user decrypt ebool$",
+      "test:rollout-standard:compile",
     ]);
   });
 });

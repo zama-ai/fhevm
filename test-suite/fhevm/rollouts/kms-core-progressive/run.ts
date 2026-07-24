@@ -1,9 +1,12 @@
 import type { RolloutRunContext } from "../../src/commands/rollout-run";
 import { from, scenario, to, versionSources } from "./versions";
 
-const testRollout = (ctx: RolloutRunContext) => ctx.test("rollout-standard", { parallel: false });
+// The released v0.13.0 test runner forwards its skip-compile flag to Hardhat
+// under the wrong name. Let that pinned runner compile instead.
+const testOptions = { noHardhatCompile: false, parallel: false } as const;
+const testRollout = (ctx: RolloutRunContext) => ctx.test("rollout-standard", testOptions);
 const testRequiredNode = (ctx: RolloutRunContext) =>
-  ctx.test("user-decryption", { grep: "test user decrypt ebool$", parallel: false });
+  ctx.test("user-decryption", { ...testOptions, grep: "test user decrypt ebool$" });
 
 type KmsCoreVersions = Record<string, string> & { CORE_VERSION: string };
 
