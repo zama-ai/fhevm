@@ -152,6 +152,7 @@ export const thresholdCoreEnv = (
   KMS_CORE__THRESHOLD__LISTEN_PORT: String(kmsMpcPort(partyId)),
   KMS_CORE__THRESHOLD__MY_ID: String(partyId),
   KMS_CORE__THRESHOLD__THRESHOLD: String(topology.threshold),
+  KMS_CORE__THRESHOLD__NUM_SESSIONS_PREPROC: "${FHEVM_KMS_PREPROC_SESSIONS:-2}",
   KMS_CORE__AWS__REGION: opts.s3Region,
   KMS_CORE__AWS__S3_ENDPOINT: opts.s3Endpoint,
   KMS_CORE__PUBLIC_VAULT__STORAGE__S3__BUCKET: opts.s3Bucket,
