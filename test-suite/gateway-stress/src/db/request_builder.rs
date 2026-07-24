@@ -2,9 +2,10 @@ use crate::{
     config::CiphertextConfig,
     decryption::types::{DecryptionRequest, DecryptionType},
 };
-use alloy::primitives::{Address, Bytes, U256};
+use alloy::primitives::{Address, Bytes, FixedBytes, U256};
 use fhevm_gateway_bindings::decryption::Decryption::{
-    PublicDecryptionRequest, SnsCiphertextMaterial, UserDecryptionRequest,
+    PublicDecryptionRequest_1 as PublicDecryptionRequest,
+    UserDecryptionRequest_2 as UserDecryptionRequest,
 };
 use rand::RngExt;
 
@@ -12,25 +13,16 @@ pub struct RequestBuilder {
     id_counter: U256,
     user_ct: Vec<CiphertextConfig>,
     public_ct: Vec<CiphertextConfig>,
-    key_id: U256,
-    copro_tx_sender_addr: Address,
 }
 
 impl RequestBuilder {
-    pub fn new(
-        user_ct: Vec<CiphertextConfig>,
-        public_ct: Vec<CiphertextConfig>,
-        key_id: U256,
-        copro_tx_sender_addr: Address,
-    ) -> Self {
+    pub fn new(user_ct: Vec<CiphertextConfig>, public_ct: Vec<CiphertextConfig>) -> Self {
         Self {
             // Take a high value for the id_counter to avoid polluting id that could be used in
             // the testing environment
             id_counter: (U256::MAX / U256::from(4)) * U256::from(3),
             user_ct,
             public_ct,
-            key_id,
-            copro_tx_sender_addr,
         }
     }
 
@@ -54,26 +46,26 @@ impl RequestBuilder {
 
     fn build_public_request(&mut self) -> anyhow::Result<PublicDecryptionRequest> {
         let decryption_id = self.generate_unique_id();
-        let sns_ct_materials = self.generate_sns_materials(self.public_ct.clone());
+        let ct_handles = self.generate_ct_handles(self.public_ct.clone());
         let extra_data = self.generate_extra_data();
 
         Ok(PublicDecryptionRequest {
             decryptionId: decryption_id,
-            snsCtMaterials: sns_ct_materials,
+            ctHandles: ct_handles,
             extraData: extra_data,
         })
     }
 
     fn build_user_request(&mut self) -> anyhow::Result<UserDecryptionRequest> {
         let decryption_id = self.generate_unique_id();
-        let sns_ct_materials = self.generate_sns_materials(self.user_ct.clone());
+        let ct_handles = self.generate_ct_handles(self.user_ct.clone());
         let user_address = Address::from(rand::rng().random::<[u8; 20]>());
         let public_key = alloy::hex::decode(COMMON_PUBLIC_KEY).unwrap().into();
         let extra_data = self.generate_extra_data();
 
         Ok(UserDecryptionRequest {
             decryptionId: decryption_id,
-            snsCtMaterials: sns_ct_materials,
+            ctHandles: ct_handles,
             userAddress: user_address,
             publicKey: public_key,
             extraData: extra_data,
@@ -86,19 +78,8 @@ impl RequestBuilder {
         id
     }
 
-    fn generate_sns_materials(
-        &self,
-        ciphertexts: Vec<CiphertextConfig>,
-    ) -> Vec<SnsCiphertextMaterial> {
-        ciphertexts
-            .iter()
-            .map(|ct| SnsCiphertextMaterial {
-                ctHandle: ct.handle,
-                keyId: self.key_id,
-                snsCiphertextDigest: ct.digest,
-                coprocessorTxSenderAddresses: vec![self.copro_tx_sender_addr],
-            })
-            .collect()
+    fn generate_ct_handles(&self, ciphertexts: Vec<CiphertextConfig>) -> Vec<FixedBytes<32>> {
+        ciphertexts.iter().map(|ct| ct.handle).collect()
     }
 
     fn generate_extra_data(&self) -> Bytes {

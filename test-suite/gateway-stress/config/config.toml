@@ -20,15 +20,11 @@ parallel_requests = 1
 [[public_ct]]
 # The handle used of the ciphertext
 handle = "0x1f9b79819b2581535a80f267862540c5eac12ee504ff00000000000030390500"
-# The digest of the ciphertext. Used only for DB tests, it can be a dummy value otherwise
-digest = "0x134b4f97e70be0e71a26e38304e096fd370188b5c11b89feb8a61176b73d1b5a"
 
 # The ciphertexts to use for user decryptions
 [[user_ct]]
 # The handle used of the ciphertext
 handle = "0x1d01f83fd1b14d84e9b8680790d993d6848aeb6462ff00000000000030390500"
-# The digest of the ciphertext. Used only for DB tests, it can be a dummy value otherwise
-digest = "0x134b4f97e70be0e71a26e38304e096fd370188b5c11b89feb8a61176b73d1b5a"
 
 # Configuration section for stress test using the Gateway chain
 [blockchain]
@@ -64,11 +60,3 @@ connection_timeout = "30s"
 # The number of requests to insert in one insertion query (should be smaller than the
 # `events_batch_size` setting of the KMS Workers)
 insertion_chunk_size = 10
-
-# The key ID that will be used by the inserted UserDecryptionRequest
-key_id = "1809251394333065553493296640760748560207343510400633813116524750123642650625"
-
-# The wallet address of the coprocessor's transaction sender. This is set in the inserted
-# decryption requests, to be used by the KMS Workers to fetch the S3 URL from the Gateway before
-# retrieving SnsCiphertextMaterial from S3.
-copro_tx_sender_addr = "0x6254a198f67ad40290a2e7b48adb2d19b71f67bd"

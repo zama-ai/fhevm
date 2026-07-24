@@ -1,4 +1,4 @@
-use alloy::primitives::{Address, FixedBytes, U256};
+use alloy::primitives::{Address, FixedBytes};
 use config::{Config as ConfigBuilder, File, FileFormat};
 use serde::Deserialize;
 use std::{path::Path, time::Duration};
@@ -24,7 +24,6 @@ pub struct Config {
 #[derive(Clone, Debug, Deserialize)]
 pub struct CiphertextConfig {
     pub handle: FixedBytes<32>,
-    pub digest: FixedBytes<32>,
 }
 
 #[derive(Clone, Debug, Deserialize)]
@@ -43,8 +42,6 @@ pub struct DatabaseConfig {
     pub pool_size: u32,
     #[serde(with = "humantime_serde", default = "default_db_connection_timeout")]
     pub connection_timeout: Duration,
-    pub key_id: U256,
-    pub copro_tx_sender_addr: Address,
     pub insertion_chunk_size: usize,
 }
 

@@ -12,7 +12,7 @@ use alloy::{
     primitives::{Address, U256},
     providers::Provider,
     rpc::types::{Log, TransactionReceipt},
-    sol_types,
+    sol_types::{self, SolEvent},
 };
 use anyhow::anyhow;
 use fhevm_gateway_bindings::decryption::{
@@ -153,7 +153,7 @@ async fn send_user_decryption_inner(
     )
     .await?;
     let decryption_call = decryption_contract
-        .userDecryptionRequest(
+        .userDecryptionRequest_1(
             config
                 .user_ct
                 .iter()
@@ -189,9 +189,9 @@ async fn send_user_decryption_inner(
 fn extract_user_decryption_id_from_receipt(receipt: &TransactionReceipt) -> anyhow::Result<U256> {
     extract_id_from_receipt(
         receipt,
-        Decryption::UserDecryptionRequest::SIGNATURE_HASH,
+        Decryption::UserDecryptionRequest_2::SIGNATURE_HASH,
         |log| {
-            Decryption::UserDecryptionRequest::decode_log_data(log)
+            Decryption::UserDecryptionRequest_2::decode_log_data(log)
                 .map(|event| event.decryptionId)
                 .map_err(|e| anyhow!("Failed to decode event data {e}"))
         },

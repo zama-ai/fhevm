@@ -2,7 +2,8 @@ use std::str::FromStr;
 
 use anyhow::anyhow;
 use fhevm_gateway_bindings::decryption::Decryption::{
-    PublicDecryptionRequest, UserDecryptionRequest,
+    PublicDecryptionRequest_1 as PublicDecryptionRequest,
+    UserDecryptionRequest_2 as UserDecryptionRequest,
 };
 use serde::{Deserialize, Deserializer, Serializer};
 

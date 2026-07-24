@@ -52,12 +52,7 @@ impl DatabaseTestManager {
             response_trackers.push(Arc::new(Mutex::new(tracker)));
         }
 
-        let request_builder = RequestBuilder::new(
-            config.user_ct.clone(),
-            config.public_ct.clone(),
-            db_config.key_id,
-            db_config.copro_tx_sender_addr,
-        );
+        let request_builder = RequestBuilder::new(config.user_ct.clone(), config.public_ct.clone());
         let manager = DatabaseTestManager {
             config,
             db_connectors,

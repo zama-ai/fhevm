@@ -1,10 +1,10 @@
 use crate::{
-    config::DatabaseConfig,
-    db::types::{DecryptionRequestDbMetadata, SnsCiphertextMaterialDbItem},
+    config::DatabaseConfig, db::types::DecryptionRequestDbMetadata,
     decryption::types::DecryptionRequest,
 };
 use fhevm_gateway_bindings::decryption::Decryption::{
-    PublicDecryptionRequest, UserDecryptionRequest,
+    PublicDecryptionRequest_1 as PublicDecryptionRequest,
+    UserDecryptionRequest_2 as UserDecryptionRequest,
 };
 use sqlx::{Executor, Pool, Postgres, QueryBuilder, postgres::PgPoolOptions};
 use std::fmt::Display;
@@ -107,16 +107,11 @@ impl DbConnector {
 
         for reqs in requests.chunks(self.insertion_chunk_size) {
             let mut query_builder = QueryBuilder::new(
-                "INSERT INTO public_decryption_requests(decryption_id, sns_ct_materials, extra_data, otlp_context) ",
+                "INSERT INTO public_decryption_requests(decryption_id, ct_handles, extra_data, otlp_context) ",
             );
             query_builder.push_values(reqs, |mut bind, req| {
                 bind.push_bind(req.decryptionId.to_le_bytes_vec())
-                    .push_bind(
-                        req.snsCtMaterials
-                            .iter()
-                            .map(SnsCiphertextMaterialDbItem::from)
-                            .collect::<Vec<_>>(),
-                    )
+                    .push_bind(req.ctHandles.iter().map(|h| h.to_vec()).collect::<Vec<_>>())
                     .push_bind(req.extraData.to_vec())
                     .push_bind(alloy::hex::decode(EMPTY_OTLP_CONTEXT_SERIALIZED_HEX).unwrap());
             });
@@ -142,16 +137,11 @@ impl DbConnector {
 
         for reqs in requests.chunks(self.insertion_chunk_size) {
             let mut query_builder = QueryBuilder::new("
-                INSERT INTO user_decryption_requests(decryption_id, sns_ct_materials, user_address, public_key, extra_data, otlp_context)
+                INSERT INTO user_decryption_requests(decryption_id, ct_handles, user_address, public_key, extra_data, otlp_context)
             ");
             query_builder.push_values(reqs, |mut bind, req| {
                 bind.push_bind(req.decryptionId.to_le_bytes_vec())
-                    .push_bind(
-                        req.snsCtMaterials
-                            .iter()
-                            .map(SnsCiphertextMaterialDbItem::from)
-                            .collect::<Vec<_>>(),
-                    )
+                    .push_bind(req.ctHandles.iter().map(|h| h.to_vec()).collect::<Vec<_>>())
                     .push_bind(req.userAddress.to_vec())
                     .push_bind(req.publicKey.to_vec())
                     .push_bind(req.extraData.to_vec())
