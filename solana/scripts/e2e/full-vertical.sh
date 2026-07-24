@@ -16,7 +16,7 @@
 set -euo pipefail
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../../.." && pwd)"
 VALUE="${TE_VALUE:-55}"
-# Input-flow leg: encrypt IV (default 56) as an external input, then one fhe_eval adds ADD (default 2)
+# Input-flow phase: encrypt IV (default 56) as an external input, then one fhe_eval adds ADD (default 2)
 # to it on-chain and the result is public-decrypted == IV+ADD (parametrized so it can't pass on a
 # trivial/hardcoded value).
 IV="${INPUT_VALUE:-56}"
@@ -105,7 +105,7 @@ run_public_decrypt_with_proof() {
 # program ids + deployer pubkey, as bytes32). SID = RFC-021 Solana host chain id.
 SID=9223372036854788153
 CONTRACT=0x0c26992cb06b8c2de7305099da15554866e2373d80cb0b597156b689d293249b
-# Deployer pubkey — the acl_domain_key the compute leg binds under and the user-decrypt authorizes.
+# Deployer pubkey — the acl_domain_key the compute phase binds under and the user-decrypt authorizes.
 # Derived from the actual deployer keypair (id.json [32:64]) so it matches whichever key is present:
 # the dev's local wallet or the one CI generates. Hardcoding it to the dev's wallet broke CI (the
 # user-decrypt signs with CI's generated key -> "ACL record domain outside the signed auth scope").
@@ -138,7 +138,7 @@ echo "==> [proof-service] decisive vertical gates"
 # Adoption matrix for standalone solana-proof-service (#1682 / #3215):
 #   [x] readiness becomes true (requires recovery.bootstrap_slot; e2e uses 0 on --reset)
 #   [x] exact inclusive replay after process restart (container restart below)
-#   [x] proof serving + consumption (public/user decrypt legs later in this script)
+#   [x] proof serving + consumption (public/user decrypt phases later in this script)
 #   [~] empty-block delivery: pinned geyser emits every block; store applies empty tx vectors
 #   [~] bounded recovery + exhaustion fail-closed: covered by solana-proof-* unit/Postgres tests
 #       (full RPC chaos inject not in this script yet)
@@ -211,7 +211,7 @@ echo "==> [user-decrypt] PURE-SDK: @fhevm/sdk/solana keygen + /v3/user-decrypt (
 # Whole round-trip in fhevm-cli: the public SDK does ML-KEM keygen, the v3 ed25519 request, and
 # de-signcryption to cleartext via deSigncryptSolanaUserDecrypt (vendored Solana TKMS WASM,
 # kms_lib.*-solana). The deployer's default keypair is the user whose ACL grants USE; its
-# pubkey is the sole allowed acl_domain_key (matches the compute leg's TE_ALLOW). No kms-core build.
+# pubkey is the sole allowed acl_domain_key (matches the compute phase's TE_ALLOW). No kms-core build.
 UD_SK="0x$(python3 -c "import json,os;print(bytes(json.load(open(os.path.expanduser('~/.config/solana/id.json')))[:32]).hex())")"
 UD_CID="0x$(python3 -c "print(int('$CTX').to_bytes(32,'big').hex())")"
 ( cd "$ROOT/test-suite/fhevm" && \
@@ -440,7 +440,7 @@ MDH_ACL="$(echo "$mdout" | grep -oE 'output encrypted value [A-Za-z0-9]+' | awk 
 [ -n "$MDH_ACL" ] || fail "no mulDiv output ACL record: $mdout"
 assert_decrypt "mulDiv" "$MDH" "$MDH_ACL" "$EXPECTED_MULDIV"
 
-# [sdk-transfer] leg (two-holder confidential transfer + current user-decrypt) moved to the TS
+# [sdk-transfer] phase (two-holder confidential transfer + current user-decrypt) moved to the TS
 # scenario harness (test-suite/fhevm/e2e/); the solana-e2e CI runs it after this vertical.
 
 echo "==> [consume] confidential mint + USDC; wrap -> burn -> release -> public-decrypt -> redeem(secp) + disclose(secp)"

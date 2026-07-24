@@ -234,7 +234,7 @@ export type OpenBatchAsyncInput<
   payoutUnderlyingMint: Address<TAccountPayoutUnderlyingMint>;
   /** Batch's plain SPL account receiving the redeemed batch total at settle. */
   batchJoinUnderlying?: Address<TAccountBatchJoinUnderlying>;
-  /** Batch's plain SPL account receiving the vault leg's output at settle. */
+  /** Batch's plain SPL account receiving the vault phase's output at settle. */
   batchPayoutUnderlying?: Address<TAccountBatchPayoutUnderlying>;
   zamaEventAuthority: Address<TAccountZamaEventAuthority>;
   /** ZamaHost program (FHE compute + ACL). */
@@ -568,7 +568,7 @@ export type OpenBatchInput<
   payoutUnderlyingMint: Address<TAccountPayoutUnderlyingMint>;
   /** Batch's plain SPL account receiving the redeemed batch total at settle. */
   batchJoinUnderlying: Address<TAccountBatchJoinUnderlying>;
-  /** Batch's plain SPL account receiving the vault leg's output at settle. */
+  /** Batch's plain SPL account receiving the vault phase's output at settle. */
   batchPayoutUnderlying: Address<TAccountBatchPayoutUnderlying>;
   zamaEventAuthority: Address<TAccountZamaEventAuthority>;
   /** ZamaHost program (FHE compute + ACL). */
@@ -865,7 +865,7 @@ export type ParsedOpenBatchInstruction<
     payoutUnderlyingMint: TAccountMetas[14];
     /** Batch's plain SPL account receiving the redeemed batch total at settle. */
     batchJoinUnderlying: TAccountMetas[15];
-    /** Batch's plain SPL account receiving the vault leg's output at settle. */
+    /** Batch's plain SPL account receiving the vault phase's output at settle. */
     batchPayoutUnderlying: TAccountMetas[16];
     zamaEventAuthority: TAccountMetas[17];
     /** ZamaHost program (FHE compute + ACL). */

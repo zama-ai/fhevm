@@ -1,6 +1,6 @@
 //! Opens the next batch: the `Batch` account, its per-batch authority, its own
 //! confidential token accounts (join and payout side), and its plain SPL
-//! accounts for settle's redeem/vault/wrap legs.
+//! accounts for settle's redeem/vault/wrap phases.
 //!
 //! One batch, one token account: the burned/revealed total is exactly this
 //! batch's sum, so dust from an earlier batch can never leak into it (the EVM
@@ -73,7 +73,7 @@ pub struct OpenBatch<'info> {
         token::authority = batch_authority,
     )]
     pub batch_join_underlying: Box<Account<'info, TokenAccount>>,
-    /// Batch's plain SPL account receiving the vault leg's output at settle.
+    /// Batch's plain SPL account receiving the vault phase's output at settle.
     #[account(
         init,
         payer = payer,

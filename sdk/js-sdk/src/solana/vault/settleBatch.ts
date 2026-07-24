@@ -39,11 +39,11 @@ import { getCurrentBatch, getEncryptedValueState } from './reads.js';
 
 const ZERO_HANDLE = new Uint8Array(32);
 
-/** What `settleBatch` still needs beyond the certificate/proof legs and the keeper signer. */
+/** What `settleBatch` still needs beyond the certificate/proof phases and the keeper signer. */
 export type SolanaVaultSettleOptions = {
   readonly rpc: Rpc<SolanaRpcApi>;
   readonly rpcSubscriptions: RpcSubscriptions<SolanaRpcSubscriptionsApi>;
-  /** Decrypt runtime (auth) for the certificate leg. */
+  /** Decrypt runtime (auth) for the certificate phase. */
   readonly runtime: FhevmRuntime;
   /** The batcher's demo topology; every settle account is derived from these. */
   readonly roots: VaultDemoRoots;
@@ -71,7 +71,7 @@ export type SolanaVaultSettleOptions = {
  * - the full settle account set, derived from the roots, the batch, and the burned handle; and
  * - the burned lineage's live MMR peaks and leaf count, read from its `EncryptedValue` account.
  *
- * Two off-chain legs then feed the on-chain instruction: the burned lineage's MMR inclusion proof
+ * Two off-chain phases then feed the on-chain instruction: the burned lineage's MMR inclusion proof
  * from the solana-proof-service (verified against the live peaks), and the KMS burn certificate from
  * the relayer, requested with that proof. The certified cleartext is a 32-byte `uint256`; settle's
  * on-chain argument is a `u64`, so its low 8 bytes are taken big-endian and its high 24 asserted zero
@@ -116,7 +116,7 @@ export async function settleBatch(
   // Read the burned lineage's live MMR state (the peaks the proof is verified against).
   const lineage = await getEncryptedValueState(rpc, accounts.batchBurnedAmountValue);
 
-  // Leg 1: the settle burns to a born-public handle, so its proof is a public-decrypt leaf. The
+  // Phase 1: the settle burns to a born-public handle, so its proof is a public-decrypt leaf. The
   // service resolves the leaf from (encryptedValue, burnedTotalHandle); the SDK never supplies a
   // leaf index, and the resolved index comes back on the proof.
   const proof = await fetchSolanaPublicDecryptProof(proofConfig, burned.encryptedValueAddress, burnedTotalHandle);
@@ -126,7 +126,7 @@ export async function settleBatch(
     );
   }
 
-  // Leg 2: KMS burn certificate, verified against the live peaks with the leg-1 proof.
+  // Phase 2: KMS burn certificate, verified against the live peaks with the phase-1 proof.
   const claim = await publicDecryptCertificate(
     { chain, runtime: options.runtime },
     {

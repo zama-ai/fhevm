@@ -134,7 +134,7 @@ echo "    zama_host=$ZAMA_HOST_ID deployed"
 echo "==> [3/5] bootstrap zama-host (real gateway/ProtocolConfig values, mock/test OFF)"
 # Build the live-client from THIS worktree's source: its Anchor instruction discriminators come
 # from the program crates, so a stale prebuilt binary sends mismatched discriminators (same
-# reason the host-listener is rebuilt below). This BOOTSTRAP leg replaces the former
+# reason the host-listener is rebuilt below). This BOOTSTRAP phase replaces the former
 # bootstrap.mjs (@solana/web3.js) with the typed anchor-client path.
 LC="$SOLANA/scripts/e2e/live-client"
 ( cd "$LC" && cargo build >/tmp/solana-live-client-build.log 2>&1 ) \

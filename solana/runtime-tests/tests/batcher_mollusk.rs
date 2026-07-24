@@ -1364,7 +1364,7 @@ fn run_settle(
     );
     let result = context.process_and_validate_instruction(&ix, &[Check::success()]);
     if total > 0 {
-        // Only the wrap leg drives an eval at settle.
+        // Only the wrap phase drives an eval at settle.
         assert_eq!(ledger.evaluate_fhe_cpis(context, &result), 1);
     }
     result.compute_units_consumed
@@ -2076,7 +2076,7 @@ fn mollusk_redeem_one_share_dust_settles_at_extreme_price() {
 /// SPL destinations cannot refuse incoming transfers, so an attacker can push
 /// plain underlying into the PDA-owned `batch_payout_underlying` account of a
 /// redeem batch before settlement. Settle must price and wrap only the
-/// vault-paid delta across its withdraw leg — the redeem mirror of the
+/// vault-paid delta across its withdraw phase — the redeem mirror of the
 /// deposit direction's preload invariant. Preloaded tokens stay in the
 /// account, unwrapped and unpriced (inert).
 #[test]
@@ -2159,7 +2159,7 @@ fn mollusk_redeem_preloaded_underlying_stays_inert() {
 /// lifecycle concurrently over the same vault, mints, and users — the
 /// two-instance pattern. Cross-direction state confusion (a redeem batch
 /// reading deposit-batch lineages, the shared escrows or the vault mixing
-/// legs) would surface here, not at open: both directions join, dispatch,
+/// phases) would surface here, not at open: both directions join, dispatch,
 /// settle, and claim against the shared world, and every balance is checked.
 #[test]
 fn mollusk_deposit_and_redeem_batchers_run_concurrently() {
@@ -2806,7 +2806,7 @@ fn redeem_settle_transaction_size_needs_v0_lookup_table_and_fits() {
 /// SPL destinations cannot refuse incoming transfers, so an attacker can push
 /// vault shares into the PDA-owned `batch_payout_underlying` account of a
 /// deposit batch before settlement. Settle must price and wrap only the
-/// vault-minted delta across its deposit leg: with balance-based accounting,
+/// vault-minted delta across its deposit phase: with balance-based accounting,
 /// this preload would have inflated the batch's payout accounting (and, under
 /// the old rate math, overflowed the u64 rate and bricked the batch). The
 /// attacker acquires the shares through a genuine demo-vault deposit and a

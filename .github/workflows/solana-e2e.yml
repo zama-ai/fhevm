@@ -238,7 +238,7 @@ jobs:
         # The stack from clean-e2e is still up. These bun:test scenarios drive product arcs through
         # @fhevm/sdk Solana actions only; the confidential-transfer arc (encrypt input ->
         # submitInputProof -> confidentialTransfer -> current user-decrypt) was moved here from
-        # full-vertical.sh's [sdk-transfer] leg. See solana/docs/TESTING.md ("Scenario layer").
+        # full-vertical.sh's [sdk-transfer] phase. See solana/docs/TESTING.md ("Scenario layer").
         working-directory: test-suite/fhevm
         run: bun run test:e2e
 

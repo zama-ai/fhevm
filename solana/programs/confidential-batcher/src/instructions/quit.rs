@@ -100,7 +100,7 @@ pub fn quit<'info>(ctx: Context<'info, Quit<'info>>) -> Result<()> {
         BatcherError::DerivedAccountMismatch
     );
 
-    // Leg 1: exact refund — the joined lineage IS the transfer amount. The
+    // Phase 1: exact refund — the joined lineage IS the transfer amount. The
     // batch authority signs via invoke_signed; the token's spend gate accepts
     // it because every joined lineage carries the batch authority in its
     // audience from birth.
@@ -134,7 +134,7 @@ pub fn quit<'info>(ctx: Context<'info, Quit<'info>>) -> Result<()> {
         &[&authority_seeds],
     ))?;
 
-    // Leg 2: reset the joined lineage to an encrypted zero (supersede in
+    // Phase 2: reset the joined lineage to an encrypted zero (supersede in
     // place), so a later re-join of the same batch accumulates from zero.
     let joined_value = fhe::read_encrypted_value(&ctx.accounts.pending_join_value)?;
     let old_handle = joined_value.current_handle;
