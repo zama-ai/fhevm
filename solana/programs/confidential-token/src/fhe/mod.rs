@@ -17,13 +17,13 @@ pub(crate) use verify_public_decrypt::*;
 
 /// Audience for a confidential-token durable output.
 ///
-/// Holder-scoped lineages (balances, `transferred_amount`, `burned_amount`) must
+/// Holder-scoped encrypted value accounts (balances, `transferred_amount`, `burned_amount`) must
 /// always grant the holder's owner key and the mint compute-signer PDA: the owner
 /// keeps decrypt access to their own value, and the compute signer gates the next
 /// eval that reads it. [`DurableAudience::for_owner`] takes both as required
 /// parameters, so a holder output can never be built missing either; extra owners
 /// (the recipient leg of a `transferred_amount` rotation) are additive via
-/// [`DurableAudience::with_owner`]. Mint-scoped lineages with no single holder
+/// [`DurableAudience::with_owner`]. Mint-scoped encrypted value accounts with no single holder
 /// (total supply, freshly minted random amounts) use
 /// [`DurableAudience::compute_only`], the one owner-less path.
 ///
@@ -77,7 +77,7 @@ impl DurableAudience {
     }
 }
 
-/// A durable eval output account bound to the exact `EncryptedValue` lineage
+/// A durable eval output account bound to the exact `EncryptedValue` encrypted value account
 /// it is allowed to create or supersede.
 pub(crate) struct DurableOutput<'info> {
     encrypted_value: AccountInfo<'info>,
@@ -86,7 +86,7 @@ pub(crate) struct DurableOutput<'info> {
 
 impl<'info> DurableOutput<'info> {
     /// Binds `encrypted_value` as the output of a durable eval step: creates the
-    /// lineage's first handle if the PDA does not exist yet, or supersedes it
+    /// encrypted value account's first handle if the PDA does not exist yet, or supersedes it
     /// (reading `previous_handle`/`previous_subjects` off the on-chain account)
     /// if it does. Either way the eval CPI's attestation matches exactly what
     /// the host will verify.

@@ -16,9 +16,9 @@ use solana_proof_store::{
     DecodedInstruction, LeafKind, LineageReplayState, PriorLineageState, SemanticLeafKey,
     SqlProofStore, SubjectGrant,
 };
-use zama_solana_acl::lineage::reconstruct;
 use zama_solana_acl::mmr::{mmr_build_proof, mmr_peaks_from_leaves, mmr_verify};
 use zama_solana_acl::public_decrypt_leaf_commitment;
+use zama_solana_acl::value_account::reconstruct;
 
 fn database_url() -> String {
     std::env::var("SOLANA_PROOF_TEST_DATABASE_URL")
@@ -310,7 +310,7 @@ async fn semantic_leaf_resolution_maps_handle_and_subject_to_index() {
         )
         .await
         .unwrap()
-        .expect("lineage ingested");
+        .expect("encrypted_value_account ingested");
     assert_eq!(access.leaf_index, Some(0));
     assert_eq!(access.snapshot.leaf_count, 2);
 
@@ -326,7 +326,7 @@ async fn semantic_leaf_resolution_maps_handle_and_subject_to_index() {
         )
         .await
         .unwrap()
-        .expect("lineage ingested");
+        .expect("encrypted_value_account ingested");
     assert_eq!(public.leaf_index, Some(1));
 
     // A public-decrypt query for the historical (superseded) handle finds no leaf: the kinds
@@ -342,7 +342,7 @@ async fn semantic_leaf_resolution_maps_handle_and_subject_to_index() {
         )
         .await
         .unwrap()
-        .expect("lineage ingested");
+        .expect("encrypted_value_account ingested");
     assert_eq!(miss_kind.leaf_index, None);
 
     // Wrong subject on the access key also misses.
@@ -357,10 +357,10 @@ async fn semantic_leaf_resolution_maps_handle_and_subject_to_index() {
         )
         .await
         .unwrap()
-        .expect("lineage ingested");
+        .expect("encrypted_value_account ingested");
     assert_eq!(miss_subject.leaf_index, None);
 
-    // An un-ingested lineage resolves to no snapshot at all.
+    // An un-ingested encrypted_value_account resolves to no snapshot at all.
     assert!(store
         .proof_snapshot_for_leaf(
             pk(0xEF),
@@ -421,12 +421,12 @@ async fn public_decrypt_resolves_duplicate_leaves_to_earliest() {
         )
         .await
         .unwrap()
-        .expect("lineage ingested");
+        .expect("encrypted_value_account ingested");
     // Two public-decrypt leaves for the one handle; resolution returns the EARLIEST.
     assert_eq!(resolved.snapshot.leaf_count, 2);
     assert_eq!(resolved.leaf_index, Some(0));
 
-    // The resolved leaf's inclusion proof verifies against the lineage peaks.
+    // The resolved leaf's inclusion proof verifies against the encrypted_value_account peaks.
     let leaf_index = resolved.leaf_index.unwrap();
     let commitment = public_decrypt_leaf_commitment(ev, leaf_index, handle);
     assert_eq!(resolved.snapshot.leaves[leaf_index as usize], commitment);
@@ -474,10 +474,10 @@ async fn detects_pre_semantic_leaf_rows() {
     assert!(!store.has_pre_semantic_leaf_rows().await.unwrap());
 
     // Simulate a legacy row: insert a leaf with NULL leaf_kind/handle (as a pre-migration ingest
-    // would have). The lineage FK is satisfied by the block above; leaf_index 99 is free.
+    // would have). The encrypted_value_account FK is satisfied by the block above; leaf_index 99 is free.
     sqlx::query(
         r#"
-        INSERT INTO solana_proof_leaves (lineage, leaf_index, commitment, block_slot, transaction_index)
+        INSERT INTO solana_proof_leaves (encrypted_value_account, leaf_index, commitment, block_slot, transaction_index)
         VALUES ($1, 99, $2, 10, 1)
         "#,
     )
@@ -860,7 +860,7 @@ async fn incomplete_bootstrap_and_post_bootstrap_birth() {
 
 #[ignore = "requires DATABASE_URL / SOLANA_PROOF_TEST_DATABASE_URL"]
 #[tokio::test]
-async fn unknown_pre_bootstrap_lineage_halts() {
+async fn unknown_pre_bootstrap_encrypted_value_account_halts() {
     let store = fresh_store().await;
     store
         .apply_completed_block(&block(10, 9, pk(0x90), pk(0xA0), Vec::new()))
@@ -882,15 +882,16 @@ async fn unknown_pre_bootstrap_lineage_halts() {
     );
     match store.apply_completed_block(&orphan).await.unwrap() {
         ApplyOutcome::IntegrityHalted { reason } => {
-            assert!(reason.contains("unknown pre-bootstrap lineage"));
+            assert!(reason.contains("unknown pre-bootstrap encrypted_value_account"));
         }
         other => panic!("expected halt, got {other:?}"),
     }
-    let lineages: (i64,) = sqlx::query_as("SELECT COUNT(*) FROM solana_proof_lineages")
-        .fetch_one(store.pool())
-        .await
-        .unwrap();
-    assert_eq!(lineages.0, 0);
+    let encrypted_value_accounts: (i64,) =
+        sqlx::query_as("SELECT COUNT(*) FROM solana_proof_encrypted_value_accounts")
+            .fetch_one(store.pool())
+            .await
+            .unwrap();
+    assert_eq!(encrypted_value_accounts.0, 0);
     let leaves: (i64,) = sqlx::query_as("SELECT COUNT(*) FROM solana_proof_leaves")
         .fetch_one(store.pool())
         .await

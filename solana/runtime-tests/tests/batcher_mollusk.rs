@@ -57,7 +57,7 @@ const DECRYPTION_CONTRACT: [u8; 20] = [0xDEu8; 20];
 const KMS_CONTEXT_ID: u64 = 9;
 const DECIMALS: u8 = 6;
 /// Generous batch-authority funding for owner-charged rent (token-account and
-/// lineage creation at open; the redeem marker and wrap growth at settle).
+/// encrypted value account creation at open; the redeem marker and wrap growth at settle).
 const AUTHORITY_FUNDING: u64 = 100_000_000;
 
 type Ctx = mollusk_svm::MolluskContext<HashMap<Pubkey, Account>>;
@@ -168,7 +168,7 @@ impl CleartextLedger {
     /// Replays every `fhe_eval` CPI a batcher instruction issued — in order,
     /// so a later eval can consume an earlier eval's persisted outputs (the
     /// join re-materialization reads the transfer's `transferred_amount`).
-    /// Each instruction writes any lineage at most once, so binding results to
+    /// Each instruction writes any encrypted value account at most once, so binding results to
     /// the end-of-instruction persisted handles is exact.
     fn evaluate_fhe_cpis(&mut self, context: &Ctx, result: &InstructionResult) -> usize {
         let message = result
@@ -426,7 +426,7 @@ fn kms_public_decrypt_cert(handle: [u8; 32], cleartext_amount: u64) -> (Vec<[u8;
     (signatures, extra_data)
 }
 
-/// Public-decrypt inclusion proof for the batch's single-burn lineage (the
+/// Public-decrypt inclusion proof for the batch's single-burn encrypted value account (the
 /// sole leaf, at index 0, is the burned handle's public-decrypt commitment).
 fn single_burn_public_decrypt_proof(
     burned_amount_value: Pubkey,
@@ -893,7 +893,7 @@ impl BatcherFixture {
 
     /// Full account set: host + KMS fixtures, both confidential mints, the
     /// demo vault at `(total_assets, total_shares)`, and both users with
-    /// seeded balance lineages on both mints. The confidential mints' plain
+    /// seeded balance encrypted value accounts on both mints. The confidential mints' plain
     /// escrows hold `underlying_escrow` / `shares_escrow` — deposit tests
     /// escrow underlying (the users' shielded deposits), redeem tests escrow
     /// vault shares (the users' shielded share positions).
@@ -1283,7 +1283,7 @@ fn ensure_open_batch_accounts(context: &Ctx, keys: &BatchKeys) {
     );
 }
 
-/// Seeds the batch's freshly created (encrypted zero) balance lineages.
+/// Seeds the batch's freshly created (encrypted zero) balance encrypted value accounts.
 fn seed_open_batch_balances(context: &Ctx, keys: &BatchKeys, ledger: &mut CleartextLedger) {
     ledger.seed_amount(
         read_encrypted_value(context, keys.join_balance_value).current_handle,
@@ -1434,7 +1434,7 @@ fn mollusk_lifecycle_two_users_deposit_dispatch_settle_claim() {
     );
 
     // Encrypted accounting after the joins: user balances debited, the batch
-    // account holds the (still encrypted) sum, each joined lineage carries
+    // account holds the (still encrypted) sum, each joined encrypted value account carries
     // that user's amount and only that user's amount.
     assert_eq!(
         ledger.u64_at(&context, fixture.alice.underlying.balance_value),
@@ -1455,7 +1455,7 @@ fn mollusk_lifecycle_two_users_deposit_dispatch_settle_claim() {
     );
     assert_eq!(read_batch(&context, keys.batch).join_count, 2);
 
-    // Dispatch burns the batch's whole balance; the burned lineage carries the
+    // Dispatch burns the batch's whole balance; the burned encrypted value account carries the
     // batch total, born publicly decryptable.
     let burned_handle = run_dispatch(&context, &fixture, &keys, &mut ledger);
     assert_eq!(ledger.u64_at(&context, keys.join_balance_value), 0);
@@ -1607,9 +1607,9 @@ fn mollusk_single_user_batch_reveals_that_users_amount() {
     );
 }
 
-/// Repeated joins accumulate in the joined lineage (the operand-aliases-output
+/// Repeated joins accumulate in the joined encrypted value account (the operand-aliases-output
 /// supersede), quit refunds the exact accumulated amount all-or-nothing and
-/// resets the lineage to zero, and a re-join after quit accumulates from zero.
+/// resets the encrypted value account to zero, and a re-join after quit accumulates from zero.
 #[test]
 fn mollusk_repeat_join_accumulates_and_quit_refunds_exactly() {
     let fixture = BatcherFixture::new(batcher::BatchDirection::Deposit);
@@ -1620,7 +1620,7 @@ fn mollusk_repeat_join_accumulates_and_quit_refunds_exactly() {
     let keys = initialize_and_open_first_batch(&context, &fixture, 0);
     seed_open_batch_balances(&context, &keys, &mut ledger);
 
-    // Two joins accumulate: the second join's eval reads the joined lineage
+    // Two joins accumulate: the second join's eval reads the joined encrypted value account
     // as an operand AND supersedes it as the output (the #3238 aliasing class
     // for the batcher's own eval — the standard same-slot supersede).
     run_join(
@@ -1648,7 +1648,7 @@ fn mollusk_repeat_join_accumulates_and_quit_refunds_exactly() {
         650
     );
 
-    // Quit refunds exactly 350 (all-or-nothing) and resets the lineage to zero.
+    // Quit refunds exactly 350 (all-or-nothing) and resets the encrypted value account to zero.
     let quit = quit_ix(&fixture, &keys, &fixture.alice);
     let result = context.process_and_validate_instruction(&quit, &[Check::success()]);
     assert_eq!(ledger.evaluate_fhe_cpis(&context, &result), 2);
@@ -1870,9 +1870,9 @@ fn mollusk_redeem_lifecycle_with_yield_rounds_down() {
 }
 
 /// The redeem twin of the deposit repeat-join/quit/re-join test: repeated
-/// SHARE joins accumulate in the joined lineage (the operand-aliases-output
+/// SHARE joins accumulate in the joined encrypted value account (the operand-aliases-output
 /// same-slot supersede — the aliasing class this test exists to pin), quit
-/// refunds the exact accumulated shares all-or-nothing and resets the lineage
+/// refunds the exact accumulated shares all-or-nothing and resets the encrypted value account
 /// to zero, and a re-join after quit accumulates from zero.
 #[test]
 fn mollusk_redeem_repeat_join_accumulates_and_quit_refunds_exactly() {
@@ -1884,7 +1884,7 @@ fn mollusk_redeem_repeat_join_accumulates_and_quit_refunds_exactly() {
     let keys = initialize_and_open_first_batch(&context, &fixture, 0);
     seed_open_batch_balances(&context, &keys, &mut ledger);
 
-    // Two joins accumulate: the second join's eval reads the joined lineage
+    // Two joins accumulate: the second join's eval reads the joined encrypted value account
     // as an operand AND supersedes it as the output.
     run_join(
         &context,
@@ -1911,7 +1911,7 @@ fn mollusk_redeem_repeat_join_accumulates_and_quit_refunds_exactly() {
         250
     );
 
-    // Quit refunds exactly 350 shares (all-or-nothing) and resets the lineage.
+    // Quit refunds exactly 350 shares (all-or-nothing) and resets the encrypted value account.
     let quit = quit_ix(&fixture, &keys, &fixture.alice);
     let result = context.process_and_validate_instruction(&quit, &[Check::success()]);
     assert_eq!(ledger.evaluate_fhe_cpis(&context, &result), 2);
@@ -1937,10 +1937,10 @@ fn mollusk_redeem_repeat_join_accumulates_and_quit_refunds_exactly() {
 }
 
 /// A user who quits before dispatch can still run the (permissionless) claim
-/// after the batch settles on the other participants: their reset lineage
+/// after the batch settles on the other participants: their reset encrypted value account
 /// makes the MulDiv produce an encrypted zero, the all-or-zero transfer moves
 /// nothing, and the record is marked claimed. Deposit direction only: quit,
-/// claim, and the lineage reset are direction-free shared code (settle's
+/// claim, and the encrypted value account reset are direction-free shared code (settle's
 /// vault CPI is the sole direction branch), so one direction pins the class.
 #[test]
 fn mollusk_claim_after_quit_pays_zero() {
@@ -2158,7 +2158,7 @@ fn mollusk_redeem_preloaded_underlying_stays_inert() {
 /// One deposit batcher and one redeem batcher run a FULL interleaved
 /// lifecycle concurrently over the same vault, mints, and users — the
 /// two-instance pattern. Cross-direction state confusion (a redeem batch
-/// reading deposit-batch lineages, the shared escrows or the vault mixing
+/// reading deposit-batch encrypted value accounts, the shared escrows or the vault mixing
 /// legs) would surface here, not at open: both directions join, dispatch,
 /// settle, and claim against the shared world, and every balance is checked.
 #[test]
@@ -2688,7 +2688,7 @@ fn mollusk_dust_total_settle_reverts_and_batch_stays_dispatched() {
 /// address lookup table, across cert thresholds and proof depths. Legacy
 /// settle never fits one packet (the ~35-account meta list alone approaches
 /// the limit); v0+ALT fits comfortably at every reachable batcher shape —
-/// the batch's burned lineage always holds exactly one leaf, so its proof
+/// the batch's burned encrypted value account always holds exactly one leaf, so its proof
 /// depth is 0 regardless of the KMS threshold. The deep-proof row is the
 /// out-of-domain bound where even v0+ALT would need a split settle.
 fn assert_settle_wire_sizes(fixture: &BatcherFixture) {
@@ -2749,7 +2749,7 @@ fn assert_settle_wire_sizes(fixture: &BatcherFixture) {
 
     // (threshold, proof depth): the Mollusk fixture shape, the realistic
     // production cert (7-of-13 majority) at the batcher's real proof depth
-    // (always 0 — one leaf per batch lineage), and the out-of-domain deep
+    // (always 0 — one leaf per batch encrypted value account), and the out-of-domain deep
     // proof bound.
     let mut sizes = Vec::new();
     for (threshold, depth) in [(1usize, 0usize), (7, 0), (7, 20)] {

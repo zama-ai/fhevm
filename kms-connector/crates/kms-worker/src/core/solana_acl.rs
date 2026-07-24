@@ -1,7 +1,7 @@
 //! Solana ACL verification helpers for the KMS connector.
 //!
 //! RFC-024 replaced the old keyed-nonce ACL and material-commitment on-chain accounts
-//! with a single `EncryptedValue` lineage account (see
+//! with a single `EncryptedValue` encrypted value account (see
 //! [`super::solana_encrypted_value_acl`]): those account types no longer exist on-chain, so the
 //! byte-offset decoders that used to read them were deleted from this module along with them —
 //! decoding them would read garbage from a nonexistent layout, not merely dead code.
@@ -74,19 +74,19 @@ pub enum SolanaAclVerificationError {
     AccountDiscriminatorMismatch,
     #[error("account data contains invalid field values")]
     InvalidAccountData,
-    #[error("encrypted-value lineage's current_handle does not match the requested handle")]
+    #[error("encrypted value account's current_handle does not match the requested handle")]
     EncryptedValueHandleMismatch,
-    #[error("subject is not a current member of the encrypted-value lineage")]
+    #[error("subject is not a current member of the encrypted value account")]
     EncryptedValueSubjectMissing,
-    #[error("encrypted-value lineage account is not the canonical PDA for its value key")]
+    #[error("encrypted value account is not the canonical PDA for its value key")]
     NonCanonicalEncryptedValueAcl,
-    #[error("encrypted-value lineage bump does not match the canonical PDA bump")]
+    #[error("encrypted value account bump does not match the canonical PDA bump")]
     EncryptedValueAclBumpMismatch,
     #[error("historical-access MMR proof failed to verify against the live peaks")]
     HistoricalAccessProofInvalid,
     #[error("public-decrypt MMR proof failed to verify against the live peaks")]
     PublicDecryptProofInvalid,
-    #[error("encrypted-value lineage MMR state (peaks/leaf_count) is internally inconsistent")]
+    #[error("encrypted value account MMR state (peaks/leaf_count) is internally inconsistent")]
     MmrStateInconsistent,
     #[error("domain is outside the signed authorization scope")]
     DomainNotAllowed,
@@ -99,7 +99,7 @@ impl SolanaAclVerifier {
 
     /// Verifies a user-decryption delegation: `delegator` granted `delegate` standing authority
     /// over `app_account`, active as of `observed_slot`. Untouched by the RFC-024 `EncryptedValue`
-    /// migration — delegation is orthogonal to the lineage ACL check, which the caller runs
+    /// migration — delegation is orthogonal to the encrypted value account ACL check, which the caller runs
     /// separately (with `delegator` as the subject) via [`super::solana_encrypted_value_acl`].
     pub fn verify_delegation(
         &self,

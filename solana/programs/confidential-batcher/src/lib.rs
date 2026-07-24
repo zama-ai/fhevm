@@ -89,7 +89,7 @@ pub mod confidential_batcher {
     /// Joins the pending batch with the batcher's join token: one user-signed
     /// transaction that CPIs the coprocessor-attested confidential transfer
     /// into the batch's own token account, then re-materializes the
-    /// transferred amount into the user's joined lineage (audience: user +
+    /// transferred amount into the user's joined encrypted value account (audience: user +
     /// batch authority) in the same transaction. Repeated joins accumulate.
     pub fn join<'info>(
         ctx: Context<'info, Join<'info>>,
@@ -100,7 +100,7 @@ pub mod confidential_batcher {
 
     /// Leaves the pending batch before dispatch: transfers the user's exact
     /// recorded amount back from the batch account (all-or-nothing) and
-    /// resets the joined lineage to zero. Always available while pending;
+    /// resets the joined encrypted value account to zero. Always available while pending;
     /// there is no exit between dispatch and settle (fhevm-internal#1773).
     pub fn quit<'info>(ctx: Context<'info, Quit<'info>>) -> Result<()> {
         instructions::quit(ctx)

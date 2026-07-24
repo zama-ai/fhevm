@@ -202,7 +202,7 @@ describe('settleBatch', () => {
     // 14 is the MEASURED ceiling for the current ALT design: the settle v0 message keeps four
     // accounts static (fee payer, redemption_record, and the two event-CPI authorities) plus the
     // invoked program ids; at 14 siblings the wire is ~1212 bytes and 15 overflows 1232. This is far
-    // above any realistic depth here — the burned_amount lineage is a PER-BATCH EncryptedValue whose
+    // above any realistic depth here — the burned_amount encrypted value account is a PER-BATCH EncryptedValue whose
     // MMR gains ~one leaf per batch (depth ~0-1), so 14 is generous headroom, not a live expectation.
     // Raising the ceiling would mean moving the two derivable event authorities out of the static set
     // and into the ALT (the only movable accounts; the fee payer, redemption_record and invoked
@@ -242,10 +242,10 @@ describe('settleBatch', () => {
     expect(sendAndConfirm).not.toHaveBeenCalled();
   });
 
-  it('rejects a proof-service leaf count that disagrees with the on-chain lineage before the certificate leg', async () => {
+  it('rejects a proof-service leaf count that disagrees with the on-chain encrypted value account before the certificate leg', async () => {
     certificate.mockResolvedValue(claim(cleartextHex(800n)));
     const { chain, proofConfig, keeper, opts } = await options({ leafCount: 2n }); // service returns leaf_count 1
-    await expect(settleBatch(chain, proofConfig, keeper, opts)).rejects.toThrow('does not match the on-chain lineage');
+    await expect(settleBatch(chain, proofConfig, keeper, opts)).rejects.toThrow('does not match the on-chain encrypted value account');
     expect(certificate).not.toHaveBeenCalled();
     expect(opts.rpc.getLatestBlockhash).not.toHaveBeenCalled();
     expect(sendAndConfirm).not.toHaveBeenCalled();

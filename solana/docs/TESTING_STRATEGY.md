@@ -14,14 +14,14 @@ Every decrypt authorizes through exactly one of these, and each has dedicated co
 | **historical** | MMR proof of `HistoricalAccessLeaf(handle, subject)` vs live peaks | `zama-solana-acl` (`authorize_historical`, `mmr_verify`); `host_mollusk` supersede-then-prove; `solana-proof-service` reconstruction |
 | **public** | MMR proof of `PublicDecryptLeaf(handle)` vs live peaks | `zama-solana-acl` (`authorize_public`); `token_mollusk` burn→redeem and `disclose_secp` after-supersession; `host_mollusk` `verify_public_decrypt` negatives (DD-040) |
 
-Negative coverage for each: wrong subject, wrong handle, foreign-lineage proof, invalid/forged proof —
+Negative coverage for each: wrong subject, wrong handle, foreign-encrypted value account proof, invalid/forged proof —
 all fail closed (see the `*_rejects_*` mollusk tests).
 
 ## Test layers
 
 1. **Shared-crate unit** (`solana/crates/zama-solana-acl`): MMR append/verify (incl. peak-cap
    `append_at_peak_cap_fails_without_mutating`), domain-separated leaf commitments, the three
-   `authorize_*` functions, lineage reconstruction, and the `resource_bounds_match_liveness_doc`
+   `authorize_*` functions, encrypted value account reconstruction, and the `resource_bounds_match_liveness_doc`
    doc-sync guard (keeps `MMR_ACL_MVP.md`'s liveness numbers honest).
 2. **On-chain integration — Mollusk** (`solana/runtime-tests/tests/{host,token}_mollusk.rs`): runs the
    **real compiled `.so`** (built `--features poc`) against Mollusk. Covers all three auth paths, the

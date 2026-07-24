@@ -15,9 +15,9 @@ pub struct VerifyPublicDecrypt<'a, 'info> {
     pub signatures: Vec<[u8; 65]>,
     /// Signed `extra_data` committing the KMS context id (EVM `_extractContextId` parity).
     pub extra_data: Vec<u8>,
-    /// MMR public-leaf inclusion proof for `expected_handle` against the lineage's current peaks.
+    /// MMR public-leaf inclusion proof for `expected_handle` against the encrypted value account's current peaks.
     pub proof: zama_host::instructions::MmrInclusionProof,
-    /// Lineage whose peaks the inclusion proof is checked against.
+    /// ValueAccount whose peaks the inclusion proof is checked against.
     pub encrypted_value: AccountInfo<'info>,
     /// Host config carrying the current KMS context id and gateway EIP-712 domain.
     pub host_config: &'a Account<'info, HostConfig>,
@@ -31,7 +31,7 @@ pub struct VerifyPublicDecrypt<'a, 'info> {
 /// it wrote to `return_data`, asserting the return came from ZamaHost and that the proven handle
 /// equals the caller-pinned `expected_handle`. Returns the certified 32-byte cleartext. The host
 /// verifies the KMS certificate against the context the cert names (any live, non-destroyed context)
-/// and the MMR proof against the lineage's peaks; this wrapper adds only the return-data integrity +
+/// and the MMR proof against the encrypted value account's peaks; this wrapper adds only the return-data integrity +
 /// pinned-handle checks. It deliberately does NOT constrain the returned context id: token
 /// disclosure and redemption accept any live context, matching EVM's valid-until-destroyed rotation
 /// grace (`destroy_kms_context` is the revocation lever). The verified id is available at

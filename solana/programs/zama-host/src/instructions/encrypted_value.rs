@@ -52,7 +52,7 @@ pub struct AllowEncryptedValueSubjects<'info> {
     /// Pays for the account's growth, if any.
     #[account(mut)]
     pub payer: Signer<'info>,
-    /// Current allowed subject on the lineage.
+    /// Current allowed subject on the encrypted value account.
     pub authority: Signer<'info>,
     /// CHECK: layout and ownership are validated inside the handler via `read_canonical_encrypted_value`.
     #[account(mut)]
@@ -110,7 +110,7 @@ pub fn allow_subjects(
 pub struct UpdateEncryptedValue<'info> {
     #[account(mut)]
     pub payer: Signer<'info>,
-    /// App account authority; must sign and match the lineage's `app_account`.
+    /// App account authority; must sign and match the encrypted value account's `app_account`.
     pub app_account_authority: Signer<'info>,
     /// CHECK: layout and ownership are validated inside the handler via `read_canonical_encrypted_value`.
     #[account(mut)]
@@ -155,7 +155,7 @@ pub(super) fn supersede_current_handle(
     Ok(())
 }
 
-/// Appends a public-decrypt leaf for `handle` at the lineage's next leaf index.
+/// Appends a public-decrypt leaf for `handle` at the encrypted value account's next leaf index.
 /// Shared by `make_handle_public` and by `fhe_eval`'s born-public output binding
 /// so both produce a byte-identical public-decrypt commitment.
 pub(super) fn append_public_decrypt_leaf(
@@ -379,10 +379,10 @@ mod tests {
     }
 
     #[test]
-    fn supersede_then_make_public_matches_shared_lineage_reconstruction() {
+    fn supersede_then_make_public_matches_shared_value_account_reconstruction() {
         // Two on-chain appends (one supersede over two allowed subjects, one
         // make-public) must reproduce byte-for-byte the peaks an off-chain
-        // indexer would derive from `zama_solana_acl::lineage::reconstruct`
+        // indexer would derive from `zama_solana_acl::value_account::reconstruct`
         // over the equivalent `HandleSuperseded`/`MarkedPublic` event log.
         let owner = Pubkey::new_unique();
         let other = Pubkey::new_unique();
@@ -401,16 +401,19 @@ mod tests {
         zama_solana_acl::mmr_append(&mut v.peaks, &mut v.leaf_count, commitment).unwrap();
 
         let events = [
-            zama_solana_acl::lineage::LineageEvent::handle_superseded(
+            zama_solana_acl::value_account::EncryptedValueAccountEvent::handle_superseded(
                 previous_handle,
                 &previous_subjects
                     .iter()
                     .map(|p| p.to_bytes())
                     .collect::<Vec<_>>(),
             ),
-            zama_solana_acl::lineage::LineageEvent::MarkedPublic { handle: [2; 32] },
+            zama_solana_acl::value_account::EncryptedValueAccountEvent::MarkedPublic {
+                handle: [2; 32],
+            },
         ];
-        let reconstructed = zama_solana_acl::lineage::reconstruct(key.to_bytes(), &events).unwrap();
+        let reconstructed =
+            zama_solana_acl::value_account::reconstruct(key.to_bytes(), &events).unwrap();
         assert!(reconstructed.peaks_match(&v.peaks, v.leaf_count));
     }
 

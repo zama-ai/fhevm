@@ -44,7 +44,7 @@ pub struct OnChainLineageState {
 #[async_trait]
 pub trait ChainFetcher: Send + Sync {
     /// Fetches and decodes the live `EncryptedValue` account at confirmed commitment.
-    async fn get_lineage_state(
+    async fn get_encrypted_value_account_state(
         &self,
         address: [u8; 32],
     ) -> Result<Option<OnChainLineageState>, ChainError>;
@@ -193,7 +193,7 @@ fn parse_context_slot(result: &serde_json::Value) -> Result<u64, ChainError> {
 }
 
 /// Interprets `getAccountInfo` `result`: only explicit `"value": null` means absent.
-fn lineage_from_rpc_result(
+fn encrypted_value_account_from_rpc_result(
     result: &serde_json::Value,
     expected_program_id: &[u8; 32],
 ) -> Result<Option<OnChainLineageState>, ChainError> {
@@ -216,14 +216,14 @@ fn lineage_from_rpc_result(
 
 #[async_trait]
 impl ChainFetcher for RpcChainFetcher {
-    async fn get_lineage_state(
+    async fn get_encrypted_value_account_state(
         &self,
         address: [u8; 32],
     ) -> Result<Option<OnChainLineageState>, ChainError> {
         let result = self
             .call("getAccountInfo", account_info_params(&address))
             .await?;
-        lineage_from_rpc_result(&result, &self.program_id)
+        encrypted_value_account_from_rpc_result(&result, &self.program_id)
     }
 }
 
@@ -348,7 +348,7 @@ mod tests {
             "context": { "slot": 918_273 },
             "value": account_json(&owner, &payload, "base64"),
         });
-        let state = lineage_from_rpc_result(&result, &program_id())
+        let state = encrypted_value_account_from_rpc_result(&result, &program_id())
             .unwrap()
             .expect("account present");
         assert_eq!(state.rpc_context_slot, 918_273);
@@ -359,7 +359,7 @@ mod tests {
         let owner = base58_encode(&program_id());
         let payload = base64::engine::general_purpose::STANDARD.encode(minimal_account_body());
         let result = json!({ "value": account_json(&owner, &payload, "base64") });
-        let err = lineage_from_rpc_result(&result, &program_id()).unwrap_err();
+        let err = encrypted_value_account_from_rpc_result(&result, &program_id()).unwrap_err();
         assert!(matches!(err, ChainError::Rpc(_)));
         assert!(err.to_string().contains("missing context slot"));
     }
@@ -378,22 +378,25 @@ mod tests {
     #[test]
     fn null_value_means_account_absent() {
         let result = json!({ "value": null, "context": { "slot": 1 } });
-        assert!(lineage_from_rpc_result(&result, &program_id())
-            .unwrap()
-            .is_none());
+        assert!(
+            encrypted_value_account_from_rpc_result(&result, &program_id())
+                .unwrap()
+                .is_none()
+        );
     }
 
     #[test]
     fn missing_value_field_is_malformed_rpc() {
         let result = json!({ "context": { "slot": 1 } });
-        let err = lineage_from_rpc_result(&result, &program_id()).unwrap_err();
+        let err = encrypted_value_account_from_rpc_result(&result, &program_id()).unwrap_err();
         assert!(matches!(err, ChainError::Rpc(_)));
         assert!(err.to_string().contains("missing value field"));
     }
 
     #[test]
     fn null_result_is_malformed_rpc() {
-        let err = lineage_from_rpc_result(&serde_json::Value::Null, &program_id()).unwrap_err();
+        let err = encrypted_value_account_from_rpc_result(&serde_json::Value::Null, &program_id())
+            .unwrap_err();
         assert!(matches!(err, ChainError::Rpc(_)));
         assert!(err.to_string().contains("null getAccountInfo result"));
     }

@@ -40,10 +40,10 @@ pub struct WrapUsdc<'info> {
     /// CHECK: Mint-scoped app authority for total-supply handles.
     #[account(seeds = [b"total-supply", mint.key().as_ref()], bump)]
     pub total_supply_authority: UncheckedAccount<'info>,
-    /// Stable balance lineage; read for the current handle and superseded by this eval.
+    /// Stable balance encrypted value account; read for the current handle and superseded by this eval.
     #[account(mut, address = token_account.balance_encrypted_value)]
     pub balance_value: Box<Account<'info, zama_host::EncryptedValue>>,
-    /// Stable total-supply lineage; read for the current handle and superseded by this eval.
+    /// Stable total-supply encrypted value account; read for the current handle and superseded by this eval.
     #[account(mut, address = mint.total_supply_encrypted_value)]
     pub total_supply_value: Box<Account<'info, zama_host::EncryptedValue>>,
     /// CHECK: Anchor event CPI authority for the Zama host program.

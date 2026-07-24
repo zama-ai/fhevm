@@ -9,9 +9,9 @@ const EVENT_AUTHORITY_SEED = new TextEncoder().encode('__event_authority');
 
 /** Accounts for the confidential-token `disclose_secp` consume instruction. */
 export type SolanaDiscloseSecpAccounts = {
-  /** Confidential mint whose ACL domain scopes the disclosed lineage and event. */
+  /** Confidential mint whose ACL domain scopes the disclosed encrypted value account and event. */
   readonly mint: Address;
-  /** The `EncryptedValue` lineage the disclosed handle belongs to. */
+  /** The `EncryptedValue` encrypted value account the disclosed handle belongs to. */
   readonly encryptedValue: Address;
   /** KMS context PDA for the host's current context id. */
   readonly kmsContext: Address;

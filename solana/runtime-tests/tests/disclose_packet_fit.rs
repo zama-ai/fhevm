@@ -122,7 +122,7 @@ fn redeem_burned_amount_threshold_fit_table() {
     // so at the same (t, depth) it is ~242B larger and its single-packet envelope is strictly
     // tighter. Measured fitting corner: t=7 at depth 0 (1159B); t=7/depth-10 already overflows
     // (1479B, over by 247), and t>=9 overflows before the proof. Same qualitative boundary as
-    // disclose, so the deep-lineage × high-threshold redeem is the binding corner for the shared
+    // disclose, so the deep-encrypted value account × high-threshold redeem is the binding corner for the shared
     // verifier path and needs the #1704 two-tx fallback when it overflows.
     let cases = [
         (7usize, 0usize, true),
@@ -161,7 +161,7 @@ fn disclose_secp_threshold_fit_table() {
     // Re-measured against the thin consume path (fhevm-internal#1704). Dropping the DisclosureRequest
     // witness did NOT shrink the tx enough to keep t=7/depth-10 inside the packet: disclose_secp is
     // ~24B larger than the old disclose_amount_secp at the same (t, depth). Fitting corner today:
-    // t=7 at depth 0 only. Deep-lineage × high-threshold consumes need the #1704 two-tx fallback.
+    // t=7 at depth 0 only. Deep-encrypted value account × high-threshold consumes need the #1704 two-tx fallback.
     let cases = [
         (7usize, 0usize, true),
         (7, 10, false),

@@ -18,7 +18,7 @@ byte-tight `fhe_eval`. Admin-gated rotation via `set_coprocessor_signers`.
 - A gateway-sync authority that mirrors the EVM `GatewayConfig` coprocessor registry into
   `set_coprocessor_signers`, instead of admin-driven rotation.
 - The real proof / transciphering service that produces the attested ciphertext behind the signature.
-- If a coprocessor quorum ever needs to carry more than a few signatures alongside a deep-lineage
+- If a coprocessor quorum ever needs to carry more than a few signatures alongside a deep-encrypted value account
   public-decrypt proof, the transaction may exceed one packet — see the DD-041 fit table and the
   fhevm-internal#1704 scratch-account two-tx fallback.
 

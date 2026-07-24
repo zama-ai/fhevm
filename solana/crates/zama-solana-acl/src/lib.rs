@@ -15,10 +15,10 @@
 #[cfg(not(target_os = "solana"))]
 use sha2::{Digest as _, Sha256};
 
-pub mod lineage;
-pub use lineage::{
-    build_proof_from_events, build_verified_proof_from_events, reconstruct, LineageError,
-    LineageEvent, ReconstructedLineage,
+pub mod value_account;
+pub use value_account::{
+    build_proof_from_events, build_verified_proof_from_events, reconstruct,
+    EncryptedValueAccountError, EncryptedValueAccountEvent, ReconstructedEncryptedValueAccount,
 };
 
 pub mod mmr;
@@ -27,7 +27,7 @@ pub use mmr::{
     MmrProof, MAX_MMR_PEAKS,
 };
 
-/// PDA seed for an encrypted-value lineage: `[ENCRYPTED_VALUE_SEED, value_key]`.
+/// PDA seed for an encrypted value account: `[ENCRYPTED_VALUE_SEED, value_key]`.
 pub const ENCRYPTED_VALUE_SEED: &[u8] = b"encrypted-value";
 /// Upper bound on durable subjects, for write-side validation.
 pub const MAX_ENCRYPTED_VALUE_SUBJECTS: usize = 8;
@@ -49,18 +49,18 @@ pub enum AclError {
     PublicDecryptProofInvalid,
 }
 
-/// Current authorization state and compact history for one encrypted-value lineage.
+/// Current authorization state and compact history for one encrypted value account.
 ///
-/// One account per lineage, reused across every handle update. The on-chain
+/// One account per encrypted value, reused across every handle update. The on-chain
 /// account is `realloc`-grown and never shrunk, so its byte size tracks the
 /// high-water mark of `peaks` plus `subjects` (`subjects` may rotate rather than
-/// only grow); a current-only lineage (`leaf_count == 0`) stays tiny and pays
+/// only grow); a current-only encrypted value account (`leaf_count == 0`) stays tiny and pays
 /// nothing for history.
 #[derive(borsh::BorshSerialize, borsh::BorshDeserialize, Clone, Debug, Default, PartialEq, Eq)]
 pub struct EncryptedValue {
     /// App-level ACL domain, such as a confidential token mint.
     pub acl_domain_key: [u8; 32],
-    /// App-owned account whose encrypted field this lineage represents.
+    /// App-owned account whose encrypted field this encrypted value account represents.
     pub app_account: [u8; 32],
     /// Domain-separated encrypted field label inside `app_account`.
     pub encrypted_value_label: [u8; 32],
@@ -77,7 +77,7 @@ pub struct EncryptedValue {
 }
 
 impl EncryptedValue {
-    /// The lineage's value key — its PDA seed. Derived, never stored.
+    /// The encrypted value account's value key — its PDA seed. Derived, never stored.
     pub fn value_key(&self) -> [u8; 32] {
         derive_value_key(
             self.acl_domain_key,
@@ -91,7 +91,7 @@ impl EncryptedValue {
         self.subjects.contains(&subject)
     }
 
-    /// Full on-chain account size (8-byte discriminator + borsh body) for a lineage
+    /// Full on-chain account size (8-byte discriminator + borsh body) for a encrypted value account
     /// with `subjects_len` subjects and `peaks_len` peaks. Used to `init`/`realloc`.
     pub fn account_size(subjects_len: usize, peaks_len: usize) -> usize {
         // disc + (domain+app+label+handle) + subjects(vec) + leaf_count + peaks(vec) + bump
@@ -147,7 +147,7 @@ pub fn decode_on_chain_account(data: &[u8]) -> Result<EncryptedValue, AclError> 
     Ok(decoded.to_shared())
 }
 
-/// The app-controlled value key for one encrypted field — the lineage's PDA seed.
+/// The app-controlled value key for one encrypted field — the encrypted value account's PDA seed.
 /// Contains app metadata, not the opaque handle, so the address is predeclarable.
 pub fn derive_value_key(
     acl_domain_key: [u8; 32],
@@ -224,7 +224,7 @@ pub fn authorize_current(
 
 /// Historical decrypt: a valid historical-access MMR proof is the authorization;
 /// the subject is bound into the proven leaf, so it survives membership changes.
-/// A current-only lineage (`leaf_count == 0`) has no provable history, so this fails.
+/// A current-only encrypted value account (`leaf_count == 0`) has no provable history, so this fails.
 pub fn authorize_historical(
     encrypted_value_account: [u8; 32],
     value: &EncryptedValue,
@@ -299,16 +299,16 @@ mod tests {
         );
     }
 
-    /// A test lineage that maintains its own leaf list so it can build proofs,
+    /// A test encrypted value account that maintains its own leaf list so it can build proofs,
     /// mirroring an off-chain proof service.
     #[derive(Default)]
-    struct Lineage {
+    struct EncryptedValueAccount {
         value: EncryptedValue,
         account: [u8; 32],
         leaves: Vec<[u8; 32]>,
     }
 
-    impl Lineage {
+    impl EncryptedValueAccount {
         fn new(handle: [u8; 32], subjects: &[[u8; 32]]) -> Self {
             let account = h(0xAC);
             Self {
@@ -363,7 +363,7 @@ mod tests {
     #[test]
     fn current_and_rejections() {
         let owner = h(1);
-        let l = Lineage::new(h(10), &[owner]);
+        let l = EncryptedValueAccount::new(h(10), &[owner]);
         assert!(authorize_current(&l.value, h(10), owner).is_ok());
         assert_eq!(
             authorize_current(&l.value, h(10), h(2)),
@@ -378,7 +378,7 @@ mod tests {
     #[test]
     fn post_update_then_historical_proof() {
         let owner = h(1);
-        let mut l = Lineage::new(h(10), &[owner]);
+        let mut l = EncryptedValueAccount::new(h(10), &[owner]);
         l.update(h(11));
         assert_eq!(
             authorize_current(&l.value, h(10), owner),
@@ -394,7 +394,7 @@ mod tests {
     #[test]
     fn exact_public_no_roll_forward() {
         let owner = h(1);
-        let mut l = Lineage::new(h(10), &[owner]);
+        let mut l = EncryptedValueAccount::new(h(10), &[owner]);
         l.make_public();
         l.update(h(11));
         let proof = l.proof(0);
@@ -408,7 +408,7 @@ mod tests {
     #[test]
     fn no_history_rejects_proofs_but_current_works() {
         let owner = h(1);
-        let l = Lineage::new(h(10), &[owner]);
+        let l = EncryptedValueAccount::new(h(10), &[owner]);
         assert_eq!(l.value.leaf_count, 0);
         assert!(authorize_current(&l.value, h(10), owner).is_ok());
         let empty = MmrProof::default();
@@ -435,7 +435,7 @@ mod tests {
     #[test]
     fn on_chain_account_decoder_reads_layout() {
         let subjects = [h(1), h(2), h(3), h(4)];
-        let mut l = Lineage::new(h(10), &subjects);
+        let mut l = EncryptedValueAccount::new(h(10), &subjects);
         l.make_public();
         let data = encode_on_chain(&l.value);
 

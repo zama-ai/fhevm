@@ -13,7 +13,7 @@
 //! the re-encryption `publicKey` (handles, identity, nonce, allowed domains, validity window) AND
 //! — new in this rewrite — the MMR proof tail (`acl_value_key`, proof leaf count carried in
 //! the legacy `proof_slot` wire field, `mmr_proof_bytes`)
-//! to the Solana identity. A relayer cannot substitute the proof, the lineage, or the slot any
+//! to the Solana identity. A relayer cannot substitute the proof, the encrypted value account, or the slot any
 //! more than it could substitute the re-encryption key: `SOLANA_USER_DECRYPT_DOMAIN_TAG` was
 //! bumped to `v2` specifically so a `v1` signature (proof-less) can never verify against the `v2`
 //! preimage, closing the same class of relayer-bypass bug for the new MMR fields.
@@ -31,12 +31,12 @@
 //!
 //! ## Dual-path ACL check
 //!
-//! Every Solana user-decrypt / public-decrypt request now names its `EncryptedValue` lineage by
+//! Every Solana user-decrypt / public-decrypt request now names its `EncryptedValue` encrypted value account by
 //! `acl_value_key` and is single-handle (see [`require_single_handle`] — a proof, when present,
 //! authorizes exactly one handle, so multi-handle Solana requests are out of scope for this
 //! rewrite):
 //!
-//! - **current-handle** (`mmr_proof_bytes` empty): the lineage account, fetched at `confirmed`
+//! - **current-handle** (`mmr_proof_bytes` empty): the encrypted value account, fetched at `confirmed`
 //!   commitment, is checked for canonical PDA derivation + program ownership + `current_handle ==
 //!   handle` + `subject ∈ subjects` ([`dispatch_solana_current`]).
 //! - **historical / public** (`mmr_proof_bytes` non-empty): the request carries an MMR inclusion
@@ -95,14 +95,14 @@ pub const MAX_MMR_SIBLINGS: usize = 64;
 pub struct VerifiedSolanaAuth {
     pub identity: SolanaPubkeyBytes,
     pub allowed_acl_domain_keys: Vec<SolanaPubkeyBytes>,
-    /// The `EncryptedValue` lineage this request targets. All-zero is only meaningful for the
+    /// The `EncryptedValue` encrypted value account this request targets. All-zero is only meaningful for the
     /// synthetic "current-ACL-shaped" preimage used to guard against MMR-proof injection (see the
-    /// `current_acl_mmr_proof_injection_rejected` test) — a real request always names its lineage.
+    /// `current_acl_mmr_proof_injection_rejected` test) — a real request always names its encrypted value account.
     pub acl_value_key: [u8; 32],
     /// The full MMR-proof transport blob (mode byte ‖ Borsh `MmrProof`); empty for a current-ACL
     /// (no-proof) request.
     pub mmr_proof_bytes: Vec<u8>,
-    /// The lineage `leaf_count` the proof was built against; 0 for a current-ACL request.
+    /// The encrypted value account `leaf_count` the proof was built against; 0 for a current-ACL request.
     pub proof_leaf_count: u64,
 }
 
@@ -169,7 +169,7 @@ pub fn verify_solana_user_decrypt_signature(
 }
 
 /// Enforces the single-handle scope of the `EncryptedValue` rewrite: an MMR proof (when present)
-/// authorizes exactly one handle, and the current-ACL path is likewise scoped to the one lineage
+/// authorizes exactly one handle, and the current-ACL path is likewise scoped to the one encrypted value account
 /// named by `acl_value_key` — so every Solana user-decrypt/public-decrypt request under this
 /// rewrite must name exactly one handle. Pure so the rejection is unit-testable without a host.
 pub fn require_single_handle(handles: &[HandleBytes]) -> Result<HandleBytes, ProcessingError> {
@@ -182,7 +182,7 @@ pub fn require_single_handle(handles: &[HandleBytes]) -> Result<HandleBytes, Pro
     }
 }
 
-/// Fetches the `EncryptedValue` lineage for `value_key` at `confirmed` commitment and decodes it.
+/// Fetches the `EncryptedValue` encrypted value account for `value_key` at `confirmed` commitment and decodes it.
 /// Never a snapshot: every call re-reads the live account, which is what lets
 /// [`dispatch_solana_mmr_proof`] verify against the LIVE peaks.
 async fn fetch_encrypted_value_acl(
@@ -198,14 +198,14 @@ async fn fetch_encrypted_value_acl(
         .map_err(ProcessingError::Recoverable)?
         .ok_or_else(|| {
             ProcessingError::Recoverable(anyhow!(
-                "Solana EncryptedValue lineage account {} not found at confirmed commitment",
+                "Solana EncryptedValue encrypted value account {} not found at confirmed commitment",
                 Pubkey::new_from_array(account_key),
             ))
         })?;
 
     if account.owner != host.program_id {
         return Err(ProcessingError::Irrecoverable(anyhow!(
-            "Solana EncryptedValue lineage account {} is owned by {}, expected ZamaHost program {}",
+            "Solana EncryptedValue encrypted value account {} is owned by {}, expected ZamaHost program {}",
             Pubkey::new_from_array(account_key),
             Pubkey::new_from_array(account.owner),
             Pubkey::new_from_array(host.program_id),
@@ -213,12 +213,14 @@ async fn fetch_encrypted_value_acl(
     }
 
     let acl = decode_encrypted_value_acl(&account.data).map_err(|e| {
-        ProcessingError::Irrecoverable(anyhow!("failed to decode EncryptedValue lineage: {e}"))
+        ProcessingError::Irrecoverable(anyhow!(
+            "failed to decode EncryptedValue encrypted value account: {e}"
+        ))
     })?;
     Ok((account_key, acl))
 }
 
-/// Current-handle path: no MMR proof, `handle` must be the lineage's live `current_handle` and
+/// Current-handle path: no MMR proof, `handle` must be the encrypted value account's live `current_handle` and
 /// `auth.identity` a current member, within the signed domain scope.
 pub fn dispatch_solana_current(
     verifier: &SolanaAclVerifier,
@@ -239,7 +241,7 @@ pub fn dispatch_solana_current(
         )
         .map_err(|e| {
             ProcessingError::Recoverable(anyhow!(
-                "Solana current-lineage ACL check failed for handle {}: {e}",
+                "Solana current encrypted value account ACL check failed for handle {}: {e}",
                 hex_handle(&handle)
             ))
         })
@@ -376,7 +378,7 @@ fn classify_mmr_verification_failure(
 }
 
 /// Full Solana user-decryption ACL check for one request: fetches the named `EncryptedValue`
-/// lineage at `confirmed` commitment and dispatches to the current or MMR-proof path.
+/// encrypted value account at `confirmed` commitment and dispatches to the current or MMR-proof path.
 pub async fn check_solana_handles_acl(
     host: &SolanaHost,
     handles: &[HandleBytes],
@@ -495,18 +497,21 @@ mod tests {
         [tag; 32]
     }
 
-    /// A lineage whose account bytes and proofs are produced by the shared crate, mirroring the
+    /// A encrypted value account whose account bytes and proofs are produced by the shared crate, mirroring the
     /// helper in `solana_encrypted_value_acl.rs`.
-    struct Lineage {
+    struct EncryptedValueAccount {
         acl: EncryptedValue,
         account: SolanaPubkeyBytes,
         leaves: Vec<[u8; 32]>,
     }
 
-    fn lineage(handle: HandleBytes, subjects: &[SolanaPubkeyBytes]) -> Lineage {
+    fn encrypted_value_account(
+        handle: HandleBytes,
+        subjects: &[SolanaPubkeyBytes],
+    ) -> EncryptedValueAccount {
         let value_key = derive_value_key(DOMAIN, APP, LABEL);
         let (account, bump) = encrypted_value_acl_address(HOST, value_key);
-        Lineage {
+        EncryptedValueAccount {
             acl: EncryptedValue {
                 acl_domain_key: DOMAIN,
                 app_account: APP,
@@ -522,7 +527,7 @@ mod tests {
         }
     }
 
-    impl Lineage {
+    impl EncryptedValueAccount {
         fn value_key(&self) -> [u8; 32] {
             derive_value_key(
                 self.acl.acl_domain_key,
@@ -573,7 +578,7 @@ mod tests {
         blob
     }
 
-    fn decoded(l: &Lineage) -> DecodedEncryptedValueAcl {
+    fn decoded(l: &EncryptedValueAccount) -> DecodedEncryptedValueAcl {
         DecodedEncryptedValueAcl { acl: l.acl.clone() }
     }
 
@@ -729,7 +734,7 @@ mod tests {
     fn historical_accept() {
         let kp = identity_kp(11);
         let owner: SolanaPubkeyBytes = kp.public_key().as_ref().try_into().unwrap();
-        let mut l = lineage(h(10), &[owner]);
+        let mut l = encrypted_value_account(h(10), &[owner]);
         l.rotate(h(11));
         let proof = l.proof(0);
         let blob = proof_blob(MMR_MODE_HISTORICAL, &proof);
@@ -746,7 +751,7 @@ mod tests {
     fn trailing_bytes_after_mmr_proof_rejected() {
         let kp = identity_kp(11);
         let owner: SolanaPubkeyBytes = kp.public_key().as_ref().try_into().unwrap();
-        let mut l = lineage(h(10), &[owner]);
+        let mut l = encrypted_value_account(h(10), &[owner]);
         l.rotate(h(11));
         let proof = l.proof(0);
         let mut blob = proof_blob(MMR_MODE_HISTORICAL, &proof);
@@ -771,7 +776,7 @@ mod tests {
     fn public_accept() {
         let kp = identity_kp(12);
         let owner: SolanaPubkeyBytes = kp.public_key().as_ref().try_into().unwrap();
-        let mut l = lineage(h(20), &[owner]);
+        let mut l = encrypted_value_account(h(20), &[owner]);
         l.mark_public();
         l.rotate(h(21));
         let proof = l.proof(0);
@@ -789,7 +794,7 @@ mod tests {
     fn public_decrypt_path_accepts_only_public_mode() {
         let kp = identity_kp(12);
         let owner: SolanaPubkeyBytes = kp.public_key().as_ref().try_into().unwrap();
-        let mut l = lineage(h(20), &[owner]);
+        let mut l = encrypted_value_account(h(20), &[owner]);
         l.mark_public();
         l.rotate(h(21));
         let public_blob = proof_blob(MMR_MODE_PUBLIC, &l.proof(0));
@@ -824,34 +829,34 @@ mod tests {
     fn public_decrypt_path_rejects_rotated_or_non_public_handle() {
         let kp = identity_kp(12);
         let owner: SolanaPubkeyBytes = kp.public_key().as_ref().try_into().unwrap();
-        let mut public_lineage = lineage(h(20), &[owner]);
-        public_lineage.mark_public();
-        public_lineage.rotate(h(21));
-        let public_blob = proof_blob(MMR_MODE_PUBLIC, &public_lineage.proof(0));
+        let mut public_value_account = encrypted_value_account(h(20), &[owner]);
+        public_value_account.mark_public();
+        public_value_account.rotate(h(21));
+        let public_blob = proof_blob(MMR_MODE_PUBLIC, &public_value_account.proof(0));
         let verifier = SolanaAclVerifier::new(HOST);
 
         let err = dispatch_solana_public_mmr_proof(
             &verifier,
-            public_lineage.account,
+            public_value_account.account,
             HOST,
-            &public_lineage.acl,
+            &public_value_account.acl,
             h(21),
-            public_lineage.acl.leaf_count,
+            public_value_account.acl.leaf_count,
             &public_blob,
         )
         .expect_err("a PublicDecryptLeaf for the old handle must not authorize the rotated handle");
         assert!(matches!(err, ProcessingError::Recoverable(_)));
 
-        let mut non_public_lineage = lineage(h(30), &[owner]);
-        non_public_lineage.rotate(h(31));
-        let historical_leaf_blob = proof_blob(MMR_MODE_PUBLIC, &non_public_lineage.proof(0));
+        let mut non_public_value_account = encrypted_value_account(h(30), &[owner]);
+        non_public_value_account.rotate(h(31));
+        let historical_leaf_blob = proof_blob(MMR_MODE_PUBLIC, &non_public_value_account.proof(0));
         let err = dispatch_solana_public_mmr_proof(
             &verifier,
-            non_public_lineage.account,
+            non_public_value_account.account,
             HOST,
-            &non_public_lineage.acl,
+            &non_public_value_account.acl,
             h(30),
-            non_public_lineage.acl.leaf_count,
+            non_public_value_account.acl.leaf_count,
             &historical_leaf_blob,
         )
         .expect_err("a historical-access leaf must not authorize public decrypt");
@@ -863,7 +868,7 @@ mod tests {
     fn stale_merged_proof_is_terminal() {
         let kp = identity_kp(11);
         let owner: SolanaPubkeyBytes = kp.public_key().as_ref().try_into().unwrap();
-        let mut l = lineage(h(10), &[owner]);
+        let mut l = encrypted_value_account(h(10), &[owner]);
         l.rotate(h(11));
         l.rotate(h(12));
         l.rotate(h(13));
@@ -943,7 +948,7 @@ mod tests {
     fn valid_proof_survives_count_drift_without_merge() {
         let kp = identity_kp(13);
         let owner: SolanaPubkeyBytes = kp.public_key().as_ref().try_into().unwrap();
-        let mut l = lineage(h(30), &[owner]);
+        let mut l = encrypted_value_account(h(30), &[owner]);
         l.rotate(h(31));
         l.rotate(h(32));
         assert_eq!(l.acl.leaf_count, 2);
@@ -964,7 +969,7 @@ mod tests {
     fn ahead_count_domain_and_canonical_failures_remain_terminal() {
         let kp = identity_kp(14);
         let owner: SolanaPubkeyBytes = kp.public_key().as_ref().try_into().unwrap();
-        let mut l = lineage(h(70), &[owner]);
+        let mut l = encrypted_value_account(h(70), &[owner]);
         l.rotate(h(71));
         let proof_slot = l.acl.leaf_count + 1;
         let blob = proof_blob(MMR_MODE_HISTORICAL, &l.proof(0));
@@ -992,10 +997,10 @@ mod tests {
 
     // (3c) CURRENT ACCEPT
     #[test]
-    fn current_lineage_accept() {
+    fn current_value_account_accept() {
         let kp = identity_kp(21);
         let owner: SolanaPubkeyBytes = kp.public_key().as_ref().try_into().unwrap();
-        let l = lineage(h(40), &[owner]);
+        let l = encrypted_value_account(h(40), &[owner]);
 
         let request = signed_mmr_request(&kp, h(40), l.value_key(), Vec::new(), 0);
         let auth = verify_solana_user_decrypt_signature(&request, CHAIN_ID).unwrap();
@@ -1004,15 +1009,15 @@ mod tests {
 
         let verifier = SolanaAclVerifier::new(HOST);
         dispatch_solana_current(&verifier, l.account, HOST, &decoded(&l), h(40), &auth)
-            .expect("current-lineage decrypt of the live handle by a subject must authorize");
+            .expect("current encrypted value account decrypt of the live handle by a subject must authorize");
     }
 
     // (3d) CURRENT NON-SUBJECT REJECTED
     #[test]
-    fn current_lineage_non_subject_rejected() {
+    fn current_value_account_non_subject_rejected() {
         let kp = identity_kp(22);
         let other: SolanaPubkeyBytes = [99u8; 32];
-        let l = lineage(h(50), &[other]);
+        let l = encrypted_value_account(h(50), &[other]);
 
         let request = signed_mmr_request(&kp, h(50), l.value_key(), Vec::new(), 0);
         let auth = verify_solana_user_decrypt_signature(&request, CHAIN_ID).unwrap();
@@ -1025,10 +1030,10 @@ mod tests {
 
     // (3e) CURRENT REJECTS A ROTATED-AWAY HANDLE
     #[test]
-    fn current_lineage_rejects_rotated_away_handle() {
+    fn current_value_account_rejects_rotated_away_handle() {
         let kp = identity_kp(23);
         let owner: SolanaPubkeyBytes = kp.public_key().as_ref().try_into().unwrap();
-        let mut l = lineage(h(60), &[owner]);
+        let mut l = encrypted_value_account(h(60), &[owner]);
         l.rotate(h(61));
 
         let request = signed_mmr_request(&kp, h(60), l.value_key(), Vec::new(), 0);
@@ -1045,7 +1050,7 @@ mod tests {
     fn v1_signature_rejected_under_v2() {
         let kp = identity_kp(11);
         let owner: SolanaPubkeyBytes = kp.public_key().as_ref().try_into().unwrap();
-        let mut l = lineage(h(10), &[owner]);
+        let mut l = encrypted_value_account(h(10), &[owner]);
         l.rotate(h(11));
         let proof = l.proof(0);
         let blob = proof_blob(MMR_MODE_HISTORICAL, &proof);
@@ -1113,7 +1118,7 @@ mod tests {
     fn proof_fields_bound_into_signature() {
         let kp = identity_kp(11);
         let owner: SolanaPubkeyBytes = kp.public_key().as_ref().try_into().unwrap();
-        let mut l = lineage(h(10), &[owner]);
+        let mut l = encrypted_value_account(h(10), &[owner]);
         l.rotate(h(11));
         let blob = proof_blob(MMR_MODE_HISTORICAL, &l.proof(0));
 
@@ -1160,7 +1165,7 @@ mod tests {
     #[test]
     fn current_acl_mmr_proof_injection_rejected() {
         let kp = identity_kp(11);
-        let l = lineage(h(10), &[kp.public_key().as_ref().try_into().unwrap()]);
+        let l = encrypted_value_account(h(10), &[kp.public_key().as_ref().try_into().unwrap()]);
 
         let mut req = signed_mmr_request(&kp, h(10), [0u8; 32], Vec::new(), 0);
 
@@ -1201,7 +1206,7 @@ mod tests {
             siblings: vec![[0u8; 32]; MAX_MMR_SIBLINGS + 1],
         };
         let blob = proof_blob(MMR_MODE_HISTORICAL, &oversized);
-        let l = lineage(h(10), &[kp.public_key().as_ref().try_into().unwrap()]);
+        let l = encrypted_value_account(h(10), &[kp.public_key().as_ref().try_into().unwrap()]);
         let request = signed_mmr_request(&kp, h(10), l.value_key(), blob, 0);
         let auth = verify_solana_user_decrypt_signature(&request, CHAIN_ID).unwrap();
 
@@ -1215,7 +1220,7 @@ mod tests {
     #[test]
     fn unknown_mode_rejected() {
         let kp = identity_kp(11);
-        let l = lineage(h(10), &[kp.public_key().as_ref().try_into().unwrap()]);
+        let l = encrypted_value_account(h(10), &[kp.public_key().as_ref().try_into().unwrap()]);
         let blob = proof_blob(0x09, &l.proof_for_empty());
         let request = signed_mmr_request(&kp, h(10), l.value_key(), blob, 0);
         let auth = verify_solana_user_decrypt_signature(&request, CHAIN_ID).unwrap();

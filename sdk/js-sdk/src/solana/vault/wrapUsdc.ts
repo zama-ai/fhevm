@@ -11,7 +11,7 @@ import {
   totalSupplyValueAddress,
   tokenEventAuthorityAddress,
   zamaEventAuthorityAddress,
-} from './internal/tokenLineage.js';
+} from './internal/tokenValueAccount.js';
 
 export type SolanaVaultWrapUsdcParameters = {
   /** Token owner and transfer authority. */
@@ -31,7 +31,7 @@ export type SolanaVaultWrapUsdcParameters = {
  * owner's associated token account and rotates the owner's confidential balance by that amount. The
  * amount is public at the wrap boundary, so — unlike a confidential transfer — this needs NO input
  * proof. The owner's confidential token account, the program's underlying vault, both durable
- * lineage accounts, and the two Anchor event authorities are derived here from the mints and owner;
+ * encrypted value accounts, and the two Anchor event authorities are derived here from the mints and owner;
  * the seeder/scenario supplies only semantic roots and assembles/sends the returned instruction.
  */
 export async function buildWrapUsdcInstruction(parameters: SolanaVaultWrapUsdcParameters): Promise<Instruction> {

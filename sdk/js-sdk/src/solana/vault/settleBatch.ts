@@ -24,7 +24,7 @@ import {
 } from '../internal/generated/confidentialToken/programAddress.js';
 import { getSettleInstructionAsync } from './internal/generated/confidentialBatcher/instructions/settle.js';
 import { fetchBatch } from './internal/generated/confidentialBatcher/accounts/batch.js';
-import { EVENT_AUTHORITY_SEED, burnedAmountLineage } from './internal/batcherPdas.js';
+import { EVENT_AUTHORITY_SEED, burnedAmountValueAccount } from './internal/batcherPdas.js';
 import { fetchSolanaPublicDecryptProof, type SolanaProofServiceConfig } from './internal/proofService.js';
 import { settleTotalFromCleartext } from './internal/cleartext.js';
 import { buildAndSignSettleTransaction } from './internal/settleMessage.js';
@@ -69,9 +69,9 @@ export type SolanaVaultSettleOptions = {
  * - the batch (its current batch, or `batchIndex` when pinned) and its born-public burned handle,
  *   read from `Batch`;
  * - the full settle account set, derived from the roots, the batch, and the burned handle; and
- * - the burned lineage's live MMR peaks and leaf count, read from its `EncryptedValue` account.
+ * - the burned encrypted value account's live MMR peaks and leaf count, read from its `EncryptedValue` account.
  *
- * Two off-chain legs then feed the on-chain instruction: the burned lineage's MMR inclusion proof
+ * Two off-chain legs then feed the on-chain instruction: the burned encrypted value account's MMR inclusion proof
  * from the solana-proof-service (verified against the live peaks), and the KMS burn certificate from
  * the relayer, requested with that proof. The certified cleartext is a 32-byte `uint256`; settle's
  * on-chain argument is a `u64`, so its low 8 bytes are taken big-endian and its high 24 asserted zero
@@ -104,25 +104,25 @@ export async function settleBatch(
 
   const accounts = await deriveSettleAccounts(roots, addresses, burnedTotalHandle as Bytes32);
 
-  // The burned lineage carries the cert's ACL value key; cross-check its derived PDA against the
+  // The burned encrypted value account carries the cert's ACL value key; cross-check its derived PDA against the
   // settle account so a roots/derivation mismatch fails here, not at on-chain verify.
-  const burned = await burnedAmountLineage(roots.joinConfidentialMint, addresses.batchJoinTokenAccount);
+  const burned = await burnedAmountValueAccount(roots.joinConfidentialMint, addresses.batchJoinTokenAccount);
   if (burned.encryptedValueAddress !== accounts.batchBurnedAmountValue) {
     throw new Error(
-      `derived burned-amount lineage ${burned.encryptedValueAddress} disagrees with the settle account ${accounts.batchBurnedAmountValue}`,
+      `derived burned-amount encrypted value account ${burned.encryptedValueAddress} disagrees with the settle account ${accounts.batchBurnedAmountValue}`,
     );
   }
 
-  // Read the burned lineage's live MMR state (the peaks the proof is verified against).
-  const lineage = await getEncryptedValueState(rpc, accounts.batchBurnedAmountValue);
+  // Read the burned encrypted value account's live MMR state (the peaks the proof is verified against).
+  const encrypted value account = await getEncryptedValueState(rpc, accounts.batchBurnedAmountValue);
 
   // Leg 1: the settle burns to a born-public handle, so its proof is a public-decrypt leaf. The
   // service resolves the leaf from (encryptedValue, burnedTotalHandle); the SDK never supplies a
   // leaf index, and the resolved index comes back on the proof.
   const proof = await fetchSolanaPublicDecryptProof(proofConfig, burned.encryptedValueAddress, burnedTotalHandle);
-  if (proof.leafCount !== lineage.leafCount) {
+  if (proof.leafCount !== encrypted value account.leafCount) {
     throw new Error(
-      `proof-service leaf count ${proof.leafCount} does not match the on-chain lineage leaf count ${lineage.leafCount}`,
+      `proof-service leaf count ${proof.leafCount} does not match the on-chain encrypted value account leaf count ${encrypted value account.leafCount}`,
     );
   }
 
@@ -135,8 +135,8 @@ export async function settleBatch(
       aclValueKey: burned.aclValueKey,
       proofSlot: proof.leafCount,
       encryptedValueAccount: base58.decode(burned.encryptedValueAddress),
-      peaks: lineage.peaks,
-      leafCount: lineage.leafCount,
+      peaks: value_account.peaks,
+      leafCount: encrypted value account.leafCount,
       mmrProofBytes: proof.mmrProofBytes,
     },
   );

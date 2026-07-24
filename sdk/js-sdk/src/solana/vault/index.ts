@@ -16,7 +16,7 @@ export { openBatch, type SolanaVaultOpenBatchParameters, type SolanaVaultOpenBat
 
 // One-time provisioning builders the demo seeder drives (fhevm-internal#1760). Kept on the vault
 // surface — the seeder is their only caller — and shaped as thin, root-taking actions: each derives
-// its lineage/event PDAs internally so the seeder passes semantic roots, never hand-rolled accounts.
+// its encrypted value account/event PDAs internally so the seeder passes semantic roots, never hand-rolled accounts.
 export {
   buildInitializeVaultInstruction,
   type SolanaVaultInitializeVaultParameters,
@@ -77,10 +77,10 @@ export {
   batchAddress,
   tokenAccountAddress,
   burnRedemptionAddress,
-  burnedAmountLineage,
-  pendingJoinLineage,
-  claimAmountLineage,
-  type SolanaValueLineage,
+  burnedAmountValueAccount,
+  pendingJoinValueAccount,
+  claimAmountValueAccount,
+  type SolanaEncryptedValueAccount,
 } from './internal/batcherPdas.js';
 export {
   ADDRESS_LOOKUP_TABLE_PROGRAM_ADDRESS,

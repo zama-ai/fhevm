@@ -3,9 +3,9 @@
 //! quit-before-dispatch is in scope; a deadline-cancel path for batches stuck
 //! after dispatch is out of scope (tracked in fhevm-internal#1773).
 //!
-//! The batch authority spends the user's joined lineage as the transfer
+//! The batch authority spends the user's joined encrypted value account as the transfer
 //! amount (`confidential_transfer_from_value` back to the user), then resets
-//! the lineage to an encrypted zero so a later re-join accumulates from zero.
+//! the encrypted value account to an encrypted zero so a later re-join accumulates from zero.
 //! The refund can never partially fail: the batch account's balance is the sum
 //! of all recorded joins, so `ge(balance, joined)` always holds pending.
 
@@ -46,17 +46,17 @@ pub struct Quit<'info> {
     /// validated by the token CPI.
     #[account(mut)]
     pub user_token_account: UncheckedAccount<'info>,
-    /// CHECK: batch's stable balance lineage; superseded by the token CPI.
+    /// CHECK: batch's stable balance encrypted value account; superseded by the token CPI.
     #[account(mut)]
     pub batch_balance_value: UncheckedAccount<'info>,
-    /// CHECK: user's stable balance lineage; superseded by the token CPI.
+    /// CHECK: user's stable balance encrypted value account; superseded by the token CPI.
     #[account(mut)]
     pub user_balance_value: UncheckedAccount<'info>,
-    /// CHECK: batch account's stable transferred-amount lineage (the refund is
+    /// CHECK: batch account's stable transferred-amount encrypted value account (the refund is
     /// a transfer FROM the batch account); superseded by the token CPI.
     #[account(mut)]
     pub batch_transferred_value: UncheckedAccount<'info>,
-    /// CHECK: the user's joined lineage; spent read-only as the refund
+    /// CHECK: the user's joined encrypted value account; spent read-only as the refund
     /// amount, then reset to an encrypted zero by the batcher eval.
     #[account(mut)]
     pub pending_join_value: UncheckedAccount<'info>,
@@ -74,7 +74,7 @@ pub struct Quit<'info> {
     pub system_program: Program<'info, System>,
 }
 
-/// Refunds the exact recorded amount and resets the joined lineage to zero.
+/// Refunds the exact recorded amount and resets the joined encrypted value account to zero.
 pub fn quit<'info>(ctx: Context<'info, Quit<'info>>) -> Result<()> {
     require!(
         ctx.accounts.batch.status == BatchStatus::Pending,
@@ -100,9 +100,9 @@ pub fn quit<'info>(ctx: Context<'info, Quit<'info>>) -> Result<()> {
         BatcherError::DerivedAccountMismatch
     );
 
-    // Leg 1: exact refund — the joined lineage IS the transfer amount. The
+    // Leg 1: exact refund — the joined encrypted value account IS the transfer amount. The
     // batch authority signs via invoke_signed; the token's spend gate accepts
-    // it because every joined lineage carries the batch authority in its
+    // it because every joined encrypted value account carries the batch authority in its
     // audience from birth.
     let authority = BatchAuthoritySeeds::new(batch_key, ctx.accounts.batch.authority_bump);
     let authority_seeds = authority.seeds();
@@ -134,7 +134,7 @@ pub fn quit<'info>(ctx: Context<'info, Quit<'info>>) -> Result<()> {
         &[&authority_seeds],
     ))?;
 
-    // Leg 2: reset the joined lineage to an encrypted zero (supersede in
+    // Leg 2: reset the joined encrypted value account to an encrypted zero (supersede in
     // place), so a later re-join of the same batch accumulates from zero.
     let joined_value = fhe::read_encrypted_value(&ctx.accounts.pending_join_value)?;
     let old_handle = joined_value.current_handle;

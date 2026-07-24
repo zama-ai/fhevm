@@ -1,6 +1,6 @@
 {
   "db_name": "PostgreSQL",
-  "query": "\n                SELECT leaf_index\n                FROM solana_proof_leaves\n                WHERE lineage = $1 AND leaf_kind = $2 AND handle = $3 AND subject = $4\n                ORDER BY leaf_index ASC\n                LIMIT 1\n                ",
+  "query": "\n                SELECT leaf_index\n                FROM solana_proof_leaves\n                WHERE encrypted_value_account = $1 AND leaf_kind = $2 AND handle = $3 AND subject = $4\n                ORDER BY leaf_index ASC\n                LIMIT 1\n                ",
   "describe": {
     "columns": [
       {

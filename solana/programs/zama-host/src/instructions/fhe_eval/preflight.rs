@@ -24,7 +24,7 @@ pub(super) fn preflight_eval_frame<'info>(
 /// keypair-rotation bypass rode, so it is rejected before compute.
 ///
 /// A durable OUTPUT is allowed through here, but note it does NOT pin the subject: output binding
-/// authorizes against `app_account_authority`, never `compute_subject`. So a throwaway-lineage
+/// authorizes against `app_account_authority`, never `compute_subject`. So a throwaway-encrypted value account
 /// create/supersede still lets a caller rotate the subject for a fresh per-slot meter — that vector
 /// remains open, but is rent-bounded (~one `HcuBlockMeter` PDA rent per rotation) rather than free,
 /// and closing it fully needs a registered app identity (the issue's Option 2, deferred). The
