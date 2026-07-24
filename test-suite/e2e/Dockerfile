@@ -33,12 +33,13 @@ COPY test-suite/e2e ./test-suite/e2e
 COPY sdk/js-sdk ./sdk/js-sdk
 
 # Install dependencies. Normal builds stay locked; rollout hotswap builds first
-# update the e2e workspace manifest in the image, then let npm resolve one
-# coherent dependency graph for that requested SDK version.
+# install the requested SDK in the e2e workspace, then verify what Node resolves
+# before producing the image.
 RUN if [ -n "$RELAYER_SDK_VERSION" ]; then \
-      npm pkg set -w test-suite/e2e "dependencies.@zama-fhe/relayer-sdk=${RELAYER_SDK_VERSION}" && \
-      npm install && \
-      npm prune; \
+      npm install -w test-suite/e2e --save-exact "@zama-fhe/relayer-sdk@${RELAYER_SDK_VERSION}" && \
+      npm prune && \
+      installed_sdk_version="$(cd test-suite/e2e && node -p "require('@zama-fhe/relayer-sdk/package.json').version")" && \
+      test "$installed_sdk_version" = "$RELAYER_SDK_VERSION"; \
     else \
       npm ci && \
       npm prune; \
