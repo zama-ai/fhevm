@@ -20,6 +20,8 @@ import "./tasks/manageHostChains";
 import "./tasks/mockedTokenFund";
 import "./tasks/ownership";
 import "./tasks/pauseContracts";
+import "./tasks/removePauser";
+import "./tasks/swapPauser";
 import "./tasks/upgradeContracts";
 
 const dotenvConfigPath: string = process.env.DOTENV_CONFIG_PATH || "./.env";
