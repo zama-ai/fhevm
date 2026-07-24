@@ -34,6 +34,7 @@ RUN set -eux; \
 
 WORKDIR /app
 
+COPY gateway-contracts/rust_bindings gateway-contracts/rust_bindings
 COPY test-suite/gateway-stress test-suite/gateway-stress
 
 # Build with improved caching

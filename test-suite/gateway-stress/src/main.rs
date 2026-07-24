@@ -4,6 +4,7 @@ mod cli;
 mod config;
 mod db;
 mod decryption;
+mod eip712;
 
 use crate::{
     blockchain::GatewayTestManager,

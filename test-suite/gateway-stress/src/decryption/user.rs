@@ -5,6 +5,7 @@ use crate::{
         BURST_WAIT_TIMEOUT, BurstResult, EVENT_LISTENER_POLLING, extract_id_from_receipt,
         send_tx_with_retries,
     },
+    eip712::user_decrypt_eip712_signature,
 };
 use alloy::{
     hex,
@@ -21,7 +22,6 @@ use fhevm_gateway_bindings::decryption::{
     IDecryption::{ContractsInfo, RequestValidity},
 };
 use futures::{Stream, StreamExt};
-use gateway_sdk::{FhevmSdk, signature::Eip712Result};
 use indicatif::ProgressBar;
 use std::{
     collections::HashSet,
@@ -46,7 +46,6 @@ pub type UserDecryptThresholdEvent =
 #[tracing::instrument(skip(
     config,
     decryption_contract,
-    sdk,
     user_addr,
     response_listener,
     requests_pb,
@@ -56,7 +55,6 @@ pub async fn user_decryption_burst<S>(
     burst_index: usize,
     config: Config,
     decryption_contract: DecryptionInstance<AppProvider>,
-    sdk: Arc<FhevmSdk>,
     user_addr: Address,
     response_listener: Arc<Mutex<S>>,
     requests_pb: ProgressBar,
@@ -88,7 +86,6 @@ where
                 index,
                 decryption_contract.clone(),
                 user_addr,
-                Arc::clone(&sdk),
                 config.clone(),
                 id_sender.clone(),
             )
@@ -114,17 +111,16 @@ where
 }
 
 /// Sends a UserDecryptionRequest transaction to the Gateway.
-#[tracing::instrument(skip(decryption_contract, user_addr, sdk, config, id_sender))]
+#[tracing::instrument(skip(decryption_contract, user_addr, config, id_sender))]
 async fn send_user_decryption(
     index: u32,
     decryption_contract: DecryptionInstance<AppProvider>,
     user_addr: Address,
-    sdk: Arc<FhevmSdk>,
     config: Config,
     id_sender: UnboundedSender<U256>,
 ) {
     if let Err(e) =
-        send_user_decryption_inner(decryption_contract, user_addr, sdk, config, id_sender).await
+        send_user_decryption_inner(decryption_contract, user_addr, config, id_sender).await
     {
         error!("{e}");
     }
@@ -133,7 +129,6 @@ async fn send_user_decryption(
 async fn send_user_decryption_inner(
     decryption_contract: DecryptionInstance<AppProvider>,
     user_addr: Address,
-    sdk: Arc<FhevmSdk>,
     config: Config,
     id_sender: UnboundedSender<U256>,
 ) -> anyhow::Result<()> {
@@ -146,12 +141,17 @@ async fn send_user_decryption_inner(
         .duration_since(SystemTime::UNIX_EPOCH)?
         .as_secs();
 
-    let eip712 = generate_eip712(
-        sdk,
+    let signature = user_decrypt_eip712_signature(
+        blockchain_config.decryption_address,
+        blockchain_config.host_chain_id,
+        RAND_PUBLIC_KEY,
         config.allowed_contract,
-        blockchain_config.private_key.clone(),
         timestamp,
-    )?;
+        DURATION_DAYS,
+        EXTRA_DATA.to_vec(),
+        &blockchain_config.private_key,
+    )
+    .await?;
     let decryption_call = decryption_contract
         .userDecryptionRequest(
             config
@@ -172,7 +172,7 @@ async fn send_user_decryption_inner(
             },
             user_addr,
             hex::decode(RAND_PUBLIC_KEY)?.into(),
-            eip712.signature.clone().unwrap(),
+            signature.clone(),
             EXTRA_DATA.into(),
         )
         .into_transaction_request();
@@ -228,29 +228,6 @@ pub async fn init_user_decryption_response_listener<P: Provider>(
         .with_poll_interval(EVENT_LISTENER_POLLING);
 
     Ok(Arc::new(Mutex::new(response_filter.into_stream())))
-}
-
-pub fn generate_eip712(
-    sdk: Arc<FhevmSdk>,
-    allowed_contract: Address,
-    private_key: String,
-    timestamp: u64,
-) -> anyhow::Result<Eip712Result> {
-    // Spawn in new thread otherwise panic because it blocks the async runtime
-    std::thread::spawn(move || {
-        sdk.create_eip712_signature_builder()
-            .with_public_key(RAND_PUBLIC_KEY)
-            .with_contract(allowed_contract)
-            .unwrap()
-            .with_verification(true)
-            .with_validity_period(timestamp, DURATION_DAYS)
-            .with_private_key(&private_key)
-            .with_extra_data(EXTRA_DATA.to_vec())
-            .generate_and_sign()
-    })
-    .join()
-    .map_err(|e| anyhow!("{e:?}"))?
-    .map_err(|e| anyhow!("{e}"))
 }
 
 /// Waits for all the responses of a requests burst.

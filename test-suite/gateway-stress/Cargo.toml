@@ -5,7 +5,6 @@ edition = "2024"
 
 [dependencies]
 fhevm_gateway_bindings = { git = "https://github.com/zama-ai/fhevm.git", tag = "v0.10.0-4", default-features = false }
-gateway-sdk = { git = "https://github.com/zama-ai/fhevm.git", tag = "v0.10.0-4", default-features = false }
 
 alloy = { version = "1.0.38", default-features = false, features = [
     "essentials",

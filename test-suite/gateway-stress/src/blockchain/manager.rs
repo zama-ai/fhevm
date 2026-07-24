@@ -15,7 +15,6 @@ use crate::{
 };
 use alloy::{
     network::EthereumWallet,
-    primitives::Address,
     providers::{
         Identity, ProviderBuilder, RootProvider,
         fillers::{ChainIdFiller, JoinFill, WalletFiller},
@@ -24,7 +23,6 @@ use alloy::{
 use anyhow::anyhow;
 use fhevm_gateway_bindings::decryption::Decryption::{self, DecryptionInstance};
 use futures::Stream;
-use gateway_sdk::{FhevmSdk, FhevmSdkBuilder};
 use indicatif::{MultiProgress, ProgressBar, ProgressStyle};
 use std::sync::{Arc, Once};
 use tokio::{
@@ -53,9 +51,6 @@ pub struct GatewayTestManager {
 
     /// The wallet used to send the requests to the Gateway.
     wallet: Wallet,
-
-    /// The fhevm rust sdk used to compute the EIP712 for UserDecryptions.
-    sdk: Arc<FhevmSdk>,
 }
 
 impl GatewayTestManager {
@@ -85,21 +80,10 @@ impl GatewayTestManager {
         info!("Successfully connected to the Gateway");
         let decryption_contract = Decryption::new(blockchain_config.decryption_address, provider);
 
-        let sdk = Arc::new(
-            FhevmSdkBuilder::new()
-                .with_gateway_chain_id(blockchain_config.gateway_chain_id)
-                .with_decryption_contract(&blockchain_config.decryption_address.to_string())
-                .with_acl_contract(&Address::ZERO.to_string())
-                .with_input_verification_contract(&Address::ZERO.to_string())
-                .with_host_chain_id(blockchain_config.host_chain_id)
-                .build()?,
-        );
-
         Ok(Self {
             decryption_contract,
             config,
             wallet,
-            sdk,
         })
     }
 
@@ -144,7 +128,6 @@ impl GatewayTestManager {
                     burst_index,
                     self.config.clone(),
                     self.decryption_contract.clone(),
-                    Arc::clone(&self.sdk),
                     self.wallet.address(),
                     user_response_listener.clone(),
                     requests_pb,
@@ -261,7 +244,6 @@ impl GatewayTestManager {
                         *burst_index,
                         config.clone(),
                         self.decryption_contract.clone(),
-                        Arc::clone(&self.sdk),
                         self.wallet.address(),
                         user_response_listener.clone(),
                         requests_pb,
