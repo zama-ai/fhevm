@@ -199,6 +199,62 @@ describe("render-compose", () => {
     expect(services).not.toContain("coprocessor1-host-listener-consumer");
   });
 
+  test("renders HTTP gateway URLs for modern gateway-facing coprocessor images", async () => {
+    const modernState: State = {
+      ...state,
+      scenario: testDefaultScenario(),
+    };
+
+    await withTempStateDir(async () => {
+      await mkdir(path.dirname(envPath("coprocessor")), { recursive: true });
+      await writeFile(
+        envPath("coprocessor"),
+        "GATEWAY_HTTP_URL=http://gateway-node:8546\nGATEWAY_WS_URL=ws://gateway-node:8546\n",
+      );
+      await generateComposeOverrides(modernState, stackSpecForState(modernState));
+      const doc = YAML.parse(await readFile(composePath("coprocessor"), "utf8")) as {
+        services: Record<string, { command?: string[] }>;
+      };
+      expect(doc.services["coprocessor-gw-listener"]?.command).toContain("--gw-url=http://gateway-node:8546");
+      expect(doc.services["coprocessor-gw-listener"]?.command).not.toContain("ws://gateway-node:8546");
+      expect(doc.services["coprocessor-transaction-sender"]?.command).toContain(
+        "--gateway-url=http://gateway-node:8546",
+      );
+      expect(doc.services["coprocessor-transaction-sender"]?.command).not.toContain("ws://gateway-node:8546");
+    });
+  });
+
+  test("renders websocket gateway URLs for legacy gateway-facing coprocessor images", async () => {
+    const legacyState: State = {
+      ...state,
+      versions: {
+        ...state.versions,
+        env: {
+          ...state.versions.env,
+          COPROCESSOR_GW_LISTENER_VERSION: "v0.12.2",
+          COPROCESSOR_TX_SENDER_VERSION: "v0.12.2",
+        },
+      },
+      scenario: testDefaultScenario(),
+    };
+
+    await withTempStateDir(async () => {
+      await mkdir(path.dirname(envPath("coprocessor")), { recursive: true });
+      await writeFile(
+        envPath("coprocessor"),
+        "GATEWAY_HTTP_URL=http://gateway-node:8546\nGATEWAY_WS_URL=ws://gateway-node:8546\n",
+      );
+      await generateComposeOverrides(legacyState, stackSpecForState(legacyState));
+      const doc = YAML.parse(await readFile(composePath("coprocessor"), "utf8")) as {
+        services: Record<string, { command?: string[] }>;
+      };
+      expect(doc.services["coprocessor-gw-listener"]?.command).toContain("ws://gateway-node:8546");
+      expect(doc.services["coprocessor-gw-listener"]?.command).not.toContain("http://gateway-node:8546");
+      expect(doc.services["coprocessor-transaction-sender"]?.command).toContain("ws://gateway-node:8546");
+      expect(doc.services["coprocessor-transaction-sender"]?.command).not.toContain("http://gateway-node:8546");
+    });
+  });
+
   test("does not request consensus-detector or upgrade-controller services for legacy coprocessor bundles", () => {
     const legacyState: State = {
       ...state,

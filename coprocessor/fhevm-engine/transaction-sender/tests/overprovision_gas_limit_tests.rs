@@ -1,13 +1,13 @@
 mod common;
 
 use alloy::primitives::{FixedBytes, U256};
-use alloy::providers::{Provider, ProviderBuilder, WsConnect};
+use alloy::providers::{Provider, ProviderBuilder};
 use common::SignerType;
 use common::{CiphertextCommits, TestEnvironment};
 use rstest::*;
 use serial_test::serial;
 use std::time::Duration;
-use transaction_sender::NonceManagedProvider;
+use transaction_sender::{gateway_http_client, NonceManagedProvider};
 
 #[rstest]
 #[case::private_key(SignerType::PrivateKey)]
@@ -19,8 +19,7 @@ async fn overprovision_gas_limit(#[case] signer_type: SignerType) -> anyhow::Res
     let provider = NonceManagedProvider::new(
         ProviderBuilder::new()
             .wallet(env.wallet.clone())
-            .connect_ws(WsConnect::new(env.ws_endpoint_url()))
-            .await?,
+            .connect_http(env.http_endpoint_url()),
         Some(env.wallet.default_signer().address()),
     );
 
@@ -68,13 +67,11 @@ async fn overprovision_estimate_failure(#[case] signer_type: SignerType) -> anyh
     let provider = NonceManagedProvider::new(
         ProviderBuilder::new()
             .wallet(env.wallet.clone())
-            .connect_ws(
-                // Reduce the retries count and the interval for alloy's internal retry to make this test faster.
-                WsConnect::new(env.ws_endpoint_url())
-                    .with_max_retries(2)
-                    .with_retry_interval(Duration::from_millis(100)),
-            )
-            .await?,
+            .connect_client(gateway_http_client(
+                &env.http_endpoint_url(),
+                2,
+                Duration::from_millis(100),
+            )),
         Some(env.wallet.default_signer().address()),
     );
 

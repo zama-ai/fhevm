@@ -6,7 +6,7 @@ use alloy::{
     providers::fillers::{
         BlobGasFiller, ChainIdFiller, FillProvider, GasFiller, JoinFill, WalletFiller,
     },
-    providers::{Identity, ProviderBuilder, RootProvider, WsConnect},
+    providers::{Identity, ProviderBuilder, RootProvider},
     signers::{aws::AwsSigner, local::PrivateKeySigner, Signer},
     transports::http::reqwest::Url,
 };
@@ -18,13 +18,18 @@ use fhevm_engine_common::database::{
     with_statement_timeout,
 };
 use fhevm_engine_common::drift_revert;
+use fhevm_engine_common::gateway_http::{
+    validate_gateway_http_timeout, DEFAULT_GATEWAY_HTTP_MAX_RETRIES,
+    DEFAULT_GATEWAY_HTTP_REQUEST_TIMEOUT_SECS,
+};
 use tokio::signal::unix::{signal, SignalKind};
 use tokio_util::sync::CancellationToken;
 use tracing::{error, info, Level};
 use transaction_sender::{
-    config::DEFAULT_GAS_LIMIT_OVERPROVISION_PERCENT, get_chain_id, http_server::HttpServer,
-    make_abstract_signer, metrics::spawn_gauge_update_routine, AbstractSigner, ConfigSettings,
-    FillersWithoutNonceManagement, NonceManagedProvider, TransactionSender,
+    config::DEFAULT_GAS_LIMIT_OVERPROVISION_PERCENT, gateway_http_client, get_chain_id,
+    http_server::HttpServer, make_abstract_signer, metrics::spawn_gauge_update_routine,
+    AbstractSigner, ConfigSettings, FillersWithoutNonceManagement, NonceManagedProvider,
+    TransactionSender,
 };
 
 use fhevm_engine_common::{
@@ -44,7 +49,7 @@ struct Conf {
     #[arg(short, long)]
     ciphertext_commits_address: Address,
 
-    #[arg(short, long)]
+    #[arg(short, long, help = "Gateway HTTP JSON-RPC URL")]
     gateway_url: Url,
 
     #[arg(short, long, value_enum, default_value = "private-key")]
@@ -95,7 +100,7 @@ struct Conf {
     #[arg(long, default_value_t = 4)]
     error_sleep_max_secs: u16,
 
-    #[arg(long, default_value_t = 4, alias = "txn-receipt-timeout-secs")]
+    #[arg(long, default_value_t = DEFAULT_GATEWAY_HTTP_REQUEST_TIMEOUT_SECS, alias = "txn-receipt-timeout-secs")]
     send_txn_sync_timeout_secs: u16,
 
     #[deprecated(note = "no longer used and will be removed in future versions")]
@@ -107,7 +112,7 @@ struct Conf {
 
     // Finite: alloy retries the request internally on BackendGone, so an unbounded
     // value means we'd never surface it to exit and let k8s restart on a dead gateway.
-    #[arg(long, default_value_t = 10)]
+    #[arg(long, default_value_t = DEFAULT_GATEWAY_HTTP_MAX_RETRIES)]
     provider_max_retries: u32,
 
     #[arg(long, default_value = "4s", value_parser = parse_duration)]
@@ -120,7 +125,7 @@ struct Conf {
     #[arg(long, default_value = "0.0.0.0:9100")]
     metrics_addr: Option<String>,
 
-    #[arg(long, default_value = "4s", value_parser = parse_duration)]
+    #[arg(long, default_value = "70s", value_parser = parse_duration)]
     health_check_timeout: Duration,
 
     #[arg(
@@ -186,52 +191,49 @@ type Provider = FillProvider<
     RootProvider,
 >;
 
-async fn get_provider(
+fn get_provider(
     conf: &Conf,
     url: &Url,
     name: &str,
     wallet: EthereumWallet,
     cancel_token: &CancellationToken,
 ) -> anyhow::Result<Provider> {
-    loop {
-        if cancel_token.is_cancelled() {
-            info!(
-                "Cancellation requested before provider ({}) was created on startup, exiting",
-                name
-            );
-            anyhow::bail!(
-                "Cancellation requested before provider ({}) was created on startup, exiting",
-                name
-            );
-        }
-        match ProviderBuilder::default()
-            .filler(FillersWithoutNonceManagement::default())
-            .wallet(wallet.clone())
-            .connect_ws(
-                // Note here that max_retries and retry_interval apply to sending requests, not to initial connection.
-                // We assume they are set to big values such that when they are reached, the following `BackendGone` error
-                // means we can't move on and we would exit the whole sender.
-                WsConnect::new(url.clone())
-                    .with_max_retries(conf.provider_max_retries)
-                    .with_retry_interval(conf.provider_retry_interval),
-            )
-            .await
-        {
-            Ok(provider) => {
-                info!(name, "Connected to chain");
-                return Ok(provider);
-            }
-            Err(e) => {
-                error!(
-                    name,
-                    error = %e,
-                    retry_interval = ?conf.provider_retry_interval,
-                    "Failed to connect to chain on startup, retrying"
-                );
-                tokio::time::sleep(conf.provider_retry_interval).await;
-            }
-        }
+    if cancel_token.is_cancelled() {
+        info!(
+            "Cancellation requested before provider ({}) was created on startup, exiting",
+            name
+        );
+        anyhow::bail!(
+            "Cancellation requested before provider ({}) was created on startup, exiting",
+            name
+        );
     }
+
+    let provider = ProviderBuilder::default()
+        .filler(FillersWithoutNonceManagement::default())
+        .wallet(wallet)
+        .connect_client(gateway_http_client(
+            url,
+            conf.provider_max_retries,
+            conf.provider_retry_interval,
+        ));
+    info!(name, gateway_url = %url, "Created Gateway HTTP RPC provider");
+    Ok(provider)
+}
+
+fn validate_gateway_http_timeouts(conf: &Conf) -> anyhow::Result<()> {
+    validate_gateway_http_timeout(
+        "send_txn_sync_timeout_secs",
+        Duration::from_secs(conf.send_txn_sync_timeout_secs.into()),
+        conf.provider_max_retries,
+        conf.provider_retry_interval,
+    )?;
+    validate_gateway_http_timeout(
+        "health_check_timeout",
+        conf.health_check_timeout,
+        conf.provider_max_retries,
+        conf.provider_retry_interval,
+    )
 }
 
 #[tokio::main]
@@ -239,6 +241,7 @@ async fn main() -> anyhow::Result<()> {
     let _ = rustls::crypto::aws_lc_rs::default_provider().install_default();
 
     let conf = parse_args();
+    validate_gateway_http_timeouts(&conf)?;
 
     let _otel_guard = telemetry::init_tracing_otel_with_logs_only_fallback(
         conf.log_level,
@@ -292,9 +295,7 @@ async fn main() -> anyhow::Result<()> {
         "Gateway",
         wallet.clone(),
         &cancel_token,
-    )
-    .await
-    else {
+    ) else {
         info!(
             "Cancellation requested before gateway chain provider was created on startup, exiting"
         );
@@ -320,7 +321,6 @@ async fn main() -> anyhow::Result<()> {
         health_check_timeout: conf.health_check_timeout,
         gas_limit_overprovision_percent: conf.gas_limit_overprovision_percent,
         graceful_shutdown_timeout: conf.graceful_shutdown_timeout,
-        // Auto-detected from the versioning table below; the CLI flag is ignored.
         gcs_mode: false,
     };
 
@@ -336,18 +336,12 @@ async fn main() -> anyhow::Result<()> {
         };
     config.gcs_mode = gcs_mode;
 
-    // The transaction sender always uses the default `public` search_path,
-    // even when `gcs_mode` is true. Unlike the GCS compute workers, it never
-    // reads or writes during the dry-run window — it stays parked until the
-    // cutover finalizes (see `TransactionSender::run`). By the time it submits
-    // anything, `execute_cutover` has already merged `gcs.*` into `public` and
-    // dropped the `gcs` schema, so all its writes target `public`. `gcs_mode`
-    // is kept purely as the gate flag passed through to the sender.
+    // The transaction sender stays parked while `gcs_mode` is true, then writes
+    // to public after cutover merges the GCS schema back into public.
     let (db_pool, _pool_refresh_handle) = connect_pool_with_options_and_connect_options(
         &database_url,
         sqlx::postgres::PgPoolOptions::new().max_connections(conf.database_pool_size),
         Some(&cancel_token),
-        // Bound this writer's statements so none can run unbounded against the DB.
         |options| with_statement_timeout(options, Duration::from_secs(10)),
     )
     .await?;

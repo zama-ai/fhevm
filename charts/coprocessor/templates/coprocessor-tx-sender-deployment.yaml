@@ -154,15 +154,7 @@ spec:
             {{- include "coprocessor.databaseSslRootCertEnv" . | nindent 12 }}
             {{- end }}
             {{- end }}
-            {{- with .Values.commonConfig.gatewayUrl }}
-            - name: GATEWAY_URL
-              {{- if .value }}
-              value: {{ .value | quote }}
-              {{- else if .valueFrom }}
-              valueFrom:
-                {{- toYaml .valueFrom | nindent 16 }}
-              {{- end }}
-            {{- end }}
+            {{- include "coprocessor.gatewayUrlEnv" (dict "root" . "component" "txSender" "mode" .Values.txSender.config.gatewayTransport "tag" .Values.txSender.image.tag) | nindent 12 }}
             {{- with .Values.txSender.config.hostChainUrl }}
             - name: HOST_CHAIN_URL
               {{- if .value }}

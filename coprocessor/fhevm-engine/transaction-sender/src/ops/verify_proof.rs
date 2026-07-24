@@ -8,8 +8,10 @@ use alloy::primitives::{Address, U256};
 use alloy::providers::Provider;
 use alloy::rpc::types::TransactionRequest;
 use alloy::sol;
+use alloy::transports::{RpcError, TransportErrorKind};
 use alloy::{network::Ethereum, primitives::FixedBytes, sol_types::SolStruct};
 use async_trait::async_trait;
+use fhevm_engine_common::gateway_http::is_gateway_transient_transport_error;
 use fhevm_engine_common::telemetry;
 use sqlx::{Pool, Postgres};
 use std::convert::TryInto;
@@ -188,6 +190,14 @@ where
                     );
                     self.remove_proof_by_id(txn_request.0).await?;
                     return Ok(());
+                } else if should_skip_verify_proof_row_retry(&e) {
+                    VERIFY_PROOF_FAIL_COUNTER.inc();
+                    warn!(
+                        zk_proof_id = txn_request.0,
+                        error = %e,
+                        "Transient gateway transport error while sending verify_proof transaction"
+                    );
+                    return Err(anyhow::Error::new(e));
                 } else if let Some(non_retryable_config_error) =
                     try_extract_non_retryable_config_error(&e)
                 {
@@ -284,6 +294,10 @@ where
         tx.commit().await?;
         Ok(())
     }
+}
+
+fn should_skip_verify_proof_row_retry(err: &RpcError<TransportErrorKind>) -> bool {
+    matches!(err, RpcError::Transport(inner) if is_gateway_transient_transport_error(inner))
 }
 
 #[async_trait]
@@ -440,5 +454,39 @@ where
             res??;
         }
         Ok(maybe_has_more_work)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use alloy::transports::TransportErrorKind;
+
+    #[test]
+    fn transient_gateway_http_errors_do_not_burn_verify_proof_row_retries() {
+        for status in [502, 503, 504] {
+            let err = TransportErrorKind::http_error(status, String::new());
+            assert!(should_skip_verify_proof_row_retry(&err));
+        }
+    }
+
+    #[test]
+    fn exhausted_gateway_retries_do_not_burn_verify_proof_row_retries() {
+        let err = TransportErrorKind::custom_str("Max retries exceeded HTTP error 502");
+        assert!(should_skip_verify_proof_row_retry(&err));
+    }
+
+    #[test]
+    fn non_transient_http_errors_still_use_verify_proof_row_retries() {
+        for status in [400, 401, 403, 404, 500] {
+            let err = TransportErrorKind::http_error(status, String::new());
+            assert!(!should_skip_verify_proof_row_retry(&err));
+        }
+    }
+
+    #[test]
+    fn arbitrary_custom_errors_still_use_verify_proof_row_retries() {
+        let err = TransportErrorKind::custom_str("gateway authentication failed");
+        assert!(!should_skip_verify_proof_row_retry(&err));
     }
 }

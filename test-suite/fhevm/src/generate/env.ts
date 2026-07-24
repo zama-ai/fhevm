@@ -517,6 +517,10 @@ export const renderEnvMaps = async (
   if (plan.blueGreen) {
     envs["coprocessor"].DRIFT_AUTO_REVERT_ENABLED = "false";
   }
+  envs["coprocessor"].GATEWAY_HTTP_URL =
+    state.discovery?.endpoints.gateway.http ?? envs["coprocessor"].GATEWAY_URL;
+  envs["coprocessor"].GATEWAY_WS_URL =
+    state.discovery?.endpoints.gateway.ws ?? envs["coprocessor"].GATEWAY_WS_URL;
   envs["kms-connector"].KMS_CONNECTOR_ETHEREUM_URL = `http://${defaultChain.node}:${defaultChain.rpcPort}`;
   envs["kms-connector"].KMS_CONNECTOR_ETHEREUM_CHAIN_ID = defaultChain.chainId;
   envs["test-suite"].RPC_URL = `http://${defaultChain.node}:${defaultChain.rpcPort}`;

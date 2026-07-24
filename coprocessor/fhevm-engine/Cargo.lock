@@ -3595,6 +3595,7 @@ name = "fhevm-engine-common"
 version = "0.6.1"
 dependencies = [
  "alloy",
+ "alloy-json-rpc",
  "anyhow",
  "aws-config",
  "aws-credential-types",
@@ -3627,6 +3628,7 @@ dependencies = [
  "tokio-util",
  "tonic",
  "tonic-build",
+ "tower 0.5.2",
  "tracing",
  "tracing-opentelemetry",
  "tracing-subscriber",
@@ -4138,7 +4140,7 @@ dependencies = [
 
 [[package]]
 name = "gw-listener"
-version = "0.7.0"
+version = "0.8.0"
 dependencies = [
  "alloy",
  "anyhow",
@@ -8931,7 +8933,7 @@ dependencies = [
 
 [[package]]
 name = "transaction-sender"
-version = "0.7.0"
+version = "0.8.0"
 dependencies = [
  "alloy",
  "anyhow",
