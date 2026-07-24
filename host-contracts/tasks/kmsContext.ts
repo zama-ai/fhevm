@@ -289,12 +289,10 @@ function outstanding(expected: string[], confirmed: Set<string>): string[] {
   return expected.filter((address) => !confirmed.has(address));
 }
 
-// Reconstructs the in-progress phase of a KMS context switch / epoch rotation purely from events
-// plus the current active-context view. ProtocolConfig exposes no getter for the intermediate
-// `Created` state or the live confirmation tally, and the new (pending) context's signer set is not
-// readable via `getKmsSignersForContext` until it is `Active` — so the new set is taken from the
-// `NewKmsContext` event, while the old-side `(n - t)` target is read from views on the still-
-// active previous context.
+// Reconstructs the in-progress phase of a KMS context switch or epoch rotation. It detects an
+// in-flight switch from authoritative state, where the allocation counter runs ahead of the active
+// context pointer. This still reports a switch defined before the scanned window. It reads the
+// old-side `(n - t)` target from the value the contract cached at define time.
 export async function inspectKmsContextSwitch(
   hre: HardhatRuntimeEnvironment,
   protocolConfigAddress: string,
@@ -334,8 +332,21 @@ export async function inspectKmsContextSwitch(
     undefined,
   );
 
-  if (latestNewContext && latestNewContext.args.contextId > activeContextId) {
-    await fillContextSwitch(pc, status, latestNewContext, newEpochEvents, fromBlock, toBlock, checksum);
+  // Detect an in-flight switch from authoritative state. The allocation counter runs ahead of the
+  // active pointer whenever a context is issued but not yet activated.
+  const latestKmsContextId = await pc.getCurrentKmsContextIdCounter();
+
+  if (latestKmsContextId > activeContextId) {
+    await fillContextSwitch(
+      pc,
+      status,
+      latestKmsContextId,
+      latestNewContext,
+      newEpochEvents,
+      fromBlock,
+      toBlock,
+      checksum,
+    );
   } else if (
     latestNewEpoch &&
     latestNewEpoch.args.epochId > activeEpochId &&
@@ -355,78 +366,91 @@ export async function inspectKmsContextSwitch(
 async function fillContextSwitch(
   pc: ProtocolConfig,
   status: KmsContextSwitchStatus,
-  newContextEvent: {
-    args: {
-      contextId: bigint;
-      previousContextId: bigint;
-      kmsNodeParams: { txSenderAddress: string; signerAddress: string }[];
-    };
-  },
+  pendingContextId: bigint,
+  newContextEvent:
+    | {
+        args: {
+          contextId: bigint;
+          previousContextId: bigint;
+          kmsNodeParams: { txSenderAddress: string; signerAddress: string }[];
+        };
+      }
+    | undefined,
   newEpochEvents: { args: { kmsContextId: bigint; epochId: bigint } }[],
   fromBlock: number,
   toBlock: number,
   checksum: (address: string) => string,
 ): Promise<void> {
   status.flow = 'context-switch';
-  const pendingContextId = newContextEvent.args.contextId;
-  const previousContextId = newContextEvent.args.previousContextId;
   status.pendingContextId = pendingContextId;
-  status.previousContextId = previousContextId;
+  // The active context is demoted only on activation. During an in-flight switch it is still the
+  // previous one, so it stands in for the previous context id when the defining event is out of range.
+  status.previousContextId = newContextEvent?.args.previousContextId ?? status.activeContextId;
 
-  // A destroy of the pending context after it was issued means the switch is no longer in
-  // flight and must be re-proposed.
-  const contextDestroyed = await pc.queryFilter(pc.filters.KmsContextDestroyed(pendingContextId), fromBlock, toBlock);
-  if (contextDestroyed.length > 0) {
-    status.aborted = true;
+  // A destroyed pending context means the switch is no longer in flight and must be re-proposed.
+  // `isLiveKmsContext` reads this authoritatively, independent of which blocks were scanned.
+  status.aborted = !(await pc.isLiveKmsContext(pendingContextId));
+  if (status.aborted) {
     status.abortReason = 'context-destroyed';
   }
 
-  // New committee: read from the event (the pending context is not yet readable via views).
-  // Signers drive the epoch phase; tx-senders drive the creation-confirmation tally.
-  const newSigners = newContextEvent.args.kmsNodeParams.map((node) => checksum(node.signerAddress));
-  status.newSigners = newSigners;
-  const newTxSenders = newContextEvent.args.kmsNodeParams.map((node) => checksum(node.txSenderAddress));
-  status.newTxSenders = newTxSenders;
+  // Old-side (n - t) target: read the value cached at define time. A recompute from the previous
+  // context's live signer count and MPC threshold drifts if either is updated mid-switch.
+  status.previousTxSenderThreshold = Number(await pc.getContextCreationPreviousTxSenderThreshold(pendingContextId));
 
-  // Old-side (n - t) target (floored at 1): the previous context is still active, so its views are readable.
-  const previousSigners: string[] = await pc.getKmsSignersForContext(previousContextId);
-  const previousMpcThreshold: bigint = await pc.getMpcThresholdForContext(previousContextId);
-  status.previousTxSenderThreshold = Math.max(previousSigners.length - Number(previousMpcThreshold), 1);
+  // New committee: read it from the event, because views cannot enumerate the pending context. When
+  // the defining event is outside the scanned window, the committee, its confirmation count, and the
+  // derived quorum flags are unknowable. They therefore stay undefined instead of reporting a value
+  // off empty data.
+  if (newContextEvent) {
+    const newSigners = newContextEvent.args.kmsNodeParams.map((node) => checksum(node.signerAddress));
+    status.newSigners = newSigners;
+    const newTxSenders = newContextEvent.args.kmsNodeParams.map((node) => checksum(node.txSenderAddress));
+    status.newTxSenders = newTxSenders;
 
-  // Tally creation confirmations from events.
-  const creationConfirmations = await pc.queryFilter(
-    pc.filters.KmsContextCreationConfirmation(pendingContextId),
-    fromBlock,
-    toBlock,
-  );
-  const newConfirmed = new Set<string>();
-  const previousConfirmed = new Set<string>();
-  for (const event of creationConfirmations) {
-    const txSender = checksum(event.args.txSender);
-    if (event.args.isNewTxSender) {
-      newConfirmed.add(txSender);
+    // Count creation confirmations from events.
+    const creationConfirmations = await pc.queryFilter(
+      pc.filters.KmsContextCreationConfirmation(pendingContextId),
+      fromBlock,
+      toBlock,
+    );
+    const newConfirmed = new Set<string>();
+    const previousConfirmed = new Set<string>();
+    for (const event of creationConfirmations) {
+      const txSender = checksum(event.args.txSender);
+      if (event.args.isNewTxSender) {
+        newConfirmed.add(txSender);
+      }
+      if (event.args.isPreviousTxSender) {
+        previousConfirmed.add(txSender);
+      }
     }
-    if (event.args.isPreviousTxSender) {
-      previousConfirmed.add(txSender);
-    }
+    status.newTxSendersConfirmed = [...newConfirmed];
+    status.newTxSendersOutstanding = outstanding(newTxSenders, newConfirmed);
+    status.previousTxSendersConfirmed = [...previousConfirmed];
+    status.previousConfirmationCount = previousConfirmed.size;
+
+    status.contextCreationQuorumReached =
+      status.newTxSendersOutstanding.length === 0 && previousConfirmed.size >= status.previousTxSenderThreshold;
+    status.stuckBelowPreviousThreshold =
+      !status.contextCreationQuorumReached && previousConfirmed.size < status.previousTxSenderThreshold;
   }
-  status.newTxSendersConfirmed = [...newConfirmed];
-  status.newTxSendersOutstanding = outstanding(newTxSenders, newConfirmed);
-  status.previousTxSendersConfirmed = [...previousConfirmed];
-  status.previousConfirmationCount = previousConfirmed.size;
-
-  status.contextCreationQuorumReached =
-    status.newTxSendersOutstanding.length === 0 && previousConfirmed.size >= status.previousTxSenderThreshold;
-  status.stuckBelowPreviousThreshold =
-    !status.contextCreationQuorumReached && previousConfirmed.size < status.previousTxSenderThreshold;
 
   // `Created` is signaled by the NewKmsEpoch emitted once the creation quorum is reached; it also
   // reveals the pending epoch id, which has no view getter.
   const pendingEpochEvent = newEpochEvents.find((event) => event.args.kmsContextId === pendingContextId);
   status.contextState = pendingEpochEvent ? 'CREATED' : 'PENDING';
 
-  if (pendingEpochEvent) {
-    await fillEpochActivation(pc, status, pendingEpochEvent.args.epochId, newSigners, fromBlock, toBlock, checksum);
+  if (pendingEpochEvent && status.newSigners) {
+    await fillEpochActivation(
+      pc,
+      status,
+      pendingEpochEvent.args.epochId,
+      status.newSigners,
+      fromBlock,
+      toBlock,
+      checksum,
+    );
   }
 }
 
@@ -505,18 +529,28 @@ function printStatus(status: KmsContextSwitchStatus): void {
     console.log('pendingContextId:', status.pendingContextId?.toString());
     console.log('previousContextId:', status.previousContextId?.toString());
     console.log('contextState:', status.contextState);
-    console.log('new tx senders confirmed:', `${status.newTxSendersConfirmed?.length}/${status.newTxSenders?.length}`);
-    if (status.newTxSendersOutstanding && status.newTxSendersOutstanding.length > 0) {
-      console.log('  outstanding new tx senders:', status.newTxSendersOutstanding.join(', '));
+    // The new committee comes from the defining event. It is undefined when that event is out of the
+    // scanned range, so print a note instead of undefined count and quorum values.
+    if (status.newSigners) {
+      console.log(
+        'new tx senders confirmed:',
+        `${status.newTxSendersConfirmed?.length}/${status.newTxSenders?.length}`,
+      );
+      if (status.newTxSendersOutstanding && status.newTxSendersOutstanding.length > 0) {
+        console.log('  outstanding new tx senders:', status.newTxSendersOutstanding.join(', '));
+      }
+      console.log(
+        'previous tx senders confirmed:',
+        `${status.previousConfirmationCount} (need >= ${status.previousTxSenderThreshold} = n - t)`,
+      );
+      if (status.stuckBelowPreviousThreshold) {
+        console.log('  ⚠ stuck below the (n - t) old-side confirmation target');
+      }
+      console.log('creation quorum reached:', status.contextCreationQuorumReached);
+    } else {
+      console.log('old-side confirmation target:', `need >= ${status.previousTxSenderThreshold} (n - t)`);
+      console.log('new committee not in scanned range, confirmation count and quorum unknown');
     }
-    console.log(
-      'previous tx senders confirmed:',
-      `${status.previousConfirmationCount} (need >= ${status.previousTxSenderThreshold} = n - t)`,
-    );
-    if (status.stuckBelowPreviousThreshold) {
-      console.log('  ⚠ stuck below the (n - t) old-side confirmation target');
-    }
-    console.log('creation quorum reached:', status.contextCreationQuorumReached);
   }
 
   if (status.pendingEpochId !== undefined) {
