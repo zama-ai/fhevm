@@ -1,6 +1,6 @@
 import { task, types } from 'hardhat/config';
 
-import { getRequiredEnvVar, getPauserSetContract } from './utils/loadVariables';
+import { getPauserSetContract, getRequiredEnvVar } from './utils/loadVariables';
 
 task('task:addGatewayPausers')
   .addParam(

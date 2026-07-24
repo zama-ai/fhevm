@@ -7,7 +7,7 @@ task('task:removeHostPauser')
     'useInternalProxyAddress',
     'If proxy address from the /addresses directory should be used',
     false,
-    types.boolean
+    types.boolean,
   )
   .addParam('pauserAddress', 'Address of the pauser to remove', undefined, types.string)
   .setAction(async function ({ useInternalProxyAddress, pauserAddress }, hre) {

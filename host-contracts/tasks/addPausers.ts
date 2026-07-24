@@ -1,13 +1,13 @@
 import { task, types } from 'hardhat/config';
 
-import { getRequiredEnvVar, getPauserSetContract } from './utils/loadVariables';
+import { getPauserSetContract, getRequiredEnvVar } from './utils/loadVariables';
 
 task('task:addHostPausers')
   .addParam(
     'useInternalProxyAddress',
     'If proxy address from the /addresses directory should be used',
     false,
-    types.boolean
+    types.boolean,
   )
   .setAction(async function ({ useInternalProxyAddress }, hre) {
     const numPausers = parseInt(getRequiredEnvVar('NUM_PAUSERS'));

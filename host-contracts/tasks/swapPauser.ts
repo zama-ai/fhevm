@@ -7,7 +7,7 @@ task('task:swapHostPauser')
     'useInternalProxyAddress',
     'If proxy address from the /addresses directory should be used',
     false,
-    types.boolean
+    types.boolean,
   )
   .addParam('oldPauserAddress', 'Address of the pauser to replace', undefined, types.string)
   .addParam('newPauserAddress', 'Address of the new pauser', undefined, types.string)

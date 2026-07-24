@@ -40,15 +40,15 @@ export function loadGatewayAddresses() {
 }
 
 export async function getPauserSetContract(useInternalProxyAddress: boolean, hre: HardhatRuntimeEnvironment) {
-  await hre.run("compile:specific", { contract: "contracts/immutable" });
+  await hre.run('compile:specific', { contract: 'contracts/immutable' });
 
-  const deployerPrivateKey = getRequiredEnvVar("DEPLOYER_PRIVATE_KEY");
+  const deployerPrivateKey = getRequiredEnvVar('DEPLOYER_PRIVATE_KEY');
   const deployer = new hre.ethers.Wallet(deployerPrivateKey).connect(hre.ethers.provider);
 
   if (useInternalProxyAddress) {
     loadGatewayAddresses();
   }
-  const pauserSetAddress = getRequiredEnvVar("PAUSER_SET_ADDRESS");
+  const pauserSetAddress = getRequiredEnvVar('PAUSER_SET_ADDRESS');
 
-  return hre.ethers.getContractAt("PauserSet", pauserSetAddress, deployer);
+  return hre.ethers.getContractAt('PauserSet', pauserSetAddress, deployer);
 }
