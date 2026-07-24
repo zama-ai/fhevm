@@ -60,7 +60,7 @@ describe('buildDiscloseSecpInstruction', () => {
     expect(Array.from(decoded.cleartext)).toEqual(Array.from(cleartextBytes));
     expect(decoded.signatures.map((s) => Array.from(s))).toEqual([Array.from(signatureBytes)]);
     expect(Array.from(decoded.extraData)).toEqual(Array.from(extraDataBytes));
-    expect(decoded.leafIndex).toBe(3n);
-    expect(decoded.siblings.map((s) => Array.from(s))).toEqual([Array.from(sibling)]);
+    expect(decoded.proof.leafIndex).toBe(3n);
+    expect(decoded.proof.siblings.map((s) => Array.from(s))).toEqual([Array.from(sibling)]);
   });
 });

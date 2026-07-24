@@ -25,6 +25,7 @@ use std::collections::HashMap;
 use std::net::SocketAddr;
 use std::sync::Arc;
 use std::time::Duration;
+use tower_http::cors::CorsLayer;
 use tracing::info;
 
 async fn wait_for_ready(addr: SocketAddr) -> anyhow::Result<()> {
@@ -195,6 +196,17 @@ pub async fn run_http_server(
         .route("/admin/config", get(admin::get_config))
         .layer(Extension(admin_registry_option))
         .layer(Extension(retry_after_option));
+
+    // Opt-in permissive CORS for the local confidential-vault demo dApp (#1760/#1761, Vite origin);
+    // only demo bring-up sets RELAYER_PERMISSIVE_CORS, and with it unset the router is byte-for-byte
+    // its prior form (relayer/ merges back toward prod, so the default must not change).
+    if matches!(
+        std::env::var("RELAYER_PERMISSIVE_CORS").ok().as_deref(),
+        Some("1") | Some("true")
+    ) {
+        info!("RELAYER_PERMISSIVE_CORS set: enabling permissive CORS (local demo dApp only)");
+        app = app.layer(CorsLayer::permissive());
+    }
 
     // Setup TCP listener and start server
     let listener = tokio::net::TcpListener::bind(http_endpoint).await.unwrap();

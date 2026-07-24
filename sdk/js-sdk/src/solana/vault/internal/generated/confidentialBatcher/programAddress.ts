@@ -2,4 +2,4 @@
 import type { Address } from '@solana/kit';
 
 export const CONFIDENTIAL_BATCHER_PROGRAM_ADDRESS =
-  '415fK9iaJJzMHbwkGD4pWgAmDkMvp7Wbd9TTPUtyRX1g' as Address<'415fK9iaJJzMHbwkGD4pWgAmDkMvp7Wbd9TTPUtyRX1g'>;
+  'Cr1Tyzov2Jq9AYVn5zLSLQdyd8CkZJLemHYkj6qDqFmG' as Address<'Cr1Tyzov2Jq9AYVn5zLSLQdyd8CkZJLemHYkj6qDqFmG'>;

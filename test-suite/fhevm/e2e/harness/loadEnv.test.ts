@@ -37,4 +37,11 @@ describe("loadEnv", () => {
   test("rejects a non-decimal user-decrypt context id", () => {
     expect(() => resolveEnv({ userDecryptContextId: "0x01" })).toThrow(/unsigned decimal/);
   });
+
+  test("the demo-config source labels its provenance and pre-seeds mints (no fresh mints)", () => {
+    const env = resolveEnv({ relayerUrl: "http://127.0.0.1:3000" }, "demo-config");
+    expect(env.source).toBe("demo-config");
+    // Still a local validator: it can fund + advance slots, but mints are pre-seeded, not created.
+    expect(env.capabilities).toEqual({ faucet: true, freshMints: false, fastSlots: true });
+  });
 });

@@ -46,7 +46,7 @@ pub use instructions::{Deposit, Harvest, InitializeVault, Withdraw};
 /// Re-export the vault layout and share-price helpers.
 pub use state::*;
 
-declare_id!("C6TBzPBWPJYY3fbsDV63nnT3s9vEjaWQAqdeAZpzowH7");
+declare_id!("6JJTCTipqMjhq5djroouMgi1XZ1Rtc3RMp483F8Bz8b9");
 
 /// Anchor entrypoint module for the demo vault.
 #[program]

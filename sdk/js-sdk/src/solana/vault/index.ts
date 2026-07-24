@@ -9,10 +9,63 @@
 export { joinBatch, type SolanaVaultJoinParameters } from './joinBatch.js';
 export { buildQuitInstruction, type SolanaVaultQuitParameters } from './quit.js';
 export { buildDispatchBatchInstruction, type SolanaVaultDispatchParameters } from './dispatchBatch.js';
-export { settleBatch, type SolanaVaultSettleParameters, type SolanaVaultSettleAccounts } from './settleBatch.js';
+export { settleBatch, type SolanaVaultSettleOptions } from './settleBatch.js';
 export { buildClaimInstruction, type SolanaVaultClaimParameters } from './claim.js';
 export { decryptPosition } from './decryptPosition.js';
 export { openBatch, type SolanaVaultOpenBatchParameters, type SolanaVaultOpenBatchResult } from './openBatch.js';
+
+// One-time provisioning builders the demo seeder drives (fhevm-internal#1760). Kept on the vault
+// surface — the seeder is their only caller — and shaped as thin, root-taking actions: each derives
+// its lineage/event PDAs internally so the seeder passes semantic roots, never hand-rolled accounts.
+export {
+  buildInitializeVaultInstruction,
+  type SolanaVaultInitializeVaultParameters,
+} from './initializeVault.js';
+export {
+  buildInitializeBatcherInstruction,
+  BatchDirection,
+  type SolanaVaultInitializeBatcherParameters,
+} from './initializeBatcher.js';
+export {
+  buildInitializeMintInstruction,
+  type SolanaVaultInitializeMintParameters,
+} from './initializeMint.js';
+export {
+  buildInitializeTokenAccountInstruction,
+  type SolanaVaultInitializeTokenAccountParameters,
+} from './initializeTokenAccount.js';
+export { buildWrapUsdcInstruction, type SolanaVaultWrapUsdcParameters } from './wrapUsdc.js';
+export {
+  openBatchForBatcher,
+  type SolanaVaultOpenBatchForBatcherParameters,
+} from './openBatchForBatcher.js';
+
+// Program ids the seeder records into the demo-config `programs` block. `CONFIDENTIAL_BATCHER_PROGRAM_ADDRESS`
+// is already exported below with the batcher internals; the other three come from the generated
+// confidential-token / demo-vault program-address modules.
+export {
+  CONFIDENTIAL_TOKEN_PROGRAM_ADDRESS,
+  ZAMA_HOST_PROGRAM_ADDRESS,
+} from '../internal/generated/confidentialToken/programAddress.js';
+export { DEMO_VAULT_PROGRAM_ADDRESS } from './internal/generated/demoVault/programAddress.js';
+
+export {
+  deriveBatchAddresses,
+  deriveJoinRecordAddress,
+  deriveSettleAccounts,
+  deriveSettleLookupTableAddresses,
+  settleAccountsToLookupTableAddresses,
+  type VaultDemoRoots,
+  type BatchAddresses,
+  type SolanaVaultSettleAccounts,
+} from './derive.js';
+export {
+  getBatcher,
+  getCurrentBatch,
+  getEncryptedValueState,
+  type BatcherState,
+  type BatchState,
+} from './reads.js';
 
 export { settleTotalFromCleartext } from './internal/cleartext.js';
 export {

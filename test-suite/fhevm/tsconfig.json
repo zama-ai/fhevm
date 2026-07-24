@@ -15,6 +15,7 @@
     "src/types.ts",
     "src/**/*.ts",
     "scripts/**/*.ts",
-    "e2e/**/*.ts"
+    "e2e/**/*.ts",
+    "demo/**/*.ts"
   ]
 }

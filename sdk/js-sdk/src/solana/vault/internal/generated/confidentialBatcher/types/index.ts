@@ -7,3 +7,4 @@
  */
 
 export * from './batchDirection.js';
+export * from './batchStatus.js';

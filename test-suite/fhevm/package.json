@@ -8,6 +8,12 @@
     "test": "bun test src",
     "test:e2e:harness": "bun test e2e/harness",
     "test:e2e": "bun test e2e/scenarios",
+    "test:demo": "bun test demo",
+    "demo:seed": "bun run demo/seed.ts",
+    "demo:faucet": "bun run demo/faucet-server.ts",
+    "demo:check-cors": "bun run demo/checkBrowserReality.ts",
+    "demo:smoke": "RUN_DEMO_SCENARIOS=1 bun test e2e/scenarios/deposit-arc.scenario.test.ts",
+    "demo:smoke-boundary": "RUN_DEMO_SCENARIOS=1 bun test e2e/scenarios/deposit-arc-boundary.scenario.test.ts",
     "start": "bun run src/cli.ts"
   },
   "dependencies": {

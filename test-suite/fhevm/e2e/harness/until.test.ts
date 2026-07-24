@@ -39,7 +39,7 @@ describe("until", () => {
     ).rejects.toThrow(/until\(relayer readiness\) timed out.*still-warming-up/);
   });
 
-  test("does not treat 0 or empty string as ready", async () => {
+  test("treats 0 as a ready value (only false/undefined/null mean wait)", async () => {
     let calls = 0;
     const value = await until(
       async () => {

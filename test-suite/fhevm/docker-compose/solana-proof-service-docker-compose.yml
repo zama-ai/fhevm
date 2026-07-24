@@ -26,6 +26,15 @@ services:
       dockerfile: solana-proof-service/Dockerfile
     env_file:
       - ${FHEVM_STATE_DIR:-../../../.fhevm}/runtime/env/solana-proof-service.env
+    environment:
+      # Opt-in permissive CORS for the local confidential-vault demo dApp (#1760/#1761). Mirrors the
+      # relayer's RELAYER_PERMISSIVE_CORS gate: only the demo bring-up (demo-up.sh / the
+      # solana-demo-acceptance workflow) exports SOLANA_PROOF_PERMISSIVE_CORS; unset, this resolves to
+      # an empty string and the service's CORS gate stays OFF (it accepts only "1"/"true"), so non-demo
+      # compose-ups are behaviourally identical. The container's other env source is the generated
+      # solana-proof-service.env (env_file above), which host-shell exports never reach — hence this
+      # explicit passthrough so both demo entry points deliver the flag to the container.
+      SOLANA_PROOF_PERMISSIVE_CORS: ${SOLANA_PROOF_PERMISSIVE_CORS:-}
     ports:
       # Loopback-only: unauthenticated PoC HTTP stays on the documented localhost boundary.
       - "127.0.0.1:8088:8088"

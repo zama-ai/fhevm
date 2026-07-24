@@ -7,3 +7,4 @@
  */
 
 export * from './coprocessorInputAttestation.js';
+export * from './mmrInclusionProof.js';

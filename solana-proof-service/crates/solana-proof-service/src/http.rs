@@ -11,6 +11,7 @@ use axum::routing::get;
 use axum::{Json, Router};
 use serde::{Deserialize, Serialize};
 use tokio::sync::Semaphore;
+use tower_http::cors::CorsLayer;
 use tower_http::request_id::{
     MakeRequestUuid, PropagateRequestIdLayer, RequestId, SetRequestIdLayer,
 };
@@ -520,12 +521,28 @@ where
         ))
         .with_state(state);
 
-    request_id_layers(
-        Router::new()
-            .merge(SwaggerUi::new("/swagger-ui").url("/api-docs/openapi.json", ApiDoc::openapi()))
-            .merge(ops)
-            .merge(proof),
-    )
+    // Opt-in permissive CORS so a browser dApp (Vite origin) can call the loopback proof service
+    // directly during the local confidential-vault demo (#1760/#1761). Gated exactly like the relayer
+    // (RELAYER_PERMISSIVE_CORS): only demo bring-up sets SOLANA_PROOF_PERMISSIVE_CORS, and with it
+    // unset the router is byte-for-byte its prior form. The service binds loopback-only by default,
+    // but that is a runtime config default, not a code-level guarantee — gating keeps the permissive
+    // layer off unless explicitly opted in, so an overridden 0.0.0.0 bind is not silently exposed.
+    let mut app = Router::new()
+        .merge(SwaggerUi::new("/swagger-ui").url("/api-docs/openapi.json", ApiDoc::openapi()))
+        .merge(ops)
+        .merge(proof);
+    if matches!(
+        std::env::var("SOLANA_PROOF_PERMISSIVE_CORS")
+            .ok()
+            .as_deref(),
+        Some("1") | Some("true")
+    ) {
+        tracing::info!(
+            "SOLANA_PROOF_PERMISSIVE_CORS set: enabling permissive CORS (local demo dApp only)"
+        );
+        app = app.layer(CorsLayer::permissive());
+    }
+    request_id_layers(app)
 }
 
 /// Proof-only router for unit tests (no readiness / Postgres dependency).
