@@ -3,13 +3,12 @@ use alloy::{
     network::{Network, TransactionBuilder},
     primitives::{Address, Bytes, U64},
     providers::{
-        EthCall, PendingTransactionBuilder, Provider, RootProvider, SendableTx,
+        EthCall, PendingTransactionBuilder, Provider, RootProvider,
         fillers::{BlobGasFiller, GasFiller, JoinFill, NonceManager},
     },
-    transports::TransportResult,
+    rpc::json_rpc::ErrorPayload,
+    transports::{RpcError, TransportErrorKind, TransportResult},
 };
-use futures::lock::Mutex;
-use std::sync::Arc;
 
 pub type FillersWithoutNonceManagement = JoinFill<GasFiller, BlobGasFiller>;
 
@@ -21,7 +20,7 @@ pub type FillersWithoutNonceManagement = JoinFill<GasFiller, BlobGasFiller>;
 pub struct NonceManagedProvider<P> {
     inner: P,
     signer_address: Address,
-    nonce_manager: Arc<Mutex<ZamaNonceManager>>,
+    nonce_manager: ZamaNonceManager,
 }
 
 impl<P> NonceManagedProvider<P> {
@@ -67,18 +66,24 @@ where
         &self,
         mut tx: N::TransactionRequest,
     ) -> TransportResult<N::ReceiptResponse> {
+        let signer_addr = self.signer_address;
         let nonce = self
             .nonce_manager
-            .lock()
-            .await
-            .get_next_nonce(&self.inner, self.signer_address)
+            .get_next_nonce(&self.inner, signer_addr)
             .await?;
         tx.set_nonce(nonce);
+
         let res = self.inner.send_transaction_sync(tx).await;
-        if res.is_err() {
-            // Reset the nonce manager if the transaction sending failed.
-            *self.nonce_manager.lock().await = Default::default();
+        match &res {
+            Err(e) if is_nonce_too_low(e) => {
+                self.nonce_manager.confirm_nonce(signer_addr, nonce).await;
+            }
+            Err(_) => {
+                self.nonce_manager.release_nonce(signer_addr, nonce).await;
+            }
+            Ok(_) => self.nonce_manager.confirm_nonce(signer_addr, nonce).await,
         }
+
         res
     }
 
@@ -86,72 +91,24 @@ where
         &self,
         mut tx: N::TransactionRequest,
     ) -> TransportResult<PendingTransactionBuilder<N>> {
+        let signer_addr = self.signer_address;
         let nonce = self
             .nonce_manager
-            .lock()
-            .await
-            .get_next_nonce(&self.inner, self.signer_address)
+            .get_next_nonce(&self.inner, signer_addr)
             .await?;
         tx.set_nonce(nonce);
+
         let res = self.inner.send_transaction(tx).await;
-        if res.is_err() {
-            // Reset the nonce manager if the transaction sending failed.
-            *self.nonce_manager.lock().await = Default::default();
-        }
-        res
-    }
-
-    // Not used but overridden for consistency with other send_transaction methods.
-    async fn send_transaction_sync_internal(
-        &self,
-        tx: SendableTx<N>,
-    ) -> TransportResult<N::ReceiptResponse> {
-        let tx = match tx {
-            SendableTx::Builder(mut tx) => {
-                let nonce = self
-                    .nonce_manager
-                    .lock()
-                    .await
-                    .get_next_nonce(&self.inner, self.signer_address)
-                    .await?;
-                tx.set_nonce(nonce);
-                SendableTx::Builder(tx)
+        match &res {
+            Err(e) if is_nonce_too_low(e) => {
+                self.nonce_manager.confirm_nonce(signer_addr, nonce).await;
             }
-            // An envelope is already signed, with its nonce baked in.
-            tx => tx,
-        };
-        let res = self.inner.send_transaction_sync_internal(tx).await;
-        if res.is_err() {
-            // Reset the nonce manager if the transaction sending failed.
-            *self.nonce_manager.lock().await = Default::default();
-        }
-        res
-    }
-
-    // Not used but overridden for consistency with other send_transaction methods.
-    async fn send_transaction_internal(
-        &self,
-        tx: SendableTx<N>,
-    ) -> TransportResult<PendingTransactionBuilder<N>> {
-        let tx = match tx {
-            SendableTx::Builder(mut tx) => {
-                let nonce = self
-                    .nonce_manager
-                    .lock()
-                    .await
-                    .get_next_nonce(&self.inner, self.signer_address)
-                    .await?;
-                tx.set_nonce(nonce);
-                SendableTx::Builder(tx)
+            Err(_) => {
+                self.nonce_manager.release_nonce(signer_addr, nonce).await;
             }
-            // An envelope is already signed, with its nonce baked in.
-            tx => tx,
-        };
-        let res = self.inner.send_transaction_internal(tx).await;
-        if res.is_err() {
-            // Reset the nonce manager if the transaction sending failed.
-            *self.nonce_manager.lock().await = Default::default();
+            Ok(_) => self.nonce_manager.confirm_nonce(signer_addr, nonce).await,
         }
+
         res
     }
 
@@ -165,5 +122,24 @@ where
 
     fn estimate_gas(&self, tx: N::TransactionRequest) -> EthCall<N, U64, u64> {
         self.inner.estimate_gas(tx)
+    }
+}
+
+// See https://ethereum-json-rpc.com/errors
+const ETH_INVALID_INPUT_RPC_ERROR_CODE: i64 = -32000;
+
+/// Returns `true` if the RPC error is "nonce too low" or "already known", `false` otherwise.
+fn is_nonce_too_low(error: &RpcError<TransportErrorKind>) -> bool {
+    match error {
+        RpcError::ErrorResp(ErrorPayload { code, message, .. }) => {
+            if *code == ETH_INVALID_INPUT_RPC_ERROR_CODE {
+                let lowercase_msg = message.to_lowercase();
+                lowercase_msg.starts_with("nonce too low")
+                    || lowercase_msg.starts_with("already known")
+            } else {
+                false
+            }
+        }
+        _ => false,
     }
 }
