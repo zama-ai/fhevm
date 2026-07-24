@@ -1,9 +1,7 @@
 import type { RolloutRunContext } from "../../src/commands/rollout-run";
 import { from, scenario, to, versionSources } from "./versions";
 
-// The released v0.13.0 test runner forwards its skip-compile flag to Hardhat
-// under the wrong name. Let that pinned runner compile instead.
-const testOptions = { noHardhatCompile: false, parallel: false } as const;
+const testOptions = { parallel: false } as const;
 const testRollout = (ctx: RolloutRunContext) => ctx.test("rollout-standard", testOptions);
 const testRequiredNode = (ctx: RolloutRunContext) =>
   ctx.test("user-decryption", { ...testOptions, grep: "test user decrypt ebool$" });
@@ -46,6 +44,7 @@ export const runProgressiveKmsCoreRollout = async (
 export const run = (ctx: RolloutRunContext) =>
   runProgressiveKmsCoreRollout(ctx, {
     from,
+    overrides: [{ group: "test-suite" }],
     scenario,
     to,
     versionSources,

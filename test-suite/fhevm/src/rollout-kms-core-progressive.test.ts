@@ -11,7 +11,7 @@ const RUNBOOK = path.resolve(import.meta.dir, "../rollouts/kms-core-progressive/
 describe("progressive KMS core rollout", () => {
   test("keeps SDK and connector versions unchanged", () => {
     expect(scenario).toBe("four-party-threshold-kms");
-    expect("RELAYER_SDK_VERSION" in from).toBe(false);
+    expect(from.RELAYER_SDK_VERSION).toBe("0.4.2");
     const baseline = from as Record<string, string>;
     expect(Object.entries(to).filter(([key, value]) => baseline[key] !== value)).toEqual([
       ["CORE_VERSION", "v0.13.22"],
@@ -25,8 +25,8 @@ describe("progressive KMS core rollout", () => {
         calls.push(`lock:${name}:${options.versions.CORE_VERSION}`);
         return `/tmp/${name}.lock.json`;
       },
-      async up(options: { lockFile: string; scenario?: string }) {
-        calls.push(`up:${options.scenario}:${options.lockFile}`);
+      async up(options: { lockFile: string; overrides?: { group: string }[]; scenario?: string }) {
+        calls.push(`up:${options.scenario}:${options.lockFile}:${options.overrides?.map(({ group }) => group).join(",")}`);
       },
       async readState() {
         calls.push("state");
@@ -51,25 +51,25 @@ describe("progressive KMS core rollout", () => {
     expect(calls).toEqual([
       "lock:00-kms-core-baseline:v0.13.20",
       "lock:01-kms-core-target:v0.13.22",
-      "up:four-party-threshold-kms:/tmp/00-kms-core-baseline.lock.json",
-      "test:rollout-standard:compile",
+      "up:four-party-threshold-kms:/tmp/00-kms-core-baseline.lock.json:test-suite",
+      "test:rollout-standard:no-compile",
       "state",
       "upgrade:1:/tmp/01-kms-core-target.lock.json",
       "require:1",
-      "test:user-decryption:compile:test user decrypt ebool$",
-      "test:rollout-standard:compile",
+      "test:user-decryption:no-compile:test user decrypt ebool$",
+      "test:rollout-standard:no-compile",
       "upgrade:2:/tmp/01-kms-core-target.lock.json",
       "require:2",
-      "test:user-decryption:compile:test user decrypt ebool$",
-      "test:rollout-standard:compile",
+      "test:user-decryption:no-compile:test user decrypt ebool$",
+      "test:rollout-standard:no-compile",
       "upgrade:3:/tmp/01-kms-core-target.lock.json",
       "require:3",
-      "test:user-decryption:compile:test user decrypt ebool$",
-      "test:rollout-standard:compile",
+      "test:user-decryption:no-compile:test user decrypt ebool$",
+      "test:rollout-standard:no-compile",
       "upgrade:4:/tmp/01-kms-core-target.lock.json",
       "require:4",
-      "test:user-decryption:compile:test user decrypt ebool$",
-      "test:rollout-standard:compile",
+      "test:user-decryption:no-compile:test user decrypt ebool$",
+      "test:rollout-standard:no-compile",
     ]);
   });
 });
