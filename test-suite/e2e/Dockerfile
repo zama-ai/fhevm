@@ -32,10 +32,10 @@ COPY library-solidity ./library-solidity
 COPY test-suite/e2e ./test-suite/e2e
 COPY sdk/js-sdk ./sdk/js-sdk
 
-# Install dependencies. Normal builds stay locked; rollout hotswap builds first
-# install the requested SDK in the e2e workspace, then verify what Node resolves
-# before producing the image.
+# Install dependencies. Normal builds stay locked; rollout hotswap builds replace
+# the e2e workspace SDK, then verify what Node resolves before producing the image.
 RUN if [ -n "$RELAYER_SDK_VERSION" ]; then \
+      npm uninstall -w test-suite/e2e "@zama-fhe/relayer-sdk" && \
       npm install -w test-suite/e2e --save-exact "@zama-fhe/relayer-sdk@${RELAYER_SDK_VERSION}" && \
       npm prune && \
       installed_sdk_version="$(cd test-suite/e2e && node -p "require('@zama-fhe/relayer-sdk/package.json').version")" && \
