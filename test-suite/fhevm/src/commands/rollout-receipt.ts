@@ -152,6 +152,17 @@ where relname ilike '%proof%'
    or relname ilike '%ciphertext%'
    or relname ilike '%transaction%'
 order by relname;
+
+select encode(handle, 'hex') as handle, txn_is_sent, txn_limited_retries_count as txn_retry_count,
+       txn_last_error, txn_last_error_at
+from ciphertext_digest
+order by txn_last_error_at desc nulls last
+limit 20;
+
+select encode(id, 'hex') as id, chain_id, block_number, completed_at
+from transactions
+order by created_at desc
+limit 20;
 `,
 };
 
@@ -160,7 +171,10 @@ const collectFailureDiagnostics = async (containers: ReceiptContainer[]) => {
   const kmsContainers = containers
     .map((container) => container.name)
     .filter((name) => /^kms-core(?:-|$)/.test(name) || /^kms-connector(?:-|$)/.test(name));
-  sections.push(...(await Promise.all(kmsContainers.map(containerLogs))));
+  const coprocessorTxSenders = containers
+    .map((container) => container.name)
+    .filter((name) => /^coprocessor\d*-transaction-sender$/.test(name));
+  sections.push(...(await Promise.all([...kmsContainers, ...coprocessorTxSenders].map(containerLogs))));
   sections.push(await psql("fhevm-relayer-db", "relayer_db", diagnosticSql.relayer));
   for (const database of ["coprocessor", "coprocessor_1", "coprocessor_2"]) {
     sections.push(await psql("coprocessor-and-kms-db", database, diagnosticSql.coprocessor));
