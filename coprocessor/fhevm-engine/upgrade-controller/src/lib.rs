@@ -1112,6 +1112,7 @@ type ReconcileRow = (
     Option<i64>,
     Option<i64>,
     Option<i64>,
+    bool,
 );
 
 /// Advance the upgrade from durable state: re-arm readiness, resume a cutover, or
@@ -1128,13 +1129,20 @@ async fn reconcile(
     }
     let row: Option<ReconcileRow> = sqlx::query_as(
         "SELECT state, proposal_id, COALESCE(proposal_block, -1),
-                host_chain_id, start_block, gw_start_block
+                host_chain_id, start_block, gw_start_block, gw_dry_run_started
            FROM upgrade_state WHERE stack_role = 'GCS' AND status = 'in_progress'",
     )
     .fetch_optional(pool)
     .await?;
-    let Some((state, proposal_id, proposal_block, host_chain_id, start_block, gw_start_block)) =
-        row
+    let Some((
+        state,
+        proposal_id,
+        proposal_block,
+        host_chain_id,
+        start_block,
+        gw_start_block,
+        gw_dry_run_started,
+    )) = row
     else {
         return Ok(());
     };
@@ -1162,8 +1170,27 @@ async fn reconcile(
             info!("reconcile: GCS in UpgradeAuthorized — resuming cutover");
             execute_cutover(pool).await?;
         }
-        // Guarded on both latches, so it no-ops until they're set.
         "DryRunStarted" => {
+            // Restore an incomplete Gateway gate after a controller restart.
+            if !gw_dry_run_started {
+                if let (Some(proposal_id), Some(chain_id), Some(start), Some(gw_start)) =
+                    (proposal_id, host_chain_id, start_block, gw_start_block)
+                {
+                    spawn_gcs_dry_run_readiness(
+                        pool,
+                        cancel,
+                        readiness,
+                        GcsReadinessAttempt {
+                            proposal_id,
+                            proposal_block,
+                            chain_id,
+                            start_block: start,
+                            gw_start_block: gw_start,
+                        },
+                    );
+                }
+            }
+            // Guarded on both latches, so it no-ops until they're set.
             try_cutover_if_consensus(pool).await?;
         }
         _ => {}
@@ -1876,6 +1903,64 @@ mod tests {
         .expect("reconcile");
 
         assert_eq!(gcs_state(&pool).await, ("LIVE".into(), "completed".into()));
+    }
+
+    /// A restart after the host gate finishes must restore an incomplete
+    /// Gateway gate instead of leaving the zkproof-worker paused forever.
+    #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+    async fn reconcile_rearms_gateway_gate_from_dry_run_started() {
+        use tokio::time::{sleep, timeout, Duration};
+
+        let (_instance, pool) = test_pool().await;
+        seed_gcs_row(&pool, "DryRunStarted", "in_progress").await;
+        sqlx::query(
+            "UPDATE upgrade_state
+                SET host_consensus_reached = FALSE,
+                    gw_consensus_reached = FALSE,
+                    gw_dry_run_started = FALSE
+              WHERE stack_role = 'GCS'",
+        )
+        .execute(&pool)
+        .await
+        .expect("reset latches and Gateway gate");
+        create_gcs_schema(&pool).await.expect("create gcs schema");
+        sqlx::query(&format!(
+            "INSERT INTO {GCS_SCHEMA_QUOTED}.gw_listener_last_block
+                    (dummy_id, last_block_num)
+             VALUES (TRUE, 1)"
+        ))
+        .execute(&pool)
+        .await
+        .expect("seed Gateway watermark");
+
+        let cancel = CancellationToken::new();
+        reconcile(
+            &pool,
+            &cancel,
+            &Arc::new(AtomicI64::new(NO_READINESS_ATTEMPT)),
+            true,
+        )
+        .await
+        .expect("reconcile");
+
+        timeout(Duration::from_secs(10), async {
+            loop {
+                let (started,): (bool,) = sqlx::query_as(
+                    "SELECT gw_dry_run_started
+                       FROM upgrade_state WHERE stack_role = 'GCS'",
+                )
+                .fetch_one(&pool)
+                .await
+                .expect("Gateway gate");
+                if started {
+                    break;
+                }
+                sleep(Duration::from_millis(20)).await;
+            }
+        })
+        .await
+        .expect("Gateway gate was not restored");
+        cancel.cancel();
     }
 
     /// A BCS-mode controller never reconciles GCS state.
