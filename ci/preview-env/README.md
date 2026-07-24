@@ -36,28 +36,36 @@ ci/preview-env/
 │   └── values-postgres-coprocessor-e2e.yaml # `common` chart overlay: in-cluster Postgres, dedicated to coprocessor
 ├── host-chain/
 │   ├── values-anvil-host-e2e.yaml       # anvil-node overlay, host chain
+│   ├── values-anvil-host-polygon-e2e.yaml   # anvil-node overlay, Polygon host chain (deploy_polygon)
 │   ├── values-host-contracts-e2e.yaml   # contracts overlay, host-contracts
+│   ├── values-host-contracts-polygon-e2e.yaml # contracts overlay, Polygon host-contracts (mirrors ETH ProtocolConfig)
 │   └── values-host-trigger-keygen-e2e.yaml # contracts overlay, real FHE key/CRS gen ceremony
 ├── gateway-chain/
 │   ├── values-anvil-gateway-e2e.yaml         # anvil-node overlay, gateway chain
 │   ├── values-gateway-contracts-e2e.yaml     # contracts overlay, gateway-contracts
-│   └── values-gateway-add-host-chains-e2e.yaml # contracts overlay, deferred addHostChains step
+│   ├── values-gateway-add-host-chains-e2e.yaml # contracts overlay, deferred addHostChains step
+│   └── values-gateway-add-host-chains-polygon-e2e.yaml # contracts overlay, register Polygon (80002) (deploy_polygon)
 ├── coprocessor/
 │   ├── values-coprocessor-e2e.yaml        # coprocessor overlay (one release per party: coprocessor-<i>)
+│   ├── values-coprocessor-polygon-e2e.yaml # additive multichain overlay: adds the Polygon chains[] consumer (deploy_polygon)
 │   ├── values-coprocessor-poller-e2e.yaml # coprocessor overlay, poller-only release: S3 key/CRS download -> keys/crs tables (coprocessor-poller-<i>)
+│   ├── values-coprocessor-poller-polygon-e2e.yaml # additive multichain overlay: adds the Polygon poller (deploy_polygon)
 │   └── values-coprocessor-redis-e2e.yaml  # iamguarded Redis overlay: per-party host-listener-consumer broker (coprocessor-redis-<i>)
 ├── listener/
 │   ├── values-listener-e2e.yaml          # listener chart overlay: per-party host-chain event producer (listener-<i>)
+│   ├── values-listener-polygon-e2e.yaml  # listener overlay, Polygon producer (listener-polygon-<i>) (deploy_polygon)
 │   └── values-postgres-listener-e2e.yaml # `common` chart overlay: in-cluster Postgres, dedicated to the listener's cursor DB
 ├── kms-connector/
 │   ├── values-kms-connector-e2e.yaml       # kms-connector overlay
+│   ├── values-kms-connector-polygon-e2e.yaml # additive overlay: adds the Polygon host chain to hostChains (deploy_polygon)
 │   └── values-postgres-connector-e2e.yaml  # `common` chart overlay: in-cluster Postgres, dedicated to kms-connector
 ├── relayer/
 │   ├── values-relayer-e2e.yaml          # `common` chart overlay, relayer server
 │   ├── values-relayer-migrate-e2e.yaml  # `common` chart overlay, relayer DB migration Job
 │   └── values-postgres-relayer-e2e.yaml # `common` chart overlay: in-cluster Postgres, dedicated to relayer + relayer-migrate
 └── test-suite/
-    └── values-test-suite-e2e.yaml       # `common` chart overlay, e2e test-suite Job
+    ├── values-test-suite-e2e.yaml       # `common` chart overlay, e2e test-suite Job
+    └── values-test-suite-workflow-polygon-e2e.yaml # Argo Workflow overlay, Polygon e2e run (deploy_polygon + automated_tests)
 ```
 
 Every file here is a **values overlay for a chart**. `anvil-node`/`contracts`/`coprocessor`/
@@ -201,6 +209,48 @@ self-contained `hostListener`. Per party `i`:
 > CPU/memory on the `coprocessor` nodepool, so `nb_coprocessor` > 1 multiplies the
 > cluster capacity needed. Default stays `1`.
 
+## Multichain: second Polygon host chain (`deploy_polygon`)
+
+`pr-preview-deploy.yml` takes a `deploy_polygon` input (default `false`) that adds a
+**second host chain — Polygon Amoy (chainId `80002`)** alongside the ETH one. It is a
+fresh local `anvil` (**not** a fork of live Amoy, and no `--fork`): nothing in the stack
+depends on Polygon consensus, only on a standard EVM JSON-RPC/WS endpoint, so a plain
+anvil with `--chain-id 80002` is indistinguishable to every fhevm component.
+
+Polygon **reuses the ETH-activated KMS key** — there is no second keygen ceremony:
+
+- `host-contracts-polygon` deploys with `--with-kms-generation false
+  --protocol-config-source canonical`, which **mirrors** the ETH ProtocolConfig (its
+  active KMS context/key) onto Polygon (`values-host-contracts-polygon-e2e.yaml`). So
+  it must run *after* the ETH host-contracts (the canonical source).
+- The coprocessor becomes multichain via **additive overlays**
+  (`values-coprocessor-polygon-e2e.yaml` / `-poller-polygon-e2e.yaml`) that add a
+  `polygon` `chains[]` entry (a `host-listener-consumer` + poller keyed to `80002`,
+  `useLegacyName: false` so names don't collide with the ETH `host` entry). They set
+  `canonicalProtocolConfigChainId: "12345"` so Polygon defers to ETH's key. The
+  coprocessor DB (`keys`/`crs`) is shared, so the ETH keygen already filled it.
+- Per party: a `listener-polygon-<i>` producer (own cursor DB
+  `postgres-listener-polygon-<i>`) publishes chain-`80002` events to the **same**
+  per-party Redis; the Polygon consumer filters them out by `--chain-id`.
+- The relayer gets a second `host_chains` entry and the kms-connector a second
+  `hostChains` entry (`values-kms-connector-polygon-e2e.yaml`) so host ACL checks cover
+  Polygon ciphertexts.
+- Chain `80002` is registered into the shared GatewayConfig by a second
+  `addHostChainsToGatewayConfig` call (`values-gateway-add-host-chains-polygon-e2e.yaml`,
+  additive, doesn't disturb the ETH registration).
+
+These overlays live in **separate files** (not the base values) on purpose: the
+coprocessor `dbMigration` Job renders `HOST_CHAIN_<i>_ACL` for every `chains[]` entry
+regardless of whether its consumer is enabled, so a Polygon entry pointing at the
+`polygon-sc-addresses` ConfigMap would crash the migration whenever Polygon isn't
+deployed. Every Polygon step in the workflow is gated on `deploy_polygon == 'true'`.
+
+> Coverage nuance: the Polygon e2e run uses Hardhat network `polygonAmoy`, which **is**
+> in `LIVE_NETWORKS` (see the network-mode section above), so `isLiveNetwork()` is
+> `true` and it takes the **reduced / read-only** path (the `hcu-block-cap` owner-only
+> and `evm_*` deterministic subtests `this.skip()`). The Polygon run is a multichain
+> routing smoke test; the ETH `staging` run remains the full-coverage one.
+
 ## TODO / remaining work
 
 - ~~Add multi-coprocessor support~~ — done, see "Multi-coprocessor (`nb_coprocessor`) and
@@ -213,4 +263,5 @@ self-contained `hostListener`. Per party `i`:
   `zama-ai/kms`'s own `ci/scripts/deploy.sh` defaults to).
 - Add support for changing the coprocessor's tfhe-worker instance type (e.g. GPU vs CPU nodepool
   selection).
-- Add multichain support
+- ~~Add multichain support~~ — done, see "Multichain: second Polygon host chain
+  (`deploy_polygon`)" above (opt-in; ETH + Polygon Amoy sharing one KMS key).

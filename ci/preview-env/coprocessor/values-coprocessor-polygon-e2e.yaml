@@ -1,0 +1,63 @@
+# ADDITIVE overlay for the coprocessor-<i> release, passed as an EXTRA `-f` AFTER
+# values-coprocessor-e2e.yaml ONLY when deploy_polygon=true (see
+# preview-env-deploy.yml). Its SOLE purpose is to add Polygon (80002) to this
+# release's chains[] so coprocessor-<i>'s dbMigration seeds the Polygon
+# host_chains row (initialize_db.sh -> seed_host_chains reads HOST_CHAIN_<i>_*
+# for EVERY chains[] entry, regardless of `enabled`). Every Polygon role is
+# DISABLED here: the actual Polygon host-listener-consumer runs in its OWN
+# release (coprocessor-polygon-<i>, values-coprocessor-polygon-consumer-e2e.yaml).
+#
+# WHY Polygon is NOT a second enabled consumer in this release: the coprocessor
+# chart emits one YAML document per (chain, role) but the `---` separator between
+# range iterations has no leading newline, so it glues onto the previous chain's
+# last rendered line. Two ENABLED consumers in a single render therefore collapse
+# into ONE YAML document and the second (Polygon) silently overwrites the first
+# (ETH) - the ETH consumer disappears. Keeping Polygon seed-only here renders
+# exactly one consumer (ETH); the Polygon consumer/poller get their own
+# single-chain releases where that collision cannot happen.
+#
+# Helm REPLACES list-typed values wholesale when a later -f redefines them, so
+# this repeats the ETH `host` entry verbatim - it MUST stay in sync with
+# values-coprocessor-e2e.yaml chains[0]. It cannot live in the base file:
+# dbMigration renders HOST_CHAIN_<i>_ACL via valueFrom for every chains[] entry,
+# so a Polygon entry pointing at polygon-sc-addresses would crash the migration
+# Job whenever Polygon isn't deployed.
+commonConfig:
+  # Polygon is a NON-CANONICAL host that mirrors ETH's ProtocolConfig/KMS context
+  # (see values-host-contracts-polygon-e2e.yaml). Point at the canonical chain
+  # (ETH, 12345) so Polygon reuses the ETH-activated key. Harmless for ETH (it IS
+  # the canonical chain).
+  canonicalProtocolConfigChainId: "12345"
+
+chains:
+  # --- ETH host chain: MUST mirror values-coprocessor-e2e.yaml chains[0] ---
+  - name: host
+    chainId: "12345"
+    wsUrl: "ws://anvil-host-anvil-node:8545"
+    httpUrl: "http://anvil-host-anvil-node:8545"
+    aclContractAddressValueFrom: {configMapKeyRef: {name: host-sc-addresses, key: acl.address}}
+    fhevmExecutorContractAddressValueFrom: {configMapKeyRef: {name: host-sc-addresses, key: fhevm_executor.address}}
+    kmsGenerationContractAddressValueFrom: {configMapKeyRef: {name: host-sc-addresses, key: kms_generation.address}}
+    protocolConfigContractAddressValueFrom: {configMapKeyRef: {name: host-sc-addresses, key: protocol_config.address}}
+    hostListener: {enabled: false, useLegacyName: true}
+    hostListenerPoller: {enabled: false, useLegacyName: true}
+    hostListenerCatchupOnly: {enabled: false, useLegacyName: true}
+    hostListenerConsumer: {enabled: true, useLegacyName: true}
+  # --- Polygon host chain (80002): SEED-ONLY (all roles disabled) ---
+  # Present solely so coprocessor-<i>'s dbMigration seeds its host_chains row. The
+  # Polygon consumer and poller run in their own releases (coprocessor-polygon-<i>
+  # / coprocessor-poller-polygon-<i>).
+  - name: polygon
+    chainId: "80002"
+    wsUrl: "ws://anvil-host-polygon-anvil-node:8545"
+    httpUrl: "http://anvil-host-polygon-anvil-node:8545"
+    aclContractAddressValueFrom: {configMapKeyRef: {name: polygon-sc-addresses, key: acl.address}}
+    fhevmExecutorContractAddressValueFrom: {configMapKeyRef: {name: polygon-sc-addresses, key: fhevm_executor.address}}
+    # Polygon has NO KMSGeneration (mirrors ETH's); point at the canonical ETH
+    # contract for seeding consistency.
+    kmsGenerationContractAddressValueFrom: {configMapKeyRef: {name: host-sc-addresses, key: kms_generation.address}}
+    protocolConfigContractAddressValueFrom: {configMapKeyRef: {name: polygon-sc-addresses, key: protocol_config.address}}
+    hostListener: {enabled: false, useLegacyName: false}
+    hostListenerPoller: {enabled: false, useLegacyName: false}
+    hostListenerCatchupOnly: {enabled: false, useLegacyName: false}
+    hostListenerConsumer: {enabled: false, useLegacyName: false}

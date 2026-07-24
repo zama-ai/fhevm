@@ -65,6 +65,10 @@ Key inputs (all have sensible defaults — you rarely set more than a couple):
 - `nb_kms_core` — number of KMS parties (default `4`).
 - `nb_coprocessor` — number of independent coprocessor stacks (default `1`).
   `> 1` multiplies cluster capacity — see the resource caveat in `README.md`.
+- `deploy_polygon` — also add a second Polygon Amoy (`80002`) host chain (default
+  `false`). Fresh local anvil, reuses the ETH KMS key; roughly doubles the
+  host-side stack. With `automated_tests` on it also runs a Polygon e2e suite.
+  See the multichain section in `README.md`.
 
 **Versions** (chart versions, image tags, `kms_core_version`/`kms_repo_ref`,
 `relayer_sdk_version`, …) — override any pin for this run. Each falls back to the

@@ -1,0 +1,28 @@
+# anvil-node overlay for the SECOND (Polygon) host chain, deployed only when
+# deploy_polygon=true (see preview-env-deploy.yml). Fresh local anvil, NOT a
+# fork of live Amoy: nothing in this stack depends on Polygon consensus, only
+# on a standard EVM JSON-RPC/WS endpoint, so a plain anvil with chainId 80002
+# is indistinguishable to every fhevm component. Same tuning as the ETH host
+# (../host-chain/values-anvil-host-e2e.yaml) - see its resources note for the
+# OOM rationale.
+nameOverride: anvil-host-polygon
+image:
+  name: ghcr.io/foundry-rs/foundry
+  tag: v1.3.5
+network:
+  blockTime: "1"
+  host: "0.0.0.0"
+  # Polygon Amoy chain id. Mimics Amoy without forking its state.
+  chainId: "80002"
+  accounts: "120"
+  mnemonic: "test test test test test test test test test test test junk"
+port: 8545
+storage:
+  size: 1Gi
+resources:
+  requests:
+    cpu: 250m
+    memory: 512Mi
+  limits:
+    cpu: "1"
+    memory: 2Gi

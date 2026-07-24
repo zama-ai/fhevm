@@ -1,0 +1,91 @@
+# coprocessor chart values overlay deploying ONLY the Polygon (80002)
+# host-listener-consumer, as a dedicated release per coprocessor party
+# (coprocessor-polygon-<i>). It ingests Polygon events (published to the shared
+# per-party Redis by listener-polygon-<i>) into the shared coprocessor DB.
+#
+# WHY A SEPARATE RELEASE (not a second enabled chains[] entry in coprocessor-<i>):
+# the coprocessor chart emits one YAML document per (chain, role), but the `---`
+# separator between range iterations has no leading newline, so it glues onto the
+# previous chain's last rendered line (e.g. `memory: 512Mi---`). Two ENABLED
+# consumers in ONE render therefore collapse into a single YAML document and the
+# second (Polygon) overwrites the first (ETH), silently dropping the ETH consumer.
+# A single-chain release renders exactly one consumer document, so the collision
+# cannot happen.
+#
+# host_chains for chain 80002 is already seeded by coprocessor-<i>'s dbMigration
+# (values-coprocessor-polygon-e2e.yaml keeps Polygon in that release's chains[]
+# purely for seeding), so dbMigration is disabled here. Shares the same per-party
+# Postgres (postgres-coprocessor-<i>) and Redis (coprocessor-redis-<i>) the ETH
+# consumer uses.
+#
+# Deployed as (per party i, see preview-env-deploy.yml):
+#   helm upgrade --install coprocessor-polygon-<i> \
+#     oci://hub.zama.org/ghcr/zama-ai/fhevm/charts/coprocessor \
+#     -n <namespace> -f this-file \
+#     --set-string commonConfig.databaseEndpoint.value=postgres-coprocessor-<i>:5432 \
+#     --set-string hostListenerConsumerShared.serviceAccountName=coprocessor-<i> \
+#     --set-string hostListenerConsumerShared.config.brokerUrl.value=redis://coprocessor-redis-<i>-master:6379 \
+#     --set-string hostListenerConsumerShared.image.tag=<coprocessor_host_listener tag>
+commonConfig:
+  # Same in-cluster Postgres the coprocessor-<i> release uses (overridden per
+  # party via --set). Shared DB: this consumer writes the same tables the ETH
+  # consumer / workers use.
+  databaseUser: {value: "zama"}
+  databasePassword: {value: "zama"}
+  databaseEndpoint: {value: "postgres-coprocessor:5432"}
+  databaseUrl: "postgresql://$(DATABASE_USER):$(DATABASE_PASSWORD)@$(DATABASE_ENDPOINT)/fhevm_e2e"
+  databaseAuthMode: password
+  # Polygon mirrors ETH's ProtocolConfig/KMS context: point at the canonical chain
+  # (ETH, 12345) so it reuses the ETH-activated key rather than expecting its own
+  # keygen.
+  canonicalProtocolConfigChainId: "12345"
+
+# Migration + every other role are owned by the coprocessor-<i> /
+# coprocessor-poller-<i> releases; keep them off here.
+dbMigration: {enabled: false}
+hostListenerShared: {enabled: false}
+hostListenerPollerShared: {enabled: false}
+hostListenerCatchupOnlyShared: {enabled: false}
+gwListener: {enabled: false}
+tfheWorker: {enabled: false}
+zkProofWorker: {enabled: false}
+snsWorker: {enabled: false}
+txSender: {enabled: false}
+
+hostListenerConsumerShared:
+  image: {name: hub.zama.org/ghcr/zama-ai/fhevm/coprocessor/host-listener, tag: latest}
+  replicas: 1
+  # IRSA SA (coprocessor-<i>, from coprocessor-infra-<i>); overridden per party.
+  serviceAccountName: coprocessor
+  config:
+    # This party's Redis, published to by listener-polygon-<i>. Overridden per
+    # party via --set; the default below is the single-party (N=1) shape.
+    brokerUrl: {value: "redis://coprocessor-redis-1-master:6379"}
+  # Light Redis->DB consumer (no FHE compute): generic zws-pool nodepool, same as
+  # the listener / Redis / poller releases, not the heavy coprocessor pool.
+  resources:
+    requests: {cpu: "500m", memory: 1Gi}
+    limits: {cpu: "1", memory: 2Gi}
+  nodeSelector:
+    karpenter.sh/nodepool: zws-pool
+  tolerations:
+    - {key: karpenter.sh/nodepool, operator: Equal, value: zws-pool, effect: NoSchedule}
+
+chains:
+  # Single chain => single consumer document => no separator collision.
+  - name: polygon
+    chainId: "80002"
+    wsUrl: "ws://anvil-host-polygon-anvil-node:8545"
+    httpUrl: "http://anvil-host-polygon-anvil-node:8545"
+    aclContractAddressValueFrom: {configMapKeyRef: {name: polygon-sc-addresses, key: acl.address}}
+    fhevmExecutorContractAddressValueFrom: {configMapKeyRef: {name: polygon-sc-addresses, key: fhevm_executor.address}}
+    # Polygon has NO KMSGeneration (mirrors ETH's). The consumer template always
+    # renders --kms-generation-address, so point it at the canonical ETH contract:
+    # it doesn't exist on the Polygon RPC, so the consumer simply sees no
+    # kms-generation events there - correct, since Polygon runs no keygen.
+    kmsGenerationContractAddressValueFrom: {configMapKeyRef: {name: host-sc-addresses, key: kms_generation.address}}
+    protocolConfigContractAddressValueFrom: {configMapKeyRef: {name: polygon-sc-addresses, key: protocol_config.address}}
+    hostListener: {enabled: false, useLegacyName: true}
+    hostListenerPoller: {enabled: false, useLegacyName: true}
+    hostListenerCatchupOnly: {enabled: false, useLegacyName: true}
+    hostListenerConsumer: {enabled: true, useLegacyName: true}
