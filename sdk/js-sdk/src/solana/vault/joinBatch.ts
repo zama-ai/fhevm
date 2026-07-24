@@ -37,10 +37,10 @@ import { CONFIDENTIAL_TOKEN_PROGRAM_ADDRESS } from '../internal/generated/confid
 import {
   EVENT_AUTHORITY_SEED,
   findBatchAuthorityPda,
-  pendingJoinLineage,
+  pendingJoinValueAccount,
   tokenAccountAddress,
 } from './internal/batcherPdas.js';
-import { balanceValueAddress, transferredAmountValueAddress } from './internal/tokenLineage.js';
+import { balanceValueAddress, transferredAmountValueAddress } from './internal/tokenValueAccount.js';
 
 /**
  * Joins a batch with a coprocessor-attested confidential amount of the batcher's join token. This
@@ -129,7 +129,7 @@ export async function joinBatch(
     userBalanceValue: await balanceValueAddress(joinConfidentialMint, userTokenAccount),
     batchBalanceValue: await balanceValueAddress(joinConfidentialMint, batchJoinTokenAccount),
     userTransferredValue: await transferredAmountValueAddress(joinConfidentialMint, userTokenAccount),
-    pendingJoinValue: (await pendingJoinLineage(parameters.batch, batchAuthority, user.address)).encryptedValueAddress,
+    pendingJoinValue: (await pendingJoinValueAccount(parameters.batch, batchAuthority, user.address)).encryptedValueAddress,
     zamaEventAuthority: await eventAuthority(zamaHostProgramAddress),
     hostConfig: parameters.hostConfig,
     confidentialTokenEventAuthority: await eventAuthority(CONFIDENTIAL_TOKEN_PROGRAM_ADDRESS),

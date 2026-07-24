@@ -27,16 +27,16 @@ vertical. Multi-replica / prod auth remain later slices.
 
 Both proof endpoints are **semantic**: the caller asks the product question — "prove `subject`
 had historical access to `handle`" or "prove `handle` is publicly decryptable" — and the service
-resolves `(lineage, handle[, subject], kind) → leaf_index` internally via one indexed lookup. A
+resolves `(encrypted value account, handle[, subject], kind) → leaf_index` internally via one indexed lookup. A
 historical-access key maps to a unique leaf by construction (a handle is superseded at most once
-per lineage, sealing one leaf per subject). A public-decrypt key may match several leaves for one
+per encrypted value account, sealing one leaf per subject). A public-decrypt key may match several leaves for one
 handle (a born-public output plus later `make_handle_public` re-releases, which have no
 already-public guard); the service resolves to the earliest — any public leaf proves publicness,
 and the earliest is deterministic and append-stable. Clients never compute, assume, or supply a
 leaf index; `leaf_index` and `leaf_count` are OUTPUTS they pass through from the response.
 
-`access-proof` serves `ZAMA_HIST_ACCESS_LEAF_V1` leaves (lineage ‖ leaf_index ‖ handle ‖ subject);
-`public-proof` serves `ZAMA_PUBLIC_DECRYPT_LEAF_V1` leaves (lineage ‖ leaf_index ‖ handle).
+`access-proof` serves `ZAMA_HIST_ACCESS_LEAF_V1` leaves (encrypted value account ‖ leaf_index ‖ handle ‖ subject);
+`public-proof` serves `ZAMA_PUBLIC_DECRYPT_LEAF_V1` leaves (encrypted value account ‖ leaf_index ‖ handle).
 
 Success proof DTO:
 
@@ -46,7 +46,7 @@ Success proof DTO:
   "leaf_index": 0,
   "leaf_count": 1,
   "rpc_context_slot": 1234,
-  "lineage_last_slot": 1230,
+  "encrypted_value_account_last_slot": 1230,
   "commitment": "confirmed",
   "proof_format_version": "v1",
   "verified": true,
@@ -61,12 +61,12 @@ Chain-context fields bind the served proof to observed state so a consumer can
 reason about staleness when the store and the RPC provider see different
 confirmed tips:
 
-- `leaf_count` — lineage leaf count the proof was built against.
+- `leaf_count` — encrypted value account leaf count the proof was built against.
 - `rpc_context_slot` — confirmed Solana RPC context slot of the on-chain peak
   comparison that produced `verified`.
-- `lineage_last_slot` — per-lineage durable ingest slot at which this lineage's
-  served leaves were last written (`solana_proof_lineages.last_slot`). Omitted
-  when no snapshot backed the response (store has not ingested the lineage yet).
+- `encrypted_value_account_last_slot` — per-encrypted value account durable ingest slot at which this encrypted value account's
+  served leaves were last written (`solana_proof_encrypted_value_accounts.last_slot`). Omitted
+  when no snapshot backed the response (store has not ingested the encrypted value account yet).
   This is deliberately distinct from the store's GLOBAL durable ingest checkpoint
   (`solana_proof_progress.checkpoint_slot`); surfacing that global checkpoint on
   the proof DTO remains a possible follow-up.
@@ -75,7 +75,7 @@ confirmed tips:
 
 The `lagging` (503) and `corrupt_cache` (500) envelopes reuse this shape and
 carry `leaf_count` + `rpc_context_slot` (the two tips being compared);
-`lineage_last_slot` appears only when a snapshot was in hand.
+`encrypted_value_account_last_slot` appears only when a snapshot was in hand.
 
 The proof path is **read-only**: SQL `proof_snapshot_for_leaf` (one consistent snapshot read that
 also resolves the semantic key to its leaf index) + confirmed on-chain peak check; no
@@ -102,8 +102,8 @@ A semantic key that resolves to **no leaf** is classified against chain: while t
 `leaf_count` is still behind the live on-chain `leaf_count`, the miss is a retryable `503`
 `status: "lagging"` (ingest has not caught up to a just-sealed leaf); once the snapshot is at
 parity with chain, the miss is terminal — `404` with `status: "leaf_not_found"` (same proof
-envelope, carrying the chain-context fields, `mmr_proof: null`). A lineage with no on-chain
-account at all is `404` `code: lineage_not_found` (`ErrorResponse`).
+envelope, carrying the chain-context fields, `mmr_proof: null`). A encrypted value account with no on-chain
+account at all is `404` `code: encrypted_value_account_not_found` (`ErrorResponse`).
 
 Other client/server failures use the same
 `ErrorResponse` JSON envelope. Proof routes get an `x-request-id`, a 30s typed
@@ -159,9 +159,9 @@ never marks complete.
 ## PoC gaps (non-prod TODOs)
 
 - **O(n) proof construction:** each proof request loads every leaf for the
-  lineage and rebuilds peaks/siblings in memory. Acceptable only as an
+  encrypted value account and rebuilds peaks/siblings in memory. Acceptable only as an
   explicitly bounded PoC. **TODO(prod):** persisted MMR nodes / checkpoints so
-  proof cost is logarithmic, plus measured lineage size limits.
+  proof cost is logarithmic, plus measured encrypted value account size limits.
 - **Single replica:** process restart or deploy causes brief API + ingest
   downtime. There is no rolling zero-downtime ingest handoff.
 - **Internal only:** intended for localhost / Tailscale-class networks. No

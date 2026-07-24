@@ -163,7 +163,7 @@ export type ClaimAsyncInput<
   TAccountConfidentialTokenProgram extends string = string,
   TAccountSystemProgram extends string = string,
 > = {
-  /** Pays the claim lineage and transfer output rent. Anyone. */
+  /** Pays the claim encrypted value account and transfer output rent. Anyone. */
   payer: TransactionSigner<TAccountPayer>;
   /** seeds. Not a signer — claims are permissionless pulls. */
   user: Address<TAccountUser>;
@@ -442,7 +442,7 @@ export type ClaimInput<
   TAccountConfidentialTokenProgram extends string = string,
   TAccountSystemProgram extends string = string,
 > = {
-  /** Pays the claim lineage and transfer output rent. Anyone. */
+  /** Pays the claim encrypted value account and transfer output rent. Anyone. */
   payer: TransactionSigner<TAccountPayer>;
   /** seeds. Not a signer — claims are permissionless pulls. */
   user: Address<TAccountUser>;
@@ -691,7 +691,7 @@ export type ParsedClaimInstruction<
 > = {
   programAddress: Address<TProgram>;
   accounts: {
-    /** Pays the claim lineage and transfer output rent. Anyone. */
+    /** Pays the claim encrypted value account and transfer output rent. Anyone. */
     payer: TAccountMetas[0];
     /** seeds. Not a signer — claims are permissionless pulls. */
     user: TAccountMetas[1];

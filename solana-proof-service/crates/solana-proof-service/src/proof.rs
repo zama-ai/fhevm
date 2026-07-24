@@ -7,7 +7,7 @@
 use async_trait::async_trait;
 use zama_solana_acl::mmr::{mmr_build_proof, mmr_peaks_from_leaves, MmrProof};
 
-use crate::chain::{ChainFetcher, OnChainLineageState};
+use crate::chain::{ChainFetcher, OnChainEncryptedValueAccountState};
 use solana_proof_store::{
     LeafKind, ProofSnapshot, ResolvedProofSnapshot, SemanticLeafKey, SqlProofStore, StoreError,
 };
@@ -18,7 +18,7 @@ use solana_proof_store::{
 pub trait ProofSnapshotSource: Send + Sync {
     async fn proof_snapshot_for_leaf(
         &self,
-        lineage: [u8; 32],
+        encrypted_value_account: [u8; 32],
         key: &SemanticLeafKey,
     ) -> Result<Option<ResolvedProofSnapshot>, StoreError>;
 }
@@ -27,23 +27,23 @@ pub trait ProofSnapshotSource: Send + Sync {
 impl ProofSnapshotSource for SqlProofStore {
     async fn proof_snapshot_for_leaf(
         &self,
-        lineage: [u8; 32],
+        encrypted_value_account: [u8; 32],
         key: &SemanticLeafKey,
     ) -> Result<Option<ResolvedProofSnapshot>, StoreError> {
-        SqlProofStore::proof_snapshot_for_leaf(self, lineage, key).await
+        SqlProofStore::proof_snapshot_for_leaf(self, encrypted_value_account, key).await
     }
 }
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct MmrProofResult {
     pub mmr_proof: Option<MmrProof>,
-    /// Lineage leaf count the proof was built against (matches the confirmed chain read).
+    /// EncryptedValueAccount leaf count the proof was built against (matches the confirmed chain read).
     pub leaf_count: u64,
     /// Confirmed RPC context slot of the on-chain peak comparison that produced `verified`.
     pub rpc_context_slot: u64,
-    /// Durable ingest slot at which this lineage's served leaves were last written
-    /// (`solana_proof_lineages.last_slot`). `None` when no snapshot backed the result.
-    pub lineage_last_slot: Option<u64>,
+    /// Durable ingest slot at which this encrypted_value_account's served leaves were last written
+    /// (`solana_proof_encrypted_value_accounts.last_slot`). `None` when no snapshot backed the result.
+    pub encrypted_value_account_last_slot: Option<u64>,
     pub verified: bool,
 }
 
@@ -53,23 +53,23 @@ pub enum ProofError {
     Chain(#[from] crate::chain::ChainError),
     #[error("store error: {0}")]
     Store(#[from] StoreError),
-    #[error("no on-chain account found for lineage")]
-    LineageNotFound,
-    #[error("lineage proof data is lagging chain state (leaf_count {leaf_count})")]
+    #[error("no on-chain account found for encrypted_value_account")]
+    EncryptedValueAccountNotFound,
+    #[error("encrypted_value_account proof data is lagging chain state (leaf_count {leaf_count})")]
     Lagging {
         leaf_count: u64,
         rpc_context_slot: u64,
-        lineage_last_slot: Option<u64>,
+        encrypted_value_account_last_slot: Option<u64>,
     },
     #[error(
-        "lineage proof store diverged from chain (leaf_count {leaf_count}); integrity rebuild required"
+        "encrypted_value_account proof store diverged from chain (leaf_count {leaf_count}); integrity rebuild required"
     )]
     CorruptStore {
         leaf_count: u64,
         rpc_context_slot: u64,
-        lineage_last_slot: Option<u64>,
+        encrypted_value_account_last_slot: Option<u64>,
     },
-    /// Terminal: the lineage exists and the store is caught up to chain
+    /// Terminal: the encrypted_value_account exists and the store is caught up to chain
     /// (snapshot `leaf_count` == on-chain `leaf_count`), but no leaf matches the
     /// requested semantic key. Distinct from `Lagging`, which is the same miss
     /// while the store is still behind a just-sealed leaf.
@@ -77,23 +77,23 @@ pub enum ProofError {
     LeafNotFound {
         leaf_count: u64,
         rpc_context_slot: u64,
-        lineage_last_slot: Option<u64>,
+        encrypted_value_account_last_slot: Option<u64>,
     },
 }
 
-/// Builds a verified historical-access proof: the leaf for `(lineage, handle, subject)`
+/// Builds a verified historical-access proof: the leaf for `(encrypted_value_account, handle, subject)`
 /// (`ZAMA_HIST_ACCESS_LEAF_V1`). Read-only.
 pub async fn build_access_proof<C: ChainFetcher, S: ProofSnapshotSource>(
     fetcher: &C,
     store: &S,
-    lineage: [u8; 32],
+    encrypted_value_account: [u8; 32],
     handle: [u8; 32],
     subject: [u8; 32],
 ) -> Result<MmrProofResult, ProofError> {
     build_semantic_proof(
         fetcher,
         store,
-        lineage,
+        encrypted_value_account,
         SemanticLeafKey {
             kind: LeafKind::HistoricalAccess,
             handle,
@@ -103,20 +103,20 @@ pub async fn build_access_proof<C: ChainFetcher, S: ProofSnapshotSource>(
     .await
 }
 
-/// Builds a verified public-decrypt proof: the earliest public-decrypt leaf for `(lineage, handle)`
+/// Builds a verified public-decrypt proof: the earliest public-decrypt leaf for `(encrypted_value_account, handle)`
 /// (`ZAMA_PUBLIC_DECRYPT_LEAF_V1`). A handle can carry several public-decrypt leaves (born-public
 /// plus later `make_handle_public` re-releases); any one proves publicness, and resolving to the
 /// earliest is deterministic and append-stable. Read-only.
 pub async fn build_public_proof<C: ChainFetcher, S: ProofSnapshotSource>(
     fetcher: &C,
     store: &S,
-    lineage: [u8; 32],
+    encrypted_value_account: [u8; 32],
     handle: [u8; 32],
 ) -> Result<MmrProofResult, ProofError> {
     build_semantic_proof(
         fetcher,
         store,
-        lineage,
+        encrypted_value_account,
         SemanticLeafKey {
             kind: LeafKind::PublicDecrypt,
             handle,
@@ -136,15 +136,18 @@ pub async fn build_public_proof<C: ChainFetcher, S: ProofSnapshotSource>(
 async fn build_semantic_proof<C: ChainFetcher, S: ProofSnapshotSource>(
     fetcher: &C,
     store: &S,
-    lineage: [u8; 32],
+    encrypted_value_account: [u8; 32],
     key: SemanticLeafKey,
 ) -> Result<MmrProofResult, ProofError> {
     let on_chain = fetcher
-        .get_lineage_state(lineage)
+        .get_encrypted_value_account_state(encrypted_value_account)
         .await?
-        .ok_or(ProofError::LineageNotFound)?;
+        .ok_or(ProofError::EncryptedValueAccountNotFound)?;
 
-    let resolved = match store.proof_snapshot_for_leaf(lineage, &key).await {
+    let resolved = match store
+        .proof_snapshot_for_leaf(encrypted_value_account, &key)
+        .await
+    {
         Ok(resolved) => resolved,
         Err(StoreError::SnapshotInconsistent { .. }) => {
             // Fail closed with the same wire envelope as peak divergence. The torn
@@ -152,7 +155,7 @@ async fn build_semantic_proof<C: ChainFetcher, S: ProofSnapshotSource>(
             return Err(ProofError::CorruptStore {
                 leaf_count: on_chain.leaf_count,
                 rpc_context_slot: on_chain.rpc_context_slot,
-                lineage_last_slot: None,
+                encrypted_value_account_last_slot: None,
             });
         }
         Err(err) => return Err(ProofError::Store(err)),
@@ -162,12 +165,12 @@ async fn build_semantic_proof<C: ChainFetcher, S: ProofSnapshotSource>(
         leaf_index,
     }) = resolved
     else {
-        // Chain has the lineage but the store has not ingested it yet, so this
-        // lineage has no durable slot to report.
+        // Chain has the encrypted_value_account but the store has not ingested it yet, so this
+        // encrypted_value_account has no durable slot to report.
         return Err(ProofError::Lagging {
             leaf_count: on_chain.leaf_count,
             rpc_context_slot: on_chain.rpc_context_slot,
-            lineage_last_slot: None,
+            encrypted_value_account_last_slot: None,
         });
     };
 
@@ -177,22 +180,22 @@ async fn build_semantic_proof<C: ChainFetcher, S: ProofSnapshotSource>(
         // store is caught up, so the key genuinely has no leaf — terminal.
         //
         // Liveness caveat: the terminal `LeafNotFound` is only reached AT parity. A nonexistent
-        // key queried against a lineage that keeps appending leaves stays perpetually behind
+        // key queried against an encrypted_value_account that keeps appending leaves stays perpetually behind
         // parity and returns `Lagging` on every attempt — it never becomes terminal server-side.
         // Bounding retries for a wrong key is therefore the client's job (its retry cap), not the
         // server's; the server cannot distinguish "just-sealed, not yet ingested" from "will never
         // exist" without waiting for the store to catch up to that exact chain tip.
-        let lineage_last_slot = Some(snapshot.last_slot);
+        let encrypted_value_account_last_slot = Some(snapshot.last_slot);
         return Err(match snapshot.leaf_count.cmp(&on_chain.leaf_count) {
             std::cmp::Ordering::Equal => ProofError::LeafNotFound {
                 leaf_count: on_chain.leaf_count,
                 rpc_context_slot: on_chain.rpc_context_slot,
-                lineage_last_slot,
+                encrypted_value_account_last_slot,
             },
             _ => ProofError::Lagging {
                 leaf_count: on_chain.leaf_count,
                 rpc_context_slot: on_chain.rpc_context_slot,
-                lineage_last_slot,
+                encrypted_value_account_last_slot,
             },
         });
     };
@@ -202,19 +205,19 @@ async fn build_semantic_proof<C: ChainFetcher, S: ProofSnapshotSource>(
 
 fn try_build_from_snapshot(
     snapshot: &ProofSnapshot,
-    on_chain: &OnChainLineageState,
+    on_chain: &OnChainEncryptedValueAccountState,
     leaf_index: u64,
 ) -> Result<MmrProofResult, ProofError> {
     // The snapshot is in hand, so its durable slot is the honest checkpoint for
     // every result (success or divergence) built from it.
-    let lineage_last_slot = Some(snapshot.last_slot);
+    let encrypted_value_account_last_slot = Some(snapshot.last_slot);
     // Internal consistency: recomputed peaks must match the persisted peaks.
     let recomputed = mmr_peaks_from_leaves(&snapshot.leaves);
     if recomputed != snapshot.peaks || snapshot.leaf_count != snapshot.leaves.len() as u64 {
         return Err(ProofError::CorruptStore {
             leaf_count: on_chain.leaf_count,
             rpc_context_slot: on_chain.rpc_context_slot,
-            lineage_last_slot,
+            encrypted_value_account_last_slot,
         });
     }
 
@@ -223,7 +226,7 @@ fn try_build_from_snapshot(
             return Err(ProofError::Lagging {
                 leaf_count: on_chain.leaf_count,
                 rpc_context_slot: on_chain.rpc_context_slot,
-                lineage_last_slot,
+                encrypted_value_account_last_slot,
             });
         }
         std::cmp::Ordering::Greater => {
@@ -232,7 +235,7 @@ fn try_build_from_snapshot(
             return Err(ProofError::Lagging {
                 leaf_count: on_chain.leaf_count,
                 rpc_context_slot: on_chain.rpc_context_slot,
-                lineage_last_slot,
+                encrypted_value_account_last_slot,
             });
         }
         std::cmp::Ordering::Equal => {}
@@ -242,7 +245,7 @@ fn try_build_from_snapshot(
         return Err(ProofError::CorruptStore {
             leaf_count: on_chain.leaf_count,
             rpc_context_slot: on_chain.rpc_context_slot,
-            lineage_last_slot,
+            encrypted_value_account_last_slot,
         });
     }
 
@@ -251,14 +254,14 @@ fn try_build_from_snapshot(
     let proof = mmr_build_proof(&snapshot.leaves, leaf_index).ok_or(ProofError::CorruptStore {
         leaf_count: on_chain.leaf_count,
         rpc_context_slot: on_chain.rpc_context_slot,
-        lineage_last_slot,
+        encrypted_value_account_last_slot,
     })?;
 
     Ok(MmrProofResult {
         mmr_proof: Some(proof),
         leaf_count: on_chain.leaf_count,
         rpc_context_slot: on_chain.rpc_context_slot,
-        lineage_last_slot,
+        encrypted_value_account_last_slot,
         verified: true,
     })
 }
@@ -278,10 +281,13 @@ mod tests {
         [tag; 32]
     }
 
-    fn snapshot_with_leaves(lineage: [u8; 32], leaves: Vec<[u8; 32]>) -> ProofSnapshot {
+    fn snapshot_with_leaves(
+        encrypted_value_account: [u8; 32],
+        leaves: Vec<[u8; 32]>,
+    ) -> ProofSnapshot {
         let peaks = mmr_peaks_from_leaves(&leaves);
         ProofSnapshot {
-            lineage,
+            encrypted_value_account,
             current_handle: None,
             subjects: vec![],
             leaf_count: leaves.len() as u64,
@@ -292,7 +298,7 @@ mod tests {
     }
 
     struct FakeChain {
-        states: Mutex<HashMap<[u8; 32], OnChainLineageState>>,
+        states: Mutex<HashMap<[u8; 32], OnChainEncryptedValueAccountState>>,
         fetches: AtomicUsize,
     }
 
@@ -304,23 +310,26 @@ mod tests {
             }
         }
 
-        fn set(&self, lineage: [u8; 32], state: OnChainLineageState) {
-            self.states.lock().unwrap().insert(lineage, state);
+        fn set(&self, encrypted_value_account: [u8; 32], state: OnChainEncryptedValueAccountState) {
+            self.states
+                .lock()
+                .unwrap()
+                .insert(encrypted_value_account, state);
         }
     }
 
     #[async_trait]
     impl ChainFetcher for FakeChain {
-        async fn get_lineage_state(
+        async fn get_encrypted_value_account_state(
             &self,
             address: [u8; 32],
-        ) -> Result<Option<OnChainLineageState>, ChainError> {
+        ) -> Result<Option<OnChainEncryptedValueAccountState>, ChainError> {
             self.fetches.fetch_add(1, Ordering::SeqCst);
             Ok(self.states.lock().unwrap().get(&address).cloned())
         }
     }
 
-    /// Read-only fake: resolves a pre-registered `(snapshot, leaf_index)` per lineage; no write /
+    /// Read-only fake: resolves a pre-registered `(snapshot, leaf_index)` per encrypted_value_account; no write /
     /// catch-up API. Semantic-key → index resolution itself is exercised by the SQL integration
     /// tests; these unit tests pin the resolved outcome and assert the classification logic.
     struct FakeStore {
@@ -341,7 +350,7 @@ mod tests {
         /// Registers a snapshot whose key resolves to `leaf_index`.
         fn insert_resolved(&self, snapshot: ProofSnapshot, leaf_index: Option<u64>) {
             self.resolved.lock().unwrap().insert(
-                snapshot.lineage,
+                snapshot.encrypted_value_account,
                 ResolvedProofSnapshot {
                     snapshot,
                     leaf_index,
@@ -354,11 +363,16 @@ mod tests {
             self.insert_resolved(snapshot, Some(0));
         }
 
-        fn mark_inconsistent(&self, lineage: [u8; 32], leaf_count: u64, leaf_rows: u64) {
+        fn mark_inconsistent(
+            &self,
+            encrypted_value_account: [u8; 32],
+            leaf_count: u64,
+            leaf_rows: u64,
+        ) {
             self.inconsistent
                 .lock()
                 .unwrap()
-                .insert(lineage, (leaf_count, leaf_rows));
+                .insert(encrypted_value_account, (leaf_count, leaf_rows));
         }
     }
 
@@ -366,32 +380,45 @@ mod tests {
     impl ProofSnapshotSource for FakeStore {
         async fn proof_snapshot_for_leaf(
             &self,
-            lineage: [u8; 32],
+            encrypted_value_account: [u8; 32],
             _key: &SemanticLeafKey,
         ) -> Result<Option<ResolvedProofSnapshot>, StoreError> {
             self.reads.fetch_add(1, Ordering::SeqCst);
-            if let Some(&(leaf_count, leaf_rows)) = self.inconsistent.lock().unwrap().get(&lineage)
+            if let Some(&(leaf_count, leaf_rows)) = self
+                .inconsistent
+                .lock()
+                .unwrap()
+                .get(&encrypted_value_account)
             {
                 return Err(StoreError::SnapshotInconsistent {
                     leaf_count,
                     leaf_rows,
                 });
             }
-            Ok(self.resolved.lock().unwrap().get(&lineage).cloned())
+            Ok(self
+                .resolved
+                .lock()
+                .unwrap()
+                .get(&encrypted_value_account)
+                .cloned())
         }
     }
 
     #[test]
     fn builds_verified_proof_when_snapshot_matches_chain() {
-        let lineage = pk(0x01);
-        let leaf =
-            zama_solana_acl::historical_access_leaf_commitment(lineage, 0, pk(0x10), pk(0x30));
+        let encrypted_value_account = pk(0x01);
+        let leaf = zama_solana_acl::historical_access_leaf_commitment(
+            encrypted_value_account,
+            0,
+            pk(0x10),
+            pk(0x30),
+        );
         let mut peaks = Vec::new();
         let mut leaf_count = 0u64;
         mmr_append(&mut peaks, &mut leaf_count, leaf).unwrap();
 
-        let snapshot = snapshot_with_leaves(lineage, vec![leaf]);
-        let on_chain = OnChainLineageState {
+        let snapshot = snapshot_with_leaves(encrypted_value_account, vec![leaf]);
+        let on_chain = OnChainEncryptedValueAccountState {
             peaks,
             leaf_count,
             rpc_context_slot: 55,
@@ -401,35 +428,36 @@ mod tests {
         assert_eq!(result.leaf_count, 1);
         assert_eq!(result.rpc_context_slot, 55);
         // snapshot_with_leaves pins last_slot = 1.
-        assert_eq!(result.lineage_last_slot, Some(1));
+        assert_eq!(result.encrypted_value_account_last_slot, Some(1));
         assert!(result.mmr_proof.is_some());
     }
 
     #[tokio::test]
-    async fn build_public_proof_returns_lineage_not_found_without_store_read() {
-        let lineage = pk(0x01);
+    async fn build_public_proof_returns_encrypted_value_account_not_found_without_store_read() {
+        let encrypted_value_account = pk(0x01);
         let chain = FakeChain::new();
         let store = FakeStore::new();
-        let err = build_public_proof(&chain, &store, lineage, pk(0x10))
+        let err = build_public_proof(&chain, &store, encrypted_value_account, pk(0x10))
             .await
             .unwrap_err();
-        assert!(matches!(err, ProofError::LineageNotFound));
+        assert!(matches!(err, ProofError::EncryptedValueAccountNotFound));
         assert_eq!(store.reads.load(Ordering::SeqCst), 0);
         assert_eq!(chain.fetches.load(Ordering::SeqCst), 1);
     }
 
     #[tokio::test]
     async fn build_public_proof_missing_leaf_at_parity_is_terminal_not_found() {
-        let lineage = pk(0x0A);
-        let leaf = zama_solana_acl::public_decrypt_leaf_commitment(lineage, 0, pk(0x10));
+        let encrypted_value_account = pk(0x0A);
+        let leaf =
+            zama_solana_acl::public_decrypt_leaf_commitment(encrypted_value_account, 0, pk(0x10));
         let mut peaks = Vec::new();
         let mut leaf_count = 0u64;
         mmr_append(&mut peaks, &mut leaf_count, leaf).unwrap();
 
         let chain = FakeChain::new();
         chain.set(
-            lineage,
-            OnChainLineageState {
+            encrypted_value_account,
+            OnChainEncryptedValueAccountState {
                 peaks,
                 leaf_count, // == snapshot leaf_count below: store is caught up
                 rpc_context_slot: 55,
@@ -437,9 +465,12 @@ mod tests {
         );
         let store = FakeStore::new();
         // Snapshot at parity with chain (1 leaf) but the requested key resolves to nothing.
-        store.insert_resolved(snapshot_with_leaves(lineage, vec![leaf]), None);
+        store.insert_resolved(
+            snapshot_with_leaves(encrypted_value_account, vec![leaf]),
+            None,
+        );
 
-        let err = build_public_proof(&chain, &store, lineage, pk(0xEE))
+        let err = build_public_proof(&chain, &store, encrypted_value_account, pk(0xEE))
             .await
             .unwrap_err();
         assert!(matches!(
@@ -450,9 +481,11 @@ mod tests {
 
     #[tokio::test]
     async fn build_public_proof_missing_leaf_behind_chain_is_lagging() {
-        let lineage = pk(0x0B);
-        let leaf0 = zama_solana_acl::public_decrypt_leaf_commitment(lineage, 0, pk(0x10));
-        let leaf1 = zama_solana_acl::public_decrypt_leaf_commitment(lineage, 1, pk(0x11));
+        let encrypted_value_account = pk(0x0B);
+        let leaf0 =
+            zama_solana_acl::public_decrypt_leaf_commitment(encrypted_value_account, 0, pk(0x10));
+        let leaf1 =
+            zama_solana_acl::public_decrypt_leaf_commitment(encrypted_value_account, 1, pk(0x11));
         let mut peaks = Vec::new();
         let mut leaf_count = 0u64;
         mmr_append(&mut peaks, &mut leaf_count, leaf0).unwrap();
@@ -460,8 +493,8 @@ mod tests {
 
         let chain = FakeChain::new();
         chain.set(
-            lineage,
-            OnChainLineageState {
+            encrypted_value_account,
+            OnChainEncryptedValueAccountState {
                 peaks,
                 leaf_count, // 2 on chain
                 rpc_context_slot: 55,
@@ -469,9 +502,12 @@ mod tests {
         );
         let store = FakeStore::new();
         // Store has only leaf 0 (behind chain) and the just-sealed key isn't ingested yet.
-        store.insert_resolved(snapshot_with_leaves(lineage, vec![leaf0]), None);
+        store.insert_resolved(
+            snapshot_with_leaves(encrypted_value_account, vec![leaf0]),
+            None,
+        );
 
-        let err = build_public_proof(&chain, &store, lineage, pk(0x11))
+        let err = build_public_proof(&chain, &store, encrypted_value_account, pk(0x11))
             .await
             .unwrap_err();
         assert!(matches!(err, ProofError::Lagging { leaf_count: 2, .. }));
@@ -479,27 +515,35 @@ mod tests {
 
     #[tokio::test]
     async fn build_access_proof_resolves_and_verifies() {
-        let lineage = pk(0x0C);
+        let encrypted_value_account = pk(0x0C);
         let handle = pk(0x10);
         let subject = pk(0x30);
-        let leaf = zama_solana_acl::historical_access_leaf_commitment(lineage, 0, handle, subject);
+        let leaf = zama_solana_acl::historical_access_leaf_commitment(
+            encrypted_value_account,
+            0,
+            handle,
+            subject,
+        );
         let mut peaks = Vec::new();
         let mut leaf_count = 0u64;
         mmr_append(&mut peaks, &mut leaf_count, leaf).unwrap();
 
         let chain = FakeChain::new();
         chain.set(
-            lineage,
-            OnChainLineageState {
+            encrypted_value_account,
+            OnChainEncryptedValueAccountState {
                 peaks,
                 leaf_count,
                 rpc_context_slot: 55,
             },
         );
         let store = FakeStore::new();
-        store.insert_resolved(snapshot_with_leaves(lineage, vec![leaf]), Some(0));
+        store.insert_resolved(
+            snapshot_with_leaves(encrypted_value_account, vec![leaf]),
+            Some(0),
+        );
 
-        let result = build_access_proof(&chain, &store, lineage, handle, subject)
+        let result = build_access_proof(&chain, &store, encrypted_value_account, handle, subject)
             .await
             .unwrap();
         assert!(result.verified);
@@ -509,16 +553,18 @@ mod tests {
 
     #[test]
     fn returns_lagging_when_snapshot_leaf_count_is_behind() {
-        let lineage = pk(0x02);
-        let leaf0 = zama_solana_acl::public_decrypt_leaf_commitment(lineage, 0, pk(0x10));
-        let leaf1 = zama_solana_acl::public_decrypt_leaf_commitment(lineage, 1, pk(0x11));
+        let encrypted_value_account = pk(0x02);
+        let leaf0 =
+            zama_solana_acl::public_decrypt_leaf_commitment(encrypted_value_account, 0, pk(0x10));
+        let leaf1 =
+            zama_solana_acl::public_decrypt_leaf_commitment(encrypted_value_account, 1, pk(0x11));
         let mut peaks = Vec::new();
         let mut leaf_count = 0u64;
         mmr_append(&mut peaks, &mut leaf_count, leaf0).unwrap();
         mmr_append(&mut peaks, &mut leaf_count, leaf1).unwrap();
 
-        let snapshot = snapshot_with_leaves(lineage, vec![leaf0]);
-        let on_chain = OnChainLineageState {
+        let snapshot = snapshot_with_leaves(encrypted_value_account, vec![leaf0]);
+        let on_chain = OnChainEncryptedValueAccountState {
             peaks,
             leaf_count,
             rpc_context_slot: 55,
@@ -529,9 +575,11 @@ mod tests {
 
     #[test]
     fn returns_lagging_when_store_is_ahead_of_rpc() {
-        let lineage = pk(0x05);
-        let leaf0 = zama_solana_acl::public_decrypt_leaf_commitment(lineage, 0, pk(0x10));
-        let leaf1 = zama_solana_acl::public_decrypt_leaf_commitment(lineage, 1, pk(0x11));
+        let encrypted_value_account = pk(0x05);
+        let leaf0 =
+            zama_solana_acl::public_decrypt_leaf_commitment(encrypted_value_account, 0, pk(0x10));
+        let leaf1 =
+            zama_solana_acl::public_decrypt_leaf_commitment(encrypted_value_account, 1, pk(0x11));
         let mut store_peaks = Vec::new();
         let mut store_count = 0u64;
         mmr_append(&mut store_peaks, &mut store_count, leaf0).unwrap();
@@ -541,8 +589,8 @@ mod tests {
         let mut chain_count = 0u64;
         mmr_append(&mut chain_peaks, &mut chain_count, leaf0).unwrap();
 
-        let snapshot = snapshot_with_leaves(lineage, vec![leaf0, leaf1]);
-        let on_chain = OnChainLineageState {
+        let snapshot = snapshot_with_leaves(encrypted_value_account, vec![leaf0, leaf1]);
+        let on_chain = OnChainEncryptedValueAccountState {
             peaks: chain_peaks,
             leaf_count: chain_count,
             rpc_context_slot: 55,
@@ -553,15 +601,17 @@ mod tests {
 
     #[test]
     fn returns_corrupt_when_equal_count_peaks_diverge() {
-        let lineage = pk(0x03);
-        let leaf = zama_solana_acl::public_decrypt_leaf_commitment(lineage, 0, pk(0x10));
-        let other = zama_solana_acl::public_decrypt_leaf_commitment(lineage, 0, pk(0xAA));
+        let encrypted_value_account = pk(0x03);
+        let leaf =
+            zama_solana_acl::public_decrypt_leaf_commitment(encrypted_value_account, 0, pk(0x10));
+        let other =
+            zama_solana_acl::public_decrypt_leaf_commitment(encrypted_value_account, 0, pk(0xAA));
         let mut peaks = Vec::new();
         let mut leaf_count = 0u64;
         mmr_append(&mut peaks, &mut leaf_count, other).unwrap();
 
-        let snapshot = snapshot_with_leaves(lineage, vec![leaf]);
-        let on_chain = OnChainLineageState {
+        let snapshot = snapshot_with_leaves(encrypted_value_account, vec![leaf]);
+        let on_chain = OnChainEncryptedValueAccountState {
             peaks,
             leaf_count,
             rpc_context_slot: 55,
@@ -575,15 +625,16 @@ mod tests {
 
     #[test]
     fn returns_corrupt_when_persisted_peaks_do_not_match_leaves() {
-        let lineage = pk(0x04);
-        let leaf = zama_solana_acl::public_decrypt_leaf_commitment(lineage, 0, pk(0x10));
+        let encrypted_value_account = pk(0x04);
+        let leaf =
+            zama_solana_acl::public_decrypt_leaf_commitment(encrypted_value_account, 0, pk(0x10));
         let mut peaks = Vec::new();
         let mut leaf_count = 0u64;
         mmr_append(&mut peaks, &mut leaf_count, leaf).unwrap();
 
-        let mut snapshot = snapshot_with_leaves(lineage, vec![leaf]);
+        let mut snapshot = snapshot_with_leaves(encrypted_value_account, vec![leaf]);
         snapshot.peaks = vec![pk(0xFF)];
-        let on_chain = OnChainLineageState {
+        let on_chain = OnChainEncryptedValueAccountState {
             peaks: peaks.clone(),
             leaf_count,
             rpc_context_slot: 55,
@@ -597,25 +648,26 @@ mod tests {
 
     #[tokio::test]
     async fn build_proof_maps_snapshot_inconsistency_to_corrupt() {
-        let lineage = pk(0x06);
-        let leaf = zama_solana_acl::public_decrypt_leaf_commitment(lineage, 0, pk(0x10));
+        let encrypted_value_account = pk(0x06);
+        let leaf =
+            zama_solana_acl::public_decrypt_leaf_commitment(encrypted_value_account, 0, pk(0x10));
         let mut peaks = Vec::new();
         let mut leaf_count = 0u64;
         mmr_append(&mut peaks, &mut leaf_count, leaf).unwrap();
 
         let chain = FakeChain::new();
         chain.set(
-            lineage,
-            OnChainLineageState {
+            encrypted_value_account,
+            OnChainEncryptedValueAccountState {
                 peaks,
                 leaf_count,
                 rpc_context_slot: 55,
             },
         );
         let store = FakeStore::new();
-        store.mark_inconsistent(lineage, 1, 0);
+        store.mark_inconsistent(encrypted_value_account, 1, 0);
 
-        let err = build_public_proof(&chain, &store, lineage, pk(0x10))
+        let err = build_public_proof(&chain, &store, encrypted_value_account, pk(0x10))
             .await
             .unwrap_err();
         assert!(matches!(
@@ -628,25 +680,26 @@ mod tests {
 
     #[tokio::test]
     async fn build_proof_is_read_only_snapshot_plus_chain_fetch() {
-        let lineage = pk(0x07);
-        let leaf = zama_solana_acl::public_decrypt_leaf_commitment(lineage, 0, pk(0x10));
+        let encrypted_value_account = pk(0x07);
+        let leaf =
+            zama_solana_acl::public_decrypt_leaf_commitment(encrypted_value_account, 0, pk(0x10));
         let mut peaks = Vec::new();
         let mut leaf_count = 0u64;
         mmr_append(&mut peaks, &mut leaf_count, leaf).unwrap();
 
         let chain = FakeChain::new();
         chain.set(
-            lineage,
-            OnChainLineageState {
+            encrypted_value_account,
+            OnChainEncryptedValueAccountState {
                 peaks: peaks.clone(),
                 leaf_count,
                 rpc_context_slot: 55,
             },
         );
         let store = FakeStore::new();
-        store.insert(snapshot_with_leaves(lineage, vec![leaf]));
+        store.insert(snapshot_with_leaves(encrypted_value_account, vec![leaf]));
 
-        let result = build_public_proof(&chain, &store, lineage, pk(0x10))
+        let result = build_public_proof(&chain, &store, encrypted_value_account, pk(0x10))
             .await
             .unwrap();
         assert!(result.verified);

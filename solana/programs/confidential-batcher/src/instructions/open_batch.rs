@@ -44,7 +44,7 @@ pub struct OpenBatch<'info> {
     /// CHECK: batch's confidential join token account; created by the token CPI.
     #[account(mut)]
     pub batch_join_token_account: UncheckedAccount<'info>,
-    /// CHECK: batch join balance lineage; created by the host CPI.
+    /// CHECK: batch join balance encrypted value account; created by the host CPI.
     #[account(mut)]
     pub batch_join_balance_value: UncheckedAccount<'info>,
     /// Confidential mint claims pay out in.
@@ -54,7 +54,7 @@ pub struct OpenBatch<'info> {
     /// CHECK: batch's confidential payout token account; created by the token CPI.
     #[account(mut)]
     pub batch_payout_token_account: UncheckedAccount<'info>,
-    /// CHECK: batch payout balance lineage; created by the host CPI.
+    /// CHECK: batch payout balance encrypted value account; created by the host CPI.
     #[account(mut)]
     pub batch_payout_balance_value: UncheckedAccount<'info>,
     /// SPL mint the join confidential mint wraps (vault underlying for deposit

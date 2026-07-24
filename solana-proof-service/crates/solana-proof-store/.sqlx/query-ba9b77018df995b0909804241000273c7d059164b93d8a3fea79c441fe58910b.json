@@ -1,6 +1,6 @@
 {
   "db_name": "PostgreSQL",
-  "query": "\n            SELECT commitment\n            FROM solana_proof_leaves\n            WHERE lineage = $1\n            ORDER BY leaf_index ASC\n            ",
+  "query": "\n            SELECT commitment\n            FROM solana_proof_leaves\n            WHERE encrypted_value_account = $1\n            ORDER BY leaf_index ASC\n            ",
   "describe": {
     "columns": [
       {
@@ -18,5 +18,5 @@
       false
     ]
   },
-  "hash": "298795d10b8ee298c4a09275bfe45a9766d302b68bcb03831c98463a25ddede3"
+  "hash": "ba9b77018df995b0909804241000273c7d059164b93d8a3fea79c441fe58910b"
 }

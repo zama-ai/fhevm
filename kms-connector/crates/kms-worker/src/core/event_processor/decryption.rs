@@ -140,7 +140,7 @@ where
             match self.host_chain_backend(ct_chain_id)? {
                 HostChainAclBackend::Solana(host) => {
                     // Public access is proven by a PublicDecryptLeaf MMR proof and verified
-                    // against the live confirmed lineage account.
+                    // against the live confirmed encrypted value account.
                     check_solana_handles_public_decrypt(host, &[ct.ctHandle.0], extra_data)
                         .await
                         .map_err(|e| {

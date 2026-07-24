@@ -149,11 +149,11 @@ type VaultDepositArcSurface = {
       payoutRate: bigint;
     };
   }>;
-  burnedAmountLineage(
+  burnedAmountValueAccount(
     joinMint: Address,
     batchJoinTokenAccount: Address,
   ): Promise<{ encryptedValueAddress: Address }>;
-  claimAmountLineage(
+  claimAmountValueAccount(
     batch: Address,
     batchAuthority: Address,
     user: Address,
@@ -588,7 +588,7 @@ describe.skipIf(!runsDemoScenarios)("solana deposit-arc scenario", () => {
       // only `lagging` (503) and treats a not-yet-committed leaf (404 leaf_not_found) as terminal,
       // so the readiness wait happens HERE, with a cheap probe of the same endpoint settleBatch
       // will hit, and settleBatch is then called exactly once.
-      const burnedValueAccount = await vault.burnedAmountLineage(joinMint, batchJoinTokenAccount);
+      const burnedValueAccount = await vault.burnedAmountValueAccount(joinMint, batchJoinTokenAccount);
       const burnedHandleHex = `0x${Buffer.from(batchAfterDispatch.state.burnedTotalHandle).toString("hex")}`;
       const proofProbeUrl =
         `${env.proofServiceUrl.replace(/\/$/, "")}/internal/solana/public-proof` +
@@ -664,7 +664,7 @@ describe.skipIf(!runsDemoScenarios)("solana deposit-arc scenario", () => {
       // dispatch. The claim value account is still derived here for the decrypt phase: its value key names
       // the handle alice decrypts in step 17.
       const payoutMint = config.mints.payoutConfidential;
-      const claimValueAccount = await vault.claimAmountLineage(batch, batchAuthority, alice.address);
+      const claimValueAccount = await vault.claimAmountValueAccount(batch, batchAuthority, alice.address);
       console.log(`deposit-arc claim: alice claiming her payout from batch ${batchBeforeJoin.index} (${batch})...`);
       await send(
         alice,

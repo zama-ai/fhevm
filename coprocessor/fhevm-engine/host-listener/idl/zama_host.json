@@ -34,7 +34,7 @@
         {
           "name": "authority",
           "docs": [
-            "Current allowed subject on the lineage."
+            "Current allowed subject on the encrypted value account."
           ],
           "signer": true
         },
@@ -751,7 +751,7 @@
         {
           "name": "authority",
           "docs": [
-            "Current allowed subject on the lineage."
+            "Current allowed subject on the encrypted value account."
           ],
           "signer": true
         },
@@ -1376,7 +1376,7 @@
         {
           "name": "app_account_authority",
           "docs": [
-            "App account authority; must sign and match the lineage's `app_account`."
+            "App account authority; must sign and match the encrypted value account's `app_account`."
           ],
           "signer": true
         },
@@ -1499,7 +1499,7 @@
         {
           "name": "encrypted_value",
           "docs": [
-            "The lineage whose peaks the inclusion proof is checked against."
+            "The encrypted value account whose peaks the inclusion proof is checked against."
           ]
         }
       ],
@@ -2697,21 +2697,21 @@
               {
                 "name": "output_acl_domain_key",
                 "docs": [
-                  "ACL domain key for the output lineage."
+                  "ACL domain key for the output encrypted value account."
                 ],
                 "type": "pubkey"
               },
               {
                 "name": "output_app_account",
                 "docs": [
-                  "App account authorized to bind the output lineage."
+                  "App account authorized to bind the output encrypted value account."
                 ],
                 "type": "pubkey"
               },
               {
                 "name": "output_encrypted_value_label",
                 "docs": [
-                  "Encrypted value label for the output lineage."
+                  "Encrypted value label for the output encrypted value account."
                 ],
                 "type": {
                   "array": [
@@ -2723,7 +2723,7 @@
               {
                 "name": "output_subjects",
                 "docs": [
-                  "Subjects on the output lineage. On create these are the initial",
+                  "Subjects on the output encrypted value account. On create these are the initial",
                   "subjects; on supersede they become the new audience, which may rotate",
                   "away from the stored set (the outgoing audience is sealed into",
                   "historical leaves first; added subjects pass the grant deny-list)."
@@ -2771,7 +2771,7 @@
                   "writing it as `current_handle`, a public-decrypt leaf is appended for",
                   "the new handle (byte-identical to `make_handle_public`). Carried in",
                   "instruction data so indexers reconstruct that leaf without reading the",
-                  "account. This is the opt-in relaxation of the \"created lineages cannot",
+                  "account. This is the opt-in relaxation of the \"created encrypted value accounts cannot",
                   "be born public\" invariant (DD-036)."
                 ],
                 "type": "bool"
@@ -4267,7 +4267,7 @@
           {
             "name": "leaf_index",
             "docs": [
-              "Index of the proven leaf within the lineage's MMR."
+              "Index of the proven leaf within the encrypted value account's MMR."
             ],
             "type": "u64"
           },

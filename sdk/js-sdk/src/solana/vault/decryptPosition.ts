@@ -16,10 +16,10 @@ import {
  * one-handle-per-request limit — when decrypt-v1 allows up to 32 handles, batching a joined amount
  * and a share balance in one request will need no API break here.
  *
- * Supply the `aclValueKey` naming the lineage being decrypted:
- * - the batcher lineages `pending_join_value` / `claim_amount_value` — see `pendingJoinLineage` /
- *   `claimAmountLineage` in `./internal/batcherPdas` — for a pending joined amount or a claimed payout, or
- * - a confidential-token balance lineage (`balance_encrypted_value_address`) for a wrapped balance.
+ * Supply the `aclValueKey` naming the encrypted value account being decrypted:
+ * - the batcher encrypted value accounts `pending_join_value` / `claim_amount_value` — see `pendingJoinValueAccount` /
+ *   `claimAmountValueAccount` in `./internal/batcherPdas` — for a pending joined amount or a claimed payout, or
+ * - a confidential-token balance encrypted value account (`balance_encrypted_value_address`) for a wrapped balance.
  */
 export async function decryptPosition(
   context: SolanaUserDecryptContext,

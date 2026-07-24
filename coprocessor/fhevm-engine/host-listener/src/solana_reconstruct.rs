@@ -209,7 +209,7 @@ pub(crate) fn encrypted_value_account_index(
 /// and KMS reads live ACL state when authorizing decrypts.
 ///
 /// A raw legacy `update_encrypted_value` instruction's `previous_handle` is
-/// included because it remains decryptable through the lineage's MMR history.
+/// included because it remains decryptable through the encrypted value account's MMR history.
 pub fn encrypted_value_material_requests(
     instruction: &EncryptedValueInstruction,
 ) -> Vec<SolanaMaterialRequest> {
@@ -669,7 +669,7 @@ pub fn reconstruct_fhe_eval_steps(
 pub struct ReconstructedEvalStep {
     pub event: SolanaHostEvent,
     pub durable_encrypted_value_index: Option<u16>,
-    /// Present when the durable output supersedes an existing lineage. The
+    /// Present when the durable output supersedes an existing encrypted value account. The
     /// transport requests material for the outgoing and reconstructed output
     /// handles.
     pub previous_handle: Option<[u8; 32]>,
@@ -685,7 +685,7 @@ pub fn fhe_eval_step_durable_output_index(step: &FheEvalStep) -> Option<u16> {
     }
 }
 
-/// The outgoing handle when a durable output supersedes an existing lineage.
+/// The outgoing handle when a durable output supersedes an existing encrypted value account.
 pub fn fhe_eval_step_previous_handle(step: &FheEvalStep) -> Option<[u8; 32]> {
     match fhe_eval_step_output(step) {
         FheEvalOutput::AllowedDurable {

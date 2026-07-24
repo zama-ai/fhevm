@@ -73,8 +73,8 @@ pub enum ConfidentialTokenError {
     #[msg("KMS public-decrypt certificate is invalid")]
     InvalidKmsCertificate,
     /// The MMR public-decrypt proof for the pinned burned handle did not verify against
-    /// the lineage's current peaks.
-    #[msg("public-decrypt MMR proof is invalid for this lineage")]
+    /// the encrypted value account's current peaks.
+    #[msg("public-decrypt MMR proof is invalid for this encrypted value account")]
     PublicDecryptProofInvalid,
     /// The host gateway verifier config (KMS signer / decryption contract) is unset.
     #[msg("gateway verifier config is not set")]

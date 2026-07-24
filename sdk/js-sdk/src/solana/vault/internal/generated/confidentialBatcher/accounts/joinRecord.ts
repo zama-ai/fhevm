@@ -51,7 +51,7 @@ export type JoinRecord = {
   batch: Address;
   /** Joining user. */
   user: Address;
-  /** `EncryptedValue` lineage holding the user's accumulated joined amount. */
+  /** `EncryptedValue` encrypted value account holding the user's accumulated joined amount. */
   joinedEncryptedValue: Address;
   /** Whether the user's payout was claimed. */
   claimed: boolean;
@@ -64,7 +64,7 @@ export type JoinRecordArgs = {
   batch: Address;
   /** Joining user. */
   user: Address;
-  /** `EncryptedValue` lineage holding the user's accumulated joined amount. */
+  /** `EncryptedValue` encrypted value account holding the user's accumulated joined amount. */
   joinedEncryptedValue: Address;
   /** Whether the user's payout was claimed. */
   claimed: boolean;

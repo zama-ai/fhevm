@@ -995,7 +995,7 @@ async fn reconstruct_events_for_insert(
                 .copied()
                 .unwrap_or([0u8; 32]);
             // Durable output handles recompute from the plan's value_key + block
-            // entropy alone (DD-015): no lineage leaf count, no handle hints.
+            // entropy alone (DD-015): no encrypted-value-account leaf count, no handle hints.
             let Some(steps) = reconstruct_fhe_eval_steps(&plan, subject, ctx)
             else {
                 anyhow::bail!(
@@ -1539,7 +1539,7 @@ mod fhe_eval_acl_tests {
 
     /// A superseding durable `fhe_eval` output recomputes its handle directly
     /// from the plan's output material + block entropy (DD-015) — no raw update
-    /// handle hint and no lineage leaf count. The
+    /// handle hint and no encrypted-value-account leaf count. The
     /// reconstructed compute result and current/historical material requests
     /// must all come from the `fhe_eval` instruction itself.
     #[tokio::test]
@@ -1631,7 +1631,7 @@ mod fhe_eval_acl_tests {
                     output_subjects: vec![AclSubjectEntry::user(
                         anchor_lang::prelude::Pubkey::new_from_array(SUBJECT),
                     )],
-                    // Fresh lineage (create), born publicly decryptable inline.
+                    // Fresh encrypted value account (create), born publicly decryptable inline.
                     previous_handle: None,
                     previous_subjects: None,
                     make_public: true,

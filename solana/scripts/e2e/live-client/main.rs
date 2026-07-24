@@ -26,7 +26,7 @@ const PROOF_SERVICE_LAGGING_PREFIX: &str = "proof service lagging:";
 const MMR_MODE_HISTORICAL: u8 = 0x01;
 const MMR_MODE_PUBLIC: u8 = 0x02;
 
-type LineageState = ([u8; 32], Vec<Pubkey>);
+type EncryptedValueAccountState = ([u8; 32], Vec<Pubkey>);
 
 struct DurableEvalTarget {
     value: u64,
@@ -78,7 +78,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         return Ok(());
     }
 
-    // TOKEN_BALANCE_STATE is a read-only test probe for the canonical current balance lineage.
+    // TOKEN_BALANCE_STATE is a read-only test probe for the canonical current balance encrypted value account.
     // Inputs: MINT + TOKEN_OWNER. The final stdout line is stable JSON for fhevm-cli consumers.
     if std::env::var("TOKEN_BALANCE_STATE").is_ok() {
         token_balance_state(&host, &token, host_config)?;
@@ -103,7 +103,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     }
 
     // HISTORICAL_STEP=compute creates the old handle, then the shell waits for SNS materialization.
-    // HISTORICAL_STEP=supersede rotates the same lineage and prints the historical MMR proof.
+    // HISTORICAL_STEP=supersede rotates the same encrypted value account and prints the historical MMR proof.
     if let Ok(step) = std::env::var("HISTORICAL_STEP") {
         historical_supersede_step(&host, &payer, host_config, &step)?;
         return Ok(());
@@ -359,8 +359,8 @@ fn token_balance_state(
             "token balance pointer does not match the canonical encrypted value PDA".into(),
         );
     }
-    // Re-read the pointer, lineage, and HostConfig in one RPC response. Rejecting a changed pointer
-    // prevents the probe from combining a token account from one bank state with a newer lineage.
+    // Re-read the pointer, encrypted value account, and HostConfig in one RPC response. Rejecting a changed pointer
+    // prevents the probe from combining a token account from one bank state with a newer encrypted value account.
     let mut accounts =
         host.rpc()
             .get_multiple_accounts(&[token_account_key, encrypted_value_key, host_config])?;
@@ -415,7 +415,7 @@ fn token_balance_state(
         || encrypted_value.bump != encrypted_value_bump
         || encrypted_value.value_key() != value_key
     {
-        return Err("balance encrypted value body does not match its canonical lineage".into());
+        return Err("balance encrypted value body does not match its canonical encrypted value account".into());
     }
     let compute_signer = confidential_token::compute_signer_address(mint).0;
     if encrypted_value.subjects != [owner, compute_signer] {
@@ -481,10 +481,10 @@ fn public_proof_encrypted_value_from_env() -> Result<Pubkey, Box<dyn std::error:
     .into())
 }
 
-fn existing_lineage_state(
+fn existing_value_account_state(
     program: &Program<Rc<Keypair>>,
     encrypted_value: Pubkey,
-) -> Result<Option<LineageState>, Box<dyn std::error::Error>> {
+) -> Result<Option<EncryptedValueAccountState>, Box<dyn std::error::Error>> {
     match program.rpc().get_account(&encrypted_value) {
         Ok(account) if account.owner == zama_host::ID => {
             let mut data: &[u8] = &account.data;
@@ -511,7 +511,7 @@ fn durable_output(
     subjects: Vec<zama_host::AclSubjectEntry>,
 ) -> Result<zama_host::FheEvalOutput, Box<dyn std::error::Error>> {
     let (previous_handle, previous_subjects) =
-        match existing_lineage_state(program, encrypted_value)? {
+        match existing_value_account_state(program, encrypted_value)? {
             Some((handle, subjects)) => (Some(handle), Some(subjects)),
             None => (None, None),
         };
@@ -552,10 +552,10 @@ fn allow_for_decryption(
         .send()?;
     println!("OK allow_subjects (idempotent membership): {grant_sig}");
 
-    let (handle, _) = existing_lineage_state(host, encrypted_value)?.ok_or_else(|| {
+    let (handle, _) = existing_value_account_state(host, encrypted_value)?.ok_or_else(|| {
         std::io::Error::new(
             std::io::ErrorKind::NotFound,
-            "encrypted value lineage missing before make_handle_public",
+            "encrypted value encrypted value account missing before make_handle_public",
         )
     })?;
     let public_sig = host
@@ -720,8 +720,8 @@ fn trivial_encrypt_eval_with_label(
         })?;
     println!("OK {ok_marker} ({} as euint64): {sig}", target.value);
 
-    let value_account = fetch_encrypted_value(host, target.encrypted_value)?;
-    let handle = value_account.current_handle;
+    let encrypted_value_account = fetch_encrypted_value(host, target.encrypted_value)?;
+    let handle = encrypted_value_account.current_handle;
     let handle_hex = hex(&handle);
     println!("  output ACL record {}", target.encrypted_value);
     println!("  acl value key 0x{}", hex(&target.value_key));
@@ -767,7 +767,7 @@ fn proof_service_url() -> String {
 
 /// JSON mirror of `solana_proof_service::http::MmrProofResponse`. Only the fields
 /// this client consumes are declared; the response also carries `rpc_context_slot`,
-/// `lineage_last_slot`, `commitment`, and `proof_format_version` (ignored here).
+/// `value_account_last_slot`, `commitment`, and `proof_format_version` (ignored here).
 #[derive(Deserialize)]
 struct ProofServiceMmrProofResponse {
     mmr_proof: Option<ProofServiceMmrProofDto>,
@@ -821,7 +821,7 @@ fn fetch_access_proof(
 /// (`503 lagging`). REQUIRES `verified == true`; every other response, including `500
 /// corrupt_cache` and `404 leaf_not_found`, fails loudly at once. Retrying HERE (not by
 /// re-invoking the client) keeps the caller idempotent — the historical `supersede` step appends
-/// on-chain leaves, so re-running it would corrupt the lineage.
+/// on-chain leaves, so re-running it would corrupt the encrypted value account.
 fn fetch_proof_with_retry(
     url: &str,
 ) -> Result<zama_solana_acl::MmrProof, Box<dyn std::error::Error>> {
@@ -910,18 +910,18 @@ fn public_decrypt_proof_step(
 ) -> Result<(), Box<dyn std::error::Error>> {
     let handle = bytes32_env("PUB_HANDLE")?;
     let encrypted_value = public_proof_encrypted_value_from_env()?;
-    let value_account = fetch_encrypted_value(host, encrypted_value)?;
-    let value_key = value_account.value_key();
+    let encrypted_value_account = fetch_encrypted_value(host, encrypted_value)?;
+    let value_key = encrypted_value_account.value_key();
     // Chain facts (peaks/leaf_count/current handle) come from the live account; the proof itself
     // comes from solana-proof-service, which resolves the public-decrypt leaf from the handle.
     let proof = fetch_public_proof(&encrypted_value, handle)?;
-    // Fail-fast: the proof service must authorize this handle against the live lineage before it is
+    // Fail-fast: the proof service must authorize this handle against the live encrypted value account before it is
     // handed to the KMS / on-chain consume steps.
-    let shared = value_account.to_shared();
+    let shared = encrypted_value_account.to_shared();
     zama_solana_acl::authorize_public(encrypted_value.to_bytes(), &shared, handle, &proof)
         .map_err(|e| {
             Box::<dyn std::error::Error>::from(format!(
-                "solana-proof-service public-decrypt proof did not verify against live lineage: {e:?}"
+                "solana-proof-service public-decrypt proof did not verify against live encrypted value account: {e:?}"
             ))
         })?;
     let proof_bytes = proof_blob(MMR_MODE_PUBLIC, &proof)?;
@@ -933,9 +933,9 @@ fn public_decrypt_proof_step(
         hex(&encrypted_value.to_bytes())
     );
     println!("PUB aclValueKey 0x{}", hex(&value_key));
-    println!("PUB peaks {}", hex_csv(&value_account.peaks));
-    println!("PUB leafCount {}", value_account.leaf_count);
-    println!("PUB proofSlot {}", value_account.leaf_count);
+    println!("PUB peaks {}", hex_csv(&encrypted_value_account.peaks));
+    println!("PUB leafCount {}", encrypted_value_account.leaf_count);
+    println!("PUB proofSlot {}", encrypted_value_account.leaf_count);
     println!("PUB leafIndex {}", proof.leaf_index);
     println!("PUB siblings {}", hex_csv(&proof.siblings));
     println!("PUB mmrProofBytes 0x{}", hex(&proof_bytes));
@@ -955,10 +955,10 @@ fn historical_supersede_step(
     match step {
         "compute" => {
             let target = durable_eval_target(payer, HISTORICAL_LABEL_MARKER);
-            if existing_lineage_state(host, target.encrypted_value)?.is_some() {
+            if existing_value_account_state(host, target.encrypted_value)?.is_some() {
                 return Err(std::io::Error::new(
                     std::io::ErrorKind::AlreadyExists,
-                    "HISTORICAL_STEP=compute requires a fresh historical lineage",
+                    "HISTORICAL_STEP=compute requires a fresh historical encrypted value account",
                 )
                 .into());
             }
@@ -980,7 +980,7 @@ fn historical_supersede_step(
         }
         "supersede" => {
             let target = durable_eval_target(payer, HISTORICAL_LABEL_MARKER);
-            let Some((old_handle, _)) = existing_lineage_state(host, target.encrypted_value)?
+            let Some((old_handle, _)) = existing_value_account_state(host, target.encrypted_value)?
             else {
                 return Err(std::io::Error::new(
                     std::io::ErrorKind::NotFound,
@@ -996,7 +996,7 @@ fn historical_supersede_step(
                 HISTORICAL_LABEL_MARKER,
                 "historical supersede",
             )?;
-            let value_account = fetch_encrypted_value(host, target.encrypted_value)?;
+            let encrypted_value_account = fetch_encrypted_value(host, target.encrypted_value)?;
             let subject = payer.pubkey().to_bytes();
             // The proof service resolves the historical-access leaf from (old handle, subject);
             // the resolved leaf index comes back on the proof.
@@ -1010,14 +1010,14 @@ fn historical_supersede_step(
                 subject,
             );
             if !zama_solana_acl::mmr_verify(
-                &value_account.peaks,
-                value_account.leaf_count,
+                &encrypted_value_account.peaks,
+                encrypted_value_account.leaf_count,
                 leaf,
                 &proof,
             ) {
                 return Err(format!(
                     "solana-proof-service historical proof did not verify against live leaf_count={}",
-                    value_account.leaf_count
+                    encrypted_value_account.leaf_count
                 )
                 .into());
             }
@@ -1031,9 +1031,9 @@ fn historical_supersede_step(
                 hex(&target.encrypted_value.to_bytes())
             );
             println!("HIST aclValueKey 0x{}", hex(&target.value_key));
-            println!("HIST peaks {}", hex_csv(&value_account.peaks));
-            println!("HIST leafCount {}", value_account.leaf_count);
-            println!("HIST proofSlot {}", value_account.leaf_count);
+            println!("HIST peaks {}", hex_csv(&encrypted_value_account.peaks));
+            println!("HIST leafCount {}", encrypted_value_account.leaf_count);
+            println!("HIST proofSlot {}", encrypted_value_account.leaf_count);
             println!("HIST leafIndex {}", proof.leaf_index);
             println!("HIST siblings {}", hex_csv(&proof.siblings));
             println!("HIST subject 0x{}", hex(&payer.pubkey().to_bytes()));
@@ -1168,14 +1168,14 @@ fn fhe_eval_verified_input_add(
         })?;
     println!("OK fhe_eval verified-input add: {sig}");
 
-    let value_account = fetch_encrypted_value(host, output_encrypted_value)?;
-    let handle_hex: String = value_account
+    let encrypted_value_account = fetch_encrypted_value(host, output_encrypted_value)?;
+    let handle_hex: String = encrypted_value_account
         .current_handle
         .iter()
         .map(|b| format!("{b:02x}"))
         .collect();
     println!("  output ACL record {output_encrypted_value}");
-    println!("  acl value key 0x{}", hex(&value_account.value_key()));
+    println!("  acl value key 0x{}", hex(&encrypted_value_account.value_key()));
     println!("  result handle 0x{handle_hex}  (tfhe-worker materializes input + {addend})");
 
     if std::env::var("TE_ALLOW").is_ok() {
@@ -1508,8 +1508,8 @@ fn consume_burn(
     let hh: String = input_handle.iter().map(|b| format!("{b:02x}")).collect();
     println!("  burn amount (attested external input) handle 0x{hh}");
 
-    // 2. Durable burn outputs supersede the stable balance/total-supply lineages in place and
-    // create or supersede the stable burned-amount lineage for this token account.
+    // 2. Durable burn outputs supersede the stable balance/total-supply encrypted value accounts in place and
+    // create or supersede the stable burned-amount encrypted value account for this token account.
     let (burned_acl, _) = confidential_token::encrypted_value_address(
         mint,
         token_account,
@@ -1925,7 +1925,7 @@ fn fhe_eval_binary(
         )?,
     }];
 
-    // Operand lineages are read-only; the output lineage is writable.
+    // Operand encrypted value accounts are read-only; the output encrypted value account is writable.
     let mut remaining: Vec<AccountMeta> = operand_values
         .iter()
         .map(|encrypted_value| AccountMeta::new_readonly(*encrypted_value, false))
@@ -2574,8 +2574,8 @@ fn fhe_eval_is_in(
         })?;
     println!("OK fhe_eval isIn({value} in {set_values:?} as euint64): {sig}");
 
-    let value_account = fetch_encrypted_value(host, output_encrypted_value)?;
-    let handle_hex: String = value_account
+    let encrypted_value_account = fetch_encrypted_value(host, output_encrypted_value)?;
+    let handle_hex: String = encrypted_value_account
         .current_handle
         .iter()
         .map(|b| format!("{b:02x}"))
@@ -2705,7 +2705,7 @@ fn fhe_eval_mul_div(
 }
 
 /// Creates a confidential mint wrapping $UNDERLYING_MINT. Exercises the host<->token
-/// CPI that trivial-encrypts the initial total-supply handle and creates its lineage.
+/// CPI that trivial-encrypts the initial total-supply handle and creates its encrypted value account.
 fn initialize_mint(
     token: &Program<Rc<Keypair>>,
     payer: &Rc<Keypair>,

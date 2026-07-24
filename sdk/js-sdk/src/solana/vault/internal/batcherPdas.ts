@@ -30,10 +30,10 @@ function addressBytes(value: Address): Uint8Array {
 }
 
 /**
- * The canonical `EncryptedValue` PDA for one confidential-value lineage
+ * The canonical `EncryptedValue` PDA for one confidential-value encrypted value account
  * (`zama_host::encrypted_value_address(value_key(acl_domain, app_account, label))`). The value key
- * carries the lineage's app metadata (never the opaque handle), so the address is derivable without
- * reading chain state. All the confidential-token/batcher field lineages (balance, total supply,
+ * carries the encrypted value account's app metadata (never the opaque handle), so the address is derivable without
+ * reading chain state. All the confidential-token/batcher field encrypted value accounts (balance, total supply,
  * burned amount, batcher pending/claim) are this same derivation under different labels.
  */
 export async function encryptedValueAddress(
@@ -69,21 +69,21 @@ export async function burnRedemptionAddress(mint: Address, burnedHandle: Uint8Ar
   return pda(CONFIDENTIAL_TOKEN_PROGRAM_ADDRESS, [BURN_REDEMPTION_SEED, addressBytes(mint), burnedHandle]);
 }
 
-/** A confidential-value lineage: its value key (naming the lineage) and its canonical `EncryptedValue` PDA. */
-export type SolanaValueLineage = {
+/** A confidential-value encrypted value account: its value key (naming the value_account) and its canonical `EncryptedValue` PDA. */
+export type SolanaEncryptedValueAccount = {
   readonly aclValueKey: Uint8Array;
   readonly encryptedValueAddress: Address;
 };
 
 /**
- * The batch's burned-amount lineage on the join mint (acl domain = join mint, app account = the
+ * The batch's burned-amount encrypted value account on the join mint (acl domain = join mint, app account = the
  * batch's join token account, label = `burned_amount`). Its value key is the certificate's
  * `aclValueKey` and its PDA is both `batchBurnedAmountValue` and the proof-service `encrypted_value`.
  */
-export async function burnedAmountLineage(
+export async function burnedAmountValueAccount(
   joinMint: Address,
   batchJoinTokenAccount: Address,
-): Promise<SolanaValueLineage> {
+): Promise<SolanaEncryptedValueAccount> {
   const aclValueKey = deriveValueKey(addressBytes(joinMint), addressBytes(batchJoinTokenAccount), BURNED_AMOUNT_LABEL);
   return {
     aclValueKey,
@@ -102,17 +102,17 @@ function concatBytes(...parts: Uint8Array[]): Uint8Array {
 }
 
 /**
- * A batcher-owned per-user lineage (`pending_join_value` or `claim_amount_value`). Batcher lineages
+ * A batcher-owned per-user encrypted value account (`pending_join_value` or `claim_amount_value`). Batcher encrypted value accounts
  * live in the batch's own ACL domain: acl domain = batch, app account = batch authority, label =
  * `sha256(purpose_prefix || user)` (`batcher_encrypted_value_address`). Use the returned
  * `aclValueKey` for a `decryptPosition` call and `encryptedValueAddress` as the account.
  */
-async function batcherLineage(
+async function batcherValueAccount(
   batch: Address,
   batchAuthority: Address,
   purposePrefix: string,
   user: Address,
-): Promise<SolanaValueLineage> {
+): Promise<SolanaEncryptedValueAccount> {
   const label = sha256(concatBytes(encoder.encode(purposePrefix), addressBytes(user)));
   const aclValueKey = deriveValueKey(addressBytes(batch), addressBytes(batchAuthority), label);
   return {
@@ -121,22 +121,22 @@ async function batcherLineage(
   };
 }
 
-/** The user's pending joined-amount lineage for a batch (`pending_join_label`). */
-export async function pendingJoinLineage(
+/** The user's pending joined-amount encrypted value account for a batch (`pending_join_label`). */
+export async function pendingJoinValueAccount(
   batch: Address,
   batchAuthority: Address,
   user: Address,
-): Promise<SolanaValueLineage> {
-  return batcherLineage(batch, batchAuthority, 'batcher-pending-join', user);
+): Promise<SolanaEncryptedValueAccount> {
+  return batcherValueAccount(batch, batchAuthority, 'batcher-pending-join', user);
 }
 
-/** The user's claimed-payout lineage for a batch (`claim_amount_label`). */
-export async function claimAmountLineage(
+/** The user's claimed-payout encrypted value account for a batch (`claim_amount_label`). */
+export async function claimAmountValueAccount(
   batch: Address,
   batchAuthority: Address,
   user: Address,
-): Promise<SolanaValueLineage> {
-  return batcherLineage(batch, batchAuthority, 'batcher-claim-amount', user);
+): Promise<SolanaEncryptedValueAccount> {
+  return batcherValueAccount(batch, batchAuthority, 'batcher-claim-amount', user);
 }
 
 export {

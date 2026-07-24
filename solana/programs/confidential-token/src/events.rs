@@ -128,11 +128,11 @@ pub struct RandomAmountCreatedEvent {
 pub struct HandleDisclosedEvent {
     /// Event schema version.
     pub version: u8,
-    /// Confidential mint whose ACL domain scopes the disclosed lineage.
+    /// Confidential mint whose ACL domain scopes the disclosed encrypted value account.
     pub mint: Pubkey,
     /// Disclosed handle, proven public by the host verifier.
     pub handle: [u8; 32],
-    /// ZamaHost `EncryptedValue` lineage the handle belongs to.
+    /// ZamaHost `EncryptedValue` encrypted value account the handle belongs to.
     pub encrypted_value: Pubkey,
     /// KMS-certified cleartext amount (low 64 bits of the certified `uint256`).
     pub cleartext_amount: u64,

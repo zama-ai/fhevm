@@ -27,7 +27,7 @@ use super::*;
 /// Accounts for claiming a payout.
 #[derive(Accounts)]
 pub struct Claim<'info> {
-    /// Pays the claim lineage and transfer output rent. Anyone.
+    /// Pays the claim encrypted value account and transfer output rent. Anyone.
     #[account(mut)]
     pub payer: Signer<'info>,
     /// CHECK: the user being claimed for; pinned by the join record's PDA
@@ -49,9 +49,9 @@ pub struct Claim<'info> {
         bump = join_record.bump,
     )]
     pub join_record: Box<Account<'info, JoinRecord>>,
-    /// CHECK: the user's joined lineage; read as the MulDiv operand.
+    /// CHECK: the user's joined encrypted value account; read as the MulDiv operand.
     pub pending_join_value: UncheckedAccount<'info>,
-    /// CHECK: the user's claim lineage; created by the claim eval and spent as
+    /// CHECK: the user's claim encrypted value account; created by the claim eval and spent as
     /// the transfer amount.
     #[account(mut)]
     pub claim_amount_value: UncheckedAccount<'info>,
@@ -68,13 +68,13 @@ pub struct Claim<'info> {
     /// token CPI and pinned below.
     #[account(mut)]
     pub user_payout_token_account: UncheckedAccount<'info>,
-    /// CHECK: batch's confidential payout balance lineage; superseded by the token CPI.
+    /// CHECK: batch's confidential payout balance encrypted value account; superseded by the token CPI.
     #[account(mut)]
     pub batch_payout_balance_value: UncheckedAccount<'info>,
-    /// CHECK: user's confidential payout balance lineage; superseded by the token CPI.
+    /// CHECK: user's confidential payout balance encrypted value account; superseded by the token CPI.
     #[account(mut)]
     pub user_payout_balance_value: UncheckedAccount<'info>,
-    /// CHECK: batch payout account's transferred-amount lineage; superseded by
+    /// CHECK: batch payout account's transferred-amount encrypted value account; superseded by
     /// the token CPI.
     #[account(mut)]
     pub batch_payout_transferred_value: UncheckedAccount<'info>,

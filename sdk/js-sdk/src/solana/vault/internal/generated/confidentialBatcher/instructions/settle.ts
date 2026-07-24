@@ -180,7 +180,7 @@ export type SettleInstructionData = {
   cleartextTotal: bigint;
   signatures: Array<ReadonlyUint8Array>;
   extraData: ReadonlyUint8Array;
-  /** Index of the proven leaf within the lineage's MMR. */
+  /** Index of the proven leaf within the encrypted value account's MMR. */
   leafIndex: bigint;
   /** Authentication path from the leaf up to its mountain peak. */
   siblings: Array<ReadonlyUint8Array>;
@@ -191,7 +191,7 @@ export type SettleInstructionDataArgs = {
   cleartextTotal: number | bigint;
   signatures: Array<ReadonlyUint8Array>;
   extraData: ReadonlyUint8Array;
-  /** Index of the proven leaf within the lineage's MMR. */
+  /** Index of the proven leaf within the encrypted value account's MMR. */
   leafIndex: number | bigint;
   /** Authentication path from the leaf up to its mountain peak. */
   siblings: Array<ReadonlyUint8Array>;

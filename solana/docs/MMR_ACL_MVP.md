@@ -15,7 +15,7 @@ this note records the operational model in one place.
   `create_encrypted_value` / `update_encrypted_value` instructions remain in the ABI but fail closed:
   they would otherwise accept caller-chosen handles without proving ciphertext provenance. Being an
   allowed subject is enough to compute/use, grant, request user decrypt, or make the exact current
-  handle public, but it is not enough to supersede the lineage. Durable-output supersession checks
+  handle public, but it is not enough to supersede the encrypted value account. Durable-output supersession checks
   `previous_handle` and `previous_subjects` against current account state so stale off-chain state
   cannot rotate a handle.
 
@@ -25,15 +25,15 @@ this note records the operational model in one place.
   `(op / plaintext / rand-seed, operands, fhe_type, chain_id, previous_bank_hash, unix_timestamp,
   context_id, op_index)`. There is no per-output binding: a durable output and an instruction-local
   output over the same material derive the same handle. This matches EVM `FHEVMExecutor`, which binds
-  no per-slot / per-caller / per-lineage value into a computed handle. `value_key` is still the
+  no per-slot / per-caller / per-encrypted value account value into a computed handle. `value_key` is still the
   `EncryptedValue` PDA seed (`derive_value_key(acl_domain_key, app_account, encrypted_value_label)`) —
   it addresses *which* stored value the result becomes — but it is **not** mixed into the handle.
-- There is **no per-output sequence and no lineage binding** in the handle (DD-015). Per-block entropy
+- There is **no per-output sequence and no encrypted value account binding** in the handle (DD-015). Per-block entropy
   plus the operands/op/type already distinguish distinct ciphertexts. An identical recomputation
   yields an identical handle (deterministic, EVM-parity).
 - Off-chain indexers (host-listener, relayer) obtain durable output handles the same way as transient
   ones — the base-handle derivation over instruction args + block entropy, byte-identical to the
-  program — with no lineage leaf-count tracking and no handle hints.
+  program — with no encrypted value account leaf-count tracking and no handle hints.
 
 ## Allowed Subjects
 
@@ -60,7 +60,7 @@ this note records the operational model in one place.
   output may instead be *born* public by setting `make_public` on the output: after the new handle is
   written, the same `PublicDecryptLeaf` is sealed for that NEW handle in the same instruction —
   byte-identical to `make_handle_public`, appended LAST (after any supersede historical leaves). This
-  is the one exception to "created lineages cannot be born public-decryptable" (DD-036).
+  is the one exception to "created encrypted value accounts cannot be born public-decryptable" (DD-036).
 - Delegated user decrypt is isolated from the core ACL path. Delegation uses standalone
   `UserDecryptionDelegation` PDAs and does not add subjects or mutate `EncryptedValue`.
 
@@ -86,9 +86,9 @@ this note records the operational model in one place.
 
 ## Flow Diagrams
 
-### Lineage state + MMR growth
+### ValueAccount state + MMR growth
 
-One stable `EncryptedValue` PDA per lineage. `current_handle` is overwritten in place; the MMR only
+One stable `EncryptedValue` PDA per encrypted value account. `current_handle` is overwritten in place; the MMR only
 ever grows (append-only), so historical and public-decrypt authorizations are permanent once sealed.
 
 ```mermaid
@@ -150,7 +150,7 @@ delta is born public in the burn's `fhe_eval` CPI; redemption is a single `redee
 consumes the stateless host `verify_public_decrypt` verifier (the request-witness lifecycle was
 dissolved in fhevm-internal#1763), authorizing by the pinned handle's public-decrypt proof against the
 live KMS context the cert names (any non-destroyed context, fhevm-internal#1765), so it stays valid
-after later burns supersede the lineage.
+after later burns supersede the encrypted value account.
 
 ```mermaid
 sequenceDiagram
@@ -187,19 +187,19 @@ code are removed once Carbon indexing lands (fhevm-internal#1665, #1676).
 
 ## Resource Bounds And Liveness
 
-No lineage can be stranded by resource limits. The peak-based MMR decouples per-transaction cost from
+No encrypted value account can be stranded by resource limits. The peak-based MMR decouples per-transaction cost from
 history length, and every relevant bound is a hard, small constant:
 
 - **Account size ceiling: 2457 bytes, forever.** `account_size = 153 + 32·subjects + 32·peaks`, with
   `subjects ≤ MAX_ENCRYPTED_VALUE_SUBJECTS = 8` and `peaks ≤ MAX_MMR_PEAKS = 64` (an MMR has exactly
   `popcount(leaf_count)` peaks, `leaf_count: u64`). Solana's per-transaction realloc cap is 10240
-  bytes, so even growing a fresh lineage to its maximum in one instruction stays ~4× under the wall.
+  bytes, so even growing a fresh encrypted value account to its maximum in one instruction stays ~4× under the wall.
 - **Supersession cost is leaf-count-independent.** An 8-subject supersession appends 8 leaves =
-  ≤ 8 leaf hashes + ≤ 64 peak-merge hashes = ≤ 80 SHA-256 ops, regardless of how old/large the lineage
+  ≤ 8 leaf hashes + ≤ 64 peak-merge hashes = ≤ 80 SHA-256 ops, regardless of how old/large the encrypted value account
   is (binary-counter amortization on peaks). That is ~1–2% of the 1.4M CU budget; the margin does not
   shrink with age. (These are op-count estimates pending a mollusk CU-trace test.)
 - **On-chain code never walks the full leaf list.** It touches only `peaks` (≤64) and the `leaf_count`
-  scalar; `lineage::reconstruct` (O(leaf_count)) is off-chain / test-only. Proof verification is
+  scalar; `value_account::reconstruct` (O(leaf_count)) is off-chain / test-only. Proof verification is
   `log2(leaf_count) ≤ 64` hashes.
 - **The only leaf-count-tied failure is u64 overflow** at ~1.8×10¹⁹ appends (unreachable), and it fails
   atomically (clean revert, no partial mutation, no stuck state).
@@ -211,7 +211,7 @@ to a follow-up.
 ## Decision Links
 
 - DD-031: deleted host-owned `HandleMaterialCommitment`; materiality lives in `CiphertextCommits`.
-- DD-032: introduced stable `EncryptedValue` lineages, single allowed-subject ACL, and MMR leaves.
+- DD-032: introduced stable `EncryptedValue` encrypted value accounts, single allowed-subject ACL, and MMR leaves.
 - DD-033: lifecycle instructions emit no events; indexers replay instruction data.
 - DD-034: Solana compute is scheduled eagerly (`is_allowed` is a scheduling gate, not decrypt auth).
 - DD-035: proof building is a standalone untrusted service; KMS re-verifies proofs against confirmed

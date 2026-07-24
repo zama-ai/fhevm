@@ -62,9 +62,9 @@ impl<'a, 'info> AdmissionState<'a, 'info> {
         Ok(ResolvedOperand::encrypted(handle, false))
     }
 
-    /// Admits one durable output lineage account: canonical PDA, writable,
+    /// Admits one durable output encrypted value account: canonical PDA, writable,
     /// used at most once per frame, and either fresh (create) or an existing
-    /// canonical lineage whose stored state matches the plan's previous_*.
+    /// canonical encrypted value account whose stored state matches the plan's previous_*.
     #[allow(clippy::too_many_arguments)]
     fn admit_durable_output_account(
         &mut self,

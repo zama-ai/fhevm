@@ -3,7 +3,7 @@
 //! underlying for deposit batchers, confidential shares for redeem batchers).
 //!
 //! Permissionless after `min_batch_age_slots`. The batch account's own balance
-//! lineage IS the burn amount (`confidential_burn_from_value`'s whole-balance
+//! encrypted value account IS the burn amount (`confidential_burn_from_value`'s whole-balance
 //! alias, deduped inside the token program), so the born-public burned handle
 //! certifies exactly this batch's sum and nothing else.
 
@@ -34,14 +34,14 @@ pub struct Dispatch<'info> {
     /// token CPI and pinned below.
     #[account(mut)]
     pub batch_join_token_account: UncheckedAccount<'info>,
-    /// CHECK: batch's stable balance lineage — read as the burn amount AND
+    /// CHECK: batch's stable balance encrypted value account — read as the burn amount AND
     /// superseded as the burn's balance output (the whole-balance alias).
     #[account(mut)]
     pub batch_balance_value: UncheckedAccount<'info>,
-    /// CHECK: mint's stable total-supply lineage; superseded by the token CPI.
+    /// CHECK: mint's stable total-supply encrypted value account; superseded by the token CPI.
     #[account(mut)]
     pub total_supply_value: UncheckedAccount<'info>,
-    /// CHECK: batch account's burned-amount lineage, born publicly
+    /// CHECK: batch account's burned-amount encrypted value account, born publicly
     /// decryptable; created by the token CPI (first and only burn per batch).
     #[account(mut)]
     pub batch_burned_amount_value: UncheckedAccount<'info>,
@@ -102,7 +102,7 @@ pub fn dispatch(ctx: Context<Dispatch>) -> Result<()> {
             balance_value: ctx.accounts.batch_balance_value.to_account_info(),
             total_supply_value: ctx.accounts.total_supply_value.to_account_info(),
             burned_amount_value: ctx.accounts.batch_burned_amount_value.to_account_info(),
-            // Whole-balance burn: the balance lineage is also the amount.
+            // Whole-balance burn: the balance encrypted value account is also the amount.
             amount_value: ctx.accounts.batch_balance_value.to_account_info(),
             zama_event_authority: ctx.accounts.zama_event_authority.to_account_info(),
             zama_program: ctx.accounts.zama_program.to_account_info(),

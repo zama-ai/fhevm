@@ -33,7 +33,7 @@
         {
           "name": "payer",
           "docs": [
-            "Pays the claim lineage and transfer output rent. Anyone."
+            "Pays the claim encrypted value account and transfer output rent. Anyone."
           ],
           "writable": true,
           "signer": true
@@ -433,7 +433,7 @@
         "Joins the pending batch with the batcher's join token: one user-signed",
         "transaction that CPIs the coprocessor-attested confidential transfer",
         "into the batch's own token account, then re-materializes the",
-        "transferred amount into the user's joined lineage (audience: user +",
+        "transferred amount into the user's joined encrypted value account (audience: user +",
         "batch authority) in the same transaction. Repeated joins accumulate."
       ],
       "discriminator": [
@@ -927,7 +927,7 @@
       "docs": [
         "Leaves the pending batch before dispatch: transfers the user's exact",
         "recorded amount back from the batch account (all-or-nothing) and",
-        "resets the joined lineage to zero. Always available while pending;",
+        "resets the joined encrypted value account to zero. Always available while pending;",
         "there is no exit between dispatch and settle (fhevm-internal#1773)."
       ],
       "discriminator": [
@@ -2148,7 +2148,7 @@
       "docs": [
         "Confidential mint state for the token PoC.",
         "",
-        "The total supply's current handle and access lineage live in the",
+        "The total supply's current handle and access encrypted value account live in the",
         "`EncryptedValue` account at `total_supply_encrypted_value`."
       ],
       "type": {
@@ -2192,7 +2192,7 @@
           {
             "name": "total_supply_encrypted_value",
             "docs": [
-              "`EncryptedValue` lineage PDA holding the current total-supply handle."
+              "`EncryptedValue` encrypted value account PDA holding the current total-supply handle."
             ],
             "type": "pubkey"
           }
@@ -2300,7 +2300,7 @@
       "name": "JoinRecord",
       "docs": [
         "Per-(batch, user) join record. The encrypted amount itself lives in the",
-        "batcher-owned `EncryptedValue` lineage at `joined_encrypted_value`",
+        "batcher-owned `EncryptedValue` encrypted value account at `joined_encrypted_value`",
         "(audience: the user, who can decrypt their pending amount, and the batch",
         "authority, which computes refunds and claims from it)."
       ],
@@ -2324,7 +2324,7 @@
           {
             "name": "joined_encrypted_value",
             "docs": [
-              "`EncryptedValue` lineage holding the user's accumulated joined amount."
+              "`EncryptedValue` encrypted value account holding the user's accumulated joined amount."
             ],
             "type": "pubkey"
           },
@@ -2378,14 +2378,14 @@
           {
             "name": "joined_encrypted_value",
             "docs": [
-              "`EncryptedValue` lineage holding the user's accumulated joined amount."
+              "`EncryptedValue` encrypted value account holding the user's accumulated joined amount."
             ],
             "type": "pubkey"
           },
           {
             "name": "joined_handle",
             "docs": [
-              "Current handle of the joined lineage after this join."
+              "Current handle of the joined encrypted value account after this join."
             ],
             "type": {
               "array": [
@@ -2411,7 +2411,7 @@
           {
             "name": "leaf_index",
             "docs": [
-              "Index of the proven leaf within the lineage's MMR."
+              "Index of the proven leaf within the encrypted value account's MMR."
             ],
             "type": "u64"
           },
@@ -2464,7 +2464,7 @@
           {
             "name": "claim_encrypted_value",
             "docs": [
-              "`EncryptedValue` lineage holding the claimed payout amount."
+              "`EncryptedValue` encrypted value account holding the claimed payout amount."
             ],
             "type": "pubkey"
           }
@@ -2475,7 +2475,7 @@
       "name": "QuitBatch",
       "docs": [
         "Emitted when a user quits a pending batch: the exact recorded amount was",
-        "transferred back and the joined lineage reset to zero."
+        "transferred back and the joined encrypted value account reset to zero."
       ],
       "type": {
         "kind": "struct",

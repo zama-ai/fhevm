@@ -89,8 +89,8 @@ export interface SolanaUserDecryptInput {
   /** Validity window duration (seconds). */
   readonly durationSeconds: bigint;
   /**
-   * The lineage value key for a current/historical/public decrypt; all-zero (the default) only
-   * when no lineage is named. Mirrors `acl_value_key` in `solana_extra_data.rs`.
+   * The encrypted value account value key for a current/historical/public decrypt; all-zero (the default) only
+   * when no encrypted value account is named. Mirrors `acl_value_key` in `solana_extra_data.rs`.
    */
   readonly aclValueKey?: Uint8Array | undefined;
   /**
@@ -99,7 +99,7 @@ export interface SolanaUserDecryptInput {
    */
   readonly mmrProofBytes?: Uint8Array | undefined;
   /**
-   * The lineage `leaf_count` the proof was built against (staleness marker); `0n` (the default)
+   * The encrypted value account `leaf_count` the proof was built against (staleness marker); `0n` (the default)
    * for a current-ACL request. Mirrors `proof_slot`.
    */
   readonly proofSlot?: bigint | undefined;
@@ -107,7 +107,7 @@ export interface SolanaUserDecryptInput {
 
 const ZERO_ACL_VALUE_KEY = new Uint8Array(32);
 
-/** Fills in the MMR-proof tail defaults (all-zero/empty, i.e. "no named lineage/proof") for fields left unset. */
+/** Fills in the MMR-proof tail defaults (all-zero/empty, i.e. "no named encrypted value account/proof") for fields left unset. */
 function withProofDefaults(input: SolanaUserDecryptInput): {
   aclValueKey: Uint8Array;
   mmrProofBytes: Uint8Array;
@@ -266,7 +266,7 @@ export function buildSolanaUserDecryptRequest(
   }
 
   // The signed preimage always commits to the MMR-proof tail (all-zero/empty when absent); only
-  // the `extraData` wire shape is conditional. Any nonzero aclValueKey names a lineage the
+  // the `extraData` wire shape is conditional. Any nonzero aclValueKey names an encrypted value account the
   // connector must fetch, so it needs the v0x03 tail even when the proof bytes are empty.
   const { aclValueKey, mmrProofBytes, proofSlot } = withProofDefaults(input);
   const extraData = !isZeroBytes(aclValueKey)

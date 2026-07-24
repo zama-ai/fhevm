@@ -15,7 +15,7 @@ pub mod proof;
 pub mod readiness;
 pub mod startup_validation;
 
-pub use chain::{ChainError, ChainFetcher, OnChainLineageState, RpcChainFetcher};
+pub use chain::{ChainError, ChainFetcher, OnChainEncryptedValueAccountState, RpcChainFetcher};
 pub use config::ServiceConfig;
 pub use http::{router, AppState};
 pub use ingest_health::IngestHealth;

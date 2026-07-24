@@ -16,7 +16,7 @@ export { openBatch, type SolanaVaultOpenBatchParameters, type SolanaVaultOpenBat
 
 // One-time provisioning builders the demo seeder drives (fhevm-internal#1760). Kept on the vault
 // surface — the seeder is their only caller — and shaped as thin, root-taking actions: each derives
-// its value-account/event PDAs internally so the seeder passes semantic roots, never hand-rolled accounts.
+// its encrypted value account/event PDAs internally so the seeder passes semantic roots, never hand-rolled accounts.
 export { buildInitializeVaultInstruction, type SolanaVaultInitializeVaultParameters } from './initializeVault.js';
 export {
   buildInitializeBatcherInstruction,
@@ -70,15 +70,15 @@ export {
   batchAddress,
   tokenAccountAddress,
   burnRedemptionAddress,
-  burnedAmountLineage,
-  pendingJoinLineage,
-  claimAmountLineage,
-  type SolanaValueLineage,
+  burnedAmountValueAccount,
+  pendingJoinValueAccount,
+  claimAmountValueAccount,
+  type SolanaEncryptedValueAccount,
 } from './internal/batcherPdas.js';
 // The mint's compute-signer PDA — the contract identity an input proof binds to. Exported so demo
 // consumers derive it from the mint root instead of restating the `fhe-compute` seed; the other
 // confidential-token value-account derivations stay internal because every action derives them itself.
-export { computeSignerAddress } from './internal/tokenLineage.js';
+export { computeSignerAddress } from './internal/tokenValueAccount.js';
 export {
   ADDRESS_LOOKUP_TABLE_PROGRAM_ADDRESS,
   deriveAddressLookupTableAddress,

@@ -71,7 +71,7 @@ export type VerifyPublicDecryptInstructionData = {
   cleartext: ReadonlyUint8Array;
   signatures: Array<ReadonlyUint8Array>;
   extraData: ReadonlyUint8Array;
-  /** Index of the proven leaf within the lineage's MMR. */
+  /** Index of the proven leaf within the encrypted value account's MMR. */
   leafIndex: bigint;
   /** Authentication path from the leaf up to its mountain peak. */
   siblings: Array<ReadonlyUint8Array>;
@@ -82,7 +82,7 @@ export type VerifyPublicDecryptInstructionDataArgs = {
   cleartext: ReadonlyUint8Array;
   signatures: Array<ReadonlyUint8Array>;
   extraData: ReadonlyUint8Array;
-  /** Index of the proven leaf within the lineage's MMR. */
+  /** Index of the proven leaf within the encrypted value account's MMR. */
   leafIndex: number | bigint;
   /** Authentication path from the leaf up to its mountain peak. */
   siblings: Array<ReadonlyUint8Array>;
@@ -140,7 +140,7 @@ export type VerifyPublicDecryptAsyncInput<
    * signed `extra_data`, and must not be destroyed. Verified in the handler.
    */
   kmsContext: Address<TAccountKmsContext>;
-  /** The lineage whose peaks the inclusion proof is checked against. */
+  /** The encrypted value account whose peaks the inclusion proof is checked against. */
   encryptedValue: Address<TAccountEncryptedValue>;
   handle: VerifyPublicDecryptInstructionDataArgs['handle'];
   cleartext: VerifyPublicDecryptInstructionDataArgs['cleartext'];
@@ -207,7 +207,7 @@ export type VerifyPublicDecryptInput<
    * signed `extra_data`, and must not be destroyed. Verified in the handler.
    */
   kmsContext: Address<TAccountKmsContext>;
-  /** The lineage whose peaks the inclusion proof is checked against. */
+  /** The encrypted value account whose peaks the inclusion proof is checked against. */
   encryptedValue: Address<TAccountEncryptedValue>;
   handle: VerifyPublicDecryptInstructionDataArgs['handle'];
   cleartext: VerifyPublicDecryptInstructionDataArgs['cleartext'];
@@ -268,7 +268,7 @@ export type ParsedVerifyPublicDecryptInstruction<
      * signed `extra_data`, and must not be destroyed. Verified in the handler.
      */
     kmsContext: TAccountMetas[1];
-    /** The lineage whose peaks the inclusion proof is checked against. */
+    /** The encrypted value account whose peaks the inclusion proof is checked against. */
     encryptedValue: TAccountMetas[2];
   };
   data: VerifyPublicDecryptInstructionData;
