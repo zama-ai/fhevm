@@ -163,7 +163,7 @@ export class FhevmSdk implements SdkInstance {
       transportKeyPair = await this.#fullClient.generateTransportKeyPair();
     }
 
-    const signedPermit = await this.#fullClient.signDecryptionPermit({
+    const signedPermit = await this.#fullClient.signLegacyDecryptionPermit({
       contractAddresses: [contractAddress],
       durationSeconds: 10 * 24 * 3600, // 10 days
       startTimestamp: parameters.startTimestamp ?? Math.floor(Date.now() / 1000),
@@ -202,7 +202,7 @@ export class FhevmSdk implements SdkInstance {
       transportKeyPair = await this.#fullClient.generateTransportKeyPair();
     }
 
-    const signedPermit = await this.#fullClient.signDecryptionPermit({
+    const signedPermit = await this.#fullClient.signLegacyDecryptionPermit({
       contractAddresses: [contractAddress],
       durationSeconds: 10 * 24 * 3600, // 10 days
       startTimestamp: parameters.startTimestamp ?? Math.floor(Date.now() / 1000),
