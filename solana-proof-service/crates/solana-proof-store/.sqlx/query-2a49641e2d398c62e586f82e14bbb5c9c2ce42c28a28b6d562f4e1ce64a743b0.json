@@ -1,0 +1,19 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n                INSERT INTO solana_proof_encrypted_value_accounts (\n                    encrypted_value_account,\n                    current_handle,\n                    subjects,\n                    leaf_count,\n                    peaks,\n                    last_slot\n                ) VALUES ($1, $2, $3, $4, $5, $6)\n                ON CONFLICT (encrypted_value_account) DO UPDATE SET\n                    current_handle = EXCLUDED.current_handle,\n                    subjects = EXCLUDED.subjects,\n                    leaf_count = EXCLUDED.leaf_count,\n                    peaks = EXCLUDED.peaks,\n                    last_slot = EXCLUDED.last_slot\n                ",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Bytea",
+        "Bytea",
+        "ByteaArray",
+        "Int8",
+        "ByteaArray",
+        "Int8"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "2a49641e2d398c62e586f82e14bbb5c9c2ce42c28a28b6d562f4e1ce64a743b0"
+}

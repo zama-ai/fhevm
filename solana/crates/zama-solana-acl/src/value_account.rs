@@ -1,10 +1,10 @@
-//! Off-chain reconstruction of an encrypted-value lineage's full leaf list.
+//! Off-chain reconstruction of an encrypted value account's full leaf list.
 //!
 //! The on-chain account stores only the MMR peaks and leaf count, never the
 //! ordered leaves a historical/public-decrypt proof needs. This module rebuilds
-//! that leaf list from a lineage's chronological update/make-public record and
+//! that leaf list from a encrypted value account's chronological update/make-public record and
 //! builds inclusion proofs from it, reusing the shared leaf commitments and MMR
-//! exactly as the host program appends them — so a reconstructed lineage's peaks
+//! exactly as the host program appends them — so a reconstructed encrypted value account's peaks
 //! match the chain byte-for-byte.
 //!
 //! Pure data transform: no I/O, no async, no chain access. Instruction ingestion
@@ -17,7 +17,7 @@ use crate::{
 
 /// Why a reconstruction or proof-build could not be trusted against chain state.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub enum LineageError {
+pub enum EncryptedValueAccountError {
     /// No longer emitted by reconstruction; kept so older callers that matched
     /// this public error variant continue to compile.
     EmptySupersededSubjects,
@@ -29,20 +29,20 @@ pub enum LineageError {
     LeafIndexOutOfRange,
 }
 
-/// One leaf-appending operation in a lineage's history, in chronological order.
+/// One leaf-appending operation in a encrypted value account's history, in chronological order.
 ///
 /// Only the two instructions that append MMR leaves appear here;
 /// `allow_subjects` appends none, so it has no leaf to log — its effect on
-/// membership is captured by the next [`LineageEvent::HandleSuperseded`]'s
+/// membership is captured by the next [`EncryptedValueAccountEvent::HandleSuperseded`]'s
 /// `previous_subjects` snapshot. Because durable-output supersession carries
 /// `previous_handle`/`previous_subjects` as verified instruction args, both
 /// variants are decodable from a single transaction with no prior state.
 #[derive(Clone, Debug, PartialEq, Eq)]
-pub enum LineageEvent {
+pub enum EncryptedValueAccountEvent {
     /// A durable-output supersession: appends one historical-access leaf per
     /// subject of the outgoing handle, in `previous_subjects` order.
     HandleSuperseded {
-        /// The handle being superseded (the lineage's handle before this supersession).
+        /// The handle being superseded (the encrypted value account's handle before this supersession).
         previous_handle: [u8; 32],
         /// The exact `subjects` snapshot (order preserved, index 0 first) as it
         /// stood immediately before this supersession executed, after any prior
@@ -51,13 +51,13 @@ pub enum LineageEvent {
     },
     /// A `make_handle_public`: appends one public-decrypt leaf for `handle`.
     MarkedPublic {
-        /// The lineage's current handle at the time it was made public.
+        /// The encrypted value account's current handle at the time it was made public.
         handle: [u8; 32],
     },
 }
 
-impl LineageEvent {
-    /// Builds a [`LineageEvent::HandleSuperseded`] from the `subjects` snapshot
+impl EncryptedValueAccountEvent {
+    /// Builds a [`EncryptedValueAccountEvent::HandleSuperseded`] from the `subjects` snapshot
     /// taken immediately before the supersession executed on-chain.
     ///
     /// `previous_subjects` is load-bearing and silent to get wrong: it must be
@@ -67,27 +67,27 @@ impl LineageEvent {
     /// chain, so the reconstructed peaks silently diverge. When decoding a
     /// durable-output supersession, use its verified args directly.
     pub fn handle_superseded(previous_handle: [u8; 32], previous_subjects: &[[u8; 32]]) -> Self {
-        LineageEvent::HandleSuperseded {
+        EncryptedValueAccountEvent::HandleSuperseded {
             previous_handle,
             previous_subjects: previous_subjects.to_vec(),
         }
     }
 }
 
-/// The full ordered leaf list of a lineage plus the MMR state it implies.
+/// The full ordered leaf list of a encrypted value account plus the MMR state it implies.
 #[derive(Clone, Debug, PartialEq, Eq)]
-pub struct ReconstructedLineage {
+pub struct ReconstructedEncryptedValueAccount {
     pub leaves: Vec<[u8; 32]>,
     pub leaf_count: u64,
     pub peaks: Vec<[u8; 32]>,
 }
 
-/// Rebuilds the full ordered leaf list from a lineage's chronological events.
+/// Rebuilds the full ordered leaf list from a encrypted value account's chronological events.
 ///
 /// Mirrors the host program's append order exactly: each
-/// [`LineageEvent::HandleSuperseded`] appends one
+/// [`EncryptedValueAccountEvent::HandleSuperseded`] appends one
 /// `historical_access_leaf_commitment` per subject in slice order
-/// (durable-output supersession), each [`LineageEvent::MarkedPublic`] appends one
+/// (durable-output supersession), each [`EncryptedValueAccountEvent::MarkedPublic`] appends one
 /// `public_decrypt_leaf_commitment` (`make_handle_public`). The leaf index bound
 /// into every commitment comes from a single running counter — the
 /// authoritative source, exactly as the on-chain handler uses `leaf_count`
@@ -95,13 +95,13 @@ pub struct ReconstructedLineage {
 ///
 pub fn reconstruct(
     encrypted_value_account: [u8; 32],
-    events: &[LineageEvent],
-) -> Result<ReconstructedLineage, LineageError> {
+    events: &[EncryptedValueAccountEvent],
+) -> Result<ReconstructedEncryptedValueAccount, EncryptedValueAccountError> {
     let mut leaves = Vec::new();
     let mut leaf_count: u64 = 0;
     for event in events {
         match event {
-            LineageEvent::HandleSuperseded {
+            EncryptedValueAccountEvent::HandleSuperseded {
                 previous_handle,
                 previous_subjects,
             } => {
@@ -115,7 +115,7 @@ pub fn reconstruct(
                     leaf_count += 1;
                 }
             }
-            LineageEvent::MarkedPublic { handle } => {
+            EncryptedValueAccountEvent::MarkedPublic { handle } => {
                 leaves.push(public_decrypt_leaf_commitment(
                     encrypted_value_account,
                     leaf_count,
@@ -126,14 +126,14 @@ pub fn reconstruct(
         }
     }
     let peaks = mmr_peaks_from_leaves(&leaves);
-    Ok(ReconstructedLineage {
+    Ok(ReconstructedEncryptedValueAccount {
         leaves,
         leaf_count,
         peaks,
     })
 }
 
-impl ReconstructedLineage {
+impl ReconstructedEncryptedValueAccount {
     /// Builds the inclusion proof for the leaf at `leaf_index`, or `None` if out of range.
     pub fn build_proof(&self, leaf_index: u64) -> Option<MmrProof> {
         mmr_build_proof(&self.leaves, leaf_index)
@@ -151,32 +151,32 @@ impl ReconstructedLineage {
     /// stale `previous_subjects` snapshot, produces a proof that is internally
     /// self-consistent but is rejected by the KMS against the real on-chain
     /// peaks. Pass the account's stored `(peaks, leaf_count)` and this returns
-    /// [`LineageError::PeaksDiverged`] before handing back a doomed proof.
+    /// [`EncryptedValueAccountError::PeaksDiverged`] before handing back a doomed proof.
     pub fn build_verified_proof(
         &self,
         on_chain_peaks: &[[u8; 32]],
         on_chain_leaf_count: u64,
         leaf_index: u64,
-    ) -> Result<MmrProof, LineageError> {
+    ) -> Result<MmrProof, EncryptedValueAccountError> {
         if !self.peaks_match(on_chain_peaks, on_chain_leaf_count) {
-            return Err(LineageError::PeaksDiverged);
+            return Err(EncryptedValueAccountError::PeaksDiverged);
         }
         self.build_proof(leaf_index)
-            .ok_or(LineageError::LeafIndexOutOfRange)
+            .ok_or(EncryptedValueAccountError::LeafIndexOutOfRange)
     }
 }
 
 /// One-shot reconstruction + proof build for the leaf at `leaf_index`.
 ///
 /// Reconstructs the full leaf list on every call. For several proofs on the same
-/// lineage (e.g. a batch after one update) call [`reconstruct`] once and reuse
-/// the returned [`ReconstructedLineage`] instead. This convenience does NOT
+/// encrypted value account (e.g. a batch after one update) call [`reconstruct`] once and reuse
+/// the returned [`ReconstructedEncryptedValueAccount`] instead. This convenience does NOT
 /// cross-check against chain state; for that use [`build_verified_proof_from_events`].
 pub fn build_proof_from_events(
     encrypted_value_account: [u8; 32],
-    events: &[LineageEvent],
+    events: &[EncryptedValueAccountEvent],
     leaf_index: u64,
-) -> Result<Option<MmrProof>, LineageError> {
+) -> Result<Option<MmrProof>, EncryptedValueAccountError> {
     Ok(reconstruct(encrypted_value_account, events)?.build_proof(leaf_index))
 }
 
@@ -184,15 +184,15 @@ pub fn build_proof_from_events(
 ///
 /// Like [`build_proof_from_events`] but cross-checks the reconstructed
 /// `(peaks, leaf_count)` against the on-chain account's before returning a proof,
-/// so a wrong record surfaces as [`LineageError::PeaksDiverged`] here rather
-/// than as a silent KMS rejection later. See [`ReconstructedLineage::build_verified_proof`].
+/// so a wrong record surfaces as [`EncryptedValueAccountError::PeaksDiverged`] here rather
+/// than as a silent KMS rejection later. See [`ReconstructedEncryptedValueAccount::build_verified_proof`].
 pub fn build_verified_proof_from_events(
     encrypted_value_account: [u8; 32],
-    events: &[LineageEvent],
+    events: &[EncryptedValueAccountEvent],
     on_chain_peaks: &[[u8; 32]],
     on_chain_leaf_count: u64,
     leaf_index: u64,
-) -> Result<MmrProof, LineageError> {
+) -> Result<MmrProof, EncryptedValueAccountError> {
     reconstruct(encrypted_value_account, events)?.build_verified_proof(
         on_chain_peaks,
         on_chain_leaf_count,
@@ -212,8 +212,8 @@ mod tests {
         [tag; 32]
     }
 
-    fn superseded(previous_handle: [u8; 32], subjects: &[[u8; 32]]) -> LineageEvent {
-        LineageEvent::handle_superseded(previous_handle, subjects)
+    fn superseded(previous_handle: [u8; 32], subjects: &[[u8; 32]]) -> EncryptedValueAccountEvent {
+        EncryptedValueAccountEvent::handle_superseded(previous_handle, subjects)
     }
 
     /// Recomputes peaks by an independent append loop over the same leaves.
@@ -229,28 +229,28 @@ mod tests {
     #[test]
     fn empty_events_produce_no_leaves() {
         let acct = h(0xAC);
-        let lineage = reconstruct(acct, &[]).unwrap();
-        assert!(lineage.leaves.is_empty());
-        assert_eq!(lineage.leaf_count, 0);
-        assert!(lineage.peaks.is_empty());
+        let encrypted_value_account = reconstruct(acct, &[]).unwrap();
+        assert!(encrypted_value_account.leaves.is_empty());
+        assert_eq!(encrypted_value_account.leaf_count, 0);
+        assert!(encrypted_value_account.peaks.is_empty());
         assert!(build_proof_from_events(acct, &[], 0).unwrap().is_none());
-        assert!(lineage.peaks_match(&[], 0));
+        assert!(encrypted_value_account.peaks_match(&[], 0));
     }
 
     #[test]
     fn single_update_one_subject() {
         let acct = h(0xAC);
         let events = [superseded(h(10), &[h(1)])];
-        let lineage = reconstruct(acct, &events).unwrap();
+        let encrypted_value_account = reconstruct(acct, &events).unwrap();
         assert_eq!(
-            lineage.leaves,
+            encrypted_value_account.leaves,
             vec![historical_access_leaf_commitment(acct, 0, h(10), h(1))]
         );
-        let proof = lineage.build_proof(0).unwrap();
+        let proof = encrypted_value_account.build_proof(0).unwrap();
         assert!(mmr_verify(
-            &lineage.peaks,
-            lineage.leaf_count,
-            lineage.leaves[0],
+            &encrypted_value_account.peaks,
+            encrypted_value_account.leaf_count,
+            encrypted_value_account.leaves[0],
             &proof
         ));
     }
@@ -259,42 +259,42 @@ mod tests {
     fn update_two_subjects_keeps_order() {
         let acct = h(0xAC);
         let events = [superseded(h(10), &[h(1), h(2)])];
-        let lineage = reconstruct(acct, &events).unwrap();
+        let encrypted_value_account = reconstruct(acct, &events).unwrap();
         assert_eq!(
-            lineage.leaves,
+            encrypted_value_account.leaves,
             vec![
                 historical_access_leaf_commitment(acct, 0, h(10), h(1)),
                 historical_access_leaf_commitment(acct, 1, h(10), h(2)),
             ]
         );
         for i in 0..2 {
-            let proof = lineage.build_proof(i).unwrap();
+            let proof = encrypted_value_account.build_proof(i).unwrap();
             assert!(mmr_verify(
-                &lineage.peaks,
-                lineage.leaf_count,
-                lineage.leaves[i as usize],
+                &encrypted_value_account.peaks,
+                encrypted_value_account.leaf_count,
+                encrypted_value_account.leaves[i as usize],
                 &proof
             ));
         }
         // Subject order is load-bearing: swapping it yields different leaves.
         let swapped = reconstruct(acct, &[superseded(h(10), &[h(2), h(1)])]).unwrap();
-        assert_ne!(lineage.leaves, swapped.leaves);
+        assert_ne!(encrypted_value_account.leaves, swapped.leaves);
     }
 
     #[test]
     fn single_make_public() {
         let acct = h(0xAC);
-        let events = [LineageEvent::MarkedPublic { handle: h(10) }];
-        let lineage = reconstruct(acct, &events).unwrap();
+        let events = [EncryptedValueAccountEvent::MarkedPublic { handle: h(10) }];
+        let encrypted_value_account = reconstruct(acct, &events).unwrap();
         assert_eq!(
-            lineage.leaves,
+            encrypted_value_account.leaves,
             vec![public_decrypt_leaf_commitment(acct, 0, h(10))]
         );
-        let proof = lineage.build_proof(0).unwrap();
+        let proof = encrypted_value_account.build_proof(0).unwrap();
         assert!(mmr_verify(
-            &lineage.peaks,
-            lineage.leaf_count,
-            lineage.leaves[0],
+            &encrypted_value_account.peaks,
+            encrypted_value_account.leaf_count,
+            encrypted_value_account.leaves[0],
             &proof
         ));
     }
@@ -303,13 +303,13 @@ mod tests {
     fn realistic_sequence_indices_and_proofs() {
         let acct = h(0xAC);
         let events = [
-            LineageEvent::MarkedPublic { handle: h(10) },
+            EncryptedValueAccountEvent::MarkedPublic { handle: h(10) },
             superseded(h(10), &[h(1), h(2)]),
-            LineageEvent::MarkedPublic { handle: h(11) },
+            EncryptedValueAccountEvent::MarkedPublic { handle: h(11) },
         ];
-        let lineage = reconstruct(acct, &events).unwrap();
+        let encrypted_value_account = reconstruct(acct, &events).unwrap();
         assert_eq!(
-            lineage.leaves,
+            encrypted_value_account.leaves,
             vec![
                 public_decrypt_leaf_commitment(acct, 0, h(10)),
                 historical_access_leaf_commitment(acct, 1, h(10), h(1)),
@@ -317,17 +317,17 @@ mod tests {
                 public_decrypt_leaf_commitment(acct, 3, h(11)),
             ]
         );
-        assert_eq!(lineage.leaf_count, 4);
+        assert_eq!(encrypted_value_account.leaf_count, 4);
         for i in 0..4 {
-            let proof = lineage.build_proof(i).unwrap();
+            let proof = encrypted_value_account.build_proof(i).unwrap();
             assert!(mmr_verify(
-                &lineage.peaks,
-                lineage.leaf_count,
-                lineage.leaves[i as usize],
+                &encrypted_value_account.peaks,
+                encrypted_value_account.leaf_count,
+                encrypted_value_account.leaves[i as usize],
                 &proof
             ));
         }
-        assert!(lineage.build_proof(4).is_none());
+        assert!(encrypted_value_account.build_proof(4).is_none());
     }
 
     /// Two updates back-to-back, with no `MarkedPublic` between them and a
@@ -341,9 +341,9 @@ mod tests {
             superseded(h(10), &[h(1)]),
             superseded(h(11), &[h(1), h(2), h(3)]),
         ];
-        let lineage = reconstruct(acct, &events).unwrap();
+        let encrypted_value_account = reconstruct(acct, &events).unwrap();
         assert_eq!(
-            lineage.leaves,
+            encrypted_value_account.leaves,
             vec![
                 historical_access_leaf_commitment(acct, 0, h(10), h(1)),
                 historical_access_leaf_commitment(acct, 1, h(11), h(1)),
@@ -351,15 +351,15 @@ mod tests {
                 historical_access_leaf_commitment(acct, 3, h(11), h(3)),
             ]
         );
-        assert_eq!(lineage.leaf_count, 4);
-        let (peaks, count) = peaks_via_append(&lineage.leaves);
-        assert!(lineage.peaks_match(&peaks, count));
+        assert_eq!(encrypted_value_account.leaf_count, 4);
+        let (peaks, count) = peaks_via_append(&encrypted_value_account.leaves);
+        assert!(encrypted_value_account.peaks_match(&peaks, count));
         for i in 0..4 {
-            let proof = lineage.build_proof(i).unwrap();
+            let proof = encrypted_value_account.build_proof(i).unwrap();
             assert!(mmr_verify(
-                &lineage.peaks,
-                lineage.leaf_count,
-                lineage.leaves[i as usize],
+                &encrypted_value_account.peaks,
+                encrypted_value_account.leaf_count,
+                encrypted_value_account.leaves[i as usize],
                 &proof
             ));
         }
@@ -399,38 +399,38 @@ mod tests {
     fn empty_superseded_subjects_append_no_leaves() {
         let acct = h(0xAC);
         let events = [
-            LineageEvent::MarkedPublic { handle: h(9) },
+            EncryptedValueAccountEvent::MarkedPublic { handle: h(9) },
             superseded(h(10), &[]),
-            LineageEvent::MarkedPublic { handle: h(11) },
+            EncryptedValueAccountEvent::MarkedPublic { handle: h(11) },
         ];
-        let lineage = reconstruct(acct, &events).unwrap();
+        let encrypted_value_account = reconstruct(acct, &events).unwrap();
         let expected = vec![
             public_decrypt_leaf_commitment(acct, 0, h(9)),
             public_decrypt_leaf_commitment(acct, 1, h(11)),
         ];
-        assert_eq!(lineage.leaves, expected);
-        let (peaks, count) = peaks_via_append(&lineage.leaves);
-        assert!(lineage.peaks_match(&peaks, count));
+        assert_eq!(encrypted_value_account.leaves, expected);
+        let (peaks, count) = peaks_via_append(&encrypted_value_account.leaves);
+        assert!(encrypted_value_account.peaks_match(&peaks, count));
     }
 
     #[test]
     fn peaks_invariant_and_match() {
         let acct = h(0xAC);
         let events = [
-            LineageEvent::MarkedPublic { handle: h(10) },
+            EncryptedValueAccountEvent::MarkedPublic { handle: h(10) },
             superseded(h(10), &[h(1), h(2)]),
-            LineageEvent::MarkedPublic { handle: h(11) },
+            EncryptedValueAccountEvent::MarkedPublic { handle: h(11) },
         ];
-        let lineage = reconstruct(acct, &events).unwrap();
-        let (peaks, count) = peaks_via_append(&lineage.leaves);
-        assert_eq!(lineage.peaks, peaks);
-        assert_eq!(lineage.leaf_count, count);
-        assert!(lineage.peaks_match(&peaks, count));
+        let encrypted_value_account = reconstruct(acct, &events).unwrap();
+        let (peaks, count) = peaks_via_append(&encrypted_value_account.leaves);
+        assert_eq!(encrypted_value_account.peaks, peaks);
+        assert_eq!(encrypted_value_account.leaf_count, count);
+        assert!(encrypted_value_account.peaks_match(&peaks, count));
 
         let mut tampered = peaks.clone();
         tampered[0][0] ^= 0xff;
-        assert!(!lineage.peaks_match(&tampered, count));
-        assert!(!lineage.peaks_match(&peaks, count + 1));
+        assert!(!encrypted_value_account.peaks_match(&tampered, count));
+        assert!(!encrypted_value_account.peaks_match(&peaks, count + 1));
 
         // A dropped event is the realistic divergence: reconstruct the same
         // history with the middle update omitted and confirm its shorter leaf
@@ -438,12 +438,15 @@ mod tests {
         let missing = reconstruct(
             acct,
             &[
-                LineageEvent::MarkedPublic { handle: h(10) },
-                LineageEvent::MarkedPublic { handle: h(11) },
+                EncryptedValueAccountEvent::MarkedPublic { handle: h(10) },
+                EncryptedValueAccountEvent::MarkedPublic { handle: h(11) },
             ],
         )
         .unwrap();
-        assert!(!missing.peaks_match(&lineage.peaks, lineage.leaf_count));
+        assert!(!missing.peaks_match(
+            &encrypted_value_account.peaks,
+            encrypted_value_account.leaf_count
+        ));
     }
 
     /// `build_verified_proof` refuses to hand back a proof when the reconstruction
@@ -453,30 +456,37 @@ mod tests {
     fn build_verified_proof_guards_divergence() {
         let acct = h(0xAC);
         let events = [superseded(h(10), &[h(1), h(2)])];
-        let lineage = reconstruct(acct, &events).unwrap();
-        let (peaks, count) = peaks_via_append(&lineage.leaves);
+        let encrypted_value_account = reconstruct(acct, &events).unwrap();
+        let (peaks, count) = peaks_via_append(&encrypted_value_account.leaves);
 
         // Matching chain state: proof is returned and verifies.
-        let proof = lineage.build_verified_proof(&peaks, count, 0).unwrap();
-        assert!(mmr_verify(&peaks, count, lineage.leaves[0], &proof));
+        let proof = encrypted_value_account
+            .build_verified_proof(&peaks, count, 0)
+            .unwrap();
+        assert!(mmr_verify(
+            &peaks,
+            count,
+            encrypted_value_account.leaves[0],
+            &proof
+        ));
 
         // Wrong leaf_count and wrong peaks each surface as PeaksDiverged before any
         // proof is built.
         assert_eq!(
-            lineage.build_verified_proof(&peaks, count + 1, 0),
-            Err(LineageError::PeaksDiverged)
+            encrypted_value_account.build_verified_proof(&peaks, count + 1, 0),
+            Err(EncryptedValueAccountError::PeaksDiverged)
         );
         let mut tampered = peaks.clone();
         tampered[0][0] ^= 0xff;
         assert_eq!(
-            lineage.build_verified_proof(&tampered, count, 0),
-            Err(LineageError::PeaksDiverged)
+            encrypted_value_account.build_verified_proof(&tampered, count, 0),
+            Err(EncryptedValueAccountError::PeaksDiverged)
         );
 
         // Out-of-range index on a matching reconstruction is its own error.
         assert_eq!(
-            lineage.build_verified_proof(&peaks, count, 2),
-            Err(LineageError::LeafIndexOutOfRange)
+            encrypted_value_account.build_verified_proof(&peaks, count, 2),
+            Err(EncryptedValueAccountError::LeafIndexOutOfRange)
         );
 
         // One-shot variant catches a divergent record (stale subject snapshot)
@@ -484,7 +494,7 @@ mod tests {
         let stale = [superseded(h(10), &[h(1)])];
         assert_eq!(
             build_verified_proof_from_events(acct, &stale, &peaks, count, 0),
-            Err(LineageError::PeaksDiverged)
+            Err(EncryptedValueAccountError::PeaksDiverged)
         );
         assert!(build_verified_proof_from_events(acct, &events, &peaks, count, 0).is_ok());
     }
@@ -494,29 +504,29 @@ mod tests {
     /// proof for every index to exercise mountain selection end-to-end on real
     /// commitment values rather than synthetic bytes.
     #[test]
-    fn large_multi_mountain_lineage_round_trips() {
+    fn large_multi_mountain_value_account_round_trips() {
         let acct = h(0xAC);
         let subjects: Vec<[u8; 32]> = (0..MAX_ENCRYPTED_VALUE_SUBJECTS as u8)
             .map(|i| h(0x20 + i))
             .collect();
         let events = [superseded(h(10), &subjects), superseded(h(11), &subjects)];
-        let lineage = reconstruct(acct, &events).unwrap();
-        assert_eq!(lineage.leaf_count, 16);
-        assert_eq!(lineage.leaves.len(), 16);
-        let (peaks, count) = peaks_via_append(&lineage.leaves);
-        assert!(lineage.peaks_match(&peaks, count));
+        let encrypted_value_account = reconstruct(acct, &events).unwrap();
+        assert_eq!(encrypted_value_account.leaf_count, 16);
+        assert_eq!(encrypted_value_account.leaves.len(), 16);
+        let (peaks, count) = peaks_via_append(&encrypted_value_account.leaves);
+        assert!(encrypted_value_account.peaks_match(&peaks, count));
         for i in 0..16 {
-            let proof = lineage.build_proof(i).unwrap();
+            let proof = encrypted_value_account.build_proof(i).unwrap();
             assert!(mmr_verify(
-                &lineage.peaks,
-                lineage.leaf_count,
-                lineage.leaves[i as usize],
+                &encrypted_value_account.peaks,
+                encrypted_value_account.leaf_count,
+                encrypted_value_account.leaves[i as usize],
                 &proof
             ));
         }
     }
 
-    /// The private `Lineage` helper in `lib.rs` tests is the already-trusted
+    /// The private `EncryptedValueAccount` helper in `lib.rs` tests is the already-trusted
     /// mirror of the on-chain append order; this reproduces its
     /// `post_update_then_historical_proof` sequence and checks the new public
     /// API reconstructs the identical leaves/peaks, then round-trips a built
@@ -524,30 +534,30 @@ mod tests {
     /// account carrying the reconstructed peaks and leaf count.
     #[test]
     fn matches_on_chain_append_and_authorizes() {
-        // Mirror `Lineage::new(h(10), &[owner])` then `update(h(11))`: the account
+        // Mirror `EncryptedValueAccount::new(h(10), &[owner])` then `update(h(11))`: the account
         // tag is `h(0xAC)`, the supersession logs the previous subjects for h(10).
         let acct = h(0xAC);
         let owner = h(1);
         let events = [superseded(h(10), &[owner])];
-        let lineage = reconstruct(acct, &events).unwrap();
+        let encrypted_value_account = reconstruct(acct, &events).unwrap();
 
         // Independent on-chain-style append over the same single leaf.
         let leaf = historical_access_leaf_commitment(acct, 0, h(10), owner);
         let (peaks, count) = peaks_via_append(&[leaf]);
-        assert_eq!(lineage.leaves, vec![leaf]);
-        assert_eq!(lineage.peaks, peaks);
-        assert_eq!(lineage.leaf_count, count);
+        assert_eq!(encrypted_value_account.leaves, vec![leaf]);
+        assert_eq!(encrypted_value_account.peaks, peaks);
+        assert_eq!(encrypted_value_account.leaf_count, count);
 
         // Build an EncryptedValue carrying only the reconstructed peaks/leaf_count
         // (what the chain stores) and authorize against a proof built off the leaf list.
         let value = EncryptedValue {
             current_handle: h(11),
             subjects: vec![owner],
-            leaf_count: lineage.leaf_count,
-            peaks: lineage.peaks.clone(),
+            leaf_count: encrypted_value_account.leaf_count,
+            peaks: encrypted_value_account.peaks.clone(),
             ..Default::default()
         };
-        let proof = lineage.build_proof(0).unwrap();
+        let proof = encrypted_value_account.build_proof(0).unwrap();
         assert!(authorize_historical(acct, &value, h(10), owner, &proof).is_ok());
         assert!(authorize_historical(acct, &value, h(10), h(2), &proof).is_err());
 
@@ -573,12 +583,12 @@ mod tests {
         let proof2 = lin2.build_proof(0).unwrap();
         assert!(authorize_historical(acct, &value1, h(10), owner, &proof2).is_err());
 
-        // A public-decrypt lineage round-trips through `authorize_public`.
-        let pub_events = [LineageEvent::MarkedPublic { handle: h(10) }];
-        let pub_lineage = reconstruct(acct, &pub_events).unwrap();
+        // A public-decrypt encrypted value account round-trips through `authorize_public`.
+        let pub_events = [EncryptedValueAccountEvent::MarkedPublic { handle: h(10) }];
+        let pub_value_account = reconstruct(acct, &pub_events).unwrap();
         let pub_value = EncryptedValue {
-            leaf_count: pub_lineage.leaf_count,
-            peaks: pub_lineage.peaks.clone(),
+            leaf_count: pub_value_account.leaf_count,
+            peaks: pub_value_account.peaks.clone(),
             ..Default::default()
         };
         let pub_proof = build_proof_from_events(acct, &pub_events, 0)

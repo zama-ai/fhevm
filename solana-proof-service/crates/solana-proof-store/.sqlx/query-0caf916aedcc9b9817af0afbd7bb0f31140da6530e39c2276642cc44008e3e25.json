@@ -1,6 +1,6 @@
 {
   "db_name": "PostgreSQL",
-  "query": "\n                SELECT current_handle, subjects, leaf_count, peaks\n                FROM solana_proof_lineages\n                WHERE lineage = $1\n                ",
+  "query": "\n            SELECT\n                current_handle,\n                subjects,\n                leaf_count,\n                peaks,\n                last_slot\n            FROM solana_proof_encrypted_value_accounts\n            WHERE encrypted_value_account = $1\n            ",
   "describe": {
     "columns": [
       {
@@ -22,6 +22,11 @@
         "ordinal": 3,
         "name": "peaks",
         "type_info": "ByteaArray"
+      },
+      {
+        "ordinal": 4,
+        "name": "last_slot",
+        "type_info": "Int8"
       }
     ],
     "parameters": {
@@ -33,8 +38,9 @@
       true,
       false,
       false,
+      false,
       false
     ]
   },
-  "hash": "8115fb7c0d9485d91dfa987cad709ce1318ee95a04e15de2f80aa90c52a0c0ac"
+  "hash": "0caf916aedcc9b9817af0afbd7bb0f31140da6530e39c2276642cc44008e3e25"
 }

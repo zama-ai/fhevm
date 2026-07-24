@@ -61,13 +61,13 @@ export type SolanaUserDecryptParameters = {
     | undefined;
   readonly options?: RelayerUserDecryptOptions | undefined;
   /**
-   * The lineage value key naming the live `EncryptedValue` account for current-handle decrypts.
+   * The encrypted value account value key naming the live `EncryptedValue` account for current-handle decrypts.
    * Required when `mmrProof` is omitted; proof requests use `mmrProof.aclValueKey`.
    */
   readonly aclValueKey?: Uint8Array | undefined;
   /**
    * A historical/public MMR inclusion proof (RFC-024) authorizing this decrypt against the
-   * `EncryptedValue` lineage, instead of the live current-handle ACL. Single-handle only (a
+   * `EncryptedValue` value_account, instead of the live current-handle ACL. Single-handle only (a
    * proof authorizes exactly one handle), so `handles` must have length 1 when this is set.
    *
    * DESIGN NOTE — "historical vs current" signal: at the time this was wired, the SDK had no
@@ -75,7 +75,7 @@ export type SolanaUserDecryptParameters = {
    * flag anywhere in the request-building path). Rather than invent one, presence of this field
    * IS the signal: callers who supply `mmrProof` get the proof-gated path (verified client-side
    * below, then attached to the request); callers who omit it get the current-ACL path and must
-   * still provide `aclValueKey` so the connector fetches the intended lineage. If a first-class
+   * still provide `aclValueKey` so the connector fetches the intended encrypted value account. If a first-class
    * historical/current signal is added to the SDK later, this should be reconciled with it rather
    * than kept as a second, parallel signal.
    */
@@ -85,15 +85,15 @@ export type SolanaUserDecryptParameters = {
 /** The MMR proof inputs needed to both verify (client-side, pre-sign) and attach a proof-gated
  * Solana user-decrypt request. Field names mirror `proof.ts` / `solana_extra_data.rs`. */
 export type SolanaUserDecryptMmrProofParameter = {
-  /** The lineage's canonical PDA account (`encrypted_value_account` in `proof.ts`). */
+  /** The encrypted value account's canonical PDA account (`encrypted_value_account` in `proof.ts`). */
   readonly encryptedValueAccount: Uint8Array;
-  /** The lineage value key naming the `EncryptedValue` account (`acl_value_key` on the wire). */
+  /** The encrypted value account value key naming the `EncryptedValue` account (`acl_value_key` on the wire). */
   readonly aclValueKey: Uint8Array;
-  /** The live MMR peaks fetched from the lineage account, used for client-side verification. */
+  /** The live MMR peaks fetched from the encrypted value account, used for client-side verification. */
   readonly peaks: readonly Uint8Array[];
-  /** The live `leaf_count` fetched from the lineage account, used for client-side verification. */
+  /** The live `leaf_count` fetched from the encrypted value account, used for client-side verification. */
   readonly leafCount: bigint;
-  /** The lineage `leaf_count` the proof was built against (`proof_slot` on the wire). */
+  /** The encrypted value account `leaf_count` the proof was built against (`proof_slot` on the wire). */
   readonly proofSlot: bigint;
   /** The decoded inclusion proof (leaf index + sibling path), used for client-side verification. */
   readonly proof: MmrProof;

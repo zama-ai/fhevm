@@ -93,7 +93,7 @@ impl Batch {
 }
 
 /// Per-(batch, user) join record. The encrypted amount itself lives in the
-/// batcher-owned `EncryptedValue` lineage at `joined_encrypted_value`
+/// batcher-owned `EncryptedValue` encrypted value account at `joined_encrypted_value`
 /// (audience: the user, who can decrypt their pending amount, and the batch
 /// authority, which computes refunds and claims from it).
 #[account]
@@ -103,7 +103,7 @@ pub struct JoinRecord {
     pub batch: Pubkey,
     /// Joining user.
     pub user: Pubkey,
-    /// `EncryptedValue` lineage holding the user's accumulated joined amount.
+    /// `EncryptedValue` encrypted value account holding the user's accumulated joined amount.
     pub joined_encrypted_value: Pubkey,
     /// Whether the user's payout was claimed.
     pub claimed: bool,
@@ -157,8 +157,8 @@ pub fn claim_amount_label(user: Pubkey) -> [u8; 32] {
     solana_sha256_hasher::hashv(&[b"batcher-claim-amount", user.as_ref()]).to_bytes()
 }
 
-/// Returns the canonical `EncryptedValue` PDA for a batcher lineage. Batcher
-/// lineages live in the batch's own ACL domain: `acl_domain_key = batch`,
+/// Returns the canonical `EncryptedValue` PDA for a batcher encrypted value account. Batcher
+/// encrypted value accounts live in the batch's own ACL domain: `acl_domain_key = batch`,
 /// `app_account = batch_authority`, per-user label.
 pub fn batcher_encrypted_value_address(
     batch: Pubkey,

@@ -43,8 +43,8 @@ CREATE TABLE solana_proof_transactions (
     CONSTRAINT solana_proof_transactions_signature_key UNIQUE (signature)
 );
 
-CREATE TABLE solana_proof_lineages (
-    lineage BYTEA PRIMARY KEY CHECK (octet_length(lineage) = 32),
+CREATE TABLE solana_proof_encrypted_value_accounts (
+    encrypted_value_account BYTEA PRIMARY KEY CHECK (octet_length(encrypted_value_account) = 32),
     current_handle BYTEA
         CHECK (current_handle IS NULL OR octet_length(current_handle) = 32),
     subjects BYTEA[] NOT NULL DEFAULT '{}',
@@ -54,12 +54,12 @@ CREATE TABLE solana_proof_lineages (
 );
 
 CREATE TABLE solana_proof_leaves (
-    lineage BYTEA NOT NULL REFERENCES solana_proof_lineages (lineage),
+    encrypted_value_account BYTEA NOT NULL REFERENCES solana_proof_encrypted_value_accounts (encrypted_value_account),
     leaf_index BIGINT NOT NULL,
     commitment BYTEA NOT NULL CHECK (octet_length(commitment) = 32),
     block_slot BIGINT NOT NULL,
     transaction_index BIGINT NOT NULL,
-    PRIMARY KEY (lineage, leaf_index)
+    PRIMARY KEY (encrypted_value_account, leaf_index)
 );
 
 CREATE INDEX solana_proof_leaves_block_slot_idx

@@ -326,7 +326,7 @@ pub enum FheEvalOperand {
 pub enum FheEvalOutput {
     /// Output stays allowed only inside the current `fhe_eval` scope; no durable ACL record.
     AllowedLocal,
-    /// Output is bound into durable ACL state: the `EncryptedValue` lineage PDA
+    /// Output is bound into durable ACL state: the `EncryptedValue` encrypted value account PDA
     /// is created when absent, or superseded when it exists.
     AllowedDurable {
         /// Index into `remaining_accounts` for the output `EncryptedValue` PDA.
@@ -337,13 +337,13 @@ pub enum FheEvalOutput {
         /// context. `Some(index)` requires that remaining account to be a signer
         /// and to match `output_app_account`.
         output_app_account_authority_index: Option<u16>,
-        /// ACL domain key for the output lineage.
+        /// ACL domain key for the output encrypted value account.
         output_acl_domain_key: Pubkey,
-        /// App account authorized to bind the output lineage.
+        /// App account authorized to bind the output encrypted value account.
         output_app_account: Pubkey,
-        /// Encrypted value label for the output lineage.
+        /// Encrypted value label for the output encrypted value account.
         output_encrypted_value_label: [u8; 32],
-        /// Subjects on the output lineage. On create these are the initial
+        /// Subjects on the output encrypted value account. On create these are the initial
         /// subjects; on supersede they become the new audience, which may rotate
         /// away from the stored set (the outgoing audience is sealed into
         /// historical leaves first; added subjects pass the grant deny-list).
@@ -359,7 +359,7 @@ pub enum FheEvalOutput {
         /// writing it as `current_handle`, a public-decrypt leaf is appended for
         /// the new handle (byte-identical to `make_handle_public`). Carried in
         /// instruction data so indexers reconstruct that leaf without reading the
-        /// account. This is the opt-in relaxation of the "created lineages cannot
+        /// account. This is the opt-in relaxation of the "created encrypted value accounts cannot
         /// be born public" invariant (DD-036).
         make_public: bool,
     },

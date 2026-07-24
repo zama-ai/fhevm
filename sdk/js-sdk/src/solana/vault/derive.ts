@@ -20,9 +20,9 @@ import {
   encryptedValueAddress,
   tokenAccountAddress,
 } from './internal/batcherPdas.js';
-// Confidential-field lineages and the SPL associated-token derivation are owned by tokenLineage;
+// Confidential-field encrypted value accounts and the SPL associated-token derivation are owned by tokenValueAccount;
 // import them rather than re-declaring the balance/total-supply labels and a second ATA helper here.
-import { associatedTokenAddress, balanceValueAddress, totalSupplyValueAddress } from './internal/tokenLineage.js';
+import { associatedTokenAddress, balanceValueAddress, totalSupplyValueAddress } from './internal/tokenValueAccount.js';
 
 /**
  * The immutable roots of one batcher's demo topology — the addresses a real integrator (or the
@@ -63,9 +63,9 @@ export interface BatchAddresses {
   readonly batchJoinUnderlying: Address;
   /** Plain SPL account receiving the vault leg's output (payout underlying). */
   readonly batchPayoutUnderlying: Address;
-  /** The batch's burned-amount lineage on the join mint (the settle proof's `encrypted_value`). */
+  /** The batch's burned-amount encrypted value account on the join mint (the settle proof's `encrypted_value`). */
   readonly batchBurnedAmountValue: Address;
-  /** The batch payout token account's confidential balance lineage. */
+  /** The batch payout token account's confidential balance encrypted value account. */
   readonly batchPayoutBalanceValue: Address;
 }
 

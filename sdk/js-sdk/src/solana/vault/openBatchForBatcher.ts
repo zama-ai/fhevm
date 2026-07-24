@@ -3,7 +3,7 @@ import type { TransactionSigner } from '@solana/kit';
 import { findComputeSignerPda } from '../internal/generated/confidentialToken/pdas/computeSigner.js';
 import { openBatch, type SolanaVaultOpenBatchResult } from './openBatch.js';
 import { deriveBatchAddresses, deriveSettleLookupTableAddresses, type VaultDemoRoots } from './derive.js';
-import { balanceValueAddress, tokenEventAuthorityAddress, zamaEventAuthorityAddress } from './internal/tokenLineage.js';
+import { balanceValueAddress, tokenEventAuthorityAddress, zamaEventAuthorityAddress } from './internal/tokenValueAccount.js';
 import { batchAddress } from './internal/batcherPdas.js';
 
 export type SolanaVaultOpenBatchForBatcherParameters = {
@@ -22,7 +22,7 @@ export type SolanaVaultOpenBatchForBatcherParameters = {
 /**
  * Opens one batch on a batcher from its {@link VaultDemoRoots} — the single call the demo seeder makes
  * per batcher. It derives every one of `open_batch`'s ~24 accounts (batch, both confidential mints'
- * compute signers, the batch's join/payout token accounts and their balance lineages, and the two
+ * compute signers, the batch's join/payout token accounts and their balance encrypted value accounts, and the two
  * Anchor event authorities) from the roots and the batch index, assembles the settle lookup-table
  * address set, and delegates to {@link openBatch} for the create/extend instructions. The seeder never
  * hand-rolls these accounts; the risky derivation stays here on the tested SDK surface.

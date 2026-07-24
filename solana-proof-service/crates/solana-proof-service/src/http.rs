@@ -43,10 +43,10 @@ pub struct AppState<C: ChainFetcher, S: ProofSnapshotSource> {
     pub proof_permits: Arc<Semaphore>,
 }
 
-/// Query for a historical-access proof: the leaf sealing `handle` for `subject` under `lineage`.
+/// Query for a historical-access proof: the leaf sealing `handle` for `subject` under `encrypted_value_account`.
 #[derive(Debug, Deserialize, ToSchema)]
 pub struct AccessProofQuery {
-    /// Base58 lineage (`EncryptedValue` PDA) address.
+    /// Base58 encrypted_value_account (`EncryptedValue` PDA) address.
     pub encrypted_value: String,
     /// Hex-encoded 32-byte ciphertext handle (optional `0x` prefix).
     pub handle: String,
@@ -55,10 +55,10 @@ pub struct AccessProofQuery {
 }
 
 /// Query for a public-decrypt proof: the earliest leaf marking `handle` publicly decryptable under
-/// `lineage` (a handle may carry several such leaves; the earliest is deterministic and stable).
+/// `encrypted_value_account` (a handle may carry several such leaves; the earliest is deterministic and stable).
 #[derive(Debug, Deserialize, ToSchema)]
 pub struct PublicProofQuery {
-    /// Base58 lineage (`EncryptedValue` PDA) address.
+    /// Base58 encrypted_value_account (`EncryptedValue` PDA) address.
     pub encrypted_value: String,
     /// Hex-encoded 32-byte ciphertext handle (optional `0x` prefix).
     pub handle: String,
@@ -88,14 +88,14 @@ pub struct MmrProofResponse {
     /// passes it through as an output and never supplies it. Omitted on non-proof responses.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub leaf_index: Option<u64>,
-    /// Lineage leaf count the proof was built against.
+    /// EncryptedValueAccount leaf count the proof was built against.
     pub leaf_count: u64,
     /// Confirmed Solana RPC context slot of the on-chain peak comparison.
     pub rpc_context_slot: u64,
-    /// Durable ingest slot at which this lineage's served leaves were last written.
+    /// Durable ingest slot at which this encrypted_value_account's served leaves were last written.
     /// Omitted when no snapshot backed the response (e.g. store not yet ingested).
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub lineage_last_slot: Option<u64>,
+    pub encrypted_value_account_last_slot: Option<u64>,
     /// Commitment level of the on-chain authorization reads.
     pub commitment: &'static str,
     /// Proof response wire-format version.
@@ -149,7 +149,7 @@ impl IntoResponse for HttpError {
             HttpError::Proof(ProofError::Lagging {
                 leaf_count,
                 rpc_context_slot,
-                lineage_last_slot,
+                encrypted_value_account_last_slot,
             }) => {
                 metrics::record_proof("lagging");
                 (
@@ -159,7 +159,7 @@ impl IntoResponse for HttpError {
                         leaf_index: None,
                         leaf_count,
                         rpc_context_slot,
-                        lineage_last_slot,
+                        encrypted_value_account_last_slot,
                         commitment: crate::chain::SOLANA_PROOF_COMMITMENT,
                         proof_format_version: PROOF_FORMAT_VERSION,
                         verified: false,
@@ -171,7 +171,7 @@ impl IntoResponse for HttpError {
             HttpError::Proof(ProofError::CorruptStore {
                 leaf_count,
                 rpc_context_slot,
-                lineage_last_slot,
+                encrypted_value_account_last_slot,
             }) => {
                 metrics::record_proof("corrupt_cache");
                 (
@@ -181,7 +181,7 @@ impl IntoResponse for HttpError {
                         leaf_index: None,
                         leaf_count,
                         rpc_context_slot,
-                        lineage_last_slot,
+                        encrypted_value_account_last_slot,
                         commitment: crate::chain::SOLANA_PROOF_COMMITMENT,
                         proof_format_version: PROOF_FORMAT_VERSION,
                         verified: false,
@@ -196,7 +196,7 @@ impl IntoResponse for HttpError {
             HttpError::Proof(ProofError::LeafNotFound {
                 leaf_count,
                 rpc_context_slot,
-                lineage_last_slot,
+                encrypted_value_account_last_slot,
             }) => {
                 metrics::record_proof("leaf_not_found");
                 (
@@ -206,7 +206,7 @@ impl IntoResponse for HttpError {
                         leaf_index: None,
                         leaf_count,
                         rpc_context_slot,
-                        lineage_last_slot,
+                        encrypted_value_account_last_slot,
                         commitment: crate::chain::SOLANA_PROOF_COMMITMENT,
                         proof_format_version: PROOF_FORMAT_VERSION,
                         verified: false,
@@ -223,9 +223,12 @@ impl IntoResponse for HttpError {
                     HttpError::InvalidHandle(_) => {
                         (StatusCode::BAD_REQUEST, "invalid_handle", None, None)
                     }
-                    HttpError::Proof(ProofError::LineageNotFound) => {
-                        (StatusCode::NOT_FOUND, "lineage_not_found", None, None)
-                    }
+                    HttpError::Proof(ProofError::LineageNotFound) => (
+                        StatusCode::NOT_FOUND,
+                        "encrypted_value_account_not_found",
+                        None,
+                        None,
+                    ),
                     HttpError::Proof(ProofError::Chain(err)) => {
                         tracing::error!(error = %err, "proof chain fetch failed");
                         (StatusCode::INTERNAL_SERVER_ERROR, "chain_error", None, None)
@@ -286,7 +289,7 @@ fn verified_response(result: crate::proof::MmrProofResult) -> Json<MmrProofRespo
         leaf_index: proof.map(|proof| proof.leaf_index),
         leaf_count: result.leaf_count,
         rpc_context_slot: result.rpc_context_slot,
-        lineage_last_slot: result.lineage_last_slot,
+        encrypted_value_account_last_slot: result.encrypted_value_account_last_slot,
         commitment: crate::chain::SOLANA_PROOF_COMMITMENT,
         proof_format_version: PROOF_FORMAT_VERSION,
         verified: result.verified,
@@ -296,7 +299,7 @@ fn verified_response(result: crate::proof::MmrProofResult) -> Json<MmrProofRespo
 
 /// GET `/internal/solana/access-proof?encrypted_value=<base58>&handle=<hex32>&subject=<base58>`
 ///
-/// Resolves the historical-access leaf sealing `handle` for `subject` under the lineage and
+/// Resolves the historical-access leaf sealing `handle` for `subject` under the encrypted_value_account and
 /// returns its verified inclusion proof.
 #[utoipa::path(
     get,
@@ -312,7 +315,7 @@ fn verified_response(result: crate::proof::MmrProofResult) -> Json<MmrProofRespo
         (status = 500, description = "Corrupt cache / integrity", body = MmrProofResponse),
         (status = 408, description = "Proof request timed out", body = ErrorResponse),
         (status = 400, description = "Invalid address or handle", body = ErrorResponse),
-        (status = 404, description = "Lineage not found on chain (ErrorResponse) or no such leaf at parity (MmrProofResponse)"),
+        (status = 404, description = "EncryptedValueAccount not found on chain (ErrorResponse) or no such leaf at parity (MmrProofResponse)"),
     ),
     tag = "Proof"
 )]
@@ -320,14 +323,14 @@ pub async fn access_proof_handler<C: ChainFetcher, S: ProofSnapshotSource>(
     State(state): State<Arc<AppState<C, S>>>,
     Query(query): Query<AccessProofQuery>,
 ) -> Result<Json<MmrProofResponse>, HttpError> {
-    let lineage =
+    let encrypted_value_account =
         decode_solana_address(&query.encrypted_value).map_err(HttpError::InvalidAddress)?;
     let handle = decode_handle(&query.handle).map_err(HttpError::InvalidHandle)?;
     let subject = decode_solana_address(&query.subject).map_err(HttpError::InvalidAddress)?;
     let result = build_access_proof(
         state.fetcher.as_ref(),
         &state.store,
-        lineage,
+        encrypted_value_account,
         handle,
         subject,
     )
@@ -338,7 +341,7 @@ pub async fn access_proof_handler<C: ChainFetcher, S: ProofSnapshotSource>(
 /// GET `/internal/solana/public-proof?encrypted_value=<base58>&handle=<hex32>`
 ///
 /// Resolves the earliest public-decrypt leaf marking `handle` publicly decryptable under the
-/// lineage (a handle may carry several such leaves) and returns its verified inclusion proof.
+/// encrypted_value_account (a handle may carry several such leaves) and returns its verified inclusion proof.
 #[utoipa::path(
     get,
     path = "/internal/solana/public-proof",
@@ -352,7 +355,7 @@ pub async fn access_proof_handler<C: ChainFetcher, S: ProofSnapshotSource>(
         (status = 500, description = "Corrupt cache / integrity", body = MmrProofResponse),
         (status = 408, description = "Proof request timed out", body = ErrorResponse),
         (status = 400, description = "Invalid address or handle", body = ErrorResponse),
-        (status = 404, description = "Lineage not found on chain (ErrorResponse) or no such leaf at parity (MmrProofResponse)"),
+        (status = 404, description = "EncryptedValueAccount not found on chain (ErrorResponse) or no such leaf at parity (MmrProofResponse)"),
     ),
     tag = "Proof"
 )]
@@ -360,10 +363,16 @@ pub async fn public_proof_handler<C: ChainFetcher, S: ProofSnapshotSource>(
     State(state): State<Arc<AppState<C, S>>>,
     Query(query): Query<PublicProofQuery>,
 ) -> Result<Json<MmrProofResponse>, HttpError> {
-    let lineage =
+    let encrypted_value_account =
         decode_solana_address(&query.encrypted_value).map_err(HttpError::InvalidAddress)?;
     let handle = decode_handle(&query.handle).map_err(HttpError::InvalidHandle)?;
-    let result = build_public_proof(state.fetcher.as_ref(), &state.store, lineage, handle).await?;
+    let result = build_public_proof(
+        state.fetcher.as_ref(),
+        &state.store,
+        encrypted_value_account,
+        handle,
+    )
+    .await?;
     Ok(verified_response(result))
 }
 
@@ -422,7 +431,7 @@ pub async fn readiness_handler<C: ChainFetcher, S: ProofSnapshotSource + Readine
     ),
     info(
         title = "Solana proof service",
-        description = "Internal-only PoC API. TODO(prod): add auth / mTLS / rate limits before any public exposure. Proof construction currently loads the full lineage leaf history (O(n)); production needs persisted MMR nodes or checkpoints.",
+        description = "Internal-only PoC API. TODO(prod): add auth / mTLS / rate limits before any public exposure. Proof construction currently loads the full encrypted_value_account leaf history (O(n)); production needs persisted MMR nodes or checkpoints.",
         version = "0.1.0"
     )
 )]
@@ -590,10 +599,13 @@ mod tests {
         [tag; 32]
     }
 
-    fn snapshot_with_leaves(lineage: [u8; 32], leaves: Vec<[u8; 32]>) -> ProofSnapshot {
+    fn snapshot_with_leaves(
+        encrypted_value_account: [u8; 32],
+        leaves: Vec<[u8; 32]>,
+    ) -> ProofSnapshot {
         let peaks = mmr_peaks_from_leaves(&leaves);
         ProofSnapshot {
-            lineage,
+            encrypted_value_account,
             current_handle: None,
             subjects: vec![],
             leaf_count: leaves.len() as u64,
@@ -614,14 +626,17 @@ mod tests {
             }
         }
 
-        fn set(&self, lineage: [u8; 32], state: OnChainLineageState) {
-            self.states.lock().unwrap().insert(lineage, state);
+        fn set(&self, encrypted_value_account: [u8; 32], state: OnChainLineageState) {
+            self.states
+                .lock()
+                .unwrap()
+                .insert(encrypted_value_account, state);
         }
     }
 
     #[async_trait]
     impl ChainFetcher for FakeChain {
-        async fn get_lineage_state(
+        async fn get_encrypted_value_account_state(
             &self,
             address: [u8; 32],
         ) -> Result<Option<OnChainLineageState>, ChainError> {
@@ -630,7 +645,7 @@ mod tests {
     }
 
     /// Read-only fake store: no write / catch-up surface. Resolution of the semantic key to a
-    /// leaf index is pinned per lineage (SQL resolution is covered by the store integration
+    /// leaf index is pinned per encrypted_value_account (SQL resolution is covered by the store integration
     /// tests); the fake asserts the handler's envelope + classification wiring.
     struct FakeStore {
         resolved: Mutex<HashMap<[u8; 32], ResolvedProofSnapshot>>,
@@ -649,7 +664,7 @@ mod tests {
 
         fn insert_resolved(&self, snapshot: ProofSnapshot, leaf_index: Option<u64>) {
             self.resolved.lock().unwrap().insert(
-                snapshot.lineage,
+                snapshot.encrypted_value_account,
                 ResolvedProofSnapshot {
                     snapshot,
                     leaf_index,
@@ -662,11 +677,16 @@ mod tests {
             self.insert_resolved(snapshot, Some(0));
         }
 
-        fn mark_inconsistent(&self, lineage: [u8; 32], leaf_count: u64, leaf_rows: u64) {
+        fn mark_inconsistent(
+            &self,
+            encrypted_value_account: [u8; 32],
+            leaf_count: u64,
+            leaf_rows: u64,
+        ) {
             self.inconsistent
                 .lock()
                 .unwrap()
-                .insert(lineage, (leaf_count, leaf_rows));
+                .insert(encrypted_value_account, (leaf_count, leaf_rows));
         }
     }
 
@@ -674,18 +694,27 @@ mod tests {
     impl ProofSnapshotSource for FakeStore {
         async fn proof_snapshot_for_leaf(
             &self,
-            lineage: [u8; 32],
+            encrypted_value_account: [u8; 32],
             _key: &SemanticLeafKey,
         ) -> Result<Option<ResolvedProofSnapshot>, StoreError> {
             self.reads.fetch_add(1, Ordering::SeqCst);
-            if let Some(&(leaf_count, leaf_rows)) = self.inconsistent.lock().unwrap().get(&lineage)
+            if let Some(&(leaf_count, leaf_rows)) = self
+                .inconsistent
+                .lock()
+                .unwrap()
+                .get(&encrypted_value_account)
             {
                 return Err(StoreError::SnapshotInconsistent {
                     leaf_count,
                     leaf_rows,
                 });
             }
-            Ok(self.resolved.lock().unwrap().get(&lineage).cloned())
+            Ok(self
+                .resolved
+                .lock()
+                .unwrap()
+                .get(&encrypted_value_account)
+                .cloned())
         }
     }
 
@@ -696,18 +725,22 @@ mod tests {
         serde_json::from_slice(&body).unwrap()
     }
 
-    fn public_proof_uri(lineage: [u8; 32], handle: [u8; 32]) -> String {
+    fn public_proof_uri(encrypted_value_account: [u8; 32], handle: [u8; 32]) -> String {
         format!(
             "/internal/solana/public-proof?encrypted_value={}&handle={}",
-            bs58::encode(lineage).into_string(),
+            bs58::encode(encrypted_value_account).into_string(),
             hex::encode(handle)
         )
     }
 
-    fn access_proof_uri(lineage: [u8; 32], handle: [u8; 32], subject: [u8; 32]) -> String {
+    fn access_proof_uri(
+        encrypted_value_account: [u8; 32],
+        handle: [u8; 32],
+        subject: [u8; 32],
+    ) -> String {
         format!(
             "/internal/solana/access-proof?encrypted_value={}&handle={}&subject={}",
-            bs58::encode(lineage).into_string(),
+            bs58::encode(encrypted_value_account).into_string(),
             hex::encode(handle),
             bs58::encode(subject).into_string()
         )
@@ -742,15 +775,16 @@ mod tests {
 
     #[tokio::test]
     async fn handler_verified_json_body() {
-        let lineage = pk(0x11);
-        let leaf = zama_solana_acl::public_decrypt_leaf_commitment(lineage, 0, pk(0x10));
+        let encrypted_value_account = pk(0x11);
+        let leaf =
+            zama_solana_acl::public_decrypt_leaf_commitment(encrypted_value_account, 0, pk(0x10));
         let mut peaks = Vec::new();
         let mut leaf_count = 0u64;
         mmr_append(&mut peaks, &mut leaf_count, leaf).unwrap();
 
         let chain = FakeChain::new();
         chain.set(
-            lineage,
+            encrypted_value_account,
             OnChainLineageState {
                 peaks,
                 leaf_count,
@@ -758,13 +792,13 @@ mod tests {
             },
         );
         let store = FakeStore::new();
-        store.insert(snapshot_with_leaves(lineage, vec![leaf]));
+        store.insert(snapshot_with_leaves(encrypted_value_account, vec![leaf]));
 
         let app = proof_test_router(app_state(chain, store));
         let response = app
             .oneshot(
                 Request::builder()
-                    .uri(public_proof_uri(lineage, pk(0x10)))
+                    .uri(public_proof_uri(encrypted_value_account, pk(0x10)))
                     .body(Body::empty())
                     .unwrap(),
             )
@@ -779,7 +813,7 @@ mod tests {
         assert_eq!(json["leaf_count"], 1);
         assert_eq!(json["rpc_context_slot"], 4242);
         // snapshot_with_leaves pins last_slot = 1.
-        assert_eq!(json["lineage_last_slot"], 1);
+        assert_eq!(json["encrypted_value_account_last_slot"], 1);
         assert_eq!(json["commitment"], "confirmed");
         assert_eq!(json["proof_format_version"], "v1");
         assert!(json.get("proof_slot").is_none());
@@ -789,9 +823,11 @@ mod tests {
 
     #[tokio::test]
     async fn handler_lagging_json_body() {
-        let lineage = pk(0x12);
-        let leaf0 = zama_solana_acl::public_decrypt_leaf_commitment(lineage, 0, pk(0x10));
-        let leaf1 = zama_solana_acl::public_decrypt_leaf_commitment(lineage, 1, pk(0x11));
+        let encrypted_value_account = pk(0x12);
+        let leaf0 =
+            zama_solana_acl::public_decrypt_leaf_commitment(encrypted_value_account, 0, pk(0x10));
+        let leaf1 =
+            zama_solana_acl::public_decrypt_leaf_commitment(encrypted_value_account, 1, pk(0x11));
         let mut peaks = Vec::new();
         let mut leaf_count = 0u64;
         mmr_append(&mut peaks, &mut leaf_count, leaf0).unwrap();
@@ -799,7 +835,7 @@ mod tests {
 
         let chain = FakeChain::new();
         chain.set(
-            lineage,
+            encrypted_value_account,
             OnChainLineageState {
                 peaks,
                 leaf_count,
@@ -807,13 +843,13 @@ mod tests {
             },
         );
         let store = FakeStore::new();
-        store.insert(snapshot_with_leaves(lineage, vec![leaf0]));
+        store.insert(snapshot_with_leaves(encrypted_value_account, vec![leaf0]));
 
         let app = proof_test_router(app_state(chain, store));
         let response = app
             .oneshot(
                 Request::builder()
-                    .uri(public_proof_uri(lineage, pk(0x10)))
+                    .uri(public_proof_uri(encrypted_value_account, pk(0x10)))
                     .body(Body::empty())
                     .unwrap(),
             )
@@ -829,16 +865,18 @@ mod tests {
 
     #[tokio::test]
     async fn handler_corrupt_cache_json_body() {
-        let lineage = pk(0x13);
-        let leaf = zama_solana_acl::public_decrypt_leaf_commitment(lineage, 0, pk(0x10));
-        let other = zama_solana_acl::public_decrypt_leaf_commitment(lineage, 0, pk(0xAA));
+        let encrypted_value_account = pk(0x13);
+        let leaf =
+            zama_solana_acl::public_decrypt_leaf_commitment(encrypted_value_account, 0, pk(0x10));
+        let other =
+            zama_solana_acl::public_decrypt_leaf_commitment(encrypted_value_account, 0, pk(0xAA));
         let mut peaks = Vec::new();
         let mut leaf_count = 0u64;
         mmr_append(&mut peaks, &mut leaf_count, other).unwrap();
 
         let chain = FakeChain::new();
         chain.set(
-            lineage,
+            encrypted_value_account,
             OnChainLineageState {
                 peaks,
                 leaf_count,
@@ -846,13 +884,13 @@ mod tests {
             },
         );
         let store = FakeStore::new();
-        store.insert(snapshot_with_leaves(lineage, vec![leaf]));
+        store.insert(snapshot_with_leaves(encrypted_value_account, vec![leaf]));
 
         let app = proof_test_router(app_state(chain, store));
         let response = app
             .oneshot(
                 Request::builder()
-                    .uri(public_proof_uri(lineage, pk(0x10)))
+                    .uri(public_proof_uri(encrypted_value_account, pk(0x10)))
                     .body(Body::empty())
                     .unwrap(),
             )
@@ -868,15 +906,16 @@ mod tests {
 
     #[tokio::test]
     async fn handler_snapshot_inconsistency_returns_corrupt_cache_json() {
-        let lineage = pk(0x14);
-        let leaf = zama_solana_acl::public_decrypt_leaf_commitment(lineage, 0, pk(0x10));
+        let encrypted_value_account = pk(0x14);
+        let leaf =
+            zama_solana_acl::public_decrypt_leaf_commitment(encrypted_value_account, 0, pk(0x10));
         let mut peaks = Vec::new();
         let mut leaf_count = 0u64;
         mmr_append(&mut peaks, &mut leaf_count, leaf).unwrap();
 
         let chain = FakeChain::new();
         chain.set(
-            lineage,
+            encrypted_value_account,
             OnChainLineageState {
                 peaks,
                 leaf_count,
@@ -884,13 +923,13 @@ mod tests {
             },
         );
         let store = FakeStore::new();
-        store.mark_inconsistent(lineage, 1, 0);
+        store.mark_inconsistent(encrypted_value_account, 1, 0);
 
         let app = proof_test_router(app_state(chain, store));
         let response = app
             .oneshot(
                 Request::builder()
-                    .uri(public_proof_uri(lineage, pk(0x10)))
+                    .uri(public_proof_uri(encrypted_value_account, pk(0x10)))
                     .body(Body::empty())
                     .unwrap(),
             )
@@ -904,15 +943,15 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn handler_lineage_missing_is_404_json_error() {
-        let lineage = pk(0x15);
+    async fn handler_encrypted_value_account_missing_is_404_json_error() {
+        let encrypted_value_account = pk(0x15);
         let chain = FakeChain::new();
         let store = FakeStore::new();
         let app = proof_test_router(app_state(chain, store));
         let response = app
             .oneshot(
                 Request::builder()
-                    .uri(public_proof_uri(lineage, pk(0x10)))
+                    .uri(public_proof_uri(encrypted_value_account, pk(0x10)))
                     .body(Body::empty())
                     .unwrap(),
             )
@@ -921,21 +960,22 @@ mod tests {
         assert_eq!(response.status(), StatusCode::NOT_FOUND);
         assert!(response.headers().get("x-request-id").is_some());
         let json = json_body(response).await;
-        assert_eq!(json["code"], "lineage_not_found");
+        assert_eq!(json["code"], "encrypted_value_account_not_found");
         assert!(json["error"].is_string());
     }
 
     #[tokio::test]
     async fn handler_leaf_not_found_at_parity_is_404_proof_envelope() {
-        let lineage = pk(0x17);
-        let leaf = zama_solana_acl::public_decrypt_leaf_commitment(lineage, 0, pk(0x10));
+        let encrypted_value_account = pk(0x17);
+        let leaf =
+            zama_solana_acl::public_decrypt_leaf_commitment(encrypted_value_account, 0, pk(0x10));
         let mut peaks = Vec::new();
         let mut leaf_count = 0u64;
         mmr_append(&mut peaks, &mut leaf_count, leaf).unwrap();
 
         let chain = FakeChain::new();
         chain.set(
-            lineage,
+            encrypted_value_account,
             OnChainLineageState {
                 peaks,
                 leaf_count, // 1 on chain == snapshot leaf_count: store is caught up
@@ -943,14 +983,17 @@ mod tests {
             },
         );
         let store = FakeStore::new();
-        // Lineage exists at parity, but the requested handle resolves to no leaf → terminal.
-        store.insert_resolved(snapshot_with_leaves(lineage, vec![leaf]), None);
+        // EncryptedValueAccount exists at parity, but the requested handle resolves to no leaf → terminal.
+        store.insert_resolved(
+            snapshot_with_leaves(encrypted_value_account, vec![leaf]),
+            None,
+        );
 
         let app = proof_test_router(app_state(chain, store));
         let response = app
             .oneshot(
                 Request::builder()
-                    .uri(public_proof_uri(lineage, pk(0xEE)))
+                    .uri(public_proof_uri(encrypted_value_account, pk(0xEE)))
                     .body(Body::empty())
                     .unwrap(),
             )
@@ -967,9 +1010,11 @@ mod tests {
 
     #[tokio::test]
     async fn handler_leaf_not_found_below_parity_is_503_lagging() {
-        let lineage = pk(0x18);
-        let leaf0 = zama_solana_acl::public_decrypt_leaf_commitment(lineage, 0, pk(0x10));
-        let leaf1 = zama_solana_acl::public_decrypt_leaf_commitment(lineage, 1, pk(0x11));
+        let encrypted_value_account = pk(0x18);
+        let leaf0 =
+            zama_solana_acl::public_decrypt_leaf_commitment(encrypted_value_account, 0, pk(0x10));
+        let leaf1 =
+            zama_solana_acl::public_decrypt_leaf_commitment(encrypted_value_account, 1, pk(0x11));
         let mut peaks = Vec::new();
         let mut leaf_count = 0u64;
         mmr_append(&mut peaks, &mut leaf_count, leaf0).unwrap();
@@ -977,7 +1022,7 @@ mod tests {
 
         let chain = FakeChain::new();
         chain.set(
-            lineage,
+            encrypted_value_account,
             OnChainLineageState {
                 peaks,
                 leaf_count, // 2 on chain
@@ -986,13 +1031,16 @@ mod tests {
         );
         let store = FakeStore::new();
         // Store still behind chain (1 leaf) and the just-sealed handle isn't ingested yet.
-        store.insert_resolved(snapshot_with_leaves(lineage, vec![leaf0]), None);
+        store.insert_resolved(
+            snapshot_with_leaves(encrypted_value_account, vec![leaf0]),
+            None,
+        );
 
         let app = proof_test_router(app_state(chain, store));
         let response = app
             .oneshot(
                 Request::builder()
-                    .uri(public_proof_uri(lineage, pk(0x11)))
+                    .uri(public_proof_uri(encrypted_value_account, pk(0x11)))
                     .body(Body::empty())
                     .unwrap(),
             )
@@ -1006,17 +1054,22 @@ mod tests {
 
     #[tokio::test]
     async fn handler_access_proof_verified_json_body() {
-        let lineage = pk(0x19);
+        let encrypted_value_account = pk(0x19);
         let handle = pk(0x20);
         let subject = pk(0x30);
-        let leaf = zama_solana_acl::historical_access_leaf_commitment(lineage, 0, handle, subject);
+        let leaf = zama_solana_acl::historical_access_leaf_commitment(
+            encrypted_value_account,
+            0,
+            handle,
+            subject,
+        );
         let mut peaks = Vec::new();
         let mut leaf_count = 0u64;
         mmr_append(&mut peaks, &mut leaf_count, leaf).unwrap();
 
         let chain = FakeChain::new();
         chain.set(
-            lineage,
+            encrypted_value_account,
             OnChainLineageState {
                 peaks,
                 leaf_count,
@@ -1024,13 +1077,13 @@ mod tests {
             },
         );
         let store = FakeStore::new();
-        store.insert(snapshot_with_leaves(lineage, vec![leaf]));
+        store.insert(snapshot_with_leaves(encrypted_value_account, vec![leaf]));
 
         let app = proof_test_router(app_state(chain, store));
         let response = app
             .oneshot(
                 Request::builder()
-                    .uri(access_proof_uri(lineage, handle, subject))
+                    .uri(access_proof_uri(encrypted_value_account, handle, subject))
                     .body(Body::empty())
                     .unwrap(),
             )
@@ -1046,13 +1099,13 @@ mod tests {
 
     #[tokio::test]
     async fn handler_invalid_handle_is_400_json_error() {
-        let lineage = pk(0x1A);
+        let encrypted_value_account = pk(0x1A);
         let chain = FakeChain::new();
         let store = FakeStore::new();
         let app = proof_test_router(app_state(chain, store));
         let uri = format!(
             "/internal/solana/public-proof?encrypted_value={}&handle=not-hex",
-            bs58::encode(lineage).into_string()
+            bs58::encode(encrypted_value_account).into_string()
         );
         let response = app
             .oneshot(Request::builder().uri(uri).body(Body::empty()).unwrap())
@@ -1065,15 +1118,16 @@ mod tests {
 
     #[tokio::test]
     async fn handler_does_not_write_or_catch_up() {
-        let lineage = pk(0x16);
-        let leaf = zama_solana_acl::public_decrypt_leaf_commitment(lineage, 0, pk(0x10));
+        let encrypted_value_account = pk(0x16);
+        let leaf =
+            zama_solana_acl::public_decrypt_leaf_commitment(encrypted_value_account, 0, pk(0x10));
         let mut peaks = Vec::new();
         let mut leaf_count = 0u64;
         mmr_append(&mut peaks, &mut leaf_count, leaf).unwrap();
 
         let chain = FakeChain::new();
         chain.set(
-            lineage,
+            encrypted_value_account,
             OnChainLineageState {
                 peaks,
                 leaf_count,
@@ -1081,14 +1135,14 @@ mod tests {
             },
         );
         let store = FakeStore::new();
-        store.insert(snapshot_with_leaves(lineage, vec![leaf]));
+        store.insert(snapshot_with_leaves(encrypted_value_account, vec![leaf]));
 
         let state = app_state(chain, store);
         let app = proof_test_router(Arc::clone(&state));
         let response = app
             .oneshot(
                 Request::builder()
-                    .uri(public_proof_uri(lineage, pk(0x10)))
+                    .uri(public_proof_uri(encrypted_value_account, pk(0x10)))
                     .body(Body::empty())
                     .unwrap(),
             )
@@ -1104,7 +1158,7 @@ mod tests {
         let response = HttpError::Proof(ProofError::Lagging {
             leaf_count: 3,
             rpc_context_slot: 77,
-            lineage_last_slot: Some(9),
+            encrypted_value_account_last_slot: Some(9),
         })
         .into_response();
         assert_eq!(response.status(), StatusCode::SERVICE_UNAVAILABLE);
@@ -1113,7 +1167,7 @@ mod tests {
         assert_eq!(body["verified"], false);
         assert_eq!(body["leaf_count"], 3);
         assert_eq!(body["rpc_context_slot"], 77);
-        assert_eq!(body["lineage_last_slot"], 9);
+        assert_eq!(body["encrypted_value_account_last_slot"], 9);
         assert_eq!(body["commitment"], "confirmed");
         assert_eq!(body["proof_format_version"], "v1");
     }
@@ -1123,7 +1177,7 @@ mod tests {
         let response = HttpError::Proof(ProofError::CorruptStore {
             leaf_count: 3,
             rpc_context_slot: 77,
-            lineage_last_slot: None,
+            encrypted_value_account_last_slot: None,
         })
         .into_response();
         assert_eq!(response.status(), StatusCode::INTERNAL_SERVER_ERROR);
@@ -1132,8 +1186,8 @@ mod tests {
         assert_eq!(body["verified"], false);
         assert_eq!(body["leaf_count"], 3);
         assert_eq!(body["rpc_context_slot"], 77);
-        // lineage_last_slot omitted when no snapshot backed the error.
-        assert!(body.get("lineage_last_slot").is_none());
+        // encrypted_value_account_last_slot omitted when no snapshot backed the error.
+        assert!(body.get("encrypted_value_account_last_slot").is_none());
     }
 
     #[test]

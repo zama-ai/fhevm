@@ -106,14 +106,14 @@
         {
           "name": "balance_value",
           "docs": [
-            "Stable balance lineage; read for the current handle and superseded by this eval."
+            "Stable balance encrypted value account; read for the current handle and superseded by this eval."
           ],
           "writable": true
         },
         {
           "name": "total_supply_value",
           "docs": [
-            "Stable total-supply lineage; read for the current handle and superseded by this eval."
+            "Stable total-supply encrypted value account; read for the current handle and superseded by this eval."
           ],
           "writable": true
         },
@@ -123,7 +123,7 @@
             "account's first burn, superseded in place thereafter to each burn's own",
             "delta. Each burn makes its own delta handle publicly decryptable at burn",
             "(ERC-7984 `unwrap` parity), so every burn stays permanently redeemable",
-            "even after a later burn supersedes this lineage (DD-036 / Vector 2 closed)."
+            "even after a later burn supersedes this encrypted value account (DD-036 / Vector 2 closed)."
           ],
           "writable": true
         },
@@ -211,7 +211,7 @@
           "name": "owner",
           "docs": [
             "Token owner and burn authority. Must be in `amount_value`'s subject set (the spend gate).",
-            "Not `mut`: rent for the burned-amount lineage's first bind is paid by `payer`, so the owner",
+            "Not `mut`: rent for the burned-amount encrypted value account's first bind is paid by `payer`, so the owner",
             "may be a program PDA (the batcher) that only authorizes the burn via `invoke_signed`."
           ],
           "signer": true
@@ -219,7 +219,7 @@
         {
           "name": "payer",
           "docs": [
-            "Pays rent for the burned-amount lineage on its first bind."
+            "Pays rent for the burned-amount encrypted value account on its first bind."
           ],
           "writable": true,
           "signer": true
@@ -296,14 +296,14 @@
         {
           "name": "balance_value",
           "docs": [
-            "Stable balance lineage; read for the current handle and superseded by this eval."
+            "Stable balance encrypted value account; read for the current handle and superseded by this eval."
           ],
           "writable": true
         },
         {
           "name": "total_supply_value",
           "docs": [
-            "Stable total-supply lineage; read for the current handle and superseded by this eval."
+            "Stable total-supply encrypted value account; read for the current handle and superseded by this eval."
           ],
           "writable": true
         },
@@ -321,7 +321,7 @@
           "docs": [
             "The existing encrypted amount to burn: a computed or received `euint64` handle. Read-only",
             "durable operand — never superseded, never consumed. Its address is the canonical PDA of its",
-            "own `(acl_domain_key, app_account, encrypted_value_label)` fields, so a lineage from any app",
+            "own `(acl_domain_key, app_account, encrypted_value_label)` fields, so a encrypted value account from any app",
             "may be passed here once its owner has granted the mint's compute subject via `allow_subjects`."
           ]
         },
@@ -400,7 +400,7 @@
         {
           "name": "payer",
           "docs": [
-            "Pays rent for the transferred-amount lineage on its first bind."
+            "Pays rent for the transferred-amount encrypted value account on its first bind."
           ],
           "writable": true,
           "signer": true
@@ -452,7 +452,7 @@
         {
           "name": "from_balance_value",
           "docs": [
-            "Sender's stable balance `EncryptedValue` lineage; read for the current",
+            "Sender's stable balance `EncryptedValue` encrypted value account; read for the current",
             "handle and superseded in place by this eval's CPI."
           ],
           "writable": true
@@ -460,7 +460,7 @@
         {
           "name": "to_balance_value",
           "docs": [
-            "Recipient's stable balance `EncryptedValue` lineage."
+            "Recipient's stable balance `EncryptedValue` encrypted value account."
           ],
           "writable": true
         },
@@ -557,7 +557,7 @@
         {
           "name": "payer",
           "docs": [
-            "Pays rent for the transferred-amount lineage on its first bind."
+            "Pays rent for the transferred-amount encrypted value account on its first bind."
           ],
           "writable": true,
           "signer": true
@@ -609,7 +609,7 @@
         {
           "name": "from_balance_value",
           "docs": [
-            "Sender's stable balance `EncryptedValue` lineage; read for the current",
+            "Sender's stable balance `EncryptedValue` encrypted value account; read for the current",
             "handle and superseded in place by this eval's CPI."
           ],
           "writable": true
@@ -617,7 +617,7 @@
         {
           "name": "to_balance_value",
           "docs": [
-            "Recipient's stable balance `EncryptedValue` lineage."
+            "Recipient's stable balance `EncryptedValue` encrypted value account."
           ],
           "writable": true
         },
@@ -633,7 +633,7 @@
           "docs": [
             "The existing encrypted amount to spend: a computed or received `euint64` handle. Read-only",
             "durable operand — never superseded, never consumed. Its address is the canonical PDA of its",
-            "own `(acl_domain_key, app_account, encrypted_value_label)` fields, so a lineage from any app",
+            "own `(acl_domain_key, app_account, encrypted_value_label)` fields, so a encrypted value account from any app",
             "may be passed here once its owner has granted the mint's compute subject via `allow_subjects`."
           ]
         },
@@ -706,13 +706,13 @@
         {
           "name": "mint",
           "docs": [
-            "Confidential mint whose ACL domain scopes the disclosed lineage and event."
+            "Confidential mint whose ACL domain scopes the disclosed encrypted value account and event."
           ]
         },
         {
           "name": "encrypted_value",
           "docs": [
-            "The `EncryptedValue` lineage the disclosed handle belongs to.",
+            "The `EncryptedValue` encrypted value account the disclosed handle belongs to.",
             "CPI; this handler additionally binds its `acl_domain_key` to `mint`."
           ]
         },
@@ -1234,8 +1234,8 @@
         {
           "name": "burned_amount_value",
           "docs": [
-            "Burned amount `EncryptedValue` lineage whose handle is redeemed. Bound to the mint/token",
-            "account/owner by `assert_burned_amount_lineage`; its canonical PDA, layout, host ownership,",
+            "Burned amount `EncryptedValue` encrypted value account whose handle is redeemed. Bound to the mint/token",
+            "account/owner by `assert_burned_amount_value_account`; its canonical PDA, layout, host ownership,",
             "and the exact-handle MMR inclusion proof are validated by the `verify_public_decrypt` CPI."
           ]
         },
@@ -1571,14 +1571,14 @@
         {
           "name": "balance_value",
           "docs": [
-            "Stable balance lineage; read for the current handle and superseded by this eval."
+            "Stable balance encrypted value account; read for the current handle and superseded by this eval."
           ],
           "writable": true
         },
         {
           "name": "total_supply_value",
           "docs": [
-            "Stable total-supply lineage; read for the current handle and superseded by this eval."
+            "Stable total-supply encrypted value account; read for the current handle and superseded by this eval."
           ],
           "writable": true
         },
@@ -1892,7 +1892,7 @@
     {
       "code": 6022,
       "name": "PublicDecryptProofInvalid",
-      "msg": "public-decrypt MMR proof is invalid for this lineage"
+      "msg": "public-decrypt MMR proof is invalid for this encrypted value account"
     },
     {
       "code": 6023,
@@ -2228,7 +2228,7 @@
           {
             "name": "burned_encrypted_value",
             "docs": [
-              "`EncryptedValue` lineage for `burned_handle`."
+              "`EncryptedValue` encrypted value account for `burned_handle`."
             ],
             "type": "pubkey"
           },
@@ -2329,7 +2329,7 @@
       "docs": [
         "Confidential mint state for the token PoC.",
         "",
-        "The total supply's current handle and access lineage live in the",
+        "The total supply's current handle and access encrypted value account live in the",
         "`EncryptedValue` account at `total_supply_encrypted_value`."
       ],
       "type": {
@@ -2373,7 +2373,7 @@
           {
             "name": "total_supply_encrypted_value",
             "docs": [
-              "`EncryptedValue` lineage PDA holding the current total-supply handle."
+              "`EncryptedValue` encrypted value account PDA holding the current total-supply handle."
             ],
             "type": "pubkey"
           }
@@ -2385,7 +2385,7 @@
       "docs": [
         "Confidential token account state.",
         "",
-        "The balance's current handle and access lineage live in the",
+        "The balance's current handle and access encrypted value account live in the",
         "`EncryptedValue` account at `balance_encrypted_value`, not here — addressing",
         "is stable per token account, so no nonce/sequence bookkeeping is needed."
       ],
@@ -2409,7 +2409,7 @@
           {
             "name": "balance_encrypted_value",
             "docs": [
-              "`EncryptedValue` lineage PDA holding the current balance handle."
+              "`EncryptedValue` encrypted value account PDA holding the current balance handle."
             ],
             "type": "pubkey"
           },
@@ -2595,7 +2595,7 @@
     {
       "name": "EncryptedValue",
       "docs": [
-        "Canonical ACL + history state for one encrypted-value lineage.",
+        "Canonical ACL + history state for one encrypted value account.",
         "",
         "PDA: `[ENCRYPTED_VALUE_SEED, value_key]` where `value_key =",
         "zama_solana_acl::derive_value_key(acl_domain_key, app_account, encrypted_value_label)`.",
@@ -2616,7 +2616,7 @@
           {
             "name": "app_account",
             "docs": [
-              "App-owned account whose encrypted field this lineage represents."
+              "App-owned account whose encrypted field this encrypted value account represents."
             ],
             "type": "pubkey"
           },
@@ -2707,7 +2707,7 @@
           {
             "name": "mint",
             "docs": [
-              "Confidential mint whose ACL domain scopes the disclosed lineage."
+              "Confidential mint whose ACL domain scopes the disclosed encrypted value account."
             ],
             "type": "pubkey"
           },
@@ -2726,7 +2726,7 @@
           {
             "name": "encrypted_value",
             "docs": [
-              "ZamaHost `EncryptedValue` lineage the handle belongs to."
+              "ZamaHost `EncryptedValue` encrypted value account the handle belongs to."
             ],
             "type": "pubkey"
           },
@@ -3005,7 +3005,7 @@
           {
             "name": "leaf_index",
             "docs": [
-              "Index of the proven leaf within the lineage's MMR."
+              "Index of the proven leaf within the encrypted value account's MMR."
             ],
             "type": "u64"
           },

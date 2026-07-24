@@ -20,13 +20,13 @@ pub(crate) struct TransferAccounts<'a, 'info> {
     pub(crate) from_account: &'a Account<'info, ConfidentialTokenAccount>,
     pub(crate) to_account: &'a Account<'info, ConfidentialTokenAccount>,
     pub(crate) compute_signer: &'a UncheckedAccount<'info>,
-    /// Sender's stable balance lineage: read for the current handle, then
+    /// Sender's stable balance encrypted value account: read for the current handle, then
     /// superseded in place as the output.
     pub(crate) from_balance_value: AccountInfo<'info>,
-    /// Recipient's stable balance lineage: read for the current handle, then
+    /// Recipient's stable balance encrypted value account: read for the current handle, then
     /// superseded in place as the output.
     pub(crate) to_balance_value: AccountInfo<'info>,
-    /// Sender's stable transferred-amount lineage, superseded every transfer.
+    /// Sender's stable transferred-amount encrypted value account, superseded every transfer.
     pub(crate) transferred_amount_value: AccountInfo<'info>,
     pub(crate) zama_event_authority: &'a UncheckedAccount<'info>,
     pub(crate) zama_program: &'a Program<'info, ZamaHost>,
@@ -41,15 +41,15 @@ pub(crate) struct TransferAccounts<'a, 'info> {
 }
 
 /// Where a transfer's amount comes from. The `ge -> sub -> select` debit and `add` credit that
-/// move the two balance lineages are identical for both arms; only how the amount operand enters
+/// move the two balance encrypted value accounts are identical for both arms; only how the amount operand enters
 /// the eval frame differs.
 pub(crate) enum TransferAmountSource<'info> {
     /// EVM `FHE.fromExternal` parity: a coprocessor-attested fresh client-side encryption,
     /// verified in-frame and transient-allowed for this eval (no durable amount account).
     Attested(zama_host::CoprocessorInputAttestation),
-    /// EVM computed/received `euint64` parity: an existing on-chain `EncryptedValue` lineage,
+    /// EVM computed/received `euint64` parity: an existing on-chain `EncryptedValue` encrypted value account,
     /// spent as a read-only durable operand at its current handle. It is never superseded and
-    /// never consumed — only the two balance lineages change. The token's spend gate (signing
+    /// never consumed — only the two balance encrypted value accounts change. The token's spend gate (signing
     /// owner in the value's subject set) and euint64 type check run in the instruction handler
     /// before this reaches the eval builder; the host re-checks the handle is current and that the
     /// mint's compute subject is allowed on the value, in-frame.
@@ -232,7 +232,7 @@ fn execute_transfer_eval<'info>(
         TransferAmountSource::Attested(amount_attestation) => builder
             .verified_input(amount_attestation.clone())
             .map_err(invalid_eval_plan)?,
-        // Existing value: the amount is an on-chain lineage's current handle, read as a durable
+        // Existing value: the amount is an on-chain encrypted value account's current handle, read as a durable
         // operand. The slot is derived from the value's own canonical fields, so its PDA equals the
         // passed account; the host re-checks handle-is-current and compute-subject membership.
         TransferAmountSource::ExistingValue { amount_value, .. } => {
@@ -264,14 +264,14 @@ fn execute_transfer_eval<'info>(
     let compute_authority =
         fhe::ComputeAuthority::for_mint(accounts.compute_signer, mint_key, compute_signer_bump)?;
     // Durable output accounts are the same for both arms; the existing-value arm adds the amount
-    // lineage as a read-only durable input operand the plan now requires.
+    // encrypted value account as a read-only durable input operand the plan now requires.
     let mut dynamic_accounts = vec![
         from_output.account_info(),
         transferred_output.account_info(),
         to_output.account_info(),
     ];
     if let TransferAmountSource::ExistingValue { amount_value, .. } = amount_source {
-        // The amount lineage can legitimately alias one of the output accounts (spending the entire
+        // The amount encrypted value account can legitimately alias one of the output accounts (spending the entire
         // balance, or re-sending a transferred_amount that is also this frame's output). The plan
         // already merges those into one slot, so only add the amount when it is a distinct account.
         if !dynamic_accounts
@@ -389,14 +389,14 @@ pub(crate) fn assert_amount_attestation_binding(
     Ok(())
 }
 
-/// Lineage checks for the redeem path: burned-amount handle type, canonical
+/// ValueAccount checks for the redeem path: burned-amount handle type, canonical
 /// address, domain/app account, the burned-amount label, and current membership
 /// for the owner and mint compute signer. Does NOT authorize the specific handle:
 /// the redeem path proves the handle's publicness via the exact-handle MMR
 /// public-decrypt proof verified inside the `verify_public_decrypt` CPI, since the
 /// burn already made the handle public (DD-036 / Vector 2). The handle need not be
 /// the live one, so a historical handle superseded by a later burn stays redeemable.
-pub(crate) fn assert_burned_amount_lineage(
+pub(crate) fn assert_burned_amount_value_account(
     amount_value: &Account<zama_host::EncryptedValue>,
     burned_handle: [u8; 32],
     mint: Pubkey,

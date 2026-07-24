@@ -5,7 +5,7 @@ import { removeSuffix } from '../../../core/base/string.js';
 import { MAX_MMR_SIBLINGS, MMR_MODE_PUBLIC, type MmrProof } from '../../proof.js';
 
 /**
- * Leg 1 of a settle: fetch the burned lineage's public-decrypt inclusion proof from the standalone
+ * Leg 1 of a settle: fetch the burned encrypted value account's public-decrypt inclusion proof from the standalone
  * solana-proof-service. The service resolves the leaf semantically from `(encrypted_value, handle)`
  * — the SDK asks the product question ("prove this handle is publicly decryptable") and never
  * computes, assumes, or supplies a leaf index (fhevm-internal#1721). The leaf index and leaf count
@@ -31,7 +31,7 @@ export type SolanaProofServiceConfig = {
 export type SolanaMmrProofResult = {
   /** The decoded inclusion proof (leaf index + sibling path); `leafIndex` is a service output. */
   readonly proof: MmrProof;
-  /** The lineage leaf count the service built the proof against (a service output, not an input). */
+  /** The encrypted value account leaf count the service built the proof against (a service output, not an input). */
   readonly leafCount: bigint;
   /** Canonical `0x02 || Borsh(MmrProof)` transport blob, attached verbatim to the certificate request. */
   readonly mmrProofBytes: Uint8Array;
@@ -44,7 +44,7 @@ export type SolanaMmrProofResult = {
 /**
  * The proof-service response shape for the semantic endpoints:
  * `{mmr_proof, leaf_index?, leaf_count, rpc_context_slot?, verified, status, ...}`.
- * Chain-context fields (`rpc_context_slot`, `lineage_last_slot`, `commitment`, `proof_format_version`)
+ * Chain-context fields (`rpc_context_slot`, `value_account_last_slot`, `commitment`, `proof_format_version`)
  * are carried on the wire but not consumed here.
  */
 type MmrProofResponseWire = {
@@ -104,7 +104,7 @@ function encodeMmrProofTransportBlob(proof: MmrProof): Uint8Array {
 const sleep = (ms: number): Promise<void> => new Promise((resolve) => setTimeout(resolve, ms));
 
 /**
- * Fetches and normalizes the burned lineage's public-decrypt inclusion proof for `handle`, retrying
+ * Fetches and normalizes the burned encrypted value account's public-decrypt inclusion proof for `handle`, retrying
  * only on `lagging`. The service resolves the leaf from `(encryptedValue, handle)`; the SDK supplies
  * no leaf index.
  */
@@ -125,7 +125,7 @@ export async function fetchSolanaPublicDecryptProof(
     if (response.ok) return parseMmrProofResponse(body);
 
     // 503 with a `lagging` body is the store catching up to the chain — bounded retry. Every other
-    // status (leaf_not_found / lineage_not_found 404, corrupt cache / integrity 500, 4xx client
+    // status (leaf_not_found / value_account_not_found 404, corrupt cache / integrity 500, 4xx client
     // errors) is terminal.
     if (response.status === 503 && isLaggingStatus(body) && attempt < maxRetries) {
       await sleep(retryDelayMs);

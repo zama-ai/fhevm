@@ -21,17 +21,17 @@ pub struct ConfidentialBurn<'info> {
     /// CHECK: Mint-scoped app authority for total-supply handles.
     #[account(seeds = [b"total-supply", mint.key().as_ref()], bump)]
     pub total_supply_authority: UncheckedAccount<'info>,
-    /// Stable balance lineage; read for the current handle and superseded by this eval.
+    /// Stable balance encrypted value account; read for the current handle and superseded by this eval.
     #[account(mut, address = token_account.balance_encrypted_value)]
     pub balance_value: Box<Account<'info, zama_host::EncryptedValue>>,
-    /// Stable total-supply lineage; read for the current handle and superseded by this eval.
+    /// Stable total-supply encrypted value account; read for the current handle and superseded by this eval.
     #[account(mut, address = mint.total_supply_encrypted_value)]
     pub total_supply_value: Box<Account<'info, zama_host::EncryptedValue>>,
-    /// CHECK: stable `burned_amount` lineage for `token_account`; created on the
+    /// CHECK: stable `burned_amount` encrypted value account for `token_account`; created on the
     /// account's first burn, superseded in place thereafter to each burn's own
     /// delta. Each burn makes its own delta handle publicly decryptable at burn
     /// (ERC-7984 `unwrap` parity), so every burn stays permanently redeemable
-    /// even after a later burn supersedes this lineage (DD-036 / Vector 2 closed).
+    /// even after a later burn supersedes this encrypted value account (DD-036 / Vector 2 closed).
     #[account(mut, address = encrypted_value_address(mint.key(), token_account.key(), burned_amount_label()).0)]
     pub burned_amount_value: UncheckedAccount<'info>,
     /// CHECK: Anchor event CPI authority for the Zama host program.
@@ -132,17 +132,17 @@ pub fn confidential_burn<'info>(
 /// This is the burn-side analog of [`ConfidentialTransferFromValue`]: the 190-byte attestation
 /// argument is gone and one account is added — `amount_value`, the encrypted amount to burn. It is
 /// read-only (the durable operand the eval reads) and is never superseded or consumed; only the
-/// balance, total-supply, and burned-amount lineages change, exactly as in [`ConfidentialBurn`].
+/// balance, total-supply, and burned-amount encrypted value accounts change, exactly as in [`ConfidentialBurn`].
 /// The batcher path uses this to burn a computed batch total (a handle produced by summing joins)
 /// whose owner is a program PDA that authorizes the burn via `invoke_signed`.
 #[derive(Accounts)]
 #[event_cpi]
 pub struct ConfidentialBurnFromValue<'info> {
     /// Token owner and burn authority. Must be in `amount_value`'s subject set (the spend gate).
-    /// Not `mut`: rent for the burned-amount lineage's first bind is paid by `payer`, so the owner
+    /// Not `mut`: rent for the burned-amount encrypted value account's first bind is paid by `payer`, so the owner
     /// may be a program PDA (the batcher) that only authorizes the burn via `invoke_signed`.
     pub owner: Signer<'info>,
-    /// Pays rent for the burned-amount lineage on its first bind.
+    /// Pays rent for the burned-amount encrypted value account on its first bind.
     #[account(mut)]
     pub payer: Signer<'info>,
     /// Confidential mint whose encrypted total supply is decreased.
@@ -157,13 +157,13 @@ pub struct ConfidentialBurnFromValue<'info> {
     /// CHECK: Mint-scoped app authority for total-supply handles.
     #[account(seeds = [b"total-supply", mint.key().as_ref()], bump)]
     pub total_supply_authority: UncheckedAccount<'info>,
-    /// Stable balance lineage; read for the current handle and superseded by this eval.
+    /// Stable balance encrypted value account; read for the current handle and superseded by this eval.
     #[account(mut, address = token_account.balance_encrypted_value)]
     pub balance_value: Box<Account<'info, zama_host::EncryptedValue>>,
-    /// Stable total-supply lineage; read for the current handle and superseded by this eval.
+    /// Stable total-supply encrypted value account; read for the current handle and superseded by this eval.
     #[account(mut, address = mint.total_supply_encrypted_value)]
     pub total_supply_value: Box<Account<'info, zama_host::EncryptedValue>>,
-    /// CHECK: stable `burned_amount` lineage for `token_account`, born publicly decryptable exactly
+    /// CHECK: stable `burned_amount` encrypted value account for `token_account`, born publicly decryptable exactly
     /// as in [`ConfidentialBurn`]; created on the account's first burn, superseded in place
     /// thereafter to each burn's own delta (DD-036 / Vector 2). This is the same output shape
     /// `redeem_burned_amount` later consumes — only where the amount comes from differs.
@@ -171,7 +171,7 @@ pub struct ConfidentialBurnFromValue<'info> {
     pub burned_amount_value: UncheckedAccount<'info>,
     /// The existing encrypted amount to burn: a computed or received `euint64` handle. Read-only
     /// durable operand — never superseded, never consumed. Its address is the canonical PDA of its
-    /// own `(acl_domain_key, app_account, encrypted_value_label)` fields, so a lineage from any app
+    /// own `(acl_domain_key, app_account, encrypted_value_label)` fields, so a encrypted value account from any app
     /// may be passed here once its owner has granted the mint's compute subject via `allow_subjects`.
     pub amount_value: Box<Account<'info, zama_host::EncryptedValue>>,
     /// CHECK: Anchor event CPI authority for the Zama host program.
@@ -293,7 +293,7 @@ enum BurnAmountSource<'info> {
     /// EVM `FHE.fromExternal` parity: a coprocessor-attested fresh client-side encryption, verified
     /// in-frame and transient-allowed for this eval (no durable amount account).
     Attested(zama_host::CoprocessorInputAttestation),
-    /// EVM computed/received `euint64` parity: an existing on-chain `EncryptedValue` lineage, spent
+    /// EVM computed/received `euint64` parity: an existing on-chain `EncryptedValue` encrypted value account, spent
     /// as a read-only durable operand at its current handle. It is never superseded and never
     /// consumed. The token spend gate (signing owner in the value's subject set) and euint64 type
     /// check run in the instruction handler before this reaches the eval builder; the host re-checks
@@ -325,7 +325,7 @@ impl BurnAmountSource<'_> {
 
 /// Fixed ZamaHost CPI accounts and burn operands shared by the attested and existing-value arms.
 struct BurnAccounts<'a, 'info> {
-    /// Rent payer for the burned-amount lineage's first bind (the owner in the attested arm, an
+    /// Rent payer for the burned-amount encrypted value account's first bind (the owner in the attested arm, an
     /// independent signer in the from-value arm so the owner may be a PDA).
     payer: &'a Signer<'info>,
     /// Token owner and burn authority (the signing owner's key).
@@ -334,11 +334,11 @@ struct BurnAccounts<'a, 'info> {
     token_account: &'a Account<'info, ConfidentialTokenAccount>,
     compute_signer: &'a UncheckedAccount<'info>,
     total_supply_authority: &'a UncheckedAccount<'info>,
-    /// Stable balance lineage: read for the current handle, then superseded in place as the output.
+    /// Stable balance encrypted value account: read for the current handle, then superseded in place as the output.
     balance_value: AccountInfo<'info>,
-    /// Stable total-supply lineage: read for the current handle, then superseded in place.
+    /// Stable total-supply encrypted value account: read for the current handle, then superseded in place.
     total_supply_value: AccountInfo<'info>,
-    /// Stable burned-amount lineage: superseded to this burn's born-public delta.
+    /// Stable burned-amount encrypted value account: superseded to this burn's born-public delta.
     burned_amount_value: AccountInfo<'info>,
     zama_event_authority: &'a UncheckedAccount<'info>,
     zama_program: &'a Program<'info, ZamaHost>,
@@ -417,7 +417,7 @@ fn execute_burn<'info>(
     )?;
     // ERC-7984 `unwrap` parity (`makePubliclyDecryptable(unwrapAmount)`): the burned delta is born
     // publicly decryptable inside this eval CPI, so the burn is permanently redeemable even after a
-    // later burn supersedes this shared lineage (DD-036 / Vector 2) — with no second make-public CPI.
+    // later burn supersedes this shared encrypted value account (DD-036 / Vector 2) — with no second make-public CPI.
     let burned_output = fhe::DurableOutput::new_public(
         accounts.burned_amount_value.clone(),
         durable_slot(mint_key, token_account_key, burned_amount_label()),
@@ -458,7 +458,7 @@ fn execute_burn<'info>(
         BurnAmountSource::Attested(amount_attestation) => builder
             .verified_input(amount_attestation.clone())
             .map_err(invalid_eval_plan)?,
-        // Existing value: the amount is an on-chain lineage's current handle, read as a durable
+        // Existing value: the amount is an on-chain encrypted value account's current handle, read as a durable
         // operand. The slot is derived from the value's own canonical fields, so its PDA equals the
         // passed account; the host re-checks handle-is-current and compute-subject membership.
         BurnAmountSource::ExistingValue { amount_value, .. } => {
@@ -496,15 +496,15 @@ fn execute_burn<'info>(
         fhe::ComputeAuthority::for_mint(accounts.compute_signer, mint_key, compute_signer_bump)?;
     let total_supply_authority_bump = total_supply_authority_address(mint_key).1;
     // Durable output accounts are the same for both arms; the existing-value arm adds the amount
-    // lineage as a read-only durable input operand the plan now requires.
+    // encrypted value account as a read-only durable input operand the plan now requires.
     let mut dynamic_accounts = vec![
         balance_output.account_info(),
         burned_output.account_info(),
         total_supply_output.account_info(),
     ];
     if let BurnAmountSource::ExistingValue { amount_value, .. } = &amount_source {
-        // The amount lineage can legitimately alias one of the output accounts (burning the entire
-        // balance aliases the balance lineage; re-burning a burned_amount aliases the burned output).
+        // The amount encrypted value account can legitimately alias one of the output accounts (burning the entire
+        // balance aliases the balance encrypted value account; re-burning a burned_amount aliases the burned output).
         // The plan already merges those into one slot, so only add the amount when it is a distinct
         // account — pushing a duplicate would trip eval account resolution (the #3238 aliasing class).
         if !dynamic_accounts

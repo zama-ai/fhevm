@@ -3,14 +3,14 @@
 //! Migrated from the old keyed-nonce `AclRecord`/`AclPermission` model (deleted
 //! along with `assert_acl_record`, `allow_acl_subjects`, `commit_handle_material`,
 //! and the single-op `fhe_*` instructions) to the new stateless-indexing
-//! `EncryptedValue` lineage: durable outputs bound through `fhe_eval`,
+//! `EncryptedValue` encrypted value account: durable outputs bound through `fhe_eval`,
 //! `allow_subjects`, and `make_handle_public`; raw create/update are covered as
 //! fail-closed ABI stubs. See `zama-host/src/state/encrypted_value.rs` and
 //! `zama_solana_acl` for the model this exercises.
 //!
 //! Scope note: this migration focuses the suite on the ACL/MMR surface that
 //! actually changed (`EncryptedValue` lifecycle + `fhe_eval` durable outputs +
-//! lineage reconstruction/proofs). The old suite's coverage of instructions
+//! encrypted value account reconstruction/proofs). The old suite's coverage of instructions
 //! untouched by the ACL rewrite (KMS context define/destroy, HCU limit
 //! setters, delegation-for-user-decryption, host-admin pause/config,
 //! grant-deny-list plumbing, material-commitment sealing, overflow-permission
@@ -221,7 +221,7 @@ fn encrypted_value_account(value: &EncryptedValue) -> Account {
     }
 }
 
-fn new_lineage(
+fn new_value_account(
     acl_domain_key: Pubkey,
     app_account: Pubkey,
     encrypted_value_label: [u8; 32],
@@ -734,7 +734,7 @@ fn mollusk_fhe_eval_fails_closed_without_previous_bank_hash() {
     let authority = Pubkey::new_unique();
     let subject = Pubkey::new_unique();
     let (host_config, host_config_account) = host_config_account(authority);
-    let (encrypted_value, _value) = new_lineage(
+    let (encrypted_value, _value) = new_value_account(
         Pubkey::new_unique(),
         authority,
         label("balance"),
@@ -795,7 +795,7 @@ fn mollusk_allow_subjects_adds_new_subject_and_is_idempotent() {
     let (host_config, host_config_account) = host_config_account(authority);
     let owner = Pubkey::new_unique();
     let new_subject = Pubkey::new_unique();
-    let (address, value) = new_lineage(
+    let (address, value) = new_value_account(
         Pubkey::new_unique(),
         authority,
         label("balance"),
@@ -836,7 +836,7 @@ fn mollusk_allow_subjects_rejects_unallowed_authority() {
     let (host_config, host_config_account) = host_config_account(authority);
     let outsider = Pubkey::new_unique();
     let allowed = Pubkey::new_unique();
-    let (address, value) = new_lineage(
+    let (address, value) = new_value_account(
         Pubkey::new_unique(),
         authority,
         label("balance"),
@@ -872,7 +872,7 @@ fn mollusk_allow_subjects_rejects_ninth_distinct_subject() {
     let authority = Pubkey::new_unique();
     let (host_config, host_config_account) = host_config_account(authority);
     let handle = handle_for_chain(2, 5);
-    let (encrypted_value, value) = new_lineage(
+    let (encrypted_value, value) = new_value_account(
         Pubkey::new_unique(),
         authority,
         label("balance"),
@@ -951,7 +951,7 @@ fn mollusk_remove_subject_removes_current_member_and_blocks_future_authority() {
     let (host_config, host_config_account) = host_config_account(authority);
     let owner = Pubkey::new_unique();
     let removed = Pubkey::new_unique();
-    let (address, value) = new_lineage(
+    let (address, value) = new_value_account(
         Pubkey::new_unique(),
         authority,
         label("balance"),
@@ -1002,7 +1002,7 @@ fn mollusk_remove_subject_rejects_absent_subject() {
     let (host_config, host_config_account) = host_config_account(authority);
     let owner = Pubkey::new_unique();
     let other = Pubkey::new_unique();
-    let (address, value) = new_lineage(
+    let (address, value) = new_value_account(
         Pubkey::new_unique(),
         authority,
         label("balance"),
@@ -1027,7 +1027,7 @@ fn mollusk_remove_subject_rejects_last_subject() {
     let authority = Pubkey::new_unique();
     let (host_config, host_config_account) = host_config_account(authority);
     let owner = Pubkey::new_unique();
-    let (address, value) = new_lineage(
+    let (address, value) = new_value_account(
         Pubkey::new_unique(),
         authority,
         label("balance"),
@@ -1056,7 +1056,7 @@ fn mollusk_removed_subject_gets_no_historical_leaf_when_later_superseded() {
     let owner = Pubkey::new_unique();
     let removed = Pubkey::new_unique();
     let handle0 = handle_for_chain(7, 5);
-    let (address, value0) = new_lineage(
+    let (address, value0) = new_value_account(
         Pubkey::new_unique(),
         authority,
         label("balance"),
@@ -1097,11 +1097,13 @@ fn mollusk_removed_subject_gets_no_historical_leaf_when_later_superseded() {
     zama_solana_acl::mmr_append(&mut expected_peaks, &mut expected_count, expected_leaf).unwrap();
     assert_eq!(updated.peaks, expected_peaks);
 
-    let events = [zama_solana_acl::lineage::LineageEvent::handle_superseded(
-        handle0,
-        &[owner.to_bytes()],
-    )];
-    let proof = zama_solana_acl::lineage::build_verified_proof_from_events(
+    let events = [
+        zama_solana_acl::value_account::EncryptedValueAccountEvent::handle_superseded(
+            handle0,
+            &[owner.to_bytes()],
+        ),
+    ];
+    let proof = zama_solana_acl::value_account::build_verified_proof_from_events(
         address.to_bytes(),
         &events,
         &updated.peaks,
@@ -1135,7 +1137,7 @@ fn mollusk_subject_retains_historical_access_sealed_before_removal() {
     let owner = Pubkey::new_unique();
     let removed = Pubkey::new_unique();
     let handle0 = handle_for_chain(9, 5);
-    let (address, value0) = new_lineage(
+    let (address, value0) = new_value_account(
         Pubkey::new_unique(),
         authority,
         label("balance"),
@@ -1166,11 +1168,13 @@ fn mollusk_subject_retains_historical_access_sealed_before_removal() {
     assert_eq!(final_value.subjects, vec![owner]);
     assert_eq!(final_value.leaf_count, 2);
 
-    let events = [zama_solana_acl::lineage::LineageEvent::handle_superseded(
-        handle0,
-        &[owner.to_bytes(), removed.to_bytes()],
-    )];
-    let proof = zama_solana_acl::lineage::build_verified_proof_from_events(
+    let events = [
+        zama_solana_acl::value_account::EncryptedValueAccountEvent::handle_superseded(
+            handle0,
+            &[owner.to_bytes(), removed.to_bytes()],
+        ),
+    ];
+    let proof = zama_solana_acl::value_account::build_verified_proof_from_events(
         address.to_bytes(),
         &events,
         &final_value.peaks,
@@ -1199,7 +1203,7 @@ fn mollusk_fhe_eval_supersedes_and_appends_allowed_subject_leaves() {
     let subject_a = Pubkey::new_unique();
     let subject_b = Pubkey::new_unique();
     let old_handle = handle_for_chain(3, 5);
-    let (address, value) = new_lineage(
+    let (address, value) = new_value_account(
         Pubkey::new_unique(),
         authority,
         label("balance"),
@@ -1242,7 +1246,7 @@ fn mollusk_fhe_eval_supersede_rotates_subjects_and_seals_the_outgoing_audience()
     let old_recipient = Pubkey::new_unique();
     let new_recipient = Pubkey::new_unique();
     let old_handle = handle_for_chain(3, 5);
-    let (address, value) = new_lineage(
+    let (address, value) = new_value_account(
         Pubkey::new_unique(),
         authority,
         label("balance"),
@@ -1324,7 +1328,7 @@ fn mollusk_fhe_eval_supersede_shrinks_audience_and_seals_the_outgoing_set() {
     let subject_b = Pubkey::new_unique();
     let subject_c = Pubkey::new_unique();
     let old_handle = handle_for_chain(3, 5);
-    let (address, value) = new_lineage(
+    let (address, value) = new_value_account(
         Pubkey::new_unique(),
         authority,
         label("balance"),
@@ -1392,7 +1396,7 @@ fn mollusk_update_encrypted_value_rejects_raw_handle_without_provenance() {
     let (host_config, host_config_account) = host_config_account(authority);
     let subject = Pubkey::new_unique();
     let old_handle = handle_for_chain(3, 5);
-    let (address, value) = new_lineage(
+    let (address, value) = new_value_account(
         Pubkey::new_unique(),
         authority,
         label("balance"),
@@ -1431,7 +1435,7 @@ fn mollusk_fhe_eval_rejects_stale_previous_subjects() {
     let (host_config, host_config_account) = host_config_account(authority);
     let subject = Pubkey::new_unique();
     let old_handle = handle_for_chain(3, 5);
-    let (address, value) = new_lineage(
+    let (address, value) = new_value_account(
         Pubkey::new_unique(),
         authority,
         label("balance"),
@@ -1465,7 +1469,7 @@ fn mollusk_fhe_eval_rejects_stale_previous_handle() {
     let (host_config, host_config_account) = host_config_account(authority);
     let subject = Pubkey::new_unique();
     let old_handle = handle_for_chain(3, 5);
-    let (address, value) = new_lineage(
+    let (address, value) = new_value_account(
         Pubkey::new_unique(),
         authority,
         label("balance"),
@@ -1502,7 +1506,7 @@ fn mollusk_make_handle_public_appends_public_decrypt_leaf() {
     let (host_config, host_config_account) = host_config_account(authority);
     let subject = Pubkey::new_unique();
     let handle = handle_for_chain(5, 5);
-    let (address, value) = new_lineage(
+    let (address, value) = new_value_account(
         Pubkey::new_unique(),
         authority,
         label("balance"),
@@ -1534,7 +1538,7 @@ fn mollusk_make_handle_public_rejects_wrong_expected_handle() {
     let subject = Pubkey::new_unique();
     let handle = handle_for_chain(5, 5);
     let wrong_handle = handle_for_chain(6, 5);
-    let (address, value) = new_lineage(
+    let (address, value) = new_value_account(
         Pubkey::new_unique(),
         authority,
         label("balance"),
@@ -1565,7 +1569,7 @@ fn mollusk_make_handle_public_rejects_unallowed_subject() {
     let allowed = Pubkey::new_unique();
     let subject = Pubkey::new_unique();
     let handle = handle_for_chain(5, 5);
-    let (address, value) = new_lineage(
+    let (address, value) = new_value_account(
         Pubkey::new_unique(),
         authority,
         label("balance"),
@@ -1633,7 +1637,7 @@ fn mollusk_denied_caller_cannot_mutate_acl_update_or_eval_output() {
         )],
     );
 
-    let (allow_address, allow_value) = new_lineage(
+    let (allow_address, allow_value) = new_value_account(
         Pubkey::new_unique(),
         caller,
         label("deny-allow"),
@@ -1682,7 +1686,7 @@ fn mollusk_denied_caller_cannot_mutate_acl_update_or_eval_output() {
         &[custom_error(host::errors::ZamaHostError::AclSubjectDenied)],
     );
 
-    let (remove_address, remove_value) = new_lineage(
+    let (remove_address, remove_value) = new_value_account(
         Pubkey::new_unique(),
         caller,
         label("deny-remove"),
@@ -1709,7 +1713,7 @@ fn mollusk_denied_caller_cannot_mutate_acl_update_or_eval_output() {
     );
 
     let old_handle = handle_for_chain(53, 5);
-    let (update_address, update_value) = new_lineage(
+    let (update_address, update_value) = new_value_account(
         Pubkey::new_unique(),
         caller,
         label("deny-update"),
@@ -1889,7 +1893,7 @@ fn mollusk_paused_state_blocks_acl_update_and_eval_output() {
     let owner = Pubkey::new_unique();
     let other = Pubkey::new_unique();
 
-    let (allow_address, allow_value) = new_lineage(
+    let (allow_address, allow_value) = new_value_account(
         Pubkey::new_unique(),
         authority,
         label("pause-allow"),
@@ -1997,17 +2001,17 @@ fn mollusk_paused_state_blocks_acl_update_and_eval_output() {
 }
 
 // ---------------------------------------------------------------------------
-// Item 2a: supersession lineage end-to-end against zama_solana_acl::lineage::reconstruct
+// Item 2a: supersession encrypted value account end-to-end against zama_solana_acl::value_account::reconstruct
 // ---------------------------------------------------------------------------
 
 #[test]
-fn mollusk_supersession_lineage_matches_offchain_reconstruction() {
+fn mollusk_supersession_value_account_matches_offchain_reconstruction() {
     let authority = Pubkey::new_unique();
     let (host_config, host_config_account) = host_config_account(authority);
     let subject_a = Pubkey::new_unique();
     let subject_b = Pubkey::new_unique();
     let handle0 = handle_for_chain(10, 5);
-    let (address, value0) = new_lineage(
+    let (address, value0) = new_value_account(
         Pubkey::new_unique(),
         authority,
         label("balance"),
@@ -2038,7 +2042,7 @@ fn mollusk_supersession_lineage_matches_offchain_reconstruction() {
     // Rebuild the HandleSuperseded events purely from the two instructions' own
     // previous_handle/previous_subjects args, exactly as an off-chain indexer would.
     let events = [
-        zama_solana_acl::lineage::LineageEvent::handle_superseded(
+        zama_solana_acl::value_account::EncryptedValueAccountEvent::handle_superseded(
             handle0,
             &value0
                 .subjects
@@ -2046,7 +2050,7 @@ fn mollusk_supersession_lineage_matches_offchain_reconstruction() {
                 .map(|p| p.to_bytes())
                 .collect::<Vec<_>>(),
         ),
-        zama_solana_acl::lineage::LineageEvent::handle_superseded(
+        zama_solana_acl::value_account::EncryptedValueAccountEvent::handle_superseded(
             value1.current_handle,
             &value1
                 .subjects
@@ -2055,7 +2059,8 @@ fn mollusk_supersession_lineage_matches_offchain_reconstruction() {
                 .collect::<Vec<_>>(),
         ),
     ];
-    let reconstructed = zama_solana_acl::lineage::reconstruct(address.to_bytes(), &events).unwrap();
+    let reconstructed =
+        zama_solana_acl::value_account::reconstruct(address.to_bytes(), &events).unwrap();
     assert!(reconstructed.peaks_match(&value2.peaks, value2.leaf_count));
     assert_eq!(reconstructed.leaf_count, 4); // 2 subjects x 2 supersessions
 }
@@ -2071,7 +2076,7 @@ fn mollusk_historical_proof_round_trip_after_two_supersessions() {
     let subject = Pubkey::new_unique();
     let other_subject = Pubkey::new_unique();
     let handle0 = handle_for_chain(20, 5);
-    let (address, value0) = new_lineage(
+    let (address, value0) = new_value_account(
         Pubkey::new_unique(),
         authority,
         label("balance"),
@@ -2100,7 +2105,7 @@ fn mollusk_historical_proof_round_trip_after_two_supersessions() {
     );
 
     let events = [
-        zama_solana_acl::lineage::LineageEvent::handle_superseded(
+        zama_solana_acl::value_account::EncryptedValueAccountEvent::handle_superseded(
             handle0,
             &value0
                 .subjects
@@ -2108,7 +2113,7 @@ fn mollusk_historical_proof_round_trip_after_two_supersessions() {
                 .map(|p| p.to_bytes())
                 .collect::<Vec<_>>(),
         ),
-        zama_solana_acl::lineage::LineageEvent::handle_superseded(
+        zama_solana_acl::value_account::EncryptedValueAccountEvent::handle_superseded(
             value1.current_handle,
             &value1
                 .subjects
@@ -2119,7 +2124,7 @@ fn mollusk_historical_proof_round_trip_after_two_supersessions() {
     ];
 
     // Leaf 0 authorizes (handle0, subject) historically against the live peaks.
-    let proof0 = zama_solana_acl::lineage::build_verified_proof_from_events(
+    let proof0 = zama_solana_acl::value_account::build_verified_proof_from_events(
         address.to_bytes(),
         &events,
         &value2.peaks,
@@ -2162,7 +2167,7 @@ fn mollusk_public_decrypt_proof_has_no_roll_forward() {
     let (host_config, host_config_account) = host_config_account(authority);
     let subject = Pubkey::new_unique();
     let handle0 = handle_for_chain(30, 5);
-    let (address, value0) = new_lineage(
+    let (address, value0) = new_value_account(
         Pubkey::new_unique(),
         authority,
         label("balance"),
@@ -2196,8 +2201,10 @@ fn mollusk_public_decrypt_proof_has_no_roll_forward() {
     );
 
     let events = [
-        zama_solana_acl::lineage::LineageEvent::MarkedPublic { handle: handle0 },
-        zama_solana_acl::lineage::LineageEvent::handle_superseded(
+        zama_solana_acl::value_account::EncryptedValueAccountEvent::MarkedPublic {
+            handle: handle0,
+        },
+        zama_solana_acl::value_account::EncryptedValueAccountEvent::handle_superseded(
             handle0,
             &value_public
                 .subjects
@@ -2206,7 +2213,7 @@ fn mollusk_public_decrypt_proof_has_no_roll_forward() {
                 .collect::<Vec<_>>(),
         ),
     ];
-    let proof = zama_solana_acl::lineage::build_verified_proof_from_events(
+    let proof = zama_solana_acl::value_account::build_verified_proof_from_events(
         address.to_bytes(),
         &events,
         &final_value.peaks,
@@ -2240,9 +2247,9 @@ fn mollusk_fhe_eval_creates_durable_output_from_local_binary_add() {
     let lhs = handle_for_chain(40, 5);
     let rhs = handle_for_chain(41, 5);
     let (lhs_address, lhs_value) =
-        new_lineage(authority, authority, label("lhs"), lhs, &[authority]);
+        new_value_account(authority, authority, label("lhs"), lhs, &[authority]);
     let (rhs_address, rhs_value) =
-        new_lineage(authority, authority, label("rhs"), rhs, &[authority]);
+        new_value_account(authority, authority, label("rhs"), rhs, &[authority]);
     let output_acl_domain_key = authority;
     let output_app_account = authority;
     let output_label = label("sum");
@@ -2312,7 +2319,7 @@ fn mollusk_fhe_eval_supersedes_durable_output_with_previous_state() {
     let authority = Pubkey::new_unique();
     let (host_config, host_config_account) = host_config_account(authority);
     let input_handle = handle_for_chain(42, 5);
-    let (input_address, input_value) = new_lineage(
+    let (input_address, input_value) = new_value_account(
         authority,
         authority,
         label("in"),
@@ -2320,7 +2327,7 @@ fn mollusk_fhe_eval_supersedes_durable_output_with_previous_state() {
         &[authority],
     );
     let output_handle = handle_for_chain(43, 5);
-    let (output_address, output_value) = new_lineage(
+    let (output_address, output_value) = new_value_account(
         authority,
         authority,
         label("out"),
@@ -3659,14 +3666,14 @@ impl EvalFixture {
         let amount_handle = handle_for_chain(152, 5);
         // The compute subject is the durable inputs' allowed member, so admission passes and the
         // same identity is what the block cap meters.
-        let (balance_value, balance_ev) = new_lineage(
+        let (balance_value, balance_ev) = new_value_account(
             authority,
             app_account,
             balance_label,
             balance_handle,
             &[compute_subject],
         );
-        let (amount_value, amount_ev) = new_lineage(
+        let (amount_value, amount_ev) = new_value_account(
             authority,
             app_account,
             amount_label,
@@ -3967,8 +3974,8 @@ impl EvalFixture {
     }
 
     /// An input-free frame that DOES persist: a single `TrivialEncrypt` bound into a fresh durable
-    /// output lineage — the legitimate bootstrap/mint path. Anchored by its durable output, so it
-    /// survives the persist-nothing rejection. Returns the output lineage address and instruction.
+    /// output encrypted value account — the legitimate bootstrap/mint path. Anchored by its durable output, so it
+    /// survives the persist-nothing rejection. Returns the output encrypted value account address and instruction.
     fn input_free_durable_instruction(&self, meter: Option<Pubkey>) -> (Pubkey, Instruction) {
         let output_label = label("input-free-bootstrap");
         let output_value_key = zama_solana_acl::derive_value_key(
@@ -4019,9 +4026,9 @@ impl EvalFixture {
 
     /// A durable-output frame that reuses the fixture's `compute_subject` (and thus its meter) but
     /// with a caller-chosen `payer` and `app_account_authority`, binding its own fresh output
-    /// lineage under that authority. Everything a caller controls is varied except the ACL-bound
+    /// encrypted value account under that authority. Everything a caller controls is varied except the ACL-bound
     /// compute subject, so this drives the #1708 regression: proving no account rotation yields a
-    /// fresh per-slot meter. Returns the output lineage address and the instruction.
+    /// fresh per-slot meter. Returns the output encrypted value account address and the instruction.
     fn frame_for_authority(
         &self,
         payer: Pubkey,
@@ -4613,7 +4620,7 @@ fn mollusk_fhe_eval_same_compute_subject_accumulates_across_varied_accounts_and_
     // mint a fresh per-slot meter by rotating any account it controls. Two frames in the same slot
     // share the SAME compute subject (hence the SAME meter) but vary everything else a caller could
     // vary — a different payer AND a different app_account_authority, each binding its own fresh
-    // output lineage. The cap fits exactly one frame, so the second frame accumulates onto the same
+    // output encrypted value account. The cap fits exactly one frame, so the second frame accumulates onto the same
     // meter and trips the cap rather than getting a fresh budget.
     let fixture = EvalFixture::with_block_cap(FIXTURE_FRAME_HCU);
     let meter_pda = fixture.meter_pda();
@@ -4649,7 +4656,7 @@ fn mollusk_fhe_eval_same_compute_subject_accumulates_across_varied_accounts_and_
         )],
     );
     // The tripped frame accumulated onto the SAME meter (no fresh budget) and, breaching in the
-    // read-only admission pass, left it unchanged and created no output lineage.
+    // read-only admission pass, left it unchanged and created no output encrypted value account.
     assert_eq!(
         read_hcu_block_meter(&fixture.context, meter_pda)
             .expect("meter")
@@ -4887,8 +4894,8 @@ fn mmr_inclusion_proof(proof: zama_solana_acl::MmrProof) -> host::instructions::
     }
 }
 
-/// Seals `handle` public on a fresh single-subject lineage via `make_handle_public`, returning the
-/// lineage address, the resulting on-chain value, and a verified inclusion proof for the sealed leaf.
+/// Seals `handle` public on a fresh single-subject encrypted value account via `make_handle_public`, returning the
+/// encrypted value account address, the resulting on-chain value, and a verified inclusion proof for the sealed leaf.
 fn seal_public_leaf(
     admin: Pubkey,
     subject: Pubkey,
@@ -4901,7 +4908,8 @@ fn seal_public_leaf(
     EncryptedValue,
     host::instructions::MmrInclusionProof,
 ) {
-    let (address, value) = new_lineage(acl_domain_key, admin, label("balance"), handle, &[subject]);
+    let (address, value) =
+        new_value_account(acl_domain_key, admin, label("balance"), handle, &[subject]);
     let seal_ix = make_handle_public_ix(admin, subject, address, host_config, handle);
     let seal_accounts = vec![
         (system_program::ID, system_program_account()),
@@ -4914,9 +4922,10 @@ fn seal_public_leaf(
         &mollusk().process_and_validate_instruction(&seal_ix, &seal_accounts, &[Check::success()]),
         address,
     );
-    let events = [zama_solana_acl::lineage::LineageEvent::MarkedPublic { handle }];
+    let events =
+        [zama_solana_acl::value_account::EncryptedValueAccountEvent::MarkedPublic { handle }];
     let proof = mmr_inclusion_proof(
-        zama_solana_acl::lineage::build_verified_proof_from_events(
+        zama_solana_acl::value_account::build_verified_proof_from_events(
             address.to_bytes(),
             &events,
             &sealed.peaks,
@@ -5516,7 +5525,7 @@ fn mollusk_verify_public_decrypt_survives_supersede_after_seal() {
         handle0,
     );
 
-    // Supersede the lineage (dust transfer analog) after the seal.
+    // Supersede the encrypted value account (dust transfer analog) after the seal.
     let final_value = supersede_with_fhe_eval(
         admin,
         subject,
@@ -5530,8 +5539,10 @@ fn mollusk_verify_public_decrypt_survives_supersede_after_seal() {
 
     // Rebuild the proof for the sealed leaf 0 against the post-supersede peaks.
     let events = [
-        zama_solana_acl::lineage::LineageEvent::MarkedPublic { handle: handle0 },
-        zama_solana_acl::lineage::LineageEvent::handle_superseded(
+        zama_solana_acl::value_account::EncryptedValueAccountEvent::MarkedPublic {
+            handle: handle0,
+        },
+        zama_solana_acl::value_account::EncryptedValueAccountEvent::handle_superseded(
             handle0,
             &sealed
                 .subjects
@@ -5541,7 +5552,7 @@ fn mollusk_verify_public_decrypt_survives_supersede_after_seal() {
         ),
     ];
     let proof = mmr_inclusion_proof(
-        zama_solana_acl::lineage::build_verified_proof_from_events(
+        zama_solana_acl::value_account::build_verified_proof_from_events(
             address.to_bytes(),
             &events,
             &final_value.peaks,
@@ -5588,7 +5599,7 @@ fn mollusk_verify_public_decrypt_survives_supersede_after_seal() {
 
 #[test]
 fn mollusk_verify_public_decrypt_rejects_historical_only_leaf() {
-    // Public-vs-historical leaf domain separation: a lineage superseded WITHOUT make_handle_public
+    // Public-vs-historical leaf domain separation: a encrypted value account superseded WITHOUT make_handle_public
     // has only historical-access leaves. A proof for such a leaf must not authorize a public decrypt,
     // even though the leaf genuinely exists — the two use distinct leaf commitments.
     let admin = Pubkey::new_unique();
@@ -5596,7 +5607,7 @@ fn mollusk_verify_public_decrypt_rejects_historical_only_leaf() {
     let (host_config, host_config_account) = host_config_with_context(admin, KMS_CONTEXT_ID);
     let (kms_context, kms_context_acct) = kms_context_account(KMS_CONTEXT_ID);
     let handle0 = handle_for_chain(40, 5);
-    let (address, value0) = new_lineage(
+    let (address, value0) = new_value_account(
         Pubkey::new_unique(),
         admin,
         label("balance"),
@@ -5615,15 +5626,17 @@ fn mollusk_verify_public_decrypt_rejects_historical_only_leaf() {
         41,
     );
 
-    let events = [zama_solana_acl::lineage::LineageEvent::handle_superseded(
-        handle0,
-        &value0
-            .subjects
-            .iter()
-            .map(|p| p.to_bytes())
-            .collect::<Vec<_>>(),
-    )];
-    let shared_proof = zama_solana_acl::lineage::build_verified_proof_from_events(
+    let events = [
+        zama_solana_acl::value_account::EncryptedValueAccountEvent::handle_superseded(
+            handle0,
+            &value0
+                .subjects
+                .iter()
+                .map(|p| p.to_bytes())
+                .collect::<Vec<_>>(),
+        ),
+    ];
+    let shared_proof = zama_solana_acl::value_account::build_verified_proof_from_events(
         address.to_bytes(),
         &events,
         &final_value.peaks,

@@ -14,7 +14,7 @@ pub struct BurnRedemption {
     pub token_account: Pubkey,
     /// Burned amount handle proven by KMS.
     pub burned_handle: [u8; 32],
-    /// `EncryptedValue` lineage for `burned_handle`.
+    /// `EncryptedValue` encrypted value account for `burned_handle`.
     pub burned_encrypted_value: Pubkey,
     /// KMS-certified cleartext amount released from the vault.
     pub cleartext_amount: u64,
