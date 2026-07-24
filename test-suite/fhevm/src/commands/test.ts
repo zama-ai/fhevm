@@ -7,6 +7,7 @@ import { runKmsGenerationAbortProfile } from "./kms-generation-abort";
 import { runKmsContextSwitchProfile } from "./kms-context-switch";
 import { DRIFT_CLEANUP_SQL, DRIFT_INSTALL_SQL, parseDriftInstanceIndex, parsePositiveInteger } from "../drift";
 import { PreflightError, formatCliError } from "../errors";
+import { runContractTask } from "../flow/contracts";
 import { dockerInspect } from "../flow/readiness";
 import { pause, shellEscape, unpause } from "../flow/up-flow";
 import { hostReachableRpcUrl, readEnvFile, withHexPrefix } from "../utils/fs";
@@ -1049,26 +1050,25 @@ const runBlueGreenProfile = async (state: State): Promise<boolean> => {
     console.log(`OK:   ${db}  pre-cutover ciphertexts=${count} (sample handle recorded)`);
   }
 
-  console.log(`\n[6/11] propose upgrade on-chain (ProtocolConfig.proposeCoprocessorUpgrade)`);
-  const hostBlock = Number((await run(
-    ["cast", "block-number", "--rpc-url", hostRpcUrl],
-  )).stdout.trim());
-  const gwBlock = Number((await run(
-    ["cast", "block-number", "--rpc-url", gatewayRpcUrl],
-  )).stdout.trim());
-  const startBlock = hostBlock + 30;
-  const endBlock = hostBlock + 230;
-  const gwStartBlock = gwBlock + 10;
-  await run([
-    "cast", "send", protocolConfig,
-    "--rpc-url", hostRpcUrl,
-    "--private-key", deployerPk,
-    "proposeCoprocessorUpgrade(uint256,string,(uint64,uint64,uint64)[],uint64)",
-    "2", gcsVersionLive,
-    `[(${chainId},${startBlock},${endBlock})]`,
-    String(gwStartBlock),
-  ]);
-  console.log(`OK:   activation emitted (start=${startBlock} end=${endBlock} gw_start=${gwStartBlock})`);
+  console.log(`\n[6/11] propose upgrade via task:proposeCoprocessorUpgrade`);
+  // Exercise the EOA task on the success path. [2/11] stays a raw cast send — its
+  // too-short window would trip the task's buffer gate.
+  const proposeStartTime = new Date(Date.now() + 30_000).toISOString();
+  await runContractTask(
+    "host-sc",
+    "host-sc-deploy",
+    'LOCAL_HOST_RPC_URL="$RPC_URL" npx hardhat task:proposeCoprocessorUpgrade ' +
+      '--environment local --start-time "$PROPOSE_START_TIME" --duration 5m --buffer 10s ' +
+      '--proposal-id 2 --software-version "$PROPOSE_SW_VERSION" --use-internal-proxy-address true',
+    {
+      env: {
+        LOCAL_GATEWAY_RPC_URL: state.discovery!.endpoints.gateway.http,
+        PROPOSE_START_TIME: proposeStartTime,
+        PROPOSE_SW_VERSION: gcsVersionLive,
+      },
+    },
+  );
+  console.log(`OK:   activation emitted via task (proposalId=2, version=${gcsVersionLive}, start=${proposeStartTime})`);
 
   console.log(`\n[7/11] wait for GCS DryRunStarted per operator`);
   for (const db of operatorDatabases) {

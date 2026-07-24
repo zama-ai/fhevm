@@ -88,6 +88,11 @@ export const ENVIRONMENTS: Record<string, EnvironmentDef> = {
     ],
     gateway: { label: 'gateway-mainnet', fallbackBlockTimeSeconds: 2, rpcUrlEnv: 'GATEWAY_MAINNET_RPC_URL' },
   },
+  // Local anvil stack for the blue-green e2e: single host chain + local gateway, RPCs from env vars.
+  local: {
+    chains: [{ chainId: 12345, label: 'host-local', fallbackBlockTimeSeconds: 1, rpcUrlEnv: 'LOCAL_HOST_RPC_URL' }],
+    gateway: { label: 'gateway-local', fallbackBlockTimeSeconds: 1, rpcUrlEnv: 'LOCAL_GATEWAY_RPC_URL' },
+  },
 };
 
 export const SUPPORTED_ENVIRONMENTS = Object.keys(ENVIRONMENTS);
