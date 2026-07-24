@@ -133,10 +133,10 @@ export type DiscloseSecpAsyncInput<
   TAccountEventAuthority extends string = string,
   TAccountProgram extends string = string,
 > = {
-  /** Confidential mint whose ACL domain scopes the disclosed lineage and event. */
+  /** Confidential mint whose ACL domain scopes the disclosed encrypted value account and event. */
   mint: Address<TAccountMint>;
   /**
-   * The `EncryptedValue` lineage the disclosed handle belongs to.
+   * The `EncryptedValue` encrypted value account the disclosed handle belongs to.
    * CPI; this handler additionally binds its `acl_domain_key` to `mint`.
    */
   encryptedValue: Address<TAccountEncryptedValue>;
@@ -255,10 +255,10 @@ export type DiscloseSecpInput<
   TAccountEventAuthority extends string = string,
   TAccountProgram extends string = string,
 > = {
-  /** Confidential mint whose ACL domain scopes the disclosed lineage and event. */
+  /** Confidential mint whose ACL domain scopes the disclosed encrypted value account and event. */
   mint: Address<TAccountMint>;
   /**
-   * The `EncryptedValue` lineage the disclosed handle belongs to.
+   * The `EncryptedValue` encrypted value account the disclosed handle belongs to.
    * CPI; this handler additionally binds its `acl_domain_key` to `mint`.
    */
   encryptedValue: Address<TAccountEncryptedValue>;
@@ -365,10 +365,10 @@ export type ParsedDiscloseSecpInstruction<
 > = {
   programAddress: Address<TProgram>;
   accounts: {
-    /** Confidential mint whose ACL domain scopes the disclosed lineage and event. */
+    /** Confidential mint whose ACL domain scopes the disclosed encrypted value account and event. */
     mint: TAccountMetas[0];
     /**
-     * The `EncryptedValue` lineage the disclosed handle belongs to.
+     * The `EncryptedValue` encrypted value account the disclosed handle belongs to.
      * CPI; this handler additionally binds its `acl_domain_key` to `mint`.
      */
     encryptedValue: TAccountMetas[1];

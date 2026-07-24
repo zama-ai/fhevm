@@ -128,7 +128,7 @@ struct EvalExecutionState<'a, 'info> {
     chain_id: u64,
     verifier_params: InputVerifierParams,
     /// Handles superseded by this frame's own output bindings, keyed by
-    /// lineage account. A later operand may still reference one (EVM parity:
+    /// encrypted value account. A later operand may still reference one (EVM parity:
     /// a handle stays usable as a value within the transaction that rotated
     /// it); admission already authorized it against frame-entry state.
     superseded_in_frame: Vec<(Pubkey, [u8; 32])>,
@@ -194,7 +194,7 @@ impl EvalStepVisitor for EvalExecutionState<'_, '_> {
             .iter()
             .any(|(key, superseded)| *key == value_info.key() && *superseded == handle)
         {
-            // The frame itself rotated this lineage past `handle`; the operand
+            // The frame itself rotated this encrypted value account past `handle`; the operand
             // was authorized by admission against frame-entry state, and
             // supersession never edits membership, so only the current-handle
             // equality is exempted here.
@@ -520,7 +520,7 @@ fn bind_eval_output<'info>(
         )?;
         write_account(output_info, &value)?;
     } else {
-        // Create: a fresh lineage has no previous state to reconstruct. It is normally
+        // Create: a fresh encrypted value account has no previous state to reconstruct. It is normally
         // not born public-decryptable; `make_public` is the documented opt-in relaxation
         // (DD-036), sealing a public-decrypt leaf for the new handle at leaf index 0.
         require!(
@@ -556,7 +556,7 @@ fn bind_eval_output<'info>(
     Ok(output_info.key())
 }
 
-/// Supersede plan validation against an existing lineage. The plan's
+/// Supersede plan validation against an existing encrypted value account. The plan's
 /// `previous_handle`/`previous_subjects` must equal the stored state exactly, so
 /// indexers reconstruct the appended MMR leaves from instruction data alone. The
 /// audience (`output_subjects`) is NOT constrained to the stored set: a supersede
@@ -627,7 +627,7 @@ fn remaining_account<'a, 'info>(
 mod tests {
     use super::*;
 
-    fn lineage(handle: [u8; 32], subjects: &[Pubkey]) -> EncryptedValue {
+    fn encrypted_value_account(handle: [u8; 32], subjects: &[Pubkey]) -> EncryptedValue {
         EncryptedValue {
             acl_domain_key: Pubkey::default(),
             app_account: Pubkey::default(),
@@ -671,7 +671,7 @@ mod tests {
     #[test]
     fn durable_output_previous_state_accepts_exact_previous_match() {
         let subjects = vec![Pubkey::new_unique(), Pubkey::new_unique()];
-        let value = lineage([9; 32], &subjects);
+        let value = encrypted_value_account([9; 32], &subjects);
         assert!(
             validate_durable_output_previous_state(&value, &Some([9; 32]), &Some(subjects),)
                 .is_ok()
@@ -681,7 +681,7 @@ mod tests {
     #[test]
     fn durable_output_previous_state_rejects_previous_mismatch() {
         let subjects = vec![Pubkey::new_unique()];
-        let value = lineage([9; 32], &subjects);
+        let value = encrypted_value_account([9; 32], &subjects);
         // Wrong previous handle.
         assert!(validate_durable_output_previous_state(
             &value,
@@ -696,7 +696,7 @@ mod tests {
             &Some(vec![Pubkey::new_unique()]),
         )
         .is_err());
-        // Missing previous_* on an existing lineage (create shape on supersede).
+        // Missing previous_* on an existing encrypted value account (create shape on supersede).
         assert!(validate_durable_output_previous_state(&value, &None, &None).is_err());
     }
 
@@ -705,7 +705,7 @@ mod tests {
         // Validation pins only the outgoing state (previous_handle/previous_subjects); it no
         // longer constrains the new audience, so a supersede may rotate `output_subjects`.
         let subjects = vec![Pubkey::new_unique()];
-        let value = lineage([9; 32], &subjects);
+        let value = encrypted_value_account([9; 32], &subjects);
         assert!(
             validate_durable_output_previous_state(&value, &Some([9; 32]), &Some(subjects)).is_ok()
         );

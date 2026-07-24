@@ -31,14 +31,14 @@ import {
  * Defined in the host program so CPI callers depend only on the host IDL, never on token types.
  */
 export type MmrInclusionProof = {
-  /** Index of the proven leaf within the lineage's MMR. */
+  /** Index of the proven leaf within the encrypted value account's MMR. */
   leafIndex: bigint;
   /** Authentication path from the leaf up to its mountain peak. */
   siblings: Array<ReadonlyUint8Array>;
 };
 
 export type MmrInclusionProofArgs = {
-  /** Index of the proven leaf within the lineage's MMR. */
+  /** Index of the proven leaf within the encrypted value account's MMR. */
   leafIndex: number | bigint;
   /** Authentication path from the leaf up to its mountain peak. */
   siblings: Array<ReadonlyUint8Array>;

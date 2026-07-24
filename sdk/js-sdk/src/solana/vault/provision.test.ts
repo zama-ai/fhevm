@@ -74,7 +74,7 @@ describe('vault provisioning builders', () => {
     expect(decoded.direction).toBe(BatchDirection.Deposit);
   });
 
-  it('initialize_mint: right program + discriminator (lineage/event PDAs derived internally)', async () => {
+  it('initialize_mint: right program + discriminator (encrypted value account/event PDAs derived internally)', async () => {
     const instruction = await buildInitializeMintInstruction({
       authority: signer(addr(1)),
       mint: signer(addr(2)),

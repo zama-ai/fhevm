@@ -58,8 +58,8 @@ pub struct RedeemBurnedAmount<'info> {
     /// CHECK: PDA authority for the underlying-token vault.
     #[account(seeds = [b"vault-authority", mint.key().as_ref()], bump)]
     pub vault_authority: UncheckedAccount<'info>,
-    /// Burned amount `EncryptedValue` lineage whose handle is redeemed. Bound to the mint/token
-    /// account/owner by `assert_burned_amount_lineage`; its canonical PDA, layout, host ownership,
+    /// Burned amount `EncryptedValue` encrypted value account whose handle is redeemed. Bound to the mint/token
+    /// account/owner by `assert_burned_amount_value_account`; its canonical PDA, layout, host ownership,
     /// and the exact-handle MMR inclusion proof are validated by the `verify_public_decrypt` CPI.
     pub burned_amount_value: Box<Account<'info, zama_host::EncryptedValue>>,
     /// Replay marker for this burned handle: write-once, never closed, the sole durable "paid out"
@@ -135,10 +135,10 @@ pub fn redeem_burned_amount(
         ctx.accounts.owner.key(),
     )?;
 
-    // Lineage binding: the burned handle need not be current. The burn already made it publicly
+    // ValueAccount binding: the burned handle need not be current. The burn already made it publicly
     // decryptable (DD-036 / Vector 2), so a historical handle superseded by a later burn stays
     // redeemable; the exact-handle MMR public-decrypt proof is checked inside the verifier CPI.
-    assert_burned_amount_lineage(
+    assert_burned_amount_value_account(
         &ctx.accounts.burned_amount_value,
         burned_handle,
         mint_key,

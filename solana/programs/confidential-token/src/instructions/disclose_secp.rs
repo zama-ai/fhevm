@@ -8,7 +8,7 @@
 //! pinned, and emits a token-scoped [`HandleDisclosedEvent`].
 //!
 //! The request side is no longer a token instruction: an allowed subject (the balance owner, or any
-//! subject on a token amount lineage) seals the public-decrypt leaf by calling the host
+//! subject on a token amount encrypted value account) seals the public-decrypt leaf by calling the host
 //! `make_handle_public` instruction directly. There is no per-request PDA, no `kms_context_id` pin,
 //! and no `expires_slot` — the certificate is verified against the `KmsContext` the cert names (any
 //! live, non-destroyed context, EVM-parity rotation grace; `destroy_kms_context` is the revocation
@@ -31,9 +31,9 @@ use super::*;
 #[derive(Accounts)]
 #[event_cpi]
 pub struct DiscloseSecp<'info> {
-    /// Confidential mint whose ACL domain scopes the disclosed lineage and event.
+    /// Confidential mint whose ACL domain scopes the disclosed encrypted value account and event.
     pub mint: Box<Account<'info, ConfidentialMint>>,
-    /// The `EncryptedValue` lineage the disclosed handle belongs to.
+    /// The `EncryptedValue` encrypted value account the disclosed handle belongs to.
     /// CHECK: canonical PDA, layout, and host ownership are validated by the `verify_public_decrypt`
     /// CPI; this handler additionally binds its `acl_domain_key` to `mint`.
     pub encrypted_value: UncheckedAccount<'info>,
@@ -66,7 +66,7 @@ pub fn disclose_secp(
     assert_host_config_allows_token_response(&ctx.accounts.host_config)?;
     let mint_key = ctx.accounts.mint.key();
 
-    // Bind the disclosed lineage to this mint's ACL domain so the emitted event is genuinely
+    // Bind the disclosed encrypted value account to this mint's ACL domain so the emitted event is genuinely
     // token-scoped. `read_encrypted_value` also asserts the account is a host-owned `EncryptedValue`;
     // the verifier CPI re-reads it and enforces the canonical PDA and inclusion proof.
     let value = fhe::read_encrypted_value(&ctx.accounts.encrypted_value.to_account_info())?;
@@ -88,7 +88,7 @@ pub fn disclose_secp(
         zama_program: &ctx.accounts.zama_program,
     })?;
 
-    // Token lineages are euint64 today, so the certified uint256 cleartext must fit in 64 bits: the
+    // Token encrypted value accounts are euint64 today, so the certified uint256 cleartext must fit in 64 bits: the
     // high 24 bytes must be zero for the low-64-bit truncation below to be lossless. Reject anything
     // wider rather than silently discarding high bits.
     require!(

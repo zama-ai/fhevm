@@ -3,7 +3,7 @@ import type { Address, Instruction, TransactionSigner } from '@solana/kit';
 import { getInitializeTokenAccountInstructionAsync } from '../internal/generated/confidentialToken/instructions/initializeTokenAccount.js';
 import { findTokenAccountPda } from '../internal/generated/confidentialToken/pdas/tokenAccount.js';
 import { CONFIDENTIAL_TOKEN_PROGRAM_ADDRESS } from '../internal/generated/confidentialToken/programAddress.js';
-import { balanceValueAddress, tokenEventAuthorityAddress, zamaEventAuthorityAddress } from './internal/tokenLineage.js';
+import { balanceValueAddress, tokenEventAuthorityAddress, zamaEventAuthorityAddress } from './internal/tokenValueAccount.js';
 
 export type SolanaVaultInitializeTokenAccountParameters = {
   /** Account owner and rent payer. */
@@ -18,7 +18,7 @@ export type SolanaVaultInitializeTokenAccountParameters = {
 
 /**
  * Builds `confidential_token::initialize_token_account`: creates the owner's confidential token
- * account PDA for `mint` and its initial balance handle. The account PDA, its balance lineage, and
+ * account PDA for `mint` and its initial balance handle. The account PDA, its balance value_account, and
  * the two Anchor event authorities are derived here from `(mint, owner)`. The seeder assembles and
  * sends the returned instruction.
  */

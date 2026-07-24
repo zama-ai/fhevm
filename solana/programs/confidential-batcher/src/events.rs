@@ -55,14 +55,14 @@ pub struct JoinedBatch {
     pub batch: Pubkey,
     /// Joining user.
     pub user: Pubkey,
-    /// `EncryptedValue` lineage holding the user's accumulated joined amount.
+    /// `EncryptedValue` encrypted value account holding the user's accumulated joined amount.
     pub joined_encrypted_value: Pubkey,
-    /// Current handle of the joined lineage after this join.
+    /// Current handle of the joined encrypted value account after this join.
     pub joined_handle: [u8; 32],
 }
 
 /// Emitted when a user quits a pending batch: the exact recorded amount was
-/// transferred back and the joined lineage reset to zero.
+/// transferred back and the joined encrypted value account reset to zero.
 #[event]
 pub struct QuitBatch {
     /// Event schema version.
@@ -122,6 +122,6 @@ pub struct PayoutClaimed {
     pub batch: Pubkey,
     /// User the payout was transferred to.
     pub user: Pubkey,
-    /// `EncryptedValue` lineage holding the claimed payout amount.
+    /// `EncryptedValue` encrypted value account holding the claimed payout amount.
     pub claim_encrypted_value: Pubkey,
 }

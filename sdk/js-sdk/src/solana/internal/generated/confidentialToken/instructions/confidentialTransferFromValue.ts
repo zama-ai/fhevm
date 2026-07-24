@@ -155,7 +155,7 @@ export type ConfidentialTransferFromValueAsyncInput<
 > = {
   /** Sender and transfer authority. Must be in `amount_value`'s subject set (the spend gate). */
   owner: TransactionSigner<TAccountOwner>;
-  /** Pays rent for the transferred-amount lineage on its first bind. */
+  /** Pays rent for the transferred-amount encrypted value account on its first bind. */
   payer: TransactionSigner<TAccountPayer>;
   /** Confidential mint. */
   mint: Address<TAccountMint>;
@@ -164,18 +164,18 @@ export type ConfidentialTransferFromValueAsyncInput<
   toAccount: Address<TAccountToAccount>;
   computeSigner?: Address<TAccountComputeSigner>;
   /**
-   * Sender's stable balance `EncryptedValue` lineage; read for the current
+   * Sender's stable balance `EncryptedValue` encrypted value account; read for the current
    * handle and superseded in place by this eval's CPI.
    */
   fromBalanceValue: Address<TAccountFromBalanceValue>;
-  /** Recipient's stable balance `EncryptedValue` lineage. */
+  /** Recipient's stable balance `EncryptedValue` encrypted value account. */
   toBalanceValue: Address<TAccountToBalanceValue>;
   /** the sender's first transfer, superseded thereafter. */
   transferredAmountValue: Address<TAccountTransferredAmountValue>;
   /**
    * The existing encrypted amount to spend: a computed or received `euint64` handle. Read-only
    * durable operand — never superseded, never consumed. Its address is the canonical PDA of its
-   * own `(acl_domain_key, app_account, encrypted_value_label)` fields, so a lineage from any app
+   * own `(acl_domain_key, app_account, encrypted_value_label)` fields, so an encrypted value account from any app
    * may be passed here once its owner has granted the mint's compute subject via `allow_subjects`.
    */
   amountValue: Address<TAccountAmountValue>;
@@ -383,7 +383,7 @@ export type ConfidentialTransferFromValueInput<
 > = {
   /** Sender and transfer authority. Must be in `amount_value`'s subject set (the spend gate). */
   owner: TransactionSigner<TAccountOwner>;
-  /** Pays rent for the transferred-amount lineage on its first bind. */
+  /** Pays rent for the transferred-amount encrypted value account on its first bind. */
   payer: TransactionSigner<TAccountPayer>;
   /** Confidential mint. */
   mint: Address<TAccountMint>;
@@ -392,18 +392,18 @@ export type ConfidentialTransferFromValueInput<
   toAccount: Address<TAccountToAccount>;
   computeSigner: Address<TAccountComputeSigner>;
   /**
-   * Sender's stable balance `EncryptedValue` lineage; read for the current
+   * Sender's stable balance `EncryptedValue` encrypted value account; read for the current
    * handle and superseded in place by this eval's CPI.
    */
   fromBalanceValue: Address<TAccountFromBalanceValue>;
-  /** Recipient's stable balance `EncryptedValue` lineage. */
+  /** Recipient's stable balance `EncryptedValue` encrypted value account. */
   toBalanceValue: Address<TAccountToBalanceValue>;
   /** the sender's first transfer, superseded thereafter. */
   transferredAmountValue: Address<TAccountTransferredAmountValue>;
   /**
    * The existing encrypted amount to spend: a computed or received `euint64` handle. Read-only
    * durable operand — never superseded, never consumed. Its address is the canonical PDA of its
-   * own `(acl_domain_key, app_account, encrypted_value_label)` fields, so a lineage from any app
+   * own `(acl_domain_key, app_account, encrypted_value_label)` fields, so an encrypted value account from any app
    * may be passed here once its owner has granted the mint's compute subject via `allow_subjects`.
    */
   amountValue: Address<TAccountAmountValue>;
@@ -590,7 +590,7 @@ export type ParsedConfidentialTransferFromValueInstruction<
   accounts: {
     /** Sender and transfer authority. Must be in `amount_value`'s subject set (the spend gate). */
     owner: TAccountMetas[0];
-    /** Pays rent for the transferred-amount lineage on its first bind. */
+    /** Pays rent for the transferred-amount encrypted value account on its first bind. */
     payer: TAccountMetas[1];
     /** Confidential mint. */
     mint: TAccountMetas[2];
@@ -599,18 +599,18 @@ export type ParsedConfidentialTransferFromValueInstruction<
     toAccount: TAccountMetas[4];
     computeSigner: TAccountMetas[5];
     /**
-     * Sender's stable balance `EncryptedValue` lineage; read for the current
+     * Sender's stable balance `EncryptedValue` encrypted value account; read for the current
      * handle and superseded in place by this eval's CPI.
      */
     fromBalanceValue: TAccountMetas[6];
-    /** Recipient's stable balance `EncryptedValue` lineage. */
+    /** Recipient's stable balance `EncryptedValue` encrypted value account. */
     toBalanceValue: TAccountMetas[7];
     /** the sender's first transfer, superseded thereafter. */
     transferredAmountValue: TAccountMetas[8];
     /**
      * The existing encrypted amount to spend: a computed or received `euint64` handle. Read-only
      * durable operand — never superseded, never consumed. Its address is the canonical PDA of its
-     * own `(acl_domain_key, app_account, encrypted_value_label)` fields, so a lineage from any app
+     * own `(acl_domain_key, app_account, encrypted_value_label)` fields, so an encrypted value account from any app
      * may be passed here once its owner has granted the mint's compute subject via `allow_subjects`.
      */
     amountValue: TAccountMetas[9];

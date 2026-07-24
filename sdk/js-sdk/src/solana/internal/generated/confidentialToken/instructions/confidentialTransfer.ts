@@ -167,7 +167,7 @@ export type ConfidentialTransferAsyncInput<
 > = {
   /** Sender and transfer authority. */
   owner: TransactionSigner<TAccountOwner>;
-  /** Pays rent for the transferred-amount lineage on its first bind. */
+  /** Pays rent for the transferred-amount encrypted value account on its first bind. */
   payer: TransactionSigner<TAccountPayer>;
   /** Confidential mint. */
   mint: Address<TAccountMint>;
@@ -176,11 +176,11 @@ export type ConfidentialTransferAsyncInput<
   toAccount: Address<TAccountToAccount>;
   computeSigner?: Address<TAccountComputeSigner>;
   /**
-   * Sender's stable balance `EncryptedValue` lineage; read for the current
+   * Sender's stable balance `EncryptedValue` encrypted value account; read for the current
    * handle and superseded in place by this eval's CPI.
    */
   fromBalanceValue: Address<TAccountFromBalanceValue>;
-  /** Recipient's stable balance `EncryptedValue` lineage. */
+  /** Recipient's stable balance `EncryptedValue` encrypted value account. */
   toBalanceValue: Address<TAccountToBalanceValue>;
   /** the sender's first transfer, superseded thereafter. */
   transferredAmountValue: Address<TAccountTransferredAmountValue>;
@@ -385,7 +385,7 @@ export type ConfidentialTransferInput<
 > = {
   /** Sender and transfer authority. */
   owner: TransactionSigner<TAccountOwner>;
-  /** Pays rent for the transferred-amount lineage on its first bind. */
+  /** Pays rent for the transferred-amount encrypted value account on its first bind. */
   payer: TransactionSigner<TAccountPayer>;
   /** Confidential mint. */
   mint: Address<TAccountMint>;
@@ -394,11 +394,11 @@ export type ConfidentialTransferInput<
   toAccount: Address<TAccountToAccount>;
   computeSigner: Address<TAccountComputeSigner>;
   /**
-   * Sender's stable balance `EncryptedValue` lineage; read for the current
+   * Sender's stable balance `EncryptedValue` encrypted value account; read for the current
    * handle and superseded in place by this eval's CPI.
    */
   fromBalanceValue: Address<TAccountFromBalanceValue>;
-  /** Recipient's stable balance `EncryptedValue` lineage. */
+  /** Recipient's stable balance `EncryptedValue` encrypted value account. */
   toBalanceValue: Address<TAccountToBalanceValue>;
   /** the sender's first transfer, superseded thereafter. */
   transferredAmountValue: Address<TAccountTransferredAmountValue>;
@@ -583,7 +583,7 @@ export type ParsedConfidentialTransferInstruction<
   accounts: {
     /** Sender and transfer authority. */
     owner: TAccountMetas[0];
-    /** Pays rent for the transferred-amount lineage on its first bind. */
+    /** Pays rent for the transferred-amount encrypted value account on its first bind. */
     payer: TAccountMetas[1];
     /** Confidential mint. */
     mint: TAccountMetas[2];
@@ -592,11 +592,11 @@ export type ParsedConfidentialTransferInstruction<
     toAccount: TAccountMetas[4];
     computeSigner: TAccountMetas[5];
     /**
-     * Sender's stable balance `EncryptedValue` lineage; read for the current
+     * Sender's stable balance `EncryptedValue` encrypted value account; read for the current
      * handle and superseded in place by this eval's CPI.
      */
     fromBalanceValue: TAccountMetas[6];
-    /** Recipient's stable balance `EncryptedValue` lineage. */
+    /** Recipient's stable balance `EncryptedValue` encrypted value account. */
     toBalanceValue: TAccountMetas[7];
     /** the sender's first transfer, superseded thereafter. */
     transferredAmountValue: TAccountMetas[8];

@@ -5,7 +5,7 @@ import { base58 } from '@scure/base';
 import { fetchSolanaPublicDecryptProof } from './proofService.js';
 import { decodeMmrProofTransportBlob, MMR_MODE_PUBLIC } from '../../proof.js';
 
-const LINEAGE: Address = address(base58.encode(new Uint8Array(32).fill(7)));
+const VALUE_ACCOUNT: Address = address(base58.encode(new Uint8Array(32).fill(7)));
 const HANDLE = new Uint8Array(32).fill(0x92);
 // bytesToHex emits a 0x-prefixed string; the service strips the prefix before hex-decoding.
 const HANDLE_HEX = `0x${Array.from(HANDLE, (b) => b.toString(16).padStart(2, '0')).join('')}`;
@@ -32,7 +32,7 @@ describe('fetchSolanaPublicDecryptProof', () => {
     );
     vi.stubGlobal('fetch', fetchMock);
 
-    const result = await fetchSolanaPublicDecryptProof({ proofServiceUrl: 'http://proof:8080/' }, LINEAGE, HANDLE);
+    const result = await fetchSolanaPublicDecryptProof({ proofServiceUrl: 'http://proof:8080/' }, VALUE_ACCOUNT, HANDLE);
     // leafIndex is a service output the SDK reads back, never supplied.
     expect(result.proof).toEqual({ leafIndex: 0n, siblings: [] });
     expect(result.leafCount).toBe(1n);
@@ -43,7 +43,7 @@ describe('fetchSolanaPublicDecryptProof', () => {
 
     // The request keys on (encrypted_value, handle) — no leaf_index anywhere.
     const url = fetchMock.mock.calls[0]![0] as string;
-    expect(url).toBe(`http://proof:8080/internal/solana/public-proof?encrypted_value=${LINEAGE}&handle=${HANDLE_HEX}`);
+    expect(url).toBe(`http://proof:8080/internal/solana/public-proof?encrypted_value=${VALUE_ACCOUNT}&handle=${HANDLE_HEX}`);
     expect(url).not.toContain('leaf_index');
   });
 
@@ -61,7 +61,7 @@ describe('fetchSolanaPublicDecryptProof', () => {
         }),
       ),
     );
-    const result = await fetchSolanaPublicDecryptProof({ proofServiceUrl: 'http://proof:8080' }, LINEAGE, HANDLE);
+    const result = await fetchSolanaPublicDecryptProof({ proofServiceUrl: 'http://proof:8080' }, VALUE_ACCOUNT, HANDLE);
     expect(result.proof.leafIndex).toBe(2n);
     expect(result.leafCount).toBe(4n);
     expect(result.proof.siblings).toHaveLength(1);
@@ -87,7 +87,7 @@ describe('fetchSolanaPublicDecryptProof', () => {
 
     const result = await fetchSolanaPublicDecryptProof(
       { proofServiceUrl: 'http://proof:8080', retryDelayMs: 0, maxRetries: 3 },
-      LINEAGE,
+      VALUE_ACCOUNT,
       HANDLE,
     );
     expect(result.leafCount).toBe(1n);
@@ -106,7 +106,7 @@ describe('fetchSolanaPublicDecryptProof', () => {
     );
     vi.stubGlobal('fetch', fetchMock);
     await expect(
-      fetchSolanaPublicDecryptProof({ proofServiceUrl: 'http://proof:8080', retryDelayMs: 0 }, LINEAGE, HANDLE),
+      fetchSolanaPublicDecryptProof({ proofServiceUrl: 'http://proof:8080', retryDelayMs: 0 }, VALUE_ACCOUNT, HANDLE),
     ).rejects.toThrow('proof-service request failed');
     expect(fetchMock).toHaveBeenCalledTimes(1);
   });
@@ -119,7 +119,7 @@ describe('fetchSolanaPublicDecryptProof', () => {
       );
     vi.stubGlobal('fetch', fetchMock);
     await expect(
-      fetchSolanaPublicDecryptProof({ proofServiceUrl: 'http://proof:8080', retryDelayMs: 0 }, LINEAGE, HANDLE),
+      fetchSolanaPublicDecryptProof({ proofServiceUrl: 'http://proof:8080', retryDelayMs: 0 }, VALUE_ACCOUNT, HANDLE),
     ).rejects.toThrow('proof-service request failed');
     expect(fetchMock).toHaveBeenCalledTimes(1);
   });
@@ -132,7 +132,7 @@ describe('fetchSolanaPublicDecryptProof', () => {
         .mockResolvedValue(jsonResponse(200, { mmr_proof: null, leaf_count: 1, verified: false, status: 'verified' })),
     );
     await expect(
-      fetchSolanaPublicDecryptProof({ proofServiceUrl: 'http://proof:8080' }, LINEAGE, HANDLE),
+      fetchSolanaPublicDecryptProof({ proofServiceUrl: 'http://proof:8080' }, VALUE_ACCOUNT, HANDLE),
     ).rejects.toThrow('unverified proof');
   });
 });

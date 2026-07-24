@@ -2,9 +2,9 @@ import type { Address, Instruction, TransactionSigner } from '@solana/kit';
 
 import { getClaimInstructionAsync } from './internal/generated/confidentialBatcher/instructions/claim.js';
 import {
-  claimAmountLineage,
+  claimAmountValueAccount,
   findBatchAuthorityPda,
-  pendingJoinLineage,
+  pendingJoinValueAccount,
   tokenAccountAddress,
 } from './internal/batcherPdas.js';
 import {
@@ -13,7 +13,7 @@ import {
   tokenEventAuthorityAddress,
   transferredAmountValueAddress,
   zamaEventAuthorityAddress,
-} from './internal/tokenLineage.js';
+} from './internal/tokenValueAccount.js';
 
 /**
  * Semantic roots for the batcher `claim` instruction. Every other account the on-chain handler
@@ -57,8 +57,8 @@ export async function buildClaimInstruction(parameters: SolanaVaultClaimParamete
     batcher: parameters.batcher,
     batch: parameters.batch,
     batchAuthority,
-    pendingJoinValue: (await pendingJoinLineage(parameters.batch, batchAuthority, user)).encryptedValueAddress,
-    claimAmountValue: (await claimAmountLineage(parameters.batch, batchAuthority, user)).encryptedValueAddress,
+    pendingJoinValue: (await pendingJoinValueAccount(parameters.batch, batchAuthority, user)).encryptedValueAddress,
+    claimAmountValue: (await claimAmountValueAccount(parameters.batch, batchAuthority, user)).encryptedValueAddress,
     payoutConfidentialMint,
     payoutComputeSigner: await computeSignerAddress(payoutConfidentialMint),
     batchPayoutTokenAccount,

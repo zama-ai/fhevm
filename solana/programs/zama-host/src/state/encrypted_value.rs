@@ -1,14 +1,14 @@
 //! On-chain account data for `EncryptedValue` (RFC-024).
 //!
 //! Replaces the keyed-nonce ACL model: one account per encrypted-value
-//! lineage, reused across every handle update, carrying a compact MMR history
+//! encrypted value account, reused across every handle update, carrying a compact MMR history
 //! instead of a fresh PDA per birth. Field order follows
 //! `zama_solana_acl::EncryptedValue`, so the shared crate's discriminator,
 //! size formula, and MMR helpers apply directly.
 
 use super::*;
 
-/// Canonical ACL + history state for one encrypted-value lineage.
+/// Canonical ACL + history state for one encrypted value account.
 ///
 /// PDA: `[ENCRYPTED_VALUE_SEED, value_key]` where `value_key =
 /// zama_solana_acl::derive_value_key(acl_domain_key, app_account, encrypted_value_label)`.
@@ -19,7 +19,7 @@ use super::*;
 pub struct EncryptedValue {
     /// App-level ACL domain, such as a confidential token mint.
     pub acl_domain_key: Pubkey,
-    /// App-owned account whose encrypted field this lineage represents.
+    /// App-owned account whose encrypted field this encrypted value account represents.
     pub app_account: Pubkey,
     /// Domain-separated encrypted field label inside `app_account`.
     pub encrypted_value_label: [u8; 32],
@@ -37,12 +37,12 @@ pub struct EncryptedValue {
 
 impl EncryptedValue {
     /// Anchor account body size (excludes the 8-byte discriminator), for a
-    /// lineage with `subjects_len` subjects and `peaks_len` peaks.
+    /// encrypted value account with `subjects_len` subjects and `peaks_len` peaks.
     pub fn space(subjects_len: usize, peaks_len: usize) -> usize {
         zama_solana_acl::EncryptedValue::account_size(subjects_len, peaks_len) - 8
     }
 
-    /// The lineage's value key — its PDA seed. Derived, never stored.
+    /// The encrypted value account's value key — its PDA seed. Derived, never stored.
     pub fn value_key(&self) -> [u8; 32] {
         zama_solana_acl::derive_value_key(
             self.acl_domain_key.to_bytes(),

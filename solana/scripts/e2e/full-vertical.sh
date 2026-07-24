@@ -504,17 +504,17 @@ relout="$(lc CONSUME_SEAL=1 TS_ACL="$BURNED_ACL" TS_HANDLE="$BURNED_HANDLE")" ||
 echo "$relout" | grep -q 'OK make_handle_public' || fail "seal (make_handle_public): $(echo "$relout" | tail -3)"
 echo "    burned handle released for public decrypt (make_handle_public)"
 
-# Public-decrypt the burned handle -> cleartext + KMS PublicDecryptVerification cert. This lineage
+# Public-decrypt the burned handle -> cleartext + KMS PublicDecryptVerification cert. This encrypted value account
 # carries TWO public-decrypt leaves for the one handle: the born-public lifecycle leaf at index 0
 # (from the burn's fhe_eval output binding) followed by the explicit make_handle_public re-release at
 # index 1 (make_handle_public has no already-public guard). The semantic endpoint resolves any
 # public-decrypt query for this handle to the EARLIEST such leaf -> index 0. The leaf_count=2
 # assertion is the real signal: it proves the lifecycle-batch + explicit-seal double append was
-# ingested (a proof for a one-leaf lineage would not exercise lifecycle-batch ingestion).
+# ingested (a proof for a one-leaf encrypted value account would not exercise lifecycle-batch ingestion).
 run_public_decrypt_with_proof "burned" "$BURNED_HANDLE" "$BURNED_ACL" 2 0
 cr="$PUBLIC_DECRYPT_JSON"
 # The burned handle's public-decrypt MMR proof (DD-036): both the redeem and disclose consume
-# steps authorize by verifying it against the lineage's on-chain peaks. The burn already sealed the
+# steps authorize by verifying it against the encrypted value account's on-chain peaks. The burn already sealed the
 # public-decrypt leaf, so no consume appends a leaf and this proof stays valid through both.
 BURNED_PROOF_BYTES="$PUBLIC_DECRYPT_INCLUSION_PROOF_BYTES"
 CLEARTEXT="$(echo "$cr" | python3 -c "import sys,json;print(int(json.load(sys.stdin)['result']['decryptedValue'],16))")"

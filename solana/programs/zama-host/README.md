@@ -88,7 +88,7 @@ Admission invariants for `fhe_eval`:
   unconstrained. The redundant standalone `verify_coprocessor_input` instruction was removed (DD-007).
 - Durable outputs are born with an allowed-subject set. Public decrypt is never a live flag or subject
   attribute; it is granted by `make_handle_public`, or at durable-output birth when `make_public=true`,
-  which appends an exact-handle `PublicDecryptLeaf` to the lineage MMR.
+  which appends an exact-handle `PublicDecryptLeaf` to the encrypted value account MMR.
 
 ## External Inputs
 

@@ -254,7 +254,7 @@ pub enum ZamaHostError {
     #[msg("KMS public-decrypt certificate is invalid")]
     InvalidKmsCertificate,
     /// The MMR public-decrypt inclusion proof does not prove the exact handle public against the
-    /// lineage's current peaks.
+    /// encrypted value account's current peaks.
     #[msg("public-decrypt inclusion proof is invalid")]
     PublicDecryptProofInvalid,
 

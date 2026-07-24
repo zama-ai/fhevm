@@ -383,7 +383,7 @@ fn initialize_token_account(svm: &mut LiteSVM, owner: &Keypair, init: TokenAccou
     );
 }
 
-/// Confidential-token `EncryptedValue` lineages are addressed by stable app-level
+/// Confidential-token `EncryptedValue` value accounts are addressed by stable app-level
 /// keys (mint, token account, label) rather than a per-transfer nonce sequence
 /// under RFC-024, so the same balance/transferred-amount accounts are reused
 /// across every transfer.

@@ -25,7 +25,7 @@
 //! ‖ domain_key_count ‖ key[0] ‖ ... ‖ key[N-1]   (4 bytes BE count, then 32 bytes each)
 //! ‖ start_timestamp                              (8 bytes BE)
 //! ‖ duration_seconds                             (8 bytes BE)
-//! ‖ acl_value_key                                (32 bytes; zero only when no lineage is named)
+//! ‖ acl_value_key                                (32 bytes; zero only when no encrypted value account is named)
 //! ‖ proof_slot                                   (8 bytes BE; 0 for current/no-proof requests)
 //! ‖ mmr_proof_len ‖ mmr_proof_bytes              (4 bytes BE length, then the verbatim proof blob)
 //! ```
@@ -43,7 +43,7 @@
 /// (`acl_value_key`, `proof_slot`, `mmr_proof_bytes`) was appended: ed25519 is non-malleable and
 /// the tag is the first bytes signed, so a `v1` signature can never verify against a `v2` preimage.
 /// This is the relayer-bypass security fix: an in-worker re-verification of this signature over
-/// the v2 preimage (see `event_processor::solana_user_decrypt`) binds the MMR proof, the lineage
+/// the v2 preimage (see `event_processor::solana_user_decrypt`) binds the MMR proof, the encrypted value account
 /// value key, and the proof slot to the user's identity, so a relayer cannot substitute any of
 /// them after the user signs.
 pub const SOLANA_USER_DECRYPT_DOMAIN_TAG: &[u8] = b"zama-solana-user-decrypt-v2";
@@ -80,14 +80,14 @@ pub struct SolanaUserDecryptSigningInput<'a> {
     pub start_timestamp: u64,
     /// Validity window duration (seconds).
     pub duration_seconds: u64,
-    /// The lineage value key for a current/historical/public decrypt; all-zero only when no
-    /// lineage is named. Flat `&[u8; 32]` (not a typed key) because this crate has no
+    /// The encrypted value account value key for a current/historical/public decrypt; all-zero only when no
+    /// encrypted value account is named. Flat `&[u8; 32]` (not a typed key) because this crate has no
     /// `zama-solana-acl` dependency — the kms-worker owns the proof decode.
     pub acl_value_key: &'a [u8; 32],
     /// The full MMR-proof transport blob (1-byte mode prefix ‖ Borsh proof) committed verbatim;
     /// empty for a current-ACL request. NOT re-Borsh'd here so sign and verify hash identical bytes.
     pub mmr_proof_bytes: &'a [u8],
-    /// The lineage leaf_count the proof was built against (staleness marker); 0 for current-ACL.
+    /// The encrypted value account leaf_count the proof was built against (staleness marker); 0 for current-ACL.
     pub proof_slot: u64,
 }
 
@@ -173,9 +173,9 @@ pub const SOLANA_EXTRA_DATA_VERSION_MMR_PROOF: u8 = 0x03;
 pub struct SolanaUserDecryptExtraData {
     /// The 32-byte KMS context id (zero when absent).
     pub context_id: [u8; 32],
-    /// The lineage value key for a current or MMR-proof decrypt; all-zero only when omitted.
+    /// The encrypted value account value key for a current or MMR-proof decrypt; all-zero only when omitted.
     pub acl_value_key: [u8; 32],
-    /// The lineage leaf_count the proof was built against; 0 for a current-ACL request.
+    /// The encrypted value account leaf_count the proof was built against; 0 for a current-ACL request.
     pub proof_slot: u64,
     /// The full MMR-proof transport blob (1-byte mode prefix ‖ Borsh proof); empty for a
     /// current-ACL request.
@@ -217,7 +217,7 @@ pub fn parse_solana_mmr_proof_extra_data(extra_data: &[u8]) -> Option<SolanaUser
 
 /// Parses a Solana `extraData` blob per [`SOLANA_EXTRA_DATA_VERSION_CONTEXT_ONLY`] /
 /// [`SOLANA_EXTRA_DATA_VERSION_MMR_PROOF`]. Unknown versions, and malformed `v0x03` bodies, decode
-/// as the all-zero/empty default (context-only, no named lineage/proof). Current-ACL requests use
+/// as the all-zero/empty default (context-only, no named encrypted value account/proof). Current-ACL requests use
 /// a well-formed `v0x03` body with a nonzero `acl_value_key` and empty `mmr_proof_bytes`; malformed
 /// tails lose that key and fail closed in the caller. This function is intentionally infallible: a
 /// malformed extraData tail must never crash request processing, only fail to grant a proof-gated
