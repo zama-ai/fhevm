@@ -1,11 +1,11 @@
-import { loadFixture } from "@nomicfoundation/hardhat-network-helpers";
-import { expect } from "chai";
-import { Wallet } from "ethers";
+import { loadFixture } from '@nomicfoundation/hardhat-network-helpers';
+import { expect } from 'chai';
+import { Wallet } from 'ethers';
 
-import { ProtocolPayment } from "../typechain-types";
-import { createRandomWallet, loadTestVariablesFixture } from "./utils";
+import { ProtocolPayment } from '../typechain-types';
+import { createRandomWallet, loadTestVariablesFixture } from './utils';
 
-describe("ProtocolPayment", function () {
+describe('ProtocolPayment', function () {
   // Define 1 $ZAMA token (using 18 decimals)
   const oneZamaToken = BigInt(10 ** 18);
 
@@ -36,42 +36,42 @@ describe("ProtocolPayment", function () {
     newUserDecryptionPrice = userDecryptionPrice + oneZamaToken * BigInt(4);
   });
 
-  describe("Setters and getters", function () {
-    it("Should set the input verification price", async function () {
+  describe('Setters and getters', function () {
+    it('Should set the input verification price', async function () {
       expect(await protocolPayment.getInputVerificationPrice()).to.equal(inputVerificationPrice);
       await protocolPayment.connect(owner).setInputVerificationPrice(newInputVerificationPrice);
       expect(await protocolPayment.getInputVerificationPrice()).to.equal(newInputVerificationPrice);
     });
 
-    it("Should set the public decryption price", async function () {
+    it('Should set the public decryption price', async function () {
       expect(await protocolPayment.getPublicDecryptionPrice()).to.equal(publicDecryptionPrice);
       await protocolPayment.connect(owner).setPublicDecryptionPrice(newPublicDecryptionPrice);
       expect(await protocolPayment.getPublicDecryptionPrice()).to.equal(newPublicDecryptionPrice);
     });
 
-    it("Should set the user decryption price", async function () {
+    it('Should set the user decryption price', async function () {
       expect(await protocolPayment.getUserDecryptionPrice()).to.equal(userDecryptionPrice);
       await protocolPayment.connect(owner).setUserDecryptionPrice(newUserDecryptionPrice);
       expect(await protocolPayment.getUserDecryptionPrice()).to.equal(newUserDecryptionPrice);
     });
   });
 
-  describe("Fee collection errors", function () {
-    it("Should revert because sender is not the InputVerification contract for input verification fee collection", async function () {
+  describe('Fee collection errors', function () {
+    it('Should revert because sender is not the InputVerification contract for input verification fee collection', async function () {
       await expect(protocolPayment.connect(fakeTxSender).collectInputVerificationFee(fakeTxSender.address))
-        .to.be.revertedWithCustomError(protocolPayment, "SenderNotInputVerificationContract")
+        .to.be.revertedWithCustomError(protocolPayment, 'SenderNotInputVerificationContract')
         .withArgs(fakeTxSender.address);
     });
 
-    it("Should revert because sender is not the Decryption contract for public decryption fee collection", async function () {
+    it('Should revert because sender is not the Decryption contract for public decryption fee collection', async function () {
       await expect(protocolPayment.connect(fakeTxSender).collectPublicDecryptionFee(fakeTxSender.address))
-        .to.be.revertedWithCustomError(protocolPayment, "SenderNotDecryptionContract")
+        .to.be.revertedWithCustomError(protocolPayment, 'SenderNotDecryptionContract')
         .withArgs(fakeTxSender.address);
     });
 
-    it("Should revert because sender is not the Decryption contract for user decryption fee collection", async function () {
+    it('Should revert because sender is not the Decryption contract for user decryption fee collection', async function () {
       await expect(protocolPayment.connect(fakeTxSender).collectUserDecryptionFee(fakeTxSender.address))
-        .to.be.revertedWithCustomError(protocolPayment, "SenderNotDecryptionContract")
+        .to.be.revertedWithCustomError(protocolPayment, 'SenderNotDecryptionContract')
         .withArgs(fakeTxSender.address);
     });
   });

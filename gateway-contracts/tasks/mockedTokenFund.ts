@@ -1,8 +1,8 @@
-import { HDNodeWallet, MaxUint256, Wallet } from "ethers";
-import { task, types } from "hardhat/config";
-import { HardhatEthersHelpers } from "hardhat/types";
+import { HDNodeWallet, MaxUint256, Wallet } from 'ethers';
+import { task, types } from 'hardhat/config';
+import { HardhatEthersHelpers } from 'hardhat/types';
 
-import { getRequiredEnvVar } from "./utils";
+import { getRequiredEnvVar } from './utils';
 
 // Mint mocked $ZAMA tokens to the specified address
 // The amount is in mocked $ZAMA tokens
@@ -13,7 +13,7 @@ async function mintMockedZamaTokens(
   amount: bigint = BigInt(10 ** 4),
 ) {
   // Get the ZamaOFT contract
-  const zamaOFT = await ethers.getContractAt("ZamaOFT", getRequiredEnvVar("ZAMA_OFT_ADDRESS"));
+  const zamaOFT = await ethers.getContractAt('ZamaOFT', getRequiredEnvVar('ZAMA_OFT_ADDRESS'));
 
   // Convert the amount to mocked $ZAMA base units (using 18 decimals)
   const amountInMockedZamaBaseUnits = amount * BigInt(10 ** 18);
@@ -39,7 +39,7 @@ export async function approveContractWithMaxAllowance(
   verbose: boolean = false,
 ) {
   // Get the ZamaOFT contract
-  const zamaOFT = await ethers.getContractAt("ZamaOFT", getRequiredEnvVar("ZAMA_OFT_ADDRESS"));
+  const zamaOFT = await ethers.getContractAt('ZamaOFT', getRequiredEnvVar('ZAMA_OFT_ADDRESS'));
 
   // Approve the spender with the maximum uint256 value
   const tx = await zamaOFT.connect(txSender).approve(contractAddressToApprove, MaxUint256);
@@ -58,35 +58,35 @@ export async function approveContractWithMaxAllowance(
 
 // Mint mocked $ZAMA tokens to the tx sender
 // Amount is in mocked $ZAMA tokens (NOT in base units with 18 decimals)
-task("task:txSenderMintMockedZamaTokens")
+task('task:txSenderMintMockedZamaTokens')
   .addOptionalParam(
-    "amount",
-    "The amount of mocked $ZAMA tokens to mint to the tx sender",
+    'amount',
+    'The amount of mocked $ZAMA tokens to mint to the tx sender',
     BigInt(10 ** 12),
     types.bigint,
   )
   .setAction(async function ({ amount }, hre) {
     // Compile the mocked payment bridging contracts
-    await hre.run("compile:specific", { contract: "contracts/mockedPaymentBridging" });
+    await hre.run('compile:specific', { contract: 'contracts/mockedPaymentBridging' });
 
     // Get the tx sender wallet
-    const txSenderPrivateKey = getRequiredEnvVar("TX_SENDER_PRIVATE_KEY");
+    const txSenderPrivateKey = getRequiredEnvVar('TX_SENDER_PRIVATE_KEY');
     const txSender = new Wallet(txSenderPrivateKey).connect(hre.ethers.provider);
 
     await mintMockedZamaTokens(txSender, hre.ethers, true, amount);
   });
 
 // Approve the ProtocolPayment contract with maximum allowance over the tx sender's tokens
-task("task:txSenderMaxApprovePayment").setAction(async function (_, hre) {
+task('task:txSenderMaxApprovePayment').setAction(async function (_, hre) {
   // Compile the mocked payment bridging contracts
-  await hre.run("compile:specific", { contract: "contracts/mockedPaymentBridging" });
+  await hre.run('compile:specific', { contract: 'contracts/mockedPaymentBridging' });
 
   // Get the tx sender wallet
-  const txSenderPrivateKey = getRequiredEnvVar("TX_SENDER_PRIVATE_KEY");
+  const txSenderPrivateKey = getRequiredEnvVar('TX_SENDER_PRIVATE_KEY');
   const txSender = new Wallet(txSenderPrivateKey).connect(hre.ethers.provider);
 
   // Get the addresses of the ProtocolPayment contract to approve
-  const protocolPaymentAddress = getRequiredEnvVar("PROTOCOL_PAYMENT_ADDRESS");
+  const protocolPaymentAddress = getRequiredEnvVar('PROTOCOL_PAYMENT_ADDRESS');
 
   await approveContractWithMaxAllowance(txSender, protocolPaymentAddress, hre.ethers, true);
 });
@@ -95,14 +95,14 @@ task("task:txSenderMaxApprovePayment").setAction(async function (_, hre) {
 // - Funding the tx sender with mocked $ZAMA tokens (by minting them)
 // - Approving the ProtocolPayment contract with maximum allowance over the tx sender's tokens
 // Amount is in mocked $ZAMA tokens (NOT in base units with 18 decimals)
-task("task:setTxSenderMockedPayment")
+task('task:setTxSenderMockedPayment')
   .addOptionalParam(
-    "amount",
-    "The amount of mocked $ZAMA tokens to fund the tx sender with",
+    'amount',
+    'The amount of mocked $ZAMA tokens to fund the tx sender with',
     BigInt(10 ** 12),
     types.bigint,
   )
   .setAction(async function ({ amount }, hre) {
-    await hre.run("task:txSenderMintMockedZamaTokens", { amount });
-    await hre.run("task:txSenderMaxApprovePayment");
+    await hre.run('task:txSenderMintMockedZamaTokens', { amount });
+    await hre.run('task:txSenderMaxApprovePayment');
   });

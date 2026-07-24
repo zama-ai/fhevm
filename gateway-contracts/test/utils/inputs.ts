@@ -1,4 +1,4 @@
-import hre from "hardhat";
+import hre from 'hardhat';
 
 // Define the maximum value for a uint64
 export const UINT64_MAX = (BigInt(1) << BigInt(64)) - BigInt(1);
@@ -23,10 +23,10 @@ export function createBytes32s(length: number): string[] {
 // [21 first random bytes from hashing] | index_21 | chainID_22...29 | fheType_30 | version_31
 export function createCtHandle(chainId: number = 0, fheType: number = 0): string {
   if (chainId < 0 || chainId > UINT64_MAX) {
-    throw new Error("chainId must be a valid uint64");
+    throw new Error('chainId must be a valid uint64');
   }
   if (fheType < 0 || fheType > 255) {
-    throw new Error("fheType must be a valid uint8");
+    throw new Error('fheType must be a valid uint8');
   }
 
   const ctHandle = hre.ethers.randomBytes(32);

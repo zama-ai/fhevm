@@ -1,2 +1,2 @@
-export * from "./mocked";
-export * from "./setAddresses";
+export * from './mocked';
+export * from './setAddresses';

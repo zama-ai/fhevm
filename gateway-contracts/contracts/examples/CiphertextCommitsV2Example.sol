@@ -2,10 +2,10 @@
 
 pragma solidity ^0.8.24;
 
-import "../CiphertextCommits.sol";
+import '../CiphertextCommits.sol';
 
 contract CiphertextCommitsV2Example is CiphertextCommits {
-    string private constant CONTRACT_NAME = "CiphertextCommits";
+    string private constant CONTRACT_NAME = 'CiphertextCommits';
 
     uint256 private constant MAJOR_VERSION = 1000;
     uint256 private constant MINOR_VERSION = 0;
@@ -16,11 +16,11 @@ contract CiphertextCommitsV2Example is CiphertextCommits {
             string(
                 abi.encodePacked(
                     CONTRACT_NAME,
-                    " v",
+                    ' v',
                     Strings.toString(MAJOR_VERSION),
-                    ".",
+                    '.',
                     Strings.toString(MINOR_VERSION),
-                    ".",
+                    '.',
                     Strings.toString(PATCH_VERSION)
                 )
             );

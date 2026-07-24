@@ -1,10 +1,10 @@
 // SPDX-License-Identifier: BSD-3-Clause-Clear
 pragma solidity ^0.8.24;
 
-import { Ownable2StepUpgradeable } from "@openzeppelin/contracts-upgradeable/access/Ownable2StepUpgradeable.sol";
-import { gatewayConfigAddress } from "../../addresses/GatewayAddresses.sol";
-import { IGatewayConfig } from "../interfaces/IGatewayConfig.sol";
-import { HandleOps } from "../libraries/HandleOps.sol";
+import { Ownable2StepUpgradeable } from '@openzeppelin/contracts-upgradeable/access/Ownable2StepUpgradeable.sol';
+import { gatewayConfigAddress } from '../../addresses/GatewayAddresses.sol';
+import { IGatewayConfig } from '../interfaces/IGatewayConfig.sol';
+import { HandleOps } from '../libraries/HandleOps.sol';
 
 /**
  * @title GatewayOwnable

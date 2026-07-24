@@ -1,2 +1,2 @@
-export * from "./loadVariables";
-export * from "./stringOps";
+export * from './loadVariables';
+export * from './stringOps';

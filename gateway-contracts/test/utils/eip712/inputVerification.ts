@@ -1,8 +1,8 @@
-import { HardhatEthersSigner } from "@nomicfoundation/hardhat-ethers/signers";
-import { HDNodeWallet, Wallet } from "ethers";
-import { ethers } from "hardhat";
+import { HardhatEthersSigner } from '@nomicfoundation/hardhat-ethers/signers';
+import { HDNodeWallet, Wallet } from 'ethers';
+import { ethers } from 'hardhat';
 
-import { EIP712, getSignaturesEIP712 } from "./interface";
+import { EIP712, getSignaturesEIP712 } from './interface';
 
 // Create an EIP712 message for a ZKPoK response
 export function createEIP712ResponseZKPoK(
@@ -15,28 +15,28 @@ export function createEIP712ResponseZKPoK(
   extraData: string,
 ): EIP712 {
   if (!ethers.isAddress(verifyingContract)) {
-    throw new Error("Invalid verifying contract address.");
+    throw new Error('Invalid verifying contract address.');
   }
   return {
     types: {
       EIP712Domain: [
-        { name: "name", type: "string" },
-        { name: "version", type: "string" },
-        { name: "chainId", type: "uint256" },
-        { name: "verifyingContract", type: "address" },
+        { name: 'name', type: 'string' },
+        { name: 'version', type: 'string' },
+        { name: 'chainId', type: 'uint256' },
+        { name: 'verifyingContract', type: 'address' },
       ],
       CiphertextVerification: [
-        { name: "ctHandles", type: "bytes32[]" },
-        { name: "userAddress", type: "address" },
-        { name: "contractAddress", type: "address" },
-        { name: "contractChainId", type: "uint256" },
-        { name: "extraData", type: "bytes" },
+        { name: 'ctHandles', type: 'bytes32[]' },
+        { name: 'userAddress', type: 'address' },
+        { name: 'contractAddress', type: 'address' },
+        { name: 'contractChainId', type: 'uint256' },
+        { name: 'extraData', type: 'bytes' },
       ],
     },
-    primaryType: "CiphertextVerification",
+    primaryType: 'CiphertextVerification',
     domain: {
-      name: "InputVerification",
-      version: "1",
+      name: 'InputVerification',
+      version: '1',
       chainId: gatewayChainId,
       verifyingContract,
     },
