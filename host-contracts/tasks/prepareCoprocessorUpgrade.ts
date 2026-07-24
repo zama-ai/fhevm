@@ -9,19 +9,26 @@ import {
 } from './utils/coprocessorUpgradeProposal';
 import { loadHostAddresses } from './utils/loadVariables';
 
-// Coprocessor-upgrade DAO tasks on the host ProtocolConfig, mirroring kmsContext.ts: `prepare*` prints
-// the Aragon calldata (DAO path), `propose*` broadcasts it with the deployer key (no-DAO devnet path).
+// Coprocessor-upgrade tasks on the host ProtocolConfig, mirroring kmsContext.ts:
+// `task:buildProposeCoprocessorUpgradeCalldata` prints the Aragon calldata (DAO path),
+// `task:proposeCoprocessorUpgrade` broadcasts it with the deployer key (no-DAO devnet path).
 // Logic lives in utils/coprocessorUpgradeProposal.ts; see COPROCESSOR_UPGRADE_RUNBOOK.md.
 
 const PROTOCOL_CONFIG_ADDRESS_ENV_VAR = 'PROTOCOL_CONFIG_CONTRACT_ADDRESS';
 
-// Resolve the host ProtocolConfig address from env or the addresses dir; throws if unset.
-function requireProtocolConfigAddress(useInternalProxyAddress: boolean): string {
+// Resolve the host ProtocolConfig address from env or the addresses dir; undefined if unset.
+function resolveProtocolConfigAddress(useInternalProxyAddress: boolean): string | undefined {
   if (useInternalProxyAddress) {
     loadHostAddresses();
   }
   const address = process.env[PROTOCOL_CONFIG_ADDRESS_ENV_VAR];
-  if (!address || address.trim() === '') {
+  return address && address.trim() !== '' ? address : undefined;
+}
+
+// Same, but throws if unset — the broadcast path needs a concrete target.
+function requireProtocolConfigAddress(useInternalProxyAddress: boolean): string {
+  const address = resolveProtocolConfigAddress(useInternalProxyAddress);
+  if (!address) {
     throw new Error(
       `No ProtocolConfig address configured. Set ${PROTOCOL_CONFIG_ADDRESS_ENV_VAR} or pass --use-internal-proxy-address.`,
     );
@@ -30,7 +37,7 @@ function requireProtocolConfigAddress(useInternalProxyAddress: boolean): string 
 }
 
 task(
-  'task:prepareCoprocessorUpgrade',
+  'task:buildProposeCoprocessorUpgradeCalldata',
   'Builds Aragon proposal calldata for ProtocolConfig.proposeCoprocessorUpgrade by computing block windows across the environment host chains + gateway (DAO path, never broadcasts)',
 )
   .addParam('environment', 'Target environment: devnet | testnet | mainnet')
@@ -39,7 +46,21 @@ task(
   .addParam('buffer', 'DAO lead time required between now and startBlock (same format as --duration)')
   .addParam('proposalId', 'Coprocessor upgrade proposal id (positive integer, decimal or 0x-hex)')
   .addParam('softwareVersion', 'Coprocessor software version string (e.g. v0.14.0)')
-  .setAction(async function ({ environment, startTime, duration, buffer, proposalId, softwareVersion }): Promise<void> {
+  .addOptionalParam(
+    'useInternalProxyAddress',
+    'Resolve the ProtocolConfig address from the /addresses directory instead of the environment',
+    false,
+    types.boolean,
+  )
+  .setAction(async function ({
+    environment,
+    startTime,
+    duration,
+    buffer,
+    proposalId,
+    softwareVersion,
+    useInternalProxyAddress,
+  }): Promise<void> {
     const inputs = parseCoprocessorUpgradeInputs({
       environment,
       startTime,
@@ -49,7 +70,8 @@ task(
       softwareVersion,
     });
     const proposal = await buildCoprocessorUpgradeProposal(inputs);
-    printCoprocessorUpgradeProposal(proposal);
+    const target = resolveProtocolConfigAddress(useInternalProxyAddress);
+    printCoprocessorUpgradeProposal(proposal, target);
 
     const violations = bufferViolations(proposal);
     if (violations.length > 0) {
@@ -89,14 +111,14 @@ task(
       softwareVersion,
     });
     const proposal = await buildCoprocessorUpgradeProposal(inputs);
-    printCoprocessorUpgradeProposal(proposal);
+    const target = requireProtocolConfigAddress(useInternalProxyAddress);
+    printCoprocessorUpgradeProposal(proposal, target);
 
     const violations = bufferViolations(proposal);
     if (violations.length > 0) {
       throw new Error(`DAO buffer violated for: ${violations.join(', ')}. Refusing to broadcast.`);
     }
 
-    const target = requireProtocolConfigAddress(useInternalProxyAddress);
     const hash = await executeCoprocessorUpgradeProposal(hre, proposal, target);
     console.log(`\nBroadcast proposeCoprocessorUpgrade on ${target} (tx: ${hash}).`);
   });

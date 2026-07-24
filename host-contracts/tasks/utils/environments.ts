@@ -1,4 +1,4 @@
-// Registry of supported environments for the `task:prepareCoprocessorUpgrade` hardhat task.
+// Registry of supported environments for the coprocessor-upgrade hardhat tasks.
 //
 // To add a new chain to an existing environment: append to that environment's
 // `chains` array. To add a new environment: add a top-level key with `chains`
@@ -42,19 +42,19 @@ export const ENVIRONMENTS: Record<string, EnvironmentDef> = {
         chainId: 11155111,
         label: 'sepolia',
         fallbackBlockTimeSeconds: 12,
-        rpcUrlEnv: 'RPC_URL_SEPOLIA',
+        rpcUrlEnv: 'SEPOLIA_ETH_RPC_URL',
         defaultRpcUrl: PUBLIC_SEPOLIA_RPC,
       },
       {
         chainId: 80002,
         label: 'amoy',
         fallbackBlockTimeSeconds: 1.5,
-        rpcUrlEnv: 'RPC_URL_AMOY',
+        rpcUrlEnv: 'POLYGON_AMOY_RPC_URL',
         defaultRpcUrl: PUBLIC_AMOY_RPC,
       },
     ],
     // Devnet gateway is a Zama-internal endpoint — no public default; env var required.
-    gateway: { label: 'gateway-devnet', fallbackBlockTimeSeconds: 2, rpcUrlEnv: 'RPC_URL_GATEWAY_DEVNET' },
+    gateway: { label: 'gateway-devnet', fallbackBlockTimeSeconds: 2, rpcUrlEnv: 'GATEWAY_DEVNET_RPC_URL' },
   },
   testnet: {
     chains: [
@@ -62,31 +62,36 @@ export const ENVIRONMENTS: Record<string, EnvironmentDef> = {
         chainId: 11155111,
         label: 'sepolia',
         fallbackBlockTimeSeconds: 12,
-        rpcUrlEnv: 'RPC_URL_SEPOLIA',
+        rpcUrlEnv: 'SEPOLIA_ETH_RPC_URL',
         defaultRpcUrl: PUBLIC_SEPOLIA_RPC,
       },
       {
         chainId: 80002,
         label: 'amoy',
         fallbackBlockTimeSeconds: 1.5,
-        rpcUrlEnv: 'RPC_URL_AMOY',
+        rpcUrlEnv: 'POLYGON_AMOY_RPC_URL',
         defaultRpcUrl: PUBLIC_AMOY_RPC,
       },
     ],
     gateway: {
       label: 'gateway-testnet',
       fallbackBlockTimeSeconds: 2,
-      rpcUrlEnv: 'RPC_URL_GATEWAY_TESTNET',
+      rpcUrlEnv: 'GATEWAY_TESTNET_RPC_URL',
       defaultRpcUrl: 'https://rpc.testnet.zama.org',
     },
   },
   // No defaults — production RPCs are private; env vars required.
   mainnet: {
     chains: [
-      { chainId: 1, label: 'ethereum', fallbackBlockTimeSeconds: 12, rpcUrlEnv: 'RPC_URL_ETHEREUM' },
-      { chainId: 137, label: 'polygon', fallbackBlockTimeSeconds: 2, rpcUrlEnv: 'RPC_URL_POLYGON' },
+      { chainId: 1, label: 'ethereum', fallbackBlockTimeSeconds: 12, rpcUrlEnv: 'MAINNET_ETH_RPC_URL' },
+      { chainId: 137, label: 'polygon', fallbackBlockTimeSeconds: 2, rpcUrlEnv: 'POLYGON_MAINNET_RPC_URL' },
     ],
-    gateway: { label: 'gateway-mainnet', fallbackBlockTimeSeconds: 2, rpcUrlEnv: 'RPC_URL_GATEWAY_MAINNET' },
+    gateway: { label: 'gateway-mainnet', fallbackBlockTimeSeconds: 2, rpcUrlEnv: 'GATEWAY_MAINNET_RPC_URL' },
+  },
+  // Local anvil stack for the blue-green e2e: single host chain + local gateway, RPCs from env vars.
+  local: {
+    chains: [{ chainId: 12345, label: 'host-local', fallbackBlockTimeSeconds: 1, rpcUrlEnv: 'LOCAL_HOST_RPC_URL' }],
+    gateway: { label: 'gateway-local', fallbackBlockTimeSeconds: 1, rpcUrlEnv: 'LOCAL_GATEWAY_RPC_URL' },
   },
 };
 
