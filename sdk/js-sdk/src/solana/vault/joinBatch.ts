@@ -34,7 +34,13 @@ import { getJoinInstructionAsync } from './internal/generated/confidentialBatche
 import { findComputeSignerPda } from '../internal/generated/confidentialToken/pdas/computeSigner.js';
 import { ZAMA_HOST_PROGRAM_ADDRESS } from '../internal/generated/confidentialToken/programAddress.js';
 import { CONFIDENTIAL_TOKEN_PROGRAM_ADDRESS } from '../internal/generated/confidentialToken/programAddress.js';
-import { EVENT_AUTHORITY_SEED, findBatchAuthorityPda, tokenAccountAddress } from './internal/batcherPdas.js';
+import {
+  EVENT_AUTHORITY_SEED,
+  findBatchAuthorityPda,
+  pendingJoinLineage,
+  tokenAccountAddress,
+} from './internal/batcherPdas.js';
+import { balanceValueAddress, transferredAmountValueAddress } from './internal/tokenLineage.js';
 
 /**
  * Joins a batch with a coprocessor-attested confidential amount of the batcher's join token. This
@@ -60,14 +66,6 @@ export type SolanaVaultJoinParameters = {
   readonly batch: Address;
   /** Confidential mint the batcher joins with (`batcher.join_confidential_mint`). */
   readonly joinConfidentialMint: Address;
-  /** User's stable balance lineage on the join mint. */
-  readonly userBalanceValue: Address;
-  /** Batch account's stable balance lineage on the join mint. */
-  readonly batchBalanceValue: Address;
-  /** User's stable transferred-amount lineage (the batcher eval's operand). */
-  readonly userTransferredValue: Address;
-  /** User's joined lineage for this batch (`pending_join_value`; see `pendingJoinLineage`). */
-  readonly pendingJoinValue: Address;
   readonly hostConfig: Address;
   readonly computeUnitLimit?: number | undefined;
 };
@@ -117,6 +115,8 @@ export async function joinBatch(
   });
 
   const [batchAuthority] = await findBatchAuthorityPda({ batch: parameters.batch });
+  const userTokenAccount = await tokenAccountAddress(joinConfidentialMint, user.address);
+  const batchJoinTokenAccount = await tokenAccountAddress(joinConfidentialMint, batchAuthority);
   const instruction = await getJoinInstructionAsync({
     user,
     payer: parameters.payer,
@@ -124,12 +124,12 @@ export async function joinBatch(
     batch: parameters.batch,
     joinConfidentialMint,
     joinComputeSigner,
-    userTokenAccount: await tokenAccountAddress(joinConfidentialMint, user.address),
-    batchJoinTokenAccount: await tokenAccountAddress(joinConfidentialMint, batchAuthority),
-    userBalanceValue: parameters.userBalanceValue,
-    batchBalanceValue: parameters.batchBalanceValue,
-    userTransferredValue: parameters.userTransferredValue,
-    pendingJoinValue: parameters.pendingJoinValue,
+    userTokenAccount,
+    batchJoinTokenAccount,
+    userBalanceValue: await balanceValueAddress(joinConfidentialMint, userTokenAccount),
+    batchBalanceValue: await balanceValueAddress(joinConfidentialMint, batchJoinTokenAccount),
+    userTransferredValue: await transferredAmountValueAddress(joinConfidentialMint, userTokenAccount),
+    pendingJoinValue: (await pendingJoinLineage(parameters.batch, batchAuthority, user.address)).encryptedValueAddress,
     zamaEventAuthority: await eventAuthority(zamaHostProgramAddress),
     hostConfig: parameters.hostConfig,
     confidentialTokenEventAuthority: await eventAuthority(CONFIDENTIAL_TOKEN_PROGRAM_ADDRESS),
