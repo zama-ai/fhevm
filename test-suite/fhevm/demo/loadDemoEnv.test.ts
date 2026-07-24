@@ -20,6 +20,7 @@ const sampleConfig = (): SolanaDemoConfig => ({
   gatewayRpcUrl: "http://127.0.0.1:8547",
   aclProgram: `0x${"cd".repeat(32)}`,
   userDecryptContextId: "7",
+  authorityFundingLamports: "100000000",
   programs: { batcher: addr(30), token: addr(31), vault: addr(32), host: addr(33) } as SolanaDemoConfig["programs"],
   hostConfig: addr(8) as SolanaDemoConfig["hostConfig"],
   kmsContext: addr(9) as SolanaDemoConfig["kmsContext"],

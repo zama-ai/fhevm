@@ -11,6 +11,8 @@
 // SDK's generated `_types` are not built at `tsc` check time (see `src/solana/current-user-decrypt.ts`).
 //
 // Seeding sequence (writes nothing until every step has produced a real on-chain address):
+//   0. verify the bring-up's kms-context account exists on-chain — the seeder never creates it, it
+//      only fails loudly (with remediation) when the host bring-up did not provision it.
 //   1. create the mock-USDC SPL mint (6 decimals, the committed mint-authority as mint authority so
 //      `demo:faucet` can later drip it) — hand-built SPL like `faucet-server.ts`.
 //   2. `initialize_vault` (demo_vault): creates the vault, its share mint (payout underlying) and the
@@ -301,14 +303,23 @@ const main = async (): Promise<void> => {
   });
   const kmsContextId = new Uint8Array(8);
   new DataView(kmsContextId.buffer).setBigUint64(0, BRINGUP_KMS_CONTEXT_ID, true);
-  // NOTE: kmsContext is DERIVED here (and recorded into the config), not confirmed on-chain — the
-  // seed never fetches the account to check it exists/was initialized. It is provisioned by the host
-  // bring-up (clean-e2e.sh), so its existence is that step's contract, not this seeder's. A settle
-  // against a missing kms-context would fail on-chain at the boundary the smoke does not yet reach.
   const [kmsContext] = await getProgramDerivedAddress({
     programAddress: vault.ZAMA_HOST_PROGRAM_ADDRESS,
     seeds: [new TextEncoder().encode("kms-context"), kmsContextId],
   });
+  // The kms-context account is provisioned by the HOST BRING-UP, not by this seeder — the seeder
+  // must never create it (it has neither the authority nor the key material to). But the smoke's
+  // settle leg consumes it on-chain, so a missing account is a bring-up failure this seed can catch
+  // NOW, at provisioning time, instead of ~15 minutes later inside the live settle. Fail loudly.
+  const kmsContextAccount = await rpc.getAccountInfo(kmsContext, { encoding: "base64", commitment: "confirmed" }).send();
+  if (kmsContextAccount.value === null) {
+    throw new Error(
+      `kms-context account ${kmsContext} (context id ${BRINGUP_KMS_CONTEXT_ID}) does not exist on-chain. ` +
+        "It is provisioned by the host bring-up (the step that deploys the zama-host program and " +
+        "initializes its config + KMS context), NOT by demo:seed. Re-run the host bring-up against " +
+        "this validator and confirm it initialized KMS context 1, then re-run demo:seed.",
+    );
+  }
   // The vault's share mint (payout underlying) is a demo_vault PDA of the vault account: [b"shares", vault].
   const [shareMint] = await getProgramDerivedAddress({
     programAddress: vault.DEMO_VAULT_PROGRAM_ADDRESS,
@@ -362,7 +373,7 @@ const main = async (): Promise<void> => {
   // 3b. Underlying-token escrows. `wrap_usdc` and `redeem_burned_amount` both take the confidential
   // mint's `vault_usdc` = ATA(vault_authority(mint), underlyingMint) and require it to already exist
   // (neither instruction inits it). Create both mints' escrows up front — cUSDC/mock-USDC is exercised
-  // by the wrap-leg smoke; cShares/share-mint is the redeem-direction mirror — so a later redeem does
+  // by the deposit-arc smoke; cShares/share-mint is the redeem-direction mirror — so a later redeem does
   // not fail the same way one step past what the smoke covers.
   const cUsdcEscrow = await buildVaultUnderlyingEscrowAtaInstruction({
     payer: deployer,
@@ -475,6 +486,9 @@ const main = async (): Promise<void> => {
     gatewayRpcUrl: env.gatewayRpcUrl,
     aclProgram: env.aclProgram,
     userDecryptContextId: env.userDecryptContextId,
+    // Must suffice to cover the rent settle's CPIs charge to the batch authority; the open_batch
+    // value is recorded as a known-good amount.
+    authorityFundingLamports: BATCH_AUTHORITY_FUNDING_LAMPORTS.toString(),
     programs: {
       batcher: vault.CONFIDENTIAL_BATCHER_PROGRAM_ADDRESS,
       token: vault.CONFIDENTIAL_TOKEN_PROGRAM_ADDRESS,
