@@ -11,7 +11,9 @@
 # Selection rule:
 #   1. Diff <base-sha>..HEAD and map changed paths to the five groups (see path map below).
 #      Paths that affect the build recipe itself (this script, the e2e/publish workflows,
-#      test-suite/fhevm, clean-e2e.sh) force building everything.
+#      test-suite/fhevm, clean-e2e.sh) force building everything — except the pure stack
+#      consumers test-suite/fhevm/e2e/ and test-suite/fhevm/demo/, which run from PR source
+#      and are copied into no image.
 #   2. Groups whose image inputs changed are built from source (--override), exactly as before.
 #   3. The untouched groups run the immutable base-commit images
 #      `ghcr.io/zama-ai/fhevm/<image>:feature-solana-<base-sha>` (bit-for-bit the code the PR is
@@ -88,6 +90,10 @@ images_for() {
 groups_for_path() {
   local path="$1"
   case "$path" in
+    # Stack consumers, not build inputs: e2e tests and demo scripts run from PR source against
+    # the already-built stack (no Dockerfile copies these trees), so they never change image
+    # contents. Matched before the test-suite/fhevm/* recipe rule below.
+    test-suite/fhevm/e2e/*|test-suite/fhevm/demo/*) echo "" ;;
     # Build-recipe changes: rebuild everything (a stale published image could mask the change).
     solana/scripts/e2e/select-overrides.sh|solana/scripts/e2e/clean-e2e.sh|.github/workflows/solana-e2e.yml|.github/workflows/solana-images-publish.yml|test-suite/fhevm/*|package.json|package-lock.json)
       echo "all" ;;
