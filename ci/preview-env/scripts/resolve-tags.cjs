@@ -13,33 +13,42 @@ module.exports = async ({ core, context }) => {
   const shortSha = isDispatch
     ? context.sha.substring(0, 7)
     : context.payload.pull_request.head.sha.substring(0, 7);
+  // PR base = the main commit this PR sits on. fhevm's main CI tags every
+  // component image at each commit (fresh build or re-tag of the prior one), so
+  // this short SHA always resolves to a real image. It is the "latest main"
+  // fallback for components this PR didn't build - so PR previews track main and
+  // never depend on a hardcoded version pin in the workflow.
+  const baseShortSha = isDispatch ? null : context.payload.pull_request.base.sha.substring(0, 7);
 
   // Map a build job's result to the tag to deploy:
-  //   'success'                 -> the freshly built+pushed shortSha
-  //   'skipped' / '' / undefined -> the pinned version. Either this run didn't
-  //     build the component (build_images=false, or build_test_suite_only so the
-  //     other build jobs are skipped -> empty output) or its build path was
-  //     unchanged ('skipped') - falling back to the pin is correct.
+  //   'success'                  -> the freshly built+pushed shortSha
+  //   'skipped' / '' / undefined -> the fallback tag (see `fallback` below).
+  //     Either this run didn't build the component (build_images=false, or
+  //     build_test_suite_only so the other build jobs are skipped -> empty
+  //     output) or its build path was unchanged ('skipped') - falling back is
+  //     correct.
   //   'failure' / 'cancelled' / anything else -> FATAL. A genuinely failed build
-  //     must NOT silently fall back to the stale pinned image and deploy old code
-  //     under a green check; fail resolve-tags so the whole deploy is gated.
-  const pick = (result, pinnedVersion, component) => {
+  //     must NOT silently fall back and deploy old code under a green check; fail
+  //     resolve-tags so the whole deploy is gated.
+  const pick = (result, fallbackTag, component) => {
     if (result === 'success') return shortSha;
-    if (result === undefined || result === '' || result === 'skipped') return pinnedVersion;
+    if (result === undefined || result === '' || result === 'skipped') return fallbackTag;
     throw new Error(
       `build for '${component}' did not succeed (result='${result}'); refusing to fall back to ` +
-        `the pinned image '${pinnedVersion}' and deploy stale code`,
+        `'${fallbackTag}' and deploy stale code`,
     );
   };
 
-  // Pinned version: env on pull_request, matching input on dispatch.
-  const pinned = (envVar, dispatchInput) => (isDispatch ? dispatchInput : envVar);
-  const hostContractsPin = pinned(env.HOST_CONTRACTS_VERSION, inputs.host_contracts_version);
-  const gatewayContractsPin = pinned(env.GATEWAY_CONTRACTS_VERSION, inputs.gateway_contracts_version);
-  const kmsConnectorPin = pinned(env.KMS_CONNECTOR_VERSION, inputs.kms_connector_version);
-  const coprocessorPin = pinned(env.COPROCESSOR_VERSION, inputs.coprocessor_version);
-  const relayerPin = pinned(env.RELAYER_VERSION, inputs.relayer_version);
-  const testSuitePin = pinned(env.TEST_SUITE_VERSION, inputs.test_suite_version);
+  // Fallback tag for a component not built this run:
+  //   - pull_request: the PR base (latest main) image, by short SHA - no pin.
+  //   - workflow_dispatch: the matching *_version input (manual and explicit).
+  const fallback = (dispatchInput) => (isDispatch ? dispatchInput : baseShortSha);
+  const hostContractsPin = fallback(inputs.host_contracts_version);
+  const gatewayContractsPin = fallback(inputs.gateway_contracts_version);
+  const kmsConnectorPin = fallback(inputs.kms_connector_version);
+  const coprocessorPin = fallback(inputs.coprocessor_version);
+  const relayerPin = fallback(inputs.relayer_version);
+  const testSuitePin = fallback(inputs.test_suite_version);
 
   const tags = {
     host_contracts: pick(needs['build-host-contracts'].outputs.build_result, hostContractsPin, 'host-contracts'),
@@ -138,7 +147,8 @@ module.exports = async ({ core, context }) => {
     .addHeading('Images', 3)
     .addRaw(
       `Short SHA \`${shortSha}\` for components built this run (build_images=\`${needs['check-labels'].outputs.build_images}\`) ` +
-        `and actually changed, otherwise the pinned version shown per component below.\n\n`,
+        `and actually changed; otherwise the fallback tag shown per component below ` +
+        `(on a PR: the base/main image \`${baseShortSha}\`; on manual dispatch: the pinned \`*_version\` input).\n\n`,
     )
     .addTable([
       [{ data: 'Component', header: true }, { data: 'Tag', header: true }],

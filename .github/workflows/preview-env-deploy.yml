@@ -155,26 +155,26 @@ env:
   # kms-connector. NOTE: 0.6.0 is only published once that chart change lands on
   # main (charts-helm-release.yml), so this pin resolves after that merge.
   ANVIL_NODE_CHART_VERSION: "0.6.0"
+  # NOTE: no per-component image version pins here (host/gateway-contracts,
+  # coprocessor, kms-connector, relayer, test-suite). On a PR, any component not
+  # rebuilt this run falls back to the PR base = latest-main image, tagged by
+  # short SHA (main CI tags every component at each commit). See
+  # ci/preview-env/scripts/resolve-tags.cjs. Manual workflow_dispatch runs still
+  # pin images explicitly via the *_version inputs declared above.
   #=====CONTRACTS============================================================
-  GATEWAY_CONTRACTS_VERSION: "v0.13.0"
-  HOST_CONTRACTS_VERSION: "v0.13.1"
   CONTRACTS_CHART: oci://hub.zama.org/ghcr/zama-ai/fhevm/charts/contracts
   CONTRACTS_CHART_VERSION: "0.8.2"
   #=====COPROCESSOR==========================================================
-  COPROCESSOR_VERSION: "v0.13.1"
   COPROCESSOR_CHART: oci://hub.zama.org/ghcr/zama-ai/fhevm/charts/coprocessor
   COPROCESSOR_CHART_VERSION: "0.13.0"
   NB_COPROCESSOR: "1"
   #=====KMS CONNECTOR=========================================================
-  KMS_CONNECTOR_VERSION: "v0.13.1-hotfix.kmsconnector.1"
   KMS_CONNECTOR_CHART: oci://hub.zama.org/ghcr/zama-ai/fhevm/charts/kms-connector
   KMS_CONNECTOR_CHART_VERSION: "1.5.2"
   #=====COPROCESSOR INFRA======================================================
   COPROCESSOR_INFRA_CHART: oci://hub.zama.org/ghcr/zama-zws/crossplane/coprocessor-infra
   COPROCESSOR_INFRA_CHART_VERSION: "0.6.5"
   #=====COMMON===============================================================
-  RELAYER_VERSION: "v0.13.0"
-  TEST_SUITE_VERSION: "v0.13.2"
   RELAYER_SDK_VERSION: ""  # If RELAYER_SDK_VERSION is empty: run the @fhevm/sdk suite only.
   COMMON_CHART: oci://hub.zama.org/ghcr/zama-zws/helm-charts/common
   COMMON_CHART_VERSION: "0.3.3"
