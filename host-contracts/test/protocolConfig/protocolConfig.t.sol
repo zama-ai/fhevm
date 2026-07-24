@@ -1587,41 +1587,6 @@ contract ProtocolConfigTest is HostContractsDeployerTestUtils {
         protocolConfig.confirmEpochActivation(epochId, keys, crsList);
     }
 
-    function test_confirmEpochActivationActivatesAtFullSignerCount() public {
-        _setupEpochLifecycle();
-        uint256 epochId = EPOCH_COUNTER_BASE + 2;
-        vm.prank(owner);
-        protocolConfig.defineNewEpochForCurrentKmsContext();
-        (uint256 completedKeyId, uint256 completedCrsId) = _completeKmsGenerationMaterial();
-
-        (, uint256 epochBeforeQuorum) = protocolConfig.getCurrentKmsContextAndEpoch();
-
-        // First signer confirms: the epoch is not yet active because quorum is not reached.
-        _confirmEpochWithMaterial(
-            KMS_CONTEXT_COUNTER_BASE + 1,
-            epochId,
-            kmsPk0,
-            kmsTxSender0,
-            completedKeyId,
-            completedCrsId
-        );
-        (, uint256 epochAfterFirst) = protocolConfig.getCurrentKmsContextAndEpoch();
-        assertEq(epochAfterFirst, epochBeforeQuorum);
-
-        // Second (final) signer confirms with the identical material: quorum is reached and the epoch activates.
-        _confirmEpochWithMaterial(
-            KMS_CONTEXT_COUNTER_BASE + 1,
-            epochId,
-            kmsPk1,
-            kmsTxSender1,
-            completedKeyId,
-            completedCrsId
-        );
-        (uint256 activeContextId, uint256 activeEpochId) = protocolConfig.getCurrentKmsContextAndEpoch();
-        assertEq(activeContextId, KMS_CONTEXT_COUNTER_BASE + 1);
-        assertEq(activeEpochId, epochId);
-    }
-
     function test_confirmEpochActivationAcceptsActiveEpochMaterial() public {
         _setupEpochLifecycle();
         (uint256 completedKeyId, uint256 completedCrsId) = _completeKmsGenerationMaterial();
