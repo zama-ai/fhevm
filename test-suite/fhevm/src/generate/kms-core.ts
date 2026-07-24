@@ -27,6 +27,7 @@
  */
 import path from "node:path";
 
+import { requiresLegacyKmsCoreVersion } from "../compat/compat";
 import type { ComposeDoc } from "./compose";
 import {
   kmsBackupPrefix,
@@ -42,6 +43,7 @@ import { GENERATED_CONFIG_DIR } from "../layout";
 
 /** Knobs the generator needs that come from the surrounding stack (S3, image tag). */
 export type KmsRenderOptions = {
+  coreVersion: string;
   coreImage: string; // e.g. ghcr.io/zama-ai/kms/core-service:${CORE_VERSION}
   s3Endpoint: string; // e.g. http://minio:9000
   s3Bucket: string; // e.g. kms-public
@@ -53,6 +55,7 @@ export type KmsRenderOptions = {
 /** Render options from the resolved core image version + fhevm minio defaults
  * (the static test credentials from templates/env/.env.minio). */
 export const kmsRenderOptionsFor = (coreVersion: string): KmsRenderOptions => ({
+  coreVersion,
   coreImage: `ghcr.io/zama-ai/kms/core-service:${coreVersion}`,
   s3Endpoint: "http://minio:9000",
   s3Bucket: "kms-public",
@@ -63,12 +66,27 @@ export const kmsRenderOptionsFor = (coreVersion: string): KmsRenderOptions => ({
 
 /** The committee threshold config filename (mounted into the `committeeSize` committee cores). */
 export const KMS_THRESHOLD_CONFIG_NAME = "kms-core-threshold.toml";
+/** The pre-v0.13.10 committee config, whose rate limiter calls context changes `reshare`. */
+export const KMS_THRESHOLD_LEGACY_CONFIG_NAME = "kms-core-threshold-legacy.toml";
 /** The spare threshold config filename: same template with NO peer roster (peers=None), so spare
  *  cores skip the `3t+1` startup validation and boot idle, joining a committee dynamically when a
  *  context names them. Mounted into cores with party id > committeeSize. */
 export const KMS_THRESHOLD_SPARE_CONFIG_NAME = "kms-core-threshold-spare.toml";
+/** The pre-v0.13.10 spare config. */
+export const KMS_THRESHOLD_LEGACY_SPARE_CONFIG_NAME = "kms-core-threshold-spare-legacy.toml";
 /** Marker in the checked-in template where the per-cluster peer roster is injected. */
 export const THRESHOLD_PEERS_MARKER = "# __THRESHOLD_PEERS__";
+/** Marker for the one config field renamed by kms-core v0.13.10. */
+export const RATE_LIMITER_CONTEXT_CHANGE_MARKER = "# __RATE_LIMITER_CONTEXT_CHANGE__";
+
+export type KmsCoreConfigSchema = "legacy" | "modern";
+
+const thresholdConfigName = (spare: boolean, legacy: boolean) => {
+  if (spare) {
+    return legacy ? KMS_THRESHOLD_LEGACY_SPARE_CONFIG_NAME : KMS_THRESHOLD_SPARE_CONFIG_NAME;
+  }
+  return legacy ? KMS_THRESHOLD_LEGACY_CONFIG_NAME : KMS_THRESHOLD_CONFIG_NAME;
+};
 
 /** The `[[threshold.peers]]` roster for the committee (the first `committeeSize` parties). The MPC
  *  group is the committee, so the roster is committee-sized (3t+1), not cluster-sized.
@@ -86,21 +104,38 @@ mpc_identity = "${kmsCoreName(peer)}"`,
     )
     .join("\n\n");
 
-/** Injects the committee peer roster into the checked-in template; the rest of the config is static. */
-export const renderThresholdCoreConfig = (templateText: string, topology: ResolvedKmsTopology): string => {
+const renderConfigSchema = (templateText: string, schema: KmsCoreConfigSchema) => {
+  if (!templateText.includes(RATE_LIMITER_CONTEXT_CHANGE_MARKER)) {
+    throw new Error(`threshold core config template is missing the ${RATE_LIMITER_CONTEXT_CHANGE_MARKER} marker`);
+  }
+  return templateText.replace(
+    RATE_LIMITER_CONTEXT_CHANGE_MARKER,
+    schema === "legacy" ? "reshare = 1" : "new_epoch = 1",
+  );
+};
+
+/** Injects the committee peer roster and the selected kms-core config schema. */
+export const renderThresholdCoreConfig = (
+  templateText: string,
+  topology: ResolvedKmsTopology,
+  schema: KmsCoreConfigSchema = "modern",
+): string => {
   if (!templateText.includes(THRESHOLD_PEERS_MARKER)) {
     throw new Error(`threshold core config template is missing the ${THRESHOLD_PEERS_MARKER} marker`);
   }
-  return templateText.replace(THRESHOLD_PEERS_MARKER, renderThresholdPeers(topology));
+  return renderConfigSchema(templateText.replace(THRESHOLD_PEERS_MARKER, renderThresholdPeers(topology)), schema);
 };
 
 /** Spare-core config: drops the peer roster entirely (peers=None) so the core skips `3t+1`
  *  validation and boots idle. */
-export const renderThresholdSpareConfig = (templateText: string): string => {
+export const renderThresholdSpareConfig = (
+  templateText: string,
+  schema: KmsCoreConfigSchema = "modern",
+): string => {
   if (!templateText.includes(THRESHOLD_PEERS_MARKER)) {
     throw new Error(`threshold core config template is missing the ${THRESHOLD_PEERS_MARKER} marker`);
   }
-  return templateText.replace(THRESHOLD_PEERS_MARKER, "");
+  return renderConfigSchema(templateText.replace(THRESHOLD_PEERS_MARKER, ""), schema);
 };
 
 /**
@@ -191,9 +226,10 @@ export const buildKmsThresholdOverride = (
 
   for (const partyId of kmsPartyIds(topology.parties)) {
     const name = kmsCoreName(partyId);
+    const coreVersion = coreVersionByNodeId[partyId] ?? opts.coreVersion;
+    const legacyConfig = requiresLegacyKmsCoreVersion(coreVersion);
     // Cores beyond the committee boot as spares with the peers=None config (idle until a context names them).
-    const configName =
-      partyId > topology.committeeSize ? KMS_THRESHOLD_SPARE_CONFIG_NAME : KMS_THRESHOLD_CONFIG_NAME;
+    const configName = thresholdConfigName(partyId > topology.committeeSize, legacyConfig);
     services[name] = {
       container_name: name,
       image: coreVersionByNodeId[partyId]

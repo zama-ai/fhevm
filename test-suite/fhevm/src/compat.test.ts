@@ -13,6 +13,7 @@ import {
   requiresLegacyGatewayKmsGenerationAddress,
   requiresLegacyHostChainSeedShim,
   requiresLegacyKmsCoreConfig,
+  requiresLegacyKmsCoreVersion,
   requiresLegacyRelayerUrl,
   requiresModernHostAddressArtifacts,
   supportsConsensusDetector,
@@ -283,6 +284,8 @@ describe("compat", () => {
   });
 
   test("treats kms-core v0.13.10 prereleases as modern config schema", () => {
+    expect(requiresLegacyKmsCoreVersion("v0.13.3")).toBe(true);
+    expect(requiresLegacyKmsCoreVersion("v0.13.10")).toBe(false);
     expect(
       requiresLegacyKmsCoreConfig({
         versions: {

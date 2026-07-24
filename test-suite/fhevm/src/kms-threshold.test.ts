@@ -8,7 +8,9 @@ import { buildKmsConnectorOverride } from "./generate/compose";
 import { buildGatewayScSwapEnv, buildHostScSwapEnv, renderEnvMaps } from "./generate/env";
 import {
   KMS_THRESHOLD_CONFIG_NAME,
+  KMS_THRESHOLD_LEGACY_CONFIG_NAME,
   KMS_THRESHOLD_SPARE_CONFIG_NAME,
+  RATE_LIMITER_CONTEXT_CHANGE_MARKER,
   THRESHOLD_PEERS_MARKER,
   buildKmsThresholdOverride,
   kmsRenderOptionsFor,
@@ -190,12 +192,18 @@ describe("buildKmsThresholdOverride", () => {
     expect(JSON.stringify(core.volumes)).not.toContain("minio_secrets");
   });
 
-  test("renders an explicitly selected core version without changing the other nodes", () => {
-    const services = buildKmsThresholdOverride(fourParty, RENDER_OPTS, { 2: "target-core" }).services;
-    expect(services["kms-core"].image).toBe(RENDER_OPTS.coreImage);
-    expect(services["kms-core-2"].image).toBe("ghcr.io/zama-ai/kms/core-service:target-core");
-    expect(services["kms-core-3"].image).toBe(RENDER_OPTS.coreImage);
-    expect(services["kms-core-gen-keys"].image).toBe(RENDER_OPTS.coreImage);
+  test("selects each core's image and matching config schema independently", () => {
+    const services = buildKmsThresholdOverride(
+      fourParty,
+      kmsRenderOptionsFor("v0.13.3"),
+      { 2: "v0.13.10" },
+    ).services;
+    expect(services["kms-core"].image).toBe("ghcr.io/zama-ai/kms/core-service:v0.13.3");
+    expect(services["kms-core-2"].image).toBe("ghcr.io/zama-ai/kms/core-service:v0.13.10");
+    expect(services["kms-core-3"].image).toBe("ghcr.io/zama-ai/kms/core-service:v0.13.3");
+    expect(services["kms-core-gen-keys"].image).toBe("ghcr.io/zama-ai/kms/core-service:v0.13.3");
+    expect(JSON.stringify(services["kms-core"].volumes)).toContain(KMS_THRESHOLD_LEGACY_CONFIG_NAME);
+    expect(JSON.stringify(services["kms-core-2"].volumes)).toContain(KMS_THRESHOLD_CONFIG_NAME);
   });
 
   test("cores publish no host ports (everything dials them over the docker network)", () => {
@@ -239,13 +247,28 @@ describe("threshold core config", () => {
   });
 
   test("renderThresholdCoreConfig injects the roster and leaves no marker", () => {
-    const config = renderThresholdCoreConfig(`[threshold]\nmy_id = 0\n\n${THRESHOLD_PEERS_MARKER}\n`, fourParty);
+    const config = renderThresholdCoreConfig(
+      `[threshold]\nmy_id = 0\n\n${THRESHOLD_PEERS_MARKER}\n\n[rate_limiter_conf]\n${RATE_LIMITER_CONTEXT_CHANGE_MARKER}\n`,
+      fourParty,
+    );
     expect(config).not.toContain(THRESHOLD_PEERS_MARKER);
+    expect(config).not.toContain(RATE_LIMITER_CONTEXT_CHANGE_MARKER);
     expect(config).toContain("party_id = 4");
+    expect(config).toContain("new_epoch = 1");
   });
 
   test("renderThresholdCoreConfig fails fast when the template marker is missing", () => {
     expect(() => renderThresholdCoreConfig("[threshold]\n", fourParty)).toThrow(/marker/);
+  });
+
+  test("renderThresholdCoreConfig selects the pre-v0.13.10 rate limiter field", () => {
+    const config = renderThresholdCoreConfig(
+      `${THRESHOLD_PEERS_MARKER}\n[rate_limiter_conf]\n${RATE_LIMITER_CONTEXT_CHANGE_MARKER}\n`,
+      fourParty,
+      "legacy",
+    );
+    expect(config).toContain("reshare = 1");
+    expect(config).not.toContain("new_epoch");
   });
 
   test("renderThresholdPeers rosters the committee, not the whole cluster", () => {
@@ -256,7 +279,9 @@ describe("threshold core config", () => {
   });
 
   test("renderThresholdSpareConfig drops the roster entirely (peers=None)", () => {
-    const spare = renderThresholdSpareConfig(`[threshold]\nmy_id = 0\n\n${THRESHOLD_PEERS_MARKER}\n`);
+    const spare = renderThresholdSpareConfig(
+      `[threshold]\nmy_id = 0\n\n${THRESHOLD_PEERS_MARKER}\n\n[rate_limiter_conf]\n${RATE_LIMITER_CONTEXT_CHANGE_MARKER}\n`,
+    );
     expect(spare).not.toContain(THRESHOLD_PEERS_MARKER);
     expect(spare).not.toContain("threshold.peers");
     expect(spare).not.toContain("party_id");

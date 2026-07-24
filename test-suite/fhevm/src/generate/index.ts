@@ -8,6 +8,8 @@ import type { StackSpec } from "../stack-spec/stack-spec";
 import { renderKmsCoreConfig, renderRelayerConfig } from "./config";
 import {
   KMS_THRESHOLD_CONFIG_NAME,
+  KMS_THRESHOLD_LEGACY_CONFIG_NAME,
+  KMS_THRESHOLD_LEGACY_SPARE_CONFIG_NAME,
   KMS_THRESHOLD_SPARE_CONFIG_NAME,
   renderThresholdCoreConfig,
   renderThresholdSpareConfig,
@@ -127,14 +129,18 @@ export const generateRuntime = async (state: State, plan: StackSpec) => {
       await fs.readFile(TEMPLATE_KMS_CORE_CONFIG_MODERN, "utf8"),
     ),
   );
-  // Threshold mode: emit the single cluster-shared core config (checked-in template
-  // with the peer roster injected). Per-party values come from KMS_CORE__* env, so one
-  // file is mounted into every kms-core-{i}. Centralized mode ignores it.
+  // Threshold mode: render both sides of the v0.13.10 config rename from one
+  // checked-in template. Each core mounts the schema required by its own image,
+  // including while a rollout intentionally mixes old and new nodes.
   if (plan.kms.mode === "threshold") {
     const thresholdTemplate = await fs.readFile(TEMPLATE_KMS_CORE_CONFIG_THRESHOLD, "utf8");
     await writeWritableFile(
       path.join(GENERATED_CONFIG_DIR, KMS_THRESHOLD_CONFIG_NAME),
       renderThresholdCoreConfig(thresholdTemplate, plan.kms),
+    );
+    await writeWritableFile(
+      path.join(GENERATED_CONFIG_DIR, KMS_THRESHOLD_LEGACY_CONFIG_NAME),
+      renderThresholdCoreConfig(thresholdTemplate, plan.kms, "legacy"),
     );
     // Spare cores (parties > committeeSize) mount a peers=None config so they boot idle and join a
     // committee dynamically via a context switch.
@@ -142,6 +148,10 @@ export const generateRuntime = async (state: State, plan: StackSpec) => {
       await writeWritableFile(
         path.join(GENERATED_CONFIG_DIR, KMS_THRESHOLD_SPARE_CONFIG_NAME),
         renderThresholdSpareConfig(thresholdTemplate),
+      );
+      await writeWritableFile(
+        path.join(GENERATED_CONFIG_DIR, KMS_THRESHOLD_LEGACY_SPARE_CONFIG_NAME),
+        renderThresholdSpareConfig(thresholdTemplate, "legacy"),
       );
     }
   }

@@ -14,7 +14,7 @@ describe("progressive KMS core rollout", () => {
     expect("RELAYER_SDK_VERSION" in from).toBe(false);
     const baseline = from as Record<string, string>;
     expect(Object.entries(to).filter(([key, value]) => baseline[key] !== value)).toEqual([
-      ["CORE_VERSION", "v0.13.20"],
+      ["CORE_VERSION", "v0.13.22"],
     ]);
   });
 
@@ -47,8 +47,8 @@ describe("progressive KMS core rollout", () => {
     await (await loadRolloutRunbook(RUNBOOK))(context);
 
     expect(calls).toEqual([
-      "lock:00-kms-core-baseline:v0.13.10",
-      "lock:01-kms-core-target:v0.13.20",
+      "lock:00-kms-core-baseline:v0.13.20",
+      "lock:01-kms-core-target:v0.13.22",
       "up:four-party-threshold-kms:/tmp/00-kms-core-baseline.lock.json",
       "test:rollout-standard",
       "state",
