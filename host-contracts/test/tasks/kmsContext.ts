@@ -13,7 +13,7 @@ import {
 } from '../../tasks/kmsContext';
 import { getRequiredEnvVar } from '../../tasks/utils/loadVariables';
 import type { ProtocolConfig } from '../../types';
-import { deployFreshProtocolConfigProxy } from './taskHelpers';
+import { buildSingleKeyActivationPayload, deployFreshProtocolConfigProxy } from './taskHelpers';
 
 const PROTOCOL_CONFIG_ENV_VAR = 'PROTOCOL_CONFIG_CONTRACT_ADDRESS';
 
@@ -298,14 +298,22 @@ describe('KMS context tasks', function () {
       return epochId;
     }
 
-    async function confirmActivation(epochId: bigint, txSenders: Signer[]): Promise<void> {
-      for (const txSender of txSenders) {
+    // `signers` are the new-context signer accounts, parallel to `txSenders` (same index = same node).
+    // The signature must recover to the signer while msg.sender is the tx-sender; they are distinct accounts.
+    async function confirmActivation(
+      contextId: bigint,
+      epochId: bigint,
+      txSenders: Signer[],
+      signers: Signer[],
+    ): Promise<void> {
+      for (let i = 0; i < txSenders.length; i++) {
         const asTxSender = (await ethers.getContractAt(
           'ProtocolConfig',
           proxyAddress,
-          txSender,
+          txSenders[i],
         )) as unknown as ProtocolConfig;
-        await (await asTxSender.confirmEpochActivation(epochId, [], [])).wait();
+        const { keys, crsList } = await buildSingleKeyActivationPayload(signers[i], proxyAddress, contextId, epochId);
+        await (await asTxSender.confirmEpochActivation(epochId, keys, crsList)).wait();
       }
     }
 
@@ -383,7 +391,7 @@ describe('KMS context tasks', function () {
     it('reports fully live once the epoch is activated', async function () {
       const contextId = await defineSwitch();
       const epochId = await confirmCreation(contextId, [...newTxSenders, oldTxSenders[0]]);
-      await confirmActivation(epochId!, newTxSenders);
+      await confirmActivation(contextId, epochId!, newTxSenders, newSigners);
 
       const result = await inspectKmsContextSwitch(hre, proxyAddress, 0);
       expect(result.flow).to.equal('idle');
