@@ -775,6 +775,8 @@ contract ProtocolConfig is IProtocolConfig, UUPSUpgradeableEmptyProxy, ACLOwnabl
 
     /// @inheritdoc IProtocolConfig
     function getKmsGenThresholdForContext(uint256 kmsContextId) external view virtual returns (uint256) {
+        // The live check (not the active-only check) keeps the kmsGen threshold readable during
+        // resharing. See `IProtocolConfig.getKmsGenThresholdForContext` for the rationale.
         if (!_isLiveKmsContext(kmsContextId)) {
             revert InvalidKmsContext(kmsContextId);
         }

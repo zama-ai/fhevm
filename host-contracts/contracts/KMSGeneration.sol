@@ -869,6 +869,12 @@ contract KMSGeneration is IKMSGeneration, EIP712Upgradeable, UUPSUpgradeableEmpt
         address signerAddress,
         address txSenderAddress
     ) internal view virtual {
+        // This signer check requires an `Active` context. The sibling response-path reads
+        // (tx-sender, kmsGen threshold, node) accept any live context. They agree today because
+        // every request pins its context from `getCurrentKmsContextAndEpoch`, which returns the
+        // `Active` `latestActiveKmsContextId`. The live gates also permit a `Created` context. A
+        // future flow that pinned one would revert here while those reads pass, deadlocking the
+        // request's consensus, so it must revisit this gate.
         if (!PROTOCOL_CONFIG.isKmsSignerForContext(contextId, signerAddress)) {
             revert NotKmsSigner(signerAddress);
         }

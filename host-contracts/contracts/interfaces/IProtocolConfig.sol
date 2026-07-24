@@ -607,6 +607,10 @@ interface IProtocolConfig {
 
     /**
      * @notice Returns the kmsGen threshold for a given context.
+     * @dev This getter uses the live check, not the active-only check of the peer threshold getters.
+     *      It returns a value for a `Created` or resharing context too. This is deliberate. The
+     *      kmsGen threshold must stay readable during resharing. A non-active context's threshold is
+     *      not authoritative for the active committee. Consumers must not treat it as such.
      * @param kmsContextId The context ID.
      * @return The kmsGen threshold for the context.
      */
