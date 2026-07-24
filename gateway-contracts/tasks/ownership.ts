@@ -1,20 +1,20 @@
-import { Wallet } from "ethers";
-import { task, types } from "hardhat/config";
+import { Wallet } from 'ethers';
+import { task, types } from 'hardhat/config';
 
-import { getRequiredAddressEnvVar, getRequiredEnvVar } from "./utils/loadVariables";
+import { getRequiredAddressEnvVar, getRequiredEnvVar } from './utils/loadVariables';
 
 task(
-  "task:transferGatewayOwnership",
-  "Transfers ownership of the gateway contracts to the provided address. This can only be used if the current owner is an EOA.",
+  'task:transferGatewayOwnership',
+  'Transfers ownership of the gateway contracts to the provided address. This can only be used if the current owner is an EOA.',
 )
-  .addParam("newOwnerAddress", "Address of the new owner of the gateway contracts.", undefined, types.string)
+  .addParam('newOwnerAddress', 'Address of the new owner of the gateway contracts.', undefined, types.string)
   .setAction(async function ({ newOwnerAddress }, { ethers }) {
     // Get the deployer wallet.
-    const deployer = new Wallet(getRequiredEnvVar("DEPLOYER_PRIVATE_KEY")).connect(ethers.provider);
+    const deployer = new Wallet(getRequiredEnvVar('DEPLOYER_PRIVATE_KEY')).connect(ethers.provider);
 
     // Get the GatewayConfig contract: its owner is the owner of all gateway contracts
-    const gatewayConfigContractAddress = getRequiredAddressEnvVar("GatewayConfig");
-    const gatewayConfigContract = await ethers.getContractAt("GatewayConfig", gatewayConfigContractAddress);
+    const gatewayConfigContractAddress = getRequiredAddressEnvVar('GatewayConfig');
+    const gatewayConfigContract = await ethers.getContractAt('GatewayConfig', gatewayConfigContractAddress);
 
     if ((await gatewayConfigContract.owner()) !== deployer.address) {
       throw new Error(
@@ -34,15 +34,15 @@ task(
   });
 
 task(
-  "task:acceptGatewayOwnership",
-  "Accepts ownership of the gateway contracts. This can only be used if the account is an EOA.",
+  'task:acceptGatewayOwnership',
+  'Accepts ownership of the gateway contracts. This can only be used if the account is an EOA.',
 ).setAction(async function ({}, { ethers }) {
   // Get the new owner wallet.
-  const newOwner = new Wallet(getRequiredEnvVar("NEW_OWNER_PRIVATE_KEY")).connect(ethers.provider);
+  const newOwner = new Wallet(getRequiredEnvVar('NEW_OWNER_PRIVATE_KEY')).connect(ethers.provider);
 
   // Get the GatewayConfig contract: its owner is the owner of all gateway contracts
-  const gatewayConfigContractAddress = getRequiredAddressEnvVar("GatewayConfig");
-  const gatewayConfigContract = await ethers.getContractAt("GatewayConfig", gatewayConfigContractAddress);
+  const gatewayConfigContractAddress = getRequiredAddressEnvVar('GatewayConfig');
+  const gatewayConfigContract = await ethers.getContractAt('GatewayConfig', gatewayConfigContractAddress);
 
   if ((await gatewayConfigContract.pendingOwner()) !== newOwner.address) {
     throw new Error(

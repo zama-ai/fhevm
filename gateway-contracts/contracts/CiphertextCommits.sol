@@ -1,13 +1,13 @@
 // SPDX-License-Identifier: BSD-3-Clause-Clear
 pragma solidity ^0.8.24;
-import { gatewayConfigAddress } from "../addresses/GatewayAddresses.sol";
-import { Strings } from "@openzeppelin/contracts/utils/Strings.sol";
-import { ICiphertextCommits } from "./interfaces/ICiphertextCommits.sol";
-import { IGatewayConfig } from "./interfaces/IGatewayConfig.sol";
-import { UUPSUpgradeableEmptyProxy } from "./shared/UUPSUpgradeableEmptyProxy.sol";
-import { GatewayConfigChecks } from "./shared/GatewayConfigChecks.sol";
-import { GatewayOwnable } from "./shared/GatewayOwnable.sol";
-import { CiphertextMaterial, SnsCiphertextMaterial } from "./shared/Structs.sol";
+import { gatewayConfigAddress } from '../addresses/GatewayAddresses.sol';
+import { Strings } from '@openzeppelin/contracts/utils/Strings.sol';
+import { ICiphertextCommits } from './interfaces/ICiphertextCommits.sol';
+import { IGatewayConfig } from './interfaces/IGatewayConfig.sol';
+import { UUPSUpgradeableEmptyProxy } from './shared/UUPSUpgradeableEmptyProxy.sol';
+import { GatewayConfigChecks } from './shared/GatewayConfigChecks.sol';
+import { GatewayOwnable } from './shared/GatewayOwnable.sol';
+import { CiphertextMaterial, SnsCiphertextMaterial } from './shared/Structs.sol';
 
 /**
  * @title CiphertextCommits smart contract
@@ -24,14 +24,14 @@ contract CiphertextCommits is ICiphertextCommits, UUPSUpgradeableEmptyProxy, Gat
      * @notice The domain separator for the add ciphertext hash.
      */
     bytes32 private constant ADD_CIPHERTEXT_DOMAIN_SEPARATOR_HASH =
-        keccak256(bytes("CiphertextCommits.addCiphertextMaterial"));
+        keccak256(bytes('CiphertextCommits.addCiphertextMaterial'));
 
     /**
      * @dev The following constants are used for versioning the contract. They are made private
      * in order to force derived contracts to consider a different version. Note that
      * they can still define their own private constants with the same name.
      */
-    string private constant CONTRACT_NAME = "CiphertextCommits";
+    string private constant CONTRACT_NAME = 'CiphertextCommits';
     uint256 private constant MAJOR_VERSION = 0;
     uint256 private constant MINOR_VERSION = 5;
     uint256 private constant PATCH_VERSION = 0;
@@ -299,11 +299,11 @@ contract CiphertextCommits is ICiphertextCommits, UUPSUpgradeableEmptyProxy, Gat
             string(
                 abi.encodePacked(
                     CONTRACT_NAME,
-                    " v",
+                    ' v',
                     Strings.toString(MAJOR_VERSION),
-                    ".",
+                    '.',
                     Strings.toString(MINOR_VERSION),
-                    ".",
+                    '.',
                     Strings.toString(PATCH_VERSION)
                 )
             );

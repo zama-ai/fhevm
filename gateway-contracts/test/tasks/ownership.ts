@@ -1,15 +1,15 @@
-import { loadFixture } from "@nomicfoundation/hardhat-network-helpers";
-import { expect } from "chai";
-import { Wallet } from "ethers";
-import hre from "hardhat";
+import { loadFixture } from '@nomicfoundation/hardhat-network-helpers';
+import { expect } from 'chai';
+import { Wallet } from 'ethers';
+import hre from 'hardhat';
 
-import { getRequiredEnvVar } from "../../tasks/utils/loadVariables";
-import { GatewayConfig } from "../../typechain-types";
-import { loadTestVariablesFixture } from "../utils";
+import { getRequiredEnvVar } from '../../tasks/utils/loadVariables';
+import { GatewayConfig } from '../../typechain-types';
+import { loadTestVariablesFixture } from '../utils';
 
-describe("Ownership tasks", function () {
+describe('Ownership tasks', function () {
   // Get the private key of the new owner
-  const newOwnerPrivateKey = getRequiredEnvVar("NEW_OWNER_PRIVATE_KEY");
+  const newOwnerPrivateKey = getRequiredEnvVar('NEW_OWNER_PRIVATE_KEY');
   const newOwner = new Wallet(newOwnerPrivateKey).connect(hre.ethers.provider);
 
   let gatewayConfig: GatewayConfig;
@@ -21,10 +21,10 @@ describe("Ownership tasks", function () {
     owner = fixtureData.owner;
   });
 
-  it("Should ask transfer ownership of the GatewayConfig contract", async function () {
+  it('Should ask transfer ownership of the GatewayConfig contract', async function () {
     expect(await gatewayConfig.owner()).to.eq(owner.address);
 
-    await hre.run("task:transferGatewayOwnership", { newOwnerAddress: newOwner.address });
+    await hre.run('task:transferGatewayOwnership', { newOwnerAddress: newOwner.address });
 
     // Check that the ownership has not been transferred as the transfer is only pending since the
     // new owner has not accepted it yet.
@@ -34,8 +34,8 @@ describe("Ownership tasks", function () {
     expect(await gatewayConfig.pendingOwner()).to.eq(newOwner.address);
   });
 
-  it("Should accept ownership of the GatewayConfig contract", async function () {
-    await hre.run("task:acceptGatewayOwnership");
+  it('Should accept ownership of the GatewayConfig contract', async function () {
+    await hre.run('task:acceptGatewayOwnership');
 
     // Check that the ownership has been transferred to the new owner.
     expect(await gatewayConfig.owner()).to.eq(newOwner.address);

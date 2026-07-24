@@ -1,8 +1,8 @@
 // SPDX-License-Identifier: BSD-3-Clause-Clear
 pragma solidity ^0.8.24;
 
-import { UUPSUpgradeable } from "@openzeppelin/contracts-upgradeable/proxy/utils/UUPSUpgradeable.sol";
-import { GatewayOwnable } from "../shared/GatewayOwnable.sol";
+import { UUPSUpgradeable } from '@openzeppelin/contracts-upgradeable/proxy/utils/UUPSUpgradeable.sol';
+import { GatewayOwnable } from '../shared/GatewayOwnable.sol';
 /**
  * @title  EmptyUUPSProxy
  * @notice EmptyUUPSProxy is an empty UUPS Proxy containing only upgrade logic to simplify deployment,

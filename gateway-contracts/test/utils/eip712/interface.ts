@@ -1,5 +1,5 @@
-import { HardhatEthersSigner } from "@nomicfoundation/hardhat-ethers/signers";
-import { BigNumberish, BytesLike, HDNodeWallet, Wallet } from "ethers";
+import { HardhatEthersSigner } from '@nomicfoundation/hardhat-ethers/signers';
+import { BigNumberish, BytesLike, HDNodeWallet, Wallet } from 'ethers';
 
 export interface EIP712Type {
   name: string;
@@ -57,7 +57,7 @@ export async function getSignaturesEIP712MultipleMessages(
   signers: (HardhatEthersSigner | HDNodeWallet | Wallet)[],
 ): Promise<string[]> {
   if (eip712s.length !== signers.length) {
-    throw new Error("The number of EIP712 messages must match the number of signers.");
+    throw new Error('The number of EIP712 messages must match the number of signers.');
   }
 
   return Promise.all(

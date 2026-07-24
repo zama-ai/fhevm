@@ -1,4 +1,4 @@
-import { ContractTransactionResponse, EventLog } from "ethers";
+import { ContractTransactionResponse, EventLog } from 'ethers';
 
 export async function getEventArgFromTxRequest(txRequest: ContractTransactionResponse, argIndex: number): Promise<any> {
   const receipt = await txRequest.wait();

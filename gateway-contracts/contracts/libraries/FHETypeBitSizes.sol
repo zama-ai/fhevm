@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: BSD-3-Clause-Clear
 pragma solidity ^0.8.24;
 
-import "../shared/FheType.sol";
+import '../shared/FheType.sol';
 
 /**
  * @title FHETypeBitSizes library

@@ -1,16 +1,16 @@
-import { HardhatEthersSigner } from "@nomicfoundation/hardhat-ethers/signers";
-import dotenv from "dotenv";
-import { Wallet } from "ethers";
-import hre from "hardhat";
-import path from "path";
+import { HardhatEthersSigner } from '@nomicfoundation/hardhat-ethers/signers';
+import dotenv from 'dotenv';
+import { Wallet } from 'ethers';
+import hre from 'hardhat';
+import path from 'path';
 
-import { ADDRESSES_DIR } from "../../hardhat.config";
-import { getRequiredEnvVar } from "../../tasks/utils";
-import { fund } from "./wallets";
+import { ADDRESSES_DIR } from '../../hardhat.config';
+import { getRequiredEnvVar } from '../../tasks/utils';
+import { fund } from './wallets';
 
 // Loads the host chains' chain IDs
 export function loadHostChainIds() {
-  const nHostChain = parseInt(getRequiredEnvVar("NUM_HOST_CHAINS"));
+  const nHostChain = parseInt(getRequiredEnvVar('NUM_HOST_CHAINS'));
   return [...Array(nHostChain)].map((_, i) => {
     return parseInt(getRequiredEnvVar(`HOST_CHAIN_CHAIN_ID_${i}`));
   });
@@ -32,20 +32,20 @@ async function checkIsHardhatSigner(signer: HardhatEthersSigner | Wallet) {
 // Adds some funds to these wallets.
 async function initTestingWallets(nKmsNodes: number, nCoprocessors: number, nCustodians: number) {
   // The owner owns the contracts and can initialize the protocol
-  const owner = new Wallet(getRequiredEnvVar("DEPLOYER_PRIVATE_KEY"), hre.ethers.provider);
+  const owner = new Wallet(getRequiredEnvVar('DEPLOYER_PRIVATE_KEY'), hre.ethers.provider);
   await fund(owner.address);
 
   // A pauser can pause the protocol by pausing some of the contracts
-  const pauser = new Wallet(getRequiredEnvVar("PAUSER_PRIVATE_KEY"), hre.ethers.provider);
+  const pauser = new Wallet(getRequiredEnvVar('PAUSER_PRIVATE_KEY'), hre.ethers.provider);
   await checkIsHardhatSigner(pauser);
 
   // The account that sends request transactions (input verification, decryption)
-  const txSenderPrivateKey = getRequiredEnvVar("TX_SENDER_PRIVATE_KEY");
+  const txSenderPrivateKey = getRequiredEnvVar('TX_SENDER_PRIVATE_KEY');
   const tokenFundedTxSender = new Wallet(txSenderPrivateKey, hre.ethers.provider);
   await checkIsHardhatSigner(tokenFundedTxSender);
 
   // Fund the tx sender with mocked $ZAMA tokens and approve the contracts with maximum allowance over its tokens
-  await hre.run("task:setTxSenderMockedPayment", { amount: BigInt(10 ** 12) });
+  await hre.run('task:setTxSenderMockedPayment', { amount: BigInt(10 ** 12) });
 
   // Load the KMS transaction senders
   const kmsTxSenders = [];
@@ -124,9 +124,9 @@ async function initTestingWallets(nKmsNodes: number, nCoprocessors: number, nCus
   }
 
   // Load the protocol payment prices
-  const inputVerificationPrice = BigInt(getRequiredEnvVar("INPUT_VERIFICATION_PRICE"));
-  const publicDecryptionPrice = BigInt(getRequiredEnvVar("PUBLIC_DECRYPTION_PRICE"));
-  const userDecryptionPrice = BigInt(getRequiredEnvVar("USER_DECRYPTION_PRICE"));
+  const inputVerificationPrice = BigInt(getRequiredEnvVar('INPUT_VERIFICATION_PRICE'));
+  const publicDecryptionPrice = BigInt(getRequiredEnvVar('PUBLIC_DECRYPTION_PRICE'));
+  const userDecryptionPrice = BigInt(getRequiredEnvVar('USER_DECRYPTION_PRICE'));
 
   return {
     owner,
@@ -151,9 +151,9 @@ async function initTestingWallets(nKmsNodes: number, nCoprocessors: number, nCus
 // Loads the addresses of the deployed contracts, and the values required for the tests.
 export async function loadTestVariablesFixture() {
   // Load the number of KMS nodes and coprocessors
-  const nKmsNodes = parseInt(getRequiredEnvVar("NUM_KMS_NODES"));
-  const nCoprocessors = parseInt(getRequiredEnvVar("NUM_COPROCESSORS"));
-  const nCustodians = parseInt(getRequiredEnvVar("NUM_CUSTODIANS"));
+  const nKmsNodes = parseInt(getRequiredEnvVar('NUM_KMS_NODES'));
+  const nCoprocessors = parseInt(getRequiredEnvVar('NUM_COPROCESSORS'));
+  const nCustodians = parseInt(getRequiredEnvVar('NUM_CUSTODIANS'));
 
   // Load the host chains' chain IDs
   const chainIds = loadHostChainIds();
@@ -162,38 +162,38 @@ export async function loadTestVariablesFixture() {
   const fixtureData = await initTestingWallets(nKmsNodes, nCoprocessors, nCustodians);
 
   // Load the environment variables for the /addresses directory
-  dotenv.config({ path: path.join(ADDRESSES_DIR, ".env.gateway"), override: true });
+  dotenv.config({ path: path.join(ADDRESSES_DIR, '.env.gateway'), override: true });
 
   // Load the GatewayConfig contract
-  const gatewayConfig = await hre.ethers.getContractAt("GatewayConfig", getRequiredEnvVar("GATEWAY_CONFIG_ADDRESS"));
+  const gatewayConfig = await hre.ethers.getContractAt('GatewayConfig', getRequiredEnvVar('GATEWAY_CONFIG_ADDRESS'));
 
   // Load the InputVerification contract
   const inputVerification = await hre.ethers.getContractAt(
-    "InputVerification",
-    getRequiredEnvVar("INPUT_VERIFICATION_ADDRESS"),
+    'InputVerification',
+    getRequiredEnvVar('INPUT_VERIFICATION_ADDRESS'),
   );
 
   // Load the CiphertextCommits contract
   const ciphertextCommits = await hre.ethers.getContractAt(
-    "CiphertextCommits",
-    getRequiredEnvVar("CIPHERTEXT_COMMITS_ADDRESS"),
+    'CiphertextCommits',
+    getRequiredEnvVar('CIPHERTEXT_COMMITS_ADDRESS'),
   );
 
   // Load the Decryption contract
-  const decryption = await hre.ethers.getContractAt("Decryption", getRequiredEnvVar("DECRYPTION_ADDRESS"));
+  const decryption = await hre.ethers.getContractAt('Decryption', getRequiredEnvVar('DECRYPTION_ADDRESS'));
 
   // Load the PauserSet contract
-  const pauserSet = await hre.ethers.getContractAt("PauserSet", getRequiredEnvVar("PAUSER_SET_ADDRESS"));
+  const pauserSet = await hre.ethers.getContractAt('PauserSet', getRequiredEnvVar('PAUSER_SET_ADDRESS'));
 
   // Load the ProtocolPayment contract
   const protocolPayment = await hre.ethers.getContractAt(
-    "ProtocolPayment",
-    getRequiredEnvVar("PROTOCOL_PAYMENT_ADDRESS"),
+    'ProtocolPayment',
+    getRequiredEnvVar('PROTOCOL_PAYMENT_ADDRESS'),
   );
 
   // Load the mocked payment bridging contracts
-  const mockedZamaOFT = await hre.ethers.getContractAt("ZamaOFT", getRequiredEnvVar("ZAMA_OFT_ADDRESS"));
-  const mockedFeesSenderToBurnerAddress = getRequiredEnvVar("FEES_SENDER_TO_BURNER_ADDRESS");
+  const mockedZamaOFT = await hre.ethers.getContractAt('ZamaOFT', getRequiredEnvVar('ZAMA_OFT_ADDRESS'));
+  const mockedFeesSenderToBurnerAddress = getRequiredEnvVar('FEES_SENDER_TO_BURNER_ADDRESS');
 
   return {
     ...fixtureData,

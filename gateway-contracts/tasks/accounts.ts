@@ -1,10 +1,10 @@
-import { task } from "hardhat/config";
-import { HardhatNetworkHDAccountsConfig } from "hardhat/types";
+import { task } from 'hardhat/config';
+import { HardhatNetworkHDAccountsConfig } from 'hardhat/types';
 
-import { NUM_ACCOUNTS } from "../hardhat.config";
+import { NUM_ACCOUNTS } from '../hardhat.config';
 
 // Use this task to get the list of accounts (addresses, private keys, public keys)
-task("get-accounts", "Prints the list of accounts").setAction(async (_, hre) => {
+task('get-accounts', 'Prints the list of accounts').setAction(async (_, hre) => {
   // Get signers from hardhat
   const signers = await hre.ethers.getSigners();
   const accounts = [];
@@ -26,8 +26,8 @@ task("get-accounts", "Prints the list of accounts").setAction(async (_, hre) => 
       address: address,
     });
   }
-  console.info("\nAccount Details:");
-  console.info("================");
+  console.info('\nAccount Details:');
+  console.info('================');
   accounts.forEach(({ index, privateKey, address, publicKey }) => {
     console.info(`\nAccount ${index}:`);
     console.info(`Address:     ${address}`);

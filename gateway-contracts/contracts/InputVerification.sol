@@ -1,18 +1,18 @@
 // SPDX-License-Identifier: BSD-3-Clause-Clear
 pragma solidity ^0.8.24;
 
-import { gatewayConfigAddress } from "../addresses/GatewayAddresses.sol";
-import { ECDSA } from "@openzeppelin/contracts/utils/cryptography/ECDSA.sol";
-import { EIP712Upgradeable } from "@openzeppelin/contracts-upgradeable/utils/cryptography/EIP712Upgradeable.sol";
-import { Strings } from "@openzeppelin/contracts/utils/Strings.sol";
-import { IInputVerification } from "./interfaces/IInputVerification.sol";
-import { IGatewayConfig } from "./interfaces/IGatewayConfig.sol";
-import { UUPSUpgradeableEmptyProxy } from "./shared/UUPSUpgradeableEmptyProxy.sol";
-import { GatewayConfigChecks } from "./shared/GatewayConfigChecks.sol";
-import { Pausable } from "./shared/Pausable.sol";
-import { GatewayOwnable } from "./shared/GatewayOwnable.sol";
-import { ProtocolPaymentUtils } from "./shared/ProtocolPaymentUtils.sol";
-import { Coprocessor } from "./shared/Structs.sol";
+import { gatewayConfigAddress } from '../addresses/GatewayAddresses.sol';
+import { ECDSA } from '@openzeppelin/contracts/utils/cryptography/ECDSA.sol';
+import { EIP712Upgradeable } from '@openzeppelin/contracts-upgradeable/utils/cryptography/EIP712Upgradeable.sol';
+import { Strings } from '@openzeppelin/contracts/utils/Strings.sol';
+import { IInputVerification } from './interfaces/IInputVerification.sol';
+import { IGatewayConfig } from './interfaces/IGatewayConfig.sol';
+import { UUPSUpgradeableEmptyProxy } from './shared/UUPSUpgradeableEmptyProxy.sol';
+import { GatewayConfigChecks } from './shared/GatewayConfigChecks.sol';
+import { Pausable } from './shared/Pausable.sol';
+import { GatewayOwnable } from './shared/GatewayOwnable.sol';
+import { ProtocolPaymentUtils } from './shared/ProtocolPaymentUtils.sol';
+import { Coprocessor } from './shared/Structs.sol';
 
 /**
  * @title InputVerification smart contract
@@ -67,7 +67,7 @@ contract InputVerification is
      * @notice The definition of the CiphertextVerification structure typed data.
      */
     string private constant EIP712_ZKPOK_TYPE =
-        "CiphertextVerification(bytes32[] ctHandles,address userAddress,address contractAddress,uint256 contractChainId,bytes extraData)";
+        'CiphertextVerification(bytes32[] ctHandles,address userAddress,address contractAddress,uint256 contractChainId,bytes extraData)';
 
     /**
      * @notice The hash of the CiphertextVerification structure typed data definition used for signature validation.
@@ -79,7 +79,7 @@ contract InputVerification is
      * in order to force derived contracts to consider a different version. Note that
      * they can still define their own private constants with the same name.
      */
-    string private constant CONTRACT_NAME = "InputVerification";
+    string private constant CONTRACT_NAME = 'InputVerification';
     uint256 private constant MAJOR_VERSION = 0;
     uint256 private constant MINOR_VERSION = 5;
     uint256 private constant PATCH_VERSION = 0;
@@ -170,7 +170,7 @@ contract InputVerification is
      */
     /// @custom:oz-upgrades-validate-as-initializer
     function initializeFromEmptyProxy() public virtual onlyFromEmptyProxy reinitializer(REINITIALIZER_VERSION) {
-        __EIP712_init(CONTRACT_NAME, "1");
+        __EIP712_init(CONTRACT_NAME, '1');
         __Pausable_init();
     }
 
@@ -422,11 +422,11 @@ contract InputVerification is
             string(
                 abi.encodePacked(
                     CONTRACT_NAME,
-                    " v",
+                    ' v',
                     Strings.toString(MAJOR_VERSION),
-                    ".",
+                    '.',
                     Strings.toString(MINOR_VERSION),
-                    ".",
+                    '.',
                     Strings.toString(PATCH_VERSION)
                 )
             );

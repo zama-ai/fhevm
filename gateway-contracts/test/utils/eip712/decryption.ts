@@ -1,8 +1,8 @@
-import { HardhatEthersSigner } from "@nomicfoundation/hardhat-ethers/signers";
-import { HDNodeWallet, Wallet } from "ethers";
-import { ethers } from "hardhat";
+import { HardhatEthersSigner } from '@nomicfoundation/hardhat-ethers/signers';
+import { HDNodeWallet, Wallet } from 'ethers';
+import { ethers } from 'hardhat';
 
-import { EIP712, getSignaturesEIP712 } from "./interface";
+import { EIP712, getSignaturesEIP712 } from './interface';
 
 // Create an EIP712 message for a public decryption response
 export function createEIP712ResponsePublicDecrypt(
@@ -13,26 +13,26 @@ export function createEIP712ResponsePublicDecrypt(
   extraData: string,
 ): EIP712 {
   if (!ethers.isAddress(verifyingContract)) {
-    throw new Error("Invalid verifying contract address.");
+    throw new Error('Invalid verifying contract address.');
   }
   return {
     types: {
       EIP712Domain: [
-        { name: "name", type: "string" },
-        { name: "version", type: "string" },
-        { name: "chainId", type: "uint256" },
-        { name: "verifyingContract", type: "address" },
+        { name: 'name', type: 'string' },
+        { name: 'version', type: 'string' },
+        { name: 'chainId', type: 'uint256' },
+        { name: 'verifyingContract', type: 'address' },
       ],
       PublicDecryptVerification: [
-        { name: "ctHandles", type: "bytes32[]" },
-        { name: "decryptedResult", type: "bytes" },
-        { name: "extraData", type: "bytes" },
+        { name: 'ctHandles', type: 'bytes32[]' },
+        { name: 'decryptedResult', type: 'bytes' },
+        { name: 'extraData', type: 'bytes' },
       ],
     },
-    primaryType: "PublicDecryptVerification",
+    primaryType: 'PublicDecryptVerification',
     domain: {
-      name: "Decryption",
-      version: "1",
+      name: 'Decryption',
+      version: '1',
       chainId,
       verifyingContract,
     },
@@ -71,28 +71,28 @@ export function createEIP712RequestUserDecrypt(
   extraData: string,
 ): EIP712 {
   if (!ethers.isAddress(verifyingContract)) {
-    throw new Error("Invalid verifying contract address.");
+    throw new Error('Invalid verifying contract address.');
   }
   return {
     types: {
       EIP712Domain: [
-        { name: "name", type: "string" },
-        { name: "version", type: "string" },
-        { name: "chainId", type: "uint256" },
-        { name: "verifyingContract", type: "address" },
+        { name: 'name', type: 'string' },
+        { name: 'version', type: 'string' },
+        { name: 'chainId', type: 'uint256' },
+        { name: 'verifyingContract', type: 'address' },
       ],
       UserDecryptRequestVerification: [
-        { name: "publicKey", type: "bytes" },
-        { name: "contractAddresses", type: "address[]" },
-        { name: "startTimestamp", type: "uint256" },
-        { name: "durationDays", type: "uint256" },
-        { name: "extraData", type: "bytes" },
+        { name: 'publicKey', type: 'bytes' },
+        { name: 'contractAddresses', type: 'address[]' },
+        { name: 'startTimestamp', type: 'uint256' },
+        { name: 'durationDays', type: 'uint256' },
+        { name: 'extraData', type: 'bytes' },
       ],
     },
-    primaryType: "UserDecryptRequestVerification",
+    primaryType: 'UserDecryptRequestVerification',
     domain: {
-      name: "Decryption",
-      version: "1",
+      name: 'Decryption',
+      version: '1',
       chainId: contractsChainId,
       verifyingContract,
     },
@@ -134,29 +134,29 @@ export function createEIP712RequestDelegatedUserDecrypt(
   extraData: string,
 ): EIP712 {
   if (!ethers.isAddress(verifyingContract)) {
-    throw new Error("Invalid verifying contract address.");
+    throw new Error('Invalid verifying contract address.');
   }
   return {
     types: {
       EIP712Domain: [
-        { name: "name", type: "string" },
-        { name: "version", type: "string" },
-        { name: "chainId", type: "uint256" },
-        { name: "verifyingContract", type: "address" },
+        { name: 'name', type: 'string' },
+        { name: 'version', type: 'string' },
+        { name: 'chainId', type: 'uint256' },
+        { name: 'verifyingContract', type: 'address' },
       ],
       DelegatedUserDecryptRequestVerification: [
-        { name: "publicKey", type: "bytes" },
-        { name: "contractAddresses", type: "address[]" },
-        { name: "delegatorAddress", type: "address" },
-        { name: "startTimestamp", type: "uint256" },
-        { name: "durationDays", type: "uint256" },
-        { name: "extraData", type: "bytes" },
+        { name: 'publicKey', type: 'bytes' },
+        { name: 'contractAddresses', type: 'address[]' },
+        { name: 'delegatorAddress', type: 'address' },
+        { name: 'startTimestamp', type: 'uint256' },
+        { name: 'durationDays', type: 'uint256' },
+        { name: 'extraData', type: 'bytes' },
       ],
     },
-    primaryType: "DelegatedUserDecryptRequestVerification",
+    primaryType: 'DelegatedUserDecryptRequestVerification',
     domain: {
-      name: "Decryption",
-      version: "1",
+      name: 'Decryption',
+      version: '1',
       chainId: contractsChainId,
       verifyingContract,
     },
@@ -189,27 +189,27 @@ export function createEIP712ResponseUserDecrypt(
   extraData: string,
 ): EIP712 {
   if (!ethers.isAddress(verifyingContract)) {
-    throw new Error("Invalid verifying contract address.");
+    throw new Error('Invalid verifying contract address.');
   }
   return {
     types: {
       EIP712Domain: [
-        { name: "name", type: "string" },
-        { name: "version", type: "string" },
-        { name: "chainId", type: "uint256" },
-        { name: "verifyingContract", type: "address" },
+        { name: 'name', type: 'string' },
+        { name: 'version', type: 'string' },
+        { name: 'chainId', type: 'uint256' },
+        { name: 'verifyingContract', type: 'address' },
       ],
       UserDecryptResponseVerification: [
-        { name: "publicKey", type: "bytes" },
-        { name: "ctHandles", type: "bytes32[]" },
-        { name: "userDecryptedShare", type: "bytes" },
-        { name: "extraData", type: "bytes" },
+        { name: 'publicKey', type: 'bytes' },
+        { name: 'ctHandles', type: 'bytes32[]' },
+        { name: 'userDecryptedShare', type: 'bytes' },
+        { name: 'extraData', type: 'bytes' },
       ],
     },
-    primaryType: "UserDecryptResponseVerification",
+    primaryType: 'UserDecryptResponseVerification',
     domain: {
-      name: "Decryption",
-      version: "1",
+      name: 'Decryption',
+      version: '1',
       chainId,
       verifyingContract,
     },
@@ -228,7 +228,7 @@ export async function getSignaturesUserDecryptResponse(
   signers: (HardhatEthersSigner | HDNodeWallet | Wallet)[],
 ): Promise<string[]> {
   if (eip712s.length !== signers.length) {
-    throw new Error("The number of EIP712 messages must match the number of signers.");
+    throw new Error('The number of EIP712 messages must match the number of signers.');
   }
 
   return Promise.all(

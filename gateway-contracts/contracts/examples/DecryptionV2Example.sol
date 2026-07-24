@@ -2,10 +2,10 @@
 
 pragma solidity ^0.8.24;
 
-import "../Decryption.sol";
+import '../Decryption.sol';
 
 contract DecryptionV2Example is Decryption {
-    string private constant CONTRACT_NAME = "Decryption";
+    string private constant CONTRACT_NAME = 'Decryption';
 
     uint256 private constant MAJOR_VERSION = 1000;
     uint256 private constant MINOR_VERSION = 0;
@@ -16,11 +16,11 @@ contract DecryptionV2Example is Decryption {
             string(
                 abi.encodePacked(
                     CONTRACT_NAME,
-                    " v",
+                    ' v',
                     Strings.toString(MAJOR_VERSION),
-                    ".",
+                    '.',
                     Strings.toString(MINOR_VERSION),
-                    ".",
+                    '.',
                     Strings.toString(PATCH_VERSION)
                 )
             );
