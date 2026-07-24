@@ -1,5 +1,5 @@
 # The contract allowed for user decrytion on user_ct_handles
-allowed_contract = "0xa5880e99d86F081E8D3868A8C4732C8f65dfdB08"
+allowed_contract = "0x1ceFA8E3F3271358218B52c33929Cf76078004c1"
 
 # The time during which the tool will send request bursts to the Gateway/Connectors' DBs
 # Format documentation: https://docs.rs/humantime/latest/humantime/
@@ -19,12 +19,12 @@ parallel_requests = 1
 # The ciphertexts to use for public decryptions
 [[public_ct]]
 # The handle used of the ciphertext
-handle = "0x1f9b79819b2581535a80f267862540c5eac12ee504ff00000000000030390500"
+handle = "0x73e704874e9b312b8a7f7c8f2e8571cafbd2e71ddfff00000000000030390500"
 
 # The ciphertexts to use for user decryptions
 [[user_ct]]
 # The handle used of the ciphertext
-handle = "0x1d01f83fd1b14d84e9b8680790d993d6848aeb6462ff00000000000030390500"
+handle = "0x7fe6b11dd17115a80fbe145febd7237adbda569030ff00000000000030390500"
 
 # Configuration section for stress test using the Gateway chain
 [blockchain]
@@ -38,17 +38,20 @@ host_chain_id = 12345
 gateway_chain_id = 54321
 
 # Address of the Decryption contract (required)
-decryption_address = "0x35760912360E875DA50D40a74305575c23D55783"
+decryption_address = "0xF0bFB159C7381F7CB332586004d8247252C5b816"
 
-# Wallet's private key as a hex string
-private_key = "24af7cb5f6cd0f29df22c6f3e2f18ee5b3949f5a489a14b0674bef8fd89bfe91"
+# Wallet's private key as a hex string (funded deployer account on the Gateway chain)
+private_key = "e746bc71f6bee141a954e6a49bc9384d334e393a7ea1e70b50241cb2e78e9e4c"
 
 
 # Configuration section for stress test using the Connectors' DBs
 [database]
-# The URLs of the Connectors' DBs
+# The URLs of the Connectors' DBs (one per KMS-connector party in the four-party-threshold-kms scenario)
 urls = [
-    "postgresql://postgres:postgres@localhost:5432/kms-connector"
+    "postgresql://postgres:postgres@localhost:5432/kms-connector",
+    "postgresql://postgres:postgres@localhost:5432/kms-connector-2",
+    "postgresql://postgres:postgres@localhost:5432/kms-connector-3",
+    "postgresql://postgres:postgres@localhost:5432/kms-connector-4",
 ]
 
 # The pool size for each connection to a Connector's DB

@@ -1,6 +1,9 @@
 use crate::{
     config::CiphertextConfig,
-    decryption::types::{DecryptionRequest, DecryptionType},
+    decryption::{
+        types::{DecryptionRequest, DecryptionType},
+        user::EXTRA_DATA,
+    },
 };
 use alloy::primitives::{Address, Bytes, FixedBytes, U256};
 use fhevm_gateway_bindings::decryption::Decryption::{
@@ -83,7 +86,7 @@ impl RequestBuilder {
     }
 
     fn generate_extra_data(&self) -> Bytes {
-        vec![1].into()
+        EXTRA_DATA.into()
     }
 }
 
