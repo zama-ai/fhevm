@@ -131,6 +131,26 @@ check "sdk-only change -> no overrides" \
   "none" \
   "$PINS_GATEWAY $PINS_HOST $PINS_COPRO $PINS_RELAYER $PINS_CONNECTOR"
 
+# e2e tests and demo scripts run from PR source against the built stack; no image copies them.
+check "e2e scenario change -> no overrides" \
+  "test-suite/fhevm/e2e/scenarios/deposit-arc.scenario.test.ts" \
+  "true" \
+  "none" \
+  "$PINS_GATEWAY $PINS_HOST $PINS_COPRO $PINS_RELAYER $PINS_CONNECTOR"
+
+check "demo script change -> no overrides" \
+  "test-suite/fhevm/demo/demo-up.sh" \
+  "true" \
+  "none" \
+  "$PINS_GATEWAY $PINS_HOST $PINS_COPRO $PINS_RELAYER $PINS_CONNECTOR"
+
+# The SDK-plus-scenario PR shape that used to pay for a full workspace rebuild.
+check "sdk + scenario change -> no overrides" \
+  $'sdk/js-sdk/src/solana/vault/index.ts\ntest-suite/fhevm/e2e/scenarios/deposit-arc.scenario.test.ts' \
+  "true" \
+  "none" \
+  "$PINS_GATEWAY $PINS_HOST $PINS_COPRO $PINS_RELAYER $PINS_CONNECTOR"
+
 # Build-recipe changes force full source builds regardless of published images.
 check "workflow change -> build all" \
   ".github/workflows/solana-e2e.yml" \
