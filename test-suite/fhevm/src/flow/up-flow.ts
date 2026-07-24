@@ -946,11 +946,11 @@ export const runStep = async (state: State, step: StepName) => {
         );
         await waitForContainer("gateway-sc-trigger-crsgen", "complete");
       }
-      // wait-for-materials polls roughly once per second. Centralized keygen is quick; a
-      // threshold-mode cluster runs a real multi-party DKG (~360s for 4 parties), so it needs a
-      // much larger budget before we conclude bootstrap failed.
+      // wait-for-materials polls every two seconds. Centralized keygen is quick; a threshold-mode
+      // cluster runs a real multi-party DKG, and legacy KMS releases can spend about 15 minutes in
+      // preprocessing before publishing the result.
       const CENTRALIZED_BOOTSTRAP_ATTEMPTS = 120;
-      const THRESHOLD_BOOTSTRAP_ATTEMPTS = 450;
+      const THRESHOLD_BOOTSTRAP_ATTEMPTS = 600;
       const bootstrapAttempts =
         state.scenario.kms.mode === "threshold" ? THRESHOLD_BOOTSTRAP_ATTEMPTS : CENTRALIZED_BOOTSTRAP_ATTEMPTS;
       await timed("[bootstrap] wait-for-materials", () => waitForBootstrap(state, bootstrapAttempts));
