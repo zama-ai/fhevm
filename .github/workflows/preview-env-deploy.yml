@@ -1,4 +1,4 @@
-name: pr-preview-deploy
+name: preview-env-deploy
 
 ##############################################################################
 # Ephemeral per-PR e2e preview environments. Each preview gets its own
@@ -7,9 +7,14 @@ name: pr-preview-deploy
 # and test-suite. Nothing is shared across PRs.
 #
 # Two PR labels control deployment (see check-labels below):
-#   - pr-preview-e2e: deploy the pinned versions below, build no images.
-#   - pr-preview-e2e-build: also build fresh images from the PR branch.
+#   - preview-env-e2e: deploy the PR branch. On PRs images are ALWAYS built
+#     fresh from the PR HEAD (only changed components; the rest fall back to
+#     the pinned versions below).
+#   - preview-env-e2e-tests: same, plus auto-run the e2e test DAG and report
+#     pass/fail back to the PR.
 # The dedicated KMS (env.KMS_REPO_REF/KMS_CORE_TAG) is never built here.
+# (A pinned-only run with no builds is still possible via workflow_dispatch
+# with build_images=false.)
 ##############################################################################
 
 on:
@@ -191,9 +196,9 @@ env:
 
 jobs:
   ##########################################################################
-  # Gate: only PRs labeled pr-preview-e2e(-build) get a preview; the -build
-  # variant also builds fresh images. workflow_dispatch always deploys (the
-  # dispatch itself is the request); build_images comes from its input.
+  # Gate: only PRs labeled preview-env-e2e(-tests) get a preview. On PRs images
+  # are always built fresh from the PR branch. workflow_dispatch always deploys
+  # (the dispatch itself is the request); build_images comes from its input.
   ##########################################################################
   check-labels:
     name: check-labels
@@ -201,9 +206,8 @@ jobs:
     if: >-
       github.event_name == 'workflow_dispatch' ||
       github.event.action != 'labeled' ||
-      github.event.label.name == 'pr-preview-e2e' ||
-      github.event.label.name == 'pr-preview-e2e-build' ||
-      github.event.label.name == 'pr-preview-e2e-tests'
+      github.event.label.name == 'preview-env-e2e' ||
+      github.event.label.name == 'preview-env-e2e-tests'
     outputs:
       should_deploy: ${{ steps.check.outputs.should_deploy }}
       build_images: ${{ steps.check.outputs.build_images }}
@@ -222,7 +226,7 @@ jobs:
           # never set it (always build everything they're allowed to).
           echo "build_test_suite_only=false" >> "$GITHUB_OUTPUT"
           # automated_tests defaults off; dispatch reads its input, PR runs opt
-          # in via the pr-preview-e2e-tests label (handled below).
+          # in via the preview-env-e2e-tests label (handled below).
           echo "automated_tests=false" >> "$GITHUB_OUTPUT"
           if [[ "${EVENT_NAME}" == "workflow_dispatch" ]]; then
             echo "should_deploy=true" >> "$GITHUB_OUTPUT"
@@ -232,24 +236,27 @@ jobs:
             exit 0
           fi
           echo "PR labels: $PR_LABELS"
-          # Compute in shell vars and write once at the end: pr-preview-e2e-tests
+          # Compute in shell vars and write once at the end: preview-env-e2e-tests
           # must be able to force should_deploy=true on its own (automated tests
           # need a deployed env), which a trailing else branch would otherwise
           # clobber via last-write-wins.
           should_deploy=false
           build_images=false
           automated_tests=false
-          # pr-preview-e2e-tests: auto-run the e2e DAG AND deploy the env it needs,
+          # preview-env-e2e-tests: auto-run the e2e DAG AND deploy the env it needs,
           # so the PR-comment report path is reachable without a manual dispatch.
-          if echo "$PR_LABELS" | jq -e '.[] | select(. == "pr-preview-e2e-tests")' > /dev/null; then
+          if echo "$PR_LABELS" | jq -e '.[] | select(. == "preview-env-e2e-tests")' > /dev/null; then
             automated_tests=true
             should_deploy=true
           fi
-          if echo "$PR_LABELS" | jq -e '.[] | select(. == "pr-preview-e2e-build")' > /dev/null; then
+          if echo "$PR_LABELS" | jq -e '.[] | select(. == "preview-env-e2e")' > /dev/null; then
             should_deploy=true
+          fi
+          # On PRs we always build fresh images from the PR branch: any preview
+          # label that triggers a deploy also builds. There is no pinned-only PR
+          # path anymore - use workflow_dispatch with build_images=false for that.
+          if [[ "${should_deploy}" == "true" ]]; then
             build_images=true
-          elif echo "$PR_LABELS" | jq -e '.[] | select(. == "pr-preview-e2e")' > /dev/null; then
-            should_deploy=true
           fi
           {
             echo "should_deploy=${should_deploy}"
@@ -439,7 +446,7 @@ jobs:
       # Gate for the SECOND (Polygon) host chain: dispatch input or PR-default off.
       DEPLOY_POLYGON: ${{ needs.resolve-tags.outputs.deploy_polygon }}
       # Gate for the automated e2e test workflow (see the test-suite-workflow
-      # deploy + report steps): dispatch input or the pr-preview-e2e-tests label.
+      # deploy + report steps): dispatch input or the preview-env-e2e-tests label.
       AUTOMATED_TESTS: ${{ needs.check-labels.outputs.automated_tests }}
     steps:
       - name: Checkout fhevm

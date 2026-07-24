@@ -27,15 +27,15 @@ new push re-deploys it fresh (an in-flight run is cancelled).
 
 | Label | What it does |
 | --- | --- |
-| `pr-preview-e2e` | Deploy the stack using the **pinned** image versions (builds nothing). Fastest. |
-| `pr-preview-e2e-build` | Same, but **builds fresh images from the PR branch** first (only changed components; the rest fall back to pinned). Use this to test your code. |
-| `pr-preview-e2e-tests` | Deploy **and** auto-run the e2e test DAG, posting a pass/fail report back to the PR. Deploys the env on its own. |
+| `preview-env-e2e` | Deploy the stack, **building fresh images from the PR branch** first (only changed components; the rest fall back to pinned). |
+| `preview-env-e2e-tests` | Same, **and** auto-run the e2e test DAG, posting a pass/fail report back to the PR. Deploys the env on its own. |
 
-Labels combine, e.g. `pr-preview-e2e-build` + `pr-preview-e2e-tests` = build your
-branch **and** auto-run the suite.
+On PRs, images are **always** built fresh from the branch - there is no
+pinned-only PR path (use a `workflow_dispatch` run with `build_images=false`
+for that).
 
 - **Namespace:** `fhevm-ci-<pr-author>-<pr-number>`.
-- **Results:** a `:rocket:` comment on success; with `pr-preview-e2e-tests`, a
+- **Results:** a `:rocket:` comment on success; with `preview-env-e2e-tests`, a
   per-test SDK-matrix report comment (see [See test results](#see-test-results)).
 - **Teardown:** automatic when the PR is **closed**, or when you **remove** the
   preview label(s) (handled by
@@ -91,11 +91,11 @@ kubectl get pods -n <namespace>          # e.g. fhevm-ci-alice-1234
 
 ## See test results
 
-- **With auto-tests** (`pr-preview-e2e-tests` label or `automated_tests=true`):
+- **With auto-tests** (`preview-env-e2e-tests` label or `automated_tests=true`):
   the workflow runs the e2e DAG for both `@fhevm/sdk` and `@zama-fhe/relayer-sdk`
   and posts a per-test pass/fail table to the PR comment / run summary.
 - **Without:** the stack is deployed with an idle test-suite Job — run tests
-  yourself against the namespace, or re-label with `pr-preview-e2e-tests`.
+  yourself against the namespace, or re-label with `preview-env-e2e-tests`.
 
 ## Destroy an environment
 
@@ -107,8 +107,8 @@ namespace. All handled by
 
 **PR env (automatic).** Nothing to do — the env is torn down when you:
 - **close/merge** the PR, or
-- **remove** the `pr-preview-e2e` label (removing only `-build`/`-tests` while
-  `pr-preview-e2e` stays keeps the env alive).
+- **remove** the `preview-env-e2e` label (removing only `-tests` while
+  `preview-env-e2e` stays keeps the env alive).
 
 **Manual (dispatch) env.** A dispatch env has no PR to key off, so tear it down
 by hand: GitHub → **Actions** → **pr-preview-destroy** → **Run workflow**, and
@@ -128,8 +128,10 @@ kubectl delete namespace <namespace>
 
 ## Gotchas
 
-- **`build_images=false` ⇒ pinned versions.** A plain `pr-preview-e2e` label does
-  **not** test your branch's code; use `-build` for that.
+- **PR labels always build your branch.** Both `preview-env-e2e` and
+  `preview-env-e2e-tests` build fresh images from the PR HEAD (only changed
+  components; the rest fall back to pinned). To deploy pinned versions only,
+  use a `workflow_dispatch` run with `build_images=false`.
 - **Each push re-deploys** the PR env from scratch and cancels any in-flight run.
 - **Namespaces key off the PR author**, not whoever pushed/labeled — so deploy
   and teardown always agree.

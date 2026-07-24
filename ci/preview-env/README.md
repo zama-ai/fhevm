@@ -9,7 +9,7 @@ driven by `test-suite/fhevm` (`fhevm-cli`). Mirrors the layout and conventions o
 [`zama-ai/kms/ci/kube-testing`](https://github.com/zama-ai/kms/tree/main/ci/kube-testing) +
 [`zama-ai/kms/ci/scripts`](https://github.com/zama-ai/kms/tree/main/ci/scripts).
 
-Every PR that carries the `pr-preview-e2e` label gets a per-PR namespace
+Every PR that carries the `preview-env-e2e` label gets a per-PR namespace
 (`fhevm-ci-<actor>-<pr>`) on the real `zws-dev` Tailscale cluster — real published OCI charts,
 a Crossplane-provisioned S3 bucket (`coprocessor-infra/`), in-cluster Postgres (official
 `postgres:17-alpine` image via the generic `common` chart, one dedicated instance each for
