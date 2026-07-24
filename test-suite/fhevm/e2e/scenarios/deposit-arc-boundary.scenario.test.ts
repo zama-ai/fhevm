@@ -1,16 +1,16 @@
-// Scenario: deposit arc — BOUNDARY (#1760). The explicit companion to the wrap-leg smoke
+// Scenario: deposit arc — BOUNDARY (#1760). The explicit companion to the wrap-phase smoke
 // (deposit-arc.scenario.test.ts). Run as `demo:smoke-boundary`. This is NOT a hard gate: it exists
 // to DOCUMENT, in executable form, exactly where the live deposit arc stops today and what remains
 // to wire — so the gap is a recorded, asserted fact instead of a silent hole in the smoke.
 //
 // Why this is not a "call it live and watch it fail" test:
-//   The next leg after wrap is `joinBatch`, whose signature REQUIRES a real coprocessor input proof
+//   The next phase after wrap is `joinBatch`, whose signature REQUIRES a real coprocessor input proof
 //   (`inputProof: SolanaZkProof` + `inputProofResult: SolanaSubmitInputProofResult` — see
 //   sdk/.../vault/joinBatch.ts:49-53). The demo has no path to PRODUCE those artifacts, so the call
 //   cannot even be constructed with honest inputs; a "live failure" here could only be manufactured
 //   by passing fabricated proof args, which would assert an arbitrary reject reason — the exact
 //   anti-pattern to avoid. Likewise `settleBatch` requires a `FhevmRuntime` for the KMS-certificate
-//   leg (settleBatch.ts:47). So the boundary is proven structurally, not theatrically:
+//   phase (settleBatch.ts:47). So the boundary is proven structurally, not theatrically:
 //     1. every downstream arc action (join → settle → claim → decrypt) EXISTS and is exported/wired;
 //     2. the seeded config already carries every ROOT those actions consume (batcher, its per-batch
 //        settle lookup table, kmsContext, the proof-service endpoint, both confidential mints);
@@ -58,7 +58,7 @@ describe.skipIf(!runsDemoScenarios)("solana deposit-arc boundary", () => {
     // gap would be "not seeded"; asserting they are present pins the gap to the two producers in (3).
     expect(config.batchers.deposit.batcher).toBeTruthy();
     expect(config.batchers.deposit.lookupTable).toBeTruthy(); // settle's v0-tx address lookup table
-    expect(config.kmsContext).toBeTruthy(); // certificate leg's context id
+    expect(config.kmsContext).toBeTruthy(); // certificate phase's context id
     expect(config.proofServiceUrl).toBeTruthy(); // MMR inclusion-proof source for settle
     expect(config.mints.joinConfidential).toBeTruthy(); // cUSDC (join)
     expect(config.mints.payoutConfidential).toBeTruthy(); // cShares (payout)
@@ -66,11 +66,11 @@ describe.skipIf(!runsDemoScenarios)("solana deposit-arc boundary", () => {
     // (3) The remaining, unwired pieces — the checklist that turns this boundary into the full arc.
     console.log(
       [
-        "deposit-arc boundary: wrap leg is live; join -> settle -> claim -> decrypt is NOT yet wired.",
+        "deposit-arc boundary: wrap phase is live; join -> settle -> claim -> decrypt is NOT yet wired.",
         "Remaining to wire (both are off-chain artifact PRODUCERS the demo cannot currently generate):",
         "  1. joinBatch: a real coprocessor input proof (SolanaZkProof + SolanaSubmitInputProofResult)",
         "     for the deposit amount — join takes these as inputs; the demo has no proof source.",
-        "  2. settleBatch: an FhevmRuntime for the KMS burn-certificate leg (the MMR inclusion proof",
+        "  2. settleBatch: an FhevmRuntime for the KMS burn-certificate phase (the MMR inclusion proof",
         "     from proofServiceUrl and the batcher/lookupTable/kmsContext roots are already seeded).",
         "Everything downstream of those (claim, decryptPosition) is exported and root-complete.",
       ].join("\n"),

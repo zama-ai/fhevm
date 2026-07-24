@@ -106,7 +106,7 @@ pub fn join<'info>(
         BatcherError::DerivedAccountMismatch
     );
 
-    // Leg 1: the attested confidential transfer into the batch account. The
+    // Phase 1: the attested confidential transfer into the batch account. The
     // user's outer signature propagates as the transfer authority — no
     // operator, no invoke_signed. All-or-zero: insufficient balance moves 0.
     ct::cpi::confidential_transfer(
@@ -138,7 +138,7 @@ pub fn join<'info>(
         amount_attestation,
     )?;
 
-    // Leg 2: re-materialize the just-transferred amount into the user's joined
+    // Phase 2: re-materialize the just-transferred amount into the user's joined
     // lineage. The batch authority reads the transferred lineage (it is in its
     // audience as the recipient owner) and accumulates: first join creates
     // `joined = transferred + 0`, repeats supersede to

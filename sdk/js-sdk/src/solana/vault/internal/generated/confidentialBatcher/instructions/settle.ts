@@ -283,7 +283,7 @@ export type SettleAsyncInput<
   /**
    * SPL mint the join confidential mint wraps (vault underlying for deposit
    * batchers, vault shares for redeem batchers). Mutable because it is the
-   * vault share mint on the redeem direction (leg 2 burns from it).
+   * vault share mint on the redeem direction (phase 2 burns from it).
    */
   joinUnderlyingMint: Address<TAccountJoinUnderlyingMint>;
   /** by the token CPI. */
@@ -300,14 +300,14 @@ export type SettleAsyncInput<
   vault: Address<TAccountVault>;
   vaultAuthority: Address<TAccountVaultAuthority>;
   vaultTokenAccount: Address<TAccountVaultTokenAccount>;
-  /** Batch's plain SPL account receiving the vault leg's output. */
+  /** Batch's plain SPL account receiving the vault phase's output. */
   batchPayoutUnderlying?: Address<TAccountBatchPayoutUnderlying>;
   /** Confidential mint claims pay out in. */
   payoutConfidentialMint: Address<TAccountPayoutConfidentialMint>;
   /**
    * SPL mint the payout confidential mint wraps (vault shares for deposit
    * batchers, vault underlying for redeem batchers). Mutable because it is
-   * the vault share mint on the deposit direction (leg 2 mints to it).
+   * the vault share mint on the deposit direction (phase 2 mints to it).
    */
   payoutUnderlyingMint: Address<TAccountPayoutUnderlyingMint>;
   batchPayoutTokenAccount: Address<TAccountBatchPayoutTokenAccount>;
@@ -734,7 +734,7 @@ export type SettleInput<
   /**
    * SPL mint the join confidential mint wraps (vault underlying for deposit
    * batchers, vault shares for redeem batchers). Mutable because it is the
-   * vault share mint on the redeem direction (leg 2 burns from it).
+   * vault share mint on the redeem direction (phase 2 burns from it).
    */
   joinUnderlyingMint: Address<TAccountJoinUnderlyingMint>;
   /** by the token CPI. */
@@ -751,14 +751,14 @@ export type SettleInput<
   vault: Address<TAccountVault>;
   vaultAuthority: Address<TAccountVaultAuthority>;
   vaultTokenAccount: Address<TAccountVaultTokenAccount>;
-  /** Batch's plain SPL account receiving the vault leg's output. */
+  /** Batch's plain SPL account receiving the vault phase's output. */
   batchPayoutUnderlying: Address<TAccountBatchPayoutUnderlying>;
   /** Confidential mint claims pay out in. */
   payoutConfidentialMint: Address<TAccountPayoutConfidentialMint>;
   /**
    * SPL mint the payout confidential mint wraps (vault shares for deposit
    * batchers, vault underlying for redeem batchers). Mutable because it is
-   * the vault share mint on the deposit direction (leg 2 mints to it).
+   * the vault share mint on the deposit direction (phase 2 mints to it).
    */
   payoutUnderlyingMint: Address<TAccountPayoutUnderlyingMint>;
   batchPayoutTokenAccount: Address<TAccountBatchPayoutTokenAccount>;
@@ -1138,7 +1138,7 @@ export type ParsedSettleInstruction<
     /**
      * SPL mint the join confidential mint wraps (vault underlying for deposit
      * batchers, vault shares for redeem batchers). Mutable because it is the
-     * vault share mint on the redeem direction (leg 2 burns from it).
+     * vault share mint on the redeem direction (phase 2 burns from it).
      */
     joinUnderlyingMint: TAccountMetas[6];
     /** by the token CPI. */
@@ -1155,14 +1155,14 @@ export type ParsedSettleInstruction<
     vault: TAccountMetas[14];
     vaultAuthority: TAccountMetas[15];
     vaultTokenAccount: TAccountMetas[16];
-    /** Batch's plain SPL account receiving the vault leg's output. */
+    /** Batch's plain SPL account receiving the vault phase's output. */
     batchPayoutUnderlying: TAccountMetas[17];
     /** Confidential mint claims pay out in. */
     payoutConfidentialMint: TAccountMetas[18];
     /**
      * SPL mint the payout confidential mint wraps (vault shares for deposit
      * batchers, vault underlying for redeem batchers). Mutable because it is
-     * the vault share mint on the deposit direction (leg 2 mints to it).
+     * the vault share mint on the deposit direction (phase 2 mints to it).
      */
     payoutUnderlyingMint: TAccountMetas[19];
     batchPayoutTokenAccount: TAccountMetas[20];

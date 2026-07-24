@@ -22,7 +22,7 @@ pub(crate) use verify_public_decrypt::*;
 /// keeps decrypt access to their own value, and the compute signer gates the next
 /// eval that reads it. [`DurableAudience::for_owner`] takes both as required
 /// parameters, so a holder output can never be built missing either; extra owners
-/// (the recipient leg of a `transferred_amount` rotation) are additive via
+/// (the recipient phase of a `transferred_amount` rotation) are additive via
 /// [`DurableAudience::with_owner`]. Mint-scoped lineages with no single holder
 /// (total supply, freshly minted random amounts) use
 /// [`DurableAudience::compute_only`], the one owner-less path.
@@ -56,7 +56,7 @@ impl DurableAudience {
         }
     }
 
-    /// Adds an extra owner subject (the recipient of a `transferred_amount` leg).
+    /// Adds an extra owner subject (the recipient of a `transferred_amount` phase).
     pub(crate) fn with_owner(mut self, owner: Pubkey) -> Self {
         self.extra_owners.push(owner);
         self

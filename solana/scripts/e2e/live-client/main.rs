@@ -120,7 +120,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     // coprocessor-attested external input (FheEvalOperand::VerifiedInput, re-verified in-frame via
     // secp256k1 with no scratch PDA) and a public scalar, binding the result to a durable output ACL
     // record under the attested acl_domain_key. The attestation comes from the same relayer
-    // input-proof the BIND_INPUT leg uses (BIND_* env); TE_ADD is the scalar addend (default 2);
+    // input-proof the BIND_INPUT phase uses (BIND_* env); TE_ADD is the scalar addend (default 2);
     // TE_ALLOW makes the result publicly decryptable. Proves encrypt V -> +2 -> decrypt V+2.
     if std::env::var("FHE_EVAL_VERIFIED_INPUT").is_ok() {
         fhe_eval_verified_input_add(&host, &payer, host_config)?;
@@ -706,7 +706,7 @@ fn trivial_encrypt_eval_with_label(
             system_program: system_program::ID,
             // Block-cap optional accounts: default cap is unrestricted, so existing flows
             // pass None/None and behave exactly as before the feature. The mandatory HCU
-            // authority is the payer itself for this wallet-driven PoC leg.
+            // authority is the payer itself for this wallet-driven PoC phase.
             hcu_block_meter: None,
             hcu_trusted_app_record: None,
             event_authority: zama_event_authority,
@@ -737,7 +737,7 @@ fn trivial_encrypt_eval_with_label(
     })
 }
 
-/// Eval-based compute leg: drives a single-step fhe_eval plan (one TrivialEncrypt step with a
+/// Eval-based compute phase: drives a single-step fhe_eval plan (one TrivialEncrypt step with a
 /// durable output ACL record). The host runs the eval executor, computes the result handle on-chain,
 /// creates the durable output ACL record
 /// (passed as the sole remaining_account). The live host-listener reconstructs the successful
@@ -1048,12 +1048,12 @@ fn historical_supersede_step(
     }
 }
 
-/// Input flow leg (#1539): one fhe_eval that adds a public scalar to a coprocessor-attested external
+/// Input flow phase (#1539): one fhe_eval that adds a public scalar to a coprocessor-attested external
 /// input and binds the result to a durable output ACL record. The verified input is resolved in-frame
 /// (FheEvalOperand::VerifiedInput) — its attestation is re-verified on-chain via secp256k1 with no
 /// scratch PDA — and the durable output is pinned to the attested acl_domain_key (the input's domain;
 /// the on-chain binding rejects any other). The attestation is supplied via the same BIND_* env vars
-/// the standalone input-verify leg uses; TE_ADD is the scalar addend (default 2). The host-listener
+/// the standalone input-verify phase uses; TE_ADD is the scalar addend (default 2). The host-listener
 /// reconstructs the successful frame so the tfhe-worker materializes (input + TE_ADD); TE_ALLOW
 /// then makes the result publicly decryptable.
 fn fhe_eval_verified_input_add(
@@ -1095,7 +1095,7 @@ fn fhe_eval_verified_input_add(
     scalar[24..32].copy_from_slice(&addend.to_be_bytes());
     let fhe_type: u8 = 5; // euint64
 
-    // Label distinct from the trivial-encrypt legs ([1]/[2] markers) so output PDAs never collide;
+    // Label distinct from the trivial-encrypt phases ([1]/[2] markers) so output PDAs never collide;
     // keyed on the input handle tail so distinct inputs derive distinct output records.
     let mut encrypted_value_label = [3u8; 32];
     encrypted_value_label[24..32].copy_from_slice(&input_handle[24..32]);
@@ -1154,7 +1154,7 @@ fn fhe_eval_verified_input_add(
             system_program: system_program::ID,
             // Block-cap optional accounts: default cap is unrestricted, so existing flows
             // pass None/None and behave exactly as before the feature. The mandatory HCU
-            // authority is the payer itself for this wallet-driven PoC leg.
+            // authority is the payer itself for this wallet-driven PoC phase.
             hcu_block_meter: None,
             hcu_trusted_app_record: None,
             event_authority: zama_event_authority,

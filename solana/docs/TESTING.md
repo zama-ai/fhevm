@@ -124,7 +124,7 @@ ported off bun APIs.
 Two rules the layer holds itself to:
 
 1. **Each behavior is tested at exactly one layer.** Mollusk owns instruction admission, guards,
-   arithmetic and cost; scenarios never re-test that territory. When a leg moves here, it is
+   arithmetic and cost; scenarios never re-test that territory. When a phase moves here, it is
    deleted from `full-vertical.sh` in the same change — no double coverage.
 2. **The harness carries zero protocol knowledge.** Scenarios reach the protocol only through
    `@fhevm/sdk` Solana actions, and assertion reads go through SDK read paths. A missing SDK
@@ -143,7 +143,7 @@ The harness (`e2e/harness/`):
 
 Scenarios (`e2e/scenarios/`) are environment-blind: they read `TestEnv`, gate on readiness with
 `until`, and drive SDK actions. `confidential-transfer.scenario.test.ts` is the confidential-transfer
-arc ported from the `[sdk-transfer]` leg of `full-vertical.sh`; its assertion-to-bash mapping is in
+arc ported from the `[sdk-transfer]` phase of `full-vertical.sh`; its assertion-to-bash mapping is in
 the file header.
 
 Run it locally against a stack that is already up (do **not** re-run `clean-e2e.sh` just for this):

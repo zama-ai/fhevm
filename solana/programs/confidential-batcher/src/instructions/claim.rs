@@ -127,7 +127,7 @@ pub fn claim<'info>(ctx: Context<'info, Claim<'info>>) -> Result<()> {
         BatcherError::DerivedAccountMismatch
     );
 
-    // Leg 1: the one MulDiv frame — the encrypted joined amount's exact
+    // Phase 1: the one MulDiv frame — the encrypted joined amount's exact
     // proportional share of the public aggregate payout.
     let joined_value = fhe::read_encrypted_value(&ctx.accounts.pending_join_value)?;
     let joined = fhe::uint64_operand(&joined_value)?;
@@ -187,7 +187,7 @@ pub fn claim<'info>(ctx: Context<'info, Claim<'info>>) -> Result<()> {
         },
     )?;
 
-    // Leg 2: transfer the freshly computed claim handle to the user.
+    // Phase 2: transfer the freshly computed claim handle to the user.
     let authority = BatchAuthoritySeeds::new(batch_key, ctx.accounts.batch.authority_bump);
     let authority_seeds = authority.seeds();
     ct::cpi::confidential_transfer_from_value(CpiContext::new_with_signer(

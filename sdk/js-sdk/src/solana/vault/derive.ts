@@ -37,9 +37,9 @@ export interface VaultDemoRoots {
   readonly hostProgram: Address;
   readonly batcher: Address;
   readonly vault: Address;
-  /** Confidential mint the batch total is burned on (join leg). */
+  /** Confidential mint the batch total is burned on (join phase). */
   readonly joinConfidentialMint: Address;
-  /** Confidential mint claims pay out in (payout leg). */
+  /** Confidential mint claims pay out in (payout phase). */
   readonly payoutConfidentialMint: Address;
   /** SPL mint `joinConfidentialMint` wraps. */
   readonly joinUnderlyingMint: Address;
@@ -61,7 +61,7 @@ export interface BatchAddresses {
   readonly batchPayoutTokenAccount: Address;
   /** Plain SPL account receiving the redeemed batch total (join underlying). */
   readonly batchJoinUnderlying: Address;
-  /** Plain SPL account receiving the vault leg's output (payout underlying). */
+  /** Plain SPL account receiving the vault phase's output (payout underlying). */
   readonly batchPayoutUnderlying: Address;
   /** The batch's burned-amount lineage on the join mint (the settle proof's `encrypted_value`). */
   readonly batchBurnedAmountValue: Address;
