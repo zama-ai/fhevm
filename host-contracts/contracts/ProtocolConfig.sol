@@ -775,11 +775,8 @@ contract ProtocolConfig is IProtocolConfig, UUPSUpgradeableEmptyProxy, ACLOwnabl
 
     /// @inheritdoc IProtocolConfig
     function getKmsGenThresholdForContext(uint256 kmsContextId) external view virtual returns (uint256) {
-        // `_isLiveKmsContext` is used so a `Created` (not yet `Active`) context's key-generation
-        // threshold is readable during resharing, unlike the peer per-context threshold getters that
-        // require an `Active` context. The threshold is stored at context-creation time, so it is
-        // populated for a live context. A non-active context's threshold is not authoritative for the
-        // active committee. Callers must not treat it as such.
+        // The live check (not the active-only check) keeps the kmsGen threshold readable during
+        // resharing. See `IProtocolConfig.getKmsGenThresholdForContext` for the rationale.
         if (!_isLiveKmsContext(kmsContextId)) {
             revert InvalidKmsContext(kmsContextId);
         }
