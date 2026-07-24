@@ -69,6 +69,7 @@ const TEST_PROFILE_NAMES = [
   "ciphertext-drift-auto-recovery",
   "coprocessor-db-state-revert",
   "heavy",
+  "hcu-block-cap-random",
   "kms-context-switch",
   "kms-generation",
   "kms-generation-random",
@@ -121,6 +122,7 @@ const TEST_PROFILE_DESCRIPTIONS: Partial<Record<(typeof TEST_PROFILE_NAMES)[numb
   "random-subset": "Run a narrower random generation subset.",
   operators: "Run manual operator workflows.",
   "hcu-block-cap": "Run HCU block cap scenarios.",
+  "hcu-block-cap-random": "Run HCU block cap scenarios, then the Rand subset on the same stack.",
   erc20: "Run ERC20 transfer coverage.",
   "negative-acl": "Run negative ACL scenarios.",
   "multi-chain-isolation": "Run multi-chain state isolation coverage.",
@@ -1492,6 +1494,17 @@ export const test = async (testName: string | undefined, options: TestOptions) =
       }
       await runNamedE2e(options, grep, "kms-generation-random: random-subset");
       console.log("[kms-generation-random] PASS — threshold KMS audit and Rand repro completed on one stack");
+      return;
+    }
+    if (name === "hcu-block-cap-random") {
+      const hcuGrep = TEST_GREP["hcu-block-cap"];
+      const randomGrep = TEST_GREP["random-subset"];
+      if (!hcuGrep || !randomGrep) {
+        throw new PreflightError("hcu-block-cap-random: missing HCU or random-subset grep pattern");
+      }
+      await runNamedE2e(options, hcuGrep, "hcu-block-cap-random: HCU block cap");
+      await runNamedE2e(options, randomGrep, "hcu-block-cap-random: Rand subset");
+      console.log("[hcu-block-cap-random] PASS — HCU block cap and Rand passed on one stack");
       return;
     }
     if (name === "kms-generation-abort") {
