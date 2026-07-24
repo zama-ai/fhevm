@@ -1,6 +1,6 @@
 import { expect } from 'chai';
 import { Wallet } from 'ethers';
-import hre, { run } from 'hardhat';
+import hre from 'hardhat';
 
 import { getPauserSetContract } from '../../tasks/utils/loadVariables';
 
@@ -19,7 +19,7 @@ describe('Pauser tasks', function () {
     process.env.NUM_PAUSERS = '1';
     process.env.PAUSER_ADDRESS_0 = newPauser;
 
-    await run('task:addHostPausers', { useInternalProxyAddress: true });
+    await hre.run('task:addHostPausers', { useInternalProxyAddress: true });
 
     expect(await pauserSet.isPauser(newPauser)).to.eq(true);
   });
@@ -30,7 +30,7 @@ describe('Pauser tasks', function () {
 
     expect(await pauserSet.isPauser(pauserToRemove)).to.eq(true);
 
-    await run('task:removeHostPauser', {
+    await hre.run('task:removeHostPauser', {
       useInternalProxyAddress: true,
       pauserAddress: pauserToRemove,
     });
@@ -46,7 +46,7 @@ describe('Pauser tasks', function () {
     expect(await pauserSet.isPauser(oldPauser)).to.eq(true);
     expect(await pauserSet.isPauser(newPauser)).to.eq(false);
 
-    await run('task:swapHostPauser', {
+    await hre.run('task:swapHostPauser', {
       useInternalProxyAddress: true,
       oldPauserAddress: oldPauser,
       newPauserAddress: newPauser,
