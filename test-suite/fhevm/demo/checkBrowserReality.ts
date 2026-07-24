@@ -1,4 +1,4 @@
-// checkBrowserReality — acceptance #5, run as a step of the demo-acceptance workflow.
+// checkBrowserReality — acceptance #5, run as a step of the solana-e2e workflow's demo phase.
 //
 // A Vite-origin dApp (#1761) reaches the relayer, the proof service and the faucet with browser
 // fetch(), so each must answer a CORS preflight (OPTIONS) with a permissive

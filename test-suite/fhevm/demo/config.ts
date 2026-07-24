@@ -47,7 +47,7 @@ export const DEMO_CONFIG_DEFAULT_PATH = ".fhevm/runtime/solana-demo.json";
 
 /**
  * The config path every producer/consumer honors: `DEMO_CONFIG_PATH` if set, else the CWD-relative
- * default. demo-up.sh and the acceptance workflow export an ABSOLUTE `DEMO_CONFIG_PATH` ($ROOT-based)
+ * default. demo-up.sh and the solana-e2e workflow export an ABSOLUTE `DEMO_CONFIG_PATH` ($ROOT-based)
  * so the path is stable regardless of which directory a step runs from (the seed runs from
  * test-suite/fhevm, later steps from the repo root). Resolved at call time so the env is read live.
  */

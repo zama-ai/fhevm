@@ -10,7 +10,7 @@
 //     https://github.com/solana-program/token — processor `Instruction::MintTo`.
 //
 // This process holds a live validator connection and cannot be unit-tested offline; it is exercised
-// only by the `solana-demo-acceptance` workflow (manual dispatch), which starts it and funds the
+// only by the `solana-e2e` workflow's demo phase (per-PR and manual dispatch), which starts it and funds the
 // deposit-arc persona through it. The pure request handler it serves IS unit-tested (`faucet.test.ts`).
 
 import fs from "node:fs/promises";

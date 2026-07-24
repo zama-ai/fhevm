@@ -1,7 +1,7 @@
 // Scenario: deposit arc — FULL ARC (#1760): wrap -> join -> dispatch -> settle -> claim ->
 // decrypt, the live-cluster exercise of the confidential vault's forward path via
-// `@fhevm/sdk/solana/vault`. Run as `demo:smoke` and hard-gated by the solana-demo-acceptance
-// workflow: every phase is expected to pass live.
+// `@fhevm/sdk/solana/vault`. Run as `demo:smoke` and hard-gated by the solana-e2e
+// workflow's demo phase: every phase is expected to pass live.
 //
 // The arc: fund a persona, initialize her confidential token accounts, wrap mock USDC into a
 // confidential cUSDC balance (a PUBLIC-amount escrow that needs no input proof), JOIN the pending

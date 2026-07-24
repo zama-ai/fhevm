@@ -39,7 +39,7 @@ services:
       - ${FHEVM_STATE_DIR:-../../../.fhevm}/runtime/env/relayer.env
     environment:
       # Opt-in permissive CORS for the local confidential-vault demo dApp (#1760/#1761). Only the demo
-      # bring-up (demo-up.sh / the solana-demo-acceptance workflow) exports RELAYER_PERMISSIVE_CORS;
+      # bring-up (demo-up.sh / the solana-e2e workflow's demo phase) exports RELAYER_PERMISSIVE_CORS;
       # unset, this resolves to an empty string and the relayer's CORS gate stays OFF (it accepts only
       # "1"/"true"), so non-demo compose-ups are behaviourally identical. The container's other env
       # source is the generated relayer.env (env_file above), which host-shell exports never reach —

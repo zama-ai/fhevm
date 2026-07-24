@@ -5,7 +5,7 @@
 // STATUS: live-only, UNVERIFIED offline. It provisions real on-chain state against a running local
 // validator with the two demo programs deployed (their keypairs are classifier-gated in this
 // environment — see solana/scripts/demo/demo-keypairs/README). It is exercised end-to-end only by the
-// `solana-demo-acceptance` workflow (manual dispatch), which deploys the programs and runs
+// `solana-e2e` workflow's demo phase (per-PR and manual dispatch), which deploys the programs and runs
 // `demo-up.sh` (which calls this) before the smoke. The SDK provisioning surface is reached through
 // the runtime dynamic-import seam (string module specifier) the rest of test-suite uses, because the
 // SDK's generated `_types` are not built at `tsc` check time (see `src/solana/current-user-decrypt.ts`).
