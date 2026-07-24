@@ -73,10 +73,6 @@ async function parameters(overrides: Partial<SolanaVaultJoinParameters> = {}): P
     batcher: key(4),
     batch: key(5),
     joinConfidentialMint,
-    userBalanceValue: key(6),
-    batchBalanceValue: key(7),
-    userTransferredValue: key(8),
-    pendingJoinValue: key(9),
     hostConfig: key(10),
     ...overrides,
   } satisfies SolanaVaultJoinParameters;

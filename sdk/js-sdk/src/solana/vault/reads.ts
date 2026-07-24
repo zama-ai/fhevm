@@ -8,6 +8,7 @@ import {
   getU64Decoder,
   getU8Decoder,
   type Address,
+  type FetchAccountConfig,
   type Rpc,
   type SolanaRpcApi,
 } from '@solana/kit';
@@ -15,18 +16,36 @@ import {
 import type { Bytes32 } from '../../core/types/primitives.js';
 import { fetchBatch, type Batch } from './internal/generated/confidentialBatcher/accounts/batch.js';
 import { fetchBatcher, type Batcher } from './internal/generated/confidentialBatcher/accounts/batcher.js';
+import { fetchJoinRecord, type JoinRecord } from './internal/generated/confidentialBatcher/accounts/joinRecord.js';
 import { deriveBatchAddresses, type BatchAddresses, type VaultDemoRoots } from './derive.js';
 
 /** The batcher config's decoded on-chain state (generated decoder). */
 export type BatcherState = Batcher;
 /** A batch's decoded on-chain state (generated decoder). */
 export type BatchState = Batch;
+/** A `(batch, user)` join record's decoded on-chain state (generated decoder). */
+export type JoinRecordState = JoinRecord;
 
 type SolanaRpc = Rpc<SolanaRpcApi>;
 
 /** Reads a batcher config via the generated `Batcher` decoder. */
 export async function getBatcher(rpc: SolanaRpc, batcher: Address): Promise<BatcherState> {
   const account = await fetchBatcher(rpc, batcher);
+  return account.data;
+}
+
+/**
+ * Reads a `(batch, user)` join record via the generated `JoinRecord` decoder — derive the address
+ * with `deriveJoinRecordAddress`. Throws if the record does not exist (the user never joined the
+ * batch). `config` is the standard fetch passthrough, e.g. `{ commitment: 'confirmed' }` to observe
+ * a claim before finalization.
+ */
+export async function getJoinRecord(
+  rpc: SolanaRpc,
+  joinRecord: Address,
+  config?: FetchAccountConfig,
+): Promise<JoinRecordState> {
+  const account = await fetchJoinRecord(rpc, joinRecord, config);
   return account.data;
 }
 
@@ -50,7 +69,7 @@ export async function getCurrentBatch(
 }
 
 /**
- * The subset of an `EncryptedValue` lineage the settle legs need: the live handle, the MMR leaf
+ * The subset of an `EncryptedValue` value account the settle phases need: the live handle, the MMR leaf
  * count, and the live peaks that a proof is verified against.
  *
  * (a) DELIBERATE, REVIEWED DEVIATION — hand-rolled, not generated. Every other account decoder in
@@ -64,7 +83,7 @@ export async function getCurrentBatch(
  *       [8-byte discriminator][aclDomainKey: 32][appAccount: 32][encryptedValueLabel: 32]
  *       [currentHandle: 32][subjects: Vec<32-byte grant>][leafCount: u64][peaks: Vec<32>][bump: u8]
  *     The discriminator is sliced off before this decoder runs; `subjects` is decoded and discarded
- *     (the settle legs never read it — only its length matters, to advance the cursor).
+ *     (the settle phases never read it — only its length matters, to advance the cursor).
  *
  * (c) FRAGILITY — each `subjects` element is decoded as a bare 32-byte grant. If the crate's
  *     `EncryptedValueSubjectGrant` ever gains a field, its element size stops being 32 and THIS
