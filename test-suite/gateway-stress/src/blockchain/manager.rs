@@ -17,7 +17,7 @@ use alloy::{
     network::EthereumWallet,
     providers::{
         Identity, ProviderBuilder, RootProvider,
-        fillers::{ChainIdFiller, JoinFill, WalletFiller},
+        fillers::{ChainIdFiller, FillProvider, JoinFill, WalletFiller},
     },
 };
 use anyhow::anyhow;
@@ -33,12 +33,10 @@ use tokio::{
 use tracing::{Instrument, info};
 
 /// The provider used to interact with the Gateway.
-pub type AppProvider = NonceManagedProvider<
-    JoinFill<
-        JoinFill<JoinFill<Identity, ChainIdFiller>, FillersWithoutNonceManagement>,
-        WalletFiller<EthereumWallet>,
-    >,
-    RootProvider,
+pub type AppProvider = NonceManagedProvider<FillProvider<AppFillers, RootProvider>>;
+type AppFillers = JoinFill<
+    JoinFill<JoinFill<Identity, ChainIdFiller>, FillersWithoutNonceManagement>,
+    WalletFiller<EthereumWallet>,
 >;
 
 /// A struct used to perform the load/stress testing of the Gateway.

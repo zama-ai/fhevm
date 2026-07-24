@@ -10,7 +10,7 @@ use alloy::{
     primitives::{FixedBytes, U256},
     providers::Provider,
     rpc::types::{Log, TransactionReceipt},
-    sol_types::{self, SolEvent},
+    sol_types,
 };
 use anyhow::anyhow;
 use fhevm_gateway_bindings::decryption::Decryption::{

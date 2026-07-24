@@ -1,5 +1,5 @@
 use crate::decryption::types::DecryptionType;
-use clap::{Args, Parser, Subcommand, command};
+use clap::{Args, Parser, Subcommand};
 use std::{path::PathBuf, str::FromStr, time::Duration};
 
 #[derive(Parser)]

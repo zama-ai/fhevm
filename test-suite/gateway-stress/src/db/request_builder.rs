@@ -6,7 +6,7 @@ use alloy::primitives::{Address, Bytes, U256};
 use fhevm_gateway_bindings::decryption::Decryption::{
     PublicDecryptionRequest, SnsCiphertextMaterial, UserDecryptionRequest,
 };
-use rand::Rng;
+use rand::RngExt;
 
 pub struct RequestBuilder {
     id_counter: U256,
