@@ -7,7 +7,11 @@ const connector = "v0.12.0";
 
 // Mainnet cutover state on 2026-07-13. Contracts and the relayer had already
 // moved; coprocessor services had not. The serving KMS cores were then replaced
-// one operator at a time while the connector stayed on v0.12.0.
+// one operator at a time while the connector stayed on v0.12.0. A fresh
+// v0.12.1 gateway deployment no longer includes the MultichainACL contract
+// required by the deployed v0.11.0 transaction sender, so the self-contained
+// reproduction uses the compatible v0.12.0 sender. The incident-critical KMS
+// and client versions remain exact.
 export const from = {
   RELAYER_VERSION: "v0.11.1",
   RELAYER_MIGRATE_VERSION: "v0.11.0",
@@ -21,7 +25,7 @@ export const from = {
   COPROCESSOR_DB_MIGRATION_VERSION: coprocessor,
   COPROCESSOR_HOST_LISTENER_VERSION: coprocessor,
   COPROCESSOR_GW_LISTENER_VERSION: coprocessor,
-  COPROCESSOR_TX_SENDER_VERSION: coprocessor,
+  COPROCESSOR_TX_SENDER_VERSION: "v0.12.0",
   COPROCESSOR_TFHE_WORKER_VERSION: coprocessor,
   COPROCESSOR_ZKPROOF_WORKER_VERSION: coprocessor,
   COPROCESSOR_SNS_WORKER_VERSION: coprocessor,
@@ -38,4 +42,5 @@ export const versionSources = [
   "kms-core=v0.13.3->v0.13.10",
   "kms-connector=v0.12.0",
   "relayer-sdk=0.4.2",
+  "harness-tx-sender=v0.12.0",
 ];

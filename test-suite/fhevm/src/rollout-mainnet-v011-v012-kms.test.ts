@@ -19,6 +19,7 @@ describe("mainnet v0.11 to v0.12 KMS rollout", () => {
       HOST_VERSION: "v0.12.1",
       CORE_VERSION: "v0.13.3",
       CONNECTOR_KMS_WORKER_VERSION: "v0.12.0",
+      COPROCESSOR_TX_SENDER_VERSION: "v0.12.0",
       COPROCESSOR_TFHE_WORKER_VERSION: "v0.11.0",
       RELAYER_SDK_VERSION: "0.4.2",
     });
