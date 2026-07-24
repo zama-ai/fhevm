@@ -412,9 +412,13 @@ jobs:
       needs.check-labels.outputs.should_deploy == 'true' &&
       needs.resolve-tags.result == 'success'
     runs-on: "runs-on=${{ github.run_id }}/runner=8cpu-linux-x64/spot=false"
-    # 90m covers a plain deploy; the automated_tests run adds the sequential
-    # e2e DAG (8 tests, each recompiling contracts), so allow headroom for it.
-    timeout-minutes: 150
+    # Budget must cover, in one sequential job: pre-keygen deploys (~45m) + the real
+    # --params-type 0 keygen/crsgen ceremony (up to 4h + 3h in the values file's
+    # in-script polls, matched by the keygen step's Helm --timeout=7h30m) + the
+    # automated_tests e2e DAG (8 tests, each recompiling contracts, ~2h). 600m (10h)
+    # leaves headroom. Safe to exceed GitHub's 6h ceiling because this runs on a
+    # RunsOn self-hosted ephemeral instance (spot=false, won't be interrupted).
+    timeout-minutes: 600
     permissions:
       pull-requests: write # Required to comment on the PR with connection info
     env:
@@ -1084,10 +1088,13 @@ jobs:
       ######################################################################
       - name: Trigger KMS keygen + CRS generation
         run: |
+          # keygen + crsgen run sequentially in this ONE Job (the values file's
+          # in-script polls allow keygen 4h + crsgen 3h with --params-type 0), so
+          # Helm must wait for the whole thing - hence 7h30m, not the old 45m.
           helm upgrade --install host-trigger-keygen "${CONTRACTS_CHART}" --version "${CONTRACTS_CHART_VERSION}" \
             -n "${NAMESPACE}" -f ci/preview-env/host-chain/values-host-trigger-keygen-e2e.yaml \
             --set-string "scDeploy.image.tag=$(jq -r .host_contracts <<<"${TAGS_JSON}")" \
-            --wait --wait-for-jobs --timeout=45m
+            --wait --wait-for-jobs --timeout=7h30m
 
       ######################################################################
       # RELAYER + TEST-SUITE: generic `common` chart + published images.
