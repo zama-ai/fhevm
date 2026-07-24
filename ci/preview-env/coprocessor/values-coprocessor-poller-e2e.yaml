@@ -62,12 +62,15 @@ hostListenerPollerShared:
   # --dependence-cross-block matches the production poller (resolves FHE-op
   # dependencies spanning blocks). --finality-lag kept small: single-node anvil
   # never reorgs, so events don't need to be held back (prod uses 15 on a live
-  # chain). --seed-start-block was a removed v0.11.0-era flag; the v0.13.0 poller
-  # starts cleanly with no prior state on a fresh e2e namespace.
+  # chain). --seed-start-block=0 is REQUIRED: the HEAD host-listener image aborts
+  # with "no poller state for this chain and no --seed-start-block; set it
+  # explicitly (0 for genesis)" on a fresh e2e namespace (no prior poller state).
+  # 0 = start from genesis, correct for a per-PR anvil created at this deploy.
   extraArgs:
     - --log-level=INFO
     - --dependence-cross-block
     - --finality-lag=1
+    - --seed-start-block=0
   # Light DB/RPC poller - no FHE compute, so the generic zws-pool node pool (same
   # as the listener / Redis / Postgres releases), not the heavy coprocessor pool.
   resources:

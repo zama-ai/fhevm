@@ -64,11 +64,14 @@ hostListenerPollerShared:
   # poller.
   serviceAccountName: coprocessor
   # Same flags as the ETH poller (values-coprocessor-poller-e2e.yaml): single-node
-  # anvil never reorgs, so finality-lag stays small.
+  # anvil never reorgs, so finality-lag stays small. --seed-start-block=0 is
+  # REQUIRED on the HEAD host-listener image (fresh namespace has no prior poller
+  # state); 0 = start from the Polygon anvil's genesis.
   extraArgs:
     - --log-level=INFO
     - --dependence-cross-block
     - --finality-lag=1
+    - --seed-start-block=0
   resources:
     requests: {cpu: "500m", memory: 1Gi}
     limits: {cpu: "1", memory: 2Gi}

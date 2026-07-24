@@ -930,6 +930,7 @@ jobs:
               --set "snsWorker.config.s3BucketName.valueFrom.configMapKeyRef.name=coprocessor-${i}" \
               --set-string "hostListenerConsumerShared.config.brokerUrl.value=redis://coprocessor-redis-${i}-master:6379" \
               --set-string "txSender.wallet.secret.value=${privkey}" \
+              --set-string "snsWorker.wallet.secret.value=${privkey}" \
               --set-string "dbMigration.image.tag=$(jq -r .coprocessor_db_migration <<<"${TAGS_JSON}")" \
               --set-string "gwListener.image.tag=$(jq -r .coprocessor_gw_listener <<<"${TAGS_JSON}")" \
               --set-string "hostListenerShared.image.tag=$(jq -r .coprocessor_host_listener <<<"${TAGS_JSON}")" \
@@ -1046,6 +1047,11 @@ jobs:
           decryption=$(kubectl get configmap gw-sc-addresses -n "${NAMESPACE}" -o jsonpath='{.data.decryption\.address}')
           gateway_config=$(kubectl get configmap gw-sc-addresses -n "${NAMESPACE}" -o jsonpath='{.data.gateway_config\.address}')
           kms_generation=$(kubectl get configmap host-sc-addresses -n "${NAMESPACE}" -o jsonpath='{.data.kms_generation\.address}')
+          # protocol_config: chart 1.5.4 requires the ProtocolConfig address for
+          # every connector component (gw-listener/kms-worker/tx-sender all render
+          # KMS_CONNECTOR_PROTOCOL_CONFIG_CONTRACT__ADDRESS); missing it aborts
+          # startup with "ProtocolConfig address is not configured".
+          protocol_config=$(kubectl get configmap host-sc-addresses -n "${NAMESPACE}" -o jsonpath='{.data.protocol_config\.address}')
           acl=$(kubectl get configmap host-sc-addresses -n "${NAMESPACE}" -o jsonpath='{.data.acl\.address}')
           # kms_verifier: chart 1.5.2 defaults kmsVerifier to the zero address
           # (parses fine), so only wire a real value when we have one.
@@ -1053,6 +1059,7 @@ jobs:
           require_nonempty "gw-sc-addresses[decryption.address]" "${decryption}"
           require_nonempty "gw-sc-addresses[gateway_config.address]" "${gateway_config}"
           require_nonempty "host-sc-addresses[kms_generation.address]" "${kms_generation}"
+          require_nonempty "host-sc-addresses[protocol_config.address]" "${protocol_config}"
           require_nonempty "host-sc-addresses[acl.address]" "${acl}"
           kms_verifier_args=()
           if [[ -n "${kms_verifier}" ]]; then
@@ -1076,7 +1083,8 @@ jobs:
               "${polygon_args[@]}" \
               --set-string "commonConfig.gatewayContractAddresses.decryption=${decryption}" \
               --set-string "commonConfig.gatewayContractAddresses.gatewayConfig=${gateway_config}" \
-              --set-string "commonConfig.gatewayContractAddresses.kmsGeneration=${kms_generation}" \
+              --set-string "commonConfig.ethereumContractAddresses.kmsGeneration=${kms_generation}" \
+              --set-string "commonConfig.ethereumContractAddresses.protocolConfig=${protocol_config}" \
               --set-string "commonConfig.ethereumContractAddresses.acl=${acl}" \
               "${kms_verifier_args[@]}" \
               --set-string "commonConfig.databaseUrl=postgresql://zama:zama@postgres-connector-${i}:5432/connector" \
