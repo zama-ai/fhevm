@@ -1,0 +1,20 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n                INSERT INTO dependence_chain(\n                    dependence_chain_id,\n                    status,\n                    last_updated_at,\n                    dependency_count,\n                    dependents,\n                    block_hash,\n                    block_height,\n                    schedule_priority\n                ) VALUES (\n                  $1, 'updated', $2::timestamp, $3, $4, $5, $6, $7\n                )\n                ON CONFLICT (dependence_chain_id) DO UPDATE\n                SET status = 'updated',\n                    last_updated_at = CASE\n                        WHEN dependence_chain.status = 'processed' THEN EXCLUDED.last_updated_at\n                        ELSE LEAST(dependence_chain.last_updated_at, EXCLUDED.last_updated_at)\n                    END,\n                    dependents = (\n                        SELECT ARRAY(\n                            SELECT DISTINCT d\n                            FROM unnest(dependence_chain.dependents || EXCLUDED.dependents) AS d\n                        )\n                    )\n                    ,\n                    -- Rebind the block context to the newest observation. A\n                    -- DCID conflict only arises from a replay of the same\n                    -- block or of a fork sibling carrying the same\n                    -- transaction (the component hash is a tx hash, and one\n                    -- tx cannot occupy two canonical blocks). Keeping the\n                    -- first writer's context starves the re-mined copy after\n                    -- a reorg: the worker resolves work through the recorded\n                    -- block hash, finds only the orphaned branch's completed\n                    -- copies, and re-marks the chain processed while the\n                    -- canonical branch's computation never executes.\n                    block_hash = EXCLUDED.block_hash,\n                    block_height = EXCLUDED.block_height,\n                    schedule_priority = GREATEST(\n                        dependence_chain.schedule_priority,\n                        EXCLUDED.schedule_priority\n                    )\n                ",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Bytea",
+        "Timestamp",
+        "Int4",
+        "ByteaArray",
+        "Bytea",
+        "Int8",
+        "Int2"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "725d32cbabbb74e740888ca582fc53910c38becf50a5e2c03549e01d1f1d7fe3"
+}

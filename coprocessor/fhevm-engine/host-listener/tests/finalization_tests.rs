@@ -118,6 +118,141 @@ async fn finalization_refuses_mismatched_parent_and_stops_batch() {
     }
 }
 
+/// A node's two ingestion paths can transiently disagree about canonicality
+/// (flapping LB, consumer stream fed from a different backend): the fork side
+/// finalizes first and wrongly orphans the canonical row. Once the oracles
+/// reconcile (by-number answers canonical again), the orphaned canonical row
+/// must RESURRECT — it is positively anchored on its finalized parent — and
+/// finalizing it orphans the stale fork branch recursively. Without
+/// resurrection the settlement frontier wedges below the height forever.
+#[tokio::test]
+#[serial(db)]
+async fn wrongly_orphaned_canonical_row_resurrects_with_finalized_anchor() {
+    let (mut db, _inst) = fresh_db(CHAIN_ID).await;
+    let (a1, c2, f2, c3, f3) =
+        (b32(0xA1), b32(0xC2), b32(0xF2), b32(0xC3), b32(0xF3));
+
+    seed_block(&db, 1, &a1, &b32(0xA0), "finalized").await;
+    // The fork oracle won the race: fork blocks finalized, canonical sibling
+    // wrongly orphaned (it was ingested by the second oracle).
+    seed_block(&db, 2, &f2, &a1, "finalized").await;
+    seed_block(&db, 2, &c2, &a1, "orphaned").await;
+    seed_block(&db, 3, &f3, &f2, "finalized").await;
+    seed_block(&db, 3, &c3, &c2, "pending").await;
+    seed_settled_height(&db, 1).await;
+
+    // Oracles reconciled: by-number now serves the canonical chain.
+    let chain = [(2u64, c2.clone()), (3u64, c3.clone())];
+    update_finalized_blocks_aux(&mut db, 3, 0, 0, |n| {
+        let hash = chain
+            .iter()
+            .find(|(num, _)| *num == n)
+            .map(|(_, h)| alloy::primitives::FixedBytes::<32>::from_slice(h))
+            .expect("requested block");
+        async move { Ok(hash) }
+    })
+    .await;
+
+    assert_eq!(
+        block_status(&db, &c2).await.as_deref(),
+        Some("finalized"),
+        "the wrongly-orphaned canonical row must resurrect on its anchor"
+    );
+    for (hash, what) in [(&f2, "stale fork block"), (&f3, "stale fork child")] {
+        assert_eq!(
+            block_status(&db, hash).await.as_deref(),
+            Some("orphaned"),
+            "{what} must be orphaned once the canonical sibling finalizes"
+        );
+    }
+    assert_eq!(
+        block_status(&db, &c3).await.as_deref(),
+        Some("finalized"),
+        "the canonical child finalizes on top of the resurrected parent"
+    );
+}
+
+/// A height where EVERY row is orphaned (both siblings lost a finalization
+/// race during split ingestion) is invisible to the pending queue and has no
+/// finalized row for plain revalidation — yet it is not a bare gap, so it
+/// holds settlement. The revalidation queue must select such heights so the
+/// anchored canonical row can resurrect; otherwise the wedge is terminal.
+#[tokio::test]
+#[serial(db)]
+async fn all_orphaned_height_is_revalidated_and_resurrects() {
+    let (mut db, _inst) = fresh_db(CHAIN_ID).await;
+    let (a1, c2, f2, c3) = (b32(0xA1), b32(0xC2), b32(0xF2), b32(0xC3));
+
+    seed_block(&db, 1, &a1, &b32(0xA0), "finalized").await;
+    seed_block(&db, 2, &c2, &a1, "orphaned").await;
+    seed_block(&db, 2, &f2, &a1, "orphaned").await;
+    seed_block(&db, 3, &c3, &c2, "pending").await;
+    seed_settled_height(&db, 1).await;
+
+    let chain = [(2u64, c2.clone()), (3u64, c3.clone())];
+    update_finalized_blocks_aux(&mut db, 3, 0, 0, |n| {
+        let hash = chain
+            .iter()
+            .find(|(num, _)| *num == n)
+            .map(|(_, h)| alloy::primitives::FixedBytes::<32>::from_slice(h))
+            .expect("requested block");
+        async move { Ok(hash) }
+    })
+    .await;
+
+    assert_eq!(
+        block_status(&db, &c2).await.as_deref(),
+        Some("finalized"),
+        "the canonical row at an all-orphaned height must resurrect"
+    );
+    assert_eq!(
+        block_status(&db, &f2).await.as_deref(),
+        Some("orphaned"),
+        "the fork sibling stays orphaned"
+    );
+    assert_eq!(
+        block_status(&db, &c3).await.as_deref(),
+        Some("finalized"),
+        "the child finalizes on top of the resurrected parent"
+    );
+}
+
+/// Resurrection demands a POSITIVE finalized-parent anchor — an orphaned row
+/// whose parent is missing (or not finalized) stays refused even when the
+/// by-number answer names it: the vacuous pass that fresh finalization
+/// enjoys must not extend to resurrection, or a poisoned RPC could revive
+/// arbitrary orphaned fork blocks behind a gap.
+#[tokio::test]
+#[serial(db)]
+async fn orphaned_row_without_anchor_is_not_resurrected() {
+    let (mut db, _inst) = fresh_db(CHAIN_ID).await;
+    let (o3, s3, x2) = (b32(0xD3), b32(0xE3), b32(0x0F));
+
+    // Orphaned row at height 3 whose recorded parent (x2) has no stored row,
+    // plus a stale finalized sibling so the revalidation queue selects the
+    // height and actually calls finalization with the orphaned row's hash.
+    seed_block(&db, 3, &o3, &x2, "orphaned").await;
+    seed_block(&db, 3, &s3, &b32(0x0E), "finalized").await;
+    seed_settled_height(&db, 1).await;
+
+    let served = [(3u64, o3.clone())];
+    update_finalized_blocks_aux(&mut db, 3, 0, 0, |n| {
+        let hash = served
+            .iter()
+            .find(|(num, _)| *num == n)
+            .map(|(_, h)| alloy::primitives::FixedBytes::<32>::from_slice(h))
+            .expect("requested block");
+        async move { Ok(hash) }
+    })
+    .await;
+
+    assert_eq!(
+        block_status(&db, &o3).await.as_deref(),
+        Some("orphaned"),
+        "no vacuous resurrection without a finalized parent anchor"
+    );
+}
+
 /// An RPC fetch failure mid-batch must STOP the batch, not skip the height:
 /// behind the gap the parent-linkage check has no finalized predecessor and
 /// passes vacuously, so a poisoned RPC that errors at height 3 and serves a
@@ -320,6 +455,43 @@ async fn prune_keeps_referenced_orphaned_and_recent_rows() {
         block_status(&db, &recent).await.as_deref(),
         Some("finalized"),
         "rows within the retention window must survive"
+    );
+}
+
+/// The row AT the settlement frontier is the parent-linkage anchor for
+/// finalizing (and resurrecting) height frontier+1. When settlement wedges
+/// far below the finalized head, retention-based pruning must not delete
+/// it — otherwise the linkage check degrades to a vacuous pass and a
+/// wrongly-orphaned frontier+1 row can never resurrect.
+#[tokio::test]
+#[serial(db)]
+async fn prune_keeps_the_settlement_frontier_anchor_row() {
+    let (db, _inst) = fresh_db(CHAIN_ID).await;
+    let (below_frontier, at_frontier, above_frontier) =
+        (b32(0x11), b32(0x12), b32(0x13));
+
+    seed_block(&db, 499, &below_frontier, &b32(0), "finalized").await;
+    seed_block(&db, 500, &at_frontier, &b32(0), "finalized").await;
+    seed_block(&db, 501, &above_frontier, &b32(0), "finalized").await;
+    seed_settled_height(&db, 500).await;
+
+    // Finalized head far ahead: plain retention would prune everything here.
+    let pruned = db
+        .prune_finalized_block_history(50_000)
+        .await
+        .expect("prune");
+    assert_eq!(pruned, 1, "only the row strictly below the frontier goes");
+
+    assert_eq!(block_status(&db, &below_frontier).await, None);
+    assert_eq!(
+        block_status(&db, &at_frontier).await.as_deref(),
+        Some("finalized"),
+        "the frontier row is the linkage anchor for frontier+1 and must survive"
+    );
+    assert_eq!(
+        block_status(&db, &above_frontier).await.as_deref(),
+        Some("finalized"),
+        "unsettled rows above the frontier are live revalidation evidence"
     );
 }
 

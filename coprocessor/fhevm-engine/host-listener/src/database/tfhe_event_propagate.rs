@@ -1305,9 +1305,12 @@ impl Database {
 
     /// Finalizes `(block_number, block_hash)` and orphans its observed
     /// sibling forks. Returns `Ok(Some(orphaned_hashes))` on success and
-    /// `Ok(None)` when finalization was REFUSED (row missing, already
-    /// orphaned, or parent linkage contradicting the finalized predecessor);
-    /// callers must stop their ascending batch on `None`.
+    /// `Ok(None)` when finalization was REFUSED (row missing, orphaned
+    /// without a positive finalized-parent anchor, or parent linkage
+    /// contradicting the finalized predecessor); callers must stop their
+    /// ascending batch on `None`. An orphaned row anchored on a finalized
+    /// parent is resurrected: wrong orphanings from transiently split
+    /// ingestion oracles must heal once the oracles reconcile.
     pub async fn update_block_as_finalized(
         &self,
         tx: &mut Transaction<'_>,
@@ -1332,6 +1335,20 @@ impl Database {
         // letting the stale sibling veto correctly-anchored children would
         // then refuse every ancestor above it forever, since orphaning only
         // runs on success and the contradiction could never clear itself.
+        //
+        // An 'orphaned' target row is refused UNLESS it is positively
+        // anchored (a finalized row at h-1 matches its recorded parent). A
+        // node's two ingestion paths can transiently disagree about
+        // canonicality (a flapping load balancer, or a consumer stream fed
+        // from a different backend than the listener's socket): whichever
+        // side finalizes first orphans the other's rows, and without a
+        // resurrection path a wrongly-orphaned canonical block could never
+        // be re-finalized once the oracles reconcile — the settlement
+        // frontier would wedge below it forever. Resurrection demands
+        // strictly more evidence than a fresh finalization: no vacuous pass,
+        // only a positive finalized-parent anchor, and a poisoned RPC gains
+        // nothing (a fork block resurrects only if its own parent is
+        // finalized, i.e. that branch was already trusted).
         let finalized_result = sqlx::query!(
             r#"
             UPDATE host_chain_blocks_valid
@@ -1339,7 +1356,18 @@ impl Database {
             WHERE chain_id = $1
               AND block_hash = $2
               AND block_number = $3
-              AND block_status <> 'orphaned'
+              AND (
+                  block_status <> 'orphaned'
+                  OR EXISTS (
+                      SELECT 1
+                      FROM host_chain_blocks_valid anchor
+                      WHERE anchor.chain_id = $1
+                        AND anchor.block_number = $3 - 1
+                        AND anchor.block_status = 'finalized'
+                        AND host_chain_blocks_valid.parent_hash <> ''::BYTEA
+                        AND anchor.block_hash = host_chain_blocks_valid.parent_hash
+                  )
+              )
               AND NOT EXISTS (
                   SELECT 1
                   FROM host_chain_blocks_valid prev
@@ -2594,13 +2622,30 @@ impl Database {
     ) -> Result<HashSet<i64>, SqlxError> {
         // Revalidation is independent from pending finalization so undrained
         // work at the settlement frontier cannot starve newer pending blocks.
+        //
+        // All-orphaned heights are selected too: they are invisible to the
+        // pending queue (no pending row) and would otherwise be invisible
+        // here (no finalized row), yet they are not bare gaps — settlement
+        // must not cross them silently, so without revalidation they hold
+        // the frontier forever. Feeding the height through finalization
+        // either resurrects the canonical row (positively anchored on its
+        // finalized parent) or refuses and keeps settlement clamped — both
+        // are live outcomes instead of a terminal wedge.
         let blocks_number = sqlx::query!(
             r#"
             SELECT DISTINCT block_number
-            FROM host_chain_blocks_valid
-            WHERE block_status = 'finalized'
-              AND chain_id = $1
-              AND block_number BETWEEN $2 AND $3
+            FROM host_chain_blocks_valid b
+            WHERE b.chain_id = $1
+              AND b.block_number BETWEEN $2 AND $3
+              AND (
+                  b.block_status = 'finalized'
+                  OR NOT EXISTS (
+                      SELECT 1 FROM host_chain_blocks_valid o
+                      WHERE o.chain_id = $1
+                        AND o.block_number = b.block_number
+                        AND o.block_status <> 'orphaned'
+                  )
+              )
             ORDER BY block_number ASC
             LIMIT $4
             "#,
@@ -2636,12 +2681,17 @@ impl Database {
         let mut prune_below =
             last_finalized_block.saturating_sub(BLOCKS_VALID_RETENTION);
         let pool = self.pool.read().await.clone();
-        // Never prune above the settlement frontier: an unsettled finalized
-        // row is live revalidation evidence — a stale row that keeps refusing
-        // revalidation is the only thing holding settlement below a
-        // contradicted height, and deleting it would turn that height into a
-        // bare gap that sparse-tolerant settlement crosses silently. Chains
-        // without a settlement row keep the plain retention window.
+        // Never prune at or above the settlement frontier: an unsettled
+        // finalized row is live revalidation evidence — a stale row that
+        // keeps refusing revalidation is the only thing holding settlement
+        // below a contradicted height, and deleting it would turn that
+        // height into a bare gap that sparse-tolerant settlement crosses
+        // silently. The row AT the frontier must survive too: it is the
+        // parent-linkage anchor for finalizing (and resurrecting) height
+        // frontier+1 — pruning it while the frontier is wedged degrades the
+        // linkage check to a vacuous pass and makes resurrection impossible,
+        // exactly when both matter most. Chains without a settlement row
+        // keep the plain retention window.
         let settled_height = sqlx::query_scalar!(
             r#"
             SELECT settled_height AS "settled_height!"
@@ -2653,7 +2703,7 @@ impl Database {
         .fetch_optional(&pool)
         .await?;
         if let Some(settled_height) = settled_height {
-            prune_below = prune_below.min(settled_height.saturating_add(1));
+            prune_below = prune_below.min(settled_height);
         }
         if prune_below <= 0 {
             return Ok(0);
@@ -3718,6 +3768,18 @@ impl Database {
                         )
                     )
                     ,
+                    -- Rebind the block context to the newest observation. A
+                    -- DCID conflict only arises from a replay of the same
+                    -- block or of a fork sibling carrying the same
+                    -- transaction (the component hash is a tx hash, and one
+                    -- tx cannot occupy two canonical blocks). Keeping the
+                    -- first writer's context starves the re-mined copy after
+                    -- a reorg: the worker resolves work through the recorded
+                    -- block hash, finds only the orphaned branch's completed
+                    -- copies, and re-marks the chain processed while the
+                    -- canonical branch's computation never executes.
+                    block_hash = EXCLUDED.block_hash,
+                    block_height = EXCLUDED.block_height,
                     schedule_priority = GREATEST(
                         dependence_chain.schedule_priority,
                         EXCLUDED.schedule_priority
