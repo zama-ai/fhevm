@@ -416,6 +416,128 @@ async fn test_extend_or_release_lock_2() {
     assert_eq!(acquired, Some(first_id.clone()));
 }
 
+/// Simulates a lock lost to a race (e.g. another worker's work-steal after
+/// TTL expiry rewrote `worker_id` between our acquisition and our extend
+/// call): the UPDATE ... WHERE worker_id = $2 in
+/// `extend_or_release_current_lock` matches zero rows, so it must report the
+/// loss rather than silently keep extending a lock it no longer holds.
+#[tokio::test]
+#[serial(db)]
+async fn test_extend_lock_reports_loss_when_worker_id_is_stolen() {
+    let instance = setup().await;
+    let pool = sqlx::postgres::PgPoolOptions::new()
+        .max_connections(2)
+        .connect(instance.db_url())
+        .await
+        .expect("Failed to connect to the database");
+
+    let dependence_chain_id = insert_sample_dcids(&pool, "updated", 1)
+        .await
+        .expect("inserted chains")
+        .first()
+        .cloned()
+        .unwrap();
+
+    // No timeslice configured: disable_timeslice_check=false path is what we
+    // are isolating here (enable_timeslice_check argument stays false too),
+    // so the only way to hit the "No lock extended" branch is a stolen lock.
+    let mut mgr =
+        LockMngr::new_with_conf(Uuid::new_v4(), pool.clone(), 3600, false, None, None, None);
+    let acquired = mgr.acquire_next_lock().await.unwrap().0;
+    assert_eq!(acquired, Some(dependence_chain_id.clone()));
+    assert!(mgr.get_current_lock().is_some());
+
+    // Simulate another worker stealing the row (e.g. after an expired-lock
+    // work-steal) by rewriting worker_id out from under this manager.
+    let thief = Uuid::new_v4();
+    sqlx::query!(
+        "UPDATE dependence_chain SET worker_id = $2 WHERE dependence_chain_id = $1",
+        dependence_chain_id,
+        thief,
+    )
+    .execute(&pool)
+    .await
+    .unwrap();
+
+    let result = mgr.extend_or_release_current_lock(false).await.unwrap();
+    assert!(
+        result.is_none(),
+        "extend must report no lock extended once worker_id no longer matches"
+    );
+    assert!(
+        mgr.get_current_lock().is_none(),
+        "the in-memory lock must be abandoned (take_locks) rather than kept alive \
+         when the DB no longer agrees we own it"
+    );
+
+    // The row itself is left untouched (still owned by the thief): a failed
+    // extend must not clobber the new owner's lock.
+    let row = sqlx::query!(
+        "SELECT worker_id FROM dependence_chain WHERE dependence_chain_id = $1",
+        dependence_chain_id
+    )
+    .fetch_one(&pool)
+    .await
+    .unwrap();
+    assert_eq!(row.worker_id, Some(thief));
+}
+
+/// Timeslice-exceeded release, driven with a tiny (zero-second) timeslice
+/// instead of sleeping: since the timeslice check compares elapsed-since-
+/// acquire against `lock_timeslice_sec`, a timeslice of 0 is already
+/// exceeded immediately after acquisition.
+#[tokio::test]
+#[serial(db)]
+async fn test_extend_or_release_lock_zero_timeslice_releases_without_sleeping() {
+    let instance = setup().await;
+    let pool = sqlx::postgres::PgPoolOptions::new()
+        .max_connections(2)
+        .connect(instance.db_url())
+        .await
+        .expect("Failed to connect to the database");
+
+    let dependence_chain_id = insert_sample_dcids(&pool, "updated", 1)
+        .await
+        .expect("inserted chains")
+        .first()
+        .cloned()
+        .unwrap();
+
+    let mut mgr = LockMngr::new_with_conf(
+        Uuid::new_v4(),
+        pool.clone(),
+        3600,
+        false,
+        Some(0), // lock_timeslice_sec: already exceeded the instant it's acquired
+        None,
+        None,
+    );
+    let acquired = mgr.acquire_next_lock().await.unwrap().0;
+    assert_eq!(acquired, Some(dependence_chain_id.clone()));
+
+    let result = mgr.extend_or_release_current_lock(true).await.unwrap();
+    assert!(
+        result.is_none(),
+        "zero timeslice must be treated as exceeded"
+    );
+    assert!(mgr.get_current_lock().is_none());
+
+    // Released, not stolen: the DB row must show a clean hand-back (worker
+    // cleared, status reverted to 'updated' so it can be re-acquired) rather
+    // than being left owned or in 'processing'.
+    let row = sqlx::query!(
+        "SELECT status, worker_id, lock_expires_at FROM dependence_chain
+         WHERE dependence_chain_id = $1",
+        dependence_chain_id
+    )
+    .fetch_one(&pool)
+    .await
+    .unwrap();
+    assert_eq!(row.status, "updated");
+    assert_eq!(row.worker_id, None);
+    assert_eq!(row.lock_expires_at, None);
+}
+
 #[tokio::test]
 #[serial(db)]
 async fn test_cleanup() {

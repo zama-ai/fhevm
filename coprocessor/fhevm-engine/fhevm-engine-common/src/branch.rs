@@ -567,4 +567,42 @@ mod tests {
         let settled = next_settled_height(7, 15, 0, Some(5));
         assert_eq!(settled, 7);
     }
+
+    #[test]
+    fn candidate_equal_to_current_is_a_no_op() {
+        let settled = next_settled_height(10, 10, 0, None);
+        assert_eq!(settled, 10);
+    }
+
+    #[test]
+    fn candidate_below_current_is_a_no_op() {
+        let settled = next_settled_height(10, 5, 0, None);
+        assert_eq!(settled, 10);
+    }
+
+    #[test]
+    fn candidate_below_current_is_a_no_op_even_with_a_blocker() {
+        // The early return must win regardless of `first_blocked_height`:
+        // a stale/blocked candidate below the frontier never regresses it.
+        let settled = next_settled_height(10, 5, 0, Some(2));
+        assert_eq!(settled, 10);
+    }
+
+    #[test]
+    fn blocked_height_at_or_below_settled_height_never_regresses_the_frontier() {
+        // No pre-cutover skip in play (cutover = 0): settled_height starts
+        // at `current`. A blocker at or below it must clamp to exactly
+        // `current`, never lower, via the `.max(settled_height)` floor.
+        let settled = next_settled_height(5, 20, 0, Some(3));
+        assert_eq!(settled, 5);
+
+        let settled_at_exact_boundary = next_settled_height(5, 20, 0, Some(5));
+        assert_eq!(settled_at_exact_boundary, 5);
+    }
+
+    #[test]
+    fn blocked_height_between_settled_and_candidate_stops_one_below_it() {
+        let settled = next_settled_height(5, 20, 0, Some(10));
+        assert_eq!(settled, 9);
+    }
 }

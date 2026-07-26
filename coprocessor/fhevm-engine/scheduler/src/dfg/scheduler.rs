@@ -746,3 +746,116 @@ fn run_computation(
         Err(e) => (graph_node_index, Err(e.into())),
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use fhevm_engine_common::utils::safe_deserialize_key;
+    use std::sync::LazyLock;
+
+    struct TestKeys {
+        sks: tfhe::ServerKey,
+        cpk: tfhe::CompactPublicKey,
+    }
+
+    /// `execute_partition` calls `tfhe::set_server_key` unconditionally,
+    /// even along the skip/degradation paths under test below, so a
+    /// structurally valid key pair is required to invoke it at all. There is
+    /// no lighter-weight or insecure parameter set anywhere in this
+    /// workspace (see `fhevm-engine-common::keys::FhevmKeys::new_config`);
+    /// tests instead load the checked-in production-parameter fixture
+    /// (`../fhevm-keys/{sks,pks}`, git-lfs) the same way
+    /// `sns-worker`/`tfhe-worker` tests do, once per test binary via
+    /// `LazyLock`, rather than paying for a fresh (very slow) key
+    /// generation.
+    static KEYS: LazyLock<TestKeys> = LazyLock::new(|| {
+        let sks_bytes = std::fs::read("../fhevm-keys/sks")
+            .expect("read ../fhevm-keys/sks fixture (git-lfs; run `git lfs pull`)");
+        let cpk_bytes = std::fs::read("../fhevm-keys/pks")
+            .expect("read ../fhevm-keys/pks fixture (git-lfs; run `git lfs pull`)");
+        TestKeys {
+            sks: safe_deserialize_key(&sks_bytes).expect("deserialize server key fixture"),
+            cpk: safe_deserialize_key(&cpk_bytes).expect("deserialize compact public key fixture"),
+        }
+    });
+
+    fn handle(byte: u8) -> Handle {
+        vec![byte; 32]
+    }
+
+    /// A transaction requires `missing` as a top-level (cross-transaction)
+    /// input. `remaining_local_uses` correctly accounts for it - this
+    /// partition has exactly one consumer of the handle - but no producer
+    /// in the partition ever populated `available_outputs` for it, so the
+    /// `uses == 1` branch removes the use-count entry and then finds
+    /// nothing to remove from `available_outputs`. This is the
+    /// "Missing input to compute transaction - skipping" branch
+    /// (scheduler.rs, tx-input-resolution loop): every `is_allowed` node in
+    /// the transaction must surface `Err(SchedulerError::MissingInputs)`,
+    /// nodes that are not `is_allowed` must not appear in the output at
+    /// all, and `execute_partition` must return normally (no panic, no
+    /// hang) rather than aborting the whole partition.
+    #[test]
+    fn missing_input_marks_only_allowed_nodes_and_completes_run() {
+        let missing = handle(0xAB);
+        let allowed_1 = handle(0x01);
+        let allowed_2 = handle(0x02);
+        let intermediate = handle(0x03);
+        let tid = handle(0x10);
+
+        let mut dfg = DFGraph::default();
+        dfg.add_node(
+            allowed_1.clone(),
+            0,
+            vec![DFGTaskInput::Dependence(missing.clone())],
+            true,
+        );
+        dfg.add_node(allowed_2.clone(), 0, vec![], true);
+        dfg.add_node(intermediate, 0, vec![], false);
+
+        let mut tx_inputs: HashMap<Handle, Option<DFGTxInput>> = HashMap::new();
+        tx_inputs.insert(missing, None);
+
+        let transactions: ComponentSet = vec![(dfg, tx_inputs, tid.clone(), 0usize)];
+
+        let (outputs, task_id) = execute_partition(
+            transactions,
+            NodeIndex::new(7),
+            0,
+            KEYS.sks.clone(),
+            KEYS.cpk.clone(),
+        );
+
+        assert_eq!(
+            task_id,
+            NodeIndex::new(7),
+            "task id must be forwarded unchanged"
+        );
+        assert_eq!(
+            outputs.len(),
+            2,
+            "only the transaction's is_allowed nodes surface an output; \
+             the non-allowed intermediate node must not"
+        );
+        let mut seen = std::collections::HashSet::new();
+        for (out_handle, task_output) in &outputs {
+            assert!(
+                out_handle == &allowed_1 || out_handle == &allowed_2,
+                "unexpected output handle {out_handle:?}"
+            );
+            seen.insert(out_handle.clone());
+            assert_eq!(task_output.transaction_id, tid);
+            match &task_output.result {
+                Err(err) => {
+                    assert_eq!(err.to_string(), SchedulerError::MissingInputs.to_string())
+                }
+                Ok(_) => panic!("missing input must surface as an error result"),
+            }
+        }
+        assert_eq!(
+            seen.len(),
+            2,
+            "both allowed nodes must be represented exactly once"
+        );
+    }
+}

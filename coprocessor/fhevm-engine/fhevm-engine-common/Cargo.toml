@@ -59,6 +59,11 @@ compact-hex = []
 # BUILD_STACK_VERSION; without it the version is the hard-coded baseline.
 stack-version-override = []
 
+[dev-dependencies]
+chrono = { workspace = true }
+serial_test = { workspace = true }
+test-harness = { path = "../test-harness" }
+
 [build-dependencies]
 tonic-build = { workspace = true }
 

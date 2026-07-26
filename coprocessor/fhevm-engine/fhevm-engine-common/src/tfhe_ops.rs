@@ -4368,3 +4368,91 @@ mod scalar_zero_divisor_tests {
         }
     }
 }
+
+#[cfg(test)]
+mod scalar_is_zero_after_cast_tests {
+    use super::scalar_is_zero_after_cast;
+
+    fn scalar32(set: &[(usize, u8)]) -> Vec<u8> {
+        let mut s = vec![0u8; 32];
+        for &(i, v) in set {
+            s[i] = v;
+        }
+        s
+    }
+
+    #[test]
+    fn bool_type_checks_only_the_low_bit() {
+        // 0x10 has bit0 clear -> zero-after-cast for Bool.
+        assert!(scalar_is_zero_after_cast(0, &scalar32(&[(31, 0x10)])));
+        // 0x01 has bit0 set -> not zero-after-cast.
+        assert!(!scalar_is_zero_after_cast(0, &scalar32(&[(31, 0x01)])));
+    }
+
+    #[test]
+    fn uint4_type_checks_only_the_low_nibble() {
+        // 0x10's low nibble is 0 -> zero-after-cast for Uint4.
+        assert!(scalar_is_zero_after_cast(1, &scalar32(&[(31, 0x10)])));
+        // 0x01's low nibble is 1 -> not zero-after-cast.
+        assert!(!scalar_is_zero_after_cast(1, &scalar32(&[(31, 0x01)])));
+    }
+
+    #[test]
+    fn uint8_type_checks_the_full_low_byte() {
+        assert!(scalar_is_zero_after_cast(2, &scalar32(&[])));
+        assert!(!scalar_is_zero_after_cast(2, &scalar32(&[(31, 0x01)])));
+        // Unlike Uint4, the high nibble is part of the retained byte, so a
+        // high-nibble-only value is NOT zero-after-cast at Uint8 width.
+        assert!(!scalar_is_zero_after_cast(2, &scalar32(&[(31, 0x10)])));
+    }
+
+    #[test]
+    fn uint16_type_checks_two_low_bytes() {
+        assert!(scalar_is_zero_after_cast(3, &scalar32(&[])));
+        // A nonzero byte outside the 2-byte window doesn't count.
+        assert!(scalar_is_zero_after_cast(3, &scalar32(&[(29, 0xff)])));
+        assert!(!scalar_is_zero_after_cast(3, &scalar32(&[(30, 0x01)])));
+        assert!(!scalar_is_zero_after_cast(3, &scalar32(&[(31, 0x01)])));
+    }
+
+    #[test]
+    fn wide_type_uint128_checks_16_low_bytes() {
+        assert!(scalar_is_zero_after_cast(6, &scalar32(&[])));
+        // Byte 15 sits just outside the 16-byte low window.
+        assert!(scalar_is_zero_after_cast(6, &scalar32(&[(15, 0xff)])));
+        assert!(!scalar_is_zero_after_cast(6, &scalar32(&[(16, 0x01)])));
+        assert!(!scalar_is_zero_after_cast(6, &scalar32(&[(31, 0x01)])));
+    }
+
+    #[test]
+    fn wide_type_uint160_checks_20_low_bytes() {
+        assert!(scalar_is_zero_after_cast(7, &scalar32(&[])));
+        // Byte 11 sits just outside the 20-byte low window.
+        assert!(scalar_is_zero_after_cast(7, &scalar32(&[(11, 0xff)])));
+        assert!(!scalar_is_zero_after_cast(7, &scalar32(&[(12, 0x01)])));
+        assert!(!scalar_is_zero_after_cast(7, &scalar32(&[(31, 0x01)])));
+    }
+
+    #[test]
+    fn wide_type_uint256_checks_all_32_bytes() {
+        assert!(scalar_is_zero_after_cast(8, &scalar32(&[])));
+        assert!(!scalar_is_zero_after_cast(8, &scalar32(&[(0, 0x01)])));
+    }
+
+    #[test]
+    fn unknown_type_falls_back_to_the_whole_scalar_length() {
+        // scalar_width_bytes(99) is None, so the width falls back to
+        // scalar.len(): the whole buffer must be checked.
+        assert!(scalar_is_zero_after_cast(99, &scalar32(&[])));
+        assert!(!scalar_is_zero_after_cast(99, &scalar32(&[(0, 0x01)])));
+    }
+
+    #[test]
+    fn empty_scalar_is_zero_after_cast_for_every_type() {
+        // scalar.last() is None -> low_byte defaults to 0, and the wide-type
+        // window over an empty slice is vacuously all-zero.
+        for ciphertext_type in [0i16, 1, 2, 3, 4, 5, 6, 7, 8, 99] {
+            assert!(scalar_is_zero_after_cast(ciphertext_type, &[]));
+        }
+    }
+}

@@ -1363,4 +1363,67 @@ mod tests {
         );
         assert!(g.get_results().expect("collect results").is_empty());
     }
+
+    /// Cross-transaction dependence cycle: tx_a needs a handle only tx_b
+    /// produces, and tx_b needs a handle only tx_a produces. `build()`
+    /// defers both edges (`deferred_dependences`), since cross-transaction
+    /// producers are only wired up after DB fetch (real cycles between
+    /// distinct transactions cannot be detected at `build()` time - see
+    /// `dependence_pairs`, which only covers same-transaction edges).
+    /// `resolve_dependences()` is where the cycle is actually caught, via a
+    /// Tarjan SCC pass over already-added + deferred edges; it marks every
+    /// transaction in the cycle `is_uncomputable` and synthesizes a
+    /// `CyclicDependence` error result for each of its ops. This mirrors
+    /// the real call site (tfhe_worker.rs): on this `Err`, the caller
+    /// returns the (partially populated) graph without ever constructing a
+    /// `Scheduler`, and a later, separate `get_results()` call harvests
+    /// these synthesized rows.
+    #[test]
+    fn resolve_dependences_detects_cross_transaction_cycle() {
+        let handle_a = handle(0xA1);
+        let handle_b = handle(0xB1);
+        let tid_a = handle(0x01);
+        let tid_b = handle(0x02);
+
+        let mut node_a = make_cnode_with_allowed_op(tid_a.clone(), handle_a.clone());
+        node_a.inputs.insert(handle_b.clone(), None);
+
+        let mut node_b = make_cnode_with_allowed_op(tid_b.clone(), handle_b.clone());
+        node_b.inputs.insert(handle_a.clone(), None);
+
+        let mut nodes = vec![node_a, node_b];
+        let mut g = DFComponentGraph::default();
+        g.build(&mut nodes)
+            .expect("build only defers cross-transaction edges; no cycle detected yet");
+
+        let error = g
+            .resolve_dependences(&HashSet::new())
+            .expect_err("cross-transaction cycle must be rejected");
+        assert_eq!(
+            error.to_string(),
+            SchedulerError::CyclicDependence.to_string()
+        );
+
+        let results = g
+            .get_results()
+            .expect("collect results synthesized before the cycle error was returned");
+        assert_eq!(
+            results.len(),
+            2,
+            "both transactions' single op must get an error result"
+        );
+        for result in &results {
+            assert!(
+                result.transaction_id == tid_a || result.transaction_id == tid_b,
+                "unexpected transaction id in results"
+            );
+            match &result.compressed_ct {
+                Err(err) => assert_eq!(
+                    err.to_string(),
+                    SchedulerError::CyclicDependence.to_string()
+                ),
+                Ok(_) => panic!("cyclic dependence must not yield an Ok result"),
+            }
+        }
+    }
 }
