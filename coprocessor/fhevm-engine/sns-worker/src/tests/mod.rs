@@ -885,6 +885,115 @@ async fn stale_upload_mark_enqueues_canonical_repair_target() {
     assert_eq!(target_event, canonical_event);
 }
 
+// Item C: the positive half of is_upload_publishable's settled-branch arm.
+// Two settled digest rows share a handle on different (producer, event) pairs;
+// exactly one producer/event is canonical (non-orphaned). The canonical task,
+// at or below the settlement frontier, must be publishable (TRUE) — the
+// existing stale test only covers the non-canonical FALSE half.
+#[tokio::test]
+#[serial(db)]
+async fn canonical_settled_upload_is_publishable() {
+    let test_instance = setup_test_db(ImportMode::None)
+        .await
+        .expect("valid db instance");
+    let pool = sqlx::postgres::PgPoolOptions::new()
+        .max_connections(3)
+        .connect(test_instance.db_url())
+        .await
+        .expect("connect test db");
+    let pool = &pool;
+    clean_up(pool).await.expect("clean db");
+
+    let host_chain_id = 1_i64;
+    let key_id_gw = vec![0x01_u8; 32];
+    let handle = vec![0xE0_u8; 32];
+    let stale_producer = vec![0xE1_u8; 32];
+    let stale_event = vec![0xE2_u8; 32];
+    let canonical_producer = vec![0xF1_u8; 32];
+    let canonical_event = vec![0xF2_u8; 32];
+
+    sqlx::query(
+        "INSERT INTO host_chain_blocks_valid(chain_id, block_hash, block_number, block_status)
+         VALUES ($1, $2, 20, 'orphaned'), ($1, $3, 20, 'orphaned'), ($1, $4, 20, 'finalized'), ($1, $5, 20, 'finalized')",
+    )
+    .bind(host_chain_id)
+    .bind(&stale_producer)
+    .bind(&stale_event)
+    .bind(&canonical_producer)
+    .bind(&canonical_event)
+    .execute(pool)
+    .await
+    .expect("insert block statuses");
+
+    for (producer, event) in [
+        (&stale_producer, &stale_event),
+        (&canonical_producer, &canonical_event),
+    ] {
+        sqlx::query(
+            "INSERT INTO ciphertext_digest_branch(
+                host_chain_id, key_id_gw, handle, producer_block_hash, block_hash, block_number
+             )
+             VALUES ($1, $2, $3, $4, $5, 20)",
+        )
+        .bind(host_chain_id)
+        .bind(&key_id_gw)
+        .bind(&handle)
+        .bind(producer)
+        .bind(event)
+        .execute(pool)
+        .await
+        .expect("insert digest row");
+    }
+
+    // Settlement frontier at/above the block: forces the canonical-target arm.
+    sqlx::query("INSERT INTO coprocessor_settlement(chain_id, settled_height) VALUES ($1, 20)")
+        .bind(host_chain_id)
+        .execute(pool)
+        .await
+        .expect("insert settlement");
+
+    // Completed SNS work for the canonical branch only, so the base
+    // publishability EXISTS clause is satisfied for the canonical task.
+    sqlx::query(
+        "INSERT INTO pbs_computations_branch(
+            handle, host_chain_id, block_number, producer_block_hash, block_hash, is_completed
+         ) VALUES ($1, $2, 20, $3, $4, TRUE)",
+    )
+    .bind(&handle)
+    .bind(host_chain_id)
+    .bind(&canonical_producer)
+    .bind(&canonical_event)
+    .execute(pool)
+    .await
+    .expect("insert completed canonical pbs row");
+
+    let canonical_task = crate::HandleItem {
+        host_chain_id: fhevm_engine_common::chain_id::ChainId::try_from(host_chain_id).unwrap(),
+        key_id_gw: key_id_gw.clone(),
+        handle: handle.clone(),
+        producer_block_hash: canonical_producer.clone(),
+        block_hash: canonical_event.clone(),
+        block_number: Some(20),
+        ct64_compressed: Arc::new(vec![0x11_u8; 32]),
+        ct128: Arc::new(BigCiphertext::new(Vec::new(), Ciphertext128Format::Unknown)),
+        ct64_digest: None,
+        ct128_digest: None,
+        s3_format_version: None,
+        span: tracing::Span::none(),
+        transaction_id: None,
+    };
+
+    let mut trx = pool.begin().await.expect("begin tx");
+    assert!(
+        canonical_task
+            .is_upload_publishable(&mut trx)
+            .await
+            .expect("publishability check"),
+        "canonical settled task should be publishable"
+    );
+    trx.rollback().await.expect("rollback");
+}
+
 #[tokio::test]
 #[serial(db)]
 async fn resubmit_waits_for_completed_pbs_and_rearms_stale_zero_digest() {

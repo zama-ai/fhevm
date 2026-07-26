@@ -1657,4 +1657,212 @@ mod tests {
         assert!(skipped.is_empty());
         assert_eq!(count_ct128_rows(&pool).await, 1);
     }
+
+    fn handle_item_named(
+        handle: Vec<u8>,
+        producer_block_hash: Vec<u8>,
+        block_hash: Vec<u8>,
+        block_number: Option<i64>,
+        ct128: BigCiphertext,
+    ) -> HandleItem {
+        HandleItem {
+            host_chain_id: ChainId::try_from(12345_i64).unwrap(),
+            key_id_gw: vec![0x11; 32],
+            handle,
+            producer_block_hash,
+            block_hash,
+            block_number,
+            ct64_compressed: Arc::new(b"ct64".to_vec()),
+            ct128: Arc::new(ct128),
+            ct64_digest: None,
+            ct128_digest: None,
+            s3_format_version: None,
+            span: tracing::Span::none(),
+            transaction_id: None,
+        }
+    }
+
+    async fn insert_completed_work(
+        pool: &sqlx::PgPool,
+        handle: &[u8],
+        producer_block_hash: &[u8],
+        block_hash: &[u8],
+        block_number: i64,
+    ) {
+        sqlx::query(
+            "INSERT INTO pbs_computations_branch(
+                handle, host_chain_id, block_number, producer_block_hash, block_hash, is_completed
+             ) VALUES ($1, $2, $3, $4, $5, TRUE)",
+        )
+        .bind(handle)
+        .bind(12345_i64)
+        .bind(block_number)
+        .bind(producer_block_hash)
+        .bind(block_hash)
+        .execute(pool)
+        .await
+        .expect("insert completed pbs branch work");
+
+        sqlx::query(
+            "INSERT INTO ciphertexts_branch(
+                handle, producer_block_hash, block_number, ciphertext, ciphertext_version, ciphertext_type
+             ) VALUES ($1, $2, $3, $4, $5, 0)",
+        )
+        .bind(handle)
+        .bind(producer_block_hash)
+        .bind(block_number)
+        .bind(vec![0x99_u8; 32])
+        .bind(current_ciphertext_version())
+        .execute(pool)
+        .await
+        .expect("insert ct64 branch row");
+    }
+
+    async fn count_digest_rows(pool: &sqlx::PgPool, handle: &[u8]) -> i64 {
+        sqlx::query_scalar("SELECT COUNT(*) FROM ciphertext_digest_branch WHERE handle = $1")
+            .bind(handle)
+            .fetch_one(pool)
+            .await
+            .expect("count ciphertext_digest_branch rows")
+    }
+
+    // Item E1: enqueue_upload_tasks must skip both failed-key tasks and
+    // settled-skipped tasks, persisting an upload (digest) row for the normal
+    // task only. Provenance is seeded identically for all three so the skip is
+    // the sole reason the guarded tasks produce no row.
+    #[tokio::test]
+    #[serial(db)]
+    async fn enqueue_upload_tasks_skips_failed_and_settled_tasks() {
+        let (_test_instance, pool) = setup_pool().await;
+        let producer = vec![0xAA; 32];
+        let block_hash = vec![0x24; 32];
+
+        let normal = handle_item_named(
+            vec![0x71; 32],
+            producer.clone(),
+            block_hash.clone(),
+            Some(5),
+            BigCiphertext::default(),
+        );
+        let failed = handle_item_named(
+            vec![0x72; 32],
+            producer.clone(),
+            block_hash.clone(),
+            Some(5),
+            BigCiphertext::default(),
+        );
+        let settled = handle_item_named(
+            vec![0x73; 32],
+            producer.clone(),
+            block_hash.clone(),
+            Some(5),
+            BigCiphertext::default(),
+        );
+
+        for task in [&normal, &failed, &settled] {
+            insert_completed_work(
+                &pool,
+                &task.handle,
+                &task.producer_block_hash,
+                &task.block_hash,
+                5,
+            )
+            .await;
+        }
+
+        let failed_task_keys = HashSet::from([sns_task_key(&failed)]);
+        let skipped_settled_tasks =
+            HashSet::from([(settled.handle.clone(), settled.producer_block_hash.clone())]);
+
+        let mut tx = pool.begin().await.expect("begin transaction");
+        enqueue_upload_tasks(
+            &mut tx,
+            &[normal.clone(), failed.clone(), settled.clone()],
+            &failed_task_keys,
+            &skipped_settled_tasks,
+        )
+        .await
+        .expect("enqueue upload tasks");
+        tx.commit().await.expect("commit transaction");
+
+        assert_eq!(count_digest_rows(&pool, &normal.handle).await, 1);
+        assert_eq!(count_digest_rows(&pool, &failed.handle).await, 0);
+        assert_eq!(count_digest_rows(&pool, &settled.handle).await, 0);
+    }
+
+    // Item E2: dispatch_upload_tasks applies the same skip semantics on the
+    // in-memory dispatch path — only the normal task is sent to the uploader.
+    #[tokio::test]
+    async fn dispatch_upload_tasks_skips_failed_and_settled_tasks() {
+        let producer = vec![0xAA; 32];
+        let block_hash = vec![0x24; 32];
+        let normal = handle_item_named(
+            vec![0x81; 32],
+            producer.clone(),
+            block_hash.clone(),
+            Some(5),
+            BigCiphertext::default(),
+        );
+        let failed = handle_item_named(
+            vec![0x82; 32],
+            producer.clone(),
+            block_hash.clone(),
+            Some(5),
+            BigCiphertext::default(),
+        );
+        let settled = handle_item_named(
+            vec![0x83; 32],
+            producer.clone(),
+            block_hash.clone(),
+            Some(5),
+            BigCiphertext::default(),
+        );
+
+        let failed_task_keys = HashSet::from([sns_task_key(&failed)]);
+        let skipped_settled_tasks =
+            HashSet::from([(settled.handle.clone(), settled.producer_block_hash.clone())]);
+
+        let (tx, mut rx) = tokio::sync::mpsc::channel::<UploadJob>(8);
+        dispatch_upload_tasks(
+            &tx,
+            &[normal.clone(), failed.clone(), settled.clone()],
+            &failed_task_keys,
+            &skipped_settled_tasks,
+        );
+        drop(tx);
+
+        let mut dispatched = Vec::new();
+        while let Some(job) = rx.recv().await {
+            match job {
+                UploadJob::Normal(item) => dispatched.push(item.handle),
+                UploadJob::DatabaseLock(_) => panic!("unexpected DatabaseLock job variant"),
+            }
+        }
+
+        assert_eq!(dispatched, vec![normal.handle.clone()]);
+    }
+
+    // Item E3: update_ciphertext128 must skip a failed-key task even when its
+    // ct128 is non-empty and the branch is above the settlement frontier —
+    // no ciphertexts128_branch row may be written for a terminally-failed task.
+    #[tokio::test]
+    #[serial(db)]
+    async fn update_ciphertext128_skips_failed_task_keys() {
+        let (_test_instance, pool) = setup_pool().await;
+        // Frontier well below the task's block, so absent the failed-key guard
+        // the write would be allowed.
+        set_settled_height(&pool, 5).await;
+        let task = computed_handle_item(vec![0xAA; 32], Some(11));
+        let failed_task_keys = HashSet::from([sns_task_key(&task)]);
+
+        let mut tx = pool.begin().await.expect("begin transaction");
+        let skipped = update_ciphertext128(&mut tx, &[task], &failed_task_keys)
+            .await
+            .expect("failed-key ct128 write should be skipped");
+        tx.commit().await.expect("commit transaction");
+
+        // Failed keys are not settlement-skips, so the returned set is empty.
+        assert!(skipped.is_empty());
+        assert_eq!(count_ct128_rows(&pool).await, 0);
+    }
 }

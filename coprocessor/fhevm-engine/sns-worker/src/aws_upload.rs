@@ -2176,8 +2176,11 @@ async fn reconcile_verified_settled_publications(
             Ciphertext128Format::Unknown
         } else {
             match ciphertext128_format.and_then(Ciphertext128Format::from_i16) {
-                Some(format) => format,
-                None => {
+                // A stored Unknown would make attestation_format() below bail
+                // and abort the whole reconcile cycle; one legacy/corrupt row
+                // must not disable the safety net for every row behind it.
+                Some(format) if format != Ciphertext128Format::Unknown => format,
+                _ => {
                     warn!(
                         handle = to_hex(&handle),
                         "Skipping S3 reconciliation for row with missing or invalid ct128 format"
@@ -2197,14 +2200,22 @@ async fn reconcile_verified_settled_publications(
             block_number,
             ct64_compressed: Arc::new(Vec::new()),
             ct128: Arc::new(BigCiphertext::new(Vec::new(), ct128_format)),
-            ct64_digest: Some(ct64_digest),
-            ct128_digest: Some(ct128_digest),
+            ct64_digest: Some(ct64_digest.clone()),
+            ct128_digest: Some(ct128_digest.clone()),
             s3_format_version,
             span: Span::none(),
             transaction_id,
         };
-        let upload_material =
-            upload_material(&task).map_err(|err| ExecutionError::InternalError(err.to_string()))?;
+        // The reconciler task is digest-only by construction (verification
+        // never re-uploads bytes). `upload_material(&task)` would reject it
+        // at the no-ciphertext-bytes guard — that guard protects the real
+        // upload path — so the material is assembled directly from the
+        // row's committed digests, which is all verification needs;
+        // `check_s3_publication` skips checksum headers for empty bytes.
+        let upload_material = UploadMaterial {
+            ct64_digest,
+            ct128_digest,
+        };
         let attestation_format =
             if upload_material.ct128_digest.as_slice() == NO_SNS_CIPHERTEXT_DIGEST.as_slice() {
                 CiphertextFormat::CompressedOnCpu
@@ -2652,7 +2663,7 @@ mod tests {
     use std::time::Duration;
     use test_harness::{
         instance::{setup_test_db, ImportMode},
-        localstack::{self, create_localstack_s3_client},
+        localstack::{self, create_localstack_s3_client, LOCALSTACK_PORT},
     };
 
     fn sample_handle_item() -> HandleItem {
@@ -3147,6 +3158,502 @@ mod tests {
         assert_eq!(
             expired_lease.1.as_deref(),
             Some("repair lease expired after maximum attempts")
+        );
+
+        Ok(())
+    }
+
+    fn empty_keys_cache() -> KeySetCache {
+        Arc::new(RwLock::new(lru::LruCache::new(
+            std::num::NonZeroUsize::new(1).unwrap(),
+        )))
+    }
+
+    // A1: fetch_pending_canonical_repairs_impl must reject a canonical-repair
+    // target whose stored ct64 bytes do not hash to the recorded ct64 digest,
+    // quarantining it immediately instead of recomputing ct128 from poisoned
+    // bytes or handing it back as an upload job.
+    #[tokio::test]
+    #[serial(db)]
+    async fn fetch_pending_repairs_quarantines_ct64_digest_mismatch() -> anyhow::Result<()> {
+        let db = setup_test_db(ImportMode::None)
+            .await
+            .map_err(|err| anyhow::anyhow!(err.to_string()))?;
+        let pool = sqlx::postgres::PgPoolOptions::new()
+            .max_connections(2)
+            .connect(db.db_url())
+            .await?;
+
+        let host_chain_id = 1_i64;
+        let key_id_gw = vec![0x01_u8; 32];
+        let handle = vec![0xC0_u8; 32];
+        let ct64_bytes = vec![0xAB_u8; 48];
+        // A digest that deliberately does NOT match compute_digest(&ct64_bytes).
+        let wrong_ct64_digest = vec![0xFF_u8; 32];
+        assert_ne!(wrong_ct64_digest, compute_digest(&ct64_bytes));
+        let committed_ct128_digest = vec![0x77_u8; 32];
+
+        // Branchless (producer '' / block '') canonical row so the "completed
+        // work" gate is satisfied without seeding pbs_computations_branch.
+        sqlx::query(
+            "INSERT INTO ciphertext_digest_branch(
+                host_chain_id, key_id_gw, handle, producer_block_hash, block_hash,
+                block_number, ciphertext, ciphertext128, ciphertext128_format
+             ) VALUES ($1, $2, $3, ''::BYTEA, ''::BYTEA, NULL, $4, $5, 11)",
+        )
+        .bind(host_chain_id)
+        .bind(&key_id_gw)
+        .bind(&handle)
+        .bind(&wrong_ct64_digest)
+        .bind(&committed_ct128_digest)
+        .execute(&pool)
+        .await?;
+
+        sqlx::query(
+            "INSERT INTO ciphertexts_branch(
+                handle, producer_block_hash, ciphertext, ciphertext_version, ciphertext_type
+             ) VALUES ($1, ''::BYTEA, $2, $3, 0)",
+        )
+        .bind(&handle)
+        .bind(&ct64_bytes)
+        .bind(current_ciphertext_version())
+        .execute(&pool)
+        .await?;
+
+        sqlx::query(
+            "INSERT INTO s3_canonical_repair_queue(
+                host_chain_id, handle, target_producer_block_hash, target_block_hash,
+                target_block_number, reason
+             ) VALUES ($1, $2, ''::BYTEA, ''::BYTEA, NULL, 'test_digest_mismatch')",
+        )
+        .bind(host_chain_id)
+        .bind(&handle)
+        .execute(&pool)
+        .await?;
+
+        let cache = empty_keys_cache();
+        let jobs = fetch_pending_canonical_repairs_impl(&pool, 10, Some(&cache)).await?;
+        assert!(
+            jobs.is_empty(),
+            "poisoned ct64 must not be returned as an upload job"
+        );
+
+        let state: (String, i32, Option<String>) = sqlx::query_as(
+            "SELECT status, attempts, last_error
+               FROM s3_canonical_repair_queue
+              WHERE host_chain_id = $1 AND handle = $2",
+        )
+        .bind(host_chain_id)
+        .bind(&handle)
+        .fetch_one(&pool)
+        .await?;
+        assert_eq!(state.0, "quarantined");
+        assert_eq!(state.1, 1);
+        assert!(
+            state
+                .2
+                .as_deref()
+                .is_some_and(|e| e.contains("canonical ct64 digest mismatch")),
+            "unexpected last_error: {:?}",
+            state.2
+        );
+
+        Ok(())
+    }
+
+    // A2: a canonical-repair target whose ct64 bytes are absent must record a
+    // bounded (non-quarantine) failure rather than being silently dropped or
+    // returned as an upload job.
+    #[tokio::test]
+    #[serial(db)]
+    async fn fetch_pending_repairs_records_missing_ct64_bytes() -> anyhow::Result<()> {
+        let db = setup_test_db(ImportMode::None)
+            .await
+            .map_err(|err| anyhow::anyhow!(err.to_string()))?;
+        let pool = sqlx::postgres::PgPoolOptions::new()
+            .max_connections(2)
+            .connect(db.db_url())
+            .await?;
+
+        let host_chain_id = 1_i64;
+        let key_id_gw = vec![0x02_u8; 32];
+        let handle = vec![0xC1_u8; 32];
+        let ct64_digest = vec![0xD3_u8; 32];
+
+        // Digest row present (so the target is selectable) but no ciphertexts_branch
+        // row — the ct64 bytes needed to republish are missing.
+        sqlx::query(
+            "INSERT INTO ciphertext_digest_branch(
+                host_chain_id, key_id_gw, handle, producer_block_hash, block_hash,
+                block_number, ciphertext, ciphertext128
+             ) VALUES ($1, $2, $3, ''::BYTEA, ''::BYTEA, NULL, $4, NULL)",
+        )
+        .bind(host_chain_id)
+        .bind(&key_id_gw)
+        .bind(&handle)
+        .bind(&ct64_digest)
+        .execute(&pool)
+        .await?;
+
+        sqlx::query(
+            "INSERT INTO s3_canonical_repair_queue(
+                host_chain_id, handle, target_producer_block_hash, target_block_hash,
+                target_block_number, reason
+             ) VALUES ($1, $2, ''::BYTEA, ''::BYTEA, NULL, 'test_missing_ct64')",
+        )
+        .bind(host_chain_id)
+        .bind(&handle)
+        .execute(&pool)
+        .await?;
+
+        let jobs = fetch_pending_canonical_repairs_impl(&pool, 10, None).await?;
+        assert!(
+            jobs.is_empty(),
+            "a repair with missing ct64 bytes must not be returned as an upload job"
+        );
+
+        let state: (String, i32, Option<String>) = sqlx::query_as(
+            "SELECT status, attempts, last_error
+               FROM s3_canonical_repair_queue
+              WHERE host_chain_id = $1 AND handle = $2",
+        )
+        .bind(host_chain_id)
+        .bind(&handle)
+        .fetch_one(&pool)
+        .await?;
+        // Bounded retry, not immediate quarantine.
+        assert_eq!(state.0, "pending");
+        assert_eq!(state.1, 1);
+        assert_eq!(
+            state.2.as_deref(),
+            Some("missing ct64 bytes for S3 canonical repair")
+        );
+
+        Ok(())
+    }
+
+    fn small_s3_config(bucket_ct64: &str, bucket_ct128: &str) -> S3Config {
+        S3Config {
+            bucket_ct128: bucket_ct128.to_owned(),
+            bucket_ct64: bucket_ct64.to_owned(),
+            max_concurrent_uploads: 1,
+            retry_policy: S3RetryPolicy {
+                max_retries_per_upload: 1,
+                max_backoff: Duration::from_millis(1),
+                max_retries_timeout: Duration::from_secs(1),
+                recheck_duration: Duration::from_secs(1),
+                regular_recheck_duration: Duration::from_secs(1),
+            },
+            verify_sha256_checksum: false,
+        }
+    }
+
+    // Item F2: upload_ciphertexts must short-circuit when the branch row is no
+    // longer publishable (provenance retracted by reorg cleanup between the
+    // compute batch and the uploader). It enqueues a canonical repair, performs
+    // no S3 upload, and returns Ok(()). The buckets deliberately do not exist,
+    // so any S3 call would surface as an error rather than Ok.
+    #[tokio::test]
+    #[serial(db)]
+    async fn upload_preflight_enqueues_repair_for_non_publishable() -> anyhow::Result<()> {
+        let db = setup_test_db(ImportMode::None)
+            .await
+            .map_err(|err| anyhow::anyhow!(err.to_string()))?;
+        let pool = sqlx::postgres::PgPoolOptions::new()
+            .max_connections(2)
+            .connect(db.db_url())
+            .await?;
+
+        let host_chain_id = 1_i64;
+        let key_id_gw = vec![0x09_u8; 32];
+        let handle = vec![0xC2_u8; 32];
+        let producer = vec![0xC3_u8; 32];
+        let block = vec![0xC4_u8; 32];
+
+        // Digest row exists (so a canonical target can be resolved) but there is
+        // NO completed pbs work → the branch row is not publishable.
+        sqlx::query(
+            "INSERT INTO ciphertext_digest_branch(
+                host_chain_id, key_id_gw, handle, producer_block_hash, block_hash, block_number
+             ) VALUES ($1, $2, $3, $4, $5, 7)",
+        )
+        .bind(host_chain_id)
+        .bind(&key_id_gw)
+        .bind(&handle)
+        .bind(&producer)
+        .bind(&block)
+        .execute(&pool)
+        .await?;
+
+        let task = HandleItem {
+            host_chain_id: ChainId::try_from(host_chain_id).unwrap(),
+            key_id_gw: key_id_gw.clone(),
+            handle: handle.clone(),
+            producer_block_hash: producer.clone(),
+            block_hash: block.clone(),
+            block_number: Some(7),
+            ct64_compressed: Arc::new(vec![0xAA, 0xBB, 0xCC, 0xDD]),
+            ct128: Arc::new(BigCiphertext::new(
+                Vec::new(),
+                Ciphertext128Format::CompressedOnCpu,
+            )),
+            ct64_digest: None,
+            ct128_digest: None,
+            s3_format_version: None,
+            span: Span::none(),
+            transaction_id: None,
+        };
+
+        let client = create_localstack_s3_client(LOCALSTACK_PORT).await;
+        let conf = small_s3_config("f2-nonpub-ct64-not-created", "f2-nonpub-ct128-not-created");
+
+        let mut trx = pool.begin().await?;
+        create_upload_task_savepoint(&mut trx).await?;
+        // Returns Ok(()) despite non-existent buckets: no S3 call is made.
+        upload_ciphertexts(
+            &mut trx,
+            task,
+            &client,
+            &conf,
+            Arc::new(PrivateKeySigner::random()),
+        )
+        .await?;
+        trx.commit().await?;
+
+        let repair_count: i64 = sqlx::query_scalar(
+            "SELECT COUNT(*) FROM s3_canonical_repair_queue
+              WHERE host_chain_id = $1 AND handle = $2",
+        )
+        .bind(host_chain_id)
+        .bind(&handle)
+        .fetch_one(&pool)
+        .await?;
+        assert_eq!(repair_count, 1, "a canonical repair must be enqueued");
+
+        // The row was never marked uploaded.
+        let ciphertext: Option<Vec<u8>> = sqlx::query_scalar(
+            "SELECT ciphertext FROM ciphertext_digest_branch
+              WHERE handle = $1 AND producer_block_hash = $2 AND block_hash = $3",
+        )
+        .bind(&handle)
+        .bind(&producer)
+        .bind(&block)
+        .fetch_one(&pool)
+        .await?;
+        assert!(ciphertext.is_none(), "no ct64 digest should be marked");
+
+        Ok(())
+    }
+
+    // End-to-end regression test for the settled-publication S3 reconciler
+    // (which was dead on arrival until the digest-only UploadMaterial fix:
+    // upload_material's no-bytes guard rejected every reconciler task).
+    // Publishes through the real upload path, then asserts both reconciler
+    // outcomes: an intact attested object refreshes the verified marker, and
+    // a deleted object enqueues an exact canonical repair instead.
+    #[tokio::test]
+    #[serial(db, s3)]
+    #[cfg(not(feature = "gpu"))]
+    async fn reconcile_verified_settled_reverifies_intact_and_repairs_missing() -> anyhow::Result<()>
+    {
+        let db = setup_test_db(ImportMode::None)
+            .await
+            .map_err(|err| anyhow::anyhow!(err.to_string()))?;
+        let pool = sqlx::postgres::PgPoolOptions::new()
+            .max_connections(2)
+            .connect(db.db_url())
+            .await?;
+        let client = create_localstack_s3_client(LOCALSTACK_PORT).await;
+        let conf = small_s3_config("b-reconcile-ct64", "b-reconcile-ct128");
+        client
+            .create_bucket()
+            .bucket(&conf.bucket_ct64)
+            .send()
+            .await
+            .ok();
+        client
+            .create_bucket()
+            .bucket(&conf.bucket_ct128)
+            .send()
+            .await
+            .ok();
+        let signer: CoproSigner = Arc::new(PrivateKeySigner::random());
+
+        let host_chain_id = 1_i64;
+        let key_id_gw = vec![0x07_u8; 32];
+        let handle = vec![0xB6_u8; 32];
+        let producer = vec![0xB7_u8; 32];
+        let block = vec![0xB8_u8; 32];
+        let ct64_bytes = vec![0xE5_u8; 64];
+        let ct64_digest = compute_digest(&ct64_bytes);
+        // Real branch rows must publish a completed SnS ct128 (ct64-only is
+        // legacy/branchless); the bytes are opaque to upload and verification.
+        let ct128_bytes = vec![0xD7_u8; 96];
+
+        // The publication row plus the completed pbs witness that makes it
+        // publishable pre-settlement.
+        sqlx::query(
+            "INSERT INTO ciphertext_digest_branch(
+                host_chain_id, key_id_gw, handle, producer_block_hash, block_hash,
+                block_number, ciphertext, s3_format_version
+             ) VALUES ($1, $2, $3, $4, $5, 1, $6, $7)",
+        )
+        .bind(host_chain_id)
+        .bind(&key_id_gw)
+        .bind(&handle)
+        .bind(&producer)
+        .bind(&block)
+        .bind(&ct64_digest)
+        .bind(CURRENT_S3_FORMAT_VERSION)
+        .execute(&pool)
+        .await?;
+        sqlx::query(
+            "INSERT INTO pbs_computations_branch(
+                handle, host_chain_id, producer_block_hash, block_hash,
+                block_number, is_completed, is_error
+             ) VALUES ($1, $2, $3, $4, 1, TRUE, FALSE)",
+        )
+        .bind(&handle)
+        .bind(host_chain_id)
+        .bind(&producer)
+        .bind(&block)
+        .execute(&pool)
+        .await?;
+
+        // Publish through the real upload path so the attested object in S3
+        // matches what the reconciler will rebuild from the row's digests.
+        let task = HandleItem {
+            host_chain_id: ChainId::try_from(host_chain_id).unwrap(),
+            key_id_gw: key_id_gw.clone(),
+            handle: handle.clone(),
+            producer_block_hash: producer.clone(),
+            block_hash: block.clone(),
+            block_number: Some(1),
+            ct64_compressed: Arc::new(ct64_bytes),
+            ct128: Arc::new(BigCiphertext::new(
+                ct128_bytes,
+                Ciphertext128Format::CompressedOnCpu,
+            )),
+            ct64_digest: None,
+            ct128_digest: None,
+            s3_format_version: Some(CURRENT_S3_FORMAT_VERSION),
+            span: Span::none(),
+            transaction_id: None,
+        };
+        let mut trx = pool.begin().await?;
+        create_upload_task_savepoint(&mut trx).await?;
+        upload_ciphertexts(&mut trx, task, &client, &conf, signer.clone()).await?;
+        trx.commit().await?;
+
+        // Mark the publication verified and the block settled: exactly the rows
+        // reconcile_verified_settled_publications selects.
+        sqlx::query(
+            "UPDATE ciphertext_digest_branch
+                SET s3_publication_verified_at = NOW() - INTERVAL '1 hour',
+                    s3_publication_verified_digest = ciphertext,
+                    s3_publication_verified_producer_block_hash = producer_block_hash
+              WHERE host_chain_id = $1 AND handle = $2",
+        )
+        .bind(host_chain_id)
+        .bind(&handle)
+        .execute(&pool)
+        .await?;
+        sqlx::query("INSERT INTO coprocessor_settlement(chain_id, settled_height) VALUES ($1, 1)")
+            .bind(host_chain_id)
+            .execute(&pool)
+            .await?;
+        let verified_before: i64 = sqlx::query_scalar(
+            "SELECT EXTRACT(EPOCH FROM s3_publication_verified_at)::bigint
+               FROM ciphertext_digest_branch
+              WHERE host_chain_id = $1 AND handle = $2",
+        )
+        .bind(host_chain_id)
+        .bind(&handle)
+        .fetch_one(&pool)
+        .await?;
+
+        // Intact object: the row is re-verified (marker refreshed), no repair.
+        reconcile_verified_settled_publications(&client, &pool, &conf, signer.clone(), 10).await?;
+        let verified_after: i64 = sqlx::query_scalar(
+            "SELECT EXTRACT(EPOCH FROM s3_publication_verified_at)::bigint
+               FROM ciphertext_digest_branch
+              WHERE host_chain_id = $1 AND handle = $2",
+        )
+        .bind(host_chain_id)
+        .bind(&handle)
+        .fetch_one(&pool)
+        .await?;
+        assert!(
+            verified_after > verified_before,
+            "an intact publication must be re-verified, not left stale"
+        );
+        let repair_count: i64 = sqlx::query_scalar(
+            "SELECT COUNT(*) FROM s3_canonical_repair_queue
+              WHERE host_chain_id = $1 AND handle = $2",
+        )
+        .bind(host_chain_id)
+        .bind(&handle)
+        .fetch_one(&pool)
+        .await?;
+        assert_eq!(repair_count, 0, "no repair for an intact publication");
+
+        // Delete the attested ct64 object out from under the verified row: the
+        // reconciler must enqueue an exact repair instead of re-verifying.
+        let key = s3_ciphertext_key(&handle, COPROCESSOR_CONTEXT_ID_1);
+        client
+            .delete_object()
+            .bucket(&conf.bucket_ct64)
+            .key(&key)
+            .send()
+            .await?;
+        reconcile_verified_settled_publications(&client, &pool, &conf, signer.clone(), 10).await?;
+        let repair_reason: String = sqlx::query_scalar(
+            "SELECT reason FROM s3_canonical_repair_queue
+              WHERE host_chain_id = $1 AND handle = $2",
+        )
+        .bind(host_chain_id)
+        .bind(&handle)
+        .fetch_one(&pool)
+        .await?;
+        assert_eq!(
+            repair_reason, "reconciler_attestation_mismatch",
+            "a missing attested object must enqueue an exact canonical repair"
+        );
+
+        Ok(())
+    }
+
+    // Item F4: recompute_missing_ct128 must fail cleanly (InternalError, no
+    // panic) when no SNS keyset is available — an empty cache over a keyless DB.
+    #[tokio::test]
+    #[serial(db)]
+    async fn recompute_missing_ct128_errors_without_keyset() -> anyhow::Result<()> {
+        let db = setup_test_db(ImportMode::None)
+            .await
+            .map_err(|err| anyhow::anyhow!(err.to_string()))?;
+        let pool = sqlx::postgres::PgPoolOptions::new()
+            .max_connections(2)
+            .connect(db.db_url())
+            .await?;
+
+        let cache = empty_keys_cache();
+        let err = recompute_missing_ct128(
+            &pool,
+            &cache,
+            vec![0xAB_u8; 32],
+            vec![0xCD_u8; 48],
+            Ciphertext128Format::CompressedOnCpu,
+        )
+        .await
+        .expect_err("recompute must fail without a keyset");
+
+        assert!(
+            matches!(err, ExecutionError::InternalError(_)),
+            "expected InternalError, got {err:?}"
+        );
+        assert!(
+            err.to_string().contains("SNS keyset is unavailable"),
+            "unexpected error: {err}"
         );
 
         Ok(())
