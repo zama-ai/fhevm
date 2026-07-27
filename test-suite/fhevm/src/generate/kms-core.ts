@@ -62,12 +62,17 @@ export const kmsRenderOptionsFor = (coreVersion: string): KmsRenderOptions => ({
 });
 
 /**
- * kms-core is published amd64-only, so an arm64 host must have the platform pinned
- * explicitly or compose fails the pull with "no matching manifest for linux/arm64".
- * The same treatment relayer-docker-compose.yml and solana-proof-service already apply;
- * a no-op on amd64 hosts, including CI.
+ * kms-core stopped publishing arm64 (zama-ai/kms#698 dropped the arm runner and bumped
+ * ci-templates to a template with no linux/arm64 target), so on an arm64 host the pull fails
+ * outright with "no matching manifest for linux/arm64/v8" -- the tag is a manifest list
+ * containing only amd64, and Docker will not substitute a platform from a list. Pinning it runs
+ * the cores under emulation instead.
+ *
+ * Emitted as a compose interpolation rather than a literal so it stays the same single knob the
+ * checked-in core-docker-compose.yml uses: set CORE_PLATFORM to go native again once a
+ * CORE_VERSION publishes arm64. A no-op on amd64 hosts, including CI.
  */
-export const KMS_CORE_PLATFORM = "linux/amd64";
+export const KMS_CORE_PLATFORM = "${CORE_PLATFORM:-linux/amd64}";
 
 /** The single cluster-shared threshold config filename (mounted into every core). */
 export const KMS_THRESHOLD_CONFIG_NAME = "kms-core-threshold.toml";
