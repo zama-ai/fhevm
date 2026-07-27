@@ -2,7 +2,10 @@ import { describe, expect, test } from "bun:test";
 import path from "node:path";
 
 import { coprocessorSenderSchemaBridge } from "../rollouts/mainnet-v0.11-to-v0.12-kms/coprocessor-schema-bridge";
-import { relayerSdkV042TestKeyError } from "../rollouts/mainnet-v0.11-to-v0.12-kms/run";
+import {
+  incidentRequestExtraData,
+  relayerSdkV042TestKeyError,
+} from "../rollouts/mainnet-v0.11-to-v0.12-kms/run";
 import { from, scenario, to } from "../rollouts/mainnet-v0.11-to-v0.12-kms/versions";
 import type { RolloutRunContext } from "./commands/rollout-run";
 import { loadRolloutRunbook } from "./commands/rollout-run";
@@ -54,9 +57,11 @@ describe("mainnet v0.11 to v0.12 KMS rollout", () => {
       },
       async checkUserDecryptionResponses(
         label: string,
-        options: { versionsByNode: string[]; expectedClientError: string },
+        options: { versionsByNode: string[]; expectedClientError: string; requestExtraData: string },
       ) {
-        calls.push(`responses:${label}:${options.versionsByNode.join(",")}:${options.expectedClientError}`);
+        calls.push(
+          `responses:${label}:${options.versionsByNode.join(",")}:${options.expectedClientError}:${options.requestExtraData}`,
+        );
       },
     } as unknown as RolloutRunContext;
 
@@ -68,13 +73,18 @@ describe("mainnet v0.11 to v0.12 KMS rollout", () => {
       "up:four-party-threshold-kms:test-suite",
       "sql:bridge v0.11 coprocessor rows to the v0.12 transaction sender:true",
       "test:input-proof",
-      `responses:old KMS nodes return v0 responses:v0,v0,v0,v0:${relayerSdkV042TestKeyError}`,
+      `responses:old KMS nodes return v0 responses:v0,v0,v0,v0:${relayerSdkV042TestKeyError}:${incidentRequestExtraData}`,
       "upgrade:1,2:/tmp/01-kms-core-target.lock.json",
       "test:input-proof",
-      `responses:mixed KMS nodes return both response versions:v1,v1,v0,v0:${relayerSdkV042TestKeyError}`,
+      `responses:mixed KMS nodes return both response versions:v1,v1,v0,v0:${relayerSdkV042TestKeyError}:${incidentRequestExtraData}`,
       "upgrade:3,4:/tmp/01-kms-core-target.lock.json",
       "test:input-proof",
-      `responses:new KMS nodes return v1 responses:v1,v1,v1,v1:${relayerSdkV042TestKeyError}`,
+      `responses:new KMS nodes return v1 responses:v1,v1,v1,v1:${relayerSdkV042TestKeyError}:${incidentRequestExtraData}`,
     ]);
+  });
+
+  test("pins the v1 request context observed during the incident", () => {
+    expect(incidentRequestExtraData).toBe(`0x0107${"1".padStart(62, "0")}`);
+    expect(incidentRequestExtraData).toHaveLength(68);
   });
 });

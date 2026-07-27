@@ -50,6 +50,7 @@ type RolloutVersionLockOptions = {
 };
 
 type RolloutTestOptions = {
+  containerEnv?: Record<string, string>;
   grep?: string;
   network?: string;
   noHardhatCompile?: boolean;
@@ -60,6 +61,7 @@ type RolloutExpectedTestFailureOptions = RolloutTestOptions & {
 };
 type RolloutUserDecryptionResponseOptions = {
   expectedClientError: string;
+  requestExtraData: string;
   versionsByNode: KmsResponseVersion[];
 };
 type RolloutContractTaskOptions = {
@@ -133,6 +135,7 @@ const runRolloutTest = async (receipt: RolloutReceipt, profile: string, options:
     noHardhatCompile: options.noHardhatCompile ?? true,
     parallel: options.parallel,
     grep: options.grep,
+    containerEnv: options.containerEnv,
   });
 };
 
@@ -165,23 +168,11 @@ export const createRolloutContext = (
     }
 
     const previousIds = await snapshotUserDecryptionResponseIds(state);
-    let observedClientError: string | undefined;
-    try {
-      await runRolloutTest(receipt, "user-decryption", {
-        grep: "test user decrypt ebool$",
-        parallel: false,
-      });
-    } catch (error) {
-      if (!matchesExpectedTestFailure(error, options.expectedClientError)) {
-        throw error;
-      }
-      observedClientError = error.stderr.slice(-2_000);
-    }
-    if (!observedClientError) {
-      throw new PreflightError(
-        `user-decryption unexpectedly passed; expected an error containing ${JSON.stringify(options.expectedClientError)}`,
-      );
-    }
+    await runRolloutTest(receipt, "user-decryption", {
+      containerEnv: { ROLLOUT_USER_DECRYPTION_EXTRA_DATA: options.requestExtraData },
+      grep: "test rollout user decrypt with configured extraData$",
+      parallel: false,
+    });
     const responses = await waitForUserDecryptionResponses(state, previousIds);
     const observedVersions = responses.map((response) => responseVersion(response.extraData));
     if (observedVersions.some((version, index) => version !== options.versionsByNode[index])) {
@@ -199,14 +190,38 @@ export const createRolloutContext = (
     if (contexts.size > 1) {
       throw new PreflightError(`${label}: v1 responses do not carry the same KMS context`);
     }
+
+    let observedClientError: string | undefined;
+    try {
+      await runRolloutTest(receipt, "user-decryption", {
+        grep: "test user decrypt ebool$",
+        parallel: false,
+      });
+    } catch (error) {
+      if (!matchesExpectedTestFailure(error, options.expectedClientError)) {
+        throw error;
+      }
+      observedClientError = error.stderr.slice(-2_000);
+    }
+    if (!observedClientError) {
+      throw new PreflightError(
+        `user-decryption unexpectedly passed; expected an error containing ${JSON.stringify(options.expectedClientError)}`,
+      );
+    }
     await receipt.record("user-decryption-responses", label, {
       details: {
-        clientErrorIncludes: options.expectedClientError,
-        decryptionId: responses[0]?.decryptionId,
-        observedClientError,
-        responses: responses
-          .map(({ extraData, nodeId, status }) => ({ extraData, nodeId, status }))
-          .sort((a, b) => a.nodeId - b.nodeId),
+        responseProbe: {
+          decryptionId: responses[0]?.decryptionId,
+          requestExtraData: options.requestExtraData,
+          responses: responses
+            .map(({ extraData, nodeId, status }) => ({ extraData, nodeId, status }))
+            .sort((a, b) => a.nodeId - b.nodeId),
+        },
+        legacyClientProbe: {
+          requestExtraData: "0x00",
+          errorIncludes: options.expectedClientError,
+          observedError: observedClientError,
+        },
       },
     });
   },

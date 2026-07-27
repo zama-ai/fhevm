@@ -3,6 +3,7 @@ import { coprocessorSenderSchemaBridge } from "./coprocessor-schema-bridge";
 import { from, scenario, to, versionSources } from "./versions";
 
 export const relayerSdkV042TestKeyError = "Cannot find user decryption pivot";
+export const incidentRequestExtraData = `0x0107${"1".padStart(62, "0")}`;
 
 export const run = async (ctx: RolloutRunContext) => {
   const baselineLock = await ctx.writeVersionLock("00-kms-core-baseline", { versions: from, sources: versionSources });
@@ -20,6 +21,7 @@ export const run = async (ctx: RolloutRunContext) => {
   await ctx.checkUserDecryptionResponses("old KMS nodes return v0 responses", {
     versionsByNode: ["v0", "v0", "v0", "v0"],
     expectedClientError: relayerSdkV042TestKeyError,
+    requestExtraData: incidentRequestExtraData,
   });
 
   await ctx.upgradeKmsNodes([1, 2], { lockFile: targetLock });
@@ -27,6 +29,7 @@ export const run = async (ctx: RolloutRunContext) => {
   await ctx.checkUserDecryptionResponses("mixed KMS nodes return both response versions", {
     versionsByNode: ["v1", "v1", "v0", "v0"],
     expectedClientError: relayerSdkV042TestKeyError,
+    requestExtraData: incidentRequestExtraData,
   });
 
   await ctx.upgradeKmsNodes([3, 4], { lockFile: targetLock });
@@ -34,6 +37,7 @@ export const run = async (ctx: RolloutRunContext) => {
   await ctx.checkUserDecryptionResponses("new KMS nodes return v1 responses", {
     versionsByNode: ["v1", "v1", "v1", "v1"],
     expectedClientError: relayerSdkV042TestKeyError,
+    requestExtraData: incidentRequestExtraData,
   });
 };
 
