@@ -2,7 +2,7 @@ import { describe, expect, test } from "bun:test";
 import path from "node:path";
 
 import { coprocessorSenderSchemaBridge } from "../rollouts/mainnet-v0.11-to-v0.12-kms/coprocessor-schema-bridge";
-import { relayerSdkV042DecryptionError } from "../rollouts/mainnet-v0.11-to-v0.12-kms/run";
+import { relayerSdkV042TestKeyError } from "../rollouts/mainnet-v0.11-to-v0.12-kms/run";
 import { from, scenario, to } from "../rollouts/mainnet-v0.11-to-v0.12-kms/versions";
 import type { RolloutRunContext } from "./commands/rollout-run";
 import { loadRolloutRunbook } from "./commands/rollout-run";
@@ -52,8 +52,11 @@ describe("mainnet v0.11 to v0.12 KMS rollout", () => {
       async test(profile: string) {
         calls.push(`test:${profile}`);
       },
-      async expectTestFailure(profile: string, options: { errorIncludes: string; grep?: string }) {
-        calls.push(`expected-failure:${profile}:${options.grep}:${options.errorIncludes}`);
+      async checkUserDecryptionResponses(
+        label: string,
+        options: { versionsByNode: string[]; expectedClientError: string },
+      ) {
+        calls.push(`responses:${label}:${options.versionsByNode.join(",")}:${options.expectedClientError}`);
       },
     } as unknown as RolloutRunContext;
 
@@ -64,11 +67,14 @@ describe("mainnet v0.11 to v0.12 KMS rollout", () => {
       "lock:01-kms-core-target:v0.13.10",
       "up:four-party-threshold-kms:test-suite",
       "sql:bridge v0.11 coprocessor rows to the v0.12 transaction sender:true",
-      "test:rollout-standard",
+      "test:input-proof",
+      `responses:old KMS nodes return v0 responses:v0,v0,v0,v0:${relayerSdkV042TestKeyError}`,
       "upgrade:1,2:/tmp/01-kms-core-target.lock.json",
-      `expected-failure:user-decryption:test user decrypt ebool$:${relayerSdkV042DecryptionError}`,
+      "test:input-proof",
+      `responses:mixed KMS nodes return both response versions:v1,v1,v0,v0:${relayerSdkV042TestKeyError}`,
       "upgrade:3,4:/tmp/01-kms-core-target.lock.json",
-      "test:rollout-standard",
+      "test:input-proof",
+      `responses:new KMS nodes return v1 responses:v1,v1,v1,v1:${relayerSdkV042TestKeyError}`,
     ]);
   });
 });

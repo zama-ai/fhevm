@@ -2,9 +2,7 @@ import type { RolloutRunContext } from "../../src/commands/rollout-run";
 import { coprocessorSenderSchemaBridge } from "./coprocessor-schema-bridge";
 import { from, scenario, to, versionSources } from "./versions";
 
-// relayer-sdk v0.4.2 contains this typo. Keep the split local instead of
-// accepting the misspelling repository-wide in the spell checker.
-export const relayerSdkV042DecryptionError = "An error occur" + "ed during decryption";
+export const relayerSdkV042TestKeyError = "Cannot find user decryption pivot";
 
 export const run = async (ctx: RolloutRunContext) => {
   const baselineLock = await ctx.writeVersionLock("00-kms-core-baseline", { versions: from, sources: versionSources });
@@ -15,19 +13,28 @@ export const run = async (ctx: RolloutRunContext) => {
     "bridge v0.11 coprocessor rows to the v0.12 transaction sender",
     coprocessorSenderSchemaBridge,
   );
-  await ctx.test("rollout-standard", { parallel: false });
+  // Threshold test parameters exercise every real node and response, but the
+  // pinned legacy client cannot reconstruct them. Plaintext fidelity belongs
+  // to the centralized realistic-key path; this path checks response compatibility.
+  await ctx.test("input-proof", { parallel: false });
+  await ctx.checkUserDecryptionResponses("old KMS nodes return v0 responses", {
+    versionsByNode: ["v0", "v0", "v0", "v0"],
+    expectedClientError: relayerSdkV042TestKeyError,
+  });
 
   await ctx.upgradeKmsNodes([1, 2], { lockFile: targetLock });
-  // v0.4.2 exposes only this generic WASM reconstruction wrapper. Successful
-  // homogeneous checks on both sides keep unrelated stack failures visible.
-  await ctx.expectTestFailure("user-decryption", {
-    errorIncludes: relayerSdkV042DecryptionError,
-    grep: "test user decrypt ebool$",
-    parallel: false,
+  await ctx.test("input-proof", { parallel: false });
+  await ctx.checkUserDecryptionResponses("mixed KMS nodes return both response versions", {
+    versionsByNode: ["v1", "v1", "v0", "v0"],
+    expectedClientError: relayerSdkV042TestKeyError,
   });
 
   await ctx.upgradeKmsNodes([3, 4], { lockFile: targetLock });
-  await ctx.test("rollout-standard", { parallel: false });
+  await ctx.test("input-proof", { parallel: false });
+  await ctx.checkUserDecryptionResponses("new KMS nodes return v1 responses", {
+    versionsByNode: ["v1", "v1", "v1", "v1"],
+    expectedClientError: relayerSdkV042TestKeyError,
+  });
 };
 
 export default run;

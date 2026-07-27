@@ -24,6 +24,12 @@ import { ensureDir, writeJson } from "../utils/fs";
 import { partyContainers, setRunning, waitForPartiesRunning, waitForPartiesStopped } from "./kms-generation";
 import { type RolloutReceipt, createRolloutReceipt } from "./rollout-receipt";
 import { test as runTest } from "./test";
+import {
+  type KmsResponseVersion,
+  responseVersion,
+  snapshotUserDecryptionResponseIds,
+  waitForUserDecryptionResponses,
+} from "./user-decryption-responses";
 
 type RolloutUpOptions = {
   lockFile: string;
@@ -52,6 +58,10 @@ type RolloutTestOptions = {
 type RolloutExpectedTestFailureOptions = RolloutTestOptions & {
   errorIncludes: string;
 };
+type RolloutUserDecryptionResponseOptions = {
+  expectedClientError: string;
+  versionsByNode: KmsResponseVersion[];
+};
 type RolloutContractTaskOptions = {
   env?: Record<string, string>;
 };
@@ -63,6 +73,7 @@ type RolloutLockOptions = {
 
 export type RolloutRunContext = {
   applyVersionLock(label: string, options: RolloutVersionLockOptions): Promise<void>;
+  checkUserDecryptionResponses(label: string, options: RolloutUserDecryptionResponseOptions): Promise<void>;
   expectTestFailure(profile: string, options: RolloutExpectedTestFailureOptions): Promise<void>;
   readState(): Promise<State>;
   refreshDiscovery(): Promise<void>;
@@ -140,6 +151,63 @@ export const createRolloutContext = (
         overrides: (options.overrides ?? []).map((override) => override.group),
       },
       lockFile: options.lockFile,
+    });
+  },
+  async checkUserDecryptionResponses(label, options) {
+    const state = await loadState();
+    if (!state || state.scenario.kms.mode !== "threshold") {
+      throw new PreflightError("checkUserDecryptionResponses requires a running threshold KMS cluster");
+    }
+    if (options.versionsByNode.length !== state.scenario.kms.committeeSize) {
+      throw new PreflightError(
+        `checkUserDecryptionResponses expects one version per KMS node (${state.scenario.kms.committeeSize}); configured ${options.versionsByNode.length}`,
+      );
+    }
+
+    const previousIds = await snapshotUserDecryptionResponseIds(state);
+    let observedClientError: string | undefined;
+    try {
+      await runRolloutTest(receipt, "user-decryption", {
+        grep: "test user decrypt ebool$",
+        parallel: false,
+      });
+    } catch (error) {
+      if (!matchesExpectedTestFailure(error, options.expectedClientError)) {
+        throw error;
+      }
+      observedClientError = error.stderr.slice(-2_000);
+    }
+    if (!observedClientError) {
+      throw new PreflightError(
+        `user-decryption unexpectedly passed; expected an error containing ${JSON.stringify(options.expectedClientError)}`,
+      );
+    }
+    const responses = await waitForUserDecryptionResponses(state, previousIds);
+    const observedVersions = responses.map((response) => responseVersion(response.extraData));
+    if (observedVersions.some((version, index) => version !== options.versionsByNode[index])) {
+      throw new PreflightError(
+        `${label}: expected node response versions ${options.versionsByNode.join(", ")}; observed ${observedVersions
+          .map((version) => version ?? "invalid")
+          .join(", ")}`,
+      );
+    }
+    const contexts = new Set(
+      responses
+        .filter((response) => responseVersion(response.extraData) === "v1")
+        .map((response) => response.extraData.slice(4).toLowerCase()),
+    );
+    if (contexts.size > 1) {
+      throw new PreflightError(`${label}: v1 responses do not carry the same KMS context`);
+    }
+    await receipt.record("user-decryption-responses", label, {
+      details: {
+        clientErrorIncludes: options.expectedClientError,
+        decryptionId: responses[0]?.decryptionId,
+        observedClientError,
+        responses: responses
+          .map(({ extraData, nodeId, status }) => ({ extraData, nodeId, status }))
+          .sort((a, b) => a.nodeId - b.nodeId),
+      },
     });
   },
   async expectTestFailure(profile, options) {

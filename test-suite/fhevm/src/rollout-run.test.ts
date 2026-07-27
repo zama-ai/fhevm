@@ -31,6 +31,9 @@ const fakeContext = () => {
     async applyVersionLock(label, options) {
       calls.push(`apply-version-lock:${label}:${options.lockFile}`);
     },
+    async checkUserDecryptionResponses(label) {
+      calls.push(`user-decryption-responses:${label}`);
+    },
     async expectTestFailure(profile, options) {
       calls.push(`expected-test-failure:${profile}:${options.errorIncludes}`);
     },
