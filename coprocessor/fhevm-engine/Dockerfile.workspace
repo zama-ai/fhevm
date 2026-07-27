@@ -82,14 +82,55 @@ RUN npm ci && \
     DOTENV_CONFIG_PATH=.env.example npx hardhat task:deployAllGatewayContracts
 
 # =============================================================================
-# Stage 1: build the Rust workspace
+# Stage 1-chef: install cargo-chef (shared base for planner + builder)
 # =============================================================================
-FROM ghcr.io/zama-ai/fhevm/gci/rust-glibc:${RUST_IMAGE_VERSION} AS builder
+FROM ghcr.io/zama-ai/fhevm/gci/rust-glibc:${RUST_IMAGE_VERSION} AS chef
+
+USER root
+WORKDIR /app
+
+# Keep this exact so writer and reader builds produce the same cook-layer key.
+RUN cargo install cargo-chef --locked --version 0.1.77
+
+# =============================================================================
+# Stage 1-planner: emit the dependency-only cargo-chef recipe
+# =============================================================================
+FROM chef AS planner
+
+# `cargo chef prepare` reads every manifest in the workspace dependency graph.
+COPY listener ./listener
+COPY coprocessor/fhevm-engine ./coprocessor/fhevm-engine
+COPY coprocessor/proto ./coprocessor/proto
+COPY gateway-contracts/rust_bindings ./gateway-contracts/rust_bindings
+COPY gateway-contracts/contracts ./gateway-contracts/contracts
+COPY host-contracts/contracts ./host-contracts/contracts
+COPY solana ./solana
+COPY shared/ciphertext-attestation ./shared/ciphertext-attestation
+
+WORKDIR /app/coprocessor/fhevm-engine
+RUN cargo chef prepare --recipe-path recipe.json
+
+# =============================================================================
+# Stage 1: cook dependencies, then build all Rust workspace binaries
+# =============================================================================
+FROM chef AS builder
 
 ARG CARGO_PROFILE=release
-ARG BUILD_ID=unknown
-# Compiled stack version; unset => baseline (0.14.0), GCS build passes a newer one.
-ARG BUILD_STACK_VERSION
+
+# cargo-chef records workspace members in recipe.json but needs real sources for non-member path
+# dependencies. Keep these copies before `cook` so their contents correctly key the shared layer.
+WORKDIR /app
+COPY coprocessor/fhevm-engine/scheduler ./coprocessor/fhevm-engine/scheduler
+COPY listener ./listener
+COPY gateway-contracts/rust_bindings ./gateway-contracts/rust_bindings
+COPY solana ./solana
+COPY shared/ciphertext-attestation ./shared/ciphertext-attestation
+WORKDIR /app/coprocessor/fhevm-engine
+COPY coprocessor/fhevm-engine/rust-toolchain.toml ./
+COPY --from=planner /app/coprocessor/fhevm-engine/recipe.json recipe.json
+RUN cargo chef cook --locked --profile=${CARGO_PROFILE} --recipe-path recipe.json
+
+# sccache is used only for the final source build, after the credential-independent cook layer.
 ARG SCCACHE_BUCKET
 ARG SCCACHE_REGION=eu-west-3
 ARG SCCACHE_S3_PREFIX
@@ -99,13 +140,8 @@ ENV SCCACHE_BUCKET=${SCCACHE_BUCKET}
 ENV SCCACHE_REGION=${SCCACHE_REGION}
 ENV SCCACHE_S3_KEY_PREFIX=${SCCACHE_S3_PREFIX}
 ENV AWS_REGION=${SCCACHE_REGION}
-
-USER root
-WORKDIR /app
-
-# TODO(sccache): temporary inline install for testing; remove once sccache
-# ships in the rust-glibc golden image and rely on that instead.
 RUN set -eux; \
+    if [ -z "${SCCACHE_BUCKET}" ]; then echo "SCCACHE_BUCKET unset; skipping sccache install"; exit 0; fi; \
     arch="$(uname -m)"; \
     case "$arch" in \
         x86_64)  triple=x86_64-unknown-linux-musl ;; \
@@ -117,29 +153,24 @@ RUN set -eux; \
     chmod +x /usr/local/bin/sccache; \
     sccache --version
 
-# Copy contract artifacts from contract_builder stage
+# Per-commit contract outputs and workspace sources stay after `cook`, preserving dependency cache
+# reuse while replacing cargo-chef's member-source stubs for the final build.
 COPY --from=contract_builder /app/host-contracts/artifacts/contracts /app/host-contracts/artifacts/contracts
 COPY --from=contract_builder /app/gateway-contracts/artifacts/contracts /app/gateway-contracts/artifacts/contracts
-
-# Copy Rust sources and dependencies.
-COPY listener ./listener
+WORKDIR /app
 COPY coprocessor/fhevm-engine ./coprocessor/fhevm-engine
 COPY coprocessor/proto ./coprocessor/proto
-COPY gateway-contracts/rust_bindings ./gateway-contracts/rust_bindings
 COPY gateway-contracts/contracts ./gateway-contracts/contracts
 COPY host-contracts/contracts ./host-contracts/contracts
-COPY solana ./solana
-COPY shared/ciphertext-attestation ./shared/ciphertext-attestation
-
 WORKDIR /app/coprocessor/fhevm-engine
 
-# Build entire workspace - tfhe compiles ONCE here
-# NOTE: We use cache mounts for incremental compilation. Because cache mounts
-# are NOT committed to the image layer, we must copy binaries to /out during
-# the same RUN instruction for COPY --from to work in later stages.
-RUN --mount=type=cache,target=/usr/local/cargo/registry,sharing=locked \
-    --mount=type=cache,target=/app/coprocessor/fhevm-engine/target,sharing=locked \
-    --mount=type=secret,id=sccache_aws_access_key_id \
+ARG BUILD_ID=unknown
+# Compiled stack version; unset => baseline (0.14.0), GCS build passes a newer one.
+ARG BUILD_STACK_VERSION
+
+# Install solc serially through gw-listener before the parallel workspace build. Otherwise the
+# listener build scripts can race while writing the shared svm binary and fail with ETXTBSY.
+RUN --mount=type=secret,id=sccache_aws_access_key_id \
     --mount=type=secret,id=sccache_aws_secret_access_key \
     if [ -n "${SCCACHE_BUCKET}" ] && command -v sccache >/dev/null 2>&1; then \
       export RUSTC_WRAPPER=sccache; \
@@ -148,6 +179,7 @@ RUN --mount=type=cache,target=/usr/local/cargo/registry,sharing=locked \
     fi && \
     cargo fetch && \
     FEATURES=""; if [ -n "${BUILD_STACK_VERSION}" ]; then FEATURES="--features fhevm-engine-common/stack-version-override"; export BUILD_STACK_VERSION="${BUILD_STACK_VERSION}"; fi && \
+    SQLX_OFFLINE=true cargo build --profile=${CARGO_PROFILE} -p gw-listener && \
     SQLX_OFFLINE=true BUILD_ID=${BUILD_ID} cargo build --profile=${CARGO_PROFILE} --workspace ${FEATURES} && \
     if [ -n "${SCCACHE_BUCKET}" ] && command -v sccache >/dev/null 2>&1; then sccache --show-stats; fi && \
     mkdir -p /out && \
