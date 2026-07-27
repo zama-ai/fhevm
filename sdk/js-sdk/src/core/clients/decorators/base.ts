@@ -49,6 +49,11 @@ import {
   type SignLegacyDecryptionPermitParameters,
   type SignLegacyDecryptionPermitReturnType,
 } from '../../actions/base/signLegacyDecryptionPermit.js';
+import {
+  signUnifiedDecryptionPermit,
+  type SignUnifiedDecryptionPermitParameters,
+  type SignUnifiedDecryptionPermitReturnType,
+} from '../../actions/base/signUnifiedDecryptionPermit.js';
 
 ////////////////////////////////////////////////////////////////////////////////
 
@@ -145,6 +150,21 @@ export type BaseActions = {
   readonly signLegacyDecryptionPermit: (
     parameters: SignLegacyDecryptionPermitParameters,
   ) => Promise<SignLegacyDecryptionPermitReturnType>;
+  /**
+   * Signs a unified decryption permit (V2).
+   *
+   * Requires an SDK on protocol API v0.14.0+ and a chain whose KMSVerifier/ProtocolConfig
+   * support the unified extraData v2 — throws if the connected chain has not yet upgraded.
+   *
+   * - Without `delegatorAddress`: Alice signs to decrypt her own encrypted values.
+   * - With `delegatorAddress`: Bob signs to decrypt values belonging to `delegatorAddress` (Alice),
+   *   after Alice has granted permission via `FHE.delegateUserDecryption()` on-chain.
+   *
+   * Inspect `isDelegated` on the returned permit to distinguish the two cases.
+   */
+  readonly signUnifiedDecryptionPermit: (
+    parameters: SignUnifiedDecryptionPermitParameters,
+  ) => Promise<SignUnifiedDecryptionPermitReturnType>;
   /** Deserializes a previously serialized e2e transport key pair back into a usable key pair. */
   readonly parseTransportKeyPair: (
     parameters: ParseTransportKeyPairParameters,
@@ -176,6 +196,7 @@ function _baseActions(fhevm: Fhevm<FhevmChain>): BaseActions {
     decryptPublicValuesWithSignatures: (parameters) => decryptPublicValuesWithSignatures(fhevm, parameters),
     signDecryptionPermit: (parameters) => signDecryptionPermit(fhevm, parameters),
     signLegacyDecryptionPermit: (parameters) => signLegacyDecryptionPermit(fhevm, parameters),
+    signUnifiedDecryptionPermit: (parameters) => signUnifiedDecryptionPermit(fhevm, parameters),
     parseTransportKeyPair: (parameters) => parseTransportKeyPair(fhevm, parameters),
     serializeTransportKeyPair: (parameters) => serializeTransportKeyPair(fhevm, parameters),
     serializeSignedDecryptionPermit: (parameters) => serializeSignedDecryptionPermit(fhevm, parameters),

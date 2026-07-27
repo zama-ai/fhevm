@@ -21,6 +21,7 @@ import {
 import { isRecordUintNumberProperty, isUintNumber } from '../base/uint.js';
 import { SDK_PROTOCOL_API_MAJOR_VERSION, SDK_PROTOCOL_API_MINOR_VERSION } from '../runtime/sdkProtocolApiVersion.js';
 import { createKmsExtraDataFromBytesHex, EXTRA_DATA_V2 } from './kmsExtraData-p.js';
+import { semverComparatorImpliesRange } from '../base/semver.js';
 
 ////////////////////////////////////////////////////////////////////////////////
 
@@ -159,11 +160,23 @@ export async function signDecryptionPermit(
   context: KmsSignDecryptionPermitContext,
   parameters: KmsSignDecryptionPermitParameters,
 ): Promise<SignedDecryptionPermit> {
-  // V1 permits are always created here: the current protocol API version this
-  // SDK is using is 0.13.0, so the SDK does not know the 0.14.0 API (which is
-  // what introduces V2 permits). Once the SDK adopts API 0.14.0, this branch
-  // falls through to signDecryptionPermitV2 below.
+  // This branch only matters for an SDK build capped at protocol API v0.13.x or
+  // below, which does not know the v0.14.0 API (the one that introduces V2
+  // permits) and so must always create V1 permits. This SDK is on v0.14.0, so
+  // this guard no longer triggers and execution always falls through past it.
   if (SDK_PROTOCOL_API_MAJOR_VERSION === 0 && SDK_PROTOCOL_API_MINOR_VERSION <= 13) {
+    return await signDecryptionPermitV1(context, parameters);
+  }
+
+  // The SDK build knows the v14 API, but the connected chain may still be on
+  // v13 (a v13 relayer rejects V2-format permits) — fall back to V1 using the
+  // frozen context's actual resolved protocol version for this operation.
+  const protocolVersion = parameters.fhevmContext.protocolVersion;
+  const isProtocolV13OrLower = semverComparatorImpliesRange(protocolVersion.version, protocolVersion.comparator, {
+    version: '0.14.0',
+    comparator: 'lt',
+  });
+  if (isProtocolV13OrLower) {
     return await signDecryptionPermitV1(context, parameters);
   }
 
@@ -272,9 +285,11 @@ export async function parseSignedDecryptionPermit(
   const version: 1 | 2 = sanitizedVersion as 1 | 2;
 
   // Enforce the SDK protocol-API cap (see the CRITICAL RULE in readKmsSignersContext-p.ts):
-  // a v13-capped SDK must never accept a v2 permit, because a v13 relayer rejects it.
-  // A v2 can arrive two independent ways; each is rejected here with its own message,
-  // up front, instead of an opaque relayer 400 later (mirrors decryptValuesFromPairs).
+  // an SDK build capped at protocol API v0.13.x or below must never accept a v2 permit,
+  // because a v13 relayer rejects it. A v2 can arrive two independent ways; each would be
+  // rejected here with its own message, up front, instead of an opaque relayer 400 later
+  // (mirrors decryptValuesFromPairs). This SDK is on v0.14.0, so this guard no longer
+  // triggers — V2 permits and extraData v2 are accepted below.
   if (SDK_PROTOCOL_API_MAJOR_VERSION === 0 && SDK_PROTOCOL_API_MINOR_VERSION <= 13) {
     // (a) A V2-format permit.
     if (version > 1) {

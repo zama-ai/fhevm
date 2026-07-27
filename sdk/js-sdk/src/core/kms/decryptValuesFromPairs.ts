@@ -48,12 +48,12 @@ export async function decryptValuesFromPairs(fhevm: Context, parameters: Paramet
   let kmsSigncryptedShares: KmsSigncryptedShares;
 
   // Compile-time fast path for the protocol API version this SDK is using.
-  // At v0.13.x the SDK only ever produces/handles V1 permits, so the V2 fetch
-  // path is statically unreachable here. This guard is a foldable literal
-  // comparison, so bundlers evaluate it at build time and tree-shake
-  // fetchKmsSigncryptedSharesV2 (and its V2-only deps) out of the bundle.
-  // When the SDK adopts protocol API v0.14+, this branch stops folding to true
-  // and the permit-version routing below takes over.
+  // On an SDK build capped at v0.13.x, the SDK only ever produces/handles V1
+  // permits, so the V2 fetch path is statically unreachable there. This guard
+  // is a foldable literal comparison, so bundlers evaluate it at build time and
+  // tree-shake fetchKmsSigncryptedSharesV2 (and its V2-only deps) out of the
+  // bundle on such a build. This SDK is on protocol API v0.14.0, so the branch
+  // below folds to false and the permit-version routing below is always taken.
   if (SDK_PROTOCOL_API_MAJOR_VERSION === 0 && SDK_PROTOCOL_API_MINOR_VERSION <= 13) {
     // A V2 permit cannot be served by this build: routing it through the V1
     // path would silently reach the wrong relayer endpoint, so fail loudly.
