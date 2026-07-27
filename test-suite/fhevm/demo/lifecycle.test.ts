@@ -15,12 +15,15 @@ import {
   doctorEnvironmentErrors,
   demoComposeProject,
   demoLaunchUrl,
+  expectedBootShutdownAction,
   existingBootAction,
   isExactOwnedProcess,
   ownedProcessBaseEnv,
+  readLifecycleLockState,
   readOwnedDockerResources,
   recoverPartialDockerResources,
   resolveOwnedLogContainers,
+  supervisedBootAction,
   terminateUntrackedChild,
   withLifecycleLock,
   type DemoManifest,
@@ -222,6 +225,117 @@ describe("demo lifecycle ownership primitives", () => {
         .then(() => true)
         .catch(() => false),
     ).toBe(false);
+  });
+
+  test("distinguishes an active lifecycle lock from absent and stale locks", async () => {
+    const directory = await fs.mkdtemp(
+      path.join(os.tmpdir(), "demo-lifecycle-lock-"),
+    );
+    temporaryDirectories.push(directory);
+    const lockPath = path.join(directory, "lock");
+    expect(await readLifecycleLockState(lockPath)).toBe("absent");
+
+    await fs.mkdir(lockPath);
+    await fs.writeFile(
+      path.join(lockPath, "owner.json"),
+      JSON.stringify({ pid: 42, identity: "identity:42" }),
+    );
+    expect(
+      await readLifecycleLockState(
+        lockPath,
+        async (pid) => `identity:${pid}`,
+      ),
+    ).toBe("active");
+    expect(
+      await readLifecycleLockState(lockPath, async () => "reused pid"),
+    ).toBe("stale");
+    await fs.rm(path.join(lockPath, "owner.json"));
+    expect(
+      await readLifecycleLockState(
+        lockPath,
+        async (pid) => `identity:${pid}`,
+      ),
+    ).toBe("stale");
+  });
+
+  test("supervisor waits only for an exact active mutation and recognizes clean stop markers", () => {
+    const running = {
+      bootId: manifest().bootId,
+      state: "running" as const,
+    };
+    expect(
+      supervisedBootAction({
+        expectedBootId: running.bootId,
+        manifest: running,
+        stoppedProcesses: [],
+        lockState: "absent",
+        stoppedMarker: false,
+      }),
+    ).toBe("continue");
+    expect(
+      supervisedBootAction({
+        expectedBootId: running.bootId,
+        manifest: running,
+        stoppedProcesses: ["dapp"],
+        lockState: "active",
+        stoppedMarker: false,
+      }),
+    ).toBe("wait");
+    expect(
+      supervisedBootAction({
+        expectedBootId: running.bootId,
+        manifest: running,
+        stoppedProcesses: ["dapp"],
+        lockState: "stale",
+        stoppedMarker: false,
+      }),
+    ).toBe("fail");
+    expect(
+      supervisedBootAction({
+        expectedBootId: running.bootId,
+        manifest: running,
+        stoppedProcesses: [],
+        lockState: "stale",
+        stoppedMarker: false,
+      }),
+    ).toBe("fail");
+    expect(
+      supervisedBootAction({
+        expectedBootId: running.bootId,
+        manifest: { bootId: crypto.randomUUID(), state: "running" },
+        stoppedProcesses: [],
+        lockState: "absent",
+        stoppedMarker: true,
+      }),
+    ).toBe("clean-stop");
+    expect(
+      supervisedBootAction({
+        expectedBootId: running.bootId,
+        manifest: { ...running, state: "stopped" },
+        stoppedProcesses: ["validator", "listener", "faucet", "dapp"],
+        lockState: "absent",
+        stoppedMarker: false,
+      }),
+    ).toBe("clean-stop");
+  });
+
+  test("signal cleanup cannot stop a replacement boot", () => {
+    const expectedBootId = manifest().bootId;
+    expect(
+      expectedBootShutdownAction(expectedBootId, {
+        bootId: expectedBootId,
+        state: "running",
+      }),
+    ).toBe("down");
+    expect(
+      expectedBootShutdownAction(expectedBootId, {
+        bootId: crypto.randomUUID(),
+        state: "running",
+      }),
+    ).toBe("clean-stop");
+    expect(expectedBootShutdownAction(expectedBootId, null)).toBe(
+      "clean-stop",
+    );
   });
 
   test("rejects a same-project resource that appears after the first teardown check", () => {

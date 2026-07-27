@@ -10,6 +10,11 @@ type BrowserDemoAuthorization = {
 
 let authorization: BrowserDemoAuthorization | undefined;
 
+const isLaunchAuthorizationHash = (hash: string): boolean => {
+  const params = new URLSearchParams(hash.startsWith('#') ? hash.slice(1) : hash);
+  return params.has('boot') || params.has('token');
+};
+
 export const consumeDemoLaunchAuthorization = (
   location: Pick<Location, 'hash' | 'pathname' | 'search'> = window.location,
   history: Pick<History, 'replaceState'> = window.history,
@@ -23,6 +28,36 @@ export const consumeDemoLaunchAuthorization = (
       : undefined;
   if (location.hash.length > 0) history.replaceState(null, '', `${location.pathname}${location.search}`);
 };
+
+export const initializeDemoLaunchAuthorization = (
+  browser: {
+    readonly location: Pick<Location, 'hash' | 'pathname' | 'search'>;
+    readonly history: Pick<History, 'replaceState'>;
+    addEventListener(type: 'hashchange', listener: () => void): void;
+    removeEventListener(type: 'hashchange', listener: () => void): void;
+  } = window,
+): (() => void) => {
+  const existing = launchAuthorizationListeners.get(browser);
+  if (existing !== undefined) return existing;
+
+  const consume = () => {
+    if (!isLaunchAuthorizationHash(browser.location.hash)) return;
+    consumeDemoLaunchAuthorization(browser.location, browser.history);
+  };
+  browser.addEventListener('hashchange', consume);
+  consume();
+
+  const dispose = () => {
+    browser.removeEventListener('hashchange', consume);
+    if (launchAuthorizationListeners.get(browser) === dispose) {
+      launchAuthorizationListeners.delete(browser);
+    }
+  };
+  launchAuthorizationListeners.set(browser, dispose);
+  return dispose;
+};
+
+const launchAuthorizationListeners = new WeakMap<object, () => void>();
 
 const authorizedFetch = (
   input: string,

@@ -3,6 +3,7 @@ import {
   downDemo,
   logsDemo,
   reseedDemo,
+  serveDemo,
   statusDemo,
   upDemo,
 } from "./lifecycle";
@@ -11,7 +12,7 @@ const [command, ...args] = process.argv.slice(2);
 
 const usage = (exitCode: number): never => {
   console.log(
-    "usage: bun run demo <doctor|up|status|logs|reseed|down> [native-process|owned-container|all] [--no-follow]",
+    "usage: bun run demo <doctor|up|serve|status|logs|reseed|down> [native-process|owned-container|all] [--no-follow]",
   );
   process.exit(exitCode);
 };
@@ -24,6 +25,8 @@ try {
     if (result.errors.length > 0) process.exitCode = 1;
   } else if (command === "up") {
     await upDemo();
+  } else if (command === "serve") {
+    await serveDemo();
   } else if (command === "status") {
     if (!(await statusDemo())) process.exitCode = 1;
   } else if (command === "logs") {

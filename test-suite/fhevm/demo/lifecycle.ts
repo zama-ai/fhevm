@@ -258,6 +258,25 @@ const lockOwner = async (
   }
 };
 
+export type LifecycleLockState = "absent" | "active" | "stale";
+
+export const readLifecycleLockState = async (
+  lockPath = DEMO_LOCK_PATH,
+  identityReader: (pid: number) => Promise<string | null> = readProcessIdentity,
+): Promise<LifecycleLockState> => {
+  try {
+    await fs.access(lockPath);
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code === "ENOENT") return "absent";
+    throw error;
+  }
+  const owner = await lockOwner(lockPath);
+  if (owner === null) return "stale";
+  return (await identityReader(owner.pid)) === owner.identity
+    ? "active"
+    : "stale";
+};
+
 export const withLifecycleLock = async <T>(
   operation: () => Promise<T>,
   lockPath = DEMO_LOCK_PATH,
@@ -269,12 +288,9 @@ export const withLifecycleLock = async <T>(
   } catch (error) {
     if ((error as NodeJS.ErrnoException).code !== "EEXIST") throw error;
     const owner = await lockOwner(lockPath);
-    if (
-      owner !== null &&
-      (await identityReader(owner.pid)) === owner.identity
-    ) {
+    if ((await readLifecycleLockState(lockPath, identityReader)) === "active") {
       throw new Error(
-        `another demo lifecycle command is running as pid ${owner.pid}`,
+        `another demo lifecycle command is running${owner === null ? "" : ` as pid ${owner.pid}`}`,
       );
     }
     throw new Error(
@@ -1211,7 +1227,7 @@ export const existingBootAction = (
   return healthy ? "noop" : "preserve-degraded";
 };
 
-export const upDemo = async (): Promise<void> =>
+export const upDemo = async (): Promise<string> =>
   withLifecycleLock(async () => {
     const existing = await readDemoManifest();
     const healthy =
@@ -1221,7 +1237,7 @@ export const upDemo = async (): Promise<void> =>
     const action = existingBootAction(existing, healthy);
     if (action === "noop") {
       console.log(`[up] owned boot ${existing!.bootId} is already healthy`);
-      return;
+      return existing!.bootId;
     }
     if (action === "preserve-degraded") {
       await statusDemo();
@@ -1318,6 +1334,7 @@ export const upDemo = async (): Promise<void> =>
       manifest = { ...manifest, state: "running" };
       await writeDemoManifest(manifest);
       console.log(readyMessage("up", bootId, authorization.launchFragment));
+      return bootId;
     } catch (error) {
       let recoveryFailure: string | undefined;
       try {
@@ -1376,6 +1393,154 @@ export const upDemo = async (): Promise<void> =>
     }
   });
 
+export const bootStoppedMarkerPath = (bootId: string): string => {
+  demoComposeProject(bootId);
+  return path.join(DEMO_RUNTIME_DIR, bootId, "stopped.json");
+};
+
+const stoppedBootMarkerExists = async (bootId: string): Promise<boolean> => {
+  try {
+    const marker = JSON.parse(
+      await fs.readFile(bootStoppedMarkerPath(bootId), "utf8"),
+    ) as { readonly version?: number; readonly bootId?: string };
+    return marker.version === 1 && marker.bootId === bootId;
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code === "ENOENT") return false;
+    return false;
+  }
+};
+
+type SupervisorAction = "continue" | "wait" | "clean-stop" | "fail";
+
+export const supervisedBootAction = ({
+  expectedBootId,
+  manifest,
+  stoppedProcesses,
+  lockState,
+  stoppedMarker,
+}: {
+  readonly expectedBootId: string;
+  readonly manifest: Pick<DemoManifest, "bootId" | "state"> | null;
+  readonly stoppedProcesses: readonly ProcessName[];
+  readonly lockState: LifecycleLockState;
+  readonly stoppedMarker: boolean;
+}): SupervisorAction => {
+  if (manifest === null || manifest.bootId !== expectedBootId) {
+    return stoppedMarker ? "clean-stop" : "fail";
+  }
+  if (manifest.state === "stopped") return "clean-stop";
+  if (lockState === "stale") return "fail";
+  if (manifest.state === "running" && stoppedProcesses.length === 0) {
+    return "continue";
+  }
+  if (lockState === "active") return "wait";
+  return "fail";
+};
+
+const downAfterLifecycleIdle = async (expectedBootId: string): Promise<void> => {
+  for (;;) {
+    try {
+      await downExpectedDemoBoot(expectedBootId);
+      return;
+    } catch (error) {
+      if ((await readLifecycleLockState()) !== "active") throw error;
+      await Bun.sleep(250);
+    }
+  }
+};
+
+export const serveDemo = async (): Promise<void> => {
+  const expectedBootId = await upDemo();
+  const initial = await readDemoManifest();
+  if (
+    initial?.state === "stopped" &&
+    initial.bootId === expectedBootId
+  ) {
+    console.log(`[serve] boot ${expectedBootId} stopped`);
+    return;
+  }
+  if (
+    initial === null ||
+    initial.bootId !== expectedBootId ||
+    initial.state !== "running"
+  ) {
+    if (await stoppedBootMarkerExists(expectedBootId)) {
+      console.log(`[serve] boot ${expectedBootId} stopped`);
+      return;
+    }
+    throw new Error("serve requires one running demo boot");
+  }
+  let requestedSignal: "SIGINT" | "SIGTERM" | undefined;
+  const requestStop = (signal: "SIGINT" | "SIGTERM") => {
+    requestedSignal ??= signal;
+  };
+  const onSigint = () => requestStop("SIGINT");
+  const onSigterm = () => requestStop("SIGTERM");
+  process.on("SIGINT", onSigint);
+  process.on("SIGTERM", onSigterm);
+  console.log(
+    `[serve] supervising native processes for boot ${expectedBootId}; use 'bun run demo down' to stop`,
+  );
+  try {
+    for (;;) {
+      if (requestedSignal !== undefined) {
+        console.log(
+          `[serve] ${requestedSignal} received; stopping exact owned boot`,
+        );
+        await downAfterLifecycleIdle(expectedBootId);
+        console.log(`[serve] boot ${expectedBootId} stopped`);
+        return;
+      }
+
+      const manifest = await readDemoManifest();
+      const stopped: ProcessName[] = [];
+      if (manifest?.bootId === expectedBootId) {
+        for (const name of PROCESS_NAMES) {
+          const owned = manifest.processes[name];
+          if (owned === undefined || !(await isExactOwnedProcess(owned))) {
+            stopped.push(name);
+          }
+        }
+      }
+      const lockState = await readLifecycleLockState();
+      const action = supervisedBootAction({
+        expectedBootId,
+        manifest,
+        stoppedProcesses: stopped,
+        lockState,
+        stoppedMarker: await stoppedBootMarkerExists(expectedBootId),
+      });
+      if (action === "clean-stop") {
+        console.log(`[serve] boot ${expectedBootId} stopped`);
+        return;
+      }
+      if (action === "wait") {
+        await Bun.sleep(250);
+        continue;
+      }
+      if (action === "fail") {
+        if (lockState === "stale") {
+          throw new Error(
+            `stale or unreadable lifecycle lock at ${DEMO_LOCK_PATH}; inspect it before removing it`,
+          );
+        }
+        if (manifest === null || manifest.bootId !== initial.bootId) {
+          throw new Error("supervised demo manifest was removed or replaced");
+        }
+        throw new Error(
+          manifest.state !== "running"
+            ? `supervised demo entered unexpected state ${manifest.state}`
+            : `supervised native process stopped: ${stopped.join(", ")}`,
+        );
+      }
+      await Bun.sleep(1_000);
+    }
+  } finally {
+    process.off("SIGINT", onSigint);
+    process.off("SIGTERM", onSigterm);
+  }
+};
+
 const stopOwnedProcess = async (
   name: ProcessName,
   owned: OwnedProcess | undefined,
@@ -1426,6 +1591,68 @@ const removeExactDockerResources = async (
   }
 };
 
+export const expectedBootShutdownAction = (
+  expectedBootId: string,
+  manifest: Pick<DemoManifest, "bootId" | "state"> | null,
+): "down" | "clean-stop" =>
+  manifest !== null &&
+  manifest.bootId === expectedBootId &&
+  manifest.state !== "stopped"
+    ? "down"
+    : "clean-stop";
+
+const stopDemoManifest = async (manifest: DemoManifest): Promise<void> => {
+  assertExactOwnedDockerResources(
+    manifest,
+    await readOwnedDockerResources(manifest.composeProject),
+  );
+  for (const name of [...PROCESS_NAMES].reverse())
+    await stopOwnedProcess(name, manifest.processes[name]);
+  // Revalidate after native-process shutdown. Removal below remains scoped to these exact IDs,
+  // so a foreign same-project resource appearing after this check cannot be selected.
+  assertExactOwnedDockerResources(
+    manifest,
+    await readOwnedDockerResources(manifest.composeProject),
+  );
+  await removeExactDockerResources(manifest);
+  await fs.rm(bootAuthorizationTokenPath(manifest.bootId), { force: true });
+  await fs.rm(DEMO_CONFIG_PATH, { force: true });
+  await fs.rm(path.join(REPO_ROOT, ".fhevm", "state", "state.json"), {
+    force: true,
+  });
+  for (const directory of ["addresses", "compose", "config", "env"]) {
+    await fs.rm(path.join(REPO_ROOT, ".fhevm", "runtime", directory), {
+      recursive: true,
+      force: true,
+    });
+  }
+  await atomicWriteJson(bootStoppedMarkerPath(manifest.bootId), {
+    version: 1,
+    bootId: manifest.bootId,
+    stoppedAt: new Date().toISOString(),
+  });
+  await writeDemoManifest({
+    ...manifest,
+    state: "stopped",
+    containers: [],
+    volumes: [],
+    networks: [],
+    processes: {},
+  });
+  console.log(`[down] stopped owned boot ${manifest.bootId}`);
+};
+
+const downExpectedDemoBoot = async (expectedBootId: string): Promise<void> =>
+  withLifecycleLock(async () => {
+    const manifest = await readDemoManifest();
+    if (expectedBootShutdownAction(expectedBootId, manifest) === "clean-stop") {
+      console.log(`[serve] boot ${expectedBootId} already stopped or replaced`);
+      return;
+    }
+    if (manifest === null) throw new Error("expected demo boot disappeared");
+    await stopDemoManifest(manifest);
+  });
+
 export const downDemo = async (): Promise<void> =>
   withLifecycleLock(async () => {
     const manifest = await readDemoManifest();
@@ -1433,39 +1660,7 @@ export const downDemo = async (): Promise<void> =>
       console.log("[down] no owned demo boot");
       return;
     }
-    assertExactOwnedDockerResources(
-      manifest,
-      await readOwnedDockerResources(manifest.composeProject),
-    );
-    for (const name of [...PROCESS_NAMES].reverse())
-      await stopOwnedProcess(name, manifest.processes[name]);
-    // Revalidate after native-process shutdown. Removal below remains scoped to these exact IDs,
-    // so a foreign same-project resource appearing after this check cannot be selected.
-    assertExactOwnedDockerResources(
-      manifest,
-      await readOwnedDockerResources(manifest.composeProject),
-    );
-    await removeExactDockerResources(manifest);
-    await fs.rm(bootAuthorizationTokenPath(manifest.bootId), { force: true });
-    await fs.rm(DEMO_CONFIG_PATH, { force: true });
-    await fs.rm(path.join(REPO_ROOT, ".fhevm", "state", "state.json"), {
-      force: true,
-    });
-    for (const directory of ["addresses", "compose", "config", "env"]) {
-      await fs.rm(path.join(REPO_ROOT, ".fhevm", "runtime", directory), {
-        recursive: true,
-        force: true,
-      });
-    }
-    await writeDemoManifest({
-      ...manifest,
-      state: "stopped",
-      containers: [],
-      volumes: [],
-      networks: [],
-      processes: {},
-    });
-    console.log(`[down] stopped owned boot ${manifest.bootId}`);
+    await stopDemoManifest(manifest);
   });
 
 export const reseedDemo = async (): Promise<void> =>
