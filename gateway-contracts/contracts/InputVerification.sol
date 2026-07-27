@@ -136,14 +136,12 @@ contract InputVerification is
         // ----------------------------------------------------------------------------------------------
         /// @notice The coprocessor context ID associated to the input verification request
         mapping(uint256 zkProofId => uint256 contextId) inputVerificationContextId;
-        /// @dev Deprecated by the removal of the priority coprocessor feature. Neither read nor
-        ///      written. Kept to preserve the storage layout: do not reuse this slot.
-        /// @custom:oz-renamed-from priorityVerifyProofConsensusTxSender
-        mapping(uint256 zkProofId => address coprocessorTxSenderAddress) deprecatedPriorityVerifyProofConsensusTxSender;
-        /// @dev Deprecated by the removal of the priority coprocessor feature. Neither read nor
-        ///      written. Kept to preserve the storage layout: do not reuse this slot.
-        /// @custom:oz-renamed-from priorityRejectProofConsensusTxSender
-        mapping(uint256 zkProofId => address coprocessorTxSenderAddress) deprecatedPriorityRejectProofConsensusTxSender;
+        /// @dev Deprecated by the removal of the priority coprocessor feature. Neither read nor written.
+        ///      This field must remain to preserve the storage layout for UUPS proxy upgrades.
+        mapping(uint256 zkProofId => address coprocessorTxSenderAddress) priorityVerifyProofConsensusTxSender;
+        /// @dev Deprecated by the removal of the priority coprocessor feature. Neither read nor written.
+        ///      This field must remain to preserve the storage layout for UUPS proxy upgrades.
+        mapping(uint256 zkProofId => address coprocessorTxSenderAddress) priorityRejectProofConsensusTxSender;
     }
 
     /**

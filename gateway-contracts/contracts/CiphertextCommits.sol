@@ -83,10 +83,9 @@ contract CiphertextCommits is ICiphertextCommits, UUPSUpgradeableEmptyProxy, Gat
         // ----------------------------------------------------------------------------------------------
         /// @notice The coprocessor context ID associated to the add ciphertext
         mapping(bytes32 addCiphertextHash => uint256 contextId) addCiphertextContextId;
-        /// @dev Deprecated by the removal of the priority coprocessor feature. Neither read nor
-        ///      written. Kept to preserve the storage layout: do not reuse this slot.
-        /// @custom:oz-renamed-from priorityConsensusTxSender
-        mapping(bytes32 ctHandle => address coprocessorTxSenderAddress) deprecatedPriorityConsensusTxSender;
+        /// @dev Deprecated by the removal of the priority coprocessor feature. Neither read nor written.
+        ///      This field must remain to preserve the storage layout for UUPS proxy upgrades.
+        mapping(bytes32 ctHandle => address coprocessorTxSenderAddress) priorityConsensusTxSender;
     }
 
     /**

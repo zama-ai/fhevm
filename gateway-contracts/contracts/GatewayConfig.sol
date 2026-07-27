@@ -162,9 +162,8 @@ contract GatewayConfig is IGatewayConfig, Ownable2StepUpgradeable, UUPSUpgradeab
         mapping(uint256 chainId => bool isDisabled) disabledHostChains;
         /// @dev Deprecated by the removal of the priority coprocessor feature: coprocessor consensus
         ///      is now always threshold-based. `reinitializeV9` zeroes this slot during the upgrade.
-        ///      Kept to preserve the storage layout: do not reuse this slot.
-        /// @custom:oz-renamed-from priorityCoprocessorTxSender
-        address deprecatedPriorityCoprocessorTxSender;
+        ///      This field must remain to preserve the storage layout for UUPS proxy upgrades.
+        address priorityCoprocessorTxSender;
     }
 
     /**
@@ -261,7 +260,7 @@ contract GatewayConfig is IGatewayConfig, Ownable2StepUpgradeable, UUPSUpgradeab
     /// @custom:oz-upgrades-validate-as-initializer
     function reinitializeV9() public virtual reinitializer(REINITIALIZER_VERSION) {
         GatewayConfigStorage storage $ = _getGatewayConfigStorage();
-        delete $.deprecatedPriorityCoprocessorTxSender;
+        delete $.priorityCoprocessorTxSender;
     }
 
     /**
