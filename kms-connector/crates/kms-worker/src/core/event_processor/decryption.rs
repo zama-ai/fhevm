@@ -781,6 +781,7 @@ impl UserDecryptionExtraData {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::core::solana_v2_fetcher::SolanaV2Fetcher;
     use alloy::{
         providers::{ProviderBuilder, mock::Asserter},
         rpc::types::Transaction as RpcTransaction,
@@ -875,7 +876,7 @@ mod tests {
                     program_id: [7; 32],
                     fetcher: SolanaV2Fetcher::new(
                         config.host_chains[0].url.clone(),
-                        reqwest::Client::new(),
+                        ::reqwest::Client::new(),
                     ),
                 }),
             )]),

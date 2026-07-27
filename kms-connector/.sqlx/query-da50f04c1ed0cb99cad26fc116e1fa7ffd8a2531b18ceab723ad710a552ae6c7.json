@@ -1,15 +1,10 @@
 {
   "db_name": "PostgreSQL",
-  "query": "SELECT epoch_id, is_valid FROM kms_context WHERE id = $1",
+  "query": "SELECT is_valid FROM kms_context WHERE id = $1",
   "describe": {
     "columns": [
       {
         "ordinal": 0,
-        "name": "epoch_id",
-        "type_info": "Bytea"
-      },
-      {
-        "ordinal": 1,
         "name": "is_valid",
         "type_info": "Bool"
       }
@@ -20,9 +15,8 @@
       ]
     },
     "nullable": [
-      false,
       false
     ]
   },
-  "hash": "21d461be0c205088d81c7f8df201fd4a573929712371fa1cb7a2b06f58640028"
+  "hash": "da50f04c1ed0cb99cad26fc116e1fa7ffd8a2531b18ceab723ad710a552ae6c7"
 }

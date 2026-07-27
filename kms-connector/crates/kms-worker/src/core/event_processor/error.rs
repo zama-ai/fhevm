@@ -122,7 +122,6 @@ impl RequestCheckError {
         Self { kind, source }
     }
 
-
     /// Records the error in [`REQUEST_CHECK_ERRORS`] and unwraps it into a [`ProcessingError`].
     pub fn record(self) -> ProcessingError {
         self.kind.inc_metric();

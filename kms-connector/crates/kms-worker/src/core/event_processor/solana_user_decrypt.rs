@@ -463,7 +463,7 @@ mod tests {
         encode_solana_extra_data_mmr_proof,
     };
     use fhevm_gateway_bindings::decryption::{
-        Decryption::{HandleEntry, SnsCiphertextMaterial, UserDecryptionRequestSolana},
+        Decryption::{HandleEntry, UserDecryptionRequestSolana},
         IDecryption::{RequestValiditySeconds, UserDecryptionRequestSolanaPayload},
     };
     use ring::signature::{Ed25519KeyPair, KeyPair};
@@ -635,10 +635,6 @@ mod tests {
         };
         UserDecryptionRequestSolana {
             decryptionId: U256::from(1u64),
-            snsCtMaterials: vec![SnsCiphertextMaterial {
-                ctHandle: FixedBytes::from(handle),
-                ..Default::default()
-            }],
             handles: vec![HandleEntry {
                 handle: FixedBytes::from(handle),
                 contractAddress: Address::ZERO,
@@ -1097,10 +1093,6 @@ mod tests {
         };
         let request = UserDecryptionRequestSolana {
             decryptionId: U256::from(1u64),
-            snsCtMaterials: vec![SnsCiphertextMaterial {
-                ctHandle: FixedBytes::from(h(10)),
-                ..Default::default()
-            }],
             handles: vec![HandleEntry {
                 handle: FixedBytes::from(h(10)),
                 contractAddress: Address::ZERO,

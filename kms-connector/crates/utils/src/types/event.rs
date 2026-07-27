@@ -198,7 +198,6 @@ impl std::fmt::Debug for ProtocolEventKind {
             Self::UserDecryptionSolana(e) => f
                 .debug_struct("UserDecryptionSolana")
                 .field("decryptionId", &e.decryptionId)
-                .field("snsCtMaterials", &e.snsCtMaterials)
                 .field("handles", &e.handles)
                 .field("payload", &e.payload)
                 .finish(),
@@ -231,10 +230,7 @@ impl PartialEq for ProtocolEventKind {
                 a.decryptionId == b.decryptionId && a.handles == b.handles && a.payload == b.payload
             }
             (Self::UserDecryptionSolana(a), Self::UserDecryptionSolana(b)) => {
-                a.decryptionId == b.decryptionId
-                    && a.snsCtMaterials == b.snsCtMaterials
-                    && a.handles == b.handles
-                    && a.payload == b.payload
+                a.decryptionId == b.decryptionId && a.handles == b.handles && a.payload == b.payload
             }
             (Self::PrepKeygen(a), Self::PrepKeygen(b)) => a == b,
             (Self::Keygen(a), Self::Keygen(b)) => a == b,
@@ -363,25 +359,61 @@ pub fn from_user_decryption_row(row: &PgRow) -> anyhow::Result<ProtocolEvent> {
                     .map_err(|_| anyhow!("duration_seconds is negative: {duration_seconds}"))?,
             };
 
-            ProtocolEventKind::UserDecryptionV2(UserDecryptionRequestV2 {
-                decryptionId: decryption_id,
-                handles,
-                payload: UserDecryptionRequestPayload {
-                    userAddress: user_address,
-                    publicKey: public_key.into(),
-                    allowedContracts: allowed_contracts,
-                    requestValidity: RequestValiditySeconds {
-                        startTimestamp: U256::try_from(start_timestamp).map_err(|_| {
-                            anyhow!("start_timestamp is negative: {start_timestamp}")
-                        })?,
-                        durationSeconds: U256::try_from(duration_seconds).map_err(|_| {
-                            anyhow!("duration_seconds is negative: {duration_seconds}")
-                        })?,
-                    },
-                    extraData: extra_data.into(),
-                    signature: signature.into(),
-                },
-            })
+            match solana_identity {
+                // RFC-021 Solana row: the ed25519 auth fields are typed columns, not an
+                // extraData blob, so they are read individually rather than decoded.
+                Some(identity) => {
+                    let nonce: Vec<u8> = row.try_get("solana_nonce")?;
+                    let domain_keys: Vec<Vec<u8>> =
+                        row.try_get("solana_allowed_acl_domain_keys")?;
+                    let user_identity = FixedBytes::<32>::try_from(identity.as_slice())
+                        .map_err(|_| anyhow!("solana_identity is not 32 bytes"))?;
+                    let nonce = FixedBytes::<32>::try_from(nonce.as_slice())
+                        .map_err(|_| anyhow!("solana_nonce is not 32 bytes"))?;
+                    let allowed_acl_domain_keys = domain_keys
+                        .iter()
+                        .map(|k| {
+                            FixedBytes::<32>::try_from(k.as_slice())
+                                .map_err(|_| anyhow!("solana ACL domain key is not 32 bytes"))
+                        })
+                        .collect::<anyhow::Result<Vec<_>>>()?;
+
+                    ProtocolEventKind::UserDecryptionSolana(UserDecryptionRequestSolana {
+                        decryptionId: decryption_id,
+                        handles,
+                        payload: UserDecryptionRequestSolanaPayload {
+                            userIdentity: user_identity,
+                            publicKey: public_key.into(),
+                            allowedAclDomainKeys: allowed_acl_domain_keys,
+                            requestValidity: request_validity,
+                            nonce,
+                            extraData: extra_data.into(),
+                            signature: signature.into(),
+                        },
+                    })
+                }
+                // EVM RFC016 row.
+                None => {
+                    let allowed_contracts: Vec<Vec<u8>> = row.try_get("allowed_contracts")?;
+                    let allowed_contracts = allowed_contracts
+                        .iter()
+                        .map(|a| Address::try_from(a.as_slice()).map_err(anyhow::Error::from))
+                        .collect::<anyhow::Result<Vec<_>>>()?;
+
+                    ProtocolEventKind::UserDecryptionV2(UserDecryptionRequestV2 {
+                        decryptionId: decryption_id,
+                        handles,
+                        payload: UserDecryptionRequestPayload {
+                            userAddress: user_address,
+                            publicKey: public_key.into(),
+                            allowedContracts: allowed_contracts,
+                            requestValidity: request_validity,
+                            extraData: extra_data.into(),
+                            signature: signature.into(),
+                        },
+                    })
+                }
+            }
         }
     };
 
@@ -743,6 +775,9 @@ impl Display for ProtocolEventKind {
             }
             ProtocolEventKind::UserDecryptionV2(e) => {
                 write!(f, "UserDecryptionRequest #{:#066x}", e.decryptionId)
+            }
+            ProtocolEventKind::UserDecryptionSolana(e) => {
+                write!(f, "UserDecryptionRequestSolana #{:#066x}", e.decryptionId)
             }
             ProtocolEventKind::PrepKeygen(e) => {
                 write!(f, "PrepKeygenRequest #{:#066x}", e.prepKeygenId)

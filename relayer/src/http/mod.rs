@@ -49,7 +49,6 @@ pub use utils::{
     validate_timestamp,
     validate_u32_string,
     validate_u64_string,
-    validate_user_decrypt_signature,
     // v3 unified EIP-712 validators
     validate_v3_attestation_type,
     validate_v3_payload_type,

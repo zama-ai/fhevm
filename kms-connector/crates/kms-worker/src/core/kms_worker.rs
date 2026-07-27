@@ -188,7 +188,9 @@ async fn register_host_chain_backends(
     validate_host_chain_configs(host_chains)?;
 
     let mut backends = HashMap::with_capacity(host_chains.len());
-    let solana_client = reqwest::Client::new();
+    // The workspace `reqwest`, not alloy's re-export: alloy now vendors a different major, and
+    // `SolanaV2Fetcher` is typed against the workspace crate.
+    let solana_client = ::reqwest::Client::new();
 
     for host_chain in host_chains {
         let backend = match host_chain.chain_kind {

@@ -138,10 +138,7 @@ impl<GP: Provider + Clone + 'static, HP: Provider, C: ContextManager> DbEventPro
         match &event.kind {
             ProtocolEventKind::PublicDecryption(req) => {
                 self.decryption_processor
-                    .check_ciphertexts_allowed_for_public_decryption(
-                        &req.ctHandles,
-                        &req.extraData,
-                    )
+                    .check_ciphertexts_allowed_for_public_decryption(&req.ctHandles, &req.extraData)
                     .await
                     .map_err(RequestCheckError::record)?;
 
