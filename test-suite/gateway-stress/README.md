@@ -15,6 +15,7 @@ duration.
   - [Benchmarking](#benchmarking)
 - [Tracing](#tracing)
 - [Local e2e setup](#local-e2e-setup)
+  - [Generating handles with `gen_handles.ts`](#generating-handles-with-gen_handlests)
 - [Bonus: Generating handles via coprocessor stress-test-generator](#bonus-generating-handles-via-coprocessor-stress-test-generator)
 
 ## Build
@@ -36,6 +37,7 @@ Some of the configuration fields can be overridden via the CLI:
 - `tests_interval`
 - `parallel_requests`
 - `sequential`
+- `id_counter_start` (via `--id-counter-start`, DB path only)
 
 ## Run
 
@@ -131,34 +133,51 @@ RUST_LOG="debug" ./gateway-stress -c config/config.toml gw -t public
 ## Local e2e setup
 
 To play with the tool in a local e2e setup, follow these steps:
-- from the root of the `fehvm` repo: `cd test-suite/fhevm`
+
+- from the root of the `fhevm` repo: `cd test-suite/fhevm`
 - deploy the e2e setup using the `./fhevm-cli deploy` command
-- if using `fhevm` version > 0.10.0, fund the account the tool is using with ERC20 token (use the same private key as in [gateway-stress config](../gateway-stress/config/config.toml)):
-  - `docker run --env-file env/staging/.env.gateway-mocked-payment.local -e TX_SENDER_PRIVATE_KEY="0x24af7cb5f6cd0f29df22c6f3e2f18ee5b3949f5a489a14b0674bef8fd89bfe91" -it --rm --network fhevm_default ghcr.io/zama-ai/fhevm/gateway-contracts:v0.10.0-4 "npx hardhat task:setTxSenderMockedPayment"`
-- generate ciphertext handles
-  - `cd ../../coprocessor/fhevm-engine/stress-test-generator; rm -f data/handles_for*; EVGEN_SCENARIO=data/minitest_003_generate_handles_for_decryption.csv make run; cd -` (see [this section](#bonus-generating-handles-via-coprocessor-stress-test-generator) for more details)
-- update the `[[public_ct]]` and `[[user_ct]]` sections of the [gateway-stress config](../gateway-stress/config/config.toml) with one of the value of the `../../coprocessor/fhevm-engine/stress-test-generator/data/handles_for_pub_decryption` and `../../coprocessor/fhevm-engine/stress-test-generator/data/handles_for_usr_decryption` files
+- generate ciphertext handles with the [`gen_handles.ts`](../e2e/scripts/gen_handles.ts) script (see below)
+- update `allowed_contract` and the `[[public_ct]]` / `[[user_ct]]` sections of the
+  [gateway-stress config](../gateway-stress/config/config.toml) with the values the script prints
 - run the tool. Ex:
-  - `cd ../gateway_stress`
+  - `cd ../gateway-stress`
   - `cargo run -- -c config/config.toml -p 1 -d "1s" gw -t user`
 
-## Bonus: Generating handles via coprocessor stress-test-generator
+### Generating handles with `gen_handles.ts`
 
-To use this tool, you would need already existing handles to decrypt. You could use coprocessor's
-`stress-test-generator` tool to generate these handles.
+`test-suite/e2e/scripts/gen_handles.ts` produces handles through the **real on-chain input flow**, so each handle is committed and ACL-authorized by construction.
 
-The tool is located at `coprocessor/fhevm-engine/stress-test-generator` in the `fhevm` repo.
-Then, look at the `README.md` and gather all the environment variable values needed (default
-values work only for e2e setup).
+The script runs **inside the test-suite e2e container**. It only needs a private key:
 
 ```bash
-export EVGEN_DB_URL="TODO"
-export ACL_CONTRACT_ADDRESS="TODO"
-# ...
-EVGEN_SCENARIO=data/minitest_003_generate_handles_for_decryption.csv make run
+# Use the same `private_key` as in config/config.toml, 0x-prefixed
+docker exec \
+  -e PRIVATE_KEY=0xe746bc71f6bee141a954e6a49bc9384d334e393a7ea1e70b50241cb2e78e9e4c \
+  fhevm-test-suite-e2e-debug \
+  bash -c 'npx hardhat run scripts/gen_handles.ts --network staging'
 ```
 
-This will generate the `data/handles_for_pub_decryption` and `handles_for_usr_decryption` files.
+The key matters: the script calls the host contract as that signer, so `msg.sender` (and thus the
+ACL-authorized address) matches the `userAddress` gateway-stress signs with at decrypt time. On a
+local stack the script also, for that same key:
 
-Make sure that the 6th column of the `EVGEN_SCENARIO` file match the `allowed_contract` value of
-this tool's configuration, and that the 7th column match the wallet address used by the tool.
+- tops up host- and gateway-chain gas via `anvil_setBalance` when the balance is 0
+- mints $ZAMA and approves `ProtocolPayment` for an unbounded allowance, so on-chain decryption
+  requests can pay the per-request fee instead of reverting with `ERC20InsufficientAllowance`
+
+It ends by printing the values to copy into the config:
+
+```
+=== gateway-stress config values ===
+allowed_contract = "0x..."
+
+[[public_ct]]
+handle = "0x..."
+
+[[user_ct]]
+handle = "0x..."
+```
+
+Notes:
+
+- Set `GEN_HANDLES_CONTRACT_ADDRESS=0x...` to reuse an already-deployed `SmokeTestInput` instead of deploying a new one.

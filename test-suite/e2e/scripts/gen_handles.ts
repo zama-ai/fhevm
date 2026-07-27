@@ -1,118 +1,28 @@
 /**
- * gen_handles.ts — generate decryptable ciphertext handles for the
- * gateway-stress tool via the real on-chain input flow:
+ * gen_handles.ts — generate decryptable ciphertext handles for the given private key via via the
+ * real on-chain input flow:
  *
  *   encryptUint64 -> SmokeTestInput.add42ToInput64(handle, proof) -> resUint64()
  *
- * add42ToInput64 grants both FHE.allow(res, msg.sender) and
- * FHE.makePubliclyDecryptable(res), so each handle is valid for user- and
- * public-decryption and is committed + ACL-authorized on-chain by construction.
- * We decrypt each handle (public + user) as a readiness check, then write the
- * handles and contract address into the gateway-stress config.
+ * add42ToInput64 grants both FHE.allow(res, msg.sender) and FHE.makePubliclyDecryptable(res), so
+ * each handle is valid for user- and public-decryption and is committed + ACL-authorized on-chain
+ * by construction.
+ * We decrypt each handle (public + user) as a readiness check, then PRINT the handles and
+ * contract address for you to paste into the gateway-stress config.
  *
- * We call the host contract as the gateway-stress `private_key`, so msg.sender
- * (hence the authorized address) matches the `userAddress` gateway-stress signs
- * with at decrypt time. That key must be funded on the host chain (checked
- * below) and holds $ZAMA on the gateway chain (see provisionGatewayZama).
+ * Designed to run INSIDE the test-suite e2e container, which is attached to the stack's docker
+ * network and loads the stack env files.
  *
- * Run from test-suite/e2e:
- *   npx hardhat run scripts/gen_handles.ts --network staging
+ *   docker exec fhevm-test-suite-e2e-debug bash -c \
+ *     'PRIVATE_KEY=<hex> npx hardhat run scripts/gen_handles.ts --network staging'
  */
-import { readFileSync, writeFileSync } from 'node:fs';
-import { resolve } from 'node:path';
-
 import { ethers, network } from 'hardhat';
 
-// cwd is the hardhat project root (test-suite/e2e) when run via `hardhat run`.
-const REPO_ROOT = resolve(process.cwd(), '../..');
-// Contract addresses + urls the deployed stack exposes for the test suites.
-// Bind-mounted to the host; we remap the docker hostnames to localhost below.
-const STACK_ENV_PATH = resolve(REPO_ROOT, '.fhevm/runtime/env/test-suite.env');
-// $ZAMA token + payment contract addresses.
-const GATEWAY_SC_ENV_PATH = resolve(REPO_ROOT, '.fhevm/runtime/env/gateway-sc.env');
-const GATEWAY_STRESS_CONFIG_PATH = resolve(REPO_ROOT, 'test-suite/gateway-stress/config/config.toml');
-
-/** Docker-internal hostnames the workers use, mapped to host-reachable ports. */
-const HOST_REMAP: ReadonlyArray<[RegExp, string]> = [
-  [/fhevm-relayer:3000/g, 'localhost:3000'],
-  [/gateway-node:8546/g, 'localhost:8546'],
-  [/host-node:8545/g, 'localhost:8545'],
-  // The relayer's /keyurl response embeds minio:9000 URLs that the SDK fetches
-  // directly; minio is published on localhost:9000.
-  [/minio:9000/g, 'localhost:9000'],
-];
-
-const remapHost = (url: string): string =>
-  HOST_REMAP.reduce((acc, [from, to]) => acc.replace(from, to), url);
-
-/**
- * Patch global fetch to remap docker hostnames to localhost. Needed because the
- * relayer's /keyurl response embeds minio:9000 URLs the SDK fetches directly,
- * which are unreachable from the host.
- */
-const installFetchHostRemap = (): void => {
-  const original = globalThis.fetch;
-  globalThis.fetch = ((input: RequestInfo | URL, init?: RequestInit) => {
-    const url = typeof input === 'string' ? input : input instanceof URL ? input.href : input.url;
-    const remapped = remapHost(url);
-    if (remapped === url) return original(input, init);
-    if (typeof input === 'string' || input instanceof URL) return original(remapped, init);
-    return original(new Request(remapped, input), init);
-  }) as typeof fetch;
-};
-
-/** Parse a `KEY=value` env file into a plain object (ignores comments/blanks). */
-const parseEnvFile = (path: string): Record<string, string> => {
-  const env: Record<string, string> = {};
-  for (const raw of readFileSync(path, 'utf8').split('\n')) {
-    const line = raw.trim();
-    if (!line || line.startsWith('#') || !line.includes('=')) continue;
-    const eq = line.indexOf('=');
-    env[line.slice(0, eq).trim()] = line.slice(eq + 1).trim();
-  }
-  return env;
-};
-
-/**
- * Copy the addresses/urls `test/instance.ts` reads at import time from
- * test-suite.env into process.env, remapping docker hostnames. Must run BEFORE
- * `test/instance` is imported.
- */
-const wireInstanceEnv = (): void => {
-  const stackEnv = parseEnvFile(STACK_ENV_PATH);
-  const need = (key: string): string => {
-    const value = stackEnv[key];
-    if (!value) throw new Error(`${key} not found in ${STACK_ENV_PATH}`);
-    return value;
-  };
-  const set = (key: string, value: string): void => {
-    process.env[key] = value;
-  };
-
-  set('ACL_CONTRACT_ADDRESS', need('ACL_CONTRACT_ADDRESS'));
-  set('KMS_VERIFIER_CONTRACT_ADDRESS', need('KMS_VERIFIER_CONTRACT_ADDRESS'));
-  set('INPUT_VERIFIER_CONTRACT_ADDRESS', need('INPUT_VERIFIER_CONTRACT_ADDRESS'));
-  set('FHEVM_EXECUTOR_CONTRACT_ADDRESS', need('FHEVM_EXECUTOR_CONTRACT_ADDRESS'));
-  set('PROTOCOL_CONFIG_CONTRACT_ADDRESS', need('PROTOCOL_CONFIG_CONTRACT_ADDRESS'));
-  set('DECRYPTION_ADDRESS', need('DECRYPTION_ADDRESS'));
-  set('INPUT_VERIFICATION_ADDRESS', need('INPUT_VERIFICATION_ADDRESS'));
-  set('CHAIN_ID_GATEWAY', need('CHAIN_ID_GATEWAY'));
-  set('CHAIN_ID_HOST', need('CHAIN_ID_HOST'));
-  set('RELAYER_URL', remapHost(need('RELAYER_URL')));
-};
-
-/** Read the gateway-stress signer key from its config.toml (the userAddress). */
-const readGatewayStressPrivateKey = (configText: string): string => {
-  const match = configText.match(/^\s*private_key\s*=\s*"([^"]+)"/m);
-  if (!match) throw new Error(`private_key not found in ${GATEWAY_STRESS_CONFIG_PATH}`);
-  return match[1];
-};
-
-/** Read the gateway RPC url gateway-stress talks to (already host-reachable). */
-const readGatewayUrl = (configText: string): string => {
-  const match = configText.match(/^\s*gateway_url\s*=\s*"([^"]+)"/m);
-  if (!match) throw new Error(`gateway_url not found in ${GATEWAY_STRESS_CONFIG_PATH}`);
-  return match[1];
+/** Read a required env var (loaded from the stack env files by the container). */
+const requireEnv = (key: string): string => {
+  const value = process.env[key];
+  if (!value) throw new Error(`${key} is not set in the environment`);
+  return value;
 };
 
 // $ZAMA (mock ZamaOFT / ERC20) surface we use; mint() is open on the local stack.
@@ -124,21 +34,14 @@ const ZAMA_ABI = [
 ];
 
 /**
- * Fund the gateway-stress signer with $ZAMA so its on-chain decryption requests
- * can pay the ProtocolPayment fee (1e18 per request, pulled via transferFrom).
- * Without balance + allowance, requests revert with ERC20InsufficientAllowance
- * (selector 0xfb8f41b2). Mints a large buffer and grants an unbounded allowance;
- * idempotent — skips when already provisioned.
+ * Fund the PRIVATE_KEY signer with $ZAMA so its on-chain decryption requests can
+ * pay the ProtocolPayment fee (1e18 per request, pulled via transferFrom).
  */
-async function provisionGatewayZama(configText: string, privateKey: string): Promise<void> {
-  const gwEnv = parseEnvFile(GATEWAY_SC_ENV_PATH);
-  const zamaAddress = gwEnv.ZAMA_OFT_ADDRESS;
-  const paymentAddress = gwEnv.PROTOCOL_PAYMENT_ADDRESS;
-  if (!zamaAddress || !paymentAddress) {
-    throw new Error(`ZAMA_OFT_ADDRESS / PROTOCOL_PAYMENT_ADDRESS not found in ${GATEWAY_SC_ENV_PATH}`);
-  }
+async function provisionGatewayZama(privateKey: string): Promise<void> {
+  const zamaAddress = requireEnv('ZAMA_OFT_ADDRESS');
+  const paymentAddress = requireEnv('PROTOCOL_PAYMENT_ADDRESS');
 
-  const gatewayUrl = readGatewayUrl(configText);
+  const gatewayUrl = requireEnv('GATEWAY_RPC_URL');
   const gwProvider = new ethers.JsonRpcProvider(gatewayUrl);
   const gwWallet = new ethers.Wallet(privateKey, gwProvider);
   console.log(`\n[gateway] $ZAMA prep on ${gatewayUrl} for signer=${gwWallet.address}`);
@@ -154,7 +57,7 @@ async function provisionGatewayZama(configText: string, privateKey: string): Pro
     }
   }
   if (gas === 0n) {
-    throw new Error(`gateway-stress signer ${gwWallet.address} has 0 gas on the gateway chain.`);
+    throw new Error(`PRIVATE_KEY signer ${gwWallet.address} has 0 gas on the gateway chain.`);
   }
 
   const zama = new ethers.Contract(zamaAddress, ZAMA_ABI, gwWallet);
@@ -177,24 +80,11 @@ async function provisionGatewayZama(configText: string, privateKey: string): Pro
   console.log(`[gateway] $ZAMA ready: balance=${ethers.formatEther(finalBalance)} allowance=unbounded`);
 }
 
-/** Replace `handle = "..."` inside a `[[section]]` block, preserving formatting. */
-const replaceSectionHandle = (configText: string, section: string, handle: string): string => {
-  const re = new RegExp(`(\\[\\[${section}\\]\\][\\s\\S]*?handle\\s*=\\s*)"[^"]*"`);
-  if (!re.test(configText)) throw new Error(`could not locate handle under [[${section}]]`);
-  return configText.replace(re, `$1"${handle}"`);
-};
-
-const replaceAllowedContract = (configText: string, address: string): string => {
-  const re = /^(allowed_contract\s*=\s*)"[^"]*"/m;
-  if (!re.test(configText)) throw new Error('could not locate allowed_contract');
-  return configText.replace(re, `$1"${address}"`);
-};
-
 async function main(): Promise<void> {
-  wireInstanceEnv();
-  installFetchHostRemap();
+  const privateKey = requireEnv('PRIVATE_KEY');
 
-  // Imported dynamically: its module-level env reads must see wireInstanceEnv().
+  // test/instance reads its addresses/urls from process.env at import time; the
+  // container already loads them from the stack env files.
   const { createInstance, aclAddress, coprocessorAddress, kmsVerifierAddress } = await import(
     '../test/instance'
   );
@@ -222,11 +112,6 @@ async function main(): Promise<void> {
   const net = await provider.getNetwork();
   console.log(`network=${network.name} chainId=${net.chainId} rpc=${(network.config as { url?: string }).url}`);
 
-  const configText = readFileSync(GATEWAY_STRESS_CONFIG_PATH, 'utf8');
-  const privateKey = readGatewayStressPrivateKey(configText);
-
-  // Call as the gateway-stress signer so msg.sender matches the decrypt-time
-  // userAddress (see file header).
   const wallet = new ethers.Wallet(privateKey, provider);
   let balance = await provider.getBalance(wallet.address);
   console.log(`host caller=${wallet.address} balance=${ethers.formatEther(balance)} ETH`);
@@ -246,12 +131,12 @@ async function main(): Promise<void> {
   if (balance === 0n) {
     throw new Error(
       `Host caller ${wallet.address} has 0 balance on the host chain.\n` +
-        'This account (gateway-stress private_key) must be funded on the host chain\n' +
-        'to submit the input transaction. Fund it, or point private_key at a funded key.',
+        'This account (PRIVATE_KEY) must be funded on the host chain to submit the\n' +
+        'input transaction. Fund it, or point PRIVATE_KEY at a funded key.',
     );
   }
 
-  await provisionGatewayZama(configText, privateKey);
+  await provisionGatewayZama(privateKey);
 
   // Deploy SmokeTestInput (or reuse an existing one via env).
   const factory = await ethers.getContractFactory('SmokeTestInput', wallet);
@@ -289,7 +174,7 @@ async function main(): Promise<void> {
   const publicHandle = await generateHandle('public_ct', 7n);
   const userHandle = await generateHandle('user_ct', 11n);
 
-  // Real readiness check: decrypt before writing config.
+  // Real readiness check: decrypt before printing the config values.
   console.log('\nverifying public decryption ...');
   const pub = await instance.publicDecrypt([publicHandle]);
   if (pub.clearValues[publicHandle] !== expectedPublic) {
@@ -308,17 +193,13 @@ async function main(): Promise<void> {
   }
   console.log(`user decrypt OK (${userHandle} = ${expectedUser})`);
 
-  // Wire the verified handles into the gateway-stress config.
-  let updated = configText;
-  updated = replaceSectionHandle(updated, 'public_ct', publicHandle);
-  updated = replaceSectionHandle(updated, 'user_ct', userHandle);
-  updated = replaceAllowedContract(updated, contractAddress);
-  writeFileSync(GATEWAY_STRESS_CONFIG_PATH, updated);
-
-  console.log(`\nUpdated ${GATEWAY_STRESS_CONFIG_PATH}:`);
-  console.log(`  public_ct.handle   = ${publicHandle}`);
-  console.log(`  user_ct.handle     = ${userHandle}`);
-  console.log(`  allowed_contract   = ${contractAddress}`);
+  // Print the verified values to paste into test-suite/gateway-stress/config/config.toml.
+  console.log('\n=== gateway-stress config values ===');
+  console.log(`allowed_contract = "${contractAddress}"`);
+  console.log('\n[[public_ct]]');
+  console.log(`handle = "${publicHandle}"`);
+  console.log('\n[[user_ct]]');
+  console.log(`handle = "${userHandle}"`);
 }
 
 main()
