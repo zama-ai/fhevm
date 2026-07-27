@@ -8,12 +8,7 @@ import { buildSolanaUserDecryptMmrProofExtraData } from '../../core/coprocessor/
 import { toFhevmHandle } from '../../core/handle/FhevmHandle.js';
 import { RelayerAsyncRequest } from '../../core/modules/relayer/module/RelayerAsyncRequest.js';
 import { removeSuffix } from '../../core/base/string.js';
-import {
-  decodeMmrProofTransportBlob,
-  hexToBytes,
-  MMR_MODE_PUBLIC,
-  verifyPublicDecryptProof,
-} from '../proof.js';
+import { decodeMmrProofTransportBlob, hexToBytes, MMR_MODE_PUBLIC, verifyPublicDecryptProof } from '../proof.js';
 
 export type SolanaPublicDecryptCertificateContext = {
   readonly chain: FhevmSolanaChain;

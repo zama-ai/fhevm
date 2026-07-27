@@ -4,10 +4,7 @@ import { base58 } from '@scure/base';
 
 import type { MmrProof } from '../proof.js';
 import type { SolanaPublicDecryptCertificateClaim } from './publicDecryptCertificate.js';
-import {
-  buildVerifyPublicDecryptInstruction,
-  verifyPublicDecryptArgsFromClaim,
-} from './verifyPublicDecrypt.js';
+import { buildVerifyPublicDecryptInstruction, verifyPublicDecryptArgsFromClaim } from './verifyPublicDecrypt.js';
 import { getVerifyPublicDecryptInstructionDataDecoder } from '../internal/generated/zamaHost/instructions/verifyPublicDecrypt.js';
 import { ZAMA_HOST_PROGRAM_ADDRESS } from '../internal/generated/zamaHost/programAddress.js';
 

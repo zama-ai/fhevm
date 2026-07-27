@@ -178,7 +178,11 @@ describe('settleBatch', () => {
     expect(lookups[0]!.lookupTableAddress).toBe(opts.lookupTableAddress);
 
     // redemption_record (derived from the burned handle) and the fee payer stay STATIC.
-    const accounts = await deriveSettleAccounts(opts.roots, (await deriveBatchAddresses(opts.roots, 0n)), BURNED_HANDLE as never);
+    const accounts = await deriveSettleAccounts(
+      opts.roots,
+      await deriveBatchAddresses(opts.roots, 0n),
+      BURNED_HANDLE as never,
+    );
     const staticAccounts = compiled.staticAccounts as readonly Address[];
     expect(staticAccounts[0]).toBe(keeper.address); // fee payer is always static account 0
     expect(staticAccounts).toContain(accounts.redemptionRecord);
@@ -245,7 +249,9 @@ describe('settleBatch', () => {
   it('rejects a proof-service leaf count that disagrees with the on-chain encrypted value account before the certificate phase', async () => {
     certificate.mockResolvedValue(claim(cleartextHex(800n)));
     const { chain, proofConfig, keeper, opts } = await options({ leafCount: 2n }); // service returns leaf_count 1
-    await expect(settleBatch(chain, proofConfig, keeper, opts)).rejects.toThrow('does not match the on-chain encrypted value account');
+    await expect(settleBatch(chain, proofConfig, keeper, opts)).rejects.toThrow(
+      'does not match the on-chain encrypted value account',
+    );
     expect(certificate).not.toHaveBeenCalled();
     expect(opts.rpc.getLatestBlockhash).not.toHaveBeenCalled();
     expect(sendAndConfirm).not.toHaveBeenCalled();

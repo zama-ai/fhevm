@@ -17,14 +17,11 @@ export type SolanaPublicDecryptActions = {
 type SolanaClientBase = FhevmBase<undefined, FhevmRuntime, undefined>;
 
 /** Attaches the signer-free Solana public-decrypt certificate action. */
-export function solanaPublicDecryptActions(
-  fhevm: SolanaClientBase,
-): FhevmExtension<SolanaPublicDecryptActions> {
+export function solanaPublicDecryptActions(fhevm: SolanaClientBase): FhevmExtension<SolanaPublicDecryptActions> {
   const chain = (fhevm as SolanaClientBase & { readonly solanaChain: FhevmSolanaChain }).solanaChain;
   return {
     actions: {
-      publicDecryptCertificate: (parameters) =>
-        publicDecryptCertificate({ chain, runtime: fhevm.runtime }, parameters),
+      publicDecryptCertificate: (parameters) => publicDecryptCertificate({ chain, runtime: fhevm.runtime }, parameters),
     },
     runtime: fhevm.runtime,
   };

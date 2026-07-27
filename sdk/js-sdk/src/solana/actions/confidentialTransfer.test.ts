@@ -276,7 +276,11 @@ describe('confidentialTransfer attestation binding', () => {
       feePayer: owner,
       mint,
       inputProof,
-      inputProofResult: { handles: inputProof.getInputHandles(), signatures: [SIGNATURE], extraData: asBytesHex('0x00') },
+      inputProofResult: {
+        handles: inputProof.getInputHandles(),
+        signatures: [SIGNATURE],
+        extraData: asBytesHex('0x00'),
+      },
       rpc: {
         getLatestBlockhash: vi.fn().mockReturnValue({
           send: vi.fn().mockResolvedValue({ value: { blockhash: key(20), lastValidBlockHeight: 1_000n } }),
