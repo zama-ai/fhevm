@@ -43,7 +43,7 @@ contract GatewayConfig is IGatewayConfig, Ownable2StepUpgradeable, UUPSUpgradeab
      */
     string private constant CONTRACT_NAME = 'GatewayConfig';
     uint256 private constant MAJOR_VERSION = 0;
-    uint256 private constant MINOR_VERSION = 7;
+    uint256 private constant MINOR_VERSION = 8;
     uint256 private constant PATCH_VERSION = 0;
 
     /**
@@ -52,7 +52,7 @@ contract GatewayConfig is IGatewayConfig, Ownable2StepUpgradeable, UUPSUpgradeab
      * This constant does not represent the number of time a specific contract have been upgraded,
      * as a contract deployed from version VX will have a REINITIALIZER_VERSION > 2.
      */
-    uint64 private constant REINITIALIZER_VERSION = 9;
+    uint64 private constant REINITIALIZER_VERSION = 10;
 
     /**
      * @notice The addresses of all gateway contracts
@@ -160,8 +160,11 @@ contract GatewayConfig is IGatewayConfig, Ownable2StepUpgradeable, UUPSUpgradeab
         mapping(uint256 contextId => bool isDestroyed) destroyedKmsContexts;
         /// @notice Whether a registered host chain has been disabled.
         mapping(uint256 chainId => bool isDisabled) disabledHostChains;
-        /// @notice The coprocessor transaction sender that can finalize consensus alone.
-        address priorityCoprocessorTxSender;
+        /// @dev Deprecated. Held the coprocessor transaction sender that could finalize consensus
+        ///      alone. The priority coprocessor feature was removed: coprocessor consensus is now
+        ///      always threshold-based. `reinitializeV9` zeroes this slot during the upgrade.
+        ///      Kept to preserve the storage layout: do not reuse this slot for a new variable.
+        address deprecatedPriorityCoprocessorTxSender;
     }
 
     /**
@@ -241,25 +244,24 @@ contract GatewayConfig is IGatewayConfig, Ownable2StepUpgradeable, UUPSUpgradeab
     }
 
     /**
-     * @notice Re-initializes the contract from V7.
-     * @dev If a priority coprocessor is set here, every host-chain `InputVerifier` must accept its signer
-     *      with threshold 1 before user inputs rely on priority mode.
-     * @dev Requests where the priority sender responded before this upgrade but consensus was not yet
-     *      reached will only finalize after priority mode is later removed (see
-     *      {IGatewayConfig-setPriorityCoprocessorTxSender}).
+     * @notice Re-initializes the contract from V8.
+     * @dev Clears the deprecated priority coprocessor slot so the upgrade itself guarantees that
+     *      coprocessor consensus is threshold-based, without depending on a prior
+     *      `removePriorityCoprocessorTxSender` ops call having run.
+     * @dev Before upgrading, every host-chain `InputVerifier` must already accept the full gateway
+     *      coprocessor signer set at the gateway threshold. While priority mode was active the gateway
+     *      emitted a single signature, so a host still pinned to one signer would start rejecting the
+     *      threshold-sized signature bundles this upgrade makes unconditional.
+     * @dev Requests where the former priority sender already responded but consensus was not yet reached
+     *      become finalizable again: their tally resumes against the coprocessor threshold.
      * @dev Intended to run atomically as the `call` of a UUPS `upgradeToAndCall`, whose `_authorizeUpgrade`
      *      already enforces owner authorization; the `reinitializer` guard then prevents any later re-entry.
-     * @param coprocessorTxSenderAddress The registered priority coprocessor transaction sender to set,
-     *        or zero to leave priority mode disabled.
      */
     /// @custom:oz-upgrades-unsafe-allow missing-initializer-call
     /// @custom:oz-upgrades-validate-as-initializer
-    function reinitializeV8(address coprocessorTxSenderAddress) public virtual reinitializer(REINITIALIZER_VERSION) {
-        if (coprocessorTxSenderAddress != address(0)) {
-            _requireRegisteredPriorityCoprocessorTxSender(coprocessorTxSenderAddress);
-            _setPriorityCoprocessorTxSender(coprocessorTxSenderAddress);
-            emit UpdatePriorityCoprocessorTxSender(coprocessorTxSenderAddress);
-        }
+    function reinitializeV9() public virtual reinitializer(REINITIALIZER_VERSION) {
+        GatewayConfigStorage storage $ = _getGatewayConfigStorage();
+        delete $.deprecatedPriorityCoprocessorTxSender;
     }
 
     /**
@@ -346,24 +348,6 @@ contract GatewayConfig is IGatewayConfig, Ownable2StepUpgradeable, UUPSUpgradeab
         uint256 newCoprocessorThreshold
     ) external virtual onlyOwner {
         GatewayConfigStorage storage $ = _getGatewayConfigStorage();
-        address priorityCoprocessorTxSender = $.priorityCoprocessorTxSender;
-        if (priorityCoprocessorTxSender != address(0)) {
-            (bool containsPriorityCoprocessor, address newPrioritySigner) = _findCoprocessorSigner(
-                newCoprocessors,
-                priorityCoprocessorTxSender
-            );
-            if (!containsPriorityCoprocessor) {
-                revert PriorityCoprocessorNotInNewCoprocessors(priorityCoprocessorTxSender);
-            }
-            address currentPrioritySigner = $.coprocessors[priorityCoprocessorTxSender].signerAddress;
-            if (newPrioritySigner != currentPrioritySigner) {
-                revert PriorityCoprocessorSignerChanged(
-                    priorityCoprocessorTxSender,
-                    currentPrioritySigner,
-                    newPrioritySigner
-                );
-            }
-        }
 
         // Remove the old coprocessors
         uint256 oldCoprocessorTxSenderAddressesLength = $.coprocessorTxSenderAddresses.length;
@@ -463,27 +447,6 @@ contract GatewayConfig is IGatewayConfig, Ownable2StepUpgradeable, UUPSUpgradeab
     function updateCoprocessorThreshold(uint256 newCoprocessorThreshold) external virtual onlyOwner {
         _setCoprocessorThreshold(newCoprocessorThreshold);
         emit UpdateCoprocessorThreshold(newCoprocessorThreshold);
-    }
-
-    /**
-     * @notice See {IGatewayConfig-setPriorityCoprocessorTxSender}.
-     * @dev Applies live; the DAO proposal/runbook must preserve host verifier compatibility
-     *      because InputVerification is not paused here.
-     */
-    function setPriorityCoprocessorTxSender(address coprocessorTxSenderAddress) external virtual onlyOwner {
-        _requireRegisteredPriorityCoprocessorTxSender(coprocessorTxSenderAddress);
-        _setPriorityCoprocessorTxSender(coprocessorTxSenderAddress);
-        emit UpdatePriorityCoprocessorTxSender(coprocessorTxSenderAddress);
-    }
-
-    /**
-     * @notice See {IGatewayConfig-removePriorityCoprocessorTxSender}.
-     * @dev Applies live; the DAO proposal/runbook must preserve host verifier compatibility
-     *      because InputVerification is not paused here.
-     */
-    function removePriorityCoprocessorTxSender() external virtual onlyOwner {
-        _setPriorityCoprocessorTxSender(address(0));
-        emit UpdatePriorityCoprocessorTxSender(address(0));
     }
 
     /**
@@ -711,14 +674,6 @@ contract GatewayConfig is IGatewayConfig, Ownable2StepUpgradeable, UUPSUpgradeab
     function getCoprocessorMajorityThreshold() external view virtual returns (uint256) {
         GatewayConfigStorage storage $ = _getGatewayConfigStorage();
         return $.coprocessorThreshold;
-    }
-
-    /**
-     * @notice See {IGatewayConfig-getPriorityCoprocessorTxSender}.
-     */
-    function getPriorityCoprocessorTxSender() external view virtual returns (address) {
-        GatewayConfigStorage storage $ = _getGatewayConfigStorage();
-        return $.priorityCoprocessorTxSender;
     }
 
     /**
@@ -1163,41 +1118,6 @@ contract GatewayConfig is IGatewayConfig, Ownable2StepUpgradeable, UUPSUpgradeab
         }
 
         $.coprocessorThreshold = newCoprocessorThreshold;
-    }
-
-    /**
-     * @notice Sets the priority coprocessor transaction sender.
-     * @param coprocessorTxSenderAddress The priority coprocessor transaction sender, or zero to disable priority mode.
-     */
-    function _setPriorityCoprocessorTxSender(address coprocessorTxSenderAddress) internal virtual {
-        GatewayConfigStorage storage $ = _getGatewayConfigStorage();
-        $.priorityCoprocessorTxSender = coprocessorTxSenderAddress;
-    }
-
-    /**
-     * @notice Reverts if the priority coprocessor transaction sender is not registered.
-     * @param coprocessorTxSenderAddress The priority coprocessor transaction sender to validate.
-     */
-    function _requireRegisteredPriorityCoprocessorTxSender(address coprocessorTxSenderAddress) internal view virtual {
-        GatewayConfigStorage storage $ = _getGatewayConfigStorage();
-        if (!$.isCoprocessorTxSender[coprocessorTxSenderAddress]) {
-            revert PriorityCoprocessorTxSenderNotRegistered(coprocessorTxSenderAddress);
-        }
-    }
-
-    /**
-     * @notice Returns whether a coprocessor transaction sender is present in a calldata coprocessor list and its signer.
-     */
-    function _findCoprocessorSigner(
-        Coprocessor[] calldata coprocessors,
-        address coprocessorTxSenderAddress
-    ) internal pure virtual returns (bool, address) {
-        for (uint256 i = 0; i < coprocessors.length; i++) {
-            if (coprocessors[i].txSenderAddress == coprocessorTxSenderAddress) {
-                return (true, coprocessors[i].signerAddress);
-            }
-        }
-        return (false, address(0));
     }
 
     /**

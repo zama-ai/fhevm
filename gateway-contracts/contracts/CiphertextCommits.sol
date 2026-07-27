@@ -83,10 +83,12 @@ contract CiphertextCommits is ICiphertextCommits, UUPSUpgradeableEmptyProxy, Gat
         // ----------------------------------------------------------------------------------------------
         /// @notice The coprocessor context ID associated to the add ciphertext
         mapping(bytes32 addCiphertextHash => uint256 contextId) addCiphertextContextId;
-        /// @notice The priority coprocessor transaction sender that finalized a handle.
-        /// @dev Raw sender arrays can include non-priority submissions before or after finalization.
-        ///      When set, public outputs expose the singleton priority result for this handle.
-        mapping(bytes32 ctHandle => address coprocessorTxSenderAddress) priorityConsensusTxSender;
+        /// @dev Deprecated. Recorded the priority coprocessor transaction sender that finalized a
+        ///      handle while the priority coprocessor feature existed. Nothing writes it anymore;
+        ///      it is still read so handles finalized under priority mode keep reporting the
+        ///      singleton sender they were finalized with, matching the event already emitted.
+        ///      Kept to preserve the storage layout: do not reuse this slot for a new variable.
+        mapping(bytes32 ctHandle => address coprocessorTxSenderAddress) deprecatedPriorityConsensusTxSender;
     }
 
     /**
@@ -164,12 +166,7 @@ contract CiphertextCommits is ICiphertextCommits, UUPSUpgradeableEmptyProxy, Gat
         // Send the event if and only if the consensus is reached in the current response call.
         // This means a "late" response will not be reverted, just ignored and no event will be emitted
         if (!$.isCiphertextMaterialAdded[ctHandle]) {
-            bool finalizedByPriority = msg.sender == GATEWAY_CONFIG.getPriorityCoprocessorTxSender();
-            if (
-                finalizedByPriority ||
-                (GATEWAY_CONFIG.getPriorityCoprocessorTxSender() == address(0) &&
-                    _isConsensusReached($.addCiphertextHashCounters[addCiphertextHash]))
-            ) {
+            if (_isConsensusReached($.addCiphertextHashCounters[addCiphertextHash])) {
                 $.ciphertextDigests[ctHandle] = ciphertextDigest;
                 $.snsCiphertextDigests[ctHandle] = snsCiphertextDigest;
                 $.keyIds[ctHandle] = keyId;
@@ -180,9 +177,6 @@ contract CiphertextCommits is ICiphertextCommits, UUPSUpgradeableEmptyProxy, Gat
                 // Public getters receive a handle, but raw sender lists are stored by material hash.
                 // Pin the handle to the material hash that actually finalized.
                 $.ctHandleConsensusHash[ctHandle] = addCiphertextHash;
-                if (finalizedByPriority) {
-                    $.priorityConsensusTxSender[ctHandle] = msg.sender;
-                }
 
                 emit AddCiphertextMaterialConsensus(
                     ctHandle,
@@ -342,15 +336,16 @@ contract CiphertextCommits is ICiphertextCommits, UUPSUpgradeableEmptyProxy, Gat
 
     /**
      * @notice Returns the coprocessor transaction senders exposed as consensus participants.
-     * @dev In priority mode, the raw sender list can include non-priority submissions. The priority
-     *      marker records that this handle finalized through priority mode, so public outputs stay
-     *      aligned with the singleton consensus event.
+     * @dev Handles finalized while the priority coprocessor feature existed kept a singleton marker,
+     *      because the raw sender list could include submissions that did not finalize anything. That
+     *      marker is still honoured so those historical handles keep reporting the sender their
+     *      `AddCiphertextMaterialConsensus` event was emitted with. Nothing writes it anymore.
      */
     function _getAddCiphertextMaterialConsensusTxSenders(
         CiphertextCommitsStorage storage $,
         bytes32 ctHandle
     ) internal view virtual returns (address[] memory) {
-        address priorityConsensusTxSender = $.priorityConsensusTxSender[ctHandle];
+        address priorityConsensusTxSender = $.deprecatedPriorityConsensusTxSender[ctHandle];
         if (priorityConsensusTxSender != address(0)) {
             address[] memory txSenders = new address[](1);
             txSenders[0] = priorityConsensusTxSender;
