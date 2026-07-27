@@ -161,8 +161,8 @@ export const thresholdCoreEnv = (
 });
 
 /** Shell for the signing-key setup container, one invocation per party (unrolled in TS rather
- * than a shell loop, so prefixes come from kms-party.ts and no `$$` compose-interpolation
- * escaping is needed). Generates ONLY each party's signing key + self-signed CA cert into S3,
+ * than a shell loop, so prefixes come from kms-party.ts). Generates ONLY each party's signing
+ * key + self-signed CA cert into S3,
  * mirroring the KMS reference threshold compose. The FHE key shares and CRS are NOT pre-generated
  * here; they come from the real on-chain DKG (keygen/crsgen). `--num-parties` must match the
  * cluster size (the CLI rejects a signing-key-party-id greater than num-parties; it also defaults
@@ -190,8 +190,8 @@ const genKeysCommand = (topology: ResolvedKmsTopology, opts: KmsRenderOptions) =
   --public-storage s3 --public-s3-bucket ${opts.s3Bucket} --public-s3-prefix ${kmsPublicPrefix(party)} \\
   --aws-s3-endpoint ${opts.s3Endpoint} \\
   --private-storage s3 --private-s3-bucket ${opts.s3Bucket} --private-s3-prefix ${kmsPrivatePrefix(party)} \\
-  $CMD \\
-  threshold --signing-key-party-id ${party} --tls-subject ${kmsCoreName(party)} --tls-wildcard $NP`,
+  $$CMD \\
+  threshold --signing-key-party-id ${party} --tls-subject ${kmsCoreName(party)} --tls-wildcard $$NP`,
     ),
     "else",
     ...kmsPartyIds(topology.parties).map(
