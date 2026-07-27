@@ -1,15 +1,15 @@
 // SPDX-License-Identifier: BSD-3-Clause-Clear
 pragma solidity ^0.8.24;
 
-import { Strings } from "@openzeppelin/contracts/utils/Strings.sol";
-import { IERC20 } from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
-import { decryptionAddress, inputVerificationAddress } from "../addresses/GatewayAddresses.sol";
-import { feesSenderToBurnerAddress } from "../addresses/PaymentBridgingAddresses.sol";
+import { Strings } from '@openzeppelin/contracts/utils/Strings.sol';
+import { IERC20 } from '@openzeppelin/contracts/token/ERC20/IERC20.sol';
+import { decryptionAddress, inputVerificationAddress } from '../addresses/GatewayAddresses.sol';
+import { feesSenderToBurnerAddress } from '../addresses/PaymentBridgingAddresses.sol';
 
-import { zamaOFTAddress } from "../addresses/PaymentBridgingAddresses.sol";
-import { IProtocolPayment } from "./interfaces/IProtocolPayment.sol";
-import { UUPSUpgradeableEmptyProxy } from "./shared/UUPSUpgradeableEmptyProxy.sol";
-import { GatewayOwnable } from "./shared/GatewayOwnable.sol";
+import { zamaOFTAddress } from '../addresses/PaymentBridgingAddresses.sol';
+import { IProtocolPayment } from './interfaces/IProtocolPayment.sol';
+import { UUPSUpgradeableEmptyProxy } from './shared/UUPSUpgradeableEmptyProxy.sol';
+import { GatewayOwnable } from './shared/GatewayOwnable.sol';
 
 /**
  * @title Payment smart contract
@@ -42,7 +42,7 @@ contract ProtocolPayment is IProtocolPayment, UUPSUpgradeableEmptyProxy, Gateway
      * in order to force derived contracts to consider a different version. Note that
      * they can still define their own private constants with the same name.
      */
-    string private constant CONTRACT_NAME = "ProtocolPayment";
+    string private constant CONTRACT_NAME = 'ProtocolPayment';
     uint256 private constant MAJOR_VERSION = 0;
     uint256 private constant MINOR_VERSION = 1;
     uint256 private constant PATCH_VERSION = 0;
@@ -207,11 +207,11 @@ contract ProtocolPayment is IProtocolPayment, UUPSUpgradeableEmptyProxy, Gateway
             string(
                 abi.encodePacked(
                     CONTRACT_NAME,
-                    " v",
+                    ' v',
                     Strings.toString(MAJOR_VERSION),
-                    ".",
+                    '.',
                     Strings.toString(MINOR_VERSION),
-                    ".",
+                    '.',
                     Strings.toString(PATCH_VERSION)
                 )
             );

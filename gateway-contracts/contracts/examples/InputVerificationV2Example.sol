@@ -2,10 +2,10 @@
 
 pragma solidity ^0.8.24;
 
-import "../InputVerification.sol";
+import '../InputVerification.sol';
 
 contract InputVerificationV2Example is InputVerification {
-    string private constant CONTRACT_NAME = "InputVerification";
+    string private constant CONTRACT_NAME = 'InputVerification';
 
     uint256 private constant MAJOR_VERSION = 1000;
     uint256 private constant MINOR_VERSION = 0;
@@ -16,11 +16,11 @@ contract InputVerificationV2Example is InputVerification {
             string(
                 abi.encodePacked(
                     CONTRACT_NAME,
-                    " v",
+                    ' v',
                     Strings.toString(MAJOR_VERSION),
-                    ".",
+                    '.',
                     Strings.toString(MINOR_VERSION),
-                    ".",
+                    '.',
                     Strings.toString(PATCH_VERSION)
                 )
             );

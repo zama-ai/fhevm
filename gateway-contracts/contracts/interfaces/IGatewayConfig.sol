@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: BSD-3-Clause-Clear
 pragma solidity ^0.8.24;
 
-import { ProtocolMetadata, KmsNode, Coprocessor, Custodian, HostChain } from "../shared/Structs.sol";
+import { ProtocolMetadata, KmsNode, Coprocessor, Custodian, HostChain } from '../shared/Structs.sol';
 
 /**
  * @title Interface for the GatewayConfig contract.
