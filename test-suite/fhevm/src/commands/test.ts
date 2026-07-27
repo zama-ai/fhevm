@@ -1166,7 +1166,7 @@ const runBlueGreenProfile = async (state: State): Promise<boolean> => {
     );
   }
 
-  // TODO(fhevm-internal#1567): re-enable once RFC-023 lands — wait for the post-cutover
+  // TODO: re-enable once RFC-023 lands — wait for the post-cutover
   // backfill to converge before verifying (the convergence signal will replace txn_is_sent).
   // for (const db of operatorDatabases) {
   //   await waitUntil({
@@ -1180,7 +1180,7 @@ const runBlueGreenProfile = async (state: State): Promise<boolean> => {
   console.log(`  cross-cutover verify: decrypt Alice's balance on promoted stack`);
   const verifyResult = await run(["./fhevm-cli", "test", "cross-cutover-verify"], { allowFailure: true });
   if (verifyResult.code !== 0) {
-    // TODO(fhevm-internal#1567): re-enable once RFC-023 lands — dry-run-era handles are
+    // TODO: re-enable once RFC-023 lands — dry-run-era handles are
     // undecryptable until then (S3 backfill vs immutable on-chain digests).
     // throw new Error(
     //   "cross-cutover verify failed — decrypted balance ≠ expected math after cutover. " +
