@@ -1,9 +1,9 @@
-import dotenv from "dotenv";
-import fs from "fs";
-import path from "path";
+import dotenv from 'dotenv';
+import fs from 'fs';
+import path from 'path';
 
-import { ADDRESSES_DIR, GATEWAY_ADDRESSES_ENV_FILE_NAME } from "../../hardhat.config";
-import { pascalCaseToAddressEnvVar } from "../utils";
+import { ADDRESSES_DIR, GATEWAY_ADDRESSES_ENV_FILE_NAME } from '../../hardhat.config';
+import { pascalCaseToAddressEnvVar } from '../utils';
 
 // Get the required environment variable, throw an error if it's not set or empty
 export function getRequiredEnvVar(name: string): string {
@@ -11,7 +11,7 @@ export function getRequiredEnvVar(name: string): string {
     throw new Error(`"${name}" env variable is not set`);
   }
   const value = process.env[name]!;
-  if (value.trim() === "") {
+  if (value.trim() === '') {
     throw new Error(`"${name}" env variable is set but empty`);
   }
   return value;

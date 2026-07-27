@@ -1,23 +1,23 @@
 // SPDX-License-Identifier: BSD-3-Clause-Clear
 pragma solidity ^0.8.24;
-import { IDecryption } from "./interfaces/IDecryption.sol";
-import { ciphertextCommitsAddress, gatewayConfigAddress } from "../addresses/GatewayAddresses.sol";
-import { ECDSA } from "@openzeppelin/contracts/utils/cryptography/ECDSA.sol";
-import { EIP712Upgradeable } from "@openzeppelin/contracts-upgradeable/utils/cryptography/EIP712Upgradeable.sol";
-import { MessageHashUtils } from "@openzeppelin/contracts/utils/cryptography/MessageHashUtils.sol";
-import { Strings } from "@openzeppelin/contracts/utils/Strings.sol";
-import { IGatewayConfig } from "./interfaces/IGatewayConfig.sol";
-import { ICiphertextCommits } from "./interfaces/ICiphertextCommits.sol";
-import { UUPSUpgradeableEmptyProxy } from "./shared/UUPSUpgradeableEmptyProxy.sol";
-import { GatewayConfigChecks } from "./shared/GatewayConfigChecks.sol";
-import { FheType } from "./shared/FheType.sol";
-import { Pausable } from "./shared/Pausable.sol";
-import { FHETypeBitSizes } from "./libraries/FHETypeBitSizes.sol";
-import { HandleOps } from "./libraries/HandleOps.sol";
-import { GatewayOwnable } from "./shared/GatewayOwnable.sol";
-import { ProtocolPaymentUtils } from "./shared/ProtocolPaymentUtils.sol";
-import { SnsCiphertextMaterial, CtHandleContractPair, HandleEntry } from "./shared/Structs.sol";
-import { PUBLIC_DECRYPT_COUNTER_BASE, USER_DECRYPT_COUNTER_BASE } from "./shared/KMSRequestCounters.sol";
+import { IDecryption } from './interfaces/IDecryption.sol';
+import { ciphertextCommitsAddress, gatewayConfigAddress } from '../addresses/GatewayAddresses.sol';
+import { ECDSA } from '@openzeppelin/contracts/utils/cryptography/ECDSA.sol';
+import { EIP712Upgradeable } from '@openzeppelin/contracts-upgradeable/utils/cryptography/EIP712Upgradeable.sol';
+import { MessageHashUtils } from '@openzeppelin/contracts/utils/cryptography/MessageHashUtils.sol';
+import { Strings } from '@openzeppelin/contracts/utils/Strings.sol';
+import { IGatewayConfig } from './interfaces/IGatewayConfig.sol';
+import { ICiphertextCommits } from './interfaces/ICiphertextCommits.sol';
+import { UUPSUpgradeableEmptyProxy } from './shared/UUPSUpgradeableEmptyProxy.sol';
+import { GatewayConfigChecks } from './shared/GatewayConfigChecks.sol';
+import { FheType } from './shared/FheType.sol';
+import { Pausable } from './shared/Pausable.sol';
+import { FHETypeBitSizes } from './libraries/FHETypeBitSizes.sol';
+import { HandleOps } from './libraries/HandleOps.sol';
+import { GatewayOwnable } from './shared/GatewayOwnable.sol';
+import { ProtocolPaymentUtils } from './shared/ProtocolPaymentUtils.sol';
+import { SnsCiphertextMaterial, CtHandleContractPair, HandleEntry } from './shared/Structs.sol';
+import { PUBLIC_DECRYPT_COUNTER_BASE, USER_DECRYPT_COUNTER_BASE } from './shared/KMSRequestCounters.sol';
 
 /**
  * @title Decryption contract
@@ -154,13 +154,13 @@ contract Decryption is
      * @notice The hash of the EIP712Domain structure typed data definition.
      */
     bytes32 private constant DOMAIN_TYPE_HASH =
-        keccak256("EIP712Domain(string name,string version,uint256 chainId,address verifyingContract)");
+        keccak256('EIP712Domain(string name,string version,uint256 chainId,address verifyingContract)');
 
     /**
      * @notice The definition of the PublicDecryptVerification structure typed data.
      */
     string private constant EIP712_PUBLIC_DECRYPT_TYPE =
-        "PublicDecryptVerification(bytes32[] ctHandles,bytes decryptedResult,bytes extraData)";
+        'PublicDecryptVerification(bytes32[] ctHandles,bytes decryptedResult,bytes extraData)';
 
     /**
      * @notice The hash of the PublicDecryptVerification structure typed data definition used for
@@ -175,8 +175,8 @@ contract Decryption is
      * does not verify signatures on-chain, so no equivalent type hash is declared for it.
      */
     string private constant EIP712_USER_DECRYPT_REQUEST_TYPE =
-        "UserDecryptRequestVerification(bytes publicKey,address[] contractAddresses,uint256 startTimestamp,"
-        "uint256 durationDays,bytes extraData)";
+        'UserDecryptRequestVerification(bytes publicKey,address[] contractAddresses,uint256 startTimestamp,'
+        'uint256 durationDays,bytes extraData)';
 
     /**
      * @notice The hash of the UserDecryptRequestVerification structure typed data definition
@@ -191,8 +191,8 @@ contract Decryption is
      * relayer-sdk deprecation window for old-format signatures closes.
      */
     string private constant EIP712_DELEGATED_USER_DECRYPT_REQUEST_TYPE =
-        "DelegatedUserDecryptRequestVerification(bytes publicKey,address[] contractAddresses,address delegatorAddress,"
-        "uint256 startTimestamp,uint256 durationDays,bytes extraData)";
+        'DelegatedUserDecryptRequestVerification(bytes publicKey,address[] contractAddresses,address delegatorAddress,'
+        'uint256 startTimestamp,uint256 durationDays,bytes extraData)';
 
     /**
      * @notice The hash of the DelegatedUserDecryptRequestVerification structure typed data definition
@@ -206,7 +206,7 @@ contract Decryption is
      * @notice The definition of the UserDecryptResponseVerification structure typed data.
      */
     string private constant EIP712_USER_DECRYPT_RESPONSE_TYPE =
-        "UserDecryptResponseVerification(bytes publicKey,bytes32[] ctHandles,bytes userDecryptedShare,bytes extraData)";
+        'UserDecryptResponseVerification(bytes publicKey,bytes32[] ctHandles,bytes userDecryptedShare,bytes extraData)';
 
     /**
      * @notice The hash of the UserDecryptResponseVerification structure typed data definition
@@ -220,7 +220,7 @@ contract Decryption is
      * in order to force derived contracts to consider a different version. Note that
      * they can still define their own private constants with the same name.
      */
-    string private constant CONTRACT_NAME = "Decryption";
+    string private constant CONTRACT_NAME = 'Decryption';
     uint256 private constant MAJOR_VERSION = 0;
     uint256 private constant MINOR_VERSION = 7;
     uint256 private constant PATCH_VERSION = 0;
@@ -309,7 +309,7 @@ contract Decryption is
      */
     /// @custom:oz-upgrades-validate-as-initializer
     function initializeFromEmptyProxy() public virtual onlyFromEmptyProxy reinitializer(REINITIALIZER_VERSION) {
-        __EIP712_init(CONTRACT_NAME, "1");
+        __EIP712_init(CONTRACT_NAME, '1');
         __Pausable_init();
 
         DecryptionStorage storage $ = _getDecryptionStorage();
@@ -955,11 +955,11 @@ contract Decryption is
             string(
                 abi.encodePacked(
                     CONTRACT_NAME,
-                    " v",
+                    ' v',
                     Strings.toString(MAJOR_VERSION),
-                    ".",
+                    '.',
                     Strings.toString(MINOR_VERSION),
-                    ".",
+                    '.',
                     Strings.toString(PATCH_VERSION)
                 )
             );

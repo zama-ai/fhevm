@@ -1,8 +1,8 @@
 // SPDX-License-Identifier: BSD-3-Clause-Clear
 pragma solidity ^0.8.24;
 
-import { protocolPaymentAddress } from "../../addresses/GatewayAddresses.sol";
-import { IProtocolPayment } from "../interfaces/IProtocolPayment.sol";
+import { protocolPaymentAddress } from '../../addresses/GatewayAddresses.sol';
+import { IProtocolPayment } from '../interfaces/IProtocolPayment.sol';
 
 /**
  * @title ProtocolPayment utils
