@@ -31,7 +31,7 @@
     "tsc": "tsc --noEmit -p tsconfig.json"
   },
   "dependencies": {
-    "@fhevm/sdk": "1.1.0-alpha.8",
+    "@fhevm/sdk": "0.14.0-0",
     "@fhevm/solidity": "*",
     "@openzeppelin/contracts": "^5.3.0",
     "bigint-buffer": "^1.1.5",

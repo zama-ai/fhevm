@@ -16,21 +16,21 @@ const word = (value: bigint): string => value.toString(16).padStart(64, '0');
 
 // A well-formed extraData v2: '0x02' | contextId(32) | epochId(32), with non-zero
 // context AND epoch (a zero context/epoch is not a valid v2). The concrete values are
-// irrelevant here: the SDK cap rejects ANY v2 by its version byte, before it looks at
-// the context — so no on-chain context read (ProtocolConfig, current epoch) is needed.
+// irrelevant here: parsing only inspects the extraData version byte, not the context —
+// so no on-chain context read (ProtocolConfig, current epoch) is needed.
 const V2_EXTRA_DATA = `0x02${word(1n)}${word(1n)}`;
 
 export function defineClientDecryptExtraDataV2Tests(parameters: {
   readonly runIf: boolean;
   readonly createFhevmDecryptClient: CreateViemDecryptClientFn;
 }): void {
-  // extraData v2 cap rule. A v13-capped SDK must NEVER handle a v2 extraData: it speaks
-  // the v13 API, and a v13 relayer rejects v2 (HTTP 400). So the SDK refuses it up front
-  // at parseSignedDecryptionPermit rather than failing later with an opaque relayer error.
-  // This forces a v2 extraData into an otherwise-valid legacy (V1) permit and asserts
-  // parse rejects it with the cap error. The rejection is driven by the SDK's *static*
-  // protocol-API cap, independent of the chain's own version — no v14 chain required.
-  describe.runIf(parameters.runIf)('Decrypt client — legacy permit with extraData v2 (cap rule)', () => {
+  // extraData v2 acceptance. This SDK is on protocol API v0.14.0, which natively
+  // knows the v2 extraData format, so parsing must NOT reject a permit merely for
+  // carrying it. This forces a v2 extraData into an otherwise-valid legacy (V1)
+  // permit and asserts parse accepts it. Acceptance is driven by the SDK's *static*
+  // protocol-API cap, independent of the chain's own version — no v14 chain required
+  // (a v13-capped SDK, by contrast, would have refused this at parse time).
+  describe.runIf(parameters.runIf)('Decrypt client — legacy permit with extraData v2', () => {
     let config: FheTestViemConfig;
 
     beforeAll(() => {
@@ -44,7 +44,7 @@ export function defineClientDecryptExtraDataV2Tests(parameters: {
       });
     });
 
-    it('rejects a legacy permit carrying extraData v2 at parse time (SDK cap)', async () => {
+    it('accepts a legacy permit carrying extraData v2 at parse time (SDK v14+)', async () => {
       const client = parameters.createFhevmDecryptClient({
         chain: config.fhevmChain,
         publicClient: config.publicClient,
@@ -67,8 +67,7 @@ export function defineClientDecryptExtraDataV2Tests(parameters: {
         message: { ...eip712.message, extraData: V2_EXTRA_DATA },
       };
 
-      // 3. Sign it offline so the permit is otherwise valid — the cap must reject on the
-      //    extraData version alone, regardless of a valid signature.
+      // 3. Sign it offline so the permit is otherwise valid.
       const signature = await config.account.signTypedData({
         domain: eip712V2.domain,
         types: eip712V2.types,
@@ -76,18 +75,20 @@ export function defineClientDecryptExtraDataV2Tests(parameters: {
         message: eip712V2.message,
       } as Parameters<typeof config.account.signTypedData>[0]);
 
-      // 4. Parsing MUST throw the SDK-cap error — a v13-capped SDK cannot use v2 permits.
-      await expect(
-        client.parseSignedDecryptionPermit({
-          serializedPermit: {
-            version: 1,
-            eip712: eip712V2,
-            signature,
-            signerAddress: config.account.address,
-          },
-          transportKeyPair,
-        }),
-      ).rejects.toThrow(/extraData v2/);
+      // 4. Parsing MUST succeed — a v14+ SDK natively supports extraData v2.
+      const permit = await client.parseSignedDecryptionPermit({
+        serializedPermit: {
+          version: 1,
+          eip712: eip712V2,
+          signature,
+          signerAddress: config.account.address,
+        },
+        transportKeyPair,
+      });
+
+      expect(permit.version).toBe(1);
+      expect(permit.signerAddress.toLowerCase()).toBe(config.account.address.toLowerCase());
+      expect(permit.eip712.message.extraData).toBe(V2_EXTRA_DATA);
     });
   });
 }
