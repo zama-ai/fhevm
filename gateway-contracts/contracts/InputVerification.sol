@@ -230,26 +230,23 @@ contract InputVerification is
             revert VerifyProofNotRequested(zkProofId);
         }
 
-        bytes32 digest;
-        address signerAddress;
-        {
-            // Retrieve stored ZK Proof verification request inputs.
-            ZKProofInput memory zkProofInput = $.zkProofInputs[zkProofId];
+        // Retrieve stored ZK Proof verification request inputs.
+        ZKProofInput memory zkProofInput = $.zkProofInputs[zkProofId];
 
-            // Compute the digest of the CiphertextVerification structure.
-            digest = _hashCiphertextVerification(
-                CiphertextVerification(
-                    ctHandles,
-                    zkProofInput.userAddress,
-                    zkProofInput.contractAddress,
-                    zkProofInput.contractChainId,
-                    extraData
-                )
-            );
+        // Initialize the CiphertextVerification structure for the signature validation.
+        CiphertextVerification memory ciphertextVerification = CiphertextVerification(
+            ctHandles,
+            zkProofInput.userAddress,
+            zkProofInput.contractAddress,
+            zkProofInput.contractChainId,
+            extraData
+        );
 
-            // Recover the signer address from the signature,
-            signerAddress = ECDSA.recover(digest, signature);
-        }
+        // Compute the digest of the CiphertextVerification structure.
+        bytes32 digest = _hashCiphertextVerification(ciphertextVerification);
+
+        // Recover the signer address from the signature,
+        address signerAddress = ECDSA.recover(digest, signature);
 
         // Check that the signer is a coprocessor signer, and that it corresponds to the transaction
         // sender of the same coprocessor.
@@ -275,18 +272,20 @@ contract InputVerification is
         // Make sure the proof has neither been verified nor rejected yet: this prevents "lazy"
         // coprocessors to be able to send both a verification and a rejection response by waiting for
         // a coprocessor threshold decrement before sending some responses.
-        if (!$.verifiedZKProofs[zkProofId] && !$.rejectedZKProofs[zkProofId]) {
-            if (_isConsensusReached(currentSignatures.length)) {
-                $.verifiedZKProofs[zkProofId] = true;
+        if (
+            !$.verifiedZKProofs[zkProofId] &&
+            !$.rejectedZKProofs[zkProofId] &&
+            _isConsensusReached(currentSignatures.length)
+        ) {
+            $.verifiedZKProofs[zkProofId] = true;
 
-                // A "late" valid coprocessor could still see its transaction sender address be added to
-                // the list after consensus. This storage variable is here to be able to retrieve this list
-                // later by only knowing the zkProofId, since a consensus can only happen once per proof
-                // verification request.
-                $.verifyProofConsensusDigest[zkProofId] = digest;
+            // A "late" valid coprocessor could still see its transaction sender address be added to
+            // the list after consensus. This storage variable is here to be able to retrieve this list
+            // later by only knowing the zkProofId, since a consensus can only happen once per proof
+            // verification request.
+            $.verifyProofConsensusDigest[zkProofId] = digest;
 
-                emit VerifyProofResponse(zkProofId, ctHandles, currentSignatures);
-            }
+            emit VerifyProofResponse(zkProofId, ctHandles, currentSignatures);
         }
     }
 
@@ -328,12 +327,14 @@ contract InputVerification is
         // Make sure the proof has neither been verified nor rejected yet: this prevents "lazy"
         // coprocessors to be able to send both a verification and a rejection response by waiting for
         // a coprocessor threshold decrement before sending some responses.
-        if (!$.verifiedZKProofs[zkProofId] && !$.rejectedZKProofs[zkProofId]) {
-            if (_isConsensusReached($.rejectedProofResponseCounter[zkProofId])) {
-                $.rejectedZKProofs[zkProofId] = true;
+        if (
+            !$.verifiedZKProofs[zkProofId] &&
+            !$.rejectedZKProofs[zkProofId] &&
+            _isConsensusReached($.rejectedProofResponseCounter[zkProofId])
+        ) {
+            $.rejectedZKProofs[zkProofId] = true;
 
-                emit RejectProofResponse(zkProofId);
-            }
+            emit RejectProofResponse(zkProofId);
         }
     }
 
@@ -360,6 +361,10 @@ contract InputVerification is
     function getVerifyProofConsensusTxSenders(uint256 zkProofId) external view virtual returns (address[] memory) {
         InputVerificationStorage storage $ = _getInputVerificationStorage();
 
+        // Get the unique digest associated to the ZK Proof verification request in order to retrieve the
+        // list of coprocessor transaction sender address that were involved in the consensus for a
+        // proof verification.
+        // This digest remains the default value (0x0) until the consensus is reached.
         bytes32 consensusDigest = $.verifyProofConsensusDigest[zkProofId];
 
         return $.verifyProofConsensusTxSenders[zkProofId][consensusDigest];

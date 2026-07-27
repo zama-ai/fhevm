@@ -162,27 +162,29 @@ contract CiphertextCommits is ICiphertextCommits, UUPSUpgradeableEmptyProxy, Gat
 
         // Send the event if and only if the consensus is reached in the current response call.
         // This means a "late" response will not be reverted, just ignored and no event will be emitted
-        if (!$.isCiphertextMaterialAdded[ctHandle]) {
-            if (_isConsensusReached($.addCiphertextHashCounters[addCiphertextHash])) {
-                $.ciphertextDigests[ctHandle] = ciphertextDigest;
-                $.snsCiphertextDigests[ctHandle] = snsCiphertextDigest;
-                $.keyIds[ctHandle] = keyId;
+        if (
+            !$.isCiphertextMaterialAdded[ctHandle] &&
+            _isConsensusReached($.addCiphertextHashCounters[addCiphertextHash])
+        ) {
+            $.ciphertextDigests[ctHandle] = ciphertextDigest;
+            $.snsCiphertextDigests[ctHandle] = snsCiphertextDigest;
+            $.keyIds[ctHandle] = keyId;
 
-                // A ciphertext handle should only be added once, ever
-                $.isCiphertextMaterialAdded[ctHandle] = true;
+            // A ciphertext handle should only be added once, ever
+            $.isCiphertextMaterialAdded[ctHandle] = true;
 
-                // Public getters receive a handle, but raw sender lists are stored by material hash.
-                // Pin the handle to the material hash that actually finalized.
-                $.ctHandleConsensusHash[ctHandle] = addCiphertextHash;
+            // A "late" valid coprocessor could still see its transaction sender address be added to
+            // the list after consensus. This variable is here to be able to retrieve this list later
+            // by only knowing the handle, since a consensus can only happen once per handle
+            $.ctHandleConsensusHash[ctHandle] = addCiphertextHash;
 
-                emit AddCiphertextMaterialConsensus(
-                    ctHandle,
-                    keyId,
-                    ciphertextDigest,
-                    snsCiphertextDigest,
-                    _getAddCiphertextMaterialConsensusTxSenders($, ctHandle)
-                );
-            }
+            emit AddCiphertextMaterialConsensus(
+                ctHandle,
+                keyId,
+                ciphertextDigest,
+                snsCiphertextDigest,
+                $.coprocessorTxSenderAddresses[addCiphertextHash]
+            );
         }
     }
 
@@ -215,10 +217,10 @@ contract CiphertextCommits is ICiphertextCommits, UUPSUpgradeableEmptyProxy, Gat
                 revert CiphertextMaterialNotFound(ctHandles[i]);
             }
 
-            address[] memory coprocessorTxSenderAddresses = _getAddCiphertextMaterialConsensusTxSenders(
-                $,
-                ctHandles[i]
-            );
+            // Get the unique hash associated to the handle and use it to get the list of coprocessor
+            // transaction sender address that were involved in the consensus
+            bytes32 addCiphertextHash = $.ctHandleConsensusHash[ctHandles[i]];
+            address[] memory coprocessorTxSenderAddresses = $.coprocessorTxSenderAddresses[addCiphertextHash];
 
             ctMaterials[i] = CiphertextMaterial(
                 ctHandles[i],
@@ -254,10 +256,10 @@ contract CiphertextCommits is ICiphertextCommits, UUPSUpgradeableEmptyProxy, Gat
                 revert CiphertextMaterialNotFound(ctHandles[i]);
             }
 
-            address[] memory coprocessorTxSenderAddresses = _getAddCiphertextMaterialConsensusTxSenders(
-                $,
-                ctHandles[i]
-            );
+            // Get the unique hash associated to the handle and use it to get the list of coprocessor
+            // transaction sender address that were involved in the consensus
+            bytes32 addCiphertextHash = $.ctHandleConsensusHash[ctHandles[i]];
+            address[] memory coprocessorTxSenderAddresses = $.coprocessorTxSenderAddresses[addCiphertextHash];
 
             snsCtMaterials[i] = SnsCiphertextMaterial(
                 ctHandles[i],
@@ -279,7 +281,12 @@ contract CiphertextCommits is ICiphertextCommits, UUPSUpgradeableEmptyProxy, Gat
     ) external view virtual returns (address[] memory) {
         CiphertextCommitsStorage storage $ = _getCiphertextCommitsStorage();
 
-        return _getAddCiphertextMaterialConsensusTxSenders($, ctHandle);
+        // Get the unique hash associated to the handle in order to retrieve the list of transaction
+        // sender address that participated in the consensus
+        // This digest remains the default value (0x0) until the consensus is reached.
+        bytes32 addCiphertextHash = $.ctHandleConsensusHash[ctHandle];
+
+        return $.coprocessorTxSenderAddresses[addCiphertextHash];
     }
 
     /**
@@ -329,17 +336,6 @@ contract CiphertextCommits is ICiphertextCommits, UUPSUpgradeableEmptyProxy, Gat
             keccak256(
                 abi.encode(ADD_CIPHERTEXT_DOMAIN_SEPARATOR_HASH, ctHandle, keyId, ciphertextDigest, snsCiphertextDigest)
             );
-    }
-
-    /**
-     * @notice Returns the coprocessor transaction senders exposed as consensus participants.
-     */
-    function _getAddCiphertextMaterialConsensusTxSenders(
-        CiphertextCommitsStorage storage $,
-        bytes32 ctHandle
-    ) internal view virtual returns (address[] memory) {
-        bytes32 addCiphertextHash = $.ctHandleConsensusHash[ctHandle];
-        return $.coprocessorTxSenderAddresses[addCiphertextHash];
     }
 
     /**

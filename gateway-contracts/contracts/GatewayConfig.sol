@@ -247,6 +247,12 @@ contract GatewayConfig is IGatewayConfig, Ownable2StepUpgradeable, UUPSUpgradeab
      * @dev Clears the deprecated priority coprocessor slot so the upgrade itself guarantees that
      *      coprocessor consensus is threshold-based, without depending on a prior
      *      `removePriorityCoprocessorTxSender` ops call having run.
+     * @dev UPGRADE ORDER: this implementation drops `getPriorityCoprocessorTxSender()`, which the
+     *      previously deployed `CiphertextCommits` and `InputVerification` call on every response.
+     *      Upgrading `GatewayConfig` before them — the order used up to v0.13.x — would make those
+     *      responses revert on the missing selector until both are upgraded. Either batch the three
+     *      upgrades in one atomic transaction, or upgrade `CiphertextCommits` and `InputVerification`
+     *      first and `GatewayConfig` last; the new implementations no longer read that getter.
      * @dev Before upgrading, every host-chain `InputVerifier` must already accept the full gateway
      *      coprocessor signer set at the gateway threshold. While priority mode was active the gateway
      *      emitted a single signature, so a host still pinned to one signer would start rejecting the
