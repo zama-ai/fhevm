@@ -41,6 +41,9 @@ const fakeContext = () => {
     async refreshDiscovery() {
       calls.push("refresh-discovery");
     },
+    async runCoprocessorSql(label) {
+      calls.push(`coprocessor-sql:${label}`);
+    },
     async runGatewayContractTask(command) {
       calls.push(`gateway:${command}`);
     },

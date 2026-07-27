@@ -236,6 +236,18 @@ const postgresExec = async (dbName: string, args: string[]) => {
   );
 };
 
+export const executeCoprocessorSql = async (state: Pick<State, "scenario">, sql: string) => {
+  for (let index = 0; index < topologyForState(state).count; index += 1) {
+    const database = coprocessorDatabaseName(index);
+    const result = await postgresExec(database, ["-v", "ON_ERROR_STOP=1", "-c", sql]);
+    if (result.code !== 0) {
+      throw new PreflightError(
+        result.stderr.trim() || result.stdout.trim() || `failed to execute rollout SQL in ${database}`,
+      );
+    }
+  }
+};
+
 const sqlLiteral = (value: string) => `'${value.replaceAll("'", "''")}'`;
 
 /** Logs elapsed time for one stack subtask. */

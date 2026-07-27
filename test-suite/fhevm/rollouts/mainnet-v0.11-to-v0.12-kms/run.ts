@@ -1,4 +1,5 @@
 import type { RolloutRunContext } from "../../src/commands/rollout-run";
+import { coprocessorSenderSchemaBridge } from "./coprocessor-schema-bridge";
 import { from, scenario, to, versionSources } from "./versions";
 
 // relayer-sdk v0.4.2 contains this typo. Keep the split local instead of
@@ -10,6 +11,10 @@ export const run = async (ctx: RolloutRunContext) => {
   const targetLock = await ctx.writeVersionLock("01-kms-core-target", { versions: to, sources: versionSources });
 
   await ctx.up({ lockFile: baselineLock, overrides: [{ group: "test-suite" }], scenario });
+  await ctx.runCoprocessorSql(
+    "bridge v0.11 coprocessor rows to the v0.12 transaction sender",
+    coprocessorSenderSchemaBridge,
+  );
   await ctx.test("rollout-standard", { parallel: false });
 
   await ctx.upgradeKmsNodes([1, 2], { lockFile: targetLock });

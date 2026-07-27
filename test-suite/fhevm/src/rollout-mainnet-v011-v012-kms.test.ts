@@ -1,6 +1,7 @@
 import { describe, expect, test } from "bun:test";
 import path from "node:path";
 
+import { coprocessorSenderSchemaBridge } from "../rollouts/mainnet-v0.11-to-v0.12-kms/coprocessor-schema-bridge";
 import { relayerSdkV042DecryptionError } from "../rollouts/mainnet-v0.11-to-v0.12-kms/run";
 import { from, scenario, to } from "../rollouts/mainnet-v0.11-to-v0.12-kms/versions";
 import type { RolloutRunContext } from "./commands/rollout-run";
@@ -19,6 +20,7 @@ describe("mainnet v0.11 to v0.12 KMS rollout", () => {
       HOST_VERSION: "v0.12.1",
       CORE_VERSION: "v0.13.3",
       CONNECTOR_KMS_WORKER_VERSION: "v0.12.0",
+      COPROCESSOR_DB_MIGRATION_VERSION: "v0.11.0",
       COPROCESSOR_TX_SENDER_VERSION: "v0.12.0",
       COPROCESSOR_TFHE_WORKER_VERSION: "v0.11.0",
       RELAYER_SDK_VERSION: "0.4.2",
@@ -41,6 +43,9 @@ describe("mainnet v0.11 to v0.12 KMS rollout", () => {
       async readState() {
         return { scenario: { kms: resolveKmsTopology({ mode: "threshold", parties: 4, threshold: 1 }) } };
       },
+      async runCoprocessorSql(label: string, sql: string) {
+        calls.push(`sql:${label}:${sql === coprocessorSenderSchemaBridge}`);
+      },
       async upgradeKmsNodes(nodeIds: readonly number[], options: { lockFile: string }) {
         calls.push(`upgrade:${nodeIds.join(",")}:${options.lockFile}`);
       },
@@ -58,6 +63,7 @@ describe("mainnet v0.11 to v0.12 KMS rollout", () => {
       "lock:00-kms-core-baseline:v0.13.3",
       "lock:01-kms-core-target:v0.13.10",
       "up:four-party-threshold-kms:test-suite",
+      "sql:bridge v0.11 coprocessor rows to the v0.12 transaction sender:true",
       "test:rollout-standard",
       "upgrade:1,2:/tmp/01-kms-core-target.lock.json",
       `expected-failure:user-decryption:test user decrypt ebool$:${relayerSdkV042DecryptionError}`,

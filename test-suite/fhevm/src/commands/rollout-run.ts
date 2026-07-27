@@ -10,6 +10,7 @@ import { waitForTestSuite } from "../flow/readiness";
 import { composeUp } from "../flow/runtime-compose";
 import {
   applyVersionLock as applyStackVersionLock,
+  executeCoprocessorSql,
   refreshDiscovery as refreshStackDiscovery,
   up,
   upgradeThresholdKmsNode,
@@ -65,6 +66,7 @@ export type RolloutRunContext = {
   expectTestFailure(profile: string, options: RolloutExpectedTestFailureOptions): Promise<void>;
   readState(): Promise<State>;
   refreshDiscovery(): Promise<void>;
+  runCoprocessorSql(label: string, sql: string): Promise<void>;
   runGatewayContractTask(command: string, options?: RolloutContractTaskOptions): Promise<void>;
   runHostContractTask(command: string, options?: RolloutContractTaskOptions): Promise<void>;
   // Runs a host contract task against a specific host chain's deploy container
@@ -85,6 +87,7 @@ export type RolloutRunContext = {
 export type RolloutRunbook = (ctx: RolloutRunContext) => Promise<void> | void;
 
 type RolloutContextOperations = {
+  executeCoprocessorSql: typeof executeCoprocessorSql;
   setRunning: typeof setRunning;
   upgradeThresholdKmsNode: typeof upgradeThresholdKmsNode;
   waitForPartiesRunning: typeof waitForPartiesRunning;
@@ -167,6 +170,14 @@ export const createRolloutContext = (
   async refreshDiscovery() {
     await refreshStackDiscovery();
     await receipt.record("refresh-discovery", "refreshed runtime addresses");
+  },
+  async runCoprocessorSql(label, sql) {
+    const state = await loadState();
+    if (!state) {
+      throw new PreflightError("Stack is not running; run ctx.up(...) first");
+    }
+    await (operationOverrides.executeCoprocessorSql ?? executeCoprocessorSql)(state, sql);
+    await receipt.record("coprocessor-sql", label);
   },
   async runGatewayContractTask(command, options = {}) {
     await runContractTask("gateway-sc", "gateway-sc-deploy", command, options);
