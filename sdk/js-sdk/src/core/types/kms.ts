@@ -167,13 +167,6 @@ export type KmsPublicDecryptEip712 = Prettify<
   }
 >;
 
-export type KmsUserDecryptEip712V2 = Prettify<{
-  readonly domain: KmsEip712Domain;
-  readonly types: KmsUserDecryptEip712V2Types;
-  readonly primaryType: 'UserDecryptRequestVerification';
-  readonly message: KmsUserDecryptEip712V2Message;
-}>;
-
 ////////////////////////////////////////////////////////////////////////////////
 //
 // KmsSigncryptedShares

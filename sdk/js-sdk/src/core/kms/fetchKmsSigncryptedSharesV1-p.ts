@@ -83,10 +83,6 @@ export async function fetchKmsSigncryptedSharesV1(context: Context, parameters: 
   // and tkmsVersion may not be initialized in the CoreFhevm instance yet.
   const tkmsVersion = await resolveFhevmTkmsVersion(context);
 
-  // This helper must support base clients, where TKMS is not mandatory
-  // and tkmsVersion may not be initialized in the CoreFhevm instance yet.
-  const tkmsVersion = await resolveFhevmTkmsVersion(context);
-
   // Check: every requested contractAddress is listed in the permit
   assertPermitV1IncludesContractAddresses(
     signedPermit,
