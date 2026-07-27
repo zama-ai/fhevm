@@ -32,15 +32,14 @@ pub struct RequestBuilder {
 
 impl RequestBuilder {
     pub fn new(
+        id_counter_start: U256,
         user_ct: Vec<CiphertextConfig>,
         public_ct: Vec<CiphertextConfig>,
         allowed_contract: Address,
         blockchain: Option<BlockchainConfig>,
     ) -> Self {
         Self {
-            // Take a high value for the id_counter to avoid polluting id that could be used in
-            // the testing environment
-            id_counter: (U256::MAX / U256::from(4)) * U256::from(3),
+            id_counter: id_counter_start,
             user_ct,
             public_ct,
             allowed_contract,

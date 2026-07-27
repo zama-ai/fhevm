@@ -131,14 +131,11 @@ const ETH_INVALID_INPUT_RPC_ERROR_CODE: i64 = -32000;
 /// Returns `true` if the RPC error is "nonce too low" or "already known", `false` otherwise.
 fn is_nonce_too_low(error: &RpcError<TransportErrorKind>) -> bool {
     match error {
-        RpcError::ErrorResp(ErrorPayload { code, message, .. }) => {
-            if *code == ETH_INVALID_INPUT_RPC_ERROR_CODE {
-                let lowercase_msg = message.to_lowercase();
-                lowercase_msg.starts_with("nonce too low")
-                    || lowercase_msg.starts_with("already known")
-            } else {
-                false
-            }
+        RpcError::ErrorResp(ErrorPayload { code, message, .. })
+            if *code == ETH_INVALID_INPUT_RPC_ERROR_CODE =>
+        {
+            let lowercase_msg = message.to_lowercase();
+            lowercase_msg.starts_with("nonce too low") || lowercase_msg.starts_with("already known")
         }
         _ => false,
     }

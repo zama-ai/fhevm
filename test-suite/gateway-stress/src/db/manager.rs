@@ -53,6 +53,7 @@ impl DatabaseTestManager {
         }
 
         let request_builder = RequestBuilder::new(
+            config.id_counter_start,
             config.user_ct.clone(),
             config.public_ct.clone(),
             config.allowed_contract,

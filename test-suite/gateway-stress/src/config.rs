@@ -1,4 +1,4 @@
-use alloy::primitives::{Address, FixedBytes};
+use alloy::primitives::{Address, FixedBytes, U256};
 use config::{Config as ConfigBuilder, File, FileFormat};
 use serde::Deserialize;
 use std::{path::Path, time::Duration};
@@ -15,6 +15,8 @@ pub struct Config {
     pub tests_interval: Duration,
     #[serde(default)]
     pub sequential: bool,
+    #[serde(default = "default_id_counter_start")]
+    pub id_counter_start: U256,
     #[serde(default)]
     pub blockchain: Option<BlockchainConfig>,
     #[serde(default)]
@@ -53,6 +55,12 @@ impl Config {
         let config = settings.try_deserialize()?;
         Ok(config)
     }
+}
+
+// Default starting value of the decryption id counter: a very high value (3/4 of `U256::MAX`) to
+// avoid colliding with ids that could legitimately be used in the testing environment.
+fn default_id_counter_start() -> U256 {
+    (U256::MAX / U256::from(4)) * U256::from(3)
 }
 
 fn default_pool_size() -> u32 {

@@ -69,6 +69,9 @@ fn update_config_from_cli(config: &mut Config, cli: &Cli) {
     if let Some(interval) = cli.interval {
         config.tests_interval = interval;
     }
+    if let Some(id_counter_start) = cli.id_counter_start {
+        config.id_counter_start = id_counter_start;
+    }
 }
 
 fn init_tracing() {
