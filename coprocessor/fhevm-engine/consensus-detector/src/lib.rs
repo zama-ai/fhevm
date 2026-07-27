@@ -558,11 +558,21 @@ async fn consensus_pass(
             }
             // Still armed past the deadline — (re)emit the timeout.
             WindowTimeout::Armed(deadline) if Instant::now() >= deadline => {
+                let mut unanchored: Vec<i64> = host_tracks
+                    .iter()
+                    .filter(|(_, t)| t.anchored.is_none())
+                    .map(|(&c, _)| c)
+                    .collect();
+                unanchored.sort_unstable();
+                if gateway.anchored.is_none() {
+                    unanchored.push(gateway.chain_id);
+                }
                 warn!(
                     chains = windows.len(),
                     max_end_block = max_end,
                     all_host_anchored,
                     gateway_anchored = gateway.anchored.is_some(),
+                    unanchored_chains = ?unanchored,
                     "consensus timeout elapsed without unanimity on all tracks — emitting event_unanimity_consensus_timeout"
                 );
                 notify_unanimity(
@@ -571,7 +581,7 @@ async fn consensus_pass(
                     &proposal_id,
                     proposal_block,
                     &NewBlockPayload {
-                        chain_id: windows.first().map(|&(c, _, _)| c).unwrap_or(0),
+                        chain_id: unanchored.first().copied().unwrap_or(0),
                         block_height: max_end,
                         block_hash: String::new(),
                     },

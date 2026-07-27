@@ -295,7 +295,7 @@ fn spawn_gcs_dry_run_readiness(
                             "pruned pre-start_block rows from gcs.computations"
                         ),
                         Err(e) => {
-                            error!(error = %e, "failed to prune gcs.computations; skipping transition");
+                            error!(chain_id, start_block, error = %e, "failed to prune gcs.computations; skipping transition");
                             return;
                         }
                     },
@@ -308,7 +308,7 @@ fn spawn_gcs_dry_run_readiness(
                         return;
                     }
                     Err(e) => {
-                        error!(error = %e, "GCS dry-run readiness loop failed");
+                        error!(chain_id, start_block, error = %e, "GCS dry-run readiness loop failed");
                         return;
                     }
                 }
@@ -1372,7 +1372,9 @@ pub async fn handle_unanimity_consensus(
             let set = sqlx::query(
                 "UPDATE upgrade_state
                     SET host_consensus_reached = TRUE, updated_at = NOW()
-                  WHERE stack_role = 'GCS' AND proposal_id = $1
+                  WHERE stack_role = 'GCS'
+                    AND state IN ('UpgradeActivated', 'DryRunStarted')
+                    AND proposal_id = $1
                     AND COALESCE(proposal_block, -1) = $2
                     AND host_chain_id = $3 AND NOT host_consensus_reached",
             )
