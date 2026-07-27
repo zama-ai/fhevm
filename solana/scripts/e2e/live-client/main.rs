@@ -667,13 +667,17 @@ fn bootstrap(
                 public_decryption: cert_threshold,
                 user_decryption: cert_threshold,
                 kms_gen: cert_threshold,
-                mpc: cert_threshold,
+                // `mpc` mirrors the gateway's MPC_THRESHOLD, which is t itself and NOT 2t+1
+                // (fhevm-cli generates MPC_THRESHOLD=t alongside PUBLIC/USER_DECRYPTION_THRESHOLD
+                // =2t+1; see test-suite/fhevm/src/kms-threshold.test.ts). It is stored for fidelity
+                // and never gates on-chain verification, so mirroring it exactly is its only job.
+                mpc: kms_corruption_threshold,
             },
         })
         .send()?;
     println!(
         "OK define_kms_context: {sig} (signers: {signer_count}, t={kms_corruption_threshold}, \
-         cert_threshold={cert_threshold})"
+         cert_threshold={cert_threshold}, mpc={kms_corruption_threshold})"
     );
     Ok(())
 }

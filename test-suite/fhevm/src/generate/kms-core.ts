@@ -61,6 +61,14 @@ export const kmsRenderOptionsFor = (coreVersion: string): KmsRenderOptions => ({
   s3SecretKey: "fhevm-access-secret-key",
 });
 
+/**
+ * kms-core is published amd64-only, so an arm64 host must have the platform pinned
+ * explicitly or compose fails the pull with "no matching manifest for linux/arm64".
+ * The same treatment relayer-docker-compose.yml and solana-proof-service already apply;
+ * a no-op on amd64 hosts, including CI.
+ */
+export const KMS_CORE_PLATFORM = "linux/amd64";
+
 /** The single cluster-shared threshold config filename (mounted into every core). */
 export const KMS_THRESHOLD_CONFIG_NAME = "kms-core-threshold.toml";
 export const kmsThresholdGenKeysConfigName = (partyId: number): string =>
@@ -190,6 +198,7 @@ export const buildKmsThresholdOverride = (
   services["kms-core-gen-keys"] = {
     container_name: "kms-core-gen-keys",
     image: opts.coreImage,
+    platform: KMS_CORE_PLATFORM,
     entrypoint: ["/bin/sh", "-c", genKeysCommand(topology, opts)],
     environment: { AWS_ACCESS_KEY_ID: opts.s3AccessKey, AWS_SECRET_ACCESS_KEY: opts.s3SecretKey },
     volumes: kmsPartyIds(topology.parties).map((partyId) => {
@@ -205,6 +214,7 @@ export const buildKmsThresholdOverride = (
     services[name] = {
       container_name: name,
       image: opts.coreImage,
+    platform: KMS_CORE_PLATFORM,
       // No shell wrapper: per-party config comes from KMS_CORE__* env and AWS creds
       // come from the environment, so the core binary runs directly.
       entrypoint: ["kms-server", "--config-file", `config/${KMS_THRESHOLD_CONFIG_NAME}`],
@@ -234,6 +244,7 @@ export const buildKmsThresholdOverride = (
   services["kms-core-init"] = {
     container_name: "kms-core-init",
     image: opts.coreImage,
+    platform: KMS_CORE_PLATFORM,
     entrypoint: ["/bin/sh", "-c", `kms-init -a ${initEndpoints}`],
     depends_on: Object.fromEntries(
       kmsPartyIds(topology.parties).map((partyId) => [
