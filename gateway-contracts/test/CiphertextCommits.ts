@@ -237,6 +237,49 @@ describe('CiphertextCommits', function () {
       expect(addCiphertextMaterialConsensusTxSenders3).to.deep.equal(expectedCoprocessorTxSenders3);
     });
 
+    // The priority coprocessor feature let a single designated sender finalize consensus alone, and
+    // the consensus event for such a handle carries that sender by itself. The raw sender list keeps
+    // growing past finalization though, so the deprecated marker is still read to keep these views
+    // consistent with the event that was emitted at the time. Nothing can write the marker anymore,
+    // hence the direct storage write below.
+    it('Should report only the priority sender for a handle finalized under the priority feature', async function () {
+      // Slot 9 of the CiphertextCommitsStorage struct: the deprecated priorityConsensusTxSender mapping.
+      const PRIORITY_CONSENSUS_TX_SENDER_SLOT =
+        BigInt('0xf41c60ea5b83c8f19b663613ffdd3fa441a59933b8a4fdf4da891b38433d1a00') + 9n;
+      const priorityTxSender = coprocessorTxSenders[0].address;
+
+      // Reach consensus normally, then let a late coprocessor append itself to the raw sender list.
+      for (const txSender of coprocessorTxSenders) {
+        await ciphertextCommits
+          .connect(txSender)
+          .addCiphertextMaterial(ctHandle, keyId, ciphertextDigest, snsCiphertextDigest);
+      }
+      expect(await ciphertextCommits.getAddCiphertextMaterialConsensusTxSenders(ctHandle)).to.deep.equal(
+        coprocessorTxSenders.map((s) => s.address),
+      );
+
+      // Mark the handle as priority-finalized, the way a pre-upgrade record would be.
+      await hre.network.provider.send('hardhat_setStorageAt', [
+        await ciphertextCommits.getAddress(),
+        hre.ethers.keccak256(
+          hre.ethers.AbiCoder.defaultAbiCoder().encode(
+            ['bytes32', 'uint256'],
+            [ctHandle, PRIORITY_CONSENSUS_TX_SENDER_SLOT],
+          ),
+        ),
+        hre.ethers.zeroPadValue(priorityTxSender, 32),
+      ]);
+
+      // Every view collapses to the singleton, rather than reporting the later responders.
+      expect(await ciphertextCommits.getAddCiphertextMaterialConsensusTxSenders(ctHandle)).to.deep.equal([
+        priorityTxSender,
+      ]);
+      const [ctMaterial] = await ciphertextCommits.getCiphertextMaterials([ctHandle]);
+      expect(ctMaterial.coprocessorTxSenderAddresses).to.deep.equal([priorityTxSender]);
+      const [snsCtMaterial] = await ciphertextCommits.getSnsCiphertextMaterials([ctHandle]);
+      expect(snsCtMaterial.coprocessorTxSenderAddresses).to.deep.equal([priorityTxSender]);
+    });
+
     it('Should revert because the transaction sender is not a coprocessor', async function () {
       await expect(
         ciphertextCommits

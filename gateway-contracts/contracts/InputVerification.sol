@@ -136,11 +136,14 @@ contract InputVerification is
         // ----------------------------------------------------------------------------------------------
         /// @notice The coprocessor context ID associated to the input verification request
         mapping(uint256 zkProofId => uint256 contextId) inputVerificationContextId;
-        /// @dev Deprecated by the removal of the priority coprocessor feature. Neither read nor written.
-        ///      This field must remain to preserve the storage layout for UUPS proxy upgrades.
+        /// @notice The priority coprocessor transaction sender that finalized proof verification.
+        /// @dev Deprecated by the removal of the priority coprocessor feature: never written again.
+        ///      Still read by {getVerifyProofConsensusTxSenders} so proofs finalized while the
+        ///      feature was active keep reporting the single sender their event carries.
         mapping(uint256 zkProofId => address coprocessorTxSenderAddress) priorityVerifyProofConsensusTxSender;
-        /// @dev Deprecated by the removal of the priority coprocessor feature. Neither read nor written.
-        ///      This field must remain to preserve the storage layout for UUPS proxy upgrades.
+        /// @notice The priority coprocessor transaction sender that finalized proof rejection.
+        /// @dev Deprecated by the removal of the priority coprocessor feature: never written again.
+        ///      Still read by {getRejectProofConsensusTxSenders}, see above.
         mapping(uint256 zkProofId => address coprocessorTxSenderAddress) priorityRejectProofConsensusTxSender;
     }
 
@@ -361,6 +364,18 @@ contract InputVerification is
     function getVerifyProofConsensusTxSenders(uint256 zkProofId) external view virtual returns (address[] memory) {
         InputVerificationStorage storage $ = _getInputVerificationStorage();
 
+        // Proofs verified while the priority coprocessor feature was active reached consensus through
+        // a single sender, and the emitted `VerifyProofResponse` carries that sender's signature
+        // alone. The historical marker is read to keep this getter consistent with that event. It is
+        // never written again, so proofs verified since the feature was removed fall through to the
+        // raw responder list built under threshold consensus.
+        address priorityConsensusTxSender = $.priorityVerifyProofConsensusTxSender[zkProofId];
+        if (priorityConsensusTxSender != address(0)) {
+            address[] memory txSenders = new address[](1);
+            txSenders[0] = priorityConsensusTxSender;
+            return txSenders;
+        }
+
         // Get the unique digest associated to the ZK Proof verification request in order to retrieve the
         // list of coprocessor transaction sender address that were involved in the consensus for a
         // proof verification.
@@ -375,6 +390,15 @@ contract InputVerification is
      */
     function getRejectProofConsensusTxSenders(uint256 zkProofId) external view virtual returns (address[] memory) {
         InputVerificationStorage storage $ = _getInputVerificationStorage();
+
+        // See {getVerifyProofConsensusTxSenders}: the historical marker keeps rejections finalized
+        // under the priority coprocessor feature aligned with their emitted event.
+        address priorityConsensusTxSender = $.priorityRejectProofConsensusTxSender[zkProofId];
+        if (priorityConsensusTxSender != address(0)) {
+            address[] memory txSenders = new address[](1);
+            txSenders[0] = priorityConsensusTxSender;
+            return txSenders;
+        }
 
         return $.rejectProofConsensusTxSenders[zkProofId];
     }
