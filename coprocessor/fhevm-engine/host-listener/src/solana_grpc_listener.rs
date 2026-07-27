@@ -852,10 +852,17 @@ async fn ingest_transaction(
     };
 
     let transaction_id = solana_transaction_id(&transaction.info.signature);
-    let mut db_tx = db
+    let Some(mut db_tx) = db
         .new_transaction()
         .await
-        .map_err(|err| IngestFailure::retryable(err).context("open db tx"))?;
+        .map_err(|err| IngestFailure::retryable(err).context("open db tx"))?
+    else {
+        info!(
+            slot = sealed_block.slot,
+            "cutover completed — host-listener skipping Solana transaction ingest (retired stack)"
+        );
+        return Ok(());
+    };
     let stats =
         insert_solana_events(db, &mut db_tx, events, transaction_id, block)
             .await

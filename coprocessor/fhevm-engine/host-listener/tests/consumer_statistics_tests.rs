@@ -94,6 +94,8 @@ async fn mark_block_as_seen_by_consumer_counts_duplicates(
     Ok(())
 }
 
+#[tokio::test]
+#[serial(db)]
 async fn mark_block_as_seen_by_consumer_reports_delay_after_main_listener_insert(
 ) -> Result<(), Box<dyn std::error::Error>> {
     let (database, pool, _db_instance) = setup_db().await?;
