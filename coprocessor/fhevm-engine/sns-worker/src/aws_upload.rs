@@ -8,7 +8,7 @@ use aws_sdk_s3::error::SdkError;
 use aws_sdk_s3::operation::head_bucket::HeadBucketError;
 use aws_sdk_s3::operation::head_object::HeadObjectError;
 use aws_sdk_s3::primitives::ByteStream;
-use aws_sdk_s3::types::{ChecksumAlgorithm, ChecksumMode};
+use aws_sdk_s3::types::ChecksumMode;
 use aws_sdk_s3::Client;
 use base64::Engine;
 use bytesize::ByteSize;
@@ -443,30 +443,10 @@ fn build_attestation_payload(
     ))
 }
 
-/// How strictly an existing object's attestation is validated.
-///
-/// The attestation signature binds the ciphertext handle (RFC 023), which only
-/// the canonical handle-keyed object can satisfy. Digest-keyed
-/// backward-compatibility copies are content-addressed: every handle whose
-/// ciphertext bytes are identical shares one copy, whose attestation is bound
-/// to whichever handle last wrote it. Recovering the signature there against
-/// another handle's payload yields a garbage address, so the check would flag
-/// a perfectly good copy as stale and re-upload it on every task that shares
-/// the content. Content-bound validation therefore checks every attested
-/// field (digests, key id, format, signer) but skips signature recovery;
-/// content identity is already pinned by the digest key, and the canonical
-/// object still gets the handle-bound check.
-#[derive(Clone, Copy, PartialEq)]
-enum AttestationBinding {
-    HandleBound,
-    ContentBound,
-}
-
 fn validate_existing_attestation(
     expected: &CiphertextAttestationPayload,
     expected_signer: Address,
     actual: &CiphertextAttestation,
-    binding: AttestationBinding,
 ) -> Result<(), String> {
     if actual.version != expected.version {
         return Err(format!(
@@ -505,11 +485,9 @@ fn validate_existing_attestation(
         ));
     }
 
-    if binding == AttestationBinding::HandleBound {
-        actual
-            .verify(expected.handle, expected.coprocessor_context_id)
-            .map_err(|err| format!("handle/context/signature mismatch: {err}"))?;
-    }
+    actual
+        .verify(expected.handle, expected.coprocessor_context_id)
+        .map_err(|err| format!("handle/context/signature mismatch: {err}"))?;
 
     Ok(())
 }
@@ -520,10 +498,8 @@ async fn upload_ct(
     client: Client,
     bucket: String,
     key: String,
-    ct_format: String,
     metadata: S3ObjectMetadata,
     ct_bytes: Vec<u8>,
-    extra_digest_key: Option<String>,
     result: UploadResult,
     verify_sha256_checksum: bool,
 ) -> anyhow::Result<UploadResult> {
@@ -531,7 +507,6 @@ async fn upload_ct(
     let mut upload = client
         .put_object()
         .bucket(bucket.clone())
-        .metadata("Ct-Format", ct_format)
         .metadata("Uploaded-By", "sns-worker")
         .metadata(S3_METADATA_ATTESTATION_KEY, &metadata.attestation_json)
         .metadata("Key-Id", metadata.key_id)
@@ -547,22 +522,6 @@ async fn upload_ct(
         error!(error = %err, bucket, key, metadata.attestation_json, "Failed to upload ct");
         span.set_status(Status::error(err.to_string()));
         return Err(ExecutionError::S3TransientError(err.to_string()).into());
-    }
-    if let Some(extra_digest_key) = extra_digest_key {
-        let copy_source = format!("{}/{}", bucket, key);
-        let upload_backward_compatible = client
-            .copy_object()
-            .copy_source(copy_source)
-            .bucket(bucket.clone())
-            .key(&extra_digest_key)
-            .set_checksum_algorithm(verify_sha256_checksum.then_some(ChecksumAlgorithm::Sha256))
-            .send()
-            .await;
-        if let Err(err) = upload_backward_compatible {
-            error!(error = %err, bucket, extra_digest_key, metadata.attestation_json, "Failed to upload ct for backcompatibility");
-            span.set_status(Status::error(err.to_string()));
-            return Err(ExecutionError::S3TransientError(err.to_string()).into());
-        }
     }
     Ok(result)
 }
@@ -726,7 +685,6 @@ async fn upload_ciphertexts(
 
     if *ct128_digest != NO_SNS_CIPHERTEXT_DIGEST.to_vec() {
         let key = s3_ciphertext_key(&task.handle, context_id);
-        let digest_key = hex::encode(ct128_digest);
 
         if preserve_legacy_s3_format {
             info!(
@@ -751,11 +709,10 @@ async fn upload_ciphertexts(
             );
             let exists = object_check_result(
                 &ct128_check_span,
-                check_ct128_objects_exist(
+                check_attested_object_exists(
                     client,
                     &conf.bucket_ct128,
                     &key,
-                    &digest_key,
                     &expected_attestation,
                     expected_signer,
                     ct128_checksum_sha256.as_deref(),
@@ -798,10 +755,8 @@ async fn upload_ciphertexts(
                     client.clone(),
                     bucket.clone(),
                     key,
-                    ct_format,
                     s3_metadata.clone(),
                     ct128_bytes.to_vec(),
-                    Some(digest_key),
                     result,
                     conf.verify_sha256_checksum,
                 );
@@ -849,7 +804,6 @@ async fn upload_ciphertexts(
                 &expected_attestation,
                 expected_signer,
                 ct64_checksum_sha256.as_deref(),
-                AttestationBinding::HandleBound,
             )
             .instrument(ct64_check_span.clone())
             .await,
@@ -883,10 +837,8 @@ async fn upload_ciphertexts(
                 client.clone(),
                 bucket.clone(),
                 key,
-                "ct64_compressed".to_string(),
                 s3_metadata.clone(),
                 ct64_compressed.clone(),
-                None,
                 result,
                 conf.verify_sha256_checksum,
             );
@@ -1269,7 +1221,6 @@ async fn check_attested_object_exists(
     expected: &CiphertextAttestationPayload,
     expected_signer: Address,
     expected_checksum_sha256: Option<&str>,
-    binding: AttestationBinding,
 ) -> Result<bool, ExecutionError> {
     let mut head_object = client.head_object().bucket(bucket).key(key);
     if expected_checksum_sha256.is_some() {
@@ -1304,7 +1255,7 @@ async fn check_attested_object_exists(
             };
 
             if let Err(reason) =
-                validate_existing_attestation(expected, expected_signer, &attestation, binding)
+                validate_existing_attestation(expected, expected_signer, &attestation)
             {
                 warn!(
                     bucket,
@@ -1364,48 +1315,6 @@ fn object_check_result(
             Err(err)
         }
     }
-}
-
-async fn check_ct128_objects_exist(
-    client: &Client,
-    bucket: &str,
-    key: &str,
-    digest_key: &str,
-    expected: &CiphertextAttestationPayload,
-    expected_signer: Address,
-    expected_checksum_sha256: Option<&str>,
-) -> Result<bool, ExecutionError> {
-    let key_exists = check_attested_object_exists(
-        client,
-        bucket,
-        key,
-        expected,
-        expected_signer,
-        expected_checksum_sha256,
-        AttestationBinding::HandleBound,
-    )
-    .await?;
-    let digest_key_exists = check_attested_object_exists(
-        client,
-        bucket,
-        digest_key,
-        expected,
-        expected_signer,
-        expected_checksum_sha256,
-        AttestationBinding::ContentBound,
-    )
-    .await?;
-
-    if key_exists && !digest_key_exists {
-        warn!(
-            bucket,
-            key,
-            digest_key,
-            "ct128 object exists without digest-key compatibility copy, reuploading"
-        );
-    }
-
-    Ok(key_exists && digest_key_exists)
 }
 
 pub async fn check_bucket_exists(
@@ -1499,13 +1408,7 @@ mod tests {
     async fn expected_attestation_accepts_current_metadata() {
         let (expected, expected_signer, attestation) = sample_attestation().await;
 
-        validate_existing_attestation(
-            &expected,
-            expected_signer,
-            &attestation,
-            AttestationBinding::HandleBound,
-        )
-        .unwrap();
+        validate_existing_attestation(&expected, expected_signer, &attestation).unwrap();
     }
 
     #[tokio::test]
@@ -1513,15 +1416,9 @@ mod tests {
         let (expected, expected_signer, mut attestation) = sample_attestation().await;
         attestation.sns_ciphertext_digest = B256::ZERO;
 
-        for binding in [
-            AttestationBinding::HandleBound,
-            AttestationBinding::ContentBound,
-        ] {
-            let err =
-                validate_existing_attestation(&expected, expected_signer, &attestation, binding)
-                    .unwrap_err();
-            assert!(err.contains("sns ciphertext digest mismatch"));
-        }
+        let err =
+            validate_existing_attestation(&expected, expected_signer, &attestation).unwrap_err();
+        assert!(err.contains("sns ciphertext digest mismatch"));
     }
 
     #[tokio::test]
@@ -1529,13 +1426,8 @@ mod tests {
         let (mut expected, expected_signer, attestation) = sample_attestation().await;
         expected.coprocessor_context_id = U256::ZERO;
 
-        let err = validate_existing_attestation(
-            &expected,
-            expected_signer,
-            &attestation,
-            AttestationBinding::HandleBound,
-        )
-        .unwrap_err();
+        let err =
+            validate_existing_attestation(&expected, expected_signer, &attestation).unwrap_err();
         assert!(err.contains("handle/context/signature mismatch"));
     }
 
@@ -1545,58 +1437,9 @@ mod tests {
         let other_signer: CoproSigner = Arc::new(PrivateKeySigner::random());
         let attestation = build_attestation(&expected, &other_signer).await.unwrap();
 
-        for binding in [
-            AttestationBinding::HandleBound,
-            AttestationBinding::ContentBound,
-        ] {
-            let err =
-                validate_existing_attestation(&expected, expected_signer, &attestation, binding)
-                    .unwrap_err();
-            assert!(err.contains("signer mismatch"));
-        }
-    }
-
-    /// A digest-keyed compatibility copy is shared by every handle whose
-    /// ciphertext bytes are identical, so its attestation is signed for
-    /// whichever handle wrote it. Content-bound validation must accept it;
-    /// handle-bound validation must keep rejecting it (canonical objects are
-    /// never shared).
-    #[tokio::test]
-    async fn cross_handle_attestation_passes_content_bound_only() {
-        let (expected, _, _) = sample_attestation().await;
-        let signer: CoproSigner = Arc::new(PrivateKeySigner::random());
-        let expected_signer = signer.address();
-
-        let mut other_task = sample_handle_item();
-        other_task.handle = vec![9; 32];
-        let upload_material = upload_material(&other_task).unwrap();
-        let format = attestation_format(other_task.ct128.format()).unwrap();
-        let other_payload = build_attestation_payload(
-            &other_task,
-            COPROCESSOR_CONTEXT_ID_1,
-            &upload_material.ct64_digest,
-            &upload_material.ct128_digest,
-            format,
-        )
-        .unwrap();
-        let attestation = build_attestation(&other_payload, &signer).await.unwrap();
-
-        validate_existing_attestation(
-            &expected,
-            expected_signer,
-            &attestation,
-            AttestationBinding::ContentBound,
-        )
-        .unwrap();
-
-        let err = validate_existing_attestation(
-            &expected,
-            expected_signer,
-            &attestation,
-            AttestationBinding::HandleBound,
-        )
-        .unwrap_err();
-        assert!(err.contains("handle/context/signature mismatch"));
+        let err =
+            validate_existing_attestation(&expected, expected_signer, &attestation).unwrap_err();
+        assert!(err.contains("signer mismatch"));
     }
 
     #[test]
