@@ -8,13 +8,15 @@
  *      stopped first), wait for the new context to become the on-chain active one, then decrypt.
  *   2. NewKmsEpoch — broadcast `defineNewEpochForCurrentKmsContext` (same context, new epoch), wait
  *      for the new epoch to activate, then decrypt again.
- *   3. Destruction — the switch and rotation each retire a still-live-but-no-longer-current entry
- *      (the baseline context, the switch's epoch). Destroy each via `destroyKmsContext` /
- *      `destroyKmsEpoch` and prove: the current context/epoch cannot be destroyed and unknown /
- *      already-destroyed ids revert; `KmsContextDestroyed` / `KmsEpochDestroyed` fire and the target
- *      stops reading valid without moving the active pointer; every party's connector forwards
- *      `DestroyMpcContext` / `DestroyMpcEpoch` to its core and invalidates its validation cache; and
- *      the current context/epoch keeps serving.
+ *   3. Destruction (same-committee clusters only) — the switch and rotation each retire a
+ *      still-live-but-no-longer-current entry (the baseline context, the switch's epoch). Destroy
+ *      each via `destroyKmsContext` / `destroyKmsEpoch` and prove: the current context/epoch cannot
+ *      be destroyed and unknown / already-destroyed ids revert; `KmsContextDestroyed` /
+ *      `KmsEpochDestroyed` fire and the target stops reading valid without moving the active pointer;
+ *      every party's connector forwards `DestroyMpcContext` / `DestroyMpcEpoch` to its core and
+ *      invalidates its validation cache; and the current context/epoch keeps serving. Skipped on a
+ *      node swap: the retired context's committee differs from the current party set, so dropped /
+ *      spare nodes can't decommission it (the KMS "at least one must remain" guard).
  *
  * Activation is not automatic: the KMS cores must reshare and the connectors must submit
  * `confirmKmsContextCreation` / `confirmEpochActivation` for `getCurrentKmsContextAndEpoch` to
@@ -477,30 +479,39 @@ export const runKmsContextSwitchProfile = async (
   }
   await runSmoke(`kms-context-switch: input-proof after the epoch rotation (epochId=${afterEpoch.epochId})`);
 
-  // 3) Destruction: the switch retired the baseline context and the rotation retired the switch's
-  //    epoch (both still live but no longer current). Destroy each and prove every layer retires it
-  //    while the current context/epoch keeps serving.
-  const owner = await loadHostOwner();
-  await destroyContextAndEpoch(
-    state,
-    { rpcUrl, protocolConfig: configAddress, owner },
-    {
-      oldContextId: baseline.contextId,
-      contextEpochId: baseline.epochId,
-      oldEpochId: afterSwitch.epochId,
-      current: afterEpoch,
-    },
-    runDecryption,
-    runSmoke,
-  );
+  const isSwap = committeeSwapPlan(state.scenario.kms).isSwap;
+
+  // 3) Destruction (same-committee clusters only). Destroying the retired context/epoch expects
+  //    every party to decommission it — but in a node swap the retired context's committee differs
+  //    from the current party set, so the dropped node (and the promoted spare) legitimately cannot:
+  //    the KMS core's "at least one context/epoch must remain" guard rejects a destroy that would
+  //    leave them empty, so their connector rows end `failed`, not `completed`. The destroy feature
+  //    is exercised on the non-swap scenario; the swap scenario's job is the node-swap switch itself.
+  if (!isSwap) {
+    const owner = await loadHostOwner();
+    await destroyContextAndEpoch(
+      state,
+      { rpcUrl, protocolConfig: configAddress, owner },
+      {
+        oldContextId: baseline.contextId,
+        contextEpochId: baseline.epochId,
+        oldEpochId: afterSwitch.epochId,
+        current: afterEpoch,
+      },
+      runDecryption,
+      runSmoke,
+    );
+  }
 
   // 4) Node swap only: prove the promoted spare actually holds a working reshared key (runs last so
   //    the earlier steps see a healthy cluster and the stopped member is restored at the end).
-  if (committeeSwapPlan(state.scenario.kms).isSwap) {
+  if (isSwap) {
     await proveSpareInQuorum(state, runDecryption);
   }
 
   console.log(
-    "[kms-context-switch] PASS — NewKmsContext and NewKmsEpoch both activated on chain, the retired context and epoch were destroyed across contract, connector, and KMS Core, user-decryption works under each transition, and the input-proof app flow held at every checkpoint",
+    isSwap
+      ? "[kms-context-switch] PASS — NewKmsContext (node swap) and NewKmsEpoch both activated on chain, the promoted spare serves the 2t+1 quorum, user-decryption works under each transition, and the input-proof app flow held at every checkpoint"
+      : "[kms-context-switch] PASS — NewKmsContext and NewKmsEpoch both activated on chain, the retired context and epoch were destroyed across contract, connector, and KMS Core, user-decryption works under each transition, and the input-proof app flow held at every checkpoint",
   );
 };
