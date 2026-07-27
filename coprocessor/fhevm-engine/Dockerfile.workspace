@@ -82,7 +82,7 @@ RUN npm ci && \
     DOTENV_CONFIG_PATH=.env.example npx hardhat task:deployAllGatewayContracts
 
 # =============================================================================
-# Stage 1-chef: install cargo-chef (shared base for planner + builder)
+# Stage 1: build the Rust workspace
 # =============================================================================
 FROM ghcr.io/zama-ai/fhevm/gci/rust-glibc:${RUST_IMAGE_VERSION} AS builder
 
@@ -121,23 +121,14 @@ RUN set -eux; \
 COPY --from=contract_builder /app/host-contracts/artifacts/contracts /app/host-contracts/artifacts/contracts
 COPY --from=contract_builder /app/gateway-contracts/artifacts/contracts /app/gateway-contracts/artifacts/contracts
 
-# =============================================================================
-# Stage 1-planner: emit the cargo-chef recipe (dependency graph only)
-# =============================================================================
-FROM chef AS planner
-
-# The full Rust source set. `cargo chef prepare` runs `cargo metadata`, which
-# reads every manifest in the dependency graph (so the non-member path-dep crates
-# must be present), but records ONLY the workspace-member manifests into
-# recipe.json -- it never captures non-member path deps. That is why the builder
-# re-supplies those path-dep sources itself before cook. prepare compiles nothing,
-# so the contract artifacts are not needed here.
+# Copy Rust sources and dependencies.
 COPY listener ./listener
 COPY coprocessor/fhevm-engine ./coprocessor/fhevm-engine
 COPY coprocessor/proto ./coprocessor/proto
 COPY gateway-contracts/rust_bindings ./gateway-contracts/rust_bindings
 COPY gateway-contracts/contracts ./gateway-contracts/contracts
 COPY host-contracts/contracts ./host-contracts/contracts
+COPY solana ./solana
 COPY shared/ciphertext-attestation ./shared/ciphertext-attestation
 
 WORKDIR /app/coprocessor/fhevm-engine

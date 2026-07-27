@@ -20,8 +20,8 @@ tx-sender.path = "crates/tx-sender"
 connector-utils.path = "crates/utils"
 fhevm_gateway_bindings = { path = "../gateway-contracts/rust_bindings", default-features = false }
 fhevm_host_bindings = { path = "../host-contracts/rust_bindings", default-features = false }
-kms-grpc = { git = "https://github.com/zama-ai/kms.git", rev = "78c4ba3dbe6eea29a42e89905938eb5d4b23c4cd", default-features = true }
-bc2wrap = { git = "https://github.com/zama-ai/kms.git", rev = "78c4ba3dbe6eea29a42e89905938eb5d4b23c4cd", default-features = true }
+kms-grpc = { git = "https://github.com/zama-ai/kms.git", rev = "6e3f95e5dd8dcc442b6489afad9f5ad1a71cafe7", default-features = true }
+bc2wrap = { git = "https://github.com/zama-ai/kms.git", rev = "6e3f95e5dd8dcc442b6489afad9f5ad1a71cafe7", default-features = true }
 tfhe = { version = "=1.6.2", default-features = false }
 user-decryption-signature = { path = "../shared/user-decryption-signature", default-features = false }
 ciphertext-attestation = { path = "../shared/ciphertext-attestation" }

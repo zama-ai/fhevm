@@ -900,6 +900,7 @@ impl TryFrom<DecryptionEvents> for ProtocolEventKind {
             DecryptionEvents::PublicDecryptionRequest_1(e) => Ok(e.into()),
             DecryptionEvents::UserDecryptionRequest_2(e) => Ok(e.into()),
             DecryptionEvents::UserDecryptionRequest_3(e) => Ok(e.into()),
+            DecryptionEvents::UserDecryptionRequestSolana(e) => Ok(e.into()),
             _ => Err(anyhow!("Unexpected Decryption event")),
         }
     }
@@ -930,6 +931,32 @@ impl TryFrom<ProtocolConfigEvents> for ProtocolEventKind {
             ProtocolConfigEvents::KmsContextDestroyed(e) => Ok(e.into()),
             ProtocolConfigEvents::KmsEpochDestroyed(e) => Ok(e.into()),
             _ => Err(anyhow!("Unexpected ProtocolConfig event")),
+        }
+    }
+}
+
+#[cfg(test)]
+mod decryption_event_tests {
+    use super::*;
+
+    #[test]
+    fn decodes_solana_user_decryption_event() {
+        let decryption_id = U256::from(7);
+        let event = UserDecryptionRequestSolana {
+            decryptionId: decryption_id,
+            handles: Vec::new(),
+            payload: UserDecryptionRequestSolanaPayload::default(),
+        };
+
+        let decoded =
+            ProtocolEventKind::try_from(DecryptionEvents::UserDecryptionRequestSolana(event))
+                .expect("Solana user-decryption events must be accepted");
+
+        match decoded {
+            ProtocolEventKind::UserDecryptionSolana(event) => {
+                assert_eq!(event.decryptionId, decryption_id);
+            }
+            other => panic!("unexpected event: {other:?}"),
         }
     }
 }
