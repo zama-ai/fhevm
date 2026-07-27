@@ -83,8 +83,8 @@ describe("mainnet v0.11 to v0.12 KMS rollout", () => {
     ]);
   });
 
-  test("pins the v1 request context observed during the incident", () => {
-    expect(incidentRequestExtraData).toBe(`0x0107${"1".padStart(62, "0")}`);
+  test("uses v1 extraData with the historical test KMS context", () => {
+    expect(incidentRequestExtraData).toBe(`0x01${"01".repeat(29)}020304`);
     expect(incidentRequestExtraData).toHaveLength(68);
   });
 });

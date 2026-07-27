@@ -3,7 +3,10 @@ import { coprocessorSenderSchemaBridge } from "./coprocessor-schema-bridge";
 import { from, scenario, to, versionSources } from "./versions";
 
 export const relayerSdkV042TestKeyError = "Cannot find user decryption pivot";
-export const incidentRequestExtraData = `0x0107${"1".padStart(62, "0")}`;
+// The incident request used v1 extraData with mainnet's context. This threshold
+// path has test keys and therefore uses the context created by v0.13.3 kms-init;
+// the v1 serialization and mixed response behavior under test are identical.
+export const incidentRequestExtraData = `0x01${"01".repeat(29)}020304`;
 
 export const run = async (ctx: RolloutRunContext) => {
   const baselineLock = await ctx.writeVersionLock("00-kms-core-baseline", { versions: from, sources: versionSources });
