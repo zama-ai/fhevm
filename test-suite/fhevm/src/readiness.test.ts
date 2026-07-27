@@ -1,6 +1,28 @@
 import { describe, expect, test } from "bun:test";
 
-import { waitForRpc } from "./flow/readiness";
+import { signerHandleFromListObjects, signerHandleFromLogs, waitForRpc } from "./flow/readiness";
+
+describe("signerHandleFromListObjects", () => {
+  test("finds a persisted centralized KMS signing-key handle", () => {
+    const handle = "60b7070add74be3827160aa635fb255eeeeb88586c4debf7ab1134ddceb4beee";
+    const xml = `<ListBucketResult><Contents><Key>PUB/VerfAddress/${handle}</Key></Contents></ListBucketResult>`;
+
+    expect(signerHandleFromListObjects(xml, "PUB")).toBe(handle);
+    expect(signerHandleFromListObjects(xml, "PUB/PUB")).toBeNull();
+  });
+
+  test("does not mistake a generated CRS handle for the signing-key handle", () => {
+    const crsHandle = "05".padEnd(64, "0");
+    const signerHandle = "60b7070add74be3827160aa635fb255eeeeb88586c4debf7ab1134ddceb4beee";
+    const logs = [
+      `Successfully stored public data element [CRS] under the handle ${crsHandle}`,
+      `Checking key PUB/SigningKey/${signerHandle}`,
+    ].join("\n");
+
+    expect(signerHandleFromLogs(logs)).toBe(signerHandle);
+    expect(signerHandleFromLogs(`stored under the handle ${crsHandle}`)).toBeNull();
+  });
+});
 
 describe("waitForRpc", () => {
   test("retries until eth_chainId returns a JSON-RPC result", async () => {

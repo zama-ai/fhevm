@@ -55,6 +55,20 @@ GRPC_URL="${GRPC_URL:-http://127.0.0.1:10000}"
 # Yellowstone plugin cdylib for the validator's --geyser-plugin-config. Prebuilt/built on demand
 # by geyser/build-yellowstone-plugin.sh; CI may set PLUGIN_LIB to a prefetched artifact.
 PLUGIN_LIB="${PLUGIN_LIB:-}"
+DEMO_LIFECYCLE_DIR="${DEMO_LIFECYCLE_DIR:-}"
+COMPOSE_PROJECT="fhevm"
+if [ -n "$DEMO_LIFECYCLE_DIR" ]; then
+  : "${FHEVM_COMPOSE_PROJECT:?lifecycle mode requires FHEVM_COMPOSE_PROJECT}"
+  if ! [[ "$FHEVM_COMPOSE_PROJECT" =~ ^fhevm-demo-[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$ ]]; then
+    echo "[setup] invalid lifecycle Compose project: $FHEVM_COMPOSE_PROJECT" >&2
+    exit 1
+  fi
+  COMPOSE_PROJECT="$FHEVM_COMPOSE_PROJECT"
+fi
+SOLANA_LOG_DIR="${SOLANA_LOG_DIR:-/tmp}"
+mkdir -p "$SOLANA_LOG_DIR"
+VALIDATOR_LOG="$SOLANA_LOG_DIR/validator.log"
+HOST_LISTENER_LOG="$SOLANA_LOG_DIR/host-listener.log"
 
 echo "==> [1/5] gathering live gateway addresses + ProtocolConfig signer set"
 # shellcheck disable=SC1091
@@ -92,22 +106,37 @@ mkdir -p "$HOME/.cache/solana"
 # plugin cdylib is resolved by geyser/build-yellowstone-plugin.sh (prebuilt x86 release in CI;
 # built from source on arm64). Bind 0.0.0.0 so the dockerized KMS worker reaches RPC over
 # host.docker.internal:8899. Local only — no mainnet exposure.
-pkill -f solana-test-validator 2>/dev/null || true
-sleep 2
+if [ -n "$DEMO_LIFECYCLE_DIR" ]; then
+  if pgrep -f solana-test-validator >/dev/null; then
+    echo "[setup] refusing to replace an unowned solana-test-validator in lifecycle mode" >&2
+    exit 1
+  fi
+else
+  pkill -f solana-test-validator 2>/dev/null || true
+  sleep 2
+fi
 [ -n "$PLUGIN_LIB" ] || PLUGIN_LIB="$("$SOLANA/geyser/build-yellowstone-plugin.sh")"
 [ -f "$PLUGIN_LIB" ] || { echo "[setup] Yellowstone plugin not found (PLUGIN_LIB=$PLUGIN_LIB)" >&2; exit 1; }
 GEYSER_CONFIG="$SOLANA/target/yellowstone-config.runtime.json"
 mkdir -p "$SOLANA/target"
 sed "s#@LIBPATH@#$PLUGIN_LIB#" "$SOLANA/geyser/yellowstone-config.json" > "$GEYSER_CONFIG"
 echo "    geyser host: solana-test-validator + Yellowstone plugin $PLUGIN_LIB"
-LEDGER="$ROOT/.solana-test-ledger"
+LEDGER="${DEMO_LIFECYCLE_DIR:+$DEMO_LIFECYCLE_DIR/ledger}"
+LEDGER="${LEDGER:-$ROOT/.solana-test-ledger}"
 rm -rf "$LEDGER"
-solana-test-validator --reset --rpc-port 8899 --bind-address 0.0.0.0 --ledger "$LEDGER" \
-  --geyser-plugin-config "$GEYSER_CONFIG" >/tmp/solana-validator.log 2>&1 &
+nohup solana-test-validator --reset --rpc-port 8899 --bind-address 0.0.0.0 --ledger "$LEDGER" \
+  --geyser-plugin-config "$GEYSER_CONFIG" </dev/null >"$VALIDATOR_LOG" 2>&1 &
+VALIDATOR_PID=$!
+[ -z "$DEMO_LIFECYCLE_DIR" ] || printf '%s\n' "$VALIDATOR_PID" > "$DEMO_LIFECYCLE_DIR/validator.pid"
 until curl -s -m2 "$VALIDATOR_RPC" -X POST -H 'Content-Type: application/json' \
   -d '{"jsonrpc":"2.0","id":1,"method":"getHealth"}' 2>/dev/null | grep -q '"ok"'; do
-  pgrep -f solana-test-validator >/dev/null \
-    || { echo "[setup] geyser validator died:" >&2; tail -20 /tmp/solana-validator.log >&2; exit 1; }
+  if [ -n "$DEMO_LIFECYCLE_DIR" ]; then
+    kill -0 "$VALIDATOR_PID" 2>/dev/null \
+      || { echo "[setup] owned geyser validator died:" >&2; tail -20 "$VALIDATOR_LOG" >&2; exit 1; }
+  else
+    pgrep -f solana-test-validator >/dev/null \
+      || { echo "[setup] geyser validator died:" >&2; tail -20 "$VALIDATOR_LOG" >&2; exit 1; }
+  fi
   sleep 1
 done
 solana airdrop 500 -u "$VALIDATOR_RPC" -k "$DEPLOYER_KEYPAIR" >/dev/null 2>&1 || true
@@ -172,7 +201,7 @@ GV="$(docker inspect gateway-sc-add-network --format '{{.Config.Image}}' | sed '
 # The gateway persists across local-validator resets, so addHostChain reverts with the
 # "host chain already registered" custom error (0x96a56828) on re-runs; tolerate that.
 add_out="$(GATEWAY_VERSION="$GV" FHEVM_STATE_DIR="$ROOT/.fhevm" docker compose \
-  -f "$FHEVM/docker-compose/gateway-sc-docker-compose.yml" -p fhevm run --rm --no-deps \
+  -f "$FHEVM/docker-compose/gateway-sc-docker-compose.yml" -p "$COMPOSE_PROJECT" run --rm --no-deps \
   -e NUM_HOST_CHAINS=1 -e "HOST_CHAIN_CHAIN_ID_0=$SID_U64" \
   -e HOST_CHAIN_FHEVM_EXECUTOR_ADDRESS_0=0x0000000000000000000000000000000000000000 \
   -e HOST_CHAIN_ACL_ADDRESS_0=0x0000000000000000000000000000000000000000 \
@@ -193,36 +222,39 @@ fi
 # they depend on the freshly-deployed program id and post-keygen state.
 
 echo "==> [5/5] run Solana host-listener"
-pkill -f solana_host_listener 2>/dev/null || true
-sleep 1
+if [ -n "$DEMO_LIFECYCLE_DIR" ]; then
+  if pgrep -f solana_host_listener >/dev/null; then
+    echo "[setup] refusing to replace an unowned solana_host_listener in lifecycle mode" >&2
+    exit 1
+  fi
+else
+  pkill -f solana_host_listener 2>/dev/null || true
+  sleep 1
+fi
 
 run_logged_background() {
   local log_file="$1"
   shift
-  local process_name
-  process_name="$(basename "$1")"
-  (
-    "$@"
-    status=$?
-    echo "[setup] $process_name exited with status $status"
-  ) >>"$log_file" 2>&1 &
+  nohup "$@" </dev/null >>"$log_file" 2>&1 &
+  LAST_BACKGROUND_PID=$!
 }
 
 # Always rebuild the listener from THIS worktree's source: its event decoders are generated
 # (build.rs -> OUT_DIR) from the program IDLs, so a stale prebuilt binary silently decodes zero
 # events when the program's event layout has moved (it drops every event whose generated struct
 # no longer matches), leaving the coprocessor with no work and the vertical hanging at SNS commit.
-: >/tmp/solana-host-listener.log
+: >"$HOST_LISTENER_LOG"
 # gRPC transport + off-chain reconstruction: the listener INGESTS events rebuilt from the tx
 # instructions (the program emits nothing), so this stands in for the whole Yellowstone effort
 # end-to-end. Handle-derivation params are auto-detected from the on-chain HostConfig PDA at
 # startup — no --chain-id / --zero-birth-entropy flags.
 ( cd "$ROOT/coprocessor/fhevm-engine" && cargo build -p host-listener --features solana-grpc,solana-reconstruct --bin solana_host_listener >/tmp/solana-host-listener-build.log 2>&1 ) \
   || { echo "[setup] host-listener (grpc,reconstruct) build failed; see /tmp/solana-host-listener-build.log" >&2; tail -20 /tmp/solana-host-listener-build.log >&2; exit 1; }
-run_logged_background /tmp/solana-host-listener.log \
+run_logged_background "$HOST_LISTENER_LOG" \
   "$ROOT/coprocessor/fhevm-engine/target/debug/solana_host_listener" \
     --grpc-url "$GRPC_URL" \
     --database-url "$DBURL" --url "$VALIDATOR_RPC" --program-id "$ZAMA_HOST_ID" \
     --host-chain-id="$SID_I64"
+[ -z "$DEMO_LIFECYCLE_DIR" ] || printf '%s\n' "$LAST_BACKGROUND_PID" > "$DEMO_LIFECYCLE_DIR/listener.pid"
 
 echo "==> Solana side-stack ready. zama_host=$ZAMA_HOST_ID host_chain_id=$SID_U64 (i64 $SID_I64)"

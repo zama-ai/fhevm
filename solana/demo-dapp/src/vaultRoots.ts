@@ -1,8 +1,8 @@
 import type { VaultDemoRoots } from "@fhevm/sdk/solana/vault";
 
-import type { DemoConfig } from "./demoSession";
+import type { DemoConfig } from "./demoConfig";
 
-export type VaultDirection = "deposit" | "redeem";
+import type { VaultDirection } from "./batchTypes";
 
 export const vaultRoots = (config: DemoConfig, direction: VaultDirection): VaultDemoRoots => {
   const redeem = direction === "redeem";

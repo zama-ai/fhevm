@@ -1122,7 +1122,9 @@ export const up = async (options: UpOptions) => {
   }
   if (!state) {
     const nextState = await bootstrapState(options);
-    if (persistedState || (await projectContainers(true)).length) {
+    const existingProject = Boolean(persistedState || (await projectContainers(true)).length);
+    assertAutomaticCleanupAllowed(existingProject);
+    if (existingProject) {
       console.log("[up] cleaning previous run");
       await down();
     }
@@ -1194,6 +1196,18 @@ export const up = async (options: UpOptions) => {
     await runStep(state, step);
   }
   console.log(`[done] stack ready in ${Math.round((Date.now() - started) / 1000)}s`);
+};
+
+/** Fail-closed seam used by lifecycle owners that have already performed collision preflight. */
+export const assertAutomaticCleanupAllowed = (
+  existingProject: boolean,
+  refuseExisting = process.env.FHEVM_REFUSE_EXISTING === "1",
+): void => {
+  if (existingProject && refuseExisting) {
+    throw new PreflightError(
+      "an existing fhevm stack appeared after preflight; refusing automatic cleanup",
+    );
+  }
 };
 
 /** Resolves and prints the stack plan without mutating state or containers. */

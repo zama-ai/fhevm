@@ -9,5 +9,16 @@
     "noEmit": true,
     "tsBuildInfoFile": "./node_modules/.cache/tsconfig.node.tsbuildinfo"
   },
-  "include": ["vite.config.ts", "src/demoSession.ts"]
+  "include": [
+    "vite.config.ts",
+    "demoServerPlugin.ts",
+    "src/batchTypes.ts",
+    "src/demoApi.ts",
+    "src/demoConfig.ts",
+    "src/harvestOperator.ts",
+    "src/sendTransaction.ts",
+    "src/settlement.ts",
+    "src/vaultRoots.ts",
+    "../../test-suite/fhevm/demo/authorization.ts"
+  ]
 }

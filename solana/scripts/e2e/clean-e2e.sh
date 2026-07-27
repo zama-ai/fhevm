@@ -60,6 +60,20 @@ echo "[clean-e2e] source-built overrides: ${SOLANA_E2E_OVERRIDES:-<none>}"
 if [ -n "$SOLANA_E2E_LOCK_PINS" ]; then
   echo "[clean-e2e] lock pins for published images: $SOLANA_E2E_LOCK_PINS"
 fi
+
+# `bun run` auto-installs missing packages, but that install is not lockfile-frozen. On a fresh
+# worktree it can therefore resolve a newer compatible CLI parser with different repeated-flag
+# semantics and silently keep only the last `--override`. Install the checked-in graph first so a
+# clean local run and CI pass the same complete override set.
+( cd "$FHEVM" && bun install --frozen-lockfile )
+
+# The local clients and demo import the public `@fhevm/sdk/solana` package exports, which resolve
+# to the generated ESM tree. Install/build this after the Bun workspace graph: Bun's file-link
+# install can disturb the SDK's own runtime dependency resolution, while nothing later in bring-up
+# needs to rewrite that graph. A fresh lifecycle run therefore pays this cost once and leaves the
+# final graph ready for both the vertical clients and Vite.
+( cd "$ROOT/sdk/js-sdk" && npm ci && npm run build:esm )
+
 # Pin the EVM stack to the main SHA this PoC was validated against. RFC-021 / Solana host support
 # is not yet on a release bundle, so we resolve a specific main commit explicitly.
 BASE_SHA="feaf86e"

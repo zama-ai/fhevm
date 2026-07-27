@@ -23,15 +23,15 @@ import {
 } from "@fhevm/sdk/solana/vault";
 
 import type { DemoSession } from "./demoSession";
-import type { DepositResult } from "./deposit";
-import { vaultRoots, type VaultDirection } from "./vaultRoots";
+import type { BatchPosition, VaultDirection } from "./batchTypes";
+import { vaultRoots } from "./vaultRoots";
 
 const BATCH_SETTLED = 2;
 const CLAIM_COMPUTE_UNIT_LIMIT = 1_200_000;
 
 export const claimBatchPayout = async (
   session: DemoSession,
-  deposit: DepositResult,
+  deposit: BatchPosition,
   direction: VaultDirection,
 ): Promise<void> => {
   const rpc = createSolanaRpc(session.config.rpcUrl);

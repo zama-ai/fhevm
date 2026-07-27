@@ -1,0 +1,88 @@
+@media (max-width: 820px) {
+  .topbar {
+    grid-template-columns: auto 1fr auto;
+    padding: 0 18px;
+  }
+
+  .network-pill {
+    justify-self: center;
+    padding: 7px 10px;
+    font-size: 11px;
+  }
+
+  .brand > span:last-child,
+  .wallet-demo-button {
+    display: none;
+  }
+
+  main {
+    width: min(100% - 28px, 620px);
+    padding-top: 56px;
+  }
+
+  .portfolio-grid,
+  .journey-card {
+    grid-template-columns: 1fr;
+  }
+
+  .vault-card {
+    grid-template-columns: auto 1fr;
+  }
+
+  .vault-metric {
+    display: none;
+  }
+
+  .deposit-action {
+    grid-column: 1 / -1;
+  }
+
+  .timeline {
+    grid-template-columns: 1fr;
+    gap: 20px;
+  }
+
+  .timeline li::after {
+    top: 34px;
+    right: auto;
+    bottom: -18px;
+    left: 14px;
+    width: 1px;
+    height: auto;
+  }
+
+  .privacy-split {
+    grid-template-columns: 1fr;
+  }
+
+  .operator-panel,
+  .claim-panel,
+  .yield-panel {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .redeem-heading,
+  .redeem-action {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .redeem-amount {
+    text-align: left;
+  }
+
+  .timeline.framed {
+    grid-template-columns: 1fr;
+    gap: 14px;
+  }
+
+  .redeem-complete {
+    grid-template-columns: 1fr;
+    align-items: stretch;
+  }
+
+  .redeem-complete > div:nth-child(2) {
+    text-align: left;
+  }
+}

@@ -15,7 +15,7 @@ import {
   type TransactionSigner,
 } from "@solana/kit";
 
-import type { DemoConfig } from "./demoSession";
+import type { DemoConfig } from "./demoConfig";
 
 export const sendTransaction = async (
   config: DemoConfig,

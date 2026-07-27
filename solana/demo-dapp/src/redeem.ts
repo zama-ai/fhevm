@@ -15,8 +15,8 @@ import {
   joinBatch,
 } from '@fhevm/sdk/solana/vault';
 
+import type { BatchPosition } from './batchTypes';
 import type { DemoSession } from './demoSession';
-import type { DepositResult } from './deposit';
 import { loadDemoEncryptionKey } from './encryptionKey';
 import { readClaimedSharesHandle } from './revealShares';
 import { vaultRoots } from './vaultRoots';
@@ -34,11 +34,11 @@ const asBytes32Hex = (value: Address): Bytes32Hex =>
 const activeRedeemKey = (session: DemoSession): string =>
   `fhevm-solana-demo:active-redeem:${session.config.chainId}:${session.signer.address}`;
 
-export type RedeemIntent = DepositResult & {
+export type RedeemIntent = BatchPosition & {
   readonly sourceHandle: string;
 };
 
-type StoredRedeem = DepositResult & {
+type StoredRedeem = BatchPosition & {
   readonly transaction?: {
     readonly signature: string;
     readonly blockhash: string;
@@ -46,7 +46,7 @@ type StoredRedeem = DepositResult & {
   };
 };
 
-export const redactRedeemPosition = (position: Pick<DepositResult, 'batchIndex' | 'batch'>): DepositResult => ({
+export const redactRedeemPosition = (position: Pick<BatchPosition, 'batchIndex' | 'batch'>): BatchPosition => ({
   ...position,
   amountBaseUnits: 0n,
 });
@@ -141,7 +141,7 @@ const recoverHandleChange = async (
   intent: RedeemIntent,
   joinRecord: Address,
   currentHandle: string,
-): Promise<DepositResult | null> => {
+): Promise<BatchPosition | null> => {
   try {
     assertBalanceHandleIsCurrent(intent.sourceHandle, currentHandle);
     return null;
@@ -166,7 +166,7 @@ const recoverHandleChange = async (
   }
 };
 
-export const findExistingRedeem = async (session: DemoSession): Promise<DepositResult | null> => {
+export const findExistingRedeem = async (session: DemoSession): Promise<BatchPosition | null> => {
   const rpc = createSolanaRpc(session.config.rpcUrl);
   const roots = vaultRoots(session.config, 'redeem');
   const saved = readActiveRedeem(session);
@@ -205,7 +205,7 @@ export const joinRedeemBatch = async (
   amountBaseUnits: bigint,
   sourceHandle: string,
   onStage: (stage: RedeemStage) => void,
-): Promise<DepositResult> => {
+): Promise<BatchPosition> => {
   session.assertActive();
   if (amountBaseUnits <= 0n) throw new Error('Redeem amount must be positive');
   const { config, signer } = session;

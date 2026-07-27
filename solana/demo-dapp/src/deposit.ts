@@ -33,6 +33,7 @@ import {
   tokenAccountAddress,
 } from "@fhevm/sdk/solana/vault";
 
+import type { BatchPosition } from "./batchTypes";
 import type { DemoSession } from "./demoSession";
 import { loadDemoEncryptionKey } from "./encryptionKey";
 import { vaultRoots } from "./vaultRoots";
@@ -43,12 +44,6 @@ export type DepositStage =
   | "proving"
   | "joining"
   | "joined";
-
-export type DepositResult = {
-  readonly batchIndex: bigint;
-  readonly batch: Address;
-  readonly amountBaseUnits: bigint;
-};
 
 type Bytes32Hex = Parameters<typeof joinBatch>[0]["aclProgramAddress"];
 
@@ -91,7 +86,7 @@ export type SubmittedDepositTransaction = {
   readonly lastValidBlockHeight: string;
 };
 
-export type StoredDeposit = DepositResult & {
+export type StoredDeposit = BatchPosition & {
   readonly transaction?: SubmittedDepositTransaction;
 };
 
@@ -206,7 +201,7 @@ export const reconcileSavedDeposit = async (
   rpc: ReturnType<typeof createSolanaRpc>,
   session: DemoSession,
   saved: StoredDeposit,
-): Promise<DepositResult | null> => {
+): Promise<BatchPosition | null> => {
   const joinRecord = await deriveJoinRecordAddress(saved.batch, session.signer.address);
   const account = await rpc
     .getAccountInfo(joinRecord, { commitment: "confirmed", encoding: "base64" })
@@ -234,7 +229,7 @@ export const reconcileSavedDeposit = async (
 export async function findExistingDeposit(
   session: DemoSession,
   amount: number,
-): Promise<DepositResult | null> {
+): Promise<BatchPosition | null> {
   const rpc = createSolanaRpc(session.config.rpcUrl);
   const saved = readActiveDeposit(session);
   if (saved !== null) {
@@ -255,7 +250,7 @@ export async function depositToVault(
   session: DemoSession,
   amount: number,
   onStage: (stage: DepositStage) => void,
-): Promise<DepositResult> {
+): Promise<BatchPosition> {
   session.assertActive();
   const { config, signer } = session;
   const amountBaseUnits = usdcToBaseUnits(amount);

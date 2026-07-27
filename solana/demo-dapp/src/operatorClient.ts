@@ -1,21 +1,16 @@
-import type { DepositResult } from "./deposit";
-import type { VaultDirection } from "./vaultRoots";
+import type { BatchPosition, OperatorAction, VaultDirection } from "./batchTypes";
+import { demoApiFetch } from "./demoAuthorization";
+import { encodeOperatorRequest } from "./demoApi";
 
 export const runDemoOperatorAction = async (
-  action: "dispatch" | "settle",
-  deposit: DepositResult,
+  action: OperatorAction,
+  deposit: BatchPosition,
   direction: VaultDirection = "deposit",
 ): Promise<void> => {
-  const response = await fetch("/api/demo-operator", {
+  const response = await demoApiFetch("/api/demo-operator", {
     method: "POST",
     headers: { "content-type": "application/json" },
-    body: JSON.stringify({
-      action,
-      direction,
-      batchIndex: deposit.batchIndex.toString(),
-      batch: deposit.batch,
-      amountBaseUnits: deposit.amountBaseUnits.toString(),
-    }),
+    body: JSON.stringify(encodeOperatorRequest(action, direction, deposit)),
   });
   if (!response.ok) {
     const body = (await response.json().catch(() => null)) as { readonly error?: string } | null;

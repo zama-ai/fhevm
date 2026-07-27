@@ -280,6 +280,36 @@ export const waitForStableChainListeners = async (state: Pick<State, "scenario">
 const verfAddressPrefixes = (parties: number, party: number): string[] =>
   parties === 1 ? ["PUB/PUB", "PUB"] : [kmsPublicPrefix(party)];
 
+/** Extracts a signing-key handle from an S3 ListObjects response for a public KMS prefix. */
+export const signerHandleFromListObjects = (xml: string, prefix: string): string | null => {
+  const escapedPrefix = prefix.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  return xml.match(new RegExp(`<Key>${escapedPrefix}/VerfAddress/([a-f0-9]{64})</Key>`))?.[1] ?? null;
+};
+
+/** Reads only an explicitly named signing-key object; generic KMS handles also identify CRS/FHE keys. */
+export const signerHandleFromLogs = (text: string): string | null =>
+  text.match(/SigningKey\/([a-f0-9]{64})/)?.[1] ?? null;
+
+/** Finds a persisted signing-key handle when restarting a core that no longer logs SigningKey/…. */
+const fetchSignerHandle = async (prefixes: string[]): Promise<string | null> => {
+  for (const prefix of prefixes) {
+    try {
+      const response = await fetch(
+        `${MINIO_EXTERNAL_URL}/kms-public?list-type=2&prefix=${encodeURIComponent(`${prefix}/VerfAddress/`)}`,
+      );
+      if (response.ok) {
+        const handle = signerHandleFromListObjects(await response.text(), prefix);
+        if (handle) {
+          return handle;
+        }
+      }
+    } catch {
+      // try the next prefix / retry the whole discovery
+    }
+  }
+  return null;
+};
+
 /** Reads a single party's VerfAddress for `handle`, trying each candidate prefix. */
 const fetchVerfAddress = async (
   prefixes: string[],
@@ -327,7 +357,7 @@ export const discoverKmsSigners = async (
   for (let attempt = 0; attempt <= 60; attempt += 1) {
     const logs = await run(["docker", "logs", KMS_CORE_CONTAINER], { allowFailure: true });
     const text = `${logs.stdout}\n${logs.stderr}`;
-    const handle = (text.match(/SigningKey\/([a-f0-9]{64})/) ?? text.match(/handle ([a-zA-Z0-9]+)/))?.[1];
+    const handle = signerHandleFromLogs(text) ?? (await fetchSignerHandle(verfAddressPrefixes(parties, 1)));
     if (handle) {
       const signers: string[] = [];
       const caCerts: string[] = [];

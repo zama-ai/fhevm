@@ -16,10 +16,10 @@ import {
   settleBatch,
 } from '@fhevm/sdk/solana/vault';
 
-import type { DemoConfig, DemoSession } from './demoSession';
-import type { DepositResult } from './deposit';
+import type { BatchLifecycle, BatchPosition, VaultDirection } from './batchTypes';
+import type { DemoConfig } from './demoConfig';
 import { sendTransaction } from './sendTransaction';
-import { vaultRoots, type VaultDirection } from './vaultRoots';
+import { vaultRoots } from './vaultRoots';
 
 const BATCH_PENDING = 0;
 const BATCH_DISPATCHED = 1;
@@ -32,6 +32,10 @@ type Bytes32Hex = Parameters<typeof defineFhevmSolanaChain>[0]['fhevm']['acl']['
 export type DemoOperatorSession = {
   readonly config: DemoConfig;
   readonly keeper: TransactionSigner;
+};
+type DemoUserSession = {
+  readonly config: DemoConfig;
+  readonly signer: TransactionSigner;
 };
 
 const asBytes32Hex = (value: Address): Bytes32Hex =>
@@ -50,7 +54,7 @@ const asBytes32BigEndian = (decimal: string): Uint8Array => {
 
 const currentPinnedBatch = async (
   session: { readonly config: DemoConfig },
-  position: DepositResult,
+  position: BatchPosition,
   direction: VaultDirection,
 ) => {
   const rpc = createSolanaRpc(session.config.rpcUrl);
@@ -62,17 +66,6 @@ const currentPinnedBatch = async (
   }
   return { rpc, batch };
 };
-
-export type DepositLifecycle =
-  | { readonly kind: 'awaiting-dispatch'; readonly remainingSlots: bigint }
-  | { readonly kind: 'proving'; readonly proofReady: boolean }
-  | {
-      readonly kind: 'settled';
-      readonly totalJoined: bigint;
-      readonly payoutReceived: bigint;
-      readonly claimed: boolean;
-    }
-  | { readonly kind: 'canceled' };
 
 type ProofReadinessBody = {
   readonly verified?: unknown;
@@ -120,10 +113,10 @@ const hasReadyProof = async (
 };
 
 export const readVaultLifecycle = async (
-  session: DemoSession,
-  position: DepositResult,
+  session: DemoUserSession,
+  position: BatchPosition,
   direction: VaultDirection,
-): Promise<DepositLifecycle> => {
+): Promise<BatchLifecycle> => {
   const { rpc, batch } = await currentPinnedBatch(session, position, direction);
   if (batch.state.status === BATCH_PENDING) {
     const batcher = await getBatcher(rpc, vaultRoots(session.config, direction).batcher, { commitment: 'confirmed' });
@@ -154,7 +147,7 @@ export const readVaultLifecycle = async (
 
 export const dispatchVaultBatch = async (
   session: DemoOperatorSession,
-  position: DepositResult,
+  position: BatchPosition,
   direction: VaultDirection,
 ): Promise<void> => {
   const roots = vaultRoots(session.config, direction);
@@ -183,7 +176,7 @@ export const dispatchVaultBatch = async (
 
 export const settleVaultBatch = async (
   session: DemoOperatorSession,
-  position: DepositResult,
+  position: BatchPosition,
   direction: VaultDirection,
 ): Promise<void> => {
   const roots = vaultRoots(session.config, direction);

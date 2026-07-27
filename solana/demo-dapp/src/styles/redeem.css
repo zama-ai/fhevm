@@ -1,0 +1,145 @@
+.redeem-card {
+  display: grid;
+  gap: 18px;
+  margin-top: 18px;
+  padding: 28px;
+  border: 1px solid rgba(153, 69, 255, 0.2);
+  border-radius: 20px;
+  background:
+    radial-gradient(circle at 90% 0%, rgba(153, 69, 255, 0.13), transparent 34%),
+    rgba(20, 20, 23, 0.84);
+  box-shadow: 0 24px 80px rgba(0, 0, 0, 0.2);
+}
+
+.redeem-heading,
+.redeem-action {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 24px;
+}
+
+.redeem-heading h2 {
+  margin: 5px 0 7px;
+}
+
+.redeem-heading p {
+  max-width: 720px;
+  margin-bottom: 0;
+  color: #b5b5bc;
+  font-size: 13px;
+  line-height: 1.55;
+}
+
+.redeem-amount {
+  min-width: 120px;
+  padding: 14px 16px;
+  border: 1px solid rgba(255, 255, 255, 0.09);
+  border-radius: 12px;
+  text-align: right;
+  background: rgba(255, 255, 255, 0.035);
+}
+
+.redeem-amount span,
+.redeem-amount small {
+  display: block;
+  color: #9c9ca4;
+  font-size: 10px;
+}
+
+.redeem-amount strong {
+  display: block;
+  margin: 3px 0;
+  color: #e9ddff;
+  font-size: 26px;
+}
+
+.redeem-action small {
+  color: #9c9ca4;
+  font-size: 10px;
+  line-height: 1.45;
+}
+
+.redeem-action {
+  padding: 16px;
+  border: 1px solid rgba(255, 255, 255, 0.09);
+  border-radius: 12px;
+  background: rgba(255, 255, 255, 0.025);
+}
+
+.redeem-action strong,
+.redeem-action small {
+  display: block;
+}
+
+.redeem-action small {
+  margin-top: 5px;
+}
+
+.redeem-action button {
+  flex: 0 0 auto;
+  padding: 12px 16px;
+  color: #fff;
+  background: linear-gradient(120deg, #7c3aed, #9945ff);
+  font-weight: 780;
+}
+
+.redeem-action button:disabled {
+  cursor: default;
+  opacity: 0.46;
+}
+
+.redeem-complete {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto auto;
+  align-items: center;
+  gap: 16px;
+}
+
+.redeem-complete .verified-settlement {
+  min-width: 0;
+}
+
+.redeem-complete > div:nth-child(2) {
+  text-align: right;
+}
+
+.redeem-complete > div:nth-child(2) strong,
+.redeem-complete > div:nth-child(2) small {
+  display: block;
+}
+
+.redeem-complete > div:nth-child(2) small {
+  margin-top: 3px;
+  color: #9c9ca4;
+  font-size: 10px;
+}
+
+.redeem-complete > button {
+  padding: 10px 13px;
+  border: 1px solid rgba(20, 241, 149, 0.28);
+  color: #bbf7d0;
+  background: rgba(20, 241, 149, 0.08);
+  font-size: 11px;
+  font-weight: 750;
+}
+
+.panel-action {
+  padding: 11px 15px;
+  border-radius: 9px;
+  cursor: pointer;
+  font-size: 12px;
+  font-weight: 760;
+}
+
+.redeem-complete > button:disabled {
+  cursor: wait;
+  opacity: 0.5;
+}
+
+.privacy-note summary {
+  width: fit-content;
+  margin-bottom: 5px;
+  color: #c7c7ce;
+  cursor: pointer;
+}

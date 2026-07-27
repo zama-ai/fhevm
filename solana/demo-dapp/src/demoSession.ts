@@ -1,5 +1,4 @@
 import {
-  address,
   createKeyPairSignerFromBytes,
   createSignableMessage,
   createSolanaRpc,
@@ -12,46 +11,10 @@ import {
 } from "@solana/wallet-account-signer";
 import type { UiWalletAccount } from "@wallet-standard/react";
 
-export type DemoConfig = {
-  readonly source: "demo-config";
-  readonly chainId: string;
-  readonly rpcUrl: string;
-  readonly wsUrl: string;
-  readonly relayerUrl: string;
-  readonly proofServiceUrl: string;
-  readonly aclProgram: `0x${string}`;
-  readonly userDecryptContextId: string;
-  readonly authorityFundingLamports: string;
-  readonly hostConfig: Address;
-  readonly kmsContext: Address;
-  readonly vault: Address;
-  readonly programs: {
-    readonly batcher: Address;
-    readonly token: Address;
-    readonly vault: Address;
-    readonly host: Address;
-  };
-  readonly mints: {
-    readonly joinUnderlying: Address;
-    readonly payoutUnderlying: Address;
-    readonly joinConfidential: Address;
-    readonly payoutConfidential: Address;
-  };
-  readonly batchers: {
-    readonly deposit: {
-      readonly batcher: Address;
-      readonly lookupTable: Address;
-    };
-    readonly redeem: {
-      readonly batcher: Address;
-      readonly lookupTable: Address;
-    };
-  };
-  readonly personas: {
-    readonly keeper: Address;
-    readonly alice: Address;
-  };
-};
+import { demoApiFetch, demoFaucetFetch } from "./demoAuthorization";
+import { parseDemoConfig, parseDemoConfigResponse, type DemoConfig } from "./demoConfig";
+
+export { parseDemoConfigResponse, type DemoConfig } from "./demoConfig";
 
 export type DemoSession = {
   readonly config: DemoConfig;
@@ -110,87 +73,6 @@ const object = (value: unknown, name: string): Record<string, unknown> => {
   return value as Record<string, unknown>;
 };
 
-const string = (value: unknown, name: string): string => {
-  if (typeof value !== "string" || value.length === 0) throw new Error(`${name} must be a non-empty string`);
-  return value;
-};
-
-const localUrl = (value: unknown, name: string, protocol: "http:" | "ws:"): string => {
-  const parsed = new URL(string(value, name));
-  if (parsed.protocol !== protocol || parsed.hostname !== "127.0.0.1") {
-    throw new Error(`${name} must use ${protocol}//127.0.0.1`);
-  }
-  return parsed.toString().replace(/\/$/, "");
-};
-
-const parseDemoConfigValue = (value: unknown): DemoConfig => {
-  const rawConfig = object(value, "demo config");
-  const personas = object(rawConfig.personas, "demo session config.personas");
-  const programs = object(rawConfig.programs, "demo session config.programs");
-  const mints = object(rawConfig.mints, "demo session config.mints");
-  const batchers = object(rawConfig.batchers, "demo session config.batchers");
-  const depositBatcher = object(batchers.deposit, "demo session config.batchers.deposit");
-  const redeemBatcher = object(batchers.redeem, "demo session config.batchers.redeem");
-  if (rawConfig.source !== "demo-config") throw new Error("demo session config.source must be demo-config");
-  const rpcUrl = localUrl(rawConfig.rpcUrl, "demo session config.rpcUrl", "http:");
-  if (rpcUrl !== "http://127.0.0.1:8899") throw new Error(`demo session refuses non-local RPC ${rpcUrl}`);
-  return {
-      source: "demo-config",
-      chainId: string(rawConfig.chainId, "demo session config.chainId"),
-      rpcUrl,
-      wsUrl: localUrl(rawConfig.wsUrl, "demo session config.wsUrl", "ws:"),
-      relayerUrl: localUrl(rawConfig.relayerUrl, "demo session config.relayerUrl", "http:"),
-      proofServiceUrl: localUrl(rawConfig.proofServiceUrl, "demo session config.proofServiceUrl", "http:"),
-      aclProgram: string(rawConfig.aclProgram, "demo session config.aclProgram") as `0x${string}`,
-      userDecryptContextId: string(
-        rawConfig.userDecryptContextId,
-        "demo session config.userDecryptContextId",
-      ),
-      authorityFundingLamports: string(
-        rawConfig.authorityFundingLamports,
-        "demo session config.authorityFundingLamports",
-      ),
-      hostConfig: address(string(rawConfig.hostConfig, "demo session config.hostConfig")),
-      kmsContext: address(string(rawConfig.kmsContext, "demo session config.kmsContext")),
-      vault: address(string(rawConfig.vault, "demo session config.vault")),
-      programs: {
-        batcher: address(string(programs.batcher, "demo session config.programs.batcher")),
-        token: address(string(programs.token, "demo session config.programs.token")),
-        vault: address(string(programs.vault, "demo session config.programs.vault")),
-        host: address(string(programs.host, "demo session config.programs.host")),
-      },
-      mints: {
-        joinUnderlying: address(string(mints.joinUnderlying, "demo session config.mints.joinUnderlying")),
-        payoutUnderlying: address(string(mints.payoutUnderlying, "demo session config.mints.payoutUnderlying")),
-        joinConfidential: address(string(mints.joinConfidential, "demo session config.mints.joinConfidential")),
-        payoutConfidential: address(string(mints.payoutConfidential, "demo session config.mints.payoutConfidential")),
-      },
-      batchers: {
-        deposit: {
-          batcher: address(string(depositBatcher.batcher, "demo session config.batchers.deposit.batcher")),
-          lookupTable: address(
-            string(depositBatcher.lookupTable, "demo session config.batchers.deposit.lookupTable"),
-          ),
-        },
-        redeem: {
-          batcher: address(string(redeemBatcher.batcher, "demo session config.batchers.redeem.batcher")),
-          lookupTable: address(
-            string(redeemBatcher.lookupTable, "demo session config.batchers.redeem.lookupTable"),
-          ),
-        },
-      },
-      personas: {
-        keeper: address(string(personas.keeper, "demo session config.personas.keeper")),
-        alice: address(string(personas.alice, "demo session config.personas.alice")),
-      },
-  };
-};
-
-export const parseDemoConfigResponse = (value: unknown): DemoConfig => {
-  const root = object(value, "demo config response");
-  return parseDemoConfigValue(root.config);
-};
-
 export const parseDemoSessionResponse = (value: unknown): DemoSessionResponse => {
   const root = object(value, "demo session");
   const candidate = root.aliceKeypair;
@@ -202,13 +84,17 @@ export const parseDemoSessionResponse = (value: unknown): DemoSessionResponse =>
     throw new Error("demo session aliceKeypair must contain exactly 64 bytes");
   }
   return {
-    config: parseDemoConfigValue(root.config),
+    config: parseDemoConfig(root.config),
     aliceKeypair: candidate as number[],
   };
 };
 
-const postFaucet = async (path: string, recipient: Address, amount: Record<string, number>): Promise<void> => {
-  const response = await fetch(`http://127.0.0.1:8090${path}`, {
+const postFaucet = async (
+  path: "/airdrop-sol" | "/mint-usdc",
+  recipient: Address,
+  amount: Record<string, number>,
+): Promise<void> => {
+  const response = await demoFaucetFetch(path, {
     method: "POST",
     headers: { "content-type": "application/json" },
     body: JSON.stringify({ address: recipient, ...amount }),
@@ -348,7 +234,7 @@ export const connectDemoSession = async (isActive: () => boolean = () => true): 
   const assertActive = (): void => {
     if (!isActive()) throw new Error("Demo wallet session is no longer active");
   };
-  const response = await fetch("/api/demo-session");
+  const response = await demoApiFetch("/api/demo-session");
   const { config, aliceKeypair } = parseDemoSessionResponse(await responseJson(response, "demo session"));
   const signer = await createKeyPairSignerFromBytes(Uint8Array.from(aliceKeypair));
   if (signer.address !== config.personas.alice) {

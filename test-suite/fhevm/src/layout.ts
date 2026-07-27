@@ -106,7 +106,19 @@ export const TEMPLATE_KMS_CORE_CONFIG_THRESHOLD = path.join(
  *  `kms-gen-keys` accepts only `--config-file` (the Solana vertical pins such an image). */
 export const TEMPLATE_KMS_GEN_KEYS_CONFIG = path.join(TEMPLATE_CONFIG_DIR, "kms-gen-keys.toml");
 export const LATEST_SUPPORTED_PROFILE = path.join(PROFILE_DIR, "latest-supported.json");
-export const PROJECT = "fhevm";
+export const FHEVM_COMPOSE_PROJECT_ENV = "FHEVM_COMPOSE_PROJECT";
+const configuredComposeProject = process.env[FHEVM_COMPOSE_PROJECT_ENV];
+if (
+  configuredComposeProject !== undefined &&
+  !/^fhevm-demo-[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/.test(
+    configuredComposeProject,
+  )
+) {
+  throw new Error(
+    `${FHEVM_COMPOSE_PROJECT_ENV} must be fhevm-demo-<lowercase UUID>`,
+  );
+}
+export const PROJECT = configuredComposeProject ?? "fhevm";
 export const DEFAULT_HOST_RPC_PORT = 8545;
 export const DEFAULT_GATEWAY_RPC_PORT = 8546;
 export const DEFAULT_EXTRA_HOST_RPC_PORT = 8547;

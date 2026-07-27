@@ -2,6 +2,7 @@
   "name": "fhevm",
   "private": true,
   "scripts": {
+    "demo": "cd test-suite/fhevm && bun run demo/cli.ts",
     "test": "cd test-suite/fhevm && bun run test"
   },
   "workspaces": [

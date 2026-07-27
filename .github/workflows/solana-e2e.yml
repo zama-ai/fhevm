@@ -1,6 +1,6 @@
 name: solana-e2e
 
-# Brings up a fresh fhevm-cli stack with the Solana host (clean-e2e.sh) and drives the Solana
+# Brings up a fresh lifecycle-owned demo stack with the Solana host (`bun run demo up`) and drives the Solana
 # decrypt vertical (full-vertical.sh): input (ZK + on-chain secp256k1 bind) -> compute ->
 # public-decrypt -> PURE-SDK user-decrypt (no kms checkout) -> input-flow -> consume. The
 # user-decrypt de-signcryption runs entirely in @fhevm/sdk/solana, so no kms-core checkout.
@@ -11,10 +11,9 @@ name: solana-e2e
 # kept so the job/artifact names keep their `-reconstruct` suffix; setup-solana-side.sh no longer
 # keys off it.
 #
-# After the e2e phases, the same job runs the confidential-vault demo phase (folded in from the
-# retired solana-demo-acceptance workflow, #1760) against the still-up stack:
-#   - demo-up.sh: deploy the two demo programs, re-seed fresh, write the config JSON (the stack is
-#     already up, so demo-up.sh re-seeds against it rather than re-bringing it up)
+# The lifecycle bring-up also deploys and seeds the confidential-vault demo (#1760). After the e2e
+# phases, the same job refreshes that still-owned boot:
+#   - `bun run demo reseed`: re-deploy the two demo programs, seed fresh, rotate authorization
 #   - deposit-arc smoke (bun run demo:smoke): the live exercise of the vault's full forward path
 #     (fund -> init accounts -> wrap -> join -> dispatch -> settle -> claim -> decrypt), hard-gated
 #   - browser-reality: CORS preflight against relayer (with RELAYER_PERMISSIVE_CORS set) + proof
@@ -57,14 +56,12 @@ jobs:
   solana-e2e:
     name: solana-e2e/full-vertical${{ matrix.reconstruct && '-reconstruct' || '' }}
     # extras=s3-cache is the RunsOn S3 build-cache extra (same one main's docker-build runners use);
-    # it provisions the runner's access to the sccache S3 bucket wired into clean-e2e.sh below.
+    # it provisions the runner's access to the sccache S3 bucket wired into lifecycle bring-up below.
     runs-on: runs-on=${{ github.run_id }}/runner=32cpu-linux-x64/volume=160gb/extras=s3-cache
     # The e2e lane's own history: median successful runs ~50-53 min, observed successful tail up
     # to 72 min (run 29830123609). The demo phase adds ~2 min on the already-built stack. 90
     # covers the observed tail plus the demo phase without letting a hung run hold the runner for
-    # two hours. demo-up.sh's re-bring-up fallback (a second ~40-min clean-e2e.sh when the
-    # validator died) cannot fit in this budget even from a median run, so the demo phase fails
-    # fast on a dead validator instead — see the health-guard step before demo-up.
+    # two hours. The owned-boot status gate before reseed fails fast if an e2e phase degraded the stack.
     timeout-minutes: 90
     strategy:
       matrix:
@@ -85,7 +82,9 @@ jobs:
       # per-PR lane: the browser-reality step below asserts the demo CORS behavior every run.
       RELAYER_PERMISSIVE_CORS: "1"
       SOLANA_PROOF_PERMISSIVE_CORS: "1"
-      DEMO_ORIGIN: "http://localhost:5173"
+      # Acceptance clients read the protected token file directly. Never persist the fragment token
+      # in GitHub Actions logs; interactive local runs keep printing the launch URL by default.
+      DEMO_PRINT_LAUNCH_URL: "0"
       # Absolute demo-config path so every producer/consumer agrees regardless of the step's working
       # directory (the seed and the smoke both run from test-suite/fhevm, but the path resolves to
       # the same repo-root file demo-up.sh advertises). See demo/config.ts.
@@ -166,19 +165,6 @@ jobs:
         if: github.event_name == 'pull_request'
         run: bash solana/scripts/e2e/select-overrides.sh "$(git rev-parse HEAD^1)"
 
-      - name: Build the @fhevm/sdk ESM (full-vertical's node clients + the demo seed/smoke import it)
-        # build:esm emits src/_esm (gitignored) + copies the TKMS WASM into it; the @fhevm/sdk
-        # `./solana` and `./solana/vault` exports both resolve there — one build serves the e2e
-        # phases and the demo phase. npm ci also populates the SDK's own node_modules.
-        run: cd sdk/js-sdk && npm ci && npm run build:esm
-
-      - name: Install fhevm-cli deps (clean-e2e.sh drives ./fhevm-cli)
-        working-directory: test-suite/fhevm
-        # test-suite/fhevm declares `@fhevm/sdk` via a `file:` path (package.json), so bun links the
-        # built SDK into node_modules and installs its runtime deps — no hand-rolled symlink. node
-        # realpath-resolves that link to sdk/js-sdk/src and finds @noble/* by walking up from there.
-        run: bun install --frozen-lockfile
-
       - name: Cache host-side cargo builds (host-listener + live-client)
         # setup-solana-side.sh compiles the host-listener (coprocessor/fhevm-engine/target) and the
         # live-client (solana/scripts/e2e/live-client/target) natively on the runner, plus the
@@ -194,7 +180,7 @@ jobs:
           key: ${{ runner.os }}-cargo-solana-e2e-host-${{ hashFiles('coprocessor/fhevm-engine/Cargo.lock', 'solana/scripts/e2e/live-client/Cargo.lock') }}
           restore-keys: ${{ runner.os }}-cargo-solana-e2e-host-
 
-      - name: Bring up fresh stack + Solana side (clean-e2e.sh)
+      - name: Bring up fresh lifecycle-owned stack + demo
         # sccache S3 cache for the source-built Rust images (coprocessor + kms-connector). The
         # bucket/region/prefix mirror main's publishing CI (zama-ai/ci-templates common-docker.yml)
         # so builds share the same cache; the AWS creds reach docker as BuildKit secrets sourced
@@ -227,18 +213,13 @@ jobs:
           # t=1, from which the live client derives the 2t+1=3 on-chain certificate thresholds.
           SOLANA_E2E_SCENARIO: ${{ inputs.kms-mode == 'threshold' && 'solana-threshold-kms' || '' }}
           KMS_THRESHOLD: ${{ inputs.kms-mode == 'threshold' && '1' || '' }}
-        run: bash solana/scripts/e2e/clean-e2e.sh
+        run: bun run demo up
 
-      - name: Ensure @fhevm/sdk runtime deps resolve for full-vertical + the demo scripts
-        # clean-e2e's bring-up disturbs the SDK's resolved @noble/* (verified: the import resolves
-        # right after `bun install` above, but fails after clean-e2e — node walks up from the
-        # realpath'd sdk/js-sdk/src, whose node_modules clean-e2e perturbs). Reinstall the SDK's own
-        # runtime deps into src/node_modules — the first dir on that walk-up — right before the
-        # vertical, then assert the exact imports load (the solana export the vertical uses AND the
-        # vault subpath the demo seed/smoke use) so a resolution failure surfaces here (seconds)
-        # instead of mid-vertical (40+ min in).
+      - name: Verify @fhevm/sdk runtime deps for full-vertical + the demo
+        # Lifecycle bring-up installs the test-suite graph first, then leaves the SDK's own frozen
+        # graph/build as the final dependency state. Assert both public entrypoints before spending
+        # the remainder of the job on the vertical.
         run: |
-          ( cd "$GITHUB_WORKSPACE/sdk/js-sdk/src" && npm install --no-save --no-package-lock --install-strategy=shallow --workspaces=false )
           cd "$GITHUB_WORKSPACE/test-suite/fhevm"
           node --input-type=module -e "await import('@fhevm/sdk/solana'); console.log('@fhevm/sdk/solana imports OK')"
           node --input-type=module -e "await import('@fhevm/sdk/solana/vault'); console.log('@fhevm/sdk/solana/vault imports OK')"
@@ -247,43 +228,19 @@ jobs:
         run: bash solana/scripts/e2e/full-vertical.sh
 
       - name: Run the Solana e2e scenario suite (SDK-driven, against the up stack)
-        # The stack from clean-e2e is still up. These bun:test scenarios drive product arcs through
+        # The lifecycle-owned stack is still up. These bun:test scenarios drive product arcs through
         # @fhevm/sdk Solana actions only; the confidential-transfer arc (encrypt input ->
         # submitInputProof -> confidentialTransfer -> current user-decrypt) was moved here from
         # full-vertical.sh's [sdk-transfer] phase. See solana/docs/TESTING.md ("Scenario layer").
         working-directory: test-suite/fhevm
         run: bun run test:e2e
 
-      - name: Require a healthy validator before the demo phase
-        # demo-up.sh falls back to a full clean-e2e.sh re-bring-up (~40 min) when the validator is
-        # unhealthy — a local-dev convenience that cannot fit in the job's 90-min budget after the
-        # e2e phases, so it would end as a timeout kill with no failure logs or teardown. Fail fast
-        # and explicitly instead; a validator that died after passing the e2e phases is its own bug.
-        # Same probe demo-up.sh uses (VALIDATOR_RPC / getHealth).
-        run: |
-          curl -s -m2 http://127.0.0.1:8899 -X POST -H 'Content-Type: application/json' \
-            -d '{"jsonrpc":"2.0","id":1,"method":"getHealth"}' | grep -q '"ok"' \
-            || { echo "::error::validator unhealthy after the e2e phases; refusing demo-up.sh's ~40-min re-bring-up in CI"; exit 1; }
+      - name: Require a healthy owned boot before the demo phase
+        run: bun run demo status
 
-      - name: Demo bring-up (deploy demo programs, seed, write config JSON) — demo-up.sh
-        # Start of the demo phase (folded in from the retired solana-demo-acceptance workflow).
-        # The stack from clean-e2e is still up (guarded above); demo-up.sh detects that and skips
-        # re-bringup (re-seeds fresh against the running stack), then deploys the two demo programs
-        # and seeds.
-        id: demo-up
-        run: bash solana/scripts/demo/demo-up.sh
-
-      - name: Start the demo faucet (background; the smoke funds its persona through it)
-        working-directory: test-suite/fhevm
-        run: |
-          bun run demo:faucet > /tmp/solana-demo-faucet.log 2>&1 &
-          echo "FAUCET_PID=$!" >> "$GITHUB_ENV"
-          # Wait for the faucet health endpoint before proceeding.
-          for _ in $(seq 1 30); do
-            if curl -fsS http://127.0.0.1:8090/health >/dev/null 2>&1; then echo "faucet up"; exit 0; fi
-            sleep 1
-          done
-          echo "faucet did not become healthy" >&2; cat /tmp/solana-demo-faucet.log >&2; exit 1
+      - name: Refresh demo programs, state, and authorization
+        id: demo-reseed
+        run: bun run demo reseed
 
       - name: Deposit-arc smoke (bun run demo:smoke) — full arc live via the SDK, hard gate
         # demo:smoke sets RUN_DEMO_SCENARIOS=1 itself, so the deposit-arc scenario only runs here
@@ -294,31 +251,22 @@ jobs:
 
       - name: Browser-reality checks (CORS preflight + faucet endpoints)
         # Runs even when the smoke fails (browser-reality is an independent acceptance criterion;
-        # an arc failure must not mask a CORS regression) — but only once the demo bring-up
+        # an arc failure must not mask a CORS regression) — but only once the demo reseed
         # succeeded, so an earlier e2e-phase failure does not fire it against a stack with no
         # demo layer.
-        if: ${{ !cancelled() && steps.demo-up.outcome == 'success' }}
+        if: ${{ !cancelled() && steps.demo-reseed.outcome == 'success' }}
         working-directory: test-suite/fhevm
         # fetch() OPTIONS preflights (relayer with RELAYER_PERMISSIVE_CORS on, proof service, faucet)
-        # from a browser Origin, asserting permissive CORS headers come back — DEMO_ORIGIN comes
-        # from the job-level env. TS, not bash: the header assertions are logic (repo policy keeps
-        # bash to zero-logic glue).
+        # from the exact 127.0.0.1 dApp origin, then exercise the current boot capability against the
+        # protected faucet and Vite session. TS, not bash: the assertions are logic.
         run: bun run demo:check-cors
-
-      - name: Stop the demo faucet
-        # When an earlier failure skips the faucet-start step, FAUCET_PID is never written to
-        # GITHUB_ENV; a bare `kill "${FAUCET_PID:-0}"` would then run `kill 0`, signalling this
-        # step's own process group and failing the step. The unset case must be a clean no-op.
-        if: ${{ always() }}
-        run: if [ -n "${FAUCET_PID:-}" ]; then kill "$FAUCET_PID" 2>/dev/null || true; fi
 
       - name: Collect stack logs on failure
         if: ${{ failure() }}
         run: |
           mkdir -p /tmp/solana-e2e-logs
-          # validator + listener + fetcher logs all land in /tmp/solana-*.log; the demo faucet log
-          # (/tmp/solana-demo-faucet.log) matches the same glob, so the demo phase needs no extra
-          # collection of its own.
+          # Capture every lifecycle-owned native and container log before exact teardown.
+          bun run demo logs --no-follow > /tmp/solana-e2e-logs/lifecycle.log 2>&1 || true
           cp /tmp/solana-*.log /tmp/solana-e2e-logs/ 2>/dev/null || true
           docker ps -a > /tmp/solana-e2e-logs/docker-ps.txt 2>&1 || true
           # Dump every container's logs so a downstream failure (e.g. public-decrypt: relayer ->
@@ -339,10 +287,4 @@ jobs:
 
       - name: Tear down the stack
         if: ${{ always() }}
-        working-directory: test-suite/fhevm
-        run: |
-          # The native solana-test-validator is started by setup-solana-side.sh and isn't part of
-          # the fhevm-cli compose, so kill it explicitly — otherwise it survives `fhevm-cli clean`
-          # and holds port 8899 on non-disposable runners.
-          pkill -f solana-test-validator || true
-          ./fhevm-cli clean || true
+        run: bun run demo down
