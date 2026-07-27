@@ -250,9 +250,11 @@ contract GatewayConfig is IGatewayConfig, Ownable2StepUpgradeable, UUPSUpgradeab
      * @dev UPGRADE ORDER: this implementation drops `getPriorityCoprocessorTxSender()`, which the
      *      previously deployed `CiphertextCommits` and `InputVerification` call on every response.
      *      Upgrading `GatewayConfig` before them — the order used up to v0.13.x — would make those
-     *      responses revert on the missing selector until both are upgraded. Either batch the three
-     *      upgrades in one atomic transaction, or upgrade `CiphertextCommits` and `InputVerification`
-     *      first and `GatewayConfig` last; the new implementations no longer read that getter.
+     *      responses revert on the missing selector until both are upgraded. Gateway upgrades reach
+     *      this chain as one `sendRemoteProposal` batch relayed in a single LayerZero message, so
+     *      putting every `upgradeToAndCall` in one proposal closes the window entirely. If they are
+     *      ever split across proposals, upgrade `CiphertextCommits` and `InputVerification` first and
+     *      `GatewayConfig` last; the new implementations no longer read that getter.
      * @dev Before upgrading, every host-chain `InputVerifier` must already accept the full gateway
      *      coprocessor signer set at the gateway threshold. While priority mode was active the gateway
      *      emitted a single signature, so a host still pinned to one signer would start rejecting the
