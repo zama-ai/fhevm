@@ -88,28 +88,6 @@ export type KmsScenarioBlock = {
   mode?: KmsMode;
   parties?: number;
   threshold?: number;
-  fheParams?: KmsFheParams;
-};
-
-/** Fully-resolved KMS topology carried on the resolved scenario / StackSpec. */
-export type ResolvedKmsTopology = {
-  mode: KmsMode;
-  parties: number;
-  threshold: number;
-  fheParams: KmsFheParams;
-};
-
-/** KMS deployment mode for a scenario. */
-export type KmsMode = "centralized" | "threshold";
-
-/** FHE parameter set: Test = small/fast for CI, Default = prod-size. */
-export type KmsFheParams = "Test" | "Default";
-
-/** Raw `kms` block as written in a scenario YAML. */
-export type KmsScenarioBlock = {
-  mode?: KmsMode;
-  parties?: number;
-  threshold?: number;
   /** Initial on-chain committee size; defaults to `parties`. When `< parties` the extra cores boot
    *  as spares (peers=None) so a context switch can rotate one in (e.g. a node swap). */
   committeeSize?: number;

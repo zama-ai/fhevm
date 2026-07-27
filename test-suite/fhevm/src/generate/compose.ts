@@ -725,54 +725,6 @@ export const buildKmsConnectorOverride = async (plan: StackSpec) => {
   return withSccacheSecrets("kms-connector", { services });
 };
 
-/**
- * Replicates the KMS connector tier once per threshold party (mirrors
- * buildCoprocessorOverride). Party 1 keeps the base `kms-connector-*` names so
- * it replaces the single-node template; parties 2..N get `kms-connector-{i}-*`.
- * Each party's services read `kms-connector[.i].env` (own core endpoint, signer
- * key, DB) and depend on that party's own db-migration.
- *
- * `--override kms-connector` behaves exactly as in centralized mode: overridden
- * services run the locally built image on EVERY party. Only the party-1 (base
- * name) clone carries the build spec — maybeBuild builds by base service name —
- * so the image is built once and parties 2..N reference the same tag. Without
- * an override every party runs the resolved published image (secure threshold
- * keygen needs no connector changes).
- */
-export const buildKmsConnectorOverride = async (plan: StackSpec) => {
-  const doc = rewriteComposePaths(await loadComposeDoc("kms-connector"));
-  const overridden = overriddenServicesForComponent(plan, "kms-connector");
-  const services: Record<string, Record<string, unknown>> = {};
-  for (let party = 1; party <= plan.kms.parties; party += 1) {
-    const prefix = `${kmsConnectorPrefix(party)}-`;
-    const envFileValue = envPath(kmsConnectorEnvName(party));
-    for (const [name, service] of Object.entries(doc.services)) {
-      const suffix = name.replace(/^kms-connector-/, "");
-      const serviceName = `${prefix}${suffix}`;
-      const next = structuredClone(service);
-      next.container_name = serviceName;
-      next.env_file = [envFileValue];
-      applyBuildPolicy(next, overridden.has(name));
-      if (party === 1 && overridden.has(name)) {
-        const build = localBuildSpecFor("kms-connector", name);
-        if (build) {
-          next.build = build;
-        }
-      }
-      if (next.depends_on && typeof next.depends_on === "object") {
-        next.depends_on = Object.fromEntries(
-          Object.entries(next.depends_on as Record<string, unknown>).map(([dep, value]) => [
-            dep.replace(/^kms-connector-/, prefix),
-            value,
-          ]),
-        );
-      }
-      services[serviceName] = next;
-    }
-  }
-  return { services };
-};
-
 /** Builds the generated compose override for one component. */
 const buildComposeOverride = async (component: string, plan: StackSpec) => {
   if (component === "coprocessor") {
