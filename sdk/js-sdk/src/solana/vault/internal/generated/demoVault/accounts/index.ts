@@ -6,5 +6,4 @@
  * @see https://github.com/codama-idl/codama
  */
 
-export * from './harvest.js';
-export * from './initializeVault.js';
+export * from './vault.js';

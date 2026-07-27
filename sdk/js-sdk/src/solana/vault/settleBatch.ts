@@ -17,6 +17,7 @@ import type { Bytes32 } from '../../core/types/primitives.js';
 import { bytesToHex, hexToBytes } from '../../core/base/bytes.js';
 import type { FhevmSolanaChain } from '../../core/types/fhevmSolanaChain.js';
 import type { FhevmRuntime } from '../../core/types/coreFhevmRuntime.js';
+import type { RelayerPublicDecryptOptions } from '../../core/types/relayer.js';
 import { publicDecryptCertificate } from '../actions/publicDecryptCertificate.js';
 import {
   CONFIDENTIAL_TOKEN_PROGRAM_ADDRESS,
@@ -60,6 +61,8 @@ export type SolanaVaultSettleOptions = {
   readonly lookupTableAddress: Address;
   readonly authorityFundingLamports: bigint;
   readonly computeUnitLimit?: number | undefined;
+  /** Bounds and observes the relayer/KMS certificate request independently of the on-chain send. */
+  readonly certificateOptions?: RelayerPublicDecryptOptions | undefined;
 };
 
 /**
@@ -138,6 +141,7 @@ export async function settleBatch(
       peaks: encryptedValueAccount.peaks,
       leafCount: encryptedValueAccount.leafCount,
       mmrProofBytes: proof.mmrProofBytes,
+      options: options.certificateOptions,
     },
   );
 

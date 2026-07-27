@@ -15,6 +15,7 @@ import {
   setTransactionMessageLifetimeUsingBlockhash,
   signTransactionMessageWithSigners,
   type Address,
+  type Blockhash,
   type Rpc,
   type RpcSubscriptions,
   type Signature,
@@ -68,6 +69,14 @@ export type SolanaVaultJoinParameters = {
   readonly joinConfidentialMint: Address;
   readonly hostConfig: Address;
   readonly computeUnitLimit?: number | undefined;
+  /** Called after successful simulation and immediately before submission, for durable recovery journals. */
+  readonly onTransactionSigned?:
+    | ((transaction: {
+        readonly signature: Signature;
+        readonly blockhash: Blockhash;
+        readonly lastValidBlockHeight: bigint;
+      }) => void | Promise<void>)
+    | undefined;
 };
 
 async function eventAuthority(programAddress: Address): Promise<Address> {
@@ -167,6 +176,12 @@ export async function joinBatch(
     const logs = simulation.value.logs?.join('\n') ?? '';
     throw new Error(logs.length > 0 ? `join simulation failed: ${err}\n${logs}` : `join simulation failed: ${err}`);
   }
+  const signature = getSignatureFromTransaction(transaction);
+  await parameters.onTransactionSigned?.({
+    signature,
+    blockhash: latestBlockhash.blockhash,
+    lastValidBlockHeight: latestBlockhash.lastValidBlockHeight,
+  });
   await sendAndConfirmTransactionFactory({ rpc: parameters.rpc, rpcSubscriptions: parameters.rpcSubscriptions })(
     transaction,
     {
@@ -174,5 +189,5 @@ export async function joinBatch(
       skipPreflight: true,
     },
   );
-  return getSignatureFromTransaction(transaction);
+  return signature;
 }

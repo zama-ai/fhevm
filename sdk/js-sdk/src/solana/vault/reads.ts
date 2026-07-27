@@ -29,8 +29,8 @@ export type JoinRecordState = JoinRecord;
 type SolanaRpc = Rpc<SolanaRpcApi>;
 
 /** Reads a batcher config via the generated `Batcher` decoder. */
-export async function getBatcher(rpc: SolanaRpc, batcher: Address): Promise<BatcherState> {
-  const account = await fetchBatcher(rpc, batcher);
+export async function getBatcher(rpc: SolanaRpc, batcher: Address, config?: FetchAccountConfig): Promise<BatcherState> {
+  const account = await fetchBatcher(rpc, batcher, config);
   return account.data;
 }
 
@@ -57,14 +57,25 @@ export async function getJoinRecord(
 export async function getCurrentBatch(
   rpc: SolanaRpc,
   roots: VaultDemoRoots,
+  config?: FetchAccountConfig,
 ): Promise<{ index: bigint; addresses: BatchAddresses; state: BatchState }> {
-  const batcher = await getBatcher(rpc, roots.batcher);
+  const batcher = await getBatcher(rpc, roots.batcher, config);
   if (batcher.nextBatchIndex === 0n) {
     throw new Error(`batcher ${roots.batcher} has opened no batches yet (nextBatchIndex is 0)`);
   }
   const index = batcher.nextBatchIndex - 1n;
+  return getBatchByIndex(rpc, roots, index, config);
+}
+
+/** Reads one pinned historical or current batch by its index. */
+export async function getBatchByIndex(
+  rpc: SolanaRpc,
+  roots: VaultDemoRoots,
+  index: bigint,
+  config?: FetchAccountConfig,
+): Promise<{ index: bigint; addresses: BatchAddresses; state: BatchState }> {
   const addresses = await deriveBatchAddresses(roots, index);
-  const account = await fetchBatch(rpc, addresses.batch);
+  const account = await fetchBatch(rpc, addresses.batch, config);
   return { index, addresses, state: account.data };
 }
 
