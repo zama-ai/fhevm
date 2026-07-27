@@ -2447,7 +2447,6 @@ pub mod FHEVMExecutor {
                 > as alloy_sol_types::SolType>::abi_encoded_size(self)
             }
         }
-        #[automatically_derived]
         impl FheType {
             /// The Solidity type name.
             pub const NAME: &'static str = stringify!(@ name);
@@ -2566,6 +2565,7 @@ error ACLNotAllowed(bytes32 handle, address account);
     const _: () = {
         use alloy::sol_types as alloy_sol_types;
         #[doc(hidden)]
+        #[allow(dead_code)]
         type UnderlyingSolTuple<'a> = (
             alloy::sol_types::sol_data::FixedBytes<32>,
             alloy::sol_types::sol_data::Address,
@@ -2658,6 +2658,7 @@ error AddressEmptyCode(address target);
     const _: () = {
         use alloy::sol_types as alloy_sol_types;
         #[doc(hidden)]
+        #[allow(dead_code)]
         type UnderlyingSolTuple<'a> = (alloy::sol_types::sol_data::Address,);
         #[doc(hidden)]
         type UnderlyingRustTuple<'a> = (alloy::sol_types::private::Address,);
@@ -2735,6 +2736,7 @@ error DivisionByZero();
     const _: () = {
         use alloy::sol_types as alloy_sol_types;
         #[doc(hidden)]
+        #[allow(dead_code)]
         type UnderlyingSolTuple<'a> = ();
         #[doc(hidden)]
         type UnderlyingRustTuple<'a> = ();
@@ -2811,6 +2813,7 @@ error ERC1967InvalidImplementation(address implementation);
     const _: () = {
         use alloy::sol_types as alloy_sol_types;
         #[doc(hidden)]
+        #[allow(dead_code)]
         type UnderlyingSolTuple<'a> = (alloy::sol_types::sol_data::Address,);
         #[doc(hidden)]
         type UnderlyingRustTuple<'a> = (alloy::sol_types::private::Address,);
@@ -2890,6 +2893,7 @@ error ERC1967NonPayable();
     const _: () = {
         use alloy::sol_types as alloy_sol_types;
         #[doc(hidden)]
+        #[allow(dead_code)]
         type UnderlyingSolTuple<'a> = ();
         #[doc(hidden)]
         type UnderlyingRustTuple<'a> = ();
@@ -2968,6 +2972,7 @@ error FHECollectionSizeInvalid(uint256 size, uint256 limit);
     const _: () = {
         use alloy::sol_types as alloy_sol_types;
         #[doc(hidden)]
+        #[allow(dead_code)]
         type UnderlyingSolTuple<'a> = (
             alloy::sol_types::sol_data::Uint<256>,
             alloy::sol_types::sol_data::Uint<256>,
@@ -3059,6 +3064,7 @@ error FailedCall();
     const _: () = {
         use alloy::sol_types as alloy_sol_types;
         #[doc(hidden)]
+        #[allow(dead_code)]
         type UnderlyingSolTuple<'a> = ();
         #[doc(hidden)]
         type UnderlyingRustTuple<'a> = ();
@@ -3132,6 +3138,7 @@ error IncompatibleTypes();
     const _: () = {
         use alloy::sol_types as alloy_sol_types;
         #[doc(hidden)]
+        #[allow(dead_code)]
         type UnderlyingSolTuple<'a> = ();
         #[doc(hidden)]
         type UnderlyingRustTuple<'a> = ();
@@ -3205,6 +3212,7 @@ error InvalidInitialization();
     const _: () = {
         use alloy::sol_types as alloy_sol_types;
         #[doc(hidden)]
+        #[allow(dead_code)]
         type UnderlyingSolTuple<'a> = ();
         #[doc(hidden)]
         type UnderlyingRustTuple<'a> = ();
@@ -3278,6 +3286,7 @@ error InvalidMulDivScalarByte();
     const _: () = {
         use alloy::sol_types as alloy_sol_types;
         #[doc(hidden)]
+        #[allow(dead_code)]
         type UnderlyingSolTuple<'a> = ();
         #[doc(hidden)]
         type UnderlyingRustTuple<'a> = ();
@@ -3351,6 +3360,7 @@ error InvalidType();
     const _: () = {
         use alloy::sol_types as alloy_sol_types;
         #[doc(hidden)]
+        #[allow(dead_code)]
         type UnderlyingSolTuple<'a> = ();
         #[doc(hidden)]
         type UnderlyingRustTuple<'a> = ();
@@ -3424,6 +3434,7 @@ error IsNotScalar();
     const _: () = {
         use alloy::sol_types as alloy_sol_types;
         #[doc(hidden)]
+        #[allow(dead_code)]
         type UnderlyingSolTuple<'a> = ();
         #[doc(hidden)]
         type UnderlyingRustTuple<'a> = ();
@@ -3500,6 +3511,7 @@ error NotHostOwner(address sender);
     const _: () = {
         use alloy::sol_types as alloy_sol_types;
         #[doc(hidden)]
+        #[allow(dead_code)]
         type UnderlyingSolTuple<'a> = (alloy::sol_types::sol_data::Address,);
         #[doc(hidden)]
         type UnderlyingRustTuple<'a> = (alloy::sol_types::private::Address,);
@@ -3577,6 +3589,7 @@ error NotInitializing();
     const _: () = {
         use alloy::sol_types as alloy_sol_types;
         #[doc(hidden)]
+        #[allow(dead_code)]
         type UnderlyingSolTuple<'a> = ();
         #[doc(hidden)]
         type UnderlyingRustTuple<'a> = ();
@@ -3650,6 +3663,7 @@ error NotInitializingFromEmptyProxy();
     const _: () = {
         use alloy::sol_types as alloy_sol_types;
         #[doc(hidden)]
+        #[allow(dead_code)]
         type UnderlyingSolTuple<'a> = ();
         #[doc(hidden)]
         type UnderlyingRustTuple<'a> = ();
@@ -3725,6 +3739,7 @@ error NotPowerOfTwo();
     const _: () = {
         use alloy::sol_types as alloy_sol_types;
         #[doc(hidden)]
+        #[allow(dead_code)]
         type UnderlyingSolTuple<'a> = ();
         #[doc(hidden)]
         type UnderlyingRustTuple<'a> = ();
@@ -3798,6 +3813,7 @@ error ScalarByteIsNotBoolean();
     const _: () = {
         use alloy::sol_types as alloy_sol_types;
         #[doc(hidden)]
+        #[allow(dead_code)]
         type UnderlyingSolTuple<'a> = ();
         #[doc(hidden)]
         type UnderlyingRustTuple<'a> = ();
@@ -3871,6 +3887,7 @@ error UUPSUnauthorizedCallContext();
     const _: () = {
         use alloy::sol_types as alloy_sol_types;
         #[doc(hidden)]
+        #[allow(dead_code)]
         type UnderlyingSolTuple<'a> = ();
         #[doc(hidden)]
         type UnderlyingRustTuple<'a> = ();
@@ -3949,6 +3966,7 @@ error UUPSUnsupportedProxiableUUID(bytes32 slot);
     const _: () = {
         use alloy::sol_types as alloy_sol_types;
         #[doc(hidden)]
+        #[allow(dead_code)]
         type UnderlyingSolTuple<'a> = (alloy::sol_types::sol_data::FixedBytes<32>,);
         #[doc(hidden)]
         type UnderlyingRustTuple<'a> = (alloy::sol_types::private::FixedBytes<32>,);
@@ -4028,6 +4046,7 @@ error UnsupportedType();
     const _: () = {
         use alloy::sol_types as alloy_sol_types;
         #[doc(hidden)]
+        #[allow(dead_code)]
         type UnderlyingSolTuple<'a> = ();
         #[doc(hidden)]
         type UnderlyingRustTuple<'a> = ();
@@ -4101,6 +4120,7 @@ error UpperBoundAboveMaxTypeValue();
     const _: () = {
         use alloy::sol_types as alloy_sol_types;
         #[doc(hidden)]
+        #[allow(dead_code)]
         type UnderlyingSolTuple<'a> = ();
         #[doc(hidden)]
         type UnderlyingRustTuple<'a> = ();
@@ -8633,6 +8653,7 @@ constructor();
         use alloy::sol_types as alloy_sol_types;
         {
             #[doc(hidden)]
+            #[allow(dead_code)]
             type UnderlyingSolTuple<'a> = ();
             #[doc(hidden)]
             type UnderlyingRustTuple<'a> = ();
@@ -8708,6 +8729,7 @@ function UPGRADE_INTERFACE_VERSION() external view returns (string memory);
         use alloy::sol_types as alloy_sol_types;
         {
             #[doc(hidden)]
+            #[allow(dead_code)]
             type UnderlyingSolTuple<'a> = ();
             #[doc(hidden)]
             type UnderlyingRustTuple<'a> = ();
@@ -8741,6 +8763,7 @@ function UPGRADE_INTERFACE_VERSION() external view returns (string memory);
         }
         {
             #[doc(hidden)]
+            #[allow(dead_code)]
             type UnderlyingSolTuple<'a> = (alloy::sol_types::sol_data::String,);
             #[doc(hidden)]
             type UnderlyingRustTuple<'a> = (alloy::sol_types::private::String,);
@@ -8860,6 +8883,7 @@ function cast(bytes32 ct, FheType toType) external returns (bytes32 result);
         use alloy::sol_types as alloy_sol_types;
         {
             #[doc(hidden)]
+            #[allow(dead_code)]
             type UnderlyingSolTuple<'a> = (
                 alloy::sol_types::sol_data::FixedBytes<32>,
                 FheType,
@@ -8900,6 +8924,7 @@ function cast(bytes32 ct, FheType toType) external returns (bytes32 result);
         }
         {
             #[doc(hidden)]
+            #[allow(dead_code)]
             type UnderlyingSolTuple<'a> = (alloy::sol_types::sol_data::FixedBytes<32>,);
             #[doc(hidden)]
             type UnderlyingRustTuple<'a> = (alloy::sol_types::private::FixedBytes<32>,);
@@ -9024,6 +9049,7 @@ function fheAdd(bytes32 lhs, bytes32 rhs, bytes1 scalarByte) external returns (b
         use alloy::sol_types as alloy_sol_types;
         {
             #[doc(hidden)]
+            #[allow(dead_code)]
             type UnderlyingSolTuple<'a> = (
                 alloy::sol_types::sol_data::FixedBytes<32>,
                 alloy::sol_types::sol_data::FixedBytes<32>,
@@ -9067,6 +9093,7 @@ function fheAdd(bytes32 lhs, bytes32 rhs, bytes1 scalarByte) external returns (b
         }
         {
             #[doc(hidden)]
+            #[allow(dead_code)]
             type UnderlyingSolTuple<'a> = (alloy::sol_types::sol_data::FixedBytes<32>,);
             #[doc(hidden)]
             type UnderlyingRustTuple<'a> = (alloy::sol_types::private::FixedBytes<32>,);
@@ -9200,6 +9227,7 @@ function fheBitAnd(bytes32 lhs, bytes32 rhs, bytes1 scalarByte) external returns
         use alloy::sol_types as alloy_sol_types;
         {
             #[doc(hidden)]
+            #[allow(dead_code)]
             type UnderlyingSolTuple<'a> = (
                 alloy::sol_types::sol_data::FixedBytes<32>,
                 alloy::sol_types::sol_data::FixedBytes<32>,
@@ -9243,6 +9271,7 @@ function fheBitAnd(bytes32 lhs, bytes32 rhs, bytes1 scalarByte) external returns
         }
         {
             #[doc(hidden)]
+            #[allow(dead_code)]
             type UnderlyingSolTuple<'a> = (alloy::sol_types::sol_data::FixedBytes<32>,);
             #[doc(hidden)]
             type UnderlyingRustTuple<'a> = (alloy::sol_types::private::FixedBytes<32>,);
@@ -9376,6 +9405,7 @@ function fheBitOr(bytes32 lhs, bytes32 rhs, bytes1 scalarByte) external returns 
         use alloy::sol_types as alloy_sol_types;
         {
             #[doc(hidden)]
+            #[allow(dead_code)]
             type UnderlyingSolTuple<'a> = (
                 alloy::sol_types::sol_data::FixedBytes<32>,
                 alloy::sol_types::sol_data::FixedBytes<32>,
@@ -9419,6 +9449,7 @@ function fheBitOr(bytes32 lhs, bytes32 rhs, bytes1 scalarByte) external returns 
         }
         {
             #[doc(hidden)]
+            #[allow(dead_code)]
             type UnderlyingSolTuple<'a> = (alloy::sol_types::sol_data::FixedBytes<32>,);
             #[doc(hidden)]
             type UnderlyingRustTuple<'a> = (alloy::sol_types::private::FixedBytes<32>,);
@@ -9552,6 +9583,7 @@ function fheBitXor(bytes32 lhs, bytes32 rhs, bytes1 scalarByte) external returns
         use alloy::sol_types as alloy_sol_types;
         {
             #[doc(hidden)]
+            #[allow(dead_code)]
             type UnderlyingSolTuple<'a> = (
                 alloy::sol_types::sol_data::FixedBytes<32>,
                 alloy::sol_types::sol_data::FixedBytes<32>,
@@ -9595,6 +9627,7 @@ function fheBitXor(bytes32 lhs, bytes32 rhs, bytes1 scalarByte) external returns
         }
         {
             #[doc(hidden)]
+            #[allow(dead_code)]
             type UnderlyingSolTuple<'a> = (alloy::sol_types::sol_data::FixedBytes<32>,);
             #[doc(hidden)]
             type UnderlyingRustTuple<'a> = (alloy::sol_types::private::FixedBytes<32>,);
@@ -9728,6 +9761,7 @@ function fheDiv(bytes32 lhs, bytes32 rhs, bytes1 scalarByte) external returns (b
         use alloy::sol_types as alloy_sol_types;
         {
             #[doc(hidden)]
+            #[allow(dead_code)]
             type UnderlyingSolTuple<'a> = (
                 alloy::sol_types::sol_data::FixedBytes<32>,
                 alloy::sol_types::sol_data::FixedBytes<32>,
@@ -9771,6 +9805,7 @@ function fheDiv(bytes32 lhs, bytes32 rhs, bytes1 scalarByte) external returns (b
         }
         {
             #[doc(hidden)]
+            #[allow(dead_code)]
             type UnderlyingSolTuple<'a> = (alloy::sol_types::sol_data::FixedBytes<32>,);
             #[doc(hidden)]
             type UnderlyingRustTuple<'a> = (alloy::sol_types::private::FixedBytes<32>,);
@@ -9904,6 +9939,7 @@ function fheEq(bytes32 lhs, bytes32 rhs, bytes1 scalarByte) external returns (by
         use alloy::sol_types as alloy_sol_types;
         {
             #[doc(hidden)]
+            #[allow(dead_code)]
             type UnderlyingSolTuple<'a> = (
                 alloy::sol_types::sol_data::FixedBytes<32>,
                 alloy::sol_types::sol_data::FixedBytes<32>,
@@ -9947,6 +9983,7 @@ function fheEq(bytes32 lhs, bytes32 rhs, bytes1 scalarByte) external returns (by
         }
         {
             #[doc(hidden)]
+            #[allow(dead_code)]
             type UnderlyingSolTuple<'a> = (alloy::sol_types::sol_data::FixedBytes<32>,);
             #[doc(hidden)]
             type UnderlyingRustTuple<'a> = (alloy::sol_types::private::FixedBytes<32>,);
@@ -10080,6 +10117,7 @@ function fheGe(bytes32 lhs, bytes32 rhs, bytes1 scalarByte) external returns (by
         use alloy::sol_types as alloy_sol_types;
         {
             #[doc(hidden)]
+            #[allow(dead_code)]
             type UnderlyingSolTuple<'a> = (
                 alloy::sol_types::sol_data::FixedBytes<32>,
                 alloy::sol_types::sol_data::FixedBytes<32>,
@@ -10123,6 +10161,7 @@ function fheGe(bytes32 lhs, bytes32 rhs, bytes1 scalarByte) external returns (by
         }
         {
             #[doc(hidden)]
+            #[allow(dead_code)]
             type UnderlyingSolTuple<'a> = (alloy::sol_types::sol_data::FixedBytes<32>,);
             #[doc(hidden)]
             type UnderlyingRustTuple<'a> = (alloy::sol_types::private::FixedBytes<32>,);
@@ -10256,6 +10295,7 @@ function fheGt(bytes32 lhs, bytes32 rhs, bytes1 scalarByte) external returns (by
         use alloy::sol_types as alloy_sol_types;
         {
             #[doc(hidden)]
+            #[allow(dead_code)]
             type UnderlyingSolTuple<'a> = (
                 alloy::sol_types::sol_data::FixedBytes<32>,
                 alloy::sol_types::sol_data::FixedBytes<32>,
@@ -10299,6 +10339,7 @@ function fheGt(bytes32 lhs, bytes32 rhs, bytes1 scalarByte) external returns (by
         }
         {
             #[doc(hidden)]
+            #[allow(dead_code)]
             type UnderlyingSolTuple<'a> = (alloy::sol_types::sol_data::FixedBytes<32>,);
             #[doc(hidden)]
             type UnderlyingRustTuple<'a> = (alloy::sol_types::private::FixedBytes<32>,);
@@ -10432,6 +10473,7 @@ function fheIfThenElse(bytes32 control, bytes32 ifTrue, bytes32 ifFalse) externa
         use alloy::sol_types as alloy_sol_types;
         {
             #[doc(hidden)]
+            #[allow(dead_code)]
             type UnderlyingSolTuple<'a> = (
                 alloy::sol_types::sol_data::FixedBytes<32>,
                 alloy::sol_types::sol_data::FixedBytes<32>,
@@ -10475,6 +10517,7 @@ function fheIfThenElse(bytes32 control, bytes32 ifTrue, bytes32 ifFalse) externa
         }
         {
             #[doc(hidden)]
+            #[allow(dead_code)]
             type UnderlyingSolTuple<'a> = (alloy::sol_types::sol_data::FixedBytes<32>,);
             #[doc(hidden)]
             type UnderlyingRustTuple<'a> = (alloy::sol_types::private::FixedBytes<32>,);
@@ -10610,6 +10653,7 @@ function fheIsIn(bytes32 value, bytes32[] memory values, FheType valueType) exte
         use alloy::sol_types as alloy_sol_types;
         {
             #[doc(hidden)]
+            #[allow(dead_code)]
             type UnderlyingSolTuple<'a> = (
                 alloy::sol_types::sol_data::FixedBytes<32>,
                 alloy::sol_types::sol_data::Array<
@@ -10657,6 +10701,7 @@ function fheIsIn(bytes32 value, bytes32[] memory values, FheType valueType) exte
         }
         {
             #[doc(hidden)]
+            #[allow(dead_code)]
             type UnderlyingSolTuple<'a> = (alloy::sol_types::sol_data::FixedBytes<32>,);
             #[doc(hidden)]
             type UnderlyingRustTuple<'a> = (alloy::sol_types::private::FixedBytes<32>,);
@@ -10790,6 +10835,7 @@ function fheLe(bytes32 lhs, bytes32 rhs, bytes1 scalarByte) external returns (by
         use alloy::sol_types as alloy_sol_types;
         {
             #[doc(hidden)]
+            #[allow(dead_code)]
             type UnderlyingSolTuple<'a> = (
                 alloy::sol_types::sol_data::FixedBytes<32>,
                 alloy::sol_types::sol_data::FixedBytes<32>,
@@ -10833,6 +10879,7 @@ function fheLe(bytes32 lhs, bytes32 rhs, bytes1 scalarByte) external returns (by
         }
         {
             #[doc(hidden)]
+            #[allow(dead_code)]
             type UnderlyingSolTuple<'a> = (alloy::sol_types::sol_data::FixedBytes<32>,);
             #[doc(hidden)]
             type UnderlyingRustTuple<'a> = (alloy::sol_types::private::FixedBytes<32>,);
@@ -10966,6 +11013,7 @@ function fheLt(bytes32 lhs, bytes32 rhs, bytes1 scalarByte) external returns (by
         use alloy::sol_types as alloy_sol_types;
         {
             #[doc(hidden)]
+            #[allow(dead_code)]
             type UnderlyingSolTuple<'a> = (
                 alloy::sol_types::sol_data::FixedBytes<32>,
                 alloy::sol_types::sol_data::FixedBytes<32>,
@@ -11009,6 +11057,7 @@ function fheLt(bytes32 lhs, bytes32 rhs, bytes1 scalarByte) external returns (by
         }
         {
             #[doc(hidden)]
+            #[allow(dead_code)]
             type UnderlyingSolTuple<'a> = (alloy::sol_types::sol_data::FixedBytes<32>,);
             #[doc(hidden)]
             type UnderlyingRustTuple<'a> = (alloy::sol_types::private::FixedBytes<32>,);
@@ -11142,6 +11191,7 @@ function fheMax(bytes32 lhs, bytes32 rhs, bytes1 scalarByte) external returns (b
         use alloy::sol_types as alloy_sol_types;
         {
             #[doc(hidden)]
+            #[allow(dead_code)]
             type UnderlyingSolTuple<'a> = (
                 alloy::sol_types::sol_data::FixedBytes<32>,
                 alloy::sol_types::sol_data::FixedBytes<32>,
@@ -11185,6 +11235,7 @@ function fheMax(bytes32 lhs, bytes32 rhs, bytes1 scalarByte) external returns (b
         }
         {
             #[doc(hidden)]
+            #[allow(dead_code)]
             type UnderlyingSolTuple<'a> = (alloy::sol_types::sol_data::FixedBytes<32>,);
             #[doc(hidden)]
             type UnderlyingRustTuple<'a> = (alloy::sol_types::private::FixedBytes<32>,);
@@ -11318,6 +11369,7 @@ function fheMin(bytes32 lhs, bytes32 rhs, bytes1 scalarByte) external returns (b
         use alloy::sol_types as alloy_sol_types;
         {
             #[doc(hidden)]
+            #[allow(dead_code)]
             type UnderlyingSolTuple<'a> = (
                 alloy::sol_types::sol_data::FixedBytes<32>,
                 alloy::sol_types::sol_data::FixedBytes<32>,
@@ -11361,6 +11413,7 @@ function fheMin(bytes32 lhs, bytes32 rhs, bytes1 scalarByte) external returns (b
         }
         {
             #[doc(hidden)]
+            #[allow(dead_code)]
             type UnderlyingSolTuple<'a> = (alloy::sol_types::sol_data::FixedBytes<32>,);
             #[doc(hidden)]
             type UnderlyingRustTuple<'a> = (alloy::sol_types::private::FixedBytes<32>,);
@@ -11494,6 +11547,7 @@ function fheMul(bytes32 lhs, bytes32 rhs, bytes1 scalarByte) external returns (b
         use alloy::sol_types as alloy_sol_types;
         {
             #[doc(hidden)]
+            #[allow(dead_code)]
             type UnderlyingSolTuple<'a> = (
                 alloy::sol_types::sol_data::FixedBytes<32>,
                 alloy::sol_types::sol_data::FixedBytes<32>,
@@ -11537,6 +11591,7 @@ function fheMul(bytes32 lhs, bytes32 rhs, bytes1 scalarByte) external returns (b
         }
         {
             #[doc(hidden)]
+            #[allow(dead_code)]
             type UnderlyingSolTuple<'a> = (alloy::sol_types::sol_data::FixedBytes<32>,);
             #[doc(hidden)]
             type UnderlyingRustTuple<'a> = (alloy::sol_types::private::FixedBytes<32>,);
@@ -11672,6 +11727,7 @@ function fheMulDiv(bytes32 factor1, bytes32 factor2, bytes32 divisor, bytes1 sca
         use alloy::sol_types as alloy_sol_types;
         {
             #[doc(hidden)]
+            #[allow(dead_code)]
             type UnderlyingSolTuple<'a> = (
                 alloy::sol_types::sol_data::FixedBytes<32>,
                 alloy::sol_types::sol_data::FixedBytes<32>,
@@ -11718,6 +11774,7 @@ function fheMulDiv(bytes32 factor1, bytes32 factor2, bytes32 divisor, bytes1 sca
         }
         {
             #[doc(hidden)]
+            #[allow(dead_code)]
             type UnderlyingSolTuple<'a> = (alloy::sol_types::sol_data::FixedBytes<32>,);
             #[doc(hidden)]
             type UnderlyingRustTuple<'a> = (alloy::sol_types::private::FixedBytes<32>,);
@@ -11855,6 +11912,7 @@ function fheNe(bytes32 lhs, bytes32 rhs, bytes1 scalarByte) external returns (by
         use alloy::sol_types as alloy_sol_types;
         {
             #[doc(hidden)]
+            #[allow(dead_code)]
             type UnderlyingSolTuple<'a> = (
                 alloy::sol_types::sol_data::FixedBytes<32>,
                 alloy::sol_types::sol_data::FixedBytes<32>,
@@ -11898,6 +11956,7 @@ function fheNe(bytes32 lhs, bytes32 rhs, bytes1 scalarByte) external returns (by
         }
         {
             #[doc(hidden)]
+            #[allow(dead_code)]
             type UnderlyingSolTuple<'a> = (alloy::sol_types::sol_data::FixedBytes<32>,);
             #[doc(hidden)]
             type UnderlyingRustTuple<'a> = (alloy::sol_types::private::FixedBytes<32>,);
@@ -12027,6 +12086,7 @@ function fheNeg(bytes32 ct) external returns (bytes32 result);
         use alloy::sol_types as alloy_sol_types;
         {
             #[doc(hidden)]
+            #[allow(dead_code)]
             type UnderlyingSolTuple<'a> = (alloy::sol_types::sol_data::FixedBytes<32>,);
             #[doc(hidden)]
             type UnderlyingRustTuple<'a> = (alloy::sol_types::private::FixedBytes<32>,);
@@ -12058,6 +12118,7 @@ function fheNeg(bytes32 ct) external returns (bytes32 result);
         }
         {
             #[doc(hidden)]
+            #[allow(dead_code)]
             type UnderlyingSolTuple<'a> = (alloy::sol_types::sol_data::FixedBytes<32>,);
             #[doc(hidden)]
             type UnderlyingRustTuple<'a> = (alloy::sol_types::private::FixedBytes<32>,);
@@ -12177,6 +12238,7 @@ function fheNot(bytes32 ct) external returns (bytes32 result);
         use alloy::sol_types as alloy_sol_types;
         {
             #[doc(hidden)]
+            #[allow(dead_code)]
             type UnderlyingSolTuple<'a> = (alloy::sol_types::sol_data::FixedBytes<32>,);
             #[doc(hidden)]
             type UnderlyingRustTuple<'a> = (alloy::sol_types::private::FixedBytes<32>,);
@@ -12208,6 +12270,7 @@ function fheNot(bytes32 ct) external returns (bytes32 result);
         }
         {
             #[doc(hidden)]
+            #[allow(dead_code)]
             type UnderlyingSolTuple<'a> = (alloy::sol_types::sol_data::FixedBytes<32>,);
             #[doc(hidden)]
             type UnderlyingRustTuple<'a> = (alloy::sol_types::private::FixedBytes<32>,);
@@ -12327,6 +12390,7 @@ function fheRand(FheType randType) external returns (bytes32 result);
         use alloy::sol_types as alloy_sol_types;
         {
             #[doc(hidden)]
+            #[allow(dead_code)]
             type UnderlyingSolTuple<'a> = (FheType,);
             #[doc(hidden)]
             type UnderlyingRustTuple<'a> = (
@@ -12360,6 +12424,7 @@ function fheRand(FheType randType) external returns (bytes32 result);
         }
         {
             #[doc(hidden)]
+            #[allow(dead_code)]
             type UnderlyingSolTuple<'a> = (alloy::sol_types::sol_data::FixedBytes<32>,);
             #[doc(hidden)]
             type UnderlyingRustTuple<'a> = (alloy::sol_types::private::FixedBytes<32>,);
@@ -12477,6 +12542,7 @@ function fheRandBounded(uint256 upperBound, FheType randType) external returns (
         use alloy::sol_types as alloy_sol_types;
         {
             #[doc(hidden)]
+            #[allow(dead_code)]
             type UnderlyingSolTuple<'a> = (
                 alloy::sol_types::sol_data::Uint<256>,
                 FheType,
@@ -12517,6 +12583,7 @@ function fheRandBounded(uint256 upperBound, FheType randType) external returns (
         }
         {
             #[doc(hidden)]
+            #[allow(dead_code)]
             type UnderlyingSolTuple<'a> = (alloy::sol_types::sol_data::FixedBytes<32>,);
             #[doc(hidden)]
             type UnderlyingRustTuple<'a> = (alloy::sol_types::private::FixedBytes<32>,);
@@ -12643,6 +12710,7 @@ function fheRem(bytes32 lhs, bytes32 rhs, bytes1 scalarByte) external returns (b
         use alloy::sol_types as alloy_sol_types;
         {
             #[doc(hidden)]
+            #[allow(dead_code)]
             type UnderlyingSolTuple<'a> = (
                 alloy::sol_types::sol_data::FixedBytes<32>,
                 alloy::sol_types::sol_data::FixedBytes<32>,
@@ -12686,6 +12754,7 @@ function fheRem(bytes32 lhs, bytes32 rhs, bytes1 scalarByte) external returns (b
         }
         {
             #[doc(hidden)]
+            #[allow(dead_code)]
             type UnderlyingSolTuple<'a> = (alloy::sol_types::sol_data::FixedBytes<32>,);
             #[doc(hidden)]
             type UnderlyingRustTuple<'a> = (alloy::sol_types::private::FixedBytes<32>,);
@@ -12819,6 +12888,7 @@ function fheRotl(bytes32 lhs, bytes32 rhs, bytes1 scalarByte) external returns (
         use alloy::sol_types as alloy_sol_types;
         {
             #[doc(hidden)]
+            #[allow(dead_code)]
             type UnderlyingSolTuple<'a> = (
                 alloy::sol_types::sol_data::FixedBytes<32>,
                 alloy::sol_types::sol_data::FixedBytes<32>,
@@ -12862,6 +12932,7 @@ function fheRotl(bytes32 lhs, bytes32 rhs, bytes1 scalarByte) external returns (
         }
         {
             #[doc(hidden)]
+            #[allow(dead_code)]
             type UnderlyingSolTuple<'a> = (alloy::sol_types::sol_data::FixedBytes<32>,);
             #[doc(hidden)]
             type UnderlyingRustTuple<'a> = (alloy::sol_types::private::FixedBytes<32>,);
@@ -12995,6 +13066,7 @@ function fheRotr(bytes32 lhs, bytes32 rhs, bytes1 scalarByte) external returns (
         use alloy::sol_types as alloy_sol_types;
         {
             #[doc(hidden)]
+            #[allow(dead_code)]
             type UnderlyingSolTuple<'a> = (
                 alloy::sol_types::sol_data::FixedBytes<32>,
                 alloy::sol_types::sol_data::FixedBytes<32>,
@@ -13038,6 +13110,7 @@ function fheRotr(bytes32 lhs, bytes32 rhs, bytes1 scalarByte) external returns (
         }
         {
             #[doc(hidden)]
+            #[allow(dead_code)]
             type UnderlyingSolTuple<'a> = (alloy::sol_types::sol_data::FixedBytes<32>,);
             #[doc(hidden)]
             type UnderlyingRustTuple<'a> = (alloy::sol_types::private::FixedBytes<32>,);
@@ -13171,6 +13244,7 @@ function fheShl(bytes32 lhs, bytes32 rhs, bytes1 scalarByte) external returns (b
         use alloy::sol_types as alloy_sol_types;
         {
             #[doc(hidden)]
+            #[allow(dead_code)]
             type UnderlyingSolTuple<'a> = (
                 alloy::sol_types::sol_data::FixedBytes<32>,
                 alloy::sol_types::sol_data::FixedBytes<32>,
@@ -13214,6 +13288,7 @@ function fheShl(bytes32 lhs, bytes32 rhs, bytes1 scalarByte) external returns (b
         }
         {
             #[doc(hidden)]
+            #[allow(dead_code)]
             type UnderlyingSolTuple<'a> = (alloy::sol_types::sol_data::FixedBytes<32>,);
             #[doc(hidden)]
             type UnderlyingRustTuple<'a> = (alloy::sol_types::private::FixedBytes<32>,);
@@ -13347,6 +13422,7 @@ function fheShr(bytes32 lhs, bytes32 rhs, bytes1 scalarByte) external returns (b
         use alloy::sol_types as alloy_sol_types;
         {
             #[doc(hidden)]
+            #[allow(dead_code)]
             type UnderlyingSolTuple<'a> = (
                 alloy::sol_types::sol_data::FixedBytes<32>,
                 alloy::sol_types::sol_data::FixedBytes<32>,
@@ -13390,6 +13466,7 @@ function fheShr(bytes32 lhs, bytes32 rhs, bytes1 scalarByte) external returns (b
         }
         {
             #[doc(hidden)]
+            #[allow(dead_code)]
             type UnderlyingSolTuple<'a> = (alloy::sol_types::sol_data::FixedBytes<32>,);
             #[doc(hidden)]
             type UnderlyingRustTuple<'a> = (alloy::sol_types::private::FixedBytes<32>,);
@@ -13523,6 +13600,7 @@ function fheSub(bytes32 lhs, bytes32 rhs, bytes1 scalarByte) external returns (b
         use alloy::sol_types as alloy_sol_types;
         {
             #[doc(hidden)]
+            #[allow(dead_code)]
             type UnderlyingSolTuple<'a> = (
                 alloy::sol_types::sol_data::FixedBytes<32>,
                 alloy::sol_types::sol_data::FixedBytes<32>,
@@ -13566,6 +13644,7 @@ function fheSub(bytes32 lhs, bytes32 rhs, bytes1 scalarByte) external returns (b
         }
         {
             #[doc(hidden)]
+            #[allow(dead_code)]
             type UnderlyingSolTuple<'a> = (alloy::sol_types::sol_data::FixedBytes<32>,);
             #[doc(hidden)]
             type UnderlyingRustTuple<'a> = (alloy::sol_types::private::FixedBytes<32>,);
@@ -13699,6 +13778,7 @@ function fheSum(bytes32[] memory values, FheType resultType) external returns (b
         use alloy::sol_types as alloy_sol_types;
         {
             #[doc(hidden)]
+            #[allow(dead_code)]
             type UnderlyingSolTuple<'a> = (
                 alloy::sol_types::sol_data::Array<
                     alloy::sol_types::sol_data::FixedBytes<32>,
@@ -13743,6 +13823,7 @@ function fheSum(bytes32[] memory values, FheType resultType) external returns (b
         }
         {
             #[doc(hidden)]
+            #[allow(dead_code)]
             type UnderlyingSolTuple<'a> = (alloy::sol_types::sol_data::FixedBytes<32>,);
             #[doc(hidden)]
             type UnderlyingRustTuple<'a> = (alloy::sol_types::private::FixedBytes<32>,);
@@ -13865,6 +13946,7 @@ function getACLAddress() external view returns (address);
         use alloy::sol_types as alloy_sol_types;
         {
             #[doc(hidden)]
+            #[allow(dead_code)]
             type UnderlyingSolTuple<'a> = ();
             #[doc(hidden)]
             type UnderlyingRustTuple<'a> = ();
@@ -13896,6 +13978,7 @@ function getACLAddress() external view returns (address);
         }
         {
             #[doc(hidden)]
+            #[allow(dead_code)]
             type UnderlyingSolTuple<'a> = (alloy::sol_types::sol_data::Address,);
             #[doc(hidden)]
             type UnderlyingRustTuple<'a> = (alloy::sol_types::private::Address,);
@@ -14008,6 +14091,7 @@ function getHCULimitAddress() external view returns (address);
         use alloy::sol_types as alloy_sol_types;
         {
             #[doc(hidden)]
+            #[allow(dead_code)]
             type UnderlyingSolTuple<'a> = ();
             #[doc(hidden)]
             type UnderlyingRustTuple<'a> = ();
@@ -14041,6 +14125,7 @@ function getHCULimitAddress() external view returns (address);
         }
         {
             #[doc(hidden)]
+            #[allow(dead_code)]
             type UnderlyingSolTuple<'a> = (alloy::sol_types::sol_data::Address,);
             #[doc(hidden)]
             type UnderlyingRustTuple<'a> = (alloy::sol_types::private::Address,);
@@ -14155,6 +14240,7 @@ function getHandleVersion() external pure returns (uint8);
         use alloy::sol_types as alloy_sol_types;
         {
             #[doc(hidden)]
+            #[allow(dead_code)]
             type UnderlyingSolTuple<'a> = ();
             #[doc(hidden)]
             type UnderlyingRustTuple<'a> = ();
@@ -14188,6 +14274,7 @@ function getHandleVersion() external pure returns (uint8);
         }
         {
             #[doc(hidden)]
+            #[allow(dead_code)]
             type UnderlyingSolTuple<'a> = (alloy::sol_types::sol_data::Uint<8>,);
             #[doc(hidden)]
             type UnderlyingRustTuple<'a> = (u8,);
@@ -14302,6 +14389,7 @@ function getInputVerifierAddress() external view returns (address);
         use alloy::sol_types as alloy_sol_types;
         {
             #[doc(hidden)]
+            #[allow(dead_code)]
             type UnderlyingSolTuple<'a> = ();
             #[doc(hidden)]
             type UnderlyingRustTuple<'a> = ();
@@ -14335,6 +14423,7 @@ function getInputVerifierAddress() external view returns (address);
         }
         {
             #[doc(hidden)]
+            #[allow(dead_code)]
             type UnderlyingSolTuple<'a> = (alloy::sol_types::sol_data::Address,);
             #[doc(hidden)]
             type UnderlyingRustTuple<'a> = (alloy::sol_types::private::Address,);
@@ -14449,6 +14538,7 @@ function getVersion() external pure returns (string memory);
         use alloy::sol_types as alloy_sol_types;
         {
             #[doc(hidden)]
+            #[allow(dead_code)]
             type UnderlyingSolTuple<'a> = ();
             #[doc(hidden)]
             type UnderlyingRustTuple<'a> = ();
@@ -14480,6 +14570,7 @@ function getVersion() external pure returns (string memory);
         }
         {
             #[doc(hidden)]
+            #[allow(dead_code)]
             type UnderlyingSolTuple<'a> = (alloy::sol_types::sol_data::String,);
             #[doc(hidden)]
             type UnderlyingRustTuple<'a> = (alloy::sol_types::private::String,);
@@ -14587,6 +14678,7 @@ function initializeFromEmptyProxy() external;
         use alloy::sol_types as alloy_sol_types;
         {
             #[doc(hidden)]
+            #[allow(dead_code)]
             type UnderlyingSolTuple<'a> = ();
             #[doc(hidden)]
             type UnderlyingRustTuple<'a> = ();
@@ -14620,6 +14712,7 @@ function initializeFromEmptyProxy() external;
         }
         {
             #[doc(hidden)]
+            #[allow(dead_code)]
             type UnderlyingSolTuple<'a> = ();
             #[doc(hidden)]
             type UnderlyingRustTuple<'a> = ();
@@ -14733,6 +14826,7 @@ function proxiableUUID() external view returns (bytes32);
         use alloy::sol_types as alloy_sol_types;
         {
             #[doc(hidden)]
+            #[allow(dead_code)]
             type UnderlyingSolTuple<'a> = ();
             #[doc(hidden)]
             type UnderlyingRustTuple<'a> = ();
@@ -14764,6 +14858,7 @@ function proxiableUUID() external view returns (bytes32);
         }
         {
             #[doc(hidden)]
+            #[allow(dead_code)]
             type UnderlyingSolTuple<'a> = (alloy::sol_types::sol_data::FixedBytes<32>,);
             #[doc(hidden)]
             type UnderlyingRustTuple<'a> = (alloy::sol_types::private::FixedBytes<32>,);
@@ -14871,6 +14966,7 @@ function reinitializeV5() external;
         use alloy::sol_types as alloy_sol_types;
         {
             #[doc(hidden)]
+            #[allow(dead_code)]
             type UnderlyingSolTuple<'a> = ();
             #[doc(hidden)]
             type UnderlyingRustTuple<'a> = ();
@@ -14902,6 +14998,7 @@ function reinitializeV5() external;
         }
         {
             #[doc(hidden)]
+            #[allow(dead_code)]
             type UnderlyingSolTuple<'a> = ();
             #[doc(hidden)]
             type UnderlyingRustTuple<'a> = ();
@@ -15018,6 +15115,7 @@ function trivialEncrypt(uint256 pt, FheType toType) external returns (bytes32 re
         use alloy::sol_types as alloy_sol_types;
         {
             #[doc(hidden)]
+            #[allow(dead_code)]
             type UnderlyingSolTuple<'a> = (
                 alloy::sol_types::sol_data::Uint<256>,
                 FheType,
@@ -15058,6 +15156,7 @@ function trivialEncrypt(uint256 pt, FheType toType) external returns (bytes32 re
         }
         {
             #[doc(hidden)]
+            #[allow(dead_code)]
             type UnderlyingSolTuple<'a> = (alloy::sol_types::sol_data::FixedBytes<32>,);
             #[doc(hidden)]
             type UnderlyingRustTuple<'a> = (alloy::sol_types::private::FixedBytes<32>,);
@@ -15177,6 +15276,7 @@ function upgradeToAndCall(address newImplementation, bytes memory data) external
         use alloy::sol_types as alloy_sol_types;
         {
             #[doc(hidden)]
+            #[allow(dead_code)]
             type UnderlyingSolTuple<'a> = (
                 alloy::sol_types::sol_data::Address,
                 alloy::sol_types::sol_data::Bytes,
@@ -15219,6 +15319,7 @@ function upgradeToAndCall(address newImplementation, bytes memory data) external
         }
         {
             #[doc(hidden)]
+            #[allow(dead_code)]
             type UnderlyingSolTuple<'a> = ();
             #[doc(hidden)]
             type UnderlyingRustTuple<'a> = ();
@@ -15349,6 +15450,7 @@ function verifyInput(bytes32 inputHandle, address userAddress, bytes memory inpu
         use alloy::sol_types as alloy_sol_types;
         {
             #[doc(hidden)]
+            #[allow(dead_code)]
             type UnderlyingSolTuple<'a> = (
                 alloy::sol_types::sol_data::FixedBytes<32>,
                 alloy::sol_types::sol_data::Address,
@@ -15400,6 +15502,7 @@ function verifyInput(bytes32 inputHandle, address userAddress, bytes memory inpu
         }
         {
             #[doc(hidden)]
+            #[allow(dead_code)]
             type UnderlyingSolTuple<'a> = (alloy::sol_types::sol_data::FixedBytes<32>,);
             #[doc(hidden)]
             type UnderlyingRustTuple<'a> = (alloy::sol_types::private::FixedBytes<32>,);
@@ -15501,6 +15604,7 @@ function verifyInput(bytes32 inputHandle, address userAddress, bytes memory inpu
         }
     };
     ///Container for all the [`FHEVMExecutor`](self) function calls.
+    #[derive(Clone)]
     #[derive(serde::Serialize, serde::Deserialize)]
     #[derive()]
     pub enum FHEVMExecutorCalls {
@@ -15587,7 +15691,6 @@ function verifyInput(bytes32 inputHandle, address userAddress, bytes memory inpu
         #[allow(missing_docs)]
         verifyInput(verifyInputCall),
     }
-    #[automatically_derived]
     impl FHEVMExecutorCalls {
         /// All the selectors of this enum.
         ///
@@ -15638,6 +15741,114 @@ function verifyInput(bytes32 inputHandle, address userAddress, bytes memory inpu
             [246u8, 133u8, 155u8, 220u8],
             [247u8, 127u8, 63u8, 29u8],
         ];
+        /// The names of the variants in the same order as `SELECTORS`.
+        pub const VARIANT_NAMES: &'static [&'static str] = &[
+            ::core::stringify!(fheMin),
+            ::core::stringify!(fheSum),
+            ::core::stringify!(verifyInput),
+            ::core::stringify!(getVersion),
+            ::core::stringify!(fheAdd),
+            ::core::stringify!(fheGe),
+            ::core::stringify!(fheSub),
+            ::core::stringify!(cast),
+            ::core::stringify!(fheMax),
+            ::core::stringify!(initializeFromEmptyProxy),
+            ::core::stringify!(fheRandBounded),
+            ::core::stringify!(upgradeToAndCall),
+            ::core::stringify!(proxiableUUID),
+            ::core::stringify!(fheMul),
+            ::core::stringify!(fheDiv),
+            ::core::stringify!(reinitializeV5),
+            ::core::stringify!(fheBitOr),
+            ::core::stringify!(fheRotl),
+            ::core::stringify!(fheLt),
+            ::core::stringify!(fheIsIn),
+            ::core::stringify!(fheLe),
+            ::core::stringify!(fheIfThenElse),
+            ::core::stringify!(getHandleVersion),
+            ::core::stringify!(fheGt),
+            ::core::stringify!(fheBitXor),
+            ::core::stringify!(fheShr),
+            ::core::stringify!(fheMulDiv),
+            ::core::stringify!(trivialEncrypt),
+            ::core::stringify!(getInputVerifierAddress),
+            ::core::stringify!(UPGRADE_INTERFACE_VERSION),
+            ::core::stringify!(fheRotr),
+            ::core::stringify!(fheShl),
+            ::core::stringify!(fheRem),
+            ::core::stringify!(fheNeg),
+            ::core::stringify!(fheRand),
+            ::core::stringify!(fheNe),
+            ::core::stringify!(fheBitAnd),
+            ::core::stringify!(getHCULimitAddress),
+            ::core::stringify!(fheNot),
+            ::core::stringify!(getACLAddress),
+            ::core::stringify!(fheEq),
+        ];
+        /// The signatures in the same order as `SELECTORS`.
+        pub const SIGNATURES: &'static [&'static str] = &[
+            <fheMinCall as alloy_sol_types::SolCall>::SIGNATURE,
+            <fheSumCall as alloy_sol_types::SolCall>::SIGNATURE,
+            <verifyInputCall as alloy_sol_types::SolCall>::SIGNATURE,
+            <getVersionCall as alloy_sol_types::SolCall>::SIGNATURE,
+            <fheAddCall as alloy_sol_types::SolCall>::SIGNATURE,
+            <fheGeCall as alloy_sol_types::SolCall>::SIGNATURE,
+            <fheSubCall as alloy_sol_types::SolCall>::SIGNATURE,
+            <castCall as alloy_sol_types::SolCall>::SIGNATURE,
+            <fheMaxCall as alloy_sol_types::SolCall>::SIGNATURE,
+            <initializeFromEmptyProxyCall as alloy_sol_types::SolCall>::SIGNATURE,
+            <fheRandBoundedCall as alloy_sol_types::SolCall>::SIGNATURE,
+            <upgradeToAndCallCall as alloy_sol_types::SolCall>::SIGNATURE,
+            <proxiableUUIDCall as alloy_sol_types::SolCall>::SIGNATURE,
+            <fheMulCall as alloy_sol_types::SolCall>::SIGNATURE,
+            <fheDivCall as alloy_sol_types::SolCall>::SIGNATURE,
+            <reinitializeV5Call as alloy_sol_types::SolCall>::SIGNATURE,
+            <fheBitOrCall as alloy_sol_types::SolCall>::SIGNATURE,
+            <fheRotlCall as alloy_sol_types::SolCall>::SIGNATURE,
+            <fheLtCall as alloy_sol_types::SolCall>::SIGNATURE,
+            <fheIsInCall as alloy_sol_types::SolCall>::SIGNATURE,
+            <fheLeCall as alloy_sol_types::SolCall>::SIGNATURE,
+            <fheIfThenElseCall as alloy_sol_types::SolCall>::SIGNATURE,
+            <getHandleVersionCall as alloy_sol_types::SolCall>::SIGNATURE,
+            <fheGtCall as alloy_sol_types::SolCall>::SIGNATURE,
+            <fheBitXorCall as alloy_sol_types::SolCall>::SIGNATURE,
+            <fheShrCall as alloy_sol_types::SolCall>::SIGNATURE,
+            <fheMulDivCall as alloy_sol_types::SolCall>::SIGNATURE,
+            <trivialEncryptCall as alloy_sol_types::SolCall>::SIGNATURE,
+            <getInputVerifierAddressCall as alloy_sol_types::SolCall>::SIGNATURE,
+            <UPGRADE_INTERFACE_VERSIONCall as alloy_sol_types::SolCall>::SIGNATURE,
+            <fheRotrCall as alloy_sol_types::SolCall>::SIGNATURE,
+            <fheShlCall as alloy_sol_types::SolCall>::SIGNATURE,
+            <fheRemCall as alloy_sol_types::SolCall>::SIGNATURE,
+            <fheNegCall as alloy_sol_types::SolCall>::SIGNATURE,
+            <fheRandCall as alloy_sol_types::SolCall>::SIGNATURE,
+            <fheNeCall as alloy_sol_types::SolCall>::SIGNATURE,
+            <fheBitAndCall as alloy_sol_types::SolCall>::SIGNATURE,
+            <getHCULimitAddressCall as alloy_sol_types::SolCall>::SIGNATURE,
+            <fheNotCall as alloy_sol_types::SolCall>::SIGNATURE,
+            <getACLAddressCall as alloy_sol_types::SolCall>::SIGNATURE,
+            <fheEqCall as alloy_sol_types::SolCall>::SIGNATURE,
+        ];
+        /// Returns the signature for the given selector, if known.
+        #[inline]
+        pub fn signature_by_selector(
+            selector: [u8; 4usize],
+        ) -> ::core::option::Option<&'static str> {
+            match Self::SELECTORS.binary_search(&selector) {
+                ::core::result::Result::Ok(idx) => {
+                    ::core::option::Option::Some(Self::SIGNATURES[idx])
+                }
+                ::core::result::Result::Err(_) => ::core::option::Option::None,
+            }
+        }
+        /// Returns the enum variant name for the given selector, if known.
+        #[inline]
+        pub fn name_by_selector(
+            selector: [u8; 4usize],
+        ) -> ::core::option::Option<&'static str> {
+            let sig = Self::signature_by_selector(selector)?;
+            sig.split_once('(').map(|(name, _)| name)
+        }
     }
     #[automatically_derived]
     impl alloy_sol_types::SolInterface for FHEVMExecutorCalls {
@@ -16954,6 +17165,7 @@ function verifyInput(bytes32 inputHandle, address userAddress, bytes memory inpu
         }
     }
     ///Container for all the [`FHEVMExecutor`](self) custom errors.
+    #[derive(Clone)]
     #[derive(serde::Serialize, serde::Deserialize)]
     #[derive(Debug, PartialEq, Eq, Hash)]
     pub enum FHEVMExecutorErrors {
@@ -17000,7 +17212,6 @@ function verifyInput(bytes32 inputHandle, address userAddress, bytes memory inpu
         #[allow(missing_docs)]
         UpperBoundAboveMaxTypeValue(UpperBoundAboveMaxTypeValue),
     }
-    #[automatically_derived]
     impl FHEVMExecutorErrors {
         /// All the selectors of this enum.
         ///
@@ -17031,6 +17242,74 @@ function verifyInput(bytes32 inputHandle, address userAddress, bytes memory inpu
             [238u8, 175u8, 102u8, 154u8],
             [249u8, 46u8, 232u8, 169u8],
         ];
+        /// The names of the variants in the same order as `SELECTORS`.
+        pub const VARIANT_NAMES: &'static [&'static str] = &[
+            ::core::stringify!(IncompatibleTypes),
+            ::core::stringify!(NotHostOwner),
+            ::core::stringify!(DivisionByZero),
+            ::core::stringify!(NotPowerOfTwo),
+            ::core::stringify!(ERC1967InvalidImplementation),
+            ::core::stringify!(IsNotScalar),
+            ::core::stringify!(InvalidMulDivScalarByte),
+            ::core::stringify!(NotInitializingFromEmptyProxy),
+            ::core::stringify!(AddressEmptyCode),
+            ::core::stringify!(ACLNotAllowed),
+            ::core::stringify!(UUPSUnsupportedProxiableUUID),
+            ::core::stringify!(ERC1967NonPayable),
+            ::core::stringify!(InvalidType),
+            ::core::stringify!(UnsupportedType),
+            ::core::stringify!(UpperBoundAboveMaxTypeValue),
+            ::core::stringify!(FailedCall),
+            ::core::stringify!(NotInitializing),
+            ::core::stringify!(ScalarByteIsNotBoolean),
+            ::core::stringify!(UUPSUnauthorizedCallContext),
+            ::core::stringify!(FHECollectionSizeInvalid),
+            ::core::stringify!(InvalidInitialization),
+        ];
+        /// The signatures in the same order as `SELECTORS`.
+        pub const SIGNATURES: &'static [&'static str] = &[
+            <IncompatibleTypes as alloy_sol_types::SolError>::SIGNATURE,
+            <NotHostOwner as alloy_sol_types::SolError>::SIGNATURE,
+            <DivisionByZero as alloy_sol_types::SolError>::SIGNATURE,
+            <NotPowerOfTwo as alloy_sol_types::SolError>::SIGNATURE,
+            <ERC1967InvalidImplementation as alloy_sol_types::SolError>::SIGNATURE,
+            <IsNotScalar as alloy_sol_types::SolError>::SIGNATURE,
+            <InvalidMulDivScalarByte as alloy_sol_types::SolError>::SIGNATURE,
+            <NotInitializingFromEmptyProxy as alloy_sol_types::SolError>::SIGNATURE,
+            <AddressEmptyCode as alloy_sol_types::SolError>::SIGNATURE,
+            <ACLNotAllowed as alloy_sol_types::SolError>::SIGNATURE,
+            <UUPSUnsupportedProxiableUUID as alloy_sol_types::SolError>::SIGNATURE,
+            <ERC1967NonPayable as alloy_sol_types::SolError>::SIGNATURE,
+            <InvalidType as alloy_sol_types::SolError>::SIGNATURE,
+            <UnsupportedType as alloy_sol_types::SolError>::SIGNATURE,
+            <UpperBoundAboveMaxTypeValue as alloy_sol_types::SolError>::SIGNATURE,
+            <FailedCall as alloy_sol_types::SolError>::SIGNATURE,
+            <NotInitializing as alloy_sol_types::SolError>::SIGNATURE,
+            <ScalarByteIsNotBoolean as alloy_sol_types::SolError>::SIGNATURE,
+            <UUPSUnauthorizedCallContext as alloy_sol_types::SolError>::SIGNATURE,
+            <FHECollectionSizeInvalid as alloy_sol_types::SolError>::SIGNATURE,
+            <InvalidInitialization as alloy_sol_types::SolError>::SIGNATURE,
+        ];
+        /// Returns the signature for the given selector, if known.
+        #[inline]
+        pub fn signature_by_selector(
+            selector: [u8; 4usize],
+        ) -> ::core::option::Option<&'static str> {
+            match Self::SELECTORS.binary_search(&selector) {
+                ::core::result::Result::Ok(idx) => {
+                    ::core::option::Option::Some(Self::SIGNATURES[idx])
+                }
+                ::core::result::Result::Err(_) => ::core::option::Option::None,
+            }
+        }
+        /// Returns the enum variant name for the given selector, if known.
+        #[inline]
+        pub fn name_by_selector(
+            selector: [u8; 4usize],
+        ) -> ::core::option::Option<&'static str> {
+            let sig = Self::signature_by_selector(selector)?;
+            sig.split_once('(').map(|(name, _)| name)
+        }
     }
     #[automatically_derived]
     impl alloy_sol_types::SolInterface for FHEVMExecutorErrors {
@@ -17835,6 +18114,7 @@ function verifyInput(bytes32 inputHandle, address userAddress, bytes memory inpu
         }
     }
     ///Container for all the [`FHEVMExecutor`](self) events.
+    #[derive(Clone)]
     #[derive(serde::Serialize, serde::Deserialize)]
     #[derive(Debug, PartialEq, Eq, Hash)]
     pub enum FHEVMExecutorEvents {
@@ -17905,7 +18185,6 @@ function verifyInput(bytes32 inputHandle, address userAddress, bytes memory inpu
         #[allow(missing_docs)]
         VerifyInput(VerifyInput),
     }
-    #[automatically_derived]
     impl FHEVMExecutorEvents {
         /// All the selectors of this enum.
         ///
@@ -18081,6 +18360,98 @@ function verifyInput(bytes32 inputHandle, address userAddress, bytes memory inpu
                 255u8, 146u8, 235u8, 130u8, 122u8, 207u8, 204u8, 166u8, 142u8, 169u8,
             ],
         ];
+        /// The names of the variants in the same order as `SELECTORS`.
+        pub const VARIANT_NAMES: &'static [&'static str] = &[
+            ::core::stringify!(TrivialEncrypt),
+            ::core::stringify!(FheRand),
+            ::core::stringify!(FheLt),
+            ::core::stringify!(FheRem),
+            ::core::stringify!(FheMul),
+            ::core::stringify!(Cast),
+            ::core::stringify!(FheShr),
+            ::core::stringify!(FheGe),
+            ::core::stringify!(FheDiv),
+            ::core::stringify!(FheBitXor),
+            ::core::stringify!(FheRandBounded),
+            ::core::stringify!(FheNot),
+            ::core::stringify!(FheBitOr),
+            ::core::stringify!(FheIfThenElse),
+            ::core::stringify!(FheNe),
+            ::core::stringify!(FheNeg),
+            ::core::stringify!(FheIsIn),
+            ::core::stringify!(FheEq),
+            ::core::stringify!(Upgraded),
+            ::core::stringify!(FheMin),
+            ::core::stringify!(FheRotr),
+            ::core::stringify!(Initialized),
+            ::core::stringify!(FheGt),
+            ::core::stringify!(FheSum),
+            ::core::stringify!(FheAdd),
+            ::core::stringify!(VerifyInput),
+            ::core::stringify!(FheLe),
+            ::core::stringify!(FheBitAnd),
+            ::core::stringify!(FheMulDiv),
+            ::core::stringify!(FheShl),
+            ::core::stringify!(FheRotl),
+            ::core::stringify!(FheSub),
+            ::core::stringify!(FheMax),
+        ];
+        /// The signatures in the same order as `SELECTORS`.
+        pub const SIGNATURES: &'static [&'static str] = &[
+            <TrivialEncrypt as alloy_sol_types::SolEvent>::SIGNATURE,
+            <FheRand as alloy_sol_types::SolEvent>::SIGNATURE,
+            <FheLt as alloy_sol_types::SolEvent>::SIGNATURE,
+            <FheRem as alloy_sol_types::SolEvent>::SIGNATURE,
+            <FheMul as alloy_sol_types::SolEvent>::SIGNATURE,
+            <Cast as alloy_sol_types::SolEvent>::SIGNATURE,
+            <FheShr as alloy_sol_types::SolEvent>::SIGNATURE,
+            <FheGe as alloy_sol_types::SolEvent>::SIGNATURE,
+            <FheDiv as alloy_sol_types::SolEvent>::SIGNATURE,
+            <FheBitXor as alloy_sol_types::SolEvent>::SIGNATURE,
+            <FheRandBounded as alloy_sol_types::SolEvent>::SIGNATURE,
+            <FheNot as alloy_sol_types::SolEvent>::SIGNATURE,
+            <FheBitOr as alloy_sol_types::SolEvent>::SIGNATURE,
+            <FheIfThenElse as alloy_sol_types::SolEvent>::SIGNATURE,
+            <FheNe as alloy_sol_types::SolEvent>::SIGNATURE,
+            <FheNeg as alloy_sol_types::SolEvent>::SIGNATURE,
+            <FheIsIn as alloy_sol_types::SolEvent>::SIGNATURE,
+            <FheEq as alloy_sol_types::SolEvent>::SIGNATURE,
+            <Upgraded as alloy_sol_types::SolEvent>::SIGNATURE,
+            <FheMin as alloy_sol_types::SolEvent>::SIGNATURE,
+            <FheRotr as alloy_sol_types::SolEvent>::SIGNATURE,
+            <Initialized as alloy_sol_types::SolEvent>::SIGNATURE,
+            <FheGt as alloy_sol_types::SolEvent>::SIGNATURE,
+            <FheSum as alloy_sol_types::SolEvent>::SIGNATURE,
+            <FheAdd as alloy_sol_types::SolEvent>::SIGNATURE,
+            <VerifyInput as alloy_sol_types::SolEvent>::SIGNATURE,
+            <FheLe as alloy_sol_types::SolEvent>::SIGNATURE,
+            <FheBitAnd as alloy_sol_types::SolEvent>::SIGNATURE,
+            <FheMulDiv as alloy_sol_types::SolEvent>::SIGNATURE,
+            <FheShl as alloy_sol_types::SolEvent>::SIGNATURE,
+            <FheRotl as alloy_sol_types::SolEvent>::SIGNATURE,
+            <FheSub as alloy_sol_types::SolEvent>::SIGNATURE,
+            <FheMax as alloy_sol_types::SolEvent>::SIGNATURE,
+        ];
+        /// Returns the signature for the given selector, if known.
+        #[inline]
+        pub fn signature_by_selector(
+            selector: [u8; 32usize],
+        ) -> ::core::option::Option<&'static str> {
+            match Self::SELECTORS.binary_search(&selector) {
+                ::core::result::Result::Ok(idx) => {
+                    ::core::option::Option::Some(Self::SIGNATURES[idx])
+                }
+                ::core::result::Result::Err(_) => ::core::option::Option::None,
+            }
+        }
+        /// Returns the enum variant name for the given selector, if known.
+        #[inline]
+        pub fn name_by_selector(
+            selector: [u8; 32usize],
+        ) -> ::core::option::Option<&'static str> {
+            let sig = Self::signature_by_selector(selector)?;
+            sig.split_once('(').map(|(name, _)| name)
+        }
     }
     #[automatically_derived]
     impl alloy_sol_types::SolEventInterface for FHEVMExecutorEvents {
@@ -18480,9 +18851,9 @@ See the [wrapper's documentation](`FHEVMExecutorInstance`) for more details.*/
         N: alloy_contract::private::Network,
     >(
         address: alloy_sol_types::private::Address,
-        provider: P,
+        __provider: P,
     ) -> FHEVMExecutorInstance<P, N> {
-        FHEVMExecutorInstance::<P, N>::new(address, provider)
+        FHEVMExecutorInstance::<P, N>::new(address, __provider)
     }
     /**Deploys this contract using the given `provider` and constructor arguments, if any.
 
@@ -18494,11 +18865,11 @@ For more fine-grained control over the deployment process, use [`deploy_builder`
         P: alloy_contract::private::Provider<N>,
         N: alloy_contract::private::Network,
     >(
-        provider: P,
+        __provider: P,
     ) -> impl ::core::future::Future<
         Output = alloy_contract::Result<FHEVMExecutorInstance<P, N>>,
     > {
-        FHEVMExecutorInstance::<P, N>::deploy(provider)
+        FHEVMExecutorInstance::<P, N>::deploy(__provider)
     }
     /**Creates a `RawCallBuilder` for deploying this contract using the given `provider`
 and constructor arguments, if any.
@@ -18509,8 +18880,8 @@ the bytecode concatenated with the constructor's ABI-encoded arguments.*/
     pub fn deploy_builder<
         P: alloy_contract::private::Provider<N>,
         N: alloy_contract::private::Network,
-    >(provider: P) -> alloy_contract::RawCallBuilder<P, N> {
-        FHEVMExecutorInstance::<P, N>::deploy_builder(provider)
+    >(__provider: P) -> alloy_contract::RawCallBuilder<P, N> {
+        FHEVMExecutorInstance::<P, N>::deploy_builder(__provider)
     }
     /**A [`FHEVMExecutor`](self) instance.
 
@@ -18537,7 +18908,6 @@ See the [module-level documentation](self) for all the available methods.*/
         }
     }
     /// Instantiation and getters/setters.
-    #[automatically_derived]
     impl<
         P: alloy_contract::private::Provider<N>,
         N: alloy_contract::private::Network,
@@ -18548,11 +18918,11 @@ See the [wrapper's documentation](`FHEVMExecutorInstance`) for more details.*/
         #[inline]
         pub const fn new(
             address: alloy_sol_types::private::Address,
-            provider: P,
+            __provider: P,
         ) -> Self {
             Self {
                 address,
-                provider,
+                provider: __provider,
                 _network: ::core::marker::PhantomData,
             }
         }
@@ -18563,9 +18933,9 @@ Returns a new instance of the contract, if the deployment was successful.
 For more fine-grained control over the deployment process, use [`deploy_builder`] instead.*/
         #[inline]
         pub async fn deploy(
-            provider: P,
+            __provider: P,
         ) -> alloy_contract::Result<FHEVMExecutorInstance<P, N>> {
-            let call_builder = Self::deploy_builder(provider);
+            let call_builder = Self::deploy_builder(__provider);
             let contract_address = call_builder.deploy().await?;
             Ok(Self::new(contract_address, call_builder.provider))
         }
@@ -18575,9 +18945,9 @@ and constructor arguments, if any.
 This is a simple wrapper around creating a `RawCallBuilder` with the data set to
 the bytecode concatenated with the constructor's ABI-encoded arguments.*/
         #[inline]
-        pub fn deploy_builder(provider: P) -> alloy_contract::RawCallBuilder<P, N> {
+        pub fn deploy_builder(__provider: P) -> alloy_contract::RawCallBuilder<P, N> {
             alloy_contract::RawCallBuilder::new_raw_deploy(
-                provider,
+                __provider,
                 ::core::clone::Clone::clone(&BYTECODE),
             )
         }
@@ -18614,7 +18984,6 @@ the bytecode concatenated with the constructor's ABI-encoded arguments.*/
         }
     }
     /// Function calls.
-    #[automatically_derived]
     impl<
         P: alloy_contract::private::Provider<N>,
         N: alloy_contract::private::Network,
@@ -19034,7 +19403,6 @@ the bytecode concatenated with the constructor's ABI-encoded arguments.*/
         }
     }
     /// Event filters.
-    #[automatically_derived]
     impl<
         P: alloy_contract::private::Provider<N>,
         N: alloy_contract::private::Network,

@@ -2804,6 +2804,7 @@ function verifyProofRequestSolana(uint256 contractChainId, bytes32 contractAddre
         use alloy::sol_types as alloy_sol_types;
         {
             #[doc(hidden)]
+            #[allow(dead_code)]
             type UnderlyingSolTuple<'a> = (
                 alloy::sol_types::sol_data::Uint<256>,
                 alloy::sol_types::sol_data::FixedBytes<32>,
@@ -2861,6 +2862,7 @@ function verifyProofRequestSolana(uint256 contractChainId, bytes32 contractAddre
         }
         {
             #[doc(hidden)]
+            #[allow(dead_code)]
             type UnderlyingSolTuple<'a> = ();
             #[doc(hidden)]
             type UnderlyingRustTuple<'a> = ();
@@ -3193,6 +3195,7 @@ function verifyProofResponseSolana(uint256 zkProofId, bytes32[] memory ctHandles
         use alloy::sol_types as alloy_sol_types;
         {
             #[doc(hidden)]
+            #[allow(dead_code)]
             type UnderlyingSolTuple<'a> = (
                 alloy::sol_types::sol_data::Uint<256>,
                 alloy::sol_types::sol_data::Array<
@@ -3245,6 +3248,7 @@ function verifyProofResponseSolana(uint256 zkProofId, bytes32[] memory ctHandles
         }
         {
             #[doc(hidden)]
+            #[allow(dead_code)]
             type UnderlyingSolTuple<'a> = ();
             #[doc(hidden)]
             type UnderlyingRustTuple<'a> = ();
@@ -3402,6 +3406,8 @@ function verifyProofResponseSolana(uint256 zkProofId, bytes32[] memory ctHandles
             ::core::stringify!(getRejectProofConsensusTxSenders),
             ::core::stringify!(verifyProofResponse),
             ::core::stringify!(rejectProofResponse),
+            ::core::stringify!(verifyProofResponseSolana),
+            ::core::stringify!(verifyProofRequestSolana),
             ::core::stringify!(verifyProofRequest),
             ::core::stringify!(getVerifyProofConsensusTxSenders),
             ::core::stringify!(isProofVerified),
@@ -3413,6 +3419,8 @@ function verifyProofResponseSolana(uint256 zkProofId, bytes32[] memory ctHandles
             <getRejectProofConsensusTxSendersCall as alloy_sol_types::SolCall>::SIGNATURE,
             <verifyProofResponseCall as alloy_sol_types::SolCall>::SIGNATURE,
             <rejectProofResponseCall as alloy_sol_types::SolCall>::SIGNATURE,
+            <verifyProofResponseSolanaCall as alloy_sol_types::SolCall>::SIGNATURE,
+            <verifyProofRequestSolanaCall as alloy_sol_types::SolCall>::SIGNATURE,
             <verifyProofRequestCall as alloy_sol_types::SolCall>::SIGNATURE,
             <getVerifyProofConsensusTxSendersCall as alloy_sol_types::SolCall>::SIGNATURE,
             <isProofVerifiedCall as alloy_sol_types::SolCall>::SIGNATURE,
@@ -4167,6 +4175,7 @@ function verifyProofResponseSolana(uint256 zkProofId, bytes32[] memory ctHandles
         /// The names of the variants in the same order as `SELECTORS`.
         pub const VARIANT_NAMES: &'static [&'static str] = &[
             ::core::stringify!(VerifyProofResponseCall),
+            ::core::stringify!(VerifyProofRequestSolana),
             ::core::stringify!(VerifyProofRequest),
             ::core::stringify!(RejectProofResponseCall),
             ::core::stringify!(RejectProofResponse),
@@ -4175,6 +4184,7 @@ function verifyProofResponseSolana(uint256 zkProofId, bytes32[] memory ctHandles
         /// The signatures in the same order as `SELECTORS`.
         pub const SIGNATURES: &'static [&'static str] = &[
             <VerifyProofResponseCall as alloy_sol_types::SolEvent>::SIGNATURE,
+            <VerifyProofRequestSolana as alloy_sol_types::SolEvent>::SIGNATURE,
             <VerifyProofRequest as alloy_sol_types::SolEvent>::SIGNATURE,
             <RejectProofResponseCall as alloy_sol_types::SolEvent>::SIGNATURE,
             <RejectProofResponse as alloy_sol_types::SolEvent>::SIGNATURE,
