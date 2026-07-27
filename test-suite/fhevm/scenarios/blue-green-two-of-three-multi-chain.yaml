@@ -1,0 +1,33 @@
+version: 1
+kind: blue-green
+name: Blue-Green Upgrade (2-of-3, multi-chain)
+description: >
+  Three-operator Blue-Green upgrade (threshold 2) across two host chains.
+  Combines the 2-of-3 operator topology with two host chains: cutover still
+  requires unanimity across all N operators per RFC-021, now for BOTH chains
+  plus the Gateway. Same failed-then-successful flow as blue-green.yaml.
+
+    ./fhevm-cli up --scenario blue-green-two-of-three-multi-chain --build
+    ./fhevm-cli test blue-green
+
+topology:
+  count: 3
+  threshold: 2
+
+hostChains:
+  - key: host
+    chainId: "12345"
+    rpcPort: 8545
+  - key: chain-b
+    chainId: "67890"
+    rpcPort: 8547
+
+bcs:
+  source:
+    mode: registry
+    tag: v0.14.0-4
+
+gcs:
+  source:
+    mode: local
+  stackVersion: "0.15.0"

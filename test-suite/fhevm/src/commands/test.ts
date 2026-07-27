@@ -804,6 +804,7 @@ const waitUntil = async (opts: {
 };
 
 type TrafficStats = { iterations: number; retries: number; failures: number };
+type TrafficTarget = { label: string; argv: string[] };
 type TrafficStream = {
   stop: () => Promise<TrafficStats>;
   /** Rejects the moment any stream sees a permanent failure (retry didn't recover). */
@@ -811,16 +812,17 @@ type TrafficStream = {
 };
 
 /**
- * Spawns `streams` background loops of `./fhevm-cli test erc20` that keep firing
- * until `.stop()` is called or a permanent failure aborts them. Each iteration
- * retries up to `TRAFFIC_MAX_RETRIES` times with backoff — mirrors client-side
- * retry behavior around the cutover boundary (Zama SDK retries transient
- * failures multiple times). First permanent failure trips `errored` AND stops
- * every stream, so the caller can fail fast.
+ * Spawns background ERC-20 loops across the supplied chain-specific targets.
+ * Targets are assigned round-robin, with the caller ensuring at least one
+ * stream per chain. Each iteration retries up to `TRAFFIC_MAX_RETRIES` times
+ * with backoff. First permanent failure trips `errored` and stops every stream.
  */
 const TRAFFIC_MAX_RETRIES = 3;
 const TRAFFIC_RETRY_BACKOFF_MS = 2000;
-const startContinuousErc20Traffic = (streams: number): TrafficStream => {
+const startContinuousErc20Traffic = (targets: TrafficTarget[], streams: number): TrafficStream => {
+  if (targets.length === 0 || streams < targets.length) {
+    throw new Error("ERC-20 traffic requires at least one stream target per host chain");
+  }
   let stopped = false;
   let rejectErrored!: (err: Error) => void;
   const errored = new Promise<never>((_, reject) => {
@@ -829,10 +831,11 @@ const startContinuousErc20Traffic = (streams: number): TrafficStream => {
   errored.catch(() => undefined);
   const counters = Array.from({ length: streams }, () => ({ iterations: 0, retries: 0, failures: 0 }));
   const loops = counters.map((counter, streamIdx) => (async () => {
+    const target = targets[streamIdx % targets.length]!;
     while (!stopped) {
       counter.iterations += 1;
-      const label = `[traffic s${streamIdx}#${counter.iterations}]`;
-      let result = await run(["./fhevm-cli", "test", "erc20"], { allowFailure: true });
+      const label = `[traffic ${target.label} s${streamIdx}#${counter.iterations}]`;
+      let result = await run(target.argv, { allowFailure: true });
       for (let attempt = 1; attempt <= TRAFFIC_MAX_RETRIES && result.code !== 0 && !stopped; attempt += 1) {
         counter.retries += 1;
         console.warn(
@@ -840,7 +843,7 @@ const startContinuousErc20Traffic = (streams: number): TrafficStream => {
             `retry ${attempt}/${TRAFFIC_MAX_RETRIES} after ${TRAFFIC_RETRY_BACKOFF_MS}ms`,
         );
         await Bun.sleep(TRAFFIC_RETRY_BACKOFF_MS);
-        result = await run(["./fhevm-cli", "test", "erc20"], { allowFailure: true });
+        result = await run(target.argv, { allowFailure: true });
       }
       if (result.code !== 0) {
         // A failure after stop() is a shutdown artifact (retry budget denied by `stopped`) — don't count it.
@@ -890,7 +893,10 @@ const startContinuousErc20Traffic = (streams: number): TrafficStream => {
  * asserts the reset (PAUSED/failed, latches cleared, schema recreated empty,
  * versioning untouched) and the successful flow then reruns over the residue.
  */
-const runBlueGreenProfile = async (state: State): Promise<boolean> => {
+const runBlueGreenProfile = async (
+  state: State,
+  options: Pick<TestOptions, "network" | "noHardhatCompile">,
+): Promise<boolean> => {
   if (state.scenario.kind !== "blue-green") {
     throw new PreflightError(
       "test blue-green requires the stack to be booted with --scenario blue-green* " +
@@ -900,7 +906,6 @@ const runBlueGreenProfile = async (state: State): Promise<boolean> => {
 
   const gcsStackVersion = state.scenario.gcs.stackVersion;
   const gcsVersionLive = `v${gcsStackVersion}`;
-  const chainId = state.scenario.hostChains[0]?.chainId ?? DEFAULT_CHAIN_ID;
   const opCount = state.scenario.topology.count;
 
   const operatorDatabases: string[] = [];
@@ -908,7 +913,7 @@ const runBlueGreenProfile = async (state: State): Promise<boolean> => {
     operatorDatabases.push(coprocessorDatabaseName(index));
   }
 
-  const BLUE_GREEN_TRAFFIC_STREAMS = 2;
+  const MIN_BLUE_GREEN_TRAFFIC_STREAMS = 2;
   const CROSS_CUTOVER_CHAIN_DEPTH = 5;
 
   console.log(`\n==== blue-green E2E: ${opCount} operator(s) ====`);
@@ -938,29 +943,79 @@ const runBlueGreenProfile = async (state: State): Promise<boolean> => {
   const gatewayRpcUrl = hostReachableRpcUrl(state.discovery!.endpoints.gateway.http);
   const { deployerPk, protocolConfig } = await readBlueGreenOnChainCreds();
 
-  // An empty window carries no non-trivial FHE op, so no track can anchor and the
-  // detector's commitment_timeout forces the rollback this phase asserts.
-  console.log(`\n[2/11] failed upgrade: propose empty window (no traffic → no anchor)`);
-  const failHostBlock = Number((await run(
-    ["cast", "block-number", "--rpc-url", hostRpcUrl],
-  )).stdout.trim());
+  // One ChainUpgradeWindow per host chain, each off that chain's own current
+  // block. Single-chain yields a one-element array, as before.
+  const hostChains = state.scenario.hostChains;
+  const hostChainRpc = (key: string) =>
+    hostReachableRpcUrl(state.discovery!.endpoints.hosts[key]!.http);
+  const testSuiteEnv = await readEnvFile(envPath("test-suite"));
+  const erc20Grep = TEST_GREP.erc20;
+  if (!erc20Grep) {
+    throw new Error("blue-green profile requires the ERC-20 test grep");
+  }
+  const chainEnvValue = (index: number, primaryName: string, indexedSuffix: string): string => {
+    const key = index === 0 ? primaryName : `HOST_CHAIN_${index}_${indexedSuffix}`;
+    const value = testSuiteEnv[key];
+    if (!value) {
+      throw new Error(`blue-green traffic target is missing ${key} in the test-suite environment`);
+    }
+    return value;
+  };
+  const trafficTargets: TrafficTarget[] = hostChains.map((chain, index) => {
+    const overrides = [
+      ["RPC_URL", chainEnvValue(index, "RPC_URL", "RPC_URL")],
+      ["CHAIN_ID_HOST", chainEnvValue(index, "CHAIN_ID_HOST", "CHAIN_ID")],
+      ["ACL_CONTRACT_ADDRESS", chainEnvValue(index, "ACL_CONTRACT_ADDRESS", "ACL_CONTRACT_ADDRESS")],
+      ["KMS_VERIFIER_CONTRACT_ADDRESS", chainEnvValue(index, "KMS_VERIFIER_CONTRACT_ADDRESS", "KMS_VERIFIER_CONTRACT_ADDRESS")],
+      ["INPUT_VERIFIER_CONTRACT_ADDRESS", chainEnvValue(index, "INPUT_VERIFIER_CONTRACT_ADDRESS", "INPUT_VERIFIER_CONTRACT_ADDRESS")],
+      ["FHEVM_EXECUTOR_CONTRACT_ADDRESS", chainEnvValue(index, "FHEVM_EXECUTOR_CONTRACT_ADDRESS", "FHEVM_EXECUTOR_CONTRACT_ADDRESS")],
+      ["PROTOCOL_CONFIG_CONTRACT_ADDRESS", chainEnvValue(index, "PROTOCOL_CONFIG_CONTRACT_ADDRESS", "PROTOCOL_CONFIG_CONTRACT_ADDRESS")],
+    ];
+    const extraExecArgs = overrides.flatMap(([name, value]) => ["-e", `${name}=${value}`]);
+    return {
+      label: chain.key,
+      argv: buildTestContainerArgs(
+        runTestsArgs({
+          ...options,
+          verbose: false,
+          parallel: false,
+          grep: erc20Grep,
+        }),
+        extraExecArgs,
+      ),
+    };
+  });
+  const blueGreenTrafficStreams = Math.max(MIN_BLUE_GREEN_TRAFFIC_STREAMS, trafficTargets.length);
+  const buildWindowArray = async (startOffset: number, endOffset: number): Promise<string> => {
+    const tuples: string[] = [];
+    for (const chain of hostChains) {
+      const block = Number(
+        (await run(["cast", "block-number", "--rpc-url", hostChainRpc(chain.key)])).stdout.trim(),
+      );
+      tuples.push(`(${chain.chainId},${block + startOffset},${block + endOffset})`);
+    }
+    return `[${tuples.join(",")}]`;
+  };
+
+  // Empty windows carry no non-trivial FHE op, so no chain anchors and the
+  // commitment_timeout rolls back every chain's row — the rollback this asserts.
+  console.log(`\n[2/11] failed upgrade: propose empty window(s) (no traffic → no anchor)`);
   const failGwBlock = Number((await run(
     ["cast", "block-number", "--rpc-url", gatewayRpcUrl],
   )).stdout.trim());
-  const failStartBlock = failHostBlock + 15;
-  const failEndBlock = failHostBlock + 45;
   const failGwStartBlock = failGwBlock + 10;
+  const failWindows = await buildWindowArray(15, 45);
   await run([
     "cast", "send", protocolConfig,
     "--rpc-url", hostRpcUrl,
     "--private-key", deployerPk,
     "proposeCoprocessorUpgrade(uint256,string,(uint64,uint64,uint64)[],uint64)",
     "1", gcsVersionLive,
-    `[(${chainId},${failStartBlock},${failEndBlock})]`,
+    failWindows,
     String(failGwStartBlock),
   ]);
   console.log(
-    `OK:   activation emitted (start=${failStartBlock} end=${failEndBlock} gw_start=${failGwStartBlock})`,
+    `OK:   activation emitted (windows=${failWindows} gw_start=${failGwStartBlock})`,
   );
 
   console.log(`\n[3/11] failed upgrade: wait for GCS DryRunStarted per operator`);
@@ -969,8 +1024,15 @@ const runBlueGreenProfile = async (state: State): Promise<boolean> => {
       label: `${db}  GCS DryRunStarted`,
       timeoutSecs: 120,
       check: async () =>
-        (await psqlQuery(db, "SELECT state FROM upgrade_state WHERE stack_role='GCS';")) ===
-        "DryRunStarted",
+        (await psqlQuery(
+          db,
+          `SELECT CASE WHEN COUNT(*)=${hostChains.length}
+                              AND BOOL_AND(state='DryRunStarted')
+                              AND COUNT(DISTINCT proposal_id)=1
+                              AND COUNT(DISTINCT proposal_block)=1
+                       THEN 'ready' ELSE 'waiting' END
+             FROM upgrade_state WHERE stack_role='GCS';`,
+        )) === "ready",
     });
   }
 
@@ -980,19 +1042,28 @@ const runBlueGreenProfile = async (state: State): Promise<boolean> => {
       label: `${db}  GCS rolled back to PAUSED/failed`,
       timeoutSecs: 300,
       check: async () =>
-        (await psqlQuery(db, "SELECT state||' '||status FROM upgrade_state WHERE stack_role='GCS';")) ===
-        "PAUSED failed",
+        (await psqlQuery(
+          db,
+          `SELECT CASE WHEN COUNT(*)=${hostChains.length}
+                              AND BOOL_AND(state='PAUSED' AND status='failed')
+                              AND BOOL_AND(NOT host_consensus_reached)
+                              AND BOOL_AND(NOT gw_consensus_reached)
+                              AND BOOL_AND(NOT gw_dry_run_started)
+                       THEN 'rolled-back' ELSE 'waiting' END
+             FROM upgrade_state WHERE stack_role='GCS';`,
+        )) === "rolled-back",
     });
   }
   for (const db of operatorDatabases) {
     const flags = await psqlQuery(
       db,
-      "SELECT last_error||'|'||host_consensus_reached||'|'||gw_consensus_reached||'|'||gw_dry_run_started " +
-        "FROM upgrade_state WHERE stack_role='GCS';",
+      "SELECT MIN(last_error)||'|'||BOOL_OR(host_consensus_reached)||'|'||" +
+        "BOOL_OR(gw_consensus_reached)||'|'||BOOL_OR(gw_dry_run_started)||'|'||" +
+        "BOOL_OR(host_consensus_reached) FROM upgrade_state WHERE stack_role='GCS';",
     );
-    if (flags !== "unanimity_consensus_timeout|false|false|false") {
+    if (flags !== "unanimity_consensus_timeout|false|false|false|false") {
       throw new Error(
-        `${db} rollback left unexpected flags "${flags}", expected "unanimity_consensus_timeout|false|false|false"`,
+        `${db} rollback left unexpected flags "${flags}", expected "unanimity_consensus_timeout|false|false|false|false"`,
       );
     }
     const version = await psqlQuery(db, "SELECT stack_version FROM versioning;");
@@ -1050,25 +1121,22 @@ const runBlueGreenProfile = async (state: State): Promise<boolean> => {
   }
 
   console.log(`\n[6/11] propose upgrade on-chain (ProtocolConfig.proposeCoprocessorUpgrade)`);
-  const hostBlock = Number((await run(
-    ["cast", "block-number", "--rpc-url", hostRpcUrl],
-  )).stdout.trim());
   const gwBlock = Number((await run(
     ["cast", "block-number", "--rpc-url", gatewayRpcUrl],
   )).stdout.trim());
-  const startBlock = hostBlock + 30;
-  const endBlock = hostBlock + 230;
   const gwStartBlock = gwBlock + 10;
+  // A wide window per chain so real dry-run traffic on every chain lands inside it.
+  const okWindows = await buildWindowArray(30, 230);
   await run([
     "cast", "send", protocolConfig,
     "--rpc-url", hostRpcUrl,
     "--private-key", deployerPk,
     "proposeCoprocessorUpgrade(uint256,string,(uint64,uint64,uint64)[],uint64)",
     "2", gcsVersionLive,
-    `[(${chainId},${startBlock},${endBlock})]`,
+    okWindows,
     String(gwStartBlock),
   ]);
-  console.log(`OK:   activation emitted (start=${startBlock} end=${endBlock} gw_start=${gwStartBlock})`);
+  console.log(`OK:   activation emitted (windows=${okWindows} gw_start=${gwStartBlock})`);
 
   console.log(`\n[7/11] wait for GCS DryRunStarted per operator`);
   for (const db of operatorDatabases) {
@@ -1076,16 +1144,23 @@ const runBlueGreenProfile = async (state: State): Promise<boolean> => {
       label: `${db}  GCS DryRunStarted`,
       timeoutSecs: 120,
       check: async () =>
-        (await psqlQuery(db, "SELECT state FROM upgrade_state WHERE stack_role='GCS';")) ===
-        "DryRunStarted",
+        (await psqlQuery(
+          db,
+          `SELECT CASE WHEN COUNT(*)=${hostChains.length}
+                              AND BOOL_AND(state='DryRunStarted')
+                              AND COUNT(DISTINCT proposal_id)=1
+                              AND COUNT(DISTINCT proposal_block)=1
+                       THEN 'ready' ELSE 'waiting' END
+             FROM upgrade_state WHERE stack_role='GCS';`,
+        )) === "ready",
     });
   }
 
   console.log(
-    `\n[8/11] start ${BLUE_GREEN_TRAFFIC_STREAMS} background stream(s) ` +
-      `+ cross-cutover chain (depth ${CROSS_CUTOVER_CHAIN_DEPTH})`,
+    `\n[8/11] start ${blueGreenTrafficStreams} background stream(s) across ` +
+      `${trafficTargets.length} host chain(s) + cross-cutover chain (depth ${CROSS_CUTOVER_CHAIN_DEPTH})`,
   );
-  const traffic = startContinuousErc20Traffic(BLUE_GREEN_TRAFFIC_STREAMS);
+  const traffic = startContinuousErc20Traffic(trafficTargets, blueGreenTrafficStreams);
   let trafficStats: { iterations: number; retries: number; failures: number };
   try {
     // The chain is a stress signal — a fence hit mid-transfer is expected; [11/11] verifies actual transferCount.
@@ -1137,10 +1212,22 @@ const runBlueGreenProfile = async (state: State): Promise<boolean> => {
     for (const db of operatorDatabases) {
       const gcsState = await psqlQuery(
         db,
-        "SELECT state||' '||status FROM upgrade_state WHERE stack_role='GCS';",
+        `SELECT CASE WHEN COUNT(*)=${hostChains.length}
+                            AND BOOL_AND(state='LIVE' AND status='completed')
+                     THEN 'LIVE completed' ELSE 'unexpected' END
+           FROM upgrade_state WHERE stack_role='GCS';`,
       );
       if (gcsState !== "LIVE completed") {
         throw new Error(`${db} GCS state = "${gcsState}", expected "LIVE completed"`);
+      }
+      const persistedWindows = await psqlQuery(
+        db,
+        "SELECT count(*) FROM upgrade_state WHERE stack_role='GCS';",
+      );
+      if (persistedWindows !== String(hostChains.length)) {
+        throw new Error(
+          `${db} persisted ${persistedWindows} chain windows, expected ${hostChains.length}`,
+        );
       }
       const leftoverSchemas = await psqlQuery(
         db,
@@ -1157,7 +1244,7 @@ const runBlueGreenProfile = async (state: State): Promise<boolean> => {
 
   console.log(`\n[11/11] stop background traffic + cross-cutover verify + continuity check`);
   console.log(
-    `  traffic stopped: ${trafficStats.iterations} iterations across ${BLUE_GREEN_TRAFFIC_STREAMS} stream(s), ` +
+    `  traffic stopped: ${trafficStats.iterations} iterations across ${blueGreenTrafficStreams} stream(s), ` +
       `${trafficStats.retries} retried, ${trafficStats.failures} failed after retry`,
   );
   if (trafficStats.failures > 0) {
@@ -1488,7 +1575,7 @@ export const test = async (testName: string | undefined, options: TestOptions) =
       return runKmsContextSwitchProfile(state, runUserDecryption, runInputProofSmoke);
     }
     if (name === "blue-green") {
-      return runBlueGreenProfile(state);
+      return runBlueGreenProfile(state, options);
     }
     if (name === "coprocessor-db-state-revert") {
       return runDbStateRevert(state, options);
