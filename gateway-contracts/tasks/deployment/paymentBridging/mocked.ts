@@ -1,16 +1,16 @@
-import { Wallet } from "ethers";
-import { task, types } from "hardhat/config";
-import { HardhatRuntimeEnvironment } from "hardhat/types";
+import { Wallet } from 'ethers';
+import { task, types } from 'hardhat/config';
+import { HardhatRuntimeEnvironment } from 'hardhat/types';
 
-import { getRequiredEnvVar } from "../../utils";
-import { appendAddressToEnvFile, createEnvAddressesFile } from "../utils";
+import { getRequiredEnvVar } from '../../utils';
+import { appendAddressToEnvFile, createEnvAddressesFile } from '../utils';
 
 // Define the file name for registering the mocked payment bridging contract addresses
-export const MOCKED_PAYMENT_BRIDGING_ADDRESSES_ENV_FILE_NAME = ".env.mocked_payment_bridging";
+export const MOCKED_PAYMENT_BRIDGING_ADDRESSES_ENV_FILE_NAME = '.env.mocked_payment_bridging';
 
-const MOCKED_ZAMA_OFT_CONTRACT_NAME = "ZamaOFT";
-const MOCKED_ZAMA_OFT_NAME = "MockedZamaOFT";
-const MOCKED_ZAMA_OFT_SYMBOL = "MockedZAMA";
+const MOCKED_ZAMA_OFT_CONTRACT_NAME = 'ZamaOFT';
+const MOCKED_ZAMA_OFT_NAME = 'MockedZamaOFT';
+const MOCKED_ZAMA_OFT_SYMBOL = 'MockedZAMA';
 
 // Deploy a mocked payment bridging contract
 async function deployMockedPaymentBridgingContract(
@@ -19,7 +19,7 @@ async function deployMockedPaymentBridgingContract(
   initializeArgs: unknown[],
 ): Promise<string> {
   // Get a deployer wallet
-  const deployerPrivateKey = getRequiredEnvVar("DEPLOYER_PRIVATE_KEY");
+  const deployerPrivateKey = getRequiredEnvVar('DEPLOYER_PRIVATE_KEY');
   const deployer = new Wallet(deployerPrivateKey).connect(hre.ethers.provider);
 
   console.log(`Deploying ${name}...`);
@@ -43,10 +43,10 @@ async function deployMockedPaymentBridgingContract(
 // simply mocked with a random address (there is no logic to test on this contract)
 // We keep the command general enough if we ever need to consider additional contracts in the future
 // Initial supply is in mocked $ZAMA tokens (NOT in base units with 18 decimals)
-task("task:deployMockedZamaOFT")
+task('task:deployMockedZamaOFT')
   .addOptionalParam(
-    "initialSupply",
-    "The initial supply of mocked $ZAMA tokens to deploy the ZamaOFT contract with",
+    'initialSupply',
+    'The initial supply of mocked $ZAMA tokens to deploy the ZamaOFT contract with',
     BigInt(10 ** 6),
     types.bigint,
   )
@@ -55,7 +55,7 @@ task("task:deployMockedZamaOFT")
     createEnvAddressesFile(MOCKED_PAYMENT_BRIDGING_ADDRESSES_ENV_FILE_NAME);
 
     // Compile the mocked payment bridging contracts
-    await hre.run("compile:specific", { contract: `contracts/mockedPaymentBridging` });
+    await hre.run('compile:specific', { contract: `contracts/mockedPaymentBridging` });
 
     // Convert the initial supply to mocked $ZAMA base units (using 18 decimals)
     const initialSupplyInMockedZamaBaseUnits = initialSupply * BigInt(10 ** 18);
@@ -71,20 +71,20 @@ task("task:deployMockedZamaOFT")
     appendAddressToEnvFile(MOCKED_ZAMA_OFT_NAME, zamaOFTAddress, MOCKED_PAYMENT_BRIDGING_ADDRESSES_ENV_FILE_NAME);
   });
 
-task("task:verifyMockedZamaOFT")
+task('task:verifyMockedZamaOFT')
   .addParam(
-    "initialSupply",
-    "The initial supply of mocked $ZAMA tokens to verify the ZamaOFT contract with",
+    'initialSupply',
+    'The initial supply of mocked $ZAMA tokens to verify the ZamaOFT contract with',
     BigInt(10 ** 6),
     types.bigint,
   )
   .setAction(async function ({ initialSupply }, { run }) {
-    const implementationAddress = getRequiredEnvVar("ZAMA_OFT_ADDRESS");
+    const implementationAddress = getRequiredEnvVar('ZAMA_OFT_ADDRESS');
 
     // Convert the initial supply to mocked $ZAMA base units (using 18 decimals)
     const initialSupplyInMockedZamaBaseUnits = initialSupply * BigInt(10 ** 18);
 
-    await run("verify:verify", {
+    await run('verify:verify', {
       address: implementationAddress,
       constructorArguments: [MOCKED_ZAMA_OFT_CONTRACT_NAME, MOCKED_ZAMA_OFT_SYMBOL, initialSupplyInMockedZamaBaseUnits],
     });
