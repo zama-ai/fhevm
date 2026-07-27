@@ -175,10 +175,14 @@ async fn bridge_writes_enabled(
         return Ok(true);
     }
 
-    let state: Option<String> =
-        sqlx::query_scalar("SELECT state FROM upgrade_state WHERE stack_role = 'GCS'")
-            .fetch_optional(&mut *conn)
-            .await?;
+    let state: Option<String> = sqlx::query_scalar(
+        "SELECT state FROM upgrade_state
+          WHERE stack_role = 'GCS'
+          ORDER BY proposal_block DESC NULLS LAST, host_chain_id
+          LIMIT 1",
+    )
+    .fetch_optional(&mut *conn)
+    .await?;
     match state.as_deref() {
         Some("LIVE") => Ok(true),
         // Without this schema, unqualified bridge writes would use public.

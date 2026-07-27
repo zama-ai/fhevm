@@ -139,6 +139,7 @@ pub struct NewBlockPayload {
 #[derive(Debug, Clone, Serialize)]
 struct UnanimityPayload<'a> {
     proposal_id: &'a [u8],
+    proposal_block: i64,
     chain_id: i64,
     block_height: i64,
     block_hash: &'a str,
@@ -239,34 +240,65 @@ fn all_slots_filled(slots: &[Option<Vec<u8>>]) -> bool {
     !slots.is_empty() && slots.iter().all(Option::is_some)
 }
 
-/// Returns `(proposal_id, start_block, end_block)` for the active GCS dry-run.
-/// `None` otherwise. Scoped to `stack_role = 'GCS'` because BCS also stays
-/// `status='in_progress'` during the upgrade and doesn't own the replay window.
-pub(crate) async fn active_upgrade_window<'e, E>(
-    executor: E,
-) -> Result<Option<(Vec<u8>, i64, i64)>, Error>
+/// An upgrade attempt and its per-chain windows:
+/// `(proposal_id, proposal_block, [(chain_id, start, end), ...])`.
+pub(crate) type HostWindows = (Vec<u8>, i64, Vec<(i64, i64, i64)>);
+
+/// Returns the complete per-chain window set for the active GCS dry-run.
+/// `None` otherwise. Proposal-level fields must agree across every row.
+pub(crate) async fn active_upgrade_windows<'e, E>(executor: E) -> Result<Option<HostWindows>, Error>
 where
     E: Executor<'e, Database = Postgres>,
 {
-    type ActiveWindowRow = (String, Option<Vec<u8>>, Option<i64>, Option<i64>);
-    let row: Option<ActiveWindowRow> = sqlx::query_as(
-        "SELECT state, proposal_id, start_block, end_block FROM upgrade_state
-          WHERE stack_role = 'GCS' AND status = 'in_progress'",
+    type ActiveWindowRow = (
+        String,
+        Option<Vec<u8>>,
+        Option<i64>,
+        i64,
+        Option<i64>,
+        Option<i64>,
+    );
+    let rows: Vec<ActiveWindowRow> = sqlx::query_as(
+        "SELECT state, proposal_id, proposal_block,
+                host_chain_id, start_block, end_block
+           FROM upgrade_state
+          WHERE stack_role = 'GCS' AND status = 'in_progress'
+          ORDER BY host_chain_id",
     )
-    .fetch_optional(executor)
+    .fetch_all(executor)
     .await?;
 
-    let Some((state, proposal_id, start_block, end_block)) = row else {
+    let Some((state, proposal_id, proposal_block, _, _, _)) = rows.first() else {
         return Ok(None);
     };
     if !matches!(state.as_str(), "UpgradeActivated" | "DryRunStarted") {
         debug!(state = %state, "GCS not in UpgradeActivated/DryRunStarted — ignoring");
         return Ok(None);
     }
-    Ok(proposal_id
-        .zip(start_block)
-        .zip(end_block)
-        .map(|((proposal_id, start), end)| (proposal_id, start, end)))
+    let (Some(proposal_id), Some(proposal_block)) = (proposal_id.as_ref(), *proposal_block) else {
+        return Err(Error::Payload(
+            "active GCS proposal is missing proposal_id or proposal_block".to_owned(),
+        ));
+    };
+
+    let mut windows = Vec::with_capacity(rows.len());
+    for (row_state, row_id, row_block, chain_id, start, end) in &rows {
+        if row_state != state
+            || row_id.as_deref() != Some(proposal_id.as_slice())
+            || *row_block != Some(proposal_block)
+        {
+            return Err(Error::Payload(
+                "active GCS upgrade_state rows do not describe one proposal".to_owned(),
+            ));
+        }
+        let (Some(start), Some(end)) = (*start, *end) else {
+            return Err(Error::Payload(format!(
+                "active GCS chain {chain_id} is missing its evaluation window"
+            )));
+        };
+        windows.push((*chain_id, start, end));
+    }
+    Ok(Some((proposal_id.clone(), proposal_block, windows)))
 }
 
 /// Per-track eager consensus state. We only need ONE unanimous block to anchor
@@ -413,18 +445,6 @@ async fn host_reached_end_block(
     Ok(reached)
 }
 
-/// Host chain id of the active GCS upgrade (set by upgrade-controller on
-/// activation). `None` when unset — host consensus is skipped until it appears.
-async fn active_host_chain_id(pool: &Pool<Postgres>) -> Result<Option<i64>, Error> {
-    let row: Option<(Option<i64>,)> = sqlx::query_as(
-        "SELECT host_chain_id FROM upgrade_state
-          WHERE stack_role = 'GCS' AND status = 'in_progress'",
-    )
-    .fetch_optional(pool)
-    .await?;
-    Ok(row.and_then(|(v,)| v))
-}
-
 /// Timeout state machine for the tracked window.
 enum WindowTimeout {
     /// No deadline running.
@@ -434,46 +454,47 @@ enum WindowTimeout {
 }
 
 struct WindowState {
-    /// The proposal and window currently being tracked.
-    tracked_window: Option<(Vec<u8>, i64, i64)>,
+    /// Tracked proposal + per-chain window set; a change resets every track.
+    tracked_window: Option<HostWindows>,
     timeout: WindowTimeout,
 }
 
-/// One consensus pass over both tracks. Reads the active window, resets track
-/// state when the window changes or closes (so a prior upgrade's anchors never
-/// carry over), then polls the host and Gateway candidates. Re-emits each
-/// anchored track's `unanimity_consensus`, and `unanimity_consensus_timeout` once
-/// past the deadline, every pass until the window closes.
+/// One pass over every host-chain track plus the Gateway track: resets tracks on
+/// a window-set change, polls each chain's + the Gateway's candidates, re-emits
+/// anchors, and — once every host chain hit end_block without unanimity — emits a
+/// single timeout past the deadline.
 async fn consensus_pass(
     pool: &Pool<Postgres>,
     http: &reqwest::Client,
     s3_urls: &Arc<RwLock<Vec<String>>>,
-    host: &mut ConsensusTrack,
+    host_tracks: &mut HashMap<i64, ConsensusTrack>,
     gateway: &mut ConsensusTrack,
     window_state: &mut WindowState,
     commitment_timeout: Duration,
 ) -> Result<(), Error> {
-    let window = active_upgrade_window(pool).await?;
-    if window_state.tracked_window != window {
-        host.reset();
+    let active = active_upgrade_windows(pool).await?;
+    if window_state.tracked_window != active {
+        // Window set changed: reset all tracks + timeout so no prior anchor carries over.
+        host_tracks.clear();
         gateway.reset();
-        // Reset the timeout for the new proposal or window.
         window_state.timeout = WindowTimeout::NotArmed;
-        window_state.tracked_window = window.clone();
+        window_state.tracked_window = active.clone();
     }
-    let Some((proposal_id, start, end)) = window else {
+    let Some((proposal_id, proposal_block, windows)) = active else {
         return Ok(());
     };
 
-    // Snapshot the URL list so both tracks see a stable operator set this pass.
+    // Snapshot the URL list so every track sees a stable operator set this pass.
     let urls = s3_urls.read().await.clone();
 
-    // Host track: needs the host chain id (set by upgrade-controller).
-    if host.anchored.is_none() {
-        if let Some(host_chain_id) = active_host_chain_id(pool).await? {
-            host.chain_id = host_chain_id;
-            let candidates = host_consensus_candidates(pool, host_chain_id, start, end).await?;
-            poll_track(http, &urls, host, &candidates).await?;
+    // Host tracks: one per chain window, each anchoring independently.
+    for &(chain_id, start, end) in &windows {
+        let track = host_tracks
+            .entry(chain_id)
+            .or_insert_with(|| ConsensusTrack::new(chain_id));
+        if track.anchored.is_none() {
+            let candidates = host_consensus_candidates(pool, chain_id, start, end).await?;
+            poll_track(http, &urls, track, &candidates).await?;
         }
     }
 
@@ -489,13 +510,15 @@ async fn consensus_pass(
         }
     }
 
-    // Re-emit each anchor every pass so a controller that missed the NOTIFY still latches.
-    for track in [&*host, &*gateway] {
+    // Re-emit each anchor every pass so a controller that missed the NOTIFY still
+    // latches; each track carries its own chain_id for per-chain latching.
+    for track in host_tracks.values().chain(std::iter::once(&*gateway)) {
         if let Some(block) = track.anchored {
             notify_unanimity(
                 pool,
                 UNANIMITY_CONSENSUS_CHANNEL,
                 &proposal_id,
+                proposal_block,
                 &NewBlockPayload {
                     chain_id: track.chain_id,
                     block_height: block,
@@ -506,47 +529,56 @@ async fn consensus_pass(
         }
     }
 
-    // If we reached the last block but didn't agree in time, give up so the
-    // upgrade can be rerun.
-    let both_anchored = host.anchored.is_some() && gateway.anchored.is_some();
+    // One global deadline, armed once every host chain reached its end_block
+    // without agreeing, so the upgrade can be rerun.
+    let all_host_anchored =
+        !host_tracks.is_empty() && host_tracks.values().all(|t| t.anchored.is_some());
+    let both_anchored = all_host_anchored && gateway.anchored.is_some();
     if !both_anchored {
+        let max_end = windows.iter().map(|&(_, _, end)| end).max().unwrap_or(0);
         match window_state.timeout {
-            // Arm once we reach end_block (chain_id is 0 until then).
-            WindowTimeout::NotArmed
-                if host.chain_id != 0
-                    && host_reached_end_block(pool, host.chain_id, end).await? =>
-            {
-                window_state.timeout = WindowTimeout::Armed(Instant::now() + commitment_timeout);
-                info!(
-                    host_chain_id = host.chain_id,
-                    end_block = end,
-                    timeout_secs = commitment_timeout.as_secs(),
-                    "host chain reached end_block without unanimity — arming consensus timeout"
-                );
+            WindowTimeout::NotArmed => {
+                let mut all_reached = true;
+                for &(chain_id, _, end) in &windows {
+                    if !host_reached_end_block(pool, chain_id, end).await? {
+                        all_reached = false;
+                        break;
+                    }
+                }
+                if all_reached {
+                    window_state.timeout =
+                        WindowTimeout::Armed(Instant::now() + commitment_timeout);
+                    info!(
+                        chains = windows.len(),
+                        max_end_block = max_end,
+                        timeout_secs = commitment_timeout.as_secs(),
+                        "all host chains reached end_block without unanimity — arming consensus timeout"
+                    );
+                }
             }
             // Still armed past the deadline — (re)emit the timeout.
             WindowTimeout::Armed(deadline) if Instant::now() >= deadline => {
                 warn!(
-                    host_chain_id = host.chain_id,
-                    start_block = start,
-                    end_block = end,
-                    host_anchored = host.anchored.is_some(),
+                    chains = windows.len(),
+                    max_end_block = max_end,
+                    all_host_anchored,
                     gateway_anchored = gateway.anchored.is_some(),
-                    "consensus timeout elapsed without both-track unanimity — emitting event_unanimity_consensus_timeout"
+                    "consensus timeout elapsed without unanimity on all tracks — emitting event_unanimity_consensus_timeout"
                 );
                 notify_unanimity(
                     pool,
                     UNANIMITY_CONSENSUS_TIMEOUT_CHANNEL,
                     &proposal_id,
+                    proposal_block,
                     &NewBlockPayload {
-                        chain_id: host.chain_id,
-                        block_height: end,
+                        chain_id: windows.first().map(|&(c, _, _)| c).unwrap_or(0),
+                        block_height: max_end,
                         block_hash: String::new(),
                     },
                 )
                 .await?;
             }
-            WindowTimeout::NotArmed | WindowTimeout::Armed(_) => {}
+            WindowTimeout::Armed(_) => {}
         }
     }
 
@@ -557,10 +589,12 @@ async fn notify_unanimity(
     pool: &Pool<Postgres>,
     channel: &str,
     proposal_id: &[u8],
+    proposal_block: i64,
     payload: &NewBlockPayload,
 ) -> Result<(), Error> {
     let body = serde_json::to_string(&UnanimityPayload {
         proposal_id,
+        proposal_block,
         chain_id: payload.chain_id,
         block_height: payload.block_height,
         block_hash: &payload.block_hash,
@@ -727,10 +761,9 @@ where
     listener.listen_all(channels).await?;
     info!(?channels, "listening for notifications");
 
-    // Per-track eager consensus state. Host chain id is discovered from
-    // upgrade_state each pass (starts unknown); the Gateway track is keyed by the
-    // provider-resolved gw_chain_id.
-    let mut host_track = ConsensusTrack::new(0);
+    // One host track per chain, discovered from upgrade_state each pass;
+    // the Gateway track is keyed by the provider-resolved gw_chain_id.
+    let mut host_tracks: HashMap<i64, ConsensusTrack> = HashMap::new();
     let mut gateway_track = ConsensusTrack::new(gw_chain_id);
     // Tracked window + its timeout state.
     let mut window_state = WindowState {
@@ -752,7 +785,7 @@ where
                     &pool,
                     &http,
                     &s3_urls,
-                    &mut host_track,
+                    &mut host_tracks,
                     &mut gateway_track,
                     &mut window_state,
                     config.commitment_timeout,
