@@ -3003,6 +3003,30 @@ describe('Decryption', function () {
         ]);
     });
 
+    it('Should emit a handles-only Solana user decryption request', async function () {
+      const payload = {
+        userIdentity: createBytes32(),
+        publicKey,
+        allowedAclDomainKeys: [createBytes32()],
+        requestValidity,
+        nonce: createBytes32(),
+        extraData: extraDataV0,
+        signature: hre.ethers.hexlify(hre.ethers.randomBytes(64)),
+      };
+
+      await expect(decryption.connect(tokenFundedTxSender).userDecryptionRequestSolana(directHandles, payload))
+        .to.emit(decryption, 'UserDecryptionRequestSolana')
+        .withArgs(decryptionId, toValues(directHandles), [
+          payload.userIdentity,
+          payload.publicKey,
+          payload.allowedAclDomainKeys,
+          toValues(payload.requestValidity),
+          payload.nonce,
+          payload.extraData,
+          payload.signature,
+        ]);
+    });
+
     it('Should accept a mixed batch (some direct, some delegated) without checking delegation on-chain', async function () {
       // Delegated entry: ownerAddress differs from userAddress. The gateway does not verify this
       // on-chain — authorization moves to the KMS Connector — so the request is accepted here

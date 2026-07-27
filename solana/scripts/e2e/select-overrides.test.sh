@@ -45,7 +45,7 @@ check() {
   fi
 }
 
-ALL="gateway-contracts host-contracts coprocessor relayer kms-connector"
+ALL="gateway-contracts host-contracts coprocessor relayer solana-proof-service kms-connector"
 T="feature-solana-$BASE_SHA"
 PINS_GATEWAY="GATEWAY_VERSION=$T"
 PINS_HOST="HOST_VERSION=$T"
@@ -53,11 +53,11 @@ PINS_COPRO="COPROCESSOR_DB_MIGRATION_VERSION=$T COPROCESSOR_HOST_LISTENER_VERSIO
 PINS_RELAYER="RELAYER_VERSION=$T RELAYER_MIGRATE_VERSION=$T"
 PINS_CONNECTOR="CONNECTOR_DB_MIGRATION_VERSION=$T CONNECTOR_GW_LISTENER_VERSION=$T CONNECTOR_KMS_WORKER_VERSION=$T CONNECTOR_TX_SENDER_VERSION=$T"
 
-# Solana-only script/geyser/docs change: nothing is built, everything pinned to the base tag.
-check "solana scripts only -> no overrides" \
+# The proof service has no branch-published image, so it is always built from the checked-out source.
+check "solana scripts only -> proof service" \
   $'solana/scripts/e2e/full-vertical.sh\nsolana/geyser/src/lib.rs\nsolana/docs/notes.md' \
   "true" \
-  "none" \
+  "solana-proof-service" \
   "$PINS_GATEWAY $PINS_HOST $PINS_COPRO $PINS_RELAYER $PINS_CONNECTOR"
 
 # zama-host is compiled into the coprocessor and relayer binaries, but NOT the kms-connector's
@@ -65,90 +65,90 @@ check "solana scripts only -> no overrides" \
 check "solana program change -> coprocessor + relayer" \
   "solana/programs/zama-host/src/lib.rs" \
   "true" \
-  "coprocessor relayer" \
+  "coprocessor relayer solana-proof-service" \
   "$PINS_GATEWAY $PINS_HOST $PINS_CONNECTOR"
 
 # zama-solana-acl is the one solana crate the kms-connector image consumes.
 check "zama-solana-acl change -> all rust consumers" \
   "solana/crates/zama-solana-acl/src/lib.rs" \
   "true" \
-  "coprocessor kms-connector relayer" \
+  "coprocessor kms-connector relayer solana-proof-service" \
   "$PINS_GATEWAY $PINS_HOST"
 
 check "other solana crate change -> coprocessor + relayer" \
   "solana/crates/zama-fhe/src/lib.rs" \
   "true" \
-  "coprocessor relayer" \
+  "coprocessor relayer solana-proof-service" \
   "$PINS_GATEWAY $PINS_HOST $PINS_CONNECTOR"
 
 check "solana Cargo.lock change -> coprocessor + relayer" \
   "solana/Cargo.lock" \
   "true" \
-  "coprocessor relayer" \
+  "coprocessor relayer solana-proof-service" \
   "$PINS_GATEWAY $PINS_HOST $PINS_CONNECTOR"
 
 # On-chain-only demo programs are compiled into no docker image.
-check "demo-vault change -> no overrides" \
+check "demo-vault change -> proof service" \
   "solana/programs/demo-vault/src/lib.rs" \
   "true" \
-  "none" \
+  "solana-proof-service" \
   "$PINS_GATEWAY $PINS_HOST $PINS_COPRO $PINS_RELAYER $PINS_CONNECTOR"
 
-check "confidential-deposit-app change -> no overrides" \
+check "confidential-deposit-app change -> proof service" \
   "solana/programs/confidential-deposit-app/src/lib.rs" \
   "true" \
-  "none" \
+  "solana-proof-service" \
   "$PINS_GATEWAY $PINS_HOST $PINS_COPRO $PINS_RELAYER $PINS_CONNECTOR"
 
 check "coprocessor change -> coprocessor only" \
   "coprocessor/fhevm-engine/tfhe-worker/src/main.rs" \
   "true" \
-  "coprocessor" \
+  "coprocessor solana-proof-service" \
   "$PINS_GATEWAY $PINS_HOST $PINS_RELAYER $PINS_CONNECTOR"
 
 check "kms-connector change -> kms-connector only" \
   "kms-connector/crates/gw-listener/src/lib.rs" \
   "true" \
-  "kms-connector" \
+  "kms-connector solana-proof-service" \
   "$PINS_GATEWAY $PINS_HOST $PINS_COPRO $PINS_RELAYER"
 
 # Contracts are compiled into the Rust images (bindings/artifacts), so they fan out.
 check "host-contracts change -> contracts + rust consumers" \
   "host-contracts/contracts/FHEVMExecutor.sol" \
   "true" \
-  "host-contracts coprocessor kms-connector relayer" \
+  "host-contracts coprocessor kms-connector relayer solana-proof-service" \
   "$PINS_GATEWAY"
 
 check "gateway-contracts change -> contracts + rust consumers" \
   "gateway-contracts/contracts/Decryption.sol" \
   "true" \
-  "gateway-contracts coprocessor kms-connector relayer" \
+  "gateway-contracts coprocessor kms-connector relayer solana-proof-service" \
   "$PINS_HOST"
 
-check "sdk-only change -> no overrides" \
+check "sdk-only change -> proof service" \
   "sdk/js-sdk/src/solana/index.ts" \
   "true" \
-  "none" \
+  "solana-proof-service" \
   "$PINS_GATEWAY $PINS_HOST $PINS_COPRO $PINS_RELAYER $PINS_CONNECTOR"
 
 # e2e tests and demo scripts run from PR source against the built stack; no image copies them.
-check "e2e scenario change -> no overrides" \
+check "e2e scenario change -> proof service" \
   "test-suite/fhevm/e2e/scenarios/deposit-arc.scenario.test.ts" \
   "true" \
-  "none" \
+  "solana-proof-service" \
   "$PINS_GATEWAY $PINS_HOST $PINS_COPRO $PINS_RELAYER $PINS_CONNECTOR"
 
-check "demo script change -> no overrides" \
+check "demo script change -> proof service" \
   "test-suite/fhevm/demo/demo-up.sh" \
   "true" \
-  "none" \
+  "solana-proof-service" \
   "$PINS_GATEWAY $PINS_HOST $PINS_COPRO $PINS_RELAYER $PINS_CONNECTOR"
 
 # The SDK-plus-scenario PR shape that used to pay for a full workspace rebuild.
-check "sdk + scenario change -> no overrides" \
+check "sdk + scenario change -> proof service" \
   $'sdk/js-sdk/src/solana/vault/index.ts\ntest-suite/fhevm/e2e/scenarios/deposit-arc.scenario.test.ts' \
   "true" \
-  "none" \
+  "solana-proof-service" \
   "$PINS_GATEWAY $PINS_HOST $PINS_COPRO $PINS_RELAYER $PINS_CONNECTOR"
 
 # Build-recipe changes force full source builds regardless of published images.
@@ -169,6 +169,12 @@ check "clean-e2e.sh change -> build all" \
   "true" \
   "$ALL" \
   ""
+
+check "proof-service change -> proof service" \
+  "solana-proof-service/src/main.rs" \
+  "true" \
+  "solana-proof-service" \
+  "$PINS_GATEWAY $PINS_HOST $PINS_COPRO $PINS_RELAYER $PINS_CONNECTOR"
 
 # Fail-safe: an incomplete base-commit image set means build everything — the floating tag is
 # never consumed (a partial publish could leave it mixing branch commits).
