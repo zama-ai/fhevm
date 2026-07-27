@@ -2,7 +2,7 @@ import type { EncryptionBits } from '../../core/types/fheType.js';
 import type { Bytes32Hex } from '../../core/types/primitives.js';
 import type { SolanaZkProof } from '../../core/types/zkProof-p.js';
 import { toSolanaZkProof } from '../../core/coprocessor/SolanaZkProof-p.js';
-import { bytesToHex } from '../../core/base/bytes.js';
+import { asBytes32Hex, asBytes65Hex, asBytesHex, bytesToHex } from '../../core/base/bytes.js';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 const sendAndConfirm = vi.hoisted(() => vi.fn());
@@ -29,8 +29,8 @@ import { findComputeSignerPda } from '../internal/generated/confidentialToken/pd
 
 const CHAIN_ID = (1n << 63n) | 12345n;
 const ACL = `0x${'11'.repeat(32)}` as Bytes32Hex;
-const CANONICAL_ACL = bytesToHex(base58.decode('6AtbvED1rfX68aCT1tYgU1aeu4kFksPDxZG9gtB1Fgtu'));
-const SIGNATURE = `0x${'44'.repeat(65)}` as const;
+const CANONICAL_ACL = asBytes32Hex(bytesToHex(base58.decode('6AtbvED1rfX68aCT1tYgU1aeu4kFksPDxZG9gtB1Fgtu')));
+const SIGNATURE = asBytes65Hex(`0x${'44'.repeat(65)}`);
 
 function key(fill: number): Address {
   return address(base58.encode(new Uint8Array(32).fill(fill)));
@@ -71,7 +71,7 @@ async function parameters(overrides: Partial<SolanaConfidentialTransferParameter
     inputProofResult: {
       handles: inputProof.getInputHandles(),
       signatures: [SIGNATURE],
-      extraData: '0x00' as const,
+      extraData: asBytesHex('0x00'),
     },
     inputIndex: 0,
     owner,
@@ -198,7 +198,7 @@ describe('confidentialTransfer attestation binding', () => {
       inputProofResult: {
         handles: inputProof.getInputHandles(),
         signatures: [SIGNATURE],
-        extraData: '0x00',
+        extraData: asBytesHex('0x00'),
       },
       rpc: {
         getLatestBlockhash: vi.fn().mockReturnValue({
@@ -276,7 +276,7 @@ describe('confidentialTransfer attestation binding', () => {
       feePayer: owner,
       mint,
       inputProof,
-      inputProofResult: { handles: inputProof.getInputHandles(), signatures: [SIGNATURE], extraData: '0x00' },
+      inputProofResult: { handles: inputProof.getInputHandles(), signatures: [SIGNATURE], extraData: asBytesHex('0x00') },
       rpc: {
         getLatestBlockhash: vi.fn().mockReturnValue({
           send: vi.fn().mockResolvedValue({ value: { blockhash: key(20), lastValidBlockHeight: 1_000n } }),
@@ -293,7 +293,7 @@ describe('confidentialTransfer attestation binding', () => {
 
   it('rejects a host program that does not match the confidential-token deployment before RPC', async () => {
     const alternateHost = key(12);
-    const alternateAcl = bytesToHex(base58.decode(alternateHost));
+    const alternateAcl = asBytes32Hex(bytesToHex(base58.decode(alternateHost)));
     const params = await parameters();
     await expect(confidentialTransfer({ ...context, aclProgramAddress: alternateAcl }, params)).rejects.toThrow(
       'does not match the host compiled into confidential-token',

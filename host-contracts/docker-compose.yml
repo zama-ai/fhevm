@@ -34,6 +34,11 @@ services:
       - HARDHAT_NETWORK=staging
       - CHAIN_ID_GATEWAY=54321
       - RPC_URL=http://anvil-node:8545
+      # This local anvil devnet has no LayerZero endpoint, so no ConfidentialBridge is deployed
+      # here. Clearing LZ_ENDPOINT_ADDRESS (which .env points at the canonical endpoint) makes
+      # task:deployEmptyUUPSProxies skip the bridge and pin its ACL address to null, instead of
+      # aborting because the canonical endpoint has no code on this chain.
+      - LZ_ENDPOINT_ADDRESS=
     command:
       - npx hardhat task:deployAllHostContracts --with-kms-generation true
     depends_on:

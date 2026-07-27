@@ -29,6 +29,10 @@ DOCKER_REGISTRY ?= ghcr.io/zama-ai/console
 RELAYER_IMAGE   ?= relayer
 MIGRATE_IMAGE   ?= relayer-migrate
 TAG             ?= latest
+# Read the channel from rust-toolchain.toml so the docker build are consistent across local/CI.
+RUST_IMAGE_VERSION := $(shell awk -F'"' '/channel/ {print $$2}' rust-toolchain.toml)
+# The relayer Dockerfiles bind repo-root-relative paths (shared/, gateway-contracts/...).
+REPO_ROOT := $(abspath $(CURDIR)/..)
 
 # Network configuration
 TESTNET_RPC       := https://rpc.testnet.zama.org/
@@ -497,10 +501,10 @@ openapi-check: ## Verify generated OpenAPI spec is up to date
 # ---------------------------------------------------------------------------
 
 docker-build: _check-docker ## Build relayer image (TAG=v0.9.0-rc.3 to version)
-	@docker build -f docker/relayer/Dockerfile -t $(RELAYER_IMAGE):$(TAG) .
+	@docker build --build-arg RUST_IMAGE_VERSION=$(RUST_IMAGE_VERSION) -f $(CURDIR)/docker/relayer/Dockerfile -t $(RELAYER_IMAGE):$(TAG) $(REPO_ROOT)
 
 docker-build-migrate: _check-docker ## Build relayer-migrate image (TAG=v0.9.0-rc.3 to version)
-	@docker build -f docker/relayer-migrate/Dockerfile -t $(MIGRATE_IMAGE):$(TAG) .
+	@docker build --build-arg RUST_IMAGE_VERSION=$(RUST_IMAGE_VERSION) -f $(CURDIR)/docker/relayer-migrate/Dockerfile -t $(MIGRATE_IMAGE):$(TAG) $(REPO_ROOT)
 
 docker-build-all: docker-build docker-build-migrate ## Build all Docker images
 

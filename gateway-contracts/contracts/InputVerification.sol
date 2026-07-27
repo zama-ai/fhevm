@@ -408,20 +408,25 @@ contract InputVerification is
             revert VerifyProofNotRequested(zkProofId);
         }
 
-        // Retrieve stored Solana ZK Proof verification request inputs (bytes32 identities).
-        SolanaZKProofInput memory solanaInput = $.solanaZkProofInputs[zkProofId];
+        // Compute the digest of the Solana CiphertextVerification structure. Scoped so the
+        // stored-input and verification-struct locals are released before the consensus block
+        // below — the Solana path carries more locals than the EVM one and would otherwise
+        // exceed the stack depth limit.
+        bytes32 digest;
+        {
+            // Retrieve stored Solana ZK Proof verification request inputs (bytes32 identities).
+            SolanaZKProofInput memory solanaInput = $.solanaZkProofInputs[zkProofId];
 
-        // Initialize the bytes32 CiphertextVerification structure for the signature validation.
-        SolanaCiphertextVerification memory ciphertextVerification = SolanaCiphertextVerification(
-            ctHandles,
-            solanaInput.userAddress,
-            solanaInput.contractAddress,
-            solanaInput.contractChainId,
-            extraData
-        );
-
-        // Compute the digest of the Solana CiphertextVerification structure.
-        bytes32 digest = _hashSolanaCiphertextVerification(ciphertextVerification);
+            // Initialize the bytes32 CiphertextVerification structure for the signature validation.
+            SolanaCiphertextVerification memory ciphertextVerification = SolanaCiphertextVerification(
+                ctHandles,
+                solanaInput.userAddress,
+                solanaInput.contractAddress,
+                solanaInput.contractChainId,
+                extraData
+            );
+            digest = _hashSolanaCiphertextVerification(ciphertextVerification);
+        }
 
         // Recover the signer address from the signature.
         address signerAddress = ECDSA.recover(digest, signature);
@@ -443,15 +448,26 @@ contract InputVerification is
         emit VerifyProofResponseCall(zkProofId, ctHandles, signature, msg.sender, extraData);
 
         // Send the event if and only if the consensus is reached in the current response call.
-        if (
-            !$.verifiedZKProofs[zkProofId] &&
-            !$.rejectedZKProofs[zkProofId] &&
-            _isConsensusReached(currentSignatures.length)
-        ) {
-            $.verifiedZKProofs[zkProofId] = true;
-            $.verifyProofConsensusDigest[zkProofId] = digest;
+        // Shares the priority-sender finalization path with the EVM `verifyProofResponse`, so a
+        // Solana-originated request is indistinguishable downstream from an EVM one.
+        if (!$.verifiedZKProofs[zkProofId] && !$.rejectedZKProofs[zkProofId]) {
+            (bool canFinalize, bool finalizedByPriority) = _canFinalizeCoprocessorConsensus(
+                msg.sender,
+                currentSignatures.length
+            );
+            if (canFinalize) {
+                $.verifiedZKProofs[zkProofId] = true;
+                $.verifyProofConsensusDigest[zkProofId] = digest;
+                if (finalizedByPriority) {
+                    $.priorityVerifyProofConsensusTxSender[zkProofId] = msg.sender;
 
-            emit VerifyProofResponse(zkProofId, ctHandles, currentSignatures);
+                    bytes[] memory prioritySignatures = new bytes[](1);
+                    prioritySignatures[0] = signature;
+                    emit VerifyProofResponse(zkProofId, ctHandles, prioritySignatures);
+                } else {
+                    emit VerifyProofResponse(zkProofId, ctHandles, currentSignatures);
+                }
+            }
         }
     }
 

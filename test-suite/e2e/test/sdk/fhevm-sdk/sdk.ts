@@ -100,8 +100,14 @@ export class FhevmSdk implements SdkInstance {
       setFhevmRuntimeConfig({
         singleThread: false,
         logger: {
-          debug: (message: string) => console.log(message),
-          error: (message: string, _cause: unknown) => console.error(message),
+          debug: (message: string) => console.log(`[debug] ${message}`),
+          warn: (message: string) => console.log(`[warn] ${message}`),
+          error: (message: string, cause: unknown) => {
+            console.log(`[error] ${message}`);
+            if (cause !== undefined) {
+              console.log(`[error] ${cause}`);
+            }
+          },
         },
       });
     }
@@ -159,7 +165,7 @@ export class FhevmSdk implements SdkInstance {
 
     const signedPermit = await this.#fullClient.signDecryptionPermit({
       contractAddresses: [contractAddress],
-      durationDays: 10,
+      durationSeconds: 10 * 24 * 3600, // 10 days
       startTimestamp: parameters.startTimestamp ?? Math.floor(Date.now() / 1000),
       transportKeyPair,
       signer,
@@ -198,7 +204,7 @@ export class FhevmSdk implements SdkInstance {
 
     const signedPermit = await this.#fullClient.signDecryptionPermit({
       contractAddresses: [contractAddress],
-      durationDays: 10,
+      durationSeconds: 10 * 24 * 3600, // 10 days
       startTimestamp: parameters.startTimestamp ?? Math.floor(Date.now() / 1000),
       transportKeyPair,
       signer,

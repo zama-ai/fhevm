@@ -1,5 +1,5 @@
 use super::common::try_extract_non_retryable_config_error;
-use super::TransactionOperation;
+use super::{begin_live_write, TransactionOperation};
 use crate::metrics::{VERIFY_PROOF_FAIL_COUNTER, VERIFY_PROOF_SUCCESS_COUNTER};
 use crate::nonce_managed_provider::NonceManagedProvider;
 use crate::AbstractSigner;
@@ -87,13 +87,17 @@ where
     }
 
     async fn remove_proof_by_id(&self, zk_proof_id: i64) -> anyhow::Result<()> {
+        let Some(mut tx) = begin_live_write(&self.db_pool).await? else {
+            return Ok(());
+        };
         debug!(zk_proof_id = zk_proof_id, "Removing proof");
         sqlx::query!(
             "DELETE FROM verify_proofs WHERE zk_proof_id = $1",
             zk_proof_id
         )
-        .execute(&self.db_pool)
+        .execute(tx.as_mut())
         .await?;
+        tx.commit().await?;
         Ok(())
     }
 
@@ -103,6 +107,9 @@ where
         current_retry_count: i32,
         error: &str,
     ) -> anyhow::Result<()> {
+        let Some(mut tx) = begin_live_write(&self.db_pool).await? else {
+            return Ok(());
+        };
         if current_retry_count == (self.conf.verify_proof_resp_max_retries as i32) - 1 {
             error!(zk_proof_id = zk_proof_id, "Max retries reached for proof");
         }
@@ -117,12 +124,16 @@ where
             zk_proof_id,
             error
         )
-        .execute(&self.db_pool)
+        .execute(tx.as_mut())
         .await?;
+        tx.commit().await?;
         Ok(())
     }
 
     async fn remove_proofs_by_retry_count(&self) -> anyhow::Result<()> {
+        let Some(mut tx) = begin_live_write(&self.db_pool).await? else {
+            return Ok(());
+        };
         debug!(
             max_retries = self.conf.verify_proof_resp_max_retries,
             "Removing proofs with retry count >= max_retries"
@@ -131,8 +142,9 @@ where
             "DELETE FROM verify_proofs WHERE retry_count >= $1",
             self.conf.verify_proof_resp_max_retries as i64
         )
-        .execute(&self.db_pool)
+        .execute(tx.as_mut())
         .await?;
+        tx.commit().await?;
         Ok(())
     }
 
@@ -270,6 +282,9 @@ where
         zk_proof_id: i64,
         error: &str,
     ) -> anyhow::Result<()> {
+        let Some(mut tx) = begin_live_write(&self.db_pool).await? else {
+            return Ok(());
+        };
         // Intentionally set retry_count to max so existing max-retry cleanup logic can run unchanged when enabled.
         sqlx::query!(
             "UPDATE verify_proofs
@@ -282,8 +297,9 @@ where
             self.conf.verify_proof_resp_max_retries as i32,
             error,
         )
-        .execute(&self.db_pool)
+        .execute(tx.as_mut())
         .await?;
+        tx.commit().await?;
         Ok(())
     }
 }

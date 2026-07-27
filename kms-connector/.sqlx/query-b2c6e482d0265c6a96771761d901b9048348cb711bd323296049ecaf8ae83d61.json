@@ -23,7 +23,8 @@
                 "pending",
                 "under_process",
                 "completed",
-                "failed"
+                "failed",
+                "aborted"
               ]
             }
           }

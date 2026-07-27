@@ -1,0 +1,23 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n            WITH RECURSIVE orphaned_branch AS (\n                SELECT block_hash\n                FROM host_chain_blocks_valid\n                WHERE chain_id = $1\n                  AND block_hash = ANY($2::bytea[])\n                UNION\n                SELECT child.block_hash\n                FROM host_chain_blocks_valid child\n                JOIN orphaned_branch parent\n                  ON child.parent_hash = parent.block_hash\n                WHERE child.chain_id = $1\n            )\n            UPDATE host_chain_blocks_valid blocks\n            SET block_status = 'orphaned'\n            FROM orphaned_branch\n            WHERE blocks.chain_id = $1\n              AND blocks.block_hash = orphaned_branch.block_hash\n            RETURNING blocks.block_hash\n            ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "block_hash",
+        "type_info": "Bytea"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Int8",
+        "ByteaArray"
+      ]
+    },
+    "nullable": [
+      false
+    ]
+  },
+  "hash": "aaabd9aef70413d64c8b20238b1d0452d3827daf19f67344b0b3b413a7aa58fa"
+}

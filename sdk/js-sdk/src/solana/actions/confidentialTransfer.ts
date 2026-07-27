@@ -190,7 +190,7 @@ export async function confidentialTransfer(
   if (simulation.value.err !== null) {
     // @solana/kit InstructionError payloads can contain bigint Custom codes;
     // plain JSON.stringify throws and hides the real on-chain failure.
-    const err = JSON.stringify(simulation.value.err, (_key, value) =>
+    const err = JSON.stringify(simulation.value.err, (_key: string, value: unknown) =>
       typeof value === 'bigint' ? value.toString() : value,
     );
     const logs = simulation.value.logs?.join('\n') ?? '';

@@ -28,7 +28,7 @@ pub mod validation_messages {
     pub const MUST_NOT_BE_EMPTY: &str = "Must not be empty";
 
     pub const INVALID_EXTRA_DATA_FORMAT: &str =
-        "Must be 0x00, or a versioned format: 0x01 + 32-byte contextId (33 bytes), 0x02 + 32-byte contextId + 32-byte epochId (65 bytes), or Solana 0x03 MMR proof extraData";
+        "Must be 0x00, or a versioned format: 0x01 + 32-byte contextId (0x07-tagged first byte), 0x02 + 32-byte contextId (0x07-tagged) + 32-byte epochId (0x08-tagged), or Solana 0x03 MMR proof extraData";
     pub const TIMESTAMP_MUST_NOT_BE_IN_FUTURE: &str = "Timestamp must not be in the future";
 }
 
@@ -162,36 +162,65 @@ const EXTRA_DATA_SOLANA_MMR_PROOF_MIN_BYTES: usize = 1 + 32 + 32 + 8 + 4;
 const EXTRA_DATA_SOLANA_MMR_PROOF_MIN_HEX_LEN: usize =
     2 + EXTRA_DATA_SOLANA_MMR_PROOF_MIN_BYTES * 2;
 
+/// OpenAPI schema for the decryption `extraData` request field.
+///
+/// Single source of truth for the user-facing description: every request type
+/// carrying the field references this via `#[schema(schema_with = ...)]`.
+/// The accepted formats are specified in [`validate_extra_data_field_decryption`].
+#[allow(deprecated)]
+pub fn extra_data_decryption_schema() -> utoipa::openapi::schema::Object {
+    utoipa::openapi::schema::ObjectBuilder::new()
+        .schema_type(utoipa::openapi::schema::SchemaType::Type(
+            utoipa::openapi::schema::Type::String,
+        ))
+        .description(Some(
+            "Extra data forwarded verbatim to the gateway contract. Accepts `\"0x00\"`, version `0x01` \
+             (`0x01` + 32-byte contextId), version `0x02` (`0x02` + 32-byte contextId + 32-byte epochId), \
+             or version `0x03` (Solana RFC-021 MMR-proof blob, variable length). \
+             contextId must be 0x07-tagged and epochId must be 0x08-tagged (first byte of each).",
+        ))
+        // Deprecated `example` (singular) matches what `#[schema(example = ...)]`
+        // emits for every other field; `examples` would render differently in the spec.
+        .example(Some("0x00".into()))
+        .build()
+}
+
 /// Validates the extraData field format for decryption requests.
 ///
-/// Accepted formats:
+/// Each version has a fixed size; trailing bytes are rejected. New fields are
+/// introduced by bumping the version byte, not by appending to an existing one.
 /// - `"0x00"`: Legacy format (version 0).
-/// - `"0x01"` + 64 hex chars: Version 1 — `[version(1B) | contextId(32B)]` = 33 bytes
-///   (66 hex chars + `"0x"` prefix = 68 chars).
-/// - `"0x02"` + 128 hex chars: Version 2 — `[version(1B) | contextId(32B) | epochId(32B)]`
-///   = 65 bytes (130 hex chars + `"0x"` prefix = 132 chars).
-/// - `"0x03"` + variable: Solana MMR-proof blob
+/// - `"0x01" + 64 hex chars`: Version 1 — `[version(1B) | contextId(32B)]` = 33 bytes
+///   (66 hex chars + `"0x"` prefix = 68 chars). The contextId must be 0x07-tagged
+///   (its first byte must be `0x07`).
+/// - `"0x02" + 128 hex chars`: Version 2 — `[version(1B) | contextId(32B) | epochId(32B)]`
+///   = 65 bytes (130 hex chars + `"0x"` prefix = 132 chars). The contextId must be
+///   0x07-tagged and the epochId must be 0x08-tagged (first byte of each, respectively).
+/// - `"0x03" + variable`: Version 3 (Solana, RFC-021) — MMR-proof blob
 ///   `[version(1B) | contextId(32B) | aclValueKey(32B) | proofSlot(8B) | proofLen(4B) | proof]`.
 ///
-/// The contextId and epochId are opaque to the Relayer: not interpreted, only
-/// validated for shape, and propagated verbatim to the Gateway.
+/// The contextId and epochId are opaque to the Relayer: they are not interpreted beyond
+/// their type tag, and the bytes are propagated verbatim to the Gateway.
 pub fn validate_extra_data_field_decryption(extra_data: &str) -> Result<(), ValidationError> {
+    const CONTEXT_ID_TAG: u8 = 0x07;
+    const EPOCH_ID_TAG: u8 = 0x08;
+
     match extra_data {
         "0x00" => Ok(()),
         s if s.len() == 68 && s.starts_with("0x01") => {
             // Version 1: [0x01 | contextId(32B)] = 33 bytes = 66 hex chars + "0x" prefix = 68 chars
-            decode_versioned_extra_data(s)
+            let bytes = decode_versioned_extra_data(s)?;
+            validate_id_tag(bytes[1], CONTEXT_ID_TAG)
         }
-        s if s.starts_with("0x02") => {
-            if s.len() == 132 {
-                // Version 2: [0x02 | contextId(32B) | epochId(32B)] = 65 bytes
-                // = 130 hex chars + "0x" prefix = 132 chars.
-                decode_versioned_extra_data(s)
-            } else {
-                Err(ValidationError::new("validation_error")
-                    .with_message(validation_messages::INVALID_EXTRA_DATA_FORMAT.into()))
-            }
+        s if s.len() == 132 && s.starts_with("0x02") => {
+            // Version 2: [0x02 | contextId(32B) | epochId(32B)] = 65 bytes
+            // = 130 hex chars + "0x" prefix = 132 chars.
+            let bytes = decode_versioned_extra_data(s)?;
+            validate_id_tag(bytes[1], CONTEXT_ID_TAG)?;
+            validate_id_tag(bytes[33], EPOCH_ID_TAG)
         }
+        // Version 3 (Solana, RFC-021): variable-length MMR-proof blob. The contextId here is
+        // not 0x07-tagged — the Solana host derives it, so only the shape is checked.
         s if s.len() >= 4 && s.starts_with("0x") && &s[2..4] == EXTRA_DATA_SOLANA_VERSION_BYTE => {
             validate_solana_mmr_proof_extra_data(s)
         }
@@ -201,23 +230,21 @@ pub fn validate_extra_data_field_decryption(extra_data: &str) -> Result<(), Vali
 }
 
 /// Ensures the hex payload of a versioned extraData string decodes cleanly.
-fn decode_versioned_extra_data(extra_data: &str) -> Result<(), ValidationError> {
+fn decode_versioned_extra_data(extra_data: &str) -> Result<Vec<u8>, ValidationError> {
     hex::decode(&extra_data[2..]).map_err(|_| {
         ValidationError::new("validation_error")
             .with_message(validation_messages::INVALID_EXTRA_DATA_FORMAT.into())
-    })?;
-    Ok(())
+    })
 }
 
+/// Validates the shape of a Solana (RFC-021) `0x03` MMR-proof extraData blob:
+/// `[version(1B) | contextId(32B) | aclValueKey(32B) | proofSlot(8B) | proofLen(4B) | proof]`.
 fn validate_solana_mmr_proof_extra_data(extra_data: &str) -> Result<(), ValidationError> {
     if extra_data.len() < EXTRA_DATA_SOLANA_MMR_PROOF_MIN_HEX_LEN {
         return Err(ValidationError::new("validation_error")
             .with_message(validation_messages::INVALID_EXTRA_DATA_FORMAT.into()));
     }
-    let bytes = hex::decode(&extra_data[2..]).map_err(|_| {
-        ValidationError::new("validation_error")
-            .with_message(validation_messages::INVALID_EXTRA_DATA_FORMAT.into())
-    })?;
+    let bytes = decode_versioned_extra_data(extra_data)?;
     let proof_len_offset = 1 + 32 + 32 + 8;
     let proof_len = u32::from_be_bytes(
         bytes[proof_len_offset..proof_len_offset + 4]
@@ -225,6 +252,15 @@ fn validate_solana_mmr_proof_extra_data(extra_data: &str) -> Result<(), Validati
             .expect("validated Solana MMR proof header length"),
     ) as usize;
     if bytes.len() != EXTRA_DATA_SOLANA_MMR_PROOF_MIN_BYTES + proof_len {
+        return Err(ValidationError::new("validation_error")
+            .with_message(validation_messages::INVALID_EXTRA_DATA_FORMAT.into()));
+    }
+    Ok(())
+}
+
+/// Checks that an id's type tag (the first byte of the 32-byte id) matches the expected one.
+fn validate_id_tag(tag: u8, expected_tag: u8) -> Result<(), ValidationError> {
+    if tag != expected_tag {
         return Err(ValidationError::new("validation_error")
             .with_message(validation_messages::INVALID_EXTRA_DATA_FORMAT.into()));
     }
@@ -459,6 +495,16 @@ pub fn validate_request_validity_seconds(
 mod tests {
     use super::*;
 
+    // 32-byte contextId / epochId payloads (64 hex chars each), tagged with their
+    // required first byte: 0x07 for contextId, 0x08 for epochId.
+    const CONTEXT_ID_HEX: &str = "07000000000000000000000000000000000000000000000000000000000000a1";
+    const EPOCH_ID_HEX: &str = "08000000000000000000000000000000000000000000000000000000000000b2";
+    // Untagged variants (first byte 0x00) used to test tag rejection.
+    const UNTAGGED_CONTEXT_ID_HEX: &str =
+        "00000000000000000000000000000000000000000000000000000000000000a1";
+    const UNTAGGED_EPOCH_ID_HEX: &str =
+        "00000000000000000000000000000000000000000000000000000000000000b2";
+
     #[test]
     fn v3_attestation_type_accepts_evm_and_solana() {
         assert!(validate_v3_attestation_type(V3_ATTESTATION_TYPE_EIP712_UNIFIED_V1).is_ok());
@@ -561,19 +607,15 @@ mod tests {
     #[test]
     fn extra_data_evm_paths_unchanged() {
         assert!(validate_extra_data_field_decryption("0x00").is_ok());
-        let v1 = format!("0x01{}", "00".repeat(32));
+        let v1 = format!("0x01{CONTEXT_ID_HEX}");
         assert!(validate_extra_data_field_decryption(&v1).is_ok());
         // A correctly-sized 0x02 (132 chars) is valid.
-        let v2_ok = format!("0x02{}", "00".repeat(64));
+        let v2_ok = format!("0x02{CONTEXT_ID_HEX}{EPOCH_ID_HEX}");
         assert!(validate_extra_data_field_decryption(&v2_ok).is_ok());
         // A wrong-size 0x02 (missing epochId) is invalid.
-        let v2_short = format!("0x02{}", "00".repeat(32));
+        let v2_short = format!("0x02{CONTEXT_ID_HEX}");
         assert!(validate_extra_data_field_decryption(&v2_short).is_err());
     }
-
-    // 32-byte contextId / epochId payloads (64 hex chars each).
-    const CONTEXT_ID_HEX: &str = "00000000000000000000000000000000000000000000000000000000000000a1";
-    const EPOCH_ID_HEX: &str = "00000000000000000000000000000000000000000000000000000000000000b2";
 
     #[test]
     fn accepts_legacy_version_0x00() {
@@ -597,6 +639,24 @@ mod tests {
     }
 
     #[test]
+    fn rejects_version_0x01_with_untagged_context_id() {
+        let extra_data = format!("0x01{UNTAGGED_CONTEXT_ID_HEX}");
+        assert!(validate_extra_data_field_decryption(&extra_data).is_err());
+    }
+
+    #[test]
+    fn rejects_version_0x02_with_untagged_context_id() {
+        let extra_data = format!("0x02{UNTAGGED_CONTEXT_ID_HEX}{EPOCH_ID_HEX}");
+        assert!(validate_extra_data_field_decryption(&extra_data).is_err());
+    }
+
+    #[test]
+    fn rejects_version_0x02_with_untagged_epoch_id() {
+        let extra_data = format!("0x02{CONTEXT_ID_HEX}{UNTAGGED_EPOCH_ID_HEX}");
+        assert!(validate_extra_data_field_decryption(&extra_data).is_err());
+    }
+
+    #[test]
     fn rejects_version_0x02_missing_epoch_id() {
         // [0x02 | contextId(32B)] = 33 bytes, shorter than the fixed 65-byte size.
         let extra_data = format!("0x02{CONTEXT_ID_HEX}");
@@ -605,7 +665,7 @@ mod tests {
 
     #[test]
     fn rejects_version_0x02_with_trailing_bytes() {
-        // v0x02 is exactly the fixed EVM context+epoch shape; trailing bytes are rejected.
+        // v0x02 is exactly 65 bytes; any extra bytes past the epochId are rejected.
         let extra_data = format!("0x02{CONTEXT_ID_HEX}{EPOCH_ID_HEX}ff");
         assert_eq!(extra_data.len(), 134);
         assert!(validate_extra_data_field_decryption(&extra_data).is_err());

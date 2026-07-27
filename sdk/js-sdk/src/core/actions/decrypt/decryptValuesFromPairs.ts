@@ -33,11 +33,13 @@ export async function decryptValuesFromPairs(
 ): Promise<DecryptValuesFromPairsReturnType> {
   const { pairs, ...rest } = parameters;
 
+  const ownerAddress = addressToChecksummedAddress(parameters.signedPermit.encryptedDataOwnerAddress);
   const sanitizedPairs = pairs.map((pair) => {
     assertIsAddress(pair.contractAddress, {});
     return {
       handle: toFhevmHandle(pair.encryptedValue),
       contractAddress: addressToChecksummedAddress(pair.contractAddress),
+      ownerAddress,
     };
   });
 
@@ -46,5 +48,5 @@ export async function decryptValuesFromPairs(
   return decryptValuesFromPairs_(f, {
     ...rest,
     pairs: sanitizedPairs,
-  } as Parameters<typeof decryptValuesFromPairs_>[1]);
+  });
 }

@@ -21,7 +21,7 @@ use std::{net::SocketAddr, str::FromStr, time::Duration};
 
 /// Configuration of the `KmsWorker`.
 #[derive(Clone, Debug, Deserialize, PartialEq)]
-#[cfg_attr(debug_assertions, derive(Serialize))]
+#[cfg_attr(test, derive(Serialize))]
 pub struct Config {
     /// The URL of the Postgres database.
     pub database_url: String,
@@ -74,9 +74,9 @@ pub struct Config {
     #[serde(default = "default_max_decryption_attempts")]
     pub max_decryption_attempts: u16,
 
-    /// Number of retries for S3 ciphertext retrieval.
-    #[serde(default = "default_s3_ciphertext_retrieval_retries")]
-    pub s3_ciphertext_retrieval_retries: u8,
+    /// Number of attempts for S3 ciphertext retrieval.
+    #[serde(default = "default_s3_ciphertext_retrieval_attempts")]
+    pub s3_ciphertext_retrieval_attempts: u8,
     /// Timeout to connect to a S3 bucket.
     #[serde(with = "humantime_serde", default = "default_s3_connect_timeout")]
     pub s3_connect_timeout: Duration,
@@ -106,13 +106,9 @@ pub struct Config {
 
 /// Configuration of the off-chain ciphertext-attestation verifier.
 #[derive(Clone, Debug, Deserialize, PartialEq)]
-#[cfg_attr(debug_assertions, derive(Serialize))]
+#[cfg_attr(test, derive(Serialize))]
 #[serde(default)]
 pub struct CtAttestationConfig {
-    /// Whether the verifier runs at all. Defaults to `true`.
-    #[serde(default = "default_ct_attestation_verifier_enabled")]
-    pub enabled: bool,
-
     /// Per-bucket S3 attestation HEAD request timeout, in seconds. Defaults to 5.
     #[serde(
         with = "humantime_serde",
@@ -131,7 +127,6 @@ pub struct CtAttestationConfig {
 impl Default for CtAttestationConfig {
     fn default() -> Self {
         Self {
-            enabled: default_ct_attestation_verifier_enabled(),
             head_timeout: default_ct_attestation_head_timeout(),
             registry_refresh: default_copro_registry_refresh_interval(),
         }
@@ -156,7 +151,7 @@ pub enum HostChainKind {
 
 /// Configuration of a single Host Chain.
 #[derive(Clone, Debug, Deserialize, PartialEq)]
-#[cfg_attr(debug_assertions, derive(Serialize))]
+#[cfg_attr(test, derive(Serialize))]
 pub struct HostChainConfig {
     /// The Host Chain RPC endpoint.
     pub url: Url,
@@ -256,7 +251,7 @@ fn default_max_decryption_attempts() -> u16 {
     20
 }
 
-fn default_s3_ciphertext_retrieval_retries() -> u8 {
+fn default_s3_ciphertext_retrieval_attempts() -> u8 {
     3
 }
 
@@ -266,10 +261,6 @@ fn default_s3_connect_timeout() -> Duration {
 
 fn default_erc1271_gas_limit() -> u64 {
     100_000
-}
-
-fn default_ct_attestation_verifier_enabled() -> bool {
-    true
 }
 
 fn default_ct_attestation_head_timeout() -> Duration {
@@ -309,7 +300,7 @@ impl Default for Config {
             kms_core_endpoints: vec!["http://localhost:50051".to_string()],
             grpc_request_retries: default_grpc_request_retries(),
             max_decryption_attempts: default_max_decryption_attempts(),
-            s3_ciphertext_retrieval_retries: default_s3_ciphertext_retrieval_retries(),
+            s3_ciphertext_retrieval_attempts: default_s3_ciphertext_retrieval_attempts(),
             s3_connect_timeout: default_s3_connect_timeout(),
             erc1271_gas_limit: default_erc1271_gas_limit(),
             service_name: default_service_name(),
@@ -344,7 +335,7 @@ mod tests {
             env::remove_var("KMS_CONNECTOR_KMS_CORE_ENDPOINTS");
             env::remove_var("KMS_CONNECTOR_GRPC_REQUEST_RETRIES");
             env::remove_var("KMS_CONNECTOR_MAX_DECRYPTION_ATTEMPTS");
-            env::remove_var("KMS_CONNECTOR_S3_CIPHERTEXT_RETRIEVAL_RETRIES");
+            env::remove_var("KMS_CONNECTOR_S3_CIPHERTEXT_RETRIEVAL_ATTEMPTS");
             env::remove_var("KMS_CONNECTOR_S3_CONNECT_TIMEOUT");
             env::remove_var("KMS_CONNECTOR_SERVICE_NAME");
         }
@@ -409,7 +400,7 @@ mod tests {
             );
             env::set_var("KMS_CONNECTOR_GRPC_REQUEST_RETRIES", "5");
             env::set_var("KMS_CONNECTOR_MAX_DECRYPTION_ATTEMPTS", "300");
-            env::set_var("KMS_CONNECTOR_S3_CIPHERTEXT_RETRIEVAL_RETRIES", "5");
+            env::set_var("KMS_CONNECTOR_S3_CIPHERTEXT_RETRIEVAL_ATTEMPTS", "5");
             env::set_var("KMS_CONNECTOR_S3_CONNECT_TIMEOUT", "4s");
             env::set_var("KMS_CONNECTOR_SERVICE_NAME", "kms-connector-test");
         }
@@ -463,7 +454,7 @@ mod tests {
         );
         assert_eq!(config.grpc_request_retries, 5);
         assert_eq!(config.max_decryption_attempts, 300);
-        assert_eq!(config.s3_ciphertext_retrieval_retries, 5);
+        assert_eq!(config.s3_ciphertext_retrieval_attempts, 5);
         assert_eq!(config.s3_connect_timeout.as_secs(), 4);
         assert_eq!(config.service_name, "kms-connector-test");
 

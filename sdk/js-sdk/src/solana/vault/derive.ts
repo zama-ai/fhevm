@@ -189,7 +189,7 @@ export const SETTLE_ALT_FIELD_ORDER = [
   'payoutTotalSupplyAuthority',
   'batchPayoutBalanceValue',
   'payoutTotalSupplyValue',
-] as const satisfies readonly Exclude<keyof SolanaVaultSettleAccounts, 'redemptionRecord'>[];
+] as const satisfies ReadonlyArray<Exclude<keyof SolanaVaultSettleAccounts, 'redemptionRecord'>>;
 
 /** Flattens a settle account set into its ALT ordering (every field except `redemptionRecord`). */
 export function settleAccountsToLookupTableAddresses(accounts: SolanaVaultSettleAccounts): Address[] {

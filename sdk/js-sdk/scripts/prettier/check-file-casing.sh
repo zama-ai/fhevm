@@ -23,6 +23,7 @@ SCAN_DIRS=(
 # File patterns to exclude (glob patterns matched against the full path)
 EXCEPTIONS=(
   "test/manual-pack"
+  "test/browser-next/node_modules"
 )
 
 # ── Helpers ──────────────────────────────────────────────────────────────────

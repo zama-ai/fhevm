@@ -357,7 +357,7 @@ export async function userDecrypt(
     shares,
     handles: handlesHex,
     solanaUserPubkey: identity,
-    hostChainId: BigInt(chain.id),
+    hostChainId: chain.id,
   });
 
   return plaintexts.map((plaintext, i) => {

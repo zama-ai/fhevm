@@ -184,6 +184,7 @@ pub async fn insert_solana_events(
                 &handles,
                 Some(transaction_id.to_vec()),
                 block.block_number,
+                &block.block_hash,
             )
             .await?
         {
@@ -234,6 +235,7 @@ pub fn to_log_tfhe(
         transaction_hash: Some(transaction_id),
         is_allowed,
         block_number: block.block_number,
+        block_hash: FixedBytes::<32>::from(block.block_hash),
         block_timestamp: block.block_timestamp,
         tx_depth_size: 0,
         dependence_chain: transaction_id,

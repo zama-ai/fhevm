@@ -1,4 +1,4 @@
-import type { Bytes32Hex, BytesHex } from '../../../src/core/types/primitives.js';
+import type { Bytes32Hex } from '../../../src/core/types/primitives.js';
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import { ed25519 } from '@noble/curves/ed25519.js';
 import { keccak_256 } from '@noble/hashes/sha3.js';
@@ -168,7 +168,6 @@ describe('createFhevmDecryptClient(...).userDecrypt', () => {
 
     const result = await client.userDecrypt({
       handles: [handleHex],
-      transportPublicKey: ('0x' + 'ab'.repeat(16)) as BytesHex,
       aclValueKey: ACL_VALUE_KEY,
       nonce,
       validity: { startTimestamp: 1000n, durationSeconds: 3600n },

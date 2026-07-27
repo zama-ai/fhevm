@@ -11,13 +11,16 @@ use alloy::providers::{
     Provider, ProviderBuilder, RootProvider, WalletProvider, WsConnect,
 };
 use alloy::rpc::types::anvil::{ReorgOptions, TransactionData};
+use alloy::rpc::types::BlockNumberOrTag;
 use alloy::rpc::types::{Filter, TransactionRequest};
 use alloy::signers::local::PrivateKeySigner;
 use alloy::sol;
+use bigdecimal::BigDecimal;
 use fhevm_engine_common::chain_id::ChainId;
 use futures_util::future::try_join_all;
 use serial_test::serial;
 use sqlx::postgres::PgPoolOptions;
+use sqlx::Row;
 use std::collections::HashSet;
 use std::process::Command;
 use std::sync::atomic::Ordering;
@@ -26,12 +29,16 @@ use test_harness::health_check;
 use test_harness::instance::ImportMode;
 use tracing::{info, warn, Level};
 
+use host_listener::cmd::block_history::BlockSummary;
 use host_listener::cmd::main;
 use host_listener::cmd::Args;
+use host_listener::cmd::InfiniteLogIter;
 use host_listener::database::ingest::{
-    ingest_block_logs, BlockLogs, IngestOptions,
+    ingest_block_logs, update_finalized_blocks, BlockLogs, IngestOptions,
 };
-use host_listener::database::tfhe_event_propagate::{Database, ToType};
+use host_listener::database::tfhe_event_propagate::{
+    Database, ProducerBlock, ToType,
+};
 
 // contracts are compiled in build.rs/build_contract() using solc
 // json are generated in build.rs/build_contract() using solc
@@ -56,9 +63,17 @@ sol!(
     "artifacts/KMSGenerationTest.sol/KMSGenerationTest.json"
 );
 
+sol!(
+    #[sol(rpc)]
+    #[derive(Debug, serde::Serialize, serde::Deserialize)]
+    ProtocolConfigTest,
+    "artifacts/ProtocolConfigTest.sol/ProtocolConfigTest.json"
+);
+
 use crate::ACLTest::ACLTestInstance;
 use crate::FHEVMExecutorTest::FHEVMExecutorTestInstance;
 use crate::KMSGenerationTest::KMSGenerationTestInstance;
+use crate::ProtocolConfigTest::ProtocolConfigTestInstance;
 
 const NB_EVENTS_PER_WALLET: i64 = 50;
 
@@ -182,6 +197,7 @@ struct Setup {
     acl_contract: ACLTestInstance<SetupProvider>,
     tfhe_contract: FHEVMExecutorTestInstance<SetupProvider>,
     kms_generation_contract: KMSGenerationTestInstance<SetupProvider>,
+    protocol_config_contract: ProtocolConfigTestInstance<SetupProvider>,
     db_pool: sqlx::Pool<sqlx::Postgres>,
     _test_instance: test_harness::instance::DBInstance, // maintain db alive
     health_check_url: String,
@@ -226,12 +242,18 @@ async fn setup_with_block_time(
     let acl_contract = ACLTest::deploy(provider.clone()).await?;
     let kms_generation_contract =
         KMSGenerationTest::deploy(provider.clone()).await?;
+    let protocol_config_contract =
+        ProtocolConfigTest::deploy(provider.clone()).await?;
     let args = Args {
         url,
         initial_block_time: 1,
         acl_contract_address: acl_contract.address().to_string(),
         tfhe_contract_address: tfhe_contract.address().to_string(),
         kms_generation_address: kms_generation_contract.address().to_string(),
+        protocol_config: host_listener::protocol_config::ProtocolConfigArgs {
+            address: protocol_config_contract.address().to_string(),
+            chain_id: Some(node_chain_id.unwrap_or(12345)),
+        },
         confidential_bridge_address: String::new(),
         database_url: test_instance.db_url.clone(),
         start_at_block: None,
@@ -250,6 +272,7 @@ async fn setup_with_block_time(
         dependence_cross_block: true,
         dependent_ops_max_per_chain: 0,
         timeout_request_websocket: 30,
+        stack_version: false,
     };
     let health_check_url = format!("http://127.0.0.1:{}", args.health_port);
 
@@ -266,6 +289,7 @@ async fn setup_with_block_time(
         acl_contract,
         tfhe_contract,
         kms_generation_contract,
+        protocol_config_contract,
         db_pool,
         _test_instance: test_instance,
         health_check_url,
@@ -275,6 +299,67 @@ async fn setup_with_block_time(
 
 async fn setup(node_chain_id: Option<u64>) -> Result<Setup, anyhow::Error> {
     setup_with_block_time(node_chain_id, 1.0).await
+}
+
+#[tokio::test]
+#[serial(db)]
+async fn test_mark_block_as_valid_repairs_missing_parent_hash(
+) -> Result<(), Box<dyn std::error::Error>> {
+    let test_instance =
+        test_harness::instance::setup_test_db(ImportMode::WithKeysNoSns)
+            .await?;
+    let chain_id = ChainId::try_from(42_u64)?;
+    let db_url = test_instance.db_url.clone();
+    let db = Database::new(&db_url, chain_id, 128).await?;
+    let pool = db.pool.read().await.clone();
+
+    let block_hash = FixedBytes::<32>::from([0x22; 32]);
+    let parent_hash = FixedBytes::<32>::from([0x11; 32]);
+
+    sqlx::query(
+        "INSERT INTO host_chain_blocks_valid (
+            chain_id, block_hash, block_number, block_status
+         )
+         VALUES ($1, $2, $3, 'pending')",
+    )
+    .bind(chain_id.as_i64())
+    .bind(block_hash.to_vec())
+    .bind(12_i64)
+    .execute(&pool)
+    .await?;
+
+    let mut tx = db
+        .new_transaction()
+        .await?
+        .expect("new_transaction() returns Some on a live stack");
+    db.mark_block_as_valid(
+        &mut tx,
+        &BlockSummary {
+            number: 12,
+            hash: block_hash,
+            parent_hash,
+            timestamp: 0,
+        },
+        false,
+        0,
+        0,
+    )
+    .await?;
+    tx.commit().await?;
+
+    let repaired_parent_hash: Option<Vec<u8>> = sqlx::query_scalar(
+        "SELECT parent_hash
+         FROM host_chain_blocks_valid
+         WHERE chain_id = $1 AND block_hash = $2",
+    )
+    .bind(chain_id.as_i64())
+    .bind(block_hash.to_vec())
+    .fetch_one(&pool)
+    .await?;
+
+    assert_eq!(repaired_parent_hash, Some(parent_hash.to_vec()));
+
+    Ok(())
 }
 
 fn trivial_encrypt_handle(val: U256, to_type: u8) -> FixedBytes<32> {
@@ -326,6 +411,8 @@ async fn ingest_blocks_for_receipts(
     let acl_address = Some(*setup.acl_contract.address());
     let tfhe_address = Some(*setup.tfhe_contract.address());
     let kms_generation_address = Some(*setup.kms_generation_contract.address());
+    let protocol_config_address =
+        Some(*setup.protocol_config_contract.address());
 
     let provider = ProviderBuilder::new()
         .wallet(setup.wallets[0].clone())
@@ -355,8 +442,9 @@ async fn ingest_blocks_for_receipts(
             &acl_address,
             &tfhe_address,
             &kms_generation_address,
+            &protocol_config_address,
             &None,
-            options,
+            options.clone(),
         )
         .await?;
     }
@@ -381,6 +469,7 @@ async fn ingest_dependent_burst_seeded(
             dependence_by_connexity: false,
             dependence_cross_block: true,
             dependent_ops_max_per_chain,
+            is_protocol_config_listener: true,
         },
     )
     .await?;
@@ -457,7 +546,7 @@ async fn dep_chain_id_for_output_handle(
     let dep_chain_id = sqlx::query_scalar::<_, Option<Vec<u8>>>(
         r#"
         SELECT dependence_chain_id
-        FROM computations
+        FROM computations_branch
         WHERE output_handle = $1
         ORDER BY created_at DESC
         LIMIT 1
@@ -500,8 +589,12 @@ async fn wait_for_next_block(
     }
 }
 
-// Polls the database until both `computations` and `allowed_handles` counts
-// satisfy `predicate`, returning the final `(tfhe_count, acl_count)`.
+// Polls the database until both branch-context event counts satisfy `predicate`,
+// returning the final `(tfhe_count, acl_count)`.
+//
+// Wave-1 also keeps branchless mirror rows for legacy-only ACL writes. Listener
+// event assertions must ignore those setup/backcompat rows and count only rows
+// carrying block context from host-chain events.
 // Panics with `context` if `timeout` elapses before the condition is met.
 async fn wait_for_event_counts(
     db_pool: &sqlx::PgPool,
@@ -511,16 +604,21 @@ async fn wait_for_event_counts(
 ) -> Result<(i64, i64), anyhow::Error> {
     let deadline = tokio::time::Instant::now() + timeout;
     loop {
-        let tfhe = sqlx::query!("SELECT COUNT(*) FROM computations")
-            .fetch_one(db_pool)
-            .await?
-            .count
-            .unwrap_or(0);
-        let acl = sqlx::query!("SELECT COUNT(*) FROM allowed_handles")
-            .fetch_one(db_pool)
-            .await?
-            .count
-            .unwrap_or(0);
+        let tfhe = sqlx::query_scalar::<_, i64>(
+            "SELECT COUNT(*) FROM computations_branch WHERE producer_block_hash <> ''::BYTEA",
+        )
+        .fetch_one(db_pool)
+        .await?;
+        let acl = sqlx::query_scalar::<_, i64>(
+            r#"
+            SELECT COUNT(*)
+            FROM allowed_handles_branch
+            WHERE producer_block_hash <> ''::BYTEA
+               OR block_hash <> ''::BYTEA
+            "#,
+        )
+        .fetch_one(db_pool)
+        .await?;
         if predicate(tfhe, acl) {
             return Ok((tfhe, acl));
         }
@@ -700,6 +798,7 @@ async fn test_slow_lane_cross_block_sustained_below_cap_stays_fast_locally(
                 dependence_by_connexity: false,
                 dependence_cross_block: true,
                 dependent_ops_max_per_chain: cap,
+                is_protocol_config_listener: true,
             },
         )
         .await?;
@@ -778,7 +877,10 @@ async fn test_slow_lane_cross_block_parent_lookup_finds_known_slow_parent_locall
     .execute(&setup.db_pool)
     .await?;
 
-    let mut tx = db.new_transaction().await?;
+    let mut tx = db
+        .new_transaction()
+        .await?
+        .expect("new_transaction() returns Some on a live stack");
     let found = db
         .find_slow_dep_chain_ids(
             &mut tx,
@@ -991,6 +1093,1392 @@ async fn test_slow_lane_contention_prefers_fast_chain(
 }
 
 #[tokio::test]
+#[serial(db)]
+async fn test_update_finalized_blocks_drives_orphan_cleanup_via_rpc_caller(
+) -> Result<(), anyhow::Error> {
+    let setup = setup_with_block_time(None, 1.0).await?;
+    let mut db = Database::new(
+        &setup.args.database_url,
+        setup.chain_id,
+        setup.args.dependence_cache_size,
+    )
+    .await?;
+
+    let provider = ProviderBuilder::new()
+        .wallet(setup.wallets[0].clone())
+        .connect_ws(WsConnect::new(setup.args.url.clone()))
+        .await?;
+    let latest_block_number = provider.get_block_number().await?;
+    let target_block_number = latest_block_number.saturating_sub(1);
+    let canonical_block = provider
+        .get_block_by_number(BlockNumberOrTag::Number(target_block_number))
+        .await?
+        .expect("target canonical block exists");
+
+    let canonical_hash = canonical_block.header.hash;
+    let orphan_hash = FixedBytes::<32>::from([0x22; 32]);
+    let orphan_descendant_hash = FixedBytes::<32>::from([0x23; 32]);
+    let canonical_handle = FixedBytes::<32>::from([0x33; 32]);
+    let orphan_handle = FixedBytes::<32>::from([0x44; 32]);
+    let orphan_descendant_handle = FixedBytes::<32>::from([0x45; 32]);
+    let canonical_txn = FixedBytes::<32>::from([0x55; 32]);
+    let orphan_txn = FixedBytes::<32>::from([0x66; 32]);
+    let orphan_descendant_txn = FixedBytes::<32>::from([0x67; 32]);
+    let key_id_gw = [0x77_u8; 32];
+
+    sqlx::query!(
+        r#"
+        INSERT INTO host_chain_blocks_valid
+            (chain_id, block_hash, parent_hash, block_number, block_status)
+        VALUES
+            ($1, $2, $3, $4, 'pending'),
+            ($1, $5, $6, $4, 'pending'),
+            ($1, $7, $5, $8, 'pending')
+        "#,
+        setup.chain_id.as_i64(),
+        canonical_hash.to_vec(),
+        canonical_block.header.parent_hash.to_vec(),
+        target_block_number as i64,
+        orphan_hash.to_vec(),
+        canonical_block.header.parent_hash.to_vec(),
+        orphan_descendant_hash.to_vec(),
+        target_block_number as i64 + 1,
+    )
+    .execute(&setup.db_pool)
+    .await?;
+
+    sqlx::query!(
+        r#"
+        INSERT INTO computations_branch (
+            output_handle,
+            dependencies,
+            fhe_operation,
+            is_scalar,
+            transaction_id,
+            host_chain_id,
+            block_number,
+            producer_block_hash
+        )
+        VALUES
+            ($1, $2, $3, FALSE, $4, $5, $6, $7),
+            ($8, $9, $3, FALSE, $10, $5, $6, $11),
+            ($12, $13, $3, FALSE, $14, $5, $15, $16)
+        "#,
+        canonical_handle.to_vec(),
+        &vec![FixedBytes::<32>::from([0x88; 32]).to_vec()],
+        1_i16,
+        canonical_txn.to_vec(),
+        setup.chain_id.as_i64(),
+        target_block_number as i64,
+        canonical_hash.to_vec(),
+        orphan_handle.to_vec(),
+        &vec![FixedBytes::<32>::from([0x99; 32]).to_vec()],
+        orphan_txn.to_vec(),
+        orphan_hash.to_vec(),
+        orphan_descendant_handle.to_vec(),
+        &vec![FixedBytes::<32>::from([0x9A; 32]).to_vec()],
+        orphan_descendant_txn.to_vec(),
+        target_block_number as i64 + 1,
+        orphan_descendant_hash.to_vec(),
+    )
+    .execute(&setup.db_pool)
+    .await?;
+
+    sqlx::query!(
+        r#"
+        INSERT INTO allowed_handles_branch (
+            handle,
+            account_address,
+            event_type,
+            transaction_id,
+            host_chain_id,
+            block_number,
+            producer_block_hash
+        )
+        VALUES
+            ($1, $2, $3, $4, $5, $6, $7),
+            ($8, $2, $3, $9, $5, $6, $10),
+            ($11, $2, $3, $12, $5, $13, $14)
+        "#,
+        canonical_handle.to_vec(),
+        "0xAccount",
+        0_i16,
+        canonical_txn.to_vec(),
+        setup.chain_id.as_i64(),
+        target_block_number as i64,
+        canonical_hash.to_vec(),
+        orphan_handle.to_vec(),
+        orphan_txn.to_vec(),
+        orphan_hash.to_vec(),
+        orphan_descendant_handle.to_vec(),
+        orphan_descendant_txn.to_vec(),
+        target_block_number as i64 + 1,
+        orphan_descendant_hash.to_vec(),
+    )
+    .execute(&setup.db_pool)
+    .await?;
+
+    sqlx::query!(
+        r#"
+        INSERT INTO ciphertext_digest_branch (
+            host_chain_id,
+            key_id_gw,
+            handle,
+            producer_block_hash,
+            block_number,
+            transaction_id
+        )
+        VALUES
+            ($1, $2, $3, $4, $5, $6),
+            ($1, $2, $7, $8, $5, $9),
+            ($1, $2, $10, $11, $12, $13)
+        "#,
+        setup.chain_id.as_i64(),
+        &key_id_gw,
+        canonical_handle.to_vec(),
+        canonical_hash.to_vec(),
+        target_block_number as i64,
+        canonical_txn.to_vec(),
+        orphan_handle.to_vec(),
+        orphan_hash.to_vec(),
+        orphan_txn.to_vec(),
+        orphan_descendant_handle.to_vec(),
+        orphan_descendant_hash.to_vec(),
+        target_block_number as i64 + 1,
+        orphan_descendant_txn.to_vec(),
+    )
+    .execute(&setup.db_pool)
+    .await?;
+
+    sqlx::query!(
+        r#"
+        INSERT INTO ciphertexts_branch (
+            handle,
+            producer_block_hash,
+            block_number,
+            ciphertext,
+            ciphertext_version,
+            ciphertext_type
+        )
+        VALUES
+            ($1, $2, $3, $4, $5, $6),
+            ($7, $8, $9, $10, $5, $6),
+            ($11, $12, $13, $14, $5, $6)
+        "#,
+        canonical_handle.to_vec(),
+        canonical_hash.to_vec(),
+        target_block_number as i64,
+        vec![0xAA_u8],
+        0_i16,
+        0_i16,
+        orphan_handle.to_vec(),
+        orphan_hash.to_vec(),
+        target_block_number as i64,
+        vec![0xBB_u8],
+        orphan_descendant_handle.to_vec(),
+        orphan_descendant_hash.to_vec(),
+        target_block_number as i64 + 1,
+        vec![0xBC_u8],
+    )
+    .execute(&setup.db_pool)
+    .await?;
+
+    let mut log_iter = InfiniteLogIter::new(&setup.args);
+    log_iter.init_provider_for_rpc().await?;
+    update_finalized_blocks(
+        &mut db,
+        &mut log_iter,
+        latest_block_number,
+        latest_block_number - target_block_number,
+    )
+    .await;
+
+    let canonical_status = sqlx::query_scalar!(
+        r#"
+        SELECT block_status
+        FROM host_chain_blocks_valid
+        WHERE chain_id = $1 AND block_hash = $2
+        "#,
+        setup.chain_id.as_i64(),
+        canonical_hash.to_vec(),
+    )
+    .fetch_one(&setup.db_pool)
+    .await?;
+    assert_eq!(canonical_status, "finalized");
+
+    let orphan_status = sqlx::query_scalar!(
+        r#"
+        SELECT block_status
+        FROM host_chain_blocks_valid
+        WHERE chain_id = $1 AND block_hash = $2
+        "#,
+        setup.chain_id.as_i64(),
+        orphan_hash.to_vec(),
+    )
+    .fetch_one(&setup.db_pool)
+    .await?;
+    assert_eq!(orphan_status, "orphaned");
+
+    let orphan_rows = sqlx::query_scalar!(
+        r#"
+        SELECT COUNT(*) AS "count!"
+        FROM computations_branch
+        WHERE host_chain_id = $1 AND producer_block_hash = ANY($2::bytea[])
+        "#,
+        setup.chain_id.as_i64(),
+        &vec![orphan_hash.to_vec(), orphan_descendant_hash.to_vec()],
+    )
+    .fetch_one(&setup.db_pool)
+    .await?;
+    assert_eq!(orphan_rows, 0);
+
+    let canonical_rows = sqlx::query_scalar!(
+        r#"
+        SELECT COUNT(*) AS "count!"
+        FROM computations_branch
+        WHERE host_chain_id = $1 AND producer_block_hash = $2
+        "#,
+        setup.chain_id.as_i64(),
+        canonical_hash.to_vec(),
+    )
+    .fetch_one(&setup.db_pool)
+    .await?;
+    assert_eq!(canonical_rows, 1);
+
+    Ok(())
+}
+
+#[tokio::test]
+#[serial(db)]
+async fn test_update_block_as_finalized_returns_direct_and_descendant_orphans(
+) -> Result<(), anyhow::Error> {
+    let setup = setup_with_block_time(None, 1.0).await?;
+    let db = Database::new(
+        &setup.args.database_url,
+        setup.chain_id,
+        setup.args.dependence_cache_size,
+    )
+    .await?;
+
+    let block_number = 10_i64;
+    let canonical_hash = FixedBytes::<32>::from([0x11; 32]);
+    let orphan_hash = FixedBytes::<32>::from([0x22; 32]);
+    let orphan_descendant_hash = FixedBytes::<32>::from([0x23; 32]);
+
+    sqlx::query!(
+        r#"
+        INSERT INTO host_chain_blocks_valid
+            (chain_id, block_hash, parent_hash, block_number, block_status)
+        VALUES
+            ($1, $2, $3, $4, 'pending'),
+            ($1, $5, $6, $4, 'pending'),
+            ($1, $7, $5, $8, 'pending')
+        "#,
+        setup.chain_id.as_i64(),
+        canonical_hash.to_vec(),
+        Option::<Vec<u8>>::None,
+        block_number,
+        orphan_hash.to_vec(),
+        Option::<Vec<u8>>::None,
+        orphan_descendant_hash.to_vec(),
+        block_number + 1,
+    )
+    .execute(&setup.db_pool)
+    .await?;
+
+    let mut tx = db
+        .new_transaction()
+        .await?
+        .expect("new_transaction() returns Some on a live stack");
+    let orphaned_hashes = db
+        .update_block_as_finalized(&mut tx, block_number, &canonical_hash)
+        .await?
+        .expect("finalization accepted");
+
+    let orphaned_hashes = orphaned_hashes.into_iter().collect::<HashSet<_>>();
+    assert!(orphaned_hashes.contains(&orphan_hash.to_vec()));
+    assert!(orphaned_hashes.contains(&orphan_descendant_hash.to_vec()));
+    assert_eq!(orphaned_hashes.len(), 2);
+
+    tx.rollback().await?;
+
+    Ok(())
+}
+
+#[tokio::test]
+#[serial(db)]
+async fn test_update_block_as_finalized_does_not_resurrect_orphaned_block(
+) -> Result<(), anyhow::Error> {
+    let setup = setup_with_block_time(None, 1.0).await?;
+    let db = Database::new(
+        &setup.args.database_url,
+        setup.chain_id,
+        setup.args.dependence_cache_size,
+    )
+    .await?;
+
+    let block_number = 11_i64;
+    let stale_hash = FixedBytes::<32>::from([0x31; 32]);
+    let sibling_hash = FixedBytes::<32>::from([0x32; 32]);
+
+    sqlx::query(
+        r#"
+        INSERT INTO host_chain_blocks_valid
+            (chain_id, block_hash, parent_hash, block_number, block_status)
+        VALUES
+            ($1, $2, NULL, $4, 'orphaned'),
+            ($1, $3, NULL, $4, 'pending')
+        "#,
+    )
+    .bind(setup.chain_id.as_i64())
+    .bind(stale_hash.to_vec())
+    .bind(sibling_hash.to_vec())
+    .bind(block_number)
+    .execute(&setup.db_pool)
+    .await?;
+
+    let mut tx = db
+        .new_transaction()
+        .await?
+        .expect("new_transaction() returns Some on a live stack");
+    let orphaned_hashes = db
+        .update_block_as_finalized(&mut tx, block_number, &stale_hash)
+        .await?;
+    tx.commit().await?;
+
+    assert!(
+        orphaned_hashes.is_none(),
+        "stale finalization must be refused, not orphan sibling branches"
+    );
+
+    let statuses = sqlx::query(
+        r#"
+        SELECT block_hash, block_status
+        FROM host_chain_blocks_valid
+        WHERE chain_id = $1
+          AND block_number = $2
+        "#,
+    )
+    .bind(setup.chain_id.as_i64())
+    .bind(block_number)
+    .fetch_all(&setup.db_pool)
+    .await?
+    .into_iter()
+    .map(|row| {
+        (
+            row.get::<Vec<u8>, _>("block_hash"),
+            row.get::<String, _>("block_status"),
+        )
+    })
+    .collect::<HashSet<_>>();
+
+    assert!(statuses.contains(&(stale_hash.to_vec(), "orphaned".to_owned())));
+    assert!(statuses.contains(&(sibling_hash.to_vec(), "pending".to_owned())));
+
+    Ok(())
+}
+
+#[tokio::test]
+#[serial(db)]
+async fn test_legacy_allowed_handle_writes_are_mirrored_branchless(
+) -> Result<(), anyhow::Error> {
+    let db_instance = test_harness::instance::setup_test_db(ImportMode::None)
+        .await
+        .expect("valid db instance");
+    let db_pool = PgPoolOptions::new()
+        .max_connections(1)
+        .connect(db_instance.db_url())
+        .await?;
+    let handle = FixedBytes::<32>::from([0xA1; 32]);
+    let transaction_id = FixedBytes::<32>::from([0xB2; 32]);
+    let host_chain_id = 4242_i64;
+
+    sqlx::query(
+        r#"
+        INSERT INTO allowed_handles (
+            tenant_id,
+            handle,
+            account_address,
+            event_type,
+            transaction_id,
+            host_chain_id,
+            block_number
+        )
+        VALUES (0, $1, $2, $3, $4, $5, $6)
+        "#,
+    )
+    .bind(handle.to_vec())
+    .bind("0xlegacy")
+    .bind(0_i16)
+    .bind(transaction_id.to_vec())
+    .bind(host_chain_id)
+    .bind(10_i64)
+    .execute(&db_pool)
+    .await?;
+
+    let mirrored = sqlx::query_scalar::<_, i64>(
+        r#"
+        SELECT COUNT(*)
+        FROM allowed_handles_branch
+        WHERE handle = $1
+          AND account_address = $2
+          AND host_chain_id = $3
+          AND producer_block_hash = ''::BYTEA
+          AND block_hash = ''::BYTEA
+        "#,
+    )
+    .bind(handle.to_vec())
+    .bind("0xlegacy")
+    .bind(host_chain_id)
+    .fetch_one(&db_pool)
+    .await?;
+    assert_eq!(mirrored, 1);
+
+    sqlx::query(
+        "UPDATE allowed_handles SET txn_is_sent = TRUE WHERE handle = $1 AND account_address = $2",
+    )
+    .bind(handle.to_vec())
+    .bind("0xlegacy")
+    .execute(&db_pool)
+    .await?;
+
+    let txn_is_sent = sqlx::query_scalar::<_, bool>(
+        r#"
+        SELECT txn_is_sent
+        FROM allowed_handles_branch
+        WHERE handle = $1
+          AND account_address = $2
+          AND producer_block_hash = ''::BYTEA
+          AND block_hash = ''::BYTEA
+        "#,
+    )
+    .bind(handle.to_vec())
+    .bind("0xlegacy")
+    .fetch_one(&db_pool)
+    .await?;
+    assert!(txn_is_sent);
+
+    sqlx::query("DELETE FROM allowed_handles WHERE handle = $1 AND account_address = $2")
+        .bind(handle.to_vec())
+        .bind("0xlegacy")
+        .execute(&db_pool)
+        .await?;
+
+    let mirrored = sqlx::query_scalar::<_, i64>(
+        r#"
+        SELECT COUNT(*)
+        FROM allowed_handles_branch
+        WHERE handle = $1
+          AND account_address = $2
+          AND producer_block_hash = ''::BYTEA
+          AND block_hash = ''::BYTEA
+        "#,
+    )
+    .bind(handle.to_vec())
+    .bind("0xlegacy")
+    .fetch_one(&db_pool)
+    .await?;
+    assert_eq!(mirrored, 0);
+
+    let wave1_handle = FixedBytes::<32>::from([0xA2; 32]);
+    let wave1_transaction_id = FixedBytes::<32>::from([0xB3; 32]);
+    let producer_block_hash = FixedBytes::<32>::from([0xC4; 32]);
+    let acl_block_hash = FixedBytes::<32>::from([0xD5; 32]);
+
+    sqlx::query(
+        r#"
+        INSERT INTO allowed_handles_branch (
+            handle,
+            account_address,
+            event_type,
+            transaction_id,
+            host_chain_id,
+            block_number,
+            block_hash,
+            producer_block_hash
+        )
+        VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+        "#,
+    )
+    .bind(wave1_handle.to_vec())
+    .bind("0xwave1")
+    .bind(0_i16)
+    .bind(wave1_transaction_id.to_vec())
+    .bind(host_chain_id)
+    .bind(11_i64)
+    .bind(acl_block_hash.to_vec())
+    .bind(producer_block_hash.to_vec())
+    .execute(&db_pool)
+    .await?;
+
+    sqlx::query(
+        r#"
+        INSERT INTO allowed_handles (
+            tenant_id,
+            handle,
+            account_address,
+            event_type,
+            transaction_id,
+            host_chain_id,
+            block_number
+        )
+        VALUES (0, $1, $2, $3, $4, $5, $6)
+        "#,
+    )
+    .bind(wave1_handle.to_vec())
+    .bind("0xwave1")
+    .bind(0_i16)
+    .bind(wave1_transaction_id.to_vec())
+    .bind(host_chain_id)
+    .bind(11_i64)
+    .execute(&db_pool)
+    .await?;
+
+    let branchless_duplicates = sqlx::query_scalar::<_, i64>(
+        r#"
+        SELECT COUNT(*)
+        FROM allowed_handles_branch
+        WHERE handle = $1
+          AND account_address = $2
+          AND producer_block_hash = ''::BYTEA
+          AND block_hash = ''::BYTEA
+        "#,
+    )
+    .bind(wave1_handle.to_vec())
+    .bind("0xwave1")
+    .fetch_one(&db_pool)
+    .await?;
+    assert_eq!(branchless_duplicates, 0);
+
+    let branchful_rows = sqlx::query_scalar::<_, i64>(
+        r#"
+        SELECT COUNT(*)
+        FROM allowed_handles_branch
+        WHERE handle = $1
+          AND account_address = $2
+          AND producer_block_hash = $3
+          AND block_hash = $4
+        "#,
+    )
+    .bind(wave1_handle.to_vec())
+    .bind("0xwave1")
+    .bind(producer_block_hash.to_vec())
+    .bind(acl_block_hash.to_vec())
+    .fetch_one(&db_pool)
+    .await?;
+    assert_eq!(branchful_rows, 1);
+
+    let wave1_txn_hash = FixedBytes::<32>::from([0xE6; 32]);
+    sqlx::query(
+        r#"
+        UPDATE allowed_handles
+        SET txn_is_sent = TRUE,
+            txn_limited_retries_count = 4,
+            txn_unlimited_retries_count = 7,
+            txn_hash = $3,
+            txn_block_number = 99,
+            txn_last_error = 'sent from legacy sender',
+            txn_last_error_at = NOW()
+        WHERE handle = $1
+          AND account_address = $2
+        "#,
+    )
+    .bind(wave1_handle.to_vec())
+    .bind("0xwave1")
+    .bind(wave1_txn_hash.to_vec())
+    .execute(&db_pool)
+    .await?;
+
+    let branchless_duplicates = sqlx::query_scalar::<_, i64>(
+        r#"
+        SELECT COUNT(*)
+        FROM allowed_handles_branch
+        WHERE handle = $1
+          AND account_address = $2
+          AND producer_block_hash = ''::BYTEA
+          AND block_hash = ''::BYTEA
+        "#,
+    )
+    .bind(wave1_handle.to_vec())
+    .bind("0xwave1")
+    .fetch_one(&db_pool)
+    .await?;
+    assert_eq!(branchless_duplicates, 0);
+
+    let (
+        txn_is_sent,
+        txn_limited_retries_count,
+        txn_unlimited_retries_count,
+        txn_hash,
+        txn_block_number,
+        txn_last_error,
+    ) = sqlx::query_as::<
+        _,
+        (bool, i32, i32, Option<Vec<u8>>, Option<i64>, Option<String>),
+    >(
+        r#"
+        SELECT
+            txn_is_sent,
+            txn_limited_retries_count,
+            txn_unlimited_retries_count,
+            txn_hash,
+            txn_block_number,
+            txn_last_error
+        FROM allowed_handles_branch
+        WHERE handle = $1
+          AND account_address = $2
+          AND producer_block_hash = $3
+          AND block_hash = $4
+        "#,
+    )
+    .bind(wave1_handle.to_vec())
+    .bind("0xwave1")
+    .bind(producer_block_hash.to_vec())
+    .bind(acl_block_hash.to_vec())
+    .fetch_one(&db_pool)
+    .await?;
+    assert!(txn_is_sent);
+    assert_eq!(txn_limited_retries_count, 4);
+    assert_eq!(txn_unlimited_retries_count, 7);
+    assert_eq!(txn_hash, Some(wave1_txn_hash.to_vec()));
+    assert_eq!(txn_block_number, Some(99));
+    assert_eq!(txn_last_error.as_deref(), Some("sent from legacy sender"));
+
+    sqlx::query(
+        r#"
+        INSERT INTO allowed_handles_branch (
+            handle,
+            account_address,
+            event_type,
+            transaction_id,
+            host_chain_id,
+            block_number,
+            producer_block_hash,
+            block_hash
+        )
+        VALUES ($1, $2, $3, $4, $5, $6, ''::BYTEA, ''::BYTEA)
+        "#,
+    )
+    .bind(wave1_handle.to_vec())
+    .bind("0xwave1")
+    .bind(0_i16)
+    .bind(wave1_transaction_id.to_vec())
+    .bind(host_chain_id)
+    .bind(11_i64)
+    .execute(&db_pool)
+    .await?;
+
+    sqlx::raw_sql(include_str!(
+        "../../db-migration/migrations/20260610145000_branch_digest_late_backfill.sql"
+    ))
+    .execute(&db_pool)
+    .await?;
+
+    let branchless_duplicates = sqlx::query_scalar::<_, i64>(
+        r#"
+        SELECT COUNT(*)
+        FROM allowed_handles_branch
+        WHERE handle = $1
+          AND account_address = $2
+          AND producer_block_hash = ''::BYTEA
+          AND block_hash = ''::BYTEA
+        "#,
+    )
+    .bind(wave1_handle.to_vec())
+    .bind("0xwave1")
+    .fetch_one(&db_pool)
+    .await?;
+    // The late backfill migration is intentionally a no-op in wave 1. Live
+    // legacy writes are still deduplicated by the mirror trigger paths above,
+    // but the migration must not perform an online cleanup sweep.
+    assert_eq!(branchless_duplicates, 1);
+
+    let txn_is_sent = sqlx::query_scalar::<_, bool>(
+        r#"
+        SELECT txn_is_sent
+        FROM allowed_handles_branch
+        WHERE handle = $1
+          AND account_address = $2
+          AND producer_block_hash = $3
+          AND block_hash = $4
+        "#,
+    )
+    .bind(wave1_handle.to_vec())
+    .bind("0xwave1")
+    .bind(producer_block_hash.to_vec())
+    .bind(acl_block_hash.to_vec())
+    .fetch_one(&db_pool)
+    .await?;
+    assert!(txn_is_sent);
+
+    Ok(())
+}
+
+#[tokio::test]
+#[serial(db)]
+async fn test_finalization_cleanup_removes_orphaned_branch_rows_locally(
+) -> Result<(), anyhow::Error> {
+    let setup = setup_with_block_time(None, 1.0).await?;
+    let db = Database::new(
+        &setup.args.database_url,
+        setup.chain_id,
+        setup.args.dependence_cache_size,
+    )
+    .await?;
+
+    let block_number = 10_i64;
+    let canonical_hash = FixedBytes::<32>::from([0x11; 32]);
+    let orphan_hash = FixedBytes::<32>::from([0x22; 32]);
+    let orphan_descendant_hash = FixedBytes::<32>::from([0x23; 32]);
+    let canonical_handle = FixedBytes::<32>::from([0x33; 32]);
+    let orphan_handle = FixedBytes::<32>::from([0x44; 32]);
+    let orphan_descendant_handle = FixedBytes::<32>::from([0x45; 32]);
+    let canonical_txn = FixedBytes::<32>::from([0x55; 32]);
+    let orphan_txn = FixedBytes::<32>::from([0x66; 32]);
+    let orphan_descendant_txn = FixedBytes::<32>::from([0x67; 32]);
+    let key_id_gw = [0x77_u8; 32];
+    let canonical_dependencies =
+        vec![FixedBytes::<32>::from([0x88; 32]).to_vec()];
+    let orphan_dependencies = vec![FixedBytes::<32>::from([0x99; 32]).to_vec()];
+    let orphan_descendant_dependencies =
+        vec![FixedBytes::<32>::from([0x9A; 32]).to_vec()];
+    let orphaned_hashes =
+        vec![orphan_hash.to_vec(), orphan_descendant_hash.to_vec()];
+
+    sqlx::query!(
+        r#"
+        INSERT INTO host_chain_blocks_valid
+            (chain_id, block_hash, parent_hash, block_number, block_status)
+        VALUES
+            ($1, $2, $3, $4, 'pending'),
+            ($1, $5, $6, $4, 'pending'),
+            ($1, $7, $5, $8, 'pending')
+        "#,
+        setup.chain_id.as_i64(),
+        canonical_hash.to_vec(),
+        Option::<Vec<u8>>::None,
+        block_number,
+        orphan_hash.to_vec(),
+        Option::<Vec<u8>>::None,
+        orphan_descendant_hash.to_vec(),
+        block_number + 1,
+    )
+    .execute(&setup.db_pool)
+    .await?;
+
+    sqlx::query(
+        r#"
+        INSERT INTO computations_branch (
+            output_handle,
+            dependencies,
+            fhe_operation,
+            is_scalar,
+            transaction_id,
+            host_chain_id,
+            block_number,
+            producer_block_hash
+        )
+        VALUES
+            ($1, $2, $3, FALSE, $4, $5, $6, $7),
+            ($8, $9, $3, FALSE, $10, $5, $6, $11),
+            ($12, $13, $3, FALSE, $14, $5, $15, $16)
+        "#,
+    )
+    .bind(canonical_handle.to_vec())
+    .bind(&canonical_dependencies)
+    .bind(1_i16)
+    .bind(canonical_txn.to_vec())
+    .bind(setup.chain_id.as_i64())
+    .bind(block_number)
+    .bind(canonical_hash.to_vec())
+    .bind(orphan_handle.to_vec())
+    .bind(&orphan_dependencies)
+    .bind(orphan_txn.to_vec())
+    .bind(orphan_hash.to_vec())
+    .bind(orphan_descendant_handle.to_vec())
+    .bind(&orphan_descendant_dependencies)
+    .bind(orphan_descendant_txn.to_vec())
+    .bind(block_number + 1)
+    .bind(orphan_descendant_hash.to_vec())
+    .execute(&setup.db_pool)
+    .await?;
+
+    sqlx::query(
+        r#"
+        INSERT INTO computations (
+            output_handle,
+            dependencies,
+            fhe_operation,
+            is_scalar,
+            transaction_id,
+            host_chain_id,
+            block_number
+        )
+        VALUES
+            ($1, $2, $3, FALSE, $4, $5, $6),
+            ($7, $8, $3, FALSE, $9, $5, $6),
+            ($10, $11, $3, FALSE, $12, $5, $13)
+        "#,
+    )
+    .bind(canonical_handle.to_vec())
+    .bind(&canonical_dependencies)
+    .bind(1_i16)
+    .bind(canonical_txn.to_vec())
+    .bind(setup.chain_id.as_i64())
+    .bind(block_number)
+    .bind(orphan_handle.to_vec())
+    .bind(&orphan_dependencies)
+    .bind(orphan_txn.to_vec())
+    .bind(orphan_descendant_handle.to_vec())
+    .bind(&orphan_descendant_dependencies)
+    .bind(orphan_descendant_txn.to_vec())
+    .bind(block_number + 1)
+    .execute(&setup.db_pool)
+    .await?;
+
+    sqlx::query(
+        r#"
+        INSERT INTO pbs_computations_branch (
+            handle,
+            transaction_id,
+            host_chain_id,
+            block_number,
+            producer_block_hash
+        )
+        VALUES
+            ($1, $2, $3, $4, $5),
+            ($6, $7, $3, $4, $8),
+            ($9, $10, $3, $11, $12)
+        "#,
+    )
+    .bind(canonical_handle.to_vec())
+    .bind(canonical_txn.to_vec())
+    .bind(setup.chain_id.as_i64())
+    .bind(block_number)
+    .bind(canonical_hash.to_vec())
+    .bind(orphan_handle.to_vec())
+    .bind(orphan_txn.to_vec())
+    .bind(orphan_hash.to_vec())
+    .bind(orphan_descendant_handle.to_vec())
+    .bind(orphan_descendant_txn.to_vec())
+    .bind(block_number + 1)
+    .bind(orphan_descendant_hash.to_vec())
+    .execute(&setup.db_pool)
+    .await?;
+
+    sqlx::query(
+        r#"
+        INSERT INTO allowed_handles_branch (
+            handle,
+            account_address,
+            event_type,
+            transaction_id,
+            host_chain_id,
+            block_number,
+            producer_block_hash
+        )
+        VALUES
+            ($1, $2, $3, $4, $5, $6, $7),
+            ($8, $2, $3, $9, $5, $6, $10),
+            ($11, $2, $3, $12, $5, $13, $14)
+        "#,
+    )
+    .bind(canonical_handle.to_vec())
+    .bind("0xAccount")
+    .bind(0_i16)
+    .bind(canonical_txn.to_vec())
+    .bind(setup.chain_id.as_i64())
+    .bind(block_number)
+    .bind(canonical_hash.to_vec())
+    .bind(orphan_handle.to_vec())
+    .bind(orphan_txn.to_vec())
+    .bind(orphan_hash.to_vec())
+    .bind(orphan_descendant_handle.to_vec())
+    .bind(orphan_descendant_txn.to_vec())
+    .bind(block_number + 1)
+    .bind(orphan_descendant_hash.to_vec())
+    .execute(&setup.db_pool)
+    .await?;
+
+    sqlx::query(
+        r#"
+        INSERT INTO ciphertext_digest_branch (
+            host_chain_id,
+            key_id_gw,
+            handle,
+            producer_block_hash,
+            block_number,
+            transaction_id
+        )
+        VALUES
+            ($1, $2, $3, $4, $5, $6),
+            ($1, $2, $7, $8, $5, $9),
+            ($1, $2, $10, $11, $12, $13)
+        "#,
+    )
+    .bind(setup.chain_id.as_i64())
+    .bind(key_id_gw.to_vec())
+    .bind(canonical_handle.to_vec())
+    .bind(canonical_hash.to_vec())
+    .bind(block_number)
+    .bind(canonical_txn.to_vec())
+    .bind(orphan_handle.to_vec())
+    .bind(orphan_hash.to_vec())
+    .bind(orphan_txn.to_vec())
+    .bind(orphan_descendant_handle.to_vec())
+    .bind(orphan_descendant_hash.to_vec())
+    .bind(block_number + 1)
+    .bind(orphan_descendant_txn.to_vec())
+    .execute(&setup.db_pool)
+    .await?;
+
+    sqlx::query(
+        r#"
+        INSERT INTO ciphertexts_branch (
+            handle,
+            producer_block_hash,
+            block_number,
+            ciphertext,
+            ciphertext_version,
+            ciphertext_type
+        )
+        VALUES
+            ($1, $2, $3, $4, $5, $6),
+            ($7, $8, $9, $10, $5, $6),
+            ($11, $12, $13, $14, $5, $6)
+        "#,
+    )
+    .bind(canonical_handle.to_vec())
+    .bind(canonical_hash.to_vec())
+    .bind(block_number)
+    .bind(vec![0xAA_u8])
+    .bind(0_i16)
+    .bind(0_i16)
+    .bind(orphan_handle.to_vec())
+    .bind(orphan_hash.to_vec())
+    .bind(block_number)
+    .bind(vec![0xBB_u8])
+    .bind(orphan_descendant_handle.to_vec())
+    .bind(orphan_descendant_hash.to_vec())
+    .bind(block_number + 1)
+    .bind(vec![0xBC_u8])
+    .execute(&setup.db_pool)
+    .await?;
+
+    sqlx::query(
+        r#"
+        INSERT INTO ciphertexts128_branch (
+            handle,
+            producer_block_hash,
+            block_number,
+            ciphertext
+        )
+        VALUES
+            ($1, $2, $3, $4),
+            ($5, $6, $7, $8),
+            ($9, $10, $11, $12)
+        "#,
+    )
+    .bind(canonical_handle.to_vec())
+    .bind(canonical_hash.to_vec())
+    .bind(block_number)
+    .bind(vec![0xCC_u8])
+    .bind(orphan_handle.to_vec())
+    .bind(orphan_hash.to_vec())
+    .bind(block_number)
+    .bind(vec![0xDD_u8])
+    .bind(orphan_descendant_handle.to_vec())
+    .bind(orphan_descendant_hash.to_vec())
+    .bind(block_number + 1)
+    .bind(vec![0xDE_u8])
+    .execute(&setup.db_pool)
+    .await?;
+
+    sqlx::query!(
+        r#"
+        INSERT INTO delegate_user_decrypt (
+            delegator,
+            delegate,
+            contract_address,
+            delegation_counter,
+            old_expiration_date,
+            new_expiration_date,
+            host_chain_id,
+            block_number,
+            block_hash,
+            transaction_id,
+            on_gateway,
+            reorg_out
+        )
+        VALUES (
+            $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, FALSE, FALSE
+        )
+        "#,
+        Address::from([0xA1; 20]).into_array().to_vec(),
+        Address::from([0xA2; 20]).into_array().to_vec(),
+        Address::from([0xA3; 20]).into_array().to_vec(),
+        1_i64,
+        BigDecimal::from(0_i64),
+        BigDecimal::from(1_i64),
+        setup.chain_id.as_i64(),
+        block_number + 1,
+        orphan_descendant_hash.to_vec(),
+        orphan_descendant_txn.to_vec(),
+    )
+    .execute(&setup.db_pool)
+    .await?;
+
+    let mut tx = db
+        .new_transaction()
+        .await?
+        .expect("new_transaction() returns Some on a live stack");
+    db.mark_block_as_valid(
+        &mut tx,
+        &BlockSummary {
+            number: block_number as u64,
+            hash: canonical_hash,
+            parent_hash: FixedBytes::<32>::ZERO,
+            timestamp: 0,
+        },
+        true,
+        0,
+        0,
+    )
+    .await?;
+    tx.commit().await?;
+
+    let canonical_status = sqlx::query_scalar!(
+        r#"
+        SELECT block_status
+        FROM host_chain_blocks_valid
+        WHERE chain_id = $1 AND block_hash = $2
+        "#,
+        setup.chain_id.as_i64(),
+        canonical_hash.to_vec(),
+    )
+    .fetch_one(&setup.db_pool)
+    .await?;
+    assert_eq!(canonical_status, "finalized");
+
+    let orphan_status = sqlx::query_scalar!(
+        r#"
+        SELECT block_status
+        FROM host_chain_blocks_valid
+        WHERE chain_id = $1 AND block_hash = $2
+        "#,
+        setup.chain_id.as_i64(),
+        orphan_hash.to_vec(),
+    )
+    .fetch_one(&setup.db_pool)
+    .await?;
+    assert_eq!(orphan_status, "orphaned");
+    let orphan_descendant_status = sqlx::query_scalar!(
+        r#"
+        SELECT block_status
+        FROM host_chain_blocks_valid
+        WHERE chain_id = $1 AND block_hash = $2
+        "#,
+        setup.chain_id.as_i64(),
+        orphan_descendant_hash.to_vec(),
+    )
+    .fetch_one(&setup.db_pool)
+    .await?;
+    assert_eq!(orphan_descendant_status, "orphaned");
+
+    let canonical_computations = sqlx::query_scalar!(
+        r#"
+        SELECT COUNT(*)
+        FROM computations_branch
+        WHERE host_chain_id = $1 AND producer_block_hash = $2
+        "#,
+        setup.chain_id.as_i64(),
+        canonical_hash.to_vec(),
+    )
+    .fetch_one(&setup.db_pool)
+    .await?
+    .unwrap_or(0);
+    let orphan_computations = sqlx::query_scalar!(
+        r#"
+        SELECT COUNT(*)
+        FROM computations_branch
+        WHERE host_chain_id = $1
+          AND producer_block_hash = ANY($2::bytea[])
+        "#,
+        setup.chain_id.as_i64(),
+        &orphaned_hashes as _,
+    )
+    .fetch_one(&setup.db_pool)
+    .await?
+    .unwrap_or(0);
+    assert_eq!(canonical_computations, 1);
+    assert_eq!(orphan_computations, 0);
+
+    let canonical_pbs = sqlx::query_scalar!(
+        r#"
+        SELECT COUNT(*)
+        FROM pbs_computations_branch
+        WHERE host_chain_id = $1 AND producer_block_hash = $2
+        "#,
+        setup.chain_id.as_i64(),
+        canonical_hash.to_vec(),
+    )
+    .fetch_one(&setup.db_pool)
+    .await?
+    .unwrap_or(0);
+    let orphan_pbs = sqlx::query_scalar!(
+        r#"
+        SELECT COUNT(*)
+        FROM pbs_computations_branch
+        WHERE host_chain_id = $1
+          AND producer_block_hash = ANY($2::bytea[])
+        "#,
+        setup.chain_id.as_i64(),
+        &orphaned_hashes as _,
+    )
+    .fetch_one(&setup.db_pool)
+    .await?
+    .unwrap_or(0);
+    assert_eq!(canonical_pbs, 1);
+    assert_eq!(orphan_pbs, 0);
+
+    let canonical_digest = sqlx::query_scalar!(
+        r#"
+        SELECT COUNT(*)
+        FROM ciphertext_digest_branch
+        WHERE host_chain_id = $1 AND producer_block_hash = $2
+        "#,
+        setup.chain_id.as_i64(),
+        canonical_hash.to_vec(),
+    )
+    .fetch_one(&setup.db_pool)
+    .await?
+    .unwrap_or(0);
+    let orphan_digest = sqlx::query_scalar!(
+        r#"
+        SELECT COUNT(*)
+        FROM ciphertext_digest_branch
+        WHERE host_chain_id = $1
+          AND producer_block_hash = ANY($2::bytea[])
+        "#,
+        setup.chain_id.as_i64(),
+        &orphaned_hashes as _,
+    )
+    .fetch_one(&setup.db_pool)
+    .await?
+    .unwrap_or(0);
+    assert_eq!(canonical_digest, 1);
+    assert_eq!(orphan_digest, 0);
+
+    let canonical_allowed = sqlx::query_scalar!(
+        r#"
+        SELECT COUNT(*)
+        FROM allowed_handles_branch
+        WHERE host_chain_id = $1 AND producer_block_hash = $2
+        "#,
+        setup.chain_id.as_i64(),
+        canonical_hash.to_vec(),
+    )
+    .fetch_one(&setup.db_pool)
+    .await?
+    .unwrap_or(0);
+    let orphan_allowed = sqlx::query_scalar!(
+        r#"
+        SELECT COUNT(*)
+        FROM allowed_handles_branch
+        WHERE host_chain_id = $1
+          AND producer_block_hash = ANY($2::bytea[])
+        "#,
+        setup.chain_id.as_i64(),
+        &orphaned_hashes as _,
+    )
+    .fetch_one(&setup.db_pool)
+    .await?
+    .unwrap_or(0);
+    assert_eq!(canonical_allowed, 1);
+    assert_eq!(orphan_allowed, 0);
+
+    let canonical_ct64 = sqlx::query_scalar!(
+        r#"
+        SELECT COUNT(*)
+        FROM ciphertexts_branch
+        WHERE producer_block_hash = $1
+        "#,
+        canonical_hash.to_vec(),
+    )
+    .fetch_one(&setup.db_pool)
+    .await?
+    .unwrap_or(0);
+    let orphan_ct64 = sqlx::query_scalar!(
+        r#"
+        SELECT COUNT(*)
+        FROM ciphertexts_branch
+        WHERE producer_block_hash = ANY($1::bytea[])
+        "#,
+        &orphaned_hashes as _,
+    )
+    .fetch_one(&setup.db_pool)
+    .await?
+    .unwrap_or(0);
+    assert_eq!(canonical_ct64, 1);
+    assert_eq!(orphan_ct64, 0);
+
+    let canonical_ct128 = sqlx::query_scalar!(
+        r#"
+        SELECT COUNT(*)
+        FROM ciphertexts128_branch
+        WHERE producer_block_hash = $1
+        "#,
+        canonical_hash.to_vec(),
+    )
+    .fetch_one(&setup.db_pool)
+    .await?
+    .unwrap_or(0);
+    let orphan_ct128 = sqlx::query_scalar!(
+        r#"
+        SELECT COUNT(*)
+        FROM ciphertexts128_branch
+        WHERE producer_block_hash = ANY($1::bytea[])
+        "#,
+        &orphaned_hashes as _,
+    )
+    .fetch_one(&setup.db_pool)
+    .await?
+    .unwrap_or(0);
+    assert_eq!(canonical_ct128, 1);
+    assert_eq!(orphan_ct128, 0);
+
+    let canonical_computations_branch = sqlx::query_scalar::<_, i64>(
+        "SELECT COUNT(*) FROM computations_branch WHERE host_chain_id = $1 AND producer_block_hash = $2",
+    )
+    .bind(setup.chain_id.as_i64())
+    .bind(canonical_hash.to_vec())
+    .fetch_one(&setup.db_pool)
+    .await?;
+    let orphan_computations_branch = sqlx::query_scalar::<_, i64>(
+        "SELECT COUNT(*) FROM computations_branch WHERE host_chain_id = $1 AND producer_block_hash = ANY($2::bytea[])",
+    )
+    .bind(setup.chain_id.as_i64())
+    .bind(&orphaned_hashes)
+    .fetch_one(&setup.db_pool)
+    .await?;
+    assert_eq!(canonical_computations_branch, 1);
+    assert_eq!(orphan_computations_branch, 0);
+
+    let legacy_orphan_computations = sqlx::query_scalar::<_, i64>(
+        "SELECT COUNT(*)
+         FROM computations
+         WHERE host_chain_id = $1
+           AND output_handle = ANY($2::bytea[])",
+    )
+    .bind(setup.chain_id.as_i64())
+    .bind(vec![
+        orphan_handle.to_vec(),
+        orphan_descendant_handle.to_vec(),
+    ])
+    .fetch_one(&setup.db_pool)
+    .await?;
+    assert_eq!(legacy_orphan_computations, 0);
+
+    let canonical_pbs_branch = sqlx::query_scalar::<_, i64>(
+        "SELECT COUNT(*) FROM pbs_computations_branch WHERE host_chain_id = $1 AND producer_block_hash = $2",
+    )
+    .bind(setup.chain_id.as_i64())
+    .bind(canonical_hash.to_vec())
+    .fetch_one(&setup.db_pool)
+    .await?;
+    let orphan_pbs_branch = sqlx::query_scalar::<_, i64>(
+        "SELECT COUNT(*) FROM pbs_computations_branch WHERE host_chain_id = $1 AND producer_block_hash = ANY($2::bytea[])",
+    )
+    .bind(setup.chain_id.as_i64())
+    .bind(&orphaned_hashes)
+    .fetch_one(&setup.db_pool)
+    .await?;
+    assert_eq!(canonical_pbs_branch, 1);
+    assert_eq!(orphan_pbs_branch, 0);
+
+    let canonical_digest_branch = sqlx::query_scalar::<_, i64>(
+        "SELECT COUNT(*) FROM ciphertext_digest_branch WHERE host_chain_id = $1 AND producer_block_hash = $2",
+    )
+    .bind(setup.chain_id.as_i64())
+    .bind(canonical_hash.to_vec())
+    .fetch_one(&setup.db_pool)
+    .await?;
+    let orphan_digest_branch = sqlx::query_scalar::<_, i64>(
+        "SELECT COUNT(*) FROM ciphertext_digest_branch WHERE host_chain_id = $1 AND producer_block_hash = ANY($2::bytea[])",
+    )
+    .bind(setup.chain_id.as_i64())
+    .bind(&orphaned_hashes)
+    .fetch_one(&setup.db_pool)
+    .await?;
+    assert_eq!(canonical_digest_branch, 1);
+    assert_eq!(orphan_digest_branch, 0);
+
+    let canonical_allowed_branch = sqlx::query_scalar::<_, i64>(
+        "SELECT COUNT(*) FROM allowed_handles_branch WHERE host_chain_id = $1 AND producer_block_hash = $2",
+    )
+    .bind(setup.chain_id.as_i64())
+    .bind(canonical_hash.to_vec())
+    .fetch_one(&setup.db_pool)
+    .await?;
+    let orphan_allowed_branch = sqlx::query_scalar::<_, i64>(
+        "SELECT COUNT(*) FROM allowed_handles_branch WHERE host_chain_id = $1 AND producer_block_hash = ANY($2::bytea[])",
+    )
+    .bind(setup.chain_id.as_i64())
+    .bind(&orphaned_hashes)
+    .fetch_one(&setup.db_pool)
+    .await?;
+    assert_eq!(canonical_allowed_branch, 1);
+    assert_eq!(orphan_allowed_branch, 0);
+
+    let canonical_ct64_branch = sqlx::query_scalar::<_, i64>(
+        "SELECT COUNT(*) FROM ciphertexts_branch WHERE producer_block_hash = $1",
+    )
+    .bind(canonical_hash.to_vec())
+    .fetch_one(&setup.db_pool)
+    .await?;
+    let orphan_ct64_branch = sqlx::query_scalar::<_, i64>(
+        "SELECT COUNT(*) FROM ciphertexts_branch WHERE producer_block_hash = ANY($1::bytea[])",
+    )
+    .bind(&orphaned_hashes)
+    .fetch_one(&setup.db_pool)
+    .await?;
+    assert_eq!(canonical_ct64_branch, 1);
+    assert_eq!(orphan_ct64_branch, 0);
+
+    let canonical_ct128_branch = sqlx::query_scalar::<_, i64>(
+        "SELECT COUNT(*) FROM ciphertexts128_branch WHERE producer_block_hash = $1",
+    )
+    .bind(canonical_hash.to_vec())
+    .fetch_one(&setup.db_pool)
+    .await?;
+    let orphan_ct128_branch = sqlx::query_scalar::<_, i64>(
+        "SELECT COUNT(*) FROM ciphertexts128_branch WHERE producer_block_hash = ANY($1::bytea[])",
+    )
+    .bind(&orphaned_hashes)
+    .fetch_one(&setup.db_pool)
+    .await?;
+    assert_eq!(canonical_ct128_branch, 1);
+    assert_eq!(orphan_ct128_branch, 0);
+
+    let orphan_delegations = sqlx::query_scalar!(
+        r#"
+        SELECT COUNT(*)
+        FROM delegate_user_decrypt
+        WHERE host_chain_id = $1
+          AND block_hash = ANY($2::bytea[])
+        "#,
+        setup.chain_id.as_i64(),
+        &orphaned_hashes as _,
+    )
+    .fetch_one(&setup.db_pool)
+    .await?
+    .unwrap_or(0);
+    assert_eq!(orphan_delegations, 0);
+
+    Ok(())
+}
+
+#[tokio::test]
 async fn test_only_catchup_loop_requires_negative_start_at_block(
 ) -> Result<(), anyhow::Error> {
     let args = Args {
@@ -998,6 +2486,10 @@ async fn test_only_catchup_loop_requires_negative_start_at_block(
         acl_contract_address: "".to_string(),
         tfhe_contract_address: "".to_string(),
         kms_generation_address: String::new(),
+        protocol_config: host_listener::protocol_config::ProtocolConfigArgs {
+            address: String::new(),
+            chain_id: None,
+        },
         confidential_bridge_address: String::new(),
         database_url: fhevm_engine_common::utils::DatabaseURL::default(),
         start_at_block: Some(0),
@@ -1017,6 +2509,7 @@ async fn test_only_catchup_loop_requires_negative_start_at_block(
         dependence_cross_block: true,
         dependent_ops_max_per_chain: 0,
         timeout_request_websocket: 30,
+        stack_version: false,
     };
 
     let result = main(args).await;
@@ -1044,72 +2537,87 @@ async fn check_finalization_status(setup: &Setup) {
         .connect_ws(WsConnect::new(setup.args.url.to_string()))
         .await
         .unwrap();
-    // Verify block finalization status: for each block number, one should be finalized and others orphaned
-    let blocks = sqlx::query!(
-        "SELECT block_number, block_hash, block_status FROM host_chain_blocks_valid",
-    )
-    .fetch_all(&setup.db_pool)
-    .await;
+    let deadline =
+        tokio::time::Instant::now() + tokio::time::Duration::from_secs(15);
+    loop {
+        // Verify block finalization status: for each block number, one should be
+        // finalized and others orphaned. During a deep reorg the listener can be
+        // between inserting missing ancestors and applying the status transition,
+        // so retry transient mismatches before failing the test.
+        let blocks = sqlx::query!(
+            "SELECT block_number, block_hash, block_status FROM host_chain_blocks_valid",
+        )
+        .fetch_all(&setup.db_pool)
+        .await
+        .expect("Failed to fetch blocks from database");
 
-    let blocks = blocks.expect("Failed to fetch blocks from database");
-    let block_max = blocks
-        .iter()
-        .map(|b| b.block_number)
-        .max()
-        .expect("At least one block should be ingested");
+        let block_max = blocks
+            .iter()
+            .map(|b| b.block_number)
+            .max()
+            .expect("At least one block should be ingested");
 
-    let mut blocks_by_number: std::collections::HashMap<
-        i64,
-        Vec<(Vec<u8>, String)>,
-    > = std::collections::HashMap::new();
-    for block in blocks {
-        if block.block_number > block_max - 5 {
-            continue; // pending blocks within finalization window can be ignored for this assert
+        let mut blocks_by_number: std::collections::HashMap<
+            i64,
+            Vec<(Vec<u8>, String)>,
+        > = std::collections::HashMap::new();
+        for block in blocks {
+            if block.block_number > block_max - 5 {
+                continue; // pending blocks within finalization window can be ignored for this assert
+            }
+            blocks_by_number
+                .entry(block.block_number)
+                .or_default()
+                .push((block.block_hash, block.block_status));
         }
-        blocks_by_number
-            .entry(block.block_number)
-            .or_default()
-            .push((block.block_hash, block.block_status));
-    }
 
-    for (block_number, block_variants) in blocks_by_number.iter() {
-        let finalized_count = block_variants
-            .iter()
-            .filter(|(_, status)| status == "finalized")
-            .count();
-        let orphan_count = block_variants
-            .iter()
-            .filter(|(_, status)| status == "orphaned")
-            .count();
-        assert_eq!(
-            finalized_count, 1,
-            "Block {} should have exactly one finalized variant, found {}",
-            block_number, finalized_count
-        );
-        let finalized_hash = block_variants
-            .iter()
-            .find(|(_, status)| status == "finalized")
-            .map(|(hash, _)| hash)
-            .unwrap();
-        assert_eq!(
-            orphan_count,
-            block_variants.len() - 1,
-            "Block {} should have remaining variants as orphan",
-            block_number
-        );
-        let expected_hash = provider
-            .get_block_by_number((*block_number as u64).into())
-            .await
-            .unwrap()
-            .unwrap()
-            .header
-            .hash;
-        assert_eq!(
-            &expected_hash.0,
-            finalized_hash.as_slice(),
-            "Finalized block hash for block {} does not match expected",
-            block_number
-        );
+        let mut mismatch = None;
+        for (block_number, block_variants) in blocks_by_number.iter() {
+            let finalized_count = block_variants
+                .iter()
+                .filter(|(_, status)| status == "finalized")
+                .count();
+            let orphan_count = block_variants
+                .iter()
+                .filter(|(_, status)| status == "orphaned")
+                .count();
+            if finalized_count != 1 {
+                mismatch = Some(format!(
+                    "Block {block_number} should have exactly one finalized variant, found {finalized_count}"
+                ));
+                break;
+            }
+            if orphan_count != block_variants.len() - 1 {
+                mismatch = Some(format!(
+                    "Block {block_number} should have remaining variants as orphan"
+                ));
+                break;
+            }
+            let finalized_hash = block_variants
+                .iter()
+                .find(|(_, status)| status == "finalized")
+                .map(|(hash, _)| hash)
+                .unwrap();
+            let expected_hash = provider
+                .get_block_by_number((*block_number as u64).into())
+                .await
+                .unwrap()
+                .unwrap()
+                .header
+                .hash;
+            if expected_hash.0 != finalized_hash.as_slice() {
+                mismatch = Some(format!(
+                    "Finalized block hash for block {block_number} does not match expected"
+                ));
+                break;
+            }
+        }
+        if mismatch.is_none() {
+            return;
+        }
+        let mismatch = mismatch.unwrap();
+        assert!(tokio::time::Instant::now() < deadline, "{mismatch}");
+        tokio::time::sleep(tokio::time::Duration::from_millis(500)).await;
     }
 }
 
@@ -1166,33 +2674,57 @@ async fn test_listener_no_event_loss(
     let mut nb_kill = 1;
     let nb_wallets = setup.wallets.len() as i64;
     // Restart/kill many times until no more events are consumed.
-    let expected_tfhe_events = if reorg {
-        nb_wallets * NB_EVENTS_PER_WALLET + 1
-    } else {
-        nb_wallets * NB_EVENTS_PER_WALLET
-    };
+    //
+    // Under branch-context orphan cleanup (finalization deletes orphaned
+    // rows from legacy `computations`/`allowed_handles`), the reorg path
+    // cannot satisfy an equal-to-total-emissions assertion: ~25 blocks
+    // worth of events get orphaned and pruned after finality. For the
+    // reorg variant the test therefore asserts on canonical-chain
+    // presence (through `check_finalization_status` + a plateau check)
+    // rather than a fixed count. The no-reorg variant keeps the exact
+    // count assertion.
+    let expected_tfhe_events = nb_wallets * NB_EVENTS_PER_WALLET;
     let expected_acl_events = nb_wallets * NB_EVENTS_PER_WALLET;
+    let mut plateau_ticks = 0;
     for _ in 1..40 {
         // 4 mins max to avoid stalled CI
         let listener_handle = tokio::spawn(main(args.clone()));
         tokio::time::sleep(tokio::time::Duration::from_secs(5)).await;
         check_finalization_status(&setup).await;
-        let tfhe_new_count = sqlx::query!("SELECT COUNT(*) FROM computations")
-            .fetch_one(&setup.db_pool)
-            .await?
-            .count
-            .unwrap_or(0);
-        let acl_new_count =
-            sqlx::query!("SELECT COUNT(*) FROM allowed_handles")
-                .fetch_one(&setup.db_pool)
-                .await?
-                .count
-                .unwrap_or(0);
+        let tfhe_new_count = sqlx::query_scalar::<_, i64>(
+            "SELECT COUNT(*) FROM computations_branch WHERE producer_block_hash <> ''::BYTEA",
+        )
+        .fetch_one(&setup.db_pool)
+        .await?;
+        let acl_new_count = sqlx::query_scalar::<_, i64>(
+            r#"
+            SELECT COUNT(*)
+            FROM allowed_handles_branch
+            WHERE producer_block_hash <> ''::BYTEA
+               OR block_hash <> ''::BYTEA
+            "#,
+        )
+        .fetch_one(&setup.db_pool)
+        .await?;
         let no_count_change = tfhe_events_count == tfhe_new_count
             && acl_events_count == acl_new_count;
         let reached_expected = tfhe_new_count >= expected_tfhe_events
             && acl_new_count >= expected_acl_events;
-        if event_source.is_finished() && no_count_change && reached_expected {
+        let reorg_plateau = reorg
+            && event_source.is_finished()
+            && no_count_change
+            && tfhe_new_count > 0
+            && acl_new_count > 0;
+        if reorg_plateau {
+            plateau_ticks += 1;
+        } else {
+            plateau_ticks = 0;
+        }
+        let stable_under_reorg = reorg_plateau && plateau_ticks >= 3;
+        if event_source.is_finished()
+            && no_count_change
+            && (reached_expected || stable_under_reorg)
+        {
             listener_handle.abort();
             break;
         };
@@ -1214,8 +2746,73 @@ async fn test_listener_no_event_loss(
         );
         tokio::time::sleep(tokio::time::Duration::from_secs(1)).await;
     }
-    assert_eq!(tfhe_events_count, expected_tfhe_events);
-    assert_eq!(acl_events_count, expected_acl_events);
+    if reorg {
+        // Orphan cleanup removes any events from the orphaned branch, so
+        // the final counts are bounded above by the raw emission totals
+        // and below by the canonical-chain subset. Require both non-zero,
+        // plus the finalization invariant (already checked every loop),
+        // plus the orphan-cleanup invariant: no row in `computations` may
+        // reference a producer_block_hash whose block is now orphaned.
+        assert!(
+            tfhe_events_count > 0,
+            "reorg variant: at least one tfhe event must survive cleanup"
+        );
+        assert!(
+            tfhe_events_count <= expected_tfhe_events + 1,
+            "reorg variant: tfhe events must not exceed raw emissions (+1 reorg replay) {tfhe_events_count} > {expected_tfhe_events}"
+        );
+        assert!(
+            acl_events_count > 0,
+            "reorg variant: at least one acl event must survive cleanup"
+        );
+        assert!(
+            acl_events_count <= expected_acl_events,
+            "reorg variant: acl events must not exceed raw emissions {acl_events_count} > {expected_acl_events}"
+        );
+        check_finalization_status(&setup).await;
+        let orphaned_leftovers = sqlx::query_scalar::<_, i64>(
+            r#"
+            SELECT COUNT(*)
+            FROM computations_branch c
+            JOIN host_chain_blocks_valid b
+              ON c.host_chain_id = b.chain_id
+             AND c.producer_block_hash = b.block_hash
+            WHERE b.block_status = 'orphaned'
+            "#,
+        )
+        .fetch_one(&setup.db_pool)
+        .await?;
+        assert_eq!(
+            orphaned_leftovers, 0,
+            "reorg variant: computations must not retain rows for orphaned blocks"
+        );
+
+        let legacy_orphaned_leftovers = sqlx::query_scalar::<_, i64>(
+            r#"
+            SELECT COUNT(*)
+            FROM computations c
+            JOIN host_chain_blocks_valid b
+              ON c.host_chain_id = b.chain_id
+             AND c.block_number = b.block_number
+            WHERE b.block_status = 'orphaned'
+              AND NOT EXISTS (
+                  SELECT 1
+                  FROM computations_branch retained
+                  WHERE retained.host_chain_id = c.host_chain_id
+                    AND retained.output_handle = c.output_handle
+              )
+            "#,
+        )
+        .fetch_one(&setup.db_pool)
+        .await?;
+        assert_eq!(
+            legacy_orphaned_leftovers, 0,
+            "reorg variant: legacy computations must not retain orphaned-only rows"
+        );
+    } else {
+        assert_eq!(tfhe_events_count, expected_tfhe_events);
+        assert_eq!(acl_events_count, expected_acl_events);
+    }
 
     Ok(())
 }
@@ -1692,10 +3289,11 @@ async fn test_host_listener_recovers_after_revert() -> Result<(), anyhow::Error>
         .execute(&setup.db_pool)
         .await
         .expect("revert failed");
-    let after_revert: i64 =
-        sqlx::query_scalar("SELECT COUNT(*) FROM computations")
-            .fetch_one(&setup.db_pool)
-            .await?;
+    let after_revert: i64 = sqlx::query_scalar(
+        "SELECT COUNT(*) FROM computations_branch WHERE producer_block_hash <> ''::BYTEA",
+    )
+    .fetch_one(&setup.db_pool)
+    .await?;
     assert!(
         after_revert < expected,
         "revert should delete some computations: {after_revert} < {expected}"
@@ -1717,5 +3315,1029 @@ async fn test_host_listener_recovers_after_revert() -> Result<(), anyhow::Error>
     assert_eq!(acl, expected, "allowed_handles after revert");
 
     listener.abort();
+    Ok(())
+}
+
+/// Wave-1 contract: every event write must land in BOTH the legacy tables
+/// (still feeding the running legacy pipeline) and the `*_branch` tables
+/// (consumed by the wave-2 block-scoped readers).
+#[tokio::test]
+#[serial(db)]
+async fn test_wave1_dual_writes_legacy_and_branch_tables(
+) -> Result<(), Box<dyn std::error::Error>> {
+    use alloy::primitives::Log as EventLog;
+    use fhevm_engine_common::types::AllowEvents;
+    use host_listener::contracts::TfheContract;
+    use host_listener::contracts::TfheContract::TfheContractEvents;
+    use host_listener::database::tfhe_event_propagate::{ClearConst, LogTfhe};
+    use sqlx::types::time::PrimitiveDateTime;
+
+    let test_instance =
+        test_harness::instance::setup_test_db(ImportMode::WithKeysNoSns)
+            .await?;
+    let chain_id = ChainId::try_from(42_u64)?;
+    let db_url = test_instance.db_url.clone();
+    let db = Database::new(&db_url, chain_id, 128).await?;
+    let pool = db.pool.read().await.clone();
+
+    let handle = FixedBytes::<32>::from([0x42; 32]);
+    let tx_hash = FixedBytes::<32>::from([0x77; 32]);
+    let block_hash = FixedBytes::<32>::from([0x33; 32]);
+    let caller: Address =
+        "0x1111111111111111111111111111111111111111".parse()?;
+
+    // 1. Computation event (TrivialEncrypt producing `handle`).
+    let event = LogTfhe {
+        event: EventLog {
+            address: Address::ZERO,
+            data: TfheContractEvents::TrivialEncrypt(
+                TfheContract::TrivialEncrypt {
+                    caller,
+                    pt: ClearConst::from_be_slice(&[7u8]),
+                    toType: 4u8,
+                    result: handle,
+                },
+            ),
+        },
+        transaction_hash: Some(tx_hash),
+        is_allowed: true,
+        block_number: 7,
+        block_hash,
+        block_timestamp: PrimitiveDateTime::MAX,
+        dependence_chain: tx_hash,
+        tx_depth_size: 0,
+        log_index: None,
+    };
+    let mut tx = db
+        .new_transaction()
+        .await?
+        .expect("new_transaction() returns Some on a live stack");
+    db.insert_tfhe_event(&mut tx, &event).await?;
+
+    // 2. Allowed handle + PBS computations.
+    db.insert_allowed_handle(
+        &mut tx,
+        handle.to_vec(),
+        format!("{caller:#x}"),
+        AllowEvents::AllowedAccount,
+        Some(tx_hash.to_vec()),
+        ProducerBlock::new(block_hash.as_slice(), 7),
+    )
+    .await?;
+    db.insert_pbs_computations(
+        &mut tx,
+        &[handle.to_vec()],
+        Some(tx_hash.to_vec()),
+        7,
+        block_hash.as_slice(),
+    )
+    .await?;
+    tx.commit().await?;
+
+    // Every write must be visible in both the legacy and the branch table.
+    for (legacy, branch, key_col) in [
+        ("computations", "computations_branch", "output_handle"),
+        ("allowed_handles", "allowed_handles_branch", "handle"),
+        ("pbs_computations", "pbs_computations_branch", "handle"),
+    ] {
+        let legacy_count: i64 = sqlx::query_scalar(&format!(
+            "SELECT COUNT(*) FROM {legacy} WHERE {key_col} = $1"
+        ))
+        .bind(handle.to_vec())
+        .fetch_one(&pool)
+        .await?;
+        let branch_count: i64 = sqlx::query_scalar(&format!(
+            "SELECT COUNT(*) FROM {branch} WHERE {key_col} = $1 AND producer_block_hash = $2"
+        ))
+        .bind(handle.to_vec())
+        .bind(block_hash.to_vec())
+        .fetch_one(&pool)
+        .await?;
+        assert_eq!(legacy_count, 1, "missing legacy row in {legacy}");
+        assert_eq!(branch_count, 1, "missing branch row in {branch}");
+    }
+
+    Ok(())
+}
+
+#[tokio::test]
+#[serial(db)]
+async fn test_acl_branch_rows_keep_acl_block_context(
+) -> Result<(), Box<dyn std::error::Error>> {
+    use alloy::primitives::Log as EventLog;
+    use host_listener::contracts::AclContract;
+    use host_listener::contracts::AclContract::AclContractEvents;
+    use host_listener::contracts::TfheContract;
+    use host_listener::contracts::TfheContract::TfheContractEvents;
+    use host_listener::database::tfhe_event_propagate::{ClearConst, LogTfhe};
+    use sqlx::types::time::PrimitiveDateTime;
+
+    let test_instance =
+        test_harness::instance::setup_test_db(ImportMode::WithKeysNoSns)
+            .await?;
+    let chain_id = ChainId::try_from(42_u64)?;
+    let db_url = test_instance.db_url.clone();
+    let db = Database::new(&db_url, chain_id, 128).await?;
+    let pool = db.pool.read().await.clone();
+
+    let handle = FixedBytes::<32>::from([0x46; 32]);
+    let producer_tx = FixedBytes::<32>::from([0x47; 32]);
+    let producer_hash = FixedBytes::<32>::from([0x48; 32]);
+    let orphan_acl_hash = FixedBytes::<32>::from([0x49; 32]);
+    let canonical_acl_hash = FixedBytes::<32>::from([0x4A; 32]);
+    let orphan_only_handle = FixedBytes::<32>::from([0x4B; 32]);
+    let orphan_only_producer_tx = FixedBytes::<32>::from([0x4C; 32]);
+    let unrepaired_handle = FixedBytes::<32>::from([0x52; 32]);
+    let branchless_handle = FixedBytes::<32>::from([0x53; 32]);
+    let producer_block_number = 19_u64;
+    let acl_block_number = 20_u64;
+    let caller: Address =
+        "0x2222222222222222222222222222222222222222".parse()?;
+
+    sqlx::query(
+        "INSERT INTO host_chain_blocks_valid (
+            chain_id, block_hash, parent_hash, block_number, block_status
+         )
+         VALUES ($1, $2, NULL, $3, 'pending')",
+    )
+    .bind(chain_id.as_i64())
+    .bind(producer_hash.to_vec())
+    .bind(producer_block_number as i64)
+    .execute(&pool)
+    .await?;
+
+    let mut tx = db
+        .new_transaction()
+        .await?
+        .expect("new_transaction() returns Some on a live stack");
+    db.insert_tfhe_event(
+        &mut tx,
+        &LogTfhe {
+            event: EventLog {
+                address: Address::ZERO,
+                data: TfheContractEvents::TrivialEncrypt(
+                    TfheContract::TrivialEncrypt {
+                        caller,
+                        pt: ClearConst::from_be_slice(&[9u8]),
+                        toType: 4u8,
+                        result: handle,
+                    },
+                ),
+            },
+            transaction_hash: Some(producer_tx),
+            is_allowed: true,
+            block_number: producer_block_number,
+            block_hash: producer_hash,
+            block_timestamp: PrimitiveDateTime::MAX,
+            dependence_chain: producer_tx,
+            tx_depth_size: 0,
+            log_index: None,
+        },
+    )
+    .await?;
+
+    db.insert_tfhe_event(
+        &mut tx,
+        &LogTfhe {
+            event: EventLog {
+                address: Address::ZERO,
+                data: TfheContractEvents::TrivialEncrypt(
+                    TfheContract::TrivialEncrypt {
+                        caller,
+                        pt: ClearConst::from_be_slice(&[10u8]),
+                        toType: 4u8,
+                        result: orphan_only_handle,
+                    },
+                ),
+            },
+            transaction_hash: Some(orphan_only_producer_tx),
+            is_allowed: true,
+            block_number: producer_block_number,
+            block_hash: producer_hash,
+            block_timestamp: PrimitiveDateTime::MAX,
+            dependence_chain: orphan_only_producer_tx,
+            tx_depth_size: 0,
+            log_index: None,
+        },
+    )
+    .await?;
+
+    let orphan_acl_event = EventLog {
+        address: Address::ZERO,
+        data: AclContractEvents::AllowedForDecryption(
+            AclContract::AllowedForDecryption {
+                caller,
+                handlesList: vec![handle, orphan_only_handle],
+            },
+        ),
+    };
+    let canonical_acl_event = EventLog {
+        address: Address::ZERO,
+        data: AclContractEvents::AllowedForDecryption(
+            AclContract::AllowedForDecryption {
+                caller,
+                handlesList: vec![handle],
+            },
+        ),
+    };
+    db.handle_acl_event(
+        &mut tx,
+        &orphan_acl_event,
+        &None,
+        &BlockSummary {
+            number: acl_block_number,
+            hash: orphan_acl_hash,
+            parent_hash: producer_hash,
+            timestamp: 0,
+        },
+    )
+    .await?;
+    sqlx::query(
+        "INSERT INTO ciphertext_digest (
+            host_chain_id,
+            key_id_gw,
+            handle,
+            ciphertext,
+            ciphertext128
+         )
+         VALUES
+            ($1, $2, $3, $4, $5),
+            ($1, $2, $6, $7, $8)",
+    )
+    .bind(chain_id.as_i64())
+    .bind(vec![0x4D_u8; 32])
+    .bind(handle.to_vec())
+    .bind(vec![0x4E_u8; 32])
+    .bind(vec![0x4F_u8; 32])
+    .bind(orphan_only_handle.to_vec())
+    .bind(vec![0x50_u8; 32])
+    .bind(vec![0x51_u8; 32])
+    .execute(&mut *tx)
+    .await?;
+    db.handle_acl_event(
+        &mut tx,
+        &canonical_acl_event,
+        &None,
+        &BlockSummary {
+            number: acl_block_number,
+            hash: canonical_acl_hash,
+            parent_hash: producer_hash,
+            timestamp: 0,
+        },
+    )
+    .await?;
+    tx.commit().await?;
+
+    for table in ["allowed_handles_branch", "pbs_computations_branch"] {
+        let count: i64 = sqlx::query_scalar(&format!(
+            "SELECT COUNT(*)
+             FROM {table}
+             WHERE host_chain_id = $1
+               AND handle = $2
+               AND producer_block_hash = $3
+               AND block_number = $4
+               AND block_hash = ANY($5::bytea[])"
+        ))
+        .bind(chain_id.as_i64())
+        .bind(handle.to_vec())
+        .bind(producer_hash.to_vec())
+        .bind(acl_block_number as i64)
+        .bind(vec![orphan_acl_hash.to_vec(), canonical_acl_hash.to_vec()])
+        .fetch_one(&pool)
+        .await?;
+        assert_eq!(count, 2, "{table}");
+    }
+
+    let digest_context_count: i64 = sqlx::query_scalar(
+        "SELECT COUNT(*)
+         FROM ciphertext_digest_branch
+         WHERE host_chain_id = $1
+           AND handle = $2
+           AND producer_block_hash = $3
+           AND block_number = $4
+           AND block_hash = ANY($5::bytea[])",
+    )
+    .bind(chain_id.as_i64())
+    .bind(handle.to_vec())
+    .bind(producer_hash.to_vec())
+    .bind(acl_block_number as i64)
+    .bind(vec![orphan_acl_hash.to_vec(), canonical_acl_hash.to_vec()])
+    .fetch_one(&pool)
+    .await?;
+    let branchless_digest_count: i64 = sqlx::query_scalar(
+        "SELECT COUNT(*)
+         FROM ciphertext_digest_branch
+         WHERE host_chain_id = $1
+           AND handle = $2
+           AND producer_block_hash = ''::bytea
+           AND block_hash = ''::bytea",
+    )
+    .bind(chain_id.as_i64())
+    .bind(handle.to_vec())
+    .fetch_one(&pool)
+    .await?;
+    assert_eq!(digest_context_count, 2);
+    assert_eq!(branchless_digest_count, 0);
+
+    let orphan_only_digest_context_count: i64 = sqlx::query_scalar(
+        "SELECT COUNT(*)
+         FROM ciphertext_digest_branch
+         WHERE host_chain_id = $1
+           AND handle = $2
+           AND producer_block_hash = $3
+           AND block_number = $4
+           AND block_hash = $5",
+    )
+    .bind(chain_id.as_i64())
+    .bind(orphan_only_handle.to_vec())
+    .bind(producer_hash.to_vec())
+    .bind(acl_block_number as i64)
+    .bind(orphan_acl_hash.to_vec())
+    .fetch_one(&pool)
+    .await?;
+    assert_eq!(orphan_only_digest_context_count, 1);
+
+    sqlx::query(
+        "INSERT INTO pbs_computations_branch (
+            handle,
+            transaction_id,
+            host_chain_id,
+            block_number,
+            block_hash,
+            producer_block_hash
+         )
+         VALUES
+            ($1, NULL, $2, $3, ''::bytea, $4),
+            ($5, NULL, $2, $3, ''::bytea, ''::bytea),
+            ($5, NULL, $2, $3, $6, $4)",
+    )
+    .bind(unrepaired_handle.to_vec())
+    .bind(chain_id.as_i64())
+    .bind(acl_block_number as i64)
+    .bind(producer_hash.to_vec())
+    .bind(branchless_handle.to_vec())
+    .bind(canonical_acl_hash.to_vec())
+    .execute(&pool)
+    .await?;
+    sqlx::query(
+        "INSERT INTO pbs_computations(handle, host_chain_id, block_number)
+         VALUES
+            ($1, $2, $3),
+            ($4, $2, $3)",
+    )
+    .bind(unrepaired_handle.to_vec())
+    .bind(chain_id.as_i64())
+    .bind(acl_block_number as i64)
+    .bind(branchless_handle.to_vec())
+    .execute(&pool)
+    .await?;
+    sqlx::query(
+        "INSERT INTO ciphertext_digest (
+            host_chain_id,
+            key_id_gw,
+            handle,
+            ciphertext,
+            ciphertext128
+         )
+         VALUES
+            ($1, $2, $3, $4, $5),
+            ($1, $2, $6, $7, $8)",
+    )
+    .bind(chain_id.as_i64())
+    .bind(vec![0x54_u8; 32])
+    .bind(unrepaired_handle.to_vec())
+    .bind(vec![0x55_u8; 32])
+    .bind(vec![0x56_u8; 32])
+    .bind(branchless_handle.to_vec())
+    .bind(vec![0x57_u8; 32])
+    .bind(vec![0x58_u8; 32])
+    .execute(&pool)
+    .await?;
+
+    let branchless_digest_before_cleanup: i64 = sqlx::query_scalar(
+        "SELECT COUNT(*)
+         FROM ciphertext_digest_branch
+         WHERE host_chain_id = $1
+           AND handle = $2
+           AND producer_block_hash = ''::bytea
+           AND block_hash = ''::bytea",
+    )
+    .bind(chain_id.as_i64())
+    .bind(branchless_handle.to_vec())
+    .fetch_one(&pool)
+    .await?;
+    assert_eq!(branchless_digest_before_cleanup, 1);
+
+    let mut tx = db
+        .new_transaction()
+        .await?
+        .expect("new_transaction() returns Some on a live stack");
+    db.cleanup_orphaned_branch_state(&mut tx, &[orphan_acl_hash.to_vec()])
+        .await?;
+    tx.commit().await?;
+
+    for table in ["allowed_handles_branch", "pbs_computations_branch"] {
+        let orphan_count: i64 = sqlx::query_scalar(&format!(
+            "SELECT COUNT(*)
+             FROM {table}
+             WHERE host_chain_id = $1
+               AND handle = $2
+               AND block_hash = $3"
+        ))
+        .bind(chain_id.as_i64())
+        .bind(handle.to_vec())
+        .bind(orphan_acl_hash.to_vec())
+        .fetch_one(&pool)
+        .await?;
+        let canonical_count: i64 = sqlx::query_scalar(&format!(
+            "SELECT COUNT(*)
+             FROM {table}
+             WHERE host_chain_id = $1
+               AND handle = $2
+               AND block_hash = $3
+               AND producer_block_hash = $4"
+        ))
+        .bind(chain_id.as_i64())
+        .bind(handle.to_vec())
+        .bind(canonical_acl_hash.to_vec())
+        .bind(producer_hash.to_vec())
+        .fetch_one(&pool)
+        .await?;
+        assert_eq!(orphan_count, 0, "{table}");
+        assert_eq!(canonical_count, 1, "{table}");
+
+        let orphan_only_count: i64 = sqlx::query_scalar(&format!(
+            "SELECT COUNT(*)
+             FROM {table}
+             WHERE host_chain_id = $1
+               AND handle = $2"
+        ))
+        .bind(chain_id.as_i64())
+        .bind(orphan_only_handle.to_vec())
+        .fetch_one(&pool)
+        .await?;
+        assert_eq!(orphan_only_count, 0, "{table}");
+    }
+
+    let orphan_digest_count: i64 = sqlx::query_scalar(
+        "SELECT COUNT(*)
+         FROM ciphertext_digest_branch
+         WHERE host_chain_id = $1
+           AND handle = $2
+           AND block_hash = $3",
+    )
+    .bind(chain_id.as_i64())
+    .bind(handle.to_vec())
+    .bind(orphan_acl_hash.to_vec())
+    .fetch_one(&pool)
+    .await?;
+    let canonical_digest_count: i64 = sqlx::query_scalar(
+        "SELECT COUNT(*)
+         FROM ciphertext_digest_branch
+         WHERE host_chain_id = $1
+           AND handle = $2
+           AND block_hash = $3
+           AND producer_block_hash = $4",
+    )
+    .bind(chain_id.as_i64())
+    .bind(handle.to_vec())
+    .bind(canonical_acl_hash.to_vec())
+    .bind(producer_hash.to_vec())
+    .fetch_one(&pool)
+    .await?;
+    assert_eq!(orphan_digest_count, 0);
+    assert_eq!(canonical_digest_count, 1);
+
+    let orphan_only_digest_count: i64 = sqlx::query_scalar(
+        "SELECT COUNT(*)
+         FROM ciphertext_digest_branch
+         WHERE host_chain_id = $1
+           AND handle = $2",
+    )
+    .bind(chain_id.as_i64())
+    .bind(orphan_only_handle.to_vec())
+    .fetch_one(&pool)
+    .await?;
+    let legacy_orphan_only_pbs_count: i64 = sqlx::query_scalar(
+        "SELECT COUNT(*)
+         FROM pbs_computations
+         WHERE host_chain_id = $1
+           AND handle = $2",
+    )
+    .bind(chain_id.as_i64())
+    .bind(orphan_only_handle.to_vec())
+    .fetch_one(&pool)
+    .await?;
+    let legacy_orphan_only_digest_count: i64 = sqlx::query_scalar(
+        "SELECT COUNT(*)
+         FROM ciphertext_digest
+         WHERE host_chain_id = $1
+           AND handle = $2",
+    )
+    .bind(chain_id.as_i64())
+    .bind(orphan_only_handle.to_vec())
+    .fetch_one(&pool)
+    .await?;
+    let legacy_orphan_only_allowed_count: i64 = sqlx::query_scalar(
+        "SELECT COUNT(*)
+         FROM allowed_handles
+         WHERE host_chain_id = $1
+           AND handle = $2",
+    )
+    .bind(chain_id.as_i64())
+    .bind(orphan_only_handle.to_vec())
+    .fetch_one(&pool)
+    .await?;
+    assert_eq!(orphan_only_digest_count, 0);
+    assert_eq!(legacy_orphan_only_pbs_count, 0);
+    assert_eq!(legacy_orphan_only_digest_count, 0);
+    assert_eq!(legacy_orphan_only_allowed_count, 0);
+
+    let legacy_retained_pbs_count: i64 = sqlx::query_scalar(
+        "SELECT COUNT(*)
+         FROM pbs_computations
+         WHERE host_chain_id = $1
+           AND handle = $2",
+    )
+    .bind(chain_id.as_i64())
+    .bind(handle.to_vec())
+    .fetch_one(&pool)
+    .await?;
+    let legacy_retained_digest_count: i64 = sqlx::query_scalar(
+        "SELECT COUNT(*)
+         FROM ciphertext_digest
+         WHERE host_chain_id = $1
+           AND handle = $2",
+    )
+    .bind(chain_id.as_i64())
+    .bind(handle.to_vec())
+    .fetch_one(&pool)
+    .await?;
+    assert_eq!(legacy_retained_pbs_count, 1);
+    assert_eq!(legacy_retained_digest_count, 1);
+
+    let unrepaired_branch_count: i64 = sqlx::query_scalar(
+        "SELECT COUNT(*)
+         FROM pbs_computations_branch
+         WHERE host_chain_id = $1
+           AND handle = $2
+           AND producer_block_hash = $3
+           AND block_hash = ''::bytea",
+    )
+    .bind(chain_id.as_i64())
+    .bind(unrepaired_handle.to_vec())
+    .bind(producer_hash.to_vec())
+    .fetch_one(&pool)
+    .await?;
+    let unrepaired_digest_count: i64 = sqlx::query_scalar(
+        "SELECT COUNT(*)
+         FROM ciphertext_digest_branch
+         WHERE host_chain_id = $1
+           AND handle = $2
+           AND producer_block_hash = $3
+           AND block_hash = ''::bytea",
+    )
+    .bind(chain_id.as_i64())
+    .bind(unrepaired_handle.to_vec())
+    .bind(producer_hash.to_vec())
+    .fetch_one(&pool)
+    .await?;
+    let branchless_digest_after_cleanup: i64 = sqlx::query_scalar(
+        "SELECT COUNT(*)
+         FROM ciphertext_digest_branch
+         WHERE host_chain_id = $1
+           AND handle = $2
+           AND producer_block_hash = ''::bytea
+           AND block_hash = ''::bytea",
+    )
+    .bind(chain_id.as_i64())
+    .bind(branchless_handle.to_vec())
+    .fetch_one(&pool)
+    .await?;
+    assert_eq!(unrepaired_branch_count, 1);
+    assert_eq!(unrepaired_digest_count, 1);
+    assert_eq!(branchless_digest_after_cleanup, 1);
+
+    let producer_count: i64 = sqlx::query_scalar(
+        "SELECT COUNT(*)
+         FROM computations_branch
+         WHERE host_chain_id = $1
+           AND output_handle = $2
+           AND producer_block_hash = $3",
+    )
+    .bind(chain_id.as_i64())
+    .bind(handle.to_vec())
+    .bind(producer_hash.to_vec())
+    .fetch_one(&pool)
+    .await?;
+    assert_eq!(producer_count, 1);
+
+    let orphan_only_producer_count: i64 = sqlx::query_scalar(
+        "SELECT COUNT(*)
+         FROM computations_branch
+         WHERE host_chain_id = $1
+           AND output_handle = $2
+           AND producer_block_hash = $3",
+    )
+    .bind(chain_id.as_i64())
+    .bind(orphan_only_handle.to_vec())
+    .bind(producer_hash.to_vec())
+    .fetch_one(&pool)
+    .await?;
+    assert_eq!(orphan_only_producer_count, 1);
+
+    Ok(())
+}
+
+/// Wave-1 branch dual-write strictness: when a required branch producer write
+/// fails, the caller must see the error and roll back the whole ingest
+/// transaction. We inject the failure with an always-false CHECK on the branch
+/// tables the host-listener writes directly (`computations_branch`,
+/// `pbs_computations_branch`).
+#[tokio::test]
+#[serial(db)]
+async fn test_wave1_branch_write_failure_aborts_dual_write_transaction(
+) -> Result<(), Box<dyn std::error::Error>> {
+    use alloy::primitives::Log as EventLog;
+    use fhevm_engine_common::types::AllowEvents;
+    use host_listener::contracts::TfheContract;
+    use host_listener::contracts::TfheContract::TfheContractEvents;
+    use host_listener::database::tfhe_event_propagate::{ClearConst, LogTfhe};
+    use sqlx::types::time::PrimitiveDateTime;
+
+    let test_instance =
+        test_harness::instance::setup_test_db(ImportMode::WithKeysNoSns)
+            .await?;
+    let chain_id = ChainId::try_from(42_u64)?;
+    let db_url = test_instance.db_url.clone();
+    let db = Database::new(&db_url, chain_id, 128).await?;
+    let pool = db.pool.read().await.clone();
+
+    // producer_block_hash is NOT NULL, so this CHECK rejects every branch row.
+    for table in [
+        "computations_branch",
+        "allowed_handles_branch",
+        "pbs_computations_branch",
+    ] {
+        sqlx::query(&format!(
+            "ALTER TABLE {table}
+             ADD CONSTRAINT wave1_test_force_branch_write_failure
+             CHECK (producer_block_hash IS NULL)"
+        ))
+        .execute(&pool)
+        .await?;
+    }
+
+    let handle = FixedBytes::<32>::from([0x61; 32]);
+    let tx_hash = FixedBytes::<32>::from([0x62; 32]);
+    let block_hash = FixedBytes::<32>::from([0x63; 32]);
+    let caller: Address =
+        "0x3333333333333333333333333333333333333333".parse()?;
+
+    let event = LogTfhe {
+        event: EventLog {
+            address: Address::ZERO,
+            data: TfheContractEvents::TrivialEncrypt(
+                TfheContract::TrivialEncrypt {
+                    caller,
+                    pt: ClearConst::from_be_slice(&[5u8]),
+                    toType: 4u8,
+                    result: handle,
+                },
+            ),
+        },
+        transaction_hash: Some(tx_hash),
+        is_allowed: true,
+        block_number: 11,
+        block_hash,
+        block_timestamp: PrimitiveDateTime::MAX,
+        dependence_chain: tx_hash,
+        tx_depth_size: 0,
+        log_index: None,
+    };
+
+    let mut tx = db
+        .new_transaction()
+        .await?
+        .expect("new_transaction() returns Some on a live stack");
+    let err = db
+        .insert_tfhe_event(&mut tx, &event)
+        .await
+        .expect_err("poisoned computations_branch write must fail the event");
+    assert!(
+        err.to_string()
+            .contains("wave1_test_force_branch_write_failure"),
+        "unexpected branch-write error: {err}"
+    );
+    tx.rollback().await?;
+
+    let mut tx = db
+        .new_transaction()
+        .await?
+        .expect("new_transaction() returns Some on a live stack");
+    let err = db
+        .insert_allowed_handle(
+            &mut tx,
+            handle.to_vec(),
+            format!("{caller:#x}"),
+            AllowEvents::AllowedAccount,
+            Some(tx_hash.to_vec()),
+            ProducerBlock::new(block_hash.as_slice(), 11),
+        )
+        .await
+        .expect_err(
+            "poisoned allowed_handles_branch write must fail ACL insert",
+        );
+    assert!(
+        err.to_string()
+            .contains("wave1_test_force_branch_write_failure"),
+        "unexpected branch-write error: {err}"
+    );
+    tx.rollback().await?;
+
+    let mut tx = db
+        .new_transaction()
+        .await?
+        .expect("new_transaction() returns Some on a live stack");
+    let err = db
+        .insert_pbs_computations(
+            &mut tx,
+            &[handle.to_vec()],
+            Some(tx_hash.to_vec()),
+            11,
+            block_hash.as_slice(),
+        )
+        .await
+        .expect_err(
+            "poisoned pbs_computations_branch write must fail PBS insert",
+        );
+    assert!(
+        err.to_string()
+            .contains("wave1_test_force_branch_write_failure"),
+        "unexpected branch-write error: {err}"
+    );
+    tx.rollback().await?;
+
+    // Rolling back each failed producer transaction leaves neither legacy nor
+    // branch rows. This keeps wave-2 branch state complete instead of silently
+    // accepting legacy-only work.
+    for (legacy, key_col) in [
+        ("computations", "output_handle"),
+        ("allowed_handles", "handle"),
+        ("pbs_computations", "handle"),
+    ] {
+        let legacy_count: i64 = sqlx::query_scalar(&format!(
+            "SELECT COUNT(*) FROM {legacy} WHERE {key_col} = $1"
+        ))
+        .bind(handle.to_vec())
+        .fetch_one(&pool)
+        .await?;
+        assert_eq!(
+            legacy_count, 0,
+            "failed branch write must roll back legacy {legacy} writes"
+        );
+    }
+
+    for (branch, key_col) in [
+        ("computations_branch", "output_handle"),
+        ("allowed_handles_branch", "handle"),
+        ("pbs_computations_branch", "handle"),
+    ] {
+        let branch_count: i64 = sqlx::query_scalar(&format!(
+            "SELECT COUNT(*) FROM {branch} WHERE {key_col} = $1"
+        ))
+        .bind(handle.to_vec())
+        .fetch_one(&pool)
+        .await?;
+        assert_eq!(
+            branch_count, 0,
+            "failed branch write to {branch} must leave no branch row"
+        );
+    }
+
+    Ok(())
+}
+
+/// Wave-1 orphan cleanup must delete the orphaned branch's ciphertext bytes but
+/// must NEVER delete the legacy `ciphertexts`/`ciphertexts128` bytes -- they are
+/// retained as the authoritative pre-cutover byte store for the wave-2 legacy
+/// fallback. The legacy index-row (NOT EXISTS) deletion is covered by
+/// `test_acl_branch_rows_keep_acl_block_context`; this test pins the
+/// ciphertext-bytes behaviour, which is otherwise only asserted by absence.
+#[tokio::test]
+#[serial(db)]
+async fn test_wave1_reorg_cleanup_preserves_legacy_ciphertext_bytes(
+) -> Result<(), Box<dyn std::error::Error>> {
+    let test_instance =
+        test_harness::instance::setup_test_db(ImportMode::WithKeysNoSns)
+            .await?;
+    let chain_id = ChainId::try_from(42_u64)?;
+    let db_url = test_instance.db_url.clone();
+    let db = Database::new(&db_url, chain_id, 128).await?;
+    let pool = db.pool.read().await.clone();
+
+    let handle = FixedBytes::<32>::from([0x71; 32]);
+    let orphan_hash = FixedBytes::<32>::from([0x72; 32]);
+    let canonical_hash = FixedBytes::<32>::from([0x73; 32]);
+    let block_number = 30_i64;
+
+    // Producer metadata ties (handle, orphan_hash) to the orphaned branch so
+    // cleanup collects it as an orphaned ciphertext pair; the canonical context
+    // on the retained branch must survive.
+    sqlx::query(
+        "INSERT INTO pbs_computations_branch (
+            handle, transaction_id, host_chain_id, block_number, block_hash, producer_block_hash
+         )
+         VALUES
+            ($1, NULL, $2, $3, $4, $4),
+            ($1, NULL, $2, $3, $5, $5)",
+    )
+    .bind(handle.to_vec())
+    .bind(chain_id.as_i64())
+    .bind(block_number)
+    .bind(orphan_hash.to_vec())
+    .bind(canonical_hash.to_vec())
+    .execute(&pool)
+    .await?;
+
+    // Branch ciphertext bytes for both the orphaned and the canonical producer.
+    for (producer, ct_tag) in
+        [(orphan_hash, 0xA0_u8), (canonical_hash, 0xA1_u8)]
+    {
+        sqlx::query(
+            "INSERT INTO ciphertexts_branch (
+                handle, ciphertext, ciphertext_version, ciphertext_type,
+                producer_block_hash, block_number
+             ) VALUES ($1, $2, 0, 4, $3, $4)",
+        )
+        .bind(handle.to_vec())
+        .bind(vec![ct_tag; 32])
+        .bind(producer.to_vec())
+        .bind(block_number)
+        .execute(&pool)
+        .await?;
+        sqlx::query(
+            "INSERT INTO ciphertexts128_branch (
+                handle, ciphertext, producer_block_hash, block_number
+             ) VALUES ($1, $2, $3, $4)",
+        )
+        .bind(handle.to_vec())
+        .bind(vec![ct_tag; 48])
+        .bind(producer.to_vec())
+        .bind(block_number)
+        .execute(&pool)
+        .await?;
+    }
+
+    // Legacy ciphertext bytes: cleanup must leave these untouched even though the
+    // handle's only producer metadata lives on the orphaned branch.
+    sqlx::query(
+        "INSERT INTO ciphertexts (handle, ciphertext, ciphertext_version, ciphertext_type)
+         VALUES ($1, $2, 0, 4)",
+    )
+    .bind(handle.to_vec())
+    .bind(vec![0xB0_u8; 32])
+    .execute(&pool)
+    .await?;
+    sqlx::query(
+        "INSERT INTO ciphertexts128 (handle, ciphertext) VALUES ($1, $2)",
+    )
+    .bind(handle.to_vec())
+    .bind(vec![0xB1_u8; 48])
+    .execute(&pool)
+    .await?;
+
+    let mut tx = db
+        .new_transaction()
+        .await?
+        .expect("new_transaction() returns Some on a live stack");
+    db.cleanup_orphaned_branch_state(&mut tx, &[orphan_hash.to_vec()])
+        .await?;
+    tx.commit().await?;
+
+    for branch in ["ciphertexts_branch", "ciphertexts128_branch"] {
+        let orphaned: i64 = sqlx::query_scalar(&format!(
+            "SELECT COUNT(*) FROM {branch} WHERE handle = $1 AND producer_block_hash = $2"
+        ))
+        .bind(handle.to_vec())
+        .bind(orphan_hash.to_vec())
+        .fetch_one(&pool)
+        .await?;
+        assert_eq!(
+            orphaned, 0,
+            "orphaned-branch bytes in {branch} must be deleted"
+        );
+
+        let canonical: i64 = sqlx::query_scalar(&format!(
+            "SELECT COUNT(*) FROM {branch} WHERE handle = $1 AND producer_block_hash = $2"
+        ))
+        .bind(handle.to_vec())
+        .bind(canonical_hash.to_vec())
+        .fetch_one(&pool)
+        .await?;
+        assert_eq!(
+            canonical, 1,
+            "canonical-branch bytes in {branch} must survive cleanup"
+        );
+    }
+
+    let legacy_ct: i64 = sqlx::query_scalar(
+        "SELECT COUNT(*) FROM ciphertexts WHERE handle = $1",
+    )
+    .bind(handle.to_vec())
+    .fetch_one(&pool)
+    .await?;
+    let legacy_ct128: i64 = sqlx::query_scalar(
+        "SELECT COUNT(*) FROM ciphertexts128 WHERE handle = $1",
+    )
+    .bind(handle.to_vec())
+    .fetch_one(&pool)
+    .await?;
+    assert_eq!(
+        legacy_ct, 1,
+        "legacy ciphertexts bytes must NOT be deleted by orphan cleanup"
+    );
+    assert_eq!(
+        legacy_ct128, 1,
+        "legacy ciphertexts128 bytes must NOT be deleted by orphan cleanup"
+    );
+
+    Ok(())
+}
+
+/// Wave-1 branch dual-write strictness (require-branch-writes): the
+/// `ciphertext_digest` branch mirror is required, so a deterministic failure of
+/// the branchless mirror must ABORT the authoritative legacy `ciphertext_digest`
+/// write rather than be silently swallowed -- a missing branch row would break
+/// wave-2 consumers. We poison `ciphertext_digest_branch` so the trigger's
+/// branch upsert fails; the legacy INSERT must then fail and roll back, leaving
+/// neither the legacy row nor any branch row.
+#[tokio::test]
+#[serial(db)]
+async fn test_wave1_digest_mirror_failure_aborts_legacy_digest_write(
+) -> Result<(), Box<dyn std::error::Error>> {
+    let test_instance =
+        test_harness::instance::setup_test_db(ImportMode::WithKeysNoSns)
+            .await?;
+    let chain_id = ChainId::try_from(42_u64)?;
+    let db_url = test_instance.db_url.clone();
+    let db = Database::new(&db_url, chain_id, 128).await?;
+    let pool = db.pool.read().await.clone();
+
+    let handle = FixedBytes::<32>::from([0x81; 32]);
+
+    // producer_block_hash is NOT NULL, so the trigger's branchless upsert
+    // (producer_block_hash = '') deterministically violates this CHECK.
+    sqlx::query(
+        "ALTER TABLE ciphertext_digest_branch
+         ADD CONSTRAINT wave1_test_force_digest_mirror_failure
+         CHECK (producer_block_hash IS NULL)",
+    )
+    .execute(&pool)
+    .await?;
+
+    // Fires mirror_ciphertext_digest_branchless. The branch upsert violates the
+    // poison CHECK and, with no EXCEPTION guard, the error propagates and aborts
+    // this legacy INSERT (autocommit -> the whole statement rolls back).
+    let result = sqlx::query(
+        "INSERT INTO ciphertext_digest (host_chain_id, key_id_gw, handle, ciphertext, ciphertext128)
+         VALUES ($1, $2, $3, $4, $5)",
+    )
+    .bind(chain_id.as_i64())
+    .bind(vec![0x82_u8; 32])
+    .bind(handle.to_vec())
+    .bind(vec![0x83_u8; 32])
+    .bind(vec![0x84_u8; 48])
+    .execute(&pool)
+    .await;
+    assert!(
+        result.is_err(),
+        "a failing required branch mirror must abort the legacy ciphertext_digest write"
+    );
+
+    let legacy_digest: i64 = sqlx::query_scalar(
+        "SELECT COUNT(*) FROM ciphertext_digest WHERE host_chain_id = $1 AND handle = $2",
+    )
+    .bind(chain_id.as_i64())
+    .bind(handle.to_vec())
+    .fetch_one(&pool)
+    .await?;
+    assert_eq!(
+        legacy_digest, 0,
+        "legacy ciphertext_digest write must roll back when the branch mirror fails"
+    );
+
+    let branch_digest: i64 = sqlx::query_scalar(
+        "SELECT COUNT(*) FROM ciphertext_digest_branch WHERE host_chain_id = $1 AND handle = $2",
+    )
+    .bind(chain_id.as_i64())
+    .bind(handle.to_vec())
+    .fetch_one(&pool)
+    .await?;
+    assert_eq!(
+        branch_digest, 0,
+        "the poisoned branch mirror must not have committed any row"
+    );
+
     Ok(())
 }

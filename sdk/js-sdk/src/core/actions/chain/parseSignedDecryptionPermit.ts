@@ -10,6 +10,7 @@ import { parseSignedDecryptionPermit as parseSignedDecryptionPermit_ } from '../
 export type ParseSignedDecryptionPermitParameters = {
   /** The serialized permit — a previously parsed permit object. */
   readonly serializedPermit: {
+    readonly version: number;
     readonly eip712: Eip712Like;
     readonly signature: string;
     readonly signerAddress: string;

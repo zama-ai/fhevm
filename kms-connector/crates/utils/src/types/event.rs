@@ -1,17 +1,18 @@
 use crate::{
     monitoring::otlp::PropagationContext,
-    types::db::{OperationStatus, ParamsTypeDb, SnsCiphertextMaterialDbItem},
+    types::db::{OperationStatus, ParamsTypeDb},
 };
 use alloy::{
     primitives::{Address, FixedBytes, U256},
     sol_types::SolValue,
 };
 use anyhow::anyhow;
+// Handle-only overloaded decryption events
 use fhevm_gateway_bindings::decryption::{
     Decryption::{
-        DecryptionEvents, HandleEntry, PublicDecryptionRequest, SnsCiphertextMaterial,
-        UserDecryptionRequest_0 as UserDecryptionRequest,
-        UserDecryptionRequest_1 as UserDecryptionRequestV2, UserDecryptionRequestSolana,
+        DecryptionEvents, HandleEntry, PublicDecryptionRequest_1 as PublicDecryptionRequest,
+        UserDecryptionRequest_2 as UserDecryptionRequest,
+        UserDecryptionRequest_3 as UserDecryptionRequestV2, UserDecryptionRequestSolana,
     },
     IDecryption::{
         RequestValiditySeconds, UserDecryptionRequestPayload, UserDecryptionRequestSolanaPayload,
@@ -19,12 +20,14 @@ use fhevm_gateway_bindings::decryption::{
 };
 use fhevm_host_bindings::{
     kms_generation::KMSGeneration::{
-        CrsgenRequest, KMSGenerationEvents, KeygenRequest, PrepKeygenRequest,
+        AbortCrsgen, AbortKeygen, CrsgenRequest, KMSGenerationEvents, KeygenRequest,
+        PrepKeygenRequest,
     },
     protocol_config::{
         IProtocolConfig::KmsThresholds,
         ProtocolConfig::{
-            KmsNodeParams, NewKmsContext, NewKmsEpoch, PcrValues, ProtocolConfigEvents,
+            KmsContextDestroyed, KmsEpochDestroyed, KmsNodeParams, NewKmsContext, NewKmsEpoch,
+            PcrValues, ProtocolConfigEvents,
         },
     },
 };
@@ -65,27 +68,39 @@ impl ProtocolEvent {
     }
 
     /// Sets the event's `status` field to `pending` in the database.
-    pub async fn mark_as_pending(&self, db: &Pool<Postgres>) {
+    pub async fn mark_as_pending(&self, db: &Pool<Postgres>) -> anyhow::Result<()> {
         warn!("Failed to process event. Restoring `status` field to `pending` in DB...");
         self.update_status(db, OperationStatus::Pending).await
     }
 
     /// Sets the event's `status` field to `completed` in the database.
-    pub async fn mark_as_completed(&self, db: &Pool<Postgres>) {
+    pub async fn mark_as_completed(&self, db: &Pool<Postgres>) -> anyhow::Result<()> {
         info!("Event successfully processed. Setting its `status` field to `completed` in DB...");
         self.update_status(db, OperationStatus::Completed).await
     }
 
     /// Sets the event's `status` field to `failed` in the database.
-    pub async fn mark_as_failed(&self, db: &Pool<Postgres>) {
+    pub async fn mark_as_failed(&self, db: &Pool<Postgres>) -> anyhow::Result<()> {
         warn!("Failed to process event. Restoring `status` field to `failed` in DB...");
         self.update_status(db, OperationStatus::Failed).await
     }
 
-    async fn update_status(&self, db: &Pool<Postgres>, status: OperationStatus) {
+    /// Sets the event's `status` field to `aborted` in the database.
+    pub async fn mark_as_aborted(&self, db: &Pool<Postgres>) -> anyhow::Result<()> {
+        info!(
+            "Event was aborted on the KMS Core. Setting its `status` field to `aborted` in DB..."
+        );
+        self.update_status(db, OperationStatus::Aborted).await
+    }
+
+    async fn update_status(
+        &self,
+        db: &Pool<Postgres>,
+        status: OperationStatus,
+    ) -> anyhow::Result<()> {
         let already_sent = self.already_sent;
         let err_count = self.error_counter;
-        match &self.kind {
+        let result = match &self.kind {
             ProtocolEventKind::PublicDecryption(e) => {
                 update_public_decryption_status(db, e.decryptionId, status, already_sent, err_count)
                     .await
@@ -112,13 +127,31 @@ impl ProtocolEvent {
             ProtocolEventKind::Crsgen(e) => {
                 update_crsgen_status(db, e.crsId, status, already_sent).await
             }
+            ProtocolEventKind::AbortKeygen(e) => {
+                update_abort_keygen_status(db, e.prepKeygenId, status, already_sent).await
+            }
+            ProtocolEventKind::AbortCrsgen(e) => {
+                update_abort_crsgen_status(db, e.crsId, status, already_sent).await
+            }
             ProtocolEventKind::NewKmsContext(e) => {
                 update_new_kms_context_status(db, e.contextId, status, already_sent).await
             }
             ProtocolEventKind::NewKmsEpoch(e) => {
                 update_new_kms_epoch_status(db, e.epochId, status, already_sent).await
             }
-        }
+            ProtocolEventKind::KmsContextDestroyed(e) => {
+                update_kms_context_destroyed_status(db, e.kmsContextId, status, already_sent).await
+            }
+            ProtocolEventKind::KmsEpochDestroyed(e) => {
+                update_kms_epoch_destroyed_status(db, e.epochId, status, already_sent).await
+            }
+        };
+        result.map_err(|e| {
+            anyhow!(
+                "Failed to set {} status to `{status}` in DB: {e:#}",
+                self.kind
+            )
+        })
     }
 }
 
@@ -143,8 +176,12 @@ pub enum ProtocolEventKind {
     PrepKeygen(PrepKeygenRequest),
     Keygen(KeygenRequest),
     Crsgen(CrsgenRequest),
+    AbortKeygen(AbortKeygen),
+    AbortCrsgen(AbortCrsgen),
     NewKmsContext(NewKmsContext),
     NewKmsEpoch(NewKmsEpoch),
+    KmsContextDestroyed(KmsContextDestroyed),
+    KmsEpochDestroyed(KmsEpochDestroyed),
 }
 
 impl std::fmt::Debug for ProtocolEventKind {
@@ -155,7 +192,6 @@ impl std::fmt::Debug for ProtocolEventKind {
             Self::UserDecryptionV2(e) => f
                 .debug_struct("UserDecryptionV2")
                 .field("decryptionId", &e.decryptionId)
-                .field("snsCtMaterials", &e.snsCtMaterials)
                 .field("handles", &e.handles)
                 .field("payload", &e.payload)
                 .finish(),
@@ -169,6 +205,8 @@ impl std::fmt::Debug for ProtocolEventKind {
             Self::PrepKeygen(e) => f.debug_tuple("PrepKeygen").field(e).finish(),
             Self::Keygen(e) => f.debug_tuple("Keygen").field(e).finish(),
             Self::Crsgen(e) => f.debug_tuple("Crsgen").field(e).finish(),
+            Self::AbortKeygen(e) => f.debug_tuple("AbortKeygen").field(e).finish(),
+            Self::AbortCrsgen(e) => f.debug_tuple("AbortCrsgen").field(e).finish(),
             Self::NewKmsContext(e) => f.debug_tuple("NewKmsContext").field(e).finish(),
             Self::NewKmsEpoch(e) => f
                 .debug_struct("NewKmsEpoch")
@@ -178,6 +216,8 @@ impl std::fmt::Debug for ProtocolEventKind {
                 .field("previousEpochId", &e.previousEpochId)
                 .field("materialBlockNumber", &e.materialBlockNumber)
                 .finish(),
+            Self::KmsContextDestroyed(e) => f.debug_tuple("KmsContextDestroyed").field(e).finish(),
+            Self::KmsEpochDestroyed(e) => f.debug_tuple("KmsEpochDestroyed").field(e).finish(),
         }
     }
 }
@@ -188,10 +228,7 @@ impl PartialEq for ProtocolEventKind {
             (Self::PublicDecryption(a), Self::PublicDecryption(b)) => a == b,
             (Self::UserDecryption(a), Self::UserDecryption(b)) => a == b,
             (Self::UserDecryptionV2(a), Self::UserDecryptionV2(b)) => {
-                a.decryptionId == b.decryptionId
-                    && a.snsCtMaterials == b.snsCtMaterials
-                    && a.handles == b.handles
-                    && a.payload == b.payload
+                a.decryptionId == b.decryptionId && a.handles == b.handles && a.payload == b.payload
             }
             (Self::UserDecryptionSolana(a), Self::UserDecryptionSolana(b)) => {
                 a.decryptionId == b.decryptionId
@@ -202,6 +239,8 @@ impl PartialEq for ProtocolEventKind {
             (Self::PrepKeygen(a), Self::PrepKeygen(b)) => a == b,
             (Self::Keygen(a), Self::Keygen(b)) => a == b,
             (Self::Crsgen(a), Self::Crsgen(b)) => a == b,
+            (Self::AbortKeygen(a), Self::AbortKeygen(b)) => a == b,
+            (Self::AbortCrsgen(a), Self::AbortCrsgen(b)) => a == b,
             (Self::NewKmsContext(a), Self::NewKmsContext(b)) => a == b,
             (Self::NewKmsEpoch(a), Self::NewKmsEpoch(b)) => {
                 a.kmsContextId == b.kmsContextId
@@ -210,42 +249,58 @@ impl PartialEq for ProtocolEventKind {
                     && a.previousEpochId == b.previousEpochId
                     && a.materialBlockNumber == b.materialBlockNumber
             }
+            (Self::KmsContextDestroyed(a), Self::KmsContextDestroyed(b)) => {
+                a.kmsContextId == b.kmsContextId
+            }
+            (Self::KmsEpochDestroyed(a), Self::KmsEpochDestroyed(b)) => a.epochId == b.epochId,
             _ => false,
         }
     }
 }
 
-pub fn from_public_decryption_row(row: &PgRow) -> anyhow::Result<ProtocolEvent> {
-    let sns_ct_materials = row
-        .try_get::<Vec<SnsCiphertextMaterialDbItem>, _>("sns_ct_materials")?
-        .iter()
-        .map(SnsCiphertextMaterial::from)
-        .collect();
+fn tx_hash_from_row(row: &PgRow) -> Option<FixedBytes<32>> {
+    row.try_get::<Vec<u8>, _>("tx_hash")
+        .ok()
+        .and_then(|h| FixedBytes::try_from(h.as_slice()).ok())
+}
 
+fn otlp_context_from_row(row: &PgRow) -> anyhow::Result<PropagationContext> {
+    Ok(bc2wrap::deserialize_slice(
+        &row.try_get::<Vec<u8>, _>("otlp_context")?,
+    )?)
+}
+
+fn ct_handles_from_row(row: &PgRow) -> anyhow::Result<Vec<FixedBytes<32>>> {
+    // NULL `ct_handles` mapped to empty handle list, which is rejected later  by the `is_empty()`
+    // guard rather than erroring here and poisoning the whole picked batch
+    row.try_get::<Option<Vec<Vec<u8>>>, _>("ct_handles")?
+        .unwrap_or_default()
+        .iter()
+        .map(|h| {
+            FixedBytes::<32>::try_from(h.as_slice())
+                .map_err(|_| anyhow!("ct_handle is not 32 bytes: {} bytes", h.len()))
+        })
+        .collect()
+}
+
+pub fn from_public_decryption_row(row: &PgRow) -> anyhow::Result<ProtocolEvent> {
     let kind = ProtocolEventKind::PublicDecryption(PublicDecryptionRequest {
         decryptionId: U256::from_le_bytes(row.try_get::<[u8; 32], _>("decryption_id")?),
-        snsCtMaterials: sns_ct_materials,
+        ctHandles: ct_handles_from_row(row)?,
         extraData: row.try_get::<Vec<u8>, _>("extra_data")?.into(),
     });
     Ok(ProtocolEvent {
         kind,
-        tx_hash: row
-            .try_get::<Vec<u8>, _>("tx_hash")
-            .ok()
-            .and_then(|h| FixedBytes::try_from(h.as_slice()).ok()),
+        tx_hash: tx_hash_from_row(row),
         already_sent: row.try_get::<bool, _>("already_sent")?,
         error_counter: row.try_get::<i16, _>("error_counter")?,
         created_at: row.try_get::<DateTime<Utc>, _>("created_at")?,
-        otlp_context: bc2wrap::deserialize_slice(&row.try_get::<Vec<u8>, _>("otlp_context")?)?,
+        otlp_context: otlp_context_from_row(row)?,
     })
 }
 
 pub fn from_user_decryption_row(row: &PgRow) -> anyhow::Result<ProtocolEvent> {
-    let sns_ct_materials = row
-        .try_get::<Vec<SnsCiphertextMaterialDbItem>, _>("sns_ct_materials")?
-        .iter()
-        .map(SnsCiphertextMaterial::from)
-        .collect();
+    let ct_handles = ct_handles_from_row(row)?;
     let decryption_id = U256::from_le_bytes(row.try_get::<[u8; 32], _>("decryption_id")?);
     let user_address: Address = row.try_get::<[u8; 20], _>("user_address")?.into();
     let public_key: Vec<u8> = row.try_get("public_key")?;
@@ -268,7 +323,7 @@ pub fn from_user_decryption_row(row: &PgRow) -> anyhow::Result<ProtocolEvent> {
     let kind = match signature {
         None => ProtocolEventKind::UserDecryption(UserDecryptionRequest {
             decryptionId: decryption_id,
-            snsCtMaterials: sns_ct_materials,
+            ctHandles: ct_handles,
             userAddress: user_address,
             publicKey: public_key.into(),
             extraData: extra_data.into(),
@@ -280,21 +335,21 @@ pub fn from_user_decryption_row(row: &PgRow) -> anyhow::Result<ProtocolEvent> {
             let start_timestamp: i64 = row.try_get("start_timestamp")?;
             let duration_seconds: i64 = row.try_get("duration_seconds")?;
 
-            if owner_addresses.len() != sns_ct_materials.len()
-                || contract_addresses.len() != sns_ct_materials.len()
+            if owner_addresses.len() != ct_handles.len()
+                || contract_addresses.len() != ct_handles.len()
             {
                 anyhow::bail!(
                     "handle owner/contract array length mismatch for user decryption row"
                 );
             }
 
-            let handles = sns_ct_materials
+            let handles = ct_handles
                 .iter()
                 .zip(owner_addresses.iter())
                 .zip(contract_addresses.iter())
-                .map(|((m, owner), contract)| {
+                .map(|((handle, owner), contract)| {
                     Ok::<_, anyhow::Error>(HandleEntry {
-                        handle: m.ctHandle,
+                        handle: *handle,
                         contractAddress: Address::try_from(contract.as_slice())?,
                         ownerAddress: Address::try_from(owner.as_slice())?,
                     })
@@ -308,75 +363,35 @@ pub fn from_user_decryption_row(row: &PgRow) -> anyhow::Result<ProtocolEvent> {
                     .map_err(|_| anyhow!("duration_seconds is negative: {duration_seconds}"))?,
             };
 
-            match solana_identity {
-                // RFC-021 Solana row: the ed25519 auth fields are typed columns, no extraData blob.
-                Some(identity) => {
-                    let nonce: Vec<u8> = row.try_get("solana_nonce")?;
-                    let domain_keys: Vec<Vec<u8>> =
-                        row.try_get("solana_allowed_acl_domain_keys")?;
-                    let user_identity = FixedBytes::<32>::try_from(identity.as_slice())
-                        .map_err(|_| anyhow!("solana_identity is not 32 bytes"))?;
-                    let nonce = FixedBytes::<32>::try_from(nonce.as_slice())
-                        .map_err(|_| anyhow!("solana_nonce is not 32 bytes"))?;
-                    let allowed_acl_domain_keys = domain_keys
-                        .iter()
-                        .map(|k| {
-                            FixedBytes::<32>::try_from(k.as_slice())
-                                .map_err(|_| anyhow!("solana ACL domain key is not 32 bytes"))
-                        })
-                        .collect::<anyhow::Result<Vec<_>>>()?;
-
-                    ProtocolEventKind::UserDecryptionSolana(UserDecryptionRequestSolana {
-                        decryptionId: decryption_id,
-                        snsCtMaterials: sns_ct_materials,
-                        handles,
-                        payload: UserDecryptionRequestSolanaPayload {
-                            userIdentity: user_identity,
-                            publicKey: public_key.into(),
-                            allowedAclDomainKeys: allowed_acl_domain_keys,
-                            requestValidity: request_validity,
-                            nonce,
-                            extraData: extra_data.into(),
-                            signature: signature.into(),
-                        },
-                    })
-                }
-                // EVM RFC016 row.
-                None => {
-                    let allowed_contracts: Vec<Vec<u8>> = row.try_get("allowed_contracts")?;
-                    let allowed_contracts = allowed_contracts
-                        .iter()
-                        .map(|a| Address::try_from(a.as_slice()).map_err(anyhow::Error::from))
-                        .collect::<anyhow::Result<Vec<_>>>()?;
-
-                    ProtocolEventKind::UserDecryptionV2(UserDecryptionRequestV2 {
-                        decryptionId: decryption_id,
-                        snsCtMaterials: sns_ct_materials,
-                        handles,
-                        payload: UserDecryptionRequestPayload {
-                            userAddress: user_address,
-                            publicKey: public_key.into(),
-                            allowedContracts: allowed_contracts,
-                            requestValidity: request_validity,
-                            extraData: extra_data.into(),
-                            signature: signature.into(),
-                        },
-                    })
-                }
-            }
+            ProtocolEventKind::UserDecryptionV2(UserDecryptionRequestV2 {
+                decryptionId: decryption_id,
+                handles,
+                payload: UserDecryptionRequestPayload {
+                    userAddress: user_address,
+                    publicKey: public_key.into(),
+                    allowedContracts: allowed_contracts,
+                    requestValidity: RequestValiditySeconds {
+                        startTimestamp: U256::try_from(start_timestamp).map_err(|_| {
+                            anyhow!("start_timestamp is negative: {start_timestamp}")
+                        })?,
+                        durationSeconds: U256::try_from(duration_seconds).map_err(|_| {
+                            anyhow!("duration_seconds is negative: {duration_seconds}")
+                        })?,
+                    },
+                    extraData: extra_data.into(),
+                    signature: signature.into(),
+                },
+            })
         }
     };
 
     Ok(ProtocolEvent {
         kind,
-        tx_hash: row
-            .try_get::<Vec<u8>, _>("tx_hash")
-            .ok()
-            .and_then(|h| FixedBytes::try_from(h.as_slice()).ok()),
+        tx_hash: tx_hash_from_row(row),
         already_sent: row.try_get::<bool, _>("already_sent")?,
         error_counter: row.try_get::<i16, _>("error_counter")?,
         created_at: row.try_get::<DateTime<Utc>, _>("created_at")?,
-        otlp_context: bc2wrap::deserialize_slice(&row.try_get::<Vec<u8>, _>("otlp_context")?)?,
+        otlp_context: otlp_context_from_row(row)?,
     })
 }
 
@@ -388,14 +403,11 @@ pub fn from_prep_keygen_row(row: &PgRow) -> anyhow::Result<ProtocolEvent> {
     });
     Ok(ProtocolEvent {
         kind,
-        tx_hash: row
-            .try_get::<Vec<u8>, _>("tx_hash")
-            .ok()
-            .and_then(|h| FixedBytes::try_from(h.as_slice()).ok()),
+        tx_hash: tx_hash_from_row(row),
         already_sent: row.try_get::<bool, _>("already_sent")?,
         error_counter: 0,
         created_at: row.try_get::<DateTime<Utc>, _>("created_at")?,
-        otlp_context: bc2wrap::deserialize_slice(&row.try_get::<Vec<u8>, _>("otlp_context")?)?,
+        otlp_context: otlp_context_from_row(row)?,
     })
 }
 
@@ -407,14 +419,11 @@ pub fn from_keygen_row(row: &PgRow) -> anyhow::Result<ProtocolEvent> {
     });
     Ok(ProtocolEvent {
         kind,
-        tx_hash: row
-            .try_get::<Vec<u8>, _>("tx_hash")
-            .ok()
-            .and_then(|h| FixedBytes::try_from(h.as_slice()).ok()),
+        tx_hash: tx_hash_from_row(row),
         already_sent: row.try_get::<bool, _>("already_sent")?,
         error_counter: 0,
         created_at: row.try_get::<DateTime<Utc>, _>("created_at")?,
-        otlp_context: bc2wrap::deserialize_slice(&row.try_get::<Vec<u8>, _>("otlp_context")?)?,
+        otlp_context: otlp_context_from_row(row)?,
     })
 }
 
@@ -438,14 +447,11 @@ pub fn from_new_kms_context_row(row: &PgRow) -> anyhow::Result<ProtocolEvent> {
     });
     Ok(ProtocolEvent {
         kind,
-        tx_hash: row
-            .try_get::<Vec<u8>, _>("tx_hash")
-            .ok()
-            .and_then(|h| FixedBytes::try_from(h.as_slice()).ok()),
+        tx_hash: tx_hash_from_row(row),
         already_sent: row.try_get::<bool, _>("already_sent")?,
         error_counter: 0,
         created_at: row.try_get::<DateTime<Utc>, _>("created_at")?,
-        otlp_context: bc2wrap::deserialize_slice(&row.try_get::<Vec<u8>, _>("otlp_context")?)?,
+        otlp_context: otlp_context_from_row(row)?,
     })
 }
 
@@ -461,14 +467,39 @@ pub fn from_new_kms_epoch_row(row: &PgRow) -> anyhow::Result<ProtocolEvent> {
     });
     Ok(ProtocolEvent {
         kind,
-        tx_hash: row
-            .try_get::<Vec<u8>, _>("tx_hash")
-            .ok()
-            .and_then(|h| FixedBytes::try_from(h.as_slice()).ok()),
+        tx_hash: tx_hash_from_row(row),
         already_sent: row.try_get::<bool, _>("already_sent")?,
         error_counter: 0,
         created_at: row.try_get::<DateTime<Utc>, _>("created_at")?,
-        otlp_context: bc2wrap::deserialize_slice(&row.try_get::<Vec<u8>, _>("otlp_context")?)?,
+        otlp_context: otlp_context_from_row(row)?,
+    })
+}
+
+pub fn from_kms_context_destroyed_row(row: &PgRow) -> anyhow::Result<ProtocolEvent> {
+    let kind = ProtocolEventKind::KmsContextDestroyed(KmsContextDestroyed {
+        kmsContextId: U256::from_le_bytes(row.try_get::<[u8; 32], _>("context_id")?),
+    });
+    Ok(ProtocolEvent {
+        kind,
+        tx_hash: tx_hash_from_row(row),
+        already_sent: row.try_get::<bool, _>("already_sent")?,
+        error_counter: 0,
+        created_at: row.try_get::<DateTime<Utc>, _>("created_at")?,
+        otlp_context: otlp_context_from_row(row)?,
+    })
+}
+
+pub fn from_kms_epoch_destroyed_row(row: &PgRow) -> anyhow::Result<ProtocolEvent> {
+    let kind = ProtocolEventKind::KmsEpochDestroyed(KmsEpochDestroyed {
+        epochId: U256::from_le_bytes(row.try_get::<[u8; 32], _>("epoch_id")?),
+    });
+    Ok(ProtocolEvent {
+        kind,
+        tx_hash: tx_hash_from_row(row),
+        already_sent: row.try_get::<bool, _>("already_sent")?,
+        error_counter: 0,
+        created_at: row.try_get::<DateTime<Utc>, _>("created_at")?,
+        otlp_context: otlp_context_from_row(row)?,
     })
 }
 
@@ -481,14 +512,39 @@ pub fn from_crsgen_row(row: &PgRow) -> anyhow::Result<ProtocolEvent> {
     });
     Ok(ProtocolEvent {
         kind,
-        tx_hash: row
-            .try_get::<Vec<u8>, _>("tx_hash")
-            .ok()
-            .and_then(|h| FixedBytes::try_from(h.as_slice()).ok()),
+        tx_hash: tx_hash_from_row(row),
         already_sent: row.try_get::<bool, _>("already_sent")?,
         error_counter: 0,
         created_at: row.try_get::<DateTime<Utc>, _>("created_at")?,
-        otlp_context: bc2wrap::deserialize_slice(&row.try_get::<Vec<u8>, _>("otlp_context")?)?,
+        otlp_context: otlp_context_from_row(row)?,
+    })
+}
+
+pub fn from_abort_keygen_row(row: &PgRow) -> anyhow::Result<ProtocolEvent> {
+    let kind = ProtocolEventKind::AbortKeygen(AbortKeygen {
+        prepKeygenId: U256::from_le_bytes(row.try_get::<[u8; 32], _>("prep_keygen_id")?),
+    });
+    Ok(ProtocolEvent {
+        kind,
+        tx_hash: tx_hash_from_row(row),
+        already_sent: row.try_get::<bool, _>("already_sent")?,
+        error_counter: 0,
+        created_at: row.try_get::<DateTime<Utc>, _>("created_at")?,
+        otlp_context: otlp_context_from_row(row)?,
+    })
+}
+
+pub fn from_abort_crsgen_row(row: &PgRow) -> anyhow::Result<ProtocolEvent> {
+    let kind = ProtocolEventKind::AbortCrsgen(AbortCrsgen {
+        crsId: U256::from_le_bytes(row.try_get::<[u8; 32], _>("crs_id")?),
+    });
+    Ok(ProtocolEvent {
+        kind,
+        tx_hash: tx_hash_from_row(row),
+        already_sent: row.try_get::<bool, _>("already_sent")?,
+        error_counter: 0,
+        created_at: row.try_get::<DateTime<Utc>, _>("created_at")?,
+        otlp_context: otlp_context_from_row(row)?,
     })
 }
 
@@ -498,7 +554,7 @@ async fn update_public_decryption_status(
     status: OperationStatus,
     already_sent: bool,
     error_counter: i16,
-) {
+) -> anyhow::Result<()> {
     let query = sqlx::query!(
         "UPDATE public_decryption_requests SET status = $1, already_sent = $2, error_counter = $3
         WHERE decryption_id = $4",
@@ -507,7 +563,7 @@ async fn update_public_decryption_status(
         error_counter,
         id.as_le_slice()
     );
-    execute_update_event_query(db, query).await;
+    execute_update_event_query(db, query).await
 }
 
 async fn update_user_decryption_status(
@@ -516,7 +572,7 @@ async fn update_user_decryption_status(
     status: OperationStatus,
     already_sent: bool,
     error_counter: i16,
-) {
+) -> anyhow::Result<()> {
     let query = sqlx::query!(
         "UPDATE user_decryption_requests SET status = $1, already_sent = $2, error_counter = $3
         WHERE decryption_id = $4",
@@ -525,7 +581,7 @@ async fn update_user_decryption_status(
         error_counter,
         id.as_le_slice()
     );
-    execute_update_event_query(db, query).await;
+    execute_update_event_query(db, query).await
 }
 
 async fn update_prep_keygen_status(
@@ -533,14 +589,14 @@ async fn update_prep_keygen_status(
     id: U256,
     status: OperationStatus,
     already_sent: bool,
-) {
+) -> anyhow::Result<()> {
     let query = sqlx::query!(
         "UPDATE prep_keygen_requests SET status = $1, already_sent = $2 WHERE prep_keygen_id = $3",
         status as OperationStatus,
         already_sent,
         id.as_le_slice()
     );
-    execute_update_event_query(db, query).await;
+    execute_update_event_query(db, query).await
 }
 
 async fn update_keygen_status(
@@ -548,14 +604,14 @@ async fn update_keygen_status(
     id: U256,
     status: OperationStatus,
     already_sent: bool,
-) {
+) -> anyhow::Result<()> {
     let query = sqlx::query!(
         "UPDATE keygen_requests SET status = $1, already_sent = $2 WHERE key_id = $3",
         status as OperationStatus,
         already_sent,
         id.as_le_slice()
     );
-    execute_update_event_query(db, query).await;
+    execute_update_event_query(db, query).await
 }
 
 async fn update_crsgen_status(
@@ -563,14 +619,44 @@ async fn update_crsgen_status(
     id: U256,
     status: OperationStatus,
     already_sent: bool,
-) {
+) -> anyhow::Result<()> {
     let query = sqlx::query!(
         "UPDATE crsgen_requests SET status = $1, already_sent = $2 WHERE crs_id = $3",
         status as OperationStatus,
         already_sent,
         id.as_le_slice()
     );
-    execute_update_event_query(db, query).await;
+    execute_update_event_query(db, query).await
+}
+
+async fn update_abort_keygen_status(
+    db: &Pool<Postgres>,
+    id: U256,
+    status: OperationStatus,
+    already_sent: bool,
+) -> anyhow::Result<()> {
+    let query = sqlx::query!(
+        "UPDATE abort_keygen_requests SET status = $1, already_sent = $2 WHERE prep_keygen_id = $3",
+        status as OperationStatus,
+        already_sent,
+        id.as_le_slice(),
+    );
+    execute_update_event_query(db, query).await
+}
+
+async fn update_abort_crsgen_status(
+    db: &Pool<Postgres>,
+    id: U256,
+    status: OperationStatus,
+    already_sent: bool,
+) -> anyhow::Result<()> {
+    let query = sqlx::query!(
+        "UPDATE abort_crsgen_requests SET status = $1, already_sent = $2 WHERE crs_id = $3",
+        status as OperationStatus,
+        already_sent,
+        id.as_le_slice(),
+    );
+    execute_update_event_query(db, query).await
 }
 
 async fn update_new_kms_context_status(
@@ -578,14 +664,14 @@ async fn update_new_kms_context_status(
     context_id: U256,
     status: OperationStatus,
     already_sent: bool,
-) {
+) -> anyhow::Result<()> {
     let query = sqlx::query!(
         "UPDATE new_kms_context SET status = $1, already_sent = $2 WHERE context_id = $3",
         status as OperationStatus,
         already_sent,
         context_id.as_le_slice()
     );
-    execute_update_event_query(db, query).await;
+    execute_update_event_query(db, query).await
 }
 
 async fn update_new_kms_epoch_status(
@@ -593,29 +679,56 @@ async fn update_new_kms_epoch_status(
     epoch_id: U256,
     status: OperationStatus,
     already_sent: bool,
-) {
+) -> anyhow::Result<()> {
     let query = sqlx::query!(
         "UPDATE new_kms_epoch SET status = $1, already_sent = $2 WHERE epoch_id = $3",
         status as OperationStatus,
         already_sent,
         epoch_id.as_le_slice()
     );
-    execute_update_event_query(db, query).await;
+    execute_update_event_query(db, query).await
 }
 
-async fn execute_update_event_query(db: &Pool<Postgres>, query: Query<'_, Postgres, PgArguments>) {
-    let query_result = match query.execute(db).await {
-        Ok(result) => result,
-        Err(e) => return warn!("Failed to update event: {e}"),
-    };
+async fn update_kms_context_destroyed_status(
+    db: &Pool<Postgres>,
+    context_id: U256,
+    status: OperationStatus,
+    already_sent: bool,
+) -> anyhow::Result<()> {
+    let query = sqlx::query!(
+        "UPDATE kms_context_destroyed SET status = $1, already_sent = $2 WHERE context_id = $3",
+        status as OperationStatus,
+        already_sent,
+        context_id.as_le_slice()
+    );
+    execute_update_event_query(db, query).await
+}
 
+async fn update_kms_epoch_destroyed_status(
+    db: &Pool<Postgres>,
+    epoch_id: U256,
+    status: OperationStatus,
+    already_sent: bool,
+) -> anyhow::Result<()> {
+    let query = sqlx::query!(
+        "UPDATE kms_epoch_destroyed SET status = $1, already_sent = $2 WHERE epoch_id = $3",
+        status as OperationStatus,
+        already_sent,
+        epoch_id.as_le_slice()
+    );
+    execute_update_event_query(db, query).await
+}
+
+async fn execute_update_event_query(
+    db: &Pool<Postgres>,
+    query: Query<'_, Postgres, PgArguments>,
+) -> anyhow::Result<()> {
+    let query_result = query.execute(db).await?;
     if query_result.rows_affected() == 1 {
         info!("Successfully updated event in DB!");
+        Ok(())
     } else {
-        warn!(
-            "Unexpected query result while updating event: {:?}",
-            query_result
-        )
+        Err(anyhow!("unexpected query result: {query_result:?}"))
     }
 }
 
@@ -631,9 +744,6 @@ impl Display for ProtocolEventKind {
             ProtocolEventKind::UserDecryptionV2(e) => {
                 write!(f, "UserDecryptionRequest #{:#066x}", e.decryptionId)
             }
-            ProtocolEventKind::UserDecryptionSolana(e) => {
-                write!(f, "UserDecryptionRequestSolana #{}", e.decryptionId)
-            }
             ProtocolEventKind::PrepKeygen(e) => {
                 write!(f, "PrepKeygenRequest #{:#066x}", e.prepKeygenId)
             }
@@ -643,11 +753,23 @@ impl Display for ProtocolEventKind {
             ProtocolEventKind::Crsgen(e) => {
                 write!(f, "CrsgenRequest #{:#066x}", e.crsId)
             }
+            ProtocolEventKind::AbortKeygen(e) => {
+                write!(f, "AbortKeygen #{:#066x}", e.prepKeygenId)
+            }
+            ProtocolEventKind::AbortCrsgen(e) => {
+                write!(f, "AbortCrsgen #{:#066x}", e.crsId)
+            }
             ProtocolEventKind::NewKmsContext(e) => {
                 write!(f, "NewKmsContext #{:#066x}", e.contextId)
             }
             ProtocolEventKind::NewKmsEpoch(e) => {
                 write!(f, "NewKmsEpoch #{:#066x}", e.epochId)
+            }
+            ProtocolEventKind::KmsContextDestroyed(e) => {
+                write!(f, "KmsContextDestroyed #{:#066x}", e.kmsContextId)
+            }
+            ProtocolEventKind::KmsEpochDestroyed(e) => {
+                write!(f, "KmsEpochDestroyed #{:#066x}", e.epochId)
             }
         }
     }
@@ -695,6 +817,18 @@ impl From<CrsgenRequest> for ProtocolEventKind {
     }
 }
 
+impl From<AbortKeygen> for ProtocolEventKind {
+    fn from(value: AbortKeygen) -> Self {
+        Self::AbortKeygen(value)
+    }
+}
+
+impl From<AbortCrsgen> for ProtocolEventKind {
+    fn from(value: AbortCrsgen) -> Self {
+        Self::AbortCrsgen(value)
+    }
+}
+
 impl From<NewKmsContext> for ProtocolEventKind {
     fn from(value: NewKmsContext) -> Self {
         Self::NewKmsContext(value)
@@ -707,17 +841,30 @@ impl From<NewKmsEpoch> for ProtocolEventKind {
     }
 }
 
+impl From<KmsContextDestroyed> for ProtocolEventKind {
+    fn from(value: KmsContextDestroyed) -> Self {
+        Self::KmsContextDestroyed(value)
+    }
+}
+
+impl From<KmsEpochDestroyed> for ProtocolEventKind {
+    fn from(value: KmsEpochDestroyed) -> Self {
+        Self::KmsEpochDestroyed(value)
+    }
+}
+
 impl TryFrom<DecryptionEvents> for ProtocolEventKind {
     type Error = anyhow::Error;
 
     fn try_from(value: DecryptionEvents) -> Result<Self, Self::Error> {
         match value {
-            // `UserDecryptionRequest_0` is the legacy event; `UserDecryptionRequest_1` is the
-            // RFC016 overload.
-            DecryptionEvents::PublicDecryptionRequest(e) => Ok(e.into()),
-            DecryptionEvents::UserDecryptionRequest_0(e) => Ok(e.into()),
-            DecryptionEvents::UserDecryptionRequest_1(e) => Ok(e.into()),
-            DecryptionEvents::UserDecryptionRequestSolana(e) => Ok(e.into()),
+            // Handle-only overloads (v0.15): `_1` for public, `_2` for the legacy-style user
+            // event and `_3` for the RFC016 unified user event
+            // The `SnsCiphertextMaterial`-carrying variants (public `_0` and user `_0`, `_1`) are
+            // intentionally ignored.
+            DecryptionEvents::PublicDecryptionRequest_1(e) => Ok(e.into()),
+            DecryptionEvents::UserDecryptionRequest_2(e) => Ok(e.into()),
+            DecryptionEvents::UserDecryptionRequest_3(e) => Ok(e.into()),
             _ => Err(anyhow!("Unexpected Decryption event")),
         }
     }
@@ -731,6 +878,8 @@ impl TryFrom<KMSGenerationEvents> for ProtocolEventKind {
             KMSGenerationEvents::PrepKeygenRequest(e) => Ok(e.into()),
             KMSGenerationEvents::KeygenRequest(e) => Ok(e.into()),
             KMSGenerationEvents::CrsgenRequest(e) => Ok(e.into()),
+            KMSGenerationEvents::AbortKeygen(e) => Ok(e.into()),
+            KMSGenerationEvents::AbortCrsgen(e) => Ok(e.into()),
             _ => Err(anyhow!("Unexpected KMSGeneration event")),
         }
     }
@@ -743,6 +892,8 @@ impl TryFrom<ProtocolConfigEvents> for ProtocolEventKind {
         match value {
             ProtocolConfigEvents::NewKmsContext(e) => Ok(e.into()),
             ProtocolConfigEvents::NewKmsEpoch(e) => Ok(e.into()),
+            ProtocolConfigEvents::KmsContextDestroyed(e) => Ok(e.into()),
+            ProtocolConfigEvents::KmsEpochDestroyed(e) => Ok(e.into()),
             _ => Err(anyhow!("Unexpected ProtocolConfig event")),
         }
     }

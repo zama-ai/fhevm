@@ -154,7 +154,10 @@ async fn schedule_erc20(
     let mut handle_counter = random_handle();
     let shared_tx_id = next_handle(&mut handle_counter);
 
-    let mut tx = listener_db.new_transaction().await?;
+    let mut tx = listener_db
+        .new_transaction()
+        .await?
+        .expect("new_transaction() returns Some on a live stack");
     let mut prev_from: Option<host_listener::database::tfhe_event_propagate::Handle> = None;
     let mut prev_to: Option<host_listener::database::tfhe_event_propagate::Handle> = None;
 

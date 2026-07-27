@@ -29,6 +29,7 @@ Options:
   --ethlib none            Start Anvil + deploy only; wait for Anvil to exit (no tests run).
   --foundry-profile <name> Required Foundry profile to use. Expected: v12 or v13.
   --use-pack               Use vitest-manual-pack.config.ts instead of vitest.config.ts.
+  --skip-fhetest           Deploy only the FHEVM stack, not TFHETest.sol (FHETest).
   --verbose                Print Anvil logs to the console instead of redirecting to a file.
   --help                   Print this help message and exit.
 
@@ -48,6 +49,7 @@ LIB="ethers,viem"
 PROFILE=""
 VERBOSE=0
 USE_PACK=0
+SKIP_FHETEST=0
 
 while [[ $# -gt 0 ]]; do
     case "$1" in
@@ -79,6 +81,10 @@ while [[ $# -gt 0 ]]; do
             ;;
         --use-pack)
             USE_PACK=1
+            shift
+            ;;
+        --skip-fhetest)
+            SKIP_FHETEST=1
             shift
             ;;
         --verbose)
@@ -159,7 +165,7 @@ anvil_check_scripts() {
         echo "Error: deploy FHEVM script not found or not executable at $DEPLOY_FHEVM_SCRIPT" >&2
         exit 1
     fi
-    if [[ ! -x "$DEPLOY_FHE_TEST_SCRIPT" ]]; then
+    if [[ "$SKIP_FHETEST" -eq 0 ]] && [[ ! -x "$DEPLOY_FHE_TEST_SCRIPT" ]]; then
         echo "Error: deploy FHETest script not found or not executable at $DEPLOY_FHE_TEST_SCRIPT" >&2
         exit 1
     fi
@@ -215,8 +221,12 @@ anvil_deploy_cleartext() {
     (
         cd "$CONTRACTS_DIR"
         bash "$DEPLOY_FHEVM_SCRIPT" --chain localcleartext
-        sleep 1
-        bash "$DEPLOY_FHE_TEST_SCRIPT" --chain localcleartext
+        if [[ "$SKIP_FHETEST" -eq 0 ]]; then
+            sleep 1
+            bash "$DEPLOY_FHE_TEST_SCRIPT" --chain localcleartext
+        else
+            echo "⏭️  Skipping TFHETest.sol (FHETest) deployment (--skip-fhetest)."
+        fi
     )
 }
 

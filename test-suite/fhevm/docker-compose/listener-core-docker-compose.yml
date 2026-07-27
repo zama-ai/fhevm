@@ -40,8 +40,8 @@ services:
 
   listener-publisher-for-anvil:
     # build:
-    #   context: ../../../listener
-    #   dockerfile: Dockerfile
+    #   context: ../../..
+    #   dockerfile: listener/Dockerfile
     image: ghcr.io/zama-ai/fhevm/listener/listener-core:${LISTENER_CORE_VERSION}
     container_name: listener-publisher-for-anvil
     profiles: [listener-publisher-for-anvil]

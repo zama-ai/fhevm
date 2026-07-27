@@ -23,7 +23,12 @@ import type {
   UintTypeName,
   ValueTypeName,
 } from '../types/primitives.js';
-import type { RecordWithPropertyType, RecordUintPropertyType, RecordUint256PropertyType } from '../types/record-p.js';
+import type {
+  RecordWithPropertyType,
+  RecordUintPropertyType,
+  RecordUint256PropertyType,
+  RecordUintNumberPropertyType,
+} from '../types/record-p.js';
 import type { ErrorMetadataParams } from './errors/ErrorBase.js';
 import { isRecordNonNullableProperty, typeofProperty } from './record.js';
 import { InvalidPropertyError } from './errors/InvalidPropertyError.js';
@@ -611,6 +616,18 @@ export function assertRecordUintProperty<K extends string>(
       options,
     );
   }
+}
+
+////////////////////////////////////////////////////////////////////////////////
+
+export function isRecordUintNumberProperty<K extends string>(
+  record: unknown,
+  property: K,
+): record is RecordUintNumberPropertyType<K> {
+  if (!isRecordNonNullableProperty(record, property)) {
+    return false;
+  }
+  return isUintNumber(record[property]);
 }
 
 ////////////////////////////////////////////////////////////////////////////////

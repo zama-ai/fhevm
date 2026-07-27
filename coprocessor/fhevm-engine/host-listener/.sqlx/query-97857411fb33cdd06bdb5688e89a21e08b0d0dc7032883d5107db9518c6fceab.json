@@ -1,0 +1,15 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n            DELETE FROM allowed_handles_branch\n             WHERE host_chain_id = $1\n               AND (\n                    block_hash = ANY($2::bytea[])\n                    OR producer_block_hash = ANY($2::bytea[])\n               )\n            ",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Int8",
+        "ByteaArray"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "97857411fb33cdd06bdb5688e89a21e08b0d0dc7032883d5107db9518c6fceab"
+}

@@ -52,7 +52,7 @@ describe('vault provisioning builders', () => {
     });
     expect(instruction.programAddress).toBe(DEMO_VAULT_PROGRAM_ADDRESS);
     expect(instruction.accounts).toHaveLength(8);
-    expect(instruction.accounts![0].address).toBe(payer.address);
+    expect(instruction.accounts?.[0]?.address).toBe(payer.address);
     const decoded = getInitializeVaultInstructionDataDecoder().decode(instruction.data!);
     expect(Array.from(decoded.discriminator)).toEqual(Array.from(INITIALIZE_VAULT_DISCRIMINATOR));
   });

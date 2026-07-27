@@ -1,0 +1,22 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n            SELECT last_caught_up_block AS \"last_caught_up_block!\"\n            FROM host_listener_poller_state\n            WHERE chain_id = $1\n            ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "last_caught_up_block!",
+        "type_info": "Int8"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Int8"
+      ]
+    },
+    "nullable": [
+      false
+    ]
+  },
+  "hash": "3892a34d1e219ec5e370a8df9ec9b022141c73ed4b6ae5d35bc6b37215ec3f63"
+}

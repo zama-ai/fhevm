@@ -870,7 +870,7 @@ contract KMSGeneration is IKMSGeneration, EIP712Upgradeable, UUPSUpgradeableEmpt
         address txSenderAddress
     ) internal view virtual {
         if (!PROTOCOL_CONFIG.isKmsSignerForContext(contextId, signerAddress)) {
-            revert KmsSignerDoesNotMatchTxSender(signerAddress, txSenderAddress);
+            revert NotKmsSigner(signerAddress);
         }
         KmsNode memory node = PROTOCOL_CONFIG.getKmsNodeForContext(contextId, txSenderAddress);
         if (node.signerAddress != signerAddress) {

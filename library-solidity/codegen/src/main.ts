@@ -23,6 +23,13 @@ import { generateSolidityHCULimit } from './hcuLimitGenerator';
 import { ALL_OPERATORS } from './operators';
 import { ALL_OPERATORS_PRICES } from './operatorsPrices';
 import { fromDirToFile, fromFileToFile, isDirectory } from './paths';
+import {
+  generateConfidentialOAppCoreLib,
+  generateConfidentialOAppLib,
+  generateConfidentialOAppReceiverLib,
+  generateConfidentialOAppSenderLib,
+  generateIDstAppLib,
+} from './templateBridge';
 import { generateFhevmECDSALib, generateSolidityFHELib } from './templateFHEDotSol';
 import { generateSolidityFheType } from './templateFheTypeDotSol';
 import { generateSolidityImplLib } from './templateImpDotSol';
@@ -151,6 +158,13 @@ export async function commandGenerateAllFiles(options: any) {
   const fheDotSol = `${path.join(absConfig.lib.outDir, 'FHE.sol')}`;
   const hcuLimitDotSol = `${path.join(absConfig.hostContracts.outDir, 'HCULimit.sol')}`;
 
+  // Confidential-bridge OApp abstracts (`lib/bridge/`); only emitted when `lib.bridge` is enabled.
+  const iDstAppDotSol = `${path.join(absConfig.lib.outDir, 'bridge', 'IDstApp.sol')}`;
+  const oAppCoreDotSol = `${path.join(absConfig.lib.outDir, 'bridge', 'ConfidentialOAppCore.sol')}`;
+  const oAppSenderDotSol = `${path.join(absConfig.lib.outDir, 'bridge', 'ConfidentialOAppSender.sol')}`;
+  const oAppReceiverDotSol = `${path.join(absConfig.lib.outDir, 'bridge', 'ConfidentialOAppReceiver.sol')}`;
+  const oAppDotSol = `${path.join(absConfig.lib.outDir, 'bridge', 'ConfidentialOApp.sol')}`;
+
   const defaultOverloadsJsonFile = absConfig.tests.overloads;
   const resolvedOverloadsJsonFile = userOverloadsJson
     ? toAbsoluteFileWithExtension(userOverloadsJson, '.json', process.cwd())
@@ -219,6 +233,16 @@ export async function commandGenerateAllFiles(options: any) {
     await formatAndWriteFile(`${implDotSol}`, implCode);
     await formatAndWriteFile(`${ecdsaDotSol}`, ecdsaCode);
     await formatAndWriteFile(`${fheDotSol}`, fheCode);
+
+    // Generate the confidential-bridge OApp abstracts under `lib/bridge/` (library-only).
+    if (absConfig.lib.bridge) {
+      mkDir(path.dirname(iDstAppDotSol));
+      await formatAndWriteFile(`${iDstAppDotSol}`, generateIDstAppLib());
+      await formatAndWriteFile(`${oAppCoreDotSol}`, generateConfidentialOAppCoreLib());
+      await formatAndWriteFile(`${oAppSenderDotSol}`, generateConfidentialOAppSenderLib());
+      await formatAndWriteFile(`${oAppReceiverDotSol}`, generateConfidentialOAppReceiverLib());
+      await formatAndWriteFile(`${oAppDotSol}`, generateConfidentialOAppLib());
+    }
   } else {
     debugLog(`Skipping lib generation.`);
   }

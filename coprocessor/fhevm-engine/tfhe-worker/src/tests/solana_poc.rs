@@ -102,7 +102,11 @@ async fn confidential_transfer_reconstructs_computes_and_decrypts(
             Time::MIDNIGHT,
         ),
     };
-    let mut db_tx = harness.listener_db.new_transaction().await?;
+    let mut db_tx = harness
+        .listener_db
+        .new_transaction()
+        .await?
+        .expect("new_transaction() returns Some on a live stack");
     let stats = insert_solana_events(
         &harness.listener_db,
         &mut db_tx,

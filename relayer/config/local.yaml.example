@@ -19,6 +19,13 @@ protocol_config:
     max_attempts: 3
     retry_interval_ms: 200
 
+# /v2/keyurl host-chain poller settings.
+keyurl:
+  # KMSGeneration contract address on the host chain (source for /v2/keyurl).
+  kms_generation_address: "0x1234567890123456789012345678901234567890"
+  # /v2/keyurl poll interval in ms; the poller reads at the finalized block.
+  poll_interval_ms: 12000
+
 # User-decryption signature check. Gas cap for the ERC-1271 isValidSignature static call.
 user_decrypt_signature_check:
   erc1271_gas_limit: 100000
@@ -134,14 +141,6 @@ log:
   show_thread_ids: false
   show_timestamp: true
   show_target: true
-
-keyurl:
-    fhe_public_key:
-      data_id: "fhe-public-key-data-id"
-      url: "http://0.0.0.0:3001/publicKey.bin"
-    crs:
-      data_id: "crs-data-id"
-      url: "http://0.0.0.0:3001/crs2048.bin"
 
 http:
   endpoint: "0.0.0.0:3000"

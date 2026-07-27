@@ -24,11 +24,13 @@ use std::sync::LazyLock;
 use std::time::Duration;
 
 use fhevm_engine_common::database::{
-    connect_pool_with_options, resolve_database_url_from_option, EVENT_CIPHERTEXTS_UPLOADED,
+    apply_gcs_mode_search_path, connect_pool_with_options_and_connect_options,
+    resolve_database_url_from_option, EVENT_CIPHERTEXTS_UPLOADED, GCS_SCHEMA,
 };
+use fhevm_engine_common::versioning::{begin_write_guarded, GcsRollbackPolicy, WriteGuard};
 use prometheus::{register_int_counter, register_int_gauge, IntCounter, IntGauge};
 use sqlx::postgres::PgPoolOptions;
-use sqlx::{PgPool, Postgres, Transaction};
+use sqlx::{PgConnection, PgPool, Postgres, Transaction};
 use tokio_util::sync::CancellationToken;
 use tracing::{error, info};
 
@@ -65,11 +67,13 @@ pub async fn run_confidential_bridge(
     cancel_token: CancellationToken,
 ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
     let db_url = resolve_database_url_from_option(args.database_url.clone())?;
+    let gcs_mode = fhevm_engine_common::versioning::resolve_gcs_mode(db_url.as_str()).await?;
     // A single connection suffices: the worker polls and associates sequentially.
-    let (pool, _pool_refresh_handle) = connect_pool_with_options(
+    let (pool, _pool_refresh_handle) = connect_pool_with_options_and_connect_options(
         &db_url,
         PgPoolOptions::new().max_connections(1),
         Some(&cancel_token),
+        apply_gcs_mode_search_path(gcs_mode),
     )
     .await?;
 
@@ -84,7 +88,14 @@ pub async fn run_confidential_bridge(
         if cancel_token.is_cancelled() {
             break;
         }
-        match drain_associations(&pool, args.bridge_associate_batch_size, &cancel_token).await {
+        match drain_associations(
+            &pool,
+            args.bridge_associate_batch_size,
+            &cancel_token,
+            gcs_mode,
+        )
+        .await
+        {
             Ok(associated) if associated > 0 => {
                 info!(target: "bridge", associated, "Associated bridged handles")
             }
@@ -114,13 +125,14 @@ pub(crate) async fn drain_associations(
     pool: &PgPool,
     batch_size: i64,
     cancel_token: &CancellationToken,
+    gcs_mode: bool,
 ) -> Result<u64, sqlx::Error> {
     let mut total = 0;
     loop {
         if cancel_token.is_cancelled() {
             break;
         }
-        let associated = associate_batch(pool, batch_size).await?;
+        let associated = associate_batch(pool, batch_size, gcs_mode).await?;
         total += associated;
         if associated < batch_size as u64 {
             break;
@@ -138,6 +150,15 @@ async fn count_unassociated_handles(pool: &PgPool) -> Result<i64, sqlx::Error> {
         FROM handle_bridged_events
         WHERE NOT is_associated
           AND NOT EXISTS (SELECT 1 FROM ciphertexts WHERE handle = handle_bridged_events.dst_handle)
+          AND (
+                block_hash = ''::bytea
+                OR EXISTS (
+                    SELECT 1 FROM host_chain_blocks_valid dst_block
+                    WHERE dst_block.chain_id = handle_bridged_events.dst_chain_id
+                      AND dst_block.block_hash = handle_bridged_events.block_hash
+                      AND dst_block.block_status <> 'orphaned'
+                )
+          )
           AND created_at <= now() - make_interval(secs => $1::int)
         "#,
         IN_FLIGHT_GRACE_SECS,
@@ -146,13 +167,55 @@ async fn count_unassociated_handles(pool: &PgPool) -> Result<i64, sqlx::Error> {
     .await
 }
 
-async fn associate_batch(pool: &PgPool, batch_size: i64) -> Result<u64, sqlx::Error> {
-    let mut txn = pool.begin().await?;
+async fn bridge_writes_enabled(
+    conn: &mut PgConnection,
+    gcs_mode: bool,
+) -> Result<bool, sqlx::Error> {
+    if !gcs_mode {
+        return Ok(true);
+    }
+
+    let state: Option<String> =
+        sqlx::query_scalar("SELECT state FROM upgrade_state WHERE stack_role = 'GCS'")
+            .fetch_optional(&mut *conn)
+            .await?;
+    match state.as_deref() {
+        Some("LIVE") => Ok(true),
+        // Without this schema, unqualified bridge writes would use public.
+        Some("UpgradeActivated" | "DryRunStarted") => {
+            sqlx::query_scalar(
+                "SELECT EXISTS (SELECT 1 FROM information_schema.schemata WHERE schema_name = $1)",
+            )
+            .bind(GCS_SCHEMA)
+            .fetch_one(conn)
+            .await
+        }
+        _ => Ok(false),
+    }
+}
+
+async fn associate_batch(
+    pool: &PgPool,
+    batch_size: i64,
+    gcs_mode: bool,
+) -> Result<u64, sqlx::Error> {
+    let mut txn = match begin_write_guarded(pool, gcs_mode, GcsRollbackPolicy::Skip).await? {
+        WriteGuard::Proceed(txn) => txn,
+        WriteGuard::Stop | WriteGuard::Skip => return Ok(0),
+    };
+
+    if !bridge_writes_enabled(txn.as_mut(), gcs_mode).await? {
+        txn.rollback().await?;
+        return Ok(0);
+    }
 
     // A pair is ready to associate when:
     // - the destination handle is not already materialized by another path
     // - both validated events are present: the destination `HandleBridged`
     //   and the matching source `BridgeHandle` one
+    // - the source approval's block is finalized; the destination event is
+    //   consumed as observed (no finality wait), skipped only when its block
+    //   is already known orphaned
     // - the source ciphertext is fully materialized: its ct64 blob exists and
     //   both digests (ct64 and ct128) are computed
     // - it has not been associated yet
@@ -164,10 +227,28 @@ async fn associate_batch(pool: &PgPool, batch_size: i64) -> Result<u64, sqlx::Er
           AND NOT EXISTS (
                 SELECT 1 FROM ciphertexts dst_ct
                 WHERE dst_ct.handle = dst_event.dst_handle)
+          AND (
+                dst_event.block_hash = ''::bytea
+                OR EXISTS (
+                    SELECT 1 FROM host_chain_blocks_valid dst_block
+                    WHERE dst_block.chain_id = dst_event.dst_chain_id
+                      AND dst_block.block_hash = dst_event.block_hash
+                      AND dst_block.block_status <> 'orphaned'
+                )
+          )
           AND EXISTS (
                 SELECT 1 FROM bridge_handle_events src_event
                 WHERE src_event.src_handle = dst_event.src_handle
-                  AND src_event.dst_chain_id = dst_event.dst_chain_id)
+                  AND src_event.dst_chain_id = dst_event.dst_chain_id
+                  AND (
+                        src_event.block_hash = ''::bytea
+                        OR EXISTS (
+                            SELECT 1 FROM host_chain_blocks_valid src_block
+                            WHERE src_block.chain_id = src_event.src_chain_id
+                              AND src_block.block_hash = src_event.block_hash
+                              AND src_block.block_status = 'finalized'
+                        )
+                  ))
           AND EXISTS (
                 SELECT 1 FROM ciphertexts src_ct
                 WHERE src_ct.handle = dst_event.src_handle)
@@ -243,12 +324,21 @@ pub(crate) async fn associate_pair(
     // Copy the digest and mark the event associated only when we actually placed
     // the ciphertext. If the destination was already materialized by another path
     // (e.g. a grantFallbackPlaintext recovery), the copy above is a no-op.
+    //
+    // Contract: `is_associated` is set in the SAME transaction as the copy —
+    // the host-listener's reorg cleanup uses a flagged observation in an
+    // orphaned block as proof that this association produced the
+    // materialization, and retracts it.
     if ciphertext_copied {
+        // `s3_format_version` travels with the digests: the copied row points at
+        // the source's S3 objects, so it must carry the version those objects
+        // were written with (NULL means "not uploaded" and would make the row
+        // self-contradictory — digests present but officially absent from S3).
         sqlx::query!(
             r#"
             INSERT INTO ciphertext_digest
-                (handle, ciphertext, ciphertext128, ciphertext128_format, host_chain_id, key_id_gw)
-            SELECT $1, ciphertext, ciphertext128, ciphertext128_format, $2, key_id_gw
+                (handle, ciphertext, ciphertext128, ciphertext128_format, host_chain_id, key_id_gw, s3_format_version)
+            SELECT $1, ciphertext, ciphertext128, ciphertext128_format, $2, key_id_gw, s3_format_version
             FROM ciphertext_digest
             WHERE handle = $3
             ON CONFLICT (handle) DO NOTHING

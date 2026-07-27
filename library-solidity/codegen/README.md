@@ -14,12 +14,6 @@ cd host-contracts
 npm run codegen
 ```
 
-```sh
-# End-to-End tests package
-cd tests-suite/e2e
-npm run codegen
-```
-
 ### To Regenerate Random Overloads (optional)
 
 ```sh
@@ -29,11 +23,6 @@ npm run codegen:overloads
 
 ```sh
 cd host-contracts
-npm run codegen:overloads
-```
-
-```sh
-cd tests-suite/e2e
 npm run codegen:overloads
 ```
 

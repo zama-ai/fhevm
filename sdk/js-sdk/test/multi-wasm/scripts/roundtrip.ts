@@ -170,10 +170,11 @@ async function run() {
               return resolveWasmAssetUrl(versionPair, assetUrls, file);
             },
       logger: {
-        debug: (message: string) => log(`  [debug] ${message}`),
+        debug: (message: string) => log(`[debug] ${message}`),
+        warn: (message: string) => log(`[warn] ${message}`),
         error: (message: string, cause: unknown) => {
-          log(`  [error] ${message}`);
-          if (cause !== undefined) log(`  [error] ${cause}`);
+          log(`[error] ${message}`);
+          if (cause !== undefined) log(`[error] ${cause}`);
         },
       },
     });
@@ -228,7 +229,7 @@ async function run() {
     const signedPermit = await client.signDecryptionPermit({
       transportKeyPair,
       contractAddresses: [fheTestAddress],
-      durationDays: 1,
+      durationSeconds: 24 * 3600,
       startTimestamp: Math.floor(Date.now() / 1000) - 5,
       signerAddress: wallet.address,
       signer,

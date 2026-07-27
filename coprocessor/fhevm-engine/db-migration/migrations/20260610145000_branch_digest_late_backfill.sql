@@ -1,0 +1,7 @@
+-- Branch-context wave 1 no-op.
+--
+-- This migration used to perform a second guarded full-table sweep from
+-- allowed_handles and ciphertext_digest into branchless branch rows after the
+-- mirror triggers were installed. Wave 2 now has explicit legacy fallback for
+-- branchless/pre-branch state, so keeping the sweep would only add online
+-- migration risk without being required for correctness.

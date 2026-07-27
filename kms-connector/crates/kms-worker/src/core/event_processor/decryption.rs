@@ -2,6 +2,7 @@ use crate::core::{
     config::Config,
     event_processor::{
         CiphertextManager, ProcessingError, RequestCheckError, RequestCheckKind,
+        ciphertext::VerifiedCiphertexts,
         context::ContextManager,
         solana_user_decrypt::{
             SolanaHost, check_solana_handles_acl, check_solana_handles_public_decrypt,
@@ -13,7 +14,7 @@ use crate::core::{
 use alloy::{
     consensus::Transaction,
     hex,
-    primitives::{Address, Bytes, FixedBytes, U256, map::DefaultHashBuilder},
+    primitives::{Address, B256, Bytes, FixedBytes, U256, map::DefaultHashBuilder},
     providers::Provider,
     sol_types::{Eip712Domain, SolCall},
 };
@@ -23,20 +24,20 @@ use connector_utils::types::{
     u256_to_request_id,
 };
 use fhevm_gateway_bindings::decryption::Decryption::{
-    self, DecryptionInstance, HandleEntry, SnsCiphertextMaterial,
-    UserDecryptionRequest_1 as UserDecryptionRequestV2, UserDecryptionRequestSolana,
-    delegatedUserDecryptionRequestCall, userDecryptionRequest_1Call as userDecryptionRequestCall,
+    self, DecryptionInstance, HandleEntry, UserDecryptionRequest_3 as UserDecryptionRequestV2,
+    UserDecryptionRequestSolana, delegatedUserDecryptionRequestCall,
+    userDecryptionRequest_1Call as userDecryptionRequestCall,
 };
 use fhevm_host_bindings::acl::ACL::ACLInstance;
 use futures::future::{join_all, try_join_all};
-use kms_grpc::kms::v1::{
-    Eip712DomainMsg, PublicDecryptionRequest, RequestId, TypedCiphertext, UserDecryptionRequest,
-};
+use kms_grpc::kms::v1::{Eip712DomainMsg, PublicDecryptionRequest, UserDecryptionRequest};
 use sqlx::types::chrono::Utc;
 use std::collections::HashMap;
 use tracing::info;
 use user_decryption_signature::{compute_user_decrypt_digest, verify_signature};
 
+/// How a host chain's ACL is consulted: an EVM `ACL` contract call, or the Solana
+/// account-based ACL reached over the host program's RPC.
 #[derive(Clone)]
 pub enum HostChainAclBackend<HP: Provider> {
     Evm(ACLInstance<HP>),
@@ -55,7 +56,7 @@ pub struct DecryptionProcessor<GP: Provider, HP: Provider, C> {
     /// The instance of the `Decryption` contract used to check decryption were not already done.
     decryption_contract: DecryptionInstance<GP>,
 
-    /// The configured ACL backend for each host chain.
+    /// The per-host-chain ACL backends used to check the decryption ACL (EVM or Solana).
     host_chain_backends: HashMap<u64, HostChainAclBackend<HP>>,
 
     /// The entity used to verify and collect the ciphertexts of decryption requests.
@@ -110,6 +111,8 @@ where
         })
     }
 
+    /// Resolves a host chain to its EVM `ACL` contract, rejecting Solana hosts. Used by the
+    /// EVM-only checks (delegation, allowed-contracts, ownership) that have no Solana analogue.
     fn evm_acl_backend(&self, chain_id: u64) -> Result<&ACLInstance<HP>, RequestCheckError> {
         match self.host_chain_backend(chain_id)? {
             HostChainAclBackend::Evm(acl) => Ok(acl),
@@ -125,23 +128,20 @@ where
     #[tracing::instrument(skip_all)]
     pub async fn check_ciphertexts_allowed_for_public_decryption(
         &self,
-        sns_ciphertexts: &[SnsCiphertextMaterial],
+        handles: &[B256],
         extra_data: &[u8],
     ) -> Result<(), RequestCheckError> {
-        info!(
-            "Starting ACL check for {} handles...",
-            sns_ciphertexts.len()
-        );
+        info!("Starting ACL check for {} handles...", handles.len());
 
-        for ct in sns_ciphertexts {
-            let ct_chain_id = extract_chain_id_from_handle(ct.ctHandle.as_slice())
+        for handle in handles {
+            let ct_chain_id = extract_chain_id_from_handle(*handle)
                 .map_err(|e| RequestCheckError::irrecoverable(RequestCheckKind::Acl, e))?;
 
             match self.host_chain_backend(ct_chain_id)? {
                 HostChainAclBackend::Solana(host) => {
                     // Public access is proven by a PublicDecryptLeaf MMR proof and verified
                     // against the live confirmed encrypted value account.
-                    check_solana_handles_public_decrypt(host, &[ct.ctHandle.0], extra_data)
+                    check_solana_handles_public_decrypt(host, &[handle.0], extra_data)
                         .await
                         .map_err(|e| {
                             RequestCheckError::from_processing(RequestCheckKind::Acl, e)
@@ -149,21 +149,21 @@ where
                 }
                 HostChainAclBackend::Evm(acl_contract) => {
                     if !acl_contract
-                        .isAllowedForDecryption(ct.ctHandle)
+                        .isAllowedForDecryption(*handle)
                         .call()
                         .await
                         .map_err(RequestCheckError::network)?
                     {
                         return Err(RequestCheckError::recoverable(
                             RequestCheckKind::Acl,
-                            anyhow!("Decryption is not allowed for {}", ct.ctHandle),
+                            anyhow!("Decryption is not allowed for {handle}"),
                         ));
                     }
                 }
             }
         }
 
-        info!("ACL check passed for {} handles!", sns_ciphertexts.len());
+        info!("ACL check passed for {} handles!", handles.len());
         Ok(())
     }
 
@@ -171,13 +171,10 @@ where
     pub async fn check_ciphertexts_allowed_for_user_decryption(
         &self,
         calldata: Vec<u8>,
-        sns_ciphertexts: &[SnsCiphertextMaterial],
+        handles: &[B256],
         user_address: Address,
     ) -> Result<(), RequestCheckError> {
-        info!(
-            "Starting ACL check for {} handles...",
-            sns_ciphertexts.len()
-        );
+        info!("Starting ACL check for {} handles...", handles.len());
 
         let (ct_handle_contract_pairs, delegator_address) =
             match delegatedUserDecryptionRequestCall::abi_decode(calldata.as_slice()) {
@@ -207,21 +204,21 @@ where
                 .iter()
                 .map(|c| (c.ctHandle, c.contractAddress)),
         );
-        for ct in sns_ciphertexts {
-            let ct_chain_id = extract_chain_id_from_handle(ct.ctHandle.as_slice())
+        for handle in handles {
+            let ct_chain_id = extract_chain_id_from_handle(*handle)
                 .map_err(|e| RequestCheckError::irrecoverable(RequestCheckKind::Acl, e))?;
             let acl_contract = self.evm_acl_backend(ct_chain_id)?;
-            let contract_address = contracts_map.get(ct.ctHandle.as_slice()).ok_or_else(|| {
+            let contract_address = contracts_map.get(handle.as_slice()).ok_or_else(|| {
                 RequestCheckError::irrecoverable(
                     RequestCheckKind::Acl,
-                    anyhow!("Could not find contract address for handle {}", ct.ctHandle),
+                    anyhow!("Could not find contract address for handle {handle}"),
                 )
             })?;
 
             if let Some(delegator_addr) = delegator_address {
                 self.inner_acl_check_for_delegated_user_decryption(
                     acl_contract,
-                    ct.ctHandle,
+                    *handle,
                     user_address,
                     *contract_address,
                     delegator_addr,
@@ -230,7 +227,7 @@ where
             } else {
                 self.inner_acl_check_for_user_decryption(
                     acl_contract,
-                    ct.ctHandle,
+                    *handle,
                     user_address,
                     *contract_address,
                 )
@@ -238,7 +235,7 @@ where
             }
         }
 
-        info!("ACL check passed for {} handles!", sns_ciphertexts.len());
+        info!("ACL check passed for {} handles!", handles.len());
         Ok(())
     }
 
@@ -275,25 +272,12 @@ where
     }
 
     /// Verify that a `UserDecryptionRequestV2` is internally consistent before the ACL phase:
-    /// `handles` and `snsCtMaterials` are pairwise aligned, and every handle resolves to the
-    /// same host chain id. Returns that shared chain id.
+    /// every handle resolves to the same host chain id. Returns that shared chain id.
     /// Shared by the EVM (`UserDecryptionRequestV2`) and Solana (`UserDecryptionRequestSolana`)
-    /// paths — both carry the same `handles` / `snsCtMaterials` shapes.
+    /// paths — both carry the same `handles` shape.
     fn validate_handles_and_extract_chain_id(
         handles: &[HandleEntry],
-        sns_ct_materials: &[SnsCiphertextMaterial],
     ) -> Result<u64, RequestCheckError> {
-        if handles.len() != sns_ct_materials.len() {
-            return Err(RequestCheckError::irrecoverable(
-                RequestCheckKind::Acl,
-                anyhow!(
-                    "handles/snsCtMaterials length mismatch: {} vs {}",
-                    handles.len(),
-                    sns_ct_materials.len(),
-                ),
-            ));
-        }
-
         let chain_id = handles
             .first()
             .ok_or_else(|| {
@@ -302,21 +286,11 @@ where
                     anyhow!("request contains no handles"),
                 )
             })
-            .map(|h| extract_chain_id_from_handle(h.handle.as_slice()))?
+            .map(|h| extract_chain_id_from_handle(h.handle))?
             .map_err(|e| RequestCheckError::irrecoverable(RequestCheckKind::Acl, e))?;
 
-        for (i, (h, m)) in handles.iter().zip(sns_ct_materials.iter()).enumerate() {
-            if h.handle != m.ctHandle {
-                return Err(RequestCheckError::irrecoverable(
-                    RequestCheckKind::Acl,
-                    anyhow!(
-                        "handles[{i}].handle ({}) != snsCtMaterials[{i}].ctHandle ({})",
-                        h.handle,
-                        m.ctHandle,
-                    ),
-                ));
-            }
-            match extract_chain_id_from_handle(h.handle.as_slice()) {
+        for h in handles.iter() {
+            match extract_chain_id_from_handle(h.handle) {
                 Ok(id) if id == chain_id => (),
                 Ok(other) => {
                     return Err(RequestCheckError::irrecoverable(
@@ -363,11 +337,8 @@ where
             request.handles.len()
         );
 
-        let chain_id =
-            Self::validate_handles_and_extract_chain_id(&request.handles, &request.snsCtMaterials)?;
+        let chain_id = Self::validate_handles_and_extract_chain_id(&request.handles)?;
 
-        // Solana user-decryptions are a distinct event kind (`UserDecryptionSolana`) handled by
-        // `check_user_decryption_request_solana`; the V2 path below is EVM-only.
         let payload = &request.payload;
 
         // Validity window
@@ -464,43 +435,14 @@ where
         Ok(())
     }
 
-    /// Picks the `client_address` for an EVM V2 user-decryption KMS gRPC request: the checksummed
-    /// `userAddress`. (Solana uses [`Self::user_decryption_extra_data_for_solana`].)
-    pub fn user_decryption_extra_data_for_v2(
-        request: &UserDecryptionRequestV2,
-    ) -> UserDecryptionExtraData {
-        let payload = &request.payload;
-        UserDecryptionExtraData::new(payload.userAddress, payload.publicKey.clone())
-    }
-
-    /// Sets the typed Solana pubkey from the authorized request payload. The legacy
-    /// `client_address` is intentionally empty.
-    pub fn user_decryption_extra_data_for_solana(
-        request: &UserDecryptionRequestSolana,
-    ) -> UserDecryptionExtraData {
-        let payload = &request.payload;
-        UserDecryptionExtraData::new_solana(payload.userIdentity.0, payload.publicKey.clone())
-    }
-
-    /// Solana user-decryption authorization check (RFC-021). The ed25519 auth fields are TYPED on
-    /// the request (no extraData blob — extraData carries only the KMS context).
-    ///
-    /// Unlike the EVM path, the re-encryption `publicKey ↔ identity` binding is NOT verified
-    /// on-chain by the Gateway, so this connector verifies it itself:
-    ///
-    /// 1. validity window (shared semantics with EVM; rejects expired / not-yet-valid windows),
-    /// 2. ed25519 signature over the canonical preimage — binds `publicKey`, handles, identity,
-    ///    nonce, allowed domains, and validity window to the claimed Solana identity (closes the
-    ///    publicKey-substitution / relayer-bypass bug),
-    /// 3. per-handle ACL read at `confirmed` commitment with owner + canonical-PDA checks and the
-    ///    domain-scoped verifier (identity as subject).
-    #[tracing::instrument(skip_all)]
+    /// RFC-021 Solana user-decryption check. Mirrors the RFC016 validity window, then verifies
+    /// the ed25519 signature (pure, no I/O) and runs the account-based ACL against the host
+    /// program at confirmed commitment. There is no EVM contract call on this path.
     pub async fn check_user_decryption_request_solana(
         &self,
         request: &UserDecryptionRequestSolana,
     ) -> Result<(), RequestCheckError> {
-        let chain_id =
-            Self::validate_handles_and_extract_chain_id(&request.handles, &request.snsCtMaterials)?;
+        let chain_id = Self::validate_handles_and_extract_chain_id(&request.handles)?;
         info!("Starting Solana user-decryption check for chain {chain_id}...");
 
         let payload = &request.payload;
@@ -554,6 +496,20 @@ where
             request.handles.len()
         );
         Ok(())
+    }
+
+    pub fn user_decryption_extra_data_for_v2(
+        request: &UserDecryptionRequestV2,
+    ) -> UserDecryptionExtraData {
+        let payload = &request.payload;
+        UserDecryptionExtraData::new(payload.userAddress, payload.publicKey.clone())
+    }
+
+    pub fn user_decryption_extra_data_for_solana(
+        request: &UserDecryptionRequestSolana,
+    ) -> UserDecryptionExtraData {
+        let payload = &request.payload;
+        UserDecryptionExtraData::new_solana(payload.userIdentity.0, payload.publicKey.clone())
     }
 
     /// RFC016 per-handle ownership check. Direct path (`ownerAddress == userAddress`) calls
@@ -696,20 +652,15 @@ where
     pub async fn prepare_decryption_request(
         &self,
         decryption_id: U256,
-        sns_materials: &[SnsCiphertextMaterial],
+        handles: &[B256],
         extra_data: &Bytes,
         user_decrypt_data: Option<UserDecryptionExtraData>,
     ) -> Result<KmsGrpcRequest, ProcessingError> {
-        // Extract keyId from the first SNS ciphertext material if available
-        let key_id = sns_materials
-            .first()
-            .map(|m| hex::encode(m.keyId.to_be_bytes::<32>()))
-            .ok_or_else(|| {
-                ProcessingError::Irrecoverable(anyhow!(
-                    "No snsCtMaterials found, cannot proceed without a valid key_id"
-                ))
-            })?;
-        info!("Extracted key_id {key_id} from snsCtMaterials[0]");
+        if handles.is_empty() {
+            return Err(ProcessingError::Irrecoverable(anyhow!(
+                "No handles found in the request, cannot proceed"
+            )));
+        }
 
         let parsed_extra_data =
             parse_extra_data(extra_data).map_err(ProcessingError::Irrecoverable)?;
@@ -718,7 +669,10 @@ where
             .await
             .map_err(RequestCheckError::record)?;
 
-        let ciphertexts = self.prepare_ciphertexts(&key_id, sns_materials).await?;
+        let VerifiedCiphertexts {
+            ciphertexts,
+            key_id,
+        } = self.ciphertext_manager.verify_and_retrieve(handles).await?;
 
         let request_id = Some(u256_to_request_id(decryption_id));
         let kms_extra_data = kms_decryption_extra_data(extra_data);
@@ -730,7 +684,7 @@ where
             let user_decryption_request = UserDecryptionRequest {
                 request_id,
                 client_address,
-                key_id: Some(RequestId { request_id: key_id }),
+                key_id: Some(u256_to_request_id(key_id)),
                 domain: Some(self.domain.clone()),
                 enc_key,
                 typed_ciphertexts: ciphertexts,
@@ -745,7 +699,7 @@ where
             let public_decryption_request = PublicDecryptionRequest {
                 request_id,
                 ciphertexts,
-                key_id: Some(RequestId { request_id: key_id }),
+                key_id: Some(u256_to_request_id(key_id)),
                 domain: Some(self.domain.clone()),
                 extra_data: kms_extra_data,
                 epoch_id: parsed_extra_data.epoch_id.map(u256_to_request_id),
@@ -755,52 +709,35 @@ where
         }
     }
 
-    async fn prepare_ciphertexts(
-        &self,
-        key_id: &str,
-        sns_materials: &[SnsCiphertextMaterial],
-    ) -> Result<Vec<TypedCiphertext>, ProcessingError> {
-        let sns_ciphertext_materials = self
-            .ciphertext_manager
-            .retrieve_verified_ciphertexts(sns_materials)
-            .await
-            .map_err(ProcessingError::Recoverable)?;
-
-        if sns_ciphertext_materials.is_empty() {
-            return Err(ProcessingError::Irrecoverable(anyhow!(
-                "Failed to retrieve any ciphertext materials"
-            )));
-        }
-
-        // Extract and log FHE types for all ciphertexts
-        let fhe_types: Vec<_> = sns_ciphertext_materials
-            .iter()
-            .map(|ct| ct.fhe_type)
-            .collect();
-
-        info!(
-            "Processing {} ciphertexts, key_id: {}, FHE types: {:?}",
-            sns_ciphertext_materials.len(),
-            key_id,
-            fhe_types,
-        );
-
-        Ok(sns_ciphertext_materials)
-    }
-
+    /// Fetches the calldata of a given transaction.
+    ///
+    /// Only allows transactions sent directly to the `Decryption` contract.
     pub async fn fetch_calldata(
         &self,
         tx_hash: FixedBytes<32>,
     ) -> Result<Vec<u8>, ProcessingError> {
-        self.decryption_contract
+        let decryption_address = *self.decryption_contract.address();
+
+        let tx = self
+            .decryption_contract
             .provider()
             .get_transaction_by_hash(tx_hash)
             .await
             .map_err(|e| ProcessingError::Recoverable(anyhow::Error::from(e)))?
             .ok_or_else(|| {
                 ProcessingError::Irrecoverable(anyhow!("No transaction found with hash {tx_hash}!"))
-            })
-            .map(|tx| tx.input().to_vec())
+            })?;
+
+        if tx.to() != Some(decryption_address) {
+            return Err(ProcessingError::Irrecoverable(anyhow!(
+                "Transaction {tx_hash} was sent to {:?} rather than directly to the Decryption \
+                contract {decryption_address}: its calldata cannot be associated with the user \
+                decryption event.",
+                tx.to(),
+            )));
+        }
+
+        Ok(tx.input().to_vec())
     }
 }
 
@@ -817,12 +754,11 @@ pub struct UserDecryptionExtraData {
     /// The checksummed EVM user address. Empty for Solana requests.
     pub client_address: String,
     pub public_key: Bytes,
-    /// The exact Solana user identity. Unset for EVM requests.
+    /// The exact Solana user identity (RFC-021). Unset for EVM requests.
     pub solana_pubkey: Option<Vec<u8>>,
 }
 
 impl UserDecryptionExtraData {
-    /// EVM user-decryption: `client_address` is the checksummed EVM `userAddress`.
     pub fn new(user_address: Address, public_key: Bytes) -> Self {
         Self {
             client_address: user_address.to_checksum(None),
@@ -831,7 +767,8 @@ impl UserDecryptionExtraData {
         }
     }
 
-    /// Solana user-decryption uses the typed 32-byte ed25519 identity only.
+    /// RFC-021: the KMS identifies a Solana user by the 32-byte ed25519 pubkey, not by an
+    /// EVM address, so `client_address` stays empty and the identity travels typed.
     pub fn new_solana(identity: [u8; 32], public_key: Bytes) -> Self {
         Self {
             client_address: String::new(),
@@ -844,15 +781,15 @@ impl UserDecryptionExtraData {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::core::solana_v2_fetcher::SolanaV2Fetcher;
     use alloy::{
         providers::{ProviderBuilder, mock::Asserter},
+        rpc::types::Transaction as RpcTransaction,
         signers::{SignerSync, local::PrivateKeySigner},
         sol_types::SolValue,
         transports::http::reqwest,
     };
     use connector_utils::{
-        tests::rand::{rand_address, rand_public_key, rand_sns_ct, rand_u256},
+        tests::rand::{rand_address, rand_digest, rand_handle, rand_public_key, rand_u256},
         types::extra_data::ExtraData,
     };
     use fhevm_gateway_bindings::decryption::{
@@ -874,18 +811,6 @@ mod tests {
         Irrecoverable,
     }
 
-    fn assert_irrecoverable_contains(result: Result<(), ProcessingError>, expected: &str) {
-        match result {
-            Err(ProcessingError::Irrecoverable(error)) => {
-                assert!(
-                    error.to_string().contains(expected),
-                    "unexpected error: {error}"
-                );
-            }
-            other => panic!("expected irrecoverable error containing '{expected}', got {other:?}"),
-        }
-    }
-
     struct MockContextManager;
 
     impl ContextManager for MockContextManager {
@@ -894,32 +819,51 @@ mod tests {
         }
     }
 
-    #[derive(Clone, Copy)]
+    fn setup_test_processor(
+        asserter: Asserter,
+        handle: B256,
+    ) -> DecryptionProcessor<impl Provider + Clone + use<>, impl Provider + use<>, MockContextManager>
+    {
+        setup_test_processor_with_config(asserter, handle, Config::default())
+    }
+
+    /// Which host-chain ACL backend the processor under test is configured with.
+    /// `Missing` leaves the map empty, to exercise the unconfigured-chain path.
     enum TestHostBackend {
         Evm,
         Solana,
         Missing,
     }
 
-    fn setup_test_processor(
+    fn setup_test_processor_with_config(
         asserter: Asserter,
-        sns_ct: &SnsCiphertextMaterial,
+        handle: B256,
+        config: Config,
     ) -> DecryptionProcessor<impl Provider + Clone + use<>, impl Provider + use<>, MockContextManager>
     {
-        setup_test_processor_with_backend(asserter, sns_ct, TestHostBackend::Evm)
+        setup_test_processor_inner(asserter, handle, config, TestHostBackend::Evm)
     }
 
     fn setup_test_processor_with_backend(
         asserter: Asserter,
-        sns_ct: &SnsCiphertextMaterial,
+        handle: B256,
+        backend: TestHostBackend,
+    ) -> DecryptionProcessor<impl Provider + Clone + use<>, impl Provider + use<>, MockContextManager>
+    {
+        setup_test_processor_inner(asserter, handle, Config::default(), backend)
+    }
+
+    fn setup_test_processor_inner(
+        asserter: Asserter,
+        handle: B256,
+        config: Config,
         backend: TestHostBackend,
     ) -> DecryptionProcessor<impl Provider + Clone + use<>, impl Provider + use<>, MockContextManager>
     {
         let mock_provider = ProviderBuilder::new()
             .disable_recommended_fillers()
             .connect_mocked_client(asserter);
-        let chain_id = extract_chain_id_from_handle(sns_ct.ctHandle.as_slice()).unwrap();
-        let config = Config::default();
+        let chain_id = extract_chain_id_from_handle(handle).unwrap();
         let host_chain_backends = match backend {
             TestHostBackend::Evm => HashMap::from([(
                 chain_id,
@@ -938,7 +882,7 @@ mod tests {
             TestHostBackend::Missing => HashMap::new(),
         };
         let ciphertext_manager =
-            CiphertextManager::disabled(mock_provider.clone(), reqwest::Client::new());
+            CiphertextManager::for_test(mock_provider.clone(), reqwest::Client::new());
         DecryptionProcessor::new(
             &config,
             MockContextManager,
@@ -965,24 +909,6 @@ mod tests {
         );
     }
 
-    #[test]
-    fn evm_user_decryption_keeps_the_checksummed_address() {
-        let address = Address::repeat_byte(0x11);
-        let data = UserDecryptionExtraData::new(address, Bytes::from_static(&[0x22]));
-
-        assert_eq!(data.client_address, address.to_checksum(None));
-        assert_eq!(data.solana_pubkey, None);
-    }
-
-    #[test]
-    fn solana_user_decryption_uses_only_the_typed_pubkey() {
-        let identity = [0x33; 32];
-        let data = UserDecryptionExtraData::new_solana(identity, Bytes::from_static(&[0x44]));
-
-        assert!(data.client_address.is_empty());
-        assert_eq!(data.solana_pubkey, Some(identity.to_vec()));
-    }
-
     enum PubDecryptACLMock {
         Failure(&'static str),
         Success(bool),
@@ -1001,9 +927,9 @@ mod tests {
         #[case] expected: ExpectedOutcome,
     ) {
         let asserter = Asserter::new();
-        let sns_ct = rand_sns_ct();
-        let decryption_processor = setup_test_processor(asserter.clone(), &sns_ct);
-        let sns_ciphertexts = vec![sns_ct];
+        let handle = rand_handle();
+        let decryption_processor = setup_test_processor(asserter.clone(), handle);
+        let handles = vec![handle];
 
         match mock_response {
             PubDecryptACLMock::Failure(msg) => asserter.push_failure_msg(msg),
@@ -1011,7 +937,7 @@ mod tests {
         }
 
         let result = decryption_processor
-            .check_ciphertexts_allowed_for_public_decryption(&sns_ciphertexts, &[0u8])
+            .check_ciphertexts_allowed_for_public_decryption(&handles, &[0])
             .await
             .map_err(RequestCheckError::record);
 
@@ -1061,19 +987,19 @@ mod tests {
         #[case] expected: ExpectedOutcome,
     ) {
         let asserter = Asserter::new();
-        let sns_ct = rand_sns_ct();
-        let decryption_processor = setup_test_processor(asserter.clone(), &sns_ct);
+        let handle = rand_handle();
+        let decryption_processor = setup_test_processor(asserter.clone(), handle);
 
         // Use non-delegated userDecryptionRequestCall (requires only 2 ACL checks)
         let calldata = userDecryptionRequestCall {
             ctHandleContractPairs: vec![CtHandleContractPair {
-                ctHandle: sns_ct.ctHandle,
+                ctHandle: handle,
                 contractAddress: rand_address(),
             }],
             ..Default::default()
         }
         .abi_encode();
-        let sns_ciphertexts = vec![sns_ct];
+        let handles = vec![handle];
         let user_address = Address::default();
 
         match mock_response {
@@ -1088,7 +1014,7 @@ mod tests {
         }
 
         let result = decryption_processor
-            .check_ciphertexts_allowed_for_user_decryption(calldata, &sns_ciphertexts, user_address)
+            .check_ciphertexts_allowed_for_user_decryption(calldata, &handles, user_address)
             .await
             .map_err(RequestCheckError::record);
 
@@ -1131,18 +1057,18 @@ mod tests {
         #[case] expected_error_msg: Option<&str>,
     ) {
         let asserter = Asserter::new();
-        let sns_ct = rand_sns_ct();
-        let decryption_processor = setup_test_processor(asserter.clone(), &sns_ct);
+        let handle = rand_handle();
+        let decryption_processor = setup_test_processor(asserter.clone(), handle);
 
         let calldata = delegatedUserDecryptionRequestCall {
             ctHandleContractPairs: vec![CtHandleContractPair {
-                ctHandle: sns_ct.ctHandle,
+                ctHandle: handle,
                 contractAddress: rand_address(),
             }],
             ..Default::default()
         }
         .abi_encode();
-        let sns_ciphertexts = vec![sns_ct];
+        let handles = vec![handle];
         let user_address = Address::default();
 
         match mock_response {
@@ -1153,7 +1079,7 @@ mod tests {
         }
 
         let result = decryption_processor
-            .check_ciphertexts_allowed_for_user_decryption(calldata, &sns_ciphertexts, user_address)
+            .check_ciphertexts_allowed_for_user_decryption(calldata, &handles, user_address)
             .await
             .map_err(RequestCheckError::record);
 
@@ -1187,7 +1113,7 @@ mod tests {
     /// The digest is computed against `Config::default().decryption_contract.address` — the
     /// same gateway address `setup_test_processor` configures the processor with.
     fn make_v2_request(
-        sns_ct: &SnsCiphertextMaterial,
+        handle: B256,
         owner_address: Address,
         user_address: Address,
         signing_key: &PrivateKeySigner,
@@ -1208,7 +1134,7 @@ mod tests {
             signature: Bytes::default(),
         };
 
-        let chain_id = extract_chain_id_from_handle(sns_ct.ctHandle.as_slice()).unwrap();
+        let chain_id = extract_chain_id_from_handle(handle).unwrap();
         let gateway_addr = Config::default().decryption_contract.address;
         let domain = default_user_decrypt_domain(chain_id, gateway_addr);
         let digest = compute_user_decrypt_digest(&payload, &domain);
@@ -1217,174 +1143,12 @@ mod tests {
 
         UserDecryptionRequestV2 {
             decryptionId: rand_u256(),
-            snsCtMaterials: vec![sns_ct.clone()],
             handles: vec![HandleEntry {
-                handle: sns_ct.ctHandle,
+                handle,
                 contractAddress: rand_address(),
                 ownerAddress: owner_address,
             }],
             payload,
-        }
-    }
-
-    fn make_solana_request(sns_ct: &SnsCiphertextMaterial) -> UserDecryptionRequestSolana {
-        let payload = UserDecryptionRequestSolanaPayload {
-            requestValidity: RequestValiditySeconds {
-                startTimestamp: U256::from((Utc::now().timestamp() - 60) as u64),
-                durationSeconds: U256::from(3_600),
-            },
-            ..Default::default()
-        };
-        UserDecryptionRequestSolana {
-            decryptionId: U256::from(1),
-            snsCtMaterials: vec![sns_ct.clone()],
-            handles: vec![HandleEntry {
-                handle: sns_ct.ctHandle,
-                contractAddress: Address::ZERO,
-                ownerAddress: Address::ZERO,
-            }],
-            payload,
-        }
-    }
-
-    #[tokio::test]
-    async fn public_decryption_dispatches_to_solana_backend() {
-        let sns_ct = rand_sns_ct();
-        let processor =
-            setup_test_processor_with_backend(Asserter::new(), &sns_ct, TestHostBackend::Solana);
-
-        let result = processor
-            .check_ciphertexts_allowed_for_public_decryption(&[sns_ct], &[0])
-            .await
-            .map_err(RequestCheckError::record);
-
-        match result {
-            Err(ProcessingError::Irrecoverable(error)) => {
-                assert!(
-                    error
-                        .to_string()
-                        .contains("requires a PublicDecryptLeaf MMR proof")
-                );
-            }
-            other => panic!("expected Solana public-decrypt rejection, got {other:?}"),
-        }
-    }
-
-    #[tokio::test]
-    async fn legacy_user_decryption_rejects_solana_backend() {
-        let sns_ct = rand_sns_ct();
-        let processor =
-            setup_test_processor_with_backend(Asserter::new(), &sns_ct, TestHostBackend::Solana);
-        let calldata = userDecryptionRequestCall {
-            ctHandleContractPairs: vec![CtHandleContractPair {
-                ctHandle: sns_ct.ctHandle,
-                contractAddress: rand_address(),
-            }],
-            ..Default::default()
-        }
-        .abi_encode();
-
-        let result = processor
-            .check_ciphertexts_allowed_for_user_decryption(calldata, &[sns_ct], Address::ZERO)
-            .await
-            .map_err(RequestCheckError::record);
-
-        assert_irrecoverable_contains(result, "request requires EVM");
-    }
-
-    #[tokio::test]
-    async fn rfc016_user_decryption_rejects_solana_backend() {
-        let sns_ct = rand_sns_ct();
-        let processor =
-            setup_test_processor_with_backend(Asserter::new(), &sns_ct, TestHostBackend::Solana);
-        let signer = PrivateKeySigner::random();
-        let request = make_v2_request(
-            &sns_ct,
-            signer.address(),
-            signer.address(),
-            &signer,
-            vec![],
-            -60,
-            3_600,
-        );
-
-        let result = processor
-            .check_user_decryption_request_v2(&request)
-            .await
-            .map_err(RequestCheckError::record);
-
-        assert_irrecoverable_contains(result, "request requires EVM");
-    }
-
-    #[tokio::test]
-    async fn solana_user_decryption_rejects_evm_backend() {
-        let sns_ct = rand_sns_ct();
-        let processor = setup_test_processor(Asserter::new(), &sns_ct);
-        let request = make_solana_request(&sns_ct);
-
-        let result = processor
-            .check_user_decryption_request_solana(&request)
-            .await
-            .map_err(RequestCheckError::record);
-
-        assert_irrecoverable_contains(result, "request requires Solana");
-    }
-
-    #[tokio::test]
-    async fn unknown_backend_is_recoverable_for_all_decryption_families() {
-        let sns_ct = rand_sns_ct();
-        let processor =
-            setup_test_processor_with_backend(Asserter::new(), &sns_ct, TestHostBackend::Missing);
-        let calldata = userDecryptionRequestCall {
-            ctHandleContractPairs: vec![CtHandleContractPair {
-                ctHandle: sns_ct.ctHandle,
-                contractAddress: rand_address(),
-            }],
-            ..Default::default()
-        }
-        .abi_encode();
-        let signer = PrivateKeySigner::random();
-        let evm_v2_request = make_v2_request(
-            &sns_ct,
-            signer.address(),
-            signer.address(),
-            &signer,
-            vec![],
-            -60,
-            3_600,
-        );
-        let solana_request = make_solana_request(&sns_ct);
-
-        let public = processor
-            .check_ciphertexts_allowed_for_public_decryption(std::slice::from_ref(&sns_ct), &[0])
-            .await
-            .map_err(RequestCheckError::record);
-        let legacy = processor
-            .check_ciphertexts_allowed_for_user_decryption(
-                calldata,
-                std::slice::from_ref(&sns_ct),
-                Address::ZERO,
-            )
-            .await
-            .map_err(RequestCheckError::record);
-        let evm_v2 = processor
-            .check_user_decryption_request_v2(&evm_v2_request)
-            .await
-            .map_err(RequestCheckError::record);
-        let solana = processor
-            .check_user_decryption_request_solana(&solana_request)
-            .await
-            .map_err(RequestCheckError::record);
-
-        for result in [public, legacy, evm_v2, solana] {
-            match result {
-                Err(ProcessingError::Recoverable(error)) => assert!(
-                    error
-                        .to_string()
-                        .contains("No host-chain ACL backend configured")
-                ),
-                other => panic!("expected recoverable unknown-backend error, got {other:?}"),
-            }
         }
     }
 
@@ -1397,12 +1161,12 @@ mod tests {
         #[case] duration_secs: u64,
         #[case] expected: ExpectedOutcome,
     ) {
-        let sns_ct = rand_sns_ct();
+        let handle = rand_handle();
         let user_signer = PrivateKeySigner::random();
         let user_address = user_signer.address();
-        let processor = setup_test_processor(Asserter::new(), &sns_ct);
+        let processor = setup_test_processor(Asserter::new(), handle);
         let request = make_v2_request(
-            &sns_ct,
+            handle,
             user_address,
             user_address,
             &user_signer,
@@ -1430,12 +1194,12 @@ mod tests {
     // Test userAddress ∈ allowedContracts
     #[tokio::test]
     async fn check_user_decryption_request_v2_user_in_allowed_contracts() {
-        let sns_ct = rand_sns_ct();
+        let handle = rand_handle();
         let user_signer = PrivateKeySigner::random();
         let user_address = user_signer.address();
-        let processor = setup_test_processor(Asserter::new(), &sns_ct);
+        let processor = setup_test_processor(Asserter::new(), handle);
         let request = make_v2_request(
-            &sns_ct,
+            handle,
             user_address,
             user_address,
             &user_signer,
@@ -1472,9 +1236,9 @@ mod tests {
         #[case] expected: ExpectedOutcome,
     ) {
         let asserter = Asserter::new();
-        let sns_ct = rand_sns_ct();
+        let handle = rand_handle();
         let user_signer = PrivateKeySigner::random();
-        let processor = setup_test_processor(asserter.clone(), &sns_ct);
+        let processor = setup_test_processor(asserter.clone(), handle);
 
         const START_OFFSET_SECS: i64 = -3600;
         let start = U256::from((Utc::now().timestamp() + START_OFFSET_SECS) as u64);
@@ -1503,7 +1267,7 @@ mod tests {
         }
 
         let request = make_v2_request(
-            &sns_ct,
+            handle,
             user_signer.address(),
             user_signer.address(),
             &user_signer,
@@ -1557,10 +1321,10 @@ mod tests {
         #[case] expected: ExpectedOutcome,
     ) {
         let asserter = Asserter::new();
-        let sns_ct = rand_sns_ct();
+        let handle = rand_handle();
         let user_signer = PrivateKeySigner::random();
         let user_address = user_signer.address();
-        let processor = setup_test_processor(asserter.clone(), &sns_ct);
+        let processor = setup_test_processor(asserter.clone(), handle);
 
         let (owner_address, acl_response) = match mock {
             OwnershipMock::DirectPath(r) => (user_address, r),
@@ -1573,7 +1337,7 @@ mod tests {
         }
 
         let request = make_v2_request(
-            &sns_ct,
+            handle,
             owner_address,
             user_address,
             &user_signer,
@@ -1614,9 +1378,9 @@ mod tests {
         #[case] expected: ExpectedOutcome,
     ) {
         let asserter = Asserter::new();
-        let sns_ct = rand_sns_ct();
+        let handle = rand_handle();
         let user_signer = PrivateKeySigner::random();
-        let processor = setup_test_processor(asserter.clone(), &sns_ct);
+        let processor = setup_test_processor(asserter.clone(), handle);
 
         asserter.push_success(&U256::ZERO.abi_encode()); // invalidation check: not invalidated
         asserter.push_success(&true.abi_encode()); // ownership always passes
@@ -1626,7 +1390,7 @@ mod tests {
         }
 
         let request = make_v2_request(
-            &sns_ct,
+            handle,
             user_signer.address(),
             user_signer.address(),
             &user_signer,
@@ -1660,16 +1424,16 @@ mod tests {
     #[tokio::test]
     async fn check_user_decryption_request_v2_signature_mismatch() {
         let asserter = Asserter::new();
-        let sns_ct = rand_sns_ct();
+        let handle = rand_handle();
         let user_signer = PrivateKeySigner::random();
-        let processor = setup_test_processor(asserter.clone(), &sns_ct);
+        let processor = setup_test_processor(asserter.clone(), handle);
 
         // STATICCALL to a no-code address returns empty returndata at the EVM level →
         // `EoaMismatchNoCode` rejection.
         asserter.push_success(&Bytes::default());
 
         let mut request = make_v2_request(
-            &sns_ct,
+            handle,
             user_signer.address(),
             user_signer.address(),
             &user_signer,
@@ -1695,8 +1459,8 @@ mod tests {
     #[tokio::test]
     async fn check_user_decryption_request_v2_smart_account_accepts() {
         let asserter = Asserter::new();
-        let sns_ct = rand_sns_ct();
-        let processor = setup_test_processor(asserter.clone(), &sns_ct);
+        let handle = rand_handle();
+        let processor = setup_test_processor(asserter.clone(), handle);
 
         // Random "smart account" address; no off-chain key controls it, so ecrecover will
         // never match — verification only succeeds via the ERC-1271 fallback.
@@ -1705,7 +1469,7 @@ mod tests {
         // address is *not* `smart_account`, forcing the ERC-1271 path.
         let owner = PrivateKeySigner::random();
         let request = make_v2_request(
-            &sns_ct,
+            handle,
             smart_account, // owner == userAddress: direct path
             smart_account,
             &owner,
@@ -1728,5 +1492,269 @@ mod tests {
             .check_user_decryption_request_v2(&request)
             .await
             .unwrap();
+    }
+
+    /// Where the legacy request transaction was sent, relative to the Decryption contract.
+    enum TxTarget {
+        /// Sent directly to the Decryption contract (the only accepted case).
+        Decryption,
+        /// Sent to some intermediary contract.
+        Intermediary,
+        /// Contract-creation transaction (`to` is `None`). Should be unreachable in theory.
+        Creation,
+    }
+
+    /// Only calldata coming from a transaction sent directly to the Decryption contract can be
+    /// associated with the user decryption event, so any other target is rejected.
+    #[rstest]
+    #[case::accepts_direct_decryption_tx(TxTarget::Decryption, true)]
+    #[case::rejects_tx_not_sent_to_decryption_contract(TxTarget::Intermediary, false)]
+    #[case::rejects_contract_creation_tx(TxTarget::Creation, false)]
+    #[tokio::test]
+    async fn fetch_calldata_only_accepts_direct_decryption_tx(
+        #[case] target: TxTarget,
+        #[case] should_succeed: bool,
+    ) {
+        let asserter = Asserter::new();
+        let decryption_address = rand_address();
+        let mut config = Config::default();
+        config.decryption_contract.address = decryption_address;
+        let processor = setup_test_processor_with_config(asserter.clone(), rand_handle(), config);
+
+        let tx_hash = rand_digest();
+        let calldata = legacy_request_calldata(rand_handle());
+
+        let to = match target {
+            TxTarget::Decryption => Some(decryption_address),
+            TxTarget::Intermediary => Some(rand_address()),
+            TxTarget::Creation => None,
+        };
+        asserter.push_success(&mock_legacy_request_tx(tx_hash, to, &calldata));
+
+        let result = processor.fetch_calldata(tx_hash).await;
+        if should_succeed {
+            assert_eq!(result.unwrap(), calldata);
+        } else {
+            match result {
+                Err(ProcessingError::Irrecoverable(_)) => (),
+                other => panic!("Expected Irrecoverable error, got: {other:?}"),
+            }
+        }
+    }
+
+    /// Builds the mocked `eth_getTransactionByHash` response for a legacy user decryption
+    /// request carrying `calldata`, sent to `to` (`None` models a contract-creation tx).
+    fn mock_legacy_request_tx(
+        tx_hash: FixedBytes<32>,
+        to: Option<Address>,
+        calldata: &[u8],
+    ) -> RpcTransaction {
+        serde_json::from_value(serde_json::json!({
+            "hash": tx_hash,
+            "nonce": "0x0",
+            "blockHash": null,
+            "blockNumber": null,
+            "transactionIndex": null,
+            "from": Address::ZERO,
+            "to": to,
+            "value": "0x0",
+            "gasPrice": "0x0",
+            "gas": "0x0",
+            "input": format!("0x{}", hex::encode(calldata)),
+            "v": "0x1b",
+            "r": "0x0000000000000000000000000000000000000000000000000000000000000001",
+            "s": "0x0000000000000000000000000000000000000000000000000000000000000001",
+            "type": "0x0"
+        }))
+        .unwrap()
+    }
+
+    fn legacy_request_calldata(handle: FixedBytes<32>) -> Vec<u8> {
+        userDecryptionRequestCall {
+            ctHandleContractPairs: vec![CtHandleContractPair {
+                ctHandle: handle,
+                contractAddress: rand_address(),
+            }],
+            ..Default::default()
+        }
+        .abi_encode()
+    }
+
+    fn assert_irrecoverable_contains(result: Result<(), ProcessingError>, expected: &str) {
+        match result {
+            Err(ProcessingError::Irrecoverable(error)) => {
+                assert!(
+                    error.to_string().contains(expected),
+                    "unexpected error: {error}"
+                );
+            }
+            other => panic!("expected irrecoverable error containing '{expected}', got {other:?}"),
+        }
+    }
+
+    fn make_solana_request(handle: B256) -> UserDecryptionRequestSolana {
+        let payload = UserDecryptionRequestSolanaPayload {
+            requestValidity: RequestValiditySeconds {
+                startTimestamp: U256::from((Utc::now().timestamp() - 60) as u64),
+                durationSeconds: U256::from(3_600),
+            },
+            ..Default::default()
+        };
+        UserDecryptionRequestSolana {
+            decryptionId: U256::from(1),
+            handles: vec![HandleEntry {
+                handle,
+                contractAddress: Address::ZERO,
+                ownerAddress: Address::ZERO,
+            }],
+            payload,
+        }
+    }
+
+    #[test]
+    fn evm_user_decryption_keeps_the_checksummed_address() {
+        let address = Address::repeat_byte(0x11);
+        let data = UserDecryptionExtraData::new(address, Bytes::from_static(&[0x22]));
+
+        assert_eq!(data.client_address, address.to_checksum(None));
+        assert_eq!(data.solana_pubkey, None);
+    }
+
+    #[test]
+    fn solana_user_decryption_uses_only_the_typed_pubkey() {
+        let identity = [0x33; 32];
+        let data = UserDecryptionExtraData::new_solana(identity, Bytes::from_static(&[0x44]));
+
+        assert!(data.client_address.is_empty());
+        assert_eq!(data.solana_pubkey, Some(identity.to_vec()));
+    }
+
+    #[tokio::test]
+    async fn public_decryption_dispatches_to_solana_backend() {
+        let handle = rand_handle();
+        let processor =
+            setup_test_processor_with_backend(Asserter::new(), handle, TestHostBackend::Solana);
+
+        let result = processor
+            .check_ciphertexts_allowed_for_public_decryption(&[handle], &[0])
+            .await
+            .map_err(RequestCheckError::record);
+
+        match result {
+            Err(ProcessingError::Irrecoverable(error)) => {
+                assert!(
+                    error
+                        .to_string()
+                        .contains("requires a PublicDecryptLeaf MMR proof")
+                );
+            }
+            other => panic!("expected Solana public-decrypt rejection, got {other:?}"),
+        }
+    }
+
+    #[tokio::test]
+    async fn legacy_user_decryption_rejects_solana_backend() {
+        let handle = rand_handle();
+        let processor =
+            setup_test_processor_with_backend(Asserter::new(), handle, TestHostBackend::Solana);
+
+        let result = processor
+            .check_ciphertexts_allowed_for_user_decryption(
+                legacy_request_calldata(handle),
+                &[handle],
+                Address::ZERO,
+            )
+            .await
+            .map_err(RequestCheckError::record);
+
+        assert_irrecoverable_contains(result, "request requires EVM");
+    }
+
+    #[tokio::test]
+    async fn rfc016_user_decryption_rejects_solana_backend() {
+        let handle = rand_handle();
+        let processor =
+            setup_test_processor_with_backend(Asserter::new(), handle, TestHostBackend::Solana);
+        let signer = PrivateKeySigner::random();
+        let request = make_v2_request(
+            handle,
+            signer.address(),
+            signer.address(),
+            &signer,
+            vec![],
+            -60,
+            3_600,
+        );
+
+        let result = processor
+            .check_user_decryption_request_v2(&request)
+            .await
+            .map_err(RequestCheckError::record);
+
+        assert_irrecoverable_contains(result, "request requires EVM");
+    }
+
+    #[tokio::test]
+    async fn solana_user_decryption_rejects_evm_backend() {
+        let handle = rand_handle();
+        let processor = setup_test_processor(Asserter::new(), handle);
+        let request = make_solana_request(handle);
+
+        let result = processor
+            .check_user_decryption_request_solana(&request)
+            .await
+            .map_err(RequestCheckError::record);
+
+        assert_irrecoverable_contains(result, "request requires Solana");
+    }
+
+    #[tokio::test]
+    async fn unknown_backend_is_recoverable_for_all_decryption_families() {
+        let handle = rand_handle();
+        let processor =
+            setup_test_processor_with_backend(Asserter::new(), handle, TestHostBackend::Missing);
+        let signer = PrivateKeySigner::random();
+        let evm_v2_request = make_v2_request(
+            handle,
+            signer.address(),
+            signer.address(),
+            &signer,
+            vec![],
+            -60,
+            3_600,
+        );
+        let solana_request = make_solana_request(handle);
+
+        let public = processor
+            .check_ciphertexts_allowed_for_public_decryption(&[handle], &[0])
+            .await
+            .map_err(RequestCheckError::record);
+        let legacy = processor
+            .check_ciphertexts_allowed_for_user_decryption(
+                legacy_request_calldata(handle),
+                &[handle],
+                Address::ZERO,
+            )
+            .await
+            .map_err(RequestCheckError::record);
+        let evm_v2 = processor
+            .check_user_decryption_request_v2(&evm_v2_request)
+            .await
+            .map_err(RequestCheckError::record);
+        let solana = processor
+            .check_user_decryption_request_solana(&solana_request)
+            .await
+            .map_err(RequestCheckError::record);
+
+        for result in [public, legacy, evm_v2, solana] {
+            match result {
+                Err(ProcessingError::Recoverable(error)) => assert!(
+                    error
+                        .to_string()
+                        .contains("No host-chain ACL backend configured")
+                ),
+                other => panic!("expected recoverable unknown-backend error, got {other:?}"),
+            }
+        }
     }
 }

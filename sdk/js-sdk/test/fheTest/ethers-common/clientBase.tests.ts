@@ -9,6 +9,7 @@ import {
   type FheTestEthersConfig,
 } from '../setup-ethers.js';
 import { clearKeyCache, readKeyFromCache, writeKeyToCache } from '../keyCache.js';
+import { createLogger } from '../setupCommon.js';
 
 ////////////////////////////////////////////////////////////////////////////////
 //
@@ -34,6 +35,7 @@ export function defineClientBaseTests(parameters: {
           type: 'ApiKeyHeader',
           value: config.zamaApiKey,
         },
+        logger: createLogger(console.log),
       });
     });
 

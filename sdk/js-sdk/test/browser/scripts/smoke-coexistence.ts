@@ -47,11 +47,11 @@ function defineChainDefinition(tfheVersion: TfheVersion, keyTfheVersion: string,
 
 const CHAIN_DEFINITIONS: readonly ChainDefinition[] = [
   defineChainDefinition('1.5.3', '1.4.0-alpha.3', true),
-  defineChainDefinition('1.6.1', '1.4.0-alpha.3', true),
+  defineChainDefinition('1.6.2', '1.4.0-alpha.3', true),
   defineChainDefinition('1.5.3', '1.5.4', true),
-  defineChainDefinition('1.6.1', '1.5.4', true),
+  defineChainDefinition('1.6.2', '1.5.4', true),
   defineChainDefinition('1.5.3', '1.6.1', false),
-  defineChainDefinition('1.6.1', '1.6.1', true),
+  defineChainDefinition('1.6.2', '1.6.1', true),
 ];
 
 void runSmokePage(async () => {

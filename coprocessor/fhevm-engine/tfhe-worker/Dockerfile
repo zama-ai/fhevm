@@ -2,6 +2,8 @@
 ARG RUST_IMAGE_VERSION=1.91.0
 
 # Stage 1: Build TFHE Worker
+# RUST_IMAGE_VERSION is injected by CI from rust-toolchain.toml (see coprocessor-docker-build.yml)
+ARG RUST_IMAGE_VERSION
 FROM ghcr.io/zama-ai/fhevm/gci/rust-glibc:${RUST_IMAGE_VERSION} AS builder
 
 ARG CARGO_PROFILE=release
@@ -16,6 +18,20 @@ ENV SCCACHE_S3_KEY_PREFIX=${SCCACHE_S3_PREFIX}
 ENV AWS_REGION=${SCCACHE_REGION}
 
 USER root
+
+# TODO(sccache): temporary inline install for testing; remove once sccache
+# ships in the rust-glibc golden image and rely on that instead.
+RUN set -eux; \
+    arch="$(uname -m)"; \
+    case "$arch" in \
+        x86_64)  triple=x86_64-unknown-linux-musl ;; \
+        aarch64) triple=aarch64-unknown-linux-musl ;; \
+        *) echo "unsupported arch: $arch" >&2; exit 1 ;; \
+    esac; \
+    curl -fsSL "https://github.com/mozilla/sccache/releases/download/${SCCACHE_VERSION}/sccache-${SCCACHE_VERSION}-${triple}.tar.gz" \
+        | tar -xz --strip-components=1 -C /usr/local/bin "sccache-${SCCACHE_VERSION}-${triple}/sccache"; \
+    chmod +x /usr/local/bin/sccache; \
+    sccache --version
 
 WORKDIR /app
 
@@ -41,22 +57,6 @@ COPY coprocessor/fhevm-engine ./coprocessor/fhevm-engine
 COPY coprocessor/proto ./coprocessor/proto
 COPY gateway-contracts/rust_bindings ./gateway-contracts/rust_bindings
 COPY shared/ciphertext-attestation ./shared/ciphertext-attestation
-# Solana path-dependencies. `cargo build -p <crate>` still loads EVERY
-# fhevm-engine workspace member manifest, so the solana path-deps of ALL
-# members must be present, not just this image's own:
-#   host-listener/Cargo.toml -> solana/programs/zama-host,
-#     solana/crates/zama-solana-acl, solana/crates/zama-solana-transaction
-#   tfhe-worker/Cargo.toml (dev-deps) -> solana/programs/confidential-token,
-#     solana/programs/zama-host
-# zama-host and confidential-token inherit package fields from solana/Cargo.toml,
-# and loading that workspace root requires every member it lists, hence the full
-# crates/ + programs/ + runtime-tests/ member set. Non-Rust solana trees (docs,
-# scripts, geyser, test-fixtures) are deliberately NOT copied so their churn
-# never invalidates these layers.
-COPY solana/Cargo.toml ./solana/Cargo.toml
-COPY solana/crates ./solana/crates
-COPY solana/programs ./solana/programs
-COPY solana/runtime-tests ./solana/runtime-tests
 
 WORKDIR /app/coprocessor/fhevm-engine
 

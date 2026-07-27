@@ -7,7 +7,7 @@ use crate::{
 };
 
 use super::common::{try_extract_non_retryable_config_error, try_into_array};
-use super::TransactionOperation;
+use super::{begin_live_write, TransactionOperation};
 use alloy::{
     network::{Ethereum, TransactionBuilder},
     primitives::{Address, FixedBytes, U256},
@@ -18,7 +18,7 @@ use alloy::{
 use anyhow::bail;
 use async_trait::async_trait;
 use fhevm_engine_common::{telemetry, utils::to_hex};
-use sqlx::{Pool, Postgres};
+use sqlx::{Pool, Postgres, Transaction};
 use tokio::task::JoinSet;
 use tracing::{error, info, warn};
 
@@ -186,6 +186,11 @@ where
         txn_block_number: Option<i64>,
         src_transaction_id: Option<Vec<u8>>,
     ) -> anyhow::Result<()> {
+        let Some(mut tx) = begin_live_write(&self.db_pool).await? else {
+            info!("Cutover completed — skipping post-send digest/ct128 writes on retired stack");
+            return Ok(());
+        };
+
         sqlx::query!(
             "UPDATE ciphertext_digest
             SET
@@ -197,7 +202,7 @@ where
             txn_block_number,
             handle
         )
-        .execute(&self.db_pool)
+        .execute(tx.as_mut())
         .await?;
 
         // Delete the local 128-bit ciphertext after successful transaction
@@ -205,7 +210,9 @@ where
         //
         // The deletion happens here but not in the SNS worker after upload because
         // here it is less probable that the deletion fails due to a race condition
-        delete_ct128_from_db(&self.db_pool, handle.to_vec()).await?;
+        delete_ct128_from_db(&mut tx, handle.to_vec()).await?;
+
+        tx.commit().await?;
 
         if let Some(txn_hash) = src_transaction_id {
             telemetry::try_end_l1_transaction(&self.db_pool, &txn_hash).await?;
@@ -247,6 +254,9 @@ where
         err: &str,
         current_retry_count: i32,
     ) -> anyhow::Result<()> {
+        let Some(mut tx) = begin_live_write(&self.db_pool).await? else {
+            return Ok(());
+        };
         let compact_hex_handle = to_hex(handle);
         if current_retry_count == self.conf.add_ciphertexts_max_retries - 1 {
             error!(
@@ -272,8 +282,9 @@ where
             err,
             handle,
         )
-        .execute(&self.db_pool)
+        .execute(tx.as_mut())
         .await?;
+        tx.commit().await?;
         Ok(())
     }
 
@@ -283,6 +294,9 @@ where
         err: &str,
         current_unlimited_retries_count: i32,
     ) -> anyhow::Result<()> {
+        let Some(mut tx) = begin_live_write(&self.db_pool).await? else {
+            return Ok(());
+        };
         let compact_hex_handle = to_hex(handle);
         if current_unlimited_retries_count >= (self.conf.review_after_unlimited_retries as i32) - 1
         {
@@ -309,8 +323,9 @@ where
             err,
             handle,
         )
-        .execute(&self.db_pool)
+        .execute(tx.as_mut())
         .await?;
+        tx.commit().await?;
         Ok(())
     }
 
@@ -319,6 +334,9 @@ where
         handle: &[u8],
         error: &str,
     ) -> anyhow::Result<()> {
+        let Some(mut tx) = begin_live_write(&self.db_pool).await? else {
+            return Ok(());
+        };
         sqlx::query!(
             "UPDATE ciphertext_digest
             SET
@@ -330,8 +348,9 @@ where
             error,
             handle,
         )
-        .execute(&self.db_pool)
+        .execute(tx.as_mut())
         .await?;
+        tx.commit().await?;
         Ok(())
     }
 }
@@ -461,11 +480,11 @@ where
 
 /// Deletes the local record of a 128-bit ciphertext
 async fn delete_ct128_from_db(
-    pool: &sqlx::Pool<Postgres>,
+    tx: &mut Transaction<'_, Postgres>,
     handle: Vec<u8>,
 ) -> Result<(), sqlx::Error> {
     let rows_affected = sqlx::query!("DELETE FROM ciphertexts128 WHERE  handle = $1", handle)
-        .execute(pool)
+        .execute(tx.as_mut())
         .await?
         .rows_affected();
 

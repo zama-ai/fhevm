@@ -54,10 +54,7 @@ WORKDIR /app
 
 # TODO(sccache): temporary inline install for testing; remove once sccache
 # ships in the rust-glibc golden image and rely on that instead.
-# Skipped entirely (no network fetch) when SCCACHE_BUCKET is unset, the same
-# signal the build hook below uses, so the disabled path stays a plain build.
 RUN set -eux; \
-    if [ -z "${SCCACHE_BUCKET}" ]; then echo "SCCACHE_BUCKET unset; skipping sccache install"; exit 0; fi; \
     arch="$(uname -m)"; \
     case "$arch" in \
         x86_64)  triple=x86_64-unknown-linux-musl ;; \
@@ -93,15 +90,7 @@ RUN --mount=type=cache,target=/usr/local/cargo/registry,sharing=locked \
       export AWS_ACCESS_KEY_ID="$(cat /run/secrets/sccache_aws_access_key_id)"; \
       export AWS_SECRET_ACCESS_KEY="$(cat /run/secrets/sccache_aws_secret_access_key)"; \
     fi && \
-    if [ -f /app/.git ]; then rm -f /app/.git; fi && \
-    git config --global --add safe.directory '*' && \
-    git config --global user.email build@local && \
-    git config --global user.name build && \
-    if [ ! -e /app/.git ]; then \
-      git init -q /app && \
-      git -C /app commit --allow-empty -q -m build && \
-      git -C /app tag -a v0.0.0-build -m build; \
-    fi && \
+    git config --global --add safe.directory /app && \
     cargo fetch && \
     cargo build --profile=${CARGO_PROFILE} --workspace && \
     if [ -n "${SCCACHE_BUCKET}" ] && command -v sccache >/dev/null 2>&1; then sccache --show-stats; fi && \

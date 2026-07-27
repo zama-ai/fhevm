@@ -76,7 +76,7 @@ type TypedPlaintextWasmType = TypedPlaintext & {
   readonly [__TypedPlaintextWasm]: never;
 };
 
-type KmsEIP712DomainWasmType = Readonly<
+type KmsEip712DomainWasmType = Readonly<
   Omit<KmsEip712Domain, 'chainId' | 'verifyingContract'> & {
     readonly chain_id: Uint8Array;
     readonly verifying_contract: ChecksummedAddress;
@@ -297,16 +297,16 @@ export async function decryptAndReconstruct(
     kmsLib,
   );
 
-  // KmsEIP712Domain
-  const kmsEIP712Domain: KmsEip712Domain = metadata.eip712Domain;
+  // KmsEip712Domain
+  const kmsEip712Domain: KmsEip712Domain = metadata.eip712Domain;
   const clientAddress: ChecksummedAddress = metadata.eip712SignerAddress;
 
   // To be modified! use uint64ToBytes32 instead
-  const eip712DomainWasmArg: KmsEIP712DomainWasmType = {
-    name: kmsEIP712Domain.name,
-    version: kmsEIP712Domain.version,
-    chain_id: uint32ToBytes32(kmsEIP712Domain.chainId), // gateway chainId
-    verifying_contract: kmsEIP712Domain.verifyingContract,
+  const eip712DomainWasmArg: KmsEip712DomainWasmType = {
+    name: kmsEip712Domain.name,
+    version: kmsEip712Domain.version,
+    chain_id: uint32ToBytes32(kmsEip712Domain.chainId), // gateway chainId
+    verifying_contract: kmsEip712Domain.verifyingContract,
     salt: null,
   };
 

@@ -13,9 +13,9 @@ type DecryptOptions = NonNullable<Parameters<typeof createFhevmDecryptClient>[0]
 type CleartextEncryptOptions = NonNullable<Parameters<typeof createFhevmCleartextEncryptClient>[0]['options']>;
 type CleartextDecryptOptions = NonNullable<Parameters<typeof createFhevmCleartextDecryptClient>[0]['options']>;
 
-export const baseAcceptsBoth: BaseOptions = { moduleVersions: { tfhe: '1.6.1', kms: '0.13.20-0' } };
-export const clientAcceptsBoth: Options = { moduleVersions: { tfhe: '1.6.1', kms: '0.13.20-0' } };
-export const encryptAcceptsTfhe: EncryptOptions = { moduleVersions: { tfhe: '1.6.1' } };
+export const baseAcceptsBoth: BaseOptions = { moduleVersions: { tfhe: '1.6.2', kms: '0.13.20-0' } };
+export const clientAcceptsBoth: Options = { moduleVersions: { tfhe: '1.6.2', kms: '0.13.20-0' } };
+export const encryptAcceptsTfhe: EncryptOptions = { moduleVersions: { tfhe: '1.6.2' } };
 export const decryptAcceptsKms: DecryptOptions = { moduleVersions: { kms: '0.13.20-0' } };
 
 export const encryptRejectsKms: EncryptOptions = {
@@ -32,7 +32,7 @@ export const decryptRejectsTfhe: DecryptOptions = {
   },
 };
 
-export const cleartextEncryptAcceptsTfhe: CleartextEncryptOptions = { moduleVersions: { tfhe: '1.6.1' } };
+export const cleartextEncryptAcceptsTfhe: CleartextEncryptOptions = { moduleVersions: { tfhe: '1.6.2' } };
 export const cleartextDecryptAcceptsKms: CleartextDecryptOptions = { moduleVersions: { kms: '0.13.20-0' } };
 
 export const cleartextEncryptRejectsKms: CleartextEncryptOptions = {

@@ -1,7 +1,8 @@
 import { verifySha256 } from './bytes.js';
 import { FetchError } from './errors/FetchError.js';
 import { isDataUrlFetchSupported } from './fetch.js';
-import { isBrowserLike } from './isomorphicWorker.js';
+import { getNodeBuffer, getNodeFs, getNodeUrl, isBrowserLike, supportsDecompressionStream } from './environment.js';
+import { inflateDecompress } from './inflate.js';
 
 /**
  * Decodes a base64 string to bytes using the fastest available method.
@@ -12,8 +13,12 @@ import { isBrowserLike } from './isomorphicWorker.js';
  */
 async function _isomorphicDecodeBase64(base64: string): Promise<BufferSource> {
   if (!isBrowserLike()) {
-    const { Buffer } = await import('node:buffer');
-    return Buffer.from(base64, 'base64');
+    const NodeBuffer = await getNodeBuffer();
+    if (NodeBuffer) {
+      return NodeBuffer.from(base64, 'base64');
+    }
+    // Not a browser, but no node:buffer either (edge runtime). Fall through to
+    // the web-standard data-URL fetch / atob paths below, which edge supports.
   }
 
   if (await isDataUrlFetchSupported()) {
@@ -47,41 +52,19 @@ async function _isomorphicFetchWasmResponse(wasmUrl: URL): Promise<Response> {
 
 async function _isomorphicReadWasmBytes(wasmUrl: URL): Promise<BufferSource> {
   if (!isBrowserLike() && wasmUrl.protocol === 'file:') {
-    const { readFile } = await import('node:fs/promises');
-    const { fileURLToPath } = await import('node:url');
-
-    // Node's Buffer extends Uint8Array but TS 5.7+ considers its .buffer as
-    // ArrayBufferLike (includes SharedArrayBuffer), making it incompatible with
-    // BufferSource. At runtime Buffer is always backed by ArrayBuffer, so the
-    // cast at WebAssembly.compile is safe and avoids copying.
-    return readFile(fileURLToPath(wasmUrl));
+    const [fs, url] = await Promise.all([getNodeFs(), getNodeUrl()]);
+    if (fs && url) {
+      // The BufferSource-safe cast for Node's Buffer lives in getNodeFs's
+      // return type (see environment.ts), so the bytes can flow straight into
+      // WebAssembly.compile without copying.
+      return fs.readFile(url.fileURLToPath(wasmUrl));
+    }
+    // Not a browser, but no node:fs either (edge runtime). Fall through to
+    // fetch below — a file: URL will fail there, surfacing a clear error.
   }
 
   const res = await _isomorphicFetchWasmResponse(wasmUrl);
   return res.arrayBuffer();
-}
-
-/**
- * Compiles a WASM module from a URL, isomorphically (browser and Node.js).
- *
- * - Node + `file://`: uses `readFile` (Node `fetch` doesn't support `file://`)
- * - Browser + streaming: uses `WebAssembly.compileStreaming` (fastest path)
- * - Fallback: `fetch` + `arrayBuffer` + `WebAssembly.compile`
- */
-export async function isomorphicCompileWasm(wasmUrl: URL): Promise<WebAssembly.Module> {
-  const isBrowser = isBrowserLike();
-
-  if (isBrowser) {
-    const res = await _isomorphicFetchWasmResponse(wasmUrl);
-    if (typeof WebAssembly.compileStreaming === 'function') {
-      return await WebAssembly.compileStreaming(res);
-    }
-    return WebAssembly.compile(await res.arrayBuffer());
-  }
-
-  const bytes = await _isomorphicReadWasmBytes(wasmUrl);
-  // Safe cast: Node's Buffer is always backed by ArrayBuffer at runtime.
-  return WebAssembly.compile(bytes);
 }
 
 /**
@@ -120,9 +103,19 @@ export async function isomorphicCompileWasmFromBase64(
 
   if (compressionFormat === undefined) {
     return WebAssembly.compile(bytes);
-  } else {
+  }
+
+  // Preferred: stream through the platform DecompressionStream (native, zero-copy).
+  if (supportsDecompressionStream()) {
     const stream = new Blob([bytes]).stream().pipeThrough(new DecompressionStream(compressionFormat));
     // compileStreaming requires Content-Type: application/wasm — supply it explicitly.
     return WebAssembly.compileStreaming(new Response(stream, { headers: { 'Content-Type': 'application/wasm' } }));
   }
+
+  // Fallback for runtimes without a usable DecompressionStream — older browsers
+  // (Firefox <113, Safari <16.4) and the Next.js Edge Runtime (whose stub throws on
+  // construction). Inflate in pure JS, then compile. Keeps the small compressed
+  // embedded payload working everywhere with no caller action.
+  const compressed = bytes instanceof Uint8Array ? bytes : new Uint8Array(bytes as ArrayBuffer);
+  return WebAssembly.compile(inflateDecompress(compressed, compressionFormat));
 }

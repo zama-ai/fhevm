@@ -25,6 +25,8 @@ jobs:
       # Each output indicates if a specific crate was modified
       changes-ciphertext-attestation: ${{ steps.filter.outputs.ciphertext-attestation }}
       changes-user-decryption-signature: ${{ steps.filter.outputs.user-decryption-signature }}
+      changes-gateway-contracts-bindings: ${{ steps.filter.outputs.gateway-contracts-bindings }}
+      changes-host-contracts-bindings: ${{ steps.filter.outputs.host-contracts-bindings }}
     steps:
     - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
       with:
@@ -38,6 +40,10 @@ jobs:
             - shared/ciphertext-attestation/**
           user-decryption-signature:
             - shared/user-decryption-signature/**
+          gateway-contracts-bindings:
+            - gateway-contracts/rust_bindings/**
+          host-contracts-bindings:
+            - host-contracts/rust_bindings/**
 
   test-user-decryption-signature:
     name: test-user-decryption-signature
@@ -57,10 +63,11 @@ jobs:
           persist-credentials: 'false'
 
       - name: Setup Rust
-        uses: dtolnay/rust-toolchain@e97e2d8cc328f1b50210efc529dca0028893a2d9 # v1
-        with:
-          toolchain: stable
-          components: rustfmt, clippy
+        uses: ./.github/actions/setup_rust
+
+      - name: Check that Cargo.lock is the source of truth
+        run: |
+          cargo update -w --locked || (echo "Error: Cargo.lock is out of sync. Please run 'cargo update' locally and commit changes" && exit 1)
 
       - name: Formatting
         run: cargo fmt -- --check
@@ -82,3 +89,39 @@ jobs:
       run:
         working-directory: shared/ciphertext-attestation
     steps: *shared-crate-test-steps
+
+  test-gateway-contracts-bindings:
+    name: test-gateway-contracts-bindings
+    needs: check-changes
+    if: ${{ needs.check-changes.outputs.changes-gateway-contracts-bindings == 'true' }}
+    permissions: *shared-crate-test-permissions
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: gateway-contracts/rust_bindings
+    steps: &bindings-test-steps
+      - name: Checkout Project
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          token: ${{ secrets.BLOCKCHAIN_ACTIONS_TOKEN }}
+          persist-credentials: 'false'
+
+      - name: Setup Rust
+        uses: ./.github/actions/setup_rust
+
+      - name: Check that Cargo.lock is the source of truth
+        run: |
+          cargo update -w --locked || (echo "Error: Cargo.lock is out of sync. Please run 'cargo update' locally and commit changes" && exit 1)
+
+        # No formatting/linting/tests for auto-generated bindings, only lockfile verification
+
+  test-host-contracts-bindings:
+    name: test-host-contracts-bindings
+    needs: check-changes
+    if: ${{ needs.check-changes.outputs.changes-host-contracts-bindings == 'true' }}
+    permissions: *shared-crate-test-permissions
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: gateway-contracts/rust_bindings
+    steps: *bindings-test-steps

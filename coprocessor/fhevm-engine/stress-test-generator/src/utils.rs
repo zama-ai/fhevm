@@ -261,6 +261,7 @@ pub async fn generate_trivial_encrypt(
         transaction_hash: Some(transaction_hash),
         is_allowed,
         block_number: 1,
+        block_hash: Handle::ZERO,
         block_timestamp: PrimitiveDateTime::MAX,
         dependence_chain: transaction_hash,
         tx_depth_size: 0,
@@ -312,8 +313,10 @@ pub async fn get_ciphertext_digests(
         .await;
 
         if let Ok(digests) = digests {
-            if digests.ciphertext.is_some() && digests.ciphertext128.is_some() {
-                return Ok((digests.ciphertext.unwrap(), digests.ciphertext128.unwrap()));
+            if let (Some(ciphertext), Some(ciphertext128)) =
+                (digests.ciphertext, digests.ciphertext128)
+            {
+                return Ok((ciphertext, ciphertext128));
             }
         }
         tokio::time::sleep(std::time::Duration::from_millis(200)).await;
@@ -425,6 +428,7 @@ pub async fn insert_tfhe_event(
         transaction_hash: Some(transaction_hash),
         is_allowed,
         block_number: 1,
+        block_hash: Handle::ZERO,
         block_timestamp: PrimitiveDateTime::MAX,
         dependence_chain: transaction_hash,
         tx_depth_size: 0,

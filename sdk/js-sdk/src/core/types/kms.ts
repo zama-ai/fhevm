@@ -31,7 +31,7 @@ export type KmsEip712Domain = Readonly<{
   verifyingContract: ChecksummedAddress;
 }>;
 
-export type KmsUserDecryptEip712Types = {
+export type KmsUserDecryptEip712V1Types = {
   readonly EIP712Domain: readonly [
     { readonly name: 'name'; readonly type: 'string' },
     { readonly name: 'version'; readonly type: 'string' },
@@ -48,7 +48,7 @@ export type KmsUserDecryptEip712Types = {
   ];
 };
 
-export type KmsDelegateUserDecryptEip712Types = {
+export type KmsDelegatedUserDecryptEip712V1Types = {
   readonly EIP712Domain: readonly [
     { readonly name: 'name'; readonly type: 'string' },
     { readonly name: 'version'; readonly type: 'string' },
@@ -98,7 +98,7 @@ export type KmsPublicDecryptEip712Types = {
   ];
 };
 
-export type KmsUserDecryptEip712Message = Readonly<{
+export type KmsUserDecryptEip712V1Message = Readonly<{
   publicKey: BytesHex;
   contractAddresses: readonly ChecksummedAddress[];
   startTimestamp: string;
@@ -106,8 +106,9 @@ export type KmsUserDecryptEip712Message = Readonly<{
   extraData: BytesHex;
 }>;
 
-export type KmsDelegatedUserDecryptEip712Message = Prettify<
-  KmsUserDecryptEip712Message & {
+// Protocol <= v0.13
+export type KmsDelegatedUserDecryptEip712V1Message = Prettify<
+  KmsUserDecryptEip712V1Message & {
     readonly delegatorAddress: ChecksummedAddress;
   }
 >;
@@ -127,33 +128,44 @@ export type KmsUserDecryptEip712V2Message = Readonly<{
   extraData: BytesHex;
 }>;
 
-export type KmsUserDecryptEip712 = Prettify<{
+export type KmsUserDecryptEip712Base = {
   readonly domain: KmsEip712Domain;
-  readonly types: KmsUserDecryptEip712Types;
-  readonly primaryType: 'UserDecryptRequestVerification';
-  readonly message: KmsUserDecryptEip712Message;
-}>;
+};
 
-export type KmsDelegatedUserDecryptEip712 = Prettify<{
-  readonly domain: KmsEip712Domain;
-  readonly types: KmsDelegateUserDecryptEip712Types;
-  readonly primaryType: 'DelegatedUserDecryptRequestVerification';
-  readonly message: KmsDelegatedUserDecryptEip712Message;
-}>;
+// Protocol <= v0.13
+export type KmsUserDecryptEip712V1 = Prettify<
+  KmsUserDecryptEip712Base & {
+    readonly types: KmsUserDecryptEip712V1Types;
+    readonly primaryType: 'UserDecryptRequestVerification';
+    readonly message: KmsUserDecryptEip712V1Message;
+  }
+>;
 
-export type KmsPublicDecryptEip712 = Prettify<{
-  readonly domain: KmsEip712Domain;
-  readonly types: KmsPublicDecryptEip712Types;
-  readonly primaryType: 'PublicDecryptVerification';
-  readonly message: KmsPublicDecryptEip712Message;
-}>;
+// Protocol <= v0.13
+export type KmsDelegatedUserDecryptEip712V1 = Prettify<
+  KmsUserDecryptEip712Base & {
+    readonly types: KmsDelegatedUserDecryptEip712V1Types;
+    readonly primaryType: 'DelegatedUserDecryptRequestVerification';
+    readonly message: KmsDelegatedUserDecryptEip712V1Message;
+  }
+>;
 
-export type KmsUserDecryptEip712V2 = Prettify<{
-  readonly domain: KmsEip712Domain;
-  readonly types: KmsUserDecryptEip712V2Types;
-  readonly primaryType: 'UserDecryptRequestVerification';
-  readonly message: KmsUserDecryptEip712V2Message;
-}>;
+// Protocol >= v0.14
+export type KmsUserDecryptEip712V2 = Prettify<
+  KmsUserDecryptEip712Base & {
+    readonly types: KmsUserDecryptEip712V2Types;
+    readonly primaryType: 'UserDecryptRequestVerification';
+    readonly message: KmsUserDecryptEip712V2Message;
+  }
+>;
+
+export type KmsPublicDecryptEip712 = Prettify<
+  KmsUserDecryptEip712Base & {
+    readonly types: KmsPublicDecryptEip712Types;
+    readonly primaryType: 'PublicDecryptVerification';
+    readonly message: KmsPublicDecryptEip712Message;
+  }
+>;
 
 ////////////////////////////////////////////////////////////////////////////////
 //

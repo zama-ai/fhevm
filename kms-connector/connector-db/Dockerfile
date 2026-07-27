@@ -20,10 +20,7 @@ USER root
 
 # TODO(sccache): temporary inline install for testing; remove once sccache
 # ships in the rust-glibc golden image and rely on that instead.
-# Skipped entirely (no network fetch) when SCCACHE_BUCKET is unset, the same
-# signal the build hook below uses, so the disabled path stays a plain build.
 RUN set -eux; \
-    if [ -z "${SCCACHE_BUCKET}" ]; then echo "SCCACHE_BUCKET unset; skipping sccache install"; exit 0; fi; \
     arch="$(uname -m)"; \
     case "$arch" in \
         x86_64)  triple=x86_64-unknown-linux-musl ;; \

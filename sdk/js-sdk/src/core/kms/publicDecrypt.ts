@@ -73,7 +73,7 @@ export async function publicDecrypt(context: Context, parameters: Parameters): P
   // 5. Call relayer
   const {
     orderedAbiEncodedClearValues,
-    kmsPublicDecryptEIP712Signatures,
+    kmsPublicDecryptEip712Signatures,
     extraData: relayerExtraData,
   } = await context.runtime.relayer.fetchPublicDecrypt(context, {
     payload: {
@@ -97,7 +97,7 @@ export async function publicDecrypt(context: Context, parameters: Parameters): P
     originToken,
     orderedHandles: orderedHandles,
     orderedAbiEncodedClearValues,
-    kmsPublicDecryptEIP712Signatures,
+    kmsPublicDecryptEip712Signatures,
     kmsSignersContext: reconciledKmsSignersContext,
   });
 

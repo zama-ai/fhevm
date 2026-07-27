@@ -18,7 +18,11 @@ fn sample_count(default_count: usize) -> usize {
 async fn schedule_erc20_whitepaper() -> Result<(), Box<dyn std::error::Error>> {
     let harness = setup_event_harness().await?;
     let num_samples = sample_count(7);
-    let mut tx = harness.listener_db.new_transaction().await?;
+    let mut tx = harness
+        .listener_db
+        .new_transaction()
+        .await?
+        .expect("new_transaction() returns Some on a live stack");
     let mut output_handles = Vec::with_capacity(num_samples * 5);
     let caller = zero_address();
 
@@ -144,7 +148,11 @@ async fn schedule_erc20_whitepaper() -> Result<(), Box<dyn std::error::Error>> {
 async fn schedule_erc20_no_cmux() -> Result<(), Box<dyn std::error::Error>> {
     let harness = setup_event_harness().await?;
     let num_samples = sample_count(7);
-    let mut tx = harness.listener_db.new_transaction().await?;
+    let mut tx = harness
+        .listener_db
+        .new_transaction()
+        .await?
+        .expect("new_transaction() returns Some on a live stack");
     let mut output_handles = Vec::with_capacity(num_samples * 5);
     let caller = zero_address();
 
@@ -269,7 +277,11 @@ async fn schedule_erc20_no_cmux() -> Result<(), Box<dyn std::error::Error>> {
 async fn schedule_dependent_erc20_no_cmux() -> Result<(), Box<dyn std::error::Error>> {
     let harness = setup_event_harness().await?;
     let num_samples = sample_count(7);
-    let mut tx = harness.listener_db.new_transaction().await?;
+    let mut tx = harness
+        .listener_db
+        .new_transaction()
+        .await?
+        .expect("new_transaction() returns Some on a live stack");
     let mut output_handles = Vec::with_capacity(num_samples * 5);
     let caller = zero_address();
 
@@ -399,7 +411,11 @@ async fn schedule_dependent_erc20_no_cmux() -> Result<(), Box<dyn std::error::Er
 async fn counter_increment() -> Result<(), Box<dyn std::error::Error>> {
     let harness = setup_event_harness().await?;
     let num_samples = sample_count(7);
-    let mut tx = harness.listener_db.new_transaction().await?;
+    let mut tx = harness
+        .listener_db
+        .new_transaction()
+        .await?
+        .expect("new_transaction() returns Some on a live stack");
     let tx_id = next_handle();
 
     let mut counter = next_handle();
@@ -444,7 +460,11 @@ async fn counter_increment() -> Result<(), Box<dyn std::error::Error>> {
 async fn tree_reduction() -> Result<(), Box<dyn std::error::Error>> {
     let harness = setup_event_harness().await?;
     let num_samples = sample_count(16);
-    let mut tx = harness.listener_db.new_transaction().await?;
+    let mut tx = harness
+        .listener_db
+        .new_transaction()
+        .await?
+        .expect("new_transaction() returns Some on a live stack");
     let tx_id = next_handle();
     let caller = zero_address();
 

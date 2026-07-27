@@ -219,6 +219,12 @@ interface IKMSGeneration {
     error NotKmsTxSender(address txSenderAddress);
 
     /**
+     * @notice Error thrown when the recovered signer is not a registered KMS signer for the context.
+     * @param signerAddress The recovered signer.
+     */
+    error NotKmsSigner(address signerAddress);
+
+    /**
      * @notice Error thrown when the recovered signer does not match the tx sender's KMS node.
      * @param signerAddress The recovered signer.
      * @param txSenderAddress The tx sender.

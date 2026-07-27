@@ -100,19 +100,17 @@ contract KMSVerifierTest is HostContractsDeployerTestUtils {
     }
 
     function _activatePendingSingleSignerContext(uint256 contextId, uint256 epochId, uint256 pk) internal {
-        _confirmContextCreation(contextId, privateKeySigner0);
-        _confirmContextCreation(contextId, privateKeySigner1);
-        _confirmContextCreation(contextId, privateKeySigner2);
-        if (pk != privateKeySigner0 && pk != privateKeySigner1 && pk != privateKeySigner2) {
-            _confirmContextCreation(contextId, pk);
-        }
+        // Previous committee has 3 nodes with mpc=1, so the previous-side quorum is n - t = 2. The
+        // single new node reuses 0xA1, whose confirmation also covers the new-signer side.
+        _confirmContextCreation(contextId, address(0xA1));
+        _confirmContextCreation(contextId, address(0xA2));
         _confirmEpochActivation(contextId, epochId, pk, address(0xA1), 0, 0);
     }
 
     function _activatePendingThreeNodeContext(uint256 contextId, uint256 epochId) internal {
-        _confirmContextCreation(contextId, privateKeySigner0);
-        _confirmContextCreation(contextId, privateKeySigner1);
-        _confirmContextCreation(contextId, privateKeySigner2);
+        _confirmContextCreation(contextId, address(0xA1));
+        _confirmContextCreation(contextId, address(0xA2));
+        _confirmContextCreation(contextId, address(0xA3));
         _confirmEpochActivation(contextId, epochId, privateKeySigner0, address(0xA1), 0, 0);
         _confirmEpochActivation(contextId, epochId, privateKeySigner1, address(0xA2), 0, 0);
         _confirmEpochActivation(contextId, epochId, privateKeySigner2, address(0xA3), 0, 0);
@@ -184,6 +182,10 @@ contract KMSVerifierTest is HostContractsDeployerTestUtils {
         uint256 verifierCtx = kmsVerifier.getCurrentKmsContextId();
         (uint256 configCtx, ) = protocolConfig.getCurrentKmsContextAndEpoch();
         assertEq(verifierCtx, configCtx);
+    }
+
+    function test_GetProtocolConfigAddress() public view {
+        assertEq(kmsVerifier.getProtocolConfigAddress(), address(protocolConfig));
     }
 
     function test_ProtocolConfigStateChangeReflectedInVerifier() public {

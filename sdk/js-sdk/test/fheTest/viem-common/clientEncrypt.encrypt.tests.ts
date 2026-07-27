@@ -8,7 +8,13 @@ import {
   type CreateViemEncryptClientFn,
   type FheTestViemConfig,
 } from '../setup-viem.js';
-import { chainIdFromHandle, clearTypeFromHandle, encryptTestCases, isBytes32Hex } from '../setupCommon.js';
+import {
+  chainIdFromHandle,
+  clearTypeFromHandle,
+  createLogger,
+  encryptTestCases,
+  isBytes32Hex,
+} from '../setupCommon.js';
 import { asEncryptedValue } from '@fhevm/sdk/types';
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -35,6 +41,7 @@ export function defineClientEncryptEncryptTests(parameters: {
           type: 'ApiKeyHeader',
           value: config.zamaApiKey,
         },
+        logger: createLogger(console.log),
       });
     });
 

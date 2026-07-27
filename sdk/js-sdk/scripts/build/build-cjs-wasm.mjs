@@ -52,6 +52,9 @@ await build({
   bundle: false,
   sourcemap: 'linked',
   logLevel: 'info',
+  // wasmBaseUrl.js intentionally uses import.meta.url with a CJS fallback;
+  // suppress the warning since the empty-object case is already handled.
+  logOverride: { 'empty-import-meta': 'silent' },
 });
 
 ////////////////////////////////////////////////////////////////////////////////

@@ -173,10 +173,10 @@ function requireRemaining(bytes: Uint8Array, offset: number, needed: number, fie
  * Borsh encodes `MmrProof` as `leaf_index: u64 LE` then `siblings: Vec<[u8;32]>`.
  */
 export function decodeMmrProofTransportBlob(mmrProofBytes: Uint8Array): MmrProofTransportBlob {
-  if (mmrProofBytes.length === 0) {
+  const [mode] = mmrProofBytes;
+  if (mode === undefined) {
     throw new Error('Solana MMR-proof blob is empty (missing mode byte)');
   }
-  const mode = mmrProofBytes[0]!;
   const view = dataView(mmrProofBytes);
   let offset = 1;
 
@@ -261,7 +261,8 @@ export function mmrVerify(
         node = local % 2n === 0n ? mmrNode(node, sibling) : mmrNode(sibling, node);
         local >>= 1n;
       }
-      return bytesEqual(node, peaks[peakPos]!);
+      const peak = peaks[peakPos];
+      return peak !== undefined && bytesEqual(node, peak);
     }
     offset += bit;
     peakPos += 1;
