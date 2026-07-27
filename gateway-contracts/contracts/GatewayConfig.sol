@@ -160,9 +160,9 @@ contract GatewayConfig is IGatewayConfig, Ownable2StepUpgradeable, UUPSUpgradeab
         mapping(uint256 contextId => bool isDestroyed) destroyedKmsContexts;
         /// @notice Whether a registered host chain has been disabled.
         mapping(uint256 chainId => bool isDisabled) disabledHostChains;
-        /// @dev Deprecated by the removal of the priority coprocessor feature: coprocessor consensus
-        ///      is now always threshold-based. `reinitializeV9` zeroes this slot during the upgrade.
-        ///      This field must remain to preserve the storage layout for UUPS proxy upgrades.
+        /// @dev Deprecated. The priority coprocessor feature was removed, so coprocessor consensus is
+        ///      always threshold-based. Kept to preserve the storage layout, and zeroed by
+        ///      `reinitializeV9`.
         address priorityCoprocessorTxSender;
     }
 
@@ -244,25 +244,17 @@ contract GatewayConfig is IGatewayConfig, Ownable2StepUpgradeable, UUPSUpgradeab
 
     /**
      * @notice Re-initializes the contract from V8.
-     * @dev Clears the deprecated priority coprocessor slot so the upgrade itself guarantees that
-     *      coprocessor consensus is threshold-based, without depending on a prior
-     *      `removePriorityCoprocessorTxSender` ops call having run.
+     * @dev Clears the deprecated priority coprocessor slot, so the upgrade itself makes coprocessor
+     *      consensus threshold-based without depending on a prior ops call.
      * @dev UPGRADE ORDER: this implementation drops `getPriorityCoprocessorTxSender()`, which the
-     *      previously deployed `CiphertextCommits` and `InputVerification` call on every response.
-     *      Upgrading `GatewayConfig` before them — the order used up to v0.13.x — would make those
-     *      responses revert on the missing selector until both are upgraded. Gateway upgrades reach
-     *      this chain as one `sendRemoteProposal` batch relayed in a single LayerZero message, so
-     *      putting every `upgradeToAndCall` in one proposal closes the window entirely. If they are
-     *      ever split across proposals, upgrade `CiphertextCommits` and `InputVerification` first and
-     *      `GatewayConfig` last; the new implementations no longer read that getter.
-     * @dev Before upgrading, every host-chain `InputVerifier` must already accept the full gateway
-     *      coprocessor signer set at the gateway threshold. While priority mode was active the gateway
-     *      emitted a single signature, so a host still pinned to one signer would start rejecting the
-     *      threshold-sized signature bundles this upgrade makes unconditional.
-     * @dev Requests where the former priority sender already responded but consensus was not yet reached
-     *      become finalizable again: their tally resumes against the coprocessor threshold.
-     * @dev Intended to run atomically as the `call` of a UUPS `upgradeToAndCall`, whose `_authorizeUpgrade`
-     *      already enforces owner authorization; the `reinitializer` guard then prevents any later re-entry.
+     *      currently deployed `CiphertextCommits` and `InputVerification` call on every response.
+     *      Upgrade `GatewayConfig` last, or batch all the `upgradeToAndCall` calls in one proposal;
+     *      upgrading it first makes those responses revert on the missing selector.
+     * @dev Every host-chain `InputVerifier` must already accept the full gateway coprocessor signer set
+     *      at the gateway threshold. Under priority mode the gateway emitted a single signature, so a
+     *      host still pinned to one signer would reject the bundles this upgrade makes unconditional.
+     * @dev Requests the former priority sender already responded to, without reaching consensus, become
+     *      finalizable again: their count resumes against the coprocessor threshold.
      */
     /// @custom:oz-upgrades-unsafe-allow missing-initializer-call
     /// @custom:oz-upgrades-validate-as-initializer

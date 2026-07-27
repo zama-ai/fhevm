@@ -137,13 +137,13 @@ contract InputVerification is
         /// @notice The coprocessor context ID associated to the input verification request
         mapping(uint256 zkProofId => uint256 contextId) inputVerificationContextId;
         /// @notice The priority coprocessor transaction sender that finalized proof verification.
-        /// @dev Deprecated by the removal of the priority coprocessor feature: never written again.
-        ///      Still read by {getVerifyProofConsensusTxSenders} so proofs finalized while the
-        ///      feature was active keep reporting the single sender their event carries.
+        /// @dev Deprecated. Never written again, but still read by {getVerifyProofConsensusTxSenders}
+        ///      so proofs finalized under the removed priority coprocessor feature keep reporting the
+        ///      single sender their event carries.
         mapping(uint256 zkProofId => address coprocessorTxSenderAddress) priorityVerifyProofConsensusTxSender;
         /// @notice The priority coprocessor transaction sender that finalized proof rejection.
-        /// @dev Deprecated by the removal of the priority coprocessor feature: never written again.
-        ///      Still read by {getRejectProofConsensusTxSenders}, see above.
+        /// @dev Deprecated. Never written again, but still read by {getRejectProofConsensusTxSenders},
+        ///      see above.
         mapping(uint256 zkProofId => address coprocessorTxSenderAddress) priorityRejectProofConsensusTxSender;
     }
 

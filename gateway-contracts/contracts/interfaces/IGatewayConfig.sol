@@ -471,9 +471,10 @@ interface IGatewayConfig {
      * @notice Update the coprocessor threshold.
      * @dev The new threshold must verify `1 <= t <= n`, with `n` the number of coprocessors currently registered.
      *      Applied live — `InputVerification` no longer has to be paused first (the pause coupling was removed,
-     *      see fhevm-internal#1487); input verification reads this threshold on every call, so any in-flight
-     *      per-proof tally sees the new value mid-flight. Raise each host chain's threshold only after this
-     *      one, never before — otherwise the host reverts with `SignatureThresholdNotReached`.
+     *      see fhevm-internal#1487); `InputVerification` reads the threshold each time a coprocessor
+     *      responds. For a proof that is still pending, the next response is compared against the new
+     *      threshold. Raise each host chain threshold only after this one. If you raise a host chain
+     *      threshold first, the host reverts with `SignatureThresholdNotReached`.
      * @param newCoprocessorThreshold The new coprocessor threshold.
      */
     function updateCoprocessorThreshold(uint256 newCoprocessorThreshold) external;

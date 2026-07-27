@@ -84,10 +84,9 @@ contract CiphertextCommits is ICiphertextCommits, UUPSUpgradeableEmptyProxy, Gat
         /// @notice The coprocessor context ID associated to the add ciphertext
         mapping(bytes32 addCiphertextHash => uint256 contextId) addCiphertextContextId;
         /// @notice The priority coprocessor transaction sender that finalized a handle.
-        /// @dev Deprecated by the removal of the priority coprocessor feature: never written again.
-        ///      Still read, so handles finalized while the feature was active keep reporting the
-        ///      single sender that their consensus event carries. See
-        ///      {_getAddCiphertextMaterialConsensusTxSenders}.
+        /// @dev Deprecated. Never written again, but still read so handles finalized under the removed
+        ///      priority coprocessor feature keep reporting the single sender their consensus event
+        ///      carries. See {_getAddCiphertextMaterialConsensusTxSenders}.
         mapping(bytes32 ctHandle => address coprocessorTxSenderAddress) priorityConsensusTxSender;
     }
 
@@ -292,32 +291,6 @@ contract CiphertextCommits is ICiphertextCommits, UUPSUpgradeableEmptyProxy, Gat
     }
 
     /**
-     * @notice Returns the coprocessor transaction senders exposed as consensus participants.
-     * @dev The raw sender list keeps growing after finalization, since a "late" valid coprocessor
-     *      still gets appended to it. For handles finalized while the priority coprocessor feature
-     *      was active, consensus was reached by that single sender and the emitted
-     *      `AddCiphertextMaterialConsensus` event carries it alone, so the historical marker is read
-     *      to keep these views consistent with that event. The marker is never written again: it is
-     *      empty for every handle finalized since the feature was removed, which fall through to the
-     *      raw list built under threshold consensus.
-     */
-    function _getAddCiphertextMaterialConsensusTxSenders(
-        CiphertextCommitsStorage storage $,
-        bytes32 ctHandle
-    ) internal view virtual returns (address[] memory) {
-        address priorityConsensusTxSender = $.priorityConsensusTxSender[ctHandle];
-        if (priorityConsensusTxSender != address(0)) {
-            address[] memory txSenders = new address[](1);
-            txSenders[0] = priorityConsensusTxSender;
-            return txSenders;
-        }
-
-        // The hash remains the default value (0x0) until the consensus is reached.
-        bytes32 addCiphertextHash = $.ctHandleConsensusHash[ctHandle];
-        return $.coprocessorTxSenderAddresses[addCiphertextHash];
-    }
-
-    /**
      * @notice See {ICiphertextCommits-getVersion}.
      */
     function getVersion() external pure virtual returns (string memory) {
@@ -364,6 +337,31 @@ contract CiphertextCommits is ICiphertextCommits, UUPSUpgradeableEmptyProxy, Gat
             keccak256(
                 abi.encode(ADD_CIPHERTEXT_DOMAIN_SEPARATOR_HASH, ctHandle, keyId, ciphertextDigest, snsCiphertextDigest)
             );
+    }
+
+    /**
+     * @notice Returns the coprocessor transaction senders exposed as consensus participants.
+     * @dev The raw sender list keeps growing after finalization, since a "late" valid coprocessor
+     *      still gets appended to it. Handles finalized under the removed priority coprocessor
+     *      feature reached consensus through a single sender, which is what their
+     *      `AddCiphertextMaterialConsensus` event carries, so the deprecated marker is still read to
+     *      keep these views consistent with it. The marker is never written again, so handles
+     *      finalized since fall through to the raw list.
+     */
+    function _getAddCiphertextMaterialConsensusTxSenders(
+        CiphertextCommitsStorage storage $,
+        bytes32 ctHandle
+    ) internal view virtual returns (address[] memory) {
+        address priorityConsensusTxSender = $.priorityConsensusTxSender[ctHandle];
+        if (priorityConsensusTxSender != address(0)) {
+            address[] memory txSenders = new address[](1);
+            txSenders[0] = priorityConsensusTxSender;
+            return txSenders;
+        }
+
+        // The hash remains the default value (0x0) until the consensus is reached.
+        bytes32 addCiphertextHash = $.ctHandleConsensusHash[ctHandle];
+        return $.coprocessorTxSenderAddresses[addCiphertextHash];
     }
 
     /**

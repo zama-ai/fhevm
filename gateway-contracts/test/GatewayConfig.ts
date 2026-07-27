@@ -111,7 +111,7 @@ describe('GatewayConfig', function () {
   }
 
   // ERC-7201 base slot of GatewayConfigStorage, from the GATEWAY_CONFIG_STORAGE_LOCATION constant
-  // in GatewayConfig.sol, plus the index of `deprecatedPriorityCoprocessorTxSender` in the struct.
+  // in GatewayConfig.sol, plus the index of `priorityCoprocessorTxSender` in the struct.
   const GATEWAY_CONFIG_STORAGE_LOCATION = BigInt('0x86d3070a8993f6b209bee6185186d38a07fce8bbd97c750d934451b72f35b400');
   const DEPRECATED_PRIORITY_SLOT = hre.ethers.toBeHex(GATEWAY_CONFIG_STORAGE_LOCATION + 36n, 32);
 
