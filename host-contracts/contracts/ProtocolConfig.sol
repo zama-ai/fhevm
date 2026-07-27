@@ -1044,8 +1044,10 @@ contract ProtocolConfig is IProtocolConfig, UUPSUpgradeableEmptyProxy, ACLOwnabl
     function _checkNoKmsLifecycleOperationInFlight() internal view virtual {
         ProtocolConfigStorage storage $ = _getProtocolConfigStorage();
         ContextState latestContextState = $.contextState[$.currentKmsContextId];
-        bool contextInFlight = latestContextState == ContextState.Pending || latestContextState == ContextState.Created;
-        if (contextInFlight || $.epochState[$.epochCounter] == EpochState.Pending) {
+        if (latestContextState == ContextState.Pending || latestContextState == ContextState.Created) {
+            revert KmsLifecycleOperationInFlight($.currentKmsContextId, $.epochCounter);
+        }
+        if ($.epochState[$.epochCounter] == EpochState.Pending) {
             revert KmsLifecycleOperationInFlight($.currentKmsContextId, $.epochCounter);
         }
     }
