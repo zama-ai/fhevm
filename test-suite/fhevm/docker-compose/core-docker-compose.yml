@@ -3,6 +3,7 @@ services:
   kms-core:
     container_name: kms-core
     image: ghcr.io/zama-ai/kms/core-service:${CORE_VERSION}
+    platform: linux/amd64
     user: root
     env_file:
       - ${FHEVM_STATE_DIR:-../../../.fhevm}/runtime/env/core.env
