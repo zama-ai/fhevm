@@ -44,6 +44,9 @@ const fakeContext = () => {
     async refreshDiscovery() {
       calls.push("refresh-discovery");
     },
+    async registerKmsContext(label, contextId) {
+      calls.push(`register-kms-context:${label}:${contextId}`);
+    },
     async runCoprocessorSql(label) {
       calls.push(`coprocessor-sql:${label}`);
     },

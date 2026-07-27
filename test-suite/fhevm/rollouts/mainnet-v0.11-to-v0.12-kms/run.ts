@@ -6,7 +6,8 @@ export const relayerSdkV042TestKeyError = "Cannot find user decryption pivot";
 // The incident request used v1 extraData with mainnet's context. This threshold
 // path has test keys and therefore uses the context created by v0.13.3 kms-init;
 // the v1 serialization and mixed response behavior under test are identical.
-export const incidentRequestExtraData = `0x01${"01".repeat(29)}020304`;
+export const incidentKmsContext = `0x${"01".repeat(29)}020304`;
+export const incidentRequestExtraData = `0x01${incidentKmsContext.slice(2)}`;
 
 export const run = async (ctx: RolloutRunContext) => {
   const baselineLock = await ctx.writeVersionLock("00-kms-core-baseline", { versions: from, sources: versionSources });
@@ -17,6 +18,9 @@ export const run = async (ctx: RolloutRunContext) => {
     "bridge v0.11 coprocessor rows to the v0.12 transaction sender",
     coprocessorSenderSchemaBridge,
   );
+  // Production connectors already knew the deployed context. The threshold test
+  // initializer creates the same state only inside KMS, so mirror it to each connector.
+  await ctx.registerKmsContext("register the threshold test context with every connector", incidentKmsContext);
   // Threshold test parameters exercise every real node and response, but the
   // pinned legacy client cannot reconstruct them. Plaintext fidelity belongs
   // to the centralized realistic-key path; this path checks response compatibility.

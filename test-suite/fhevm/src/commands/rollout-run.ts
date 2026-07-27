@@ -26,6 +26,7 @@ import { type RolloutReceipt, createRolloutReceipt } from "./rollout-receipt";
 import { test as runTest } from "./test";
 import {
   type KmsResponseVersion,
+  registerKmsContext,
   responseVersion,
   snapshotUserDecryptionResponseIds,
   waitForUserDecryptionResponses,
@@ -79,6 +80,7 @@ export type RolloutRunContext = {
   expectTestFailure(profile: string, options: RolloutExpectedTestFailureOptions): Promise<void>;
   readState(): Promise<State>;
   refreshDiscovery(): Promise<void>;
+  registerKmsContext(label: string, contextId: string): Promise<void>;
   runCoprocessorSql(label: string, sql: string): Promise<void>;
   runGatewayContractTask(command: string, options?: RolloutContractTaskOptions): Promise<void>;
   runHostContractTask(command: string, options?: RolloutContractTaskOptions): Promise<void>;
@@ -101,6 +103,7 @@ export type RolloutRunbook = (ctx: RolloutRunContext) => Promise<void> | void;
 
 type RolloutContextOperations = {
   executeCoprocessorSql: typeof executeCoprocessorSql;
+  registerKmsContext: typeof registerKmsContext;
   setRunning: typeof setRunning;
   upgradeThresholdKmsNode: typeof upgradeThresholdKmsNode;
   waitForPartiesRunning: typeof waitForPartiesRunning;
@@ -253,6 +256,16 @@ export const createRolloutContext = (
   async refreshDiscovery() {
     await refreshStackDiscovery();
     await receipt.record("refresh-discovery", "refreshed runtime addresses");
+  },
+  async registerKmsContext(label, contextId) {
+    const state = await loadState();
+    if (!state) {
+      throw new PreflightError("Stack is not running; run ctx.up(...) first");
+    }
+    const databases = await (operationOverrides.registerKmsContext ?? registerKmsContext)(state, contextId);
+    await receipt.record("register-kms-context", label, {
+      details: { contextId, databases },
+    });
   },
   async runCoprocessorSql(label, sql) {
     const state = await loadState();

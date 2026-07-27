@@ -3,6 +3,7 @@ import path from "node:path";
 
 import { coprocessorSenderSchemaBridge } from "../rollouts/mainnet-v0.11-to-v0.12-kms/coprocessor-schema-bridge";
 import {
+  incidentKmsContext,
   incidentRequestExtraData,
   relayerSdkV042TestKeyError,
 } from "../rollouts/mainnet-v0.11-to-v0.12-kms/run";
@@ -49,6 +50,9 @@ describe("mainnet v0.11 to v0.12 KMS rollout", () => {
       async runCoprocessorSql(label: string, sql: string) {
         calls.push(`sql:${label}:${sql === coprocessorSenderSchemaBridge}`);
       },
+      async registerKmsContext(label: string, contextId: string) {
+        calls.push(`context:${label}:${contextId}`);
+      },
       async upgradeKmsNodes(nodeIds: readonly number[], options: { lockFile: string }) {
         calls.push(`upgrade:${nodeIds.join(",")}:${options.lockFile}`);
       },
@@ -72,6 +76,7 @@ describe("mainnet v0.11 to v0.12 KMS rollout", () => {
       "lock:01-kms-core-target:v0.13.10",
       "up:four-party-threshold-kms:test-suite",
       "sql:bridge v0.11 coprocessor rows to the v0.12 transaction sender:true",
+      `context:register the threshold test context with every connector:${incidentKmsContext}`,
       "test:input-proof",
       `responses:old KMS nodes return v0 responses:v0,v0,v0,v0:${relayerSdkV042TestKeyError}:${incidentRequestExtraData}`,
       "upgrade:1,2:/tmp/01-kms-core-target.lock.json",
@@ -84,6 +89,7 @@ describe("mainnet v0.11 to v0.12 KMS rollout", () => {
   });
 
   test("uses v1 extraData with the historical test KMS context", () => {
+    expect(incidentKmsContext).toBe(`0x${"01".repeat(29)}020304`);
     expect(incidentRequestExtraData).toBe(`0x01${"01".repeat(29)}020304`);
     expect(incidentRequestExtraData).toHaveLength(68);
   });

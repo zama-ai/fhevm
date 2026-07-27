@@ -26,6 +26,45 @@ const connectorDbRuntime = () => ({
   password: process.env.POSTGRES_PASSWORD ?? DEFAULT_POSTGRES_PASSWORD,
 });
 
+export const contextIdToConnectorHex = (contextId: string) => {
+  if (!/^0x[0-9a-f]{64}$/i.test(contextId)) {
+    throw new PreflightError(`KMS context ID must be a 32-byte hex value; received ${JSON.stringify(contextId)}`);
+  }
+  return contextId.slice(2).match(/../g)!.reverse().join("").toLowerCase();
+};
+
+export const registerKmsContext = async (state: State, contextId: string): Promise<string[]> => {
+  if (state.scenario.kms.mode !== "threshold") {
+    throw new PreflightError("registerKmsContext requires a running threshold KMS cluster");
+  }
+  const db = connectorDbRuntime();
+  const dbNames = kmsPartyIds(state.scenario.kms.committeeSize).map(kmsConnectorDbName);
+  const id = contextIdToConnectorHex(contextId);
+  const sql =
+    `INSERT INTO kms_context(id, is_valid, created_at, updated_at) ` +
+    `VALUES (decode('${id}','hex'), true, NOW(), NOW()) ` +
+    `ON CONFLICT (id) DO UPDATE SET is_valid = true, updated_at = NOW()`;
+  for (const dbName of dbNames) {
+    await run([
+      "docker",
+      "exec",
+      "-e",
+      `PGPASSWORD=${db.password}`,
+      db.container,
+      "psql",
+      "-U",
+      db.user,
+      "-d",
+      dbName,
+      "-v",
+      "ON_ERROR_STOP=1",
+      "-c",
+      sql,
+    ]);
+  }
+  return dbNames;
+};
+
 const latestResponse = async (nodeId: number): Promise<UserDecryptionResponse | undefined> => {
   const db = connectorDbRuntime();
   const result = await run([
@@ -98,4 +137,3 @@ export const responseVersion = (extraData: string): KmsResponseVersion | undefin
   }
   return /^0x01[0-9a-f]{64}$/i.test(extraData) ? "v1" : undefined;
 };
-
