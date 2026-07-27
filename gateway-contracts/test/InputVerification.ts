@@ -1045,7 +1045,7 @@ describe('InputVerification', function () {
     });
   });
 
-  describe("Solana host (RFC-021) proof verification", function () {
+  describe('Solana host (RFC-021) proof verification', function () {
     let inputVerification: InputVerification;
     let coprocessorTxSenders: HardhatEthersSigner[];
     let coprocessorSigners: HardhatEthersSigner[];
@@ -1055,8 +1055,8 @@ describe('InputVerification', function () {
     let signatures: string[];
 
     // 32-byte (bytes32) Solana host identities, in contrast to the 20-byte EVM addresses above.
-    const solanaContractAddress = "0x" + "11".repeat(32);
-    const solanaUserAddress = "0x" + "22".repeat(32);
+    const solanaContractAddress = '0x' + '11'.repeat(32);
+    const solanaUserAddress = '0x' + '22'.repeat(32);
 
     beforeEach(async function () {
       const fixture = await loadFixture(loadTestVariablesFixture);
@@ -1080,7 +1080,7 @@ describe('InputVerification', function () {
       signatures = await getSignaturesZKPoK(eip712Message, coprocessorSigners);
     });
 
-    it("Should emit VerifyProofRequestSolana with bytes32 identities", async function () {
+    it('Should emit VerifyProofRequestSolana with bytes32 identities', async function () {
       await expect(
         inputVerification
           .connect(tokenFundedTxSender)
@@ -1092,7 +1092,7 @@ describe('InputVerification', function () {
             extraDataV0,
           ),
       )
-        .to.emit(inputVerification, "VerifyProofRequestSolana")
+        .to.emit(inputVerification, 'VerifyProofRequestSolana')
         .withArgs(
           zkProofId,
           contractChainId,
@@ -1103,7 +1103,7 @@ describe('InputVerification', function () {
         );
     });
 
-    it("Should verify a Solana proof once consensus is reached over the bytes32 attestation", async function () {
+    it('Should verify a Solana proof once consensus is reached over the bytes32 attestation', async function () {
       await inputVerification
         .connect(tokenFundedTxSender)
         .verifyProofRequestSolana(
@@ -1123,7 +1123,7 @@ describe('InputVerification', function () {
 
       // Consensus reached at the second response (coprocessor threshold = 2).
       await expect(txResponse)
-        .to.emit(inputVerification, "VerifyProofResponse")
+        .to.emit(inputVerification, 'VerifyProofResponse')
         .withArgs(zkProofId, ctHandles, signatures.slice(0, 2));
       expect(await inputVerification.isProofVerified(zkProofId)).to.be.true;
     });

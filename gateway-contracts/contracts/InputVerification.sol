@@ -105,7 +105,7 @@ contract InputVerification is
      * signature validates both on the gateway and on-chain on Solana.
      */
     string private constant EIP712_SOLANA_ZKPOK_TYPE =
-        "CiphertextVerification(bytes32[] ctHandles,bytes32 userAddress,bytes32 contractAddress,uint256 contractChainId,bytes extraData)";
+        'CiphertextVerification(bytes32[] ctHandles,bytes32 userAddress,bytes32 contractAddress,uint256 contractChainId,bytes extraData)';
 
     /**
      * @notice The hash of the Solana CiphertextVerification typed data definition.
@@ -174,11 +174,6 @@ contract InputVerification is
         // ----------------------------------------------------------------------------------------------
         /// @notice The coprocessor context ID associated to the input verification request
         mapping(uint256 zkProofId => uint256 contextId) inputVerificationContextId;
-        // ----------------------------------------------------------------------------------------------
-        // Solana (RFC-021) host state variables (appended; preserves the ERC-7201 storage layout):
-        // ----------------------------------------------------------------------------------------------
-        /// @notice The bytes32-identity request inputs for Solana host ZK Proof verifications.
-        mapping(uint256 zkProofId => SolanaZKProofInput solanaZkProofInput) solanaZkProofInputs;
         /// @notice The priority coprocessor transaction sender that finalized proof verification.
         /// @dev Raw responder arrays keep every valid sender, including non-priority senders that
         ///      submitted before or after finalization. When set, this freezes the exposed
@@ -191,6 +186,11 @@ contract InputVerification is
         ///      consensus result to a singleton priority sender, even if the global priority
         ///      configuration later changes.
         mapping(uint256 zkProofId => address coprocessorTxSenderAddress) priorityRejectProofConsensusTxSender;
+        // ----------------------------------------------------------------------------------------------
+        // Solana (RFC-021) host state variables (appended; preserves the ERC-7201 storage layout):
+        // ----------------------------------------------------------------------------------------------
+        /// @notice The bytes32-identity request inputs for Solana host ZK Proof verifications.
+        mapping(uint256 zkProofId => SolanaZKProofInput solanaZkProofInput) solanaZkProofInputs;
     }
 
     /**
