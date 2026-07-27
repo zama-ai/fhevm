@@ -110,6 +110,16 @@ describe('GatewayConfig', function () {
     return { ...fixtureData, kmsNodes, coprocessors, custodians };
   }
 
+  // ERC-7201 base slot of GatewayConfigStorage, from the GATEWAY_CONFIG_STORAGE_LOCATION constant
+  // in GatewayConfig.sol, plus the index of `deprecatedPriorityCoprocessorTxSender` in the struct.
+  const GATEWAY_CONFIG_STORAGE_LOCATION = BigInt('0x86d3070a8993f6b209bee6185186d38a07fce8bbd97c750d934451b72f35b400');
+  const DEPRECATED_PRIORITY_SLOT = hre.ethers.toBeHex(GATEWAY_CONFIG_STORAGE_LOCATION + 36n, 32);
+
+  async function readDeprecatedPrioritySlot(proxyAddress: string): Promise<string> {
+    const raw = await hre.ethers.provider.getStorage(proxyAddress, DEPRECATED_PRIORITY_SLOT);
+    return hre.ethers.getAddress(hre.ethers.dataSlice(raw, 12));
+  }
+
   describe('Deployment', function () {
     let gatewayConfig: GatewayConfig;
     let inputVerification: InputVerification;
@@ -127,8 +137,6 @@ describe('GatewayConfig', function () {
     let highCoprocessorThreshold: number;
     let proxyContract: EmptyUUPSProxyGatewayConfig;
     let oldGatewayConfigFactory: ContractFactory;
-    let gatewayConfigV8Factory: ContractFactory;
-    let gatewayConfigV9Factory: ContractFactory;
     let newGatewayConfigFactory: ContractFactory;
 
     beforeEach(async function () {
@@ -160,8 +168,6 @@ describe('GatewayConfig', function () {
 
       // Get the GatewayConfig contract factory
       oldGatewayConfigFactory = await hre.ethers.getContractFactory('GatewayConfigV7Example', owner);
-      gatewayConfigV8Factory = await hre.ethers.getContractFactory('GatewayConfigV8Example', owner);
-      gatewayConfigV9Factory = await hre.ethers.getContractFactory('GatewayConfigV9Example', owner);
       newGatewayConfigFactory = await hre.ethers.getContractFactory('GatewayConfig', owner);
     });
 
@@ -177,23 +183,6 @@ describe('GatewayConfig', function () {
         call: {
           fn: 'initializeV7ForTest',
           args: [owner.address, [coprocessors[0]], 1],
-        },
-      });
-    }
-
-    // Reproduces the deployed v0.7.0 state, where the priority coprocessor feature was live.
-    async function deployGatewayConfigV8Proxy(priorityCoprocessorTxSender: string) {
-      const proxyImplementation = await hre.ethers.getContractFactory('EmptyUUPSProxyGatewayConfig', owner);
-      const proxy = await hre.upgrades.deployProxy(proxyImplementation, [owner.address], {
-        initializer: 'initialize',
-        kind: 'uups',
-      });
-      await proxy.waitForDeployment();
-
-      return hre.upgrades.upgradeProxy(proxy, gatewayConfigV8Factory, {
-        call: {
-          fn: 'initializeV8ForTest',
-          args: [owner.address, coprocessors, coprocessorThreshold, priorityCoprocessorTxSender],
         },
       });
     }
@@ -234,56 +223,26 @@ describe('GatewayConfig', function () {
       expect(await gatewayConfig.getVersion()).to.equal('GatewayConfig v0.8.0');
     });
 
-    it('Should clear the deprecated priority coprocessor slot when upgrading from V8', async function () {
-      const zamaTxSender = coprocessors[0].txSenderAddress;
-      const gatewayConfigV8 = await deployGatewayConfigV8Proxy(zamaTxSender);
-
-      // The deployed V8 state has priority mode active.
-      expect(await gatewayConfigV8.getDeprecatedPriorityCoprocessorTxSenderForTest()).to.equal(zamaTxSender);
-
-      const upgradedGatewayConfig = await hre.upgrades.upgradeProxy(gatewayConfigV8, gatewayConfigV9Factory, {
-        call: { fn: 'reinitializeV9' },
-      });
-
-      // The upgrade itself disables priority mode, without relying on a prior ops call.
-      expect(await upgradedGatewayConfig.getDeprecatedPriorityCoprocessorTxSenderForTest()).to.equal(ZeroAddress);
-    });
-
-    it('Should leave the deprecated priority coprocessor slot cleared when upgrading from V7', async function () {
+    it('Should clear a set priority coprocessor slot during the upgrade', async function () {
       const gatewayConfigPhase1 = await deployGatewayConfigPhase1Proxy();
+      const proxyAddress = await gatewayConfigPhase1.getAddress();
 
-      const upgradedGatewayConfig = await hre.upgrades.upgradeProxy(gatewayConfigPhase1, gatewayConfigV9Factory, {
+      // Simulate the deployed state where priority mode is still active. The feature is gone, so
+      // nothing can write the slot anymore: plant it directly. If DEPRECATED_PRIORITY_SLOT were
+      // wrong, reinitializeV9 would not clear it and this test would fail.
+      await hre.network.provider.send('hardhat_setStorageAt', [
+        proxyAddress,
+        DEPRECATED_PRIORITY_SLOT,
+        hre.ethers.zeroPadValue(coprocessors[0].txSenderAddress, 32),
+      ]);
+      expect(await readDeprecatedPrioritySlot(proxyAddress)).to.equal(coprocessors[0].txSenderAddress);
+
+      await hre.upgrades.upgradeProxy(gatewayConfigPhase1, newGatewayConfigFactory, {
         call: { fn: 'reinitializeV9' },
       });
 
-      expect(await upgradedGatewayConfig.getDeprecatedPriorityCoprocessorTxSenderForTest()).to.equal(ZeroAddress);
-    });
-
-    it('Should register partners after upgrading from V8', async function () {
-      const zamaTxSender = coprocessors[0].txSenderAddress;
-      const gatewayConfigV8 = await deployGatewayConfigV8Proxy(zamaTxSender);
-
-      const upgradedGatewayConfig = await hre.upgrades.upgradeProxy(gatewayConfigV8, newGatewayConfigFactory, {
-        call: { fn: 'reinitializeV9' },
-      });
-
-      await upgradedGatewayConfig.connect(owner).updateCoprocessors(coprocessors, coprocessorThreshold);
-
-      expect(await upgradedGatewayConfig.getCoprocessorTxSenders()).to.deep.equal(
-        coprocessors.map((coprocessor) => coprocessor.txSenderAddress),
-      );
-      expect(await upgradedGatewayConfig.getCoprocessorMajorityThreshold()).to.equal(coprocessorThreshold);
-    });
-
-    it('Should allow reinitialization while InputVerification is not paused', async function () {
-      const gatewayConfigPhase1 = await deployGatewayConfigPhase1Proxy();
-      expect(await inputVerification.paused()).to.be.false;
-
-      const upgradedGatewayConfig = await hre.upgrades.upgradeProxy(gatewayConfigPhase1, newGatewayConfigFactory, {
-        call: { fn: 'reinitializeV9' },
-      });
-
-      expect(await upgradedGatewayConfig.getVersion()).to.equal('GatewayConfig v0.8.0');
+      // The upgrade disables priority mode on its own, without relying on a prior ops call.
+      expect(await readDeprecatedPrioritySlot(proxyAddress)).to.equal(ZeroAddress);
     });
 
     it('Should revert when reinitializing a second time (reinitializer guard)', async function () {

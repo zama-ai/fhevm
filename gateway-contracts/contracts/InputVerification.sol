@@ -81,7 +81,7 @@ contract InputVerification is
      */
     string private constant CONTRACT_NAME = 'InputVerification';
     uint256 private constant MAJOR_VERSION = 0;
-    uint256 private constant MINOR_VERSION = 5;
+    uint256 private constant MINOR_VERSION = 6;
     uint256 private constant PATCH_VERSION = 0;
 
     /**
@@ -90,7 +90,7 @@ contract InputVerification is
      * This constant does not represent the number of time a specific contract have been upgraded,
      * as a contract deployed from version VX will have a REINITIALIZER_VERSION > 2.
      */
-    uint64 private constant REINITIALIZER_VERSION = 6;
+    uint64 private constant REINITIALIZER_VERSION = 7;
 
     /**
      * @notice The contract's variable storage struct (@dev see ERC-7201)
@@ -136,17 +136,13 @@ contract InputVerification is
         // ----------------------------------------------------------------------------------------------
         /// @notice The coprocessor context ID associated to the input verification request
         mapping(uint256 zkProofId => uint256 contextId) inputVerificationContextId;
-        /// @dev Deprecated. Recorded the priority coprocessor transaction sender that finalized proof
-        ///      verification while the priority coprocessor feature existed. Nothing writes it anymore;
-        ///      it is still read so proofs finalized under priority mode keep reporting the singleton
-        ///      sender their `VerifyProofResponse` event was emitted with.
-        ///      Kept to preserve the storage layout: do not reuse this slot for a new variable.
+        /// @dev Deprecated by the removal of the priority coprocessor feature. Neither read nor
+        ///      written. Kept to preserve the storage layout: do not reuse this slot.
+        /// @custom:oz-renamed-from priorityVerifyProofConsensusTxSender
         mapping(uint256 zkProofId => address coprocessorTxSenderAddress) deprecatedPriorityVerifyProofConsensusTxSender;
-        /// @dev Deprecated. Recorded the priority coprocessor transaction sender that finalized proof
-        ///      rejection while the priority coprocessor feature existed. Nothing writes it anymore;
-        ///      it is still read so those historical proofs keep reporting the singleton sender they
-        ///      were finalized with.
-        ///      Kept to preserve the storage layout: do not reuse this slot for a new variable.
+        /// @dev Deprecated by the removal of the priority coprocessor feature. Neither read nor
+        ///      written. Kept to preserve the storage layout: do not reuse this slot.
+        /// @custom:oz-renamed-from priorityRejectProofConsensusTxSender
         mapping(uint256 zkProofId => address coprocessorTxSenderAddress) deprecatedPriorityRejectProofConsensusTxSender;
     }
 
@@ -175,11 +171,11 @@ contract InputVerification is
     }
 
     /**
-     * @notice Re-initializes the contract from V4.
+     * @notice Re-initializes the contract from V5.
      */
     /// @custom:oz-upgrades-unsafe-allow missing-initializer-call
     /// @custom:oz-upgrades-validate-as-initializer
-    function reinitializeV5() public virtual reinitializer(REINITIALIZER_VERSION) {}
+    function reinitializeV6() public virtual reinitializer(REINITIALIZER_VERSION) {}
 
     /**
      * @notice See {IInputVerification-verifyProofRequest}.
@@ -366,15 +362,6 @@ contract InputVerification is
     function getVerifyProofConsensusTxSenders(uint256 zkProofId) external view virtual returns (address[] memory) {
         InputVerificationStorage storage $ = _getInputVerificationStorage();
 
-        address priorityConsensusTxSender = $.deprecatedPriorityVerifyProofConsensusTxSender[zkProofId];
-        if (priorityConsensusTxSender != address(0)) {
-            // Historical proof finalized under the removed priority coprocessor feature: keep the
-            // getter aligned with the singleton event payload it was emitted with.
-            address[] memory txSenders = new address[](1);
-            txSenders[0] = priorityConsensusTxSender;
-            return txSenders;
-        }
-
         bytes32 consensusDigest = $.verifyProofConsensusDigest[zkProofId];
 
         return $.verifyProofConsensusTxSenders[zkProofId][consensusDigest];
@@ -385,15 +372,6 @@ contract InputVerification is
      */
     function getRejectProofConsensusTxSenders(uint256 zkProofId) external view virtual returns (address[] memory) {
         InputVerificationStorage storage $ = _getInputVerificationStorage();
-
-        address priorityConsensusTxSender = $.deprecatedPriorityRejectProofConsensusTxSender[zkProofId];
-        if (priorityConsensusTxSender != address(0)) {
-            // Historical proof finalized under the removed priority coprocessor feature: keep the
-            // getter aligned with the singleton consensus result it was exposed with.
-            address[] memory txSenders = new address[](1);
-            txSenders[0] = priorityConsensusTxSender;
-            return txSenders;
-        }
 
         return $.rejectProofConsensusTxSenders[zkProofId];
     }

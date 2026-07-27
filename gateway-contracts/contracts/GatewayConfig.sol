@@ -160,10 +160,10 @@ contract GatewayConfig is IGatewayConfig, Ownable2StepUpgradeable, UUPSUpgradeab
         mapping(uint256 contextId => bool isDestroyed) destroyedKmsContexts;
         /// @notice Whether a registered host chain has been disabled.
         mapping(uint256 chainId => bool isDisabled) disabledHostChains;
-        /// @dev Deprecated. Held the coprocessor transaction sender that could finalize consensus
-        ///      alone. The priority coprocessor feature was removed: coprocessor consensus is now
-        ///      always threshold-based. `reinitializeV9` zeroes this slot during the upgrade.
-        ///      Kept to preserve the storage layout: do not reuse this slot for a new variable.
+        /// @dev Deprecated by the removal of the priority coprocessor feature: coprocessor consensus
+        ///      is now always threshold-based. `reinitializeV9` zeroes this slot during the upgrade.
+        ///      Kept to preserve the storage layout: do not reuse this slot.
+        /// @custom:oz-renamed-from priorityCoprocessorTxSender
         address deprecatedPriorityCoprocessorTxSender;
     }
 

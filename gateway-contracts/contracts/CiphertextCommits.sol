@@ -33,7 +33,7 @@ contract CiphertextCommits is ICiphertextCommits, UUPSUpgradeableEmptyProxy, Gat
      */
     string private constant CONTRACT_NAME = 'CiphertextCommits';
     uint256 private constant MAJOR_VERSION = 0;
-    uint256 private constant MINOR_VERSION = 5;
+    uint256 private constant MINOR_VERSION = 6;
     uint256 private constant PATCH_VERSION = 0;
 
     /**
@@ -42,7 +42,7 @@ contract CiphertextCommits is ICiphertextCommits, UUPSUpgradeableEmptyProxy, Gat
      * This constant does not represent the number of time a specific contract have been upgraded,
      * as a contract deployed from version VX will have a REINITIALIZER_VERSION > 2.
      */
-    uint64 private constant REINITIALIZER_VERSION = 6;
+    uint64 private constant REINITIALIZER_VERSION = 7;
 
     /**
      * @notice The contract's variable storage struct (@dev see ERC-7201)
@@ -83,11 +83,9 @@ contract CiphertextCommits is ICiphertextCommits, UUPSUpgradeableEmptyProxy, Gat
         // ----------------------------------------------------------------------------------------------
         /// @notice The coprocessor context ID associated to the add ciphertext
         mapping(bytes32 addCiphertextHash => uint256 contextId) addCiphertextContextId;
-        /// @dev Deprecated. Recorded the priority coprocessor transaction sender that finalized a
-        ///      handle while the priority coprocessor feature existed. Nothing writes it anymore;
-        ///      it is still read so handles finalized under priority mode keep reporting the
-        ///      singleton sender they were finalized with, matching the event already emitted.
-        ///      Kept to preserve the storage layout: do not reuse this slot for a new variable.
+        /// @dev Deprecated by the removal of the priority coprocessor feature. Neither read nor
+        ///      written. Kept to preserve the storage layout: do not reuse this slot.
+        /// @custom:oz-renamed-from priorityConsensusTxSender
         mapping(bytes32 ctHandle => address coprocessorTxSenderAddress) deprecatedPriorityConsensusTxSender;
     }
 
@@ -112,11 +110,11 @@ contract CiphertextCommits is ICiphertextCommits, UUPSUpgradeableEmptyProxy, Gat
     function initializeFromEmptyProxy() public virtual onlyFromEmptyProxy reinitializer(REINITIALIZER_VERSION) {}
 
     /**
-     * @notice Re-initializes the contract from V4.
+     * @notice Re-initializes the contract from V5.
      */
     /// @custom:oz-upgrades-unsafe-allow missing-initializer-call
     /// @custom:oz-upgrades-validate-as-initializer
-    function reinitializeV5() public virtual reinitializer(REINITIALIZER_VERSION) {}
+    function reinitializeV6() public virtual reinitializer(REINITIALIZER_VERSION) {}
 
     /**
      * @notice See {ICiphertextCommits-addCiphertextMaterial}.
@@ -336,22 +334,11 @@ contract CiphertextCommits is ICiphertextCommits, UUPSUpgradeableEmptyProxy, Gat
 
     /**
      * @notice Returns the coprocessor transaction senders exposed as consensus participants.
-     * @dev Handles finalized while the priority coprocessor feature existed kept a singleton marker,
-     *      because the raw sender list could include submissions that did not finalize anything. That
-     *      marker is still honoured so those historical handles keep reporting the sender their
-     *      `AddCiphertextMaterialConsensus` event was emitted with. Nothing writes it anymore.
      */
     function _getAddCiphertextMaterialConsensusTxSenders(
         CiphertextCommitsStorage storage $,
         bytes32 ctHandle
     ) internal view virtual returns (address[] memory) {
-        address priorityConsensusTxSender = $.deprecatedPriorityConsensusTxSender[ctHandle];
-        if (priorityConsensusTxSender != address(0)) {
-            address[] memory txSenders = new address[](1);
-            txSenders[0] = priorityConsensusTxSender;
-            return txSenders;
-        }
-
         bytes32 addCiphertextHash = $.ctHandleConsensusHash[ctHandle];
         return $.coprocessorTxSenderAddresses[addCiphertextHash];
     }
