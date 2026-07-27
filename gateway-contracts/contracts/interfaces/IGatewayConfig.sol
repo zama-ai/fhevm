@@ -405,8 +405,8 @@ interface IGatewayConfig {
 
     /**
      * @notice Update the list of coprocessors and their threshold.
-     * @dev Applied live — `InputVerification` no longer has to be paused first, since the pause coupling
-     *      was removed. This rewrites the coprocessor set and threshold that input
+     * @dev Applied live — `InputVerification` no longer has to be paused first (the pause coupling was
+     *      removed, see fhevm-internal#1487). This rewrites the coprocessor set and threshold that input
      *      verification reads on every call, so any in-flight per-proof tally sees the new values
      *      mid-flight; that is the accepted trade-off, managed by ordering the coprocessor-set changes
      *      rather than by a pause. Per host chain the ordering invariant must hold at every step: the host
@@ -470,8 +470,8 @@ interface IGatewayConfig {
     /**
      * @notice Update the coprocessor threshold.
      * @dev The new threshold must verify `1 <= t <= n`, with `n` the number of coprocessors currently registered.
-     *      Applied live — `InputVerification` no longer has to be paused first, since the pause coupling was
-     *      removed; input verification reads this threshold on every call, so any in-flight
+     *      Applied live — `InputVerification` no longer has to be paused first (the pause coupling was removed,
+     *      see fhevm-internal#1487); input verification reads this threshold on every call, so any in-flight
      *      per-proof tally sees the new value mid-flight. Raise each host chain's threshold only after this
      *      one, never before — otherwise the host reverts with `SignatureThresholdNotReached`.
      * @param newCoprocessorThreshold The new coprocessor threshold.
