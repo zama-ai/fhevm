@@ -554,7 +554,7 @@ interface IProtocolConfig {
 
     error DuplicateChainId(uint64 chainId);
     error EmptyChainUpgradeWindows();
-    error EmptyEpochActivationPayload(uint256 epochId);
+    error EmptyEpochActivationAttestation(uint256 epochId);
     error EmptyKmsNodes();
     error EmptySoftwareVersion();
     error EpochActivationAlreadyConfirmed(address signer, uint256 epochId);
@@ -2172,7 +2172,7 @@ interface IProtocolConfig {
   },
   {
     "type": "error",
-    "name": "EmptyEpochActivationPayload",
+    "name": "EmptyEpochActivationAttestation",
     "inputs": [
       {
         "name": "epochId",
@@ -4605,13 +4605,13 @@ error EmptyChainUpgradeWindows();
     };
     #[derive(serde::Serialize, serde::Deserialize)]
     #[derive(Default, Debug, PartialEq, Eq, Hash)]
-    /**Custom error with signature `EmptyEpochActivationPayload(uint256)` and selector `0xf4684a21`.
+    /**Custom error with signature `EmptyEpochActivationAttestation(uint256)` and selector `0xce9440df`.
 ```solidity
-error EmptyEpochActivationPayload(uint256 epochId);
+error EmptyEpochActivationAttestation(uint256 epochId);
 ```*/
     #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
     #[derive(Clone)]
-    pub struct EmptyEpochActivationPayload {
+    pub struct EmptyEpochActivationAttestation {
         #[allow(missing_docs)]
         pub epochId: alloy::sol_types::private::primitives::aliases::U256,
     }
@@ -4642,28 +4642,28 @@ error EmptyEpochActivationPayload(uint256 epochId);
         }
         #[automatically_derived]
         #[doc(hidden)]
-        impl ::core::convert::From<EmptyEpochActivationPayload>
+        impl ::core::convert::From<EmptyEpochActivationAttestation>
         for UnderlyingRustTuple<'_> {
-            fn from(value: EmptyEpochActivationPayload) -> Self {
+            fn from(value: EmptyEpochActivationAttestation) -> Self {
                 (value.epochId,)
             }
         }
         #[automatically_derived]
         #[doc(hidden)]
         impl ::core::convert::From<UnderlyingRustTuple<'_>>
-        for EmptyEpochActivationPayload {
+        for EmptyEpochActivationAttestation {
             fn from(tuple: UnderlyingRustTuple<'_>) -> Self {
                 Self { epochId: tuple.0 }
             }
         }
         #[automatically_derived]
-        impl alloy_sol_types::SolError for EmptyEpochActivationPayload {
+        impl alloy_sol_types::SolError for EmptyEpochActivationAttestation {
             type Parameters<'a> = UnderlyingSolTuple<'a>;
             type Token<'a> = <Self::Parameters<
                 'a,
             > as alloy_sol_types::SolType>::Token<'a>;
-            const SIGNATURE: &'static str = "EmptyEpochActivationPayload(uint256)";
-            const SELECTOR: [u8; 4] = [244u8, 104u8, 74u8, 33u8];
+            const SIGNATURE: &'static str = "EmptyEpochActivationAttestation(uint256)";
+            const SELECTOR: [u8; 4] = [206u8, 148u8, 64u8, 223u8];
             #[inline]
             fn new<'a>(
                 tuple: <Self::Parameters<'a> as alloy_sol_types::SolType>::RustType,
@@ -15778,7 +15778,7 @@ function updateUserDecryptionThresholdForContext(uint256 kmsContextId, uint256 t
         #[allow(missing_docs)]
         EmptyChainUpgradeWindows(EmptyChainUpgradeWindows),
         #[allow(missing_docs)]
-        EmptyEpochActivationPayload(EmptyEpochActivationPayload),
+        EmptyEpochActivationAttestation(EmptyEpochActivationAttestation),
         #[allow(missing_docs)]
         EmptyKmsNodes(EmptyKmsNodes),
         #[allow(missing_docs)]
@@ -15867,13 +15867,13 @@ function updateUserDecryptionThresholdForContext(uint256 kmsContextId, uint256 t
             [190u8, 80u8, 80u8, 68u8],
             [200u8, 72u8, 133u8, 212u8],
             [202u8, 168u8, 20u8, 163u8],
+            [206u8, 148u8, 64u8, 223u8],
             [209u8, 140u8, 79u8, 240u8],
             [232u8, 18u8, 31u8, 81u8],
             [239u8, 213u8, 95u8, 103u8],
             [240u8, 231u8, 129u8, 193u8],
             [241u8, 115u8, 91u8, 70u8],
             [242u8, 25u8, 220u8, 14u8],
-            [244u8, 104u8, 74u8, 33u8],
             [245u8, 26u8, 246u8, 187u8],
         ];
     }
@@ -15891,8 +15891,8 @@ function updateUserDecryptionThresholdForContext(uint256 kmsContextId, uint256 t
                 Self::EmptyChainUpgradeWindows(_) => {
                     <EmptyChainUpgradeWindows as alloy_sol_types::SolError>::SELECTOR
                 }
-                Self::EmptyEpochActivationPayload(_) => {
-                    <EmptyEpochActivationPayload as alloy_sol_types::SolError>::SELECTOR
+                Self::EmptyEpochActivationAttestation(_) => {
+                    <EmptyEpochActivationAttestation as alloy_sol_types::SolError>::SELECTOR
                 }
                 Self::EmptyKmsNodes(_) => {
                     <EmptyKmsNodes as alloy_sol_types::SolError>::SELECTOR
@@ -16241,6 +16241,17 @@ function updateUserDecryptionThresholdForContext(uint256 kmsContextId, uint256 t
                     InvalidHighThreshold
                 },
                 {
+                    fn EmptyEpochActivationAttestation(
+                        data: &[u8],
+                    ) -> alloy_sol_types::Result<IProtocolConfigErrors> {
+                        <EmptyEpochActivationAttestation as alloy_sol_types::SolError>::abi_decode_raw(
+                                data,
+                            )
+                            .map(IProtocolConfigErrors::EmptyEpochActivationAttestation)
+                    }
+                    EmptyEpochActivationAttestation
+                },
+                {
                     fn KmsTxSenderAlreadyRegistered(
                         data: &[u8],
                     ) -> alloy_sol_types::Result<IProtocolConfigErrors> {
@@ -16309,17 +16320,6 @@ function updateUserDecryptionThresholdForContext(uint256 kmsContextId, uint256 t
                             .map(IProtocolConfigErrors::InvalidBlockWindow)
                     }
                     InvalidBlockWindow
-                },
-                {
-                    fn EmptyEpochActivationPayload(
-                        data: &[u8],
-                    ) -> alloy_sol_types::Result<IProtocolConfigErrors> {
-                        <EmptyEpochActivationPayload as alloy_sol_types::SolError>::abi_decode_raw(
-                                data,
-                            )
-                            .map(IProtocolConfigErrors::EmptyEpochActivationPayload)
-                    }
-                    EmptyEpochActivationPayload
                 },
                 {
                     fn KmsSignerAlreadyRegistered(
@@ -16601,6 +16601,17 @@ function updateUserDecryptionThresholdForContext(uint256 kmsContextId, uint256 t
                     InvalidHighThreshold
                 },
                 {
+                    fn EmptyEpochActivationAttestation(
+                        data: &[u8],
+                    ) -> alloy_sol_types::Result<IProtocolConfigErrors> {
+                        <EmptyEpochActivationAttestation as alloy_sol_types::SolError>::abi_decode_raw_validate(
+                                data,
+                            )
+                            .map(IProtocolConfigErrors::EmptyEpochActivationAttestation)
+                    }
+                    EmptyEpochActivationAttestation
+                },
+                {
                     fn KmsTxSenderAlreadyRegistered(
                         data: &[u8],
                     ) -> alloy_sol_types::Result<IProtocolConfigErrors> {
@@ -16671,17 +16682,6 @@ function updateUserDecryptionThresholdForContext(uint256 kmsContextId, uint256 t
                     InvalidBlockWindow
                 },
                 {
-                    fn EmptyEpochActivationPayload(
-                        data: &[u8],
-                    ) -> alloy_sol_types::Result<IProtocolConfigErrors> {
-                        <EmptyEpochActivationPayload as alloy_sol_types::SolError>::abi_decode_raw_validate(
-                                data,
-                            )
-                            .map(IProtocolConfigErrors::EmptyEpochActivationPayload)
-                    }
-                    EmptyEpochActivationPayload
-                },
-                {
                     fn KmsSignerAlreadyRegistered(
                         data: &[u8],
                     ) -> alloy_sol_types::Result<IProtocolConfigErrors> {
@@ -16716,8 +16716,8 @@ function updateUserDecryptionThresholdForContext(uint256 kmsContextId, uint256 t
                         inner,
                     )
                 }
-                Self::EmptyEpochActivationPayload(inner) => {
-                    <EmptyEpochActivationPayload as alloy_sol_types::SolError>::abi_encoded_size(
+                Self::EmptyEpochActivationAttestation(inner) => {
+                    <EmptyEpochActivationAttestation as alloy_sol_types::SolError>::abi_encoded_size(
                         inner,
                     )
                 }
@@ -16869,8 +16869,8 @@ function updateUserDecryptionThresholdForContext(uint256 kmsContextId, uint256 t
                         out,
                     )
                 }
-                Self::EmptyEpochActivationPayload(inner) => {
-                    <EmptyEpochActivationPayload as alloy_sol_types::SolError>::abi_encode_raw(
+                Self::EmptyEpochActivationAttestation(inner) => {
+                    <EmptyEpochActivationAttestation as alloy_sol_types::SolError>::abi_encode_raw(
                         inner,
                         out,
                     )

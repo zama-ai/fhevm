@@ -461,7 +461,7 @@ abstract contract HostContractsDeployerTestUtils is Test {
     function _confirmEpochActivation(uint256 contextId, uint256 epochId, uint256 pk, address txSender) internal {
         bytes memory extraData = abi.encodePacked(uint8(0x02), contextId, epochId);
 
-        // An empty payload reverts with EmptyEpochActivationPayload, so supply one deterministic self-signed
+        // An empty payload reverts with EmptyEpochActivationAttestation, so supply one deterministic self-signed
         // key attestation with a constant keyId. Every signer produces the same dataHash. The keyId need not
         // exist in KMSGeneration because confirmEpochActivation checks only signer recovery.
         IKMSGeneration.KeyDigest[] memory keyDigests = _mockKeyDigests();

@@ -1478,7 +1478,7 @@ contract ProtocolConfigTest is HostContractsDeployerTestUtils {
         );
 
         // Replay with the same material the first confirm used. The signer check passes, so the call reaches
-        // the already-confirmed check. Empty arrays would revert earlier with EmptyEpochActivationPayload.
+        // the already-confirmed check. Empty arrays would revert earlier with EmptyEpochActivationAttestation.
         bytes memory replayExtraData = abi.encodePacked(uint8(0x02), KMS_CONTEXT_COUNTER_BASE + 1, epochId);
         IKMSGeneration.KeyDigest[] memory replayKeyDigests = _mockKeyDigests();
         IProtocolConfig.EpochKeyResult[] memory replayKeys = new IProtocolConfig.EpochKeyResult[](1);
@@ -1516,7 +1516,7 @@ contract ProtocolConfigTest is HostContractsDeployerTestUtils {
         IProtocolConfig.EpochKeyResult[] memory keys = new IProtocolConfig.EpochKeyResult[](0);
         IProtocolConfig.EpochCrsResult[] memory crsList = new IProtocolConfig.EpochCrsResult[](0);
         vm.prank(kmsTxSender0);
-        vm.expectRevert(abi.encodeWithSelector(IProtocolConfig.EmptyEpochActivationPayload.selector, epochId));
+        vm.expectRevert(abi.encodeWithSelector(IProtocolConfig.EmptyEpochActivationAttestation.selector, epochId));
         protocolConfig.confirmEpochActivation(epochId, keys, crsList);
     }
 

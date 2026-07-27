@@ -182,7 +182,7 @@ async function activateNewKmsContext(
   }
 }
 
-// An empty activation payload reverts with EmptyEpochActivationPayload, so supply one self-signed key
+// An empty activation payload reverts with EmptyEpochActivationAttestation, so supply one self-signed key
 // attestation. confirmEpochActivation checks only that the signature recovers to the node signer, so the
 // constant keyId need not exist in KMSGeneration, and every signer produces the same dataHash for quorum.
 async function buildEpochKeyAttestation(protocolConfig: any, signerAccount: any, contextId: bigint, epochId: bigint) {
