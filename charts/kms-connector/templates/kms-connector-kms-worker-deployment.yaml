@@ -79,6 +79,14 @@ spec:
               value: {{ $contracts.polygonChainId | quote }}
             - name: KMS_CONNECTOR_POLYGON_ACL_ADDRESS
               value: {{ $contracts.polygonAcl | quote }}
+          {{- if .Values.commonConfig.bnbTestnetUrl }}
+            - name: KMS_CONNECTOR_BNB_TESTNET_URL
+              value: {{ .Values.commonConfig.bnbTestnetUrl | quote }}
+            - name: KMS_CONNECTOR_BNB_TESTNET_CHAIN_ID
+              value: {{ $contracts.bnbTestnetChainId | quote }}
+            - name: KMS_CONNECTOR_BNB_TESTNET_ACL_ADDRESS
+              value: {{ $contracts.bnbTestnetAcl | quote }}
+          {{- end }}
             - name: KMS_CONNECTOR_KMS_GENERATION_CONTRACT__ADDRESS
               value: {{ $contracts.ethereumKmsGeneration | quote }}
             - name: KMS_CONNECTOR_PROTOCOL_CONFIG_CONTRACT__ADDRESS
