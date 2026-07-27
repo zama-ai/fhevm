@@ -1924,7 +1924,7 @@ checksum = "2af50177e190e07a26ab74f8b1efbfe2ef87da2116221318cb1c2e82baf7de06"
 [[package]]
 name = "bc2wrap"
 version = "2.0.1"
-source = "git+https://github.com/zama-ai/kms.git?rev=6e3f95e5dd8dcc442b6489afad9f5ad1a71cafe7#6e3f95e5dd8dcc442b6489afad9f5ad1a71cafe7"
+source = "git+https://github.com/zama-ai/kms.git?rev=68ba21ba13f5063c729952a0fa0359c0e577db8d#68ba21ba13f5063c729952a0fa0359c0e577db8d"
 dependencies = [
  "bincode 2.0.1",
  "serde",
@@ -4173,7 +4173,7 @@ dependencies = [
 [[package]]
 name = "kms-grpc"
 version = "0.15.0-0"
-source = "git+https://github.com/zama-ai/kms.git?rev=6e3f95e5dd8dcc442b6489afad9f5ad1a71cafe7#6e3f95e5dd8dcc442b6489afad9f5ad1a71cafe7"
+source = "git+https://github.com/zama-ai/kms.git?rev=68ba21ba13f5063c729952a0fa0359c0e577db8d#68ba21ba13f5063c729952a0fa0359c0e577db8d"
 dependencies = [
  "alloy-dyn-abi",
  "alloy-primitives",
@@ -7029,7 +7029,7 @@ dependencies = [
 [[package]]
 name = "threshold-hashing"
 version = "0.15.0-0"
-source = "git+https://github.com/zama-ai/kms.git?rev=6e3f95e5dd8dcc442b6489afad9f5ad1a71cafe7#6e3f95e5dd8dcc442b6489afad9f5ad1a71cafe7"
+source = "git+https://github.com/zama-ai/kms.git?rev=68ba21ba13f5063c729952a0fa0359c0e577db8d#68ba21ba13f5063c729952a0fa0359c0e577db8d"
 dependencies = [
  "anyhow",
  "bc2wrap",
@@ -7042,7 +7042,7 @@ dependencies = [
 [[package]]
 name = "threshold-types"
 version = "0.15.0-0"
-source = "git+https://github.com/zama-ai/kms.git?rev=6e3f95e5dd8dcc442b6489afad9f5ad1a71cafe7#6e3f95e5dd8dcc442b6489afad9f5ad1a71cafe7"
+source = "git+https://github.com/zama-ai/kms.git?rev=68ba21ba13f5063c729952a0fa0359c0e577db8d#68ba21ba13f5063c729952a0fa0359c0e577db8d"
 dependencies = [
  "anyhow",
  "async-trait",

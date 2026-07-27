@@ -157,7 +157,8 @@ export class UserDecryptionRequest {
     free(): void;
     [Symbol.dispose](): void;
     /**
-     * The client's (blockchain wallet) address, encoded using EIP-55. I.e. including `0x`.
+     * The EVM client's (blockchain wallet) address, encoded using EIP-55, including `0x`.
+     * Solana requests MUST leave this empty and use `solana_pubkey` instead.
      */
     client_address: string;
     /**
@@ -175,11 +176,11 @@ export class UserDecryptionRequest {
      */
     set context_id(value: RequestId | null | undefined);
     /**
-     * The user's EIP712 domain. This MUST be present. Furthermore, the `verifying_contract` MUST be set and be distinct from `client_address`.
+     * The user's EIP712 domain. This MUST be present. Furthermore, the `verifying_contract` MUST be set and, for EVM requests, be distinct from `client_address`.
      */
     get domain(): Eip712DomainMsg | undefined;
     /**
-     * The user's EIP712 domain. This MUST be present. Furthermore, the `verifying_contract` MUST be set and be distinct from `client_address`.
+     * The user's EIP712 domain. This MUST be present. Furthermore, the `verifying_contract` MUST be set and, for EVM requests, be distinct from `client_address`.
      */
     set domain(value: Eip712DomainMsg | null | undefined);
     /**
@@ -433,8 +434,6 @@ export type InitInput = RequestInfo | URL | Response | BufferSource | WebAssembl
 export interface InitOutput {
     readonly memory: WebAssembly.Memory;
     readonly __wbg_client_free: (a: number, b: number) => void;
-    readonly __wbg_privatesigkey_free: (a: number, b: number) => void;
-    readonly __wbg_publicsigkey_free: (a: number, b: number) => void;
     readonly __wbg_ciphertexthandle_free: (a: number, b: number) => void;
     readonly __wbg_parseduserdecryptionrequest_free: (a: number, b: number) => void;
     readonly __wbg_privateenckeymlkem512_free: (a: number, b: number) => void;
@@ -461,6 +460,8 @@ export interface InitOutput {
     readonly u8vec_to_ml_kem_pke_sk: (a: number, b: number) => [number, number, number];
     readonly u8vec_to_private_sig_key: (a: number, b: number) => [number, number, number];
     readonly u8vec_to_public_sig_key: (a: number, b: number) => [number, number, number];
+    readonly __wbg_privatesigkey_free: (a: number, b: number) => void;
+    readonly __wbg_publicsigkey_free: (a: number, b: number) => void;
     readonly __wbg_eip712domainmsg_free: (a: number, b: number) => void;
     readonly __wbg_get_eip712domainmsg_chain_id: (a: number) => [number, number];
     readonly __wbg_get_eip712domainmsg_name: (a: number) => [number, number];
@@ -472,10 +473,8 @@ export interface InitOutput {
     readonly __wbg_get_typedciphertext_external_handle: (a: number) => [number, number];
     readonly __wbg_get_typedciphertext_fhe_type: (a: number) => number;
     readonly __wbg_get_typedplaintext_fhe_type: (a: number) => number;
-    readonly __wbg_get_userdecryptionrequest_client_address: (a: number) => [number, number];
     readonly __wbg_get_userdecryptionrequest_context_id: (a: number) => number;
     readonly __wbg_get_userdecryptionrequest_domain: (a: number) => number;
-    readonly __wbg_get_userdecryptionrequest_enc_key: (a: number) => [number, number];
     readonly __wbg_get_userdecryptionrequest_epoch_id: (a: number) => number;
     readonly __wbg_get_userdecryptionrequest_extra_data: (a: number) => [number, number];
     readonly __wbg_get_userdecryptionrequest_key_id: (a: number) => number;
@@ -494,12 +493,9 @@ export interface InitOutput {
     readonly __wbg_set_typedciphertext_ciphertext_format: (a: number, b: number) => void;
     readonly __wbg_set_typedciphertext_fhe_type: (a: number, b: number) => void;
     readonly __wbg_set_typedplaintext_fhe_type: (a: number, b: number) => void;
-    readonly __wbg_set_userdecryptionrequest_client_address: (a: number, b: number, c: number) => void;
     readonly __wbg_set_userdecryptionrequest_context_id: (a: number, b: number) => void;
     readonly __wbg_set_userdecryptionrequest_domain: (a: number, b: number) => void;
-    readonly __wbg_set_userdecryptionrequest_enc_key: (a: number, b: number, c: number) => void;
     readonly __wbg_set_userdecryptionrequest_epoch_id: (a: number, b: number) => void;
-    readonly __wbg_set_userdecryptionrequest_extra_data: (a: number, b: number, c: number) => void;
     readonly __wbg_set_userdecryptionrequest_key_id: (a: number, b: number) => void;
     readonly __wbg_set_userdecryptionrequest_request_id: (a: number, b: number) => void;
     readonly __wbg_set_userdecryptionrequest_typed_ciphertexts: (a: number, b: number, c: number) => void;
@@ -514,6 +510,7 @@ export interface InitOutput {
     readonly __wbg_userdecryptionresponse_free: (a: number, b: number) => void;
     readonly __wbg_userdecryptionresponsepayload_free: (a: number, b: number) => void;
     readonly __wbg_get_requestid_request_id: (a: number) => [number, number];
+    readonly __wbg_get_userdecryptionrequest_client_address: (a: number) => [number, number];
     readonly __wbg_get_typedsigncryptedciphertext_fhe_type: (a: number) => number;
     readonly __wbg_get_typedsigncryptedciphertext_packing_factor: (a: number) => number;
     readonly __wbg_set_typedsigncryptedciphertext_fhe_type: (a: number, b: number) => void;
@@ -524,6 +521,9 @@ export interface InitOutput {
     readonly __wbg_set_typedplaintext_bytes: (a: number, b: number, c: number) => void;
     readonly __wbg_set_typedsigncryptedciphertext_external_handle: (a: number, b: number, c: number) => void;
     readonly __wbg_set_typedsigncryptedciphertext_signcrypted_ciphertext: (a: number, b: number, c: number) => void;
+    readonly __wbg_set_userdecryptionrequest_client_address: (a: number, b: number, c: number) => void;
+    readonly __wbg_set_userdecryptionrequest_enc_key: (a: number, b: number, c: number) => void;
+    readonly __wbg_set_userdecryptionrequest_extra_data: (a: number, b: number, c: number) => void;
     readonly __wbg_set_userdecryptionresponse_external_signature: (a: number, b: number, c: number) => void;
     readonly __wbg_set_userdecryptionresponse_extra_data: (a: number, b: number, c: number) => void;
     readonly __wbg_set_userdecryptionresponse_signature: (a: number, b: number, c: number) => void;
@@ -532,6 +532,7 @@ export interface InitOutput {
     readonly __wbg_get_typedplaintext_bytes: (a: number) => [number, number];
     readonly __wbg_get_typedsigncryptedciphertext_external_handle: (a: number) => [number, number];
     readonly __wbg_get_typedsigncryptedciphertext_signcrypted_ciphertext: (a: number) => [number, number];
+    readonly __wbg_get_userdecryptionrequest_enc_key: (a: number) => [number, number];
     readonly __wbg_get_userdecryptionresponse_external_signature: (a: number) => [number, number];
     readonly __wbg_get_userdecryptionresponse_extra_data: (a: number) => [number, number];
     readonly __wbg_get_userdecryptionresponse_signature: (a: number) => [number, number];

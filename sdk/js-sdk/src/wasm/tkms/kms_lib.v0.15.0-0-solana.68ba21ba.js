@@ -609,7 +609,8 @@ export class UserDecryptionRequest {
         wasm.__wbg_userdecryptionrequest_free(ptr, 0);
     }
     /**
-     * The client's (blockchain wallet) address, encoded using EIP-55. I.e. including `0x`.
+     * The EVM client's (blockchain wallet) address, encoded using EIP-55, including `0x`.
+     * Solana requests MUST leave this empty and use `solana_pubkey` instead.
      * @returns {string}
      */
     get client_address() {
@@ -636,7 +637,7 @@ export class UserDecryptionRequest {
         return ret === 0 ? undefined : RequestId.__wrap(ret);
     }
     /**
-     * The user's EIP712 domain. This MUST be present. Furthermore, the `verifying_contract` MUST be set and be distinct from `client_address`.
+     * The user's EIP712 domain. This MUST be present. Furthermore, the `verifying_contract` MUST be set and, for EVM requests, be distinct from `client_address`.
      * @returns {Eip712DomainMsg | undefined}
      */
     get domain() {
@@ -701,7 +702,8 @@ export class UserDecryptionRequest {
         return v1;
     }
     /**
-     * The client's (blockchain wallet) address, encoded using EIP-55. I.e. including `0x`.
+     * The EVM client's (blockchain wallet) address, encoded using EIP-55, including `0x`.
+     * Solana requests MUST leave this empty and use `solana_pubkey` instead.
      * @param {string} arg0
      */
     set client_address(arg0) {
@@ -725,7 +727,7 @@ export class UserDecryptionRequest {
         wasm.__wbg_set_userdecryptionrequest_context_id(this.__wbg_ptr, ptr0);
     }
     /**
-     * The user's EIP712 domain. This MUST be present. Furthermore, the `verifying_contract` MUST be set and be distinct from `client_address`.
+     * The user's EIP712 domain. This MUST be present. Furthermore, the `verifying_contract` MUST be set and, for EVM requests, be distinct from `client_address`.
      * @param {Eip712DomainMsg | null} [arg0]
      */
     set domain(arg0) {
