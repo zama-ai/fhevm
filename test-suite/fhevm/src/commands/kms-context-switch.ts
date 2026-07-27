@@ -1,13 +1,20 @@
 /**
  * The `kms-context-switch` acceptance profile for `fhevm-cli test`.
  *
- * Drives the two ProtocolConfig KMS-context lifecycle flows end to end on a threshold-mode cluster and
+ * Drives the ProtocolConfig KMS-context lifecycle flows end to end on a threshold-mode cluster and
  * proves the KMS reacts to the emitted events:
  *   1. NewKmsContext — broadcast `defineNewKmsContextAndEpoch` (same committee, so no new signing
  *      keys are needed; on a spare-core cluster, a node swap with the dropped node's tx-sender
  *      stopped first), wait for the new context to become the on-chain active one, then decrypt.
  *   2. NewKmsEpoch — broadcast `defineNewEpochForCurrentKmsContext` (same context, new epoch), wait
  *      for the new epoch to activate, then decrypt again.
+ *   3. Destruction — the switch and rotation each retire a still-live-but-no-longer-current entry
+ *      (the baseline context, the switch's epoch). Destroy each via `destroyKmsContext` /
+ *      `destroyKmsEpoch` and prove: the current context/epoch cannot be destroyed and unknown /
+ *      already-destroyed ids revert; `KmsContextDestroyed` / `KmsEpochDestroyed` fire and the target
+ *      stops reading valid without moving the active pointer; every party's connector forwards
+ *      `DestroyMpcContext` / `DestroyMpcEpoch` to its core and invalidates its validation cache; and
+ *      the current context/epoch keeps serving.
  *
  * Activation is not automatic: the KMS cores must reshare and the connectors must submit
  * `confirmKmsContextCreation` / `confirmEpochActivation` for `getCurrentKmsContextAndEpoch` to
@@ -19,10 +26,16 @@
  * not only to the dedicated user-decryption probe — so the input-proof smoke runs at baseline,
  * while the switch is pending (the previous context must keep serving during the reshare), and
  * after each transition.
+ *
+ * Disruptive + single-run: it advances the KMS context/epoch and destroys the retired ones, so it
+ * expects a pristine stack — re-up between runs
+ * (`fhevm-cli down && fhevm-cli up --scenario four-party-threshold-kms`).
  */
 import { PreflightError } from "../errors";
-import { castCall, resolveKmsGenerationTarget, waitForContainer } from "../flow/readiness";
+import { castBool, castCall, resolveKmsGenerationTarget, waitForContainer } from "../flow/readiness";
 import { stepComposeTask } from "../flow/runtime-compose";
+import { columnQuery, pollConnectors } from "../kms-connector-db";
+import { castSend, eventTopicWord, expectRevert, keccakTopic, loadHostOwner, type Owner } from "../kms-onchain";
 import { kmsTxSenderName, reconstructionThreshold } from "../kms-party";
 import type { State } from "../types";
 import {
@@ -219,6 +232,205 @@ const proveSpareInQuorum = async (state: State, runDecryption: DecryptionRunner)
   }
 };
 
+type DestroyTarget = { rpcUrl: string; protocolConfig: string; owner: Owner };
+type DestroyIds = {
+  oldContextId: bigint;
+  // The epoch that belongs to the retired context (its baseline epoch). Destroying the context
+  // decommissions this epoch in KMS Core — DestroyMpcContext returns its id — and the connector
+  // then invalidates it in the epoch cache, so it must flip to invalid without a separate destroy.
+  contextEpochId: bigint;
+  oldEpochId: bigint;
+  current: ContextAndEpoch;
+};
+
+// A deterministic address that is never the ACL owner, used to prove destroy is owner-gated. Only
+// the address is used (an eth_call revert probe needs no signature), so the key is irrelevant.
+const NON_OWNER: Owner = { key: "", address: "0x000000000000000000000000000000000000dEaD" };
+
+/** Asserts the on-chain active pointer did not move — destroying retired material must never
+ * change what `getCurrentKmsContextAndEpoch` resolves to. */
+const assertCurrentUnchanged = async (
+  rpcUrl: string,
+  protocolConfig: string,
+  current: ContextAndEpoch,
+  afterWhat: string,
+): Promise<void> => {
+  const now = await readContextAndEpoch(rpcUrl, protocolConfig);
+  if (now.contextId !== current.contextId || now.epochId !== current.epochId) {
+    throw new PreflightError(
+      `kms-context-switch: current (contextId, epochId) moved from (${current.contextId}, ${current.epochId}) to ` +
+        `(${now.contextId}, ${now.epochId}) after ${afterWhat} — destroying retired material must not move the active pointer`,
+    );
+  }
+};
+
+/**
+ * Context/epoch destruction. The switch + rotation leave two retired-but-live entries: the baseline
+ * context (superseded by the switch) and the switch's epoch (superseded by the rotation, still under
+ * the current context). This destroys each and proves every layer retires it:
+ *   - reverts: only the ACL owner may destroy (a non-owner is rejected); the current context and
+ *     epoch cannot be destroyed, nor can unknown ids, nor can an already-destroyed context/epoch
+ *     be destroyed twice;
+ *   - on-chain: `KmsContextDestroyed` / `KmsEpochDestroyed` fire, the target stops reading valid, and
+ *     the active pointer does not move;
+ *   - connector + KMS Core: every party marks its destroy request `completed` (forwarded
+ *     `DestroyMpcContext` / `DestroyMpcEpoch` to its core) and flips the validation-cache row to
+ *     invalid — a context destroy also cascades to its epoch (returned by DestroyMpcContext);
+ *   - app: the current context/epoch keeps serving user decryption and the input-proof flow.
+ */
+const destroyContextAndEpoch = async (
+  state: State,
+  target: DestroyTarget,
+  ids: DestroyIds,
+  runDecryption: DecryptionRunner,
+  runSmoke: SmokeRunner,
+): Promise<void> => {
+  const { rpcUrl, protocolConfig, owner } = target;
+  const { oldContextId, contextEpochId, oldEpochId, current } = ids;
+  const parties = state.scenario.kms.parties;
+  const [contextDestroyedTopic, epochDestroyedTopic] = await Promise.all([
+    keccakTopic("KmsContextDestroyed(uint256)"),
+    keccakTopic("KmsEpochDestroyed(uint256)"),
+  ]);
+
+  // Reverts first, while everything is still live: destroying the current context/epoch would strand
+  // live decryptions, and unknown ids were never issued.
+  const unknownId = (1n << 255n).toString();
+  await expectRevert(
+    rpcUrl, protocolConfig, owner,
+    "destroy the current KMS context",
+    "LatestActiveKmsContextCannotBeDestroyed(uint256)",
+    "destroyKmsContext(uint256)", current.contextId.toString(),
+  );
+  await expectRevert(
+    rpcUrl, protocolConfig, owner,
+    "destroy the current KMS epoch",
+    "LatestActiveKmsEpochCannotBeDestroyed(uint256)",
+    "destroyKmsEpoch(uint256)", current.epochId.toString(),
+  );
+  await expectRevert(
+    rpcUrl, protocolConfig, owner,
+    "destroy an unknown KMS context",
+    "InvalidKmsContext(uint256)",
+    "destroyKmsContext(uint256)", unknownId,
+  );
+  await expectRevert(
+    rpcUrl, protocolConfig, owner,
+    "destroy an unknown KMS epoch",
+    "InvalidKmsEpoch(uint256)",
+    "destroyKmsEpoch(uint256)", unknownId,
+  );
+  // Owner-gated: a non-owner is rejected by onlyACLOwner before any target check, so a valid
+  // destroyable id still reverts with the access-control error rather than the target-state one.
+  await expectRevert(
+    rpcUrl, protocolConfig, NON_OWNER,
+    "destroy a KMS context as a non-owner",
+    "NotHostOwner(address)",
+    "destroyKmsContext(uint256)", oldContextId.toString(),
+  );
+  await expectRevert(
+    rpcUrl, protocolConfig, NON_OWNER,
+    "destroy a KMS epoch as a non-owner",
+    "NotHostOwner(address)",
+    "destroyKmsEpoch(uint256)", oldEpochId.toString(),
+  );
+  console.log(
+    "[kms-context-switch] destroy reverts OK (non-owner, current context/epoch, and unknown ids are all rejected)",
+  );
+
+  // Destroy the retired context.
+  if (!(await castBool(rpcUrl, protocolConfig, "isValidKmsContext(uint256)(bool)", oldContextId.toString()))) {
+    throw new PreflightError(
+      `kms-context-switch: retired context ${oldContextId} is not valid before destroy — nothing to prove the destroy transition against`,
+    );
+  }
+  console.log(`[kms-context-switch] destroying retired context ${oldContextId}…`);
+  const contextReceipt = await castSend(rpcUrl, protocolConfig, owner, "destroyKmsContext(uint256)", oldContextId.toString());
+  if (eventTopicWord(contextReceipt, contextDestroyedTopic, 1, "KmsContextDestroyed") !== oldContextId) {
+    throw new PreflightError(`kms-context-switch: KmsContextDestroyed event does not carry contextId=${oldContextId}`);
+  }
+  if (await castBool(rpcUrl, protocolConfig, "isValidKmsContext(uint256)(bool)", oldContextId.toString())) {
+    throw new PreflightError(`kms-context-switch: context ${oldContextId} still reads valid after destroy`);
+  }
+  await assertCurrentUnchanged(rpcUrl, protocolConfig, current, "destroying the retired context");
+  await pollConnectors(
+    parties, "context-destroy forwarded to KMS Core",
+    columnQuery("kms_context_destroyed", "context_id", "status", oldContextId), ["completed"],
+  );
+  await pollConnectors(
+    parties, "destroyed context invalidated in the validation cache",
+    // Postgres renders boolean::text as 'true'/'false' (not the 't'/'f' psql shows for the raw type).
+    columnQuery("kms_context", "id", "is_valid", oldContextId), ["false"],
+  );
+  // #696: DestroyMpcContext returns the epoch ids it decommissioned; the connector invalidates them.
+  // The retired context's epoch must therefore flip to invalid off the back of the context destroy,
+  // without a separate destroyKmsEpoch call.
+  await pollConnectors(
+    parties, "destroyed context cascaded to its epoch in the validation cache",
+    columnQuery("kms_epoch", "id", "is_valid", contextEpochId), ["false"],
+  );
+  await expectRevert(
+    rpcUrl, protocolConfig, owner,
+    "destroy an already-destroyed context",
+    "InvalidKmsContext(uint256)",
+    "destroyKmsContext(uint256)", oldContextId.toString(),
+  );
+  console.log(`[kms-context-switch] retired context ${oldContextId} destroyed across contract, connector, and KMS Core`);
+
+  // Destroy the retired epoch (still under the current context, superseded by the rotation).
+  if (
+    !(await castBool(
+      rpcUrl, protocolConfig, "isValidEpochForContext(uint256,uint256)(bool)",
+      current.contextId.toString(), oldEpochId.toString(),
+    ))
+  ) {
+    throw new PreflightError(
+      `kms-context-switch: retired epoch ${oldEpochId} is not valid under context ${current.contextId} before destroy`,
+    );
+  }
+  console.log(`[kms-context-switch] destroying retired epoch ${oldEpochId}…`);
+  const epochReceipt = await castSend(rpcUrl, protocolConfig, owner, "destroyKmsEpoch(uint256)", oldEpochId.toString());
+  if (eventTopicWord(epochReceipt, epochDestroyedTopic, 1, "KmsEpochDestroyed") !== oldEpochId) {
+    throw new PreflightError(`kms-context-switch: KmsEpochDestroyed event does not carry epochId=${oldEpochId}`);
+  }
+  if (
+    await castBool(
+      rpcUrl, protocolConfig, "isValidEpochForContext(uint256,uint256)(bool)",
+      current.contextId.toString(), oldEpochId.toString(),
+    )
+  ) {
+    throw new PreflightError(`kms-context-switch: epoch ${oldEpochId} still reads valid after destroy`);
+  }
+  await assertCurrentUnchanged(rpcUrl, protocolConfig, current, "destroying the retired epoch");
+  await pollConnectors(
+    parties, "epoch-destroy forwarded to KMS Core",
+    columnQuery("kms_epoch_destroyed", "epoch_id", "status", oldEpochId), ["completed"],
+  );
+  await pollConnectors(
+    parties, "destroyed epoch invalidated in the validation cache",
+    columnQuery("kms_epoch", "id", "is_valid", oldEpochId), ["false"],
+  );
+  await expectRevert(
+    rpcUrl, protocolConfig, owner,
+    "destroy an already-destroyed epoch",
+    "InvalidKmsEpoch(uint256)",
+    "destroyKmsEpoch(uint256)", oldEpochId.toString(),
+  );
+  console.log(`[kms-context-switch] retired epoch ${oldEpochId} destroyed across contract, connector, and KMS Core`);
+
+  // The active context/epoch must keep serving after the retired material is gone.
+  if (
+    !(await runDecryption(
+      `kms-context-switch: decrypt after destroying retired context ${oldContextId} and epoch ${oldEpochId}`,
+    ))
+  ) {
+    throw new PreflightError(
+      "kms-context-switch: user-decryption failed after destroying the retired context/epoch — the current context/epoch must keep serving",
+    );
+  }
+  await runSmoke(`kms-context-switch: input-proof after destroying retired context ${oldContextId} and epoch ${oldEpochId}`);
+};
+
 export const runKmsContextSwitchProfile = async (
   state: State,
   runDecryption: DecryptionRunner,
@@ -265,13 +477,30 @@ export const runKmsContextSwitchProfile = async (
   }
   await runSmoke(`kms-context-switch: input-proof after the epoch rotation (epochId=${afterEpoch.epochId})`);
 
-  // 3) Node swap only: prove the promoted spare actually holds a working reshared key (runs last so
+  // 3) Destruction: the switch retired the baseline context and the rotation retired the switch's
+  //    epoch (both still live but no longer current). Destroy each and prove every layer retires it
+  //    while the current context/epoch keeps serving.
+  const owner = await loadHostOwner();
+  await destroyContextAndEpoch(
+    state,
+    { rpcUrl, protocolConfig: configAddress, owner },
+    {
+      oldContextId: baseline.contextId,
+      contextEpochId: baseline.epochId,
+      oldEpochId: afterSwitch.epochId,
+      current: afterEpoch,
+    },
+    runDecryption,
+    runSmoke,
+  );
+
+  // 4) Node swap only: prove the promoted spare actually holds a working reshared key (runs last so
   //    the earlier steps see a healthy cluster and the stopped member is restored at the end).
   if (committeeSwapPlan(state.scenario.kms).isSwap) {
     await proveSpareInQuorum(state, runDecryption);
   }
 
   console.log(
-    "[kms-context-switch] PASS — NewKmsContext and NewKmsEpoch both activated on chain, user-decryption works under each, and the input-proof app flow held at every checkpoint",
+    "[kms-context-switch] PASS — NewKmsContext and NewKmsEpoch both activated on chain, the retired context and epoch were destroyed across contract, connector, and KMS Core, user-decryption works under each transition, and the input-proof app flow held at every checkpoint",
   );
 };
