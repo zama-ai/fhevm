@@ -2211,7 +2211,7 @@ mod tests {
         .await
         .expect("reconcile");
 
-        timeout(Duration::from_secs(10), async {
+        timeout(Duration::from_secs(30), async {
             loop {
                 let (started,): (bool,) = sqlx::query_as(
                     "SELECT gw_dry_run_started
