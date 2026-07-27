@@ -1,10 +1,6 @@
-/* eslint-disable @typescript-eslint/unified-signatures */
 import type { Fhevm } from '../../types/coreFhevmClient.js';
 import type { FhevmChain } from '../../types/fhevmChain.js';
-import type {
-  SignedDelegatedDecryptionPermit,
-  SignedSelfDecryptionPermit,
-} from '../../types/signedDecryptionPermit.js';
+import type { SignedDecryptionPermit } from '../../types/signedDecryptionPermit.js';
 import type { TransportKeyPair } from '../../kms/TransportKeyPair-p.js';
 import type { EncryptedValueLike } from '../../types/encryptedTypes.js';
 import { canDecryptValuesFromPairs as canDecryptValuesFromPairs_ } from '../../host-contracts/canDecryptValuesFromPairs.js';
@@ -25,7 +21,7 @@ export type CanDecryptValuesFromPairsWithUserAddressParameters = CanDecryptValue
 };
 
 export type CanDecryptValuesFromPairsWithPermitParameters = CanDecryptValuesFromPairsParametersBase & {
-  readonly signedPermit: SignedSelfDecryptionPermit | SignedDelegatedDecryptionPermit;
+  readonly signedPermit: SignedDecryptionPermit;
   readonly transportKeyPair?: TransportKeyPair | undefined;
 };
 
@@ -38,16 +34,6 @@ export type CanDecryptValuesFromPairsReturnType = {
 };
 
 ////////////////////////////////////////////////////////////////////////////////
-
-export async function canDecryptValuesFromPairs(
-  fhevm: Fhevm<FhevmChain>,
-  parameters: CanDecryptValuesFromPairsWithUserAddressParameters,
-): Promise<CanDecryptValuesFromPairsReturnType>;
-
-export async function canDecryptValuesFromPairs(
-  fhevm: Fhevm<FhevmChain>,
-  parameters: CanDecryptValuesFromPairsWithPermitParameters,
-): Promise<CanDecryptValuesFromPairsReturnType>;
 
 export async function canDecryptValuesFromPairs(
   fhevm: Fhevm<FhevmChain>,

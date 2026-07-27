@@ -4,7 +4,7 @@ use fhevm_engine_common::chain_id::ChainId;
 use fhevm_engine_common::types::AllowEvents;
 use host_listener::contracts::TfheContract::TfheContractEvents;
 use host_listener::database::tfhe_event_propagate::{
-    ClearConst, Database as ListenerDatabase, Handle, LogTfhe, ToType, Transaction,
+    ClearConst, Database as ListenerDatabase, Handle, LogTfhe, ProducerBlock, ToType, Transaction,
 };
 use sqlx::types::time::PrimitiveDateTime;
 
@@ -124,6 +124,7 @@ pub async fn insert_event(
         transaction_hash: Some(tx_id),
         is_allowed,
         block_number: 0,
+        block_hash: Handle::ZERO,
         block_timestamp: PrimitiveDateTime::MAX,
         dependence_chain: tx_id,
         tx_depth_size: 0,
@@ -170,7 +171,7 @@ pub async fn allow_handle(
             String::new(),
             AllowEvents::AllowedForDecryption,
             None,
-            0,
+            ProducerBlock::new(&[], 0),
         )
         .await?;
     Ok(())
@@ -194,7 +195,7 @@ pub async fn wait_for_error(
     tx_id: &[u8],
 ) -> Result<(bool, Option<String>), Box<dyn std::error::Error>> {
     let mut last_error = None;
-    for _ in 0..80 {
+    for _ in 0..240 {
         tokio::time::sleep(tokio::time::Duration::from_millis(250)).await;
         let row = sqlx::query_as::<_, (bool, bool, Option<String>)>(
             r#"SELECT is_error, is_completed, error_message

@@ -135,6 +135,10 @@ export const SOLANA_ACL_PROGRAM = "0x4cd3022dff504a675caf2d9b4f4014d0b3dc3ea17ff
 // Default KMS/gateway user-decrypt context id, as an unsigned decimal string.
 export const SOLANA_DEFAULT_USER_DECRYPT_CONTEXT =
   "3166189940082864718613269121331309980362851143201109172953918312716374638593";
+
+/** Per-operator coprocessor DB name: instance 0 → `coprocessor`, N → `coprocessor_N`. */
+export const coprocessorDatabaseName = (instanceIndex: number) =>
+  instanceIndex === 0 ? "coprocessor" : `coprocessor_${instanceIndex}`;
 export const KMS_CORE_CONTAINER = "kms-core";
 export const TEST_SUITE_CONTAINER = "fhevm-test-suite-e2e-debug";
 export const KEYGEN_ID_SELECTOR = "0xd52f10eb";
@@ -218,6 +222,8 @@ export const GROUP_BUILD_SERVICES: Record<OverrideGroup, string[]> = {
     "coprocessor-zkproof-worker",
     "coprocessor-sns-worker",
     "coprocessor-transaction-sender",
+    "coprocessor-consensus-detector",
+    "coprocessor-upgrade-controller",
   ],
   "kms-connector": [
     "kms-connector-db-migration",
@@ -236,6 +242,7 @@ export const GROUP_BUILD_SERVICES: Record<OverrideGroup, string[]> = {
     "gateway-sc-add-pausers",
     "gateway-sc-trigger-keygen",
     "gateway-sc-trigger-crsgen",
+    "gateway-sc-context-switch",
   ],
   "host-contracts": [
     "host-sc-deploy",
@@ -308,6 +315,9 @@ export const TEST_GREP: Record<string, string> = {
   "priority-coprocessor": "test priority coprocessor input flow",
   "user-decryption": "test user decrypt",
   "delegated-user-decryption": "test delegated user decrypt",
+  "erc1271-user-decryption": "ERC-1271 user decryption",
+  "unified-user-decryption": "Unified user decryption",
+  "decryption-signature-invalidation": "Decryption signature invalidation",
   "public-decryption":
     "test async decrypt (uint.*|ebytes.* trivial|ebytes64 non-trivial|ebytes256 non-trivial with snapshot|addresses|several addresses)",
   "public-decrypt-http-ebool": "test HTTPPublicDecrypt ebool",
@@ -318,6 +328,9 @@ export const TEST_GREP: Record<string, string> = {
   "operators": "test operator|FHEVM manual operations",
   "hcu-block-cap": "block cap scenarios",
   "erc20": "should transfer tokens between two users.",
+  "cross-cutover-setup": "\\[cross-cutover-setup\\]",
+  "cross-cutover-transfer": "\\[cross-cutover-transfer\\]",
+  "cross-cutover-verify": "\\[cross-cutover-verify\\]",
   "negative-acl": "negative-acl",
   "multi-chain-isolation": "Multi-Chain State Isolation",
   "confidential-bridge": "Confidential Bridge",
@@ -350,6 +363,9 @@ export const STANDARD_TEST_PROFILES = [
   "input-proof-compute-decrypt",
   "user-decryption",
   "delegated-user-decryption",
+  "erc1271-user-decryption",
+  "unified-user-decryption",
+  "decryption-signature-invalidation",
   "erc20",
   "public-decrypt-http-ebool",
   "public-decrypt-http-mixed",
@@ -363,6 +379,44 @@ export const STANDARD_TEST_PROFILES = [
   // `ciphertext-drift` is still registered as a profile for on-demand runs but
   // is omitted from the standard suite to avoid leaving a corrupted DB.
   "ciphertext-drift-auto-recovery",
+] as const;
+
+// CI shards of the standard suite. Together they must cover STANDARD_TEST_PROFILES
+// exactly (enforced by a unit test in cli.test.ts); each shard runs on its own
+// freshly booted stack so wall-clock time is bounded by the slowest shard, not the sum.
+//
+// Sharding rationale:
+// - "stateful" isolates the suites that mutate shared stack state (contract pauses,
+//   DB revert, deliberate ciphertext drift) and carry the largest polling budgets.
+//   Order within the shard preserves the standard-suite order, drift last.
+// - "decryption" groups the user/public decryption flows (read-only).
+// - "compute" groups input/compute flows plus the multi-chain-only suites.
+export const STANDARD_SHARD_STATEFUL_TEST_PROFILES = [
+  "paused-host-contracts",
+  "paused-gateway-contracts",
+  "coprocessor-db-state-revert",
+  "ciphertext-drift-auto-recovery",
+] as const;
+
+export const STANDARD_SHARD_DECRYPTION_TEST_PROFILES = [
+  "user-decryption",
+  "delegated-user-decryption",
+  "erc1271-user-decryption",
+  "unified-user-decryption",
+  "decryption-signature-invalidation",
+  "public-decrypt-http-ebool",
+  "public-decrypt-http-mixed",
+] as const;
+
+export const STANDARD_SHARD_COMPUTE_TEST_PROFILES = [
+  "input-proof",
+  "input-proof-compute-decrypt",
+  "erc20",
+  "negative-acl",
+  "random-subset",
+  "multi-chain-isolation",
+  "confidential-bridge",
+  "hcu-block-cap",
 ] as const;
 
 /** Heavy suites are the slowest and most stateful CI checks. */

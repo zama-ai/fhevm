@@ -93,7 +93,7 @@ pub fn spawn_gauge_update_routine(
 }
 
 /// The operation statuses tracked by the unprocessed gauge, kept bounded by excluding the terminal
-/// `completed`/`failed` statuses (which grow forever now that operations are not deleted).
+/// `completed`/`failed`/`aborted` statuses (which grow forever now that operations are not deleted).
 const PENDING_STATUS: &str = "pending";
 const UNDER_PROCESS_STATUS: &str = "under_process";
 

@@ -1,7 +1,9 @@
 # syntax=docker/dockerfile:1
-ARG RUST_IMAGE_VERSION=1.91.0
+ARG RUST_IMAGE_VERSION=1.97.1
 
 # Stage 1: Build TFHE Worker
+# RUST_IMAGE_VERSION is injected by CI from rust-toolchain.toml (see coprocessor-docker-build.yml)
+ARG RUST_IMAGE_VERSION
 FROM ghcr.io/zama-ai/fhevm/gci/rust-glibc:${RUST_IMAGE_VERSION} AS builder
 
 ARG CARGO_PROFILE=release
@@ -16,6 +18,20 @@ ENV SCCACHE_S3_KEY_PREFIX=${SCCACHE_S3_PREFIX}
 ENV AWS_REGION=${SCCACHE_REGION}
 
 USER root
+
+# TODO(sccache): temporary inline install for testing; remove once sccache
+# ships in the rust-glibc golden image and rely on that instead.
+RUN set -eux; \
+    arch="$(uname -m)"; \
+    case "$arch" in \
+        x86_64)  triple=x86_64-unknown-linux-musl ;; \
+        aarch64) triple=aarch64-unknown-linux-musl ;; \
+        *) echo "unsupported arch: $arch" >&2; exit 1 ;; \
+    esac; \
+    curl -fsSL "https://github.com/mozilla/sccache/releases/download/${SCCACHE_VERSION}/sccache-${SCCACHE_VERSION}-${triple}.tar.gz" \
+        | tar -xz --strip-components=1 -C /usr/local/bin "sccache-${SCCACHE_VERSION}-${triple}/sccache"; \
+    chmod +x /usr/local/bin/sccache; \
+    sccache --version
 
 WORKDIR /app
 

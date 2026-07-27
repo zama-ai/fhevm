@@ -9,12 +9,16 @@ use alloy::primitives::U256;
 use anyhow::anyhow;
 use connector_utils::{
     conn::{CONNECTION_RETRY_DELAY, CONNECTION_RETRY_NUMBER},
-    types::{KmsGrpcRequest, KmsGrpcResponse, db::EventType, request_id_to_u256, u256_to_u32},
+    types::{
+        KmsGrpcRequest, KmsGrpcResponse, SendResponse, db::EventType, request_id_to_u256,
+        u256_to_u32,
+    },
 };
 use kms_grpc::{
     kms::v1::{
-        CrsGenRequest, KeyGenPreprocRequest, KeyGenRequest, NewMpcContextRequest,
-        NewMpcEpochRequest, PublicDecryptionRequest, RequestId, UserDecryptionRequest,
+        CrsGenRequest, DestroyMpcContextRequest, DestroyMpcContextResponse, DestroyMpcEpochRequest,
+        KeyGenPreprocRequest, KeyGenRequest, NewMpcContextRequest, NewMpcEpochRequest,
+        PublicDecryptionRequest, RequestId, UserDecryptionRequest,
     },
     kms_service::v1::core_service_endpoint_client::CoreServiceEndpointClient,
 };
@@ -91,13 +95,15 @@ impl KmsClient {
     pub async fn send_request(
         &self,
         request: &KmsGrpcRequest,
-    ) -> (i16, Result<(), ProcessingError>) {
+    ) -> (i16, Result<SendResponse, ProcessingError>) {
         match request {
             KmsGrpcRequest::PublicDecryption(req) => self.request_public_decryption(req).await,
             KmsGrpcRequest::UserDecryption(req) => self.request_user_decryption(req).await,
             KmsGrpcRequest::PrepKeygen(req) => self.request_prep_keygen(req).await,
             KmsGrpcRequest::Keygen(req) => self.request_keygen(req).await,
             KmsGrpcRequest::Crsgen(req) => self.request_crsgen(req).await,
+            KmsGrpcRequest::AbortKeygen(req) => self.request_abort_keygen(req).await,
+            KmsGrpcRequest::AbortCrsgen(req) => self.request_abort_crsgen(req).await,
             KmsGrpcRequest::NewMpcContext { old, new } => {
                 // Create the old context in case it doesn't exist, then the new context.
                 match self.request_new_mpc_context(old).await {
@@ -107,6 +113,8 @@ impl KmsClient {
                 }
             }
             KmsGrpcRequest::NewMpcEpoch(req) => self.request_new_mpc_epoch(req).await,
+            KmsGrpcRequest::DestroyMpcContext(req) => self.request_destroy_mpc_context(req).await,
+            KmsGrpcRequest::DestroyMpcEpoch(req) => self.request_destroy_mpc_epoch(req).await,
         }
     }
 
@@ -124,6 +132,12 @@ impl KmsClient {
             KmsGrpcRequest::PrepKeygen(req) => self.poll_prep_keygen_result(req).await,
             KmsGrpcRequest::Keygen(req) => self.poll_keygen_result(req).await,
             KmsGrpcRequest::Crsgen(req) => self.poll_crsgen_result(req).await,
+            // Abort has no result-polling endpoint on the Core: the send-side ack is the only
+            // signal. The original keygen/crsgen request is separately retired when its own result
+            // poll returns `Code::Aborted`.
+            KmsGrpcRequest::AbortKeygen(_) | KmsGrpcRequest::AbortCrsgen(_) => {
+                (0, Ok(KmsGrpcResponse::NoResponseExpected))
+            }
             // `NewMpcContext` has no result-polling endpoint: the Core's send-side ack is the
             // only signal we get. The caller has already observed a successful send; we emit a
             // synthetic response so the publisher can write the row. `context_id` is sourced
@@ -133,13 +147,18 @@ impl KmsClient {
                 Err(e) => (0, Err(e)),
             },
             KmsGrpcRequest::NewMpcEpoch(req) => self.poll_epoch_result_response(req).await,
+            // Like aborts, destructions have no result-polling endpoint on the Core: the
+            // send-side ack is the only signal.
+            KmsGrpcRequest::DestroyMpcContext(_) | KmsGrpcRequest::DestroyMpcEpoch(_) => {
+                (0, Ok(KmsGrpcResponse::NoResponseExpected))
+            }
         }
     }
 
     async fn request_public_decryption(
         &self,
         request: &PublicDecryptionRequest,
-    ) -> (i16, Result<(), ProcessingError>) {
+    ) -> (i16, Result<SendResponse, ProcessingError>) {
         let Some(request_id) = request.request_id.clone() else {
             return irrecoverable_error(anyhow!("Missing request ID"));
         };
@@ -153,6 +172,7 @@ impl KmsClient {
                 async move { client.public_decrypt(request).await }
             },
             EventType::PublicDecryptionRequest,
+            |_| Ok(SendResponse::Empty),
         )
         .await
     }
@@ -160,7 +180,7 @@ impl KmsClient {
     async fn request_user_decryption(
         &self,
         request: &UserDecryptionRequest,
-    ) -> (i16, Result<(), ProcessingError>) {
+    ) -> (i16, Result<SendResponse, ProcessingError>) {
         let Some(request_id) = request.request_id.clone() else {
             return irrecoverable_error(anyhow!("Missing request ID"));
         };
@@ -173,6 +193,7 @@ impl KmsClient {
                 async move { client.user_decrypt(request).await }
             },
             EventType::UserDecryptionRequest,
+            |_| Ok(SendResponse::Empty),
         )
         .await
     }
@@ -180,7 +201,7 @@ impl KmsClient {
     async fn request_prep_keygen(
         &self,
         request: &KeyGenPreprocRequest,
-    ) -> (i16, Result<(), ProcessingError>) {
+    ) -> (i16, Result<SendResponse, ProcessingError>) {
         let Some(request_id) = request.request_id.clone() else {
             return irrecoverable_error(anyhow!("Missing request ID"));
         };
@@ -194,15 +215,21 @@ impl KmsClient {
                 async move { client.key_gen_preproc(request).await }
             },
             EventType::PrepKeygenRequest,
+            |_| Ok(SendResponse::Empty),
         )
         .await
     }
 
-    async fn request_keygen(&self, request: &KeyGenRequest) -> (i16, Result<(), ProcessingError>) {
-        let Some(request_id) = request.request_id.clone() else {
-            return irrecoverable_error(anyhow!("Missing request ID"));
+    async fn request_keygen(
+        &self,
+        request: &KeyGenRequest,
+    ) -> (i16, Result<SendResponse, ProcessingError>) {
+        // Route to the shard holding this keygen's preprocessing material (keyed by the
+        // preprocessing ID), so prep-keygen, keygen and abort-keygen all target the same shard.
+        let Some(preproc_id) = request.preproc_id.clone() else {
+            return irrecoverable_error(anyhow!("Missing preprocessing ID"));
         };
-        let inner_client = self.choose_client(request_id.clone());
+        let inner_client = self.choose_client(preproc_id);
 
         send_request_with_retries(
             self.grpc_request_retries,
@@ -212,11 +239,15 @@ impl KmsClient {
                 async move { client.key_gen(request).await }
             },
             EventType::KeygenRequest,
+            |_| Ok(SendResponse::Empty),
         )
         .await
     }
 
-    async fn request_crsgen(&self, request: &CrsGenRequest) -> (i16, Result<(), ProcessingError>) {
+    async fn request_crsgen(
+        &self,
+        request: &CrsGenRequest,
+    ) -> (i16, Result<SendResponse, ProcessingError>) {
         let Some(request_id) = request.request_id.clone() else {
             return irrecoverable_error(anyhow!("Missing request ID"));
         };
@@ -230,6 +261,45 @@ impl KmsClient {
                 async move { client.crs_gen(request).await }
             },
             EventType::CrsgenRequest,
+            |_| Ok(SendResponse::Empty),
+        )
+        .await
+    }
+
+    async fn request_abort_keygen(
+        &self,
+        request_id: &RequestId,
+    ) -> (i16, Result<SendResponse, ProcessingError>) {
+        let inner_client = self.choose_client(request_id.clone());
+
+        send_request_with_retries(
+            self.grpc_request_retries,
+            || {
+                let mut client = inner_client.clone();
+                let request_id = request_id.clone();
+                async move { client.abort_key_gen(request_id).await }
+            },
+            EventType::AbortKeygenRequest,
+            |_| Ok(SendResponse::Empty),
+        )
+        .await
+    }
+
+    async fn request_abort_crsgen(
+        &self,
+        request_id: &RequestId,
+    ) -> (i16, Result<SendResponse, ProcessingError>) {
+        let inner_client = self.choose_client(request_id.clone());
+
+        send_request_with_retries(
+            self.grpc_request_retries,
+            || {
+                let mut client = inner_client.clone();
+                let request_id = request_id.clone();
+                async move { client.abort_crs_gen(request_id).await }
+            },
+            EventType::AbortCrsgenRequest,
+            |_| Ok(SendResponse::Empty),
         )
         .await
     }
@@ -314,8 +384,11 @@ impl KmsClient {
         )
         .await;
 
-        match grpc_result.map_err(ProcessingError::from_response_status) {
-            Err(e) => (error_count, Err(e)),
+        match grpc_result {
+            Err(status) => (
+                error_count,
+                Err(ProcessingError::from_response_status(status)),
+            ),
             Ok(grpc_response) => (
                 error_count,
                 Ok(KmsGrpcResponse::PrepKeygen(grpc_response.into_inner())),
@@ -330,7 +403,12 @@ impl KmsClient {
         let Some(request_id) = request.request_id.clone() else {
             return irrecoverable_error(anyhow!("Missing request ID"));
         };
-        let inner_client = self.choose_client(request_id.clone());
+        // Poll the shard that ran the keygen, i.e. the one holding its preprocessing material
+        // (keyed by the preprocessing ID). The result itself is still fetched by key ID.
+        let Some(preproc_id) = request.preproc_id.clone() else {
+            return irrecoverable_error(anyhow!("Missing preprocessing ID"));
+        };
+        let inner_client = self.choose_client(preproc_id);
 
         let (error_count, grpc_result) = poll_for_result(
             self.grpc_request_retries,
@@ -343,8 +421,11 @@ impl KmsClient {
         )
         .await;
 
-        match grpc_result.map_err(ProcessingError::from_response_status) {
-            Err(e) => (error_count, Err(e)),
+        match grpc_result {
+            Err(status) => (
+                error_count,
+                Err(ProcessingError::from_response_status(status)),
+            ),
             Ok(grpc_response) => (
                 error_count,
                 Ok(KmsGrpcResponse::Keygen(grpc_response.into_inner())),
@@ -372,8 +453,11 @@ impl KmsClient {
         )
         .await;
 
-        match grpc_result.map_err(ProcessingError::from_response_status) {
-            Err(e) => (error_count, Err(e)),
+        match grpc_result {
+            Err(status) => (
+                error_count,
+                Err(ProcessingError::from_response_status(status)),
+            ),
             Ok(grpc_response) => (
                 error_count,
                 Ok(KmsGrpcResponse::Crsgen(grpc_response.into_inner())),
@@ -384,7 +468,7 @@ impl KmsClient {
     async fn request_new_mpc_context(
         &self,
         request: &NewMpcContextRequest,
-    ) -> (i16, Result<(), ProcessingError>) {
+    ) -> (i16, Result<SendResponse, ProcessingError>) {
         let Some(context_id) = request
             .new_context
             .as_ref()
@@ -403,6 +487,51 @@ impl KmsClient {
                 async move { client.new_mpc_context(request).await }
             },
             EventType::NewKmsContext,
+            |_| Ok(SendResponse::Empty),
+        )
+        .await
+    }
+
+    async fn request_destroy_mpc_context(
+        &self,
+        request: &DestroyMpcContextRequest,
+    ) -> (i16, Result<SendResponse, ProcessingError>) {
+        let Some(context_id) = request.context_id.clone() else {
+            return irrecoverable_error(anyhow!("Missing context_id in DestroyMpcContextRequest"));
+        };
+        let inner_client = self.choose_client(context_id);
+
+        send_request_with_retries(
+            self.grpc_request_retries,
+            || {
+                let mut client = inner_client.clone();
+                let request = request.clone();
+                async move { client.destroy_mpc_context(request).await }
+            },
+            EventType::KmsContextDestroyed,
+            map_destroyed_epochs,
+        )
+        .await
+    }
+
+    async fn request_destroy_mpc_epoch(
+        &self,
+        request: &DestroyMpcEpochRequest,
+    ) -> (i16, Result<SendResponse, ProcessingError>) {
+        let Some(epoch_id) = request.epoch_id.clone() else {
+            return irrecoverable_error(anyhow!("Missing epoch_id in DestroyMpcEpochRequest"));
+        };
+        let inner_client = self.choose_client(epoch_id);
+
+        send_request_with_retries(
+            self.grpc_request_retries,
+            || {
+                let mut client = inner_client.clone();
+                let request = request.clone();
+                async move { client.destroy_mpc_epoch(request).await }
+            },
+            EventType::KmsEpochDestroyed,
+            |_| Ok(SendResponse::Empty),
         )
         .await
     }
@@ -410,7 +539,7 @@ impl KmsClient {
     async fn request_new_mpc_epoch(
         &self,
         request: &NewMpcEpochRequest,
-    ) -> (i16, Result<(), ProcessingError>) {
+    ) -> (i16, Result<SendResponse, ProcessingError>) {
         let Some(epoch_id) = request.epoch_id.clone() else {
             return irrecoverable_error(anyhow!("Missing epoch_id in NewMpcEpochRequest"));
         };
@@ -424,6 +553,7 @@ impl KmsClient {
                 async move { client.new_mpc_epoch(request).await }
             },
             EventType::NewKmsEpoch,
+            |_| Ok(SendResponse::Empty),
         )
         .await
     }
@@ -515,6 +645,23 @@ fn irrecoverable_error<T>(err: anyhow::Error) -> (i16, Result<T, ProcessingError
     (0, Err(ProcessingError::Irrecoverable(err)))
 }
 
+/// Converts a `DestroyMpcContextResponse` into the list of destroyed epoch IDs to invalidate.
+fn map_destroyed_epochs(
+    response: DestroyMpcContextResponse,
+) -> Result<SendResponse, ProcessingError> {
+    response
+        .epoch_ids
+        .into_iter()
+        .map(request_id_to_u256)
+        .collect::<Result<Vec<_>, _>>()
+        .map(SendResponse::DestroyedEpochs)
+        .map_err(|e| {
+            ProcessingError::Irrecoverable(anyhow!(
+                "Invalid epoch_id in DestroyMpcContextResponse: {e}"
+            ))
+        })
+}
+
 const RETRYABLE_GRPC_CODE: [Code; 4] = [
     Code::DeadlineExceeded,
     Code::ResourceExhausted,
@@ -525,40 +672,41 @@ const RETRYABLE_GRPC_CODE: [Code; 4] = [
 /// Sends a given GRPC request to the KMS with retries.
 ///
 /// Returns the number of errors and the result of the request.
-async fn send_request_with_retries<F, Fut, R>(
+async fn send_request_with_retries<F, Fut, R, M>(
     retries: u8,
     mut request_fn: F,
     event_type: EventType,
-) -> (i16, Result<(), ProcessingError>)
+    map_response: M,
+) -> (i16, Result<SendResponse, ProcessingError>)
 where
     F: FnMut() -> Fut,
     Fut: Future<Output = Result<Response<R>, Status>>,
+    M: Fn(R) -> Result<SendResponse, ProcessingError>,
 {
     for i in 1..=retries as i16 {
-        match request_fn().await {
-            Ok(_) => {
+        // Don't count last successful attempt
+        let error = match request_fn().await {
+            Ok(response) => {
                 GRPC_REQUEST_SENT_COUNTER
                     .with_label_values(&[event_type.as_str()])
                     .inc();
                 info!("GRPC request successfully sent to the KMS!");
-                return (i - 1, Ok(())); // Don't count last successful attempt
+                return (i - 1, map_response(response.into_inner()));
             }
             Err(e) if e.code() == Code::AlreadyExists => {
                 info!("GRPC already sent to the KMS!");
-                return (i - 1, Ok(())); // Don't count last successful attempt
+                return (i - 1, Ok(SendResponse::Empty));
             }
-            Err(e) if RETRYABLE_GRPC_CODE.contains(&e.code()) => {
-                GRPC_REQUEST_SENT_ERRORS
-                    .with_label_values(&[event_type.as_str()])
-                    .inc();
-                warn!("#{i}/{retries} GRPC request attempt failed: {e}");
-            }
-            Err(e) => {
-                GRPC_REQUEST_SENT_ERRORS
-                    .with_label_values(&[event_type.as_str()])
-                    .inc();
-                return (i, Err(ProcessingError::Irrecoverable(e.into())));
-            }
+            Err(e) => e,
+        };
+
+        GRPC_REQUEST_SENT_ERRORS
+            .with_label_values(&[event_type.as_str()])
+            .inc();
+        if RETRYABLE_GRPC_CODE.contains(&error.code()) {
+            warn!("#{i}/{retries} GRPC request attempt failed: {error}");
+        } else {
+            return (i, Err(ProcessingError::Irrecoverable(error.into())));
         }
     }
     (

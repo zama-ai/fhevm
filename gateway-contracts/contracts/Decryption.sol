@@ -377,7 +377,9 @@ contract Decryption is
         // Collect the fee from the transaction sender for this public decryption request.
         _collectPublicDecryptionFee(msg.sender);
 
+        // Dual emission: for both pre and post 0.15 consumers
         emit PublicDecryptionRequest(publicDecryptionId, snsCtMaterials, extraData);
+        emit PublicDecryptionRequest(publicDecryptionId, ctHandles, extraData);
     }
 
     /**
@@ -545,7 +547,9 @@ contract Decryption is
         // Collect the fee from the transaction sender for this user decryption request.
         _collectUserDecryptionFee(msg.sender);
 
+        // Dual emission: for both pre and post 0.15 consumers
         emit UserDecryptionRequest(userDecryptionId, snsCtMaterials, userAddress, publicKey, extraData);
+        emit UserDecryptionRequest(userDecryptionId, ctHandles, userAddress, publicKey, extraData);
     }
 
     /**
@@ -643,9 +647,17 @@ contract Decryption is
         // Collect the fee from the transaction sender for this delegated user decryption request.
         _collectUserDecryptionFee(msg.sender);
 
+        // Dual emission: for both pre and post 0.15 consumers
         emit UserDecryptionRequest(
             userDecryptionId,
             snsCtMaterials,
+            delegationAccounts.delegateAddress,
+            publicKey,
+            extraData
+        );
+        emit UserDecryptionRequest(
+            userDecryptionId,
+            ctHandles,
             delegationAccounts.delegateAddress,
             publicKey,
             extraData
@@ -727,7 +739,9 @@ contract Decryption is
         // Pin the KMS context at request time. See `decryptionContextId` storage docs.
         $.decryptionContextId[userDecryptionId] = contextId;
 
+        // Dual emission: for both pre and post 0.15 consumers
         emit UserDecryptionRequest(userDecryptionId, snsCtMaterials, handles, payload);
+        emit UserDecryptionRequest(userDecryptionId, handles, payload);
     }
 
     /**

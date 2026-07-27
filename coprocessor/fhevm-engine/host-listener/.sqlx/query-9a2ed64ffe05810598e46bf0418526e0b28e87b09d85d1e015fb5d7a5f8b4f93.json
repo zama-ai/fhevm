@@ -1,0 +1,15 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n            DELETE FROM bridge_handle_events\n            WHERE src_chain_id = $1\n              AND block_hash = ANY($2::bytea[])\n            ",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Int8",
+        "ByteaArray"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "9a2ed64ffe05810598e46bf0418526e0b28e87b09d85d1e015fb5d7a5f8b4f93"
+}

@@ -1,9 +1,9 @@
 use alloy::primitives::Signature;
-use alloy::providers::RootProvider;
-use alloy::signers::Signer;
-use alloy_provider::fillers::{
+use alloy::providers::fillers::{
     BlobGasFiller, ChainIdFiller, FillProvider, GasFiller, JoinFill, NonceFiller,
 };
+use alloy::providers::RootProvider;
+use alloy::signers::Signer;
 use anyhow::Result;
 use bigdecimal::num_bigint::BigInt;
 use clap::{Parser, ValueEnum};
@@ -767,25 +767,6 @@ impl SupportedFheCiphertexts {
         }
     }
 
-    pub fn add_to_rerandomisation_context(&self, context: &mut ReRandomizationContext) {
-        match self {
-            SupportedFheCiphertexts::FheBool(c) => context.add_ciphertext(c),
-            SupportedFheCiphertexts::FheUint4(c) => context.add_ciphertext(c),
-            SupportedFheCiphertexts::FheUint8(c) => context.add_ciphertext(c),
-            SupportedFheCiphertexts::FheUint16(c) => context.add_ciphertext(c),
-            SupportedFheCiphertexts::FheUint32(c) => context.add_ciphertext(c),
-            SupportedFheCiphertexts::FheUint64(c) => context.add_ciphertext(c),
-            SupportedFheCiphertexts::FheUint128(c) => context.add_ciphertext(c),
-            SupportedFheCiphertexts::FheUint160(c) => context.add_ciphertext(c),
-            SupportedFheCiphertexts::FheUint256(c) => context.add_ciphertext(c),
-            SupportedFheCiphertexts::FheBytes64(c) => context.add_ciphertext(c),
-            SupportedFheCiphertexts::FheBytes128(c) => context.add_ciphertext(c),
-            SupportedFheCiphertexts::FheBytes256(c) => context.add_ciphertext(c),
-            SupportedFheCiphertexts::Scalar(_) => {
-                // Do nothing
-            }
-        };
-    }
     pub fn re_randomise(
         &mut self,
         cpk: &CompactPublicKey,

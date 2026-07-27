@@ -18,7 +18,7 @@ pub struct PublicDecryptRequestJson {
     /// Extra data forwarded verbatim to the gateway contract. Accepts `"0x00"`, version `0x01`
     /// (`0x01` + 32-byte contextId), fixed KMS version `0x02`
     /// (`0x02` + 32-byte contextId + 32-byte epochId), or Solana MMR-proof version `0x03`.
-    #[schema(value_type = String, example = "0x00")]
+    #[schema(schema_with = crate::http::extra_data_decryption_schema)]
     #[validate(custom(function = "crate::http::validate_extra_data_field_decryption"))]
     pub extra_data: String,
 }

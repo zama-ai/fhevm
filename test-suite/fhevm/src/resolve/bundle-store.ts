@@ -9,12 +9,13 @@ import type { UpOptions, VersionBundle, VersionTarget } from "../types";
 import { exists, readJson, writeJson } from "../utils/fs";
 import { GitHubApiError } from "../errors";
 import {
+  OPTIONAL_REPO_KEYS,
   PACKAGE_TO_REPOSITORY,
   applyVersionEnvOverrides,
   resolveTarget,
 } from "./target";
 
-const VERSION_KEYS = Object.keys(PACKAGE_TO_REPOSITORY);
+const REQUIRED_VERSION_KEYS = Object.keys(PACKAGE_TO_REPOSITORY).filter((key) => !OPTIONAL_REPO_KEYS.has(key));
 const SAFE_LOCK_NAME = /^[A-Za-z0-9._-]+\.json$/;
 
 /** Computes the cache file path for a resolved bundle target. */
@@ -49,9 +50,18 @@ const validateLockBundleShape = (bundle: unknown): VersionBundle => {
   if (!candidate.env || typeof candidate.env !== "object") {
     throw new GitHubApiError("Lock file must include an env object with every version key");
   }
-  const missing = VERSION_KEYS.filter((key) => typeof candidate.env?.[key] !== "string" || !candidate.env[key]?.length);
+  const missing = REQUIRED_VERSION_KEYS.filter(
+    (key) => typeof candidate.env?.[key] !== "string" || !candidate.env[key]?.length,
+  );
   if (missing.length) {
     throw new GitHubApiError(`Lock file is missing required version keys: ${missing.join(", ")}`);
+  }
+  // Optional keys are allowed to be absent, but when present must still be non-empty strings.
+  const malformedOptional = [...OPTIONAL_REPO_KEYS].filter(
+    (key) => key in (candidate.env ?? {}) && (typeof candidate.env?.[key] !== "string" || !candidate.env[key]?.length),
+  );
+  if (malformedOptional.length) {
+    throw new GitHubApiError(`Lock file has malformed optional version keys: ${malformedOptional.join(", ")}`);
   }
   return candidate as VersionBundle;
 };

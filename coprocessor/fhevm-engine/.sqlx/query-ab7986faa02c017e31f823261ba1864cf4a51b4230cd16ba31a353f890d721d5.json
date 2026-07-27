@@ -1,0 +1,19 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n            INSERT INTO ciphertexts (\n                handle, ciphertext, ciphertext_version, ciphertext_type,\n                input_blob_hash, input_blob_index, is_input, created_at\n            ) VALUES ($1, $2, $3, $4, $5, $6, TRUE, NOW())\n            ON CONFLICT (handle, ciphertext_version) DO NOTHING;\n            ",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Bytea",
+        "Bytea",
+        "Int2",
+        "Int2",
+        "Bytea",
+        "Int4"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "ab7986faa02c017e31f823261ba1864cf4a51b4230cd16ba31a353f890d721d5"
+}

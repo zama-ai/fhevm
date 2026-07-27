@@ -4,20 +4,26 @@ use alloy::{
     sol_types::SolEvent,
 };
 use anyhow::anyhow;
+// Handle-only overloaded decryption events
 use fhevm_gateway_bindings::decryption::Decryption::{
-    PublicDecryptionRequest, SnsCiphertextMaterial,
-    UserDecryptionRequest_0 as UserDecryptionRequest,
-    UserDecryptionRequest_1 as UserDecryptionRequestV2, UserDecryptionRequestSolana,
+    PublicDecryptionRequest_1 as PublicDecryptionRequest, SnsCiphertextMaterial,
+    UserDecryptionRequest_2 as UserDecryptionRequest,
+    UserDecryptionRequest_3 as UserDecryptionRequestV2, UserDecryptionRequestSolana,
 };
 use fhevm_host_bindings::{
     kms_generation::{
         IKMSGeneration::KeyDigest,
-        KMSGeneration::{CrsgenRequest, KeygenRequest, PrepKeygenRequest},
+        KMSGeneration::{
+            AbortCrsgen, AbortKeygen, CrsgenRequest, KeygenRequest, PrepKeygenRequest,
+        },
     },
-    protocol_config::ProtocolConfig::{NewKmsContext, NewKmsEpoch},
+    protocol_config::ProtocolConfig::{
+        KmsContextDestroyed, KmsEpochDestroyed, NewKmsContext, NewKmsEpoch,
+    },
 };
-use sqlx::postgres::PgNotification;
+use sqlx::{PgExecutor, postgres::PgNotification, types::chrono::Utc};
 use std::{fmt::Display, str::FromStr};
+use tracing::info;
 
 /// Struct representing how `SnsCiphertextMaterial` are stored in the database.
 #[derive(sqlx::Type, Clone, Debug, Default, PartialEq)]
@@ -141,8 +147,12 @@ pub enum EventType {
     PrepKeygenRequest,
     KeygenRequest,
     CrsgenRequest,
+    AbortKeygenRequest,
+    AbortCrsgenRequest,
     NewKmsContext,
     NewKmsEpoch,
+    KmsContextDestroyed,
+    KmsEpochDestroyed,
 }
 
 impl Display for EventType {
@@ -153,8 +163,12 @@ impl Display for EventType {
             EventType::PrepKeygenRequest => write!(f, "PrepKeygenRequest"),
             EventType::KeygenRequest => write!(f, "KeygenRequest"),
             EventType::CrsgenRequest => write!(f, "CrsgenRequest"),
+            EventType::AbortKeygenRequest => write!(f, "AbortKeygenRequest"),
+            EventType::AbortCrsgenRequest => write!(f, "AbortCrsgenRequest"),
             EventType::NewKmsContext => write!(f, "NewKmsContext"),
             EventType::NewKmsEpoch => write!(f, "NewKmsEpoch"),
+            EventType::KmsContextDestroyed => write!(f, "KmsContextDestroyed"),
+            EventType::KmsEpochDestroyed => write!(f, "KmsEpochDestroyed"),
         }
     }
 }
@@ -171,8 +185,12 @@ impl From<&ProtocolEventKind> for EventType {
             ProtocolEventKind::PrepKeygen(_) => Self::PrepKeygenRequest,
             ProtocolEventKind::Keygen(_) => Self::KeygenRequest,
             ProtocolEventKind::Crsgen(_) => Self::CrsgenRequest,
+            ProtocolEventKind::AbortKeygen(_) => Self::AbortKeygenRequest,
+            ProtocolEventKind::AbortCrsgen(_) => Self::AbortCrsgenRequest,
             ProtocolEventKind::NewKmsContext(_) => Self::NewKmsContext,
             ProtocolEventKind::NewKmsEpoch(_) => Self::NewKmsEpoch,
+            ProtocolEventKind::KmsContextDestroyed(_) => Self::KmsContextDestroyed,
+            ProtocolEventKind::KmsEpochDestroyed(_) => Self::KmsEpochDestroyed,
         }
     }
 }
@@ -187,8 +205,12 @@ impl TryFrom<PgNotification> for EventType {
             PREP_KEYGEN_REQUEST_NOTIFICATION => Ok(Self::PrepKeygenRequest),
             KEYGEN_REQUEST_NOTIFICATION => Ok(Self::KeygenRequest),
             CRSGEN_REQUEST_NOTIFICATION => Ok(Self::CrsgenRequest),
+            ABORT_KEYGEN_REQUEST_NOTIFICATION => Ok(Self::AbortKeygenRequest),
+            ABORT_CRSGEN_REQUEST_NOTIFICATION => Ok(Self::AbortCrsgenRequest),
             NEW_KMS_CONTEXT_NOTIFICATION => Ok(Self::NewKmsContext),
             NEW_KMS_EPOCH_NOTIFICATION => Ok(Self::NewKmsEpoch),
+            KMS_CONTEXT_DESTROYED_NOTIFICATION => Ok(Self::KmsContextDestroyed),
+            KMS_EPOCH_DESTROYED_NOTIFICATION => Ok(Self::KmsEpochDestroyed),
             s => Err(anyhow!("Unknown notification channel: {s}")),
         }
     }
@@ -202,8 +224,12 @@ impl EventType {
             Self::PrepKeygenRequest => PREP_KEYGEN_REQUEST_NOTIFICATION,
             Self::KeygenRequest => KEYGEN_REQUEST_NOTIFICATION,
             Self::CrsgenRequest => CRSGEN_REQUEST_NOTIFICATION,
+            Self::AbortKeygenRequest => ABORT_KEYGEN_REQUEST_NOTIFICATION,
+            Self::AbortCrsgenRequest => ABORT_CRSGEN_REQUEST_NOTIFICATION,
             Self::NewKmsContext => NEW_KMS_CONTEXT_NOTIFICATION,
             Self::NewKmsEpoch => NEW_KMS_EPOCH_NOTIFICATION,
+            Self::KmsContextDestroyed => KMS_CONTEXT_DESTROYED_NOTIFICATION,
+            Self::KmsEpochDestroyed => KMS_EPOCH_DESTROYED_NOTIFICATION,
         }
     }
 
@@ -214,8 +240,12 @@ impl EventType {
             EventType::PrepKeygenRequest => "prep_keygen_request",
             EventType::KeygenRequest => "keygen_request",
             EventType::CrsgenRequest => "crsgen_request",
+            EventType::AbortKeygenRequest => "abort_keygen_request",
+            EventType::AbortCrsgenRequest => "abort_crsgen_request",
             EventType::NewKmsContext => "new_kms_context",
             EventType::NewKmsEpoch => "new_kms_epoch",
+            EventType::KmsContextDestroyed => "kms_context_destroyed",
+            EventType::KmsEpochDestroyed => "kms_epoch_destroyed",
         }
     }
 
@@ -226,8 +256,12 @@ impl EventType {
             EventType::PrepKeygenRequest => PrepKeygenRequest::SIGNATURE_HASH,
             EventType::KeygenRequest => KeygenRequest::SIGNATURE_HASH,
             EventType::CrsgenRequest => CrsgenRequest::SIGNATURE_HASH,
+            EventType::AbortKeygenRequest => AbortKeygen::SIGNATURE_HASH,
+            EventType::AbortCrsgenRequest => AbortCrsgen::SIGNATURE_HASH,
             EventType::NewKmsContext => NewKmsContext::SIGNATURE_HASH,
             EventType::NewKmsEpoch => NewKmsEpoch::SIGNATURE_HASH,
+            EventType::KmsContextDestroyed => KmsContextDestroyed::SIGNATURE_HASH,
+            EventType::KmsEpochDestroyed => KmsEpochDestroyed::SIGNATURE_HASH,
         }
     }
 
@@ -256,8 +290,12 @@ pub const USER_DECRYPT_REQUEST_NOTIFICATION: &str = "user_decryption_request_ava
 pub const PREP_KEYGEN_REQUEST_NOTIFICATION: &str = "prep_keygen_request_available";
 pub const KEYGEN_REQUEST_NOTIFICATION: &str = "keygen_request_available";
 pub const CRSGEN_REQUEST_NOTIFICATION: &str = "crsgen_request_available";
+pub const ABORT_KEYGEN_REQUEST_NOTIFICATION: &str = "abort_keygen_request_available";
+pub const ABORT_CRSGEN_REQUEST_NOTIFICATION: &str = "abort_crsgen_request_available";
 pub const NEW_KMS_CONTEXT_NOTIFICATION: &str = "new_kms_context_available";
 pub const NEW_KMS_EPOCH_NOTIFICATION: &str = "new_kms_epoch_available";
+pub const KMS_CONTEXT_DESTROYED_NOTIFICATION: &str = "kms_context_destroyed_available";
+pub const KMS_EPOCH_DESTROYED_NOTIFICATION: &str = "kms_epoch_destroyed_available";
 
 #[derive(sqlx::Type, Copy, Clone, Debug, PartialEq)]
 #[sqlx(type_name = "operation_status", rename_all = "lowercase")]
@@ -267,4 +305,62 @@ pub enum OperationStatus {
     UnderProcess,
     Completed,
     Failed,
+    Aborted,
+}
+
+impl std::fmt::Display for OperationStatus {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(match self {
+            Self::Pending => "pending",
+            Self::UnderProcess => "under_process",
+            Self::Completed => "completed",
+            Self::Failed => "failed",
+            Self::Aborted => "aborted",
+        })
+    }
+}
+
+/// Marks a destroyed KMS context as invalid in the `kms_context` validation cache.
+///
+/// The invalidation is upserted so the destruction is recorded even if the context was not cached.
+pub async fn invalidate_kms_context<'e>(
+    executor: impl PgExecutor<'e>,
+    context_id: U256,
+) -> anyhow::Result<()> {
+    let now = Utc::now();
+    sqlx::query!(
+        "INSERT INTO kms_context(id, is_valid, created_at, updated_at)
+        VALUES ($1, FALSE, $2, $2)
+        ON CONFLICT (id) DO UPDATE SET is_valid = FALSE, updated_at = $2",
+        context_id.as_le_slice(),
+        now,
+    )
+    .execute(executor)
+    .await?;
+
+    info!("KMS context #{context_id} marked as destroyed in DB");
+    Ok(())
+}
+
+/// Marks a destroyed KMS epoch as invalid in the `kms_epoch` validation cache.
+///
+/// The invalidation is upserted so the destruction is recorded even if the epoch was never cached;
+/// `context_id` stays NULL in that case, as the event does not carry it.
+pub async fn invalidate_kms_epoch<'e>(
+    executor: impl PgExecutor<'e>,
+    epoch_id: U256,
+) -> anyhow::Result<()> {
+    let now = Utc::now();
+    sqlx::query!(
+        "INSERT INTO kms_epoch(id, is_valid, created_at, updated_at)
+        VALUES ($1, FALSE, $2, $2)
+        ON CONFLICT (id) DO UPDATE SET is_valid = FALSE, updated_at = $2",
+        epoch_id.as_le_slice(),
+        now,
+    )
+    .execute(executor)
+    .await?;
+
+    info!("KMS epoch #{epoch_id} marked as destroyed in DB");
+    Ok(())
 }

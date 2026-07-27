@@ -10,6 +10,7 @@ use aws_credential_types::provider::ProvideCredentials;
 use aws_sigv4::http_request::{SignableBody, SignableRequest, SigningSettings, sign};
 use aws_sigv4::sign::v4;
 use sqlx::postgres::{PgConnectOptions, PgPool, PgPoolOptions, PgSslMode};
+use std::str::FromStr;
 use std::time::{Duration, SystemTime};
 use tokio_util::sync::CancellationToken;
 use tracing::{error, info};
@@ -32,6 +33,10 @@ struct ConnectParameters {
     database: String,
     /// `None` = rely on system/rustls trust store, `Some(path)` = custom CA PEM.
     ssl_ca_path: Option<String>,
+    /// TLS mode, taken from `?sslmode=` in `db_url`. Defaults to `VerifyFull`
+    /// when the URL omits it, so the URL can only ever be used to explicitly
+    /// pick a mode — never to silently weaken the default.
+    ssl_mode: PgSslMode,
 }
 
 impl ConnectParameters {
@@ -64,20 +69,35 @@ impl ConnectParameters {
 
         let port = url.port().unwrap_or(5432);
 
+        // Honor `?sslmode=...` from the URL (libpq names + sqlx `ssl-mode` alias),
+        // reusing sqlx's own case-insensitive parser. Absent → VerifyFull.
+        let ssl_mode = match url
+            .query_pairs()
+            .find(|(key, _)| key.as_ref() == "sslmode" || key.as_ref() == "ssl-mode")
+        {
+            Some((_, value)) => PgSslMode::from_str(value.as_ref())
+                .map_err(|e| anyhow::anyhow!("invalid sslmode in db_url: {e}"))?,
+            None => PgSslMode::VerifyFull,
+        };
+
         Ok(Self {
             host,
             port,
             username,
             database,
             ssl_ca_path,
+            ssl_mode,
         })
     }
 
     /// Generate a fresh IAM token and build `PgConnectOptions` with SSL.
     ///
-    /// By default, relies on the system/rustls trust store (which includes
-    /// Amazon Root CAs). If `ssl_ca_path` is set, uses that PEM file instead
-    /// (needed for legacy `rds-ca-2019` or custom CAs).
+    /// The TLS mode is `self.ssl_mode` (from `?sslmode=` in `db_url`, default
+    /// `VerifyFull`). For verifying modes, relies on the system/rustls trust
+    /// store (which includes Amazon Root CAs) unless `ssl_ca_path` is set, in
+    /// which case that PEM is used instead (needed for legacy `rds-ca-2019` or
+    /// custom CAs). Note: with `require`, a present CA triggers `verify-ca`
+    /// behavior; with `prefer`/`allow`/`disable` no certificate is verified.
     ///
     /// # Errors
     ///
@@ -93,7 +113,7 @@ impl ConnectParameters {
             .username(&self.username)
             .password(&token)
             .database(&self.database)
-            .ssl_mode(PgSslMode::VerifyFull);
+            .ssl_mode(self.ssl_mode);
 
         if let Some(path) = &self.ssl_ca_path {
             opts = opts.ssl_root_cert(path);
@@ -315,5 +335,38 @@ mod tests {
     fn invalid_url_rejected() {
         let result = ConnectParameters::from_db_url("not-a-url", None);
         assert!(result.is_err());
+    }
+
+    #[test]
+    fn ssl_mode_defaults_to_verify_full_when_absent() {
+        // PgSslMode does not implement PartialEq, so match on the variant.
+        let params = ConnectParameters::from_db_url("postgres://user@host/db", None).unwrap();
+        assert!(matches!(params.ssl_mode, PgSslMode::VerifyFull));
+    }
+
+    #[test]
+    fn ssl_mode_parsed_from_url() {
+        let require =
+            ConnectParameters::from_db_url("postgres://user@host/db?sslmode=require", None)
+                .unwrap();
+        assert!(matches!(require.ssl_mode, PgSslMode::Require));
+
+        // case-insensitive + the `ssl-mode` alias
+        let prefer =
+            ConnectParameters::from_db_url("postgres://user@host/db?ssl-mode=PREFER", None)
+                .unwrap();
+        assert!(matches!(prefer.ssl_mode, PgSslMode::Prefer));
+    }
+
+    #[test]
+    fn invalid_ssl_mode_rejected() {
+        let result = ConnectParameters::from_db_url("postgres://user@host/db?sslmode=bogus", None);
+        assert!(result.is_err());
+        assert!(
+            result
+                .unwrap_err()
+                .to_string()
+                .contains("invalid sslmode in db_url")
+        );
     }
 }

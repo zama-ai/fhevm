@@ -11,7 +11,7 @@ import {
   MODERN_RELAYER_MIGRATE_IMAGE_REPOSITORY,
 } from "../compat/compat";
 import { GitHubApiError } from "../errors";
-import { gitopsFile, mainCommits, packageTags } from "./github";
+import { commitsFrom, gitopsFile, mainCommits, packageTags } from "./github";
 import { NON_NETWORK_COMPANIONS } from "./presets";
 import { LATEST_SUPPORTED_PROFILE } from "../layout";
 import type { VersionBundle, VersionTarget } from "../types";
@@ -66,6 +66,8 @@ const REPO_PACKAGES = {
   COPROCESSOR_TFHE_WORKER_VERSION: "fhevm%2Fcoprocessor%2Ftfhe-worker",
   COPROCESSOR_ZKPROOF_WORKER_VERSION: "fhevm%2Fcoprocessor%2Fzkproof-worker",
   COPROCESSOR_SNS_WORKER_VERSION: "fhevm%2Fcoprocessor%2Fsns-worker",
+  COPROCESSOR_CONSENSUS_DETECTOR_VERSION: "fhevm%2Fcoprocessor%2Fconsensus-detector",
+  COPROCESSOR_UPGRADE_CONTROLLER_VERSION: "fhevm%2Fcoprocessor%2Fupgrade-controller",
   LISTENER_CORE_VERSION: "fhevm%2Flistener%2Flistener-core",
   CONNECTOR_DB_MIGRATION_VERSION: "fhevm%2Fkms-connector%2Fdb-migration",
   CONNECTOR_GW_LISTENER_VERSION: "fhevm%2Fkms-connector%2Fgw-listener",
@@ -78,6 +80,12 @@ const REPO_PACKAGES = {
 
 export const REPO_KEYS = new Set(Object.keys(REPO_PACKAGES));
 
+// Repo-owned images that may not be published at a resolved sha yet (brand-new images); pinned once published, omitted while unpublished so the compat layer gates their services out instead of docker failing to pull a missing manifest.
+export const OPTIONAL_REPO_KEYS = new Set([
+  "COPROCESSOR_CONSENSUS_DETECTOR_VERSION",
+  "COPROCESSOR_UPGRADE_CONTROLLER_VERSION",
+]);
+
 export const PACKAGE_TO_REPOSITORY = {
   GATEWAY_VERSION: "ghcr.io/zama-ai/fhevm/gateway-contracts",
   HOST_VERSION: "ghcr.io/zama-ai/fhevm/host-contracts",
@@ -88,6 +96,8 @@ export const PACKAGE_TO_REPOSITORY = {
   COPROCESSOR_TFHE_WORKER_VERSION: "ghcr.io/zama-ai/fhevm/coprocessor/tfhe-worker",
   COPROCESSOR_ZKPROOF_WORKER_VERSION: "ghcr.io/zama-ai/fhevm/coprocessor/zkproof-worker",
   COPROCESSOR_SNS_WORKER_VERSION: "ghcr.io/zama-ai/fhevm/coprocessor/sns-worker",
+  COPROCESSOR_CONSENSUS_DETECTOR_VERSION: "ghcr.io/zama-ai/fhevm/coprocessor/consensus-detector",
+  COPROCESSOR_UPGRADE_CONTROLLER_VERSION: "ghcr.io/zama-ai/fhevm/coprocessor/upgrade-controller",
   LISTENER_CORE_VERSION: "ghcr.io/zama-ai/fhevm/listener/listener-core",
   CONNECTOR_DB_MIGRATION_VERSION: "ghcr.io/zama-ai/fhevm/kms-connector/db-migration",
   CONNECTOR_GW_LISTENER_VERSION: "ghcr.io/zama-ai/fhevm/kms-connector/gw-listener",
@@ -103,6 +113,13 @@ const PACKAGE_REPOSITORY_CANDIDATES: Partial<Record<keyof typeof PACKAGE_TO_REPO
   RELAYER_VERSION: [MODERN_RELAYER_IMAGE_REPOSITORY, LEGACY_RELAYER_IMAGE_REPOSITORY],
   RELAYER_MIGRATE_VERSION: [MODERN_RELAYER_MIGRATE_IMAGE_REPOSITORY, LEGACY_RELAYER_MIGRATE_IMAGE_REPOSITORY],
 };
+
+const SHA_FALLBACK_COMMIT_WINDOW = 500;
+// A missing tag from a flaked re-tag, an in-flight push pipeline, or an is-latest-commit skip
+// sits a handful of commits behind the requested sha (a merge train at most). A published image
+// lagging further than this means the component's publishing is genuinely broken, which a
+// fallback must not paper over.
+export const MAX_FALLBACK_COMMIT_DEPTH = 50;
 
 export const REPO_TAG = /^[0-9a-f]{7}$/;
 export const SHA_REF = /^(?:[0-9a-f]{7}|[0-9a-f]{40})$/i;
@@ -162,7 +179,67 @@ const findImageTag = (
 };
 
 /** Normalizes a full SHA into the short tag form used by repo-owned images. */
-const shortSha = (value: string) => value.toLowerCase().slice(0, 7);
+export const shortSha = (value: string) => value.toLowerCase().slice(0, 7);
+
+/** Finds the position of the newest commit in an ancestry walk (newest first) that has a
+ * published image tag; -1 when none does. The position is the commit distance behind the walk's
+ * starting sha. */
+export const findPublishedAncestorIndex = (commitShas: string[], publishedTags: Set<string>) =>
+  commitShas.findIndex((sha) => publishedTags.has(shortSha(sha)));
+
+/**
+ * Resolves per-component fallback tags for repo-owned images with no published image at the
+ * requested sha.
+ *
+ * A missing tag is an exceptional state: on every push the docker-build workflows either build a
+ * changed component or re-tag the previous image with the new sha, so a gap means one of those
+ * jobs failed, has not finished, or was skipped for a superseded branch tip. Each affected
+ * component independently falls back to its newest published tag on the requested sha's
+ * ancestry, and the substitution is recorded in `sources`. A fallback deeper than
+ * MAX_FALLBACK_COMMIT_DEPTH fails resolution instead — that lag means the component's publishing
+ * is broken, not flaked. Components with no published tag in the walked window (brand-new or
+ * feature-branch-only packages) keep the requested sha, matching how latest-main skips gating
+ * on such packages.
+ */
+export const resolveMissingRepoTagFallbacks = (options: {
+  requestedTag: string;
+  missingKeys: string[];
+  commitShas: string[];
+  packageTagsMap: Record<string, Set<string>>;
+}): { overrides: Record<string, string>; sources: string[] } => {
+  const overrides: Record<string, string> = {};
+  const sources: string[] = [];
+  for (const key of options.missingKeys) {
+    const ancestorIndex = findPublishedAncestorIndex(options.commitShas, options.packageTagsMap[key] ?? new Set());
+    if (ancestorIndex < 0) {
+      // An empty tag set can mean the GitHub token simply cannot see the package (the versions
+      // API 404s on inaccessible packages), so the registry pull may still succeed with the
+      // runtime's own credentials; keep the pin and record that it is unverified.
+      if (!options.packageTagsMap[key]?.size) {
+        sources.push(`${key}=${options.requestedTag} (unverified: package has no visible published tags)`);
+        continue;
+      }
+      // A non-empty tag set with no tag anywhere on the ancestry proves the lock would be
+      // unpullable; failing here beats the guaranteed `manifest unknown` at e2e time.
+      throw new GitHubApiError(
+        `${key} has no published image for ${options.requestedTag} nor for any of the ` +
+          `${options.commitShas.length} commits behind it. Its docker builds look broken; fix or re-run them ` +
+          `before resolving this baseline, or pin ${key} explicitly to a published tag.`,
+      );
+    }
+    if (ancestorIndex > MAX_FALLBACK_COMMIT_DEPTH) {
+      throw new GitHubApiError(
+        `${key} has no published image for ${options.requestedTag}, and its newest published image is ` +
+          `${ancestorIndex} commits behind — beyond the ${MAX_FALLBACK_COMMIT_DEPTH}-commit fallback limit. ` +
+          `Its docker builds look broken rather than flaked; fix or re-run them before resolving this baseline.`,
+      );
+    }
+    const ancestor = shortSha(options.commitShas[ancestorIndex]);
+    overrides[key] = ancestor;
+    sources.push(`${key}=${ancestor} (fallback: ${options.requestedTag} unpublished)`);
+  }
+  return { overrides, sources };
+};
 
 /** Locates the simple-ACL support floor in fetched main history. */
 export const simpleAclFloor = (commits: string[]) => {
@@ -192,18 +269,24 @@ export const presetBundle = (
   repoVersion: string,
   lockName: string,
   sources: string[] = [],
+  publishedOptionalKeys?: ReadonlySet<string>,
+  repoKeyOverrides?: Record<string, string>,
 ): VersionBundle => ({
   target,
   lockName,
   env: Object.fromEntries(
-    Object.keys(PACKAGE_TO_REPOSITORY).map((key) => {
+    Object.keys(PACKAGE_TO_REPOSITORY).flatMap((key) => {
+      // Omit optional repo-owned images the resolved sha has not published (per `publishedOptionalKeys`) so the compat layer gates the service out instead of docker failing with `manifest unknown`.
+      if (OPTIONAL_REPO_KEYS.has(key) && publishedOptionalKeys && !publishedOptionalKeys.has(key)) {
+        return [];
+      }
       const version = REPO_KEYS.has(key)
-        ? repoVersion
+        ? repoKeyOverrides?.[key] ?? repoVersion
         : NON_NETWORK_COMPANIONS[target][key as keyof (typeof NON_NETWORK_COMPANIONS)[typeof target]];
       if (!version) {
         throw new Error(`Missing ${target} preset for ${key}`);
       }
-      return [key, version];
+      return [[key, version]];
     }),
   ),
   sources: [`preset=${target}`, `repo-owned=${repoVersion}`, ...sources],
@@ -214,10 +297,13 @@ export const applyVersionEnvOverrides = (
   bundle: VersionBundle,
   env: Record<string, string | undefined>,
 ): VersionBundle => {
+  // Optional repo-owned images may be absent from the resolved bundle when unpublished; still honor an explicit env pin so callers can force-test a specific published tag.
+  const overrideKeys = new Set([
+    ...Object.keys(bundle.env),
+    ...[...OPTIONAL_REPO_KEYS].filter((key) => env[key]?.length),
+  ]);
   const overrides = Object.fromEntries(
-    Object.keys(bundle.env)
-      .filter((key) => env[key]?.length)
-      .map((key) => [key, env[key] as string]),
+    [...overrideKeys].filter((key) => env[key]?.length).map((key) => [key, env[key] as string]),
   );
   if (!Object.keys(overrides).length) {
     return bundle;
@@ -261,6 +347,10 @@ const bundleFromFiles = async (
         COPROCESSOR_TFHE_WORKER_VERSION: findImageTag(parsed, "coprocessorWorkers", "COPROCESSOR_TFHE_WORKER_VERSION"),
         COPROCESSOR_ZKPROOF_WORKER_VERSION: findImageTag(parsed, "coprocessorWorkers", "COPROCESSOR_ZKPROOF_WORKER_VERSION"),
         COPROCESSOR_SNS_WORKER_VERSION: findImageTag(parsed, "coprocessorWorkers", "COPROCESSOR_SNS_WORKER_VERSION"),
+        // GitOps YAMLs don't carry consensus-detector / upgrade-controller image refs yet; pin
+        // them to the host-listener tag (same release cadence).
+        COPROCESSOR_CONSENSUS_DETECTOR_VERSION: coprocessorHostListenerVersion,
+        COPROCESSOR_UPGRADE_CONTROLLER_VERSION: coprocessorHostListenerVersion,
         LISTENER_CORE_VERSION: coprocessorHostListenerVersion,
         CONNECTOR_DB_MIGRATION_VERSION: findImageTag(parsed, "connector", "CONNECTOR_DB_MIGRATION_VERSION"),
         CONNECTOR_GW_LISTENER_VERSION: findImageTag(parsed, "connector", "CONNECTOR_GW_LISTENER_VERSION"),
@@ -276,6 +366,29 @@ const bundleFromFiles = async (
   } catch (error) {
     throw new GitHubApiError(error instanceof Error ? error.message : String(error));
   }
+};
+
+/**
+ * Selects the newest short main-commit SHA published by every gating repo-owned package.
+ *
+ * A package gates resolution only when its published tag set intersects the candidate
+ * window. Two kinds of package are treated as "don't gate on this":
+ *  - an empty set: the image hasn't been published yet (typically a brand-new image
+ *    whose CI build hasn't landed);
+ *  - a non-empty set whose tags are all feature-branch builds not yet on main: it would
+ *    otherwise reject every main commit and stall resolution entirely.
+ * Both are pinned to the resolved sha by presetBundle (host-listener release cadence, as
+ * bundleFromFiles does for network targets) until CI publishes them for main commits, at
+ * which point they start gating again automatically.
+ */
+export const selectSupportedMainSha = (
+  candidateShas: string[],
+  packageTagsMap: Record<string, Set<string>>,
+): string | undefined => {
+  const gatingSets = Object.values(packageTagsMap).filter(
+    (set) => set.size > 0 && candidateShas.some((sha) => set.has(sha)),
+  );
+  return candidateShas.find((sha) => gatingSets.every((set) => set.has(sha)));
 };
 
 /** Fetches the available tag sets for all repo-owned packages. */
@@ -317,7 +430,54 @@ export const resolveTarget = async (
       throw new GitHubApiError(`Invalid sha ${requested}; expected 7 or 40 hex characters`);
     }
     const tag = shortSha(requested);
-    return presetBundle(target, tag, `sha-${tag}.json`, [`requested-sha=${requested.toLowerCase()}`]);
+    const lockName = `sha-${tag}.json`;
+    const baseSources = [`requested-sha=${requested.toLowerCase()}`];
+
+    // The docker-build workflows re-tag unchanged components on every push, so normally every
+    // repo-owned image is published at the requested sha. Verify that instead of trusting it: a
+    // flaked re-tag or failed build otherwise only surfaces as `manifest unknown` at pull time.
+    let packageTagsMap: Record<string, Set<string>>;
+    try {
+      packageTagsMap = await repoPackageTags(tag);
+    } catch (error) {
+      // GitHub metadata is unavailable (offline, missing scopes): keep the historical unverified
+      // pin so `--target sha` still resolves, and record that the check was skipped.
+      const reason = error instanceof Error ? error.message.split("\n")[0] : String(error);
+      console.log(`[resolve] sha ${tag}: skipping published-image check (${reason})`);
+      return presetBundle(target, tag, lockName, [...baseSources, "published-image-check=skipped"], new Set());
+    }
+    const missingKeys = Object.keys(REPO_PACKAGES).filter(
+      (key) => !OPTIONAL_REPO_KEYS.has(key) && !packageTagsMap[key]?.has(tag),
+    );
+    if (!missingKeys.length) {
+      return presetBundle(target, tag, lockName, baseSources, new Set());
+    }
+    console.log(
+      `[resolve] sha ${tag}: no published image for ${missingKeys.join(", ")}; looking for published ancestor tags`,
+    );
+    // Unlike the tag fetch above, an ancestry failure here is not skippable: missingKeys proves
+    // the unverified pin would produce an unpullable lock, so resolution must not fall back to it.
+    let commitShas: string[];
+    try {
+      commitShas = await commitsFrom(requested, SHA_FALLBACK_COMMIT_WINDOW);
+    } catch (error) {
+      const reason = error instanceof Error ? error.message.split("\n")[0] : String(error);
+      throw new GitHubApiError(
+        `${missingKeys.join(", ")} have no published image for ${tag}, and the ancestry lookup for ` +
+          `fallback tags failed (${reason}). Retry once GitHub is reachable, or pin the affected ` +
+          `versions explicitly.`,
+      );
+    }
+    const { overrides, sources } = resolveMissingRepoTagFallbacks({
+      requestedTag: tag,
+      missingKeys,
+      commitShas,
+      packageTagsMap,
+    });
+    for (const source of sources) {
+      console.log(`[resolve] ${source}`);
+    }
+    return presetBundle(target, tag, lockName, [...baseSources, ...sources], new Set(), overrides);
   }
 
   const [packageTagsMap, commits] = await Promise.all([repoPackageTags(), mainCommits(5000)]);
@@ -329,12 +489,16 @@ export const resolveTarget = async (
   } catch (error) {
     throw new GitHubApiError(error instanceof Error ? error.message : String(error));
   }
-  const short = commits
+  const candidateShas = commits
     .slice(0, Math.min(floor, compatFloor) + 1)
     .map((sha) => sha.slice(0, 7))
-    .find((sha) => Object.values(packageTagsMap).every((set) => set.has(sha) && REPO_TAG.test(sha)));
+    .filter((sha) => REPO_TAG.test(sha));
+  const short = selectSupportedMainSha(candidateShas, packageTagsMap);
   if (!short) {
     throw new GitHubApiError("Could not find a supported modern latest-main image set");
   }
-  return presetBundle(target, short, `latest-main-${short}.json`);
+  const publishedOptionalKeys = new Set(
+    [...OPTIONAL_REPO_KEYS].filter((key) => packageTagsMap[key]?.has(short)),
+  );
+  return presetBundle(target, short, `latest-main-${short}.json`, [], publishedOptionalKeys);
 };

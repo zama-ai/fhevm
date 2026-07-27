@@ -10,7 +10,13 @@ import {
 } from '../setup-viem.js';
 import { describe, it, expect, beforeAll } from 'vitest';
 import { setFhevmRuntimeConfig } from '@fhevm/sdk/viem';
-import { clearTypeFromHandle, encryptTestCases, prepareSingleChain, isBytes32Hex } from '../setupCommon.js';
+import {
+  clearTypeFromHandle,
+  createLogger,
+  encryptTestCases,
+  prepareSingleChain,
+  isBytes32Hex,
+} from '../setupCommon.js';
 import { FHETestABI } from '../FheTest-abi-v2.js';
 import { createWalletClient, http, type Hex } from 'viem';
 
@@ -41,10 +47,7 @@ export function defineClientEncryptDecryptSlowTests(parameters: {
             type: 'ApiKeyHeader',
             value: config.zamaApiKey,
           },
-          logger: {
-            debug: (message: string) => console.log(message),
-            error: (message: string) => console.log(message),
-          },
+          logger: createLogger(console.log),
         });
       });
 
@@ -139,7 +142,7 @@ export function defineClientEncryptDecryptSlowTests(parameters: {
         const signedPermit = await decryptClient.signDecryptionPermit({
           transportKeyPair: transportKeyPair,
           contractAddresses: [config.fheTestAddress],
-          durationDays: 1,
+          durationSeconds: 24 * 3600,
           startTimestamp: Math.floor(Date.now() / 1000) - 5,
           signerAddress: config.account.address,
           signer: config.account,

@@ -71,13 +71,12 @@ function setConfig(numThreads: number) {
     //   return undefined as unknown as URL;
     // },
     logger: {
-      debug: (message: string) => {
-        console.log(message);
-      },
+      debug: (message: string) => console.log(`[debug] ${message}`),
+      warn: (message: string) => console.log(`[warn] ${message}`),
       error: (message: string, cause: unknown) => {
-        console.log(message);
+        console.log(`[error] ${message}`);
         if (cause !== undefined) {
-          console.log(cause);
+          console.log(`[error] ${cause}`);
         }
       },
     },
@@ -189,8 +188,8 @@ describe('hello', () => {
       //   signedPermit: signedDelegatePermit,
       // });
 
-      // // Let's test the creation of a simple EIP712
-      // const eip712 = fhevmDecryptClient.createUserDecryptEIP712({
+      // // Let's test the creation of a simple Eip712
+      // const eip712 = fhevmDecryptClient.createUserDecryptEip712({
       //   contractAddresses: ["0x1E7eA8fE4877E6ea5dc8856f0dA92da8d5066241"],
       //   durationDays: 356,
       //   startTimestamp: timestampNow(),
@@ -252,10 +251,10 @@ describe('hello', () => {
       //         ),
       //       },
       //     ],
-      //     userDecryptEIP712Message: eip712.message,
-      //     userDecryptEIP712Signer:
+      //     userDecryptEip712Message: eip712.message,
+      //     userDecryptEip712Signer:
       //       "0x37ac010c1c566696326813b840319b58bb5840e4" as ChecksummedAddress,
-      //     userDecryptEIP712Signature: "0x" as Bytes65Hex,
+      //     userDecryptEip712Signature: "0x" as Bytes65Hex,
       //   });
 
       /*

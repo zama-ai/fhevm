@@ -1,0 +1,24 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n            SELECT (\n                EXISTS(\n                    SELECT 1 FROM computations\n                    WHERE output_handle = $1\n                      AND transaction_id IS DISTINCT FROM $2\n                )\n                OR EXISTS(\n                    SELECT 1 FROM computations_branch\n                    WHERE output_handle = $1\n                      AND transaction_id IS NOT DISTINCT FROM $2\n                      AND producer_block_hash = $3\n                )\n                OR (\n                    NOT EXISTS(\n                        SELECT 1 FROM computations WHERE output_handle = $1\n                    )\n                    AND EXISTS(\n                        SELECT 1 FROM ciphertexts WHERE handle = $1\n                    )\n                )\n            ) AS \"conflicts!\"\n            ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "conflicts!",
+        "type_info": "Bool"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Bytea",
+        "Bytea",
+        "Bytea"
+      ]
+    },
+    "nullable": [
+      null
+    ]
+  },
+  "hash": "c2a937e6201381fd42eb4a67c49269f5898029f2bc4d0bca53e0312f8af8469b"
+}

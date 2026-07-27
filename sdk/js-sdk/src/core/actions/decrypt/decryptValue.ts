@@ -38,6 +38,7 @@ export async function decryptValue(
     {
       handle: toFhevmHandle(encryptedValue),
       contractAddress: sanitizedContractAddress,
+      ownerAddress: addressToChecksummedAddress(parameters.signedPermit.encryptedDataOwnerAddress),
     },
   ];
 
@@ -46,7 +47,7 @@ export async function decryptValue(
   const typedValues = await decryptValuesFromPairs_(f, {
     ...rest,
     pairs: sanitizedPairs,
-  } as Parameters<typeof decryptValuesFromPairs_>[1]);
+  });
 
   // eslint-disable-next-line @typescript-eslint/no-non-null-assertion
   return typedValues[0]!;

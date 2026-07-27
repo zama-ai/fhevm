@@ -1,0 +1,25 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        SELECT handle AS \"handle!\"\n         FROM ciphertext_digest\n         WHERE s3_format_version = $1\n           AND (ciphertext IS NOT NULL OR ciphertext128 IS NOT NULL)\n           AND (\n               ($2 = FALSE AND s3_migration_failure_count = 0)\n               OR (\n                   $2 = TRUE\n                   AND s3_migration_failure_count > 0\n                   AND s3_migration_failure_count < $3\n                   AND s3_migration_failure_count = (\n                       SELECT MIN(s3_migration_failure_count)\n                        FROM ciphertext_digest\n                        WHERE s3_format_version = $1\n                          AND (ciphertext IS NOT NULL OR ciphertext128 IS NOT NULL)\n                          AND s3_migration_failure_count > 0\n                          AND s3_migration_failure_count < $3\n                   )\n               )\n           )\n         ORDER BY s3_migration_failure_count, handle\n         LIMIT $4\n        ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "handle!",
+        "type_info": "Bytea"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Int2",
+        "Bool",
+        "Int4",
+        "Int8"
+      ]
+    },
+    "nullable": [
+      false
+    ]
+  },
+  "hash": "b6be6aeba6ad7b0519b071119039751ba1be1714bbfaec8ad6e62c5bfd4f9257"
+}

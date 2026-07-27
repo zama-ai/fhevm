@@ -4,13 +4,15 @@
 import YAML from "yaml";
 
 import {
+  requiresLegacyRelayerKeyUrlConfig,
   requiresLegacyKmsCoreConfig,
   requiresLegacyRelayerReadinessConfig,
 } from "../compat/compat";
-import { hostChainRuntimes } from "../layout";
+import { hostChainRuntimes, MINIO_INTERNAL_URL } from "../layout";
 import { solanaProgramId, solanaValidatorUrl } from "./solana";
 import type { StackSpec } from "../stack-spec/stack-spec";
 import type { HostChainScenario, State } from "../types";
+import { hostReachableMaterialUrl, predictedCrsId, predictedKeyId } from "../utils/fs";
 
 /** Rewrites relayer readiness config into the legacy shape when required. */
 const rewriteRelayerConfig = (
@@ -40,6 +42,35 @@ const rewriteRelayerConfig = (
       delegated_user_decrypt: current.delegated_user_decrypt,
     }).filter(([, value]) => value !== undefined),
   );
+  return config;
+};
+
+/** Rewrites keyurl config into the static schema expected by released relayers. */
+const rewriteRelayerKeyUrlConfig = (
+  config: Record<string, unknown>,
+  state: Pick<State, "versions"> & Partial<Pick<State, "discovery">>,
+) => {
+  if (!requiresLegacyRelayerKeyUrlConfig(state)) {
+    return config;
+  }
+  const keyPrefix = state.discovery?.minioKeyPrefix ?? "PUB";
+  const materialBase = `${(
+    state.discovery?.endpoints?.minioExternal ??
+    state.discovery?.endpoints?.minioInternal ??
+    MINIO_INTERNAL_URL
+  ).replace(/\/$/, "")}/kms-public/${keyPrefix}`;
+  const fheKeyId = state.discovery?.actualFheKeyId ?? state.discovery?.fheKeyId ?? predictedKeyId();
+  const crsKeyId = state.discovery?.actualCrsKeyId ?? state.discovery?.crsKeyId ?? predictedCrsId();
+  config.keyurl = {
+    fhe_public_key: {
+      data_id: fheKeyId,
+      url: hostReachableMaterialUrl(`${materialBase}/PublicKey/${fheKeyId}`),
+    },
+    crs: {
+      data_id: crsKeyId,
+      url: hostReachableMaterialUrl(`${materialBase}/CRS/${crsKeyId}`),
+    },
+  };
   return config;
 };
 
@@ -100,6 +131,7 @@ export const renderRelayerConfig = (
   plan?: Pick<StackSpec, "hostChains">,
 ) => {
   let config = rewriteRelayerConfig(YAML.parse(templateText) as Record<string, unknown>, state);
+  config = rewriteRelayerKeyUrlConfig(config, state);
   const chains = plan?.hostChains ?? [];
   if (chains.length) {
     config = rewriteHostChains(config, state, chains);

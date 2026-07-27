@@ -17,10 +17,10 @@ use connector_utils::{
             InsertRequestOptions, TestEventType, check_no_uncompleted_request_in_db,
             insert_rand_request,
         },
-        rand::{rand_digest, rand_sns_ct},
+        rand::rand_digest,
         setup::{
-            DbInstance, S3_CT_DIGEST, S3_CT_HANDLE, S3_CT_KEY_ID, S3Instance, TestInstanceBuilder,
-            erc1271_magic_response, init_host_chains_acl_contracts_mock,
+            DbInstance, S3_CT_HANDLE, S3Instance, TestInstanceBuilder, erc1271_magic_response,
+            init_host_chains_acl_contracts_mock,
         },
     },
     types::{
@@ -51,6 +51,10 @@ use tracing::{info, warn};
 #[case::crsgen(TestEventType::Crsgen, false)]
 #[case::new_kms_context(TestEventType::NewKmsContext, false)]
 #[case::new_kms_epoch(TestEventType::NewKmsEpoch, false)]
+#[case::abort_keygen(TestEventType::AbortKeygen, false)]
+#[case::abort_crsgen(TestEventType::AbortCrsgen, false)]
+#[case::kms_context_destroyed(TestEventType::KmsContextDestroyed, false)]
+#[case::kms_epoch_destroyed(TestEventType::KmsEpochDestroyed, false)]
 #[case::public_decryption_already_sent(TestEventType::PublicDecryption, true)]
 #[case::user_decryption_already_sent(TestEventType::UserDecryption, true)]
 #[case::user_decryption_v2_already_sent(TestEventType::UserDecryptionV2, true)]
@@ -59,6 +63,10 @@ use tracing::{info, warn};
 #[case::crsgen_already_sent(TestEventType::Crsgen, true)]
 #[case::new_kms_context_already_sent(TestEventType::NewKmsContext, true)]
 #[case::new_kms_epoch_already_sent(TestEventType::NewKmsEpoch, true)]
+#[case::abort_keygen_already_sent(TestEventType::AbortKeygen, true)]
+#[case::abort_crsgen_already_sent(TestEventType::AbortCrsgen, true)]
+#[case::kms_context_destroyed_already_sent(TestEventType::KmsContextDestroyed, true)]
+#[case::kms_epoch_destroyed_already_sent(TestEventType::KmsEpochDestroyed, true)]
 #[timeout(Duration::from_secs(60))]
 #[tokio::test]
 async fn test_processing_request(
@@ -67,29 +75,25 @@ async fn test_processing_request(
 ) -> anyhow::Result<()> {
     // Setup real DB and S3 instance
     let test_instance = TestInstanceBuilder::default()
-        .with_db(DbInstance::setup().await?)
+        .with_db(DbInstance::setup_external().await?)
         .with_s3(S3Instance::setup().await?)
         .build();
 
     // Mocking Gateway/Ethereum
     let asserter = Asserter::new();
-    let copro_tx_sender = mock_copro_registry_load(&asserter, test_instance.s3_url());
-    let mut sns_ct = rand_sns_ct();
-    sns_ct.keyId = S3_CT_KEY_ID;
-    sns_ct.ctHandle = FixedBytes::<32>::from_hex(S3_CT_HANDLE)?;
-    sns_ct.snsCiphertextDigest = FixedBytes::<32>::from_hex(S3_CT_DIGEST)?;
-    sns_ct.coprocessorTxSenderAddresses = vec![copro_tx_sender];
+    mock_copro_registry_load(&asserter, test_instance.s3_url());
+    let handle = FixedBytes::<32>::from_hex(S3_CT_HANDLE)?;
 
     let mut insert_options = InsertRequestOptions::new()
         .with_already_sent(already_sent)
-        .with_sns_ct_materials(vec![sns_ct.clone()]);
+        .with_ct_handles(vec![handle]);
 
     match event_type {
         // Only the legacy `UserDecryptionRequest` path re-fetches calldata via `get_transaction_by_hash`
         // — the RFC016 V2 event carries the full payload in-event, so no such mock is needed.
         TestEventType::UserDecryption => {
             let tx_hash = rand_digest();
-            let mock_tx = create_mock_user_decryption_request_tx(tx_hash, sns_ct.ctHandle)?;
+            let mock_tx = create_mock_user_decryption_request_tx(tx_hash, handle)?;
             insert_options = insert_options.with_tx_hash(tx_hash);
             asserter.push_success(&mock_tx);
         }
@@ -145,8 +149,7 @@ async fn test_processing_request(
         TestEventType::UserDecryption => vec![true.abi_encode(); 2],
         _ => vec![],
     };
-    let acl_contracts_mock =
-        init_host_chains_acl_contracts_mock(sns_ct.ctHandle.as_slice(), acl_responses);
+    let acl_contracts_mock = init_host_chains_acl_contracts_mock(handle, acl_responses);
 
     // Insert request in DB to trigger kms_worker job
     let request = insert_rand_request(test_instance.db(), event_type, insert_options).await?;
@@ -161,7 +164,7 @@ async fn test_processing_request(
     // Starting kms_worker
     let config = Config {
         kms_core_endpoints: vec![kms_mock_server.base_url().unwrap().to_string()],
-        ct_attestation: testing_ct_attestation_config(true),
+        ct_attestation: testing_ct_attestation_config(),
         ..Default::default()
     };
     let kms_worker = init_kms_worker(
@@ -176,8 +179,19 @@ async fn test_processing_request(
     info!("KmsWorker started!");
 
     // Waiting for kms_worker to process the request
-    let response = wait_for_response_in_db(test_instance.db(), &request).await?;
-    check_response_data(&request, response)?;
+    if matches!(
+        event_type,
+        TestEventType::AbortKeygen
+            | TestEventType::AbortCrsgen
+            | TestEventType::KmsContextDestroyed
+            | TestEventType::KmsEpochDestroyed
+    ) {
+        // Abort and destruction events yield no response row, so just wait for it to be `completed`
+        wait_for_no_response_event_completed(test_instance.db(), event_type).await?;
+    } else {
+        let response = wait_for_response_in_db(test_instance.db(), &request).await?;
+        check_response_data(&request, response)?;
+    }
     check_no_uncompleted_request_in_db(test_instance.db(), event_type).await?;
 
     // Stopping the test
@@ -210,6 +224,12 @@ fn prepare_mocks(req: &ProtocolEventKind, already_sent: bool) -> MockSet {
         ProtocolEventKind::Crsgen(r) => (r.crsId, "CrsGen", "GetCrsGenResult"),
         ProtocolEventKind::NewKmsContext(r) => (r.contextId, "NewMpcContext", "unreachable"),
         ProtocolEventKind::NewKmsEpoch(r) => (r.epochId, "NewMpcEpoch", "GetEpochResult"),
+        ProtocolEventKind::AbortKeygen(r) => (r.prepKeygenId, "AbortKeyGen", "unreachable"),
+        ProtocolEventKind::AbortCrsgen(r) => (r.crsId, "AbortCrsGen", "unreachable"),
+        ProtocolEventKind::KmsContextDestroyed(r) => {
+            (r.kmsContextId, "DestroyMpcContext", "unreachable")
+        }
+        ProtocolEventKind::KmsEpochDestroyed(r) => (r.epochId, "DestroyMpcEpoch", "unreachable"),
     };
     let request_id = Some(u256_to_request_id(request_id_u256));
 
@@ -252,11 +272,15 @@ fn prepare_mocks(req: &ProtocolEventKind, already_sent: bool) -> MockSet {
                 request_id,
                 ..Default::default()
             }),
-            ProtocolEventKind::NewKmsContext(_) => then.error(
+            ProtocolEventKind::NewKmsEpoch(_) => then.pb(GrpcEpochResultResponse::default()),
+            ProtocolEventKind::NewKmsContext(_)
+            | ProtocolEventKind::AbortKeygen(_)
+            | ProtocolEventKind::AbortCrsgen(_)
+            | ProtocolEventKind::KmsContextDestroyed(_)
+            | ProtocolEventKind::KmsEpochDestroyed(_) => then.error(
                 StatusCode::BAD_REQUEST,
                 "No response expected response from kms-core",
             ),
-            ProtocolEventKind::NewKmsEpoch(_) => then.pb(GrpcEpochResultResponse::default()),
         };
     });
 
@@ -278,12 +302,18 @@ async fn wait_for_response_in_db(
         ProtocolEventKind::Crsgen(_) => "SELECT * FROM crsgen_responses",
         ProtocolEventKind::NewKmsContext(_) => "SELECT * FROM new_kms_context_responses",
         ProtocolEventKind::NewKmsEpoch(_) => "SELECT * FROM epoch_result_responses",
+        ProtocolEventKind::AbortKeygen(_)
+        | ProtocolEventKind::AbortCrsgen(_)
+        | ProtocolEventKind::KmsContextDestroyed(_)
+        | ProtocolEventKind::KmsEpochDestroyed(_) => {
+            unreachable!("abort and destruction events produce no response row")
+        }
     };
     let response = loop {
         let result = sqlx::query(query).fetch_all(db).await?;
 
         if result.is_empty() {
-            warn!("Not yet...");
+            warn!("Response not yet stored in DB...");
             tokio::time::sleep(Duration::from_millis(200)).await;
         } else {
             match req {
@@ -310,10 +340,16 @@ async fn wait_for_response_in_db(
                 ProtocolEventKind::NewKmsEpoch(_) => {
                     break kms_response::from_epoch_result_row(&result[0])?;
                 }
+                ProtocolEventKind::AbortKeygen(_)
+                | ProtocolEventKind::AbortCrsgen(_)
+                | ProtocolEventKind::KmsContextDestroyed(_)
+                | ProtocolEventKind::KmsEpochDestroyed(_) => {
+                    unreachable!("abort and destruction events produce no response row")
+                }
             };
         }
     };
-    info!("OK!");
+    info!("Response successfully stored in DB!");
     Ok(response)
 }
 
@@ -368,8 +404,47 @@ fn check_response_data(request: &ProtocolEventKind, response: KmsResponse) -> an
             epoch_id: r.epochId,
             grpc_response: GrpcEpochResultResponse::default(),
         },
+        ProtocolEventKind::AbortKeygen(_)
+        | ProtocolEventKind::AbortCrsgen(_)
+        | ProtocolEventKind::KmsContextDestroyed(_)
+        | ProtocolEventKind::KmsEpochDestroyed(_) => {
+            unreachable!("abort and destruction events produce no response to check")
+        }
     };
     assert_eq!(response.kind, KmsResponseKind::process(expected_response)?);
-    info!("OK!");
+    info!("Response data validated!");
     Ok(())
+}
+
+async fn wait_for_no_response_event_completed(
+    db: &Pool<Postgres>,
+    event_type: TestEventType,
+) -> anyhow::Result<()> {
+    info!("Waiting for request to be marked as completed in DB...");
+    let query = match event_type {
+        TestEventType::AbortKeygen => {
+            "SELECT COUNT(prep_keygen_id) FROM abort_keygen_requests WHERE status = 'completed'"
+        }
+        TestEventType::AbortCrsgen => {
+            "SELECT COUNT(crs_id) FROM abort_crsgen_requests WHERE status = 'completed'"
+        }
+        TestEventType::KmsContextDestroyed => {
+            "SELECT COUNT(context_id) FROM kms_context_destroyed WHERE status = 'completed'"
+        }
+        TestEventType::KmsEpochDestroyed => {
+            "SELECT COUNT(epoch_id) FROM kms_epoch_destroyed WHERE status = 'completed'"
+        }
+        _ => unreachable!(
+            "wait_for_no_response_event_completed only handles abort and destruction events"
+        ),
+    };
+    loop {
+        let count: i64 = sqlx::query_scalar(query).fetch_one(db).await?;
+        if count > 0 {
+            info!("Request marked as completed in DB!");
+            return Ok(());
+        }
+        warn!("Request not yet marked as completed in DB...");
+        tokio::time::sleep(Duration::from_millis(200)).await;
+    }
 }

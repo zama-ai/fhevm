@@ -282,7 +282,7 @@ async function decrypt(): Promise<void> {
       const signedPermit = await state.client.signDecryptionPermit({
         transportKeyPair,
         contractAddresses: [state.fheTestAddress],
-        durationDays: 1,
+        durationSeconds: 24 * 3600,
         startTimestamp: Math.floor(Date.now() / 1000) - 5,
         signerAddress: state.walletAddress,
         signer: state.signer,
@@ -426,10 +426,11 @@ function applyRuntimeConfig(matrix_: Matrix, versionPair: VersionPair, options: 
             return resolveWasmAssetUrl(versionPair, assetUrls, file);
           },
     logger: {
-      debug: (message: string) => log(`debug: ${message}`),
+      debug: (message: string) => log(`[debug] ${message}`),
+      warn: (message: string) => log(`[warn] ${message}`),
       error: (message: string, cause: unknown) => {
-        log(`runtime error: ${message}`);
-        if (cause !== undefined) log(String(cause));
+        log(`[error] ${message}`);
+        if (cause !== undefined) log(`[error] ${String(cause)}`);
       },
     },
   });

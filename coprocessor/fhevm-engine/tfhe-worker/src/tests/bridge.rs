@@ -1,5 +1,6 @@
 //! Tests for the confidential-bridge association worker.
 
+use crate::bridge::drain_associations;
 use serial_test::serial;
 use sqlx::PgPool;
 use test_harness::instance::{setup_test_db, DBInstance, ImportMode};
@@ -14,8 +15,11 @@ const CT64_DIGEST: &[u8] = &[0xA1; 4];
 const CT128_DIGEST: &[u8] = &[0xB2; 4];
 const CT128_FORMAT: i16 = 11;
 const KEY_ID_GW: &[u8] = &[0xC3, 0xC4];
+const S3_FORMAT_VERSION: i16 = 1;
 const CIPHERTEXT_VERSION: i16 = 0;
 const CIPHERTEXT_TYPE: i16 = 4;
+const SRC_BLOCK_HASH: &[u8] = &[0x51; 32];
+const DST_BLOCK_HASH: &[u8] = &[0x52; 32];
 
 /// Subset of `ciphertext_digest` columns asserted to be copied verbatim.
 #[derive(sqlx::FromRow)]
@@ -24,6 +28,7 @@ struct CopiedDigest {
     ciphertext128: Option<Vec<u8>>,
     ciphertext128_format: i16,
     key_id_gw: Vec<u8>,
+    s3_format_version: Option<i16>,
 }
 
 /// Returns the `DBInstance` (kept alive by the caller) and a connected pool.
@@ -60,8 +65,8 @@ async fn insert_digest(
 ) {
     sqlx::query(
         "INSERT INTO ciphertext_digest
-             (host_chain_id, key_id_gw, handle, ciphertext, ciphertext128, ciphertext128_format)
-         VALUES ($1, $2, $3, $4, $5, $6)",
+             (host_chain_id, key_id_gw, handle, ciphertext, ciphertext128, ciphertext128_format, s3_format_version)
+         VALUES ($1, $2, $3, $4, $5, $6, $7)",
     )
     .bind(host_chain_id)
     .bind(KEY_ID_GW)
@@ -69,6 +74,7 @@ async fn insert_digest(
     .bind(ct64_digest)
     .bind(ct128_digest)
     .bind(CT128_FORMAT)
+    .bind(S3_FORMAT_VERSION)
     .execute(pool)
     .await
     .expect("insert ciphertext_digest");
@@ -97,6 +103,61 @@ async fn insert_dst_event(pool: &PgPool, src_handle: &[u8], dst_handle: &[u8], d
     .bind(src_handle)
     .bind(dst_handle)
     .bind(dst_chain_id)
+    .execute(pool)
+    .await
+    .expect("insert handle_bridged_events");
+}
+
+async fn insert_block_status(pool: &PgPool, chain_id: i64, block_hash: &[u8], status: &str) {
+    sqlx::query(
+        "INSERT INTO host_chain_blocks_valid (chain_id, block_hash, block_number, block_status)
+         VALUES ($1, $2, 1, $3)",
+    )
+    .bind(chain_id)
+    .bind(block_hash)
+    .bind(status)
+    .execute(pool)
+    .await
+    .expect("insert host_chain_blocks_valid");
+}
+
+async fn insert_src_event_with_block_hash(
+    pool: &PgPool,
+    src_handle: &[u8],
+    src_chain_id: i64,
+    dst_chain_id: i64,
+    block_hash: &[u8],
+) {
+    sqlx::query(
+        "INSERT INTO bridge_handle_events
+             (src_handle, dst_chain_id, src_chain_id, sender_dapp, guid, block_number, block_hash)
+         VALUES ($1, $2, $3, '\\xda'::bytea, '\\x01'::bytea, 1, $4)",
+    )
+    .bind(src_handle)
+    .bind(dst_chain_id)
+    .bind(src_chain_id)
+    .bind(block_hash)
+    .execute(pool)
+    .await
+    .expect("insert bridge_handle_events");
+}
+
+async fn insert_dst_event_with_block_hash(
+    pool: &PgPool,
+    src_handle: &[u8],
+    dst_handle: &[u8],
+    dst_chain_id: i64,
+    block_hash: &[u8],
+) {
+    sqlx::query(
+        "INSERT INTO handle_bridged_events
+             (src_handle, dst_handle, dst_chain_id, receiver_dapp, guid, block_number, block_hash)
+         VALUES ($1, $2, $3, '\\xdb'::bytea, '\\x01'::bytea, 1, $4)",
+    )
+    .bind(src_handle)
+    .bind(dst_handle)
+    .bind(dst_chain_id)
+    .bind(block_hash)
     .execute(pool)
     .await
     .expect("insert handle_bridged_events");
@@ -163,7 +224,7 @@ async fn associates_ready_pair() {
     let dst = handle(2);
     insert_ready_pair(&pool, &src, &dst).await;
 
-    let associated = crate::bridge::drain_associations(&pool, 128, &CancellationToken::new())
+    let associated = drain_associations(&pool, 128, &CancellationToken::new(), false)
         .await
         .unwrap();
     assert_eq!(associated, 1);
@@ -183,7 +244,7 @@ async fn associates_ready_pair() {
     // The digest values are copied verbatim, so the destination handle resolves
     // to the same S3 blobs as the source (no re-SnS).
     let digest: CopiedDigest = sqlx::query_as(
-        "SELECT ciphertext, ciphertext128, ciphertext128_format, key_id_gw
+        "SELECT ciphertext, ciphertext128, ciphertext128_format, key_id_gw, s3_format_version
          FROM ciphertext_digest WHERE handle = $1",
     )
     .bind(&dst)
@@ -194,10 +255,39 @@ async fn associates_ready_pair() {
     assert_eq!(digest.ciphertext128.as_deref(), Some(CT128_DIGEST));
     assert_eq!(digest.ciphertext128_format, CT128_FORMAT);
     assert_eq!(digest.key_id_gw, KEY_ID_GW);
+    // NULL here means "not uploaded" to the S3 migration machinery; the copy
+    // points at the source's blobs, so it must inherit their format version.
+    assert_eq!(digest.s3_format_version, Some(S3_FORMAT_VERSION));
 
     assert!(is_associated(&pool, &dst).await);
 
     assert!(in_publish_queue(&pool, &dst, DST_CHAIN).await);
+}
+
+#[tokio::test]
+#[serial]
+async fn gcs_bridge_does_not_fall_back_to_public() {
+    let (_db, pool) = fresh_db().await;
+    let src = handle(3);
+    let dst = handle(4);
+    insert_ready_pair(&pool, &src, &dst).await;
+    sqlx::query(
+        "INSERT INTO upgrade_state
+            (stack_role, state, status, proposal_id, version, start_block, end_block, updated_at)
+         VALUES ('GCS', 'UpgradeActivated', 'in_progress', '\\x02', 'v0.15', 1, 2, NOW())
+         ON CONFLICT (stack_role) DO UPDATE
+         SET state = EXCLUDED.state, status = EXCLUDED.status",
+    )
+    .execute(&pool)
+    .await
+    .expect("seed GCS state");
+
+    let associated = drain_associations(&pool, 128, &CancellationToken::new(), true)
+        .await
+        .unwrap();
+
+    assert_eq!(associated, 0);
+    assert!(!is_associated(&pool, &dst).await);
 }
 
 #[tokio::test]
@@ -219,7 +309,7 @@ async fn skips_when_source_approval_missing() {
     .await;
     insert_dst_event(&pool, &src, &dst, DST_CHAIN).await;
 
-    let associated = crate::bridge::drain_associations(&pool, 128, &CancellationToken::new())
+    let associated = drain_associations(&pool, 128, &CancellationToken::new(), false)
         .await
         .unwrap();
     assert_eq!(associated, 0);
@@ -247,7 +337,7 @@ async fn associates_when_source_event_arrives_last() {
     .await;
     insert_dst_event(&pool, &src, &dst, DST_CHAIN).await;
     assert_eq!(
-        crate::bridge::drain_associations(&pool, 128, &CancellationToken::new())
+        drain_associations(&pool, 128, &CancellationToken::new(), false)
             .await
             .unwrap(),
         0
@@ -257,12 +347,139 @@ async fn associates_when_source_event_arrives_last() {
     // The source `BridgeHandle` approval arrives last -> the pair associates.
     insert_src_event(&pool, &src, SRC_CHAIN, DST_CHAIN).await;
     assert_eq!(
-        crate::bridge::drain_associations(&pool, 128, &CancellationToken::new())
+        drain_associations(&pool, 128, &CancellationToken::new(), false)
             .await
             .unwrap(),
         1
     );
     assert!(is_associated(&pool, &dst).await);
+}
+
+#[tokio::test]
+#[serial]
+async fn skips_events_from_orphaned_bridge_blocks() {
+    let (_db, pool) = fresh_db().await;
+    let src = handle(1);
+    let dst = handle(2);
+
+    insert_ciphertext(&pool, &src, CT64).await;
+    insert_digest(
+        &pool,
+        &src,
+        Some(CT64_DIGEST),
+        Some(CT128_DIGEST),
+        SRC_CHAIN,
+    )
+    .await;
+
+    insert_block_status(&pool, SRC_CHAIN, SRC_BLOCK_HASH, "pending").await;
+    insert_block_status(&pool, DST_CHAIN, DST_BLOCK_HASH, "finalized").await;
+    insert_src_event_with_block_hash(&pool, &src, SRC_CHAIN, DST_CHAIN, SRC_BLOCK_HASH).await;
+    insert_dst_event_with_block_hash(&pool, &src, &dst, DST_CHAIN, DST_BLOCK_HASH).await;
+    assert_eq!(
+        drain_associations(&pool, 128, &CancellationToken::new(), false)
+            .await
+            .unwrap(),
+        0
+    );
+
+    sqlx::query(
+        "UPDATE host_chain_blocks_valid
+         SET block_status = 'orphaned'
+         WHERE chain_id = $1 AND block_hash = $2",
+    )
+    .bind(SRC_CHAIN)
+    .bind(SRC_BLOCK_HASH)
+    .execute(&pool)
+    .await
+    .unwrap();
+    assert_eq!(
+        drain_associations(&pool, 128, &CancellationToken::new(), false)
+            .await
+            .unwrap(),
+        0
+    );
+
+    sqlx::query(
+        "UPDATE host_chain_blocks_valid
+         SET block_status = 'finalized'
+         WHERE chain_id = $1 AND block_hash = $2",
+    )
+    .bind(SRC_CHAIN)
+    .bind(SRC_BLOCK_HASH)
+    .execute(&pool)
+    .await
+    .unwrap();
+    sqlx::query(
+        "UPDATE host_chain_blocks_valid
+         SET block_status = 'orphaned'
+         WHERE chain_id = $1 AND block_hash = $2",
+    )
+    .bind(DST_CHAIN)
+    .bind(DST_BLOCK_HASH)
+    .execute(&pool)
+    .await
+    .unwrap();
+    assert_eq!(
+        drain_associations(&pool, 128, &CancellationToken::new(), false)
+            .await
+            .unwrap(),
+        0
+    );
+    assert_eq!(digest_count(&pool, &dst).await, 0);
+    assert!(!is_associated(&pool, &dst).await);
+
+    sqlx::query(
+        "UPDATE host_chain_blocks_valid
+         SET block_status = 'finalized'
+         WHERE chain_id = $1 AND block_hash = $2",
+    )
+    .bind(DST_CHAIN)
+    .bind(DST_BLOCK_HASH)
+    .execute(&pool)
+    .await
+    .unwrap();
+    assert_eq!(
+        drain_associations(&pool, 128, &CancellationToken::new(), false)
+            .await
+            .unwrap(),
+        1
+    );
+    assert!(is_associated(&pool, &dst).await);
+}
+
+#[tokio::test]
+#[serial]
+async fn associates_pending_destination_block() {
+    let (_db, pool) = fresh_db().await;
+    let src = handle(1);
+    let dst = handle(2);
+
+    insert_ciphertext(&pool, &src, CT64).await;
+    insert_digest(
+        &pool,
+        &src,
+        Some(CT64_DIGEST),
+        Some(CT128_DIGEST),
+        SRC_CHAIN,
+    )
+    .await;
+
+    // Source approval finalized; destination event still in a pending block.
+    insert_block_status(&pool, SRC_CHAIN, SRC_BLOCK_HASH, "finalized").await;
+    insert_block_status(&pool, DST_CHAIN, DST_BLOCK_HASH, "pending").await;
+    insert_src_event_with_block_hash(&pool, &src, SRC_CHAIN, DST_CHAIN, SRC_BLOCK_HASH).await;
+    insert_dst_event_with_block_hash(&pool, &src, &dst, DST_CHAIN, DST_BLOCK_HASH).await;
+
+    // Destination finality is not awaited: the pair associates immediately.
+    assert_eq!(
+        drain_associations(&pool, 128, &CancellationToken::new(), false)
+            .await
+            .unwrap(),
+        1
+    );
+    assert!(is_associated(&pool, &dst).await);
+    assert_eq!(digest_count(&pool, &dst).await, 1);
 }
 
 #[tokio::test]
@@ -276,7 +493,7 @@ async fn associates_only_when_source_fully_materialized() {
     insert_src_event(&pool, &src, SRC_CHAIN, DST_CHAIN).await;
     insert_dst_event(&pool, &src, &dst, DST_CHAIN).await;
     assert_eq!(
-        crate::bridge::drain_associations(&pool, 128, &CancellationToken::new())
+        drain_associations(&pool, 128, &CancellationToken::new(), false)
             .await
             .unwrap(),
         0
@@ -285,7 +502,7 @@ async fn associates_only_when_source_fully_materialized() {
     // ct64 blob present, but no digest row yet.
     insert_ciphertext(&pool, &src, CT64).await;
     assert_eq!(
-        crate::bridge::drain_associations(&pool, 128, &CancellationToken::new())
+        drain_associations(&pool, 128, &CancellationToken::new(), false)
             .await
             .unwrap(),
         0
@@ -294,7 +511,7 @@ async fn associates_only_when_source_fully_materialized() {
     // Digest row present but ct128 digest still missing.
     insert_digest(&pool, &src, Some(CT64_DIGEST), None, SRC_CHAIN).await;
     assert_eq!(
-        crate::bridge::drain_associations(&pool, 128, &CancellationToken::new())
+        drain_associations(&pool, 128, &CancellationToken::new(), false)
             .await
             .unwrap(),
         0
@@ -309,7 +526,7 @@ async fn associates_only_when_source_fully_materialized() {
         .await
         .unwrap();
     assert_eq!(
-        crate::bridge::drain_associations(&pool, 128, &CancellationToken::new())
+        drain_associations(&pool, 128, &CancellationToken::new(), false)
             .await
             .unwrap(),
         1
@@ -326,14 +543,14 @@ async fn associates_only_once() {
     insert_ready_pair(&pool, &src, &dst).await;
 
     assert_eq!(
-        crate::bridge::drain_associations(&pool, 128, &CancellationToken::new())
+        drain_associations(&pool, 128, &CancellationToken::new(), false)
             .await
             .unwrap(),
         1
     );
     // A second run finds nothing new: the associated row is skipped.
     assert_eq!(
-        crate::bridge::drain_associations(&pool, 128, &CancellationToken::new())
+        drain_associations(&pool, 128, &CancellationToken::new(), false)
             .await
             .unwrap(),
         0
@@ -356,7 +573,7 @@ async fn skips_pair_when_destination_already_materialized() {
 
     // The pair is skipped: the destination already has a ciphertext, so there is
     // nothing to copy.
-    let associated = crate::bridge::drain_associations(&pool, 128, &CancellationToken::new())
+    let associated = drain_associations(&pool, 128, &CancellationToken::new(), false)
         .await
         .unwrap();
     assert_eq!(associated, 0);
@@ -424,7 +641,7 @@ async fn drains_across_multiple_batches() {
         insert_ready_pair(&pool, src, dst).await;
     }
 
-    let associated = crate::bridge::drain_associations(&pool, 2, &CancellationToken::new())
+    let associated = drain_associations(&pool, 2, &CancellationToken::new(), false)
         .await
         .unwrap();
     assert_eq!(associated, 3);
@@ -458,7 +675,7 @@ async fn associates_same_chain_pair() {
     insert_src_event(&pool, &src, SAME_CHAIN, SAME_CHAIN).await;
     insert_dst_event(&pool, &src, &dst, SAME_CHAIN).await;
 
-    let associated = crate::bridge::drain_associations(&pool, 128, &CancellationToken::new())
+    let associated = drain_associations(&pool, 128, &CancellationToken::new(), false)
         .await
         .unwrap();
     assert_eq!(associated, 1);

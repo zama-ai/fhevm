@@ -8,7 +8,13 @@ import {
   type CreateEthersBaseClientFn,
   type FheTestEthersConfig,
 } from '../setup-ethers.js';
-import { decryptTestCases, fheTypeIdFromName, clearTypeFromHandle, fheTypeIdFromHandle } from '../setupCommon.js';
+import {
+  createLogger,
+  decryptTestCases,
+  fheTypeIdFromName,
+  clearTypeFromHandle,
+  fheTypeIdFromHandle,
+} from '../setupCommon.js';
 import { asEncryptedValue } from '@fhevm/sdk/types';
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -34,6 +40,7 @@ export function defineClientBaseDecryptPublicValueTests(parameters: {
           type: 'ApiKeyHeader',
           value: config.zamaApiKey,
         },
+        logger: createLogger(console.log),
       });
     });
 

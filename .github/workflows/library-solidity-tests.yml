@@ -89,8 +89,7 @@ jobs:
           # Verify immutability: curl -fsSL https://api.github.com/repos/AikidoSec/safe-chain/releases/tags/1.5.3 | grep immutable
           curl -fsSL https://github.com/AikidoSec/safe-chain/releases/download/1.5.3/install-safe-chain.sh | sh -s -- --ci
       - run: npm --workspace=host-contracts ci --include=optional
-      - run: make -C host-contracts ensure-addresses
       - run: cp ./library-solidity/.env.example ./library-solidity/.env
       - run: npm --workspace=library-solidity ci --include=optional
       - name: "Run forge tests"
-        run: "cd library-solidity && forge soldeer install && forge test"
+        run: make -C library-solidity forge-test

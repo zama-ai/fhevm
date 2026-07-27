@@ -11,7 +11,7 @@
 
 import type * as Mod from './tfhe.js';
 import type { TfheLibApi } from '../TfheApi.js';
-import type { WasmAssetLoadMode as CoreWasmAssetLoadMode } from '../../../core/types/coreFhevmRuntime.js';
+import type { WasmAssetLoadMode as CoreWasmAssetLoadMode } from '../../../core/types/wasmAssets.js';
 import type { WasmAssetLoadMode as TfheWasmAssetLoadMode } from './tfhe.js';
 
 type Assert<T extends true> = T;

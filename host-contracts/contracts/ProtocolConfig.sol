@@ -3,7 +3,7 @@ pragma solidity ^0.8.24;
 
 import {IProtocolConfig} from "./interfaces/IProtocolConfig.sol";
 import {IKMSGeneration} from "./interfaces/IKMSGeneration.sol";
-import {KmsContextAnchor, KmsNode, KmsNodeParams, PcrValues} from "./shared/Structs.sol";
+import {KmsContextAnchor, KmsNode, KmsNodeParams, PcrValues, ChainUpgradeWindow} from "./shared/Structs.sol";
 import {EPOCH_COUNTER_BASE, EXTRA_DATA_V2, KMS_CONTEXT_COUNTER_BASE} from "./shared/Constants.sol";
 import {UUPSUpgradeableEmptyProxy} from "./shared/UUPSUpgradeableEmptyProxy.sol";
 import {ACLOwnable} from "./shared/ACLOwnable.sol";
@@ -131,17 +131,17 @@ contract ProtocolConfig is IProtocolConfig, UUPSUpgradeableEmptyProxy, ACLOwnabl
         /// @notice Context owning each epoch.
         mapping(uint256 epochId => uint256 contextId) contextForEpoch;
         /// @notice Context creation confirmations.
-        mapping(uint256 contextId => mapping(address signer => bool confirmed)) contextCreationConfirmedBySigner;
+        mapping(uint256 contextId => mapping(address txSender => bool confirmed)) contextCreationConfirmedByTxSender;
         /// @notice Epoch activation confirmations per signer (one digest per signer per epoch).
         mapping(uint256 epochId => mapping(address signer => bool confirmed)) epochActivationConfirmedBySigner;
         /// @notice Number of epoch activation confirmations grouped by digest
         mapping(uint256 epochId => mapping(bytes32 dataHash => uint256 confirmations)) epochActivationConfirmationCountForDigest;
-        /// @notice Required previous-context signer quorum, cached at pending-context creation time.
-        mapping(uint256 contextId => uint256 threshold) contextCreationPreviousSignerThreshold;
-        /// @notice New-context signer confirmations for context creation.
-        mapping(uint256 contextId => uint256 confirmations) contextCreationNewSignerConfirmationCount;
-        /// @notice Previous-context signer confirmations for context creation.
-        mapping(uint256 contextId => uint256 confirmations) contextCreationPreviousSignerConfirmationCount;
+        /// @notice Required previous-context confirmation quorum, cached at pending-context creation time.
+        mapping(uint256 contextId => uint256 threshold) contextCreationPreviousTxSenderThreshold;
+        /// @notice New-context tx-sender confirmations for context creation.
+        mapping(uint256 contextId => uint256 confirmations) contextCreationNewTxSenderConfirmationCount;
+        /// @notice Previous-context tx-sender confirmations for context creation.
+        mapping(uint256 contextId => uint256 confirmations) contextCreationPreviousTxSenderConfirmationCount;
         /// @notice Context anchor recorded when NewKmsContext was emitted.
         mapping(uint256 contextId => KmsContextAnchor) contextAnchors;
     }
@@ -229,7 +229,7 @@ contract ProtocolConfig is IProtocolConfig, UUPSUpgradeableEmptyProxy, ACLOwnabl
             revert InvalidKmsContext(canonicalContextId);
         }
         if (canonicalEpochId < EPOCH_COUNTER_BASE + 1) {
-            revert InvalidEpoch(canonicalEpochId);
+            revert InvalidKmsEpoch(canonicalEpochId);
         }
 
         _storeAndActivateKmsContextAndEpoch(
@@ -244,7 +244,6 @@ contract ProtocolConfig is IProtocolConfig, UUPSUpgradeableEmptyProxy, ACLOwnabl
      * @notice Re-initializes the contract from V1.
      * @dev Define a `reinitializeVX` function once the contract needs to be upgraded.
      * @param kmsNodeParams The existing context's KMS node set, used to recompute the anchor hash.
-     * @param thresholds The existing context's thresholds, used to recompute the anchor hash.
      * @param softwareVersion The KMS software version expected for the context.
      * @param pcrValues Accepted enclave PCR values for the context.
      */
@@ -252,7 +251,6 @@ contract ProtocolConfig is IProtocolConfig, UUPSUpgradeableEmptyProxy, ACLOwnabl
     /// @custom:oz-upgrades-validate-as-initializer
     function reinitializeV2(
         KmsNodeParams[] calldata kmsNodeParams,
-        KmsThresholds calldata thresholds,
         string calldata softwareVersion,
         PcrValues[] calldata pcrValues
     ) public virtual reinitializer(REINITIALIZER_VERSION) {
@@ -261,6 +259,13 @@ contract ProtocolConfig is IProtocolConfig, UUPSUpgradeableEmptyProxy, ACLOwnabl
         // Bring the existing context into the epoch-lifecycle shape: active context + first epoch.
         $.epochCounter = EPOCH_COUNTER_BASE;
         uint256 contextId = $.currentKmsContextId;
+
+        KmsThresholds memory thresholds = KmsThresholds({
+            publicDecryption: $.publicDecryptionThresholdForContext[contextId],
+            userDecryption: $.userDecryptionThresholdForContext[contextId],
+            kmsGen: $.kmsGenThresholdForContext[contextId],
+            mpc: $.mpcThresholdForContext[contextId]
+        });
         $.latestActiveKmsContextId = contextId;
         $.contextState[contextId] = ContextState.Active;
         uint256 epochId = ++$.epochCounter;
@@ -300,12 +305,18 @@ contract ProtocolConfig is IProtocolConfig, UUPSUpgradeableEmptyProxy, ACLOwnabl
         $.contextState[contextId] = ContextState.Pending;
         _createPendingEpoch(contextId);
 
-        // Cache the previous-context signer quorum needed by confirmKmsContextCreation.
-        // `n - t + 1` (n = previous signers, t = previous MPC fault threshold) so no t-subset ratifies alone.
-        $.contextCreationPreviousSignerThreshold[contextId] =
-            $.kmsSignerAddressesForContext[previousContextId].length -
-            $.mpcThresholdForContext[previousContextId] +
-            1;
+        // Cache the number of previous-committee confirmations confirmKmsContextCreation requires.
+        // The previous committee has `n` nodes, of which at most `t` (its MPC threshold) are assumed
+        // faulty — crashed, offline, or malicious. The quorum must be:
+        //   - more than `t`, so faulty nodes can never approve a switch on their own;
+        //   - at most `n - t`, because if `t` nodes stay silent only `n - t` confirmations ever
+        //     arrive — anything higher lets a dead node block the switch forever.
+        // `n - t` satisfies `n - t >= t + 1` under the `n = 3t + 1` topology the KMS core
+        // requires; the contract itself does not enforce the topology.
+        // Floored at 1 so the degenerate `t = n` config cannot make the quorum zero.
+        uint256 previousQuorum = $.kmsNodesForContext[previousContextId].length -
+            $.mpcThresholdForContext[previousContextId];
+        $.contextCreationPreviousTxSenderThreshold[contextId] = previousQuorum > 0 ? previousQuorum : 1;
 
         // Store context anchor and emit NewKmsContext event.
         $.contextAnchors[contextId] = KmsContextAnchor({
@@ -319,8 +330,7 @@ contract ProtocolConfig is IProtocolConfig, UUPSUpgradeableEmptyProxy, ACLOwnabl
     /// @dev Same-set resharing: governance opens a new Pending epoch under the active context, no signer change.
     /// @dev The DAO must not open a switch while another is in flight: at most one context and one
     ///      epoch may be non-active (Pending/Created) at a time. Settle the in-flight one first, either
-    ///      by completing it (confirmKmsContextCreation then confirmEpochActivation) or aborting it
-    ///      (abortPendingContext / abortPendingEpoch).
+    ///      by completing it (confirmEpochActivation) or aborting it (abortPendingContext / abortPendingEpoch).
     function defineNewEpochForCurrentKmsContext() external virtual onlyACLOwner {
         ProtocolConfigStorage storage $ = _getProtocolConfigStorage();
         uint256 latestActiveKmsContextId = $.latestActiveKmsContextId;
@@ -339,37 +349,36 @@ contract ProtocolConfig is IProtocolConfig, UUPSUpgradeableEmptyProxy, ACLOwnabl
     }
 
     /// @inheritdoc IProtocolConfig
-    /// @dev Context-switch: previous+new signers confirm on split-threshold quorum.
+    /// @dev Context-switch: previous+new committee tx senders confirm on split-threshold quorum.
     function confirmKmsContextCreation(uint256 kmsContextId) external virtual {
         ProtocolConfigStorage storage $ = _getProtocolConfigStorage();
         if ($.contextState[kmsContextId] != ContextState.Pending) {
             revert KmsContextNotPending(kmsContextId);
         }
 
-        // Caller must belong to the outgoing or incoming signer set and confirm only once.
-        address signer = msg.sender;
+        // Caller must belong to the outgoing or incoming committee and confirm only once.
         uint256 previousContextId = $.latestActiveKmsContextId;
-        bool isPreviousSigner = $.isKmsSignerForContext[previousContextId][signer];
-        bool isNewSigner = $.isKmsSignerForContext[kmsContextId][signer];
-        if (!isPreviousSigner && !isNewSigner) {
-            revert KmsContextCreationUnauthorized(signer, kmsContextId);
+        bool isPreviousTxSender = $.isKmsTxSenderForContext[previousContextId][msg.sender];
+        bool isNewTxSender = $.isKmsTxSenderForContext[kmsContextId][msg.sender];
+        if (!isPreviousTxSender && !isNewTxSender) {
+            revert KmsContextCreationUnauthorized(msg.sender, kmsContextId);
         }
-        if ($.contextCreationConfirmedBySigner[kmsContextId][signer]) {
-            revert KmsContextCreationAlreadyConfirmed(signer, kmsContextId);
+        if ($.contextCreationConfirmedByTxSender[kmsContextId][msg.sender]) {
+            revert KmsContextCreationAlreadyConfirmed(msg.sender, kmsContextId);
         }
 
         // Record the confirmation and counts separately for the split quorum.
-        $.contextCreationConfirmedBySigner[kmsContextId][signer] = true;
-        if (isPreviousSigner) {
-            ++$.contextCreationPreviousSignerConfirmationCount[kmsContextId];
+        $.contextCreationConfirmedByTxSender[kmsContextId][msg.sender] = true;
+        if (isPreviousTxSender) {
+            ++$.contextCreationPreviousTxSenderConfirmationCount[kmsContextId];
         }
-        if (isNewSigner) {
-            ++$.contextCreationNewSignerConfirmationCount[kmsContextId];
+        if (isNewTxSender) {
+            ++$.contextCreationNewTxSenderConfirmationCount[kmsContextId];
         }
 
-        emit KmsContextCreationConfirmation(kmsContextId, signer, isPreviousSigner, isNewSigner);
+        emit KmsContextCreationConfirmation(kmsContextId, msg.sender, isPreviousTxSender, isNewTxSender);
 
-        // All new signers + (n - t + 1) previous signers confirm to tell Connectors the epoch transition may start.
+        // All new nodes + (n - t) previous nodes confirm to tell Connectors the epoch transition may start.
         if (_hasContextCreationQuorum(kmsContextId)) {
             $.contextState[kmsContextId] = ContextState.Created;
             // The context-switch created this context and its epoch as a paired (Pending, Pending). The DAO
@@ -392,7 +401,7 @@ contract ProtocolConfig is IProtocolConfig, UUPSUpgradeableEmptyProxy, ACLOwnabl
 
         // Validate epoch activation: Verify EIP-712 keygen/CRS attestations and derive the consensus hash all signers must agree on.
         if ($.epochState[epochId] != EpochState.Pending) {
-            revert InvalidEpoch(epochId);
+            revert InvalidKmsEpoch(epochId);
         }
 
         uint256 contextId = $.contextForEpoch[epochId];
@@ -444,7 +453,8 @@ contract ProtocolConfig is IProtocolConfig, UUPSUpgradeableEmptyProxy, ACLOwnabl
         // Confirm epoch activation: add this signer's vote under that hash, activate the epoch once all signers agree.
         // Record one confirmation per signer, counted by data hash so quorum requires all signers on the same result.
         // Unanimity is required by design: a single divergent dataHash splits the vote so no hash reaches quorum,
-        // leaving the epoch Pending until governance calls abortPendingEpoch / abortPendingContext.
+        // leaving the epoch Pending until the signers converge on a single result, or governance calls
+        // abortPendingEpoch / abortPendingContext.
         if ($.epochActivationConfirmedBySigner[epochId][signer]) {
             revert EpochActivationAlreadyConfirmed(signer, epochId);
         }
@@ -473,13 +483,26 @@ contract ProtocolConfig is IProtocolConfig, UUPSUpgradeableEmptyProxy, ACLOwnabl
         ProtocolConfigStorage storage $ = _getProtocolConfigStorage();
 
         if (kmsContextId == $.latestActiveKmsContextId) {
-            revert CurrentKmsContextCannotBeDestroyed(kmsContextId);
+            revert LatestActiveKmsContextCannotBeDestroyed(kmsContextId);
         }
         if (!_isLiveKmsContext(kmsContextId)) {
             revert InvalidKmsContext(kmsContextId);
         }
 
-        _clearContext(kmsContextId);
+        // Mark the context destroyed, clear its epoch (if any), and wipe context-creation bookkeeping.
+        $.destroyedContexts[kmsContextId] = true;
+        $.contextState[kmsContextId] = ContextState.None;
+        // Contexts and epochs are issued in pairs, so the latest-issued epoch is this context's epoch.
+        // Clear it whether it is still Pending (aborted switch) or already Active, so no live epoch
+        // is left pointing at a destroyed context.
+        uint256 latestEpochId = $.epochCounter;
+        if ($.contextForEpoch[latestEpochId] == kmsContextId) {
+            _clearEpoch(latestEpochId);
+        }
+        delete $.contextCreationPreviousTxSenderThreshold[kmsContextId];
+        delete $.contextCreationNewTxSenderConfirmationCount[kmsContextId];
+        delete $.contextCreationPreviousTxSenderConfirmationCount[kmsContextId];
+
         emit KmsContextDestroyed(kmsContextId);
     }
 
@@ -487,7 +510,7 @@ contract ProtocolConfig is IProtocolConfig, UUPSUpgradeableEmptyProxy, ACLOwnabl
     function abortPendingEpoch(uint256 epochId) external virtual onlyACLOwner {
         ProtocolConfigStorage storage $ = _getProtocolConfigStorage();
         if ($.epochState[epochId] != EpochState.Pending) {
-            revert InvalidEpoch(epochId);
+            revert InvalidKmsEpoch(epochId);
         }
 
         uint256 contextId = $.contextForEpoch[epochId];
@@ -508,6 +531,59 @@ contract ProtocolConfig is IProtocolConfig, UUPSUpgradeableEmptyProxy, ACLOwnabl
 
         _clearContext(kmsContextId);
         emit PendingContextAborted(kmsContextId);
+    }
+
+    /// @inheritdoc IProtocolConfig
+    function destroyKmsEpoch(uint256 epochId) external virtual onlyACLOwner {
+        ProtocolConfigStorage storage $ = _getProtocolConfigStorage();
+
+        if (epochId == $.latestActiveEpochId) {
+            revert LatestActiveKmsEpochCannotBeDestroyed(epochId);
+        }
+        if ($.epochState[epochId] != EpochState.Active) {
+            revert InvalidKmsEpoch(epochId);
+        }
+
+        _clearEpoch(epochId);
+        emit KmsEpochDestroyed(epochId);
+    }
+
+    /// @inheritdoc IProtocolConfig
+    function proposeCoprocessorUpgrade(
+        uint256 proposalId,
+        string calldata softwareVersion,
+        ChainUpgradeWindow[] calldata chainUpgradeWindows,
+        uint64 gwStartBlock
+    ) external virtual onlyACLOwner {
+        if (proposalId == 0) {
+            revert InvalidProposalId();
+        }
+        if (bytes(softwareVersion).length == 0) {
+            revert EmptySoftwareVersion();
+        }
+        if (chainUpgradeWindows.length == 0) {
+            revert EmptyChainUpgradeWindows();
+        }
+        if (gwStartBlock == 0) {
+            revert ZeroGwStartBlock();
+        }
+
+        for (uint256 i = 0; i < chainUpgradeWindows.length; i++) {
+            ChainUpgradeWindow calldata cw = chainUpgradeWindows[i];
+            if (cw.chainId == 0) {
+                revert ZeroChainId();
+            }
+            if (cw.startBlock > cw.endBlock) {
+                revert InvalidBlockWindow(cw.chainId, cw.startBlock, cw.endBlock);
+            }
+            for (uint256 j = 0; j < i; j++) {
+                if (chainUpgradeWindows[j].chainId == cw.chainId) {
+                    revert DuplicateChainId(cw.chainId);
+                }
+            }
+        }
+
+        emit CoprocessorUpgradeProposed(proposalId, softwareVersion, chainUpgradeWindows, gwStartBlock);
     }
 
     /// @inheritdoc IProtocolConfig
@@ -639,7 +715,10 @@ contract ProtocolConfig is IProtocolConfig, UUPSUpgradeableEmptyProxy, ACLOwnabl
     /// @inheritdoc IProtocolConfig
     function isValidEpochForContext(uint256 kmsContextId, uint256 epochId) external view virtual returns (bool) {
         ProtocolConfigStorage storage $ = _getProtocolConfigStorage();
-        return $.epochState[epochId] == EpochState.Active && $.contextForEpoch[epochId] == kmsContextId;
+        return
+            $.epochState[epochId] == EpochState.Active &&
+            $.contextForEpoch[epochId] == kmsContextId &&
+            _isValidKmsContext(kmsContextId);
     }
 
     /// @inheritdoc IProtocolConfig
@@ -911,10 +990,9 @@ contract ProtocolConfig is IProtocolConfig, UUPSUpgradeableEmptyProxy, ACLOwnabl
     function _hasContextCreationQuorum(uint256 contextId) internal view virtual returns (bool) {
         ProtocolConfigStorage storage $ = _getProtocolConfigStorage();
         return
-            $.contextCreationNewSignerConfirmationCount[contextId] ==
-            $.kmsSignerAddressesForContext[contextId].length &&
-            $.contextCreationPreviousSignerConfirmationCount[contextId] >=
-            $.contextCreationPreviousSignerThreshold[contextId];
+            $.contextCreationNewTxSenderConfirmationCount[contextId] == $.kmsNodesForContext[contextId].length &&
+            $.contextCreationPreviousTxSenderConfirmationCount[contextId] >=
+            $.contextCreationPreviousTxSenderThreshold[contextId];
     }
 
     function _requireExpectedSigner(
@@ -987,8 +1065,8 @@ contract ProtocolConfig is IProtocolConfig, UUPSUpgradeableEmptyProxy, ACLOwnabl
 
     /**
      * @dev Marks a context destroyed, clears its pending epoch (if any), and wipes the
-     *      context-creation bookkeeping. Shared by `destroyKmsContext` and `abortPendingContext`;
-     *      callers own the preconditions and the event emitted.
+     *      context-creation bookkeeping. Used by `abortPendingContext`; the caller owns
+     *      the preconditions and the event emitted.
      */
     function _clearContext(uint256 kmsContextId) internal virtual {
         ProtocolConfigStorage storage $ = _getProtocolConfigStorage();
@@ -999,9 +1077,9 @@ contract ProtocolConfig is IProtocolConfig, UUPSUpgradeableEmptyProxy, ACLOwnabl
         if ($.epochState[latestEpochId] == EpochState.Pending && $.contextForEpoch[latestEpochId] == kmsContextId) {
             _clearEpoch(latestEpochId);
         }
-        delete $.contextCreationPreviousSignerThreshold[kmsContextId];
-        delete $.contextCreationNewSignerConfirmationCount[kmsContextId];
-        delete $.contextCreationPreviousSignerConfirmationCount[kmsContextId];
+        delete $.contextCreationPreviousTxSenderThreshold[kmsContextId];
+        delete $.contextCreationNewTxSenderConfirmationCount[kmsContextId];
+        delete $.contextCreationPreviousTxSenderConfirmationCount[kmsContextId];
     }
 
     /**

@@ -124,14 +124,15 @@ async fn run_uploader_loop(
                     continue;
                 }
 
-                let mut trx = pool.begin().await?;
+                let mut trx = fhevm_engine_common::versioning::begin_guarded_pool(&pool).await?;
 
-                let item = match job {
-                    UploadJob::Normal(item) => {
-                        item.enqueue_upload_task(&mut trx).await?;
-                        create_upload_task_savepoint(&mut trx).await?;
-                        item
-                    }
+                // Normal jobs defer their enqueue into the spawned task: the
+                // provenance witness takes FOR KEY SHARE on the pbs row,
+                // which blocks while the originating batch transaction still
+                // holds its FOR UPDATE work locks — the dispatch loop must
+                // never park head-of-line on that.
+                let (item, needs_enqueue) = match job {
+                    UploadJob::Normal(item) => (item, true),
                     UploadJob::DatabaseLock(mut item) => {
                         create_upload_task_savepoint(&mut trx).await?;
                         let row = match sqlx::query!(
@@ -194,7 +195,7 @@ async fn run_uploader_loop(
                             item.ct128 = Arc::new(BigCiphertext::new(Vec::new(), ct128_format));
                         }
 
-                        item
+                        (item, false)
                     }
                 };
                 debug!(handle = hex::encode(&item.handle), "Received task, handle");
@@ -228,9 +229,35 @@ async fn run_uploader_loop(
                     // that was captured when the upload item was created.
                     let upload_span = error_span!("upload_s3");
                     upload_span.set_parent(item.span.context());
-                    let result = upload_ciphertexts(&mut trx, item, &client, &conf, signer)
-                        .instrument(upload_span.clone())
-                        .await;
+                    // Enqueue deferred from the dispatch loop (see above). A
+                    // dead witness means reorg cleanup cancelled the
+                    // publication while this job was queued: drop it.
+                    let prep: anyhow::Result<bool> = async {
+                        if needs_enqueue {
+                            if !item.enqueue_upload_task(&mut trx).await? {
+                                return Ok(false);
+                            }
+                            create_upload_task_savepoint(&mut trx).await?;
+                        }
+                        Ok(true)
+                    }
+                    .await;
+                    let result = match prep {
+                        Ok(false) => {
+                            if let Err(err) = trx.rollback().await {
+                                warn!(error = %err, "Failed to roll back cancelled upload");
+                            }
+                            drop(upload_span);
+                            drop(permit);
+                            return Ok(());
+                        }
+                        Ok(true) => {
+                            upload_ciphertexts(&mut trx, item, &client, &conf, signer)
+                                .instrument(upload_span.clone())
+                                .await
+                        }
+                        Err(err) => Err(err),
+                    };
                     let outcome = match result {
                         Ok(()) => {
                             if let Err(err) = trx.commit().await {
@@ -967,7 +994,7 @@ async fn fetch_pending_uploads(
         if row_incomplete || should_verify_existing_s3 {
             if let Ok(row) = sqlx::query!(
                 "SELECT ciphertext FROM ciphertexts WHERE handle = $1;",
-                handle
+                handle,
             )
             .fetch_optional(db_pool)
             .await
@@ -989,7 +1016,7 @@ async fn fetch_pending_uploads(
         if has_ct128_ciphertext && (row_incomplete || should_verify_existing_s3) {
             if let Ok(row) = sqlx::query!(
                 "SELECT ciphertext FROM ciphertexts128 WHERE handle = $1;",
-                handle
+                handle,
             )
             .fetch_optional(db_pool)
             .await
@@ -1126,7 +1153,7 @@ async fn do_resubmits_loop(
             _ = recheck_ticker.tick() => {
                 if !is_ready.load(Ordering::Acquire) {
                     info!("Recheck S3 setup ...");
-                    let (is_ready_res, _) = check_is_ready(&client, &conf).await;
+                    let (is_ready_res, _) = check_is_ready(&client, &conf.s3).await;
                     if is_ready_res {
                         info!("Reconnected to S3, buckets exist");
                         is_ready.store(true, Ordering::Release);
@@ -1203,13 +1230,13 @@ async fn try_resubmit(
 /// the ct64 and ct128 buckets.
 ///
 /// Returns is_ready and is_connected status.
-pub(crate) async fn check_is_ready(client: &Client, conf: &Config) -> (bool, bool) {
+pub(crate) async fn check_is_ready(client: &Client, conf: &S3Config) -> (bool, bool) {
     // Check if the S3 client is ready
     //
     // By checking the existence of both ct64 and ct128 buckets here,
     // we also incorporate the aws-sdk connection retry
-    let (ct64_exists, _) = check_bucket_exists(client, &conf.s3.bucket_ct64).await;
-    let (ct128_exists, conn) = check_bucket_exists(client, &conf.s3.bucket_ct128).await;
+    let (ct64_exists, _) = check_bucket_exists(client, &conf.bucket_ct64).await;
+    let (ct128_exists, conn) = check_bucket_exists(client, &conf.bucket_ct128).await;
 
     ((ct64_exists && ct128_exists), conn)
 }
@@ -1357,7 +1384,7 @@ async fn check_ct128_objects_exist(
     Ok(key_exists && digest_key_exists)
 }
 
-async fn check_bucket_exists(
+pub async fn check_bucket_exists(
     client: &Client,
     bucket: &str,
 ) -> (bool, bool /* connection status */) {

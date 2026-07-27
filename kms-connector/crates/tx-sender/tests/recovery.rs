@@ -4,6 +4,7 @@ use connector_utils::{
         db::{
             requests::{
                 InsertRequestOptions, insert_rand_crsgen_request, insert_rand_keygen_request,
+                insert_rand_kms_context_destroyed, insert_rand_kms_epoch_destroyed,
                 insert_rand_new_kms_context, insert_rand_new_kms_epoch,
                 insert_rand_prep_keygen_request, insert_rand_public_decryption_request,
                 insert_rand_user_decryption_request,
@@ -46,6 +47,8 @@ const LONG_INTERVAL: Duration = Duration::from_secs(120);
 #[case::new_kms_epoch("NewKmsEpoch")]
 #[case::new_kms_context_response("NewKmsContextResponse")]
 #[case::epoch_result_response("EpochResultResponse")]
+#[case::kms_context_destroyed("KmsContextDestroyed")]
+#[case::kms_epoch_destroyed("KmsEpochDestroyed")]
 #[timeout(Duration::from_secs(60))]
 #[tokio::test]
 async fn unlocks_old_under_process(#[case] operation: &str) -> anyhow::Result<()> {
@@ -266,6 +269,16 @@ async fn insert_operation_in_db_and_get_id(
                 .await?
                 .epoch_id
         }
+        "KmsContextDestroyed" => {
+            insert_rand_kms_context_destroyed(db, insert_option)
+                .await?
+                .kmsContextId
+        }
+        "KmsEpochDestroyed" => {
+            insert_rand_kms_epoch_destroyed(db, insert_option)
+                .await?
+                .epochId
+        }
         _ => panic!("Unexpected operation type"),
     };
     Ok(id)
@@ -305,6 +318,8 @@ async fn get_operation_status(
             "SELECT status FROM new_kms_context_responses WHERE context_id = $1"
         }
         "EpochResultResponse" => "SELECT status FROM epoch_result_responses WHERE epoch_id = $1",
+        "KmsContextDestroyed" => "SELECT status FROM kms_context_destroyed WHERE context_id = $1",
+        "KmsEpochDestroyed" => "SELECT status FROM kms_epoch_destroyed WHERE epoch_id = $1",
         _ => panic!("Unexpected operation type"),
     };
     let status: OperationStatus = sqlx::query(query)

@@ -55,6 +55,10 @@ export type HostContractsUserConfig = {
 export type LibUserConfig = {
   outDir?: string;
   fheTypeDir?: string;
+  // whether to generate the confidential-bridge OApp abstracts under `lib/bridge/`
+  // (ConfidentialOAppCore/Sender/Receiver/ConfidentialOApp + IDstApp). Library-only;
+  // host-contracts leaves this off so it does not emit the OApp abstracts.
+  bridge?: boolean;
 };
 
 export type TestsUserConfig = {
@@ -76,6 +80,8 @@ export type LibConfig = {
   outDir: string;
   // directory where the FheType.sol file is located
   fheTypeDir: string;
+  // whether to generate the confidential-bridge OApp abstracts under `lib/bridge/`
+  bridge: boolean;
 };
 
 export type TestsConfig = {
@@ -212,6 +218,7 @@ function resolveLibConfig(userLibConfig: LibUserConfig | undefined): LibConfig {
   const p: LibConfig = {
     fheTypeDir: userLibConfig?.fheTypeDir ?? outDir,
     outDir,
+    bridge: userLibConfig?.bridge ?? false,
   };
   assertRelative(p.fheTypeDir);
   assertRelative(p.outDir);
@@ -273,6 +280,7 @@ function toAbsoluteLibConfig(resolved: LibConfig, baseDir: string): LibConfig {
   return {
     outDir: toAbsoluteDirectory(resolved.outDir, baseDir),
     fheTypeDir: toAbsoluteDirectory(resolved.fheTypeDir, baseDir),
+    bridge: resolved.bridge,
   };
 }
 

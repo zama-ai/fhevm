@@ -1,6 +1,6 @@
 # This workflow verifies that:
 # - The Rust bindings crate version and files are up-to-date
-# - Contract mocks and selectors are current
+# - Contract selectors are current
 # - Dependency licenses compliance
 name: gateway-contracts-integrity-checks
 
@@ -54,9 +54,17 @@ jobs:
           key: ${{ runner.os }}-node-${{ hashFiles('**/package-lock.json') }}
 
       - name: Install Foundry
-        uses: foundry-rs/foundry-toolchain@de808b1eea699e761c404bda44ba8f21aba30b2c # v1.3.1
+        uses: foundry-rs/foundry-toolchain@b00af27efadbc7b4ca8b82abbd903b17cc874d2a # v1.9.0
         with:
-          version: v1.3.1
+          version: v1.7.1
+
+      - name: Install safe-chain
+        shell: bash
+        run: |
+          # safe-chain v1.5.3 is distributed as an immutable GitHub release asset —
+          # its content is permanently fixed and cannot be modified after the tag is published.
+          # Verify immutability: curl -fsSL https://api.github.com/repos/AikidoSec/safe-chain/releases/tags/1.5.3 | grep immutable
+          curl -fsSL https://github.com/AikidoSec/safe-chain/releases/download/1.5.3/install-safe-chain.sh | sh -s -- --ci
 
       - name: Install safe-chain
         shell: bash
@@ -77,10 +85,6 @@ jobs:
       - name: Check contract selectors are up-to-date
         working-directory: gateway-contracts
         run: make check-selectors
-
-      - name: Check mock contracts are up-to-date
-        working-directory: gateway-contracts
-        run: make check-mocks
 
       - name: Check SPDX license headers
         working-directory: gateway-contracts

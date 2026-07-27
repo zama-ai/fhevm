@@ -1,0 +1,15 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n                DELETE FROM ciphertexts128_branch\n                WHERE (handle, producer_block_hash) IN (\n                    SELECT * FROM UNNEST($1::bytea[], $2::bytea[])\n                )\n                ",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "ByteaArray",
+        "ByteaArray"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "309f207871fea3bec1c9ad9a24feee4f920f55b954e69597a17b16ea9ab5b90f"
+}

@@ -26,6 +26,10 @@ pub fn rand_digest() -> FixedBytes<32> {
     rand::rng().random::<[u8; 32]>().into()
 }
 
+pub fn rand_handle() -> FixedBytes<32> {
+    rand::rng().random::<[u8; 32]>().into()
+}
+
 pub fn rand_sns_ct() -> SnsCiphertextMaterial {
     SnsCiphertextMaterial {
         keyId: rand_u256(),

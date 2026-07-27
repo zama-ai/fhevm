@@ -507,6 +507,11 @@ library IKMSGeneration {
 }
 
 interface IProtocolConfig {
+    struct ChainUpgradeWindow {
+        uint64 chainId;
+        uint64 startBlock;
+        uint64 endBlock;
+    }
     struct EpochCrsResult {
         uint256 crsId;
         uint256 maxBitLength;
@@ -547,17 +552,22 @@ interface IProtocolConfig {
         bytes pcr2;
     }
 
-    error CurrentKmsContextCannotBeDestroyed(uint256 kmsContextId);
+    error DuplicateChainId(uint64 chainId);
+    error EmptyChainUpgradeWindows();
     error EmptyKmsNodes();
+    error EmptySoftwareVersion();
     error EpochActivationAlreadyConfirmed(address signer, uint256 epochId);
     error EpochActivationSignerDoesNotMatchTxSender(address signer, address txSender);
     error EpochActivationUnauthorized(address caller, uint256 epochId);
     error EpochNotUnderActiveContext(uint256 epochId, uint256 contextId);
+    error InvalidBlockWindow(uint64 chainId, uint64 startBlock, uint64 endBlock);
     error InvalidEpoch(uint256 epochId);
     error InvalidHighThreshold(string thresholdName, uint256 threshold, uint256 nodeCount);
     error InvalidKmsContext(uint256 kmsContextId);
+    error InvalidKmsEpoch(uint256 epochId);
     error InvalidNullThreshold(string thresholdName);
-    error KmsContextCreationAlreadyConfirmed(address signer, uint256 kmsContextId);
+    error InvalidProposalId();
+    error KmsContextCreationAlreadyConfirmed(address txSender, uint256 kmsContextId);
     error KmsContextCreationUnauthorized(address caller, uint256 kmsContextId);
     error KmsContextNotCreated(uint256 kmsContextId);
     error KmsContextNotPending(uint256 kmsContextId);
@@ -566,14 +576,20 @@ interface IProtocolConfig {
     error KmsSignerAlreadyRegistered(address signer);
     error KmsSignerSetExceedsProofFormatLimit(uint256 signerCount, uint256 maxAllowed);
     error KmsTxSenderAlreadyRegistered(address txSender);
+    error LatestActiveKmsContextCannotBeDestroyed(uint256 kmsContextId);
+    error LatestActiveKmsEpochCannotBeDestroyed(uint256 epochId);
     error NonIncreasingEpochId(uint256 epochId, uint256 currentEpochId);
     error NonIncreasingKmsContextId(uint256 contextId, uint256 latestActiveKmsContextId);
     error ThresholdExceedsProofFormatLimit(string thresholdName, uint256 threshold, uint256 maxAllowed);
+    error ZeroChainId();
+    error ZeroGwStartBlock();
 
     event ActivateEpoch(uint256 indexed kmsContextId, uint256 indexed epochId, EpochKeyResult[] keys, EpochCrsResult[] crsList, string[] kmsNodeStorageUrls);
+    event CoprocessorUpgradeProposed(uint256 indexed proposalId, string softwareVersion, ChainUpgradeWindow[] chainUpgradeWindows, uint64 gwStartBlock);
     event EpochActivationConfirmation(uint256 indexed epochId, address indexed signer, bytes32 dataHash);
-    event KmsContextCreationConfirmation(uint256 indexed kmsContextId, address indexed signer, bool isPreviousSigner, bool isNewSigner);
+    event KmsContextCreationConfirmation(uint256 indexed kmsContextId, address indexed txSender, bool isPreviousTxSender, bool isNewTxSender);
     event KmsContextDestroyed(uint256 indexed kmsContextId);
+    event KmsEpochDestroyed(uint256 indexed epochId);
     event KmsGenThresholdUpdated(uint256 indexed kmsContextId, uint256 threshold);
     event MirrorKmsContextAndEpoch(uint256 indexed contextId, uint256 indexed epochId, KmsNodeParams[] kmsNodeParams, KmsThresholds thresholds, string softwareVersion, PcrValues[] pcrValues);
     event MirrorKmsEpoch(uint256 indexed contextId, uint256 indexed epochId);
@@ -592,6 +608,7 @@ interface IProtocolConfig {
     function defineNewEpochForCurrentKmsContext() external;
     function defineNewKmsContextAndEpoch(KmsNodeParams[] memory kmsNodeParams, KmsThresholds memory thresholds, string memory softwareVersion, PcrValues[] memory pcrValues) external;
     function destroyKmsContext(uint256 kmsContextId) external;
+    function destroyKmsEpoch(uint256 epochId) external;
     function getCurrentKmsContextAndEpoch() external view returns (uint256 contextId, uint256 epochId);
     function getCurrentKmsContextId() external view returns (uint256);
     function getKmsContextAnchor(uint256 contextId) external view returns (uint256 emissionBlockNumber, bytes32 contextInfoHash);
@@ -615,6 +632,7 @@ interface IProtocolConfig {
     function isValidKmsContext(uint256 kmsContextId) external view returns (bool);
     function mirrorKmsContextAndEpoch(uint256 contextId, uint256 epochId, KmsNodeParams[] memory kmsNodeParams, KmsThresholds memory thresholds, string memory softwareVersion, PcrValues[] memory pcrValues) external;
     function mirrorKmsEpoch(uint256 contextId, uint256 epochId) external;
+    function proposeCoprocessorUpgrade(uint256 proposalId, string memory softwareVersion, ChainUpgradeWindow[] memory chainUpgradeWindows, uint64 gwStartBlock) external;
     function updateKmsGenThresholdForContext(uint256 kmsContextId, uint256 threshold) external;
     function updateMpcThresholdForContext(uint256 kmsContextId, uint256 threshold) external;
     function updatePublicDecryptionThresholdForContext(uint256 kmsContextId, uint256 threshold) external;
@@ -865,6 +883,19 @@ interface IProtocolConfig {
     "inputs": [
       {
         "name": "kmsContextId",
+        "type": "uint256",
+        "internalType": "uint256"
+      }
+    ],
+    "outputs": [],
+    "stateMutability": "nonpayable"
+  },
+  {
+    "type": "function",
+    "name": "destroyKmsEpoch",
+    "inputs": [
+      {
+        "name": "epochId",
         "type": "uint256",
         "internalType": "uint256"
       }
@@ -1436,6 +1467,51 @@ interface IProtocolConfig {
   },
   {
     "type": "function",
+    "name": "proposeCoprocessorUpgrade",
+    "inputs": [
+      {
+        "name": "proposalId",
+        "type": "uint256",
+        "internalType": "uint256"
+      },
+      {
+        "name": "softwareVersion",
+        "type": "string",
+        "internalType": "string"
+      },
+      {
+        "name": "chainUpgradeWindows",
+        "type": "tuple[]",
+        "internalType": "struct ChainUpgradeWindow[]",
+        "components": [
+          {
+            "name": "chainId",
+            "type": "uint64",
+            "internalType": "uint64"
+          },
+          {
+            "name": "startBlock",
+            "type": "uint64",
+            "internalType": "uint64"
+          },
+          {
+            "name": "endBlock",
+            "type": "uint64",
+            "internalType": "uint64"
+          }
+        ]
+      },
+      {
+        "name": "gwStartBlock",
+        "type": "uint64",
+        "internalType": "uint64"
+      }
+    ],
+    "outputs": [],
+    "stateMutability": "nonpayable"
+  },
+  {
+    "type": "function",
     "name": "updateKmsGenThresholdForContext",
     "inputs": [
       {
@@ -1601,6 +1677,54 @@ interface IProtocolConfig {
   },
   {
     "type": "event",
+    "name": "CoprocessorUpgradeProposed",
+    "inputs": [
+      {
+        "name": "proposalId",
+        "type": "uint256",
+        "indexed": true,
+        "internalType": "uint256"
+      },
+      {
+        "name": "softwareVersion",
+        "type": "string",
+        "indexed": false,
+        "internalType": "string"
+      },
+      {
+        "name": "chainUpgradeWindows",
+        "type": "tuple[]",
+        "indexed": false,
+        "internalType": "struct ChainUpgradeWindow[]",
+        "components": [
+          {
+            "name": "chainId",
+            "type": "uint64",
+            "internalType": "uint64"
+          },
+          {
+            "name": "startBlock",
+            "type": "uint64",
+            "internalType": "uint64"
+          },
+          {
+            "name": "endBlock",
+            "type": "uint64",
+            "internalType": "uint64"
+          }
+        ]
+      },
+      {
+        "name": "gwStartBlock",
+        "type": "uint64",
+        "indexed": false,
+        "internalType": "uint64"
+      }
+    ],
+    "anonymous": false
+  },
+  {
+    "type": "event",
     "name": "EpochActivationConfirmation",
     "inputs": [
       {
@@ -1635,19 +1759,19 @@ interface IProtocolConfig {
         "internalType": "uint256"
       },
       {
-        "name": "signer",
+        "name": "txSender",
         "type": "address",
         "indexed": true,
         "internalType": "address"
       },
       {
-        "name": "isPreviousSigner",
+        "name": "isPreviousTxSender",
         "type": "bool",
         "indexed": false,
         "internalType": "bool"
       },
       {
-        "name": "isNewSigner",
+        "name": "isNewTxSender",
         "type": "bool",
         "indexed": false,
         "internalType": "bool"
@@ -1661,6 +1785,19 @@ interface IProtocolConfig {
     "inputs": [
       {
         "name": "kmsContextId",
+        "type": "uint256",
+        "indexed": true,
+        "internalType": "uint256"
+      }
+    ],
+    "anonymous": false
+  },
+  {
+    "type": "event",
+    "name": "KmsEpochDestroyed",
+    "inputs": [
+      {
+        "name": "epochId",
         "type": "uint256",
         "indexed": true,
         "internalType": "uint256"
@@ -2082,18 +2219,28 @@ interface IProtocolConfig {
   },
   {
     "type": "error",
-    "name": "CurrentKmsContextCannotBeDestroyed",
+    "name": "DuplicateChainId",
     "inputs": [
       {
-        "name": "kmsContextId",
-        "type": "uint256",
-        "internalType": "uint256"
+        "name": "chainId",
+        "type": "uint64",
+        "internalType": "uint64"
       }
     ]
   },
   {
     "type": "error",
+    "name": "EmptyChainUpgradeWindows",
+    "inputs": []
+  },
+  {
+    "type": "error",
     "name": "EmptyKmsNodes",
+    "inputs": []
+  },
+  {
+    "type": "error",
+    "name": "EmptySoftwareVersion",
     "inputs": []
   },
   {
@@ -2162,6 +2309,27 @@ interface IProtocolConfig {
   },
   {
     "type": "error",
+    "name": "InvalidBlockWindow",
+    "inputs": [
+      {
+        "name": "chainId",
+        "type": "uint64",
+        "internalType": "uint64"
+      },
+      {
+        "name": "startBlock",
+        "type": "uint64",
+        "internalType": "uint64"
+      },
+      {
+        "name": "endBlock",
+        "type": "uint64",
+        "internalType": "uint64"
+      }
+    ]
+  },
+  {
+    "type": "error",
     "name": "InvalidEpoch",
     "inputs": [
       {
@@ -2205,6 +2373,17 @@ interface IProtocolConfig {
   },
   {
     "type": "error",
+    "name": "InvalidKmsEpoch",
+    "inputs": [
+      {
+        "name": "epochId",
+        "type": "uint256",
+        "internalType": "uint256"
+      }
+    ]
+  },
+  {
+    "type": "error",
     "name": "InvalidNullThreshold",
     "inputs": [
       {
@@ -2216,10 +2395,15 @@ interface IProtocolConfig {
   },
   {
     "type": "error",
+    "name": "InvalidProposalId",
+    "inputs": []
+  },
+  {
+    "type": "error",
     "name": "KmsContextCreationAlreadyConfirmed",
     "inputs": [
       {
-        "name": "signer",
+        "name": "txSender",
         "type": "address",
         "internalType": "address"
       },
@@ -2318,6 +2502,28 @@ interface IProtocolConfig {
   },
   {
     "type": "error",
+    "name": "LatestActiveKmsContextCannotBeDestroyed",
+    "inputs": [
+      {
+        "name": "kmsContextId",
+        "type": "uint256",
+        "internalType": "uint256"
+      }
+    ]
+  },
+  {
+    "type": "error",
+    "name": "LatestActiveKmsEpochCannotBeDestroyed",
+    "inputs": [
+      {
+        "name": "epochId",
+        "type": "uint256",
+        "internalType": "uint256"
+      }
+    ]
+  },
+  {
+    "type": "error",
     "name": "NonIncreasingEpochId",
     "inputs": [
       {
@@ -2368,6 +2574,16 @@ interface IProtocolConfig {
         "internalType": "uint256"
       }
     ]
+  },
+  {
+    "type": "error",
+    "name": "ZeroChainId",
+    "inputs": []
+  },
+  {
+    "type": "error",
+    "name": "ZeroGwStartBlock",
+    "inputs": []
   }
 ]
 ```*/
@@ -2401,6 +2617,253 @@ pub mod IProtocolConfig {
     pub static DEPLOYED_BYTECODE: alloy_sol_types::private::Bytes = alloy_sol_types::private::Bytes::from_static(
         b"",
     );
+    #[derive(serde::Serialize, serde::Deserialize)]
+    #[derive(Default, Debug, PartialEq, Eq, Hash)]
+    /**```solidity
+struct ChainUpgradeWindow { uint64 chainId; uint64 startBlock; uint64 endBlock; }
+```*/
+    #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
+    #[derive(Clone)]
+    pub struct ChainUpgradeWindow {
+        #[allow(missing_docs)]
+        pub chainId: u64,
+        #[allow(missing_docs)]
+        pub startBlock: u64,
+        #[allow(missing_docs)]
+        pub endBlock: u64,
+    }
+    #[allow(
+        non_camel_case_types,
+        non_snake_case,
+        clippy::pub_underscore_fields,
+        clippy::style
+    )]
+    const _: () = {
+        use alloy::sol_types as alloy_sol_types;
+        #[doc(hidden)]
+        type UnderlyingSolTuple<'a> = (
+            alloy::sol_types::sol_data::Uint<64>,
+            alloy::sol_types::sol_data::Uint<64>,
+            alloy::sol_types::sol_data::Uint<64>,
+        );
+        #[doc(hidden)]
+        type UnderlyingRustTuple<'a> = (u64, u64, u64);
+        #[cfg(test)]
+        #[allow(dead_code, unreachable_patterns)]
+        fn _type_assertion(
+            _t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>,
+        ) {
+            match _t {
+                alloy_sol_types::private::AssertTypeEq::<
+                    <UnderlyingSolTuple as alloy_sol_types::SolType>::RustType,
+                >(_) => {}
+            }
+        }
+        #[automatically_derived]
+        #[doc(hidden)]
+        impl ::core::convert::From<ChainUpgradeWindow> for UnderlyingRustTuple<'_> {
+            fn from(value: ChainUpgradeWindow) -> Self {
+                (value.chainId, value.startBlock, value.endBlock)
+            }
+        }
+        #[automatically_derived]
+        #[doc(hidden)]
+        impl ::core::convert::From<UnderlyingRustTuple<'_>> for ChainUpgradeWindow {
+            fn from(tuple: UnderlyingRustTuple<'_>) -> Self {
+                Self {
+                    chainId: tuple.0,
+                    startBlock: tuple.1,
+                    endBlock: tuple.2,
+                }
+            }
+        }
+        #[automatically_derived]
+        impl alloy_sol_types::SolValue for ChainUpgradeWindow {
+            type SolType = Self;
+        }
+        #[automatically_derived]
+        impl alloy_sol_types::private::SolTypeValue<Self> for ChainUpgradeWindow {
+            #[inline]
+            fn stv_to_tokens(&self) -> <Self as alloy_sol_types::SolType>::Token<'_> {
+                (
+                    <alloy::sol_types::sol_data::Uint<
+                        64,
+                    > as alloy_sol_types::SolType>::tokenize(&self.chainId),
+                    <alloy::sol_types::sol_data::Uint<
+                        64,
+                    > as alloy_sol_types::SolType>::tokenize(&self.startBlock),
+                    <alloy::sol_types::sol_data::Uint<
+                        64,
+                    > as alloy_sol_types::SolType>::tokenize(&self.endBlock),
+                )
+            }
+            #[inline]
+            fn stv_abi_encoded_size(&self) -> usize {
+                if let Some(size) = <Self as alloy_sol_types::SolType>::ENCODED_SIZE {
+                    return size;
+                }
+                let tuple = <UnderlyingRustTuple<
+                    '_,
+                > as ::core::convert::From<Self>>::from(self.clone());
+                <UnderlyingSolTuple<
+                    '_,
+                > as alloy_sol_types::SolType>::abi_encoded_size(&tuple)
+            }
+            #[inline]
+            fn stv_eip712_data_word(&self) -> alloy_sol_types::Word {
+                <Self as alloy_sol_types::SolStruct>::eip712_hash_struct(self)
+            }
+            #[inline]
+            fn stv_abi_encode_packed_to(
+                &self,
+                out: &mut alloy_sol_types::private::Vec<u8>,
+            ) {
+                let tuple = <UnderlyingRustTuple<
+                    '_,
+                > as ::core::convert::From<Self>>::from(self.clone());
+                <UnderlyingSolTuple<
+                    '_,
+                > as alloy_sol_types::SolType>::abi_encode_packed_to(&tuple, out)
+            }
+            #[inline]
+            fn stv_abi_packed_encoded_size(&self) -> usize {
+                if let Some(size) = <Self as alloy_sol_types::SolType>::PACKED_ENCODED_SIZE {
+                    return size;
+                }
+                let tuple = <UnderlyingRustTuple<
+                    '_,
+                > as ::core::convert::From<Self>>::from(self.clone());
+                <UnderlyingSolTuple<
+                    '_,
+                > as alloy_sol_types::SolType>::abi_packed_encoded_size(&tuple)
+            }
+        }
+        #[automatically_derived]
+        impl alloy_sol_types::SolType for ChainUpgradeWindow {
+            type RustType = Self;
+            type Token<'a> = <UnderlyingSolTuple<
+                'a,
+            > as alloy_sol_types::SolType>::Token<'a>;
+            const SOL_NAME: &'static str = <Self as alloy_sol_types::SolStruct>::NAME;
+            const ENCODED_SIZE: Option<usize> = <UnderlyingSolTuple<
+                '_,
+            > as alloy_sol_types::SolType>::ENCODED_SIZE;
+            const PACKED_ENCODED_SIZE: Option<usize> = <UnderlyingSolTuple<
+                '_,
+            > as alloy_sol_types::SolType>::PACKED_ENCODED_SIZE;
+            #[inline]
+            fn valid_token(token: &Self::Token<'_>) -> bool {
+                <UnderlyingSolTuple<'_> as alloy_sol_types::SolType>::valid_token(token)
+            }
+            #[inline]
+            fn detokenize(token: Self::Token<'_>) -> Self::RustType {
+                let tuple = <UnderlyingSolTuple<
+                    '_,
+                > as alloy_sol_types::SolType>::detokenize(token);
+                <Self as ::core::convert::From<UnderlyingRustTuple<'_>>>::from(tuple)
+            }
+        }
+        #[automatically_derived]
+        impl alloy_sol_types::SolStruct for ChainUpgradeWindow {
+            const NAME: &'static str = "ChainUpgradeWindow";
+            #[inline]
+            fn eip712_root_type() -> alloy_sol_types::private::Cow<'static, str> {
+                alloy_sol_types::private::Cow::Borrowed(
+                    "ChainUpgradeWindow(uint64 chainId,uint64 startBlock,uint64 endBlock)",
+                )
+            }
+            #[inline]
+            fn eip712_components() -> alloy_sol_types::private::Vec<
+                alloy_sol_types::private::Cow<'static, str>,
+            > {
+                alloy_sol_types::private::Vec::new()
+            }
+            #[inline]
+            fn eip712_encode_type() -> alloy_sol_types::private::Cow<'static, str> {
+                <Self as alloy_sol_types::SolStruct>::eip712_root_type()
+            }
+            #[inline]
+            fn eip712_encode_data(&self) -> alloy_sol_types::private::Vec<u8> {
+                [
+                    <alloy::sol_types::sol_data::Uint<
+                        64,
+                    > as alloy_sol_types::SolType>::eip712_data_word(&self.chainId)
+                        .0,
+                    <alloy::sol_types::sol_data::Uint<
+                        64,
+                    > as alloy_sol_types::SolType>::eip712_data_word(&self.startBlock)
+                        .0,
+                    <alloy::sol_types::sol_data::Uint<
+                        64,
+                    > as alloy_sol_types::SolType>::eip712_data_word(&self.endBlock)
+                        .0,
+                ]
+                    .concat()
+            }
+        }
+        #[automatically_derived]
+        impl alloy_sol_types::EventTopic for ChainUpgradeWindow {
+            #[inline]
+            fn topic_preimage_length(rust: &Self::RustType) -> usize {
+                0usize
+                    + <alloy::sol_types::sol_data::Uint<
+                        64,
+                    > as alloy_sol_types::EventTopic>::topic_preimage_length(
+                        &rust.chainId,
+                    )
+                    + <alloy::sol_types::sol_data::Uint<
+                        64,
+                    > as alloy_sol_types::EventTopic>::topic_preimage_length(
+                        &rust.startBlock,
+                    )
+                    + <alloy::sol_types::sol_data::Uint<
+                        64,
+                    > as alloy_sol_types::EventTopic>::topic_preimage_length(
+                        &rust.endBlock,
+                    )
+            }
+            #[inline]
+            fn encode_topic_preimage(
+                rust: &Self::RustType,
+                out: &mut alloy_sol_types::private::Vec<u8>,
+            ) {
+                out.reserve(
+                    <Self as alloy_sol_types::EventTopic>::topic_preimage_length(rust),
+                );
+                <alloy::sol_types::sol_data::Uint<
+                    64,
+                > as alloy_sol_types::EventTopic>::encode_topic_preimage(
+                    &rust.chainId,
+                    out,
+                );
+                <alloy::sol_types::sol_data::Uint<
+                    64,
+                > as alloy_sol_types::EventTopic>::encode_topic_preimage(
+                    &rust.startBlock,
+                    out,
+                );
+                <alloy::sol_types::sol_data::Uint<
+                    64,
+                > as alloy_sol_types::EventTopic>::encode_topic_preimage(
+                    &rust.endBlock,
+                    out,
+                );
+            }
+            #[inline]
+            fn encode_topic(
+                rust: &Self::RustType,
+            ) -> alloy_sol_types::abi::token::WordToken {
+                let mut out = alloy_sol_types::private::Vec::new();
+                <Self as alloy_sol_types::EventTopic>::encode_topic_preimage(
+                    rust,
+                    &mut out,
+                );
+                alloy_sol_types::abi::token::WordToken(
+                    alloy_sol_types::private::keccak256(out),
+                )
+            }
+        }
+    };
     #[derive(serde::Serialize, serde::Deserialize)]
     #[derive(Default, Debug, PartialEq, Eq, Hash)]
     /**```solidity
@@ -4066,15 +4529,15 @@ struct PcrValues { bytes pcr0; bytes pcr1; bytes pcr2; }
     };
     #[derive(serde::Serialize, serde::Deserialize)]
     #[derive(Default, Debug, PartialEq, Eq, Hash)]
-    /**Custom error with signature `CurrentKmsContextCannotBeDestroyed(uint256)` and selector `0x4595fce2`.
+    /**Custom error with signature `DuplicateChainId(uint64)` and selector `0x6c67e470`.
 ```solidity
-error CurrentKmsContextCannotBeDestroyed(uint256 kmsContextId);
+error DuplicateChainId(uint64 chainId);
 ```*/
     #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
     #[derive(Clone)]
-    pub struct CurrentKmsContextCannotBeDestroyed {
+    pub struct DuplicateChainId {
         #[allow(missing_docs)]
-        pub kmsContextId: alloy::sol_types::private::primitives::aliases::U256,
+        pub chainId: u64,
     }
     #[allow(
         non_camel_case_types,
@@ -4085,11 +4548,9 @@ error CurrentKmsContextCannotBeDestroyed(uint256 kmsContextId);
     const _: () = {
         use alloy::sol_types as alloy_sol_types;
         #[doc(hidden)]
-        type UnderlyingSolTuple<'a> = (alloy::sol_types::sol_data::Uint<256>,);
+        type UnderlyingSolTuple<'a> = (alloy::sol_types::sol_data::Uint<64>,);
         #[doc(hidden)]
-        type UnderlyingRustTuple<'a> = (
-            alloy::sol_types::private::primitives::aliases::U256,
-        );
+        type UnderlyingRustTuple<'a> = (u64,);
         #[cfg(test)]
         #[allow(dead_code, unreachable_patterns)]
         fn _type_assertion(
@@ -4103,28 +4564,26 @@ error CurrentKmsContextCannotBeDestroyed(uint256 kmsContextId);
         }
         #[automatically_derived]
         #[doc(hidden)]
-        impl ::core::convert::From<CurrentKmsContextCannotBeDestroyed>
-        for UnderlyingRustTuple<'_> {
-            fn from(value: CurrentKmsContextCannotBeDestroyed) -> Self {
-                (value.kmsContextId,)
+        impl ::core::convert::From<DuplicateChainId> for UnderlyingRustTuple<'_> {
+            fn from(value: DuplicateChainId) -> Self {
+                (value.chainId,)
             }
         }
         #[automatically_derived]
         #[doc(hidden)]
-        impl ::core::convert::From<UnderlyingRustTuple<'_>>
-        for CurrentKmsContextCannotBeDestroyed {
+        impl ::core::convert::From<UnderlyingRustTuple<'_>> for DuplicateChainId {
             fn from(tuple: UnderlyingRustTuple<'_>) -> Self {
-                Self { kmsContextId: tuple.0 }
+                Self { chainId: tuple.0 }
             }
         }
         #[automatically_derived]
-        impl alloy_sol_types::SolError for CurrentKmsContextCannotBeDestroyed {
+        impl alloy_sol_types::SolError for DuplicateChainId {
             type Parameters<'a> = UnderlyingSolTuple<'a>;
             type Token<'a> = <Self::Parameters<
                 'a,
             > as alloy_sol_types::SolType>::Token<'a>;
-            const SIGNATURE: &'static str = "CurrentKmsContextCannotBeDestroyed(uint256)";
-            const SELECTOR: [u8; 4] = [69u8, 149u8, 252u8, 226u8];
+            const SIGNATURE: &'static str = "DuplicateChainId(uint64)";
+            const SELECTOR: [u8; 4] = [108u8, 103u8, 228u8, 112u8];
             #[inline]
             fn new<'a>(
                 tuple: <Self::Parameters<'a> as alloy_sol_types::SolType>::RustType,
@@ -4135,9 +4594,84 @@ error CurrentKmsContextCannotBeDestroyed(uint256 kmsContextId);
             fn tokenize(&self) -> Self::Token<'_> {
                 (
                     <alloy::sol_types::sol_data::Uint<
-                        256,
-                    > as alloy_sol_types::SolType>::tokenize(&self.kmsContextId),
+                        64,
+                    > as alloy_sol_types::SolType>::tokenize(&self.chainId),
                 )
+            }
+            #[inline]
+            fn abi_decode_raw_validate(data: &[u8]) -> alloy_sol_types::Result<Self> {
+                <Self::Parameters<
+                    '_,
+                > as alloy_sol_types::SolType>::abi_decode_sequence_validate(data)
+                    .map(Self::new)
+            }
+        }
+    };
+    #[derive(serde::Serialize, serde::Deserialize)]
+    #[derive(Default, Debug, PartialEq, Eq, Hash)]
+    /**Custom error with signature `EmptyChainUpgradeWindows()` and selector `0xbe505044`.
+```solidity
+error EmptyChainUpgradeWindows();
+```*/
+    #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
+    #[derive(Clone)]
+    pub struct EmptyChainUpgradeWindows;
+    #[allow(
+        non_camel_case_types,
+        non_snake_case,
+        clippy::pub_underscore_fields,
+        clippy::style
+    )]
+    const _: () = {
+        use alloy::sol_types as alloy_sol_types;
+        #[doc(hidden)]
+        type UnderlyingSolTuple<'a> = ();
+        #[doc(hidden)]
+        type UnderlyingRustTuple<'a> = ();
+        #[cfg(test)]
+        #[allow(dead_code, unreachable_patterns)]
+        fn _type_assertion(
+            _t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>,
+        ) {
+            match _t {
+                alloy_sol_types::private::AssertTypeEq::<
+                    <UnderlyingSolTuple as alloy_sol_types::SolType>::RustType,
+                >(_) => {}
+            }
+        }
+        #[automatically_derived]
+        #[doc(hidden)]
+        impl ::core::convert::From<EmptyChainUpgradeWindows>
+        for UnderlyingRustTuple<'_> {
+            fn from(value: EmptyChainUpgradeWindows) -> Self {
+                ()
+            }
+        }
+        #[automatically_derived]
+        #[doc(hidden)]
+        impl ::core::convert::From<UnderlyingRustTuple<'_>>
+        for EmptyChainUpgradeWindows {
+            fn from(tuple: UnderlyingRustTuple<'_>) -> Self {
+                Self
+            }
+        }
+        #[automatically_derived]
+        impl alloy_sol_types::SolError for EmptyChainUpgradeWindows {
+            type Parameters<'a> = UnderlyingSolTuple<'a>;
+            type Token<'a> = <Self::Parameters<
+                'a,
+            > as alloy_sol_types::SolType>::Token<'a>;
+            const SIGNATURE: &'static str = "EmptyChainUpgradeWindows()";
+            const SELECTOR: [u8; 4] = [190u8, 80u8, 80u8, 68u8];
+            #[inline]
+            fn new<'a>(
+                tuple: <Self::Parameters<'a> as alloy_sol_types::SolType>::RustType,
+            ) -> Self {
+                tuple.into()
+            }
+            #[inline]
+            fn tokenize(&self) -> Self::Token<'_> {
+                ()
             }
             #[inline]
             fn abi_decode_raw_validate(data: &[u8]) -> alloy_sol_types::Result<Self> {
@@ -4202,6 +4736,79 @@ error EmptyKmsNodes();
             > as alloy_sol_types::SolType>::Token<'a>;
             const SIGNATURE: &'static str = "EmptyKmsNodes()";
             const SELECTOR: [u8; 4] = [6u8, 140u8, 141u8, 64u8];
+            #[inline]
+            fn new<'a>(
+                tuple: <Self::Parameters<'a> as alloy_sol_types::SolType>::RustType,
+            ) -> Self {
+                tuple.into()
+            }
+            #[inline]
+            fn tokenize(&self) -> Self::Token<'_> {
+                ()
+            }
+            #[inline]
+            fn abi_decode_raw_validate(data: &[u8]) -> alloy_sol_types::Result<Self> {
+                <Self::Parameters<
+                    '_,
+                > as alloy_sol_types::SolType>::abi_decode_sequence_validate(data)
+                    .map(Self::new)
+            }
+        }
+    };
+    #[derive(serde::Serialize, serde::Deserialize)]
+    #[derive(Default, Debug, PartialEq, Eq, Hash)]
+    /**Custom error with signature `EmptySoftwareVersion()` and selector `0xb5489147`.
+```solidity
+error EmptySoftwareVersion();
+```*/
+    #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
+    #[derive(Clone)]
+    pub struct EmptySoftwareVersion;
+    #[allow(
+        non_camel_case_types,
+        non_snake_case,
+        clippy::pub_underscore_fields,
+        clippy::style
+    )]
+    const _: () = {
+        use alloy::sol_types as alloy_sol_types;
+        #[doc(hidden)]
+        type UnderlyingSolTuple<'a> = ();
+        #[doc(hidden)]
+        type UnderlyingRustTuple<'a> = ();
+        #[cfg(test)]
+        #[allow(dead_code, unreachable_patterns)]
+        fn _type_assertion(
+            _t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>,
+        ) {
+            match _t {
+                alloy_sol_types::private::AssertTypeEq::<
+                    <UnderlyingSolTuple as alloy_sol_types::SolType>::RustType,
+                >(_) => {}
+            }
+        }
+        #[automatically_derived]
+        #[doc(hidden)]
+        impl ::core::convert::From<EmptySoftwareVersion> for UnderlyingRustTuple<'_> {
+            fn from(value: EmptySoftwareVersion) -> Self {
+                ()
+            }
+        }
+        #[automatically_derived]
+        #[doc(hidden)]
+        impl ::core::convert::From<UnderlyingRustTuple<'_>> for EmptySoftwareVersion {
+            fn from(tuple: UnderlyingRustTuple<'_>) -> Self {
+                Self
+            }
+        }
+        #[automatically_derived]
+        impl alloy_sol_types::SolError for EmptySoftwareVersion {
+            type Parameters<'a> = UnderlyingSolTuple<'a>;
+            type Token<'a> = <Self::Parameters<
+                'a,
+            > as alloy_sol_types::SolType>::Token<'a>;
+            const SIGNATURE: &'static str = "EmptySoftwareVersion()";
+            const SELECTOR: [u8; 4] = [181u8, 72u8, 145u8, 71u8];
             #[inline]
             fn new<'a>(
                 tuple: <Self::Parameters<'a> as alloy_sol_types::SolType>::RustType,
@@ -4607,6 +5214,104 @@ error EpochNotUnderActiveContext(uint256 epochId, uint256 contextId);
     };
     #[derive(serde::Serialize, serde::Deserialize)]
     #[derive(Default, Debug, PartialEq, Eq, Hash)]
+    /**Custom error with signature `InvalidBlockWindow(uint64,uint64,uint64)` and selector `0xf219dc0e`.
+```solidity
+error InvalidBlockWindow(uint64 chainId, uint64 startBlock, uint64 endBlock);
+```*/
+    #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
+    #[derive(Clone)]
+    pub struct InvalidBlockWindow {
+        #[allow(missing_docs)]
+        pub chainId: u64,
+        #[allow(missing_docs)]
+        pub startBlock: u64,
+        #[allow(missing_docs)]
+        pub endBlock: u64,
+    }
+    #[allow(
+        non_camel_case_types,
+        non_snake_case,
+        clippy::pub_underscore_fields,
+        clippy::style
+    )]
+    const _: () = {
+        use alloy::sol_types as alloy_sol_types;
+        #[doc(hidden)]
+        type UnderlyingSolTuple<'a> = (
+            alloy::sol_types::sol_data::Uint<64>,
+            alloy::sol_types::sol_data::Uint<64>,
+            alloy::sol_types::sol_data::Uint<64>,
+        );
+        #[doc(hidden)]
+        type UnderlyingRustTuple<'a> = (u64, u64, u64);
+        #[cfg(test)]
+        #[allow(dead_code, unreachable_patterns)]
+        fn _type_assertion(
+            _t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>,
+        ) {
+            match _t {
+                alloy_sol_types::private::AssertTypeEq::<
+                    <UnderlyingSolTuple as alloy_sol_types::SolType>::RustType,
+                >(_) => {}
+            }
+        }
+        #[automatically_derived]
+        #[doc(hidden)]
+        impl ::core::convert::From<InvalidBlockWindow> for UnderlyingRustTuple<'_> {
+            fn from(value: InvalidBlockWindow) -> Self {
+                (value.chainId, value.startBlock, value.endBlock)
+            }
+        }
+        #[automatically_derived]
+        #[doc(hidden)]
+        impl ::core::convert::From<UnderlyingRustTuple<'_>> for InvalidBlockWindow {
+            fn from(tuple: UnderlyingRustTuple<'_>) -> Self {
+                Self {
+                    chainId: tuple.0,
+                    startBlock: tuple.1,
+                    endBlock: tuple.2,
+                }
+            }
+        }
+        #[automatically_derived]
+        impl alloy_sol_types::SolError for InvalidBlockWindow {
+            type Parameters<'a> = UnderlyingSolTuple<'a>;
+            type Token<'a> = <Self::Parameters<
+                'a,
+            > as alloy_sol_types::SolType>::Token<'a>;
+            const SIGNATURE: &'static str = "InvalidBlockWindow(uint64,uint64,uint64)";
+            const SELECTOR: [u8; 4] = [242u8, 25u8, 220u8, 14u8];
+            #[inline]
+            fn new<'a>(
+                tuple: <Self::Parameters<'a> as alloy_sol_types::SolType>::RustType,
+            ) -> Self {
+                tuple.into()
+            }
+            #[inline]
+            fn tokenize(&self) -> Self::Token<'_> {
+                (
+                    <alloy::sol_types::sol_data::Uint<
+                        64,
+                    > as alloy_sol_types::SolType>::tokenize(&self.chainId),
+                    <alloy::sol_types::sol_data::Uint<
+                        64,
+                    > as alloy_sol_types::SolType>::tokenize(&self.startBlock),
+                    <alloy::sol_types::sol_data::Uint<
+                        64,
+                    > as alloy_sol_types::SolType>::tokenize(&self.endBlock),
+                )
+            }
+            #[inline]
+            fn abi_decode_raw_validate(data: &[u8]) -> alloy_sol_types::Result<Self> {
+                <Self::Parameters<
+                    '_,
+                > as alloy_sol_types::SolType>::abi_decode_sequence_validate(data)
+                    .map(Self::new)
+            }
+        }
+    };
+    #[derive(serde::Serialize, serde::Deserialize)]
+    #[derive(Default, Debug, PartialEq, Eq, Hash)]
     /**Custom error with signature `InvalidEpoch(uint256)` and selector `0xa225656d`.
 ```solidity
 error InvalidEpoch(uint256 epochId);
@@ -4873,6 +5578,88 @@ error InvalidKmsContext(uint256 kmsContextId);
     };
     #[derive(serde::Serialize, serde::Deserialize)]
     #[derive(Default, Debug, PartialEq, Eq, Hash)]
+    /**Custom error with signature `InvalidKmsEpoch(uint256)` and selector `0x7995bbcf`.
+```solidity
+error InvalidKmsEpoch(uint256 epochId);
+```*/
+    #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
+    #[derive(Clone)]
+    pub struct InvalidKmsEpoch {
+        #[allow(missing_docs)]
+        pub epochId: alloy::sol_types::private::primitives::aliases::U256,
+    }
+    #[allow(
+        non_camel_case_types,
+        non_snake_case,
+        clippy::pub_underscore_fields,
+        clippy::style
+    )]
+    const _: () = {
+        use alloy::sol_types as alloy_sol_types;
+        #[doc(hidden)]
+        type UnderlyingSolTuple<'a> = (alloy::sol_types::sol_data::Uint<256>,);
+        #[doc(hidden)]
+        type UnderlyingRustTuple<'a> = (
+            alloy::sol_types::private::primitives::aliases::U256,
+        );
+        #[cfg(test)]
+        #[allow(dead_code, unreachable_patterns)]
+        fn _type_assertion(
+            _t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>,
+        ) {
+            match _t {
+                alloy_sol_types::private::AssertTypeEq::<
+                    <UnderlyingSolTuple as alloy_sol_types::SolType>::RustType,
+                >(_) => {}
+            }
+        }
+        #[automatically_derived]
+        #[doc(hidden)]
+        impl ::core::convert::From<InvalidKmsEpoch> for UnderlyingRustTuple<'_> {
+            fn from(value: InvalidKmsEpoch) -> Self {
+                (value.epochId,)
+            }
+        }
+        #[automatically_derived]
+        #[doc(hidden)]
+        impl ::core::convert::From<UnderlyingRustTuple<'_>> for InvalidKmsEpoch {
+            fn from(tuple: UnderlyingRustTuple<'_>) -> Self {
+                Self { epochId: tuple.0 }
+            }
+        }
+        #[automatically_derived]
+        impl alloy_sol_types::SolError for InvalidKmsEpoch {
+            type Parameters<'a> = UnderlyingSolTuple<'a>;
+            type Token<'a> = <Self::Parameters<
+                'a,
+            > as alloy_sol_types::SolType>::Token<'a>;
+            const SIGNATURE: &'static str = "InvalidKmsEpoch(uint256)";
+            const SELECTOR: [u8; 4] = [121u8, 149u8, 187u8, 207u8];
+            #[inline]
+            fn new<'a>(
+                tuple: <Self::Parameters<'a> as alloy_sol_types::SolType>::RustType,
+            ) -> Self {
+                tuple.into()
+            }
+            #[inline]
+            fn tokenize(&self) -> Self::Token<'_> {
+                (
+                    <alloy::sol_types::sol_data::Uint<
+                        256,
+                    > as alloy_sol_types::SolType>::tokenize(&self.epochId),
+                )
+            }
+            #[inline]
+            fn abi_decode_raw_validate(data: &[u8]) -> alloy_sol_types::Result<Self> {
+                <Self::Parameters<
+                    '_,
+                > as alloy_sol_types::SolType>::abi_decode_sequence_validate(data)
+                    .map(Self::new)
+            }
+        }
+    };
+    #[derive(serde::Serialize, serde::Deserialize)]
+    #[derive(Default, Debug, PartialEq, Eq, Hash)]
     /**Custom error with signature `InvalidNullThreshold(string)` and selector `0x36bfb60e`.
 ```solidity
 error InvalidNullThreshold(string thresholdName);
@@ -4953,15 +5740,88 @@ error InvalidNullThreshold(string thresholdName);
     };
     #[derive(serde::Serialize, serde::Deserialize)]
     #[derive(Default, Debug, PartialEq, Eq, Hash)]
+    /**Custom error with signature `InvalidProposalId()` and selector `0x0992f7ad`.
+```solidity
+error InvalidProposalId();
+```*/
+    #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
+    #[derive(Clone)]
+    pub struct InvalidProposalId;
+    #[allow(
+        non_camel_case_types,
+        non_snake_case,
+        clippy::pub_underscore_fields,
+        clippy::style
+    )]
+    const _: () = {
+        use alloy::sol_types as alloy_sol_types;
+        #[doc(hidden)]
+        type UnderlyingSolTuple<'a> = ();
+        #[doc(hidden)]
+        type UnderlyingRustTuple<'a> = ();
+        #[cfg(test)]
+        #[allow(dead_code, unreachable_patterns)]
+        fn _type_assertion(
+            _t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>,
+        ) {
+            match _t {
+                alloy_sol_types::private::AssertTypeEq::<
+                    <UnderlyingSolTuple as alloy_sol_types::SolType>::RustType,
+                >(_) => {}
+            }
+        }
+        #[automatically_derived]
+        #[doc(hidden)]
+        impl ::core::convert::From<InvalidProposalId> for UnderlyingRustTuple<'_> {
+            fn from(value: InvalidProposalId) -> Self {
+                ()
+            }
+        }
+        #[automatically_derived]
+        #[doc(hidden)]
+        impl ::core::convert::From<UnderlyingRustTuple<'_>> for InvalidProposalId {
+            fn from(tuple: UnderlyingRustTuple<'_>) -> Self {
+                Self
+            }
+        }
+        #[automatically_derived]
+        impl alloy_sol_types::SolError for InvalidProposalId {
+            type Parameters<'a> = UnderlyingSolTuple<'a>;
+            type Token<'a> = <Self::Parameters<
+                'a,
+            > as alloy_sol_types::SolType>::Token<'a>;
+            const SIGNATURE: &'static str = "InvalidProposalId()";
+            const SELECTOR: [u8; 4] = [9u8, 146u8, 247u8, 173u8];
+            #[inline]
+            fn new<'a>(
+                tuple: <Self::Parameters<'a> as alloy_sol_types::SolType>::RustType,
+            ) -> Self {
+                tuple.into()
+            }
+            #[inline]
+            fn tokenize(&self) -> Self::Token<'_> {
+                ()
+            }
+            #[inline]
+            fn abi_decode_raw_validate(data: &[u8]) -> alloy_sol_types::Result<Self> {
+                <Self::Parameters<
+                    '_,
+                > as alloy_sol_types::SolType>::abi_decode_sequence_validate(data)
+                    .map(Self::new)
+            }
+        }
+    };
+    #[derive(serde::Serialize, serde::Deserialize)]
+    #[derive(Default, Debug, PartialEq, Eq, Hash)]
     /**Custom error with signature `KmsContextCreationAlreadyConfirmed(address,uint256)` and selector `0x62585cc8`.
 ```solidity
-error KmsContextCreationAlreadyConfirmed(address signer, uint256 kmsContextId);
+error KmsContextCreationAlreadyConfirmed(address txSender, uint256 kmsContextId);
 ```*/
     #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
     #[derive(Clone)]
     pub struct KmsContextCreationAlreadyConfirmed {
         #[allow(missing_docs)]
-        pub signer: alloy::sol_types::private::Address,
+        pub txSender: alloy::sol_types::private::Address,
         #[allow(missing_docs)]
         pub kmsContextId: alloy::sol_types::private::primitives::aliases::U256,
     }
@@ -4999,7 +5859,7 @@ error KmsContextCreationAlreadyConfirmed(address signer, uint256 kmsContextId);
         impl ::core::convert::From<KmsContextCreationAlreadyConfirmed>
         for UnderlyingRustTuple<'_> {
             fn from(value: KmsContextCreationAlreadyConfirmed) -> Self {
-                (value.signer, value.kmsContextId)
+                (value.txSender, value.kmsContextId)
             }
         }
         #[automatically_derived]
@@ -5008,7 +5868,7 @@ error KmsContextCreationAlreadyConfirmed(address signer, uint256 kmsContextId);
         for KmsContextCreationAlreadyConfirmed {
             fn from(tuple: UnderlyingRustTuple<'_>) -> Self {
                 Self {
-                    signer: tuple.0,
+                    txSender: tuple.0,
                     kmsContextId: tuple.1,
                 }
             }
@@ -5031,7 +5891,7 @@ error KmsContextCreationAlreadyConfirmed(address signer, uint256 kmsContextId);
             fn tokenize(&self) -> Self::Token<'_> {
                 (
                     <alloy::sol_types::sol_data::Address as alloy_sol_types::SolType>::tokenize(
-                        &self.signer,
+                        &self.txSender,
                     ),
                     <alloy::sol_types::sol_data::Uint<
                         256,
@@ -5715,6 +6575,174 @@ error KmsTxSenderAlreadyRegistered(address txSender);
     };
     #[derive(serde::Serialize, serde::Deserialize)]
     #[derive(Default, Debug, PartialEq, Eq, Hash)]
+    /**Custom error with signature `LatestActiveKmsContextCannotBeDestroyed(uint256)` and selector `0x187aeaa8`.
+```solidity
+error LatestActiveKmsContextCannotBeDestroyed(uint256 kmsContextId);
+```*/
+    #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
+    #[derive(Clone)]
+    pub struct LatestActiveKmsContextCannotBeDestroyed {
+        #[allow(missing_docs)]
+        pub kmsContextId: alloy::sol_types::private::primitives::aliases::U256,
+    }
+    #[allow(
+        non_camel_case_types,
+        non_snake_case,
+        clippy::pub_underscore_fields,
+        clippy::style
+    )]
+    const _: () = {
+        use alloy::sol_types as alloy_sol_types;
+        #[doc(hidden)]
+        type UnderlyingSolTuple<'a> = (alloy::sol_types::sol_data::Uint<256>,);
+        #[doc(hidden)]
+        type UnderlyingRustTuple<'a> = (
+            alloy::sol_types::private::primitives::aliases::U256,
+        );
+        #[cfg(test)]
+        #[allow(dead_code, unreachable_patterns)]
+        fn _type_assertion(
+            _t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>,
+        ) {
+            match _t {
+                alloy_sol_types::private::AssertTypeEq::<
+                    <UnderlyingSolTuple as alloy_sol_types::SolType>::RustType,
+                >(_) => {}
+            }
+        }
+        #[automatically_derived]
+        #[doc(hidden)]
+        impl ::core::convert::From<LatestActiveKmsContextCannotBeDestroyed>
+        for UnderlyingRustTuple<'_> {
+            fn from(value: LatestActiveKmsContextCannotBeDestroyed) -> Self {
+                (value.kmsContextId,)
+            }
+        }
+        #[automatically_derived]
+        #[doc(hidden)]
+        impl ::core::convert::From<UnderlyingRustTuple<'_>>
+        for LatestActiveKmsContextCannotBeDestroyed {
+            fn from(tuple: UnderlyingRustTuple<'_>) -> Self {
+                Self { kmsContextId: tuple.0 }
+            }
+        }
+        #[automatically_derived]
+        impl alloy_sol_types::SolError for LatestActiveKmsContextCannotBeDestroyed {
+            type Parameters<'a> = UnderlyingSolTuple<'a>;
+            type Token<'a> = <Self::Parameters<
+                'a,
+            > as alloy_sol_types::SolType>::Token<'a>;
+            const SIGNATURE: &'static str = "LatestActiveKmsContextCannotBeDestroyed(uint256)";
+            const SELECTOR: [u8; 4] = [24u8, 122u8, 234u8, 168u8];
+            #[inline]
+            fn new<'a>(
+                tuple: <Self::Parameters<'a> as alloy_sol_types::SolType>::RustType,
+            ) -> Self {
+                tuple.into()
+            }
+            #[inline]
+            fn tokenize(&self) -> Self::Token<'_> {
+                (
+                    <alloy::sol_types::sol_data::Uint<
+                        256,
+                    > as alloy_sol_types::SolType>::tokenize(&self.kmsContextId),
+                )
+            }
+            #[inline]
+            fn abi_decode_raw_validate(data: &[u8]) -> alloy_sol_types::Result<Self> {
+                <Self::Parameters<
+                    '_,
+                > as alloy_sol_types::SolType>::abi_decode_sequence_validate(data)
+                    .map(Self::new)
+            }
+        }
+    };
+    #[derive(serde::Serialize, serde::Deserialize)]
+    #[derive(Default, Debug, PartialEq, Eq, Hash)]
+    /**Custom error with signature `LatestActiveKmsEpochCannotBeDestroyed(uint256)` and selector `0xf0e781c1`.
+```solidity
+error LatestActiveKmsEpochCannotBeDestroyed(uint256 epochId);
+```*/
+    #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
+    #[derive(Clone)]
+    pub struct LatestActiveKmsEpochCannotBeDestroyed {
+        #[allow(missing_docs)]
+        pub epochId: alloy::sol_types::private::primitives::aliases::U256,
+    }
+    #[allow(
+        non_camel_case_types,
+        non_snake_case,
+        clippy::pub_underscore_fields,
+        clippy::style
+    )]
+    const _: () = {
+        use alloy::sol_types as alloy_sol_types;
+        #[doc(hidden)]
+        type UnderlyingSolTuple<'a> = (alloy::sol_types::sol_data::Uint<256>,);
+        #[doc(hidden)]
+        type UnderlyingRustTuple<'a> = (
+            alloy::sol_types::private::primitives::aliases::U256,
+        );
+        #[cfg(test)]
+        #[allow(dead_code, unreachable_patterns)]
+        fn _type_assertion(
+            _t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>,
+        ) {
+            match _t {
+                alloy_sol_types::private::AssertTypeEq::<
+                    <UnderlyingSolTuple as alloy_sol_types::SolType>::RustType,
+                >(_) => {}
+            }
+        }
+        #[automatically_derived]
+        #[doc(hidden)]
+        impl ::core::convert::From<LatestActiveKmsEpochCannotBeDestroyed>
+        for UnderlyingRustTuple<'_> {
+            fn from(value: LatestActiveKmsEpochCannotBeDestroyed) -> Self {
+                (value.epochId,)
+            }
+        }
+        #[automatically_derived]
+        #[doc(hidden)]
+        impl ::core::convert::From<UnderlyingRustTuple<'_>>
+        for LatestActiveKmsEpochCannotBeDestroyed {
+            fn from(tuple: UnderlyingRustTuple<'_>) -> Self {
+                Self { epochId: tuple.0 }
+            }
+        }
+        #[automatically_derived]
+        impl alloy_sol_types::SolError for LatestActiveKmsEpochCannotBeDestroyed {
+            type Parameters<'a> = UnderlyingSolTuple<'a>;
+            type Token<'a> = <Self::Parameters<
+                'a,
+            > as alloy_sol_types::SolType>::Token<'a>;
+            const SIGNATURE: &'static str = "LatestActiveKmsEpochCannotBeDestroyed(uint256)";
+            const SELECTOR: [u8; 4] = [240u8, 231u8, 129u8, 193u8];
+            #[inline]
+            fn new<'a>(
+                tuple: <Self::Parameters<'a> as alloy_sol_types::SolType>::RustType,
+            ) -> Self {
+                tuple.into()
+            }
+            #[inline]
+            fn tokenize(&self) -> Self::Token<'_> {
+                (
+                    <alloy::sol_types::sol_data::Uint<
+                        256,
+                    > as alloy_sol_types::SolType>::tokenize(&self.epochId),
+                )
+            }
+            #[inline]
+            fn abi_decode_raw_validate(data: &[u8]) -> alloy_sol_types::Result<Self> {
+                <Self::Parameters<
+                    '_,
+                > as alloy_sol_types::SolType>::abi_decode_sequence_validate(data)
+                    .map(Self::new)
+            }
+        }
+    };
+    #[derive(serde::Serialize, serde::Deserialize)]
+    #[derive(Default, Debug, PartialEq, Eq, Hash)]
     /**Custom error with signature `NonIncreasingEpochId(uint256,uint256)` and selector `0xe8121f51`.
 ```solidity
 error NonIncreasingEpochId(uint256 epochId, uint256 currentEpochId);
@@ -6010,6 +7038,152 @@ error ThresholdExceedsProofFormatLimit(string thresholdName, uint256 threshold, 
         }
     };
     #[derive(serde::Serialize, serde::Deserialize)]
+    #[derive(Default, Debug, PartialEq, Eq, Hash)]
+    /**Custom error with signature `ZeroChainId()` and selector `0xc84885d4`.
+```solidity
+error ZeroChainId();
+```*/
+    #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
+    #[derive(Clone)]
+    pub struct ZeroChainId;
+    #[allow(
+        non_camel_case_types,
+        non_snake_case,
+        clippy::pub_underscore_fields,
+        clippy::style
+    )]
+    const _: () = {
+        use alloy::sol_types as alloy_sol_types;
+        #[doc(hidden)]
+        type UnderlyingSolTuple<'a> = ();
+        #[doc(hidden)]
+        type UnderlyingRustTuple<'a> = ();
+        #[cfg(test)]
+        #[allow(dead_code, unreachable_patterns)]
+        fn _type_assertion(
+            _t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>,
+        ) {
+            match _t {
+                alloy_sol_types::private::AssertTypeEq::<
+                    <UnderlyingSolTuple as alloy_sol_types::SolType>::RustType,
+                >(_) => {}
+            }
+        }
+        #[automatically_derived]
+        #[doc(hidden)]
+        impl ::core::convert::From<ZeroChainId> for UnderlyingRustTuple<'_> {
+            fn from(value: ZeroChainId) -> Self {
+                ()
+            }
+        }
+        #[automatically_derived]
+        #[doc(hidden)]
+        impl ::core::convert::From<UnderlyingRustTuple<'_>> for ZeroChainId {
+            fn from(tuple: UnderlyingRustTuple<'_>) -> Self {
+                Self
+            }
+        }
+        #[automatically_derived]
+        impl alloy_sol_types::SolError for ZeroChainId {
+            type Parameters<'a> = UnderlyingSolTuple<'a>;
+            type Token<'a> = <Self::Parameters<
+                'a,
+            > as alloy_sol_types::SolType>::Token<'a>;
+            const SIGNATURE: &'static str = "ZeroChainId()";
+            const SELECTOR: [u8; 4] = [200u8, 72u8, 133u8, 212u8];
+            #[inline]
+            fn new<'a>(
+                tuple: <Self::Parameters<'a> as alloy_sol_types::SolType>::RustType,
+            ) -> Self {
+                tuple.into()
+            }
+            #[inline]
+            fn tokenize(&self) -> Self::Token<'_> {
+                ()
+            }
+            #[inline]
+            fn abi_decode_raw_validate(data: &[u8]) -> alloy_sol_types::Result<Self> {
+                <Self::Parameters<
+                    '_,
+                > as alloy_sol_types::SolType>::abi_decode_sequence_validate(data)
+                    .map(Self::new)
+            }
+        }
+    };
+    #[derive(serde::Serialize, serde::Deserialize)]
+    #[derive(Default, Debug, PartialEq, Eq, Hash)]
+    /**Custom error with signature `ZeroGwStartBlock()` and selector `0x17d3e948`.
+```solidity
+error ZeroGwStartBlock();
+```*/
+    #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
+    #[derive(Clone)]
+    pub struct ZeroGwStartBlock;
+    #[allow(
+        non_camel_case_types,
+        non_snake_case,
+        clippy::pub_underscore_fields,
+        clippy::style
+    )]
+    const _: () = {
+        use alloy::sol_types as alloy_sol_types;
+        #[doc(hidden)]
+        type UnderlyingSolTuple<'a> = ();
+        #[doc(hidden)]
+        type UnderlyingRustTuple<'a> = ();
+        #[cfg(test)]
+        #[allow(dead_code, unreachable_patterns)]
+        fn _type_assertion(
+            _t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>,
+        ) {
+            match _t {
+                alloy_sol_types::private::AssertTypeEq::<
+                    <UnderlyingSolTuple as alloy_sol_types::SolType>::RustType,
+                >(_) => {}
+            }
+        }
+        #[automatically_derived]
+        #[doc(hidden)]
+        impl ::core::convert::From<ZeroGwStartBlock> for UnderlyingRustTuple<'_> {
+            fn from(value: ZeroGwStartBlock) -> Self {
+                ()
+            }
+        }
+        #[automatically_derived]
+        #[doc(hidden)]
+        impl ::core::convert::From<UnderlyingRustTuple<'_>> for ZeroGwStartBlock {
+            fn from(tuple: UnderlyingRustTuple<'_>) -> Self {
+                Self
+            }
+        }
+        #[automatically_derived]
+        impl alloy_sol_types::SolError for ZeroGwStartBlock {
+            type Parameters<'a> = UnderlyingSolTuple<'a>;
+            type Token<'a> = <Self::Parameters<
+                'a,
+            > as alloy_sol_types::SolType>::Token<'a>;
+            const SIGNATURE: &'static str = "ZeroGwStartBlock()";
+            const SELECTOR: [u8; 4] = [23u8, 211u8, 233u8, 72u8];
+            #[inline]
+            fn new<'a>(
+                tuple: <Self::Parameters<'a> as alloy_sol_types::SolType>::RustType,
+            ) -> Self {
+                tuple.into()
+            }
+            #[inline]
+            fn tokenize(&self) -> Self::Token<'_> {
+                ()
+            }
+            #[inline]
+            fn abi_decode_raw_validate(data: &[u8]) -> alloy_sol_types::Result<Self> {
+                <Self::Parameters<
+                    '_,
+                > as alloy_sol_types::SolType>::abi_decode_sequence_validate(data)
+                    .map(Self::new)
+            }
+        }
+    };
+    #[derive(serde::Serialize, serde::Deserialize)]
     #[derive()]
     /**Event with signature `ActivateEpoch(uint256,uint256,(uint256,uint256,(uint8,bytes)[],bytes)[],(uint256,uint256,bytes,bytes)[],string[])` and selector `0x1a547b42e72cd3dda04e6adccd2200276cfef01fe2138d07f3a7440f416d38bc`.
 ```solidity
@@ -6160,6 +7334,142 @@ event ActivateEpoch(uint256 indexed kmsContextId, uint256 indexed epochId, Epoch
     };
     #[derive(serde::Serialize, serde::Deserialize)]
     #[derive(Default, Debug, PartialEq, Eq, Hash)]
+    /**Event with signature `CoprocessorUpgradeProposed(uint256,string,(uint64,uint64,uint64)[],uint64)` and selector `0xc42f1ecac8d4881ef9fd335ca98ee7254a436b92ba874a609e50a7d30c487b8d`.
+```solidity
+event CoprocessorUpgradeProposed(uint256 indexed proposalId, string softwareVersion, ChainUpgradeWindow[] chainUpgradeWindows, uint64 gwStartBlock);
+```*/
+    #[allow(
+        non_camel_case_types,
+        non_snake_case,
+        clippy::pub_underscore_fields,
+        clippy::style
+    )]
+    #[derive(Clone)]
+    pub struct CoprocessorUpgradeProposed {
+        #[allow(missing_docs)]
+        pub proposalId: alloy::sol_types::private::primitives::aliases::U256,
+        #[allow(missing_docs)]
+        pub softwareVersion: alloy::sol_types::private::String,
+        #[allow(missing_docs)]
+        pub chainUpgradeWindows: alloy::sol_types::private::Vec<
+            <ChainUpgradeWindow as alloy::sol_types::SolType>::RustType,
+        >,
+        #[allow(missing_docs)]
+        pub gwStartBlock: u64,
+    }
+    #[allow(
+        non_camel_case_types,
+        non_snake_case,
+        clippy::pub_underscore_fields,
+        clippy::style
+    )]
+    const _: () = {
+        use alloy::sol_types as alloy_sol_types;
+        #[automatically_derived]
+        impl alloy_sol_types::SolEvent for CoprocessorUpgradeProposed {
+            type DataTuple<'a> = (
+                alloy::sol_types::sol_data::String,
+                alloy::sol_types::sol_data::Array<ChainUpgradeWindow>,
+                alloy::sol_types::sol_data::Uint<64>,
+            );
+            type DataToken<'a> = <Self::DataTuple<
+                'a,
+            > as alloy_sol_types::SolType>::Token<'a>;
+            type TopicList = (
+                alloy_sol_types::sol_data::FixedBytes<32>,
+                alloy::sol_types::sol_data::Uint<256>,
+            );
+            const SIGNATURE: &'static str = "CoprocessorUpgradeProposed(uint256,string,(uint64,uint64,uint64)[],uint64)";
+            const SIGNATURE_HASH: alloy_sol_types::private::B256 = alloy_sol_types::private::B256::new([
+                196u8, 47u8, 30u8, 202u8, 200u8, 212u8, 136u8, 30u8, 249u8, 253u8, 51u8,
+                92u8, 169u8, 142u8, 231u8, 37u8, 74u8, 67u8, 107u8, 146u8, 186u8, 135u8,
+                74u8, 96u8, 158u8, 80u8, 167u8, 211u8, 12u8, 72u8, 123u8, 141u8,
+            ]);
+            const ANONYMOUS: bool = false;
+            #[allow(unused_variables)]
+            #[inline]
+            fn new(
+                topics: <Self::TopicList as alloy_sol_types::SolType>::RustType,
+                data: <Self::DataTuple<'_> as alloy_sol_types::SolType>::RustType,
+            ) -> Self {
+                Self {
+                    proposalId: topics.1,
+                    softwareVersion: data.0,
+                    chainUpgradeWindows: data.1,
+                    gwStartBlock: data.2,
+                }
+            }
+            #[inline]
+            fn check_signature(
+                topics: &<Self::TopicList as alloy_sol_types::SolType>::RustType,
+            ) -> alloy_sol_types::Result<()> {
+                if topics.0 != Self::SIGNATURE_HASH {
+                    return Err(
+                        alloy_sol_types::Error::invalid_event_signature_hash(
+                            Self::SIGNATURE,
+                            topics.0,
+                            Self::SIGNATURE_HASH,
+                        ),
+                    );
+                }
+                Ok(())
+            }
+            #[inline]
+            fn tokenize_body(&self) -> Self::DataToken<'_> {
+                (
+                    <alloy::sol_types::sol_data::String as alloy_sol_types::SolType>::tokenize(
+                        &self.softwareVersion,
+                    ),
+                    <alloy::sol_types::sol_data::Array<
+                        ChainUpgradeWindow,
+                    > as alloy_sol_types::SolType>::tokenize(&self.chainUpgradeWindows),
+                    <alloy::sol_types::sol_data::Uint<
+                        64,
+                    > as alloy_sol_types::SolType>::tokenize(&self.gwStartBlock),
+                )
+            }
+            #[inline]
+            fn topics(&self) -> <Self::TopicList as alloy_sol_types::SolType>::RustType {
+                (Self::SIGNATURE_HASH.into(), self.proposalId.clone())
+            }
+            #[inline]
+            fn encode_topics_raw(
+                &self,
+                out: &mut [alloy_sol_types::abi::token::WordToken],
+            ) -> alloy_sol_types::Result<()> {
+                if out.len() < <Self::TopicList as alloy_sol_types::TopicList>::COUNT {
+                    return Err(alloy_sol_types::Error::Overrun);
+                }
+                out[0usize] = alloy_sol_types::abi::token::WordToken(
+                    Self::SIGNATURE_HASH,
+                );
+                out[1usize] = <alloy::sol_types::sol_data::Uint<
+                    256,
+                > as alloy_sol_types::EventTopic>::encode_topic(&self.proposalId);
+                Ok(())
+            }
+        }
+        #[automatically_derived]
+        impl alloy_sol_types::private::IntoLogData for CoprocessorUpgradeProposed {
+            fn to_log_data(&self) -> alloy_sol_types::private::LogData {
+                From::from(self)
+            }
+            fn into_log_data(self) -> alloy_sol_types::private::LogData {
+                From::from(&self)
+            }
+        }
+        #[automatically_derived]
+        impl From<&CoprocessorUpgradeProposed> for alloy_sol_types::private::LogData {
+            #[inline]
+            fn from(
+                this: &CoprocessorUpgradeProposed,
+            ) -> alloy_sol_types::private::LogData {
+                alloy_sol_types::SolEvent::encode_log_data(this)
+            }
+        }
+    };
+    #[derive(serde::Serialize, serde::Deserialize)]
+    #[derive(Default, Debug, PartialEq, Eq, Hash)]
     /**Event with signature `EpochActivationConfirmation(uint256,address,bytes32)` and selector `0x7eda6f85e23b7b91c019b0570d02b663606ef9d74594f7e01fcfbdb0f4e954d5`.
 ```solidity
 event EpochActivationConfirmation(uint256 indexed epochId, address indexed signer, bytes32 dataHash);
@@ -6287,7 +7597,7 @@ event EpochActivationConfirmation(uint256 indexed epochId, address indexed signe
     #[derive(Default, Debug, PartialEq, Eq, Hash)]
     /**Event with signature `KmsContextCreationConfirmation(uint256,address,bool,bool)` and selector `0xb79c48003695b6ebe555afa36fad071deeee75eb3718ad63de5621d35ba44b4f`.
 ```solidity
-event KmsContextCreationConfirmation(uint256 indexed kmsContextId, address indexed signer, bool isPreviousSigner, bool isNewSigner);
+event KmsContextCreationConfirmation(uint256 indexed kmsContextId, address indexed txSender, bool isPreviousTxSender, bool isNewTxSender);
 ```*/
     #[allow(
         non_camel_case_types,
@@ -6300,11 +7610,11 @@ event KmsContextCreationConfirmation(uint256 indexed kmsContextId, address index
         #[allow(missing_docs)]
         pub kmsContextId: alloy::sol_types::private::primitives::aliases::U256,
         #[allow(missing_docs)]
-        pub signer: alloy::sol_types::private::Address,
+        pub txSender: alloy::sol_types::private::Address,
         #[allow(missing_docs)]
-        pub isPreviousSigner: bool,
+        pub isPreviousTxSender: bool,
         #[allow(missing_docs)]
-        pub isNewSigner: bool,
+        pub isNewTxSender: bool,
     }
     #[allow(
         non_camel_case_types,
@@ -6343,9 +7653,9 @@ event KmsContextCreationConfirmation(uint256 indexed kmsContextId, address index
             ) -> Self {
                 Self {
                     kmsContextId: topics.1,
-                    signer: topics.2,
-                    isPreviousSigner: data.0,
-                    isNewSigner: data.1,
+                    txSender: topics.2,
+                    isPreviousTxSender: data.0,
+                    isNewTxSender: data.1,
                 }
             }
             #[inline]
@@ -6367,10 +7677,10 @@ event KmsContextCreationConfirmation(uint256 indexed kmsContextId, address index
             fn tokenize_body(&self) -> Self::DataToken<'_> {
                 (
                     <alloy::sol_types::sol_data::Bool as alloy_sol_types::SolType>::tokenize(
-                        &self.isPreviousSigner,
+                        &self.isPreviousTxSender,
                     ),
                     <alloy::sol_types::sol_data::Bool as alloy_sol_types::SolType>::tokenize(
-                        &self.isNewSigner,
+                        &self.isNewTxSender,
                     ),
                 )
             }
@@ -6379,7 +7689,7 @@ event KmsContextCreationConfirmation(uint256 indexed kmsContextId, address index
                 (
                     Self::SIGNATURE_HASH.into(),
                     self.kmsContextId.clone(),
-                    self.signer.clone(),
+                    self.txSender.clone(),
                 )
             }
             #[inline]
@@ -6397,7 +7707,7 @@ event KmsContextCreationConfirmation(uint256 indexed kmsContextId, address index
                     256,
                 > as alloy_sol_types::EventTopic>::encode_topic(&self.kmsContextId);
                 out[2usize] = <alloy::sol_types::sol_data::Address as alloy_sol_types::EventTopic>::encode_topic(
-                    &self.signer,
+                    &self.txSender,
                 );
                 Ok(())
             }
@@ -6525,6 +7835,113 @@ event KmsContextDestroyed(uint256 indexed kmsContextId);
         impl From<&KmsContextDestroyed> for alloy_sol_types::private::LogData {
             #[inline]
             fn from(this: &KmsContextDestroyed) -> alloy_sol_types::private::LogData {
+                alloy_sol_types::SolEvent::encode_log_data(this)
+            }
+        }
+    };
+    #[derive(serde::Serialize, serde::Deserialize)]
+    #[derive(Default, Debug, PartialEq, Eq, Hash)]
+    /**Event with signature `KmsEpochDestroyed(uint256)` and selector `0x03436013075f8d1abb1781dbcaf418fc76fc797d1ab51c38664c1a51f3cd57f9`.
+```solidity
+event KmsEpochDestroyed(uint256 indexed epochId);
+```*/
+    #[allow(
+        non_camel_case_types,
+        non_snake_case,
+        clippy::pub_underscore_fields,
+        clippy::style
+    )]
+    #[derive(Clone)]
+    pub struct KmsEpochDestroyed {
+        #[allow(missing_docs)]
+        pub epochId: alloy::sol_types::private::primitives::aliases::U256,
+    }
+    #[allow(
+        non_camel_case_types,
+        non_snake_case,
+        clippy::pub_underscore_fields,
+        clippy::style
+    )]
+    const _: () = {
+        use alloy::sol_types as alloy_sol_types;
+        #[automatically_derived]
+        impl alloy_sol_types::SolEvent for KmsEpochDestroyed {
+            type DataTuple<'a> = ();
+            type DataToken<'a> = <Self::DataTuple<
+                'a,
+            > as alloy_sol_types::SolType>::Token<'a>;
+            type TopicList = (
+                alloy_sol_types::sol_data::FixedBytes<32>,
+                alloy::sol_types::sol_data::Uint<256>,
+            );
+            const SIGNATURE: &'static str = "KmsEpochDestroyed(uint256)";
+            const SIGNATURE_HASH: alloy_sol_types::private::B256 = alloy_sol_types::private::B256::new([
+                3u8, 67u8, 96u8, 19u8, 7u8, 95u8, 141u8, 26u8, 187u8, 23u8, 129u8, 219u8,
+                202u8, 244u8, 24u8, 252u8, 118u8, 252u8, 121u8, 125u8, 26u8, 181u8, 28u8,
+                56u8, 102u8, 76u8, 26u8, 81u8, 243u8, 205u8, 87u8, 249u8,
+            ]);
+            const ANONYMOUS: bool = false;
+            #[allow(unused_variables)]
+            #[inline]
+            fn new(
+                topics: <Self::TopicList as alloy_sol_types::SolType>::RustType,
+                data: <Self::DataTuple<'_> as alloy_sol_types::SolType>::RustType,
+            ) -> Self {
+                Self { epochId: topics.1 }
+            }
+            #[inline]
+            fn check_signature(
+                topics: &<Self::TopicList as alloy_sol_types::SolType>::RustType,
+            ) -> alloy_sol_types::Result<()> {
+                if topics.0 != Self::SIGNATURE_HASH {
+                    return Err(
+                        alloy_sol_types::Error::invalid_event_signature_hash(
+                            Self::SIGNATURE,
+                            topics.0,
+                            Self::SIGNATURE_HASH,
+                        ),
+                    );
+                }
+                Ok(())
+            }
+            #[inline]
+            fn tokenize_body(&self) -> Self::DataToken<'_> {
+                ()
+            }
+            #[inline]
+            fn topics(&self) -> <Self::TopicList as alloy_sol_types::SolType>::RustType {
+                (Self::SIGNATURE_HASH.into(), self.epochId.clone())
+            }
+            #[inline]
+            fn encode_topics_raw(
+                &self,
+                out: &mut [alloy_sol_types::abi::token::WordToken],
+            ) -> alloy_sol_types::Result<()> {
+                if out.len() < <Self::TopicList as alloy_sol_types::TopicList>::COUNT {
+                    return Err(alloy_sol_types::Error::Overrun);
+                }
+                out[0usize] = alloy_sol_types::abi::token::WordToken(
+                    Self::SIGNATURE_HASH,
+                );
+                out[1usize] = <alloy::sol_types::sol_data::Uint<
+                    256,
+                > as alloy_sol_types::EventTopic>::encode_topic(&self.epochId);
+                Ok(())
+            }
+        }
+        #[automatically_derived]
+        impl alloy_sol_types::private::IntoLogData for KmsEpochDestroyed {
+            fn to_log_data(&self) -> alloy_sol_types::private::LogData {
+                From::from(self)
+            }
+            fn into_log_data(self) -> alloy_sol_types::private::LogData {
+                From::from(&self)
+            }
+        }
+        #[automatically_derived]
+        impl From<&KmsEpochDestroyed> for alloy_sol_types::private::LogData {
+            #[inline]
+            fn from(this: &KmsEpochDestroyed) -> alloy_sol_types::private::LogData {
                 alloy_sol_types::SolEvent::encode_log_data(this)
             }
         }
@@ -8893,6 +10310,152 @@ function destroyKmsContext(uint256 kmsContextId) external;
             #[inline]
             fn tokenize_returns(ret: &Self::Return) -> Self::ReturnToken<'_> {
                 destroyKmsContextReturn::_tokenize(ret)
+            }
+            #[inline]
+            fn abi_decode_returns(data: &[u8]) -> alloy_sol_types::Result<Self::Return> {
+                <Self::ReturnTuple<
+                    '_,
+                > as alloy_sol_types::SolType>::abi_decode_sequence(data)
+                    .map(Into::into)
+            }
+            #[inline]
+            fn abi_decode_returns_validate(
+                data: &[u8],
+            ) -> alloy_sol_types::Result<Self::Return> {
+                <Self::ReturnTuple<
+                    '_,
+                > as alloy_sol_types::SolType>::abi_decode_sequence_validate(data)
+                    .map(Into::into)
+            }
+        }
+    };
+    #[derive(serde::Serialize, serde::Deserialize)]
+    #[derive(Default, Debug, PartialEq, Eq, Hash)]
+    /**Function with signature `destroyKmsEpoch(uint256)` and selector `0xc2580a2d`.
+```solidity
+function destroyKmsEpoch(uint256 epochId) external;
+```*/
+    #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
+    #[derive(Clone)]
+    pub struct destroyKmsEpochCall {
+        #[allow(missing_docs)]
+        pub epochId: alloy::sol_types::private::primitives::aliases::U256,
+    }
+    ///Container type for the return parameters of the [`destroyKmsEpoch(uint256)`](destroyKmsEpochCall) function.
+    #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
+    #[derive(Clone)]
+    pub struct destroyKmsEpochReturn {}
+    #[allow(
+        non_camel_case_types,
+        non_snake_case,
+        clippy::pub_underscore_fields,
+        clippy::style
+    )]
+    const _: () = {
+        use alloy::sol_types as alloy_sol_types;
+        {
+            #[doc(hidden)]
+            type UnderlyingSolTuple<'a> = (alloy::sol_types::sol_data::Uint<256>,);
+            #[doc(hidden)]
+            type UnderlyingRustTuple<'a> = (
+                alloy::sol_types::private::primitives::aliases::U256,
+            );
+            #[cfg(test)]
+            #[allow(dead_code, unreachable_patterns)]
+            fn _type_assertion(
+                _t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>,
+            ) {
+                match _t {
+                    alloy_sol_types::private::AssertTypeEq::<
+                        <UnderlyingSolTuple as alloy_sol_types::SolType>::RustType,
+                    >(_) => {}
+                }
+            }
+            #[automatically_derived]
+            #[doc(hidden)]
+            impl ::core::convert::From<destroyKmsEpochCall> for UnderlyingRustTuple<'_> {
+                fn from(value: destroyKmsEpochCall) -> Self {
+                    (value.epochId,)
+                }
+            }
+            #[automatically_derived]
+            #[doc(hidden)]
+            impl ::core::convert::From<UnderlyingRustTuple<'_>> for destroyKmsEpochCall {
+                fn from(tuple: UnderlyingRustTuple<'_>) -> Self {
+                    Self { epochId: tuple.0 }
+                }
+            }
+        }
+        {
+            #[doc(hidden)]
+            type UnderlyingSolTuple<'a> = ();
+            #[doc(hidden)]
+            type UnderlyingRustTuple<'a> = ();
+            #[cfg(test)]
+            #[allow(dead_code, unreachable_patterns)]
+            fn _type_assertion(
+                _t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>,
+            ) {
+                match _t {
+                    alloy_sol_types::private::AssertTypeEq::<
+                        <UnderlyingSolTuple as alloy_sol_types::SolType>::RustType,
+                    >(_) => {}
+                }
+            }
+            #[automatically_derived]
+            #[doc(hidden)]
+            impl ::core::convert::From<destroyKmsEpochReturn>
+            for UnderlyingRustTuple<'_> {
+                fn from(value: destroyKmsEpochReturn) -> Self {
+                    ()
+                }
+            }
+            #[automatically_derived]
+            #[doc(hidden)]
+            impl ::core::convert::From<UnderlyingRustTuple<'_>>
+            for destroyKmsEpochReturn {
+                fn from(tuple: UnderlyingRustTuple<'_>) -> Self {
+                    Self {}
+                }
+            }
+        }
+        impl destroyKmsEpochReturn {
+            fn _tokenize(
+                &self,
+            ) -> <destroyKmsEpochCall as alloy_sol_types::SolCall>::ReturnToken<'_> {
+                ()
+            }
+        }
+        #[automatically_derived]
+        impl alloy_sol_types::SolCall for destroyKmsEpochCall {
+            type Parameters<'a> = (alloy::sol_types::sol_data::Uint<256>,);
+            type Token<'a> = <Self::Parameters<
+                'a,
+            > as alloy_sol_types::SolType>::Token<'a>;
+            type Return = destroyKmsEpochReturn;
+            type ReturnTuple<'a> = ();
+            type ReturnToken<'a> = <Self::ReturnTuple<
+                'a,
+            > as alloy_sol_types::SolType>::Token<'a>;
+            const SIGNATURE: &'static str = "destroyKmsEpoch(uint256)";
+            const SELECTOR: [u8; 4] = [194u8, 88u8, 10u8, 45u8];
+            #[inline]
+            fn new<'a>(
+                tuple: <Self::Parameters<'a> as alloy_sol_types::SolType>::RustType,
+            ) -> Self {
+                tuple.into()
+            }
+            #[inline]
+            fn tokenize(&self) -> Self::Token<'_> {
+                (
+                    <alloy::sol_types::sol_data::Uint<
+                        256,
+                    > as alloy_sol_types::SolType>::tokenize(&self.epochId),
+                )
+            }
+            #[inline]
+            fn tokenize_returns(ret: &Self::Return) -> Self::ReturnToken<'_> {
+                destroyKmsEpochReturn::_tokenize(ret)
             }
             #[inline]
             fn abi_decode_returns(data: &[u8]) -> alloy_sol_types::Result<Self::Return> {
@@ -12617,6 +14180,198 @@ function mirrorKmsEpoch(uint256 contextId, uint256 epochId) external;
     };
     #[derive(serde::Serialize, serde::Deserialize)]
     #[derive(Default, Debug, PartialEq, Eq, Hash)]
+    /**Function with signature `proposeCoprocessorUpgrade(uint256,string,(uint64,uint64,uint64)[],uint64)` and selector `0xccbf8199`.
+```solidity
+function proposeCoprocessorUpgrade(uint256 proposalId, string memory softwareVersion, ChainUpgradeWindow[] memory chainUpgradeWindows, uint64 gwStartBlock) external;
+```*/
+    #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
+    #[derive(Clone)]
+    pub struct proposeCoprocessorUpgradeCall {
+        #[allow(missing_docs)]
+        pub proposalId: alloy::sol_types::private::primitives::aliases::U256,
+        #[allow(missing_docs)]
+        pub softwareVersion: alloy::sol_types::private::String,
+        #[allow(missing_docs)]
+        pub chainUpgradeWindows: alloy::sol_types::private::Vec<
+            <ChainUpgradeWindow as alloy::sol_types::SolType>::RustType,
+        >,
+        #[allow(missing_docs)]
+        pub gwStartBlock: u64,
+    }
+    ///Container type for the return parameters of the [`proposeCoprocessorUpgrade(uint256,string,(uint64,uint64,uint64)[],uint64)`](proposeCoprocessorUpgradeCall) function.
+    #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
+    #[derive(Clone)]
+    pub struct proposeCoprocessorUpgradeReturn {}
+    #[allow(
+        non_camel_case_types,
+        non_snake_case,
+        clippy::pub_underscore_fields,
+        clippy::style
+    )]
+    const _: () = {
+        use alloy::sol_types as alloy_sol_types;
+        {
+            #[doc(hidden)]
+            type UnderlyingSolTuple<'a> = (
+                alloy::sol_types::sol_data::Uint<256>,
+                alloy::sol_types::sol_data::String,
+                alloy::sol_types::sol_data::Array<ChainUpgradeWindow>,
+                alloy::sol_types::sol_data::Uint<64>,
+            );
+            #[doc(hidden)]
+            type UnderlyingRustTuple<'a> = (
+                alloy::sol_types::private::primitives::aliases::U256,
+                alloy::sol_types::private::String,
+                alloy::sol_types::private::Vec<
+                    <ChainUpgradeWindow as alloy::sol_types::SolType>::RustType,
+                >,
+                u64,
+            );
+            #[cfg(test)]
+            #[allow(dead_code, unreachable_patterns)]
+            fn _type_assertion(
+                _t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>,
+            ) {
+                match _t {
+                    alloy_sol_types::private::AssertTypeEq::<
+                        <UnderlyingSolTuple as alloy_sol_types::SolType>::RustType,
+                    >(_) => {}
+                }
+            }
+            #[automatically_derived]
+            #[doc(hidden)]
+            impl ::core::convert::From<proposeCoprocessorUpgradeCall>
+            for UnderlyingRustTuple<'_> {
+                fn from(value: proposeCoprocessorUpgradeCall) -> Self {
+                    (
+                        value.proposalId,
+                        value.softwareVersion,
+                        value.chainUpgradeWindows,
+                        value.gwStartBlock,
+                    )
+                }
+            }
+            #[automatically_derived]
+            #[doc(hidden)]
+            impl ::core::convert::From<UnderlyingRustTuple<'_>>
+            for proposeCoprocessorUpgradeCall {
+                fn from(tuple: UnderlyingRustTuple<'_>) -> Self {
+                    Self {
+                        proposalId: tuple.0,
+                        softwareVersion: tuple.1,
+                        chainUpgradeWindows: tuple.2,
+                        gwStartBlock: tuple.3,
+                    }
+                }
+            }
+        }
+        {
+            #[doc(hidden)]
+            type UnderlyingSolTuple<'a> = ();
+            #[doc(hidden)]
+            type UnderlyingRustTuple<'a> = ();
+            #[cfg(test)]
+            #[allow(dead_code, unreachable_patterns)]
+            fn _type_assertion(
+                _t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>,
+            ) {
+                match _t {
+                    alloy_sol_types::private::AssertTypeEq::<
+                        <UnderlyingSolTuple as alloy_sol_types::SolType>::RustType,
+                    >(_) => {}
+                }
+            }
+            #[automatically_derived]
+            #[doc(hidden)]
+            impl ::core::convert::From<proposeCoprocessorUpgradeReturn>
+            for UnderlyingRustTuple<'_> {
+                fn from(value: proposeCoprocessorUpgradeReturn) -> Self {
+                    ()
+                }
+            }
+            #[automatically_derived]
+            #[doc(hidden)]
+            impl ::core::convert::From<UnderlyingRustTuple<'_>>
+            for proposeCoprocessorUpgradeReturn {
+                fn from(tuple: UnderlyingRustTuple<'_>) -> Self {
+                    Self {}
+                }
+            }
+        }
+        impl proposeCoprocessorUpgradeReturn {
+            fn _tokenize(
+                &self,
+            ) -> <proposeCoprocessorUpgradeCall as alloy_sol_types::SolCall>::ReturnToken<
+                '_,
+            > {
+                ()
+            }
+        }
+        #[automatically_derived]
+        impl alloy_sol_types::SolCall for proposeCoprocessorUpgradeCall {
+            type Parameters<'a> = (
+                alloy::sol_types::sol_data::Uint<256>,
+                alloy::sol_types::sol_data::String,
+                alloy::sol_types::sol_data::Array<ChainUpgradeWindow>,
+                alloy::sol_types::sol_data::Uint<64>,
+            );
+            type Token<'a> = <Self::Parameters<
+                'a,
+            > as alloy_sol_types::SolType>::Token<'a>;
+            type Return = proposeCoprocessorUpgradeReturn;
+            type ReturnTuple<'a> = ();
+            type ReturnToken<'a> = <Self::ReturnTuple<
+                'a,
+            > as alloy_sol_types::SolType>::Token<'a>;
+            const SIGNATURE: &'static str = "proposeCoprocessorUpgrade(uint256,string,(uint64,uint64,uint64)[],uint64)";
+            const SELECTOR: [u8; 4] = [204u8, 191u8, 129u8, 153u8];
+            #[inline]
+            fn new<'a>(
+                tuple: <Self::Parameters<'a> as alloy_sol_types::SolType>::RustType,
+            ) -> Self {
+                tuple.into()
+            }
+            #[inline]
+            fn tokenize(&self) -> Self::Token<'_> {
+                (
+                    <alloy::sol_types::sol_data::Uint<
+                        256,
+                    > as alloy_sol_types::SolType>::tokenize(&self.proposalId),
+                    <alloy::sol_types::sol_data::String as alloy_sol_types::SolType>::tokenize(
+                        &self.softwareVersion,
+                    ),
+                    <alloy::sol_types::sol_data::Array<
+                        ChainUpgradeWindow,
+                    > as alloy_sol_types::SolType>::tokenize(&self.chainUpgradeWindows),
+                    <alloy::sol_types::sol_data::Uint<
+                        64,
+                    > as alloy_sol_types::SolType>::tokenize(&self.gwStartBlock),
+                )
+            }
+            #[inline]
+            fn tokenize_returns(ret: &Self::Return) -> Self::ReturnToken<'_> {
+                proposeCoprocessorUpgradeReturn::_tokenize(ret)
+            }
+            #[inline]
+            fn abi_decode_returns(data: &[u8]) -> alloy_sol_types::Result<Self::Return> {
+                <Self::ReturnTuple<
+                    '_,
+                > as alloy_sol_types::SolType>::abi_decode_sequence(data)
+                    .map(Into::into)
+            }
+            #[inline]
+            fn abi_decode_returns_validate(
+                data: &[u8],
+            ) -> alloy_sol_types::Result<Self::Return> {
+                <Self::ReturnTuple<
+                    '_,
+                > as alloy_sol_types::SolType>::abi_decode_sequence_validate(data)
+                    .map(Into::into)
+            }
+        }
+    };
+    #[derive(serde::Serialize, serde::Deserialize)]
+    #[derive(Default, Debug, PartialEq, Eq, Hash)]
     /**Function with signature `updateKmsGenThresholdForContext(uint256,uint256)` and selector `0xb0b461c4`.
 ```solidity
 function updateKmsGenThresholdForContext(uint256 kmsContextId, uint256 threshold) external;
@@ -13294,6 +15049,8 @@ function updateUserDecryptionThresholdForContext(uint256 kmsContextId, uint256 t
         #[allow(missing_docs)]
         destroyKmsContext(destroyKmsContextCall),
         #[allow(missing_docs)]
+        destroyKmsEpoch(destroyKmsEpochCall),
+        #[allow(missing_docs)]
         getCurrentKmsContextAndEpoch(getCurrentKmsContextAndEpochCall),
         #[allow(missing_docs)]
         getCurrentKmsContextId(getCurrentKmsContextIdCall),
@@ -13341,6 +15098,8 @@ function updateUserDecryptionThresholdForContext(uint256 kmsContextId, uint256 t
         mirrorKmsContextAndEpoch(mirrorKmsContextAndEpochCall),
         #[allow(missing_docs)]
         mirrorKmsEpoch(mirrorKmsEpochCall),
+        #[allow(missing_docs)]
+        proposeCoprocessorUpgrade(proposeCoprocessorUpgradeCall),
         #[allow(missing_docs)]
         updateKmsGenThresholdForContext(updateKmsGenThresholdForContextCall),
         #[allow(missing_docs)]
@@ -13391,9 +15150,11 @@ function updateUserDecryptionThresholdForContext(uint256 kmsContextId, uint256 t
             [188u8, 77u8, 7u8, 194u8],
             [191u8, 155u8, 22u8, 200u8],
             [192u8, 174u8, 100u8, 247u8],
+            [194u8, 88u8, 10u8, 45u8],
             [194u8, 180u8, 41u8, 134u8],
             [195u8, 170u8, 170u8, 90u8],
             [201u8, 153u8, 168u8, 180u8],
+            [204u8, 191u8, 129u8, 153u8],
             [204u8, 234u8, 192u8, 25u8],
             [217u8, 190u8, 45u8, 228u8],
             [249u8, 198u8, 112u8, 195u8],
@@ -13403,7 +15164,7 @@ function updateUserDecryptionThresholdForContext(uint256 kmsContextId, uint256 t
     impl alloy_sol_types::SolInterface for IProtocolConfigCalls {
         const NAME: &'static str = "IProtocolConfigCalls";
         const MIN_DATA_LENGTH: usize = 0usize;
-        const COUNT: usize = 34usize;
+        const COUNT: usize = 36usize;
         #[inline]
         fn selector(&self) -> [u8; 4] {
             match self {
@@ -13427,6 +15188,9 @@ function updateUserDecryptionThresholdForContext(uint256 kmsContextId, uint256 t
                 }
                 Self::destroyKmsContext(_) => {
                     <destroyKmsContextCall as alloy_sol_types::SolCall>::SELECTOR
+                }
+                Self::destroyKmsEpoch(_) => {
+                    <destroyKmsEpochCall as alloy_sol_types::SolCall>::SELECTOR
                 }
                 Self::getCurrentKmsContextAndEpoch(_) => {
                     <getCurrentKmsContextAndEpochCall as alloy_sol_types::SolCall>::SELECTOR
@@ -13496,6 +15260,9 @@ function updateUserDecryptionThresholdForContext(uint256 kmsContextId, uint256 t
                 }
                 Self::mirrorKmsEpoch(_) => {
                     <mirrorKmsEpochCall as alloy_sol_types::SolCall>::SELECTOR
+                }
+                Self::proposeCoprocessorUpgrade(_) => {
+                    <proposeCoprocessorUpgradeCall as alloy_sol_types::SolCall>::SELECTOR
                 }
                 Self::updateKmsGenThresholdForContext(_) => {
                     <updateKmsGenThresholdForContextCall as alloy_sol_types::SolCall>::SELECTOR
@@ -13845,6 +15612,17 @@ function updateUserDecryptionThresholdForContext(uint256 kmsContextId, uint256 t
                     destroyKmsContext
                 },
                 {
+                    fn destroyKmsEpoch(
+                        data: &[u8],
+                    ) -> alloy_sol_types::Result<IProtocolConfigCalls> {
+                        <destroyKmsEpochCall as alloy_sol_types::SolCall>::abi_decode_raw(
+                                data,
+                            )
+                            .map(IProtocolConfigCalls::destroyKmsEpoch)
+                    }
+                    destroyKmsEpoch
+                },
+                {
                     fn getUserDecryptionThreshold(
                         data: &[u8],
                     ) -> alloy_sol_types::Result<IProtocolConfigCalls> {
@@ -13878,6 +15656,17 @@ function updateUserDecryptionThresholdForContext(uint256 kmsContextId, uint256 t
                             .map(IProtocolConfigCalls::getKmsContextAnchor)
                     }
                     getKmsContextAnchor
+                },
+                {
+                    fn proposeCoprocessorUpgrade(
+                        data: &[u8],
+                    ) -> alloy_sol_types::Result<IProtocolConfigCalls> {
+                        <proposeCoprocessorUpgradeCall as alloy_sol_types::SolCall>::abi_decode_raw(
+                                data,
+                            )
+                            .map(IProtocolConfigCalls::proposeCoprocessorUpgrade)
+                    }
+                    proposeCoprocessorUpgrade
                 },
                 {
                     fn isValidEpochForContext(
@@ -14249,6 +16038,17 @@ function updateUserDecryptionThresholdForContext(uint256 kmsContextId, uint256 t
                     destroyKmsContext
                 },
                 {
+                    fn destroyKmsEpoch(
+                        data: &[u8],
+                    ) -> alloy_sol_types::Result<IProtocolConfigCalls> {
+                        <destroyKmsEpochCall as alloy_sol_types::SolCall>::abi_decode_raw_validate(
+                                data,
+                            )
+                            .map(IProtocolConfigCalls::destroyKmsEpoch)
+                    }
+                    destroyKmsEpoch
+                },
+                {
                     fn getUserDecryptionThreshold(
                         data: &[u8],
                     ) -> alloy_sol_types::Result<IProtocolConfigCalls> {
@@ -14282,6 +16082,17 @@ function updateUserDecryptionThresholdForContext(uint256 kmsContextId, uint256 t
                             .map(IProtocolConfigCalls::getKmsContextAnchor)
                     }
                     getKmsContextAnchor
+                },
+                {
+                    fn proposeCoprocessorUpgrade(
+                        data: &[u8],
+                    ) -> alloy_sol_types::Result<IProtocolConfigCalls> {
+                        <proposeCoprocessorUpgradeCall as alloy_sol_types::SolCall>::abi_decode_raw_validate(
+                                data,
+                            )
+                            .map(IProtocolConfigCalls::proposeCoprocessorUpgrade)
+                    }
+                    proposeCoprocessorUpgrade
                 },
                 {
                     fn isValidEpochForContext(
@@ -14362,6 +16173,11 @@ function updateUserDecryptionThresholdForContext(uint256 kmsContextId, uint256 t
                 }
                 Self::destroyKmsContext(inner) => {
                     <destroyKmsContextCall as alloy_sol_types::SolCall>::abi_encoded_size(
+                        inner,
+                    )
+                }
+                Self::destroyKmsEpoch(inner) => {
+                    <destroyKmsEpochCall as alloy_sol_types::SolCall>::abi_encoded_size(
                         inner,
                     )
                 }
@@ -14478,6 +16294,11 @@ function updateUserDecryptionThresholdForContext(uint256 kmsContextId, uint256 t
                         inner,
                     )
                 }
+                Self::proposeCoprocessorUpgrade(inner) => {
+                    <proposeCoprocessorUpgradeCall as alloy_sol_types::SolCall>::abi_encoded_size(
+                        inner,
+                    )
+                }
                 Self::updateKmsGenThresholdForContext(inner) => {
                     <updateKmsGenThresholdForContextCall as alloy_sol_types::SolCall>::abi_encoded_size(
                         inner,
@@ -14541,6 +16362,12 @@ function updateUserDecryptionThresholdForContext(uint256 kmsContextId, uint256 t
                 }
                 Self::destroyKmsContext(inner) => {
                     <destroyKmsContextCall as alloy_sol_types::SolCall>::abi_encode_raw(
+                        inner,
+                        out,
+                    )
+                }
+                Self::destroyKmsEpoch(inner) => {
+                    <destroyKmsEpochCall as alloy_sol_types::SolCall>::abi_encode_raw(
                         inner,
                         out,
                     )
@@ -14683,6 +16510,12 @@ function updateUserDecryptionThresholdForContext(uint256 kmsContextId, uint256 t
                         out,
                     )
                 }
+                Self::proposeCoprocessorUpgrade(inner) => {
+                    <proposeCoprocessorUpgradeCall as alloy_sol_types::SolCall>::abi_encode_raw(
+                        inner,
+                        out,
+                    )
+                }
                 Self::updateKmsGenThresholdForContext(inner) => {
                     <updateKmsGenThresholdForContextCall as alloy_sol_types::SolCall>::abi_encode_raw(
                         inner,
@@ -14715,9 +16548,13 @@ function updateUserDecryptionThresholdForContext(uint256 kmsContextId, uint256 t
     #[derive(Debug, PartialEq, Eq, Hash)]
     pub enum IProtocolConfigErrors {
         #[allow(missing_docs)]
-        CurrentKmsContextCannotBeDestroyed(CurrentKmsContextCannotBeDestroyed),
+        DuplicateChainId(DuplicateChainId),
+        #[allow(missing_docs)]
+        EmptyChainUpgradeWindows(EmptyChainUpgradeWindows),
         #[allow(missing_docs)]
         EmptyKmsNodes(EmptyKmsNodes),
+        #[allow(missing_docs)]
+        EmptySoftwareVersion(EmptySoftwareVersion),
         #[allow(missing_docs)]
         EpochActivationAlreadyConfirmed(EpochActivationAlreadyConfirmed),
         #[allow(missing_docs)]
@@ -14729,13 +16566,19 @@ function updateUserDecryptionThresholdForContext(uint256 kmsContextId, uint256 t
         #[allow(missing_docs)]
         EpochNotUnderActiveContext(EpochNotUnderActiveContext),
         #[allow(missing_docs)]
+        InvalidBlockWindow(InvalidBlockWindow),
+        #[allow(missing_docs)]
         InvalidEpoch(InvalidEpoch),
         #[allow(missing_docs)]
         InvalidHighThreshold(InvalidHighThreshold),
         #[allow(missing_docs)]
         InvalidKmsContext(InvalidKmsContext),
         #[allow(missing_docs)]
+        InvalidKmsEpoch(InvalidKmsEpoch),
+        #[allow(missing_docs)]
         InvalidNullThreshold(InvalidNullThreshold),
+        #[allow(missing_docs)]
+        InvalidProposalId(InvalidProposalId),
         #[allow(missing_docs)]
         KmsContextCreationAlreadyConfirmed(KmsContextCreationAlreadyConfirmed),
         #[allow(missing_docs)]
@@ -14755,11 +16598,19 @@ function updateUserDecryptionThresholdForContext(uint256 kmsContextId, uint256 t
         #[allow(missing_docs)]
         KmsTxSenderAlreadyRegistered(KmsTxSenderAlreadyRegistered),
         #[allow(missing_docs)]
+        LatestActiveKmsContextCannotBeDestroyed(LatestActiveKmsContextCannotBeDestroyed),
+        #[allow(missing_docs)]
+        LatestActiveKmsEpochCannotBeDestroyed(LatestActiveKmsEpochCannotBeDestroyed),
+        #[allow(missing_docs)]
         NonIncreasingEpochId(NonIncreasingEpochId),
         #[allow(missing_docs)]
         NonIncreasingKmsContextId(NonIncreasingKmsContextId),
         #[allow(missing_docs)]
         ThresholdExceedsProofFormatLimit(ThresholdExceedsProofFormatLimit),
+        #[allow(missing_docs)]
+        ZeroChainId(ZeroChainId),
+        #[allow(missing_docs)]
+        ZeroGwStartBlock(ZeroGwStartBlock),
     }
     #[automatically_derived]
     impl IProtocolConfigErrors {
@@ -14771,26 +16622,35 @@ function updateUserDecryptionThresholdForContext(uint256 kmsContextId, uint256 t
         /// Prefer using `SolInterface` methods instead.
         pub const SELECTORS: &'static [[u8; 4usize]] = &[
             [6u8, 140u8, 141u8, 64u8],
+            [9u8, 146u8, 247u8, 173u8],
             [22u8, 167u8, 39u8, 120u8],
+            [23u8, 211u8, 233u8, 72u8],
+            [24u8, 122u8, 234u8, 168u8],
             [34u8, 186u8, 82u8, 219u8],
             [45u8, 236u8, 207u8, 77u8],
             [50u8, 197u8, 185u8, 246u8],
             [53u8, 134u8, 239u8, 161u8],
             [54u8, 191u8, 182u8, 14u8],
-            [69u8, 149u8, 252u8, 226u8],
             [73u8, 65u8, 118u8, 54u8],
             [98u8, 88u8, 92u8, 200u8],
+            [108u8, 103u8, 228u8, 112u8],
             [119u8, 221u8, 190u8, 129u8],
+            [121u8, 149u8, 187u8, 207u8],
             [132u8, 102u8, 128u8, 74u8],
             [162u8, 37u8, 101u8, 109u8],
             [163u8, 244u8, 175u8, 235u8],
             [166u8, 157u8, 125u8, 91u8],
+            [181u8, 72u8, 145u8, 71u8],
             [184u8, 29u8, 248u8, 232u8],
+            [190u8, 80u8, 80u8, 68u8],
+            [200u8, 72u8, 133u8, 212u8],
             [202u8, 168u8, 20u8, 163u8],
             [209u8, 140u8, 79u8, 240u8],
             [232u8, 18u8, 31u8, 81u8],
             [239u8, 213u8, 95u8, 103u8],
+            [240u8, 231u8, 129u8, 193u8],
             [241u8, 115u8, 91u8, 70u8],
+            [242u8, 25u8, 220u8, 14u8],
             [245u8, 26u8, 246u8, 187u8],
         ];
     }
@@ -14798,15 +16658,21 @@ function updateUserDecryptionThresholdForContext(uint256 kmsContextId, uint256 t
     impl alloy_sol_types::SolInterface for IProtocolConfigErrors {
         const NAME: &'static str = "IProtocolConfigErrors";
         const MIN_DATA_LENGTH: usize = 0usize;
-        const COUNT: usize = 22usize;
+        const COUNT: usize = 31usize;
         #[inline]
         fn selector(&self) -> [u8; 4] {
             match self {
-                Self::CurrentKmsContextCannotBeDestroyed(_) => {
-                    <CurrentKmsContextCannotBeDestroyed as alloy_sol_types::SolError>::SELECTOR
+                Self::DuplicateChainId(_) => {
+                    <DuplicateChainId as alloy_sol_types::SolError>::SELECTOR
+                }
+                Self::EmptyChainUpgradeWindows(_) => {
+                    <EmptyChainUpgradeWindows as alloy_sol_types::SolError>::SELECTOR
                 }
                 Self::EmptyKmsNodes(_) => {
                     <EmptyKmsNodes as alloy_sol_types::SolError>::SELECTOR
+                }
+                Self::EmptySoftwareVersion(_) => {
+                    <EmptySoftwareVersion as alloy_sol_types::SolError>::SELECTOR
                 }
                 Self::EpochActivationAlreadyConfirmed(_) => {
                     <EpochActivationAlreadyConfirmed as alloy_sol_types::SolError>::SELECTOR
@@ -14820,6 +16686,9 @@ function updateUserDecryptionThresholdForContext(uint256 kmsContextId, uint256 t
                 Self::EpochNotUnderActiveContext(_) => {
                     <EpochNotUnderActiveContext as alloy_sol_types::SolError>::SELECTOR
                 }
+                Self::InvalidBlockWindow(_) => {
+                    <InvalidBlockWindow as alloy_sol_types::SolError>::SELECTOR
+                }
                 Self::InvalidEpoch(_) => {
                     <InvalidEpoch as alloy_sol_types::SolError>::SELECTOR
                 }
@@ -14829,8 +16698,14 @@ function updateUserDecryptionThresholdForContext(uint256 kmsContextId, uint256 t
                 Self::InvalidKmsContext(_) => {
                     <InvalidKmsContext as alloy_sol_types::SolError>::SELECTOR
                 }
+                Self::InvalidKmsEpoch(_) => {
+                    <InvalidKmsEpoch as alloy_sol_types::SolError>::SELECTOR
+                }
                 Self::InvalidNullThreshold(_) => {
                     <InvalidNullThreshold as alloy_sol_types::SolError>::SELECTOR
+                }
+                Self::InvalidProposalId(_) => {
+                    <InvalidProposalId as alloy_sol_types::SolError>::SELECTOR
                 }
                 Self::KmsContextCreationAlreadyConfirmed(_) => {
                     <KmsContextCreationAlreadyConfirmed as alloy_sol_types::SolError>::SELECTOR
@@ -14859,6 +16734,12 @@ function updateUserDecryptionThresholdForContext(uint256 kmsContextId, uint256 t
                 Self::KmsTxSenderAlreadyRegistered(_) => {
                     <KmsTxSenderAlreadyRegistered as alloy_sol_types::SolError>::SELECTOR
                 }
+                Self::LatestActiveKmsContextCannotBeDestroyed(_) => {
+                    <LatestActiveKmsContextCannotBeDestroyed as alloy_sol_types::SolError>::SELECTOR
+                }
+                Self::LatestActiveKmsEpochCannotBeDestroyed(_) => {
+                    <LatestActiveKmsEpochCannotBeDestroyed as alloy_sol_types::SolError>::SELECTOR
+                }
                 Self::NonIncreasingEpochId(_) => {
                     <NonIncreasingEpochId as alloy_sol_types::SolError>::SELECTOR
                 }
@@ -14867,6 +16748,12 @@ function updateUserDecryptionThresholdForContext(uint256 kmsContextId, uint256 t
                 }
                 Self::ThresholdExceedsProofFormatLimit(_) => {
                     <ThresholdExceedsProofFormatLimit as alloy_sol_types::SolError>::SELECTOR
+                }
+                Self::ZeroChainId(_) => {
+                    <ZeroChainId as alloy_sol_types::SolError>::SELECTOR
+                }
+                Self::ZeroGwStartBlock(_) => {
+                    <ZeroGwStartBlock as alloy_sol_types::SolError>::SELECTOR
                 }
             }
         }
@@ -14899,6 +16786,17 @@ function updateUserDecryptionThresholdForContext(uint256 kmsContextId, uint256 t
                     EmptyKmsNodes
                 },
                 {
+                    fn InvalidProposalId(
+                        data: &[u8],
+                    ) -> alloy_sol_types::Result<IProtocolConfigErrors> {
+                        <InvalidProposalId as alloy_sol_types::SolError>::abi_decode_raw(
+                                data,
+                            )
+                            .map(IProtocolConfigErrors::InvalidProposalId)
+                    }
+                    InvalidProposalId
+                },
+                {
                     fn KmsSignerSetExceedsProofFormatLimit(
                         data: &[u8],
                     ) -> alloy_sol_types::Result<IProtocolConfigErrors> {
@@ -14910,6 +16808,30 @@ function updateUserDecryptionThresholdForContext(uint256 kmsContextId, uint256 t
                             )
                     }
                     KmsSignerSetExceedsProofFormatLimit
+                },
+                {
+                    fn ZeroGwStartBlock(
+                        data: &[u8],
+                    ) -> alloy_sol_types::Result<IProtocolConfigErrors> {
+                        <ZeroGwStartBlock as alloy_sol_types::SolError>::abi_decode_raw(
+                                data,
+                            )
+                            .map(IProtocolConfigErrors::ZeroGwStartBlock)
+                    }
+                    ZeroGwStartBlock
+                },
+                {
+                    fn LatestActiveKmsContextCannotBeDestroyed(
+                        data: &[u8],
+                    ) -> alloy_sol_types::Result<IProtocolConfigErrors> {
+                        <LatestActiveKmsContextCannotBeDestroyed as alloy_sol_types::SolError>::abi_decode_raw(
+                                data,
+                            )
+                            .map(
+                                IProtocolConfigErrors::LatestActiveKmsContextCannotBeDestroyed,
+                            )
+                    }
+                    LatestActiveKmsContextCannotBeDestroyed
                 },
                 {
                     fn ThresholdExceedsProofFormatLimit(
@@ -14967,19 +16889,6 @@ function updateUserDecryptionThresholdForContext(uint256 kmsContextId, uint256 t
                     InvalidNullThreshold
                 },
                 {
-                    fn CurrentKmsContextCannotBeDestroyed(
-                        data: &[u8],
-                    ) -> alloy_sol_types::Result<IProtocolConfigErrors> {
-                        <CurrentKmsContextCannotBeDestroyed as alloy_sol_types::SolError>::abi_decode_raw(
-                                data,
-                            )
-                            .map(
-                                IProtocolConfigErrors::CurrentKmsContextCannotBeDestroyed,
-                            )
-                    }
-                    CurrentKmsContextCannotBeDestroyed
-                },
-                {
                     fn EpochActivationAlreadyConfirmed(
                         data: &[u8],
                     ) -> alloy_sol_types::Result<IProtocolConfigErrors> {
@@ -15004,6 +16913,17 @@ function updateUserDecryptionThresholdForContext(uint256 kmsContextId, uint256 t
                     KmsContextCreationAlreadyConfirmed
                 },
                 {
+                    fn DuplicateChainId(
+                        data: &[u8],
+                    ) -> alloy_sol_types::Result<IProtocolConfigErrors> {
+                        <DuplicateChainId as alloy_sol_types::SolError>::abi_decode_raw(
+                                data,
+                            )
+                            .map(IProtocolConfigErrors::DuplicateChainId)
+                    }
+                    DuplicateChainId
+                },
+                {
                     fn InvalidKmsContext(
                         data: &[u8],
                     ) -> alloy_sol_types::Result<IProtocolConfigErrors> {
@@ -15013,6 +16933,17 @@ function updateUserDecryptionThresholdForContext(uint256 kmsContextId, uint256 t
                             .map(IProtocolConfigErrors::InvalidKmsContext)
                     }
                     InvalidKmsContext
+                },
+                {
+                    fn InvalidKmsEpoch(
+                        data: &[u8],
+                    ) -> alloy_sol_types::Result<IProtocolConfigErrors> {
+                        <InvalidKmsEpoch as alloy_sol_types::SolError>::abi_decode_raw(
+                                data,
+                            )
+                            .map(IProtocolConfigErrors::InvalidKmsEpoch)
+                    }
+                    InvalidKmsEpoch
                 },
                 {
                     fn KmsNodeNullTxSender(
@@ -15057,6 +16988,17 @@ function updateUserDecryptionThresholdForContext(uint256 kmsContextId, uint256 t
                     EpochNotUnderActiveContext
                 },
                 {
+                    fn EmptySoftwareVersion(
+                        data: &[u8],
+                    ) -> alloy_sol_types::Result<IProtocolConfigErrors> {
+                        <EmptySoftwareVersion as alloy_sol_types::SolError>::abi_decode_raw(
+                                data,
+                            )
+                            .map(IProtocolConfigErrors::EmptySoftwareVersion)
+                    }
+                    EmptySoftwareVersion
+                },
+                {
                     fn KmsContextCreationUnauthorized(
                         data: &[u8],
                     ) -> alloy_sol_types::Result<IProtocolConfigErrors> {
@@ -15066,6 +17008,26 @@ function updateUserDecryptionThresholdForContext(uint256 kmsContextId, uint256 t
                             .map(IProtocolConfigErrors::KmsContextCreationUnauthorized)
                     }
                     KmsContextCreationUnauthorized
+                },
+                {
+                    fn EmptyChainUpgradeWindows(
+                        data: &[u8],
+                    ) -> alloy_sol_types::Result<IProtocolConfigErrors> {
+                        <EmptyChainUpgradeWindows as alloy_sol_types::SolError>::abi_decode_raw(
+                                data,
+                            )
+                            .map(IProtocolConfigErrors::EmptyChainUpgradeWindows)
+                    }
+                    EmptyChainUpgradeWindows
+                },
+                {
+                    fn ZeroChainId(
+                        data: &[u8],
+                    ) -> alloy_sol_types::Result<IProtocolConfigErrors> {
+                        <ZeroChainId as alloy_sol_types::SolError>::abi_decode_raw(data)
+                            .map(IProtocolConfigErrors::ZeroChainId)
+                    }
+                    ZeroChainId
                 },
                 {
                     fn InvalidHighThreshold(
@@ -15112,6 +17074,19 @@ function updateUserDecryptionThresholdForContext(uint256 kmsContextId, uint256 t
                     NonIncreasingKmsContextId
                 },
                 {
+                    fn LatestActiveKmsEpochCannotBeDestroyed(
+                        data: &[u8],
+                    ) -> alloy_sol_types::Result<IProtocolConfigErrors> {
+                        <LatestActiveKmsEpochCannotBeDestroyed as alloy_sol_types::SolError>::abi_decode_raw(
+                                data,
+                            )
+                            .map(
+                                IProtocolConfigErrors::LatestActiveKmsEpochCannotBeDestroyed,
+                            )
+                    }
+                    LatestActiveKmsEpochCannotBeDestroyed
+                },
+                {
                     fn EpochActivationSignerDoesNotMatchTxSender(
                         data: &[u8],
                     ) -> alloy_sol_types::Result<IProtocolConfigErrors> {
@@ -15123,6 +17098,17 @@ function updateUserDecryptionThresholdForContext(uint256 kmsContextId, uint256 t
                             )
                     }
                     EpochActivationSignerDoesNotMatchTxSender
+                },
+                {
+                    fn InvalidBlockWindow(
+                        data: &[u8],
+                    ) -> alloy_sol_types::Result<IProtocolConfigErrors> {
+                        <InvalidBlockWindow as alloy_sol_types::SolError>::abi_decode_raw(
+                                data,
+                            )
+                            .map(IProtocolConfigErrors::InvalidBlockWindow)
+                    }
+                    InvalidBlockWindow
                 },
                 {
                     fn KmsSignerAlreadyRegistered(
@@ -15167,6 +17153,17 @@ function updateUserDecryptionThresholdForContext(uint256 kmsContextId, uint256 t
                     EmptyKmsNodes
                 },
                 {
+                    fn InvalidProposalId(
+                        data: &[u8],
+                    ) -> alloy_sol_types::Result<IProtocolConfigErrors> {
+                        <InvalidProposalId as alloy_sol_types::SolError>::abi_decode_raw_validate(
+                                data,
+                            )
+                            .map(IProtocolConfigErrors::InvalidProposalId)
+                    }
+                    InvalidProposalId
+                },
+                {
                     fn KmsSignerSetExceedsProofFormatLimit(
                         data: &[u8],
                     ) -> alloy_sol_types::Result<IProtocolConfigErrors> {
@@ -15178,6 +17175,30 @@ function updateUserDecryptionThresholdForContext(uint256 kmsContextId, uint256 t
                             )
                     }
                     KmsSignerSetExceedsProofFormatLimit
+                },
+                {
+                    fn ZeroGwStartBlock(
+                        data: &[u8],
+                    ) -> alloy_sol_types::Result<IProtocolConfigErrors> {
+                        <ZeroGwStartBlock as alloy_sol_types::SolError>::abi_decode_raw_validate(
+                                data,
+                            )
+                            .map(IProtocolConfigErrors::ZeroGwStartBlock)
+                    }
+                    ZeroGwStartBlock
+                },
+                {
+                    fn LatestActiveKmsContextCannotBeDestroyed(
+                        data: &[u8],
+                    ) -> alloy_sol_types::Result<IProtocolConfigErrors> {
+                        <LatestActiveKmsContextCannotBeDestroyed as alloy_sol_types::SolError>::abi_decode_raw_validate(
+                                data,
+                            )
+                            .map(
+                                IProtocolConfigErrors::LatestActiveKmsContextCannotBeDestroyed,
+                            )
+                    }
+                    LatestActiveKmsContextCannotBeDestroyed
                 },
                 {
                     fn ThresholdExceedsProofFormatLimit(
@@ -15235,19 +17256,6 @@ function updateUserDecryptionThresholdForContext(uint256 kmsContextId, uint256 t
                     InvalidNullThreshold
                 },
                 {
-                    fn CurrentKmsContextCannotBeDestroyed(
-                        data: &[u8],
-                    ) -> alloy_sol_types::Result<IProtocolConfigErrors> {
-                        <CurrentKmsContextCannotBeDestroyed as alloy_sol_types::SolError>::abi_decode_raw_validate(
-                                data,
-                            )
-                            .map(
-                                IProtocolConfigErrors::CurrentKmsContextCannotBeDestroyed,
-                            )
-                    }
-                    CurrentKmsContextCannotBeDestroyed
-                },
-                {
                     fn EpochActivationAlreadyConfirmed(
                         data: &[u8],
                     ) -> alloy_sol_types::Result<IProtocolConfigErrors> {
@@ -15272,6 +17280,17 @@ function updateUserDecryptionThresholdForContext(uint256 kmsContextId, uint256 t
                     KmsContextCreationAlreadyConfirmed
                 },
                 {
+                    fn DuplicateChainId(
+                        data: &[u8],
+                    ) -> alloy_sol_types::Result<IProtocolConfigErrors> {
+                        <DuplicateChainId as alloy_sol_types::SolError>::abi_decode_raw_validate(
+                                data,
+                            )
+                            .map(IProtocolConfigErrors::DuplicateChainId)
+                    }
+                    DuplicateChainId
+                },
+                {
                     fn InvalidKmsContext(
                         data: &[u8],
                     ) -> alloy_sol_types::Result<IProtocolConfigErrors> {
@@ -15281,6 +17300,17 @@ function updateUserDecryptionThresholdForContext(uint256 kmsContextId, uint256 t
                             .map(IProtocolConfigErrors::InvalidKmsContext)
                     }
                     InvalidKmsContext
+                },
+                {
+                    fn InvalidKmsEpoch(
+                        data: &[u8],
+                    ) -> alloy_sol_types::Result<IProtocolConfigErrors> {
+                        <InvalidKmsEpoch as alloy_sol_types::SolError>::abi_decode_raw_validate(
+                                data,
+                            )
+                            .map(IProtocolConfigErrors::InvalidKmsEpoch)
+                    }
+                    InvalidKmsEpoch
                 },
                 {
                     fn KmsNodeNullTxSender(
@@ -15327,6 +17357,17 @@ function updateUserDecryptionThresholdForContext(uint256 kmsContextId, uint256 t
                     EpochNotUnderActiveContext
                 },
                 {
+                    fn EmptySoftwareVersion(
+                        data: &[u8],
+                    ) -> alloy_sol_types::Result<IProtocolConfigErrors> {
+                        <EmptySoftwareVersion as alloy_sol_types::SolError>::abi_decode_raw_validate(
+                                data,
+                            )
+                            .map(IProtocolConfigErrors::EmptySoftwareVersion)
+                    }
+                    EmptySoftwareVersion
+                },
+                {
                     fn KmsContextCreationUnauthorized(
                         data: &[u8],
                     ) -> alloy_sol_types::Result<IProtocolConfigErrors> {
@@ -15336,6 +17377,28 @@ function updateUserDecryptionThresholdForContext(uint256 kmsContextId, uint256 t
                             .map(IProtocolConfigErrors::KmsContextCreationUnauthorized)
                     }
                     KmsContextCreationUnauthorized
+                },
+                {
+                    fn EmptyChainUpgradeWindows(
+                        data: &[u8],
+                    ) -> alloy_sol_types::Result<IProtocolConfigErrors> {
+                        <EmptyChainUpgradeWindows as alloy_sol_types::SolError>::abi_decode_raw_validate(
+                                data,
+                            )
+                            .map(IProtocolConfigErrors::EmptyChainUpgradeWindows)
+                    }
+                    EmptyChainUpgradeWindows
+                },
+                {
+                    fn ZeroChainId(
+                        data: &[u8],
+                    ) -> alloy_sol_types::Result<IProtocolConfigErrors> {
+                        <ZeroChainId as alloy_sol_types::SolError>::abi_decode_raw_validate(
+                                data,
+                            )
+                            .map(IProtocolConfigErrors::ZeroChainId)
+                    }
+                    ZeroChainId
                 },
                 {
                     fn InvalidHighThreshold(
@@ -15382,6 +17445,19 @@ function updateUserDecryptionThresholdForContext(uint256 kmsContextId, uint256 t
                     NonIncreasingKmsContextId
                 },
                 {
+                    fn LatestActiveKmsEpochCannotBeDestroyed(
+                        data: &[u8],
+                    ) -> alloy_sol_types::Result<IProtocolConfigErrors> {
+                        <LatestActiveKmsEpochCannotBeDestroyed as alloy_sol_types::SolError>::abi_decode_raw_validate(
+                                data,
+                            )
+                            .map(
+                                IProtocolConfigErrors::LatestActiveKmsEpochCannotBeDestroyed,
+                            )
+                    }
+                    LatestActiveKmsEpochCannotBeDestroyed
+                },
+                {
                     fn EpochActivationSignerDoesNotMatchTxSender(
                         data: &[u8],
                     ) -> alloy_sol_types::Result<IProtocolConfigErrors> {
@@ -15393,6 +17469,17 @@ function updateUserDecryptionThresholdForContext(uint256 kmsContextId, uint256 t
                             )
                     }
                     EpochActivationSignerDoesNotMatchTxSender
+                },
+                {
+                    fn InvalidBlockWindow(
+                        data: &[u8],
+                    ) -> alloy_sol_types::Result<IProtocolConfigErrors> {
+                        <InvalidBlockWindow as alloy_sol_types::SolError>::abi_decode_raw_validate(
+                                data,
+                            )
+                            .map(IProtocolConfigErrors::InvalidBlockWindow)
+                    }
+                    InvalidBlockWindow
                 },
                 {
                     fn KmsSignerAlreadyRegistered(
@@ -15419,13 +17506,23 @@ function updateUserDecryptionThresholdForContext(uint256 kmsContextId, uint256 t
         #[inline]
         fn abi_encoded_size(&self) -> usize {
             match self {
-                Self::CurrentKmsContextCannotBeDestroyed(inner) => {
-                    <CurrentKmsContextCannotBeDestroyed as alloy_sol_types::SolError>::abi_encoded_size(
+                Self::DuplicateChainId(inner) => {
+                    <DuplicateChainId as alloy_sol_types::SolError>::abi_encoded_size(
+                        inner,
+                    )
+                }
+                Self::EmptyChainUpgradeWindows(inner) => {
+                    <EmptyChainUpgradeWindows as alloy_sol_types::SolError>::abi_encoded_size(
                         inner,
                     )
                 }
                 Self::EmptyKmsNodes(inner) => {
                     <EmptyKmsNodes as alloy_sol_types::SolError>::abi_encoded_size(inner)
+                }
+                Self::EmptySoftwareVersion(inner) => {
+                    <EmptySoftwareVersion as alloy_sol_types::SolError>::abi_encoded_size(
+                        inner,
+                    )
                 }
                 Self::EpochActivationAlreadyConfirmed(inner) => {
                     <EpochActivationAlreadyConfirmed as alloy_sol_types::SolError>::abi_encoded_size(
@@ -15447,6 +17544,11 @@ function updateUserDecryptionThresholdForContext(uint256 kmsContextId, uint256 t
                         inner,
                     )
                 }
+                Self::InvalidBlockWindow(inner) => {
+                    <InvalidBlockWindow as alloy_sol_types::SolError>::abi_encoded_size(
+                        inner,
+                    )
+                }
                 Self::InvalidEpoch(inner) => {
                     <InvalidEpoch as alloy_sol_types::SolError>::abi_encoded_size(inner)
                 }
@@ -15460,8 +17562,18 @@ function updateUserDecryptionThresholdForContext(uint256 kmsContextId, uint256 t
                         inner,
                     )
                 }
+                Self::InvalidKmsEpoch(inner) => {
+                    <InvalidKmsEpoch as alloy_sol_types::SolError>::abi_encoded_size(
+                        inner,
+                    )
+                }
                 Self::InvalidNullThreshold(inner) => {
                     <InvalidNullThreshold as alloy_sol_types::SolError>::abi_encoded_size(
+                        inner,
+                    )
+                }
+                Self::InvalidProposalId(inner) => {
+                    <InvalidProposalId as alloy_sol_types::SolError>::abi_encoded_size(
                         inner,
                     )
                 }
@@ -15510,6 +17622,16 @@ function updateUserDecryptionThresholdForContext(uint256 kmsContextId, uint256 t
                         inner,
                     )
                 }
+                Self::LatestActiveKmsContextCannotBeDestroyed(inner) => {
+                    <LatestActiveKmsContextCannotBeDestroyed as alloy_sol_types::SolError>::abi_encoded_size(
+                        inner,
+                    )
+                }
+                Self::LatestActiveKmsEpochCannotBeDestroyed(inner) => {
+                    <LatestActiveKmsEpochCannotBeDestroyed as alloy_sol_types::SolError>::abi_encoded_size(
+                        inner,
+                    )
+                }
                 Self::NonIncreasingEpochId(inner) => {
                     <NonIncreasingEpochId as alloy_sol_types::SolError>::abi_encoded_size(
                         inner,
@@ -15525,19 +17647,39 @@ function updateUserDecryptionThresholdForContext(uint256 kmsContextId, uint256 t
                         inner,
                     )
                 }
+                Self::ZeroChainId(inner) => {
+                    <ZeroChainId as alloy_sol_types::SolError>::abi_encoded_size(inner)
+                }
+                Self::ZeroGwStartBlock(inner) => {
+                    <ZeroGwStartBlock as alloy_sol_types::SolError>::abi_encoded_size(
+                        inner,
+                    )
+                }
             }
         }
         #[inline]
         fn abi_encode_raw(&self, out: &mut alloy_sol_types::private::Vec<u8>) {
             match self {
-                Self::CurrentKmsContextCannotBeDestroyed(inner) => {
-                    <CurrentKmsContextCannotBeDestroyed as alloy_sol_types::SolError>::abi_encode_raw(
+                Self::DuplicateChainId(inner) => {
+                    <DuplicateChainId as alloy_sol_types::SolError>::abi_encode_raw(
+                        inner,
+                        out,
+                    )
+                }
+                Self::EmptyChainUpgradeWindows(inner) => {
+                    <EmptyChainUpgradeWindows as alloy_sol_types::SolError>::abi_encode_raw(
                         inner,
                         out,
                     )
                 }
                 Self::EmptyKmsNodes(inner) => {
                     <EmptyKmsNodes as alloy_sol_types::SolError>::abi_encode_raw(
+                        inner,
+                        out,
+                    )
+                }
+                Self::EmptySoftwareVersion(inner) => {
+                    <EmptySoftwareVersion as alloy_sol_types::SolError>::abi_encode_raw(
                         inner,
                         out,
                     )
@@ -15566,6 +17708,12 @@ function updateUserDecryptionThresholdForContext(uint256 kmsContextId, uint256 t
                         out,
                     )
                 }
+                Self::InvalidBlockWindow(inner) => {
+                    <InvalidBlockWindow as alloy_sol_types::SolError>::abi_encode_raw(
+                        inner,
+                        out,
+                    )
+                }
                 Self::InvalidEpoch(inner) => {
                     <InvalidEpoch as alloy_sol_types::SolError>::abi_encode_raw(
                         inner,
@@ -15584,8 +17732,20 @@ function updateUserDecryptionThresholdForContext(uint256 kmsContextId, uint256 t
                         out,
                     )
                 }
+                Self::InvalidKmsEpoch(inner) => {
+                    <InvalidKmsEpoch as alloy_sol_types::SolError>::abi_encode_raw(
+                        inner,
+                        out,
+                    )
+                }
                 Self::InvalidNullThreshold(inner) => {
                     <InvalidNullThreshold as alloy_sol_types::SolError>::abi_encode_raw(
+                        inner,
+                        out,
+                    )
+                }
+                Self::InvalidProposalId(inner) => {
+                    <InvalidProposalId as alloy_sol_types::SolError>::abi_encode_raw(
                         inner,
                         out,
                     )
@@ -15644,6 +17804,18 @@ function updateUserDecryptionThresholdForContext(uint256 kmsContextId, uint256 t
                         out,
                     )
                 }
+                Self::LatestActiveKmsContextCannotBeDestroyed(inner) => {
+                    <LatestActiveKmsContextCannotBeDestroyed as alloy_sol_types::SolError>::abi_encode_raw(
+                        inner,
+                        out,
+                    )
+                }
+                Self::LatestActiveKmsEpochCannotBeDestroyed(inner) => {
+                    <LatestActiveKmsEpochCannotBeDestroyed as alloy_sol_types::SolError>::abi_encode_raw(
+                        inner,
+                        out,
+                    )
+                }
                 Self::NonIncreasingEpochId(inner) => {
                     <NonIncreasingEpochId as alloy_sol_types::SolError>::abi_encode_raw(
                         inner,
@@ -15662,6 +17834,18 @@ function updateUserDecryptionThresholdForContext(uint256 kmsContextId, uint256 t
                         out,
                     )
                 }
+                Self::ZeroChainId(inner) => {
+                    <ZeroChainId as alloy_sol_types::SolError>::abi_encode_raw(
+                        inner,
+                        out,
+                    )
+                }
+                Self::ZeroGwStartBlock(inner) => {
+                    <ZeroGwStartBlock as alloy_sol_types::SolError>::abi_encode_raw(
+                        inner,
+                        out,
+                    )
+                }
             }
         }
     }
@@ -15672,11 +17856,15 @@ function updateUserDecryptionThresholdForContext(uint256 kmsContextId, uint256 t
         #[allow(missing_docs)]
         ActivateEpoch(ActivateEpoch),
         #[allow(missing_docs)]
+        CoprocessorUpgradeProposed(CoprocessorUpgradeProposed),
+        #[allow(missing_docs)]
         EpochActivationConfirmation(EpochActivationConfirmation),
         #[allow(missing_docs)]
         KmsContextCreationConfirmation(KmsContextCreationConfirmation),
         #[allow(missing_docs)]
         KmsContextDestroyed(KmsContextDestroyed),
+        #[allow(missing_docs)]
+        KmsEpochDestroyed(KmsEpochDestroyed),
         #[allow(missing_docs)]
         KmsGenThresholdUpdated(KmsGenThresholdUpdated),
         #[allow(missing_docs)]
@@ -15707,6 +17895,11 @@ function updateUserDecryptionThresholdForContext(uint256 kmsContextId, uint256 t
         ///
         /// Prefer using `SolInterface` methods instead.
         pub const SELECTORS: &'static [[u8; 32usize]] = &[
+            [
+                3u8, 67u8, 96u8, 19u8, 7u8, 95u8, 141u8, 26u8, 187u8, 23u8, 129u8, 219u8,
+                202u8, 244u8, 24u8, 252u8, 118u8, 252u8, 121u8, 125u8, 26u8, 181u8, 28u8,
+                56u8, 102u8, 76u8, 26u8, 81u8, 243u8, 205u8, 87u8, 249u8,
+            ],
             [
                 10u8, 28u8, 36u8, 194u8, 186u8, 94u8, 110u8, 27u8, 26u8, 133u8, 133u8,
                 121u8, 94u8, 91u8, 120u8, 30u8, 55u8, 42u8, 238u8, 29u8, 182u8, 134u8,
@@ -15763,6 +17956,11 @@ function updateUserDecryptionThresholdForContext(uint256 kmsContextId, uint256 t
                 173u8, 99u8, 222u8, 86u8, 33u8, 211u8, 91u8, 164u8, 75u8, 79u8,
             ],
             [
+                196u8, 47u8, 30u8, 202u8, 200u8, 212u8, 136u8, 30u8, 249u8, 253u8, 51u8,
+                92u8, 169u8, 142u8, 231u8, 37u8, 74u8, 67u8, 107u8, 146u8, 186u8, 135u8,
+                74u8, 96u8, 158u8, 80u8, 167u8, 211u8, 12u8, 72u8, 123u8, 141u8,
+            ],
+            [
                 213u8, 113u8, 191u8, 131u8, 62u8, 65u8, 85u8, 59u8, 190u8, 38u8, 14u8,
                 0u8, 179u8, 175u8, 122u8, 14u8, 145u8, 170u8, 253u8, 108u8, 220u8, 35u8,
                 138u8, 128u8, 58u8, 169u8, 172u8, 14u8, 115u8, 239u8, 237u8, 101u8,
@@ -15782,7 +17980,7 @@ function updateUserDecryptionThresholdForContext(uint256 kmsContextId, uint256 t
     #[automatically_derived]
     impl alloy_sol_types::SolEventInterface for IProtocolConfigEvents {
         const NAME: &'static str = "IProtocolConfigEvents";
-        const COUNT: usize = 14usize;
+        const COUNT: usize = 16usize;
         fn decode_raw_log(
             topics: &[alloy_sol_types::Word],
             data: &[u8],
@@ -15794,6 +17992,15 @@ function updateUserDecryptionThresholdForContext(uint256 kmsContextId, uint256 t
                             data,
                         )
                         .map(Self::ActivateEpoch)
+                }
+                Some(
+                    <CoprocessorUpgradeProposed as alloy_sol_types::SolEvent>::SIGNATURE_HASH,
+                ) => {
+                    <CoprocessorUpgradeProposed as alloy_sol_types::SolEvent>::decode_raw_log(
+                            topics,
+                            data,
+                        )
+                        .map(Self::CoprocessorUpgradeProposed)
                 }
                 Some(
                     <EpochActivationConfirmation as alloy_sol_types::SolEvent>::SIGNATURE_HASH,
@@ -15821,6 +18028,15 @@ function updateUserDecryptionThresholdForContext(uint256 kmsContextId, uint256 t
                             data,
                         )
                         .map(Self::KmsContextDestroyed)
+                }
+                Some(
+                    <KmsEpochDestroyed as alloy_sol_types::SolEvent>::SIGNATURE_HASH,
+                ) => {
+                    <KmsEpochDestroyed as alloy_sol_types::SolEvent>::decode_raw_log(
+                            topics,
+                            data,
+                        )
+                        .map(Self::KmsEpochDestroyed)
                 }
                 Some(
                     <KmsGenThresholdUpdated as alloy_sol_types::SolEvent>::SIGNATURE_HASH,
@@ -15927,6 +18143,9 @@ function updateUserDecryptionThresholdForContext(uint256 kmsContextId, uint256 t
                 Self::ActivateEpoch(inner) => {
                     alloy_sol_types::private::IntoLogData::to_log_data(inner)
                 }
+                Self::CoprocessorUpgradeProposed(inner) => {
+                    alloy_sol_types::private::IntoLogData::to_log_data(inner)
+                }
                 Self::EpochActivationConfirmation(inner) => {
                     alloy_sol_types::private::IntoLogData::to_log_data(inner)
                 }
@@ -15934,6 +18153,9 @@ function updateUserDecryptionThresholdForContext(uint256 kmsContextId, uint256 t
                     alloy_sol_types::private::IntoLogData::to_log_data(inner)
                 }
                 Self::KmsContextDestroyed(inner) => {
+                    alloy_sol_types::private::IntoLogData::to_log_data(inner)
+                }
+                Self::KmsEpochDestroyed(inner) => {
                     alloy_sol_types::private::IntoLogData::to_log_data(inner)
                 }
                 Self::KmsGenThresholdUpdated(inner) => {
@@ -15973,6 +18195,9 @@ function updateUserDecryptionThresholdForContext(uint256 kmsContextId, uint256 t
                 Self::ActivateEpoch(inner) => {
                     alloy_sol_types::private::IntoLogData::into_log_data(inner)
                 }
+                Self::CoprocessorUpgradeProposed(inner) => {
+                    alloy_sol_types::private::IntoLogData::into_log_data(inner)
+                }
                 Self::EpochActivationConfirmation(inner) => {
                     alloy_sol_types::private::IntoLogData::into_log_data(inner)
                 }
@@ -15980,6 +18205,9 @@ function updateUserDecryptionThresholdForContext(uint256 kmsContextId, uint256 t
                     alloy_sol_types::private::IntoLogData::into_log_data(inner)
                 }
                 Self::KmsContextDestroyed(inner) => {
+                    alloy_sol_types::private::IntoLogData::into_log_data(inner)
+                }
+                Self::KmsEpochDestroyed(inner) => {
                     alloy_sol_types::private::IntoLogData::into_log_data(inner)
                 }
                 Self::KmsGenThresholdUpdated(inner) => {
@@ -16264,6 +18492,13 @@ the bytecode concatenated with the constructor's ABI-encoded arguments.*/
                 },
             )
         }
+        ///Creates a new call builder for the [`destroyKmsEpoch`] function.
+        pub fn destroyKmsEpoch(
+            &self,
+            epochId: alloy::sol_types::private::primitives::aliases::U256,
+        ) -> alloy_contract::SolCallBuilder<&P, destroyKmsEpochCall, N> {
+            self.call_builder(&destroyKmsEpochCall { epochId })
+        }
         ///Creates a new call builder for the [`getCurrentKmsContextAndEpoch`] function.
         pub fn getCurrentKmsContextAndEpoch(
             &self,
@@ -16505,6 +18740,25 @@ the bytecode concatenated with the constructor's ABI-encoded arguments.*/
                 },
             )
         }
+        ///Creates a new call builder for the [`proposeCoprocessorUpgrade`] function.
+        pub fn proposeCoprocessorUpgrade(
+            &self,
+            proposalId: alloy::sol_types::private::primitives::aliases::U256,
+            softwareVersion: alloy::sol_types::private::String,
+            chainUpgradeWindows: alloy::sol_types::private::Vec<
+                <ChainUpgradeWindow as alloy::sol_types::SolType>::RustType,
+            >,
+            gwStartBlock: u64,
+        ) -> alloy_contract::SolCallBuilder<&P, proposeCoprocessorUpgradeCall, N> {
+            self.call_builder(
+                &proposeCoprocessorUpgradeCall {
+                    proposalId,
+                    softwareVersion,
+                    chainUpgradeWindows,
+                    gwStartBlock,
+                },
+            )
+        }
         ///Creates a new call builder for the [`updateKmsGenThresholdForContext`] function.
         pub fn updateKmsGenThresholdForContext(
             &self,
@@ -16587,6 +18841,12 @@ the bytecode concatenated with the constructor's ABI-encoded arguments.*/
         ) -> alloy_contract::Event<&P, ActivateEpoch, N> {
             self.event_filter::<ActivateEpoch>()
         }
+        ///Creates a new event filter for the [`CoprocessorUpgradeProposed`] event.
+        pub fn CoprocessorUpgradeProposed_filter(
+            &self,
+        ) -> alloy_contract::Event<&P, CoprocessorUpgradeProposed, N> {
+            self.event_filter::<CoprocessorUpgradeProposed>()
+        }
         ///Creates a new event filter for the [`EpochActivationConfirmation`] event.
         pub fn EpochActivationConfirmation_filter(
             &self,
@@ -16604,6 +18864,12 @@ the bytecode concatenated with the constructor's ABI-encoded arguments.*/
             &self,
         ) -> alloy_contract::Event<&P, KmsContextDestroyed, N> {
             self.event_filter::<KmsContextDestroyed>()
+        }
+        ///Creates a new event filter for the [`KmsEpochDestroyed`] event.
+        pub fn KmsEpochDestroyed_filter(
+            &self,
+        ) -> alloy_contract::Event<&P, KmsEpochDestroyed, N> {
+            self.event_filter::<KmsEpochDestroyed>()
         }
         ///Creates a new event filter for the [`KmsGenThresholdUpdated`] event.
         pub fn KmsGenThresholdUpdated_filter(

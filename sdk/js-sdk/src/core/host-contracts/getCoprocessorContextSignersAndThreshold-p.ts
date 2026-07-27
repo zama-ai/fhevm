@@ -5,7 +5,7 @@ import { asUint8Number, isUint8 } from '../base/uint.js';
 import { executeWithBatching } from '../base/promise.js';
 import { getTrustedClient } from '../runtime/CoreFhevm-p.js';
 import { getCoprocessorSignersAbi, getThresholdAbi } from './abi-fragments/fragments.js';
-import { CACHE_TTL_24H, createCachedFetch } from '../base/cachedFetch.js';
+import { CACHE_TTL_15MIN, createCachedFetch } from '../base/cachedFetch.js';
 
 ////////////////////////////////////////////////////////////////////////////////
 
@@ -30,7 +30,7 @@ const cachedGetCoprocessorContextSignersAndThreshold = createCachedFetch<Context
   executeFn: _getCoprocessorContextSignersAndThreshold,
   cacheKeyFn: (context, params) => `${context.runtime.uid.toLowerCase()}:${params.address.toLowerCase()}`,
   // Signers are not Use long TTL
-  ttlMs: CACHE_TTL_24H,
+  ttlMs: CACHE_TTL_15MIN,
 });
 
 ////////////////////////////////////////////////////////////////////////////////

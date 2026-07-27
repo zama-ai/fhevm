@@ -56,12 +56,6 @@ update-bindings: ensure-addresses
 lint-bindings:
 	cd rust_bindings && cargo clippy -- -D warnings && cd ..
 
-check-mocks:
-	node scripts/mock_contracts_cli.js check
-
-update-mocks:
-	node scripts/mock_contracts_cli.js update
-
 # Here, we purposely use a logical OR (||) instead of an if statement with a negation to avoid having
 # discrepancies between running locally and in the CI. This is because some shell environments
 # handle exit statuses of pipelines differently.
@@ -76,7 +70,7 @@ update-selectors: ensure-addresses
 	DAPP_OUT=$(FORGE_DAPP_OUT) forge selectors list | tail -n +2 > ./selectors.txt
 
 # Update auto-generated files for conformance checks
-update-conformance: update-bindings update-mocks update-selectors
+update-conformance: update-bindings update-selectors
 
 # Conform to pre-commit checks
 conformance: prettier update-conformance

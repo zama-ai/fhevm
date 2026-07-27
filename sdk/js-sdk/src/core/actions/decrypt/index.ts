@@ -17,12 +17,6 @@ export { type DecryptValueParameters, type DecryptValueReturnType, decryptValue 
 export { type DecryptValuesParameters, type DecryptValuesReturnType, decryptValues } from './decryptValues.js';
 
 export {
-  type DecryptKmsSigncryptedSharesParameters,
-  type DecryptKmsSigncryptedSharesReturnType,
-  decryptKmsSigncryptedShares,
-} from './decryptKmsSigncryptedShares.js';
-
-export {
   type CanDecryptValuesFromPairsWithUserAddressParameters,
   type CanDecryptValuesFromPairsWithPermitParameters,
   type CanDecryptValuesFromPairsReturnType,

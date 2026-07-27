@@ -1,0 +1,113 @@
+# charts/contracts overlay for deploying gateway-contracts against
+# anvil-gateway, for the fhevm e2e preview namespace (4-party dedicated
+# threshold+enclave KMS, single coprocessor, single custodian, single host
+# chain).
+#
+# Deployed as:
+#   helm upgrade --install gateway-contracts oci://hub.zama.org/ghcr/zama-ai/fhevm/charts/contracts \
+#     -n <namespace> -f this-file
+#
+# Real friction points found and fixed while getting this to deploy:
+#   1. HARDHAT_NETWORK must be set to a profile that reads RPC_URL (here:
+#      "staging", chainId 54321 - matches anvil-gateway's chain id). Omitting
+#      it silently falls back to Hardhat's own in-memory network simulator,
+#      which has a *different* default mnemonic than Foundry/anvil's - this
+#      produces a confusing "sender's balance is 0" error that looks like a
+#      funding problem but is actually a wrong-network problem.
+#   2. Gateway contracts have no "skip payment" mode, even for test setups:
+#      ZAMA_OFT_ADDRESS and FEES_SENDER_TO_BURNER_ADDRESS are always required.
+#      fhevm-cli's compose flow deploys a mocked ZamaOFT ERC20 as its own step
+#      first and feeds the resulting address in; FeesSenderToBurner can just be
+#      any non-zero address (no logic to test on it).
+#   3. task:addHostChainsToGatewayConfig is deliberately NOT run as part of this
+#      chart: it needs the real FHEVMExecutor/ACL addresses from the host chain.
+#      Deferred to a follow-up step (values-gateway-add-host-chains-e2e.yaml)
+#      run after host-contracts deploys.
+#
+# NUM_KMS_NODES / KMS_TX_SENDER_ADDRESS_x / KMS_SIGNER_ADDRESS_x / KMS_NODE_IP_ADDRESS_x /
+# KMS_NODE_STORAGE_URL_x / the 4 threshold fields are all generated dynamically for
+# NB_KMS_CORE real parties (not a fixed 4) by the "Wire real KMS node info into
+# gateway-contracts values" step in preview-env-deploy.yml, from:
+#   - "Discover KMS party signer addresses" (real kms-core operator identities + S3
+#     public vault endpoint)
+#   - "Derive KMS tx-sender wallets" (one real, funded, per-party wallet - previously a
+#     single shared placeholder wallet with no per-party mapping, see git history)
+# Nothing to fill in here - see that step for the generated env entries.
+scDeploy:
+  enabled: true
+  image:
+    name: hub.zama.org/ghcr/zama-ai/fhevm/gateway-contracts
+    tag: latest
+  # Chart default (512Mi limit) OOMKills on this suite's size - Hardhat compiling
+  # + deploying the full set of gateway contracts (GatewayConfig, KMSGeneration,
+  # InputVerification, Decryption, oracle contracts, ...) under ts-node needs
+  # real headroom (same fix as values-host-contracts-e2e.yaml).
+  resources:
+    requests:
+      cpu: 500m
+      memory: 1Gi
+    limits:
+      cpu: "2"
+      memory: 4Gi
+  configmap:
+    name: gw-sc-addresses
+  env:
+    - {name: HARDHAT_NETWORK, value: "staging"}
+    # Must match anvil-gateway's --mnemonic so DEPLOYER_PRIVATE_KEY's address is funded.
+    - {name: MNEMONIC, value: "test test test test test test test test test test test junk"}
+    - {name: RPC_URL, value: "http://anvil-gateway-anvil-node:8546"}
+    # Hardhat account #0 (well-known "test test test ... junk" mnemonic) - deterministic,
+    # ephemeral-testing deployer only, never use for anything real.
+    - {name: DEPLOYER_PRIVATE_KEY, value: "0xac0974bec39a17e36ba4a6b4d238ff944bacb478cbed5efcae784d7bf4f2ff80"}
+    # Hardhat account #3 - mirrors fhevm-cli's "Gateway (relayer account)" role for the
+    # mocked-payment tx sender (funded with mocked $ZAMA + max-approved on ProtocolPayment below).
+    - {name: TX_SENDER_PRIVATE_KEY, value: "0x7c852118294e51e653712a81e05800f419141751be58f605c371e15141b007a6"}
+    # No real FeesSenderToBurner contract exists in this test setup; per fhevm-cli's own
+    # .env.gateway-sc template, this can be anything except address(0) - there's no logic
+    # to test on it.
+    - {name: FEES_SENDER_TO_BURNER_ADDRESS, value: "0x0000111122223333444455556666777788889999"}
+    # NUM_KMS_NODES / KMS_TX_SENDER_ADDRESS_x / KMS_SIGNER_ADDRESS_x /
+    # KMS_NODE_IP_ADDRESS_x / KMS_NODE_STORAGE_URL_x / the 4 threshold fields
+    # are appended dynamically for NB_KMS_CORE parties - see header note.
+    - {name: KMS_CONTEXT_ID, value: "3166189940082864718613269121331309980362851143201109172953918312716374638593"}
+    # NUM_COPROCESSORS / COPROCESSOR_THRESHOLD / COPROCESSOR_TX_SENDER_ADDRESS_x /
+    # COPROCESSOR_SIGNER_ADDRESS_x / COPROCESSOR_S3_BUCKET_URL_x are appended
+    # dynamically for the NB_COPROCESSOR independent coprocessor parties by the
+    # "Wire real KMS node info into gateway-contracts values" step in
+    # preview-env-deploy.yml: each party's tx-sender/signer comes from the derived
+    # coprocessor wallets and its S3 bucket ROOT url from that party's
+    # coprocessor-<i> ConfigMap (S3_BUCKET_NAME key, written by
+    # crossplane/coprocessor-infra-<i>). Threshold is a simple majority of N.
+    # Not set statically here so the two never duplicate/conflict.
+    - {name: NUM_CUSTODIANS, value: "1"}
+    # PLACEHOLDER: mocked custodian identity + throwaway encryption key (test data only, taken
+    # from fhevm-cli's own .env.gateway-sc template - not a real custodian key).
+    - {name: CUSTODIAN_TX_SENDER_ADDRESS_0, value: "0x9965507D1a55bcC2695C58ba16FB37d819B0A4dc"}
+    - {name: CUSTODIAN_SIGNER_ADDRESS_0, value: "0x9965507D1a55bcC2695C58ba16FB37d819B0A4dc"}
+    - {name: CUSTODIAN_ENCRYPTION_KEY_0, value: "0xea8b8b710d770493a41b588808ea8e09d986561f73d523227718233f3b4742de793f18a9885136a9e7054b00ba0050a17f0c7d1bf180aaff5ece0fa3343afb1b"}
+    - {name: PROTOCOL_NAME, value: "fhevm-ci"}
+    - {name: PROTOCOL_WEBSITE, value: "https://example.invalid"}
+    - {name: INPUT_VERIFICATION_PRICE, value: "10000000000000000000"}
+    - {name: PUBLIC_DECRYPTION_PRICE, value: "1000000000000000000"}
+    - {name: USER_DECRYPTION_PRICE, value: "1000000000000000000"}
+  deployCommands:
+    # Deploy the mocked ZamaOFT ERC20 first and export its address for the main deploy
+    # (see friction point #2 above).
+    - npx hardhat task:deployMockedZamaOFT
+    - export ZAMA_OFT_ADDRESS=$(cut -d'=' -f2 addresses/.env.mocked_payment_bridging | tr -d '[:space:]')
+    - npx hardhat task:deployAllGatewayContracts
+    # task:addHostChainsToGatewayConfig intentionally omitted here - see friction point #3 above.
+    # Mirrors fhevm-cli's "gateway-set-relayer-mocked-payment" step: fund + max-approve the
+    # relayer's tx sender so it can pay for input verification / decryption requests.
+    - export PROTOCOL_PAYMENT_ADDRESS=$(grep '^PROTOCOL_PAYMENT_ADDRESS=' addresses/.env.gateway | cut -d'=' -f2)
+    - npx hardhat task:setTxSenderMockedPayment
+  verifyContracts: false
+persistence:
+  enabled: true
+  volumeClaim:
+    name: gateway-sc-deploy-workdir
+    create: true
+    storageCapacity: 1Gi
+    storageClassName: ""
+scUpgrade:
+  enabled: false

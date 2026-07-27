@@ -100,8 +100,8 @@ pub struct Eip712UnifiedUserDecryptPayloadJson {
     /// Solana ed25519 attestation type the ed25519 auth fields travel as the
     /// typed `solana*` fields below rather than packed here, so `extraData`
     /// is context-only on no-proof requests. Opaque to the relayer; forwarded verbatim.
+    #[schema(schema_with = crate::http::extra_data_decryption_schema)]
     #[validate(custom(function = "crate::http::validate_extra_data_field_decryption"))]
-    #[schema(example = "0x00")]
     pub extra_data: String,
 
     /// RFC-021 Solana ed25519 identity (32-byte pubkey, `0x` + 64 hex). Required for the

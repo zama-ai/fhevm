@@ -58,9 +58,6 @@ DROP FUNCTION IF EXISTS inject_ciphertext_drift_once();
 DROP TABLE IF EXISTS drift_injection_state;
 `;
 
-export const driftDatabaseName = (instanceIndex: number) =>
-  instanceIndex === 0 ? "coprocessor" : `coprocessor_${instanceIndex}`;
-
 /** Parses a coprocessor instance index from env or CLI input. */
 export const parseDriftInstanceIndex = (value: string) => {
   if (!/^\d+$/.test(value)) {

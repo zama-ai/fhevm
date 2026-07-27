@@ -35,6 +35,7 @@ interface IKMSGeneration {
     error KmsAlreadySignedForKeygen(uint256 keyId, address kmsSigner);
     error KmsAlreadySignedForPrepKeygen(uint256 prepKeygenId, address kmsSigner);
     error KmsSignerDoesNotMatchTxSender(address signerAddress, address txSenderAddress);
+    error NotKmsSigner(address signerAddress);
     error NotKmsTxSender(address txSenderAddress);
     error PrepKeygenNotRequested(uint256 prepKeygenId);
     error UnsupportedExtraDataVersion(uint8 version);
@@ -970,6 +971,17 @@ interface IKMSGeneration {
       },
       {
         "name": "txSenderAddress",
+        "type": "address",
+        "internalType": "address"
+      }
+    ]
+  },
+  {
+    "type": "error",
+    "name": "NotKmsSigner",
+    "inputs": [
+      {
+        "name": "signerAddress",
         "type": "address",
         "internalType": "address"
       }
@@ -3392,6 +3404,86 @@ error KmsSignerDoesNotMatchTxSender(address signerAddress, address txSenderAddre
                     ),
                     <alloy::sol_types::sol_data::Address as alloy_sol_types::SolType>::tokenize(
                         &self.txSenderAddress,
+                    ),
+                )
+            }
+            #[inline]
+            fn abi_decode_raw_validate(data: &[u8]) -> alloy_sol_types::Result<Self> {
+                <Self::Parameters<
+                    '_,
+                > as alloy_sol_types::SolType>::abi_decode_sequence_validate(data)
+                    .map(Self::new)
+            }
+        }
+    };
+    #[derive(serde::Serialize, serde::Deserialize)]
+    #[derive(Default, Debug, PartialEq, Eq, Hash)]
+    /**Custom error with signature `NotKmsSigner(address)` and selector `0x2a7c6ef6`.
+```solidity
+error NotKmsSigner(address signerAddress);
+```*/
+    #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
+    #[derive(Clone)]
+    pub struct NotKmsSigner {
+        #[allow(missing_docs)]
+        pub signerAddress: alloy::sol_types::private::Address,
+    }
+    #[allow(
+        non_camel_case_types,
+        non_snake_case,
+        clippy::pub_underscore_fields,
+        clippy::style
+    )]
+    const _: () = {
+        use alloy::sol_types as alloy_sol_types;
+        #[doc(hidden)]
+        type UnderlyingSolTuple<'a> = (alloy::sol_types::sol_data::Address,);
+        #[doc(hidden)]
+        type UnderlyingRustTuple<'a> = (alloy::sol_types::private::Address,);
+        #[cfg(test)]
+        #[allow(dead_code, unreachable_patterns)]
+        fn _type_assertion(
+            _t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>,
+        ) {
+            match _t {
+                alloy_sol_types::private::AssertTypeEq::<
+                    <UnderlyingSolTuple as alloy_sol_types::SolType>::RustType,
+                >(_) => {}
+            }
+        }
+        #[automatically_derived]
+        #[doc(hidden)]
+        impl ::core::convert::From<NotKmsSigner> for UnderlyingRustTuple<'_> {
+            fn from(value: NotKmsSigner) -> Self {
+                (value.signerAddress,)
+            }
+        }
+        #[automatically_derived]
+        #[doc(hidden)]
+        impl ::core::convert::From<UnderlyingRustTuple<'_>> for NotKmsSigner {
+            fn from(tuple: UnderlyingRustTuple<'_>) -> Self {
+                Self { signerAddress: tuple.0 }
+            }
+        }
+        #[automatically_derived]
+        impl alloy_sol_types::SolError for NotKmsSigner {
+            type Parameters<'a> = UnderlyingSolTuple<'a>;
+            type Token<'a> = <Self::Parameters<
+                'a,
+            > as alloy_sol_types::SolType>::Token<'a>;
+            const SIGNATURE: &'static str = "NotKmsSigner(address)";
+            const SELECTOR: [u8; 4] = [42u8, 124u8, 110u8, 246u8];
+            #[inline]
+            fn new<'a>(
+                tuple: <Self::Parameters<'a> as alloy_sol_types::SolType>::RustType,
+            ) -> Self {
+                tuple.into()
+            }
+            #[inline]
+            fn tokenize(&self) -> Self::Token<'_> {
+                (
+                    <alloy::sol_types::sol_data::Address as alloy_sol_types::SolType>::tokenize(
+                        &self.signerAddress,
                     ),
                 )
             }
@@ -9052,6 +9144,8 @@ function prepKeygenResponse(uint256 prepKeygenId, bytes memory signature) extern
         #[allow(missing_docs)]
         KmsSignerDoesNotMatchTxSender(KmsSignerDoesNotMatchTxSender),
         #[allow(missing_docs)]
+        NotKmsSigner(NotKmsSigner),
+        #[allow(missing_docs)]
         NotKmsTxSender(NotKmsTxSender),
         #[allow(missing_docs)]
         PrepKeygenNotRequested(PrepKeygenNotRequested),
@@ -9071,6 +9165,7 @@ function prepKeygenResponse(uint256 prepKeygenId, bytes memory signature) extern
             [10u8, 183u8, 246u8, 135u8],
             [13u8, 134u8, 245u8, 33u8],
             [33u8, 57u8, 204u8, 44u8],
+            [42u8, 124u8, 110u8, 246u8],
             [51u8, 202u8, 31u8, 227u8],
             [59u8, 133u8, 61u8, 168u8],
             [111u8, 188u8, 221u8, 43u8],
@@ -9095,7 +9190,7 @@ function prepKeygenResponse(uint256 prepKeygenId, bytes memory signature) extern
     impl alloy_sol_types::SolInterface for IKMSGenerationErrors {
         const NAME: &'static str = "IKMSGenerationErrors";
         const MIN_DATA_LENGTH: usize = 0usize;
-        const COUNT: usize = 22usize;
+        const COUNT: usize = 23usize;
         #[inline]
         fn selector(&self) -> [u8; 4] {
             match self {
@@ -9155,6 +9250,9 @@ function prepKeygenResponse(uint256 prepKeygenId, bytes memory signature) extern
                 }
                 Self::KmsSignerDoesNotMatchTxSender(_) => {
                     <KmsSignerDoesNotMatchTxSender as alloy_sol_types::SolError>::SELECTOR
+                }
+                Self::NotKmsSigner(_) => {
+                    <NotKmsSigner as alloy_sol_types::SolError>::SELECTOR
                 }
                 Self::NotKmsTxSender(_) => {
                     <NotKmsTxSender as alloy_sol_types::SolError>::SELECTOR
@@ -9227,6 +9325,15 @@ function prepKeygenResponse(uint256 prepKeygenId, bytes memory signature) extern
                             .map(IKMSGenerationErrors::UnsupportedExtraDataVersion)
                     }
                     UnsupportedExtraDataVersion
+                },
+                {
+                    fn NotKmsSigner(
+                        data: &[u8],
+                    ) -> alloy_sol_types::Result<IKMSGenerationErrors> {
+                        <NotKmsSigner as alloy_sol_types::SolError>::abi_decode_raw(data)
+                            .map(IKMSGenerationErrors::NotKmsSigner)
+                    }
+                    NotKmsSigner
                 },
                 {
                     fn KmsAlreadySignedForPrepKeygen(
@@ -9485,6 +9592,17 @@ function prepKeygenResponse(uint256 prepKeygenId, bytes memory signature) extern
                             .map(IKMSGenerationErrors::UnsupportedExtraDataVersion)
                     }
                     UnsupportedExtraDataVersion
+                },
+                {
+                    fn NotKmsSigner(
+                        data: &[u8],
+                    ) -> alloy_sol_types::Result<IKMSGenerationErrors> {
+                        <NotKmsSigner as alloy_sol_types::SolError>::abi_decode_raw_validate(
+                                data,
+                            )
+                            .map(IKMSGenerationErrors::NotKmsSigner)
+                    }
+                    NotKmsSigner
                 },
                 {
                     fn KmsAlreadySignedForPrepKeygen(
@@ -9785,6 +9903,9 @@ function prepKeygenResponse(uint256 prepKeygenId, bytes memory signature) extern
                         inner,
                     )
                 }
+                Self::NotKmsSigner(inner) => {
+                    <NotKmsSigner as alloy_sol_types::SolError>::abi_encoded_size(inner)
+                }
                 Self::NotKmsTxSender(inner) => {
                     <NotKmsTxSender as alloy_sol_types::SolError>::abi_encoded_size(
                         inner,
@@ -9909,6 +10030,12 @@ function prepKeygenResponse(uint256 prepKeygenId, bytes memory signature) extern
                 }
                 Self::KmsSignerDoesNotMatchTxSender(inner) => {
                     <KmsSignerDoesNotMatchTxSender as alloy_sol_types::SolError>::abi_encode_raw(
+                        inner,
+                        out,
+                    )
+                }
+                Self::NotKmsSigner(inner) => {
+                    <NotKmsSigner as alloy_sol_types::SolError>::abi_encode_raw(
                         inner,
                         out,
                     )

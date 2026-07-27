@@ -119,6 +119,19 @@ describe("Decryption", function () {
     return hre.ethers.solidityPacked(["uint8", "uint256", "uint256"], [2, contextId, epochId]);
   }
 
+  // Full event signatures. Solidity event overloading makes bare-name lookups ambiguous in
+  // ethers/hardhat, so every `PublicDecryptionRequest`/`UserDecryptionRequest` assertion must
+  // address the event by its full signature. The legacy `SnsCiphertextMaterial[]` variants and the
+  // overloaded handles-only variants (RFC-023 Part 2) are emitted together on every request; the
+  // handles-only variants are removed together with the legacy ones in a later release.
+  // `SnsCiphertextMaterial` encodes as `(bytes32,uint256,bytes32,address[])`.
+  const PUBLIC_DECRYPTION_REQUEST_LEGACY_SIG =
+    "PublicDecryptionRequest(uint256,(bytes32,uint256,bytes32,address[])[],bytes)";
+  const PUBLIC_DECRYPTION_REQUEST_HANDLES_SIG = "PublicDecryptionRequest(uint256,bytes32[],bytes)";
+  const USER_DECRYPTION_REQUEST_LEGACY_SIG =
+    "UserDecryptionRequest(uint256,(bytes32,uint256,bytes32,address[])[],address,bytes,bytes)";
+  const USER_DECRYPTION_REQUEST_HANDLES_SIG = "UserDecryptionRequest(uint256,bytes32[],address,bytes,bytes)";
+
   let kmsSigners: HardhatEthersSigner[];
 
   // Add ciphertext materials
@@ -251,10 +264,14 @@ describe("Decryption", function () {
       // Request public decryption
       const requestTx = await decryption.connect(tokenFundedTxSender).publicDecryptionRequest(ctHandles, extraDataV0);
 
-      // Check request event
+      // Check that both the legacy (SnsCiphertextMaterial[]) and the overloaded handles-only events
+      // are emitted in the same tx with a consistent payload.
       await expect(requestTx)
-        .to.emit(decryption, "PublicDecryptionRequest")
+        .to.emit(decryption, PUBLIC_DECRYPTION_REQUEST_LEGACY_SIG)
         .withArgs(decryptionId, toValues(snsCiphertextMaterials), extraDataV0);
+      await expect(requestTx)
+        .to.emit(decryption, PUBLIC_DECRYPTION_REQUEST_HANDLES_SIG)
+        .withArgs(decryptionId, ctHandles, extraDataV0);
     });
 
     it("Should request a public decryption with a single ctHandle", async function () {
@@ -265,10 +282,13 @@ describe("Decryption", function () {
 
       const singleSnsCiphertextMaterials = snsCiphertextMaterials.slice(0, 1);
 
-      // Check request event
+      // Check both request events
       await expect(requestTx)
-        .to.emit(decryption, "PublicDecryptionRequest")
+        .to.emit(decryption, PUBLIC_DECRYPTION_REQUEST_LEGACY_SIG)
         .withArgs(decryptionId, toValues(singleSnsCiphertextMaterials), extraDataV0);
+      await expect(requestTx)
+        .to.emit(decryption, PUBLIC_DECRYPTION_REQUEST_HANDLES_SIG)
+        .withArgs(decryptionId, [ctHandles[0]], extraDataV0);
     });
 
     it("Should revert because ctHandles list is empty", async function () {
@@ -581,7 +601,7 @@ describe("Decryption", function () {
       expect(await mockedZamaOFT.balanceOf(mockedFeesSenderToBurnerAddress)).to.equal(feesSenderToBurnerBalance);
 
       await expect(decryption.connect(tokenFundedTxSender).publicDecryptionRequest(ctHandles, extraDataV0))
-        .to.emit(decryption, "PublicDecryptionRequest")
+        .to.emit(decryption, PUBLIC_DECRYPTION_REQUEST_LEGACY_SIG)
         .withArgs(decryptionId, toValues(snsCiphertextMaterials), extraDataV0);
     });
 
@@ -631,9 +651,13 @@ describe("Decryption", function () {
       const currentContextId = await gatewayConfig.getCurrentKmsContextId();
       const v2ExtraData = extraDataV2(currentContextId, 1n);
 
-      await expect(decryption.connect(tokenFundedTxSender).publicDecryptionRequest(ctHandles, v2ExtraData))
-        .to.emit(decryption, "PublicDecryptionRequest")
+      const requestTx = await decryption.connect(tokenFundedTxSender).publicDecryptionRequest(ctHandles, v2ExtraData);
+      await expect(requestTx)
+        .to.emit(decryption, PUBLIC_DECRYPTION_REQUEST_LEGACY_SIG)
         .withArgs(decryptionId, toValues(snsCiphertextMaterials), v2ExtraData);
+      await expect(requestTx)
+        .to.emit(decryption, PUBLIC_DECRYPTION_REQUEST_HANDLES_SIG)
+        .withArgs(decryptionId, ctHandles, v2ExtraData);
 
       const v2ResponseEip712 = createEIP712ResponsePublicDecrypt(
         gatewayChainId,
@@ -982,10 +1006,14 @@ describe("Decryption", function () {
           "userDecryptionRequest((bytes32,address)[],(uint256,uint256),(uint256,address[]),address,bytes,bytes,bytes)"
         ](ctHandleContractPairs, requestValidity, contractsInfo, user.address, publicKey, userSignature, extraDataV0);
 
-      // Check request event
+      // Check that both the legacy (SnsCiphertextMaterial[]) and the overloaded handles-only events
+      // are emitted in the same tx with a consistent payload.
       await expect(requestTx)
-        .to.emit(decryption, "UserDecryptionRequest(uint256,(bytes32,uint256,bytes32,address[])[],address,bytes,bytes)")
+        .to.emit(decryption, USER_DECRYPTION_REQUEST_LEGACY_SIG)
         .withArgs(decryptionId, toValues(snsCiphertextMaterials), user.address, publicKey, extraDataV0);
+      await expect(requestTx)
+        .to.emit(decryption, USER_DECRYPTION_REQUEST_HANDLES_SIG)
+        .withArgs(decryptionId, ctHandles, user.address, publicKey, extraDataV0);
     });
 
     it("Should request a user decryption with a single ctHandleContractPair", async function () {
@@ -1000,10 +1028,13 @@ describe("Decryption", function () {
           "userDecryptionRequest((bytes32,address)[],(uint256,uint256),(uint256,address[]),address,bytes,bytes,bytes)"
         ](singleCtHandleContractPair, requestValidity, contractsInfo, user.address, publicKey, userSignature, extraDataV0);
 
-      // Check request event
+      // Check both request events
       await expect(requestTx)
-        .to.emit(decryption, "UserDecryptionRequest(uint256,(bytes32,uint256,bytes32,address[])[],address,bytes,bytes)")
+        .to.emit(decryption, USER_DECRYPTION_REQUEST_LEGACY_SIG)
         .withArgs(decryptionId, toValues(singleSnsCiphertextMaterials), user.address, publicKey, extraDataV0);
+      await expect(requestTx)
+        .to.emit(decryption, USER_DECRYPTION_REQUEST_HANDLES_SIG)
+        .withArgs(decryptionId, [ctHandles[0]], user.address, publicKey, extraDataV0);
     });
 
     it("Should revert because ctHandleContractPairs is empty", async function () {
@@ -2020,9 +2051,10 @@ describe("Decryption", function () {
           extraDataV0,
         );
 
-      // Check request event.
+      // Check that both the legacy (SnsCiphertextMaterial[]) and the overloaded handles-only events
+      // are emitted in the same tx with a consistent payload.
       await expect(requestTx)
-        .to.emit(decryption, "UserDecryptionRequest(uint256,(bytes32,uint256,bytes32,address[])[],address,bytes,bytes)")
+        .to.emit(decryption, USER_DECRYPTION_REQUEST_LEGACY_SIG)
         .withArgs(
           decryptionId,
           toValues(snsCiphertextMaterials),
@@ -2030,6 +2062,9 @@ describe("Decryption", function () {
           publicKey,
           extraDataV0,
         );
+      await expect(requestTx)
+        .to.emit(decryption, USER_DECRYPTION_REQUEST_HANDLES_SIG)
+        .withArgs(decryptionId, ctHandles, delegationAccounts.delegateAddress, publicKey, extraDataV0);
     });
 
     it("Should request a user decryption with a single ctHandleContractPair", async function () {
@@ -2050,9 +2085,9 @@ describe("Decryption", function () {
           extraDataV0,
         );
 
-      // Check request event.
+      // Check both request events.
       await expect(requestTx)
-        .to.emit(decryption, "UserDecryptionRequest(uint256,(bytes32,uint256,bytes32,address[])[],address,bytes,bytes)")
+        .to.emit(decryption, USER_DECRYPTION_REQUEST_LEGACY_SIG)
         .withArgs(
           decryptionId,
           toValues(singleSnsCiphertextMaterials),
@@ -2060,6 +2095,9 @@ describe("Decryption", function () {
           publicKey,
           extraDataV0,
         );
+      await expect(requestTx)
+        .to.emit(decryption, USER_DECRYPTION_REQUEST_HANDLES_SIG)
+        .withArgs(decryptionId, [ctHandles[0]], delegationAccounts.delegateAddress, publicKey, extraDataV0);
     });
 
     it("Should revert because ctHandleContractPairs is empty", async function () {
@@ -2926,6 +2964,10 @@ describe("Decryption", function () {
       "userDecryptionRequest((bytes32,address,address)[],address,bytes,address[],(uint256,uint256),bytes,bytes)";
     const UNIFIED_EVENT_SIG =
       "UserDecryptionRequest(uint256,(bytes32,uint256,bytes32,address[])[],(bytes32,address,address)[],(address,bytes,address[],(uint256,uint256),bytes,bytes))";
+    // Overloaded handles-only unified event (RFC-023 Part 2): same as UNIFIED_EVENT_SIG minus the
+    // on-chain-resolved `SnsCiphertextMaterial[]`.
+    const UNIFIED_HANDLES_EVENT_SIG =
+      "UserDecryptionRequest(uint256,(bytes32,address,address)[],(address,bytes,address[],(uint256,uint256),bytes,bytes))";
     const LEGACY_EVENT_SIG = "UserDecryptionRequest(uint256,(bytes32,uint256,bytes32,address[])[],address,bytes,bytes)";
     const UNIFIED_READY_SIG = "isUserDecryptionReady((bytes32,address,address)[],bytes)";
 
@@ -2975,11 +3017,20 @@ describe("Decryption", function () {
           UNIFIED_REQUEST_SIG
         ](directHandles, user.address, publicKey, allowedContracts, requestValidity, opaqueSignature, extraDataV0);
 
+      // Check that both the legacy (SnsCiphertextMaterial[]) and the overloaded handles-only unified
+      // events are emitted in the same tx with a consistent payload.
       await expect(tx)
         .to.emit(decryption, UNIFIED_EVENT_SIG)
         .withArgs(
           decryptionId,
           toValues(snsCiphertextMaterials),
+          toValues(directHandles),
+          [user.address, publicKey, allowedContracts, toValues(requestValidity), extraDataV0, opaqueSignature],
+        );
+      await expect(tx)
+        .to.emit(decryption, UNIFIED_HANDLES_EVENT_SIG)
+        .withArgs(
+          decryptionId,
           toValues(directHandles),
           [user.address, publicKey, allowedContracts, toValues(requestValidity), extraDataV0, opaqueSignature],
         );

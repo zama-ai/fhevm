@@ -12,10 +12,14 @@ import {
   shouldStopPackageTagScan,
 } from "./resolve/github";
 import {
+  MAX_FALLBACK_COMMIT_DEPTH,
   SIMPLE_ACL_MIN_SHA,
   SHA_RUNTIME_COMPAT_MIN_SHA,
   applyVersionEnvOverrides,
+  findPublishedAncestorIndex,
   presetBundle,
+  resolveMissingRepoTagFallbacks,
+  selectSupportedMainSha,
   shaRuntimeCompatFloor,
   simpleAclFloor,
 } from "./resolve/target";
@@ -31,6 +35,37 @@ describe("resolve", () => {
     const commits = ["head", SHA_RUNTIME_COMPAT_MIN_SHA, SIMPLE_ACL_MIN_SHA, "tail"];
     expect(simpleAclFloor(commits)).toBe(2);
     expect(shaRuntimeCompatFloor(commits)).toBe(1);
+  });
+
+  test("selects the newest sha every gating package publishes", () => {
+    const candidates = ["aaaaaa1", "bbbbbb2", "cccccc3"];
+    const packageTagsMap = {
+      HOST_VERSION: new Set(["bbbbbb2", "cccccc3"]),
+      GATEWAY_VERSION: new Set(["aaaaaa1", "bbbbbb2", "cccccc3"]),
+    };
+    expect(selectSupportedMainSha(candidates, packageTagsMap)).toBe("bbbbbb2");
+  });
+
+  test("does not gate on unpublished or branch-only images", () => {
+    const candidates = ["aaaaaa1", "bbbbbb2"];
+    const packageTagsMap = {
+      HOST_VERSION: new Set(["aaaaaa1", "bbbbbb2"]),
+      // Empty set: image not published yet.
+      COPROCESSOR_CONSENSUS_DETECTOR_VERSION: new Set<string>(),
+      // Non-empty but only feature-branch tags absent from the candidate window:
+      // must not reject every main commit.
+      COPROCESSOR_UPGRADE_CONTROLLER_VERSION: new Set(["1a3646e", "9d01d7b"]),
+    };
+    expect(selectSupportedMainSha(candidates, packageTagsMap)).toBe("aaaaaa1");
+  });
+
+  test("returns undefined when a gating package publishes no candidate sha", () => {
+    const candidates = ["aaaaaa1", "bbbbbb2"];
+    const packageTagsMap = {
+      HOST_VERSION: new Set(["aaaaaa1"]),
+      GATEWAY_VERSION: new Set(["bbbbbb2"]),
+    };
+    expect(selectSupportedMainSha(candidates, packageTagsMap)).toBeUndefined();
   });
 
   test("applies env overrides to a bundle", () => {
@@ -49,6 +84,106 @@ describe("resolve", () => {
     expect(bundle.env.RELAYER_VERSION).toBe("abcdef0");
     expect(bundle.env.RELAYER_MIGRATE_VERSION).toBe("abcdef0");
     expect(bundle.env.CORE_VERSION).not.toBe("abcdef0");
+  });
+
+  test("pins optional images by default but omits unpublished ones for latest-main", () => {
+    // No published-key set: optional images stay pinned like every package (default contract).
+    const pinned = presetBundle("sha", "abcdef0", "sha-abcdef0.json");
+    expect(pinned.env.COPROCESSOR_CONSENSUS_DETECTOR_VERSION).toBe("abcdef0");
+    expect(pinned.env.COPROCESSOR_UPGRADE_CONTROLLER_VERSION).toBe("abcdef0");
+
+    // Empty published-key set (what `--target sha` passes): optional images are omitted.
+    const shaBundle = presetBundle("sha", "abcdef0", "sha-abcdef0.json", [], new Set());
+    expect("COPROCESSOR_CONSENSUS_DETECTOR_VERSION" in shaBundle.env).toBe(false);
+    expect("COPROCESSOR_UPGRADE_CONTROLLER_VERSION" in shaBundle.env).toBe(false);
+    expect(shaBundle.env.COPROCESSOR_HOST_LISTENER_VERSION).toBe("abcdef0");
+
+    // latest-main with only consensus-detector published at the resolved sha: pin it, drop the
+    // upgrade-controller so its service gates out instead of pulling a nonexistent manifest.
+    const bundle = presetBundle("latest-main", "abcdef0", "latest-main-abcdef0.json", [], new Set([
+      "COPROCESSOR_CONSENSUS_DETECTOR_VERSION",
+    ]));
+    expect(bundle.env.COPROCESSOR_CONSENSUS_DETECTOR_VERSION).toBe("abcdef0");
+    expect("COPROCESSOR_UPGRADE_CONTROLLER_VERSION" in bundle.env).toBe(false);
+    // Non-optional repo images are still always pinned.
+    expect(bundle.env.COPROCESSOR_HOST_LISTENER_VERSION).toBe("abcdef0");
+  });
+
+  test("honors an explicit env pin for an omitted optional image", () => {
+    const bundle = presetBundle("latest-main", "abcdef0", "latest-main-abcdef0.json", [], new Set());
+    expect("COPROCESSOR_CONSENSUS_DETECTOR_VERSION" in bundle.env).toBe(false);
+    const next = applyVersionEnvOverrides(bundle, { COPROCESSOR_CONSENSUS_DETECTOR_VERSION: "v0.14.0" });
+    expect(next.env.COPROCESSOR_CONSENSUS_DETECTOR_VERSION).toBe("v0.14.0");
+  });
+
+  test("finds the nearest ancestor with a published image tag", () => {
+    const commits = [
+      "d77a0417aa5d928063181454756ebb73cdbadc24",
+      "2cde6c960c24405015ab03959a2d9053cde31f23",
+      "8e2f724d4000000000000000000000000000000",
+    ];
+    expect(findPublishedAncestorIndex(commits, new Set(["2cde6c9", "8e2f724"]))).toBe(1);
+    expect(findPublishedAncestorIndex(commits, new Set(["fffffff"]))).toBe(-1);
+    expect(findPublishedAncestorIndex([], new Set(["2cde6c9"]))).toBe(-1);
+  });
+
+  test("falls back to the newest published ancestor tag for missing images", () => {
+    const { overrides, sources } = resolveMissingRepoTagFallbacks({
+      requestedTag: "d77a041",
+      missingKeys: ["CONNECTOR_GW_LISTENER_VERSION"],
+      commitShas: ["d77a0417aa5d928063181454756ebb73cdbadc24", "2cde6c960c24405015ab03959a2d9053cde31f23"],
+      packageTagsMap: { CONNECTOR_GW_LISTENER_VERSION: new Set(["2cde6c9"]) },
+    });
+    expect(overrides).toEqual({ CONNECTOR_GW_LISTENER_VERSION: "2cde6c9" });
+    expect(sources).toEqual(["CONNECTOR_GW_LISTENER_VERSION=2cde6c9 (fallback: d77a041 unpublished)"]);
+  });
+
+  test("fails resolution when the newest published image lags beyond the fallback limit", () => {
+    const commits = Array.from(
+      { length: MAX_FALLBACK_COMMIT_DEPTH + 2 },
+      (_, index) => index.toString(16).padEnd(40, "f"),
+    );
+    expect(() =>
+      resolveMissingRepoTagFallbacks({
+        requestedTag: commits[0].slice(0, 7),
+        missingKeys: ["CONNECTOR_GW_LISTENER_VERSION"],
+        commitShas: commits,
+        packageTagsMap: { CONNECTOR_GW_LISTENER_VERSION: new Set([commits.at(-1)!.slice(0, 7)]) },
+      }),
+    ).toThrow("beyond the 50-commit fallback limit");
+  });
+
+  test("keeps the unverified pin when the package has no visible published tags", () => {
+    const { overrides, sources } = resolveMissingRepoTagFallbacks({
+      requestedTag: "d77a041",
+      missingKeys: ["CONNECTOR_GW_LISTENER_VERSION"],
+      commitShas: ["d77a0417aa5d928063181454756ebb73cdbadc24"],
+      packageTagsMap: { CONNECTOR_GW_LISTENER_VERSION: new Set<string>() },
+    });
+    expect(overrides).toEqual({});
+    expect(sources).toEqual([
+      "CONNECTOR_GW_LISTENER_VERSION=d77a041 (unverified: package has no visible published tags)",
+    ]);
+  });
+
+  test("fails resolution when a published package has no tag anywhere on the ancestry", () => {
+    expect(() =>
+      resolveMissingRepoTagFallbacks({
+        requestedTag: "d77a041",
+        missingKeys: ["CONNECTOR_GW_LISTENER_VERSION"],
+        commitShas: ["d77a0417aa5d928063181454756ebb73cdbadc24"],
+        packageTagsMap: { CONNECTOR_GW_LISTENER_VERSION: new Set(["0000000"]) },
+      }),
+    ).toThrow("nor for any of the 1 commits behind it");
+  });
+
+  test("applies per-component fallback overrides to a sha preset bundle", () => {
+    const bundle = presetBundle("sha", "d77a041", "sha-d77a041.json", [], new Set(), {
+      CONNECTOR_GW_LISTENER_VERSION: "2cde6c9",
+    });
+    expect(bundle.env.CONNECTOR_GW_LISTENER_VERSION).toBe("2cde6c9");
+    expect(bundle.env.CONNECTOR_TX_SENDER_VERSION).toBe("d77a041");
+    expect(bundle.env.COPROCESSOR_HOST_LISTENER_VERSION).toBe("d77a041");
   });
 
   test("only caches immutable sha targets", () => {
@@ -84,6 +219,43 @@ describe("resolve", () => {
           process.env,
         ),
       ).rejects.toThrow("invalid lockName");
+    });
+  });
+
+  test("accepts a lock file that omits unpublished optional images", async () => {
+    await withTempStateDir(async (stateDir) => {
+      const lockFile = path.join(stateDir, "latest-main.json");
+      // Optional images pinned only when published: presetBundle with an empty set omits them.
+      const env = presetBundle("latest-main", "abcdef0", "latest-main.json", [], new Set()).env;
+      expect("COPROCESSOR_CONSENSUS_DETECTOR_VERSION" in env).toBe(false);
+      await writeFile(
+        lockFile,
+        JSON.stringify({ target: "latest-main", lockName: "latest-main.json", sources: ["test"], env }),
+      );
+      const { bundle } = await resolveBundle(
+        { target: "latest-main", requestedTarget: undefined, sha: undefined, lockFile, reset: false },
+        {},
+      );
+      expect("COPROCESSOR_CONSENSUS_DETECTOR_VERSION" in bundle.env).toBe(false);
+      expect(bundle.env.COPROCESSOR_HOST_LISTENER_VERSION).toBe("abcdef0");
+    });
+  });
+
+  test("still rejects a lock file missing a required (non-optional) image", async () => {
+    await withTempStateDir(async (stateDir) => {
+      const lockFile = path.join(stateDir, "latest-main.json");
+      const env = { ...presetBundle("latest-main", "abcdef0", "latest-main.json").env };
+      delete env.COPROCESSOR_HOST_LISTENER_VERSION;
+      await writeFile(
+        lockFile,
+        JSON.stringify({ target: "latest-main", lockName: "latest-main.json", sources: ["test"], env }),
+      );
+      await expect(
+        resolveBundle(
+          { target: "latest-main", requestedTarget: undefined, sha: undefined, lockFile, reset: false },
+          {},
+        ),
+      ).rejects.toThrow("missing required version keys");
     });
   });
 

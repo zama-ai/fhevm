@@ -177,6 +177,10 @@ const upCommandDefinition = {
     },
     "lock-file": { type: "string", description: "Use an existing lock snapshot instead of resolving versions live." },
     scenario: { type: "string", description: "Scenario preset name or path." },
+    "bcs-tag": {
+      type: "string",
+      description: "Override the BCS registry tag for blue-green scenarios (release tag or commit SHA).",
+    },
     resume: { type: "boolean", description: "Resume from persisted state." },
     "dry-run": { type: "boolean", description: "Print the resolved plan and stop before mutating state." },
     reset: { type: "boolean", description: "Discard cached resolution and regenerate from scratch." },

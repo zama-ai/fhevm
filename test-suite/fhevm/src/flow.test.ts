@@ -13,9 +13,14 @@ import {
 } from "./flow/up-flow";
 import { KMS_THRESHOLD_CONFIG_NAME, kmsThresholdGenKeysConfigName } from "./generate/kms-core";
 import { GENERATED_CONFIG_DIR, envPath, hostChainAddressesPath, kmsCoreConfigPath } from "./layout";
-import { type Discovery, OVERRIDE_GROUPS, type State } from "./types";
+import {
+  type Discovery,
+  OVERRIDE_GROUPS,
+  type ResolvedCoprocessorScenario,
+  type State,
+} from "./types";
 
-const completeState = (): State => ({
+const completeState = (): State & { scenario: ResolvedCoprocessorScenario } => ({
   target: "latest-main",
   lockPath: "/tmp/latest-main.json",
   versions: {
@@ -51,7 +56,7 @@ const completeState = (): State => ({
     hostChains: [{ key: "host", chainId: "12345", rpcPort: 8545 }],
     topology: { count: 1, threshold: 1 },
     instances: [{ index: 0, source: { mode: "inherit" }, env: {}, args: {} }],
-    kms: { mode: "centralized", parties: 1, threshold: 1, fheParams: "Default" },
+    kms: { mode: "centralized", parties: 1, threshold: 1, committeeSize: 1, fheParams: "Default" },
   },
   completedSteps: [
     "preflight",
@@ -163,6 +168,8 @@ describe("resumeRepairStep", () => {
       "coprocessor-zkproof-worker",
       "coprocessor-sns-worker",
       "coprocessor-transaction-sender",
+      "coprocessor-consensus-detector",
+      "coprocessor-upgrade-controller",
       "kms-connector-gw-listener",
       "kms-connector-kms-worker",
       "kms-connector-tx-sender",
@@ -189,6 +196,8 @@ describe("resumeRepairStep", () => {
       "coprocessor-zkproof-worker",
       "coprocessor-sns-worker",
       "coprocessor-transaction-sender",
+      "coprocessor-consensus-detector",
+      "coprocessor-upgrade-controller",
       "kms-connector-gw-listener",
       "kms-connector-kms-worker",
       "kms-connector-tx-sender",
@@ -329,6 +338,8 @@ describe("resumeRepairStep", () => {
       "coprocessor-zkproof-worker",
       "coprocessor-sns-worker",
       "coprocessor-transaction-sender",
+      "coprocessor-consensus-detector",
+      "coprocessor-upgrade-controller",
       "coprocessor-host-listener-chain-b",
       "coprocessor-host-listener-poller-chain-b",
       "kms-connector-gw-listener",
@@ -407,7 +418,7 @@ describe("runtime helpers", () => {
 
   test("runtime artifacts include every threshold KMS config", () => {
     const state = completeState();
-    state.scenario.kms = { mode: "threshold", parties: 4, threshold: 1, fheParams: "Test" };
+    state.scenario.kms = { mode: "threshold", parties: 4, threshold: 1, committeeSize: 4, fheParams: "Test" };
     const paths = runtimeArtifactPaths(state);
     expect(paths).toContain(path.join(GENERATED_CONFIG_DIR, KMS_THRESHOLD_CONFIG_NAME));
     for (let partyId = 1; partyId <= 4; partyId += 1) {

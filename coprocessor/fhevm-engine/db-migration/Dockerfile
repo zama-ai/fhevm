@@ -1,7 +1,9 @@
 # syntax=docker/dockerfile:1
-ARG RUST_IMAGE_VERSION=1.91.0
+ARG RUST_IMAGE_VERSION=1.97.1
 
 # Stage 1: Build DB Migration
+# RUST_IMAGE_VERSION is injected by CI from rust-toolchain.toml (see coprocessor-docker-build.yml)
+ARG RUST_IMAGE_VERSION
 FROM ghcr.io/zama-ai/fhevm/gci/rust-glibc:${RUST_IMAGE_VERSION} AS builder
 
 ARG SCCACHE_BUCKET
@@ -15,6 +17,20 @@ ENV SCCACHE_S3_KEY_PREFIX=${SCCACHE_S3_PREFIX}
 ENV AWS_REGION=${SCCACHE_REGION}
 
 USER root
+
+# TODO(sccache): temporary inline install for testing; remove once sccache
+# ships in the rust-glibc golden image and rely on that instead.
+RUN set -eux; \
+    arch="$(uname -m)"; \
+    case "$arch" in \
+        x86_64)  triple=x86_64-unknown-linux-musl ;; \
+        aarch64) triple=aarch64-unknown-linux-musl ;; \
+        *) echo "unsupported arch: $arch" >&2; exit 1 ;; \
+    esac; \
+    curl -fsSL "https://github.com/mozilla/sccache/releases/download/${SCCACHE_VERSION}/sccache-${SCCACHE_VERSION}-${triple}.tar.gz" \
+        | tar -xz --strip-components=1 -C /usr/local/bin "sccache-${SCCACHE_VERSION}-${triple}/sccache"; \
+    chmod +x /usr/local/bin/sccache; \
+    sccache --version
 
 WORKDIR /app
 
@@ -36,6 +52,10 @@ RUN set -eux; \
     sccache --version
 
 # Install sqlx-cli
+# NOTE: the `rustls` feature is mandatory. Without a TLS backend compiled in,
+# `sqlx database create` / `sqlx migrate run` fail against any RDS that requires
+# TLS ("TLS upgrade required by connect options but SQLx was built without TLS
+# support enabled"), e.g. when sslmode=require or rds.force_ssl=1.
 RUN --mount=type=cache,target=/usr/local/cargo/registry,sharing=locked \
     --mount=type=secret,id=sccache_aws_access_key_id \
     --mount=type=secret,id=sccache_aws_secret_access_key \
@@ -47,6 +67,42 @@ RUN --mount=type=cache,target=/usr/local/cargo/registry,sharing=locked \
     cargo install sqlx-cli --version 0.7.2 \
     --no-default-features --features postgres,rustls --locked && \
     if [ -n "${SCCACHE_BUCKET}" ] && command -v sccache >/dev/null 2>&1; then sccache --show-stats; fi
+
+# Install AWS CLI v2 (self-contained bundle) for RDS IAM auth token generation.
+# prepare_database_url.sh shells out to `aws rds generate-db-auth-token`. The bundle
+# ships its own Python/libs and only depends on glibc, so it runs on the glibc-based
+# postgres runtime image below. Pinned to a specific version for reproducible builds.
+ARG TARGETARCH
+ARG AWS_CLI_VERSION="2.34.52"
+RUN set -eux; \
+    apk add --no-cache unzip; \
+    arch="${TARGETARCH:-}"; \
+    if [ -z "$arch" ]; then \
+      case "$(uname -m)" in \
+        x86_64) arch=amd64 ;; \
+        aarch64) arch=arm64 ;; \
+      esac; \
+    fi; \
+    case "$arch" in \
+      amd64) aws_arch=x86_64 ;; \
+      arm64) aws_arch=aarch64 ;; \
+      *) echo "unsupported architecture: ${arch}" >&2; exit 1 ;; \
+    esac; \
+    curl -fsSL "https://awscli.amazonaws.com/awscli-exe-linux-${aws_arch}-${AWS_CLI_VERSION}.zip" -o /tmp/awscliv2.zip; \
+    unzip -q /tmp/awscliv2.zip -d /tmp; \
+    /tmp/aws/install --install-dir /usr/local/aws-cli --bin-dir /usr/local/aws-cli-bin; \
+    rm -rf /tmp/aws /tmp/awscliv2.zip
+
+# Guard: fail the build early if the sqlx CLI was compiled without a TLS
+# backend. rustls (and its webpki dependency) leave their crate names in the
+# binary; their absence means TLS support was dropped and migrations would
+# break against TLS-requiring databases.
+RUN if grep -aqE 'rustls|webpki' /usr/local/cargo/bin/sqlx; then \
+        echo "sqlx TLS (rustls) support: OK"; \
+    else \
+        echo "ERROR: sqlx built without rustls TLS support" >&2; \
+        exit 1; \
+    fi
 
 # Copy migrations and initialization script
 COPY listener ./listener
@@ -101,6 +157,11 @@ COPY  --from=builder --chown=fhevm:fhevm /app/coprocessor/fhevm-engine/db-migrat
 COPY  --from=builder --chown=fhevm:fhevm /app/coprocessor/fhevm-engine/db-migration/revert_coprocessor_db_state.sh /revert_coprocessor_db_state.sh
 COPY  --from=builder /etc/group /etc/group
 COPY  --from=builder /etc/passwd /etc/passwd
+
+# AWS CLI v2, used by prepare_database_url.sh to mint RDS IAM auth tokens.
+COPY  --from=builder /usr/local/aws-cli /usr/local/aws-cli
+COPY  --from=builder /usr/local/aws-cli-bin /usr/local/aws-cli-bin
+ENV PATH="/usr/local/aws-cli-bin:${PATH}"
 
 USER fhevm:fhevm
 

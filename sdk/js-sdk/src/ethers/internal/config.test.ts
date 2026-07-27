@@ -11,7 +11,7 @@ async function loadConfigModule(): Promise<ConfigModule> {
 describe('ethers runtime config', () => {
   it('allows identical module version objects', async () => {
     const { setFhevmRuntimeConfig } = await loadConfigModule();
-    const config: FhevmRuntimeConfig = { moduleVersions: { tfhe: '1.6.1', kms: '0.13.20-0' } };
+    const config: FhevmRuntimeConfig = { moduleVersions: { tfhe: '1.6.2', kms: '0.13.20-0' } };
 
     setFhevmRuntimeConfig(config);
 

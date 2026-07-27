@@ -1,0 +1,23 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n            SELECT dependence_chain_id\n            FROM dependence_chain\n            WHERE schedule_priority = $1\n              AND dependence_chain_id = ANY($2::bytea[])\n            ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "dependence_chain_id",
+        "type_info": "Bytea"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Int2",
+        "ByteaArray"
+      ]
+    },
+    "nullable": [
+      false
+    ]
+  },
+  "hash": "e6783de9bead8fc13c6954369740763df1e7ae2a98aa0495b4245960b9a1bbfc"
+}

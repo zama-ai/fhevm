@@ -9,7 +9,6 @@ license.workspace = true
 # workspace dependencies
 anyhow = { workspace = true }
 alloy = { workspace = true, features = ["providers", "provider-ws"] }
-alloy-provider = { workspace = true }
 aws-config = { workspace = true }
 aws-credential-types = { workspace = true }
 aws-sigv4 = { workspace = true }
@@ -56,6 +55,9 @@ gpu = ["tfhe/gpu"]
 latency = []
 throughput = []
 compact-hex = []
+# Gates the build-time stack version: with the feature `stack_version!()` reads
+# BUILD_STACK_VERSION; without it the version is the hard-coded baseline.
+stack-version-override = []
 
 [build-dependencies]
 tonic-build = { workspace = true }

@@ -1,0 +1,17 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "INSERT INTO kms_epoch_destroyed(epoch_id, tx_hash, created_at, otlp_context)\n        VALUES ($1, $2, $3, $4) ON CONFLICT DO NOTHING",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Bytea",
+        "Bytea",
+        "Timestamptz",
+        "Bytea"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "959ff53f2bfa7e73e408006acbaf7bef60277053d5c67bddb6198265c05e1df6"
+}

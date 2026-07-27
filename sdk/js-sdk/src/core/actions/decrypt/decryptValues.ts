@@ -34,10 +34,12 @@ export async function decryptValues(
   assertIsAddress(contractAddress, {});
   const sanitizedContractAddress = addressToChecksummedAddress(contractAddress);
 
+  const ownerAddress = addressToChecksummedAddress(parameters.signedPermit.encryptedDataOwnerAddress);
   const sanitizedPairs = encryptedValues.map((ev) => {
     return {
       handle: toFhevmHandle(ev),
       contractAddress: sanitizedContractAddress,
+      ownerAddress,
     };
   });
 
@@ -46,5 +48,5 @@ export async function decryptValues(
   return decryptValuesFromPairs_(f, {
     ...rest,
     pairs: sanitizedPairs,
-  } as Parameters<typeof decryptValuesFromPairs_>[1]);
+  });
 }

@@ -65,6 +65,15 @@ const versionChanges = (previous: Record<string, string> | undefined, next: Reco
 
 type InspectResult = { containers: ReceiptContainer[]; error?: string };
 
+export const requireDockerSnapshot = (snapshot: InspectResult) => {
+  if (snapshot.error) {
+    throw new PreflightError(`Required Docker snapshot failed: ${snapshot.error}`);
+  }
+  if (!snapshot.containers.length) {
+    throw new PreflightError("Required Docker snapshot contained no project containers");
+  }
+};
+
 const inspectFailed = (error: string): InspectResult => {
   console.warn(`[receipt] docker inspect failed: ${error}`);
   return { containers: [], error };
@@ -200,7 +209,9 @@ const markdownEntry = (entry: ReceiptEntry) => {
   return `${lines.join("\n")}\n`;
 };
 
-export const createRolloutReceipt = () => {
+export const createRolloutReceipt = (
+  operations: { inspectContainers?: typeof inspectContainers } = {},
+) => {
   let seq = 0;
   let started = false;
   let currentEnv: Record<string, string> | undefined;
@@ -239,7 +250,9 @@ export const createRolloutReceipt = () => {
     if (lock) {
       currentEnv = lock.env;
     }
-    const docker = options.docker || options.diagnostics ? await inspectContainers() : undefined;
+    const docker = options.docker || options.diagnostics
+      ? await (operations.inspectContainers ?? inspectContainers)()
+      : undefined;
     const diagnostics = options.diagnostics ? await collectFailureDiagnostics() : undefined;
     const entry: ReceiptEntry = {
       seq: ++seq,
@@ -256,6 +269,9 @@ export const createRolloutReceipt = () => {
     await fs.appendFile(receiptJsonlPath(), `${JSON.stringify(entry)}\n`);
     await fs.appendFile(receiptMarkdownPath(), markdownEntry(entry));
     console.log(`[receipt] ${entry.seq}. ${kind}: ${title}`);
+    if (options.docker && docker) {
+      requireDockerSnapshot(docker);
+    }
   };
 
   return { record, start };

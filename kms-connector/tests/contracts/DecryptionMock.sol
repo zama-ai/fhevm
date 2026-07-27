@@ -14,13 +14,6 @@ pragma solidity ^0.8.24;
 // ones in `fhevm_gateway_bindings::decryption::Decryption` — the `DecryptionInstance` binding
 // calls dispatch to these mock bodies without any binding regeneration.
 
-struct SnsCiphertextMaterial {
-    bytes32 ctHandle;
-    uint256 keyId;
-    bytes32 snsCiphertextDigest;
-    address[] coprocessorTxSenderAddresses;
-}
-
 struct CtHandleContractPair {
     bytes32 ctHandle;
     address contractAddress;
@@ -97,11 +90,7 @@ contract DecryptionMock {
         bytes32[] ctHandles;
     }
 
-    event PublicDecryptionRequest(
-        uint256 indexed decryptionId,
-        SnsCiphertextMaterial[] snsCtMaterials,
-        bytes extraData
-    );
+    event PublicDecryptionRequest(uint256 indexed decryptionId, bytes32[] ctHandles, bytes extraData);
 
     event PublicDecryptionResponseCall(
         uint256 indexed decryptionId,
@@ -120,7 +109,7 @@ contract DecryptionMock {
 
     event UserDecryptionRequest(
         uint256 indexed decryptionId,
-        SnsCiphertextMaterial[] snsCtMaterials,
+        bytes32[] ctHandles,
         address userAddress,
         bytes publicKey,
         bytes extraData
@@ -128,7 +117,6 @@ contract DecryptionMock {
 
     event UserDecryptionRequest(
         uint256 indexed decryptionId,
-        SnsCiphertextMaterial[] snsCtMaterials,
         HandleEntry[] handles,
         UserDecryptionRequestPayload payload
     );
@@ -149,9 +137,8 @@ contract DecryptionMock {
     function publicDecryptionRequest(bytes32[] calldata ctHandles, bytes calldata extraData) external {
         publicDecryptionCounter++;
         uint256 decryptionId = publicDecryptionCounter;
-        SnsCiphertextMaterial[] memory snsCtMaterials = new SnsCiphertextMaterial[](1);
 
-        emit PublicDecryptionRequest(decryptionId, snsCtMaterials, extraData);
+        emit PublicDecryptionRequest(decryptionId, ctHandles, extraData);
     }
 
     function publicDecryptionResponse(
@@ -179,9 +166,12 @@ contract DecryptionMock {
     ) external {
         userDecryptionCounter++;
         uint256 decryptionId = userDecryptionCounter;
-        SnsCiphertextMaterial[] memory snsCtMaterials = new SnsCiphertextMaterial[](1);
+        bytes32[] memory ctHandles = new bytes32[](ctHandleContractPairs.length);
+        for (uint256 i = 0; i < ctHandleContractPairs.length; i++) {
+            ctHandles[i] = ctHandleContractPairs[i].ctHandle;
+        }
 
-        emit UserDecryptionRequest(decryptionId, snsCtMaterials, userAddress, publicKey, extraData);
+        emit UserDecryptionRequest(decryptionId, ctHandles, userAddress, publicKey, extraData);
     }
 
     // RFC016 unified EIP-712 overload. Selector matches the `userDecryptionRequest_0` binding
@@ -198,7 +188,6 @@ contract DecryptionMock {
     ) external {
         userDecryptionCounter++;
         uint256 decryptionId = userDecryptionCounter;
-        SnsCiphertextMaterial[] memory snsCtMaterials = new SnsCiphertextMaterial[](1);
 
         UserDecryptionRequestPayload memory payload = UserDecryptionRequestPayload(
             userAddress,
@@ -209,7 +198,7 @@ contract DecryptionMock {
             signature
         );
 
-        emit UserDecryptionRequest(decryptionId, snsCtMaterials, handles, payload);
+        emit UserDecryptionRequest(decryptionId, handles, payload);
     }
 
     function delegatedUserDecryptionRequest(
@@ -223,10 +212,13 @@ contract DecryptionMock {
     ) external {
         userDecryptionCounter++;
         uint256 decryptionId = userDecryptionCounter;
-        SnsCiphertextMaterial[] memory snsCtMaterials = new SnsCiphertextMaterial[](1);
         address userAddress;
+        bytes32[] memory ctHandles = new bytes32[](ctHandleContractPairs.length);
+        for (uint256 i = 0; i < ctHandleContractPairs.length; i++) {
+            ctHandles[i] = ctHandleContractPairs[i].ctHandle;
+        }
 
-        emit UserDecryptionRequest(decryptionId, snsCtMaterials, userAddress, publicKey, extraData);
+        emit UserDecryptionRequest(decryptionId, ctHandles, userAddress, publicKey, extraData);
     }
 
     function userDecryptionResponse(

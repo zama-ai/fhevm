@@ -117,13 +117,12 @@ log:
   show_timestamp: true
   show_target: true
 
+# /v2/keyurl host-chain poller settings.
 keyurl:
-  fhe_public_key:
-    data_id: "fhe-public-key-data-id"
-    url: "http://0.0.0.0:3001/publicKey.bin"
-  crs:
-    data_id: "crs-data-id"
-    url: "http://0.0.0.0:3001/crs2048.bin"
+  # KMSGeneration contract address on the host chain (source for /v2/keyurl).
+  kms_generation_address: "0x3E0fBCcE61af7C01113027449eEFFF5DCd501419"
+  # /v2/keyurl poll interval in ms; the poller reads at the finalized block.
+  poll_interval_ms: 12000
 
 http:
   endpoint: "0.0.0.0:3000"

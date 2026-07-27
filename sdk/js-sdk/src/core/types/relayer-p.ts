@@ -51,7 +51,7 @@ export type RelayerFetchPublicDecryptPayload = {
 };
 
 // https://github.com/zama-ai/fhevm-relayer/blob/96151ef300f787658c5fbaf1b4471263160032d5/src/http/userdecrypt_http_listener.rs#L33
-export type HandleContractPair = {
+export type HandleContractPairV1 = {
   // Hex encoded bytes32 with 0x prefix.
   readonly handle: HandleBytes32Hex;
   // Hex encoded address with 0x prefix.
@@ -60,7 +60,7 @@ export type HandleContractPair = {
 
 // https://github.com/zama-ai/fhevm-relayer/blob/96151ef300f787658c5fbaf1b4471263160032d5/src/http/userdecrypt_http_listener.rs#L20
 export type FetchUserDecryptPayload = {
-  readonly handleContractPairs: readonly HandleContractPair[];
+  readonly handleContractPairs: readonly HandleContractPairV1[];
   readonly requestValidity: {
     // Number as a string
     readonly startTimestamp: string;
@@ -81,8 +81,45 @@ export type FetchUserDecryptPayload = {
   readonly extraData: BytesHex;
 };
 
+// https://github.com/zama-ai/fhevm-relayer v3 HandleEntryJson (camelCase)
+export type HandleContractPairV2 = {
+  // Hex encoded bytes32 with 0x prefix.
+  readonly ctHandle: HandleBytes32Hex;
+  // Hex encoded address with 0x prefix.
+  readonly contractAddress: ChecksummedAddress;
+  // Hex encoded address with 0x prefix.
+  readonly ownerAddress: ChecksummedAddress;
+};
+
+// https://github.com/zama-ai/fhevm-relayer — v3/user-decrypt (RFC-016 unified struct)
+// POST body: AttestedUserDecryptRequestJson envelope
+export type FetchUserDecryptPayloadV2 = {
+  readonly attestationType: 'eip712-unified-user-decrypt-v1';
+  readonly attestedPayload: {
+    readonly version: '2.0';
+    readonly type: 'user_decryption';
+    readonly handles: readonly HandleContractPairV2[];
+    // Hex encoded address with 0x prefix.
+    readonly userAddress: ChecksummedAddress;
+    // List of hex encoded addresses with 0x prefix (empty = permissive mode)
+    readonly allowedContracts: readonly ChecksummedAddress[];
+    readonly requestValidity: {
+      // Number as a string
+      readonly startTimestamp: string;
+      // Number as a string
+      readonly durationSeconds: string;
+    };
+    // Hex encoded key with 0x prefix.
+    readonly publicKey: BytesHex;
+    // Hex encoded bytes with 0x prefix. Default: 0x00
+    readonly extraData: BytesHex;
+  };
+  // Hex encoded signature with 0x prefix.
+  readonly signature: Bytes65Hex;
+};
+
 export type FetchDelegatedUserDecryptPayload = {
-  readonly handleContractPairs: readonly HandleContractPair[];
+  readonly handleContractPairs: readonly HandleContractPairV1[];
   // Hex encoded uint256 string without prefix
   readonly contractsChainId: string;
   // List of hex encoded addresses with 0x prefix
@@ -318,7 +355,7 @@ export type RelayerApiError400 = RelayerApiError400NoDetails | RelayerApiError40
  * Status: 400 (no details)
  */
 export type RelayerApiError400NoDetails = {
-  label: 'malformed_json' | 'request_error' | 'not_ready_for_decryption';
+  label: 'malformed_json' | 'request_error' | 'not_ready_for_decryption' | 'not_allowed_on_host_acl';
   message: string;
 };
 
@@ -372,7 +409,13 @@ export type RelayerApiError500 = {
  * Status: 503
  */
 export type RelayerApiError503 = {
-  label: 'protocol_paused' | 'gateway_not_reachable' | 'readiness_check_timed_out' | 'response_timed_out';
+  label:
+    | 'protocol_paused'
+    | 'insufficient_balance'
+    | 'insufficient_allowance'
+    | 'gateway_not_reachable'
+    | 'readiness_check_timed_out'
+    | 'response_timed_out';
   message: string;
 };
 
