@@ -162,6 +162,8 @@ export function PortfolioOverview({ controller }: { readonly controller: DemoCon
                   autoComplete="off"
                   value={amount}
                   aria-describedby="deposit-amount-help"
+                  aria-invalid={amount !== '' && !validAmount}
+                  aria-errormessage={amount !== '' && !validAmount ? 'deposit-amount-error' : undefined}
                   onChange={(event) => setAmount(event.target.value)}
                 />
                 <strong>USDC</strong>
@@ -192,7 +194,11 @@ export function PortfolioOverview({ controller }: { readonly controller: DemoCon
             >
               {depositRunning ? 'Depositing…' : 'Shield & deposit'}
             </button>
-            {!validAmount && amount !== '' && <p className="input-error">Enter up to 1,000 USDC.</p>}
+            {!validAmount && amount !== '' && (
+              <p className="input-error" id="deposit-amount-error">
+                Enter 0.000001–1,000 USDC, with up to 6 decimals.
+              </p>
+            )}
           </>
         ) : (
           <div className="active-deposit">
@@ -205,9 +211,7 @@ export function PortfolioOverview({ controller }: { readonly controller: DemoCon
         )}
 
         {deposit.kind === 'error' && (
-          <ActionError retryLabel="Retry" onRetry={() => actions.shieldAndDeposit(parsedAmount)}>
-            {deposit.message}
-          </ActionError>
+          <ActionError>{deposit.message}</ActionError>
         )}
       </article>
     </section>

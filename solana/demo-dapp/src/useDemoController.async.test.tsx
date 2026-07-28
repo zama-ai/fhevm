@@ -382,4 +382,105 @@ describe('useDemoController generation safety', () => {
     expect(controller.state.vaultMetrics).toEqual(after);
     expect(controller.state.harvestError).toBe(null);
   });
+
+  test('fast-forward can be repeated independently and compounds the vault metrics', async () => {
+    const initial = { totalAssets: 100_000_000n, totalShares: 100_000_000n };
+    const yearOne = { totalAssets: 107_000_000n, totalShares: 100_000_000n };
+    const yearTwo = { totalAssets: 114_490_000n, totalShares: 100_000_000n };
+    mocks.lifecycle.mockResolvedValue(settled);
+    mocks.metrics.mockResolvedValue(initial);
+    mocks.harvest
+      .mockResolvedValueOnce({ before: initial, after: yearOne })
+      .mockResolvedValueOnce({ before: yearOne, after: yearTwo });
+    await connect(controller);
+    await flush();
+
+    controller.actions.fastForwardOneYear();
+    await flush();
+    controller.actions.fastForwardOneYear();
+    await flush();
+
+    expect(mocks.harvest).toHaveBeenCalledTimes(2);
+    expect(controller.state.vaultMetrics).toEqual(yearTwo);
+    expect(controller.state.harvestFromPrice).toBe(1.07);
+  });
+
+  test('coalesces concurrent fast-forward actions', async () => {
+    const result = deferred<{
+      before: { totalAssets: bigint; totalShares: bigint };
+      after: { totalAssets: bigint; totalShares: bigint };
+    }>();
+    mocks.lifecycle.mockResolvedValue(settled);
+    mocks.harvest.mockReturnValue(result.promise);
+    await connect(controller);
+    await flush();
+
+    controller.actions.fastForwardOneYear();
+    controller.actions.fastForwardOneYear();
+    await flush();
+
+    expect(mocks.harvest).toHaveBeenCalledTimes(1);
+    result.resolve({
+      before: { totalAssets: 100_000_000n, totalShares: 100_000_000n },
+      after: { totalAssets: 107_000_000n, totalShares: 100_000_000n },
+    });
+    await flush();
+  });
+
+  test('refreshes vault metrics after a completed redemption', async () => {
+    const afterRedeem = { totalAssets: 0n, totalShares: 0n };
+    mocks.findDeposit.mockResolvedValue(null);
+    mocks.lifecycle.mockResolvedValue(settled);
+    mocks.revealShares.mockResolvedValue({ value: 100_000_000n, handle: '0x01' });
+    mocks.joinRedeem.mockResolvedValue(position);
+    mocks.metrics.mockResolvedValueOnce({ totalAssets: 100_000_000n, totalShares: 100_000_000n });
+    mocks.metrics.mockResolvedValueOnce(afterRedeem);
+    await connect(controller);
+    await flush();
+
+    controller.actions.redeem(50);
+    await flush();
+
+    expect(controller.state.vaultMetrics).toEqual(afterRedeem);
+  });
+
+  test('does not let a redemption refresh overwrite a newer fast-forward result', async () => {
+    const staleRefresh = deferred<{ totalAssets: bigint; totalShares: bigint }>();
+    const initial = { totalAssets: 100_000_000n, totalShares: 100_000_000n };
+    const afterHarvest = { totalAssets: 107_000_000n, totalShares: 100_000_000n };
+    mocks.findDeposit.mockResolvedValue(null);
+    mocks.lifecycle.mockResolvedValue(settled);
+    mocks.revealShares.mockResolvedValue({ value: 100_000_000n, handle: '0x01' });
+    mocks.joinRedeem.mockResolvedValue(position);
+    mocks.metrics.mockResolvedValueOnce(initial).mockReturnValueOnce(staleRefresh.promise);
+    mocks.harvest.mockResolvedValue({ before: initial, after: afterHarvest });
+    await connect(controller);
+    await flush();
+
+    controller.actions.redeem(50);
+    await flush();
+    controller.actions.fastForwardOneYear();
+    await flush();
+    expect(controller.state.vaultMetrics).toEqual(afterHarvest);
+
+    staleRefresh.resolve({ totalAssets: 50_000_000n, totalShares: 50_000_000n });
+    await flush();
+    expect(controller.state.vaultMetrics).toEqual(afterHarvest);
+  });
+
+  test('clears the private position after a completed full redemption', async () => {
+    mocks.findDeposit.mockResolvedValue(null);
+    mocks.lifecycle.mockResolvedValue(settled);
+    mocks.revealShares.mockResolvedValue({ value: 100_000_000n, handle: '0x01' });
+    mocks.joinRedeem.mockResolvedValue(position);
+    await connect(controller);
+    await flush();
+
+    controller.actions.redeem(100);
+    await flush();
+
+    expect(controller.state.hasPrivateShares).toBe(false);
+    expect(controller.state.vaultMetrics).toBe(null);
+    expect(controller.state.redeemPercentage).toBe(null);
+  });
 });

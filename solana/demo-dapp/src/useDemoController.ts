@@ -52,6 +52,7 @@ export type DemoState = {
   readonly harvestError: string | null;
   readonly harvestFromPrice: number | null;
   readonly redeem: JoinState<'decrypting' | RedeemStage>;
+  readonly redeemPercentage: number | null;
   readonly redeemLifecycle: BatchLifecycle | null;
   readonly completedRedeemLifecycle: Extract<BatchLifecycle, { readonly kind: 'settled' }> | null;
   readonly completedRedeemPosition: BatchPosition | null;
@@ -77,6 +78,7 @@ const accountState = {
   harvestError: null,
   harvestFromPrice: null,
   redeem: { kind: 'idle' },
+  redeemPercentage: null,
   redeemLifecycle: null,
   completedRedeemLifecycle: null,
   completedRedeemPosition: null,
@@ -110,6 +112,8 @@ const errorMessage = (error: unknown): string => (error instanceof Error ? error
 export function useDemoController() {
   const [state, dispatch] = useReducer(demoStateReducer, initialDemoState);
   const operationInFlight = useRef(false);
+  const harvestInFlight = useRef(false);
+  const metricsRequestGeneration = useRef(0);
   const operatorGeneration = useRef<Record<VaultDirection, number | null>>({ deposit: null, redeem: null });
   const sessionGeneration = useRef(0);
   const currentDepositClaimed = state.depositLifecycle?.kind === 'settled' && state.depositLifecycle.claimed;
@@ -120,6 +124,22 @@ export function useDemoController() {
   const finishOperation = useCallback((generation: number) => {
     if (sessionGeneration.current === generation) operationInFlight.current = false;
   }, []);
+  const refreshVaultMetrics = useCallback(
+    async (generation: number) => {
+      const requestGeneration = ++metricsRequestGeneration.current;
+      try {
+        const vaultMetrics = await readDemoVaultMetrics();
+        if (metricsRequestGeneration.current === requestGeneration) {
+          commit(generation, { vaultMetrics, harvestError: null });
+        }
+      } catch (error) {
+        if (metricsRequestGeneration.current === requestGeneration) {
+          commit(generation, { harvestError: errorMessage(error) });
+        }
+      }
+    },
+    [commit],
+  );
 
   const advanceOperator = useCallback(
     async (
@@ -242,13 +262,18 @@ export function useDemoController() {
             recordCompletedRedeem(session, position);
             commit(generation, {
               redeem: { kind: 'idle' },
+              redeemPercentage: null,
               redeemLifecycle: null,
               completedRedeemLifecycle: next,
               completedRedeemPosition: position,
               redeemOperatorError: null,
               revealedUsdc: null,
               revealUsdcError: null,
+              ...(state.redeemPercentage === 100
+                ? { hasPrivateShares: false, revealedShares: null, vaultMetrics: null }
+                : {}),
             });
+            if (state.redeemPercentage !== 100) void refreshVaultMetrics(generation);
             return;
           }
           commit(generation, { redeemLifecycle: next, redeemOperatorError: null });
@@ -271,31 +296,22 @@ export function useDemoController() {
       canceled = true;
       if (timeout !== undefined) window.clearTimeout(timeout);
     };
-  }, [advanceOperator, commit, state.connection, state.generation, state.redeem]);
+  }, [advanceOperator, commit, refreshVaultMetrics, state.connection, state.generation, state.redeem, state.redeemPercentage]);
 
   useEffect(() => {
     if (!state.hasPrivateShares) {
       commit(state.generation, { vaultMetrics: null });
       return;
     }
-    let canceled = false;
     const generation = state.generation;
-    void readDemoVaultMetrics()
-      .then((vaultMetrics) => {
-        if (!canceled) commit(generation, { vaultMetrics });
-      })
-      .catch((error) => {
-        if (!canceled) commit(generation, { harvestError: errorMessage(error) });
-      });
-    return () => {
-      canceled = true;
-    };
-  }, [commit, state.generation, state.hasPrivateShares]);
+    void refreshVaultMetrics(generation);
+  }, [commit, refreshVaultMetrics, state.generation, state.hasPrivateShares]);
 
   const disconnect = useCallback(() => {
     const generation = sessionGeneration.current + 1;
     sessionGeneration.current = generation;
     operationInFlight.current = false;
+    harvestInFlight.current = false;
     dispatch({ type: 'reset', generation, connection: { kind: 'disconnected' } });
   }, []);
 
@@ -412,8 +428,10 @@ export function useDemoController() {
   };
 
   const fastForwardOneYear = async () => {
-    if (state.harvesting) return;
+    if (harvestInFlight.current) return;
     const generation = state.generation;
+    const metricsRequest = ++metricsRequestGeneration.current;
+    harvestInFlight.current = true;
     commit(generation, {
       harvesting: true,
       harvestError: null,
@@ -422,14 +440,17 @@ export function useDemoController() {
       const metrics = state.vaultMetrics ?? (await readDemoVaultMetrics());
       if (metrics.totalShares === 0n) throw new Error('The vault has no shares to accrue yield to');
       const result = await harvestDemoVault();
-      commit(generation, {
-        vaultMetrics: result.after,
-        harvestFromPrice: Number(result.before.totalAssets) / Number(result.before.totalShares),
-      });
+      if (metricsRequestGeneration.current === metricsRequest) {
+        commit(generation, {
+          vaultMetrics: result.after,
+          harvestFromPrice: Number(result.before.totalAssets) / Number(result.before.totalShares),
+        });
+      }
     } catch (error) {
       commit(generation, { harvestFromPrice: null, harvestError: errorMessage(error) });
     } finally {
       commit(generation, { harvesting: false });
+      if (sessionGeneration.current === generation) harvestInFlight.current = false;
     }
   };
 
@@ -441,6 +462,7 @@ export function useDemoController() {
     operationInFlight.current = true;
     commit(generation, {
       redeem: { kind: 'running', stage: 'decrypting' },
+      redeemPercentage: percentage,
       revealedUsdc: null,
       revealUsdcError: null,
     });
@@ -460,7 +482,10 @@ export function useDemoController() {
       session.assertActive();
       commit(generation, { redeem: { kind: 'joined', result } });
     } catch (error) {
-      commit(generation, { redeem: { kind: 'error', message: describeWalletError(error, 'transaction') } });
+      commit(generation, {
+        redeem: { kind: 'error', message: describeWalletError(error, 'transaction') },
+        redeemPercentage: null,
+      });
     } finally {
       finishOperation(generation);
     }

@@ -110,7 +110,7 @@ export function DepositJourney({ controller }: { readonly controller: DemoContro
             <button
               className="panel-action"
               type="button"
-              disabled={vaultMetrics === null || harvesting}
+              disabled={vaultMetrics === null || vaultMetrics.totalShares === 0n || harvesting}
               onClick={actions.fastForwardOneYear}
             >
               {harvesting ? 'Fast-forwarding…' : 'Fast-forward 1 year'}

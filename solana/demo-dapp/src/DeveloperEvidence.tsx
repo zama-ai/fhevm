@@ -13,6 +13,9 @@ type TransactionEvidence = {
   readonly label: string;
   readonly signature: Signature;
   readonly slot: bigint;
+  readonly status: 'succeeded' | 'failed' | 'unavailable';
+  readonly computeUnitsConsumed: bigint | null;
+  readonly programIds: readonly Address[];
 };
 
 const short = (value: string): string => `${value.slice(0, 7)}…${value.slice(-7)}`;
@@ -108,34 +111,47 @@ export function DeveloperEvidence({ controller }: { readonly controller: DemoCon
         );
         const discoveredTransactions = signatureLists
           .flatMap(({ label, signatures }) =>
-            signatures.map(({ signature, slot }) => ({ label, signature, slot })),
+            signatures.map(({ signature }) => ({ label, signature })),
           )
-          .sort((left, right) => (left.slot === right.slot ? 0 : left.slot > right.slot ? -1 : 1))
           .slice(0, addresses.length * 4);
         const storedTransactions = readTransactionEvidence(session);
-        const storedStatuses =
-          storedTransactions.length === 0
-            ? []
-            : (
-                await rpc
-                  .getSignatureStatuses(
-                    storedTransactions.map(({ signature }) => signature),
-                    { searchTransactionHistory: true },
-                  )
-                  .send()
-              ).value;
-        const verifiedStoredTransactions = storedTransactions.flatMap((record, index) =>
-          storedStatuses[index] === null ? [] : [{ ...record, slot: -1n }],
-        );
         const seen = new Set<string>();
-        const nextTransactions = [
-          ...verifiedStoredTransactions,
-          ...discoveredTransactions,
-        ].filter(({ signature }) => {
+        const transactionCandidates = [...storedTransactions, ...discoveredTransactions].filter(({ signature }) => {
           if (seen.has(signature)) return false;
           seen.add(signature);
           return true;
         });
+        const transactionResults = await Promise.allSettled(
+          transactionCandidates.map(async ({ label, signature }): Promise<TransactionEvidence | null> => {
+              const transaction = await rpc
+                .getTransaction(signature, {
+                  commitment: 'confirmed',
+                  encoding: 'jsonParsed',
+                  maxSupportedTransactionVersion: 0,
+                })
+                .send();
+              if (transaction === null) return null;
+              return {
+                label,
+                signature,
+                slot: transaction.slot,
+                status:
+                  transaction.meta === null
+                    ? 'unavailable'
+                    : transaction.meta.err === null
+                      ? 'succeeded'
+                      : 'failed',
+                computeUnitsConsumed: transaction.meta?.computeUnitsConsumed ?? null,
+                programIds: [
+                  ...new Set(transaction.transaction.message.instructions.map(({ programId }) => programId)),
+                ],
+              } satisfies TransactionEvidence;
+            }),
+        );
+        const transactionFailures = transactionResults.filter((result) => result.status === 'rejected').length;
+        const nextTransactions = transactionResults
+          .flatMap((result) => result.status === 'fulfilled' && result.value !== null ? [result.value] : [])
+          .sort((left, right) => (left.slot === right.slot ? 0 : left.slot > right.slot ? -1 : 1));
         const [nextShares, nextUsdc] = await Promise.all([
           readOptionalBalanceEvidence(() =>
             readConfidentialBalanceEvidence(session, session.config.mints.payoutConfidential),
@@ -150,7 +166,11 @@ export function DeveloperEvidence({ controller }: { readonly controller: DemoCon
           setDecryptions(readDecryptionEvidence(session));
           setShares(nextShares);
           setClaimedUsdc(nextUsdc);
-          setError(null);
+          setError(
+            transactionFailures === 0
+              ? null
+              : `${transactionFailures} transaction ${transactionFailures === 1 ? 'lookup' : 'lookups'} failed; other evidence was refreshed.`,
+          );
         }
       } catch (loadError) {
         if (!canceled) setError(loadError instanceof Error ? loadError.message : String(loadError));
@@ -181,7 +201,11 @@ export function DeveloperEvidence({ controller }: { readonly controller: DemoCon
       <div className="evidence-content">
         <div className="evidence-toolbar">
           <span role="status" aria-live="polite">
-            {loading ? 'Refreshing localnet evidence…' : 'Live localnet evidence'}
+            {loading
+              ? 'Refreshing localnet evidence…'
+              : error === null
+                ? 'Verified localnet state'
+                : 'Evidence refresh failed'}
           </span>
           <button type="button" disabled={loading} onClick={() => setRefreshNonce((value) => value + 1)}>
             Refresh
@@ -232,7 +256,20 @@ export function DeveloperEvidence({ controller }: { readonly controller: DemoCon
             <ul>
               {transactions.map((transaction) => (
                 <li key={transaction.signature}>
-                  <span>{transaction.label}</span>
+                  <span>
+                    {transaction.label}
+                    <small>
+                      {transaction.status === 'succeeded'
+                        ? 'Succeeded'
+                        : transaction.status === 'failed'
+                          ? 'Failed'
+                          : 'Status unavailable'}
+                      {' · '}slot {transaction.slot.toString()}
+                      {transaction.computeUnitsConsumed === null
+                        ? ''
+                        : ` · ${transaction.computeUnitsConsumed.toLocaleString()} CU`}
+                    </small>
+                  </span>
                   <CopyValue label="transaction signature" value={transaction.signature} />
                   <a
                     href={explorerUrl(transaction.signature, session.config.rpcUrl)}
@@ -241,6 +278,12 @@ export function DeveloperEvidence({ controller }: { readonly controller: DemoCon
                   >
                     Explorer
                   </a>
+                  <details>
+                    <summary>Top-level programs</summary>
+                    {transaction.programIds.map((programId) => (
+                      <CopyValue key={programId} label="program ID" value={programId} />
+                    ))}
+                  </details>
                 </li>
               ))}
             </ul>
@@ -248,7 +291,7 @@ export function DeveloperEvidence({ controller }: { readonly controller: DemoCon
         )}
         {decryptions.length > 0 && (
           <div className="evidence-decryptions">
-            <strong>Recent user decryptions</strong>
+            <strong>Recorded user decryptions</strong>
             <ul>
               {decryptions.slice(0, 4).map((decryption) => (
                 <li key={decryption.jobId}>

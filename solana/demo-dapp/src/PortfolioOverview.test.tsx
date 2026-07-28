@@ -44,6 +44,7 @@ describe('PortfolioOverview', () => {
   });
 
   test('clears the completed amount and shows transient success feedback', () => {
+    vi.useFakeTimers();
     const shieldAndDeposit = vi.fn();
     let renderer: ReturnType<typeof create>;
     act(() => {
@@ -59,15 +60,45 @@ describe('PortfolioOverview', () => {
     const status = renderer!.root.findByProps({ role: 'status' });
     expect(status.findByType('strong').children).toEqual(['Deposit complete · cShares received']);
     expect(renderer!.root.findByProps({ id: 'deposit-amount' }).props.value).toBe('');
+    act(() => {
+      vi.advanceTimersByTime(5_000);
+    });
+    expect(renderer!.root.findAllByProps({ role: 'status' })).toHaveLength(0);
     act(() => renderer!.unmount());
+    vi.useRealTimers();
   });
 
   test('does not prefill a new deposit for an existing position', () => {
+    const shieldAndDeposit = vi.fn();
     let renderer: ReturnType<typeof create>;
     act(() => {
-      renderer = create(<PortfolioOverview controller={controller(vi.fn(), true)} />);
+      renderer = create(<PortfolioOverview controller={controller(shieldAndDeposit, true)} />);
     });
-    expect(renderer!.root.findByProps({ id: 'deposit-amount' }).props.value).toBe('');
+    const input = renderer!.root.findByProps({ id: 'deposit-amount' });
+    expect(input.props.value).toBe('');
+    act(() => input.props.onChange({ target: { value: '25' } }));
+    const submit = renderer!.root.findAllByType('button').find((button) => button.children.includes('Shield & deposit'));
+    act(() => submit!.props.onClick());
+    expect(shieldAndDeposit).toHaveBeenCalledWith(25);
+    act(() => renderer!.unmount());
+  });
+
+  test('does not expose an unvalidated retry action after a deposit error', () => {
+    const shieldAndDeposit = vi.fn();
+    const value = controller(shieldAndDeposit, false);
+    const errorController = {
+      ...value,
+      state: { ...value.state, deposit: { kind: 'error', message: 'Wallet request cancelled' } },
+    } as DemoController;
+    let renderer: ReturnType<typeof create>;
+    act(() => {
+      renderer = create(<PortfolioOverview controller={errorController} />);
+    });
+
+    expect(renderer!.root.findByProps({ role: 'alert' }).findAllByType('button')).toHaveLength(0);
+    expect(
+      renderer!.root.findAllByType('button').some((button) => button.children.includes('Shield & deposit')),
+    ).toBe(true);
     act(() => renderer!.unmount());
   });
 });
