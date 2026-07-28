@@ -1,3 +1,4 @@
+import { createHash } from "node:crypto";
 import { closeSync, openSync } from "node:fs";
 import fs from "node:fs/promises";
 import path from "node:path";
@@ -10,6 +11,7 @@ import {
 import { solanaImages } from "../src/solana/images";
 import { run, runStreaming } from "../src/utils/process";
 import {
+  authorizeDemoHeaders,
   createDemoAuthorizationFile,
   DEMO_ALLOWED_ORIGIN_ENV,
   DEMO_AUTH_TOKEN_FILE_ENV,
@@ -18,6 +20,11 @@ import {
   readDemoAuthorizationFromEnv,
 } from "./authorization";
 import { DEMO_CONFIG_DEFAULT_PATH } from "./config";
+import {
+  requestSupervisorReseed,
+  startSupervisorControl,
+  type SupervisorReseedResult,
+} from "./supervisorControl";
 
 export const DEMO_RUNTIME_DIR = path.join(
   REPO_ROOT,
@@ -260,7 +267,7 @@ const lockOwner = async (
 
 export type LifecycleLockState = "absent" | "active" | "stale";
 
-export const readLifecycleLockState = async (
+const readLifecycleLockStateOnce = async (
   lockPath = DEMO_LOCK_PATH,
   identityReader: (pid: number) => Promise<string | null> = readProcessIdentity,
 ): Promise<LifecycleLockState> => {
@@ -271,10 +278,19 @@ export const readLifecycleLockState = async (
     throw error;
   }
   const owner = await lockOwner(lockPath);
-  if (owner === null) return "stale";
+  // Ownership publication follows mkdir. Missing ownership is indeterminate and therefore remains
+  // locked until it is inspected; elapsed wall time cannot prove that the creator is dead.
+  if (owner === null) return "active";
   return (await identityReader(owner.pid)) === owner.identity
     ? "active"
     : "stale";
+};
+
+export const readLifecycleLockState = async (
+  lockPath = DEMO_LOCK_PATH,
+  identityReader: (pid: number) => Promise<string | null> = readProcessIdentity,
+): Promise<LifecycleLockState> => {
+  return readLifecycleLockStateOnce(lockPath, identityReader);
 };
 
 export const withLifecycleLock = async <T>(
@@ -1398,6 +1414,23 @@ export const bootStoppedMarkerPath = (bootId: string): string => {
   return path.join(DEMO_RUNTIME_DIR, bootId, "stopped.json");
 };
 
+export const supervisorControlSocketPath = (bootId: string): string => {
+  demoComposeProject(bootId);
+  const userId = process.getuid?.();
+  if (userId === undefined) {
+    throw new Error("demo supervisor control requires a Unix user id");
+  }
+  const socketName = createHash("sha256")
+    .update(`${REPO_ROOT}\0${bootId}`)
+    .digest("hex")
+    .slice(0, 24);
+  return path.join(
+    "/tmp",
+    `fhevm-demo-${userId}`,
+    `${socketName}.sock`,
+  );
+};
+
 const stoppedBootMarkerExists = async (bootId: string): Promise<boolean> => {
   try {
     const marker = JSON.parse(
@@ -1411,6 +1444,29 @@ const stoppedBootMarkerExists = async (bootId: string): Promise<boolean> => {
 };
 
 type SupervisorAction = "continue" | "wait" | "clean-stop" | "fail";
+type SupervisorObservationAction = "observe" | "wait" | "fail";
+
+export const supervisorObservationAction = ({
+  lockBefore,
+  lockAfter,
+  manifestBefore,
+  manifestAfter,
+}: {
+  readonly lockBefore: LifecycleLockState;
+  readonly lockAfter: LifecycleLockState;
+  readonly manifestBefore: DemoManifest | null;
+  readonly manifestAfter: DemoManifest | null;
+}): SupervisorObservationAction => {
+  if (lockBefore === "stale" || lockAfter === "stale") return "fail";
+  if (
+    lockBefore === "active" ||
+    lockAfter === "active" ||
+    JSON.stringify(manifestBefore) !== JSON.stringify(manifestAfter)
+  ) {
+    return "wait";
+  }
+  return "observe";
+};
 
 export const supervisedBootAction = ({
   expectedBootId,
@@ -1476,6 +1532,36 @@ export const serveDemo = async (): Promise<void> => {
   };
   const onSigint = () => requestStop("SIGINT");
   const onSigterm = () => requestStop("SIGTERM");
+  const supervisorIdentity = await readProcessIdentity(process.pid);
+  if (supervisorIdentity === null) {
+    throw new Error("cannot establish demo supervisor process identity");
+  }
+  const stopSupervisorControl = await withLifecycleLock(() =>
+    startSupervisorControl({
+      socketPath: supervisorControlSocketPath(expectedBootId),
+      bootId: expectedBootId,
+      owner: { pid: process.pid, identity: supervisorIdentity },
+      isExactOwner: async (owner) =>
+        (await readProcessIdentity(owner.pid)) === owner.identity,
+      onReseed: async (request) => {
+        const authorization = await readCurrentDemoAuthorization();
+        const decision = authorizeDemoHeaders(
+          (name) =>
+            name === "authorization"
+              ? `Bearer ${request.token}`
+              : name === "x-fhevm-demo-boot-id"
+                ? request.bootId
+                : undefined,
+          authorization,
+        );
+        if (!decision.ok) throw new Error("supervisor authorization rejected");
+        return reseedDemo({
+          announce: false,
+          expectedBootId,
+        });
+      },
+    }),
+  );
   process.on("SIGINT", onSigint);
   process.on("SIGTERM", onSigterm);
   console.log(
@@ -1492,6 +1578,7 @@ export const serveDemo = async (): Promise<void> => {
         return;
       }
 
+      const lockBefore = await readLifecycleLockState();
       const manifest = await readDemoManifest();
       const stopped: ProcessName[] = [];
       if (manifest?.bootId === expectedBootId) {
@@ -1502,10 +1589,27 @@ export const serveDemo = async (): Promise<void> => {
           }
         }
       }
-      const lockState = await readLifecycleLockState();
+      const manifestAfter = await readDemoManifest();
+      const lockAfter = await readLifecycleLockState();
+      const observation = supervisorObservationAction({
+        lockBefore,
+        lockAfter,
+        manifestBefore: manifest,
+        manifestAfter,
+      });
+      if (observation === "wait") {
+        await Bun.sleep(250);
+        continue;
+      }
+      if (observation === "fail") {
+        throw new Error(
+          `stale or unreadable lifecycle lock at ${DEMO_LOCK_PATH}; inspect it before removing it`,
+        );
+      }
+      const lockState = lockAfter;
       const action = supervisedBootAction({
         expectedBootId,
-        manifest,
+        manifest: manifestAfter,
         stoppedProcesses: stopped,
         lockState,
         stoppedMarker: await stoppedBootMarkerExists(expectedBootId),
@@ -1524,12 +1628,12 @@ export const serveDemo = async (): Promise<void> => {
             `stale or unreadable lifecycle lock at ${DEMO_LOCK_PATH}; inspect it before removing it`,
           );
         }
-        if (manifest === null || manifest.bootId !== initial.bootId) {
+        if (manifestAfter === null || manifestAfter.bootId !== initial.bootId) {
           throw new Error("supervised demo manifest was removed or replaced");
         }
         throw new Error(
-          manifest.state !== "running"
-            ? `supervised demo entered unexpected state ${manifest.state}`
+          manifestAfter.state !== "running"
+            ? `supervised demo entered unexpected state ${manifestAfter.state}`
             : `supervised native process stopped: ${stopped.join(", ")}`,
         );
       }
@@ -1538,6 +1642,7 @@ export const serveDemo = async (): Promise<void> => {
   } finally {
     process.off("SIGINT", onSigint);
     process.off("SIGTERM", onSigterm);
+    await withLifecycleLock(stopSupervisorControl);
   }
 };
 
@@ -1663,9 +1768,34 @@ export const downDemo = async (): Promise<void> =>
     await stopDemoManifest(manifest);
   });
 
-export const reseedDemo = async (): Promise<void> =>
+const reseedReadyMessage = ({
+  bootId,
+  launchUrl,
+}: SupervisorReseedResult): string =>
+  process.env.DEMO_PRINT_LAUNCH_URL === "0"
+    ? `[reseed] refreshed owned boot ${bootId} (launch URL suppressed)`
+    : `[reseed] refreshed owned boot ${bootId}; reopen ${launchUrl}`;
+
+export const reseedTargetAction = (
+  expectedBootId: string | undefined,
+  manifest: Pick<DemoManifest, "bootId"> | null,
+): "proceed" | "replaced" =>
+  expectedBootId === undefined || manifest?.bootId === expectedBootId
+    ? "proceed"
+    : "replaced";
+
+export const reseedDemo = async ({
+  announce = true,
+  expectedBootId,
+}: {
+  readonly announce?: boolean;
+  readonly expectedBootId?: string;
+} = {}): Promise<SupervisorReseedResult> =>
   withLifecycleLock(async () => {
     const manifest = await readDemoManifest();
+    if (reseedTargetAction(expectedBootId, manifest) === "replaced") {
+      throw new Error(`supervised boot ${expectedBootId} was replaced`);
+    }
     if (manifest === null || !(await isOwnedBootHealthy(manifest))) {
       throw new Error("reseed requires one healthy, exactly-owned demo boot");
     }
@@ -1739,11 +1869,12 @@ export const reseedDemo = async (): Promise<void> =>
         );
       }
       await writeDemoManifest({ ...nextManifest, state: "running" });
-      console.log(
-        process.env.DEMO_PRINT_LAUNCH_URL === "0"
-          ? `[reseed] refreshed owned boot ${manifest.bootId} (launch URL suppressed)`
-          : `[reseed] refreshed owned boot ${manifest.bootId}; reopen ${demoLaunchUrl(authorization.launchFragment)}`,
-      );
+      const result = {
+        bootId: manifest.bootId,
+        launchUrl: demoLaunchUrl(authorization.launchFragment),
+      };
+      if (announce) console.log(reseedReadyMessage(result));
+      return result;
     } catch (error) {
       await writeDemoManifest({
         ...nextManifest,
@@ -1753,6 +1884,32 @@ export const reseedDemo = async (): Promise<void> =>
       throw error;
     }
   });
+
+export const reseedThroughSupervisor = async (): Promise<void> => {
+  const manifest = await readDemoManifest();
+  if (manifest === null || manifest.state !== "running") {
+    throw new Error("supervised reseed requires one running demo boot");
+  }
+  const socketPath = supervisorControlSocketPath(manifest.bootId);
+  try {
+    await fs.access(socketPath);
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code === "ENOENT") {
+      throw new Error(
+        "no active demo supervisor; run 'bun run demo serve' or use 'bun run demo reseed --direct' only from a shell that preserves child processes",
+      );
+    }
+    throw error;
+  }
+  const authorization = await readCurrentDemoAuthorization();
+  const result = await requestSupervisorReseed(socketPath, {
+    version: 1,
+    action: "reseed",
+    bootId: authorization.bootId,
+    token: authorization.token,
+  });
+  console.log(reseedReadyMessage(result));
+};
 
 export const statusDemo = async (): Promise<boolean> => {
   const manifest = await readDemoManifest();

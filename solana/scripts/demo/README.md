@@ -8,15 +8,20 @@ bun run demo up
 bun run demo serve
 bun run demo status
 bun run demo logs [validator|listener|faucet|dapp|owned-container-name|all] [--no-follow]
-bun run demo reseed
+bun run demo reseed [--direct]
 bun run demo down
 ```
 
 `up` returns after the stack is healthy and is intended for an interactive shell or CI job that
 preserves background processes. Use `serve` for browser automation and other command runners that
 reap descendant processes when a command returns. It performs the same idempotent `up`, then stays
-in the foreground and fails if an owned native process exits. Run `down` from another terminal to
-stop the exact owned stack and let `serve` exit cleanly.
+in the foreground and fails if an owned native process exits. While `serve` is active, `reseed`
+delegates through its mode-0600, boot-authorized Unix socket so replacement faucet and dApp
+processes remain children of the supervisor. Run `down` from another terminal to stop the exact
+owned stack and let `serve` exit cleanly.
+
+Without an active `serve`, `reseed` fails closed. `reseed --direct` is reserved for an interactive
+shell or CI runner that is known to preserve descendants after the command returns.
 
 `doctor` and `status` are read-only. `up` refuses occupied demo ports, an existing unowned
 `fhevm` state/project, or native processes it cannot prove it owns. Re-running `up` is a no-op only

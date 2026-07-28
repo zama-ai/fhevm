@@ -22,7 +22,10 @@ import {
   readLifecycleLockState,
   readOwnedDockerResources,
   recoverPartialDockerResources,
+  reseedTargetAction,
   resolveOwnedLogContainers,
+  supervisorControlSocketPath,
+  supervisorObservationAction,
   supervisedBootAction,
   terminateUntrackedChild,
   withLifecycleLock,
@@ -255,7 +258,28 @@ describe("demo lifecycle ownership primitives", () => {
         lockPath,
         async (pid) => `identity:${pid}`,
       ),
-    ).toBe("stale");
+    ).toBe("active");
+  });
+
+  test("keeps a delayed lock owner publication transitional", async () => {
+    const directory = await fs.mkdtemp(
+      path.join(os.tmpdir(), "demo-lifecycle-lock-"),
+    );
+    temporaryDirectories.push(directory);
+    const lockPath = path.join(directory, "lock");
+    await fs.mkdir(lockPath);
+    await Bun.sleep(50);
+    expect(await readLifecycleLockState(lockPath)).toBe("active");
+    await fs.writeFile(
+      path.join(lockPath, "owner.json"),
+      JSON.stringify({ pid: 42, identity: "identity:42" }),
+    );
+    expect(
+      await readLifecycleLockState(
+        lockPath,
+        async (pid) => `identity:${pid}`,
+      ),
+    ).toBe("active");
   });
 
   test("supervisor waits only for an exact active mutation and recognizes clean stop markers", () => {
@@ -319,6 +343,43 @@ describe("demo lifecycle ownership primitives", () => {
     ).toBe("clean-stop");
   });
 
+  test("supervisor acts only on a stable lifecycle observation", () => {
+    const before = manifest();
+    const after = { ...before, state: "starting" as const };
+    expect(
+      supervisorObservationAction({
+        lockBefore: "absent",
+        lockAfter: "absent",
+        manifestBefore: before,
+        manifestAfter: before,
+      }),
+    ).toBe("observe");
+    expect(
+      supervisorObservationAction({
+        lockBefore: "absent",
+        lockAfter: "absent",
+        manifestBefore: before,
+        manifestAfter: after,
+      }),
+    ).toBe("wait");
+    expect(
+      supervisorObservationAction({
+        lockBefore: "active",
+        lockAfter: "absent",
+        manifestBefore: before,
+        manifestAfter: before,
+      }),
+    ).toBe("wait");
+    expect(
+      supervisorObservationAction({
+        lockBefore: "absent",
+        lockAfter: "stale",
+        manifestBefore: before,
+        manifestAfter: before,
+      }),
+    ).toBe("fail");
+  });
+
   test("signal cleanup cannot stop a replacement boot", () => {
     const expectedBootId = manifest().bootId;
     expect(
@@ -336,6 +397,28 @@ describe("demo lifecycle ownership primitives", () => {
     expect(expectedBootShutdownAction(expectedBootId, null)).toBe(
       "clean-stop",
     );
+  });
+
+  test("supervised reseed cannot target a replacement boot", () => {
+    const expectedBootId = manifest().bootId;
+    expect(
+      reseedTargetAction(expectedBootId, { bootId: expectedBootId }),
+    ).toBe("proceed");
+    expect(
+      reseedTargetAction(expectedBootId, { bootId: crypto.randomUUID() }),
+    ).toBe("replaced");
+    expect(reseedTargetAction(expectedBootId, null)).toBe("replaced");
+    expect(
+      reseedTargetAction(undefined, { bootId: crypto.randomUUID() }),
+    ).toBe("proceed");
+  });
+
+  test("derives a private macOS-compatible supervisor socket path", () => {
+    const socketPath = supervisorControlSocketPath(manifest().bootId);
+    expect(socketPath.startsWith("/tmp/fhevm-demo-")).toBe(true);
+    expect(Buffer.byteLength(socketPath)).toBeLessThanOrEqual(103);
+    expect(socketPath).not.toContain(process.cwd());
+    expect(socketPath).not.toContain(manifest().bootId);
   });
 
   test("rejects a same-project resource that appears after the first teardown check", () => {
