@@ -13,19 +13,18 @@ export const localcleartext_legacy = /*#__PURE__*/ defineFhevmChain({
       kmsVerifier: {
         address: '0x901F8942346f7AB3a01F6D7613119Bca447Bb030',
       },
-      protocolConfig: {
-        address: '0x0000000000000000000000000000000000000000',
-      },
+      // v0.12.0 predates ProtocolConfig — no such contract is deployed for this profile.
+      protocolConfig: undefined,
     },
     relayerUrl: 'http://localhost:8545',
     gateway: {
-      id: 10_901,
+      id: 654_321,
       contracts: {
         decryption: {
-          address: '0x5ffdaAB0373E62E2ea2944776209aEf29E631A64',
+          address: '0xEaaA2FC6BC259dF015Aa7Dc8e59e0B67df622721',
         },
         inputVerification: {
-          address: '0x812b06e1CDCE800494b79fFE4f925A504a9A9810',
+          address: '0x6189F6c0c3E40B4a3c72ec86262295D78d845297',
         },
       },
     },

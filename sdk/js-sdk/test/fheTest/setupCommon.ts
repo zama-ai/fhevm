@@ -533,7 +533,7 @@ function _prepareChain(chainName: FheTestChainName): FheTestBaseEnv {
     localstack_v14,
     localcleartext_legacy,
     localcleartext,
-    localcleartext_v12: localcleartext,
+    localcleartext_v12: localcleartext_legacy,
     localcleartext_v13: localcleartext,
     polygon_devnet,
     ingen_trex_cleartext,
