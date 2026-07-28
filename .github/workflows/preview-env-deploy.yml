@@ -120,7 +120,7 @@ on:
         required: false
         default: ""
       listener_version:
-        description: "Override the listener/listener-core image tag (external dep, not built here - pair with the coprocessor's host-listener-consumer). Leave empty for the pin in the workflow env."
+        description: "Override the image tag for the listener/listener-core image. Leave empty to resolve it automatically from the change-detection base commit."
         required: false
         default: ""
 
@@ -173,11 +173,6 @@ env:
   #=====REDIS================================================================
   REDIS_CHART: oci://hub.zama.org/cgr/zama.ai/iamguarded-charts/redis
   REDIS_CHART_VERSION: ${{ inputs.redis_chart_version || '25.3.8' }}
-  #=====LISTENER=============================================================
-  # The chart is this repo's; the image is an external dep, paired with the
-  # coprocessor's host-listener-consumer.
-  # TODO: Why
-  LISTENER_VERSION: ${{ inputs.listener_version || 'v0.13.3' }}
   #=====TAILSCALE============================================================
   TAILSCALE_HOSTNAME: tailscale-operator-zws-dev.diplodocus-boa.ts.net
 
@@ -306,6 +301,14 @@ jobs:
     permissions: *docker_permissions
     secrets: *docker_secrets
 
+  build-listener:
+    name: build/listener
+    needs: check-labels
+    if: *should_build_images
+    uses: ./.github/workflows/listener-docker-build.yml
+    permissions: *docker_permissions
+    secrets: *docker_secrets
+
   build-relayer:
     name: build/relayer
     needs: check-labels
@@ -342,6 +345,7 @@ jobs:
       - build-gateway-contracts
       - build-kms-connector
       - build-coprocessor
+      - build-listener
       - build-relayer
       - build-test-suite
     if: >-
@@ -784,7 +788,7 @@ jobs:
           for i in $(seq 1 "${NB_COPROCESSOR}"); do
             helm upgrade --install "listener-${i}" "${LISTENER_CHART}" \
               -n "${NAMESPACE}" -f ci/preview-env/listener/values-listener-e2e.yaml \
-              --set-string "image.tag=${LISTENER_VERSION}" \
+              --set-string "image.tag=$(jq -r .listener <<<"${TAGS_JSON}")" \
               --set-string "env[0].value=postgresql://zama:zama@postgres-listener-${i}:5432/listener?sslmode=disable" \
               --set-string "env[1].value=redis://coprocessor-redis-${i}-master:6379" &
           done

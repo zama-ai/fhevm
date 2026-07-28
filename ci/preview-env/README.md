@@ -195,12 +195,12 @@ self-contained `hostListener`. Per party `i`:
   blocks in order as they are mined — deployed after keygen it anchors past them and has
   to grind the whole finalization backlog back down first.
 
-> This producer path is newer to the preview than the old DB-only `hostListener`. Three
+> This producer path is newer to the preview than the old DB-only `hostListener`. Two
 > things to validate on the first real multi-run (adjust the preview-env values, not the
-> charts): the `listener-core` image tag (`LISTENER_VERSION`) must be broker-payload
-> compatible with the deployed coprocessor's `host_listener_consumer`; anvil must serve the
-> `block_receipts` RPC (`eth_getBlockReceipts`); and the broker topic keying (chain id
-> `12345`) must match the consumer's `--chain-id`.
+> charts): anvil must serve the `block_receipts` RPC (`eth_getBlockReceipts`), and the
+> broker topic keying (chain id `12345`) must match the consumer's `--chain-id`. (The
+> `listener-core` image resolves from the same commit as the coprocessor consumer, so
+> broker-payload compatibility holds by construction.)
 
 > Resource caveat: each coprocessor party's `tfhe`/`sns` workers request substantial
 > CPU/memory on the `coprocessor` nodepool, so `nb_coprocessor` > 1 multiplies the

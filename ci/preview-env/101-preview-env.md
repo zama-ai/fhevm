@@ -76,9 +76,9 @@ Key inputs (all have sensible defaults — you rarely set more than a couple):
   picked branch". Set one to deploy that **published** OCI chart release
   instead.
 - **External deps** (`common_chart_version`, `redis_chart_version`,
-  `kms_core_version`/`kms_repo_ref`, `listener_version`, …) also default to
-  **empty**, meaning "use the pinned version in the workflow env" — they're
-  owned by other repos, so there's no commit of this repo to derive them from.
+  `kms_core_version`/`kms_repo_ref`, …) also default to **empty**, meaning
+  "use the pinned version in the workflow env" — they're owned by other
+  repos, so there's no commit of this repo to derive them from.
   (`relayer_sdk_version` keeps a real default; emptying it skips the
   relayer-sdk suite.)
 
