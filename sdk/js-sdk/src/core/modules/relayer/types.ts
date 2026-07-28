@@ -152,7 +152,8 @@ export type FetchUserDecryptParametersV2 = {
     }>;
     readonly kmsDecryptEip712Signer: ChecksummedAddress;
     readonly kmsDecryptEip712Message: KmsUserDecryptEip712V2Message;
-    readonly kmsDecryptEip712Signature: Bytes65Hex;
+    // Variable length: 65-byte EOA, ERC-1271 blob, or empty `0x`.
+    readonly kmsDecryptEip712Signature: BytesHex;
   };
   readonly fhevmContext: FhevmClientFrozenContext;
   readonly options?: RelayerUserDecryptOptions | undefined;
