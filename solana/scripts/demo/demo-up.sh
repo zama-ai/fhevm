@@ -62,7 +62,10 @@ bash "$ROOT/solana/scripts/e2e/clean-e2e.sh"
 
 # The lifecycle starts Vite after this script returns. Install its frozen graph once per fresh boot
 # so local and CI bring-up never rely on Bun's implicit auto-install; reseed intentionally skips it.
-( cd "$ROOT/solana/demo-dapp" && bun install --frozen-lockfile )
+if ! ( cd "$ROOT/solana/demo-dapp" && bun install --frozen-lockfile ); then
+  echo "==> [demo-up] dependency install failed; retrying once without cached registry data" >&2
+  ( cd "$ROOT/solana/demo-dapp" && bun install --force --no-cache --frozen-lockfile )
+fi
 
 bash "$ROOT/solana/scripts/demo/deploy-demo-programs.sh"
 

@@ -266,7 +266,6 @@ mod tests {
         let handle = FixedBytes::from([0x12; 32]);
         let request = UserDecryptionRequestSolana {
             decryptionId: U256::from(42),
-            snsCtMaterials: Vec::new(),
             handles: vec![HandleEntry {
                 handle,
                 contractAddress: Address::ZERO,
