@@ -13,6 +13,7 @@ import {
 } from '@fhevm/sdk/solana/vault';
 
 import type { DemoSession } from './demoSession';
+import { recordDecryptionEvidence } from './evidenceStore';
 
 type Bytes32Hex = Parameters<typeof defineFhevmSolanaChain>[0]['fhevm']['acl']['domainKeys'][number];
 
@@ -50,6 +51,7 @@ const userDecryptSigner = (session: DemoSession): SolanaUserDecryptSigner => ({
 const revealConfidentialBalance = async (
   session: DemoSession,
   mint: DemoSession['config']['mints']['joinConfidential'],
+  label: 'cShares' | 'cUSDC',
 ): Promise<RevealedBalance> => {
   const tokenAccount = await tokenAccountAddress(mint, session.signer.address);
   const balance = await confidentialBalanceValueAccount(mint, tokenAccount);
@@ -72,6 +74,10 @@ const revealConfidentialBalance = async (
   const signer = userDecryptSigner(session);
   const client = createFhevmDecryptClient({ chain, signer });
   await client.ready;
+  const startedAt = performance.now();
+  let jobId: string | null = null;
+  let queuedAt: number | null = null;
+  let responseAt: number | null = null;
   const [clearValue] = await decryptPosition(
     { chain, runtime: client.runtime, options: { batchRpcCalls: false } },
     signer,
@@ -79,13 +85,36 @@ const revealConfidentialBalance = async (
       handles: [state.currentHandle],
       aclValueKey: balance.aclValueKey,
       contextId: asBytes32BigEndian(session.config.userDecryptContextId),
-      options: { timeout: 60_000 },
+      options: {
+        timeout: 60_000,
+        onProgress: (progress) => {
+          if (progress.type === 'queued' && progress.method === 'POST') {
+            jobId = progress.jobId;
+            queuedAt = performance.now();
+          } else if (progress.type === 'succeeded') {
+            jobId ??= progress.jobId;
+            responseAt = performance.now();
+          }
+        },
+      },
     },
   );
   if (clearValue === undefined || typeof clearValue.value !== 'bigint') {
-    throw new Error('decrypted cShares balance is not an integer');
+    throw new Error(`decrypted ${label} balance is not an integer`);
   }
-  return { handle: handleHex(state.currentHandle), value: clearValue.value };
+  const handle = handleHex(state.currentHandle);
+  const totalElapsedMs = Math.round(performance.now() - startedAt);
+  if (jobId !== null && queuedAt !== null && responseAt !== null) {
+    recordDecryptionEvidence(session, {
+      label,
+      handle,
+      jobId,
+      queueToResponseMs: Math.round(responseAt - queuedAt),
+      totalElapsedMs,
+      completedAt: Date.now(),
+    });
+  }
+  return { handle, value: clearValue.value };
 };
 
 export const readClaimedSharesHandle = async (session: DemoSession): Promise<string> => {
@@ -111,7 +140,7 @@ export const readConfidentialBalanceEvidence = async (
 };
 
 export const revealClaimedShares = (session: DemoSession): Promise<RevealedBalance> =>
-  revealConfidentialBalance(session, session.config.mints.payoutConfidential);
+  revealConfidentialBalance(session, session.config.mints.payoutConfidential, 'cShares');
 
 export const revealClaimedUsdc = (session: DemoSession): Promise<RevealedBalance> =>
-  revealConfidentialBalance(session, session.config.mints.joinConfidential);
+  revealConfidentialBalance(session, session.config.mints.joinConfidential, 'cUSDC');

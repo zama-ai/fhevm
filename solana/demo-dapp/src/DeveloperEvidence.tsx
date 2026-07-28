@@ -1,7 +1,11 @@
 import { createSolanaRpc, type Address, type Signature } from '@solana/kit';
 import { useEffect, useMemo, useState } from 'react';
 
-import { readTransactionEvidence } from './evidenceStore';
+import {
+  readDecryptionEvidence,
+  readTransactionEvidence,
+  type DecryptionEvidenceRecord,
+} from './evidenceStore';
 import { readConfidentialBalanceEvidence, type ConfidentialBalanceEvidence } from './revealShares';
 import type { DemoController } from './useDemoController';
 
@@ -53,6 +57,7 @@ export function DeveloperEvidence({ controller }: { readonly controller: DemoCon
   const { state } = controller;
   const [open, setOpen] = useState(false);
   const [transactions, setTransactions] = useState<readonly TransactionEvidence[]>([]);
+  const [decryptions, setDecryptions] = useState<readonly DecryptionEvidenceRecord[]>([]);
   const [shares, setShares] = useState<ConfidentialBalanceEvidence | null>(null);
   const [claimedUsdc, setClaimedUsdc] = useState<ConfidentialBalanceEvidence | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -67,6 +72,8 @@ export function DeveloperEvidence({ controller }: { readonly controller: DemoCon
     state.redeemLifecycle?.kind === 'settled' && state.redeemLifecycle.claimed ? 'redeem-claimed' : '',
     state.redeemOperatorAction ?? '',
     state.completedRedeemPosition?.batchIndex.toString() ?? '',
+    state.revealedShares?.handle ?? '',
+    state.revealedUsdc?.handle ?? '',
   ].join(':');
   const addresses = useMemo(() => {
     if (session === null) return [];
@@ -140,6 +147,7 @@ export function DeveloperEvidence({ controller }: { readonly controller: DemoCon
         session.assertActive();
         if (!canceled) {
           setTransactions(nextTransactions);
+          setDecryptions(readDecryptionEvidence(session));
           setShares(nextShares);
           setClaimedUsdc(nextUsdc);
           setError(null);
@@ -238,6 +246,26 @@ export function DeveloperEvidence({ controller }: { readonly controller: DemoCon
             </ul>
           </div>
         )}
+        {decryptions.length > 0 && (
+          <div className="evidence-decryptions">
+            <strong>Recent user decryptions</strong>
+            <ul>
+              {decryptions.slice(0, 4).map((decryption) => (
+                <li key={decryption.jobId}>
+                  <span>{decryption.label}</span>
+                  <span className="decryption-identifiers">
+                    <CopyValue label="decryption handle" value={decryption.handle} />
+                    <CopyValue label="decryption job id" value={decryption.jobId} />
+                  </span>
+                  <small>
+                    {(decryption.totalElapsedMs / 1_000).toFixed(2)}s wallet→cleartext ·{' '}
+                    {(decryption.queueToResponseMs / 1_000).toFixed(2)}s queued→response
+                  </small>
+                </li>
+              ))}
+            </ul>
+          </div>
+        )}
         {error !== null && (
           <p className="evidence-error" role="status" aria-live="polite">
             Evidence is temporarily unavailable: {error}
@@ -246,6 +274,7 @@ export function DeveloperEvidence({ controller }: { readonly controller: DemoCon
         <p className="evidence-note">
           Demo-only: faucet funding, automatic keeper actions, 7% illustrative APY, and fast-forwarding. Encryption,
           settlement, claims, transactions, KMS authorization, and browser decryption use the real local stack.
+          Timings are individual observations, not a p95 benchmark.
         </p>
       </div>
     </details>

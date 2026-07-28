@@ -87,7 +87,8 @@
 }
 
 .evidence-content dl > div,
-.evidence-transactions li {
+.evidence-transactions li,
+.evidence-decryptions li {
   display: grid;
   grid-template-columns: minmax(150px, 0.7fr) minmax(220px, 1fr) auto;
   align-items: center;
@@ -95,7 +96,8 @@
 }
 
 .evidence-content dt,
-.evidence-transactions li > span {
+.evidence-transactions li > span,
+.evidence-decryptions li > span:first-child {
   color: #9c9ca4;
   font-size: 11px;
 }
@@ -138,18 +140,31 @@
   background: rgba(124, 58, 237, 0.18);
 }
 
-.evidence-transactions > strong {
+.evidence-transactions > strong,
+.evidence-decryptions > strong {
   display: block;
   margin-bottom: 10px;
   font-size: 12px;
 }
 
-.evidence-transactions ul {
+.evidence-transactions ul,
+.evidence-decryptions ul {
   display: grid;
   gap: 8px;
   margin: 0;
   padding: 0;
   list-style: none;
+}
+
+.decryption-identifiers {
+  display: grid;
+  gap: 5px;
+}
+
+.evidence-decryptions li > small {
+  color: #8e8e96;
+  font-size: 10px;
+  white-space: nowrap;
 }
 
 .evidence-note,
@@ -166,7 +181,8 @@
 
 @media (max-width: 700px) {
   .evidence-content dl > div,
-  .evidence-transactions li {
+  .evidence-transactions li,
+  .evidence-decryptions li {
     grid-template-columns: 1fr;
     gap: 5px;
   }
