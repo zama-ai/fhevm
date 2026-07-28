@@ -236,6 +236,13 @@ where
             )),
         }
     }
+
+    pub fn with_snapshot(self, snapshot: CoprocessorRegistrySnapshot) -> Self {
+        Self {
+            snapshot: Arc::new(RwLock::new(Arc::new(snapshot))),
+            ..self
+        }
+    }
 }
 
 #[cfg(test)]

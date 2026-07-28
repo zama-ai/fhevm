@@ -11,11 +11,19 @@ use alloy::{
             WalletFiller,
         },
     },
-    transports::http::reqwest::Url,
+    rpc::client::{ClientBuilder, RpcClient},
+    transports::{
+        IntoBoxTransport, TransportFut,
+        http::{Http, reqwest::Url},
+    },
 };
 use anyhow::anyhow;
 use sqlx::{Pool, Postgres, postgres::PgPoolOptions};
-use std::{sync::Once, time::Duration};
+use std::{num::NonZeroUsize, sync::Once, time::Duration};
+use tower::{
+    limit::{GlobalConcurrencyLimitLayer, concurrency::future::ResponseFuture},
+    util::MapFutureLayer,
+};
 use tracing::{info, warn};
 
 /// The number of connection retry to connect to the database or to a RPC node.
@@ -66,7 +74,19 @@ pub async fn connect_to_rpc_node(
     rpc_node_url: Url,
     chain_id: u64,
 ) -> anyhow::Result<DefaultProvider> {
-    connect_to_rpc_node_inner(rpc_node_url, || {
+    connect_to_rpc_node_inner(rpc_node_url, None, || {
+        ProviderBuilder::new().with_chain_id(chain_id)
+    })
+    .await
+}
+
+/// Tries to establish the connection with a RPC node, bounding the calls it may have in flight.
+pub async fn connect_to_rpc_node_with_concurrency_limit(
+    rpc_node_url: Url,
+    chain_id: u64,
+    max_concurrent_calls: NonZeroUsize,
+) -> anyhow::Result<DefaultProvider> {
+    connect_to_rpc_node_inner(rpc_node_url, Some(max_concurrent_calls), || {
         ProviderBuilder::new().with_chain_id(chain_id)
     })
     .await
@@ -78,7 +98,7 @@ pub async fn connect_to_rpc_node_with_wallet(
     chain_id: u64,
     wallet: KmsWallet,
 ) -> anyhow::Result<WalletProvider> {
-    let provider = connect_to_rpc_node_inner(rpc_node_url, || {
+    let provider = connect_to_rpc_node_inner(rpc_node_url, None, || {
         ProviderBuilder::new()
             .disable_recommended_fillers()
             .with_chain_id(chain_id)
@@ -89,9 +109,26 @@ pub async fn connect_to_rpc_node_with_wallet(
     Ok(NonceManagedProvider::new(provider, wallet.address()))
 }
 
+/// An `RpcClient` which never has more than `max_concurrent_calls` JSON-RPC calls in flight.
+fn bounded_rpc_client<T: IntoBoxTransport>(
+    transport: T,
+    is_local: bool,
+    max_concurrent_calls: NonZeroUsize,
+) -> RpcClient {
+    ClientBuilder::default()
+        // Added first, so outermost: `ConcurrencyLimit` has a future type of its own, which has to
+        // be boxed back into the `TransportFut` that alloy's `Transport` bound requires.
+        .layer(MapFutureLayer::new(
+            |fut: ResponseFuture<TransportFut<'static>>| Box::pin(fut) as TransportFut<'static>,
+        ))
+        .layer(GlobalConcurrencyLimitLayer::new(max_concurrent_calls.get()))
+        .transport(transport, is_local)
+}
+
 /// Tries to establish the connection with a RPC node.
 async fn connect_to_rpc_node_inner<L, F>(
     rpc_node_url: Url,
+    max_concurrent_calls: Option<NonZeroUsize>,
     provider_builder_new: impl Fn() -> ProviderBuilder<L, F>,
 ) -> anyhow::Result<F::Provider>
 where
@@ -105,7 +142,14 @@ where
             .unwrap()
     });
 
-    let provider = provider_builder_new().connect_http(rpc_node_url.clone());
+    let transport = Http::new(rpc_node_url.clone());
+    let is_local = transport.guess_local();
+    let client = match max_concurrent_calls {
+        Some(max) => bounded_rpc_client(transport, is_local, max),
+        None => ClientBuilder::default().transport(transport, is_local),
+    };
+
+    let provider = provider_builder_new().connect_client(client);
     info!(
         "Connected to RPC node successfully ({})",
         rpc_node_url.host_str().unwrap_or("unexpected URL format")
@@ -115,3 +159,90 @@ where
 }
 
 static INSTALL_CRYPTO_PROVIDER_ONCE: Once = Once::new();
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use alloy::{
+        primitives::U64,
+        providers::Provider,
+        transports::mock::{Asserter, MockTransport},
+    };
+    use futures::future::join_all;
+    use std::sync::{
+        Arc,
+        atomic::{AtomicUsize, Ordering},
+    };
+
+    const CALLS: usize = 8;
+
+    /// Highest number of calls ever in flight at the same time, and the current one.
+    #[derive(Default)]
+    struct InFlightRecorder {
+        current: AtomicUsize,
+        max: AtomicUsize,
+    }
+
+    /// A mocked node answering `CALLS` block numbers, slowly enough for the calls to overlap, and
+    /// recording how many of them are in flight.
+    fn slow_mocked_node() -> (impl IntoBoxTransport, Arc<InFlightRecorder>) {
+        let asserter = Asserter::new();
+        for _ in 0..CALLS {
+            asserter.push_success(&U64::from(1));
+        }
+
+        let in_flight = Arc::new(InFlightRecorder::default());
+        let recorder = in_flight.clone();
+        let transport = tower::ServiceBuilder::new()
+            .map_future(move |fut: TransportFut<'static>| {
+                let recorder = recorder.clone();
+                Box::pin(async move {
+                    // `fetch_add` returns the previous value, so `+ 1` is needed to get the
+                    // number of calls in flight including this one.
+                    let current = recorder.current.fetch_add(1, Ordering::SeqCst) + 1;
+                    recorder.max.fetch_max(current, Ordering::SeqCst);
+                    tokio::time::sleep(Duration::from_millis(50)).await;
+                    let response = fut.await;
+                    recorder.current.fetch_sub(1, Ordering::SeqCst);
+                    response
+                }) as TransportFut<'static>
+            })
+            .service(MockTransport::new(asserter));
+
+        (transport, in_flight)
+    }
+
+    #[tokio::test]
+    async fn concurrency_limit_bounds_the_calls_in_flight() {
+        const MAX_IN_FLIGHT: usize = 2;
+
+        let (transport, in_flight) = slow_mocked_node();
+        let provider = ProviderBuilder::new()
+            .disable_recommended_fillers()
+            .connect_client(bounded_rpc_client(
+                transport,
+                true,
+                NonZeroUsize::new(MAX_IN_FLIGHT).unwrap(),
+            ));
+
+        let calls_res = join_all((0..CALLS).map(|_| provider.get_block_number())).await;
+        assert!(calls_res.iter().all(|r| r.is_ok()), "{calls_res:?}");
+
+        assert_eq!(in_flight.max.load(Ordering::SeqCst), MAX_IN_FLIGHT);
+        assert_eq!(in_flight.current.load(Ordering::SeqCst), 0);
+    }
+
+    /// Guards the test above against a mocked node that would serialize the calls by itself.
+    #[tokio::test]
+    async fn unbounded_client_runs_every_call_at_once() {
+        let (transport, in_flight) = slow_mocked_node();
+        let provider = ProviderBuilder::new()
+            .disable_recommended_fillers()
+            .connect_client(ClientBuilder::default().transport(transport, true));
+
+        let calls_res = join_all((0..CALLS).map(|_| provider.get_block_number())).await;
+        assert!(calls_res.iter().all(|r| r.is_ok()), "{calls_res:?}");
+
+        assert_eq!(in_flight.max.load(Ordering::SeqCst), CALLS);
+    }
+}
