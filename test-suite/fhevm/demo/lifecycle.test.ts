@@ -315,6 +315,11 @@ describe("demo lifecycle collision policy", () => {
         "ghcr.io/zama-ai/fhevm/gci/rust-glibc:${RUST_IMAGE_VERSION}",
       );
     }
+    const workspaceDockerfile = await fs.readFile(
+      path.join(import.meta.dir, "../../../kms-connector/Dockerfile.workspace"),
+      "utf8",
+    );
+    expect(workspaceDockerfile).not.toContain("COPY .git");
   });
 
   test("Solana setup keeps every lifecycle compose call on the per-boot project", async () => {
