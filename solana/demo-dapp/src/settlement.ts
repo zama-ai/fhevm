@@ -98,9 +98,8 @@ const hasReadyProof = async (
 ): Promise<boolean> => {
   const roots = vaultRoots(session.config, direction);
   const burned = await burnedAmountValueAccount(roots.joinConfidentialMint, batch.addresses.batchJoinTokenAccount);
-  const handle = `0x${Array.from(batch.state.burnedTotalHandle, (byte) => byte.toString(16).padStart(2, '0')).join(
-    '',
-  )}`;
+  const burnedTotalHandle = new Uint8Array(batch.state.burnedTotalHandle);
+  const handle = `0x${Array.from(burnedTotalHandle, (byte) => byte.toString(16).padStart(2, '0')).join('')}`;
   const query = new URLSearchParams({
     encrypted_value: burned.encryptedValueAddress,
     handle,
