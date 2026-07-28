@@ -121,6 +121,17 @@ const psql = async (container: string, database: string, sql: string): Promise<D
   };
 };
 
+const containerLogs = async (container: string): Promise<DiagnosticSection> => {
+  const command = `docker logs --tail 120 ${container}`;
+  const result = await run(["docker", "logs", "--tail", "120", container], { allowFailure: true });
+  return {
+    title: `${container} logs`,
+    command,
+    output: [result.stdout, result.stderr].filter(Boolean).join("\n").trim(),
+    error: result.code === 0 ? undefined : (result.stderr || result.stdout).trim() || `docker logs exited ${result.code}`,
+  };
+};
+
 const diagnosticSql = {
   relayer: `
 select ext_job_id, req_status, err_reason, accepted, created_at, updated_at
@@ -144,8 +155,12 @@ order by relname;
 `,
 };
 
-const collectFailureDiagnostics = async () => {
+const collectFailureDiagnostics = async (containers: ReceiptContainer[]) => {
   const sections: DiagnosticSection[] = [];
+  const kmsContainers = containers
+    .map((container) => container.name)
+    .filter((name) => /^kms-core(?:-|$)/.test(name) || /^kms-connector(?:-|$)/.test(name));
+  sections.push(...(await Promise.all(kmsContainers.map(containerLogs))));
   sections.push(await psql("fhevm-relayer-db", "relayer_db", diagnosticSql.relayer));
   for (const database of ["coprocessor", "coprocessor_1", "coprocessor_2"]) {
     sections.push(await psql("coprocessor-and-kms-db", database, diagnosticSql.coprocessor));
@@ -253,7 +268,7 @@ export const createRolloutReceipt = (
     const docker = options.docker || options.diagnostics
       ? await (operations.inspectContainers ?? inspectContainers)()
       : undefined;
-    const diagnostics = options.diagnostics ? await collectFailureDiagnostics() : undefined;
+    const diagnostics = options.diagnostics ? await collectFailureDiagnostics(docker?.containers ?? []) : undefined;
     const entry: ReceiptEntry = {
       seq: ++seq,
       at: new Date().toISOString(),
