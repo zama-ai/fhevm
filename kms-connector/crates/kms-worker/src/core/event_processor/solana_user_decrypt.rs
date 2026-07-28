@@ -14,9 +14,9 @@
 //! — new in this rewrite — the MMR proof tail (`acl_value_key`, proof leaf count carried in
 //! the legacy `proof_slot` wire field, `mmr_proof_bytes`)
 //! to the Solana identity. A relayer cannot substitute the proof, the encrypted value account, or the slot any
-//! more than it could substitute the re-encryption key: `SOLANA_USER_DECRYPT_DOMAIN_TAG` was
-//! bumped to `v2` specifically so a `v1` signature (proof-less) can never verify against the `v2`
-//! preimage, closing the same class of relayer-bypass bug for the new MMR fields.
+//! more than it could substitute the re-encryption key. The current `v3` domain also moves the
+//! binary commitment behind a wallet-safe UTF-8 digest envelope, so earlier raw-binary signatures
+//! cannot verify against the current message.
 //!
 //! ## DEVIATION FROM THE REFERENCE DESIGN: MMR fields travel in `extraData`, not typed fields
 //!
@@ -26,7 +26,7 @@
 //! `gateway-contracts` change outside this workstream's scope (`kms-connector/` +
 //! `sdk/js-sdk/` only). Instead, they are packed into the existing `extraData` blob, versioned
 //! (see `connector_utils::types::solana_extra_data`): `v0x01` = context-only (no MMR tail, as
-//! before), `v0x03` = context + MMR tail. This is transport-only: the signed preimage bytes and
+//! before), `v0x03` = context + MMR tail. This is transport-only: the signed message bytes and
 //! the signature-binding property are unchanged from the reference design.
 //!
 //! ## Dual-path ACL check
@@ -75,7 +75,7 @@ use anyhow::anyhow;
 use borsh::BorshDeserialize;
 use connector_utils::types::solana_extra_data::{
     SolanaUserDecryptSigningInput, parse_solana_mmr_proof_extra_data,
-    parse_solana_user_decrypt_extra_data, solana_user_decrypt_signing_preimage,
+    parse_solana_user_decrypt_extra_data, solana_user_decrypt_signing_message,
 };
 use fhevm_gateway_bindings::decryption::Decryption::UserDecryptionRequestSolana;
 use ring::signature::{ED25519, UnparsedPublicKey};
@@ -96,7 +96,7 @@ pub struct VerifiedSolanaAuth {
     pub identity: SolanaPubkeyBytes,
     pub allowed_acl_domain_keys: Vec<SolanaPubkeyBytes>,
     /// The `EncryptedValue` encrypted value account this request targets. All-zero is only meaningful for the
-    /// synthetic "current-ACL-shaped" preimage used to guard against MMR-proof injection (see the
+    /// synthetic "current-ACL-shaped" signing message used to guard against MMR-proof injection (see the
     /// `current_acl_mmr_proof_injection_rejected` test) — a real request always names its encrypted value account.
     pub acl_value_key: [u8; 32],
     /// The full MMR-proof transport blob (mode byte ‖ Borsh `MmrProof`); empty for a current-ACL
@@ -114,8 +114,9 @@ pub struct SolanaHost {
     pub fetcher: SolanaV2Fetcher,
 }
 
-/// Verifies the ed25519 signature binding for a Solana user-decryption request, over the `v2`
-/// preimage (handles, identity, nonce, allowed domains, validity window, AND the MMR-proof tail).
+/// Verifies the ed25519 signature binding for a Solana user-decryption request, over the `v3`
+/// wallet-safe message (handles, identity, nonce, allowed domains, validity window, AND the
+/// MMR-proof tail).
 /// Pure (no I/O), so the publicKey-substitution, forged-signature, and proof-tail-tampering
 /// rejections are unit-testable without a live RPC.
 pub fn verify_solana_user_decrypt_signature(
@@ -133,7 +134,7 @@ pub fn verify_solana_user_decrypt_signature(
 
     let handles: Vec<HandleBytes> = request.handles.iter().map(|entry| entry.handle.0).collect();
 
-    let preimage = solana_user_decrypt_signing_preimage(&SolanaUserDecryptSigningInput {
+    let signing_message = solana_user_decrypt_signing_message(&SolanaUserDecryptSigningInput {
         contracts_chain_id,
         public_key: payload.publicKey.as_ref(),
         handles: &handles,
@@ -150,14 +151,16 @@ pub fn verify_solana_user_decrypt_signature(
 
     let signature = payload.signature.as_ref();
     let identity_key = UnparsedPublicKey::new(&ED25519, identity);
-    identity_key.verify(&preimage, signature).map_err(|_| {
-        // A substituted publicKey, a substituted/mutated MMR-proof tail, a forged/relayer-only
-        // signature, or a wrong identity all land here.
-        ProcessingError::Irrecoverable(anyhow!(
+    identity_key
+        .verify(&signing_message, signature)
+        .map_err(|_| {
+            // A substituted publicKey, a substituted/mutated MMR-proof tail, a forged/relayer-only
+            // signature, or a wrong identity all land here.
+            ProcessingError::Irrecoverable(anyhow!(
             "Solana user-decryption ed25519 signature verification failed: the signature does not \
              bind the re-encryption publicKey and MMR-proof tail to the claimed identity"
         ))
-    })?;
+        })?;
 
     Ok(VerifiedSolanaAuth {
         identity,
@@ -599,7 +602,7 @@ mod tests {
         let start: u64 = 1_000;
         let duration: u64 = 3_600;
 
-        let preimage = solana_user_decrypt_signing_preimage(&SolanaUserDecryptSigningInput {
+        let signing_message = solana_user_decrypt_signing_message(&SolanaUserDecryptSigningInput {
             contracts_chain_id: CHAIN_ID,
             public_key: &public_key,
             handles: &[handle],
@@ -613,7 +616,7 @@ mod tests {
             mmr_proof_bytes: &proof_blob,
             proof_slot,
         });
-        let signature = identity_kp.sign(&preimage);
+        let signature = identity_kp.sign(&signing_message);
 
         let extra_data = if proof_blob.is_empty() && value_key == [0u8; 32] {
             encode_solana_extra_data_context_only(context_id)
@@ -645,7 +648,7 @@ mod tests {
     }
 
     #[test]
-    fn signing_preimage_with_mmr_tail_matches_shared_vector() {
+    fn signing_message_with_mmr_tail_matches_shared_vector() {
         let identity = [0x07u8; 32];
         let nonce = [0x09u8; 32];
         let mut context_id = [0u8; 32];
@@ -658,7 +661,7 @@ mod tests {
         let mmr_proof_bytes = [0x01u8, 0x02, 0x03];
         let proof_slot = 42;
 
-        let preimage = solana_user_decrypt_signing_preimage(&SolanaUserDecryptSigningInput {
+        let signing_message = solana_user_decrypt_signing_message(&SolanaUserDecryptSigningInput {
             contracts_chain_id: 0xcafe,
             public_key,
             handles: &handles,
@@ -673,8 +676,8 @@ mod tests {
             proof_slot,
         });
         assert_eq!(
-            format!("0x{}", alloy::hex::encode(preimage)),
-            "0x7a616d612d736f6c616e612d757365722d646563727970742d7632000000000000cafe000000107075626c69632d6b65792d6279746573000000020303030303030303030303030303030303030303030303030303030303030303aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa070707070707070707070707070707070707070707070707070707070707070700000000000000000000000000000000000000000000000000000000000012340909090909090909090909090909090909090909090909090909090909090909000000020101010101010101010101010101010101010101010101010101010101010101020202020202020202020202020202020202020202020202020202020202020200000000000003e80000000000000e105555555555555555555555555555555555555555555555555555555555555555000000000000002a00000003010203"
+            format!("0x{}", alloy::hex::encode(signing_message)),
+            "0x5a616d61206f6e652d74696d6520636f6e666964656e7469616c2076616c75652072657665616c0a56657273696f6e3a20310a526571756573743a2033303038646336333532366130633138316434363363356433326236353139343563646664636465306132653931396664383530396164656434646231363835"
         );
 
         let extra_data = encode_solana_extra_data_mmr_proof(
@@ -1041,9 +1044,9 @@ mod tests {
         assert!(matches!(err, ProcessingError::Recoverable(_)));
     }
 
-    // (4) V1-SIGNED REJECTED UNDER V2
+    // (4) IMMEDIATE RAW-V2 PREDECESSOR REJECTED UNDER V3
     #[test]
-    fn v1_signature_rejected_under_v2() {
+    fn raw_v2_signature_rejected_under_v3() {
         let kp = identity_kp(11);
         let owner: SolanaPubkeyBytes = kp.public_key().as_ref().try_into().unwrap();
         let mut l = encrypted_value_account(h(10), &[owner]);
@@ -1054,7 +1057,7 @@ mod tests {
 
         assert_eq!(
             SOLANA_USER_DECRYPT_DOMAIN_TAG,
-            b"zama-solana-user-decrypt-v2"
+            b"zama-solana-user-decrypt-v3"
         );
 
         let identity: SolanaPubkeyBytes = kp.public_key().as_ref().try_into().unwrap();
@@ -1062,23 +1065,28 @@ mod tests {
         let nonce = [5u8; 32];
         let context_id = [0u8; 32];
         let (start, duration) = (1_000u64, 3_600u64);
-        let mut v1_preimage = b"zama-solana-user-decrypt-v1".to_vec();
-        v1_preimage.extend_from_slice(&CHAIN_ID.to_be_bytes());
-        v1_preimage.extend_from_slice(&(public_key.len() as u32).to_be_bytes());
-        v1_preimage.extend_from_slice(&public_key);
-        v1_preimage.extend_from_slice(&1u32.to_be_bytes());
-        v1_preimage.extend_from_slice(&h(10));
-        v1_preimage.extend_from_slice(&identity);
-        v1_preimage.extend_from_slice(&context_id);
-        v1_preimage.extend_from_slice(&nonce);
-        v1_preimage.extend_from_slice(&1u32.to_be_bytes());
-        v1_preimage.extend_from_slice(&DOMAIN);
-        v1_preimage.extend_from_slice(&start.to_be_bytes());
-        v1_preimage.extend_from_slice(&duration.to_be_bytes());
-        let v1_signature = kp.sign(&v1_preimage);
+        let proof_slot = l.acl.leaf_count;
+        let mut raw_v2 = b"zama-solana-user-decrypt-v2".to_vec();
+        raw_v2.extend_from_slice(&CHAIN_ID.to_be_bytes());
+        raw_v2.extend_from_slice(&(public_key.len() as u32).to_be_bytes());
+        raw_v2.extend_from_slice(&public_key);
+        raw_v2.extend_from_slice(&1u32.to_be_bytes());
+        raw_v2.extend_from_slice(&h(10));
+        raw_v2.extend_from_slice(&identity);
+        raw_v2.extend_from_slice(&context_id);
+        raw_v2.extend_from_slice(&nonce);
+        raw_v2.extend_from_slice(&1u32.to_be_bytes());
+        raw_v2.extend_from_slice(&DOMAIN);
+        raw_v2.extend_from_slice(&start.to_be_bytes());
+        raw_v2.extend_from_slice(&duration.to_be_bytes());
+        raw_v2.extend_from_slice(&value_key);
+        raw_v2.extend_from_slice(&proof_slot.to_be_bytes());
+        raw_v2.extend_from_slice(&(blob.len() as u32).to_be_bytes());
+        raw_v2.extend_from_slice(&blob);
+        let raw_v2_signature = kp.sign(&raw_v2);
 
         let extra_data =
-            encode_solana_extra_data_mmr_proof(context_id, value_key, l.acl.leaf_count, &blob);
+            encode_solana_extra_data_mmr_proof(context_id, value_key, proof_slot, &blob);
         let payload = UserDecryptionRequestSolanaPayload {
             userIdentity: FixedBytes::from(identity),
             publicKey: Bytes::from(public_key),
@@ -1089,7 +1097,7 @@ mod tests {
             },
             nonce: FixedBytes::from(nonce),
             extraData: Bytes::from(extra_data),
-            signature: Bytes::from(v1_signature.as_ref().to_vec()),
+            signature: Bytes::from(raw_v2_signature.as_ref().to_vec()),
         };
         let request = UserDecryptionRequestSolana {
             decryptionId: U256::from(1u64),

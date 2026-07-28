@@ -360,7 +360,7 @@ pub const V3_ATTESTATION_TYPE_EIP712_UNIFIED_V1: &str = "eip712-unified-user-dec
 /// `signature` + the `0x03` `extraData` blob verbatim into the same gateway
 /// V2 `userDecryptionRequest` calldata; each KMS party's connector verifies the
 /// ed25519 signature off-chain.
-pub const V3_ATTESTATION_TYPE_SOLANA_ED25519_V1: &str = "solana-ed25519-user-decrypt-v1";
+pub const V3_ATTESTATION_TYPE_SOLANA_ED25519_V2: &str = "solana-ed25519-user-decrypt-v2";
 
 /// Required `version` value in the EIP-712 payload.
 pub const V3_PAYLOAD_VERSION: &str = "2.0";
@@ -374,12 +374,12 @@ pub const V3_PAYLOAD_TYPE: &str = "user_decryption";
 /// `signature` + `extraData` and never verifies them.
 pub fn validate_v3_attestation_type(value: &str) -> Result<(), ValidationError> {
     if value != V3_ATTESTATION_TYPE_EIP712_UNIFIED_V1
-        && value != V3_ATTESTATION_TYPE_SOLANA_ED25519_V1
+        && value != V3_ATTESTATION_TYPE_SOLANA_ED25519_V2
     {
         return Err(ValidationError::new("validation_error").with_message(
             format!(
                 "Unsupported attestationType; expected one of: [{}, {}]",
-                V3_ATTESTATION_TYPE_EIP712_UNIFIED_V1, V3_ATTESTATION_TYPE_SOLANA_ED25519_V1
+                V3_ATTESTATION_TYPE_EIP712_UNIFIED_V1, V3_ATTESTATION_TYPE_SOLANA_ED25519_V2
             )
             .into(),
         ));
@@ -491,14 +491,15 @@ mod tests {
     #[test]
     fn v3_attestation_type_accepts_evm_and_solana() {
         assert!(validate_v3_attestation_type(V3_ATTESTATION_TYPE_EIP712_UNIFIED_V1).is_ok());
-        assert!(validate_v3_attestation_type(V3_ATTESTATION_TYPE_SOLANA_ED25519_V1).is_ok());
-        assert!(validate_v3_attestation_type("solana-ed25519-user-decrypt-v1").is_ok());
+        assert!(validate_v3_attestation_type(V3_ATTESTATION_TYPE_SOLANA_ED25519_V2).is_ok());
+        assert!(validate_v3_attestation_type("solana-ed25519-user-decrypt-v2").is_ok());
+        assert!(validate_v3_attestation_type("solana-ed25519-user-decrypt-v1").is_err());
     }
 
     #[test]
     fn v3_attestation_type_rejects_unknown() {
         assert!(validate_v3_attestation_type("eip712-unified-user-decrypt-v2").is_err());
-        assert!(validate_v3_attestation_type("solana-ed25519-user-decrypt-v2").is_err());
+        assert!(validate_v3_attestation_type("solana-ed25519-user-decrypt-v3").is_err());
         assert!(validate_v3_attestation_type("").is_err());
         assert!(validate_v3_attestation_type("garbage").is_err());
     }

@@ -37,7 +37,7 @@ const asBytes32BigEndian = (decimal: string): Uint8Array => {
 
 const userDecryptSigner = (session: DemoSession): SolanaUserDecryptSigner => ({
   publicKey: new Uint8Array(getAddressEncoder().encode(session.signer.address)),
-  sign: (preimage) => session.signMessageExact(preimage),
+  sign: (message) => session.signMessageExact(message),
 });
 
 /** One-shot exact-handle reveal; the clear balance is never persisted. */

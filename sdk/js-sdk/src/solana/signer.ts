@@ -17,10 +17,10 @@ export interface SolanaUserDecryptSigner {
   /** The signer's 32-byte ed25519 public key — the user-decrypt `identity`. */
   readonly publicKey: Uint8Array;
   /**
-   * Signs `preimage` with the ed25519 secret key and resolves to the raw 64-byte signature.
+   * Signs the wallet-safe one-shot authorization message and resolves to the raw 64-byte signature.
    * The returned signature must verify against {@link SolanaUserDecryptSigner.publicKey}.
    */
-  sign(preimage: Uint8Array): Promise<Uint8Array>;
+  sign(message: Uint8Array): Promise<Uint8Array>;
 }
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -43,6 +43,6 @@ export function solanaSignerFromSecretKey(seed: Uint8Array): SolanaUserDecryptSi
   const publicKey = ed25519.getPublicKey(seed);
   return Object.freeze({
     publicKey,
-    sign: (preimage: Uint8Array): Promise<Uint8Array> => Promise.resolve(ed25519.sign(preimage, seed)),
+    sign: (message: Uint8Array): Promise<Uint8Array> => Promise.resolve(ed25519.sign(message, seed)),
   });
 }

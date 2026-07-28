@@ -20,6 +20,7 @@ const runtimeConfigPath = path.resolve(
 const aliceKeypairPath = path.join(repoRoot, 'solana/scripts/demo/demo-keypairs/alice.json');
 const keeperKeypairPath = path.join(repoRoot, 'solana/scripts/demo/demo-keypairs/keeper.json');
 const relayerKeyUrl = 'http://127.0.0.1:3000/v2/keyurl';
+const browserRelayerUrl = 'http://127.0.0.1:5173/api/relayer';
 
 type DemoEncryptionKey = {
   readonly fingerprint: string;
@@ -402,7 +403,7 @@ export const demoServerPlugin = (): Plugin => ({
               .readFile(aliceKeypairPath, 'utf8')
               .then((value) => JSON.parse(value) as number[]);
             response.statusCode = 200;
-            response.end(JSON.stringify({ config, aliceKeypair }));
+            response.end(JSON.stringify({ config: { ...config, relayerUrl: browserRelayerUrl }, aliceKeypair }));
           } catch (error) {
             response.statusCode = 503;
             response.end(JSON.stringify({ error: error instanceof Error ? error.message : String(error) }));
@@ -430,7 +431,7 @@ export const demoServerPlugin = (): Plugin => ({
               throw new Error('refusing to expose configuration outside the seeded local validator');
             }
             response.statusCode = 200;
-            response.end(JSON.stringify({ config }));
+            response.end(JSON.stringify({ config: { ...config, relayerUrl: browserRelayerUrl } }));
           } catch (error) {
             response.statusCode = 503;
             response.end(JSON.stringify({ error: error instanceof Error ? error.message : String(error) }));

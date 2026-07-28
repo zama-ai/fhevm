@@ -7,14 +7,14 @@ import { bytesToHex } from '../base/bytes.js';
 import {
   buildSolanaUserDecryptRequest,
   solanaUserDecryptClientId,
-  solanaUserDecryptSigningPreimage,
+  solanaUserDecryptSigningMessage,
   SOLANA_USER_DECRYPT_ATTESTATION_TYPE,
   type SolanaUserDecryptInput,
 } from './SolanaUserDecrypt-p.js';
 
 // Fixed cross-impl vector. The expected hex below is the byte output of the Rust source of truth
 // `kms-connector/crates/utils/src/types/solana_extra_data.rs`
-// (`encode_solana_extra_data` / `solana_user_decrypt_signing_preimage`), captured by a standalone
+// (`encode_solana_extra_data` / `solana_user_decrypt_signing_message`), captured by a standalone
 // Rust program that copies that module's layout verbatim and prints hex for THIS exact vector.
 // If the TS layout drifts from the Rust, these assertions fail.
 const IDENTITY = new Uint8Array(32).fill(0x07);
@@ -43,28 +43,41 @@ const VECTOR: SolanaUserDecryptInput = {
 };
 
 const RUST_PREIMAGE =
-  '0x7a616d612d736f6c616e612d757365722d646563727970742d7632' + // "zama-solana-user-decrypt-v2"
-  '000000000000cafe' + // contracts_chain_id u64 BE
-  '00000010' +
-  '7075626c69632d6b65792d6279746573' + // "public-key-bytes"
-  '00000002' +
-  '0303030303030303030303030303030303030303030303030303030303030303' +
-  'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa' +
-  '0707070707070707070707070707070707070707070707070707070707070707' + // identity
-  '0000000000000000000000000000000000000000000000000000000000001234' + // context_id
-  '0909090909090909090909090909090909090909090909090909090909090909' + // nonce
-  '00000002' +
-  '0101010101010101010101010101010101010101010101010101010101010101' +
-  '0202020202020202020202020202020202020202020202020202020202020202' +
-  '00000000000003e8' + // start_timestamp 1000
-  '0000000000000e10' + // duration_seconds 3600
-  '0000000000000000000000000000000000000000000000000000000000000000' + // acl_value_key (absent)
-  '0000000000000000' + // proof_slot (absent)
-  '00000000'; // mmr_proof_len (absent, empty proof)
+  '0x5a616d61206f6e652d74696d6520636f6e666964656e7469616c2076616c75652072657665616c' +
+  '0a56657273696f6e3a20310a526571756573743a20' +
+  '3235613437353839336235663335326436623063343565616337383163383335' +
+  '3233613037383038663361373138346135376564376534663565643761633436';
 
 describe('SolanaUserDecrypt byte-parity with Rust source of truth', () => {
-  it('builds the signing preimage byte-identically to solana_user_decrypt_signing_preimage', () => {
-    expect(bytesToHex(solanaUserDecryptSigningPreimage(VECTOR))).toBe(RUST_PREIMAGE);
+  it('builds the signing message byte-identically to solana_user_decrypt_signing_message', () => {
+    expect(bytesToHex(solanaUserDecryptSigningMessage(VECTOR))).toBe(RUST_PREIMAGE);
+  });
+
+  it('produces a short, human-readable wallet message', () => {
+    expect(new TextDecoder().decode(solanaUserDecryptSigningMessage(VECTOR))).toBe(
+      'Zama one-time confidential value reveal\n' +
+        'Version: 1\n' +
+        'Request: 25a475893b5f352d6b0c45eac781c83523a07808f3a7184a57ed7e4f5ed7ac46',
+    );
+  });
+
+  const mutations: ReadonlyArray<readonly [string, SolanaUserDecryptInput]> = [
+    ['chain id', { ...VECTOR, contractsChainId: VECTOR.contractsChainId + 1n }],
+    ['transport key', { ...VECTOR, publicKey: new TextEncoder().encode('other-public-key') }],
+    ['handle', { ...VECTOR, handles: [new Uint8Array(32).fill(0x04), new Uint8Array(32).fill(0xaa)] }],
+    ['identity', { ...VECTOR, identity: new Uint8Array(32).fill(0x08) }],
+    ['context', { ...VECTOR, contextId: new Uint8Array(32).fill(0x01) }],
+    ['nonce', { ...VECTOR, nonce: new Uint8Array(32).fill(0x0a) }],
+    ['allowed domain', { ...VECTOR, allowedAclDomainKeys: [new Uint8Array(32).fill(0x04)] }],
+    ['validity start', { ...VECTOR, startTimestamp: VECTOR.startTimestamp + 1n }],
+    ['validity duration', { ...VECTOR, durationSeconds: VECTOR.durationSeconds + 1n }],
+    ['ACL value key', { ...VECTOR, aclValueKey: new Uint8Array(32).fill(0x55) }],
+    ['proof slot', { ...VECTOR, proofSlot: 1n }],
+    ['proof bytes', { ...VECTOR, mmrProofBytes: new Uint8Array([0x01]) }],
+  ];
+
+  it.each(mutations)('binds the %s', (_name, mutated) => {
+    expect(bytesToHex(solanaUserDecryptSigningMessage(mutated))).not.toBe(RUST_PREIMAGE);
   });
 });
 
@@ -82,15 +95,15 @@ describe('SolanaUserDecrypt signer and request builder', () => {
     const sig = Uint8Array.from(Buffer.from(req.signature.slice(2), 'hex'));
     expect(sig.length).toBe(64);
 
-    const preimage = solanaUserDecryptSigningPreimage(signed);
-    expect(ed25519.verify(sig, preimage, PK)).toBe(true);
+    const signingMessage = solanaUserDecryptSigningMessage(signed);
+    expect(ed25519.verify(sig, signingMessage, PK)).toBe(true);
   });
 
   it('binds the publicKey: a substituted key invalidates the signature', () => {
     const req = buildSolanaUserDecryptRequest(signed, SEED);
     const sig = Uint8Array.from(Buffer.from(req.signature.slice(2), 'hex'));
 
-    const tampered = solanaUserDecryptSigningPreimage({
+    const tampered = solanaUserDecryptSigningMessage({
       ...signed,
       publicKey: new TextEncoder().encode('attacker-public-key'),
     });

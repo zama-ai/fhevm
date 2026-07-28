@@ -16,7 +16,7 @@ use validator::Validate;
 /// v3 user-decrypt request envelope. The relayer dispatches strictly by
 /// `attestationType`. Supported values:
 /// - `"eip712-unified-user-decrypt-v1"` — EVM EIP-712 (verified on-chain by the gateway).
-/// - `"solana-ed25519-user-decrypt-v1"` — Solana ed25519 (verified off-chain per-party by the
+/// - `"solana-ed25519-user-decrypt-v2"` — Solana ed25519 (verified off-chain per-party by the
 ///   kms-connector). Both route to the same gateway V2 `userDecryptionRequest` calldata; the
 ///   relayer forwards `signature` + `extraData` opaquely and never verifies them.
 #[derive(Deserialize, Clone, ToSchema, Validate, Derivative)]
@@ -25,7 +25,7 @@ use validator::Validate;
 pub struct AttestedUserDecryptRequestJson {
     /// The attestation/signature scheme used for the `signature` bytes.
     /// Must equal `"eip712-unified-user-decrypt-v1"` (EVM EIP-712) or
-    /// `"solana-ed25519-user-decrypt-v1"` (Solana ed25519).
+    /// `"solana-ed25519-user-decrypt-v2"` (Solana ed25519).
     #[validate(custom(function = "crate::http::validate_v3_attestation_type"))]
     #[schema(example = "eip712-unified-user-decrypt-v1")]
     pub attestation_type: String,
@@ -98,7 +98,7 @@ pub struct Eip712UnifiedUserDecryptPayloadJson {
     pub extra_data: String,
 
     /// RFC-021 Solana ed25519 identity (32-byte pubkey, `0x` + 64 hex). Required for the
-    /// `solana-ed25519-user-decrypt-v1` attestation type; absent for EVM. The ed25519 `signature`
+    /// `solana-ed25519-user-decrypt-v2` attestation type; absent for EVM. The ed25519 `signature`
     /// is verified against this identity off-chain by the KMS Connector.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     #[schema(example = "0x1111111111111111111111111111111111111111111111111111111111111111")]

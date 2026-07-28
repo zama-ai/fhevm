@@ -1,20 +1,22 @@
-//! Canonical Solana user-decryption ed25519 signing preimage.
+//! Canonical Solana user-decryption ed25519 signing message.
 //!
 //! On EVM, the Gateway verifies on-chain the EIP-712 signature that binds the re-encryption
 //! `publicKey` to the requesting `userAddress`, so the relayer is untrusted. The Solana host has no
 //! such on-chain binding, so each KMS party's connector MUST re-derive and verify the user's
 //! ed25519 signature itself. This module is the single source of truth for the exact bytes the
-//! user's ed25519 key signs (the "signing preimage").
+//! user's ed25519 key signs (the "signing message").
 //!
 //! The auth fields (identity, nonce, allowed ACL domain keys, context) travel as TYPED gateway
 //! fields (RFC-021) — there is no `extraData` blob. The relayer, the client SDK, and kms-core must
-//! reproduce this preimage byte-for-byte. It is pure (no I/O, no crypto) so it can be shared and
+//! reproduce this message byte-for-byte. It is pure and can be shared and
 //! unit-tested in isolation; the ed25519 verification lives in the `kms-worker` connector, which
 //! owns the vetted crypto dependency.
 //!
-//! # Signing preimage
+//! # Signing message
 //!
 //! ```text
+//! "Zama one-time confidential value reveal\nVersion: 1\nRequest: "
+//! ‖ lowercase_hex(sha256(
 //! SOLANA_USER_DECRYPT_DOMAIN_TAG                 (constant ASCII tag)
 //! ‖ contracts_chain_id                           (8 bytes BE)
 //! ‖ public_key_len ‖ public_key                  (4 bytes BE length, then the re-encryption key)
@@ -28,7 +30,12 @@
 //! ‖ acl_value_key                                (32 bytes; zero only when no encrypted value account is named)
 //! ‖ proof_slot                                   (8 bytes BE; 0 for current/no-proof requests)
 //! ‖ mmr_proof_len ‖ mmr_proof_bytes              (4 bytes BE length, then the verbatim proof blob)
+//! ))
 //! ```
+//!
+//! The UTF-8 envelope is intentionally safe for wallet `signMessage` implementations. Phantom
+//! rejects arbitrary binary messages because they may be serialized Solana transactions. The
+//! digest keeps the wallet prompt short while binding every byte of the canonical request below.
 //!
 //! Binding `public_key` here is what closes the substitution attack: an attacker cannot swap in
 //! their own re-encryption key without invalidating the user's signature.
@@ -38,15 +45,19 @@
 //! blob (a 1-byte mode prefix followed by the Borsh-encoded proof) committed **verbatim** — it is
 //! NOT re-encoded or normalized here, so the sign side and the verify side hash identical bytes.
 
-/// Domain-separation tag for the Solana user-decryption signing preimage. Versioned so a future
-/// layout change forces signatures to a fresh domain. Bumped to `v2` when the MMR-proof tail
-/// (`acl_value_key`, `proof_slot`, `mmr_proof_bytes`) was appended: ed25519 is non-malleable and
-/// the tag is the first bytes signed, so a `v1` signature can never verify against a `v2` preimage.
-/// This is the relayer-bypass security fix: an in-worker re-verification of this signature over
-/// the v2 preimage (see `event_processor::solana_user_decrypt`) binds the MMR proof, the encrypted value account
-/// value key, and the proof slot to the user's identity, so a relayer cannot substitute any of
-/// them after the user signs.
-pub const SOLANA_USER_DECRYPT_DOMAIN_TAG: &[u8] = b"zama-solana-user-decrypt-v2";
+/// Domain-separation tag for the canonical Solana user-decryption request commitment. Versioned so a future
+/// layout change forces signatures to a fresh domain. Bumped to `v3` when the canonical binary
+/// request moved behind the wallet-safe UTF-8 digest envelope. Ed25519 is non-malleable, so an
+/// earlier raw-binary signature can never verify against the `v3` message. The in-worker
+/// re-verification (see `event_processor::solana_user_decrypt`) still binds the MMR proof, the
+/// encrypted value account value key, and the proof slot to the user's identity, so a relayer
+/// cannot substitute any of them after the user signs.
+pub const SOLANA_USER_DECRYPT_DOMAIN_TAG: &[u8] = b"zama-solana-user-decrypt-v3";
+
+/// Human-readable, versioned envelope signed by Solana wallets. The request digest is appended as
+/// 64 lowercase hexadecimal ASCII bytes.
+pub const SOLANA_USER_DECRYPT_SIGNING_MESSAGE_PREFIX: &[u8] =
+    b"Zama one-time confidential value reveal\nVersion: 1\nRequest: ";
 
 /// Length of a Solana ed25519 public key / ACL domain key / nonce, in bytes.
 pub const SOLANA_PUBKEY_LEN: usize = 32;
@@ -56,7 +67,7 @@ pub const HANDLE_LEN: usize = 32;
 pub const ED25519_SIGNATURE_LEN: usize = 64;
 
 /// Fields of a Solana user-decryption request that the ed25519 signature must commit to. Held by
-/// reference so callers build the preimage without copying the (potentially large) handle list or
+/// reference so callers build the signing message without copying the (potentially large) handle list or
 /// public key.
 #[derive(Clone, Copy, Debug)]
 pub struct SolanaUserDecryptSigningInput<'a> {
@@ -71,7 +82,7 @@ pub struct SolanaUserDecryptSigningInput<'a> {
     pub identity: &'a [u8; SOLANA_PUBKEY_LEN],
     /// The 32-byte big-endian context id (zero when none).
     pub context_id: &'a [u8; 32],
-    /// Per-request nonce bound into the signed preimage (not dedup-enforced; replay is bounded by
+    /// Per-request nonce bound into the signed request (not dedup-enforced; replay is bounded by
     /// the validity window, matching EVM).
     pub nonce: &'a [u8; SOLANA_PUBKEY_LEN],
     /// The authorized ACL domain keys (the signed `allowedContracts` scope).
@@ -92,8 +103,10 @@ pub struct SolanaUserDecryptSigningInput<'a> {
 }
 
 /// Builds the exact bytes the user's ed25519 key must sign. See the module docs for the layout.
-pub fn solana_user_decrypt_signing_preimage(input: &SolanaUserDecryptSigningInput<'_>) -> Vec<u8> {
-    let mut preimage = Vec::with_capacity(
+pub fn solana_user_decrypt_signing_message(input: &SolanaUserDecryptSigningInput<'_>) -> Vec<u8> {
+    use sha2::{Digest, Sha256};
+
+    let mut commitment = Vec::with_capacity(
         SOLANA_USER_DECRYPT_DOMAIN_TAG.len()
             + 8
             + 4
@@ -112,40 +125,48 @@ pub fn solana_user_decrypt_signing_preimage(input: &SolanaUserDecryptSigningInpu
             + input.mmr_proof_bytes.len(),
     );
 
-    preimage.extend_from_slice(SOLANA_USER_DECRYPT_DOMAIN_TAG);
-    preimage.extend_from_slice(&input.contracts_chain_id.to_be_bytes());
+    commitment.extend_from_slice(SOLANA_USER_DECRYPT_DOMAIN_TAG);
+    commitment.extend_from_slice(&input.contracts_chain_id.to_be_bytes());
 
     // Length-prefix variable-length fields so distinct (publicKey, handles) splits can never
-    // collide into the same preimage.
-    preimage.extend_from_slice(&(input.public_key.len() as u32).to_be_bytes());
-    preimage.extend_from_slice(input.public_key);
+    // collide into the same commitment.
+    commitment.extend_from_slice(&(input.public_key.len() as u32).to_be_bytes());
+    commitment.extend_from_slice(input.public_key);
 
-    preimage.extend_from_slice(&(input.handles.len() as u32).to_be_bytes());
+    commitment.extend_from_slice(&(input.handles.len() as u32).to_be_bytes());
     for handle in input.handles {
-        preimage.extend_from_slice(handle);
+        commitment.extend_from_slice(handle);
     }
 
-    preimage.extend_from_slice(input.identity);
-    preimage.extend_from_slice(input.context_id);
-    preimage.extend_from_slice(input.nonce);
+    commitment.extend_from_slice(input.identity);
+    commitment.extend_from_slice(input.context_id);
+    commitment.extend_from_slice(input.nonce);
 
-    preimage.extend_from_slice(&(input.allowed_acl_domain_keys.len() as u32).to_be_bytes());
+    commitment.extend_from_slice(&(input.allowed_acl_domain_keys.len() as u32).to_be_bytes());
     for key in input.allowed_acl_domain_keys {
-        preimage.extend_from_slice(key);
+        commitment.extend_from_slice(key);
     }
 
-    preimage.extend_from_slice(&input.start_timestamp.to_be_bytes());
-    preimage.extend_from_slice(&input.duration_seconds.to_be_bytes());
+    commitment.extend_from_slice(&input.start_timestamp.to_be_bytes());
+    commitment.extend_from_slice(&input.duration_seconds.to_be_bytes());
 
     // MMR-proof tail. acl_value_key is fixed-width (no prefix); proof_slot is fixed 8 BE bytes;
     // mmr_proof_bytes is length-prefixed (empty = 0x00000000, unambiguous). Committed verbatim:
     // the kms-worker decodes the proof, never this crate, so sign/verify hash identical bytes.
-    preimage.extend_from_slice(input.acl_value_key);
-    preimage.extend_from_slice(&input.proof_slot.to_be_bytes());
-    preimage.extend_from_slice(&(input.mmr_proof_bytes.len() as u32).to_be_bytes());
-    preimage.extend_from_slice(input.mmr_proof_bytes);
+    commitment.extend_from_slice(input.acl_value_key);
+    commitment.extend_from_slice(&input.proof_slot.to_be_bytes());
+    commitment.extend_from_slice(&(input.mmr_proof_bytes.len() as u32).to_be_bytes());
+    commitment.extend_from_slice(input.mmr_proof_bytes);
 
-    preimage
+    let digest = Sha256::digest(&commitment);
+    let mut message = Vec::with_capacity(SOLANA_USER_DECRYPT_SIGNING_MESSAGE_PREFIX.len() + 64);
+    message.extend_from_slice(SOLANA_USER_DECRYPT_SIGNING_MESSAGE_PREFIX);
+    const HEX: &[u8; 16] = b"0123456789abcdef";
+    for byte in digest {
+        message.push(HEX[(byte >> 4) as usize]);
+        message.push(HEX[(byte & 0x0f) as usize]);
+    }
+    message
 }
 
 /// `extraData` version byte carrying only the KMS context id (32 bytes), no MMR proof.
@@ -161,10 +182,10 @@ pub const SOLANA_EXTRA_DATA_VERSION_CONTEXT_ONLY: u8 = 0x01;
 /// `extraData` blob — versioned so a `v0x01` (context-only) request is unambiguous from a `v0x03`
 /// (MMR-proof) request — reuses the one Solana-specific "escape hatch" field the gateway interface
 /// already has, at zero gateway-contracts cost. `mmr_proof_bytes` is still committed **verbatim**
-/// into the [`SOLANA_USER_DECRYPT_DOMAIN_TAG`] preimage, so the signature-binding property is
+/// into the [`SOLANA_USER_DECRYPT_DOMAIN_TAG`] request commitment, so the signature-binding property is
 /// unaffected by this transport choice; only the origin of `acl_value_key` / `proof_slot` /
 /// `mmr_proof_bytes` on the decode side differs from the reference (extraData here, typed fields
-/// there). If/when `gateway-contracts` grows the typed fields, this module's preimage builder is
+/// there). If/when `gateway-contracts` grows the typed fields, this module's signing-message builder is
 /// unchanged and only [`parse_solana_user_decrypt_extra_data`] (and its call site) should move.
 pub const SOLANA_EXTRA_DATA_VERSION_MMR_PROOF: u8 = 0x03;
 
@@ -263,7 +284,7 @@ mod tests {
     use super::*;
 
     #[test]
-    fn preimage_is_deterministic_and_binds_public_key() {
+    fn signing_message_is_deterministic_and_binds_public_key() {
         let handles = [[3u8; HANDLE_LEN]];
         let domain_keys = [[1u8; 32]];
         let identity = [7u8; 32];
@@ -284,18 +305,53 @@ mod tests {
             proof_slot: 0,
         };
 
-        let a = solana_user_decrypt_signing_preimage(&base);
-        let b = solana_user_decrypt_signing_preimage(&base);
-        assert_eq!(a, b, "preimage must be deterministic");
+        let a = solana_user_decrypt_signing_message(&base);
+        let b = solana_user_decrypt_signing_message(&base);
+        assert_eq!(a, b, "signing message must be deterministic");
 
         let mut other = base;
         other.public_key = b"different-public";
-        let c = solana_user_decrypt_signing_preimage(&other);
-        assert_ne!(a, c, "preimage must change when the public key changes");
+        let c = solana_user_decrypt_signing_message(&other);
+        assert_ne!(
+            a, c,
+            "signing message must change when the public key changes"
+        );
     }
 
     #[test]
-    fn preimage_avoids_length_extension_collisions() {
+    fn signing_message_is_short_wallet_safe_utf8() {
+        let handles = [[3u8; HANDLE_LEN], [0xaau8; HANDLE_LEN]];
+        let domain_keys = [[1u8; 32], [2u8; 32]];
+        let identity = [7u8; 32];
+        let nonce = [9u8; 32];
+        let mut context_id = [0u8; 32];
+        context_id[30..].copy_from_slice(&[0x12, 0x34]);
+        let input = SolanaUserDecryptSigningInput {
+            contracts_chain_id: 0xcafe,
+            public_key: b"public-key-bytes",
+            handles: &handles,
+            identity: &identity,
+            context_id: &context_id,
+            nonce: &nonce,
+            allowed_acl_domain_keys: &domain_keys,
+            start_timestamp: 1000,
+            duration_seconds: 3600,
+            acl_value_key: &[0u8; 32],
+            mmr_proof_bytes: &[],
+            proof_slot: 0,
+        };
+
+        let message = solana_user_decrypt_signing_message(&input);
+        assert_eq!(
+            std::str::from_utf8(&message).unwrap(),
+            "Zama one-time confidential value reveal\n\
+             Version: 1\n\
+             Request: 25a475893b5f352d6b0c45eac781c83523a07808f3a7184a57ed7e4f5ed7ac46"
+        );
+    }
+
+    #[test]
+    fn signing_message_avoids_length_extension_collisions() {
         // (publicKey="ab", one handle) vs (publicKey="abXX...", zero handles) must differ thanks
         // to the explicit length prefixes.
         let identity = [7u8; 32];
@@ -326,8 +382,8 @@ mod tests {
         };
 
         assert_ne!(
-            solana_user_decrypt_signing_preimage(&with_handle),
-            solana_user_decrypt_signing_preimage(&without_handle),
+            solana_user_decrypt_signing_message(&with_handle),
+            solana_user_decrypt_signing_message(&without_handle),
         );
     }
 
@@ -371,15 +427,15 @@ mod tests {
         let empty_proof = base_input(&id, &ctx, &nonce, &value_key, &[], 0);
 
         assert_ne!(
-            solana_user_decrypt_signing_preimage(&proof_one_byte),
-            solana_user_decrypt_signing_preimage(&empty_proof),
+            solana_user_decrypt_signing_message(&proof_one_byte),
+            solana_user_decrypt_signing_message(&empty_proof),
         );
     }
 
-    // The new MMR-proof fields are load-bearing in the preimage: changing the proof_slot, the
+    // The new MMR-proof fields are load-bearing in the signed request: changing the proof_slot, the
     // proof bytes, or the value_key changes the signed bytes (so a mutated request fails verify).
     #[test]
-    fn tail_fields_bind_into_preimage() {
+    fn tail_fields_bind_into_signing_message() {
         let id = [7u8; 32];
         let ctx = [0u8; 32];
         let nonce = [9u8; 32];
@@ -387,21 +443,21 @@ mod tests {
         let value_key = [0x55u8; 32];
 
         let base = base_input(&id, &ctx, &nonce, &value_key, &proof, 42);
-        let baseline = solana_user_decrypt_signing_preimage(&base);
+        let baseline = solana_user_decrypt_signing_message(&base);
 
         let mut diff_slot = base;
         diff_slot.proof_slot = 43;
-        assert_ne!(baseline, solana_user_decrypt_signing_preimage(&diff_slot));
+        assert_ne!(baseline, solana_user_decrypt_signing_message(&diff_slot));
 
         let other_proof = [0x01u8, 0x02, 0x04];
         let mut diff_proof = base;
         diff_proof.mmr_proof_bytes = &other_proof;
-        assert_ne!(baseline, solana_user_decrypt_signing_preimage(&diff_proof));
+        assert_ne!(baseline, solana_user_decrypt_signing_message(&diff_proof));
 
         let other_key = [0x66u8; 32];
         let mut diff_key = base;
         diff_key.acl_value_key = &other_key;
-        assert_ne!(baseline, solana_user_decrypt_signing_preimage(&diff_key));
+        assert_ne!(baseline, solana_user_decrypt_signing_message(&diff_key));
     }
 
     #[test]

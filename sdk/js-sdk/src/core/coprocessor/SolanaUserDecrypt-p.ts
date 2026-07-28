@@ -1,17 +1,18 @@
 import type { Bytes20Hex, BytesHex } from '../types/primitives.js';
 
 import { ed25519 } from '@noble/curves/ed25519.js';
+import { sha256 } from '@noble/hashes/sha2.js';
 import { keccak_256 } from '@noble/hashes/sha3.js';
 
-import { bytesToHex, concatBytes } from '../base/bytes.js';
+import { bytesToHex, bytesToHexNo0x, concatBytes } from '../base/bytes.js';
 
 /**
  * Solana user-decryption signer and request builder.
  *
- * The signing preimage here is the TypeScript mirror of the Rust source of truth
+ * The signing message here is the TypeScript mirror of the Rust source of truth
  * `kms-connector/crates/utils/src/types/solana_extra_data.rs`. Every KMS party's connector
- * re-derives this preimage and verifies the ed25519 signature over it, so the bytes produced
- * by {@link solanaUserDecryptSigningPreimage} MUST match the Rust byte-for-byte. The cross-impl
+ * re-derives this message and verifies the ed25519 signature over it, so the bytes produced
+ * by {@link solanaUserDecryptSigningMessage} MUST match the Rust byte-for-byte. The cross-impl
  * parity is locked by `SolanaUserDecrypt-p.test.ts`. The ed25519 auth fields travel as typed
  * gateway fields (RFC-021), so `extraData` carries only the KMS context or the MMR-proof tail.
  *
@@ -30,15 +31,19 @@ export const SOLANA_CONTEXT_EXTRA_DATA_VERSION = 0x01;
 export const SOLANA_MMR_PROOF_EXTRA_DATA_VERSION = 0x03;
 
 /**
- * Domain-separation tag for the signing preimage (`SOLANA_USER_DECRYPT_DOMAIN_TAG` in Rust).
- * Bumped to `v2` when the MMR-proof tail (`aclValueKey`, `proofSlot`, `mmrProofBytes`) was
- * appended to the preimage (RFC-024) — ed25519 is non-malleable, so a `v1` signature can never
- * verify against the `v2` preimage.
+ * Domain-separation tag for the canonical request commitment (`SOLANA_USER_DECRYPT_DOMAIN_TAG` in Rust).
+ * Bumped to `v3` when the canonical binary request moved behind the wallet-safe UTF-8 digest
+ * envelope. Ed25519 is non-malleable, so an earlier raw-binary signature can never verify against
+ * the `v3` message.
  */
-export const SOLANA_USER_DECRYPT_DOMAIN_TAG = 'zama-solana-user-decrypt-v2';
+export const SOLANA_USER_DECRYPT_DOMAIN_TAG = 'zama-solana-user-decrypt-v3';
 
-/** V2 user-decrypt attestation discriminator the relayer/gateway route on. */
-export const SOLANA_USER_DECRYPT_ATTESTATION_TYPE = 'solana-ed25519-user-decrypt-v1';
+/** Human-readable, versioned envelope signed by Solana wallets. */
+export const SOLANA_USER_DECRYPT_SIGNING_MESSAGE_PREFIX =
+  'Zama one-time confidential value reveal\nVersion: 1\nRequest: ';
+
+/** Versioned user-decrypt signing scheme discriminator the relayer/gateway route on. */
+export const SOLANA_USER_DECRYPT_ATTESTATION_TYPE = 'solana-ed25519-user-decrypt-v2';
 
 const SOLANA_PUBKEY_LEN = 32;
 const HANDLE_LEN = 32;
@@ -68,7 +73,7 @@ function isZeroBytes(bytes: Uint8Array): boolean {
   return bytes.every((byte) => byte === 0);
 }
 
-/** Fields shared by the `extraData` blob and the signing preimage. */
+/** Fields shared by the `extraData` blob and the signed request commitment. */
 export interface SolanaUserDecryptInput {
   /** The host chain id the handles belong to (`contracts_chain_id`). */
   readonly contractsChainId: bigint;
@@ -80,7 +85,7 @@ export interface SolanaUserDecryptInput {
   readonly identity: Uint8Array;
   /** The 32-byte big-endian context id (all-zero when no explicit context). */
   readonly contextId: Uint8Array;
-  /** Per-request 32-byte nonce bound into the signed preimage (not dedup-enforced; replay is bounded by the validity window, matching EVM). */
+  /** Per-request 32-byte nonce bound into the signed request (not dedup-enforced; replay is bounded by the validity window, matching EVM). */
   readonly nonce: Uint8Array;
   /** The authorized ACL domain keys (the signed `allowedContracts` scope), each 32 bytes. */
   readonly allowedAclDomainKeys: readonly Uint8Array[];
@@ -173,7 +178,7 @@ export function buildSolanaUserDecryptMmrProofExtraData(
 
 /**
  * Builds the exact bytes the user's ed25519 key must sign, byte-identical to
- * `solana_user_decrypt_signing_preimage` in Rust:
+ * `solana_user_decrypt_signing_message` in Rust:
  *
  * `TAG ‖ contracts_chain_id(8 BE) ‖ publicKey_len(4 BE) ‖ publicKey ‖ handle_count(4 BE) ‖
  * handles(32 each) ‖ identity(32) ‖ context_id(32 BE) ‖ nonce(32) ‖ domain_key_count(4 BE) ‖
@@ -183,11 +188,11 @@ export function buildSolanaUserDecryptMmrProofExtraData(
  * The MMR-proof tail is always appended (all-zero/empty when the request carries no proof),
  * matching the Rust builder, which never makes the tail conditional.
  */
-export function solanaUserDecryptSigningPreimage(input: SolanaUserDecryptInput): Uint8Array {
+export function solanaUserDecryptSigningMessage(input: SolanaUserDecryptInput): Uint8Array {
   assertCommonInput(input);
   const { aclValueKey, mmrProofBytes, proofSlot } = withProofDefaults(input);
 
-  return concatBytes(
+  const commitment = concatBytes(
     new TextEncoder().encode(SOLANA_USER_DECRYPT_DOMAIN_TAG),
     u64BE(input.contractsChainId),
     u32BE(input.publicKey.length),
@@ -206,6 +211,7 @@ export function solanaUserDecryptSigningPreimage(input: SolanaUserDecryptInput):
     u32BE(mmrProofBytes.length),
     mmrProofBytes,
   );
+  return new TextEncoder().encode(`${SOLANA_USER_DECRYPT_SIGNING_MESSAGE_PREFIX}${bytesToHexNo0x(sha256(commitment))}`);
 }
 
 /**
@@ -222,7 +228,7 @@ export function solanaUserDecryptClientId(identity: Uint8Array): Bytes20Hex {
 /** A user-decrypt request ready to POST to the relayer's Solana ed25519 endpoint (RFC-021). */
 export interface SolanaUserDecryptRequest {
   readonly attestationType: typeof SOLANA_USER_DECRYPT_ATTESTATION_TYPE;
-  /** The 64-byte ed25519 signature over the signing preimage, 0x-hex. */
+  /** The 64-byte ed25519 signature over the wallet-safe signing message, 0x-hex. */
   readonly signature: BytesHex;
   /** `extraData`, 0x-hex: v0x01 context-only when no ACL value key is present, or v0x03 with the ACL/proof tail. */
   readonly extraData: BytesHex;
@@ -234,15 +240,15 @@ export interface SolanaUserDecryptRequest {
   readonly userAddress: Bytes20Hex;
   /** The user's 32-byte ed25519 identity public key, 0x-hex (typed gateway field). */
   readonly solanaUserIdentity: BytesHex;
-  /** The per-request 32-byte nonce, 0x-hex (typed gateway field). Bound into the signed preimage; not dedup-enforced (replay bounded by the validity window, matching EVM). */
+  /** The per-request 32-byte nonce, 0x-hex (typed gateway field). Bound into the signed request; not dedup-enforced (replay bounded by the validity window, matching EVM). */
   readonly solanaNonce: BytesHex;
   /** The allowed Solana ACL domain keys, each 0x-hex 32 bytes (typed gateway field). */
   readonly solanaAllowedAclDomainKeys: readonly BytesHex[];
 }
 
 /**
- * ed25519-signs the canonical preimage with the user's Solana secret key and assembles a
- * well-formed V2 Solana user-decrypt request. `secretKey` is the 32-byte ed25519 seed; the
+ * Ed25519-signs the wallet-safe one-shot message with the user's Solana secret key and assembles a
+ * well-formed Solana user-decrypt request. `secretKey` is the 32-byte ed25519 seed; the
  * derived public key must equal `input.identity` or signing throws (a mismatch would produce a
  * signature the connector rejects).
  */
@@ -259,13 +265,13 @@ export function buildSolanaUserDecryptRequest(
     throw new Error('secretKey does not derive the provided identity public key');
   }
 
-  const preimage = solanaUserDecryptSigningPreimage(input);
-  const signature = ed25519.sign(preimage, secretKey);
+  const signingMessage = solanaUserDecryptSigningMessage(input);
+  const signature = ed25519.sign(signingMessage, secretKey);
   if (signature.length !== ED25519_SIGNATURE_LEN) {
     throw new Error(`unexpected ed25519 signature length: ${signature.length}`);
   }
 
-  // The signed preimage always commits to the MMR-proof tail (all-zero/empty when absent); only
+  // The signed message always commits to the MMR-proof tail (all-zero/empty when absent); only
   // the `extraData` wire shape is conditional. Any nonzero aclValueKey names an encrypted value account the
   // connector must fetch, so it needs the v0x03 tail even when the proof bytes are empty.
   const { aclValueKey, mmrProofBytes, proofSlot } = withProofDefaults(input);

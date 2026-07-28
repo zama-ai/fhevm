@@ -23,6 +23,12 @@ export default defineConfig(({ mode }) => ({
     host: '127.0.0.1',
     port: 5173,
     strictPort: true,
+    proxy: {
+      '/api/relayer': {
+        target: 'http://127.0.0.1:3000',
+        rewrite: (requestPath) => requestPath.replace(/^\/api\/relayer/, ''),
+      },
+    },
     headers: {
       'Cross-Origin-Embedder-Policy': 'require-corp',
       'Cross-Origin-Opener-Policy': 'same-origin',
