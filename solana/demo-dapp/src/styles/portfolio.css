@@ -150,6 +150,18 @@
   background: rgba(255, 255, 255, 0.05);
 }
 
+.wallet-scan-note {
+  margin: 0;
+  color: #9c9ca4;
+  font-size: 11px;
+  line-height: 1.5;
+}
+
+.wallet-scan-note strong {
+  color: #d8d8dc;
+  font-weight: 650;
+}
+
 .action-status {
   gap: 9px;
   color: #d8d8dc;

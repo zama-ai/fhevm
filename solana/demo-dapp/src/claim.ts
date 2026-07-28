@@ -3,6 +3,7 @@ import {
   assertIsFullySignedTransaction,
   assertIsTransactionWithBlockhashLifetime,
   assertIsTransactionWithinSizeLimit,
+  compileTransaction,
   createSolanaRpc,
   createSolanaRpcSubscriptions,
   createTransactionMessage,
@@ -24,6 +25,10 @@ import {
 
 import type { DemoSession } from "./demoSession";
 import type { BatchPosition, VaultDirection } from "./batchTypes";
+import {
+  simulateSignedTransactionLocally,
+  simulateUnsignedTransactionLocally,
+} from "./transactionSimulation";
 import { vaultRoots } from "./vaultRoots";
 
 const BATCH_SETTLED = 2;
@@ -82,10 +87,14 @@ export const claimBatchPayout = async (
   const withComputeLimit = setTransactionMessageComputeUnitLimit(CLAIM_COMPUTE_UNIT_LIMIT, withLifetime);
   const message = appendTransactionMessageInstructions(instructions, withComputeLimit);
   session.assertActive();
+  await simulateUnsignedTransactionLocally(rpc, compileTransaction(message), "Claim transaction");
+  session.assertActive();
   const transaction = await signTransactionMessageWithSigners(message);
   session.assertActive();
   assertIsFullySignedTransaction(transaction);
   assertIsTransactionWithBlockhashLifetime(transaction);
   assertIsTransactionWithinSizeLimit(transaction);
-  await sendAndConfirm(transaction, { commitment: "confirmed" });
+  await simulateSignedTransactionLocally(rpc, transaction, "Signed claim transaction");
+  session.assertActive();
+  await sendAndConfirm(transaction, { commitment: "confirmed", skipPreflight: true });
 };

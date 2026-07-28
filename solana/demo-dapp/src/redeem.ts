@@ -32,7 +32,7 @@ const asBytes32Hex = (value: Address): Bytes32Hex =>
   `0x${Array.from(addressEncoder.encode(value), (byte) => byte.toString(16).padStart(2, '0')).join('')}` as Bytes32Hex;
 
 const activeRedeemKey = (session: DemoSession): string =>
-  `fhevm-solana-demo:active-redeem:${session.config.chainId}:${session.signer.address}`;
+  `fhevm-solana-demo:active-redeem:${session.config.chainId}:${session.config.batchers.redeem.batcher}:${session.signer.address}`;
 
 export type RedeemIntent = BatchPosition & {
   readonly sourceHandle: string;

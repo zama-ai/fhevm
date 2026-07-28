@@ -4,6 +4,7 @@ import {
   assertIsFullySignedTransaction,
   assertIsTransactionWithBlockhashLifetime,
   assertIsTransactionWithinSizeLimit,
+  compileTransaction,
   createSolanaRpc,
   createSolanaRpcSubscriptions,
   createTransactionMessage,
@@ -27,6 +28,7 @@ import {
   buildInitializeTokenAccountInstruction,
   buildWrapUsdcInstruction,
   computeSignerAddress,
+  deriveBatchAddresses,
   deriveJoinRecordAddress,
   getCurrentBatch,
   joinBatch,
@@ -36,6 +38,10 @@ import {
 import type { BatchPosition } from "./batchTypes";
 import type { DemoSession } from "./demoSession";
 import { loadDemoEncryptionKey } from "./encryptionKey";
+import {
+  simulateSignedTransactionLocally,
+  simulateUnsignedTransactionLocally,
+} from "./transactionSimulation";
 import { vaultRoots } from "./vaultRoots";
 
 export type DepositStage =
@@ -68,9 +74,9 @@ export const usdcToBaseUnits = (amount: number): bigint => {
 const depositRoots = (session: DemoSession) => vaultRoots(session.config, "deposit");
 
 const shieldJournalKey = (session: DemoSession): string =>
-  `fhevm-solana-demo:shield:${session.config.chainId}:${session.signer.address}`;
+  `fhevm-solana-demo:shield:${session.config.chainId}:${session.config.batchers.deposit.batcher}:${session.signer.address}`;
 const activeDepositKey = (session: DemoSession): string =>
-  `fhevm-solana-demo:active-deposit:${session.config.chainId}:${session.signer.address}`;
+  `fhevm-solana-demo:active-deposit:${session.config.chainId}:${session.config.batchers.deposit.batcher}:${session.signer.address}`;
 
 type ShieldJournal = {
   readonly amountBaseUnits: string;
@@ -202,6 +208,12 @@ export const reconcileSavedDeposit = async (
   session: DemoSession,
   saved: StoredDeposit,
 ): Promise<BatchPosition | null> => {
+  const expectedBatch = await deriveBatchAddresses(depositRoots(session), saved.batchIndex);
+  if (expectedBatch.batch !== saved.batch) {
+    clearActiveDeposit(session);
+    clearShieldJournal(session);
+    return null;
+  }
   const joinRecord = await deriveJoinRecordAddress(saved.batch, session.signer.address);
   const account = await rpc
     .getAccountInfo(joinRecord, { commitment: "confirmed", encoding: "base64" })
@@ -291,18 +303,22 @@ export async function depositToVault(
     const withComputeLimit = setTransactionMessageComputeUnitLimit(computeUnitLimit, withLifetime);
     const message = appendTransactionMessageInstructions(instructions, withComputeLimit);
     session.assertActive();
+    await simulateUnsignedTransactionLocally(rpc, compileTransaction(message), "Shield transaction");
+    session.assertActive();
     const transaction = await signTransactionMessageWithSigners(message);
     session.assertActive();
     assertIsFullySignedTransaction(transaction);
     assertIsTransactionWithBlockhashLifetime(transaction);
     assertIsTransactionWithinSizeLimit(transaction);
+    await simulateSignedTransactionLocally(rpc, transaction, "Signed shield transaction");
+    session.assertActive();
     const signature = getSignatureFromTransaction(transaction);
     beforeSend?.({
       signature,
       blockhash: latestBlockhash.blockhash,
       lastValidBlockHeight: latestBlockhash.lastValidBlockHeight.toString(),
     });
-    await sendAndConfirm(transaction, { commitment: "confirmed" });
+    await sendAndConfirm(transaction, { commitment: "confirmed", skipPreflight: true });
     return signature;
   };
 

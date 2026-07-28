@@ -18,6 +18,7 @@
     "src/harvestOperator.ts",
     "src/sendTransaction.ts",
     "src/settlement.ts",
+    "src/transactionSimulation.ts",
     "src/vaultRoots.ts",
     "../../test-suite/fhevm/demo/authorization.ts"
   ]

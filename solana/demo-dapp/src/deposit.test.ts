@@ -1,6 +1,8 @@
 import { address } from "@solana/kit";
+import { deriveBatchAddresses } from "@fhevm/sdk/solana/vault";
 import { beforeEach, describe, expect, test, vi } from "vitest";
 
+import type { DemoConfig } from "./demoConfig";
 import type { DemoSession } from "./demoSession";
 import {
   reconcileDepositTransaction,
@@ -8,14 +10,34 @@ import {
   type StoredDeposit,
   usdcToBaseUnits,
 } from "./deposit";
+import { vaultRoots } from "./vaultRoots";
 
 const user = address("SysvarRent111111111111111111111111111111111");
-const batch = address("SysvarC1ock11111111111111111111111111111111");
+const root = address("SysvarC1ock11111111111111111111111111111111");
+const config = {
+  chainId: "2147483648",
+  hostConfig: root,
+  kmsContext: root,
+  vault: root,
+  programs: { batcher: root, token: root, vault: root, host: root },
+  mints: {
+    joinUnderlying: root,
+    payoutUnderlying: root,
+    joinConfidential: root,
+    payoutConfidential: root,
+  },
+  batchers: {
+    deposit: { batcher: root, lookupTable: root },
+    redeem: { batcher: root, lookupTable: root },
+  },
+} as DemoConfig;
 const session = {
-  config: { chainId: "2147483648" },
+  config,
   signer: { address: user },
 } as unknown as DemoSession;
-const activeDepositKey = `fhevm-solana-demo:active-deposit:${session.config.chainId}:${user}`;
+const batch = (await deriveBatchAddresses(vaultRoots(config, "deposit"), 8n)).batch;
+const activeDepositKey = `fhevm-solana-demo:active-deposit:${config.chainId}:${config.batchers.deposit.batcher}:${user}`;
+const shieldJournalKey = `fhevm-solana-demo:shield:${config.chainId}:${config.batchers.deposit.batcher}:${user}`;
 
 const storedDeposit = (transaction = true): StoredDeposit => ({
   batchIndex: 8n,
@@ -107,6 +129,23 @@ describe("deposit join recovery", () => {
       batch,
       amountBaseUnits: "100000000",
     });
+  });
+
+  test("clears a position and shield journal from a different seeded world", async () => {
+    localStorage.setItem(activeDepositKey, "old position");
+    localStorage.setItem(shieldJournalKey, "old shield");
+    const rpc = rpcWith({}, null);
+
+    await expect(
+      reconcileSavedDeposit(rpc, session, {
+        ...storedDeposit(),
+        batch: address("SysvarS1otHashes111111111111111111111111111"),
+      }),
+    ).resolves.toBeNull();
+
+    expect(rpc.getAccountInfo).not.toHaveBeenCalled();
+    expect(localStorage.getItem(activeDepositKey)).toBeNull();
+    expect(localStorage.getItem(shieldJournalKey)).toBeNull();
   });
 
   test("clears a failed signed join so a new proof may be built", async () => {

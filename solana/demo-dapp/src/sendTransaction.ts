@@ -3,6 +3,7 @@ import {
   assertIsFullySignedTransaction,
   assertIsTransactionWithBlockhashLifetime,
   assertIsTransactionWithinSizeLimit,
+  compileTransaction,
   createSolanaRpc,
   createSolanaRpcSubscriptions,
   createTransactionMessage,
@@ -16,6 +17,10 @@ import {
 } from "@solana/kit";
 
 import type { DemoConfig } from "./demoConfig";
+import {
+  simulateSignedTransactionLocally,
+  simulateUnsignedTransactionLocally,
+} from "./transactionSimulation";
 
 export const sendTransaction = async (
   config: DemoConfig,
@@ -31,9 +36,11 @@ export const sendTransaction = async (
   const withLifetime = setTransactionMessageLifetimeUsingBlockhash(latestBlockhash, base);
   const withComputeLimit = setTransactionMessageComputeUnitLimit(computeUnitLimit, withLifetime);
   const message = appendTransactionMessageInstructions(instructions, withComputeLimit);
+  await simulateUnsignedTransactionLocally(rpc, compileTransaction(message), "Transaction");
   const transaction = await signTransactionMessageWithSigners(message);
   assertIsFullySignedTransaction(transaction);
   assertIsTransactionWithBlockhashLifetime(transaction);
   assertIsTransactionWithinSizeLimit(transaction);
-  await sendAndConfirm(transaction, { commitment: "confirmed" });
+  await simulateSignedTransactionLocally(rpc, transaction, "Signed transaction");
+  await sendAndConfirm(transaction, { commitment: "confirmed", skipPreflight: true });
 };

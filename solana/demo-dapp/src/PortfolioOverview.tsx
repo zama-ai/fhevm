@@ -8,6 +8,10 @@ export function PortfolioOverview({ controller }: { readonly controller: DemoCon
   const { state, derived, actions } = controller;
   const { deposit, depositLifecycle, revealedShares, revealingShares, revealSharesError } = state;
   const { connected, depositRunning, depositJoined } = derived;
+  const phantomLocalnet =
+    state.connection.kind === 'ready' &&
+    state.connection.session.wallet.kind === 'wallet-standard' &&
+    state.connection.session.wallet.name.toLowerCase() === 'phantom';
   const settled = depositLifecycle?.kind === 'settled';
   const status =
     deposit.kind === 'running'
@@ -68,8 +72,8 @@ export function PortfolioOverview({ controller }: { readonly controller: DemoCon
           <p>Shield USDC, join the next batch, and earn private vault shares.</p>
         </div>
         <div className="vault-metric">
-          <span>Deposit flow</span>
-          <strong>2 txs</strong>
+          <span>{phantomLocalnet ? 'Wallet flow' : 'Deposit flow'}</span>
+          <strong>{phantomLocalnet ? '1 app action · 2 approvals' : '2 txs'}</strong>
         </div>
         <div className="deposit-action">
           <div className="amount-row">
@@ -85,6 +89,13 @@ export function PortfolioOverview({ controller }: { readonly controller: DemoCon
             <span>1 · Shield USDC</span>
             <span>2 · Join private batch</span>
           </div>
+          {phantomLocalnet && !depositJoined && (
+            <p className="wallet-scan-note">
+              <strong>Phantom localnet · developer mode.</strong> The app simulates each transaction on this local
+              validator before and after signing. Phantom&apos;s scanner cannot reach this local validator and may still
+              show an unresolved warning. Use Demo wallet for the supported warning-free local flow.
+            </p>
+          )}
           <button
             className="primary-action"
             type="button"

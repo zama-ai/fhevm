@@ -4,6 +4,7 @@ import {
   assertIsFullySignedTransaction,
   assertIsTransactionWithBlockhashLifetime,
   assertIsTransactionWithinSizeLimit,
+  compileTransaction,
   createTransactionMessage,
   getBase64EncodedWireTransaction,
   getProgramDerivedAddress,
@@ -77,6 +78,18 @@ export type SolanaVaultJoinParameters = {
         readonly lastValidBlockHeight: bigint;
       }) => void | Promise<void>)
     | undefined;
+};
+
+const assertJoinSimulationSucceeded = (simulation: {
+  readonly err: unknown;
+  readonly logs?: readonly string[] | null;
+}): void => {
+  if (simulation.err === null) return;
+  const err = JSON.stringify(simulation.err, (_key, value: unknown) =>
+    typeof value === 'bigint' ? value.toString() : value,
+  );
+  const logs = simulation.logs?.join('\n') ?? '';
+  throw new Error(logs.length > 0 ? `join simulation failed: ${err}\n${logs}` : `join simulation failed: ${err}`);
 };
 
 async function eventAuthority(programAddress: Address): Promise<Address> {
@@ -161,6 +174,13 @@ export async function joinBatch(
     (m) => setTransactionMessageComputeUnitLimit(parameters.computeUnitLimit ?? 400_000, m),
     (m) => appendTransactionMessageInstructions([instruction], m),
   );
+  const unsignedTransaction = compileTransaction(message);
+  assertIsTransactionWithinSizeLimit(unsignedTransaction);
+  const unsignedWireTransaction = getBase64EncodedWireTransaction(unsignedTransaction);
+  const preflight = await parameters.rpc
+    .simulateTransaction(unsignedWireTransaction, { commitment: 'confirmed', encoding: 'base64', sigVerify: false })
+    .send();
+  assertJoinSimulationSucceeded(preflight.value);
   const transaction = await signTransactionMessageWithSigners(message);
   assertIsFullySignedTransaction(transaction);
   assertIsTransactionWithBlockhashLifetime(transaction);
@@ -169,13 +189,7 @@ export async function joinBatch(
   const simulation = await parameters.rpc
     .simulateTransaction(wireTransaction, { commitment: 'confirmed', encoding: 'base64', sigVerify: true })
     .send();
-  if (simulation.value.err !== null) {
-    const err = JSON.stringify(simulation.value.err, (_key, value: unknown) =>
-      typeof value === 'bigint' ? value.toString() : value,
-    );
-    const logs = simulation.value.logs?.join('\n') ?? '';
-    throw new Error(logs.length > 0 ? `join simulation failed: ${err}\n${logs}` : `join simulation failed: ${err}`);
-  }
+  assertJoinSimulationSucceeded(simulation.value);
   const signature = getSignatureFromTransaction(transaction);
   await parameters.onTransactionSigned?.({
     signature,
