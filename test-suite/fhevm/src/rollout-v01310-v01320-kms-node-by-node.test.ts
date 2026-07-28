@@ -12,11 +12,11 @@ const RUNBOOK = path.resolve(
 );
 
 describe("v0.13.10 to v0.13.20 KMS node-by-node upgrade", () => {
-  test("keeps SDK and connector versions unchanged", () => {
+  test("uses the threshold CI SDK path and changes only KMS Core", () => {
     expect(scenario).toBe("four-party-threshold-kms");
-    expect(from.RELAYER_SDK_VERSION).toBe("0.5.0-alpha.2");
-    expect(from.CONNECTOR_KMS_WORKER_VERSION).toBe("v0.12.5");
     const baseline = from as Record<string, string>;
+    expect(baseline.RELAYER_SDK_VERSION).toBeUndefined();
+    expect(from.CONNECTOR_KMS_WORKER_VERSION).toBe("v0.13.0-6");
     expect(Object.entries(to).filter(([key, value]) => baseline[key] !== value)).toEqual([
       ["CORE_VERSION", "v0.13.20"],
     ]);

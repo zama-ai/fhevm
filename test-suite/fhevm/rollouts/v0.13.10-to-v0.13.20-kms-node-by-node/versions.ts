@@ -2,11 +2,11 @@ type Env = Record<string, string>;
 
 export const scenario = "four-party-threshold-kms";
 
-const release = "v0.12.5";
+const release = "v0.13.0-6";
 
 export const from = {
-  RELAYER_VERSION: "v0.11.0",
-  RELAYER_MIGRATE_VERSION: "v0.11.0",
+  RELAYER_VERSION: release,
+  RELAYER_MIGRATE_VERSION: release,
   GATEWAY_VERSION: release,
   HOST_VERSION: release,
   CORE_VERSION: "v0.13.10",
@@ -23,7 +23,6 @@ export const from = {
   COPROCESSOR_SNS_WORKER_VERSION: release,
   LISTENER_CORE_VERSION: release,
   TEST_SUITE_VERSION: release,
-  RELAYER_SDK_VERSION: "0.5.0-alpha.2",
 } satisfies Env;
 
 export const to = { ...from, CORE_VERSION: "v0.13.20" } satisfies Env;
@@ -31,7 +30,6 @@ export const to = { ...from, CORE_VERSION: "v0.13.20" } satisfies Env;
 export const versionSources = [
   "rollout=v0.13.10-to-v0.13.20-kms-node-by-node",
   "kms-core=v0.13.10->v0.13.20",
-  "fhevm=v0.12.5",
-  "relayer=v0.11.0",
-  "relayer-sdk=0.5.0-alpha.2",
+  "fhevm=v0.13.0-6",
+  "sdk=@fhevm/sdk",
 ];
