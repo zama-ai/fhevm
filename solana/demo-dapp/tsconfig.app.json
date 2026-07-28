@@ -14,11 +14,7 @@
     "resolveJsonModule": true,
     "isolatedModules": true,
     "noEmit": true,
-    "jsx": "react-jsx",
-    "paths": {
-      "@fhevm/sdk/solana": ["../../sdk/js-sdk/src/solana/index.ts"],
-      "@fhevm/sdk/solana/vault": ["../../sdk/js-sdk/src/solana/vault/index.ts"]
-    }
+    "jsx": "react-jsx"
   },
   "include": ["src"]
 }

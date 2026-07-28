@@ -215,7 +215,7 @@ jobs:
           KMS_THRESHOLD: ${{ inputs.kms-mode == 'threshold' && '1' || '' }}
         run: bun run demo up
 
-      - name: Verify @fhevm/sdk runtime deps for full-vertical + the demo
+      - name: Verify @fhevm/sdk runtime deps and demo consumer build
         # Lifecycle bring-up installs the test-suite graph first, then leaves the SDK's own frozen
         # graph/build as the final dependency state. Assert both public entrypoints before spending
         # the remainder of the job on the vertical.
@@ -223,6 +223,8 @@ jobs:
           cd "$GITHUB_WORKSPACE/test-suite/fhevm"
           node --input-type=module -e "await import('@fhevm/sdk/solana'); console.log('@fhevm/sdk/solana imports OK')"
           node --input-type=module -e "await import('@fhevm/sdk/solana/vault'); console.log('@fhevm/sdk/solana/vault imports OK')"
+          cd "$GITHUB_WORKSPACE/solana/demo-dapp"
+          bun run build
 
       - name: Drive the Solana decrypt vertical (full-vertical.sh)
         run: bash solana/scripts/e2e/full-vertical.sh

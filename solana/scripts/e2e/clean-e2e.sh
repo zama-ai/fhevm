@@ -61,12 +61,11 @@ if [ -n "$SOLANA_E2E_LOCK_PINS" ]; then
   echo "[clean-e2e] lock pins for published images: $SOLANA_E2E_LOCK_PINS"
 fi
 
-# The local clients and demo import the public `@fhevm/sdk/solana` package exports, which resolve
-# to the generated ESM tree. An implicit Bun install may have copied the file-linked SDK before that
-# tree existed (including Bun's implicit install while entering `demo up`). Build the source, then
-# force-refresh the frozen Bun graph so its package copy contains those generated exports and the
-# checked-in CLI dependency versions. Assert the exact imports before paying for stack bring-up.
-( cd "$ROOT/sdk/js-sdk" && npm ci && npm run build:esm )
+# The local clients and demo import the public `@fhevm/sdk/solana` package exports. Install the SDK
+# workspace explicitly so runtime imports from its realpath can resolve the SDK's own dependencies,
+# then generate the ESM and declaration trees before refreshing the file-linked consumers.
+( cd "$ROOT" && npm ci --workspace=sdk/js-sdk --include-workspace-root=false )
+( cd "$ROOT/sdk/js-sdk" && npm run clean && npm run build:esm && npm run build:types )
 ( cd "$FHEVM" && bun install --force --frozen-lockfile )
 ( cd "$FHEVM" && bun -e "await import('@fhevm/sdk/solana'); await import('@fhevm/sdk/solana/vault')" )
 
