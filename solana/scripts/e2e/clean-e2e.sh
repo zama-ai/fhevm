@@ -62,12 +62,14 @@ if [ -n "$SOLANA_E2E_LOCK_PINS" ]; then
 fi
 
 # The local clients and demo import the public `@fhevm/sdk/solana` package exports. Install the SDK
-# workspace explicitly so runtime imports from its realpath can resolve the SDK's own dependencies,
-# then generate the ESM and declaration trees before refreshing the file-linked consumers.
-( cd "$ROOT" && npm ci --workspace=@fhevm/sdk-dev --workspace=@fhevm/sdk --include-workspace-root=false --install-strategy=nested )
+# build workspace, then generate the ESM and declaration trees before refreshing the file-linked
+# consumer. Runtime dependencies remain owned by each consumer's frozen graph.
+( cd "$ROOT" && npm ci --workspace=@fhevm/sdk-dev --workspace=@fhevm/sdk --include-workspace-root=false )
 ( cd "$ROOT/sdk/js-sdk" && npm run clean && npm run build:esm && npm run build:types )
 ( cd "$FHEVM" && bun install --force --frozen-lockfile )
-( cd "$FHEVM" && node --input-type=module -e "await import('@fhevm/sdk/solana'); await import('@fhevm/sdk/solana/vault')" )
+# Bun's local file package links generated SDK files back to the source tree. Preserve those link
+# paths under Node so package dependencies resolve from this consumer's frozen node_modules graph.
+( cd "$FHEVM" && node --preserve-symlinks --input-type=module -e "await import('@fhevm/sdk/solana'); await import('@fhevm/sdk/solana/vault')" )
 
 # The source-built Rust services inherit their builder tag from each component's toolchain.
 # Some tags are published for amd64 only. On an arm64 Docker daemon, keep those services native:

@@ -240,7 +240,7 @@ export const createRealTwoHolderDependencies = (config: Partial<TwoHolderConfig>
     },
     async transfer(scenario, alice, bob) {
       if (alice.chainId !== bob.chainId) throw new Error("Alice and Bob balance handles disagree on chain id");
-      const result = await run(["node", SDK_WORKER], {
+      const result = await run(["node", "--preserve-symlinks", SDK_WORKER], {
         cwd: CLI_DIR,
         env: {
           TRANSFER_RPC_URL: cfg.rpcUrl,

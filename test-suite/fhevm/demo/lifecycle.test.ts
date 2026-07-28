@@ -274,18 +274,53 @@ describe("demo lifecycle collision policy", () => {
       "utf8",
     );
     const install = script.indexOf(
-      "npm ci --workspace=@fhevm/sdk-dev --workspace=@fhevm/sdk --include-workspace-root=false --install-strategy=nested",
+      "npm ci --workspace=@fhevm/sdk-dev --workspace=@fhevm/sdk --include-workspace-root=false",
     );
     const build = script.indexOf("npm run clean && npm run build:esm && npm run build:types");
     const refresh = script.indexOf("bun install --force --frozen-lockfile");
     const canary = script.indexOf(
-      'node --input-type=module -e "await import(\'@fhevm/sdk/solana\'); await import(\'@fhevm/sdk/solana/vault\')"',
+      'node --preserve-symlinks --input-type=module -e "await import(\'@fhevm/sdk/solana\'); await import(\'@fhevm/sdk/solana/vault\')"',
     );
     expect(install).toBeGreaterThan(-1);
     expect(build).toBeGreaterThan(-1);
     expect(build).toBeGreaterThan(install);
     expect(refresh).toBeGreaterThan(build);
     expect(canary).toBeGreaterThan(refresh);
+  });
+
+  test("local Node SDK consumers preserve Bun file-package links", async () => {
+    const sdkPackage = JSON.parse(
+      await fs.readFile(path.join(import.meta.dir, "../../../sdk/js-sdk/src/package.json"), "utf8"),
+    ) as { dependencies: Record<string, string> };
+    const consumerLock = Bun.JSONC.parse(
+      await fs.readFile(path.join(import.meta.dir, "../bun.lock"), "utf8"),
+    ) as {
+      packages: Record<string, [string, { dependencies?: Record<string, string> }]>;
+    };
+    const fullVertical = await fs.readFile(
+      path.join(import.meta.dir, "../../../solana/scripts/e2e/full-vertical.sh"),
+      "utf8",
+    );
+    const adversarial = await fs.readFile(
+      path.join(import.meta.dir, "../../../solana/scripts/e2e/adversarial-l4.sh"),
+      "utf8",
+    );
+    const workflow = await fs.readFile(
+      path.join(import.meta.dir, "../../../.github/workflows/solana-e2e.yml"),
+      "utf8",
+    );
+    const twoHolderTransfer = await fs.readFile(
+      path.join(import.meta.dir, "../src/solana/two-holder-transfer.ts"),
+      "utf8",
+    );
+    expect(fullVertical.match(/node --preserve-symlinks solana-input\.ts/g)).toHaveLength(2);
+    expect(adversarial.match(/node --preserve-symlinks solana-input\.ts/g)).toHaveLength(1);
+    expect(workflow.match(/node --preserve-symlinks --input-type=module/g)).toHaveLength(2);
+    expect(twoHolderTransfer).toContain('run(["node", "--preserve-symlinks", SDK_WORKER]');
+    expect(fullVertical).not.toMatch(/\bnode solana-input\.ts/);
+    expect(adversarial).not.toMatch(/\bnode solana-input\.ts/);
+    expect(twoHolderTransfer).not.toContain('run(["node", SDK_WORKER]');
+    expect(consumerLock.packages["@fhevm/sdk"][1].dependencies).toEqual(sdkPackage.dependencies);
   });
 
   test("arm64 source builds use the canonical native Rust builder", async () => {

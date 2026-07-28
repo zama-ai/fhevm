@@ -100,9 +100,7 @@ jobs:
           fetch-depth: 2
 
       - name: Setup Node
-        # full-vertical.sh runs the @fhevm/sdk clients under `node`. node 24 realpath-resolves the
-        # @fhevm/sdk symlink, so the SDK's runtime deps (@noble/*) resolve from sdk/js-sdk's
-        # node_modules; the runner-default node 22 fails with ERR_MODULE_NOT_FOUND @noble/curves.
+        # full-vertical.sh runs the TypeScript @fhevm/sdk clients directly under Node.
         uses: actions/setup-node@395ad3262231945c25e8478fd5baf05154b1d79f # v6.1.0
         with:
           node-version: 24
@@ -216,13 +214,12 @@ jobs:
         run: bun run demo up
 
       - name: Verify @fhevm/sdk runtime deps and demo consumer build
-        # Lifecycle bring-up installs the test-suite graph first, then leaves the SDK's own frozen
-        # graph/build as the final dependency state. Assert both public entrypoints before spending
-        # the remainder of the job on the vertical.
+        # Lifecycle bring-up builds the SDK, then refreshes each frozen consumer graph. Assert both
+        # public entrypoints before spending the remainder of the job on the vertical.
         run: |
           cd "$GITHUB_WORKSPACE/test-suite/fhevm"
-          node --input-type=module -e "await import('@fhevm/sdk/solana'); console.log('@fhevm/sdk/solana imports OK')"
-          node --input-type=module -e "await import('@fhevm/sdk/solana/vault'); console.log('@fhevm/sdk/solana/vault imports OK')"
+          node --preserve-symlinks --input-type=module -e "await import('@fhevm/sdk/solana'); console.log('@fhevm/sdk/solana imports OK')"
+          node --preserve-symlinks --input-type=module -e "await import('@fhevm/sdk/solana/vault'); console.log('@fhevm/sdk/solana/vault imports OK')"
           cd "$GITHUB_WORKSPACE/solana/demo-dapp"
           bun run build
 
