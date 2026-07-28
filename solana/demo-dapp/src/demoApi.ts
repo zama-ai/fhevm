@@ -1,12 +1,19 @@
 import { address } from '@solana/kit';
 
-import type { BatchPosition, BatchTarget, OperatorAction, VaultDirection, VaultMetrics } from './batchTypes';
+import type { BatchTarget, VaultDirection, VaultMetrics } from './batchTypes';
 
-export type OperatorRequest = {
-  readonly action: OperatorAction;
-  readonly direction: VaultDirection;
-  readonly position: BatchPosition;
-};
+export type OperatorRequest =
+  | {
+      readonly action: 'dispatch' | 'settle';
+      readonly direction: VaultDirection;
+      readonly position: BatchTarget;
+    }
+  | {
+      readonly action: 'claim';
+      readonly direction: VaultDirection;
+      readonly position: BatchTarget;
+      readonly user: ReturnType<typeof address>;
+    };
 
 const record = (value: unknown, name: string): Record<string, unknown> => {
   if (typeof value !== 'object' || value === null) throw new Error(`${name} must be an object`);
@@ -18,22 +25,18 @@ const string = (value: unknown, name: string): string => {
   return value;
 };
 
-export const encodeOperatorRequest = (
-  action: OperatorAction,
-  direction: VaultDirection,
-  position: BatchPosition,
-): Record<string, string> => ({
-  action,
-  direction,
-  batchIndex: position.batchIndex.toString(),
-  batch: position.batch,
-  amountBaseUnits: position.amountBaseUnits.toString(),
+export const encodeOperatorRequest = (request: OperatorRequest): Record<string, string> => ({
+  action: request.action,
+  direction: request.direction,
+  batchIndex: request.position.batchIndex.toString(),
+  batch: request.position.batch,
+  ...(request.action === 'claim' ? { user: request.user } : {}),
 });
 
 export const parseOperatorRequest = (value: unknown): OperatorRequest => {
   const body = record(value, 'operator request');
-  if (body.action !== 'dispatch' && body.action !== 'settle') {
-    throw new Error('action must be dispatch or settle');
+  if (body.action !== 'dispatch' && body.action !== 'settle' && body.action !== 'claim') {
+    throw new Error('action must be dispatch, settle, or claim');
   }
   if (body.direction !== 'deposit' && body.direction !== 'redeem') {
     throw new Error('direction must be deposit or redeem');
@@ -41,10 +44,11 @@ export const parseOperatorRequest = (value: unknown): OperatorRequest => {
   const position = {
     batchIndex: BigInt(string(body.batchIndex, 'batchIndex')),
     batch: address(string(body.batch, 'batch')),
-    amountBaseUnits: BigInt(string(body.amountBaseUnits, 'amountBaseUnits')),
   };
-  if (position.batchIndex < 0n || position.amountBaseUnits < 0n) throw new Error('invalid batch position');
-  return { action: body.action, direction: body.direction, position };
+  if (position.batchIndex < 0n) throw new Error('invalid batch position');
+  return body.action === 'claim'
+    ? { action: body.action, direction: body.direction, position, user: address(string(body.user, 'user')) }
+    : { action: body.action, direction: body.direction, position };
 };
 
 export const encodeBatchTarget = (target: BatchTarget): Record<string, string> => ({

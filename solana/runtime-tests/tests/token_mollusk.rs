@@ -720,6 +720,7 @@ fn initialize_mint_ix(
 }
 
 fn initialize_token_account_ix(
+    payer: Pubkey,
     owner: Pubkey,
     mint: Pubkey,
     host_config: Pubkey,
@@ -731,6 +732,7 @@ fn initialize_token_account_ix(
     anchor_ix(
         token::id(),
         token::accounts::InitializeTokenAccount {
+            payer,
             owner,
             mint,
             compute_signer,
@@ -1030,7 +1032,7 @@ fn mollusk_initialize_token_account_creates_initial_balance_encrypted_value() {
     accounts.insert(token_account, system_account(0));
     accounts.insert(balance_encrypted_value, system_account(0));
     let context = mollusk().with_context(accounts);
-    let ix = initialize_token_account_ix(owner, fixture.mint, fixture.host_config, 0);
+    let ix = initialize_token_account_ix(owner, owner, fixture.mint, fixture.host_config, 0);
 
     let result = context.process_and_validate_instruction(&ix, &[Check::success()]);
 
@@ -1070,6 +1072,42 @@ fn mollusk_initialize_token_account_creates_initial_balance_encrypted_value() {
 }
 
 #[test]
+fn mollusk_initialize_token_account_allows_distinct_sponsor_and_owner() {
+    let fixture = TokenFixture::new();
+    let payer = Pubkey::new_unique();
+    let owner = Pubkey::new_unique();
+    let (token_account, _bump) = token::token_account_address(fixture.mint, owner);
+    let balance_encrypted_value =
+        token::balance_encrypted_value_address(fixture.mint, token_account).0;
+    let mut accounts = fixture.base_accounts();
+    accounts.insert(payer, system_account(5_000_000_000));
+    accounts.insert(owner, system_account(0));
+    accounts.insert(token_account, system_account(0));
+    accounts.insert(balance_encrypted_value, system_account(0));
+    let context = mollusk().with_context(accounts);
+    let ix = initialize_token_account_ix(payer, owner, fixture.mint, fixture.host_config, 0);
+
+    context.process_and_validate_instruction(&ix, &[Check::success()]);
+
+    let stored = read_token_account(&context, token_account);
+    assert_eq!(stored.owner, owner);
+    let balance_value = read_encrypted_value(&context, balance_encrypted_value);
+    assert!(balance_value.has_subject(owner));
+    assert!(!balance_value.has_subject(payer));
+
+    let retry = context.process_instruction(&ix);
+    assert!(retry.raw_result.is_err());
+    let stored_after_retry = read_token_account(&context, token_account);
+    let balance_after_retry = read_encrypted_value(&context, balance_encrypted_value);
+    assert_eq!(stored_after_retry.owner, stored.owner);
+    assert_eq!(
+        balance_after_retry.current_handle,
+        balance_value.current_handle
+    );
+    assert_eq!(balance_after_retry.subjects, balance_value.subjects);
+}
+
+#[test]
 fn mollusk_initialize_token_account_rejects_nonzero_initial_balance() {
     let fixture = TokenFixture::new();
     let owner = Pubkey::new_unique();
@@ -1081,7 +1119,7 @@ fn mollusk_initialize_token_account_rejects_nonzero_initial_balance() {
     accounts.insert(token_account, system_account(0));
     accounts.insert(balance_encrypted_value, system_account(0));
     let context = mollusk().with_context(accounts);
-    let ix = initialize_token_account_ix(owner, fixture.mint, fixture.host_config, 1);
+    let ix = initialize_token_account_ix(owner, owner, fixture.mint, fixture.host_config, 1);
 
     let result = context.process_instruction(&ix);
 
@@ -4591,7 +4629,7 @@ fn cost_snapshot_initialize_token_account() {
     accounts.insert(token_account, system_account(0));
     accounts.insert(balance_encrypted_value, system_account(0));
     let context = mollusk().with_context(accounts);
-    let ix = initialize_token_account_ix(owner, fixture.mint, fixture.host_config, 0);
+    let ix = initialize_token_account_ix(owner, owner, fixture.mint, fixture.host_config, 0);
 
     let result = context.process_and_validate_instruction(&ix, &[Check::success()]);
 

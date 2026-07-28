@@ -1,6 +1,6 @@
 import { useState } from 'react';
 
-import { ActionError, ClaimPanel, JourneyTimeline, SettlementProgress } from './JourneyPrimitives';
+import { ActionError, JourneyTimeline, SettlementProgress } from './JourneyPrimitives';
 import type { RedeemStage } from './redeem';
 import { formatUsdc } from './format';
 import type { DemoController } from './useDemoController';
@@ -19,8 +19,6 @@ export function RedeemJourney({ controller }: { readonly controller: DemoControl
     redeemLifecycle: lifecycle,
     redeemOperatorAction: operatorAction,
     redeemOperatorError: operatorError,
-    redeemClaiming: claiming,
-    redeemClaimError: claimError,
     revealedShares,
     revealedUsdc,
     revealingUsdc,
@@ -62,8 +60,8 @@ export function RedeemJourney({ controller }: { readonly controller: DemoControl
           },
           {
             state: settled && lifecycle.claimed ? 'complete' : settled ? 'active' : 'idle',
-            title: 'Receive cUSDC',
-            detail: 'Balance remains encrypted',
+            title: settled && lifecycle.claimed ? 'cUSDC received' : 'Receiving cUSDC',
+            detail: settled && lifecycle.claimed ? 'Balance remains encrypted' : 'Automatic',
           },
         ]}
       />
@@ -127,17 +125,6 @@ export function RedeemJourney({ controller }: { readonly controller: DemoControl
         />
       )}
 
-      {settled && !lifecycle.claimed && (
-        <ClaimPanel
-          title="Claim your private cUSDC"
-          detail="Receive the settled cUSDC in your encrypted balance."
-          label="Receive cUSDC"
-          busyLabel="Receiving cUSDC…"
-          busy={claiming}
-          onClaim={() => actions.claim('redeem')}
-        />
-      )}
-
       {settled && (
         <div className="privacy-split redeem-privacy-split">
           <div>
@@ -193,10 +180,9 @@ export function RedeemJourney({ controller }: { readonly controller: DemoControl
         </details>
       )}
 
-      {operatorError && <ActionError>Settlement is retrying automatically: {operatorError}</ActionError>}
-      {claimError && (
-        <ActionError retryLabel="Retry claim" onRetry={() => actions.claim('redeem')}>
-          {claimError}
+      {operatorError && (
+        <ActionError>
+          {operatorAction === 'claim' ? 'Receiving cUSDC' : 'Settlement'} is retrying automatically: {operatorError}
         </ActionError>
       )}
       {revealUsdcError && (

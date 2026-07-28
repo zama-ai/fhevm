@@ -1007,12 +1007,19 @@
       ],
       "accounts": [
         {
-          "name": "owner",
+          "name": "payer",
           "docs": [
-            "Account owner and rent payer."
+            "Pays rent for the token account and its initial encrypted balance."
           ],
           "writable": true,
           "signer": true
+        },
+        {
+          "name": "owner",
+          "docs": [
+            "Account owner. The canonical token-account PDA, stored owner, and",
+            "encrypted-value ACL audience are all derived from this address."
+          ]
         },
         {
           "name": "mint",

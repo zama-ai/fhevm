@@ -3,7 +3,6 @@ import { act, create, type ReactTestRenderer } from 'react-test-renderer';
 import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest';
 
 const mocks = vi.hoisted(() => ({
-  claim: vi.fn(),
   findDeposit: vi.fn(),
   findRedeem: vi.fn(),
   fund: vi.fn(),
@@ -19,7 +18,6 @@ const mocks = vi.hoisted(() => ({
   revealUsdc: vi.fn(),
 }));
 
-vi.mock('./claim', () => ({ claimBatchPayout: mocks.claim }));
 vi.mock('./demoSession', () => ({
   connectDemoSession: vi.fn(),
   describeWalletError: (error: unknown) => (error instanceof Error ? error.message : String(error)),
@@ -148,7 +146,7 @@ describe('useDemoController generation safety', () => {
     await connect(controller);
     await flush();
 
-    expect(mocks.operator).toHaveBeenCalledWith('dispatch', position, 'deposit');
+    expect(mocks.operator).toHaveBeenCalledWith({ action: 'dispatch', position, direction: 'deposit' });
     expect(controller.state.depositOperatorAction).toBe(null);
   });
 
@@ -157,7 +155,7 @@ describe('useDemoController generation safety', () => {
     await connect(controller);
     await flush();
 
-    expect(mocks.operator).toHaveBeenCalledWith('settle', position, 'deposit');
+    expect(mocks.operator).toHaveBeenCalledWith({ action: 'settle', position, direction: 'deposit' });
     expect(controller.state.depositOperatorAction).toBe(null);
   });
 
@@ -168,7 +166,7 @@ describe('useDemoController generation safety', () => {
     await connect(controller);
     await flush();
 
-    expect(mocks.operator).toHaveBeenCalledWith('dispatch', position, 'redeem');
+    expect(mocks.operator).toHaveBeenCalledWith({ action: 'dispatch', position, direction: 'redeem' });
     expect(controller.state.redeemOperatorAction).toBe(null);
   });
 
@@ -255,30 +253,31 @@ describe('useDemoController generation safety', () => {
     await flush();
   });
 
-  test('an old claim completion cannot clear the new generation claiming state', async () => {
+  test('an old automatic claim completion cannot clear the new generation action', async () => {
     const oldClaim = deferred<void>();
     const currentClaim = deferred<void>();
-    mocks.claim.mockReturnValueOnce(oldClaim.promise).mockReturnValueOnce(currentClaim.promise);
+    mocks.operator.mockReturnValueOnce(oldClaim.promise).mockReturnValueOnce(currentClaim.promise);
     mocks.lifecycle.mockResolvedValue(settledUnclaimed);
     await connect(controller);
     await flush();
-    controller.actions.claim('deposit');
-    await flush();
+    expect(mocks.operator).toHaveBeenCalledWith({
+      action: 'claim',
+      position,
+      direction: 'deposit',
+      user: position.batch,
+    });
 
     act(() => controller.actions.disconnect());
     await connect(controller);
     await flush();
-    controller.actions.claim('deposit');
-    await flush();
-    expect(controller.state.depositClaiming).toBe(true);
+    expect(controller.state.depositOperatorAction).toBe('claim');
 
     oldClaim.resolve();
     await flush();
-    expect(controller.state.depositClaiming).toBe(true);
+    expect(controller.state.depositOperatorAction).toBe('claim');
 
     currentClaim.resolve();
     await flush();
-    expect(controller.state.depositClaiming).toBe(false);
   });
 
   test('an old harvest result cannot overwrite the reconnected generation', async () => {

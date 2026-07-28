@@ -22,7 +22,7 @@ export type BatchLifecycle =
     }
   | { readonly kind: 'canceled' };
 
-export type OperatorAction = 'dispatch' | 'settle';
+export type OperatorAction = 'dispatch' | 'settle' | 'claim';
 
 export type VaultMetrics = {
   readonly totalAssets: bigint;

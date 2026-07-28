@@ -1,7 +1,6 @@
 import { useCallback, useEffect, useReducer, useRef } from 'react';
 
 import type { BatchLifecycle, BatchPosition, OperatorAction, VaultDirection, VaultMetrics } from './batchTypes';
-import { claimBatchPayout } from './claim';
 import { connectDemoSession, describeWalletError, ensureDemoFunding, type DemoSession } from './demoSession';
 import {
   depositToVault,
@@ -37,8 +36,6 @@ export type DemoState = {
   readonly depositLifecycleError: string | null;
   readonly depositOperatorAction: OperatorAction | null;
   readonly depositOperatorError: string | null;
-  readonly depositClaiming: boolean;
-  readonly depositClaimError: string | null;
   readonly hasPrivateShares: boolean;
   readonly revealedShares: RevealedBalance | null;
   readonly revealingShares: boolean;
@@ -51,8 +48,6 @@ export type DemoState = {
   readonly redeemLifecycle: BatchLifecycle | null;
   readonly redeemOperatorAction: OperatorAction | null;
   readonly redeemOperatorError: string | null;
-  readonly redeemClaiming: boolean;
-  readonly redeemClaimError: string | null;
   readonly revealedUsdc: RevealedBalance | null;
   readonly revealingUsdc: boolean;
   readonly revealUsdcError: string | null;
@@ -64,8 +59,6 @@ const accountState = {
   depositLifecycleError: null,
   depositOperatorAction: null,
   depositOperatorError: null,
-  depositClaiming: false,
-  depositClaimError: null,
   hasPrivateShares: false,
   revealedShares: null,
   revealingShares: false,
@@ -78,8 +71,6 @@ const accountState = {
   redeemLifecycle: null,
   redeemOperatorAction: null,
   redeemOperatorError: null,
-  redeemClaiming: false,
-  redeemClaimError: null,
   revealedUsdc: null,
   revealingUsdc: false,
   revealUsdcError: null,
@@ -140,7 +131,11 @@ export function useDemoController() {
       commit(generation, { [actionKey]: action, [errorKey]: null });
       let actionError: string | null = null;
       try {
-        await runDemoOperatorAction(action, position, direction);
+        if (action === 'claim') {
+          await runDemoOperatorAction({ action, position, direction, user: session.signer.address });
+        } else {
+          await runDemoOperatorAction({ action, position, direction });
+        }
       } catch (error) {
         actionError = errorMessage(error);
       } finally {
@@ -151,11 +146,16 @@ export function useDemoController() {
             const completed =
               action === 'dispatch'
                 ? next.kind !== 'awaiting-dispatch'
-                : next.kind === 'settled' || next.kind === 'canceled';
+                : action === 'settle'
+                  ? next.kind === 'settled' || next.kind === 'canceled'
+                  : next.kind === 'settled' && next.claimed;
             commit(generation, {
               [lifecycleKey]: next,
               [errorKey]: completed ? null : actionError,
               [actionKey]: null,
+              ...(direction === 'deposit' && next.kind === 'settled' && next.claimed
+                ? { hasPrivateShares: true, revealedShares: null }
+                : {}),
             });
           } catch (error) {
             commit(generation, {
@@ -191,6 +191,8 @@ export function useDemoController() {
             await advanceOperator(session, position, 'deposit', 'dispatch', generation);
           } else if (next.kind === 'proving' && next.proofReady) {
             await advanceOperator(session, position, 'deposit', 'settle', generation);
+          } else if (next.kind === 'settled' && !next.claimed) {
+            await advanceOperator(session, position, 'deposit', 'claim', generation);
           }
         }
       } catch (error) {
@@ -225,6 +227,8 @@ export function useDemoController() {
             await advanceOperator(session, position, 'redeem', 'dispatch', generation);
           } else if (next.kind === 'proving' && next.proofReady) {
             await advanceOperator(session, position, 'redeem', 'settle', generation);
+          } else if (next.kind === 'settled' && !next.claimed) {
+            await advanceOperator(session, position, 'redeem', 'claim', generation);
           }
         }
       } catch (error) {
@@ -308,51 +312,6 @@ export function useDemoController() {
     }
   };
 
-  const claim = async (direction: VaultDirection) => {
-    const journey = direction === 'deposit' ? state.deposit : state.redeem;
-    const lifecycle = direction === 'deposit' ? state.depositLifecycle : state.redeemLifecycle;
-    if (
-      state.connection.kind !== 'ready' ||
-      journey.kind !== 'joined' ||
-      lifecycle?.kind !== 'settled' ||
-      lifecycle.claimed ||
-      operationInFlight.current
-    ) {
-      return;
-    }
-    const session = state.connection.session;
-    const generation = state.generation;
-    const claimingKey = direction === 'deposit' ? 'depositClaiming' : 'redeemClaiming';
-    const errorKey = direction === 'deposit' ? 'depositClaimError' : 'redeemClaimError';
-    const lifecycleKey = direction === 'deposit' ? 'depositLifecycle' : 'redeemLifecycle';
-    operationInFlight.current = true;
-    commit(generation, { [claimingKey]: true, [errorKey]: null });
-    let actionError: string | null = null;
-    try {
-      await withWalletMutationLock(session, () => claimBatchPayout(session, journey.result, direction));
-    } catch (error) {
-      actionError = describeWalletError(error, 'transaction');
-    } finally {
-      if (sessionGeneration.current === generation) {
-        try {
-          const next = await readVaultLifecycle(session, journey.result, direction);
-          session.assertActive();
-          commit(generation, {
-            [lifecycleKey]: next,
-            [errorKey]: next.kind === 'settled' && next.claimed ? null : actionError,
-            [claimingKey]: false,
-            ...(direction === 'deposit' && next.kind === 'settled' && next.claimed
-              ? { hasPrivateShares: true, revealedShares: null }
-              : {}),
-          });
-        } catch {
-          commit(generation, { [errorKey]: actionError, [claimingKey]: false });
-        }
-      }
-      finishOperation(generation);
-    }
-  };
-
   const shieldAndDeposit = async (amount: number) => {
     if (
       state.connection.kind !== 'ready' ||
@@ -367,7 +326,6 @@ export function useDemoController() {
     commit(generation, {
       deposit: { kind: 'running', stage: 'preparing' },
       depositLifecycle: null,
-      depositClaimError: null,
       revealSharesError: null,
     });
     try {
@@ -508,7 +466,6 @@ export function useDemoController() {
       redeem: (percentage: number) => void redeemPosition(percentage),
       revealRedeemedUsdc: () => void revealRedeemedUsdc(),
       hideRedeemedUsdc: () => commit(state.generation, { revealedUsdc: null }),
-      claim: (direction: VaultDirection) => void claim(direction),
     },
   };
 }

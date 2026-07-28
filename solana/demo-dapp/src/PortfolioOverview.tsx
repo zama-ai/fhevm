@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 
-import { ActionError, ClaimPanel } from './JourneyPrimitives';
+import { ActionError } from './JourneyPrimitives';
 import { formatUsdc } from './format';
 import type { DemoController } from './useDemoController';
 import { DEMO_APY_PERCENT, DEMO_RATE_WINDOW_DAYS } from './yieldPolicy';
@@ -12,8 +12,6 @@ export function PortfolioOverview({ controller }: { readonly controller: DemoCon
   const {
     deposit,
     depositLifecycle,
-    depositClaiming,
-    depositClaimError,
     revealedShares,
     revealingShares,
     revealSharesError,
@@ -47,8 +45,10 @@ export function PortfolioOverview({ controller }: { readonly controller: DemoCon
           joining: 'Approval 2 of 2 · Depositing…',
           joined: 'Deposit submitted',
         }[deposit.stage]
-      : deposit.kind === 'joined' && !settled
-        ? 'Settlement in progress'
+      : deposit.kind === 'joined'
+        ? settled
+          ? 'Receiving cShares…'
+          : 'Settlement in progress'
         : null;
 
   useEffect(() => {
@@ -190,15 +190,6 @@ export function PortfolioOverview({ controller }: { readonly controller: DemoCon
             </button>
             {!validAmount && amount !== '' && <p className="input-error">Enter up to 1,000 USDC.</p>}
           </>
-        ) : settled && !depositLifecycle.claimed ? (
-          <ClaimPanel
-            title="Your cShares are ready"
-            detail="One transaction. The balance stays private."
-            label="Claim private cShares"
-            busyLabel="Claiming…"
-            busy={depositClaiming}
-            onClaim={() => actions.claim('deposit')}
-          />
         ) : (
           <div className="active-deposit">
             <span className="status-dot" />
@@ -212,11 +203,6 @@ export function PortfolioOverview({ controller }: { readonly controller: DemoCon
         {deposit.kind === 'error' && (
           <ActionError retryLabel="Retry" onRetry={() => actions.shieldAndDeposit(parsedAmount)}>
             {deposit.message}
-          </ActionError>
-        )}
-        {depositClaimError && (
-          <ActionError retryLabel="Retry claim" onRetry={() => actions.claim('deposit')}>
-            {depositClaimError}
           </ActionError>
         )}
       </article>

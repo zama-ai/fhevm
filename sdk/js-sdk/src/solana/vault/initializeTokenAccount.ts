@@ -10,8 +10,10 @@ import {
 } from './internal/tokenValueAccount.js';
 
 export type SolanaVaultInitializeTokenAccountParameters = {
-  /** Account owner and rent payer. */
-  readonly owner: TransactionSigner;
+  /** Signer funding the new confidential account and encrypted balance. */
+  readonly payer: TransactionSigner;
+  /** Owner of the confidential account. This address does not need to sign. */
+  readonly owner: Address;
   /** The confidential mint this account belongs to. */
   readonly mint: Address;
   /** zama-host config PDA used for handle derivation. */
@@ -29,8 +31,9 @@ export type SolanaVaultInitializeTokenAccountParameters = {
 export async function buildInitializeTokenAccountInstruction(
   parameters: SolanaVaultInitializeTokenAccountParameters,
 ): Promise<Instruction> {
-  const [tokenAccount] = await findTokenAccountPda({ mint: parameters.mint, owner: parameters.owner.address });
+  const [tokenAccount] = await findTokenAccountPda({ mint: parameters.mint, owner: parameters.owner });
   return getInitializeTokenAccountInstructionAsync({
+    payer: parameters.payer,
     owner: parameters.owner,
     mint: parameters.mint,
     tokenAccount,

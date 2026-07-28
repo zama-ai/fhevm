@@ -18,11 +18,29 @@ const position = {
 
 describe('demo API codecs', () => {
   test('round-trips the shared batch position contract', () => {
-    expect(parseOperatorRequest(encodeOperatorRequest('settle', 'redeem', position))).toEqual({
+    expect(parseOperatorRequest(encodeOperatorRequest({ action: 'settle', direction: 'redeem', position }))).toEqual({
       action: 'settle',
       direction: 'redeem',
-      position,
+      position: { batchIndex: position.batchIndex, batch: position.batch },
     });
+  });
+
+  test('requires and parses the user for a sponsored claim', () => {
+    const user = address('SysvarC1ock11111111111111111111111111111111');
+    expect(parseOperatorRequest(encodeOperatorRequest({ action: 'claim', direction: 'deposit', position, user }))).toEqual({
+      action: 'claim',
+      direction: 'deposit',
+      position: { batchIndex: position.batchIndex, batch: position.batch },
+      user,
+    });
+    expect(() =>
+      parseOperatorRequest({
+        action: 'claim',
+        direction: 'deposit',
+        batchIndex: position.batchIndex.toString(),
+        batch: position.batch,
+      }),
+    ).toThrow('user');
   });
 
   test('round-trips a prepared batch target and rejects negative indices', () => {

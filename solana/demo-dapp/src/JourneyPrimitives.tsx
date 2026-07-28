@@ -74,34 +74,6 @@ export function SettlementProgress({
   );
 }
 
-export function ClaimPanel({
-  title,
-  detail,
-  label,
-  busyLabel,
-  busy,
-  onClaim,
-}: {
-  readonly title: string;
-  readonly detail: string;
-  readonly label: string;
-  readonly busyLabel: string;
-  readonly busy: boolean;
-  readonly onClaim: () => void;
-}) {
-  return (
-    <div className="claim-panel">
-      <div>
-        <strong>{title}</strong>
-        <small>{detail}</small>
-      </div>
-      <button className="panel-action" type="button" disabled={busy} onClick={onClaim}>
-        {busy ? busyLabel : label}
-      </button>
-    </div>
-  );
-}
-
 export function ActionError({
   children,
   retryLabel,

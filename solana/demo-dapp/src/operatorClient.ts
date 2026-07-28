@@ -1,6 +1,6 @@
-import type { BatchPosition, BatchTarget, OperatorAction, VaultDirection } from "./batchTypes";
+import type { BatchTarget } from "./batchTypes";
 import { demoApiFetch } from "./demoAuthorization";
-import { encodeOperatorRequest, parseBatchTarget } from "./demoApi";
+import { encodeOperatorRequest, parseBatchTarget, type OperatorRequest } from "./demoApi";
 
 export const prepareDemoDepositBatch = async (): Promise<BatchTarget> => {
   const response = await demoApiFetch("/api/demo-batch", {
@@ -16,14 +16,12 @@ export const prepareDemoDepositBatch = async (): Promise<BatchTarget> => {
 };
 
 export const runDemoOperatorAction = async (
-  action: OperatorAction,
-  deposit: BatchPosition,
-  direction: VaultDirection = "deposit",
+  request: OperatorRequest,
 ): Promise<void> => {
   const response = await demoApiFetch("/api/demo-operator", {
     method: "POST",
     headers: { "content-type": "application/json" },
-    body: JSON.stringify(encodeOperatorRequest(action, direction, deposit)),
+    body: JSON.stringify(encodeOperatorRequest(request)),
   });
   if (!response.ok) {
     const body = (await response.json().catch(() => null)) as { readonly error?: string } | null;

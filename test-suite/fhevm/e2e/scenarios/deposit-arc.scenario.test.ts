@@ -118,7 +118,8 @@ type SolanaInputProofSubmission = unknown;
 /** The vault surface the scenario drives — provisioning, batch phases, claim + decrypt (untyped: runtime dynamic-import seam). */
 type VaultDepositArcSurface = {
   buildInitializeTokenAccountInstruction(parameters: {
-    owner: TransactionSigner;
+    payer: TransactionSigner;
+    owner: Address;
     mint: Address;
     hostConfig: Address;
     initialBalance?: number | bigint;
@@ -402,12 +403,14 @@ describe.skipIf(!runsDemoScenarios)("solana deposit-arc scenario", () => {
       // + wrap both revert on failure, so their confirmation IS the assertion for these phases.
       await send(alice, [
         await vault.buildInitializeTokenAccountInstruction({
-          owner: alice,
+          payer: alice,
+          owner: alice.address,
           mint: config.mints.joinConfidential,
           hostConfig: config.hostConfig,
         }),
         await vault.buildInitializeTokenAccountInstruction({
-          owner: alice,
+          payer: alice,
+          owner: alice.address,
           mint: config.mints.payoutConfidential,
           hostConfig: config.hostConfig,
         }),

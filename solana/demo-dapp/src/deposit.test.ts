@@ -5,6 +5,7 @@ import { beforeEach, describe, expect, test, vi } from "vitest";
 import type { DemoConfig } from "./demoConfig";
 import type { DemoSession } from "./demoSession";
 import {
+  needsTokenAccountInitialization,
   reconcileDepositTransaction,
   reconcileSavedDeposit,
   type StoredDeposit,
@@ -93,6 +94,18 @@ describe("usdcToBaseUnits", () => {
   test("rejects zero and amounts above the funded demo balance", () => {
     expect(() => usdcToBaseUnits(0)).toThrow("between 0 and 1,000");
     expect(() => usdcToBaseUnits(1_000.000001)).toThrow("between 0 and 1,000");
+  });
+});
+
+describe("confidential token account ownership", () => {
+  test("initializes absent and pre-funded System-owned PDAs", () => {
+    expect(needsTokenAccountInitialization(null, root)).toBe(true);
+    expect(needsTokenAccountInitialization(address("11111111111111111111111111111111"), root)).toBe(true);
+  });
+
+  test("accepts only token-program-owned initialized accounts", () => {
+    expect(needsTokenAccountInitialization(root, root)).toBe(false);
+    expect(() => needsTokenAccountInitialization(user, root)).toThrow("unexpected program");
   });
 });
 

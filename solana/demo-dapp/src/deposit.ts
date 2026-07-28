@@ -59,6 +59,7 @@ type Bytes32Hex = Parameters<typeof joinBatch>[0]["aclProgramAddress"];
 const USDC_DECIMALS = 6;
 const SHIELD_COMPUTE_UNIT_LIMIT = 1_200_000;
 const JOIN_COMPUTE_UNIT_LIMIT = 800_000;
+const SYSTEM_PROGRAM_ADDRESS = "11111111111111111111111111111111";
 
 const addressEncoder = getAddressEncoder();
 
@@ -72,6 +73,15 @@ export const usdcToBaseUnits = (amount: number): bigint => {
     throw new Error("Deposit amount must be between 0 and 1,000 USDC");
   }
   return BigInt(Math.round(amount * 10 ** USDC_DECIMALS));
+};
+
+export const needsTokenAccountInitialization = (
+  accountOwner: Address | null,
+  tokenProgram: Address,
+): boolean => {
+  if (accountOwner === null || accountOwner === SYSTEM_PROGRAM_ADDRESS) return true;
+  if (accountOwner === tokenProgram) return false;
+  throw new Error("The canonical confidential token account is owned by an unexpected program");
 };
 
 const depositRoots = (session: DemoSession) => vaultRoots(session.config, "deposit");
@@ -385,11 +395,16 @@ export async function depositToVault(
     const joinTokenAccountInfo = await rpc
       .getAccountInfo(joinTokenAccount, { commitment: "confirmed", encoding: "base64" })
       .send();
+    const initializeJoinTokenAccount = needsTokenAccountInitialization(
+      joinTokenAccountInfo.value?.owner ?? null,
+      config.programs.token,
+    );
     const shieldInstructions: Instruction[] =
-      joinTokenAccountInfo.value === null
+      initializeJoinTokenAccount
         ? [
             await buildInitializeTokenAccountInstruction({
-              owner: signer,
+              payer: signer,
+              owner: signer.address,
               mint: config.mints.joinConfidential,
               hostConfig: config.hostConfig,
             }),

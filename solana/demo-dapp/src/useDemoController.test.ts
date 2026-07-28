@@ -7,11 +7,9 @@ describe('demoStateReducer', () => {
     const dirty = {
       ...initialDemoState,
       deposit: { kind: 'running', stage: 'joining' },
-      depositClaiming: true,
       revealedShares: { value: 12n, handle: 'handle' },
       harvesting: true,
       redeem: { kind: 'running', stage: 'decrypting' },
-      redeemClaiming: true,
       revealingUsdc: true,
     } as DemoState;
 

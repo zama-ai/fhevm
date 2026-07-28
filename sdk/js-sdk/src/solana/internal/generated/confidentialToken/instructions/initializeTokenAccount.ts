@@ -52,6 +52,7 @@ export function getInitializeTokenAccountDiscriminatorBytes(): ReadonlyUint8Arra
 
 export type InitializeTokenAccountInstruction<
   TProgram extends string = typeof CONFIDENTIAL_TOKEN_PROGRAM_ADDRESS,
+  TAccountPayer extends string | AccountMeta<string> = string,
   TAccountOwner extends string | AccountMeta<string> = string,
   TAccountMint extends string | AccountMeta<string> = string,
   TAccountComputeSigner extends string | AccountMeta<string> = string,
@@ -70,9 +71,10 @@ export type InitializeTokenAccountInstruction<
   InstructionWithData<ReadonlyUint8Array> &
   InstructionWithAccounts<
     [
-      TAccountOwner extends string
-        ? WritableSignerAccount<TAccountOwner> & AccountSignerMeta<TAccountOwner>
-        : TAccountOwner,
+      TAccountPayer extends string
+        ? WritableSignerAccount<TAccountPayer> & AccountSignerMeta<TAccountPayer>
+        : TAccountPayer,
+      TAccountOwner extends string ? ReadonlyAccount<TAccountOwner> : TAccountOwner,
       TAccountMint extends string ? ReadonlyAccount<TAccountMint> : TAccountMint,
       TAccountComputeSigner extends string ? ReadonlyAccount<TAccountComputeSigner> : TAccountComputeSigner,
       TAccountTokenAccount extends string ? WritableAccount<TAccountTokenAccount> : TAccountTokenAccount,
@@ -135,6 +137,7 @@ export function getInitializeTokenAccountInstructionDataCodec(): FixedSizeCodec<
 }
 
 export type InitializeTokenAccountAsyncInput<
+  TAccountPayer extends string = string,
   TAccountOwner extends string = string,
   TAccountMint extends string = string,
   TAccountComputeSigner extends string = string,
@@ -149,8 +152,13 @@ export type InitializeTokenAccountAsyncInput<
   TAccountEventAuthority extends string = string,
   TAccountProgram extends string = string,
 > = {
-  /** Account owner and rent payer. */
-  owner: TransactionSigner<TAccountOwner>;
+  /** Pays rent for the token account and its initial encrypted balance. */
+  payer: TransactionSigner<TAccountPayer>;
+  /**
+   * Account owner. The canonical token-account PDA, stored owner, and
+   * encrypted-value ACL audience are all derived from this address.
+   */
+  owner: Address<TAccountOwner>;
   /** Confidential mint this account belongs to. */
   mint: Address<TAccountMint>;
   computeSigner?: Address<TAccountComputeSigner>;
@@ -179,6 +187,7 @@ export type InitializeTokenAccountAsyncInput<
 };
 
 export async function getInitializeTokenAccountInstructionAsync<
+  TAccountPayer extends string,
   TAccountOwner extends string,
   TAccountMint extends string,
   TAccountComputeSigner extends string,
@@ -195,6 +204,7 @@ export async function getInitializeTokenAccountInstructionAsync<
   TProgramAddress extends Address = typeof CONFIDENTIAL_TOKEN_PROGRAM_ADDRESS,
 >(
   input: InitializeTokenAccountAsyncInput<
+    TAccountPayer,
     TAccountOwner,
     TAccountMint,
     TAccountComputeSigner,
@@ -213,6 +223,7 @@ export async function getInitializeTokenAccountInstructionAsync<
 ): Promise<
   InitializeTokenAccountInstruction<
     TProgramAddress,
+    TAccountPayer,
     TAccountOwner,
     TAccountMint,
     TAccountComputeSigner,
@@ -233,7 +244,8 @@ export async function getInitializeTokenAccountInstructionAsync<
 
   // Original accounts.
   const originalAccounts = {
-    owner: { value: input.owner ?? null, isWritable: true },
+    payer: { value: input.payer ?? null, isWritable: true },
+    owner: { value: input.owner ?? null, isWritable: false },
     mint: { value: input.mint ?? null, isWritable: false },
     computeSigner: { value: input.computeSigner ?? null, isWritable: false },
     tokenAccount: { value: input.tokenAccount ?? null, isWritable: true },
@@ -284,6 +296,7 @@ export async function getInitializeTokenAccountInstructionAsync<
   const getAccountMeta = getAccountMetaFactory(programAddress, 'programId');
   return Object.freeze({
     accounts: [
+      getAccountMeta('payer', accounts.payer),
       getAccountMeta('owner', accounts.owner),
       getAccountMeta('mint', accounts.mint),
       getAccountMeta('computeSigner', accounts.computeSigner),
@@ -302,6 +315,7 @@ export async function getInitializeTokenAccountInstructionAsync<
     programAddress,
   } as InitializeTokenAccountInstruction<
     TProgramAddress,
+    TAccountPayer,
     TAccountOwner,
     TAccountMint,
     TAccountComputeSigner,
@@ -319,6 +333,7 @@ export async function getInitializeTokenAccountInstructionAsync<
 }
 
 export type InitializeTokenAccountInput<
+  TAccountPayer extends string = string,
   TAccountOwner extends string = string,
   TAccountMint extends string = string,
   TAccountComputeSigner extends string = string,
@@ -333,8 +348,13 @@ export type InitializeTokenAccountInput<
   TAccountEventAuthority extends string = string,
   TAccountProgram extends string = string,
 > = {
-  /** Account owner and rent payer. */
-  owner: TransactionSigner<TAccountOwner>;
+  /** Pays rent for the token account and its initial encrypted balance. */
+  payer: TransactionSigner<TAccountPayer>;
+  /**
+   * Account owner. The canonical token-account PDA, stored owner, and
+   * encrypted-value ACL audience are all derived from this address.
+   */
+  owner: Address<TAccountOwner>;
   /** Confidential mint this account belongs to. */
   mint: Address<TAccountMint>;
   computeSigner: Address<TAccountComputeSigner>;
@@ -363,6 +383,7 @@ export type InitializeTokenAccountInput<
 };
 
 export function getInitializeTokenAccountInstruction<
+  TAccountPayer extends string,
   TAccountOwner extends string,
   TAccountMint extends string,
   TAccountComputeSigner extends string,
@@ -379,6 +400,7 @@ export function getInitializeTokenAccountInstruction<
   TProgramAddress extends Address = typeof CONFIDENTIAL_TOKEN_PROGRAM_ADDRESS,
 >(
   input: InitializeTokenAccountInput<
+    TAccountPayer,
     TAccountOwner,
     TAccountMint,
     TAccountComputeSigner,
@@ -396,6 +418,7 @@ export function getInitializeTokenAccountInstruction<
   config?: { programAddress?: TProgramAddress },
 ): InitializeTokenAccountInstruction<
   TProgramAddress,
+  TAccountPayer,
   TAccountOwner,
   TAccountMint,
   TAccountComputeSigner,
@@ -415,7 +438,8 @@ export function getInitializeTokenAccountInstruction<
 
   // Original accounts.
   const originalAccounts = {
-    owner: { value: input.owner ?? null, isWritable: true },
+    payer: { value: input.payer ?? null, isWritable: true },
+    owner: { value: input.owner ?? null, isWritable: false },
     mint: { value: input.mint ?? null, isWritable: false },
     computeSigner: { value: input.computeSigner ?? null, isWritable: false },
     tokenAccount: { value: input.tokenAccount ?? null, isWritable: true },
@@ -455,6 +479,7 @@ export function getInitializeTokenAccountInstruction<
   const getAccountMeta = getAccountMetaFactory(programAddress, 'programId');
   return Object.freeze({
     accounts: [
+      getAccountMeta('payer', accounts.payer),
       getAccountMeta('owner', accounts.owner),
       getAccountMeta('mint', accounts.mint),
       getAccountMeta('computeSigner', accounts.computeSigner),
@@ -473,6 +498,7 @@ export function getInitializeTokenAccountInstruction<
     programAddress,
   } as InitializeTokenAccountInstruction<
     TProgramAddress,
+    TAccountPayer,
     TAccountOwner,
     TAccountMint,
     TAccountComputeSigner,
@@ -495,32 +521,37 @@ export type ParsedInitializeTokenAccountInstruction<
 > = {
   programAddress: Address<TProgram>;
   accounts: {
-    /** Account owner and rent payer. */
-    owner: TAccountMetas[0];
+    /** Pays rent for the token account and its initial encrypted balance. */
+    payer: TAccountMetas[0];
+    /**
+     * Account owner. The canonical token-account PDA, stored owner, and
+     * encrypted-value ACL audience are all derived from this address.
+     */
+    owner: TAccountMetas[1];
     /** Confidential mint this account belongs to. */
-    mint: TAccountMetas[1];
-    computeSigner: TAccountMetas[2];
-    tokenAccount: TAccountMetas[3];
-    balanceEncryptedValue: TAccountMetas[4];
-    zamaEventAuthority: TAccountMetas[5];
+    mint: TAccountMetas[2];
+    computeSigner: TAccountMetas[3];
+    tokenAccount: TAccountMetas[4];
+    balanceEncryptedValue: TAccountMetas[5];
+    zamaEventAuthority: TAccountMetas[6];
     /** ZamaHost program used to create the initial balance handle. */
-    zamaProgram: TAccountMetas[6];
+    zamaProgram: TAccountMetas[7];
     /** ZamaHost config used for handle derivation. */
-    hostConfig: TAccountMetas[7];
+    hostConfig: TAccountMetas[8];
     /** System program used for account creation. */
-    systemProgram: TAccountMetas[8];
+    systemProgram: TAccountMetas[9];
     /**
      * canonical `["hcu-block-meter", compute_signer]` PDA. Supplied by an untrusted mint under a
      * metering-band cap; omitted when the mint is trusted or the cap is unrestricted.
      */
-    hcuBlockMeter?: TAccountMetas[9] | undefined;
+    hcuBlockMeter?: TAccountMetas[10] | undefined;
     /**
      * canonical `["hcu-trusted", compute_signer]` PDA. Present + valid bypasses the cap; absent
      * means the mint is metered.
      */
-    hcuTrustedAppRecord?: TAccountMetas[10] | undefined;
-    eventAuthority: TAccountMetas[11];
-    program: TAccountMetas[12];
+    hcuTrustedAppRecord?: TAccountMetas[11] | undefined;
+    eventAuthority: TAccountMetas[12];
+    program: TAccountMetas[13];
   };
   data: InitializeTokenAccountInstructionData;
 };
@@ -531,10 +562,10 @@ export function parseInitializeTokenAccountInstruction<
 >(
   instruction: Instruction<TProgram> & InstructionWithAccounts<TAccountMetas> & InstructionWithData<ReadonlyUint8Array>,
 ): ParsedInitializeTokenAccountInstruction<TProgram, TAccountMetas> {
-  if (instruction.accounts.length < 13) {
+  if (instruction.accounts.length < 14) {
     throw new SolanaError(SOLANA_ERROR__PROGRAM_CLIENTS__INSUFFICIENT_ACCOUNT_METAS, {
       actualAccountMetas: instruction.accounts.length,
-      expectedAccountMetas: 13,
+      expectedAccountMetas: 14,
     });
   }
   let accountIndex = 0;
@@ -550,6 +581,7 @@ export function parseInitializeTokenAccountInstruction<
   return {
     programAddress: instruction.programAddress,
     accounts: {
+      payer: getNextAccount(),
       owner: getNextAccount(),
       mint: getNextAccount(),
       computeSigner: getNextAccount(),

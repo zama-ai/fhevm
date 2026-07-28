@@ -2,7 +2,7 @@ import fs from 'node:fs/promises';
 import type { IncomingMessage } from 'node:http';
 import path from 'node:path';
 
-import { createKeyPairSignerFromBytes } from '@solana/kit';
+import { createKeyPairSignerFromBytes, type Address } from '@solana/kit';
 import type { Plugin } from 'vite';
 
 import {
@@ -345,14 +345,17 @@ export const demoServerPlugin = (): Plugin => ({
             return;
           }
           try {
-            const { action, direction, position } = parseOperatorRequest(await readJsonBody(request));
-            const operationKey = `${direction}:${position.batch}:${action}`;
+            const operatorRequest = parseOperatorRequest(await readJsonBody(request));
+            const { action, direction, position } = operatorRequest;
+            const claimUser = operatorRequest.action === 'claim' ? operatorRequest.user : null;
+            const operationKey = `${direction}:${position.batch}:${action}:${claimUser ?? ''}`;
             await runSingleFlight(operatorInFlight, operationKey, async () => {
               const session = await loadDemoOperatorSession();
-              const operator = (await server.ssrLoadModule('/src/settlement.ts')) as typeof import('./src/settlement');
-              if (action === 'dispatch') {
+              if (operatorRequest.action === 'dispatch') {
+                const operator = (await server.ssrLoadModule('/src/settlement.ts')) as typeof import('./src/settlement');
                 await operator.dispatchVaultBatch(session, position, direction);
-              } else {
+              } else if (operatorRequest.action === 'settle') {
+                const operator = (await server.ssrLoadModule('/src/settlement.ts')) as typeof import('./src/settlement');
                 const provisioning = (await server.ssrLoadModule(
                   '/src/batchProvisioning.ts',
                 )) as typeof import('./src/batchProvisioning');
@@ -363,6 +366,17 @@ export const demoServerPlugin = (): Plugin => ({
                   batchRegistryPath,
                 );
                 await operator.settleVaultBatch(session, position, direction, lookupTable);
+              } else {
+                if (claimUser === null) throw new Error('claim user is required');
+                const claim = (await server.ssrLoadModule('/src/claim.ts')) as {
+                  claimBatchPayout(
+                    claimSession: Awaited<ReturnType<typeof loadDemoOperatorSession>>,
+                    claimPosition: typeof position,
+                    claimDirection: typeof direction,
+                    claimUser: Address,
+                  ): Promise<void>;
+                };
+                await claim.claimBatchPayout(session, position, direction, claimUser);
               }
             });
             response.statusCode = 200;

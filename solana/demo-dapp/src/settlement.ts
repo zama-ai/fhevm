@@ -16,7 +16,7 @@ import {
   settleBatch,
 } from '@fhevm/sdk/solana/vault';
 
-import type { BatchLifecycle, BatchPosition, VaultDirection } from './batchTypes';
+import type { BatchLifecycle, BatchTarget, VaultDirection } from './batchTypes';
 import type { DemoConfig } from './demoConfig';
 import { sendTransaction } from './sendTransaction';
 import { vaultRoots } from './vaultRoots';
@@ -54,7 +54,7 @@ const asBytes32BigEndian = (decimal: string): Uint8Array => {
 
 const currentPinnedBatch = async (
   session: { readonly config: DemoConfig },
-  position: BatchPosition,
+  position: BatchTarget,
   direction: VaultDirection,
 ) => {
   const rpc = createSolanaRpc(session.config.rpcUrl);
@@ -114,7 +114,7 @@ const hasReadyProof = async (
 
 export const readVaultLifecycle = async (
   session: DemoUserSession,
-  position: BatchPosition,
+  position: BatchTarget,
   direction: VaultDirection,
 ): Promise<BatchLifecycle> => {
   const { rpc, batch } = await currentPinnedBatch(session, position, direction);
@@ -147,7 +147,7 @@ export const readVaultLifecycle = async (
 
 export const dispatchVaultBatch = async (
   session: DemoOperatorSession,
-  position: BatchPosition,
+  position: BatchTarget,
   direction: VaultDirection,
 ): Promise<void> => {
   const roots = vaultRoots(session.config, direction);
@@ -176,7 +176,7 @@ export const dispatchVaultBatch = async (
 
 export const settleVaultBatch = async (
   session: DemoOperatorSession,
-  position: BatchPosition,
+  position: BatchTarget,
   direction: VaultDirection,
   lookupTableAddress: Address = session.config.batchers[direction].lookupTable,
 ): Promise<void> => {

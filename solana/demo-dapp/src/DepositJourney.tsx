@@ -24,7 +24,7 @@ export function DepositJourney({ controller }: { readonly controller: DemoContro
     : lifecycle?.kind === 'proving'
       ? 'Settlement in progress'
       : settled
-        ? 'Claim available'
+        ? 'Receiving cShares'
         : 'Deposit in progress';
 
   return (
@@ -53,8 +53,8 @@ export function DepositJourney({ controller }: { readonly controller: DemoContro
                 },
                 {
                   state: complete ? 'complete' : settled ? 'active' : 'idle',
-                  title: complete ? 'cShares received' : 'Claim cShares',
-                  detail: 'Balance stays private',
+                  title: complete ? 'cShares received' : 'Receiving cShares',
+                  detail: complete ? 'Balance stays private' : 'Automatic',
                 },
               ]}
             />
@@ -74,7 +74,12 @@ export function DepositJourney({ controller }: { readonly controller: DemoContro
               <SettlementProgress lifecycle={lifecycle} action={operatorAction} />
             )}
 
-            {operatorError && <ActionError>Settlement is retrying automatically: {operatorError}</ActionError>}
+            {operatorError && (
+              <ActionError>
+                {operatorAction === 'claim' ? 'Receiving cShares' : 'Settlement'} is retrying automatically:{' '}
+                {operatorError}
+              </ActionError>
+            )}
             {lifecycleError && !operatorError && (
               <ActionError>Live batch status is temporarily unavailable: {lifecycleError}</ActionError>
             )}
