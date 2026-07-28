@@ -268,10 +268,14 @@ describe("demo lifecycle collision policy", () => {
       path.join(import.meta.dir, "../../../solana/scripts/e2e/clean-e2e.sh"),
       "utf8",
     );
-    const install = script.indexOf("npm ci --workspace=sdk/js-sdk --include-workspace-root=false");
+    const install = script.indexOf(
+      "npm ci --workspace=@fhevm/sdk-dev --workspace=@fhevm/sdk --include-workspace-root=false --install-strategy=nested",
+    );
     const build = script.indexOf("npm run clean && npm run build:esm && npm run build:types");
     const refresh = script.indexOf("bun install --force --frozen-lockfile");
-    const canary = script.indexOf("await import('@fhevm/sdk/solana/vault')");
+    const canary = script.indexOf(
+      'node --input-type=module -e "await import(\'@fhevm/sdk/solana\'); await import(\'@fhevm/sdk/solana/vault\')"',
+    );
     expect(install).toBeGreaterThan(-1);
     expect(build).toBeGreaterThan(-1);
     expect(build).toBeGreaterThan(install);
