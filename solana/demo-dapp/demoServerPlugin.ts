@@ -9,7 +9,7 @@ import {
   readDemoAuthorizationFromEnv,
 } from '../../test-suite/fhevm/demo/authorization';
 import type { VaultMetrics } from './src/batchTypes';
-import { parseDemoConfig } from './src/demoConfig';
+import { parseRuntimeDemoConfig } from './src/demoConfig';
 import { encodeVaultMetrics, parseOperatorRequest } from './src/demoApi';
 
 const appDirectory = import.meta.dirname;
@@ -124,12 +124,12 @@ const readJsonBody = async (request: IncomingMessage): Promise<unknown> => {
   return JSON.parse(Buffer.concat(chunks).toString('utf8'));
 };
 
-const loadDemoOperatorSession = async () => {
+const loadDemoOperatorSession = async (demoBootId: string) => {
   const [configJson, keeperKeypairJson] = await Promise.all([
     fs.readFile(runtimeConfigPath, 'utf8'),
     fs.readFile(keeperKeypairPath, 'utf8'),
   ]);
-  const config = parseDemoConfig(JSON.parse(configJson) as unknown);
+  const config = parseRuntimeDemoConfig(JSON.parse(configJson) as unknown, demoBootId);
   const keeper = await createKeyPairSignerFromBytes(Uint8Array.from(JSON.parse(keeperKeypairJson) as number[]));
   if (keeper.address !== config.personas.keeper) {
     throw new Error(`keeper signer ${keeper.address} does not match seeded keeper ${config.personas.keeper}`);
@@ -245,7 +245,7 @@ export const demoServerPlugin = (): Plugin => ({
               `prepare:${direction}`,
               () =>
                 runSerialized(batchPreparationQueue, async () => {
-                  const session = await loadDemoOperatorSession();
+                  const session = await loadDemoOperatorSession(authorization.bootId);
                   const module = (await server.ssrLoadModule(
                     '/src/batchProvisioning.ts',
                   )) as typeof import('./src/batchProvisioning');
@@ -372,7 +372,7 @@ export const demoServerPlugin = (): Plugin => ({
             const claimUser = operatorRequest.action === 'claim' ? operatorRequest.user : null;
             const operationKey = `${direction}:${position.batch}:${action}:${claimUser ?? ''}`;
             const signature = await runSingleFlight(operatorInFlight, operationKey, async () => {
-              const session = await loadDemoOperatorSession();
+              const session = await loadDemoOperatorSession(authorization.bootId);
               if (operatorRequest.action === 'dispatch') {
                 const operator = (await server.ssrLoadModule('/src/settlement.ts')) as typeof import('./src/settlement');
                 return operator.dispatchVaultBatch(session, position, direction);
@@ -417,7 +417,7 @@ export const demoServerPlugin = (): Plugin => ({
             return;
           }
           try {
-            const session = await loadDemoOperatorSession();
+            const session = await loadDemoOperatorSession(authorization.bootId);
             const module = (await server.ssrLoadModule(
               '/src/harvestOperator.ts',
             )) as typeof import('./src/harvestOperator');
@@ -448,7 +448,7 @@ export const demoServerPlugin = (): Plugin => ({
           }
           try {
             harvestInFlight ??= (async () => {
-              const session = await loadDemoOperatorSession();
+              const session = await loadDemoOperatorSession(authorization.bootId);
               const module = (await server.ssrLoadModule(
                 '/src/harvestOperator.ts',
               )) as typeof import('./src/harvestOperator');

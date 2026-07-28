@@ -108,5 +108,10 @@ export const parseDemoConfig = (value: unknown): DemoConfig => {
   };
 };
 
+export const parseRuntimeDemoConfig = (value: unknown, demoBootId: string): DemoConfig => {
+  const raw = object(value, "runtime demo config");
+  return parseDemoConfig({ ...raw, demoBootId });
+};
+
 export const parseDemoConfigResponse = (value: unknown): DemoConfig =>
   parseDemoConfig(object(value, "demo config response").config);

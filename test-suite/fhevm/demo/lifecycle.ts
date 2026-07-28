@@ -855,12 +855,19 @@ export const doctorDemo = async (): Promise<{
   return { manifest, errors };
 };
 
-const waitForHttp = async (url: string, label: string): Promise<void> => {
+const waitForHttp = async (
+  url: string,
+  label: string,
+  validate: (response: Response) => boolean | Promise<boolean> = (response) =>
+    response.ok,
+): Promise<void> => {
   let last = "not reachable";
   for (let attempt = 0; attempt < 60; attempt += 1) {
     try {
-      const response = await fetch(url);
-      if (response.ok) return;
+      const response = await fetch(url, {
+        signal: AbortSignal.timeout(2_000),
+      });
+      if (await validate(response)) return;
       last = `HTTP ${response.status}`;
     } catch (error) {
       last = error instanceof Error ? error.message : String(error);
@@ -1046,6 +1053,35 @@ const httpHealthy = async (url: string): Promise<boolean> => {
   }
 };
 
+export const isDemoDappApiResponseHealthy = async (
+  response: Response,
+): Promise<boolean> => {
+  if (
+    !response.ok ||
+    !response.headers.get("content-type")?.startsWith("application/json")
+  ) {
+    return false;
+  }
+  try {
+    const body = (await response.json()) as { readonly fingerprint?: unknown };
+    return typeof body.fingerprint === "string" && body.fingerprint.length > 0;
+  } catch {
+    return false;
+  }
+};
+
+const demoDappHealthy = async (): Promise<boolean> => {
+  try {
+    return await isDemoDappApiResponseHealthy(
+      await fetch("http://127.0.0.1:5173/api/demo-encryption-key-meta", {
+        signal: AbortSignal.timeout(2_000),
+      }),
+    );
+  } catch {
+    return false;
+  }
+};
+
 const ownedContainer = (
   manifest: DemoManifest,
   name: string,
@@ -1172,7 +1208,7 @@ const demoHealth = async (manifest: DemoManifest): Promise<DemoHealth> => {
   ] = await Promise.all([
     validatorHealthy().catch(() => false),
     httpHealthy("http://127.0.0.1:8090/health"),
-    httpHealthy("http://127.0.0.1:5173/"),
+    demoDappHealthy(),
     dockerLogContains(
       manifest,
       "kms-core",
@@ -1336,7 +1372,11 @@ export const upDemo = async (): Promise<string> =>
       );
       manifest = { ...manifest, processes: { ...manifest.processes, dapp } };
       await writeDemoManifest(manifest);
-      await waitForHttp("http://127.0.0.1:5173/", "demo dApp");
+      await waitForHttp(
+        "http://127.0.0.1:5173/api/demo-encryption-key-meta",
+        "demo dApp API",
+        isDemoDappApiResponseHealthy,
+      );
       if (!allDemoHealthReady(await demoHealth(manifest))) {
         throw new Error(
           "full demo health gate failed after dApp startup; run 'bun run demo status'",
@@ -1857,7 +1897,11 @@ export const reseedDemo = async ({
         processes: { ...nextManifest.processes, dapp },
       };
       await writeDemoManifest(nextManifest);
-      await waitForHttp("http://127.0.0.1:5173/", "demo dApp");
+      await waitForHttp(
+        "http://127.0.0.1:5173/api/demo-encryption-key-meta",
+        "demo dApp API",
+        isDemoDappApiResponseHealthy,
+      );
       if (!allDemoHealthReady(await demoHealth(nextManifest))) {
         throw new Error(
           "full demo health gate failed after reseed; run 'bun run demo status'",

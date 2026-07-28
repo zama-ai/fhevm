@@ -17,6 +17,7 @@ import {
   demoLaunchUrl,
   expectedBootShutdownAction,
   existingBootAction,
+  isDemoDappApiResponseHealthy,
   isExactOwnedProcess,
   ownedProcessBaseEnv,
   readLifecycleLockState,
@@ -60,6 +61,25 @@ const readyCommands = new Map([
 ]);
 
 describe("demo lifecycle collision policy", () => {
+  test("requires the demo API rather than accepting only the Vite HTML shell", async () => {
+    await expect(
+      isDemoDappApiResponseHealthy(
+        new Response("<!doctype html>", {
+          status: 200,
+          headers: { "content-type": "text/html" },
+        }),
+      ),
+    ).resolves.toBe(false);
+    await expect(
+      isDemoDappApiResponseHealthy(
+        Response.json({ fingerprint: "kms-key-fingerprint" }),
+      ),
+    ).resolves.toBe(true);
+    await expect(
+      isDemoDappApiResponseHealthy(Response.json({ fingerprint: "" })),
+    ).resolves.toBe(false);
+  });
+
   test("demo-up has no direct-use or global-kill bypass", async () => {
     const script = await fs.readFile(
       path.join(import.meta.dir, "../../../solana/scripts/demo/demo-up.sh"),

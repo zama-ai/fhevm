@@ -9,6 +9,7 @@ import {
   planDemoFunding,
   readExactMessageSignature,
 } from "./demoSession";
+import { parseRuntimeDemoConfig } from "./demoConfig";
 
 const validResponse = {
   config: {
@@ -77,6 +78,14 @@ describe("parseDemoSessionResponse", () => {
 
   test("parses public configuration without burner key material", () => {
     expect(parseDemoConfigResponse({ config: validResponse.config })).toEqual(validResponse.config);
+  });
+
+  test("binds the lifecycle boot to a seeded runtime config", () => {
+    const { demoBootId: _omitted, ...runtimeConfig } = validResponse.config;
+    expect(parseRuntimeDemoConfig(runtimeConfig, "current-boot")).toEqual({
+      ...validResponse.config,
+      demoBootId: "current-boot",
+    });
   });
 });
 
