@@ -1,8 +1,6 @@
 import type { SignedDecryptionPermit, SignedDecryptionPermitV2 } from '../types/signedDecryptionPermit.js';
 import type { KmsUserDecryptEip712V2 } from '../types/kms.js';
-import type { Bytes65Hex, BytesHex, ChecksummedAddress, Uint8Number } from '../types/primitives.js';
-import type { FhevmChain } from '../types/fhevmChain.js';
-import type { FhevmRuntime } from '../types/coreFhevmRuntime.js';
+import type { BytesHex, ChecksummedAddress, Uint8Number } from '../types/primitives.js';
 import type { KmsSignDecryptionPermitContext, KmsSignDecryptionPermitParameters } from './SignedDecryptionPermit-p.js';
 import type { KmsExtraData } from '../types/kms-p.js';
 import type { FhevmClientFrozenContext } from '../types/fhevmClientFrozenContext-p.js';
@@ -100,7 +98,7 @@ export function isSignedDecryptionPermitV2(value: unknown): value is SignedDecry
 ////////////////////////////////////////////////////////////////////////////////
 
 async function _createSignedDecryptionPermitV2(
-  context: SignDecryptionPermitContext,
+  context: KmsSignDecryptionPermitContext,
   parameters: {
     readonly signerAddress: ChecksummedAddress;
     readonly eip712: KmsUserDecryptEip712V2;
@@ -109,6 +107,13 @@ async function _createSignedDecryptionPermitV2(
   },
 ): Promise<SignedDecryptionPermitV2> {
   const { eip712, signature } = parameters;
+
+  // Enforced here (the choke point shared by signDecryptionPermitV2 and
+  // parseSignedDecryptionPermitV2). The message field is a validated uint256
+  // string, so `BigInt` is safe; a uint can only be non-positive when it is 0.
+  if (BigInt(eip712.message.durationSeconds) <= 0n) {
+    throw new RangeError(`durationSeconds must be positive, got ${eip712.message.durationSeconds}`);
+  }
 
   if (eip712.message.allowedContracts.length > MAX_USER_DECRYPT_CONTRACT_ADDRESSES) {
     throw Error(`allowedContracts max length of ${MAX_USER_DECRYPT_CONTRACT_ADDRESSES} exceeded`);
@@ -306,37 +311,6 @@ export async function createUnsignedDecryptionPermitEip712V2(
   // no need to validate as it has already been validated
 
   return eip712;
-}
-
-////////////////////////////////////////////////////////////////////////////////
-// _createSignedDecryptionPermitV2
-////////////////////////////////////////////////////////////////////////////////
-
-async function _createSignedDecryptionPermitV2(
-  context: { readonly chain: FhevmChain; readonly runtime: FhevmRuntime },
-  parameters: {
-    readonly signerAddress: ChecksummedAddress;
-    readonly eip712: KmsUserDecryptEip712V2;
-    readonly signature: Bytes65Hex;
-    readonly delegatorAddress?: ChecksummedAddress | undefined;
-  },
-): Promise<SignedDecryptionPermitV2> {
-  const { signerAddress, eip712, signature } = parameters;
-
-  // Enforced here (the choke point shared by signDecryptionPermitV2 and
-  // parseSignedDecryptionPermitV2). The message field is a validated uint256
-  // string, so `BigInt` is safe; a uint can only be non-positive when it is 0.
-  if (BigInt(eip712.message.durationSeconds) <= 0n) {
-    throw new RangeError(`durationSeconds must be positive, got ${eip712.message.durationSeconds}`);
-  }
-
-  if (eip712.message.allowedContracts.length > MAX_USER_DECRYPT_CONTRACT_ADDRESSES) {
-    throw Error(`allowedContracts max length of ${MAX_USER_DECRYPT_CONTRACT_ADDRESSES} exceeded`);
-  }
-
-  await verifyKmsUserDecryptEip712V2(context, { signer: signerAddress, message: eip712.message, signature });
-
-  return new SignedDecryptionPermitV2Impl(PRIVATE_TOKEN, parameters);
 }
 
 ////////////////////////////////////////////////////////////////////////////////

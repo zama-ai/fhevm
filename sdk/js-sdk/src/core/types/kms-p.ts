@@ -3,7 +3,6 @@ import type { Handle } from './encryptedTypes-p.js';
 import type { KmsEip712Domain } from './kms.js';
 import type { KmsSignersContext } from './kmsSignersContext.js';
 import type {
-  Bytes65Hex,
   Bytes65HexNo0x,
   BytesHex,
   BytesHexNo0x,
