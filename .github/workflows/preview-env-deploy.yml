@@ -168,8 +168,8 @@ env:
   COMMON_CHART: oci://hub.zama.org/ghcr/zama-zws/helm-charts/common
   COMMON_CHART_VERSION: ${{ inputs.common_chart_version || '0.3.3' }}
   #=====KMS==================================================================
-  KMS_REPO_REF: ${{ inputs.kms_repo_ref || 'v0.13.20' }}
-  KMS_CORE_TAG: ${{ inputs.kms_core_version || 'v0.13.20' }}
+  KMS_REPO_REF: ${{ inputs.kms_repo_ref || 'd27c3b52aa292f6e06c03c668223d0aac9be22e4' }}
+  KMS_CORE_TAG: ${{ inputs.kms_core_version || 'd27c3b5' }}
   #=====REDIS================================================================
   REDIS_CHART: oci://hub.zama.org/cgr/zama.ai/iamguarded-charts/redis
   REDIS_CHART_VERSION: ${{ inputs.redis_chart_version || '25.3.8' }}
