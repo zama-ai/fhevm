@@ -76,6 +76,26 @@
   margin-top: 5px;
 }
 
+.redeem-slider {
+  display: grid;
+  grid-template-columns: minmax(180px, 1fr) 42px;
+  align-items: center;
+  gap: 12px;
+  margin-top: 14px;
+}
+
+.redeem-slider input {
+  width: 100%;
+  accent-color: #9945ff;
+}
+
+.redeem-slider output {
+  color: #e9ddff;
+  font-size: 12px;
+  font-weight: 760;
+  text-align: right;
+}
+
 .redeem-action button {
   flex: 0 0 auto;
   padding: 12px 16px;

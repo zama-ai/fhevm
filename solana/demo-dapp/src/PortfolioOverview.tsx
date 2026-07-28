@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 
 import { ActionError, ClaimPanel } from './JourneyPrimitives';
 import { formatUsdc } from './format';
@@ -20,6 +20,8 @@ export function PortfolioOverview({ controller }: { readonly controller: DemoCon
   } = state;
   const { connected, depositRunning, hasPrivateShares, sharePrice } = derived;
   const [amount, setAmount] = useState(DEFAULT_DEPOSIT_AMOUNT);
+  const [depositComplete, setDepositComplete] = useState(false);
+  const pendingDeposit = useRef(false);
   const parsedAmount = Number(amount);
   const validAmount =
     amount.trim() !== '' &&
@@ -49,8 +51,35 @@ export function PortfolioOverview({ controller }: { readonly controller: DemoCon
         ? 'Settlement in progress'
         : null;
 
+  useEffect(() => {
+    pendingDeposit.current = false;
+    setDepositComplete(false);
+    setAmount(DEFAULT_DEPOSIT_AMOUNT);
+  }, [state.generation]);
+
+  useEffect(() => {
+    if (deposit.kind === 'joined' && depositLifecycle !== null && !currentDepositClaimed) {
+      pendingDeposit.current = true;
+    }
+  }, [currentDepositClaimed, deposit.kind, depositLifecycle]);
+
+  useEffect(() => {
+    if (!currentDepositClaimed || !pendingDeposit.current) return;
+    pendingDeposit.current = false;
+    setAmount('');
+    setDepositComplete(true);
+    const timeout = globalThis.setTimeout(() => setDepositComplete(false), 5_000);
+    return () => globalThis.clearTimeout(timeout);
+  }, [currentDepositClaimed]);
+
   return (
     <section className="vault-workspace" aria-label="Confidential USDC vault">
+      {depositComplete && (
+        <div className="success-toast" role="status" aria-live="polite">
+          <span>✓</span>
+          <strong>Deposit complete · cShares received</strong>
+        </div>
+      )}
       <article className="vault-identity">
         <div className="vault-title">
           <div className="vault-symbol">USDC</div>
@@ -151,7 +180,11 @@ export function PortfolioOverview({ controller }: { readonly controller: DemoCon
               className="primary-action"
               type="button"
               disabled={!connected || depositRunning || !validAmount}
-              onClick={() => actions.shieldAndDeposit(parsedAmount)}
+              onClick={() => {
+                pendingDeposit.current = true;
+                setDepositComplete(false);
+                actions.shieldAndDeposit(parsedAmount);
+              }}
             >
               {depositRunning ? 'Depositing…' : 'Shield & deposit'}
             </button>

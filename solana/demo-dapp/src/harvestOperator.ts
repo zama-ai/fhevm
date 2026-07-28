@@ -5,18 +5,18 @@ import type { DemoConfig } from "./demoConfig";
 import { sendTransaction } from "./sendTransaction";
 import type { VaultMetrics } from "./batchTypes";
 import {
-  DEMO_TARGET_PRICE_DENOMINATOR,
-  DEMO_TARGET_PRICE_NUMERATOR,
+  DEMO_YEAR_GROWTH_DENOMINATOR,
+  DEMO_YEAR_GROWTH_NUMERATOR,
 } from "./yieldPolicy";
 
 const HARVEST_COMPUTE_UNIT_LIMIT = 200_000;
 
-export const donationToTargetPrice = (metrics: VaultMetrics): bigint => {
+export const donationForOneYear = (metrics: VaultMetrics): bigint => {
   if (metrics.totalShares === 0n) throw new Error("the vault has no shares to accrue yield to");
   const targetAssets =
-    (metrics.totalShares * DEMO_TARGET_PRICE_NUMERATOR + DEMO_TARGET_PRICE_DENOMINATOR - 1n) /
-    DEMO_TARGET_PRICE_DENOMINATOR;
-  return targetAssets > metrics.totalAssets ? targetAssets - metrics.totalAssets : 0n;
+    (metrics.totalAssets * DEMO_YEAR_GROWTH_NUMERATOR + DEMO_YEAR_GROWTH_DENOMINATOR - 1n) /
+    DEMO_YEAR_GROWTH_DENOMINATOR;
+  return targetAssets - metrics.totalAssets;
 };
 
 export const readDemoVaultMetrics = async (config: DemoConfig): Promise<VaultMetrics> => {
@@ -47,7 +47,7 @@ const fundDonation = async (
   }
 };
 
-/** Raises the seeded share price to its one-year 7% target; repeat calls are chain-state idempotent. */
+/** Adds one year of illustrative 7% yield to the current vault assets. */
 export const harvestDemoVault = async (
   config: DemoConfig,
   keeper: TransactionSigner,
@@ -55,8 +55,7 @@ export const harvestDemoVault = async (
 ): Promise<{ readonly before: VaultMetrics; readonly after: VaultMetrics }> => {
   const rpc = createSolanaRpc(config.rpcUrl);
   const before = await readDemoVaultMetrics(config);
-  const donation = donationToTargetPrice(before);
-  if (donation === 0n) return { before, after: before };
+  const donation = donationForOneYear(before);
 
   await fundDonation(keeper, donation, authorizationHeaders);
   await sendTransaction(

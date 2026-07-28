@@ -1,7 +1,30 @@
 .vault-workspace {
+  position: relative;
   display: grid;
   grid-template-columns: minmax(0, 1.15fr) minmax(360px, 0.85fr);
   gap: 18px;
+}
+
+.success-toast {
+  position: absolute;
+  z-index: 4;
+  top: -14px;
+  left: 50%;
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  padding: 10px 14px;
+  border: 1px solid rgba(20, 241, 149, 0.32);
+  border-radius: 999px;
+  color: #d1fae5;
+  background: rgba(7, 35, 26, 0.96);
+  box-shadow: 0 12px 34px rgba(0, 0, 0, 0.35);
+  font-size: 12px;
+  transform: translate(-50%, -100%);
+}
+
+.success-toast span {
+  color: #14f195;
 }
 
 .vault-identity,

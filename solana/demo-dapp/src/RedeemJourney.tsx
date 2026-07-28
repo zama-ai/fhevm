@@ -1,14 +1,16 @@
+import { useState } from 'react';
+
 import { ActionError, ClaimPanel, JourneyTimeline, SettlementProgress } from './JourneyPrimitives';
 import type { RedeemStage } from './redeem';
 import { formatUsdc } from './format';
 import type { DemoController } from './useDemoController';
 
-const stageCopy: Record<'decrypting' | RedeemStage, string> = {
+const stageCopy = (percentage: number): Record<'decrypting' | RedeemStage, string> => ({
   decrypting: 'Authorizing a one-time balance reveal…',
-  proving: 'Creating your private 50% redeem proof…',
+  proving: `Creating your private ${percentage}% redeem proof…`,
   joining: 'Signing one private redeem transaction…',
   joined: 'Redemption joined · Waiting for private settlement',
-};
+});
 
 export function RedeemJourney({ controller }: { readonly controller: DemoController }) {
   const { state, derived, actions } = controller;
@@ -24,25 +26,24 @@ export function RedeemJourney({ controller }: { readonly controller: DemoControl
     revealingUsdc,
     revealUsdcError,
   } = state;
-  const { sharesClaimed, yieldApplied, redeemJoined } = derived;
+  const { connected, hasPrivateShares, redeemJoined } = derived;
+  const [percentage, setPercentage] = useState(50);
   const settled = lifecycle?.kind === 'settled';
-  if (!sharesClaimed) return null;
+  if (!connected || !hasPrivateShares) return null;
+  const copy = stageCopy(percentage);
 
   return (
     <section className="redeem-card">
       <div className="redeem-heading">
         <div>
-          <p className="eyebrow">Private exit, same Solana rhythm</p>
-          <h2>Redeem half your position</h2>
-          <p>
-            A one-time balance signature calculates exactly 50%, then one transaction joins the private redeem batch.
-            The clear balance is remasked immediately.
-          </p>
+          <p className="eyebrow">Redeem</p>
+          <h2>Withdraw from the vault</h2>
+          <p>Your amount stays encrypted. Settlement publishes aggregate batch totals.</p>
         </div>
         <div className="redeem-amount">
-          <span>Intent</span>
-          <strong>50%</strong>
-          <small>of private cShares</small>
+          <span>Amount</span>
+          <strong>{redeemJoined ? 'Private' : `${percentage}%`}</strong>
+          <small>{redeemJoined ? 'encrypted on-chain' : 'of your position'}</small>
         </div>
       </div>
 
@@ -50,13 +51,8 @@ export function RedeemJourney({ controller }: { readonly controller: DemoControl
         framed
         steps={[
           {
-            state: yieldApplied ? 'complete' : 'active',
-            title: 'Yield accrues',
-            detail: 'Public share price rises on-chain',
-          },
-          {
-            state: redeemJoined ? 'complete' : yieldApplied ? 'active' : 'idle',
-            title: 'Redeem half privately',
+            state: redeemJoined ? 'complete' : 'active',
+            title: 'Redeem',
             detail: 'One signature · one transaction',
           },
           {
@@ -66,8 +62,8 @@ export function RedeemJourney({ controller }: { readonly controller: DemoControl
           },
           {
             state: settled && lifecycle.claimed ? 'complete' : settled ? 'active' : 'idle',
-            title: 'Claim private cUSDC',
-            detail: 'Redeemed value stays encrypted',
+            title: 'Receive cUSDC',
+            detail: 'Balance remains encrypted',
           },
         ]}
       />
@@ -76,10 +72,10 @@ export function RedeemJourney({ controller }: { readonly controller: DemoControl
         <div>
           <strong>
             {redeem.kind === 'running'
-              ? stageCopy[redeem.stage]
+              ? copy[redeem.stage]
               : redeemJoined
-                ? stageCopy.joined
-                : 'Redeem 50% without exposing the amount on-chain'}
+                ? copy.joined
+                : `Redeem ${percentage}% of your position`}
           </strong>
           <small>
             {redeemJoined
@@ -88,23 +84,38 @@ export function RedeemJourney({ controller }: { readonly controller: DemoControl
                 ? 'The one-time decrypt signature is requested inside this intent.'
                 : `Uses the ${formatUsdc(revealedShares.value)} cShares revealed in this view, then remasks it.`}
           </small>
+          {!redeemJoined && (
+            <label className="redeem-slider">
+              <input
+                aria-label="Percentage to redeem"
+                type="range"
+                min="1"
+                max="100"
+                step="1"
+                value={percentage}
+                disabled={redeem.kind === 'running'}
+                onChange={(event) => setPercentage(Number(event.target.value))}
+              />
+              <output>{percentage}%</output>
+            </label>
+          )}
         </div>
         <button
           className="panel-action"
           type="button"
-          disabled={!yieldApplied || redeem.kind === 'running' || redeemJoined}
-          onClick={actions.redeemHalf}
+          disabled={redeem.kind === 'running' || redeemJoined}
+          onClick={() => actions.redeem(percentage)}
         >
           {redeem.kind === 'running'
-            ? 'Redeeming half…'
+            ? 'Redeeming…'
             : redeemJoined
               ? 'Redemption joined'
-              : 'Redeem half privately'}
+              : 'Redeem'}
         </button>
       </div>
 
       {redeem.kind === 'error' && (
-        <ActionError retryLabel="Retry redeem" onRetry={actions.redeemHalf}>
+        <ActionError retryLabel="Retry redeem" onRetry={() => actions.redeem(percentage)}>
           {redeem.message}
         </ActionError>
       )}
@@ -119,9 +130,9 @@ export function RedeemJourney({ controller }: { readonly controller: DemoControl
       {settled && !lifecycle.claimed && (
         <ClaimPanel
           title="Claim your private cUSDC"
-          detail="One transaction. The redeemed value remains encrypted."
-          label="Claim private cUSDC"
-          busyLabel="Claiming private cUSDC…"
+          detail="Receive the settled cUSDC in your encrypted balance."
+          label="Receive cUSDC"
+          busyLabel="Receiving cUSDC…"
           busy={claiming}
           onClaim={() => actions.claim('redeem')}
         />
@@ -149,7 +160,7 @@ export function RedeemJourney({ controller }: { readonly controller: DemoControl
           <div className="verified-settlement" role="status">
             <span>✓</span>
             <div>
-              <strong>Half redeemed and cUSDC claimed privately</strong>
+              <strong>Redemption complete</strong>
               <small>The remaining cShares and claimed cUSDC are both still encrypted.</small>
             </div>
           </div>

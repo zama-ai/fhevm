@@ -16,7 +16,6 @@ import { findExistingRedeem, joinRedeemBatch, type RedeemStage } from './redeem'
 import { revealClaimedShares, revealClaimedUsdc, type RevealedBalance } from './revealShares';
 import { readVaultLifecycle } from './settlement';
 import { harvestDemoVault, readDemoVaultMetrics } from './vaultYield';
-import { DEMO_TARGET_SHARE_PRICE } from './yieldPolicy';
 
 export type ConnectionState =
   | { readonly kind: 'disconnected' }
@@ -277,7 +276,7 @@ export function useDemoController() {
     try {
       const session = await createSession(isActive);
       session.assertActive();
-      commit(generation, { connection: { kind: 'ready', session }, deposit: { kind: 'running', stage: 'preparing' } });
+      commit(generation, { deposit: { kind: 'running', stage: 'preparing' } });
       const existingDeposit = await findExistingDeposit(session);
       session.assertActive();
       const hasPrivateShares = await hasClaimedDeposit(session);
@@ -295,6 +294,8 @@ export function useDemoController() {
       } catch (error) {
         commit(generation, { redeem: { kind: 'error', message: errorMessage(error) } });
       }
+      session.assertActive();
+      commit(generation, { connection: { kind: 'ready', session } });
     } catch (error) {
       if (isActive()) {
         commit(generation, {
@@ -421,12 +422,11 @@ export function useDemoController() {
     try {
       const metrics = state.vaultMetrics ?? (await readDemoVaultMetrics());
       if (metrics.totalShares === 0n) throw new Error('The vault has no shares to accrue yield to');
-      commit(generation, {
-        vaultMetrics: metrics,
-        harvestFromPrice: Number(metrics.totalAssets) / Number(metrics.totalShares),
-      });
       const result = await harvestDemoVault();
-      commit(generation, { vaultMetrics: result.after });
+      commit(generation, {
+        vaultMetrics: result.after,
+        harvestFromPrice: Number(result.before.totalAssets) / Number(result.before.totalShares),
+      });
     } catch (error) {
       commit(generation, { harvestFromPrice: null, harvestError: errorMessage(error) });
     } finally {
@@ -434,8 +434,9 @@ export function useDemoController() {
     }
   };
 
-  const redeemHalf = async () => {
+  const redeemPosition = async (percentage: number) => {
     if (state.connection.kind !== 'ready' || operationInFlight.current || state.redeem.kind === 'running') return;
+    if (!Number.isInteger(percentage) || percentage < 1 || percentage > 100) return;
     const session = state.connection.session;
     const generation = state.generation;
     operationInFlight.current = true;
@@ -444,8 +445,8 @@ export function useDemoController() {
       const shares = state.revealedShares ?? (await revealClaimedShares(session));
       session.assertActive();
       commit(generation, { revealedShares: null });
-      const amount = shares.value / 2n;
-      if (amount === 0n) throw new Error('The private share balance is too small to redeem half');
+      const amount = (shares.value * BigInt(percentage)) / 100n;
+      if (amount === 0n) throw new Error(`The private share balance is too small to redeem ${percentage}%`);
       const result = await withWalletMutationLock(session, () =>
         joinRedeemBatch(session, amount, shares.handle, (stage) => {
           commit(generation, { redeem: { kind: 'running', stage } });
@@ -493,7 +494,6 @@ export function useDemoController() {
       sharesClaimed: currentDepositClaimed,
       hasPrivateShares: state.hasPrivateShares,
       sharePrice,
-      yieldApplied: sharePrice !== null && sharePrice >= DEMO_TARGET_SHARE_PRICE,
       redeemJoined: state.redeem.kind === 'joined',
       redeemSettled: state.redeemLifecycle?.kind === 'settled',
     },
@@ -505,7 +505,7 @@ export function useDemoController() {
       revealShares: () => void revealShares(),
       hideShares: () => commit(state.generation, { revealedShares: null }),
       fastForwardOneYear: () => void fastForwardOneYear(),
-      redeemHalf: () => void redeemHalf(),
+      redeem: (percentage: number) => void redeemPosition(percentage),
       revealRedeemedUsdc: () => void revealRedeemedUsdc(),
       hideRedeemedUsdc: () => commit(state.generation, { revealedUsdc: null }),
       claim: (direction: VaultDirection) => void claim(direction),

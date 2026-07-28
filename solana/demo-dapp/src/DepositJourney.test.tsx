@@ -29,7 +29,6 @@ describe('DepositJourney activity presentation', () => {
         depositJoined: true,
         hasPrivateShares: true,
         sharePrice: 1,
-        yieldApplied: false,
       },
       actions: { fastForwardOneYear },
     } as unknown as DemoController;

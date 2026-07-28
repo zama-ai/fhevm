@@ -1,18 +1,18 @@
 import { describe, expect, test } from "vitest";
 
-import { donationToTargetPrice } from "./harvestOperator";
+import { donationForOneYear } from "./harvestOperator";
 
-describe("donationToTargetPrice", () => {
-  test("donates exactly enough to move a 1.00 share price to 1.07", () => {
-    expect(donationToTargetPrice({ totalAssets: 100_000_000n, totalShares: 100_000_000n })).toBe(7_000_000n);
+describe("donationForOneYear", () => {
+  test("adds 7% to the current vault assets", () => {
+    expect(donationForOneYear({ totalAssets: 100_000_000n, totalShares: 100_000_000n })).toBe(7_000_000n);
   });
 
-  test("is idempotent once the target has been reached", () => {
-    expect(donationToTargetPrice({ totalAssets: 107_000_000n, totalShares: 100_000_000n })).toBe(0n);
-    expect(donationToTargetPrice({ totalAssets: 130_000_000n, totalShares: 100_000_000n })).toBe(0n);
+  test("compounds from the current assets on every call", () => {
+    expect(donationForOneYear({ totalAssets: 107_000_000n, totalShares: 100_000_000n })).toBe(7_490_000n);
+    expect(donationForOneYear({ totalAssets: 130_000_000n, totalShares: 100_000_000n })).toBe(9_100_000n);
   });
 
-  test("rounds the target up so it never undershoots 1.07", () => {
-    expect(donationToTargetPrice({ totalAssets: 1n, totalShares: 1n })).toBe(1n);
+  test("rounds up so a non-empty vault always advances", () => {
+    expect(donationForOneYear({ totalAssets: 1n, totalShares: 1n })).toBe(1n);
   });
 });

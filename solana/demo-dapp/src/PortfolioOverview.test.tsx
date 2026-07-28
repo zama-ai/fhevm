@@ -6,13 +6,70 @@ import type { DemoSession } from './demoSession';
 import { PortfolioOverview } from './PortfolioOverview';
 import { initialDemoState, type DemoController } from './useDemoController';
 
+const controller = (
+  shieldAndDeposit: ReturnType<typeof vi.fn>,
+  claimed: boolean,
+): DemoController =>
+  ({
+    state: {
+      generation: 1,
+      connection: { kind: 'ready', session: { wallet: { kind: 'burner' } } },
+      deposit: claimed ? { kind: 'joined', result: {} } : { kind: 'idle' },
+      depositLifecycle: claimed
+        ? { kind: 'settled', totalJoined: 100_000_000n, payoutReceived: 100_000_000n, claimed: true }
+        : null,
+      depositClaiming: false,
+      depositClaimError: null,
+      revealedShares: null,
+      revealingShares: false,
+      revealSharesError: null,
+    },
+    derived: {
+      connected: true,
+      depositRunning: false,
+      hasPrivateShares: claimed,
+      sharePrice: 1,
+    },
+    actions: {
+      shieldAndDeposit,
+      revealShares: vi.fn(),
+      hideShares: vi.fn(),
+    },
+  }) as unknown as DemoController;
+
+describe('PortfolioOverview', () => {
+  beforeEach(() => {
+    Object.assign(globalThis, { IS_REACT_ACT_ENVIRONMENT: true });
+    vi.clearAllMocks();
+  });
+
+  test('clears the completed amount and shows transient success feedback', () => {
+    const shieldAndDeposit = vi.fn();
+    let renderer: ReturnType<typeof create>;
+    act(() => {
+      renderer = create(<PortfolioOverview controller={controller(shieldAndDeposit, false)} />);
+    });
+    const submit = renderer!.root.findAllByType('button').find((button) => button.children.includes('Shield & deposit'));
+    act(() => submit!.props.onClick());
+    expect(shieldAndDeposit).toHaveBeenCalledWith(100);
+
+    act(() => {
+      renderer!.update(<PortfolioOverview controller={controller(shieldAndDeposit, true)} />);
+    });
+    const status = renderer!.root.findByProps({ role: 'status' });
+    expect(status.findByType('strong').children).toEqual(['Deposit complete · cShares received']);
+    expect(renderer!.root.findByProps({ id: 'deposit-amount' }).props.value).toBe('');
+    act(() => renderer!.unmount());
+  });
+});
+
 const actions = {
   hideShares: vi.fn(),
   revealShares: vi.fn(),
   shieldAndDeposit: vi.fn(),
 };
 
-const controller = (
+const walletController = (
   wallet: DemoSession['wallet'],
   deposit: DemoController['state']['deposit'] = { kind: 'idle' },
 ): DemoController =>
@@ -53,7 +110,7 @@ describe('PortfolioOverview Phantom localnet guidance', () => {
   });
 
   test('advertises the demo APY before deposit', () => {
-    const renderer = render(controller({ kind: 'burner', name: 'Demo wallet' }));
+    const renderer = render(walletController({ kind: 'burner', name: 'Demo wallet' }));
     const metrics = renderer.root.findByProps({ className: 'vault-stats' });
     expect(metrics.findAllByType('strong').some((node) => node.children.join('') === '7.0%')).toBe(true);
     expect(
@@ -66,7 +123,7 @@ describe('PortfolioOverview Phantom localnet guidance', () => {
     ['idle', { kind: 'idle' }],
     ['error', { kind: 'error', message: 'Wallet request cancelled' }],
   ] as const)('shows passive developer-mode guidance while the Phantom deposit is %s', (_name, deposit) => {
-    const renderer = render(controller(phantom, deposit));
+    const renderer = render(walletController(phantom, deposit));
     const notes = renderer.root.findAll((node) => node.props.className === 'wallet-scan-note');
 
     expect(notes).toHaveLength(1);
@@ -95,7 +152,7 @@ describe('PortfolioOverview Phantom localnet guidance', () => {
       { kind: 'joined', result: {} as BatchPosition } as const,
     ],
   ])('does not show the localnet note for %s', (_name, wallet, deposit) => {
-    const renderer = render(controller(wallet, deposit as DemoController['state']['deposit']));
+    const renderer = render(walletController(wallet, deposit as DemoController['state']['deposit']));
 
     expect(renderer.root.findAll((node) => node.props.className === 'wallet-scan-note')).toHaveLength(0);
     act(() => renderer.unmount());

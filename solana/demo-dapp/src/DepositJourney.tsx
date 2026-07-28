@@ -14,7 +14,7 @@ export function DepositJourney({ controller }: { readonly controller: DemoContro
     harvestError,
     harvestFromPrice,
   } = state;
-  const { depositJoined, hasPrivateShares, sharePrice, yieldApplied } = derived;
+  const { depositJoined, hasPrivateShares, sharePrice } = derived;
   if (!depositJoined && !hasPrivateShares) return null;
 
   const settled = lifecycle?.kind === 'settled';
@@ -97,7 +97,7 @@ export function DepositJourney({ controller }: { readonly controller: DemoContro
             <span>
               <strong>Fast-forward vault time</strong>
               <small>
-                {harvestFromPrice !== null && yieldApplied
+                {harvestFromPrice !== null && sharePrice !== null
                   ? `${harvestFromPrice.toFixed(2)} → ${sharePrice?.toFixed(2)} USDC`
                   : 'Applies one year of demo yield without a wallet approval.'}
               </small>
@@ -105,10 +105,10 @@ export function DepositJourney({ controller }: { readonly controller: DemoContro
             <button
               className="panel-action"
               type="button"
-              disabled={vaultMetrics === null || harvesting || yieldApplied}
+              disabled={vaultMetrics === null || harvesting}
               onClick={actions.fastForwardOneYear}
             >
-              {harvesting ? 'Fast-forwarding…' : yieldApplied ? 'Applied' : 'Fast-forward 1 year'}
+              {harvesting ? 'Fast-forwarding…' : 'Fast-forward 1 year'}
             </button>
           </div>
           {harvestError && (
