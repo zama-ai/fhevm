@@ -21,7 +21,7 @@ rand = "0.10.0"
 indexmap = "2.13.0"
 
 # Ethereum types with WebSocket support - match relayer version + add needed features
-alloy = { version = "1.7.3", features = [
+alloy = { version = "2.2.0", features = [
   "provider-ws",
   "rpc-types",
   "json-rpc",

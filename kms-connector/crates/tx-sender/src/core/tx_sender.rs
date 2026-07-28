@@ -6,9 +6,7 @@ use crate::{
     monitoring::{health::State, metrics::register_response_forwarding_latency},
 };
 use alloy::{
-    providers::{
-        PendingTransactionError, Provider, RootProvider, ext::DebugApi, fillers::TxFiller,
-    },
+    providers::{PendingTransactionError, Provider, ext::DebugApi},
     rpc::types::{
         TransactionReceipt, TransactionRequest,
         trace::geth::{CallConfig, GethDebugTracingOptions},
@@ -17,7 +15,7 @@ use alloy::{
 };
 use anyhow::anyhow;
 use connector_utils::{
-    conn::{WalletProviderFillers, connect_to_db, connect_to_rpc_node_with_wallet},
+    conn::{WalletProvider, connect_to_db, connect_to_rpc_node_with_wallet},
     tasks::spawn_with_limit,
     types::{KmsResponse, KmsResponseKind},
 };
@@ -32,39 +30,37 @@ use fhevm_host_bindings::{
 use sqlx::{Pool, Postgres};
 use thiserror::Error;
 use tokio_util::sync::CancellationToken;
-use tracing::{debug, error, info};
+use tracing::{debug, error, info, warn};
 use tracing_opentelemetry::OpenTelemetrySpanExt;
 
 /// Struct sending stored KMS Core's responses to the Gateway and Ethereum.
-pub struct TransactionSender<L, F, P>
+pub struct TransactionSender<L, P>
 where
-    F: TxFiller,
     P: Provider,
 {
     /// The entity used to collect stored KMS Core's responses.
     response_picker: L,
 
     /// The entity responsible to send transactions to the Gateway.
-    gw_sender: GatewayTransactionSender<F, P>,
+    gw_sender: GatewayTransactionSender<P>,
 
     /// The entity responsible to send transactions to Ethereum.
-    eth_sender: EthereumTransactionSender<F, P>,
+    eth_sender: EthereumTransactionSender<P>,
 
     /// The database pool for where the KMS Core's responses are stored.
     db_pool: Pool<Postgres>,
 }
 
-impl<L, F, P> TransactionSender<L, F, P>
+impl<L, P> TransactionSender<L, P>
 where
     L: KmsResponsePicker,
-    F: TxFiller + 'static,
     P: Provider + Clone + 'static,
 {
     /// Creates a new `TransactionSender` instance.
     pub fn new(
         response_picker: L,
-        gw_sender: GatewayTransactionSender<F, P>,
-        eth_sender: EthereumTransactionSender<F, P>,
+        gw_sender: GatewayTransactionSender<P>,
+        eth_sender: EthereumTransactionSender<P>,
         db_pool: Pool<Postgres>,
     ) -> Self {
         Self {
@@ -128,8 +124,8 @@ where
     /// Routes decryption responses to the Gateway and keygen responses to Ethereum.
     #[tracing::instrument(skip(gw_sender, eth_sender, db_pool, cancel_token), fields(response = %response.kind))]
     async fn forward_response(
-        gw_sender: GatewayTransactionSender<F, P>,
-        eth_sender: EthereumTransactionSender<F, P>,
+        gw_sender: GatewayTransactionSender<P>,
+        eth_sender: EthereumTransactionSender<P>,
         db_pool: Pool<Postgres>,
         response: KmsResponse,
         cancel_token: CancellationToken,
@@ -143,24 +139,35 @@ where
             _ => eth_sender.send_to_ethereum(response.kind.clone()).await,
         };
 
-        match result {
+        let status_update_result = match result {
             Err(Error::Recoverable(_)) => response.mark_as_pending(&db_pool).await,
             Err(Error::Irrecoverable(_)) => response.mark_as_failed(&db_pool).await,
             Err(Error::AlloyBackendGone) => {
-                response.mark_as_pending(&db_pool).await;
+                let status_update_result = response.mark_as_pending(&db_pool).await;
                 cancel_token.cancel();
+                status_update_result
             }
             Ok(()) => {
-                response.mark_as_completed(&db_pool).await;
                 register_response_forwarding_latency(&response);
+                response.mark_as_completed(&db_pool).await
             }
+        };
+        if let Err(e) = status_update_result {
+            warn!("{e}");
         }
     }
 }
 
-impl TransactionSender<DbKmsResponsePicker, WalletProviderFillers, RootProvider> {
+impl TransactionSender<DbKmsResponsePicker, WalletProvider> {
     /// Creates a new `TransactionSender` instance from a valid `Config`.
     pub async fn from_config(config: Config) -> anyhow::Result<(Self, State)> {
+        if config.private_key.is_some() {
+            warn!(
+                "Signing transactions with a raw private key. This is intended for TESTING \
+                PURPOSES ONLY, production deployments should use an AWS KMS signer instead!"
+            );
+        }
+
         let db_pool = connect_to_db(&config.database_url, config.database_pool_size).await?;
         let response_picker = DbKmsResponsePicker::connect(db_pool.clone(), &config).await?;
 

@@ -11,7 +11,7 @@ import {
   type CreateEthersEncryptClientFn,
   type FheTestEthersConfig,
 } from '../setup-ethers.js';
-import { clearTypeFromHandle, encryptTestCases, isBytes32Hex } from '../setupCommon.js';
+import { clearTypeFromHandle, createLogger, encryptTestCases, isBytes32Hex } from '../setupCommon.js';
 
 ////////////////////////////////////////////////////////////////////////////////
 //
@@ -40,10 +40,7 @@ export function defineClientEncryptDecryptSlowTests(parameters: {
             type: 'ApiKeyHeader',
             value: config.zamaApiKey,
           },
-          logger: {
-            debug: (message: string) => console.log(message),
-            error: (message: string) => console.log(message),
-          },
+          logger: createLogger(console.log),
         });
       });
 
@@ -145,7 +142,7 @@ export function defineClientEncryptDecryptSlowTests(parameters: {
         const signedPermit = await decryptClient.signDecryptionPermit({
           transportKeyPair: transportKeyPair,
           contractAddresses: [config.fheTestAddress],
-          durationDays: 1,
+          durationSeconds: 24 * 3600,
           startTimestamp: Math.floor(Date.now() / 1000) - 5,
           signerAddress: config.wallet.address,
           signer: config.signer,

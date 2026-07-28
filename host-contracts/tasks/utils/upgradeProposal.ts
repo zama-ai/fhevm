@@ -1,3 +1,4 @@
+import type { UpgradeOptions } from '@openzeppelin/hardhat-upgrades';
 import { Interface } from 'ethers';
 import type { HardhatRuntimeEnvironment } from 'hardhat/types';
 
@@ -29,6 +30,7 @@ export type UpgradeProposal = {
   decodedArgs: unknown[];
   innerCalldata: string;
   outerCalldata: string;
+  constructorArgs: unknown[];
 };
 
 export async function buildUpgradeProposal(
@@ -38,17 +40,24 @@ export async function buildUpgradeProposal(
     contractName: string;
     innerFunctionName: string;
     decodedArgs: unknown[];
+    constructorArgs?: UpgradeOptions['constructorArgs'];
+    unsafeAllow?: UpgradeOptions['unsafeAllow'];
   },
 ): Promise<UpgradeProposal> {
   const { ethers, upgrades } = hre;
   const privateKey = getRequiredEnvVar('DEPLOYER_PRIVATE_KEY');
   const deployer = new ethers.Wallet(privateKey).connect(ethers.provider);
-  const currentImplementation = await ethers.getContractFactory('EmptyUUPSProxy', deployer);
+  const currentImplementation = await ethers.getContractFactory(
+    'contracts/emptyProxy/EmptyUUPSProxy.sol:EmptyUUPSProxy',
+    deployer,
+  );
   const newImplementation = await ethers.getContractFactory(params.contractName, deployer);
   await upgrades.forceImport(params.proxyAddress, currentImplementation);
   const newImplementationAddress = String(
     await upgrades.prepareUpgrade(params.proxyAddress, newImplementation, {
       kind: 'uups',
+      constructorArgs: params.constructorArgs,
+      unsafeAllow: params.unsafeAllow,
     }),
   );
   // The factory's interface already knows the new implementation's ABI, so encode by function name
@@ -67,6 +76,7 @@ export async function buildUpgradeProposal(
     decodedArgs: params.decodedArgs,
     innerCalldata,
     outerCalldata,
+    constructorArgs: params.constructorArgs ?? [],
   };
 }
 
@@ -92,7 +102,7 @@ export async function verifyProposalImplementation(
   await hre.run('verify:verify', {
     address: data.newImplementationAddress,
     contract,
-    constructorArguments: [],
+    constructorArguments: data.constructorArgs,
   });
 }
 

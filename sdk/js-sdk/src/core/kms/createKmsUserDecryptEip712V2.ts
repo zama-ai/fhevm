@@ -27,7 +27,7 @@ export type CreateKmsUserDecryptEip712V2Parameters = {
   readonly publicKey: string | Uint8Array;
   readonly allowedContracts: readonly string[];
   readonly startTimestamp: number | bigint;
-  readonly durationSeconds: number | bigint;
+  readonly durationSeconds: bigint;
   readonly extraData: string;
 };
 

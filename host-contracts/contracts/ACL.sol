@@ -8,6 +8,7 @@ import {Ownable2StepUpgradeable} from "@openzeppelin/contracts-upgradeable/acces
 import {PausableUpgradeable} from "@openzeppelin/contracts-upgradeable/utils/PausableUpgradeable.sol";
 import {confidentialBridgeAdd, fhevmExecutorAdd, pauserSetAdd} from "../addresses/FHEVMHostAddresses.sol";
 import {IPauserSet} from "./interfaces/IPauserSet.sol";
+import {IConfidentialBridge} from "./bridge/interfaces/IConfidentialBridge.sol";
 
 import {ACLEvents} from "./ACLEvents.sol";
 
@@ -208,6 +209,19 @@ contract ACL is
     function reinitializeV5() public virtual reinitializer(REINITIALIZER_VERSION) {}
 
     /**
+     * @notice Accepts pending ownership and re-syncs the ConfidentialBridge's LayerZero
+     *         endpoint delegate to the new owner in the same transaction.
+     */
+    function acceptOwnership() public virtual override {
+        super.acceptOwnership();
+
+        // A bridge address is null if and only if there is no bridge on this chain, by deployment convention.
+        if (CONFIDENTIAL_BRIDGE_ADDRESS != address(0)) {
+            IConfidentialBridge(CONFIDENTIAL_BRIDGE_ADDRESS).syncDelegate();
+        }
+    }
+
+    /**
      * @notice Allows the use of `handle` for the address `account`.
      * @dev The caller must not be in the deny list and must be allowed to use `handle` for allow() to succeed. If not, allow() reverts.
      * @param handle Handle.
@@ -256,7 +270,7 @@ contract ACL is
      * @notice Invalidates decryption signatures before a given timestamp for the caller.
      * @param timestamp Oldest timestamp that remains valid. Passing 0 resolves to the current block timestamp.
      */
-    function invalidateDecryptionSignaturesBefore(uint256 timestamp) external virtual whenNotPaused {
+    function invalidateDecryptionSignaturesBefore(uint256 timestamp) external virtual {
         uint256 resolvedTimestamp = timestamp == 0 ? block.timestamp : timestamp;
         ACLStorage storage $ = _getACLStorage();
         if (resolvedTimestamp <= $.decryptionSignatureInvalidatedBefore[msg.sender]) {
@@ -466,7 +480,10 @@ contract ACL is
 
     /**
      * @notice Getter function for the ConfidentialBridge contract address.
-     * @return confidentialBridgeAddress Address of the ConfidentialBridge contract.
+     * @dev    Returns the null address (address(0)) when no ConfidentialBridge was deployed on
+     *         this host chain, so callers can use a null result to detect the bridge's absence.
+     * @return confidentialBridgeAddress Address of the ConfidentialBridge contract, or the null
+     *         address if no ConfidentialBridge is deployed on this host chain.
      */
     function getConfidentialBridgeAddress() public view virtual returns (address) {
         return CONFIDENTIAL_BRIDGE_ADDRESS;

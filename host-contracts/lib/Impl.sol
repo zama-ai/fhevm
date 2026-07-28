@@ -14,6 +14,50 @@ struct CoprocessorConfig {
 }
 
 /**
+ * @title   Local copies of the LayerZero messaging structs (with added `LZ`suffix to avoid import conflicts)
+ * @notice  `MessagingFeeLZ` and `MessagingReceiptLZ` are the fee-quote and send-receipt types the
+ *          bridge returns. They originate in LayerZero's `ILayerZeroEndpointV2`, but are copied
+ *          here field-for-field so that apps using `fhevm/solidity` do not have to install the
+ *          LayerZero packages just to bridge. The layout is identical, so they are ABI-compatible
+ *          with the real bridge. Original names were `MessagingFee` and `MessagingReceipt`.
+ */
+struct MessagingFeeLZ {
+    uint256 nativeFee;
+    uint256 lzTokenFee;
+}
+
+struct MessagingReceiptLZ {
+    bytes32 guid;
+    uint64 nonce;
+    MessagingFeeLZ fee;
+}
+
+/**
+ * @title   IConfidentialBridge
+ * @notice  Minimal view of the host `ConfidentialBridge` that the library wrapper needs.
+ */
+interface IConfidentialBridge {
+    function send(
+        uint32 dstEid,
+        bytes32 dstApp,
+        bytes calldata payload,
+        bytes32[] calldata handleList,
+        uint64 lzComposeGas
+    ) external payable returns (MessagingReceiptLZ memory receipt);
+
+    function quote(
+        uint32 dstEid,
+        address srcApp,
+        bytes32 dstApp,
+        bytes calldata payload,
+        bytes32[] calldata handleList,
+        uint64 lzComposeGas
+    ) external view returns (MessagingFeeLZ memory fee);
+
+    function getDstChainId(uint32 dstEid) external view returns (uint256);
+}
+
+/**
  * @title   IFHEVMExecutor
  * @notice  This interface contains all functions to conduct FHE operations.
  */
@@ -392,6 +436,12 @@ interface IACL {
      * @param contractAddress The contract address forming the user decryption context.
      */
     function revokeDelegationForUserDecryption(address delegate, address contractAddress) external;
+
+    /**
+     * @notice              Returns the `ConfidentialBridge` address.
+     * @return cBridgeAddr  The ConfidentialBridge contract address, or address(0) if not deployed.
+     */
+    function getConfidentialBridgeAddress() external view returns (address);
 
     /**
      * @notice              Returns the expiration date for delegated user decryption rights.

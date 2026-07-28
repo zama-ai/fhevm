@@ -1,4 +1,4 @@
-use crate::config::settings::HttpConfig;
+use crate::config::settings::Settings;
 use crate::core::event::{ApiCategory, ApiVersion};
 use crate::gateway::throttlers::BouncerThrottlers;
 use crate::host::{HostChainIdChecker, UserDecryptSignaturePreChecker};
@@ -45,15 +45,20 @@ async fn wait_for_ready(addr: SocketAddr) -> anyhow::Result<()> {
 
 #[allow(clippy::too_many_arguments)]
 pub async fn run_http_server(
-    config: &HttpConfig,
+    settings: &Settings,
     orchestrator: Arc<Orchestrator>,
     repositories: Arc<Repositories>,
-    user_decrypt_shares_threshold: u32,
     bouncer_throttlers: BouncerThrottlers,
     host_chain_id_checker: Arc<HostChainIdChecker>,
     signature_prechecker: Arc<UserDecryptSignaturePreChecker>,
+    keyurl_rx: tokio::sync::watch::Receiver<
+        crate::http::endpoints::v2::types::keyurl::KeyUrlResponseJson,
+    >,
 ) -> SocketAddr {
-    let http_endpoint: SocketAddr = config
+    let http = &settings.http;
+    let user_decrypt_shares_threshold = settings.gateway.contracts.user_decrypt_shares_threshold;
+
+    let http_endpoint: SocketAddr = http
         .endpoint
         .as_ref()
         .expect("HTTP endpoint must be configured")
@@ -62,7 +67,7 @@ pub async fn run_http_server(
     let api_version = ApiVersion::new(ApiCategory::PRODUCTION, 1);
 
     // Create RetryAfterState directly from config
-    let retry_after_state = Arc::new(RetryAfterState::new(&config.retry_after));
+    let retry_after_state = Arc::new(RetryAfterState::new(&http.retry_after));
 
     // Create AdminConfigRegistry for TPS throttling (separate from retry-after)
     let admin_registry = Arc::new(AdminConfigRegistry::new(
@@ -79,7 +84,7 @@ pub async fn run_http_server(
         orchestrator.clone(),
         api_version,
         repositories.input_proof.clone(),
-        config.api_retry_after_seconds,
+        http.api_retry_after_seconds,
         bouncer_throttlers
             .tx_throttlers
             .input_proof_tx_throttler
@@ -101,7 +106,7 @@ pub async fn run_http_server(
                 .readiness_throttling_senders
                 .user_decrypt_readiness_throttler
                 .clone(),
-            config.api_retry_after_seconds,
+            http.api_retry_after_seconds,
         ),
         retry_after_state.clone(),
         host_chain_id_checker.clone(),
@@ -120,7 +125,7 @@ pub async fn run_http_server(
                 .readiness_throttling_senders
                 .public_decrypt_readiness_throttler
                 .clone(),
-            config.api_retry_after_seconds,
+            http.api_retry_after_seconds,
         ),
         retry_after_state.clone(),
         host_chain_id_checker.clone(),
@@ -144,7 +149,7 @@ pub async fn run_http_server(
                 .readiness_throttling_senders
                 .user_decrypt_readiness_throttler
                 .clone(),
-            config.api_retry_after_seconds,
+            http.api_retry_after_seconds,
         ),
         retry_after_state.clone(),
         host_chain_id_checker.clone(),
@@ -155,8 +160,8 @@ pub async fn run_http_server(
     // Clone orchestrator for health endpoint before using it
     let orchestrator_for_health = orchestrator.clone();
 
-    // Create KeyUrlHandler - self-registers with orchestrator
-    let keyurl_handler_v2 = KeyUrlHandlerV2::new(orchestrator.clone());
+    // Create KeyUrlHandler - reads the latest chain-sourced value from the poller's watch channel
+    let keyurl_handler_v2 = KeyUrlHandlerV2::new(keyurl_rx);
 
     // Create the router by merging all handler routers
     let mut app = Router::new()
@@ -183,7 +188,7 @@ pub async fn run_http_server(
     let (admin_registry_option, retry_after_option): (
         Option<Arc<AdminConfigRegistry>>,
         Option<Arc<RetryAfterState>>,
-    ) = if config.enable_admin_endpoint {
+    ) = if http.enable_admin_endpoint {
         info!("Admin endpoints enabled at /admin/config");
         (Some(admin_registry), Some(retry_after_state))
     } else {

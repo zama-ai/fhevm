@@ -8,16 +8,16 @@ use std::{
 };
 use tracing::warn;
 
-/// A winning consensus: the agreed material plus the number of distinct, in-registry signers that
-/// vouched for it.
+/// A winning consensus: the agreed material plus the distinct, in-registry signers that vouched
+/// for it.
 #[derive(Clone, Debug)]
 pub struct Consensus {
     pub material: ConsensusMaterial,
-    pub valid_signers: usize,
+    pub signers: HashSet<Address>,
 }
 
 /// The ciphertext material a consensus group agreed on.
-#[derive(Clone, Debug, Hash, PartialEq, Eq)]
+#[derive(Clone, Debug, Hash, PartialEq, Eq, PartialOrd, Ord)]
 pub struct ConsensusMaterial {
     pub key_id: U256,
     pub ciphertext_digest: B256,
@@ -87,14 +87,19 @@ pub fn evaluate(
             .insert(attestation.signer);
     }
 
-    match signer_groups
-        .into_iter()
-        .max_by_key(|(_, signers)| signers.len())
-    {
-        Some((material, signers)) if signers.len() >= threshold.get() => Ok(Consensus {
-            material,
-            valid_signers: signers.len(),
-        }),
+    match signer_groups.into_iter().max_by(
+        |(left_material, left_signers), (right_material, right_signers)| {
+            left_signers
+                .len()
+                .cmp(&right_signers.len())
+                // Equal-size groups cannot reach honest consensus, but the result must still
+                // be deterministic for Byzantine or misconfigured thresholds.
+                .then_with(|| right_material.cmp(left_material))
+        },
+    ) {
+        Some((material, signers)) if signers.len() >= threshold.get() => {
+            Ok(Consensus { material, signers })
+        }
         Some((_, signers)) => Err(ConsensusError {
             valid_signers: signers.len(),
             threshold,
@@ -176,7 +181,7 @@ mod tests {
             nz(2),
         )
         .unwrap();
-        assert_eq!(consensus.valid_signers, 2);
+        assert_eq!(consensus.signers.len(), 2);
         assert_eq!(consensus.material.sns_ciphertext_digest, SNS_DIGEST);
         assert_eq!(consensus.material.key_id, KEY_ID);
     }
@@ -286,8 +291,33 @@ mod tests {
             nz(2),
         )
         .unwrap();
-        assert_eq!(consensus.valid_signers, 2);
+        assert_eq!(consensus.signers.len(), 2);
         assert_eq!(consensus.material.format, FORMAT);
+    }
+
+    #[tokio::test]
+    async fn equal_size_groups_use_deterministic_material_tie_break() {
+        let s1 = PrivateKeySigner::random();
+        let s2 = PrivateKeySigner::random();
+        let signers = signer_set(&[&s1, &s2]);
+        let larger_digest = B256::repeat_byte(0xDD);
+        let smaller_digest = B256::repeat_byte(0xBC);
+        let atts = vec![
+            signed(&s1, KEY_ID, larger_digest, SNS_DIGEST, FORMAT).await,
+            signed(&s2, KEY_ID, smaller_digest, SNS_DIGEST, FORMAT).await,
+        ];
+
+        let consensus = evaluate(
+            HANDLE,
+            COPROCESSOR_CONTEXT_ID,
+            &fetched(atts),
+            &signers,
+            nz(1),
+        )
+        .unwrap();
+
+        assert_eq!(consensus.signers.len(), 1);
+        assert_eq!(consensus.material.ciphertext_digest, smaller_digest);
     }
 
     #[tokio::test]

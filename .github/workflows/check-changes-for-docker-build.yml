@@ -99,8 +99,9 @@ jobs:
           done
 
           if [[ -z "${LATEST_IMAGE_COMMIT}" ]]; then
-            echo "No images found for ${IMAGE} with the last ${MAX_COMMIT_COUNT} commits!"
-            exit 1
+            # new image with no prior tag to diff against or retag from: signal a first build instead of failing; once published, later runs find it and normal change detection resumes.
+            echo "::warning::No existing ${IMAGE} image in the last ${MAX_COMMIT_COUNT} commits; forcing a first build (new-image bootstrap)."
+            echo "image-missing=true" >> "$GITHUB_OUTPUT"
           fi
 
           echo "latest-image-commit=${LATEST_IMAGE_COMMIT}" >> "$GITHUB_OUTPUT"
@@ -126,7 +127,15 @@ jobs:
         env:
           INPUT_FILTERS: ${{ inputs.filters }}
           FILTER_OUTPUTS_JSON: ${{ toJSON(steps.filter.outputs) }}
+          IMAGE_MISSING: ${{ steps.find-latest-image-commit.outputs.image-missing }}
         run: |
+          # A new image has no prior tag to diff against or retag from; force a build so
+          # the first image gets published, after which normal change detection resumes.
+          if [[ "${IMAGE_MISSING}" == "true" ]]; then
+            echo "changes=true" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
           # Ensure inputs.filters has exactly one top-level key and get it
           key_count=$(yq -r 'keys | length' <<< "$INPUT_FILTERS")
           if [[ "$key_count" -ne 1 ]]; then

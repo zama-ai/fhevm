@@ -31,6 +31,8 @@ COPY sdk/js-sdk/src/package.json ./sdk/js-sdk/src/
 COPY library-solidity ./library-solidity
 COPY test-suite/e2e ./test-suite/e2e
 COPY sdk/js-sdk ./sdk/js-sdk
+# The sdk's codegen:solana:check step reads the Anchor IDLs from here.
+COPY coprocessor/fhevm-engine/host-listener/idl ./coprocessor/fhevm-engine/host-listener/idl
 
 # Install dependencies. Normal builds stay locked; rollout hotswap builds first
 # update the e2e workspace manifest in the image, then let npm resolve one

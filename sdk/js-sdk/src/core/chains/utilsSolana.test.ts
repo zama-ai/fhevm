@@ -1,6 +1,6 @@
+import type { FhevmSolanaChain } from '../types/fhevmSolanaChain.js';
 import { describe, expect, it } from 'vitest';
 import { asBytes32Hex } from '../base/bytes.js';
-import type { FhevmSolanaChain } from '../types/fhevmSolanaChain.js';
 import { defineFhevmSolanaChain } from './utilsSolana.js';
 
 const chain = {

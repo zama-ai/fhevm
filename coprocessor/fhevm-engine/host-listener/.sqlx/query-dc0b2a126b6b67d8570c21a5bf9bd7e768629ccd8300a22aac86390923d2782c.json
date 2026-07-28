@@ -1,0 +1,29 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n            SELECT handle AS \"handle!\", producer_block_hash AS \"producer_block_hash!\"\n             FROM (\n                SELECT output_handle AS handle, producer_block_hash\n                FROM computations_branch\n                WHERE host_chain_id = $1\n                  AND producer_block_hash = ANY($2::bytea[])\n                UNION\n                SELECT handle, producer_block_hash\n                FROM pbs_computations_branch\n                WHERE host_chain_id = $1\n                  AND producer_block_hash = ANY($2::bytea[])\n                UNION\n                SELECT handle, producer_block_hash\n                FROM ciphertext_digest_branch\n                WHERE host_chain_id = $1\n                  AND producer_block_hash = ANY($2::bytea[])\n             ) orphaned_pairs\n            ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "handle!",
+        "type_info": "Bytea"
+      },
+      {
+        "ordinal": 1,
+        "name": "producer_block_hash!",
+        "type_info": "Bytea"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Int8",
+        "ByteaArray"
+      ]
+    },
+    "nullable": [
+      null,
+      null
+    ]
+  },
+  "hash": "dc0b2a126b6b67d8570c21a5bf9bd7e768629ccd8300a22aac86390923d2782c"
+}

@@ -35,7 +35,8 @@ export function verifyPublicDecryptArgsFromClaim(
   }
   const signatures = claim.signatures.map((signature, index) => {
     const bytes = hexToBytes(signature);
-    if (bytes.length !== 65) throw new Error(`public-decrypt signature[${index}] must be 65 bytes, got ${bytes.length}`);
+    if (bytes.length !== 65)
+      throw new Error(`public-decrypt signature[${index}] must be 65 bytes, got ${bytes.length}`);
     return bytes;
   });
   return {

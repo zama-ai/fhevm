@@ -37,9 +37,6 @@
 
 export const TFHE_MANIFEST = Object.freeze([
   Object.freeze({ version: '1.5.3', tags: Object.freeze(['prod', 'dev']) }),
-  Object.freeze({ version: '1.6.1', tags: Object.freeze(['prod', 'dev']) }),
-  // The Solana (RFC-021) vertical pins tfhe 1.6.2 to match the coprocessor/kms-core;
-  // it is the default below. 1.5.3/1.6.1 stay available for multi-version dispatch.
   Object.freeze({ version: '1.6.2', tags: Object.freeze(['prod', 'dev']) }),
   Object.freeze({
     version: '1.6.0-dev',

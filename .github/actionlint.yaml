@@ -19,5 +19,6 @@ self-hosted-runner:
 paths:
   .github/workflows/**/*.{yml,yaml}:
     ignore:
-      - SC2001 # https://www.shellcheck.net/wiki/SC2129
+      - SC2001 # https://www.shellcheck.net/wiki/SC2001
+      - SC2129 # style-only: individually-guarded redirects to $GITHUB_OUTPUT are clearer than one block - https://www.shellcheck.net/wiki/SC2129
       - 'property "result" is not defined in object type.*'

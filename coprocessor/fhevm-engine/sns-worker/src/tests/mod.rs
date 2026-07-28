@@ -2,12 +2,15 @@ use crate::{
     executor::{garbage_collect, query_sns_tasks, Order},
     keyset::fetch_client_key,
     squash_noise::safe_deserialize,
-    Config, DBConfig, S3Config, S3RetryPolicy, SchedulePolicy,
+    Config, DBConfig, S3Config, S3MigrationMode, S3RetryPolicy, SchedulePolicy,
+    DEFAULT_S3_MIGRATION_MAX_RETRIES,
 };
 use alloy::signers::local::PrivateKeySigner;
 use alloy_primitives::{B256, U256};
 use anyhow::{anyhow, Ok};
 use aws_config::BehaviorVersion;
+#[cfg(not(feature = "gpu"))]
+use aws_sdk_s3::{error::SdkError, operation::head_object::HeadObjectError};
 use ciphertext_attestation::{
     CiphertextAttestation, CiphertextFormat, S3_METADATA_ATTESTATION_KEY,
 };
@@ -41,6 +44,9 @@ use tracing::{info, Level};
 
 const LISTEN_CHANNEL: &str = "sns_worker_chan";
 static TRACING_INIT: OnceLock<()> = OnceLock::new();
+
+mod s3_migration;
+mod s3_migration_dry_run;
 
 pub fn init_tracing() {
     TRACING_INIT.get_or_init(|| {
@@ -216,7 +222,7 @@ async fn run_batch_computations(
     info!(elapsed = ?elapsed, batch_size, "Batch execution completed");
 
     // Assert that all ciphertext objects are uploaded to S3
-    assert_ciphertext_s3_object_count(test_env, bucket128, batch_size as i64 + 1).await;
+    assert_ciphertext_s3_object_count(test_env, bucket128, batch_size as i64).await;
     assert_ciphertext_s3_object_count(test_env, bucket64, batch_size as i64).await;
 
     anyhow::Result::<()>::Ok(())
@@ -310,6 +316,109 @@ async fn test_lifo_mode() {
     }
 }
 
+/// Reorg cleanup deletes the pbs_computations and ciphertext_digest rows of
+/// handles that lived solely on an orphaned fork. An sns task that fetched
+/// its work before the cleanup must not resurrect the digest row afterwards
+/// (that would drive a phantom addCiphertextMaterial publication), and a
+/// mark-uploaded landing after the cleanup must be a no-op, not an error.
+#[tokio::test]
+#[serial(db)]
+#[cfg(not(feature = "gpu"))]
+async fn enqueue_upload_task_skips_after_reorg_cleanup() {
+    init_tracing();
+
+    let test_instance = setup_test_db(ImportMode::None)
+        .await
+        .expect("valid db instance");
+    let pool = sqlx::postgres::PgPoolOptions::new()
+        .max_connections(3)
+        .connect(test_instance.db_url())
+        .await
+        .unwrap();
+
+    // Persistent-DB (COPROCESSOR_TEST_LOCALHOST) runs reuse the database:
+    // start from a clean slate so query_sns_tasks below fetches OUR row and
+    // this test leaves nothing behind for the next one.
+    clean_up(&pool).await.unwrap();
+
+    let host_chain_id: i64 = 1;
+    let handle = vec![0x42u8; 32];
+    let key_id_gw: DbKeyId = vec![0u8; 32];
+
+    test_harness::db_utils::insert_ciphertext64(&pool, &handle, &vec![0xAB; 32])
+        .await
+        .unwrap();
+    test_harness::db_utils::insert_into_pbs_computations(&pool, host_chain_id, &handle)
+        .await
+        .unwrap();
+
+    // Acquire the task the same way the worker does, then release the lock.
+    let mut trx = pool.begin().await.unwrap();
+    let task = query_sns_tasks(&mut trx, 1, Order::Asc, &key_id_gw)
+        .await
+        .unwrap()
+        .expect("one task")
+        .remove(0);
+    trx.rollback().await.unwrap();
+
+    // Live provenance: the digest row is enqueued.
+    let mut trx = pool.begin().await.unwrap();
+    assert!(task.enqueue_upload_task(&mut trx).await.unwrap());
+    trx.commit().await.unwrap();
+    let digest_rows = || async {
+        sqlx::query_scalar::<_, i64>("SELECT COUNT(*) FROM ciphertext_digest WHERE handle = $1")
+            .bind(&handle)
+            .fetch_one(&pool)
+            .await
+            .unwrap()
+    };
+    assert_eq!(digest_rows().await, 1);
+
+    // Simulate the reorg cleanup for an orphan-only handle.
+    for sql in [
+        "DELETE FROM pbs_computations WHERE handle = $1",
+        "DELETE FROM ciphertext_digest WHERE handle = $1",
+    ] {
+        sqlx::query(sql).bind(&handle).execute(&pool).await.unwrap();
+    }
+
+    // The in-flight task must not resurrect the digest row...
+    let mut trx = pool.begin().await.unwrap();
+    assert!(!task.enqueue_upload_task(&mut trx).await.unwrap());
+    trx.commit().await.unwrap();
+    assert_eq!(digest_rows().await, 0, "digest row must not be resurrected");
+
+    // ...and a late mark-uploaded is a cancelled no-op, not an error.
+    let mut trx = pool.begin().await.unwrap();
+    task.mark_ciphertexts_uploaded(&mut trx, vec![0xC1; 32], vec![0xC2; 32], 1)
+        .await
+        .expect("mark after cleanup must be a no-op");
+    trx.commit().await.unwrap();
+    assert_eq!(digest_rows().await, 0);
+
+    // Bridge-retraction variant: the pbs row survives (allow events created
+    // it) but the copied ciphertexts row was retracted. The ciphertext
+    // witness must veto the enqueue on its own.
+    test_harness::db_utils::insert_into_pbs_computations(&pool, host_chain_id, &handle)
+        .await
+        .unwrap();
+    sqlx::query("DELETE FROM ciphertexts WHERE handle = $1")
+        .bind(&handle)
+        .execute(&pool)
+        .await
+        .unwrap();
+    let mut trx = pool.begin().await.unwrap();
+    assert!(
+        !task.enqueue_upload_task(&mut trx).await.unwrap(),
+        "missing ciphertexts row must veto the enqueue"
+    );
+    trx.commit().await.unwrap();
+    assert_eq!(digest_rows().await, 0);
+
+    // Leave the shared (localhost-mode) database as we found it.
+    clean_up(&pool).await.unwrap();
+}
+
 #[tokio::test]
 #[serial(db)]
 #[cfg(not(feature = "gpu"))]
@@ -350,7 +459,7 @@ async fn test_garbage_collect() {
         .expect("insert into ciphertexts");
 
         let _ = sqlx::query!(
-            "INSERT INTO ciphertext_digest(host_chain_id, key_id_gw, handle, ciphertext, ciphertext128 )
+            "INSERT INTO ciphertext_digest(host_chain_id, key_id_gw, handle, ciphertext, ciphertext128)
                 VALUES ($1, $2, $3, $4, $5)
             ON CONFLICT DO NOTHING;",
             host_chain_id,
@@ -564,6 +673,8 @@ async fn setup_localstack(
 }
 
 async fn recreate_bucket(s3_client: &aws_sdk_s3::Client, bucket_name: &str) -> anyhow::Result<()> {
+    empty_bucket(s3_client, bucket_name).await?;
+
     s3_client
         .delete_bucket()
         .set_bucket(Some(bucket_name.to_string()))
@@ -577,6 +688,28 @@ async fn recreate_bucket(s3_client: &aws_sdk_s3::Client, bucket_name: &str) -> a
         .send()
         .await
         .expect("Failed to create bucket");
+
+    Ok(())
+}
+
+async fn empty_bucket(s3_client: &aws_sdk_s3::Client, bucket_name: &str) -> anyhow::Result<()> {
+    let result = match s3_client.list_objects().bucket(bucket_name).send().await {
+        std::result::Result::Ok(result) => result,
+        Err(_) => return Ok(()),
+    };
+
+    for object in result.contents() {
+        let Some(key) = object.key() else {
+            continue;
+        };
+
+        s3_client
+            .delete_object()
+            .bucket(bucket_name)
+            .key(key)
+            .send()
+            .await?;
+    }
 
     Ok(())
 }
@@ -794,24 +927,18 @@ async fn assert_ciphertext128(
     {
         info!("Asserting ciphertext uploaded to S3");
 
-        let expected_ct_format = if with_compression {
-            crate::Ciphertext128Format::CompressedOnCpu
-        } else {
-            crate::Ciphertext128Format::UncompressedOnCpu
-        };
         let expected_attestation_format = if with_compression {
             CiphertextFormat::CompressedOnCpu
         } else {
             CiphertextFormat::UncompressedOnCpu
         };
-        let expected_ct_format = expected_ct_format.to_string();
 
         assert_ciphertext_uploaded(
             test_env,
             &test_env.conf.s3.bucket_ct128,
             handle,
             Some(ct.len() as i64),
-            Some((&expected_ct_format, expected_attestation_format)),
+            Some(expected_attestation_format),
         )
         .await?;
         assert_ciphertext_uploaded(test_env, &test_env.conf.s3.bucket_ct64, handle, None, None)
@@ -828,7 +955,7 @@ async fn assert_ciphertext_uploaded(
     bucket: &String,
     handle: &Vec<u8>,
     expected_ct_len: Option<i64>,
-    expected_ct_format: Option<(&str, CiphertextFormat)>,
+    expected_attestation_format: Option<CiphertextFormat>,
 ) -> anyhow::Result<()> {
     let ciphertext_key =
         crate::aws_upload::s3_ciphertext_key(handle, crate::aws_upload::COPROCESSOR_CONTEXT_ID_1);
@@ -904,42 +1031,32 @@ async fn assert_ciphertext_uploaded(
         metadata.contains_key("signer"),
         "ciphertext object should include Signer metadata"
     );
-    if let Some((expected_ct_format, expected_attestation_format)) = expected_ct_format {
+    assert!(
+        !metadata.contains_key("ct-format"),
+        "ciphertext object should not include legacy Ct-Format metadata"
+    );
+    if let Some(expected_attestation_format) = expected_attestation_format {
         assert_eq!(
             attestation.format, expected_attestation_format,
             "ciphertext128 attestation should include the expected ct format"
         );
-        assert_eq!(
-            metadata.get("ct-format").map(String::as_str),
-            Some(expected_ct_format),
-            "ciphertext128 object should include Ct-Format metadata"
-        );
 
         let digest_key = hex::encode(&sns_ciphertext_digest);
-        s3_utils::assert_key_exists(
-            test_env.s3_client.to_owned(),
-            bucket,
-            &digest_key,
-            expected_ct_len,
-            100,
-        )
-        .await;
-
-        let digest_output = test_env
+        let err = test_env
             .s3_client
             .head_object()
             .bucket(bucket)
-            .key(digest_key)
+            .key(&digest_key)
             .send()
             .await
-            .expect("head ciphertext128 digest object");
-        let digest_metadata = digest_output
-            .metadata()
-            .expect("ciphertext128 digest object metadata");
-        assert_eq!(
-            digest_metadata.get("ct-format").map(String::as_str),
-            Some(expected_ct_format),
-            "ciphertext128 digest object should include Ct-Format metadata"
+            .expect_err("legacy ciphertext128 digest object should not be uploaded");
+        assert!(
+            matches!(
+                err,
+                SdkError::ServiceError(ref err)
+                    if matches!(err.err(), HeadObjectError::NotFound(_))
+            ),
+            "expected missing legacy ciphertext128 digest object, got {err}"
         );
     }
 
@@ -989,7 +1106,7 @@ async fn assert_ciphertext_uploaded(
     _bucket: &String,
     _handle: &Vec<u8>,
     _expected_ct_len: Option<i64>,
-    _expected_ct_format: Option<(&str, CiphertextFormat)>,
+    _expected_attestation_format: Option<CiphertextFormat>,
 ) -> anyhow::Result<()> {
     // No-op when GPU feature is enabled
     Ok(())
@@ -1062,7 +1179,11 @@ fn build_test_config(url: DatabaseURL, enable_compression: bool) -> Config {
         schedule_policy,
         pg_auto_explain_with_min_duration: Some(Duration::from_secs(1)),
         metrics: Default::default(),
+        gcs_mode: false,
         private_key: None,
         signer_type: fhevm_engine_common::types::SignerType::PrivateKey,
+        s3_migration: S3MigrationMode::No,
+        s3_migration_sleep_duration: Duration::from_mins(5),
+        s3_migration_max_retries: DEFAULT_S3_MIGRATION_MAX_RETRIES,
     }
 }

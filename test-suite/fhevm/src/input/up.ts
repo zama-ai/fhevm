@@ -39,6 +39,7 @@ export const parseUpInput = (args: Record<string, unknown>) => {
   const fromStepRaw = asString(args["from-step"] ?? args.fromStep);
   const lockFile = asString(args["lock-file"] ?? args.lockFile);
   const scenarioPath = asString(args.scenario);
+  const bcsTag = asString(args["bcs-tag"] ?? args.bcsTag);
   const resume = asBool(args.resume);
   const dryRun = asBool(args["dry-run"] ?? args.dryRun);
   const reset = asBool(args.reset);
@@ -79,6 +80,12 @@ export const parseUpInput = (args: Record<string, unknown>) => {
   if (resume && scenarioPath) {
     throw new PreflightError("--resume cannot be used with --scenario");
   }
+  if (bcsTag && !scenarioPath) {
+    throw new PreflightError("--bcs-tag requires --scenario (only applies to blue-green scenarios)");
+  }
+  if (bcsTag && resume) {
+    throw new PreflightError("--bcs-tag cannot be used with --resume");
+  }
   if (fromStep && !resume && !dryRun) {
     throw new PreflightError("--from-step requires --resume or --dry-run");
   }
@@ -95,7 +102,9 @@ export const parseUpInput = (args: Record<string, unknown>) => {
     requestedTarget: target as VersionTarget | undefined,
     sha,
     overrides,
+    build,
     scenarioPath,
+    bcsTag,
     fromStep,
     lockFile,
     allowSchemaMismatch,

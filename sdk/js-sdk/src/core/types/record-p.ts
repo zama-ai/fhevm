@@ -1,4 +1,4 @@
-import type { Uint, ChecksummedAddress, Uint256, Address } from './primitives.js';
+import type { Uint, ChecksummedAddress, Uint256, Address, UintNumber } from './primitives.js';
 
 /**
  * Generic helper type that creates a record with a specific property of type T.
@@ -17,6 +17,7 @@ export type RecordBooleanPropertyType<K extends string> = RecordWithPropertyType
 
 export type RecordUintPropertyType<K extends string> = RecordWithPropertyType<K, Uint>;
 export type RecordUint256PropertyType<K extends string> = RecordWithPropertyType<K, Uint256>;
+export type RecordUintNumberPropertyType<K extends string> = RecordWithPropertyType<K, UintNumber>;
 
 export type RecordUint8ArrayPropertyType<K extends string> = RecordWithPropertyType<K, Uint8Array>;
 

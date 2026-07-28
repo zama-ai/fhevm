@@ -32,7 +32,11 @@ describe('fetchSolanaPublicDecryptProof', () => {
     );
     vi.stubGlobal('fetch', fetchMock);
 
-    const result = await fetchSolanaPublicDecryptProof({ proofServiceUrl: 'http://proof:8080/' }, VALUE_ACCOUNT, HANDLE);
+    const result = await fetchSolanaPublicDecryptProof(
+      { proofServiceUrl: 'http://proof:8080/' },
+      VALUE_ACCOUNT,
+      HANDLE,
+    );
     // leafIndex is a service output the SDK reads back, never supplied.
     expect(result.proof).toEqual({ leafIndex: 0n, siblings: [] });
     expect(result.leafCount).toBe(1n);
@@ -43,7 +47,9 @@ describe('fetchSolanaPublicDecryptProof', () => {
 
     // The request keys on (encrypted_value, handle) — no leaf_index anywhere.
     const url = fetchMock.mock.calls[0]![0] as string;
-    expect(url).toBe(`http://proof:8080/internal/solana/public-proof?encrypted_value=${VALUE_ACCOUNT}&handle=${HANDLE_HEX}`);
+    expect(url).toBe(
+      `http://proof:8080/internal/solana/public-proof?encrypted_value=${VALUE_ACCOUNT}&handle=${HANDLE_HEX}`,
+    );
     expect(url).not.toContain('leaf_index');
   });
 

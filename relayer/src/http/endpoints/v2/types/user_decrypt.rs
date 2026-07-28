@@ -24,18 +24,19 @@ pub struct UserDecryptRequestJson {
     #[schema(value_type = ChainId)]
     #[validate(custom(function = "crate::http::validate_chain_id_string"))]
     pub contracts_chain_id: String,
-    // EVM requires >=1 contract address; RFC-021 Solana sends an empty list (the handle ACL is
-    // enforced by the KMS solana_acl, off-gateway), so emptiness is allowed here and the per-mode
-    // requirement is enforced downstream.
-    #[validate(custom(function = "crate::http::validate_host_addresses"))]
-    #[schema(example = json!(["0x1234567890123456789012345678901234567890"]))]
+    #[validate(length(min = 1, message = "Must not be empty"))]
+    #[validate(custom(function = "crate::http::validate_blockchain_addresses"))]
+    #[schema(min_items = 1, example = json!(["0x1234567890123456789012345678901234567890"]))]
     pub contract_addresses: Vec<String>,
-    /// User requesting decryption: an EVM `0x`+40-hex address, or an RFC-021 Solana base58 pubkey.
-    #[validate(custom(function = "crate::http::validate_host_address"))]
+    /// Ethereum address of the user requesting decryption. `0x` + 40 hex chars.
+    #[validate(custom(function = "crate::http::validate_blockchain_address"))]
     #[schema(example = "0x1234567890123456789012345678901234567890")]
     pub user_address: String,
-    /// User signature over the request: EVM EIP-712 (130 hex) or Solana ed25519 signMessage (128 hex), no `0x`.
-    #[validate(custom(function = "crate::http::validate_user_decrypt_signature"))]
+    /// EIP-712 signature over the decryption request, signed by the user. Raw hex, 130 chars, no `0x` prefix.
+    #[validate(
+        length(equal = 130, message = "Must be 130 characters long"),
+        custom(function = "crate::http::validate_no_0x_hex")
+    )]
     #[derivative(Debug(format_with = "redact_len"))]
     #[schema(
         example = "aabbccdd00112233445566778899aabbccdd00112233445566778899aabbccdd00112233445566778899aabbccdd00112233445566778899aabbccdd0011223344"
@@ -47,11 +48,8 @@ pub struct UserDecryptRequestJson {
     #[derivative(Debug(format_with = "redact_len"))]
     #[schema(example = "04b8e5d3f1a2c4e6d8f0a1b3c5d7e9f1a2b4c6d8e0f2a3b5c7d9e1f3a5b7c9d1")]
     pub public_key: String,
-    /// Extra data forwarded verbatim to the gateway contract. Accepts `"0x00"`, version `0x01`
-    /// (`0x01` + 32-byte contextId), version `0x02` (`0x02` + 32-byte contextId + 32-byte epochId),
-    /// or Solana MMR-proof version `0x03`.
+    #[schema(schema_with = crate::http::extra_data_decryption_schema)]
     #[validate(custom(function = "crate::http::validate_extra_data_field_decryption"))]
-    #[schema(example = "0x00")]
     pub extra_data: String,
 }
 
@@ -102,11 +100,8 @@ pub struct DelegatedUserDecryptRequestJson {
     #[validate(custom(function = "crate::http::validate_no_0x_hex"))]
     #[schema(example = "04b8e5d3f1a2c4e6d8f0a1b3c5d7e9f1a2b4c6d8e0f2a3b5c7d9e1f3a5b7c9d1")]
     pub public_key: String,
-    /// Extra data forwarded verbatim to the gateway contract. Accepts `"0x00"`, version `0x01`
-    /// (`0x01` + 32-byte contextId), version `0x02` (`0x02` + 32-byte contextId + 32-byte epochId),
-    /// or Solana MMR-proof version `0x03`.
+    #[schema(schema_with = crate::http::extra_data_decryption_schema)]
     #[validate(custom(function = "crate::http::validate_extra_data_field_decryption"))]
-    #[schema(example = "0x00")]
     pub extra_data: String,
 }
 

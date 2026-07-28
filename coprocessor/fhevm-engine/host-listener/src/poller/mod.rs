@@ -18,6 +18,7 @@ use fhevm_engine_common::chain_id::ChainId;
 use fhevm_engine_common::database::connect_pool_with_options;
 use fhevm_engine_common::healthz_server::HttpServer as HealthHttpServer;
 use fhevm_engine_common::utils::{DatabaseURL, HeartBeat};
+use fhevm_engine_common::versioning::{run_stack_version_listener, StackMode};
 use sqlx::postgres::PgPoolOptions;
 
 use crate::cmd::block_history::BlockSummary;
@@ -70,12 +71,65 @@ fn handle_rpc_failure<E: std::fmt::Display>(
     }
 }
 
+/// Seed for `host_listener_poller_state` when no anchor row exists yet; an
+/// existing row always wins in the caller, so restarts never rewind or skip.
+/// A non-negative value is an absolute height (0 = genesis, explicitly), a
+/// negative value means that many blocks behind the current head. Unset is an
+/// error: the first start for a chain must state where to begin.
+#[derive(Debug, PartialEq, Eq)]
+enum StartAnchor {
+    Block(i64),
+    BehindHead(u64),
+}
+
+fn resolve_start_anchor(seed_start_block: Option<i64>) -> Result<StartAnchor> {
+    match seed_start_block {
+        Some(block) if block >= 0 => Ok(StartAnchor::Block(block)),
+        Some(delta) => Ok(StartAnchor::BehindHead(delta.unsigned_abs())),
+        None => Err(anyhow!(
+            "no poller state for this chain and no --seed-start-block; \
+             set it explicitly (0 for genesis)"
+        )),
+    }
+}
+
+#[cfg(test)]
+mod start_anchor_tests {
+    use super::{resolve_start_anchor, StartAnchor};
+
+    #[test]
+    fn non_negative_flag_is_absolute() {
+        assert_eq!(
+            resolve_start_anchor(Some(7)).unwrap(),
+            StartAnchor::Block(7)
+        );
+        assert_eq!(
+            resolve_start_anchor(Some(0)).unwrap(),
+            StartAnchor::Block(0)
+        );
+    }
+
+    #[test]
+    fn negative_flag_is_behind_head() {
+        assert_eq!(
+            resolve_start_anchor(Some(-10_000)).unwrap(),
+            StartAnchor::BehindHead(10_000)
+        );
+    }
+
+    #[test]
+    fn no_flag_is_an_error() {
+        assert!(resolve_start_anchor(None).is_err());
+    }
+}
+
 #[derive(Clone, Debug)]
 pub struct PollerConfig {
     pub url: String,
     pub acl_address: Address,
     pub tfhe_address: Address,
     pub kms_generation_address: Option<Address>,
+    pub protocol_config_address: Option<Address>,
     pub confidential_bridge_address: Option<Address>,
     pub database_url: DatabaseURL,
     pub finality_lag: u64,
@@ -89,17 +143,23 @@ pub struct PollerConfig {
     /// Higher values = less throttling.
     pub rpc_compute_units_per_second: u64,
     pub health_port: u16,
+    /// Initial sync anchor when no poller state exists yet
+    /// (initialization-only; >= 0 absolute, negative from head).
+    pub seed_start_block: Option<i64>,
     // Dependence chain settings
     pub dependence_cache_size: u16,
     pub dependence_by_connexity: bool,
     pub dependence_cross_block: bool,
     pub dependent_ops_max_per_chain: u32,
+    pub gcs_mode: bool,
+    pub canonical_protocol_config_chain_id: Option<u64>,
 }
 
 pub async fn run_poller(config: PollerConfig) -> Result<()> {
     let acl_address = config.acl_address;
     let tfhe_address = config.tfhe_address;
     let kms_generation_address = config.kms_generation_address;
+    let protocol_config_address = config.protocol_config_address;
     let confidential_bridge_address = config.confidential_bridge_address;
 
     let blockchain_tick = HeartBeat::new();
@@ -137,12 +197,18 @@ pub async fn run_poller(config: PollerConfig) -> Result<()> {
         }
     };
     let chain_id_str = chain_id.to_string();
+    let is_protocol_config_listener =
+        crate::protocol_config::resolve_protocol_config_listener(
+            config.canonical_protocol_config_chain_id,
+            chain_id.as_u64(),
+        )?;
     blockchain_timeout_tick.update();
 
-    let mut db = Database::new(
+    let mut db = Database::new_with_gcs_mode(
         &config.database_url,
         chain_id,
         config.dependence_cache_size,
+        config.gcs_mode,
     )
     .await?;
     let aws_s3_client = AwsS3Client {};
@@ -192,13 +258,40 @@ pub async fn run_poller(config: PollerConfig) -> Result<()> {
         }
     }
 
+    // Runtime stack mode + `event_stack_version_upgraded` listener: at cutover
+    // this (blue) stack is retired and `stack_mode` flips to paused, turning
+    // the poll loop below into a no-op (stops polling/producing blocks).
+    let stack_mode = StackMode::new(config.gcs_mode);
+    {
+        let pool = db.pool().await;
+        let stack_mode = stack_mode.clone();
+        let cancel = cancel_token.clone();
+        tokio::spawn(async move {
+            if let Err(err) =
+                run_stack_version_listener(pool, stack_mode, cancel).await
+            {
+                error!(error = %err, "stack-version listener exited with error");
+            }
+        });
+    }
+
     let initial_anchor = db.poller_get_last_caught_up_block(chain_id).await?;
     db.tick.update();
     let mut last_caught_up_block = match initial_anchor {
         Some(block) => u64::try_from(block)
             .context("last_caught_up_block cannot be negative")?,
         None => {
-            let initial = db.read_last_valid_block().await.unwrap_or(0);
+            let initial = match resolve_start_anchor(config.seed_start_block)? {
+                StartAnchor::Block(block) => block,
+                StartAnchor::BehindHead(delta) => {
+                    let head = client.latest_block_number().await.context(
+                        "Failed to fetch head to resolve negative seed-start-block",
+                    )?;
+                    i64::try_from(head.saturating_sub(delta)).context(
+                        "start block computed from head is out of range",
+                    )?
+                }
+            };
             db.poller_set_last_caught_up_block(chain_id, initial)
                 .await?;
             db.tick.update();
@@ -223,6 +316,11 @@ pub async fn run_poller(config: PollerConfig) -> Result<()> {
     let mut consecutive_rpc_failures: u64 = 0;
 
     loop {
+        // Paused (retired blue stack after cutover): no-op — stop polling.
+        if stack_mode.is_paused() {
+            sleep(config.poll_interval).await;
+            continue;
+        }
         let latest = match client.latest_block_number().await {
             Ok(block) => {
                 consecutive_rpc_failures = 0;
@@ -323,6 +421,7 @@ pub async fn run_poller(config: PollerConfig) -> Result<()> {
                 dependence_by_connexity: config.dependence_by_connexity,
                 dependence_cross_block: config.dependence_cross_block,
                 dependent_ops_max_per_chain: config.dependent_ops_max_per_chain,
+                is_protocol_config_listener,
             };
             match ingest_with_retry(
                 chain_id,
@@ -331,6 +430,7 @@ pub async fn run_poller(config: PollerConfig) -> Result<()> {
                 acl_address,
                 tfhe_address,
                 kms_generation_address,
+                protocol_config_address,
                 confidential_bridge_address,
                 config.retry_interval,
                 ingest_options,
@@ -420,6 +520,7 @@ async fn ingest_with_retry(
     acl_address: Address,
     tfhe_address: Address,
     kms_generation_address: Option<Address>,
+    protocol_config_address: Option<Address>,
     confidential_bridge_address: Option<Address>,
     retry_interval: Duration,
     options: IngestOptions,
@@ -427,6 +528,7 @@ async fn ingest_with_retry(
     let mut errors = 0;
     let acl = Some(acl_address);
     let tfhe = Some(tfhe_address);
+    let protocol_config = protocol_config_address;
     loop {
         match ingest_block_logs(
             chain_id,
@@ -435,8 +537,9 @@ async fn ingest_with_retry(
             &acl,
             &tfhe,
             &kms_generation_address,
+            &protocol_config,
             &confidential_bridge_address,
-            options,
+            options.clone(),
         )
         .await
         {

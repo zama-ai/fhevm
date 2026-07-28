@@ -76,6 +76,7 @@ describe("env", () => {
     expect(rendered.componentEnvs["host-node"].HOST_NODE_CHAIN_ID).toBe("543210");
     expect(rendered.componentEnvs["host-sc"].RPC_URL).toBe("http://host-node:9650");
     expect(rendered.componentEnvs["coprocessor"].RPC_HTTP_URL).toBe("http://host-node:9650");
+    expect(rendered.componentEnvs["coprocessor"].CANONICAL_PROTOCOL_CONFIG_CHAIN_ID).toBe("543210");
     expect(rendered.componentEnvs["kms-connector"].KMS_CONNECTOR_ETHEREUM_URL).toBe("http://host-node:9650");
     expect(rendered.componentEnvs["kms-connector"].KMS_CONNECTOR_ETHEREUM_CHAIN_ID).toBe("543210");
     expect(rendered.componentEnvs["test-suite"].RPC_URL).toBe("http://host-node:9650");
@@ -135,7 +136,7 @@ describe("env", () => {
       requiresGitHub: true,
       versions: presetBundle("latest-main", "abcdef0", "latest-main.json"),
       overrides: [],
-      scenario: testDefaultScenario({ kms: { mode: "threshold", parties: 4, threshold: 1, fheParams: "Test" } }),
+      scenario: testDefaultScenario({ kms: { mode: "threshold", parties: 4, threshold: 1, committeeSize: 4, fheParams: "Test" } }),
       discovery: {
         gateway: {},
         hosts: {},
@@ -192,7 +193,7 @@ describe("env", () => {
       requiresGitHub: true,
       versions: presetBundle("latest-main", "abcdef0", "latest-main.json"),
       overrides: [],
-      scenario: testDefaultScenario({ kms: { mode: "centralized", parties: 1, threshold: 1, fheParams: "Default" } }),
+      scenario: testDefaultScenario({ kms: { mode: "centralized", parties: 1, threshold: 1, committeeSize: 1, fheParams: "Default" } }),
       discovery: {
         gateway: {},
         hosts: {},

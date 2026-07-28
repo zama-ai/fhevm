@@ -129,7 +129,8 @@ export async function joinBatch(
     userBalanceValue: await balanceValueAddress(joinConfidentialMint, userTokenAccount),
     batchBalanceValue: await balanceValueAddress(joinConfidentialMint, batchJoinTokenAccount),
     userTransferredValue: await transferredAmountValueAddress(joinConfidentialMint, userTokenAccount),
-    pendingJoinValue: (await pendingJoinValueAccount(parameters.batch, batchAuthority, user.address)).encryptedValueAddress,
+    pendingJoinValue: (await pendingJoinValueAccount(parameters.batch, batchAuthority, user.address))
+      .encryptedValueAddress,
     zamaEventAuthority: await eventAuthority(zamaHostProgramAddress),
     hostConfig: parameters.hostConfig,
     confidentialTokenEventAuthority: await eventAuthority(CONFIDENTIAL_TOKEN_PROGRAM_ADDRESS),

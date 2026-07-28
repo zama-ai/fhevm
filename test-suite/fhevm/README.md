@@ -211,7 +211,7 @@ Runbooks use the same primitives an operator needs during a release:
 
 `rollout-standard` is intentionally narrow: it covers encrypted input, FHE compute/write paths, user decrypt, delegated user decrypt, public decrypt, and ERC20 transfer coverage. Broader profiles such as `multi-chain-isolation`, HCU, pause/unpause, DB revert, and drift recovery stay available as explicit tests but are not part of the per-step rollout gate.
 
-The `test-suite-stateful-rollout` workflow executes the checked-in runbook when the `rollout` label is present, or through manual dispatch with a custom runbook path.
+The `test-suite-stateful-rollout` workflow executes a checked-in runbook through manual dispatch with a path relative to `test-suite/fhevm`.
 
 ## Version Override via Environment Variables
 
@@ -342,6 +342,9 @@ When changing runtime flags, env contracts, target semantics, or external compan
 ./fhevm-cli logs --no-follow relayer
 ./fhevm-cli test input-proof
 ./fhevm-cli test erc20
+./fhevm-cli test erc1271-user-decryption
+./fhevm-cli test unified-user-decryption
+./fhevm-cli test decryption-signature-invalidation
 ./fhevm-cli test light
 ./fhevm-cli test standard
 ./fhevm-cli test heavy

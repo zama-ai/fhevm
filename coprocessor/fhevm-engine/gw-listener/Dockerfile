@@ -1,5 +1,5 @@
-# syntax=docker/dockerfile:1
-ARG RUST_IMAGE_VERSION=1.91.0
+# RUST_IMAGE_VERSION is injected by CI from rust-toolchain.toml (see coprocessor-docker-build.yml)
+ARG RUST_IMAGE_VERSION
 
 # Stage 0: Build contracts
 FROM ghcr.io/zama-ai/fhevm/gci/nodejs:22.14.0-alpine3.21 AS contract_builder
@@ -19,10 +19,6 @@ RUN npm ci && \
 FROM ghcr.io/zama-ai/fhevm/gci/rust-glibc:${RUST_IMAGE_VERSION} AS builder
 
 ARG CARGO_PROFILE=release
-# Build identifier baked into the binaries. Passed as a build arg instead of
-# `COPY .git/HEAD` so worktree contexts (where .git is a file) build too, and
-# so the layer cache is not invalidated by unrelated ref updates.
-ARG BUILD_ID=unknown
 ARG SCCACHE_BUCKET
 ARG SCCACHE_REGION=eu-west-3
 ARG SCCACHE_S3_PREFIX
@@ -94,7 +90,7 @@ RUN --mount=type=cache,target=/usr/local/cargo/registry,sharing=locked \
       export AWS_SECRET_ACCESS_KEY="$(cat /run/secrets/sccache_aws_secret_access_key)"; \
     fi && \
     cargo fetch && \
-    SQLX_OFFLINE=true BUILD_ID=${BUILD_ID} cargo build --profile=${CARGO_PROFILE} -p gw-listener && \
+    SQLX_OFFLINE=true BUILD_ID=$(cat BUILD_ID) cargo build --profile=${CARGO_PROFILE} -p gw-listener && \
     if [ -n "${SCCACHE_BUCKET}" ] && command -v sccache >/dev/null 2>&1; then sccache --show-stats; fi && \
     cp target/${CARGO_PROFILE}/gw_listener /tmp/gw_listener
 

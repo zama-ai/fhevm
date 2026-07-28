@@ -11,20 +11,19 @@ const relayerClient: RelayerClient = {
   relayerUrl: 'https://relayer.example.com',
   chainId: 11155111,
 };
+const originalFetch = global.fetch;
 
 // Resolve a fresh Response on every fetch call (a Response body reads once).
 function mockFetchStatus(status: number, body: string): void {
   global.fetch = vi.fn().mockImplementation(() => Promise.resolve(new Response(body, { status })));
 }
 
+afterEach(() => {
+  global.fetch = originalFetch;
+  vi.restoreAllMocks();
+});
+
 describe('fetchFheEncryptionKeySource error surfacing', () => {
-  const originalFetch = global.fetch;
-
-  afterEach(() => {
-    global.fetch = originalFetch;
-    vi.restoreAllMocks();
-  });
-
   it('401 surfaces the message from { error: { message } }', async () => {
     mockFetchStatus(401, JSON.stringify({ error: { message: 'invalid x-api-key', label: 'unauthorized' } }));
 
@@ -62,5 +61,79 @@ describe('fetchFheEncryptionKeySource error surfacing', () => {
       expect(message).toContain('HTTP error! status: 403');
       expect(message).not.toContain('Forbidden');
     }
+  });
+});
+
+describe('_assertIsFetchKeyUrlResult accepted payloads', () => {
+  const expectedPublicKeySource = {
+    id: '0x0400000000000000000000000000000000000000000000000000000000000001',
+    url: 'https://keys.example.com/PublicKey/0400000000000000000000000000000000000000000000000000000000000001',
+  };
+  const expectedCrsSource = {
+    id: '0x0500000000000000000000000000000000000000000000000000000000000001',
+    url: 'https://keys.example.com/CRS/0500000000000000000000000000000000000000000000000000000000000001',
+    capacity: 2048,
+  };
+
+  it.each([
+    [
+      'with contextId and epochId',
+      {
+        status: 'succeeded',
+        response: {
+          fheKeyInfo: [{ fhePublicKey: { dataId: expectedPublicKeySource.id, urls: [expectedPublicKeySource.url] } }],
+          crs: {
+            '2048': { dataId: expectedCrsSource.id, urls: [expectedCrsSource.url] },
+          },
+          contextId: '0x0700000000000000000000000000000000000000000000000000000000000001',
+          epochId: '0x01',
+        },
+      },
+    ],
+    [
+      'without contextId and epochId',
+      {
+        status: 'succeeded',
+        response: {
+          fheKeyInfo: [{ fhePublicKey: { dataId: expectedPublicKeySource.id, urls: [expectedPublicKeySource.url] } }],
+          crs: {
+            '2048': { dataId: expectedCrsSource.id, urls: [expectedCrsSource.url] },
+          },
+        },
+      },
+    ],
+  ])('accepts a succeeded keyurl response %s', async (_name, payload) => {
+    mockFetchStatus(200, JSON.stringify(payload));
+
+    const source = await fetchFheEncryptionKeySource(relayerClient, {});
+
+    expect(source.publicKeySource).toStrictEqual(expectedPublicKeySource);
+    expect(source.crsSource).toStrictEqual(expectedCrsSource);
+  });
+});
+
+describe('_assertIsFetchKeyUrlResult rejected payloads', () => {
+  const validFheKeyInfo = [
+    {
+      fhePublicKey: {
+        dataId: '0x0400000000000000000000000000000000000000000000000000000000000001',
+        urls: ['https://keys.example.com/PublicKey/0400000000000000000000000000000000000000000000000000000000000001'],
+      },
+    },
+  ];
+  const validCrs = {
+    '2048': {
+      dataId: '0x0500000000000000000000000000000000000000000000000000000000000001',
+      urls: ['https://keys.example.com/CRS/0500000000000000000000000000000000000000000000000000000000000001'],
+    },
+  };
+
+  it.each([
+    ['fheKeyInfo', { crs: validCrs }, 'missing response.fheKeyInfo'],
+    ['crs', { fheKeyInfo: validFheKeyInfo }, 'missing response.crs'],
+  ])('rejects a succeeded keyurl response without %s', async (_field, response, expectedMessage) => {
+    mockFetchStatus(200, JSON.stringify({ status: 'succeeded', response }));
+
+    await expect(fetchFheEncryptionKeySource(relayerClient, {})).rejects.toThrow(expectedMessage);
   });
 });

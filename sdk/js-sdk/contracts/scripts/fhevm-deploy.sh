@@ -141,8 +141,11 @@ esac
 fhevm_mnemonic="test test test test test test test future home engine virtual motion"
 fhevm_host_contracts_mnemonic="adapt mosquito move limb mobile illegal tree voyage juice mosquito burger raise father hope layer"
 
-deployer_mnemonic=${fhevm_host_contracts_mnemonic}
-deployer_mnemonic_index=5
+# DEPLOYER_MNEMONIC may be overridden from the environment so a deploy can land the
+# FHEVM stack at a distinct address set (used by the multi-chain browser tests).
+# Unset → the default below, which reproduces the committed addresses.
+deployer_mnemonic=${DEPLOYER_MNEMONIC:-${fhevm_host_contracts_mnemonic}}
+deployer_mnemonic_index=${DEPLOYER_MNEMONIC_INDEX:-5}
 empty_uups_mnemonic=${fhevm_host_contracts_mnemonic}
 empty_uups_mnemonic_index=100
 

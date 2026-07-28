@@ -14,7 +14,6 @@ test-suite/gateway-stress/Dockerfile @zama-ai/fhevm-devs
 /gateway-contracts/ @zama-ai/fhevm-gateway
 /host-contracts/ @zama-ai/fhevm-gateway
 /library-solidity/ @zama-ai/fhevm-gateway
-/kms-connector/ @zama-ai/mpc-devs @dartdart26
 /relayer/ @zama-ai/fhevm-gateway
 
 # Coprocessor Team ownership
@@ -27,6 +26,13 @@ test-suite/gateway-stress/Dockerfile @zama-ai/fhevm-devs
 
 # SDK / Dev-Ex ownership
 /sdk/js-sdk/ @zama-ai/dev-ex
+
+# MPC Team ownership
+/kms-connector/ @zama-ai/mpc-devs
+
+# Shared ownership
+/shared/ciphertext-attestation/ @zama-ai/fhevm-devs @zama-ai/mpc-devs
+/shared/user-decryption-signature/ @zama-ai/fhevm-devs @zama-ai/mpc-devs
 
 # Enforces changes in Sandboxed AI CI/CD
 .github/squid/sandbox-*.conf @zama-ai/security-team 

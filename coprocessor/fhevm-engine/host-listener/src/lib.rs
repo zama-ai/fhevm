@@ -6,6 +6,7 @@ pub mod generated;
 pub mod health_check;
 pub mod kms_generation;
 pub mod poller;
+pub mod protocol_config;
 pub mod solana_adapter;
 #[cfg(all(feature = "solana-grpc", feature = "solana-reconstruct"))]
 pub mod solana_grpc_listener;

@@ -5,7 +5,13 @@ import { describe, it, expect, beforeAll } from 'vitest';
 import { setFhevmRuntimeConfig } from '@fhevm/sdk/viem';
 import { getViemClientOptions, getViemTestConfigs } from '../setup-viem.js';
 import { FHETestABI } from '../FheTest-abi-v2.js';
-import { decryptTestCases, fheTypeIdFromName, clearTypeFromHandle, fheTypeIdFromHandle } from '../setupCommon.js';
+import {
+  createLogger,
+  decryptTestCases,
+  fheTypeIdFromName,
+  clearTypeFromHandle,
+  fheTypeIdFromHandle,
+} from '../setupCommon.js';
 import { asEncryptedValue } from '@fhevm/sdk/types';
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -28,6 +34,7 @@ export function defineClientBaseMultichainDecryptPublicValueTests(parameters: {
           type: 'ApiKeyHeader',
           value: configs[0]!.zamaApiKey,
         },
+        logger: createLogger(console.log),
       });
     });
 

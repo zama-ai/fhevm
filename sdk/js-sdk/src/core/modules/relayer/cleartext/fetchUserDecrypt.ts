@@ -1,7 +1,7 @@
 import type { BytesHex, ChecksummedAddress } from '../../../types/primitives.js';
 import type { FetchUserDecryptResultItem } from '../../../types/relayer.js';
 import type { CleartextEthereumModule } from '../../ethereum/types-ct.js';
-import type { FetchUserDecryptParameters, FetchUserDecryptReturnType, RelayerClientWithRuntime } from '../types.js';
+import type { FetchUserDecryptParametersV1, FetchUserDecryptReturnType, RelayerClientWithRuntime } from '../types.js';
 import { remove0x } from '../../../base/string.js';
 import { asUint32BigInt, tryParseUintBigIntString, randomUniqueUints } from '../../../base/uint.js';
 import { getTrustedClient } from '../../../runtime/CoreFhevm-p.js';
@@ -61,7 +61,7 @@ const userDecryptAbi = [
 
 export async function fetchUserDecrypt(
   relayerClient: RelayerClientWithRuntime,
-  parameters: FetchUserDecryptParameters,
+  parameters: FetchUserDecryptParametersV1,
 ): Promise<FetchUserDecryptReturnType> {
   const cleartextEthereumModule = relayerClient.runtime.ethereum as CleartextEthereumModule;
   const { payload } = parameters;

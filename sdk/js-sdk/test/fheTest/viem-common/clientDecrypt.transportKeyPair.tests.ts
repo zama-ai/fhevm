@@ -2,6 +2,7 @@ import { describe, it, expect, beforeAll } from 'vitest';
 import { setFhevmRuntimeConfig } from '@fhevm/sdk/viem';
 import { serializeTransportKeyPair, parseTransportKeyPair } from '@fhevm/sdk/actions/chain';
 import { getViemTestConfig, type CreateViemDecryptClientFn, type FheTestViemConfig } from '../setup-viem.js';
+import { createLogger } from '../setupCommon.js';
 
 ////////////////////////////////////////////////////////////////////////////////
 //
@@ -26,6 +27,7 @@ export function defineClientDecryptTransportKeyPairTests(parameters: {
           type: 'ApiKeyHeader',
           value: config.zamaApiKey,
         },
+        logger: createLogger(console.log),
       });
     });
 

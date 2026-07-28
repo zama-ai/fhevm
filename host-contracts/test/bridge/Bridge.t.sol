@@ -9,12 +9,13 @@ import {Vm} from "forge-std/Vm.sol";
 
 import {DeployableERC1967Proxy, HostContractsDeployerTestUtils} from "../../fhevm-foundry/HostContractsDeployerTestUtils.sol";
 import {ACL} from "../../contracts/ACL.sol";
+import {PauserSet} from "@fhevm-host-contracts/contracts/immutable/PauserSet.sol";
 import {EmptyUUPSProxy} from "../../contracts/emptyProxy/EmptyUUPSProxy.sol";
 import {ConfidentialBridge} from "../../contracts/bridge/ConfidentialBridge.sol";
 import {HandlesSender} from "../../contracts/bridge/HandlesSender.sol";
 import {HandlesReceiver} from "../../contracts/bridge/HandlesReceiver.sol";
 import {BridgeEvents} from "../../contracts/bridge/BridgeEvents.sol";
-import {aclAdd, confidentialBridgeAdd, fhevmExecutorAdd} from "../../addresses/FHEVMHostAddresses.sol";
+import {aclAdd, confidentialBridgeAdd, fhevmExecutorAdd, pauserSetAdd} from "../../addresses/FHEVMHostAddresses.sol";
 
 import {MockDstApp} from "./mocks/MockDstApp.sol";
 
@@ -142,6 +143,19 @@ contract BridgeTest is TestHelperOz5, HostContractsDeployerTestUtils, BridgeEven
 
     function _addressToBytes32(address a) internal pure returns (bytes32) {
         return bytes32(uint256(uint160(a)));
+    }
+
+    /// @dev Pauses the source-chain ACL: deploys the PauserSet at its canonical address,
+    ///      registers a pauser (as the ACL owner), and pauses as that pauser. Mirrors
+    ///      acl.t.sol's pause setup.
+    function _pauseACL() internal {
+        PauserSet pauserSet = _deployPauserSet();
+        address pauser = makeAddr("pauser");
+        vm.prank(owner);
+        pauserSet.addPauser(pauser);
+        vm.prank(pauser);
+        acl.pause();
+        assertTrue(acl.paused(), "ACL should be paused");
     }
 
     /// @dev Decodes the `lzReceive` gas from a type-3 LayerZero options blob whose first
@@ -317,6 +331,122 @@ contract BridgeTest is TestHelperOz5, HostContractsDeployerTestUtils, BridgeEven
         srcBridge.send{value: 0}(DST_EID, _addressToBytes32(address(dstApp)), "", handleList, uint64(30_000));
     }
 
+    /// @dev A paused source-chain ACL halts `send`. The handle is ACL-allowed and all
+    ///      other inputs are valid, so {ACLPaused} — not the allowance or input guards —
+    ///      is what reverts, confirming the pause check fires up-front.
+    function test_Send_RevertsWhenACLPaused() public {
+        bytes32 h = _makeHandle(0);
+        bytes32[] memory handleList = new bytes32[](1);
+        handleList[0] = h;
+        _allow(h, srcApp);
+
+        _pauseACL();
+
+        vm.prank(srcApp);
+        vm.expectRevert(HandlesSender.ACLPaused.selector);
+        srcBridge.send{value: 0}(DST_EID, _addressToBytes32(address(dstApp)), "", handleList, uint64(30_000));
+    }
+
+    /// @dev Once the ACL is unpaused, `send` works again — a full send goes through and
+    ///      produces a LayerZero GUID, proving the pause guard didn't leave the bridge stuck.
+    function test_Send_SucceedsAfterUnpause() public {
+        bytes32 h = _makeHandle(0);
+        bytes32[] memory handleList = new bytes32[](1);
+        handleList[0] = h;
+        _allow(h, srcApp);
+
+        _pauseACL();
+        vm.prank(owner);
+        acl.unpause();
+
+        MessagingFee memory fee = srcBridge.quote(
+            DST_EID,
+            srcApp,
+            _addressToBytes32(address(dstApp)),
+            "",
+            handleList,
+            uint64(200_000)
+        );
+
+        vm.prank(srcApp);
+        MessagingReceipt memory receipt = srcBridge.send{value: fee.nativeFee}(
+            DST_EID,
+            _addressToBytes32(address(dstApp)),
+            "",
+            handleList,
+            uint64(200_000)
+        );
+        assertTrue(receipt.guid != bytes32(0), "send should produce a LayerZero GUID once unpaused");
+    }
+
+    ////////////////////////////////////////////////////////////////////////////////
+    // Native-fee payment: msg.value must exactly equal the quoted nativeFee
+    ////////////////////////////////////////////////////////////////////////////////
+
+    /// @dev Sets up a single ACL-allowed handle and returns the handle list plus the
+    ///      native fee quoted for bridging it with `composeGas`.
+    function _sendableHandleAndFee(
+        uint64 composeGas
+    ) internal returns (bytes32[] memory handleList, uint256 nativeFee) {
+        bytes32 h = _makeHandle(0);
+        handleList = new bytes32[](1);
+        handleList[0] = h;
+        _allow(h, srcApp);
+
+        MessagingFee memory fee = srcBridge.quote(
+            DST_EID,
+            srcApp,
+            _addressToBytes32(address(dstApp)),
+            "",
+            handleList,
+            composeGas
+        );
+        nativeFee = fee.nativeFee;
+    }
+
+    /// @dev Paying exactly the quoted native fee succeeds and produces a LayerZero GUID.
+    function test_Send_SucceedsWhenMsgValueEqualsQuotedFee() public {
+        uint64 composeGas = 200_000;
+        (bytes32[] memory handleList, uint256 nativeFee) = _sendableHandleAndFee(composeGas);
+        assertGt(nativeFee, 0, "quote should return a positive native fee");
+
+        vm.prank(srcApp);
+        MessagingReceipt memory receipt = srcBridge.send{value: nativeFee}(
+            DST_EID,
+            _addressToBytes32(address(dstApp)),
+            "",
+            handleList,
+            composeGas
+        );
+        assertTrue(receipt.guid != bytes32(0), "exact-fee send should produce a LayerZero GUID");
+    }
+
+    /// @dev Overpaying by 1 wei reverts with {MsgValueMustEqualQuotedFee}, confirming the
+    ///      exact-match override rejects excess (no refund path) rather than forwarding it.
+    function test_Send_RevertsWhenMsgValueOverpaysQuotedFee() public {
+        uint64 composeGas = 200_000;
+        (bytes32[] memory handleList, uint256 nativeFee) = _sendableHandleAndFee(composeGas);
+
+        uint256 overpaid = nativeFee + 1;
+        vm.prank(srcApp);
+        vm.expectRevert(abi.encodeWithSelector(HandlesSender.MsgValueMustEqualQuotedFee.selector, overpaid, nativeFee));
+        srcBridge.send{value: overpaid}(DST_EID, _addressToBytes32(address(dstApp)), "", handleList, composeGas);
+    }
+
+    /// @dev Underpaying by 1 wei reverts with {MsgValueMustEqualQuotedFee}, carrying the
+    ///      supplied and required amounts.
+    function test_Send_RevertsWhenMsgValueUnderpaysQuotedFee() public {
+        uint64 composeGas = 200_000;
+        (bytes32[] memory handleList, uint256 nativeFee) = _sendableHandleAndFee(composeGas);
+
+        uint256 underpaid = nativeFee - 1;
+        vm.prank(srcApp);
+        vm.expectRevert(
+            abi.encodeWithSelector(HandlesSender.MsgValueMustEqualQuotedFee.selector, underpaid, nativeFee)
+        );
+        srcBridge.send{value: underpaid}(DST_EID, _addressToBytes32(address(dstApp)), "", handleList, composeGas);
+    }
+
     ////////////////////////////////////////////////////////////////////////////////
     // quote: mirrors send's input validation, except the ACL allowance check
     ////////////////////////////////////////////////////////////////////////////////
@@ -347,6 +477,39 @@ contract BridgeTest is TestHelperOz5, HostContractsDeployerTestUtils, BridgeEven
         handleList[0] = _makeHandle(0);
         vm.expectRevert(HandlesSender.ZeroLzComposeGas.selector);
         srcBridge.quote(DST_EID, srcApp, _addressToBytes32(address(dstApp)), "", handleList, uint64(0));
+    }
+
+    /// @dev A paused source-chain ACL halts `quote` too, so callers cannot estimate a
+    ///      fee for a bridge operation that `send` would reject while the host is stopped.
+    function test_Quote_RevertsWhenACLPaused() public {
+        bytes32[] memory handleList = new bytes32[](1);
+        handleList[0] = _makeHandle(0);
+
+        _pauseACL();
+
+        vm.expectRevert(HandlesSender.ACLPaused.selector);
+        srcBridge.quote(DST_EID, srcApp, _addressToBytes32(address(dstApp)), "", handleList, uint64(30_000));
+    }
+
+    /// @dev Once the ACL is unpaused, `quote` works again — proving the pause guard is the
+    ///      only thing that blocked it (and does not leave the bridge permanently stuck).
+    function test_Quote_SucceedsAfterUnpause() public {
+        bytes32[] memory handleList = new bytes32[](1);
+        handleList[0] = _makeHandle(0);
+
+        _pauseACL();
+        vm.prank(owner);
+        acl.unpause();
+
+        MessagingFee memory fee = srcBridge.quote(
+            DST_EID,
+            srcApp,
+            _addressToBytes32(address(dstApp)),
+            "",
+            handleList,
+            uint64(30_000)
+        );
+        assertGt(fee.nativeFee, 0, "quote should succeed once the ACL is unpaused");
     }
 
     /// @dev The key difference from `send`: `quote` does NOT run the ACL allowance check,
@@ -672,6 +835,96 @@ contract BridgeTest is TestHelperOz5, HostContractsDeployerTestUtils, BridgeEven
         vm.expectRevert();
         acl.allowTransient(fresh, address(dstApp));
     }
+
+    ////////////////////////////////////////////////////////////////////////////////
+    // syncDelegate: the LZ endpoint delegate stays bound to the ACL owner
+    //
+    // The bridge resolves `owner()` dynamically from the ACL, but the LayerZero endpoint
+    // delegate is a concrete address stored on the endpoint, so it does not follow an ACL
+    // ownership change on its own. `syncDelegate` (ACL-gated) re-points it to the current
+    // owner, and `ACL.acceptOwnership` calls it automatically on every handoff.
+    //
+    // These tests use the production topology: a real ConfidentialBridge deployed at the
+    // ACL's canonical `confidentialBridgeAdd`, so `ACL.acceptOwnership`'s hardcoded call
+    // lands on it and the full end-to-end resync is exercised (not a mock or a skip path).
+    ////////////////////////////////////////////////////////////////////////////////
+
+    /// @dev Reads the delegate the LayerZero endpoint records for a given OApp.
+    function _endpointDelegate(uint32 eid, address oapp) internal view returns (address) {
+        return IEndpointDelegates(endpoints[eid]).delegates(oapp);
+    }
+
+    /// @dev Deploys a real ConfidentialBridge at `target` (the ACL's canonical bridge
+    ///      address) wired to `lzEndpoint`, using the same two-phase UUPS pattern as the
+    ///      production deploy. `deployCodeTo` pins the proxy to the exact canonical address
+    ///      so `ACL.acceptOwnership`'s hardcoded `syncDelegate` call reaches this instance.
+    function _deployBridgeAtCanonical(address target, address lzEndpoint) internal returns (ConfidentialBridge) {
+        address emptyImpl = address(new EmptyUUPSProxy());
+        deployCodeTo(
+            "HostContractsDeployerTestUtils.sol:DeployableERC1967Proxy",
+            abi.encode(emptyImpl, abi.encodeCall(EmptyUUPSProxy.initialize, ())),
+            target
+        );
+        address bridgeImpl = address(new ConfidentialBridge(lzEndpoint));
+        vm.prank(owner);
+        EmptyUUPSProxy(target).upgradeToAndCall(
+            bridgeImpl,
+            abi.encodeCall(ConfidentialBridge.initializeFromEmptyProxy, (new uint32[](0), new uint64[](0)))
+        );
+        return ConfidentialBridge(payable(target));
+    }
+
+    /// @dev At initialization the bridge seeds the endpoint delegate with the ACL owner
+    ///      (`__OAppCore_init(owner())`), so the delegate starts equal to `owner`.
+    function test_SyncDelegate_InitialDelegateIsOwner() public {
+        ConfidentialBridge bridge = _deployBridgeAtCanonical(confidentialBridgeAdd, endpoints[DST_EID]);
+        assertEq(_endpointDelegate(DST_EID, address(bridge)), owner);
+    }
+
+    /// @dev `syncDelegate` is restricted to the ACL contract; neither an arbitrary caller
+    ///      nor even the ACL owner may call it directly — it must go through the ACL.
+    function test_SyncDelegate_OnlyCallableByACL() public {
+        ConfidentialBridge bridge = _deployBridgeAtCanonical(confidentialBridgeAdd, endpoints[DST_EID]);
+
+        vm.expectRevert(abi.encodeWithSelector(ConfidentialBridge.NotACL.selector, address(this)));
+        bridge.syncDelegate();
+
+        vm.prank(owner);
+        vm.expectRevert(abi.encodeWithSelector(ConfidentialBridge.NotACL.selector, owner));
+        bridge.syncDelegate();
+    }
+
+    /// @dev The core fix, end-to-end through the real ACL path: transferring ACL ownership
+    ///      and accepting it resyncs the bridge's endpoint delegate from the old owner to
+    ///      the new owner in the same transaction — no manual step — closing the window
+    ///      where a former owner would keep endpoint-config rights after a rotation.
+    function test_AcceptOwnership_ResyncsBridgeDelegateToNewOwner() public {
+        assertTrue(confidentialBridgeAdd != address(0), "test requires a non-null canonical bridge address");
+        ConfidentialBridge bridge = _deployBridgeAtCanonical(confidentialBridgeAdd, endpoints[DST_EID]);
+
+        // Sanity: the bridge sits at the ACL's canonical address and starts delegated to owner.
+        assertEq(address(bridge), acl.getConfidentialBridgeAddress());
+        assertEq(_endpointDelegate(DST_EID, address(bridge)), owner);
+
+        address newOwner = makeAddr("newOwner");
+        vm.prank(owner);
+        acl.transferOwnership(newOwner);
+        vm.prank(newOwner);
+        acl.acceptOwnership();
+
+        assertEq(acl.owner(), newOwner);
+        assertEq(bridge.owner(), newOwner, "bridge owner tracks ACL owner");
+        assertEq(
+            _endpointDelegate(DST_EID, address(bridge)),
+            newOwner,
+            "acceptOwnership must resync the endpoint delegate to the new owner"
+        );
+    }
+}
+
+/// @dev Minimal view into the LayerZero endpoint's `delegates` mapping for assertions.
+interface IEndpointDelegates {
+    function delegates(address oapp) external view returns (address);
 }
 
 /// @dev Test-only harness exposing the internal `_deriveDstHandle`. Deployed

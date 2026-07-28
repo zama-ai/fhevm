@@ -1,18 +1,18 @@
 // SPDX-License-Identifier: BSD-3-Clause-Clear
 pragma solidity ^0.8.24;
 
-import { gatewayConfigAddress } from "../addresses/GatewayAddresses.sol";
-import { ECDSA } from "@openzeppelin/contracts/utils/cryptography/ECDSA.sol";
-import { EIP712Upgradeable } from "@openzeppelin/contracts-upgradeable/utils/cryptography/EIP712Upgradeable.sol";
-import { Strings } from "@openzeppelin/contracts/utils/Strings.sol";
-import { IInputVerification } from "./interfaces/IInputVerification.sol";
-import { IGatewayConfig } from "./interfaces/IGatewayConfig.sol";
-import { UUPSUpgradeableEmptyProxy } from "./shared/UUPSUpgradeableEmptyProxy.sol";
-import { GatewayConfigChecks } from "./shared/GatewayConfigChecks.sol";
-import { Pausable } from "./shared/Pausable.sol";
-import { GatewayOwnable } from "./shared/GatewayOwnable.sol";
-import { ProtocolPaymentUtils } from "./shared/ProtocolPaymentUtils.sol";
-import { Coprocessor } from "./shared/Structs.sol";
+import { gatewayConfigAddress } from '../addresses/GatewayAddresses.sol';
+import { ECDSA } from '@openzeppelin/contracts/utils/cryptography/ECDSA.sol';
+import { EIP712Upgradeable } from '@openzeppelin/contracts-upgradeable/utils/cryptography/EIP712Upgradeable.sol';
+import { Strings } from '@openzeppelin/contracts/utils/Strings.sol';
+import { IInputVerification } from './interfaces/IInputVerification.sol';
+import { IGatewayConfig } from './interfaces/IGatewayConfig.sol';
+import { UUPSUpgradeableEmptyProxy } from './shared/UUPSUpgradeableEmptyProxy.sol';
+import { GatewayConfigChecks } from './shared/GatewayConfigChecks.sol';
+import { Pausable } from './shared/Pausable.sol';
+import { GatewayOwnable } from './shared/GatewayOwnable.sol';
+import { ProtocolPaymentUtils } from './shared/ProtocolPaymentUtils.sol';
+import { Coprocessor } from './shared/Structs.sol';
 
 /**
  * @title InputVerification smart contract
@@ -91,7 +91,7 @@ contract InputVerification is
      * @notice The definition of the CiphertextVerification structure typed data.
      */
     string private constant EIP712_ZKPOK_TYPE =
-        "CiphertextVerification(bytes32[] ctHandles,address userAddress,address contractAddress,uint256 contractChainId,bytes extraData)";
+        'CiphertextVerification(bytes32[] ctHandles,address userAddress,address contractAddress,uint256 contractChainId,bytes extraData)';
 
     /**
      * @notice The hash of the CiphertextVerification structure typed data definition used for signature validation.
@@ -105,7 +105,7 @@ contract InputVerification is
      * signature validates both on the gateway and on-chain on Solana.
      */
     string private constant EIP712_SOLANA_ZKPOK_TYPE =
-        "CiphertextVerification(bytes32[] ctHandles,bytes32 userAddress,bytes32 contractAddress,uint256 contractChainId,bytes extraData)";
+        'CiphertextVerification(bytes32[] ctHandles,bytes32 userAddress,bytes32 contractAddress,uint256 contractChainId,bytes extraData)';
 
     /**
      * @notice The hash of the Solana CiphertextVerification typed data definition.
@@ -117,9 +117,9 @@ contract InputVerification is
      * in order to force derived contracts to consider a different version. Note that
      * they can still define their own private constants with the same name.
      */
-    string private constant CONTRACT_NAME = "InputVerification";
+    string private constant CONTRACT_NAME = 'InputVerification';
     uint256 private constant MAJOR_VERSION = 0;
-    uint256 private constant MINOR_VERSION = 5;
+    uint256 private constant MINOR_VERSION = 6;
     uint256 private constant PATCH_VERSION = 0;
 
     /**
@@ -128,7 +128,7 @@ contract InputVerification is
      * This constant does not represent the number of time a specific contract have been upgraded,
      * as a contract deployed from version VX will have a REINITIALIZER_VERSION > 2.
      */
-    uint64 private constant REINITIALIZER_VERSION = 6;
+    uint64 private constant REINITIALIZER_VERSION = 7;
 
     /**
      * @notice The contract's variable storage struct (@dev see ERC-7201)
@@ -174,11 +174,6 @@ contract InputVerification is
         // ----------------------------------------------------------------------------------------------
         /// @notice The coprocessor context ID associated to the input verification request
         mapping(uint256 zkProofId => uint256 contextId) inputVerificationContextId;
-        // ----------------------------------------------------------------------------------------------
-        // Solana (RFC-021) host state variables (appended; preserves the ERC-7201 storage layout):
-        // ----------------------------------------------------------------------------------------------
-        /// @notice The bytes32-identity request inputs for Solana host ZK Proof verifications.
-        mapping(uint256 zkProofId => SolanaZKProofInput solanaZkProofInput) solanaZkProofInputs;
         /// @notice The priority coprocessor transaction sender that finalized proof verification.
         /// @dev Raw responder arrays keep every valid sender, including non-priority senders that
         ///      submitted before or after finalization. When set, this freezes the exposed
@@ -191,6 +186,11 @@ contract InputVerification is
         ///      consensus result to a singleton priority sender, even if the global priority
         ///      configuration later changes.
         mapping(uint256 zkProofId => address coprocessorTxSenderAddress) priorityRejectProofConsensusTxSender;
+        // ----------------------------------------------------------------------------------------------
+        // Solana (RFC-021) host state variables (appended; preserves the ERC-7201 storage layout):
+        // ----------------------------------------------------------------------------------------------
+        /// @notice The bytes32-identity request inputs for Solana host ZK Proof verifications.
+        mapping(uint256 zkProofId => SolanaZKProofInput solanaZkProofInput) solanaZkProofInputs;
     }
 
     /**
@@ -213,7 +213,7 @@ contract InputVerification is
      */
     /// @custom:oz-upgrades-validate-as-initializer
     function initializeFromEmptyProxy() public virtual onlyFromEmptyProxy reinitializer(REINITIALIZER_VERSION) {
-        __EIP712_init(CONTRACT_NAME, "1");
+        __EIP712_init(CONTRACT_NAME, '1');
         __Pausable_init();
     }
 
@@ -222,7 +222,7 @@ contract InputVerification is
      */
     /// @custom:oz-upgrades-unsafe-allow missing-initializer-call
     /// @custom:oz-upgrades-validate-as-initializer
-    function reinitializeV5() public virtual reinitializer(REINITIALIZER_VERSION) {}
+    function reinitializeV6() public virtual reinitializer(REINITIALIZER_VERSION) {}
 
     /**
      * @notice See {IInputVerification-verifyProofRequest}.
@@ -408,20 +408,25 @@ contract InputVerification is
             revert VerifyProofNotRequested(zkProofId);
         }
 
-        // Retrieve stored Solana ZK Proof verification request inputs (bytes32 identities).
-        SolanaZKProofInput memory solanaInput = $.solanaZkProofInputs[zkProofId];
+        // Compute the digest of the Solana CiphertextVerification structure. Scoped so the
+        // stored-input and verification-struct locals are released before the consensus block
+        // below — the Solana path carries more locals than the EVM one and would otherwise
+        // exceed the stack depth limit.
+        bytes32 digest;
+        {
+            // Retrieve stored Solana ZK Proof verification request inputs (bytes32 identities).
+            SolanaZKProofInput memory solanaInput = $.solanaZkProofInputs[zkProofId];
 
-        // Initialize the bytes32 CiphertextVerification structure for the signature validation.
-        SolanaCiphertextVerification memory ciphertextVerification = SolanaCiphertextVerification(
-            ctHandles,
-            solanaInput.userAddress,
-            solanaInput.contractAddress,
-            solanaInput.contractChainId,
-            extraData
-        );
-
-        // Compute the digest of the Solana CiphertextVerification structure.
-        bytes32 digest = _hashSolanaCiphertextVerification(ciphertextVerification);
+            // Initialize the bytes32 CiphertextVerification structure for the signature validation.
+            SolanaCiphertextVerification memory ciphertextVerification = SolanaCiphertextVerification(
+                ctHandles,
+                solanaInput.userAddress,
+                solanaInput.contractAddress,
+                solanaInput.contractChainId,
+                extraData
+            );
+            digest = _hashSolanaCiphertextVerification(ciphertextVerification);
+        }
 
         // Recover the signer address from the signature.
         address signerAddress = ECDSA.recover(digest, signature);
@@ -443,15 +448,26 @@ contract InputVerification is
         emit VerifyProofResponseCall(zkProofId, ctHandles, signature, msg.sender, extraData);
 
         // Send the event if and only if the consensus is reached in the current response call.
-        if (
-            !$.verifiedZKProofs[zkProofId] &&
-            !$.rejectedZKProofs[zkProofId] &&
-            _isConsensusReached(currentSignatures.length)
-        ) {
-            $.verifiedZKProofs[zkProofId] = true;
-            $.verifyProofConsensusDigest[zkProofId] = digest;
+        // Shares the priority-sender finalization path with the EVM `verifyProofResponse`, so a
+        // Solana-originated request is indistinguishable downstream from an EVM one.
+        if (!$.verifiedZKProofs[zkProofId] && !$.rejectedZKProofs[zkProofId]) {
+            (bool canFinalize, bool finalizedByPriority) = _canFinalizeCoprocessorConsensus(
+                msg.sender,
+                currentSignatures.length
+            );
+            if (canFinalize) {
+                $.verifiedZKProofs[zkProofId] = true;
+                $.verifyProofConsensusDigest[zkProofId] = digest;
+                if (finalizedByPriority) {
+                    $.priorityVerifyProofConsensusTxSender[zkProofId] = msg.sender;
 
-            emit VerifyProofResponse(zkProofId, ctHandles, currentSignatures);
+                    bytes[] memory prioritySignatures = new bytes[](1);
+                    prioritySignatures[0] = signature;
+                    emit VerifyProofResponse(zkProofId, ctHandles, prioritySignatures);
+                } else {
+                    emit VerifyProofResponse(zkProofId, ctHandles, currentSignatures);
+                }
+            }
         }
     }
 
@@ -570,11 +586,11 @@ contract InputVerification is
             string(
                 abi.encodePacked(
                     CONTRACT_NAME,
-                    " v",
+                    ' v',
                     Strings.toString(MAJOR_VERSION),
-                    ".",
+                    '.',
                     Strings.toString(MINOR_VERSION),
-                    ".",
+                    '.',
                     Strings.toString(PATCH_VERSION)
                 )
             );

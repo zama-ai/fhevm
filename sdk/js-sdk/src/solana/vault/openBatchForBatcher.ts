@@ -3,7 +3,11 @@ import type { TransactionSigner } from '@solana/kit';
 import { findComputeSignerPda } from '../internal/generated/confidentialToken/pdas/computeSigner.js';
 import { openBatch, type SolanaVaultOpenBatchResult } from './openBatch.js';
 import { deriveBatchAddresses, deriveSettleLookupTableAddresses, type VaultDemoRoots } from './derive.js';
-import { balanceValueAddress, tokenEventAuthorityAddress, zamaEventAuthorityAddress } from './internal/tokenValueAccount.js';
+import {
+  balanceValueAddress,
+  tokenEventAuthorityAddress,
+  zamaEventAuthorityAddress,
+} from './internal/tokenValueAccount.js';
 import { batchAddress } from './internal/batcherPdas.js';
 
 export type SolanaVaultOpenBatchForBatcherParameters = {

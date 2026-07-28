@@ -1,0 +1,181 @@
+name: pr-preview-destroy
+
+##############################################################################
+# Tears down the per-PR e2e preview namespace created by
+# preview-env-deploy.yml. Mirrors zama-ai/kms's ci/.github/workflows/
+# pr-preview-destroy.yml: same Tailscale cluster, same "helm uninstall
+# everything, then delete the namespace" approach so Crossplane claims
+# (coprocessor-infra's S3 bucket, tkms-infra's S3 vaults/enclave nodegroups)
+# are released and their underlying AWS resources get deprovisioned instead
+# of leaking. Postgres (coprocessor + kms-connector) is plain in-cluster
+# StatefulSets, not a Crossplane claim, so it's already gone the moment the
+# namespace is - see coprocessor-infra/values-postgres-coprocessor-e2e.yaml.
+#
+# Triggers (the pull_request ones mirror preview-env-deploy.yml's labels:
+# pr-preview-e2e / pr-preview-e2e-build / pr-preview-e2e-tests):
+#   - closed:    PR merged/closed -> always attempt teardown (no-op if none).
+#   - unlabeled: a preview label was removed AND no preview label remains, i.e.
+#     the label that keeps the env alive is gone. Removing only -build/-tests
+#     while pr-preview-e2e stays does NOT tear down (the env is still wanted).
+#   - workflow_dispatch: manual teardown for envs created by a manual
+#     pr-preview-deploy run (namespace fhevm-ci-<actor>-<suffix|run_id>), which
+#     has no PR event to key off. Pass the exact namespace from the deploy run's
+#     summary.
+##############################################################################
+
+on:
+  pull_request:
+    types: [closed, unlabeled]
+  workflow_dispatch:
+    inputs:
+      namespace:
+        description: "Exact namespace to destroy (copy from the manual deploy run's summary, e.g. fhevm-ci-<actor>-<suffix|run_id>). Must start with fhevm-ci-."
+        required: true
+        type: string
+
+permissions: {}
+
+jobs:
+  destroy:
+    name: destroy
+    # On `closed` we attempt teardown unconditionally (can't cheaply check
+    # label history; the namespace step no-ops if nothing exists). On
+    # `unlabeled` we only tear down when a preview label was removed AND none
+    # remains: all three preview labels share the 'pr-preview-e2e' prefix, so
+    # `contains(label.name, 'pr-preview-e2e')` matches the removed one and
+    # `!contains(toJSON(labels.*.name), 'pr-preview-e2e')` confirms no preview
+    # label is left (removing -build/-tests while -e2e stays keeps the env).
+    if: >-
+      github.event_name == 'workflow_dispatch' ||
+      github.event.action == 'closed' ||
+      (github.event.action == 'unlabeled' &&
+      contains(github.event.label.name, 'pr-preview-e2e') &&
+      !contains(toJSON(github.event.pull_request.labels.*.name), 'pr-preview-e2e'))
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    # The comment step needs to write to the PR; the workflow-level
+    # permissions ({}) don't grant it, so scope it here at the job level.
+    permissions:
+      pull-requests: write # for the comment step
+    env:
+      TAILSCALE_HOSTNAME: tailscale-operator-zws-dev.diplodocus-boa.ts.net
+    steps:
+      - name: Resolve target namespace
+        # pull_request: MUST match preview-env-deploy.yml's namespace derivation
+        # (resolve-tags.cjs). Both use the PR AUTHOR (pull_request.user.login), not
+        # github.actor: on the closed/unlabeled event github.actor is whoever closed
+        # the PR or removed the label - that can differ from the author and would
+        # target a namespace that was never created (leaking the real one). The PR
+        # author is identical across all those events, so teardown always hits the
+        # namespace deploy created. k8s namespaces are RFC-1123 labels, so lowercase
+        # + strip exactly like resolve-tags.cjs's sanitizeNs (uppercase logins like
+        # `Simon-Eudeline` and bot logins like `dependabot[bot]` would otherwise be
+        # invalid). The untrusted login is read via env, never interpolated inline
+        # into the script, to avoid injection.
+        # workflow_dispatch: no PR to derive from - take the operator's pasted
+        # namespace verbatim (the destroy step guards the fhevm-ci- prefix).
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          DISPATCH_NAMESPACE: ${{ inputs.namespace }}
+          PR_AUTHOR: ${{ github.event.pull_request.user.login }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+        run: |
+          if [[ "${EVENT_NAME}" == "workflow_dispatch" ]]; then
+            ns="${DISPATCH_NAMESPACE}"
+          else
+            ns=$(printf 'fhevm-ci-%s-%s' "${PR_AUTHOR}" "${PR_NUMBER}" \
+              | tr '[:upper:]' '[:lower:]' \
+              | tr -c 'a-z0-9-' '-' \
+              | sed -E 's/-+/-/g; s/^-+|-+$//g')
+          fi
+          echo "NAMESPACE=${ns}" >> "$GITHUB_ENV"
+
+      - name: Setup tailscale
+        uses: tailscale/github-action@84a3f23bb4d843bcf4da6cf824ec1be473daf4de # v3.2.3
+        with:
+          oauth-client-id: ${{ secrets.TS_OAUTH_CLIENT_ID }}
+          oauth-secret: ${{ secrets.TS_OAUTH_SECRET }}
+          tags: tag:fhevm-ci
+
+      - name: Setup helm
+        run: |
+          curl -fsSL https://raw.githubusercontent.com/helm/helm/main/scripts/get-helm-3 | bash
+
+      - name: Setup kubectl
+        uses: azure/setup-kubectl@776406bce94f63e41d621b960d78ee25c8b76ede # v4.0.1
+
+      - name: Configure kubeconfig for the Tailscale cluster
+        run: tailscale configure kubeconfig "${TAILSCALE_HOSTNAME}"
+
+      - name: Destroy preview namespace
+        id: destroy
+        run: |
+          # Guard against a typo'd dispatch input nuking an unrelated namespace:
+          # all preview envs are fhevm-ci-*, so refuse anything else.
+          if [[ "${NAMESPACE}" != fhevm-ci-* ]]; then
+            echo "::error::Refusing to destroy '${NAMESPACE}': not a fhevm-ci-* preview namespace."
+            exit 1
+          fi
+
+          # `closed` fires on every PR, most of which never had a preview env.
+          # Emit deleted=false and no-op so the success comment/summary (gated on
+          # deleted == 'true') doesn't spam unrelated PRs with a false "torn down".
+          if ! kubectl get namespace "${NAMESPACE}" > /dev/null 2>&1; then
+            echo "Namespace ${NAMESPACE} does not exist, nothing to destroy."
+            echo "deleted=false" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          echo "Uninstalling all helm releases in ${NAMESPACE}..."
+          helm list -n "${NAMESPACE}" --short | xargs -r -L1 helm uninstall -n "${NAMESPACE}"
+
+          echo "Deleting namespace ${NAMESPACE}..."
+          kubectl delete namespace "${NAMESPACE}" --grace-period=1 --timeout=5s --wait=false
+          # A wait timeout means the namespace is stuck Terminating (typically on
+          # Crossplane finalizers still releasing AWS resources - S3 buckets,
+          # enclave nodegroups). That is NOT a clean teardown, so fail the step:
+          # otherwise the job stays green and the success() step below would post a
+          # false ":broom: torn down", masking the leak. Failing here routes to the
+          # failure() comment/summary instead.
+          if ! kubectl wait --for=delete "namespace/${NAMESPACE}" --timeout=300s; then
+            echo "::error::Namespace ${NAMESPACE} did not finish terminating within 5m (likely stuck on Crossplane finalizers releasing AWS resources) - check and clean up manually."
+            exit 1
+          fi
+          echo "deleted=true" >> "$GITHUB_OUTPUT"
+
+      # Report success and failure separately so we never tell the PR an env is
+      # "torn down" when teardown actually failed (a false all-clear masks leaked
+      # Crossplane-managed AWS resources - S3 buckets, enclave nodegroups).
+      - name: Comment teardown success on PR
+        # No PR to comment on for workflow_dispatch - result goes to the summary.
+        # deleted == 'true' only when a namespace actually existed and was torn
+        # down, so we never comment on the many closed PRs that had no env.
+        if: success() && github.event_name == 'pull_request' && steps.destroy.outputs.deleted == 'true'
+        uses: peter-evans/create-or-update-comment@e8674b075228eee787fea43ef493e45ece1004c9 # v5.0.0
+        with:
+          issue-number: ${{ github.event.pull_request.number }}
+          body: |
+            :broom: e2e preview environment (namespace `${{ env.NAMESPACE }}`) has been torn down.
+
+      - name: Comment teardown failure on PR
+        if: failure() && github.event_name == 'pull_request'
+        uses: peter-evans/create-or-update-comment@e8674b075228eee787fea43ef493e45ece1004c9 # v5.0.0
+        with:
+          issue-number: ${{ github.event.pull_request.number }}
+          body: |
+            :warning: **Teardown of e2e preview environment (namespace `${{ env.NAMESPACE }}`) FAILED.** Crossplane-managed AWS resources (S3 buckets, enclave nodegroups) may still be leaking - see the [workflow run](${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}) and clean up manually.
+
+      - name: Write teardown success to summary
+        if: success() && github.event_name == 'workflow_dispatch' && steps.destroy.outputs.deleted == 'true'
+        run: |
+          echo ":broom: e2e preview environment (namespace \`${NAMESPACE}\`) teardown finished." >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Write no-op to summary
+        if: success() && github.event_name == 'workflow_dispatch' && steps.destroy.outputs.deleted != 'true'
+        run: |
+          echo ":information_source: Namespace \`${NAMESPACE}\` did not exist - nothing to tear down." >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Write teardown failure to summary
+        if: failure() && github.event_name == 'workflow_dispatch'
+        run: |
+          echo ":warning: Teardown of namespace \`${NAMESPACE}\` FAILED - Crossplane-managed AWS resources may still be leaking; check the run and clean up manually." >> "$GITHUB_STEP_SUMMARY"

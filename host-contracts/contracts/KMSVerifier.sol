@@ -251,6 +251,14 @@ contract KMSVerifier is UUPSUpgradeableEmptyProxy, EIP712UpgradeableCrossChain, 
     }
 
     /**
+     * @notice Getter function for the ProtocolConfig contract address.
+     * @return protocolConfigAddress Address of the ProtocolConfig contract.
+     */
+    function getProtocolConfigAddress() public view virtual returns (address) {
+        return address(PROTOCOL_CONFIG);
+    }
+
+    /**
      * @notice        Getter for the name and version of the contract.
      * @return string Name and the version of the contract.
      */

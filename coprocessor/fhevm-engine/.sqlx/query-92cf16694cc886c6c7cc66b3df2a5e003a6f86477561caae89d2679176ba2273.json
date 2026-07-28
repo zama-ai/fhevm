@@ -1,0 +1,53 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        SELECT handle as \"handle!\",\n               key_id_gw as \"key_id_gw!\",\n               transaction_id,\n               ciphertext,\n               ciphertext128,\n               ciphertext128_format as \"ciphertext128_format!\"\n         FROM ciphertext_digest\n         WHERE handle = $1\n           AND s3_format_version = $2\n           AND (ciphertext IS NOT NULL OR ciphertext128 IS NOT NULL)\n        ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "handle!",
+        "type_info": "Bytea"
+      },
+      {
+        "ordinal": 1,
+        "name": "key_id_gw!",
+        "type_info": "Bytea"
+      },
+      {
+        "ordinal": 2,
+        "name": "transaction_id",
+        "type_info": "Bytea"
+      },
+      {
+        "ordinal": 3,
+        "name": "ciphertext",
+        "type_info": "Bytea"
+      },
+      {
+        "ordinal": 4,
+        "name": "ciphertext128",
+        "type_info": "Bytea"
+      },
+      {
+        "ordinal": 5,
+        "name": "ciphertext128_format!",
+        "type_info": "Int2"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Bytea",
+        "Int2"
+      ]
+    },
+    "nullable": [
+      false,
+      false,
+      true,
+      true,
+      true,
+      false
+    ]
+  },
+  "hash": "92cf16694cc886c6c7cc66b3df2a5e003a6f86477561caae89d2679176ba2273"
+}

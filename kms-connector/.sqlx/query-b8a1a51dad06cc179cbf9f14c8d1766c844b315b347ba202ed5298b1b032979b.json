@@ -1,0 +1,15 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "INSERT INTO kms_context(id, is_valid, created_at, updated_at)\n        VALUES ($1, TRUE, $2, $2) ON CONFLICT DO NOTHING",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Bytea",
+        "Timestamptz"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "b8a1a51dad06cc179cbf9f14c8d1766c844b315b347ba202ed5298b1b032979b"
+}

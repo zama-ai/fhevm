@@ -101,8 +101,12 @@ impl DbEventPicker {
             EventType::PrepKeygenRequest => self.pick_prep_keygen_requests().await,
             EventType::KeygenRequest => self.pick_keygen_requests().await,
             EventType::CrsgenRequest => self.pick_crsgen_requests().await,
+            EventType::AbortKeygenRequest => self.pick_abort_keygen_requests().await,
+            EventType::AbortCrsgenRequest => self.pick_abort_crsgen_requests().await,
             EventType::NewKmsContext => self.pick_new_kms_context_events().await,
             EventType::NewKmsEpoch => self.pick_new_kms_epoch_events().await,
+            EventType::KmsContextDestroyed => self.pick_kms_context_destroyed_events().await,
+            EventType::KmsEpochDestroyed => self.pick_kms_epoch_destroyed_events().await,
         }
     }
 
@@ -118,7 +122,7 @@ impl DbEventPicker {
                     LIMIT $1 FOR UPDATE SKIP LOCKED
                 ) AS req
                 WHERE public_decryption_requests.decryption_id = req.decryption_id
-                RETURNING req.decryption_id, sns_ct_materials, extra_data,
+                RETURNING req.decryption_id, ct_handles, extra_data,
                 tx_hash, already_sent, error_counter, created_at, otlp_context
             ",
         )
@@ -142,7 +146,7 @@ impl DbEventPicker {
                     LIMIT $1 FOR UPDATE SKIP LOCKED
                 ) AS req
                 WHERE user_decryption_requests.decryption_id = req.decryption_id
-                RETURNING req.decryption_id, sns_ct_materials, user_address, public_key, extra_data,
+                RETURNING req.decryption_id, ct_handles, user_address, public_key, extra_data,
                 signature, handle_owner_addresses, handle_contract_addresses, allowed_contracts,
                 start_timestamp, duration_seconds,
                 solana_identity, solana_nonce, solana_allowed_acl_domain_keys,
@@ -249,6 +253,50 @@ impl DbEventPicker {
         .collect()
     }
 
+    async fn pick_kms_context_destroyed_events(&self) -> anyhow::Result<Vec<ProtocolEvent>> {
+        sqlx::query(
+            "
+                UPDATE kms_context_destroyed
+                SET status = 'under_process'
+                FROM (
+                    SELECT context_id
+                    FROM kms_context_destroyed
+                    WHERE status = 'pending'
+                    LIMIT 1 FOR UPDATE SKIP LOCKED
+                ) AS req
+                WHERE kms_context_destroyed.context_id = req.context_id
+                RETURNING req.context_id, tx_hash, already_sent, created_at, otlp_context
+            ",
+        )
+        .fetch_all(&self.db_pool)
+        .await?
+        .iter()
+        .map(event::from_kms_context_destroyed_row)
+        .collect()
+    }
+
+    async fn pick_kms_epoch_destroyed_events(&self) -> anyhow::Result<Vec<ProtocolEvent>> {
+        sqlx::query(
+            "
+                UPDATE kms_epoch_destroyed
+                SET status = 'under_process'
+                FROM (
+                    SELECT epoch_id
+                    FROM kms_epoch_destroyed
+                    WHERE status = 'pending'
+                    LIMIT 1 FOR UPDATE SKIP LOCKED
+                ) AS req
+                WHERE kms_epoch_destroyed.epoch_id = req.epoch_id
+                RETURNING req.epoch_id, tx_hash, already_sent, created_at, otlp_context
+            ",
+        )
+        .fetch_all(&self.db_pool)
+        .await?
+        .iter()
+        .map(event::from_kms_epoch_destroyed_row)
+        .collect()
+    }
+
     async fn pick_crsgen_requests(&self) -> anyhow::Result<Vec<ProtocolEvent>> {
         sqlx::query(
             "
@@ -269,6 +317,50 @@ impl DbEventPicker {
         .await?
         .iter()
         .map(event::from_crsgen_row)
+        .collect()
+    }
+
+    async fn pick_abort_keygen_requests(&self) -> anyhow::Result<Vec<ProtocolEvent>> {
+        sqlx::query(
+            "
+                UPDATE abort_keygen_requests
+                SET status = 'under_process'
+                FROM (
+                    SELECT prep_keygen_id
+                    FROM abort_keygen_requests
+                    WHERE status = 'pending'
+                    LIMIT 1 FOR UPDATE SKIP LOCKED
+                ) AS req
+                WHERE abort_keygen_requests.prep_keygen_id = req.prep_keygen_id
+                RETURNING req.prep_keygen_id, tx_hash, already_sent, created_at, otlp_context
+            ",
+        )
+        .fetch_all(&self.db_pool)
+        .await?
+        .iter()
+        .map(event::from_abort_keygen_row)
+        .collect()
+    }
+
+    async fn pick_abort_crsgen_requests(&self) -> anyhow::Result<Vec<ProtocolEvent>> {
+        sqlx::query(
+            "
+                UPDATE abort_crsgen_requests
+                SET status = 'under_process'
+                FROM (
+                    SELECT crs_id
+                    FROM abort_crsgen_requests
+                    WHERE status = 'pending'
+                    LIMIT 1 FOR UPDATE SKIP LOCKED
+                ) AS req
+                WHERE abort_crsgen_requests.crs_id = req.crs_id
+                RETURNING req.crs_id, tx_hash, already_sent, created_at, otlp_context
+            ",
+        )
+        .fetch_all(&self.db_pool)
+        .await?
+        .iter()
+        .map(event::from_abort_crsgen_row)
         .collect()
     }
 }

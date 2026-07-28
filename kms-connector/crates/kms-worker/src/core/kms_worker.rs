@@ -26,7 +26,7 @@ use connector_utils::{
 use fhevm_host_bindings::acl::ACL;
 use std::collections::{HashMap, HashSet};
 use tokio_util::sync::CancellationToken;
-use tracing::{error, info};
+use tracing::{error, info, warn};
 use tracing_opentelemetry::OpenTelemetrySpanExt;
 
 /// Struct processing stored Gateway's events.
@@ -107,8 +107,10 @@ where
 
         let response = KmsResponse::new(response_kind, otlp_context);
         if let Err(e) = response_publisher.publish_response(response).await {
-            response_publisher.mark_event_as_pending(event).await;
             error!("Failed to publish response: {e}");
+            if let Err(e) = response_publisher.mark_event_as_pending(event).await {
+                warn!("{e}");
+            }
         } else {
             register_event_latency(&event);
         }
@@ -186,7 +188,9 @@ async fn register_host_chain_backends(
     validate_host_chain_configs(host_chains)?;
 
     let mut backends = HashMap::with_capacity(host_chains.len());
-    let solana_client = reqwest::Client::new();
+    // The workspace `reqwest`, not alloy's re-export: alloy now vendors a different major, and
+    // `SolanaV2Fetcher` is typed against the workspace crate.
+    let solana_client = ::reqwest::Client::new();
 
     for host_chain in host_chains {
         let backend = match host_chain.chain_kind {

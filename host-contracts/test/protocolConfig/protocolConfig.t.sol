@@ -10,7 +10,7 @@ import {KMSGeneration} from "@fhevm-host-contracts/contracts/KMSGeneration.sol";
 import {IKMSGeneration} from "@fhevm-host-contracts/contracts/interfaces/IKMSGeneration.sol";
 import {ProtocolConfigUpgradedExample} from "@fhevm-host-contracts/examples/ProtocolConfigUpgradedExample.sol";
 import {IProtocolConfig} from "@fhevm-host-contracts/contracts/interfaces/IProtocolConfig.sol";
-import {KmsNode, KmsNodeParams, PcrValues} from "@fhevm-host-contracts/contracts/shared/Structs.sol";
+import {KmsNode, KmsNodeParams, PcrValues, ChainUpgradeWindow} from "@fhevm-host-contracts/contracts/shared/Structs.sol";
 import {EmptyUUPSProxy} from "@fhevm-host-contracts/contracts/emptyProxy/EmptyUUPSProxy.sol";
 import {UUPSUpgradeableEmptyProxy} from "@fhevm-host-contracts/contracts/shared/UUPSUpgradeableEmptyProxy.sol";
 import {ACLOwnable} from "@fhevm-host-contracts/contracts/shared/ACLOwnable.sol";
@@ -219,14 +219,14 @@ contract ProtocolConfigTest is HostContractsDeployerTestUtils {
     }
 
     function _confirmContextCreationWithTwoSigners(uint256 contextId) internal {
-        vm.prank(vm.addr(kmsPk0));
+        vm.prank(kmsTxSender0);
         protocolConfig.confirmKmsContextCreation(contextId);
-        vm.prank(vm.addr(kmsPk1));
+        vm.prank(kmsTxSender1);
         protocolConfig.confirmKmsContextCreation(contextId);
     }
 
     function _activatePendingContextWithOneKmsNode(uint256 contextId, uint256 epochId) internal {
-        vm.prank(vm.addr(kmsPk0));
+        vm.prank(kmsTxSender0);
         protocolConfig.confirmKmsContextCreation(contextId);
         _confirmEpoch(contextId, epochId, kmsPk0, kmsTxSender0);
     }
@@ -776,7 +776,9 @@ contract ProtocolConfigTest is HostContractsDeployerTestUtils {
         _setupDefault();
         uint256 currentId = protocolConfig.getCurrentKmsContextId();
         vm.prank(owner);
-        vm.expectRevert(abi.encodeWithSelector(IProtocolConfig.CurrentKmsContextCannotBeDestroyed.selector, currentId));
+        vm.expectRevert(
+            abi.encodeWithSelector(IProtocolConfig.LatestActiveKmsContextCannotBeDestroyed.selector, currentId)
+        );
         protocolConfig.destroyKmsContext(currentId);
     }
 
@@ -961,19 +963,6 @@ contract ProtocolConfigTest is HostContractsDeployerTestUtils {
         assertTrue(protocolConfig.isValidEpochForContext(contextId, newEpochId));
     }
 
-    function test_isValidEpochForContext_falseForAbortedPendingEpoch() public {
-        _setupEpochLifecycle();
-        uint256 contextId = KMS_CONTEXT_COUNTER_BASE + 1;
-        uint256 abortedEpochId = EPOCH_COUNTER_BASE + 2;
-
-        vm.prank(owner);
-        protocolConfig.defineNewEpochForCurrentKmsContext();
-        vm.prank(owner);
-        protocolConfig.abortPendingEpoch(abortedEpochId);
-
-        assertFalse(protocolConfig.isValidEpochForContext(contextId, abortedEpochId));
-    }
-
     function test_isValidEpochForContext_falseForPendingEpochUnderPendingContext() public {
         _setupEpochLifecycle();
         uint256 pendingContextId = KMS_CONTEXT_COUNTER_BASE + 2;
@@ -1011,119 +1000,104 @@ contract ProtocolConfigTest is HostContractsDeployerTestUtils {
         assertTrue(protocolConfig.isValidEpochForContext(oldContextId, oldEpochId));
     }
 
-    function test_abortPendingEpochForCurrentKmsContext() public {
+    function test_isValidEpochForContext_falseAfterContextDestroyed() public {
         _setupEpochLifecycle();
-        uint256 epochId = EPOCH_COUNTER_BASE + 2;
-
-        vm.prank(owner);
-        protocolConfig.defineNewEpochForCurrentKmsContext();
-
-        vm.expectEmit(true, true, false, true, address(protocolConfig));
-        emit IProtocolConfig.PendingEpochAborted(KMS_CONTEXT_COUNTER_BASE + 1, epochId);
-        vm.prank(owner);
-        protocolConfig.abortPendingEpoch(epochId);
-
-        vm.prank(owner);
-        protocolConfig.defineNewEpochForCurrentKmsContext();
-        (, uint256 activeEpochId) = protocolConfig.getCurrentKmsContextAndEpoch();
-        assertEq(activeEpochId, EPOCH_COUNTER_BASE + 1);
-    }
-
-    function test_revertAbortPendingEpochForPendingContext() public {
-        _setupEpochLifecycle();
+        uint256 oldContextId = KMS_CONTEXT_COUNTER_BASE + 1;
+        uint256 oldEpochId = EPOCH_COUNTER_BASE + 1;
+        uint256 newContextId = KMS_CONTEXT_COUNTER_BASE + 2;
+        uint256 newEpochId = EPOCH_COUNTER_BASE + 2;
 
         vm.prank(owner);
         _defineNewKmsContextAndEpoch(_makeKmsNodeParams(2), _defaultThresholds());
-        uint256 epochId = EPOCH_COUNTER_BASE + 2;
-        uint256 contextId = KMS_CONTEXT_COUNTER_BASE + 2;
+        _activatePendingContextWithTwoKmsNodes(newContextId, newEpochId);
 
+        // The old context's epoch stays Active after rotation, so the pair is still valid
+        assertTrue(protocolConfig.isValidEpochForContext(oldContextId, oldEpochId));
+
+        // but destroying the old context must invalidate its epoch too.
+        vm.prank(owner);
+        protocolConfig.destroyKmsContext(oldContextId);
+
+        assertFalse(protocolConfig.isValidEpochForContext(oldContextId, oldEpochId));
+    }
+
+    function test_destroyEpoch() public {
+        _setupEpochLifecycle();
+        uint256 oldContextId = KMS_CONTEXT_COUNTER_BASE + 1;
+        uint256 oldEpochId = EPOCH_COUNTER_BASE + 1;
+        uint256 newContextId = KMS_CONTEXT_COUNTER_BASE + 2;
+        uint256 newEpochId = EPOCH_COUNTER_BASE + 2;
+
+        // Switch to a newer context+epoch so the old epoch is a superseded (non-current) Active epoch.
+        vm.prank(owner);
+        _defineNewKmsContextAndEpoch(_makeKmsNodeParams(2), _defaultThresholds());
+        _activatePendingContextWithTwoKmsNodes(newContextId, newEpochId);
+        assertTrue(protocolConfig.isValidEpochForContext(oldContextId, oldEpochId));
+
+        vm.expectEmit(true, false, false, true, address(protocolConfig));
+        emit IProtocolConfig.KmsEpochDestroyed(oldEpochId);
+        vm.prank(owner);
+        protocolConfig.destroyKmsEpoch(oldEpochId);
+
+        assertFalse(protocolConfig.isValidEpochForContext(oldContextId, oldEpochId));
+    }
+
+    function test_revertDestroyCurrentEpoch() public {
+        _setupEpochLifecycle();
+        (, uint256 currentEpochId) = protocolConfig.getCurrentKmsContextAndEpoch();
         vm.prank(owner);
         vm.expectRevert(
-            abi.encodeWithSelector(IProtocolConfig.EpochNotUnderActiveContext.selector, epochId, contextId)
+            abi.encodeWithSelector(IProtocolConfig.LatestActiveKmsEpochCannotBeDestroyed.selector, currentEpochId)
         );
-        protocolConfig.abortPendingEpoch(epochId);
+        protocolConfig.destroyKmsEpoch(currentEpochId);
     }
 
-    function test_abortPendingContextClearsStateAndAllowsRedefine() public {
+    function testFuzz_revertDestroyInvalidKmsEpoch(uint256 invalidEpochId) public {
         _setupEpochLifecycle();
-        uint256 pendingContextId = KMS_CONTEXT_COUNTER_BASE + 2;
-        (uint256 activeContextBefore, uint256 activeEpochBefore) = protocolConfig.getCurrentKmsContextAndEpoch();
-
+        (, uint256 currentEpochId) = protocolConfig.getCurrentKmsContextAndEpoch();
+        vm.assume(invalidEpochId != currentEpochId);
         vm.prank(owner);
-        _defineNewKmsContextAndEpoch(_makeKmsNodeParams(2), _defaultThresholds());
-
-        vm.expectEmit(true, true, false, true, address(protocolConfig));
-        emit IProtocolConfig.PendingContextAborted(pendingContextId);
-        vm.prank(owner);
-        protocolConfig.abortPendingContext(pendingContextId);
-
-        // Active context/epoch are untouched.
-        (uint256 activeContextAfter, uint256 activeEpochAfter) = protocolConfig.getCurrentKmsContextAndEpoch();
-        assertEq(activeContextAfter, activeContextBefore);
-        assertEq(activeEpochAfter, activeEpochBefore);
-        assertFalse(protocolConfig.isValidKmsContext(pendingContextId));
-
-        // The aborted context can no longer be confirmed.
-        vm.prank(vm.addr(kmsPk0));
-        vm.expectRevert(abi.encodeWithSelector(IProtocolConfig.KmsContextNotPending.selector, pendingContextId));
-        protocolConfig.confirmKmsContextCreation(pendingContextId);
-
-        // The pending slot is released, so a fresh pending context can be defined.
-        vm.prank(owner);
-        _defineNewKmsContextAndEpoch(_makeKmsNodeParams(2), _defaultThresholds());
+        vm.expectRevert(abi.encodeWithSelector(IProtocolConfig.InvalidKmsEpoch.selector, invalidEpochId));
+        protocolConfig.destroyKmsEpoch(invalidEpochId);
     }
 
-    function test_revertAbortPendingContextWhenActive() public {
+    function test_revertDestroyPendingEpoch() public {
         _setupEpochLifecycle();
-        uint256 activeContextId = protocolConfig.getCurrentKmsContextId();
+        uint256 pendingEpochId = EPOCH_COUNTER_BASE + 2;
+
+        // In-flight (Pending) epochs are not destroyable: destroy is Active-only.
         vm.prank(owner);
-        vm.expectRevert(abi.encodeWithSelector(IProtocolConfig.KmsContextNotPending.selector, activeContextId));
-        protocolConfig.abortPendingContext(activeContextId);
+        protocolConfig.defineNewEpochForCurrentKmsContext();
+
+        vm.prank(owner);
+        vm.expectRevert(abi.encodeWithSelector(IProtocolConfig.InvalidKmsEpoch.selector, pendingEpochId));
+        protocolConfig.destroyKmsEpoch(pendingEpochId);
     }
 
-    function test_revertAbortPendingContextWhenCreated() public {
+    function test_revertDestroyEpochNotOwner() public {
         _setupEpochLifecycle();
-        vm.prank(owner);
-        _defineNewKmsContextAndEpoch(_makeKmsNodeParams(2), _defaultThresholds());
-        uint256 createdContextId = KMS_CONTEXT_COUNTER_BASE + 2;
-        _confirmContextCreationWithTwoSigners(createdContextId);
-
-        vm.prank(owner);
-        vm.expectRevert(abi.encodeWithSelector(IProtocolConfig.KmsContextNotPending.selector, createdContextId));
-        protocolConfig.abortPendingContext(createdContextId);
-    }
-
-    function test_revertAbortPendingContextWhenAlreadyAborted() public {
-        _setupEpochLifecycle();
-        vm.prank(owner);
-        _defineNewKmsContextAndEpoch(_makeKmsNodeParams(2), _defaultThresholds());
-        uint256 pendingContextId = KMS_CONTEXT_COUNTER_BASE + 2;
-
-        vm.prank(owner);
-        protocolConfig.abortPendingContext(pendingContextId);
-
-        vm.prank(owner);
-        vm.expectRevert(abi.encodeWithSelector(IProtocolConfig.KmsContextNotPending.selector, pendingContextId));
-        protocolConfig.abortPendingContext(pendingContextId);
-    }
-
-    function testFuzz_revertAbortPendingContextInvalidId(uint256 invalidContextId) public {
-        _setupEpochLifecycle();
-        vm.assume(invalidContextId != protocolConfig.getCurrentKmsContextId());
-        vm.prank(owner);
-        vm.expectRevert(abi.encodeWithSelector(IProtocolConfig.KmsContextNotPending.selector, invalidContextId));
-        protocolConfig.abortPendingContext(invalidContextId);
-    }
-
-    function test_revertAbortPendingContextNotOwner() public {
-        _setupEpochLifecycle();
-        vm.prank(owner);
-        _defineNewKmsContextAndEpoch(_makeKmsNodeParams(2), _defaultThresholds());
-        uint256 pendingContextId = KMS_CONTEXT_COUNTER_BASE + 2;
-
+        (, uint256 currentEpochId) = protocolConfig.getCurrentKmsContextAndEpoch();
         vm.prank(address(0x999));
         vm.expectRevert(abi.encodeWithSelector(ACLOwnable.NotHostOwner.selector, address(0x999)));
-        protocolConfig.abortPendingContext(pendingContextId);
+        protocolConfig.destroyKmsEpoch(currentEpochId);
+    }
+
+    function test_revertDestroyAlreadyDestroyedEpoch() public {
+        _setupEpochLifecycle();
+        uint256 oldEpochId = EPOCH_COUNTER_BASE + 1;
+        uint256 newContextId = KMS_CONTEXT_COUNTER_BASE + 2;
+        uint256 newEpochId = EPOCH_COUNTER_BASE + 2;
+
+        vm.prank(owner);
+        _defineNewKmsContextAndEpoch(_makeKmsNodeParams(2), _defaultThresholds());
+        _activatePendingContextWithTwoKmsNodes(newContextId, newEpochId);
+
+        vm.prank(owner);
+        protocolConfig.destroyKmsEpoch(oldEpochId);
+
+        vm.prank(owner);
+        vm.expectRevert(abi.encodeWithSelector(IProtocolConfig.InvalidKmsEpoch.selector, oldEpochId));
+        protocolConfig.destroyKmsEpoch(oldEpochId);
     }
 
     function test_defineNewKmsContextAndEpochDoesNotActivateImmediately() public {
@@ -1145,21 +1119,26 @@ contract ProtocolConfigTest is HostContractsDeployerTestUtils {
         assertEq(protocolConfig.getKmsGenThresholdForContext(KMS_CONTEXT_COUNTER_BASE + 2), 1);
     }
 
+    /// @dev Previous-side quorum boundary, both sides: with n = 4 previous nodes and t = 2, the
+    ///      target is n - t = 2. All-new + n - t - 1 previous confirmations stay Pending, the
+    ///      (n - t)-th completes creation (NewKmsEpoch), and any later one hits the Created state.
     function test_confirmKmsContextCreationUsesNewSignersAndOldQuorum() public {
-        _setupDefaultWithMpcThreshold(3);
+        _setupDefaultWithMpcThreshold(2);
         KmsNodeParams[] memory nodes = _makeKmsNodeParams(2);
+        nodes[0].txSenderAddress = address(0xC1);
         nodes[0].signerAddress = address(0xB2);
+        nodes[1].txSenderAddress = address(0xC2);
         nodes[1].signerAddress = address(0xB3);
 
         vm.prank(owner);
         _defineNewKmsContextAndEpoch(nodes, _defaultThresholds());
         uint256 newContextId = KMS_CONTEXT_COUNTER_BASE + 2;
 
-        vm.prank(address(0xB2));
+        vm.prank(address(0xC1));
         protocolConfig.confirmKmsContextCreation(newContextId);
-        vm.prank(address(0xB3));
+        vm.prank(address(0xC2));
         protocolConfig.confirmKmsContextCreation(newContextId);
-        vm.prank(vm.addr(kmsPk0));
+        vm.prank(kmsTxSender0);
         protocolConfig.confirmKmsContextCreation(newContextId);
         assertFalse(protocolConfig.isValidKmsContext(newContextId));
 
@@ -1172,25 +1151,32 @@ contract ProtocolConfigTest is HostContractsDeployerTestUtils {
             EPOCH_COUNTER_BASE + 1,
             block.number - 1
         );
-        vm.prank(vm.addr(kmsPk1));
+        vm.prank(kmsTxSender1);
+        protocolConfig.confirmKmsContextCreation(newContextId);
+
+        // The context left Pending on the (n - t)-th previous confirmation; a further one is rejected.
+        vm.prank(kmsTxSender2);
+        vm.expectRevert(abi.encodeWithSelector(IProtocolConfig.KmsContextNotPending.selector, newContextId));
         protocolConfig.confirmKmsContextCreation(newContextId);
     }
 
     function test_confirmKmsContextCreationRequiresAllNewSigners() public {
         _setupDefaultWithMpcThreshold(3);
         KmsNodeParams[] memory nodes = _makeKmsNodeParams(2);
+        nodes[0].txSenderAddress = address(0xC1);
         nodes[0].signerAddress = address(0xB2);
+        nodes[1].txSenderAddress = address(0xC2);
         nodes[1].signerAddress = address(0xB3);
 
         vm.prank(owner);
         _defineNewKmsContextAndEpoch(nodes, _defaultThresholds());
         uint256 newContextId = KMS_CONTEXT_COUNTER_BASE + 2;
 
-        vm.prank(address(0xB2));
+        vm.prank(address(0xC1));
         protocolConfig.confirmKmsContextCreation(newContextId);
-        vm.prank(vm.addr(kmsPk0));
+        vm.prank(kmsTxSender0);
         protocolConfig.confirmKmsContextCreation(newContextId);
-        vm.prank(vm.addr(kmsPk1));
+        vm.prank(kmsTxSender1);
         protocolConfig.confirmKmsContextCreation(newContextId);
         assertFalse(protocolConfig.isValidKmsContext(newContextId));
 
@@ -1204,7 +1190,7 @@ contract ProtocolConfigTest is HostContractsDeployerTestUtils {
             EPOCH_COUNTER_BASE + 1,
             block.number - 1
         );
-        vm.prank(address(0xB3));
+        vm.prank(address(0xC2));
         protocolConfig.confirmKmsContextCreation(newContextId);
     }
 
@@ -1232,9 +1218,9 @@ contract ProtocolConfigTest is HostContractsDeployerTestUtils {
         vm.prank(owner);
         _defineNewKmsContextAndEpoch(_makeKmsNodeParams(2), _defaultThresholds());
         uint256 createdContextId = KMS_CONTEXT_COUNTER_BASE + 2;
-        vm.prank(vm.addr(kmsPk0));
+        vm.prank(kmsTxSender0);
         protocolConfig.confirmKmsContextCreation(createdContextId);
-        vm.prank(vm.addr(kmsPk1));
+        vm.prank(kmsTxSender1);
         protocolConfig.confirmKmsContextCreation(createdContextId);
 
         vm.prank(owner);
@@ -1246,7 +1232,9 @@ contract ProtocolConfigTest is HostContractsDeployerTestUtils {
         _setupEpochLifecycle();
         _seedActiveEpochWithMaterialForTwoNodeContext();
         KmsNodeParams[] memory nodes = _makeKmsNodeParams(2);
+        nodes[0].txSenderAddress = address(0xC1);
         nodes[0].signerAddress = vm.addr(kmsPk2);
+        nodes[1].txSenderAddress = address(0xC2);
         nodes[1].signerAddress = vm.addr(kmsPk3);
 
         vm.prank(owner);
@@ -1254,16 +1242,16 @@ contract ProtocolConfigTest is HostContractsDeployerTestUtils {
 
         uint256 newContextId = KMS_CONTEXT_COUNTER_BASE + 2;
         uint256 newEpochId = EPOCH_COUNTER_BASE + 3;
-        vm.prank(vm.addr(kmsPk0));
+        vm.prank(kmsTxSender0);
         protocolConfig.confirmKmsContextCreation(newContextId);
-        vm.prank(vm.addr(kmsPk1));
+        vm.prank(kmsTxSender1);
         protocolConfig.confirmKmsContextCreation(newContextId);
         (uint256 contextBeforeCreation, uint256 epochBeforeCreation) = protocolConfig.getCurrentKmsContextAndEpoch();
         assertEq(contextBeforeCreation, KMS_CONTEXT_COUNTER_BASE + 1);
         assertEq(epochBeforeCreation, EPOCH_COUNTER_BASE + 2);
-        vm.prank(vm.addr(kmsPk2));
+        vm.prank(address(0xC1));
         protocolConfig.confirmKmsContextCreation(newContextId);
-        vm.prank(vm.addr(kmsPk3));
+        vm.prank(address(0xC2));
         protocolConfig.confirmKmsContextCreation(newContextId);
         (uint256 contextBeforeActivation, uint256 epochBeforeActivation) = protocolConfig
             .getCurrentKmsContextAndEpoch();
@@ -1276,10 +1264,10 @@ contract ProtocolConfigTest is HostContractsDeployerTestUtils {
             kmsPk1,
             kmsTxSender1
         );
-        _confirmEpochWithMaterial(newContextId, newEpochId, kmsPk2, kmsTxSender0, keyId, crsId);
+        _confirmEpochWithMaterial(newContextId, newEpochId, kmsPk2, address(0xC1), keyId, crsId);
         assertEq(protocolConfig.getCurrentKmsContextId(), KMS_CONTEXT_COUNTER_BASE + 1);
 
-        _confirmEpochWithMaterial(newContextId, newEpochId, kmsPk3, kmsTxSender1, keyId, crsId);
+        _confirmEpochWithMaterial(newContextId, newEpochId, kmsPk3, address(0xC2), keyId, crsId);
 
         (uint256 activeContextId, uint256 activeEpochId) = protocolConfig.getCurrentKmsContextAndEpoch();
         assertEq(activeContextId, newContextId);
@@ -1293,11 +1281,11 @@ contract ProtocolConfigTest is HostContractsDeployerTestUtils {
         _defineNewKmsContextAndEpoch(_makeKmsNodeParams(2), _defaultThresholds());
         uint256 newContextId = KMS_CONTEXT_COUNTER_BASE + 2;
 
-        vm.prank(vm.addr(kmsPk0));
+        vm.prank(kmsTxSender0);
         protocolConfig.confirmKmsContextCreation(newContextId);
 
         vm.recordLogs();
-        vm.prank(vm.addr(kmsPk1));
+        vm.prank(kmsTxSender1);
         protocolConfig.confirmKmsContextCreation(newContextId);
         Vm.Log[] memory logs = vm.getRecordedLogs();
 
@@ -1411,13 +1399,13 @@ contract ProtocolConfigTest is HostContractsDeployerTestUtils {
         );
         protocolConfig.confirmKmsContextCreation(newContextId);
 
-        vm.prank(vm.addr(kmsPk0));
+        vm.prank(kmsTxSender0);
         protocolConfig.confirmKmsContextCreation(newContextId);
-        vm.prank(vm.addr(kmsPk0));
+        vm.prank(kmsTxSender0);
         vm.expectRevert(
             abi.encodeWithSelector(
                 IProtocolConfig.KmsContextCreationAlreadyConfirmed.selector,
-                vm.addr(kmsPk0),
+                kmsTxSender0,
                 newContextId
             )
         );
@@ -1698,9 +1686,9 @@ contract ProtocolConfigTest is HostContractsDeployerTestUtils {
 
         (, uint256 activeEpochBeforeContextActivation) = protocolConfig.getCurrentKmsContextAndEpoch();
         assertEq(activeEpochBeforeContextActivation, EPOCH_COUNTER_BASE + 2);
-        vm.prank(vm.addr(kmsPk0));
+        vm.prank(kmsTxSender0);
         protocolConfig.confirmKmsContextCreation(KMS_CONTEXT_COUNTER_BASE + 2);
-        vm.prank(vm.addr(kmsPk1));
+        vm.prank(kmsTxSender1);
         protocolConfig.confirmKmsContextCreation(KMS_CONTEXT_COUNTER_BASE + 2);
         (uint256 nextKeyId, uint256 nextCrsId) = _completeKmsGenerationMaterial();
         _confirmEpochWithMaterial(
@@ -1767,7 +1755,7 @@ contract ProtocolConfigTest is HostContractsDeployerTestUtils {
         IProtocolConfig.KmsThresholds memory thresholds = _defaultThresholds();
 
         vm.prank(owner);
-        vm.expectRevert(abi.encodeWithSelector(IProtocolConfig.InvalidEpoch.selector, invalidEpochId));
+        vm.expectRevert(abi.encodeWithSelector(IProtocolConfig.InvalidKmsEpoch.selector, invalidEpochId));
         EmptyUUPSProxy(protocolConfigAdd).upgradeToAndCall(
             impl,
             abi.encodeCall(
@@ -2269,7 +2257,7 @@ contract ProtocolConfigTest is HostContractsDeployerTestUtils {
         vm.prank(owner);
         EmptyUUPSProxy(protocolConfigAdd).upgradeToAndCall(
             realImpl,
-            abi.encodeCall(ProtocolConfig.reinitializeV2, (nodes, thresholds, softwareVersion, pcrValues))
+            abi.encodeCall(ProtocolConfig.reinitializeV2, (nodes, softwareVersion, pcrValues))
         );
         protocolConfig = ProtocolConfig(protocolConfigAdd);
 
@@ -2456,7 +2444,7 @@ contract ProtocolConfigTest is HostContractsDeployerTestUtils {
     }
 
     // -----------------------------------------------------------------------
-    // confirmEpochActivation / abortPendingEpoch negative branches
+    // confirmEpochActivation negative branches
     // -----------------------------------------------------------------------
 
     /// @dev Reaching the `!_isLiveKmsContext` guard requires the epoch's context to be destroyed
@@ -2476,13 +2464,9 @@ contract ProtocolConfigTest is HostContractsDeployerTestUtils {
         _defineNewKmsContextAndEpoch(nodes, _defaultThresholds());
         uint256 secondContextId = KMS_CONTEXT_COUNTER_BASE + 2;
         uint256 secondEpochId = EPOCH_COUNTER_BASE + 3;
-        vm.prank(vm.addr(kmsPk0));
+        vm.prank(kmsTxSender0);
         protocolConfig.confirmKmsContextCreation(secondContextId);
-        vm.prank(vm.addr(kmsPk1));
-        protocolConfig.confirmKmsContextCreation(secondContextId);
-        vm.prank(vm.addr(kmsPk2));
-        protocolConfig.confirmKmsContextCreation(secondContextId);
-        vm.prank(vm.addr(kmsPk3));
+        vm.prank(kmsTxSender1);
         protocolConfig.confirmKmsContextCreation(secondContextId);
         (uint256 keyId, uint256 crsId) = _completeKmsGenerationMaterialWithTwoResponses(
             kmsPk0,
@@ -2503,48 +2487,21 @@ contract ProtocolConfigTest is HostContractsDeployerTestUtils {
         uint256 thirdContextId = KMS_CONTEXT_COUNTER_BASE + 3;
         uint256 thirdEpochId = EPOCH_COUNTER_BASE + 4;
 
-        vm.prank(vm.addr(kmsPk2));
+        vm.prank(kmsTxSender0);
         protocolConfig.confirmKmsContextCreation(thirdContextId);
-        vm.prank(vm.addr(kmsPk3));
-        protocolConfig.confirmKmsContextCreation(thirdContextId);
-        vm.prank(vm.addr(kmsPk0));
-        protocolConfig.confirmKmsContextCreation(thirdContextId);
-        vm.prank(vm.addr(kmsPk1));
+        vm.prank(kmsTxSender1);
         protocolConfig.confirmKmsContextCreation(thirdContextId);
 
         vm.prank(owner);
         protocolConfig.destroyKmsContext(thirdContextId);
 
         // The pending epoch was cleared with the context, so confirming activation now reverts on the
-        // epoch state guard (InvalidEpoch) — the context is no longer live for it.
+        // epoch state guard (InvalidKmsEpoch) — the context is no longer live for it.
         IProtocolConfig.EpochKeyResult[] memory keys = new IProtocolConfig.EpochKeyResult[](0);
         IProtocolConfig.EpochCrsResult[] memory crsList = new IProtocolConfig.EpochCrsResult[](0);
         vm.prank(kmsTxSender0);
-        vm.expectRevert(abi.encodeWithSelector(IProtocolConfig.InvalidEpoch.selector, thirdEpochId));
+        vm.expectRevert(abi.encodeWithSelector(IProtocolConfig.InvalidKmsEpoch.selector, thirdEpochId));
         protocolConfig.confirmEpochActivation(thirdEpochId, keys, crsList);
-    }
-
-    function test_revertAbortPendingEpochNotOwner() public {
-        _setupEpochLifecycle();
-        vm.prank(owner);
-        protocolConfig.defineNewEpochForCurrentKmsContext();
-        uint256 epochId = EPOCH_COUNTER_BASE + 2;
-
-        vm.prank(address(0x999));
-        vm.expectRevert(abi.encodeWithSelector(ACLOwnable.NotHostOwner.selector, address(0x999)));
-        protocolConfig.abortPendingEpoch(epochId);
-    }
-
-    function testFuzz_revertAbortPendingEpochUnknownEpoch(uint256 unknownEpochId) public {
-        _setupEpochLifecycle();
-        // The active epoch (EPOCH_COUNTER_BASE + 1) is Active, not Pending, so it is also rejected.
-        vm.assume(unknownEpochId != EPOCH_COUNTER_BASE + 2);
-        vm.prank(owner);
-        protocolConfig.defineNewEpochForCurrentKmsContext();
-
-        vm.prank(owner);
-        vm.expectRevert(abi.encodeWithSelector(IProtocolConfig.InvalidEpoch.selector, unknownEpochId));
-        protocolConfig.abortPendingEpoch(unknownEpochId);
     }
 
     /// @dev Partial quorum (one of two new signers confirming context creation) must not advance the
@@ -2558,7 +2515,7 @@ contract ProtocolConfigTest is HostContractsDeployerTestUtils {
         uint256 newContextId = KMS_CONTEXT_COUNTER_BASE + 2;
 
         // Only one signer confirms: quorum not reached.
-        vm.prank(vm.addr(kmsPk0));
+        vm.prank(kmsTxSender0);
         protocolConfig.confirmKmsContextCreation(newContextId);
 
         assertEq(protocolConfig.getCurrentKmsContextId(), activeContextIdBefore);
@@ -2628,35 +2585,71 @@ contract ProtocolConfigTest is HostContractsDeployerTestUtils {
     // Per-confirmation events and malformed-signature negative
     // -----------------------------------------------------------------------
 
-    /// @dev Asserts KmsContextCreationConfirmation fires with correct isPreviousSigner/isNewSigner flags,
-    ///      including a signer present in BOTH the previous and new committee.
+    /// @dev Asserts KmsContextCreationConfirmation fires with correct isPreviousTxSender/isNewTxSender
+    ///      flags, including a tx-sender present in BOTH the previous and new committee.
     function test_kmsContextCreationConfirmationEventFlags() public {
         _setupEpochLifecycle();
 
-        // New committee: kmsPk0 (also a previous signer -> both) and kmsPk2 (new only).
+        // New committee: node 0 stays same-set (tx-sender 0xA1 in both); node 1 is a fresh new-only
+        // node confirmable through a distinct tx-sender.
         KmsNodeParams[] memory nodes = _makeKmsNodeParams(2);
         nodes[0].signerAddress = vm.addr(kmsPk0);
+        nodes[1].txSenderAddress = address(0xC2);
         nodes[1].signerAddress = vm.addr(kmsPk2);
         vm.prank(owner);
         _defineNewKmsContextAndEpoch(nodes, _defaultThresholds());
         uint256 newContextId = KMS_CONTEXT_COUNTER_BASE + 2;
 
-        // kmsPk1 is a previous signer only.
+        // kmsTxSender1 belongs to the previous committee only.
         vm.expectEmit(true, true, false, true, address(protocolConfig));
-        emit IProtocolConfig.KmsContextCreationConfirmation(newContextId, vm.addr(kmsPk1), true, false);
-        vm.prank(vm.addr(kmsPk1));
+        emit IProtocolConfig.KmsContextCreationConfirmation(newContextId, kmsTxSender1, true, false);
+        vm.prank(kmsTxSender1);
         protocolConfig.confirmKmsContextCreation(newContextId);
 
-        // kmsPk2 is a new signer only.
+        // 0xC2 belongs to the new committee only.
         vm.expectEmit(true, true, false, true, address(protocolConfig));
-        emit IProtocolConfig.KmsContextCreationConfirmation(newContextId, vm.addr(kmsPk2), false, true);
-        vm.prank(vm.addr(kmsPk2));
+        emit IProtocolConfig.KmsContextCreationConfirmation(newContextId, address(0xC2), false, true);
+        vm.prank(address(0xC2));
         protocolConfig.confirmKmsContextCreation(newContextId);
 
-        // kmsPk0 belongs to both committees.
+        // kmsTxSender0 belongs to both committees (same-set tx-sender).
         vm.expectEmit(true, true, false, true, address(protocolConfig));
-        emit IProtocolConfig.KmsContextCreationConfirmation(newContextId, vm.addr(kmsPk0), true, true);
-        vm.prank(vm.addr(kmsPk0));
+        emit IProtocolConfig.KmsContextCreationConfirmation(newContextId, kmsTxSender0, true, true);
+        vm.prank(kmsTxSender0);
+        protocolConfig.confirmKmsContextCreation(newContextId);
+    }
+
+    /// @dev A node that keeps its signer but rotates its tx-sender across the switch confirms from
+    ///      both wallets: dedup is per tx-sender, so neither call blocks the other side's count.
+    function test_confirmKmsContextCreationSignerKeptTxSenderRotated() public {
+        _setupEpochLifecycle();
+
+        // New committee reuses the previous signers but rotates both tx-senders.
+        KmsNodeParams[] memory nodes = _makeKmsNodeParams(2);
+        nodes[0].txSenderAddress = address(0xC1);
+        nodes[1].txSenderAddress = address(0xC2);
+        vm.prank(owner);
+        _defineNewKmsContextAndEpoch(nodes, _defaultThresholds());
+        uint256 newContextId = KMS_CONTEXT_COUNTER_BASE + 2;
+
+        // Old wallets confirm the previous side first, then the rotated wallets the new side.
+        vm.prank(kmsTxSender0);
+        protocolConfig.confirmKmsContextCreation(newContextId);
+        vm.prank(kmsTxSender1);
+        protocolConfig.confirmKmsContextCreation(newContextId);
+        vm.prank(address(0xC1));
+        protocolConfig.confirmKmsContextCreation(newContextId);
+
+        // The last new-side confirmation completes the split quorum and emits NewKmsEpoch.
+        vm.expectEmit(true, true, false, true, address(protocolConfig));
+        emit IProtocolConfig.NewKmsEpoch(
+            newContextId,
+            EPOCH_COUNTER_BASE + 2,
+            KMS_CONTEXT_COUNTER_BASE + 1,
+            EPOCH_COUNTER_BASE + 1,
+            block.number - 1
+        );
+        vm.prank(address(0xC2));
         protocolConfig.confirmKmsContextCreation(newContextId);
     }
 
@@ -2706,5 +2699,232 @@ contract ProtocolConfigTest is HostContractsDeployerTestUtils {
         vm.prank(kmsTxSender0);
         vm.expectRevert();
         protocolConfig.confirmEpochActivation(epochId, keys, crsList);
+    }
+
+    // -----------------------------------------------------------------------
+    // Coprocessor context tests
+    // -----------------------------------------------------------------------
+
+    function _makeChainUpgradeWindows(uint256 count) internal pure returns (ChainUpgradeWindow[] memory windows) {
+        windows = new ChainUpgradeWindow[](count);
+        for (uint256 i = 0; i < count; i++) {
+            windows[i] = ChainUpgradeWindow({
+                chainId: uint64(i + 1),
+                startBlock: uint64(100 + i),
+                endBlock: uint64(200 + i)
+            });
+        }
+    }
+
+    function _defaultSoftwareVersion() internal pure returns (string memory) {
+        return "v0.14.0";
+    }
+
+    function _defaultGwStartBlock() internal pure returns (uint64) {
+        return 8421337;
+    }
+
+    function _defaultProposalId() internal pure returns (uint256) {
+        return 1;
+    }
+
+    function test_proposeCoprocessorUpgrade_singleChain() public {
+        _setupDefault();
+        ChainUpgradeWindow[] memory windows = _makeChainUpgradeWindows(1);
+        uint64 gwStart = _defaultGwStartBlock();
+        string memory version = _defaultSoftwareVersion();
+        uint256 proposalId = _defaultProposalId();
+
+        vm.expectEmit(true, false, false, true, address(protocolConfig));
+        emit IProtocolConfig.CoprocessorUpgradeProposed(proposalId, version, windows, gwStart);
+        vm.prank(owner);
+        protocolConfig.proposeCoprocessorUpgrade(proposalId, version, windows, gwStart);
+    }
+
+    function test_proposeCoprocessorUpgrade_multiChain() public {
+        _setupDefault();
+        ChainUpgradeWindow[] memory windows = _makeChainUpgradeWindows(3);
+        uint64 gwStart = _defaultGwStartBlock();
+        string memory version = _defaultSoftwareVersion();
+        uint256 proposalId = _defaultProposalId();
+
+        vm.expectEmit(true, false, false, true, address(protocolConfig));
+        emit IProtocolConfig.CoprocessorUpgradeProposed(proposalId, version, windows, gwStart);
+        vm.prank(owner);
+        protocolConfig.proposeCoprocessorUpgrade(proposalId, version, windows, gwStart);
+    }
+
+    function test_revertCoprocessor_InvalidProposalId() public {
+        _setupDefault();
+        vm.prank(owner);
+        vm.expectRevert(IProtocolConfig.InvalidProposalId.selector);
+        protocolConfig.proposeCoprocessorUpgrade(
+            0,
+            _defaultSoftwareVersion(),
+            _makeChainUpgradeWindows(1),
+            _defaultGwStartBlock()
+        );
+    }
+
+    function test_revertCoprocessor_EmptySoftwareVersion() public {
+        _setupDefault();
+        vm.prank(owner);
+        vm.expectRevert(IProtocolConfig.EmptySoftwareVersion.selector);
+        protocolConfig.proposeCoprocessorUpgrade(
+            _defaultProposalId(),
+            "",
+            _makeChainUpgradeWindows(1),
+            _defaultGwStartBlock()
+        );
+    }
+
+    function test_revertCoprocessor_EmptyChainUpgradeWindows() public {
+        _setupDefault();
+        ChainUpgradeWindow[] memory windows = new ChainUpgradeWindow[](0);
+        vm.prank(owner);
+        vm.expectRevert(IProtocolConfig.EmptyChainUpgradeWindows.selector);
+        protocolConfig.proposeCoprocessorUpgrade(
+            _defaultProposalId(),
+            _defaultSoftwareVersion(),
+            windows,
+            _defaultGwStartBlock()
+        );
+    }
+
+    function test_revertCoprocessor_ZeroChainId() public {
+        _setupDefault();
+        ChainUpgradeWindow[] memory windows = _makeChainUpgradeWindows(1);
+        windows[0].chainId = 0;
+        vm.prank(owner);
+        vm.expectRevert(IProtocolConfig.ZeroChainId.selector);
+        protocolConfig.proposeCoprocessorUpgrade(
+            _defaultProposalId(),
+            _defaultSoftwareVersion(),
+            windows,
+            _defaultGwStartBlock()
+        );
+    }
+
+    function test_revertCoprocessor_DuplicateChainId() public {
+        _setupDefault();
+        ChainUpgradeWindow[] memory windows = _makeChainUpgradeWindows(2);
+        windows[1].chainId = windows[0].chainId;
+        vm.prank(owner);
+        vm.expectRevert(abi.encodeWithSelector(IProtocolConfig.DuplicateChainId.selector, windows[0].chainId));
+        protocolConfig.proposeCoprocessorUpgrade(
+            _defaultProposalId(),
+            _defaultSoftwareVersion(),
+            windows,
+            _defaultGwStartBlock()
+        );
+    }
+
+    function test_revertCoprocessor_InvalidBlockWindow() public {
+        _setupDefault();
+        ChainUpgradeWindow[] memory windows = _makeChainUpgradeWindows(1);
+        windows[0].startBlock = 500;
+        windows[0].endBlock = 100; // start > end
+        vm.prank(owner);
+        vm.expectRevert(
+            abi.encodeWithSelector(
+                IProtocolConfig.InvalidBlockWindow.selector,
+                windows[0].chainId,
+                uint64(500),
+                uint64(100)
+            )
+        );
+        protocolConfig.proposeCoprocessorUpgrade(
+            _defaultProposalId(),
+            _defaultSoftwareVersion(),
+            windows,
+            _defaultGwStartBlock()
+        );
+    }
+
+    function test_revertCoprocessor_ZeroGwStartBlock() public {
+        _setupDefault();
+        vm.prank(owner);
+        vm.expectRevert(IProtocolConfig.ZeroGwStartBlock.selector);
+        protocolConfig.proposeCoprocessorUpgrade(
+            _defaultProposalId(),
+            _defaultSoftwareVersion(),
+            _makeChainUpgradeWindows(1),
+            0
+        );
+    }
+
+    function test_proposeCoprocessorUpgrade_sameIdTwice_bothEmit() public {
+        _setupDefault();
+        ChainUpgradeWindow[] memory windows = _makeChainUpgradeWindows(1);
+        uint256 proposalId = _defaultProposalId();
+
+        vm.prank(owner);
+        protocolConfig.proposeCoprocessorUpgrade(
+            proposalId,
+            _defaultSoftwareVersion(),
+            windows,
+            _defaultGwStartBlock()
+        );
+
+        // Uniqueness is the caller's responsibility — contract does not enforce.
+        vm.expectEmit(true, false, false, true, address(protocolConfig));
+        emit IProtocolConfig.CoprocessorUpgradeProposed(
+            proposalId,
+            _defaultSoftwareVersion(),
+            windows,
+            _defaultGwStartBlock()
+        );
+        vm.prank(owner);
+        protocolConfig.proposeCoprocessorUpgrade(
+            proposalId,
+            _defaultSoftwareVersion(),
+            windows,
+            _defaultGwStartBlock()
+        );
+    }
+
+    function test_proposeCoprocessorUpgrade_maxUint256() public {
+        _setupDefault();
+        uint256 proposalId = type(uint256).max;
+
+        vm.expectEmit(true, false, false, true, address(protocolConfig));
+        emit IProtocolConfig.CoprocessorUpgradeProposed(
+            proposalId,
+            _defaultSoftwareVersion(),
+            _makeChainUpgradeWindows(1),
+            _defaultGwStartBlock()
+        );
+        vm.prank(owner);
+        protocolConfig.proposeCoprocessorUpgrade(
+            proposalId,
+            _defaultSoftwareVersion(),
+            _makeChainUpgradeWindows(1),
+            _defaultGwStartBlock()
+        );
+    }
+
+    function test_proposeCoprocessorUpgrade_twoDistinctPending_bothEmit() public {
+        _setupDefault();
+        ChainUpgradeWindow[] memory windows = _makeChainUpgradeWindows(1);
+
+        vm.prank(owner);
+        protocolConfig.proposeCoprocessorUpgrade(1, _defaultSoftwareVersion(), windows, _defaultGwStartBlock());
+
+        vm.expectEmit(true, false, false, true, address(protocolConfig));
+        emit IProtocolConfig.CoprocessorUpgradeProposed(2, _defaultSoftwareVersion(), windows, _defaultGwStartBlock());
+        vm.prank(owner);
+        protocolConfig.proposeCoprocessorUpgrade(2, _defaultSoftwareVersion(), windows, _defaultGwStartBlock());
+    }
+
+    function test_revertProposeCoprocessorUpgradeNotOwner() public {
+        _setupDefault();
+        vm.prank(address(0x999));
+        vm.expectRevert(abi.encodeWithSelector(ACLOwnable.NotHostOwner.selector, address(0x999)));
+        protocolConfig.proposeCoprocessorUpgrade(
+            _defaultProposalId(),
+            _defaultSoftwareVersion(),
+            _makeChainUpgradeWindows(1),
+            _defaultGwStartBlock()
+        );
     }
 }

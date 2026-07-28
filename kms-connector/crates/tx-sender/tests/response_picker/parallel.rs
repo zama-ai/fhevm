@@ -52,7 +52,7 @@ async fn test_parallel_response_picking(
 
     info!("Data OK! Releasing first {response_type}...");
     for response in responses0 {
-        response.mark_as_pending(test_instance.db()).await;
+        response.mark_as_pending(test_instance.db()).await?;
     }
 
     info!("Done! Picking first {response_type} again...");
@@ -68,10 +68,10 @@ async fn test_parallel_response_picking(
 
     info!("Data OK! Marking all responses as completed...");
     for response in responses0 {
-        response.mark_as_completed(test_instance.db()).await;
+        response.mark_as_completed(test_instance.db()).await?;
     }
     for response in responses1 {
-        response.mark_as_completed(test_instance.db()).await;
+        response.mark_as_completed(test_instance.db()).await?;
     }
 
     info!("Done! Checking there is no uncompleted response in DB...");

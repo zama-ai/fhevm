@@ -3,15 +3,8 @@ import type { FhevmRuntime } from '../../core/types/coreFhevmRuntime.js';
 import { RelayerAsyncRequest } from '../../core/modules/relayer/module/RelayerAsyncRequest.js';
 import { buildSolanaUserDecryptMmrProofExtraData } from '../../core/coprocessor/SolanaUserDecrypt-p.js';
 import { bytesToHex } from '../../core/base/bytes.js';
-import {
-  mmrLeafNode,
-  publicDecryptLeafCommitment,
-  type MmrProof,
-} from '../proof.js';
-import {
-  publicDecryptCertificate,
-  type SolanaPublicDecryptCertificateParameters,
-} from './publicDecryptCertificate.js';
+import { mmrLeafNode, publicDecryptLeafCommitment, type MmrProof } from '../proof.js';
+import { publicDecryptCertificate, type SolanaPublicDecryptCertificateParameters } from './publicDecryptCertificate.js';
 
 const handle = new Uint8Array(32);
 handle[22] = 0x80;
@@ -43,7 +36,12 @@ function concat(...parts: readonly Uint8Array[]): Uint8Array {
 }
 
 const proofBlob = (mode = 0x02, includedProof = proof) =>
-  concat(new Uint8Array([mode]), u64LE(includedProof.leafIndex), u32LE(includedProof.siblings.length), ...includedProof.siblings);
+  concat(
+    new Uint8Array([mode]),
+    u64LE(includedProof.leafIndex),
+    u32LE(includedProof.siblings.length),
+    ...includedProof.siblings,
+  );
 
 const parameters = (): SolanaPublicDecryptCertificateParameters => ({
   handle,
@@ -115,9 +113,9 @@ describe('publicDecryptCertificate', () => {
   });
 
   it('rejects a non-public proof mode before the network', async () => {
-    await expect(publicDecryptCertificate(context, { ...parameters(), mmrProofBytes: proofBlob(0x01) })).rejects.toThrow(
-      'must use mode 0x02',
-    );
+    await expect(
+      publicDecryptCertificate(context, { ...parameters(), mmrProofBytes: proofBlob(0x01) }),
+    ).rejects.toThrow('must use mode 0x02');
   });
 
   it('rejects a malformed proof blob instead of accepting a separate proof', async () => {
@@ -128,9 +126,9 @@ describe('publicDecryptCertificate', () => {
 
   it('rejects invalid inclusion', async () => {
     const input = parameters();
-    await expect(
-      publicDecryptCertificate(context, { ...input, peaks: [new Uint8Array(32)] }),
-    ).rejects.toThrow('failed client-side verification');
+    await expect(publicDecryptCertificate(context, { ...input, peaks: [new Uint8Array(32)] })).rejects.toThrow(
+      'failed client-side verification',
+    );
   });
 
   it('rejects a proof slot that is not the pinned leaf count', async () => {

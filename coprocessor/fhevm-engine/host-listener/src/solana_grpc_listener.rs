@@ -852,10 +852,19 @@ async fn ingest_transaction(
     };
 
     let transaction_id = solana_transaction_id(&transaction.info.signature);
-    let mut db_tx = db
+    // Same cutover/schema-reset write boundary as the EVM ingest path: a retired stack takes no
+    // more rows, so drop the batch instead of failing the subscription.
+    let Some(mut db_tx) = db
         .new_transaction()
         .await
-        .map_err(|err| IngestFailure::retryable(err).context("open db tx"))?;
+        .map_err(|err| IngestFailure::retryable(err).context("open db tx"))?
+    else {
+        info!(
+            slot = sealed_block.slot,
+            "Cutover completed - skipping Solana host event insert on retired stack"
+        );
+        return Ok(());
+    };
     let stats =
         insert_solana_events(db, &mut db_tx, events, transaction_id, block)
             .await

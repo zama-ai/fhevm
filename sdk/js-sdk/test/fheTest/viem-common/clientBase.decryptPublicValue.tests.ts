@@ -8,7 +8,13 @@ import {
   type FheTestViemConfig,
 } from '../setup-viem.js';
 import { FHETestABI } from '../FheTest-abi-v2.js';
-import { decryptTestCases, fheTypeIdFromName, clearTypeFromHandle, fheTypeIdFromHandle } from '../setupCommon.js';
+import {
+  createLogger,
+  decryptTestCases,
+  fheTypeIdFromName,
+  clearTypeFromHandle,
+  fheTypeIdFromHandle,
+} from '../setupCommon.js';
 import { asEncryptedValue, type EncryptedValue } from '@fhevm/sdk/types';
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -34,6 +40,7 @@ export function defineClientBaseDecryptPublicValueTests(parameters: {
           type: 'ApiKeyHeader',
           value: config.zamaApiKey,
         },
+        logger: createLogger(console.log),
       });
     });
 

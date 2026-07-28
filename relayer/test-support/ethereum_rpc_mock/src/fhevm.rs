@@ -1060,13 +1060,12 @@ fn build_user_decrypt_response(
         vec![
             Decryption::UserDecryptionResponse::SIGNATURE_HASH,
             B256::from(decryption_id),
-            B256::from(U256::from(0)), // indexShare topic
         ],
     )
 }
 
 fn build_public_decrypt_request(contract: Address, decryption_id: U256, handles: Vec<B256>) -> Log {
-    let request = Decryption::PublicDecryptionRequest {
+    let request = Decryption::PublicDecryptionRequest_0 {
         decryptionId: decryption_id,
         snsCtMaterials: create_sns_materials(handles),
         extraData: Bytes::from(vec![0x00]),
@@ -1076,7 +1075,7 @@ fn build_public_decrypt_request(contract: Address, decryption_id: U256, handles:
         contract,
         &request,
         vec![
-            Decryption::PublicDecryptionRequest::SIGNATURE_HASH,
+            Decryption::PublicDecryptionRequest_0::SIGNATURE_HASH,
             B256::from(decryption_id),
         ],
     )
@@ -1110,11 +1109,6 @@ fn build_public_decrypt_response(
         vec![
             Decryption::PublicDecryptionResponse::SIGNATURE_HASH,
             B256::from(decryption_id),
-            if success {
-                B256::from([1u8; 32])
-            } else {
-                B256::ZERO
-            },
         ],
     )
 }
@@ -1206,7 +1200,6 @@ fn build_individual_user_decrypt_response(
         vec![
             Decryption::UserDecryptionResponse::SIGNATURE_HASH,
             B256::from(decryption_id),
-            B256::from(U256::from(index_share)),
         ],
     )
 }

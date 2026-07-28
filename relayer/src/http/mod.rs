@@ -20,6 +20,7 @@ pub use utils::{
     // Other utilities
     de_string_or_number,
     deserialize_ct_handles_from_hex,
+    extra_data_decryption_schema,
     // Parsing utilities
     parse_and_validate,
     parse_and_validate_cross,
@@ -48,7 +49,6 @@ pub use utils::{
     validate_timestamp,
     validate_u32_string,
     validate_u64_string,
-    validate_user_decrypt_signature,
     // v3 unified EIP-712 validators
     validate_v3_attestation_type,
     validate_v3_payload_type,

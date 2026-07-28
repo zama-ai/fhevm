@@ -37,6 +37,7 @@ import { is0x, isNo0x, remove0x } from './string.js';
 import { InvalidPropertyError } from './errors/InvalidPropertyError.js';
 import { InvalidTypeError } from './errors/InvalidTypeError.js';
 import { isUintForByteLength } from './uint.js';
+import { Sha256VerificationError } from './errors/Sha256VerificationError.js';
 
 ////////////////////////////////////////////////////////////////////////////////
 
@@ -1446,7 +1447,7 @@ export async function verifySha256(
 
   if (actual !== expected) {
     const subject = options?.subject ?? 'bytes';
-    throw new Error(`SHA-256 mismatch for ${subject}: expected ${expected}, got ${actual}`);
+    throw new Sha256VerificationError({ subject, expected, actual }, {});
   }
 }
 

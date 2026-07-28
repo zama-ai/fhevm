@@ -3,7 +3,11 @@ import type { Address, Instruction, TransactionSigner } from '@solana/kit';
 import { getInitializeMintInstructionAsync } from '../internal/generated/confidentialToken/instructions/initializeMint.js';
 import { findTotalSupplyAuthorityPda } from '../internal/generated/confidentialToken/pdas/totalSupplyAuthority.js';
 import { CONFIDENTIAL_TOKEN_PROGRAM_ADDRESS } from '../internal/generated/confidentialToken/programAddress.js';
-import { totalSupplyValueAddress, tokenEventAuthorityAddress, zamaEventAuthorityAddress } from './internal/tokenValueAccount.js';
+import {
+  totalSupplyValueAddress,
+  tokenEventAuthorityAddress,
+  zamaEventAuthorityAddress,
+} from './internal/tokenValueAccount.js';
 
 export type SolanaVaultInitializeMintParameters = {
   /** Mint authority and rent payer. */
