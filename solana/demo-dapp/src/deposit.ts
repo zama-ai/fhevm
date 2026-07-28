@@ -41,6 +41,7 @@ import {
 import type { BatchPosition, BatchTarget } from "./batchTypes";
 import type { DemoSession } from "./demoSession";
 import { loadDemoEncryptionKey } from "./encryptionKey";
+import { recordTransactionEvidence } from "./evidenceStore";
 import {
   simulateSignedTransactionLocally,
   simulateUnsignedTransactionLocally,
@@ -232,6 +233,9 @@ export const reconcileSavedDeposit = async (
     .getAccountInfo(joinRecord, { commitment: "confirmed", encoding: "base64" })
     .send();
   if (account.value !== null) {
+    if (saved.transaction !== undefined) {
+      recordTransactionEvidence(session, { label: "Deposit", signature: saved.transaction.signature as Signature });
+    }
     const confirmed = {
       batchIndex: saved.batchIndex,
       batch: saved.batch,
@@ -389,6 +393,9 @@ export async function depositToVault(
   } else if (shieldJournal !== null) {
     clearShieldJournal(session);
   }
+  if (shieldAlreadyConfirmed && shieldJournal !== null) {
+    recordTransactionEvidence(session, { label: "Shield USDC", signature: shieldJournal.signature as Signature });
+  }
   if (!shieldAlreadyConfirmed) {
     onStage("preparing");
     const joinTokenAccount = await tokenAccountAddress(config.mints.joinConfidential, signer.address);
@@ -422,7 +429,7 @@ export async function depositToVault(
 
     onStage("shielding");
     let submittedJournal: ShieldJournal | undefined;
-    await send(shieldInstructions, SHIELD_COMPUTE_UNIT_LIMIT, (submitted) => {
+    const shieldSignature = await send(shieldInstructions, SHIELD_COMPUTE_UNIT_LIMIT, (submitted) => {
       submittedJournal = {
         ...submitted,
         amountBaseUnits: amountBaseUnits.toString(),
@@ -432,6 +439,7 @@ export async function depositToVault(
     });
     if (submittedJournal === undefined) throw new Error("Shield transaction journal was not created");
     writeShieldJournal(session, { ...submittedJournal, state: "confirmed" });
+    recordTransactionEvidence(session, { label: "Shield USDC", signature: shieldSignature });
   }
 
   const supportsThreads = globalThis.crossOriginIsolated === true && typeof SharedArrayBuffer !== "undefined";
@@ -465,6 +473,7 @@ export async function depositToVault(
 
   onStage("joining");
   session.assertActive();
+  let joinSignature: Signature | undefined;
   await joinBatch(
     { solanaChain: chain, aclProgramAddress },
     {
@@ -482,6 +491,7 @@ export async function depositToVault(
       computeUnitLimit: JOIN_COMPUTE_UNIT_LIMIT,
       onTransactionSigned: (transaction) => {
         session.assertActive();
+        joinSignature = transaction.signature;
         writeActiveDeposit(session, {
           batchIndex: batch.index,
           batch: batch.addresses.batch,
@@ -495,6 +505,9 @@ export async function depositToVault(
       },
     },
   );
+  if (joinSignature !== undefined) {
+    recordTransactionEvidence(session, { label: "Deposit", signature: joinSignature });
+  }
 
   clearShieldJournal(session);
   onStage("joined");

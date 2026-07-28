@@ -2,6 +2,7 @@ import { address, type Address } from "@solana/kit";
 
 export type DemoConfig = {
   readonly source: "demo-config";
+  readonly demoBootId: string;
   readonly chainId: string;
   readonly rpcUrl: string;
   readonly wsUrl: string;
@@ -66,6 +67,7 @@ export const parseDemoConfig = (value: unknown): DemoConfig => {
   if (rpcUrl !== "http://127.0.0.1:8899") throw new Error(`demo refuses non-local RPC ${rpcUrl}`);
   return {
     source: "demo-config",
+    demoBootId: string(raw.demoBootId, "demo config.demoBootId"),
     chainId: string(raw.chainId, "demo config.chainId"),
     rpcUrl,
     wsUrl: localUrl(raw.wsUrl, "demo config.wsUrl", "ws:"),

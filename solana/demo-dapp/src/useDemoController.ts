@@ -9,9 +9,16 @@ import {
   usdcToBaseUnits,
   type DepositStage,
 } from './deposit';
+import { recordTransactionEvidence } from './evidenceStore';
 import { withWalletMutationLock } from './mutationLock';
-import { prepareDemoDepositBatch, runDemoOperatorAction } from './operatorClient';
-import { findExistingRedeem, joinRedeemBatch, type RedeemStage } from './redeem';
+import { prepareDemoBatch, prepareDemoDepositBatch, runDemoOperatorAction } from './operatorClient';
+import {
+  findCompletedRedeem,
+  findExistingRedeem,
+  joinRedeemBatch,
+  recordCompletedRedeem,
+  type RedeemStage,
+} from './redeem';
 import { revealClaimedShares, revealClaimedUsdc, type RevealedBalance } from './revealShares';
 import { readVaultLifecycle } from './settlement';
 import { harvestDemoVault, readDemoVaultMetrics } from './vaultYield';
@@ -46,6 +53,8 @@ export type DemoState = {
   readonly harvestFromPrice: number | null;
   readonly redeem: JoinState<'decrypting' | RedeemStage>;
   readonly redeemLifecycle: BatchLifecycle | null;
+  readonly completedRedeemLifecycle: Extract<BatchLifecycle, { readonly kind: 'settled' }> | null;
+  readonly completedRedeemPosition: BatchPosition | null;
   readonly redeemOperatorAction: OperatorAction | null;
   readonly redeemOperatorError: string | null;
   readonly revealedUsdc: RevealedBalance | null;
@@ -69,6 +78,8 @@ const accountState = {
   harvestFromPrice: null,
   redeem: { kind: 'idle' },
   redeemLifecycle: null,
+  completedRedeemLifecycle: null,
+  completedRedeemPosition: null,
   redeemOperatorAction: null,
   redeemOperatorError: null,
   revealedUsdc: null,
@@ -131,10 +142,15 @@ export function useDemoController() {
       commit(generation, { [actionKey]: action, [errorKey]: null });
       let actionError: string | null = null;
       try {
-        if (action === 'claim') {
-          await runDemoOperatorAction({ action, position, direction, user: session.signer.address });
-        } else {
-          await runDemoOperatorAction({ action, position, direction });
+        const signature =
+          action === 'claim'
+            ? await runDemoOperatorAction({ action, position, direction, user: session.signer.address })
+            : await runDemoOperatorAction({ action, position, direction });
+        if (typeof signature === 'string') {
+          recordTransactionEvidence(session, {
+            label: `${direction === 'deposit' ? 'Deposit' : 'Redeem'} ${action}`,
+            signature,
+          });
         }
       } catch (error) {
         actionError = errorMessage(error);
@@ -222,6 +238,19 @@ export function useDemoController() {
       try {
         const next = await readVaultLifecycle(session, position, 'redeem');
         if (!canceled) {
+          if (next.kind === 'settled' && next.claimed) {
+            recordCompletedRedeem(session, position);
+            commit(generation, {
+              redeem: { kind: 'idle' },
+              redeemLifecycle: null,
+              completedRedeemLifecycle: next,
+              completedRedeemPosition: position,
+              redeemOperatorError: null,
+              revealedUsdc: null,
+              revealUsdcError: null,
+            });
+            return;
+          }
           commit(generation, { redeemLifecycle: next, redeemOperatorError: null });
           if (next.kind === 'awaiting-dispatch' && next.remainingSlots === 0n) {
             await advanceOperator(session, position, 'redeem', 'dispatch', generation);
@@ -292,8 +321,20 @@ export function useDemoController() {
       try {
         const existingRedeem = await findExistingRedeem(session);
         session.assertActive();
+        const completedRedeemPosition = await findCompletedRedeem(session);
+        session.assertActive();
+        const completedRedeemLifecycle =
+          completedRedeemPosition === null
+            ? null
+            : await readVaultLifecycle(session, completedRedeemPosition, 'redeem');
+        session.assertActive();
         commit(generation, {
           redeem: existingRedeem === null ? { kind: 'idle' } : { kind: 'joined', result: existingRedeem },
+          completedRedeemPosition,
+          completedRedeemLifecycle:
+            completedRedeemLifecycle?.kind === 'settled' && completedRedeemLifecycle.claimed
+              ? completedRedeemLifecycle
+              : null,
         });
       } catch (error) {
         commit(generation, { redeem: { kind: 'error', message: errorMessage(error) } });
@@ -398,8 +439,14 @@ export function useDemoController() {
     const session = state.connection.session;
     const generation = state.generation;
     operationInFlight.current = true;
-    commit(generation, { redeem: { kind: 'running', stage: 'decrypting' } });
+    commit(generation, {
+      redeem: { kind: 'running', stage: 'decrypting' },
+      revealedUsdc: null,
+      revealUsdcError: null,
+    });
     try {
+      await prepareDemoBatch('redeem');
+      session.assertActive();
       const shares = state.revealedShares ?? (await revealClaimedShares(session));
       session.assertActive();
       commit(generation, { revealedShares: null });

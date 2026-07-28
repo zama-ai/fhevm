@@ -79,6 +79,41 @@ describe('RedeemJourney', () => {
   test('does not keep showing an in-progress action after redemption completes', () => {
     const controller = {
       state: {
+        redeem: { kind: 'idle' },
+        redeemLifecycle: null,
+        completedRedeemLifecycle: {
+          kind: 'settled',
+          claimed: true,
+          totalJoined: 50_000_000n,
+          payoutReceived: 50_000_000n,
+        },
+        redeemOperatorAction: null,
+        redeemOperatorError: null,
+        revealedShares: null,
+        revealedUsdc: null,
+        revealingUsdc: false,
+        revealUsdcError: null,
+      },
+      derived: {
+        connected: true,
+        hasPrivateShares: true,
+        redeemJoined: false,
+      },
+      actions: {
+        revealRedeemedUsdc: vi.fn(),
+      },
+    } as unknown as DemoController;
+
+    const markup = renderToStaticMarkup(<RedeemJourney controller={controller} />);
+    expect(markup).toContain('Latest redemption');
+    expect(markup).toContain('Redeem 50% of your position');
+    expect(markup).not.toContain('Waiting for private settlement');
+    expect(markup).not.toContain('Redemption joined</button>');
+  });
+
+  test('does not duplicate the completed timeline during the claimed-to-idle transition', () => {
+    const controller = {
+      state: {
         redeem: { kind: 'joined', result: {} },
         redeemLifecycle: {
           kind: 'settled',
@@ -86,6 +121,7 @@ describe('RedeemJourney', () => {
           totalJoined: 50_000_000n,
           payoutReceived: 50_000_000n,
         },
+        completedRedeemLifecycle: null,
         redeemOperatorAction: null,
         redeemOperatorError: null,
         revealedShares: null,
@@ -104,8 +140,7 @@ describe('RedeemJourney', () => {
     } as unknown as DemoController;
 
     const markup = renderToStaticMarkup(<RedeemJourney controller={controller} />);
-    expect(markup).toContain('Redemption complete');
-    expect(markup).not.toContain('Waiting for private settlement');
-    expect(markup).not.toContain('Redemption joined</button>');
+    expect(markup).toContain('Latest redemption');
+    expect(markup).not.toContain('One signature · one transaction');
   });
 });

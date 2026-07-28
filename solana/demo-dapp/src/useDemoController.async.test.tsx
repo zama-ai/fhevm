@@ -5,6 +5,7 @@ import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest';
 const mocks = vi.hoisted(() => ({
   findDeposit: vi.fn(),
   findRedeem: vi.fn(),
+  findCompletedRedeem: vi.fn(),
   fund: vi.fn(),
   harvest: vi.fn(),
   hasShares: vi.fn(),
@@ -14,6 +15,7 @@ const mocks = vi.hoisted(() => ({
   metrics: vi.fn(),
   operator: vi.fn(),
   prepareBatch: vi.fn(),
+  recordCompletedRedeem: vi.fn(),
   revealShares: vi.fn(),
   revealUsdc: vi.fn(),
 }));
@@ -33,10 +35,16 @@ vi.mock('./mutationLock', () => ({
   withWalletMutationLock: async (_session: unknown, action: () => Promise<unknown>) => action(),
 }));
 vi.mock('./operatorClient', () => ({
+  prepareDemoBatch: mocks.prepareBatch,
   prepareDemoDepositBatch: mocks.prepareBatch,
   runDemoOperatorAction: mocks.operator,
 }));
-vi.mock('./redeem', () => ({ findExistingRedeem: mocks.findRedeem, joinRedeemBatch: mocks.joinRedeem }));
+vi.mock('./redeem', () => ({
+  findCompletedRedeem: mocks.findCompletedRedeem,
+  findExistingRedeem: mocks.findRedeem,
+  joinRedeemBatch: mocks.joinRedeem,
+  recordCompletedRedeem: mocks.recordCompletedRedeem,
+}));
 vi.mock('./revealShares', () => ({
   revealClaimedShares: mocks.revealShares,
   revealClaimedUsdc: mocks.revealUsdc,
@@ -110,6 +118,7 @@ describe('useDemoController generation safety', () => {
     Object.assign(globalThis, { IS_REACT_ACT_ENVIRONMENT: true, window: globalThis });
     mocks.findDeposit.mockResolvedValue(position);
     mocks.findRedeem.mockResolvedValue(null);
+    mocks.findCompletedRedeem.mockResolvedValue(null);
     mocks.fund.mockResolvedValue(undefined);
     mocks.hasShares.mockResolvedValue(true);
     mocks.lifecycle.mockResolvedValue(awaiting);
@@ -216,6 +225,52 @@ describe('useDemoController generation safety', () => {
       kind: 'joined',
       result: { ...nextPosition, amountBaseUnits: 50_000_000n },
     });
+  });
+
+  test('completes a partial redemption and leaves the next redemption available', async () => {
+    mocks.findDeposit.mockResolvedValue(null);
+    mocks.lifecycle.mockResolvedValue(settled);
+    mocks.revealShares.mockResolvedValue({ value: 100_000_000n, handle: '0x01' });
+    mocks.joinRedeem.mockResolvedValue(position);
+    await connect(controller);
+    await flush();
+
+    await act(async () => {
+      controller.actions.redeem(50);
+    });
+    await flush();
+
+    expect(mocks.prepareBatch).toHaveBeenCalledWith('redeem');
+    expect(mocks.joinRedeem).toHaveBeenCalledWith(
+      expect.anything(),
+      50_000_000n,
+      '0x01',
+      expect.any(Function),
+    );
+    expect(mocks.recordCompletedRedeem).toHaveBeenCalledWith(expect.anything(), position);
+    expect(controller.state.redeem).toEqual({ kind: 'idle' });
+    expect(controller.state.completedRedeemLifecycle).toEqual(settled);
+
+    await act(async () => {
+      controller.actions.redeem(25);
+    });
+    await flush();
+
+    expect(mocks.prepareBatch).toHaveBeenCalledTimes(2);
+    expect(mocks.joinRedeem).toHaveBeenCalledTimes(2);
+  });
+
+  test('restores the latest completed redemption for activity and evidence after reconnect', async () => {
+    mocks.findDeposit.mockResolvedValue(null);
+    mocks.findCompletedRedeem.mockResolvedValue(position);
+    mocks.lifecycle.mockResolvedValue(settled);
+
+    await connect(controller);
+    await flush();
+
+    expect(controller.state.redeem).toEqual({ kind: 'idle' });
+    expect(controller.state.completedRedeemPosition).toEqual(position);
+    expect(controller.state.completedRedeemLifecycle).toEqual(settled);
   });
 
   test('retries an automatic operator failure on the next lifecycle poll', async () => {

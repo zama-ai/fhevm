@@ -17,6 +17,7 @@ export function RedeemJourney({ controller }: { readonly controller: DemoControl
   const {
     redeem,
     redeemLifecycle: lifecycle,
+    completedRedeemLifecycle,
     redeemOperatorAction: operatorAction,
     redeemOperatorError: operatorError,
     revealedShares,
@@ -27,7 +28,7 @@ export function RedeemJourney({ controller }: { readonly controller: DemoControl
   const { connected, hasPrivateShares, redeemJoined } = derived;
   const [percentage, setPercentage] = useState(50);
   const settled = lifecycle?.kind === 'settled';
-  const complete = settled && lifecycle.claimed;
+  const completed = (settled && lifecycle.claimed ? lifecycle : completedRedeemLifecycle) ?? null;
   if (!connected || !hasPrivateShares) return null;
   const copy = stageCopy(percentage);
 
@@ -46,73 +47,69 @@ export function RedeemJourney({ controller }: { readonly controller: DemoControl
         </div>
       </div>
 
-      <JourneyTimeline
-        framed
-        steps={[
-          {
-            state: redeemJoined ? 'complete' : 'active',
-            title: 'Redeem',
-            detail: 'One signature · one transaction',
-          },
-          {
-            state: settled ? 'complete' : redeemJoined ? 'active' : 'idle',
-            title: settled ? 'Settled on Solana' : 'Automatic settlement',
-            detail: settled ? 'Batch total is now public' : 'Your redemption stays private',
-          },
-          {
-            state: settled && lifecycle.claimed ? 'complete' : settled ? 'active' : 'idle',
-            title: settled && lifecycle.claimed ? 'cUSDC received' : 'Receiving cUSDC',
-            detail: settled && lifecycle.claimed ? 'Balance remains encrypted' : 'Automatic',
-          },
-        ]}
-      />
-
-      {!complete && (
-        <div className="redeem-action">
-          <div>
-            <strong>
-              {redeem.kind === 'running'
-                ? copy[redeem.stage]
-                : redeemJoined
-                  ? copy.joined
-                  : `Redeem ${percentage}% of your position`}
-            </strong>
-            <small>
-              {redeemJoined
-                ? 'The clear redeem amount was discarded immediately after the private join.'
-                : revealedShares === null
-                  ? 'The one-time decrypt signature is requested inside this intent.'
-                  : `Uses the ${formatUsdc(revealedShares.value)} cShares revealed in this view, then remasks it.`}
-            </small>
-            {!redeemJoined && (
-              <label className="redeem-slider">
-                <input
-                  aria-label="Percentage to redeem"
-                  type="range"
-                  min="1"
-                  max="100"
-                  step="1"
-                  value={percentage}
-                  disabled={redeem.kind === 'running'}
-                  onChange={(event) => setPercentage(Number(event.target.value))}
-                />
-                <output>{percentage}%</output>
-              </label>
-            )}
-          </div>
-          <button
-            className="panel-action"
-            type="button"
-            disabled={redeem.kind === 'running' || redeemJoined}
-            onClick={() => actions.redeem(percentage)}
-          >
+      <div className="redeem-action">
+        <div>
+          <strong>
             {redeem.kind === 'running'
-              ? 'Redeeming…'
+              ? copy[redeem.stage]
               : redeemJoined
-                ? 'Redemption joined'
-                : 'Redeem'}
-          </button>
+                ? copy.joined
+                : `Redeem ${percentage}% of your position`}
+          </strong>
+          <small>
+            {redeemJoined
+              ? 'The clear redeem amount was discarded immediately after the private join.'
+              : revealedShares === null
+                ? 'The one-time decrypt signature is requested inside this intent.'
+                : `Uses the ${formatUsdc(revealedShares.value)} cShares revealed in this view, then remasks it.`}
+          </small>
+          {!redeemJoined && (
+            <label className="redeem-slider">
+              <input
+                aria-label="Percentage to redeem"
+                type="range"
+                min="1"
+                max="100"
+                step="1"
+                value={percentage}
+                disabled={redeem.kind === 'running'}
+                onChange={(event) => setPercentage(Number(event.target.value))}
+              />
+              <output>{percentage}%</output>
+            </label>
+          )}
         </div>
+        <button
+          className="panel-action"
+          type="button"
+          disabled={redeem.kind === 'running' || redeemJoined}
+          onClick={() => actions.redeem(percentage)}
+        >
+          {redeem.kind === 'running' ? 'Redeeming…' : redeemJoined ? 'Redemption joined' : 'Redeem'}
+        </button>
+      </div>
+
+      {redeemJoined && !(settled && lifecycle.claimed) && (
+        <JourneyTimeline
+          framed
+          steps={[
+            {
+              state: 'complete',
+              title: 'Redeem',
+              detail: 'One signature · one transaction',
+            },
+            {
+              state: settled ? 'complete' : 'active',
+              title: settled ? 'Settled on Solana' : 'Automatic settlement',
+              detail: settled ? 'Batch total is now public' : 'Your redemption stays private',
+            },
+            {
+              state: settled && lifecycle.claimed ? 'complete' : settled ? 'active' : 'idle',
+              title: settled && lifecycle.claimed ? 'cUSDC received' : 'Receiving cUSDC',
+              detail: settled && lifecycle.claimed ? 'Balance remains encrypted' : 'Automatic',
+            },
+          ]}
+        />
       )}
 
       {redeem.kind === 'error' && (
@@ -128,7 +125,7 @@ export function RedeemJourney({ controller }: { readonly controller: DemoControl
         />
       )}
 
-      {settled && (
+      {settled && !lifecycle.claimed && (
         <div className="privacy-split redeem-privacy-split">
           <div>
             <span>Your redeemed amount</span>
@@ -145,41 +142,56 @@ export function RedeemJourney({ controller }: { readonly controller: DemoControl
         </div>
       )}
 
-      {settled && lifecycle.claimed && (
-        <div className="redeem-complete">
-          <div className="verified-settlement" role="status">
-            <span>✓</span>
-            <div>
-              <strong>Redemption complete</strong>
-              <small>The remaining cShares and claimed cUSDC are both still encrypted.</small>
+      {completed !== null && (
+        <details className="activity-ledger redeem-activity">
+          <summary>
+            <span>
+              <strong>Latest redemption</strong>
+              <small>cUSDC received</small>
+            </span>
+            <span className="activity-state complete">Completed</span>
+          </summary>
+          <div className="activity-content">
+            <div className="privacy-split redeem-privacy-split">
+              <div>
+                <span>Your redeemed amount</span>
+                <strong>••• cShares</strong>
+              </div>
+              <div>
+                <span>Public redeem batch total</span>
+                <strong>{formatUsdc(completed.totalJoined)} cShares</strong>
+              </div>
+              <div>
+                <span>Public USDC returned</span>
+                <strong>{formatUsdc(completed.payoutReceived)} USDC</strong>
+              </div>
             </div>
+            <div className="redeem-balance-action">
+              <div className="revealed-value">
+                <strong>
+                  {revealingUsdc
+                    ? 'Decrypting…'
+                    : revealedUsdc === null
+                      ? '•••• cUSDC'
+                      : `${formatUsdc(revealedUsdc.value)} cUSDC`}
+                </strong>
+                <small>{revealedUsdc === null ? 'Exact current balance' : 'Revealed for this view only'}</small>
+              </div>
+              <button
+                className="panel-action"
+                type="button"
+                disabled={revealingUsdc}
+                onClick={revealedUsdc === null ? actions.revealRedeemedUsdc : actions.hideRedeemedUsdc}
+              >
+                {revealedUsdc === null ? 'Reveal current cUSDC balance' : 'Hide cUSDC'}
+              </button>
+            </div>
+            <details className="privacy-note">
+              <summary>Privacy detail</summary>
+              Settlement publishes the batch total. If you are the only participant, that total reveals your amount.
+              Privacy strengthens with more independent participants.
+            </details>
           </div>
-          <div className="revealed-value">
-            <strong>
-              {revealingUsdc
-                ? 'Decrypting…'
-                : revealedUsdc === null
-                  ? '•••• cUSDC'
-                  : `${formatUsdc(revealedUsdc.value)} cUSDC`}
-            </strong>
-            <small>{revealedUsdc === null ? 'Exact current balance' : 'Revealed for this view only'}</small>
-          </div>
-          <button
-            className="panel-action"
-            type="button"
-            disabled={revealingUsdc}
-            onClick={revealedUsdc === null ? actions.revealRedeemedUsdc : actions.hideRedeemedUsdc}
-          >
-            {revealedUsdc === null ? 'Reveal current cUSDC balance' : 'Hide cUSDC'}
-          </button>
-        </div>
-      )}
-
-      {settled && (
-        <details className="privacy-note">
-          <summary>Privacy detail</summary>
-          Settlement publishes the batch total. If you are the only participant, that total reveals your amount.
-          Privacy strengthens with more independent participants.
         </details>
       )}
 

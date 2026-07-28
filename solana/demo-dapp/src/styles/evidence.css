@@ -1,0 +1,173 @@
+.developer-evidence {
+  margin-top: 18px;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 14px;
+  background: rgba(20, 20, 23, 0.54);
+}
+
+.developer-evidence > summary {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 16px 18px;
+  cursor: pointer;
+  list-style: none;
+}
+
+.developer-evidence > summary::-webkit-details-marker {
+  display: none;
+}
+
+.developer-evidence > summary::after {
+  color: #8e8e96;
+  content: "＋";
+}
+
+.developer-evidence[open] > summary::after {
+  content: "−";
+}
+
+.developer-evidence > summary:focus-visible,
+.evidence-toolbar button:focus-visible,
+.evidence-value button:focus-visible,
+.evidence-transactions a:focus-visible {
+  outline: 2px solid #a78bfa;
+  outline-offset: 2px;
+}
+
+.developer-evidence > summary strong,
+.developer-evidence > summary small {
+  display: block;
+}
+
+.developer-evidence > summary small {
+  margin-top: 3px;
+  color: #8e8e96;
+  font-size: 10px;
+}
+
+.evidence-content {
+  display: grid;
+  gap: 18px;
+  padding: 18px;
+  border-top: 1px solid rgba(255, 255, 255, 0.07);
+}
+
+.evidence-toolbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.evidence-toolbar span {
+  color: #8e8e96;
+  font-size: 10px;
+}
+
+.evidence-toolbar button {
+  padding: 6px 9px;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 7px;
+  color: #c4b5fd;
+  background: rgba(124, 58, 237, 0.09);
+  cursor: pointer;
+  font-size: 10px;
+}
+
+.evidence-toolbar button:disabled {
+  cursor: wait;
+  opacity: 0.55;
+}
+
+.evidence-content dl {
+  display: grid;
+  gap: 10px;
+  margin: 0;
+}
+
+.evidence-content dl > div,
+.evidence-transactions li {
+  display: grid;
+  grid-template-columns: minmax(150px, 0.7fr) minmax(220px, 1fr) auto;
+  align-items: center;
+  gap: 12px;
+}
+
+.evidence-content dt,
+.evidence-transactions li > span {
+  color: #9c9ca4;
+  font-size: 11px;
+}
+
+.evidence-content dd {
+  margin: 0;
+}
+
+.evidence-value {
+  display: flex;
+  min-width: 0;
+  align-items: center;
+  gap: 8px;
+}
+
+.evidence-value code {
+  overflow: hidden;
+  color: #d8d8df;
+  font-size: 11px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.evidence-value button,
+.evidence-transactions a {
+  padding: 5px 7px;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 6px;
+  color: #c4b5fd;
+  background: rgba(124, 58, 237, 0.09);
+  cursor: pointer;
+  font-size: 10px;
+  text-decoration: none;
+}
+
+.evidence-toolbar button:hover:not(:disabled),
+.evidence-value button:hover,
+.evidence-transactions a:hover {
+  border-color: rgba(196, 181, 253, 0.4);
+  background: rgba(124, 58, 237, 0.18);
+}
+
+.evidence-transactions > strong {
+  display: block;
+  margin-bottom: 10px;
+  font-size: 12px;
+}
+
+.evidence-transactions ul {
+  display: grid;
+  gap: 8px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.evidence-note,
+.evidence-error {
+  margin: 0;
+  color: #8e8e96;
+  font-size: 10px;
+  line-height: 1.55;
+}
+
+.evidence-error {
+  color: #fecaca;
+}
+
+@media (max-width: 700px) {
+  .evidence-content dl > div,
+  .evidence-transactions li {
+    grid-template-columns: 1fr;
+    gap: 5px;
+  }
+}

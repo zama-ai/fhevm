@@ -64,12 +64,12 @@
     gap: 14px;
   }
 
-  .redeem-complete {
-    grid-template-columns: 1fr;
+  .redeem-balance-action {
     align-items: stretch;
+    flex-direction: column;
   }
 
-  .redeem-complete > div:nth-child(2) {
+  .redeem-balance-action .revealed-value {
     text-align: left;
   }
 }

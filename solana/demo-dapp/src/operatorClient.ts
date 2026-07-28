@@ -1,12 +1,14 @@
-import type { BatchTarget } from "./batchTypes";
+import type { Signature } from "@solana/kit";
+
+import type { BatchTarget, VaultDirection } from "./batchTypes";
 import { demoApiFetch } from "./demoAuthorization";
 import { encodeOperatorRequest, parseBatchTarget, type OperatorRequest } from "./demoApi";
 
-export const prepareDemoDepositBatch = async (): Promise<BatchTarget> => {
+export const prepareDemoBatch = async (direction: VaultDirection): Promise<BatchTarget> => {
   const response = await demoApiFetch("/api/demo-batch", {
     method: "POST",
     headers: { "content-type": "application/json" },
-    body: JSON.stringify({ direction: "deposit" }),
+    body: JSON.stringify({ direction }),
   });
   if (!response.ok) {
     const body = (await response.json().catch(() => null)) as { readonly error?: string } | null;
@@ -15,9 +17,11 @@ export const prepareDemoDepositBatch = async (): Promise<BatchTarget> => {
   return parseBatchTarget(await response.json());
 };
 
+export const prepareDemoDepositBatch = (): Promise<BatchTarget> => prepareDemoBatch("deposit");
+
 export const runDemoOperatorAction = async (
   request: OperatorRequest,
-): Promise<void> => {
+): Promise<Signature | null> => {
   const response = await demoApiFetch("/api/demo-operator", {
     method: "POST",
     headers: { "content-type": "application/json" },
@@ -27,4 +31,6 @@ export const runDemoOperatorAction = async (
     const body = (await response.json().catch(() => null)) as { readonly error?: string } | null;
     throw new Error(body?.error ?? `demo operator failed with HTTP ${response.status}`);
   }
+  const body = (await response.json()) as { readonly signature?: unknown };
+  return typeof body.signature === "string" ? body.signature as Signature : null;
 };

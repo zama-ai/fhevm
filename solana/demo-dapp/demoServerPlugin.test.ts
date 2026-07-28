@@ -2,7 +2,7 @@ import type { IncomingMessage } from 'node:http';
 
 import { describe, expect, test } from 'vitest';
 
-import { hasDemoPageContext, runSingleFlight } from './demoServerPlugin';
+import { hasDemoPageContext, runSerialized, runSingleFlight } from './demoServerPlugin';
 
 const request = (
   overrides: Partial<{
@@ -77,5 +77,31 @@ describe('local keeper single-flight', () => {
     await expect(runSingleFlight(operations, 'deposit:batch:dispatch', async () => 'already advanced')).resolves.toBe(
       'already advanced',
     );
+  });
+
+  test('serializes distinct batch preparations that share one registry', async () => {
+    const queue = { tail: Promise.resolve() };
+    const order: string[] = [];
+    let releaseFirst!: () => void;
+    const firstPending = new Promise<void>((resolve) => {
+      releaseFirst = resolve;
+    });
+    const first = runSerialized(queue, async () => {
+      order.push('deposit:start');
+      await firstPending;
+      order.push('deposit:end');
+      return 'deposit';
+    });
+    const second = runSerialized(queue, async () => {
+      order.push('redeem:start');
+      order.push('redeem:end');
+      return 'redeem';
+    });
+
+    await Promise.resolve();
+    expect(order).toEqual(['deposit:start']);
+    releaseFirst();
+    await expect(Promise.all([first, second])).resolves.toEqual(['deposit', 'redeem']);
+    expect(order).toEqual(['deposit:start', 'deposit:end', 'redeem:start', 'redeem:end']);
   });
 });

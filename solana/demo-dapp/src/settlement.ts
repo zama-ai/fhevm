@@ -3,6 +3,7 @@ import {
   createSolanaRpcSubscriptions,
   getAddressEncoder,
   type Address,
+  type Signature,
   type TransactionSigner,
 } from '@solana/kit';
 import { createFhevmPublicDecryptClient, defineFhevmSolanaChain, setFhevmRuntimeConfig } from '@fhevm/sdk/solana';
@@ -149,16 +150,16 @@ export const dispatchVaultBatch = async (
   session: DemoOperatorSession,
   position: BatchTarget,
   direction: VaultDirection,
-): Promise<void> => {
+): Promise<Signature | null> => {
   const roots = vaultRoots(session.config, direction);
   const { rpc, batch } = await currentPinnedBatch(session, position, direction);
-  if (batch.state.status >= BATCH_DISPATCHED) return;
+  if (batch.state.status >= BATCH_DISPATCHED) return null;
   const batcher = await getBatcher(rpc, roots.batcher, { commitment: 'confirmed' });
   const currentSlot = await rpc.getSlot({ commitment: 'confirmed' }).send();
   if (currentSlot < batch.state.openedSlot + batcher.minBatchAgeSlots) {
     throw new Error('The batch is not old enough to dispatch yet');
   }
-  await sendTransaction(
+  return sendTransaction(
     session.config,
     session.keeper,
     [
@@ -179,10 +180,10 @@ export const settleVaultBatch = async (
   position: BatchTarget,
   direction: VaultDirection,
   lookupTableAddress: Address = session.config.batchers[direction].lookupTable,
-): Promise<void> => {
+): Promise<Signature | null> => {
   const roots = vaultRoots(session.config, direction);
   const { rpc, batch } = await currentPinnedBatch(session, position, direction);
-  if (batch.state.status === BATCH_SETTLED || batch.state.status === BATCH_CANCELED) return;
+  if (batch.state.status === BATCH_SETTLED || batch.state.status === BATCH_CANCELED) return null;
   if (batch.state.status !== BATCH_DISPATCHED) throw new Error('Dispatch the batch before settlement');
   if (!(await hasReadyProof(session, batch, direction))) throw new Error('The private proof is not ready yet');
 
@@ -196,7 +197,7 @@ export const settleVaultBatch = async (
     },
   });
   const publicDecryptClient = createFhevmPublicDecryptClient({ chain });
-  await settleBatch(chain, { proofServiceUrl: session.config.proofServiceUrl }, session.keeper, {
+  return settleBatch(chain, { proofServiceUrl: session.config.proofServiceUrl }, session.keeper, {
     rpc,
     rpcSubscriptions,
     runtime: publicDecryptClient.runtime,

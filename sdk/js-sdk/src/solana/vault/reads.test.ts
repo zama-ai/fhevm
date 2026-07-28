@@ -96,6 +96,56 @@ describe('getEncryptedValueState', () => {
     expect(state.peaks).toEqual([]);
   });
 
+  it('accepts stale 32-byte high-water capacity after a shorter live MMR', async () => {
+    const currentHandle = new Uint8Array(32).fill(0x77);
+    const livePeak = new Uint8Array(32).fill(0x0a);
+    const stalePeak = new Uint8Array(32).fill(0xbb);
+    const data = concat(
+      encryptedValueAccount({
+        currentHandle,
+        subjects: [new Uint8Array(32).fill(0x05)],
+        leafCount: 8n,
+        peaks: [livePeak],
+        bump: 254,
+      }),
+      stalePeak,
+    );
+    fetchEncodedAccount.mockResolvedValue({ exists: true, address: addr(9), data });
+
+    const state = await getEncryptedValueState({} as never, addr(9));
+    expect(state.leafCount).toBe(8n);
+    expect(state.peaks.map((p) => Array.from(p))).toEqual([Array.from(livePeak)]);
+  });
+
+  it('rejects trailing bytes that cannot be vector high-water capacity', async () => {
+    const data = concat(
+      encryptedValueAccount({
+        currentHandle: new Uint8Array(32),
+        subjects: [],
+        leafCount: 0n,
+        peaks: [],
+        bump: 255,
+      }),
+      new Uint8Array([0xbb]),
+    );
+    fetchEncodedAccount.mockResolvedValue({ exists: true, address: addr(9), data });
+
+    await expect(getEncryptedValueState({} as never, addr(9))).rejects.toThrow('layout has drifted');
+  });
+
+  it('rejects an MMR peak count inconsistent with the leaf count', async () => {
+    const data = encryptedValueAccount({
+      currentHandle: new Uint8Array(32),
+      subjects: [],
+      leafCount: 3n,
+      peaks: [new Uint8Array(32)],
+      bump: 255,
+    });
+    fetchEncodedAccount.mockResolvedValue({ exists: true, address: addr(9), data });
+
+    await expect(getEncryptedValueState({} as never, addr(9))).rejects.toThrow('layout has drifted');
+  });
+
   it('throws when the account does not exist', async () => {
     fetchEncodedAccount.mockResolvedValue({ exists: false, address: addr(9) });
     await expect(getEncryptedValueState({} as never, addr(9))).rejects.toThrow('does not exist');

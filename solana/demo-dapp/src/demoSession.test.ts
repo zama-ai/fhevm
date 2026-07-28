@@ -13,6 +13,7 @@ import {
 const validResponse = {
   config: {
     source: "demo-config",
+    demoBootId: "test-boot",
     chainId: "9223372036854788153",
     rpcUrl: "http://127.0.0.1:8899",
     wsUrl: "ws://127.0.0.1:8900",

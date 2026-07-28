@@ -7,12 +7,14 @@ import {
   createSolanaRpc,
   createSolanaRpcSubscriptions,
   createTransactionMessage,
+  getSignatureFromTransaction,
   sendAndConfirmTransactionFactory,
   setTransactionMessageComputeUnitLimit,
   setTransactionMessageFeePayerSigner,
   setTransactionMessageLifetimeUsingBlockhash,
   signTransactionMessageWithSigners,
   type Instruction,
+  type Signature,
   type TransactionSigner,
 } from "@solana/kit";
 
@@ -27,7 +29,7 @@ export const sendTransaction = async (
   payer: TransactionSigner,
   instructions: readonly Instruction[],
   computeUnitLimit: number,
-): Promise<void> => {
+): Promise<Signature> => {
   const rpc = createSolanaRpc(config.rpcUrl);
   const rpcSubscriptions = createSolanaRpcSubscriptions(config.wsUrl);
   const sendAndConfirm = sendAndConfirmTransactionFactory({ rpc, rpcSubscriptions });
@@ -43,4 +45,5 @@ export const sendTransaction = async (
   assertIsTransactionWithinSizeLimit(transaction);
   await simulateSignedTransactionLocally(rpc, transaction, "Signed transaction");
   await sendAndConfirm(transaction, { commitment: "confirmed", skipPreflight: true });
+  return getSignatureFromTransaction(transaction);
 };

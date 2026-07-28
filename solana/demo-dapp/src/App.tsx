@@ -1,5 +1,6 @@
 import { AppHeader } from './AppHeader';
 import { DepositJourney } from './DepositJourney';
+import { DeveloperEvidence } from './DeveloperEvidence';
 import { PortfolioOverview } from './PortfolioOverview';
 import { RedeemJourney } from './RedeemJourney';
 import { useDemoController } from './useDemoController';
@@ -29,6 +30,7 @@ export function App() {
         <PortfolioOverview controller={controller} />
         <DepositJourney controller={controller} />
         <RedeemJourney controller={controller} />
+        <DeveloperEvidence key={controller.state.generation} controller={controller} />
       </main>
     </div>
   );

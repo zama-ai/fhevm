@@ -1,4 +1,4 @@
-import { createSolanaRpc, type Address, type Instruction, type TransactionSigner } from '@solana/kit';
+import { createSolanaRpc, type Address, type Instruction, type Signature, type TransactionSigner } from '@solana/kit';
 import {
   buildClaimInstruction,
   buildInitializeTokenAccountInstruction,
@@ -100,16 +100,16 @@ export const claimBatchPayout = async (
   position: BatchTarget,
   direction: VaultDirection,
   user: Address,
-): Promise<void> => {
+): Promise<Signature | null> => {
   const plan = await buildClaimInstructions(session, position, direction, user);
-  if (plan === null) return;
+  if (plan === null) return null;
   try {
-    await sendTransaction(session.config, session.keeper, plan.instructions, CLAIM_COMPUTE_UNIT_LIMIT);
+    return await sendTransaction(session.config, session.keeper, plan.instructions, CLAIM_COMPUTE_UNIT_LIMIT);
   } catch (error) {
     if (!plan.initializesAccount) throw error;
     const retryPlan = await buildClaimInstructions(session, position, direction, user);
-    if (retryPlan === null) return;
+    if (retryPlan === null) return null;
     if (retryPlan.initializesAccount) throw error;
-    await sendTransaction(session.config, session.keeper, retryPlan.instructions, CLAIM_COMPUTE_UNIT_LIMIT);
+    return sendTransaction(session.config, session.keeper, retryPlan.instructions, CLAIM_COMPUTE_UNIT_LIMIT);
   }
 };

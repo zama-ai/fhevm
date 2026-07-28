@@ -21,6 +21,12 @@ export type RevealedBalance = {
   readonly value: bigint;
 };
 
+export type ConfidentialBalanceEvidence = {
+  readonly encryptedValue: string;
+  readonly handle: string;
+  readonly tokenAccount: string;
+};
+
 const handleHex = (handle: Uint8Array): string =>
   `0x${Array.from(handle, (byte) => byte.toString(16).padStart(2, '0')).join('')}`;
 
@@ -88,6 +94,20 @@ export const readClaimedSharesHandle = async (session: DemoSession): Promise<str
   const balance = await confidentialBalanceValueAccount(mint, tokenAccount);
   const state = await getEncryptedValueState(createSolanaRpc(session.config.rpcUrl), balance.encryptedValueAddress);
   return handleHex(state.currentHandle);
+};
+
+export const readConfidentialBalanceEvidence = async (
+  session: DemoSession,
+  mint: DemoSession['config']['mints']['joinConfidential'],
+): Promise<ConfidentialBalanceEvidence> => {
+  const tokenAccount = await tokenAccountAddress(mint, session.signer.address);
+  const balance = await confidentialBalanceValueAccount(mint, tokenAccount);
+  const state = await getEncryptedValueState(createSolanaRpc(session.config.rpcUrl), balance.encryptedValueAddress);
+  return {
+    encryptedValue: balance.encryptedValueAddress,
+    handle: handleHex(state.currentHandle),
+    tokenAccount,
+  };
 };
 
 export const revealClaimedShares = (session: DemoSession): Promise<RevealedBalance> =>

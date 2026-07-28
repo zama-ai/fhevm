@@ -98,9 +98,10 @@ export async function getBatchByIndex(
  *
  * (c) FRAGILITY — each `subjects` element is decoded as a bare 32-byte grant. If the crate's
  *     `EncryptedValueSubjectGrant` ever gains a field, its element size stops being 32 and THIS
- *     decoder silently misaligns everything after it (`leafCount`, `peaks`, `bump` decode from the
- *     wrong offsets) with no error — just wrong values. Anyone who changes that struct MUST update
- *     the `subjects` element decoder here in lockstep. Do not treat 32 as incidental.
+ *     decoder can misalign everything after it (`leafCount`, `peaks`, `bump`). The structural
+ *     checks below reject impossible MMR shapes and non-32-byte trailing capacity. Anyone who
+ *     changes that struct MUST still update the decoder here in lockstep. Do not treat 32 as
+ *     incidental.
  */
 const encryptedValueBodyDecoder = getStructDecoder([
   ['aclDomainKey', fixDecoderSize(getBytesDecoder(), 32)],
@@ -114,6 +115,13 @@ const encryptedValueBodyDecoder = getStructDecoder([
 ]);
 
 const ENCRYPTED_VALUE_DISCRIMINATOR_SIZE = 8;
+const ENCRYPTED_VALUE_VECTOR_ELEMENT_SIZE = 32;
+
+const popcount = (value: bigint): number => {
+  let count = 0;
+  for (let remaining = value; remaining > 0n; remaining >>= 1n) count += Number(remaining & 1n);
+  return count;
+};
 
 export async function getEncryptedValueState(
   rpc: SolanaRpc,
@@ -122,17 +130,23 @@ export async function getEncryptedValueState(
   const account = await fetchEncodedAccount(rpc, address);
   if (!account.exists) throw new Error(`EncryptedValue account ${address} does not exist`);
   const body = account.data.slice(ENCRYPTED_VALUE_DISCRIMINATOR_SIZE);
-  // Structural guard against the layout drift this decoder is explicitly fragile to (see the header
-  // comment on the crate's `EncryptedValue` struct, esp. the bare 32-byte `subjects` element). `read`
-  // returns the offset it consumed to; if it is not exactly the account body length the on-chain
-  // layout no longer matches what we decode, so every field past the divergence is silently wrong.
-  // Fail loudly here rather than return misaligned `leafCount`/`peaks` that corrupt a settle proof.
+  // `EncryptedValue` realloc-grows but never shrinks, so a shorter current `subjects`/`peaks`
+  // serialization may leave stale high-water capacity after the live borsh value. Each capacity
+  // step is exactly one 32-byte vector element. Reject any other trailing shape, and independently
+  // verify the MMR invariant so a misaligned hand-written decoder still fails loudly.
   const [decoded, offset] = encryptedValueBodyDecoder.read(body, 0);
-  if (offset !== body.length) {
+  const trailingCapacity = body.length - offset;
+  const expectedPeakCount = popcount(decoded.leafCount);
+  if (
+    trailingCapacity < 0 ||
+    trailingCapacity % ENCRYPTED_VALUE_VECTOR_ELEMENT_SIZE !== 0 ||
+    decoded.peaks.length !== expectedPeakCount
+  ) {
     throw new Error(
-      `EncryptedValue account ${address}: decoder consumed ${offset} of ${body.length} body bytes ` +
-        `(after the ${ENCRYPTED_VALUE_DISCRIMINATOR_SIZE}-byte discriminator) — the on-chain layout ` +
-        `has drifted from this decoder. Re-check the crate's EncryptedValue struct and update reads.ts.`,
+      `EncryptedValue account ${address}: decoded ${decoded.peaks.length} MMR peaks for leaf count ` +
+        `${decoded.leafCount} and consumed ${offset} of ${body.length} body bytes (after the ` +
+        `${ENCRYPTED_VALUE_DISCRIMINATOR_SIZE}-byte discriminator) — the on-chain layout has drifted ` +
+        `from this decoder. Re-check the crate's EncryptedValue struct and update reads.ts.`,
     );
   }
   return {

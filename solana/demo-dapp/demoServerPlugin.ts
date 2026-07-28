@@ -88,6 +88,22 @@ export const runSingleFlight = async <T>(
   }
 };
 
+export type SerialQueue = { tail: Promise<void> };
+
+export const runSerialized = async <T>(queue: SerialQueue, start: () => Promise<T>): Promise<T> => {
+  const previous = queue.tail;
+  let release!: () => void;
+  queue.tail = new Promise<void>((resolve) => {
+    release = resolve;
+  });
+  await previous;
+  try {
+    return await start();
+  } finally {
+    release();
+  }
+};
+
 const hasJsonContentType = (request: IncomingMessage): boolean =>
   request.headers['content-type']?.split(';', 1)[0]?.trim().toLowerCase() === 'application/json';
 
@@ -197,11 +213,12 @@ export const demoServerPlugin = (): Plugin => ({
         };
         type HarvestResult = { readonly before: VaultMetrics; readonly after: VaultMetrics };
         let harvestInFlight: Promise<HarvestResult> | undefined;
-        const operatorInFlight = new Map<string, Promise<void>>();
+        const operatorInFlight = new Map<string, Promise<string | null>>();
         const batchPreparationInFlight = new Map<
           string,
           Promise<{ readonly batchIndex: string; readonly batch: string }>
         >();
+        const batchPreparationQueue: SerialQueue = { tail: Promise.resolve() };
 
         server.middlewares.use('/api/demo-batch', async (request, response) => {
           response.setHeader('content-type', 'application/json');
@@ -222,20 +239,25 @@ export const demoServerPlugin = (): Plugin => ({
             const body = await readJsonBody(request);
             const direction =
               typeof body === 'object' && body !== null ? (body as Record<string, unknown>).direction : undefined;
-            if (direction !== 'deposit') throw new Error('only deposit batch preparation is supported');
-            const preparedTarget = await runSingleFlight(batchPreparationInFlight, 'prepare:deposit', async () => {
-              const session = await loadDemoOperatorSession();
-              const module = (await server.ssrLoadModule(
-                '/src/batchProvisioning.ts',
-              )) as typeof import('./src/batchProvisioning');
-              const prepared = await module.prepareNextBatch(
-                session.config,
-                session.keeper,
-                'deposit',
-                batchRegistryPath,
-              );
-              return { batchIndex: prepared.batchIndex.toString(), batch: prepared.batch };
-            });
+            if (direction !== 'deposit' && direction !== 'redeem') throw new Error('invalid vault direction');
+            const preparedTarget = await runSingleFlight(
+              batchPreparationInFlight,
+              `prepare:${direction}`,
+              () =>
+                runSerialized(batchPreparationQueue, async () => {
+                  const session = await loadDemoOperatorSession();
+                  const module = (await server.ssrLoadModule(
+                    '/src/batchProvisioning.ts',
+                  )) as typeof import('./src/batchProvisioning');
+                  const prepared = await module.prepareNextBatch(
+                    session.config,
+                    session.keeper,
+                    direction,
+                    batchRegistryPath,
+                  );
+                  return { batchIndex: prepared.batchIndex.toString(), batch: prepared.batch };
+                }),
+            );
             response.statusCode = 200;
             response.end(JSON.stringify(preparedTarget));
           } catch (error) {
@@ -349,11 +371,11 @@ export const demoServerPlugin = (): Plugin => ({
             const { action, direction, position } = operatorRequest;
             const claimUser = operatorRequest.action === 'claim' ? operatorRequest.user : null;
             const operationKey = `${direction}:${position.batch}:${action}:${claimUser ?? ''}`;
-            await runSingleFlight(operatorInFlight, operationKey, async () => {
+            const signature = await runSingleFlight(operatorInFlight, operationKey, async () => {
               const session = await loadDemoOperatorSession();
               if (operatorRequest.action === 'dispatch') {
                 const operator = (await server.ssrLoadModule('/src/settlement.ts')) as typeof import('./src/settlement');
-                await operator.dispatchVaultBatch(session, position, direction);
+                return operator.dispatchVaultBatch(session, position, direction);
               } else if (operatorRequest.action === 'settle') {
                 const operator = (await server.ssrLoadModule('/src/settlement.ts')) as typeof import('./src/settlement');
                 const provisioning = (await server.ssrLoadModule(
@@ -365,7 +387,7 @@ export const demoServerPlugin = (): Plugin => ({
                   position,
                   batchRegistryPath,
                 );
-                await operator.settleVaultBatch(session, position, direction, lookupTable);
+                return operator.settleVaultBatch(session, position, direction, lookupTable);
               } else {
                 if (claimUser === null) throw new Error('claim user is required');
                 const claim = (await server.ssrLoadModule('/src/claim.ts')) as {
@@ -374,13 +396,13 @@ export const demoServerPlugin = (): Plugin => ({
                     claimPosition: typeof position,
                     claimDirection: typeof direction,
                     claimUser: Address,
-                  ): Promise<void>;
+                  ): Promise<string | null>;
                 };
-                await claim.claimBatchPayout(session, position, direction, claimUser);
+                return claim.claimBatchPayout(session, position, direction, claimUser);
               }
             });
             response.statusCode = 200;
-            response.end(JSON.stringify({ ok: true }));
+            response.end(JSON.stringify({ ok: true, signature }));
           } catch (error) {
             response.statusCode = 503;
             response.end(JSON.stringify({ error: error instanceof Error ? error.message : String(error) }));
@@ -472,7 +494,12 @@ export const demoServerPlugin = (): Plugin => ({
               .readFile(aliceKeypairPath, 'utf8')
               .then((value) => JSON.parse(value) as number[]);
             response.statusCode = 200;
-            response.end(JSON.stringify({ config: { ...config, relayerUrl: browserRelayerUrl }, aliceKeypair }));
+            response.end(
+              JSON.stringify({
+                config: { ...config, relayerUrl: browserRelayerUrl, demoBootId: authorization.bootId },
+                aliceKeypair,
+              }),
+            );
           } catch (error) {
             response.statusCode = 503;
             response.end(JSON.stringify({ error: error instanceof Error ? error.message : String(error) }));
@@ -500,7 +527,11 @@ export const demoServerPlugin = (): Plugin => ({
               throw new Error('refusing to expose configuration outside the seeded local validator');
             }
             response.statusCode = 200;
-            response.end(JSON.stringify({ config: { ...config, relayerUrl: browserRelayerUrl } }));
+            response.end(
+              JSON.stringify({
+                config: { ...config, relayerUrl: browserRelayerUrl, demoBootId: authorization.bootId },
+              }),
+            );
           } catch (error) {
             response.statusCode = 503;
             response.end(JSON.stringify({ error: error instanceof Error ? error.message : String(error) }));
