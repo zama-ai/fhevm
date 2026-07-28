@@ -1161,6 +1161,18 @@ pub async fn execute_cutover(pool: &Pool<Postgres>) -> Result<(), Error> {
     // 3. Merge the GCS-canonical tables back into public before dropping the
     //    schema. Each merge lets the GCS rows win on PK collisions (GCS is the
     //    canonical writer for its dry-run window).
+    //
+    //    First snapshot handles BCS already committed on-chain: the merge would
+    //    copy GCS's `txn_is_sent = false` onto them and the tx-sender would
+    //    re-broadcast, reverting with `CoprocessorAlreadyAdded`. Restore the flag
+    //    after merging.
+    sqlx::query(
+        "CREATE TEMP TABLE committed_before_cutover ON COMMIT DROP AS
+         SELECT handle FROM ciphertext_digest WHERE txn_is_sent = TRUE",
+    )
+    .execute(&mut *tx)
+    .await?;
+
     info!(stack_version, "cutover: merging gcs tables into public");
     for table in COPROCESSOR_TABLES {
         if !table.is_merged() {
@@ -1168,6 +1180,19 @@ pub async fn execute_cutover(pool: &Pool<Postgres>) -> Result<(), Error> {
         }
         merge_gcs_table(&mut tx, table.name, table.conflict_cols).await?;
     }
+
+    let resent_guard = sqlx::query(
+        "UPDATE ciphertext_digest d SET txn_is_sent = TRUE
+           FROM committed_before_cutover c
+          WHERE d.handle = c.handle AND d.txn_is_sent = FALSE",
+    )
+    .execute(&mut *tx)
+    .await?
+    .rows_affected();
+    info!(
+        resent_guard,
+        "cutover: preserved txn_is_sent for already-committed handles"
+    );
 
     // 4b. Reconcile BCS's leftovers to green.
     reconcile_bcs_leftovers_to_green(&mut tx).await?;
@@ -2671,6 +2696,64 @@ mod tests {
             .await
             .expect("count");
         assert_eq!(n, 1, "a handle GCS reproduced must be left to the merge");
+    }
+
+    /// A handle BCS already committed (`txn_is_sent = true`) must stay committed
+    /// after cutover, so the merge's unsent flag can't trigger a re-broadcast; a
+    /// handle BCS never committed stays unsent so green commits it once.
+    #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+    async fn cutover_preserves_committed_txn_is_sent() {
+        let (_instance, pool) = test_pool().await;
+        create_gcs_schema(&pool).await.expect("create gcs schema");
+        seed_gcs_row(&pool, "UpgradeAuthorized", "in_progress").await;
+
+        let committed = &[0xD1u8; 32][..]; // BCS committed on-chain
+        let uncommitted = &[0xD2u8; 32][..]; // BCS never committed
+
+        sqlx::query(
+            "INSERT INTO ciphertext_digest (handle, txn_is_sent) VALUES ($1, TRUE), ($2, FALSE)",
+        )
+        .bind(committed)
+        .bind(uncommitted)
+        .execute(&pool)
+        .await
+        .expect("seed public digests");
+
+        // GCS's dry-run rows are unsent; the merge would copy that onto public.
+        let gcs = format!(
+            "INSERT INTO {GCS_SCHEMA_QUOTED}.ciphertext_digest (handle, txn_is_sent)
+             VALUES ($1, FALSE), ($2, FALSE)"
+        );
+        sqlx::query(&gcs)
+            .bind(committed)
+            .bind(uncommitted)
+            .execute(&pool)
+            .await
+            .expect("seed gcs digests");
+
+        execute_cutover(&pool).await.expect("cutover succeeds");
+
+        let sent: bool =
+            sqlx::query_scalar("SELECT txn_is_sent FROM ciphertext_digest WHERE handle = $1")
+                .bind(committed)
+                .fetch_one(&pool)
+                .await
+                .expect("committed digest");
+        assert!(
+            sent,
+            "an already-committed handle must stay sent so it is not re-broadcast"
+        );
+
+        let sent: bool =
+            sqlx::query_scalar("SELECT txn_is_sent FROM ciphertext_digest WHERE handle = $1")
+                .bind(uncommitted)
+                .fetch_one(&pool)
+                .await
+                .expect("uncommitted digest");
+        assert!(
+            !sent,
+            "a never-committed handle stays unsent so green commits it once"
+        );
     }
 
     /// A readiness task left over from an old proposal must not advance a newer one.
