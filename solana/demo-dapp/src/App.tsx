@@ -13,11 +13,8 @@ export function App() {
       <AppHeader controller={controller} />
       <main>
         <section className="hero">
-          <p className="eyebrow">Private yield, familiar Solana flow</p>
-          <h1>Your confidential portfolio</h1>
-          <p className="hero-copy">
-            Deposit USDC into an encrypted vault. Your position stays private; settlement remains verifiable on Solana.
-          </p>
+          <h1>Earn yield privately</h1>
+          <p className="hero-copy">Shield USDC. Keep your position private.</p>
         </section>
 
         {connection.kind === 'error' && (

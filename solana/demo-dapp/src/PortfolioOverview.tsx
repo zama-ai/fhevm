@@ -19,15 +19,15 @@ export function PortfolioOverview({ controller }: { readonly controller: DemoCon
           preparing: 'Checking your confidential account…',
           shielding: 'Transaction 1 of 2 · Shielding 100 USDC…',
           proving: 'Creating your private deposit proof…',
-          joining: 'Transaction 2 of 2 · Joining the batch…',
-          joined: 'Deposit joined · Waiting for private settlement',
+          joining: 'Transaction 2 of 2 · Depositing 100 USDC…',
+          joined: 'Deposit complete · Waiting for settlement',
         }[deposit.stage]
       : deposit.kind === 'joined'
         ? settled
           ? depositLifecycle.claimed
             ? 'Private cShares claimed'
             : 'Settlement complete · Claim available'
-          : 'Deposit joined · Waiting for private settlement'
+          : 'Deposit complete · Waiting for settlement'
         : null;
 
   return (
@@ -69,11 +69,11 @@ export function PortfolioOverview({ controller }: { readonly controller: DemoCon
         <div>
           <span className="muted">Vault</span>
           <h2>Confidential USDC</h2>
-          <p>Shield USDC, join the next batch, and earn private vault shares.</p>
+          <p>Shield USDC and earn yield.</p>
         </div>
         <div className="vault-metric">
-          <span>{phantomLocalnet ? 'Wallet flow' : 'Deposit flow'}</span>
-          <strong>{phantomLocalnet ? '1 app action · 2 approvals' : '2 txs'}</strong>
+          <span>{phantomLocalnet ? 'Wallet approvals' : 'Transactions'}</span>
+          <strong>{phantomLocalnet ? '2 required' : '2'}</strong>
         </div>
         <div className="deposit-action">
           <div className="amount-row">
@@ -87,7 +87,7 @@ export function PortfolioOverview({ controller }: { readonly controller: DemoCon
           </div>
           <div className="transaction-preview">
             <span>1 · Shield USDC</span>
-            <span>2 · Join private batch</span>
+            <span>2 · Deposit</span>
           </div>
           {phantomLocalnet && !depositJoined && (
             <p className="wallet-scan-note">
@@ -102,7 +102,7 @@ export function PortfolioOverview({ controller }: { readonly controller: DemoCon
             disabled={!connected || depositRunning || depositJoined}
             onClick={actions.shieldAndDeposit}
           >
-            {depositRunning ? 'Deposit in progress…' : depositJoined ? 'Deposit joined' : 'Shield & deposit'}
+            {depositRunning ? 'Deposit in progress…' : depositJoined ? 'Deposited' : 'Shield & deposit'}
           </button>
           {status && (
             <p className={`action-status ${depositJoined ? 'success' : ''}`} role="status">

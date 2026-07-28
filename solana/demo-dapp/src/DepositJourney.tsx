@@ -22,15 +22,14 @@ export function DepositJourney({ controller }: { readonly controller: DemoContro
   return (
     <section className="journey-card">
       <div>
-        <p className="eyebrow">One intent, clearly tracked</p>
-        <h2>Deposit journey</h2>
+        <h2>Your deposit</h2>
       </div>
       <JourneyTimeline
         steps={[
           {
             state: depositJoined ? 'complete' : 'active',
-            title: 'Shield & join',
-            detail: 'One click · two sequential transactions',
+            title: 'Shield & deposit',
+            detail: 'Two transactions',
           },
           {
             state: settled ? 'complete' : depositJoined ? 'active' : 'idle',

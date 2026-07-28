@@ -63,7 +63,7 @@ describe('PortfolioOverview Phantom localnet guidance', () => {
     expect(notes[0].findAllByType('a')).toHaveLength(0);
     expect(notes[0].children.join(' ')).toContain("Phantom's scanner cannot reach this local validator");
     const walletFlow = renderer.root.findByProps({ className: 'vault-metric' });
-    expect(walletFlow.findByType('strong').children).toEqual(['1 app action · 2 approvals']);
+    expect(walletFlow.findByType('strong').children).toEqual(['2 required']);
     act(() => renderer.unmount());
   });
 
