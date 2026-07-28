@@ -276,6 +276,28 @@ describe("demo lifecycle collision policy", () => {
     expect(canary).toBeGreaterThan(refresh);
   });
 
+  test("arm64 source builds use the canonical native Rust builder", async () => {
+    const script = await fs.readFile(
+      path.join(import.meta.dir, "../../../solana/scripts/e2e/clean-e2e.sh"),
+      "utf8",
+    );
+    expect(script).toContain("ensure_native_rust_builders");
+    expect(script).toContain("docker info --format '{{.Architecture}}'");
+    expect(script).toContain(
+      '"$ROOT/golden-container-images/rust-glibc"',
+    );
+    expect(script).toContain(
+      '--build-arg "RUST_IMAGE_VERSION=$version"',
+    );
+    expect(script).toContain("org.zama.rust-glibc.recipe");
+    expect(script).toContain("docker pull --platform linux/arm64");
+    expect(script).toContain(
+      'temporary_image="fhevm-rust-glibc:$version-arm64-$$"',
+    );
+    expect(script).toContain('if [ "$local_arch" != "arm64" ]');
+    expect(script).not.toContain("--platform linux/amd64");
+  });
+
   test("Solana setup keeps every lifecycle compose call on the per-boot project", async () => {
     const script = await fs.readFile(
       path.join(

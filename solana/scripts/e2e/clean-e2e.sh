@@ -70,6 +70,110 @@ fi
 ( cd "$FHEVM" && bun install --force --frozen-lockfile )
 ( cd "$FHEVM" && bun -e "await import('@fhevm/sdk/solana'); await import('@fhevm/sdk/solana/vault')" )
 
+# The source-built Rust services inherit their builder tag from each component's toolchain.
+# Some tags are published for amd64 only. On an arm64 Docker daemon, keep those services native:
+# reuse an exact local arm64 builder, let Docker pull a published arm64 manifest when available,
+# or build the repository's canonical builder under the same tag once.
+ensure_native_rust_builders() {
+  local docker_arch
+  docker_arch="$(docker info --format '{{.Architecture}}')"
+  case "$docker_arch" in
+    arm64 | aarch64) ;;
+    *) return ;;
+  esac
+
+  local versions=""
+  local group toolchain version image local_arch local_channel local_recipe
+  local remote_manifest remote_has_arm temporary_image recipe_hash
+  recipe_hash="$(git -C "$ROOT" hash-object golden-container-images/rust-glibc/Dockerfile)"
+  for group in $SOLANA_E2E_OVERRIDES; do
+    case "$group" in
+      coprocessor) toolchain="$ROOT/coprocessor/fhevm-engine/rust-toolchain.toml" ;;
+      kms-connector) toolchain="$ROOT/kms-connector/rust-toolchain.toml" ;;
+      relayer) toolchain="$ROOT/relayer/rust-toolchain.toml" ;;
+      *) continue ;;
+    esac
+    version="$(sed -n 's/^channel = "\([^"]*\)"/\1/p' "$toolchain")"
+    if [ -z "$version" ]; then
+      echo "[clean-e2e] unable to read Rust channel from $toolchain" >&2
+      return 1
+    fi
+    case " $versions " in
+      *" $version "*) ;;
+      *) versions="${versions:+$versions }$version" ;;
+    esac
+  done
+
+  for version in $versions; do
+    image="ghcr.io/zama-ai/fhevm/gci/rust-glibc:$version"
+    local_arch="$(docker image inspect --format '{{.Architecture}}' "$image" 2>/dev/null || true)"
+    local_channel="$(docker image inspect --format '{{index .Config.Labels "org.zama.rust-glibc.channel"}}' "$image" 2>/dev/null || true)"
+    local_recipe="$(docker image inspect --format '{{index .Config.Labels "org.zama.rust-glibc.recipe"}}' "$image" 2>/dev/null || true)"
+    if [ "$local_arch" = "arm64" ] &&
+      [ "$local_channel" = "$version" ] &&
+      [ "$local_recipe" = "$recipe_hash" ]; then
+      echo "[clean-e2e] reusing fingerprinted native arm64 Rust builder $image"
+      continue
+    fi
+
+    if ! remote_manifest="$(docker buildx imagetools inspect --format '{{json .}}' "$image")"; then
+      echo "[clean-e2e] unable to inspect the published platforms for $image" >&2
+      return 1
+    fi
+    remote_has_arm="$(python3 - "$remote_manifest" <<'PY'
+import json, sys
+
+document = json.loads(sys.argv[1])
+
+def contains_arm64(value):
+    if isinstance(value, dict):
+        architecture = value.get("architecture") or value.get("Architecture")
+        os_name = value.get("os") or value.get("OS")
+        if architecture in ("arm64", "aarch64") and os_name in (None, "linux"):
+            return True
+        return any(contains_arm64(child) for child in value.values())
+    if isinstance(value, list):
+        return any(contains_arm64(child) for child in value)
+    return False
+
+print("yes" if contains_arm64(document) else "no")
+PY
+)"
+    if [ "$remote_has_arm" = "yes" ]; then
+      echo "[clean-e2e] pulling published native arm64 Rust builder $image"
+      docker pull --platform linux/arm64 "$image"
+      local_arch="$(docker image inspect --format '{{.Architecture}}' "$image")"
+      if [ "$local_arch" != "arm64" ]; then
+        echo "[clean-e2e] expected published arm64 builder, got $local_arch for $image" >&2
+        return 1
+      fi
+      continue
+    fi
+
+    temporary_image="fhevm-rust-glibc:$version-arm64-$$"
+    echo "[clean-e2e] $image has no arm64 manifest; building its canonical image natively"
+    docker build \
+      --build-arg "RUST_IMAGE_VERSION=$version" \
+      --label "org.zama.rust-glibc.channel=$version" \
+      --label "org.zama.rust-glibc.recipe=$recipe_hash" \
+      --tag "$temporary_image" \
+      "$ROOT/golden-container-images/rust-glibc"
+    local_arch="$(docker image inspect --format '{{.Architecture}}' "$temporary_image")"
+    local_channel="$(docker image inspect --format '{{index .Config.Labels "org.zama.rust-glibc.channel"}}' "$temporary_image")"
+    local_recipe="$(docker image inspect --format '{{index .Config.Labels "org.zama.rust-glibc.recipe"}}' "$temporary_image")"
+    if [ "$local_arch" != "arm64" ] ||
+      [ "$local_channel" != "$version" ] ||
+      [ "$local_recipe" != "$recipe_hash" ]; then
+      echo "[clean-e2e] native Rust builder validation failed for $temporary_image" >&2
+      return 1
+    fi
+    docker image tag "$temporary_image" "$image"
+    docker image rm "$temporary_image"
+  done
+}
+
+ensure_native_rust_builders
+
 # Pin the EVM stack to the main SHA this PoC was validated against. RFC-021 / Solana host support
 # is not yet on a release bundle, so we resolve a specific main commit explicitly.
 BASE_SHA="feaf86e"
