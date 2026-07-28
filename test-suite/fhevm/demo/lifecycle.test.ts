@@ -12,6 +12,7 @@ import {
   bootAuthorizationTokenPath,
   collisionErrors,
   DEMO_REQUIRED_COMMANDS,
+  demoReservedPorts,
   doctorEnvironmentErrors,
   demoComposeProject,
   demoLaunchUrl,
@@ -19,7 +20,12 @@ import {
   existingBootAction,
   isDemoDappApiResponseHealthy,
   isExactOwnedProcess,
+  observabilityComposeCommand,
+  observabilityModeMatches,
+  ownedContainer,
   ownedProcessBaseEnv,
+  parseDemoOptions,
+  prometheusTargetsReady,
   readLifecycleLockState,
   readOwnedDockerResources,
   recoverPartialDockerResources,
@@ -41,7 +47,8 @@ afterEach(async () => {
 });
 
 const manifest = (): DemoManifest => ({
-  version: 3,
+  version: 4,
+  observability: false,
   bootId: "12345678-1234-4123-8123-123456789abc",
   repoRoot: "/repo",
   composeProject:
@@ -61,6 +68,128 @@ const readyCommands = new Map([
 ]);
 
 describe("demo lifecycle collision policy", () => {
+  test("parses only the explicit observability option", () => {
+    expect(parseDemoOptions([])).toEqual({ observability: false });
+    expect(parseDemoOptions(["--observability"])).toEqual({
+      observability: true,
+    });
+    expect(() => parseDemoOptions(["--unknown"])).toThrow(
+      "unknown demo option",
+    );
+  });
+
+  test("reserves telemetry ports only for an observability boot", () => {
+    expect(demoReservedPorts(false)).not.toContain(9090);
+    expect(demoReservedPorts(false)).not.toContain(16686);
+    expect(demoReservedPorts(true)).toEqual(
+      expect.arrayContaining([9090, 16686]),
+    );
+  });
+
+  test("requires a restart when a healthy boot topology differs", () => {
+    expect(observabilityModeMatches(manifest(), false)).toBe(true);
+    expect(observabilityModeMatches(manifest(), true)).toBe(false);
+    expect(
+      observabilityModeMatches({ ...manifest(), observability: true }, true),
+    ).toBe(true);
+  });
+
+  test("keeps observability on the per-boot Compose project", () => {
+    const project = manifest().composeProject;
+    const command = observabilityComposeCommand(project);
+    expect(command).toEqual(
+      expect.arrayContaining(["docker", "compose", "-p", project, "-f"]),
+    );
+    expect(command.slice(-2)).toEqual(["up", "-d"]);
+  });
+
+  test("observability compose has no global names or external network", async () => {
+    const compose = await fs.readFile(
+      path.join(
+        import.meta.dir,
+        "../docker-compose/tracing-docker-compose.yml",
+      ),
+      "utf8",
+    );
+    expect(compose).not.toContain("container_name:");
+    expect(compose).not.toContain("external: true");
+    expect(compose).not.toContain("4317:4317");
+    expect(compose).toContain("127.0.0.1:9090:9090");
+    expect(compose).toContain("127.0.0.1:16686:16686");
+  });
+
+  test("Prometheus includes the relayer and centralized KMS targets", async () => {
+    const prometheus = await fs.readFile(
+      path.join(
+        import.meta.dir,
+        "../static/config/prometheus/prometheus.yml",
+      ),
+      "utf8",
+    );
+    expect(prometheus).toContain('"relayer:9898"');
+    expect(prometheus).toContain('"kms-core:9646"');
+  });
+
+  test("resolves Compose-prefixed observability containers", () => {
+    const current = manifest();
+    const name = `${current.composeProject}-prometheus-1`;
+    expect(
+      ownedContainer(
+        {
+          ...current,
+          containers: [{ id: "prometheus-id", name }],
+        },
+        "prometheus",
+      ),
+    ).toEqual({ id: "prometheus-id", name });
+  });
+
+  test("requires every configured Prometheus target to be up", async () => {
+    const scrapeUrls = [
+      "http://kms-connector-gw-listener:9100/metrics",
+      "http://kms-connector-kms-worker:9100/metrics",
+      "http://kms-connector-tx-sender:9100/metrics",
+      "http://coprocessor-transaction-sender:9100/metrics",
+      "http://coprocessor-gw-listener:9100/metrics",
+      "http://coprocessor-tfhe-worker:9100/metrics",
+      "http://coprocessor-sns-worker:9100/metrics",
+      "http://coprocessor-zkproof-worker:9100/metrics",
+      "http://relayer:9898/metrics",
+      "http://kms-core:9646/metrics",
+    ];
+    const healthyResponse = () =>
+      Response.json({
+        data: {
+          activeTargets: scrapeUrls.map((scrapeUrl) => ({
+            health: "up",
+            scrapeUrl,
+          })),
+        },
+      });
+    await expect(prometheusTargetsReady(healthyResponse())).resolves.toBe(true);
+    const missing = scrapeUrls.slice(1).map((scrapeUrl) => ({
+      health: "up",
+      scrapeUrl,
+    }));
+    await expect(
+      prometheusTargetsReady(
+        Response.json({ data: { activeTargets: missing } }),
+      ),
+    ).resolves.toBe(false);
+    await expect(
+      prometheusTargetsReady(
+        Response.json({
+          data: {
+            activeTargets: scrapeUrls.map((scrapeUrl, index) => ({
+              health: index === 0 ? "down" : "up",
+              scrapeUrl,
+            })),
+          },
+        }),
+      ),
+    ).resolves.toBe(false);
+  });
+
   test("requires the demo API rather than accepting only the Vite HTML shell", async () => {
     await expect(
       isDemoDappApiResponseHealthy(

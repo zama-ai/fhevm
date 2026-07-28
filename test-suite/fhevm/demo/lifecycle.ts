@@ -39,6 +39,23 @@ export const DEMO_COMPOSE_PROJECT = "fhevm";
 const DEMO_COMPOSE_PROJECT_PREFIX = "fhevm-demo-";
 const BOOT_ID_PATTERN =
   /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+const OBSERVABILITY_PORTS = [9090, 16686] as const;
+const OBSERVABILITY_COMPOSE_PATH = path.join(
+  REPO_ROOT,
+  "test-suite/fhevm/docker-compose/tracing-docker-compose.yml",
+);
+
+export type DemoOptions = {
+  readonly observability?: boolean;
+};
+
+export const parseDemoOptions = (args: readonly string[]): DemoOptions => {
+  const unknown = args.filter((arg) => arg !== "--observability");
+  if (unknown.length > 0) {
+    throw new Error(`unknown demo option: ${unknown.join(", ")}`);
+  }
+  return { observability: args.includes("--observability") };
+};
 
 export const demoComposeProject = (bootId: string): string => {
   if (!BOOT_ID_PATTERN.test(bootId)) {
@@ -84,7 +101,17 @@ export const DEMO_REQUIRED_COMMANDS = [
   "uname",
   "which",
 ];
-const RESERVED_PORTS = [...new Set([...PORTS, 50051, 5173, 8090, 8899, 10000])];
+export const demoReservedPorts = (observability = false): readonly number[] => [
+  ...new Set([
+    ...PORTS,
+    50051,
+    5173,
+    8090,
+    8899,
+    10000,
+    ...(observability ? OBSERVABILITY_PORTS : []),
+  ]),
+];
 const PROCESS_NAMES = ["validator", "listener", "faucet", "dapp"] as const;
 const CORE_IMAGE = `ghcr.io/zama-ai/kms/core-service:${solanaImages.CORE_VERSION}`;
 const REQUIRED_KEYPAIRS = [
@@ -126,7 +153,8 @@ export type OwnedProcess = {
 };
 
 export type DemoManifest = {
-  readonly version: 3;
+  readonly version: 4;
+  readonly observability: boolean;
   readonly bootId: string;
   readonly repoRoot: string;
   readonly composeProject: string;
@@ -228,7 +256,8 @@ export const readDemoManifest = async (): Promise<DemoManifest | null> => {
       await fs.readFile(DEMO_MANIFEST_PATH, "utf8"),
     ) as DemoManifest;
     if (
-      manifest.version !== 3 ||
+      manifest.version !== 4 ||
+      typeof manifest.observability !== "boolean" ||
       manifest.repoRoot !== REPO_ROOT ||
       manifest.composeProject !== demoComposeProject(manifest.bootId) ||
       manifest.configPath !== DEMO_CONFIG_PATH
@@ -329,6 +358,7 @@ export const withLifecycleLock = async <T>(
 
 const collisionSnapshot = async (
   composeProject = DEMO_COMPOSE_PROJECT,
+  observability = false,
 ): Promise<CollisionSnapshot> => {
   const [
     commands,
@@ -385,7 +415,7 @@ const collisionSnapshot = async (
       { allowFailure: true },
     ),
     Promise.all(
-      RESERVED_PORTS.map(
+      demoReservedPorts(observability).map(
         async (port) =>
           [
             port,
@@ -820,13 +850,18 @@ export const doctorEnvironmentErrors = (
   return errors;
 };
 
-export const doctorDemo = async (): Promise<{
+export const doctorDemo = async ({
+  observability = false,
+}: DemoOptions = {}): Promise<{
   readonly manifest: DemoManifest | null;
   readonly errors: string[];
 }> => {
   const manifest = await readDemoManifest();
   const [snapshot, exact, environment] = await Promise.all([
-    collisionSnapshot(manifest?.composeProject ?? DEMO_COMPOSE_PROJECT),
+    collisionSnapshot(
+      manifest?.composeProject ?? DEMO_COMPOSE_PROJECT,
+      observability,
+    ),
     exactProcessMap(manifest),
     doctorEnvironmentSnapshot(),
   ]);
@@ -862,7 +897,8 @@ const waitForHttp = async (
     response.ok,
 ): Promise<void> => {
   let last = "not reachable";
-  for (let attempt = 0; attempt < 60; attempt += 1) {
+  const deadline = Date.now() + 30_000;
+  while (Date.now() < deadline) {
     try {
       const response = await fetch(url, {
         signal: AbortSignal.timeout(2_000),
@@ -875,6 +911,76 @@ const waitForHttp = async (
     await Bun.sleep(500);
   }
   throw new Error(`${label} did not become healthy: ${last}`);
+};
+
+const REQUIRED_PROMETHEUS_TARGETS = new Set([
+  "kms-connector-gw-listener:9100",
+  "kms-connector-kms-worker:9100",
+  "kms-connector-tx-sender:9100",
+  "coprocessor-transaction-sender:9100",
+  "coprocessor-gw-listener:9100",
+  "coprocessor-tfhe-worker:9100",
+  "coprocessor-sns-worker:9100",
+  "coprocessor-zkproof-worker:9100",
+  "relayer:9898",
+  "kms-core:9646",
+]);
+
+export const prometheusTargetsReady = async (
+  response: Response,
+): Promise<boolean> => {
+  if (!response.ok) return false;
+  try {
+    const body = (await response.json()) as {
+      readonly data?: {
+        readonly activeTargets?: readonly {
+          readonly health?: unknown;
+          readonly scrapeUrl?: unknown;
+        }[];
+      };
+    };
+    const healthyTargets = new Set(
+      (body.data?.activeTargets ?? [])
+        .filter(
+          (target) =>
+            target.health === "up" && typeof target.scrapeUrl === "string",
+        )
+        .map((target) => new URL(target.scrapeUrl as string).host),
+    );
+    return [...REQUIRED_PROMETHEUS_TARGETS].every((target) =>
+      healthyTargets.has(target),
+    );
+  } catch {
+    return false;
+  }
+};
+
+export const observabilityComposeCommand = (
+  composeProject: string,
+): readonly string[] => [
+  "docker",
+  "compose",
+  "-p",
+  composeProject,
+  "-f",
+  OBSERVABILITY_COMPOSE_PATH,
+  "up",
+  "-d",
+];
+
+const startObservability = async (composeProject: string): Promise<void> => {
+  await runStreaming([...observabilityComposeCommand(composeProject)], {
+    cwd: path.join(REPO_ROOT, "test-suite/fhevm"),
+    env: { COMPOSE_IGNORE_ORPHANS: "true" },
+  });
+  await Promise.all([
+    waitForHttp(
+      "http://127.0.0.1:9090/api/v1/targets",
+      "Prometheus required targets",
+      prometheusTargetsReady,
+    ),
+    waitForHttp("http://127.0.0.1:16686/api/services", "Jaeger query API"),
+  ]);
 };
 
 const OWNED_PROCESS_ENV_KEYS = [
@@ -1001,7 +1107,17 @@ export const demoLaunchUrl = (): string => "http://127.0.0.1:5173/";
 const readyMessage = (
   command: "up" | "reseed",
   bootId: string,
-): string => `[${command}] demo boot ${bootId} is ready at ${demoLaunchUrl()}`;
+  observability = false,
+): string =>
+  [
+    `[${command}] demo boot ${bootId} is ready at ${demoLaunchUrl()}`,
+    ...(observability
+      ? [
+          `[${command}] metrics http://127.0.0.1:9090`,
+          `[${command}] connector traces http://127.0.0.1:16686`,
+        ]
+      : []),
+  ].join("\n");
 
 export const bootAuthorizationTokenPath = (bootId: string): string =>
   path.join(DEMO_RUNTIME_DIR, bootId, DEMO_AUTH_TOKEN_FILENAME);
@@ -1082,11 +1198,15 @@ const demoDappHealthy = async (): Promise<boolean> => {
   }
 };
 
-const ownedContainer = (
+export const ownedContainer = (
   manifest: DemoManifest,
   name: string,
 ): DemoManifest["containers"][number] | undefined =>
-  manifest.containers.find((container) => container.name === name);
+  manifest.containers.find(
+    (container) =>
+      container.name === name ||
+      container.name === `${manifest.composeProject}-${name}-1`,
+  );
 
 const EXPECTED_ONE_SHOT_CONTAINERS = new Set([
   "fhevm-minio-setup",
@@ -1141,7 +1261,7 @@ const dockerContainerHealth = async (
       "{{.State.Status}}\t{{.State.ExitCode}}\t{{if .State.Health}}{{.State.Health.Status}}{{end}}",
       container.id,
     ],
-    { allowFailure: true },
+    { allowFailure: true, timeoutMs: 5_000 },
   );
   if (result.code !== 0)
     return { ready: false, detail: "not inspectable by exact ID" };
@@ -1164,6 +1284,7 @@ const dockerLogContains = async (
   if (container === undefined) return false;
   const result = await run(["docker", "logs", "--tail", "500", container.id], {
     allowFailure: true,
+    timeoutMs: 5_000,
   });
   return result.code === 0 && pattern.test(result.stdout + result.stderr);
 };
@@ -1179,6 +1300,8 @@ type DemoHealth = {
   readonly hostRpc: boolean;
   readonly gatewayRpc: boolean;
   readonly minio: boolean;
+  readonly prometheus: boolean;
+  readonly jaeger: boolean;
   readonly containers: ReadonlyMap<
     string,
     { readonly ready: boolean; readonly detail: string }
@@ -1205,6 +1328,8 @@ const demoHealth = async (manifest: DemoManifest): Promise<DemoHealth> => {
     hostRpc,
     gatewayRpc,
     minio,
+    prometheus,
+    jaeger,
   ] = await Promise.all([
     validatorHealthy().catch(() => false),
     httpHealthy("http://127.0.0.1:8090/health"),
@@ -1219,9 +1344,24 @@ const demoHealth = async (manifest: DemoManifest): Promise<DemoHealth> => {
     evmRpcHealthy(8545),
     evmRpcHealthy(8546),
     httpHealthy("http://127.0.0.1:9000/minio/health/ready"),
+    manifest.observability
+      ? fetch("http://127.0.0.1:9090/api/v1/targets", {
+          signal: AbortSignal.timeout(2_000),
+        })
+          .then(prometheusTargetsReady)
+          .catch(() => false)
+      : Promise.resolve(true),
+    manifest.observability
+      ? httpHealthy("http://127.0.0.1:16686/api/services")
+      : Promise.resolve(true),
   ]);
-  const containerReady = (name: string) =>
-    containerHealth.get(name)?.ready === true;
+  const containerReady = (name: string) => {
+    const container = ownedContainer(manifest, name);
+    return (
+      container !== undefined &&
+      containerHealth.get(container.name)?.ready === true
+    );
+  };
   return {
     validator,
     listener: exact.get("listener") === true,
@@ -1233,6 +1373,11 @@ const demoHealth = async (manifest: DemoManifest): Promise<DemoHealth> => {
     hostRpc: containerReady("host-node") && hostRpc,
     gatewayRpc: containerReady("gateway-node") && gatewayRpc,
     minio: containerReady("fhevm-minio") && minio,
+    prometheus:
+      !manifest.observability ||
+      (containerReady("prometheus") && prometheus),
+    jaeger:
+      !manifest.observability || (containerReady("jaeger") && jaeger),
     containers: containerHealth,
   };
 };
@@ -1248,7 +1393,36 @@ const allDemoHealthReady = (health: DemoHealth): boolean =>
   health.hostRpc &&
   health.gatewayRpc &&
   health.minio &&
+  health.prometheus &&
+  health.jaeger &&
   [...health.containers.values()].every(({ ready }) => ready);
+
+const assertDemoHealthReady = (health: DemoHealth): void => {
+  if (allDemoHealthReady(health)) return;
+  const serviceNames = [
+    "validator",
+    "listener",
+    "faucet",
+    "dapp",
+    "kmsCore",
+    "relayer",
+    "proof",
+    "hostRpc",
+    "gatewayRpc",
+    "minio",
+    "prometheus",
+    "jaeger",
+  ] as const;
+  const failedServices = [
+    ...serviceNames.filter((name) => !health[name]),
+    ...[...health.containers.entries()]
+      .filter(([, state]) => !state.ready)
+      .map(([name, state]) => `${name} (${state.detail})`),
+  ];
+  throw new Error(
+    `full demo health gate failed: ${failedServices.join(", ")}`,
+  );
+};
 
 const isOwnedBootHealthy = async (manifest: DemoManifest): Promise<boolean> => {
   if (manifest.state !== "running") return false;
@@ -1274,7 +1448,14 @@ export const existingBootAction = (
   return healthy ? "noop" : "preserve-degraded";
 };
 
-export const upDemo = async (): Promise<string> =>
+export const observabilityModeMatches = (
+  manifest: Pick<DemoManifest, "observability">,
+  requested: boolean,
+): boolean => manifest.observability === requested;
+
+export const upDemo = async ({
+  observability = false,
+}: DemoOptions = {}): Promise<string> =>
   withLifecycleLock(async () => {
     const existing = await readDemoManifest();
     const healthy =
@@ -1283,6 +1464,11 @@ export const upDemo = async (): Promise<string> =>
         : false;
     const action = existingBootAction(existing, healthy);
     if (action === "noop") {
+      if (!observabilityModeMatches(existing!, observability)) {
+        throw new Error(
+          `owned boot ${existing!.bootId} is already running with observability ${existing!.observability ? "enabled" : "disabled"}; run 'bun run demo down', then restart ${observability ? "with" : "without"} '--observability'`,
+        );
+      }
       console.log(`[up] owned boot ${existing!.bootId} is already healthy`);
       return existing!.bootId;
     }
@@ -1292,7 +1478,7 @@ export const upDemo = async (): Promise<string> =>
         `owned boot ${existing!.bootId} is degraded; its manifest and resources were preserved. Inspect 'bun run demo logs --no-follow', then use 'bun run demo reseed' if the core stack is healthy or 'bun run demo down' for an exact-owned teardown`,
       );
     }
-    const { errors } = await doctorDemo();
+    const { errors } = await doctorDemo({ observability });
     if (errors.length > 0)
       throw new Error(`demo collision/preflight failed:\n${errors.join("\n")}`);
     const bootId = crypto.randomUUID();
@@ -1309,7 +1495,8 @@ export const upDemo = async (): Promise<string> =>
     const logsDir = path.join(runtimeDir, "logs");
     const env = lifecycleEnv(runtimeDir, composeProject);
     let manifest: DemoManifest = {
-      version: 3,
+      version: 4,
+      observability,
       bootId,
       repoRoot: REPO_ROOT,
       composeProject,
@@ -1344,6 +1531,7 @@ export const upDemo = async (): Promise<string> =>
         path.join(runtimeDir, "listener.pid"),
         path.join(logsDir, "host-listener.log"),
       );
+      if (observability) await startObservability(composeProject);
       const resources = await readOwnedDockerResources(composeProject);
       if (resources.containers.length === 0)
         throw new Error("fhevm-cli brought up no compose containers");
@@ -1377,14 +1565,14 @@ export const upDemo = async (): Promise<string> =>
         "demo dApp API",
         isDemoDappApiResponseHealthy,
       );
-      if (!allDemoHealthReady(await demoHealth(manifest))) {
-        throw new Error(
-          "full demo health gate failed after dApp startup; run 'bun run demo status'",
-        );
-      }
+      await waitForHttp(
+        "http://127.0.0.1:8088/health/readiness",
+        "Solana proof service",
+      );
+      assertDemoHealthReady(await demoHealth(manifest));
       manifest = { ...manifest, state: "running" };
       await writeDemoManifest(manifest);
-      console.log(readyMessage("up", bootId));
+      console.log(readyMessage("up", bootId, observability));
       return bootId;
     } catch (error) {
       let recoveryFailure: string | undefined;
@@ -1540,8 +1728,8 @@ const downAfterLifecycleIdle = async (expectedBootId: string): Promise<void> => 
   }
 };
 
-export const serveDemo = async (): Promise<void> => {
-  const expectedBootId = await upDemo();
+export const serveDemo = async (options: DemoOptions = {}): Promise<void> => {
+  const expectedBootId = await upDemo(options);
   const initial = await readDemoManifest();
   if (
     initial?.state === "stopped" &&
@@ -1902,11 +2090,11 @@ export const reseedDemo = async ({
         "demo dApp API",
         isDemoDappApiResponseHealthy,
       );
-      if (!allDemoHealthReady(await demoHealth(nextManifest))) {
-        throw new Error(
-          "full demo health gate failed after reseed; run 'bun run demo status'",
-        );
-      }
+      await waitForHttp(
+        "http://127.0.0.1:8088/health/readiness",
+        "Solana proof service",
+      );
+      assertDemoHealthReady(await demoHealth(nextManifest));
       await writeDemoManifest({ ...nextManifest, state: "running" });
       const result = {
         bootId: manifest.bootId,
@@ -1957,6 +2145,13 @@ export const statusDemo = async (): Promise<boolean> => {
     return false;
   }
   console.log(`[status] boot=${manifest.bootId} state=${manifest.state}`);
+  console.log(
+    `[status] observability=${manifest.observability ? "enabled" : "disabled"}`,
+  );
+  if (manifest.observability) {
+    console.log("[status] metrics=http://127.0.0.1:9090");
+    console.log("[status] connector-traces=http://127.0.0.1:16686");
+  }
   let healthy = manifest.state === "running";
   const containers = await exactDockerResources(manifest);
   console.log(
@@ -1983,6 +2178,12 @@ export const statusDemo = async (): Promise<boolean> => {
     ["hostRpc", serviceHealth.hostRpc],
     ["gatewayRpc", serviceHealth.gatewayRpc],
     ["minio", serviceHealth.minio],
+    ...(manifest.observability
+      ? ([
+          ["prometheus", serviceHealth.prometheus],
+          ["jaeger", serviceHealth.jaeger],
+        ] as const)
+      : []),
   ] as const) {
     console.log(`[status] health.${service}=${ready ? "ready" : "not-ready"}`);
     healthy &&= ready;
