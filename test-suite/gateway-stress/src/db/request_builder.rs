@@ -70,7 +70,7 @@ impl RequestBuilder {
 
     fn build_public_request(&mut self) -> anyhow::Result<PublicDecryptionRequest> {
         let decryption_id = self.generate_unique_id();
-        let ct_handles = self.generate_ct_handles(self.public_ct.clone());
+        let ct_handles = self.generate_ct_handles(&self.public_ct);
         let extra_data = self.generate_extra_data();
 
         Ok(PublicDecryptionRequest {
@@ -82,7 +82,7 @@ impl RequestBuilder {
 
     fn build_user_request(&mut self) -> anyhow::Result<UserDecryptionRequest> {
         let decryption_id = self.generate_unique_id();
-        let ct_handles = self.generate_ct_handles(self.user_ct.clone());
+        let ct_handles = self.generate_ct_handles(&self.user_ct);
         let user_address = Address::from(rand::rng().random::<[u8; 20]>());
         let public_key = alloy::hex::decode(COMMON_PUBLIC_KEY).unwrap().into();
         let extra_data = self.generate_extra_data();
@@ -160,7 +160,7 @@ impl RequestBuilder {
         id
     }
 
-    fn generate_ct_handles(&self, ciphertexts: Vec<CiphertextConfig>) -> Vec<FixedBytes<32>> {
+    fn generate_ct_handles(&self, ciphertexts: &[CiphertextConfig]) -> Vec<FixedBytes<32>> {
         ciphertexts.iter().map(|ct| ct.handle).collect()
     }
 

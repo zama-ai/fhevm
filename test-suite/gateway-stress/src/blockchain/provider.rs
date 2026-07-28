@@ -51,7 +51,7 @@ impl<P: Clone> Clone for NonceManagedProvider<P> {
 // If a wallet-dependent method were missing here, it would fall back to the trait default, which
 // skips the fillers: `estimate_gas`, for example, would then run with `from = 0x0` instead of the
 // signer address, and could revert on contracts that restrict callers. This list is complete for
-// the current `alloy` version, and the unit tests below guard the methods our services rely on.
+// the current `alloy` version.
 #[async_trait::async_trait]
 impl<N, P> Provider<N> for NonceManagedProvider<P>
 where

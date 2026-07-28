@@ -1,4 +1,4 @@
-# The contract allowed for user decrytion on user_ct_handles
+# The contract allowed for user decryption on user_ct_handles
 allowed_contract = "0x5ffdaAB0373E62E2ea2944776209aEf29E631A64"
 
 # The time during which the tool will send request bursts to the Gateway/Connectors' DBs

@@ -1,5 +1,5 @@
 /**
- * gen_handles.ts — generate decryptable ciphertext handles for the given private key via via the
+ * gen_handles.ts — generate decryptable ciphertext handles for the given private key via the
  * real on-chain input flow:
  *
  *   encryptUint64 -> SmokeTestInput.add42ToInput64(handle, proof) -> resUint64()
