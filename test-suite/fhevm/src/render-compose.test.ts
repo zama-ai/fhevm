@@ -265,12 +265,14 @@ describe("render-compose", () => {
       await writeFile(envPath("coprocessor"), "\n");
       await generateComposeOverrides(gatewayContractsOverrideState, stackSpecForState(gatewayContractsOverrideState));
       const doc = YAML.parse(await readFile(composePath("gateway-sc"), "utf8")) as {
-        services: Record<string, { image?: string; build?: unknown }>;
+        services: Record<string, { image?: string; build?: unknown; command?: string[] }>;
       };
       expect(doc.services["gateway-sc-trigger-keygen"]?.image).toContain(":fhevm-local");
       expect(doc.services["gateway-sc-trigger-keygen"]?.build).toBeTruthy();
+      expect(doc.services["gateway-sc-trigger-keygen"]?.command?.[0]).toContain("${KEYGEN_PARAMS_TYPE:-0}");
       expect(doc.services["gateway-sc-trigger-crsgen"]?.image).toContain(":fhevm-local");
       expect(doc.services["gateway-sc-trigger-crsgen"]?.build).toBeTruthy();
+      expect(doc.services["gateway-sc-trigger-crsgen"]?.command?.[0]).toContain("${KEYGEN_PARAMS_TYPE:-0}");
     });
   });
 
