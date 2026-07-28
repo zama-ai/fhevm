@@ -3,6 +3,13 @@ services:
   kms-core:
     container_name: kms-core
     image: ghcr.io/zama-ai/kms/core-service:${CORE_VERSION}
+    # kms-core stopped publishing arm64 (zama-ai/kms#698 dropped the arm runner and bumped
+    # ci-templates to a template with no linux/arm64 target), so on an Apple Silicon host the
+    # pull fails outright with "no matching manifest for linux/arm64/v8" -- the tag is a manifest
+    # list containing only amd64, and Docker will not substitute a platform from a list. Pinning
+    # it runs the core under emulation instead. Overridable so that a CORE_VERSION which does
+    # publish arm64 can go native again; a no-op on amd64 hosts, including CI.
+    platform: ${CORE_PLATFORM:-linux/amd64}
     user: root
     env_file:
       - ${FHEVM_STATE_DIR:-../../../.fhevm}/runtime/env/core.env

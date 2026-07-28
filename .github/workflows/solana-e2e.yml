@@ -39,6 +39,13 @@ on:
         description: "USDC the deposit-arc persona wraps + joins with (fresh per run avoids PDA reuse)."
         default: "1000"
         type: string
+      kms-mode:
+        description: "KMS topology. `centralized` is the single-party PoC default; `threshold` runs the 4-party (3t+1, t=1) cluster (fhevm-internal#1746)."
+        default: "centralized"
+        type: choice
+        options:
+          - centralized
+          - threshold
 
 permissions: {}
 
@@ -215,6 +222,11 @@ jobs:
           # skipped, in which case clean-e2e.sh keeps its build-everything default).
           SOLANA_E2E_OVERRIDES: ${{ steps.select-overrides.outputs.overrides }}
           SOLANA_E2E_LOCK_PINS: ${{ steps.select-overrides.outputs.lock_pins }}
+          # KMS topology. Empty (PR runs) keeps clean-e2e.sh's centralized defaults, so the PR lane
+          # is unchanged. `threshold` selects the 4-party scenario and sets the corruption threshold
+          # t=1, from which the live client derives the 2t+1=3 on-chain certificate thresholds.
+          SOLANA_E2E_SCENARIO: ${{ inputs.kms-mode == 'threshold' && 'solana-threshold-kms' || '' }}
+          KMS_THRESHOLD: ${{ inputs.kms-mode == 'threshold' && '1' || '' }}
         run: bash solana/scripts/e2e/clean-e2e.sh
 
       - name: Ensure @fhevm/sdk runtime deps resolve for full-vertical + the demo scripts
