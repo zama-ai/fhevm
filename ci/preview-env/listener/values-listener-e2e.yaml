@@ -26,7 +26,7 @@
 # on the first multi-run and adjust here, NOT in the chart):
 #   - listener-core image tag (LISTENER_VERSION in the workflow) must be a
 #     published tag compatible with the coprocessor host_listener_consumer
-#     version (COPROCESSOR_VERSION); the broker payload format has to match.
+#     version; the broker payload format has to match.
 #   - anvil must support the block_fetcher RPC the listener uses
 #     (eth_getBlockReceipts for the default `block_receipts` fetcher).
 #   - the broker topic keying (chain_id 12345) must match the consumer's

@@ -27,8 +27,8 @@ new push re-deploys it fresh (an in-flight run is cancelled).
 
 | Label | What it does |
 | --- | --- |
-| `pr-preview-e2e` | Deploy the stack using the **pinned** image versions (builds nothing). Fastest. |
-| `pr-preview-e2e-build` | Same, but **builds fresh images from the PR branch** first (only changed components; the rest fall back to pinned). Use this to test your code. |
+| `pr-preview-e2e` | Deploy **your branch's Helm charts** (`charts/*`, straight from the checkout) with **the images your PR's base commit runs** (builds nothing). Fastest; also tests chart-only changes. |
+| `pr-preview-e2e-build` | Same, but **builds fresh images from the PR branch** first (only changed components; the rest come from the base commit). Use this to test your code. |
 | `pr-preview-e2e-tests` | Deploy **and** auto-run the e2e test DAG, posting a pass/fail report back to the PR. Deploys the env on its own. |
 
 Labels combine, e.g. `pr-preview-e2e-build` + `pr-preview-e2e-tests` = build your
@@ -52,10 +52,11 @@ topology, or to deploy without a PR.
 Key inputs (all have sensible defaults — you rarely set more than a couple):
 
 **Control**
-- `build_images` — build fresh images from the picked branch (`true`) or deploy
-  pinned versions only (`false`).
+- `build_images` — build fresh images from the picked branch (`true`) or build
+  nothing (`false`).
 - `build_test_suite_only` — when building, build **only** the e2e test-suite
-  image (fast test-suite iteration); everything else stays pinned.
+  image (fast test-suite iteration); every other image resolves to the base
+  commit's.
 - `automated_tests` — auto-run the e2e DAG and write the report to the run
   summary.
 - `namespace_suffix` — fixed suffix for the namespace (e.g. a ticket id);
@@ -66,9 +67,20 @@ Key inputs (all have sensible defaults — you rarely set more than a couple):
 - `nb_coprocessor` — number of independent coprocessor stacks (default `1`).
   `> 1` multiplies cluster capacity — see the resource caveat in `README.md`.
 
-**Versions** (chart versions, image tags, `kms_core_version`/`kms_repo_ref`,
-`relayer_sdk_version`, …) — override any pin for this run. Each falls back to the
-same value used on PR runs when left at its default.
+**Versions** — three kinds:
+- **fhevm's own images** (`coprocessor_version`, `test_suite_version`, …)
+  default to **empty**, meaning "resolve from the base commit" exactly as a PR
+  run does. Set one only to force a specific tag for this run.
+- **In-repo charts** (`coprocessor_chart_version`, `contracts_chart_version`, …)
+  default to **empty**, meaning "install `charts/<name>` straight from the
+  picked branch". Set one to deploy that **published** OCI chart release
+  instead.
+- **External deps** (`common_chart_version`, `redis_chart_version`,
+  `kms_core_version`/`kms_repo_ref`, `listener_version`, …) also default to
+  **empty**, meaning "use the pinned version in the workflow env" — they're
+  owned by other repos, so there's no commit of this repo to derive them from.
+  (`relayer_sdk_version` keeps a real default; emptying it skips the
+  relayer-sdk suite.)
 
 - **Namespace:** `fhevm-ci-<actor>-<namespace_suffix | run-id>`.
 - **Results:** run summary (deployment plan + e2e report if `automated_tests`).
@@ -124,8 +136,28 @@ kubectl delete namespace <namespace>
 
 ## Gotchas
 
-- **`build_images=false` ⇒ pinned versions.** A plain `pr-preview-e2e` label does
-  **not** test your branch's code; use `-build` for that.
+- **`build_images=false` ⇒ your base commit's images.** A plain `pr-preview-e2e`
+  label does **not** test your branch's *code* — charts and values overlays still
+  come from your branch; use `-build` to test code changes too.
+- **Chart changes deploy directly.** In-repo charts (`charts/*`) install straight
+  from your branch's checkout — no publish, no version bump needed. Flip side:
+  the chart may be **newer than the images** it runs (base commit's, unless
+  `-build`), so a chart change that needs a matching code change should ship in
+  the same PR with the `-build` label.
+- **There are no version pins for fhevm's own artifacts.** Charts come from your
+  checkout, and every push to `main`/`release/*` tags every image with that
+  commit's short SHA, so images resolve from your base commit. Check the run
+  summary's **Images** table: each row shows the tag *and* where it came from
+  (`built`, `base-sha`, `dispatch-override`).
+- **Unresolvable ⇒ the run fails.** If GHCR has pruned the base commit's tags and
+  nothing turns up within 50 commits, `resolve-tags` fails instead of quietly
+  deploying something older. Rebase onto a newer base commit, or pass an explicit
+  `*_version` input via dispatch.
+- **Stacked PRs resolve images from `main`.** Only `main`/`release/*` commits
+  publish images, so a PR based on another feature branch resolves them from its
+  merge-base with `main` and **excludes the parent PR's code changes** (with a
+  warning). Charts are unaffected — the checkout includes the parent branch.
+  Retarget at `main` once the parent merges.
 - **Each push re-deploys** the PR env from scratch and cancels any in-flight run.
 - **Namespaces key off the PR author**, not whoever pushed/labeled — so deploy
   and teardown always agree.
