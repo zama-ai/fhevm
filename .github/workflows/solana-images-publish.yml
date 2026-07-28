@@ -60,80 +60,89 @@ jobs:
           - name: coprocessor-db-migration
             image: fhevm/coprocessor/db-migration
             dockerfile: coprocessor/fhevm-engine/db-migration/Dockerfile
+            rust_toolchain: coprocessor/fhevm-engine/rust-toolchain.toml
             context: .
             target: prod
             sccache: true
           - name: coprocessor-host-listener
             image: fhevm/coprocessor/host-listener
             dockerfile: coprocessor/fhevm-engine/host-listener/Dockerfile
+            rust_toolchain: coprocessor/fhevm-engine/rust-toolchain.toml
             context: .
             target: prod
             sccache: true
           - name: coprocessor-gw-listener
             image: fhevm/coprocessor/gw-listener
             dockerfile: coprocessor/fhevm-engine/gw-listener/Dockerfile
+            rust_toolchain: coprocessor/fhevm-engine/rust-toolchain.toml
             context: .
             target: prod
             sccache: true
           - name: coprocessor-tfhe-worker
             image: fhevm/coprocessor/tfhe-worker
             dockerfile: coprocessor/fhevm-engine/tfhe-worker/Dockerfile
+            rust_toolchain: coprocessor/fhevm-engine/rust-toolchain.toml
             context: .
             target: prod
             sccache: true
           - name: coprocessor-zkproof-worker
             image: fhevm/coprocessor/zkproof-worker
             dockerfile: coprocessor/fhevm-engine/zkproof-worker/Dockerfile
+            rust_toolchain: coprocessor/fhevm-engine/rust-toolchain.toml
             context: .
             target: prod
             sccache: true
           - name: coprocessor-sns-worker
             image: fhevm/coprocessor/sns-worker
             dockerfile: coprocessor/fhevm-engine/sns-worker/Dockerfile
+            rust_toolchain: coprocessor/fhevm-engine/rust-toolchain.toml
             context: .
             target: prod
             sccache: true
           - name: coprocessor-tx-sender
             image: fhevm/coprocessor/tx-sender
             dockerfile: coprocessor/fhevm-engine/transaction-sender/Dockerfile
+            rust_toolchain: coprocessor/fhevm-engine/rust-toolchain.toml
             context: .
             target: prod
             sccache: true
           - name: relayer
             image: fhevm/relayer
             dockerfile: relayer/docker/relayer/Dockerfile
+            rust_toolchain: relayer/rust-toolchain.toml
             context: .
           - name: relayer-migrate
             image: fhevm/relayer-migrate
             dockerfile: relayer/docker/relayer-migrate/Dockerfile
+            rust_toolchain: relayer/rust-toolchain.toml
             context: .
           - name: kms-connector-db-migration
             image: fhevm/kms-connector/db-migration
             dockerfile: kms-connector/connector-db/Dockerfile
+            rust_toolchain: kms-connector/rust-toolchain.toml
             context: .
             target: prod
-            build_args: "RUST_IMAGE_VERSION=1.91.0"
             sccache: true
           - name: kms-connector-gw-listener
             image: fhevm/kms-connector/gw-listener
             dockerfile: kms-connector/crates/gw-listener/Dockerfile
+            rust_toolchain: kms-connector/rust-toolchain.toml
             context: .
             target: prod
-            build_args: "RUST_IMAGE_VERSION=1.91.0"
             sccache: true
           - name: kms-connector-kms-worker
             image: fhevm/kms-connector/kms-worker
             dockerfile: kms-connector/crates/kms-worker/Dockerfile
+            rust_toolchain: kms-connector/rust-toolchain.toml
             context: .
             target: prod
-            build_args: "RUST_IMAGE_VERSION=1.91.0"
             sccache: true
           - name: kms-connector-tx-sender
             image: fhevm/kms-connector/tx-sender
             dockerfile: kms-connector/crates/tx-sender/Dockerfile
+            rust_toolchain: kms-connector/rust-toolchain.toml
             context: .
             target: prod
-            build_args: "RUST_IMAGE_VERSION=1.91.0"
             sccache: true
     steps:
       - name: Checkout
@@ -167,9 +176,9 @@ jobs:
         env:
           IMAGE: ${{ matrix.image }}
           DOCKERFILE: ${{ matrix.dockerfile }}
+          RUST_TOOLCHAIN: ${{ matrix.rust_toolchain || '' }}
           CONTEXT: ${{ matrix.context }}
           TARGET: ${{ matrix.target || '' }}
-          EXTRA_BUILD_ARGS: ${{ matrix.build_args || '' }}
           USE_SCCACHE: ${{ matrix.sccache && 'true' || 'false' }}
           # Same gating as solana-e2e.yml: activate sccache only when BOTH S3 creds are present,
           # so a fork/misconfigured run degrades to a plain (slower) build instead of failing.
@@ -193,9 +202,14 @@ jobs:
           if [ -n "$TARGET" ]; then
             args+=(--target "$TARGET")
           fi
-          for arg in $EXTRA_BUILD_ARGS; do
-            args+=(--build-arg "$arg")
-          done
+          if [ -n "$RUST_TOOLCHAIN" ]; then
+            rust_image_version="$(awk -F '"' '/^[[:space:]]*channel[[:space:]]*=/{print $2; exit}' "$RUST_TOOLCHAIN")"
+            if [ -z "$rust_image_version" ]; then
+              echo "Could not read Rust channel from $RUST_TOOLCHAIN" >&2
+              exit 1
+            fi
+            args+=(--build-arg "RUST_IMAGE_VERSION=$rust_image_version")
+          fi
           if [ "$USE_SCCACHE" = "true" ] && [ -n "$SCCACHE_BUCKET" ]; then
             # Same build args + BuildKit secret ids as test-suite/fhevm/src/utils/sccache.ts.
             args+=(
@@ -280,11 +294,17 @@ jobs:
       - name: Build and export workspace cache
         env:
           DOCKERFILE: coprocessor/fhevm-engine/Dockerfile.workspace
+          RUST_TOOLCHAIN: coprocessor/fhevm-engine/rust-toolchain.toml
           # Single shared cache ref for every coprocessor workspace target (they share the builder
           # stage). Matches WORKSPACE_BUILDCACHE_IMAGE + FHEVM_BUILDCACHE_TAG on the reader side.
           CACHE_REF: ghcr.io/zama-ai/fhevm/coprocessor/workspace:buildcache-feature-solana
         run: |
           set -euo pipefail
+          rust_image_version="$(awk -F '"' '/^[[:space:]]*channel[[:space:]]*=/{print $2; exit}' "$RUST_TOOLCHAIN")"
+          if [ -z "$rust_image_version" ]; then
+            echo "Could not read Rust channel from $RUST_TOOLCHAIN" >&2
+            exit 1
+          fi
           # db-migration depends on builder + sqlx_builder, so this one build exports the whole
           # chef -> planner -> builder (cook) chain AND sqlx_builder under the shared ref.
           # Cache-only: no --tag, no --push. A missing cache ref on the first run is a non-fatal
@@ -292,6 +312,7 @@ jobs:
           docker buildx build \
             --file "$DOCKERFILE" \
             --target db-migration \
+            --build-arg "RUST_IMAGE_VERSION=$rust_image_version" \
             --cache-from "type=registry,ref=$CACHE_REF" \
             --cache-to "type=registry,ref=$CACHE_REF,mode=max,image-manifest=true,oci-mediatypes=true" \
             .

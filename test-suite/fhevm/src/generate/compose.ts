@@ -274,7 +274,9 @@ const withSccacheSecrets = <T extends Record<string, unknown>>(component: string
   }
   const existing = (doc.secrets as Record<string, unknown> | undefined) ?? {};
   return { ...doc, secrets: { ...existing, ...sccacheComposeSecrets() } };
-};const CANONICAL_HOST_ONLY_SERVICES = new Set([
+};
+
+const CANONICAL_HOST_ONLY_SERVICES = new Set([
   "host-sc-trigger-keygen",
   "host-sc-trigger-crsgen",
   "host-sc-context-switch",
