@@ -479,7 +479,7 @@ where
             }
         }
 
-        // All RPC calls failed.
+        // No contract returned true (all denied, all RPC calls failed, or a mix of both).
         Err(RequestCheckError::recoverable(
             RequestCheckKind::Acl,
             anyhow!(
