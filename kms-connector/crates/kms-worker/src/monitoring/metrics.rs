@@ -133,7 +133,6 @@ mod tests {
         let event = ProtocolEvent::new(
             ProtocolEventKind::UserDecryptionSolana(UserDecryptionRequestSolana {
                 decryptionId: U256::ZERO,
-                snsCtMaterials: Vec::new(),
                 handles: Vec::new(),
                 payload: UserDecryptionRequestSolanaPayload {
                     userIdentity: FixedBytes::ZERO,
