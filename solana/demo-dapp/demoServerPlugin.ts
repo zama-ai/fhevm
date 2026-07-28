@@ -6,7 +6,6 @@ import { createKeyPairSignerFromBytes } from '@solana/kit';
 import type { Plugin } from 'vite';
 
 import {
-  authorizeDemoHeaders,
   readDemoAuthorizationFromEnv,
 } from '../../test-suite/fhevm/demo/authorization';
 import type { VaultMetrics } from './src/batchTypes';
@@ -43,8 +42,33 @@ let encryptionKeyPromise: Promise<DemoEncryptionKey> | undefined;
 
 const isLoopback = (remoteAddress?: string): boolean =>
   remoteAddress === '127.0.0.1' || remoteAddress === '::1' || remoteAddress === '::ffff:127.0.0.1';
-const hasDemoOrigin = (request: IncomingMessage): boolean =>
-  request.headers.origin === 'http://127.0.0.1:5173' && request.headers.host === '127.0.0.1:5173';
+export const hasDemoPageContext = (
+  request: Pick<IncomingMessage, 'headers' | 'method' | 'socket'>,
+): boolean => {
+  if (
+    !isLoopback(request.socket.remoteAddress) ||
+    request.headers.host !== '127.0.0.1:5173' ||
+    request.headers['sec-fetch-site'] !== 'same-origin' ||
+    request.headers['sec-fetch-dest'] !== 'empty'
+  ) {
+    return false;
+  }
+  const origin = request.headers.origin;
+  if (
+    (request.method !== 'GET' && origin !== 'http://127.0.0.1:5173') ||
+    (origin !== undefined && origin !== 'http://127.0.0.1:5173')
+  ) {
+    return false;
+  }
+  const referer = request.headers.referer;
+  if (referer === undefined) return false;
+  try {
+    const url = new URL(referer);
+    return url.origin === 'http://127.0.0.1:5173' && url.username === '' && url.password === '';
+  } catch {
+    return false;
+  }
+};
 const hasJsonContentType = (request: IncomingMessage): boolean =>
   request.headers['content-type']?.split(';', 1)[0]?.trim().toLowerCase() === 'application/json';
 
@@ -152,18 +176,43 @@ export const demoServerPlugin = (): Plugin => ({
           authorization: `Bearer ${authorization.token}`,
           'x-fhevm-demo-boot-id': authorization.bootId,
         };
-        const requireAuthorization = (request: IncomingMessage, response: import('node:http').ServerResponse): boolean => {
-          const decision = authorizeDemoHeaders((name) => {
-            const value = request.headers[name];
-            return Array.isArray(value) ? value[0] : value;
-          }, authorization);
-          if (decision.ok) return true;
-          response.statusCode = decision.status;
-          response.end(JSON.stringify({ error: decision.error }));
-          return false;
-        };
         type HarvestResult = { readonly before: VaultMetrics; readonly after: VaultMetrics };
         let harvestInFlight: Promise<HarvestResult> | undefined;
+
+        server.middlewares.use('/api/demo-faucet', async (request, response) => {
+          response.setHeader('content-type', 'application/json');
+          response.setHeader('cache-control', 'no-store');
+          response.setHeader('x-content-type-options', 'nosniff');
+          if (request.method !== 'POST' || !hasDemoPageContext(request) || !hasJsonContentType(request)) {
+            response.statusCode = request.method === 'POST' ? 403 : 405;
+            response.end(
+              JSON.stringify({ error: request.method === 'POST' ? 'local demo page only' : 'method not allowed' }),
+            );
+            return;
+          }
+          const path = request.url?.split('?', 1)[0];
+          if (path !== '/airdrop-sol' && path !== '/mint-usdc') {
+            response.statusCode = 404;
+            response.end(JSON.stringify({ error: 'unknown faucet action' }));
+            return;
+          }
+          try {
+            const upstream = await fetch(`http://127.0.0.1:8090${path}`, {
+              method: 'POST',
+              headers: {
+                'content-type': 'application/json',
+                origin: 'http://127.0.0.1:5173',
+                ...authorizationHeaders,
+              },
+              body: JSON.stringify(await readJsonBody(request)),
+            });
+            response.statusCode = upstream.status;
+            response.end(await upstream.text());
+          } catch (error) {
+            response.statusCode = 503;
+            response.end(JSON.stringify({ error: error instanceof Error ? error.message : String(error) }));
+          }
+        });
 
         server.middlewares.use('/api/demo-encryption-key-meta', async (request, response) => {
           response.setHeader('content-type', 'application/json');
@@ -221,7 +270,7 @@ export const demoServerPlugin = (): Plugin => ({
           if (
             request.method !== 'POST' ||
             !isLoopback(request.socket.remoteAddress) ||
-            !hasDemoOrigin(request) ||
+            !hasDemoPageContext(request) ||
             !hasJsonContentType(request)
           ) {
             response.statusCode = request.method === 'POST' ? 403 : 405;
@@ -230,7 +279,6 @@ export const demoServerPlugin = (): Plugin => ({
             );
             return;
           }
-          if (!requireAuthorization(request, response)) return;
           try {
             const { action, direction, position } = parseOperatorRequest(await readJsonBody(request));
             const session = await loadDemoOperatorSession();
@@ -276,7 +324,7 @@ export const demoServerPlugin = (): Plugin => ({
           if (
             request.method !== 'POST' ||
             !isLoopback(request.socket.remoteAddress) ||
-            !hasDemoOrigin(request) ||
+            !hasDemoPageContext(request) ||
             !hasJsonContentType(request)
           ) {
             response.statusCode = request.method === 'POST' ? 403 : 405;
@@ -285,7 +333,6 @@ export const demoServerPlugin = (): Plugin => ({
             );
             return;
           }
-          if (!requireAuthorization(request, response)) return;
           try {
             harvestInFlight ??= (async () => {
               const session = await loadDemoOperatorSession();
@@ -317,12 +364,11 @@ export const demoServerPlugin = (): Plugin => ({
             response.end(JSON.stringify({ error: 'method not allowed' }));
             return;
           }
-          if (!isLoopback(request.socket.remoteAddress)) {
+          if (!hasDemoPageContext(request)) {
             response.statusCode = 403;
-            response.end(JSON.stringify({ error: 'demo session is loopback-only' }));
+            response.end(JSON.stringify({ error: 'demo session is available only to the local demo page' }));
             return;
           }
-          if (!requireAuthorization(request, response)) return;
           try {
             const config = JSON.parse(await fs.readFile(runtimeConfigPath, 'utf8')) as {
               source?: string;
@@ -349,9 +395,9 @@ export const demoServerPlugin = (): Plugin => ({
             response.end(JSON.stringify({ error: 'method not allowed' }));
             return;
           }
-          if (!isLoopback(request.socket.remoteAddress)) {
+          if (!hasDemoPageContext(request)) {
             response.statusCode = 403;
-            response.end(JSON.stringify({ error: 'demo config is loopback-only' }));
+            response.end(JSON.stringify({ error: 'demo config is available only to the local demo page' }));
             return;
           }
           try {

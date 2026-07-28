@@ -39,7 +39,7 @@ const validatedToken = (value: string): string => {
 export const createDemoAuthorizationFile = async (
   runtimeDir: string,
   bootId: string,
-): Promise<{ readonly tokenFile: string; readonly authorization: DemoAuthorization; readonly launchFragment: string }> => {
+): Promise<{ readonly tokenFile: string; readonly authorization: DemoAuthorization }> => {
   const validatedId = validatedBootId(bootId);
   await fs.mkdir(runtimeDir, { recursive: true, mode: 0o700 });
   const tokenFile = path.join(runtimeDir, DEMO_AUTH_TOKEN_FILENAME);
@@ -63,7 +63,6 @@ export const createDemoAuthorizationFile = async (
   return {
     tokenFile,
     authorization,
-    launchFragment: `#boot=${encodeURIComponent(validatedId)}&token=${encodeURIComponent(token)}`,
   };
 };
 

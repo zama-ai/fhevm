@@ -989,17 +989,12 @@ export const authorizedServiceEnv = (
   [DEMO_BOOT_ID_ENV]: bootId,
 });
 
-export const demoLaunchUrl = (fragment: string): string =>
-  `http://127.0.0.1:5173/${fragment}`;
+export const demoLaunchUrl = (): string => "http://127.0.0.1:5173/";
 
 const readyMessage = (
   command: "up" | "reseed",
   bootId: string,
-  launchFragment: string,
-): string =>
-  process.env.DEMO_PRINT_LAUNCH_URL === "0"
-    ? `[${command}] demo boot ${bootId} is ready (launch URL suppressed)`
-    : `[${command}] demo boot ${bootId} is ready at ${demoLaunchUrl(launchFragment)}`;
+): string => `[${command}] demo boot ${bootId} is ready at ${demoLaunchUrl()}`;
 
 export const bootAuthorizationTokenPath = (bootId: string): string =>
   path.join(DEMO_RUNTIME_DIR, bootId, DEMO_AUTH_TOKEN_FILENAME);
@@ -1349,7 +1344,7 @@ export const upDemo = async (): Promise<string> =>
       }
       manifest = { ...manifest, state: "running" };
       await writeDemoManifest(manifest);
-      console.log(readyMessage("up", bootId, authorization.launchFragment));
+      console.log(readyMessage("up", bootId));
       return bootId;
     } catch (error) {
       let recoveryFailure: string | undefined;
@@ -1771,10 +1766,7 @@ export const downDemo = async (): Promise<void> =>
 const reseedReadyMessage = ({
   bootId,
   launchUrl,
-}: SupervisorReseedResult): string =>
-  process.env.DEMO_PRINT_LAUNCH_URL === "0"
-    ? `[reseed] refreshed owned boot ${bootId} (launch URL suppressed)`
-    : `[reseed] refreshed owned boot ${bootId}; reopen ${launchUrl}`;
+}: SupervisorReseedResult): string => `[reseed] refreshed owned boot ${bootId}; reopen ${launchUrl}`;
 
 export const reseedTargetAction = (
   expectedBootId: string | undefined,
@@ -1871,7 +1863,7 @@ export const reseedDemo = async ({
       await writeDemoManifest({ ...nextManifest, state: "running" });
       const result = {
         bootId: manifest.bootId,
-        launchUrl: demoLaunchUrl(authorization.launchFragment),
+        launchUrl: demoLaunchUrl(),
       };
       if (announce) console.log(reseedReadyMessage(result));
       return result;

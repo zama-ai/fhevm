@@ -35,7 +35,6 @@ describe("demo boot authorization", () => {
     const firstToken = (await fs.readFile(first.tokenFile, "utf8")).trim();
     expect(Buffer.from(firstToken, "base64url")).toHaveLength(32);
     expect((await fs.stat(first.tokenFile)).mode & 0o777).toBe(0o600);
-    expect(first.launchFragment).toBe(`#boot=${BOOT_ID}&token=${firstToken}`);
 
     const second = await createDemoAuthorizationFile(directory, BOOT_ID);
     expect(second.tokenFile).toBe(first.tokenFile);

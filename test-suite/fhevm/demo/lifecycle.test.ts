@@ -636,7 +636,7 @@ describe("demo lifecycle ownership primitives", () => {
         AWS_ACCESS_KEY_S3_USER: "access-secret",
         AWS_SECRET_KEY_S3_USER: "secret-secret",
         GH_TOKEN: "github-secret",
-        DEMO_PRINT_LAUNCH_URL: "0",
+        DEMO_AUTH_TOKEN: "demo-secret",
       }),
     ).toEqual({
       PATH: "/tools/bin",
@@ -662,17 +662,8 @@ describe("demo lifecycle ownership primitives", () => {
     expect(signals).toEqual([undefined]);
   });
 
-  test("puts the boot capability in a URL fragment, never a query string", async () => {
-    const directory = await fs.mkdtemp(path.join(os.tmpdir(), "demo-launch-"));
-    temporaryDirectories.push(directory);
-    const authorization = await createDemoAuthorizationFile(
-      directory,
-      "12345678-1234-4123-8123-123456789abc",
-    );
-    const launchUrl = demoLaunchUrl(authorization.launchFragment);
-    expect(launchUrl).toStartWith("http://127.0.0.1:5173/#boot=");
-    expect(launchUrl).toContain("&token=");
-    expect(launchUrl).not.toContain("?");
+  test("uses one stable plain local URL", () => {
+    expect(demoLaunchUrl()).toBe("http://127.0.0.1:5173/");
   });
 });
 

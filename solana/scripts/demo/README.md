@@ -32,12 +32,12 @@ faucet, dApp, KMS, relayer, and proof-service readiness, plus the Docker state/h
 container captured for the scenario. `logs` resolves every Docker alias from those exact owned
 container IDs; the optional `fhevm-` name prefix may be omitted.
 
-Each `up` or `reseed` creates a fresh mode-0600 boot capability and prints its fragment launch URL
-only after every health gate passes. The raw token is never stored in the manifest or passed in an
-environment variable; faucet and dApp processes receive only the boot ID, token-file path, and
-allowed loopback origin. The browser consumes and scrubs the fragment immediately. If development
-causes a full document reload, reopen the current launch URL; the capability is intentionally not
-persisted in browser storage. `down` removes the exact boot's token file.
+Each `up` or `reseed` creates a fresh mode-0600 boot capability. The raw token is never stored in the
+manifest, passed in an environment variable, or exposed to the browser; faucet and dApp processes
+receive only the boot ID, token-file path, and allowed loopback origin. Open
+`http://127.0.0.1:5173/`: the dApp server validates the exact same-origin, loopback-only browser
+context and forwards privileged faucet calls with its server-held capability. Reloading the page
+requires no recovery step. `down` removes the exact boot's token file.
 
 Lifecycle state is under `.fhevm/runtime/solana-demo/`. Each boot gets its own ledger and logs. The
 published config has one absolute path: `.fhevm/runtime/solana-demo.json`.

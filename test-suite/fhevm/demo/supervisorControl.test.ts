@@ -34,7 +34,7 @@ describe("demo supervisor control", () => {
         received = request;
         return {
           bootId: request.bootId,
-          launchUrl: "http://127.0.0.1:5173/#redacted",
+          launchUrl: "http://127.0.0.1:5173/",
         };
       },
     });
@@ -49,7 +49,7 @@ describe("demo supervisor control", () => {
       };
       expect(await requestSupervisorReseed(socketPath, request)).toEqual({
         bootId: request.bootId,
-        launchUrl: "http://127.0.0.1:5173/#redacted",
+        launchUrl: "http://127.0.0.1:5173/",
       });
       expect(received).toEqual(request);
       await expect(
@@ -134,7 +134,7 @@ describe("demo supervisor control", () => {
       isExactOwner: async () => false,
       onReseed: async () => ({
         bootId,
-        launchUrl: "http://127.0.0.1:5173/#redacted",
+          launchUrl: "http://127.0.0.1:5173/",
       }),
     });
     try {
@@ -158,7 +158,7 @@ describe("demo supervisor control", () => {
       isExactOwner: async () => false,
       onReseed: async () => ({
         bootId,
-        launchUrl: "http://127.0.0.1:5173/#redacted",
+        launchUrl: "http://127.0.0.1:5173/",
       }),
     });
     await fs.rm(socketPath);
