@@ -1308,6 +1308,11 @@ type DemoHealth = {
   >;
 };
 
+export const exactEndpointReady = (
+  exactProcess: boolean,
+  endpointReady: boolean,
+): boolean => exactProcess && endpointReady;
+
 const demoHealth = async (manifest: DemoManifest): Promise<DemoHealth> => {
   const exact = await exactProcessMap(manifest);
   const containerHealth = new Map(
@@ -1363,10 +1368,10 @@ const demoHealth = async (manifest: DemoManifest): Promise<DemoHealth> => {
     );
   };
   return {
-    validator,
+    validator: exactEndpointReady(exact.get("validator") === true, validator),
     listener: exact.get("listener") === true,
-    faucet,
-    dapp,
+    faucet: exactEndpointReady(exact.get("faucet") === true, faucet),
+    dapp: exactEndpointReady(exact.get("dapp") === true, dapp),
     kmsCore: containerReady("kms-core") && kmsReady,
     relayer: containerReady("fhevm-relayer") && relayerEndpoint,
     proof: containerReady("fhevm-solana-proof-service") && proofEndpoint,
@@ -1387,6 +1392,19 @@ const allDemoHealthReady = (health: DemoHealth): boolean =>
   health.listener &&
   health.faucet &&
   health.dapp &&
+  health.kmsCore &&
+  health.relayer &&
+  health.proof &&
+  health.hostRpc &&
+  health.gatewayRpc &&
+  health.minio &&
+  health.prometheus &&
+  health.jaeger &&
+  [...health.containers.values()].every(({ ready }) => ready);
+
+export const reseedHealthReady = (health: DemoHealth): boolean =>
+  health.validator &&
+  health.listener &&
   health.kmsCore &&
   health.relayer &&
   health.proof &&
@@ -1438,6 +1456,24 @@ const isOwnedBootHealthy = async (manifest: DemoManifest): Promise<boolean> => {
     return false;
   }
   return allDemoHealthReady(await demoHealth(manifest));
+};
+
+const isOwnedBootReseedable = async (
+  manifest: DemoManifest,
+): Promise<boolean> => {
+  if (manifest.state !== "running") return false;
+  const [exact, containers] = await Promise.all([
+    exactProcessMap(manifest),
+    exactDockerResources(manifest),
+  ]);
+  if (
+    manifest.containers.length === 0 ||
+    !containers ||
+    !PROCESS_NAMES.every((name) => exact.get(name) === true)
+  ) {
+    return false;
+  }
+  return reseedHealthReady(await demoHealth(manifest));
 };
 
 export const existingBootAction = (
@@ -2016,8 +2052,10 @@ export const reseedDemo = async ({
     if (reseedTargetAction(expectedBootId, manifest) === "replaced") {
       throw new Error(`supervised boot ${expectedBootId} was replaced`);
     }
-    if (manifest === null || !(await isOwnedBootHealthy(manifest))) {
-      throw new Error("reseed requires one healthy, exactly-owned demo boot");
+    if (manifest === null || !(await isOwnedBootReseedable(manifest))) {
+      throw new Error(
+        "reseed requires one healthy, exactly-owned demo core stack",
+      );
     }
     let nextManifest = manifest;
     try {
@@ -2032,6 +2070,14 @@ export const reseedDemo = async ({
         },
       };
       await writeDemoManifest(nextManifest);
+      if (
+        !(await isExactOwnedProcess(manifest.processes.validator!)) ||
+        !(await isExactOwnedProcess(manifest.processes.listener!))
+      ) {
+        throw new Error(
+          "validator or listener ownership changed before demo redeployment",
+        );
+      }
       const runtimeDir = path.join(DEMO_RUNTIME_DIR, manifest.bootId);
       const logsDir = path.join(runtimeDir, "logs");
       const env = lifecycleEnv(runtimeDir, manifest.composeProject);

@@ -16,6 +16,7 @@ import {
   doctorEnvironmentErrors,
   demoComposeProject,
   demoLaunchUrl,
+  exactEndpointReady,
   expectedBootShutdownAction,
   existingBootAction,
   isDemoDappApiResponseHealthy,
@@ -29,6 +30,7 @@ import {
   readLifecycleLockState,
   readOwnedDockerResources,
   recoverPartialDockerResources,
+  reseedHealthReady,
   reseedTargetAction,
   resolveOwnedLogContainers,
   supervisorControlSocketPath,
@@ -68,6 +70,42 @@ const readyCommands = new Map([
 ]);
 
 describe("demo lifecycle collision policy", () => {
+  test("reseed may recover unhealthy replaceable clients only", () => {
+    const health = {
+      validator: true,
+      listener: true,
+      faucet: false,
+      dapp: false,
+      kmsCore: true,
+      relayer: true,
+      proof: true,
+      hostRpc: true,
+      gatewayRpc: true,
+      minio: true,
+      prometheus: true,
+      jaeger: true,
+      containers: new Map([
+        ["kms-core", { ready: true, detail: "running" }],
+      ]),
+    };
+    expect(reseedHealthReady(health)).toBe(true);
+    expect(reseedHealthReady({ ...health, relayer: false })).toBe(false);
+    expect(
+      reseedHealthReady({
+        ...health,
+        containers: new Map([
+          ["kms-core", { ready: false, detail: "stopped" }],
+        ]),
+      }),
+    ).toBe(false);
+  });
+
+  test("endpoint health cannot adopt a foreign replacement process", () => {
+    expect(exactEndpointReady(true, true)).toBe(true);
+    expect(exactEndpointReady(false, true)).toBe(false);
+    expect(exactEndpointReady(true, false)).toBe(false);
+  });
+
   test("parses only the explicit observability option", () => {
     expect(parseDemoOptions([])).toEqual({ observability: false });
     expect(parseDemoOptions(["--observability"])).toEqual({
