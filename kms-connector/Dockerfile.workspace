@@ -1,4 +1,5 @@
-# syntax=docker/dockerfile:1
+# Use BuildKit's bundled Dockerfile frontend so Apple Silicon local builds can resolve the
+# fingerprinted native rust-glibc fallback from Docker's local image store.
 # =============================================================================
 # BRANCH-LOCAL (feature/solana) E2E BUILD FILE — DELETE AT MERGE-BACK TO MAIN.
 # Main's release CI builds each image from its per-binary Dockerfile

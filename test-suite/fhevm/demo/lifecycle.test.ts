@@ -298,6 +298,25 @@ describe("demo lifecycle collision policy", () => {
     expect(script).not.toContain("--platform linux/amd64");
   });
 
+  test("local Rust overrides use the bundled frontend that honors native images", async () => {
+    const dockerfiles = [
+      "../../../kms-connector/connector-db/Dockerfile",
+      "../../../kms-connector/Dockerfile.workspace",
+      "../../../relayer/docker/relayer/Dockerfile",
+      "../../../relayer/docker/relayer-migrate/Dockerfile",
+    ];
+    for (const dockerfile of dockerfiles) {
+      const contents = await fs.readFile(
+        path.join(import.meta.dir, dockerfile),
+        "utf8",
+      );
+      expect(contents).not.toMatch(/^#\s*syntax=/m);
+      expect(contents).toContain(
+        "ghcr.io/zama-ai/fhevm/gci/rust-glibc:${RUST_IMAGE_VERSION}",
+      );
+    }
+  });
+
   test("Solana setup keeps every lifecycle compose call on the per-boot project", async () => {
     const script = await fs.readFile(
       path.join(

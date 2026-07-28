@@ -1,4 +1,5 @@
-# syntax=docker/dockerfile:1
+# Use BuildKit's bundled Dockerfile frontend so Apple Silicon local builds can resolve the
+# fingerprinted native rust-glibc fallback from Docker's local image store.
 # RUST_IMAGE_VERSION is intentionally left without a default so the Rust toolchain
 # version has a single source of truth: relayer/rust-toolchain.toml.
 ARG RUST_IMAGE_VERSION
