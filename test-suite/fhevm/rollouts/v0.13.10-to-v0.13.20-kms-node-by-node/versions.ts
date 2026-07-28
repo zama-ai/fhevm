@@ -23,7 +23,7 @@ export const from = {
   COPROCESSOR_SNS_WORKER_VERSION: release,
   LISTENER_CORE_VERSION: release,
   TEST_SUITE_VERSION: release,
-  RELAYER_SDK_VERSION: "0.4.2",
+  RELAYER_SDK_VERSION: "0.5.0-alpha.2",
 } satisfies Env;
 
 export const to = { ...from, CORE_VERSION: "v0.13.20" } satisfies Env;
@@ -33,5 +33,5 @@ export const versionSources = [
   "kms-core=v0.13.10->v0.13.20",
   "fhevm=v0.12.5",
   "relayer=v0.11.0",
-  "relayer-sdk=0.4.2",
+  "relayer-sdk=0.5.0-alpha.2",
 ];

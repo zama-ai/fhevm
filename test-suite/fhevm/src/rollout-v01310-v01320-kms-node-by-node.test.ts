@@ -14,7 +14,7 @@ const RUNBOOK = path.resolve(
 describe("v0.13.10 to v0.13.20 KMS node-by-node upgrade", () => {
   test("keeps SDK and connector versions unchanged", () => {
     expect(scenario).toBe("four-party-threshold-kms");
-    expect(from.RELAYER_SDK_VERSION).toBe("0.4.2");
+    expect(from.RELAYER_SDK_VERSION).toBe("0.5.0-alpha.2");
     expect(from.CONNECTOR_KMS_WORKER_VERSION).toBe("v0.12.5");
     const baseline = from as Record<string, string>;
     expect(Object.entries(to).filter(([key, value]) => baseline[key] !== value)).toEqual([
