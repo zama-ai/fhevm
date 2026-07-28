@@ -288,21 +288,58 @@
   font-size: 11px;
 }
 
-.yield-panel button {
-  flex: 0 0 auto;
-  color: #07150f;
-  background: #14f195;
-  font-weight: 780;
+.yield-price {
+  text-align: right;
 }
 
-.yield-panel button:disabled {
-  cursor: default;
-  opacity: 0.52;
+.yield-price > span {
+  color: #9c9ca4;
+  font-size: 10px;
+  font-weight: 760;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
 }
 
-.yield-panel.yield-applied strong {
+.yield-panel.yield-applied .yield-price strong {
   animation: price-rise 700ms ease-out;
   color: #bbf7d0;
+}
+
+.demo-controls {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 20px;
+  padding: 16px;
+  border: 1px dashed rgba(251, 191, 36, 0.34);
+  border-radius: 12px;
+  background: rgba(251, 191, 36, 0.045);
+}
+
+.demo-controls .operator-label {
+  color: #fcd34d;
+}
+
+.demo-controls strong,
+.demo-controls small {
+  display: block;
+}
+
+.demo-controls small {
+  margin-top: 4px;
+  color: #9c9ca4;
+  font-size: 11px;
+}
+
+.demo-controls button {
+  flex: 0 0 auto;
+  color: #1c1605;
+  background: #fcd34d;
+}
+
+.demo-controls button:disabled {
+  cursor: default;
+  opacity: 0.52;
 }
 
 @keyframes price-rise {

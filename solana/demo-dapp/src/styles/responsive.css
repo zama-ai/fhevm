@@ -57,9 +57,14 @@
 
   .settlement-progress,
   .claim-panel,
-  .yield-panel {
+  .yield-panel,
+  .demo-controls {
     align-items: stretch;
     flex-direction: column;
+  }
+
+  .yield-price {
+    text-align: left;
   }
 
   .redeem-heading,

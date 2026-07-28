@@ -1,6 +1,7 @@
 import { ActionError } from './JourneyPrimitives';
 import { formatUsdc } from './format';
 import type { DemoController } from './useDemoController';
+import { DEMO_APY_PERCENT, DEMO_RATE_WINDOW_DAYS } from './yieldPolicy';
 
 const DEPOSIT_AMOUNT_USDC = 100;
 
@@ -69,7 +70,9 @@ export function PortfolioOverview({ controller }: { readonly controller: DemoCon
         <div>
           <span className="muted">Vault</span>
           <h2>Confidential USDC</h2>
-          <p>Shield USDC and earn yield.</p>
+          <p>
+            {DEMO_APY_PERCENT.toFixed(1)}% demo APY · {DEMO_RATE_WINDOW_DAYS}-day rate, annualized
+          </p>
         </div>
         <div className="vault-metric">
           <span>{phantomLocalnet ? 'Wallet approvals' : 'Transactions'}</span>

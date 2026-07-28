@@ -20,6 +20,7 @@
     "src/settlement.ts",
     "src/transactionSimulation.ts",
     "src/vaultRoots.ts",
+    "src/yieldPolicy.ts",
     "../../test-suite/fhevm/demo/authorization.ts"
   ]
 }

@@ -50,6 +50,16 @@ describe('PortfolioOverview Phantom localnet guidance', () => {
     vi.clearAllMocks();
   });
 
+  test('advertises the demo APY before deposit', () => {
+    const renderer = render(controller({ kind: 'burner', name: 'Demo wallet' }));
+    expect(
+      renderer.root
+        .findAllByType('p')
+        .some((node) => node.children.join('') === '7.0% demo APY · 30-day rate, annualized'),
+    ).toBe(true);
+    act(() => renderer.unmount());
+  });
+
   test.each([
     ['idle', { kind: 'idle' }],
     ['running', { kind: 'running', stage: 'shielding' }],

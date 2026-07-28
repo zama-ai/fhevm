@@ -1,6 +1,7 @@
 import { ActionError, ClaimPanel, JourneyTimeline, SettlementProgress } from './JourneyPrimitives';
 import { formatUsdc } from './format';
 import type { DemoController } from './useDemoController';
+import { DEMO_APY_PERCENT, DEMO_RATE_WINDOW_DAYS } from './yieldPolicy';
 
 export function DepositJourney({ controller }: { readonly controller: DemoController }) {
   const { state, derived, actions } = controller;
@@ -106,25 +107,40 @@ export function DepositJourney({ controller }: { readonly controller: DemoContro
           {settled && lifecycle.claimed && (
             <div className={`yield-panel ${harvestFromPrice !== null && yieldApplied ? 'yield-applied' : ''}`}>
               <div>
-                <span className="operator-label">Public vault event</span>
-                <strong>
-                  {sharePrice === null ? 'Reading live share price…' : `1 cShare = ${sharePrice.toFixed(2)} USDC`}
-                </strong>
+                <span className="operator-label">Demo vault yield</span>
+                <strong>{DEMO_APY_PERCENT.toFixed(1)}% APY</strong>
+                <small>Illustrative {DEMO_RATE_WINDOW_DAYS}-day rate · annualized</small>
+              </div>
+              <div className="yield-price">
+                <span>Share price</span>
+                <strong>{sharePrice === null ? 'Reading…' : `${sharePrice.toFixed(2)} USDC`}</strong>
+                <small>{yieldApplied ? 'Yield reflected on-chain' : 'Live vault ratio'}</small>
+              </div>
+            </div>
+          )}
+
+          {settled && lifecycle.claimed && (
+            <div className="demo-controls">
+              <div>
+                <span className="operator-label">Demo control</span>
+                <strong>Fast-forward vault time</strong>
                 <small>
                   {harvestFromPrice !== null && yieldApplied
-                    ? `${harvestFromPrice.toFixed(2)} → ${sharePrice?.toFixed(2)} · assets rose, share supply did not`
-                    : yieldApplied
-                      ? 'Yield is already reflected in the on-chain asset/share ratio.'
-                      : 'The demo keeper can donate real USDC to simulate accrued yield.'}
+                    ? `${harvestFromPrice.toFixed(2)} → ${sharePrice?.toFixed(2)} · assets rose, share supply stayed fixed`
+                    : 'No wallet approval · local keeper demo action'}
                 </small>
               </div>
               <button
                 className="panel-action"
                 type="button"
                 disabled={vaultMetrics === null || harvesting || yieldApplied}
-                onClick={actions.applyDemoYield}
+                onClick={actions.fastForwardOneYear}
               >
-                {harvesting ? 'Applying yield…' : yieldApplied ? 'Yield applied' : 'Simulate +25% yield'}
+                {harvesting
+                  ? 'Fast-forwarding…'
+                  : yieldApplied
+                    ? '1 year of demo yield applied'
+                    : 'Fast-forward 1 year'}
               </button>
             </div>
           )}
@@ -139,7 +155,7 @@ export function DepositJourney({ controller }: { readonly controller: DemoContro
             </ActionError>
           )}
           {harvestError && (
-            <ActionError retryLabel="Retry yield" onRetry={actions.applyDemoYield}>
+            <ActionError retryLabel="Retry fast-forward" onRetry={actions.fastForwardOneYear}>
               {harvestError}
             </ActionError>
           )}

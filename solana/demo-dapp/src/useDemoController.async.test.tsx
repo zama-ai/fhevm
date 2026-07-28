@@ -247,7 +247,7 @@ describe('useDemoController generation safety', () => {
     mocks.harvest.mockReturnValue(oldHarvest.promise);
     await connect(controller);
     await flush();
-    controller.actions.applyDemoYield();
+    controller.actions.fastForwardOneYear();
     await flush();
 
     act(() => controller.actions.disconnect());
@@ -262,5 +262,23 @@ describe('useDemoController generation safety', () => {
     await flush();
     expect(controller.state.vaultMetrics).toEqual({ totalAssets: 200n, totalShares: 100n });
     expect(controller.state.harvesting).toBe(false);
+  });
+
+  test('fast-forward recovers from an initial metrics read failure', async () => {
+    const before = { totalAssets: 100n, totalShares: 100n };
+    const after = { totalAssets: 107n, totalShares: 100n };
+    mocks.lifecycle.mockResolvedValue(settled);
+    mocks.metrics.mockRejectedValueOnce(new Error('metrics unavailable')).mockResolvedValue(before);
+    mocks.harvest.mockResolvedValue({ before, after });
+    await connect(controller);
+    await flush();
+    expect(controller.state.vaultMetrics).toBe(null);
+    expect(controller.state.harvestError).toBe('metrics unavailable');
+
+    controller.actions.fastForwardOneYear();
+    await flush();
+    expect(mocks.harvest).toHaveBeenCalledTimes(1);
+    expect(controller.state.vaultMetrics).toEqual(after);
+    expect(controller.state.harvestError).toBe(null);
   });
 });

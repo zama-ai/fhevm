@@ -4,16 +4,18 @@ import { buildHarvestInstruction, getVaultMetrics } from "@fhevm/sdk/solana/vaul
 import type { DemoConfig } from "./demoConfig";
 import { sendTransaction } from "./sendTransaction";
 import type { VaultMetrics } from "./batchTypes";
+import {
+  DEMO_TARGET_PRICE_DENOMINATOR,
+  DEMO_TARGET_PRICE_NUMERATOR,
+} from "./yieldPolicy";
 
-const TARGET_PRICE_NUMERATOR = 5n;
-const TARGET_PRICE_DENOMINATOR = 4n;
 const HARVEST_COMPUTE_UNIT_LIMIT = 200_000;
 
 export const donationToTargetPrice = (metrics: VaultMetrics): bigint => {
   if (metrics.totalShares === 0n) throw new Error("the vault has no shares to accrue yield to");
   const targetAssets =
-    (metrics.totalShares * TARGET_PRICE_NUMERATOR + TARGET_PRICE_DENOMINATOR - 1n) /
-    TARGET_PRICE_DENOMINATOR;
+    (metrics.totalShares * DEMO_TARGET_PRICE_NUMERATOR + DEMO_TARGET_PRICE_DENOMINATOR - 1n) /
+    DEMO_TARGET_PRICE_DENOMINATOR;
   return targetAssets > metrics.totalAssets ? targetAssets - metrics.totalAssets : 0n;
 };
 
@@ -45,7 +47,7 @@ const fundDonation = async (
   }
 };
 
-/** Raises the live share price to at least 1.25 once; repeat calls are chain-state idempotent. */
+/** Raises the seeded share price to its one-year 7% target; repeat calls are chain-state idempotent. */
 export const harvestDemoVault = async (
   config: DemoConfig,
   keeper: TransactionSigner,

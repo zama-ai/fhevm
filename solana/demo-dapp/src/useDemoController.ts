@@ -10,6 +10,7 @@ import { findExistingRedeem, joinRedeemBatch, type RedeemStage } from './redeem'
 import { revealClaimedShares, revealClaimedUsdc, type RevealedBalance } from './revealShares';
 import { readVaultLifecycle } from './settlement';
 import { harvestDemoVault, readDemoVaultMetrics } from './vaultYield';
+import { DEMO_TARGET_SHARE_PRICE } from './yieldPolicy';
 
 export type ConnectionState =
   | { readonly kind: 'disconnected' }
@@ -382,15 +383,20 @@ export function useDemoController() {
     }
   };
 
-  const applyDemoYield = async () => {
-    if (state.harvesting || state.vaultMetrics === null) return;
+  const fastForwardOneYear = async () => {
+    if (state.harvesting) return;
     const generation = state.generation;
     commit(generation, {
       harvesting: true,
       harvestError: null,
-      harvestFromPrice: Number(state.vaultMetrics.totalAssets) / Number(state.vaultMetrics.totalShares),
     });
     try {
+      const metrics = state.vaultMetrics ?? (await readDemoVaultMetrics());
+      if (metrics.totalShares === 0n) throw new Error('The vault has no shares to accrue yield to');
+      commit(generation, {
+        vaultMetrics: metrics,
+        harvestFromPrice: Number(metrics.totalAssets) / Number(metrics.totalShares),
+      });
       const result = await harvestDemoVault();
       commit(generation, { vaultMetrics: result.after });
     } catch (error) {
@@ -458,7 +464,7 @@ export function useDemoController() {
       depositSettled: state.depositLifecycle?.kind === 'settled',
       sharesClaimed,
       sharePrice,
-      yieldApplied: sharePrice !== null && sharePrice >= 1.25,
+      yieldApplied: sharePrice !== null && sharePrice >= DEMO_TARGET_SHARE_PRICE,
       redeemJoined: state.redeem.kind === 'joined',
       redeemSettled: state.redeemLifecycle?.kind === 'settled',
     },
@@ -469,7 +475,7 @@ export function useDemoController() {
       shieldAndDeposit: () => void shieldAndDeposit(),
       revealShares: () => void revealShares(),
       hideShares: () => commit(state.generation, { revealedShares: null }),
-      applyDemoYield: () => void applyDemoYield(),
+      fastForwardOneYear: () => void fastForwardOneYear(),
       redeemHalf: () => void redeemHalf(),
       revealRedeemedUsdc: () => void revealRedeemedUsdc(),
       hideRedeemedUsdc: () => commit(state.generation, { revealedUsdc: null }),
