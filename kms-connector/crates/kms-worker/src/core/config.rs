@@ -17,7 +17,7 @@ use connector_utils::{
 #[cfg(test)]
 use serde::Serialize;
 use serde::{Deserialize, Deserializer};
-use std::{net::SocketAddr, str::FromStr, time::Duration};
+use std::{net::SocketAddr, num::NonZeroUsize, str::FromStr, time::Duration};
 
 /// Configuration of the `KmsWorker`.
 #[derive(Clone, Debug, Deserialize, PartialEq)]
@@ -80,6 +80,17 @@ pub struct Config {
     /// Timeout to connect to a S3 bucket.
     #[serde(with = "humantime_serde", default = "default_s3_connect_timeout")]
     pub s3_connect_timeout: Duration,
+
+    /// Ceiling on the calls a single host chain endpoint may have in flight, across all requests.
+    #[serde(default = "default_host_rpc_max_concurrent_calls")]
+    pub host_rpc_max_concurrent_calls: NonZeroUsize,
+    /// Ceiling on the attestation `HEAD`s in flight on a single Coprocessor bucket, across all
+    /// requests.
+    #[serde(default = "default_s3_max_concurrent_heads_per_bucket")]
+    pub s3_max_concurrent_heads_per_bucket: NonZeroUsize,
+    /// Ceiling on the ciphertext `GET`s in flight, across all requests and buckets.
+    #[serde(default = "default_s3_max_concurrent_gets")]
+    pub s3_max_concurrent_gets: NonZeroUsize,
 
     /// Gas cap for the host-chain `IERC1271.isValidSignature` static call (RFC-012).
     /// Bounded to prevent resource exhaustion from malicious smart-account contracts.
@@ -212,6 +223,19 @@ fn default_s3_connect_timeout() -> Duration {
     Duration::from_secs(3)
 }
 
+fn default_host_rpc_max_concurrent_calls() -> NonZeroUsize {
+    NonZeroUsize::new(128).unwrap()
+}
+
+fn default_s3_max_concurrent_heads_per_bucket() -> NonZeroUsize {
+    NonZeroUsize::new(64).unwrap()
+}
+
+fn default_s3_max_concurrent_gets() -> NonZeroUsize {
+    // Kept low: SNS ciphertexts are big, so too many buffered at once would OOM the worker.
+    NonZeroUsize::new(16).unwrap()
+}
+
 fn default_erc1271_gas_limit() -> u64 {
     100_000
 }
@@ -253,6 +277,9 @@ impl Default for Config {
             max_decryption_attempts: default_max_decryption_attempts(),
             s3_ciphertext_retrieval_attempts: default_s3_ciphertext_retrieval_attempts(),
             s3_connect_timeout: default_s3_connect_timeout(),
+            host_rpc_max_concurrent_calls: default_host_rpc_max_concurrent_calls(),
+            s3_max_concurrent_heads_per_bucket: default_s3_max_concurrent_heads_per_bucket(),
+            s3_max_concurrent_gets: default_s3_max_concurrent_gets(),
             erc1271_gas_limit: default_erc1271_gas_limit(),
             service_name: default_service_name(),
             task_limit: default_task_limit(),

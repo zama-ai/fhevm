@@ -1,12 +1,9 @@
-use super::{
-    registry::{CoprocessorRegistry, CoprocessorRegistrySnapshot},
-    s3,
-};
+use super::registry::{CoprocessorRegistry, CoprocessorRegistrySnapshot};
 use crate::core::{
     config::{Config, CtAttestationConfig},
     event_processor::{
         ProcessingError, RequestCheckError, RequestCheckKind,
-        ciphertext::{COPROCESSOR_CONTEXT_ID, VerifiedCiphertexts},
+        ciphertext::{COPROCESSOR_CONTEXT_ID, VerifiedCiphertexts, s3::BoundedClient},
     },
 };
 use alloy::{
@@ -35,7 +32,7 @@ pub struct CiphertextManager<P: Provider> {
     registry: CoprocessorRegistry<P>,
 
     /// HTTP client for the attestation HEAD fan-out and the ciphertext retrieval.
-    client: Client,
+    s3_client: BoundedClient,
 
     /// Off-chain ciphertext-attestation verification config.
     config: CtAttestationConfig,
@@ -58,7 +55,11 @@ where
 
         Ok(Self {
             registry,
-            client,
+            s3_client: BoundedClient::new(
+                client,
+                config.s3_max_concurrent_heads_per_bucket,
+                config.s3_max_concurrent_gets,
+            ),
             config: config.ct_attestation.clone(),
             s3_ciphertext_retrieval_attempts: config.s3_ciphertext_retrieval_attempts,
         })
@@ -124,14 +125,15 @@ where
             "Consensus reached for handle"
         );
 
-        let ciphertext = s3::retrieve_verified_ciphertext(
-            &self.client,
-            handle,
-            &consensus.material,
-            &winning_buckets,
-            self.s3_ciphertext_retrieval_attempts,
-        )
-        .await?;
+        let ciphertext = self
+            .s3_client
+            .retrieve_verified_ciphertext(
+                handle,
+                &consensus.material,
+                &winning_buckets,
+                self.s3_ciphertext_retrieval_attempts,
+            )
+            .await?;
 
         Ok(ResolvedHandle {
             key_id: consensus.material.key_id,
@@ -155,11 +157,12 @@ where
     ) -> anyhow::Result<ResolvedConsensus> {
         let mut fetch_attestation_tasks = JoinSet::new();
         for (tx_sender, bucket) in registry.tx_sender_to_bucket.iter() {
-            let (client, head_timeout) = (self.client.clone(), self.config.head_timeout);
+            let (s3_client, head_timeout) = (self.s3_client.clone(), self.config.head_timeout);
             let (bucket, tx_sender) = (bucket.clone(), *tx_sender);
             fetch_attestation_tasks.spawn(async move {
-                let result =
-                    s3::fetch_single_attestation(&client, &bucket, handle, head_timeout).await;
+                let result = s3_client
+                    .fetch_single_attestation(&bucket, handle, head_timeout)
+                    .await;
                 (tx_sender, result)
             });
         }
@@ -283,11 +286,16 @@ where
     /// Test constructor: an empty registry and default config. The resolution path is never
     /// exercised by the tests that use it (they fail earlier, at the ACL or signature stage).
     pub fn for_test(provider: P, client: Client) -> Self {
+        let config = Config::default();
         Self {
             registry: CoprocessorRegistry::empty(provider),
-            client,
+            s3_client: BoundedClient::new(
+                client,
+                config.s3_max_concurrent_heads_per_bucket,
+                config.s3_max_concurrent_gets,
+            ),
             config: CtAttestationConfig::default(),
-            s3_ciphertext_retrieval_attempts: Config::default().s3_ciphertext_retrieval_attempts,
+            s3_ciphertext_retrieval_attempts: config.s3_ciphertext_retrieval_attempts,
         }
     }
 }
@@ -295,6 +303,12 @@ where
 #[cfg(test)]
 mod tests {
     use super::*;
+    use alloy::providers::{ProviderBuilder, mock::Asserter};
+    use std::{
+        collections::{HashMap, HashSet},
+        num::NonZeroUsize,
+        time::Duration,
+    };
 
     fn resolved(key_id: U256, handle_byte: u8) -> ResolvedHandle {
         ResolvedHandle {
@@ -337,6 +351,47 @@ mod tests {
     #[test]
     fn aggregate_rejects_empty() {
         let result = aggregate_resolved_handles(vec![]);
+        assert!(matches!(result, Err(ProcessingError::Recoverable(_))));
+    }
+
+    /// No S3 request is issued without a permit: with the bucket's only one held, the resolution
+    /// cannot even start, and it does start again as soon as the permit is released.
+    #[tokio::test]
+    async fn s3_requests_wait_for_a_permit() {
+        const BUCKET: &str = "http://127.0.0.1:1";
+
+        let provider = ProviderBuilder::new()
+            .disable_recommended_fillers()
+            .connect_mocked_client(Asserter::new());
+
+        // Single permit manager with an unreachable bucket
+        let mut manager = CiphertextManager::for_test(provider, Client::new());
+        let snapshot = CoprocessorRegistrySnapshot::new(
+            HashSet::from([Address::ZERO]),
+            HashMap::from([(Address::ZERO, BUCKET.to_string())]),
+            NonZeroUsize::MIN,
+        );
+        manager.registry = manager.registry.with_snapshot(snapshot);
+        manager.s3_client = BoundedClient::new(Client::new(), NonZeroUsize::MIN, NonZeroUsize::MIN);
+
+        let permit = manager.s3_client.acquire_head_for_test(BUCKET).await;
+        let gated = tokio::time::timeout(
+            Duration::from_millis(200),
+            manager.verify_and_retrieve(&[B256::ZERO]),
+        )
+        .await;
+        assert!(gated.is_err(), "resolution should not have started");
+
+        drop(permit);
+
+        // The bucket is unreachable, so consensus fails: reaching that error is the proof that the
+        // `HEAD` request was issued once the permit freed.
+        let result = tokio::time::timeout(
+            Duration::from_secs(5),
+            manager.verify_and_retrieve(&[B256::ZERO]),
+        )
+        .await
+        .expect("resolution should have resumed");
         assert!(matches!(result, Err(ProcessingError::Recoverable(_))));
     }
 }

@@ -27,8 +27,89 @@ use sha3::{
     Digest, Keccak256,
     digest::{consts::U32, generic_array::GenericArray},
 };
-use std::time::Duration;
+use std::{
+    collections::HashMap,
+    num::NonZeroUsize,
+    sync::{Arc, Mutex},
+    time::Duration,
+};
+use tokio::sync::Semaphore;
 use tracing::{debug, warn};
+
+/// An HTTP client with a ceiling on the requests it may have in flight.
+#[derive(Clone)]
+pub(crate) struct BoundedClient {
+    /// The inner HTTP client.
+    client: Client,
+
+    /// The per bucket HEAD request ceiling.
+    head_permits: Arc<Mutex<HashMap<String, Arc<Semaphore>>>>,
+
+    /// The maximum number of concurrent HEAD requests per bucket.
+    max_concurrent_heads_per_bucket: NonZeroUsize,
+
+    /// The global `GET` ceiling, as we query a single winning bucket to fetch ciphertexts.
+    /// Kept low: SNS ciphertexts are big, so too many buffered at once would OOM the worker.
+    get_permits: Arc<Semaphore>,
+}
+
+impl BoundedClient {
+    pub(crate) fn new(
+        client: Client,
+        max_concurrent_heads_per_bucket: NonZeroUsize,
+        max_concurrent_gets: NonZeroUsize,
+    ) -> Self {
+        Self {
+            client,
+            head_permits: Arc::new(Mutex::new(HashMap::new())),
+            max_concurrent_heads_per_bucket,
+            get_permits: Arc::new(Semaphore::new(max_concurrent_gets.get())),
+        }
+    }
+
+    /// See [`fetch_single_attestation`].
+    pub(crate) async fn fetch_single_attestation(
+        &self,
+        bucket: &str,
+        handle: B256,
+        head_timeout: Duration,
+    ) -> Result<CiphertextAttestation, FetchAttestationError> {
+        let bucket_permits = self.bucket_permit(bucket);
+        let _permit = bucket_permits.acquire().await;
+        fetch_single_attestation(&self.client, bucket, handle, head_timeout).await
+    }
+
+    /// The `HEAD` ceiling of `bucket`, created on first use.
+    fn bucket_permit(&self, bucket: &str) -> Arc<Semaphore> {
+        let mut permits = self
+            .head_permits
+            .lock()
+            .expect("S3 HEAD permits lock poisoned");
+
+        if let Some(permit) = permits.get(bucket) {
+            Arc::clone(permit)
+        } else {
+            let permit = Arc::new(Semaphore::new(self.max_concurrent_heads_per_bucket.get()));
+            permits.insert(bucket.to_string(), Arc::clone(&permit));
+            permit
+        }
+    }
+
+    /// See [`retrieve_verified_ciphertext`].
+    ///
+    /// One permit for the whole call: it retries the winning buckets sequentially.
+    pub(crate) async fn retrieve_verified_ciphertext(
+        &self,
+        handle: B256,
+        material: &ConsensusMaterial,
+        winning_buckets: &[String],
+        attempts: u8,
+    ) -> Result<TypedCiphertext, ProcessingError> {
+        let _permit = self.get_permits.acquire().await;
+        retrieve_verified_ciphertext(&self.client, handle, material, winning_buckets, attempts)
+            .await
+    }
+}
 
 /// URL of a ciphertext object in a Coprocessor bucket (RFC 023 layout).
 fn rfc023_ciphertext_url(bucket_url: &str, handle: B256) -> String {
@@ -211,6 +292,17 @@ fn attestation_from_http_headers(
 
     serde_json::from_slice(header.as_bytes())
         .map_err(|e| FetchAttestationError::BadHeader(e.to_string()))
+}
+
+#[cfg(test)]
+impl BoundedClient {
+    /// Takes a permit out of `bucket`'s ceiling, to check that its `HEAD`s wait for one.
+    pub(super) async fn acquire_head_for_test(
+        &self,
+        bucket: &str,
+    ) -> tokio::sync::OwnedSemaphorePermit {
+        self.bucket_permit(bucket).acquire_owned().await.unwrap()
+    }
 }
 
 #[cfg(test)]
