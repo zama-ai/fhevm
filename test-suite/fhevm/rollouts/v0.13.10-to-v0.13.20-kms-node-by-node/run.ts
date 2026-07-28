@@ -43,6 +43,7 @@ export const runKmsNodeByNodeUpgrade = async (
 export const run = (ctx: RolloutRunContext) =>
   runKmsNodeByNodeUpgrade(ctx, {
     from,
+    overrides: [{ group: "test-suite" }],
     scenario,
     to,
     versionSources,

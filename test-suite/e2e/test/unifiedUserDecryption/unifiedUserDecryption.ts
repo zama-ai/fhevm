@@ -413,6 +413,9 @@ describe('Unified user decryption', function () {
     const taggedHex32 = (tag: number, v: bigint) => tag.toString(16).padStart(2, '0') + v.toString(16).padStart(62, '0');
 
     before(async function () {
+      if (!protocolConfigAddress) {
+        throw new Error('PROTOCOL_CONFIG_CONTRACT_ADDRESS is required');
+      }
       // Fresh re-encryption key: the relayer dedups requests on
       // (handles, userAddress, allowedContracts, publicKey, extraData) — a
       // fresh key guarantees these are real jobs, not cache hits from the

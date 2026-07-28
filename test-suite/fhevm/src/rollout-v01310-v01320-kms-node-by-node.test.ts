@@ -14,7 +14,8 @@ const RUNBOOK = path.resolve(
 describe("v0.13.10 to v0.13.20 KMS node-by-node upgrade", () => {
   test("keeps SDK and connector versions unchanged", () => {
     expect(scenario).toBe("four-party-threshold-kms");
-    expect("RELAYER_SDK_VERSION" in from).toBe(false);
+    expect(from.RELAYER_SDK_VERSION).toBe("0.4.2");
+    expect(from.CONNECTOR_KMS_WORKER_VERSION).toBe("v0.12.5");
     const baseline = from as Record<string, string>;
     expect(Object.entries(to).filter(([key, value]) => baseline[key] !== value)).toEqual([
       ["CORE_VERSION", "v0.13.20"],
@@ -28,8 +29,10 @@ describe("v0.13.10 to v0.13.20 KMS node-by-node upgrade", () => {
         calls.push(`lock:${name}:${options.versions.CORE_VERSION}`);
         return `/tmp/${name}.lock.json`;
       },
-      async up(options: { lockFile: string; scenario?: string }) {
-        calls.push(`up:${options.scenario}:${options.lockFile}`);
+      async up(options: { lockFile: string; overrides?: { group: string }[]; scenario?: string }) {
+        calls.push(
+          `up:${options.scenario}:${options.lockFile}:${options.overrides?.map(({ group }) => group).join(",")}`,
+        );
       },
       async readState() {
         calls.push("state");
@@ -52,7 +55,7 @@ describe("v0.13.10 to v0.13.20 KMS node-by-node upgrade", () => {
     expect(calls).toEqual([
       "lock:00-kms-core-baseline:v0.13.10",
       "lock:01-kms-core-target:v0.13.20",
-      "up:four-party-threshold-kms:/tmp/00-kms-core-baseline.lock.json",
+      "up:four-party-threshold-kms:/tmp/00-kms-core-baseline.lock.json:test-suite",
       "test:rollout-standard",
       "state",
       "upgrade:1:/tmp/01-kms-core-target.lock.json",
