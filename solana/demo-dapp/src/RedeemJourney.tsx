@@ -27,6 +27,7 @@ export function RedeemJourney({ controller }: { readonly controller: DemoControl
   const { connected, hasPrivateShares, redeemJoined } = derived;
   const [percentage, setPercentage] = useState(50);
   const settled = lifecycle?.kind === 'settled';
+  const complete = settled && lifecycle.claimed;
   if (!connected || !hasPrivateShares) return null;
   const copy = stageCopy(percentage);
 
@@ -66,51 +67,53 @@ export function RedeemJourney({ controller }: { readonly controller: DemoControl
         ]}
       />
 
-      <div className="redeem-action">
-        <div>
-          <strong>
+      {!complete && (
+        <div className="redeem-action">
+          <div>
+            <strong>
+              {redeem.kind === 'running'
+                ? copy[redeem.stage]
+                : redeemJoined
+                  ? copy.joined
+                  : `Redeem ${percentage}% of your position`}
+            </strong>
+            <small>
+              {redeemJoined
+                ? 'The clear redeem amount was discarded immediately after the private join.'
+                : revealedShares === null
+                  ? 'The one-time decrypt signature is requested inside this intent.'
+                  : `Uses the ${formatUsdc(revealedShares.value)} cShares revealed in this view, then remasks it.`}
+            </small>
+            {!redeemJoined && (
+              <label className="redeem-slider">
+                <input
+                  aria-label="Percentage to redeem"
+                  type="range"
+                  min="1"
+                  max="100"
+                  step="1"
+                  value={percentage}
+                  disabled={redeem.kind === 'running'}
+                  onChange={(event) => setPercentage(Number(event.target.value))}
+                />
+                <output>{percentage}%</output>
+              </label>
+            )}
+          </div>
+          <button
+            className="panel-action"
+            type="button"
+            disabled={redeem.kind === 'running' || redeemJoined}
+            onClick={() => actions.redeem(percentage)}
+          >
             {redeem.kind === 'running'
-              ? copy[redeem.stage]
+              ? 'Redeeming…'
               : redeemJoined
-                ? copy.joined
-                : `Redeem ${percentage}% of your position`}
-          </strong>
-          <small>
-            {redeemJoined
-              ? 'The clear redeem amount was discarded immediately after the private join.'
-              : revealedShares === null
-                ? 'The one-time decrypt signature is requested inside this intent.'
-                : `Uses the ${formatUsdc(revealedShares.value)} cShares revealed in this view, then remasks it.`}
-          </small>
-          {!redeemJoined && (
-            <label className="redeem-slider">
-              <input
-                aria-label="Percentage to redeem"
-                type="range"
-                min="1"
-                max="100"
-                step="1"
-                value={percentage}
-                disabled={redeem.kind === 'running'}
-                onChange={(event) => setPercentage(Number(event.target.value))}
-              />
-              <output>{percentage}%</output>
-            </label>
-          )}
+                ? 'Redemption joined'
+                : 'Redeem'}
+          </button>
         </div>
-        <button
-          className="panel-action"
-          type="button"
-          disabled={redeem.kind === 'running' || redeemJoined}
-          onClick={() => actions.redeem(percentage)}
-        >
-          {redeem.kind === 'running'
-            ? 'Redeeming…'
-            : redeemJoined
-              ? 'Redemption joined'
-              : 'Redeem'}
-        </button>
-      </div>
+      )}
 
       {redeem.kind === 'error' && (
         <ActionError retryLabel="Retry redeem" onRetry={() => actions.redeem(percentage)}>

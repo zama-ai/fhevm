@@ -1827,7 +1827,10 @@ export const reseedDemo = async ({
       );
       await runStreaming(["bun", "run", "demo:seed"], {
         cwd: path.join(REPO_ROOT, "test-suite/fhevm"),
-        env,
+        env: {
+          ...env,
+          NODE_PATH: path.join(REPO_ROOT, "solana/demo-dapp/node_modules"),
+        },
       });
       const faucet = await startOwnedProcess(
         "faucet",

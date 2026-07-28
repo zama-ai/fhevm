@@ -73,6 +73,7 @@ describe("demo lifecycle collision policy", () => {
     expect(script).toContain('state") != "starting');
     expect(script).toContain('cd "$ROOT/solana/demo-dapp"');
     expect(script).toContain("bun install --frozen-lockfile");
+    expect(script).toContain('NODE_PATH="$ROOT/solana/demo-dapp/node_modules" bun run demo:seed');
   });
 
   test("Solana setup keeps every lifecycle compose call on the per-boot project", async () => {

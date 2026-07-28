@@ -61,6 +61,15 @@ describe('PortfolioOverview', () => {
     expect(renderer!.root.findByProps({ id: 'deposit-amount' }).props.value).toBe('');
     act(() => renderer!.unmount());
   });
+
+  test('does not prefill a new deposit for an existing position', () => {
+    let renderer: ReturnType<typeof create>;
+    act(() => {
+      renderer = create(<PortfolioOverview controller={controller(vi.fn(), true)} />);
+    });
+    expect(renderer!.root.findByProps({ id: 'deposit-amount' }).props.value).toBe('');
+    act(() => renderer!.unmount());
+  });
 });
 
 const actions = {

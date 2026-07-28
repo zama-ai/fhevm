@@ -75,4 +75,37 @@ describe('RedeemJourney', () => {
     expect(redeem).toHaveBeenCalledWith(25);
     act(() => renderer!.unmount());
   });
+
+  test('does not keep showing an in-progress action after redemption completes', () => {
+    const controller = {
+      state: {
+        redeem: { kind: 'joined', result: {} },
+        redeemLifecycle: {
+          kind: 'settled',
+          claimed: true,
+          totalJoined: 50_000_000n,
+          payoutReceived: 50_000_000n,
+        },
+        redeemOperatorAction: null,
+        redeemOperatorError: null,
+        revealedShares: null,
+        revealedUsdc: null,
+        revealingUsdc: false,
+        revealUsdcError: null,
+      },
+      derived: {
+        connected: true,
+        hasPrivateShares: true,
+        redeemJoined: true,
+      },
+      actions: {
+        revealRedeemedUsdc: vi.fn(),
+      },
+    } as unknown as DemoController;
+
+    const markup = renderToStaticMarkup(<RedeemJourney controller={controller} />);
+    expect(markup).toContain('Redemption complete');
+    expect(markup).not.toContain('Waiting for private settlement');
+    expect(markup).not.toContain('Redemption joined</button>');
+  });
 });

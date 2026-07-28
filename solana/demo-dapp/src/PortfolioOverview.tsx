@@ -58,6 +58,10 @@ export function PortfolioOverview({ controller }: { readonly controller: DemoCon
   }, [state.generation]);
 
   useEffect(() => {
+    if (hasPrivateShares && !pendingDeposit.current) setAmount('');
+  }, [hasPrivateShares]);
+
+  useEffect(() => {
     if (deposit.kind === 'joined' && depositLifecycle !== null && !currentDepositClaimed) {
       pendingDeposit.current = true;
     }
