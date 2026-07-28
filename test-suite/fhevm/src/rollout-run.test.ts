@@ -3,7 +3,14 @@ import { mkdtemp, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 
-import { receiptJsonlPath, receiptMarkdownPath, requireDockerSnapshot } from "./commands/rollout-receipt";
+import {
+  diagnosticLogArgs,
+  diagnosticLogOutput,
+  kmsConnectorPartyIds,
+  receiptJsonlPath,
+  receiptMarkdownPath,
+  requireDockerSnapshot,
+} from "./commands/rollout-receipt";
 import {
   type RolloutRunContext,
   createRolloutContext,
@@ -233,6 +240,45 @@ describe("rollout runbook", () => {
         containers: [{ image: "image", imageId: "sha256:id", name: "kms-core", state: "running" }],
       }),
     ).not.toThrow();
+  });
+
+  test("bounds diagnostic logs while retaining the last hour", () => {
+    expect(diagnosticLogArgs("kms-core")).toEqual([
+      "docker",
+      "logs",
+      "--since",
+      "1h",
+      "--tail",
+      "10000",
+      "kms-core",
+    ]);
+  });
+
+  test("filters exporter noise before bounding diagnostic logs", () => {
+    const output = diagnosticLogOutput(
+      ["root cause", ...Array.from({ length: 2100 }, () => "BatchSpanProcessor.ExportError")].join("\n"),
+      "",
+      2,
+    );
+    expect(output).toBe("root cause");
+
+    const bounded = diagnosticLogOutput(["first", "second", "third", "last"].join("\n"), "", 2);
+    expect(bounded).toContain("first");
+    expect(bounded).toContain("last");
+    expect(bounded.split("\n")).toHaveLength(3);
+  });
+
+  test("discovers the exact connector databases from partial Docker state", () => {
+    expect(kmsConnectorPartyIds(["kms-connector-db-migration"])).toEqual([1]);
+    expect(
+      kmsConnectorPartyIds([
+        "kms-connector-4-db-migration",
+        "kms-connector-db-migration",
+        "kms-connector-3-db-migration",
+        "kms-connector-4-db-migration",
+        "kms-connector-3-kms-worker",
+      ]),
+    ).toEqual([1, 3, 4]);
   });
 
   test("records a failed required Docker snapshot before rejecting it", async () => {

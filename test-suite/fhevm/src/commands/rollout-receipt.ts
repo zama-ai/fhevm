@@ -3,6 +3,7 @@ import path from "node:path";
 
 import { PreflightError } from "../errors";
 import { projectContainers } from "../flow/runtime-compose";
+import { kmsConnectorDbName } from "../kms-party";
 import { STATE_DIR } from "../layout";
 import type { VersionBundle } from "../types";
 import { ensureDir, readJson } from "../utils/fs";
@@ -121,13 +122,42 @@ const psql = async (container: string, database: string, sql: string): Promise<D
   };
 };
 
+export const diagnosticLogArgs = (container: string) => [
+  "docker",
+  "logs",
+  "--since",
+  "1h",
+  "--tail",
+  "10000",
+  container,
+];
+
+export const diagnosticLogOutput = (stdout: string, stderr: string, maxLines = 2000) => {
+  const lines = [stdout, stderr]
+    .filter(Boolean)
+    .join("\n")
+    .split(/\r?\n/)
+    .filter((line) => !line.includes("BatchSpanProcessor.ExportError"));
+  if (lines.length <= maxLines) {
+    return lines.join("\n").trim();
+  }
+  const head = Math.floor(maxLines / 2);
+  const tail = maxLines - head;
+  return [
+    ...lines.slice(0, head),
+    `[receipt] ${lines.length - maxLines} diagnostic log lines omitted`,
+    ...lines.slice(-tail),
+  ].join("\n").trim();
+};
+
 const containerLogs = async (container: string): Promise<DiagnosticSection> => {
-  const command = `docker logs --tail 120 ${container}`;
-  const result = await run(["docker", "logs", "--tail", "120", container], { allowFailure: true });
+  const args = diagnosticLogArgs(container);
+  const command = args.join(" ");
+  const result = await run(args, { allowFailure: true });
   return {
     title: `${container} logs`,
     command,
-    output: [result.stdout, result.stderr].filter(Boolean).join("\n").trim(),
+    output: diagnosticLogOutput(result.stdout, result.stderr),
     error: result.code === 0 ? undefined : (result.stderr || result.stdout).trim() || `docker logs exited ${result.code}`,
   };
 };
@@ -153,7 +183,31 @@ where relname ilike '%proof%'
    or relname ilike '%transaction%'
 order by relname;
 `,
+  kmsConnector: `
+select 'prep_keygen_requests' as table_name, status, count(*) from prep_keygen_requests group by status
+union all
+select 'prep_keygen_responses', status, count(*) from prep_keygen_responses group by status
+union all
+select 'keygen_requests', status, count(*) from keygen_requests group by status
+union all
+select 'keygen_responses', status, count(*) from keygen_responses group by status
+union all
+select 'crsgen_requests', status, count(*) from crsgen_requests group by status
+union all
+select 'crsgen_responses', status, count(*) from crsgen_responses group by status
+order by table_name, status;
+`,
 };
+
+export const kmsConnectorPartyIds = (containerNames: string[]) =>
+  [
+    ...new Set(
+      containerNames.flatMap((name) => {
+        const match = /^kms-connector(?:-(\d+))?-db-migration$/.exec(name);
+        return match ? [match[1] ? Number(match[1]) : 1] : [];
+      }),
+    ),
+  ].sort((a, b) => a - b);
 
 const collectFailureDiagnostics = async (containers: ReceiptContainer[]) => {
   const sections: DiagnosticSection[] = [];
@@ -161,6 +215,10 @@ const collectFailureDiagnostics = async (containers: ReceiptContainer[]) => {
     .map((container) => container.name)
     .filter((name) => /^kms-core(?:-|$)/.test(name) || /^kms-connector(?:-|$)/.test(name));
   sections.push(...(await Promise.all(kmsContainers.map(containerLogs))));
+  const connectorParties = kmsConnectorPartyIds(containers.map((container) => container.name));
+  for (const party of connectorParties) {
+    sections.push(await psql("coprocessor-and-kms-db", kmsConnectorDbName(party), diagnosticSql.kmsConnector));
+  }
   sections.push(await psql("fhevm-relayer-db", "relayer_db", diagnosticSql.relayer));
   for (const database of ["coprocessor", "coprocessor_1", "coprocessor_2"]) {
     sections.push(await psql("coprocessor-and-kms-db", database, diagnosticSql.coprocessor));
