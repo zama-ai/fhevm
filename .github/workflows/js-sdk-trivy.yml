@@ -1,0 +1,54 @@
+name: js-sdk-trivy
+
+# SCA: filesystem scan of sdk/js-sdk for known-vulnerable dependencies,
+# leaked secrets, and misconfigurations (Aqua Security's Trivy). Results are
+# uploaded as SARIF to the GitHub Security tab.
+
+on:
+  push:
+    branches:
+      - main
+      - devex/js-sdk
+    paths:
+      - "sdk/js-sdk/**"
+      - ".github/workflows/js-sdk-trivy.yml"
+  pull_request:
+    branches:
+      - main
+      - devex/js-sdk
+    paths:
+      - "sdk/js-sdk/**"
+      - ".github/workflows/js-sdk-trivy.yml"
+  schedule:
+    # Catch newly-disclosed CVEs against unchanged dependencies.
+    - cron: "0 6 * * 1"
+
+permissions: {}
+
+jobs:
+  trivy:
+    name: js-sdk-trivy/scan
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    permissions:
+      contents: "read" # Required to checkout repository code
+      security-events: "write" # Required to upload SARIF results
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@8e8c483db84b4bee98b60c0593521ed34d9990e8 # v6.0.1
+        with:
+          persist-credentials: "false"
+
+      - name: Run Trivy vulnerability scanner
+        uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
+        with:
+          scan-type: "fs"
+          scan-ref: "./sdk/js-sdk"
+          format: "sarif"
+          output: "trivy-results.sarif"
+          severity: "CRITICAL,HIGH"
+
+      - name: Upload Trivy scan results to GitHub Security tab
+        uses: github/codeql-action/upload-sarif@02c5e83432fe5497fd85b873b6c9f16a8578e1d9 # v3.37.0
+        with:
+          sarif_file: "trivy-results.sarif"

@@ -24,12 +24,12 @@ on:
       - devex/js-sdk
       - main
     paths:
-      - 'sdk/js-sdk/**'
-      - '.github/workflows/js-sdk-dod.yml'
+      - "sdk/js-sdk/**"
+      - ".github/workflows/js-sdk-dod.yml"
   workflow_dispatch:
     inputs:
       mode:
-        description: 'dry-run = sleep+traces (validate fan-out, act-friendly); real = run the actual dod:full jobs'
+        description: "dry-run = sleep+traces (validate fan-out, act-friendly); real = run the actual dod:full jobs"
         type: choice
         default: dry-run
         options:
@@ -41,10 +41,10 @@ permissions: {}
 # Harden `npm ci` (run in every job) against transient registry blips such as
 # ECONNRESET / "network aborted" by giving npm more retries and longer timeouts.
 env:
-  NPM_CONFIG_FETCH_RETRIES: '5'
-  NPM_CONFIG_FETCH_RETRY_MINTIMEOUT: '20000'
-  NPM_CONFIG_FETCH_RETRY_MAXTIMEOUT: '120000'
-  NPM_CONFIG_FETCH_TIMEOUT: '600000'
+  NPM_CONFIG_FETCH_RETRIES: "5"
+  NPM_CONFIG_FETCH_RETRY_MINTIMEOUT: "20000"
+  NPM_CONFIG_FETCH_RETRY_MAXTIMEOUT: "120000"
+  NPM_CONFIG_FETCH_TIMEOUT: "600000"
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
@@ -104,17 +104,20 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 30
     permissions:
-      contents: 'read' # checkout the repository
+      contents: "read" # checkout the repository
     steps:
       - uses: actions/checkout@8e8c483db84b4bee98b60c0593521ed34d9990e8 # v6.0.1
         with:
-          persist-credentials: 'false'
+          persist-credentials: "false"
       - uses: actions/setup-node@395ad3262231945c25e8478fd5baf05154b1d79f # v6.1.0
         with:
           node-version: 22.x
       - uses: foundry-rs/foundry-toolchain@82dee4ba654bd2146511f85f0d013af94670c4de # v1.4.0
         with:
           version: stable
+      - name: Install safe-chain
+        shell: bash
+        run: curl -fsSL https://github.com/AikidoSec/safe-chain/releases/download/1.5.3/install-safe-chain.sh | sh -s -- --ci
       - run: npm ci
       - run: npm run build:prod # clean, codegen, prettier(+ext), lint, cjs/esm/types/tests
       - run: npm run test:unit
@@ -126,17 +129,20 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 30
     permissions:
-      contents: 'read' # checkout the repository
+      contents: "read" # checkout the repository
     steps:
       - uses: actions/checkout@8e8c483db84b4bee98b60c0593521ed34d9990e8 # v6.0.1
         with:
-          persist-credentials: 'false'
+          persist-credentials: "false"
       - uses: actions/setup-node@395ad3262231945c25e8478fd5baf05154b1d79f # v6.1.0
         with:
           node-version: 22.x
       - uses: foundry-rs/foundry-toolchain@82dee4ba654bd2146511f85f0d013af94670c4de # v1.4.0
         with:
           version: stable
+      - name: Install safe-chain
+        shell: bash
+        run: curl -fsSL https://github.com/AikidoSec/safe-chain/releases/download/1.5.3/install-safe-chain.sh | sh -s -- --ci
       - run: npm ci
       - run: npm run build:dev
 
@@ -147,17 +153,20 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 30
     permissions:
-      contents: 'read' # checkout the repository
+      contents: "read" # checkout the repository
     steps:
       - uses: actions/checkout@8e8c483db84b4bee98b60c0593521ed34d9990e8 # v6.0.1
         with:
-          persist-credentials: 'false'
+          persist-credentials: "false"
       - uses: actions/setup-node@395ad3262231945c25e8478fd5baf05154b1d79f # v6.1.0
         with:
           node-version: 22.x
       - uses: foundry-rs/foundry-toolchain@82dee4ba654bd2146511f85f0d013af94670c4de # v1.4.0
         with:
           version: stable
+      - name: Install safe-chain
+        shell: bash
+        run: curl -fsSL https://github.com/AikidoSec/safe-chain/releases/download/1.5.3/install-safe-chain.sh | sh -s -- --ci
       - run: npm ci
       - run: npm run build:prod
       - run: npx playwright install --with-deps
@@ -170,25 +179,28 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 40
     permissions:
-      contents: 'read' # checkout the repository
+      contents: "read" # checkout the repository
     strategy:
       fail-fast: false
       matrix:
         include:
           - profile: v12
-            flags: '--use-pack --foundry-profile=v12'
+            flags: "--use-pack --foundry-profile=v12"
           - profile: v13
-            flags: '--use-pack --foundry-profile=v13'
+            flags: "--use-pack --foundry-profile=v13"
     steps:
       - uses: actions/checkout@8e8c483db84b4bee98b60c0593521ed34d9990e8 # v6.0.1
         with:
-          persist-credentials: 'false'
+          persist-credentials: "false"
       - uses: actions/setup-node@395ad3262231945c25e8478fd5baf05154b1d79f # v6.1.0
         with:
           node-version: 22.x
       - uses: foundry-rs/foundry-toolchain@82dee4ba654bd2146511f85f0d013af94670c4de # v1.4.0
         with:
           version: stable
+      - name: Install safe-chain
+        shell: bash
+        run: curl -fsSL https://github.com/AikidoSec/safe-chain/releases/download/1.5.3/install-safe-chain.sh | sh -s -- --ci
       - run: npm ci
       - run: cd contracts && forge soldeer install
       - name: Write test .env
@@ -213,9 +225,9 @@ jobs:
     runs-on: large_ubuntu_32
     timeout-minutes: 60
     permissions:
-      contents: 'read' # checkout the repository
-      packages: 'read' # pull stack images from ghcr.io
-      id-token: 'write' # OIDC for registry / stack auth
+      contents: "read" # checkout the repository
+      packages: "read" # pull stack images from ghcr.io
+      id-token: "write" # OIDC for registry / stack auth
     env:
       GH_TOKEN: ${{ github.token }}
     strategy:
@@ -234,7 +246,7 @@ jobs:
     steps:
       - uses: actions/checkout@8e8c483db84b4bee98b60c0593521ed34d9990e8 # v6.0.1
         with:
-          persist-credentials: 'false'
+          persist-credentials: "false"
           fetch-depth: 0
       # The stack exposes its S3 store (and other services) by hostname; the
       # tests resolve `minio` directly. Locally this is a documented /etc/hosts
@@ -263,6 +275,9 @@ jobs:
           registry: cgr.dev
           username: ${{ secrets.CGR_USERNAME }}
           password: ${{ secrets.CGR_PASSWORD }}
+      - name: Install safe-chain
+        shell: bash
+        run: curl -fsSL https://github.com/AikidoSec/safe-chain/releases/download/1.5.3/install-safe-chain.sh | sh -s -- --ci
       - name: Install fhevm-cli deps
         working-directory: test-suite/fhevm
         run: bun install --frozen-lockfile
