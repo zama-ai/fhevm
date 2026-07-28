@@ -69,6 +69,23 @@ export const hasDemoPageContext = (
     return false;
   }
 };
+
+export const runSingleFlight = async <T>(
+  operations: Map<string, Promise<T>>,
+  key: string,
+  start: () => Promise<T>,
+): Promise<T> => {
+  const existing = operations.get(key);
+  if (existing !== undefined) return existing;
+  const operation = start();
+  operations.set(key, operation);
+  try {
+    return await operation;
+  } finally {
+    if (operations.get(key) === operation) operations.delete(key);
+  }
+};
+
 const hasJsonContentType = (request: IncomingMessage): boolean =>
   request.headers['content-type']?.split(';', 1)[0]?.trim().toLowerCase() === 'application/json';
 
@@ -178,6 +195,7 @@ export const demoServerPlugin = (): Plugin => ({
         };
         type HarvestResult = { readonly before: VaultMetrics; readonly after: VaultMetrics };
         let harvestInFlight: Promise<HarvestResult> | undefined;
+        const operatorInFlight = new Map<string, Promise<void>>();
 
         server.middlewares.use('/api/demo-faucet', async (request, response) => {
           response.setHeader('content-type', 'application/json');
@@ -281,13 +299,16 @@ export const demoServerPlugin = (): Plugin => ({
           }
           try {
             const { action, direction, position } = parseOperatorRequest(await readJsonBody(request));
-            const session = await loadDemoOperatorSession();
-            const operator = (await server.ssrLoadModule('/src/settlement.ts')) as typeof import('./src/settlement');
-            if (action === 'dispatch') {
-              await operator.dispatchVaultBatch(session, position, direction);
-            } else {
-              await operator.settleVaultBatch(session, position, direction);
-            }
+            const operationKey = `${direction}:${position.batch}:${action}`;
+            await runSingleFlight(operatorInFlight, operationKey, async () => {
+              const session = await loadDemoOperatorSession();
+              const operator = (await server.ssrLoadModule('/src/settlement.ts')) as typeof import('./src/settlement');
+              if (action === 'dispatch') {
+                await operator.dispatchVaultBatch(session, position, direction);
+              } else {
+                await operator.settleVaultBatch(session, position, direction);
+              }
+            });
             response.statusCode = 200;
             response.end(JSON.stringify({ ok: true }));
           } catch (error) {

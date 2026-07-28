@@ -2,7 +2,7 @@ import type { IncomingMessage } from 'node:http';
 
 import { describe, expect, test } from 'vitest';
 
-import { hasDemoPageContext } from './demoServerPlugin';
+import { hasDemoPageContext, runSingleFlight } from './demoServerPlugin';
 
 const request = (
   overrides: Partial<{
@@ -52,5 +52,30 @@ describe('local demo page boundary', () => {
 
   test('accepts a missing Origin header on same-origin GET requests', () => {
     expect(hasDemoPageContext(request({ origin: null }))).toBe(true);
+  });
+});
+
+describe('local keeper single-flight', () => {
+  test('shares one operation across concurrent callers and permits a later lifecycle recheck', async () => {
+    const operations = new Map<string, Promise<string>>();
+    let starts = 0;
+    let resolve!: (value: string) => void;
+    const pending = new Promise<string>((resolvePromise) => {
+      resolve = resolvePromise;
+    });
+    const start = () => {
+      starts += 1;
+      return pending;
+    };
+
+    const first = runSingleFlight(operations, 'deposit:batch:dispatch', start);
+    const second = runSingleFlight(operations, 'deposit:batch:dispatch', start);
+    expect(starts).toBe(1);
+
+    resolve('confirmed');
+    await expect(Promise.all([first, second])).resolves.toEqual(['confirmed', 'confirmed']);
+    await expect(runSingleFlight(operations, 'deposit:batch:dispatch', async () => 'already advanced')).resolves.toBe(
+      'already advanced',
+    );
   });
 });

@@ -55,7 +55,7 @@
     grid-template-columns: 1fr;
   }
 
-  .operator-panel,
+  .settlement-progress,
   .claim-panel,
   .yield-panel {
     align-items: stretch;

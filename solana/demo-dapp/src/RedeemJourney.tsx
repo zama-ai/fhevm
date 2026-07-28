@@ -1,4 +1,4 @@
-import { ActionError, ClaimPanel, JourneyTimeline, OperatorPanel } from './JourneyPrimitives';
+import { ActionError, ClaimPanel, JourneyTimeline, SettlementProgress } from './JourneyPrimitives';
 import type { RedeemStage } from './redeem';
 import { formatUsdc } from './format';
 import type { DemoController } from './useDemoController';
@@ -61,8 +61,8 @@ export function RedeemJourney({ controller }: { readonly controller: DemoControl
           },
           {
             state: settled ? 'complete' : redeemJoined ? 'active' : 'idle',
-            title: 'KMS settlement',
-            detail: 'Certificate verified on Solana',
+            title: settled ? 'Settled on Solana' : 'Automatic settlement',
+            detail: settled ? 'Batch total is now public' : 'Your redemption stays private',
           },
           {
             state: settled && lifecycle.claimed ? 'complete' : settled ? 'active' : 'idle',
@@ -110,17 +110,9 @@ export function RedeemJourney({ controller }: { readonly controller: DemoControl
       )}
 
       {(lifecycle?.kind === 'awaiting-dispatch' || lifecycle?.kind === 'proving') && (
-        <OperatorPanel
+        <SettlementProgress
           lifecycle={lifecycle}
           action={operatorAction}
-          copy={{
-            awaitingTitle: 'The private redeem batch is ready to advance.',
-            provingPendingTitle: 'Proving the private total…',
-            provingReadyTitle: 'Private redeem proof is ready.',
-            provingReadyDetail: 'The KMS certificate can now settle the redemption on Solana.',
-            settleLabel: 'Settle private redemption',
-          }}
-          onAction={(action) => actions.runOperator('redeem', action)}
         />
       )}
 
@@ -185,12 +177,12 @@ export function RedeemJourney({ controller }: { readonly controller: DemoControl
       {settled && (
         <details className="privacy-note">
           <summary>Privacy detail</summary>
-          This local redeem batch has one participant, so its public total allows the redeemed amount to be inferred.
-          Privacy strengthens with multiple independent participants.
+          Settlement publishes the batch total. If you are the only participant, that total reveals your amount.
+          Privacy strengthens with more independent participants.
         </details>
       )}
 
-      {operatorError && <ActionError>{operatorError}</ActionError>}
+      {operatorError && <ActionError>Settlement is retrying automatically: {operatorError}</ActionError>}
       {claimError && (
         <ActionError retryLabel="Retry claim" onRetry={() => actions.claim('redeem')}>
           {claimError}

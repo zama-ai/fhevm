@@ -42,13 +42,16 @@ const position = {
   batch: address('11111111111111111111111111111111'),
   amountBaseUnits: 100_000_000n,
 };
-const awaiting = { kind: 'awaiting-dispatch' as const, remainingSlots: 0n };
+const awaiting = { kind: 'awaiting-dispatch' as const, remainingSlots: 1n };
+const dispatchable = { kind: 'awaiting-dispatch' as const, remainingSlots: 0n };
+const proofReady = { kind: 'proving' as const, proofReady: true };
 const settled = {
   kind: 'settled' as const,
   totalJoined: 100_000_000n,
   payoutReceived: 100_000_000n,
   claimed: true,
 };
+const settledUnclaimed = { ...settled, claimed: false };
 
 const deferred = <T,>() => {
   let resolve!: (value: T) => void;
@@ -125,25 +128,80 @@ describe('useDemoController generation safety', () => {
     expect(controller.state.depositLifecycle).toEqual(settled);
   });
 
-  test('an old operator completion cannot clear the new generation operation lock', async () => {
+  test('automatically dispatches an eligible batch', async () => {
+    mocks.lifecycle.mockResolvedValue(dispatchable);
+    await connect(controller);
+    await flush();
+
+    expect(mocks.operator).toHaveBeenCalledWith('dispatch', position, 'deposit');
+    expect(controller.state.depositOperatorAction).toBe(null);
+  });
+
+  test('automatically settles when the proof is ready', async () => {
+    mocks.lifecycle.mockResolvedValue(proofReady);
+    await connect(controller);
+    await flush();
+
+    expect(mocks.operator).toHaveBeenCalledWith('settle', position, 'deposit');
+    expect(controller.state.depositOperatorAction).toBe(null);
+  });
+
+  test('automatically advances the redeem batch too', async () => {
+    mocks.findDeposit.mockResolvedValue(null);
+    mocks.findRedeem.mockResolvedValue(position);
+    mocks.lifecycle.mockResolvedValue(dispatchable);
+    await connect(controller);
+    await flush();
+
+    expect(mocks.operator).toHaveBeenCalledWith('dispatch', position, 'redeem');
+    expect(controller.state.redeemOperatorAction).toBe(null);
+  });
+
+  test('refreshes the lifecycle after an automatic action succeeds', async () => {
+    const proving = { kind: 'proving' as const, proofReady: false };
+    mocks.lifecycle.mockResolvedValueOnce(dispatchable).mockResolvedValueOnce(proving);
+    await connect(controller);
+    await flush();
+
+    expect(controller.state.depositLifecycle).toEqual(proving);
+  });
+
+  test('does not advance a batch before its slot boundary', async () => {
+    await connect(controller);
+    await flush();
+
+    expect(mocks.operator).not.toHaveBeenCalled();
+  });
+
+  test('retries an automatic operator failure on the next lifecycle poll', async () => {
+    mocks.lifecycle.mockResolvedValue(dispatchable);
+    mocks.operator.mockRejectedValueOnce(new Error('temporary operator failure')).mockResolvedValue(undefined);
+    await connect(controller);
+    await flush();
+    expect(mocks.operator).toHaveBeenCalledTimes(1);
+
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(2_500);
+    });
+    await flush();
+    expect(mocks.operator).toHaveBeenCalledTimes(2);
+  });
+
+  test('an old automatic operator completion cannot clear the new generation action', async () => {
     const oldOperator = deferred<void>();
     const currentOperator = deferred<void>();
     mocks.operator.mockReturnValueOnce(oldOperator.promise).mockReturnValueOnce(currentOperator.promise);
+    mocks.lifecycle.mockResolvedValue(dispatchable);
     await connect(controller);
-    controller.actions.runOperator('deposit', 'dispatch');
     await flush();
 
     act(() => controller.actions.disconnect());
     await connect(controller);
-    controller.actions.runOperator('deposit', 'dispatch');
     await flush();
     expect(controller.state.depositOperatorAction).toBe('dispatch');
 
     oldOperator.resolve();
     await flush();
-    controller.actions.claim('deposit');
-    await flush();
-    expect(mocks.claim).not.toHaveBeenCalled();
     expect(controller.state.depositOperatorAction).toBe('dispatch');
 
     currentOperator.resolve();
@@ -154,12 +212,15 @@ describe('useDemoController generation safety', () => {
     const oldClaim = deferred<void>();
     const currentClaim = deferred<void>();
     mocks.claim.mockReturnValueOnce(oldClaim.promise).mockReturnValueOnce(currentClaim.promise);
+    mocks.lifecycle.mockResolvedValue(settledUnclaimed);
     await connect(controller);
+    await flush();
     controller.actions.claim('deposit');
     await flush();
 
     act(() => controller.actions.disconnect());
     await connect(controller);
+    await flush();
     controller.actions.claim('deposit');
     await flush();
     expect(controller.state.depositClaiming).toBe(true);

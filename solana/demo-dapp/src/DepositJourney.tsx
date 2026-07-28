@@ -1,4 +1,4 @@
-import { ActionError, ClaimPanel, JourneyTimeline, OperatorPanel } from './JourneyPrimitives';
+import { ActionError, ClaimPanel, JourneyTimeline, SettlementProgress } from './JourneyPrimitives';
 import { formatUsdc } from './format';
 import type { DemoController } from './useDemoController';
 
@@ -34,15 +34,15 @@ export function DepositJourney({ controller }: { readonly controller: DemoContro
           {
             state: settled ? 'complete' : depositJoined ? 'active' : 'idle',
             title: settled
-              ? 'KMS settlement verified'
+              ? 'Settled on Solana'
               : lifecycle?.kind === 'proving'
                 ? lifecycle.proofReady
-                  ? 'Private proof ready'
-                  : 'Proving privately'
+                  ? 'Verifying on Solana'
+                  : 'Processing privately'
                 : depositJoined
-                  ? 'Awaiting dispatch'
-                  : 'Private batch settles',
-            detail: settled ? 'Public total revealed on-chain' : 'Your contribution remains masked',
+                  ? 'Waiting for batch close'
+                  : 'Automatic settlement',
+            detail: settled ? 'Batch total is now public' : 'Your contribution stays private',
           },
           {
             state: settled ? (lifecycle.claimed ? 'complete' : 'active') : 'idle',
@@ -65,17 +65,9 @@ export function DepositJourney({ controller }: { readonly controller: DemoContro
           </div>
 
           {(lifecycle?.kind === 'awaiting-dispatch' || lifecycle?.kind === 'proving') && (
-            <OperatorPanel
+            <SettlementProgress
               lifecycle={lifecycle}
               action={operatorAction}
-              copy={{
-                awaitingTitle: 'The local keeper advances this permissionless batch.',
-                provingPendingTitle: 'Proving the encrypted batch total…',
-                provingReadyTitle: 'Private proof is ready.',
-                provingReadyDetail: 'The KMS certificate can now be verified on Solana.',
-                settleLabel: 'Settle with KMS certificate',
-              }}
-              onAction={(action) => actions.runOperator('deposit', action)}
             />
           )}
 
@@ -83,7 +75,7 @@ export function DepositJourney({ controller }: { readonly controller: DemoContro
             <div className="verified-settlement" role="status">
               <span>✓</span>
               <div>
-                <strong>KMS certificate verified on Solana</strong>
+                <strong>Settlement verified on Solana</strong>
                 <small>
                   {lifecycle.claimed
                     ? 'Your claimed cShares remain encrypted.'
@@ -137,7 +129,7 @@ export function DepositJourney({ controller }: { readonly controller: DemoContro
             </div>
           )}
 
-          {operatorError && <ActionError>{operatorError}</ActionError>}
+          {operatorError && <ActionError>Settlement is retrying automatically: {operatorError}</ActionError>}
           {lifecycleError && !operatorError && (
             <ActionError>Live batch status is temporarily unavailable: {lifecycleError}</ActionError>
           )}
@@ -155,8 +147,8 @@ export function DepositJourney({ controller }: { readonly controller: DemoContro
           {settled && (
             <details className="privacy-note">
               <summary>Privacy detail</summary>
-              This local batch has one participant, so its public total allows the deposit to be inferred. Privacy
-              strengthens with multiple independent participants.
+              Settlement publishes the batch total. If you are the only participant, that total reveals your amount.
+              Privacy strengthens with more independent participants.
             </details>
           )}
         </div>

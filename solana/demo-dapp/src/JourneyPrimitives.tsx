@@ -33,61 +33,43 @@ export function JourneyTimeline({
   );
 }
 
-type OperatorCopy = {
-  readonly awaitingTitle: string;
-  readonly provingPendingTitle: string;
-  readonly provingReadyTitle: string;
-  readonly provingReadyDetail: string;
-  readonly settleLabel: string;
-};
-
-export function OperatorPanel({
+export function SettlementProgress({
   lifecycle,
   action,
-  copy,
-  onAction,
 }: {
   readonly lifecycle: Extract<BatchLifecycle, { kind: 'awaiting-dispatch' | 'proving' }>;
   readonly action: OperatorAction | null;
-  readonly copy: OperatorCopy;
-  readonly onAction: (action: OperatorAction) => void;
 }) {
-  if (lifecycle.kind === 'awaiting-dispatch') {
-    return (
-      <div className="operator-panel">
-        <div>
-          <span className="operator-label">Demo operator</span>
-          <strong>{copy.awaitingTitle}</strong>
-          <small>This is not a wallet action.</small>
-        </div>
-        <button
-          className="panel-action"
-          type="button"
-          disabled={lifecycle.remainingSlots > 0n || action !== null}
-          onClick={() => onAction('dispatch')}
-        >
-          {action === 'dispatch'
-            ? 'Dispatching…'
-            : lifecycle.remainingSlots > 0n
-              ? `Available in ~${lifecycle.remainingSlots.toString()} slots`
-              : 'Dispatch batch'}
-        </button>
-      </div>
-    );
-  }
+  const phase = lifecycle.kind === 'awaiting-dispatch' ? 1 : lifecycle.proofReady ? 3 : 2;
+  const title =
+    lifecycle.kind === 'awaiting-dispatch'
+      ? action === 'dispatch'
+        ? 'Starting encrypted settlement'
+        : lifecycle.remainingSlots > 0n
+          ? 'Waiting for batch close'
+          : 'Batch ready'
+      : lifecycle.proofReady || action === 'settle'
+        ? 'Verifying settlement on Solana'
+        : 'Processing encrypted settlement';
+  const detail =
+    lifecycle.kind === 'awaiting-dispatch'
+      ? lifecycle.remainingSlots > 0n
+        ? `Batch closes in ~${lifecycle.remainingSlots.toString()} slots`
+        : 'The local keeper is advancing the batch automatically'
+      : lifecycle.proofReady
+        ? 'The proof is ready and is being finalized on-chain'
+        : 'The privacy service is computing the encrypted batch result';
 
   return (
-    <div className="operator-panel">
+    <div className="settlement-progress">
       <div>
-        <span className="operator-label">Demo operator</span>
-        <strong>{lifecycle.proofReady ? copy.provingReadyTitle : copy.provingPendingTitle}</strong>
-        <small>{lifecycle.proofReady ? copy.provingReadyDetail : 'Proof readiness is checked automatically.'}</small>
+        <span className="operator-label">Automatic settlement</span>
+        <strong role="status" aria-live="polite">
+          {title}
+        </strong>
+        <small>{detail}</small>
       </div>
-      {lifecycle.proofReady && (
-        <button className="panel-action" type="button" disabled={action !== null} onClick={() => onAction('settle')}>
-          {action === 'settle' ? 'Settling…' : copy.settleLabel}
-        </button>
-      )}
+      <progress aria-label={title} max={3} value={phase} />
     </div>
   );
 }
