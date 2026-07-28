@@ -4,20 +4,20 @@ import path from "node:path";
 import type { RolloutRunContext } from "./commands/rollout-run";
 import { loadRolloutRunbook } from "./commands/rollout-run";
 import { resolveKmsTopology } from "./scenario/resolve";
-import { from, scenario, to } from "../rollouts/v0.13.10-to-v0.13.20-kms-node-by-node/versions";
+import { from, scenario, to } from "../rollouts/v0.13.20-to-v0.13.21-kms-node-by-node/versions";
 
 const RUNBOOK = path.resolve(
   import.meta.dir,
-  "../rollouts/v0.13.10-to-v0.13.20-kms-node-by-node/run.ts",
+  "../rollouts/v0.13.20-to-v0.13.21-kms-node-by-node/run.ts",
 );
 
-describe("v0.13.10 to v0.13.20 KMS node-by-node upgrade", () => {
+describe("v0.13.20 to v0.13.21 KMS node-by-node upgrade", () => {
   test("uses the threshold CI SDK path and changes only KMS Core", () => {
     expect(scenario).toBe("four-party-threshold-kms");
     const baseline = from as Record<string, string>;
     expect(baseline.RELAYER_SDK_VERSION).toBeUndefined();
     expect(Object.entries(to).filter(([key, value]) => baseline[key] !== value)).toEqual([
-      ["CORE_VERSION", "v0.13.20"],
+      ["CORE_VERSION", "v0.13.21"],
     ]);
     expect(Object.keys(from)).toEqual(["CORE_VERSION"]);
   });
@@ -53,8 +53,8 @@ describe("v0.13.10 to v0.13.20 KMS node-by-node upgrade", () => {
     await (await loadRolloutRunbook(RUNBOOK))(context);
 
     expect(calls).toEqual([
-      "lock:00-kms-core-baseline:v0.13.10",
-      "lock:01-kms-core-target:v0.13.20",
+      "lock:00-kms-core-baseline:v0.13.20",
+      "lock:01-kms-core-target:v0.13.21",
       "up:four-party-threshold-kms:/tmp/00-kms-core-baseline.lock.json:test-suite",
       "test:rollout-standard",
       "state",
