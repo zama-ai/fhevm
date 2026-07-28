@@ -13,7 +13,7 @@ import {
 } from '../../tasks/kmsContext';
 import { getRequiredEnvVar } from '../../tasks/utils/loadVariables';
 import type { ProtocolConfig } from '../../types';
-import { buildSingleKeyActivationPayload, deployFreshProtocolConfigProxy } from './taskHelpers';
+import { buildSingleKeyAndCrsActivationPayload, deployFreshProtocolConfigProxy } from './taskHelpers';
 
 const PROTOCOL_CONFIG_ENV_VAR = 'PROTOCOL_CONFIG_CONTRACT_ADDRESS';
 
@@ -312,7 +312,12 @@ describe('KMS context tasks', function () {
           proxyAddress,
           txSenders[i],
         )) as unknown as ProtocolConfig;
-        const { keys, crsList } = await buildSingleKeyActivationPayload(signers[i], proxyAddress, contextId, epochId);
+        const { keys, crsList } = await buildSingleKeyAndCrsActivationPayload(
+          signers[i],
+          proxyAddress,
+          contextId,
+          epochId,
+        );
         await (await asTxSender.confirmEpochActivation(epochId, keys, crsList)).wait();
       }
     }

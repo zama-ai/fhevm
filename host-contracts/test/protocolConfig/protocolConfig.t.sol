@@ -1478,7 +1478,7 @@ contract ProtocolConfigTest is HostContractsDeployerTestUtils {
         );
 
         // Replay with the same material the first confirm used. The signer check passes, so the call reaches
-        // the already-confirmed check. Empty arrays would revert earlier with EmptyEpochActivationAttestation.
+        // the already-confirmed check. An empty array would revert earlier with EmptyEpochActivationAttestation.
         bytes memory replayExtraData = abi.encodePacked(uint8(0x02), KMS_CONTEXT_COUNTER_BASE + 1, epochId);
         IKMSGeneration.KeyDigest[] memory replayKeyDigests = _mockKeyDigests();
         IProtocolConfig.EpochKeyResult[] memory replayKeys = new IProtocolConfig.EpochKeyResult[](1);
@@ -1496,7 +1496,16 @@ contract ProtocolConfigTest is HostContractsDeployerTestUtils {
                 )
             )
         });
-        IProtocolConfig.EpochCrsResult[] memory replayCrsList = new IProtocolConfig.EpochCrsResult[](0);
+        IProtocolConfig.EpochCrsResult[] memory replayCrsList = new IProtocolConfig.EpochCrsResult[](1);
+        replayCrsList[0] = IProtocolConfig.EpochCrsResult({
+            crsId: completedCrsId,
+            maxBitLength: 4096,
+            crsDigest: hex"deadbeef",
+            signature: _computeSignature(
+                kmsPk0,
+                _hashProtocolConfigCrsgen(completedCrsId, 4096, hex"deadbeef", replayExtraData)
+            )
+        });
 
         vm.prank(kmsTxSender0);
         vm.expectRevert(
@@ -1520,6 +1529,57 @@ contract ProtocolConfigTest is HostContractsDeployerTestUtils {
         protocolConfig.confirmEpochActivation(epochId, keys, crsList);
     }
 
+    function test_revertConfirmEpochActivationKeysOnlyPayload() public {
+        _setupEpochLifecycle();
+        (uint256 completedKeyId, ) = _completeKmsGenerationMaterial();
+        uint256 epochId = EPOCH_COUNTER_BASE + 2;
+        vm.prank(owner);
+        protocolConfig.defineNewEpochForCurrentKmsContext();
+
+        bytes memory extraData = abi.encodePacked(uint8(0x02), KMS_CONTEXT_COUNTER_BASE + 1, epochId);
+        IKMSGeneration.KeyDigest[] memory keyDigests = _mockKeyDigests();
+        IProtocolConfig.EpochKeyResult[] memory keys = new IProtocolConfig.EpochKeyResult[](1);
+        keys[0] = IProtocolConfig.EpochKeyResult({
+            prepKeygenId: PREP_KEYGEN_COUNTER_BASE + 1,
+            keyId: completedKeyId,
+            keyDigests: keyDigests,
+            signature: _computeSignature(
+                kmsPk0,
+                _hashProtocolConfigKeygen(PREP_KEYGEN_COUNTER_BASE + 1, completedKeyId, keyDigests, extraData)
+            )
+        });
+        IProtocolConfig.EpochCrsResult[] memory crsList = new IProtocolConfig.EpochCrsResult[](0);
+
+        vm.prank(kmsTxSender0);
+        vm.expectRevert(abi.encodeWithSelector(IProtocolConfig.EmptyEpochActivationAttestation.selector, epochId));
+        protocolConfig.confirmEpochActivation(epochId, keys, crsList);
+    }
+
+    function test_revertConfirmEpochActivationCrsOnlyPayload() public {
+        _setupEpochLifecycle();
+        (, uint256 completedCrsId) = _completeKmsGenerationMaterial();
+        uint256 epochId = EPOCH_COUNTER_BASE + 2;
+        vm.prank(owner);
+        protocolConfig.defineNewEpochForCurrentKmsContext();
+
+        bytes memory extraData = abi.encodePacked(uint8(0x02), KMS_CONTEXT_COUNTER_BASE + 1, epochId);
+        IProtocolConfig.EpochKeyResult[] memory keys = new IProtocolConfig.EpochKeyResult[](0);
+        IProtocolConfig.EpochCrsResult[] memory crsList = new IProtocolConfig.EpochCrsResult[](1);
+        crsList[0] = IProtocolConfig.EpochCrsResult({
+            crsId: completedCrsId,
+            maxBitLength: 4096,
+            crsDigest: hex"deadbeef",
+            signature: _computeSignature(
+                kmsPk0,
+                _hashProtocolConfigCrsgen(completedCrsId, 4096, hex"deadbeef", extraData)
+            )
+        });
+
+        vm.prank(kmsTxSender0);
+        vm.expectRevert(abi.encodeWithSelector(IProtocolConfig.EmptyEpochActivationAttestation.selector, epochId));
+        protocolConfig.confirmEpochActivation(epochId, keys, crsList);
+    }
+
     function test_confirmEpochActivationAcceptsActiveEpochMaterial() public {
         _setupEpochLifecycle();
         (uint256 completedKeyId, uint256 completedCrsId) = _completeKmsGenerationMaterial();
@@ -1537,7 +1597,7 @@ contract ProtocolConfigTest is HostContractsDeployerTestUtils {
 
     function test_revertStructuredConfirmEpochActivationSignerMismatch() public {
         _setupEpochLifecycle();
-        (uint256 completedKeyId, ) = _completeKmsGenerationMaterial();
+        (uint256 completedKeyId, uint256 completedCrsId) = _completeKmsGenerationMaterial();
         uint256 epochId = EPOCH_COUNTER_BASE + 2;
         vm.prank(owner);
         protocolConfig.defineNewEpochForCurrentKmsContext();
@@ -1554,7 +1614,18 @@ contract ProtocolConfigTest is HostContractsDeployerTestUtils {
                 _hashProtocolConfigKeygen(PREP_KEYGEN_COUNTER_BASE + 1, completedKeyId, keyDigests, extraData)
             )
         });
-        IProtocolConfig.EpochCrsResult[] memory crsList = new IProtocolConfig.EpochCrsResult[](0);
+        // The keys loop runs first, so the mismatch reverts there. The CRS entry only keeps the payload past
+        // the non-empty check.
+        IProtocolConfig.EpochCrsResult[] memory crsList = new IProtocolConfig.EpochCrsResult[](1);
+        crsList[0] = IProtocolConfig.EpochCrsResult({
+            crsId: completedCrsId,
+            maxBitLength: 4096,
+            crsDigest: hex"deadbeef",
+            signature: _computeSignature(
+                kmsPk1,
+                _hashProtocolConfigCrsgen(completedCrsId, 4096, hex"deadbeef", extraData)
+            )
+        });
 
         vm.prank(kmsTxSender0);
         vm.expectRevert(
@@ -2675,7 +2746,7 @@ contract ProtocolConfigTest is HostContractsDeployerTestUtils {
     ///      ECDSA.recover's length validation, with real key material in the payload.
     function test_revertConfirmEpochActivationMalformedSignature() public {
         _setupEpochLifecycle();
-        (uint256 completedKeyId, ) = _completeKmsGenerationMaterial();
+        (uint256 completedKeyId, uint256 completedCrsId) = _completeKmsGenerationMaterial();
         uint256 epochId = EPOCH_COUNTER_BASE + 2;
         vm.prank(owner);
         protocolConfig.defineNewEpochForCurrentKmsContext();
@@ -2689,7 +2760,18 @@ contract ProtocolConfigTest is HostContractsDeployerTestUtils {
             // 65 bytes is the only valid ECDSA length; a 10-byte blob is rejected by ECDSA.recover.
             signature: hex"00112233445566778899"
         });
-        IProtocolConfig.EpochCrsResult[] memory crsList = new IProtocolConfig.EpochCrsResult[](0);
+        // The CRS entry only keeps the payload past the non-empty check, so the keys loop reaches ECDSA.recover.
+        bytes memory extraData = abi.encodePacked(uint8(0x02), KMS_CONTEXT_COUNTER_BASE + 1, epochId);
+        IProtocolConfig.EpochCrsResult[] memory crsList = new IProtocolConfig.EpochCrsResult[](1);
+        crsList[0] = IProtocolConfig.EpochCrsResult({
+            crsId: completedCrsId,
+            maxBitLength: 4096,
+            crsDigest: hex"deadbeef",
+            signature: _computeSignature(
+                kmsPk0,
+                _hashProtocolConfigCrsgen(completedCrsId, 4096, hex"deadbeef", extraData)
+            )
+        });
 
         vm.prank(kmsTxSender0);
         vm.expectRevert();

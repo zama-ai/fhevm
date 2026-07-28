@@ -17,7 +17,7 @@ import {KMSGeneration} from "@fhevm-host-contracts/contracts/KMSGeneration.sol";
 import {IProtocolConfig} from "@fhevm-host-contracts/contracts/interfaces/IProtocolConfig.sol";
 import {IKMSGeneration} from "@fhevm-host-contracts/contracts/interfaces/IKMSGeneration.sol";
 import {KmsNode, KmsNodeParams, PcrValues} from "@fhevm-host-contracts/contracts/shared/Structs.sol";
-import {PREP_KEYGEN_COUNTER_BASE, KEY_COUNTER_BASE} from "@fhevm-host-contracts/contracts/shared/Constants.sol";
+import {PREP_KEYGEN_COUNTER_BASE, KEY_COUNTER_BASE, CRS_COUNTER_BASE} from "@fhevm-host-contracts/contracts/shared/Constants.sol";
 import {aclAdd, fhevmExecutorAdd, hcuLimitAdd, inputVerifierAdd, kmsVerifierAdd, pauserSetAdd, protocolConfigAdd, kmsGenerationAdd} from "@fhevm-host-contracts/addresses/FHEVMHostAddresses.sol";
 
 /**
@@ -461,9 +461,9 @@ abstract contract HostContractsDeployerTestUtils is Test {
     function _confirmEpochActivation(uint256 contextId, uint256 epochId, uint256 pk, address txSender) internal {
         bytes memory extraData = abi.encodePacked(uint8(0x02), contextId, epochId);
 
-        // An empty payload reverts with EmptyEpochActivationAttestation, so supply one deterministic self-signed
-        // key attestation with a constant keyId. Every signer produces the same dataHash. The keyId need not
-        // exist in KMSGeneration because confirmEpochActivation checks only signer recovery.
+        // An empty `keys` or `crsList` reverts with EmptyEpochActivationAttestation, so supply one deterministic
+        // self-signed attestation of each kind with constant ids. Every signer produces the same dataHash. The ids
+        // need not exist in KMSGeneration because confirmEpochActivation checks only signer recovery.
         IKMSGeneration.KeyDigest[] memory keyDigests = _mockKeyDigests();
         uint256 keyId = KEY_COUNTER_BASE + 1;
         uint256 prepKeygenId = _prepKeygenIdForKeyId(keyId);
@@ -476,7 +476,14 @@ abstract contract HostContractsDeployerTestUtils is Test {
             signature: _computeSignature(pk, _hashProtocolConfigKeygen(prepKeygenId, keyId, keyDigests, extraData))
         });
 
-        IProtocolConfig.EpochCrsResult[] memory crsList = new IProtocolConfig.EpochCrsResult[](0);
+        uint256 crsId = CRS_COUNTER_BASE + 1;
+        IProtocolConfig.EpochCrsResult[] memory crsList = new IProtocolConfig.EpochCrsResult[](1);
+        crsList[0] = IProtocolConfig.EpochCrsResult({
+            crsId: crsId,
+            maxBitLength: 4096,
+            crsDigest: hex"deadbeef",
+            signature: _computeSignature(pk, _hashProtocolConfigCrsgen(crsId, 4096, hex"deadbeef", extraData))
+        });
 
         vm.prank(txSender);
         protocolConfig.confirmEpochActivation(epochId, keys, crsList);

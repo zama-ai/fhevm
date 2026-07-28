@@ -304,7 +304,7 @@ interface IProtocolConfig {
     /// @param epochId The epoch ID.
     error EpochActivationAlreadyConfirmed(address signer, uint256 epochId);
 
-    /// @notice The epoch activation payload has no keys and no CRS, so no attestation can be verified.
+    /// @notice The epoch activation payload has no keys or no CRS, so a required attestation cannot be verified.
     /// @param epochId The epoch ID.
     error EmptyEpochActivationAttestation(uint256 epochId);
 

@@ -416,9 +416,9 @@ contract ProtocolConfig is IProtocolConfig, UUPSUpgradeableEmptyProxy, ACLOwnabl
             revert InvalidKmsContext(contextId);
         }
 
-        // An empty payload skips both attestation loops below, so no signature would be verified before the vote is
-        // recorded. Reject it so `_requireExpectedSigner` always checks at least one attestation from the signer.
-        if (keys.length == 0 && crsList.length == 0) {
+        // Activation requires one key and one CRS attestation from the signer. An empty array skips its loop
+        // below, so the vote would be recorded without checking that attestation.
+        if (keys.length == 0 || crsList.length == 0) {
             revert EmptyEpochActivationAttestation(epochId);
         }
 

@@ -188,12 +188,13 @@ export async function buildControllableKmsCommittee(): Promise<ControllableKmsCo
   };
 }
 
-// Builds a single self-signed key attestation for confirmEpochActivation. The contract only checks that
-// the EIP-712 signature recovers to the node's signer, so constant key material is valid. The material is
+// Builds one self-signed key attestation and one self-signed CRS attestation for confirmEpochActivation.
+// Both arrays must be non-empty, so a key-only payload is rejected. The contract only checks that each
+// EIP-712 signature recovers to the node's signer, so constant material is valid. The material is
 // identical across signers, so every signer produces the same consensus dataHash and quorum is reachable.
 // `signerSigner` is the node's SIGNER account (not its tx-sender). `contextId`/`epochId` are the pair being
 // activated and must match the values the contract packs into extraData.
-export async function buildSingleKeyActivationPayload(
+export async function buildSingleKeyAndCrsActivationPayload(
   signerSigner: Signer,
   proxyAddress: string,
   contextId: bigint,
@@ -205,7 +206,12 @@ export async function buildSingleKeyActivationPayload(
     keyDigests: Array<{ keyType: number; digest: string }>;
     signature: string;
   }>;
-  crsList: never[];
+  crsList: Array<{
+    crsId: bigint;
+    maxBitLength: bigint;
+    crsDigest: string;
+    signature: string;
+  }>;
 }> {
   const chainId = (await ethers.provider.getNetwork()).chainId;
   const domain = {
@@ -214,7 +220,7 @@ export async function buildSingleKeyActivationPayload(
     chainId,
     verifyingContract: proxyAddress,
   };
-  const types = {
+  const keygenTypes = {
     KeygenVerification: [
       { name: 'prepKeygenId', type: 'uint256' },
       { name: 'keyId', type: 'uint256' },
@@ -226,20 +232,45 @@ export async function buildSingleKeyActivationPayload(
       { name: 'digest', type: 'bytes' },
     ],
   };
-  // Single source of truth for the key material, so the signed digest matches the submitted payload.
+  const crsgenTypes = {
+    CrsgenVerification: [
+      { name: 'crsId', type: 'uint256' },
+      { name: 'maxBitLength', type: 'uint256' },
+      { name: 'crsDigest', type: 'bytes' },
+      { name: 'extraData', type: 'bytes' },
+    ],
+  };
+  // Single source of truth for the material, so the signed digests match the submitted payload.
   const prepKeygenId = 1n;
   const keyId = 1n;
   const keyDigests = [{ keyType: 0, digest: '0x01020304' }];
+  const crsId = 1n;
+  const maxBitLength = 4096n;
+  const crsDigest = '0x01020304';
   // extraData mirrors abi.encodePacked(EXTRA_DATA_V2, contextId, epochId) with EXTRA_DATA_V2 = 0x02.
   const extraData = ethers.solidityPacked(['uint8', 'uint256', 'uint256'], [2, contextId, epochId]);
-  const signature = await (
-    signerSigner as unknown as {
-      signTypedData: (d: typeof domain, t: typeof types, v: Record<string, unknown>) => Promise<string>;
-    }
-  ).signTypedData(domain, types, { prepKeygenId, keyId, keyDigests, extraData });
+  const typedDataSigner = signerSigner as unknown as {
+    signTypedData: (
+      d: typeof domain,
+      t: typeof keygenTypes | typeof crsgenTypes,
+      v: Record<string, unknown>,
+    ) => Promise<string>;
+  };
+  const signature = await typedDataSigner.signTypedData(domain, keygenTypes, {
+    prepKeygenId,
+    keyId,
+    keyDigests,
+    extraData,
+  });
+  const crsSignature = await typedDataSigner.signTypedData(domain, crsgenTypes, {
+    crsId,
+    maxBitLength,
+    crsDigest,
+    extraData,
+  });
   return {
     keys: [{ prepKeygenId, keyId, keyDigests, signature }],
-    crsList: [],
+    crsList: [{ crsId, maxBitLength, crsDigest, signature: crsSignature }],
   };
 }
 
@@ -265,7 +296,7 @@ function findEventArg(
 
 // Rotates the canonical ProtocolConfig to a fresh KMS context that reuses `committee`, driving the full
 // epoch lifecycle (define -> confirm creation -> confirm activation) so getCurrentKmsContextId advances.
-// Activation requires at least one attestation, so each signer submits a single self-signed key attestation.
+// Activation requires a non-empty key and CRS array, so each signer submits one self-signed attestation of each.
 export async function rotateToNewKmsContext(
   proxyAddress: string,
   ownerSigner: Signer,
@@ -304,7 +335,7 @@ export async function rotateToNewKmsContext(
       proxyAddress,
       committee.txSenderSigners[i],
     )) as unknown as ProtocolConfig;
-    const { keys, crsList } = await buildSingleKeyActivationPayload(
+    const { keys, crsList } = await buildSingleKeyAndCrsActivationPayload(
       committee.signerSigners[i],
       proxyAddress,
       contextId,
