@@ -2,9 +2,12 @@ import type { Address } from '@solana/kit';
 
 export type VaultDirection = 'deposit' | 'redeem';
 
-export type BatchPosition = {
+export type BatchTarget = {
   readonly batchIndex: bigint;
   readonly batch: Address;
+};
+
+export type BatchPosition = BatchTarget & {
   readonly amountBaseUnits: bigint;
 };
 

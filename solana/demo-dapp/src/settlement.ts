@@ -178,6 +178,7 @@ export const settleVaultBatch = async (
   session: DemoOperatorSession,
   position: BatchPosition,
   direction: VaultDirection,
+  lookupTableAddress: Address = session.config.batchers[direction].lookupTable,
 ): Promise<void> => {
   const roots = vaultRoots(session.config, direction);
   const { rpc, batch } = await currentPinnedBatch(session, position, direction);
@@ -202,7 +203,7 @@ export const settleVaultBatch = async (
     roots,
     batchIndex: position.batchIndex,
     contextId: asBytes32BigEndian(session.config.userDecryptContextId),
-    lookupTableAddress: session.config.batchers[direction].lookupTable,
+    lookupTableAddress,
     authorityFundingLamports: BigInt(session.config.authorityFundingLamports),
     certificateOptions: { timeout: 60_000 },
   });

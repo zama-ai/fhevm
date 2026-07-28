@@ -1,6 +1,6 @@
 import { address } from '@solana/kit';
 
-import type { BatchPosition, OperatorAction, VaultDirection, VaultMetrics } from './batchTypes';
+import type { BatchPosition, BatchTarget, OperatorAction, VaultDirection, VaultMetrics } from './batchTypes';
 
 export type OperatorRequest = {
   readonly action: OperatorAction;
@@ -45,6 +45,21 @@ export const parseOperatorRequest = (value: unknown): OperatorRequest => {
   };
   if (position.batchIndex < 0n || position.amountBaseUnits < 0n) throw new Error('invalid batch position');
   return { action: body.action, direction: body.direction, position };
+};
+
+export const encodeBatchTarget = (target: BatchTarget): Record<string, string> => ({
+  batchIndex: target.batchIndex.toString(),
+  batch: target.batch,
+});
+
+export const parseBatchTarget = (value: unknown): BatchTarget => {
+  const target = record(value, 'prepared batch');
+  const batchIndex = BigInt(string(target.batchIndex, 'prepared batch batchIndex'));
+  if (batchIndex < 0n) throw new Error('prepared batch index cannot be negative');
+  return {
+    batchIndex,
+    batch: address(string(target.batch, 'prepared batch batch')),
+  };
 };
 
 export const encodeVaultMetrics = (metrics: VaultMetrics): Record<string, string> => ({

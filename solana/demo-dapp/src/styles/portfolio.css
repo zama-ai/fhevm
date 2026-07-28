@@ -1,70 +1,54 @@
-.portfolio-grid {
+.vault-workspace {
   display: grid;
-  grid-template-columns: minmax(0, 0.8fr) minmax(0, 1.6fr);
+  grid-template-columns: minmax(0, 1.15fr) minmax(360px, 0.85fr);
   gap: 18px;
 }
 
-.balance-card,
-.vault-card,
-.journey-card {
+.vault-identity,
+.deposit-panel,
+.activity-ledger,
+.demo-tools {
   border: 1px solid rgba(255, 255, 255, 0.09);
   border-radius: 20px;
   background: rgba(20, 20, 23, 0.84);
   box-shadow: 0 24px 80px rgba(0, 0, 0, 0.2);
 }
 
-.balance-card {
-  min-height: 250px;
+.vault-identity,
+.deposit-panel {
   padding: 26px;
 }
 
-.card-heading {
+.vault-title,
+.deposit-panel-heading,
+.vault-stats,
+.card-heading,
+.active-deposit,
+.action-error {
   display: flex;
   align-items: center;
-  justify-content: space-between;
-  color: #b5b5bc;
+}
+
+.vault-title {
+  gap: 16px;
+}
+
+.vault-title h2,
+.deposit-panel-heading h2 {
+  margin-bottom: 4px;
+}
+
+.vault-title p {
+  margin: 0;
+  color: #9c9ca4;
   font-size: 14px;
-}
-
-.icon-button {
-  width: 30px;
-  height: 30px;
-  border-radius: 9px;
-  color: #8e8e96;
-  background: rgba(255, 255, 255, 0.06);
-}
-
-.private-balance {
-  display: block;
-  margin: 50px 0 8px;
-  font-size: 40px;
-  letter-spacing: 0.1em;
-}
-
-.balance-card p,
-.vault-card p {
-  margin-bottom: 0;
-  font-size: 14px;
-  line-height: 1.55;
-}
-
-.balance-card .balance-error {
-  color: #fecaca;
-  font-size: 11px;
-}
-
-.vault-card {
-  display: grid;
-  grid-template-columns: auto minmax(0, 1fr) auto;
-  align-items: center;
-  gap: 22px;
-  padding: 26px;
 }
 
 .vault-symbol {
   display: grid;
   width: 60px;
   height: 60px;
+  flex: 0 0 auto;
   place-items: center;
   border: 1px solid rgba(255, 255, 255, 0.14);
   border-radius: 18px;
@@ -74,72 +58,145 @@
   font-weight: 850;
 }
 
-.muted,
-.vault-metric span {
+.muted {
   display: block;
   margin-bottom: 5px;
-  font-size: 12px;
-}
-
-.vault-metric {
-  min-width: 86px;
-  text-align: right;
-}
-
-.vault-metric strong {
-  font-size: 15px;
-}
-
-.primary-action {
-  width: 100%;
-  padding: 13px 18px;
-  border-radius: 11px;
-  color: #0b0b0d;
-  background: #f4f4f5;
-  cursor: pointer;
-  font-weight: 760;
-}
-
-.deposit-action {
-  display: grid;
-  grid-column: 2 / -1;
-  gap: 12px;
-}
-
-.amount-row,
-.transaction-preview,
-.action-status,
-.action-error {
-  display: flex;
-  align-items: center;
-}
-
-.amount-row {
-  justify-content: space-between;
-  gap: 16px;
-  padding: 14px 16px;
-  border: 1px solid rgba(255, 255, 255, 0.09);
-  border-radius: 12px;
-  background: rgba(255, 255, 255, 0.035);
-}
-
-.amount-row strong {
-  display: block;
-  font-size: 22px;
-}
-
-.amount-row strong small {
   color: #9c9ca4;
   font-size: 12px;
 }
 
-.funding-note {
+.vault-stats {
+  gap: 12px;
+  margin: 24px 0;
+}
+
+.vault-stats > div {
+  flex: 1;
+  padding: 15px;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 12px;
+  background: rgba(255, 255, 255, 0.025);
+}
+
+.vault-stats span,
+.vault-stats small {
+  display: block;
   color: #9c9ca4;
   font-size: 11px;
 }
 
-.transaction-preview {
+.vault-stats strong {
+  display: block;
+  margin: 5px 0;
+  font-size: 22px;
+}
+
+.private-position {
+  padding-top: 20px;
+  border-top: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+.card-heading,
+.deposit-panel-heading {
+  justify-content: space-between;
+}
+
+.card-heading {
+  color: #b5b5bc;
+  font-size: 13px;
+}
+
+.icon-button {
+  width: 30px;
+  height: 30px;
+  border-radius: 9px;
+  color: #8e8e96;
+  background: rgba(255, 255, 255, 0.06);
+  cursor: pointer;
+}
+
+.icon-button:disabled {
+  cursor: not-allowed;
+  opacity: 0.4;
+}
+
+.private-balance {
+  display: block;
+  margin: 24px 0 7px;
+  font-size: 34px;
+  letter-spacing: 0.08em;
+}
+
+.private-position p {
+  margin: 0;
+  color: #9c9ca4;
+  font-size: 12px;
+}
+
+.private-position .balance-error,
+.input-error {
+  margin-top: 8px;
+  color: #fecaca;
+  font-size: 11px;
+}
+
+.deposit-panel {
+  display: grid;
+  align-content: start;
+  gap: 14px;
+}
+
+.approval-count {
+  padding: 6px 9px;
+  border-radius: 999px;
+  color: #b5b5bc;
+  background: rgba(255, 255, 255, 0.06);
+  font-size: 11px;
+}
+
+.amount-input {
+  display: grid;
+  gap: 8px;
+  margin-top: 8px;
+  padding: 16px;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 14px;
+  background: rgba(255, 255, 255, 0.035);
+}
+
+.amount-input > span,
+.amount-input small {
+  color: #9c9ca4;
+  font-size: 11px;
+}
+
+.amount-input > div {
+  display: flex;
+  align-items: baseline;
   gap: 10px;
+}
+
+.amount-input input {
+  width: 100%;
+  min-width: 0;
+  padding: 0;
+  border: 0;
+  outline: 0;
+  color: #f6f6f7;
+  background: transparent;
+  font: inherit;
+  font-size: 32px;
+  font-weight: 720;
+}
+
+.amount-input:focus-within {
+  border-color: rgba(167, 139, 250, 0.65);
+  box-shadow: 0 0 0 3px rgba(124, 58, 237, 0.16);
+}
+
+.transaction-preview {
+  display: flex;
+  gap: 8px;
   color: #9c9ca4;
   font-size: 11px;
 }
@@ -157,31 +214,48 @@
   line-height: 1.5;
 }
 
-.wallet-scan-note strong {
-  color: #d8d8dc;
-  font-weight: 650;
+.primary-action {
+  width: 100%;
+  padding: 13px 18px;
+  border-radius: 11px;
+  color: #0b0b0d;
+  background: #f4f4f5;
+  cursor: pointer;
+  font-weight: 760;
 }
 
-.action-status {
-  gap: 9px;
-  color: #d8d8dc;
+.primary-action:disabled {
+  cursor: not-allowed;
+  opacity: 0.38;
+}
+
+.active-deposit {
+  gap: 12px;
+  min-height: 132px;
+  padding: 18px;
+  border: 1px solid rgba(167, 139, 250, 0.2);
+  border-radius: 14px;
+  background: rgba(124, 58, 237, 0.07);
+}
+
+.active-deposit strong,
+.active-deposit small {
+  display: block;
+}
+
+.active-deposit small {
+  margin-top: 5px;
+  color: #9c9ca4;
+  font-size: 11px;
 }
 
 .status-dot {
-  width: 7px;
-  height: 7px;
+  width: 8px;
+  height: 8px;
+  flex: 0 0 auto;
   border-radius: 999px;
   background: #a78bfa;
   box-shadow: 0 0 12px rgba(167, 139, 250, 0.65);
-}
-
-.action-status.success {
-  color: #bbf7d0;
-}
-
-.action-status.success .status-dot {
-  background: #14f195;
-  box-shadow: 0 0 12px rgba(20, 241, 149, 0.65);
 }
 
 .action-error {
@@ -202,9 +276,4 @@
   background: #fecaca;
   cursor: pointer;
   font-weight: 700;
-}
-
-.primary-action:disabled {
-  cursor: not-allowed;
-  opacity: 0.38;
 }

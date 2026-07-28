@@ -6,12 +6,15 @@ const mocks = vi.hoisted(() => ({
   claim: vi.fn(),
   findDeposit: vi.fn(),
   findRedeem: vi.fn(),
+  fund: vi.fn(),
   harvest: vi.fn(),
+  hasShares: vi.fn(),
   joinDeposit: vi.fn(),
   joinRedeem: vi.fn(),
   lifecycle: vi.fn(),
   metrics: vi.fn(),
   operator: vi.fn(),
+  prepareBatch: vi.fn(),
   revealShares: vi.fn(),
   revealUsdc: vi.fn(),
 }));
@@ -20,12 +23,21 @@ vi.mock('./claim', () => ({ claimBatchPayout: mocks.claim }));
 vi.mock('./demoSession', () => ({
   connectDemoSession: vi.fn(),
   describeWalletError: (error: unknown) => (error instanceof Error ? error.message : String(error)),
+  ensureDemoFunding: mocks.fund,
 }));
-vi.mock('./deposit', () => ({ depositToVault: mocks.joinDeposit, findExistingDeposit: mocks.findDeposit }));
+vi.mock('./deposit', () => ({
+  depositToVault: mocks.joinDeposit,
+  findExistingDeposit: mocks.findDeposit,
+  hasClaimedDeposit: mocks.hasShares,
+  usdcToBaseUnits: (amount: number) => BigInt(amount * 1_000_000),
+}));
 vi.mock('./mutationLock', () => ({
   withWalletMutationLock: async (_session: unknown, action: () => Promise<unknown>) => action(),
 }));
-vi.mock('./operatorClient', () => ({ runDemoOperatorAction: mocks.operator }));
+vi.mock('./operatorClient', () => ({
+  prepareDemoDepositBatch: mocks.prepareBatch,
+  runDemoOperatorAction: mocks.operator,
+}));
 vi.mock('./redeem', () => ({ findExistingRedeem: mocks.findRedeem, joinRedeemBatch: mocks.joinRedeem }));
 vi.mock('./revealShares', () => ({
   revealClaimedShares: mocks.revealShares,
@@ -100,8 +112,11 @@ describe('useDemoController generation safety', () => {
     Object.assign(globalThis, { IS_REACT_ACT_ENVIRONMENT: true, window: globalThis });
     mocks.findDeposit.mockResolvedValue(position);
     mocks.findRedeem.mockResolvedValue(null);
+    mocks.fund.mockResolvedValue(undefined);
+    mocks.hasShares.mockResolvedValue(true);
     mocks.lifecycle.mockResolvedValue(awaiting);
     mocks.metrics.mockResolvedValue({ totalAssets: 125n, totalShares: 100n });
+    mocks.prepareBatch.mockResolvedValue(position);
     await act(async () => {
       renderer = create(<Harness />);
     });
@@ -171,6 +186,38 @@ describe('useDemoController generation safety', () => {
     await flush();
 
     expect(mocks.operator).not.toHaveBeenCalled();
+  });
+
+  test('prepares a new batch and preserves the existing private position for another deposit', async () => {
+    const nextPosition = { ...position, batchIndex: 2n };
+    mocks.lifecycle.mockResolvedValue(settled);
+    mocks.prepareBatch.mockResolvedValue(nextPosition);
+    mocks.joinDeposit.mockResolvedValue({ ...nextPosition, amountBaseUnits: 50_000_000n });
+    await connect(controller);
+    await flush();
+
+    await act(async () => {
+      controller.actions.shieldAndDeposit(50);
+    });
+    await flush();
+
+    expect(mocks.fund).toHaveBeenCalledWith(
+      undefined,
+      position.batch,
+      50_000_000n,
+    );
+    expect(mocks.prepareBatch).toHaveBeenCalledWith();
+    expect(mocks.joinDeposit).toHaveBeenCalledWith(
+      expect.anything(),
+      50,
+      expect.any(Function),
+      nextPosition,
+    );
+    expect(controller.state.hasPrivateShares).toBe(true);
+    expect(controller.state.deposit).toEqual({
+      kind: 'joined',
+      result: { ...nextPosition, amountBaseUnits: 50_000_000n },
+    });
   });
 
   test('retries an automatic operator failure on the next lifecycle poll', async () => {

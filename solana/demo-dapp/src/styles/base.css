@@ -143,7 +143,7 @@ main {
 
 .hero {
   max-width: 720px;
-  margin-bottom: 36px;
+  margin-bottom: 28px;
 }
 
 .eyebrow {
@@ -163,10 +163,10 @@ p {
 
 h1 {
   max-width: 650px;
-  margin-bottom: 18px;
-  font-size: clamp(42px, 6vw, 64px);
-  line-height: 0.97;
-  letter-spacing: -0.055em;
+  margin-bottom: 12px;
+  font-size: clamp(36px, 5vw, 48px);
+  line-height: 1;
+  letter-spacing: -0.045em;
 }
 
 h2 {
@@ -185,8 +185,8 @@ h2 {
 
 .hero-copy {
   max-width: 620px;
-  font-size: 18px;
-  line-height: 1.6;
+  font-size: 15px;
+  line-height: 1.5;
 }
 
 .error-banner {

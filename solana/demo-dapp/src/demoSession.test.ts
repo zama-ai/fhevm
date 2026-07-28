@@ -95,6 +95,11 @@ describe("planDemoFunding", () => {
     expect(planDemoFunding(5_000_000_000n, 0n)).toEqual({ usdc: 1_000 });
     expect(planDemoFunding(0n, 1_000_000_000n)).toEqual({ sol: 5 });
   });
+
+  test("funds the requested deposit when it is above the default target", () => {
+    expect(planDemoFunding(5_000_000_000n, 900_000_000n, 1_000_000_000n)).toEqual({ usdc: 100 });
+    expect(planDemoFunding(5_000_000_000n, 900_000_000n, 800_000_000n)).toEqual({});
+  });
 });
 
 describe("Wallet Standard boundary", () => {

@@ -20,21 +20,8 @@
     padding-top: 56px;
   }
 
-  .portfolio-grid,
-  .journey-card {
+  .vault-workspace {
     grid-template-columns: 1fr;
-  }
-
-  .vault-card {
-    grid-template-columns: auto 1fr;
-  }
-
-  .vault-metric {
-    display: none;
-  }
-
-  .deposit-action {
-    grid-column: 1 / -1;
   }
 
   .timeline {
@@ -57,14 +44,9 @@
 
   .settlement-progress,
   .claim-panel,
-  .yield-panel,
-  .demo-controls {
+  .demo-tools > div {
     align-items: stretch;
     flex-direction: column;
-  }
-
-  .yield-price {
-    text-align: left;
   }
 
   .redeem-heading,
@@ -89,5 +71,29 @@
 
   .redeem-complete > div:nth-child(2) {
     text-align: left;
+  }
+}
+
+@media (max-width: 520px) {
+  .vault-identity,
+  .deposit-panel {
+    padding: 20px;
+  }
+
+  .vault-stats {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .deposit-panel-heading {
+    align-items: flex-start;
+  }
+
+  .activity-ledger > summary {
+    padding: 16px;
+  }
+
+  .activity-content {
+    padding: 0 16px 16px;
   }
 }

@@ -1,124 +1,191 @@
-import { ActionError } from './JourneyPrimitives';
+import { useState } from 'react';
+
+import { ActionError, ClaimPanel } from './JourneyPrimitives';
 import { formatUsdc } from './format';
 import type { DemoController } from './useDemoController';
 import { DEMO_APY_PERCENT, DEMO_RATE_WINDOW_DAYS } from './yieldPolicy';
 
-const DEPOSIT_AMOUNT_USDC = 100;
+const DEFAULT_DEPOSIT_AMOUNT = '100';
 
 export function PortfolioOverview({ controller }: { readonly controller: DemoController }) {
   const { state, derived, actions } = controller;
-  const { deposit, depositLifecycle, revealedShares, revealingShares, revealSharesError } = state;
-  const { connected, depositRunning, depositJoined } = derived;
+  const {
+    deposit,
+    depositLifecycle,
+    depositClaiming,
+    depositClaimError,
+    revealedShares,
+    revealingShares,
+    revealSharesError,
+  } = state;
+  const { connected, depositRunning, hasPrivateShares, sharePrice } = derived;
+  const [amount, setAmount] = useState(DEFAULT_DEPOSIT_AMOUNT);
+  const parsedAmount = Number(amount);
+  const validAmount =
+    amount.trim() !== '' &&
+    Number.isFinite(parsedAmount) &&
+    parsedAmount > 0 &&
+    parsedAmount <= 1_000 &&
+    /^\d+(\.\d{0,6})?$/.test(amount);
+  const settled = depositLifecycle?.kind === 'settled';
+  const currentDepositClaimed = settled && depositLifecycle.claimed;
+  const canDeposit = deposit.kind === 'idle' || deposit.kind === 'error' || currentDepositClaimed;
   const phantomLocalnet =
     state.connection.kind === 'ready' &&
     state.connection.session.wallet.kind === 'wallet-standard' &&
     state.connection.session.wallet.name.toLowerCase() === 'phantom';
-  const settled = depositLifecycle?.kind === 'settled';
+  const externalWallet =
+    state.connection.kind === 'ready' && state.connection.session.wallet.kind === 'wallet-standard';
   const status =
     deposit.kind === 'running'
       ? {
-          preparing: 'Checking your confidential account…',
-          shielding: 'Transaction 1 of 2 · Shielding 100 USDC…',
-          proving: 'Creating your private deposit proof…',
-          joining: 'Transaction 2 of 2 · Depositing 100 USDC…',
-          joined: 'Deposit complete · Waiting for settlement',
+          preparing: 'Preparing the next private batch…',
+          shielding: 'Approval 1 of 2 · Shielding USDC…',
+          proving: 'Creating the private deposit proof…',
+          joining: 'Approval 2 of 2 · Depositing…',
+          joined: 'Deposit submitted',
         }[deposit.stage]
-      : deposit.kind === 'joined'
-        ? settled
-          ? depositLifecycle.claimed
-            ? 'Private cShares claimed'
-            : 'Settlement complete · Claim available'
-          : 'Deposit complete · Waiting for settlement'
+      : deposit.kind === 'joined' && !settled
+        ? 'Settlement in progress'
         : null;
 
   return (
-    <section className="portfolio-grid" aria-label="Portfolio overview">
-      <article className="balance-card">
-        <div className="card-heading">
-          <span>Private vault shares</span>
-          <button
-            className="icon-button"
-            type="button"
-            aria-label={revealedShares === null ? 'Reveal confidential balance' : 'Hide confidential balance'}
-            disabled={!settled || !depositLifecycle.claimed || revealingShares}
-            onClick={revealedShares === null ? actions.revealShares : actions.hideShares}
-          >
-            ◉
-          </button>
+    <section className="vault-workspace" aria-label="Confidential USDC vault">
+      <article className="vault-identity">
+        <div className="vault-title">
+          <div className="vault-symbol">USDC</div>
+          <div>
+            <span className="muted">Vault</span>
+            <h2>Confidential USDC</h2>
+            <p>Shield USDC and earn yield.</p>
+          </div>
         </div>
-        <strong className="private-balance">
-          {revealingShares
-            ? 'Decrypting…'
-            : revealedShares === null
-              ? '••••••'
-              : `${formatUsdc(revealedShares.value)} cShares`}
-        </strong>
-        <p>
-          {revealedShares !== null
-            ? 'Revealed for this view only · no transaction'
-            : settled && depositLifecycle.claimed
-              ? 'Private cShares received'
-              : connected
-                ? 'Ready to decrypt'
-                : 'Connect to view your private position'}
-        </p>
-        {revealSharesError && <p className="balance-error">{revealSharesError}</p>}
+
+        <div className="vault-stats" aria-label="Vault metrics">
+          <div>
+            <span>APY</span>
+            <strong>{DEMO_APY_PERCENT.toFixed(1)}%</strong>
+            <small>{DEMO_RATE_WINDOW_DAYS}-day average · annualized</small>
+          </div>
+          <div>
+            <span>Share price</span>
+            <strong>{sharePrice == null ? '1.00 USDC' : `${sharePrice.toFixed(2)} USDC`}</strong>
+            <small>Live vault ratio</small>
+          </div>
+        </div>
+
+        <div className="private-position">
+          <div className="card-heading">
+            <span>Your private position</span>
+            <button
+              className="icon-button"
+              type="button"
+              aria-label={revealedShares === null ? 'Reveal confidential balance' : 'Hide confidential balance'}
+              disabled={!hasPrivateShares || revealingShares}
+              onClick={revealedShares === null ? actions.revealShares : actions.hideShares}
+            >
+              {revealedShares === null ? '◉' : '○'}
+            </button>
+          </div>
+          <strong className="private-balance">
+            {revealingShares
+              ? 'Decrypting…'
+              : revealedShares === null
+                ? '••••••'
+                : `${formatUsdc(revealedShares.value)} cShares`}
+          </strong>
+          <p>
+            {revealedShares !== null
+              ? 'Visible in this browser only'
+              : hasPrivateShares
+                ? 'Ready to reveal'
+                : connected
+                  ? 'No shares yet'
+                  : 'Connect to view'}
+          </p>
+          {revealSharesError && <p className="balance-error">{revealSharesError}</p>}
+        </div>
       </article>
 
-      <article className="vault-card">
-        <div className="vault-symbol">USDC</div>
-        <div>
-          <span className="muted">Vault</span>
-          <h2>Confidential USDC</h2>
-          <p>
-            {DEMO_APY_PERCENT.toFixed(1)}% demo APY · {DEMO_RATE_WINDOW_DAYS}-day rate, annualized
-          </p>
+      <article className="deposit-panel">
+        <div className="deposit-panel-heading">
+          <div>
+            <span className="muted">{hasPrivateShares ? 'Add to position' : 'Deposit'}</span>
+            <h2>{hasPrivateShares ? 'Deposit more USDC' : 'Start earning privately'}</h2>
+          </div>
+          <span className="approval-count">{externalWallet ? '2 approvals' : '2 transactions'}</span>
         </div>
-        <div className="vault-metric">
-          <span>{phantomLocalnet ? 'Wallet approvals' : 'Transactions'}</span>
-          <strong>{phantomLocalnet ? '2 required' : '2'}</strong>
-        </div>
-        <div className="deposit-action">
-          <div className="amount-row">
-            <div>
-              <span className="muted">Amount</span>
-              <strong>
-                {DEPOSIT_AMOUNT_USDC} <small>USDC</small>
-              </strong>
+
+        {canDeposit ? (
+          <>
+            <label className="amount-input" htmlFor="deposit-amount">
+              <span>Amount</span>
+              <div>
+                <input
+                  id="deposit-amount"
+                  name="deposit-amount"
+                  type="text"
+                  inputMode="decimal"
+                  autoComplete="off"
+                  value={amount}
+                  aria-describedby="deposit-amount-help"
+                  onChange={(event) => setAmount(event.target.value)}
+                />
+                <strong>USDC</strong>
+              </div>
+              <small id="deposit-amount-help">Funded automatically on localnet</small>
+            </label>
+            <div
+              className="transaction-preview"
+              aria-label={externalWallet ? 'Two wallet approvals' : 'Two transactions'}
+            >
+              <span>1 · Shield</span>
+              <span>2 · Deposit</span>
             </div>
-            <span className="funding-note">{connected ? 'Funded automatically' : 'Connect to fund'}</span>
+            {phantomLocalnet && (
+              <p className="wallet-scan-note">
+                Phantom may show an unresolved simulation warning because its scanner cannot reach this local validator.
+              </p>
+            )}
+            <button
+              className="primary-action"
+              type="button"
+              disabled={!connected || depositRunning || !validAmount}
+              onClick={() => actions.shieldAndDeposit(parsedAmount)}
+            >
+              {depositRunning ? 'Depositing…' : 'Shield & deposit'}
+            </button>
+            {!validAmount && amount !== '' && <p className="input-error">Enter up to 1,000 USDC.</p>}
+          </>
+        ) : settled && !depositLifecycle.claimed ? (
+          <ClaimPanel
+            title="Your cShares are ready"
+            detail="One transaction. The balance stays private."
+            label="Claim private cShares"
+            busyLabel="Claiming…"
+            busy={depositClaiming}
+            onClaim={() => actions.claim('deposit')}
+          />
+        ) : (
+          <div className="active-deposit">
+            <span className="status-dot" />
+            <div>
+              <strong role="status" aria-live="polite">{status ?? 'Reading deposit status…'}</strong>
+              <small>You can close this page. Progress is saved.</small>
+            </div>
           </div>
-          <div className="transaction-preview">
-            <span>1 · Shield USDC</span>
-            <span>2 · Deposit</span>
-          </div>
-          {phantomLocalnet && !depositJoined && (
-            <p className="wallet-scan-note">
-              <strong>Phantom localnet · developer mode.</strong> The app simulates each transaction on this local
-              validator before and after signing. Phantom&apos;s scanner cannot reach this local validator and may still
-              show an unresolved warning. Use Demo wallet for the supported warning-free local flow.
-            </p>
-          )}
-          <button
-            className="primary-action"
-            type="button"
-            disabled={!connected || depositRunning || depositJoined}
-            onClick={actions.shieldAndDeposit}
-          >
-            {depositRunning ? 'Deposit in progress…' : depositJoined ? 'Deposited' : 'Shield & deposit'}
-          </button>
-          {status && (
-            <p className={`action-status ${depositJoined ? 'success' : ''}`} role="status">
-              <span className="status-dot" />
-              {status}
-            </p>
-          )}
-          {deposit.kind === 'error' && (
-            <ActionError retryLabel="Retry" onRetry={actions.shieldAndDeposit}>
-              {deposit.message}
-            </ActionError>
-          )}
-        </div>
+        )}
+
+        {deposit.kind === 'error' && (
+          <ActionError retryLabel="Retry" onRetry={() => actions.shieldAndDeposit(parsedAmount)}>
+            {deposit.message}
+          </ActionError>
+        )}
+        {depositClaimError && (
+          <ActionError retryLabel="Retry claim" onRetry={() => actions.claim('deposit')}>
+            {depositClaimError}
+          </ActionError>
+        )}
       </article>
     </section>
   );

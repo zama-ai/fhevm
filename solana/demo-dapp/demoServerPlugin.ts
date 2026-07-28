@@ -21,6 +21,7 @@ const aliceKeypairPath = path.join(repoRoot, 'solana/scripts/demo/demo-keypairs/
 const keeperKeypairPath = path.join(repoRoot, 'solana/scripts/demo/demo-keypairs/keeper.json');
 const relayerKeyUrl = 'http://127.0.0.1:3000/v2/keyurl';
 const browserRelayerUrl = 'http://127.0.0.1:5173/api/relayer';
+const batchRegistryPath = path.join(repoRoot, '.fhevm/runtime/solana-demo-batch-alts.json');
 
 type DemoEncryptionKey = {
   readonly fingerprint: string;
@@ -197,6 +198,51 @@ export const demoServerPlugin = (): Plugin => ({
         type HarvestResult = { readonly before: VaultMetrics; readonly after: VaultMetrics };
         let harvestInFlight: Promise<HarvestResult> | undefined;
         const operatorInFlight = new Map<string, Promise<void>>();
+        const batchPreparationInFlight = new Map<
+          string,
+          Promise<{ readonly batchIndex: string; readonly batch: string }>
+        >();
+
+        server.middlewares.use('/api/demo-batch', async (request, response) => {
+          response.setHeader('content-type', 'application/json');
+          response.setHeader('cache-control', 'no-store');
+          if (
+            request.method !== 'POST' ||
+            !isLoopback(request.socket.remoteAddress) ||
+            !hasDemoPageContext(request) ||
+            !hasJsonContentType(request)
+          ) {
+            response.statusCode = request.method === 'POST' ? 403 : 405;
+            response.end(
+              JSON.stringify({ error: request.method === 'POST' ? 'local demo origin only' : 'method not allowed' }),
+            );
+            return;
+          }
+          try {
+            const body = await readJsonBody(request);
+            const direction =
+              typeof body === 'object' && body !== null ? (body as Record<string, unknown>).direction : undefined;
+            if (direction !== 'deposit') throw new Error('only deposit batch preparation is supported');
+            const preparedTarget = await runSingleFlight(batchPreparationInFlight, 'prepare:deposit', async () => {
+              const session = await loadDemoOperatorSession();
+              const module = (await server.ssrLoadModule(
+                '/src/batchProvisioning.ts',
+              )) as typeof import('./src/batchProvisioning');
+              const prepared = await module.prepareNextBatch(
+                session.config,
+                session.keeper,
+                'deposit',
+                batchRegistryPath,
+              );
+              return { batchIndex: prepared.batchIndex.toString(), batch: prepared.batch };
+            });
+            response.statusCode = 200;
+            response.end(JSON.stringify(preparedTarget));
+          } catch (error) {
+            response.statusCode = 503;
+            response.end(JSON.stringify({ error: error instanceof Error ? error.message : String(error) }));
+          }
+        });
 
         server.middlewares.use('/api/demo-faucet', async (request, response) => {
           response.setHeader('content-type', 'application/json');
@@ -307,7 +353,16 @@ export const demoServerPlugin = (): Plugin => ({
               if (action === 'dispatch') {
                 await operator.dispatchVaultBatch(session, position, direction);
               } else {
-                await operator.settleVaultBatch(session, position, direction);
+                const provisioning = (await server.ssrLoadModule(
+                  '/src/batchProvisioning.ts',
+                )) as typeof import('./src/batchProvisioning');
+                const lookupTable = await provisioning.lookupTableForBatch(
+                  session.config,
+                  direction,
+                  position,
+                  batchRegistryPath,
+                );
+                await operator.settleVaultBatch(session, position, direction, lookupTable);
               }
             });
             response.statusCode = 200;

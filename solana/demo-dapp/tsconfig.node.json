@@ -12,6 +12,7 @@
   "include": [
     "vite.config.ts",
     "demoServerPlugin.ts",
+    "src/batchProvisioning.ts",
     "src/batchTypes.ts",
     "src/demoApi.ts",
     "src/demoConfig.ts",

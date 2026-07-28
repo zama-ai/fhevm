@@ -30,12 +30,15 @@ import {
   computeSignerAddress,
   deriveBatchAddresses,
   deriveJoinRecordAddress,
+  getBatchByIndex,
+  getBatcher,
   getCurrentBatch,
+  getJoinRecord,
   joinBatch,
   tokenAccountAddress,
 } from "@fhevm/sdk/solana/vault";
 
-import type { BatchPosition } from "./batchTypes";
+import type { BatchPosition, BatchTarget } from "./batchTypes";
 import type { DemoSession } from "./demoSession";
 import { loadDemoEncryptionKey } from "./encryptionKey";
 import {
@@ -240,7 +243,6 @@ export const reconcileSavedDeposit = async (
 
 export async function findExistingDeposit(
   session: DemoSession,
-  amount: number,
 ): Promise<BatchPosition | null> {
   const rpc = createSolanaRpc(session.config.rpcUrl);
   const saved = readActiveDeposit(session);
@@ -253,15 +255,34 @@ export async function findExistingDeposit(
   const account = await rpc.getAccountInfo(joinRecord, { commitment: "confirmed", encoding: "base64" }).send();
   if (account.value === null) return null;
   clearShieldJournal(session);
-  const result = { batchIndex: batch.index, batch: batch.addresses.batch, amountBaseUnits: usdcToBaseUnits(amount) };
+  const result = { batchIndex: batch.index, batch: batch.addresses.batch, amountBaseUnits: 0n };
   writeActiveDeposit(session, result);
   return result;
 }
+
+export const hasClaimedDeposit = async (session: DemoSession): Promise<boolean> => {
+  const rpc = createSolanaRpc(session.config.rpcUrl);
+  const roots = depositRoots(session);
+  const batcher = await getBatcher(rpc, roots.batcher, { commitment: "confirmed" });
+  for (let batchIndex = 0n; batchIndex < batcher.nextBatchIndex; batchIndex += 1n) {
+    const batch = await deriveBatchAddresses(roots, batchIndex);
+    const joinRecordAddress = await deriveJoinRecordAddress(batch.batch, session.signer.address);
+    const account = await rpc
+      .getAccountInfo(joinRecordAddress, { commitment: "confirmed", encoding: "base64" })
+      .send();
+    if (account.value !== null) {
+      const joinRecord = await getJoinRecord(rpc, joinRecordAddress, { commitment: "confirmed" });
+      if (joinRecord.claimed) return true;
+    }
+  }
+  return false;
+};
 
 export async function depositToVault(
   session: DemoSession,
   amount: number,
   onStage: (stage: DepositStage) => void,
+  target?: BatchTarget,
 ): Promise<BatchPosition> {
   session.assertActive();
   const { config, signer } = session;
@@ -271,24 +292,33 @@ export async function depositToVault(
   const sendAndConfirm = sendAndConfirmTransactionFactory({ rpc, rpcSubscriptions });
   const roots = depositRoots(session);
   const saved = readActiveDeposit(session);
-  if (saved !== null) {
+  if (
+    saved !== null &&
+    (target === undefined || (saved.batchIndex === target.batchIndex && saved.batch === target.batch))
+  ) {
     const reconciled = await reconcileSavedDeposit(rpc, session, saved);
     if (reconciled !== null) {
       onStage("joined");
       return reconciled;
     }
   }
-  const batch = await getCurrentBatch(rpc, roots, { commitment: "confirmed" });
+  const batch =
+    target === undefined
+      ? await getCurrentBatch(rpc, roots, { commitment: "confirmed" })
+      : await getBatchByIndex(rpc, roots, target.batchIndex, { commitment: "confirmed" });
+  if (
+    target !== undefined &&
+    (batch.index !== target.batchIndex || batch.addresses.batch !== target.batch)
+  ) {
+    throw new Error("The prepared deposit batch no longer matches the requested batch");
+  }
   const joinRecord = await deriveJoinRecordAddress(batch.addresses.batch, signer.address);
   const joinRecordAccount = await rpc
     .getAccountInfo(joinRecord, { commitment: "confirmed", encoding: "base64" })
     .send();
   if (joinRecordAccount.value !== null) {
     clearShieldJournal(session);
-    onStage("joined");
-    const result = { batchIndex: batch.index, batch: batch.addresses.batch, amountBaseUnits };
-    writeActiveDeposit(session, result);
-    return result;
+    throw new Error("This wallet already joined the current batch. Reconnect to recover the confirmed deposit.");
   }
   if (batch.state.status !== 0) throw new Error("The current deposit batch is no longer accepting deposits");
 

@@ -1,6 +1,19 @@
-import type { BatchPosition, OperatorAction, VaultDirection } from "./batchTypes";
+import type { BatchPosition, BatchTarget, OperatorAction, VaultDirection } from "./batchTypes";
 import { demoApiFetch } from "./demoAuthorization";
-import { encodeOperatorRequest } from "./demoApi";
+import { encodeOperatorRequest, parseBatchTarget } from "./demoApi";
+
+export const prepareDemoDepositBatch = async (): Promise<BatchTarget> => {
+  const response = await demoApiFetch("/api/demo-batch", {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ direction: "deposit" }),
+  });
+  if (!response.ok) {
+    const body = (await response.json().catch(() => null)) as { readonly error?: string } | null;
+    throw new Error(body?.error ?? `demo batch preparation failed with HTTP ${response.status}`);
+  }
+  return parseBatchTarget(await response.json());
+};
 
 export const runDemoOperatorAction = async (
   action: OperatorAction,

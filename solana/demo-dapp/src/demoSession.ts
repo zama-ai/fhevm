@@ -59,14 +59,23 @@ export const describeWalletError = (
   return "Signature cancelled — nothing new was sent; any confirmed step is saved";
 };
 
-export const planDemoFunding = (solLamports: bigint, usdcBaseUnits: bigint): FundingPlan => ({
+export const planDemoFunding = (
+  solLamports: bigint,
+  usdcBaseUnits: bigint,
+  requiredUsdcBaseUnits: bigint = MIN_USDC_BALANCE,
+): FundingPlan => {
+  const targetUsdcBalance = requiredUsdcBaseUnits > TARGET_USDC_BALANCE
+    ? requiredUsdcBaseUnits
+    : TARGET_USDC_BALANCE;
+  return {
   ...(solLamports < MIN_SOL_BALANCE
     ? { sol: Number(TARGET_SOL_BALANCE - solLamports) / Number(LAMPORTS_PER_SOL) }
     : {}),
-  ...(usdcBaseUnits < MIN_USDC_BALANCE
-    ? { usdc: Number(TARGET_USDC_BALANCE - usdcBaseUnits) / Number(USDC_BASE_UNITS) }
+  ...(usdcBaseUnits < requiredUsdcBaseUnits
+    ? { usdc: Number(targetUsdcBalance - usdcBaseUnits) / Number(USDC_BASE_UNITS) }
     : {}),
-});
+  };
+};
 
 const object = (value: unknown, name: string): Record<string, unknown> => {
   if (typeof value !== "object" || value === null) throw new Error(`${name} must be an object`);
@@ -127,16 +136,20 @@ const readBalances = async (config: DemoConfig, owner: Address): Promise<readonl
   return [sol.value, usdc];
 };
 
-export const ensureDemoFunding = async (config: DemoConfig, owner: Address): Promise<void> => {
+export const ensureDemoFunding = async (
+  config: DemoConfig,
+  owner: Address,
+  requiredUsdcBaseUnits: bigint = MIN_USDC_BALANCE,
+): Promise<void> => {
   const [solLamports, usdcBaseUnits] = await readBalances(config, owner);
-  const funding = planDemoFunding(solLamports, usdcBaseUnits);
+  const funding = planDemoFunding(solLamports, usdcBaseUnits, requiredUsdcBaseUnits);
   await Promise.all([
     ...(funding.sol === undefined ? [] : [postFaucet("/airdrop-sol", owner, { sol: funding.sol })]),
     ...(funding.usdc === undefined ? [] : [postFaucet("/mint-usdc", owner, { amount: funding.usdc })]),
   ]);
   for (let attempt = 0; attempt < 40; attempt += 1) {
     const [fundedSolLamports, fundedUsdcBaseUnits] = await readBalances(config, owner);
-    const missing = planDemoFunding(fundedSolLamports, fundedUsdcBaseUnits);
+    const missing = planDemoFunding(fundedSolLamports, fundedUsdcBaseUnits, requiredUsdcBaseUnits);
     if (missing.sol === undefined && missing.usdc === undefined) return;
     await new Promise((resolve) => setTimeout(resolve, 250));
   }

@@ -2,10 +2,16 @@ import { useCallback, useEffect, useReducer, useRef } from 'react';
 
 import type { BatchLifecycle, BatchPosition, OperatorAction, VaultDirection, VaultMetrics } from './batchTypes';
 import { claimBatchPayout } from './claim';
-import { connectDemoSession, describeWalletError, type DemoSession } from './demoSession';
-import { depositToVault, findExistingDeposit, type DepositStage } from './deposit';
+import { connectDemoSession, describeWalletError, ensureDemoFunding, type DemoSession } from './demoSession';
+import {
+  depositToVault,
+  findExistingDeposit,
+  hasClaimedDeposit,
+  usdcToBaseUnits,
+  type DepositStage,
+} from './deposit';
 import { withWalletMutationLock } from './mutationLock';
-import { runDemoOperatorAction } from './operatorClient';
+import { prepareDemoDepositBatch, runDemoOperatorAction } from './operatorClient';
 import { findExistingRedeem, joinRedeemBatch, type RedeemStage } from './redeem';
 import { revealClaimedShares, revealClaimedUsdc, type RevealedBalance } from './revealShares';
 import { readVaultLifecycle } from './settlement';
@@ -34,6 +40,7 @@ export type DemoState = {
   readonly depositOperatorError: string | null;
   readonly depositClaiming: boolean;
   readonly depositClaimError: string | null;
+  readonly hasPrivateShares: boolean;
   readonly revealedShares: RevealedBalance | null;
   readonly revealingShares: boolean;
   readonly revealSharesError: string | null;
@@ -60,6 +67,7 @@ const accountState = {
   depositOperatorError: null,
   depositClaiming: false,
   depositClaimError: null,
+  hasPrivateShares: false,
   revealedShares: null,
   revealingShares: false,
   revealSharesError: null,
@@ -103,7 +111,7 @@ export function useDemoController() {
   const operationInFlight = useRef(false);
   const operatorGeneration = useRef<Record<VaultDirection, number | null>>({ deposit: null, redeem: null });
   const sessionGeneration = useRef(0);
-  const sharesClaimed = state.depositLifecycle?.kind === 'settled' && state.depositLifecycle.claimed;
+  const currentDepositClaimed = state.depositLifecycle?.kind === 'settled' && state.depositLifecycle.claimed;
   const commit = useCallback(
     (generation: number, patch: Partial<DemoState>) => dispatch({ type: 'update', generation, patch }),
     [],
@@ -234,7 +242,7 @@ export function useDemoController() {
   }, [advanceOperator, commit, state.connection, state.generation, state.redeem]);
 
   useEffect(() => {
-    if (state.connection.kind !== 'ready' || !sharesClaimed) {
+    if (!state.hasPrivateShares) {
       commit(state.generation, { vaultMetrics: null });
       return;
     }
@@ -250,7 +258,7 @@ export function useDemoController() {
     return () => {
       canceled = true;
     };
-  }, [commit, state.connection, state.generation, sharesClaimed]);
+  }, [commit, state.generation, state.hasPrivateShares]);
 
   const disconnect = useCallback(() => {
     const generation = sessionGeneration.current + 1;
@@ -270,10 +278,13 @@ export function useDemoController() {
       const session = await createSession(isActive);
       session.assertActive();
       commit(generation, { connection: { kind: 'ready', session }, deposit: { kind: 'running', stage: 'preparing' } });
-      const existingDeposit = await findExistingDeposit(session, DEPOSIT_AMOUNT_USDC);
+      const existingDeposit = await findExistingDeposit(session);
+      session.assertActive();
+      const hasPrivateShares = await hasClaimedDeposit(session);
       session.assertActive();
       commit(generation, {
         deposit: existingDeposit === null ? { kind: 'idle' } : { kind: 'joined', result: existingDeposit },
+        hasPrivateShares,
       });
       try {
         const existingRedeem = await findExistingRedeem(session);
@@ -329,6 +340,9 @@ export function useDemoController() {
             [lifecycleKey]: next,
             [errorKey]: next.kind === 'settled' && next.claimed ? null : actionError,
             [claimingKey]: false,
+            ...(direction === 'deposit' && next.kind === 'settled' && next.claimed
+              ? { hasPrivateShares: true, revealedShares: null }
+              : {}),
           });
         } catch {
           commit(generation, { [errorKey]: actionError, [claimingKey]: false });
@@ -338,17 +352,32 @@ export function useDemoController() {
     }
   };
 
-  const shieldAndDeposit = async () => {
-    if (state.connection.kind !== 'ready' || operationInFlight.current) return;
+  const shieldAndDeposit = async (amount: number) => {
+    if (
+      state.connection.kind !== 'ready' ||
+      operationInFlight.current ||
+      (state.deposit.kind === 'joined' && !currentDepositClaimed)
+    ) {
+      return;
+    }
     const session = state.connection.session;
     const generation = state.generation;
     operationInFlight.current = true;
-    commit(generation, { deposit: { kind: 'running', stage: 'preparing' } });
+    commit(generation, {
+      deposit: { kind: 'running', stage: 'preparing' },
+      depositLifecycle: null,
+      depositClaimError: null,
+      revealSharesError: null,
+    });
     try {
+      await ensureDemoFunding(session.config, session.signer.address, usdcToBaseUnits(amount));
+      session.assertActive();
+      const target = await prepareDemoDepositBatch();
+      session.assertActive();
       const result = await withWalletMutationLock(session, () =>
-        depositToVault(session, DEPOSIT_AMOUNT_USDC, (stage) => {
+        depositToVault(session, amount, (stage) => {
           commit(generation, { deposit: { kind: 'running', stage } });
-        }),
+        }, target),
       );
       session.assertActive();
       commit(generation, { deposit: { kind: 'joined', result } });
@@ -362,8 +391,7 @@ export function useDemoController() {
   const revealShares = async () => {
     if (
       state.connection.kind !== 'ready' ||
-      state.depositLifecycle?.kind !== 'settled' ||
-      !state.depositLifecycle.claimed ||
+      !state.hasPrivateShares ||
       operationInFlight.current
     )
       return;
@@ -462,7 +490,8 @@ export function useDemoController() {
       depositRunning: state.deposit.kind === 'running',
       depositJoined: state.deposit.kind === 'joined',
       depositSettled: state.depositLifecycle?.kind === 'settled',
-      sharesClaimed,
+      sharesClaimed: currentDepositClaimed,
+      hasPrivateShares: state.hasPrivateShares,
       sharePrice,
       yieldApplied: sharePrice !== null && sharePrice >= DEMO_TARGET_SHARE_PRICE,
       redeemJoined: state.redeem.kind === 'joined',
@@ -472,7 +501,7 @@ export function useDemoController() {
       connect,
       connectBurner: () => void connect((isActive) => connectDemoSession(isActive)),
       disconnect,
-      shieldAndDeposit: () => void shieldAndDeposit(),
+      shieldAndDeposit: (amount: number = DEPOSIT_AMOUNT_USDC) => void shieldAndDeposit(amount),
       revealShares: () => void revealShares(),
       hideShares: () => commit(state.generation, { revealedShares: null }),
       fastForwardOneYear: () => void fastForwardOneYear(),
