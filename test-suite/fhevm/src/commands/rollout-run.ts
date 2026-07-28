@@ -17,6 +17,7 @@ import {
 } from "../flow/up-flow";
 import { STATE_DIR, composePath, hostChainRuntimes } from "../layout";
 import { reconstructionThreshold } from "../kms-party";
+import { previewBundle } from "../resolve/bundle-store";
 import { loadState } from "../state/state";
 import type { LocalOverride, State, UpOptions, VersionBundle, VersionTarget } from "../types";
 import { ensureDir, writeJson } from "../utils/fs";
@@ -79,12 +80,14 @@ export type RolloutRunContext = {
   /** Runs a check with an exact reconstruction quorum that must include this KMS node. */
   withRequiredKmsNode(nodeId: number, task: () => Promise<void>): Promise<void>;
   upgradeRuntimeGroup(group: string, options?: RolloutRuntimeUpgradeOptions): Promise<void>;
+  resolveVersionLock(name: string, options: RolloutLockOptions): Promise<string>;
   writeVersionLock(name: string, options: RolloutLockOptions): Promise<string>;
 };
 
 export type RolloutRunbook = (ctx: RolloutRunContext) => Promise<void> | void;
 
 type RolloutContextOperations = {
+  previewBundle: typeof previewBundle;
   setRunning: typeof setRunning;
   upgradeThresholdKmsNode: typeof upgradeThresholdKmsNode;
   waitForPartiesRunning: typeof waitForPartiesRunning;
@@ -125,9 +128,24 @@ const runRolloutTest = async (receipt: RolloutReceipt, profile: string, options:
 export const matchesExpectedTestFailure = (error: unknown, errorIncludes: string): error is CommandError =>
   error instanceof CommandError && error.stderr.includes(errorIncludes);
 
-export const createRolloutContext = (
-  receipt: RolloutReceipt = createRolloutReceipt(),
-  operationOverrides: Partial<RolloutContextOperations> = {},
+const writeRolloutVersionLock = async (name: string, options: RolloutLockOptions) => {
+  const filename = name.endsWith(".json") ? name : `${name}.lock.json`;
+  const file = path.join(STATE_DIR, "rollout", filename);
+  await ensureDir(path.dirname(file));
+  const bundle = {
+    target: options.target ?? "latest-main",
+    lockName: path.basename(file),
+    env: options.versions,
+    sources: options.sources ?? ["rollout-runbook"],
+  } satisfies VersionBundle;
+  await writeJson(file, bundle);
+  return file;
+};
+
+const createRolloutContextWithCache = (
+  receipt: RolloutReceipt,
+  operationOverrides: Partial<RolloutContextOperations>,
+  resolvedBundles: Map<VersionTarget, VersionBundle>,
 ): RolloutRunContext => ({
   async applyVersionLock(label, options) {
     await applyStackVersionLock(label, options.lockFile, options.allowedVersionKeys, { overrides: options.overrides });
@@ -337,20 +355,31 @@ export const createRolloutContext = (
     await upgradeStackRuntimeGroup(group, options);
     await receipt.record("upgrade-runtime", group, { lockFile: options.lockFile });
   },
+  async resolveVersionLock(name, options) {
+    const target = options.target ?? "latest-main";
+    let base = resolvedBundles.get(target);
+    if (!base) {
+      base = await (operationOverrides.previewBundle ?? previewBundle)(
+        { target, requestedTarget: target, reset: false },
+        {},
+      );
+      resolvedBundles.set(target, base);
+    }
+    return writeRolloutVersionLock(name, {
+      target,
+      versions: { ...base.env, ...options.versions },
+      sources: [...base.sources, ...(options.sources ?? ["rollout-runbook"])],
+    });
+  },
   async writeVersionLock(name, options) {
-    const filename = name.endsWith(".json") ? name : `${name}.lock.json`;
-    const file = path.join(STATE_DIR, "rollout", filename);
-    await ensureDir(path.dirname(file));
-    const bundle = {
-      target: options.target ?? "latest-main",
-      lockName: path.basename(file),
-      env: options.versions,
-      sources: options.sources ?? ["rollout-runbook"],
-    } satisfies VersionBundle;
-    await writeJson(file, bundle);
-    return file;
+    return writeRolloutVersionLock(name, options);
   },
 });
+
+export const createRolloutContext = (
+  receipt: RolloutReceipt = createRolloutReceipt(),
+  operationOverrides: Partial<RolloutContextOperations> = {},
+): RolloutRunContext => createRolloutContextWithCache(receipt, operationOverrides, new Map());
 
 export const loadRolloutRunbook = async (script: string): Promise<RolloutRunbook> => {
   const file = path.resolve(script);

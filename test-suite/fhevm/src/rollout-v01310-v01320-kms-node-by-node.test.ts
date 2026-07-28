@@ -16,16 +16,16 @@ describe("v0.13.10 to v0.13.20 KMS node-by-node upgrade", () => {
     expect(scenario).toBe("four-party-threshold-kms");
     const baseline = from as Record<string, string>;
     expect(baseline.RELAYER_SDK_VERSION).toBeUndefined();
-    expect(from.CONNECTOR_KMS_WORKER_VERSION).toBe("v0.13.0-6");
     expect(Object.entries(to).filter(([key, value]) => baseline[key] !== value)).toEqual([
       ["CORE_VERSION", "v0.13.20"],
     ]);
+    expect(Object.keys(from)).toEqual(["CORE_VERSION"]);
   });
 
   test("upgrades every core and requires each upgraded node in a healthy quorum", async () => {
     const calls: string[] = [];
     const context = {
-      async writeVersionLock(name: string, options: { versions: Record<string, string> }) {
+      async resolveVersionLock(name: string, options: { versions: Record<string, string> }) {
         calls.push(`lock:${name}:${options.versions.CORE_VERSION}`);
         return `/tmp/${name}.lock.json`;
       },

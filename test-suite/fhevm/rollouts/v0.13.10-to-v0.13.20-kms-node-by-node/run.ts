@@ -19,11 +19,11 @@ export const runKmsNodeByNodeUpgrade = async (
   ctx: RolloutRunContext,
   config: KmsNodeByNodeRunbook,
 ) => {
-  const baselineLock = await ctx.writeVersionLock("00-kms-core-baseline", {
+  const baselineLock = await ctx.resolveVersionLock("00-kms-core-baseline", {
     versions: config.from,
     sources: config.versionSources,
   });
-  const targetLock = await ctx.writeVersionLock("01-kms-core-target", {
+  const targetLock = await ctx.resolveVersionLock("01-kms-core-target", {
     versions: config.to,
     sources: config.versionSources,
   });
