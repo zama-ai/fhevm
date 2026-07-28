@@ -12,6 +12,35 @@ bun run demo reseed [--direct]
 bun run demo down
 ```
 
+## Phantom rehearsal
+
+Start the complete stack and keep the command running:
+
+```sh
+bun run demo serve --observability
+```
+
+Then open `http://127.0.0.1:5173/` and connect Phantom with Solana Localnet enabled. The expected
+wallet interactions are:
+
+1. one connection approval; fee SOL and mock USDC are funded automatically;
+2. two announced transaction approvals for **Shield & deposit**;
+3. one message-sign approval when a confidential balance is revealed;
+4. one message-sign approval to read the private share amount, followed by one transaction
+   approval for **Redeem**; settlement and the confidential-token claim are sponsored
+   automatically;
+5. one message-sign approval when the received cUSDC balance is revealed.
+
+Phantom may label a locally simulated transaction as unsafe because its remote scanner cannot
+reach `127.0.0.1`. The dApp independently simulates the unsigned transaction against that exact
+local validator before opening Phantom, then verifies the wallet signature and simulates the
+signed transaction before submission. Confirm that Phantom shows `127.0.0.1:5173`; never approve
+the rehearsal against a different site or network.
+
+The **Developer evidence** panel exposes the exact local signatures, compute consumption,
+ciphertext handles, and encrypted-value account. Use the Explorer links for transaction details
+and the copied handle for Jaeger correlation.
+
 Add `--observability` to `doctor`, `up`, or `serve` to reserve and start boot-owned Prometheus and
 Jaeger services:
 
