@@ -373,14 +373,14 @@ describe("compat", () => {
     expect(policy.composeEnv.GATEWAY_ADD_PAUSERS_INTERNAL_FLAG).toBe("--use-internal-pauser-set-address");
   });
 
-  test("keeps legacy pauser flags for v0.12 contract tags", () => {
+  test("keeps legacy pauser flags before host contracts v0.12.5", () => {
     const policy = compatPolicyForState({
       versions: {
         target: "latest-supported",
         lockName: "v0.12.0.json",
         env: {
-          HOST_VERSION: "v0.12.0",
-          GATEWAY_VERSION: "v0.12.0",
+          HOST_VERSION: "v0.12.4",
+          GATEWAY_VERSION: "v0.12.4",
         } as Record<string, string>,
         sources: [],
       },
@@ -388,6 +388,24 @@ describe("compat", () => {
       scenario: testDefaultScenario(),
     });
     expect(policy.composeEnv.HOST_ADD_PAUSERS_INTERNAL_FLAG).toBe("--use-internal-pauser-set-address");
+    expect(policy.composeEnv.GATEWAY_ADD_PAUSERS_INTERNAL_FLAG).toBe("--use-internal-pauser-set-address");
+  });
+
+  test("uses the proxy pauser flag from host contracts v0.12.5", () => {
+    const policy = compatPolicyForState({
+      versions: {
+        target: "latest-supported",
+        lockName: "v0.12.5.json",
+        env: {
+          HOST_VERSION: "v0.12.5",
+          GATEWAY_VERSION: "v0.12.5",
+        } as Record<string, string>,
+        sources: [],
+      },
+      overrides: [],
+      scenario: testDefaultScenario(),
+    });
+    expect(policy.composeEnv.HOST_ADD_PAUSERS_INTERNAL_FLAG).toBe("--use-internal-proxy-address");
     expect(policy.composeEnv.GATEWAY_ADD_PAUSERS_INTERNAL_FLAG).toBe("--use-internal-pauser-set-address");
   });
 
