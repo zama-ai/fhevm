@@ -636,6 +636,22 @@ fn bootstrap(
         &zama_host::ID,
     );
     let signer_count = kms_signers.len();
+    // A centralized KMS signs with one key, so the certificate threshold is 1. A threshold-mode
+    // KMS with corruption threshold t needs 2t+1 matching signatures, and KMS core requires
+    // parties == 3t+1 (see test-suite/fhevm/scenarios/four-party-threshold-kms.yaml). KMS_THRESHOLD
+    // carries t; unset means the centralized PoC default so the `solana` scenario is unchanged.
+    let kms_corruption_threshold: u8 = std::env::var("KMS_THRESHOLD")
+        .ok()
+        .and_then(|v| v.parse().ok())
+        .unwrap_or(0);
+    let cert_threshold: u8 = 2 * kms_corruption_threshold + 1;
+    if cert_threshold as usize > signer_count {
+        return Err(format!(
+            "KMS_THRESHOLD={kms_corruption_threshold} needs 2t+1={cert_threshold} certificate \
+             signatures but only {signer_count} KMS signers are registered on the gateway"
+        )
+        .into());
+    }
     let sig = host
         .request()
         .accounts(zama_host::accounts::DefineKmsContext {
@@ -648,14 +664,21 @@ fn bootstrap(
             context_id,
             signers: kms_signers,
             thresholds: zama_host::KmsThresholds {
-                public_decryption: 1,
-                user_decryption: 1,
-                kms_gen: 1,
-                mpc: 1,
+                public_decryption: cert_threshold,
+                user_decryption: cert_threshold,
+                kms_gen: cert_threshold,
+                // `mpc` mirrors the gateway's MPC_THRESHOLD, which is t itself and NOT 2t+1
+                // (fhevm-cli generates MPC_THRESHOLD=t alongside PUBLIC/USER_DECRYPTION_THRESHOLD
+                // =2t+1; see test-suite/fhevm/src/kms-threshold.test.ts). It is stored for fidelity
+                // and never gates on-chain verification, so mirroring it exactly is its only job.
+                mpc: kms_corruption_threshold,
             },
         })
         .send()?;
-    println!("OK define_kms_context: {sig} (signers: {signer_count})");
+    println!(
+        "OK define_kms_context: {sig} (signers: {signer_count}, t={kms_corruption_threshold}, \
+         cert_threshold={cert_threshold}, mpc={kms_corruption_threshold})"
+    );
     Ok(())
 }
 

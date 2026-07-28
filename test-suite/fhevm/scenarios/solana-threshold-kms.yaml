@@ -1,0 +1,49 @@
+version: 1
+kind: coprocessor-consensus
+name: Solana Host + Threshold KMS
+description: >-
+  `solana` plus a real 4-party threshold-mode KMS (t=1), to establish whether the Solana
+  vertical can run against a genuine multi-party KMS rather than the centralized PoC one
+  (fhevm-internal#1746).
+
+  Deliberately keeps a single coprocessor (topology count 1) so the ONLY variable versus the
+  `solana` scenario is the KMS mode. Secure keygen with Test FHE params does real MPC
+  preprocessing and is measured at ~360s for 4 parties, so expect a slow bring-up.
+
+  Expected outcome, in order:
+    1. four Solana-capable kms-core containers come up. The single CORE_VERSION pin fans out
+       correctly: src/generate/kms-core.ts builds one `coreImage` from
+       plan.versions.env.CORE_VERSION and every generated service (gen-keys, the N cores,
+       kms-core-init) uses it, so pinning the Solana-capable tag covers the whole cluster with
+       no change. The pinned commit is threshold-capable (kms-init.rs + engine/threshold/service
+       both present at b14d45dc). Note party 1's service is named `kms-core`, reusing the
+       centralized name; parties 2..N are `kms-core-2`..`kms-core-N`.
+    2. secure keygen completes and reaches activeKeyId.
+    3. the on-chain KmsContext carries 4 signers with cert thresholds 2t+1 = 3
+       (the live-client derives these from KMS_THRESHOLD).
+    4. user-decrypt then FAILS client-side in kms `process_user_decryption_resp_solana`
+       (`stored_server_addrs.len() != 1`), because that path is a copy of the centralized
+       flow with no Shamir reconstruction. That failure is the point of the experiment: it
+       confirms the remaining work is the client-side refactor and not infrastructure.
+
+  Unlike four-party-threshold-kms.yaml this must NOT use the published connector: the Solana
+  vertical requires the kms-connector built from the worktree (`--override kms-connector`),
+  because the pinned baseline rejects the generated Solana host_chains config with
+  "missing field acl_address". clean-e2e.sh already passes that override.
+hostChains:
+  - key: host
+    chainId: "12345"
+    rpcPort: 8545
+  - key: solana
+    type: solana
+    nodeProvisioning: external # host-native solana-test-validator; fhevm-cli owns only its config
+    chainId: "9223372036854788153"
+    rpcPort: 8899
+topology:
+  count: 1
+  threshold: 1
+kms:
+  mode: threshold
+  parties: 4 # MPC nodes; KMS core requires parties == 3*threshold + 1
+  threshold: 1 # t (reconstruction needs 2t+1 = 3 matching responses)
+  fheParams: Test # matches four-party-threshold-kms.yaml; Default params deferred

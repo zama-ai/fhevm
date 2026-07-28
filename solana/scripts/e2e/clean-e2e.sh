@@ -44,6 +44,10 @@ FHEVM="$ROOT/test-suite/fhevm"
 # (select-overrides.sh computes both in CI). Local runs keep the build-everything default; set
 # SOLANA_E2E_OVERRIDES to "none" for an explicit empty override list.
 SOLANA_E2E_OVERRIDES="${SOLANA_E2E_OVERRIDES:-gateway-contracts host-contracts coprocessor relayer solana-proof-service kms-connector}"
+# Scenario + KMS corruption threshold t. Defaults reproduce the centralized PoC exactly.
+# `solana-threshold-kms` + KMS_THRESHOLD=1 runs the 4-party (3t+1) threshold KMS.
+SOLANA_E2E_SCENARIO="${SOLANA_E2E_SCENARIO:-solana}"
+export KMS_THRESHOLD="${KMS_THRESHOLD:-0}"
 SOLANA_E2E_LOCK_PINS="${SOLANA_E2E_LOCK_PINS:-}"
 if [ "$SOLANA_E2E_OVERRIDES" = "none" ]; then
   SOLANA_E2E_OVERRIDES=""
@@ -89,8 +93,12 @@ PY
 #    (the solana-side bring-up below no longer patches those — single config writer).
 #    `--override solana-proof-service` rebuilds the standalone proof image from this worktree so a
 #    stale `solana-proof-service:local` / `:fhevm-local` image cannot outlive HEAD.
+#    SOLANA_E2E_SCENARIO selects the fhevm-cli scenario. Default `solana` (centralized KMS).
+#    Set to `solana-threshold-kms` to run the same vertical against a real 4-party threshold KMS
+#    (fhevm-internal#1746); that scenario also requires KMS_THRESHOLD below so the on-chain
+#    certificate thresholds match 2t+1 instead of the centralized default of 1.
 ( cd "$FHEVM" && ./fhevm-cli up \
-    --scenario solana \
+    --scenario "$SOLANA_E2E_SCENARIO" \
     --lock-file "$LOCK" \
     ${OVERRIDE_ARGS[@]+"${OVERRIDE_ARGS[@]}"} \
     --allow-schema-mismatch )
