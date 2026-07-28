@@ -157,11 +157,11 @@ contract DecryptionMock {
 
     function userDecryptionRequest(
         CtHandleContractPair[] calldata ctHandleContractPairs,
-        RequestValidity calldata requestValidity,
-        ContractsInfo calldata contractsInfo,
+        RequestValidity calldata /* requestValidity */,
+        ContractsInfo calldata /* contractsInfo */,
         address userAddress,
         bytes calldata publicKey,
-        bytes calldata signature,
+        bytes calldata /* signature */,
         bytes calldata extraData
     ) external {
         userDecryptionCounter++;
@@ -203,11 +203,11 @@ contract DecryptionMock {
 
     function delegatedUserDecryptionRequest(
         CtHandleContractPair[] calldata ctHandleContractPairs,
-        RequestValidity calldata requestValidity,
-        DelegationAccounts calldata delegationAccounts,
-        ContractsInfo calldata contractsInfo,
+        RequestValidity calldata /* requestValidity */,
+        DelegationAccounts calldata /* delegationAccounts */,
+        ContractsInfo calldata /* contractsInfo */,
         bytes calldata publicKey,
-        bytes calldata signature,
+        bytes calldata /* signature */,
         bytes calldata extraData
     ) external {
         userDecryptionCounter++;
