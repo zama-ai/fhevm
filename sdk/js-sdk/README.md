@@ -169,6 +169,12 @@ Full documentation is available in the [`docs/`](docs/) directory:
 - [Glossary](docs/GLOSSARY.md) — canonical naming across the SDK, docs, and Zama Protocol
 - [Release notes](docs/release-notes.md) — changelog and breaking changes
 
+## Contributing
+
+External pull requests are not accepted. To report a bug, request a feature, or start a discussion, please [open an issue](https://github.com/zama-ai/fhevm/issues).
+
+For security vulnerabilities, use [private vulnerability reporting](https://github.com/zama-ai/fhevm/security/advisories/new) or follow the process in [SECURITY.md](../../SECURITY.md).
+
 ## License
 
 This project is licensed under the [BSD 3-Clause Clear License](LICENSE).
