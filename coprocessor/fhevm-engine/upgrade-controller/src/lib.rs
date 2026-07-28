@@ -869,6 +869,143 @@ async fn transition_to_gw_dry_run_started(
     Ok(())
 }
 
+/// Reconcile BCS's leftovers to green at cutover. BCS runs ahead of GCS, so results
+/// GCS never ingested survive the merge, leaving each operator with a different set.
+/// For every handle at/after `start_block` GCS did not ingest, delete BCS's ciphertext
+/// and re-queue it so the live GCS workers recompute and re-upload. Runs in the cutover
+/// txn after the merge, while `gcs.computations` still exists.
+async fn reconcile_bcs_leftovers_to_green(tx: &mut Transaction<'_, Postgres>) -> Result<(), Error> {
+    let row: Option<(i64, i64)> = sqlx::query_as(
+        "SELECT host_chain_id, start_block FROM upgrade_state
+          WHERE stack_role = 'GCS' AND host_chain_id IS NOT NULL AND start_block IS NOT NULL",
+    )
+    .fetch_optional(&mut **tx)
+    .await?;
+    let Some((chain_id, start_block)) = row else {
+        return Ok(());
+    };
+    for ct_table in ["ciphertexts", "ciphertexts128"] {
+        let sql = format!(
+            "DELETE FROM {ct_table} ct
+               USING computations comp
+              WHERE ct.handle = comp.output_handle
+                AND comp.host_chain_id = $1 AND comp.block_number >= $2
+                AND NOT EXISTS (
+                    SELECT 1 FROM {GCS_SCHEMA_QUOTED}.computations g
+                     WHERE g.output_handle = comp.output_handle)"
+        );
+        sqlx::query(&sql)
+            .bind(chain_id)
+            .bind(start_block)
+            .execute(&mut **tx)
+            .await?;
+    }
+    let requeue = format!(
+        "UPDATE computations c SET is_completed = FALSE, is_error = FALSE
+          WHERE c.host_chain_id = $1 AND c.block_number >= $2
+            AND NOT EXISTS (
+                SELECT 1 FROM {GCS_SCHEMA_QUOTED}.computations g
+                 WHERE g.output_handle = c.output_handle)"
+    );
+    let requeued = sqlx::query(&requeue)
+        .bind(chain_id)
+        .bind(start_block)
+        .execute(&mut **tx)
+        .await?
+        .rows_affected();
+    info!(
+        host_chain_id = chain_id,
+        start_block,
+        requeued,
+        "reconcile_bcs_leftovers: re-queued BCS host leftovers for green recompute"
+    );
+    // Scoped to real host computations (`EXISTS computations`) so it doesn't stray
+    // onto input handles — those are owned by `reconcile_gw_leftovers_to_green`.
+    let requeue_pbs = format!(
+        "UPDATE pbs_computations p SET is_completed = FALSE
+          WHERE p.host_chain_id = $1 AND p.block_number >= $2
+            AND EXISTS (
+                SELECT 1 FROM computations c
+                 WHERE c.output_handle = p.handle)
+            AND NOT EXISTS (
+                SELECT 1 FROM {GCS_SCHEMA_QUOTED}.computations g
+                 WHERE g.output_handle = p.handle)"
+    );
+    sqlx::query(&requeue_pbs)
+        .bind(chain_id)
+        .bind(start_block)
+        .execute(&mut **tx)
+        .await?;
+    Ok(())
+}
+
+/// Reconcile the gateway/zkproof-input side's leftovers to green at cutover. Green
+/// re-verifies proofs to the *same* input handles but *different* ciphertext bytes
+/// (the re-randomization strategy switches at cutover). For gw-window proofs GCS never
+/// re-verified, blue's old input ciphertexts survive, so delete those, re-queue their
+/// ct128, and reset the proofs for the live GCS zkproof-worker. Scoped to
+/// `gw_start_block`; runs before the schema drop, while `gcs.*` still exists.
+async fn reconcile_gw_leftovers_to_green(tx: &mut Transaction<'_, Postgres>) -> Result<(), Error> {
+    let row: Option<(i64,)> = sqlx::query_as(
+        "SELECT gw_start_block FROM upgrade_state
+          WHERE stack_role = 'GCS' AND gw_start_block IS NOT NULL",
+    )
+    .fetch_optional(&mut **tx)
+    .await?;
+    let Some((gw_start_block,)) = row else {
+        return Ok(());
+    };
+    for ct_table in ["ciphertexts", "ciphertexts128"] {
+        let sql = format!(
+            "DELETE FROM {ct_table} ct
+              WHERE EXISTS (
+                  SELECT 1 FROM input_handles ih
+                   WHERE ih.handle = ct.handle
+                     AND ih.block_number >= $1
+                     AND NOT EXISTS (
+                         SELECT 1 FROM {GCS_SCHEMA_QUOTED}.input_handles g
+                          WHERE g.handle = ih.handle))"
+        );
+        sqlx::query(&sql)
+            .bind(gw_start_block)
+            .execute(&mut **tx)
+            .await?;
+    }
+    let pbs = format!(
+        "UPDATE pbs_computations p SET is_completed = FALSE
+          WHERE EXISTS (
+              SELECT 1 FROM input_handles ih
+               WHERE ih.handle = p.handle
+                 AND ih.block_number >= $1
+                 AND NOT EXISTS (
+                     SELECT 1 FROM {GCS_SCHEMA_QUOTED}.input_handles g
+                      WHERE g.handle = ih.handle))"
+    );
+    sqlx::query(&pbs)
+        .bind(gw_start_block)
+        .execute(&mut **tx)
+        .await?;
+    let proofs = format!(
+        "UPDATE verify_proofs vp
+            SET verified = NULL, handles = NULL, verified_at = NULL,
+                last_error = NULL, retry_count = 0
+          WHERE vp.block_number >= $1
+            AND NOT EXISTS (
+                SELECT 1 FROM {GCS_SCHEMA_QUOTED}.verify_proofs g
+                 WHERE g.zk_proof_id = vp.zk_proof_id)"
+    );
+    let reset_proofs = sqlx::query(&proofs)
+        .bind(gw_start_block)
+        .execute(&mut **tx)
+        .await?
+        .rows_affected();
+    info!(
+        gw_start_block,
+        reset_proofs, "reconcile_gw_leftovers: reset BCS-leftover proofs for green re-verify"
+    );
+    Ok(())
+}
+
 /// Merge every row from `gcs.<table>` into `public.<table>`, letting the GCS
 /// rows win on collisions (`ON CONFLICT (<conflict_cols>) DO UPDATE`) — GCS is
 /// the canonical writer for its dry-run window. Driven by [`execute_cutover`]
@@ -1031,6 +1168,12 @@ pub async fn execute_cutover(pool: &Pool<Postgres>) -> Result<(), Error> {
         }
         merge_gcs_table(&mut tx, table.name, table.conflict_cols).await?;
     }
+
+    // 4b. Reconcile BCS's leftovers to green.
+    reconcile_bcs_leftovers_to_green(&mut tx).await?;
+
+    // 4c. Reconcile gateway/zkproof-input leftovers to green.
+    reconcile_gw_leftovers_to_green(&mut tx).await?;
 
     // 5. Drop the gcs schema (and everything in it) now that its data has been
 
@@ -2366,6 +2509,168 @@ mod tests {
         .expect("latches");
         assert_eq!(latches, (false, false));
         assert!(!host_reached(&pool, 1).await);
+    }
+
+    /// Cutover backfill, eager case: a handle GCS never ingested but BCS wrote
+    /// within the window (block 160 < `end_block` 200) is re-queued and its
+    /// ciphertext deleted; one GCS did ingest is left to the merge.
+    #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+    async fn cutover_backfill_requeues_bcs_leftovers_eager() {
+        let (_instance, pool) = test_pool().await;
+        create_gcs_schema(&pool).await.expect("create gcs schema");
+        seed_gcs_row(&pool, "UpgradeAuthorized", "in_progress").await; // start=100, end=200, chain=1
+
+        let leftover = &[0xAAu8; 32][..]; // BCS wrote it, GCS never ingested (block 160)
+        let ingested = &[0xBBu8; 32][..]; // GCS ingested it (block 150)
+        for (handle, block) in [(leftover, 160_i64), (ingested, 150_i64)] {
+            sqlx::query(
+                "INSERT INTO computations
+                    (output_handle, dependencies, fhe_operation,
+                     is_scalar, is_completed, host_chain_id, block_number)
+                 VALUES ($1, ARRAY[]::bytea[], 0, false, TRUE, 1, $2)",
+            )
+            .bind(handle)
+            .bind(block)
+            .execute(&pool)
+            .await
+            .expect("seed computation");
+            sqlx::query(
+                "INSERT INTO ciphertexts (handle, ciphertext, ciphertext_version, ciphertext_type)
+                 VALUES ($1, $2, 0, 0)",
+            )
+            .bind(handle)
+            .bind(&[0x00u8][..])
+            .execute(&pool)
+            .await
+            .expect("seed ciphertext");
+        }
+
+        let seed_gcs = format!(
+            "INSERT INTO {GCS_SCHEMA_QUOTED}.computations
+                (output_handle, dependencies, fhe_operation,
+                 is_scalar, is_completed, host_chain_id, block_number)
+             VALUES ($1, ARRAY[]::bytea[], 0, false, TRUE, 1, 150)"
+        );
+        sqlx::query(&seed_gcs)
+            .bind(ingested)
+            .execute(&pool)
+            .await
+            .expect("seed gcs computation");
+
+        execute_cutover(&pool).await.expect("cutover succeeds");
+
+        // Leftover (no gcs row): re-queued + ciphertext deleted.
+        let (done, cts): (bool, i64) = sqlx::query_as(
+            "SELECT c.is_completed,
+                    (SELECT COUNT(*) FROM ciphertexts WHERE handle = c.output_handle)
+               FROM computations c WHERE c.output_handle = $1",
+        )
+        .bind(leftover)
+        .fetch_one(&pool)
+        .await
+        .expect("leftover row");
+        assert!(!done, "a BCS leftover GCS never ingested must be re-queued");
+        assert_eq!(
+            cts, 0,
+            "its ciphertext must be deleted so GCS overwrites it"
+        );
+
+        let cts: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM ciphertexts WHERE handle = $1")
+            .bind(ingested)
+            .fetch_one(&pool)
+            .await
+            .expect("count");
+        assert_eq!(cts, 1, "a handle GCS ingested must be left to the merge");
+    }
+
+    /// Gateway/zkproof-side backfill: a gw-window proof GCS never re-verified is
+    /// reset (`verified = NULL`) and its input ciphertext deleted, so the live GCS
+    /// zkproof-worker re-verifies it; one GCS did re-verify is left to the merge.
+    #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+    async fn cutover_backfill_reconciles_gw_leftovers() {
+        let (_instance, pool) = test_pool().await;
+        create_gcs_schema(&pool).await.expect("create gcs schema");
+        seed_gcs_row(&pool, "UpgradeAuthorized", "in_progress").await; // gw_start_block = 1
+
+        let h_left = &[0xC1u8; 32][..]; // input handle of the leftover proof
+        let h_repro = &[0xC2u8; 32][..]; // input handle of the reproduced proof
+
+        for (id, block) in [(100_i64, 5_i64), (200_i64, 3_i64)] {
+            sqlx::query(
+                "INSERT INTO verify_proofs
+                    (zk_proof_id, chain_id, contract_address, user_address, verified, block_number)
+                 VALUES ($1, 1, '0xc', '0xu', TRUE, $2)",
+            )
+            .bind(id)
+            .bind(block)
+            .execute(&pool)
+            .await
+            .expect("seed verify_proofs");
+        }
+        for (handle, block) in [(h_left, 5_i64), (h_repro, 3_i64)] {
+            sqlx::query("INSERT INTO input_handles (handle, block_number) VALUES ($1, $2)")
+                .bind(handle)
+                .bind(block)
+                .execute(&pool)
+                .await
+                .expect("seed input_handles");
+            sqlx::query(
+                "INSERT INTO ciphertexts (handle, ciphertext, ciphertext_version, ciphertext_type)
+                 VALUES ($1, $2, 0, 0)",
+            )
+            .bind(handle)
+            .bind(&[0x00u8][..])
+            .execute(&pool)
+            .await
+            .expect("seed ciphertext");
+        }
+
+        // GCS re-verified proof 200 and reproduced its input handle.
+        let gcs_vp = format!(
+            "INSERT INTO {GCS_SCHEMA_QUOTED}.verify_proofs
+                (zk_proof_id, chain_id, contract_address, user_address, verified, block_number)
+             VALUES (200, 1, '0xc', '0xu', TRUE, 3)"
+        );
+        sqlx::query(&gcs_vp)
+            .execute(&pool)
+            .await
+            .expect("seed gcs verify_proofs");
+        let gcs_ih = format!(
+            "INSERT INTO {GCS_SCHEMA_QUOTED}.input_handles (handle, block_number) VALUES ($1, 3)"
+        );
+        sqlx::query(&gcs_ih)
+            .bind(h_repro)
+            .execute(&pool)
+            .await
+            .expect("seed gcs input_handles");
+
+        execute_cutover(&pool).await.expect("cutover succeeds");
+
+        let verified: Option<bool> =
+            sqlx::query_scalar("SELECT verified FROM verify_proofs WHERE zk_proof_id = 100")
+                .fetch_one(&pool)
+                .await
+                .expect("proof 100");
+        assert_eq!(
+            verified, None,
+            "a proof GCS never re-verified must be reset to re-verify"
+        );
+        let n: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM ciphertexts WHERE handle = $1")
+            .bind(h_left)
+            .fetch_one(&pool)
+            .await
+            .expect("count");
+        assert_eq!(
+            n, 0,
+            "its input ciphertext must be deleted so GCS re-verify overwrites it"
+        );
+
+        let n: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM ciphertexts WHERE handle = $1")
+            .bind(h_repro)
+            .fetch_one(&pool)
+            .await
+            .expect("count");
+        assert_eq!(n, 1, "a handle GCS reproduced must be left to the merge");
     }
 
     /// A readiness task left over from an old proposal must not advance a newer one.
