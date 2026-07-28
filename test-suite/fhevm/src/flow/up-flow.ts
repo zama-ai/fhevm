@@ -236,18 +236,6 @@ const postgresExec = async (dbName: string, args: string[]) => {
   );
 };
 
-export const executeCoprocessorSql = async (state: Pick<State, "scenario">, sql: string) => {
-  for (let index = 0; index < topologyForState(state).count; index += 1) {
-    const database = coprocessorDatabaseName(index);
-    const result = await postgresExec(database, ["-v", "ON_ERROR_STOP=1", "-c", sql]);
-    if (result.code !== 0) {
-      throw new PreflightError(
-        result.stderr.trim() || result.stdout.trim() || `failed to execute rollout SQL in ${database}`,
-      );
-    }
-  }
-};
-
 const sqlLiteral = (value: string) => `'${value.replaceAll("'", "''")}'`;
 
 /** Logs elapsed time for one stack subtask. */
@@ -958,11 +946,11 @@ export const runStep = async (state: State, step: StepName) => {
         );
         await waitForContainer("gateway-sc-trigger-crsgen", "complete");
       }
-      // wait-for-materials polls every two seconds. Centralized keygen is quick; a threshold-mode
-      // cluster runs a real multi-party DKG, and legacy KMS releases can take more than 20 minutes
-      // to finish two preprocessing sessions and publish the result.
+      // wait-for-materials polls roughly once per second. Centralized keygen is quick; a
+      // threshold-mode cluster runs a real multi-party DKG (~360s for 4 parties), so it needs a
+      // much larger budget before we conclude bootstrap failed.
       const CENTRALIZED_BOOTSTRAP_ATTEMPTS = 120;
-      const THRESHOLD_BOOTSTRAP_ATTEMPTS = 1200;
+      const THRESHOLD_BOOTSTRAP_ATTEMPTS = 450;
       const bootstrapAttempts =
         state.scenario.kms.mode === "threshold" ? THRESHOLD_BOOTSTRAP_ATTEMPTS : CENTRALIZED_BOOTSTRAP_ATTEMPTS;
       await timed("[bootstrap] wait-for-materials", () => waitForBootstrap(state, bootstrapAttempts));

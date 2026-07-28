@@ -10,7 +10,6 @@ import { waitForTestSuite } from "../flow/readiness";
 import { composeUp } from "../flow/runtime-compose";
 import {
   applyVersionLock as applyStackVersionLock,
-  executeCoprocessorSql,
   refreshDiscovery as refreshStackDiscovery,
   up,
   upgradeThresholdKmsNode,
@@ -24,13 +23,6 @@ import { ensureDir, writeJson } from "../utils/fs";
 import { partyContainers, setRunning, waitForPartiesRunning, waitForPartiesStopped } from "./kms-generation";
 import { type RolloutReceipt, createRolloutReceipt } from "./rollout-receipt";
 import { test as runTest } from "./test";
-import {
-  type KmsResponseVersion,
-  registerKmsContext,
-  responseVersion,
-  snapshotUserDecryptionResponseIds,
-  waitForUserDecryptionResponses,
-} from "./user-decryption-responses";
 
 type RolloutUpOptions = {
   lockFile: string;
@@ -51,7 +43,6 @@ type RolloutVersionLockOptions = {
 };
 
 type RolloutTestOptions = {
-  containerEnv?: Record<string, string>;
   grep?: string;
   network?: string;
   noHardhatCompile?: boolean;
@@ -59,11 +50,6 @@ type RolloutTestOptions = {
 };
 type RolloutExpectedTestFailureOptions = RolloutTestOptions & {
   errorIncludes: string;
-};
-type RolloutUserDecryptionResponseOptions = {
-  expectedClientError: string;
-  requestExtraData: string;
-  versionsByNode: KmsResponseVersion[];
 };
 type RolloutContractTaskOptions = {
   env?: Record<string, string>;
@@ -76,12 +62,9 @@ type RolloutLockOptions = {
 
 export type RolloutRunContext = {
   applyVersionLock(label: string, options: RolloutVersionLockOptions): Promise<void>;
-  checkUserDecryptionResponses(label: string, options: RolloutUserDecryptionResponseOptions): Promise<void>;
   expectTestFailure(profile: string, options: RolloutExpectedTestFailureOptions): Promise<void>;
   readState(): Promise<State>;
   refreshDiscovery(): Promise<void>;
-  registerKmsContext(label: string, contextId: string): Promise<void>;
-  runCoprocessorSql(label: string, sql: string): Promise<void>;
   runGatewayContractTask(command: string, options?: RolloutContractTaskOptions): Promise<void>;
   runHostContractTask(command: string, options?: RolloutContractTaskOptions): Promise<void>;
   // Runs a host contract task against a specific host chain's deploy container
@@ -102,8 +85,6 @@ export type RolloutRunContext = {
 export type RolloutRunbook = (ctx: RolloutRunContext) => Promise<void> | void;
 
 type RolloutContextOperations = {
-  executeCoprocessorSql: typeof executeCoprocessorSql;
-  registerKmsContext: typeof registerKmsContext;
   setRunning: typeof setRunning;
   upgradeThresholdKmsNode: typeof upgradeThresholdKmsNode;
   waitForPartiesRunning: typeof waitForPartiesRunning;
@@ -138,7 +119,6 @@ const runRolloutTest = async (receipt: RolloutReceipt, profile: string, options:
     noHardhatCompile: options.noHardhatCompile ?? true,
     parallel: options.parallel,
     grep: options.grep,
-    containerEnv: options.containerEnv,
   });
 };
 
@@ -157,75 +137,6 @@ export const createRolloutContext = (
         overrides: (options.overrides ?? []).map((override) => override.group),
       },
       lockFile: options.lockFile,
-    });
-  },
-  async checkUserDecryptionResponses(label, options) {
-    const state = await loadState();
-    if (!state || state.scenario.kms.mode !== "threshold") {
-      throw new PreflightError("checkUserDecryptionResponses requires a running threshold KMS cluster");
-    }
-    if (options.versionsByNode.length !== state.scenario.kms.committeeSize) {
-      throw new PreflightError(
-        `checkUserDecryptionResponses expects one version per KMS node (${state.scenario.kms.committeeSize}); configured ${options.versionsByNode.length}`,
-      );
-    }
-
-    const previousIds = await snapshotUserDecryptionResponseIds(state);
-    await runRolloutTest(receipt, "user-decryption", {
-      containerEnv: { ROLLOUT_USER_DECRYPTION_EXTRA_DATA: options.requestExtraData },
-      grep: "test rollout user decrypt with configured extraData$",
-      parallel: false,
-    });
-    const responses = await waitForUserDecryptionResponses(state, previousIds);
-    const observedVersions = responses.map((response) => responseVersion(response.extraData));
-    if (observedVersions.some((version, index) => version !== options.versionsByNode[index])) {
-      throw new PreflightError(
-        `${label}: expected node response versions ${options.versionsByNode.join(", ")}; observed ${observedVersions
-          .map((version) => version ?? "invalid")
-          .join(", ")}`,
-      );
-    }
-    const contexts = new Set(
-      responses
-        .filter((response) => responseVersion(response.extraData) === "v1")
-        .map((response) => response.extraData.slice(4).toLowerCase()),
-    );
-    if (contexts.size > 1) {
-      throw new PreflightError(`${label}: v1 responses do not carry the same KMS context`);
-    }
-
-    let observedClientError: string | undefined;
-    try {
-      await runRolloutTest(receipt, "user-decryption", {
-        grep: "test user decrypt ebool$",
-        parallel: false,
-      });
-    } catch (error) {
-      if (!matchesExpectedTestFailure(error, options.expectedClientError)) {
-        throw error;
-      }
-      observedClientError = error.stderr.slice(-2_000);
-    }
-    if (!observedClientError) {
-      throw new PreflightError(
-        `user-decryption unexpectedly passed; expected an error containing ${JSON.stringify(options.expectedClientError)}`,
-      );
-    }
-    await receipt.record("user-decryption-responses", label, {
-      details: {
-        responseProbe: {
-          decryptionId: responses[0]?.decryptionId,
-          requestExtraData: options.requestExtraData,
-          responses: responses
-            .map(({ extraData, nodeId, status }) => ({ extraData, nodeId, status }))
-            .sort((a, b) => a.nodeId - b.nodeId),
-        },
-        legacyClientProbe: {
-          requestExtraData: "0x00",
-          errorIncludes: options.expectedClientError,
-          observedError: observedClientError,
-        },
-      },
     });
   },
   async expectTestFailure(profile, options) {
@@ -256,24 +167,6 @@ export const createRolloutContext = (
   async refreshDiscovery() {
     await refreshStackDiscovery();
     await receipt.record("refresh-discovery", "refreshed runtime addresses");
-  },
-  async registerKmsContext(label, contextId) {
-    const state = await loadState();
-    if (!state) {
-      throw new PreflightError("Stack is not running; run ctx.up(...) first");
-    }
-    const databases = await (operationOverrides.registerKmsContext ?? registerKmsContext)(state, contextId);
-    await receipt.record("register-kms-context", label, {
-      details: { contextId, databases },
-    });
-  },
-  async runCoprocessorSql(label, sql) {
-    const state = await loadState();
-    if (!state) {
-      throw new PreflightError("Stack is not running; run ctx.up(...) first");
-    }
-    await (operationOverrides.executeCoprocessorSql ?? executeCoprocessorSql)(state, sql);
-    await receipt.record("coprocessor-sql", label);
   },
   async runGatewayContractTask(command, options = {}) {
     await runContractTask("gateway-sc", "gateway-sc-deploy", command, options);

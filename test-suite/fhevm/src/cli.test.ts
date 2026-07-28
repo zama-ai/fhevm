@@ -5,7 +5,6 @@ import path from "node:path";
 import { resolveLogsFollow } from "./cli";
 import {
   buildTestContainerArgs,
-  containerEnvArgs,
   dbRevertDeleteExpectations,
   dbRevertTargetBlock,
   keyBootstrapLogArgs,
@@ -283,13 +282,6 @@ describe("cli", () => {
       "GATEWAY_RPC_URL=",
       TEST_SUITE_CONTAINER,
       "./run-tests.sh",
-    ]);
-  });
-
-  test("renders rollout probe env as docker exec arguments", () => {
-    expect(containerEnvArgs({ ROLLOUT_USER_DECRYPTION_EXTRA_DATA: "0x0107" })).toEqual([
-      "-e",
-      "ROLLOUT_USER_DECRYPTION_EXTRA_DATA=0x0107",
     ]);
   });
 

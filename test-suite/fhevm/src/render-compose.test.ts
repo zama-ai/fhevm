@@ -149,11 +149,6 @@ describe("render-compose", () => {
     expect(volumes).toContain("fhevm_kms_core_keys:/app/kms/core/service/keys");
   });
 
-  test("keeps localhost MinIO URLs reachable from the e2e container", async () => {
-    const doc = await loadMergedComposeDoc("test-suite");
-    expect(doc.services["test-suite-e2e-debug"]?.network_mode).toBe("container:fhevm-minio");
-  });
-
   test("renders listener-core local override for the publisher only", async () => {
     await withTempStateDir(async () => {
       await mkdir(path.dirname(envPath("coprocessor")), { recursive: true });
@@ -270,14 +265,12 @@ describe("render-compose", () => {
       await writeFile(envPath("coprocessor"), "\n");
       await generateComposeOverrides(gatewayContractsOverrideState, stackSpecForState(gatewayContractsOverrideState));
       const doc = YAML.parse(await readFile(composePath("gateway-sc"), "utf8")) as {
-        services: Record<string, { image?: string; build?: unknown; command?: string[] }>;
+        services: Record<string, { image?: string; build?: unknown }>;
       };
       expect(doc.services["gateway-sc-trigger-keygen"]?.image).toContain(":fhevm-local");
       expect(doc.services["gateway-sc-trigger-keygen"]?.build).toBeTruthy();
-      expect(doc.services["gateway-sc-trigger-keygen"]?.command?.[0]).toContain("${KEYGEN_PARAMS_TYPE:-0}");
       expect(doc.services["gateway-sc-trigger-crsgen"]?.image).toContain(":fhevm-local");
       expect(doc.services["gateway-sc-trigger-crsgen"]?.build).toBeTruthy();
-      expect(doc.services["gateway-sc-trigger-crsgen"]?.command?.[0]).toContain("${KEYGEN_PARAMS_TYPE:-0}");
     });
   });
 

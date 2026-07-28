@@ -31,9 +31,6 @@ const fakeContext = () => {
     async applyVersionLock(label, options) {
       calls.push(`apply-version-lock:${label}:${options.lockFile}`);
     },
-    async checkUserDecryptionResponses(label) {
-      calls.push(`user-decryption-responses:${label}`);
-    },
     async expectTestFailure(profile, options) {
       calls.push(`expected-test-failure:${profile}:${options.errorIncludes}`);
     },
@@ -43,12 +40,6 @@ const fakeContext = () => {
     },
     async refreshDiscovery() {
       calls.push("refresh-discovery");
-    },
-    async registerKmsContext(label, contextId) {
-      calls.push(`register-kms-context:${label}:${contextId}`);
-    },
-    async runCoprocessorSql(label) {
-      calls.push(`coprocessor-sql:${label}`);
     },
     async runGatewayContractTask(command) {
       calls.push(`gateway:${command}`);
@@ -111,7 +102,9 @@ describe("rollout runbook", () => {
   });
 
   test("loads the checked-in v0.12 to v0.13 runbook", async () => {
-    await expect(loadRolloutRunbook(path.join(CLI_DIR, "rollouts/v0.12-to-v0.13/run.ts"))).resolves.toBeFunction();
+    await expect(
+      loadRolloutRunbook(path.join(CLI_DIR, "rollouts/v0.12-to-v0.13-protocol-upgrade/run.ts")),
+    ).resolves.toBeFunction();
   });
 
   test("executes runbook helpers in code order", async () => {

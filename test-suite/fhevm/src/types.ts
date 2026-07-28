@@ -266,7 +266,6 @@ export type CleanOptions = {
 };
 
 export type TestOptions = {
-  containerEnv?: Record<string, string>;
   grep?: string;
   network: string;
   verbose: boolean;

@@ -312,13 +312,9 @@ export const requiresLegacyRelayerReadinessConfig = (state: Pick<CompatState, "v
 export const requiresLegacyRelayerKeyUrlConfig = (state: Pick<CompatState, "versions">) =>
   versionBeforeReleaseFamily(state.versions.env.RELAYER_VERSION ?? "", [0, 14, 0], { unparsed: "modern" });
 
-/** Detects when a kms-core image still expects the legacy config schema. */
-export const requiresLegacyKmsCoreVersion = (version: string) =>
-  versionBeforeReleaseFamily(version, [0, 13, 10]);
-
-/** Detects when the stack's default kms-core still expects the legacy config schema. */
+/** Detects when kms-core still expects the legacy config schema. */
 export const requiresLegacyKmsCoreConfig = (state: Pick<CompatState, "versions">) =>
-  requiresLegacyKmsCoreVersion(state.versions.env.CORE_VERSION ?? "");
+  versionBeforeReleaseFamily(state.versions.env.CORE_VERSION ?? "", [0, 13, 10]);
 
 /** Detects when test-suite should use the legacy relayer base URL. */
 export const requiresLegacyRelayerUrl = (state: Pick<CompatState, "versions">) =>
@@ -378,7 +374,7 @@ export const requiresLegacyGatewayKmsGenerationAddress = (state: Pick<CompatStat
 
 /** Detects when contract tasks still expect the legacy internal PauserSet flag name. */
 const requiresLegacyHostPauserTaskFlag = (version: string) =>
-  versionBeforeReleaseFamily(version, [0, 12, 1], { unparsed: "modern" });
+  versionBeforeReleaseFamily(version, [0, 13, 0], { unparsed: "modern" });
 
 const requiresLegacyGatewayPauserTaskFlag = (version: string) =>
   versionBeforeReleaseFamily(version, [0, 13, 0], { unparsed: "modern" });

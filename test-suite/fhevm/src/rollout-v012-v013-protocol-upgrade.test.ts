@@ -4,8 +4,8 @@ import {
   normalizeLocalOneNodeMpcThreshold,
   resolveRolloutTestMode,
   rolloutPhaseTestProfiles,
-} from "../rollouts/v0.12-to-v0.13/run";
-import { phaseVersions, scenario } from "../rollouts/v0.12-to-v0.13/versions";
+} from "../rollouts/v0.12-to-v0.13-protocol-upgrade/run";
+import { phaseVersions, scenario } from "../rollouts/v0.12-to-v0.13-protocol-upgrade/versions";
 
 test("starts v0.12 without new v0.13 host chains", () => {
   expect(scenario).toBe("two-of-three");

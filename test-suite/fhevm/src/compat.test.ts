@@ -13,7 +13,6 @@ import {
   requiresLegacyGatewayKmsGenerationAddress,
   requiresLegacyHostChainSeedShim,
   requiresLegacyKmsCoreConfig,
-  requiresLegacyKmsCoreVersion,
   requiresLegacyRelayerUrl,
   requiresModernHostAddressArtifacts,
   supportsConsensusDetector,
@@ -284,8 +283,6 @@ describe("compat", () => {
   });
 
   test("treats kms-core v0.13.10 prereleases as modern config schema", () => {
-    expect(requiresLegacyKmsCoreVersion("v0.13.3")).toBe(true);
-    expect(requiresLegacyKmsCoreVersion("v0.13.10")).toBe(false);
     expect(
       requiresLegacyKmsCoreConfig({
         versions: {
@@ -376,7 +373,7 @@ describe("compat", () => {
     expect(policy.composeEnv.GATEWAY_ADD_PAUSERS_INTERNAL_FLAG).toBe("--use-internal-pauser-set-address");
   });
 
-  test("keeps legacy pauser flags for v0.12.0 contract tags", () => {
+  test("keeps legacy pauser flags for v0.12 contract tags", () => {
     const policy = compatPolicyForState({
       versions: {
         target: "latest-supported",
@@ -391,24 +388,6 @@ describe("compat", () => {
       scenario: testDefaultScenario(),
     });
     expect(policy.composeEnv.HOST_ADD_PAUSERS_INTERNAL_FLAG).toBe("--use-internal-pauser-set-address");
-    expect(policy.composeEnv.GATEWAY_ADD_PAUSERS_INTERNAL_FLAG).toBe("--use-internal-pauser-set-address");
-  });
-
-  test("uses the proxy pauser flag from host contracts v0.12.1", () => {
-    const policy = compatPolicyForState({
-      versions: {
-        target: "latest-supported",
-        lockName: "v0.12.1.json",
-        env: {
-          HOST_VERSION: "v0.12.1",
-          GATEWAY_VERSION: "v0.12.1",
-        } as Record<string, string>,
-        sources: [],
-      },
-      overrides: [],
-      scenario: testDefaultScenario(),
-    });
-    expect(policy.composeEnv.HOST_ADD_PAUSERS_INTERNAL_FLAG).toBe("--use-internal-proxy-address");
     expect(policy.composeEnv.GATEWAY_ADD_PAUSERS_INTERNAL_FLAG).toBe("--use-internal-pauser-set-address");
   });
 

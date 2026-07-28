@@ -4,7 +4,7 @@ on:
   workflow_dispatch:
     inputs:
       runbook:
-        description: "Path relative to test-suite/fhevm (for example rollouts/v0.13.0-testnet/run.ts)"
+        description: "Path relative to test-suite/fhevm (for example rollouts/v0.13.10-to-v0.13.20-kms-node-by-node/run.ts)"
         required: true
         type: string
 

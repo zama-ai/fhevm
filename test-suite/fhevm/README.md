@@ -195,7 +195,7 @@ The lock file replaces only the version resolution step — preflight, boot pipe
 Release rollouts are executable TypeScript runbooks under `rollouts/`. A runbook boots one baseline stack, performs each upgrade step in order, preserves chain/database/container state, and runs rollout-safe e2e coverage after each step:
 
 ```sh
-./fhevm-cli rollout run ./rollouts/v0.12-to-v0.13/run.ts
+./fhevm-cli rollout run ./rollouts/v0.12-to-v0.13-protocol-upgrade/run.ts
 ```
 
 Use `./fhevm-cli rollout receipt` to print the markdown receipt of the most recent rollout run.

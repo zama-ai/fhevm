@@ -525,9 +525,6 @@ const runTestsCommand = (
   options: Pick<TestOptions, "network" | "verbose" | "parallel" | "noHardhatCompile"> & { grep: string },
 ) => runTestsArgs(options).map(shellEscape).join(" ");
 
-export const containerEnvArgs = (env: Record<string, string> | undefined) =>
-  Object.entries(env ?? {}).flatMap(([key, value]) => ["-e", `${key}=${value}`]);
-
 /** Runs a narrow e2e grep inside the test-suite container. */
 const assertMatchedTests = (output: string, label: string) => {
   if (!matchedTests(output)) {
@@ -1746,10 +1743,7 @@ export const test = async (testName: string | undefined, options: TestOptions) =
         if (KEY_BOOTSTRAP_PROFILES.has(name)) {
           await waitForKeyBootstrap(state);
         }
-        const result = await runWithHeartbeat(
-          buildTestContainerArgs(["sh", "-lc", command], containerEnvArgs(options.containerEnv)),
-          `test ${name}`,
-        );
+        const result = await runWithHeartbeat(buildTestContainerArgs(["sh", "-lc", command]), `test ${name}`);
         assertMatchedTests(result.stdout + result.stderr, `test ${name}`);
       });
     };
@@ -1879,10 +1873,7 @@ export const test = async (testName: string | undefined, options: TestOptions) =
     const started = Date.now();
     const command = runTestsCommand({ ...options, grep: options.grep });
     await runLogged("custom", started, async () => {
-      const result = await runWithHeartbeat(
-        buildTestContainerArgs(["sh", "-lc", command], containerEnvArgs(options.containerEnv)),
-        "test custom",
-      );
+      const result = await runWithHeartbeat(buildTestContainerArgs(["sh", "-lc", command]), "test custom");
       assertMatchedTests(result.stdout + result.stderr, "test custom");
     });
     return;

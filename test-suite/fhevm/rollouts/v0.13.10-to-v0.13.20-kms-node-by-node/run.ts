@@ -1,14 +1,13 @@
 import type { RolloutRunContext } from "../../src/commands/rollout-run";
 import { from, scenario, to, versionSources } from "./versions";
 
-const testOptions = { parallel: false } as const;
-const testRollout = (ctx: RolloutRunContext) => ctx.test("rollout-standard", testOptions);
+const testRollout = (ctx: RolloutRunContext) => ctx.test("rollout-standard", { parallel: false });
 const testRequiredNode = (ctx: RolloutRunContext) =>
-  ctx.test("user-decryption", { ...testOptions, grep: "test user decrypt ebool$" });
+  ctx.test("user-decryption", { grep: "test user decrypt ebool$", parallel: false });
 
 type KmsCoreVersions = Record<string, string> & { CORE_VERSION: string };
 
-export type ProgressiveKmsCoreRunbook = {
+export type KmsNodeByNodeRunbook = {
   from: KmsCoreVersions;
   overrides?: Parameters<RolloutRunContext["up"]>[0]["overrides"];
   scenario: string;
@@ -16,9 +15,9 @@ export type ProgressiveKmsCoreRunbook = {
   versionSources: string[];
 };
 
-export const runProgressiveKmsCoreRollout = async (
+export const runKmsNodeByNodeUpgrade = async (
   ctx: RolloutRunContext,
-  config: ProgressiveKmsCoreRunbook,
+  config: KmsNodeByNodeRunbook,
 ) => {
   const baselineLock = await ctx.writeVersionLock("00-kms-core-baseline", {
     versions: config.from,
@@ -42,9 +41,8 @@ export const runProgressiveKmsCoreRollout = async (
 };
 
 export const run = (ctx: RolloutRunContext) =>
-  runProgressiveKmsCoreRollout(ctx, {
+  runKmsNodeByNodeUpgrade(ctx, {
     from,
-    overrides: [{ group: "test-suite" }],
     scenario,
     to,
     versionSources,

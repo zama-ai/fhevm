@@ -4,17 +4,20 @@ import path from "node:path";
 import type { RolloutRunContext } from "./commands/rollout-run";
 import { loadRolloutRunbook } from "./commands/rollout-run";
 import { resolveKmsTopology } from "./scenario/resolve";
-import { from, scenario, to } from "../rollouts/kms-core-progressive/versions";
+import { from, scenario, to } from "../rollouts/v0.13.10-to-v0.13.20-kms-node-by-node/versions";
 
-const RUNBOOK = path.resolve(import.meta.dir, "../rollouts/kms-core-progressive/run.ts");
+const RUNBOOK = path.resolve(
+  import.meta.dir,
+  "../rollouts/v0.13.10-to-v0.13.20-kms-node-by-node/run.ts",
+);
 
-describe("progressive KMS core rollout", () => {
+describe("v0.13.10 to v0.13.20 KMS node-by-node upgrade", () => {
   test("keeps SDK and connector versions unchanged", () => {
     expect(scenario).toBe("four-party-threshold-kms");
-    expect(from.RELAYER_SDK_VERSION).toBe("0.4.2");
+    expect("RELAYER_SDK_VERSION" in from).toBe(false);
     const baseline = from as Record<string, string>;
     expect(Object.entries(to).filter(([key, value]) => baseline[key] !== value)).toEqual([
-      ["CORE_VERSION", "v0.13.22"],
+      ["CORE_VERSION", "v0.13.20"],
     ]);
   });
 
@@ -25,8 +28,8 @@ describe("progressive KMS core rollout", () => {
         calls.push(`lock:${name}:${options.versions.CORE_VERSION}`);
         return `/tmp/${name}.lock.json`;
       },
-      async up(options: { lockFile: string; overrides?: { group: string }[]; scenario?: string }) {
-        calls.push(`up:${options.scenario}:${options.lockFile}:${options.overrides?.map(({ group }) => group).join(",")}`);
+      async up(options: { lockFile: string; scenario?: string }) {
+        calls.push(`up:${options.scenario}:${options.lockFile}`);
       },
       async readState() {
         calls.push("state");
@@ -35,10 +38,8 @@ describe("progressive KMS core rollout", () => {
       async upgradeKmsNodes(nodeIds: readonly number[], options: { lockFile: string }) {
         calls.push(`upgrade:${nodeIds.join(",")}:${options.lockFile}`);
       },
-      async test(profile: string, options?: { grep?: string; noHardhatCompile?: boolean }) {
-        calls.push(
-          `test:${profile}:${options?.noHardhatCompile === false ? "compile" : "no-compile"}${options?.grep ? `:${options.grep}` : ""}`,
-        );
+      async test(profile: string, options?: { grep?: string }) {
+        calls.push(`test:${profile}${options?.grep ? `:${options.grep}` : ""}`);
       },
       async withRequiredKmsNode(nodeId: number, task: () => Promise<void>) {
         calls.push(`require:${nodeId}`);
@@ -49,27 +50,27 @@ describe("progressive KMS core rollout", () => {
     await (await loadRolloutRunbook(RUNBOOK))(context);
 
     expect(calls).toEqual([
-      "lock:00-kms-core-baseline:v0.13.20",
-      "lock:01-kms-core-target:v0.13.22",
-      "up:four-party-threshold-kms:/tmp/00-kms-core-baseline.lock.json:test-suite",
-      "test:rollout-standard:no-compile",
+      "lock:00-kms-core-baseline:v0.13.10",
+      "lock:01-kms-core-target:v0.13.20",
+      "up:four-party-threshold-kms:/tmp/00-kms-core-baseline.lock.json",
+      "test:rollout-standard",
       "state",
       "upgrade:1:/tmp/01-kms-core-target.lock.json",
       "require:1",
-      "test:user-decryption:no-compile:test user decrypt ebool$",
-      "test:rollout-standard:no-compile",
+      "test:user-decryption:test user decrypt ebool$",
+      "test:rollout-standard",
       "upgrade:2:/tmp/01-kms-core-target.lock.json",
       "require:2",
-      "test:user-decryption:no-compile:test user decrypt ebool$",
-      "test:rollout-standard:no-compile",
+      "test:user-decryption:test user decrypt ebool$",
+      "test:rollout-standard",
       "upgrade:3:/tmp/01-kms-core-target.lock.json",
       "require:3",
-      "test:user-decryption:no-compile:test user decrypt ebool$",
-      "test:rollout-standard:no-compile",
+      "test:user-decryption:test user decrypt ebool$",
+      "test:rollout-standard",
       "upgrade:4:/tmp/01-kms-core-target.lock.json",
       "require:4",
-      "test:user-decryption:no-compile:test user decrypt ebool$",
-      "test:rollout-standard:no-compile",
+      "test:user-decryption:test user decrypt ebool$",
+      "test:rollout-standard",
     ]);
   });
 });

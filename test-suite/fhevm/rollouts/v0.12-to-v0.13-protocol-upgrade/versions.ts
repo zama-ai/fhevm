@@ -85,4 +85,8 @@ export const phaseVersions = {
   coprocessor: to,
 };
 
-export const versionSources = [`rollout=v0.12-to-v0.13`, `target=${targetTag}`, `kms-core=v0.13.20-0`];
+export const versionSources = [
+  `rollout=v0.12-to-v0.13-protocol-upgrade`,
+  `target=${targetTag}`,
+  `kms-core=v0.13.20-0`,
+];

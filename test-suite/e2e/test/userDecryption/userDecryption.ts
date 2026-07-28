@@ -1,12 +1,7 @@
 import { expect } from 'chai';
 import { ethers } from 'hardhat';
 
-import {
-  createInstances,
-  relayerApiKey,
-  relayerUrl,
-  verifyingContractAddressDecryption,
-} from '../instance';
+import { createInstances } from '../instance';
 import { getSigners, initSigners } from '../signers';
 
 describe('User decryption', function () {
@@ -30,72 +25,6 @@ describe('User decryption', function () {
       signer: this.signers.alice,
     });
     expect(decryptedValue).to.equal(true);
-  });
-
-  it('test rollout user decrypt with configured extraData', async function () {
-    const extraData = process.env.ROLLOUT_USER_DECRYPTION_EXTRA_DATA;
-    if (!extraData) {
-      this.skip();
-    }
-
-    const handle = await this.contract.xBool();
-    const transportKeypair = await this.instances.alice.generateKeypair();
-    const publicKey = transportKeypair.publicKey.startsWith('0x')
-      ? transportKeypair.publicKey
-      : `0x${transportKeypair.publicKey}`;
-    const startTimestamp = Math.floor(Date.now() / 1000);
-    const durationDays = 10;
-    const chainId = Number((await ethers.provider.getNetwork()).chainId);
-    const contractAddresses = [this.contractAddress];
-    const signature = await this.signers.alice.signTypedData(
-      {
-        name: 'Decryption',
-        version: '1',
-        chainId,
-        verifyingContract: verifyingContractAddressDecryption,
-      },
-      {
-        UserDecryptRequestVerification: [
-          { name: 'publicKey', type: 'bytes' },
-          { name: 'contractAddresses', type: 'address[]' },
-          { name: 'startTimestamp', type: 'uint256' },
-          { name: 'durationDays', type: 'uint256' },
-          { name: 'extraData', type: 'bytes' },
-        ],
-      },
-      {
-        publicKey,
-        contractAddresses,
-        startTimestamp,
-        durationDays,
-        extraData,
-      },
-    );
-    const response = await fetch(`${relayerUrl.replace(/\/$/, '')}/user-decrypt`, {
-      method: 'POST',
-      headers: {
-        'content-type': 'application/json',
-        'ZAMA-SDK-NAME': '@zama-fhe/relayer-sdk',
-        'ZAMA-SDK-VERSION': '0.4.2',
-        ...(relayerApiKey ? { 'x-api-key': relayerApiKey } : {}),
-      },
-      body: JSON.stringify({
-        handleContractPairs: [{ handle, contractAddress: this.contractAddress }],
-        requestValidity: {
-          startTimestamp: String(startTimestamp),
-          durationDays: String(durationDays),
-        },
-        contractsChainId: String(chainId),
-        contractAddresses,
-        userAddress: this.signers.alice.address,
-        signature: signature.replace(/^0x/, ''),
-        publicKey: publicKey.replace(/^0x/, ''),
-        extraData,
-      }),
-    });
-    const body = (await response.json()) as { result?: { jobId?: string } };
-    expect(response.status, JSON.stringify(body)).to.equal(202);
-    expect(body.result?.jobId, JSON.stringify(body)).to.be.a('string').and.not.be.empty;
   });
 
   it('test user decrypt euint8', async function () {

@@ -46,7 +46,7 @@ services:
       - ${FHEVM_STATE_DIR:-../../../.fhevm}/runtime/env/gateway-sc.env
     # Only pre-v0.13 gateway-KMS bundles use this path; v0.13+ Gateway KMSGeneration is read-only.
     command:
-      - npx hardhat task:triggerKeygen --params-type ${KEYGEN_PARAMS_TYPE:-0} --use-internal-proxy-address true
+      - npx hardhat task:triggerKeygen --params-type 0 --use-internal-proxy-address true
     depends_on:
       gateway-sc-add-pausers:
         condition: service_completed_successfully
@@ -60,7 +60,7 @@ services:
       - ${FHEVM_STATE_DIR:-../../../.fhevm}/runtime/env/gateway-sc.env
     # Same pre-v0.13 gateway-KMS compatibility path as gateway-sc-trigger-keygen.
     command:
-      - npx hardhat task:triggerCrsgen --params-type ${KEYGEN_PARAMS_TYPE:-0} --max-bit-length 2048 --use-internal-proxy-address true
+      - npx hardhat task:triggerCrsgen --params-type 0 --max-bit-length 2048 --use-internal-proxy-address true
     depends_on:
       gateway-sc-trigger-keygen:
         condition: service_completed_successfully
