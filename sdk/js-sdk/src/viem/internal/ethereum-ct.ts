@@ -3,8 +3,6 @@ import type {
   GeneratePrivateKeyReturnType,
   GetPublicKeyParameters,
   GetPublicKeyReturnType,
-  HashTypedDataParameters,
-  HashTypedDataReturnType,
   MnemonicToAccountParameters,
   MnemonicToAccountReturnType,
   RecoverAddressParameters,
@@ -15,16 +13,18 @@ import type {
 import type { Bytes65Hex, BytesHex, ChecksummedAddress } from '../../core/types/primitives.js';
 import { generatePrivateKey, mnemonicToAccount, privateKeyToAccount, sign } from 'viem/accounts';
 import {
+  call,
   decode,
   encode,
   encodePacked,
   getChainId,
+  hashTypedData,
   readContract,
   recoverTypedDataAddress,
   signTypedData,
 } from './ethereum.js';
-import { asBytes32Hex, bytesToHex } from '../../core/base/bytes.js';
-import { hashTypedData, recoverAddress } from 'viem';
+import { bytesToHex } from '../../core/base/bytes.js';
+import { recoverAddress } from 'viem';
 
 ////////////////////////////////////////////////////////////////////////////////
 
@@ -35,9 +35,11 @@ export const cleartextEthereumModule: CleartextEthereumModuleFactory = () => {
       encode,
       encodePacked,
       recoverTypedDataAddress,
+      hashTypedData,
       signTypedData,
       getChainId,
       readContract,
+      call,
       mnemonicToAccount: (parameters: MnemonicToAccountParameters): MnemonicToAccountReturnType => {
         const signer = mnemonicToAccount(parameters.mnemonic, { path: parameters.path });
         const pk = signer.getHdKey().privateKey;
@@ -57,16 +59,6 @@ export const cleartextEthereumModule: CleartextEthereumModuleFactory = () => {
       },
       recoverAddress: (parameters: RecoverAddressParameters): Promise<RecoverAddressReturnType> => {
         return recoverAddress(parameters) as Promise<ChecksummedAddress>;
-      },
-      hashTypedData: (parameters: HashTypedDataParameters): HashTypedDataReturnType => {
-        return asBytes32Hex(
-          hashTypedData({
-            domain: parameters.domain,
-            types: parameters.types as Record<string, Array<{ name: string; type: string }>>,
-            primaryType: parameters.primaryType,
-            message: parameters.message,
-          }),
-        );
       },
     }),
   });
