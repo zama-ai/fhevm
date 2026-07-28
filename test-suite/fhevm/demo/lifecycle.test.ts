@@ -225,6 +225,19 @@ describe("demo lifecycle collision policy", () => {
     expect(script).toContain('NODE_PATH="$ROOT/solana/demo-dapp/node_modules" bun run demo:seed');
   });
 
+  test("fresh bring-up refreshes the file-linked SDK after generating ESM", async () => {
+    const script = await fs.readFile(
+      path.join(import.meta.dir, "../../../solana/scripts/e2e/clean-e2e.sh"),
+      "utf8",
+    );
+    const build = script.indexOf("npm ci && npm run build:esm");
+    const refresh = script.indexOf("bun install --force --frozen-lockfile");
+    const canary = script.indexOf("await import('@fhevm/sdk/solana/vault')");
+    expect(build).toBeGreaterThan(-1);
+    expect(refresh).toBeGreaterThan(build);
+    expect(canary).toBeGreaterThan(refresh);
+  });
+
   test("Solana setup keeps every lifecycle compose call on the per-boot project", async () => {
     const script = await fs.readFile(
       path.join(
