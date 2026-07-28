@@ -56,6 +56,11 @@ export async function resolveFhevmClientFrozenContext(fhevm: FhevmBase<FhevmChai
   const kmsVerifierAddress: ChecksummedAddress = addressToChecksummedAddress(
     asAddress(fhevm.chain.fhevm.contracts.kmsVerifier.address),
   );
+  // ProtocolConfig only exists on v0.14+ deployments — absent on older chains.
+  const protocolConfigAddress: ChecksummedAddress | undefined =
+    fhevm.chain.fhevm.contracts.protocolConfig === undefined
+      ? undefined
+      : addressToChecksummedAddress(asAddress(fhevm.chain.fhevm.contracts.protocolConfig.address));
 
   // Design note — reads are intentionally NOT pinned to a block number.
   // All protocol contracts (ACL, KMSVerifier, InputVerifier, ProtocolConfig, …)
@@ -63,18 +68,25 @@ export async function resolveFhevmClientFrozenContext(fhevm: FhevmBase<FhevmChai
   // `getVersion()` in one step, so this batch either all observes the pre-upgrade
   // versions or all observes the post-upgrade ones — never a mixed, half-applied
   // state. Capturing the whole basis in one call is what keeps it coherent.
-  const [aclVersion, inputVerifierVersion, kmsVerifierVersion] = (await executeWithBatching<unknown>(
-    [
-      () => getHostContractVersion(fhevm, { address: aclAddress }),
-      () => getHostContractVersion(fhevm, { address: inputVerifierAddress }),
-      () => getHostContractVersion(fhevm, { address: kmsVerifierAddress }),
-    ],
-    fhevm.options.batchRpcCalls,
-  )) as [HostContractVersion, HostContractVersion, HostContractVersion];
+  const [aclVersion, inputVerifierVersion, kmsVerifierVersion, protocolConfigVersion] =
+    (await executeWithBatching<unknown>(
+      [
+        () => getHostContractVersion(fhevm, { address: aclAddress }),
+        () => getHostContractVersion(fhevm, { address: inputVerifierAddress }),
+        () => getHostContractVersion(fhevm, { address: kmsVerifierAddress }),
+        ...(protocolConfigAddress === undefined
+          ? []
+          : [() => getHostContractVersion(fhevm, { address: protocolConfigAddress })]),
+      ],
+      fhevm.options.batchRpcCalls,
+    )) as [HostContractVersion, HostContractVersion, HostContractVersion, HostContractVersion | undefined];
 
   assertIsHostContractVersionOf(aclVersion, 'ACL');
   assertIsHostContractVersionOf(inputVerifierVersion, 'InputVerifier');
   assertIsHostContractVersionOf(kmsVerifierVersion, 'KMSVerifier');
+  if (protocolConfigVersion !== undefined) {
+    assertIsHostContractVersionOf(protocolConfigVersion, 'ProtocolConfig');
+  }
 
   const protocolContext = protocolContextFromAclVersion(fhevm.chain, aclVersion);
 
@@ -86,6 +98,7 @@ export async function resolveFhevmClientFrozenContext(fhevm: FhevmBase<FhevmChai
       ACL: aclVersion,
       InputVerifier: inputVerifierVersion,
       KMSVerifier: kmsVerifierVersion,
+      ...(protocolConfigVersion === undefined ? {} : { ProtocolConfig: protocolConfigVersion }),
     },
     protocolVersion: protocolContext.protocolVersion,
     pubKeyCrsVersion: protocolContext.pubKeyCrsVersion,
