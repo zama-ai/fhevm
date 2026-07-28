@@ -29,6 +29,17 @@ export class FhevmSdk implements SdkInstance {
     this.#auth = auth;
   }
 
+  /**
+   * Escape hatch exposing the underlying `@fhevm/sdk` client for suites that
+   * must exercise raw client actions the `SdkInstance` interface does not
+   * cover — e.g. the ERC-1271 SDK-client-gap tests, which drive
+   * `signDecryptionPermit` / `parseSignedDecryptionPermit` directly to pin the
+   * SDK's current signature-shape limitations.
+   */
+  get rawClient(): FhevmClient {
+    return this.#fullClient;
+  }
+
   getUserDecryptErrorMessage(parameters: {
     readonly type: 'user-unauthorized' | 'user-equal-contract' | 'contract-unauthorized' | 'permit-expired';
     readonly signer: Signer & { readonly address: string };
