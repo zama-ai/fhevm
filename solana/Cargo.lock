@@ -4967,6 +4967,17 @@ dependencies = [
 ]
 
 [[package]]
+name = "zama-solana-permit"
+version = "0.1.0"
+dependencies = [
+ "bs58",
+ "ed25519-dalek 2.2.0",
+ "serde",
+ "serde_json",
+ "sha3",
+]
+
+[[package]]
 name = "zama-solana-runtime-tests"
 version = "0.1.0"
 dependencies = [
