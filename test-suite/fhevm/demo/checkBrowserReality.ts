@@ -2,9 +2,10 @@
 //
 // A Vite-origin dApp (#1761) reaches the relayer, the proof service and the faucet with browser
 // fetch(), so each must answer the exact dApp origin's CORS preflight (OPTIONS), and the protected
-// local endpoints must accept only the current lifecycle boot capability. This
-// exercises exactly that, from a browser Origin, and exits non-zero (naming the failing endpoint) if
-// any check fails. TS rather than a bash curl script because the header assertions are logic.
+// faucet must accept only the current lifecycle boot capability, while the dApp session must be
+// same-origin and expose that same boot. This exercises exactly that, from a browser Origin, and
+// exits non-zero (naming the failing endpoint) if any check fails. TS rather than a bash curl script
+// because the header assertions are logic.
 //
 // Reads the seeded demo-config for the relayer + proof-service URLs; the faucet and dApp use their
 // lifecycle-owned loopback ports. The browser origin is deliberately the exact Vite origin.
@@ -138,17 +139,27 @@ const main = async (): Promise<void> => {
       },
     },
     {
-      name: "dApp current boot authorization",
+      name: "dApp current boot session",
       run: async () => {
         const response = await fetch(`${DAPP_URL}/api/demo-session`, {
-          headers: authorizationHeaders,
+          headers: {
+            referer: `${ORIGIN}/`,
+            "sec-fetch-dest": "empty",
+            "sec-fetch-site": "same-origin",
+          },
         });
         if (!response.ok) {
-          throw new Error(`authorized demo session returned ${response.status}`);
+          throw new Error(`same-origin demo session returned ${response.status}`);
         }
-        const body = (await response.json()) as { readonly aliceKeypair?: unknown };
+        const body = (await response.json()) as {
+          readonly aliceKeypair?: unknown;
+          readonly config?: { readonly demoBootId?: unknown };
+        };
         if (!Array.isArray(body.aliceKeypair) || body.aliceKeypair.length !== 64) {
-          throw new Error("authorized demo session did not return the burner wallet");
+          throw new Error("same-origin demo session did not return the burner wallet");
+        }
+        if (body.config?.demoBootId !== authorization.bootId) {
+          throw new Error("same-origin demo session did not return the current boot");
         }
       },
     },

@@ -257,7 +257,8 @@ jobs:
         working-directory: test-suite/fhevm
         # fetch() OPTIONS preflights (relayer with RELAYER_PERMISSIVE_CORS on, proof service, faucet)
         # from the exact 127.0.0.1 dApp origin, then exercise the current boot capability against the
-        # protected faucet and Vite session. TS, not bash: the assertions are logic.
+        # protected faucet and the same-origin, current-boot Vite session. TS, not bash: the
+        # assertions are logic.
         run: bun run demo:check-cors
 
       - name: Collect stack logs on failure
