@@ -19,7 +19,7 @@ on:
   workflow_dispatch:
     inputs:
       namespace_suffix:
-        description: "Optional fixed suffix for the fhevm-ci-<actor>-<suffix> namespace (e.g. a ticket id). Leave empty to use this run's own id (always unique)."
+        description: "Optional fixed suffix for the fhevm-ci-<actor>-<suffix> namespace (e.g. a ticket id). Full namespace is capped at 40 chars. Leave empty to use this run's own id (always unique)."
         required: false
         default: ""
       build_images:

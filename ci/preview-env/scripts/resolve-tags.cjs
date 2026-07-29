@@ -244,6 +244,21 @@ module.exports = async ({ core, context, github }) => {
     ? sanitizeNs(`fhevm-ci-${process.env.ACTOR}-${inputs.namespace_suffix || context.runId}`)
     : sanitizeNs(`fhevm-ci-${context.payload.pull_request.user.login}-${context.payload.pull_request.number}`);
 
+  // AWS limits namespace length to 63 chars. If longer, the enclave nodegroup
+  // silently times out after 20 minutes, so fail fast here with margin.
+  // Format: kms-party-<namespace> + two 6-char Crossplane suffixes
+  const NAMESPACE_MAX = 40;
+  if (namespace.length > NAMESPACE_MAX) {
+    throw new Error(
+      `namespace '${namespace}' is ${namespace.length} chars, max is ${NAMESPACE_MAX}: the derived EKS ` +
+        `nodegroup name (kms-party-<namespace> plus two Crossplane suffixes) would exceed AWS's 63-char ` +
+        `limit and the KMS deploy would time out with no readable error. ` +
+        (isDispatch
+          ? `Pass a shorter namespace_suffix.`
+          : `The PR author's login is too long; deploy via workflow_dispatch with a short namespace_suffix instead.`),
+    );
+  }
+
   // Summary first, so a failed resolution still shows exactly what it resolved
   // and what it couldn't.
   await core.summary
