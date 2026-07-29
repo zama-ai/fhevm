@@ -323,6 +323,7 @@ describe("demo lifecycle collision policy", () => {
       "utf8",
     );
     expect(fullVertical.match(/node --preserve-symlinks solana-input\.ts/g)).toHaveLength(2);
+    expect(fullVertical.match(/bun --preserve-symlinks run src\/cli\.ts test solana-/g)).toHaveLength(2);
     expect(adversarial.match(/node --preserve-symlinks solana-input\.ts/g)).toHaveLength(1);
     expect(workflow.match(/node --preserve-symlinks --input-type=module/g)).toHaveLength(2);
     expect(twoHolderTransfer).toContain('run(["node", "--preserve-symlinks", SDK_WORKER]');

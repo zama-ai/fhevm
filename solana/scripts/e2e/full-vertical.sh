@@ -94,7 +94,7 @@ run_public_decrypt_with_proof() {
     PD_MMR_ENCRYPTED_VALUE_ACCOUNT="$pub_encrypted_value_account" PD_ACL_VALUE_KEY="$pub_acl_value_key" \
     PD_MMR_PEAKS="$pub_peaks" PD_MMR_LEAF_COUNT="$pub_leaf_count" PD_MMR_PROOF_SLOT="$pub_proof_slot" \
     PD_MMR_PROOF_BYTES="$pub_mmr_proof_bytes" \
-    ./fhevm-cli test solana-public-decrypt 2>&1)"; then
+    bun --preserve-symlinks run src/cli.ts test solana-public-decrypt 2>&1)"; then
     fail "$label public-decrypt failed: $output"
   fi
   result="$(printf '%s\n' "$output" | tail -1)"
@@ -218,7 +218,7 @@ UD_CID="0x$(python3 -c "print(int('$CTX').to_bytes(32,'big').hex())")"
     UD_RELAYER_URL=http://127.0.0.1:3000 UD_CONTRACTS_CHAIN_ID="$SID" UD_HANDLE="$H" \
     UD_SECRET_KEY="$UD_SK" UD_CONTEXT_ID="$UD_CID" UD_ALLOWED_DOMAIN_KEYS="$USER" \
     UD_ACL_VALUE_KEY="$VK" UD_EXPECTED="$VALUE" \
-    ./fhevm-cli test solana-current-user-decrypt ) \
+    bun --preserve-symlinks run src/cli.ts test solana-current-user-decrypt ) \
   || fail "pure-SDK user-decrypt failed"
 echo "    user-decrypt cleartext=$VALUE OK (PURE-SDK: ed25519 v3 + in-SDK de-signcryption, no kms checkout)"
 
