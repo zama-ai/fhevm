@@ -501,6 +501,24 @@ export const runKmsContextSwitchProfile = async (
       runDecryption,
       runSmoke,
     );
+
+    // 3b) Destroying the retired context must not stall the next switch. The connector
+    //     reads the previous key/CRS material via getCrsMaterials, which resolves the context that
+    //     material was generated under — the one just destroyed. Prove the switch still reshare
+    //     and activates end to end.
+    console.log(
+      "[kms-context-switch] broadcasting a second switch after the destroy (a destroyed context must not stall the next switch)…",
+    );
+    const afterDestroySwitch = await switchKmsContext(
+      state,
+      runDecryption,
+      runSmoke,
+      { rpcUrl, configAddress, where },
+      afterEpoch,
+    );
+    console.log(
+      `[kms-context-switch] post-destroy switch activated: contextId ${afterEpoch.contextId} -> ${afterDestroySwitch.contextId} (epochId=${afterDestroySwitch.epochId})`,
+    );
   }
 
   // 4) Node swap only: prove the promoted spare actually holds a working reshared key (runs last so
@@ -512,6 +530,6 @@ export const runKmsContextSwitchProfile = async (
   console.log(
     isSwap
       ? "[kms-context-switch] PASS — NewKmsContext (node swap) and NewKmsEpoch both activated on chain, the promoted spare serves the 2t+1 quorum, user-decryption works under each transition, and the input-proof app flow held at every checkpoint"
-      : "[kms-context-switch] PASS — NewKmsContext and NewKmsEpoch both activated on chain, the retired context and epoch were destroyed across contract, connector, and KMS Core, user-decryption works under each transition, and the input-proof app flow held at every checkpoint",
+      : "[kms-context-switch] PASS — NewKmsContext and NewKmsEpoch both activated on chain, the retired context and epoch were destroyed across contract, connector, and KMS Core, a further context switch after the destroy still reshared and activated, user-decryption works under each transition, and the input-proof app flow held at every checkpoint",
   );
 };
