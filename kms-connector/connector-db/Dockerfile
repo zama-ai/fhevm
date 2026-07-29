@@ -1,5 +1,5 @@
-# Use BuildKit's bundled Dockerfile frontend so Apple Silicon local builds can resolve the
-# fingerprinted native rust-glibc fallback from Docker's local image store.
+# Keep Docker's bundled frontend: the external frontend pulls the amd64-only
+# Rust base from the registry instead of using clean-e2e's native arm64 alias.
 ARG RUST_IMAGE_VERSION
 
 # Stage 1: install DB Migration tooling

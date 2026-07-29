@@ -145,7 +145,7 @@ describe("demo lifecycle collision policy", () => {
     const compose = await fs.readFile(
       path.join(
         import.meta.dir,
-        "../docker-compose/tracing-docker-compose.yml",
+        "observability-docker-compose.yml",
       ),
       "utf8",
     );
@@ -367,10 +367,30 @@ describe("demo lifecycle collision policy", () => {
     expect(script).toContain("org.zama.rust-glibc.recipe");
     expect(script).toContain("docker pull --platform linux/arm64");
     expect(script).toContain(
-      'temporary_image="fhevm-rust-glibc:$version-arm64-$$"',
+      'cache_image="fhevm-rust-glibc-local:$version-arm64-$recipe_short"',
     );
+    expect(script).toContain("cleanup_native_rust_builder_aliases");
     expect(script).toContain('if [ "$local_arch" != "arm64" ]');
     expect(script).not.toContain("--platform linux/amd64");
+  });
+
+  test("native Rust builder cleanup preserves and restores local tags", () => {
+    const result = Bun.spawnSync({
+      cmd: [
+        "bash",
+        path.join(
+          import.meta.dir,
+          "../../../solana/scripts/e2e/native-rust-builders.test.sh",
+        ),
+      ],
+      stdout: "pipe",
+      stderr: "pipe",
+    });
+    if (result.exitCode !== 0) {
+      throw new Error(
+        `${result.stdout.toString()}\n${result.stderr.toString()}`,
+      );
+    }
   });
 
   test("local Rust overrides use the bundled frontend that honors native images", async () => {

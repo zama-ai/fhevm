@@ -1,0 +1,20 @@
+services:
+  prometheus:
+    image: prom/prometheus:v2.53.5
+    ports:
+      - "127.0.0.1:9090:9090"
+    volumes:
+      - ../static/config/prometheus:/etc/prometheus:ro
+      - prom_data:/prometheus
+    command:
+      - "--config.file=/etc/prometheus/prometheus.yml"
+
+  jaeger:
+    image: cr.jaegertracing.io/jaegertracing/jaeger:2.8.0
+    environment:
+      COLLECTOR_OTLP_ENABLED: "true"
+    ports:
+      - "127.0.0.1:16686:16686"
+
+volumes:
+  prom_data:

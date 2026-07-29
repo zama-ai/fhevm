@@ -7,7 +7,7 @@
 //! user's ed25519 key signs (the "signing message").
 //!
 //! The auth fields (identity, nonce, allowed ACL domain keys, context) travel as TYPED gateway
-//! fields (RFC-021) — there is no `extraData` blob. The relayer, the client SDK, and kms-core must
+//! fields (RFC-021) — there is no `extraData` blob. The relayer, the client SDK, and kms-worker must
 //! reproduce this message byte-for-byte. It is pure and can be shared and
 //! unit-tested in isolation; the ed25519 verification lives in the `kms-worker` connector, which
 //! owns the vetted crypto dependency.

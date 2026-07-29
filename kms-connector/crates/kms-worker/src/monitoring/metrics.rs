@@ -86,10 +86,8 @@ pub static REQUEST_CHECK_ERRORS: LazyLock<IntCounterVec> = LazyLock::new(|| {
 });
 
 /// Histogram bucket boundaries (in seconds) for decryption latency measurements.
-/// Ranges from 10ms to 5m so a slow local KMS run remains quantifiable.
-const DECRYPTION_LATENCY_BUCKETS: &[f64] = &[
-    0.01, 0.05, 0.1, 0.25, 0.5, 1.0, 2.5, 5.0, 10.0, 30.0, 60.0, 120.0, 300.0,
-];
+/// Ranges from 10ms to 30s to capture both fast and slow decryption.
+const DECRYPTION_LATENCY_BUCKETS: &[f64] = &[0.01, 0.05, 0.1, 0.25, 0.5, 1.0, 2.5, 5.0, 10.0, 30.0];
 
 pub static DECRYPTION_LATENCY_HISTOGRAM: LazyLock<HistogramVec> = LazyLock::new(|| {
     register_histogram_vec!(

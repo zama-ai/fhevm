@@ -42,7 +42,7 @@ const BOOT_ID_PATTERN =
 const OBSERVABILITY_PORTS = [9090, 16686] as const;
 const OBSERVABILITY_COMPOSE_PATH = path.join(
   REPO_ROOT,
-  "test-suite/fhevm/docker-compose/tracing-docker-compose.yml",
+  "test-suite/fhevm/demo/observability-docker-compose.yml",
 );
 
 export type DemoOptions = {
