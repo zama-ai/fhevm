@@ -410,6 +410,11 @@ pub async fn user_decrypt_post_v3(
 }
 
 /// Check v3 user-decryption status.
+///
+/// Once the threshold is reached the relayer may keep returning 202 briefly
+/// while it waits for a few extra shares (optimistic wait window). The
+/// succeeded result therefore contains at least `threshold` shares and may
+/// contain more, ordered by share index.
 #[utoipa::path(
     get,
     path = "/v3/user-decrypt/{job_id}",

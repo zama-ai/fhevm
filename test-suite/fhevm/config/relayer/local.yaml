@@ -107,6 +107,9 @@ gateway:
     decryption_address: "0xF0bFB159C7381F7CB332586004d8247252C5b816"
     input_verification_address: "0x3b12Fc766Eb598b285998877e8E90F3e43a1F8d2"
     user_decrypt_shares_threshold: 1 # KMS centralized mode
+    # Optimistic wait window disabled: centralized KMS returns a single share.
+    user_decrypt_additional_shares: 0
+    user_decrypt_additional_shares_timeout_secs: 10
 log:
   format: "compact" # compact, pretty, or json
   show_file_line: true
