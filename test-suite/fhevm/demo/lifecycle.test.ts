@@ -326,6 +326,7 @@ describe("demo lifecycle collision policy", () => {
     expect(fullVertical.match(/bun --preserve-symlinks run src\/cli\.ts test solana-/g)).toHaveLength(2);
     expect(adversarial.match(/node --preserve-symlinks solana-input\.ts/g)).toHaveLength(1);
     expect(workflow.match(/node --preserve-symlinks --input-type=module/g)).toHaveLength(2);
+    expect(workflow).toContain('bun-version: "1.3.6"');
     expect(twoHolderTransfer).toContain('run(["node", "--preserve-symlinks", SDK_WORKER]');
     expect(demoViteConfig).toContain("preserveSymlinks: true");
     expect(fullVertical).not.toMatch(/\bnode solana-input\.ts/);
