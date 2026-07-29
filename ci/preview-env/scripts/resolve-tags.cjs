@@ -116,9 +116,9 @@ const registryClient = ({ core, user, token }) => {
 
 /** Newest-first SHAs reachable from `sha`, capped at `max`. */
 const listAncestors = async ({ github, owner, repo, sha, max }) => {
+  const perPage = Math.min(100, max);
   const shas = [];
   for (let page = 1; shas.length < max; page += 1) {
-    const perPage = Math.min(100, max - shas.length);
     const { data } = await github.rest.repos.listCommits({ owner, repo, sha, per_page: perPage, page });
     shas.push(...data.map((commit) => commit.sha));
     if (data.length < perPage) break;
@@ -187,6 +187,15 @@ module.exports = async ({ core, context, github }) => {
       decisions.set(image.key, { tag: value, source: 'dispatch-override', detail: 'explicit dispatch input' });
     }
   }
+
+  // Fail fast in case of bad override tags
+  const overridden = IMAGES.filter((image) => decisions.get(image.key)?.source === 'dispatch-override');
+  const overrideExists = await Promise.all(overridden.map((image) => registry.manifestExists(image.repo, decisions.get(image.key).tag)));
+  overridden.forEach((image, i) => {
+    if (overrideExists[i]) return;
+    const { tag } = decisions.get(image.key);
+    decisions.set(image.key, { tag: '', source: 'unresolved', detail: `dispatch override '${tag}' not found in GHCR (${image.repo})` });
+  });
 
   let pending = IMAGES.filter((image) => !decisions.has(image.key));
   let searched = 0;
@@ -287,9 +296,9 @@ module.exports = async ({ core, context, github }) => {
     throw new Error(
       `could not resolve ${unresolved.length} image(s) from ${baseWhy} ${short(baseSha)}:\n` +
         unresolved.map((i) => `  - ${i.label} (${decisions.get(i.key).detail})`).join('\n') +
-        `\nThere are deliberately no fallback pins. Either the registry pruned these tags (raise ` +
-        `MAX_IMAGE_COMMIT_COUNT or rebase onto a newer base commit), or pass an explicit version ` +
-        `via workflow_dispatch.`,
+        `\nThere are deliberately no fallback pins. Fix the dispatch override tag if one is listed ` +
+        `above; otherwise the registry likely pruned these tags - raise MAX_IMAGE_COMMIT_COUNT, ` +
+        `rebase onto a newer base commit, or pass an explicit version via workflow_dispatch.`,
     );
   }
 
