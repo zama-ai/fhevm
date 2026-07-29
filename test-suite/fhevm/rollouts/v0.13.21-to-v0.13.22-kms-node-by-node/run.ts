@@ -5,30 +5,20 @@ const testRollout = (ctx: RolloutRunContext) => ctx.test("rollout-standard", { p
 const testRequiredNode = (ctx: RolloutRunContext) =>
   ctx.test("user-decryption", { grep: "test user decrypt ebool$", parallel: false });
 
-type KmsCoreVersions = Record<string, string> & { CORE_VERSION: string };
-
-export type KmsNodeByNodeRunbook = {
-  from: KmsCoreVersions;
-  overrides?: Parameters<RolloutRunContext["up"]>[0]["overrides"];
-  scenario: string;
-  to: KmsCoreVersions;
-  versionSources: string[];
-};
-
-export const runKmsNodeByNodeUpgrade = async (
-  ctx: RolloutRunContext,
-  config: KmsNodeByNodeRunbook,
-) => {
+export const run = async (ctx: RolloutRunContext) => {
   const baselineLock = await ctx.resolveVersionLock("00-kms-core-baseline", {
-    versions: config.from,
-    sources: config.versionSources,
+    versions: from,
+    sources: versionSources,
   });
   const targetLock = await ctx.resolveVersionLock("01-kms-core-target", {
-    versions: config.to,
-    sources: config.versionSources,
+    versions: to,
+    sources: versionSources,
   });
 
-  await ctx.up({ lockFile: baselineLock, overrides: config.overrides, scenario: config.scenario });
+  // Build the e2e image from the working tree: this runbook exercises current test
+  // code against released KMS cores, so the published test-suite image for either
+  // core tag would be the wrong harness.
+  await ctx.up({ lockFile: baselineLock, overrides: [{ group: "test-suite" }], scenario });
   await testRollout(ctx);
 
   const state = await ctx.readState();
@@ -39,14 +29,5 @@ export const runKmsNodeByNodeUpgrade = async (
     await testRollout(ctx);
   }
 };
-
-export const run = (ctx: RolloutRunContext) =>
-  runKmsNodeByNodeUpgrade(ctx, {
-    from,
-    overrides: [{ group: "test-suite" }],
-    scenario,
-    to,
-    versionSources,
-  });
 
 export default run;

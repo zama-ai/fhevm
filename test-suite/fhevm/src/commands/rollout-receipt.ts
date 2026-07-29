@@ -132,6 +132,9 @@ export const diagnosticLogArgs = (container: string) => [
   container,
 ];
 
+/** Bounds a container's logs for the receipt, dropping the OTEL exporter retry spam the
+ * local stack emits with no collector attached — hence fetching more lines than we keep,
+ * so what survives the filter is `maxLines` of signal rather than of noise. */
 export const diagnosticLogOutput = (stdout: string, stderr: string, maxLines = 2000) => {
   const lines = [stdout, stderr]
     .filter(Boolean)

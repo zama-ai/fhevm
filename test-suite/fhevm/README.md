@@ -203,7 +203,8 @@ Use `./fhevm-cli rollout receipt` to print the markdown receipt of the most rece
 Runbooks use the same primitives an operator needs during a release:
 
 - `ctx.up(...)` starts the old baseline once.
-- `ctx.writeVersionLock(...)` writes explicit version locks from the runbook.
+- `ctx.writeVersionLock(...)` writes explicit version locks from the runbook: every version key comes from the runbook.
+- `ctx.resolveVersionLock(...)` writes a lock over the resolved current stack, changing only the keys the runbook names. The surrounding stack is resolved once per run, so every lock derived this way shares one snapshot.
 - `ctx.applyVersionLock(...)` applies version changes that do not restart runtime services, then regenerates env/compose.
 - `ctx.runHostContractTask(...)` and `ctx.runGatewayContractTask(...)` run contract migration/upgrade tasks from the selected deploy images.
 - `ctx.upgradeRuntimeGroup(...)` restarts selected runtime components in place and runs their DB migrations when present.
@@ -212,6 +213,12 @@ Runbooks use the same primitives an operator needs during a release:
 `rollout-standard` is intentionally narrow: it covers encrypted input, FHE compute/write paths, user decrypt, delegated user decrypt, public decrypt, and ERC20 transfer coverage. Broader profiles such as `multi-chain-isolation`, HCU, pause/unpause, DB revert, and drift recovery stay available as explicit tests but are not part of the per-step rollout gate.
 
 The `test-suite-stateful-rollout` workflow executes a checked-in runbook through manual dispatch with a path relative to `test-suite/fhevm`.
+
+Runbooks are kept only while the version range they describe is still supported here. The
+reproduction of the 2026-07-13 mainnet KMS incident was removed as unsupported; its
+coordinates, should it ever need rebuilding, were contracts v0.12.1, coprocessor v0.11.0,
+connector v0.12.0, KMS core v0.13.3 -> v0.13.10 and relayer-sdk 0.4.2, with the expected
+failure being a generic WASM reconstruction error at the two-old/two-new node boundary.
 
 ## Version Override via Environment Variables
 

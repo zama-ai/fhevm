@@ -12,14 +12,14 @@ const RUNBOOK = path.resolve(
 );
 
 describe("v0.13.21 to v0.13.22 KMS node-by-node upgrade", () => {
-  test("uses the threshold CI SDK path and changes only KMS Core", () => {
+  // Pinning only CORE_VERSION is what keeps the surrounding stack identical across both
+  // locks; anything else here would be resolved twice and could drift between them.
+  test("pins nothing but the KMS core version", () => {
     expect(scenario).toBe("four-party-threshold-kms");
-    const baseline = from as Record<string, string>;
-    expect(baseline.RELAYER_SDK_VERSION).toBeUndefined();
-    expect(Object.entries(to).filter(([key, value]) => baseline[key] !== value)).toEqual([
+    expect(Object.keys(from)).toEqual(["CORE_VERSION"]);
+    expect(Object.entries(to).filter(([key, value]) => from[key as keyof typeof from] !== value)).toEqual([
       ["CORE_VERSION", "v0.13.22"],
     ]);
-    expect(Object.keys(from)).toEqual(["CORE_VERSION"]);
   });
 
   test("upgrades every core and requires each upgraded node in a healthy quorum", async () => {

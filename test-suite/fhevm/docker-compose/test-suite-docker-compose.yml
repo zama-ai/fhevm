@@ -3,6 +3,11 @@ services:
   test-suite-e2e-debug:
     container_name: fhevm-test-suite-e2e-debug
     image: ghcr.io/zama-ai/fhevm/test-suite/e2e:${TEST_SUITE_VERSION}
+    # Share MinIO's network namespace so the `http://localhost:9000` key URLs published by
+    # pre-v0.13 KMS cores resolve inside this container. Each component is composed from its
+    # own file, so `service:minio` is not addressable here and the container name is used
+    # instead: MinIO must already be running (it starts in the `base` step), and recreating
+    # MinIO also requires recreating this container.
     network_mode: "container:fhevm-minio"
     env_file:
       - ${FHEVM_STATE_DIR:-../../../.fhevm}/runtime/env/test-suite.env
