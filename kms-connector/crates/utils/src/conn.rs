@@ -14,7 +14,7 @@ use alloy::{
     rpc::client::{ClientBuilder, RpcClient},
     transports::{
         IntoBoxTransport, TransportFut,
-        http::{Http, reqwest::Url},
+        http::{Client, Http, reqwest::Url},
     },
 };
 use anyhow::anyhow;
@@ -69,6 +69,14 @@ pub type WalletProviderFillers = JoinFill<
     WalletFiller<EthereumWallet>,
 >;
 
+/// The ceilings of a RPC connection: how many calls it may have in flight, and how long any single
+/// one of them may take.
+#[derive(Clone, Copy, Debug)]
+struct RpcCallBounds {
+    pub max_concurrent_calls: NonZeroUsize,
+    pub call_timeout: Duration,
+}
+
 /// Tries to establish the connection with a RPC node.
 pub async fn connect_to_rpc_node(
     rpc_node_url: Url,
@@ -80,13 +88,19 @@ pub async fn connect_to_rpc_node(
     .await
 }
 
-/// Tries to establish the connection with a RPC node, bounding the calls it may have in flight.
-pub async fn connect_to_rpc_node_with_concurrency_limit(
+/// Tries to establish the connection with a RPC node, bounding the calls it may have in flight and
+/// the duration of each of them.
+pub async fn connect_to_rpc_node_with_bounds(
     rpc_node_url: Url,
     chain_id: u64,
     max_concurrent_calls: NonZeroUsize,
+    call_timeout: Duration,
 ) -> anyhow::Result<DefaultProvider> {
-    connect_to_rpc_node_inner(rpc_node_url, Some(max_concurrent_calls), || {
+    let bounds = RpcCallBounds {
+        max_concurrent_calls,
+        call_timeout,
+    };
+    connect_to_rpc_node_inner(rpc_node_url, Some(bounds), || {
         ProviderBuilder::new().with_chain_id(chain_id)
     })
     .await
@@ -128,7 +142,7 @@ fn bounded_rpc_client<T: IntoBoxTransport>(
 /// Tries to establish the connection with a RPC node.
 async fn connect_to_rpc_node_inner<L, F>(
     rpc_node_url: Url,
-    max_concurrent_calls: Option<NonZeroUsize>,
+    bounds: Option<RpcCallBounds>,
     provider_builder_new: impl Fn() -> ProviderBuilder<L, F>,
 ) -> anyhow::Result<F::Provider>
 where
@@ -142,11 +156,21 @@ where
             .unwrap()
     });
 
-    let transport = Http::new(rpc_node_url.clone());
-    let is_local = transport.guess_local();
-    let client = match max_concurrent_calls {
-        Some(max) => bounded_rpc_client(transport, is_local, max),
-        None => ClientBuilder::default().transport(transport, is_local),
+    let client = match bounds {
+        Some(bounds) => {
+            let http_client = Client::builder()
+                .timeout(bounds.call_timeout)
+                .build()
+                .map_err(|e| anyhow!("Failed to create the RPC HTTP client: {e}"))?;
+            let transport = Http::with_client(http_client, rpc_node_url.clone());
+            let is_local = transport.guess_local();
+            bounded_rpc_client(transport, is_local, bounds.max_concurrent_calls)
+        }
+        None => {
+            let transport = Http::new(rpc_node_url.clone());
+            let is_local = transport.guess_local();
+            ClientBuilder::default().transport(transport, is_local)
+        }
     };
 
     let provider = provider_builder_new().connect_client(client);

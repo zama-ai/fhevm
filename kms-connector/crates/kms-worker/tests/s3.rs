@@ -14,6 +14,7 @@ fn s3_http_client() -> anyhow::Result<reqwest::Client> {
     let config = Config::default();
     reqwest::Client::builder()
         .connect_timeout(config.s3_connect_timeout)
+        .timeout(config.s3_get_timeout)
         .build()
         .map_err(|e| anyhow!("Failed to create HTTP client: {}", e))
 }

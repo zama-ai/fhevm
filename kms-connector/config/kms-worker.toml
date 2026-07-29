@@ -72,9 +72,13 @@ database_url = "postgres://postgres:postgres@localhost/kms-connector"
 # ENV: KMS_CONNECTOR_S3_CONNECT_TIMEOUT (format: https://docs.rs/humantime/latest/humantime/)
 # s3_connect_timeout = "3s"
 
-# Maximum number of calls in flight on a single host chain endpoint, across all requests (optional, defaults to 128)
-# ENV: KMS_CONNECTOR_HOST_RPC_MAX_CONCURRENT_CALLS
-# host_rpc_max_concurrent_calls = 128
+# Timeout of a single attestation HEAD request on a Coprocessor bucket (optional, defaults to 5s)
+# ENV: KMS_CONNECTOR_S3_HEAD_TIMEOUT (format: https://docs.rs/humantime/latest/humantime/)
+# s3_head_timeout = "5s"
+
+# Timeout of a single ciphertext GET request, covering the whole response body (optional, defaults to 10s)
+# ENV: KMS_CONNECTOR_S3_GET_TIMEOUT (format: https://docs.rs/humantime/latest/humantime/)
+# s3_get_timeout = "10s"
 
 # Maximum number of attestation HEAD requests in flight on a single Coprocessor bucket (optional, defaults to 64)
 # ENV: KMS_CONNECTOR_S3_MAX_CONCURRENT_HEADS_PER_BUCKET
@@ -84,6 +88,18 @@ database_url = "postgres://postgres:postgres@localhost/kms-connector"
 # Kept low: SNS ciphertexts are big, so too many buffered at once would OOM the worker.
 # ENV: KMS_CONNECTOR_S3_MAX_CONCURRENT_GETS
 # s3_max_concurrent_gets = 16
+
+# Refresh interval of the Coprocessor registry read from the GatewayConfig contract (optional, defaults to 60s)
+# ENV: KMS_CONNECTOR_COPRO_REGISTRY_REFRESH (format: https://docs.rs/humantime/latest/humantime/)
+# copro_registry_refresh = "60s"
+
+# Maximum number of calls in flight on a host chain endpoint, across all requests (optional, defaults to 128)
+# ENV: KMS_CONNECTOR_HOST_RPC_MAX_CONCURRENT_CALLS
+# host_rpc_max_concurrent_calls = 128
+
+# Timeout of a single host chain call (optional, defaults to 10s)
+# ENV: KMS_CONNECTOR_HOST_RPC_CALL_TIMEOUT (format: https://docs.rs/humantime/latest/humantime/)
+# host_rpc_call_timeout = "10s"
 
 # Gas cap for the host-chain `IERC1271.isValidSignature` static call (RFC-012).
 # Bounds resource use when verifying signatures from smart-account users (Safe, Argent,
@@ -147,15 +163,6 @@ address = "0x0000000000000000000000000000000000000000"
 # EIP-712 domain version for ProtocolConfig contract (optional, defaults to "1")
 # ENV: KMS_CONNECTOR_PROTOCOL_CONFIG_CONTRACT__DOMAIN_VERSION
 # domain_version = "1"
-
-# Off-chain ciphertext-attestation verifier configuration
-# [ct_attestation]
-# Per-bucket S3 attestation HEAD request timeout in seconds (optional, defaults to 5)
-# ENV: KMS_CONNECTOR_CT_ATTESTATION__HEAD_TIMEOUT (format: https://docs.rs/humantime/latest/humantime/)
-# head_timeout = 5s
-# Coprocessor registry snapshot refresh interval in seconds (optional, defaults to 60)
-# ENV: KMS_CONNECTOR_CT_ATTESTATION__REGISTRY_REFRESH (format: https://docs.rs/humantime/latest/humantime/)
-# registry_refresh = 60s
 
 # List of supported host chains (required)
 # ENV: KMS_CONNECTOR_HOST_CHAINS

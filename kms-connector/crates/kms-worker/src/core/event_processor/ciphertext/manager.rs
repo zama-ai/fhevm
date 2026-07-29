@@ -1,6 +1,6 @@
 use super::registry::{CoprocessorRegistry, CoprocessorRegistrySnapshot};
 use crate::core::{
-    config::{Config, CtAttestationConfig},
+    config::Config,
     event_processor::{
         ProcessingError, RequestCheckError, RequestCheckKind,
         ciphertext::{COPROCESSOR_CONTEXT_ID, VerifiedCiphertexts, s3::BoundedClient},
@@ -18,6 +18,7 @@ use ciphertext_attestation::{
 };
 use futures::future::try_join_all;
 use kms_grpc::kms::v1::TypedCiphertext;
+use std::time::Duration;
 use tokio::task::JoinSet;
 use tokio_util::sync::CancellationToken;
 use tracing::{debug, info, warn};
@@ -34,8 +35,8 @@ pub struct CiphertextManager<P: Provider> {
     /// HTTP client for the attestation HEAD fan-out and the ciphertext retrieval.
     s3_client: BoundedClient,
 
-    /// Off-chain ciphertext-attestation verification config.
-    config: CtAttestationConfig,
+    /// Timeout of a single attestation `HEAD` on a Coprocessor bucket.
+    head_timeout: Duration,
 
     /// Number of attempts for S3 ciphertext retrieval.
     s3_ciphertext_retrieval_attempts: u8,
@@ -60,7 +61,7 @@ where
                 config.s3_max_concurrent_heads_per_bucket,
                 config.s3_max_concurrent_gets,
             ),
-            config: config.ct_attestation.clone(),
+            head_timeout: config.s3_head_timeout,
             s3_ciphertext_retrieval_attempts: config.s3_ciphertext_retrieval_attempts,
         })
     }
@@ -157,7 +158,7 @@ where
     ) -> anyhow::Result<ResolvedConsensus> {
         let mut fetch_attestation_tasks = JoinSet::new();
         for (tx_sender, bucket) in registry.tx_sender_to_bucket.iter() {
-            let (s3_client, head_timeout) = (self.s3_client.clone(), self.config.head_timeout);
+            let (s3_client, head_timeout) = (self.s3_client.clone(), self.head_timeout);
             let (bucket, tx_sender) = (bucket.clone(), *tx_sender);
             fetch_attestation_tasks.spawn(async move {
                 let result = s3_client
@@ -283,8 +284,7 @@ impl<P> CiphertextManager<P>
 where
     P: Provider + Clone + 'static,
 {
-    /// Test constructor: an empty registry and default config. The resolution path is never
-    /// exercised by the tests that use it (they fail earlier, at the ACL or signature stage).
+    /// Test constructor: an empty registry and default config.
     pub fn for_test(provider: P, client: Client) -> Self {
         let config = Config::default();
         Self {
@@ -294,7 +294,7 @@ where
                 config.s3_max_concurrent_heads_per_bucket,
                 config.s3_max_concurrent_gets,
             ),
-            config: CtAttestationConfig::default(),
+            head_timeout: config.s3_head_timeout,
             s3_ciphertext_retrieval_attempts: config.s3_ciphertext_retrieval_attempts,
         }
     }

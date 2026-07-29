@@ -17,10 +17,7 @@ use crate::{
 use alloy::transports::http::reqwest;
 use anyhow::anyhow;
 use connector_utils::{
-    conn::{
-        DefaultProvider, connect_to_db, connect_to_rpc_node,
-        connect_to_rpc_node_with_concurrency_limit,
-    },
+    conn::{DefaultProvider, connect_to_db, connect_to_rpc_node, connect_to_rpc_node_with_bounds},
     tasks::spawn_with_limit,
     types::{KmsResponse, ProtocolEvent},
 };
@@ -138,10 +135,11 @@ impl
 
         let mut acl_contracts = HashMap::new();
         for host_chain in &config.host_chains {
-            let provider = connect_to_rpc_node_with_concurrency_limit(
+            let provider = connect_to_rpc_node_with_bounds(
                 host_chain.url.clone(),
                 host_chain.chain_id,
                 config.host_rpc_max_concurrent_calls,
+                config.host_rpc_call_timeout,
             )
             .await?;
             let acl_contract = ACL::new(host_chain.acl_address, provider);
@@ -157,6 +155,7 @@ impl
         let kms_health_client = KmsHealthClient::connect(&config.kms_core_endpoints).await?;
         let s3_client = reqwest::Client::builder()
             .connect_timeout(config.s3_connect_timeout)
+            .timeout(config.s3_get_timeout)
             .build()
             .map_err(|e| anyhow!("Failed to create HTTP client: {}", e))?;
 

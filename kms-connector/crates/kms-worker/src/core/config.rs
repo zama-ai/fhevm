@@ -80,10 +80,12 @@ pub struct Config {
     /// Timeout to connect to a S3 bucket.
     #[serde(with = "humantime_serde", default = "default_s3_connect_timeout")]
     pub s3_connect_timeout: Duration,
-
-    /// Ceiling on the calls a single host chain endpoint may have in flight, across all requests.
-    #[serde(default = "default_host_rpc_max_concurrent_calls")]
-    pub host_rpc_max_concurrent_calls: NonZeroUsize,
+    /// Timeout of a single attestation `HEAD` on a Coprocessor bucket.
+    #[serde(with = "humantime_serde", default = "default_s3_head_timeout")]
+    pub s3_head_timeout: Duration,
+    /// Timeout of a single ciphertext `GET`, covering the whole response body.
+    #[serde(with = "humantime_serde", default = "default_s3_get_timeout")]
+    pub s3_get_timeout: Duration,
     /// Ceiling on the attestation `HEAD`s in flight on a single Coprocessor bucket, across all
     /// requests.
     #[serde(default = "default_s3_max_concurrent_heads_per_bucket")]
@@ -91,6 +93,16 @@ pub struct Config {
     /// Ceiling on the ciphertext `GET`s in flight, across all requests and buckets.
     #[serde(default = "default_s3_max_concurrent_gets")]
     pub s3_max_concurrent_gets: NonZeroUsize,
+    /// Refresh interval of the Coprocessor registry, read from the `GatewayConfig` contract.
+    #[serde(with = "humantime_serde", default = "default_copro_registry_refresh")]
+    pub copro_registry_refresh: Duration,
+
+    /// Ceiling on the calls a single host chain endpoint may have in flight, across all requests.
+    #[serde(default = "default_host_rpc_max_concurrent_calls")]
+    pub host_rpc_max_concurrent_calls: NonZeroUsize,
+    /// Timeout of a single host chain RPC call.
+    #[serde(with = "humantime_serde", default = "default_host_rpc_call_timeout")]
+    pub host_rpc_call_timeout: Duration,
 
     /// Gas cap for the host-chain `IERC1271.isValidSignature` static call (RFC-012).
     /// Bounded to prevent resource exhaustion from malicious smart-account contracts.
@@ -109,39 +121,6 @@ pub struct Config {
     /// The timeout to perform each external service connection healthcheck.
     #[serde(with = "humantime_serde", default = "default_healthcheck_timeout")]
     pub healthcheck_timeout: Duration,
-
-    /// Off-chain ciphertext-attestation verifier config.
-    #[serde(default)]
-    pub ct_attestation: CtAttestationConfig,
-}
-
-/// Configuration of the off-chain ciphertext-attestation verifier.
-#[derive(Clone, Debug, Deserialize, PartialEq)]
-#[cfg_attr(test, derive(Serialize))]
-#[serde(default)]
-pub struct CtAttestationConfig {
-    /// Per-bucket S3 attestation HEAD request timeout, in seconds. Defaults to 5.
-    #[serde(
-        with = "humantime_serde",
-        default = "default_ct_attestation_head_timeout"
-    )]
-    pub head_timeout: Duration,
-
-    /// Coprocessor registry snapshot refresh interval, in seconds. Defaults to 60.
-    #[serde(
-        with = "humantime_serde",
-        default = "default_copro_registry_refresh_interval"
-    )]
-    pub registry_refresh: Duration,
-}
-
-impl Default for CtAttestationConfig {
-    fn default() -> Self {
-        Self {
-            head_timeout: default_ct_attestation_head_timeout(),
-            registry_refresh: default_copro_registry_refresh_interval(),
-        }
-    }
 }
 
 /// Configuration of a single Host Chain.
@@ -223,8 +202,24 @@ fn default_s3_connect_timeout() -> Duration {
     Duration::from_secs(3)
 }
 
+fn default_s3_head_timeout() -> Duration {
+    Duration::from_secs(5)
+}
+
+fn default_s3_get_timeout() -> Duration {
+    Duration::from_secs(10)
+}
+
+fn default_copro_registry_refresh() -> Duration {
+    Duration::from_secs(60)
+}
+
 fn default_host_rpc_max_concurrent_calls() -> NonZeroUsize {
     NonZeroUsize::new(128).unwrap()
+}
+
+fn default_host_rpc_call_timeout() -> Duration {
+    Duration::from_secs(10)
 }
 
 fn default_s3_max_concurrent_heads_per_bucket() -> NonZeroUsize {
@@ -238,14 +233,6 @@ fn default_s3_max_concurrent_gets() -> NonZeroUsize {
 
 fn default_erc1271_gas_limit() -> u64 {
     100_000
-}
-
-fn default_ct_attestation_head_timeout() -> Duration {
-    Duration::from_secs(5)
-}
-
-fn default_copro_registry_refresh_interval() -> Duration {
-    Duration::from_secs(60)
 }
 
 impl DeserializeConfig for Config {}
@@ -277,15 +264,18 @@ impl Default for Config {
             max_decryption_attempts: default_max_decryption_attempts(),
             s3_ciphertext_retrieval_attempts: default_s3_ciphertext_retrieval_attempts(),
             s3_connect_timeout: default_s3_connect_timeout(),
-            host_rpc_max_concurrent_calls: default_host_rpc_max_concurrent_calls(),
+            s3_head_timeout: default_s3_head_timeout(),
+            s3_get_timeout: default_s3_get_timeout(),
             s3_max_concurrent_heads_per_bucket: default_s3_max_concurrent_heads_per_bucket(),
             s3_max_concurrent_gets: default_s3_max_concurrent_gets(),
+            copro_registry_refresh: default_copro_registry_refresh(),
+            host_rpc_max_concurrent_calls: default_host_rpc_max_concurrent_calls(),
+            host_rpc_call_timeout: default_host_rpc_call_timeout(),
             erc1271_gas_limit: default_erc1271_gas_limit(),
             service_name: default_service_name(),
             task_limit: default_task_limit(),
             monitoring_endpoint: default_monitoring_endpoint(),
             healthcheck_timeout: default_healthcheck_timeout(),
-            ct_attestation: CtAttestationConfig::default(),
         }
     }
 }
