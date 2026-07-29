@@ -288,12 +288,17 @@ describe("demo lifecycle collision policy", () => {
     expect(canary).toBeGreaterThan(refresh);
   });
 
-  test("local Node SDK consumers preserve Bun file-package links", async () => {
+  test("local SDK consumers preserve Bun file-package links", async () => {
     const sdkPackage = JSON.parse(
       await fs.readFile(path.join(import.meta.dir, "../../../sdk/js-sdk/src/package.json"), "utf8"),
     ) as { dependencies: Record<string, string> };
     const consumerLock = Bun.JSONC.parse(
       await fs.readFile(path.join(import.meta.dir, "../bun.lock"), "utf8"),
+    ) as {
+      packages: Record<string, [string, { dependencies?: Record<string, string> }]>;
+    };
+    const demoDappLock = Bun.JSONC.parse(
+      await fs.readFile(path.join(import.meta.dir, "../../../solana/demo-dapp/bun.lock"), "utf8"),
     ) as {
       packages: Record<string, [string, { dependencies?: Record<string, string> }]>;
     };
@@ -313,14 +318,20 @@ describe("demo lifecycle collision policy", () => {
       path.join(import.meta.dir, "../src/solana/two-holder-transfer.ts"),
       "utf8",
     );
+    const demoViteConfig = await fs.readFile(
+      path.join(import.meta.dir, "../../../solana/demo-dapp/vite.config.ts"),
+      "utf8",
+    );
     expect(fullVertical.match(/node --preserve-symlinks solana-input\.ts/g)).toHaveLength(2);
     expect(adversarial.match(/node --preserve-symlinks solana-input\.ts/g)).toHaveLength(1);
     expect(workflow.match(/node --preserve-symlinks --input-type=module/g)).toHaveLength(2);
     expect(twoHolderTransfer).toContain('run(["node", "--preserve-symlinks", SDK_WORKER]');
+    expect(demoViteConfig).toContain("preserveSymlinks: true");
     expect(fullVertical).not.toMatch(/\bnode solana-input\.ts/);
     expect(adversarial).not.toMatch(/\bnode solana-input\.ts/);
     expect(twoHolderTransfer).not.toContain('run(["node", SDK_WORKER]');
     expect(consumerLock.packages["@fhevm/sdk"][1].dependencies).toEqual(sdkPackage.dependencies);
+    expect(demoDappLock.packages["@fhevm/sdk"][1].dependencies).toEqual(sdkPackage.dependencies);
   });
 
   test("arm64 source builds use the canonical native Rust builder", async () => {

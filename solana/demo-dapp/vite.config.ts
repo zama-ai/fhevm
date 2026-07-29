@@ -3,6 +3,10 @@ import { defineConfig } from 'vite';
 import { demoServerPlugin } from './demoServerPlugin';
 
 export default defineConfig(({ mode }) => ({
+  resolve: {
+    // Bun links local package files; keep the consumer path so SDK dependencies resolve from this lockfile.
+    preserveSymlinks: true,
+  },
   server: {
     host: '127.0.0.1',
     port: 5173,
