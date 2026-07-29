@@ -797,10 +797,11 @@ jobs:
       - name: Deploy coprocessor
         # One release PER COPROCESSOR PARTY (coprocessor-<i>), each with its own
         # Postgres (postgres-coprocessor-<i>), IRSA SA + S3 bucket ConfigMap
-        # (coprocessor-<i>, from coprocessor-infra-<i>) and tx-sender identity
-        # (the derived coprocessor wallet, same address registered on the gateway
-        # as COPROCESSOR_*_ADDRESS_<i-1>) and its own Redis broker
-        # (coprocessor-redis-<i>). Image tags are shared across parties.
+        # (coprocessor-<i>, from coprocessor-infra-<i>) and tx-sender/sns-worker
+        # identity (the derived coprocessor wallet, same address registered on the
+        # gateway as COPROCESSOR_*_ADDRESS_<i-1>; the sns-worker signs ciphertext
+        # attestations with it, and its own Redis broker (coprocessor-redis-<i>).
+        # Image tags are shared across parties.
         env:
           COPROC_WALLETS_JSON: ${{ steps.coproc-wallets.outputs.wallets_json }}
         run: |
@@ -823,6 +824,7 @@ jobs:
               --set "snsWorker.config.s3BucketName.valueFrom.configMapKeyRef.name=coprocessor-${i}" \
               --set-string "hostListenerConsumerShared.config.brokerUrl.value=redis://coprocessor-redis-${i}-master:6379" \
               --set-string "txSender.wallet.secret.value=${privkey}" \
+              --set-string "snsWorker.wallet.secret.value=${privkey}" \
               --set-string "dbMigration.image.tag=$(jq -r .coprocessor_db_migration <<<"${TAGS_JSON}")" \
               --set-string "gwListener.image.tag=$(jq -r .coprocessor_gw_listener <<<"${TAGS_JSON}")" \
               --set-string "hostListenerShared.image.tag=$(jq -r .coprocessor_host_listener <<<"${TAGS_JSON}")" \

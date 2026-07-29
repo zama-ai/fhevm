@@ -209,7 +209,7 @@ snsWorker:
     - --pg-notify-channel
     - event_ciphertext128_computed
   # The sns-worker binary now unconditionally constructs a ciphertext-
-  # attestation signer. Same key as txSender.wallet below (anvil account #4).
+  # attestation signer. Value below is a default: the workflow overrides it.
   wallet:
     enabled: true
     secret: {value: "0x47e179ec197488593b187f80a00eb0da91f1b9d0b13f8733639f19c30a34926a"}

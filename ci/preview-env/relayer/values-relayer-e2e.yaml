@@ -2,11 +2,10 @@
 # namespace. Mirrors zama-zws/gitops's fhevm-dev/relayer.yaml pattern
 # (generic `common` chart + published image), not a fhevm-specific chart.
 #
-# IMPORTANT: this schema is validated against relayer/src/config/settings.rs
-# AT v0.13.0 specifically (`git show v0.13.0:relayer/src/config/settings.rs`)
-# - the schema on main/HEAD has since evolved (e.g. keyurl.* was replaced by
-# a kms_generation_address poller), so don't copy patterns from the current
-# checked-out worktree source without re-pinning to RELAYER_VERSION's tag.
+# IMPORTANT: this config must match relayer/src/config/settings.rs at the
+# commit the deployed image resolves from (the PR's base commit, ~ current
+# main - there is no version pin anymore). A missing required field crashes
+# the pod at startup ('missing configuration field "x.y"'); fix it here.
 #
 # Settings::new() layers a `config/local.yaml` file (relative to CWD, i.e.
 # this chart's configmapFiles mount below) with APP_-prefixed env var
@@ -96,7 +95,6 @@ configmapFiles:
             retry: {max_attempts: 75, retry_interval_ms: 3000}
           public_decrypt: {max_concurrency: 250, capacity: 11000, safety_margin: 1000}
           user_decrypt: {max_concurrency: 250, capacity: 11000, safety_margin: 1000}
-          delegated_user_decrypt: {max_concurrency: 250, capacity: 11000, safety_margin: 1000}
         contracts:
           # Reconstruction threshold (n-t) for the DEFAULT 4-party topology.
           # preview-env-deploy.yml's "Deploy relayer" step overrides this at
@@ -109,6 +107,14 @@ configmapFiles:
           retry_delay_ms: 1000
       protocol_config:
         retry: {max_attempts: 3, retry_interval_ms: 200}
+      # /v2/keyurl poller: reads the active key/CRS info from the KMSGeneration
+      # contract (address is per-deploy - see env below). Finality is instant
+      # on our anvil, so poll fast (prod example uses 12000).
+      keyurl:
+        poll_interval_ms: 2000
+      # Gas cap for the ERC-1271 signature check (local.yaml.example default).
+      user_decrypt_signature_check:
+        erc1271_gas_limit: 100000
       log:
         format: "json"
         show_file_line: true
@@ -197,44 +203,12 @@ env:
   - name: APP_GATEWAY__CONTRACTS__INPUT_VERIFICATION_ADDRESS
     valueFrom: {configMapKeyRef: {name: gw-sc-addresses, key: input_verification.address}}
 
-  # --- keyurl (fhe_public_key + crs) - populated by the "Trigger KMS keygen +
-  # CRS generation" job's on-chain poll (values-host-trigger-keygen-e2e.yaml)
-  # once the real 4-party DKG ceremony reaches consensus. data_id here is
-  # just a label the relayer echoes back in /v2/keyurl responses (not looked
-  # up anywhere), so the raw on-chain key/CRS id doubles as it.
-  #
-  # NB: every key below needs the ".address" suffix - charts/contracts'
-  # sc-deploy-config.yaml unconditionally appends ".address" to every key
-  # promoted from addresses/.env.* into this ConfigMap (confirmed live:
-  # `kubectl get configmap host-sc-addresses -o yaml` shows
-  # "kms_active_key_id.address", not "kms_active_key_id" - a bare key here
-  # 404s the pod with CreateContainerConfigError: "couldn't find key
-  # kms_active_key_id in ConfigMap ... host-sc-addresses").
-  - name: APP_KEYURL__FHE_PUBLIC_KEY__DATA_ID
-    valueFrom: {configMapKeyRef: {name: host-sc-addresses, key: kms_active_key_id.address}}
-  - name: KMS_ACTIVE_KEY_STORAGE_URL
-    valueFrom: {configMapKeyRef: {name: host-sc-addresses, key: kms_active_key_storage_url.address}}
-  - name: KMS_ACTIVE_KEY_ID
-    valueFrom: {configMapKeyRef: {name: host-sc-addresses, key: kms_active_key_id.address}}
-  # /PUB-p1/ is hardcoded here (not derived), matching
-  # zama-zws/gitops/values/relayer/relayer/values-relayer-dev.yaml's own
-  # "$(KMS_BUCKET_URL)/PUB-p1/PublicKey/$(KMS_KEY_ID)" pattern exactly: unlike
-  # KMS_NODE_STORAGE_URL_x (the on-chain ProtocolConfig registration
-  # host-listener reads - deliberately kept prefix-less above, see that
-  # comment), the relayer has no per-party fallback/search logic of its own -
-  # it needs the *exact* object key path, and since every party publishes
-  # identical public content under its own PUB-p<i>/ prefix, party 1's is
-  # picked as the one arbitrary source of truth, same as production.
-  - {name: APP_KEYURL__FHE_PUBLIC_KEY__URL, value: "$(KMS_ACTIVE_KEY_STORAGE_URL)/PUB-p1/PublicKey/$(KMS_ACTIVE_KEY_ID)"}
-  - name: APP_KEYURL__CRS__DATA_ID
-    valueFrom: {configMapKeyRef: {name: host-sc-addresses, key: kms_active_crs_id.address}}
-  - name: KMS_ACTIVE_CRS_STORAGE_URL
-    valueFrom: {configMapKeyRef: {name: host-sc-addresses, key: kms_active_crs_storage_url.address}}
-  - name: KMS_ACTIVE_CRS_ID
-    valueFrom: {configMapKeyRef: {name: host-sc-addresses, key: kms_active_crs_id.address}}
-  # See the matching comment on APP_KEYURL__FHE_PUBLIC_KEY__URL above - same
-  # hardcoded /PUB-p1/ requirement applies here.
-  - {name: APP_KEYURL__CRS__URL, value: "$(KMS_ACTIVE_CRS_STORAGE_URL)/PUB-p1/CRS/$(KMS_ACTIVE_CRS_ID)"}
+  # --- keyurl (KMSGeneration poller) ---
+  # The relayer polls KMSGeneration on-chain for the active key/CRS ids and
+  # storage URLs itself, so only the contract address is wired here. NB:
+  # charts/contracts appends ".address" to every ConfigMap key, hence the suffix.
+  - name: APP_KEYURL__KMS_GENERATION_ADDRESS
+    valueFrom: {configMapKeyRef: {name: host-sc-addresses, key: kms_generation.address}}
 
   # --- storage (dedicated in-cluster Postgres release, values-postgres-relayer-e2e.yaml) ---
   - {name: APP_STORAGE__SQL_DATABASE_URL, value: "postgresql://zama:zama@postgres-relayer:5432/relayer"}
