@@ -107,7 +107,6 @@ const TEST_PROFILE_DESCRIPTIONS: Partial<Record<(typeof TEST_PROFILE_NAMES)[numb
   "paused-gateway-contracts": "Run pause-mode checks with gateway contracts paused.",
   "input-proof": "Run basic user input proof coverage.",
   "input-proof-compute-decrypt": "Run compute-and-decrypt input proof coverage.",
-  "priority-coprocessor": "Run input proof coverage with gateway priority-coprocessor mode enabled.",
   "user-decryption": "Run user decryption coverage.",
   "delegated-user-decryption": "Run delegated user decryption coverage.",
   "erc1271-user-decryption": "Run ERC-1271 smart-account signature verification coverage.",
@@ -1397,13 +1396,6 @@ export const test = async (testName: string | undefined, options: TestOptions) =
       ? undefined
       : "multi-chain-isolation requires a multi-chain topology; rerun `fhevm-cli up --scenario multi-chain` first";
 
-  const priorityCoprocessorRequirement = () => {
-    const topology = topologyForState(state);
-    return topology.count > 1
-      ? undefined
-      : "priority-coprocessor requires a multi-coprocessor topology; rerun `fhevm-cli up --scenario two-of-three-multi-chain` first";
-  };
-
   const multiChainIsolationSkipReason = () =>
     state.scenario.hostChains.length > 1 ? undefined : "topology has fewer than 2 host chains";
 
@@ -1717,12 +1709,6 @@ export const test = async (testName: string | undefined, options: TestOptions) =
     }
     if (name === "multi-chain-isolation") {
       const precondition = multiChainIsolationRequirement();
-      if (precondition) {
-        throw new PreflightError(precondition);
-      }
-    }
-    if (name === "priority-coprocessor") {
-      const precondition = priorityCoprocessorRequirement();
       if (precondition) {
         throw new PreflightError(precondition);
       }
