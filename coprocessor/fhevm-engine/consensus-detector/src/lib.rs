@@ -454,20 +454,25 @@ async fn gcs_host_watermark(pool: &Pool<Postgres>, host_chain_id: i64) -> Result
     Ok(watermark)
 }
 
-/// Latest GCS host block that has a produced `state_hash`, or -1. Lags finalization,
-/// so `>= end_block` means every window block's records have landed.
-async fn gcs_state_hash_watermark(pool: &Pool<Postgres>, host_chain_id: i64) -> Result<i64, Error> {
+/// True once every block in `[start, end]` has a `state_hash`: counts the hashes and
+/// compares to the window size, so a gap below a hashed block still fails.
+async fn gcs_window_fully_hashed(
+    pool: &Pool<Postgres>,
+    host_chain_id: i64,
+    start: i64,
+    end: i64,
+) -> Result<bool, Error> {
     let sql = format!(
-        "SELECT COALESCE(
-                  (SELECT MAX(block_number) FROM {GCS_SCHEMA_QUOTED}.state_hash WHERE chain_id = $1),
-                  -1
-                )"
+        "SELECT (SELECT COUNT(*) FROM {GCS_SCHEMA_QUOTED}.state_hash
+                  WHERE chain_id = $1 AND block_number BETWEEN $2 AND $3) >= ($3 - $2 + 1)"
     );
-    let (watermark,): (i64,) = sqlx::query_as(&sql)
+    let (ok,): (bool,) = sqlx::query_as(&sql)
         .bind(host_chain_id)
+        .bind(start)
+        .bind(end)
         .fetch_one(pool)
         .await?;
-    Ok(watermark)
+    Ok(ok)
 }
 
 /// Timeout state machine for the tracked window.
@@ -520,6 +525,26 @@ fn host_consensus_ready(host_tracks: &HashMap<i64, ConsensusTrack>) -> bool {
         && host_tracks.values().any(|t| t.anchored_nontrivial)
 }
 
+/// `(chain_id, block)` anchors to notify: host anchors only once `host_consensus_ready`
+/// holds, plus the Gateway anchor whenever it is set.
+fn unanimity_notifications(
+    host_tracks: &HashMap<i64, ConsensusTrack>,
+    gateway: &ConsensusTrack,
+) -> Vec<(i64, i64)> {
+    let mut out = Vec::new();
+    if host_consensus_ready(host_tracks) {
+        for t in host_tracks.values() {
+            if let Some(block) = t.anchored {
+                out.push((t.chain_id, block));
+            }
+        }
+    }
+    if let Some(block) = gateway.anchored {
+        out.push((gateway.chain_id, block));
+    }
+    out
+}
+
 /// One pass over every host-chain track plus the Gateway track: resets tracks on
 /// a window-set change, polls each chain's + the Gateway's candidates, re-emits
 /// anchors, and — once every host chain hit end_block without unanimity — emits a
@@ -558,11 +583,11 @@ async fn consensus_pass(
             let candidates = host_consensus_candidates(pool, chain_id, start, end, true).await?;
             poll_track(http, &urls, track, &candidates, true).await?;
             // No FHE op in the whole window: let this chain anchor on any block so it
-            // doesn't block the upgrade. Gate on state_hash (not just finalization)
-            // reaching end_block, so we don't call it quiet before a late op is recorded.
+            // doesn't block the upgrade. Require every window block hashed (no gap), so a
+            // finalized-but-unfinished non-trivial block can't be mistaken for quiet.
             if track.anchored.is_none()
                 && candidates.is_empty()
-                && gcs_state_hash_watermark(pool, chain_id).await? >= end
+                && gcs_window_fully_hashed(pool, chain_id, start, end).await?
             {
                 let readiness =
                     host_consensus_candidates(pool, chain_id, start, end, false).await?;
@@ -584,22 +609,22 @@ async fn consensus_pass(
     }
 
     // Re-emit each anchor every pass so a controller that missed the NOTIFY still
-    // latches; each track carries its own chain_id for per-chain latching.
-    for track in host_tracks.values().chain(std::iter::once(&*gateway)) {
-        if let Some(block) = track.anchored {
-            notify_unanimity(
-                pool,
-                UNANIMITY_CONSENSUS_CHANNEL,
-                &proposal_id,
-                proposal_block,
-                &NewBlockPayload {
-                    chain_id: track.chain_id,
-                    block_height: block,
-                    block_hash: String::new(),
-                },
-            )
-            .await?;
-        }
+    // latches. Host anchors are withheld until host_consensus_ready holds (all host
+    // anchored + >=1 non-trivial), so the controller can't cut over on an all-quiet
+    // fleet; the Gateway anchor is independent.
+    for (chain_id, block) in unanimity_notifications(host_tracks, gateway) {
+        notify_unanimity(
+            pool,
+            UNANIMITY_CONSENSUS_CHANNEL,
+            &proposal_id,
+            proposal_block,
+            &NewBlockPayload {
+                chain_id,
+                block_height: block,
+                block_hash: String::new(),
+            },
+        )
+        .await?;
     }
 
     // One global deadline, armed once every host chain reached its end_block
@@ -934,8 +959,10 @@ mod tests {
 
     const CT: Duration = Duration::from_secs(60);
 
-    fn track(anchored: Option<i64>, nontrivial: bool) -> ConsensusTrack {
-        let mut t = ConsensusTrack::new(1);
+    const GW: i64 = 54321;
+
+    fn track(chain_id: i64, anchored: Option<i64>, nontrivial: bool) -> ConsensusTrack {
+        let mut t = ConsensusTrack::new(chain_id);
         t.anchored = anchored;
         t.anchored_nontrivial = nontrivial;
         t
@@ -944,18 +971,42 @@ mod tests {
     #[test]
     fn host_ready_needs_all_anchored_and_one_nontrivial() {
         assert!(host_consensus_ready(&HashMap::from([
-            (1, track(Some(5), false)),
-            (2, track(Some(9), true)),
+            (1, track(1, Some(5), false)),
+            (2, track(2, Some(9), true)),
         ])));
         assert!(!host_consensus_ready(&HashMap::from([
-            (1, track(Some(5), false)),
-            (2, track(Some(7), false)),
+            (1, track(1, Some(5), false)),
+            (2, track(2, Some(7), false)),
         ])));
         assert!(!host_consensus_ready(&HashMap::from([
-            (1, track(Some(5), true)),
-            (2, track(None, false)),
+            (1, track(1, Some(5), true)),
+            (2, track(2, None, false)),
         ])));
         assert!(!host_consensus_ready(&HashMap::new()));
+    }
+
+    #[test]
+    fn unanimity_notifications_gate_hosts_on_nontrivial() {
+        let gateway = track(GW, Some(500), true);
+        let sorted = |mut v: Vec<(i64, i64)>| {
+            v.sort_unstable();
+            v
+        };
+
+        // 2 chains, 0 FHE ops (both empty), 1 GW input -> only GW notified -> NO cutover.
+        let all_quiet = HashMap::from([(1, track(1, Some(5), false)), (2, track(2, Some(6), false))]);
+        assert_eq!(unanimity_notifications(&all_quiet, &gateway), vec![(GW, 500)]);
+
+        // 2 chains, 1 FHE op (chain 2), chain 1 empty, 1 GW input -> all notified -> cutover.
+        let mixed = HashMap::from([(1, track(1, Some(5), false)), (2, track(2, Some(6), true))]);
+        assert_eq!(sorted(unanimity_notifications(&mixed, &gateway)), vec![(1, 5), (2, 6), (GW, 500)]);
+
+        // 1 chain, 0 FHE ops (empty), 1 GW input -> only GW notified -> NO cutover.
+        let single_quiet = HashMap::from([(1, track(1, Some(5), false))]);
+        assert_eq!(unanimity_notifications(&single_quiet, &gateway), vec![(GW, 500)]);
+        // 1 chain, 1 FHE op, 1 GW input -> host + GW notified -> cutover.
+        let single_nt = HashMap::from([(1, track(1, Some(5), true))]);
+        assert_eq!(sorted(unanimity_notifications(&single_nt, &gateway)), vec![(1, 5), (GW, 500)]);
     }
 
     #[test]
