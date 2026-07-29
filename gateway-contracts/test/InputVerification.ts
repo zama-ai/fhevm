@@ -51,6 +51,33 @@ describe('InputVerification', function () {
   // Define extra data for version 0
   const extraDataV0 = hre.ethers.solidityPacked(['uint8'], [0]);
 
+  // ERC-7201 base slot of InputVerificationStorage, from the INPUT_VERIFICATION_STORAGE_LOCATION
+  // constant in InputVerification.sol, plus the index of the deprecated priority marker mappings in
+  // the struct: `priorityVerifyProofConsensusTxSender` (12) and
+  // `priorityRejectProofConsensusTxSender` (13).
+  const INPUT_VERIFICATION_STORAGE_LOCATION = BigInt(
+    '0x4544165ce1653264fdcb09b029891e3d4c8d8583486821172f882e19a149a800',
+  );
+  const PRIORITY_VERIFY_CONSENSUS_SLOT = INPUT_VERIFICATION_STORAGE_LOCATION + 12n;
+  const PRIORITY_REJECT_CONSENSUS_SLOT = INPUT_VERIFICATION_STORAGE_LOCATION + 13n;
+
+  // The priority markers can no longer be written through the contract, so historical records are
+  // reproduced by writing the mapping entry directly.
+  async function setPriorityConsensusTxSender(
+    proxyAddress: string,
+    mappingSlot: bigint,
+    proofId: number,
+    txSenderAddress: string,
+  ): Promise<void> {
+    await hre.network.provider.send('hardhat_setStorageAt', [
+      proxyAddress,
+      hre.ethers.keccak256(
+        hre.ethers.AbiCoder.defaultAbiCoder().encode(['uint256', 'uint256'], [proofId, mappingSlot]),
+      ),
+      hre.ethers.zeroPadValue(txSenderAddress, 32),
+    ]);
+  }
+
   describe('Deployment', function () {
     let inputVerificationFactory: InputVerification__factory;
     let inputVerification: InputVerification;
@@ -408,6 +435,33 @@ describe('InputVerification', function () {
       expect(proofVerificationConsensusTxSenders3).to.deep.equal(expectedCoprocessorTxSenders3);
     });
 
+    // The removed priority coprocessor feature let a single designated sender finalize consensus
+    // alone, and the `VerifyProofResponse` emitted for such a proof carries that sender's signature
+    // by itself. The raw responder list keeps growing past finalization, so the deprecated marker is
+    // still read to keep the getter consistent with that event. Nothing can write the marker anymore,
+    // hence the direct storage write.
+    it('Should report only the priority sender for a proof verified under the priority feature', async function () {
+      const priorityTxSender = coprocessorTxSenders[0].address;
+
+      // Reach consensus, then let the remaining coprocessor append itself to the raw responder list.
+      for (const [i, txSender] of coprocessorTxSenders.entries()) {
+        await inputVerification.connect(txSender).verifyProofResponse(zkProofId, ctHandles, signatures[i], extraDataV0);
+      }
+      expect(await inputVerification.getVerifyProofConsensusTxSenders(zkProofId)).to.deep.equal(
+        coprocessorTxSenders.map((s) => s.address),
+      );
+
+      // Mark the proof as priority-finalized, the way a pre-upgrade record would be.
+      await setPriorityConsensusTxSender(
+        await inputVerification.getAddress(),
+        PRIORITY_VERIFY_CONSENSUS_SLOT,
+        zkProofId,
+        priorityTxSender,
+      );
+
+      expect(await inputVerification.getVerifyProofConsensusTxSenders(zkProofId)).to.deep.equal([priorityTxSender]);
+    });
+
     it('Should get all valid coprocessor transaction senders from proof verification consensus and ignore malicious ones', async function () {
       // Trigger 2 valid proof verification responses
       await inputVerification
@@ -742,6 +796,28 @@ describe('InputVerification', function () {
       // coprocessor transaction senders, after the consensus is reached
       const proofRejectionConsensusTxSenders3 = await inputVerification.getRejectProofConsensusTxSenders(zkProofId);
       expect(proofRejectionConsensusTxSenders3).to.deep.equal(expectedCoprocessorTxSenders3);
+    });
+
+    // See the equivalent proof-verification test: the deprecated marker keeps rejections finalized
+    // under the removed priority coprocessor feature aligned with their emitted event.
+    it('Should report only the priority sender for a proof rejected under the priority feature', async function () {
+      const priorityTxSender = coprocessorTxSenders[0].address;
+
+      for (const txSender of coprocessorTxSenders) {
+        await inputVerification.connect(txSender).rejectProofResponse(zkProofId, extraDataV0);
+      }
+      expect(await inputVerification.getRejectProofConsensusTxSenders(zkProofId)).to.deep.equal(
+        coprocessorTxSenders.map((s) => s.address),
+      );
+
+      await setPriorityConsensusTxSender(
+        await inputVerification.getAddress(),
+        PRIORITY_REJECT_CONSENSUS_SLOT,
+        zkProofId,
+        priorityTxSender,
+      );
+
+      expect(await inputVerification.getRejectProofConsensusTxSenders(zkProofId)).to.deep.equal([priorityTxSender]);
     });
 
     it('Should get all valid coprocessor transaction senders from proof rejection consensus and ignore the one from proof verification', async function () {
