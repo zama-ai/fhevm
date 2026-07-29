@@ -100,7 +100,7 @@ bproof="$(cd "$ROOT/test-suite/fhevm" && \
   IN_RELAYER_URL=http://127.0.0.1:3000 IN_CONTRACTS_CHAIN_ID="$SID" IN_ACL_PROGRAM="$ACL" \
   IN_CONTRACT="$CS_HEX" IN_USER="$USER" \
   IN_VALUE=7 IN_TYPE=uint64 \
-  node --preserve-symlinks solana-input.ts 2>"$berr" || true)"
+  node solana-input.ts 2>"$berr" || true)"
 bh="$(echo "$bproof" | python3 -c "import sys,json;print(json.load(sys.stdin)['handles'][0])" 2>/dev/null || true)"
 [ -n "$bh" ] || fail "(b) burn input-proof submission failed.
   client stdout: $(printf '%s' "$bproof" | tail -3)

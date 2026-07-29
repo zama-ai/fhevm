@@ -13,10 +13,9 @@
 //
 // Output: `{ handles, signatures, extraData }` JSON on stdout.
 //
-// Run under Node 24 with `--preserve-symlinks`, NOT Bun: Node 24 executes TypeScript natively, and
-// preserving links makes Bun's local `file:` SDK resolve dependencies from this consumer's frozen
-// graph. The TFHE WASM prover also needs Node's locate-file path; Bun's browser-like detection
-// bypasses it and throws "Missing locate file function".
+// Run under Node 24, NOT Bun: Node 24 executes TypeScript natively. The TFHE WASM prover needs
+// Node's locate-file path; Bun's browser-like detection bypasses it and throws
+// "Missing locate file function".
 import { defineFhevmSolanaChain } from '@fhevm/sdk/chains';
 import { createFhevmEncryptClient, setFhevmRuntimeConfig } from '@fhevm/sdk/solana';
 import type { Bytes32Hex } from '@fhevm/sdk/types';

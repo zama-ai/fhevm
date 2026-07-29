@@ -67,9 +67,11 @@ fi
 ( cd "$ROOT" && npm ci --workspace=@fhevm/sdk-dev --workspace=@fhevm/sdk --include-workspace-root=false )
 ( cd "$ROOT/sdk/js-sdk" && npm run clean && npm run build:esm && npm run build:types )
 ( cd "$FHEVM" && bun install --force --frozen-lockfile )
-# Bun's local file package links generated SDK files back to the source tree. Preserve those link
-# paths under Node so package dependencies resolve from this consumer's frozen node_modules graph.
-( cd "$FHEVM" && node --preserve-symlinks --input-type=module -e "await import('@fhevm/sdk/solana'); await import('@fhevm/sdk/solana/vault')" )
+"$ROOT/solana/scripts/e2e/materialize-test-sdk.sh"
+[ ! -L "$FHEVM/node_modules/@fhevm/sdk/_esm/solana/index.js" ]
+# Prove both runtimes resolve SDK dependencies from the consumer's frozen graph.
+( cd "$FHEVM" && node --input-type=module -e "await import('@fhevm/sdk/solana'); await import('@fhevm/sdk/solana/vault')" )
+( cd "$FHEVM" && bun -e "await import('@fhevm/sdk/solana'); await import('@fhevm/sdk/solana/vault')" )
 
 # The source-built Rust services inherit their builder tag from each component's toolchain.
 # Some tags are published for amd64 only. On an arm64 Docker daemon, keep those services native:

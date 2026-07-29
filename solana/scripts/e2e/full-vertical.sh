@@ -94,7 +94,7 @@ run_public_decrypt_with_proof() {
     PD_MMR_ENCRYPTED_VALUE_ACCOUNT="$pub_encrypted_value_account" PD_ACL_VALUE_KEY="$pub_acl_value_key" \
     PD_MMR_PEAKS="$pub_peaks" PD_MMR_LEAF_COUNT="$pub_leaf_count" PD_MMR_PROOF_SLOT="$pub_proof_slot" \
     PD_MMR_PROOF_BYTES="$pub_mmr_proof_bytes" \
-    bun --preserve-symlinks run src/cli.ts test solana-public-decrypt 2>&1)"; then
+    ./fhevm-cli test solana-public-decrypt 2>&1)"; then
     fail "$label public-decrypt failed: $output"
   fi
   result="$(printf '%s\n' "$output" | tail -1)"
@@ -169,7 +169,7 @@ iout="$(cd "$ROOT/test-suite/fhevm" && \
   IN_RELAYER_URL=http://127.0.0.1:3000 IN_CONTRACTS_CHAIN_ID="$SID" IN_ACL_PROGRAM="$ACL" \
   IN_CONTRACT="$USER" IN_USER="$USER" \
   IN_VALUE="$IV" IN_TYPE=uint64 \
-  node --preserve-symlinks solana-input.ts 2>"$ierr" || true)"
+  node solana-input.ts 2>"$ierr" || true)"
 ih="$(echo "$iout" | python3 -c "import sys,json;print(json.load(sys.stdin)['handles'][0])" 2>/dev/null || true)"
 [ -n "$ih" ] || fail "input-proof submission failed.
   client stdout: $(printf '%s' "$iout" | tail -3)
@@ -218,7 +218,7 @@ UD_CID="0x$(python3 -c "print(int('$CTX').to_bytes(32,'big').hex())")"
     UD_RELAYER_URL=http://127.0.0.1:3000 UD_CONTRACTS_CHAIN_ID="$SID" UD_HANDLE="$H" \
     UD_SECRET_KEY="$UD_SK" UD_CONTEXT_ID="$UD_CID" UD_ALLOWED_DOMAIN_KEYS="$USER" \
     UD_ACL_VALUE_KEY="$VK" UD_EXPECTED="$VALUE" \
-    bun --preserve-symlinks run src/cli.ts test solana-current-user-decrypt ) \
+    ./fhevm-cli test solana-current-user-decrypt ) \
   || fail "pure-SDK user-decrypt failed"
 echo "    user-decrypt cleartext=$VALUE OK (PURE-SDK: ed25519 v3 + in-SDK de-signcryption, no kms checkout)"
 
@@ -476,7 +476,7 @@ bproof="$(cd "$ROOT/test-suite/fhevm" && \
   IN_RELAYER_URL=http://127.0.0.1:3000 IN_CONTRACTS_CHAIN_ID="$SID" IN_ACL_PROGRAM="$ACL" \
   IN_CONTRACT="$CS_HEX" IN_USER="$USER" \
   IN_VALUE=7 IN_TYPE=uint64 \
-  node --preserve-symlinks solana-input.ts 2>"$berr" || true)"
+  node solana-input.ts 2>"$berr" || true)"
 bh="$(echo "$bproof" | python3 -c "import sys,json;print(json.load(sys.stdin)['handles'][0])" 2>/dev/null || true)"
 [ -n "$bh" ] || fail "burn input-proof submission failed.
   client stdout: $(printf '%s' "$bproof" | tail -3)

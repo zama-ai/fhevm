@@ -268,7 +268,7 @@ describe("demo lifecycle collision policy", () => {
     expect(script).toContain('NODE_PATH="$ROOT/solana/demo-dapp/node_modules" bun run demo:seed');
   });
 
-  test("fresh bring-up refreshes the file-linked SDK after generating ESM", async () => {
+  test("fresh bring-up materializes the built SDK before runtime canaries", async () => {
     const script = await fs.readFile(
       path.join(import.meta.dir, "../../../solana/scripts/e2e/clean-e2e.sh"),
       "utf8",
@@ -278,17 +278,24 @@ describe("demo lifecycle collision policy", () => {
     );
     const build = script.indexOf("npm run clean && npm run build:esm && npm run build:types");
     const refresh = script.indexOf("bun install --force --frozen-lockfile");
+    const materialize = script.indexOf('solana/scripts/e2e/materialize-test-sdk.sh');
     const canary = script.indexOf(
-      'node --preserve-symlinks --input-type=module -e "await import(\'@fhevm/sdk/solana\'); await import(\'@fhevm/sdk/solana/vault\')"',
+      'node --input-type=module -e "await import(\'@fhevm/sdk/solana\'); await import(\'@fhevm/sdk/solana/vault\')"',
+    );
+    const bunCanary = script.indexOf(
+      'bun -e "await import(\'@fhevm/sdk/solana\'); await import(\'@fhevm/sdk/solana/vault\')"',
     );
     expect(install).toBeGreaterThan(-1);
     expect(build).toBeGreaterThan(-1);
     expect(build).toBeGreaterThan(install);
     expect(refresh).toBeGreaterThan(build);
-    expect(canary).toBeGreaterThan(refresh);
+    expect(materialize).toBeGreaterThan(refresh);
+    expect(canary).toBeGreaterThan(materialize);
+    expect(bunCanary).toBeGreaterThan(materialize);
+    expect(script).toContain('[ ! -L "$FHEVM/node_modules/@fhevm/sdk/_esm/solana/index.js" ]');
   });
 
-  test("local SDK consumers preserve Bun file-package links", async () => {
+  test("local SDK consumers own the materialized package dependency graph", async () => {
     const sdkPackage = JSON.parse(
       await fs.readFile(path.join(import.meta.dir, "../../../sdk/js-sdk/src/package.json"), "utf8"),
     ) as { dependencies: Record<string, string> };
@@ -322,16 +329,15 @@ describe("demo lifecycle collision policy", () => {
       path.join(import.meta.dir, "../../../solana/demo-dapp/vite.config.ts"),
       "utf8",
     );
-    expect(fullVertical.match(/node --preserve-symlinks solana-input\.ts/g)).toHaveLength(2);
-    expect(fullVertical.match(/bun --preserve-symlinks run src\/cli\.ts test solana-/g)).toHaveLength(2);
-    expect(adversarial.match(/node --preserve-symlinks solana-input\.ts/g)).toHaveLength(1);
-    expect(workflow.match(/node --preserve-symlinks --input-type=module/g)).toHaveLength(2);
-    expect(workflow).toContain('bun-version: "1.3.6"');
-    expect(twoHolderTransfer).toContain('run(["node", "--preserve-symlinks", SDK_WORKER]');
+    expect(fullVertical.match(/\bnode solana-input\.ts/g)).toHaveLength(2);
+    expect(adversarial.match(/\bnode solana-input\.ts/g)).toHaveLength(1);
+    expect(workflow.match(/node --input-type=module/g)).toHaveLength(2);
+    expect(twoHolderTransfer).toContain('run(["node", SDK_WORKER]');
     expect(demoViteConfig).toContain("preserveSymlinks: true");
-    expect(fullVertical).not.toMatch(/\bnode solana-input\.ts/);
-    expect(adversarial).not.toMatch(/\bnode solana-input\.ts/);
-    expect(twoHolderTransfer).not.toContain('run(["node", SDK_WORKER]');
+    expect(fullVertical).not.toContain("--preserve-symlinks");
+    expect(adversarial).not.toContain("--preserve-symlinks");
+    expect(workflow).not.toContain("--preserve-symlinks");
+    expect(twoHolderTransfer).not.toContain("--preserve-symlinks");
     expect(consumerLock.packages["@fhevm/sdk"][1].dependencies).toEqual(sdkPackage.dependencies);
     expect(demoDappLock.packages["@fhevm/sdk"][1].dependencies).toEqual(sdkPackage.dependencies);
   });
