@@ -12,6 +12,7 @@ const controller = (
 ): DemoController =>
   ({
     state: {
+      ...initialDemoState,
       generation: 1,
       connection: { kind: 'ready', session: { wallet: { kind: 'burner' } } },
       deposit: claimed ? { kind: 'joined', result: {} } : { kind: 'idle' },
@@ -20,6 +21,9 @@ const controller = (
         : null,
       depositClaiming: false,
       depositClaimError: null,
+      hasConfidentialUsdc: true,
+      hasConfidentialShares: claimed,
+      publicUsdcBalance: 900_000_000n,
       revealedShares: null,
       revealingShares: false,
       revealSharesError: null,
@@ -28,10 +32,13 @@ const controller = (
       connected: true,
       depositRunning: false,
       hasPrivateShares: claimed,
+      hasConfidentialShares: claimed,
       sharePrice: 1,
     },
     actions: {
       shieldAndDeposit,
+      revealUsdc: vi.fn(),
+      hideUsdc: vi.fn(),
       revealShares: vi.fn(),
       hideShares: vi.fn(),
     },
@@ -105,7 +112,9 @@ describe('PortfolioOverview', () => {
 
 const actions = {
   hideShares: vi.fn(),
+  hideUsdc: vi.fn(),
   revealShares: vi.fn(),
+  revealUsdc: vi.fn(),
   shieldAndDeposit: vi.fn(),
 };
 
@@ -118,12 +127,14 @@ const walletController = (
       ...initialDemoState,
       connection: { kind: 'ready', session: { wallet } as DemoSession },
       deposit,
+      hasConfidentialShares: false,
     },
     derived: {
       connected: true,
       depositJoined: deposit.kind === 'joined',
       depositRunning: deposit.kind === 'running',
       hasPrivateShares: false,
+      hasConfidentialShares: false,
       sharePrice: null,
     },
     actions,
@@ -156,6 +167,54 @@ describe('PortfolioOverview Phantom localnet guidance', () => {
     expect(
       metrics.findAllByType('small').some((node) => node.children.join('') === '30-day average · annualized'),
     ).toBe(true);
+    act(() => renderer.unmount());
+  });
+
+  test('keeps public, shielded, and vault balances distinct', () => {
+    const value = walletController({ kind: 'burner', name: 'Demo wallet' });
+    const renderer = render({
+      ...value,
+      state: {
+        ...value.state,
+        publicUsdcBalance: 900_000_000n,
+        hasConfidentialUsdc: true,
+        hasConfidentialShares: true,
+        hasPrivateShares: true,
+      },
+      derived: { ...value.derived, hasPrivateShares: true, hasConfidentialShares: true },
+    });
+
+    const inventory = renderer.root.findByProps({ className: 'asset-inventory' });
+    expect(inventory.findAllByType('span').map((node) => node.children.join(''))).toEqual(
+      expect.arrayContaining(['Wallet · Public', 'Shielded balance · Private', 'Vault position · Private']),
+    );
+    expect(inventory.findAllByType('strong').map((node) => node.children.join(''))).toEqual(
+      expect.arrayContaining(['900 USDC', '•••• cUSDC', '•••• cShares']),
+    );
+    const revealButtons = inventory.findAllByType('button');
+    expect(revealButtons).toHaveLength(2);
+    act(() => revealButtons[0].props.onClick());
+    act(() => revealButtons[1].props.onClick());
+    expect(actions.revealUsdc).toHaveBeenCalledOnce();
+    expect(actions.revealShares).toHaveBeenCalledOnce();
+    act(() => renderer.unmount());
+  });
+
+  test('disables private balance actions while an automatic claim is running', () => {
+    const value = walletController({ kind: 'burner', name: 'Demo wallet' });
+    const renderer = render({
+      ...value,
+      state: {
+        ...value.state,
+        hasConfidentialUsdc: true,
+        hasConfidentialShares: true,
+        depositOperatorAction: 'claim',
+      },
+      derived: { ...value.derived, hasConfidentialShares: true },
+    });
+
+    const inventory = renderer.root.findByProps({ className: 'asset-inventory' });
+    expect(inventory.findAllByType('button').every((button) => button.props.disabled)).toBe(true);
     act(() => renderer.unmount());
   });
 

@@ -15,7 +15,9 @@ const mocks = vi.hoisted(() => ({
   metrics: vi.fn(),
   operator: vi.fn(),
   prepareBatch: vi.fn(),
+  readBalances: vi.fn(),
   recordCompletedRedeem: vi.fn(),
+  hasConfidentialUsdc: vi.fn(),
   revealShares: vi.fn(),
   revealUsdc: vi.fn(),
 }));
@@ -24,6 +26,7 @@ vi.mock('./demoSession', () => ({
   connectDemoSession: vi.fn(),
   describeWalletError: (error: unknown) => (error instanceof Error ? error.message : String(error)),
   ensureDemoFunding: mocks.fund,
+  readDemoWalletBalances: mocks.readBalances,
 }));
 vi.mock('./deposit', () => ({
   depositToVault: mocks.joinDeposit,
@@ -46,6 +49,7 @@ vi.mock('./redeem', () => ({
   recordCompletedRedeem: mocks.recordCompletedRedeem,
 }));
 vi.mock('./revealShares', () => ({
+  hasConfidentialBalanceAccount: mocks.hasConfidentialUsdc,
   revealClaimedShares: mocks.revealShares,
   revealClaimedUsdc: mocks.revealUsdc,
 }));
@@ -92,6 +96,12 @@ const connect = async (controller: DemoController) => {
   await act(async () => {
     await controller.actions.connect(async (isActive) => {
       const session = {
+        config: {
+          mints: {
+            joinConfidential: position.batch,
+            payoutConfidential: position.batch,
+          },
+        },
         signer: { address: position.batch },
         isActive,
         assertActive: () => {
@@ -124,6 +134,8 @@ describe('useDemoController generation safety', () => {
     mocks.lifecycle.mockResolvedValue(awaiting);
     mocks.metrics.mockResolvedValue({ totalAssets: 125n, totalShares: 100n });
     mocks.prepareBatch.mockResolvedValue(position);
+    mocks.readBalances.mockResolvedValue([5_000_000_000n, 1_000_000_000n]);
+    mocks.hasConfidentialUsdc.mockResolvedValue(true);
     await act(async () => {
       renderer = create(<Harness />);
     });
@@ -209,7 +221,7 @@ describe('useDemoController generation safety', () => {
     await flush();
 
     expect(mocks.fund).toHaveBeenCalledWith(
-      undefined,
+      expect.anything(),
       position.batch,
       50_000_000n,
     );
@@ -225,6 +237,126 @@ describe('useDemoController generation safety', () => {
       kind: 'joined',
       result: { ...nextPosition, amountBaseUnits: 50_000_000n },
     });
+  });
+
+  test('does not keep a stale public balance when only that refresh fails', async () => {
+    mocks.lifecycle.mockResolvedValue(settled);
+    mocks.joinDeposit.mockResolvedValue(position);
+    await connect(controller);
+    await flush();
+    expect(controller.state.publicUsdcBalance).toBe(1_000_000_000n);
+
+    mocks.readBalances.mockRejectedValueOnce(new Error('public balance unavailable'));
+    await act(async () => {
+      controller.actions.shieldAndDeposit(50);
+    });
+    await flush();
+
+    expect(controller.state.publicUsdcBalance).toBe(null);
+    expect(controller.state.hasConfidentialUsdc).toBe(true);
+    expect(controller.state.walletBalancesError).toBe('public balance unavailable');
+  });
+
+  test('releases the wallet mutation lock before a post-deposit balance refresh completes', async () => {
+    const pendingBalance = deferred<readonly [bigint, bigint]>();
+    mocks.lifecycle.mockResolvedValue(settled);
+    mocks.joinDeposit.mockResolvedValue(position);
+    mocks.revealShares.mockResolvedValue({ value: 100_000_000n, handle: '0x01' });
+    await connect(controller);
+    await flush();
+
+    mocks.readBalances.mockReturnValueOnce(pendingBalance.promise);
+    await act(async () => {
+      controller.actions.shieldAndDeposit(50);
+      await Promise.resolve();
+      await Promise.resolve();
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+    expect(controller.state.deposit.kind).toBe('joined');
+    await act(async () => {
+      controller.actions.revealShares();
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+    await flush();
+
+    expect(mocks.revealShares).toHaveBeenCalledTimes(1);
+    await act(async () => {
+      pendingBalance.resolve([5_000_000_000n, 950_000_000n]);
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+  });
+
+  test('an older wallet refresh cannot overwrite a newer one in the same session', async () => {
+    const oldBalance = deferred<readonly [bigint, bigint]>();
+    mocks.lifecycle.mockResolvedValue(settled);
+    mocks.joinDeposit.mockResolvedValue(position);
+    await connect(controller);
+    await flush();
+
+    mocks.readBalances
+      .mockReturnValueOnce(oldBalance.promise)
+      .mockResolvedValueOnce([5_000_000_000n, 800_000_000n]);
+    await act(async () => {
+      await controller.actions.shieldAndDeposit(50);
+    });
+    await act(async () => {
+      await controller.actions.shieldAndDeposit(25);
+    });
+    await flush();
+    expect(controller.state.publicUsdcBalance).toBe(800_000_000n);
+
+    oldBalance.resolve([5_000_000_000n, 950_000_000n]);
+    await flush();
+    expect(controller.state.publicUsdcBalance).toBe(800_000_000n);
+  });
+
+  test('does not prepare a redeem batch for a known-zero share balance', async () => {
+    mocks.findDeposit.mockResolvedValue(null);
+    mocks.revealShares.mockResolvedValue({ value: 0n, handle: '0x01' });
+    await connect(controller);
+    await flush();
+    mocks.prepareBatch.mockClear();
+
+    await act(async () => {
+      await controller.actions.redeem(50);
+    });
+    await flush();
+
+    expect(mocks.prepareBatch).not.toHaveBeenCalled();
+    expect(mocks.joinRedeem).not.toHaveBeenCalled();
+    expect(controller.state.redeem).toMatchObject({ kind: 'error' });
+  });
+
+  test('does not commit a reveal that predates an automatic claim', async () => {
+    const reveal = deferred<{ value: bigint; handle: string }>();
+    mocks.revealShares.mockReturnValue(reveal.promise);
+    mocks.lifecycle
+      .mockResolvedValueOnce(awaiting)
+      .mockResolvedValueOnce(settledUnclaimed)
+      .mockResolvedValue(settled);
+    await connect(controller);
+    await flush();
+
+    act(() => {
+      void controller.actions.revealShares();
+    });
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(2_500);
+    });
+    await flush();
+    reveal.resolve({ value: 100_000_000n, handle: '0x01' });
+    await flush();
+
+    expect(mocks.operator).toHaveBeenCalledWith({
+      action: 'claim',
+      position,
+      direction: 'deposit',
+      user: position.batch,
+    });
+    expect(controller.state.revealedShares).toBe(null);
   });
 
   test('completes a partial redemption and leaves the next redemption available', async () => {

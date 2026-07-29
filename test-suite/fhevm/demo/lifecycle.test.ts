@@ -268,6 +268,14 @@ describe("demo lifecycle collision policy", () => {
     expect(script).toContain('NODE_PATH="$ROOT/solana/demo-dapp/node_modules" bun run demo:seed');
   });
 
+  test("root package exposes one-command observable start and owned stop", async () => {
+    const rootPackage = JSON.parse(
+      await fs.readFile(path.join(import.meta.dir, "../../../package.json"), "utf8"),
+    ) as { scripts: Record<string, string> };
+    expect(rootPackage.scripts["demo:start"]).toBe("bun run demo serve --observability");
+    expect(rootPackage.scripts["demo:stop"]).toBe("bun run demo down");
+  });
+
   test("fresh bring-up materializes the built SDK before runtime canaries", async () => {
     const script = await fs.readFile(
       path.join(import.meta.dir, "../../../solana/scripts/e2e/clean-e2e.sh"),
@@ -1011,6 +1019,31 @@ describe("Apple Silicon compose policy", () => {
       expect.stringContaining("has no linux/amd64 manifest"),
       expect.stringContaining("runtime parent is not writable"),
       "required demo keypair not found: /repo/missing.json",
+    ]);
+  });
+
+  test("doctor checks Docker Compose and Apple Silicon Buildx capabilities", () => {
+    const snapshot = {
+      docker: {
+        cpus: 8,
+        memoryBytes: 16 * 1024 ** 3,
+        osType: "linux",
+        architecture: "aarch64",
+      },
+      dockerComposeError: "compose is not a docker command",
+      dockerBuildxError: "buildx is not a docker command",
+      coreManifestArchitectures: ["amd64"],
+      missingKeypairs: [],
+      runtimeWritable: true,
+    };
+    expect(doctorEnvironmentErrors(snapshot, "darwin", "arm64")).toEqual([
+      "Docker Compose unavailable: compose is not a docker command",
+      "Docker Buildx unavailable: buildx is not a docker command",
+    ]);
+    expect(doctorEnvironmentErrors(snapshot, "linux", "arm64")).toEqual([
+      "Docker Compose unavailable: compose is not a docker command",
+      "Docker Buildx unavailable: buildx is not a docker command",
+      expect.stringContaining("has no linux/arm64 manifest"),
     ]);
   });
 });

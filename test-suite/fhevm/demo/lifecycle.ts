@@ -205,6 +205,8 @@ export type DoctorEnvironmentSnapshot = {
       }
     | undefined;
   readonly dockerError?: string;
+  readonly dockerComposeError?: string;
+  readonly dockerBuildxError?: string;
   readonly coreManifestArchitectures: readonly string[];
   readonly coreManifestError?: string;
   readonly missingKeypairs: readonly string[];
@@ -726,7 +728,7 @@ const collectManifestArchitectures = (value: unknown): string[] => {
 
 const doctorEnvironmentSnapshot =
   async (): Promise<DoctorEnvironmentSnapshot> => {
-    const [dockerInfo, coreManifest, keypairs, runtimeDirectory] =
+    const [dockerInfo, dockerCompose, dockerBuildx, coreManifest, keypairs, runtimeDirectory] =
       await Promise.all([
         run(
           [
@@ -737,6 +739,8 @@ const doctorEnvironmentSnapshot =
           ],
           { allowFailure: true },
         ),
+        run(["docker", "compose", "version"], { allowFailure: true }),
+        run(["docker", "buildx", "version"], { allowFailure: true }),
         run(["docker", "manifest", "inspect", "--verbose", CORE_IMAGE], {
           allowFailure: true,
         }),
@@ -786,6 +790,16 @@ const doctorEnvironmentSnapshot =
           ? undefined
           : (dockerInfo.stderr || dockerInfo.stdout).trim() ||
             "Docker daemon is not reachable",
+      dockerComposeError:
+        dockerCompose.code === 0
+          ? undefined
+          : (dockerCompose.stderr || dockerCompose.stdout).trim() ||
+            "Docker Compose plugin is unavailable",
+      dockerBuildxError:
+        dockerBuildx.code === 0
+          ? undefined
+          : (dockerBuildx.stderr || dockerBuildx.stdout).trim() ||
+            "Docker Buildx plugin is unavailable",
       coreManifestArchitectures: [...new Set(manifestArchitectures)],
       coreManifestError: manifestError,
       missingKeypairs: keypairs
@@ -825,6 +839,16 @@ export const doctorEnvironmentErrors = (
         `Docker server OS is ${snapshot.docker.osType || "unknown"}; Linux containers are required`,
       );
     }
+  }
+  if (snapshot.dockerComposeError !== undefined) {
+    errors.push(`Docker Compose unavailable: ${snapshot.dockerComposeError}`);
+  }
+  if (
+    (snapshot.docker?.architecture === "arm64" ||
+      snapshot.docker?.architecture === "aarch64") &&
+    snapshot.dockerBuildxError !== undefined
+  ) {
+    errors.push(`Docker Buildx unavailable: ${snapshot.dockerBuildxError}`);
   }
   const requiredCoreArchitecture =
     platform === "darwin" && architecture === "arm64"

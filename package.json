@@ -3,6 +3,8 @@
   "private": true,
   "scripts": {
     "demo": "cd test-suite/fhevm && bun run demo/cli.ts",
+    "demo:start": "bun run demo serve --observability",
+    "demo:stop": "bun run demo down",
     "test": "cd test-suite/fhevm && bun run test"
   },
   "workspaces": [

@@ -114,7 +114,10 @@ const postFaucet = async (
   }
 };
 
-const readBalances = async (config: DemoConfig, owner: Address): Promise<readonly [bigint, bigint]> => {
+export const readDemoWalletBalances = async (
+  config: DemoConfig,
+  owner: Address,
+): Promise<readonly [solLamports: bigint, usdcBaseUnits: bigint]> => {
   const rpc = createSolanaRpc(config.rpcUrl);
   const [sol, tokenAccounts] = await Promise.all([
     rpc.getBalance(owner, { commitment: "confirmed" }).send(),
@@ -141,14 +144,14 @@ export const ensureDemoFunding = async (
   owner: Address,
   requiredUsdcBaseUnits: bigint = MIN_USDC_BALANCE,
 ): Promise<void> => {
-  const [solLamports, usdcBaseUnits] = await readBalances(config, owner);
+  const [solLamports, usdcBaseUnits] = await readDemoWalletBalances(config, owner);
   const funding = planDemoFunding(solLamports, usdcBaseUnits, requiredUsdcBaseUnits);
   await Promise.all([
     ...(funding.sol === undefined ? [] : [postFaucet("/airdrop-sol", owner, { sol: funding.sol })]),
     ...(funding.usdc === undefined ? [] : [postFaucet("/mint-usdc", owner, { amount: funding.usdc })]),
   ]);
   for (let attempt = 0; attempt < 40; attempt += 1) {
-    const [fundedSolLamports, fundedUsdcBaseUnits] = await readBalances(config, owner);
+    const [fundedSolLamports, fundedUsdcBaseUnits] = await readDemoWalletBalances(config, owner);
     const missing = planDemoFunding(fundedSolLamports, fundedUsdcBaseUnits, requiredUsdcBaseUnits);
     if (missing.sol === undefined && missing.usdc === undefined) return;
     await new Promise((resolve) => setTimeout(resolve, 250));

@@ -12,11 +12,26 @@ export function PortfolioOverview({ controller }: { readonly controller: DemoCon
   const {
     deposit,
     depositLifecycle,
+    hasConfidentialUsdc,
+    hasConfidentialShares,
+    publicUsdcBalance,
+    walletBalancesError,
     revealedShares,
     revealingShares,
     revealSharesError,
+    revealedUsdc,
+    revealingUsdc,
+    revealUsdcError,
   } = state;
-  const { connected, depositRunning, hasPrivateShares, sharePrice } = derived;
+  const { connected, depositRunning, sharePrice } = derived;
+  const hasConfidentialPositionAccount = hasConfidentialShares === true;
+  const privateActionRunning =
+    depositRunning ||
+    state.redeem.kind === 'running' ||
+    state.depositOperatorAction !== null ||
+    state.redeemOperatorAction !== null ||
+    revealingShares ||
+    revealingUsdc;
   const [amount, setAmount] = useState(DEFAULT_DEPOSIT_AMOUNT);
   const [depositComplete, setDepositComplete] = useState(false);
   const pendingDeposit = useRef(false);
@@ -50,6 +65,42 @@ export function PortfolioOverview({ controller }: { readonly controller: DemoCon
           ? 'Receiving cShares…'
           : 'Settlement in progress'
         : null;
+  const publicUsdcLabel =
+    !connected
+      ? '—'
+      : publicUsdcBalance === null
+        ? walletBalancesError
+          ? 'Unavailable'
+          : 'Loading…'
+        : `${formatUsdc(publicUsdcBalance)} USDC`;
+  const confidentialUsdcLabel =
+    !connected
+      ? '—'
+      : hasConfidentialUsdc === null
+        ? walletBalancesError
+          ? 'Unavailable'
+          : 'Loading…'
+        : !hasConfidentialUsdc
+          ? '0 cUSDC'
+          : revealingUsdc
+            ? 'Decrypting…'
+            : revealedUsdc === null
+              ? '•••• cUSDC'
+              : `${formatUsdc(revealedUsdc.value)} cUSDC`;
+  const confidentialSharesLabel =
+    !connected
+      ? '—'
+      : hasConfidentialShares === null
+        ? walletBalancesError
+          ? 'Unavailable'
+          : 'Loading…'
+        : !hasConfidentialShares
+          ? '0 cShares'
+          : revealingShares
+            ? 'Decrypting…'
+            : revealedShares === null
+              ? '•••• cShares'
+              : `${formatUsdc(revealedShares.value)} cShares`;
 
   useEffect(() => {
     pendingDeposit.current = false;
@@ -58,8 +109,8 @@ export function PortfolioOverview({ controller }: { readonly controller: DemoCon
   }, [state.generation]);
 
   useEffect(() => {
-    if (hasPrivateShares && !pendingDeposit.current) setAmount('');
-  }, [hasPrivateShares]);
+    if (hasConfidentialPositionAccount && !pendingDeposit.current) setAmount('');
+  }, [hasConfidentialPositionAccount]);
 
   useEffect(() => {
     if (deposit.kind === 'joined' && depositLifecycle !== null && !currentDepositClaimed) {
@@ -107,44 +158,72 @@ export function PortfolioOverview({ controller }: { readonly controller: DemoCon
           </div>
         </div>
 
-        <div className="private-position">
-          <div className="card-heading">
-            <span>Your private position</span>
-            <button
-              className="icon-button"
-              type="button"
-              aria-label={revealedShares === null ? 'Reveal confidential balance' : 'Hide confidential balance'}
-              disabled={!hasPrivateShares || revealingShares}
-              onClick={revealedShares === null ? actions.revealShares : actions.hideShares}
-            >
-              {revealedShares === null ? '◉' : '○'}
-            </button>
+        <div className="asset-inventory">
+          <h3>Your assets</h3>
+          <div className="asset-list">
+            <div className="asset-row">
+              <div>
+                <strong>USDC</strong>
+                <span>Wallet · Public</span>
+              </div>
+              <strong className="asset-balance">{publicUsdcLabel}</strong>
+            </div>
+            <div className="asset-row">
+              <div>
+                <strong>cUSDC</strong>
+                <span>Shielded balance · Private</span>
+              </div>
+              <div className="asset-value">
+                <strong className="asset-balance" aria-live="polite">{confidentialUsdcLabel}</strong>
+                {hasConfidentialUsdc && (
+                  <button
+                    className="balance-action"
+                    type="button"
+                    aria-label={revealedUsdc === null ? 'Reveal cUSDC balance' : 'Hide cUSDC balance'}
+                    disabled={privateActionRunning}
+                    onClick={revealedUsdc === null ? actions.revealUsdc : actions.hideUsdc}
+                  >
+                    {revealedUsdc === null ? 'Reveal' : 'Hide'}
+                  </button>
+                )}
+              </div>
+            </div>
+            <div className="asset-row">
+              <div>
+                <strong>cShares</strong>
+                <span>Vault position · Private</span>
+              </div>
+              <div className="asset-value">
+                <strong className="asset-balance" aria-live="polite">{confidentialSharesLabel}</strong>
+                {hasConfidentialPositionAccount && (
+                  <button
+                    className="balance-action"
+                    type="button"
+                    aria-label={revealedShares === null ? 'Reveal cShares balance' : 'Hide cShares balance'}
+                    disabled={privateActionRunning}
+                    onClick={revealedShares === null ? actions.revealShares : actions.hideShares}
+                  >
+                    {revealedShares === null ? 'Reveal' : 'Hide'}
+                  </button>
+                )}
+              </div>
+            </div>
           </div>
-          <strong className="private-balance">
-            {revealingShares
-              ? 'Decrypting…'
-              : revealedShares === null
-                ? '••••••'
-                : `${formatUsdc(revealedShares.value)} cShares`}
-          </strong>
-          <p>
-            {revealedShares !== null
-              ? 'Visible in this browser only'
-              : hasPrivateShares
-                ? 'Ready to reveal'
-                : connected
-                  ? 'No shares yet'
-                  : 'Connect to view'}
-          </p>
-          {revealSharesError && <p className="balance-error">{revealSharesError}</p>}
+          {(walletBalancesError || revealUsdcError || revealSharesError) && (
+            <div className="balance-errors" role="alert">
+              {walletBalancesError && <p className="balance-error">{walletBalancesError}</p>}
+              {revealUsdcError && <p className="balance-error">{revealUsdcError}</p>}
+              {revealSharesError && <p className="balance-error">{revealSharesError}</p>}
+            </div>
+          )}
         </div>
       </article>
 
       <article className="deposit-panel">
         <div className="deposit-panel-heading">
           <div>
-            <span className="muted">{hasPrivateShares ? 'Add to position' : 'Deposit'}</span>
-            <h2>{hasPrivateShares ? 'Deposit more USDC' : 'Start earning privately'}</h2>
+            <span className="muted">{hasConfidentialPositionAccount ? 'Add to position' : 'Deposit'}</span>
+            <h2>{hasConfidentialPositionAccount ? 'Deposit more USDC' : 'Start earning privately'}</h2>
           </div>
           <span className="approval-count">{externalWallet ? '2 approvals' : '2 transactions'}</span>
         </div>

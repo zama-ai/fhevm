@@ -45,7 +45,6 @@
 .vault-title,
 .deposit-panel-heading,
 .vault-stats,
-.card-heading,
 .active-deposit,
 .action-error {
   display: flex;
@@ -114,53 +113,113 @@
   font-size: 22px;
 }
 
-.private-position {
+.asset-inventory {
   padding-top: 20px;
   border-top: 1px solid rgba(255, 255, 255, 0.08);
 }
 
-.card-heading,
 .deposit-panel-heading {
   justify-content: space-between;
 }
 
-.card-heading {
-  color: #b5b5bc;
+.asset-inventory h3 {
+  margin: 0 0 10px;
   font-size: 13px;
 }
 
-.icon-button {
-  width: 30px;
-  height: 30px;
-  border-radius: 9px;
-  color: #8e8e96;
-  background: rgba(255, 255, 255, 0.06);
-  cursor: pointer;
+.asset-list {
+  overflow: hidden;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 12px;
+  background: rgba(255, 255, 255, 0.025);
 }
 
-.icon-button:disabled {
-  cursor: not-allowed;
-  opacity: 0.4;
+.asset-row,
+.asset-value {
+  display: flex;
+  align-items: center;
 }
 
-.private-balance {
+.asset-row {
+  min-height: 62px;
+  justify-content: space-between;
+  gap: 18px;
+  padding: 11px 14px;
+}
+
+.asset-row + .asset-row {
+  border-top: 1px solid rgba(255, 255, 255, 0.07);
+}
+
+.asset-row > div:first-child {
+  min-width: 0;
+}
+
+.asset-row > div:first-child > strong,
+.asset-row > div:first-child > span {
   display: block;
-  margin: 24px 0 7px;
-  font-size: 34px;
-  letter-spacing: 0.08em;
 }
 
-.private-position p {
-  margin: 0;
+.asset-row > div:first-child > strong {
+  margin-bottom: 3px;
+  font-size: 13px;
+}
+
+.asset-row > div:first-child > span {
   color: #9c9ca4;
-  font-size: 12px;
+  font-size: 11px;
 }
 
-.private-position .balance-error,
+.asset-value {
+  flex: 0 0 auto;
+  justify-content: flex-end;
+  gap: 10px;
+}
+
+.asset-balance {
+  font-size: 13px;
+  font-variant-numeric: tabular-nums;
+  text-align: right;
+}
+
+.balance-action {
+  min-width: 49px;
+  padding: 6px 9px;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 8px;
+  color: #d4d4d8;
+  background: rgba(255, 255, 255, 0.055);
+  cursor: pointer;
+  font-size: 11px;
+  font-weight: 650;
+}
+
+.balance-action:hover:not(:disabled) {
+  background: rgba(255, 255, 255, 0.1);
+}
+
+.balance-action:focus-visible {
+  outline: 2px solid #a78bfa;
+  outline-offset: 2px;
+}
+
+.balance-action:disabled {
+  cursor: wait;
+  opacity: 0.55;
+}
+
+.asset-inventory .balance-error,
 .input-error {
-  margin-top: 8px;
   color: #fecaca;
   font-size: 11px;
+}
+
+.asset-inventory .balance-error {
+  margin: 8px 0 0;
+}
+
+.input-error {
+  margin-top: 8px;
 }
 
 .deposit-panel {

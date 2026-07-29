@@ -16,13 +16,11 @@ describe('RedeemJourney', () => {
         redeemClaiming: false,
         redeemClaimError: null,
         revealedShares: null,
-        revealedUsdc: null,
-        revealingUsdc: false,
-        revealUsdcError: null,
       },
       derived: {
         connected: true,
-        hasPrivateShares: true,
+        hasPrivateShares: false,
+        hasConfidentialShares: true,
         redeemJoined: false,
       },
       actions: {
@@ -51,13 +49,11 @@ describe('RedeemJourney', () => {
         redeemClaiming: false,
         redeemClaimError: null,
         revealedShares: null,
-        revealedUsdc: null,
-        revealingUsdc: false,
-        revealUsdcError: null,
       },
       derived: {
         connected: true,
         hasPrivateShares: true,
+        hasConfidentialShares: true,
         redeemJoined: false,
       },
       actions: { redeem },
@@ -76,6 +72,28 @@ describe('RedeemJourney', () => {
     act(() => renderer!.unmount());
   });
 
+  test('disables redemption when the revealed cShare balance is zero', () => {
+    const controller = {
+      state: {
+        redeem: { kind: 'idle' },
+        redeemLifecycle: null,
+        redeemOperatorAction: null,
+        redeemOperatorError: null,
+        revealedShares: { value: 0n, handle: '0x01' },
+      },
+      derived: {
+        connected: true,
+        hasConfidentialShares: true,
+        redeemJoined: false,
+      },
+      actions: { redeem: vi.fn() },
+    } as unknown as DemoController;
+
+    const markup = renderToStaticMarkup(<RedeemJourney controller={controller} />);
+    expect(markup).toContain('disabled=""');
+    expect(markup).toContain('No cShares to redeem');
+  });
+
   test('does not keep showing an in-progress action after redemption completes', () => {
     const controller = {
       state: {
@@ -90,18 +108,14 @@ describe('RedeemJourney', () => {
         redeemOperatorAction: null,
         redeemOperatorError: null,
         revealedShares: null,
-        revealedUsdc: null,
-        revealingUsdc: false,
-        revealUsdcError: null,
       },
       derived: {
         connected: true,
         hasPrivateShares: true,
+        hasConfidentialShares: true,
         redeemJoined: false,
       },
-      actions: {
-        revealRedeemedUsdc: vi.fn(),
-      },
+      actions: {},
     } as unknown as DemoController;
 
     const markup = renderToStaticMarkup(<RedeemJourney controller={controller} />);
@@ -125,18 +139,14 @@ describe('RedeemJourney', () => {
         redeemOperatorAction: null,
         redeemOperatorError: null,
         revealedShares: null,
-        revealedUsdc: null,
-        revealingUsdc: false,
-        revealUsdcError: null,
       },
       derived: {
         connected: true,
         hasPrivateShares: true,
+        hasConfidentialShares: true,
         redeemJoined: true,
       },
-      actions: {
-        revealRedeemedUsdc: vi.fn(),
-      },
+      actions: {},
     } as unknown as DemoController;
 
     const markup = renderToStaticMarkup(<RedeemJourney controller={controller} />);

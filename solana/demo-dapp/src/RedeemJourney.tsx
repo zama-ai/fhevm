@@ -21,15 +21,13 @@ export function RedeemJourney({ controller }: { readonly controller: DemoControl
     redeemOperatorAction: operatorAction,
     redeemOperatorError: operatorError,
     revealedShares,
-    revealedUsdc,
-    revealingUsdc,
-    revealUsdcError,
   } = state;
-  const { connected, hasPrivateShares, redeemJoined } = derived;
+  const { connected, hasConfidentialShares, redeemJoined } = derived;
   const [percentage, setPercentage] = useState(50);
   const settled = lifecycle?.kind === 'settled';
   const completed = (settled && lifecycle.claimed ? lifecycle : completedRedeemLifecycle) ?? null;
-  if (!connected || !hasPrivateShares) return null;
+  const knownEmpty = revealedShares?.value === 0n;
+  if (!connected || hasConfidentialShares !== true) return null;
   const copy = stageCopy(percentage);
 
   return (
@@ -82,10 +80,16 @@ export function RedeemJourney({ controller }: { readonly controller: DemoControl
         <button
           className="panel-action"
           type="button"
-          disabled={redeem.kind === 'running' || redeemJoined}
+          disabled={redeem.kind === 'running' || redeemJoined || knownEmpty}
           onClick={() => actions.redeem(percentage)}
         >
-          {redeem.kind === 'running' ? 'Redeeming…' : redeemJoined ? 'Redemption joined' : 'Redeem'}
+          {redeem.kind === 'running'
+            ? 'Redeeming…'
+            : redeemJoined
+              ? 'Redemption joined'
+              : knownEmpty
+                ? 'No cShares to redeem'
+                : 'Redeem'}
         </button>
       </div>
 
@@ -166,26 +170,6 @@ export function RedeemJourney({ controller }: { readonly controller: DemoControl
                 <strong>{formatUsdc(completed.payoutReceived)} USDC</strong>
               </div>
             </div>
-            <div className="redeem-balance-action">
-              <div className="revealed-value">
-                <strong>
-                  {revealingUsdc
-                    ? 'Decrypting…'
-                    : revealedUsdc === null
-                      ? '•••• cUSDC'
-                      : `${formatUsdc(revealedUsdc.value)} cUSDC`}
-                </strong>
-                <small>{revealedUsdc === null ? 'Exact current balance' : 'Revealed for this view only'}</small>
-              </div>
-              <button
-                className="panel-action"
-                type="button"
-                disabled={revealingUsdc}
-                onClick={revealedUsdc === null ? actions.revealRedeemedUsdc : actions.hideRedeemedUsdc}
-              >
-                {revealedUsdc === null ? 'Reveal current cUSDC balance' : 'Hide cUSDC'}
-              </button>
-            </div>
             <details className="privacy-note">
               <summary>Privacy detail</summary>
               Settlement publishes the batch total. If you are the only participant, that total reveals your amount.
@@ -198,11 +182,6 @@ export function RedeemJourney({ controller }: { readonly controller: DemoControl
       {operatorError && (
         <ActionError>
           {operatorAction === 'claim' ? 'Receiving cUSDC' : 'Settlement'} is retrying automatically: {operatorError}
-        </ActionError>
-      )}
-      {revealUsdcError && (
-        <ActionError retryLabel="Retry reveal" onRetry={actions.revealRedeemedUsdc}>
-          {revealUsdcError}
         </ActionError>
       )}
     </section>

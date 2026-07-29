@@ -1,7 +1,13 @@
 import { useCallback, useEffect, useReducer, useRef } from 'react';
 
 import type { BatchLifecycle, BatchPosition, OperatorAction, VaultDirection, VaultMetrics } from './batchTypes';
-import { connectDemoSession, describeWalletError, ensureDemoFunding, type DemoSession } from './demoSession';
+import {
+  connectDemoSession,
+  describeWalletError,
+  ensureDemoFunding,
+  readDemoWalletBalances,
+  type DemoSession,
+} from './demoSession';
 import {
   depositToVault,
   findExistingDeposit,
@@ -19,7 +25,12 @@ import {
   recordCompletedRedeem,
   type RedeemStage,
 } from './redeem';
-import { revealClaimedShares, revealClaimedUsdc, type RevealedBalance } from './revealShares';
+import {
+  hasConfidentialBalanceAccount,
+  revealClaimedShares,
+  revealClaimedUsdc,
+  type RevealedBalance,
+} from './revealShares';
 import { readVaultLifecycle } from './settlement';
 import { harvestDemoVault, readDemoVaultMetrics } from './vaultYield';
 
@@ -44,6 +55,10 @@ export type DemoState = {
   readonly depositOperatorAction: OperatorAction | null;
   readonly depositOperatorError: string | null;
   readonly hasPrivateShares: boolean;
+  readonly hasConfidentialUsdc: boolean | null;
+  readonly hasConfidentialShares: boolean | null;
+  readonly publicUsdcBalance: bigint | null;
+  readonly walletBalancesError: string | null;
   readonly revealedShares: RevealedBalance | null;
   readonly revealingShares: boolean;
   readonly revealSharesError: string | null;
@@ -70,6 +85,10 @@ const accountState = {
   depositOperatorAction: null,
   depositOperatorError: null,
   hasPrivateShares: false,
+  hasConfidentialUsdc: null,
+  hasConfidentialShares: null,
+  publicUsdcBalance: null,
+  walletBalancesError: null,
   revealedShares: null,
   revealingShares: false,
   revealSharesError: null,
@@ -114,6 +133,8 @@ export function useDemoController() {
   const operationInFlight = useRef(false);
   const harvestInFlight = useRef(false);
   const metricsRequestGeneration = useRef(0);
+  const walletBalancesRequestGeneration = useRef(0);
+  const privateBalanceMutationGeneration = useRef(0);
   const operatorGeneration = useRef<Record<VaultDirection, number | null>>({ deposit: null, redeem: null });
   const sessionGeneration = useRef(0);
   const currentDepositClaimed = state.depositLifecycle?.kind === 'settled' && state.depositLifecycle.claimed;
@@ -140,6 +161,43 @@ export function useDemoController() {
     },
     [commit],
   );
+  const refreshWalletBalances = useCallback(
+    async (session: DemoSession, generation: number) => {
+      const requestGeneration = ++walletBalancesRequestGeneration.current;
+      const isCurrent = () =>
+        session.isActive() && walletBalancesRequestGeneration.current === requestGeneration;
+      commit(generation, {
+        publicUsdcBalance: null,
+        hasConfidentialUsdc: null,
+        hasConfidentialShares: null,
+        walletBalancesError: null,
+      });
+      const errors: string[] = [];
+      const fail = (patch: Partial<DemoState>, error: unknown) => {
+        if (!isCurrent()) return;
+        errors.push(errorMessage(error));
+        commit(generation, { ...patch, walletBalancesError: errors.join(' · ') });
+      };
+      await Promise.all([
+        readDemoWalletBalances(session.config, session.signer.address)
+          .then(([, publicUsdcBalance]) => {
+            if (isCurrent()) commit(generation, { publicUsdcBalance });
+          })
+          .catch((error: unknown) => fail({ publicUsdcBalance: null }, error)),
+        hasConfidentialBalanceAccount(session, session.config.mints.joinConfidential)
+          .then((hasConfidentialUsdc) => {
+            if (isCurrent()) commit(generation, { hasConfidentialUsdc });
+          })
+          .catch((error: unknown) => fail({ hasConfidentialUsdc: null }, error)),
+        hasConfidentialBalanceAccount(session, session.config.mints.payoutConfidential)
+          .then((hasConfidentialShares) => {
+            if (isCurrent()) commit(generation, { hasConfidentialShares });
+          })
+          .catch((error: unknown) => fail({ hasConfidentialShares: null }, error)),
+      ]);
+    },
+    [commit],
+  );
 
   const advanceOperator = useCallback(
     async (
@@ -159,6 +217,10 @@ export function useDemoController() {
       const actionKey = direction === 'deposit' ? 'depositOperatorAction' : 'redeemOperatorAction';
       const errorKey = direction === 'deposit' ? 'depositOperatorError' : 'redeemOperatorError';
       const lifecycleKey = direction === 'deposit' ? 'depositLifecycle' : 'redeemLifecycle';
+      if (action === 'claim') {
+        privateBalanceMutationGeneration.current += 1;
+        commit(generation, direction === 'deposit' ? { revealedShares: null } : { revealedUsdc: null });
+      }
       commit(generation, { [actionKey]: action, [errorKey]: null });
       let actionError: string | null = null;
       try {
@@ -193,6 +255,9 @@ export function useDemoController() {
                 ? { hasPrivateShares: true, revealedShares: null }
                 : {}),
             });
+            if (action === 'claim' && completed) {
+              void refreshWalletBalances(session, generation);
+            }
           } catch (error) {
             commit(generation, {
               [errorKey]: actionError ?? errorMessage(error),
@@ -205,7 +270,7 @@ export function useDemoController() {
         }
       }
     },
-    [commit],
+    [commit, refreshWalletBalances],
   );
 
   useEffect(() => {
@@ -334,6 +399,8 @@ export function useDemoController() {
         deposit: existingDeposit === null ? { kind: 'idle' } : { kind: 'joined', result: existingDeposit },
         hasPrivateShares,
       });
+      await refreshWalletBalances(session, generation);
+      session.assertActive();
       try {
         const existingRedeem = await findExistingRedeem(session);
         session.assertActive();
@@ -384,6 +451,8 @@ export function useDemoController() {
       deposit: { kind: 'running', stage: 'preparing' },
       depositLifecycle: null,
       revealSharesError: null,
+      revealedUsdc: null,
+      revealUsdcError: null,
     });
     try {
       await ensureDemoFunding(session.config, session.signer.address, usdcToBaseUnits(amount));
@@ -401,24 +470,28 @@ export function useDemoController() {
       commit(generation, { deposit: { kind: 'error', message: describeWalletError(error, 'transaction') } });
     } finally {
       finishOperation(generation);
+      void refreshWalletBalances(session, generation);
     }
   };
 
   const revealShares = async () => {
     if (
       state.connection.kind !== 'ready' ||
-      !state.hasPrivateShares ||
+      state.hasConfidentialShares !== true ||
       operationInFlight.current
     )
       return;
     const session = state.connection.session;
     const generation = state.generation;
+    const mutationGeneration = privateBalanceMutationGeneration.current;
     operationInFlight.current = true;
     commit(generation, { revealingShares: true, revealSharesError: null });
     try {
       const revealedShares = await revealClaimedShares(session);
       session.assertActive();
-      commit(generation, { revealedShares });
+      if (privateBalanceMutationGeneration.current === mutationGeneration) {
+        commit(generation, { revealedShares });
+      }
     } catch (error) {
       commit(generation, { revealSharesError: describeWalletError(error, 'reveal') });
     } finally {
@@ -467,13 +540,13 @@ export function useDemoController() {
       revealUsdcError: null,
     });
     try {
-      await prepareDemoBatch('redeem');
-      session.assertActive();
       const shares = state.revealedShares ?? (await revealClaimedShares(session));
       session.assertActive();
       commit(generation, { revealedShares: null });
       const amount = (shares.value * BigInt(percentage)) / 100n;
       if (amount === 0n) throw new Error(`The private share balance is too small to redeem ${percentage}%`);
+      await prepareDemoBatch('redeem');
+      session.assertActive();
       const result = await withWalletMutationLock(session, () =>
         joinRedeemBatch(session, amount, shares.handle, (stage) => {
           commit(generation, { redeem: { kind: 'running', stage } });
@@ -491,16 +564,19 @@ export function useDemoController() {
     }
   };
 
-  const revealRedeemedUsdc = async () => {
+  const revealUsdc = async () => {
     if (state.connection.kind !== 'ready' || operationInFlight.current) return;
     const session = state.connection.session;
     const generation = state.generation;
+    const mutationGeneration = privateBalanceMutationGeneration.current;
     operationInFlight.current = true;
     commit(generation, { revealingUsdc: true, revealUsdcError: null });
     try {
       const revealedUsdc = await revealClaimedUsdc(session);
       session.assertActive();
-      commit(generation, { revealedUsdc });
+      if (privateBalanceMutationGeneration.current === mutationGeneration) {
+        commit(generation, { revealedUsdc });
+      }
     } catch (error) {
       commit(generation, { revealUsdcError: describeWalletError(error, 'reveal') });
     } finally {
@@ -523,6 +599,7 @@ export function useDemoController() {
       depositSettled: state.depositLifecycle?.kind === 'settled',
       sharesClaimed: currentDepositClaimed,
       hasPrivateShares: state.hasPrivateShares,
+      hasConfidentialShares: state.hasConfidentialShares,
       sharePrice,
       redeemJoined: state.redeem.kind === 'joined',
       redeemSettled: state.redeemLifecycle?.kind === 'settled',
@@ -536,8 +613,8 @@ export function useDemoController() {
       hideShares: () => commit(state.generation, { revealedShares: null }),
       fastForwardOneYear: () => void fastForwardOneYear(),
       redeem: (percentage: number) => void redeemPosition(percentage),
-      revealRedeemedUsdc: () => void revealRedeemedUsdc(),
-      hideRedeemedUsdc: () => commit(state.generation, { revealedUsdc: null }),
+      revealUsdc: () => void revealUsdc(),
+      hideUsdc: () => commit(state.generation, { revealedUsdc: null }),
     },
   };
 }

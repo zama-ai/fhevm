@@ -64,14 +64,6 @@
     gap: 14px;
   }
 
-  .redeem-balance-action {
-    align-items: stretch;
-    flex-direction: column;
-  }
-
-  .redeem-balance-action .revealed-value {
-    text-align: left;
-  }
 }
 
 @media (max-width: 520px) {

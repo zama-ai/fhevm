@@ -1,4 +1,4 @@
-import { createSolanaRpc, getAddressEncoder } from '@solana/kit';
+import { createSolanaRpc, getAddressEncoder, type Address } from '@solana/kit';
 import {
   createFhevmDecryptClient,
   defineFhevmSolanaChain,
@@ -137,6 +137,21 @@ export const readConfidentialBalanceEvidence = async (
     handle: handleHex(state.currentHandle),
     tokenAccount,
   };
+};
+
+export const hasConfidentialBalanceAccount = async (
+  session: DemoSession,
+  mint: Address,
+): Promise<boolean> => {
+  const tokenAccount = await tokenAccountAddress(mint, session.signer.address);
+  const account = await createSolanaRpc(session.config.rpcUrl)
+    .getAccountInfo(tokenAccount, { commitment: 'confirmed', encoding: 'base64' })
+    .send();
+  if (account.value === null || account.value.owner === '11111111111111111111111111111111') return false;
+  if (account.value.owner !== session.config.programs.token) {
+    throw new Error('The canonical confidential token account is owned by an unexpected program');
+  }
+  return true;
 };
 
 export const revealClaimedShares = (session: DemoSession): Promise<RevealedBalance> =>

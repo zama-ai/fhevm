@@ -109,48 +109,12 @@
   opacity: 0.46;
 }
 
-.redeem-balance-action {
-  display: flex;
-  align-items: center;
-  justify-content: flex-end;
-  gap: 16px;
-}
-
-.redeem-balance-action .revealed-value {
-  text-align: right;
-}
-
-.redeem-balance-action .revealed-value strong,
-.redeem-balance-action .revealed-value small {
-  display: block;
-}
-
-.redeem-balance-action .revealed-value small {
-  margin-top: 3px;
-  color: #9c9ca4;
-  font-size: 10px;
-}
-
-.redeem-balance-action > button {
-  padding: 10px 13px;
-  border: 1px solid rgba(20, 241, 149, 0.28);
-  color: #bbf7d0;
-  background: rgba(20, 241, 149, 0.08);
-  font-size: 11px;
-  font-weight: 750;
-}
-
 .panel-action {
   padding: 11px 15px;
   border-radius: 9px;
   cursor: pointer;
   font-size: 12px;
   font-weight: 760;
-}
-
-.redeem-balance-action > button:disabled {
-  cursor: wait;
-  opacity: 0.5;
 }
 
 .privacy-note summary {

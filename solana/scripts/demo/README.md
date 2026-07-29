@@ -1,6 +1,15 @@
 # Solana confidential-vault demo lifecycle
 
-Run the demo lifecycle from the repository root:
+For the shortest source-clone path and the end-to-end architecture, start with the
+[dApp README](../../demo-dapp/README.md).
+
+Run the complete observable demo from the repository root:
+
+```sh
+bun run demo:start
+```
+
+The underlying lifecycle commands are:
 
 ```sh
 bun run demo doctor
