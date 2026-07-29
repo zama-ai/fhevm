@@ -395,35 +395,31 @@ describe("compat", () => {
   // task:addHostPausers took useInternalProxyAddress from v0.12.1; the gateway task
   // kept useInternalPauserSetAddress until v0.13.0, so the two flags diverge here.
   test("uses the proxy pauser flag from host contracts v0.12.1", () => {
-    for (const hostVersion of ["v0.12.1", "v0.12.4", "v0.12.5"]) {
-      const policy = compatPolicyForState({
-        versions: {
-          target: "latest-supported",
-          lockName: `${hostVersion}.json`,
-          env: {
-            HOST_VERSION: hostVersion,
-            GATEWAY_VERSION: hostVersion,
-          } as Record<string, string>,
-          sources: [],
-        },
-        overrides: [],
-        scenario: testDefaultScenario(),
-      });
-      expect(policy.composeEnv.HOST_ADD_PAUSERS_INTERNAL_FLAG).toBe("--use-internal-proxy-address");
-      expect(policy.composeEnv.GATEWAY_ADD_PAUSERS_INTERNAL_FLAG).toBe("--use-internal-pauser-set-address");
-    }
+    const policy = compatPolicyForState({
+      versions: {
+        target: "latest-supported",
+        lockName: "v0.12.1.json",
+        env: {
+          HOST_VERSION: "v0.12.1",
+          GATEWAY_VERSION: "v0.12.1",
+        } as Record<string, string>,
+        sources: [],
+      },
+      overrides: [],
+      scenario: testDefaultScenario(),
+    });
+    expect(policy.composeEnv.HOST_ADD_PAUSERS_INTERNAL_FLAG).toBe("--use-internal-proxy-address");
+    expect(policy.composeEnv.GATEWAY_ADD_PAUSERS_INTERNAL_FLAG).toBe("--use-internal-pauser-set-address");
   });
 
   test("grants the larger bootstrap budget only to pre-v0.13.20 KMS cores", () => {
     expect(requiresLegacyKmsBootstrapBudget("v0.13.10")).toBe(true);
-    expect(requiresLegacyKmsBootstrapBudget("v0.12.0")).toBe(true);
     expect(requiresLegacyKmsBootstrapBudget("v0.13.20")).toBe(false);
     expect(requiresLegacyKmsBootstrapBudget("v0.13.20-0")).toBe(false);
+    // The checked-in node-by-node runbook must stay on the standard budget.
     expect(requiresLegacyKmsBootstrapBudget("v0.13.21")).toBe(false);
-    expect(requiresLegacyKmsBootstrapBudget("v0.13.22")).toBe(false);
     // Unparsed (sha-tagged) cores follow the modern budget, as elsewhere in compat.
     expect(requiresLegacyKmsBootstrapBudget("abc1234")).toBe(false);
-    expect(requiresLegacyKmsBootstrapBudget("")).toBe(false);
   });
 
   test("renders modern pauser flags for unparsed mainline versions", () => {

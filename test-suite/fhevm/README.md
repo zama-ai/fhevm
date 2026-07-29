@@ -214,12 +214,6 @@ Runbooks use the same primitives an operator needs during a release:
 
 The `test-suite-stateful-rollout` workflow executes a checked-in runbook through manual dispatch with a path relative to `test-suite/fhevm`.
 
-Runbooks are kept only while the version range they describe is still supported here. The
-reproduction of the 2026-07-13 mainnet KMS incident was removed as unsupported; its
-coordinates, should it ever need rebuilding, were contracts v0.12.1, coprocessor v0.11.0,
-connector v0.12.0, KMS core v0.13.3 -> v0.13.10 and relayer-sdk 0.4.2, with the expected
-failure being a generic WASM reconstruction error at the two-old/two-new node boundary.
-
 ## Version Override via Environment Variables
 
 After resolving a target bundle, the CLI applies **environment variable overrides**: any
