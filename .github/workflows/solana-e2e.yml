@@ -239,7 +239,7 @@ jobs:
 
       - name: Refresh demo programs, state, and authorization
         id: demo-reseed
-        run: bun run demo reseed
+        run: bun run demo reseed --direct
 
       - name: Deposit-arc smoke (bun run demo:smoke) — full arc live via the SDK, hard gate
         # demo:smoke sets RUN_DEMO_SCENARIOS=1 itself, so the deposit-arc scenario only runs here

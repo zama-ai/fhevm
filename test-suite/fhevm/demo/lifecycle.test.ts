@@ -332,6 +332,7 @@ describe("demo lifecycle collision policy", () => {
     expect(fullVertical.match(/\bnode solana-input\.ts/g)).toHaveLength(2);
     expect(adversarial.match(/\bnode solana-input\.ts/g)).toHaveLength(1);
     expect(workflow.match(/node --input-type=module/g)).toHaveLength(2);
+    expect(workflow).toContain("run: bun run demo reseed --direct");
     expect(twoHolderTransfer).toContain('run(["node", SDK_WORKER]');
     expect(demoViteConfig).toContain("preserveSymlinks: true");
     expect(fullVertical).not.toContain("--preserve-symlinks");
