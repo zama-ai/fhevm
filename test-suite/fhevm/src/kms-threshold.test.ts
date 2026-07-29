@@ -340,12 +340,46 @@ describe("renderEnvMaps (threshold)", () => {
     expect(gw.PUBLIC_DECRYPTION_THRESHOLD).toBe("3"); // 2t+1
     expect(gw.USER_DECRYPTION_THRESHOLD).toBe("3");
     expect(gw.KMS_GENERATION_THRESHOLD).toBe("3");
+    // Full 2t+1 quorum, plus t spares so the client can drop a corrupted share.
+    const relayer = rendered.componentEnvs["relayer"];
+    expect(relayer.APP_GATEWAY__CONTRACTS__USER_DECRYPT_SHARES_THRESHOLD).toBe("3");
+    expect(relayer.APP_GATEWAY__CONTRACTS__USER_DECRYPT_ADDITIONAL_SHARES).toBe("1"); // t=1
+    expect(relayer.APP_GATEWAY__CONTRACTS__USER_DECRYPT_ADDITIONAL_SHARES_TIMEOUT_SECS).toBe("5");
     // one distinct tx-sender per party
     expect(gw.KMS_TX_SENDER_ADDRESS_0).toBeDefined();
     expect(gw.KMS_TX_SENDER_ADDRESS_3).toBeDefined();
     expect(gw.KMS_TX_SENDER_ADDRESS_0).not.toBe(gw.KMS_TX_SENDER_ADDRESS_3);
     // Test params drive the on-chain keygen/crsgen triggers
     expect(rendered.versionsEnv.KEYGEN_PARAMS_TYPE).toBe("1");
+  });
+
+  // t=2 is the first topology where the spare count differs from a literal 1.
+  test("scales the relayer's spare shares with t, not a fixed 1", async () => {
+    const templateEnvs = Object.fromEntries(
+      await Promise.all(
+        COMPONENTS.map(async (component) => [
+          component,
+          await readEnvFile(path.join(TEMPLATE_ENV_DIR, `.env.${component}`)),
+        ]),
+      ),
+    ) as Record<string, Record<string, string>>;
+    const state: State = {
+      target: "latest-main",
+      lockPath: "/tmp/latest-main.json",
+      requiresGitHub: true,
+      versions: presetBundle("latest-main", "abcdef0", "latest-main.json"),
+      overrides: [],
+      scenario: testDefaultScenario({
+        kms: { mode: "threshold", parties: 7, threshold: 2, committeeSize: 7, fheParams: "Test" },
+      }),
+      completedSteps: [],
+      updatedAt: "2026-03-30T00:00:00.000Z",
+    };
+
+    const rendered = await renderEnvMaps({ discovery: undefined }, stackSpecForState(state), templateEnvs, deriveWallet);
+    const relayer = rendered.componentEnvs["relayer"];
+    expect(relayer.APP_GATEWAY__CONTRACTS__USER_DECRYPT_SHARES_THRESHOLD).toBe("5"); // 2t+1
+    expect(relayer.APP_GATEWAY__CONTRACTS__USER_DECRYPT_ADDITIONAL_SHARES).toBe("2"); // t, so 5+2 = the whole committee
   });
 });
 

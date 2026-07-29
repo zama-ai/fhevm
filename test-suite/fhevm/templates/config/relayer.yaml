@@ -112,7 +112,7 @@ gateway:
     user_decrypt_shares_threshold: 1 # KMS centralized mode
     # Optimistic wait window disabled: centralized KMS returns a single share.
     user_decrypt_additional_shares: 0
-    user_decrypt_additional_shares_timeout_secs: 10
+    user_decrypt_additional_shares_timeout_secs: 5
 log:
   format: "compact" # compact, pretty, or json
   show_file_line: true
