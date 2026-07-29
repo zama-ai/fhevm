@@ -835,6 +835,96 @@ contract BridgeTest is TestHelperOz5, HostContractsDeployerTestUtils, BridgeEven
         vm.expectRevert();
         acl.allowTransient(fresh, address(dstApp));
     }
+
+    ////////////////////////////////////////////////////////////////////////////////
+    // syncDelegate: the LZ endpoint delegate stays bound to the ACL owner
+    //
+    // The bridge resolves `owner()` dynamically from the ACL, but the LayerZero endpoint
+    // delegate is a concrete address stored on the endpoint, so it does not follow an ACL
+    // ownership change on its own. `syncDelegate` (ACL-gated) re-points it to the current
+    // owner, and `ACL.acceptOwnership` calls it automatically on every handoff.
+    //
+    // These tests use the production topology: a real ConfidentialBridge deployed at the
+    // ACL's canonical `confidentialBridgeAdd`, so `ACL.acceptOwnership`'s hardcoded call
+    // lands on it and the full end-to-end resync is exercised (not a mock or a skip path).
+    ////////////////////////////////////////////////////////////////////////////////
+
+    /// @dev Reads the delegate the LayerZero endpoint records for a given OApp.
+    function _endpointDelegate(uint32 eid, address oapp) internal view returns (address) {
+        return IEndpointDelegates(endpoints[eid]).delegates(oapp);
+    }
+
+    /// @dev Deploys a real ConfidentialBridge at `target` (the ACL's canonical bridge
+    ///      address) wired to `lzEndpoint`, using the same two-phase UUPS pattern as the
+    ///      production deploy. `deployCodeTo` pins the proxy to the exact canonical address
+    ///      so `ACL.acceptOwnership`'s hardcoded `syncDelegate` call reaches this instance.
+    function _deployBridgeAtCanonical(address target, address lzEndpoint) internal returns (ConfidentialBridge) {
+        address emptyImpl = address(new EmptyUUPSProxy());
+        deployCodeTo(
+            "HostContractsDeployerTestUtils.sol:DeployableERC1967Proxy",
+            abi.encode(emptyImpl, abi.encodeCall(EmptyUUPSProxy.initialize, ())),
+            target
+        );
+        address bridgeImpl = address(new ConfidentialBridge(lzEndpoint));
+        vm.prank(owner);
+        EmptyUUPSProxy(target).upgradeToAndCall(
+            bridgeImpl,
+            abi.encodeCall(ConfidentialBridge.initializeFromEmptyProxy, (new uint32[](0), new uint64[](0)))
+        );
+        return ConfidentialBridge(payable(target));
+    }
+
+    /// @dev At initialization the bridge seeds the endpoint delegate with the ACL owner
+    ///      (`__OAppCore_init(owner())`), so the delegate starts equal to `owner`.
+    function test_SyncDelegate_InitialDelegateIsOwner() public {
+        ConfidentialBridge bridge = _deployBridgeAtCanonical(confidentialBridgeAdd, endpoints[DST_EID]);
+        assertEq(_endpointDelegate(DST_EID, address(bridge)), owner);
+    }
+
+    /// @dev `syncDelegate` is restricted to the ACL contract; neither an arbitrary caller
+    ///      nor even the ACL owner may call it directly — it must go through the ACL.
+    function test_SyncDelegate_OnlyCallableByACL() public {
+        ConfidentialBridge bridge = _deployBridgeAtCanonical(confidentialBridgeAdd, endpoints[DST_EID]);
+
+        vm.expectRevert(abi.encodeWithSelector(ConfidentialBridge.NotACL.selector, address(this)));
+        bridge.syncDelegate();
+
+        vm.prank(owner);
+        vm.expectRevert(abi.encodeWithSelector(ConfidentialBridge.NotACL.selector, owner));
+        bridge.syncDelegate();
+    }
+
+    /// @dev The core fix, end-to-end through the real ACL path: transferring ACL ownership
+    ///      and accepting it resyncs the bridge's endpoint delegate from the old owner to
+    ///      the new owner in the same transaction — no manual step — closing the window
+    ///      where a former owner would keep endpoint-config rights after a rotation.
+    function test_AcceptOwnership_ResyncsBridgeDelegateToNewOwner() public {
+        assertTrue(confidentialBridgeAdd != address(0), "test requires a non-null canonical bridge address");
+        ConfidentialBridge bridge = _deployBridgeAtCanonical(confidentialBridgeAdd, endpoints[DST_EID]);
+
+        // Sanity: the bridge sits at the ACL's canonical address and starts delegated to owner.
+        assertEq(address(bridge), acl.getConfidentialBridgeAddress());
+        assertEq(_endpointDelegate(DST_EID, address(bridge)), owner);
+
+        address newOwner = makeAddr("newOwner");
+        vm.prank(owner);
+        acl.transferOwnership(newOwner);
+        vm.prank(newOwner);
+        acl.acceptOwnership();
+
+        assertEq(acl.owner(), newOwner);
+        assertEq(bridge.owner(), newOwner, "bridge owner tracks ACL owner");
+        assertEq(
+            _endpointDelegate(DST_EID, address(bridge)),
+            newOwner,
+            "acceptOwnership must resync the endpoint delegate to the new owner"
+        );
+    }
+}
+
+/// @dev Minimal view into the LayerZero endpoint's `delegates` mapping for assertions.
+interface IEndpointDelegates {
+    function delegates(address oapp) external view returns (address);
 }
 
 /// @dev Test-only harness exposing the internal `_deriveDstHandle`. Deployed

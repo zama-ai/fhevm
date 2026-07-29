@@ -500,7 +500,10 @@ task('task:deployBridge').setAction(async function (_, { ethers, upgrades }) {
     return;
   }
 
-  const currentImplementation = await ethers.getContractFactory('EmptyUUPSProxy', deployer);
+  const currentImplementation = await ethers.getContractFactory(
+    'contracts/emptyProxy/EmptyUUPSProxy.sol:EmptyUUPSProxy',
+    deployer,
+  );
   const newImplem = await ethers.getContractFactory('ConfidentialBridge', deployer);
 
   const proxy = await upgrades.forceImport(proxyAddress, currentImplementation);

@@ -8,6 +8,7 @@ import {Ownable2StepUpgradeable} from "@openzeppelin/contracts-upgradeable/acces
 import {PausableUpgradeable} from "@openzeppelin/contracts-upgradeable/utils/PausableUpgradeable.sol";
 import {confidentialBridgeAdd, fhevmExecutorAdd, pauserSetAdd} from "../addresses/FHEVMHostAddresses.sol";
 import {IPauserSet} from "./interfaces/IPauserSet.sol";
+import {IConfidentialBridge} from "./bridge/interfaces/IConfidentialBridge.sol";
 
 import {ACLEvents} from "./ACLEvents.sol";
 
@@ -206,6 +207,19 @@ contract ACL is
     /// @custom:oz-upgrades-unsafe-allow missing-initializer-call
     /// @custom:oz-upgrades-validate-as-initializer
     function reinitializeV5() public virtual reinitializer(REINITIALIZER_VERSION) {}
+
+    /**
+     * @notice Accepts pending ownership and re-syncs the ConfidentialBridge's LayerZero
+     *         endpoint delegate to the new owner in the same transaction.
+     */
+    function acceptOwnership() public virtual override {
+        super.acceptOwnership();
+
+        // A bridge address is null if and only if there is no bridge on this chain, by deployment convention.
+        if (CONFIDENTIAL_BRIDGE_ADDRESS != address(0)) {
+            IConfidentialBridge(CONFIDENTIAL_BRIDGE_ADDRESS).syncDelegate();
+        }
+    }
 
     /**
      * @notice Allows the use of `handle` for the address `account`.

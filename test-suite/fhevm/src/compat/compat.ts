@@ -60,6 +60,12 @@ export const COMPAT_MATRIX = {
     },
     {
       key: "COPROCESSOR_HOST_LISTENER_VERSION",
+      below: [0, 14, 0] as CompatSemver,
+      profile: "legacy-host-listener-poller-no-seed-start-block",
+      unparsed: "modern" as const,
+    },
+    {
+      key: "COPROCESSOR_HOST_LISTENER_VERSION",
       below: [0, 12, 0] as CompatSemver,
       profile: "legacy-coprocessor-api-keys",
       unparsed: "modern" as const,
@@ -131,6 +137,14 @@ const SHIM_PROFILES = {
       "host-listener": ["--confidential-bridge-address"],
       "host-listener-poller": ["--confidential-bridge-address"],
       "host-listener-consumer": ["--confidential-bridge-address"],
+    },
+    connectorEnv: {},
+    composeEnv: {},
+  },
+  "legacy-host-listener-poller-no-seed-start-block": {
+    coprocessorArgs: {},
+    coprocessorDropFlags: {
+      "host-listener-poller": ["--seed-start-block"],
     },
     connectorEnv: {},
     composeEnv: {},

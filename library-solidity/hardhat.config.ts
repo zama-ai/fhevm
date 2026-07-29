@@ -54,7 +54,16 @@ task('test', async (_taskArgs, hre, runSuper) => {
   const hostContractsSrcDir = path.resolve(__dirname, '../node_modules/@fhevm/host-contracts/contracts');
   const hostContractsDstDir = path.resolve(__dirname, 'fhevmTemp/contracts');
   fs.copySync(hostContractsSrcDir, hostContractsDstDir, { dereference: true });
-  fs.removeSync(path.join(hostContractsDstDir, 'bridge'));
+  // The host bridge contracts pull in LayerZero dependencies that library-solidity does not ship,
+  // so they are excluded from the compile set. ACL.sol, however, imports the dependency-free
+  // IConfidentialBridge interface (to resync the LZ delegate on ownership transfer), so preserve
+  // that single file while dropping the rest of bridge/.
+  const bridgeDstDir = path.join(hostContractsDstDir, 'bridge');
+  const keptBridgeInterface = path.join(bridgeDstDir, 'interfaces/IConfidentialBridge.sol');
+  const keptBridgeInterfaceContents = fs.readFileSync(keptBridgeInterface);
+  fs.removeSync(bridgeDstDir);
+  fs.mkdirSync(path.dirname(keptBridgeInterface), { recursive: true });
+  fs.writeFileSync(keptBridgeInterface, keptBridgeInterfaceContents);
 
   // Run modified test task
   if (hre.network.name === 'hardhat') {

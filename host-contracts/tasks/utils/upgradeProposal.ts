@@ -47,7 +47,10 @@ export async function buildUpgradeProposal(
   const { ethers, upgrades } = hre;
   const privateKey = getRequiredEnvVar('DEPLOYER_PRIVATE_KEY');
   const deployer = new ethers.Wallet(privateKey).connect(ethers.provider);
-  const currentImplementation = await ethers.getContractFactory('EmptyUUPSProxy', deployer);
+  const currentImplementation = await ethers.getContractFactory(
+    'contracts/emptyProxy/EmptyUUPSProxy.sol:EmptyUUPSProxy',
+    deployer,
+  );
   const newImplementation = await ethers.getContractFactory(params.contractName, deployer);
   await upgrades.forceImport(params.proxyAddress, currentImplementation);
   const newImplementationAddress = String(

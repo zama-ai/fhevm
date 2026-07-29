@@ -110,7 +110,8 @@ pub fn create_mock_user_decryption_request_tx(
     }
     .abi_encode();
 
-    // Mock get_transaction_by_hash response
+    // Mock get_transaction_by_hash response. `to` is the default Decryption contract address so
+    // the direct-target hardening check in `fetch_calldata` passes.
     serde_json::from_value(serde_json::json!({
         "hash": hex::encode(tx_hash.as_slice()),
         "nonce": "0x0",

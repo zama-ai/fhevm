@@ -50,6 +50,10 @@ contract ConfidentialBridge is UUPSUpgradeableEmptyProxy, ACLOwnable, HandlesSen
     /// @dev    The bridge owner is bound to the ACL owner; it cannot be moved locally.
     error OwnershipNotTransferable();
 
+    /// @notice Returned when {syncDelegate} is called by anyone other than the ACL contract.
+    /// @param caller The unauthorized caller.
+    error NotACL(address caller);
+
     /// @notice Name of the contract.
     string private constant CONTRACT_NAME = "ConfidentialBridge";
 
@@ -83,9 +87,14 @@ contract ConfidentialBridge is UUPSUpgradeableEmptyProxy, ACLOwnable, HandlesSen
      * @param dstChainIds  Destination chain ids paired index-by-index with `dstEids`.
      *
      * @dev    The LayerZero "delegate" (the address with endpoint-side config
-     *         rights on the LZ endpoint contract) is seeded with the current ACL owner;
-     *         it can be reassigned afterwards via the OApp's `setDelegate`, which is
-     *         itself gated by `onlyOwner` → ACL owner.
+     *         rights on the LZ endpoint contract) is seeded with the current ACL owner.
+     *         Because the delegate is stored in the endpoint contract storage (it
+     *         cannot track {owner} dynamically the way this contract's `onlyOwner` gate
+     *         does), it is re-synced to the current ACL owner via {syncDelegate}, which
+     *         `ACL.acceptOwnership` calls automatically on every ownership change.
+     * @notice The delegate could still be reassigned after an ownership change via the OApp's
+     *         `setDelegate`, which is itself gated by `onlyOwner` → ACL owner, but any
+     *         ownership change will automatically re-sync the delegate to the new ACL owner.
      */
     /// @custom:oz-upgrades-validate-as-initializer
     function initializeFromEmptyProxy(
@@ -146,6 +155,30 @@ contract ConfidentialBridge is UUPSUpgradeableEmptyProxy, ACLOwnable, HandlesSen
      */
     function owner() public view virtual override returns (address) {
         return Ownable2StepUpgradeable(getACLAddress()).owner();
+    }
+
+    /**
+     * @notice Re-points the LayerZero endpoint delegate to the current ACL owner.
+     *
+     * @dev    The delegate is the address allowed to configure this OApp directly on the
+     *         LayerZero endpoint (security-stack / message-lane config). Unlike {owner},
+     *         which is resolved dynamically from the ACL on every call, the delegate is a
+     *         concrete address stored on the endpoint, so it does not follow an ACL
+     *         ownership change on its own. `ACL.acceptOwnership` calls this on every
+     *         ownership handoff so the delegate stays bound to the same governance account
+     *         as the owner, closing the window where a former owner retained endpoint
+     *         config rights.
+     *
+     * @dev    Restricted to the ACL contract (not the ACL owner): the ACL is the only
+     *         caller that can atomically resync as part of `acceptOwnership`. The value
+     *         is always `owner()`, so this can only ever hand delegate rights to the
+     *         current legitimate ACL owner. LayerZero's own `OAppCoreUpgradeable.setDelegate`
+     *         is not `virtual`, so this is a separate, purpose-built entry point rather
+     *         than an override of it.
+     */
+    function syncDelegate() external virtual {
+        if (msg.sender != getACLAddress()) revert NotACL(msg.sender);
+        endpoint.setDelegate(owner());
     }
 
     /**
