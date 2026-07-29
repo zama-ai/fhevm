@@ -994,19 +994,32 @@ mod tests {
         };
 
         // 2 chains, 0 FHE ops (both empty), 1 GW input -> only GW notified -> NO cutover.
-        let all_quiet = HashMap::from([(1, track(1, Some(5), false)), (2, track(2, Some(6), false))]);
-        assert_eq!(unanimity_notifications(&all_quiet, &gateway), vec![(GW, 500)]);
+        let all_quiet =
+            HashMap::from([(1, track(1, Some(5), false)), (2, track(2, Some(6), false))]);
+        assert_eq!(
+            unanimity_notifications(&all_quiet, &gateway),
+            vec![(GW, 500)]
+        );
 
         // 2 chains, 1 FHE op (chain 2), chain 1 empty, 1 GW input -> all notified -> cutover.
         let mixed = HashMap::from([(1, track(1, Some(5), false)), (2, track(2, Some(6), true))]);
-        assert_eq!(sorted(unanimity_notifications(&mixed, &gateway)), vec![(1, 5), (2, 6), (GW, 500)]);
+        assert_eq!(
+            sorted(unanimity_notifications(&mixed, &gateway)),
+            vec![(1, 5), (2, 6), (GW, 500)]
+        );
 
         // 1 chain, 0 FHE ops (empty), 1 GW input -> only GW notified -> NO cutover.
         let single_quiet = HashMap::from([(1, track(1, Some(5), false))]);
-        assert_eq!(unanimity_notifications(&single_quiet, &gateway), vec![(GW, 500)]);
+        assert_eq!(
+            unanimity_notifications(&single_quiet, &gateway),
+            vec![(GW, 500)]
+        );
         // 1 chain, 1 FHE op, 1 GW input -> host + GW notified -> cutover.
         let single_nt = HashMap::from([(1, track(1, Some(5), true))]);
-        assert_eq!(sorted(unanimity_notifications(&single_nt, &gateway)), vec![(1, 5), (GW, 500)]);
+        assert_eq!(
+            sorted(unanimity_notifications(&single_nt, &gateway)),
+            vec![(1, 5), (GW, 500)]
+        );
     }
 
     #[test]

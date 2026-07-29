@@ -953,6 +953,10 @@ const runBlueGreenProfile = async (
   if (!erc20Grep) {
     throw new Error("blue-green profile requires the ERC-20 test grep");
   }
+  const gatewayInputGrep = TEST_GREP["input-proof-gateway-only"];
+  if (!gatewayInputGrep) {
+    throw new Error("blue-green profile requires the gateway-only input-proof grep");
+  }
   const chainEnvValue = (index: number, primaryName: string, indexedSuffix: string): string => {
     const key = index === 0 ? primaryName : `HOST_CHAIN_${index}_${indexedSuffix}`;
     const value = testSuiteEnv[key];
@@ -961,8 +965,8 @@ const runBlueGreenProfile = async (
     }
     return value;
   };
-  const trafficTargets: TrafficTarget[] = hostChains.map((chain, index) => {
-    const overrides = [
+  const chainExtraExecArgs = (index: number): string[] =>
+    [
       ["RPC_URL", chainEnvValue(index, "RPC_URL", "RPC_URL")],
       ["CHAIN_ID_HOST", chainEnvValue(index, "CHAIN_ID_HOST", "CHAIN_ID")],
       ["ACL_CONTRACT_ADDRESS", chainEnvValue(index, "ACL_CONTRACT_ADDRESS", "ACL_CONTRACT_ADDRESS")],
@@ -970,21 +974,18 @@ const runBlueGreenProfile = async (
       ["INPUT_VERIFIER_CONTRACT_ADDRESS", chainEnvValue(index, "INPUT_VERIFIER_CONTRACT_ADDRESS", "INPUT_VERIFIER_CONTRACT_ADDRESS")],
       ["FHEVM_EXECUTOR_CONTRACT_ADDRESS", chainEnvValue(index, "FHEVM_EXECUTOR_CONTRACT_ADDRESS", "FHEVM_EXECUTOR_CONTRACT_ADDRESS")],
       ["PROTOCOL_CONFIG_CONTRACT_ADDRESS", chainEnvValue(index, "PROTOCOL_CONFIG_CONTRACT_ADDRESS", "PROTOCOL_CONFIG_CONTRACT_ADDRESS")],
-    ];
-    const extraExecArgs = overrides.flatMap(([name, value]) => ["-e", `${name}=${value}`]);
-    return {
-      label: chain.key,
-      argv: buildTestContainerArgs(
-        runTestsArgs({
-          ...options,
-          verbose: false,
-          parallel: false,
-          grep: erc20Grep,
-        }),
-        extraExecArgs,
-      ),
-    };
-  });
+    ].flatMap(([name, value]) => ["-e", `${name}=${value}`]);
+  const trafficTargets: TrafficTarget[] = hostChains.map((chain, index) => ({
+    label: chain.key,
+    argv: buildTestContainerArgs(
+      runTestsArgs({ ...options, verbose: false, parallel: false, grep: erc20Grep }),
+      chainExtraExecArgs(index),
+    ),
+  }));
+  const gatewayInputProbeArgv = buildTestContainerArgs(
+    runTestsArgs({ ...options, verbose: false, parallel: false, grep: gatewayInputGrep }),
+    chainExtraExecArgs(0),
+  );
   const blueGreenTrafficStreams = Math.max(MIN_BLUE_GREEN_TRAFFIC_STREAMS, trafficTargets.length);
   const buildWindowArray = async (startOffset: number, endOffset: number): Promise<string> => {
     const tuples: string[] = [];
@@ -997,9 +998,11 @@ const runBlueGreenProfile = async (
     return `[${tuples.join(",")}]`;
   };
 
-  // Empty windows carry no non-trivial FHE op, so no chain anchors and the
-  // commitment_timeout rolls back every chain's row — the rollback this asserts.
-  console.log(`\n[2/11] failed upgrade: propose empty window(s) (no traffic → no anchor)`);
+  // Host chains stay quiet (no non-trivial FHE op) while [3/11] anchors the Gateway
+  // track with one input. Cutover needs at least one non-trivial host anchor, so the
+  // controller withholds the hosts and commitment_timeout rolls back every row — the
+  // rollback this asserts. A regression that notified quiet hosts would cut over.
+  console.log(`\n[2/11] failed upgrade: Gateway input, hosts quiet (no non-trivial host → no cutover)`);
   const failGwBlock = Number((await run(
     ["cast", "block-number", "--rpc-url", gatewayRpcUrl],
   )).stdout.trim());
@@ -1018,7 +1021,7 @@ const runBlueGreenProfile = async (
     `OK:   activation emitted (windows=${failWindows} gw_start=${failGwStartBlock})`,
   );
 
-  console.log(`\n[3/11] failed upgrade: wait for GCS DryRunStarted per operator`);
+  console.log(`\n[3/11] failed upgrade: wait for GCS DryRunStarted, then submit a Gateway-only input proof`);
   for (const db of operatorDatabases) {
     await waitUntil({
       label: `${db}  GCS DryRunStarted`,
@@ -1035,6 +1038,10 @@ const runBlueGreenProfile = async (
         )) === "ready",
     });
   }
+  // Verify one Gateway input inside the window. Host chains get no non-trivial FHE
+  // op, so cutover must be withheld and the window must time out (asserted in [4/11]).
+  await run(gatewayInputProbeArgv);
+  console.log(`OK:   Gateway input submitted (host chains remain quiet)`);
 
   console.log(`\n[4/11] failed upgrade: wait for unanimity timeout rollback + verify reset`);
   for (const db of operatorDatabases) {
