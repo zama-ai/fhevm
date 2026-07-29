@@ -75,10 +75,11 @@ describe('getEncryptedValueState', () => {
     });
     fetchEncodedAccount.mockResolvedValue({ exists: true, address: addr(9), data });
 
-    const state = await getEncryptedValueState({} as never, addr(9));
+    const state = await getEncryptedValueState({} as never, addr(9), { commitment: 'confirmed' });
     expect(Array.from(state.currentHandle)).toEqual(Array.from(currentHandle));
     expect(state.leafCount).toBe(3n);
     expect(state.peaks.map((p) => Array.from(p))).toEqual([Array.from(peakA), Array.from(peakB)]);
+    expect(fetchEncodedAccount).toHaveBeenLastCalledWith({}, addr(9), { commitment: 'confirmed' });
   });
 
   it('handles an empty encrypted value account (no subjects, no peaks)', async () => {

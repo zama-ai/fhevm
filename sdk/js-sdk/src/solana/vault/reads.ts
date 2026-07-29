@@ -126,8 +126,9 @@ const popcount = (value: bigint): number => {
 export async function getEncryptedValueState(
   rpc: SolanaRpc,
   address: Address,
+  config?: FetchAccountConfig,
 ): Promise<{ currentHandle: Bytes32; leafCount: bigint; peaks: Uint8Array[] }> {
-  const account = await fetchEncodedAccount(rpc, address);
+  const account = await fetchEncodedAccount(rpc, address, config);
   if (!account.exists) throw new Error(`EncryptedValue account ${address} does not exist`);
   const body = account.data.slice(ENCRYPTED_VALUE_DISCRIMINATOR_SIZE);
   // `EncryptedValue` realloc-grows but never shrinks, so a shorter current `subjects`/`peaks`

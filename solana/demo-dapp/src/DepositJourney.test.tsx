@@ -37,6 +37,8 @@ describe('DepositJourney activity presentation', () => {
     expect(markup).toContain('Latest activity');
     expect(markup).toContain('Deposit complete');
     expect(markup).toContain('Completed');
+    expect(markup).toContain('Wallet submission complete');
+    expect(markup).not.toContain('Two transactions');
     expect(markup).toContain('Demo controls');
     expect(markup).toContain('Applies one year of demo yield without a wallet approval.');
     expect(markup).toContain('Fast-forward 1 year');

@@ -42,6 +42,7 @@ import type { BatchPosition, BatchTarget } from "./batchTypes";
 import type { DemoSession } from "./demoSession";
 import { loadDemoEncryptionKey } from "./encryptionKey";
 import { recordTransactionEvidence } from "./evidenceStore";
+import { readClaimedUsdcHandle } from "./revealShares";
 import {
   simulateSignedTransactionLocally,
   simulateUnsignedTransactionLocally,
@@ -54,6 +55,19 @@ export type DepositStage =
   | "proving"
   | "joining"
   | "joined";
+
+export type DepositSource = "usdc" | "cusdc";
+
+export const needsShieldTransaction = (source: DepositSource): boolean => source === "usdc";
+
+export const assertDepositSourceHandle = (
+  expectedSourceHandle: string | undefined,
+  currentHandle: string,
+): void => {
+  if (expectedSourceHandle === undefined || currentHandle !== expectedSourceHandle) {
+    throw new Error("Your private cUSDC balance changed. Reveal it again before depositing.");
+  }
+};
 
 type Bytes32Hex = Parameters<typeof joinBatch>[0]["aclProgramAddress"];
 
@@ -297,6 +311,8 @@ export async function depositToVault(
   amount: number,
   onStage: (stage: DepositStage) => void,
   target?: BatchTarget,
+  source: DepositSource = "usdc",
+  expectedSourceHandle?: string,
 ): Promise<BatchPosition> {
   session.assertActive();
   const { config, signer } = session;
@@ -335,6 +351,10 @@ export async function depositToVault(
     throw new Error("This wallet already joined the current batch. Reconnect to recover the confirmed deposit.");
   }
   if (batch.state.status !== 0) throw new Error("The current deposit batch is no longer accepting deposits");
+  if (source === "cusdc") {
+    const currentHandle = await readClaimedUsdcHandle(session);
+    assertDepositSourceHandle(expectedSourceHandle, currentHandle);
+  }
 
   const send = async (
     instructions: readonly Instruction[],
@@ -367,7 +387,7 @@ export async function depositToVault(
   };
 
   let shieldAlreadyConfirmed = false;
-  const shieldJournal = readShieldJournal(session);
+  const shieldJournal = needsShieldTransaction(source) ? readShieldJournal(session) : null;
   if (shieldJournal?.amountBaseUnits === amountBaseUnits.toString()) {
     if (shieldJournal.state === "confirmed") {
       shieldAlreadyConfirmed = true;
@@ -396,7 +416,7 @@ export async function depositToVault(
   if (shieldAlreadyConfirmed && shieldJournal !== null) {
     recordTransactionEvidence(session, { label: "Shield USDC", signature: shieldJournal.signature as Signature });
   }
-  if (!shieldAlreadyConfirmed) {
+  if (needsShieldTransaction(source) && !shieldAlreadyConfirmed) {
     onStage("preparing");
     const joinTokenAccount = await tokenAccountAddress(config.mints.joinConfidential, signer.address);
     const joinTokenAccountInfo = await rpc
@@ -473,6 +493,10 @@ export async function depositToVault(
 
   onStage("joining");
   session.assertActive();
+  if (source === "cusdc") {
+    const currentHandle = await readClaimedUsdcHandle(session);
+    assertDepositSourceHandle(expectedSourceHandle, currentHandle);
+  }
   let joinSignature: Signature | undefined;
   await joinBatch(
     { solanaChain: chain, aclProgramAddress },

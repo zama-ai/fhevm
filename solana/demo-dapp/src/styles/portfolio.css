@@ -236,6 +236,66 @@
   font-size: 11px;
 }
 
+.deposit-source {
+  min-width: 0;
+  margin: 0;
+  padding: 0;
+  border: 0;
+}
+
+.deposit-source legend {
+  margin-bottom: 8px;
+  color: #9c9ca4;
+  font-size: 11px;
+}
+
+.deposit-source > div {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 4px;
+  padding: 4px;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 12px;
+  background: rgba(255, 255, 255, 0.025);
+}
+
+.deposit-source label {
+  position: relative;
+  cursor: pointer;
+}
+
+.deposit-source input {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  opacity: 0;
+}
+
+.deposit-source span {
+  display: grid;
+  min-height: 36px;
+  place-items: center;
+  border-radius: 8px;
+  color: #9c9ca4;
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.deposit-source input:checked + span {
+  color: #f6f6f7;
+  background: rgba(255, 255, 255, 0.1);
+}
+
+.deposit-source input:focus-visible + span {
+  outline: 2px solid #a78bfa;
+  outline-offset: 2px;
+}
+
+.deposit-source input:disabled + span {
+  cursor: not-allowed;
+  opacity: 0.5;
+}
+
 .amount-input {
   display: grid;
   gap: 8px;
@@ -304,6 +364,15 @@
   background: #f4f4f5;
   cursor: pointer;
   font-weight: 760;
+}
+
+.primary-action:hover:not(:disabled) {
+  background: #ffffff;
+}
+
+.primary-action:focus-visible {
+  outline: 2px solid #a78bfa;
+  outline-offset: 2px;
 }
 
 .primary-action:disabled {

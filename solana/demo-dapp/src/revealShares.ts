@@ -55,7 +55,11 @@ const revealConfidentialBalance = async (
 ): Promise<RevealedBalance> => {
   const tokenAccount = await tokenAccountAddress(mint, session.signer.address);
   const balance = await confidentialBalanceValueAccount(mint, tokenAccount);
-  const state = await getEncryptedValueState(createSolanaRpc(session.config.rpcUrl), balance.encryptedValueAddress);
+  const state = await getEncryptedValueState(
+    createSolanaRpc(session.config.rpcUrl),
+    balance.encryptedValueAddress,
+    { commitment: 'confirmed' },
+  );
   const encodedDomain = `0x${Array.from(getAddressEncoder().encode(mint), (byte) =>
     byte.toString(16).padStart(2, '0'),
   ).join('')}` as Bytes32Hex;
@@ -121,7 +125,23 @@ export const readClaimedSharesHandle = async (session: DemoSession): Promise<str
   const mint = session.config.mints.payoutConfidential;
   const tokenAccount = await tokenAccountAddress(mint, session.signer.address);
   const balance = await confidentialBalanceValueAccount(mint, tokenAccount);
-  const state = await getEncryptedValueState(createSolanaRpc(session.config.rpcUrl), balance.encryptedValueAddress);
+  const state = await getEncryptedValueState(
+    createSolanaRpc(session.config.rpcUrl),
+    balance.encryptedValueAddress,
+    { commitment: 'confirmed' },
+  );
+  return handleHex(state.currentHandle);
+};
+
+export const readClaimedUsdcHandle = async (session: DemoSession): Promise<string> => {
+  const mint = session.config.mints.joinConfidential;
+  const tokenAccount = await tokenAccountAddress(mint, session.signer.address);
+  const balance = await confidentialBalanceValueAccount(mint, tokenAccount);
+  const state = await getEncryptedValueState(
+    createSolanaRpc(session.config.rpcUrl),
+    balance.encryptedValueAddress,
+    { commitment: 'confirmed' },
+  );
   return handleHex(state.currentHandle);
 };
 
@@ -131,7 +151,11 @@ export const readConfidentialBalanceEvidence = async (
 ): Promise<ConfidentialBalanceEvidence> => {
   const tokenAccount = await tokenAccountAddress(mint, session.signer.address);
   const balance = await confidentialBalanceValueAccount(mint, tokenAccount);
-  const state = await getEncryptedValueState(createSolanaRpc(session.config.rpcUrl), balance.encryptedValueAddress);
+  const state = await getEncryptedValueState(
+    createSolanaRpc(session.config.rpcUrl),
+    balance.encryptedValueAddress,
+    { commitment: 'confirmed' },
+  );
   return {
     encryptedValue: balance.encryptedValueAddress,
     handle: handleHex(state.currentHandle),

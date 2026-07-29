@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 
 import { ActionError } from './JourneyPrimitives';
+import { usdcToBaseUnits, type DepositSource } from './deposit';
 import { formatUsdc } from './format';
 import type { DemoController } from './useDemoController';
 import { DEMO_APY_PERCENT, DEMO_RATE_WINDOW_DAYS } from './yieldPolicy';
@@ -25,6 +26,7 @@ export function PortfolioOverview({ controller }: { readonly controller: DemoCon
   } = state;
   const { connected, depositRunning, sharePrice } = derived;
   const hasConfidentialPositionAccount = hasConfidentialShares === true;
+  const canDepositConfidential = hasConfidentialUsdc === true;
   const privateActionRunning =
     depositRunning ||
     state.redeem.kind === 'running' ||
@@ -33,6 +35,7 @@ export function PortfolioOverview({ controller }: { readonly controller: DemoCon
     revealingShares ||
     revealingUsdc;
   const [amount, setAmount] = useState(DEFAULT_DEPOSIT_AMOUNT);
+  const [depositSource, setDepositSource] = useState<DepositSource>('usdc');
   const [depositComplete, setDepositComplete] = useState(false);
   const pendingDeposit = useRef(false);
   const parsedAmount = Number(amount);
@@ -42,6 +45,12 @@ export function PortfolioOverview({ controller }: { readonly controller: DemoCon
     parsedAmount > 0 &&
     parsedAmount <= 1_000 &&
     /^\d+(\.\d{0,6})?$/.test(amount);
+  const confidentialBalanceTooLow =
+    depositSource === 'cusdc' &&
+    validAmount &&
+    revealedUsdc !== null &&
+    revealedUsdc.value < usdcToBaseUnits(parsedAmount);
+  const confidentialBalanceUnknown = depositSource === 'cusdc' && revealedUsdc === null;
   const settled = depositLifecycle?.kind === 'settled';
   const currentDepositClaimed = settled && depositLifecycle.claimed;
   const canDeposit = deposit.kind === 'idle' || deposit.kind === 'error' || currentDepositClaimed;
@@ -55,9 +64,12 @@ export function PortfolioOverview({ controller }: { readonly controller: DemoCon
     deposit.kind === 'running'
       ? {
           preparing: 'Preparing the next private batch…',
-          shielding: 'Approval 1 of 2 · Shielding USDC…',
+          shielding: `${externalWallet ? 'Approval' : 'Transaction'} 1 of 2 · Shielding USDC…`,
           proving: 'Creating the private deposit proof…',
-          joining: 'Approval 2 of 2 · Depositing…',
+          joining:
+            depositSource === 'usdc'
+              ? `${externalWallet ? 'Approval' : 'Transaction'} 2 of 2 · Depositing…`
+              : `${externalWallet ? 'Approval' : 'Transaction'} 1 of 1 · Depositing…`,
           joined: 'Deposit submitted',
         }[deposit.stage]
       : deposit.kind === 'joined'
@@ -106,7 +118,12 @@ export function PortfolioOverview({ controller }: { readonly controller: DemoCon
     pendingDeposit.current = false;
     setDepositComplete(false);
     setAmount(DEFAULT_DEPOSIT_AMOUNT);
+    setDepositSource('usdc');
   }, [state.generation]);
+
+  useEffect(() => {
+    if (hasConfidentialUsdc === false && depositSource === 'cusdc') setDepositSource('usdc');
+  }, [hasConfidentialUsdc, depositSource]);
 
   useEffect(() => {
     if (hasConfidentialPositionAccount && !pendingDeposit.current) setAmount('');
@@ -222,14 +239,55 @@ export function PortfolioOverview({ controller }: { readonly controller: DemoCon
       <article className="deposit-panel">
         <div className="deposit-panel-heading">
           <div>
-            <span className="muted">{hasConfidentialPositionAccount ? 'Add to position' : 'Deposit'}</span>
-            <h2>{hasConfidentialPositionAccount ? 'Deposit more USDC' : 'Start earning privately'}</h2>
+            <span className="muted">Deposit</span>
+            <h2>{depositSource === 'usdc' ? 'Deposit USDC' : 'Deposit cUSDC'}</h2>
           </div>
-          <span className="approval-count">{externalWallet ? '2 approvals' : '2 transactions'}</span>
+          <span className="approval-count">
+            {depositSource === 'usdc'
+              ? externalWallet
+                ? 'Up to 2 approvals'
+                : 'Up to 2 transactions'
+              : externalWallet
+                ? revealedUsdc === null
+                  ? '1 signature · 1 approval'
+                  : '1 approval'
+                : revealedUsdc === null
+                  ? '1 signature · 1 transaction'
+                  : '1 transaction'}
+          </span>
         </div>
 
         {canDeposit ? (
           <>
+            {(canDepositConfidential || depositSource === 'cusdc') && (
+              <fieldset className="deposit-source">
+                <legend>Deposit from</legend>
+                <div>
+                  <label>
+                    <input
+                      type="radio"
+                      name="deposit-source"
+                      value="usdc"
+                      checked={depositSource === 'usdc'}
+                      disabled={depositRunning}
+                      onChange={() => setDepositSource('usdc')}
+                    />
+                    <span>USDC</span>
+                  </label>
+                  <label>
+                    <input
+                      type="radio"
+                      name="deposit-source"
+                      value="cusdc"
+                      checked={depositSource === 'cusdc'}
+                      disabled={depositRunning}
+                      onChange={() => setDepositSource('cusdc')}
+                    />
+                    <span>cUSDC</span>
+                  </label>
+                </div>
+              </fieldset>
+            )}
             <label className="amount-input" htmlFor="deposit-amount">
               <span>Amount</span>
               <div>
@@ -245,16 +303,37 @@ export function PortfolioOverview({ controller }: { readonly controller: DemoCon
                   aria-errormessage={amount !== '' && !validAmount ? 'deposit-amount-error' : undefined}
                   onChange={(event) => setAmount(event.target.value)}
                 />
-                <strong>USDC</strong>
+                <strong>{depositSource === 'usdc' ? 'USDC' : 'cUSDC'}</strong>
               </div>
-              <small id="deposit-amount-help">Funded automatically on localnet</small>
+              <small id="deposit-amount-help">
+                {depositSource === 'usdc'
+                  ? 'Funded automatically on localnet'
+                  : 'Uses your private cUSDC balance'}
+              </small>
             </label>
             <div
               className="transaction-preview"
-              aria-label={externalWallet ? 'Two wallet approvals' : 'Two transactions'}
+              aria-label={
+                depositSource === 'usdc'
+                  ? externalWallet
+                    ? 'Up to two wallet approvals'
+                    : 'Up to two transactions'
+                  : externalWallet
+                    ? revealedUsdc === null
+                      ? 'One balance signature and one wallet approval'
+                      : 'One wallet approval'
+                    : revealedUsdc === null
+                      ? 'One balance signature and one transaction'
+                      : 'One transaction'
+              }
             >
-              <span>1 · Shield</span>
-              <span>2 · Deposit</span>
+              {depositSource === 'cusdc' && revealedUsdc === null && <span>1 · Reveal balance</span>}
+              {depositSource === 'usdc' && <span>1 · Shield if needed</span>}
+              <span>
+                {depositSource === 'usdc' || (depositSource === 'cusdc' && revealedUsdc === null)
+                  ? '2 · Deposit'
+                  : '1 · Deposit'}
+              </span>
             </div>
             {phantomLocalnet && (
               <p className="wallet-scan-note">
@@ -264,19 +343,44 @@ export function PortfolioOverview({ controller }: { readonly controller: DemoCon
             <button
               className="primary-action"
               type="button"
-              disabled={!connected || depositRunning || !validAmount}
+              disabled={
+                !connected ||
+                depositRunning ||
+                revealingUsdc ||
+                (!confidentialBalanceUnknown && (!validAmount || confidentialBalanceTooLow))
+              }
               onClick={() => {
+                if (confidentialBalanceUnknown) {
+                  actions.revealUsdc();
+                  return;
+                }
                 pendingDeposit.current = true;
                 setDepositComplete(false);
-                actions.shieldAndDeposit(parsedAmount);
+                actions.deposit(parsedAmount, depositSource);
               }}
             >
-              {depositRunning ? 'Depositing…' : 'Shield & deposit'}
+              {revealingUsdc && confidentialBalanceUnknown
+                ? 'Revealing cUSDC…'
+                : confidentialBalanceUnknown
+                  ? 'Reveal cUSDC to continue'
+                  : depositRunning
+                    ? 'Depositing…'
+                    : depositSource === 'usdc'
+                      ? 'Deposit USDC'
+                      : 'Deposit cUSDC'}
             </button>
             {!validAmount && amount !== '' && (
               <p className="input-error" id="deposit-amount-error">
-                Enter 0.000001–1,000 USDC, with up to 6 decimals.
+                Enter 0.000001–1,000 {depositSource === 'usdc' ? 'USDC' : 'cUSDC'}, with up to 6 decimals.
               </p>
+            )}
+            {confidentialBalanceTooLow && (
+              <p className="input-error" role="alert">
+                Your revealed cUSDC balance is too low for this deposit.
+              </p>
+            )}
+            {depositSource === 'cusdc' && revealedUsdc !== null && !confidentialBalanceTooLow && (
+              <p className="balance-available">Available: {formatUsdc(revealedUsdc.value)} cUSDC</p>
             )}
           </>
         ) : (

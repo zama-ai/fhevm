@@ -43,8 +43,8 @@ export function DepositJourney({ controller }: { readonly controller: DemoContro
               steps={[
                 {
                   state: depositJoined ? 'complete' : 'active',
-                  title: 'Shield & deposit',
-                  detail: 'Two transactions',
+                  title: 'Deposit',
+                  detail: 'Wallet submission complete',
                 },
                 {
                   state: settled ? 'complete' : depositJoined ? 'active' : 'idle',

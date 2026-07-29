@@ -5,7 +5,9 @@ import { beforeEach, describe, expect, test, vi } from "vitest";
 import type { DemoConfig } from "./demoConfig";
 import type { DemoSession } from "./demoSession";
 import {
+  assertDepositSourceHandle,
   needsTokenAccountInitialization,
+  needsShieldTransaction,
   reconcileDepositTransaction,
   reconcileSavedDeposit,
   type StoredDeposit,
@@ -106,6 +108,19 @@ describe("confidential token account ownership", () => {
   test("accepts only token-program-owned initialized accounts", () => {
     expect(needsTokenAccountInitialization(root, root)).toBe(false);
     expect(() => needsTokenAccountInitialization(user, root)).toThrow("unexpected program");
+  });
+});
+
+describe("deposit source safety", () => {
+  test("shields public USDC but never shields existing cUSDC", () => {
+    expect(needsShieldTransaction("usdc")).toBe(true);
+    expect(needsShieldTransaction("cusdc")).toBe(false);
+  });
+
+  test("requires the revealed cUSDC handle to remain current", () => {
+    expect(() => assertDepositSourceHandle(undefined, "0xcurrent")).toThrow("Reveal it again");
+    expect(() => assertDepositSourceHandle("0xstale", "0xcurrent")).toThrow("Reveal it again");
+    expect(() => assertDepositSourceHandle("0xcurrent", "0xcurrent")).not.toThrow();
   });
 });
 

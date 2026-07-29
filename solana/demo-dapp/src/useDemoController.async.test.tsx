@@ -136,6 +136,7 @@ describe('useDemoController generation safety', () => {
     mocks.prepareBatch.mockResolvedValue(position);
     mocks.readBalances.mockResolvedValue([5_000_000_000n, 1_000_000_000n]);
     mocks.hasConfidentialUsdc.mockResolvedValue(true);
+    mocks.revealUsdc.mockResolvedValue({ handle: '0xcurrent', value: 1_000_000_000n });
     await act(async () => {
       renderer = create(<Harness />);
     });
@@ -216,7 +217,7 @@ describe('useDemoController generation safety', () => {
     await flush();
 
     await act(async () => {
-      controller.actions.shieldAndDeposit(50);
+      controller.actions.deposit(50, 'usdc');
     });
     await flush();
 
@@ -231,12 +232,61 @@ describe('useDemoController generation safety', () => {
       50,
       expect.any(Function),
       nextPosition,
+      'usdc',
+      undefined,
     );
     expect(controller.state.hasPrivateShares).toBe(true);
     expect(controller.state.deposit).toEqual({
       kind: 'joined',
       result: { ...nextPosition, amountBaseUnits: 50_000_000n },
     });
+  });
+
+  test('deposits existing cUSDC without funding public USDC', async () => {
+    mocks.lifecycle.mockResolvedValue(settled);
+    mocks.joinDeposit.mockResolvedValue(position);
+    await connect(controller);
+    await flush();
+    mocks.fund.mockClear();
+
+    await act(async () => {
+      controller.actions.revealUsdc();
+    });
+    await flush();
+    await act(async () => {
+      controller.actions.deposit(25, 'cusdc');
+    });
+    await flush();
+
+    expect(mocks.fund).toHaveBeenCalledWith(expect.anything(), position.batch, 0n);
+    expect(mocks.joinDeposit).toHaveBeenCalledWith(
+      expect.anything(),
+      25,
+      expect.any(Function),
+      position,
+      'cusdc',
+      '0xcurrent',
+    );
+  });
+
+  test('does not join cUSDC without a revealed sufficient balance', async () => {
+    mocks.lifecycle.mockResolvedValue(settled);
+    mocks.joinDeposit.mockResolvedValue(position);
+    await connect(controller);
+    await flush();
+    mocks.fund.mockClear();
+
+    await act(async () => {
+      controller.actions.deposit(25, 'cusdc');
+    });
+    await flush();
+
+    expect(controller.state.deposit).toEqual({
+      kind: 'error',
+      message: 'Reveal your cUSDC balance before depositing.',
+    });
+    expect(mocks.fund).not.toHaveBeenCalled();
+    expect(mocks.joinDeposit).not.toHaveBeenCalled();
   });
 
   test('does not keep a stale public balance when only that refresh fails', async () => {
@@ -248,7 +298,7 @@ describe('useDemoController generation safety', () => {
 
     mocks.readBalances.mockRejectedValueOnce(new Error('public balance unavailable'));
     await act(async () => {
-      controller.actions.shieldAndDeposit(50);
+      controller.actions.deposit(50, 'usdc');
     });
     await flush();
 
@@ -267,7 +317,7 @@ describe('useDemoController generation safety', () => {
 
     mocks.readBalances.mockReturnValueOnce(pendingBalance.promise);
     await act(async () => {
-      controller.actions.shieldAndDeposit(50);
+      controller.actions.deposit(50, 'usdc');
       await Promise.resolve();
       await Promise.resolve();
       await Promise.resolve();
@@ -300,10 +350,10 @@ describe('useDemoController generation safety', () => {
       .mockReturnValueOnce(oldBalance.promise)
       .mockResolvedValueOnce([5_000_000_000n, 800_000_000n]);
     await act(async () => {
-      await controller.actions.shieldAndDeposit(50);
+      await controller.actions.deposit(50, 'usdc');
     });
     await act(async () => {
-      await controller.actions.shieldAndDeposit(25);
+      await controller.actions.deposit(25, 'usdc');
     });
     await flush();
     expect(controller.state.publicUsdcBalance).toBe(800_000_000n);

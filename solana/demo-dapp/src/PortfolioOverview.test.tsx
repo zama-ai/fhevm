@@ -7,7 +7,7 @@ import { PortfolioOverview } from './PortfolioOverview';
 import { initialDemoState, type DemoController } from './useDemoController';
 
 const controller = (
-  shieldAndDeposit: ReturnType<typeof vi.fn>,
+  deposit: ReturnType<typeof vi.fn>,
   claimed: boolean,
 ): DemoController =>
   ({
@@ -36,7 +36,7 @@ const controller = (
       sharePrice: 1,
     },
     actions: {
-      shieldAndDeposit,
+      deposit,
       revealUsdc: vi.fn(),
       hideUsdc: vi.fn(),
       revealShares: vi.fn(),
@@ -52,17 +52,17 @@ describe('PortfolioOverview', () => {
 
   test('clears the completed amount and shows transient success feedback', () => {
     vi.useFakeTimers();
-    const shieldAndDeposit = vi.fn();
+    const deposit = vi.fn();
     let renderer: ReturnType<typeof create>;
     act(() => {
-      renderer = create(<PortfolioOverview controller={controller(shieldAndDeposit, false)} />);
+      renderer = create(<PortfolioOverview controller={controller(deposit, false)} />);
     });
-    const submit = renderer!.root.findAllByType('button').find((button) => button.children.includes('Shield & deposit'));
+    const submit = renderer!.root.findAllByType('button').find((button) => button.children.includes('Deposit USDC'));
     act(() => submit!.props.onClick());
-    expect(shieldAndDeposit).toHaveBeenCalledWith(100);
+    expect(deposit).toHaveBeenCalledWith(100, 'usdc');
 
     act(() => {
-      renderer!.update(<PortfolioOverview controller={controller(shieldAndDeposit, true)} />);
+      renderer!.update(<PortfolioOverview controller={controller(deposit, true)} />);
     });
     const status = renderer!.root.findByProps({ role: 'status' });
     expect(status.findByType('strong').children).toEqual(['Deposit complete · cShares received']);
@@ -76,23 +76,27 @@ describe('PortfolioOverview', () => {
   });
 
   test('does not prefill a new deposit for an existing position', () => {
-    const shieldAndDeposit = vi.fn();
+    const deposit = vi.fn();
     let renderer: ReturnType<typeof create>;
     act(() => {
-      renderer = create(<PortfolioOverview controller={controller(shieldAndDeposit, true)} />);
+      renderer = create(<PortfolioOverview controller={controller(deposit, true)} />);
     });
+    expect(
+      renderer!.root.findAllByType('h2').some((heading) => heading.children.includes('Deposit USDC')),
+    ).toBe(true);
+    expect(JSON.stringify(renderer!.toJSON())).not.toContain('Deposit more USDC');
     const input = renderer!.root.findByProps({ id: 'deposit-amount' });
     expect(input.props.value).toBe('');
     act(() => input.props.onChange({ target: { value: '25' } }));
-    const submit = renderer!.root.findAllByType('button').find((button) => button.children.includes('Shield & deposit'));
+    const submit = renderer!.root.findAllByType('button').find((button) => button.children.includes('Deposit USDC'));
     act(() => submit!.props.onClick());
-    expect(shieldAndDeposit).toHaveBeenCalledWith(25);
+    expect(deposit).toHaveBeenCalledWith(25, 'usdc');
     act(() => renderer!.unmount());
   });
 
   test('does not expose an unvalidated retry action after a deposit error', () => {
-    const shieldAndDeposit = vi.fn();
-    const value = controller(shieldAndDeposit, false);
+    const deposit = vi.fn();
+    const value = controller(deposit, false);
     const errorController = {
       ...value,
       state: { ...value.state, deposit: { kind: 'error', message: 'Wallet request cancelled' } },
@@ -104,8 +108,117 @@ describe('PortfolioOverview', () => {
 
     expect(renderer!.root.findByProps({ role: 'alert' }).findAllByType('button')).toHaveLength(0);
     expect(
-      renderer!.root.findAllByType('button').some((button) => button.children.includes('Shield & deposit')),
+      renderer!.root.findAllByType('button').some((button) => button.children.includes('Deposit USDC')),
     ).toBe(true);
+    act(() => renderer!.unmount());
+  });
+
+  test('offers a direct one-transaction cUSDC deposit when the account exists', () => {
+    const deposit = vi.fn();
+    const value = controller(deposit, true);
+    let renderer: ReturnType<typeof create>;
+    act(() => {
+      renderer = create(
+        <PortfolioOverview
+          controller={{
+            ...value,
+            state: {
+              ...value.state,
+              revealedUsdc: { handle: '0xcurrent', value: 50_000_000n },
+            },
+          }}
+        />,
+      );
+    });
+    const cUsdcSource = renderer!.root.findByProps({ name: 'deposit-source', value: 'cusdc' });
+    act(() => cUsdcSource.props.onChange());
+
+    expect(renderer!.root.findAllByType('h2').some((heading) => heading.children.includes('Deposit cUSDC'))).toBe(
+      true,
+    );
+    expect(renderer!.root.findByProps({ className: 'approval-count' }).children).toEqual(['1 transaction']);
+    expect(renderer!.root.findByProps({ className: 'transaction-preview' }).children).toHaveLength(1);
+    const input = renderer!.root.findByProps({ id: 'deposit-amount' });
+    act(() => input.props.onChange({ target: { value: '25' } }));
+    const submit = renderer!.root.findAllByType('button').find((button) => button.children.includes('Deposit cUSDC'));
+    act(() => submit!.props.onClick());
+    expect(deposit).toHaveBeenCalledWith(25, 'cusdc');
+    act(() => renderer!.unmount());
+  });
+
+  test('reveals cUSDC before allowing a direct deposit', () => {
+    const deposit = vi.fn();
+    const value = controller(deposit, true);
+    let renderer: ReturnType<typeof create>;
+    act(() => {
+      renderer = create(<PortfolioOverview controller={value} />);
+    });
+    const cUsdcSource = renderer!.root.findByProps({ name: 'deposit-source', value: 'cusdc' });
+    act(() => cUsdcSource.props.onChange());
+
+    expect(renderer!.root.findByProps({ className: 'approval-count' }).children).toEqual([
+      '1 signature · 1 transaction',
+    ]);
+    const reveal = renderer!.root
+      .findAllByType('button')
+      .find((button) => button.children.includes('Reveal cUSDC to continue'));
+    act(() => reveal!.props.onClick());
+    expect(value.actions.revealUsdc).toHaveBeenCalledOnce();
+    expect(deposit).not.toHaveBeenCalled();
+    act(() => renderer!.unmount());
+  });
+
+  test('keeps cUSDC selected while account state refreshes', () => {
+    const deposit = vi.fn();
+    const value = controller(deposit, true);
+    let renderer: ReturnType<typeof create>;
+    act(() => {
+      renderer = create(<PortfolioOverview controller={value} />);
+    });
+    act(() => renderer!.root.findByProps({ name: 'deposit-source', value: 'cusdc' }).props.onChange());
+    act(() => {
+      renderer!.update(
+        <PortfolioOverview
+          controller={{
+            ...value,
+            state: { ...value.state, hasConfidentialUsdc: null },
+          }}
+        />,
+      );
+    });
+
+    expect(renderer!.root.findAllByType('h2').some((heading) => heading.children.includes('Deposit cUSDC'))).toBe(
+      true,
+    );
+    expect(renderer!.root.findByProps({ name: 'deposit-source', value: 'usdc' })).toBeDefined();
+    act(() => renderer!.unmount());
+  });
+
+  test('blocks a cUSDC amount above the revealed balance', () => {
+    const deposit = vi.fn();
+    const value = controller(deposit, true);
+    let renderer: ReturnType<typeof create>;
+    act(() => {
+      renderer = create(
+        <PortfolioOverview
+          controller={{
+            ...value,
+            state: {
+              ...value.state,
+              revealedUsdc: { handle: '0xcurrent', value: 10_000_000n },
+            },
+          }}
+        />,
+      );
+    });
+    act(() => renderer!.root.findByProps({ name: 'deposit-source', value: 'cusdc' }).props.onChange());
+    const input = renderer!.root.findByProps({ id: 'deposit-amount' });
+    act(() => input.props.onChange({ target: { value: '25' } }));
+    const submit = renderer!.root.findAllByType('button').find((button) => button.children.includes('Deposit cUSDC'));
+
+    expect(submit!.props.disabled).toBe(true);
+    expect(renderer!.root.findByProps({ role: 'alert' }).children.join('')).toContain('too low');
+    expect(deposit).not.toHaveBeenCalled();
     act(() => renderer!.unmount());
   });
 });
@@ -115,7 +228,7 @@ const actions = {
   hideUsdc: vi.fn(),
   revealShares: vi.fn(),
   revealUsdc: vi.fn(),
-  shieldAndDeposit: vi.fn(),
+  deposit: vi.fn(),
 };
 
 const walletController = (
@@ -229,7 +342,7 @@ describe('PortfolioOverview Phantom localnet guidance', () => {
     expect(notes[0].findAllByType('button')).toHaveLength(0);
     expect(notes[0].findAllByType('a')).toHaveLength(0);
     expect(notes[0].children.join(' ')).toContain('its scanner cannot reach this local validator');
-    expect(renderer.root.findByProps({ className: 'approval-count' }).children).toEqual(['2 approvals']);
+    expect(renderer.root.findByProps({ className: 'approval-count' }).children).toEqual(['Up to 2 approvals']);
     act(() => renderer.unmount());
   });
 

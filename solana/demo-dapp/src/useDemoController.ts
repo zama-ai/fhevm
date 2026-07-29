@@ -13,6 +13,7 @@ import {
   findExistingDeposit,
   hasClaimedDeposit,
   usdcToBaseUnits,
+  type DepositSource,
   type DepositStage,
 } from './deposit';
 import { recordTransactionEvidence } from './evidenceStore';
@@ -436,7 +437,7 @@ export function useDemoController() {
     }
   };
 
-  const shieldAndDeposit = async (amount: number) => {
+  const depositPosition = async (amount: number, source: DepositSource) => {
     if (
       state.connection.kind !== 'ready' ||
       operationInFlight.current ||
@@ -446,6 +447,19 @@ export function useDemoController() {
     }
     const session = state.connection.session;
     const generation = state.generation;
+    const revealedSource = source === 'cusdc' ? state.revealedUsdc : null;
+    if (source === 'cusdc' && (revealedSource === null || revealedSource.value < usdcToBaseUnits(amount))) {
+      commit(generation, {
+        deposit: {
+          kind: 'error',
+          message:
+            revealedSource === null
+              ? 'Reveal your cUSDC balance before depositing.'
+              : 'Your cUSDC balance is too low for this deposit.',
+        },
+      });
+      return;
+    }
     operationInFlight.current = true;
     commit(generation, {
       deposit: { kind: 'running', stage: 'preparing' },
@@ -455,14 +469,25 @@ export function useDemoController() {
       revealUsdcError: null,
     });
     try {
-      await ensureDemoFunding(session.config, session.signer.address, usdcToBaseUnits(amount));
+      await ensureDemoFunding(
+        session.config,
+        session.signer.address,
+        source === 'usdc' ? usdcToBaseUnits(amount) : 0n,
+      );
       session.assertActive();
       const target = await prepareDemoDepositBatch();
       session.assertActive();
       const result = await withWalletMutationLock(session, () =>
-        depositToVault(session, amount, (stage) => {
-          commit(generation, { deposit: { kind: 'running', stage } });
-        }, target),
+        depositToVault(
+          session,
+          amount,
+          (stage) => {
+            commit(generation, { deposit: { kind: 'running', stage } });
+          },
+          target,
+          source,
+          revealedSource?.handle,
+        ),
       );
       session.assertActive();
       commit(generation, { deposit: { kind: 'joined', result } });
@@ -608,7 +633,8 @@ export function useDemoController() {
       connect,
       connectBurner: () => void connect((isActive) => connectDemoSession(isActive)),
       disconnect,
-      shieldAndDeposit: (amount: number = DEPOSIT_AMOUNT_USDC) => void shieldAndDeposit(amount),
+      deposit: (amount: number = DEPOSIT_AMOUNT_USDC, source: DepositSource = 'usdc') =>
+        void depositPosition(amount, source),
       revealShares: () => void revealShares(),
       hideShares: () => commit(state.generation, { revealedShares: null }),
       fastForwardOneYear: () => void fastForwardOneYear(),

@@ -105,18 +105,21 @@ flowchart LR
 The app connects a wallet, supplies missing fee SOL and test USDC, then reads any existing position
 from Solana. An external wallet keeps its key and approves its own requests.
 
-### Shield and deposit
+### Deposit from USDC or cUSDC
 
-One button starts two wallet transactions:
+The app keeps the 2 sources separate:
 
-1. **Shield:** public USDC moves into the confidential token program and the user's encrypted cUSDC
-   balance changes.
-2. **Deposit:** the user creates an encrypted amount and joins the deposit batch with cUSDC.
+- **Deposit USDC** first shields public USDC, then deposits the resulting cUSDC. This takes
+  2 wallet transactions.
+- **Deposit cUSDC** asks for one message signature if the balance is hidden, then joins the batch
+  directly in 1 wallet transaction.
 
-They are separate because shielding and joining use different programs, checks, and proof data. The
-app gives each transaction a high work allowance; that allowance is not measured use. Combining
-both actions has not been proven to fit reliably. If the second transaction fails, the user still
-owns the cUSDC created by the first.
+Shielding and joining use different programs, checks, and proof data. The app gives each transaction
+a high work allowance; that allowance is not measured use. Combining both actions has not been
+proven to fit reliably. If a USDC deposit's second transaction fails, the user still owns the cUSDC
+created by the first.
+
+The 2-transaction USDC path is:
 
 ```mermaid
 sequenceDiagram
@@ -184,9 +187,9 @@ Solana checks both the history proof and the key service's signed result before 
 may close, settle, or claim a ready batch. A claim can only credit the confidential token account
 derived for that user.
 
-The public batch total is intentional. A one-person batch reveals that person's amount. The demo
-also shields and deposits the same amount back-to-back from one wallet, so an observer can often
-link them. Shielding earlier, keeping cUSDC, and waiting between actions reduce that link.
+The public batch total is intentional. A one-person batch reveals that person's amount. The USDC
+deposit path shields and deposits the same amount back-to-back from one wallet, so an observer can
+often link them. Shielding earlier, keeping cUSDC, and waiting between actions reduce that link.
 
 ### Reveal a balance
 
@@ -215,6 +218,7 @@ from redemption.
 | Public vault, private batcher | Keeps normal vault pricing and avoids costly encrypted division |
 | Public batch totals | Lets an ordinary Solana vault accept the batch while individual balances stay encrypted |
 | Separate deposit and redeem batches | Entries never delay exits |
+| Separate USDC and cUSDC deposit sources | Users with cUSDC can deposit directly without shielding again |
 | Separate shield and deposit transactions | Clear failure recovery; a combined transaction has not been shown to fit |
 | Automatic keeper and claims | A claim can only add funds to that user's fixed confidential account; it cannot debit or redirect them |
 | No minimum batch size | One actor could fake many participants; the demo states the privacy limit instead |
