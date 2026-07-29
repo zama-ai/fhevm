@@ -10,7 +10,9 @@
 //!
 //!   * **host chain** — for each finalized, fully-computed, *non-trivial* block
 //!     in `[start_block, end_block]` (one carrying a real FHE op, not only
-//!     `trivialEncrypt`), poll every operator's per-block state-hash blob.
+//!     `trivialEncrypt`), poll every operator's per-block state-hash blob. A chain
+//!     that finalizes the window with no non-trivial op anchors on any block
+//!     (readiness); at least one non-trivial anchor is still required across chains.
 //!   * **Gateway inputs** — likewise for each sealed Gateway block carrying
 //!     re-randomized ZK-proof input ciphertexts.
 //!
@@ -26,7 +28,8 @@
 //! it (RFC 021).
 //!
 //! `unanimity_consensus` is consumed only by the upgrade-controller, which
-//! authorizes cutover once BOTH tracks have anchored.
+//! authorizes cutover once every host track and the Gateway track have anchored,
+//! with at least one host anchor on a non-trivial block.
 //!
 //! **Timeout.** If a track is still un-anchored `commitment_timeout` after `end_block`,
 //! `unanimity_consensus_timeout` is emitted (and re-emitted each pass) until the
@@ -311,6 +314,8 @@ struct ConsensusTrack {
     chain_id: i64,
     /// The anchored block once unanimity is reached; `None` until then.
     anchored: Option<i64>,
+    /// Whether the anchor block carried a non-trivial FHE op.
+    anchored_nontrivial: bool,
     partial: HashMap<i64, Vec<Option<Vec<u8>>>>,
     /// Blocks we've already logged a divergence warning for. State hashes are
     /// deterministic per block, so a divergence is permanent — warn once per
@@ -323,6 +328,7 @@ impl ConsensusTrack {
         Self {
             chain_id,
             anchored: None,
+            anchored_nontrivial: false,
             partial: HashMap::new(),
             divergence_warned: HashSet::new(),
         }
@@ -331,6 +337,7 @@ impl ConsensusTrack {
     /// Clear state for a fresh upgrade window.
     fn reset(&mut self) {
         self.anchored = None;
+        self.anchored_nontrivial = false;
         self.partial.clear();
         self.divergence_warned.clear();
     }
@@ -344,6 +351,7 @@ async fn poll_track(
     urls: &[String],
     track: &mut ConsensusTrack,
     candidates: &[i64],
+    nontrivial: bool,
 ) -> Result<(), Error> {
     if track.anchored.is_some() || urls.is_empty() {
         return Ok(());
@@ -368,6 +376,7 @@ async fn poll_track(
             );
             // consensus_pass emits (and re-emits) the anchor; here we just record it.
             track.anchored = Some(block);
+            track.anchored_nontrivial = nontrivial;
             track.partial.clear();
             return Ok(());
         }
@@ -400,18 +409,23 @@ async fn host_consensus_candidates(
     host_chain_id: i64,
     start: i64,
     end: i64,
+    require_nontrivial: bool,
 ) -> Result<Vec<i64>, Error> {
+    let nontrivial = if require_nontrivial {
+        format!(
+            "AND EXISTS (SELECT 1 FROM {GCS_SCHEMA_QUOTED}.computations c
+                 WHERE c.host_chain_id = sh.chain_id AND c.block_number = sh.block_number
+                   AND c.is_error = false AND c.fhe_operation <> {FHE_TRIVIAL_ENCRYPT_OPCODE})"
+        )
+    } else {
+        String::new()
+    };
     let sql = format!(
         "SELECT sh.block_number
            FROM {GCS_SCHEMA_QUOTED}.state_hash sh
           WHERE sh.chain_id = $1
             AND sh.block_number >= $2 AND sh.block_number <= $3
-            AND EXISTS (
-                SELECT 1 FROM {GCS_SCHEMA_QUOTED}.computations c
-                 WHERE c.host_chain_id = sh.chain_id
-                   AND c.block_number = sh.block_number
-                   AND c.is_error = false
-                   AND c.fhe_operation <> {FHE_TRIVIAL_ENCRYPT_OPCODE})
+            {nontrivial}
           ORDER BY sh.block_number
           LIMIT {MAX_ANCHOR_CANDIDATES}"
     );
@@ -430,6 +444,22 @@ async fn gcs_host_watermark(pool: &Pool<Postgres>, host_chain_id: i64) -> Result
         "SELECT COALESCE(
                   (SELECT MAX(block_number) FROM {GCS_SCHEMA_QUOTED}.host_chain_blocks_valid
                     WHERE chain_id = $1 AND block_status = 'finalized'),
+                  -1
+                )"
+    );
+    let (watermark,): (i64,) = sqlx::query_as(&sql)
+        .bind(host_chain_id)
+        .fetch_one(pool)
+        .await?;
+    Ok(watermark)
+}
+
+/// Latest GCS host block that has a produced `state_hash`, or -1. Lags finalization,
+/// so `>= end_block` means every window block's records have landed.
+async fn gcs_state_hash_watermark(pool: &Pool<Postgres>, host_chain_id: i64) -> Result<i64, Error> {
+    let sql = format!(
+        "SELECT COALESCE(
+                  (SELECT MAX(block_number) FROM {GCS_SCHEMA_QUOTED}.state_hash WHERE chain_id = $1),
                   -1
                 )"
     );
@@ -483,6 +513,13 @@ fn should_arm_timeout(
     all_reached || stalled
 }
 
+/// Host side is ready: every chain anchored and at least one anchor is non-trivial.
+fn host_consensus_ready(host_tracks: &HashMap<i64, ConsensusTrack>) -> bool {
+    !host_tracks.is_empty()
+        && host_tracks.values().all(|t| t.anchored.is_some())
+        && host_tracks.values().any(|t| t.anchored_nontrivial)
+}
+
 /// One pass over every host-chain track plus the Gateway track: resets tracks on
 /// a window-set change, polls each chain's + the Gateway's candidates, re-emits
 /// anchors, and — once every host chain hit end_block without unanimity — emits a
@@ -518,8 +555,19 @@ async fn consensus_pass(
             .entry(chain_id)
             .or_insert_with(|| ConsensusTrack::new(chain_id));
         if track.anchored.is_none() {
-            let candidates = host_consensus_candidates(pool, chain_id, start, end).await?;
-            poll_track(http, &urls, track, &candidates).await?;
+            let candidates = host_consensus_candidates(pool, chain_id, start, end, true).await?;
+            poll_track(http, &urls, track, &candidates, true).await?;
+            // No FHE op in the whole window: let this chain anchor on any block so it
+            // doesn't block the upgrade. Gate on state_hash (not just finalization)
+            // reaching end_block, so we don't call it quiet before a late op is recorded.
+            if track.anchored.is_none()
+                && candidates.is_empty()
+                && gcs_state_hash_watermark(pool, chain_id).await? >= end
+            {
+                let readiness =
+                    host_consensus_candidates(pool, chain_id, start, end, false).await?;
+                poll_track(http, &urls, track, &readiness, false).await?;
+            }
         }
     }
 
@@ -531,7 +579,7 @@ async fn consensus_pass(
         ) {
             let candidates =
                 pending_gw_consensus_blocks(pool, gateway.chain_id, gw_start, gw_tip).await?;
-            poll_track(http, &urls, gateway, &candidates).await?;
+            poll_track(http, &urls, gateway, &candidates, true).await?;
         }
     }
 
@@ -558,7 +606,7 @@ async fn consensus_pass(
     // without agreeing, so the upgrade can be rerun.
     let all_host_anchored =
         !host_tracks.is_empty() && host_tracks.values().all(|t| t.anchored.is_some());
-    let both_anchored = all_host_anchored && gateway.anchored.is_some();
+    let both_anchored = host_consensus_ready(host_tracks) && gateway.anchored.is_some();
     if !both_anchored {
         let max_end = windows.iter().map(|&(_, _, end)| end).max().unwrap_or(0);
         match window_state.timeout {
@@ -599,6 +647,7 @@ async fn consensus_pass(
                     chains = windows.len(),
                     max_end_block = max_end,
                     all_host_anchored,
+                    nontrivial_anchored = host_tracks.values().any(|t| t.anchored_nontrivial),
                     gateway_anchored = gateway.anchored.is_some(),
                     unanchored_chains = ?unanchored,
                     "consensus timeout elapsed without unanimity on all tracks — emitting event_unanimity_consensus_timeout"
@@ -884,6 +933,30 @@ mod tests {
     use super::*;
 
     const CT: Duration = Duration::from_secs(60);
+
+    fn track(anchored: Option<i64>, nontrivial: bool) -> ConsensusTrack {
+        let mut t = ConsensusTrack::new(1);
+        t.anchored = anchored;
+        t.anchored_nontrivial = nontrivial;
+        t
+    }
+
+    #[test]
+    fn host_ready_needs_all_anchored_and_one_nontrivial() {
+        assert!(host_consensus_ready(&HashMap::from([
+            (1, track(Some(5), false)),
+            (2, track(Some(9), true)),
+        ])));
+        assert!(!host_consensus_ready(&HashMap::from([
+            (1, track(Some(5), false)),
+            (2, track(Some(7), false)),
+        ])));
+        assert!(!host_consensus_ready(&HashMap::from([
+            (1, track(Some(5), true)),
+            (2, track(None, false)),
+        ])));
+        assert!(!host_consensus_ready(&HashMap::new()));
+    }
 
     #[test]
     fn arm_timeout_when_all_chains_reached_end_block() {
