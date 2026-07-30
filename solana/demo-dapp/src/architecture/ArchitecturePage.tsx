@@ -15,23 +15,29 @@ const frames: readonly ArchitectureFrame[] = [
 flowchart TB
     subgraph input["Input"]
         direction LR
-        Value["User value"] --> Encrypt["SDK encrypts"] --> Ciphertext["Ciphertext"]
+        Value["User value"] --> Encrypt["SDK<br/>encrypts inputs"] --> Ciphertext["Ciphertext"]
     end
 
     subgraph execution["Execution"]
         direction LR
-        Rules["Solana enforces<br/>rules and permissions"] --> Compute["Coprocessor computes<br/>over ciphertexts"] --> Result["Encrypted result"]
+        Host["Host program<br/>records operations and permissions"] --> Compute["Coprocessor<br/>computes over ciphertexts"] --> Result["Encrypted result"]
     end
 
     subgraph release["Release"]
-        direction LR
+        direction TB
+        Gateway["Gateway<br/>coordinates encrypted material<br/>and decryption work"]
+        KMS["KMS<br/>checks rights and releases results"]
         Authorized{"Decryption scope"}
-        Authorized -->|"one user"| User["User decrypt"]
+        Relayer["Relayer<br/>returns a protected user result"]
+        Browser["Browser opens result"]
+
+        Gateway --> KMS --> Authorized
+        Authorized -->|"one user"| Relayer --> Browser
         Authorized -->|"the program"| Public["Certified public decrypt"]
     end
 
-    Ciphertext --> Rules
-    Result --> Authorized
+    Ciphertext --> Host
+    Result --> Gateway
 `,
   },
   {
@@ -57,35 +63,6 @@ flowchart LR
 
     Compose --> Quorum
     Quorum --> Decrypt["Authorized result"]
-`,
-  },
-  {
-    title: 'Protocol architecture',
-    statement: 'Requests move between the user, host chain and encrypted services.',
-    diagram: String.raw`
-flowchart TB
-    subgraph client["User side"]
-        direction LR
-        User["User"] --> SDK["SDK<br/>encrypts inputs and opens results"]
-        SDK --> Relayer["Relayer<br/>carries requests and results"]
-    end
-
-    subgraph hostchain["Host chain"]
-        Host["Host contract / program<br/>records operations and permissions"]
-    end
-
-    subgraph network["Encrypted network"]
-        direction LR
-        Coprocessor["Coprocessor<br/>computes over ciphertexts"]
-        Gateway["Gateway<br/>coordinates encrypted material<br/>and decryption work"]
-        KMS["KMS<br/>checks rights and releases<br/>authorized results"]
-        Coprocessor --> Gateway
-    end
-
-    SDK -->|"encrypted transaction"| Host
-    Host -->|"confirmed operations"| Coprocessor
-    Relayer <-->|"request / protected result"| Gateway
-    Gateway <-->|"authorized decrypt"| KMS
 `,
   },
   {
