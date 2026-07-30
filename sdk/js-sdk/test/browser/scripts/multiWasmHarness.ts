@@ -26,7 +26,7 @@ import { createFhevmClientFrozenContext } from '../../../src/core/frozenContext/
 
 export const EXPECTED_THREADS = 1;
 export const TFHE_VERSIONS: readonly TfheVersion[] = ['1.5.3', '1.6.2'];
-export const TKMS_VERSIONS: readonly TkmsVersion[] = ['0.13.10', '0.13.20-0'];
+export const TKMS_VERSIONS: readonly TkmsVersion[] = ['0.13.10', '0.13.20-0', '0.14.0-1'];
 
 /** A runtime equipped with both the encrypt and decrypt modules. */
 export type MultiWasmRuntime = WithEncrypt & WithDecrypt;
@@ -118,6 +118,7 @@ const WASM_URLS: Record<string, URL> = {
   'tfhe-worker.v1.6.2.mjs': new URL('/__raw_wasm/src/wasm/tfhe/v1.6.2/tfhe-worker.mjs', location.origin),
   'kms_lib_bg.v0.13.10.wasm': new URL('/__raw_wasm/src/wasm/tkms/v0.13.10/kms_lib_bg.wasm', location.origin),
   'kms_lib_bg.v0.13.20-0.wasm': new URL('/__raw_wasm/src/wasm/tkms/v0.13.20-0/kms_lib_bg.wasm', location.origin),
+  'kms_lib_bg.v0.14.0-1.wasm': new URL('/__raw_wasm/src/wasm/tkms/v0.14.0-1/kms_lib_bg.wasm', location.origin),
 };
 
 function locateWasmFile(file: string): URL {

@@ -1,7 +1,7 @@
 import type { ModuleVersionCompatibilityCheck, TfheVersion, TkmsVersion } from '../types/moduleVersions.js';
 import type { FhevmRuntime } from '../types/coreFhevmRuntime.js';
 import type { FhevmProtocolContext, ResolvedFhevmOptions, VersionResolution } from '../types/coreFhevmClient.js';
-import type { SemverRange } from '../base/semver.js';
+import type { SemverInterval, SemverRange } from '../base/semver.js';
 import type { Logger } from '../types/logger.js';
 import { semverComparatorImpliesRange } from '../base/semver.js';
 
@@ -22,7 +22,7 @@ type WasmModuleKey = keyof WasmModuleVersionByKey;
 type WasmModuleVersion<K extends WasmModuleKey> = WasmModuleVersionByKey[K];
 
 type WasmCompatibilityRule = {
-  readonly protocol: SemverRange;
+  readonly protocol: SemverInterval;
   readonly pubKeyCrs: SemverRange;
   readonly tfhe: {
     readonly canonical: TfheVersion;
@@ -69,7 +69,7 @@ const HYPER_WASM_SOLVER_CONFIG = {
   compatibilityRules: [
     {
       // protocol.version <= 0.12.x
-      protocol: { version: '0.13.0', comparator: 'lt' },
+      protocol: { upperBound: { version: '0.13.0', comparator: 'lt' } },
       // pubKeyCrs.version <= 1.5.x (ex: mainnet 1.4.0-alpha.3)
       pubKeyCrs: { version: '1.6.0', comparator: 'lt' },
       tfhe: {
@@ -82,8 +82,11 @@ const HYPER_WASM_SOLVER_CONFIG = {
       },
     },
     {
-      // protocol.version >= 0.13.0
-      protocol: { version: '0.13.0', comparator: 'ge' },
+      // 0.13.0 <= protocol.version < 0.14.0
+      protocol: {
+        lowerBound: { version: '0.13.0', comparator: 'ge' },
+        upperBound: { version: '0.14.0', comparator: 'lt' },
+      },
       // pubKeyCrs.version <= 1.5.x (ex: mainnet 1.4.0-alpha.3)
       pubKeyCrs: { version: '1.6.0', comparator: 'lt' },
       tfhe: {
@@ -96,8 +99,11 @@ const HYPER_WASM_SOLVER_CONFIG = {
       },
     },
     {
-      // protocol.version >= 0.13.0
-      protocol: { version: '0.13.0', comparator: 'ge' },
+      // 0.13.0 <= protocol.version < 0.14.0
+      protocol: {
+        lowerBound: { version: '0.13.0', comparator: 'ge' },
+        upperBound: { version: '0.14.0', comparator: 'lt' },
+      },
       // pubKeyCrs.version >= 1.6.0 (ex: localstack_v13)
       pubKeyCrs: { version: '1.6.0', comparator: 'ge' },
       tfhe: {
@@ -107,6 +113,34 @@ const HYPER_WASM_SOLVER_CONFIG = {
       kms: {
         canonical: '0.13.20-0',
         compatible: ['0.13.10', '0.13.20-0'],
+      },
+    },
+    {
+      // protocol.version >= 0.14.0
+      protocol: { lowerBound: { version: '0.14.0', comparator: 'ge' } },
+      // pubKeyCrs.version <= 1.5.x (ex: mainnet 1.4.0-alpha.3)
+      pubKeyCrs: { version: '1.6.0', comparator: 'lt' },
+      tfhe: {
+        canonical: '1.6.2',
+        compatible: ['1.5.3', '1.6.2'],
+      },
+      kms: {
+        canonical: '0.14.0-1',
+        compatible: ['0.13.10', '0.13.20-0', '0.14.0-1'],
+      },
+    },
+    {
+      // protocol.version >= 0.14.0
+      protocol: { lowerBound: { version: '0.14.0', comparator: 'ge' } },
+      // pubKeyCrs.version >= 1.6.0 (ex: localstack_v13)
+      pubKeyCrs: { version: '1.6.0', comparator: 'ge' },
+      tfhe: {
+        canonical: '1.6.2',
+        compatible: ['1.6.2'],
+      },
+      kms: {
+        canonical: '0.14.0-1',
+        compatible: ['0.13.10', '0.13.20-0', '0.14.0-1'],
       },
     },
   ],
@@ -203,6 +237,7 @@ export function hyperWasmResolveTfheModuleVersion(
  *   `protocolVersion = eq:0.12.0, pubKeyCrsVersion = eq:1.5.4` -> `'0.13.10'`.
  *   `protocolVersion = eq:0.13.0, pubKeyCrsVersion = eq:1.4.0-alpha.3` -> `'0.13.20-0'`.
  *   `protocolVersion = eq:0.13.0, pubKeyCrsVersion = eq:1.6.1` -> `'0.13.20-0'`.
+ *   `protocolVersion = eq:0.14.0, pubKeyCrsVersion = eq:1.6.1` -> `'0.14.0-1'`.
  */
 export function hyperWasmResolveTkmsModuleVersion(
   parameters: ResolveParameters,
@@ -295,13 +330,26 @@ function _resolveWasmCompatibilityRule(
 function _findWasmCompatibilityRules(protocolContext: FhevmProtocolContext): WasmCompatibilityRule[] {
   return WASM_COMPATIBILITY_RULES.filter(
     (entry) =>
-      _versionResolutionImpliesRange(protocolContext.protocolVersion, entry.protocol) &&
+      _versionResolutionImpliesInterval(protocolContext.protocolVersion, entry.protocol) &&
       _versionResolutionImpliesRange(protocolContext.pubKeyCrsVersion, entry.pubKeyCrs),
   );
 }
 
 function _versionResolutionImpliesRange(versionResolution: VersionResolution<string>, range: SemverRange): boolean {
   return semverComparatorImpliesRange(versionResolution.version, versionResolution.comparator, range);
+}
+
+function _versionResolutionImpliesInterval(
+  versionResolution: VersionResolution<string>,
+  interval: SemverInterval,
+): boolean {
+  if (interval.lowerBound !== undefined && !_versionResolutionImpliesRange(versionResolution, interval.lowerBound)) {
+    return false;
+  }
+  if (interval.upperBound !== undefined && !_versionResolutionImpliesRange(versionResolution, interval.upperBound)) {
+    return false;
+  }
+  return true;
 }
 
 function _resolveModuleVersionCompatibilityCheck(

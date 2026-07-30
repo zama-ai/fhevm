@@ -16,7 +16,8 @@ The required module version is selected at runtime via the on-chain host-contrac
 [src/core/runtime/HyperWasmSolver-p.ts](../src/core/runtime/HyperWasmSolver-p.ts):
 
 - `ACL.getVersion() < 0.4.0` -> TFHE `1.5.3` + TKMS `0.13.10`
-- `ACL.getVersion() >= 0.4.0` -> TFHE `1.6.1` + TKMS `0.13.20-0`
+- `0.4.0 <= ACL.getVersion() < 0.5.0` -> TFHE `1.6.2` + TKMS `0.13.20-0`
+- `ACL.getVersion() >= 0.5.0` -> TFHE `1.6.2` + TKMS `0.14.0-1`
 
 ### Lifecycle Boundary
 
@@ -124,12 +125,13 @@ Test `hyperWasmResolveTfheModuleVersion` and `hyperWasmResolveTkmsModuleVersion`
 Cases:
 
 1. ACL version below `0.4.0` resolves to TFHE `1.5.3` and TKMS `0.13.10`.
-2. ACL version exactly `0.4.0` resolves to TFHE `1.6.1` and TKMS `0.13.20-0`.
-3. ACL version above `0.4.0` resolves to TFHE `1.6.1` and TKMS `0.13.20-0`.
-4. Explicit `moduleVersions` overrides `auto`.
-5. Missing native client fails with a clear error.
-6. Non-ACL host contract version fails the `ACL` assertion.
-7. Malformed host-contract version strings fail cleanly.
+2. ACL version exactly `0.4.0` resolves to TFHE `1.6.2` and TKMS `0.13.20-0`.
+3. ACL version in `[0.4.0, 0.5.0)` resolves to TFHE `1.6.2` and TKMS `0.13.20-0`.
+4. ACL version `0.5.0` and above resolves to TFHE `1.6.2` and TKMS `0.14.0-1`.
+5. Explicit `moduleVersions` overrides `auto`.
+6. Missing native client fails with a clear error.
+7. Non-ACL host contract version fails the `ACL` assertion.
+8. Malformed host-contract version strings fail cleanly.
 
 Also cover `getVersion` cache behavior enough to ensure two distinct ACL addresses do not contaminate each other.
 
@@ -234,9 +236,10 @@ The browser coexistence test should initialize modules directly in one browser J
 2. Create or obtain one runtime in the page.
 3. Directly initialize:
    - TFHE `1.5.3`
-   - TFHE `1.6.1`
+   - TFHE `1.6.2`
    - TKMS `0.13.10`
    - TKMS `0.13.20-0`
+   - TKMS `0.14.0-1`
 4. Initialize the versions concurrently where possible.
 5. Assert:
    - both TFHE module infos are present
