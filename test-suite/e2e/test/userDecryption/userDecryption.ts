@@ -2,7 +2,7 @@ import { expect } from 'chai';
 import { ethers } from 'hardhat';
 
 import { createInstances } from '../instance';
-import { bitFlipPayload, corruptSignature, expectCorruptedShareDecryptToFail } from '../sdk/corruption/interceptShares';
+import { corruptPayloadFraming, corruptSignature, expectCorruptedShareDecryptToFail } from '../sdk/corruption/interceptShares';
 import { getSigners, initSigners } from '../signers';
 
 describe('User decryption', function () {
@@ -102,12 +102,15 @@ describe('User decryption', function () {
     // Observe how the SDK behaves when the KMS signcrypted shares it receives
     // are corrupted before client-side reconstruction. The corruption is
     // injected at the SDK's HTTP input boundary (see interceptShares).
-    // For now we assert only that decryption fails and print the error; whether
-    // 2 bad shares are always enough to break reconstruction is exactly the
-    // open question this test is meant to surface.
-    it('case 1: bit-flipped payload makes user decryption fail', async function () {
+    // Pins current behaviour, not desired: a framing fault is fatal regardless of
+    // how many shares arrived, because `js_to_resp` decodes the whole response
+    // vector with `?` per response, discarding the good shares along with the bad
+    // one. Known defect, fhevm-internal#1738 — the fix belongs in the KMS wasm, and
+    // this expectation flips when it lands. See spareShareTolerance for the counts
+    // at which a *droppable* fault (bad signature, corrupt body) survives.
+    it('case 1: corrupted payload framing bytes abort the whole user decryption', async function () {
       const handle = await this.contract.xUint64();
-      await expectCorruptedShareDecryptToFail('direct/payload', bitFlipPayload, () =>
+      await expectCorruptedShareDecryptToFail('direct/payload', corruptPayloadFraming, () =>
         this.instances.alice.userDecryptSingleHandle({
           handle,
           contractAddress: this.contractAddress,

@@ -9,6 +9,31 @@ import { expect } from 'chai';
  * `@zama-fhe/relayer-sdk` resolve the bare global at request time, so a single
  * patch covers either. Shares live at `result.result[]` on the poll response;
  * anything without that array (202 accepts, in-flight polls) passes through.
+ *
+ * What each corruptor does, and why the outcomes differ (all three measured on a
+ * 4-party `t=1` cluster returning every share; see `spareShareTolerance`):
+ *
+ * | corruptor               | bytes hit       | parses? | EIP-712     | outcome                    |
+ * | ----------------------- | --------------- | ------- | ----------- | -------------------------- |
+ * | `corruptSignature`      | signature       | yes     | fails       | that share dropped         |
+ * | `corruptPayloadBody`    | payload content | yes     | fails       | that share dropped         |
+ * | `corruptPayloadFraming` | payload length  | NO      | not reached | ENTIRE response discarded  |
+ *
+ * The first two are interchangeable: the EIP-712 signature covers the whole
+ * serialized payload, so mutating content invalidates the signature exactly as
+ * mutating the signature does. Both are survivable while `2t+1` valid shares
+ * remain — the wasm charges every share missing from a full `3t+1` committee
+ * against a fault budget of `t` (`num_bots = 3t+1 - accepted`), so tolerance is
+ * `returned - (2t+1)`.
+ *
+ * The third is different in kind, and is a defect rather than a threshold
+ * property: `js_to_resp` deserializes the whole response vector with `?` per
+ * response, so one undecodable payload discards the good shares too, before any
+ * signature is checked. Spares cannot help at any count.
+ * See TODO(fhevm-internal#1738).
+ *
+ * Corollary: payload corruption is NOT inherently fatal. Only *framing*
+ * corruption is. A flipped byte in the payload body behaves like a bad signature.
  */
 
 /** One signcrypted share as it appears on the wire (hex, no `0x` prefix). */
@@ -27,26 +52,60 @@ export const DEFAULT_CORRUPT_COUNT = 2;
 
 /**
  * Corrupt every share, whatever the topology returned. A fixed count is unsafe
- * for "must fail" assertions: the relayer returns `2t+1` shares plus spares
- * while the wasm needs only `t+1` good ones, so 2 of 4 still reconstructs.
+ * for "must fail" assertions: reconstruction needs `2t+1` *valid* shares, so on a
+ * 4-party cluster returning all `3t+1`, corrupting 2 of 4 still leaves 2 valid and
+ * a fixed count of 2 would reconstruct where the test expected a failure.
  */
 export const CORRUPT_ALL_SHARES = Number.MAX_SAFE_INTEGER;
 
-/** Flip every bit of the first byte of a hex-no-0x string (guaranteed change). */
-export function flipFirstByte(hex: string): string {
-  if (hex.length < 2) {
+/** Flip every bit of the byte at `byteOffset` of a hex-no-0x string. */
+export function flipByteAt(hex: string, byteOffset: number): string {
+  const start = byteOffset * 2;
+  if (start + 2 > hex.length) {
     return hex;
   }
-  const firstByte = parseInt(hex.slice(0, 2), 16);
-  const flipped = ((firstByte ^ 0xff) & 0xff).toString(16).padStart(2, '0');
-  return flipped + hex.slice(2);
+  const byte = parseInt(hex.slice(start, start + 2), 16);
+  const flipped = ((byte ^ 0xff) & 0xff).toString(16).padStart(2, '0');
+  return hex.slice(0, start) + flipped + hex.slice(start + 2);
 }
 
-/** Case 1: bit-flip the signcrypted payload. */
-export const bitFlipPayload: ShareCorruptor = (share) => ({
+/** Flip every bit of the first byte of a hex-no-0x string (guaranteed change). */
+export function flipFirstByte(hex: string): string {
+  return flipByteAt(hex, 0);
+}
+
+/**
+ * Case 1: corrupt the payload's leading length prefix — a framing fault.
+ *
+ * Byte 0 of the bincode-encoded `UserDecryptionResponsePayload` belongs to the
+ * length prefix of its first field (`verification_key`), so flipping it corrupts
+ * no key material: it changes how many bytes the decoder is told to read. The
+ * wasm then reads following bytes as a 64-bit length and aborts with
+ * `OutsideUsizeRange` (`usize` is 32-bit on wasm32), which is why the reported
+ * length differs on every run.
+ *
+ * This never reaches signature verification. `js_to_resp` deserializes the whole
+ * response vector with `?` per response, so a single framing fault discards every
+ * share — spares cannot help at any count. Contrast `corruptPayloadBody`.
+ */
+export const corruptPayloadFraming: ShareCorruptor = (share) => ({
   ...share,
   payload: flipFirstByte(share.payload),
 });
+
+/**
+ * Case 3: corrupt the payload body, past every length prefix — a content fault.
+ *
+ * Three quarters in lands inside the signcrypted ciphertext, by far the largest
+ * field, so the framing survives and the payload deserializes. The EIP-712
+ * signature covers `bc2wrap::serialize(payload)` in full, so validation then
+ * rejects this share and drops it — the same fate as a corrupted signature,
+ * rather than the whole-response abort of `corruptPayloadFraming`.
+ */
+export const corruptPayloadBody: ShareCorruptor = (share) => {
+  const byteLength = Math.floor(share.payload.length / 2);
+  return { ...share, payload: flipByteAt(share.payload, Math.floor(byteLength * 0.75)) };
+};
 
 /** Case 2: corrupt the KMS party's signature (length preserved, so it clears
  * the SDK's 65-byte length guard and reaches wasm signature verification). */
@@ -95,7 +154,13 @@ export interface CorruptionOptions {
   count?: number;
   /** Which end of the array to corrupt (default `'head'`). */
   from?: CorruptionEnd;
-  /** Called for every share-bearing response, with the count as received. */
+  /**
+   * Drop the response to its first `keep` shares before corrupting, simulating a
+   * relayer that returned fewer. Dumb on purpose: the count is the caller's to
+   * derive, so a truncation cannot silently track whatever the relayer sent.
+   */
+  keep?: number;
+  /** Called for every share-bearing response, with the count the SDK will see. */
   onShares?: (shareCount: number) => void;
 }
 
@@ -104,7 +169,7 @@ export interface CorruptionOptions {
  * are corrupted before the SDK reconstructs them. Restores `fetch` afterwards.
  */
 export async function withCorruptedUserDecryptShares<T>(options: CorruptionOptions, fn: () => Promise<T>): Promise<T> {
-  const { corrupt, onShares } = options;
+  const { corrupt, onShares, keep } = options;
   const count = options.count ?? DEFAULT_CORRUPT_COUNT;
   const from = options.from ?? 'head';
   const realFetch = globalThis.fetch;
@@ -131,12 +196,18 @@ export async function withCorruptedUserDecryptShares<T>(options: CorruptionOptio
       return rebuildResponse(response, text);
     }
 
+    const received = shares.length;
+    if (keep !== undefined && keep < shares.length) {
+      shares.splice(keep);
+    }
     onShares?.(shares.length);
     const corruptCount = Math.min(count, shares.length);
     const offset = from === 'tail' ? shares.length - corruptCount : 0;
+    const dropped = received === shares.length ? '' : `, truncated to ${shares.length}`;
     // eslint-disable-next-line no-console
     console.log(
-      `[corruption] user-decrypt response: ${shares.length} shares received, corrupting ${corruptCount} from the ${from}`,
+      `[corruption] user-decrypt response: ${received} shares received${dropped}, ` +
+        `corrupting ${corruptCount} from the ${from}`,
     );
     for (let i = 0; i < corruptCount; i++) {
       shares[offset + i] = corrupt(shares[offset + i], offset + i);
@@ -162,7 +233,7 @@ export async function expectCorruptedShareDecryptToFail(
   label: string,
   corrupt: ShareCorruptor,
   decrypt: () => Promise<unknown>,
-  options: Pick<CorruptionOptions, 'count' | 'from'> = {},
+  options: Pick<CorruptionOptions, 'count' | 'from' | 'keep'> = {},
 ): Promise<{ shareCount: number; message: string }> {
   let thrown: unknown;
   let observed = 0;
@@ -195,7 +266,7 @@ export async function expectCorruptedShareDecryptToSucceed<T>(
   label: string,
   corrupt: ShareCorruptor,
   decrypt: () => Promise<T>,
-  options: Pick<CorruptionOptions, 'count' | 'from'> = {},
+  options: Pick<CorruptionOptions, 'count' | 'from' | 'keep'> = {},
 ): Promise<{ value: T; shareCount: number }> {
   let observed = 0;
   const value = await withCorruptedUserDecryptShares({ ...options, corrupt, onShares: (n) => (observed = n) }, decrypt);

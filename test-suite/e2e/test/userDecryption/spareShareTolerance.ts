@@ -4,7 +4,9 @@ import { ethers } from 'hardhat';
 import { UserDecrypt } from '../../types';
 import { createInstances, protocolConfigAddress } from '../instance';
 import {
-  bitFlipPayload,
+  ShareCorruptor,
+  corruptPayloadBody,
+  corruptPayloadFraming,
   corruptSignature,
   expectCorruptedShareDecryptToFail,
   expectCorruptedShareDecryptToSucceed,
@@ -23,10 +25,12 @@ const THRESHOLD_MIN_SIGNERS = 4;
  * centralized stack and on a 4-party t=1 cluster, so it cannot tell them apart.
  *
  * - `t` is the MPC threshold, derived the way the SDK's wasm derives it.
- * - `reconstructMin` (`t+1`) is what decides success or failure.
- * - `collectThreshold` (`2t+1`) is what the relayer waits for before completing;
- *   being larger than `reconstructMin` is why the stack already tolerated `t` bad
- *   shares before spare shares existed.
+ * - `collectThreshold` (`2t+1`) is what decides success or failure: the wasm charges
+ *   every share missing from a full `3t+1` committee against a fault budget of `t`
+ *   (`num_bots = 3t+1 - accepted`), so it needs `2t+1` *valid* shares, and tolerance
+ *   is `returned - (2t+1)`. At exactly `2t+1` returned, tolerance is zero.
+ * - `reconstructMin` (`t+1`) is only the floor below which validation gives up
+ *   early with a different error; it is not the success criterion.
  */
 const readKmsTopology = async () => {
   const protocolConfig = new ethers.Contract(
@@ -98,17 +102,21 @@ describe('User decryption spare-share tolerance', function () {
 
     // eslint-disable-next-line no-console
     console.log(
-      `[spare-shares] signers=${topology.signerCount} t=${t} needs=${reconstructMin} ` +
-        `collects=${collectThreshold} returned=${returnedShares} faultBudget=${t}`,
+      `[spare-shares] signers=${topology.signerCount} t=${t} quorum=${collectThreshold} ` +
+        `floor=${reconstructMin} returned=${returnedShares} ` +
+        `tolerated=${returnedShares - collectThreshold} (ceiling ${t})`,
     );
 
-    // A precondition, not a case: without the relayer's spare-share wait the
-    // response carries exactly `collectThreshold`. Failing here names the cause
-    // instead of silently shifting every count below.
+    // A precondition, not a case: before the spare-share change the relayer's
+    // share query was capped by a LIMIT at its own threshold, so the response
+    // carried exactly `collectThreshold`. Failing here names the cause instead of
+    // silently shifting every count below. Note that user_decrypt_additional_shares
+    // is NOT the switch to check: it gates only the optimistic wait, while the LIMIT
+    // removal is unconditional, so a fast cluster returns every share even at 0.
     expect(
       returnedShares,
       `Relayer returned ${returnedShares} shares; expected more than the ${collectThreshold} it collects before ` +
-        `completing. Is user_decrypt_additional_shares > 0, and did the spare arrive inside the wait window?`,
+        `completing. Has the share query regained a LIMIT at the collection threshold?`,
     ).to.be.greaterThan(collectThreshold);
   });
 
@@ -122,27 +130,28 @@ describe('User decryption spare-share tolerance', function () {
   };
 
   /**
-   * Signature corruption keeps a share parseable and fails only its verification,
-   * so the reconstruction can discard it. The budget for discards is `t` — set by
-   * the scheme, not by how many shares arrived — because more than `t` faulty
-   * parties breaks the assumption the remaining shares are trustworthy at all.
-   * Past the budget the failure mode splits: while at least `reconstructMin` good
-   * shares remain it is a fault-budget refusal, below that there is simply too
-   * little left to interpolate.
+   * Sweeps 1..returnedShares for a *droppable* fault — one the wasm rejects at
+   * validation rather than choking on while parsing. Tolerance is `returned - (2t+1)`,
+   * which reaches the scheme's ceiling `t` only when every one of the `3t+1` shares
+   * comes back. Past the budget the failure mode splits: while at least
+   * `reconstructMin` good shares remain it is a fault-budget refusal, below that
+   * there is simply too little left to interpolate.
+   *
+   * Shared by the two droppable faults so their equivalence is structural: a bad
+   * signature and a corrupted payload body must behave identically.
    */
-  it('survives up to t corrupted signatures and no more', async function () {
+  const sweepDroppableCorruption = async (kind: string, corrupt: ShareCorruptor) => {
+    const tolerated = returnedShares - collectThreshold;
     const outcomes: string[] = [];
     for (let corrupted = 1; corrupted <= returnedShares; corrupted += 1) {
-      const label = `spare-shares/sig-${corrupted}`;
-      if (corrupted <= t) {
-        const { value, shareCount } = await expectCorruptedShareDecryptToSucceed(
-          label,
-          corruptSignature,
-          decryptXUint64,
-          { count: corrupted, from: 'tail' },
-        );
+      const label = `spare-shares/${kind}-${corrupted}`;
+      if (corrupted <= tolerated) {
+        const { value, shareCount } = await expectCorruptedShareDecryptToSucceed(label, corrupt, decryptXUint64, {
+          count: corrupted,
+          from: 'tail',
+        });
         expectSameShareCount(shareCount);
-        expect(value, `${corrupted} corrupted signature(s) should still reconstruct`).to.equal(X_UINT64_CLEARTEXT);
+        expect(value, `${corrupted} corrupted ${kind}(s) should still reconstruct`).to.equal(X_UINT64_CLEARTEXT);
         outcomes.push(`${corrupted}: reconstructed`);
         continue;
       }
@@ -151,41 +160,111 @@ describe('User decryption spare-share tolerance', function () {
         returnedShares - corrupted >= reconstructMin
           ? /num_bots \(\d+\) > threshold \(\d+\)/
           : /Not enough correct responses/;
-      const { shareCount, message } = await expectCorruptedShareDecryptToFail(label, corruptSignature, decryptXUint64, {
+      const { shareCount, message } = await expectCorruptedShareDecryptToFail(label, corrupt, decryptXUint64, {
         count: corrupted,
         from: 'tail',
       });
       expectSameShareCount(shareCount);
-      expect(message, `${corrupted} corrupted signature(s) failed for an unexpected reason`).to.match(expected);
+      expect(message, `${corrupted} corrupted ${kind}(s) failed for an unexpected reason`).to.match(expected);
       outcomes.push(`${corrupted}: refused (${returnedShares - corrupted} good left)`);
     }
     // eslint-disable-next-line no-console
-    console.log(`[spare-shares] signatures — ${outcomes.join(' | ')}`);
+    console.log(`[spare-shares] ${kind} — tolerated=${tolerated} — ${outcomes.join(' | ')}`);
+  };
+
+  /**
+   * Signature corruption keeps a share parseable and fails only its verification,
+   * so reconstruction can discard it.
+   */
+  it('corrupted signature bytes fail validation and are dropped, up to the spare count', async function () {
+    await sweepDroppableCorruption('sig', corruptSignature);
   });
 
   /**
-   * Payload corruption is unsurvivable at any count: the payload is signcrypted,
-   * so a flipped byte decrypts to garbage and deserialization dies on a nonsense
-   * length. The whole response is deserialized before any share is weighed, so a
-   * single bad payload aborts the request no matter how many spares arrived.
-   * Flip the expectation once the SDK drops undecodable shares (#1738).
+   * A payload byte flipped past every length prefix still deserializes, so unlike
+   * `corruptPayloadFraming` it reaches EIP-712 validation — where it fails,
+   * because the signature covers the whole serialized payload. It must therefore
+   * be indistinguishable from a corrupted signature. Proves that payload
+   * corruption is not inherently fatal: only *framing* corruption is.
    */
-  it('survives no corrupted payloads at all, however many spares arrive', async function () {
+  it('corrupted payload body bytes fail signature validation, exactly like a corrupted signature', async function () {
+    await sweepDroppableCorruption('body', corruptPayloadBody);
+  });
+
+  /**
+   * The counterfactual the relayer can no longer produce: `user_decrypt_additional_shares`
+   * only disables the optimistic wait, while the un-capping (dropping the share query's
+   * `LIMIT`) is unconditional, so no config makes the relayer return `2t+1` again.
+   * Truncating the response client-side is indistinguishable to the wasm, and isolates
+   * the share count as the only variable: same stack, same config, same corruptor.
+   *
+   * The truncate-only case comes first on purpose — without it, a failure below could
+   * be blamed on truncation rather than on the missing spare.
+   */
+  it('needs the spare: at 2t+1 shares the same single corruption is fatal', async function () {
+    const { value, shareCount } = await expectCorruptedShareDecryptToSucceed(
+      'spare-shares/truncated-clean',
+      corruptSignature,
+      decryptXUint64,
+      { count: 0, from: 'tail', keep: collectThreshold },
+    );
+    expect(shareCount, 'truncation did not reach the SDK').to.equal(collectThreshold);
+    expect(value, `${collectThreshold} uncorrupted shares should reconstruct`).to.equal(X_UINT64_CLEARTEXT);
+
+    const { shareCount: corruptedCount, message } = await expectCorruptedShareDecryptToFail(
+      'spare-shares/truncated-sig-1',
+      corruptSignature,
+      decryptXUint64,
+      { count: 1, from: 'tail', keep: collectThreshold },
+    );
+    expect(corruptedCount, 'truncation did not reach the SDK').to.equal(collectThreshold);
+    // The budget is spent on the shares that never arrived: num_bots = 3t+1 - (2t+1 - 1) = t+1.
+    expect(message, 'a corrupted share at exactly the quorum should exhaust the fault budget').to.match(
+      /num_bots \(\d+\) > threshold \(\d+\)/,
+    );
+    // eslint-disable-next-line no-console
+    console.log(
+      `[spare-shares] counterfactual — ${collectThreshold} shares: clean reconstructs, ` +
+        `1 corrupted refused; at ${returnedShares} the same corruption survives`,
+    );
+  });
+
+  /**
+   * TODO(fhevm-internal#1738): this case pins CURRENT behaviour, not desired
+   * behaviour — flip the expectation when the fix below lands.
+   *
+   * A framing fault (see `corruptPayloadFraming`) is fatal at any count, and
+   * spares cannot help. That is not a threshold property: `js_to_resp` decodes the
+   * whole response vector with `?` per response, so one undecodable payload
+   * discards every share — including the good ones — before validation runs.
+   *
+   * It should behave like any other single bad share: skip that response, keep the
+   * rest, reconstruct. Nothing is lost by skipping, since a response that fails to
+   * deserialize could never have passed validation anyway. The inconsistency is the
+   * argument: a bad *signature* is already skipped with a warning, so the same
+   * principle simply is not applied to a bad *encoding*.
+   *
+   * The fix belongs in the KMS wasm (`js_to_resp`), not here or in the SDK — every
+   * exclusion decision lives behind that boundary. When it lands, framing corruption
+   * becomes droppable and this case should move to `sweepDroppableCorruption`
+   * alongside signatures and payload bodies.
+   */
+  it('corrupted payload framing bytes break parsing and abort every share (known defect)', async function () {
     const outcomes: string[] = [];
     for (let corrupted = 1; corrupted <= returnedShares; corrupted += 1) {
       const { shareCount, message } = await expectCorruptedShareDecryptToFail(
-        `spare-shares/payload-${corrupted}`,
-        bitFlipPayload,
+        `spare-shares/framing-${corrupted}`,
+        corruptPayloadFraming,
         decryptXUint64,
         { count: corrupted, from: 'tail' },
       );
       expectSameShareCount(shareCount);
-      expect(message, `${corrupted} corrupted payload(s) failed for an unexpected reason`).to.match(
+      expect(message, `${corrupted} malformed payload(s) failed for an unexpected reason`).to.match(
         /response parsing failed/,
       );
       outcomes.push(`${corrupted}: parse aborted`);
     }
     // eslint-disable-next-line no-console
-    console.log(`[spare-shares] payloads — ${outcomes.join(' | ')}`);
+    console.log(`[spare-shares] framing (known defect, fhevm-internal#1738) — ${outcomes.join(' | ')}`);
   });
 });

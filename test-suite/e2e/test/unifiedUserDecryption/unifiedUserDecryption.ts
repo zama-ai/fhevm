@@ -9,7 +9,7 @@ import {
   relayerUrl,
   verifyingContractAddressDecryption,
 } from '../instance';
-import { bitFlipPayload, corruptSignature, expectCorruptedShareDecryptToFail } from '../sdk/corruption/interceptShares';
+import { corruptPayloadFraming, corruptSignature, expectCorruptedShareDecryptToFail } from '../sdk/corruption/interceptShares';
 import { Signers, getSigners, initSigners } from '../signers';
 import { FhevmInstances } from '../types';
 import { waitForBlock } from '../utils';
@@ -123,10 +123,13 @@ describe('Unified user decryption', function () {
     // relayer helper only checks job status and does not reconstruct), so the
     // corruption is observed by driving the SDK's reconstruction directly. We
     // assert only that decryption fails and print the error (see interceptShares).
-    it('case 1: bit-flipped payload makes user decryption fail', async function () {
+    // Pins current behaviour, not desired: one undecodable payload discards every
+    // share because `js_to_resp` decodes the whole vector with `?`. Known defect,
+    // fhevm-internal#1738 — flip this expectation when the KMS wasm skips instead.
+    it('case 1: corrupted payload framing bytes abort the whole user decryption', async function () {
       this.timeout(POSITIVE_TIMEOUT_MS + TIMEOUT_MARGIN_MS);
       const handle = await aliceContract.xUint64();
-      await expectCorruptedShareDecryptToFail('unified/payload', bitFlipPayload, () =>
+      await expectCorruptedShareDecryptToFail('unified/payload', corruptPayloadFraming, () =>
         instances.alice.userDecryptSingleHandle({
           handle,
           contractAddress: aliceContractAddress,

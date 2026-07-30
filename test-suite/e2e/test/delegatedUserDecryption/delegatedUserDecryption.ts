@@ -5,7 +5,7 @@ import { ethers } from 'hardhat';
 import { EncryptedERC20, SmartWalletWithDelegation, WildcardDelegationTarget } from '../../types';
 import { aclAddress, createInstances } from '../instance';
 import { isLiveNetwork } from '../network';
-import { bitFlipPayload, corruptSignature, expectCorruptedShareDecryptToFail } from '../sdk/corruption/interceptShares';
+import { corruptPayloadFraming, corruptSignature, expectCorruptedShareDecryptToFail } from '../sdk/corruption/interceptShares';
 import { ClearValueType, SdkInstance } from '../sdk/types';
 import { Signers, getSigners, initSigners } from '../signers';
 import { FhevmInstances } from '../types';
@@ -165,8 +165,11 @@ describe('Delegated user decryption', function () {
       balanceHandle = await token.balanceOf(smartWalletAddress);
     });
 
-    it('case 1: bit-flipped payload makes delegated user decryption fail', async function () {
-      await expectCorruptedShareDecryptToFail('delegated/payload', bitFlipPayload, () =>
+    // Pins current behaviour, not desired: one undecodable payload discards every
+    // share because `js_to_resp` decodes the whole vector with `?`. Known defect,
+    // fhevm-internal#1738 — flip this expectation when the KMS wasm skips instead.
+    it('case 1: corrupted payload framing bytes abort the whole delegated user decryption', async function () {
+      await expectCorruptedShareDecryptToFail('delegated/payload', corruptPayloadFraming, () =>
         instances.bob.delegatedUserDecryptSingleHandle({
           handle: balanceHandle,
           contractAddress: tokenAddress,
