@@ -1,22 +1,11 @@
 import mermaid from 'mermaid';
 import { useEffect } from 'react';
 
-type DiagramFrame = {
+type ArchitectureFrame = {
   readonly title: string;
   readonly statement: string;
   readonly diagram: string;
 };
-
-type GlossaryFrame = {
-  readonly title: string;
-  readonly statement: string;
-  readonly terms: readonly {
-    readonly term: string;
-    readonly definition: string;
-  }[];
-};
-
-type ArchitectureFrame = DiagramFrame | GlossaryFrame;
 
 const frames: readonly ArchitectureFrame[] = [
   {
@@ -71,64 +60,65 @@ flowchart LR
 `,
   },
   {
-    title: 'Protocol glossary',
-    statement: 'Each protocol layer has one job.',
-    terms: [
-      {
-        term: 'SDK',
-        definition: 'Encrypts inputs, builds requests and opens user-decrypt results.',
-      },
-      {
-        term: 'Host contract / program',
-        definition: 'Records encrypted operations and enforces who may use their results.',
-      },
-      {
-        term: 'Relayer',
-        definition: 'Carries SDK requests to protocol services and returns their results.',
-      },
-      {
-        term: 'Gateway',
-        definition: 'Keeps encrypted material and decryption work synchronized across the protocol.',
-      },
-      {
-        term: 'Coprocessor',
-        definition: 'Reconstructs confirmed operations and computes them over ciphertexts.',
-      },
-      {
-        term: 'KMS',
-        definition: 'Checks decryption rights and combines secret-key shares to release a result.',
-      },
-    ],
+    title: 'Protocol architecture',
+    statement: 'Each layer carries encrypted work to the next.',
+    diagram: String.raw`
+flowchart TB
+    subgraph client["User side"]
+        direction LR
+        User["User"] --> SDK["SDK<br/>encrypts inputs and opens results"]
+        SDK --> Relayer["Relayer<br/>carries requests and results"]
+    end
+
+    subgraph hostchain["Host chain"]
+        Host["Host contract / program<br/>records operations and permissions"]
+    end
+
+    subgraph network["Encrypted network"]
+        direction LR
+        Coprocessor["Coprocessor<br/>computes over ciphertexts"]
+        Gateway["Gateway<br/>coordinates encrypted material<br/>and decryption work"]
+        KMS["KMS<br/>checks rights and releases<br/>authorized results"]
+        Coprocessor --> Gateway
+    end
+
+    SDK -->|"encrypted transaction"| Host
+    Host -->|"confirmed operations"| Coprocessor
+    Relayer <-->|"request / protected result"| Gateway
+    Gateway <-->|"authorized decrypt"| KMS
+`,
   },
   {
-    title: 'Solana glossary',
-    statement: 'Solana gives every rule and encrypted value a concrete execution path.',
-    terms: [
-      {
-        term: 'Program',
-        definition: 'Executes code; mutable state lives in separate accounts.',
-      },
-      {
-        term: 'PDA',
-        definition: 'Gives a program a deterministic address with no private key.',
-      },
-      {
-        term: 'CPI',
-        definition: 'Lets one program call another with the authority already present.',
-      },
-      {
-        term: 'Handle',
-        definition: 'Identifies one ciphertext and its metadata; it is not the ciphertext.',
-      },
-      {
-        term: 'EncryptedValue',
-        definition: 'Keeps the current handle, permissions and compact history at one stable PDA.',
-      },
-      {
-        term: 'MMR',
-        definition: 'Commits old permissions into compact, append-only history.',
-      },
-    ],
+    title: 'Solana architecture',
+    statement: 'Programs execute the rules; accounts hold the encrypted state.',
+    diagram: String.raw`
+flowchart TB
+    subgraph transaction["One Solana transaction"]
+        direction LR
+        Instruction["Instruction<br/>names a program, accounts and data"]
+        ProgramA["Program<br/>executes code"]
+        CPI["CPI<br/>calls another program"]
+        ProgramB["Program<br/>reuses existing logic"]
+        Instruction --> ProgramA --> CPI --> ProgramB
+    end
+
+    subgraph state["Encrypted state"]
+        direction TB
+        PDA["PDA<br/>deterministic address<br/>with no private key"]
+        EncryptedValue["EncryptedValue<br/>stable account for one value"]
+        PDA --> EncryptedValue
+
+        Handle["Handle<br/>identifies the current ciphertext"]
+        Material["Encrypted material<br/>stored off-chain"]
+        EncryptedValue --> Handle --> Material
+
+        Permissions["Current permissions"]
+        MMR["MMR<br/>compact history of old permissions"]
+        EncryptedValue --> Permissions --> MMR
+    end
+
+    ProgramA -->|"reads and writes"| PDA
+`,
   },
   {
     title: 'Complete system',
@@ -374,20 +364,9 @@ export function ArchitecturePage() {
             </p>
             <h1>{frame.statement}</h1>
           </header>
-          {'diagram' in frame ? (
-            <div className="diagram-shell">
-              <pre className="mermaid">{frame.diagram}</pre>
-            </div>
-          ) : (
-            <dl className="glossary-grid">
-              {frame.terms.map(({ term, definition }) => (
-                <div className="glossary-entry" key={term}>
-                  <dt>{term}</dt>
-                  <dd>{definition}</dd>
-                </div>
-              ))}
-            </dl>
-          )}
+          <div className="diagram-shell">
+            <pre className="mermaid">{frame.diagram}</pre>
+          </div>
         </section>
       ))}
     </main>

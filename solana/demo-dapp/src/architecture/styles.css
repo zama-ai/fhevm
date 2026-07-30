@@ -39,8 +39,7 @@ body {
 }
 
 .frame-heading,
-.diagram-shell,
-.glossary-grid {
+.diagram-shell {
   width: min(1440px, 100%);
   margin-inline: auto;
 }
@@ -97,38 +96,6 @@ h1 {
   max-height: 62vh;
 }
 
-.glossary-grid {
-  display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 16px;
-  align-self: start;
-  margin: 0 auto;
-}
-
-.glossary-entry {
-  min-height: 148px;
-  padding: clamp(22px, 2.4vw, 34px);
-  border: 1px solid rgba(255, 255, 255, 0.1);
-  border-radius: 20px;
-  background: rgba(20, 20, 24, 0.76);
-  box-shadow: 0 20px 56px rgba(0, 0, 0, 0.2);
-}
-
-.glossary-entry dt {
-  margin-bottom: 12px;
-  color: #f6f6f7;
-  font-size: clamp(20px, 2vw, 30px);
-  font-weight: 760;
-  letter-spacing: -0.025em;
-}
-
-.glossary-entry dd {
-  margin: 0;
-  color: #b5b5bd;
-  font-size: clamp(15px, 1.35vw, 20px);
-  line-height: 1.45;
-}
-
 body[data-mermaid-error="true"]::before {
   position: fixed;
   z-index: 10;
@@ -157,14 +124,6 @@ body[data-mermaid-error="true"]::before {
   .diagram-shell {
     min-height: 460px;
     overflow-x: auto;
-  }
-
-  .glossary-grid {
-    grid-template-columns: 1fr;
-  }
-
-  .glossary-entry {
-    min-height: auto;
   }
 
   .mermaid svg {
