@@ -2,7 +2,7 @@ use crate::core::{
     config::Config,
     event_processor::{RequestCheckError, RequestCheckKind},
 };
-use alloy::{primitives::U256, providers::Provider};
+use alloy::{eips::BlockId, primitives::U256, providers::Provider};
 use anyhow::anyhow;
 use connector_utils::types::extra_data::ExtraData;
 use fhevm_host_bindings::protocol_config::ProtocolConfig::{self, ProtocolConfigInstance};
@@ -132,6 +132,7 @@ impl<P: Provider> DbContextManager<P> {
         let context_valid = self
             .protocol_config_contract
             .isValidKmsContext(context_id)
+            .block(BlockId::finalized())
             .call()
             .await
             .map_err(|e| {
@@ -154,6 +155,7 @@ impl<P: Provider> DbContextManager<P> {
         let epoch_valid = self
             .protocol_config_contract
             .isValidEpochForContext(context_id, epoch_id)
+            .block(BlockId::finalized())
             .call()
             .await
             .map_err(|e| {

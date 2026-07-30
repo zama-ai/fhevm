@@ -13,9 +13,9 @@
  *     request is in flight.
  *
  * Two rules keep the runs deterministic:
- *   - Abort immediately after the trigger — the ceremony is the slow path, so the abort always
- *     lands on chain first; waiting for connector ingestion can lose the race to a fast
- *     ceremony.
+ *   - Sleep TRIGGER_TO_ABORT_SLEEP_MS between the trigger and the abort — long enough for the
+ *     connectors to pick the request and register the ceremony on every KMS core, yet below the
+ *     ceremony duration so the abort still lands mid-flight.
  *   - Assert connector statuses without assuming a specific phase — depending on where the
  *     abort catches a party, request rows end `aborted` (KMS Core canceled the ceremony),
  *     `completed` (late work recorded on chain without consensus), or `failed` (a threshold
@@ -38,8 +38,15 @@ import { run } from "../utils/process";
 /** How long the connector gets to ingest the abort, forward it to KMS Core, and settle. */
 const CONNECTOR_SETTLE_TIMEOUT_MS = 240_000;
 const CONNECTOR_POLL_MS = 2_000;
-/** One listener batch cycle: a KeygenRequest emitted just before the abort may still be ingesting. */
-const LISTENER_BATCH_GRACE_MS = 35_000;
+/**
+ * Trigger-to-abort delay keeping the events in different kms-connector gw-listener poll batches.
+ * Lower bound: KMS_CONNECTOR_KEY_MANAGEMENT_POLLING (1s, templates/env/.env.kms-connector).
+ * Upper bound: ceremony duration (Test params in CI: ~24s crsgen, ~40s keygen preproc) —
+ * past that the ceremony is over and the abort reverts AlreadyDone.
+ */
+const TRIGGER_TO_ABORT_SLEEP_MS = 3_000;
+/** A few listener batch cycles: a KeygenRequest emitted alongside the trigger may still be ingesting. */
+const LISTENER_BATCH_GRACE_MS = 10_000;
 /** Bound for a full post-abort keygen/crsgen cycle (trigger -> consensus -> activation). */
 const RECOVERY_TIMEOUT_MS = Number(process.env.KMS_ABORT_RECOVERY_TIMEOUT_SECONDS ?? "900") * 1_000;
 const RECOVERY_POLL_MS = 5_000;
@@ -261,6 +268,9 @@ const abortKeygenMidFlight = async (state: State, target: Target, owner: Owner, 
   // The pipeline is exclusive while the request is in flight.
   await expectRevert(target, owner, "keygen while one is in flight", "KeygenOngoing(uint256)", "keygen(uint8)", paramsType);
 
+  // Let every connector register the ceremony on its KMS core before the abort event exists.
+  await Bun.sleep(TRIGGER_TO_ABORT_SLEEP_MS);
+
   let abortReceipt: Receipt;
   try {
     abortReceipt = await castSend(target, owner, "abortKeygen(uint256)", prepKeygenId.toString());
@@ -301,6 +311,9 @@ const abortCrsgenMidFlight = async (state: State, target: Target, owner: Owner, 
   console.log(`[kms-generation-abort] crsgen in flight: crsId=${crsId}`);
 
   await expectRevert(target, owner, "crsgen while one is in flight", "CrsgenOngoing(uint256)", "crsgenRequest(uint256,uint8)", "2048", paramsType);
+
+  // Let every connector register the ceremony on its KMS core before the abort event exists.
+  await Bun.sleep(TRIGGER_TO_ABORT_SLEEP_MS);
 
   let abortReceipt: Receipt;
   try {

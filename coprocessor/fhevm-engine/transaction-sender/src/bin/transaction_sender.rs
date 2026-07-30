@@ -105,7 +105,9 @@ struct Conf {
     #[arg(long, default_value_t = 30)]
     review_after_unlimited_retries: u16,
 
-    #[arg(long, default_value_t = u32::MAX)]
+    // Finite: alloy retries the request internally on BackendGone, so an unbounded
+    // value means we'd never surface it to exit and let k8s restart on a dead gateway.
+    #[arg(long, default_value_t = 10)]
     provider_max_retries: u32,
 
     #[arg(long, default_value = "4s", value_parser = parse_duration)]

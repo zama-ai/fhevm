@@ -9,7 +9,7 @@ const enum KmsRequestType {
 // Get the expected KMS request ID (uint256) for a counter and request type
 export function getKmsRequestIds(counter: number, kmsRequestType: KmsRequestType): bigint {
   if (counter < 0) {
-    throw new Error("Counter must be non-negative");
+    throw new Error('Counter must be non-negative');
   }
   // Left shift 248 bits to put the expected value in the ID's most significant byte.
   // See `KmsRequestCounters.sol` for more details.

@@ -625,7 +625,7 @@ impl std::fmt::Debug for OpNode {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_struct("OpNode")
             .field("OP", &self.opcode)
-            .field("Result handle", &format_args!("{:?}", &self.result_handle))
+            .field("Result handle", &format_args!("{:?}", self.result_handle))
             .finish()
     }
 }

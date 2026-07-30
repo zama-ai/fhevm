@@ -1,13 +1,13 @@
 // SPDX-License-Identifier: BSD-3-Clause-Clear
 pragma solidity ^0.8.24;
 
-import { IKMSGeneration } from "./interfaces/IKMSGeneration.sol";
-import { IGatewayConfig } from "./interfaces/IGatewayConfig.sol";
-import { gatewayConfigAddress } from "../addresses/GatewayAddresses.sol";
-import { EIP712Upgradeable } from "@openzeppelin/contracts-upgradeable/utils/cryptography/EIP712Upgradeable.sol";
-import { Strings } from "@openzeppelin/contracts/utils/Strings.sol";
-import { UUPSUpgradeableEmptyProxy } from "./shared/UUPSUpgradeableEmptyProxy.sol";
-import { GatewayOwnable } from "./shared/GatewayOwnable.sol";
+import { IKMSGeneration } from './interfaces/IKMSGeneration.sol';
+import { IGatewayConfig } from './interfaces/IGatewayConfig.sol';
+import { gatewayConfigAddress } from '../addresses/GatewayAddresses.sol';
+import { EIP712Upgradeable } from '@openzeppelin/contracts-upgradeable/utils/cryptography/EIP712Upgradeable.sol';
+import { Strings } from '@openzeppelin/contracts/utils/Strings.sol';
+import { UUPSUpgradeableEmptyProxy } from './shared/UUPSUpgradeableEmptyProxy.sol';
+import { GatewayOwnable } from './shared/GatewayOwnable.sol';
 
 /**
  * @title KMSGeneration contract (view-only)
@@ -38,7 +38,7 @@ contract KMSGeneration is IKMSGeneration, EIP712Upgradeable, UUPSUpgradeableEmpt
      * in order to force derived contracts to consider a different version. Note that
      * they can still define their own private constants with the same name.
      */
-    string private constant CONTRACT_NAME = "KMSGeneration";
+    string private constant CONTRACT_NAME = 'KMSGeneration';
     uint256 private constant MAJOR_VERSION = 0;
     uint256 private constant MINOR_VERSION = 5;
     uint256 private constant PATCH_VERSION = 0;
@@ -222,11 +222,11 @@ contract KMSGeneration is IKMSGeneration, EIP712Upgradeable, UUPSUpgradeableEmpt
             string(
                 abi.encodePacked(
                     CONTRACT_NAME,
-                    " v",
+                    ' v',
                     Strings.toString(MAJOR_VERSION),
-                    ".",
+                    '.',
                     Strings.toString(MINOR_VERSION),
-                    ".",
+                    '.',
                     Strings.toString(PATCH_VERSION)
                 )
             );

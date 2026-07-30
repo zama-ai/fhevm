@@ -1,0 +1,23 @@
+# anvil-node values overlay for the fhevm-e2e "simplest scenario" gateway chain.
+# Deployed as: helm upgrade --install anvil-gateway charts/anvil-node -n fhevm-e2e -f this-file
+nameOverride: anvil-gateway
+image:
+  name: ghcr.io/foundry-rs/foundry
+  tag: v1.3.5
+network:
+  blockTime: "1"
+  host: "0.0.0.0"
+  chainId: "54321"
+  accounts: "120"
+  slotsInAnEpoch: "1"
+  mnemonic: "test test test test test test test test test test test junk"
+port: 8546
+storage:
+  size: 1Gi
+resources:
+  requests:
+    cpu: 250m
+    memory: 512Mi
+  limits:
+    cpu: "1"
+    memory: 2Gi

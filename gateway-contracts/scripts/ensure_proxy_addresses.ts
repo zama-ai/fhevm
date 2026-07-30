@@ -1,8 +1,8 @@
 #!/usr/bin/env node
-import { execSync } from "child_process";
-import * as dotenv from "dotenv";
-import * as fs from "fs";
-import * as path from "path";
+import { execSync } from 'child_process';
+import * as dotenv from 'dotenv';
+import * as fs from 'fs';
+import * as path from 'path';
 
 function main(): void {
   try {
@@ -10,18 +10,18 @@ function main(): void {
     const envPath = process.env.ENV_PATH;
 
     if (!envPath) {
-      console.error("ENV_PATH is not set");
+      console.error('ENV_PATH is not set');
       process.exit(1);
     } else if (!fs.existsSync(envPath)) {
-      console.error("ENV_PATH does not exist");
+      console.error('ENV_PATH does not exist');
       process.exit(1);
     }
 
     // Get addresses directory
-    const addressesDir = "addresses";
+    const addressesDir = 'addresses';
 
     // Get gateway config address env file
-    const gatewayConfigAddressEnv = path.join(addressesDir, ".env.gateway");
+    const gatewayConfigAddressEnv = path.join(addressesDir, '.env.gateway');
 
     let shouldGenerateAddresses = false;
 
@@ -60,14 +60,14 @@ function main(): void {
       console.log(`Generating contract addresses in development environment.`);
       // Deploy the setup contracts (empty proxies, pauserSet) and generate addresses
       execSync(`make deploy-setup-contracts`, {
-        stdio: "inherit",
+        stdio: 'inherit',
         env: process.env,
       });
     } else {
-      console.log("Contract addresses match local development environment.");
+      console.log('Contract addresses match local development environment.');
     }
   } catch (error) {
-    console.error("Error:", error);
+    console.error('Error:', error);
     process.exit(1);
   }
 }

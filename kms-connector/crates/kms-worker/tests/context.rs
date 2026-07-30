@@ -21,13 +21,14 @@ use connector_utils::{
             init_host_chains_acl_contracts_mock,
         },
     },
-    types::{DEFAULT_EPOCH_ID, TESTING_KMS_CONTEXT, extra_data::ExtraData},
+    types::{DEFAULT_EPOCH_ID, TESTING_KMS_CONTEXT, extra_data::ExtraData, u256_to_request_id},
 };
+use kms_grpc::kms::v1::DestroyMpcContextResponse;
 use kms_worker::core::{
     Config,
     event_processor::{ContextManager, DbContextManager, ProcessingError, RequestCheckError},
 };
-use mocktail::server::MockServer;
+use mocktail::{MockSet, server::MockServer};
 use rstest::rstest;
 use std::time::Duration;
 use tokio_util::sync::CancellationToken;
@@ -242,6 +243,105 @@ async fn test_decryption_context_invalid(#[case] event_type: TestEventType) -> a
 
     // Verify no pending requests remain
     check_no_uncompleted_request_in_db(test_instance.db(), event_type).await?;
+
+    cancel_token.cancel();
+    kms_worker_task.await.unwrap();
+    Ok(())
+}
+
+#[rstest]
+#[timeout(Duration::from_secs(60))]
+#[tokio::test]
+async fn test_context_destruction_invalidates_returned_epochs() -> anyhow::Result<()> {
+    let test_instance = TestInstanceBuilder::default()
+        .with_db(DbInstance::setup_external().await?)
+        .build();
+
+    // The registry mocks are only consumed by its initial load — the destruction flow involves
+    // no ciphertext nor ACL interaction.
+    let asserter = Asserter::new();
+    mock_copro_registry_load(&asserter, "http://unused-bucket-url");
+    let mock_provider = ProviderBuilder::new()
+        .disable_recommended_fillers()
+        .connect_mocked_client(asserter);
+    let acl_contracts_mock = init_host_chains_acl_contracts_mock(rand_handle(), vec![]);
+
+    // Two epochs cached as valid under the testing context, to be reported destroyed by the Core
+    let destroyed_epoch_ids = [U256::from(41), U256::from(42)];
+    for epoch_id in destroyed_epoch_ids {
+        sqlx::query(
+            "INSERT INTO kms_epoch(id, context_id, is_valid, created_at, updated_at)
+            VALUES ($1, $2, TRUE, NOW(), NOW())",
+        )
+        .bind(epoch_id.as_le_slice())
+        .bind(TESTING_KMS_CONTEXT.as_le_slice())
+        .execute(test_instance.db())
+        .await?;
+    }
+
+    // Destruction request targeting `TESTING_KMS_CONTEXT`
+    insert_rand_request(
+        test_instance.db(),
+        TestEventType::KmsContextDestroyed,
+        InsertRequestOptions::new().with_id(TESTING_KMS_CONTEXT),
+    )
+    .await?;
+
+    // Mock the KMS Core's response to the destruction request
+    let mut kms_mocks = MockSet::new();
+    kms_mocks.mock(|when, then| {
+        when.path("/kms_service.v1.CoreServiceEndpoint/DestroyMpcContext");
+        then.pb(DestroyMpcContextResponse {
+            epoch_ids: destroyed_epoch_ids.map(u256_to_request_id).to_vec(),
+        });
+    });
+    let kms_mock_server =
+        MockServer::new_grpc("kms_service.v1.CoreServiceEndpoint").with_mocks(kms_mocks);
+    kms_mock_server.start().await?;
+    info!("KMS mock server started!");
+
+    let config = Config {
+        kms_core_endpoints: vec![kms_mock_server.base_url().unwrap().to_string()],
+        ct_attestation: testing_ct_attestation_config(),
+        ..Default::default()
+    };
+    let kms_worker = init_kms_worker(
+        config,
+        mock_provider,
+        acl_contracts_mock,
+        test_instance.db(),
+    )
+    .await?;
+    let cancel_token = CancellationToken::new();
+    let kms_worker_task = tokio::spawn(kms_worker.start(cancel_token.clone()));
+    info!("KmsWorker started!");
+
+    // Waiting for the destruction request to reach a terminal status.
+    while let Err(e) =
+        check_no_uncompleted_request_in_db(test_instance.db(), TestEventType::KmsContextDestroyed)
+            .await
+    {
+        warn!("Request not yet processed: {e}");
+        tokio::time::sleep(Duration::from_millis(200)).await;
+    }
+
+    // Both epochs reported by the Core must be invalidated...
+    for epoch_id in destroyed_epoch_ids {
+        let is_valid: bool = sqlx::query_scalar("SELECT is_valid FROM kms_epoch WHERE id = $1")
+            .bind(epoch_id.as_le_slice())
+            .fetch_one(test_instance.db())
+            .await?;
+        assert!(!is_valid, "epoch #{epoch_id} should have been invalidated");
+    }
+    // ...while the epoch not reported (seeded by `DbInstance::setup`) must remain valid.
+    let sibling_valid: bool = sqlx::query_scalar("SELECT is_valid FROM kms_epoch WHERE id = $1")
+        .bind(DEFAULT_EPOCH_ID.as_le_slice())
+        .fetch_one(test_instance.db())
+        .await?;
+    assert!(
+        sibling_valid,
+        "an epoch not reported by the Core should remain valid"
+    );
 
     cancel_token.cancel();
     kms_worker_task.await.unwrap();
