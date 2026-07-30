@@ -33,13 +33,6 @@ import { type StackSpec, topologyForState } from "../stack-spec/stack-spec";
 import { buildKmsThresholdOverride, kmsRenderOptionsFor } from "./kms-core";
 import type { HostChainScenario, ResolvedCoprocessorScenarioInstance, State } from "../types";
 import { ensureDir, exists, mergeArgs, readEnvFile, remove, toServiceName } from "../utils/fs";
-import { WORKSPACE_BUILDCACHE_IMAGE, buildCacheEnabled, buildCacheTag } from "../utils/build-cache";
-import {
-  sccacheBuildArgs,
-  sccacheBuildSecretIds,
-  sccacheComposeSecrets,
-  sccacheEnabled,
-} from "../utils/sccache";
 
 export type ComposeDoc = Record<string, unknown> & {
   services: Record<string, Record<string, unknown>>;
@@ -212,75 +205,6 @@ const COMPONENT_BUILD_SPECS: Record<string, Record<string, Record<string, unknow
   },
 };
 const localBuildSpecFor = (component: string, service: string) => COMPONENT_BUILD_SPECS[component]?.[service];
-
-/**
- * Components whose Dockerfiles carry the sccache hook (the Rust workspace builds). Only these get
- * the S3-cache build args + BuildKit secrets injected; Node/Solidity image builds (gateway/host
- * contracts, test-suite) are left untouched.
- */
-const SCCACHE_BUILD_COMPONENTS = new Set(["coprocessor", "kms-connector"]);
-
-/**
- * Returns a build spec augmented with the sccache build args + secret references when sccache is
- * enabled and the component's Dockerfile carries the hook. A no-op otherwise, so the generated
- * compose is byte-identical when SCCACHE_BUCKET is unset. Clones the input so the shared
- * COMPONENT_BUILD_SPECS entries are never mutated.
- */
-const withSccacheBuild = (component: string, build: Record<string, unknown> | undefined) => {
-  if (!build || !sccacheEnabled() || !SCCACHE_BUILD_COMPONENTS.has(component)) {
-    return build;
-  }
-  const next = structuredClone(build);
-  const existingArgs = (next.args as Record<string, unknown> | undefined) ?? {};
-  next.args = { ...existingArgs, ...sccacheBuildArgs() };
-  const existingSecrets = Array.isArray(next.secrets) ? (next.secrets as string[]) : [];
-  next.secrets = [...existingSecrets, ...sccacheBuildSecretIds()];
-  return next;
-};
-
-/**
- * Adds a registry `cache_from` entry (the BuildKit cache manifest that
- * solana-images-publish.yml exports) when FHEVM_BUILDCACHE_TAG is set. Scoped to the same Rust
- * components as sccache (the builds the publish workflow exports caches for). Two cases:
- *
- *   - Per-binary Dockerfile builds (e.g. kms-connector-db-migration): the cache ref is the
- *     service's own image repository at the cache tag, so the compose reader and the publish
- *     writer's per-image job stay aligned without a name map.
- *   - coprocessor workspace builds (Dockerfile.workspace): every coprocessor workspace target
- *     shares one `builder` stage (its cargo-chef cook layer holds the whole dependency compile),
- *     so ONE shared manifest — WORKSPACE_BUILDCACHE_IMAGE at the cache tag — serves every service.
- *     This is exported by solana-images-publish.yml's workspace-cache job.
- *
- * The kms-connector workspace Dockerfile has no cache writer, so those builds stay uncached
- * (injecting a ref there would only add a guaranteed miss). A no-op otherwise, so the generated
- * compose is byte-identical when FHEVM_BUILDCACHE_TAG is unset.
- */
-const withRegistryBuildCache = (component: string, image: unknown, build: Record<string, unknown> | undefined) => {
-  if (!build || !buildCacheEnabled() || !SCCACHE_BUILD_COMPONENTS.has(component) || typeof image !== "string") {
-    return build;
-  }
-  const isWorkspace = typeof build.dockerfile === "string" && build.dockerfile.endsWith("Dockerfile.workspace");
-  if (isWorkspace && component !== "coprocessor") {
-    // No writer exports the kms-connector workspace cache; leave those builds uncached.
-    return build;
-  }
-  const cacheRef = isWorkspace
-    ? `${WORKSPACE_BUILDCACHE_IMAGE}:${buildCacheTag()}`
-    : rewriteImageTag(image, buildCacheTag());
-  const next = structuredClone(build);
-  const existing = Array.isArray(next.cache_from) ? (next.cache_from as string[]) : [];
-  next.cache_from = [...existing, cacheRef];
-  return next;
-};
-
-/** Adds the top-level compose `secrets:` block for a Rust component when sccache is enabled. */
-const withSccacheSecrets = <T extends Record<string, unknown>>(component: string, doc: T): T => {
-  if (!sccacheEnabled() || !SCCACHE_BUILD_COMPONENTS.has(component)) {
-    return doc;
-  }
-  const existing = (doc.secrets as Record<string, unknown> | undefined) ?? {};
-  return { ...doc, secrets: { ...existing, ...sccacheComposeSecrets() } };
-};
 
 const CANONICAL_HOST_ONLY_SERVICES = new Set([
   "host-sc-trigger-keygen",
@@ -528,11 +452,7 @@ const applyCoprocessorSource = (
 ) => {
   if (locallyBuilt) {
     service.image = retagLocal(service.image, localInstanceTag(instance.index));
-    service.build = withRegistryBuildCache(
-      "coprocessor",
-      service.image,
-      withSccacheBuild("coprocessor", localBuildSpecFor("coprocessor", serviceName)),
-    );
+    service.build = localBuildSpecFor("coprocessor", serviceName);
     return;
   }
   if (instance.source.mode === "registry") {
@@ -668,7 +588,7 @@ const buildCoprocessorOverride = async (plan: StackSpec) => {
   }
 
   next.services = services;
-  return withSccacheSecrets("coprocessor", next);
+  return next;
 };
 
 /**
@@ -700,11 +620,7 @@ export const buildKmsConnectorOverride = async (plan: StackSpec) => {
       next.env_file = [envFileValue];
       applyBuildPolicy(next, overridden.has(name));
       if (party === 1 && overridden.has(name)) {
-        const build = withRegistryBuildCache(
-          "kms-connector",
-          next.image,
-          withSccacheBuild("kms-connector", localBuildSpecFor("kms-connector", name)),
-        );
+        const build = localBuildSpecFor("kms-connector", name);
         if (build) {
           next.build = build;
         }
@@ -720,7 +636,7 @@ export const buildKmsConnectorOverride = async (plan: StackSpec) => {
       services[serviceName] = next;
     }
   }
-  return withSccacheSecrets("kms-connector", { services });
+  return { services };
 };
 
 /** Builds the generated compose override for one component. */
@@ -754,17 +670,13 @@ const buildComposeOverride = async (component: string, plan: StackSpec) => {
     }
     const next = structuredClone(service);
     applyBuildPolicy(next, true);
-    const build = withRegistryBuildCache(
-      component,
-      next.image,
-      withSccacheBuild(component, localBuildSpecFor(component, name)),
-    );
+    const build = localBuildSpecFor(component, name);
     if (build) {
       next.build = build;
     }
     services[name] = next;
   }
-  return withSccacheSecrets(component, { services });
+  return { services };
 };
 
 /** Builds a host-node compose override for an extra (EVM) host chain. */
@@ -878,7 +790,7 @@ const buildExtraCoprocessorListenerOverride = async (
       services[cloneName] = adjusted;
     }
   }
-  return withSccacheSecrets("coprocessor", { services });
+  return { services };
 };
 
 /** Lists which components need generated compose overrides for a runtime plan. */

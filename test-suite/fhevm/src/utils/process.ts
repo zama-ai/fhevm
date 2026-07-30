@@ -4,7 +4,6 @@
 import { STATE_DIR, envPath, versionsEnvPath } from "../layout";
 import { exists, readEnvFileIfExists, type RunOptions, type RunResult } from "./fs";
 import { CommandError } from "../errors";
-import { sccacheComposeEnv } from "./sccache";
 
 /** Reads a spawned process pipe into a string when one exists. */
 const readPipe = async (stream: ReadableStream<Uint8Array> | number | null | undefined) =>
@@ -214,8 +213,5 @@ export const composeEnv = async (component: string, extra?: Record<string, strin
   const env = (await exists(versionsEnvPath))
     ? { ...(await readEnvFileIfExists(versionsEnvPath)), COMPOSE_IGNORE_ORPHANS: "true", FHEVM_STATE_DIR: STATE_DIR }
     : { COMPOSE_IGNORE_ORPHANS: "true", FHEVM_STATE_DIR: STATE_DIR };
-  // Forward the sccache S3-cache env (bucket/region/prefix + AWS creds) so `docker compose build`
-  // can resolve the environment-sourced BuildKit secrets. Empty unless SCCACHE_BUCKET is set, so
-  // the local-dev / fork build env is unchanged.
-  return { ...env, ...sccacheComposeEnv(), ...(await readEnvFileIfExists(envPath(component))), ...extra };
+  return { ...env, ...(await readEnvFileIfExists(envPath(component))), ...extra };
 };
