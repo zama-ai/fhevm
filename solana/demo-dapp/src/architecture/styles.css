@@ -32,49 +32,63 @@ body {
 
 .architecture-frame {
   display: grid;
+  grid-template-rows: auto minmax(0, 1fr);
+  height: 100svh;
   min-height: 100svh;
-  padding: clamp(32px, 5vw, 72px) clamp(24px, 6vw, 96px);
+  padding: clamp(12px, 1.5vw, 24px) clamp(12px, 2vw, 32px) clamp(16px, 2vw, 28px);
   border-bottom: 1px solid rgba(255, 255, 255, 0.08);
   scroll-snap-align: start;
 }
 
 .frame-heading,
 .diagram-shell {
-  width: min(1440px, 100%);
+  width: min(1600px, 100%);
   margin-inline: auto;
 }
 
 .frame-heading {
-  align-self: end;
-  margin-bottom: clamp(24px, 3vh, 40px);
+  align-self: start;
+  margin-bottom: clamp(8px, 1vh, 12px);
+}
+
+.frame-heading h1 {
+  display: flex;
+  max-width: none;
+  margin: 0;
+  align-items: baseline;
+  gap: 8px 12px;
+  font-size: clamp(17px, 1.55vw, 24px);
+  line-height: 1.15;
+  letter-spacing: -0.02em;
 }
 
 .frame-label {
-  margin: 0 0 14px;
+  flex: none;
   color: #a78bfa;
-  font-size: clamp(12px, 1.2vw, 15px);
+  font-size: clamp(10px, 0.75vw, 13px);
   font-weight: 760;
   letter-spacing: 0.12em;
   text-transform: uppercase;
 }
 
-h1 {
-  max-width: 1120px;
-  margin: 0;
-  font-size: clamp(32px, 4.2vw, 64px);
-  line-height: 1.02;
-  letter-spacing: -0.045em;
+.frame-separator {
+  color: #666672;
+}
+
+.frame-statement {
+  font-weight: 700;
 }
 
 .diagram-shell {
   display: grid;
-  min-height: min(64vh, 760px);
+  min-height: 0;
+  height: 100%;
   place-items: center;
-  align-self: start;
-  padding: clamp(20px, 3vw, 42px);
+  align-self: stretch;
+  padding: clamp(10px, 1.5vw, 24px);
   overflow: hidden;
   border: 1px solid rgba(255, 255, 255, 0.1);
-  border-radius: 24px;
+  border-radius: 18px;
   background: rgba(20, 20, 24, 0.76);
   box-shadow: 0 28px 80px rgba(0, 0, 0, 0.28);
 }
@@ -82,6 +96,8 @@ h1 {
 .mermaid {
   display: grid;
   width: 100%;
+  height: 100%;
+  min-height: 0;
   margin: 0;
   place-items: center;
   color: #9c9ca4;
@@ -92,8 +108,9 @@ h1 {
 
 .mermaid svg {
   width: 100%;
-  max-width: 1320px;
-  max-height: 62vh;
+  height: 100%;
+  max-width: 1520px;
+  max-height: 100%;
 }
 
 body[data-mermaid-error="true"]::before {
@@ -117,16 +134,33 @@ body[data-mermaid-error="true"]::before {
   }
 
   .architecture-frame {
+    grid-template-rows: auto auto;
+    height: auto;
     min-height: auto;
     padding-block: 48px;
   }
 
+  .frame-heading h1 {
+    display: block;
+  }
+
+  .frame-separator {
+    display: none;
+  }
+
+  .frame-statement {
+    display: block;
+    margin-top: 6px;
+  }
+
   .diagram-shell {
+    height: auto;
     min-height: 460px;
     overflow-x: auto;
   }
 
   .mermaid svg {
+    height: auto;
     min-width: 720px;
   }
 }

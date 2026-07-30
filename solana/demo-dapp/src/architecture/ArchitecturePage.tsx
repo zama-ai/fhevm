@@ -261,10 +261,15 @@ export function ArchitecturePage() {
       {frames.map((frame, index) => (
         <section className="architecture-frame" id={`frame-${index + 1}`} key={frame.title}>
           <header className="frame-heading">
-            <p className="frame-label">
-              {frameNumber(index)} / {frames.length} · {frame.title}
-            </p>
-            <h1>{frame.statement}</h1>
+            <h1>
+              <span className="frame-label">
+                {frameNumber(index)} / {frames.length} · {frame.title}
+              </span>
+              <span className="frame-separator" aria-hidden="true">
+                —
+              </span>
+              <span className="frame-statement">{frame.statement}</span>
+            </h1>
           </header>
           <div className="diagram-shell">
             <pre className="mermaid">{frame.diagram}</pre>
