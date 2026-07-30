@@ -126,30 +126,6 @@ sequenceDiagram
 `,
   },
   {
-    title: 'Join',
-    statement: 'Joining transfers encrypted cUSDC into the current batch.',
-    diagram: String.raw`
-sequenceDiagram
-    box User device
-        participant Wallet
-        participant SDK
-    end
-    box Solana
-        participant Batch as Batcher
-        participant Token as Confidential token
-        participant Host as Zama host
-    end
-
-    SDK->>Wallet: Build join with encrypted amount and attestation
-    Wallet->>Batch: Sign and submit join
-    Batch->>Token: Confidential transfer by CPI
-    Token->>Host: Verify coprocessor attestation inside transfer
-    Token->>Host: Record encrypted operations
-    Host-->>Token: New balance handles
-    Token-->>Batch: New encrypted joined amount
-`,
-  },
-  {
     title: 'Encrypted execution',
     statement: 'Host instructions define handles; the coprocessor materializes their ciphertexts.',
     diagram: String.raw`
