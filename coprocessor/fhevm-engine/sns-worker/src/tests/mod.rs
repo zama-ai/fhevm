@@ -10,7 +10,8 @@ use alloy_primitives::{B256, U256};
 use anyhow::{anyhow, Ok};
 use aws_config::BehaviorVersion;
 use ciphertext_attestation::{
-    CiphertextAttestation, CiphertextFormat, S3_METADATA_ATTESTATION_KEY,
+    CiphertextAttestation, CiphertextFormat, S3_CT128_KEY_PREFIX, S3_CT64_KEY_PREFIX,
+    S3_METADATA_ATTESTATION_KEY,
 };
 use fhevm_engine_common::db_keys::DbKeyId;
 use fhevm_engine_common::utils::{to_hex, DatabaseURL};
@@ -172,8 +173,8 @@ async fn run_batch_computations(
 
     clean_up(pool).await?;
 
-    assert_ciphertext_s3_object_count(test_env, bucket128, 0i64).await;
-    assert_ciphertext_s3_object_count(test_env, bucket64, 0i64).await;
+    assert_ciphertext_s3_object_count(test_env, bucket128, Some(S3_CT128_KEY_PREFIX), 0i64).await;
+    assert_ciphertext_s3_object_count(test_env, bucket64, Some(S3_CT64_KEY_PREFIX), 0i64).await;
 
     info!(batch_size, "Inserting ciphertexts ...");
 
@@ -220,8 +221,23 @@ async fn run_batch_computations(
     info!(elapsed = ?elapsed, batch_size, "Batch execution completed");
 
     // Assert that all ciphertext objects are uploaded to S3
-    assert_ciphertext_s3_object_count(test_env, bucket128, batch_size as i64 + 1).await;
-    assert_ciphertext_s3_object_count(test_env, bucket64, batch_size as i64).await;
+    assert_ciphertext_s3_object_count(
+        test_env,
+        bucket128,
+        Some(S3_CT128_KEY_PREFIX),
+        batch_size as i64,
+    )
+    .await;
+    assert_ciphertext_s3_object_count(
+        test_env,
+        bucket64,
+        Some(S3_CT64_KEY_PREFIX),
+        batch_size as i64,
+    )
+    .await;
+    // The only other object in the bucket is the single digest-keyed
+    // backward-compatible copy of the ct128 shared by the whole batch
+    assert_ciphertext_s3_object_count(test_env, bucket128, None, 2 * batch_size as i64 + 1).await;
 
     anyhow::Result::<()>::Ok(())
 }
@@ -665,7 +681,9 @@ async fn setup_localstack(
     let client: aws_sdk_s3::Client = aws_sdk_s3::Client::new(&aws_conf);
 
     recreate_bucket(&client, &conf.s3.bucket_ct128).await?;
-    recreate_bucket(&client, &conf.s3.bucket_ct64).await?;
+    if conf.s3.bucket_ct64 != conf.s3.bucket_ct128 {
+        recreate_bucket(&client, &conf.s3.bucket_ct64).await?;
+    }
 
     Ok((localstack, client))
 }
@@ -1136,21 +1154,29 @@ async fn assert_ciphertext_uploaded(
     Ok(())
 }
 
-/// Asserts that the number of ciphertext128 objects in S3 matches the expected count
+/// Asserts that the number of ciphertext objects in S3 under the given key
+/// prefix (or in the whole bucket if `None`) matches the expected count
 #[cfg(not(feature = "gpu"))]
 async fn assert_ciphertext_s3_object_count(
     test_env: &TestEnvironment,
     bucket: &String,
+    key_prefix: Option<&str>,
     expected_count: i64,
 ) {
-    s3_utils::assert_object_count(test_env.s3_client.to_owned(), bucket, expected_count as i32)
-        .await;
+    s3_utils::assert_object_count(
+        test_env.s3_client.to_owned(),
+        bucket,
+        key_prefix.map(|p| format!("{p}/")).as_deref(),
+        expected_count as i32,
+    )
+    .await;
 }
 
 #[cfg(feature = "gpu")]
 async fn assert_ciphertext_s3_object_count(
     _te: &TestEnvironment,
     _bucket: &String,
+    _key_prefix: Option<&str>,
     _expected_count: i64,
 ) {
     // No-op when GPU feature is enabled
@@ -1181,8 +1207,10 @@ fn build_test_config(url: DatabaseURL, enable_compression: bool) -> Config {
             lifo: false,
         },
         s3: S3Config {
-            bucket_ct128: "ct128".to_owned(),
-            bucket_ct64: "ct64".to_owned(),
+            // Single bucket for both ct128 and ct64, as deployed in production.
+            // Ensures the tests catch any key collision between the two artifacts.
+            bucket_ct128: "copro".to_owned(),
+            bucket_ct64: "copro".to_owned(),
             max_concurrent_uploads: 2000,
             retry_policy: S3RetryPolicy {
                 max_retries_per_upload: 100,
