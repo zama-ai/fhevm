@@ -237,101 +237,47 @@ describe('CiphertextCommits', function () {
       expect(addCiphertextMaterialConsensusTxSenders3).to.deep.equal(expectedCoprocessorTxSenders3);
     });
 
-    it('Should keep ciphertext material consensus Zama-only when a priority coprocessor is set', async function () {
-      const zamaTxSender = coprocessorTxSenders[0];
-      const partnerTxSender = coprocessorTxSenders[1];
+    // The priority coprocessor feature let a single designated sender finalize consensus alone, and
+    // the consensus event for such a handle carries that sender by itself. The raw sender list keeps
+    // growing past finalization though, so the deprecated marker is still read to keep these views
+    // consistent with the event that was emitted at the time. Nothing can write the marker anymore,
+    // hence the direct storage write below.
+    it('Should report only the priority sender for a handle finalized under the priority feature', async function () {
+      // Slot 9 of the CiphertextCommitsStorage struct: the deprecated priorityConsensusTxSender mapping.
+      const PRIORITY_CONSENSUS_TX_SENDER_SLOT =
+        BigInt('0xf41c60ea5b83c8f19b663613ffdd3fa441a59933b8a4fdf4da891b38433d1a00') + 9n;
+      const priorityTxSender = coprocessorTxSenders[0].address;
 
-      await inputVerification.connect(pauser).pause();
-      await gatewayConfig.connect(owner).updateCoprocessors([coprocessors[0]], 1);
-      await gatewayConfig.connect(owner).setPriorityCoprocessorTxSender(zamaTxSender.address);
-      await gatewayConfig.connect(owner).updateCoprocessors(coprocessors, 2);
-
-      const partnerTx = await ciphertextCommits
-        .connect(partnerTxSender)
-        .addCiphertextMaterial(ctHandle, keyId, ciphertextDigest, snsCiphertextDigest);
-
-      await expect(partnerTx).to.not.emit(ciphertextCommits, 'AddCiphertextMaterialConsensus');
-      expect(await ciphertextCommits.getAddCiphertextMaterialConsensusTxSenders(ctHandle)).to.deep.equal([]);
-
-      const zamaTx = await ciphertextCommits
-        .connect(zamaTxSender)
-        .addCiphertextMaterial(ctHandle, keyId, ciphertextDigest, snsCiphertextDigest);
-
-      await expect(zamaTx)
-        .to.emit(ciphertextCommits, 'AddCiphertextMaterialConsensus')
-        .withArgs(ctHandle, keyId, ciphertextDigest, snsCiphertextDigest, [zamaTxSender.address]);
-
-      expect(await ciphertextCommits.getAddCiphertextMaterialConsensusTxSenders(ctHandle)).to.deep.equal([
-        zamaTxSender.address,
-      ]);
-
-      const snsCtMaterials = await ciphertextCommits.getSnsCiphertextMaterials([ctHandle]);
-      expect(snsCtMaterials[0].coprocessorTxSenderAddresses).to.deep.equal([zamaTxSender.address]);
-
-      const latePartnerTxSender = coprocessorTxSenders[2];
-      const latePartnerTx = await ciphertextCommits
-        .connect(latePartnerTxSender)
-        .addCiphertextMaterial(ctHandle, keyId, ciphertextDigest, snsCiphertextDigest);
-
-      await expect(latePartnerTx).to.not.emit(ciphertextCommits, 'AddCiphertextMaterialConsensus');
-      expect(await ciphertextCommits.getAddCiphertextMaterialConsensusTxSenders(ctHandle)).to.deep.equal([
-        zamaTxSender.address,
-      ]);
-
-      const snsCtMaterialsAfterLatePartner = await ciphertextCommits.getSnsCiphertextMaterials([ctHandle]);
-      expect(snsCtMaterialsAfterLatePartner[0].coprocessorTxSenderAddresses).to.deep.equal([zamaTxSender.address]);
-    });
-
-    it('Should require the full threshold again after the priority coprocessor is removed', async function () {
-      const zamaTxSender = coprocessorTxSenders[0];
-      const partnerTxSender = coprocessorTxSenders[1];
-
-      // Set up priority mode: all coprocessors registered with threshold 2, but Zama set as the priority
-      // sender so it alone finalizes
-      await inputVerification.connect(pauser).pause();
-      await gatewayConfig.connect(owner).updateCoprocessors([coprocessors[0]], 1);
-      await gatewayConfig.connect(owner).setPriorityCoprocessorTxSender(zamaTxSender.address);
-      await gatewayConfig.connect(owner).updateCoprocessors(coprocessors, 2);
-
-      // While a priority sender is set the threshold is inert: Zama alone finalizes the commit even though
-      // the coprocessor threshold is 2
-      const priorityZamaTx = await ciphertextCommits
-        .connect(zamaTxSender)
-        .addCiphertextMaterial(ctHandle, keyId, ciphertextDigest, snsCiphertextDigest);
-      await expect(priorityZamaTx)
-        .to.emit(ciphertextCommits, 'AddCiphertextMaterialConsensus')
-        .withArgs(ctHandle, keyId, ciphertextDigest, snsCiphertextDigest, [zamaTxSender.address]);
-      expect(await ciphertextCommits.getAddCiphertextMaterialConsensusTxSenders(ctHandle)).to.deep.equal([
-        zamaTxSender.address,
-      ]);
-
-      // Switch back to threshold consensus: one batched gateway tx (re)asserts the threshold and removes
-      // priority. The threshold is inert while priority is set, so this flip is effectively atomic.
-      await gatewayConfig.connect(owner).updateCoprocessorThreshold(2);
-      await gatewayConfig.connect(owner).removePriorityCoprocessorTxSender();
-
-      // A single Zama commit for a fresh handle no longer finalizes — priority is gone and the threshold of 2
-      // is now in force, so consensus is not reached yet (the tx-sender list stays empty until then)
-      const firstTx = await ciphertextCommits
-        .connect(zamaTxSender)
-        .addCiphertextMaterial(newCtHandle, keyId, ciphertextDigest, snsCiphertextDigest);
-      await expect(firstTx).to.not.emit(ciphertextCommits, 'AddCiphertextMaterialConsensus');
-      expect(await ciphertextCommits.getAddCiphertextMaterialConsensusTxSenders(newCtHandle)).to.deep.equal([]);
-
-      // A second commit from a distinct (formerly partner) coprocessor reaches the 2-of-3 threshold and
-      // finalizes with both transaction senders
-      const secondTx = await ciphertextCommits
-        .connect(partnerTxSender)
-        .addCiphertextMaterial(newCtHandle, keyId, ciphertextDigest, snsCiphertextDigest);
-      await expect(secondTx)
-        .to.emit(ciphertextCommits, 'AddCiphertextMaterialConsensus')
-        .withArgs(newCtHandle, keyId, ciphertextDigest, snsCiphertextDigest, [
-          zamaTxSender.address,
-          partnerTxSender.address,
-        ]);
-      expect(await ciphertextCommits.getAddCiphertextMaterialConsensusTxSenders(newCtHandle)).to.deep.equal(
-        coprocessorTxSenders.slice(0, 2).map((s) => s.address),
+      // Reach consensus normally, then let a late coprocessor append itself to the raw sender list.
+      for (const txSender of coprocessorTxSenders) {
+        await ciphertextCommits
+          .connect(txSender)
+          .addCiphertextMaterial(ctHandle, keyId, ciphertextDigest, snsCiphertextDigest);
+      }
+      expect(await ciphertextCommits.getAddCiphertextMaterialConsensusTxSenders(ctHandle)).to.deep.equal(
+        coprocessorTxSenders.map((s) => s.address),
       );
+
+      // Mark the handle as priority-finalized, the way a pre-upgrade record would be.
+      await hre.network.provider.send('hardhat_setStorageAt', [
+        await ciphertextCommits.getAddress(),
+        hre.ethers.keccak256(
+          hre.ethers.AbiCoder.defaultAbiCoder().encode(
+            ['bytes32', 'uint256'],
+            [ctHandle, PRIORITY_CONSENSUS_TX_SENDER_SLOT],
+          ),
+        ),
+        hre.ethers.zeroPadValue(priorityTxSender, 32),
+      ]);
+
+      // Every view collapses to the singleton, rather than reporting the later responders.
+      expect(await ciphertextCommits.getAddCiphertextMaterialConsensusTxSenders(ctHandle)).to.deep.equal([
+        priorityTxSender,
+      ]);
+      const [ctMaterial] = await ciphertextCommits.getCiphertextMaterials([ctHandle]);
+      expect(ctMaterial.coprocessorTxSenderAddresses).to.deep.equal([priorityTxSender]);
+      const [snsCtMaterial] = await ciphertextCommits.getSnsCiphertextMaterials([ctHandle]);
+      expect(snsCtMaterial.coprocessorTxSenderAddresses).to.deep.equal([priorityTxSender]);
     });
 
     it('Should revert because the transaction sender is not a coprocessor', async function () {
