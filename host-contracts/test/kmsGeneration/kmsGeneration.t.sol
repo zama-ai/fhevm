@@ -169,8 +169,8 @@ contract KMSGenerationTest is HostContractsDeployerTestUtils {
         // New and previous committees share tx-senders 0xA1/0xA2, so each confirmation counts on both sides.
         _confirmContextCreation(contextId, kmsTxSender0);
         _confirmContextCreation(contextId, kmsTxSender1);
-        _confirmEpochActivation(contextId, epochId, pk0, kmsTxSender0, 0, 0);
-        _confirmEpochActivation(contextId, epochId, pk1, kmsTxSender1, 0, 0);
+        _confirmEpochActivation(contextId, epochId, pk0, kmsTxSender0);
+        _confirmEpochActivation(contextId, epochId, pk1, kmsTxSender1);
     }
 
     function _activatePendingDisjointTwoNodeContext(
@@ -186,8 +186,8 @@ contract KMSGenerationTest is HostContractsDeployerTestUtils {
         _confirmContextCreation(contextId, kmsTxSender1);
         _confirmContextCreation(contextId, txSender0);
         _confirmContextCreation(contextId, txSender1);
-        _confirmEpochActivation(contextId, epochId, pk0, txSender0, 0, 0);
-        _confirmEpochActivation(contextId, epochId, pk1, txSender1, 0, 0);
+        _confirmEpochActivation(contextId, epochId, pk0, txSender0);
+        _confirmEpochActivation(contextId, epochId, pk1, txSender1);
     }
 
     function _activatePendingFourNodeContext(uint256 contextId, uint256 epochId) internal {
@@ -195,10 +195,10 @@ contract KMSGenerationTest is HostContractsDeployerTestUtils {
         _confirmContextCreation(contextId, kmsTxSender1);
         _confirmContextCreation(contextId, kmsTxSender2);
         _confirmContextCreation(contextId, kmsTxSender3);
-        _confirmEpochActivation(contextId, epochId, kmsPk0, kmsTxSender0, 0, 0);
-        _confirmEpochActivation(contextId, epochId, kmsPk1, kmsTxSender1, 0, 0);
-        _confirmEpochActivation(contextId, epochId, kmsPk2, kmsTxSender2, 0, 0);
-        _confirmEpochActivation(contextId, epochId, kmsPk3, kmsTxSender3, 0, 0);
+        _confirmEpochActivation(contextId, epochId, kmsPk0, kmsTxSender0);
+        _confirmEpochActivation(contextId, epochId, kmsPk1, kmsTxSender1);
+        _confirmEpochActivation(contextId, epochId, kmsPk2, kmsTxSender2);
+        _confirmEpochActivation(contextId, epochId, kmsPk3, kmsTxSender3);
     }
 
     function _primaryStorageUrls() internal pure returns (string[] memory urls) {
