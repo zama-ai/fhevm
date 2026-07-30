@@ -23,4 +23,6 @@ tokio-util = { version = "0.7", default-features = false }
 tracing = { version = "0.1", default-features = false }
 
 [dev-dependencies]
+alloy-signer-local = { version = "2", default-features = false }
 tokio = { version = "1", features = ["macros", "rt"] }
+wiremock = "0.6.5"

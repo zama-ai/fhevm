@@ -37,6 +37,7 @@ pub enum ConsensusCheckError {
 /// `winning_buckets` (the buckets whose attestation vouches for the winning material) exists only
 /// so a ciphertext-retrieving consumer (e.g. the KMS Connector) can fetch the ciphertext bytes
 /// from a winning-group bucket; a consumer that only needs the consensus verdict can ignore it.
+#[derive(Debug)]
 pub struct ResolvedConsensus {
     pub consensus: Consensus,
     pub winning_buckets: Vec<String>,
