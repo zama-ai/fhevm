@@ -2,8 +2,7 @@ use super::super::common::{
     assert_encrypted_value_subject_allowed, assert_output_acl_metadata,
     check_grant_not_denied_info, read_canonical_encrypted_value,
 };
-use super::handles::EvalHandleContext;
-use super::walk::{walk_eval_frame, EvalStepVisitor};
+use super::walk::{walk_eval_frame, EvalHandleContext, EvalStepVisitor};
 use super::*;
 
 /// Validate-only first pass over the plan: re-uses the shared step walk and

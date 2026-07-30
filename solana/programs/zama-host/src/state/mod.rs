@@ -816,58 +816,6 @@ pub fn user_decryption_delegation_address(
     )
 }
 
-/// Derives an instruction-local eval handle using the current slot context.
-///
-/// This helper uses [`SOLANA_POC_CHAIN_ID`]. CPI callers that have a
-/// [`HostConfig`] should prefer [`computed_eval_handle_for_current_slot_with_chain_id`].
-pub fn computed_eval_handle_for_current_slot(
-    op: FheBinaryOpCode,
-    lhs: [u8; 32],
-    rhs: [u8; 32],
-    scalar: bool,
-    fhe_type: u8,
-    context_id: [u8; 32],
-    op_index: u16,
-) -> Result<[u8; 32]> {
-    computed_eval_handle_for_current_slot_with_chain_id(
-        op,
-        lhs,
-        rhs,
-        scalar,
-        fhe_type,
-        SOLANA_POC_CHAIN_ID,
-        context_id,
-        op_index,
-    )
-}
-
-/// Derives an instruction-local eval handle using the current slot context and chain id.
-pub fn computed_eval_handle_for_current_slot_with_chain_id(
-    op: FheBinaryOpCode,
-    lhs: [u8; 32],
-    rhs: [u8; 32],
-    scalar: bool,
-    fhe_type: u8,
-    chain_id: u64,
-    context_id: [u8; 32],
-    op_index: u16,
-) -> Result<[u8; 32]> {
-    let clock = Clock::get()?;
-    let previous_bank_hash = previous_bank_hash(clock.slot)?;
-    Ok(computed_eval_handle(
-        op,
-        lhs,
-        rhs,
-        scalar,
-        fhe_type,
-        chain_id,
-        previous_bank_hash,
-        clock.unix_timestamp,
-        context_id,
-        op_index,
-    ))
-}
-
 fn finish_computed_handle(result: &mut [u8; 32], chain_id_bytes: &[u8; 8], fhe_type: u8) {
     result[21..32].fill(0);
     result[21] = COMPUTED_HANDLE_MARKER;
@@ -1125,11 +1073,7 @@ pub fn computed_rand_handle(seed: [u8; 16], fhe_type: u8, chain_id: u64) -> [u8;
     ])
     .to_bytes();
 
-    result[21..32].fill(0);
-    result[21] = COMPUTED_HANDLE_MARKER;
-    result[22..30].copy_from_slice(&chain_id_bytes);
-    result[30] = fhe_type;
-    result[31] = HANDLE_VERSION;
+    finish_computed_handle(&mut result, &chain_id_bytes, fhe_type);
     result
 }
 
@@ -1153,39 +1097,6 @@ pub fn computed_rand_bounded_handle(
     ])
     .to_bytes();
 
-    result[21..32].fill(0);
-    result[21] = COMPUTED_HANDLE_MARKER;
-    result[22..30].copy_from_slice(&chain_id_bytes);
-    result[30] = fhe_type;
-    result[31] = HANDLE_VERSION;
-    result
-}
-
-/// Derives an unbound unary-op handle from explicit slot entropy.
-pub fn computed_unary_handle(
-    op: FheUnaryOpCode,
-    operand: [u8; 32],
-    fhe_type: u8,
-    chain_id: u64,
-    previous_bank_hash: [u8; 32],
-    unix_timestamp: i64,
-) -> [u8; 32] {
-    let op_byte = [op.as_u8()];
-    let type_byte = [fhe_type];
-    let chain_id_bytes = chain_id.to_be_bytes();
-    let timestamp_bytes = unix_timestamp.to_be_bytes();
-    // Cast binds the target type into the prehandle (EVM `FHEVMExecutor.cast`); Neg/Not derive it from the operand.
-    let mut parts: Vec<&[u8]> = vec![COMPUTATION_DOMAIN_SEPARATOR, &op_byte, &operand];
-    if matches!(op, FheUnaryOpCode::Cast) {
-        parts.push(&type_byte);
-    }
-    parts.extend_from_slice(&[
-        crate::ID.as_ref(),
-        &chain_id_bytes,
-        &previous_bank_hash,
-        &timestamp_bytes,
-    ]);
-    let mut result = keccak_hashv(&parts).to_bytes();
     finish_computed_handle(&mut result, &chain_id_bytes, fhe_type);
     result
 }
@@ -1206,7 +1117,7 @@ pub fn computed_eval_unary_handle(
     let chain_id_bytes = chain_id.to_be_bytes();
     let op_index_bytes = op_index.to_be_bytes();
     let timestamp_bytes = unix_timestamp.to_be_bytes();
-    // Cast binds its target type into the prehandle (see `computed_unary_handle`); Neg/Not take it from the operand.
+    // Cast binds its target type into the prehandle (EVM `FHEVMExecutor.cast`); Neg/Not take it from the operand.
     let mut parts: Vec<&[u8]> = vec![
         b"FHE_eval_unary",
         &context_id,
@@ -1226,34 +1137,6 @@ pub fn computed_eval_unary_handle(
     let mut result = hashv(&parts).to_bytes();
     finish_computed_handle(&mut result, &chain_id_bytes, fhe_type);
     result
-}
-
-/// Derives the seed emitted for an instruction-local eval bounded-random handle.
-pub fn computed_eval_rand_bounded_seed(
-    upper_bound: [u8; 32],
-    chain_id: u64,
-    previous_bank_hash: [u8; 32],
-    unix_timestamp: i64,
-    context_id: [u8; 32],
-    op_index: u16,
-) -> [u8; 16] {
-    let chain_id_bytes = chain_id.to_be_bytes();
-    let op_index_bytes = op_index.to_be_bytes();
-    let timestamp_bytes = unix_timestamp.to_be_bytes();
-    let hash = hashv(&[
-        b"FHE_eval_bounded_seed",
-        &context_id,
-        &op_index_bytes,
-        &upper_bound,
-        crate::ID.as_ref(),
-        &chain_id_bytes,
-        &previous_bank_hash,
-        &timestamp_bytes,
-    ])
-    .to_bytes();
-    let mut seed = [0; 16];
-    seed.copy_from_slice(&hash[..16]);
-    seed
 }
 
 /// Returns the latest prior bank hash.

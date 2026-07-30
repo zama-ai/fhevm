@@ -7,12 +7,161 @@
 //! [`EvalStepVisitor`] so the match-on-step skeleton and the operand resolvers
 //! exist exactly once.
 
-use super::handles::{
-    expected_binary_eval_result, expected_is_in_eval_result, expected_mul_div_eval_result,
-    expected_rand_eval_seed, expected_sum_eval_result, expected_ternary_eval_result,
-    expected_trivial_eval_result, expected_unary_eval_result, EvalHandleContext,
-};
 use super::*;
+
+/// Per-frame slot entropy and identifiers shared by every handle derivation.
+pub(super) struct EvalHandleContext<'a> {
+    pub chain_id: u64,
+    pub previous_bank_hash: &'a [u8; 32],
+    pub unix_timestamp: i64,
+    pub context_id: &'a [u8; 32],
+}
+
+// Durable and instruction-local outputs derive the identical handle: the base
+// handle (op/operands/type + per-block entropy) already distinguishes distinct
+// ciphertexts, matching EVM `FHEVMExecutor`, which binds no per-output value.
+impl EvalHandleContext<'_> {
+    fn binary_result(
+        &self,
+        op: FheBinaryOpCode,
+        lhs: [u8; 32],
+        rhs: [u8; 32],
+        scalar: bool,
+        output_fhe_type: u8,
+        op_index: u16,
+    ) -> [u8; 32] {
+        computed_eval_handle(
+            op,
+            lhs,
+            rhs,
+            scalar,
+            output_fhe_type,
+            self.chain_id,
+            *self.previous_bank_hash,
+            self.unix_timestamp,
+            *self.context_id,
+            op_index,
+        )
+    }
+
+    fn ternary_result(
+        &self,
+        op: FheTernaryOpCode,
+        control: [u8; 32],
+        if_true: [u8; 32],
+        if_false: [u8; 32],
+        output_fhe_type: u8,
+        op_index: u16,
+    ) -> [u8; 32] {
+        computed_eval_ternary_handle(
+            op,
+            control,
+            if_true,
+            if_false,
+            output_fhe_type,
+            self.chain_id,
+            *self.previous_bank_hash,
+            self.unix_timestamp,
+            *self.context_id,
+            op_index,
+        )
+    }
+
+    fn trivial_result(&self, plaintext: [u8; 32], fhe_type: u8, op_index: u16) -> [u8; 32] {
+        computed_eval_trivial_handle(
+            plaintext,
+            fhe_type,
+            self.chain_id,
+            *self.previous_bank_hash,
+            self.unix_timestamp,
+            *self.context_id,
+            op_index,
+        )
+    }
+
+    fn rand_seed(&self, op_index: u16) -> [u8; 16] {
+        computed_eval_rand_seed(
+            self.chain_id,
+            *self.previous_bank_hash,
+            self.unix_timestamp,
+            *self.context_id,
+            op_index,
+        )
+    }
+
+    fn unary_result(
+        &self,
+        op: FheUnaryOpCode,
+        operand: [u8; 32],
+        output_fhe_type: u8,
+        op_index: u16,
+    ) -> [u8; 32] {
+        computed_eval_unary_handle(
+            op,
+            operand,
+            output_fhe_type,
+            self.chain_id,
+            *self.previous_bank_hash,
+            self.unix_timestamp,
+            *self.context_id,
+            op_index,
+        )
+    }
+
+    fn sum_result(&self, operand_handles: &[[u8; 32]], fhe_type: u8, op_index: u16) -> [u8; 32] {
+        computed_eval_sum_handle(
+            operand_handles,
+            fhe_type,
+            self.chain_id,
+            *self.previous_bank_hash,
+            self.unix_timestamp,
+            *self.context_id,
+            op_index,
+        )
+    }
+
+    fn is_in_result(
+        &self,
+        value_handle: [u8; 32],
+        set_handles: &[[u8; 32]],
+        fhe_type: u8,
+        op_index: u16,
+    ) -> [u8; 32] {
+        computed_eval_is_in_handle(
+            value_handle,
+            set_handles,
+            fhe_type,
+            self.chain_id,
+            *self.previous_bank_hash,
+            self.unix_timestamp,
+            *self.context_id,
+            op_index,
+        )
+    }
+
+    fn mul_div_result(
+        &self,
+        factor1: [u8; 32],
+        factor2: [u8; 32],
+        scalar: bool,
+        divisor: [u8; 32],
+        output_fhe_type: u8,
+        op_index: u16,
+    ) -> [u8; 32] {
+        computed_eval_mul_div_handle(
+            factor1,
+            factor2,
+            divisor,
+            scalar,
+            output_fhe_type,
+            self.chain_id,
+            *self.previous_bank_hash,
+            self.unix_timestamp,
+            *self.context_id,
+            op_index,
+        )
+    }
+}
 
 /// Operands resolved identically by both phases (durable input membership checks and
 /// transient producer lookups), parameterized by the phase-specific account
@@ -133,13 +282,12 @@ pub(super) fn walk_eval_frame<'info, V: EvalStepVisitor>(
                     rhs.scalar,
                     *output_fhe_type,
                 )?;
-                let result = expected_binary_eval_result(
+                let result = handle_context.binary_result(
                     *op,
                     lhs.handle,
                     rhs.handle,
                     rhs.scalar,
                     *output_fhe_type,
-                    handle_context,
                     op_index,
                 );
                 visitor.accept_output(
@@ -167,13 +315,12 @@ pub(super) fn walk_eval_frame<'info, V: EvalStepVisitor>(
                     if_false.handle,
                     *output_fhe_type,
                 )?;
-                let result = expected_ternary_eval_result(
+                let result = handle_context.ternary_result(
                     *op,
                     control.handle,
                     if_true.handle,
                     if_false.handle,
                     *output_fhe_type,
-                    handle_context,
                     op_index,
                 );
                 visitor.accept_output(
@@ -190,13 +337,12 @@ pub(super) fn walk_eval_frame<'info, V: EvalStepVisitor>(
                 output,
             } => {
                 assert_supported_fhe_type(*fhe_type)?;
-                let result =
-                    expected_trivial_eval_result(*plaintext, *fhe_type, handle_context, op_index);
+                let result = handle_context.trivial_result(*plaintext, *fhe_type, op_index);
                 visitor.accept_output(ctx, op_index, result, output, false)?;
             }
             FheEvalStep::Rand { fhe_type, output } => {
                 assert_supported_rand_type(*fhe_type)?;
-                let seed = expected_rand_eval_seed(handle_context, op_index);
+                let seed = handle_context.rand_seed(op_index);
                 let result = computed_rand_handle(seed, *fhe_type, handle_context.chain_id);
                 visitor.accept_output(ctx, op_index, result, output, false)?;
             }
@@ -208,14 +354,8 @@ pub(super) fn walk_eval_frame<'info, V: EvalStepVisitor>(
             } => {
                 let operand = visitor.resolve_encrypted_operand(operand)?;
                 assert_unary_operand_type(*op, operand.handle, *output_fhe_type)?;
-                let result = expected_unary_eval_result(
-                    *op,
-                    operand.handle,
-                    *output_fhe_type,
-                    handle_context,
-                    op_index,
-                    output,
-                );
+                let result =
+                    handle_context.unary_result(*op, operand.handle, *output_fhe_type, op_index);
                 visitor.accept_output(
                     ctx,
                     op_index,
@@ -230,7 +370,7 @@ pub(super) fn walk_eval_frame<'info, V: EvalStepVisitor>(
                 output,
             } => {
                 assert_valid_bounded_rand_upper_bound(*upper_bound, *fhe_type)?;
-                let seed = expected_rand_eval_seed(handle_context, op_index);
+                let seed = handle_context.rand_seed(op_index);
                 let result = computed_rand_bounded_handle(
                     *upper_bound,
                     seed,
@@ -251,13 +391,7 @@ pub(super) fn walk_eval_frame<'info, V: EvalStepVisitor>(
                 let operand_handles: Vec<[u8; 32]> = resolved.iter().map(|r| r.handle).collect();
                 assert_sum_operand_types(&operand_handles, *fhe_type)?;
                 let public_decrypt = resolved.iter().all(|r| r.public_decrypt_allowed);
-                let result = expected_sum_eval_result(
-                    &operand_handles,
-                    *fhe_type,
-                    handle_context,
-                    op_index,
-                    output,
-                );
+                let result = handle_context.sum_result(&operand_handles, *fhe_type, op_index);
                 visitor.accept_output(ctx, op_index, result, output, public_decrypt)?;
             }
             FheEvalStep::IsIn {
@@ -275,13 +409,11 @@ pub(super) fn walk_eval_frame<'info, V: EvalStepVisitor>(
                 assert_is_in_operand_types(value_resolved.handle, &set_handles, *fhe_type)?;
                 let public_decrypt = value_resolved.public_decrypt_allowed
                     && set_resolved.iter().all(|r| r.public_decrypt_allowed);
-                let result = expected_is_in_eval_result(
+                let result = handle_context.is_in_result(
                     value_resolved.handle,
                     &set_handles,
                     *fhe_type,
-                    handle_context,
                     op_index,
-                    output,
                 );
                 visitor.accept_output(ctx, op_index, result, output, public_decrypt)?;
             }
@@ -301,15 +433,13 @@ pub(super) fn walk_eval_frame<'info, V: EvalStepVisitor>(
                     *divisor,
                     *output_fhe_type,
                 )?;
-                let result = expected_mul_div_eval_result(
+                let result = handle_context.mul_div_result(
                     factor1.handle,
                     factor2.handle,
                     factor2.scalar,
                     *divisor,
                     *output_fhe_type,
-                    handle_context,
                     op_index,
-                    output,
                 );
                 visitor.accept_output(
                     ctx,

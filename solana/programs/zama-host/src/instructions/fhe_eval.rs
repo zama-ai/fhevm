@@ -16,16 +16,14 @@ use crate::{
 mod admission;
 mod block_cap;
 mod event_transport;
-mod handles;
 mod hcu;
 mod preflight;
 mod walk;
 
 use admission::admit_eval_frame;
 use event_transport::emit_public_outputs_produced;
-use handles::EvalHandleContext;
 use preflight::preflight_eval_frame;
-use walk::{walk_eval_frame, EvalStepVisitor};
+use walk::{walk_eval_frame, EvalHandleContext, EvalStepVisitor};
 
 /// Accounts for composed instruction-local FHE evaluation.
 ///
