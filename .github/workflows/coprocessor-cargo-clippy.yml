@@ -50,10 +50,9 @@ jobs:
       run: git lfs checkout
 
     - name: Setup Rust
-      uses: dtolnay/rust-toolchain@a54c7afa936fefeb4456b2dd8068152669aa8203
+      uses: ./.github/actions/setup_rust
       with:
-        toolchain: 1.91.1
-        components: clippy
+        toolchain-dir: coprocessor/fhevm-engine
 
     - name: Install dependencies
       run: |

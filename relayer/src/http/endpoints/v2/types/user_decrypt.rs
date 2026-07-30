@@ -48,10 +48,8 @@ pub struct UserDecryptRequestJson {
     #[derivative(Debug(format_with = "redact_len"))]
     #[schema(example = "04b8e5d3f1a2c4e6d8f0a1b3c5d7e9f1a2b4c6d8e0f2a3b5c7d9e1f3a5b7c9d1")]
     pub public_key: String,
-    /// Extra data forwarded verbatim to the gateway contract. Accepts `"0x00"`, version `0x01`
-    /// (`0x01` + 32-byte contextId), or version `0x02` (`0x02` + 32-byte contextId + 32-byte epochId).
+    #[schema(schema_with = crate::http::extra_data_decryption_schema)]
     #[validate(custom(function = "crate::http::validate_extra_data_field_decryption"))]
-    #[schema(example = "0x00")]
     pub extra_data: String,
 }
 
@@ -102,10 +100,8 @@ pub struct DelegatedUserDecryptRequestJson {
     #[validate(custom(function = "crate::http::validate_no_0x_hex"))]
     #[schema(example = "04b8e5d3f1a2c4e6d8f0a1b3c5d7e9f1a2b4c6d8e0f2a3b5c7d9e1f3a5b7c9d1")]
     pub public_key: String,
-    /// Extra data forwarded verbatim to the gateway contract. Accepts `"0x00"`, version `0x01`
-    /// (`0x01` + 32-byte contextId), or version `0x02` (`0x02` + 32-byte contextId + 32-byte epochId).
+    #[schema(schema_with = crate::http::extra_data_decryption_schema)]
     #[validate(custom(function = "crate::http::validate_extra_data_field_decryption"))]
-    #[schema(example = "0x00")]
     pub extra_data: String,
 }
 

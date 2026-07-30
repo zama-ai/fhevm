@@ -9,6 +9,7 @@ use fhevm_engine_common::host_chains::HostChainsCache;
 use fhevm_engine_common::pg_pool::{PostgresPoolManager, ServiceError};
 use fhevm_engine_common::tfhe_ops::{current_ciphertext_version, extract_ct_list};
 use fhevm_engine_common::types::{FhevmError, SupportedFheCiphertexts};
+use fhevm_engine_common::versioning::{GcsRollbackPolicy, WriteGuard};
 use fhevm_engine_common::{telemetry, HANDLE_VERSION};
 
 use fhevm_engine_common::utils::safe_deserialize_conformant;
@@ -369,15 +370,26 @@ async fn execute_verify_proof_routine(
     // failure. Enforces the invariant: "one unknown chain on the queue must
     // not stop processing for known chains" — workers simply don't see those
     // rows.
-    // Cutover safety (BCS only): begin a write tx fenced against cutover before
-    // inserting verified input ciphertexts into the `ciphertexts` table
-    // execute_cutover merges. `None` means a committed cutover retired this stack.
+    // Begin the write tx under the shared controller lock before inserting
+    // verified ciphertexts into a table cutover merges. A retired BCS stack
+    // stops; a GCS worker skips while the dry-run is PAUSED after rollback.
     // See versioning::begin_write_guarded.
-    let Some(mut txn) =
-        fhevm_engine_common::versioning::begin_write_guarded(pool, conf.gcs_mode).await?
-    else {
-        info!("Cutover completed — zkproof BCS worker skipping cycle");
-        return Ok(());
+    let mut txn = match fhevm_engine_common::versioning::begin_write_guarded(
+        pool,
+        conf.gcs_mode,
+        GcsRollbackPolicy::Skip,
+    )
+    .await?
+    {
+        WriteGuard::Proceed(txn) => txn,
+        WriteGuard::Stop => {
+            info!("Cutover completed — zkproof BCS worker skipping cycle");
+            return Ok(());
+        }
+        WriteGuard::Skip => {
+            debug!("GCS dry-run rolled back — zkproof skipping cycle");
+            return Ok(());
+        }
     };
 
     if let Ok(row) = sqlx::query!(

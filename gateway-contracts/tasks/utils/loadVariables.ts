@@ -1,9 +1,10 @@
-import dotenv from "dotenv";
-import fs from "fs";
-import path from "path";
+import dotenv from 'dotenv';
+import fs from 'fs';
+import { HardhatRuntimeEnvironment } from 'hardhat/types';
+import path from 'path';
 
-import { ADDRESSES_DIR, GATEWAY_ADDRESSES_ENV_FILE_NAME } from "../../hardhat.config";
-import { pascalCaseToAddressEnvVar } from "../utils";
+import { ADDRESSES_DIR, GATEWAY_ADDRESSES_ENV_FILE_NAME } from '../../hardhat.config';
+import { pascalCaseToAddressEnvVar } from '../utils';
 
 // Get the required environment variable, throw an error if it's not set or empty
 export function getRequiredEnvVar(name: string): string {
@@ -11,7 +12,7 @@ export function getRequiredEnvVar(name: string): string {
     throw new Error(`"${name}" env variable is not set`);
   }
   const value = process.env[name]!;
-  if (value.trim() === "") {
+  if (value.trim() === '') {
     throw new Error(`"${name}" env variable is set but empty`);
   }
   return value;
@@ -36,4 +37,18 @@ export function loadAddressEnvVarsFromFile(fileName: string) {
 
 export function loadGatewayAddresses() {
   loadAddressEnvVarsFromFile(GATEWAY_ADDRESSES_ENV_FILE_NAME);
+}
+
+export async function getPauserSetContract(useInternalProxyAddress: boolean, hre: HardhatRuntimeEnvironment) {
+  await hre.run('compile:specific', { contract: 'contracts/immutable' });
+
+  const deployerPrivateKey = getRequiredEnvVar('DEPLOYER_PRIVATE_KEY');
+  const deployer = new hre.ethers.Wallet(deployerPrivateKey).connect(hre.ethers.provider);
+
+  if (useInternalProxyAddress) {
+    loadGatewayAddresses();
+  }
+  const pauserSetAddress = getRequiredEnvVar('PAUSER_SET_ADDRESS');
+
+  return hre.ethers.getContractAt('PauserSet', pauserSetAddress, deployer);
 }

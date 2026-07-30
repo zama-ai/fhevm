@@ -1,0 +1,243 @@
+# common chart overlay for the relayer server, for the fhevm e2e preview
+# namespace. Mirrors zama-zws/gitops's fhevm-dev/relayer.yaml pattern
+# (generic `common` chart + published image), not a fhevm-specific chart.
+#
+# IMPORTANT: this schema is validated against relayer/src/config/settings.rs
+# AT v0.13.0 specifically (`git show v0.13.0:relayer/src/config/settings.rs`)
+# - the schema on main/HEAD has since evolved (e.g. keyurl.* was replaced by
+# a kms_generation_address poller), so don't copy patterns from the current
+# checked-out worktree source without re-pinning to RELAYER_VERSION's tag.
+#
+# Settings::new() layers a `config/local.yaml` file (relative to CWD, i.e.
+# this chart's configmapFiles mount below) with APP_-prefixed env var
+# overrides on top (env vars always win - see settings.rs's Config::builder
+# order). Static/structural knobs (tuning, retry policy, log format, etc.)
+# live in the local.yaml file; anything that's dynamic per-deploy (contract
+# addresses, chain URLs, secrets, DB URL) is wired via env below instead,
+# following zama-zws/gitops/values/relayer/relayer/values-relayer-dev.yaml's
+# own split between the two.
+#
+# Deployed as:
+#   helm upgrade --install relayer oci://hub.zama.org/ghcr/zama-zws/helm-charts/common \
+#     -n <namespace> -f this-file
+fullnameOverride: relayer
+
+# See values-relayer-migrate-e2e.yaml's header note: this generic `common`
+# chart needs imagePullSecrets set explicitly (unlike coprocessor/
+# kms-connector's own charts, which hardcode it) to pull private
+# hub.zama.org/ghcr/zama-ai/* images.
+imagePullSecrets:
+  - name: registry-credentials
+
+image:
+  repository: hub.zama.org/ghcr/zama-ai/fhevm/relayer
+  tag: latest
+
+deployment:
+  enabled: true
+
+service:
+  enabled: true
+  ports:
+    - {name: http, port: 3000}
+    - {name: metrics, port: 9898}
+
+# relayer's own binary defaults to config/local.yaml relative to CWD with no
+# --config-file flag needed (Settings::new(None) already does
+# File::with_name("config/local").required(false)). The image's own WORKDIR
+# is "/app/config" though (not "/app"), so config-rs actually resolves
+# "config/local.yaml" to "/app/config/config/local.yaml" - mounting this
+# ConfigMap at "/app/config" directly (matching the WORKDIR itself) hides
+# local.yaml from config-rs entirely (confirmed live: local.yaml file
+# present on disk at /app/config/local.yaml, but config-rs silently treats
+# it as "not found" - required(false) - and every field only set in
+# local.yaml, e.g. storage.app_pool, then errors as missing).
+configmapFiles:
+  enabled: true
+  volumeMount:
+    mountPath: "/app/config/config"
+    subPath: ""
+    readOnly: true
+  files:
+    local.yaml: |
+      gateway:
+        blockchain_rpc:
+          ws_health_check_timeout_secs: 5
+          http_health_check_timeout_secs: 5
+        listener_pool:
+          # MIN_LISTENERS=2 (settings.rs) - our single anvil-gateway node serves
+          # both ws:// and http:// on the same port, so listener 0 (subscription)
+          # and listener 1 (polling) both just point back at it (see env below).
+          reconnect_config:
+            max_attempts: 20
+            retry_interval_ms: 500
+          polling_max_attempts: 40
+          recycle_interval_mins: 30
+          poll_interval_ms: 2000
+          dedup_ttl_seconds: 5
+          dedup_max_capacity: 100000
+        tx_engine:
+          # signer.type is set here (structural); signer.private_key is
+          # dynamic (env, APP_GATEWAY__TX_ENGINE__SIGNER__PRIVATE_KEY below).
+          signer:
+            type: "private_key"
+          max_concurrency: 50
+          retry:
+            max_attempts: 100
+            retry_interval_ms: 500
+          tx_throttlers:
+            input_proof: {per_seconds: 10, capacity: 11000, safety_margin: 1000}
+            user_decrypt: {per_seconds: 10, capacity: 11000, safety_margin: 1000}
+            public_decrypt: {per_seconds: 10, capacity: 11000, safety_margin: 1000}
+        readiness_checker:
+          host_acl_check:
+            retry: {max_attempts: 3, retry_interval_ms: 1000}
+          gw_ciphertext_check:
+            retry: {max_attempts: 75, retry_interval_ms: 3000}
+          public_decrypt: {max_concurrency: 250, capacity: 11000, safety_margin: 1000}
+          user_decrypt: {max_concurrency: 250, capacity: 11000, safety_margin: 1000}
+          delegated_user_decrypt: {max_concurrency: 250, capacity: 11000, safety_margin: 1000}
+        contracts:
+          # Reconstruction threshold (n-t) for the DEFAULT 4-party topology.
+          # preview-env-deploy.yml's "Deploy relayer" step overrides this at
+          # install time (APP_GATEWAY__CONTRACTS__USER_DECRYPT_SHARES_THRESHOLD)
+          # to match the actually-deployed nb_kms_core, so keep this in sync with
+          # the default only - do NOT hardcode a higher party count's value here.
+          user_decrypt_shares_threshold: 3
+        gw_event_not_found_retry:
+          max_retries: 5
+          retry_delay_ms: 1000
+      protocol_config:
+        retry: {max_attempts: 3, retry_interval_ms: 200}
+      log:
+        format: "json"
+        show_file_line: true
+        show_thread_ids: false
+        show_timestamp: true
+        show_target: true
+      http:
+        endpoint: "0.0.0.0:3000"
+        api_retry_after_seconds: 4
+        enable_admin_endpoint: false
+        retry_after:
+          min_seconds: 1
+          max_seconds: 60
+          safety_margin: 0.2
+          nominal_times:
+            readiness_check_seconds: 4
+            input_proof_processing_seconds: 2
+            user_decrypt_processing_seconds: 6
+            public_decrypt_processing_seconds: 6
+            tx_confirmation_ms: 250
+          copro_kms_backoff_intervals:
+            - [0, 4]
+            - [60, 10]
+            - [120, 30]
+            - [300, 60]
+            - [900, 300]
+        metrics:
+          histogram_buckets: [0.005, 0.01, 0.025, 0.05, 0.1, 0.25, 0.5, 1.0, 2.5, 5.0, 10.0]
+      metrics:
+        endpoint: "0.0.0.0:9898"
+        query_duration_histogram_bucket: [0.001, 0.005, 0.01, 0.025, 0.05, 0.1, 0.25, 0.5, 1.0, 2.5, 5.0, 10.0]
+        request_status_duration_histogram_bucket: [0.1, 0.25, 0.5, 1.0, 2.5, 5.0, 10.0, 30.0, 60.0, 300.0, 600.0, 1800.0, 3600.0]
+        transaction_duration_secs_histogram_bucket: [0.01, 0.1, 0.25, 0.50, 0.75, 1.0, 1.25, 1.5, 2.0, 5.0, 10.0]
+        retry_after_raw_eta_histogram_bucket: [1, 2, 5, 10, 20, 30, 60, 120, 300, 600, 1200, 2400]
+      storage:
+        app_pool: {max_connections: 10, min_connections: 2, acquire_timeout_secs: 10, idle_timeout_secs: 300, max_lifetime_secs: 900}
+        cron_pool: {max_connections: 5, min_connections: 1, acquire_timeout_secs: 30, idle_timeout_secs: 600, max_lifetime_secs: 1800}
+        sql_health_check_timeout_secs: 5
+        cron:
+          timeout_cron_interval: "60s"
+          public_decrypt_timeout: "30m"
+          user_decrypt_timeout: "30m"
+          input_proof_timeout: "30m"
+          expiry_enabled: false
+          expiry_cron_interval: "5m"
+          public_decrypt_expiry: "365d"
+          user_decrypt_expiry: "7d"
+          input_proof_expiry: "7d"
+          cron_startup_delay_after_recovery: "30s"
+
+env:
+  # --- host_chains (single entry - our per-PR anvil-host) ---
+  - {name: APP_HOST_CHAINS__0__CHAIN_ID, value: "12345"}
+  - {name: APP_HOST_CHAINS__0__URL, value: "http://anvil-host-anvil-node:8545"}
+  - name: APP_HOST_CHAINS__0__ACL_ADDRESS
+    valueFrom: {configMapKeyRef: {name: host-sc-addresses, key: acl.address}}
+
+  # --- protocol_config (ProtocolConfig now lives on the host chain, RFC013) ---
+  - {name: APP_PROTOCOL_CONFIG__ETHEREUM_HTTP_RPC_URL, value: "http://anvil-host-anvil-node:8545"}
+  - name: APP_PROTOCOL_CONFIG__ADDRESS
+    valueFrom: {configMapKeyRef: {name: host-sc-addresses, key: protocol_config.address}}
+
+  # --- gateway.blockchain_rpc (our single anvil-gateway node) ---
+  - {name: APP_GATEWAY__BLOCKCHAIN_RPC__HTTP_URL, value: "http://anvil-gateway-anvil-node:8546"}
+  - {name: APP_GATEWAY__BLOCKCHAIN_RPC__READ_HTTP_URL, value: "http://anvil-gateway-anvil-node:8546"}
+  - {name: APP_GATEWAY__BLOCKCHAIN_RPC__CHAIN_ID, value: "54321"}
+
+  # --- gateway.listener_pool.listeners (MIN_LISTENERS=2) - same anvil-gateway
+  # node for both, one ws:// subscription + one http:// polling (anvil serves
+  # both on the same port, same as commonConfig.gatewayUrl elsewhere in this
+  # namespace - see coprocessor's values-coprocessor-e2e.yaml ws:// fix).
+  - {name: APP_GATEWAY__LISTENER_POOL__LISTENERS__0__TYPE, value: "subscription"}
+  - {name: APP_GATEWAY__LISTENER_POOL__LISTENERS__0__URL, value: "ws://anvil-gateway-anvil-node:8546"}
+  - {name: APP_GATEWAY__LISTENER_POOL__LISTENERS__1__TYPE, value: "polling"}
+  - {name: APP_GATEWAY__LISTENER_POOL__LISTENERS__1__URL, value: "http://anvil-gateway-anvil-node:8546"}
+
+  # --- gateway.tx_engine.signer (private_key type - see local.yaml above) ---
+  # Same Hardhat account #3 as gateway-contracts' TX_SENDER_PRIVATE_KEY (the
+  # "Gateway/relayer account" role, already funded + max-approved on
+  # ProtocolPayment by gateway-contracts' setTxSenderMockedPayment step).
+  - {name: APP_GATEWAY__TX_ENGINE__SIGNER__PRIVATE_KEY, value: "0x7c852118294e51e653712a81e05800f419141751be58f605c371e15141b007a6"}
+
+  # --- gateway.contracts ---
+  - name: APP_GATEWAY__CONTRACTS__DECRYPTION_ADDRESS
+    valueFrom: {configMapKeyRef: {name: gw-sc-addresses, key: decryption.address}}
+  - name: APP_GATEWAY__CONTRACTS__INPUT_VERIFICATION_ADDRESS
+    valueFrom: {configMapKeyRef: {name: gw-sc-addresses, key: input_verification.address}}
+
+  # --- keyurl (fhe_public_key + crs) - populated by the "Trigger KMS keygen +
+  # CRS generation" job's on-chain poll (values-host-trigger-keygen-e2e.yaml)
+  # once the real 4-party DKG ceremony reaches consensus. data_id here is
+  # just a label the relayer echoes back in /v2/keyurl responses (not looked
+  # up anywhere), so the raw on-chain key/CRS id doubles as it.
+  #
+  # NB: every key below needs the ".address" suffix - charts/contracts'
+  # sc-deploy-config.yaml unconditionally appends ".address" to every key
+  # promoted from addresses/.env.* into this ConfigMap (confirmed live:
+  # `kubectl get configmap host-sc-addresses -o yaml` shows
+  # "kms_active_key_id.address", not "kms_active_key_id" - a bare key here
+  # 404s the pod with CreateContainerConfigError: "couldn't find key
+  # kms_active_key_id in ConfigMap ... host-sc-addresses").
+  - name: APP_KEYURL__FHE_PUBLIC_KEY__DATA_ID
+    valueFrom: {configMapKeyRef: {name: host-sc-addresses, key: kms_active_key_id.address}}
+  - name: KMS_ACTIVE_KEY_STORAGE_URL
+    valueFrom: {configMapKeyRef: {name: host-sc-addresses, key: kms_active_key_storage_url.address}}
+  - name: KMS_ACTIVE_KEY_ID
+    valueFrom: {configMapKeyRef: {name: host-sc-addresses, key: kms_active_key_id.address}}
+  # /PUB-p1/ is hardcoded here (not derived), matching
+  # zama-zws/gitops/values/relayer/relayer/values-relayer-dev.yaml's own
+  # "$(KMS_BUCKET_URL)/PUB-p1/PublicKey/$(KMS_KEY_ID)" pattern exactly: unlike
+  # KMS_NODE_STORAGE_URL_x (the on-chain ProtocolConfig registration
+  # host-listener reads - deliberately kept prefix-less above, see that
+  # comment), the relayer has no per-party fallback/search logic of its own -
+  # it needs the *exact* object key path, and since every party publishes
+  # identical public content under its own PUB-p<i>/ prefix, party 1's is
+  # picked as the one arbitrary source of truth, same as production.
+  - {name: APP_KEYURL__FHE_PUBLIC_KEY__URL, value: "$(KMS_ACTIVE_KEY_STORAGE_URL)/PUB-p1/PublicKey/$(KMS_ACTIVE_KEY_ID)"}
+  - name: APP_KEYURL__CRS__DATA_ID
+    valueFrom: {configMapKeyRef: {name: host-sc-addresses, key: kms_active_crs_id.address}}
+  - name: KMS_ACTIVE_CRS_STORAGE_URL
+    valueFrom: {configMapKeyRef: {name: host-sc-addresses, key: kms_active_crs_storage_url.address}}
+  - name: KMS_ACTIVE_CRS_ID
+    valueFrom: {configMapKeyRef: {name: host-sc-addresses, key: kms_active_crs_id.address}}
+  # See the matching comment on APP_KEYURL__FHE_PUBLIC_KEY__URL above - same
+  # hardcoded /PUB-p1/ requirement applies here.
+  - {name: APP_KEYURL__CRS__URL, value: "$(KMS_ACTIVE_CRS_STORAGE_URL)/PUB-p1/CRS/$(KMS_ACTIVE_CRS_ID)"}
+
+  # --- storage (dedicated in-cluster Postgres release, values-postgres-relayer-e2e.yaml) ---
+  - {name: APP_STORAGE__SQL_DATABASE_URL, value: "postgresql://zama:zama@postgres-relayer:5432/relayer"}
+
+  - {name: RUST_LOG, value: "warn,fhevm_relayer=debug"}
+  - {name: NO_COLOR, value: "true"}

@@ -75,7 +75,9 @@ jobs:
             package: host-listener
             needs_localstack: false
             needs_foundry: true
-            runner: runs-on=${{ github.run_id }}/runner=16cpu-linux-x64
+            # Larger disk: coverage build of host-listener plus the restored cargo
+            # cache exceeds the default runner disk.
+            runner: runs-on=${{ github.run_id }}/runner=16cpu-linux-x64/volume=80gb
           - service: common
             package: fhevm-engine-common
             needs_localstack: false
@@ -91,11 +93,10 @@ jobs:
     - name: Checkout LFS objects
       run: git lfs checkout
 
-    - name: Setup Rust toolchain file
-      run: cp coprocessor/fhevm-engine/rust-toolchain.toml .
-
     - name: Setup Rust
-      uses: dsherret/rust-toolchain-file@3551321aa44dd44a0393eb3b6bdfbc5d25ecf621 # v1
+      uses: ./.github/actions/setup_rust
+      with:
+        toolchain-dir: coprocessor/fhevm-engine
 
     - name: Install cargo-llvm-cov
       uses: taiki-e/install-action@a37010ded18ff788be4440302bd6830b1ae50d8b # v2.68.25

@@ -4,9 +4,10 @@ use crate::{
     provider::{FillersWithoutNonceManagement, NonceManagedProvider},
 };
 use alloy::{
+    eips::BlockNumberOrTag,
     node_bindings::{Anvil, AnvilInstance},
     primitives::{Address, ChainId},
-    providers::ProviderBuilder,
+    providers::{Provider, ProviderBuilder},
     transports::http::reqwest::Url,
 };
 use anyhow::anyhow;
@@ -130,6 +131,9 @@ impl BlockchainInstance {
         info!("KMSGenerationMock deployed at: {}", kms_generation_addr);
         info!("ProtocolConfigMock deployed at: {}", protocol_config_addr);
 
+        // Connector's view calls target finalized block, so we wait to avoid reverts in tests
+        wait_for_deployments_finalized(&provider).await?;
+
         Ok(BlockchainInstance::new(
             anvil,
             provider,
@@ -156,6 +160,22 @@ impl BlockchainInstance {
     /// Resumes a previously paused Anvil process via `SIGCONT`.
     pub fn unpause_anvil(&self) -> anyhow::Result<()> {
         signal_anvil(&self.anvil, "-CONT")
+    }
+}
+
+/// Waits until the deployed mock contracts are visible to `finalized`-pinned view calls.
+async fn wait_for_deployments_finalized(provider: &WalletProvider) -> anyhow::Result<()> {
+    let contracts_deployed_at = provider.get_block_number().await?;
+    loop {
+        let finalized = provider
+            .get_block_by_number(BlockNumberOrTag::Finalized)
+            .await?
+            .map(|block| block.header.number)
+            .unwrap_or_default();
+        if finalized >= contracts_deployed_at {
+            return Ok(());
+        }
+        tokio::time::sleep(Duration::from_millis(200)).await;
     }
 }
 

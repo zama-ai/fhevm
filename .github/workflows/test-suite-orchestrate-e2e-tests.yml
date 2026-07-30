@@ -2,36 +2,33 @@ name: test-suite-orchestrate-e2e-tests
 
 on:
   pull_request:
-    types: [opened, synchronize, reopened, labeled]
+    types: [opened, synchronize, reopened]
     branches:
       - main
       - release/*
+  workflow_dispatch:
+    inputs:
+      run-threshold-legs:
+        description: "Also run the non-gating threshold-KMS legs (keygen, context-switch, node-swap)"
+        type: boolean
+        default: false
 
 permissions: {}
 
 concurrency:
   group: test-suite-orchestrate-e2e-tests-${{ github.ref }}
-  # Do NOT cancel on `labeled` events: a Mergify merge-queue PR receives the
-  # `cla-signed` label moments after it's opened, on the same ref/concurrency
-  # group as the real run. Cancelling there would kill the in-flight e2e run.
-  # Only real code pushes (synchronize/opened/reopened) should cancel.
-  cancel-in-progress: ${{ github.event.action != 'labeled' && github.ref != 'refs/heads/main' }}
+  cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
 
 jobs:
   resolve-baseline:
     name: resolve-baseline
     if: &build-trigger-condition |
-      (github.event.action != 'labeled' || github.event.label.name == 'e2e orchestrate test') &&
-      (
-        startsWith(github.head_ref, 'mergify/merge-queue/') ||
-        startsWith(github.base_ref, 'release/') ||
-        contains(github.event.pull_request.labels.*.name, 'e2e orchestrate test')
-      )
+      github.event_name == 'workflow_dispatch' ||
+      startsWith(github.head_ref, 'mergify/merge-queue/') ||
+      startsWith(github.base_ref, 'release/')
     runs-on: ubuntu-latest
     permissions:
       contents: 'read' # Required to checkout repository code
-    env:
-      BASE_SHA: ${{ github.event.pull_request.base.sha }}
     outputs:
       lock-artifact-name: ${{ steps.resolve-baseline.outputs.lock-artifact-name }}
     steps:
@@ -39,6 +36,22 @@ jobs:
         uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
         with:
           persist-credentials: 'false'
+
+      - id: diff-base
+        name: Resolve diff base
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PR_BASE_SHA: ${{ github.event.pull_request.base.sha }}
+        run: |
+          set -euo pipefail
+          if [[ -n "$PR_BASE_SHA" ]]; then
+            base_sha="$PR_BASE_SHA"
+          else
+            # workflow_dispatch carries no PR payload: baseline against the
+            # merge-base with main (the compare API avoids needing git history)
+            base_sha="$(gh api "repos/${GITHUB_REPOSITORY}/compare/main...${GITHUB_SHA}" --jq '.merge_base_commit.sha')"
+          fi
+          echo "base-sha=$base_sha" >> "$GITHUB_OUTPUT"
 
       - name: Setup Bun
         uses: oven-sh/setup-bun@ecf28ddc73e819eb6fa29df6b34ef8921c743461 # v2.1.3
@@ -58,6 +71,8 @@ jobs:
       - id: resolve-baseline
         name: Resolve base-sha baseline lock
         working-directory: test-suite/fhevm
+        env:
+          BASE_SHA: ${{ steps.diff-base.outputs.base-sha }}
         run: |
           set -euo pipefail
           lock_path="$(./fhevm-cli resolve --target sha --sha "$BASE_SHA" --reset | tail -n 1)"
@@ -75,6 +90,7 @@ jobs:
     if: *build-trigger-condition
     uses: ./.github/workflows/coprocessor-docker-build.yml
     with:
+      # Empty on workflow_dispatch but dorny/paths-filter falls back to the repo default branch
       path-filter-base-commit: ${{ github.event.pull_request.base.sha }}
     permissions: &docker_permissions
       actions: 'read' # Required to read workflow run information
@@ -146,13 +162,13 @@ jobs:
       - test-suite-docker-build
     if: |
       (success() || failure()) &&
-      (github.event.action != 'labeled' || github.event.label.name == 'e2e orchestrate test') && (
+      (
+        github.event_name == 'workflow_dispatch' ||
         startsWith(github.head_ref, 'mergify/merge-queue/') ||
-        startsWith(github.base_ref, 'release/') ||
-        contains(github.event.pull_request.labels.*.name, 'e2e orchestrate test')
+        startsWith(github.base_ref, 'release/')
       )
     env:
-      NEW_COMMIT_HASH: ${{ github.event.pull_request.head.sha }}
+      NEW_COMMIT_HASH: ${{ github.event.pull_request.head.sha || github.sha }}
       DOCKER_BUILD_RESULTS: ${{ toJSON(needs) }}
     # github-script only — a GitHub-hosted runner starts in seconds, while a
     # provisioned runner adds minutes of spin-up variance on the merge-queue
@@ -340,18 +356,15 @@ jobs:
   # NOT a merge-queue gate, and since it competes with the gating shards for the same runner pool it
   # deliberately does NOT run on mergify merge-queue PRs — the same coverage runs post-merge on every
   # main push via test-suite-e2e-threshold-post-merge.yml. It still runs here for release branches and
-  # PRs labeled `e2e orchestrate test`. For a standalone threshold run (no full image build), dispatch
-  # the reusable workflow directly:
+  # manual dispatches with `run-threshold-legs: true`. For a standalone threshold run (no full image
+  # build), dispatch the reusable workflow directly:
   #   gh workflow run test-suite-e2e-tests.yml -f scenario=four-party-threshold-kms \
   #     -f test-profile=kms-generation -f build=false
   run-e2e-tests-threshold-kms:
     needs: [create-e2e-tests-input]
     if: &threshold-trigger-condition |
-      (github.event.action != 'labeled' || github.event.label.name == 'e2e orchestrate test') &&
-      (
-        startsWith(github.base_ref, 'release/') ||
-        contains(github.event.pull_request.labels.*.name, 'e2e orchestrate test')
-      )
+      (github.event_name == 'workflow_dispatch' && inputs.run-threshold-legs) ||
+      startsWith(github.base_ref, 'release/')
     uses:
       ./.github/workflows/test-suite-e2e-tests.yml
     permissions: *e2e_permissions

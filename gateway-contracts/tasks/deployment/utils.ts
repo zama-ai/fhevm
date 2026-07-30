@@ -1,16 +1,16 @@
-import fs from "fs";
-import path from "path";
+import fs from 'fs';
+import path from 'path';
 
 import {
   ADDRESSES_DIR,
   GATEWAY_ADDRESSES_ENV_FILE_NAME,
   GATEWAY_ADDRESSES_SOLIDITY_FILE_NAME,
-} from "../../hardhat.config";
-import { pascalCaseToAddressEnvVar, pascalCaseToCamelCase } from "../utils/stringOps";
+} from '../../hardhat.config';
+import { pascalCaseToAddressEnvVar, pascalCaseToCamelCase } from '../utils/stringOps';
 
 // Define the empty proxy names for the different contracts
-export const GATEWAY_CONFIG_EMPTY_PROXY_NAME = "EmptyUUPSProxyGatewayConfig";
-export const REGULAR_EMPTY_PROXY_NAME = "EmptyUUPSProxy";
+export const GATEWAY_CONFIG_EMPTY_PROXY_NAME = 'EmptyUUPSProxyGatewayConfig';
+export const REGULAR_EMPTY_PROXY_NAME = 'EmptyUUPSProxy';
 
 // Create an empty env file
 export function createEnvAddressesFile(fileName: string) {
@@ -18,7 +18,7 @@ export function createEnvAddressesFile(fileName: string) {
   fs.mkdirSync(ADDRESSES_DIR, { recursive: true });
 
   const envFilePath = path.join(ADDRESSES_DIR, fileName);
-  fs.writeFileSync(envFilePath, "", { flag: "w" });
+  fs.writeFileSync(envFilePath, '', { flag: 'w' });
 }
 
 // Create an empty solidity file with the Solidity header
@@ -29,8 +29,8 @@ export function createSolidityAddressesFile(fileName: string) {
   const solidityFilePath = path.join(ADDRESSES_DIR, fileName);
   const solidityHeader = `// SPDX-License-Identifier: BSD-3-Clause-Clear\npragma solidity ^0.8.24;\n\n`;
   fs.writeFileSync(solidityFilePath, solidityHeader, {
-    encoding: "utf8",
-    flag: "w",
+    encoding: 'utf8',
+    flag: 'w',
   });
 }
 
@@ -52,8 +52,8 @@ export function appendAddressToSolidityFile(name: string, address: string, solid
   const solidityTemplate = `address constant ${pascalCaseToCamelCase(name)}Address = ${address};\n`;
 
   fs.appendFileSync(solidityFilePath, solidityTemplate, {
-    encoding: "utf8",
-    flag: "a",
+    encoding: 'utf8',
+    flag: 'a',
   });
 }
 
@@ -70,7 +70,7 @@ export function appendAddressToEnvFile(name: string, address: string, envFileNam
   }
 
   // Append the contract's address in the addresses/.env.gateway file
-  fs.appendFileSync(envFilePath, envContent, { encoding: "utf8", flag: "a" });
+  fs.appendFileSync(envFilePath, envContent, { encoding: 'utf8', flag: 'a' });
 }
 
 // Update a gateway contract's address in the .env and solidity files in the `./addresses` directory

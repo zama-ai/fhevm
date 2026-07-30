@@ -399,11 +399,18 @@ describe('Unified user decryption', function () {
     // dropped later — the explicit v0 test below is the canary that fails
     // loudly when that happens, forcing a conscious update instead of a
     // silent break.
+    //
+    // The relayer's wire validation also requires embedded ids to be type
+    // tagged: a v1/v2 contextId must start with byte 0x07 and a v2 epochId
+    // must start with byte 0x08 — untagged ids are rejected synchronously
+    // with HTTP 400 before reaching the connector.
     let extraDataPublicKey: string;
     let currentContextId: bigint;
     let currentEpochId: bigint;
 
     const hex32 = (v: bigint) => v.toString(16).padStart(64, '0');
+    // Tag byte (0x07 for contextId, 0x08 for epochId) followed by 31 bytes of value.
+    const taggedHex32 = (tag: number, v: bigint) => tag.toString(16).padStart(2, '0') + v.toString(16).padStart(62, '0');
 
     before(async function () {
       // Fresh re-encryption key: the relayer dedups requests on
@@ -511,12 +518,14 @@ describe('Unified user decryption', function () {
       expect(clear).to.equal(16n);
     });
 
-    it('test unified user decrypt rejects extraData v2 with an inactive epochId (0)', async function () {
+    it('test unified user decrypt rejects extraData v2 with an inactive epochId', async function () {
       this.timeout(negativeWindowMs + TIMEOUT_MARGIN_MS);
       // Empirical pin: epoch validation is LIVE on the unified path. A v2
-      // extraData with the correct contextId but epochId 0 (the js-sdk's
-      // pre-epoch default) is rejected by the connector:
-      // "Epoch #0 of context #... is not active on-chain".
+      // extraData with the correct contextId but a fabricated (0x08-tagged,
+      // non-active) epochId passes the relayer's format check and is
+      // rejected by the connector: "Epoch #... of context #... is not active
+      // on-chain".
+      expect(currentContextId, 'stack reports no current KMS context id').to.not.equal(0n);
       const handle = await aliceContract.xUint64();
       const req: UnifiedDecryptRequest = {
         handles: [directHandle(handle, aliceContractAddress, signers.alice.address)],
@@ -525,7 +534,7 @@ describe('Unified user decryption', function () {
         publicKey: extraDataPublicKey,
         startTimestamp: backdatedStartTimestamp(),
         durationSeconds: DURATION_SECONDS,
-        extraData: `0x02${hex32(currentContextId)}${hex32(0n)}`,
+        extraData: `0x02${hex32(currentContextId)}${taggedHex32(0x08, 0xdeadbeefn)}`,
       };
       const { post, poll } = await requestUnifiedUserDecrypt(cfg, req, { kind: 'eoa', signer: signers.alice }, {
         waitForTerminal: true,
@@ -538,9 +547,10 @@ describe('Unified user decryption', function () {
     it('test unified user decrypt rejects extraData with an unknown contextId', async function () {
       this.timeout(negativeWindowMs + TIMEOUT_MARGIN_MS);
       // Versioned extraData is NOT decorative: the connector validates the
-      // embedded contextId against its context store. A fabricated id passes
-      // the relayer's format check (and the signature covers it), but the KMS
-      // Connector rejects it and the job never succeeds.
+      // embedded contextId against its context store. A fabricated, but
+      // properly 0x07-tagged, id passes the relayer's format check (and the
+      // signature covers it), but the KMS Connector rejects it and the job
+      // never succeeds.
       const handle = await aliceContract.xUint64();
       const req: UnifiedDecryptRequest = {
         handles: [directHandle(handle, aliceContractAddress, signers.alice.address)],
@@ -549,7 +559,7 @@ describe('Unified user decryption', function () {
         publicKey: extraDataPublicKey,
         startTimestamp: backdatedStartTimestamp(),
         durationSeconds: DURATION_SECONDS,
-        extraData: `0x01${hex32(0xdeadbeefn)}`,
+        extraData: `0x01${taggedHex32(0x07, 0xdeadbeefn)}`,
       };
       const { post, poll } = await requestUnifiedUserDecrypt(cfg, req, { kind: 'eoa', signer: signers.alice }, {
         waitForTerminal: true,
@@ -571,6 +581,43 @@ describe('Unified user decryption', function () {
         startTimestamp: backdatedStartTimestamp(),
         durationSeconds: DURATION_SECONDS,
         extraData: `0x03${hex32(1n)}`,
+      };
+      const { post } = await submitUnifiedRequest(cfg, req, { kind: 'eoa', signer: signers.alice });
+      expect(post.httpStatus, JSON.stringify(post.raw)).to.equal(400);
+    });
+
+    it('test unified user decrypt rejects extraData v1 with an untagged contextId', async function () {
+      // A v1 contextId must be 0x07-tagged; an untagged id is rejected
+      // synchronously by the relayer's wire validation — it never reaches
+      // the KMS Connector.
+      const handle = await aliceContract.xUint64();
+      const req: UnifiedDecryptRequest = {
+        handles: [directHandle(handle, aliceContractAddress, signers.alice.address)],
+        userAddress: signers.alice.address,
+        allowedContracts: [],
+        publicKey: extraDataPublicKey,
+        startTimestamp: backdatedStartTimestamp(),
+        durationSeconds: DURATION_SECONDS,
+        extraData: `0x01${hex32(0xdeadbeefn)}`,
+      };
+      const { post } = await submitUnifiedRequest(cfg, req, { kind: 'eoa', signer: signers.alice });
+      expect(post.httpStatus, JSON.stringify(post.raw)).to.equal(400);
+    });
+
+    it('test unified user decrypt rejects extraData v2 with an untagged epochId', async function () {
+      // A v2 epochId must be 0x08-tagged; an untagged id (e.g. the bare
+      // value 0) is rejected synchronously by the relayer's wire validation
+      // — it never reaches the KMS Connector.
+      expect(currentContextId, 'stack reports no current KMS context id').to.not.equal(0n);
+      const handle = await aliceContract.xUint64();
+      const req: UnifiedDecryptRequest = {
+        handles: [directHandle(handle, aliceContractAddress, signers.alice.address)],
+        userAddress: signers.alice.address,
+        allowedContracts: [],
+        publicKey: extraDataPublicKey,
+        startTimestamp: backdatedStartTimestamp(),
+        durationSeconds: DURATION_SECONDS,
+        extraData: `0x02${hex32(currentContextId)}${hex32(0n)}`,
       };
       const { post } = await submitUnifiedRequest(cfg, req, { kind: 'eoa', signer: signers.alice });
       expect(post.httpStatus, JSON.stringify(post.raw)).to.equal(400);

@@ -1,0 +1,118 @@
+# `listener` chart overlay for the fhevm e2e preview namespace - the dedicated
+# blockchain-event PRODUCER (image listener/listener-core), one release PER
+# COPROCESSOR PARTY (listener-<i>). This is the same chart + role as
+# zama-zws/gitops's eth-blockchain/eth-listener app: it indexes the host chain
+# and PUBLISHES events to a Redis broker (broker.ensure_publish), which the
+# coprocessor's host-listener-consumer then reads (see
+# ../coprocessor/values-coprocessor-e2e.yaml, where the built-in hostListener +
+# poller are disabled in favour of this producer + the consumer).
+#
+# Topology per party i (all wired at deploy time in preview-env-deploy.yml):
+#   listener-<i>  --(publishes)-->  coprocessor-redis-<i>  --(consumed by)-->  coprocessor-<i> host-listener-consumer
+#
+# The listener is a GENERIC EVM indexer: it takes NO FHEVM contract addresses
+# (chain_id + RPC + broker + its own cursor DB only). Event decoding/filtering
+# by ACL/executor/kms-generation address happens downstream in the consumer,
+# which already has those addresses via its chain config.
+#
+# Deployed as (per party i):
+#   helm upgrade --install listener-<i> \
+#     oci://hub.zama.org/ghcr/zama-ai/fhevm/charts/listener \
+#     -n <namespace> -f this-file \
+#     --set-string "env[0].value=postgresql://zama:zama@postgres-listener-<i>:5432/listener?sslmode=disable" \
+#     --set-string "env[1].value=redis://coprocessor-redis-<i>-master:6379"
+#
+# OPEN VERIFICATION POINTS (this producer path is new to the preview; validate
+# on the first multi-run and adjust here, NOT in the chart):
+#   - listener-core image tag (LISTENER_VERSION in the workflow) must be a
+#     published tag compatible with the coprocessor host_listener_consumer
+#     version (COPROCESSOR_VERSION); the broker payload format has to match.
+#   - anvil must support the block_fetcher RPC the listener uses
+#     (eth_getBlockReceipts for the default `block_receipts` fetcher).
+#   - the broker topic keying (chain_id 12345) must match the consumer's
+#     --chain-id (12345) so published events are actually consumed.
+image:
+  repository: hub.zama.org/ghcr/zama-ai/fhevm/listener/listener-core
+  # Pinned to the tag zama-zws/gitops's eth-listener runs (values-zws-dev.yaml).
+  # Overridable via the LISTENER_VERSION workflow env. Chart appVersion (0.1.0)
+  # is the fallback if left empty, but that tag may not exist in the ghcr mirror.
+  tag: "cc8fc16-dev"
+  pullPolicy: IfNotPresent
+
+imagePullSecrets:
+  - name: registry-credentials
+
+# Secrets are provided inline via env below (ephemeral, non-secret test creds -
+# same reasoning as the in-cluster Postgres releases), so no ExternalSecret /
+# fallback Secret is rendered.
+externalSecret:
+  enabled: true
+
+serviceAccount:
+  # The listener needs no cloud identity (no S3, no IRSA) - a plain namespace
+  # SA is enough. Let the chart create one per release.
+  create: true
+
+# Shared broker settings for every listener in this release. broker_url comes
+# from APP_BROKER__BROKER_URL (env below); type is Redis (matches the shared
+# coprocessor-redis-<i> we point it at).
+commonConfig:
+  broker:
+    broker_type: redis
+
+# env is a LIST -> Helm replaces it wholesale. env[0]/env[1] hold the DB and
+# broker URLs; the workflow overrides their .value per party via --set-string
+# (postgres-listener-<i> / coprocessor-redis-<i>). The N=1 defaults below keep
+# this file valid + runnable standalone.
+env:
+  - {name: APP_DATABASE__DB_URL, value: "postgresql://zama:zama@postgres-listener-1:5432/listener?sslmode=disable"}
+  - {name: APP_BROKER__BROKER_URL, value: "redis://coprocessor-redis-1-master:6379"}
+
+# One listener instance for the host chain. chain_id is the SAME across parties
+# (they all independently index the one host anvil chain, 12345); only the
+# broker/DB differ per party (set via env above).
+listeners:
+  - name: host
+    config:
+      broker:
+        # Publish indexed events to the broker (this is the producer half of the
+        # producer -> Redis -> consumer flow). Off in the chart default.
+        ensure_publish: true
+      blockchain:
+        # Host anvil chain (matches ../host-chain/values-anvil-host-e2e.yaml and
+        # the coprocessor chains[0].chainId). Must equal the consumer's
+        # --chain-id so the broker topic lines up.
+        chain_id: 12345
+        # anvil serves HTTP+WS on the same port; the indexer polls over HTTP.
+        rpc_url: "http://anvil-host-anvil-node:8545"
+        network: host
+        # Single-node anvil never reorgs, so treat blocks as final immediately -
+        # otherwise a default finality_depth (64) would delay every event by
+        # dozens of blocks and stall the consumer during the short test run.
+        finality_depth: 0
+        strategy:
+          # Start from the current tip on first boot: the listener is deployed
+          # before keygen + the tests emit events, so nothing relevant precedes
+          # it. compute_block(+allow_skipping) so per-block event data is emitted.
+          block_start_on_first_start: "current"
+          compute_block: true
+          compute_block_allow_skipping: true
+
+resources:
+  requests:
+    cpu: "500m"
+    memory: 1Gi
+  limits:
+    cpu: "1"
+    memory: 2Gi
+
+# Pin onto the zws-pool Karpenter node pool - same convention as the in-cluster
+# Postgres / Redis releases (the listener is light; it does not need the heavy
+# `coprocessor` compute nodepool the tfhe/sns workers use).
+nodeSelector:
+  karpenter.sh/nodepool: zws-pool
+tolerations:
+  - key: "karpenter.sh/nodepool"
+    operator: "Equal"
+    value: "zws-pool"
+    effect: "NoSchedule"

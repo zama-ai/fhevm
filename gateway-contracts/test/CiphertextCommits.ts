@@ -1,11 +1,11 @@
-import { HardhatEthersSigner } from "@nomicfoundation/hardhat-ethers/signers";
-import { loadFixture } from "@nomicfoundation/hardhat-network-helpers";
-import { expect } from "chai";
-import { Wallet } from "ethers";
-import hre from "hardhat";
+import { HardhatEthersSigner } from '@nomicfoundation/hardhat-ethers/signers';
+import { loadFixture } from '@nomicfoundation/hardhat-network-helpers';
+import { expect } from 'chai';
+import { Wallet } from 'ethers';
+import hre from 'hardhat';
 
-import { CiphertextCommits, CiphertextCommits__factory, GatewayConfig, InputVerification } from "../typechain-types";
-import { CoprocessorStruct } from "../typechain-types/contracts/interfaces/IGatewayConfig";
+import { CiphertextCommits, CiphertextCommits__factory, GatewayConfig, InputVerification } from '../typechain-types';
+import { CoprocessorStruct } from '../typechain-types/contracts/interfaces/IGatewayConfig';
 import {
   createBytes32,
   createCtHandle,
@@ -13,9 +13,9 @@ import {
   createRandomWallet,
   loadHostChainIds,
   loadTestVariablesFixture,
-} from "./utils";
+} from './utils';
 
-describe("CiphertextCommits", function () {
+describe('CiphertextCommits', function () {
   // Define the host chains' chain IDs
   const hostChainIds = loadHostChainIds();
   const hostChainId = hostChainIds[0];
@@ -87,46 +87,46 @@ describe("CiphertextCommits", function () {
     pauser = fixture.pauser;
   });
 
-  describe("Deployment", function () {
+  describe('Deployment', function () {
     let ciphertextCommitsFactory: CiphertextCommits__factory;
 
     beforeEach(async function () {
       // Get the CiphertextCommits contract factory
-      ciphertextCommitsFactory = await hre.ethers.getContractFactory("CiphertextCommits", owner);
+      ciphertextCommitsFactory = await hre.ethers.getContractFactory('CiphertextCommits', owner);
     });
 
-    it("Should revert because initialization is not from an empty proxy", async function () {
+    it('Should revert because initialization is not from an empty proxy', async function () {
       await expect(
         hre.upgrades.upgradeProxy(ciphertextCommits, ciphertextCommitsFactory, {
-          call: { fn: "initializeFromEmptyProxy" },
+          call: { fn: 'initializeFromEmptyProxy' },
         }),
-      ).to.be.revertedWithCustomError(ciphertextCommits, "NotInitializingFromEmptyProxy");
+      ).to.be.revertedWithCustomError(ciphertextCommits, 'NotInitializingFromEmptyProxy');
     });
   });
 
-  describe("Add ciphertext material", async function () {
-    it("Should revert because the chain ID does not correspond to a registered host chain", async function () {
+  describe('Add ciphertext material', async function () {
+    it('Should revert because the chain ID does not correspond to a registered host chain', async function () {
       // Check that adding a ciphertext material on a fake chain ID reverts
       await expect(
         ciphertextCommits
           .connect(coprocessorTxSenders[0])
           .addCiphertextMaterial(ctHandleFakeChainId, keyId, ciphertextDigest, snsCiphertextDigest),
       )
-        .revertedWithCustomError(ciphertextCommits, "HostChainNotRegistered")
+        .revertedWithCustomError(ciphertextCommits, 'HostChainNotRegistered')
         .withArgs(fakeHostChainId);
     });
 
-    it("Should emit an event when calling a single addCiphertextMaterial", async function () {
+    it('Should emit an event when calling a single addCiphertextMaterial', async function () {
       await expect(
         ciphertextCommits
           .connect(coprocessorTxSenders[0])
           .addCiphertextMaterial(ctHandle, keyId, ciphertextDigest, snsCiphertextDigest),
       )
-        .to.emit(ciphertextCommits, "AddCiphertextMaterial")
+        .to.emit(ciphertextCommits, 'AddCiphertextMaterial')
         .withArgs(ctHandle, keyId, ciphertextDigest, snsCiphertextDigest, coprocessorTxSenders[0].address);
     });
 
-    it("Should add a ciphertext material with 2 valid calls", async function () {
+    it('Should add a ciphertext material with 2 valid calls', async function () {
       // Trigger 2 valid add ciphertext material calls
       await ciphertextCommits
         .connect(coprocessorTxSenders[0])
@@ -139,14 +139,14 @@ describe("CiphertextCommits", function () {
       // Consensus should be reached at the second call
       // Check 2nd call event: it should only contain the 2 coprocessor transaction sender addresses
       await expect(resultTx2)
-        .to.emit(ciphertextCommits, "AddCiphertextMaterialConsensus")
+        .to.emit(ciphertextCommits, 'AddCiphertextMaterialConsensus')
         .withArgs(ctHandle, keyId, ciphertextDigest, snsCiphertextDigest, [
           coprocessorTxSenders[0].address,
           coprocessorTxSenders[1].address,
         ]);
     });
 
-    it("Should add a ciphertext material with 2 valid calls and ignore the other valid one", async function () {
+    it('Should add a ciphertext material with 2 valid calls and ignore the other valid one', async function () {
       // Trigger 3 valid add ciphertext material calls
       const resultTx1 = await ciphertextCommits
         .connect(coprocessorTxSenders[0])
@@ -163,11 +163,11 @@ describe("CiphertextCommits", function () {
       // Check that the 1st and 3rd calls do not emit an event:
       // - 1st call is ignored because consensus is not reached yet
       // - 3rd call is ignored (not reverted) even though it is late
-      await expect(resultTx1).to.not.emit(ciphertextCommits, "AddCiphertextMaterialConsensus");
-      await expect(resultTx3).to.not.emit(ciphertextCommits, "AddCiphertextMaterialConsensus");
+      await expect(resultTx1).to.not.emit(ciphertextCommits, 'AddCiphertextMaterialConsensus');
+      await expect(resultTx3).to.not.emit(ciphertextCommits, 'AddCiphertextMaterialConsensus');
     });
 
-    it("Should add a ciphertext material with 2 valid and 1 malicious calls ", async function () {
+    it('Should add a ciphertext material with 2 valid and 1 malicious calls ', async function () {
       // Trigger 1 valid add ciphertext material call
       await ciphertextCommits
         .connect(coprocessorTxSenders[0])
@@ -181,7 +181,7 @@ describe("CiphertextCommits", function () {
         .addCiphertextMaterial(ctHandle, keyId, fakeCiphertextDigest, snsCiphertextDigest);
 
       // Make sure that the consensus has not been reached yet
-      await expect(fakeResultTx2).to.not.emit(ciphertextCommits, "AddCiphertextMaterialConsensus");
+      await expect(fakeResultTx2).to.not.emit(ciphertextCommits, 'AddCiphertextMaterialConsensus');
 
       // Trigger a 2nd valid add ciphertext material call: consensus should then be reached for this
       // handle and the associated infos
@@ -192,14 +192,14 @@ describe("CiphertextCommits", function () {
       // Check 2nd call event: it should only contain 2 coprocessor transaction sender addresses, the
       // 1st and 3rd one
       await expect(resultTx3)
-        .to.emit(ciphertextCommits, "AddCiphertextMaterialConsensus")
+        .to.emit(ciphertextCommits, 'AddCiphertextMaterialConsensus')
         .withArgs(ctHandle, keyId, ciphertextDigest, snsCiphertextDigest, [
           coprocessorTxSenders[0].address,
           coprocessorTxSenders[2].address,
         ]);
     });
 
-    it("Should get all valid coprocessor transaction senders from add ciphertext material consensus", async function () {
+    it('Should get all valid coprocessor transaction senders from add ciphertext material consensus', async function () {
       // Trigger a valid add ciphertext material call using the first coprocessor transaction sender
       await ciphertextCommits
         .connect(coprocessorTxSenders[0])
@@ -237,7 +237,7 @@ describe("CiphertextCommits", function () {
       expect(addCiphertextMaterialConsensusTxSenders3).to.deep.equal(expectedCoprocessorTxSenders3);
     });
 
-    it("Should keep ciphertext material consensus Zama-only when a priority coprocessor is set", async function () {
+    it('Should keep ciphertext material consensus Zama-only when a priority coprocessor is set', async function () {
       const zamaTxSender = coprocessorTxSenders[0];
       const partnerTxSender = coprocessorTxSenders[1];
 
@@ -250,7 +250,7 @@ describe("CiphertextCommits", function () {
         .connect(partnerTxSender)
         .addCiphertextMaterial(ctHandle, keyId, ciphertextDigest, snsCiphertextDigest);
 
-      await expect(partnerTx).to.not.emit(ciphertextCommits, "AddCiphertextMaterialConsensus");
+      await expect(partnerTx).to.not.emit(ciphertextCommits, 'AddCiphertextMaterialConsensus');
       expect(await ciphertextCommits.getAddCiphertextMaterialConsensusTxSenders(ctHandle)).to.deep.equal([]);
 
       const zamaTx = await ciphertextCommits
@@ -258,7 +258,7 @@ describe("CiphertextCommits", function () {
         .addCiphertextMaterial(ctHandle, keyId, ciphertextDigest, snsCiphertextDigest);
 
       await expect(zamaTx)
-        .to.emit(ciphertextCommits, "AddCiphertextMaterialConsensus")
+        .to.emit(ciphertextCommits, 'AddCiphertextMaterialConsensus')
         .withArgs(ctHandle, keyId, ciphertextDigest, snsCiphertextDigest, [zamaTxSender.address]);
 
       expect(await ciphertextCommits.getAddCiphertextMaterialConsensusTxSenders(ctHandle)).to.deep.equal([
@@ -273,7 +273,7 @@ describe("CiphertextCommits", function () {
         .connect(latePartnerTxSender)
         .addCiphertextMaterial(ctHandle, keyId, ciphertextDigest, snsCiphertextDigest);
 
-      await expect(latePartnerTx).to.not.emit(ciphertextCommits, "AddCiphertextMaterialConsensus");
+      await expect(latePartnerTx).to.not.emit(ciphertextCommits, 'AddCiphertextMaterialConsensus');
       expect(await ciphertextCommits.getAddCiphertextMaterialConsensusTxSenders(ctHandle)).to.deep.equal([
         zamaTxSender.address,
       ]);
@@ -282,7 +282,7 @@ describe("CiphertextCommits", function () {
       expect(snsCtMaterialsAfterLatePartner[0].coprocessorTxSenderAddresses).to.deep.equal([zamaTxSender.address]);
     });
 
-    it("Should require the full threshold again after the priority coprocessor is removed", async function () {
+    it('Should require the full threshold again after the priority coprocessor is removed', async function () {
       const zamaTxSender = coprocessorTxSenders[0];
       const partnerTxSender = coprocessorTxSenders[1];
 
@@ -299,7 +299,7 @@ describe("CiphertextCommits", function () {
         .connect(zamaTxSender)
         .addCiphertextMaterial(ctHandle, keyId, ciphertextDigest, snsCiphertextDigest);
       await expect(priorityZamaTx)
-        .to.emit(ciphertextCommits, "AddCiphertextMaterialConsensus")
+        .to.emit(ciphertextCommits, 'AddCiphertextMaterialConsensus')
         .withArgs(ctHandle, keyId, ciphertextDigest, snsCiphertextDigest, [zamaTxSender.address]);
       expect(await ciphertextCommits.getAddCiphertextMaterialConsensusTxSenders(ctHandle)).to.deep.equal([
         zamaTxSender.address,
@@ -315,7 +315,7 @@ describe("CiphertextCommits", function () {
       const firstTx = await ciphertextCommits
         .connect(zamaTxSender)
         .addCiphertextMaterial(newCtHandle, keyId, ciphertextDigest, snsCiphertextDigest);
-      await expect(firstTx).to.not.emit(ciphertextCommits, "AddCiphertextMaterialConsensus");
+      await expect(firstTx).to.not.emit(ciphertextCommits, 'AddCiphertextMaterialConsensus');
       expect(await ciphertextCommits.getAddCiphertextMaterialConsensusTxSenders(newCtHandle)).to.deep.equal([]);
 
       // A second commit from a distinct (formerly partner) coprocessor reaches the 2-of-3 threshold and
@@ -324,7 +324,7 @@ describe("CiphertextCommits", function () {
         .connect(partnerTxSender)
         .addCiphertextMaterial(newCtHandle, keyId, ciphertextDigest, snsCiphertextDigest);
       await expect(secondTx)
-        .to.emit(ciphertextCommits, "AddCiphertextMaterialConsensus")
+        .to.emit(ciphertextCommits, 'AddCiphertextMaterialConsensus')
         .withArgs(newCtHandle, keyId, ciphertextDigest, snsCiphertextDigest, [
           zamaTxSender.address,
           partnerTxSender.address,
@@ -334,17 +334,17 @@ describe("CiphertextCommits", function () {
       );
     });
 
-    it("Should revert because the transaction sender is not a coprocessor", async function () {
+    it('Should revert because the transaction sender is not a coprocessor', async function () {
       await expect(
         ciphertextCommits
           .connect(fakeTxSender)
           .addCiphertextMaterial(ctHandle, keyId, ciphertextDigest, snsCiphertextDigest),
       )
-        .revertedWithCustomError(ciphertextCommits, "NotCoprocessorTxSender")
+        .revertedWithCustomError(ciphertextCommits, 'NotCoprocessorTxSender')
         .withArgs(fakeTxSender.address);
     });
 
-    it("Should revert because the coprocessor transaction sender has already added the ciphertext handle", async function () {
+    it('Should revert because the coprocessor transaction sender has already added the ciphertext handle', async function () {
       // Add the ciphertext with the first coprocessor transaction sender
       await ciphertextCommits
         .connect(coprocessorTxSenders[0])
@@ -356,12 +356,12 @@ describe("CiphertextCommits", function () {
           .connect(coprocessorTxSenders[0])
           .addCiphertextMaterial(ctHandle, keyId, ciphertextDigest, snsCiphertextDigest),
       )
-        .revertedWithCustomError(ciphertextCommits, "CoprocessorAlreadyAdded")
+        .revertedWithCustomError(ciphertextCommits, 'CoprocessorAlreadyAdded')
         .withArgs(ctHandle, coprocessorTxSenders[0]);
     });
   });
 
-  describe("Get ciphertext materials", async function () {
+  describe('Get ciphertext materials', async function () {
     let unusedCoprocessorTxSender: HardhatEthersSigner;
     let usedCoprocessorTxSender: HardhatEthersSigner[];
 
@@ -371,7 +371,7 @@ describe("CiphertextCommits", function () {
       usedCoprocessorTxSender = fixtureData.usedCoprocessorTxSender;
     });
 
-    it("Should get regular ciphertext materials", async function () {
+    it('Should get regular ciphertext materials', async function () {
       const result = await ciphertextCommits.getCiphertextMaterials([ctHandle]);
 
       expect(result).to.be.deep.eq([
@@ -379,7 +379,7 @@ describe("CiphertextCommits", function () {
       ]);
     });
 
-    it("Should get late transaction sender after consensus (regular)", async function () {
+    it('Should get late transaction sender after consensus (regular)', async function () {
       const resultTx1 = await ciphertextCommits.getCiphertextMaterials([ctHandle]);
 
       // The consensus has been reached with only 2 coprocessors
@@ -404,20 +404,20 @@ describe("CiphertextCommits", function () {
       expect(resultTx2).to.be.deep.eq([[ctHandle, keyId, ciphertextDigest, expectedTxSenderAddresses]]);
     });
 
-    it("Should revert with CiphertextMaterialNotFound (regular)", async function () {
+    it('Should revert with CiphertextMaterialNotFound (regular)', async function () {
       await expect(ciphertextCommits.getCiphertextMaterials([newCtHandle]))
-        .revertedWithCustomError(ciphertextCommits, "CiphertextMaterialNotFound")
+        .revertedWithCustomError(ciphertextCommits, 'CiphertextMaterialNotFound')
         .withArgs(newCtHandle);
     });
 
-    it("Should revert with EmptyCtHandles (regular)", async function () {
+    it('Should revert with EmptyCtHandles (regular)', async function () {
       await expect(ciphertextCommits.getCiphertextMaterials([])).revertedWithCustomError(
         ciphertextCommits,
-        "EmptyCtHandles",
+        'EmptyCtHandles',
       );
     });
 
-    it("Should get SNS ciphertext materials", async function () {
+    it('Should get SNS ciphertext materials', async function () {
       const result = await ciphertextCommits.getSnsCiphertextMaterials([ctHandle]);
 
       expect(result).to.be.deep.eq([
@@ -425,7 +425,7 @@ describe("CiphertextCommits", function () {
       ]);
     });
 
-    it("Should get late transaction sender after consensus (SNS) ", async function () {
+    it('Should get late transaction sender after consensus (SNS) ', async function () {
       const result = await ciphertextCommits.getSnsCiphertextMaterials([ctHandle]);
 
       // The consensus has been reached with only 2 coprocessors
@@ -450,15 +450,15 @@ describe("CiphertextCommits", function () {
       expect(resultTx2).to.be.deep.eq([[ctHandle, keyId, snsCiphertextDigest, expectedTxSenderAddresses]]);
     });
 
-    it("Should revert with CiphertextMaterialNotFound (SNS)", async function () {
+    it('Should revert with CiphertextMaterialNotFound (SNS)', async function () {
       await expect(ciphertextCommits.getSnsCiphertextMaterials([newCtHandle]))
-        .revertedWithCustomError(ciphertextCommits, "CiphertextMaterialNotFound")
+        .revertedWithCustomError(ciphertextCommits, 'CiphertextMaterialNotFound')
         .withArgs(newCtHandle);
     });
-    it("Should revert with EmptyCtHandles (SNS)", async function () {
+    it('Should revert with EmptyCtHandles (SNS)', async function () {
       await expect(ciphertextCommits.getSnsCiphertextMaterials([])).revertedWithCustomError(
         ciphertextCommits,
-        "EmptyCtHandles",
+        'EmptyCtHandles',
       );
     });
 
@@ -469,7 +469,7 @@ describe("CiphertextCommits", function () {
       await gatewayConfig.connect(owner).disableHostChain(hostChainId);
 
       await expect(ciphertextCommits.getSnsCiphertextMaterials([ctHandle]))
-        .revertedWithCustomError(ciphertextCommits, "HostChainDisabled")
+        .revertedWithCustomError(ciphertextCommits, 'HostChainDisabled')
         .withArgs(hostChainId);
 
       // Re-enable: the same lookup goes through.
@@ -481,16 +481,16 @@ describe("CiphertextCommits", function () {
     });
   });
 
-  describe("Check ciphertext material", async function () {
+  describe('Check ciphertext material', async function () {
     beforeEach(async function () {
       await loadFixture(prepareViewTestFixture);
     });
 
-    it("Should be true as the ciphertext material have been added", async function () {
+    it('Should be true as the ciphertext material have been added', async function () {
       expect(await ciphertextCommits.isCiphertextMaterialAdded(ctHandle)).to.be.true;
     });
 
-    it("Should be false as the ciphertext material has not been added", async function () {
+    it('Should be false as the ciphertext material has not been added', async function () {
       expect(await ciphertextCommits.isCiphertextMaterialAdded(newCtHandle)).to.be.false;
     });
   });

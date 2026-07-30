@@ -603,21 +603,22 @@ impl Database {
     }
 
     /// Begin a write transaction fenced against cutover. Runs `assert_not_retired`
-    /// at BEGIN (via `begin_guarded_pool`), then takes the shared cutover advisory
-    /// lock and re-checks retirement. Returns `Ok(None)` if a committed cutover has
-    /// retired this stack — the caller must skip the write. GCS-mode connections
-    /// (`self.gcs_mode`) still take the shared lock (their gcs-schema writes are
-    /// merged into the cutover target) but skip the retirement re-check, since a
-    /// green stack can never be retired. See `versioning::cutover_gate`.
+    /// at BEGIN (via `begin_guarded_pool`), then takes the shared advisory lock and
+    /// re-checks retirement. Returns `Ok(None)` if a committed cutover retired
+    /// this stack. GCS-mode connections (`self.gcs_mode`) take the same lock so
+    /// their raw writes cannot overlap cutover or schema reset, but continue after
+    /// rollback to refill the GCS schema. See `versioning::begin_write_guarded`.
     pub async fn new_transaction(
         &self,
     ) -> Result<Option<Transaction<'_>>, SqlxError> {
         let pool = self.pool().await;
-        fhevm_engine_common::versioning::begin_write_guarded(
+        Ok(fhevm_engine_common::versioning::begin_write_guarded(
             &pool,
             self.gcs_mode,
+            fhevm_engine_common::versioning::GcsRollbackPolicy::Continue,
         )
-        .await
+        .await?
+        .into_tx())
     }
 
     pub async fn pool(&self) -> sqlx::Pool<Postgres> {
