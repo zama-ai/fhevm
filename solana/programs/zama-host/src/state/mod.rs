@@ -1109,47 +1109,30 @@ pub fn previous_bank_hash(current_slot: u64) -> Result<[u8; 32]> {
     if current_slot == 0 {
         return Err(error!(ZamaHostError::PreviousBankHashUnavailable));
     }
-    // `PodSlotHashes::fetch()` (solana-sysvar 3.1.1) allocates an align-1 `Vec<u8>` and then
-    // rejects it with an 8-byte alignment check; the SBF bump allocator does not 8-align
-    // align-1 allocations, so fetch() fails on a real validator (LiteSVM/mollusk mock the
-    // `sol_get_sysvar` syscall and never exercise this allocation). Read the sysvar into an
-    // 8-aligned buffer ourselves via the same syscall, then scan the entries — which are laid
-    // out as `[u64 count][ (u64 slot, [u8;32] hash) ...]` — for the most recent slot below
-    // `current_slot`.
+    // Read the `SlotHashes` sysvar via the `sol_get_sysvar` syscall instead of
+    // `PodSlotHashes::fetch()` (broken as of solana-sysvar <= 4.2.0: it allocates an align-1
+    // buffer, then errors unless the bump allocator happened to leave it 8-aligned). The
+    // syscall copies raw bytes — `[u64 count][ (u64 slot, [u8;32] hash) ...]` — with no
+    // alignment requirement, and entries are parsed with `from_le_bytes`.
     //
-    // Tracking (fhevm-internal#1853 W12): no upstream anza-xyz/solana-sdk issue exists for
-    // this as of 2026-07 (searched "PodSlotHashes"). Once one is filed, link it here. On every
-    // solana-sysvar bump, re-test `PodSlotHashes::fetch()` under a real SBF validator (not
-    // LiteSVM/mollusk); if fetch() works, delete this manual read and both `unsafe` blocks.
-    //
-    // `SlotHashes` is ordered newest-first and every entry is a prior slot (slot < the
-    // executing `current_slot`), so the answer is in the first entries. Read only a small
-    // window rather than the full 20_488-byte sysvar: on the SBF bump allocator (default 32KB
-    // heap, never freed) a 20KB buffer per call means a second FHE op in the same instruction
-    // — e.g. wrap_usdc's balance-add then total-supply-add — runs out of heap. A small window
-    // keeps the read well within the default heap.
+    // Entries are ordered newest-first, so the answer is in the first few. Read only a small
+    // window: the full 20_488-byte sysvar would burn 2/3 of the default 32KB bump heap
+    // (never freed) per call.
     const ENTRY_LEN: usize = 40; // u64 slot + 32-byte hash
     const MAX_SCAN_ENTRIES: usize = 16;
 
-    // Read the 8-byte entry count first (8-aligned stack buffer).
-    let mut count_word = [0u64; 1];
-    let count_bytes =
-        unsafe { core::slice::from_raw_parts_mut(count_word.as_mut_ptr() as *mut u8, 8) };
-    get_sysvar(count_bytes, &solana_sysvar::slot_hashes::id(), 0, 8)
+    let mut count_bytes = [0u8; 8];
+    get_sysvar(&mut count_bytes, &solana_sysvar::slot_hashes::id(), 0, 8)
         .map_err(|_| error!(ZamaHostError::PreviousBankHashUnavailable))?;
-    let count = count_word[0] as usize;
+    let count = u64::from_le_bytes(count_bytes) as usize;
     if count == 0 {
         return Err(error!(ZamaHostError::PreviousBankHashUnavailable));
     }
 
     let scan = count.min(MAX_SCAN_ENTRIES);
-    // 8-aligned heap buffer for the scanned entries; ENTRY_LEN (40) is a multiple of 8.
-    let mut aligned = vec![0u64; (scan * ENTRY_LEN) / 8];
-    let data: &mut [u8] = unsafe {
-        core::slice::from_raw_parts_mut(aligned.as_mut_ptr() as *mut u8, scan * ENTRY_LEN)
-    };
+    let mut data = vec![0u8; scan * ENTRY_LEN];
     get_sysvar(
-        data,
+        &mut data,
         &solana_sysvar::slot_hashes::id(),
         8,
         (scan * ENTRY_LEN) as u64,
