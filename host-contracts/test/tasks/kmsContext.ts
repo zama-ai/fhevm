@@ -410,6 +410,26 @@ describe('KMS context tasks', function () {
       expect(aborted.abortReason).to.equal('context-destroyed');
     });
 
+    it('reports a rotation opened after an aborted switch', async function () {
+      // Destroying a context does not rewind the allocation counter, so it stays ahead of the active
+      // context pointer with nothing in flight. A check on the counter alone would keep reporting the
+      // dead switch and never see the rotation opened afterwards.
+      const contextId = await defineSwitch();
+      await (await (await asOwner()).destroyKmsContext(contextId)).wait();
+      expect(await protocolConfig.getCurrentKmsContextIdCounter()).to.be.greaterThan(
+        await protocolConfig.getCurrentKmsContextId(),
+      );
+
+      const receipt = await (await (await asOwner()).defineNewEpochForCurrentKmsContext()).wait();
+      const epochId = parseEventArg(receipt!, 'NewKmsEpoch', 'epochId');
+
+      const result = await inspectKmsContextSwitch(hre, proxyAddress, 0);
+      expect(result.flow).to.equal('same-set-rotation');
+      expect(result.pendingEpochId).to.equal(epochId);
+      // Same-set resharing keeps the committee, so the old signers are the expected confirmers.
+      expect(result.epochSignersOutstanding).to.have.lengthOf(oldSigners.length);
+    });
+
     it('reports a pending switch whose defining event is outside the scanned range', async function () {
       const contextId = await defineSwitch();
 

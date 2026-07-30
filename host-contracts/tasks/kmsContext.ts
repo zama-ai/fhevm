@@ -291,8 +291,9 @@ function outstanding(expected: string[], confirmed: Set<string>): string[] {
 
 // Reconstructs the in-progress phase of a KMS context switch or epoch rotation. It detects an
 // in-flight switch from authoritative state, where the allocation counter runs ahead of the active
-// context pointer. This still reports a switch defined before the scanned window. It reads the
-// old-side `(n - t)` target from the value the contract cached at define time.
+// context pointer and the issued context is still live. This still reports a switch defined before
+// the scanned window. It reads the old-side `(n - t)` target from the value the contract cached at
+// define time.
 export async function inspectKmsContextSwitch(
   hre: HardhatRuntimeEnvironment,
   protocolConfigAddress: string,
@@ -332,26 +333,36 @@ export async function inspectKmsContextSwitch(
     undefined,
   );
 
-  // Detect an in-flight switch from authoritative state. The allocation counter runs ahead of the
-  // active pointer whenever a context is issued but not yet activated.
+  // The allocation counter runs ahead of the active pointer once a context is issued. Destroying a
+  // context does not rewind the counter, so the comparison alone cannot separate an in-flight switch
+  // from an aborted one. The live state separates them. The task reads it from state, because a
+  // destruction before `fromBlock` leaves no event in the scanned window.
   const latestKmsContextId = await pc.getCurrentKmsContextIdCounter();
+  const contextSwitchIssued = latestKmsContextId > activeContextId;
+  const pendingContextIsLive = contextSwitchIssued && (await pc.isLiveKmsContext(latestKmsContextId));
 
-  if (latestKmsContextId > activeContextId) {
+  // A same-set rotation is only observable from events: no view getter exposes the epoch counter. A
+  // rotation opened before `fromBlock` is therefore not reported.
+  const sameSetRotationPending =
+    latestNewEpoch !== undefined &&
+    latestNewEpoch.args.epochId > activeEpochId &&
+    latestNewEpoch.args.kmsContextId === activeContextId;
+
+  // The task still reports an aborted switch, because the abort needs attention. A rotation opened
+  // after the abort takes precedence: that rotation is the work in flight.
+  if (contextSwitchIssued && (pendingContextIsLive || !sameSetRotationPending)) {
     await fillContextSwitch(
       pc,
       status,
       latestKmsContextId,
+      pendingContextIsLive,
       latestNewContext,
       newEpochEvents,
       fromBlock,
       toBlock,
       checksum,
     );
-  } else if (
-    latestNewEpoch &&
-    latestNewEpoch.args.epochId > activeEpochId &&
-    latestNewEpoch.args.kmsContextId === activeContextId
-  ) {
+  } else if (sameSetRotationPending) {
     await fillSameSetRotation(pc, status, latestNewEpoch.args.epochId, fromBlock, toBlock, checksum);
   } else {
     // Nothing in flight: the latest-issued context and epoch are already the active ones.
@@ -367,6 +378,7 @@ async function fillContextSwitch(
   pc: ProtocolConfig,
   status: KmsContextSwitchStatus,
   pendingContextId: bigint,
+  pendingContextIsLive: boolean,
   newContextEvent:
     | {
         args: {
@@ -387,9 +399,8 @@ async function fillContextSwitch(
   // previous one, so it stands in for the previous context id when the defining event is out of range.
   status.previousContextId = newContextEvent?.args.previousContextId ?? status.activeContextId;
 
-  // A destroyed pending context means the switch is no longer in flight and must be re-proposed.
-  // `isLiveKmsContext` reads this authoritatively, independent of which blocks were scanned.
-  status.aborted = !(await pc.isLiveKmsContext(pendingContextId));
+  // A destroyed pending context aborts the switch. To switch again, governance must define a new context.
+  status.aborted = !pendingContextIsLive;
   if (status.aborted) {
     status.abortReason = 'context-destroyed';
   }
