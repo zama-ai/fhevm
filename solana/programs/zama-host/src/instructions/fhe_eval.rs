@@ -602,12 +602,16 @@ pub(super) fn validate_durable_output_previous_state(
     Ok(())
 }
 
-/// Deny-list gate for a supersede that rotates the audience. Every subject present
+/// Deny-list gate for a supersede that rotates the audience: every subject present
 /// in `output_subjects` but absent from the stored set is a new grant and must
-/// clear the grant deny-list exactly as `allow_subjects` gates added subjects, so
-/// rotation cannot bypass the deny list. Respects `grant_deny_list_enabled` and
-/// (via the shared helpers) pause-independent deny semantics; the deny record for
-/// each added subject is located by canonical derived address through the table.
+/// clear the grant deny-list. Respects `grant_deny_list_enabled`; the deny record
+/// for each added subject is located by canonical derived address through the table.
+///
+/// Known boundary (inherited from the pre-cleanup admission path): this is the only
+/// per-subject deny check. The create path writes its initial `output_subjects`
+/// without one, and `allow_subjects` deny-checks the granting authority rather than
+/// each added subject — so a denied subject can still enter via create, and then
+/// persists across supersedes because subjects already stored are exempt here.
 fn check_rotation_grants_not_denied(
     host_config: &HostConfig,
     table: &EvalAccountTable<'_, '_>,

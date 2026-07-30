@@ -1010,8 +1010,8 @@ async fn reconstruct_events_for_insert(
                 .get(COMPUTE_SUBJECT_INDEX)
                 .copied()
                 .unwrap_or([0u8; 32]);
-            // Durable output handles recompute from the plan's value_key + block
-            // entropy alone (DD-015): no encrypted-value-account leaf count, no handle hints.
+            // Output handles recompute from op + operands + block entropy alone:
+            // no encrypted-value-account leaf count, no handle hints.
             let Some(steps) = reconstruct_fhe_eval_steps(
                 &plan,
                 subject,

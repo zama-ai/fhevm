@@ -16,7 +16,7 @@
     "max_cpi_instruction_data_bytes": 596
   },
   "join": {
-    "compute_units": 323354,
+    "compute_units": 323378,
     "unique_accounts": 20,
     "instruction_data_bytes": 223,
     "cpi_instructions": 14,
@@ -48,7 +48,7 @@
     "max_cpi_instruction_data_bytes": 596
   },
   "redeem_join": {
-    "compute_units": 315855,
+    "compute_units": 315879,
     "unique_accounts": 20,
     "instruction_data_bytes": 223,
     "cpi_instructions": 14,
