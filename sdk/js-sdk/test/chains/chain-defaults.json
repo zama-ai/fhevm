@@ -78,6 +78,11 @@
     "fheTestAddress": "0x7553CB9124f974Ee475E5cE45482F90d5B6076BC",
     "fheTestVersion": "v2"
   },
+  "polygon_testnet": {
+    "rpcUrl": "https://rpc-amoy.polygon.technology",
+    "fheTestAddress": "0xa66bCEd74D1Df0736d0eb8E52371b1b1AAA1F0F0",
+    "fheTestVersion": "v2"
+  },
   "ingen_trex_cleartext": {
     "rpcUrl": "https://rpc.ingen.t-rex.network",
     "fheTestAddress": "0x7553CB9124f974Ee475E5cE45482F90d5B6076BC",
