@@ -598,12 +598,14 @@ async fn test_before_and_quit_rewrites_current_objects_with_stale_metadata() {
     )
     .await;
 
-    let current_key =
+    let current_ct64_key =
         crate::aws_upload::s3_ct64_key(&handle, crate::aws_upload::COPROCESSOR_CONTEXT_ID_1);
+    let current_ct128_key =
+        crate::aws_upload::s3_ct128_key(&handle, crate::aws_upload::COPROCESSOR_CONTEXT_ID_1);
     put_object_with_stale_metadata(
         &env.s3_client,
         &env.conf.s3.bucket_ct64,
-        &current_key,
+        &current_ct64_key,
         ct64_bytes.clone(),
     )
     .await;
@@ -617,7 +619,7 @@ async fn test_before_and_quit_rewrites_current_objects_with_stale_metadata() {
     put_object_with_stale_metadata(
         &env.s3_client,
         &env.conf.s3.bucket_ct128,
-        &current_key,
+        &current_ct128_key,
         ct128_bytes.clone(),
     )
     .await;
@@ -639,7 +641,7 @@ async fn test_before_and_quit_rewrites_current_objects_with_stale_metadata() {
         .s3_client
         .head_object()
         .bucket(&env.conf.s3.bucket_ct64)
-        .key(&current_key)
+        .key(&current_ct64_key)
         .send()
         .await
         .expect("current ct64 object should exist after metadata rewrite");
@@ -649,7 +651,7 @@ async fn test_before_and_quit_rewrites_current_objects_with_stale_metadata() {
         .s3_client
         .head_object()
         .bucket(&env.conf.s3.bucket_ct128)
-        .key(&current_key)
+        .key(&current_ct128_key)
         .send()
         .await
         .expect("current ct128 object should exist after metadata rewrite");
@@ -676,14 +678,14 @@ async fn test_before_and_quit_rewrites_current_objects_with_stale_metadata() {
     assert_object_body_eq(
         &env.s3_client,
         &env.conf.s3.bucket_ct64,
-        &current_key,
+        &current_ct64_key,
         &ct64_bytes,
     )
     .await;
     assert_object_body_eq(
         &env.s3_client,
         &env.conf.s3.bucket_ct128,
-        &current_key,
+        &current_ct128_key,
         &ct128_bytes,
     )
     .await;
