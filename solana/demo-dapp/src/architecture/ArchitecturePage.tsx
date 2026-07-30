@@ -66,35 +66,6 @@ flowchart LR
 `,
   },
   {
-    title: 'Solana architecture',
-    statement: 'A cUSDC deposit updates three accounts across three programs.',
-    diagram: String.raw`
-flowchart TB
-    subgraph action["One atomic transaction"]
-        direction TB
-        Wallet["Wallet approves<br/>Deposit 100 cUSDC"]
-        Batcher["Batcher validates<br/>deposit eligibility"]
-        Token["Confidential token moves<br/>the encrypted amount"]
-        Host["Zama host records<br/>the encrypted calculation"]
-
-        Wallet --> Batcher
-        Batcher -->|"program call · CPI"| Token
-        Token -->|"requests encrypted arithmetic"| Host
-    end
-
-    subgraph state["Updated accounts"]
-        direction TB
-        UserBalance["cUSDC balance<br/>encrypted"]
-        JoinedAmount["Joined deposit<br/>encrypted"]
-        BatchState["Batch status<br/>public"]
-    end
-
-    Token --> UserBalance
-    Batcher --> JoinedAmount
-    Batcher --> BatchState
-`,
-  },
-  {
     title: 'Shield',
     statement: 'Shielding locks USDC and credits an encrypted cUSDC balance.',
     diagram: String.raw`
@@ -132,63 +103,57 @@ sequenceDiagram
 `,
   },
   {
-    title: 'Encrypted state',
-    statement: 'One EncryptedValue account tracks the current handle and permission history.',
+    title: 'Encrypted execution',
+    statement: 'Host instructions define handles; the coprocessor materializes their ciphertexts.',
     diagram: String.raw`
-flowchart LR
-    Value["EncryptedValue PDA<br/>stable logical balance"]
-    Value --> Current["Current handle H3"]
-    Value --> Subjects["Allowed users and programs"]
-    Value --> Peaks["Compact history peaks"]
-    H1["Old handle H1"] --> Peaks
-    H2["Old handle H2"] --> Peaks
-    Current --> Material["Encrypted material<br/>stored off-chain"]
-`,
-  },
-  {
-    title: 'Compute pipeline',
-    statement: 'The listener converts confirmed host instructions into coprocessor jobs.',
-    diagram: String.raw`
-flowchart LR
-    Tx["Confirmed transaction"] --> Yellowstone["Yellowstone stream"]
-    Yellowstone --> Listener["Host listener"]
-    Listener --> Job["Reconstructed computation"]
-    Job --> Worker["Encrypted compute worker"]
-    Worker --> Ciphertext["Encrypted result"]
-    Worker --> Material["Gateway material record"]
-`,
-  },
-  {
-    title: 'Public settlement',
-    statement: 'Settlement decrypts the batch total and deposits it into the vault.',
-    diagram: String.raw`
-sequenceDiagram
-    participant Batch as Batcher
-    participant Host as Zama host
-    participant Proof as Proof service
-    participant Keys as Key service
-    participant Settle as Solana settlement
-    participant Vault
+flowchart TB
+    subgraph solana["Solana"]
+        direction LR
+        Tx["Confirmed host instruction"]
+        Value["EncryptedValue PDA<br/>permissions and history"]
+        Handle["Current handle"]
+        Tx --> Value --> Handle
+    end
 
-    Batch->>Host: Burn encrypted batch balance
-    Host->>Host: Release the exact burned handle
-    Proof-->>Keys: History inclusion proof
-    Keys-->>Settle: Clear total and signed certificate
-    Settle->>Settle: Verify proof and certificate
-    Settle->>Vault: Deposit public batch total
+    subgraph services["Encrypted services"]
+        direction LR
+        Yellowstone["Yellowstone stream"]
+        Listener["Host listener"]
+        Worker["Encrypted compute"]
+        Material["Encrypted material"]
+        Yellowstone --> Listener --> Worker --> Material
+    end
+
+    Tx --> Yellowstone
+    Value --> History["Old permissions<br/>MMR peaks"]
+    Handle -.->|"identifies"| Material
 `,
   },
   {
-    title: 'Claim',
-    statement: 'A claim computes and transfers each encrypted share allocation.',
+    title: 'Settle and claim',
+    statement: 'The public vault receives the batch total; encrypted shares are allocated per deposit.',
     diagram: String.raw`
-flowchart LR
-    Deposit["Encrypted user deposit"] --> Formula["deposit × batch shares ÷ batch total"]
-    Shares["Public batch shares"] --> Formula
-    Total["Public batch total"] --> Formula
-    Formula --> Claim["Encrypted user allocation"]
-    Claim --> Transfer["Confidential transfer"]
-    Transfer --> Balance["User cShares"]
+flowchart TB
+    subgraph settlement["Settle public total"]
+        direction LR
+        Burn["Batcher burns<br/>encrypted batch balance"]
+        Proof["Proof service proves<br/>the released handle"]
+        KMS["KMS returns total<br/>and signed certificate"]
+        Solana["Solana verifies<br/>proof and certificate"]
+        Vault["Vault deposits total<br/>and returns public shares"]
+        Burn --> Proof --> KMS --> Solana --> Vault
+    end
+
+    subgraph claim["Claim encrypted shares"]
+        direction LR
+        Deposit["Encrypted deposit"]
+        Formula["deposit × shares ÷ total"]
+        Allocation["Encrypted cShares allocation"]
+        Deposit --> Formula --> Allocation
+    end
+
+    Vault -->|"public shares"| Formula
+    KMS -->|"public total"| Formula
 `,
   },
   {
