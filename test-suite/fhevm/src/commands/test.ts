@@ -967,6 +967,15 @@ const runBlueGreenProfile = async (
     chainExtraExecArgs(0),
   );
   const blueGreenTrafficStreams = Math.max(MIN_BLUE_GREEN_TRAFFIC_STREAMS, trafficTargets.length);
+  // Host chains for the proposal task (read via LOCAL_HOST_CHAINS), so single- and
+  // multi-chain scenarios both work. Same per-chain internal RPCs the traffic uses.
+  const localHostChains = JSON.stringify(
+    hostChains.map((_chain, index) => ({
+      chainId: Number(chainEnvValue(index, "CHAIN_ID_HOST", "CHAIN_ID")),
+      rpcUrl: chainEnvValue(index, "RPC_URL", "RPC_URL"),
+      fallbackBlockTimeSeconds: 1,
+    })),
+  );
 
   // Host chains stay quiet (no non-trivial FHE op) while [3/11] anchors the Gateway
   // track with one input. Cutover needs at least one non-trivial host anchor, so the
@@ -983,6 +992,7 @@ const runBlueGreenProfile = async (
     {
       env: {
         LOCAL_GATEWAY_RPC_URL: state.discovery!.endpoints.gateway.http,
+        LOCAL_HOST_CHAINS: localHostChains,
         PROPOSE_START_TIME: failStartTime,
         PROPOSE_SW_VERSION: gcsVersionLive,
       },
@@ -1119,6 +1129,7 @@ const runBlueGreenProfile = async (
     {
       env: {
         LOCAL_GATEWAY_RPC_URL: state.discovery!.endpoints.gateway.http,
+        LOCAL_HOST_CHAINS: localHostChains,
         PROPOSE_START_TIME: proposeStartTime,
         PROPOSE_SW_VERSION: gcsVersionLive,
       },
