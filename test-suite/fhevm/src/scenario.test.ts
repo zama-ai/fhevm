@@ -347,11 +347,10 @@ gcs:
       ).toThrow("must be local");
     });
 
-    test("rejects more than one host chain", () => {
-      expect(() =>
-        resolveBlueGreenScenario(
-          "/tmp/bg-two-chains.yaml",
-          parseBlueGreenScenario(`
+    test("accepts multiple host chains (multi-chain blue-green)", () => {
+      const resolved = resolveBlueGreenScenario(
+        "/tmp/bg-two-chains.yaml",
+        parseBlueGreenScenario(`
 version: 1
 kind: blue-green
 hostChains:
@@ -364,8 +363,8 @@ hostChains:
 gcs:
   stackVersion: "0.15.0"
 `),
-        ),
-      ).toThrow("exactly one host chain");
+      );
+      expect(resolved.hostChains.map((c) => c.chainId)).toEqual(["12345", "67890"]);
     });
 
     test("--bcs-tag with a 7-char short SHA passes through unchanged", async () => {

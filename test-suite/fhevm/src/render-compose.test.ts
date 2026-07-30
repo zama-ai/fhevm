@@ -480,6 +480,7 @@ gcs:
             container_name?: string;
             image?: string;
             build?: { args?: Record<string, string> } | undefined;
+            environment?: Record<string, string>;
           }
         >;
       };
@@ -496,6 +497,18 @@ gcs:
       expect(doc.services["coprocessor-db-migration"]?.build).toBeDefined();
       expect(doc.services["coprocessor-db-migration"]?.image).not.toContain(":v0.13.0");
       expect(doc.services["coprocessor-gcs-tfhe-worker"]?.build).toBeDefined();
+      expect(
+        doc.services["coprocessor-host-listener"]?.environment
+          ?.CANONICAL_PROTOCOL_CONFIG_CHAIN_ID,
+      ).toBeUndefined();
+      expect(
+        doc.services["coprocessor-host-listener-poller"]?.environment
+          ?.CANONICAL_PROTOCOL_CONFIG_CHAIN_ID,
+      ).toBeUndefined();
+      expect(
+        doc.services["coprocessor-gcs-host-listener"]?.environment
+          ?.CANONICAL_PROTOCOL_CONFIG_CHAIN_ID,
+      ).toBeUndefined();
       expect(doc.services["coprocessor-gcs-upgrade-controller"]?.container_name).toBe(
         "coprocessor-gcs-upgrade-controller",
       );

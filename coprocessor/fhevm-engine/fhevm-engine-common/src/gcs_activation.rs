@@ -100,10 +100,14 @@ pub async fn run_gcs_activation_watcher(
         // `start_block` column is populated one state earlier (UpgradeActivated),
         // before BCS has settled up to start_block and before pre-start rows are
         // pruned — too early to begin computing.
-        let row: Option<(String, Option<i64>)> =
-            sqlx::query_as("SELECT state, start_block FROM upgrade_state WHERE stack_role = 'GCS'")
-                .fetch_optional(pool)
-                .await?;
+        let row: Option<(String, Option<i64>)> = sqlx::query_as(
+            "SELECT state, start_block FROM upgrade_state
+              WHERE stack_role = 'GCS'
+              ORDER BY proposal_block DESC NULLS LAST, host_chain_id
+              LIMIT 1",
+        )
+        .fetch_optional(pool)
+        .await?;
 
         let current = state.load(Ordering::SeqCst);
         let next = row.as_ref().map_or(current, |(fsm_state, start_block)| {
@@ -175,7 +179,10 @@ pub async fn run_gcs_gw_activation_watcher(
         // early to begin re-randomizing. A `PAUSED` row (rolled-back dry-run)
         // re-pauses the worker.
         let row: Option<(String, bool, Option<i64>)> = sqlx::query_as(
-            "SELECT state, gw_dry_run_started, gw_start_block FROM upgrade_state WHERE stack_role = 'GCS'",
+            "SELECT state, gw_dry_run_started, gw_start_block FROM upgrade_state
+              WHERE stack_role = 'GCS'
+              ORDER BY proposal_block DESC NULLS LAST, host_chain_id
+              LIMIT 1",
         )
         .fetch_optional(pool)
         .await?;
