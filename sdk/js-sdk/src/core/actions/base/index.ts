@@ -43,6 +43,12 @@ export {
   createUnsignedLegacyDecryptionPermitEip712,
 } from './createUnsignedLegacyDecryptionPermitEip712.js';
 
+export {
+  type CanUseUnifiedDecryptionPermitParameters,
+  type CanUseUnifiedDecryptionPermitReturnType,
+  canUseUnifiedDecryptionPermit,
+} from './canUseUnifiedDecryptionPermit.js';
+
 // V1 permit (protocol v13 and below) — kept for chains/relayers not yet on v14.
 export {
   type SignLegacyDecryptionPermitParameters,

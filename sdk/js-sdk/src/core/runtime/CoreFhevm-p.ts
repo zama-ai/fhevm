@@ -15,6 +15,7 @@ import type { FhevmRuntime, WithModule, WithModuleMap } from '../types/coreFhevm
 import type { FhevmClientFrozenContext } from '../types/fhevmClientFrozenContext-p.js';
 import type { TfheVersion } from '../../wasm/tfhe/TfheApi.js';
 import type { TkmsVersion } from '../../wasm/tkms/KmsLibApi.js';
+import type { RelayerFeatures } from '../relayerFeatures/resolveRelayerFeatures-p.js';
 import { InvalidTypeError } from '../base/errors/InvalidTypeError.js';
 import { verifyTrustedValue } from '../base/trustedValue.js';
 import { uid } from '../base/uid.js';
@@ -31,6 +32,10 @@ const GET_FROZEN_CONTEXT = Symbol('CoreFhevmHostClient.getFrozenContext');
 const SET_FROZEN_CONTEXT = Symbol('CoreFhevmHostClient.setFrozenContext');
 const GET_FROZEN_CONTEXT_PROMISE = Symbol('CoreFhevmHostClient.getFrozenContextPromise');
 const SET_FROZEN_CONTEXT_PROMISE = Symbol('CoreFhevmHostClient.setFrozenContextPromise');
+const GET_RELAYER_FEATURES = Symbol('CoreFhevmHostClient.getRelayerFeatures');
+const SET_RELAYER_FEATURES = Symbol('CoreFhevmHostClient.setRelayerFeatures');
+const GET_RELAYER_FEATURES_PROMISE = Symbol('CoreFhevmHostClient.getRelayerFeaturesPromise');
+const SET_RELAYER_FEATURES_PROMISE = Symbol('CoreFhevmHostClient.setRelayerFeaturesPromise');
 
 const UNRESOLVED_FHEVM_CONTEXT_MESSAGE = 'Fhevm context has not been resolved. Await client.ready before.';
 
@@ -38,6 +43,10 @@ type GetFrozenContextFn = () => FhevmClientFrozenContext | undefined;
 type SetFrozenContextFn = (frozenContext: FhevmClientFrozenContext) => void;
 type GetFrozenContextPromiseFn = () => Promise<FhevmClientFrozenContext> | undefined;
 type SetFrozenContextPromiseFn = (frozenContextPromise: Promise<FhevmClientFrozenContext> | undefined) => void;
+type GetRelayerFeaturesFn = () => RelayerFeatures | undefined;
+type SetRelayerFeaturesFn = (relayerFeatures: RelayerFeatures) => void;
+type GetRelayerFeaturesPromiseFn = () => Promise<RelayerFeatures> | undefined;
+type SetRelayerFeaturesPromiseFn = (relayerFeaturesPromise: Promise<RelayerFeatures> | undefined) => void;
 
 ////////////////////////////////////////////////////////////////////////////////
 // CoreFhevmImpl
@@ -52,6 +61,8 @@ class CoreFhevmImpl<
   readonly #uid: string;
   #frozenContext: FhevmClientFrozenContext | undefined;
   #frozenContextPromise: Promise<FhevmClientFrozenContext> | undefined;
+  #relayerFeatures: RelayerFeatures | undefined;
+  #relayerFeaturesPromise: Promise<RelayerFeatures> | undefined;
   readonly #runtime: runtime;
   readonly #trustedClient: TrustedClient<client> | undefined;
   readonly #chain: chain | undefined;
@@ -95,6 +106,8 @@ class CoreFhevmImpl<
     this.#uid = uid();
     this.#frozenContext = undefined;
     this.#frozenContextPromise = undefined;
+    this.#relayerFeatures = undefined;
+    this.#relayerFeaturesPromise = undefined;
     this.#trustedClient =
       parameters.client !== undefined ? createTrustedClient(parameters.client, ownerToken) : undefined;
     this.#chain = parameters.chain;
@@ -269,6 +282,38 @@ class CoreFhevmImpl<
         // is kept as data in #frozenContext).
         value: (frozenContextPromise: Promise<FhevmClientFrozenContext> | undefined): void => {
           this.#frozenContextPromise = frozenContextPromise;
+        },
+        configurable: false,
+        enumerable: false,
+        writable: false,
+      },
+      [GET_RELAYER_FEATURES]: {
+        value: (): RelayerFeatures | undefined => this.#relayerFeatures,
+        configurable: false,
+        enumerable: false,
+        writable: false,
+      },
+      [SET_RELAYER_FEATURES]: {
+        // Plain overwrite: relayer features are resolved once (Auth-independent) and pinned.
+        value: (relayerFeatures: RelayerFeatures): void => {
+          this.#relayerFeatures = relayerFeatures;
+        },
+        configurable: false,
+        enumerable: false,
+        writable: false,
+      },
+      [GET_RELAYER_FEATURES_PROMISE]: {
+        value: (): Promise<RelayerFeatures> | undefined => this.#relayerFeaturesPromise,
+        configurable: false,
+        enumerable: false,
+        writable: false,
+      },
+      [SET_RELAYER_FEATURES_PROMISE]: {
+        // Transient: holds the single in-flight fetch so concurrent callers dedupe
+        // onto one promise; cleared once it settles (the resolved features are kept
+        // as data in #relayerFeatures).
+        value: (relayerFeaturesPromise: Promise<RelayerFeatures> | undefined): void => {
+          this.#relayerFeaturesPromise = relayerFeaturesPromise;
         },
         configurable: false,
         enumerable: false,
@@ -674,6 +719,32 @@ export function setFrozenContextPromise(
 export function getFrozenContextPromise(fhevm: unknown): Promise<FhevmClientFrozenContext> | undefined {
   const f = asCoreFhevm(fhevm) as CoreFhevm & { readonly [GET_FROZEN_CONTEXT_PROMISE]: GetFrozenContextPromiseFn };
   return f[GET_FROZEN_CONTEXT_PROMISE]();
+}
+
+// `fhevm` is typed `unknown` (like the getters): relayer features are resolved lazily from within
+// internal `context`-typed decrypt helpers that carry a minimal client shape, not a full `FhevmBase`.
+// `asCoreFhevm` validates at runtime that it is a genuine SDK client.
+export function setRelayerFeatures(fhevm: unknown, relayerFeatures: RelayerFeatures): void {
+  const f = asCoreFhevm(fhevm) as CoreFhevm & { readonly [SET_RELAYER_FEATURES]: SetRelayerFeaturesFn };
+  f[SET_RELAYER_FEATURES](relayerFeatures);
+}
+
+export function getRelayerFeatures(fhevm: unknown): RelayerFeatures | undefined {
+  const f = asCoreFhevm(fhevm) as CoreFhevm & { readonly [GET_RELAYER_FEATURES]: GetRelayerFeaturesFn };
+  return f[GET_RELAYER_FEATURES]();
+}
+
+export function setRelayerFeaturesPromise(
+  fhevm: unknown,
+  relayerFeaturesPromise: Promise<RelayerFeatures> | undefined,
+): void {
+  const f = asCoreFhevm(fhevm) as CoreFhevm & { readonly [SET_RELAYER_FEATURES_PROMISE]: SetRelayerFeaturesPromiseFn };
+  f[SET_RELAYER_FEATURES_PROMISE](relayerFeaturesPromise);
+}
+
+export function getRelayerFeaturesPromise(fhevm: unknown): Promise<RelayerFeatures> | undefined {
+  const f = asCoreFhevm(fhevm) as CoreFhevm & { readonly [GET_RELAYER_FEATURES_PROMISE]: GetRelayerFeaturesPromiseFn };
+  return f[GET_RELAYER_FEATURES_PROMISE]();
 }
 
 ////////////////////////////////////////////////////////////////////////////////

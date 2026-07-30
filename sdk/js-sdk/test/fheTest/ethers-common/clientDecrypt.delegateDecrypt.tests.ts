@@ -284,7 +284,7 @@ export function defineClientDecryptDelegateDecryptTests(parameters: {
         await bobClient.ready;
 
         const bobKeyPair = await bobClient.generateTransportKeyPair();
-        const bobSignedPermit = await bobClient.signDecryptionPermit({
+        const bobSignedPermit = await bobClient.signLegacyDecryptionPermit({
           transportKeyPair: bobKeyPair,
           contractAddresses: [config.fheTestAddress],
           durationSeconds: 24 * 3600,
