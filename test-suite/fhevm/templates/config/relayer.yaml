@@ -137,6 +137,9 @@ http:
   metrics:
     histogram_buckets: [0, 2, 4, 6, 8, 10, 12, 14, 16, 18, 20, 22, 24, 26, 28, 30, 32, 34, 36, 40]
   api_retry_after_seconds: 4
+  # Local stack only: exposes POST /admin/config so runtime knobs (share wait
+  # window, retry-after) can be changed without rebuilding the relayer image.
+  enable_admin_endpoint: true
   # Dynamic retry-after configuration for V2 handlers
   # Computes Retry-After based on queue size, drain rate, and processing stage
   retry_after:
