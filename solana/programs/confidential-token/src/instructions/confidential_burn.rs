@@ -245,14 +245,12 @@ pub fn confidential_burn_from_value<'info>(
         amount_value.has_subject(ctx.accounts.owner.key()),
         ConfidentialTokenError::AmountSpendSubjectMismatch
     );
-    let amount_handle = amount_value.current_handle;
     let amount_value_info = amount_value.to_account_info();
     let outcome = execute_burn(
         ctx.accounts.as_burn_accounts(ctx.remaining_accounts),
         ctx.bumps.compute_signer,
         BurnAmountSource::ExistingValue {
             amount_value: amount_value_info,
-            amount_handle,
         },
     )?;
     emit_cpi!(ConfidentialBurnEvent {
@@ -298,29 +296,7 @@ enum BurnAmountSource<'info> {
     /// consumed. The token spend gate (signing owner in the value's subject set) and euint64 type
     /// check run in the instruction handler before this reaches the eval builder; the host re-checks
     /// the handle is current and that the mint's compute subject is allowed on the value, in-frame.
-    ExistingValue {
-        amount_value: AccountInfo<'info>,
-        amount_handle: [u8; 32],
-    },
-}
-
-impl BurnAmountSource<'_> {
-    fn amount_handle(&self) -> [u8; 32] {
-        match self {
-            Self::Attested(attestation) => attestation.input_handle,
-            Self::ExistingValue { amount_handle, .. } => *amount_handle,
-        }
-    }
-
-    /// Domain-separates the eval context id per arm so the two amount sources never derive colliding
-    /// handles for the same (mint, token account, amount handle) tuple. The attested arm keeps the
-    /// original `burn-balance` tag so its handle derivation is byte-for-byte unchanged.
-    fn context_tag(&self) -> &'static [u8] {
-        match self {
-            Self::Attested(_) => b"burn-balance",
-            Self::ExistingValue { .. } => b"burn-from-value",
-        }
-    }
+    ExistingValue { amount_value: AccountInfo<'info> },
 }
 
 /// Fixed ZamaHost CPI accounts and burn operands shared by the attested and existing-value arms.
@@ -441,17 +417,8 @@ fn execute_burn<'info>(
         total_supply_authority,
         total_supply_label(),
     )?;
-    let context_id = transfer_eval_context(
-        amount_source.context_tag(),
-        mint_key,
-        token_account_key,
-        token_account_key,
-        amount_source.amount_handle(),
-    )?;
-    let mut builder = zama_fhe::EvalBuilder::new(
-        context_id,
-        zama_fhe::EvalAppAuthority::new(token_account_key),
-    );
+    let mut builder =
+        zama_fhe::EvalBuilder::new(zama_fhe::EvalAppAuthority::new(token_account_key));
     let amount: zama_fhe::Uint64Handle = match &amount_source {
         // fromExternal: the amount is a coprocessor-attested external input, verified in-frame and
         // transient-allowed for this eval (no durable amount handle / ACL account).

@@ -7,6 +7,7 @@ pub(super) fn preflight_eval_frame<'info>(
     args: &FheEvalArgs,
 ) -> Result<()> {
     assert_frame_pins_or_persists_under_cap(args, ctx.accounts.host_config.hcu_block_cap_per_app)?;
+    assert_rand_steps_anchor_durable_output(args)?;
     preflight_eval_frame_accounts(
         table,
         args,
@@ -43,6 +44,32 @@ fn assert_frame_pins_or_persists_under_cap(
     require!(
         args.steps.iter().any(step_pins_or_persists),
         ZamaHostError::FheEvalUnanchoredUnderBlockCap
+    );
+    Ok(())
+}
+
+/// Rejects a frame containing a rand step but no durable output (fhevm-internal#1853 W4).
+///
+/// Rand seeds are anchored to the frame's durable-write anchor — the `(account key,
+/// previous_handle)` pairs its durable outputs consume — so a rand step needs at least one
+/// durable output for the seed to be compulsorily fresh. The excluded class is provably
+/// useless: an all-transient frame has no ACL records, no decrypt path, and no `make_public`,
+/// so its randomness is unobservable by everyone including the author.
+fn assert_rand_steps_anchor_durable_output(args: &FheEvalArgs) -> Result<()> {
+    let has_rand = args.steps.iter().any(|step| {
+        matches!(
+            step,
+            FheEvalStep::Rand { .. } | FheEvalStep::RandBounded { .. }
+        )
+    });
+    if !has_rand {
+        return Ok(());
+    }
+    require!(
+        args.steps
+            .iter()
+            .any(|step| output_persists(super::step_output(step))),
+        ZamaHostError::FheEvalRandRequiresDurableOutput
     );
     Ok(())
 }
@@ -263,7 +290,10 @@ fn preflight_encrypted_operand(
     Ok(())
 }
 
-fn preflight_output(output: &FheEvalOutput, preflight: &mut EvalPreflight<'_, '_, '_>) -> Result<()> {
+fn preflight_output(
+    output: &FheEvalOutput,
+    preflight: &mut EvalPreflight<'_, '_, '_>,
+) -> Result<()> {
     match output {
         FheEvalOutput::AllowedLocal => {}
         FheEvalOutput::AllowedDurable {
@@ -331,10 +361,7 @@ mod tests {
     }
 
     fn frame(steps: Vec<FheEvalStep>) -> FheEvalArgs {
-        FheEvalArgs {
-            context_id: [1; 32],
-            steps,
-        }
+        FheEvalArgs { steps }
     }
 
     fn trivial_local() -> FheEvalStep {
@@ -372,6 +399,45 @@ mod tests {
                 signatures: Vec::new(),
             }),
         }
+    }
+
+    #[test]
+    fn rand_step_without_durable_output_is_rejected() {
+        // Unconditional (unlike the cap-gated persist-nothing rule): the rand seed is anchored
+        // to the frame's durable writes, so an all-transient rand frame has no seed anchor.
+        let args = frame(vec![FheEvalStep::Rand {
+            fhe_type: 5,
+            output: FheEvalOutput::AllowedLocal,
+        }]);
+        assert!(assert_rand_steps_anchor_durable_output(&args).is_err());
+    }
+
+    #[test]
+    fn rand_step_with_durable_output_anywhere_in_frame_is_accepted() {
+        // The durable output may be the rand step's own or any other step's.
+        let own = frame(vec![FheEvalStep::Rand {
+            fhe_type: 5,
+            output: durable_output(),
+        }]);
+        assert!(assert_rand_steps_anchor_durable_output(&own).is_ok());
+
+        let elsewhere = frame(vec![
+            FheEvalStep::Rand {
+                fhe_type: 5,
+                output: FheEvalOutput::AllowedLocal,
+            },
+            FheEvalStep::TrivialEncrypt {
+                plaintext: [0; 32],
+                fhe_type: 5,
+                output: durable_output(),
+            },
+        ]);
+        assert!(assert_rand_steps_anchor_durable_output(&elsewhere).is_ok());
+    }
+
+    #[test]
+    fn frame_without_rand_needs_no_durable_output() {
+        assert!(assert_rand_steps_anchor_durable_output(&frame(vec![trivial_local()])).is_ok());
     }
 
     const FINITE_CAP: u64 = 500_000;

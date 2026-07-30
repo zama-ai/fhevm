@@ -19,14 +19,12 @@ use solana_sdk::{
     instruction::{AccountMeta, Instruction},
     pubkey::Pubkey,
 };
-use solana_sha256_hasher::hashv as sha256_hashv;
 use support::cleartext_fhe_eval::{evaluate, ClearInputs, TypedClearValue};
 use zama_host::{
     self as host, FheBinaryOpCode, FheEvalArgs, FheEvalOperand, FheEvalOutput, FheEvalStep,
     FheUnaryOpCode,
 };
 
-const CONTEXT_ID: [u8; 32] = [7; 32];
 const PREVIOUS_BANK_HASH: [u8; 32] = [0x44; 32];
 const UNIX_TIMESTAMP: i64 = 0;
 
@@ -167,7 +165,10 @@ fn random_executes_then_binds_seed_and_type() {
     });
 
     assert_eq!(outcome.only_cleartext().fhe_type, 5);
-    outcome.assert_handle(expected_rand_handle(expected_rand_seed(), 5));
+    outcome.assert_handle(expected_rand_handle(
+        expected_rand_seed(outcome.compute_subject, outcome.output_address),
+        5,
+    ));
 }
 
 #[test]
@@ -181,7 +182,7 @@ fn bounded_random_executes_then_binds_bound_into_result_handle() {
     assert!(outcome.only_u64() < 16);
     outcome.assert_handle(expected_rand_bounded_handle(
         be(16),
-        expected_rand_seed(),
+        expected_rand_seed(outcome.compute_subject, outcome.output_address),
         5,
     ));
 }
@@ -365,6 +366,8 @@ impl EvalFlow {
         EvalOutcome {
             cleartext,
             output_handle,
+            compute_subject: self.authority,
+            output_address,
         }
     }
 
@@ -378,10 +381,7 @@ impl EvalFlow {
     }
 
     fn instruction(&self, step: FheEvalStep) -> (FheEvalArgs, Instruction) {
-        let args = FheEvalArgs {
-            context_id: CONTEXT_ID,
-            steps: vec![step],
-        };
+        let args = FheEvalArgs { steps: vec![step] };
         let mut instruction = anchor_ix(
             host::id(),
             host::accounts::FheEval {
@@ -405,6 +405,10 @@ impl EvalFlow {
 struct EvalOutcome {
     cleartext: Vec<TypedClearValue>,
     output_handle: [u8; 32],
+    /// Rand-seed anchor inputs: the signed compute subject and the frame's single
+    /// durable output (a create, so `previous_handle = [0; 32]`).
+    compute_subject: Pubkey,
+    output_address: Pubkey,
 }
 
 impl EvalOutcome {
@@ -612,8 +616,6 @@ fn expected_binary_handle(
     finish_handle(
         keccak_hashv(&[
             b"FHE_eval",
-            &CONTEXT_ID,
-            &0_u16.to_be_bytes(),
             &[op.as_u8()],
             &lhs,
             &rhs,
@@ -633,15 +635,8 @@ fn expected_unary_handle(op: FheUnaryOpCode, operand: [u8; 32], fhe_type: u8) ->
     let fhe_type_byte = [fhe_type];
     let program_id = host::id();
     let chain_id = host::SOLANA_POC_CHAIN_ID.to_be_bytes();
-    let op_index = 0_u16.to_be_bytes();
     let timestamp = UNIX_TIMESTAMP.to_be_bytes();
-    let mut parts: Vec<&[u8]> = vec![
-        b"FHE_eval_unary",
-        &CONTEXT_ID,
-        &op_index,
-        &op_byte,
-        &operand,
-    ];
+    let mut parts: Vec<&[u8]> = vec![b"FHE_eval_unary", &op_byte, &operand];
     if matches!(op, FheUnaryOpCode::Cast) {
         parts.push(&fhe_type_byte);
     }
@@ -651,22 +646,15 @@ fn expected_unary_handle(op: FheUnaryOpCode, operand: [u8; 32], fhe_type: u8) ->
         &PREVIOUS_BANK_HASH,
         &timestamp,
     ]);
-    finish_handle(sha256_hashv(&parts).to_bytes(), fhe_type)
+    finish_handle(keccak_hashv(&parts).to_bytes(), fhe_type)
 }
 
 fn expected_is_in_handle(value: [u8; 32], set: &[[u8; 32]], fhe_type: u8) -> [u8; 32] {
     let fhe_type_byte = [fhe_type];
     let program_id = host::id();
     let chain_id = host::SOLANA_POC_CHAIN_ID.to_be_bytes();
-    let op_index = 0_u16.to_be_bytes();
     let timestamp = UNIX_TIMESTAMP.to_be_bytes();
-    let mut parts: Vec<&[u8]> = vec![
-        b"FHE_eval_is_in",
-        &CONTEXT_ID,
-        &op_index,
-        &fhe_type_byte,
-        &value,
-    ];
+    let mut parts: Vec<&[u8]> = vec![b"FHE_eval_is_in", &fhe_type_byte, &value];
     parts.extend(set.iter().map(<[u8; 32]>::as_ref));
     parts.extend_from_slice(&[
         program_id.as_ref(),
@@ -674,13 +662,17 @@ fn expected_is_in_handle(value: [u8; 32], set: &[[u8; 32]], fhe_type: u8) -> [u8
         &PREVIOUS_BANK_HASH,
         &timestamp,
     ]);
-    finish_handle(sha256_hashv(&parts).to_bytes(), 0)
+    finish_handle(keccak_hashv(&parts).to_bytes(), 0)
 }
 
-fn expected_rand_seed() -> [u8; 16] {
-    let hash = sha256_hashv(&[
+fn expected_rand_seed(compute_subject: Pubkey, output_address: Pubkey) -> [u8; 16] {
+    // The frame's durable-write anchor: its single durable output is a create,
+    // so the (account key, previous_handle) pair is (output_address, zero).
+    let anchor: Vec<u8> = [output_address.to_bytes(), [0; 32]].concat();
+    let hash = keccak_hashv(&[
         b"FHE_eval_seed",
-        &CONTEXT_ID,
+        compute_subject.as_ref(),
+        &anchor,
         &0_u16.to_be_bytes(),
         host::id().as_ref(),
         &host::SOLANA_POC_CHAIN_ID.to_be_bytes(),

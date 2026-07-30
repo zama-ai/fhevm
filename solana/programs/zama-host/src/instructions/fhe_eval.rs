@@ -64,10 +64,6 @@ pub struct FheEval<'info> {
 pub fn fhe_eval<'info>(ctx: Context<'info, FheEval<'info>>, args: FheEvalArgs) -> Result<()> {
     assert_not_paused(&ctx.accounts.host_config)?;
     require!(
-        args.context_id != [0; 32],
-        ZamaHostError::InvalidFheEvalContext
-    );
-    require!(
         !args.steps.is_empty() && args.steps.len() <= MAX_FHE_EVAL_OPS,
         ZamaHostError::InvalidFheEvalOperationCount
     );
@@ -92,11 +88,13 @@ pub fn fhe_eval<'info>(ctx: Context<'info, FheEval<'info>>, args: FheEvalArgs) -
     let subject = ctx.accounts.compute_subject.key();
     let clock = Clock::get()?;
     let previous_bank_hash = previous_bank_hash(clock.slot)?;
+    let durable_anchor_bytes = collect_durable_anchor_bytes(&account_table, &args)?;
     let handle_context = EvalHandleContext {
         chain_id: ctx.accounts.host_config.chain_id,
         previous_bank_hash: &previous_bank_hash,
         unix_timestamp: clock.unix_timestamp,
-        context_id: &args.context_id,
+        compute_subject: subject,
+        durable_anchor_bytes: &durable_anchor_bytes,
     };
     block_cap::charge(&ctx, frame.total, clock.slot)?;
     // Execution is the single walk: it validates each step as it mutates. A failure mid-frame
@@ -107,6 +105,46 @@ pub fn fhe_eval<'info>(ctx: Context<'info, FheEval<'info>>, args: FheEvalArgs) -
         execute_eval_frame(&mut account_table, &ctx, &args, subject, &handle_context)?;
     emit_public_outputs_produced(&ctx, born_public_outputs)?;
     Ok(())
+}
+
+/// The step's declared output, shared by preflight rules and anchor collection.
+pub(in crate::instructions) fn step_output(step: &FheEvalStep) -> &FheEvalOutput {
+    match step {
+        FheEvalStep::Binary { output, .. }
+        | FheEvalStep::Ternary { output, .. }
+        | FheEvalStep::TrivialEncrypt { output, .. }
+        | FheEvalStep::Rand { output, .. }
+        | FheEvalStep::Unary { output, .. }
+        | FheEvalStep::RandBounded { output, .. }
+        | FheEvalStep::Sum { output, .. }
+        | FheEvalStep::IsIn { output, .. }
+        | FheEvalStep::MulDiv { output, .. } => output,
+    }
+}
+
+/// Flattens the frame's durable-write anchor: every durable output's
+/// `(account key, previous_handle)` pair in wire order (`[0u8; 32]` for a create).
+/// Each pair is verified against live state and consumed by the frame's own bind, so
+/// the concatenation can never validly recur — the uniqueness source rand seeds hash
+/// (see [`computed_eval_rand_seed`]).
+fn collect_durable_anchor_bytes(
+    table: &EvalAccountTable<'_, '_>,
+    args: &FheEvalArgs,
+) -> Result<Vec<u8>> {
+    let mut anchor_bytes = Vec::with_capacity(args.steps.len() * 64);
+    for step in &args.steps {
+        if let FheEvalOutput::AllowedDurable {
+            output_encrypted_value_index,
+            previous_handle,
+            ..
+        } = step_output(step)
+        {
+            let key = table.account(*output_encrypted_value_index)?.key();
+            anchor_bytes.extend_from_slice(key.as_ref());
+            anchor_bytes.extend_from_slice(&previous_handle.unwrap_or([0; 32]));
+        }
+    }
+    Ok(anchor_bytes)
 }
 
 #[inline(never)]
@@ -543,8 +581,7 @@ fn check_rotation_grants_not_denied(
         if stored_subjects.contains(&entry.pubkey) {
             continue;
         }
-        let deny_record =
-            table.deny_record(host_config.grant_deny_list_enabled, entry.pubkey)?;
+        let deny_record = table.deny_record(host_config.grant_deny_list_enabled, entry.pubkey)?;
         check_grant_not_denied_info(host_config, entry.pubkey, deny_record)?;
     }
     Ok(())

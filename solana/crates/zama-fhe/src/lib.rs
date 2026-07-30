@@ -50,8 +50,9 @@ pub enum EvalBuildError {
     TooManyOps,
     /// `finish` was called with no ops; the host rejects empty eval frames.
     EmptyOps,
-    /// `finish` was called with an all-zero `context_id`; the host rejects it.
-    EmptyContextId,
+    /// `finish` was called on a frame with a rand step but no durable output;
+    /// the host anchors rand seeds to durable writes and rejects such frames.
+    RandRequiresDurableOutput,
     /// A scalar was supplied as the left-hand operand. The host invariant is
     /// scalar-RHS-only: the left operand must be an encrypted handle.
     ScalarLhsOperand,
@@ -508,7 +509,6 @@ enum OperandKind {
     Durable(DurableOperand),
     Transient {
         producer_index: u16,
-        context_id: EvalContextId,
         builder_scope: EvalBuilderScope,
     },
     /// External input verified in-frame via a coprocessor attestation (EVM `fromExternal`). The
@@ -530,14 +530,9 @@ impl Operand {
         }))
     }
 
-    fn transient(
-        producer_index: u16,
-        context_id: EvalContextId,
-        builder_scope: EvalBuilderScope,
-    ) -> Self {
+    fn transient(producer_index: u16, builder_scope: EvalBuilderScope) -> Self {
         Self(OperandKind::Transient {
             producer_index,
-            context_id,
             builder_scope,
         })
     }
@@ -554,31 +549,6 @@ impl Operand {
     }
 }
 
-/// Non-zero frame identifier for one host eval request.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
-pub struct EvalContextId([u8; 32]);
-
-impl EvalContextId {
-    pub fn new(bytes: [u8; 32]) -> Result<Self> {
-        if bytes == [0u8; 32] {
-            return Err(EvalBuildError::EmptyContextId);
-        }
-        Ok(Self(bytes))
-    }
-
-    pub fn bytes(self) -> [u8; 32] {
-        self.0
-    }
-}
-
-impl TryFrom<[u8; 32]> for EvalContextId {
-    type Error = EvalBuildError;
-
-    fn try_from(value: [u8; 32]) -> Result<Self> {
-        Self::new(value)
-    }
-}
-
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 struct EvalBuilderScope(u64);
 
@@ -592,6 +562,10 @@ fn next_eval_builder_scope() -> EvalBuilderScope {
 
 #[cfg(target_os = "solana")]
 fn next_eval_builder_scope() -> EvalBuilderScope {
+    // SBF forbids writable static data (no `.data`/atomics), so on-chain every builder
+    // shares scope 1: mixing operands across two builders created inside one instruction
+    // is caught only by the producer-index bounds check there. Off-chain (where plans are
+    // normally built and tested) the counter makes cross-builder mixing a hard error.
     EvalBuilderScope(1)
 }
 
@@ -1162,15 +1136,11 @@ impl EvalPlan {
     ///
     /// This keeps transient values scoped to one builder while removing the
     /// need for app code to call [`EvalBuilder::finish`] explicitly.
-    pub fn build<T, F>(
-        context_id: EvalContextId,
-        app_authority: EvalAppAuthority,
-        build: F,
-    ) -> Result<Self>
+    pub fn build<T, F>(app_authority: EvalAppAuthority, build: F) -> Result<Self>
     where
         F: FnOnce(&mut EvalBuilder) -> Result<T>,
     {
-        let mut builder = EvalBuilder::new(context_id, app_authority);
+        let mut builder = EvalBuilder::new(app_authority);
         build(&mut builder)?;
         builder.finish()
     }
@@ -1364,7 +1334,6 @@ fn resolve_eval_accounts<'info>(
 /// Pubkey-oriented builder for `FheEvalArgs`.
 #[derive(Debug)]
 pub struct EvalBuilder {
-    context_id: EvalContextId,
     scope: EvalBuilderScope,
     app_authority: EvalAppAuthority,
     steps: Vec<FheEvalStep>,
@@ -1378,7 +1347,6 @@ pub struct EvalBuilder {
 impl Clone for EvalBuilder {
     fn clone(&self) -> Self {
         Self {
-            context_id: self.context_id,
             scope: next_eval_builder_scope(),
             app_authority: self.app_authority,
             steps: self.steps.clone(),
@@ -1390,9 +1358,8 @@ impl Clone for EvalBuilder {
 }
 
 impl EvalBuilder {
-    pub fn new(context_id: EvalContextId, app_authority: EvalAppAuthority) -> Self {
+    pub fn new(app_authority: EvalAppAuthority) -> Self {
         Self {
-            context_id,
             scope: next_eval_builder_scope(),
             app_authority,
             steps: Vec::new(),
@@ -1495,7 +1462,6 @@ impl EvalBuilder {
             &rhs,
             output_fhe_type,
             self.steps.len(),
-            self.context_id,
             self.scope,
             |index| self.produced_types.get(index as usize).copied(),
         )?;
@@ -1504,7 +1470,6 @@ impl EvalBuilder {
         let lhs = lower_operand(
             &mut remaining_accounts,
             self.steps.len(),
-            self.context_id,
             self.scope,
             &self.verified_inputs,
             lhs,
@@ -1512,7 +1477,6 @@ impl EvalBuilder {
         let rhs = lower_operand(
             &mut remaining_accounts,
             self.steps.len(),
-            self.context_id,
             self.scope,
             &self.verified_inputs,
             rhs,
@@ -1527,7 +1491,7 @@ impl EvalBuilder {
             output,
         });
         self.produced_types.push(output_fhe_type);
-        Ok(Operand::transient(op_index, self.context_id, self.scope))
+        Ok(Operand::transient(op_index, self.scope))
     }
 
     pub fn if_then_else<T: FheTyped>(
@@ -1553,7 +1517,6 @@ impl EvalBuilder {
             output_fhe_type,
             self.steps.len(),
             |index| self.produced_types.get(index as usize).copied(),
-            self.context_id,
             self.scope,
         )?;
         let step_index = u16::try_from(self.steps.len()).map_err(|_| EvalBuildError::TooManyOps)?;
@@ -1561,7 +1524,6 @@ impl EvalBuilder {
         let control = lower_operand(
             &mut remaining_accounts,
             self.steps.len(),
-            self.context_id,
             self.scope,
             &self.verified_inputs,
             control,
@@ -1569,7 +1531,6 @@ impl EvalBuilder {
         let if_true = lower_operand(
             &mut remaining_accounts,
             self.steps.len(),
-            self.context_id,
             self.scope,
             &self.verified_inputs,
             if_true,
@@ -1577,7 +1538,6 @@ impl EvalBuilder {
         let if_false = lower_operand(
             &mut remaining_accounts,
             self.steps.len(),
-            self.context_id,
             self.scope,
             &self.verified_inputs,
             if_false,
@@ -1594,9 +1554,7 @@ impl EvalBuilder {
         });
         self.produced_types.push(output_fhe_type);
         Ok(Encrypted::from_operand(Operand::transient(
-            step_index,
-            self.context_id,
-            self.scope,
+            step_index, self.scope,
         )))
     }
 
@@ -1630,7 +1588,7 @@ impl EvalBuilder {
             output,
         });
         self.produced_types.push(fhe_type);
-        Ok(Operand::transient(step_index, self.context_id, self.scope))
+        Ok(Operand::transient(step_index, self.scope))
     }
 
     pub fn trivial_encrypt_u64(
@@ -1658,7 +1616,7 @@ impl EvalBuilder {
         self.remaining_accounts = remaining_accounts;
         self.steps.push(FheEvalStep::Rand { fhe_type, output });
         self.produced_types.push(fhe_type);
-        Ok(Operand::transient(step_index, self.context_id, self.scope))
+        Ok(Operand::transient(step_index, self.scope))
     }
 
     pub fn rand_u64(&mut self, output: Output) -> Result<Encrypted<Uint<64>>> {
@@ -1685,9 +1643,7 @@ impl EvalBuilder {
         });
         self.produced_types.push(fhe_type);
         Ok(Encrypted::from_operand(Operand::transient(
-            step_index,
-            self.context_id,
-            self.scope,
+            step_index, self.scope,
         )))
     }
 
@@ -2026,7 +1982,6 @@ impl EvalBuilder {
             lowered.push(lower_operand(
                 &mut remaining_accounts,
                 self.steps.len(),
-                self.context_id,
                 self.scope,
                 &self.verified_inputs,
                 op,
@@ -2041,9 +1996,7 @@ impl EvalBuilder {
         });
         self.produced_types.push(fhe_type);
         Ok(Encrypted::from_operand(Operand::transient(
-            step_index,
-            self.context_id,
-            self.scope,
+            step_index, self.scope,
         )))
     }
 
@@ -2077,7 +2030,6 @@ impl EvalBuilder {
         let value_lowered = lower_operand(
             &mut remaining_accounts,
             self.steps.len(),
-            self.context_id,
             self.scope,
             &self.verified_inputs,
             value_op,
@@ -2087,7 +2039,6 @@ impl EvalBuilder {
             set_lowered.push(lower_operand(
                 &mut remaining_accounts,
                 self.steps.len(),
-                self.context_id,
                 self.scope,
                 &self.verified_inputs,
                 op,
@@ -2104,9 +2055,7 @@ impl EvalBuilder {
         });
         self.produced_types.push(bool_type);
         Ok(Encrypted::from_operand(Operand::transient(
-            step_index,
-            self.context_id,
-            self.scope,
+            step_index, self.scope,
         )))
     }
 
@@ -2141,7 +2090,6 @@ impl EvalBuilder {
         let factor1 = lower_operand(
             &mut remaining_accounts,
             self.steps.len(),
-            self.context_id,
             self.scope,
             &self.verified_inputs,
             lhs,
@@ -2149,7 +2097,6 @@ impl EvalBuilder {
         let factor2 = lower_operand(
             &mut remaining_accounts,
             self.steps.len(),
-            self.context_id,
             self.scope,
             &self.verified_inputs,
             rhs,
@@ -2165,9 +2112,7 @@ impl EvalBuilder {
         });
         self.produced_types.push(fhe_type);
         Ok(Encrypted::from_operand(Operand::transient(
-            step_index,
-            self.context_id,
-            self.scope,
+            step_index, self.scope,
         )))
     }
 
@@ -2190,7 +2135,6 @@ impl EvalBuilder {
             &operand,
             output_fhe_type,
             self.steps.len(),
-            self.context_id,
             self.scope,
             |index| self.produced_types.get(index as usize).copied(),
         )?;
@@ -2199,7 +2143,6 @@ impl EvalBuilder {
         let operand = lower_operand(
             &mut remaining_accounts,
             self.steps.len(),
-            self.context_id,
             self.scope,
             &self.verified_inputs,
             operand,
@@ -2213,7 +2156,7 @@ impl EvalBuilder {
             output,
         });
         self.produced_types.push(output_fhe_type);
-        Ok(Operand::transient(step_index, self.context_id, self.scope))
+        Ok(Operand::transient(step_index, self.scope))
     }
 
     fn encrypted_operand_type(
@@ -2221,22 +2164,18 @@ impl EvalBuilder {
         operand: &Operand,
         scalar_error: EvalBuildError,
     ) -> Result<FheType> {
-        let fhe_type = operand_fhe_type(
-            operand,
-            self.steps.len(),
-            self.context_id,
-            self.scope,
-            &|index| self.produced_types.get(index as usize).copied(),
-        )?
+        let fhe_type = operand_fhe_type(operand, self.steps.len(), self.scope, &|index| {
+            self.produced_types.get(index as usize).copied()
+        })?
         .ok_or(scalar_error)?;
         FheType::from_host_byte(fhe_type)
     }
 
     /// Validates the accumulated frame and lowers it to an [`EvalPlan`].
     ///
-    /// Mirrors the host admission checks (`context_id != 0`, non-empty steps,
-    /// `steps.len() <= MAX_FHE_EVAL_OPS`) so a malformed frame fails locally
-    /// instead of on-chain.
+    /// Mirrors the host preflight checks (non-empty steps,
+    /// `steps.len() <= MAX_FHE_EVAL_OPS`, rand steps anchored by a durable
+    /// output) so a malformed frame fails locally instead of on-chain.
     ///
     /// Not mirrored (it depends on the deployed `hcu_block_cap_per_app`, unknown here): under a
     /// finite block cap the host rejects a persist-nothing frame — one binding no durable input, no
@@ -2245,9 +2184,6 @@ impl EvalBuilder {
     /// verified input if it must run under a finite cap.
     pub fn finish(self) -> Result<EvalPlan> {
         validate_app_authority(self.app_authority)?;
-        if self.context_id.bytes() == [0u8; 32] {
-            return Err(EvalBuildError::EmptyContextId);
-        }
         if self.steps.is_empty() {
             return Err(EvalBuildError::EmptyOps);
         }
@@ -2255,15 +2191,65 @@ impl EvalBuilder {
             return Err(EvalBuildError::TooManyOps);
         }
         validate_lowered_eval_plan(&self.steps, &self.remaining_accounts)?;
+        validate_rand_steps_anchor_durable_output(&self.steps)?;
         Ok(EvalPlan {
             app_authority: self.app_authority,
-            args: FheEvalArgs {
-                context_id: self.context_id.bytes(),
-                steps: self.steps,
-            },
+            args: FheEvalArgs { steps: self.steps },
             remaining_accounts: self.remaining_accounts,
         })
     }
+}
+
+/// Mirrors the host preflight rule (fhevm-internal#1853 W4): rand seeds are anchored to
+/// the frame's durable writes, so a frame with a rand step and no durable output is
+/// rejected here before it fails on-chain with `FheEvalRandRequiresDurableOutput`.
+fn validate_rand_steps_anchor_durable_output(steps: &[FheEvalStep]) -> Result<()> {
+    let has_rand = steps.iter().any(|step| {
+        matches!(
+            step,
+            FheEvalStep::Rand { .. } | FheEvalStep::RandBounded { .. }
+        )
+    });
+    if !has_rand {
+        return Ok(());
+    }
+    let persists = steps.iter().any(|step| {
+        matches!(
+            step,
+            FheEvalStep::Binary {
+                output: FheEvalOutput::AllowedDurable { .. },
+                ..
+            } | FheEvalStep::Ternary {
+                output: FheEvalOutput::AllowedDurable { .. },
+                ..
+            } | FheEvalStep::TrivialEncrypt {
+                output: FheEvalOutput::AllowedDurable { .. },
+                ..
+            } | FheEvalStep::Rand {
+                output: FheEvalOutput::AllowedDurable { .. },
+                ..
+            } | FheEvalStep::Unary {
+                output: FheEvalOutput::AllowedDurable { .. },
+                ..
+            } | FheEvalStep::RandBounded {
+                output: FheEvalOutput::AllowedDurable { .. },
+                ..
+            } | FheEvalStep::Sum {
+                output: FheEvalOutput::AllowedDurable { .. },
+                ..
+            } | FheEvalStep::IsIn {
+                output: FheEvalOutput::AllowedDurable { .. },
+                ..
+            } | FheEvalStep::MulDiv {
+                output: FheEvalOutput::AllowedDurable { .. },
+                ..
+            }
+        )
+    });
+    if !persists {
+        return Err(EvalBuildError::RandRequiresDurableOutput);
+    }
+    Ok(())
 }
 
 fn validate_lowered_eval_plan(
@@ -2430,7 +2416,6 @@ fn validate_binary_step<F>(
     rhs: &Operand,
     output_fhe_type: u8,
     produced_count: usize,
-    context_id: EvalContextId,
     builder_scope: EvalBuilderScope,
     produced_type: F,
 ) -> Result<()>
@@ -2439,14 +2424,8 @@ where
 {
     validate_supported_binary_output_type(op, output_fhe_type)?;
 
-    let lhs_type = operand_fhe_type(
-        lhs,
-        produced_count,
-        context_id,
-        builder_scope,
-        &produced_type,
-    )?
-    .ok_or(EvalBuildError::ScalarLhsOperand)?;
+    let lhs_type = operand_fhe_type(lhs, produced_count, builder_scope, &produced_type)?
+        .ok_or(EvalBuildError::ScalarLhsOperand)?;
     match op {
         // Eq/Ne accept the widest operand set (Bool..Uint256); ordered comparisons Uint8..Uint128.
         FheBinaryOpCode::Eq | FheBinaryOpCode::Ne => {
@@ -2495,13 +2474,7 @@ where
             }
         }
     }
-    if let Some(rhs_type) = operand_fhe_type(
-        rhs,
-        produced_count,
-        context_id,
-        builder_scope,
-        &produced_type,
-    )? {
+    if let Some(rhs_type) = operand_fhe_type(rhs, produced_count, builder_scope, &produced_type)? {
         if rhs_type != lhs_type {
             return Err(EvalBuildError::BinaryOperandTypeMismatch);
         }
@@ -2515,7 +2488,6 @@ fn validate_unary_step<F>(
     operand: &Operand,
     output_fhe_type: u8,
     produced_count: usize,
-    context_id: EvalContextId,
     builder_scope: EvalBuilderScope,
     produced_type: F,
 ) -> Result<()>
@@ -2532,14 +2504,8 @@ where
     if !valid_output {
         return Err(EvalBuildError::UnsupportedFheType);
     }
-    let operand_type = operand_fhe_type(
-        operand,
-        produced_count,
-        context_id,
-        builder_scope,
-        &produced_type,
-    )?
-    .ok_or(EvalBuildError::ScalarEncryptedOperand)?;
+    let operand_type = operand_fhe_type(operand, produced_count, builder_scope, &produced_type)?
+        .ok_or(EvalBuildError::ScalarEncryptedOperand)?;
     validate_supported_fhe_type(operand_type)?;
     match op {
         FheUnaryOpCode::Neg => {
@@ -2580,7 +2546,6 @@ fn validate_ternary_step<F>(
     output_fhe_type: u8,
     produced_count: usize,
     produced_type: F,
-    context_id: EvalContextId,
     builder_scope: EvalBuilderScope,
 ) -> Result<()>
 where
@@ -2588,30 +2553,12 @@ where
 {
     validate_supported_fhe_type(output_fhe_type)?;
 
-    let control_type = operand_fhe_type(
-        control,
-        produced_count,
-        context_id,
-        builder_scope,
-        &produced_type,
-    )?
-    .ok_or(EvalBuildError::ScalarEncryptedOperand)?;
-    let true_type = operand_fhe_type(
-        if_true,
-        produced_count,
-        context_id,
-        builder_scope,
-        &produced_type,
-    )?
-    .ok_or(EvalBuildError::ScalarEncryptedOperand)?;
-    let false_type = operand_fhe_type(
-        if_false,
-        produced_count,
-        context_id,
-        builder_scope,
-        &produced_type,
-    )?
-    .ok_or(EvalBuildError::ScalarEncryptedOperand)?;
+    let control_type = operand_fhe_type(control, produced_count, builder_scope, &produced_type)?
+        .ok_or(EvalBuildError::ScalarEncryptedOperand)?;
+    let true_type = operand_fhe_type(if_true, produced_count, builder_scope, &produced_type)?
+        .ok_or(EvalBuildError::ScalarEncryptedOperand)?;
+    let false_type = operand_fhe_type(if_false, produced_count, builder_scope, &produced_type)?
+        .ok_or(EvalBuildError::ScalarEncryptedOperand)?;
 
     if control_type != 0 || true_type != output_fhe_type || false_type != output_fhe_type {
         return Err(EvalBuildError::TernaryOperandTypeMismatch);
@@ -2622,7 +2569,6 @@ where
 fn operand_fhe_type<F>(
     operand: &Operand,
     produced_count: usize,
-    context_id: EvalContextId,
     builder_scope: EvalBuilderScope,
     produced_type: &F,
 ) -> Result<Option<u8>>
@@ -2633,10 +2579,9 @@ where
         OperandKind::Durable(durable) => Ok(Some(handle_fhe_type(durable.handle))),
         OperandKind::Transient {
             producer_index,
-            context_id: operand_context_id,
             builder_scope: operand_builder_scope,
         } => {
-            if *operand_context_id != context_id || *operand_builder_scope != builder_scope {
+            if *operand_builder_scope != builder_scope {
                 return Err(EvalBuildError::InvalidTransientReference);
             }
             if *producer_index as usize >= produced_count {
@@ -2765,7 +2710,6 @@ fn handle_fhe_type(handle: [u8; 32]) -> u8 {
 fn lower_operand(
     remaining_accounts: &mut Vec<EvalAccountMeta>,
     produced_count: usize,
-    context_id: EvalContextId,
     builder_scope: EvalBuilderScope,
     verified_inputs: &[CoprocessorInputAttestation],
     operand: Operand,
@@ -2786,10 +2730,9 @@ fn lower_operand(
         }
         OperandKind::Transient {
             producer_index,
-            context_id: operand_context_id,
             builder_scope: operand_builder_scope,
         } => {
-            if operand_context_id != context_id || operand_builder_scope != builder_scope {
+            if operand_builder_scope != builder_scope {
                 return Err(EvalBuildError::InvalidTransientReference);
             }
             if producer_index as usize >= produced_count {
@@ -2947,7 +2890,6 @@ impl From<anchor_lang::error::Error> for EvalInvokeError {
 /// [`invoke_eval_signed_resolved`].
 #[cfg(feature = "cpi")]
 pub fn invoke_eval_signed_with_builder<'a, 'info, T, F>(
-    context_id: EvalContextId,
     app_authority: EvalAppAuthority,
     accounts: EvalCpiAccounts<'a, 'info>,
     dynamic_accounts: impl IntoIterator<Item = AccountInfo<'info>>,
@@ -2958,7 +2900,7 @@ pub fn invoke_eval_signed_with_builder<'a, 'info, T, F>(
 where
     F: FnOnce(&mut EvalBuilder) -> Result<T>,
 {
-    let plan = EvalPlan::build(context_id, app_authority, build)?;
+    let plan = EvalPlan::build(app_authority, build)?;
     let mut output_authorities = output_authorities.into_iter().collect::<Vec<_>>();
     output_authorities.insert(0, accounts.app_account_authority.clone());
     let resolved_accounts = plan.resolve_accounts(dynamic_accounts, output_authorities)?;
@@ -3052,10 +2994,6 @@ mod tests {
         typed_handle(tag, 5)
     }
 
-    fn context_id(tag: u8) -> EvalContextId {
-        EvalContextId::new(handle(tag)).unwrap()
-    }
-
     fn app_authority(pubkey: Pubkey) -> EvalAppAuthority {
         EvalAppAuthority::new(pubkey)
     }
@@ -3123,7 +3061,7 @@ mod tests {
         let output_acl = output_slot.address();
         let balance = Uint64Handle::durable(balance_handle(1), input_slot).unwrap();
 
-        let plan = EvalPlan::build(context_id(9), app_authority(primary_authority), |builder| {
+        let plan = EvalPlan::build(app_authority(primary_authority), |builder| {
             let incremented =
                 builder.add(balance, Scalar::<Uint<64>>::u64(1), Output::transient())?;
             builder.add(
@@ -3168,7 +3106,7 @@ mod tests {
         let input_handle = balance_handle(2);
         let attestation = dummy_attestation(input_handle, primary_authority);
 
-        let plan = EvalPlan::build(context_id(9), app_authority(primary_authority), |builder| {
+        let plan = EvalPlan::build(app_authority(primary_authority), |builder| {
             let amount: Uint64Handle = builder.verified_input(attestation.clone())?;
             builder.add(
                 amount,
@@ -3209,7 +3147,7 @@ mod tests {
         let primary_authority = Pubkey::new_unique();
         // Input handle typed as BOOL (0) but requested as Uint64: caught at build time.
         let attestation = dummy_attestation(typed_handle(2, 0), primary_authority);
-        let mut builder = EvalBuilder::new(context_id(9), app_authority(primary_authority));
+        let mut builder = EvalBuilder::new(app_authority(primary_authority));
         assert_eq!(
             builder.verified_input::<Uint<64>>(attestation).unwrap_err(),
             EvalBuildError::UnsupportedFheType
@@ -3219,26 +3157,21 @@ mod tests {
     #[test]
     fn eval_plan_build_propagates_closure_and_finish_errors() {
         let primary_authority = Pubkey::new_unique();
-        let error =
-            match EvalPlan::build(context_id(9), app_authority(primary_authority), |builder| {
-                builder.binary_op(
-                    FheBinaryOpCode::Ge,
-                    Operand::durable(balance_handle(1), Pubkey::new_unique()),
-                    scalar_operand_u64(2),
-                    FheType::UINT64,
-                    Output::transient(),
-                )
-            }) {
-                Ok(_) => panic!("invalid frame unexpectedly built"),
-                Err(error) => error,
-            };
+        let error = match EvalPlan::build(app_authority(primary_authority), |builder| {
+            builder.binary_op(
+                FheBinaryOpCode::Ge,
+                Operand::durable(balance_handle(1), Pubkey::new_unique()),
+                scalar_operand_u64(2),
+                FheType::UINT64,
+                Output::transient(),
+            )
+        }) {
+            Ok(_) => panic!("invalid frame unexpectedly built"),
+            Err(error) => error,
+        };
         assert_eq!(error, EvalBuildError::UnsupportedBinaryOutputType);
 
-        let error = match EvalPlan::build(
-            context_id(9),
-            app_authority(primary_authority),
-            |_builder| Ok(()),
-        ) {
+        let error = match EvalPlan::build(app_authority(primary_authority), |_builder| Ok(())) {
             Ok(_) => panic!("empty frame unexpectedly built"),
             Err(error) => error,
         };
@@ -3248,7 +3181,7 @@ mod tests {
     #[test]
     fn finish_preflights_lowered_remaining_account_indices() {
         let primary_authority = Pubkey::new_unique();
-        let mut builder = EvalBuilder::new(context_id(9), app_authority(primary_authority));
+        let mut builder = EvalBuilder::new(app_authority(primary_authority));
         builder.steps.push(FheEvalStep::Binary {
             op: FheBinaryOpCode::Add,
             lhs: FheEvalOperand::AllowedDurable {
@@ -3270,7 +3203,7 @@ mod tests {
     #[test]
     fn finish_preflights_lowered_transient_order_and_account_uniqueness() {
         let primary_authority = Pubkey::new_unique();
-        let mut builder = EvalBuilder::new(context_id(9), app_authority(primary_authority));
+        let mut builder = EvalBuilder::new(app_authority(primary_authority));
         builder.steps.push(FheEvalStep::TrivialEncrypt {
             plaintext: Scalar::<Uint<64>>::u64(1).bytes(),
             fhe_type: FheType::UINT64.byte(),
@@ -3293,7 +3226,7 @@ mod tests {
         let input_slot = durable_slot(primary_authority, 1);
         let input_acl = input_slot.address();
         let balance = Uint64Handle::durable(balance_handle(1), input_slot).unwrap();
-        let mut builder = EvalBuilder::new(context_id(9), app_authority(primary_authority));
+        let mut builder = EvalBuilder::new(app_authority(primary_authority));
         builder
             .add(balance, Scalar::<Uint<64>>::u64(1), Output::transient())
             .unwrap();
@@ -3313,7 +3246,6 @@ mod tests {
     fn invoke_eval_signed_with_builder_reports_build_errors_before_resolution() {
         let primary_authority = Pubkey::new_unique();
         let error = invoke_eval_signed_with_builder(
-            context_id(9),
             app_authority(primary_authority),
             cpi_accounts(primary_authority),
             Vec::<AccountInfo<'static>>::new(),
@@ -3340,7 +3272,6 @@ mod tests {
         let balance = Uint64Handle::durable(balance_handle(1), input_slot).unwrap();
 
         let error = invoke_eval_signed_with_builder(
-            context_id(9),
             app_authority(primary_authority),
             cpi_accounts(primary_authority),
             vec![account_info(input_acl, false)],
@@ -3376,7 +3307,6 @@ mod tests {
         let balance = Uint64Handle::durable(balance_handle(1), input_slot).unwrap();
 
         let error = invoke_eval_signed_with_builder(
-            context_id(9),
             app_authority(primary_authority),
             cpi_accounts(primary_authority),
             vec![
@@ -3414,7 +3344,7 @@ mod tests {
         let output_acl = output_slot.address();
         let balance = Uint64Handle::durable(balance_handle(1), balance_slot).unwrap();
         let amount = Uint64Handle::durable(balance_handle(2), amount_slot).unwrap();
-        let mut builder = EvalBuilder::new(context_id(9), app_authority(primary_authority));
+        let mut builder = EvalBuilder::new(app_authority(primary_authority));
         let success = builder.ge(balance, amount, Output::transient()).unwrap();
         let debit_candidate = builder.sub(balance, amount, Output::transient()).unwrap();
         builder
@@ -3488,7 +3418,7 @@ mod tests {
         let output_acl = output_slot.address();
         let input = Uint64Handle::durable(balance_handle(1), input_slot).unwrap();
 
-        let plan = EvalPlan::build(context_id(9), app_authority(primary_authority), |builder| {
+        let plan = EvalPlan::build(app_authority(primary_authority), |builder| {
             builder.add(
                 input,
                 Scalar::<Uint<64>>::u64(2),
@@ -3532,7 +3462,7 @@ mod tests {
         let output_slot = durable_slot(authority, 7);
         let output_acl = output_slot.address();
         let balance = Uint64Handle::durable(balance_handle(1), input_slot).unwrap();
-        let mut builder = EvalBuilder::new(context_id(9), app_authority(primary_authority));
+        let mut builder = EvalBuilder::new(app_authority(primary_authority));
         builder
             .add(
                 balance,
@@ -3598,7 +3528,7 @@ mod tests {
         let output_slot = durable_slot(extra_authority, 7);
         let output_acl = output_slot.address();
         let input = Uint64Handle::durable(balance_handle(1), input_slot).unwrap();
-        let mut builder = EvalBuilder::new(context_id(9), app_authority(primary_authority));
+        let mut builder = EvalBuilder::new(app_authority(primary_authority));
         builder
             .add(
                 input,
@@ -3761,7 +3691,7 @@ mod tests {
         let output_slot = durable_slot(extra_authority, 7);
         let output_acl = output_slot.address();
         let input = Uint64Handle::durable(balance_handle(1), input_slot).unwrap();
-        let mut builder = EvalBuilder::new(context_id(9), app_authority(primary_authority));
+        let mut builder = EvalBuilder::new(app_authority(primary_authority));
         builder
             .add(
                 input,
@@ -3833,7 +3763,7 @@ mod tests {
         let primary_authority = Pubkey::new_unique();
         let output_slot = durable_slot(primary_authority, 7);
         let output_acl = output_slot.address();
-        let mut builder = EvalBuilder::new(context_id(9), app_authority(primary_authority));
+        let mut builder = EvalBuilder::new(app_authority(primary_authority));
         let trivial = builder.trivial_encrypt_u64(1, Output::transient()).unwrap();
         builder
             .rand_u64(Output::durable(
@@ -3863,11 +3793,11 @@ mod tests {
     #[test]
     fn rejects_invalid_references_and_types() {
         let primary_authority = Pubkey::new_unique();
-        let mut builder = EvalBuilder::new(context_id(9), app_authority(primary_authority));
+        let mut builder = EvalBuilder::new(app_authority(primary_authority));
         let error = builder
             .binary_op(
                 FheBinaryOpCode::Add,
-                Operand::transient(0, builder.context_id, builder.scope),
+                Operand::transient(0, builder.scope),
                 scalar_operand_u64(1),
                 FheType::UINT64,
                 Output::transient(),
@@ -3875,7 +3805,7 @@ mod tests {
             .unwrap_err();
         assert_eq!(error, EvalBuildError::InvalidTransientReference);
 
-        let mut builder = EvalBuilder::new(context_id(9), app_authority(primary_authority));
+        let mut builder = EvalBuilder::new(app_authority(primary_authority));
         let error = builder
             .binary_op(
                 FheBinaryOpCode::Ge,
@@ -3889,12 +3819,12 @@ mod tests {
 
         let input_slot = durable_slot(primary_authority, 1);
         let input = Uint64Handle::durable(balance_handle(1), input_slot).unwrap();
-        let mut builder = EvalBuilder::new(context_id(9), app_authority(primary_authority));
+        let mut builder = EvalBuilder::new(app_authority(primary_authority));
         builder.trivial_encrypt_u64(1, Output::transient()).unwrap();
         let current_index = builder
             .binary_op(
                 FheBinaryOpCode::Add,
-                Operand::transient(1, builder.context_id, builder.scope),
+                Operand::transient(1, builder.scope),
                 scalar_operand_u64(1),
                 FheType::UINT64,
                 Output::transient(),
@@ -3905,7 +3835,7 @@ mod tests {
         let future_index = builder
             .binary_op(
                 FheBinaryOpCode::Add,
-                Operand::transient(9, builder.context_id, builder.scope),
+                Operand::transient(9, builder.scope),
                 scalar_operand_u64(1),
                 FheType::UINT64,
                 Output::transient(),
@@ -3917,7 +3847,7 @@ mod tests {
             .binary_op(
                 FheBinaryOpCode::Add,
                 input.operand(),
-                Operand::transient(1, builder.context_id, builder.scope),
+                Operand::transient(1, builder.scope),
                 FheType::UINT64,
                 Output::transient(),
             )
@@ -3926,18 +3856,17 @@ mod tests {
     }
 
     #[test]
-    fn rejects_transients_from_another_builder_with_same_context_id() {
+    fn rejects_transients_from_another_builder() {
         let primary_authority = Pubkey::new_unique();
         let input_slot = durable_slot(primary_authority, 1);
         let balance = Uint64Handle::durable(balance_handle(1), input_slot).unwrap();
-        let context = context_id(9);
 
-        let mut first = EvalBuilder::new(context, app_authority(primary_authority));
+        let mut first = EvalBuilder::new(app_authority(primary_authority));
         let foreign = first
             .add(balance, Scalar::<Uint<64>>::u64(1), Output::transient())
             .unwrap();
 
-        let mut second = EvalBuilder::new(context, app_authority(primary_authority));
+        let mut second = EvalBuilder::new(app_authority(primary_authority));
         second.trivial_encrypt_u64(1, Output::transient()).unwrap();
         let error = second
             .add(foreign, Scalar::<Uint<64>>::u64(1), Output::transient())
@@ -3948,7 +3877,7 @@ mod tests {
 
     #[test]
     fn validates_app_authority_and_durable_account_pubkeys() {
-        let mut builder = EvalBuilder::new(context_id(9), app_authority(Pubkey::default()));
+        let mut builder = EvalBuilder::new(app_authority(Pubkey::default()));
         builder.trivial_encrypt_u64(1, Output::transient()).unwrap();
         let error = match builder.finish() {
             Ok(_) => panic!("invalid app authority unexpectedly built"),
@@ -3992,7 +3921,7 @@ mod tests {
     #[test]
     fn binary_validation_rejects_host_type_mismatches() {
         let primary_authority = Pubkey::new_unique();
-        let mut builder = EvalBuilder::new(context_id(9), app_authority(primary_authority));
+        let mut builder = EvalBuilder::new(app_authority(primary_authority));
         let bool_lhs =
             Operand::durable(typed_handle(1, FheType::BOOL.byte()), Pubkey::new_unique());
         let error = builder
@@ -4008,7 +3937,7 @@ mod tests {
         // Bool lhs against a Uint64 output is a type mismatch (host + client agree).
         assert_eq!(error, EvalBuildError::BinaryOperandTypeMismatch);
 
-        let mut builder = EvalBuilder::new(context_id(9), app_authority(primary_authority));
+        let mut builder = EvalBuilder::new(app_authority(primary_authority));
         let error = builder
             .binary_op(
                 FheBinaryOpCode::Add,
@@ -4027,7 +3956,7 @@ mod tests {
     #[test]
     fn unary_validation_rejects_same_type_cast_and_bad_operand_types() {
         let primary_authority = Pubkey::new_unique();
-        let mut builder = EvalBuilder::new(context_id(9), app_authority(primary_authority));
+        let mut builder = EvalBuilder::new(app_authority(primary_authority));
         // A cast to a different type is accepted.
         assert!(builder
             .unary_op(
@@ -4112,7 +4041,7 @@ mod tests {
     #[test]
     fn mul_div_rejects_zero_divisor() {
         let primary_authority = Pubkey::new_unique();
-        let mut builder = EvalBuilder::new(context_id(9), app_authority(primary_authority));
+        let mut builder = EvalBuilder::new(app_authority(primary_authority));
         let balance =
             Uint64Handle::durable(balance_handle(1), durable_slot(primary_authority, 1)).unwrap();
         assert_eq!(
@@ -4131,7 +4060,7 @@ mod tests {
     #[test]
     fn div_rem_require_nonzero_scalar_divisor() {
         let auth = Pubkey::new_unique();
-        let mut builder = EvalBuilder::new(context_id(9), app_authority(auth));
+        let mut builder = EvalBuilder::new(app_authority(auth));
         // Encrypted divisor is rejected — division is scalar-only (EVM `IsNotScalar`).
         let lhs = Uint64Handle::durable(balance_handle(1), durable_slot(auth, 1)).unwrap();
         let enc_divisor = Uint64Handle::durable(balance_handle(2), durable_slot(auth, 2)).unwrap();
@@ -4160,7 +4089,7 @@ mod tests {
     fn builder_exposes_the_host_operator_type_surface() {
         // The typed builder must express the host's type matrix: bitwise on Bool/Uint256, neg on Uint256, eq on Bool, is_in on Uint160.
         let auth = Pubkey::new_unique();
-        let mut builder = EvalBuilder::new(context_id(9), app_authority(auth));
+        let mut builder = EvalBuilder::new(app_authority(auth));
 
         let bool_a = Encrypted::<Bool>::durable(
             typed_handle(1, FheType::BOOL.byte()),
@@ -4264,7 +4193,7 @@ mod tests {
         assert_eq!(birth.previous_handle(), None);
         assert_eq!(birth.previous_subjects(), None);
 
-        let mut builder = EvalBuilder::new(context_id(9), app_authority(primary_authority));
+        let mut builder = EvalBuilder::new(app_authority(primary_authority));
         builder
             .trivial_encrypt_u64(7, Output::durable(output_slot, access_policy(subject)))
             .unwrap();
@@ -4326,12 +4255,12 @@ mod tests {
         let input_slot = durable_slot(primary_authority, 1);
         let balance = Uint64Handle::durable(balance_handle(1), input_slot).unwrap();
 
-        let mut first = EvalBuilder::new(context_id(9), app_authority(primary_authority));
+        let mut first = EvalBuilder::new(app_authority(primary_authority));
         let foreign = first
             .add(balance, Scalar::<Uint<64>>::u64(1), Output::transient())
             .unwrap();
 
-        let mut second = EvalBuilder::new(context_id(10), app_authority(primary_authority));
+        let mut second = EvalBuilder::new(app_authority(primary_authority));
         second.trivial_encrypt_u64(1, Output::transient()).unwrap();
         let error = second
             .add(foreign, Scalar::<Uint<64>>::u64(1), Output::transient())
@@ -4352,7 +4281,7 @@ mod tests {
 
     #[test]
     fn rand_rejects_address_type_like_host() {
-        let mut builder = EvalBuilder::new(context_id(9), app_authority(Pubkey::new_unique()));
+        let mut builder = EvalBuilder::new(app_authority(Pubkey::new_unique()));
         let error = builder
             .rand_raw(FheType::ADDRESS, Output::transient())
             .unwrap_err();
@@ -4360,14 +4289,10 @@ mod tests {
     }
 
     #[test]
-    fn finish_rejects_empty_context_id_and_empty_steps() {
+    fn finish_rejects_empty_steps() {
         let primary_authority = Pubkey::new_unique();
         assert!(matches!(
-            EvalContextId::new([0u8; 32]),
-            Err(EvalBuildError::EmptyContextId)
-        ));
-        assert!(matches!(
-            EvalBuilder::new(context_id(9), app_authority(primary_authority)).finish(),
+            EvalBuilder::new(app_authority(primary_authority)).finish(),
             Err(EvalBuildError::EmptyOps)
         ));
     }
@@ -4377,7 +4302,7 @@ mod tests {
         let primary_authority = Pubkey::new_unique();
         let input_slot = durable_slot(primary_authority, 1);
         let balance = Uint64Handle::durable(balance_handle(1), input_slot).unwrap();
-        let mut builder = EvalBuilder::new(context_id(9), app_authority(primary_authority));
+        let mut builder = EvalBuilder::new(app_authority(primary_authority));
         for index in 0..MAX_FHE_EVAL_OPS {
             builder
                 .add(

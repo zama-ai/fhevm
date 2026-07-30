@@ -168,16 +168,6 @@ pub fn join<'info>(
         )?)?),
         None => None,
     };
-    let context_id = zama_fhe::EvalContextId::new(
-        solana_sha256_hasher::hashv(&[
-            b"confidential-batcher-join-v1",
-            batch_key.as_ref(),
-            user.as_ref(),
-            &transferred_value.current_handle,
-        ])
-        .to_bytes(),
-    )
-    .map_err(fhe::invalid_eval_plan)?;
     // The joined and transferred encrypted value accounts live in different ACL domains (the
     // batch vs the mint), so their PDAs are distinct by construction; the only
     // alias in this frame is the joined encrypted value account as both operand and output on
@@ -194,7 +184,6 @@ pub fn join<'info>(
             system_program: ctx.accounts.system_program.to_account_info(),
             deny_subject_records: ctx.remaining_accounts,
         },
-        context_id,
         vec![
             joined_binding.account_info(),
             ctx.accounts.user_transferred_value.to_account_info(),

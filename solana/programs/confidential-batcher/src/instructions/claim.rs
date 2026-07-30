@@ -148,16 +148,6 @@ pub fn claim<'info>(ctx: Context<'info, Claim<'info>>) -> Result<()> {
         ])
         .map_err(fhe::invalid_eval_plan)?,
     )?;
-    let context_id = zama_fhe::EvalContextId::new(
-        solana_sha256_hasher::hashv(&[
-            b"confidential-batcher-claim-v1",
-            batch_key.as_ref(),
-            user.as_ref(),
-            &joined_value.current_handle,
-        ])
-        .to_bytes(),
-    )
-    .map_err(fhe::invalid_eval_plan)?;
     let payout_received = ctx.accounts.batch.payout_received;
     let total_joined = ctx.accounts.batch.total_joined;
     fhe::eval_as_batch_authority(
@@ -172,7 +162,6 @@ pub fn claim<'info>(ctx: Context<'info, Claim<'info>>) -> Result<()> {
             system_program: ctx.accounts.system_program.to_account_info(),
             deny_subject_records: ctx.remaining_accounts,
         },
-        context_id,
         vec![
             claim_binding.account_info(),
             ctx.accounts.pending_join_value.to_account_info(),

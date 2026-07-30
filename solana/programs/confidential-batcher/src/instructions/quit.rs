@@ -136,8 +136,6 @@ pub fn quit<'info>(ctx: Context<'info, Quit<'info>>) -> Result<()> {
 
     // Phase 2: reset the joined encrypted value account to an encrypted zero (supersede in
     // place), so a later re-join of the same batch accumulates from zero.
-    let joined_value = fhe::read_encrypted_value(&ctx.accounts.pending_join_value)?;
-    let old_handle = joined_value.current_handle;
     let reset_binding = fhe::DurableBinding::bind(
         ctx.accounts.pending_join_value.to_account_info(),
         zama_fhe::DurableSlot::new(
@@ -152,16 +150,6 @@ pub fn quit<'info>(ctx: Context<'info, Quit<'info>>) -> Result<()> {
         ])
         .map_err(fhe::invalid_eval_plan)?,
     )?;
-    let context_id = zama_fhe::EvalContextId::new(
-        solana_sha256_hasher::hashv(&[
-            b"confidential-batcher-quit-v1",
-            batch_key.as_ref(),
-            user.as_ref(),
-            &old_handle,
-        ])
-        .to_bytes(),
-    )
-    .map_err(fhe::invalid_eval_plan)?;
     fhe::eval_as_batch_authority(
         fhe::BatchAuthorityEval {
             batch: batch_key,
@@ -174,7 +162,6 @@ pub fn quit<'info>(ctx: Context<'info, Quit<'info>>) -> Result<()> {
             system_program: ctx.accounts.system_program.to_account_info(),
             deny_subject_records: ctx.remaining_accounts,
         },
-        context_id,
         vec![reset_binding.account_info()],
         |builder| builder.trivial_encrypt_u64(0, reset_binding.output()),
     )?;

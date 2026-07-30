@@ -110,14 +110,12 @@ pub(crate) struct BatchAuthorityEval<'a, 'info> {
 /// compute subject and app account authority.
 pub(crate) fn eval_as_batch_authority<'info, T>(
     eval: BatchAuthorityEval<'_, 'info>,
-    context_id: zama_fhe::EvalContextId,
     dynamic_accounts: Vec<AccountInfo<'info>>,
     build: impl FnOnce(&mut zama_fhe::EvalBuilder) -> zama_fhe::Result<T>,
 ) -> Result<()> {
     let bump = [eval.authority_bump];
     let authority_seeds: &[&[u8]] = &[BATCH_AUTHORITY_SEED, eval.batch.as_ref(), &bump];
     zama_fhe::invoke_eval_signed_with_builder(
-        context_id,
         zama_fhe::EvalAppAuthority::new(eval.batch_authority.key()),
         zama_fhe::EvalCpiAccounts {
             payer: eval.payer,

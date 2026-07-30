@@ -130,9 +130,10 @@ pub enum ZamaHostError {
     /// An FHE eval durable output account already exists.
     #[msg("FHE eval durable output ACL record already exists")]
     FheEvalOutputAlreadyInitialized,
-    /// An FHE eval context id must be non-zero.
-    #[msg("FHE eval context id is invalid")]
-    InvalidFheEvalContext,
+    /// A frame containing a rand step must declare at least one durable output,
+    /// which anchors the compulsorily fresh rand seed (fhevm-internal#1853 W4).
+    #[msg("FHE eval rand step requires a durable output in the frame")]
+    FheEvalRandRequiresDurableOutput,
     /// A derived durable output may not be made public-decryptable by a non-authorized subject.
     #[msg("transient capability cannot authorize public decrypt")]
     DerivedOutputPublicDecryptDenied,

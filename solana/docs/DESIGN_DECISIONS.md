@@ -1868,3 +1868,46 @@ between dispatch and settle in either direction — the deadline-cancel path sta
 token/host CPI passes deny-list records and HCU accounts (`deny_subject_record`,
 `hcu_block_meter`, `hcu_trusted_app_record`) as hardcoded `None` — the program assumes
 `grant_deny_list_enabled = false` and no binding HCU cap, which is how the PoC host fixtures run.
+
+## DD-043: Two Derivation Regimes — Content-Addressed Deterministic Handles, Durable-Write-Anchored Rand Seeds (`context_id` deleted)
+
+Decision (fhevm-internal#1853 W3+W4). Handle derivation is unified on keccak (the recorded
+2026-07-06 team position: EVM-side handle math is keccak, and both are same-price syscalls) and
+split into exactly two regimes, mirroring `FHEVMExecutor`:
+
+1. **Deterministic ops** (binary, ternary, unary, sum, is-in, mul-div, trivial-encrypt) are
+   content-addressed: `H(domain, op, operand handles, fhe_type, program_id, chain_id,
+   previous_bank_hash, unix_timestamp)`. No `context_id`, no `compute_subject`, no `op_index` —
+   an identical computation derives the identical handle, which is the same value by construction
+   (EVM's exact behavior; a second party can only reproduce a result whose inputs it was
+   independently authorized on, and the DAG is public in instruction data regardless).
+2. **Rand / rand-bounded seeds** are compulsorily fresh: `H(domain, compute_subject, the frame's
+   durable-write anchor, op_index, program_id, chain_id, previous_bank_hash, unix_timestamp)`.
+   The durable-write anchor is every durable output's `(account key, previous_handle)` pair in
+   wire order (`[0; 32]` for a create). Each pair is verified against live state by the freshness
+   pin and consumed by the frame's own supersede/create, so it can never validly recur: the
+   `EncryptedValue` handle chain plays the role of EVM's `counterRand`, sharded per account and
+   advanced by writes the frame already performs. A frame containing a rand step must therefore
+   declare at least one durable output (preflight `FheEvalRandRequiresDurableOutput`); the
+   excluded all-transient class is provably useless — no ACL record, no decrypt path, no
+   `make_public`, so its randomness is unobservable by everyone including the author.
+
+`context_id` is deleted from `FheEvalArgs` (−32 B per frame), `EvalContextId` from the SDK, and
+`transfer_eval_context` from the confidential token. Its two jobs are covered better: handle
+domain separation was never needed for deterministic ops (content addressing), and rand freshness
+was only caller-supplied *advice* (two frames sharing a `context_id` in one slot derived identical
+rand seeds), where the anchor is *enforced*.
+
+Load-bearing invariants (must survive refactors):
+- Every declared durable output is always written, and duplicate durable-output accounts within a
+  frame are rejected (`EvalAccountTable::claim_durable_output`) — these make the anchor a consumed
+  ticket.
+- Two frames presenting the same `(key, previous_handle)` serialize on the account write-lock; the
+  second fails the pin and reverts fully, and a reverted frame's seed never materializes, so its
+  ticket correctly remains valid for retry.
+- No seed-steering: the preimage is fully determined by the caller's own signed frame + slot
+  context; front-running the pinned handle makes the frame fail loudly, never compute on an
+  attacker-chosen seed.
+- **Standing invariant**: no close/expiry/reopen path exists for `EncryptedValue` (the lifecycle
+  is deliberately sealed). If one is ever added (#1705, #1710), close-then-recreate within one
+  slot lets a `(key, [0; 32])` creation ticket recur, and this argument must be re-derived.

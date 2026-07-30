@@ -282,12 +282,11 @@ fn supersede_with_fhe_eval(
     host_config_account: Account,
     address: Pubkey,
     value: &EncryptedValue,
-    context_id_tag: u8,
+    plaintext_tag: u8,
 ) -> EncryptedValue {
     let args = FheEvalArgs {
-        context_id: [context_id_tag; 32],
         steps: vec![FheEvalStep::TrivialEncrypt {
-            plaintext: [context_id_tag; 32],
+            plaintext: [plaintext_tag; 32],
             fhe_type: 5,
             output: FheEvalOutput::AllowedDurable {
                 output_encrypted_value_index: 0,
@@ -339,13 +338,12 @@ fn expect_fhe_eval_supersede_error(
     previous_handle: [u8; 32],
     previous_subjects: Vec<Pubkey>,
     output_subjects: Vec<host::AclSubjectEntry>,
-    context_id_tag: u8,
+    plaintext_tag: u8,
     expected: Check<'static>,
 ) {
     let args = FheEvalArgs {
-        context_id: [context_id_tag; 32],
         steps: vec![FheEvalStep::TrivialEncrypt {
-            plaintext: [context_id_tag; 32],
+            plaintext: [plaintext_tag; 32],
             fhe_type: 5,
             output: FheEvalOutput::AllowedDurable {
                 output_encrypted_value_index: 0,
@@ -742,7 +740,6 @@ fn mollusk_fhe_eval_fails_closed_without_previous_bank_hash() {
         &[subject],
     );
     let args = FheEvalArgs {
-        context_id: [1; 32],
         steps: vec![FheEvalStep::TrivialEncrypt {
             plaintext: [1; 32],
             fhe_type: 5,
@@ -1255,7 +1252,6 @@ fn mollusk_fhe_eval_supersede_rotates_subjects_and_seals_the_outgoing_audience()
     );
 
     let args = FheEvalArgs {
-        context_id: [7; 32],
         steps: vec![FheEvalStep::TrivialEncrypt {
             plaintext: [7; 32],
             fhe_type: 5,
@@ -1338,7 +1334,6 @@ fn mollusk_fhe_eval_supersede_shrinks_audience_and_seals_the_outgoing_set() {
     let bytes_before = encrypted_value_account(&value).data.len();
 
     let args = FheEvalArgs {
-        context_id: [8; 32],
         steps: vec![FheEvalStep::TrivialEncrypt {
             plaintext: [8; 32],
             fhe_type: 5,
@@ -1750,7 +1745,6 @@ fn mollusk_denied_caller_cannot_mutate_acl_update_or_eval_output() {
         zama_solana_acl::derive_value_key(caller.to_bytes(), caller.to_bytes(), output_label);
     let (output_address, _bump) = host::encrypted_value_address(output_value_key);
     let args = FheEvalArgs {
-        context_id: [9; 32],
         steps: vec![FheEvalStep::TrivialEncrypt {
             plaintext: [1; 32],
             fhe_type: 5,
@@ -1816,7 +1810,6 @@ fn mollusk_fhe_eval_rejects_denied_second_output_authority_in_multi_output_frame
     ))
     .0;
     let args = FheEvalArgs {
-        context_id: [11; 32],
         steps: vec![
             FheEvalStep::TrivialEncrypt {
                 plaintext: [3; 32],
@@ -1960,7 +1953,6 @@ fn mollusk_paused_state_blocks_acl_update_and_eval_output() {
         zama_solana_acl::derive_value_key(authority.to_bytes(), authority.to_bytes(), output_label);
     let (output_address, _bump) = host::encrypted_value_address(output_value_key);
     let args = FheEvalArgs {
-        context_id: [10; 32],
         steps: vec![FheEvalStep::TrivialEncrypt {
             plaintext: [2; 32],
             fhe_type: 5,
@@ -2261,7 +2253,6 @@ fn mollusk_fhe_eval_creates_durable_output_from_local_binary_add() {
     let (output_address, _bump) = host::encrypted_value_address(output_value_key);
 
     let args = FheEvalArgs {
-        context_id: [7; 32],
         steps: vec![FheEvalStep::Binary {
             op: FheBinaryOpCode::Add,
             lhs: FheEvalOperand::AllowedDurable {
@@ -2337,7 +2328,6 @@ fn mollusk_fhe_eval_supersedes_durable_output_with_previous_state() {
     let previous_subjects = output_value.subjects.clone();
 
     let args = FheEvalArgs {
-        context_id: [8; 32],
         steps: vec![FheEvalStep::Binary {
             op: FheBinaryOpCode::Add,
             lhs: FheEvalOperand::AllowedDurable {
@@ -2440,10 +2430,7 @@ fn born_public_frame(step_count: usize, born_public_steps: &[usize]) -> BornPubl
         authority,
         authority,
         host_config,
-        FheEvalArgs {
-            context_id: label("born-public-frame"),
-            steps,
-        },
+        FheEvalArgs { steps },
         output_metas,
     );
     let mut accounts = vec![
@@ -3802,7 +3789,6 @@ impl EvalFixture {
             },
             host::instruction::FheEval {
                 args: FheEvalArgs {
-                    context_id: label("block-cap-frame"),
                     steps: self.success_steps(),
                 },
             },
@@ -3887,10 +3873,7 @@ impl EvalFixture {
                 program: self.program_id,
             },
             host::instruction::FheEval {
-                args: FheEvalArgs {
-                    context_id: label("max-ops-frame"),
-                    steps,
-                },
+                args: FheEvalArgs { steps },
             },
         );
         ix.accounts.push(writable(self.balance_value));
@@ -3927,10 +3910,7 @@ impl EvalFixture {
                 program: self.program_id,
             },
             host::instruction::FheEval {
-                args: FheEvalArgs {
-                    context_id: label("transient-only"),
-                    steps,
-                },
+                args: FheEvalArgs { steps },
             },
         );
         ix.accounts.push(writable(self.balance_value));
@@ -3962,7 +3942,6 @@ impl EvalFixture {
             },
             host::instruction::FheEval {
                 args: FheEvalArgs {
-                    context_id: label("persist-nothing"),
                     steps: vec![FheEvalStep::TrivialEncrypt {
                         plaintext: [7; 32],
                         fhe_type: 5,
@@ -3999,7 +3978,6 @@ impl EvalFixture {
             },
             host::instruction::FheEval {
                 args: FheEvalArgs {
-                    context_id: output_label,
                     steps: vec![FheEvalStep::TrivialEncrypt {
                         plaintext: [7; 32],
                         fhe_type: 5,
@@ -4092,10 +4070,7 @@ impl EvalFixture {
                 program: self.program_id,
             },
             host::instruction::FheEval {
-                args: FheEvalArgs {
-                    context_id: output_label,
-                    steps,
-                },
+                args: FheEvalArgs { steps },
             },
         );
         ix.accounts.push(writable(self.balance_value));
@@ -4707,6 +4682,30 @@ fn mollusk_fhe_eval_transient_only_frame_is_metered_via_compute_subject() {
     let meter = read_hcu_block_meter(&fixture.context, meter_pda).expect("meter created");
     assert_eq!(meter.app, fixture.block_cap_app());
     assert_eq!(meter.used_hcu, TRANSIENT_FRAME_HCU);
+}
+
+#[test]
+fn mollusk_fhe_eval_rejects_rand_frame_without_durable_output() {
+    // fhevm-internal#1853 W4: rand seeds are anchored to the frame's durable writes, so an
+    // all-transient rand frame has no seed anchor. Rejected unconditionally in preflight —
+    // unlike the cap-gated persist-nothing rule, this holds under the unrestricted default cap.
+    let fixture = EvalFixture::with_block_cap(u64::MAX);
+    let mut ix = fixture.persist_nothing_instruction(None, None);
+    ix.data = host::instruction::FheEval {
+        args: FheEvalArgs {
+            steps: vec![FheEvalStep::Rand {
+                fhe_type: 5,
+                output: FheEvalOutput::AllowedLocal,
+            }],
+        },
+    }
+    .data();
+    fixture.context.process_and_validate_instruction(
+        &ix,
+        &[custom_error(
+            host::errors::ZamaHostError::FheEvalRandRequiresDurableOutput,
+        )],
+    );
 }
 
 #[test]

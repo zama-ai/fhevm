@@ -649,10 +649,6 @@ mod tests {
         handle
     }
 
-    fn context_id(tag: u8) -> zama_fhe::EvalContextId {
-        zama_fhe::EvalContextId::new(handle(tag)).unwrap()
-    }
-
     fn account_info(pubkey: Pubkey, is_writable: bool) -> AccountInfo<'static> {
         let key = Box::leak(Box::new(pubkey));
         let owner = Box::leak(Box::new(System::id()));
@@ -687,8 +683,7 @@ mod tests {
         let output_slot = durable_slot(authority, 2);
         let output_acl = output_slot.address();
         let input = zama_fhe::Uint64Handle::durable(balance_handle(1), input_slot).unwrap();
-        let mut builder =
-            zama_fhe::EvalBuilder::new(context_id(9), zama_fhe::EvalAppAuthority::new(authority));
+        let mut builder = zama_fhe::EvalBuilder::new(zama_fhe::EvalAppAuthority::new(authority));
         builder
             .add(
                 input,

@@ -802,7 +802,6 @@ mod tests {
         let ev0 = pk(0xE0);
         let ev1 = pk(0xE1);
         let plan = FheEvalArgs {
-            context_id: pk(0x01),
             steps: vec![
                 FheEvalStep::TrivialEncrypt {
                     plaintext: pk(0x10),
@@ -876,7 +875,6 @@ mod tests {
         let ev0 = pk(0xE0);
         let ev1 = pk(0xE1);
         let plan = FheEvalArgs {
-            context_id: pk(0x01),
             steps: vec![
                 FheEvalStep::TrivialEncrypt {
                     plaintext: pk(0x02),
@@ -957,7 +955,6 @@ mod tests {
     #[test]
     fn extra_batch_for_non_public_frame_fails_closed() {
         let plan = FheEvalArgs {
-            context_id: pk(0x01),
             steps: vec![FheEvalStep::TrivialEncrypt {
                 plaintext: pk(0x02),
                 fhe_type: 5,

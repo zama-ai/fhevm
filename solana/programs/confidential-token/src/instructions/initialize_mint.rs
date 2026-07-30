@@ -63,17 +63,8 @@ pub fn initialize_mint<'info>(ctx: Context<'info, InitializeMint<'info>>) -> Res
         durable_slot(mint_key, total_supply_authority, total_supply_label()),
         fhe::DurableAudience::compute_only(compute_signer),
     )?;
-    let context_id = transfer_eval_context(
-        b"initialize-total-supply",
-        mint_key,
-        total_supply_authority,
-        total_supply_authority,
-        [0; 32],
-    )?;
-    let mut builder = zama_fhe::EvalBuilder::new(
-        context_id,
-        zama_fhe::EvalAppAuthority::new(total_supply_authority),
-    );
+    let mut builder =
+        zama_fhe::EvalBuilder::new(zama_fhe::EvalAppAuthority::new(total_supply_authority));
     builder
         .trivial_encrypt_u64(0, total_supply_output.output())
         .map_err(invalid_eval_plan)?;

@@ -8,17 +8,23 @@
 
 use super::*;
 
-/// Per-frame slot entropy and identifiers shared by every handle derivation.
+/// Per-frame slot entropy, identity, and rand anchor shared by every handle derivation.
 pub(super) struct EvalHandleContext<'a> {
     pub chain_id: u64,
     pub previous_bank_hash: &'a [u8; 32],
     pub unix_timestamp: i64,
-    pub context_id: &'a [u8; 32],
+    /// Signed caller identity folded into rand seeds (never into deterministic handles).
+    pub compute_subject: Pubkey,
+    /// The frame's durable-write anchor: every durable output's
+    /// `(account key, previous_handle)` pair concatenated in wire order
+    /// (see [`computed_eval_rand_seed`]).
+    pub durable_anchor_bytes: &'a [u8],
 }
 
-// Durable and instruction-local outputs derive the identical handle: the base
-// handle (op/operands/type + per-block entropy) already distinguishes distinct
-// ciphertexts, matching EVM `FHEVMExecutor`, which binds no per-output value.
+// Durable and instruction-local outputs derive the identical handle, and identical
+// computations collide by design: deterministic handles are content-addressed
+// (op/operands/type + slot entropy, no salt), matching EVM `FHEVMExecutor`. Only
+// rand seeds carry uniqueness — signer identity plus the durable-write anchor.
 impl EvalHandleContext<'_> {
     fn binary_result(
         &self,
@@ -27,7 +33,6 @@ impl EvalHandleContext<'_> {
         rhs: [u8; 32],
         scalar: bool,
         output_fhe_type: u8,
-        op_index: u16,
     ) -> [u8; 32] {
         computed_eval_handle(
             op,
@@ -38,8 +43,6 @@ impl EvalHandleContext<'_> {
             self.chain_id,
             *self.previous_bank_hash,
             self.unix_timestamp,
-            *self.context_id,
-            op_index,
         )
     }
 
@@ -50,7 +53,6 @@ impl EvalHandleContext<'_> {
         if_true: [u8; 32],
         if_false: [u8; 32],
         output_fhe_type: u8,
-        op_index: u16,
     ) -> [u8; 32] {
         computed_eval_ternary_handle(
             op,
@@ -61,40 +63,31 @@ impl EvalHandleContext<'_> {
             self.chain_id,
             *self.previous_bank_hash,
             self.unix_timestamp,
-            *self.context_id,
-            op_index,
         )
     }
 
-    fn trivial_result(&self, plaintext: [u8; 32], fhe_type: u8, op_index: u16) -> [u8; 32] {
+    fn trivial_result(&self, plaintext: [u8; 32], fhe_type: u8) -> [u8; 32] {
         computed_eval_trivial_handle(
             plaintext,
             fhe_type,
             self.chain_id,
             *self.previous_bank_hash,
             self.unix_timestamp,
-            *self.context_id,
-            op_index,
         )
     }
 
     fn rand_seed(&self, op_index: u16) -> [u8; 16] {
         computed_eval_rand_seed(
+            self.compute_subject,
+            self.durable_anchor_bytes,
+            op_index,
             self.chain_id,
             *self.previous_bank_hash,
             self.unix_timestamp,
-            *self.context_id,
-            op_index,
         )
     }
 
-    fn unary_result(
-        &self,
-        op: FheUnaryOpCode,
-        operand: [u8; 32],
-        output_fhe_type: u8,
-        op_index: u16,
-    ) -> [u8; 32] {
+    fn unary_result(&self, op: FheUnaryOpCode, operand: [u8; 32], output_fhe_type: u8) -> [u8; 32] {
         computed_eval_unary_handle(
             op,
             operand,
@@ -102,20 +95,16 @@ impl EvalHandleContext<'_> {
             self.chain_id,
             *self.previous_bank_hash,
             self.unix_timestamp,
-            *self.context_id,
-            op_index,
         )
     }
 
-    fn sum_result(&self, operand_handles: &[[u8; 32]], fhe_type: u8, op_index: u16) -> [u8; 32] {
+    fn sum_result(&self, operand_handles: &[[u8; 32]], fhe_type: u8) -> [u8; 32] {
         computed_eval_sum_handle(
             operand_handles,
             fhe_type,
             self.chain_id,
             *self.previous_bank_hash,
             self.unix_timestamp,
-            *self.context_id,
-            op_index,
         )
     }
 
@@ -124,7 +113,6 @@ impl EvalHandleContext<'_> {
         value_handle: [u8; 32],
         set_handles: &[[u8; 32]],
         fhe_type: u8,
-        op_index: u16,
     ) -> [u8; 32] {
         computed_eval_is_in_handle(
             value_handle,
@@ -133,8 +121,6 @@ impl EvalHandleContext<'_> {
             self.chain_id,
             *self.previous_bank_hash,
             self.unix_timestamp,
-            *self.context_id,
-            op_index,
         )
     }
 
@@ -145,7 +131,6 @@ impl EvalHandleContext<'_> {
         scalar: bool,
         divisor: [u8; 32],
         output_fhe_type: u8,
-        op_index: u16,
     ) -> [u8; 32] {
         computed_eval_mul_div_handle(
             factor1,
@@ -156,8 +141,6 @@ impl EvalHandleContext<'_> {
             self.chain_id,
             *self.previous_bank_hash,
             self.unix_timestamp,
-            *self.context_id,
-            op_index,
         )
     }
 }
@@ -244,7 +227,6 @@ pub(super) fn walk_eval_frame<'info>(
                     rhs.handle,
                     rhs.scalar,
                     *output_fhe_type,
-                    op_index,
                 );
                 execution.accept_output(
                     ctx,
@@ -277,7 +259,6 @@ pub(super) fn walk_eval_frame<'info>(
                     if_true.handle,
                     if_false.handle,
                     *output_fhe_type,
-                    op_index,
                 );
                 execution.accept_output(
                     ctx,
@@ -293,7 +274,7 @@ pub(super) fn walk_eval_frame<'info>(
                 output,
             } => {
                 assert_supported_fhe_type(*fhe_type)?;
-                let result = handle_context.trivial_result(*plaintext, *fhe_type, op_index);
+                let result = handle_context.trivial_result(*plaintext, *fhe_type);
                 execution.accept_output(ctx, op_index, result, output, false)?;
             }
             FheEvalStep::Rand { fhe_type, output } => {
@@ -310,8 +291,7 @@ pub(super) fn walk_eval_frame<'info>(
             } => {
                 let operand = execution.resolve_encrypted_operand(operand)?;
                 assert_unary_operand_type(*op, operand.handle, *output_fhe_type)?;
-                let result =
-                    handle_context.unary_result(*op, operand.handle, *output_fhe_type, op_index);
+                let result = handle_context.unary_result(*op, operand.handle, *output_fhe_type);
                 execution.accept_output(
                     ctx,
                     op_index,
@@ -347,7 +327,7 @@ pub(super) fn walk_eval_frame<'info>(
                 let operand_handles: Vec<[u8; 32]> = resolved.iter().map(|r| r.handle).collect();
                 assert_sum_operand_types(&operand_handles, *fhe_type)?;
                 let public_decrypt = resolved.iter().all(|r| r.public_decrypt_allowed);
-                let result = handle_context.sum_result(&operand_handles, *fhe_type, op_index);
+                let result = handle_context.sum_result(&operand_handles, *fhe_type);
                 execution.accept_output(ctx, op_index, result, output, public_decrypt)?;
             }
             FheEvalStep::IsIn {
@@ -365,12 +345,8 @@ pub(super) fn walk_eval_frame<'info>(
                 assert_is_in_operand_types(value_resolved.handle, &set_handles, *fhe_type)?;
                 let public_decrypt = value_resolved.public_decrypt_allowed
                     && set_resolved.iter().all(|r| r.public_decrypt_allowed);
-                let result = handle_context.is_in_result(
-                    value_resolved.handle,
-                    &set_handles,
-                    *fhe_type,
-                    op_index,
-                );
+                let result =
+                    handle_context.is_in_result(value_resolved.handle, &set_handles, *fhe_type);
                 execution.accept_output(ctx, op_index, result, output, public_decrypt)?;
             }
             FheEvalStep::MulDiv {
@@ -395,7 +371,6 @@ pub(super) fn walk_eval_frame<'info>(
                     factor2.scalar,
                     *divisor,
                     *output_fhe_type,
-                    op_index,
                 );
                 execution.accept_output(
                     ctx,

@@ -76,7 +76,7 @@ impl ClearValue {
 /// are intentionally ignored.
 pub fn evaluate(args: &FheEvalArgs, inputs: &ClearInputs) -> Result<Vec<TypedClearValue>, String> {
     let mut produced = Vec::<ClearValue>::with_capacity(args.steps.len());
-    let mut random = StdRng::from_seed(args.context_id);
+    let mut random = StdRng::from_seed([7; 32]);
 
     for step in &args.steps {
         let value = match step {

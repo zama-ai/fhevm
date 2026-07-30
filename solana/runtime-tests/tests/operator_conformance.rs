@@ -1025,10 +1025,7 @@ fn bounded_rand_step(upper_bound: [u8; 32], fhe_type: u8) -> FheEvalStep {
 }
 
 fn args(steps: Vec<FheEvalStep>) -> FheEvalArgs {
-    FheEvalArgs {
-        context_id: [7; 32],
-        steps,
-    }
+    FheEvalArgs { steps }
 }
 
 fn local_output() -> FheEvalOutput {

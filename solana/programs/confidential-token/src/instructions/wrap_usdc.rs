@@ -148,17 +148,8 @@ pub fn wrap_usdc<'info>(ctx: Context<'info, WrapUsdc<'info>>, amount: u64) -> Re
     )?;
     let mut amount_context = [0u8; 32];
     amount_context[24..].copy_from_slice(&amount.to_be_bytes());
-    let context_id = transfer_eval_context(
-        b"wrap-balance",
-        mint_key,
-        token_account.key(),
-        token_account.key(),
-        amount_context,
-    )?;
-    let mut builder = zama_fhe::EvalBuilder::new(
-        context_id,
-        zama_fhe::EvalAppAuthority::new(token_account.key()),
-    );
+    let mut builder =
+        zama_fhe::EvalBuilder::new(zama_fhe::EvalAppAuthority::new(token_account.key()));
     let encrypted_amount = builder
         .trivial_encrypt_u64(amount, zama_fhe::Output::transient())
         .map_err(invalid_eval_plan)?;

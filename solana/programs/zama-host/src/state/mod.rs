@@ -6,7 +6,6 @@
 
 use anchor_lang::prelude::*;
 use solana_keccak_hasher::hashv as keccak_hashv;
-use solana_sha256_hasher::hashv;
 use solana_sysvar::get_sysvar;
 
 use crate::constants::{COMPUTATION_DOMAIN_SEPARATOR, COMPUTED_HANDLE_MARKER};
@@ -155,10 +154,6 @@ impl FheUnaryOpCode {
 /// Arguments for composed instruction-local FHE evaluation.
 #[derive(AnchorSerialize, AnchorDeserialize, Clone, Debug, PartialEq, Eq)]
 pub struct FheEvalArgs {
-    /// Caller-chosen domain separator for the instruction-local handles in this eval.
-    ///
-    /// Callers should use a fresh value for each logical eval session.
-    pub context_id: [u8; 32],
     /// Ordered step list. Each `AllowedLocal` operand may only reference an output
     /// produced by an earlier index in this vector.
     pub steps: Vec<FheEvalStep>,
@@ -824,7 +819,9 @@ fn finish_computed_handle(result: &mut [u8; 32], chain_id_bytes: &[u8; 8], fhe_t
     result[31] = HANDLE_VERSION;
 }
 
-/// Derives an instruction-local eval operation handle from explicit slot entropy.
+/// Derives a content-addressed binary eval handle (EVM `FHEVMExecutor` shape):
+/// no salt beyond slot entropy, so an identical computation derives the
+/// identical handle — the same value, by construction.
 pub fn computed_eval_handle(
     op: FheBinaryOpCode,
     lhs: [u8; 32],
@@ -834,18 +831,13 @@ pub fn computed_eval_handle(
     chain_id: u64,
     previous_bank_hash: [u8; 32],
     unix_timestamp: i64,
-    context_id: [u8; 32],
-    op_index: u16,
 ) -> [u8; 32] {
     let op_byte = [op.as_u8()];
     let scalar_byte = [u8::from(scalar)];
     let chain_id_bytes = chain_id.to_be_bytes();
-    let op_index_bytes = op_index.to_be_bytes();
     let timestamp_bytes = unix_timestamp.to_be_bytes();
     let mut result = keccak_hashv(&[
         b"FHE_eval",
-        &context_id,
-        &op_index_bytes,
         &op_byte,
         &lhs,
         &rhs,
@@ -861,8 +853,7 @@ pub fn computed_eval_handle(
     result
 }
 
-/// Derives an instruction-local ternary eval operation handle from explicit slot entropy.
-#[allow(clippy::too_many_arguments)]
+/// Derives a content-addressed ternary eval handle (see [`computed_eval_handle`]).
 pub fn computed_eval_ternary_handle(
     op: FheTernaryOpCode,
     control: [u8; 32],
@@ -872,17 +863,12 @@ pub fn computed_eval_ternary_handle(
     chain_id: u64,
     previous_bank_hash: [u8; 32],
     unix_timestamp: i64,
-    context_id: [u8; 32],
-    op_index: u16,
 ) -> [u8; 32] {
     let op_byte = [op.as_u8()];
     let chain_id_bytes = chain_id.to_be_bytes();
-    let op_index_bytes = op_index.to_be_bytes();
     let timestamp_bytes = unix_timestamp.to_be_bytes();
-    let mut result = hashv(&[
+    let mut result = keccak_hashv(&[
         b"FHE_eval_ternary",
-        &context_id,
-        &op_index_bytes,
         &op_byte,
         &control,
         &if_true,
@@ -898,24 +884,19 @@ pub fn computed_eval_ternary_handle(
     result
 }
 
-/// Derives an instruction-local trivial-encrypt eval handle from explicit slot entropy.
+/// Derives a content-addressed trivial-encrypt eval handle (see [`computed_eval_handle`]).
 pub fn computed_eval_trivial_handle(
     plaintext: [u8; 32],
     fhe_type: u8,
     chain_id: u64,
     previous_bank_hash: [u8; 32],
     unix_timestamp: i64,
-    context_id: [u8; 32],
-    op_index: u16,
 ) -> [u8; 32] {
     let chain_id_bytes = chain_id.to_be_bytes();
-    let op_index_bytes = op_index.to_be_bytes();
     let timestamp_bytes = unix_timestamp.to_be_bytes();
     let fhe_type_bytes = [fhe_type];
-    let mut result = hashv(&[
+    let mut result = keccak_hashv(&[
         b"FHE_eval_trivial",
-        &context_id,
-        &op_index_bytes,
         &plaintext,
         &fhe_type_bytes,
         crate::ID.as_ref(),
@@ -929,20 +910,31 @@ pub fn computed_eval_trivial_handle(
     result
 }
 
-/// Derives the seed emitted for an instruction-local eval random handle.
+/// Derives the compulsorily fresh seed for an instruction-local eval random handle.
+///
+/// Freshness is anchored, never caller-advised: `durable_anchor_bytes` is the frame's
+/// durable-write anchor — every durable output's `(account key, previous_handle)` pair
+/// concatenated in wire order (`[0u8; 32]` for a create). Each pair is verified against
+/// live state by the freshness pin and consumed by the frame's own supersede/create, so
+/// it can never validly recur: the `EncryptedValue` handle chain plays the role of EVM's
+/// `counterRand`, sharded per account and advanced by writes the frame already performs.
+/// `compute_subject` separates concurrent frames of different signers in the same slot;
+/// `op_index` separates rand steps within one frame; slot entropy separates slots.
 pub fn computed_eval_rand_seed(
+    compute_subject: Pubkey,
+    durable_anchor_bytes: &[u8],
+    op_index: u16,
     chain_id: u64,
     previous_bank_hash: [u8; 32],
     unix_timestamp: i64,
-    context_id: [u8; 32],
-    op_index: u16,
 ) -> [u8; 16] {
     let chain_id_bytes = chain_id.to_be_bytes();
     let op_index_bytes = op_index.to_be_bytes();
     let timestamp_bytes = unix_timestamp.to_be_bytes();
-    let hash = hashv(&[
+    let hash = keccak_hashv(&[
         b"FHE_eval_seed",
-        &context_id,
+        compute_subject.as_ref(),
+        durable_anchor_bytes,
         &op_index_bytes,
         crate::ID.as_ref(),
         &chain_id_bytes,
@@ -955,27 +947,18 @@ pub fn computed_eval_rand_seed(
     seed
 }
 
-/// Derives an instruction-local eval sum handle from explicit slot entropy.
-#[allow(clippy::too_many_arguments)]
+/// Derives a content-addressed sum eval handle (see [`computed_eval_handle`]).
 pub fn computed_eval_sum_handle(
     operand_handles: &[[u8; 32]],
     fhe_type: u8,
     chain_id: u64,
     previous_bank_hash: [u8; 32],
     unix_timestamp: i64,
-    context_id: [u8; 32],
-    op_index: u16,
 ) -> [u8; 32] {
     let chain_id_bytes = chain_id.to_be_bytes();
-    let op_index_bytes = op_index.to_be_bytes();
     let timestamp_bytes = unix_timestamp.to_be_bytes();
     let fhe_type_bytes = [fhe_type];
-    let mut preimage: Vec<&[u8]> = vec![
-        b"FHE_eval_sum",
-        &context_id,
-        &op_index_bytes,
-        &fhe_type_bytes,
-    ];
+    let mut preimage: Vec<&[u8]> = vec![b"FHE_eval_sum", &fhe_type_bytes];
     for h in operand_handles {
         preimage.push(h.as_ref());
     }
@@ -983,13 +966,12 @@ pub fn computed_eval_sum_handle(
     preimage.push(&chain_id_bytes);
     preimage.push(&previous_bank_hash);
     preimage.push(&timestamp_bytes);
-    let mut result = hashv(preimage.as_slice()).to_bytes();
+    let mut result = keccak_hashv(preimage.as_slice()).to_bytes();
     finish_computed_handle(&mut result, &chain_id_bytes, fhe_type);
     result
 }
 
-/// Derives an instruction-local eval is-in handle from explicit slot entropy.
-#[allow(clippy::too_many_arguments)]
+/// Derives a content-addressed is-in eval handle (see [`computed_eval_handle`]).
 pub fn computed_eval_is_in_handle(
     value_handle: [u8; 32],
     set_handles: &[[u8; 32]],
@@ -997,20 +979,11 @@ pub fn computed_eval_is_in_handle(
     chain_id: u64,
     previous_bank_hash: [u8; 32],
     unix_timestamp: i64,
-    context_id: [u8; 32],
-    op_index: u16,
 ) -> [u8; 32] {
     let chain_id_bytes = chain_id.to_be_bytes();
-    let op_index_bytes = op_index.to_be_bytes();
     let timestamp_bytes = unix_timestamp.to_be_bytes();
     let fhe_type_bytes = [fhe_type];
-    let mut preimage: Vec<&[u8]> = vec![
-        b"FHE_eval_is_in",
-        &context_id,
-        &op_index_bytes,
-        &fhe_type_bytes,
-        &value_handle,
-    ];
+    let mut preimage: Vec<&[u8]> = vec![b"FHE_eval_is_in", &fhe_type_bytes, &value_handle];
     for h in set_handles {
         preimage.push(h.as_ref());
     }
@@ -1018,13 +991,12 @@ pub fn computed_eval_is_in_handle(
     preimage.push(&chain_id_bytes);
     preimage.push(&previous_bank_hash);
     preimage.push(&timestamp_bytes);
-    let mut result = hashv(preimage.as_slice()).to_bytes();
+    let mut result = keccak_hashv(preimage.as_slice()).to_bytes();
     finish_computed_handle(&mut result, &chain_id_bytes, 0 /* ebool */);
     result
 }
 
-/// Derives an instruction-local eval mul-div handle from explicit slot entropy.
-#[allow(clippy::too_many_arguments)]
+/// Derives a content-addressed mul-div eval handle (see [`computed_eval_handle`]).
 pub fn computed_eval_mul_div_handle(
     factor1: [u8; 32],
     factor2: [u8; 32],
@@ -1034,17 +1006,12 @@ pub fn computed_eval_mul_div_handle(
     chain_id: u64,
     previous_bank_hash: [u8; 32],
     unix_timestamp: i64,
-    context_id: [u8; 32],
-    op_index: u16,
 ) -> [u8; 32] {
     let chain_id_bytes = chain_id.to_be_bytes();
-    let op_index_bytes = op_index.to_be_bytes();
     let timestamp_bytes = unix_timestamp.to_be_bytes();
     let scalar_byte = [u8::from(scalar)];
-    let mut result = hashv(&[
+    let mut result = keccak_hashv(&[
         b"FHE_eval_mul_div",
-        &context_id,
-        &op_index_bytes,
         &factor1,
         &factor2,
         &divisor,
@@ -1101,7 +1068,7 @@ pub fn computed_rand_bounded_handle(
     result
 }
 
-/// Derives an instruction-local eval unary handle from explicit slot entropy.
+/// Derives a content-addressed unary eval handle (see [`computed_eval_handle`]).
 pub fn computed_eval_unary_handle(
     op: FheUnaryOpCode,
     operand: [u8; 32],
@@ -1109,22 +1076,13 @@ pub fn computed_eval_unary_handle(
     chain_id: u64,
     previous_bank_hash: [u8; 32],
     unix_timestamp: i64,
-    context_id: [u8; 32],
-    op_index: u16,
 ) -> [u8; 32] {
     let op_byte = [op.as_u8()];
     let type_byte = [fhe_type];
     let chain_id_bytes = chain_id.to_be_bytes();
-    let op_index_bytes = op_index.to_be_bytes();
     let timestamp_bytes = unix_timestamp.to_be_bytes();
     // Cast binds its target type into the prehandle (EVM `FHEVMExecutor.cast`); Neg/Not take it from the operand.
-    let mut parts: Vec<&[u8]> = vec![
-        b"FHE_eval_unary",
-        &context_id,
-        &op_index_bytes,
-        &op_byte,
-        &operand,
-    ];
+    let mut parts: Vec<&[u8]> = vec![b"FHE_eval_unary", &op_byte, &operand];
     if matches!(op, FheUnaryOpCode::Cast) {
         parts.push(&type_byte);
     }
@@ -1134,7 +1092,7 @@ pub fn computed_eval_unary_handle(
         &previous_bank_hash,
         &timestamp_bytes,
     ]);
-    let mut result = hashv(&parts).to_bytes();
+    let mut result = keccak_hashv(&parts).to_bytes();
     finish_computed_handle(&mut result, &chain_id_bytes, fhe_type);
     result
 }
