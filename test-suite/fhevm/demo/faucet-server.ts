@@ -34,9 +34,10 @@ import {
   type TransactionSigner,
 } from "@solana/kit";
 
+import { readDemoAllowedOriginFromEnv, readDemoAuthorizationFromEnv } from "./authorization";
 import { readDemoConfig } from "./config";
-import { DEMO_KEYPAIRS } from "./loadDemoEnv";
 import { serveFaucet, type UsdcMinter } from "./faucet";
+import { DEMO_KEYPAIRS } from "./loadDemoEnv";
 import { associatedTokenAddress, createIdempotentAtaInstruction } from "./tokenAccounts";
 
 // Mock USDC is minted on the classic token program.
@@ -99,6 +100,8 @@ const buildUsdcMinter = async (options: {
 };
 
 const main = async (): Promise<void> => {
+  const authorization = await readDemoAuthorizationFromEnv();
+  const allowedOrigin = readDemoAllowedOriginFromEnv();
   const config = await readDemoConfig();
   const mintUsdc = await buildUsdcMinter({
     rpcUrl: config.rpcUrl,
@@ -107,7 +110,7 @@ const main = async (): Promise<void> => {
     mint: address(config.mints.joinUnderlying),
     mintAuthorityKeypairPath: DEMO_KEYPAIRS.mintAuthority,
   });
-  const { port } = serveFaucet({ rpcUrl: config.rpcUrl, mintUsdc });
+  const { port } = serveFaucet({ rpcUrl: config.rpcUrl, mintUsdc, authorization, allowedOrigin });
   console.log(`demo faucet listening on http://127.0.0.1:${port} (mock USDC mint ${config.mints.joinUnderlying})`);
 };
 

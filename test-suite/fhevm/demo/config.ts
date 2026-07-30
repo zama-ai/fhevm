@@ -42,14 +42,12 @@ export type VaultDemoRoots = {
   readonly kmsContext: Address;
 };
 
-/** Where `demo-seed` writes the artifact and every consumer reads it from, unless overridden. */
-export const DEMO_CONFIG_DEFAULT_PATH = ".fhevm/runtime/solana-demo.json";
+/** Absolute artifact path shared by seed, lifecycle, faucet, smoke, and dApp, unless explicitly overridden. */
+export const DEMO_CONFIG_DEFAULT_PATH = path.resolve(import.meta.dir, "../../..", ".fhevm/runtime/solana-demo.json");
 
 /**
- * The config path every producer/consumer honors: `DEMO_CONFIG_PATH` if set, else the CWD-relative
- * default. demo-up.sh and the solana-e2e workflow export an ABSOLUTE `DEMO_CONFIG_PATH` ($ROOT-based)
- * so the path is stable regardless of which directory a step runs from (the seed runs from
- * test-suite/fhevm, later steps from the repo root). Resolved at call time so the env is read live.
+ * The config path every producer/consumer honors: `DEMO_CONFIG_PATH` if set, else the repo-root
+ * absolute default. Resolved at call time so the environment is read live.
  */
 export const resolveDemoConfigPath = (): string => process.env.DEMO_CONFIG_PATH ?? DEMO_CONFIG_DEFAULT_PATH;
 
@@ -216,7 +214,20 @@ export const readDemoConfig = async (configPath = resolveDemoConfigPath()): Prom
 export const writeDemoConfig = async (config: SolanaDemoConfig, configPath = resolveDemoConfigPath()): Promise<void> => {
   const validated = parseDemoConfig(config); // never persist an artifact that would not re-load
   await fs.mkdir(path.dirname(configPath), { recursive: true });
-  await fs.writeFile(configPath, `${JSON.stringify(validated, null, 2)}\n`, "utf8");
+  const temporary = `${configPath}.${process.pid}.${crypto.randomUUID()}.tmp`;
+  try {
+    const handle = await fs.open(temporary, "wx", 0o600);
+    try {
+      await handle.writeFile(`${JSON.stringify(validated, null, 2)}\n`, "utf8");
+      await handle.sync();
+    } finally {
+      await handle.close();
+    }
+    await fs.rename(temporary, configPath);
+  } catch (error) {
+    await fs.rm(temporary, { force: true });
+    throw error;
+  }
 };
 
 const commonRoots = (config: SolanaDemoConfig): Pick<VaultDemoRoots, "batcherProgram" | "tokenProgram" | "vaultProgram" | "hostProgram" | "vault" | "hostConfig" | "kmsContext"> => ({

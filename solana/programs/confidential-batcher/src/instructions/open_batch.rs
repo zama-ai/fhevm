@@ -167,6 +167,7 @@ pub fn open_batch(ctx: Context<OpenBatch>, authority_funding_lamports: u64) -> R
             CpiContext::new_with_signer(
                 ctx.accounts.confidential_token_program.key(),
                 ct::cpi::accounts::InitializeTokenAccount {
+                    payer: ctx.accounts.batch_authority.to_account_info(),
                     owner: ctx.accounts.batch_authority.to_account_info(),
                     mint: mint.to_account_info(),
                     compute_signer: compute_signer.to_account_info(),

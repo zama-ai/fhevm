@@ -54,3 +54,4 @@ services:
 
 volumes:
   minio_secrets:
+    name: fhevm_minio_secrets

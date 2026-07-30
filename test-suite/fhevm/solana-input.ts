@@ -13,9 +13,9 @@
 //
 // Output: `{ handles, signatures, extraData }` JSON on stdout.
 //
-// Run under node (e.g. `node solana-input.ts` on Node >= 22.6 / native on Node 24), NOT bun: the
-// TFHE WASM prover resolves its worker/wasm via node's locate-file path, which bun's browser-like
-// environment detection bypasses (throws "Missing locate file function").
+// Run under Node 24, NOT Bun: Node 24 executes TypeScript natively. The TFHE WASM prover needs
+// Node's locate-file path; Bun's browser-like detection bypasses it and throws
+// "Missing locate file function".
 import { defineFhevmSolanaChain } from '@fhevm/sdk/chains';
 import { createFhevmEncryptClient, setFhevmRuntimeConfig } from '@fhevm/sdk/solana';
 import type { Bytes32Hex } from '@fhevm/sdk/types';

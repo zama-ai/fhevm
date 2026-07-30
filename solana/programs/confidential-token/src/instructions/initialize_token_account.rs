@@ -6,9 +6,13 @@ use super::*;
 #[derive(Accounts)]
 #[event_cpi]
 pub struct InitializeTokenAccount<'info> {
-    /// Account owner and rent payer.
+    /// Pays rent for the token account and its initial encrypted balance.
     #[account(mut)]
-    pub owner: Signer<'info>,
+    pub payer: Signer<'info>,
+    /// Account owner. The canonical token-account PDA, stored owner, and
+    /// encrypted-value ACL audience are all derived from this address.
+    /// CHECK: This account is used only as a public key.
+    pub owner: UncheckedAccount<'info>,
     /// Confidential mint this account belongs to.
     pub mint: Account<'info, ConfidentialMint>,
     /// CHECK: Program-controlled compute signer PDA.
@@ -16,7 +20,7 @@ pub struct InitializeTokenAccount<'info> {
     pub compute_signer: UncheckedAccount<'info>,
     #[account(
         init,
-        payer = owner,
+        payer = payer,
         space = 8 + ConfidentialTokenAccount::SPACE,
         seeds = [b"token-account", mint.key().as_ref(), owner.key().as_ref()],
         bump
@@ -110,7 +114,7 @@ pub fn initialize_token_account<'info>(
     )?;
     fhe::eval(fhe::Eval {
         context: fhe::EvalContext {
-            payer: &ctx.accounts.owner,
+            payer: &ctx.accounts.payer,
             event_authority: &ctx.accounts.zama_event_authority,
             zama_program: &ctx.accounts.zama_program,
             host_config: &ctx.accounts.host_config,

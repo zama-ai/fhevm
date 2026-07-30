@@ -32,7 +32,7 @@ vi.mock('../../../src/solana/deSigncrypt.ts', async (importOriginal) => {
 const { createFhevmDecryptClient, solanaSignerFromSecretKey, setFhevmRuntimeConfig } =
   await import('@fhevm/sdk/solana');
 const { defineFhevmSolanaChain } = await import('@fhevm/sdk/chains');
-const { solanaUserDecryptSigningPreimage, solanaUserDecryptClientId } =
+const { solanaUserDecryptSigningMessage, solanaUserDecryptClientId } =
   await import('../../../src/core/coprocessor/SolanaUserDecrypt-p.js');
 const { generateSolanaTransportKeyPair } = await import('../../../src/solana/deSigncrypt.js');
 
@@ -71,11 +71,11 @@ function buildHandleHex(): string {
 }
 
 describe('solanaSignerFromSecretKey', () => {
-  it('derives the ed25519 identity and signs a verifiable preimage', async () => {
+  it('derives the ed25519 identity and signs a verifiable wallet message', async () => {
     const signer = solanaSignerFromSecretKey(SEED);
     expect(Buffer.from(signer.publicKey).toString('hex')).toBe(Buffer.from(ed25519.getPublicKey(SEED)).toString('hex'));
 
-    const preimage = solanaUserDecryptSigningPreimage({
+    const signingMessage = solanaUserDecryptSigningMessage({
       contractsChainId: 12_345n,
       publicKey: new TextEncoder().encode('pk'),
       handles: [new Uint8Array(32).fill(0x03)],
@@ -87,9 +87,9 @@ describe('solanaSignerFromSecretKey', () => {
       durationSeconds: 3600n,
     });
 
-    const sig = await signer.sign(preimage);
+    const sig = await signer.sign(signingMessage);
     expect(sig.length).toBe(64);
-    expect(ed25519.verify(sig, preimage, signer.publicKey)).toBe(true);
+    expect(ed25519.verify(sig, signingMessage, signer.publicKey)).toBe(true);
   });
 
   it('rejects a non-32-byte seed', () => {
@@ -183,7 +183,7 @@ describe('createFhevmDecryptClient(...).userDecrypt', () => {
     // The body matches the relayer's v3 AttestedUserDecryptRequestJson envelope.
     expect(postedBody).toBeDefined();
     const body = postedBody as Record<string, unknown>;
-    expect(body.attestationType).toBe('solana-ed25519-user-decrypt-v1');
+    expect(body.attestationType).toBe('solana-ed25519-user-decrypt-v2');
 
     const payload = body.attestedPayload as Record<string, unknown>;
     expect(payload.version).toBe('2.0');
@@ -211,8 +211,8 @@ describe('createFhevmDecryptClient(...).userDecrypt', () => {
     // The transport public key is forwarded 0x-prefixed (v3 validate_0x_hex).
     expect(payload.publicKey).toBe('0x' + 'ab'.repeat(16));
 
-    // The top-level signature verifies against the canonical preimage.
-    const preimage = solanaUserDecryptSigningPreimage({
+    // The top-level signature verifies against the canonical wallet-safe message.
+    const signingMessage = solanaUserDecryptSigningMessage({
       contractsChainId: 12_345n,
       publicKey: hexToBytes('0x' + 'ab'.repeat(16)),
       handles: [hexToBytes(handleHex)],
@@ -224,6 +224,6 @@ describe('createFhevmDecryptClient(...).userDecrypt', () => {
       durationSeconds: 3600n,
       aclValueKey: ACL_VALUE_KEY,
     });
-    expect(ed25519.verify(hexToBytes(body.signature as string), preimage, signer.publicKey)).toBe(true);
+    expect(ed25519.verify(hexToBytes(body.signature as string), signingMessage, signer.publicKey)).toBe(true);
   });
 });

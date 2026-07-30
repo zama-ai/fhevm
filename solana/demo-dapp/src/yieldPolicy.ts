@@ -1,0 +1,4 @@
+export const DEMO_APY_PERCENT = 7;
+export const DEMO_RATE_WINDOW_DAYS = 30;
+export const DEMO_YEAR_GROWTH_NUMERATOR = 107n;
+export const DEMO_YEAR_GROWTH_DENOMINATOR = 100n;

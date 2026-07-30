@@ -46,6 +46,7 @@ FHEVM ensures both confidentiality and composability, with the following guarant
   - [Use cases](#use-cases)
 - [Resources](#resources)
 - [Working with FHEVM](#working-with-fhevm)
+  - [Solana confidential vault demo](#solana-confidential-vault-demo)
   - [Citations](#citations)
   - [Contributing](#contributing)
   - [License](#license)
@@ -116,6 +117,18 @@ _Learn more use cases in the [list of examples](https://docs.zama.ai/protocol/ex
 </p>
 
 ## Working with FHEVM
+
+### Solana confidential vault demo
+
+The `feature/solana` branch includes a source-built localnet demo with confidential USDC deposits,
+private vault shares, user decryption, redemption, and on-chain KMS certificate verification:
+
+```sh
+bun run demo:start
+```
+
+See the [demo guide](solana/demo-dapp/README.md) for prerequisites, architecture, and evidence.
+
 ### Citations
 
 To cite FHEVM or the whitepaper in academic papers, please use the following entries:

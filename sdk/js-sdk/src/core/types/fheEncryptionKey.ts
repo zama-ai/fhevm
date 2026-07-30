@@ -81,7 +81,8 @@ export type FheEncryptionCrsBytes = Prettify<
 
 export type FheEncryptionKeyMetadata = {
   readonly relayerUrl: string;
-  readonly chainId: number;
+  /** EVM chain ids are numbers; Solana's RFC-021 uint64 chain id is carried exactly as bigint. */
+  readonly chainId: number | bigint;
 };
 
 export type FheEncryptionKeyWasm = {

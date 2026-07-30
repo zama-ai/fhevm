@@ -139,15 +139,15 @@ const targets = [
   },
   {
     // The demo-vault client, also isolated under the vault module. The confidential-vault demo
-    // seeder is the only SDK caller (fhevm-internal#1760), so only initializeVault is kept — it
-    // creates the public share-mint vault the two batchers front. Its three PDAs (vaultAuthority,
-    // shareMint, vaultTokenAccount) all seed on the vault account alone, so their find* helpers are
-    // pure derivations; every account decoder is pruned (the seeder derives, never reads, the vault).
+    // seeder creates the public share-mint vault and the dApp's demo operator drives harvest to
+    // simulate yield. Harvest's underlying-mint and vault-token-account relations resolve from the
+    // Vault account, so its generated decoder is kept with the two instructions.
     idlPath: idlUrl('demo_vault.json'),
     generatedPath: `${sdkRoot}/src/solana/vault/internal/generated/demoVault`,
     keep: {
-      instructions: new Set(['initializeVault']),
+      instructions: new Set(['initializeVault', 'harvest']),
       definedTypes: new Set(),
+      accounts: new Set(['vault']),
       pdas: new Set(['vaultAuthority', 'shareMint', 'vaultTokenAccount']),
     },
     programAddress(program) {

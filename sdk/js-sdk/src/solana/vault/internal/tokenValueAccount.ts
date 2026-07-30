@@ -1,5 +1,6 @@
 import { getAddressEncoder, getProgramDerivedAddress, type Address } from '@solana/kit';
 
+import { deriveValueKey } from '../../proof.js';
 import {
   CONFIDENTIAL_TOKEN_PROGRAM_ADDRESS,
   ZAMA_HOST_PROGRAM_ADDRESS,
@@ -31,6 +32,18 @@ const pda = async (programAddress: Address, seeds: Uint8Array[]): Promise<Addres
 /** The confidential balance encrypted value account for `tokenAccount` under `mint` (label `balance`). */
 export const balanceValueAddress = (mint: Address, tokenAccount: Address): Promise<Address> =>
   encryptedValueAddress(mint, tokenAccount, BALANCE_LABEL);
+
+/** The value key and host account backing a confidential token account's live balance. */
+export const confidentialBalanceValueAccount = async (
+  mint: Address,
+  tokenAccount: Address,
+): Promise<{ readonly aclValueKey: Uint8Array; readonly encryptedValueAddress: Address }> => {
+  const aclValueKey = deriveValueKey(encodeAddress(mint), encodeAddress(tokenAccount), BALANCE_LABEL);
+  return {
+    aclValueKey,
+    encryptedValueAddress: await encryptedValueAddress(mint, tokenAccount, BALANCE_LABEL),
+  };
+};
 
 /** The transferred-amount encrypted value account for `tokenAccount` under `mint` (label `transferred_amount`). */
 export const transferredAmountValueAddress = (mint: Address, tokenAccount: Address): Promise<Address> =>

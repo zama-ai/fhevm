@@ -1,0 +1,27 @@
+{
+  "compilerOptions": {
+    "composite": true,
+    "skipLibCheck": true,
+    "module": "ESNext",
+    "moduleResolution": "Bundler",
+    "allowSyntheticDefaultImports": true,
+    "strict": true,
+    "noEmit": true,
+    "tsBuildInfoFile": "./node_modules/.cache/tsconfig.node.tsbuildinfo"
+  },
+  "include": [
+    "vite.config.ts",
+    "demoServerPlugin.ts",
+    "src/batchProvisioning.ts",
+    "src/batchTypes.ts",
+    "src/demoApi.ts",
+    "src/demoConfig.ts",
+    "src/harvestOperator.ts",
+    "src/sendTransaction.ts",
+    "src/settlement.ts",
+    "src/transactionSimulation.ts",
+    "src/vaultRoots.ts",
+    "src/yieldPolicy.ts",
+    "../../test-suite/fhevm/demo/authorization.ts"
+  ]
+}

@@ -295,6 +295,7 @@ fn token_fixture() -> TokenFixture {
     initialize_token_account(
         &mut svm,
         &alice,
+        alice.pubkey(),
         TokenAccountInit {
             token_program_id,
             host_program_id,
@@ -311,6 +312,7 @@ fn token_fixture() -> TokenFixture {
     initialize_token_account(
         &mut svm,
         &bob,
+        bob.pubkey(),
         TokenAccountInit {
             token_program_id,
             host_program_id,
@@ -357,14 +359,20 @@ struct TokenAccountInit {
     initial_balance: u64,
 }
 
-fn initialize_token_account(svm: &mut LiteSVM, owner: &Keypair, init: TokenAccountInit) {
+fn initialize_token_account(
+    svm: &mut LiteSVM,
+    payer: &Keypair,
+    owner: Pubkey,
+    init: TokenAccountInit,
+) {
     send(
         svm,
-        owner,
+        payer,
         Instruction {
             program_id: init.token_program_id,
             accounts: token::accounts::InitializeTokenAccount {
-                owner: owner.pubkey(),
+                payer: payer.pubkey(),
+                owner,
                 mint: init.mint,
                 compute_signer: init.compute_signer,
                 token_account: init.token_account,

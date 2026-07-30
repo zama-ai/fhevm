@@ -1,15 +1,16 @@
 // faucet — the minimal HTTP faucet the demo dApp's "get funds" button calls (#1760/#1761).
 //
-// Localnet-only, unauthenticated, permissive CORS. Two funding endpoints plus health:
+// Localnet-only, boot-authorized, exact-origin CORS. Two funding endpoints plus public health:
 //   POST /airdrop-sol   { address, sol? }       -> native validator airdrop (kit requestAirdrop)
 //   POST /mint-usdc     { address, amount? }    -> mints mock USDC to the recipient's ATA
 //   GET  /health                                 -> { ok: true }
 //
-// POC-lean by mandate: no auth, no rate limit, no config system. It is only ever bound to a local
-// validator; the mint authority is a committed demo keypair. `createFaucet` returns the request
-// handler (pure, unit-testable with a stub RPC + minter); `serveFaucet` wraps it in Bun.serve.
+// The mint authority is a committed demo keypair. `createFaucet` returns the request handler (pure,
+// unit-testable with a stub RPC + minter); `serveFaucet` wraps it in Bun.serve.
 
 import { address, createSolanaRpc, lamports, type Address, type Commitment, type Lamports } from "@solana/kit";
+
+import { authorizeDemoHeaders, type DemoAuthorization } from "./authorization";
 
 const LAMPORTS_PER_SOL = 1_000_000_000n;
 const DEFAULT_AIRDROP_SOL = 5;
@@ -32,18 +33,25 @@ export type AirdropRpc = {
 export type FaucetConfig = {
   readonly rpc: AirdropRpc;
   readonly mintUsdc: UsdcMinter;
+  readonly authorization: DemoAuthorization;
+  readonly allowedOrigin: string;
 };
 
-const CORS_HEADERS: Record<string, string> = {
-  "access-control-allow-origin": "*",
+const ALLOWED_CORS_HEADERS: Record<string, string> = {
   "access-control-allow-methods": "GET, POST, OPTIONS",
-  "access-control-allow-headers": "content-type",
+  "access-control-allow-headers": "authorization, content-type, x-fhevm-demo-boot-id",
+  vary: "Origin",
 };
 
-const json = (status: number, body: unknown): Response =>
+const corsHeaders = (request: Request, allowedOrigin: string): Record<string, string> =>
+  request.headers.get("origin") === allowedOrigin
+    ? { ...ALLOWED_CORS_HEADERS, "access-control-allow-origin": allowedOrigin }
+    : {};
+
+const json = (request: Request, allowedOrigin: string, status: number, body: unknown): Response =>
   new Response(JSON.stringify(body), {
     status,
-    headers: { "content-type": "application/json", ...CORS_HEADERS },
+    headers: { "content-type": "application/json", ...corsHeaders(request, allowedOrigin) },
   });
 
 const parseRecipient = (value: unknown): Address => {
@@ -66,18 +74,34 @@ const parsePositiveNumber = (value: unknown, name: string, fallback: number): nu
 /** Builds the faucet request handler over an injected RPC + USDC minter. */
 export const createFaucet = (config: FaucetConfig): ((request: Request) => Promise<Response>) => {
   return async (request: Request): Promise<Response> => {
-    if (request.method === "OPTIONS") return new Response(null, { status: 204, headers: CORS_HEADERS });
+    const originAllowed = request.headers.get("origin") === config.allowedOrigin;
+    if (request.method === "OPTIONS") {
+      return originAllowed
+        ? new Response(null, { status: 204, headers: corsHeaders(request, config.allowedOrigin) })
+        : new Response(null, { status: 403 });
+    }
 
     const url = new URL(request.url);
-    if (request.method === "GET" && url.pathname === "/health") return json(200, { ok: true });
+    if (request.method === "GET" && url.pathname === "/health") {
+      return json(request, config.allowedOrigin, 200, { ok: true });
+    }
 
-    if (request.method !== "POST") return json(405, { error: `method ${request.method} not allowed` });
+    if (request.method !== "POST") {
+      return json(request, config.allowedOrigin, 405, { error: `method ${request.method} not allowed` });
+    }
+    if (!originAllowed) {
+      return json(request, config.allowedOrigin, 403, { error: "demo faucet origin not allowed" });
+    }
+    const authorization = authorizeDemoHeaders((name) => request.headers.get(name), config.authorization);
+    if (!authorization.ok) {
+      return json(request, config.allowedOrigin, authorization.status, { error: authorization.error });
+    }
 
     let body: Record<string, unknown>;
     try {
       body = (await request.json()) as Record<string, unknown>;
     } catch {
-      return json(400, { error: "request body must be JSON" });
+      return json(request, config.allowedOrigin, 400, { error: "request body must be JSON" });
     }
 
     try {
@@ -89,7 +113,7 @@ export const createFaucet = (config: FaucetConfig): ((request: Request) => Promi
             commitment: "confirmed",
           })
           .send();
-        return json(200, { signature, address: recipient, sol });
+        return json(request, config.allowedOrigin, 200, { signature, address: recipient, sol });
       }
 
       if (url.pathname === "/mint-usdc") {
@@ -97,26 +121,40 @@ export const createFaucet = (config: FaucetConfig): ((request: Request) => Promi
         const amount = parsePositiveNumber(body.amount, "amount", Number(DEFAULT_USDC_AMOUNT));
         const baseUnits = BigInt(Math.round(amount * 10 ** USDC_DECIMALS));
         const signature = await config.mintUsdc(recipient, baseUnits);
-        return json(200, { signature, address: recipient, amount, baseUnits: baseUnits.toString() });
+        return json(request, config.allowedOrigin, 200, {
+          signature,
+          address: recipient,
+          amount,
+          baseUnits: baseUnits.toString(),
+        });
       }
     } catch (error) {
-      return json(400, { error: error instanceof Error ? error.message : String(error) });
+      return json(request, config.allowedOrigin, 400, {
+        error: error instanceof Error ? error.message : String(error),
+      });
     }
 
-    return json(404, { error: `no faucet endpoint at ${url.pathname}` });
+    return json(request, config.allowedOrigin, 404, { error: `no faucet endpoint at ${url.pathname}` });
   };
 };
 
 export type ServeFaucetOptions = {
   readonly rpcUrl: string;
   readonly mintUsdc: UsdcMinter;
+  readonly authorization: DemoAuthorization;
+  readonly allowedOrigin: string;
   readonly port?: number;
   readonly hostname?: string;
 };
 
 /** Starts the faucet on a local validator. Binds loopback by default (same-machine demo boundary). */
 export const serveFaucet = (options: ServeFaucetOptions): { port: number; stop: () => void } => {
-  const handler = createFaucet({ rpc: createSolanaRpc(options.rpcUrl), mintUsdc: options.mintUsdc });
+  const handler = createFaucet({
+    rpc: createSolanaRpc(options.rpcUrl),
+    mintUsdc: options.mintUsdc,
+    authorization: options.authorization,
+    allowedOrigin: options.allowedOrigin,
+  });
   const server = Bun.serve({
     port: options.port ?? 8090,
     hostname: options.hostname ?? "127.0.0.1",

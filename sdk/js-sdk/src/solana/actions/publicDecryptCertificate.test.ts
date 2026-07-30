@@ -112,6 +112,54 @@ describe('publicDecryptCertificate', () => {
     });
   });
 
+  it('retries only the typed KMS readiness timeout before queuing the certificate job', async () => {
+    vi.useFakeTimers();
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce(
+        new Response(
+          JSON.stringify({
+            status: 'failed',
+            error: { label: 'readiness_check_timed_out', message: 'KMS material is still indexing' },
+          }),
+          { status: 503, headers: { 'Retry-After': '1' } },
+        ),
+      )
+      .mockResolvedValueOnce(
+        new Response(JSON.stringify({ status: 'queued', requestId: 'r1', result: { jobId: 'j1' } }), {
+          status: 202,
+          headers: { 'Retry-After': '1' },
+        }),
+      )
+      .mockResolvedValueOnce(
+        new Response(JSON.stringify({ status: 'succeeded', requestId: 'r1', result: successResult() }), {
+          status: 200,
+        }),
+      );
+    global.fetch = fetchMock;
+
+    const pending = publicDecryptCertificate(context, parameters());
+    await vi.runAllTimersAsync();
+    await expect(pending).resolves.toMatchObject({ abiEncodedCleartext: '00' });
+    expect(fetchMock).toHaveBeenCalledTimes(3);
+  });
+
+  it('does not retry a non-readiness 503', async () => {
+    const fetchMock = vi.fn().mockResolvedValue(
+      new Response(
+        JSON.stringify({
+          status: 'failed',
+          error: { label: 'gateway_not_reachable', message: 'KMS gateway is unavailable' },
+        }),
+        { status: 503 },
+      ),
+    );
+    global.fetch = fetchMock;
+
+    await expect(publicDecryptCertificate(context, parameters())).rejects.toThrow('gateway_not_reachable');
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+  });
+
   it('rejects a non-public proof mode before the network', async () => {
     await expect(
       publicDecryptCertificate(context, { ...parameters(), mmrProofBytes: proofBlob(0x01) }),

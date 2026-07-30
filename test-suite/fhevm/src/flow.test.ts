@@ -4,6 +4,7 @@ import { describe, expect, test } from "bun:test";
 import { assertContractTaskStackRunning } from "./flow/contracts";
 import { validateDiscovery } from "./flow/discovery";
 import {
+  assertAutomaticCleanupAllowed,
   displayedBundle,
   multiChainCoprocessorUpgradeTargets,
   preflightPorts,
@@ -352,6 +353,44 @@ describe("resumeRepairStep", () => {
     expect(resumeRepairStep(state, running)).toBeUndefined();
   });
 
+  test("does not treat the externally managed Solana validator as a base container", () => {
+    const state = completeState();
+    state.scenario.hostChains.push({
+      key: "solana",
+      type: "solana",
+      chainId: "9223372036854788153",
+      rpcPort: 8899,
+    });
+    const running = [
+      "fhevm-minio",
+      "coprocessor-and-kms-db",
+      "kms-core",
+      "host-node",
+      "gateway-node",
+      "listener-redis",
+      "listener-publisher-for-anvil",
+      "coprocessor-host-listener",
+      "coprocessor-host-listener-poller",
+      "coprocessor-host-listener-consumer",
+      "coprocessor-gw-listener",
+      "coprocessor-tfhe-worker",
+      "coprocessor-zkproof-worker",
+      "coprocessor-sns-worker",
+      "coprocessor-transaction-sender",
+      "coprocessor-host-listener-solana",
+      "coprocessor-host-listener-poller-solana",
+      "kms-connector-gw-listener",
+      "kms-connector-kms-worker",
+      "kms-connector-tx-sender",
+      "fhevm-relayer-db",
+      "fhevm-relayer",
+      "fhevm-solana-proof-db",
+      "fhevm-solana-proof-service",
+      "fhevm-test-suite-e2e-debug",
+    ];
+    expect(resumeRepairStep(state, running)).toBeUndefined();
+  });
+
   test("repairs from coprocessor when a required runtime container is unhealthy", () => {
     const live = new Map([
       ["fhevm-minio", { status: "running" }],
@@ -381,6 +420,14 @@ describe("resumeRepairStep", () => {
 });
 
 describe("runtime helpers", () => {
+  test("lifecycle-owned up refuses a late existing-stack cleanup", () => {
+    expect(() => assertAutomaticCleanupAllowed(true, true)).toThrow(
+      "appeared after preflight",
+    );
+    expect(() => assertAutomaticCleanupAllowed(false, true)).not.toThrow();
+    expect(() => assertAutomaticCleanupAllowed(true, false)).not.toThrow();
+  });
+
   test("contract tasks reject missing persisted state", () => {
     expect(() => assertContractTaskStackRunning(false, 0)).toThrow("Stack is not running; run `fhevm-cli up` first");
   });

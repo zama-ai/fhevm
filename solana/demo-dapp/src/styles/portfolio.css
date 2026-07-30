@@ -1,0 +1,430 @@
+.vault-workspace {
+  position: relative;
+  display: grid;
+  grid-template-columns: minmax(0, 1.15fr) minmax(360px, 0.85fr);
+  gap: 18px;
+}
+
+.success-toast {
+  position: absolute;
+  z-index: 4;
+  top: -14px;
+  left: 50%;
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  padding: 10px 14px;
+  border: 1px solid rgba(20, 241, 149, 0.32);
+  border-radius: 999px;
+  color: #d1fae5;
+  background: rgba(7, 35, 26, 0.96);
+  box-shadow: 0 12px 34px rgba(0, 0, 0, 0.35);
+  font-size: 12px;
+  transform: translate(-50%, -100%);
+}
+
+.success-toast span {
+  color: #14f195;
+}
+
+.vault-identity,
+.deposit-panel,
+.activity-ledger,
+.demo-tools {
+  border: 1px solid rgba(255, 255, 255, 0.09);
+  border-radius: 20px;
+  background: rgba(20, 20, 23, 0.84);
+  box-shadow: 0 24px 80px rgba(0, 0, 0, 0.2);
+}
+
+.vault-identity,
+.deposit-panel {
+  padding: 26px;
+}
+
+.vault-title,
+.deposit-panel-heading,
+.vault-stats,
+.active-deposit,
+.action-error {
+  display: flex;
+  align-items: center;
+}
+
+.vault-title {
+  gap: 16px;
+}
+
+.vault-title h2,
+.deposit-panel-heading h2 {
+  margin-bottom: 4px;
+}
+
+.vault-title p {
+  margin: 0;
+  color: #9c9ca4;
+  font-size: 14px;
+}
+
+.vault-symbol {
+  display: grid;
+  width: 60px;
+  height: 60px;
+  flex: 0 0 auto;
+  place-items: center;
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  border-radius: 18px;
+  color: #14f195;
+  background: linear-gradient(145deg, rgba(20, 241, 149, 0.14), rgba(153, 69, 255, 0.16));
+  font-size: 12px;
+  font-weight: 850;
+}
+
+.muted {
+  display: block;
+  margin-bottom: 5px;
+  color: #9c9ca4;
+  font-size: 12px;
+}
+
+.vault-stats {
+  gap: 12px;
+  margin: 24px 0;
+}
+
+.vault-stats > div {
+  flex: 1;
+  padding: 15px;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 12px;
+  background: rgba(255, 255, 255, 0.025);
+}
+
+.vault-stats span,
+.vault-stats small {
+  display: block;
+  color: #9c9ca4;
+  font-size: 11px;
+}
+
+.vault-stats strong {
+  display: block;
+  margin: 5px 0;
+  font-size: 22px;
+}
+
+.asset-inventory {
+  padding-top: 20px;
+  border-top: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+.deposit-panel-heading {
+  justify-content: space-between;
+}
+
+.asset-inventory h3 {
+  margin: 0 0 10px;
+  font-size: 13px;
+}
+
+.asset-list {
+  overflow: hidden;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 12px;
+  background: rgba(255, 255, 255, 0.025);
+}
+
+.asset-row,
+.asset-value {
+  display: flex;
+  align-items: center;
+}
+
+.asset-row {
+  min-height: 62px;
+  justify-content: space-between;
+  gap: 18px;
+  padding: 11px 14px;
+}
+
+.asset-row + .asset-row {
+  border-top: 1px solid rgba(255, 255, 255, 0.07);
+}
+
+.asset-row > div:first-child {
+  min-width: 0;
+}
+
+.asset-row > div:first-child > strong,
+.asset-row > div:first-child > span {
+  display: block;
+}
+
+.asset-row > div:first-child > strong {
+  margin-bottom: 3px;
+  font-size: 13px;
+}
+
+.asset-row > div:first-child > span {
+  color: #9c9ca4;
+  font-size: 11px;
+}
+
+.asset-value {
+  flex: 0 0 auto;
+  justify-content: flex-end;
+  gap: 10px;
+}
+
+.asset-balance {
+  font-size: 13px;
+  font-variant-numeric: tabular-nums;
+  text-align: right;
+}
+
+.balance-action {
+  min-width: 49px;
+  padding: 6px 9px;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 8px;
+  color: #d4d4d8;
+  background: rgba(255, 255, 255, 0.055);
+  cursor: pointer;
+  font-size: 11px;
+  font-weight: 650;
+}
+
+.balance-action:hover:not(:disabled) {
+  background: rgba(255, 255, 255, 0.1);
+}
+
+.balance-action:focus-visible {
+  outline: 2px solid #a78bfa;
+  outline-offset: 2px;
+}
+
+.balance-action:disabled {
+  cursor: wait;
+  opacity: 0.55;
+}
+
+.asset-inventory .balance-error,
+.input-error {
+  color: #fecaca;
+  font-size: 11px;
+}
+
+.asset-inventory .balance-error {
+  margin: 8px 0 0;
+}
+
+.input-error {
+  margin-top: 8px;
+}
+
+.deposit-panel {
+  display: grid;
+  align-content: start;
+  gap: 14px;
+}
+
+.approval-count {
+  padding: 6px 9px;
+  border-radius: 999px;
+  color: #b5b5bc;
+  background: rgba(255, 255, 255, 0.06);
+  font-size: 11px;
+}
+
+.deposit-source {
+  min-width: 0;
+  margin: 0;
+  padding: 0;
+  border: 0;
+}
+
+.deposit-source legend {
+  margin-bottom: 8px;
+  color: #9c9ca4;
+  font-size: 11px;
+}
+
+.deposit-source > div {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 4px;
+  padding: 4px;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 12px;
+  background: rgba(255, 255, 255, 0.025);
+}
+
+.deposit-source label {
+  position: relative;
+  cursor: pointer;
+}
+
+.deposit-source input {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  opacity: 0;
+}
+
+.deposit-source span {
+  display: grid;
+  min-height: 36px;
+  place-items: center;
+  border-radius: 8px;
+  color: #9c9ca4;
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.deposit-source input:checked + span {
+  color: #f6f6f7;
+  background: rgba(255, 255, 255, 0.1);
+}
+
+.deposit-source input:focus-visible + span {
+  outline: 2px solid #a78bfa;
+  outline-offset: 2px;
+}
+
+.deposit-source input:disabled + span {
+  cursor: not-allowed;
+  opacity: 0.5;
+}
+
+.amount-input {
+  display: grid;
+  gap: 8px;
+  margin-top: 8px;
+  padding: 16px;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 14px;
+  background: rgba(255, 255, 255, 0.035);
+}
+
+.amount-input > span,
+.amount-input small {
+  color: #9c9ca4;
+  font-size: 11px;
+}
+
+.amount-input > div {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+}
+
+.amount-input input {
+  width: 100%;
+  min-width: 0;
+  padding: 0;
+  border: 0;
+  outline: 0;
+  color: #f6f6f7;
+  background: transparent;
+  font: inherit;
+  font-size: 32px;
+  font-weight: 720;
+}
+
+.amount-input:focus-within {
+  border-color: rgba(167, 139, 250, 0.65);
+  box-shadow: 0 0 0 3px rgba(124, 58, 237, 0.16);
+}
+
+.transaction-preview {
+  display: flex;
+  gap: 8px;
+  color: #9c9ca4;
+  font-size: 11px;
+}
+
+.transaction-preview span {
+  padding: 5px 8px;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.05);
+}
+
+.wallet-scan-note {
+  margin: 0;
+  color: #9c9ca4;
+  font-size: 11px;
+  line-height: 1.5;
+}
+
+.primary-action {
+  width: 100%;
+  padding: 13px 18px;
+  border-radius: 11px;
+  color: #0b0b0d;
+  background: #f4f4f5;
+  cursor: pointer;
+  font-weight: 760;
+}
+
+.primary-action:hover:not(:disabled) {
+  background: #ffffff;
+}
+
+.primary-action:focus-visible {
+  outline: 2px solid #a78bfa;
+  outline-offset: 2px;
+}
+
+.primary-action:disabled {
+  cursor: not-allowed;
+  opacity: 0.38;
+}
+
+.active-deposit {
+  gap: 12px;
+  min-height: 132px;
+  padding: 18px;
+  border: 1px solid rgba(167, 139, 250, 0.2);
+  border-radius: 14px;
+  background: rgba(124, 58, 237, 0.07);
+}
+
+.active-deposit strong,
+.active-deposit small {
+  display: block;
+}
+
+.active-deposit small {
+  margin-top: 5px;
+  color: #9c9ca4;
+  font-size: 11px;
+}
+
+.status-dot {
+  width: 8px;
+  height: 8px;
+  flex: 0 0 auto;
+  border-radius: 999px;
+  background: #a78bfa;
+  box-shadow: 0 0 12px rgba(167, 139, 250, 0.65);
+}
+
+.action-error {
+  justify-content: space-between;
+  gap: 12px;
+  padding: 10px 12px;
+  border: 1px solid rgba(248, 113, 113, 0.3);
+  border-radius: 10px;
+  color: #fecaca;
+  background: rgba(127, 29, 29, 0.18);
+  font-size: 12px;
+}
+
+.action-error button {
+  padding: 6px 10px;
+  border-radius: 8px;
+  color: #450a0a;
+  background: #fecaca;
+  cursor: pointer;
+  font-weight: 700;
+}
