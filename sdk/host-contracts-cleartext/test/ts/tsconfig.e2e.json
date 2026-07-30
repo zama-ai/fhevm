@@ -1,0 +1,10 @@
+{
+  "extends": "../../tsconfig.base.json",
+  "compilerOptions": {
+    "allowImportingTsExtensions": true,
+    "noEmit": true,
+    "rootDir": ".",
+    "types": ["node", "vitest"]
+  },
+  "include": ["upgrade-e2e.test.ts", "anvil.ts", "ethUtils.ts", "viemEthereumLib.ts"]
+}

@@ -1,0 +1,54 @@
+/**
+ * Where the cleartext stack is placed.
+ *
+ * The first three are NOT free choices. `ZamaConfig._getLocalConfig()`
+ * (`library-solidity/config/ZamaConfig.sol`, the `block.chainid == 31337` branch) hardcodes them, and that
+ * config is compiled INTO the user's contracts. So the mock must put ACL / FHEVMExecutor / KMSVerifier at
+ * exactly these addresses, or `FHE.*` calls in user code reach empty accounts.
+ *
+ * That constraint is why the plugin calls the package's `deployAt` (which places the stack at addresses the
+ * caller chooses) rather than `deploy` (which is CREATE-based, so its addresses fall out of the deployer's
+ * nonce and can never land here).
+ *
+ * The rest are free. Nothing outside the host stack references them: the host contracts find each other
+ * through the constants in `host-contracts-cleartext/config/addresses.sol`, and `deployAt` rewrites each of
+ * those to the map below. Any consistent set works. (The one exception is ConfidentialBridge — never
+ * deployed, only referenced by ACL — whose compile-time constant the package keeps as-is.)
+ */
+export const ADDRESSES = {
+  // Pinned by ZamaConfig._getLocalConfig() — do not change.
+  ACL: "0x50157CFfD6bBFA2DECe204a89ec419c23ef5755D",
+  FHEVMExecutor: "0xe3a9105a3a932253A70F126eb1E3b589C643dD24", // ZamaConfig calls this "CoprocessorAddress"
+  KMSVerifier: "0x901F8942346f7AB3a01F6D7613119Bca447Bb030",
+  // Free choices — patched into the bytecode, referenced only by the host stack itself.
+  InputVerifier: "0x36772142b74871f255CbD7A3e89B401d3e45825f",
+  HCULimit: "0x233ff88A48c172d29F675403e6A8e302b0F032D9",
+  ProtocolConfig: "0x44aA028fd264C76BF4A8f8B4d8A5272f6AE25CAc",
+  KMSGeneration: "0x216be43148dB537BeddBC268163deb1a802b5553",
+  PauserSet: "0xded0D2a71268DC12622BdD1b55d68a1CB5662327",
+  CleartextArithmetic: "0x7071727374757677787980818283848586878889",
+  CleartextDB: "0x8081828384858687888990919293949596979899",
+} as const;
+
+export type HostContractName = keyof typeof ADDRESSES;
+
+/**
+ * The same map, in the shape `@fhevm/host-contracts-cleartext`'s `deployAt` takes. The package places the
+ * stack; the plugin only decides WHERE — and for the first three, `ZamaConfig` already decided.
+ */
+export const FIXED_ADDRESSES = {
+  fhevmAddresses: {
+    aclAddress: ADDRESSES.ACL,
+    fhevmExecutorAddress: ADDRESSES.FHEVMExecutor,
+    kmsVerifierAddress: ADDRESSES.KMSVerifier,
+    inputVerifierAddress: ADDRESSES.InputVerifier,
+    hcuLimitAddress: ADDRESSES.HCULimit,
+    protocolConfigAddress: ADDRESSES.ProtocolConfig,
+    kmsGenerationAddress: ADDRESSES.KMSGeneration,
+  },
+  cleartextAddresses: {
+    cleartextArithmeticAddress: ADDRESSES.CleartextArithmetic,
+    cleartextDbAddress: ADDRESSES.CleartextDB,
+  },
+  pauserSetAddress: ADDRESSES.PauserSet,
+} as const;
