@@ -940,13 +940,21 @@ async fn assert_ciphertext128(
         assert_ciphertext_uploaded(
             test_env,
             &test_env.conf.s3.bucket_ct128,
+            &crate::aws_upload::s3_ct128_key(handle, crate::aws_upload::COPROCESSOR_CONTEXT_ID_1),
             handle,
             Some(ct.len() as i64),
             Some((&expected_ct_format, expected_attestation_format)),
         )
         .await?;
-        assert_ciphertext_uploaded(test_env, &test_env.conf.s3.bucket_ct64, handle, None, None)
-            .await?;
+        assert_ciphertext_uploaded(
+            test_env,
+            &test_env.conf.s3.bucket_ct64,
+            &crate::aws_upload::s3_ct64_key(handle, crate::aws_upload::COPROCESSOR_CONTEXT_ID_1),
+            handle,
+            None,
+            None,
+        )
+        .await?;
     }
 
     Ok(())
@@ -957,12 +965,11 @@ async fn assert_ciphertext128(
 async fn assert_ciphertext_uploaded(
     test_env: &TestEnvironment,
     bucket: &String,
+    ciphertext_key: &str,
     handle: &Vec<u8>,
     expected_ct_len: Option<i64>,
     expected_ct_format: Option<(&str, CiphertextFormat)>,
 ) -> anyhow::Result<()> {
-    let ciphertext_key =
-        crate::aws_upload::s3_ciphertext_key(handle, crate::aws_upload::COPROCESSOR_CONTEXT_ID_1);
     use crate::S3_FORMAT_VERSION_V1;
 
     let (ciphertext_digest, sns_ciphertext_digest, s3_format_version) =
@@ -971,7 +978,7 @@ async fn assert_ciphertext_uploaded(
     s3_utils::assert_key_exists(
         test_env.s3_client.to_owned(),
         bucket,
-        &ciphertext_key,
+        &ciphertext_key.to_string(),
         expected_ct_len,
         100,
     )
@@ -1118,6 +1125,7 @@ async fn wait_for_ciphertext_digest_upload_state(
 async fn assert_ciphertext_uploaded(
     _test_env: &TestEnvironment,
     _bucket: &String,
+    _ciphertext_key: &str,
     _handle: &Vec<u8>,
     _expected_ct_len: Option<i64>,
     _expected_ct_format: Option<(&str, CiphertextFormat)>,

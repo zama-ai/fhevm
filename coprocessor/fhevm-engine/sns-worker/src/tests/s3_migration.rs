@@ -175,7 +175,7 @@ async fn test_before_and_quit_migrates_ct64_from_legacy_digest_key() {
         .expect("upload legacy ct64 digest-key object");
 
     let current_key =
-        crate::aws_upload::s3_ciphertext_key(&handle, crate::aws_upload::COPROCESSOR_CONTEXT_ID_1);
+        crate::aws_upload::s3_ct64_key(&handle, crate::aws_upload::COPROCESSOR_CONTEXT_ID_1);
     let bucket_ct64 = conf.s3.bucket_ct64.clone();
 
     let run_result = timeout(
@@ -302,8 +302,10 @@ async fn test_before_and_quit_migrates_ct64_and_ct128_from_legacy_digest_keys() 
         .await
         .expect("upload legacy ct128 digest-key object");
 
-    let current_key =
-        crate::aws_upload::s3_ciphertext_key(&handle, crate::aws_upload::COPROCESSOR_CONTEXT_ID_1);
+    let current_ct64_key =
+        crate::aws_upload::s3_ct64_key(&handle, crate::aws_upload::COPROCESSOR_CONTEXT_ID_1);
+    let current_ct128_key =
+        crate::aws_upload::s3_ct128_key(&handle, crate::aws_upload::COPROCESSOR_CONTEXT_ID_1);
     let bucket_ct64 = conf.s3.bucket_ct64.clone();
     let bucket_ct128 = conf.s3.bucket_ct128.clone();
 
@@ -319,7 +321,7 @@ async fn test_before_and_quit_migrates_ct64_and_ct128_from_legacy_digest_keys() 
     s3_client
         .head_object()
         .bucket(bucket_ct64)
-        .key(&current_key)
+        .key(&current_ct64_key)
         .send()
         .await
         .expect("current ct64 object should exist after migration");
@@ -327,7 +329,7 @@ async fn test_before_and_quit_migrates_ct64_and_ct128_from_legacy_digest_keys() 
     let current_ct128 = s3_client
         .head_object()
         .bucket(&bucket_ct128)
-        .key(&current_key)
+        .key(&current_ct128_key)
         .send()
         .await
         .expect("current ct128 object should exist after migration");
@@ -419,7 +421,7 @@ async fn test_before_and_quit_records_corrupted_ct64_object_error() {
     assert_object_missing(
         &env.s3_client,
         &env.conf.s3.bucket_ct64,
-        &crate::aws_upload::s3_ciphertext_key(&handle, crate::aws_upload::COPROCESSOR_CONTEXT_ID_1),
+        &crate::aws_upload::s3_ct64_key(&handle, crate::aws_upload::COPROCESSOR_CONTEXT_ID_1),
     )
     .await;
 }
@@ -472,7 +474,7 @@ async fn test_before_and_quit_records_corrupted_ct128_object_error() {
     assert_object_missing(
         &env.s3_client,
         &env.conf.s3.bucket_ct128,
-        &crate::aws_upload::s3_ciphertext_key(&handle, crate::aws_upload::COPROCESSOR_CONTEXT_ID_1),
+        &crate::aws_upload::s3_ct128_key(&handle, crate::aws_upload::COPROCESSOR_CONTEXT_ID_1),
     )
     .await;
 }
@@ -497,7 +499,7 @@ async fn test_before_and_quit_rebuilds_ct64_from_db_when_legacy_object_is_missin
     run_result.expect("missing legacy ct64 object should be rebuilt from DB bytes");
 
     let current_key =
-        crate::aws_upload::s3_ciphertext_key(&handle, crate::aws_upload::COPROCESSOR_CONTEXT_ID_1);
+        crate::aws_upload::s3_ct64_key(&handle, crate::aws_upload::COPROCESSOR_CONTEXT_ID_1);
     assert_object_body_eq(
         &env.s3_client,
         &env.conf.s3.bucket_ct64,
@@ -544,7 +546,7 @@ async fn test_before_and_quit_rebuilds_ct128_from_db_when_legacy_object_is_missi
     run_result.expect("missing legacy ct128 object should be rebuilt from DB bytes");
 
     let current_key =
-        crate::aws_upload::s3_ciphertext_key(&handle, crate::aws_upload::COPROCESSOR_CONTEXT_ID_1);
+        crate::aws_upload::s3_ct128_key(&handle, crate::aws_upload::COPROCESSOR_CONTEXT_ID_1);
     assert_object_body_eq(
         &env.s3_client,
         &env.conf.s3.bucket_ct128,
@@ -597,7 +599,7 @@ async fn test_before_and_quit_rewrites_current_objects_with_stale_metadata() {
     .await;
 
     let current_key =
-        crate::aws_upload::s3_ciphertext_key(&handle, crate::aws_upload::COPROCESSOR_CONTEXT_ID_1);
+        crate::aws_upload::s3_ct64_key(&handle, crate::aws_upload::COPROCESSOR_CONTEXT_ID_1);
     put_object_with_stale_metadata(
         &env.s3_client,
         &env.conf.s3.bucket_ct64,
@@ -786,7 +788,7 @@ async fn test_before_and_quit_retries_recorded_failure_and_clears_error() {
     run_result.expect("recorded failure should be retried and migrated");
 
     let current_key =
-        crate::aws_upload::s3_ciphertext_key(&handle, crate::aws_upload::COPROCESSOR_CONTEXT_ID_1);
+        crate::aws_upload::s3_ct64_key(&handle, crate::aws_upload::COPROCESSOR_CONTEXT_ID_1);
     env.s3_client
         .head_object()
         .bucket(&env.conf.s3.bucket_ct64)

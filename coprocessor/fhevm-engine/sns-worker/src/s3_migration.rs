@@ -13,7 +13,7 @@ use tokio_util::sync::CancellationToken;
 use tracing::{error, info, warn};
 
 use crate::aws_upload::{
-    check_is_ready, compute_digest, s3_ciphertext_key, COPROCESSOR_CONTEXT_ID_1,
+    check_is_ready, compute_digest, s3_ct128_key, s3_ct64_key, COPROCESSOR_CONTEXT_ID_1,
 };
 use crate::{
     Ciphertext128Format, ExecutionError, S3Config, CLEAN_OLD_S3_FORMAT_VERSION,
@@ -598,7 +598,7 @@ async fn migrate_ct64_object(
         return Ok(());
     }
 
-    let key = current_s3_ciphertext_key(&material.handle);
+    let key = current_s3_ct64_key(&material.handle);
     if object_has_current_attestation(
         client,
         &s3.bucket_ct64,
@@ -674,7 +674,7 @@ async fn migrate_ct128_object(
         return Ok(());
     }
 
-    let key = current_s3_ciphertext_key(&material.handle);
+    let key = current_s3_ct128_key(&material.handle);
     let legacy_key = legacy_s3_ciphertext_key(&material.ct128_digest);
     let digest_key = hex::encode(&material.ct128_digest);
     let ct_format = material.ct128_format.to_string();
@@ -764,13 +764,11 @@ async fn migrated_objects_are_current(
     s3: &S3Config,
     material: &MigrationMaterial,
 ) -> Result<bool, ExecutionError> {
-    let key = current_s3_ciphertext_key(&material.handle);
-
     if material.has_ct64
         && !object_has_current_attestation(
             client,
             &s3.bucket_ct64,
-            &key,
+            &current_s3_ct64_key(&material.handle),
             CiphertextKind::Ct64,
             material,
         )
@@ -784,7 +782,7 @@ async fn migrated_objects_are_current(
         let key_is_current = object_has_current_attestation(
             client,
             &s3.bucket_ct128,
-            &key,
+            &current_s3_ct128_key(&material.handle),
             CiphertextKind::Ct128,
             material,
         )
@@ -1234,8 +1232,12 @@ fn attestation_format(format: Ciphertext128Format) -> Result<CiphertextFormat, E
     }
 }
 
-pub(crate) fn current_s3_ciphertext_key(handle: &[u8]) -> String {
-    s3_ciphertext_key(handle, COPROCESSOR_CONTEXT_ID_1)
+pub(crate) fn current_s3_ct128_key(handle: &[u8]) -> String {
+    s3_ct128_key(handle, COPROCESSOR_CONTEXT_ID_1)
+}
+
+pub(crate) fn current_s3_ct64_key(handle: &[u8]) -> String {
+    s3_ct64_key(handle, COPROCESSOR_CONTEXT_ID_1)
 }
 
 pub(crate) fn legacy_s3_ciphertext_key(digest: &[u8]) -> String {
