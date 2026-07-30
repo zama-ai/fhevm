@@ -6,8 +6,8 @@ use tracing::{info, warn};
 
 use crate::{
     s3_migration::{
-        count_failed_old_format_handles, count_pending_old_format_handles,
-        current_s3_ciphertext_key, download_existing_object, fetch_ct128_bytes_from_db,
+        count_failed_old_format_handles, count_pending_old_format_handles, current_s3_ct128_key,
+        current_s3_ct64_key, download_existing_object, fetch_ct128_bytes_from_db,
         fetch_ct64_bytes_from_db, legacy_s3_ciphertext_key, object_body_matches_expected,
         object_has_current_attestation, prepare_migration_material, CiphertextKind,
         CopySourceCandidate, MigrationMaterial, MigrationRow, S3MigrationConfig,
@@ -356,7 +356,7 @@ async fn plan_ct64_object(
         return Ok(());
     }
 
-    let key = current_s3_ciphertext_key(&material.handle);
+    let key = current_s3_ct64_key(&material.handle);
     if object_has_current_attestation(
         client,
         &config.s3.bucket_ct64,
@@ -423,7 +423,7 @@ async fn plan_ct128_object(
         return Ok(());
     }
 
-    let key = current_s3_ciphertext_key(&material.handle);
+    let key = current_s3_ct128_key(&material.handle);
     let legacy_key = legacy_s3_ciphertext_key(&material.ct128_digest);
     let digest_key = hex::encode(&material.ct128_digest);
 

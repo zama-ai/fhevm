@@ -51,6 +51,14 @@ commonConfig:
   polygonContractAddresses:
     acl: ""
 
+  # BNB Testnet chain RPC node endpoint (HTTP)
+  bnbTestnetUrl: ""
+  # BNB Testnet chain identifier (override the network preset when set)
+  bnbTestnetChainId: ""
+  # BNB Testnet smart contract addresses (override the network preset when set)
+  bnbTestnetContractAddresses:
+    acl: ""
+
   # Distributed tracing configuration
   tracing:
     enabled: false

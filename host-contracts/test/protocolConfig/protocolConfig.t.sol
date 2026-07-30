@@ -458,8 +458,9 @@ contract ProtocolConfigTest is HostContractsDeployerTestUtils {
         );
     }
 
-    /// @dev Asserts all seven context-guarded view functions revert for the given context ID.
-    function _expectAllViewsRevertForContext(uint256 contextId) internal {
+    /// @dev Asserts the liveness-guarded context view functions revert for the given context ID.
+    ///      getKmsNodeForContext is existence-guarded (readable after destroy), so callers assert it separately.
+    function _expectContextGuardedViewsRevert(uint256 contextId) internal {
         vm.expectRevert(abi.encodeWithSelector(IProtocolConfig.InvalidKmsContext.selector, contextId));
         protocolConfig.getKmsSignersForContext(contextId);
 
@@ -471,9 +472,6 @@ contract ProtocolConfigTest is HostContractsDeployerTestUtils {
 
         vm.expectRevert(abi.encodeWithSelector(IProtocolConfig.InvalidKmsContext.selector, contextId));
         protocolConfig.isKmsTxSenderForContext(contextId, address(0xDEAD));
-
-        vm.expectRevert(abi.encodeWithSelector(IProtocolConfig.InvalidKmsContext.selector, contextId));
-        protocolConfig.getKmsNodeForContext(contextId, address(0xDEAD));
 
         vm.expectRevert(abi.encodeWithSelector(IProtocolConfig.InvalidKmsContext.selector, contextId));
         protocolConfig.getUserDecryptionThresholdForContext(contextId);
@@ -1912,7 +1910,10 @@ contract ProtocolConfigTest is HostContractsDeployerTestUtils {
     function testFuzz_revertViewFunctionsForInvalidContext(uint256 invalidContextId) public {
         _setupDefault();
         vm.assume(invalidContextId != protocolConfig.getCurrentKmsContextId());
-        _expectAllViewsRevertForContext(invalidContextId);
+        _expectContextGuardedViewsRevert(invalidContextId);
+        // A never-created context does not exist, so the node lookup reverts too.
+        vm.expectRevert(abi.encodeWithSelector(IProtocolConfig.InvalidKmsContext.selector, invalidContextId));
+        protocolConfig.getKmsNodeForContext(invalidContextId, address(0xDEAD));
     }
 
     function test_revertViewFunctionsForDestroyedContext() public {
@@ -1927,7 +1928,28 @@ contract ProtocolConfigTest is HostContractsDeployerTestUtils {
         vm.prank(owner);
         protocolConfig.destroyKmsContext(firstContextId);
 
-        _expectAllViewsRevertForContext(firstContextId);
+        _expectContextGuardedViewsRevert(firstContextId);
+    }
+
+    /// @dev Key/CRS material keeps pointing at the context it was generated under, so its nodes must
+    ///      stay readable once that context is destroyed.
+    function test_getKmsNodeForContextReadableAfterDestroy() public {
+        _setupDefault();
+        uint256 firstContextId = protocolConfig.getCurrentKmsContextId();
+        _seedActiveEpochWithMaterialForFourNodeContext();
+
+        vm.prank(owner);
+        _defineNewKmsContextAndEpoch(_makeKmsNodeParams(1), _defaultThresholds());
+        _activatePendingContextWithOneKmsNode(KMS_CONTEXT_COUNTER_BASE + 2, EPOCH_COUNTER_BASE + 3);
+
+        vm.prank(owner);
+        protocolConfig.destroyKmsContext(firstContextId);
+
+        KmsNode memory expectedNode = _makeKmsNodes(4)[0];
+        KmsNode memory node = protocolConfig.getKmsNodeForContext(firstContextId, expectedNode.txSenderAddress);
+        assertEq(node.txSenderAddress, expectedNode.txSenderAddress);
+        assertEq(node.signerAddress, expectedNode.signerAddress);
+        assertEq(node.storageUrl, expectedNode.storageUrl);
     }
 
     // -----------------------------------------------------------------------
