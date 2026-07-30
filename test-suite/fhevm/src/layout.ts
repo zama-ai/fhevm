@@ -283,7 +283,6 @@ export const TEST_GREP: Record<string, string> = {
   "input-proof": "test user input uint64",
   "input-proof-gateway-only": "test gateway-only user input uint64",
   "input-proof-compute-decrypt": "test add 42 to uint64 input and decrypt",
-  "priority-coprocessor": "test priority coprocessor input flow",
   "user-decryption": "test user decrypt",
   "delegated-user-decryption": "test delegated user decrypt",
   "erc1271-user-decryption": "ERC-1271 user decryption",
