@@ -118,56 +118,6 @@ flowchart TB
 `,
   },
   {
-    title: 'System architecture',
-    statement: 'The dApp connects Solana to encrypted services.',
-    diagram: String.raw`
-flowchart LR
-    subgraph browser["Browser"]
-        Dapp["Demo dApp"]
-        Wallet["Phantom"]
-        Dapp <--> Wallet
-    end
-
-    subgraph solana["Solana"]
-        Validator["Validator"]
-        Programs["Vault · Batcher · Token · Host"]
-        State["Accounts and PDAs"]
-        Validator --> Programs --> State
-    end
-
-    subgraph services["Encrypted services"]
-        Yellowstone["Yellowstone"]
-        Listener["Host listener"]
-        Compute["Encrypted compute"]
-        Storage["Encrypted data"]
-        Proof["History proofs"]
-        Relayer["Request service"]
-        Keys["Key service"]
-        Yellowstone --> Listener --> Compute --> Storage
-        Proof --> Keys
-        Relayer <--> Keys
-    end
-
-    Dapp --> Validator
-    Validator --> Yellowstone
-    Dapp --> Relayer
-    State -. authorization .-> Proof
-`,
-  },
-  {
-    title: 'Vault design',
-    statement: 'The batcher aggregates private deposits into one public vault deposit.',
-    diagram: String.raw`
-flowchart LR
-    Alice["Alice<br/>encrypted amount"] --> Batch["Confidential batcher"]
-    Bob["Bob<br/>encrypted amount"] --> Batch
-    Batch -->|"public total"| Vault["Public vault"]
-    Vault -->|"normal shares"| Batch
-    Batch -->|"encrypted allocation"| AliceShares["Alice cShares"]
-    Batch -->|"encrypted allocation"| BobShares["Bob cShares"]
-`,
-  },
-  {
     title: 'Shield',
     statement: 'Shielding locks USDC and credits an encrypted cUSDC balance.',
     diagram: String.raw`
@@ -249,20 +199,6 @@ sequenceDiagram
     Keys-->>Settle: Clear total and signed certificate
     Settle->>Settle: Verify proof and certificate
     Settle->>Vault: Deposit public batch total
-`,
-  },
-  {
-    title: 'History',
-    statement: 'MMR proofs preserve access to previous handles.',
-    diagram: String.raw`
-flowchart LR
-    H1["Handle H1"] --> L1["Alice could access H1"]
-    H2["Handle H2"] --> L2["Alice could access H2"]
-    H3["Current handle H3"] --> Value["EncryptedValue PDA"]
-    L1 --> MMR["MMR peaks on Solana"]
-    L2 --> MMR
-    MMR --> Proof["Small inclusion proof"]
-    Proof --> Check["Verified before decryption"]
 `,
   },
   {
