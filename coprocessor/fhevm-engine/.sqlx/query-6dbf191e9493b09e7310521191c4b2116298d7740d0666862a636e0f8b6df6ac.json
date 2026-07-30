@@ -1,21 +1,21 @@
 {
   "db_name": "PostgreSQL",
-  "query": "SELECT start_block, gw_start_block, host_chain_id\n                 FROM public.upgrade_state\n                 WHERE stack_role = 'GCS'",
+  "query": "SELECT host_chain_id, start_block, gw_start_block\n                 FROM public.upgrade_state WHERE stack_role = 'GCS'",
   "describe": {
     "columns": [
       {
         "ordinal": 0,
-        "name": "start_block",
+        "name": "host_chain_id",
         "type_info": "Int8"
       },
       {
         "ordinal": 1,
-        "name": "gw_start_block",
+        "name": "start_block",
         "type_info": "Int8"
       },
       {
         "ordinal": 2,
-        "name": "host_chain_id",
+        "name": "gw_start_block",
         "type_info": "Int8"
       }
     ],
@@ -23,10 +23,10 @@
       "Left": []
     },
     "nullable": [
-      true,
+      false,
       true,
       true
     ]
   },
-  "hash": "db1f686cdfa49d9481f0f82a6eb549a0227053126f8a74a01570c422255e41ff"
+  "hash": "6dbf191e9493b09e7310521191c4b2116298d7740d0666862a636e0f8b6df6ac"
 }

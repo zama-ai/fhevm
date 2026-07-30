@@ -412,34 +412,33 @@ async fn query_ciphertexts<'a>(
             .cloned()
             .collect();
         if !missing.is_empty() {
-            // Per-track start-block bounds for this GCS upgrade. `upgrade_state`
-            // is a shared (non-duplicated) control-plane table; read it fully
-            // qualified so the result is unambiguous regardless of search_path.
-            let gate = sqlx::query!(
-                "SELECT start_block, gw_start_block, host_chain_id
-                 FROM public.upgrade_state
-                 WHERE stack_role = 'GCS'",
+            // Per-chain start-block bounds for this GCS upgrade. `upgrade_state`
+            // is a shared (non-duplicated) control-plane table with one row per
+            // host chain; read it fully qualified so the result is unambiguous
+            // regardless of search_path.
+            let windows = sqlx::query!(
+                "SELECT host_chain_id, start_block, gw_start_block
+                 FROM public.upgrade_state WHERE stack_role = 'GCS'",
             )
-            .fetch_optional(trx.as_mut())
+            .fetch_all(trx.as_mut())
             .await
             .map_err(|err| {
                 error!(target: "tfhe_worker", { error = %err }, "error while reading GCS upgrade_state bounds");
                 err
             })?;
 
-            let bounds = gate.map(|r| (r.start_block, r.gw_start_block, r.host_chain_id));
-            let (start_block, gw_start_block, host_chain_id) = match bounds {
-                Some((Some(sb), Some(gw), Some(hc))) => (sb, gw, hc),
-                other => {
-                    // Fail safe: without complete bounds we cannot prove a
-                    // public row is pre-snapshot, so we serve none. The
-                    // dependent computation then stalls (no consensus) rather
-                    // than risking divergence — the intended safety behaviour.
-                    warn!(target: "tfhe_worker", { row = ?other, missing = missing.len() },
-                        "GCS upgrade_state bounds incomplete; skipping public.ciphertexts fallback");
-                    return Ok(ciphertext_map);
-                }
-            };
+            // Fail safe: without at least one window carrying complete bounds we
+            // cannot prove a public row is pre-snapshot, so we serve none. The
+            // dependent computation then stalls (no consensus) rather than risking
+            // divergence — the intended safety behaviour.
+            if !windows
+                .iter()
+                .any(|w| w.start_block.is_some() && w.gw_start_block.is_some())
+            {
+                warn!(target: "tfhe_worker", { rows = windows.len(), missing = missing.len() },
+                    "GCS upgrade_state bounds incomplete; skipping public.ciphertexts fallback");
+                return Ok(ciphertext_map);
+            }
 
             // Block-gated fallback into the live `public.ciphertexts`. Fully
             // qualified to bypass search_path. A missing handle is served only
@@ -449,7 +448,8 @@ async fn query_ciphertexts<'a>(
             // the bound; any post-start BCS write carries lineage strictly
             // above it:
             //   - compute outputs -> public.computations.block_number, scoped to
-            //     this upgrade's host chain (host `start_block`);
+            //     each output's own host chain (its `start_block`, joined by
+            //     host_chain_id);
             //   - ZK input ctxts  -> public.input_handles.block_number, which is
             //     the *Gateway* block (`gw_start_block`).
             // Inputs never have a `computations` row and outputs never have an
@@ -461,17 +461,16 @@ async fn query_ciphertexts<'a>(
                  WHERE c.handle = ANY($1::BYTEA[])
                    AND NOT EXISTS (
                        SELECT 1 FROM public.computations comp
+                       JOIN public.upgrade_state us
+                         ON us.stack_role = 'GCS' AND us.host_chain_id = comp.host_chain_id
                        WHERE comp.output_handle = c.handle
-                         AND comp.host_chain_id = $2
-                         AND comp.block_number >= $3)
+                         AND comp.block_number >= us.start_block)
                    AND NOT EXISTS (
                        SELECT 1 FROM public.input_handles ih
                        WHERE ih.handle = c.handle
-                         AND ih.block_number >= $4)",
+                         AND ih.block_number >= (
+                             SELECT MIN(gw_start_block) FROM public.upgrade_state WHERE stack_role = 'GCS'))",
                 &missing,
-                host_chain_id,
-                start_block,
-                gw_start_block,
             )
             .fetch_all(trx.as_mut())
             .await
@@ -493,8 +492,16 @@ async fn query_ciphertexts<'a>(
                 .map(|h| format!("0x{}", hex::encode(h)))
                 .collect();
             if !withheld.is_empty() {
-                debug!(target: "tfhe_worker",
-                    { host_chain_id, start_block, gw_start_block, withheld = ?withheld },
+                let gcs_windows: Vec<String> = windows
+                    .iter()
+                    .map(|w| {
+                        format!(
+                            "chain {:?} start={:?} gw={:?}",
+                            w.host_chain_id, w.start_block, w.gw_start_block
+                        )
+                    })
+                    .collect();
+                debug!(target: "tfhe_worker", { gcs_windows = ?gcs_windows, withheld = ?withheld },
                     "GCS public.ciphertexts fallback withheld handles (absent or block-gated as post-snapshot)");
             }
         }
