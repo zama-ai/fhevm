@@ -315,8 +315,20 @@ contract HCULimit is UUPSUpgradeableEmptyProxy, ACLOwnable {
     }
 
     if (data.scalar && data.nonScalar) {
-      const scalarVariantByte = operation === 'fheMulDiv' ? 'FHE_MUL_DIV_FACTOR2_SCALAR' : '0x01';
-      output += `if (scalarByte == ${scalarVariantByte}) {
+      if (operation === 'fheMulDiv') {
+        output += `if (scalarByte == FHE_MUL_DIV_FACTOR2_SCALAR) {
+          ${generatePriceChecks(data.scalar)}
+
+          ${generateCheckTransactionLimit(data.numberInputs, true, lhsName, rhsName)}
+        } else if (scalarByte == FHE_MUL_DIV_FACTOR2_ENCRYPTED) {
+          ${generatePriceChecks(data.nonScalar)}
+
+        ${generateCheckTransactionLimit(data.numberInputs, false, lhsName, rhsName)}
+        } else {
+          revert OnlyScalarOperationsAreSupported();
+    }`;
+      } else {
+        output += `if (scalarByte == 0x01) {
           ${generatePriceChecks(data.scalar)}
 
           ${generateCheckTransactionLimit(data.numberInputs, true, lhsName, rhsName)}
@@ -325,6 +337,7 @@ contract HCULimit is UUPSUpgradeableEmptyProxy, ACLOwnable {
 
         ${generateCheckTransactionLimit(data.numberInputs, false, lhsName, rhsName)}
     }`;
+      }
     } else if (data.scalar) {
       output += `if(scalarByte != 0x01) revert OnlyScalarOperationsAreSupported();`;
       output += `${generatePriceChecks(data.scalar)}
