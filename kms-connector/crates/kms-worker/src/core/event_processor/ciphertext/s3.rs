@@ -31,7 +31,7 @@ const OLD_CT_FORMAT_HEADER: &str = "x-amz-meta-Ct-Format";
 /// URL of a ciphertext object in a Coprocessor bucket (RFC 023 layout).
 fn rfc023_ciphertext_url(bucket_url: &str, handle: B256) -> String {
     format!(
-        "{bucket_url}/{}/{COPROCESSOR_CONTEXT_ID}",
+        "{bucket_url}/ct128/{}/{COPROCESSOR_CONTEXT_ID}",
         hex::encode(handle)
     )
 }
