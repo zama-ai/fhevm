@@ -237,7 +237,7 @@ async fn send_user_decryption_inner(
             },
             user_addr,
             hex::decode(RAND_PUBLIC_KEY)?.into(),
-            signature.clone(),
+            signature,
             EXTRA_DATA.into(),
         )
         .into_transaction_request();
@@ -315,7 +315,7 @@ async fn send_user_decryption_v2_inner(
                 startTimestamp: U256::from(timestamp),
                 durationSeconds: U256::from(DURATION_SECONDS),
             },
-            signature.clone(),
+            signature,
             EXTRA_DATA.into(),
         )
         .into_transaction_request();
