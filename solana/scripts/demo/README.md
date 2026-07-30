@@ -47,8 +47,8 @@ signed transaction before submission. Confirm that Phantom shows `127.0.0.1:5173
 the rehearsal against a different site or network.
 
 The **Developer evidence** panel exposes the exact local signatures, compute consumption,
-ciphertext handles, and encrypted-value account. Use the Explorer links for transaction details
-and the copied handle for Jaeger correlation.
+ciphertext handles, and encrypted-value account. Its links open the matching transaction,
+handle-filtered Jaeger trace, or a prepared Prometheus query.
 
 Add `--observability` to `doctor`, `up`, or `serve` to reserve and start boot-owned Prometheus and
 Jaeger services:
@@ -88,11 +88,11 @@ internals, the relayer, or the native Solana listener as one distributed trace. 
 decryption histogram measures event creation through successful response persistence; report its
 p95 only with a meaningful sample count, and do not label it end-to-end browser latency.
 
-For a user decryption, copy the ciphertext handle from the dApp's **Developer evidence** panel,
-open Jaeger, select `kms-connector-gw-listener`, and filter the `handle_gateway_event` operation by
-the `ciphertext_handle` tag. Older locally built connector images expose the same value as
-`ciphertext_handles`. This trace proves the connector and KMS request path for that exact encrypted
-value; the dApp records the separate wallet-to-cleartext duration.
+For a user decryption, open **Trace in Jaeger** next to the ciphertext handle in the dApp's
+**Developer evidence** panel. The prepared search selects `kms-connector-gw-listener`, the
+`handle_gateway_event` operation, and the exact `ciphertext_handle`. This trace proves the
+connector and KMS request path for that encrypted value; the dApp records the separate
+wallet-to-cleartext duration.
 
 Prometheus exposes `kms_connector_worker_decryption_latency_seconds`. Keep the
 `event_type="user_decryption_request"` filter and show the sample count beside any percentile. A

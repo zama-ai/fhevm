@@ -15,6 +15,7 @@
     "@solana/kit": "6.10.0",
     "@solana/wallet-account-signer": "6.10.0",
     "@wallet-standard/react": "1.0.3",
+    "mermaid": "^11.16.0",
     "react": "19.2.7",
     "react-dom": "19.2.7"
   },
