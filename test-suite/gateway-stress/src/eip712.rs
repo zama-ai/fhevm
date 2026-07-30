@@ -6,6 +6,10 @@ use alloy::{
 };
 use anyhow::anyhow;
 use std::str::FromStr;
+// The RFC-016 unified signing struct is reused from the KMS connector's off-chain verifier so the
+// EIP-712 `typeHash` can never drift. Aliased because the legacy struct below shares its Solidity
+// name (with different fields).
+use user_decryption_signature::UserDecryptRequestVerification as UserDecryptRequestVerificationV2;
 
 // `UserDecryptRequestVerification` is only used off-chain to compute the EIP-712 signature
 // (it's internal to the `Decryption` contract, so it isn't part of `fhevm_gateway_bindings`).
@@ -16,24 +20,6 @@ sol! {
         uint256 startTimestamp;
         uint256 durationDays;
         bytes extraData;
-    }
-}
-
-// RFC-016 unified user-decryption signing struct. Field names/order AND the struct name MUST match
-// the KMS connector's off-chain verifier (`shared/user-decryption-signature`) exactly: the struct
-// name feeds the EIP-712 `typeHash`, so this must stay `UserDecryptRequestVerification` even though
-// the legacy struct above shares that name (with different fields). It lives in its own module
-// purely to avoid the Rust type-name clash.
-mod v2 {
-    alloy::sol! {
-        struct UserDecryptRequestVerification {
-            address userAddress;
-            bytes publicKey;
-            address[] allowedContracts;
-            uint256 startTimestamp;
-            uint256 durationSeconds;
-            bytes extraData;
-        }
     }
 }
 
@@ -95,7 +81,7 @@ pub async fn user_decrypt_v2_eip712_signature(
         chain_id: contracts_chain_id,
         verifying_contract: decryption_contract,
     };
-    let message = v2::UserDecryptRequestVerification {
+    let message = UserDecryptRequestVerificationV2 {
         userAddress: user_address,
         publicKey: Bytes::from(alloy::hex::decode(
             public_key.strip_prefix("0x").unwrap_or(public_key),

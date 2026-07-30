@@ -16,7 +16,6 @@ duration.
 - [Tracing](#tracing)
 - [Local e2e setup](#local-e2e-setup)
   - [Generating handles with `gen_handles.ts`](#generating-handles-with-gen_handlests)
-- [Bonus: Generating handles via coprocessor stress-test-generator](#bonus-generating-handles-via-coprocessor-stress-test-generator)
 
 ## Build
 

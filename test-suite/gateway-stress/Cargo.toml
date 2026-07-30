@@ -5,6 +5,7 @@ edition = "2024"
 
 [dependencies]
 fhevm_gateway_bindings = { path = "../../gateway-contracts/rust_bindings", default-features = false }
+user-decryption-signature = { path = "../../shared/user-decryption-signature" }
 
 alloy = { version = "2.2.0", default-features = false, features = [
     "essentials",
