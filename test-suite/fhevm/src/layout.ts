@@ -284,6 +284,7 @@ export const TEST_GREP: Record<string, string> = {
   "input-proof-compute-decrypt": "test add 42 to uint64 input and decrypt",
   "priority-coprocessor": "test priority coprocessor input flow",
   "user-decryption": "test user decrypt",
+  "spare-share-tolerance": "User decryption spare-share tolerance",
   "delegated-user-decryption": "test delegated user decrypt",
   "erc1271-user-decryption": "ERC-1271 user decryption",
   "unified-user-decryption": "Unified user decryption",

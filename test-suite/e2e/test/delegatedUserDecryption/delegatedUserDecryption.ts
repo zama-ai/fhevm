@@ -5,6 +5,7 @@ import { ethers } from 'hardhat';
 import { EncryptedERC20, SmartWalletWithDelegation, WildcardDelegationTarget } from '../../types';
 import { aclAddress, createInstances } from '../instance';
 import { isLiveNetwork } from '../network';
+import { bitFlipPayload, corruptSignature, expectCorruptedShareDecryptToFail } from '../sdk/corruption/interceptShares';
 import { ClearValueType, SdkInstance } from '../sdk/types';
 import { Signers, getSigners, initSigners } from '../signers';
 import { FhevmInstances } from '../types';
@@ -140,6 +141,51 @@ describe('Delegated user decryption', function () {
         'transfer(address,bytes32,bytes)'
       ](smartWalletAddress, encryptedTransferAmount.handles[0], encryptedTransferAmount.inputProof);
     await transferTx.wait();
+  });
+
+  describe('corrupted shares', function () {
+    // Same delegation as the happy-path test below, but the KMS signcrypted
+    // shares are corrupted before client-side reconstruction. We assert only
+    // that delegated decryption fails and print the error (see interceptShares).
+    let balanceHandle: string;
+
+    before(async function () {
+      this.timeout(SLOW_TEST_TIMEOUT_MS);
+      // Bob (smartWallet owner) delegates his own EOA to decrypt the balance.
+      const expirationTimestamp = Math.floor(Date.now() / 1000) + ONE_DAY_SECONDS;
+      const delegateTx = await smartWallet
+        .connect(signers.bob)
+        .delegateUserDecryption(signers.bob.address, tokenAddress, expirationTimestamp);
+      await delegateTx.wait();
+
+      // Wait for the coprocessor to absorb the ACL change.
+      const currentBlock = await ethers.provider.getBlockNumber();
+      await waitForBlock(currentBlock + PROPAGATION_BLOCKS);
+
+      balanceHandle = await token.balanceOf(smartWalletAddress);
+    });
+
+    it('case 1: bit-flipped payload makes delegated user decryption fail', async function () {
+      await expectCorruptedShareDecryptToFail('delegated/payload', bitFlipPayload, () =>
+        instances.bob.delegatedUserDecryptSingleHandle({
+          handle: balanceHandle,
+          contractAddress: tokenAddress,
+          delegatorAddress: smartWalletAddress,
+          signer: signers.bob,
+        }),
+      );
+    });
+
+    it('case 2: corrupted signature makes delegated user decryption fail', async function () {
+      await expectCorruptedShareDecryptToFail('delegated/signature', corruptSignature, () =>
+        instances.bob.delegatedUserDecryptSingleHandle({
+          handle: balanceHandle,
+          contractAddress: tokenAddress,
+          delegatorAddress: smartWalletAddress,
+          signer: signers.bob,
+        }),
+      );
+    });
   });
 
   it('test delegated user decryption - smartWallet owner delegates his own EOA to decrypt the smartWallet balance', async function () {
