@@ -406,7 +406,7 @@ fn register_host_acl_allow_all(
 /// Clean up all incomplete requests from the database to start with a clean state
 async fn cleanup_incomplete_requests() -> anyhow::Result<()> {
     // Use the same database URL as the config
-    let database_url = "postgresql://postgres:postgres@localhost:5433/relayer_db";
+    let database_url = "postgresql://postgres:postgres@localhost:15433/relayer_db";
 
     let pool = PgPoolOptions::new()
         .max_connections(1)

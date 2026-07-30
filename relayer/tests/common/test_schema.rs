@@ -5,7 +5,7 @@ use tracing::{debug, error, info, warn};
 use uuid::Uuid;
 
 /// Default test database URL - can be overridden via TEST_DATABASE_URL env var
-const DEFAULT_TEST_DB_URL: &str = "postgresql://postgres:postgres@localhost:5433/relayer_db";
+const DEFAULT_TEST_DB_URL: &str = "postgresql://postgres:postgres@localhost:15433/relayer_db";
 
 /// Manages isolated PostgreSQL schema per test
 ///
