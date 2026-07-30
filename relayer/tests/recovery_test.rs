@@ -24,6 +24,7 @@ use alloy::primitives::{Address, Bytes, B256};
 use alloy::sol_types::SolCall;
 use common::utils::{host_acl_multicall_allow_response, random_handle};
 use ethereum_rpc_mock::{
+    ct_attestation::CtAttestationMock,
     fhevm::{FhevmMockWrapper, UserDecryptKind},
     MockConfig, MockServer, MockServerHandle, Response, SubscriptionTarget, UsageLimit,
 };
@@ -46,6 +47,8 @@ use tokio_util::sync::CancellationToken;
 // Contract addresses used by mocks
 const DECRYPTION_ADDR: &str = "0xB8Ae44365c45A7C5256b14F607CaE23BC040c354";
 const INPUT_VERIFICATION_ADDR: &str = "0xe61cff9c581c7c91aef682c2c10e8632864339ab";
+/// Must match `gateway.contracts.gateway_config_address` in the test config.
+const GATEWAY_CONFIG_ADDR: &str = "0x576Ea67208b146E63C5255d0f90104E25e3e04c7";
 
 /// Test setup with two gateway mocks - one broken, one working
 struct RecoveryTestSetup {
@@ -53,8 +56,10 @@ struct RecoveryTestSetup {
     working_gateway_port: u16,
     host_port: u16,
     host_server: MockServer,
-    broken_gateway: FhevmMockWrapper,
     working_gateway: FhevmMockWrapper,
+    /// Shared by both gateway mocks: the Coprocessor buckets are infrastructure independent of
+    /// which gateway node the relayer is pointed at, and they survive its restart.
+    ct_attestation: CtAttestationMock,
     _broken_handle: MockServerHandle,
     _working_handle: MockServerHandle,
     _host_handle: MockServerHandle,
@@ -82,6 +87,12 @@ impl RecoveryTestSetup {
         let input_verification_addr: Address = INPUT_VERIFICATION_ADDR
             .parse()
             .expect("Invalid input verification address");
+        let gateway_config_addr: Address = GATEWAY_CONFIG_ADDR
+            .parse()
+            .expect("Invalid gateway config address");
+
+        let ct_attestation = CtAttestationMock::start().await;
+        ct_attestation.serve_attestations().await;
 
         // Create and start host chain mock server (ACL registered after settings load)
         let host_config = MockConfig {
@@ -101,11 +112,15 @@ impl RecoveryTestSetup {
             ..MockConfig::new()
         };
         let broken_server = MockServer::new(broken_config);
+        // Only needed to serve the registry views; the broken gateway is otherwise driven
+        // through its own mock server and the shared attestation buckets.
         let broken_gateway = FhevmMockWrapper::new(
             broken_server.clone(),
             decryption_addr,
             input_verification_addr,
+            gateway_config_addr,
         );
+        broken_gateway.set_coprocessor_registry(&ct_attestation);
         let broken_handle = broken_server
             .start()
             .await
@@ -121,7 +136,9 @@ impl RecoveryTestSetup {
             working_server.clone(),
             decryption_addr,
             input_verification_addr,
+            gateway_config_addr,
         );
+        working_gateway.set_coprocessor_registry(&ct_attestation);
         let working_handle = working_server
             .start()
             .await
@@ -132,7 +149,7 @@ impl RecoveryTestSetup {
             working_gateway_port: working_port,
             host_port,
             host_server: host_server_clone,
-            broken_gateway,
+            ct_attestation,
             working_gateway,
             _broken_handle: broken_handle,
             _working_handle: working_handle,
@@ -199,7 +216,7 @@ impl RecoveryTestSetup {
         let task_handle = tokio::spawn(async move {
             match run_fhevm_relayer(settings, relayer_token, Some(settings_tx)).await {
                 Ok(()) => tracing::debug!("Relayer service exited normally"),
-                Err(e) => tracing::error!("Relayer service error: {}", e),
+                Err(e) => tracing::error!("Relayer service error: {:#}", e),
             }
         });
 
@@ -246,17 +263,17 @@ impl RecoveryTestSetup {
 
     /// Configure broken gateway for 'queued' status:
     /// - Readiness check fails, so requests stay in queued
-    fn configure_for_queued_stuck(&self) {
-        self.broken_gateway.set_readiness_failure();
+    async fn configure_for_queued_stuck(&self) {
+        self.ct_attestation.serve_nothing().await;
         tracing::info!("Broken gateway configured for 'queued' stuck - readiness fails");
     }
 
     /// Configure broken gateway for 'processing' status:
     /// - Requests pass readiness check
     /// - Transaction is accepted but no response event is emitted
-    fn configure_for_processing_stuck(&self, _handles: &[String]) {
-        // Set readiness to pass so requests can leave queued status
-        self.broken_gateway.set_readiness_success();
+    async fn configure_for_processing_stuck(&self, _handles: &[String]) {
+        // Attest the ciphertext so requests can leave queued status
+        self.ct_attestation.serve_attestations().await;
 
         // DON'T register any event patterns - this keeps transactions pending
         // without any events being emitted, so requests stay in 'processing' status
@@ -270,9 +287,9 @@ impl RecoveryTestSetup {
     /// - Requests pass readiness check and transaction is sent
     /// - No events emitted so request stays in processing/tx_in_flight
     #[allow(dead_code)]
-    fn configure_for_tx_in_flight_stuck(&self, _handles: &[String]) {
-        // Set readiness to pass so requests can leave queued status
-        self.broken_gateway.set_readiness_success();
+    async fn configure_for_tx_in_flight_stuck(&self, _handles: &[String]) {
+        // Attest the ciphertext so requests can leave queued status
+        self.ct_attestation.serve_attestations().await;
 
         // DON'T register any event patterns - this keeps transactions pending
         // without any events being emitted, so requests stay in 'processing' or 'tx_in_flight' status
@@ -283,8 +300,8 @@ impl RecoveryTestSetup {
     }
 
     /// Configure working gateway to complete any request
-    fn configure_working_gateway(&self, handles: &[String]) {
-        self.working_gateway.set_readiness_success();
+    async fn configure_working_gateway(&self, handles: &[String]) {
+        self.ct_attestation.serve_attestations().await;
 
         let b256_handles: Vec<B256> = handles
             .iter()
@@ -582,7 +599,9 @@ async fn test_recovery_from_processing_status() {
 
     // Phase 1: Pre-generate handles and configure broken gateway
     let handle1 = random_handle();
-    setup.configure_for_processing_stuck(slice::from_ref(&handle1));
+    setup
+        .configure_for_processing_stuck(slice::from_ref(&handle1))
+        .await;
 
     // Phase 2: Start relayer with broken gateway
     tracing::info!("Phase 1: Starting relayer with broken gateway");
@@ -640,7 +659,7 @@ async fn test_recovery_from_processing_status() {
 
     // Phase 6: Configure and restart with working gateway
     tracing::info!("Phase 5: Starting relayer with working gateway");
-    setup.configure_working_gateway(&[handle1]);
+    setup.configure_working_gateway(&[handle1]).await;
 
     setup
         .start_relayer_with_gateway(setup.working_gateway_port, |_| {})
@@ -700,7 +719,7 @@ async fn test_recovery_from_queued_status() {
 
     // Phase 1: Pre-generate handles and configure broken gateway to fail readiness
     let handle1 = random_handle();
-    setup.configure_for_queued_stuck();
+    setup.configure_for_queued_stuck().await;
 
     // Phase 2: Start relayer with broken gateway (readiness fails)
     tracing::info!("Phase 1: Starting relayer with broken gateway (readiness fails)");
@@ -766,7 +785,7 @@ async fn test_recovery_from_queued_status() {
 
     // Phase 6: Configure and restart with working gateway
     tracing::info!("Phase 5: Starting relayer with working gateway");
-    setup.configure_working_gateway(&[handle1]);
+    setup.configure_working_gateway(&[handle1]).await;
 
     setup
         .start_relayer_with_gateway(setup.working_gateway_port, |_| {})
@@ -833,7 +852,9 @@ async fn test_recovery_from_tx_in_flight_status() {
 
     // Phase 1: Pre-generate handles and configure broken gateway
     let handle1 = random_handle();
-    setup.configure_for_processing_stuck(slice::from_ref(&handle1));
+    setup
+        .configure_for_processing_stuck(slice::from_ref(&handle1))
+        .await;
 
     // Phase 2: Start relayer with broken gateway
     tracing::info!(
@@ -891,7 +912,7 @@ async fn test_recovery_from_tx_in_flight_status() {
 
     // Phase 6: Configure and restart with working gateway
     tracing::info!("Phase 5: Starting relayer with working gateway");
-    setup.configure_working_gateway(&[handle1]);
+    setup.configure_working_gateway(&[handle1]).await;
 
     setup
         .start_relayer_with_gateway(setup.working_gateway_port, |_| {})

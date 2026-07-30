@@ -228,7 +228,7 @@ async fn test_max_retries_exceeded_fails() {
     let payload = helpers::create_public_decrypt_payload();
 
     // Set up readiness check to pass
-    setup.fhevm_mock.set_readiness_success();
+    setup.ct_attestation.serve_attestations().await;
 
     // Queue more errors than max_attempts (3 errors > 2 max_attempts)
     setup.fhevm_mock.queue_tx_responses_for_selector(
@@ -264,7 +264,7 @@ async fn test_contract_paused_returns_503() {
     let setup = TestSetup::new().await.expect("Failed to create test setup");
     let payload = helpers::create_public_decrypt_payload();
 
-    setup.fhevm_mock.set_readiness_success();
+    setup.ct_attestation.serve_attestations().await;
     setup
         .fhevm_mock
         .on_public_decrypt_revert(constants::REVERT_ENFORCED_PAUSE);
@@ -292,7 +292,7 @@ async fn test_invalid_signature_returns_400() {
     let setup = TestSetup::new().await.expect("Failed to create test setup");
     let payload = helpers::create_public_decrypt_payload();
 
-    setup.fhevm_mock.set_readiness_success();
+    setup.ct_attestation.serve_attestations().await;
     setup
         .fhevm_mock
         .on_public_decrypt_revert(constants::REVERT_INVALID_SIGNATURE);
@@ -316,7 +316,7 @@ async fn test_insufficient_balance_returns_503() {
     let setup = TestSetup::new().await.expect("Failed to create test setup");
     let payload = helpers::create_public_decrypt_payload();
 
-    setup.fhevm_mock.set_readiness_success();
+    setup.ct_attestation.serve_attestations().await;
     setup
         .fhevm_mock
         .on_public_decrypt_revert(constants::REVERT_INSUFFICIENT_BALANCE);
@@ -344,7 +344,7 @@ async fn test_insufficient_allowance_returns_503() {
     let setup = TestSetup::new().await.expect("Failed to create test setup");
     let payload = helpers::create_public_decrypt_payload();
 
-    setup.fhevm_mock.set_readiness_success();
+    setup.ct_attestation.serve_attestations().await;
     setup
         .fhevm_mock
         .on_public_decrypt_revert(constants::REVERT_INSUFFICIENT_ALLOWANCE);
@@ -372,7 +372,7 @@ async fn test_unknown_selector_returns_500() {
     let setup = TestSetup::new().await.expect("Failed to create test setup");
     let payload = helpers::create_public_decrypt_payload();
 
-    setup.fhevm_mock.set_readiness_success();
+    setup.ct_attestation.serve_attestations().await;
     setup
         .fhevm_mock
         .on_public_decrypt_revert(constants::REVERT_UNKNOWN_SELECTOR);
@@ -534,7 +534,7 @@ async fn test_retry_after_failure_creates_new_job_id() {
     let payload = helpers::create_public_decrypt_payload();
 
     // Set up readiness check to pass
-    setup.fhevm_mock.set_readiness_success();
+    setup.ct_attestation.serve_attestations().await;
 
     // Configure mock to fail with max retries exceeded
     setup.fhevm_mock.queue_tx_responses_for_selector(
@@ -645,18 +645,18 @@ async fn test_timeout() {
     setup.shutdown().await;
 }
 
-/// Test that a readiness check contract error (RPC node unavailable) correctly
-/// transitions the request from 'queued' to 'failure' so V2 clients see failure.
-/// Before the fix, update_status_to_failure_on_tx_failed silently no-oped because
-/// the request was still in 'queued' state (not 'processing' or 'tx_in_flight').
+/// Test that a terminal readiness failure — Coprocessors serving attestations over divergent
+/// ciphertext material, so no group ever reaches the majority threshold — transitions the request
+/// from 'queued' straight to 'failure', without burning the retry budget that an
+/// as-yet-unattested ciphertext is entitled to.
 #[tokio::test]
-async fn test_readiness_contract_error_returns_failure_v2() {
+async fn test_readiness_no_consensus_returns_failure_v2() {
     let setup = TestSetup::new_with_minimal_readiness()
         .await
         .expect("Failed to create test setup");
 
-    // Configure readiness checks to return RPC error (node unavailable)
-    setup.fhevm_mock.set_readiness_contract_error();
+    // Every Coprocessor signs valid attestations, but over different material
+    setup.ct_attestation.serve_divergent_attestations().await;
 
     let payload = helpers::create_public_decrypt_payload();
     let job_id = helpers::submit_request(&setup, &payload).await;
@@ -668,7 +668,7 @@ async fn test_readiness_contract_error_returns_failure_v2() {
     assert_eq!(
         status,
         reqwest::StatusCode::INTERNAL_SERVER_ERROR,
-        "Expected 500 for readiness check contract error (RPC error is not a known revert)"
+        "Expected 500 when the Coprocessors cannot agree on the ciphertext material"
     );
     assert_eq!(body.status, ApiResponseStatus::Failed);
     assert!(body.result.is_none());
@@ -676,8 +676,8 @@ async fn test_readiness_contract_error_returns_failure_v2() {
     let error = body.error.as_ref().expect("Error should be present");
     assert_eq!(
         error.label(),
-        "internal_server_error",
-        "Expected label 'internal_server_error' for readiness check contract error"
+        "no_attestation_consensus",
+        "Expected label 'no_attestation_consensus', distinct from the retryable timeout label"
     );
 
     setup.shutdown().await;
@@ -692,8 +692,8 @@ async fn test_readiness_timeout_returns_503_with_correct_label() {
         .await
         .expect("Failed to create test setup");
 
-    // Configure readiness checks to always return false (ciphertext never ready)
-    setup.fhevm_mock.set_readiness_failure();
+    // No Coprocessor has published an attestation for the handle
+    setup.ct_attestation.serve_nothing().await;
 
     let payload = helpers::create_public_decrypt_payload();
     let job_id = helpers::submit_request(&setup, &payload).await;
