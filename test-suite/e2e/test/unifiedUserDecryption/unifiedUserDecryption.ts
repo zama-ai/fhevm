@@ -405,6 +405,16 @@ describe('Unified user decryption', function () {
 
     const hex32 = (v: bigint) => v.toString(16).padStart(64, '0');
 
+    // KMS context/epoch ids are tagged in their high byte — [0x07 | 31 counter
+    // bytes] for context ids, [0x08 | 31 counter bytes] for epoch ids (see
+    // host-contracts/contracts/shared/Constants.sol). The relayer's extraData
+    // format validation now enforces this tag syntactically, so fabricated
+    // "unknown"/"inactive" ids used below must still carry the right tag to
+    // reach the KMS Connector's semantic checks instead of being bounced by
+    // the relayer's format check.
+    const KMS_CONTEXT_TAG = 0x07n << 248n;
+    const EPOCH_TAG = 0x08n << 248n;
+
     before(async function () {
       // Fresh re-encryption key: the relayer dedups requests on
       // (handles, userAddress, allowedContracts, publicKey, extraData) — a
@@ -514,9 +524,9 @@ describe('Unified user decryption', function () {
     it('test unified user decrypt rejects extraData v2 with an inactive epochId (0)', async function () {
       this.timeout(negativeWindowMs + TIMEOUT_MARGIN_MS);
       // Empirical pin: epoch validation is LIVE on the unified path. A v2
-      // extraData with the correct contextId but epochId 0 (the js-sdk's
-      // pre-epoch default) is rejected by the connector:
-      // "Epoch #0 of context #... is not active on-chain".
+      // extraData with the correct contextId but epoch counter 0 (tagged, but
+      // never activated — the js-sdk's pre-epoch default) is rejected by the
+      // connector: "Epoch #0 of context #... is not active on-chain".
       const handle = await aliceContract.xUint64();
       const req: UnifiedDecryptRequest = {
         handles: [directHandle(handle, aliceContractAddress, signers.alice.address)],
@@ -525,7 +535,7 @@ describe('Unified user decryption', function () {
         publicKey: extraDataPublicKey,
         startTimestamp: backdatedStartTimestamp(),
         durationSeconds: DURATION_SECONDS,
-        extraData: `0x02${hex32(currentContextId)}${hex32(0n)}`,
+        extraData: `0x02${hex32(currentContextId)}${hex32(EPOCH_TAG)}`,
       };
       const { post, poll } = await requestUnifiedUserDecrypt(cfg, req, { kind: 'eoa', signer: signers.alice }, {
         waitForTerminal: true,
@@ -551,7 +561,7 @@ describe('Unified user decryption', function () {
         publicKey: extraDataPublicKey,
         startTimestamp: backdatedStartTimestamp(),
         durationSeconds: DURATION_SECONDS,
-        extraData: `0x01${hex32(0xdeadbeefn)}`,
+        extraData: `0x01${hex32(KMS_CONTEXT_TAG | 0xdeadbeefn)}`,
       };
       const { post, poll } = await requestUnifiedUserDecrypt(cfg, req, { kind: 'eoa', signer: signers.alice }, {
         waitForTerminal: true,
