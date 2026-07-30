@@ -1,23 +1,23 @@
-import { task, types } from "hardhat/config";
+import { task, types } from 'hardhat/config';
 
-import { getRequiredEnvVar, loadGatewayAddresses } from "./utils";
+import { getRequiredEnvVar, loadGatewayAddresses } from './utils';
 
 // Add host chains metadata to the GatewayConfig contract
 // Note: Internal GatewayConfig address is defined in the `addresses/` directory. It should be used
 // for local testing. By default, we use the GATEWAY_CONFIG_ADDRESS env var, as done in deployment
-task("task:addHostChainsToGatewayConfig")
+task('task:addHostChainsToGatewayConfig')
   .addParam(
-    "useInternalProxyAddress",
-    "If proxy address from the /addresses directory should be used",
+    'useInternalProxyAddress',
+    'If proxy address from the /addresses directory should be used',
     false,
     types.boolean,
   )
   .setAction(async function ({ useInternalProxyAddress }, hre) {
-    await hre.run("compile:specific", { contract: "contracts" });
-    console.log("Register host chains to GatewayConfig contract");
+    await hre.run('compile:specific', { contract: 'contracts' });
+    console.log('Register host chains to GatewayConfig contract');
 
-    const deployerPrivateKey = getRequiredEnvVar("DEPLOYER_PRIVATE_KEY");
-    const numHostChains = parseInt(getRequiredEnvVar("NUM_HOST_CHAINS"));
+    const deployerPrivateKey = getRequiredEnvVar('DEPLOYER_PRIVATE_KEY');
+    const numHostChains = parseInt(getRequiredEnvVar('NUM_HOST_CHAINS'));
     const deployer = new hre.ethers.Wallet(deployerPrivateKey).connect(hre.ethers.provider);
 
     // Parse the host chain(s)
@@ -35,15 +35,15 @@ task("task:addHostChainsToGatewayConfig")
     if (useInternalProxyAddress) {
       loadGatewayAddresses();
     }
-    const proxyAddress = getRequiredEnvVar("GATEWAY_CONFIG_ADDRESS");
+    const proxyAddress = getRequiredEnvVar('GATEWAY_CONFIG_ADDRESS');
 
     // Add host chains
-    const gatewayConfig = await hre.ethers.getContractAt("GatewayConfig", proxyAddress, deployer);
+    const gatewayConfig = await hre.ethers.getContractAt('GatewayConfig', proxyAddress, deployer);
     for (const hostChain of hostChains) {
       await gatewayConfig.addHostChain(hostChain);
     }
 
-    console.log("In GatewayConfig contract:", proxyAddress, "\n");
-    console.log("Added host chains:", hostChains, "\n");
-    console.log("Host chains registration done!");
+    console.log('In GatewayConfig contract:', proxyAddress, '\n');
+    console.log('Added host chains:', hostChains, '\n');
+    console.log('Host chains registration done!');
   });

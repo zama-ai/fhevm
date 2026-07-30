@@ -163,13 +163,17 @@ function getChainConfig(chain: keyof typeof chainIds): NetworkUserConfig {
     default:
       throw new Error(`unsupported chain: ${chain}`);
   }
+  const chainId =
+    chain === 'staging' && process.env.CHAIN_ID_HOST
+      ? Number(process.env.CHAIN_ID_HOST)
+      : chainIds[chain];
   return {
     accounts: {
       count: NUM_ACCOUNTS,
       mnemonic,
       path: "m/44'/60'/0'/0",
     },
-    chainId: chainIds[chain],
+    chainId,
     url: jsonRpcUrl,
   };
 }

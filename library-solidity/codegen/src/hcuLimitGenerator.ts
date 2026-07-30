@@ -162,10 +162,8 @@ contract HCULimit is UUPSUpgradeableEmptyProxy, ACLOwnable {
     const functionName = `checkHCUFor${operation.charAt(0).toUpperCase() + operation.slice(1)}`;
     const lhsName = operation === 'fheMulDiv' ? 'factor1' : 'lhs';
     const rhsName = operation === 'fheMulDiv' ? 'factor2' : 'rhs';
-    const lhsDoc =
-      operation === 'fheMulDiv' ? 'The first multiplication factor.' : 'The left-hand side operand.';
-    const rhsDoc =
-      operation === 'fheMulDiv' ? 'The second multiplication factor.' : 'The right-hand side operand.';
+    const lhsDoc = operation === 'fheMulDiv' ? 'The first multiplication factor.' : 'The left-hand side operand.';
+    const rhsDoc = operation === 'fheMulDiv' ? 'The second multiplication factor.' : 'The right-hand side operand.';
 
     if (data.supportScalar && data.scalar && data.nonScalar) {
       switch (data.numberInputs) {

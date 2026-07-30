@@ -65,7 +65,7 @@ jobs:
       filters: |
         listener:
           - .github/workflows/listener-docker-build.yml
-          - listener/Dockerfile.ci
+          - listener/Dockerfile
           - listener/Cargo.toml
           - listener/Cargo.lock
           - listener/crates/**
@@ -101,7 +101,7 @@ jobs:
       docker-context: "."
       push_image: true
       image-name: "fhevm/listener/listener-core"
-      docker-file: "listener/Dockerfile.ci"
+      docker-file: "listener/Dockerfile"
       app-cache-dir: "fhevm-listener"
       # 16 vCPUs to match runs-on-arm; the ubuntu-latest default (2 vCPUs) makes
       # cache-miss Rust builds the longest job on the merge-queue critical path.

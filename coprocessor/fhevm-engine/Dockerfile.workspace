@@ -26,6 +26,12 @@
 #
 # =============================================================================
 
+# LOCAL-ONLY build (docker-compose). CI builds the per-service Dockerfiles via
+# common-docker.yml, which injects RUST_IMAGE_VERSION from rust-toolchain.toml.
+# That injection does NOT happen here, so this is the one place that needs a
+# hardcoded default.
+ARG RUST_IMAGE_VERSION=1.97.1
+
 # =============================================================================
 # Stage 0: Build Solidity contracts (required for host-listener, gw-listener)
 # =============================================================================
@@ -59,7 +65,7 @@ RUN npm ci && \
 # =============================================================================
 # Stage 1: Build ALL Rust workspace binaries
 # =============================================================================
-FROM ghcr.io/zama-ai/fhevm/gci/rust-glibc:1.91.0 AS builder
+FROM ghcr.io/zama-ai/fhevm/gci/rust-glibc:${RUST_IMAGE_VERSION} AS builder
 
 ARG CARGO_PROFILE=release
 ARG BUILD_ID=unknown
@@ -141,7 +147,7 @@ RUN --mount=type=cache,target=/usr/local/cargo/registry,sharing=locked \
 # =============================================================================
 # Stage 1b: Build sqlx-cli for db-migration
 # =============================================================================
-FROM ghcr.io/zama-ai/fhevm/gci/rust-glibc:1.91.0 AS sqlx_builder
+FROM ghcr.io/zama-ai/fhevm/gci/rust-glibc:${RUST_IMAGE_VERSION} AS sqlx_builder
 
 ARG SCCACHE_BUCKET
 ARG SCCACHE_REGION=eu-west-3

@@ -1,3 +1,6 @@
+# RUST_IMAGE_VERSION is injected by CI from rust-toolchain.toml (see coprocessor-docker-build.yml)
+ARG RUST_IMAGE_VERSION
+
 # Stage 0: Build contracts
 FROM ghcr.io/zama-ai/fhevm/gci/nodejs:22.14.0-alpine3.21 AS contract_builder
 
@@ -19,7 +22,7 @@ RUN cp .env.example .env \
     && npx hardhat compile
 
 # Stage 1: Build Stress-Tool
-FROM ghcr.io/zama-ai/fhevm/gci/rust-glibc:1.91.0 AS builder
+FROM ghcr.io/zama-ai/fhevm/gci/rust-glibc:${RUST_IMAGE_VERSION} AS builder
 
 ARG CARGO_PROFILE=release
 

@@ -1,0 +1,135 @@
+# common chart overlay for the e2e test-suite runner, for the fhevm e2e
+# preview namespace. Mirrors zama-zws/gitops's fhevm-dev/fhevm-test-suite.yaml
+# pattern (generic `common` chart + published image), not a fhevm-specific chart.
+#
+# Env var names follow test-suite/fhevm/env/staging/.env.test-suite (the
+# staging profile's reference env file) rather than being guessed - contract
+# addresses substituted for real configMapKeyRef wiring against
+# gw-sc-addresses / host-sc-addresses instead of static values.
+#
+# This is a one-shot test run (not a long-running service), so it's deployed
+# as a Job rather than a Deployment. image.tag is overridden at deploy time
+# via --set-string in preview-env-deploy.yml with the real per-PR
+# short-SHA tag.
+#
+# Deployed as:
+#   helm upgrade --install test-suite oci://hub.zama.org/ghcr/zama-zws/helm-charts/common \
+#     -n <namespace> -f this-file
+fullnameOverride: test-suite
+
+# See ../relayer/values-relayer-migrate-e2e.yaml's header note: this generic
+# `common` chart needs imagePullSecrets set explicitly (unlike coprocessor/
+# kms-connector's own charts, which hardcode it) to pull private
+# hub.zama.org/ghcr/zama-ai/* images.
+imagePullSecrets:
+  - name: registry-credentials
+
+image:
+  repository: hub.zama.org/ghcr/zama-ai/fhevm/test-suite/e2e
+  # preview-env-deploy.yml ALWAYS overrides image.tag at deploy time via
+  # --set-string (this run's short-SHA build, or env.TEST_SUITE_VERSION's pinned
+  # fallback when build_images=false), so this value only applies to a raw manual
+  # `helm upgrade` like this file's own header example. Even then, NEITHER this
+  # pinned v0.13.0 NOR the older v0.11.5-0 actually work against kms-core v0.13.20
+  # (both bundle a tfhe/node-tfhe build that can't deserialize its
+  # tfhe-rs-1.6.1-format public keys - confirmed live under both SDKs). If
+  # deploying by hand against a real v0.13.20 KMS, either build+push your own
+  # test-suite image from this branch first, or downgrade KMS_CORE_TAG.
+  tag: v0.13.0
+
+job:
+  enabled: true
+  backoffLimit: 0
+  restartPolicy: Never
+  # Debugging mode: this job only compiles and then idles (see args below) so
+  # tests can be run manually via `kubectl exec` instead of the whole suite
+  # auto-running once on deploy - matches zws-testnet's own
+  # e2e-fhevm-test-suite StatefulSet pattern (long-lived pod + manual
+  # ./run-tests.sh -g "..." invocations), see that pod spec for reference.
+  # Generous deadline since this is meant to sit idle across a debugging
+  # session, not complete a bounded test run.
+  activeDeadlineSeconds: 86400
+  # test-suite/e2e's Dockerfile ENTRYPOINT is just ["/bin/bash", "-c"] with no
+  # default CMD (confirmed via `git show v0.13.0:test-suite/e2e/Dockerfile`) -
+  # without this, the container runs bare "/bin/bash -c" with no script
+  # argument at all: "/bin/bash: -c: option requires an argument". command/
+  # args must be nested under `job.*` here, not top-level - the common
+  # chart's templates/job.yaml only reads .Values.job.command/.Values.job.args
+  # (top-level command/args are deployment.yaml-only, confirmed via the
+  # vendored chart at /tmp/common-chart/common/templates/job.yaml).
+  # "staging" is the hardhat network name matching our topology (chainId
+  # 12345, reads RPC_URL - see hardhat.config.ts's getChainConfig('staging'),
+  # same env var already set below). No --grep filter, so this runs the full
+  # suite, not run-tests.sh's single-test default.
+  command: ["/bin/bash", "-c"]
+  args:
+    - |
+      # contracts/E2ECoprocessorConfigLocal.sol ships with hardcoded placeholder
+      # addresses (0x05fD9B5E.../0xcCAe95fF.../0xa1880e99...) - its own header
+      # comment says so verbatim: "These addresses are placeholders. They are
+      # patched at runtime via sed in the E2E test runner script with the
+      # actual deployment addresses." (confirmed via `git show
+      # v0.13.0:test-suite/e2e/contracts/E2ECoprocessorConfigLocal.sol`).
+      # DefaultCoprocessorConfig.getConfig() only takes the sed-patched branch
+      # when block.chainid != 31337 (see the same file) - our "staging" network
+      # uses chainId 12345 (not the Hardhat-default 31337), so we hit that
+      # branch and MUST patch here, exactly like zws-testnet's
+      # e2e-fhevm-test-suite StatefulSet's update-contract-addresses initContainer
+      # does against eth-sc-addresses/gw-sc-addresses. Without this, every FHE.*
+      # call in the test contracts targets addresses with no code deployed at
+      # them in this namespace, so no on-chain FHE activity is ever generated
+      # for the coprocessor/relayer to see - tests instead fail earlier, at
+      # input-ciphertext encryption (relayer keyurl fetch/deserialize).
+      echo "Patching E2ECoprocessorConfigLocal.sol with real deployment addresses..."
+      sed -i "s|ACLAddress: 0x[0-9a-fA-F]*,|ACLAddress: ${ACL_CONTRACT_ADDRESS},|g" contracts/E2ECoprocessorConfigLocal.sol
+      sed -i "s|CoprocessorAddress: 0x[0-9a-fA-F]*,|CoprocessorAddress: ${FHEVM_EXECUTOR_CONTRACT_ADDRESS},|g" contracts/E2ECoprocessorConfigLocal.sol
+      # No trailing "," here (unlike ACLAddress/CoprocessorAddress above): at
+      # v0.13.0, KMSVerifierAddress is the LAST field in the CoprocessorConfig
+      # struct literal, so it's followed by a bare newline + "});", not a comma
+      # - confirmed live: with a comma-anchored pattern (matching zws-testnet's
+      # own sed, whose deployed image apparently has a 4th field after it) this
+      # field silently failed to match and kept shipping the placeholder.
+      sed -i "s|KMSVerifierAddress: 0x[0-9a-fA-F]*|KMSVerifierAddress: ${KMS_VERIFIER_CONTRACT_ADDRESS}|g" contracts/E2ECoprocessorConfigLocal.sol
+      cat contracts/E2ECoprocessorConfigLocal.sol
+      npx hardhat clean
+      npx hardhat compile
+      echo "Recompiled contracts done - idling for manual ./run-tests.sh invocations via kubectl exec"
+      tail -f /dev/null
+
+env:
+  # Same well-known Foundry/Hardhat test mnemonic used to fund every anvil
+  # account across the other contracts/coprocessor deploy steps.
+  - {name: MNEMONIC, value: "test test test test test test test test test test test junk"}
+  - {name: CHAIN_ID_GATEWAY, value: "54321"}
+  - {name: CHAIN_ID_HOST, value: "12345"}
+  - {name: RPC_URL, value: "http://anvil-host-anvil-node:8545"}
+  - {name: GATEWAY_RPC_URL, value: "http://anvil-gateway-anvil-node:8546"}
+  - name: DECRYPTION_ADDRESS
+    valueFrom: {configMapKeyRef: {name: gw-sc-addresses, key: decryption.address}}
+  - name: INPUT_VERIFICATION_ADDRESS
+    valueFrom: {configMapKeyRef: {name: gw-sc-addresses, key: input_verification.address}}
+  - name: CIPHERTEXT_COMMITS_ADDRESS
+    valueFrom: {configMapKeyRef: {name: gw-sc-addresses, key: ciphertext_commits.address}}
+  - name: KMS_VERIFIER_CONTRACT_ADDRESS
+    valueFrom: {configMapKeyRef: {name: host-sc-addresses, key: kms_verifier.address}}
+  - name: ACL_CONTRACT_ADDRESS
+    valueFrom: {configMapKeyRef: {name: host-sc-addresses, key: acl.address}}
+  - name: INPUT_VERIFIER_CONTRACT_ADDRESS
+    valueFrom: {configMapKeyRef: {name: host-sc-addresses, key: input_verifier.address}}
+  - name: FHEVM_EXECUTOR_CONTRACT_ADDRESS
+    valueFrom: {configMapKeyRef: {name: host-sc-addresses, key: fhevm_executor.address}}
+  - name: HCU_LIMIT_CONTRACT_ADDRESS
+    valueFrom: {configMapKeyRef: {name: host-sc-addresses, key: hcu_limit.address}}
+  # Required by the @fhevm/sdk code path (instance.ts requireEnv, no default):
+  # the SDK reads protocol/KMS context from ProtocolConfig on the host chain.
+  # Same host-sc-addresses key the coprocessor's host-listener uses.
+  - name: PROTOCOL_CONFIG_CONTRACT_ADDRESS
+    valueFrom: {configMapKeyRef: {name: host-sc-addresses, key: protocol_config.address}}
+  # Hardhat account #9 (of the "test test ... junk" mnemonic) - the host/ACL owner,
+  # needed for HCU-limit owner-restricted tests when run manually via kubectl exec.
+  # Must match the host-contracts/trigger-keygen deployer. (The previous value
+  # 0x2d24c36c... was account #9 of a DIFFERENT default mnemonic and never owned this
+  # ACL - it silently broke manual HCU runs.)
+  - {name: DEPLOYER_PRIVATE_KEY, value: "0x2a871d0798f97d79848a013d4936a73bf4cc922c825d33c1cf7073dff6d409c6"}
+  - {name: RELAYER_URL, value: "http://relayer:3000/v2"}
+  - {name: RELAYER_SDK_VERSION, value: ""}

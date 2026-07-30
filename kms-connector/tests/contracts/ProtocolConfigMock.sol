@@ -129,4 +129,12 @@ contract ProtocolConfigMock {
     function getCurrentKmsContextAndEpoch() external pure returns (uint256, uint256) {
         return (1, 1);
     }
+
+    function isValidKmsContext(uint256) external pure returns (bool) {
+        return true;
+    }
+
+    function isValidEpochForContext(uint256, uint256) external pure returns (bool) {
+        return true;
+    }
 }

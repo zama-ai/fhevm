@@ -2,11 +2,11 @@
 
 pragma solidity ^0.8.24;
 
-import "../GatewayConfig.sol";
-import "../shared/Structs.sol";
+import '../GatewayConfig.sol';
+import '../shared/Structs.sol';
 
 contract GatewayConfigV7Example is GatewayConfig {
-    string private constant CONTRACT_NAME = "GatewayConfig";
+    string private constant CONTRACT_NAME = 'GatewayConfig';
 
     uint256 private constant MAJOR_VERSION = 0;
     uint256 private constant MINOR_VERSION = 6;
@@ -26,11 +26,11 @@ contract GatewayConfigV7Example is GatewayConfig {
             string(
                 abi.encodePacked(
                     CONTRACT_NAME,
-                    " v",
+                    ' v',
                     Strings.toString(MAJOR_VERSION),
-                    ".",
+                    '.',
                     Strings.toString(MINOR_VERSION),
-                    ".",
+                    '.',
                     Strings.toString(PATCH_VERSION)
                 )
             );
