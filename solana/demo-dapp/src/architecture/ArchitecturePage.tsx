@@ -12,14 +12,14 @@ const frames: readonly ArchitectureFrame[] = [
     title: 'Encrypted computation',
     statement: 'Applications compute on encrypted values.',
     diagram: String.raw`
-flowchart TB
+flowchart LR
     subgraph input["Input"]
-        direction LR
+        direction TB
         Value["User value"] --> Encrypt["SDK<br/>encrypts inputs"] --> Ciphertext["Ciphertext"]
     end
 
     subgraph execution["Execution"]
-        direction LR
+        direction TB
         Host["Host program<br/>records operations and permissions"] --> Compute["Coprocessor<br/>computes over ciphertexts"] --> Result["Encrypted result"]
     end
 
