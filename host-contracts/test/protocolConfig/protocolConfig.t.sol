@@ -1834,10 +1834,27 @@ contract ProtocolConfigTest is HostContractsDeployerTestUtils {
         protocolConfig.destroyKmsContext(firstContextId);
 
         _expectContextGuardedViewsRevert(firstContextId);
-        // getKmsNodeForContext stays readable after destroy so key/CRS material generated under the
-        // context can still resolve its storage nodes.
-        KmsNode memory node = protocolConfig.getKmsNodeForContext(firstContextId, kmsTxSender0);
-        assertEq(node.txSenderAddress, kmsTxSender0);
+    }
+
+    /// @dev Key/CRS material keeps pointing at the context it was generated under, so its nodes must
+    ///      stay readable once that context is destroyed.
+    function test_getKmsNodeForContextReadableAfterDestroy() public {
+        _setupDefault();
+        uint256 firstContextId = protocolConfig.getCurrentKmsContextId();
+        _seedActiveEpochWithMaterialForFourNodeContext();
+
+        vm.prank(owner);
+        _defineNewKmsContextAndEpoch(_makeKmsNodeParams(1), _defaultThresholds());
+        _activatePendingContextWithOneKmsNode(KMS_CONTEXT_COUNTER_BASE + 2, EPOCH_COUNTER_BASE + 3);
+
+        vm.prank(owner);
+        protocolConfig.destroyKmsContext(firstContextId);
+
+        KmsNode memory expectedNode = _makeKmsNodes(4)[0];
+        KmsNode memory node = protocolConfig.getKmsNodeForContext(firstContextId, expectedNode.txSenderAddress);
+        assertEq(node.txSenderAddress, expectedNode.txSenderAddress);
+        assertEq(node.signerAddress, expectedNode.signerAddress);
+        assertEq(node.storageUrl, expectedNode.storageUrl);
     }
 
     // -----------------------------------------------------------------------
