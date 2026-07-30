@@ -71,8 +71,9 @@ where
         response_listener,
         requests_pb,
         responses_pb,
-        move |_index, id_sender| {
+        move |index, id_sender| {
             send_user_decryption(
+                index,
                 decryption_contract.clone(),
                 user_addr,
                 config.clone(),
@@ -111,8 +112,9 @@ where
         response_listener,
         requests_pb,
         responses_pb,
-        move |_index, id_sender| {
+        move |index, id_sender| {
             send_user_decryption_v2(
+                index,
                 decryption_contract.clone(),
                 user_addr,
                 config.clone(),
@@ -179,6 +181,7 @@ where
 /// Sends a legacy `UserDecryptionRequest` transaction to the Gateway.
 #[tracing::instrument(skip(decryption_contract, user_addr, config, id_sender))]
 async fn send_user_decryption(
+    index: u32,
     decryption_contract: DecryptionInstance<AppProvider>,
     user_addr: Address,
     config: Config,
@@ -254,6 +257,7 @@ async fn send_user_decryption_inner(
 /// Sends a RFC-016 `UserDecryptionRequest` (V2) transaction to the Gateway.
 #[tracing::instrument(skip(decryption_contract, user_addr, config, id_sender))]
 async fn send_user_decryption_v2(
+    index: u32,
     decryption_contract: DecryptionInstance<AppProvider>,
     user_addr: Address,
     config: Config,
