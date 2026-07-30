@@ -1,6 +1,7 @@
 /**
  * Generates compose overrides for local builds, scenario instances, and compatibility-adjusted service commands.
  */
+import { readFileSync } from "node:fs";
 import fs from "node:fs/promises";
 import path from "node:path";
 import YAML from "yaml";
@@ -19,6 +20,7 @@ import {
   GROUP_BUILD_COMPONENTS,
   GROUP_BUILD_SERVICES,
   GROUP_SERVICE_SUFFIXES,
+  REPO_ROOT,
   TEMPLATE_COMPOSE_DIR,
   composePath,
   envPath,
@@ -86,65 +88,75 @@ const buildSpec = (context: string, dockerfile: string, extra: Record<string, un
   dockerfile: resolveComposePath(dockerfile),
   ...extra,
 });
+
+/**
+ * Reads the Rust toolchain channel from a `rust-toolchain.toml` (relative to the
+ * repo root) and returns it.
+ */
+const rustImageVersion = (toolchainRepoPath: string): string => {
+  const filePath = path.join(REPO_ROOT, toolchainRepoPath);
+  const match = readFileSync(filePath, "utf8").match(/^\s*channel\s*=\s*"([^"]+)"/m);
+  if (!match) {
+    throw new Error(`Could not read Rust toolchain channel from ${toolchainRepoPath}`);
+  }
+  return match[1];
+};
+
+// Single-sourced from each component's rust-toolchain.toml, matching how CI's
+// common-docker.yml derives RUST_IMAGE_VERSION. This lets the local
+// (docker-compose) builds inject the arg instead of the Dockerfiles hardcoding
+// a default that drifts.
+const COPROCESSOR_RUST_IMAGE_VERSION = rustImageVersion("coprocessor/fhevm-engine/rust-toolchain.toml");
+const KMS_CONNECTOR_RUST_IMAGE_VERSION = rustImageVersion("kms-connector/rust-toolchain.toml");
+const RELAYER_RUST_IMAGE_VERSION = rustImageVersion("relayer/rust-toolchain.toml");
+
+const coprocessorBuildSpec = (target: string) =>
+  buildSpec("../../..", "coprocessor/fhevm-engine/Dockerfile.workspace", {
+    target,
+    args: { RUST_IMAGE_VERSION: COPROCESSOR_RUST_IMAGE_VERSION },
+  });
+
 const COMPONENT_BUILD_SPECS: Record<string, Record<string, Record<string, unknown>>> = {
   coprocessor: {
-    "coprocessor-db-migration": buildSpec("../../..", "coprocessor/fhevm-engine/Dockerfile.workspace", {
-      target: "db-migration",
-    }),
-    "coprocessor-host-listener": buildSpec("../../..", "coprocessor/fhevm-engine/Dockerfile.workspace", {
-      target: "host-listener",
-    }),
-    "coprocessor-host-listener-poller": buildSpec("../../..", "coprocessor/fhevm-engine/Dockerfile.workspace", {
-      target: "host-listener",
-    }),
-    "coprocessor-host-listener-consumer": buildSpec("../../..", "coprocessor/fhevm-engine/Dockerfile.workspace", {
-      target: "host-listener",
-    }),
-    "coprocessor-gw-listener": buildSpec("../../..", "coprocessor/fhevm-engine/Dockerfile.workspace", {
-      target: "gw-listener",
-    }),
-    "coprocessor-tfhe-worker": buildSpec("../../..", "coprocessor/fhevm-engine/Dockerfile.workspace", {
-      target: "tfhe-worker",
-    }),
-    "coprocessor-zkproof-worker": buildSpec("../../..", "coprocessor/fhevm-engine/Dockerfile.workspace", {
-      target: "zkproof-worker",
-    }),
-    "coprocessor-sns-worker": buildSpec("../../..", "coprocessor/fhevm-engine/Dockerfile.workspace", {
-      target: "sns-worker",
-    }),
-    "coprocessor-transaction-sender": buildSpec("../../..", "coprocessor/fhevm-engine/Dockerfile.workspace", {
-      target: "transaction-sender",
-    }),
-    "coprocessor-consensus-detector": buildSpec("../../..", "coprocessor/fhevm-engine/Dockerfile.workspace", {
-      target: "consensus-detector",
-    }),
-    "coprocessor-upgrade-controller": buildSpec("../../..", "coprocessor/fhevm-engine/Dockerfile.workspace", {
-      target: "upgrade-controller",
-    }),
+    "coprocessor-db-migration": coprocessorBuildSpec("db-migration"),
+    "coprocessor-host-listener": coprocessorBuildSpec("host-listener"),
+    "coprocessor-host-listener-poller": coprocessorBuildSpec("host-listener"),
+    "coprocessor-host-listener-consumer": coprocessorBuildSpec("host-listener"),
+    "coprocessor-gw-listener": coprocessorBuildSpec("gw-listener"),
+    "coprocessor-tfhe-worker": coprocessorBuildSpec("tfhe-worker"),
+    "coprocessor-zkproof-worker": coprocessorBuildSpec("zkproof-worker"),
+    "coprocessor-sns-worker": coprocessorBuildSpec("sns-worker"),
+    "coprocessor-transaction-sender": coprocessorBuildSpec("transaction-sender"),
+    "coprocessor-consensus-detector": coprocessorBuildSpec("consensus-detector"),
+    "coprocessor-upgrade-controller": coprocessorBuildSpec("upgrade-controller"),
   },
   "kms-connector": {
     "kms-connector-db-migration": buildSpec("../../..", "kms-connector/connector-db/Dockerfile", {
-      args: { RUST_IMAGE_VERSION: "1.91.0" },
+      args: { RUST_IMAGE_VERSION: KMS_CONNECTOR_RUST_IMAGE_VERSION },
     }),
     "kms-connector-gw-listener": buildSpec("../../..", "kms-connector/Dockerfile.workspace", {
       target: "gw-listener",
-      args: { RUST_IMAGE_VERSION: "1.91.0" },
+      args: { RUST_IMAGE_VERSION: KMS_CONNECTOR_RUST_IMAGE_VERSION },
     }),
     "kms-connector-kms-worker": buildSpec("../../..", "kms-connector/Dockerfile.workspace", {
       target: "kms-worker",
-      args: { RUST_IMAGE_VERSION: "1.91.0" },
+      args: { RUST_IMAGE_VERSION: KMS_CONNECTOR_RUST_IMAGE_VERSION },
     }),
     "kms-connector-tx-sender": buildSpec("../../..", "kms-connector/Dockerfile.workspace", {
       target: "tx-sender",
-      args: { RUST_IMAGE_VERSION: "1.91.0" },
+      args: { RUST_IMAGE_VERSION: KMS_CONNECTOR_RUST_IMAGE_VERSION },
     }),
   },
   "listener-core": {
-    "listener-publisher-for-anvil": buildSpec("../../../listener", "Dockerfile"),
+    "listener-publisher-for-anvil": buildSpec("../../..", "listener/Dockerfile"),
   },
   relayer: {
-    "relayer-db-migration": buildSpec("../../..", "relayer/docker/relayer-migrate/Dockerfile"),
-    relayer: buildSpec("../../..", "relayer/docker/relayer/Dockerfile"),
+    "relayer-db-migration": buildSpec("../../..", "relayer/docker/relayer-migrate/Dockerfile", {
+      args: { RUST_IMAGE_VERSION: RELAYER_RUST_IMAGE_VERSION },
+    }),
+    relayer: buildSpec("../../..", "relayer/docker/relayer/Dockerfile", {
+      args: { RUST_IMAGE_VERSION: RELAYER_RUST_IMAGE_VERSION },
+    }),
   },
   "gateway-mocked-payment": {
     "gateway-deploy-mocked-zama-oft": buildSpec("../../../gateway-contracts", "Dockerfile"),
@@ -616,7 +628,11 @@ const buildComposeOverride = async (component: string, plan: StackSpec) => {
   if (component === "core-threshold") {
     // Dedicated threshold-cluster component (gen-keys + N cores + kms-init).
     // Separate from `core` so it never merges with the centralized template.
-    return buildKmsThresholdOverride(plan.kms, kmsRenderOptionsFor(plan.versions.env.CORE_VERSION));
+    return buildKmsThresholdOverride(
+      plan.kms,
+      kmsRenderOptionsFor(plan.versions.env.CORE_VERSION),
+      plan.kmsCoreVersionByNodeId,
+    );
   }
   if (component === "kms-connector" && plan.kms.mode === "threshold") {
     // One connector per KMS party (each cores↔connector pair is independent).
@@ -746,11 +762,61 @@ const buildExtraCoprocessorListenerOverride = async (
         locallyBuilt ? {} : compat.coprocessorDropFlags,
       );
       adjusted.container_name = cloneName;
+      // Extra chains keep their env canonical id (default chain), so they don't decode proposals.
       applyCoprocessorSource(adjusted, baseName, instance, locallyBuilt);
       delete adjusted.depends_on;
       services[cloneName] = adjusted;
     }
   }
+
+  // Blue-green: clone the GCS host-listeners per extra chain too, so the
+  // GCS stack can ingest and dry-run each chain.
+  if (plan.blueGreen) {
+    const gcs = plan.blueGreen.gcs;
+    for (const instance of plan.coprocessor.instances) {
+      const prefix = instance.index === 0 ? "coprocessor-" : `coprocessor${instance.index}-`;
+      const gcsPrefix = `${prefix}gcs-`;
+      const envFileValue = envPath(`coprocessor-${chain.key}.${instance.index}`);
+      const instanceEnv = await readEnvFile(envFileValue);
+      const gcsInstance: ResolvedCoprocessorScenarioInstance = {
+        index: instance.index,
+        source: gcs.source,
+        env: gcs.env,
+        args: gcs.args,
+      };
+      for (const baseName of listenerServices) {
+        const suffix = baseName.replace(/^coprocessor-/, "");
+        const cloneName = `${gcsPrefix}${suffix}${chainSuffix}`;
+        const baseService = doc.services[baseName];
+        if (!baseService) continue;
+        const adjusted = applyInstanceAdjustments(
+          baseName,
+          baseService,
+          envFileValue,
+          instanceEnv,
+          gcsInstance,
+          compat.coprocessorArgs,
+          compat.coprocessorDropFlags,
+        );
+        adjusted.container_name = cloneName;
+        // GCS is always local-built and retagged to its stack version.
+        const buildSpec = localBuildSpecFor("coprocessor", baseName);
+        if (buildSpec) {
+          adjusted.image = retagLocal(baseService.image, `gcs-${gcs.stackVersion}`);
+          adjusted.build = {
+            ...buildSpec,
+            args: {
+              ...(buildSpec.args as Record<string, string> | undefined),
+              BUILD_STACK_VERSION: gcs.stackVersion,
+            },
+          };
+        }
+        delete adjusted.depends_on;
+        services[cloneName] = adjusted;
+      }
+    }
+  }
+
   return { services };
 };
 

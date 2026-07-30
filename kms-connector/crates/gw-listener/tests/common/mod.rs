@@ -18,9 +18,9 @@ use connector_utils::{
 };
 use fhevm_gateway_bindings::decryption::{
     Decryption::{
-        HandleEntry, PublicDecryptionRequest_0 as PublicDecryptionRequest,
-        UserDecryptionRequest_0 as UserDecryptionRequest,
-        UserDecryptionRequest_1 as UserDecryptionRequestV2,
+        HandleEntry, PublicDecryptionRequest_1 as PublicDecryptionRequest,
+        UserDecryptionRequest_2 as UserDecryptionRequest,
+        UserDecryptionRequest_3 as UserDecryptionRequestV2,
     },
     IDecryption::{
         ContractsInfo, RequestValidity, RequestValiditySeconds, UserDecryptionRequestPayload,
@@ -138,7 +138,6 @@ pub async fn mock_event_on_gw(
             };
             let event = UserDecryptionRequestV2 {
                 decryptionId: U256::ZERO,
-                snsCtMaterials: vec![],
                 handles: handles.clone(),
                 payload: payload.clone(),
             };

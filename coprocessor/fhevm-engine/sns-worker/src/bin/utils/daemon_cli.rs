@@ -1,6 +1,6 @@
 use std::time::Duration;
 
-use clap::{command, Parser};
+use clap::Parser;
 use fhevm_engine_common::telemetry::MetricsConfig;
 use fhevm_engine_common::types::SignerType;
 use fhevm_engine_common::utils::DatabaseURL;

@@ -10,7 +10,7 @@ version = "0.15.0"
 unused = "allow"
 
 [dependencies]
-alloy = { version = "1.0", default-features = false, features = [
+alloy = { version = "2", default-features = false, features = [
     "contract",
     "sol-types",
 ] }

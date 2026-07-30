@@ -5,11 +5,11 @@ use crate::core::event_processor::{
     kms::KMSGenerationProcessor,
     protocol_config::ProtocolConfigProcessor,
 };
-use alloy::providers::Provider;
+use alloy::{primitives::B256, providers::Provider};
 use anyhow::anyhow;
 use connector_utils::types::{
     KmsGrpcRequest, KmsGrpcResponse, KmsResponseKind, ProtocolEvent, ProtocolEventKind,
-    u256_to_request_id,
+    SendResponse, db::invalidate_kms_epoch, u256_to_request_id,
 };
 use kms_grpc::kms::v1::{DestroyMpcContextRequest, DestroyMpcEpochRequest};
 use sqlx::{Pool, Postgres};
@@ -137,14 +137,14 @@ impl<GP: Provider + Clone + 'static, HP: Provider, C: ContextManager> DbEventPro
         match &event.kind {
             ProtocolEventKind::PublicDecryption(req) => {
                 self.decryption_processor
-                    .check_ciphertexts_allowed_for_public_decryption(&req.snsCtMaterials)
+                    .check_ciphertexts_allowed_for_public_decryption(&req.ctHandles)
                     .await
                     .map_err(RequestCheckError::record)?;
 
                 self.decryption_processor
                     .prepare_decryption_request(
                         req.decryptionId,
-                        &req.snsCtMaterials,
+                        &req.ctHandles,
                         &req.extraData,
                         None,
                     )
@@ -163,7 +163,7 @@ impl<GP: Provider + Clone + 'static, HP: Provider, C: ContextManager> DbEventPro
                 self.decryption_processor
                     .check_ciphertexts_allowed_for_user_decryption(
                         calldata,
-                        &req.snsCtMaterials,
+                        &req.ctHandles,
                         req.userAddress,
                     )
                     .await
@@ -171,7 +171,7 @@ impl<GP: Provider + Clone + 'static, HP: Provider, C: ContextManager> DbEventPro
                 self.decryption_processor
                     .prepare_decryption_request(
                         req.decryptionId,
-                        &req.snsCtMaterials,
+                        &req.ctHandles,
                         &req.extraData,
                         Some(UserDecryptionExtraData::new(
                             req.userAddress,
@@ -188,10 +188,11 @@ impl<GP: Provider + Clone + 'static, HP: Provider, C: ContextManager> DbEventPro
                     .await
                     .map_err(RequestCheckError::record)?;
                 let payload = &req.payload;
+                let handles: Vec<B256> = req.handles.iter().map(|h| h.handle).collect();
                 self.decryption_processor
                     .prepare_decryption_request(
                         req.decryptionId,
-                        &req.snsCtMaterials,
+                        &handles,
                         &payload.extraData,
                         Some(UserDecryptionExtraData::new(
                             payload.userAddress,
@@ -231,17 +232,11 @@ impl<GP: Provider + Clone + 'static, HP: Provider, C: ContextManager> DbEventPro
                     .prepare_new_kms_epoch_request(req)
                     .await
             }
-            ProtocolEventKind::KmsContextDestroyed(req) => {
-                // TODO: the `epoch_ids` field is left empty for now, as the gRPC interface of
-                // the KMS Core for context/epoch destruction is about to change.
-                // Remove once https://github.com/zama-ai/kms-internal/issues/3079 is done.
-                Ok(KmsGrpcRequest::DestroyMpcContext(
-                    DestroyMpcContextRequest {
-                        context_id: Some(u256_to_request_id(req.kmsContextId)),
-                        epoch_ids: vec![],
-                    },
-                ))
-            }
+            ProtocolEventKind::KmsContextDestroyed(req) => Ok(KmsGrpcRequest::DestroyMpcContext(
+                DestroyMpcContextRequest {
+                    context_id: Some(u256_to_request_id(req.kmsContextId)),
+                },
+            )),
             ProtocolEventKind::KmsEpochDestroyed(req) => {
                 Ok(KmsGrpcRequest::DestroyMpcEpoch(DestroyMpcEpochRequest {
                     epoch_id: Some(u256_to_request_id(req.epochId)),
@@ -263,8 +258,19 @@ impl<GP: Provider + Clone + 'static, HP: Provider, C: ContextManager> DbEventPro
         if !event.already_sent {
             let (error_count, result) = self.kms_client.send_request(&request).await;
             event.error_counter += error_count;
-            result?;
+            let send_response = result?;
             event.already_sent = true;
+
+            // Invalidate epochs associated to destroyed context returned by the KMS Core.
+            // A failure must not prevent the event from completing, as retrying would result in an
+            // `NotFound` from KMS Core with no epoch IDs.
+            if let SendResponse::DestroyedEpochs(epoch_ids) = send_response {
+                for epoch_id in epoch_ids {
+                    if let Err(e) = invalidate_kms_epoch(&self.db_pool, epoch_id).await {
+                        warn!("Failed to invalidate destroyed KMS epoch #{epoch_id}: {e}");
+                    }
+                }
+            }
         }
 
         let (error_count, grpc_result) = self.kms_client.poll_result(request).await;

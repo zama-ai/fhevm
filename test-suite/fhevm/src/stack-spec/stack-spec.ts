@@ -39,6 +39,7 @@ export type StackSpec = {
   requiresGitHub: boolean;
   target: State["target"];
   versions: VersionBundle;
+  kmsCoreVersionByNodeId?: State["kmsCoreVersionByNodeId"];
   overrides: State["overrides"];
   topology: Topology;
   hostChains: HostChainScenario[];
@@ -55,10 +56,14 @@ export const resolveScenarioForOptions = async (
     const sourcePath = await resolveScenarioReference(options.scenarioPath);
     const kind = await peekScenarioKind(sourcePath);
     if (kind === "blue-green") {
-      // --build's implicit all-group overrides are fine (GCS builds from HEAD); only explicit --override conflicts.
-      if (!options.build && options.overrides.some((override) => override.group === "coprocessor")) {
+      // GCS always builds from the local tree, so a full-group --override coprocessor is accepted
+      // as an explicit alias; per-service selections have no GCS granularity and BCS stays pinned.
+      if (
+        !options.build &&
+        options.overrides.some((override) => override.group === "coprocessor" && override.services?.length)
+      ) {
         throw new PreflightError(
-          "--override coprocessor is not supported with blue-green scenarios (BCS/GCS sources are scenario-defined)",
+          "--override coprocessor:<service> is not supported with blue-green scenarios; use --override coprocessor — the GCS fleet builds from the local tree",
         );
       }
       const loaded = await loadBlueGreenScenario(sourcePath);
@@ -104,6 +109,7 @@ export const topologyForState = (state: Pick<State, "scenario">): Topology => ({
 const stackSpecFromResolved = (input: {
   target: State["target"];
   versions: VersionBundle;
+  kmsCoreVersionByNodeId?: State["kmsCoreVersionByNodeId"];
   overrides: State["overrides"];
   scenario: ResolvedScenario;
   requiresGitHub: boolean;
@@ -132,6 +138,7 @@ const stackSpecFromResolved = (input: {
       requiresGitHub: input.requiresGitHub,
       target: input.target,
       versions: input.versions,
+      kmsCoreVersionByNodeId: input.kmsCoreVersionByNodeId,
       overrides: input.overrides,
       topology: bg.topology,
       hostChains: bg.hostChains,
@@ -144,6 +151,7 @@ const stackSpecFromResolved = (input: {
     requiresGitHub: input.requiresGitHub,
     target: input.target,
     versions: input.versions,
+    kmsCoreVersionByNodeId: input.kmsCoreVersionByNodeId,
     overrides: input.overrides,
     topology: topologyFromScenario(input.scenario),
     hostChains: input.scenario.hostChains,
@@ -154,12 +162,13 @@ const stackSpecFromResolved = (input: {
 
 /** Rebuilds a stack spec from persisted state. */
 export const stackSpecForState = (
-  state: Pick<State, "requiresGitHub" | "target" | "versions" | "overrides" | "scenario">,
+  state: Pick<State, "requiresGitHub" | "target" | "versions" | "kmsCoreVersionByNodeId" | "overrides" | "scenario">,
 ): StackSpec =>
   stackSpecFromResolved({
     requiresGitHub: state.requiresGitHub ?? true,
     target: state.target,
     versions: state.versions,
+    kmsCoreVersionByNodeId: state.kmsCoreVersionByNodeId,
     overrides: state.overrides,
     scenario: state.scenario,
   });

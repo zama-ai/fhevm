@@ -1,26 +1,27 @@
 use crate::{
     monitoring::otlp::PropagationContext,
     tests::{
-        rand::{rand_address, rand_public_key, rand_signature, rand_sns_ct, rand_u256},
-        setup::{S3_CT_DIGEST, S3_CT_HANDLE},
+        rand::{rand_address, rand_public_key, rand_signature, rand_u256},
+        setup::S3_CT_HANDLE,
     },
     types::{
         DEFAULT_EPOCH_ID, ProtocolEventKind, TESTING_KMS_CONTEXT,
-        db::{EventType, OperationStatus, ParamsTypeDb, SnsCiphertextMaterialDbItem},
+        db::{EventType, OperationStatus, ParamsTypeDb},
         extra_data::EXTRA_DATA_V2_VERSION,
     },
 };
 use alloy::{
     hex,
-    primitives::{FixedBytes, U256},
+    primitives::{B256, FixedBytes, U256},
     sol_types::SolValue,
 };
 use anyhow::anyhow;
+// Handle-only overloaded decryption events (authoritative ct-commits verifier, v0.15).
 use fhevm_gateway_bindings::decryption::{
     Decryption::{
-        HandleEntry, PublicDecryptionRequest_0 as PublicDecryptionRequest, SnsCiphertextMaterial,
-        UserDecryptionRequest_0 as UserDecryptionRequest,
-        UserDecryptionRequest_1 as UserDecryptionRequestV2,
+        HandleEntry, PublicDecryptionRequest_1 as PublicDecryptionRequest,
+        UserDecryptionRequest_2 as UserDecryptionRequest,
+        UserDecryptionRequest_3 as UserDecryptionRequestV2,
     },
     IDecryption::{RequestValiditySeconds, UserDecryptionRequestPayload},
 };
@@ -125,30 +126,19 @@ pub async fn insert_rand_public_decryption_request(
 ) -> anyhow::Result<PublicDecryptionRequest> {
     let decryption_id = options.id.unwrap_or_else(rand_u256);
     let extra_data = options.build_extra_data();
-    let sns_cts = match options.sns_ct_materials {
-        Some(materials) => materials,
-        None => {
-            let mut sns_ct = rand_sns_ct();
-            sns_ct.ctHandle = FixedBytes::from_slice(&hex::decode(S3_CT_HANDLE)?);
-            sns_ct.snsCiphertextDigest = FixedBytes::from_slice(&hex::decode(S3_CT_DIGEST)?);
-            vec![sns_ct]
-        }
-    };
+    let ct_handles = options.ct_handles_or_default()?;
     let status = options.status.unwrap_or(OperationStatus::Pending);
 
-    let sns_ciphertexts_db = sns_cts
-        .iter()
-        .map(SnsCiphertextMaterialDbItem::from)
-        .collect::<Vec<SnsCiphertextMaterialDbItem>>();
+    let ct_handles_db: Vec<Vec<u8>> = ct_handles.iter().map(|h| h.to_vec()).collect();
 
     sqlx::query!(
         "INSERT INTO public_decryption_requests(
-            decryption_id, sns_ct_materials, extra_data, tx_hash, created_at, otlp_context,
+            decryption_id, ct_handles, extra_data, tx_hash, created_at, otlp_context,
             already_sent, status
         )
         VALUES ($1, $2, $3, $4, $5, $6, $7, $8) ON CONFLICT DO NOTHING",
         decryption_id.as_le_slice(),
-        sns_ciphertexts_db as Vec<SnsCiphertextMaterialDbItem>,
+        &ct_handles_db,
         extra_data.clone(),
         options.tx_hash.map(|h| h.to_vec()),
         Utc::now(),
@@ -161,7 +151,7 @@ pub async fn insert_rand_public_decryption_request(
 
     Ok(PublicDecryptionRequest {
         decryptionId: decryption_id,
-        snsCtMaterials: sns_cts,
+        ctHandles: ct_handles,
         extraData: extra_data.into(),
     })
 }
@@ -172,32 +162,21 @@ pub async fn insert_rand_user_decryption_request(
 ) -> anyhow::Result<UserDecryptionRequest> {
     let decryption_id = options.id.unwrap_or_else(rand_u256);
     let extra_data = options.build_extra_data();
-    let sns_cts = match options.sns_ct_materials {
-        Some(materials) => materials,
-        None => {
-            let mut sns_ct = rand_sns_ct();
-            sns_ct.ctHandle = FixedBytes::from_slice(&hex::decode(S3_CT_HANDLE)?);
-            sns_ct.snsCiphertextDigest = FixedBytes::from_slice(&hex::decode(S3_CT_DIGEST)?);
-            vec![sns_ct]
-        }
-    };
+    let ct_handles = options.ct_handles_or_default()?;
     let user_address = rand_address();
     let public_key = rand_public_key();
 
     let status = options.status.unwrap_or(OperationStatus::Pending);
-    let sns_ciphertexts_db = sns_cts
-        .iter()
-        .map(SnsCiphertextMaterialDbItem::from)
-        .collect::<Vec<SnsCiphertextMaterialDbItem>>();
+    let ct_handles_db: Vec<Vec<u8>> = ct_handles.iter().map(|h| h.to_vec()).collect();
 
     sqlx::query!(
         "INSERT INTO user_decryption_requests(
-            decryption_id, sns_ct_materials, user_address, public_key, extra_data, tx_hash,
+            decryption_id, ct_handles, user_address, public_key, extra_data, tx_hash,
             created_at, otlp_context, already_sent, status
         )
         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10) ON CONFLICT DO NOTHING",
         decryption_id.as_le_slice(),
-        sns_ciphertexts_db as Vec<SnsCiphertextMaterialDbItem>,
+        &ct_handles_db,
         user_address.as_slice(),
         &public_key,
         extra_data.clone(),
@@ -212,7 +191,7 @@ pub async fn insert_rand_user_decryption_request(
 
     Ok(UserDecryptionRequest {
         decryptionId: decryption_id,
-        snsCtMaterials: sns_cts,
+        ctHandles: ct_handles,
         userAddress: user_address,
         publicKey: public_key.into(),
         extraData: extra_data.into(),
@@ -224,15 +203,7 @@ pub async fn insert_rand_user_decryption_request_v2(
     options: InsertRequestOptions,
 ) -> anyhow::Result<UserDecryptionRequestV2> {
     let decryption_id = options.id.unwrap_or_else(rand_u256);
-    let sns_cts = match options.sns_ct_materials {
-        Some(materials) => materials,
-        None => {
-            let mut sns_ct = rand_sns_ct();
-            sns_ct.ctHandle = FixedBytes::from_slice(&hex::decode(S3_CT_HANDLE)?);
-            sns_ct.snsCiphertextDigest = FixedBytes::from_slice(&hex::decode(S3_CT_DIGEST)?);
-            vec![sns_ct]
-        }
-    };
+    let ct_handles = options.ct_handles_or_default()?;
     let user_address = rand_address();
     let public_key = rand_public_key();
     let signature = rand_signature();
@@ -247,14 +218,15 @@ pub async fn insert_rand_user_decryption_request_v2(
     // empty `allowedContracts` (permissive mode). The worker's `check_user_decryption_request_v2`
     // therefore issues exactly one `isAllowed(handle, userAddress)` call per handle and skips the
     // per-`allowedContracts` loop entirely — so tests can mock ACL responses as `vec![true; n_handles]`.
-    let handles: Vec<HandleEntry> = sns_cts
+    let handles: Vec<HandleEntry> = ct_handles
         .iter()
-        .map(|m| HandleEntry {
-            handle: m.ctHandle,
+        .map(|handle| HandleEntry {
+            handle: *handle,
             contractAddress: rand_address(),
             ownerAddress: user_address,
         })
         .collect();
+    let ct_handles_db: Vec<Vec<u8>> = ct_handles.iter().map(|h| h.to_vec()).collect();
     let handle_owner_addresses: Vec<Vec<u8>> =
         handles.iter().map(|h| h.ownerAddress.to_vec()).collect();
     let handle_contract_addresses: Vec<Vec<u8>> =
@@ -269,14 +241,9 @@ pub async fn insert_rand_user_decryption_request_v2(
     let start_timestamp: i64 = now_secs - 3600;
     let duration_seconds: i64 = 24 * 3600;
 
-    let sns_ciphertexts_db = sns_cts
-        .iter()
-        .map(SnsCiphertextMaterialDbItem::from)
-        .collect::<Vec<SnsCiphertextMaterialDbItem>>();
-
     sqlx::query!(
         "INSERT INTO user_decryption_requests(
-            decryption_id, sns_ct_materials, user_address, public_key, extra_data, tx_hash,
+            decryption_id, ct_handles, user_address, public_key, extra_data, tx_hash,
             created_at, otlp_context, already_sent, status, handle_owner_addresses,
             handle_contract_addresses, allowed_contracts, start_timestamp, duration_seconds,
             signature
@@ -284,7 +251,7 @@ pub async fn insert_rand_user_decryption_request_v2(
         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16)
         ON CONFLICT DO NOTHING",
         decryption_id.as_le_slice(),
-        sns_ciphertexts_db as Vec<SnsCiphertextMaterialDbItem>,
+        &ct_handles_db,
         user_address.as_slice(),
         &public_key,
         extra_data.clone(),
@@ -305,7 +272,6 @@ pub async fn insert_rand_user_decryption_request_v2(
 
     Ok(UserDecryptionRequestV2 {
         decryptionId: decryption_id,
-        snsCtMaterials: sns_cts,
         handles,
         payload: UserDecryptionRequestPayload {
             userAddress: user_address,
@@ -731,7 +697,7 @@ pub struct InsertRequestOptions {
     pub already_sent: bool,
     pub status: Option<OperationStatus>,
     pub tx_hash: Option<FixedBytes<32>>,
-    pub sns_ct_materials: Option<Vec<SnsCiphertextMaterial>>,
+    pub ct_handles: Option<Vec<B256>>,
     pub context_id: Option<U256>,
     pub epoch_id: Option<U256>,
 }
@@ -761,9 +727,18 @@ impl InsertRequestOptions {
         self
     }
 
-    pub fn with_sns_ct_materials(mut self, materials: Vec<SnsCiphertextMaterial>) -> Self {
-        self.sns_ct_materials = Some(materials);
+    pub fn with_ct_handles(mut self, handles: Vec<B256>) -> Self {
+        self.ct_handles = Some(handles);
         self
+    }
+
+    /// The configured handles, or a single well-known handle (`S3_CT_HANDLE`) that matches the S3
+    /// test fixture so the integration tests can resolve it via the attestation consensus.
+    fn ct_handles_or_default(&self) -> anyhow::Result<Vec<B256>> {
+        match &self.ct_handles {
+            Some(handles) => Ok(handles.clone()),
+            None => Ok(vec![FixedBytes::from_slice(&hex::decode(S3_CT_HANDLE)?)]),
+        }
     }
 
     pub fn with_context_id(mut self, context_id: U256) -> Self {

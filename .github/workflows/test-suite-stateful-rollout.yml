@@ -1,0 +1,104 @@
+name: test-suite-stateful-rollout
+
+on:
+  workflow_dispatch:
+    inputs:
+      runbook:
+        description: "Path relative to test-suite/fhevm (for example rollouts/v0.13.0-testnet/run.ts)"
+        required: true
+        type: string
+
+permissions: {}
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  fhevm-rollout: # zizmor: ignore[secrets-outside-env] Manual dispatch is the authorization boundary; PRs cannot trigger this job.
+    name: fhevm-rollout
+    permissions:
+      contents: "read" # Required to checkout repository code.
+      packages: "read" # Required when a runbook resolves GitHub package metadata.
+    runs-on: large_ubuntu_32
+    timeout-minutes: 300
+    env:
+      GH_TOKEN: ${{ github.token }}
+      ROLLOUT_RUNBOOK: ${{ inputs.runbook }}
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          persist-credentials: "false"
+          fetch-depth: 0
+
+      - name: Setup Docker
+        uses: docker/setup-buildx-action@d70bba72b1f3fd22344832f00baa16ece964efeb # v3.3.0
+
+      - name: Setup Bun
+        uses: oven-sh/setup-bun@ecf28ddc73e819eb6fa29df6b34ef8921c743461 # v2.1.3
+
+      - name: Install foundry
+        uses: foundry-rs/foundry-toolchain@82dee4ba654bd2146511f85f0d013af94670c4de # v1.4.0
+
+      - name: Install GitHub CLI
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y gh
+
+      - name: Login to GitHub Container Registry
+        uses: zama-ai/ci-templates/.github/actions/retry@542103e14b9ae6a9aea27787b8724b3b35bb3918 # v1.0.9
+        env:
+          GHCR_USERNAME: ${{ github.actor }}
+          GHCR_PASSWORD: ${{ secrets.GHCR_READ_TOKEN }}
+        with:
+          command: |
+            echo "Logging into ghcr.io..."
+            echo "$GHCR_PASSWORD" | docker login ghcr.io -u "$GHCR_USERNAME" --password-stdin
+
+      - name: Login to Chainguard Registry
+        uses: docker/login-action@9780b0c442fbb1117ed29e0efdff1e18412f7567 # v3.3.0
+        with:
+          registry: cgr.dev
+          username: ${{ secrets.CGR_USERNAME }}
+          password: ${{ secrets.CGR_PASSWORD }}
+
+      - name: Install safe-chain
+        shell: bash
+        run: |
+          # safe-chain v1.5.3 is distributed as an immutable GitHub release asset —
+          # its content is permanently fixed and cannot be modified after the tag is published.
+          # Verify immutability: curl -fsSL https://api.github.com/repos/AikidoSec/safe-chain/releases/tags/1.5.3 | grep immutable
+          curl -fsSL https://github.com/AikidoSec/safe-chain/releases/download/1.5.3/install-safe-chain.sh | sh -s -- --ci
+
+      - name: Install CLI dependencies
+        working-directory: test-suite/fhevm
+        run: bun install --frozen-lockfile
+
+      - name: Execute stateful rollout
+        working-directory: test-suite/fhevm
+        timeout-minutes: 185
+        run: ./fhevm-cli rollout run "$ROLLOUT_RUNBOOK"
+
+      - name: Show rollout receipt
+        if: ${{ always() }}
+        continue-on-error: true
+        working-directory: test-suite/fhevm
+        run: ./fhevm-cli rollout receipt
+
+      - name: Upload rollout receipt
+        if: ${{ always() }}
+        uses: actions/upload-artifact@65c4c4a1ddee5b72f698fdd19549f0f0fb45cf08 # v4.6.0
+        with:
+          name: stateful-rollout-receipt-${{ github.run_id }}-${{ github.run_attempt }}
+          path: |
+            .fhevm/rollout/receipt.md
+            .fhevm/rollout/receipt.jsonl
+          include-hidden-files: true
+          if-no-files-found: error
+
+      - name: Cleanup
+        if: ${{ always() }}
+        working-directory: test-suite/fhevm
+        timeout-minutes: 15
+        run: ./fhevm-cli clean

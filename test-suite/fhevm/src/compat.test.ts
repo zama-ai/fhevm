@@ -484,9 +484,35 @@ describe("compat", () => {
     expect(policy.coprocessorDropFlags["host-listener-poller"]?.sort()).toEqual([
       "--confidential-bridge-address",
       "--protocol-config-address",
+      "--seed-start-block",
     ]);
     expect(policy.composeEnv.HOST_ADD_PAUSERS_INTERNAL_FLAG).toBe("--use-internal-proxy-address");
     expect(policy.composeEnv.GATEWAY_ADD_PAUSERS_INTERNAL_FLAG).toBe("--use-internal-proxy-address");
+  });
+
+  test("drops --seed-start-block only for host-listener bundles that predate the 0.13.2 backport", () => {
+    const stateFor = (version: string) => ({
+      versions: {
+        target: "mainnet" as const,
+        lockName: "compat.json",
+        env: { COPROCESSOR_HOST_LISTENER_VERSION: version } as Record<string, string>,
+        sources: [],
+      },
+      overrides: [],
+      scenario: testDefaultScenario(),
+    });
+    const dropsSeedStartBlock = (version: string) =>
+      (compatPolicyForState(stateFor(version)).coprocessorDropFlags["host-listener-poller"] ?? []).includes(
+        "--seed-start-block",
+      );
+
+    expect(dropsSeedStartBlock("v0.11.0")).toBe(true);
+    expect(dropsSeedStartBlock("v0.13.0-2")).toBe(true);
+    expect(dropsSeedStartBlock("v0.13.1")).toBe(true);
+    expect(dropsSeedStartBlock("v0.13.2-0")).toBe(false);
+    expect(dropsSeedStartBlock("v0.13.3")).toBe(false);
+    expect(dropsSeedStartBlock("v0.14.0-4")).toBe(false);
+    expect(dropsSeedStartBlock("13a37bc")).toBe(false);
   });
 
   test("requires modern host addresses when host-contracts is locally overridden", () => {

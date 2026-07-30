@@ -1,0 +1,53 @@
+# charts/contracts overlay for the deferred task:addHostChainsToGatewayConfig follow-up
+# (see gateway-chain/values-gateway-contracts-e2e.yaml's friction point #3). Runs after both
+# gateway-contracts AND host-contracts have deployed, registering the host chain's
+# FHEVMExecutor/ACL addresses into the gateway's GatewayConfig contract.
+#
+# Deployed as:
+#   helm install gateway-add-host-chains charts/contracts -n fhevm-e2e -f this-file
+#
+# Reuses gateway-contracts' PVC (create: false) so --use-internal-proxy-address true can read
+# GATEWAY_CONFIG_ADDRESS from the addresses/.env.gateway file already written there.
+# HOST_CHAIN_FHEVM_EXECUTOR_ADDRESS_0/HOST_CHAIN_ACL_ADDRESS_0 are wired directly from
+# host-contracts' output ConfigMap (same valueFrom.configMapKeyRef pattern as
+# values-host-contracts-e2e.yaml's DECRYPTION_ADDRESS/INPUT_VERIFICATION_ADDRESS).
+scDeploy:
+  enabled: true
+  image:
+    name: hub.zama.org/ghcr/zama-ai/fhevm/gateway-contracts
+    tag: latest
+  # Reuse gateway-contracts' own ConfigMap — this just adds to it, no new keys of note beyond
+  # what's already there (addHostChainsToGatewayConfig doesn't write any addresses/.env.* files).
+  configmap:
+    name: gw-sc-addresses
+  env:
+    - {name: HARDHAT_NETWORK, value: "staging"}
+    - {name: MNEMONIC, value: "test test test test test test test test test test test junk"}
+    - {name: RPC_URL, value: "http://anvil-gateway-anvil-node:8546"}
+    - {name: DEPLOYER_PRIVATE_KEY, value: "0xac0974bec39a17e36ba4a6b4d238ff944bacb478cbed5efcae784d7bf4f2ff80"}
+    - {name: NUM_HOST_CHAINS, value: "1"}
+    - {name: HOST_CHAIN_CHAIN_ID_0, value: "12345"}
+    - {name: HOST_CHAIN_NAME_0, value: "fhevm-ci host chain"}
+    - {name: HOST_CHAIN_WEBSITE_0, value: "https://example.invalid"}
+    - name: HOST_CHAIN_FHEVM_EXECUTOR_ADDRESS_0
+      valueFrom:
+        configMapKeyRef:
+          name: host-sc-addresses
+          key: fhevm_executor.address
+    - name: HOST_CHAIN_ACL_ADDRESS_0
+      valueFrom:
+        configMapKeyRef:
+          name: host-sc-addresses
+          key: acl.address
+  deployCommands:
+    - npx hardhat task:addHostChainsToGatewayConfig --use-internal-proxy-address true
+  verifyContracts: false
+persistence:
+  enabled: true
+  mountPath: /app/addresses
+  volumeClaim:
+    # Reuse the PVC gateway-contracts already populated — do NOT create a new one.
+    name: gateway-sc-deploy-workdir
+    create: false
+scUpgrade:
+  enabled: false

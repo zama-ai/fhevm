@@ -8,12 +8,12 @@ use std::{
 };
 use tracing::warn;
 
-/// A winning consensus: the agreed material plus the number of distinct, in-registry signers that
-/// vouched for it.
+/// A winning consensus: the agreed material plus the distinct, in-registry signers that vouched
+/// for it.
 #[derive(Clone, Debug)]
 pub struct Consensus {
     pub material: ConsensusMaterial,
-    pub valid_signers: usize,
+    pub signers: HashSet<Address>,
 }
 
 /// The ciphertext material a consensus group agreed on.
@@ -97,10 +97,9 @@ pub fn evaluate(
                 .then_with(|| right_material.cmp(left_material))
         },
     ) {
-        Some((material, signers)) if signers.len() >= threshold.get() => Ok(Consensus {
-            material,
-            valid_signers: signers.len(),
-        }),
+        Some((material, signers)) if signers.len() >= threshold.get() => {
+            Ok(Consensus { material, signers })
+        }
         Some((_, signers)) => Err(ConsensusError {
             valid_signers: signers.len(),
             threshold,
@@ -182,7 +181,7 @@ mod tests {
             nz(2),
         )
         .unwrap();
-        assert_eq!(consensus.valid_signers, 2);
+        assert_eq!(consensus.signers.len(), 2);
         assert_eq!(consensus.material.sns_ciphertext_digest, SNS_DIGEST);
         assert_eq!(consensus.material.key_id, KEY_ID);
     }
@@ -292,7 +291,7 @@ mod tests {
             nz(2),
         )
         .unwrap();
-        assert_eq!(consensus.valid_signers, 2);
+        assert_eq!(consensus.signers.len(), 2);
         assert_eq!(consensus.material.format, FORMAT);
     }
 
@@ -317,7 +316,7 @@ mod tests {
         )
         .unwrap();
 
-        assert_eq!(consensus.valid_signers, 1);
+        assert_eq!(consensus.signers.len(), 1);
         assert_eq!(consensus.material.ciphertext_digest, smaller_digest);
     }
 

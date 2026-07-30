@@ -438,13 +438,9 @@ export function isSignatureRejection(post: PostResult): boolean {
  * negatives whose cause is a per-handle ownership/delegation ACL failure —
  * pinning the reason so the test cannot pass on an unintended failure.
  */
-export function expectRelayerAclRejection(poll: PollResult | undefined, messagePattern?: RegExp): void {
+export function expectRelayerAclRejection(poll: PollResult | undefined): void {
   expect(poll?.status, JSON.stringify(poll?.raw)).to.equal('failed');
   expect(poll?.errorLabel, JSON.stringify(poll?.raw)).to.equal('not_allowed_on_host_acl');
-  if (messagePattern) {
-    const message = ((poll?.raw as { error?: { message?: string } })?.error?.message ?? '') as string;
-    expect(message, JSON.stringify(poll?.raw)).to.match(messagePattern);
-  }
 }
 
 /**

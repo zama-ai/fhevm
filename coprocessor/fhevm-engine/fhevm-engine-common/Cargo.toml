@@ -9,7 +9,6 @@ license.workspace = true
 # workspace dependencies
 anyhow = { workspace = true }
 alloy = { workspace = true, features = ["providers", "provider-ws"] }
-alloy-provider = { workspace = true }
 aws-config = { workspace = true }
 aws-credential-types = { workspace = true }
 aws-sigv4 = { workspace = true }

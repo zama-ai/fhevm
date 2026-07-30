@@ -20,6 +20,7 @@ pub use utils::{
     // Other utilities
     de_string_or_number,
     deserialize_ct_handles_from_hex,
+    extra_data_decryption_schema,
     // Parsing utilities
     parse_and_validate,
     // Serialization helpers

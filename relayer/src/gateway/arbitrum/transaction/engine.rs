@@ -164,7 +164,7 @@ impl
 
         let provider = ProviderBuilder::new()
             .network::<Ethereum>()
-            .filler(GasFiller)
+            .filler(GasFiller::default())
             .filler(ChainIdFiller::new(Some(chain_id)))
             .filler(WalletFiller::new(wallet))
             .connect_http(write_rpc_url);

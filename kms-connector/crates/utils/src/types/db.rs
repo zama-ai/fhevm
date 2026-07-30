@@ -1,13 +1,14 @@
 use crate::types::ProtocolEventKind;
 use alloy::{
-    primitives::{Address, B256, U256},
+    primitives::{B256, U256},
     sol_types::SolEvent,
 };
 use anyhow::anyhow;
+// Handle-only overloaded decryption events
 use fhevm_gateway_bindings::decryption::Decryption::{
-    PublicDecryptionRequest_0 as PublicDecryptionRequest, SnsCiphertextMaterial,
-    UserDecryptionRequest_0 as UserDecryptionRequest,
-    UserDecryptionRequest_1 as UserDecryptionRequestV2,
+    PublicDecryptionRequest_1 as PublicDecryptionRequest,
+    UserDecryptionRequest_2 as UserDecryptionRequest,
+    UserDecryptionRequest_3 as UserDecryptionRequestV2,
 };
 use fhevm_host_bindings::{
     kms_generation::{
@@ -20,48 +21,9 @@ use fhevm_host_bindings::{
         KmsContextDestroyed, KmsEpochDestroyed, NewKmsContext, NewKmsEpoch,
     },
 };
-use sqlx::postgres::PgNotification;
+use sqlx::{PgExecutor, postgres::PgNotification, types::chrono::Utc};
 use std::{fmt::Display, str::FromStr};
-
-/// Struct representing how `SnsCiphertextMaterial` are stored in the database.
-#[derive(sqlx::Type, Clone, Debug, Default, PartialEq)]
-#[sqlx(type_name = "sns_ciphertext_material")]
-pub struct SnsCiphertextMaterialDbItem {
-    pub ct_handle: [u8; 32],
-    pub key_id: [u8; 32],
-    pub sns_ciphertext_digest: [u8; 32],
-    pub coprocessor_tx_sender_addresses: Vec<[u8; 20]>,
-}
-
-impl From<&SnsCiphertextMaterial> for SnsCiphertextMaterialDbItem {
-    fn from(value: &SnsCiphertextMaterial) -> Self {
-        Self {
-            ct_handle: *value.ctHandle,
-            key_id: value.keyId.to_le_bytes(),
-            sns_ciphertext_digest: *value.snsCiphertextDigest,
-            coprocessor_tx_sender_addresses: value
-                .coprocessorTxSenderAddresses
-                .iter()
-                .map(|a| *a.0)
-                .collect(),
-        }
-    }
-}
-
-impl From<&SnsCiphertextMaterialDbItem> for SnsCiphertextMaterial {
-    fn from(value: &SnsCiphertextMaterialDbItem) -> Self {
-        Self {
-            ctHandle: value.ct_handle.into(),
-            keyId: U256::from_le_bytes(value.key_id),
-            snsCiphertextDigest: value.sns_ciphertext_digest.into(),
-            coprocessorTxSenderAddresses: value
-                .coprocessor_tx_sender_addresses
-                .iter()
-                .map(Address::from)
-                .collect(),
-        }
-    }
-}
+use tracing::info;
 
 /// Struct representing the `ParamsType` enum in the database.
 #[derive(sqlx::Type, Copy, Clone, Debug, PartialEq)]
@@ -313,4 +275,49 @@ impl std::fmt::Display for OperationStatus {
             Self::Aborted => "aborted",
         })
     }
+}
+
+/// Marks a destroyed KMS context as invalid in the `kms_context` validation cache.
+///
+/// The invalidation is upserted so the destruction is recorded even if the context was not cached.
+pub async fn invalidate_kms_context<'e>(
+    executor: impl PgExecutor<'e>,
+    context_id: U256,
+) -> anyhow::Result<()> {
+    let now = Utc::now();
+    sqlx::query!(
+        "INSERT INTO kms_context(id, is_valid, created_at, updated_at)
+        VALUES ($1, FALSE, $2, $2)
+        ON CONFLICT (id) DO UPDATE SET is_valid = FALSE, updated_at = $2",
+        context_id.as_le_slice(),
+        now,
+    )
+    .execute(executor)
+    .await?;
+
+    info!("KMS context #{context_id} marked as destroyed in DB");
+    Ok(())
+}
+
+/// Marks a destroyed KMS epoch as invalid in the `kms_epoch` validation cache.
+///
+/// The invalidation is upserted so the destruction is recorded even if the epoch was never cached;
+/// `context_id` stays NULL in that case, as the event does not carry it.
+pub async fn invalidate_kms_epoch<'e>(
+    executor: impl PgExecutor<'e>,
+    epoch_id: U256,
+) -> anyhow::Result<()> {
+    let now = Utc::now();
+    sqlx::query!(
+        "INSERT INTO kms_epoch(id, is_valid, created_at, updated_at)
+        VALUES ($1, FALSE, $2, $2)
+        ON CONFLICT (id) DO UPDATE SET is_valid = FALSE, updated_at = $2",
+        epoch_id.as_le_slice(),
+        now,
+    )
+    .execute(executor)
+    .await?;
+
+    info!("KMS epoch #{epoch_id} marked as destroyed in DB");
+    Ok(())
 }

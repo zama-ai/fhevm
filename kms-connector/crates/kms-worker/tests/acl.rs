@@ -14,7 +14,7 @@ use connector_utils::tests::{
         InsertRequestOptions, TestEventType, check_no_uncompleted_request_in_db,
         check_request_failed_in_db, insert_rand_request,
     },
-    rand::{rand_digest, rand_sns_ct},
+    rand::{rand_digest, rand_handle},
     setup::{
         DbInstance, TestInstanceBuilder, erc1271_magic_response,
         init_host_chains_acl_contracts_mock,
@@ -44,17 +44,17 @@ async fn test_decryption_acl_failure(#[case] event_type: TestEventType) -> anyho
     // Mocking Gateway/Ethereum
     let asserter = Asserter::new();
     mock_copro_registry_load(&asserter, "http://unused-bucket-url");
-    let sns_ct = rand_sns_ct();
+    let handle = rand_handle();
     let tx_hash = rand_digest();
     let insert_options = InsertRequestOptions::new()
-        .with_sns_ct_materials(vec![sns_ct.clone()])
+        .with_ct_handles(vec![handle])
         .with_tx_hash(tx_hash);
     for _ in 0..MAX_DECRYPTION_ATTEMPTS {
         match event_type {
             TestEventType::PublicDecryption | TestEventType::UserDecryptionV2 => (),
             TestEventType::UserDecryption => {
                 // Mocking `get_transaction_by_hash` call result
-                let mock_tx = create_mock_user_decryption_request_tx(tx_hash, sns_ct.ctHandle)?;
+                let mock_tx = create_mock_user_decryption_request_tx(tx_hash, handle)?;
                 asserter.push_success(&mock_tx);
             }
             _ => panic!("Unexpected event kind"),
@@ -87,8 +87,7 @@ async fn test_decryption_acl_failure(#[case] event_type: TestEventType) -> anyho
         }
         _ => vec![],
     };
-    let acl_contracts_mock =
-        init_host_chains_acl_contracts_mock(sns_ct.ctHandle.as_slice(), acl_responses);
+    let acl_contracts_mock = init_host_chains_acl_contracts_mock(handle, acl_responses);
 
     // No KMS mocks needed - request should fail before reaching KMS
     let kms_mock_server = MockServer::new_grpc("kms_service.v1.CoreServiceEndpoint");
@@ -100,7 +99,7 @@ async fn test_decryption_acl_failure(#[case] event_type: TestEventType) -> anyho
         kms_core_endpoints: vec![kms_mock_server.base_url().unwrap().to_string()],
         max_decryption_attempts: MAX_DECRYPTION_ATTEMPTS,
         db_fast_event_polling: Duration::from_millis(500),
-        ct_attestation: testing_ct_attestation_config(false),
+        ct_attestation: testing_ct_attestation_config(),
         ..Default::default()
     };
     let kms_worker = init_kms_worker(

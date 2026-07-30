@@ -44,11 +44,10 @@ jobs:
         with:
           persist-credentials: 'false'
 
-      - name: Setup Rust toolchain file
-        run: cp relayer/rust-toolchain.toml .
-
-      - name: Rust setup
-        uses: dsherret/rust-toolchain-file@3551321aa44dd44a0393eb3b6bdfbc5d25ecf621 # v1
+      - name: Setup Rust
+        uses: ./.github/actions/setup_rust
+        with:
+          toolchain-dir: relayer
 
       - name: Install cargo-binstall
         uses: cargo-bins/cargo-binstall@84ca29d5c1719e79e23b6af147555a8f4dac79d6 # v1.10.14

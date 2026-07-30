@@ -10,6 +10,11 @@ network:
   chainId: "12345"
   accounts: "10"
   mnemonic: ""
+  # Optional. When set, passes --slots-in-an-epoch to anvil, controlling how
+  # quickly the `finalized`/`safe` block tags advance (anvil default: 32).
+  # Set to "1" to make finalization near-instant for test setups whose
+  # consumers wait on finalized events. Omitted -> anvil default.
+  # slotsInAnEpoch: "1"
 
 port: 8545
 

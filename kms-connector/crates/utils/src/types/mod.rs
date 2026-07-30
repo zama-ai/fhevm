@@ -6,7 +6,7 @@ pub mod handle;
 pub mod kms_response;
 
 pub use event::{ProtocolEvent, ProtocolEventKind};
-pub use grpc::{KmsGrpcRequest, KmsGrpcResponse};
+pub use grpc::{KmsGrpcRequest, KmsGrpcResponse, SendResponse};
 pub use kms_response::{
     CrsgenResponse, EpochResultResponse, KeygenResponse, KmsResponse, KmsResponseKind,
     NewKmsContextResponse, PrepKeygenResponse, PublicDecryptionResponse, UserDecryptionResponse,

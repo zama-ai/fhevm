@@ -2,11 +2,11 @@
 
 pragma solidity ^0.8.24;
 
-import "../KMSGeneration.sol";
+import '../KMSGeneration.sol';
 
 /// @custom:oz-upgrades-unsafe-allow missing-initializer
 contract KMSGenerationV2Example is KMSGeneration {
-    string private constant CONTRACT_NAME = "KMSGeneration";
+    string private constant CONTRACT_NAME = 'KMSGeneration';
 
     uint256 private constant MAJOR_VERSION = 1000;
     uint256 private constant MINOR_VERSION = 0;
@@ -17,11 +17,11 @@ contract KMSGenerationV2Example is KMSGeneration {
             string(
                 abi.encodePacked(
                     CONTRACT_NAME,
-                    " v",
+                    ' v',
                     Strings.toString(MAJOR_VERSION),
-                    ".",
+                    '.',
                     Strings.toString(MINOR_VERSION),
-                    ".",
+                    '.',
                     Strings.toString(PATCH_VERSION)
                 )
             );

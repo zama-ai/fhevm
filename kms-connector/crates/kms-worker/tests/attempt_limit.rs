@@ -16,10 +16,10 @@ use connector_utils::{
             InsertRequestOptions, TestEventType, check_no_uncompleted_request_in_db,
             insert_rand_request,
         },
-        rand::{rand_digest, rand_sns_ct},
+        rand::rand_digest,
         setup::{
-            DbInstance, S3_CT_DIGEST, S3_CT_HANDLE, S3_CT_KEY_ID, S3Instance, TestInstanceBuilder,
-            erc1271_magic_response, init_host_chains_acl_contracts_mock,
+            DbInstance, S3_CT_HANDLE, S3Instance, TestInstanceBuilder, erc1271_magic_response,
+            init_host_chains_acl_contracts_mock,
         },
     },
     types::ProtocolEventKind,
@@ -60,21 +60,17 @@ async fn test_request_processing(#[case] event_type: TestEventType) -> anyhow::R
 
     // Mocking Gateway/Ethereum
     let asserter = Asserter::new();
-    let copro_tx_sender = mock_copro_registry_load(&asserter, test_instance.s3_url());
-    let mut sns_ct = rand_sns_ct();
-    sns_ct.keyId = S3_CT_KEY_ID;
-    sns_ct.ctHandle = FixedBytes::<32>::from_hex(S3_CT_HANDLE)?;
-    sns_ct.snsCiphertextDigest = FixedBytes::<32>::from_hex(S3_CT_DIGEST)?;
-    sns_ct.coprocessorTxSenderAddresses = vec![copro_tx_sender];
+    mock_copro_registry_load(&asserter, test_instance.s3_url());
+    let handle = FixedBytes::<32>::from_hex(S3_CT_HANDLE)?;
 
     let tx_hash = rand_digest();
     let insert_options = InsertRequestOptions::new()
-        .with_sns_ct_materials(vec![sns_ct.clone()])
+        .with_ct_handles(vec![handle])
         .with_tx_hash(tx_hash);
     for _ in 0..MAX_DECRYPTION_ATTEMPTS {
         if matches!(event_type, TestEventType::UserDecryption) {
             // Mocking `get_transaction_by_hash` call result
-            let mock_tx = create_mock_user_decryption_request_tx(tx_hash, sns_ct.ctHandle)?;
+            let mock_tx = create_mock_user_decryption_request_tx(tx_hash, handle)?;
             asserter.push_success(&mock_tx);
         }
     }
@@ -105,8 +101,7 @@ async fn test_request_processing(#[case] event_type: TestEventType) -> anyhow::R
         }
         _ => vec![],
     };
-    let acl_contracts_mock =
-        init_host_chains_acl_contracts_mock(sns_ct.ctHandle.as_slice(), acl_responses);
+    let acl_contracts_mock = init_host_chains_acl_contracts_mock(handle, acl_responses);
 
     // Insert request in DB to trigger kms_worker job
     let request = insert_rand_request(test_instance.db(), event_type, insert_options).await?;
@@ -125,7 +120,7 @@ async fn test_request_processing(#[case] event_type: TestEventType) -> anyhow::R
         grpc_request_retries: GRPC_REQUEST_RETRIES,
         db_fast_event_polling: Duration::from_millis(500),
         db_long_event_polling: Duration::from_millis(500),
-        ct_attestation: testing_ct_attestation_config(true),
+        ct_attestation: testing_ct_attestation_config(),
         ..Default::default()
     };
     let kms_worker = init_kms_worker(

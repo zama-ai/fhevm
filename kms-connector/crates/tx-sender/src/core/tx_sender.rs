@@ -6,9 +6,7 @@ use crate::{
     monitoring::{health::State, metrics::register_response_forwarding_latency},
 };
 use alloy::{
-    providers::{
-        PendingTransactionError, Provider, RootProvider, ext::DebugApi, fillers::TxFiller,
-    },
+    providers::{PendingTransactionError, Provider, ext::DebugApi},
     rpc::types::{
         TransactionReceipt, TransactionRequest,
         trace::geth::{CallConfig, GethDebugTracingOptions},
@@ -17,7 +15,7 @@ use alloy::{
 };
 use anyhow::anyhow;
 use connector_utils::{
-    conn::{WalletProviderFillers, connect_to_db, connect_to_rpc_node_with_wallet},
+    conn::{WalletProvider, connect_to_db, connect_to_rpc_node_with_wallet},
     tasks::spawn_with_limit,
     types::{KmsResponse, KmsResponseKind},
 };
@@ -36,35 +34,33 @@ use tracing::{debug, error, info, warn};
 use tracing_opentelemetry::OpenTelemetrySpanExt;
 
 /// Struct sending stored KMS Core's responses to the Gateway and Ethereum.
-pub struct TransactionSender<L, F, P>
+pub struct TransactionSender<L, P>
 where
-    F: TxFiller,
     P: Provider,
 {
     /// The entity used to collect stored KMS Core's responses.
     response_picker: L,
 
     /// The entity responsible to send transactions to the Gateway.
-    gw_sender: GatewayTransactionSender<F, P>,
+    gw_sender: GatewayTransactionSender<P>,
 
     /// The entity responsible to send transactions to Ethereum.
-    eth_sender: EthereumTransactionSender<F, P>,
+    eth_sender: EthereumTransactionSender<P>,
 
     /// The database pool for where the KMS Core's responses are stored.
     db_pool: Pool<Postgres>,
 }
 
-impl<L, F, P> TransactionSender<L, F, P>
+impl<L, P> TransactionSender<L, P>
 where
     L: KmsResponsePicker,
-    F: TxFiller + 'static,
     P: Provider + Clone + 'static,
 {
     /// Creates a new `TransactionSender` instance.
     pub fn new(
         response_picker: L,
-        gw_sender: GatewayTransactionSender<F, P>,
-        eth_sender: EthereumTransactionSender<F, P>,
+        gw_sender: GatewayTransactionSender<P>,
+        eth_sender: EthereumTransactionSender<P>,
         db_pool: Pool<Postgres>,
     ) -> Self {
         Self {
@@ -128,8 +124,8 @@ where
     /// Routes decryption responses to the Gateway and keygen responses to Ethereum.
     #[tracing::instrument(skip(gw_sender, eth_sender, db_pool, cancel_token), fields(response = %response.kind))]
     async fn forward_response(
-        gw_sender: GatewayTransactionSender<F, P>,
-        eth_sender: EthereumTransactionSender<F, P>,
+        gw_sender: GatewayTransactionSender<P>,
+        eth_sender: EthereumTransactionSender<P>,
         db_pool: Pool<Postgres>,
         response: KmsResponse,
         cancel_token: CancellationToken,
@@ -162,7 +158,7 @@ where
     }
 }
 
-impl TransactionSender<DbKmsResponsePicker, WalletProviderFillers, RootProvider> {
+impl TransactionSender<DbKmsResponsePicker, WalletProvider> {
     /// Creates a new `TransactionSender` instance from a valid `Config`.
     pub async fn from_config(config: Config) -> anyhow::Result<(Self, State)> {
         if config.private_key.is_some() {

@@ -347,11 +347,11 @@ async function insertHandleFromEvent(event: FHEVMEvent) {
       resultType = parseInt(handle.slice(-4, -2), 16);
       clearLHS = await getClearText(event.args[1]);
       if (event.args[3] === '0x01') {
-        clearText = BigInt(clearLHS) << BigInt(event.args[2]) % NumBits[resultType as keyof typeof NumBits];
+        clearText = BigInt(clearLHS) << (BigInt(event.args[2]) % NumBits[resultType as keyof typeof NumBits]);
         clearText = clearText % 2n ** NumBits[resultType as keyof typeof NumBits];
       } else {
         clearRHS = await getClearText(event.args[2]);
-        clearText = BigInt(clearLHS) << BigInt(clearRHS) % NumBits[resultType as keyof typeof NumBits];
+        clearText = BigInt(clearLHS) << (BigInt(clearRHS) % NumBits[resultType as keyof typeof NumBits]);
         clearText = clearText % 2n ** NumBits[resultType as keyof typeof NumBits];
       }
       insertSQL(handle, clearText);
@@ -362,11 +362,11 @@ async function insertHandleFromEvent(event: FHEVMEvent) {
       resultType = parseInt(handle.slice(-4, -2), 16);
       clearLHS = await getClearText(event.args[1]);
       if (event.args[3] === '0x01') {
-        clearText = BigInt(clearLHS) >> BigInt(event.args[2]) % NumBits[resultType as keyof typeof NumBits];
+        clearText = BigInt(clearLHS) >> (BigInt(event.args[2]) % NumBits[resultType as keyof typeof NumBits]);
         clearText = clearText % 2n ** NumBits[resultType as keyof typeof NumBits];
       } else {
         clearRHS = await getClearText(event.args[2]);
-        clearText = BigInt(clearLHS) >> BigInt(clearRHS) % NumBits[resultType as keyof typeof NumBits];
+        clearText = BigInt(clearLHS) >> (BigInt(clearRHS) % NumBits[resultType as keyof typeof NumBits]);
         clearText = clearText % 2n ** NumBits[resultType as keyof typeof NumBits];
       }
       insertSQL(handle, clearText);
@@ -622,9 +622,7 @@ async function insertHandleFromEvent(event: FHEVMEvent) {
       handle = ethers.toBeHex(event.args[3], 32);
       const valueText = BigInt(await getClearText(ethers.toBeHex(event.args[1], 32)));
       const setHandles = event.args[2] as string[];
-      const setClearTexts = await Promise.all(
-        setHandles.map((h) => getClearText(ethers.toBeHex(h, 32)).then(BigInt)),
-      );
+      const setClearTexts = await Promise.all(setHandles.map((h) => getClearText(ethers.toBeHex(h, 32)).then(BigInt)));
       clearText = setClearTexts.some((s) => s === valueText) ? 1n : 0n;
       insertSQL(handle, clearText);
       break;
@@ -1370,9 +1368,7 @@ export function getTxHCUFromTxReceipt(
           hcuConsumed = nBucketedPrices.le100 ?? nBucketedPrices.le60 ?? nBucketedPrices.le30 ?? nBucketedPrices.le10;
         const inputValues = event.args[1] as string[];
         const maxInputHCU =
-          inputValues.length > 0
-            ? Math.max(...inputValues.map((v) => readFromHCUMap(ethers.toBeHex(v, 32))))
-            : 0;
+          inputValues.length > 0 ? Math.max(...inputValues.map((v) => readFromHCUMap(ethers.toBeHex(v, 32)))) : 0;
         hcuMap[handleResult] = hcuConsumed + maxInputHCU;
         handleSet.add(handleResult);
         totalHCUConsumed += hcuConsumed;
