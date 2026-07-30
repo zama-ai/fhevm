@@ -90,34 +90,31 @@ flowchart TB
   },
   {
     title: 'Solana architecture',
-    statement: 'Programs execute the rules; accounts hold the encrypted state.',
+    statement: 'One signed action moves through several programs and updates encrypted accounts.',
     diagram: String.raw`
 flowchart TB
-    subgraph transaction["One Solana transaction"]
-        direction LR
-        Instruction["Instruction<br/>names a program, accounts and data"]
-        ProgramA["Program<br/>executes code"]
-        CPI["CPI<br/>calls another program"]
-        ProgramB["Program<br/>reuses existing logic"]
-        Instruction --> ProgramA --> CPI --> ProgramB
-    end
-
-    subgraph state["Encrypted state"]
+    subgraph action["One transaction · every step succeeds or none does"]
         direction TB
-        PDA["PDA<br/>deterministic address<br/>with no private key"]
-        EncryptedValue["EncryptedValue<br/>stable account for one value"]
-        PDA --> EncryptedValue
+        Wallet["Wallet approves<br/>Deposit 100 cUSDC"]
+        Batcher["Batcher checks<br/>Can this deposit join?"]
+        Token["Confidential token moves<br/>the encrypted amount"]
+        Host["Zama host records<br/>the encrypted calculation"]
 
-        Handle["Handle<br/>identifies the current ciphertext"]
-        Material["Encrypted material<br/>stored off-chain"]
-        EncryptedValue --> Handle --> Material
-
-        Permissions["Current permissions"]
-        MMR["MMR<br/>compact history of old permissions"]
-        EncryptedValue --> Permissions --> MMR
+        Wallet --> Batcher
+        Batcher -->|"calls another program · CPI"| Token
+        Token -->|"requests encrypted arithmetic"| Host
     end
 
-    ProgramA -->|"reads and writes"| PDA
+    subgraph state["State updated by that action"]
+        direction TB
+        UserBalance["Your cUSDC balance<br/>encrypted"]
+        JoinedAmount["Your joined deposit<br/>encrypted"]
+        BatchState["Batch status<br/>public"]
+    end
+
+    Token --> UserBalance
+    Batcher --> JoinedAmount
+    Batcher --> BatchState
 `,
   },
   {
