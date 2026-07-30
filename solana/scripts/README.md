@@ -12,6 +12,8 @@ Cargo `--features poc` (compile-gated test shims).
 | `bash scripts/check-zama-host-idl.sh` | Before Mollusk tests; CI IDL/ABI parity | `target/deploy` only |
 | `bash scripts/sync-zama-host-idl.sh` | After an intentional IDL/ABI change | IDL + ABI goldens |
 | `bash scripts/update-cost-snapshots.sh` | After an intentional CU / ix-shape change | `runtime-tests/cost-snapshots/*.json` |
+| `bash scripts/update-permit-vectors.sh` | After an intentional permit-canon change | `test-fixtures/permit/permit_v1.json` |
+| `bash scripts/update-permit-invalidation-fixture.sh` | After an intentional `PermitInvalidation` layout / seed change | `test-fixtures/permit/permit_invalidation_account_v1.json` |
 | `bash scripts/e2e/clean-e2e.sh` | Bring up a clean local vertical stack | local validator + fhevm-cli stack |
 | `bash scripts/e2e/full-vertical.sh` | Drive compute → decrypt on a running stack | no checked-in goldens |
 | `bash scripts/e2e/adversarial-l4.sh` | Negative live checks on a running stack | no checked-in goldens |

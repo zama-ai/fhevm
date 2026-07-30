@@ -1,11 +1,12 @@
-//! Revokes every outstanding permit a user has signed.
+//! Revokes a user's permits by raising their invalidation watermark.
 //!
 //! The instruction writes one number: the later of the stored watermark and the
 //! current clock. Everything else about revocation is a reader's rule — a verifier
 //! rejects a permit whose validity window starts before this moment, and a missing
 //! account reads as zero — so this handler has no list to walk and nothing to
 //! enumerate. That is the whole point of the design: one transaction, constant work,
-//! however many permits are outstanding.
+//! however many permits are outstanding. What a raised watermark cannot reach — a
+//! permit pre-signed to open in the future — is recorded on [`PermitInvalidation`].
 //!
 //! Account validation here is manual rather than expressed through typed account
 //! wrappers: the program is moving off the framework, and new code does not add to

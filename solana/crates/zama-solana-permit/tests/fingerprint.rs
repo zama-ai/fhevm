@@ -70,9 +70,8 @@ fn fingerprint_is_plain_shake256_of_the_key_bytes() {
     }
 }
 
-/// Every byte of the key is hashed. A fingerprint computed over a prefix of the key —
-/// the shape of a truncation bug — would collide for keys differing only past the
-/// truncation point.
+/// A fingerprint computed over a prefix of the key — the shape of a truncation bug —
+/// would collide for keys differing only past the truncation point.
 #[test]
 fn fingerprint_covers_every_byte_of_the_key() {
     let baseline_bytes = reference_transport_key();
@@ -90,8 +89,7 @@ fn fingerprint_covers_every_byte_of_the_key() {
     }
 }
 
-/// Distinct keys have distinct fingerprints across a sample — the property the text's
-/// commitment relies on.
+/// The property the text's commitment relies on, checked across a sample.
 #[test]
 fn distinct_keys_have_distinct_fingerprints() {
     let mut seen = std::collections::HashMap::new();

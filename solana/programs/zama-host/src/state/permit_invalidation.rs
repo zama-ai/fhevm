@@ -5,8 +5,14 @@ use super::*;
 /// One per user: the moment of that user's most recent permit revocation.
 ///
 /// A permit whose validity window starts before this moment is dead, permanently.
-/// That is what makes a single transaction able to kill every outstanding permit a
-/// user has signed — there is no list to walk and nothing to enumerate.
+/// There is no list to walk and nothing to enumerate, which is what keeps revocation
+/// one transaction of constant work.
+///
+/// The moment also bounds what revocation reaches: a permit pre-signed with a start
+/// still in the future opens later than this watermark and survives it. Request-time
+/// checks refuse a permit before its window opens, but once it does, an earlier
+/// revocation does not kill it. The EVM side accepts the same limitation deliberately,
+/// so a reader of this account must not assume a stronger guarantee than EVM gives.
 ///
 /// A missing account reads as watermark zero. There is no migration and no
 /// initialization step: a user who has never revoked anything simply has no account.

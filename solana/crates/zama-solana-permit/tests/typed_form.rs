@@ -271,9 +271,8 @@ fn decode_accepts_minimally_separated_ascending_keys() {
     }
 }
 
-/// The validated list type applies the same rules as decoding does. There is one
-/// ordering rule, in one place: a consumer that builds the list directly cannot end
-/// up with a laxer one.
+/// There is one ordering rule, in one place: a consumer that builds the list directly
+/// cannot end up with a laxer one.
 #[test]
 fn validated_domain_list_applies_the_same_rules_as_decoding() {
     use zama_solana_permit::{AclDomainKeys, Identity};

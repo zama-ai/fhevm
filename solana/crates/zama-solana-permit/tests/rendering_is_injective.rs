@@ -72,7 +72,6 @@ fn rendering_is_total_at_every_corner() {
 // Distinguishability
 // ---------------------------------------------------------------------------
 
-/// No two distinct permits in the sample share a canonical text.
 #[test]
 fn distinct_permits_never_share_a_canonical_text() {
     let mut seen: HashMap<String, PermitWireFields> = HashMap::new();
@@ -333,8 +332,7 @@ fn the_mutation_set_covers_every_signed_field() {
     assert_eq!(names.len(), 9);
 }
 
-/// Every mutation must still be a well-formed permit — a mutation that gets rejected
-/// by decoding would make the test above vacuous.
+/// A mutation that gets rejected by decoding would make the test above vacuous.
 #[test]
 fn every_mutation_is_still_well_formed() {
     for seed in 0..64u64 {

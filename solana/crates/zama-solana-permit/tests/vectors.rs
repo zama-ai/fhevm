@@ -952,8 +952,7 @@ fn every_rule_is_exercised_by_some_vector() {
     }
 }
 
-/// Both accepted classes are represented, and the conditional class carries the
-/// explanation that makes it meaningful.
+/// The conditional class carries the explanation that makes it meaningful.
 #[test]
 fn the_accepted_classes_are_represented() {
     let file = load_vectors();

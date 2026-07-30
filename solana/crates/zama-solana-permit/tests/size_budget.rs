@@ -47,8 +47,7 @@ fn the_widest_permit_matches_its_documented_size_and_fits() {
     );
 }
 
-/// The documented two-domain worst case, which is the size a typical scoped permit
-/// approaches.
+/// The size a typical scoped permit approaches.
 #[test]
 fn the_two_domain_worst_case_matches_its_documented_size() {
     assert_eq!(sizes(2), (537, 587));
