@@ -1,0 +1,26 @@
+[package]
+authors = ["Zama"]
+name = "ciphertext-attestation-client"
+version = "0.14.0"
+edition = "2024"
+license = "BSD-3-Clause-Clear"
+
+[dependencies]
+ciphertext-attestation = { path = "../ciphertext-attestation" }
+fhevm_gateway_bindings = { path = "../../gateway-contracts/rust_bindings", default-features = false }
+
+alloy = { version = "2", default-features = false, features = [
+    "essentials",
+    "reqwest-rustls-tls",
+    "std",
+] }
+anyhow = { version = "1", default-features = false, features = ["std"] }
+futures = { version = "0.3", default-features = false }
+serde_json = { version = "1", default-features = false, features = ["std"] }
+thiserror = { version = "2", default-features = false }
+tokio = { version = "1", default-features = false, features = ["rt", "time"] }
+tokio-util = { version = "0.7", default-features = false }
+tracing = { version = "0.1", default-features = false }
+
+[dev-dependencies]
+tokio = { version = "1", features = ["macros", "rt"] }

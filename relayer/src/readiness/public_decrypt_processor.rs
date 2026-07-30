@@ -7,7 +7,6 @@ use crate::{
         },
         job_id::JobId,
     },
-    host::redact_alloy_error,
     orchestrator::Orchestrator,
     readiness::{
         checker::{ReadinessCheckError, ReadinessChecker},
@@ -95,11 +94,7 @@ impl PublicDecryptReadinessProcessor {
             .collect();
 
         let result = checker
-            .check_public_decryption_readiness(
-                &task.job_id,
-                handles_fixed_bytes,
-                task.request.extra_data.clone(),
-            )
+            .check_public_decryption_readiness(&task.job_id, handles_fixed_bytes)
             .await;
 
         // 3. DISPATCH RESULT
@@ -138,14 +133,14 @@ impl PublicDecryptReadinessProcessor {
                 .await;
             }
 
-            Err(ReadinessCheckError::GwContractError(e)) => {
-                error!(job_id = %task.job_id, error = ?e, "Readiness check contract error");
+            Err(ReadinessCheckError::NoAttestationConsensus(reason)) => {
+                error!(job_id = %task.job_id, %reason, "No Coprocessor attestation consensus");
 
                 Self::dispatch_failure(
                     &dispatcher,
                     &task.request,
                     task.job_id,
-                    EventProcessingError::ContractCallFailed(redact_alloy_error(&e)),
+                    EventProcessingError::NoAttestationConsensus { reason },
                 )
                 .await;
             }

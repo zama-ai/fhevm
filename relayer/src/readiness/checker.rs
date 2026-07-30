@@ -8,8 +8,9 @@ use crate::{
     gateway::ciphertext_checker::CiphertextChecker,
     host::{HostAclChecker, HostAclError},
 };
-use alloy::primitives::{Bytes, FixedBytes};
+use alloy::primitives::FixedBytes;
 use std::fmt;
+use tokio_util::sync::CancellationToken;
 
 /// Steps for readiness checker operations
 #[derive(Debug, Clone, Copy)]
@@ -33,8 +34,11 @@ impl fmt::Display for ReadinessStep {
 
 #[derive(Debug)]
 pub enum ReadinessCheckError {
+    /// Retries were exhausted while the ciphertext material was still unattested.
     GwTimeout,
-    GwContractError(alloy::contract::Error),
+    /// The Coprocessors served enough attestations and disagreed on the material. Distinct from
+    /// [`Self::GwTimeout`] because it is terminal: the request cannot become ready by waiting.
+    NoAttestationConsensus(String),
     NotAllowedOnHostAcl(HostAclError),
     HostAclFailed(HostAclError),
 }
@@ -47,11 +51,12 @@ pub struct ReadinessChecker {
 }
 
 impl ReadinessChecker {
-    pub fn new(
+    pub async fn new(
         host_acl: HostAclChecker,
         gateway_config: &GatewayConfig,
+        cancel_token: CancellationToken,
     ) -> Result<Self, EventProcessingError> {
-        let ciphertext = CiphertextChecker::new(gateway_config)?;
+        let ciphertext = CiphertextChecker::new(gateway_config, cancel_token).await?;
         Ok(Self {
             host_acl,
             ciphertext,
@@ -76,10 +81,9 @@ impl ReadinessChecker {
         &self,
         job_id: &JobId,
         handles: Vec<FixedBytes<32>>,
-        extra_data: Bytes,
     ) -> Result<(), ReadinessCheckError> {
         self.ciphertext
-            .check_public_decryption_readiness(job_id, handles, extra_data)
+            .check_public_decryption_readiness(job_id, handles)
             .await
     }
 
@@ -141,10 +145,9 @@ impl ReadinessChecker {
         &self,
         job_id: &JobId,
         pairs: &[HandleContractPair],
-        extra_data: Bytes,
     ) -> Result<(), ReadinessCheckError> {
         self.ciphertext
-            .check_user_decryption_readiness(job_id, pairs, extra_data)
+            .check_user_decryption_readiness(job_id, pairs)
             .await
     }
 }

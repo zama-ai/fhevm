@@ -196,6 +196,10 @@ env:
     valueFrom: {configMapKeyRef: {name: gw-sc-addresses, key: decryption.address}}
   - name: APP_GATEWAY__CONTRACTS__INPUT_VERIFICATION_ADDRESS
     valueFrom: {configMapKeyRef: {name: gw-sc-addresses, key: input_verification.address}}
+  # GatewayConfig: Coprocessor registry (signers, S3 buckets, majority
+  # threshold) for the off-chain ciphertext-attestation readiness check.
+  - name: APP_GATEWAY__CONTRACTS__GATEWAY_CONFIG_ADDRESS
+    valueFrom: {configMapKeyRef: {name: gw-sc-addresses, key: gateway_config.address}}
 
   # --- keyurl (fhe_public_key + crs) - populated by the "Trigger KMS keygen +
   # CRS generation" job's on-chain poll (values-host-trigger-keygen-e2e.yaml)

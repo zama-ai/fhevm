@@ -347,7 +347,7 @@ dependencies = [
  "rustc-hash",
  "secp256k1 0.31.1",
  "serde",
- "sha3",
+ "sha3 0.11.0",
 ]
 
 [[package]]
@@ -597,7 +597,7 @@ dependencies = [
  "proc-macro-error3",
  "proc-macro2",
  "quote",
- "sha3",
+ "sha3 0.11.0",
  "syn 2.0.117",
  "syn-solidity",
 ]
@@ -1774,6 +1774,36 @@ dependencies = [
 ]
 
 [[package]]
+name = "ciphertext-attestation"
+version = "0.14.0"
+dependencies = [
+ "alloy-primitives",
+ "alloy-signer",
+ "hex",
+ "serde",
+ "serde_json",
+ "sha3 0.10.9",
+ "thiserror 2.0.18",
+ "tracing",
+]
+
+[[package]]
+name = "ciphertext-attestation-client"
+version = "0.14.0"
+dependencies = [
+ "alloy",
+ "anyhow",
+ "ciphertext-attestation",
+ "fhevm_gateway_bindings",
+ "futures",
+ "serde_json",
+ "thiserror 2.0.18",
+ "tokio",
+ "tokio-util",
+ "tracing",
+]
+
+[[package]]
 name = "clap"
 version = "4.6.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2499,6 +2529,7 @@ dependencies = [
  "axum",
  "built",
  "chrono",
+ "ciphertext-attestation-client",
  "clap",
  "config",
  "dashmap",
@@ -3541,6 +3572,15 @@ dependencies = [
  "once_cell",
  "serdect",
  "sha2",
+]
+
+[[package]]
+name = "keccak"
+version = "0.1.6"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "cb26cec98cce3a3d96cbb7bced3c4b16e3d13f27ec56dbd62cbc8f39cfb9d653"
+dependencies = [
+ "cpufeatures 0.2.17",
 ]
 
 [[package]]
@@ -5264,12 +5304,22 @@ dependencies = [
 
 [[package]]
 name = "sha3"
+version = "0.10.9"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "77fd7028345d415a4034cf8777cd4f8ab1851274233b45f84e3d955502d93874"
+dependencies = [
+ "digest 0.10.7",
+ "keccak 0.1.6",
+]
+
+[[package]]
+name = "sha3"
 version = "0.11.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "be176f1a57ce4e3d31c1a166222d9768de5954f811601fb7ca06fc8203905ce1"
 dependencies = [
  "digest 0.11.3",
- "keccak",
+ "keccak 0.2.0",
 ]
 
 [[package]]
@@ -6651,7 +6701,7 @@ version = "0.1.11"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "c2a7b1c03c876122aa43f3020e6c3c3ee5c05081c9a00739faf7503aeba10d22"
 dependencies = [
- "windows-sys 0.48.0",
+ "windows-sys 0.61.2",
 ]
 
 [[package]]

@@ -219,6 +219,9 @@ const applyDiscoveryEnv = (
   updateContracts(envs["relayer"], {
     APP_GATEWAY__CONTRACTS__DECRYPTION_ADDRESS: state.discovery.gateway.DECRYPTION_ADDRESS,
     APP_GATEWAY__CONTRACTS__INPUT_VERIFICATION_ADDRESS: state.discovery.gateway.INPUT_VERIFICATION_ADDRESS,
+    // GatewayConfig backs the relayer's off-chain ciphertext-attestation readiness check
+    // (RFC-023): Coprocessor signers, S3 bucket URLs and the majority threshold come from it.
+    APP_GATEWAY__CONTRACTS__GATEWAY_CONFIG_ADDRESS: state.discovery.gateway.GATEWAY_CONFIG_ADDRESS,
   });
   updateContracts(envs["test-suite"], {
     GATEWAY_CONFIG_ADDRESS: state.discovery.gateway.GATEWAY_CONFIG_ADDRESS,
