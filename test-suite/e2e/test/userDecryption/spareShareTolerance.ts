@@ -50,8 +50,9 @@ const readKmsTopology = async () => {
  * means no spare — so the suite skips itself there rather than passing falsely.
  *
  * Counts are derived here rather than inside the interceptor on purpose: a
- * corruptor that adapted to the response would also adapt to the relayer
- * regressing back to `2t+1` shares, and pass either way.
+ * corruptor that sized itself from the response would also resize when a KMS
+ * party stops answering, and report success against a cluster that has no spare
+ * left at all. Policy lives in the test; the interceptor only mutates and reports.
  */
 describe('User decryption spare-share tolerance', function () {
   this.timeout(5 * 60 * 1000);
@@ -107,16 +108,14 @@ describe('User decryption spare-share tolerance', function () {
         `tolerated=${returnedShares - collectThreshold} (ceiling ${t})`,
     );
 
-    // A precondition, not a case: before the spare-share change the relayer's
-    // share query was capped by a LIMIT at its own threshold, so the response
-    // carried exactly `collectThreshold`. Failing here names the cause instead of
-    // silently shifting every count below. Note that user_decrypt_additional_shares
-    // is NOT the switch to check: it gates only the optimistic wait, while the LIMIT
-    // removal is unconditional, so a fast cluster returns every share even at 0.
+    // A precondition, not a case: every count below is derived from the spare, so
+    // failing here names the cause instead of silently shifting all of them. The
+    // usual reason is a KMS party not answering, which leaves exactly the quorum —
+    // see the `spare-share-tolerance-kms-down` suite, which covers that state deliberately.
     expect(
       returnedShares,
-      `Relayer returned ${returnedShares} shares; expected more than the ${collectThreshold} it collects before ` +
-        `completing. Has the share query regained a LIMIT at the collection threshold?`,
+      `Relayer returned ${returnedShares} shares; expected more than the ${collectThreshold} needed to ` +
+        `reconstruct. Is every KMS party answering?`,
     ).to.be.greaterThan(collectThreshold);
   });
 

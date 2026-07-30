@@ -1399,10 +1399,10 @@ export const test = async (testName: string | undefined, options: TestOptions) =
       ? undefined
       : "multi-chain-isolation requires a multi-chain topology; rerun `fhevm-cli up --scenario multi-chain` first";
 
-  const spareShareToleranceRequirement = () =>
+  const spareShareToleranceRequirement = (profile: string) =>
     state.scenario.kms.mode === "threshold"
       ? undefined
-      : "spare-share-tolerance requires a threshold-mode KMS cluster (a lone party has no spare share); rerun `fhevm-cli up --scenario four-party-threshold-kms` first";
+      : `${profile} requires a threshold-mode KMS cluster (a lone party has no spare share); rerun \`fhevm-cli up --scenario four-party-threshold-kms\` first`;
 
   const priorityCoprocessorRequirement = () => {
     const topology = topologyForState(state);
@@ -1734,8 +1734,8 @@ export const test = async (testName: string | undefined, options: TestOptions) =
         throw new PreflightError(precondition);
       }
     }
-    if (name === "spare-share-tolerance") {
-      const precondition = spareShareToleranceRequirement();
+    if (name === "spare-share-tolerance" || name === "spare-share-tolerance-kms-down") {
+      const precondition = spareShareToleranceRequirement(name);
       if (precondition) {
         throw new PreflightError(precondition);
       }
