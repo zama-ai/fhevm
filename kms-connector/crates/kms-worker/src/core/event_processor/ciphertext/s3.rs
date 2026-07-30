@@ -335,6 +335,7 @@ impl BoundedClient {
 mod tests {
     use super::*;
     use alloy::primitives::U256;
+    use connector_utils::tests::net::black_hole_server;
 
     /// Two addresses nothing can be listening on: a request to either fails at connection, fast.
     const UNREACHABLE_BUCKET: &str = "http://127.0.0.1:1";
@@ -420,26 +421,11 @@ mod tests {
         assert!(matches!(result, Err(ProcessingError::Recoverable(_))));
     }
 
-    /// A socket that accepts connections and never answers: a request sent to it can only end on
-    /// its own deadline. Returns its URL, and the handle of the accept loop to abort.
-    async fn black_hole_bucket() -> (String, tokio::task::JoinHandle<()>) {
-        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
-        let url = format!("http://{}", listener.local_addr().unwrap());
-        let accept_loop = tokio::spawn(async move {
-            // The accepted streams are kept alive, and left unanswered, until the test aborts us.
-            let mut accepted = Vec::new();
-            while let Ok((stream, _)) = listener.accept().await {
-                accepted.push(stream);
-            }
-        });
-        (url, accept_loop)
-    }
-
     /// Every request the client issues carries a deadline — the `HEAD` its own, the `GET` the
     /// client-wide one: a bucket that accepts the connection then goes silent can hang neither.
     #[tokio::test]
     async fn requests_are_bounded_by_their_own_deadline() {
-        let (bucket, accept_loop) = black_hole_bucket().await;
+        let (bucket, accept_loop) = black_hole_server().await;
         let client = BoundedClient::from_config(&Config {
             s3_head_timeout: Duration::from_millis(100),
             s3_get_timeout: Duration::from_millis(300),

@@ -305,6 +305,13 @@ mod tests {
             env::remove_var("KMS_CONNECTOR_MAX_DECRYPTION_ATTEMPTS");
             env::remove_var("KMS_CONNECTOR_S3_CIPHERTEXT_RETRIEVAL_ATTEMPTS");
             env::remove_var("KMS_CONNECTOR_S3_CONNECT_TIMEOUT");
+            env::remove_var("KMS_CONNECTOR_S3_HEAD_TIMEOUT");
+            env::remove_var("KMS_CONNECTOR_S3_GET_TIMEOUT");
+            env::remove_var("KMS_CONNECTOR_S3_MAX_CONCURRENT_HEADS_PER_BUCKET");
+            env::remove_var("KMS_CONNECTOR_S3_MAX_CONCURRENT_GETS");
+            env::remove_var("KMS_CONNECTOR_COPRO_REGISTRY_REFRESH");
+            env::remove_var("KMS_CONNECTOR_HOST_RPC_MAX_CONCURRENT_CALLS");
+            env::remove_var("KMS_CONNECTOR_HOST_RPC_CALL_TIMEOUT");
             env::remove_var("KMS_CONNECTOR_SERVICE_NAME");
         }
     }
@@ -370,6 +377,13 @@ mod tests {
             env::set_var("KMS_CONNECTOR_MAX_DECRYPTION_ATTEMPTS", "300");
             env::set_var("KMS_CONNECTOR_S3_CIPHERTEXT_RETRIEVAL_ATTEMPTS", "5");
             env::set_var("KMS_CONNECTOR_S3_CONNECT_TIMEOUT", "4s");
+            env::set_var("KMS_CONNECTOR_S3_HEAD_TIMEOUT", "6s");
+            env::set_var("KMS_CONNECTOR_S3_GET_TIMEOUT", "30s");
+            env::set_var("KMS_CONNECTOR_S3_MAX_CONCURRENT_HEADS_PER_BUCKET", "32");
+            env::set_var("KMS_CONNECTOR_S3_MAX_CONCURRENT_GETS", "8");
+            env::set_var("KMS_CONNECTOR_COPRO_REGISTRY_REFRESH", "90s");
+            env::set_var("KMS_CONNECTOR_HOST_RPC_MAX_CONCURRENT_CALLS", "64");
+            env::set_var("KMS_CONNECTOR_HOST_RPC_CALL_TIMEOUT", "15s");
             env::set_var("KMS_CONNECTOR_SERVICE_NAME", "kms-connector-test");
         }
 
@@ -421,7 +435,32 @@ mod tests {
         assert_eq!(config.max_decryption_attempts, 300);
         assert_eq!(config.s3_ciphertext_retrieval_attempts, 5);
         assert_eq!(config.s3_connect_timeout.as_secs(), 4);
+        assert_eq!(config.s3_head_timeout.as_secs(), 6);
+        assert_eq!(config.s3_get_timeout.as_secs(), 30);
+        assert_eq!(config.s3_max_concurrent_heads_per_bucket.get(), 32);
+        assert_eq!(config.s3_max_concurrent_gets.get(), 8);
+        assert_eq!(config.copro_registry_refresh.as_secs(), 90);
+        assert_eq!(config.host_rpc_max_concurrent_calls.get(), 64);
+        assert_eq!(config.host_rpc_call_timeout.as_secs(), 15);
         assert_eq!(config.service_name, "kms-connector-test");
+
+        cleanup_env_vars();
+    }
+
+    #[test]
+    #[serial(config_tests)]
+    fn test_zero_concurrency_ceiling_is_rejected() {
+        for ceiling in [
+            "KMS_CONNECTOR_S3_MAX_CONCURRENT_HEADS_PER_BUCKET",
+            "KMS_CONNECTOR_S3_MAX_CONCURRENT_GETS",
+            "KMS_CONNECTOR_HOST_RPC_MAX_CONCURRENT_CALLS",
+        ] {
+            cleanup_env_vars();
+            unsafe { env::set_var(ceiling, "0") }
+
+            let config = Config::from_env_and_file(Some(example_config_path()));
+            assert!(config.is_err(), "{ceiling} = 0 should not have loaded");
+        }
 
         cleanup_env_vars();
     }

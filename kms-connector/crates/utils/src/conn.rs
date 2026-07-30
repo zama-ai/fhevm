@@ -187,6 +187,7 @@ static INSTALL_CRYPTO_PROVIDER_ONCE: Once = Once::new();
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::tests::net::black_hole_server;
     use alloy::{
         primitives::U64,
         providers::Provider,
@@ -254,6 +255,29 @@ mod tests {
 
         assert_eq!(in_flight.max.load(Ordering::SeqCst), MAX_IN_FLIGHT);
         assert_eq!(in_flight.current.load(Ordering::SeqCst), 0);
+    }
+
+    #[tokio::test]
+    async fn bounded_calls_end_on_their_deadline() {
+        const CALL_TIMEOUT: Duration = Duration::from_millis(200);
+
+        let (url, accept_loop) = black_hole_server().await;
+        let url = Url::parse(&url).unwrap();
+        let provider = connect_to_rpc_node_with_bounds(url, 1, NonZeroUsize::MIN, CALL_TIMEOUT)
+            .await
+            .expect("the bounded provider should have been built");
+
+        // Without the deadline, the silent node would leave this call pending forever.
+        let started = std::time::Instant::now();
+        let call = tokio::time::timeout(Duration::from_secs(5), provider.get_block_number())
+            .await
+            .expect("the call should have ended on its own deadline");
+        assert!(call.is_err(), "{call:?}");
+
+        // And the deadline is what ended it, rather than the call failing on the spot.
+        assert!(started.elapsed() >= CALL_TIMEOUT, "{:?}", started.elapsed());
+
+        accept_loop.abort();
     }
 
     /// Guards the test above against a mocked node that would serialize the calls by itself.
