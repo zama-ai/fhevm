@@ -39,9 +39,10 @@ import {IDstApp} from "./interfaces/IDstApp.sol";
  *         the destination chain's HANDLE_VERSION).
  *
  * @dev    Abstract: the {ConfidentialBridge} concrete contract derives from this and
- *         from {HandlesSender}, and is the only deployed contract. The OApp endpoint
- *         and ownership are initialized by the derived constructor — this contract
- *         intentionally provides none.
+ *         from {HandlesSender}, and is the only deployed contract. The OApp endpoint is
+ *         set as an immutable by the derived constructor; the delegate is seeded by the
+ *         derived initializer and ownership is resolved via the {owner} override — this
+ *         contract intentionally provides none.
  */
 /// @custom:security-contact https://github.com/zama-ai/fhevm/blob/main/SECURITY.md
 abstract contract HandlesReceiver is OAppReceiverUpgradeable, ILayerZeroComposer, ACLOwnable, BridgeEvents {
@@ -56,6 +57,46 @@ abstract contract HandlesReceiver is OAppReceiverUpgradeable, ILayerZeroComposer
 
     /// @notice ACL contract on this (destination) chain.
     ACL private constant ACL_CONTRACT = ACL(aclAdd);
+
+    // ─────────────────────────────────────────────────────────────────────────
+    // Bridged-handle metadata layout.
+    //
+    // A derived destination handle carries metadata in its low 11 bytes, matching
+    // the FHEVMExecutor computation-handle convention:
+    //   byte 21     : non-input (computation) marker, always 0xff
+    //   bytes 22-29 : destination chain id (uint64)
+    //   byte 30     : FheType (copied from the source handle)
+    //   byte 31     : HANDLE_VERSION of this chain
+    //
+    // These constants are the single source of truth shared by the derivation
+    // ({_deriveDstHandle}) and the extraction/validation ({grantFallbackPlaintext}),
+    // keeping the two byte-for-byte aligned.
+    // ─────────────────────────────────────────────────────────────────────────
+
+    /// @dev Byte index of the computation marker.
+    uint256 private constant HANDLE_MARKER_BYTE = 21;
+    /// @dev Least-significant byte index of the chain-id field (bytes 22-29).
+    uint256 private constant HANDLE_CHAIN_ID_LOW_BYTE = 29;
+    /// @dev Byte index of the FheType metadata byte.
+    uint256 private constant HANDLE_FHE_TYPE_BYTE = 30;
+    /// @dev Byte index of the HANDLE_VERSION metadata byte.
+    uint256 private constant HANDLE_VERSION_BYTE = 31;
+
+    /// @dev Marker written at {HANDLE_MARKER_BYTE}: flags a non-input (computation) handle.
+    uint8 private constant HANDLE_COMPUTATION_MARKER = 0xff;
+
+    /// @dev Bit shift placing a value at a given byte: byte `i` of a 32-byte word occupies
+    ///      bits [(31 - i) * 8 .. (31 - i) * 8 + 7]. Derived from the byte indices above so
+    ///      the shifts cannot drift out of sync with the layout.
+    uint256 private constant HANDLE_MARKER_SHIFT = (31 - HANDLE_MARKER_BYTE) * 8;
+    uint256 private constant HANDLE_CHAIN_ID_SHIFT = (31 - HANDLE_CHAIN_ID_LOW_BYTE) * 8;
+    uint256 private constant HANDLE_FHE_TYPE_SHIFT = (31 - HANDLE_FHE_TYPE_BYTE) * 8;
+
+    /// @dev Mask clearing the 11 metadata bytes (21-31) while keeping bytes 0-20.
+    bytes32 private constant HANDLE_METADATA_CLEAR_MASK =
+        0xffffffffffffffffffffffffffffffffffffffffff0000000000000000000000;
+    /// @dev Mask selecting the chain-id bytes (22-29) in place.
+    bytes32 private constant HANDLE_CHAIN_ID_MASK = 0x00000000000000000000000000000000000000000000ffffffffffffffff0000;
 
     error WrongChainIdInDstHandle();
 
@@ -117,20 +158,18 @@ abstract contract HandlesReceiver is OAppReceiverUpgradeable, ILayerZeroComposer
      *         `FallbackGrantedPlaintext` event as the source of truth.
      */
     function grantFallbackPlaintext(bytes32 dstHandle, uint256 plaintext) external virtual onlyACLOwner {
-        // Bytes 22-29 must encode this chain's id (matches `_appendMetadataToPrehandle`).
-        uint256 extractedChainId = uint256(
-            dstHandle & 0x00000000000000000000000000000000000000000000ffffffffffffffff0000
-        ) >> 16;
+        // Bytes 22-29 must encode this chain's id (matches `FHEVMExecutor._appendMetadataToPrehandle`).
+        uint256 extractedChainId = uint256(dstHandle & HANDLE_CHAIN_ID_MASK) >> HANDLE_CHAIN_ID_SHIFT;
         if (extractedChainId != block.chainid) revert WrongChainIdInDstHandle();
 
         // Byte 21 is the index/marker byte; bridged handles always set it to 0xff.
-        if (uint8(dstHandle[21]) != 0xff) revert WrongIndexByteInDstHandle();
+        if (uint8(dstHandle[HANDLE_MARKER_BYTE]) != HANDLE_COMPUTATION_MARKER) revert WrongIndexByteInDstHandle();
 
         // Byte 31 carries the destination chain's HANDLE_VERSION.
-        if (uint8(dstHandle[31]) != HANDLE_VERSION) revert WrongHandleVersionInDstHandle();
+        if (uint8(dstHandle[HANDLE_VERSION_BYTE]) != HANDLE_VERSION) revert WrongHandleVersionInDstHandle();
 
         // Byte 30 is the FheType.
-        FheType fheType = FheType(uint8(dstHandle[30]));
+        FheType fheType = FheType(uint8(dstHandle[HANDLE_FHE_TYPE_BYTE]));
         uint256 supportedTypes = (1 << uint8(FheType.Bool)) +
             (1 << uint8(FheType.Uint8)) +
             (1 << uint8(FheType.Uint16)) +
@@ -268,14 +307,14 @@ abstract contract HandlesReceiver is OAppReceiverUpgradeable, ILayerZeroComposer
         );
 
         // Clear bytes 21-31 in preparation for metadata embedding.
-        result = result & 0xffffffffffffffffffffffffffffffffffffffffff0000000000000000000000;
+        result = result & HANDLE_METADATA_CLEAR_MASK;
         // Byte 21 = 0xff for non-input (i.e. computation) marker, matches FHEVMExecutor pattern.
-        result = result | (bytes32(uint256(0xff)) << 80);
+        result = result | (bytes32(uint256(HANDLE_COMPUTATION_MARKER)) << HANDLE_MARKER_SHIFT);
         // Bytes 22-29 = chain id of this (destination) chain.
-        result = result | (bytes32(uint256(uint64(block.chainid))) << 16);
+        result = result | (bytes32(uint256(uint64(block.chainid))) << HANDLE_CHAIN_ID_SHIFT);
         // Byte 30 = FheType byte copied from the source handle (preserves the type).
-        uint256 fheTypeByte = uint256(uint8(srcHandle[30]));
-        result = result | (bytes32(fheTypeByte) << 8);
+        uint256 fheTypeByte = uint256(uint8(srcHandle[HANDLE_FHE_TYPE_BYTE]));
+        result = result | (bytes32(fheTypeByte) << HANDLE_FHE_TYPE_SHIFT);
         // Byte 31 = HANDLE_VERSION on this chain.
         result = result | bytes32(uint256(HANDLE_VERSION));
     }

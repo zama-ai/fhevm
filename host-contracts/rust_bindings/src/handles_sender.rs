@@ -52,7 +52,7 @@ interface HandlesSender {
     function MAX_HANDLES() external view returns (uint256);
     function endpoint() external view returns (address);
     function getACLAddress() external view returns (address);
-    function getDstChainId(uint32 dstEid) external view returns (uint256);
+    function getDstChainId(uint32 dstEid) external view returns (uint64);
     function getLzReceiveBaseGas(uint32 dstEid) external view returns (uint64);
     function getLzReceivePerHandleGas(uint32 dstEid) external view returns (uint64);
     function getLzReceivePerPayloadByteGas(uint32 dstEid) external view returns (uint64);
@@ -166,8 +166,8 @@ interface HandlesSender {
     "outputs": [
       {
         "name": "",
-        "type": "uint256",
-        "internalType": "uint256"
+        "type": "uint64",
+        "internalType": "uint64"
       }
     ],
     "stateMutability": "view"
@@ -5252,7 +5252,7 @@ function getACLAddress() external view returns (address);
     #[derive(Default, Debug, PartialEq, Eq, Hash)]
     /**Function with signature `getDstChainId(uint32)` and selector `0x03f8b526`.
 ```solidity
-function getDstChainId(uint32 dstEid) external view returns (uint256);
+function getDstChainId(uint32 dstEid) external view returns (uint64);
 ```*/
     #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
     #[derive(Clone)]
@@ -5267,7 +5267,7 @@ function getDstChainId(uint32 dstEid) external view returns (uint256);
     #[derive(Clone)]
     pub struct getDstChainIdReturn {
         #[allow(missing_docs)]
-        pub _0: alloy::sol_types::private::primitives::aliases::U256,
+        pub _0: u64,
     }
     #[allow(
         non_camel_case_types,
@@ -5312,11 +5312,9 @@ function getDstChainId(uint32 dstEid) external view returns (uint256);
         {
             #[doc(hidden)]
             #[allow(dead_code)]
-            type UnderlyingSolTuple<'a> = (alloy::sol_types::sol_data::Uint<256>,);
+            type UnderlyingSolTuple<'a> = (alloy::sol_types::sol_data::Uint<64>,);
             #[doc(hidden)]
-            type UnderlyingRustTuple<'a> = (
-                alloy::sol_types::private::primitives::aliases::U256,
-            );
+            type UnderlyingRustTuple<'a> = (u64,);
             #[cfg(test)]
             #[allow(dead_code, unreachable_patterns)]
             fn _type_assertion(
@@ -5349,8 +5347,8 @@ function getDstChainId(uint32 dstEid) external view returns (uint256);
             type Token<'a> = <Self::Parameters<
                 'a,
             > as alloy_sol_types::SolType>::Token<'a>;
-            type Return = alloy::sol_types::private::primitives::aliases::U256;
-            type ReturnTuple<'a> = (alloy::sol_types::sol_data::Uint<256>,);
+            type Return = u64;
+            type ReturnTuple<'a> = (alloy::sol_types::sol_data::Uint<64>,);
             type ReturnToken<'a> = <Self::ReturnTuple<
                 'a,
             > as alloy_sol_types::SolType>::Token<'a>;
@@ -5374,7 +5372,7 @@ function getDstChainId(uint32 dstEid) external view returns (uint256);
             fn tokenize_returns(ret: &Self::Return) -> Self::ReturnToken<'_> {
                 (
                     <alloy::sol_types::sol_data::Uint<
-                        256,
+                        64,
                     > as alloy_sol_types::SolType>::tokenize(ret),
                 )
             }
