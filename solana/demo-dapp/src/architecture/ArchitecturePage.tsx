@@ -9,8 +9,8 @@ type ArchitectureFrame = {
 
 const frames: readonly ArchitectureFrame[] = [
   {
-    title: 'First principle',
-    statement: 'Applications compute on encrypted values without exposing them.',
+    title: 'Encrypted computation',
+    statement: 'Applications compute on encrypted values.',
     diagram: String.raw`
 flowchart TB
     subgraph input["Input"]
@@ -35,8 +35,8 @@ flowchart TB
 `,
   },
   {
-    title: 'Shared key',
-    statement: 'One public key connects encrypted applications; no single party holds the secret.',
+    title: 'Shared network key',
+    statement: 'Applications encrypt with one shared public key.',
     diagram: String.raw`
 flowchart LR
     PublicKey["Network public key"] --> AppA["App A encrypts"]
@@ -61,7 +61,7 @@ flowchart LR
   },
   {
     title: 'Protocol architecture',
-    statement: 'Each layer carries encrypted work to the next.',
+    statement: 'Requests move between the user, host chain and encrypted services.',
     diagram: String.raw`
 flowchart TB
     subgraph client["User side"]
@@ -90,10 +90,10 @@ flowchart TB
   },
   {
     title: 'Solana architecture',
-    statement: 'One signed action moves through several programs and updates encrypted accounts.',
+    statement: 'A cUSDC deposit updates three accounts across three programs.',
     diagram: String.raw`
 flowchart TB
-    subgraph action["One transaction · every step succeeds or none does"]
+    subgraph action["One atomic transaction"]
         direction TB
         Wallet["Wallet approves<br/>Deposit 100 cUSDC"]
         Batcher["Batcher checks<br/>Can this deposit join?"]
@@ -101,11 +101,11 @@ flowchart TB
         Host["Zama host records<br/>the encrypted calculation"]
 
         Wallet --> Batcher
-        Batcher -->|"calls another program · CPI"| Token
+        Batcher -->|"program call · CPI"| Token
         Token -->|"requests encrypted arithmetic"| Host
     end
 
-    subgraph state["State updated by that action"]
+    subgraph state["Updated accounts"]
         direction TB
         UserBalance["Your cUSDC balance<br/>encrypted"]
         JoinedAmount["Your joined deposit<br/>encrypted"]
@@ -118,8 +118,8 @@ flowchart TB
 `,
   },
   {
-    title: 'Complete system',
-    statement: 'Solana records the rules; encrypted services execute the work.',
+    title: 'System architecture',
+    statement: 'The dApp connects Solana to encrypted services.',
     diagram: String.raw`
 flowchart LR
     subgraph browser["Browser"]
@@ -156,7 +156,7 @@ flowchart LR
   },
   {
     title: 'Vault design',
-    statement: 'The batcher hides each amount and reveals only the total.',
+    statement: 'The batcher aggregates private deposits into one public vault deposit.',
     diagram: String.raw`
 flowchart LR
     Alice["Alice<br/>encrypted amount"] --> Batch["Confidential batcher"]
@@ -169,7 +169,7 @@ flowchart LR
   },
   {
     title: 'Shield',
-    statement: 'Public USDC enters custody and becomes private spending power.',
+    statement: 'Shielding locks USDC and credits an encrypted cUSDC balance.',
     diagram: String.raw`
 sequenceDiagram
     participant Wallet
@@ -186,7 +186,7 @@ sequenceDiagram
   },
   {
     title: 'Join',
-    statement: 'A verified encrypted amount moves into the private batch.',
+    statement: 'Joining transfers encrypted cUSDC into the current batch.',
     diagram: String.raw`
 sequenceDiagram
     participant Browser
@@ -206,7 +206,7 @@ sequenceDiagram
   },
   {
     title: 'Encrypted state',
-    statement: 'The account stays fixed while its encrypted value changes.',
+    statement: 'One EncryptedValue account tracks the current handle and permission history.',
     diagram: String.raw`
 flowchart LR
     Value["EncryptedValue PDA<br/>stable logical balance"]
@@ -220,7 +220,7 @@ flowchart LR
   },
   {
     title: 'Compute pipeline',
-    statement: 'Confirmed Solana instructions become encrypted computation jobs.',
+    statement: 'The listener converts confirmed host instructions into coprocessor jobs.',
     diagram: String.raw`
 flowchart LR
     Tx["Confirmed transaction"] --> Yellowstone["Yellowstone stream"]
@@ -233,7 +233,7 @@ flowchart LR
   },
   {
     title: 'Public settlement',
-    statement: 'A proven batch total crosses into the public vault.',
+    statement: 'Settlement decrypts the batch total and deposits it into the vault.',
     diagram: String.raw`
 sequenceDiagram
     participant Batch as Batcher
@@ -253,7 +253,7 @@ sequenceDiagram
   },
   {
     title: 'History',
-    statement: 'Compact history keeps old decrypt rights verifiable.',
+    statement: 'MMR proofs preserve access to previous handles.',
     diagram: String.raw`
 flowchart LR
     H1["Handle H1"] --> L1["Alice could access H1"]
@@ -267,7 +267,7 @@ flowchart LR
   },
   {
     title: 'Claim',
-    statement: 'Public ratios allocate encrypted shares without revealing deposits.',
+    statement: 'A claim computes and transfers each encrypted share allocation.',
     diagram: String.raw`
 flowchart LR
     Deposit["Encrypted user deposit"] --> Formula["deposit × batch shares ÷ batch total"]
@@ -280,7 +280,7 @@ flowchart LR
   },
   {
     title: 'User decrypt',
-    statement: 'The wallet authorizes a value that opens only in the browser.',
+    statement: 'User decryption returns plaintext only to the authorized browser.',
     diagram: String.raw`
 sequenceDiagram
     participant Browser
@@ -299,7 +299,7 @@ sequenceDiagram
   },
   {
     title: 'Redeem',
-    statement: 'Encrypted shares return through the same private doorway.',
+    statement: 'Redemption converts encrypted cShares back into encrypted cUSDC.',
     diagram: String.raw`
 flowchart LR
     Shares["User cShares"] -->|"encrypted amount"| Batch["Redeem batch"]
@@ -309,8 +309,8 @@ flowchart LR
 `,
   },
   {
-    title: 'Trust boundary',
-    statement: 'The private path is real; the keys, assets, vault and yield source are local.',
+    title: 'POC boundary',
+    statement: 'The POC runs real protocol components with local keys, assets and yield.',
     diagram: String.raw`
 flowchart LR
     subgraph real["Runs for real"]
