@@ -251,8 +251,8 @@ export async function deployImplementations(parameters: {
 export function buildHostAddressReplacementsV14(parameters: {
   readonly fhevmAddresses: FhevmAddressesV14;
   readonly pauserSetAddress: string;
-  // Optional: only the fresh `deploy` materializes the cleartext-infra contracts. The (deferred)
-  // v12→v13 update path omits them until the cleartext-v12 fixture lands (see plan Decision #4).
+  // Optional: references with no offsets in a template patch as no-ops, so a caller only patching the
+  // base host contracts may omit them. Both `deploy` and `updateV13ToV14` pass them.
   readonly cleartextAddresses?: CleartextAddresses;
 }): AddressReplacement[] {
   const replacements: AddressReplacement[] = [

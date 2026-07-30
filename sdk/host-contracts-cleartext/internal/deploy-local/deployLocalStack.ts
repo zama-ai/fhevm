@@ -154,9 +154,6 @@ async function main(): Promise<void> {
           value: parameters.value as Hex,
         });
       },
-      async getCodeAt(parameters) {
-        return (await publicClient.getCode({ address: parameters.address as Address })) ?? '0x';
-      },
     },
     admin: {
       getAddress: () => Promise.resolve(account.address),

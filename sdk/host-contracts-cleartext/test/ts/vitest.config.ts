@@ -23,7 +23,13 @@ export default defineConfig({
   root: TEST_ROOT,
   test: {
     environment: 'node',
-    include: ['tarball-consumer.test.ts', 'acl-owner-upgrade.test.ts', 'deploy-v14.test.ts', 'deploy-at.test.ts'],
+    include: [
+      'tarball-consumer.test.ts',
+      'acl-owner-upgrade.test.ts',
+      'deploy-v14.test.ts',
+      'deploy-at.test.ts',
+      'destroy-kms-context.test.ts',
+    ],
     testTimeout: 60_000,
   },
 });

@@ -12,6 +12,17 @@ export { pauseACL, unpauseACL } from './aclOwner.js';
 // Retire a past KMS context via the standing `ACLOwner`. (No rotation helper yet: v14 made defining a
 // new context a multi-party ceremony — see the note in `kmsContext.ts`.)
 export { destroyKmsContext } from './kmsContext.js';
+// Package defaults and node-params builders. Unlike v13, consumers genuinely need these: `deployAt`
+// takes a REQUIRED config, `updateV13ToV14`'s migration wants v14 `KmsNodeParams`, and until the
+// rotation helper lands (see `kmsContext.ts`) a context switch is driven by hand from these blocks.
+export {
+  DEFAULT_BOOTSTRAP_CONFIG_V14,
+  DEFAULT_KMS_SOFTWARE_VERSION,
+  DEFAULT_KMS_THRESHOLDS,
+  DEFAULT_PCR_VALUES,
+  generateFromExistingDefaultKmsNodes,
+  nextDefaultKmsSignerWindow,
+} from './constants.js';
 
 export type {
   // Abstract adapter interfaces (consumers implement these over their web3 lib).

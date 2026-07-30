@@ -109,7 +109,7 @@ test('e2e: deploy a v13 cleartext stack, then upgrade it to v14 — cleartext su
     privateKey: privateKeyFromMnemonic({ mnemonic: MNEMONIC, addressIndex: 8 }),
   });
 
-  const anvil = startAnvil({ port: 8621, mnemonic: MNEMONIC });
+  const anvil = startAnvil({ port: 8620, mnemonic: MNEMONIC });
   try {
     await waitForAnvil(anvil.rpcUrl);
 

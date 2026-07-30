@@ -9,25 +9,25 @@ import {
   randomBytes,
   toBeArray,
   toBeHex,
-} from "ethers";
+} from 'ethers';
 
 import {
   EIP712_DOMAIN_VERSION,
   EIP712_INPUT_VERIFICATION_DOMAIN_NAME,
   GATEWAY_CHAIN_ID,
   GATEWAY_INPUT_VERIFICATION_ADDRESS,
-} from "../stack/config";
-import { FheType, fheTypeByteLength } from "./fhetype";
-import { computeHandles } from "./handle";
+} from '../stack/config';
+import { FheType, fheTypeByteLength } from './fhetype';
+import { computeHandles } from './handle';
 
 /** EIP-712 typed-data for the coprocessor's CiphertextVerification signature (gateway InputVerification). */
 export const CIPHERTEXT_VERIFICATION_TYPES: Record<string, TypedDataField[]> = {
   CiphertextVerification: [
-    { name: "ctHandles", type: "bytes32[]" },
-    { name: "userAddress", type: "address" },
-    { name: "contractAddress", type: "address" },
-    { name: "contractChainId", type: "uint256" },
-    { name: "extraData", type: "bytes" },
+    { name: 'ctHandles', type: 'bytes32[]' },
+    { name: 'userAddress', type: 'address' },
+    { name: 'contractAddress', type: 'address' },
+    { name: 'contractChainId', type: 'uint256' },
+    { name: 'extraData', type: 'bytes' },
   ],
 };
 
@@ -54,7 +54,7 @@ export function computeMockCiphertext(values: EncryptValue[], rand: Uint8Array[]
 }
 
 function clearValueBytes(v: EncryptValue, byteLength: number): Uint8Array {
-  const big = typeof v.value === "string" ? BigInt(getAddress(v.value)) : BigInt(v.value);
+  const big = typeof v.value === 'string' ? BigInt(getAddress(v.value)) : BigInt(v.value);
   const raw = toBeArray(big);
   if (raw.length > byteLength) {
     throw new Error(`value ${v.value} does not fit in ${byteLength} bytes`);
@@ -73,11 +73,11 @@ function clearValueBytes(v: EncryptValue, byteLength: number): Uint8Array {
  */
 export function packExtraData(values: EncryptValue[]): string {
   if (values.length === 0) {
-    return "0x00";
+    return '0x00';
   }
-  let out = "0x";
+  let out = '0x';
   for (const v of values) {
-    const big = typeof v.value === "string" ? BigInt(getAddress(v.value)) : BigInt(v.value);
+    const big = typeof v.value === 'string' ? BigInt(getAddress(v.value)) : BigInt(v.value);
     out += toBeHex(big, 32).slice(2);
   }
   return out;
@@ -92,19 +92,19 @@ export function assembleInputProof(handlesHex: string[], signaturesHex: string[]
     if (n < 0 || n > 255) {
       throw new Error(`count ${n} does not fit in one byte`);
     }
-    return n.toString(16).padStart(2, "0");
+    return n.toString(16).padStart(2, '0');
   };
 
-  let proof = "0x" + byte(handlesHex.length) + byte(signaturesHex.length);
+  let proof = '0x' + byte(handlesHex.length) + byte(signaturesHex.length);
   for (const h of handlesHex) {
-    const noPrefix = h.replace(/^0x/, "");
+    const noPrefix = h.replace(/^0x/, '');
     if (noPrefix.length !== 64) {
       throw new Error(`handle is not 32 bytes: ${h}`);
     }
     proof += noPrefix;
   }
   for (const s of signaturesHex) {
-    const noPrefix = s.replace(/^0x/, "");
+    const noPrefix = s.replace(/^0x/, '');
     if (noPrefix.length !== 130) {
       throw new Error(`signature is not 65 bytes: ${s}`);
     }
@@ -141,7 +141,7 @@ export interface EncryptResult {
 export async function encryptInput(params: EncryptParams): Promise<EncryptResult> {
   const rand = params.rand ?? params.values.map(() => randomBytes(32));
   if (rand.length !== params.values.length) {
-    throw new Error("rand length must match values length");
+    throw new Error('rand length must match values length');
   }
 
   const ciphertext = computeMockCiphertext(params.values, rand);
@@ -169,9 +169,13 @@ export async function encryptInput(params: EncryptParams): Promise<EncryptResult
     verifyingContract: GATEWAY_INPUT_VERIFICATION_ADDRESS,
   };
 
-  const signers = params.coprocessorSigners.slice(0, Math.max(params.coprocessorThreshold, params.coprocessorSigners.length));
+  if (params.coprocessorThreshold > params.coprocessorSigners.length) {
+    throw new Error(
+      `coprocessorThreshold (${params.coprocessorThreshold}) exceeds the ${params.coprocessorSigners.length} available coprocessor signers`,
+    );
+  }
   const signaturesHex: string[] = [];
-  for (const signer of signers) {
+  for (const signer of params.coprocessorSigners) {
     signaturesHex.push(await signer.signTypedData(domain, CIPHERTEXT_VERIFICATION_TYPES, message));
   }
 

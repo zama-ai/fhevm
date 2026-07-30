@@ -30,6 +30,7 @@ function run(command: string, args: readonly string[], cwd: string): void {
 }
 
 function packV13(): string {
+  mkdirSync(V13_TARBALL_DIR, { recursive: true });
   // Both packages share the tarball name prefix (same package name); only the version distinguishes
   // them, so match the v13 version precisely to avoid deleting this package's own tarball.
   for (const entry of readdirSync(V13_TARBALL_DIR)) {

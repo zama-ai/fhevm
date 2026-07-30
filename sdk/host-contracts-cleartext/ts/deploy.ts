@@ -482,11 +482,6 @@ async function deployEmptyProxiesV12(parameters: {
 }
 
 ////////////////////////////////////////////////////////////////////////////////
-
-/*
-  PauserSet.sol
-*/
-////////////////////////////////////////////////////////////////////////////////
 // Upgrade step: materialize each empty proxy into its real implementation.
 //
 // For every proxy this performs exactly two on-chain actions:
@@ -533,7 +528,7 @@ function bootstrapUpgradeConfigV14(parameters: {
     acl: bootstrap([]),
     fhevmExecutor: bootstrap([]),
     kmsVerifier: bootstrap(kmsVerifierInitArgsV14(config.kmsVerifier)),
-    inputVerifier: bootstrap(eip712VerifierInitArgs(config.inputVerifier)),
+    inputVerifier: bootstrap(inputVerifierInitArgs(config.inputVerifier)),
     hcuLimit: bootstrap(hcuLimitInitArgs(config.hcuLimit)),
     // v14 `initializeFromEmptyProxy(KmsNodeParams[], KmsThresholds, string, PcrValues[])` — two more
     // args than v13, which took only (KmsNode[], KmsThresholds).
@@ -559,7 +554,7 @@ function kmsVerifierInitArgsV14(config: KMSVerifierInitConfig): readonly unknown
 ////////////////////////////////////////////////////////////////////////////////
 
 /** Builds the `initializeFromEmptyProxy` arguments for InputVerifier bootstrap, type-safely. */
-function eip712VerifierInitArgs(config: InputVerifierInitConfig): readonly unknown[] {
+function inputVerifierInitArgs(config: InputVerifierInitConfig): readonly unknown[] {
   return [config.verifyingContractSource, config.chainIDSource, config.initialSigners, config.initialThreshold];
 }
 
@@ -626,7 +621,7 @@ export function bootstrapInitCalls(parameters: {
       contractName: 'InputVerifier',
       address: fhevm.inputVerifierAddress,
       abi: inputVerifierAbi,
-      args: eip712VerifierInitArgs(config.inputVerifier),
+      args: inputVerifierInitArgs(config.inputVerifier),
     },
     {
       contractName: 'HCULimit',

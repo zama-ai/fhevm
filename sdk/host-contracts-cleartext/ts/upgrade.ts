@@ -95,6 +95,10 @@ export async function updateV13ToV14(parameters: {
  * shape via `generateFromExistingDefaultKmsNodes`. Unlike v12→v13, no context id or thresholds are
  * needed — v13's `ProtocolConfig` storage carries them over; only the per-node MPC metadata, software
  * version and PCR values are new in v14, and those come from the package defaults.
+ *
+ * Two consequences of that assumption: a stack whose signers are NOT from the default pool fails here
+ * (pass `migration` explicitly), and a stack that registered pool signers under non-default tx-sender
+ * metadata gets the default metadata anyway — `reinitializeV2` does not cross-check it on-chain.
  * @internal — used by `updateV13ToV14` when no explicit `migration` is supplied.
  */
 async function resolveDefaultMigration(parameters: {
@@ -107,8 +111,19 @@ async function resolveDefaultMigration(parameters: {
     functionName: 'getKmsSigners',
   })) as readonly string[];
 
+  let kmsNodeParams;
+  try {
+    kmsNodeParams = generateFromExistingDefaultKmsNodes([...existingSigners]);
+  } catch (error) {
+    throw new Error(
+      `Cannot derive a default migration config: the live v13 stack's KMS signers are not from the ` +
+        `default signer pool. Pass \`migration\` explicitly to updateV13ToV14.`,
+      { cause: error },
+    );
+  }
+
   return {
-    kmsNodeParams: generateFromExistingDefaultKmsNodes([...existingSigners]),
+    kmsNodeParams,
     softwareVersion: DEFAULT_KMS_SOFTWARE_VERSION,
     pcrValues: DEFAULT_PCR_VALUES,
   };

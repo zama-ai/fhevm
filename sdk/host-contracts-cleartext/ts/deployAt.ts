@@ -64,9 +64,9 @@ type PlacedContract = {
  * initializer. It must be a funded account on the node.
  */
 export async function deployAt(parameters: {
-  // Only the cheat-code subset: `deployAt` places code and writes slots, it never reads contracts or
-  // nonces. Keeps thin dev-node adapters (e.g. the hardhat plugin's) off the read-API hook.
-  readonly ethProvider: Pick<AbstractEthereumProvider, 'setCodeAt' | 'setStorageAt' | 'getCodeAt'>;
+  // Only the cheat-code subset: `deployAt` places code and writes slots, it never reads code,
+  // contracts, or nonces. Keeps thin dev-node adapters (e.g. the hardhat plugin's) off the read hooks.
+  readonly ethProvider: Pick<AbstractEthereumProvider, 'setCodeAt' | 'setStorageAt'>;
   readonly admin: AbstractEthereumSigner;
   readonly addresses: FixedAddressesV14;
   readonly config: BootstrapConfigV14;
