@@ -26,23 +26,29 @@ sequenceDiagram
         participant KMS as KMS network
     end
 
-    Note over Client,Gateway: Encrypted transaction and event-driven FHE computation
-    Client->>Client: Encrypt input and approve action
-    Client->>Host: Submit encrypted input and verification
-    Host->>Host: Check input and permissions
-    Host->>Host: Record encrypted operation
+    Note over Client,Copro: Input proof and attestation
+    Client->>Relayer: Encrypted input and proof
+    Relayer->>Gateway: Verification request
+    Gateway->>Copro: Input proof
+    Copro->>Copro: Verify input proof
+    Copro-->>Gateway: Ciphertext attestation
+    Gateway-->>Relayer: Attestation
+    Relayer-->>Client: Attestation
+
+    Note over Client,Gateway: On-chain encrypted computation
+    Client->>Host: Encrypted action and attestation
+    Host->>Host: Verify coprocessor attestation and record operation
     Host-->>Copro: Confirmed operation
-    Copro->>Copro: Compute with FHE
-    Copro-->>Gateway: Store encrypted result
+    Copro-->>Gateway: FHE result
 
     Note over Client,KMS: Authorized decryption
     Client->>Relayer: Signed decryption request
-    Relayer->>Gateway: Locate encrypted result
-    Gateway->>KMS: Request authorized decrypt
-    KMS-->>Gateway: Result protected for SDK
+    Relayer->>Gateway: Decryption request
+    Gateway->>KMS: Authorized decrypt
+    KMS-->>Gateway: User-protected result
     Gateway-->>Relayer: Protected result
     Relayer-->>Client: Protected result
-    Client->>Client: Recover and display plaintext
+    Client->>Client: Recover plaintext
 `,
   },
   {
@@ -100,21 +106,19 @@ sequenceDiagram
         participant Wallet
         participant SDK
     end
-    box Input service
-        participant Input as Input verifier
-    end
     box Solana
         participant Batch as Batcher
         participant Token as Confidential token
         participant Host as Zama host
     end
 
-    SDK->>Input: Encrypted deposit amount
-    Input-->>SDK: Signed verification
-    Wallet->>Batch: Join batch
+    SDK->>Wallet: Build join with encrypted amount and attestation
+    Wallet->>Batch: Sign and submit join
     Batch->>Token: Confidential transfer by CPI
-    Token->>Host: Verify input and record operations
-    Host-->>Batch: New encrypted joined amount
+    Token->>Host: Verify coprocessor attestation inside transfer
+    Token->>Host: Record encrypted operations
+    Host-->>Token: New balance handles
+    Token-->>Batch: New encrypted joined amount
 `,
   },
   {
