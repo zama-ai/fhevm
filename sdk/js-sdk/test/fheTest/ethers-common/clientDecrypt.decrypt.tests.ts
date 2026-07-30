@@ -50,7 +50,8 @@ export function defineClientDecryptDecryptTests(parameters: {
       expect(typeof client.decryptValues).toBe('function');
       expect(typeof client.decryptValuesFromPairs).toBe('function');
       expect(typeof client.generateTransportKeyPair).toBe('function');
-      expect(typeof client.signDecryptionPermit).toBe('function');
+      expect(typeof client.signLegacyDecryptionPermit).toBe('function');
+      expect(typeof client.signUnifiedDecryptionPermit).toBe('function');
     });
 
     it('should generate an e2e transport key pair', async () => {

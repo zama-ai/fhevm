@@ -1,8 +1,8 @@
 import { asEncryptedValue, type EncryptedValue, type TypedValue } from '@fhevm/sdk/types';
 import { ethers } from 'ethers';
-import { describe, it, expect, beforeAll } from 'vitest';
+import { describe, it, expect, beforeAll, beforeEach } from 'vitest';
 import { setFhevmRuntimeConfig } from '@fhevm/sdk/ethers';
-import { createUnsignedUnifiedDecryptionPermitEip712 } from '@fhevm/sdk/actions/base';
+import { canUseUnifiedDecryptionPermit, createUnsignedUnifiedDecryptionPermitEip712 } from '@fhevm/sdk/actions/base';
 import { getEthersTestConfig, type CreateEthersDecryptClientFn, type FheTestEthersConfig } from '../setup-ethers.js';
 import { decryptTestCases, fheTypeIdFromName, clearTypeFromHandle, createLogger } from '../setupCommon.js';
 
@@ -73,23 +73,18 @@ async function getUserDecryptionDelegationExpirationDate(parameters: {
 
 export function defineClientDecryptUnifiedPermitTests(parameters: {
   readonly runIf: boolean;
+  // Real deployed environments (testnet/devnet) can lag behind the chain's protocol version — the
+  // relayer feature may not be rolled out yet even though the chain itself is on protocol v14+. Set
+  // this to have the suite probe `canUseUnifiedDecryptionPermit()` once and skip all its tests if the
+  // relayer doesn't actually support the unified route. Not needed for localstack chains, where
+  // `protocolEraOf` already statically guarantees relayer support.
+  readonly checkRelayerSupportsUnifiedPermit?: boolean;
   readonly createFhevmDecryptClient: CreateEthersDecryptClientFn;
 }): void {
   describe.runIf(parameters.runIf)('Decrypt client — unified (V2) permit', () => {
     let config: FheTestEthersConfig;
     let logger: ReturnType<typeof createLogger>;
-
-    beforeAll(() => {
-      config = getEthersTestConfig();
-      logger = createLogger(console.log, `${config.fhevmChain.id}`);
-      setFhevmRuntimeConfig({
-        auth: {
-          type: 'ApiKeyHeader',
-          value: config.zamaApiKey,
-        },
-        logger,
-      });
-    });
+    let relayerSupportsUnifiedPermit = true;
 
     async function createReadyClient() {
       const client = parameters.createFhevmDecryptClient({
@@ -99,6 +94,29 @@ export function defineClientDecryptUnifiedPermitTests(parameters: {
       await client.ready;
       return client;
     }
+
+    beforeAll(async () => {
+      config = getEthersTestConfig();
+      logger = createLogger(console.log, `${config.fhevmChain.id}`);
+      setFhevmRuntimeConfig({
+        auth: {
+          type: 'ApiKeyHeader',
+          value: config.zamaApiKey,
+        },
+        logger,
+      });
+
+      if (parameters.checkRelayerSupportsUnifiedPermit) {
+        const client = await createReadyClient();
+        relayerSupportsUnifiedPermit = await canUseUnifiedDecryptionPermit(client, {
+          options: { auth: { type: 'ApiKeyHeader', value: config.zamaApiKey } },
+        });
+      }
+    });
+
+    beforeEach((ctx) => {
+      ctx.skip(!relayerSupportsUnifiedPermit, 'relayer does not support the unified (V2) user-decrypt route yet');
+    });
 
     it('should sign a self unified decryption permit', async () => {
       const client = await createReadyClient();
@@ -352,6 +370,12 @@ export function defineClientDecryptUnifiedPermitTests(parameters: {
       'delegated unified decrypt (alice delegates to bob)',
       () => {
         beforeAll(async () => {
+          // Skip the on-chain delegation setup too — its tests are about to be skipped by the
+          // `beforeEach` above, and there's no point spending a transaction for nothing.
+          if (!relayerSupportsUnifiedPermit) {
+            return;
+          }
+
           const existingExpiration = await getUserDecryptionDelegationExpirationDate({
             aclAddress: config.fhevmChain.fhevm.contracts.acl.address,
             provider: config.provider,

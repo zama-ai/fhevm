@@ -13,15 +13,10 @@ import {
   parseSignedDecryptionPermitV1,
   signDecryptionPermitV1,
 } from './SignedDecryptionPermitV1-p.js';
-import {
-  isSignedDecryptionPermitV2,
-  parseSignedDecryptionPermitV2,
-  signDecryptionPermitV2,
-} from './SignedDecryptionPermitV2-p.js';
+import { isSignedDecryptionPermitV2, parseSignedDecryptionPermitV2 } from './SignedDecryptionPermitV2-p.js';
 import { isRecordUintNumberProperty, isUintNumber } from '../base/uint.js';
 import { SDK_PROTOCOL_API_MAJOR_VERSION, SDK_PROTOCOL_API_MINOR_VERSION } from '../runtime/sdkProtocolApiVersion.js';
 import { createKmsExtraDataFromBytesHex, EXTRA_DATA_V2 } from './kmsExtraData-p.js';
-import { semverComparatorImpliesRange } from '../base/semver.js';
 
 ////////////////////////////////////////////////////////////////////////////////
 
@@ -160,27 +155,11 @@ export async function signDecryptionPermit(
   context: KmsSignDecryptionPermitContext,
   parameters: KmsSignDecryptionPermitParameters,
 ): Promise<SignedDecryptionPermit> {
-  // This branch only matters for an SDK build capped at protocol API v0.13.x or
-  // below, which does not know the v0.14.0 API (the one that introduces V2
-  // permits) and so must always create V1 permits. This SDK is on v0.14.0, so
-  // this guard no longer triggers and execution always falls through past it.
-  if (SDK_PROTOCOL_API_MAJOR_VERSION === 0 && SDK_PROTOCOL_API_MINOR_VERSION <= 13) {
-    return await signDecryptionPermitV1(context, parameters);
-  }
-
-  // The SDK build knows the v14 API, but the connected chain may still be on
-  // v13 (a v13 relayer rejects V2-format permits) — fall back to V1 using the
-  // frozen context's actual resolved protocol version for this operation.
-  const protocolVersion = parameters.fhevmContext.protocolVersion;
-  const isProtocolV13OrLower = semverComparatorImpliesRange(protocolVersion.version, protocolVersion.comparator, {
-    version: '0.14.0',
-    comparator: 'lt',
-  });
-  if (isProtocolV13OrLower) {
-    return await signDecryptionPermitV1(context, parameters);
-  }
-
-  return await signDecryptionPermitV2(context, parameters);
+  // `signDecryptionPermit` (the public action wrapping this) is deprecated in
+  // favor of `signLegacyDecryptionPermit`/`signUnifiedDecryptionPermit`, but we
+  // deliberately keep it pinned to V1 here for good compatibility with callers
+  // that haven't migrated yet.
+  return await signDecryptionPermitV1(context, parameters);
 }
 
 ////////////////////////////////////////////////////////////////////////////////

@@ -31,7 +31,7 @@ import { FhevmInstances } from '../types';
 //
 // A smart-contract-wallet permit is issued by pointing the serialized permit's
 // `eip712.message.userAddress` at the wallet and passing the assembled blob to
-// `parseSignedDecryptionPermit`. The signing path (`signDecryptionPermit`) is
+// `parseSignedDecryptionPermit`. The signing path (`signUnifiedDecryptionPermit`) is
 // deliberately unchanged and stays EOA/self-only: it hard-wires `userAddress`
 // to the connected signer (asserted below).
 //
@@ -149,7 +149,7 @@ describe('ERC-1271 user decryption via the SDK client', function () {
    */
   async function eip712ForWallet(walletAddress: string): Promise<MutableEip712> {
     const { holderAddress } = holderOf(walletAddress);
-    const selfPermit = await client.signDecryptionPermit({
+    const selfPermit = await client.signUnifiedDecryptionPermit({
       contractAddresses: [holderAddress as `0x${string}`],
       durationSeconds: DURATION_SECONDS,
       startTimestamp,
@@ -271,11 +271,11 @@ describe('ERC-1271 user decryption via the SDK client', function () {
 
   it('hard-wires the signed permit userAddress to the connected signer (signing path stays EOA/self-only)', async function () {
     this.timeout(120_000);
-    // `signDecryptionPermit` has no parameter for a userAddress distinct from the
+    // `signUnifiedDecryptionPermit` has no parameter for a userAddress distinct from the
     // signer, so the permit it produces always asserts over the signer's own
     // handles (wallet permits go through `parseSignedDecryptionPermit` instead —
     // see the multisig / approveHash cases above).
-    const permit = await client.signDecryptionPermit({
+    const permit = await client.signUnifiedDecryptionPermit({
       contractAddresses: [multisigWalletAddress],
       durationSeconds: DURATION_SECONDS,
       startTimestamp,

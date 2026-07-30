@@ -69,6 +69,27 @@ export function isCleartext(chainName: FheTestChainName) {
 }
 
 /**
+ * Real, remotely-deployed networks (as opposed to the local docker-compose chains).
+ *
+ * Their contracts/relayer roll out independently of this repo, so a nominal protocol version in
+ * `PROTOCOL_VERSION_BY_CHAIN` can lag (or a relayer feature can lag its own chain's protocol) —
+ * unlike `localstack*`, where `protocolEraOf` statically guarantees the deployed version. Suites
+ * gated on this should still runtime-probe the actual capability (see
+ * `checkRelayerSupportsUnifiedPermit` in the unified-permit test suites) rather than trust a static
+ * version check, so this list can safely include chains not on the latest protocol yet — an
+ * unsupported chain just resolves the probe to `false` and skips.
+ */
+export function isRealDeployedChain(chainName: FheTestChainName): boolean {
+  return (
+    chainName === 'sepolia' ||
+    chainName === 'testnet' ||
+    chainName === 'mainnet' ||
+    chainName === 'devnet' ||
+    chainName === 'polygon_devnet'
+  );
+}
+
+/**
  * Protocol era (the minor version of the protocol: 11, 12, 13, 14) a test
  * chain runs on, derived from its name. Used to gate migration tests that only
  * make sense on chains at or above a given protocol version.
