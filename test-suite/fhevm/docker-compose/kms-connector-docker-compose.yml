@@ -1,15 +1,3 @@
-# =============================================================================
-# KMS-CONNECTOR BUILD STRATEGY
-# =============================================================================
-# Each Rust service (gw-listener, kms-worker, tx-sender) builds from its own
-# per-crate Dockerfile (kms-connector/crates/<crate>/Dockerfile, target `prod`)
-# -- the same recipes main's kms-connector-docker-build.yml publishes from.
-# Identical COPY/RUN prefixes across the images are deduplicated by BuildKit
-# content-addressing within a run; cross-run reuse comes from the registry
-# layer cache (`cache_from`, injected by fhevm-cli when FHEVM_BUILDCACHE_TAG is
-# set) plus the sccache compiler cache.
-# =============================================================================
-
 services:
   kms-connector-db-migration:
     container_name: kms-connector-db-migration
