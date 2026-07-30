@@ -48,7 +48,7 @@ mermaid.initialize({
     diagramMarginX: 20,
     diagramMarginY: 24,
     messageMargin: 30,
-    mirrorActors: false,
+    mirrorActors: true,
     width: 150,
   },
 });
