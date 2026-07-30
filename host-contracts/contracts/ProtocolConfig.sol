@@ -738,8 +738,10 @@ contract ProtocolConfig is IProtocolConfig, UUPSUpgradeableEmptyProxy, ACLOwnabl
         uint256 kmsContextId,
         address txSender
     ) external view virtual returns (KmsNode memory) {
-        // `_isLiveKmsContext` is used so a `Created` (not yet `Active`) context's nodes are readable during resharing.
-        if (!_isLiveKmsContext(kmsContextId)) {
+        // Existence-based, not liveness: a context's nodes stay readable for its whole lifecycle —
+        // Pending/Created during resharing, and even once it is destroyed — so key/CRS material
+        // generated under it can still resolve its storage nodes. Only a never-created context reverts.
+        if (!_kmsContextExists(kmsContextId)) {
             revert InvalidKmsContext(kmsContextId);
         }
         return _getProtocolConfigStorage().kmsNodeByTxSenderForContext[kmsContextId][txSender];
