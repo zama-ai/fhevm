@@ -73,8 +73,8 @@ pub type WalletProviderFillers = JoinFill<
 /// one of them may take.
 #[derive(Clone, Copy, Debug)]
 struct RpcCallBounds {
-    pub max_concurrent_calls: NonZeroUsize,
-    pub call_timeout: Duration,
+    max_concurrent_calls: NonZeroUsize,
+    call_timeout: Duration,
 }
 
 /// Tries to establish the connection with a RPC node.
