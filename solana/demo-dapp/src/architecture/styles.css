@@ -1,0 +1,139 @@
+:root {
+  font-family:
+    Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  color: #f6f6f7;
+  background: #09090b;
+  font-synthesis: none;
+  text-rendering: optimizeLegibility;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html {
+  scroll-snap-type: y proximity;
+  background: #09090b;
+}
+
+body {
+  min-width: 320px;
+  min-height: 100vh;
+  margin: 0;
+  background:
+    radial-gradient(circle at 12% 0%, rgba(130, 87, 229, 0.18), transparent 34rem),
+    radial-gradient(circle at 88% 20%, rgba(20, 241, 149, 0.07), transparent 30rem),
+    #09090b;
+}
+
+.architecture-page {
+  width: 100%;
+}
+
+.architecture-frame {
+  display: grid;
+  min-height: 100svh;
+  padding: clamp(32px, 5vw, 72px) clamp(24px, 6vw, 96px);
+  border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+  scroll-snap-align: start;
+}
+
+.frame-heading,
+.diagram-shell {
+  width: min(1440px, 100%);
+  margin-inline: auto;
+}
+
+.frame-heading {
+  align-self: end;
+  margin-bottom: clamp(24px, 3vh, 40px);
+}
+
+.frame-label {
+  margin: 0 0 14px;
+  color: #a78bfa;
+  font-size: clamp(12px, 1.2vw, 15px);
+  font-weight: 760;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+}
+
+h1 {
+  max-width: 1120px;
+  margin: 0;
+  font-size: clamp(32px, 4.2vw, 64px);
+  line-height: 1.02;
+  letter-spacing: -0.045em;
+}
+
+.diagram-shell {
+  display: grid;
+  min-height: min(64vh, 760px);
+  place-items: center;
+  align-self: start;
+  padding: clamp(20px, 3vw, 42px);
+  overflow: hidden;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 24px;
+  background: rgba(20, 20, 24, 0.76);
+  box-shadow: 0 28px 80px rgba(0, 0, 0, 0.28);
+}
+
+.mermaid {
+  display: grid;
+  width: 100%;
+  margin: 0;
+  place-items: center;
+  color: #9c9ca4;
+  background: transparent;
+  font-family: inherit;
+  white-space: pre-wrap;
+}
+
+.mermaid svg {
+  width: 100%;
+  max-width: 1320px;
+  max-height: 62vh;
+}
+
+body[data-mermaid-error="true"]::before {
+  position: fixed;
+  z-index: 10;
+  top: 16px;
+  right: 16px;
+  padding: 10px 14px;
+  border: 1px solid rgba(248, 113, 113, 0.55);
+  border-radius: 10px;
+  background: #450a0a;
+  color: #fecaca;
+  content: "A diagram failed to render";
+  font-size: 13px;
+  font-weight: 700;
+}
+
+@media (max-width: 760px) {
+  html {
+    scroll-snap-type: none;
+  }
+
+  .architecture-frame {
+    min-height: auto;
+    padding-block: 48px;
+  }
+
+  .diagram-shell {
+    min-height: 460px;
+    overflow-x: auto;
+  }
+
+  .mermaid svg {
+    min-width: 720px;
+  }
+}
+
+@media print {
+  .architecture-frame {
+    min-height: 100vh;
+    break-after: page;
+  }
+}

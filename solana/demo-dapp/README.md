@@ -18,6 +18,7 @@ bun run demo:start
 
 Open `http://127.0.0.1:5173/`. The built-in wallet works immediately. Phantom or another wallet
 that supports Solana Localnet can also connect. The demo gives the wallet fee SOL and test USDC.
+The scrolling architecture walkthrough is at `http://127.0.0.1:5173/architecture.html`.
 
 ```sh
 bun run demo:stop

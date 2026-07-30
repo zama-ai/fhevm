@@ -25,4 +25,9 @@ export default defineConfig(({ mode }) => ({
   // Vitest needs only transforms; omitting the development server plugin keeps tests independent
   // of runtime credentials without creating a credential bypass mode.
   plugins: mode === 'test' ? [] : [demoServerPlugin()],
+  build: {
+    rollupOptions: {
+      input: ['index.html', 'architecture.html'],
+    },
+  },
 }));
