@@ -9,35 +9,40 @@ type ArchitectureFrame = {
 
 const frames: readonly ArchitectureFrame[] = [
   {
-    title: 'Encrypted computation',
-    statement: 'Applications compute on encrypted values.',
+    title: 'Encrypted request',
+    statement: 'A wallet submits encrypted inputs and receives authorized plaintext results.',
     diagram: String.raw`
-flowchart LR
-    subgraph input["Input"]
-        direction TB
-        Value["User value"] --> Encrypt["SDK<br/>encrypts inputs"] --> Ciphertext["Ciphertext"]
+sequenceDiagram
+    box User device
+        participant Client as Wallet + SDK
+    end
+    box Solana
+        participant Host as Host program
+    end
+    box Protocol services
+        participant Copro as Coprocessor
+        participant Relayer
+        participant Gateway
+        participant KMS as KMS network
     end
 
-    subgraph execution["Execution"]
-        direction TB
-        Host["Host program<br/>records operations and permissions"] --> Compute["Coprocessor<br/>computes over ciphertexts"] --> Result["Encrypted result"]
-    end
+    Note over Client,Gateway: Encrypted transaction and event-driven FHE computation
+    Client->>Client: Encrypt input and approve action
+    Client->>Host: Submit encrypted input and verification
+    Host->>Host: Check input and permissions
+    Host->>Host: Record encrypted operation
+    Host-->>Copro: Confirmed operation
+    Copro->>Copro: Compute with FHE
+    Copro-->>Gateway: Store encrypted result
 
-    subgraph release["Release"]
-        direction TB
-        Gateway["Gateway<br/>coordinates encrypted material<br/>and decryption work"]
-        KMS["KMS<br/>checks rights and releases results"]
-        Authorized{"Decryption scope"}
-        Relayer["Relayer<br/>returns a protected user result"]
-        Browser["Browser opens result"]
-
-        Gateway --> KMS --> Authorized
-        Authorized -->|"one user"| Relayer --> Browser
-        Authorized -->|"the program"| Public["Certified public decrypt"]
-    end
-
-    Ciphertext --> Host
-    Result --> Gateway
+    Note over Client,KMS: Authorized decryption
+    Client->>Relayer: Signed decryption request
+    Relayer->>Gateway: Locate encrypted result
+    Gateway->>KMS: Request authorized decrypt
+    KMS-->>Gateway: Result protected for SDK
+    Gateway-->>Relayer: Protected result
+    Relayer-->>Client: Protected result
+    Client->>Client: Recover and display plaintext
 `,
   },
   {
@@ -70,10 +75,14 @@ flowchart LR
     statement: 'Shielding locks USDC and credits an encrypted cUSDC balance.',
     diagram: String.raw`
 sequenceDiagram
-    participant Wallet
-    participant Token as Confidential token
-    participant SPL as SPL Token
-    participant Host as Zama host
+    box User device
+        participant Wallet
+    end
+    box Solana
+        participant Token as Confidential token
+        participant SPL as SPL Token
+        participant Host as Zama host
+    end
 
     Wallet->>Token: Shield public USDC
     Token->>SPL: Move USDC into wrapper custody
@@ -87,15 +96,21 @@ sequenceDiagram
     statement: 'Joining transfers encrypted cUSDC into the current batch.',
     diagram: String.raw`
 sequenceDiagram
-    participant Browser
-    participant Input as Input verification
-    participant Wallet
-    participant Batch as Batcher
-    participant Token as Confidential token
-    participant Host as Zama host
+    box User device
+        participant Wallet
+        participant SDK
+    end
+    box Input service
+        participant Input as Input verifier
+    end
+    box Solana
+        participant Batch as Batcher
+        participant Token as Confidential token
+        participant Host as Zama host
+    end
 
-    Browser->>Input: Encrypted deposit amount
-    Input-->>Browser: Signed verification
+    SDK->>Input: Encrypted deposit amount
+    Input-->>SDK: Signed verification
     Wallet->>Batch: Join batch
     Batch->>Token: Confidential transfer by CPI
     Token->>Host: Verify input and record operations
@@ -158,21 +173,29 @@ flowchart TB
   },
   {
     title: 'User decrypt',
-    statement: 'User decryption returns plaintext only to the authorized browser.',
+    statement: 'The wallet authorizes the request; the SDK recovers the plaintext.',
     diagram: String.raw`
 sequenceDiagram
-    participant Browser
-    participant Wallet as Phantom
-    participant Relayer as Request service
-    participant Keys as Key service
+    box User device
+        participant Wallet as Phantom
+        participant SDK
+    end
+    box Protocol services
+        participant Relayer
+        participant Gateway
+        participant KMS as KMS network
+    end
 
-    Browser->>Browser: Create fresh transport key
-    Wallet->>Browser: Sign decryption request
-    Browser->>Relayer: Signed request and public key
-    Relayer->>Keys: Check Solana authorization
-    Keys-->>Relayer: Signcrypted response
-    Relayer-->>Browser: Opaque response
-    Browser->>Browser: Recover the clear value
+    SDK->>SDK: Create fresh transport key
+    SDK->>Wallet: Request authorization
+    Wallet-->>SDK: Signed decryption request
+    SDK->>Relayer: Signed request and public key
+    Relayer->>Gateway: Locate encrypted result
+    Gateway->>KMS: Check authorization and decrypt
+    KMS-->>Gateway: Result protected for SDK
+    Gateway-->>Relayer: Protected result
+    Relayer-->>SDK: Protected result
+    SDK->>SDK: Recover plaintext
 `,
   },
   {

@@ -44,12 +44,12 @@ mermaid.initialize({
     rankSpacing: 64,
   },
   sequence: {
-    actorMargin: 64,
-    diagramMarginX: 32,
+    actorMargin: 32,
+    diagramMarginX: 20,
     diagramMarginY: 24,
-    messageMargin: 36,
+    messageMargin: 30,
     mirrorActors: false,
-    width: 190,
+    width: 150,
   },
 });
 
