@@ -11,7 +11,7 @@ import { PreflightError, formatCliError } from "../errors";
 import { runContractTask } from "../flow/contracts";
 import { dockerInspect } from "../flow/readiness";
 import { pause, shellEscape, unpause } from "../flow/up-flow";
-import { hostReachableRpcUrl, readEnvFile, withHexPrefix } from "../utils/fs";
+import { hostReachableRpcUrl, readEnvFile } from "../utils/fs";
 import { composeEnv, run, runWithHeartbeat } from "../utils/process";
 import { loadState } from "../state/state";
 import { topologyForState } from "../stack-spec/stack-spec";
@@ -23,7 +23,6 @@ import {
   DEFAULT_POSTGRES_DB,
   DEFAULT_POSTGRES_PASSWORD,
   DEFAULT_POSTGRES_USER,
-  defaultHostChainKey,
   envPath,
   HEAVY_TEST_PROFILES,
   LIGHT_TEST_PROFILES,
@@ -873,19 +872,6 @@ const localDbMigrationImageRef = (state: Pick<State, "overrides" | "builtImages"
 // Blue-Green upgrade E2E
 // ============================================================================
 
-/** Reads deployer PK from host-sc env and ProtocolConfig address from test-suite env. */
-const readBlueGreenOnChainCreds = async (): Promise<{ deployerPk: string; protocolConfig: string }> => {
-  const [hostSc, testSuite] = await Promise.all([
-    readEnvFile(envPath("host-sc")),
-    readEnvFile(envPath("test-suite")),
-  ]);
-  const deployerPk = hostSc.DEPLOYER_PRIVATE_KEY;
-  const protocolConfig = testSuite.PROTOCOL_CONFIG_CONTRACT_ADDRESS;
-  if (!deployerPk) throw new Error("DEPLOYER_PRIVATE_KEY missing from host-sc env");
-  if (!protocolConfig) throw new Error("PROTOCOL_CONFIG_CONTRACT_ADDRESS missing from test-suite env");
-  return { deployerPk: withHexPrefix(deployerPk), protocolConfig };
-};
-
 const psqlQuery = async (database: string, query: string): Promise<string> =>
   scalarQuery(database, query, postgresRuntime());
 
@@ -1057,16 +1043,9 @@ const runBlueGreenProfile = async (
   }
   console.log(`OK:   ${opCount} DB(s) at v0.14, empty upgrade_state, gcs-${gcsStackVersion} schema present`);
 
-  const defaultHostKey = defaultHostChainKey(state.scenario.hostChains);
-  const hostRpcUrl = hostReachableRpcUrl(state.discovery!.endpoints.hosts[defaultHostKey]!.http);
   const gatewayRpcUrl = hostReachableRpcUrl(state.discovery!.endpoints.gateway.http);
-  const { deployerPk, protocolConfig } = await readBlueGreenOnChainCreds();
 
-  // One ChainUpgradeWindow per host chain, each off that chain's own current
-  // block. Single-chain yields a one-element array, as before.
   const hostChains = state.scenario.hostChains;
-  const hostChainRpc = (key: string) =>
-    hostReachableRpcUrl(state.discovery!.endpoints.hosts[key]!.http);
   const testSuiteEnv = await readEnvFile(envPath("test-suite"));
   const erc20Grep = TEST_GREP.erc20;
   if (!erc20Grep) {
@@ -1106,16 +1085,6 @@ const runBlueGreenProfile = async (
     chainExtraExecArgs(0),
   );
   const blueGreenTrafficStreams = Math.max(MIN_BLUE_GREEN_TRAFFIC_STREAMS, trafficTargets.length);
-  const buildWindowArray = async (startOffset: number, endOffset: number): Promise<string> => {
-    const tuples: string[] = [];
-    for (const chain of hostChains) {
-      const block = Number(
-        (await run(["cast", "block-number", "--rpc-url", hostChainRpc(chain.key)])).stdout.trim(),
-      );
-      tuples.push(`(${chain.chainId},${block + startOffset},${block + endOffset})`);
-    }
-    return `[${tuples.join(",")}]`;
-  };
 
   // Host chains stay quiet (no non-trivial FHE op) while [3/11] anchors the Gateway
   // track with one input. Recreate the GCS listeners with injection off first, so
@@ -1124,23 +1093,22 @@ const runBlueGreenProfile = async (
   console.log(`\n[2/11] failed upgrade: Gateway input, hosts quiet (no non-trivial host \u2192 no cutover)`);
   const disabled = await setSyntheticOps(false);
   console.log(`OK:   recreated ${disabled.length} GCS host-listener service(s) with synthetic ops disabled`);
-  const failGwBlock = Number((await run(
-    ["cast", "block-number", "--rpc-url", gatewayRpcUrl],
-  )).stdout.trim());
-  const failGwStartBlock = failGwBlock + 10;
-  const failWindows = await buildWindowArray(15, 45);
-  await run([
-    "cast", "send", protocolConfig,
-    "--rpc-url", hostRpcUrl,
-    "--private-key", deployerPk,
-    "proposeCoprocessorUpgrade(uint256,string,(uint64,uint64,uint64)[],uint64)",
-    "1", gcsVersionLive,
-    failWindows,
-    String(failGwStartBlock),
-  ]);
-  console.log(
-    `OK:   activation emitted (windows=${failWindows} gw_start=${failGwStartBlock})`,
+  const failStartTime = new Date(Date.now() + 30_000).toISOString();
+  await runContractTask(
+    "host-sc",
+    "host-sc-deploy",
+    'LOCAL_HOST_RPC_URL="$RPC_URL" npx hardhat task:proposeCoprocessorUpgrade ' +
+      '--environment local --start-time "$PROPOSE_START_TIME" --duration 60s --buffer 10s ' +
+      '--proposal-id 1 --software-version "$PROPOSE_SW_VERSION" --use-internal-proxy-address true',
+    {
+      env: {
+        LOCAL_GATEWAY_RPC_URL: state.discovery!.endpoints.gateway.http,
+        PROPOSE_START_TIME: failStartTime,
+        PROPOSE_SW_VERSION: gcsVersionLive,
+      },
+    },
   );
+  console.log(`OK:   activation emitted via task (proposalId=1, version=${gcsVersionLive}, start=${failStartTime})`);
 
   console.log(`\n[3/11] failed upgrade: wait for GCS DryRunStarted, then submit a Gateway-only input proof`);
   for (const db of operatorDatabases) {
@@ -1159,6 +1127,17 @@ const runBlueGreenProfile = async (
         )) === "ready",
     });
   }
+  // Wait for the Gateway tip to reach gw_start_block so the input lands in the window
+  // and anchors the GW track.
+  const failGwStartBlock = Number(
+    await psqlQuery(operatorDatabases[0]!, "SELECT gw_start_block FROM upgrade_state WHERE stack_role='GCS' LIMIT 1;"),
+  );
+  await waitUntil({
+    label: `gateway tip reaches window start ${failGwStartBlock}`,
+    timeoutSecs: 120,
+    check: async () =>
+      Number((await run(["cast", "block-number", "--rpc-url", gatewayRpcUrl])).stdout.trim()) >= failGwStartBlock,
+  });
   // Verify one Gateway input inside the window. The silenced operator never reports,
   // so unanimity cannot form and the window must time out (asserted in [4/11]).
   await run(gatewayInputProbeArgv);
@@ -1251,8 +1230,7 @@ const runBlueGreenProfile = async (
   }
 
   console.log(`\n[6/11] propose upgrade via task:proposeCoprocessorUpgrade`);
-  // Exercise the EOA task on the success path. [2/11] stays a raw cast send — its
-  // too-short window would trip the task's buffer gate.
+  // Exercise the EOA task on the success path (a longer window with real traffic).
   const proposeStartTime = new Date(Date.now() + 30_000).toISOString();
   await runContractTask(
     "host-sc",
