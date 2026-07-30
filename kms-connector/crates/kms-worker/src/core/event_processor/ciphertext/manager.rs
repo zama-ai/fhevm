@@ -325,17 +325,16 @@ mod tests {
         assert!(matches!(result, Err(ProcessingError::Recoverable(_))));
     }
 
-    /// No S3 request is issued without a permit: with the bucket's only one held, the resolution
-    /// cannot even start, and it does start again as soon as the permit is released.
+    // Checks that the CiphertextManager waits for a permit before sending a `HEAD` request.
     #[tokio::test]
-    async fn s3_requests_wait_for_a_permit() {
+    async fn s3_head_requests_wait_for_a_permit() {
         const BUCKET: &str = "http://127.0.0.1:1";
 
         let provider = ProviderBuilder::new()
             .disable_recommended_fillers()
             .connect_mocked_client(Asserter::new());
 
-        // Single permit manager with an unreachable bucket
+        // One `HEAD` permit for the whole bucket, whose address nothing listens on
         let mut manager = CiphertextManager::for_test(provider);
         let snapshot = CoprocessorRegistrySnapshot::new(
             HashSet::from([Address::ZERO]),
@@ -350,6 +349,8 @@ mod tests {
         })
         .unwrap();
 
+        // The `HEAD` request is gated by a permit, so it should not be issued until the permit is
+        // dropped
         let permit = manager.s3_client.acquire_head_for_test(BUCKET).await;
         let gated = tokio::time::timeout(
             Duration::from_millis(200),
