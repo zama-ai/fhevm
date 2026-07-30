@@ -884,7 +884,7 @@ async fn assert_ciphertext128(
         let res = safe_deserialize::<CompressedSquashedNoiseCiphertextList>(&ct);
         assert!(
             res.is_ok(),
-            "Could not deserialize compressed ciphertext128. 
+            "Could not deserialize compressed ciphertext128.
             This might indicate a failed squash_noise computation."
         );
         res?.get(0)?
@@ -893,7 +893,7 @@ async fn assert_ciphertext128(
         let res = safe_deserialize::<SquashedNoiseFheUint>(&ct);
         assert!(
             res.is_ok(),
-            "Could not deserialize ciphertext128. 
+            "Could not deserialize ciphertext128.
             This might indicate a failed squash_noise computation."
         );
         res?
@@ -923,6 +923,8 @@ async fn assert_ciphertext128(
 
     #[cfg(feature = "test_s3_use_handle_as_key")]
     {
+        use ciphertext_attestation::{s3_ct128_key, s3_ct64_key};
+
         info!("Asserting ciphertext uploaded to S3");
 
         let expected_ct_format = if with_compression {
@@ -940,7 +942,7 @@ async fn assert_ciphertext128(
         assert_ciphertext_uploaded(
             test_env,
             &test_env.conf.s3.bucket_ct128,
-            &crate::aws_upload::s3_ct128_key(handle, crate::aws_upload::COPROCESSOR_CONTEXT_ID_1),
+            &s3_ct128_key(handle, crate::aws_upload::COPROCESSOR_CONTEXT_ID_1),
             handle,
             Some(ct.len() as i64),
             Some((&expected_ct_format, expected_attestation_format)),
@@ -949,7 +951,7 @@ async fn assert_ciphertext128(
         assert_ciphertext_uploaded(
             test_env,
             &test_env.conf.s3.bucket_ct64,
-            &crate::aws_upload::s3_ct64_key(handle, crate::aws_upload::COPROCESSOR_CONTEXT_ID_1),
+            &s3_ct64_key(handle, crate::aws_upload::COPROCESSOR_CONTEXT_ID_1),
             handle,
             None,
             None,

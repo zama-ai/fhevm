@@ -13,8 +13,8 @@ use aws_sdk_s3::Client;
 use base64::Engine;
 use bytesize::ByteSize;
 use ciphertext_attestation::{
-    CiphertextAttestation, CiphertextAttestationPayload, CiphertextFormat, Version,
-    S3_METADATA_ATTESTATION_KEY,
+    s3_ct128_key, s3_ct64_key, CiphertextAttestation, CiphertextAttestationPayload,
+    CiphertextFormat, Version, S3_METADATA_ATTESTATION_KEY,
 };
 use fhevm_engine_common::chain_id::ChainId;
 use fhevm_engine_common::database::EVENT_CIPHERTEXTS_UPLOADED;
@@ -565,16 +565,6 @@ async fn upload_ct(
         }
     }
     Ok(result)
-}
-
-/// S3 key of the ct128 (SNS) ciphertext object.
-pub(crate) fn s3_ct128_key(handle: &[u8], context_id: U256) -> String {
-    format!("ct128/{}/{}", hex::encode(handle), context_id)
-}
-
-/// S3 key of the compressed ct64 ciphertext object.
-pub(crate) fn s3_ct64_key(handle: &[u8], context_id: U256) -> String {
-    format!("ct64/{}/{}", hex::encode(handle), context_id)
 }
 
 fn b256_from_bytes(field: &str, bytes: &[u8]) -> anyhow::Result<B256> {

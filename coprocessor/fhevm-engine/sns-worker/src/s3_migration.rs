@@ -3,8 +3,8 @@ use std::{collections::HashMap, panic::AssertUnwindSafe, time::Duration, time::I
 use alloy_primitives::{Address, B256, U256};
 use aws_sdk_s3::{error::SdkError, primitives::ByteStream, types::MetadataDirective, Client};
 use ciphertext_attestation::{
-    CiphertextAttestation, CiphertextAttestationPayload, CiphertextFormat, Version,
-    S3_METADATA_ATTESTATION_KEY,
+    s3_ct128_key, s3_ct64_key, CiphertextAttestation, CiphertextAttestationPayload,
+    CiphertextFormat, Version, S3_METADATA_ATTESTATION_KEY,
 };
 use fhevm_engine_common::{types::CoproSigner, utils::to_hex};
 use futures::{stream::FuturesUnordered, FutureExt, StreamExt};
@@ -12,9 +12,7 @@ use sqlx::PgPool;
 use tokio_util::sync::CancellationToken;
 use tracing::{error, info, warn};
 
-use crate::aws_upload::{
-    check_is_ready, compute_digest, s3_ct128_key, s3_ct64_key, COPROCESSOR_CONTEXT_ID_1,
-};
+use crate::aws_upload::{check_is_ready, compute_digest, COPROCESSOR_CONTEXT_ID_1};
 use crate::{
     Ciphertext128Format, ExecutionError, S3Config, CLEAN_OLD_S3_FORMAT_VERSION,
     S3_FORMAT_VERSION_V1,

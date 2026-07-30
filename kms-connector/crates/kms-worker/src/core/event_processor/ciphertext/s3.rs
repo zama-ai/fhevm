@@ -15,7 +15,7 @@ use alloy::{
 };
 use anyhow::anyhow;
 use ciphertext_attestation::{
-    CiphertextAttestation, CiphertextFormat, S3_METADATA_ATTESTATION_HEADER,
+    CiphertextAttestation, CiphertextFormat, S3_METADATA_ATTESTATION_HEADER, s3_ct128_key,
 };
 use connector_utils::types::handle::extract_fhe_type_from_handle;
 use fhevm_gateway_bindings::decryption::Decryption::SnsCiphertextMaterial;
@@ -31,8 +31,8 @@ const OLD_CT_FORMAT_HEADER: &str = "x-amz-meta-Ct-Format";
 /// URL of a ciphertext object in a Coprocessor bucket (RFC 023 layout).
 fn rfc023_ciphertext_url(bucket_url: &str, handle: B256) -> String {
     format!(
-        "{bucket_url}/ct128/{}/{COPROCESSOR_CONTEXT_ID}",
-        hex::encode(handle)
+        "{bucket_url}/{}",
+        s3_ct128_key(handle.as_slice(), COPROCESSOR_CONTEXT_ID)
     )
 }
 
