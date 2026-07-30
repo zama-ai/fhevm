@@ -1,13 +1,135 @@
 import mermaid from 'mermaid';
 import { useEffect } from 'react';
 
-type ArchitectureFrame = {
+type DiagramFrame = {
   readonly title: string;
   readonly statement: string;
   readonly diagram: string;
 };
 
+type GlossaryFrame = {
+  readonly title: string;
+  readonly statement: string;
+  readonly terms: readonly {
+    readonly term: string;
+    readonly definition: string;
+  }[];
+};
+
+type ArchitectureFrame = DiagramFrame | GlossaryFrame;
+
 const frames: readonly ArchitectureFrame[] = [
+  {
+    title: 'First principle',
+    statement: 'Applications compute on encrypted values without exposing them.',
+    diagram: String.raw`
+flowchart TB
+    subgraph input["Input"]
+        direction LR
+        Value["User value"] --> Encrypt["SDK encrypts"] --> Ciphertext["Ciphertext"]
+    end
+
+    subgraph execution["Execution"]
+        direction LR
+        Rules["Solana enforces<br/>rules and permissions"] --> Compute["Coprocessor computes<br/>over ciphertexts"] --> Result["Encrypted result"]
+    end
+
+    subgraph release["Release"]
+        direction LR
+        Authorized{"Who may learn it?"}
+        Authorized -->|"one user"| User["User decrypt"]
+        Authorized -->|"the program"| Public["Certified public decrypt"]
+    end
+
+    Ciphertext --> Rules
+    Result --> Authorized
+`,
+  },
+  {
+    title: 'Shared key',
+    statement: 'One public key connects encrypted applications; no single party holds the secret.',
+    diagram: String.raw`
+flowchart LR
+    PublicKey["Network public key"] --> AppA["App A encrypts"]
+    PublicKey --> AppB["App B encrypts"]
+    AppA --> Shared["Compatible ciphertexts"]
+    AppB --> Shared
+    Shared --> Compose["Encrypted results<br/>move between apps"]
+
+    subgraph kms["Production key service"]
+        Share1["Secret share 1"]
+        Share2["Secret share 2"]
+        Share3["Secret share 3"]
+        Quorum["Several parties<br/>must approve"]
+        Share1 --> Quorum
+        Share2 --> Quorum
+        Share3 --> Quorum
+    end
+
+    Compose --> Quorum
+    Quorum --> Decrypt["Authorized result"]
+`,
+  },
+  {
+    title: 'Protocol glossary',
+    statement: 'Each protocol layer has one job.',
+    terms: [
+      {
+        term: 'SDK',
+        definition: 'Encrypts inputs, builds requests and opens user-decrypt results.',
+      },
+      {
+        term: 'Host contract / program',
+        definition: 'Records encrypted operations and enforces who may use their results.',
+      },
+      {
+        term: 'Relayer',
+        definition: 'Carries SDK requests to protocol services and returns their results.',
+      },
+      {
+        term: 'Gateway',
+        definition: 'Keeps encrypted material and decryption work synchronized across the protocol.',
+      },
+      {
+        term: 'Coprocessor',
+        definition: 'Reconstructs confirmed operations and computes them over ciphertexts.',
+      },
+      {
+        term: 'KMS',
+        definition: 'Checks decryption rights and combines secret-key shares to release a result.',
+      },
+    ],
+  },
+  {
+    title: 'Solana glossary',
+    statement: 'Solana gives every rule and encrypted value a concrete execution path.',
+    terms: [
+      {
+        term: 'Program',
+        definition: 'Executes code; mutable state lives in separate accounts.',
+      },
+      {
+        term: 'PDA',
+        definition: 'Gives a program a deterministic address with no private key.',
+      },
+      {
+        term: 'CPI',
+        definition: 'Lets one program call another with the authority already present.',
+      },
+      {
+        term: 'Handle',
+        definition: 'Identifies one ciphertext and its metadata; it is not the ciphertext.',
+      },
+      {
+        term: 'EncryptedValue',
+        definition: 'Keeps the current handle, permissions and compact history at one stable PDA.',
+      },
+      {
+        term: 'MMR',
+        definition: 'Commits old permissions into compact, append-only history.',
+      },
+    ],
+  },
   {
     title: 'Complete system',
     statement: 'Solana records the rules; encrypted services execute the work.',
@@ -252,9 +374,20 @@ export function ArchitecturePage() {
             </p>
             <h1>{frame.statement}</h1>
           </header>
-          <div className="diagram-shell">
-            <pre className="mermaid">{frame.diagram}</pre>
-          </div>
+          {'diagram' in frame ? (
+            <div className="diagram-shell">
+              <pre className="mermaid">{frame.diagram}</pre>
+            </div>
+          ) : (
+            <dl className="glossary-grid">
+              {frame.terms.map(({ term, definition }) => (
+                <div className="glossary-entry" key={term}>
+                  <dt>{term}</dt>
+                  <dd>{definition}</dd>
+                </div>
+              ))}
+            </dl>
+          )}
         </section>
       ))}
     </main>
