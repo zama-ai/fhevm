@@ -10,7 +10,32 @@ type ArchitectureFrame = {
 const frames: readonly ArchitectureFrame[] = [
   {
     title: 'Protocol overview',
-    statement: 'Zama end-to-end flow',
+    statement: 'Encrypted execution and authorized decryption',
+    diagram: String.raw`
+sequenceDiagram
+    box User device
+        participant Client as Wallet + SDK
+    end
+    box Solana
+        participant Host as Host program
+    end
+    box Protocol services
+        participant Copro as Coprocessor
+        participant KMS as KMS network
+    end
+
+    Client->>Host: Encrypted transaction
+    Host-->>Copro: Confirmed operation
+    Copro->>Copro: FHE computation
+    Copro-->>KMS: Encrypted result available
+    Client->>KMS: Authorized decryption request
+    KMS-->>Client: Result protected for user
+    Client->>Client: Recover plaintext
+`,
+  },
+  {
+    title: 'Protocol detail',
+    statement: 'Input proof, gateway synchronization and signcryption',
     diagram: String.raw`
 sequenceDiagram
     box User device
@@ -27,10 +52,11 @@ sequenceDiagram
     end
 
     Note over Client,Copro: Input proof and attestation
-    Client->>Relayer: Encrypted input and proof
+    Client->>Client: Encrypt input and create zero-knowledge proof of knowledge
+    Client->>Relayer: Ciphertext and proof
     Relayer->>Gateway: Verification request
     Gateway->>Copro: Input proof
-    Copro->>Copro: Verify input proof
+    Copro->>Copro: Verify proof of knowledge
     Copro-->>Gateway: Ciphertext attestation
     Gateway-->>Relayer: Attestation
     Relayer-->>Client: Attestation
@@ -42,13 +68,15 @@ sequenceDiagram
     Copro-->>Gateway: FHE result
 
     Note over Client,KMS: Authorized decryption
-    Client->>Relayer: Signed decryption request
+    Client->>Client: Create transport key and sign request
+    Client->>Relayer: Signed request and transport public key
     Relayer->>Gateway: Decryption request
-    Gateway->>KMS: Authorized decrypt
-    KMS-->>Gateway: User-protected result
-    Gateway-->>Relayer: Protected result
-    Relayer-->>Client: Protected result
-    Client->>Client: Recover plaintext
+    Gateway->>KMS: Encrypted result and authorization
+    KMS->>KMS: Decrypt and re-encrypt for transport key
+    KMS-->>Gateway: Signcrypted result
+    Gateway-->>Relayer: Signcrypted result
+    Relayer-->>Client: Signcrypted result
+    Client->>Client: Open signcrypted result
 `,
   },
   {
