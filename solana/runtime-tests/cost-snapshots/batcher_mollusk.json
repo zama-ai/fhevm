@@ -1,6 +1,6 @@
 {
   "claim": {
-    "compute_units": 311092,
+    "compute_units": 310698,
     "unique_accounts": 22,
     "instruction_data_bytes": 8,
     "cpi_instructions": 12,
@@ -8,7 +8,7 @@
     "max_cpi_instruction_data_bytes": 1065
   },
   "dispatch": {
-    "compute_units": 303535,
+    "compute_units": 303296,
     "unique_accounts": 18,
     "instruction_data_bytes": 8,
     "cpi_instructions": 9,
@@ -16,7 +16,7 @@
     "max_cpi_instruction_data_bytes": 969
   },
   "join": {
-    "compute_units": 352925,
+    "compute_units": 352543,
     "unique_accounts": 20,
     "instruction_data_bytes": 223,
     "cpi_instructions": 14,
@@ -24,7 +24,7 @@
     "max_cpi_instruction_data_bytes": 1427
   },
   "open_batch": {
-    "compute_units": 218924,
+    "compute_units": 218648,
     "unique_accounts": 24,
     "instruction_data_bytes": 16,
     "cpi_instructions": 20,
@@ -32,7 +32,7 @@
     "max_cpi_instruction_data_bytes": 249
   },
   "redeem_claim": {
-    "compute_units": 353093,
+    "compute_units": 352699,
     "unique_accounts": 22,
     "instruction_data_bytes": 8,
     "cpi_instructions": 12,
@@ -40,7 +40,7 @@
     "max_cpi_instruction_data_bytes": 1065
   },
   "redeem_dispatch": {
-    "compute_units": 243536,
+    "compute_units": 243297,
     "unique_accounts": 18,
     "instruction_data_bytes": 8,
     "cpi_instructions": 9,
@@ -48,7 +48,7 @@
     "max_cpi_instruction_data_bytes": 969
   },
   "redeem_join": {
-    "compute_units": 345426,
+    "compute_units": 345044,
     "unique_accounts": 20,
     "instruction_data_bytes": 223,
     "cpi_instructions": 14,
@@ -56,7 +56,7 @@
     "max_cpi_instruction_data_bytes": 1427
   },
   "redeem_open_batch": {
-    "compute_units": 214425,
+    "compute_units": 214149,
     "unique_accounts": 24,
     "instruction_data_bytes": 16,
     "cpi_instructions": 20,

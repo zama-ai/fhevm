@@ -2,61 +2,47 @@ use super::super::common::{
     assert_encrypted_value_subject_allowed, assert_output_acl_metadata,
     check_grant_not_denied_info, read_canonical_encrypted_value,
 };
+use super::account_table::EvalAccountTable;
 use super::walk::{walk_eval_frame, EvalHandleContext, EvalStepVisitor};
 use super::*;
 
 /// Validate-only first pass over the plan: re-uses the shared step walk and
-/// operand resolvers (see [`walk`]) but performs no mutation. It tracks the
-/// planned durable outputs in memory so the whole frame is checked before
-/// execution touches any account.
+/// operand resolvers (see [`walk`]) but performs no mutation. It claims the
+/// planned durable outputs in the shared account table so the whole frame is
+/// checked before execution touches any account.
 ///
 /// Returns the per-frame HCU total computed by the walk, so the caller can run the read-only
 /// block-cap `check` before execution.
 pub(super) fn admit_eval_frame<'info>(
+    table: &mut EvalAccountTable<'_, 'info>,
     ctx: &Context<'info, FheEval<'info>>,
     args: &FheEvalArgs,
     subject: Pubkey,
     handle_context: &EvalHandleContext<'_>,
 ) -> Result<u64> {
-    let mut admission = AdmissionState::new(
-        ctx.remaining_accounts,
-        args.steps.len(),
+    let mut admission = AdmissionState {
+        table,
+        produced: Vec::with_capacity(args.steps.len()),
         subject,
-        handle_context.chain_id,
-    );
+        chain_id: handle_context.chain_id,
+    };
     walk_eval_frame(&mut admission, ctx, args, handle_context)
 }
 
-struct AdmissionState<'a, 'info> {
-    remaining_accounts: &'a [AccountInfo<'info>],
+struct AdmissionState<'t, 'a, 'info> {
+    table: &'t mut EvalAccountTable<'a, 'info>,
     produced: Vec<ProducedValue>,
-    durable_output_accounts: Vec<Pubkey>,
     subject: Pubkey,
     chain_id: u64,
 }
 
-impl<'a, 'info> AdmissionState<'a, 'info> {
-    fn new(
-        remaining_accounts: &'a [AccountInfo<'info>],
-        step_count: usize,
-        subject: Pubkey,
-        chain_id: u64,
-    ) -> Self {
-        Self {
-            remaining_accounts,
-            produced: Vec::with_capacity(step_count),
-            durable_output_accounts: Vec::new(),
-            subject,
-            chain_id,
-        }
-    }
-
+impl AdmissionState<'_, '_, '_> {
     fn resolve_durable(
         &mut self,
         handle: [u8; 32],
         encrypted_value_index: u16,
     ) -> Result<ResolvedOperand> {
-        let value_info = account_at(self.remaining_accounts, encrypted_value_index)?;
+        let value_info = self.table.account(encrypted_value_index)?;
         assert_encrypted_value_subject_allowed(value_info, handle, self.chain_id, self.subject)?;
         Ok(ResolvedOperand::encrypted(handle, false))
     }
@@ -68,7 +54,6 @@ impl<'a, 'info> AdmissionState<'a, 'info> {
     fn admit_durable_output_account(
         &mut self,
         host_config: &crate::state::HostConfig,
-        remaining_accounts: &[AccountInfo],
         output_encrypted_value_index: u16,
         output_acl_domain_key: Pubkey,
         output_app_account: Pubkey,
@@ -77,25 +62,18 @@ impl<'a, 'info> AdmissionState<'a, 'info> {
         previous_handle: &Option<[u8; 32]>,
         previous_subjects: &Option<Vec<Pubkey>>,
     ) -> Result<()> {
-        let output_info = account_at(remaining_accounts, output_encrypted_value_index)?;
-        let value_key = zama_solana_acl::derive_value_key(
-            output_acl_domain_key.to_bytes(),
-            output_app_account.to_bytes(),
+        let output_info = self.table.account(output_encrypted_value_index)?;
+        let output_pda = self.table.expected_output_pda(
+            output_acl_domain_key,
+            output_app_account,
             output_encrypted_value_label,
         );
-        let (expected, _) = encrypted_value_address(value_key);
         require_keys_eq!(
             output_info.key(),
-            expected,
+            output_pda.key,
             ZamaHostError::EncryptedValuePdaMismatch
         );
-        require!(
-            !self
-                .durable_output_accounts
-                .iter()
-                .any(|account| *account == output_info.key()),
-            ZamaHostError::FheEvalOutputAlreadyInitialized
-        );
+        self.table.claim_durable_output(output_info.key())?;
         require!(
             output_info.is_writable,
             ZamaHostError::InvalidFheEvalAccount
@@ -109,8 +87,7 @@ impl<'a, 'info> AdmissionState<'a, 'info> {
             )?;
             super::check_rotation_grants_not_denied(
                 host_config,
-                remaining_accounts,
-                None,
+                self.table,
                 &value.subjects,
                 output_subjects,
             )?;
@@ -133,12 +110,11 @@ impl<'a, 'info> AdmissionState<'a, 'info> {
                 ZamaHostError::FheEvalOutputAlreadyInitialized
             );
         }
-        self.durable_output_accounts.push(output_info.key());
         Ok(())
     }
 }
 
-impl EvalStepVisitor for AdmissionState<'_, '_> {
+impl<'info> EvalStepVisitor<'info> for AdmissionState<'_, '_, 'info> {
     fn subject(&self) -> Pubkey {
         self.subject
     }
@@ -166,7 +142,7 @@ impl EvalStepVisitor for AdmissionState<'_, '_> {
         Ok(ResolvedOperand::encrypted(attestation.input_handle, true))
     }
 
-    fn accept_output<'info>(
+    fn accept_output(
         &mut self,
         ctx: &Context<'info, FheEval<'info>>,
         _op_index: u16,
@@ -193,6 +169,7 @@ impl EvalStepVisitor for AdmissionState<'_, '_> {
                 make_public: _,
             } => {
                 let app_account_authority = admit_durable_output_authority(
+                    self.table,
                     ctx,
                     *output_app_account_authority_index,
                     *output_app_account,
@@ -204,7 +181,6 @@ impl EvalStepVisitor for AdmissionState<'_, '_> {
                 )?;
                 self.admit_durable_output_account(
                     &ctx.accounts.host_config,
-                    ctx.remaining_accounts,
                     *output_encrypted_value_index,
                     *output_acl_domain_key,
                     *output_app_account,
@@ -225,13 +201,14 @@ impl EvalStepVisitor for AdmissionState<'_, '_> {
 }
 
 fn admit_durable_output_authority<'info>(
+    table: &EvalAccountTable<'_, 'info>,
     ctx: &Context<'info, FheEval<'info>>,
     authority_index: Option<u16>,
     output_app_account: Pubkey,
 ) -> Result<AccountInfo<'info>> {
     let authority = match authority_index {
         Some(index) => {
-            let authority = account_at(ctx.remaining_accounts, index)?;
+            let authority = table.account(index)?;
             require!(authority.is_signer, ZamaHostError::InvalidFheEvalAccount);
             require_keys_eq!(
                 authority.key(),
@@ -242,21 +219,10 @@ fn admit_durable_output_authority<'info>(
         }
         None => ctx.accounts.app_account_authority.to_account_info(),
     };
-    let deny_record = super::deny_subject_record_for(
-        &ctx.accounts.host_config,
-        ctx.remaining_accounts,
-        None,
+    let deny_record = table.deny_record(
+        ctx.accounts.host_config.grant_deny_list_enabled,
         authority.key(),
     )?;
     check_grant_not_denied_info(&ctx.accounts.host_config, authority.key(), deny_record)?;
     Ok(authority)
-}
-
-fn account_at<'a, 'info>(
-    remaining_accounts: &'a [AccountInfo<'info>],
-    index: u16,
-) -> Result<&'a AccountInfo<'info>> {
-    remaining_accounts
-        .get(index as usize)
-        .ok_or_else(|| error!(ZamaHostError::InvalidFheEvalAccount))
 }

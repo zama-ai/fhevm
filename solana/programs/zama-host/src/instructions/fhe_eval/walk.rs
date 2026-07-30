@@ -165,8 +165,10 @@ impl EvalHandleContext<'_> {
 
 /// Operands resolved identically by both phases (durable input membership checks and
 /// transient producer lookups), parameterized by the phase-specific account
-/// access and transient-session handling.
-pub(super) trait EvalStepVisitor {
+/// access and transient-session handling. The trait is generic over the
+/// account-info lifetime so a visitor holding the shared [`EvalAccountTable`]
+/// unifies it with the instruction context's.
+pub(super) trait EvalStepVisitor<'info> {
     /// Subject required to be allowed on durable `EncryptedValue` accounts.
     fn subject(&self) -> Pubkey;
     /// Transient values produced by earlier steps in this frame.
@@ -190,7 +192,7 @@ pub(super) trait EvalStepVisitor {
 
     /// Validates and applies a produced output (instruction-local or durable).
     /// Admission validates and plans; execution validates and mutates.
-    fn accept_output<'info>(
+    fn accept_output(
         &mut self,
         ctx: &Context<'info, FheEval<'info>>,
         op_index: u16,
@@ -246,7 +248,7 @@ pub(super) trait EvalStepVisitor {
 
 /// Drives a visitor over every plan step: resolve operands, assert operand
 /// types, compute the produced handle, and accept the output.
-pub(super) fn walk_eval_frame<'info, V: EvalStepVisitor>(
+pub(super) fn walk_eval_frame<'info, V: EvalStepVisitor<'info>>(
     visitor: &mut V,
     ctx: &Context<'info, FheEval<'info>>,
     args: &FheEvalArgs,
