@@ -5311,6 +5311,7 @@ function getDstChainId(uint32 dstEid) external view returns (uint64);
         }
         {
             #[doc(hidden)]
+            #[allow(dead_code)]
             type UnderlyingSolTuple<'a> = (alloy::sol_types::sol_data::Uint<64>,);
             #[doc(hidden)]
             type UnderlyingRustTuple<'a> = (u64,);

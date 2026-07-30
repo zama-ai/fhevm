@@ -2491,6 +2491,7 @@ error DuplicateDstEidInInitializer(uint32 dstEid);
     const _: () = {
         use alloy::sol_types as alloy_sol_types;
         #[doc(hidden)]
+        #[allow(dead_code)]
         type UnderlyingSolTuple<'a> = (alloy::sol_types::sol_data::Uint<32>,);
         #[doc(hidden)]
         type UnderlyingRustTuple<'a> = (u32,);
@@ -5389,6 +5390,7 @@ error ZeroDstChainIdInInitializer(uint32 dstEid);
     const _: () = {
         use alloy::sol_types as alloy_sol_types;
         #[doc(hidden)]
+        #[allow(dead_code)]
         type UnderlyingSolTuple<'a> = (alloy::sol_types::sol_data::Uint<32>,);
         #[doc(hidden)]
         type UnderlyingRustTuple<'a> = (u32,);
@@ -8139,6 +8141,7 @@ function getDstChainId(uint32 dstEid) external view returns (uint64);
         }
         {
             #[doc(hidden)]
+            #[allow(dead_code)]
             type UnderlyingSolTuple<'a> = (alloy::sol_types::sol_data::Uint<64>,);
             #[doc(hidden)]
             type UnderlyingRustTuple<'a> = (u64,);
@@ -14114,6 +14117,7 @@ function upgradeToAndCall(address newImplementation, bytes memory data) external
             ::core::stringify!(UnexpectedComposeOrigin),
             ::core::stringify!(SafeERC20FailedOperation),
             ::core::stringify!(LzTokenUnavailable),
+            ::core::stringify!(DuplicateDstEidInInitializer),
             ::core::stringify!(ACLPaused),
             ::core::stringify!(SafeCastOverflowedUintDowncast),
             ::core::stringify!(NotInitializingFromEmptyProxy),
@@ -14126,6 +14130,7 @@ function upgradeToAndCall(address newImplementation, bytes memory data) external
             ::core::stringify!(NotEnoughNative),
             ::core::stringify!(UUPSUnsupportedProxiableUUID),
             ::core::stringify!(NotACL),
+            ::core::stringify!(ZeroDstChainIdInInitializer),
             ::core::stringify!(ERC1967NonPayable),
             ::core::stringify!(InvalidDelegate),
             ::core::stringify!(WrongHandleVersionInDstHandle),
@@ -14156,6 +14161,7 @@ function upgradeToAndCall(address newImplementation, bytes memory data) external
             <UnexpectedComposeOrigin as alloy_sol_types::SolError>::SIGNATURE,
             <SafeERC20FailedOperation as alloy_sol_types::SolError>::SIGNATURE,
             <LzTokenUnavailable as alloy_sol_types::SolError>::SIGNATURE,
+            <DuplicateDstEidInInitializer as alloy_sol_types::SolError>::SIGNATURE,
             <ACLPaused as alloy_sol_types::SolError>::SIGNATURE,
             <SafeCastOverflowedUintDowncast as alloy_sol_types::SolError>::SIGNATURE,
             <NotInitializingFromEmptyProxy as alloy_sol_types::SolError>::SIGNATURE,
@@ -14168,6 +14174,7 @@ function upgradeToAndCall(address newImplementation, bytes memory data) external
             <NotEnoughNative as alloy_sol_types::SolError>::SIGNATURE,
             <UUPSUnsupportedProxiableUUID as alloy_sol_types::SolError>::SIGNATURE,
             <NotACL as alloy_sol_types::SolError>::SIGNATURE,
+            <ZeroDstChainIdInInitializer as alloy_sol_types::SolError>::SIGNATURE,
             <ERC1967NonPayable as alloy_sol_types::SolError>::SIGNATURE,
             <InvalidDelegate as alloy_sol_types::SolError>::SIGNATURE,
             <WrongHandleVersionInDstHandle as alloy_sol_types::SolError>::SIGNATURE,
