@@ -14,7 +14,6 @@ use crate::{
 };
 
 mod account_table;
-mod admission;
 mod block_cap;
 mod event_transport;
 mod hcu;
@@ -22,10 +21,9 @@ mod preflight;
 mod walk;
 
 use account_table::EvalAccountTable;
-use admission::admit_eval_frame;
 use event_transport::emit_public_outputs_produced;
 use preflight::preflight_eval_frame;
-use walk::{walk_eval_frame, EvalHandleContext, EvalStepVisitor};
+use walk::{walk_eval_frame, EvalHandleContext};
 
 /// Accounts for composed instruction-local FHE evaluation.
 ///
@@ -75,10 +73,21 @@ pub fn fhe_eval<'info>(ctx: Context<'info, FheEval<'info>>, args: FheEvalArgs) -
     );
     // The account table owns every remaining-accounts invariant for the frame:
     // duplicate rejection (at construction), the used-account bitmap (marked in
-    // preflight, asserted before any pass mutates state), durable-output claims,
-    // and cached output-PDA derivations reused by admission and execution.
+    // preflight, asserted before execution mutates state), durable-output
+    // claims, and output-PDA derivation.
     let mut account_table = EvalAccountTable::new(ctx.remaining_accounts)?;
     preflight_eval_frame(&mut account_table, &ctx, &args)?;
+
+    // HCU metering: one pure pass over the plan, enforcing the per-frame total + in-frame depth
+    // caps against the canonical host_config limits (0 = unlimited). The same total then feeds the
+    // block-cap charge — reused, never independently recomputed — so both caps trip before
+    // execution burns CU or creates any ACL record.
+    let host_config = &ctx.accounts.host_config;
+    let frame = hcu::meter_eval_plan(
+        &args.steps,
+        host_config.max_hcu_per_tx,
+        host_config.max_hcu_depth_per_tx,
+    )?;
 
     let subject = ctx.accounts.compute_subject.key();
     let clock = Clock::get()?;
@@ -89,19 +98,13 @@ pub fn fhe_eval<'info>(ctx: Context<'info, FheEval<'info>>, args: FheEvalArgs) -
         unix_timestamp: clock.unix_timestamp,
         context_id: &args.context_id,
     };
-    let current_slot = clock.slot;
-    // Admission (walk #1) computes the frame's HCU total; the read-only block-cap check then trips
-    // an over-budget frame before execution burns CU or creates any ACL record.
-    let frame_total = admit_eval_frame(&mut account_table, &ctx, &args, subject, &handle_context)?;
-    block_cap::check(&ctx, frame_total, current_slot)?;
-    let born_public_outputs = execute_eval_frame(
-        &mut account_table,
-        &ctx,
-        &args,
-        subject,
-        current_slot,
-        &handle_context,
-    )?;
+    block_cap::charge(&ctx, frame.total, clock.slot)?;
+    // Execution is the single walk: it validates each step as it mutates. A failure mid-frame
+    // leaves partial writes behind only until the runtime reverts the transaction, which discards
+    // every account write — so no validate-only pre-pass is needed for atomicity. The event CPI
+    // stays last so no event describes state that did not commit.
+    let born_public_outputs =
+        execute_eval_frame(&mut account_table, &ctx, &args, subject, &handle_context)?;
     emit_public_outputs_produced(&ctx, born_public_outputs)?;
     Ok(())
 }
@@ -112,7 +115,6 @@ fn execute_eval_frame<'a, 'info>(
     ctx: &Context<'info, FheEval<'info>>,
     args: &FheEvalArgs,
     subject: Pubkey,
-    current_slot: u64,
     handle_context: &EvalHandleContext<'_>,
 ) -> Result<Vec<ProducedPublicOutput>> {
     let mut execution = EvalExecutionState {
@@ -124,16 +126,15 @@ fn execute_eval_frame<'a, 'info>(
         verifier_params: InputVerifierParams::from_config(&ctx.accounts.host_config),
         superseded_in_frame: Vec::new(),
     };
-    // Execution (walk #2) recomputes the same frame total; the block-cap charge is the single meter
-    // write — lazy-create/reset, checked accumulate, cap assert, write once.
-    let frame_total = walk_eval_frame(&mut execution, ctx, args, handle_context)?;
-    block_cap::charge(ctx, frame_total, current_slot)?;
+    walk_eval_frame(&mut execution, ctx, args, handle_context)?;
     Ok(execution.born_public_outputs)
 }
 
-/// Execution phase: resolves operands through the shared account table (which
-/// preflight already validated for coverage), creates durable output ACL
-/// records, and buffers produced-public lifecycle records.
+/// The single walk's state: resolves operands through the shared account table
+/// (which preflight already validated for coverage), validates and creates or
+/// supersedes durable outputs, and buffers produced-public lifecycle records.
+/// The operand resolvers driving these methods live with the step match in
+/// [`walk`].
 struct EvalExecutionState<'t, 'a, 'info> {
     table: &'t mut EvalAccountTable<'a, 'info>,
     produced: Vec<ProducedValue>,
@@ -144,19 +145,13 @@ struct EvalExecutionState<'t, 'a, 'info> {
     /// Handles superseded by this frame's own output bindings, keyed by
     /// encrypted value account. A later operand may still reference one (EVM parity:
     /// a handle stays usable as a value within the transaction that rotated
-    /// it); admission already authorized it against frame-entry state.
+    /// it); the bind that rotated it validated the frame-entry state, and
+    /// membership is re-checked below, so only the current-handle equality is
+    /// exempted.
     superseded_in_frame: Vec<(Pubkey, [u8; 32])>,
 }
 
-impl<'info> EvalStepVisitor<'info> for EvalExecutionState<'_, '_, 'info> {
-    fn subject(&self) -> Pubkey {
-        self.subject
-    }
-
-    fn produced(&self) -> &[ProducedValue] {
-        &self.produced
-    }
-
+impl<'info> EvalExecutionState<'_, '_, 'info> {
     #[inline(never)]
     fn resolve_durable_operand(
         &mut self,
@@ -169,10 +164,10 @@ impl<'info> EvalStepVisitor<'info> for EvalExecutionState<'_, '_, 'info> {
             .iter()
             .any(|(key, superseded)| *key == value_info.key() && *superseded == handle)
         {
-            // The frame itself rotated this encrypted value account past `handle`; the operand
-            // was authorized by admission against frame-entry state, and
-            // supersession never edits membership, so only the current-handle
-            // equality is exempted here.
+            // The frame itself rotated this encrypted value account past `handle`; the bind
+            // that rotated it validated the frame-entry state, and supersession
+            // never edits membership, so only the current-handle equality is
+            // exempted here.
             let value = read_canonical_encrypted_value(value_info)?;
             require!(
                 value.has_subject(self.subject),
@@ -189,7 +184,7 @@ impl<'info> EvalStepVisitor<'info> for EvalExecutionState<'_, '_, 'info> {
         &mut self,
         attestation: &CoprocessorInputAttestation,
     ) -> Result<ResolvedOperand> {
-        // Authoritative in-frame verification: re-run the coprocessor attestation. No account, no
+        // Authoritative in-frame verification of the coprocessor attestation. No account, no
         // PDA — the "allow" exists only for this instruction's execution (the EVM
         // `allowTransient(input, msg.sender)` analog). The caller-is-contract gate is enforced in
         // `resolve_encrypted_operand`; derived outputs are then unconstrained, exactly like EVM.
@@ -429,6 +424,13 @@ fn bind_eval_output<'info>(
         output_info.key(),
         output_pda.key,
         ZamaHostError::EncryptedValuePdaMismatch
+    );
+    // One write per account per frame — load-bearing for the rand seed anchor (#1853 W4).
+    table.claim_durable_output(output_info.key())?;
+    // Explicit on the supersede path; `create_pda_strict` enforces it on create.
+    require!(
+        output_info.is_writable,
+        ZamaHostError::InvalidFheEvalAccount
     );
 
     if output_info.owner == &crate::ID {

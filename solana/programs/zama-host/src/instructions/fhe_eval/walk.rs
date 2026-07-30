@@ -1,11 +1,10 @@
-//! Single operand-resolution + step-walk path shared by the admission
-//! (validate-only) and execution (mutate) phases of [`super::fhe_eval`].
+//! The single walk over an `fhe_eval` plan: resolve operands, assert operand
+//! types, derive the produced handle, and hand each output to
+//! [`super::EvalExecutionState`], which validates and mutates in one pass.
 //!
-//! Both phases parse the same plan and resolve the same operands; only the
-//! side effects differ (admission tracks planned mutations in memory, execution
-//! performs them). The two phases plug their differences into
-//! [`EvalStepVisitor`] so the match-on-step skeleton and the operand resolvers
-//! exist exactly once.
+//! A step that fails mid-frame reverts the whole transaction — the Solana
+//! runtime discards every account write on error — so validating while
+//! mutating needs no separate validate-only pass to stay atomic.
 
 use super::*;
 
@@ -163,44 +162,10 @@ impl EvalHandleContext<'_> {
     }
 }
 
-/// Operands resolved identically by both phases (durable input membership checks and
-/// transient producer lookups), parameterized by the phase-specific account
-/// access and transient-session handling. The trait is generic over the
-/// account-info lifetime so a visitor holding the shared [`EvalAccountTable`]
-/// unifies it with the instruction context's.
-pub(super) trait EvalStepVisitor<'info> {
-    /// Subject required to be allowed on durable `EncryptedValue` accounts.
-    fn subject(&self) -> Pubkey;
-    /// Transient values produced by earlier steps in this frame.
-    fn produced(&self) -> &[ProducedValue];
-
-    /// Resolves a durable encrypted input, fetching its `EncryptedValue`
-    /// account the way this phase fetches accounts.
-    fn resolve_durable_operand(
-        &mut self,
-        handle: [u8; 32],
-        encrypted_value_index: u16,
-    ) -> Result<ResolvedOperand>;
-
-    /// Resolves an external input verified in-frame via the coprocessor attestation. Admission
-    /// resolves it structurally (the handle is known from the operand data); execution re-runs the
-    /// secp256k1 attestation authoritatively. Instruction-local — no account, no PDA.
-    fn resolve_verified_input_operand(
-        &mut self,
-        attestation: &CoprocessorInputAttestation,
-    ) -> Result<ResolvedOperand>;
-
-    /// Validates and applies a produced output (instruction-local or durable).
-    /// Admission validates and plans; execution validates and mutates.
-    fn accept_output(
-        &mut self,
-        ctx: &Context<'info, FheEval<'info>>,
-        op_index: u16,
-        result: [u8; 32],
-        output: &FheEvalOutput,
-        output_public_decrypt_allowed: bool,
-    ) -> Result<()>;
-
+/// Operand resolvers shared by every step shape. Defined here so the
+/// match-on-step skeleton and the operand rules read together; the
+/// account-access and mutation halves live with the state in [`super`].
+impl EvalExecutionState<'_, '_, '_> {
     /// Resolves an operand that must be encrypted (rejects scalars).
     fn resolve_encrypted_operand(&mut self, operand: &FheEvalOperand) -> Result<ResolvedOperand> {
         match operand {
@@ -209,18 +174,18 @@ pub(super) trait EvalStepVisitor<'info> {
                 encrypted_value_index,
             } => self.resolve_durable_operand(*handle, *encrypted_value_index),
             FheEvalOperand::AllowedLocal { producer_index } => self
-                .produced()
+                .produced
                 .get(*producer_index as usize)
                 .map(ResolvedOperand::from_produced)
                 .ok_or_else(|| error!(ZamaHostError::FheEvalAllowedLocalMissing)),
             FheEvalOperand::VerifiedInput { attestation } => {
                 // EVM `fromExternal` parity: only the attested contract may consume the input.
                 // Enforced here (the `msg.sender` analog) — not by constraining derived outputs.
-                // `subject()` is the eval's `compute_subject`; a copied attestation is useless
+                // `subject` is the eval's `compute_subject`; a copied attestation is useless
                 // unless the caller can sign as `contract_address`.
                 require_keys_eq!(
                     Pubkey::new_from_array(attestation.contract_address),
-                    self.subject(),
+                    self.subject,
                     ZamaHostError::InputBindContractMismatch
                 );
                 self.resolve_verified_input_operand(attestation)
@@ -246,25 +211,14 @@ pub(super) trait EvalStepVisitor<'info> {
     }
 }
 
-/// Drives a visitor over every plan step: resolve operands, assert operand
-/// types, compute the produced handle, and accept the output.
-pub(super) fn walk_eval_frame<'info, V: EvalStepVisitor<'info>>(
-    visitor: &mut V,
+/// Drives the execution state over every plan step: resolve operands, assert
+/// operand types, compute the produced handle, and accept the output.
+pub(super) fn walk_eval_frame<'info>(
+    execution: &mut EvalExecutionState<'_, '_, 'info>,
     ctx: &Context<'info, FheEval<'info>>,
     args: &FheEvalArgs,
     handle_context: &EvalHandleContext<'_>,
-) -> Result<u64> {
-    // HCU metering: pure pass over the plan, enforcing the per-frame total + in-frame depth caps
-    // against the canonical host_config limits (0 = unlimited). Runs in both the admission and
-    // execution phases (both call this walk), so they compute and trip identically; a trip
-    // in admission — which runs first — reverts before execution mutates any account.
-    let host_config = &ctx.accounts.host_config;
-    let frame = super::hcu::meter_eval_plan(
-        &args.steps,
-        host_config.max_hcu_per_tx,
-        host_config.max_hcu_depth_per_tx,
-    )?;
-
+) -> Result<()> {
     for (index, step) in args.steps.iter().enumerate() {
         let op_index = index as u16;
         match step {
@@ -275,8 +229,8 @@ pub(super) fn walk_eval_frame<'info, V: EvalStepVisitor<'info>>(
                 output_fhe_type,
                 output,
             } => {
-                let lhs = visitor.resolve_lhs_operand(lhs)?;
-                let rhs = visitor.resolve_rhs_operand(rhs)?;
+                let lhs = execution.resolve_lhs_operand(lhs)?;
+                let rhs = execution.resolve_rhs_operand(rhs)?;
                 assert_binary_operand_types(
                     *op,
                     lhs.handle,
@@ -292,7 +246,7 @@ pub(super) fn walk_eval_frame<'info, V: EvalStepVisitor<'info>>(
                     *output_fhe_type,
                     op_index,
                 );
-                visitor.accept_output(
+                execution.accept_output(
                     ctx,
                     op_index,
                     result,
@@ -308,9 +262,9 @@ pub(super) fn walk_eval_frame<'info, V: EvalStepVisitor<'info>>(
                 output_fhe_type,
                 output,
             } => {
-                let control = visitor.resolve_encrypted_operand(control)?;
-                let if_true = visitor.resolve_encrypted_operand(if_true)?;
-                let if_false = visitor.resolve_encrypted_operand(if_false)?;
+                let control = execution.resolve_encrypted_operand(control)?;
+                let if_true = execution.resolve_encrypted_operand(if_true)?;
+                let if_false = execution.resolve_encrypted_operand(if_false)?;
                 assert_ternary_operand_types(
                     control.handle,
                     if_true.handle,
@@ -325,7 +279,7 @@ pub(super) fn walk_eval_frame<'info, V: EvalStepVisitor<'info>>(
                     *output_fhe_type,
                     op_index,
                 );
-                visitor.accept_output(
+                execution.accept_output(
                     ctx,
                     op_index,
                     result,
@@ -340,13 +294,13 @@ pub(super) fn walk_eval_frame<'info, V: EvalStepVisitor<'info>>(
             } => {
                 assert_supported_fhe_type(*fhe_type)?;
                 let result = handle_context.trivial_result(*plaintext, *fhe_type, op_index);
-                visitor.accept_output(ctx, op_index, result, output, false)?;
+                execution.accept_output(ctx, op_index, result, output, false)?;
             }
             FheEvalStep::Rand { fhe_type, output } => {
                 assert_supported_rand_type(*fhe_type)?;
                 let seed = handle_context.rand_seed(op_index);
                 let result = computed_rand_handle(seed, *fhe_type, handle_context.chain_id);
-                visitor.accept_output(ctx, op_index, result, output, false)?;
+                execution.accept_output(ctx, op_index, result, output, false)?;
             }
             FheEvalStep::Unary {
                 op,
@@ -354,11 +308,11 @@ pub(super) fn walk_eval_frame<'info, V: EvalStepVisitor<'info>>(
                 output_fhe_type,
                 output,
             } => {
-                let operand = visitor.resolve_encrypted_operand(operand)?;
+                let operand = execution.resolve_encrypted_operand(operand)?;
                 assert_unary_operand_type(*op, operand.handle, *output_fhe_type)?;
                 let result =
                     handle_context.unary_result(*op, operand.handle, *output_fhe_type, op_index);
-                visitor.accept_output(
+                execution.accept_output(
                     ctx,
                     op_index,
                     result,
@@ -379,7 +333,7 @@ pub(super) fn walk_eval_frame<'info, V: EvalStepVisitor<'info>>(
                     *fhe_type,
                     handle_context.chain_id,
                 );
-                visitor.accept_output(ctx, op_index, result, output, false)?;
+                execution.accept_output(ctx, op_index, result, output, false)?;
             }
             FheEvalStep::Sum {
                 operands,
@@ -388,13 +342,13 @@ pub(super) fn walk_eval_frame<'info, V: EvalStepVisitor<'info>>(
             } => {
                 let mut resolved: Vec<ResolvedOperand> = Vec::with_capacity(operands.len());
                 for operand in operands {
-                    resolved.push(visitor.resolve_encrypted_operand(operand)?);
+                    resolved.push(execution.resolve_encrypted_operand(operand)?);
                 }
                 let operand_handles: Vec<[u8; 32]> = resolved.iter().map(|r| r.handle).collect();
                 assert_sum_operand_types(&operand_handles, *fhe_type)?;
                 let public_decrypt = resolved.iter().all(|r| r.public_decrypt_allowed);
                 let result = handle_context.sum_result(&operand_handles, *fhe_type, op_index);
-                visitor.accept_output(ctx, op_index, result, output, public_decrypt)?;
+                execution.accept_output(ctx, op_index, result, output, public_decrypt)?;
             }
             FheEvalStep::IsIn {
                 value,
@@ -402,10 +356,10 @@ pub(super) fn walk_eval_frame<'info, V: EvalStepVisitor<'info>>(
                 fhe_type,
                 output,
             } => {
-                let value_resolved = visitor.resolve_encrypted_operand(value)?;
+                let value_resolved = execution.resolve_encrypted_operand(value)?;
                 let mut set_resolved: Vec<ResolvedOperand> = Vec::with_capacity(set.len());
                 for operand in set {
-                    set_resolved.push(visitor.resolve_encrypted_operand(operand)?);
+                    set_resolved.push(execution.resolve_encrypted_operand(operand)?);
                 }
                 let set_handles: Vec<[u8; 32]> = set_resolved.iter().map(|r| r.handle).collect();
                 assert_is_in_operand_types(value_resolved.handle, &set_handles, *fhe_type)?;
@@ -417,7 +371,7 @@ pub(super) fn walk_eval_frame<'info, V: EvalStepVisitor<'info>>(
                     *fhe_type,
                     op_index,
                 );
-                visitor.accept_output(ctx, op_index, result, output, public_decrypt)?;
+                execution.accept_output(ctx, op_index, result, output, public_decrypt)?;
             }
             FheEvalStep::MulDiv {
                 factor1,
@@ -426,8 +380,8 @@ pub(super) fn walk_eval_frame<'info, V: EvalStepVisitor<'info>>(
                 output_fhe_type,
                 output,
             } => {
-                let factor1 = visitor.resolve_lhs_operand(factor1)?;
-                let factor2 = visitor.resolve_rhs_operand(factor2)?;
+                let factor1 = execution.resolve_lhs_operand(factor1)?;
+                let factor2 = execution.resolve_rhs_operand(factor2)?;
                 assert_mul_div_operand_types(
                     factor1.handle,
                     factor2.handle,
@@ -443,7 +397,7 @@ pub(super) fn walk_eval_frame<'info, V: EvalStepVisitor<'info>>(
                     *output_fhe_type,
                     op_index,
                 );
-                visitor.accept_output(
+                execution.accept_output(
                     ctx,
                     op_index,
                     result,
@@ -453,7 +407,5 @@ pub(super) fn walk_eval_frame<'info, V: EvalStepVisitor<'info>>(
             }
         }
     }
-    // Return the per-frame total so the block-cap check/charge accumulate exactly the same HCU the
-    // per-frame cap measured — reused, never independently recomputed.
-    Ok(frame.total)
+    Ok(())
 }

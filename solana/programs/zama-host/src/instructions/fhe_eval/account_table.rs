@@ -18,8 +18,7 @@ pub(super) struct EvalAccountTable<'a, 'info> {
     /// the op cap up front: the SBF bump allocator never frees, so growth by
     /// doubling would leak, and the born-public maximum frame already runs
     /// close to the 32KB heap ceiling. (For the same reason the table caches
-    /// no derived PDAs: once admission and execution collapse into one walk —
-    /// #1853 W6 — each output PDA is derived exactly once anyway.)
+    /// no derived PDAs: the single walk derives each output PDA exactly once.)
     durable_outputs_claimed: Vec<Pubkey>,
 }
 
@@ -109,8 +108,7 @@ impl<'a, 'info> EvalAccountTable<'a, 'info> {
     }
 
     /// Derived canonical PDA for a durable output's declaration inputs. The
-    /// one place output-PDA derivation lives; admission and execution both
-    /// resolve through here.
+    /// one place output-PDA derivation lives.
     pub(super) fn expected_output_pda(
         &self,
         acl_domain_key: Pubkey,

@@ -4,8 +4,8 @@
 //! [`FheEvalStep`]: a step's cost is a function of its op, result FHE type, and scalar flag; its
 //! critical-path *depth* is a function of the operand *kinds* (an `AllowedLocal` reads the depth of
 //! the producer it points at; durable / verified / scalar operands are zero-depth leaves). No
-//! sysvars, no accounts — so the same computation runs identically in the admission (validate) and
-//! execution (mutate) phases via the shared walk.
+//! sysvars, no accounts — so it runs once in [`super::fhe_eval`], before execution mutates any
+//! account, and its total feeds the block-cap charge unchanged.
 //!
 //! **Fail-closed:** every op variant is enumerated explicitly (no `_ =>` arm over the op enums), so a
 //! newly added op fails to compile until a cost decision is made; any `(op, fhe_type, scalar)`
@@ -287,8 +287,8 @@ fn operand_depth(operand: &FheEvalOperand, step_depths: &[u64]) -> u64 {
 }
 
 /// Meters a plan: sums per-step costs into a frame total and computes each step's critical-path depth,
-/// enforcing both caps after every step (`0 = unlimited`). Pure over `steps` + the two limits — the
-/// shared walk runs it in both phases, so admission and execution compute and trip identically.
+/// enforcing both caps after every step (`0 = unlimited`). Pure over `steps` + the two limits, so
+/// off-chain planners compute exactly what on-chain enforcement trips.
 pub(super) fn meter_eval_plan(
     steps: &[FheEvalStep],
     max_hcu_per_tx: u64,
@@ -811,7 +811,7 @@ mod tests {
         assert!(meter_eval_plan(&steps, 0, 0).is_ok());
     }
 
-    // ---- determinism is the admission==execution parity basis ----
+    // ---- determinism is the on-chain==off-chain parity basis ----
 
     #[test]
     fn meter_is_deterministic() {
