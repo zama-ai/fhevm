@@ -304,6 +304,10 @@ interface IProtocolConfig {
     /// @param epochId The epoch ID.
     error EpochActivationAlreadyConfirmed(address signer, uint256 epochId);
 
+    /// @notice The epoch activation payload has no keys or no CRS, so a required attestation cannot be verified.
+    /// @param epochId The epoch ID.
+    error EmptyEpochActivationAttestation(uint256 epochId);
+
     /// @notice The structured activation signature does not match the caller's KMS signer.
     /// @param signer The recovered signer.
     /// @param txSender The transaction sender.
