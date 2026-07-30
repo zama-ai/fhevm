@@ -208,6 +208,16 @@ describe('useDemoController generation safety', () => {
     expect(mocks.operator).not.toHaveBeenCalled();
   });
 
+  test('reads the live vault price even when this wallet has no shares', async () => {
+    mocks.hasShares.mockResolvedValue(false);
+
+    await connect(controller);
+    await flush();
+
+    expect(mocks.metrics).toHaveBeenCalled();
+    expect(controller.state.vaultMetrics).toEqual({ totalAssets: 125n, totalShares: 100n });
+  });
+
   test('prepares a new batch and preserves the existing private position for another deposit', async () => {
     const nextPosition = { ...position, batchIndex: 2n };
     mocks.lifecycle.mockResolvedValue(settled);
@@ -650,11 +660,14 @@ describe('useDemoController generation safety', () => {
     expect(controller.state.vaultMetrics).toEqual(afterHarvest);
   });
 
-  test('clears the private position after a completed full redemption', async () => {
+  test('clears the private position and reads the empty vault after a completed full redemption', async () => {
     mocks.findDeposit.mockResolvedValue(null);
     mocks.lifecycle.mockResolvedValue(settled);
     mocks.revealShares.mockResolvedValue({ value: 100_000_000n, handle: '0x01' });
     mocks.joinRedeem.mockResolvedValue(position);
+    mocks.metrics
+      .mockResolvedValueOnce({ totalAssets: 114_490_000n, totalShares: 100_000_000n })
+      .mockResolvedValueOnce({ totalAssets: 0n, totalShares: 0n });
     await connect(controller);
     await flush();
 
@@ -662,7 +675,7 @@ describe('useDemoController generation safety', () => {
     await flush();
 
     expect(controller.state.hasPrivateShares).toBe(false);
-    expect(controller.state.vaultMetrics).toBe(null);
+    expect(controller.state.vaultMetrics).toEqual({ totalAssets: 0n, totalShares: 0n });
     expect(controller.state.redeemPercentage).toBe(null);
   });
 });

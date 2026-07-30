@@ -336,10 +336,10 @@ export function useDemoController() {
               revealedUsdc: null,
               revealUsdcError: null,
               ...(state.redeemPercentage === 100
-                ? { hasPrivateShares: false, revealedShares: null, vaultMetrics: null }
+                ? { hasPrivateShares: false, revealedShares: null }
                 : {}),
             });
-            if (state.redeemPercentage !== 100) void refreshVaultMetrics(generation);
+            void refreshVaultMetrics(generation);
             return;
           }
           commit(generation, { redeemLifecycle: next, redeemOperatorError: null });
@@ -365,13 +365,13 @@ export function useDemoController() {
   }, [advanceOperator, commit, refreshVaultMetrics, state.connection, state.generation, state.redeem, state.redeemPercentage]);
 
   useEffect(() => {
-    if (!state.hasPrivateShares) {
+    if (state.connection.kind !== 'ready') {
       commit(state.generation, { vaultMetrics: null });
       return;
     }
     const generation = state.generation;
     void refreshVaultMetrics(generation);
-  }, [commit, refreshVaultMetrics, state.generation, state.hasPrivateShares]);
+  }, [commit, refreshVaultMetrics, state.connection, state.generation]);
 
   const disconnect = useCallback(() => {
     const generation = sessionGeneration.current + 1;
