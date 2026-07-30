@@ -76,9 +76,10 @@ database_url = "postgres://postgres:postgres@localhost/kms-connector"
 # ENV: KMS_CONNECTOR_S3_HEAD_TIMEOUT (format: https://docs.rs/humantime/latest/humantime/)
 # s3_head_timeout = "5s"
 
-# Timeout of a single ciphertext GET request, covering the whole response body (optional, defaults to 10s)
+# Timeout of a single ciphertext GET request (optional, defaults to 20s)
+# A retrieval retries over every winning-group buckets, so a slow bucket is better abandoned for one of its replicas.
 # ENV: KMS_CONNECTOR_S3_GET_TIMEOUT (format: https://docs.rs/humantime/latest/humantime/)
-# s3_get_timeout = "10s"
+# s3_get_timeout = "20s"
 
 # Maximum number of attestation HEAD requests in flight on a single Coprocessor bucket (optional, defaults to 64)
 # ENV: KMS_CONNECTOR_S3_MAX_CONCURRENT_HEADS_PER_BUCKET

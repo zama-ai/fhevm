@@ -83,7 +83,7 @@ pub struct Config {
     /// Timeout of a single attestation `HEAD` on a Coprocessor bucket.
     #[serde(with = "humantime_serde", default = "default_s3_head_timeout")]
     pub s3_head_timeout: Duration,
-    /// Timeout of a single ciphertext `GET`, covering the whole response body.
+    /// Timeout of a single ciphertext `GET`.
     #[serde(with = "humantime_serde", default = "default_s3_get_timeout")]
     pub s3_get_timeout: Duration,
     /// Ceiling on the attestation `HEAD`s in flight on a single Coprocessor bucket, across all
@@ -207,7 +207,7 @@ fn default_s3_head_timeout() -> Duration {
 }
 
 fn default_s3_get_timeout() -> Duration {
-    Duration::from_secs(10)
+    Duration::from_secs(20)
 }
 
 fn default_copro_registry_refresh() -> Duration {
