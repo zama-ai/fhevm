@@ -1,5 +1,19 @@
 # Release Notes
 
+## v1.2.1 (2026-07-29)
+
+### For SDK users
+
+#### Added
+
+- **Protocol `0.14.0` support: KMS WASM bumped to `0.14.0-1`.** The default bundled TKMS module
+  moves from `0.13.20-0` to `0.14.0-1` (TFHE stays at `1.6.2`), and the auto-resolution table now
+  maps `protocol >= 0.14.0` to `kms 0.14.0-1` instead of falling through to the `0.13.x` canonical
+  version. Older KMS builds (`0.13.10`, `0.13.20-0`) remain accepted as explicit
+  `moduleVersions.kms` overrides under a `0.14.0` protocol context. See
+  [Version compatibility](compatibility.md) for the full `(protocol, PubKey/CRS, TFHE, KMS)`
+  matrix.
+
 ## v1.2.0-alpha.1 (2026-07-08)
 
 ### For SDK users
