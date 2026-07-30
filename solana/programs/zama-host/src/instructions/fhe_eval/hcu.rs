@@ -420,6 +420,34 @@ mod tests {
     const EU64: u8 = 5;
     const EU128: u8 = 6;
 
+    /// Every FHE type byte the ABI can carry, plus out-of-range probes. The inverse
+    /// conformance tests sweep this whole space and consult the `state` validation
+    /// functions to decide which combinations metering must price.
+    const ALL_FHE_TYPE_PROBES: [u8; 11] = [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 200];
+
+    const ALL_BINARY_OPS: [FheBinaryOpCode; 20] = [
+        FheBinaryOpCode::Add,
+        FheBinaryOpCode::Sub,
+        FheBinaryOpCode::Mul,
+        FheBinaryOpCode::Div,
+        FheBinaryOpCode::Rem,
+        FheBinaryOpCode::And,
+        FheBinaryOpCode::Or,
+        FheBinaryOpCode::Xor,
+        FheBinaryOpCode::Shl,
+        FheBinaryOpCode::Shr,
+        FheBinaryOpCode::Rotl,
+        FheBinaryOpCode::Rotr,
+        FheBinaryOpCode::Eq,
+        FheBinaryOpCode::Ne,
+        FheBinaryOpCode::Ge,
+        FheBinaryOpCode::Gt,
+        FheBinaryOpCode::Le,
+        FheBinaryOpCode::Lt,
+        FheBinaryOpCode::Min,
+        FheBinaryOpCode::Max,
+    ];
+
     // ---- plan builders (handles are irrelevant to metering; only operand KIND matters) ----
     fn trivial(fhe_type: u8) -> FheEvalStep {
         FheEvalStep::TrivialEncrypt {
@@ -495,6 +523,154 @@ mod tests {
         }
         for ty in [EBOOL, EU8, 3, 4, EU64, EU128, 8] {
             assert!(unary_op_hcu(FheUnaryOpCode::Not, ty).unwrap() > 0);
+        }
+    }
+
+    // ---- inverse conformance: every combination validation admits has a cost row ----
+    // (fhevm-internal#1853 W9). Metering runs before the walk's type validation, so a
+    // validated combination that reached execution must never die with HcuUnknownCost.
+    // Each test sweeps the full type space and consults the corresponding `state`
+    // validation function to decide what metering must price.
+
+    fn handle_of(ty: u8) -> [u8; 32] {
+        let mut handle = [0u8; 32];
+        handle[30] = ty;
+        handle
+    }
+
+    #[test]
+    fn binary_op_hcu_covers_every_validated_combination() {
+        use crate::state::assert_binary_operand_types;
+        for op in ALL_BINARY_OPS {
+            for ty in ALL_FHE_TYPE_PROBES {
+                for scalar in [false, true] {
+                    // Comparisons take same-typed operands and produce ebool; other ops take
+                    // operands of the output type. Sweep the operand type independently so the
+                    // (operand, output) pairs validation admits are exactly the ones probed.
+                    for operand_ty in ALL_FHE_TYPE_PROBES {
+                        let validated = assert_binary_operand_types(
+                            op,
+                            handle_of(operand_ty),
+                            handle_of(if scalar { 0 } else { operand_ty }),
+                            scalar,
+                            ty,
+                        )
+                        .is_ok();
+                        if validated {
+                            assert!(
+                                binary_op_hcu(op, ty, scalar).is_ok(),
+                                "validated binary op {op:?} output type {ty} scalar {scalar} \
+                                 has no cost row"
+                            );
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn ternary_op_hcu_covers_every_validated_output_type() {
+        use super::super::assert_ternary_operand_types;
+        for ty in ALL_FHE_TYPE_PROBES {
+            let validated =
+                assert_ternary_operand_types(handle_of(0), handle_of(ty), handle_of(ty), ty)
+                    .is_ok();
+            if validated {
+                assert!(
+                    ternary_op_hcu(FheTernaryOpCode::IfThenElse, ty).is_ok(),
+                    "validated ternary output type {ty} has no cost row"
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn trivial_encrypt_hcu_covers_every_validated_type() {
+        use crate::state::assert_supported_fhe_type;
+        for ty in ALL_FHE_TYPE_PROBES {
+            if assert_supported_fhe_type(ty).is_ok() {
+                assert!(
+                    trivial_encrypt_hcu(ty).is_ok(),
+                    "validated trivial-encrypt type {ty} has no cost row"
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn rand_hcu_covers_every_validated_rand_and_bounded_rand_type() {
+        use crate::state::{assert_supported_bounded_rand_type, assert_supported_rand_type};
+        for ty in ALL_FHE_TYPE_PROBES {
+            if assert_supported_rand_type(ty).is_ok() {
+                assert!(
+                    rand_hcu(ty).is_ok(),
+                    "validated rand type {ty} has no cost row"
+                );
+            }
+            // RandBounded meters through the same rand_hcu table.
+            if assert_supported_bounded_rand_type(ty).is_ok() {
+                assert!(
+                    rand_hcu(ty).is_ok(),
+                    "validated bounded-rand type {ty} has no cost row"
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn sum_hcu_covers_every_validated_type_and_operand_count() {
+        use crate::state::assert_sum_operand_types;
+        for ty in ALL_FHE_TYPE_PROBES {
+            // 100 operands is the widest count any type admits; validation gates per type.
+            for count in [0usize, 1, 2, 60, 100] {
+                let handles = vec![handle_of(ty); count];
+                if assert_sum_operand_types(&handles, ty).is_ok() {
+                    assert!(
+                        sum_hcu(ty, count).is_ok(),
+                        "validated sum type {ty} x{count} has no cost row"
+                    );
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn is_in_hcu_covers_every_validated_type_and_set_size() {
+        use crate::state::assert_is_in_operand_types;
+        for ty in ALL_FHE_TYPE_PROBES {
+            for count in [0usize, 1, 2, 60, 100] {
+                let handles = vec![handle_of(ty); count];
+                if assert_is_in_operand_types(handle_of(ty), &handles, ty).is_ok() {
+                    assert!(
+                        is_in_hcu(ty, count).is_ok(),
+                        "validated is-in type {ty} x{count} has no cost row"
+                    );
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn mul_div_hcu_covers_every_validated_combination() {
+        use crate::state::assert_mul_div_operand_types;
+        for ty in ALL_FHE_TYPE_PROBES {
+            for scalar in [false, true] {
+                let validated = assert_mul_div_operand_types(
+                    handle_of(ty),
+                    handle_of(if scalar { 0 } else { ty }),
+                    scalar,
+                    [0xFF; 32], // non-zero at every truncation width
+                    ty,
+                )
+                .is_ok();
+                if validated {
+                    assert!(
+                        mul_div_hcu(ty, scalar).is_ok(),
+                        "validated mul-div output type {ty} scalar {scalar} has no cost row"
+                    );
+                }
+            }
         }
     }
 
@@ -802,12 +978,14 @@ mod tests {
 
     #[test]
     fn meter_disabled_limits_accept_costliest_plan() {
-        // 16 chained EU128 adds (MAX_FHE_EVAL_OPS = 16) with limits off.
+        // MAX_FHE_EVAL_OPS chained EU128 adds with limits off.
+        let cap = u8::try_from(crate::state::MAX_FHE_EVAL_OPS)
+            .expect("MAX_FHE_EVAL_OPS must fit producer indices");
         let mut steps = vec![trivial(EU128)];
-        for i in 1..16u8 {
+        for i in 1..cap {
             steps.push(add_local(EU128, i - 1, i - 1));
         }
-        assert_eq!(steps.len(), 16);
+        assert_eq!(steps.len(), crate::state::MAX_FHE_EVAL_OPS);
         assert!(meter_eval_plan(&steps, 0, 0).is_ok());
     }
 

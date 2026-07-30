@@ -859,8 +859,12 @@ not 5 — DD-019) while keeping per-output signer-witness authority (DD-017).
 
 Open for debate:
 
-`MAX_FHE_EVAL_OPS = 16` step cap, and the replay-event transport split (CPI ≤ 8 events vs log) — see
-DD-024.
+The step cap `MAX_FHE_EVAL_OPS` is derived from measured instruction-data and compute-unit budgets
+on the interned wire format (fhevm-internal#1853 W8; see the constant's doc in
+`programs/zama-host/src/constants.rs`). The old per-operation replay-event transport split is
+superseded by the single born-public lifecycle batch — see DD-038. (An earlier revision cited
+DD-024 here, which is the coprocessor-side ciphertext-material decision and was never about the
+event transport.)
 
 ## DD-024: Eager Ciphertext-Material Preparation (coprocessor side)
 
@@ -1483,8 +1487,11 @@ zero-based step index, the host-owned `EncryptedValue` account, and the host-der
 a frame with no produced public output emits no lifecycle event.
 
 This narrow batch exists because block-entropy output handles are absent from instruction arguments.
-At the maximum `MAX_FHE_EVAL_OPS` frame, 16 records serialize to one 1,077-byte CPI instruction,
-avoiding the old one-CPI-per-step heap growth. The event is unconditional when optional
+At the maximum `MAX_FHE_EVAL_OPS` frame (32), the records serialize to one 2,133-byte CPI
+instruction — far below the 10,240-byte CPI instruction-data cap — avoiding the old
+one-CPI-per-step heap growth. (Execution, not the batch, bounds the all-born-public frame shape:
+the fixed 32KB Anchor bump heap fits 20 durable creates per frame, measured and pinned by
+`mollusk_fhe_eval_born_public_heap_boundary`.) The event is unconditional when optional
 `emit-events` features are disabled. Consumers must still validate the host program, its canonical
 event-authority PDA, transaction success, record ordering, and one-to-one agreement with durable
 `make_public` outputs; the event grants no authority by itself.

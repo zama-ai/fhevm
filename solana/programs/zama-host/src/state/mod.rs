@@ -1117,6 +1117,11 @@ pub fn previous_bank_hash(current_slot: u64) -> Result<[u8; 32]> {
     // out as `[u64 count][ (u64 slot, [u8;32] hash) ...]` — for the most recent slot below
     // `current_slot`.
     //
+    // Tracking (fhevm-internal#1853 W12): no upstream anza-xyz/solana-sdk issue exists for
+    // this as of 2026-07 (searched "PodSlotHashes"). Once one is filed, link it here. On every
+    // solana-sysvar bump, re-test `PodSlotHashes::fetch()` under a real SBF validator (not
+    // LiteSVM/mollusk); if fetch() works, delete this manual read and both `unsafe` blocks.
+    //
     // `SlotHashes` is ordered newest-first and every entry is a prior slot (slot < the
     // executing `current_slot`), so the answer is in the first entries. Read only a small
     // window rather than the full 20_488-byte sysvar: on the SBF bump allocator (default 32KB

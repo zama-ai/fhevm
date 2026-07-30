@@ -32,7 +32,21 @@ pub const DELEGATION_SEED: &[u8] = b"user-decryption-delegation";
 pub const WILDCARD_APP_CONTEXT_BYTES: [u8; 32] = [0xff; 32];
 
 /// Maximum number of FHE operations accepted by one composed eval.
-pub const MAX_FHE_EVAL_OPS: usize = 16;
+///
+/// Derived from measured budgets on the interned wire format (fhevm-internal#1853 W8), not chosen
+/// a priori. Measured on the max-op cost-snapshot frame: a marginal chained step costs ~9 bytes of
+/// instruction data and ~3,700 CU. At 32 ops the maximum frame measures ~450 bytes of instruction
+/// data (the whole signed transaction stays under the 1,232-byte packet limit with >180 bytes of
+/// envelope headroom — asserted by `mollusk_fhe_eval_max_op_transaction_fits_packet`) and ~148k CU
+/// (under the 200k default budget, so no compute-budget instruction is required). 48 ops would
+/// exceed the default CU budget and leave <5% packet headroom for realistic account envelopes.
+/// The heap-heaviest legal frame shape (all steps born-public durable creates) fits 20 creates
+/// on the 32KB bump heap — a hard boundary, since the Anchor default allocator serves a fixed
+/// 32KB region even when a larger heap frame is requested; such frames revert cleanly beyond it
+/// (measured; pinned by `mollusk_fhe_eval_born_public_heap_boundary`). Wire
+/// indices (`producer_index`, pool and account indices) are `u8`, bounding any future raise
+/// at 256.
+pub const MAX_FHE_EVAL_OPS: usize = 32;
 /// Maximum number of external encrypted-input handles in one signed proof.
 pub const MAX_INPUT_PROOF_HANDLES: usize = 16;
 /// Maximum opaque verifier payload bytes carried in one signed input proof.

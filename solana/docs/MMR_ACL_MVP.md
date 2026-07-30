@@ -173,7 +173,7 @@ sequenceDiagram
 
 ```mermaid
 flowchart TD
-    prog["zama-host fhe_eval"] -->|"emit_cpi! (single batch CPI, ≤16 records;<br/>DD-038; no emit! log fallback)"| ev["op-event (self-CPI inner ix):<br/>carries the block-entropy output handle"]
+    prog["zama-host fhe_eval"] -->|"emit_cpi! (single batch CPI, ≤MAX_FHE_EVAL_OPS records;<br/>DD-038; no emit! log fallback)"| ev["op-event (self-CPI inner ix):<br/>carries the block-entropy output handle"]
     prog -->|"instruction data (args)"| ix["fhe_eval durable-output / make_public args"]
     ev --> proofsvc["solana-proof-service (Yellowstone + Postgres):<br/>resolves born-public handle from op-event,<br/>reconstructs MMR, cross-checks vs confirmed peaks"]
     ix --> listener["host-listener indexer:<br/>Yellowstone gRPC reconstruction-only<br/>(SlotHashes+Clock sysvar streams → block entropy;<br/>never reads events)"]

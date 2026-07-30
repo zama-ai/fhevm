@@ -2606,16 +2606,41 @@ fn mollusk_fhe_eval_batches_multiple_born_public_outputs_in_step_order() {
     assert_born_public_batch(&result, &frame.outputs);
 }
 
+/// The measured heap budget for the heap-heaviest legal frame shape: all steps born-public
+/// durable creates. The Anchor default bump allocator serves a fixed 32KB region (never freed,
+/// and NOT extended by a compute-budget heap-frame request), and 20 creates is the measured
+/// maximum that executes within it (fhevm-internal#1853 W8).
+const MAX_BORN_PUBLIC_CREATES_ON_DEFAULT_HEAP: usize = 20;
+
 #[test]
 fn mollusk_fhe_eval_maximum_born_public_frame_fits_one_cpi() {
-    let born_public_steps = (0..host::MAX_FHE_EVAL_OPS).collect::<Vec<_>>();
-    let frame = born_public_frame(host::MAX_FHE_EVAL_OPS, &born_public_steps);
+    // The largest executable all-born-public frame still emits its DD-038 lifecycle records in
+    // exactly one batch CPI. (The full MAX_FHE_EVAL_OPS batch serialization is covered by the
+    // event-transport unit test; frames with more than the measured create budget cannot
+    // execute — see `mollusk_fhe_eval_born_public_heap_boundary`.)
+    let born_public_steps = (0..MAX_BORN_PUBLIC_CREATES_ON_DEFAULT_HEAP).collect::<Vec<_>>();
+    let frame = born_public_frame(MAX_BORN_PUBLIC_CREATES_ON_DEFAULT_HEAP, &born_public_steps);
     let result = mollusk().process_and_validate_instruction(
         &frame.instruction,
         &frame.accounts,
         &[Check::success()],
     );
     assert_born_public_batch(&result, &frame.outputs);
+}
+
+#[test]
+fn mollusk_fhe_eval_born_public_heap_boundary() {
+    // Pins the measured heap boundary behind MAX_FHE_EVAL_OPS (fhevm-internal#1853 W8): one
+    // create past the measured budget exhausts the 32KB bump heap and reverts cleanly,
+    // committing nothing. Raising this boundary requires a custom allocator, not a larger cap.
+    let over = MAX_BORN_PUBLIC_CREATES_ON_DEFAULT_HEAP + 1;
+    let failing = born_public_frame(over, &(0..over).collect::<Vec<_>>());
+    let result = mollusk().process_instruction(&failing.instruction, &failing.accounts);
+    assert!(result.program_result.is_err());
+    for (_, output) in &failing.outputs {
+        let account = result.get_account(output).unwrap();
+        assert_eq!(account.owner, system_program::ID, "no output may commit");
+    }
 }
 
 #[test]
@@ -5856,4 +5881,31 @@ fn cost_snapshot_fhe_eval_max_op_frame() {
         .process_and_validate_instruction(&ix, &[Check::success()]);
 
     cost_snapshot::assert_cost_snapshot("host_mollusk", "fhe_eval/max_op_frame", &ix, &result);
+}
+
+#[test]
+fn mollusk_fhe_eval_max_op_transaction_fits_packet() {
+    // MAX_FHE_EVAL_OPS is derived from measured budgets (fhevm-internal#1853 W8). This is the
+    // byte-budget half: the whole signed transaction for the max-op frame — envelope included —
+    // must fit one 1,232-byte packet, with headroom for realistic envelopes (more durable
+    // accounts, more pool entries) so the cap is not set at the packet edge.
+    let fixture = EvalFixture::with_block_cap_keys(
+        u64::MAX,
+        Pubkey::new_from_array([0x21; 32]),
+        Pubkey::new_from_array([0x22; 32]),
+    );
+    // The Solana transaction packet limit (solana-packet's PACKET_DATA_SIZE: 1280-byte
+    // IPv6 minimum MTU minus 48 bytes of headers).
+    const PACKET_DATA_SIZE: usize = 1_232;
+    let ix = fixture.max_ops_instruction();
+    let message =
+        solana_sdk::message::Message::new(std::slice::from_ref(&ix), Some(&fixture.authority));
+    let signature_bytes = 1 + 64 * usize::from(message.header.num_required_signatures);
+    let transaction_bytes = signature_bytes + message.serialize().len();
+
+    assert!(
+        transaction_bytes + 150 <= PACKET_DATA_SIZE,
+        "max-op fhe_eval transaction is {transaction_bytes} bytes; it must fit a \
+         {PACKET_DATA_SIZE}-byte packet with >=150 bytes of envelope headroom"
+    );
 }
