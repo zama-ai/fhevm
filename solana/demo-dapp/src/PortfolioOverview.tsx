@@ -196,11 +196,11 @@ export function PortfolioOverview({ controller }: { readonly controller: DemoCon
                   <button
                     className="balance-action"
                     type="button"
-                    aria-label={revealedUsdc === null ? 'Reveal cUSDC balance' : 'Hide cUSDC balance'}
+                    aria-label={revealedUsdc === null ? 'Decrypt cUSDC balance' : 'Hide cUSDC balance'}
                     disabled={privateActionRunning}
                     onClick={revealedUsdc === null ? actions.revealUsdc : actions.hideUsdc}
                   >
-                    {revealedUsdc === null ? 'Reveal' : 'Hide'}
+                    {revealedUsdc === null ? 'Decrypt' : 'Hide'}
                   </button>
                 )}
               </div>
@@ -327,7 +327,7 @@ export function PortfolioOverview({ controller }: { readonly controller: DemoCon
                       : 'One transaction'
               }
             >
-              {depositSource === 'cusdc' && revealedUsdc === null && <span>1 · Reveal balance</span>}
+              {depositSource === 'cusdc' && revealedUsdc === null && <span>1 · Decrypt balance</span>}
               {depositSource === 'usdc' && <span>1 · Shield if needed</span>}
               <span>
                 {depositSource === 'usdc' || (depositSource === 'cusdc' && revealedUsdc === null)
@@ -343,6 +343,11 @@ export function PortfolioOverview({ controller }: { readonly controller: DemoCon
             <button
               className="primary-action"
               type="button"
+              title={
+                confidentialBalanceUnknown
+                  ? 'Decrypts the balance only in this browser so the deposit amount can be checked.'
+                  : undefined
+              }
               disabled={
                 !connected ||
                 depositRunning ||
@@ -360,9 +365,9 @@ export function PortfolioOverview({ controller }: { readonly controller: DemoCon
               }}
             >
               {revealingUsdc && confidentialBalanceUnknown
-                ? 'Revealing cUSDC…'
+                ? 'Decrypting cUSDC…'
                 : confidentialBalanceUnknown
-                  ? 'Reveal cUSDC to continue'
+                  ? 'Decrypt cUSDC balance to continue'
                   : depositRunning
                     ? 'Depositing…'
                     : depositSource === 'usdc'
@@ -376,7 +381,7 @@ export function PortfolioOverview({ controller }: { readonly controller: DemoCon
             )}
             {confidentialBalanceTooLow && (
               <p className="input-error" role="alert">
-                Your revealed cUSDC balance is too low for this deposit.
+                The decrypted cUSDC balance is too low for this deposit.
               </p>
             )}
             {depositSource === 'cusdc' && revealedUsdc !== null && !confidentialBalanceTooLow && (

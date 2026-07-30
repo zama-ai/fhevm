@@ -30,6 +30,8 @@
 .developer-evidence > summary:focus-visible,
 .evidence-toolbar button:focus-visible,
 .evidence-value button:focus-visible,
+.evidence-link:focus-visible,
+.evidence-observability a:focus-visible,
 .evidence-transactions a:focus-visible {
   outline: 2px solid #a78bfa;
   outline-offset: 2px;
@@ -78,6 +80,24 @@
 .evidence-toolbar button:disabled {
   cursor: wait;
   opacity: 0.55;
+}
+
+.evidence-observability {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.evidence-link,
+.evidence-observability a {
+  width: fit-content;
+  padding: 5px 7px;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 6px;
+  color: #c4b5fd;
+  background: rgba(124, 58, 237, 0.09);
+  font-size: 10px;
+  text-decoration: none;
 }
 
 .evidence-content dl {
@@ -134,6 +154,8 @@
 }
 
 .evidence-toolbar button:hover:not(:disabled),
+.evidence-link:hover,
+.evidence-observability a:hover,
 .evidence-value button:hover,
 .evidence-transactions a:hover {
   border-color: rgba(196, 181, 253, 0.4);

@@ -1,0 +1,289 @@
+import mermaid from 'mermaid';
+import { useEffect } from 'react';
+
+type ArchitectureFrame = {
+  readonly title: string;
+  readonly statement: string;
+  readonly diagram: string;
+};
+
+const frames: readonly ArchitectureFrame[] = [
+  {
+    title: 'Protocol overview',
+    statement: 'Encrypted execution and authorized decryption',
+    diagram: String.raw`
+sequenceDiagram
+    box User device
+        participant Client as Wallet + SDK
+    end
+    box Solana
+        participant Host as Host program
+    end
+    box Protocol services
+        participant Copro as Coprocessor
+        participant KMS as KMS network
+    end
+
+    Client->>Host: Encrypted transaction
+    Host-->>Copro: Confirmed operation
+    Copro->>Copro: FHE computation
+    Copro-->>KMS: Encrypted result available
+    Client->>KMS: Authorized decryption request
+    KMS-->>Client: Result protected for user
+    Client->>Client: Recover plaintext
+`,
+  },
+  {
+    title: 'Protocol detail',
+    statement: 'Input proof, gateway synchronization and signcryption',
+    diagram: String.raw`
+sequenceDiagram
+    box User device
+        participant Client as Wallet + SDK
+    end
+    box Solana
+        participant Host as Host program
+    end
+    box Protocol services
+        participant Copro as Coprocessor
+        participant Relayer
+        participant Gateway
+        participant KMS as KMS network
+    end
+
+    Note over Client,Copro: Input proof and attestation
+    Client->>Client: Encrypt input and create zero-knowledge proof of knowledge
+    Client->>Relayer: Ciphertext and proof
+    Relayer->>Gateway: Verification request
+    Gateway->>Copro: Input proof
+    Copro->>Copro: Verify proof of knowledge
+    Copro-->>Gateway: Ciphertext attestation
+    Gateway-->>Relayer: Attestation
+    Relayer-->>Client: Attestation
+
+    Note over Client,Gateway: On-chain encrypted computation
+    Client->>Host: Encrypted action and attestation
+    Host->>Host: Verify coprocessor attestation and record operation
+    Host-->>Copro: Confirmed operation
+    Copro-->>Gateway: FHE result
+
+    Note over Client,KMS: Authorized decryption
+    Client->>Client: Create transport key and sign request
+    Client->>Relayer: Signed request and transport public key
+    Relayer->>Gateway: Decryption request
+    Gateway->>KMS: Encrypted result and authorization
+    KMS->>KMS: Decrypt and re-encrypt for transport key
+    KMS-->>Gateway: Signcrypted result
+    Gateway-->>Relayer: Signcrypted result
+    Relayer-->>Client: Signcrypted result
+    Client->>Client: Open signcrypted result
+`,
+  },
+  {
+    title: 'Shared network key',
+    statement: 'Applications encrypt with one shared public key.',
+    diagram: String.raw`
+flowchart LR
+    PublicKey["Network public key"] --> AppA["App A encrypts"]
+    PublicKey --> AppB["App B encrypts"]
+    AppA --> Shared["Compatible ciphertexts"]
+    AppB --> Shared
+    Shared --> Compose["Encrypted results<br/>move between apps"]
+
+    subgraph kms["Production key service"]
+        Share1["Secret share 1"]
+        Share2["Secret share 2"]
+        Share3["Secret share 3"]
+        Quorum["Several parties<br/>must approve"]
+        Share1 --> Quorum
+        Share2 --> Quorum
+        Share3 --> Quorum
+    end
+
+    Compose --> Quorum
+    Quorum --> Decrypt["Authorized result"]
+`,
+  },
+  {
+    title: 'Shield',
+    statement: 'Shielding locks USDC and credits an encrypted cUSDC balance.',
+    diagram: String.raw`
+sequenceDiagram
+    box User device
+        participant Wallet
+    end
+    box Solana
+        participant Token as Confidential token
+        participant SPL as SPL Token
+        participant Host as Zama host
+    end
+
+    Wallet->>Token: Shield public USDC
+    Token->>SPL: Move USDC into wrapper custody
+    Token->>Host: Encrypt the public amount
+    Token->>Host: Add to encrypted balance and supply
+    Host-->>Token: New balance and supply handles
+`,
+  },
+  {
+    title: 'Encrypted execution',
+    statement: 'Host instructions define handles; the coprocessor materializes their ciphertexts.',
+    diagram: String.raw`
+flowchart TB
+    subgraph solana["Solana"]
+        direction LR
+        Tx["Confirmed host instruction"]
+        Value["EncryptedValue PDA<br/>permissions and history"]
+        Handle["Current handle"]
+        Tx --> Value --> Handle
+    end
+
+    subgraph services["Encrypted services"]
+        direction LR
+        Yellowstone["Yellowstone stream"]
+        Listener["Host listener"]
+        Worker["Encrypted compute"]
+        Material["Encrypted material"]
+        Yellowstone --> Listener --> Worker --> Material
+    end
+
+    Tx --> Yellowstone
+    Value --> History["Old permissions<br/>MMR peaks"]
+    Handle -.->|"identifies"| Material
+`,
+  },
+  {
+    title: 'Settle and claim',
+    statement: 'The public vault receives the batch total; encrypted shares are allocated per deposit.',
+    diagram: String.raw`
+flowchart TB
+    subgraph settlement["Settle public total"]
+        direction LR
+        Burn["Batcher burns<br/>encrypted batch balance"]
+        Proof["Proof service proves<br/>the released handle"]
+        KMS["KMS returns total<br/>and signed certificate"]
+        Solana["Solana verifies<br/>proof and certificate"]
+        Vault["Vault deposits total<br/>and returns public shares"]
+        Burn --> Proof --> KMS --> Solana --> Vault
+    end
+
+    subgraph claim["Claim encrypted shares"]
+        direction LR
+        Deposit["Encrypted deposit"]
+        Formula["deposit × shares ÷ total"]
+        Allocation["Encrypted cShares allocation"]
+        Deposit --> Formula --> Allocation
+    end
+
+    Vault -->|"public shares"| Formula
+    KMS -->|"public total"| Formula
+`,
+  },
+  {
+    title: 'User decrypt',
+    statement: 'Wallet signs the request. KMS nodes produce partial decryptions. SDK reconstructs plaintext.',
+    diagram: String.raw`
+sequenceDiagram
+    box User device
+        participant Wallet as Phantom
+        participant SDK
+    end
+    box Protocol services
+        participant Relayer
+        participant Gateway
+        participant Connector as KMS connector
+        participant KMS as KMS node
+    end
+
+    SDK->>SDK: Generate ephemeral transport key
+    SDK->>Wallet: Request decryption signature
+    Wallet-->>SDK: Signed user-decryption request
+    SDK->>Relayer: Submit request and transport public key
+    Relayer->>Gateway: Submit user-decryption transaction
+    Gateway-->>Connector: Emit user-decryption request
+    Connector->>Connector: Verify wallet signature and Solana access
+    Connector->>KMS: Request partial decryption
+    KMS-->>Connector: Signed, signcrypted partial share
+    Connector->>Gateway: Post partial share
+    Gateway-->>Relayer: Emit verified partial share
+    Relayer-->>SDK: Return threshold shares
+    SDK->>SDK: Verify, de-signcrypt and reconstruct plaintext
+`,
+  },
+  {
+    title: 'Redeem',
+    statement: 'Redemption converts encrypted cShares back into encrypted cUSDC.',
+    diagram: String.raw`
+flowchart LR
+    Shares["User cShares"] -->|"encrypted amount"| Batch["Redeem batch"]
+    Batch -->|"public share total"| Vault["Public vault"]
+    Vault -->|"public USDC payout"| Batch
+    Batch -->|"encrypted allocation"| Cusdc["User cUSDC"]
+`,
+  },
+  {
+    title: 'POC boundary',
+    statement: 'The POC runs real protocol components with local keys, assets and yield.',
+    diagram: String.raw`
+flowchart LR
+    subgraph real["Runs for real"]
+        Transactions["Solana transactions"]
+        Programs["On-chain programs"]
+        Encryption["Encrypted computation"]
+        Authorization["Authorization proofs"]
+        Decryption["User and public decrypt"]
+        Accounting["Vault accounting"]
+    end
+
+    subgraph poc["POC setting"]
+        Localnet["Local validator"]
+        TestAssets["Test assets and keys"]
+        Centralized["One key service"]
+        ToyVault["Toy public vault"]
+        Keeper["Local keeper"]
+        Yield["Demo-funded yield"]
+    end
+
+    Transactions --- Localnet
+    Programs --- ToyVault
+    Encryption --- TestAssets
+    Authorization --- Keeper
+    Decryption --- Centralized
+    Accounting --- Yield
+`,
+  },
+];
+
+const frameNumber = (index: number): string => String(index + 1).padStart(2, '0');
+
+export function ArchitecturePage() {
+  useEffect(() => {
+    void mermaid.run({ querySelector: '.mermaid', suppressErrors: false }).catch((error: unknown) => {
+      document.body.dataset.mermaidError = 'true';
+      console.error('Failed to render architecture diagrams', error);
+    });
+  }, []);
+
+  return (
+    <main className="architecture-page">
+      {frames.map((frame, index) => (
+        <section className="architecture-frame" id={`frame-${index + 1}`} key={frame.title}>
+          <header className="frame-heading">
+            <h1>
+              <span className="frame-label">
+                {frameNumber(index)} / {frames.length} · {frame.title}
+              </span>
+              <span className="frame-separator" aria-hidden="true">
+                —
+              </span>
+              <span className="frame-statement">{frame.statement}</span>
+            </h1>
+          </header>
+          <div className="diagram-shell">
+            <pre className="mermaid">{frame.diagram}</pre>
+          </div>
+        </section>
+      ))}
+    </main>
+  );
+}
