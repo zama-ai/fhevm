@@ -282,7 +282,7 @@ fn operand_depth(operand: &FheEvalOperand, step_depths: &[u64]) -> u64 {
             .unwrap_or(0),
         FheEvalOperand::AllowedDurable { .. } => 0,
         FheEvalOperand::VerifiedInput { .. } => 0,
-        FheEvalOperand::Scalar(_) => 0,
+        FheEvalOperand::Scalar { .. } => 0,
     }
 }
 
@@ -309,7 +309,7 @@ pub(super) fn meter_eval_plan(
                 let cost = binary_op_hcu(
                     *op,
                     *output_fhe_type,
-                    matches!(rhs, FheEvalOperand::Scalar(_)),
+                    matches!(rhs, FheEvalOperand::Scalar { .. }),
                 )?;
                 let depth = operand_depth(lhs, &step_depths).max(operand_depth(rhs, &step_depths));
                 (cost, depth)
@@ -376,7 +376,7 @@ pub(super) fn meter_eval_plan(
             } => {
                 let cost = mul_div_hcu(
                     *output_fhe_type,
-                    matches!(factor2, FheEvalOperand::Scalar(_)),
+                    matches!(factor2, FheEvalOperand::Scalar { .. }),
                 )?;
                 let depth =
                     operand_depth(factor1, &step_depths).max(operand_depth(factor2, &step_depths));
@@ -428,7 +428,7 @@ mod tests {
             output: FheEvalOutput::AllowedLocal,
         }
     }
-    fn add_local(ty: u8, lhs_producer: u16, rhs_producer: u16) -> FheEvalStep {
+    fn add_local(ty: u8, lhs_producer: u8, rhs_producer: u8) -> FheEvalStep {
         FheEvalStep::Binary {
             op: FheBinaryOpCode::Add,
             lhs: FheEvalOperand::AllowedLocal {
@@ -441,25 +441,25 @@ mod tests {
             output: FheEvalOutput::AllowedLocal,
         }
     }
-    fn add_scalar(ty: u8, lhs_producer: u16) -> FheEvalStep {
+    fn add_scalar(ty: u8, lhs_producer: u8) -> FheEvalStep {
         FheEvalStep::Binary {
             op: FheBinaryOpCode::Add,
             lhs: FheEvalOperand::AllowedLocal {
                 producer_index: lhs_producer,
             },
-            rhs: FheEvalOperand::Scalar([0u8; 32]),
+            rhs: FheEvalOperand::Scalar { value_index: 0 },
             output_fhe_type: ty,
             output: FheEvalOutput::AllowedLocal,
         }
     }
-    fn add_durable(ty: u8, lhs_producer: u16) -> FheEvalStep {
+    fn add_durable(ty: u8, lhs_producer: u8) -> FheEvalStep {
         FheEvalStep::Binary {
             op: FheBinaryOpCode::Add,
             lhs: FheEvalOperand::AllowedLocal {
                 producer_index: lhs_producer,
             },
             rhs: FheEvalOperand::AllowedDurable {
-                handle: [7u8; 32],
+                handle_index: 0,
                 encrypted_value_index: 0,
             },
             output_fhe_type: ty,
@@ -761,7 +761,7 @@ mod tests {
             lhs: FheEvalOperand::VerifiedInput {
                 attestation: Box::new(attestation),
             },
-            rhs: FheEvalOperand::Scalar([0u8; 32]),
+            rhs: FheEvalOperand::Scalar { value_index: 0 },
             output_fhe_type: EU64,
             output: FheEvalOutput::AllowedLocal,
         }];
@@ -804,7 +804,7 @@ mod tests {
     fn meter_disabled_limits_accept_costliest_plan() {
         // 16 chained EU128 adds (MAX_FHE_EVAL_OPS = 16) with limits off.
         let mut steps = vec![trivial(EU128)];
-        for i in 1..16u16 {
+        for i in 1..16u8 {
             steps.push(add_local(EU128, i - 1, i - 1));
         }
         assert_eq!(steps.len(), 16);

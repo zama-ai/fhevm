@@ -51,31 +51,6 @@ pub struct InitializeHostConfigArgs {
     pub grant_deny_list_enabled: bool,
 }
 
-/// Pubkey stored inline as an allowed subject.
-#[derive(AnchorSerialize, AnchorDeserialize, Clone, Copy, Debug, PartialEq, Eq)]
-pub struct AclSubjectEntry {
-    /// Subject identity. For app users this is usually the owner pubkey; for
-    /// app programs this can be a program-controlled compute signer PDA.
-    pub pubkey: Pubkey,
-}
-
-impl AclSubjectEntry {
-    /// Builds an owner/user subject.
-    pub fn user(pubkey: Pubkey) -> Self {
-        Self { pubkey }
-    }
-
-    /// Builds a compute subject.
-    pub fn compute(pubkey: Pubkey) -> Self {
-        Self { pubkey }
-    }
-
-    /// Builds an allowed subject.
-    pub fn use_only(pubkey: Pubkey) -> Self {
-        Self { pubkey }
-    }
-}
-
 /// Binary FHE operators currently modeled by the PoC.
 #[derive(AnchorSerialize, AnchorDeserialize, Clone, Copy, Debug, PartialEq, Eq)]
 pub enum FheBinaryOpCode {
@@ -154,9 +129,33 @@ impl FheUnaryOpCode {
 /// Arguments for composed instruction-local FHE evaluation.
 #[derive(AnchorSerialize, AnchorDeserialize, Clone, Debug, PartialEq, Eq)]
 pub struct FheEvalArgs {
+    /// Declared `remaining_accounts` length, asserted equal to the actual list. Carried in
+    /// instruction data so stateless indexers can validate account references without the
+    /// transaction envelope (DD-033 self-description).
+    pub account_count: u8,
+    /// Interned 32-byte constant pool: operand handles, scalar values, ACL domain keys, app
+    /// account keys, encrypted value labels, and output subjects. Steps reference entries by
+    /// `u8` index, so a value repeated across steps is paid for once (the compiled-message /
+    /// constant-pool encoding; fhevm-internal#1853 W7).
+    pub pool: Vec<[u8; 32]>,
     /// Ordered step list. Each `AllowedLocal` operand may only reference an output
     /// produced by an earlier index in this vector.
     pub steps: Vec<FheEvalStep>,
+}
+
+impl FheEvalArgs {
+    /// Resolves an interned pool entry; an out-of-range index fails the frame.
+    pub fn pool_bytes(&self, index: u8) -> anchor_lang::Result<[u8; 32]> {
+        self.pool
+            .get(index as usize)
+            .copied()
+            .ok_or_else(|| error!(ZamaHostError::FheEvalPoolIndexOutOfBounds))
+    }
+
+    /// Resolves an interned pool entry as a public key.
+    pub fn pool_key(&self, index: u8) -> anchor_lang::Result<Pubkey> {
+        Ok(Pubkey::new_from_array(self.pool_bytes(index)?))
+    }
 }
 
 /// One step inside a composed FHE eval.
@@ -289,19 +288,22 @@ pub enum FheEvalOperand {
     /// Input allowed through durable ACL state: a canonical `EncryptedValue`
     /// account in `remaining_accounts` whose current handle matches.
     AllowedDurable {
-        /// Handle expected as the encrypted value's current handle.
-        handle: [u8; 32],
+        /// Pool index of the handle expected as the encrypted value's current handle.
+        handle_index: u8,
         /// Index into `remaining_accounts` for the `EncryptedValue` account.
-        encrypted_value_index: u16,
+        encrypted_value_index: u8,
     },
     /// Instruction-local value produced by an earlier operation in this `fhe_eval`; allowed only
     /// inside the current evaluation scope and never stored.
     AllowedLocal {
         /// Producer operation index.
-        producer_index: u16,
+        producer_index: u8,
     },
-    /// Plaintext scalar bytes. Scalar operands are only valid on the RHS.
-    Scalar([u8; 32]),
+    /// Plaintext scalar bytes (pool index). Scalar operands are only valid on the RHS.
+    Scalar {
+        /// Pool index of the scalar value.
+        value_index: u8,
+    },
     /// External encrypted input verified in-frame by re-running the coprocessor attestation.
     /// The "allow" is instruction-local (no ACL record, no session, no PDA): the input is usable
     /// only where it is consumed in the same `fhe_eval`. Valid as an encrypted operand, not a scalar.
@@ -325,24 +327,24 @@ pub enum FheEvalOutput {
     /// is created when absent, or superseded when it exists.
     AllowedDurable {
         /// Index into `remaining_accounts` for the output `EncryptedValue` PDA.
-        output_encrypted_value_index: u16,
+        output_encrypted_value_index: u8,
         /// Optional index into `remaining_accounts` for the app account authority signer.
         ///
         /// `None` uses the fixed `app_account_authority` account in the eval
         /// context. `Some(index)` requires that remaining account to be a signer
-        /// and to match `output_app_account`.
-        output_app_account_authority_index: Option<u16>,
-        /// ACL domain key for the output encrypted value account.
-        output_acl_domain_key: Pubkey,
-        /// App account authorized to bind the output encrypted value account.
-        output_app_account: Pubkey,
-        /// Encrypted value label for the output encrypted value account.
-        output_encrypted_value_label: [u8; 32],
-        /// Subjects on the output encrypted value account. On create these are the initial
-        /// subjects; on supersede they become the new audience, which may rotate
+        /// and to match the output app account.
+        output_app_account_authority_index: Option<u8>,
+        /// Pool index of the ACL domain key for the output encrypted value account.
+        output_acl_domain_key_index: u8,
+        /// Pool index of the app account authorized to bind the output encrypted value account.
+        output_app_account_index: u8,
+        /// Pool index of the encrypted value label for the output encrypted value account.
+        output_encrypted_value_label_index: u8,
+        /// Pool indexes of the subjects on the output encrypted value account. On create these
+        /// are the initial subjects; on supersede they become the new audience, which may rotate
         /// away from the stored set (the outgoing audience is sealed into
         /// historical leaves first; added subjects pass the grant deny-list).
-        output_subjects: Vec<AclSubjectEntry>,
+        output_subject_indexes: Vec<u8>,
         /// Superseded handle: `None` on create, `Some(current_handle)` on update.
         /// Carried in instruction data so indexers can reconstruct the appended
         /// MMR leaves without reading the account; validated against the account.

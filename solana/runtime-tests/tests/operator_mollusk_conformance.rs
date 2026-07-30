@@ -55,7 +55,7 @@ fn encrypted_encrypted_add_executes_then_reads_cleartext_outcome() {
 fn encrypted_scalar_add_executes_then_reads_cleartext_outcome() {
     let mut flow = EvalFlow::new();
     let lhs = flow.encrypted(5, 40);
-    let rhs = FheEvalOperand::Scalar(be(2));
+    let rhs = scalar(be(2));
     let outcome = flow.execute(FheEvalStep::Binary {
         op: FheBinaryOpCode::Add,
         lhs: lhs.clone(),
@@ -215,7 +215,7 @@ fn system_owned_encrypted_operand_is_rejected() {
         FheEvalStep::Binary {
             op: FheBinaryOpCode::Add,
             lhs,
-            rhs: FheEvalOperand::Scalar(be(2)),
+            rhs: scalar(be(2)),
             output_fhe_type: 5,
             output: FheEvalOutput::AllowedLocal,
         },
@@ -233,7 +233,7 @@ fn readonly_durable_output_is_rejected() {
         FheEvalStep::Binary {
             op: FheBinaryOpCode::Add,
             lhs,
-            rhs: FheEvalOperand::Scalar(be(2)),
+            rhs: scalar(be(2)),
             output_fhe_type: 5,
             output,
         },
@@ -250,8 +250,42 @@ struct EvalFlow {
     next_seed: u8,
 }
 
+// Frame constants (operand handles, scalar values, output ACL metadata) live in the
+// frame's interned pool and are referenced by `u8` index (fhevm-internal#1853 W7). The
+// flow helpers intern through a thread-local pool while a test assembles its single
+// frame; `instruction` snapshots it into the finished args and byte-mirror helpers keep
+// resolving through it afterwards. Each test runs on its own thread and each flow
+// clears the pool on construction, so pools never mix across tests.
+std::thread_local! {
+    static FRAME_POOL: std::cell::RefCell<Vec<[u8; 32]>> =
+        const { std::cell::RefCell::new(Vec::new()) };
+}
+
+fn intern(bytes: [u8; 32]) -> u8 {
+    FRAME_POOL.with(|pool| {
+        let mut pool = pool.borrow_mut();
+        if let Some(index) = pool.iter().position(|entry| *entry == bytes) {
+            return u8::try_from(index).expect("test pool fits u8");
+        }
+        let index = u8::try_from(pool.len()).expect("test pool fits u8");
+        pool.push(bytes);
+        index
+    })
+}
+
+fn pool_entry(index: u8) -> [u8; 32] {
+    FRAME_POOL.with(|pool| pool.borrow()[usize::from(index)])
+}
+
+fn scalar(value: [u8; 32]) -> FheEvalOperand {
+    FheEvalOperand::Scalar {
+        value_index: intern(value),
+    }
+}
+
 impl EvalFlow {
     fn new() -> Self {
+        FRAME_POOL.with(|pool| pool.borrow_mut().clear());
         let authority = Pubkey::new_unique();
         let (host_config, host_config_account) = host_config_account(authority);
         Self {
@@ -276,13 +310,14 @@ impl EvalFlow {
         self.cleartext
             .insert(handle, TypedClearValue::from_u64(fhe_type, plaintext));
         let (address, value) = new_value_account(self.authority, [seed; 32], handle);
-        let encrypted_value_index = self.remaining.len() as u16;
+        let encrypted_value_index =
+            u8::try_from(self.remaining.len()).expect("test accounts fit u8");
         self.remaining
             .push(AccountMeta::new_readonly(address, false));
         self.accounts
             .push((address, encrypted_value_account(&value)));
         FheEvalOperand::AllowedDurable {
-            handle,
+            handle_index: intern(handle),
             encrypted_value_index,
         }
     }
@@ -299,19 +334,18 @@ impl EvalFlow {
             label,
         );
         let address = host::encrypted_value_address(value_key).0;
-        let output_encrypted_value_index = self.remaining.len() as u16;
+        let output_encrypted_value_index =
+            u8::try_from(self.remaining.len()).expect("test accounts fit u8");
         self.remaining
             .push(AccountMeta::new_readonly(address, false));
         self.accounts.push((address, empty_system_account()));
         FheEvalOutput::AllowedDurable {
             output_encrypted_value_index,
             output_app_account_authority_index: None,
-            output_acl_domain_key: self.authority,
-            output_app_account: self.authority,
-            output_encrypted_value_label: label,
-            output_subjects: vec![host::AclSubjectEntry {
-                pubkey: self.authority,
-            }],
+            output_acl_domain_key_index: intern(self.authority.to_bytes()),
+            output_app_account_index: intern(self.authority.to_bytes()),
+            output_encrypted_value_label_index: intern(label),
+            output_subject_indexes: vec![intern(self.authority.to_bytes())],
             previous_handle: None,
             previous_subjects: None,
             make_public: false,
@@ -326,19 +360,18 @@ impl EvalFlow {
             label,
         );
         let address = host::encrypted_value_address(value_key).0;
-        let output_encrypted_value_index = self.remaining.len() as u16;
+        let output_encrypted_value_index =
+            u8::try_from(self.remaining.len()).expect("test accounts fit u8");
         self.remaining.push(AccountMeta::new(address, false));
         self.accounts.push((address, empty_system_account()));
         (
             FheEvalOutput::AllowedDurable {
                 output_encrypted_value_index,
                 output_app_account_authority_index: None,
-                output_acl_domain_key: self.authority,
-                output_app_account: self.authority,
-                output_encrypted_value_label: label,
-                output_subjects: vec![host::AclSubjectEntry {
-                    pubkey: self.authority,
-                }],
+                output_acl_domain_key_index: intern(self.authority.to_bytes()),
+                output_app_account_index: intern(self.authority.to_bytes()),
+                output_encrypted_value_label_index: intern(label),
+                output_subject_indexes: vec![intern(self.authority.to_bytes())],
                 previous_handle: None,
                 previous_subjects: None,
                 make_public: false,
@@ -381,7 +414,11 @@ impl EvalFlow {
     }
 
     fn instruction(&self, step: FheEvalStep) -> (FheEvalArgs, Instruction) {
-        let args = FheEvalArgs { steps: vec![step] };
+        let args = FheEvalArgs {
+            account_count: u8::try_from(self.remaining.len()).expect("test accounts fit u8"),
+            pool: FRAME_POOL.with(|pool| pool.borrow().clone()),
+            steps: vec![step],
+        };
         let mut instruction = anchor_ix(
             host::id(),
             host::accounts::FheEval {
@@ -596,8 +633,8 @@ fn handle_for_chain(seed: u8, fhe_type: u8) -> [u8; 32] {
 
 fn operand_handle(operand: &FheEvalOperand) -> [u8; 32] {
     match operand {
-        FheEvalOperand::AllowedDurable { handle, .. } => *handle,
-        FheEvalOperand::Scalar(value) => *value,
+        FheEvalOperand::AllowedDurable { handle_index, .. } => pool_entry(*handle_index),
+        FheEvalOperand::Scalar { value_index } => pool_entry(*value_index),
         _ => panic!("representative flow uses only durable or scalar operands"),
     }
 }

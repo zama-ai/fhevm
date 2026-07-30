@@ -165,6 +165,8 @@ pub enum DecodeError {
     },
     #[error("fhe_eval durable output has mismatched previous_handle/previous_subjects options")]
     InvalidFheEvalPreviousState,
+    #[error("fhe_eval constant pool index {0} out of bounds")]
+    InvalidFheEvalPoolIndex(u8),
     #[error("missing or invalid Solana instruction stack metadata")]
     InvalidStackMetadata,
     #[error("born-public lifecycle event is missing for fhe_eval")]
@@ -278,7 +280,7 @@ fn account_at(ix: &RawInstruction, index: usize) -> Result<[u8; 32], DecodeError
 
 fn fhe_eval_durable_output_account(
     ix: &RawInstruction,
-    remaining_index: u16,
+    remaining_index: u8,
 ) -> Result<[u8; 32], DecodeError> {
     // `remaining_index` is the plan's `output_encrypted_value_index`, relative to
     // `remaining_accounts`. Those always start at a fixed offset past the 9 named
@@ -290,7 +292,7 @@ fn fhe_eval_durable_output_account(
         .get(absolute_index)
         .copied()
         .ok_or(DecodeError::MissingFheEvalOutputAccount {
-            remaining_index,
+            remaining_index: u16::from(remaining_index),
             absolute_index,
         })
 }
@@ -304,7 +306,7 @@ fn decode_fhe_eval_durable_outputs(
     for (step_index, step) in plan.steps.iter().enumerate() {
         let FheEvalOutput::AllowedDurable {
             output_encrypted_value_index,
-            output_subjects,
+            output_subject_indexes,
             previous_handle,
             previous_subjects,
             make_public,
@@ -319,10 +321,15 @@ fn decode_fhe_eval_durable_outputs(
         } else {
             None
         };
-        let output_subjects = output_subjects
+        let output_subjects = output_subject_indexes
             .iter()
-            .map(|subject| subject.pubkey.to_bytes())
-            .collect::<Vec<_>>();
+            .map(|index| {
+                plan.pool
+                    .get(usize::from(*index))
+                    .copied()
+                    .ok_or(DecodeError::InvalidFheEvalPoolIndex(*index))
+            })
+            .collect::<Result<Vec<_>, _>>()?;
         match (previous_handle, previous_subjects) {
             (None, None) => out.push(DecodedInstruction::FheEvalCreateEncryptedValue {
                 encrypted_value,
@@ -574,7 +581,7 @@ mod tests {
     use anchor_lang::prelude::Pubkey;
     use anchor_lang::AnchorSerialize;
     use borsh::BorshSerialize;
-    use zama_host::state::{AclSubjectEntry, FheEvalOutput, FheEvalStep};
+    use zama_host::state::{FheEvalOutput, FheEvalStep};
 
     fn program_id() -> [u8; 32] {
         [7u8; 32]
@@ -641,8 +648,36 @@ mod tests {
         accounts
     }
 
+    // Frame constants live in the interned pool (fhevm-internal#1853 W7). The
+    // fixtures intern through a thread-local pool while assembling steps and
+    // `frame` drains it into the finished args; each test runs on its own thread.
+    std::thread_local! {
+        static FRAME_POOL: std::cell::RefCell<Vec<[u8; 32]>> =
+            const { std::cell::RefCell::new(Vec::new()) };
+    }
+
+    fn intern(bytes: [u8; 32]) -> u8 {
+        FRAME_POOL.with(|pool| {
+            let mut pool = pool.borrow_mut();
+            if let Some(index) = pool.iter().position(|entry| *entry == bytes) {
+                return u8::try_from(index).expect("test pool fits u8");
+            }
+            let index = u8::try_from(pool.len()).expect("test pool fits u8");
+            pool.push(bytes);
+            index
+        })
+    }
+
+    fn frame(steps: Vec<FheEvalStep>) -> FheEvalArgs {
+        FheEvalArgs {
+            account_count: 0,
+            pool: FRAME_POOL.with(|pool| pool.take()),
+            steps,
+        }
+    }
+
     fn durable_output(
-        output_encrypted_value_index: u16,
+        output_encrypted_value_index: u8,
         subject_tags: &[u8],
         previous_handle: Option<[u8; 32]>,
         previous_subject_tags: Option<&[u8]>,
@@ -650,15 +685,10 @@ mod tests {
         FheEvalOutput::AllowedDurable {
             output_encrypted_value_index,
             output_app_account_authority_index: None,
-            output_acl_domain_key: pubkey(0x40),
-            output_app_account: pubkey(0x41),
-            output_encrypted_value_label: pk(0x42),
-            output_subjects: subject_tags
-                .iter()
-                .map(|tag| AclSubjectEntry {
-                    pubkey: pubkey(*tag),
-                })
-                .collect(),
+            output_acl_domain_key_index: intern(pk(0x40)),
+            output_app_account_index: intern(pk(0x41)),
+            output_encrypted_value_label_index: intern(pk(0x42)),
+            output_subject_indexes: subject_tags.iter().map(|tag| intern(pk(*tag))).collect(),
             previous_handle,
             previous_subjects: previous_subject_tags
                 .map(|subjects| subjects.iter().map(|tag| pubkey(*tag)).collect()),
@@ -667,7 +697,7 @@ mod tests {
     }
 
     fn make_public_durable_output(
-        output_encrypted_value_index: u16,
+        output_encrypted_value_index: u8,
         subject_tags: &[u8],
         previous_handle: Option<[u8; 32]>,
         previous_subject_tags: Option<&[u8]>,
@@ -801,19 +831,17 @@ mod tests {
     fn decodes_fhe_eval_durable_outputs_in_step_order() {
         let ev0 = pk(0xE0);
         let ev1 = pk(0xE1);
-        let plan = FheEvalArgs {
-            steps: vec![
-                FheEvalStep::TrivialEncrypt {
-                    plaintext: pk(0x10),
-                    fhe_type: 5,
-                    output: durable_output(0, &[0x30], None, None),
-                },
-                FheEvalStep::Rand {
-                    fhe_type: 5,
-                    output: durable_output(1, &[0x31, 0x32], Some(pk(0x20)), Some(&[0x31, 0x32])),
-                },
-            ],
-        };
+        let plan = frame(vec![
+            FheEvalStep::TrivialEncrypt {
+                plaintext: pk(0x10),
+                fhe_type: 5,
+                output: durable_output(0, &[0x30], None, None),
+            },
+            FheEvalStep::Rand {
+                fhe_type: 5,
+                output: durable_output(1, &[0x31, 0x32], Some(pk(0x20)), Some(&[0x31, 0x32])),
+            },
+        ]);
         let ix = ix_with_anchor_data(fhe_eval_accounts(&[ev0, ev1]), "fhe_eval", plan);
         let decoded = decode_program_instructions(program_id(), &[ix]).unwrap();
         assert_eq!(
@@ -874,20 +902,18 @@ mod tests {
     fn two_born_public_outputs() -> (RawInstruction, RawInstruction) {
         let ev0 = pk(0xE0);
         let ev1 = pk(0xE1);
-        let plan = FheEvalArgs {
-            steps: vec![
-                FheEvalStep::TrivialEncrypt {
-                    plaintext: pk(0x02),
-                    fhe_type: 5,
-                    output: make_public_durable_output(0, &[0x30], None, None),
-                },
-                FheEvalStep::TrivialEncrypt {
-                    plaintext: pk(0x03),
-                    fhe_type: 5,
-                    output: make_public_durable_output(1, &[0x31], Some(pk(0x20)), Some(&[0x31])),
-                },
-            ],
-        };
+        let plan = frame(vec![
+            FheEvalStep::TrivialEncrypt {
+                plaintext: pk(0x02),
+                fhe_type: 5,
+                output: make_public_durable_output(0, &[0x30], None, None),
+            },
+            FheEvalStep::TrivialEncrypt {
+                plaintext: pk(0x03),
+                fhe_type: 5,
+                output: make_public_durable_output(1, &[0x31], Some(pk(0x20)), Some(&[0x31])),
+            },
+        ]);
         let eval = ix_with_anchor_data(fhe_eval_accounts(&[ev0, ev1]), "fhe_eval", plan);
         let event = born_public_event_ix(&[(0, ev0, pk(0x50)), (1, ev1, pk(0x51))]);
         (eval, event)
@@ -954,13 +980,11 @@ mod tests {
 
     #[test]
     fn extra_batch_for_non_public_frame_fails_closed() {
-        let plan = FheEvalArgs {
-            steps: vec![FheEvalStep::TrivialEncrypt {
-                plaintext: pk(0x02),
-                fhe_type: 5,
-                output: durable_output(0, &[0x30], None, None),
-            }],
-        };
+        let plan = frame(vec![FheEvalStep::TrivialEncrypt {
+            plaintext: pk(0x02),
+            fhe_type: 5,
+            output: durable_output(0, &[0x30], None, None),
+        }]);
         let eval = ix_with_anchor_data(fhe_eval_accounts(&[pk(0xE0)]), "fhe_eval", plan);
         let event = born_public_event_ix(&[(0, pk(0xE0), pk(0x50))]);
         assert_eq!(

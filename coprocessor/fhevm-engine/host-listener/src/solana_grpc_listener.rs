@@ -231,13 +231,20 @@ pub async fn run(
 /// pair follows them, so they can never be truncated off the tail. Returns `None` when
 /// the index is out of range; the caller treats that as a hard problem, since the
 /// durable output would otherwise never request ciphertext material.
+/// The number of named `fhe_eval` accounts before the dynamic tail the frame's
+/// `u8` indices refer to.
+const FHE_EVAL_REMAINING_BASE: usize = 9;
+
+fn fhe_eval_remaining_accounts(accounts: &[[u8; 32]]) -> &[[u8; 32]] {
+    accounts.get(FHE_EVAL_REMAINING_BASE..).unwrap_or(&[])
+}
+
 fn fhe_eval_durable_encrypted_value(
     accounts: &[[u8; 32]],
-    remaining_index: u16,
+    remaining_index: u8,
 ) -> Option<[u8; 32]> {
-    const FHE_EVAL_REMAINING_BASE: usize = 9;
     accounts
-        .get(FHE_EVAL_REMAINING_BASE + remaining_index as usize)
+        .get(FHE_EVAL_REMAINING_BASE + usize::from(remaining_index))
         .copied()
 }
 
@@ -1005,8 +1012,12 @@ async fn reconstruct_events_for_insert(
                 .unwrap_or([0u8; 32]);
             // Durable output handles recompute from the plan's value_key + block
             // entropy alone (DD-015): no encrypted-value-account leaf count, no handle hints.
-            let Some(steps) = reconstruct_fhe_eval_steps(&plan, subject, ctx)
-            else {
+            let Some(steps) = reconstruct_fhe_eval_steps(
+                &plan,
+                subject,
+                fhe_eval_remaining_accounts(&ix.accounts),
+                ctx,
+            ) else {
                 anyhow::bail!(
                     "reconstruct: incomplete fhe_eval reconstruction in slot {slot}; \
                      malformed plan or missing handle context"

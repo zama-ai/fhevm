@@ -1,0 +1,83 @@
+//! Internal operand representation shared by the builder, validators, and lowering.
+
+use anchor_lang::prelude::Pubkey;
+#[cfg(not(target_os = "solana"))]
+use std::sync::atomic::{AtomicU64, Ordering};
+
+/// Durable host operand identified by its `EncryptedValue` PDA.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) struct DurableOperand {
+    pub(crate) handle: [u8; 32],
+    pub(crate) encrypted_value: Pubkey,
+}
+
+/// Raw operand used by the lowering implementation.
+///
+/// Public builders expose typed [`Encrypted`] values instead.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) struct Operand(pub(crate) OperandKind);
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum OperandKind {
+    Durable(DurableOperand),
+    Transient {
+        producer_index: u16,
+        builder_scope: EvalBuilderScope,
+    },
+    /// External input verified in-frame via a coprocessor attestation (EVM `fromExternal`). The
+    /// `Vec`-bearing attestation is held by the [`EvalBuilder`] and referenced by index; keeping
+    /// only the index + `input_handle` here leaves the operand `Copy`. `input_handle` carries the
+    /// FHE type for operand type-checks without touching the attestation.
+    VerifiedInput {
+        input_handle: [u8; 32],
+        attestation_index: u16,
+    },
+    Scalar([u8; 32]),
+}
+
+impl Operand {
+    pub(crate) fn durable(handle: [u8; 32], encrypted_value: Pubkey) -> Self {
+        Self(OperandKind::Durable(DurableOperand {
+            handle,
+            encrypted_value,
+        }))
+    }
+
+    pub(crate) fn transient(producer_index: u16, builder_scope: EvalBuilderScope) -> Self {
+        Self(OperandKind::Transient {
+            producer_index,
+            builder_scope,
+        })
+    }
+
+    pub(crate) fn scalar(value: [u8; 32]) -> Self {
+        Self(OperandKind::Scalar(value))
+    }
+
+    pub(crate) fn verified_input(input_handle: [u8; 32], attestation_index: u16) -> Self {
+        Self(OperandKind::VerifiedInput {
+            input_handle,
+            attestation_index,
+        })
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) struct EvalBuilderScope(pub(crate) u64);
+
+#[cfg(not(target_os = "solana"))]
+static NEXT_EVAL_BUILDER_SCOPE: AtomicU64 = AtomicU64::new(1);
+
+#[cfg(not(target_os = "solana"))]
+pub(crate) fn next_eval_builder_scope() -> EvalBuilderScope {
+    EvalBuilderScope(NEXT_EVAL_BUILDER_SCOPE.fetch_add(1, Ordering::Relaxed))
+}
+
+#[cfg(target_os = "solana")]
+pub(crate) fn next_eval_builder_scope() -> EvalBuilderScope {
+    // SBF forbids writable static data (no `.data`/atomics), so on-chain every builder
+    // shares scope 1: mixing operands across two builders created inside one instruction
+    // is caught only by the producer-index bounds check there. Off-chain (where plans are
+    // normally built and tested) the counter makes cross-builder mixing a hard error.
+    EvalBuilderScope(1)
+}

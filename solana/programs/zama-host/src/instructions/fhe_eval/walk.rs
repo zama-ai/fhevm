@@ -153,9 +153,12 @@ impl EvalExecutionState<'_, '_, '_> {
     fn resolve_encrypted_operand(&mut self, operand: &FheEvalOperand) -> Result<ResolvedOperand> {
         match operand {
             FheEvalOperand::AllowedDurable {
-                handle,
+                handle_index,
                 encrypted_value_index,
-            } => self.resolve_durable_operand(*handle, *encrypted_value_index),
+            } => {
+                let handle = self.pool_bytes(*handle_index)?;
+                self.resolve_durable_operand(handle, u16::from(*encrypted_value_index))
+            }
             FheEvalOperand::AllowedLocal { producer_index } => self
                 .produced
                 .get(*producer_index as usize)
@@ -173,14 +176,14 @@ impl EvalExecutionState<'_, '_, '_> {
                 );
                 self.resolve_verified_input_operand(attestation)
             }
-            FheEvalOperand::Scalar(_) => Err(error!(ZamaHostError::InvalidFheEvalAccount)),
+            FheEvalOperand::Scalar { .. } => Err(error!(ZamaHostError::InvalidFheEvalAccount)),
         }
     }
 
     /// Resolves a binary left-hand operand, which may not be a scalar.
     fn resolve_lhs_operand(&mut self, operand: &FheEvalOperand) -> Result<ResolvedOperand> {
         match operand {
-            FheEvalOperand::Scalar(_) => Err(error!(ZamaHostError::InvalidFheEvalAccount)),
+            FheEvalOperand::Scalar { .. } => Err(error!(ZamaHostError::InvalidFheEvalAccount)),
             _ => self.resolve_encrypted_operand(operand),
         }
     }
@@ -188,7 +191,9 @@ impl EvalExecutionState<'_, '_, '_> {
     /// Resolves a binary right-hand operand, which may be a scalar.
     fn resolve_rhs_operand(&mut self, operand: &FheEvalOperand) -> Result<ResolvedOperand> {
         match operand {
-            FheEvalOperand::Scalar(value) => Ok(ResolvedOperand::scalar(*value)),
+            FheEvalOperand::Scalar { value_index } => {
+                Ok(ResolvedOperand::scalar(self.pool_bytes(*value_index)?))
+            }
             _ => self.resolve_encrypted_operand(operand),
         }
     }

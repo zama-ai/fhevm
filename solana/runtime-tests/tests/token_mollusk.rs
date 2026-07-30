@@ -206,18 +206,24 @@ impl CleartextLedger {
         let mut durable_outputs = 0;
         for (step, value) in eval_args[0].steps.iter().zip(outputs) {
             let host::FheEvalOutput::AllowedDurable {
-                output_acl_domain_key,
-                output_app_account,
-                output_encrypted_value_label,
+                output_acl_domain_key_index,
+                output_app_account_index,
+                output_encrypted_value_label_index,
                 ..
             } = eval_step_output(step)
             else {
                 continue;
             };
             let value_key = zama_solana_acl::derive_value_key(
-                output_acl_domain_key.to_bytes(),
-                output_app_account.to_bytes(),
-                *output_encrypted_value_label,
+                eval_args[0]
+                    .pool_bytes(*output_acl_domain_key_index)
+                    .expect("valid pool index"),
+                eval_args[0]
+                    .pool_bytes(*output_app_account_index)
+                    .expect("valid pool index"),
+                eval_args[0]
+                    .pool_bytes(*output_encrypted_value_label_index)
+                    .expect("valid pool index"),
             );
             let address = host::encrypted_value_address(value_key).0;
             let persisted = read_encrypted_value(context, address);

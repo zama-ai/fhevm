@@ -67,6 +67,10 @@ pub fn fhe_eval<'info>(ctx: Context<'info, FheEval<'info>>, args: FheEvalArgs) -
         !args.steps.is_empty() && args.steps.len() <= MAX_FHE_EVAL_OPS,
         ZamaHostError::InvalidFheEvalOperationCount
     );
+    require!(
+        usize::from(args.account_count) == ctx.remaining_accounts.len(),
+        ZamaHostError::FheEvalAccountCountMismatch
+    );
     // The account table owns every remaining-accounts invariant for the frame:
     // duplicate rejection (at construction), the used-account bitmap (marked in
     // preflight, asserted before execution mutates state), durable-output
@@ -139,7 +143,9 @@ fn collect_durable_anchor_bytes(
             ..
         } = step_output(step)
         {
-            let key = table.account(*output_encrypted_value_index)?.key();
+            let key = table
+                .account(u16::from(*output_encrypted_value_index))?
+                .key();
             anchor_bytes.extend_from_slice(key.as_ref());
             anchor_bytes.extend_from_slice(&previous_handle.unwrap_or([0; 32]));
         }
@@ -157,6 +163,7 @@ fn execute_eval_frame<'a, 'info>(
 ) -> Result<Vec<ProducedPublicOutput>> {
     let mut execution = EvalExecutionState {
         table,
+        pool: &args.pool,
         produced: Vec::with_capacity(args.steps.len()),
         born_public_outputs: Vec::new(),
         subject,
@@ -175,6 +182,8 @@ fn execute_eval_frame<'a, 'info>(
 /// [`walk`].
 struct EvalExecutionState<'t, 'a, 'info> {
     table: &'t mut EvalAccountTable<'a, 'info>,
+    /// The frame's interned constant pool ([`FheEvalArgs::pool`]).
+    pool: &'t [[u8; 32]],
     produced: Vec<ProducedValue>,
     born_public_outputs: Vec<ProducedPublicOutput>,
     subject: Pubkey,
@@ -190,6 +199,13 @@ struct EvalExecutionState<'t, 'a, 'info> {
 }
 
 impl<'info> EvalExecutionState<'_, '_, 'info> {
+    fn pool_bytes(&self, index: u8) -> Result<[u8; 32]> {
+        self.pool
+            .get(index as usize)
+            .copied()
+            .ok_or_else(|| error!(ZamaHostError::FheEvalPoolIndexOutOfBounds))
+    }
+
     #[inline(never)]
     fn resolve_durable_operand(
         &mut self,
@@ -254,6 +270,7 @@ impl<'info> EvalExecutionState<'_, '_, 'info> {
         let born_public_output = accept_eval_output(
             ctx,
             self.table,
+            self.pool,
             &mut self.produced,
             result,
             output,
@@ -269,7 +286,10 @@ impl<'info> EvalExecutionState<'_, '_, 'info> {
             ..
         } = output
         {
-            let key = self.table.account(*output_encrypted_value_index)?.key();
+            let key = self
+                .table
+                .account(u16::from(*output_encrypted_value_index))?
+                .key();
             self.superseded_in_frame.push((key, *previous_handle));
         }
         Ok(())
@@ -297,6 +317,7 @@ pub fn assert_ternary_operand_types(
 fn accept_eval_output<'info>(
     ctx: &Context<'info, FheEval<'info>>,
     table: &mut EvalAccountTable<'_, 'info>,
+    pool: &[[u8; 32]],
     produced: &mut Vec<ProducedValue>,
     result: [u8; 32],
     output: &FheEvalOutput,
@@ -313,30 +334,35 @@ fn accept_eval_output<'info>(
         FheEvalOutput::AllowedDurable {
             output_encrypted_value_index,
             output_app_account_authority_index,
-            output_acl_domain_key,
-            output_app_account,
-            output_encrypted_value_label,
-            output_subjects,
+            output_acl_domain_key_index,
+            output_app_account_index,
+            output_encrypted_value_label_index,
+            output_subject_indexes,
             previous_handle,
             previous_subjects,
             make_public,
         } => {
+            let output_acl_domain_key = pool_key(pool, *output_acl_domain_key_index)?;
+            let output_app_account = pool_key(pool, *output_app_account_index)?;
+            let output_encrypted_value_label =
+                pool_bytes(pool, *output_encrypted_value_label_index)?;
+            let output_subjects = resolve_pool_subjects(pool, output_subject_indexes)?;
             let app_account_authority = durable_output_authority(
                 table,
                 ctx,
-                *output_app_account_authority_index,
-                *output_app_account,
+                output_app_account_authority_index.map(u16::from),
+                output_app_account,
             )?;
             let encrypted_value = bind_eval_output(
                 ctx,
                 table,
-                *output_encrypted_value_index,
+                u16::from(*output_encrypted_value_index),
                 result,
                 app_account_authority.key(),
-                *output_acl_domain_key,
-                *output_app_account,
-                *output_encrypted_value_label,
-                output_subjects,
+                output_acl_domain_key,
+                output_app_account,
+                output_encrypted_value_label,
+                &output_subjects,
                 previous_handle,
                 previous_subjects,
                 *make_public,
@@ -354,6 +380,20 @@ fn accept_eval_output<'info>(
         public_decrypt_allowed: output_public_decrypt_allowed,
     });
     Ok(born_public_output)
+}
+
+fn pool_bytes(pool: &[[u8; 32]], index: u8) -> Result<[u8; 32]> {
+    pool.get(index as usize)
+        .copied()
+        .ok_or_else(|| error!(ZamaHostError::FheEvalPoolIndexOutOfBounds))
+}
+
+fn pool_key(pool: &[[u8; 32]], index: u8) -> Result<Pubkey> {
+    Ok(Pubkey::new_from_array(pool_bytes(pool, index)?))
+}
+
+fn resolve_pool_subjects(pool: &[[u8; 32]], indexes: &[u8]) -> Result<Vec<Pubkey>> {
+    indexes.iter().map(|index| pool_key(pool, *index)).collect()
 }
 
 fn durable_output_authority<'info>(
@@ -445,7 +485,7 @@ fn bind_eval_output<'info>(
     output_acl_domain_key: Pubkey,
     output_app_account: Pubkey,
     output_encrypted_value_label: [u8; 32],
-    output_subjects: &[AclSubjectEntry],
+    output_subjects: &[Pubkey],
     previous_handle: &Option<[u8; 32]>,
     previous_subjects: &Option<Vec<Pubkey>>,
     make_public: bool,
@@ -486,7 +526,7 @@ fn bind_eval_output<'info>(
         supersede_current_handle(output_info, &mut value, result)?;
         // Seal the outgoing audience into historical leaves first (above), then rotate
         // to the new set — every added subject cleared the deny-list check above.
-        value.subjects = output_subjects.iter().map(|entry| entry.pubkey).collect();
+        value.subjects = output_subjects.to_vec();
         // Born-public opt-in: after the outgoing handle's historical leaves, seal a
         // public-decrypt leaf for the NEW current handle (leaf order: historical(old)
         // per subject FIRST, then public(new) LAST). Same commitment as
@@ -515,7 +555,7 @@ fn bind_eval_output<'info>(
             app_account: output_app_account,
             encrypted_value_label: output_encrypted_value_label,
             current_handle: result,
-            subjects: output_subjects.iter().map(|s| s.pubkey).collect(),
+            subjects: output_subjects.to_vec(),
             leaf_count: 0,
             peaks: Vec::new(),
             bump: output_pda.bump,
@@ -572,17 +612,17 @@ fn check_rotation_grants_not_denied(
     host_config: &HostConfig,
     table: &EvalAccountTable<'_, '_>,
     stored_subjects: &[Pubkey],
-    output_subjects: &[AclSubjectEntry],
+    output_subjects: &[Pubkey],
 ) -> Result<()> {
     if !host_config.grant_deny_list_enabled {
         return Ok(());
     }
-    for entry in output_subjects {
-        if stored_subjects.contains(&entry.pubkey) {
+    for subject in output_subjects {
+        if stored_subjects.contains(subject) {
             continue;
         }
-        let deny_record = table.deny_record(host_config.grant_deny_list_enabled, entry.pubkey)?;
-        check_grant_not_denied_info(host_config, entry.pubkey, deny_record)?;
+        let deny_record = table.deny_record(host_config.grant_deny_list_enabled, *subject)?;
+        check_grant_not_denied_info(host_config, *subject, deny_record)?;
     }
     Ok(())
 }
@@ -625,11 +665,8 @@ mod tests {
         }
     }
 
-    fn grants(subjects: &[Pubkey]) -> Vec<AclSubjectEntry> {
-        subjects
-            .iter()
-            .map(|subject| AclSubjectEntry { pubkey: *subject })
-            .collect()
+    fn grants(subjects: &[Pubkey]) -> Vec<Pubkey> {
+        subjects.to_vec()
     }
 
     #[test]

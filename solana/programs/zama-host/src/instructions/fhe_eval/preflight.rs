@@ -80,7 +80,7 @@ fn assert_rand_steps_anchor_durable_output(args: &FheEvalArgs) -> Result<()> {
 fn operand_pins_subject(operand: &FheEvalOperand) -> bool {
     match operand {
         FheEvalOperand::AllowedDurable { .. } | FheEvalOperand::VerifiedInput { .. } => true,
-        FheEvalOperand::AllowedLocal { .. } | FheEvalOperand::Scalar(_) => false,
+        FheEvalOperand::AllowedLocal { .. } | FheEvalOperand::Scalar { .. } => false,
     }
 }
 
@@ -150,12 +150,20 @@ fn preflight_eval_frame_accounts(
 ) -> Result<()> {
     let mut preflight = EvalPreflight {
         table,
+        pool: &args.pool,
+        pool_used: vec![false; args.pool.len()],
         app_account_authority,
         deny_list_enabled,
     };
     for (index, step) in args.steps.iter().enumerate() {
         preflight_eval_step(step, index, &mut preflight)?;
     }
+    // Whole-frame hygiene, mirroring the account table: every interned pool
+    // entry must be referenced by some step, so a frame cannot carry dead bytes.
+    require!(
+        preflight.pool_used.iter().all(|used| *used),
+        ZamaHostError::FheEvalPoolIndexOutOfBounds
+    );
     preflight.table.assert_all_used()
 }
 
@@ -164,16 +172,30 @@ fn preflight_eval_frame_accounts(
 /// any pass mutates state.
 struct EvalPreflight<'t, 'a, 'info> {
     table: &'t mut EvalAccountTable<'a, 'info>,
+    pool: &'t [[u8; 32]],
+    pool_used: Vec<bool>,
     app_account_authority: Pubkey,
     deny_list_enabled: bool,
 }
 
 impl EvalPreflight<'_, '_, '_> {
-    fn mark_output_authority(&mut self, authority_index: Option<u16>) -> Result<Pubkey> {
+    /// Marks a pool reference used and returns its bytes; out-of-range fails the frame here,
+    /// before execution resolves anything.
+    fn mark_pool(&mut self, index: u8) -> Result<[u8; 32]> {
+        let entry = self
+            .pool
+            .get(index as usize)
+            .copied()
+            .ok_or_else(|| error!(ZamaHostError::FheEvalPoolIndexOutOfBounds))?;
+        self.pool_used[index as usize] = true;
+        Ok(entry)
+    }
+
+    fn mark_output_authority(&mut self, authority_index: Option<u8>) -> Result<Pubkey> {
         match authority_index {
             Some(index) => {
-                let authority = self.table.account(index)?.key();
-                self.table.mark(index)?;
+                let authority = self.table.account(u16::from(index))?.key();
+                self.table.mark(u16::from(index))?;
                 Ok(authority)
             }
             None => Ok(self.app_account_authority),
@@ -259,7 +281,10 @@ fn preflight_rhs_operand(
     preflight: &mut EvalPreflight<'_, '_, '_>,
 ) -> Result<()> {
     match operand {
-        FheEvalOperand::Scalar(_) => Ok(()),
+        FheEvalOperand::Scalar { value_index } => {
+            preflight.mark_pool(*value_index)?;
+            Ok(())
+        }
         _ => preflight_encrypted_operand(operand, step_index, preflight),
     }
 }
@@ -271,10 +296,11 @@ fn preflight_encrypted_operand(
 ) -> Result<()> {
     match operand {
         FheEvalOperand::AllowedDurable {
+            handle_index,
             encrypted_value_index,
-            ..
         } => {
-            preflight.table.mark(*encrypted_value_index)?;
+            preflight.mark_pool(*handle_index)?;
+            preflight.table.mark(u16::from(*encrypted_value_index))?;
         }
         FheEvalOperand::AllowedLocal { producer_index } => {
             require!(
@@ -285,7 +311,7 @@ fn preflight_encrypted_operand(
         FheEvalOperand::VerifiedInput { .. } => {
             // No remaining account: the attestation is carried inline and verified in-frame.
         }
-        FheEvalOperand::Scalar(_) => return Err(error!(ZamaHostError::InvalidFheEvalAccount)),
+        FheEvalOperand::Scalar { .. } => return Err(error!(ZamaHostError::InvalidFheEvalAccount)),
     }
     Ok(())
 }
@@ -299,11 +325,19 @@ fn preflight_output(
         FheEvalOutput::AllowedDurable {
             output_encrypted_value_index,
             output_app_account_authority_index,
-            output_subjects,
+            output_acl_domain_key_index,
+            output_app_account_index,
+            output_encrypted_value_label_index,
+            output_subject_indexes,
             previous_subjects,
             ..
         } => {
-            preflight.table.mark(*output_encrypted_value_index)?;
+            preflight
+                .table
+                .mark(u16::from(*output_encrypted_value_index))?;
+            preflight.mark_pool(*output_acl_domain_key_index)?;
+            preflight.mark_pool(*output_app_account_index)?;
+            preflight.mark_pool(*output_encrypted_value_label_index)?;
             let authority = preflight.mark_output_authority(*output_app_account_authority_index)?;
             preflight.mark_deny_record(authority)?;
             // A supersede that rotates the audience deny-checks each added subject in the bind
@@ -311,10 +345,11 @@ fn preflight_output(
             // `output_subjects \ previous_subjects` from instruction data alone — a lying
             // previous_subjects is rejected later with PreviousStateMismatch, so trusting it for
             // account-marking is safe. `None` previous is a create (no rotation, nothing added).
-            if let Some(previous_subjects) = previous_subjects {
-                for subject in output_subjects {
-                    if !previous_subjects.contains(&subject.pubkey) {
-                        preflight.mark_deny_record(subject.pubkey)?;
+            for subject_index in output_subject_indexes {
+                let subject = Pubkey::new_from_array(preflight.mark_pool(*subject_index)?);
+                if let Some(previous_subjects) = previous_subjects {
+                    if !previous_subjects.contains(&subject) {
+                        preflight.mark_deny_record(subject)?;
                     }
                 }
             }
@@ -334,10 +369,10 @@ mod tests {
         let args = frame(vec![FheEvalStep::Binary {
             op: FheBinaryOpCode::Add,
             lhs: FheEvalOperand::AllowedDurable {
-                handle: [1; 32],
+                handle_index: 0,
                 encrypted_value_index: 0,
             },
-            rhs: FheEvalOperand::Scalar([2; 32]),
+            rhs: FheEvalOperand::Scalar { value_index: 1 },
             output_fhe_type: 5,
             output: FheEvalOutput::AllowedLocal,
         }]);
@@ -361,7 +396,11 @@ mod tests {
     }
 
     fn frame(steps: Vec<FheEvalStep>) -> FheEvalArgs {
-        FheEvalArgs { steps }
+        FheEvalArgs {
+            account_count: 0,
+            pool: vec![[1; 32], [2; 32]],
+            steps,
+        }
     }
 
     fn trivial_local() -> FheEvalStep {
@@ -376,10 +415,10 @@ mod tests {
         FheEvalOutput::AllowedDurable {
             output_encrypted_value_index: 0,
             output_app_account_authority_index: None,
-            output_acl_domain_key: Pubkey::new_unique(),
-            output_app_account: Pubkey::new_unique(),
-            output_encrypted_value_label: [0; 32],
-            output_subjects: Vec::new(),
+            output_acl_domain_key_index: 0,
+            output_app_account_index: 0,
+            output_encrypted_value_label_index: 1,
+            output_subject_indexes: Vec::new(),
             previous_handle: None,
             previous_subjects: None,
             make_public: false,
@@ -475,10 +514,10 @@ mod tests {
         let step = FheEvalStep::Binary {
             op: FheBinaryOpCode::Add,
             lhs: FheEvalOperand::AllowedDurable {
-                handle: [1; 32],
+                handle_index: 0,
                 encrypted_value_index: 0,
             },
-            rhs: FheEvalOperand::Scalar([2; 32]),
+            rhs: FheEvalOperand::Scalar { value_index: 1 },
             output_fhe_type: 5,
             output: FheEvalOutput::AllowedLocal,
         };

@@ -134,17 +134,28 @@ fn reconstruct_transfer_events(
     meta: &TransactionMetadata,
     account_keys: &[Pubkey],
 ) -> Vec<SolanaHostEvent> {
-    let plan = meta
+    // fhe_eval has 9 named accounts (incl. event-CPI authority + program); the rest are the
+    // frame's remaining accounts, which the pooled wire format references by index.
+    const FHE_EVAL_REMAINING_BASE: usize = 9;
+    let (plan, remaining_accounts) = meta
         .inner_instructions
         .iter()
         .flatten()
         .filter(|inner| *inner.instruction.program_id(account_keys) == fixture.host_program_id)
-        .find_map(|inner| decode_fhe_eval_args(&inner.instruction.data))
+        .find_map(|inner| {
+            let plan = decode_fhe_eval_args(&inner.instruction.data)?;
+            let remaining = inner.instruction.accounts[FHE_EVAL_REMAINING_BASE..]
+                .iter()
+                .map(|index| account_keys[usize::from(*index)].to_bytes())
+                .collect::<Vec<_>>();
+            Some((plan, remaining))
+        })
         .expect("confidential transfer must CPI into zama-host fhe_eval");
     let clock = fixture.svm.get_sysvar::<Clock>();
     reconstruct_fhe_eval_events(
         &plan,
         fixture.compute_signer.to_bytes(),
+        &remaining_accounts,
         &ReconstructContext {
             chain_id: host::SOLANA_POC_CHAIN_ID,
             previous_bank_hash: PREVIOUS_BANK_HASH,

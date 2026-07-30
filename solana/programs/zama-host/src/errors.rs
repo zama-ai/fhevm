@@ -283,4 +283,10 @@ pub enum ZamaHostError {
     /// The KMS signer set contains the zero address, which can never be a valid recovered EVM signer.
     #[msg("KMS signer set contains the zero address")]
     ZeroKmsSigner,
+    /// A step referenced an interned pool index past the end of `FheEvalArgs::pool`.
+    #[msg("FHE eval pool index out of bounds")]
+    FheEvalPoolIndexOutOfBounds,
+    /// `FheEvalArgs::account_count` does not match the actual remaining-accounts length.
+    #[msg("FHE eval declared account count mismatch")]
+    FheEvalAccountCountMismatch,
 }
