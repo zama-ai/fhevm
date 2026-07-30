@@ -1,6 +1,6 @@
 {
   "claim": {
-    "compute_units": 267552,
+    "compute_units": 267576,
     "unique_accounts": 22,
     "instruction_data_bytes": 8,
     "cpi_instructions": 12,
@@ -8,7 +8,7 @@
     "max_cpi_instruction_data_bytes": 662
   },
   "dispatch": {
-    "compute_units": 264780,
+    "compute_units": 264804,
     "unique_accounts": 18,
     "instruction_data_bytes": 8,
     "cpi_instructions": 9,
@@ -32,7 +32,7 @@
     "max_cpi_instruction_data_bytes": 242
   },
   "redeem_claim": {
-    "compute_units": 305053,
+    "compute_units": 305077,
     "unique_accounts": 22,
     "instruction_data_bytes": 8,
     "cpi_instructions": 12,
@@ -40,7 +40,7 @@
     "max_cpi_instruction_data_bytes": 662
   },
   "redeem_dispatch": {
-    "compute_units": 213781,
+    "compute_units": 213805,
     "unique_accounts": 18,
     "instruction_data_bytes": 8,
     "cpi_instructions": 9,
