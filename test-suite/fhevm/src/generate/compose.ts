@@ -762,11 +762,61 @@ const buildExtraCoprocessorListenerOverride = async (
         locallyBuilt ? {} : compat.coprocessorDropFlags,
       );
       adjusted.container_name = cloneName;
+      // Extra chains keep their env canonical id (default chain), so they don't decode proposals.
       applyCoprocessorSource(adjusted, baseName, instance, locallyBuilt);
       delete adjusted.depends_on;
       services[cloneName] = adjusted;
     }
   }
+
+  // Blue-green: clone the GCS host-listeners per extra chain too, so the
+  // GCS stack can ingest and dry-run each chain.
+  if (plan.blueGreen) {
+    const gcs = plan.blueGreen.gcs;
+    for (const instance of plan.coprocessor.instances) {
+      const prefix = instance.index === 0 ? "coprocessor-" : `coprocessor${instance.index}-`;
+      const gcsPrefix = `${prefix}gcs-`;
+      const envFileValue = envPath(`coprocessor-${chain.key}.${instance.index}`);
+      const instanceEnv = await readEnvFile(envFileValue);
+      const gcsInstance: ResolvedCoprocessorScenarioInstance = {
+        index: instance.index,
+        source: gcs.source,
+        env: gcs.env,
+        args: gcs.args,
+      };
+      for (const baseName of listenerServices) {
+        const suffix = baseName.replace(/^coprocessor-/, "");
+        const cloneName = `${gcsPrefix}${suffix}${chainSuffix}`;
+        const baseService = doc.services[baseName];
+        if (!baseService) continue;
+        const adjusted = applyInstanceAdjustments(
+          baseName,
+          baseService,
+          envFileValue,
+          instanceEnv,
+          gcsInstance,
+          compat.coprocessorArgs,
+          compat.coprocessorDropFlags,
+        );
+        adjusted.container_name = cloneName;
+        // GCS is always local-built and retagged to its stack version.
+        const buildSpec = localBuildSpecFor("coprocessor", baseName);
+        if (buildSpec) {
+          adjusted.image = retagLocal(baseService.image, `gcs-${gcs.stackVersion}`);
+          adjusted.build = {
+            ...buildSpec,
+            args: {
+              ...(buildSpec.args as Record<string, string> | undefined),
+              BUILD_STACK_VERSION: gcs.stackVersion,
+            },
+          };
+        }
+        delete adjusted.depends_on;
+        services[cloneName] = adjusted;
+      }
+    }
+  }
+
   return { services };
 };
 
