@@ -71,6 +71,7 @@ import {
 
 import { loadPersonas, until } from "../harness";
 import { depositRoots, type VaultDemoRoots } from "../../demo/config";
+import { readCurrentDemoAuthorization } from "../../demo/lifecycle";
 import { DEMO_KEYPAIRS, loadDemoEnv } from "../../demo/loadDemoEnv";
 
 // A live batcher arc waits on slot age + SNS commit + settle certificate + the decrypt roundtrip.
@@ -81,8 +82,8 @@ import { DEMO_KEYPAIRS, loadDemoEnv } from "../../demo/loadDemoEnv";
 // a hung RPC read is ultimately caught by this scenario timeout.
 const SCENARIO_TIMEOUT_MS = 30 * 60_000;
 
-// The demo faucet binds loopback by default (same-machine demo boundary); the acceptance workflow
-// starts it on 8090 and waits for /health before invoking this. Overridable for a non-default run.
+// The lifecycle-owned demo faucet binds loopback on 8090 and is health-gated before this runs.
+// The endpoint remains overridable for a non-default run.
 const FAUCET_URL = process.env.DEMO_FAUCET_URL ?? "http://127.0.0.1:8090";
 // Mock USDC decimals (matches the seeded SPL mint and the faucet).
 const USDC_DECIMALS = 6;
@@ -117,7 +118,8 @@ type SolanaInputProofSubmission = unknown;
 /** The vault surface the scenario drives — provisioning, batch phases, claim + decrypt (untyped: runtime dynamic-import seam). */
 type VaultDepositArcSurface = {
   buildInitializeTokenAccountInstruction(parameters: {
-    owner: TransactionSigner;
+    payer: TransactionSigner;
+    owner: Address;
     mint: Address;
     hostConfig: Address;
     initialBalance?: number | bigint;
@@ -304,6 +306,7 @@ describe.skipIf(!runsDemoScenarios)("solana deposit-arc scenario", () => {
     "deposit arc (full arc): alice funds, initializes her confidential accounts, wraps mock USDC, and joins the pending deposit batch with a coprocessor-attested amount; the keeper dispatches the aged batch and settles it with the KMS burn certificate; alice claims her payout and user-decrypts the exact amount",
     async () => {
       const { env, config } = await loadDemoEnv();
+      const authorization = await readCurrentDemoAuthorization();
 
       // Personas: the keeper is the operator that plays dispatch + settle; alice is the depositing
       // end-user. Both load from committed demo keypairs (pubkeys cross-checked against the config).
@@ -359,7 +362,12 @@ describe.skipIf(!runsDemoScenarios)("solana deposit-arc scenario", () => {
       await personas.fund(alicePersona);
       const mintUsdc = await fetch(`${FAUCET_URL}/mint-usdc`, {
         method: "POST",
-        headers: { "content-type": "application/json" },
+        headers: {
+          authorization: `Bearer ${authorization.token}`,
+          "content-type": "application/json",
+          origin: "http://127.0.0.1:5173",
+          "x-fhevm-demo-boot-id": authorization.bootId,
+        },
         body: JSON.stringify({ address: alice.address, amount: DEPOSIT_USDC }),
       });
       if (!mintUsdc.ok) {
@@ -395,12 +403,14 @@ describe.skipIf(!runsDemoScenarios)("solana deposit-arc scenario", () => {
       // + wrap both revert on failure, so their confirmation IS the assertion for these phases.
       await send(alice, [
         await vault.buildInitializeTokenAccountInstruction({
-          owner: alice,
+          payer: alice,
+          owner: alice.address,
           mint: config.mints.joinConfidential,
           hostConfig: config.hostConfig,
         }),
         await vault.buildInitializeTokenAccountInstruction({
-          owner: alice,
+          payer: alice,
+          owner: alice.address,
           mint: config.mints.payoutConfidential,
           hostConfig: config.hostConfig,
         }),

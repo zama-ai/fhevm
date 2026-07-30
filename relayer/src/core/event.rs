@@ -5,7 +5,7 @@ use crate::http::endpoints::v2::types::{
     InputProofRequestJson, PublicDecryptRequestJson, UserDecryptRequestJson,
 };
 use crate::http::endpoints::v3::types::AttestedUserDecryptRequestJson;
-use crate::http::utils::validations::V3_ATTESTATION_TYPE_SOLANA_ED25519_V1;
+use crate::http::utils::validations::V3_ATTESTATION_TYPE_SOLANA_ED25519_V2;
 use crate::orchestrator::traits::Event;
 use alloy::primitives::{Address, Bytes, FixedBytes, TxHash, B256};
 use alloy::{primitives::U256, rpc::types::Log};
@@ -494,7 +494,7 @@ pub enum UserDecryptRequest {
         extra_data: Bytes,
     },
     /// Unified Solana ed25519 user-decryption (attestation_type
-    /// `"solana-ed25519-user-decrypt-v1"`, RFC-021): maps to
+    /// `"solana-ed25519-user-decrypt-v2"`, RFC-021): maps to
     /// `userDecryptionRequestSolana(HandleEntry[], UserDecryptionRequestSolanaPayload)`.
     /// The ed25519 auth fields (`user_identity`, `nonce`, `allowed_acl_domain_keys`) are 32-byte
     /// Solana pubkeys carried as typed fields rather than packed into `extra_data`; `extra_data`
@@ -817,7 +817,7 @@ impl TryFrom<AttestedUserDecryptRequestJson> for UserDecryptRequest {
         let public_key = Bytes::from_str(&payload_inner.public_key)?;
         let extra_data = Bytes::from_str(&payload_inner.extra_data)?;
 
-        if value.attestation_type == V3_ATTESTATION_TYPE_SOLANA_ED25519_V1 {
+        if value.attestation_type == V3_ATTESTATION_TYPE_SOLANA_ED25519_V2 {
             let user_identity = B256::from_str(payload_inner.solana_user_identity.as_deref().ok_or_else(
                 || anyhow::anyhow!("solanaUserIdentity is required for the Solana ed25519 attestation type"),
             )?)
@@ -1212,7 +1212,7 @@ mod tests {
         let domain_key_hex = format!("0x{}", "05".repeat(32));
 
         let json = AttestedUserDecryptRequestJson {
-            attestation_type: "solana-ed25519-user-decrypt-v1".to_string(),
+            attestation_type: "solana-ed25519-user-decrypt-v2".to_string(),
             attested_payload: Eip712UnifiedUserDecryptPayloadJson {
                 version: "2.0".to_string(),
                 r#type: "user_decryption".to_string(),

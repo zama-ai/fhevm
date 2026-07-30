@@ -1,0 +1,32 @@
+{
+  "name": "@fhevm/solana-demo-dapp",
+  "private": true,
+  "version": "0.0.0",
+  "type": "module",
+  "scripts": {
+    "dev": "vite --host 127.0.0.1 --port 5173",
+    "build": "tsc -b && vite build",
+    "check": "tsc -b",
+    "lint": "oxlint src vite.config.ts demoServerPlugin.ts",
+    "test": "vitest run"
+  },
+  "dependencies": {
+    "@fhevm/sdk": "file:../../sdk/js-sdk/src",
+    "@solana/kit": "6.10.0",
+    "@solana/wallet-account-signer": "6.10.0",
+    "@wallet-standard/react": "1.0.3",
+    "react": "19.2.7",
+    "react-dom": "19.2.7"
+  },
+  "devDependencies": {
+    "@types/node": "25.1.0",
+    "@types/react": "19.2.17",
+    "@types/react-dom": "19.2.3",
+    "@types/react-test-renderer": "19.1.0",
+    "oxlint": "1.60.0",
+    "react-test-renderer": "19.2.7",
+    "typescript": "6.0.2",
+    "vite": "7.3.1",
+    "vitest": "4.1.5"
+  }
+}

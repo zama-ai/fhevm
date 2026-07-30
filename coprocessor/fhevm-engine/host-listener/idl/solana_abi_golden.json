@@ -141,7 +141,7 @@
       "fixture_len": 16,
       "name": "initialize_token_account",
       "program": "confidential_token",
-      "schema_hash": "b26742e5ded405756ffe42ea6fbb0c711b85fe91fd53c4846cbf5cbb2aa0dc85"
+      "schema_hash": "73982135458838814892188b8c0751c2b10b06643936e06f2820531a20131df0"
     },
     {
       "category": "instruction_args",

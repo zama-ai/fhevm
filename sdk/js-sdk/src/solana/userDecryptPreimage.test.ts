@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 
 import {
   buildSolanaUserDecryptMmrProofExtraData,
-  solanaUserDecryptSigningPreimage,
+  solanaUserDecryptSigningMessage,
   type SolanaUserDecryptInput,
 } from '../core/coprocessor/SolanaUserDecrypt-p.js';
 import { bytesToHex } from './proof.js';
@@ -38,25 +38,10 @@ const vector: SolanaUserDecryptInput = {
 };
 
 const rustPreimage =
-  '0x7a616d612d736f6c616e612d757365722d646563727970742d7632' +
-  '000000000000cafe' +
-  '00000010' +
-  '7075626c69632d6b65792d6279746573' +
-  '00000002' +
-  '0303030303030303030303030303030303030303030303030303030303030303' +
-  'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa' +
-  '0707070707070707070707070707070707070707070707070707070707070707' +
-  '0000000000000000000000000000000000000000000000000000000000001234' +
-  '0909090909090909090909090909090909090909090909090909090909090909' +
-  '00000002' +
-  '0101010101010101010101010101010101010101010101010101010101010101' +
-  '0202020202020202020202020202020202020202020202020202020202020202' +
-  '00000000000003e8' +
-  '0000000000000e10' +
-  '5555555555555555555555555555555555555555555555555555555555555555' +
-  '000000000000002a' +
-  '00000003' +
-  '010203';
+  '0x5a616d61206f6e652d74696d6520636f6e666964656e7469616c2076616c75652072657665616c' +
+  '0a56657273696f6e3a20310a526571756573743a20' +
+  '3330303864633633353236613063313831643436336335643332623635313934' +
+  '3563646664636465306132653931396664383530396164656434646231363835';
 
 const rustExtraData =
   '0x03' +
@@ -66,9 +51,9 @@ const rustExtraData =
   '00000003' +
   '010203';
 
-describe('Solana user decrypt v2 MMR-tail byte parity', () => {
-  it('matches the Rust preimage and extraData vectors with a non-empty proof tail', () => {
-    expect(bytesToHex(solanaUserDecryptSigningPreimage(vector))).toBe(rustPreimage);
+describe('Solana user decrypt v3 wallet-message parity', () => {
+  it('matches the Rust signing-message and extraData vectors with a non-empty proof tail', () => {
+    expect(bytesToHex(solanaUserDecryptSigningMessage(vector))).toBe(rustPreimage);
     expect(bytesToHex(buildSolanaUserDecryptMmrProofExtraData(contextId, aclValueKey, proofSlot, mmrProofBytes))).toBe(
       rustExtraData,
     );

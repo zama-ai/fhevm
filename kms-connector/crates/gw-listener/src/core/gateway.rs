@@ -14,7 +14,7 @@ use alloy::{
 use anyhow::anyhow;
 use connector_utils::{
     monitoring::otlp::PropagationContext,
-    types::{ProtocolEvent, db::EventType},
+    types::{ProtocolEvent, ProtocolEventKind, db::EventType},
 };
 use fhevm_gateway_bindings::decryption::Decryption::DecryptionEvents;
 use sqlx::{Pool, Postgres};
@@ -27,6 +27,20 @@ const DECRYPTION_EVENT_TYPES: [EventType; 2] = [
     EventType::PublicDecryptionRequest,
     EventType::UserDecryptionRequest,
 ];
+
+fn solana_trace_attributes(event: &ProtocolEventKind) -> Option<(String, String, Option<String>)> {
+    let ProtocolEventKind::UserDecryptionSolana(request) = event else {
+        return None;
+    };
+    let handles = request
+        .handles
+        .iter()
+        .map(|entry| format!("{:#x}", entry.handle))
+        .collect::<Vec<_>>()
+        .join(",");
+    let single_handle = (request.handles.len() == 1).then(|| handles.clone());
+    Some((request.decryptionId.to_string(), handles, single_handle))
+}
 
 /// Struct monitoring and storing Gateway's decryption events.
 pub struct GatewayListener<P>
@@ -178,7 +192,24 @@ where
                 .with_label_values(&[EventType::from(&event_kind).as_str()])
                 .inc();
 
-            let span = info_span!("handle_gateway_event", event = %event_kind);
+            let span = match solana_trace_attributes(&event_kind) {
+                Some((decryption_id, ciphertext_handles, Some(ciphertext_handle))) => info_span!(
+                    "handle_gateway_event",
+                    event = %event_kind,
+                    operation = "solana_user_decrypt",
+                    decryption_id = %decryption_id,
+                    ciphertext_handle = %ciphertext_handle,
+                    ciphertext_handles = %ciphertext_handles,
+                ),
+                Some((decryption_id, ciphertext_handles, None)) => info_span!(
+                    "handle_gateway_event",
+                    event = %event_kind,
+                    operation = "solana_user_decrypt",
+                    decryption_id = %decryption_id,
+                    ciphertext_handles = %ciphertext_handles,
+                ),
+                None => info_span!("handle_gateway_event", event = %event_kind),
+            };
             let otlp_ctx = PropagationContext::inject(&span.context());
             events.push(ProtocolEvent::new(
                 event_kind,
@@ -216,6 +247,7 @@ where
 #[cfg(test)]
 mod tests {
     use super::*;
+    use alloy::primitives::{Address, Bytes, FixedBytes, U256};
     use alloy::providers::{
         Identity, ProviderBuilder, RootProvider,
         fillers::{BlobGasFiller, ChainIdFiller, FillProvider, GasFiller, JoinFill, NonceFiller},
@@ -223,7 +255,45 @@ mod tests {
     };
     use alloy::rpc::json_rpc::ErrorPayload;
     use connector_utils::tests::setup::{TestInstance, TestInstanceBuilder};
+    use fhevm_gateway_bindings::decryption::{
+        Decryption::{HandleEntry, UserDecryptionRequestSolana},
+        IDecryption::{RequestValiditySeconds, UserDecryptionRequestSolanaPayload},
+    };
     use std::time::Duration;
+
+    #[test]
+    fn solana_trace_attributes_include_every_ciphertext_handle() {
+        let handle = FixedBytes::from([0x12; 32]);
+        let request = UserDecryptionRequestSolana {
+            decryptionId: U256::from(42),
+            handles: vec![HandleEntry {
+                handle,
+                contractAddress: Address::ZERO,
+                ownerAddress: Address::ZERO,
+            }],
+            payload: UserDecryptionRequestSolanaPayload {
+                userIdentity: FixedBytes::ZERO,
+                publicKey: Bytes::new(),
+                allowedAclDomainKeys: Vec::new(),
+                requestValidity: RequestValiditySeconds {
+                    startTimestamp: U256::ZERO,
+                    durationSeconds: U256::ZERO,
+                },
+                nonce: FixedBytes::ZERO,
+                extraData: Bytes::new(),
+                signature: Bytes::new(),
+            },
+        };
+
+        assert_eq!(
+            solana_trace_attributes(&ProtocolEventKind::UserDecryptionSolana(request)),
+            Some((
+                "42".to_owned(),
+                format!("{handle:#x}"),
+                Some(format!("{handle:#x}")),
+            )),
+        );
+    }
 
     #[rstest::rstest]
     #[timeout(Duration::from_secs(90))]

@@ -87,13 +87,18 @@ describe('vault provisioning builders', () => {
   });
 
   it('initialize_token_account: right program + discriminator + initial balance', async () => {
+    const payer = signer(addr(1));
+    const owner = addr(2);
     const instruction = await buildInitializeTokenAccountInstruction({
-      owner: signer(addr(1)),
-      mint: addr(2),
+      payer,
+      owner,
+      mint: addr(3),
       hostConfig: HOST_CONFIG,
       initialBalance: 0,
     });
     expect(instruction.programAddress).toBe(CONFIDENTIAL_TOKEN_PROGRAM_ADDRESS);
+    expect(instruction.accounts?.[0]?.address).toBe(payer.address);
+    expect(instruction.accounts?.[1]?.address).toBe(owner);
     const decoded = getInitializeTokenAccountInstructionDataDecoder().decode(instruction.data!);
     expect(Array.from(decoded.discriminator)).toEqual(Array.from(INITIALIZE_TOKEN_ACCOUNT_DISCRIMINATOR));
     expect(decoded.initialBalance).toBe(0n);

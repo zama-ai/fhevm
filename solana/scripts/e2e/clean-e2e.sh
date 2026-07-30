@@ -60,6 +60,211 @@ echo "[clean-e2e] source-built overrides: ${SOLANA_E2E_OVERRIDES:-<none>}"
 if [ -n "$SOLANA_E2E_LOCK_PINS" ]; then
   echo "[clean-e2e] lock pins for published images: $SOLANA_E2E_LOCK_PINS"
 fi
+
+# The source-built Rust services inherit their builder tag from each component's toolchain.
+# Some tags are published for amd64 only. On arm64, build the canonical image once under a
+# fingerprinted cache tag, alias it only while Compose builds, then restore the prior local tag.
+NATIVE_RUST_BUILDER_ALIASES=()
+NATIVE_RUST_BUILDER_BACKUPS=()
+NATIVE_RUST_BUILDER_IMAGE_IDS=()
+NATIVE_RUST_BUILDER_PREEXISTED=()
+
+cleanup_native_rust_builder_aliases() {
+  local original_status=$?
+  local cleanup_failed=0
+  local index image backup_image expected_id preexisted current_id
+  for ((index = 0; index < ${#NATIVE_RUST_BUILDER_ALIASES[@]}; index++)); do
+    image="${NATIVE_RUST_BUILDER_ALIASES[$index]}"
+    backup_image="${NATIVE_RUST_BUILDER_BACKUPS[$index]}"
+    expected_id="${NATIVE_RUST_BUILDER_IMAGE_IDS[$index]}"
+    preexisted="${NATIVE_RUST_BUILDER_PREEXISTED[$index]}"
+    current_id="$(docker image inspect --format '{{.Id}}' "$image" 2>/dev/null || true)"
+    if [ "$current_id" != "$expected_id" ]; then
+      echo "[clean-e2e] not restoring $image because its image changed after the temporary alias was installed" >&2
+      cleanup_failed=1
+      continue
+    fi
+    if [ -n "$backup_image" ]; then
+      if ! docker image tag "$backup_image" "$image"; then
+        echo "[clean-e2e] failed to restore previous tag $image from $backup_image" >&2
+        cleanup_failed=1
+        continue
+      fi
+      if ! docker image rm "$backup_image" >/dev/null; then
+        echo "[clean-e2e] restored $image but failed to remove $backup_image" >&2
+        cleanup_failed=1
+        continue
+      fi
+      echo "[clean-e2e] restored previous local tag $image"
+    elif [ "$preexisted" = "yes" ]; then
+      echo "[clean-e2e] preserved pre-existing native tag $image"
+    elif ! docker image rm "$image" >/dev/null; then
+      echo "[clean-e2e] failed to remove temporary alias $image" >&2
+      cleanup_failed=1
+    else
+      echo "[clean-e2e] removed temporary alias $image"
+    fi
+  done
+  NATIVE_RUST_BUILDER_ALIASES=()
+  NATIVE_RUST_BUILDER_BACKUPS=()
+  NATIVE_RUST_BUILDER_IMAGE_IDS=()
+  NATIVE_RUST_BUILDER_PREEXISTED=()
+  if [ "$original_status" -ne 0 ]; then
+    return "$original_status"
+  fi
+  return "$cleanup_failed"
+}
+
+install_native_rust_builder_alias() {
+  local image="$1"
+  local cache_image="$2"
+  local backup_image="$3"
+  local cache_id="$4"
+  local preexisted="$5"
+  if ! docker image tag "$cache_image" "$image"; then
+    if [ -n "$backup_image" ] && ! docker image rm "$backup_image" >/dev/null; then
+      echo "[clean-e2e] failed to install $image and remove its unused backup $backup_image" >&2
+    fi
+    return 1
+  fi
+  NATIVE_RUST_BUILDER_ALIASES+=("$image")
+  NATIVE_RUST_BUILDER_BACKUPS+=("$backup_image")
+  NATIVE_RUST_BUILDER_IMAGE_IDS+=("$cache_id")
+  NATIVE_RUST_BUILDER_PREEXISTED+=("$preexisted")
+}
+
+ensure_native_rust_builders() {
+  local docker_arch
+  docker_arch="$(docker info --format '{{.Architecture}}')"
+  case "$docker_arch" in
+    arm64 | aarch64) ;;
+    *) return ;;
+  esac
+
+  local versions=""
+  local group toolchain version image cache_image backup_image preexisted
+  local local_arch local_channel local_recipe local_id cache_id
+  local remote_manifest remote_has_arm recipe_hash recipe_short
+  recipe_hash="$(git -C "$ROOT" hash-object golden-container-images/rust-glibc/Dockerfile)"
+  recipe_short="${recipe_hash:0:12}"
+  for group in $SOLANA_E2E_OVERRIDES; do
+    case "$group" in
+      coprocessor) toolchain="$ROOT/coprocessor/fhevm-engine/rust-toolchain.toml" ;;
+      kms-connector) toolchain="$ROOT/kms-connector/rust-toolchain.toml" ;;
+      relayer) toolchain="$ROOT/relayer/rust-toolchain.toml" ;;
+      *) continue ;;
+    esac
+    version="$(sed -n 's/^channel = "\([^"]*\)"/\1/p' "$toolchain")"
+    if [ -z "$version" ]; then
+      echo "[clean-e2e] unable to read Rust channel from $toolchain" >&2
+      return 1
+    fi
+    case " $versions " in
+      *" $version "*) ;;
+      *) versions="${versions:+$versions }$version" ;;
+    esac
+  done
+
+  for version in $versions; do
+    image="ghcr.io/zama-ai/fhevm/gci/rust-glibc:$version"
+    if ! remote_manifest="$(docker buildx imagetools inspect --format '{{json .}}' "$image")"; then
+      echo "[clean-e2e] unable to inspect published platforms for $image" >&2
+      return 1
+    fi
+    remote_has_arm="$(python3 - "$remote_manifest" <<'PY'
+import json, sys
+
+document = json.loads(sys.argv[1])
+
+def contains_arm64(value):
+    if isinstance(value, dict):
+        architecture = value.get("architecture") or value.get("Architecture")
+        os_name = value.get("os") or value.get("OS")
+        if architecture in ("arm64", "aarch64") and os_name in (None, "linux"):
+            return True
+        return any(contains_arm64(child) for child in value.values())
+    if isinstance(value, list):
+        return any(contains_arm64(child) for child in value)
+    return False
+
+print("yes" if contains_arm64(document) else "no")
+PY
+)"
+    if [ "$remote_has_arm" = "yes" ]; then
+      echo "[clean-e2e] pulling published native arm64 Rust builder $image"
+      docker pull --platform linux/arm64 "$image"
+      local_arch="$(docker image inspect --format '{{.Architecture}}' "$image")"
+      if [ "$local_arch" != "arm64" ]; then
+        echo "[clean-e2e] expected arm64, got $local_arch for $image" >&2
+        return 1
+      fi
+      continue
+    fi
+
+    cache_image="fhevm-rust-glibc-local:$version-arm64-$recipe_short"
+    local_arch="$(docker image inspect --format '{{.Architecture}}' "$cache_image" 2>/dev/null || true)"
+    local_channel="$(docker image inspect --format '{{index .Config.Labels "org.zama.rust-glibc.channel"}}' "$cache_image" 2>/dev/null || true)"
+    local_recipe="$(docker image inspect --format '{{index .Config.Labels "org.zama.rust-glibc.recipe"}}' "$cache_image" 2>/dev/null || true)"
+    if [ "$local_arch" != "arm64" ] ||
+      [ "$local_channel" != "$version" ] ||
+      [ "$local_recipe" != "$recipe_hash" ]; then
+      echo "[clean-e2e] $image has no arm64 manifest; building its canonical image natively"
+      docker build \
+        --build-arg "RUST_IMAGE_VERSION=$version" \
+        --label "org.zama.rust-glibc.channel=$version" \
+        --label "org.zama.rust-glibc.recipe=$recipe_hash" \
+        --tag "$cache_image" \
+        "$ROOT/golden-container-images/rust-glibc"
+    else
+      echo "[clean-e2e] reusing fingerprinted native arm64 Rust builder $cache_image"
+    fi
+
+    local_arch="$(docker image inspect --format '{{.Architecture}}' "$cache_image")"
+    local_channel="$(docker image inspect --format '{{index .Config.Labels "org.zama.rust-glibc.channel"}}' "$cache_image")"
+    local_recipe="$(docker image inspect --format '{{index .Config.Labels "org.zama.rust-glibc.recipe"}}' "$cache_image")"
+    if [ "$local_arch" != "arm64" ] ||
+      [ "$local_channel" != "$version" ] ||
+      [ "$local_recipe" != "$recipe_hash" ]; then
+      echo "[clean-e2e] native Rust builder validation failed for $cache_image" >&2
+      return 1
+    fi
+
+    cache_id="$(docker image inspect --format '{{.Id}}' "$cache_image")"
+    local_id="$(docker image inspect --format '{{.Id}}' "$image" 2>/dev/null || true)"
+    backup_image=""
+    preexisted="no"
+    if [ -n "$local_id" ]; then
+      preexisted="yes"
+    fi
+    if [ -n "$local_id" ] && [ "$local_id" != "$cache_id" ]; then
+      backup_image="fhevm-rust-glibc-restore:$version-$$"
+      docker image tag "$image" "$backup_image"
+    fi
+    install_native_rust_builder_alias "$image" "$cache_image" "$backup_image" "$cache_id" "$preexisted"
+    echo "[clean-e2e] installed temporary native alias $image"
+  done
+}
+
+if [ "${SOLANA_E2E_LIBRARY_ONLY:-0}" = "1" ]; then
+  # shellcheck disable=SC2317 # `return` is for sourced tests; `exit` is for direct execution.
+  return 0 2>/dev/null || exit 0
+fi
+
+# The local clients and demo import the public `@fhevm/sdk/solana` package exports. Install the SDK
+# build workspace, then generate the ESM and declaration trees before refreshing the file-linked
+# consumer. Runtime dependencies remain owned by each consumer's frozen graph.
+( cd "$ROOT" && npm ci --workspace=@fhevm/sdk-dev --workspace=@fhevm/sdk --include-workspace-root=false )
+( cd "$ROOT/sdk/js-sdk" && npm run clean && npm run build:esm && npm run build:types )
+( cd "$FHEVM" && bun install --force --frozen-lockfile )
+"$ROOT/solana/scripts/e2e/materialize-test-sdk.sh"
+[ ! -L "$FHEVM/node_modules/@fhevm/sdk/_esm/solana/index.js" ]
+# Prove both runtimes resolve SDK dependencies from the consumer's frozen graph.
+( cd "$FHEVM" && node --input-type=module -e "await import('@fhevm/sdk/solana'); await import('@fhevm/sdk/solana/vault')" )
+( cd "$FHEVM" && bun -e "await import('@fhevm/sdk/solana'); await import('@fhevm/sdk/solana/vault')" )
+
+trap cleanup_native_rust_builder_aliases EXIT
+ensure_native_rust_builders
+
 # Pin the EVM stack to the main SHA this PoC was validated against. RFC-021 / Solana host support
 # is not yet on a release bundle, so we resolve a specific main commit explicitly.
 BASE_SHA="feaf86e"
@@ -102,6 +307,8 @@ PY
     --lock-file "$LOCK" \
     ${OVERRIDE_ARGS[@]+"${OVERRIDE_ARGS[@]}"} \
     --allow-schema-mismatch )
+cleanup_native_rust_builder_aliases
+trap - EXIT
 # NOTE: relayer + kms-connector + solana-proof-service must run feature/solana
 # worktree code (via --override), NOT the pinned 4f42734 baseline images: the
 # prebuilt kms-connector at that tag rejects the generated Solana host_chains

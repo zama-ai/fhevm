@@ -107,10 +107,53 @@ pub fn register_event_latency(event: &ProtocolEvent) {
         ProtocolEventKind::PublicDecryption(_)
             | ProtocolEventKind::UserDecryption(_)
             | ProtocolEventKind::UserDecryptionV2(_)
+            | ProtocolEventKind::UserDecryptionSolana(_)
     ) {
         let elapsed = Utc::now() - event.created_at;
         DECRYPTION_LATENCY_HISTOGRAM
             .with_label_values(&[EventType::from(&event.kind).as_str()])
             .observe(elapsed.as_seconds_f64());
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use alloy::primitives::{Bytes, FixedBytes, U256};
+    use connector_utils::monitoring::otlp::PropagationContext;
+    use fhevm_gateway_bindings::decryption::{
+        Decryption::UserDecryptionRequestSolana,
+        IDecryption::{RequestValiditySeconds, UserDecryptionRequestSolanaPayload},
+    };
+
+    #[test]
+    fn records_solana_user_decryption_latency() {
+        let event = ProtocolEvent::new(
+            ProtocolEventKind::UserDecryptionSolana(UserDecryptionRequestSolana {
+                decryptionId: U256::ZERO,
+                handles: Vec::new(),
+                payload: UserDecryptionRequestSolanaPayload {
+                    userIdentity: FixedBytes::ZERO,
+                    publicKey: Bytes::new(),
+                    allowedAclDomainKeys: Vec::new(),
+                    requestValidity: RequestValiditySeconds {
+                        startTimestamp: U256::ZERO,
+                        durationSeconds: U256::ZERO,
+                    },
+                    nonce: FixedBytes::ZERO,
+                    extraData: Bytes::new(),
+                    signature: Bytes::new(),
+                },
+            }),
+            None,
+            PropagationContext::default(),
+        );
+        let histogram = DECRYPTION_LATENCY_HISTOGRAM
+            .with_label_values(&[EventType::from(&event.kind).as_str()]);
+        let before = histogram.get_sample_count();
+
+        register_event_latency(&event);
+
+        assert_eq!(histogram.get_sample_count(), before + 1);
     }
 }

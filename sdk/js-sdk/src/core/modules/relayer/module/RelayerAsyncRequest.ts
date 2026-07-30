@@ -669,6 +669,11 @@ export class RelayerAsyncRequest {
             });
           }
 
+          if (bodyJson.error.label === 'readiness_check_timed_out') {
+            await this._setRetryAfterTimeout(this._getRetryAfterHeaderValueInMs(response));
+            continue;
+          }
+
           this._throwRelayerResponseApiError({
             status: responseStatus,
             relayerApiError: bodyJson.error,
@@ -1048,6 +1053,11 @@ export class RelayerAsyncRequest {
               cause: cause as InvalidPropertyError,
               bodyJson: safeJSONstringify(bodyJson),
             });
+          }
+
+          if (bodyJson.error.label === 'readiness_check_timed_out') {
+            await this._setRetryAfterTimeout(this._getRetryAfterHeaderValueInMs(response));
+            continue;
           }
 
           this._throwRelayerResponseApiError({

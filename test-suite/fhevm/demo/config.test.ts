@@ -57,6 +57,8 @@ describe("demo-config parse", () => {
     tmpFiles.push(file);
     await writeDemoConfig(config, file);
     expect(await readDemoConfig(file)).toEqual(config);
+    expect((await fs.stat(file)).mode & 0o777).toBe(0o600);
+    expect((await fs.readdir(path.dirname(file))).filter((name) => name.endsWith(".tmp"))).toEqual([]);
   });
 
   test("rejects a malformed field with the field named", () => {

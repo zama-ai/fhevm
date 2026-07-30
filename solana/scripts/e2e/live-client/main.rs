@@ -1453,6 +1453,7 @@ fn initialize_token_account_if_missing(
     let signature = token
         .request()
         .accounts(confidential_token::accounts::InitializeTokenAccount {
+            payer: payer.pubkey(),
             owner,
             mint,
             compute_signer,

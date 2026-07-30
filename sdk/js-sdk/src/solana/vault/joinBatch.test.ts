@@ -80,35 +80,60 @@ async function parameters(overrides: Partial<SolanaVaultJoinParameters> = {}): P
 
 const context = { solanaChain: { id: CHAIN_ID } as never, aclProgramAddress: CANONICAL_ACL as never };
 
+async function sendableParameters(onTransactionSigned: NonNullable<SolanaVaultJoinParameters['onTransactionSigned']>) {
+  const user = await generateKeyPairSigner();
+  const joinConfidentialMint = key(2);
+  const [computeSigner] = await findComputeSignerPda({ mint: joinConfidentialMint });
+  const inputProof = proof(user.address, computeSigner);
+  const simulate = vi.fn().mockReturnValue({ send: vi.fn().mockResolvedValue({ value: { err: null } }) });
+  const params = await parameters({
+    user,
+    payer: user,
+    joinConfidentialMint,
+    inputProof,
+    inputProofResult: {
+      handles: inputProof.getInputHandles(),
+      signatures: [SIGNATURE] as never,
+      extraData: '0x00' as never,
+    },
+    rpc: {
+      getLatestBlockhash: vi.fn().mockReturnValue({
+        send: vi.fn().mockResolvedValue({ value: { blockhash: key(20), lastValidBlockHeight: 1_000n } }),
+      }),
+      simulateTransaction: simulate,
+    } as unknown as SolanaVaultJoinParameters['rpc'],
+    onTransactionSigned,
+  });
+  return { inputProof, params, simulate };
+}
+
 describe('joinBatch (attested arm)', () => {
   beforeEach(() => sendAndConfirm.mockReset().mockResolvedValue(undefined));
 
   it('builds, simulates, sends, and encodes the coprocessor attestation into the join instruction', async () => {
-    const user = await generateKeyPairSigner();
-    const joinConfidentialMint = key(2);
-    const [computeSigner] = await findComputeSignerPda({ mint: joinConfidentialMint });
-    const inputProof = proof(user.address, computeSigner);
-    const simulate = vi.fn().mockReturnValue({ send: vi.fn().mockResolvedValue({ value: { err: null } }) });
-    const params = await parameters({
-      user,
-      payer: user,
-      joinConfidentialMint,
-      inputProof,
-      inputProofResult: {
-        handles: inputProof.getInputHandles(),
-        signatures: [SIGNATURE] as never,
-        extraData: '0x00' as never,
-      },
-      rpc: {
-        getLatestBlockhash: vi.fn().mockReturnValue({
-          send: vi.fn().mockResolvedValue({ value: { blockhash: key(20), lastValidBlockHeight: 1_000n } }),
-        }),
-        simulateTransaction: simulate,
-      } as unknown as SolanaVaultJoinParameters['rpc'],
+    let finishJournal!: () => void;
+    const journal = new Promise<void>((resolve) => {
+      finishJournal = resolve;
     });
+    const onTransactionSigned = vi.fn(() => journal);
+    const { inputProof, params, simulate } = await sendableParameters(onTransactionSigned);
 
-    await expect(joinBatch(context, params)).resolves.toEqual(expect.any(String));
+    const pending = joinBatch(context, params);
+    await vi.waitFor(() => expect(onTransactionSigned).toHaveBeenCalledOnce());
+    expect(sendAndConfirm).not.toHaveBeenCalled();
+    finishJournal();
+    await expect(pending).resolves.toEqual(expect.any(String));
     expect(sendAndConfirm).toHaveBeenCalledOnce();
+    expect(simulate).toHaveBeenCalledTimes(2);
+    expect(simulate.mock.calls[0]![1]).toMatchObject({ sigVerify: false });
+    expect(simulate.mock.calls[1]![1]).toMatchObject({ sigVerify: true });
+    expect(onTransactionSigned).toHaveBeenCalledWith({
+      signature: expect.any(String),
+      blockhash: key(20),
+      lastValidBlockHeight: 1_000n,
+    });
+    expect(simulate.mock.invocationCallOrder[1]).toBeLessThan(onTransactionSigned.mock.invocationCallOrder[0]!);
+    expect(onTransactionSigned.mock.invocationCallOrder[0]).toBeLessThan(sendAndConfirm.mock.invocationCallOrder[0]!);
 
     const wire = simulate.mock.calls[0]![0] as string;
     const transaction = getTransactionDecoder().decode(getBase64Encoder().encode(wire));
@@ -120,6 +145,59 @@ describe('joinBatch (attested arm)', () => {
     expect(data.contractChainId).toBe(CHAIN_ID);
     expect(Array.from(data.inputHandle)).toEqual(Array.from(inputProof.getInputHandles()[0]!.bytes32));
     expect(data.signatures).toHaveLength(1);
+  });
+
+  it('does not submit when durable transaction journaling fails', async () => {
+    const { params } = await sendableParameters(async () => {
+      throw new Error('journal unavailable');
+    });
+    await expect(joinBatch(context, params)).rejects.toThrow('journal unavailable');
+    expect(sendAndConfirm).not.toHaveBeenCalled();
+  });
+
+  it('does not request durable submission after unsigned preflight fails', async () => {
+    const onTransactionSigned = vi.fn();
+    const { params, simulate } = await sendableParameters(onTransactionSigned);
+    const originalSigner = params.user;
+    const signTransactions = vi.fn(originalSigner.signTransactions.bind(originalSigner));
+    const trackedSigner = { address: originalSigner.address, signTransactions } as TransactionSigner;
+    const trackedParams = { ...params, user: trackedSigner, payer: trackedSigner };
+    simulate.mockReturnValueOnce({
+      send: vi.fn().mockResolvedValue({
+        value: {
+          err: { InstructionError: [1, { Custom: 6_001n }] },
+          logs: ['Program log: rejected'],
+        },
+      }),
+    });
+
+    await expect(joinBatch(context, trackedParams)).rejects.toThrow(
+      'join simulation failed: {"InstructionError":[1,{"Custom":"6001"}]}',
+    );
+    expect(simulate).toHaveBeenCalledOnce();
+    expect(signTransactions).not.toHaveBeenCalled();
+    expect(onTransactionSigned).not.toHaveBeenCalled();
+    expect(sendAndConfirm).not.toHaveBeenCalled();
+  });
+
+  it('does not journal or submit after signed simulation fails', async () => {
+    const onTransactionSigned = vi.fn();
+    const { params, simulate } = await sendableParameters(onTransactionSigned);
+    simulate.mockReturnValueOnce({ send: vi.fn().mockResolvedValue({ value: { err: null } }) }).mockReturnValueOnce({
+      send: vi.fn().mockResolvedValue({
+        value: {
+          err: { InstructionError: [1, 'InvalidAccountData'] },
+          logs: ['Program log: signed transaction rejected'],
+        },
+      }),
+    });
+
+    await expect(joinBatch(context, params)).rejects.toThrow(
+      'join simulation failed: {"InstructionError":[1,"InvalidAccountData"]}',
+    );
+    expect(simulate).toHaveBeenCalledTimes(2);
+    expect(onTransactionSigned).not.toHaveBeenCalled();
+    expect(sendAndConfirm).not.toHaveBeenCalled();
   });
 
   it.each([

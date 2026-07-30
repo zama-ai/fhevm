@@ -49,6 +49,12 @@ const LOCAL_BUILD_TAG = "fhevm-local";
 /** Returns the local image tag used for a specific coprocessor instance. */
 const localInstanceTag = (index: number) => `${LOCAL_BUILD_TAG}-i${index}`;
 
+/** The pinned centralized kms-core image has no arm64 manifest; only that service uses emulation on Apple Silicon. */
+export const centralizedKmsCorePlatform = (
+  platform: NodeJS.Platform = process.platform,
+  arch: string = process.arch,
+): "linux/amd64" | undefined => (platform === "darwin" && arch === "arm64" ? "linux/amd64" : undefined);
+
 /** Builds the environment passed to docker compose from resolved versions. */
 export const resolvedComposeEnv = (
   state: Pick<State, "versions" | "overrides" | "scenario">,
@@ -719,6 +725,10 @@ export const buildKmsConnectorOverride = async (plan: StackSpec) => {
 
 /** Builds the generated compose override for one component. */
 const buildComposeOverride = async (component: string, plan: StackSpec) => {
+  if (component === "core") {
+    const platform = plan.kms.mode === "centralized" ? centralizedKmsCorePlatform() : undefined;
+    if (platform !== undefined) return { services: { "kms-core": { platform } } };
+  }
   if (component === "coprocessor") {
     return buildCoprocessorOverride(plan);
   }
@@ -875,6 +885,7 @@ const buildExtraCoprocessorListenerOverride = async (
 export const generatedComposeComponents = (plan: Pick<StackSpec, "overrides" | "kms">) =>
   new Set([
     "coprocessor",
+    ...(plan.kms.mode === "centralized" && centralizedKmsCorePlatform() !== undefined ? ["core"] : []),
     ...(plan.kms.mode === "threshold" ? ["core-threshold", "kms-connector"] : []),
     ...plan.overrides.flatMap((override) => GROUP_BUILD_COMPONENTS[override.group]),
   ]);

@@ -1,4 +1,5 @@
-# syntax=docker/dockerfile:1
+# Keep Docker's bundled frontend: the external frontend pulls the amd64-only
+# Rust base from the registry instead of using clean-e2e's native arm64 alias.
 # =============================================================================
 # BRANCH-LOCAL (feature/solana) E2E BUILD FILE — DELETE AT MERGE-BACK TO MAIN.
 # Main's release CI builds each image from its per-binary Dockerfile
@@ -66,7 +67,6 @@ RUN set -eux; \
     chmod +x /usr/local/bin/sccache; \
     sccache --version
 
-COPY .git ./.git
 COPY gateway-contracts/rust_bindings ./gateway-contracts/rust_bindings
 COPY host-contracts/rust_bindings ./host-contracts/rust_bindings
 COPY shared ./shared
@@ -90,7 +90,6 @@ RUN --mount=type=cache,target=/usr/local/cargo/registry,sharing=locked \
       export AWS_ACCESS_KEY_ID="$(cat /run/secrets/sccache_aws_access_key_id)"; \
       export AWS_SECRET_ACCESS_KEY="$(cat /run/secrets/sccache_aws_secret_access_key)"; \
     fi && \
-    git config --global --add safe.directory /app && \
     cargo fetch && \
     cargo build --profile=${CARGO_PROFILE} --workspace && \
     if [ -n "${SCCACHE_BUCKET}" ] && command -v sccache >/dev/null 2>&1; then sccache --show-stats; fi && \

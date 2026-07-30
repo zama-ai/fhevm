@@ -24,7 +24,8 @@ import {
  *
  * `user` is not a signer: claim is a permissionless pull, and the payout can only land in the
  * user's own account. That account (`token_account_address(payoutConfidentialMint, user)`) must
- * already exist — build and send `initializeTokenAccount` for the user once before the first claim.
+ * already exist; it may be initialized by the user or a sponsor because initialization cannot
+ * assign a nonzero balance.
  */
 export type SolanaVaultClaimParameters = {
   /** Pays the rent for the claim-amount value account and the transfer output. Anyone — claim is a permissionless pull. */

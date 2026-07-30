@@ -1,7 +1,6 @@
 services:
   relayer-db:
     container_name: fhevm-relayer-db
-    platform: linux/amd64
     image: postgres:17
     environment:
       POSTGRES_DB: relayer_db
@@ -19,7 +18,6 @@ services:
 
   relayer-db-migration:
     container_name: relayer-db-migration
-    platform: linux/amd64
     image: ${RELAYER_MIGRATE_IMAGE_REPOSITORY}:${RELAYER_MIGRATE_VERSION}
     env_file:
       - ${FHEVM_STATE_DIR:-../../../.fhevm}/runtime/env/relayer.env
@@ -33,7 +31,6 @@ services:
 
   relayer:
     container_name: fhevm-relayer
-    platform: linux/amd64
     image: ${RELAYER_IMAGE_REPOSITORY}:${RELAYER_VERSION}
     env_file:
       - ${FHEVM_STATE_DIR:-../../../.fhevm}/runtime/env/relayer.env

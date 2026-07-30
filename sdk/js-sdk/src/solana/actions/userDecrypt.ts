@@ -8,7 +8,7 @@ import type { Bytes32Hex } from '../../core/types/primitives.js';
 import {
   buildSolanaUserDecryptMmrProofExtraData,
   solanaUserDecryptClientId,
-  solanaUserDecryptSigningPreimage,
+  solanaUserDecryptSigningMessage,
   SOLANA_USER_DECRYPT_ATTESTATION_TYPE,
 } from '../../core/coprocessor/SolanaUserDecrypt-p.js';
 import { toFhevmHandle } from '../../core/handle/FhevmHandle.js';
@@ -47,7 +47,7 @@ export type SolanaUserDecryptParameters = {
   /** 32-byte big-endian context id. Defaults to all-zero (no explicit context). */
   readonly contextId?: Uint8Array | undefined;
   /**
-   * Per-request 32-byte nonce, bound into the ed25519 signing preimage (a random one is generated
+   * Per-request 32-byte nonce, bound into the ed25519 signing message (a random one is generated
    * when omitted). It binds the nonce to the signed request but is NOT dedup-enforced on-chain or in
    * the connector; replay is bounded by the validity window, matching the EVM user-decrypt path.
    */
@@ -98,7 +98,7 @@ export type SolanaUserDecryptMmrProofParameter = {
   /** The decoded inclusion proof (leaf index + sibling path), used for client-side verification. */
   readonly proof: MmrProof;
   /** The full MMR-proof transport blob (mode prefix ‖ Borsh proof) attached verbatim to the wire
-   * request; committed into the signed preimage byte-for-byte. */
+   * request; committed into the signed message byte-for-byte. */
   readonly mmrProofBytes: Uint8Array;
   /** Whether this proof authorizes a historical access grant or an exact public-decrypt leaf. A
    * historical proof additionally requires `subject`. */
@@ -176,7 +176,7 @@ function assertCanonicalMmrProofBytes(mmrProof: SolanaUserDecryptMmrProofParamet
 /**
  * Runs the full Solana user-decrypt round-trip and returns the decrypted clear values:
  *
- * 1. derive `identity` from the signer and assemble the ed25519 signing preimage,
+ * 1. derive `identity` from the signer and assemble the ed25519 signing message,
  * 2. sign it via the {@link SolanaUserDecryptSigner} and build the v3 attested request,
  * 3. POST it to the relayer's `/v3/user-decrypt` Solana seam and poll for the signcrypted shares,
  * 4. de-signcrypt the shares to cleartext in-SDK (vendored Solana TKMS WASM, no kms-core).
@@ -261,10 +261,10 @@ export async function userDecrypt(
     }
   }
 
-  // 1. + 2. Build the canonical ed25519 preimage (the same bytes the KMS connector re-derives),
+  // 1. + 2. Build the canonical ed25519 signing message (the same bytes the KMS connector re-derives),
   // sign it via the abstract signer, then assemble the request. `buildSolanaUserDecryptRequest`
   // signs from a raw seed; an abstract signer is opaque, so we route through the same exported
-  // preimage + client-id helpers and attach the externally-produced signature.
+  // signing-message + client-id helpers and attach the externally-produced signature.
   const input = {
     contractsChainId: chain.id,
     publicKey,
@@ -280,8 +280,8 @@ export async function userDecrypt(
     proofSlot: mmrProof?.proofSlot,
   };
 
-  const preimage = solanaUserDecryptSigningPreimage(input);
-  const signature = await signer.sign(preimage);
+  const signingMessage = solanaUserDecryptSigningMessage(input);
+  const signature = await signer.sign(signingMessage);
   if (signature.length !== ED25519_SIGNATURE_LEN) {
     throw new Error(`unexpected ed25519 signature length: ${signature.length}`);
   }

@@ -11,6 +11,12 @@ export { buildQuitInstruction, type SolanaVaultQuitParameters } from './quit.js'
 export { buildDispatchBatchInstruction, type SolanaVaultDispatchParameters } from './dispatchBatch.js';
 export { settleBatch, type SolanaVaultSettleOptions } from './settleBatch.js';
 export { buildClaimInstruction, type SolanaVaultClaimParameters } from './claim.js';
+export {
+  buildHarvestInstruction,
+  getVaultMetrics,
+  type SolanaVaultHarvestParameters,
+  type SolanaVaultMetrics,
+} from './harvest.js';
 export { decryptPosition } from './decryptPosition.js';
 export { openBatch, type SolanaVaultOpenBatchParameters, type SolanaVaultOpenBatchResult } from './openBatch.js';
 
@@ -52,6 +58,7 @@ export {
 } from './derive.js';
 export {
   getBatcher,
+  getBatchByIndex,
   getCurrentBatch,
   getEncryptedValueState,
   getJoinRecord,
@@ -79,6 +86,7 @@ export {
 // consumers derive it from the mint root instead of restating the `fhe-compute` seed; the other
 // confidential-token value-account derivations stay internal because every action derives them itself.
 export { computeSignerAddress } from './internal/tokenValueAccount.js';
+export { confidentialBalanceValueAccount } from './internal/tokenValueAccount.js';
 export {
   ADDRESS_LOOKUP_TABLE_PROGRAM_ADDRESS,
   deriveAddressLookupTableAddress,

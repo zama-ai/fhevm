@@ -1,7 +1,6 @@
 services:
   solana-proof-db:
     container_name: fhevm-solana-proof-db
-    platform: linux/amd64
     image: postgres:17
     environment:
       POSTGRES_DB: solana_proof_service
@@ -19,7 +18,6 @@ services:
 
   solana-proof-service:
     container_name: fhevm-solana-proof-service
-    platform: linux/amd64
     image: ${SOLANA_PROOF_SERVICE_IMAGE_REPOSITORY:-solana-proof-service}:${SOLANA_PROOF_SERVICE_VERSION:-local}
     build:
       context: ../../..
