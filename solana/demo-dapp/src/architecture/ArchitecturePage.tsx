@@ -181,7 +181,7 @@ flowchart TB
   },
   {
     title: 'User decrypt',
-    statement: 'The wallet authorizes the request; the SDK recovers the plaintext.',
+    statement: 'Wallet signs the request. KMS nodes produce partial decryptions. SDK reconstructs plaintext.',
     diagram: String.raw`
 sequenceDiagram
     box User device
@@ -191,19 +191,23 @@ sequenceDiagram
     box Protocol services
         participant Relayer
         participant Gateway
-        participant KMS as KMS network
+        participant Connector as KMS connector
+        participant KMS as KMS node
     end
 
-    SDK->>SDK: Create fresh transport key
-    SDK->>Wallet: Request authorization
-    Wallet-->>SDK: Signed decryption request
-    SDK->>Relayer: Signed request and public key
-    Relayer->>Gateway: Locate encrypted result
-    Gateway->>KMS: Check authorization and decrypt
-    KMS-->>Gateway: Result protected for SDK
-    Gateway-->>Relayer: Protected result
-    Relayer-->>SDK: Protected result
-    SDK->>SDK: Recover plaintext
+    SDK->>SDK: Generate ephemeral transport key
+    SDK->>Wallet: Request decryption signature
+    Wallet-->>SDK: Signed user-decryption request
+    SDK->>Relayer: Submit request and transport public key
+    Relayer->>Gateway: Submit user-decryption transaction
+    Gateway-->>Connector: Emit user-decryption request
+    Connector->>Connector: Verify wallet signature and Solana access
+    Connector->>KMS: Request partial decryption
+    KMS-->>Connector: Signed, signcrypted partial share
+    Connector->>Gateway: Post partial share
+    Gateway-->>Relayer: Emit verified partial share
+    Relayer-->>SDK: Return threshold shares
+    SDK->>SDK: Verify, de-signcrypt and reconstruct plaintext
 `,
   },
   {
