@@ -9,7 +9,6 @@ use crate::core::{
 use alloy::{
     primitives::{Address, B256, U256},
     providers::Provider,
-    transports::http::Client,
 };
 use anyhow::anyhow;
 use ciphertext_attestation::{
@@ -18,7 +17,6 @@ use ciphertext_attestation::{
 };
 use futures::future::try_join_all;
 use kms_grpc::kms::v1::TypedCiphertext;
-use std::time::Duration;
 use tokio::task::JoinSet;
 use tokio_util::sync::CancellationToken;
 use tracing::{debug, info, warn};
@@ -34,12 +32,6 @@ pub struct CiphertextManager<P: Provider> {
 
     /// HTTP client for the attestation HEAD fan-out and the ciphertext retrieval.
     s3_client: BoundedClient,
-
-    /// Timeout of a single attestation `HEAD` on a Coprocessor bucket.
-    head_timeout: Duration,
-
-    /// Number of attempts for S3 ciphertext retrieval.
-    s3_ciphertext_retrieval_attempts: u8,
 }
 
 impl<P> CiphertextManager<P>
@@ -48,7 +40,6 @@ where
 {
     pub async fn connect(
         provider: P,
-        client: Client,
         config: &Config,
         cancel_token: CancellationToken,
     ) -> anyhow::Result<Self> {
@@ -56,13 +47,7 @@ where
 
         Ok(Self {
             registry,
-            s3_client: BoundedClient::new(
-                client,
-                config.s3_max_concurrent_heads_per_bucket,
-                config.s3_max_concurrent_gets,
-            ),
-            head_timeout: config.s3_head_timeout,
-            s3_ciphertext_retrieval_attempts: config.s3_ciphertext_retrieval_attempts,
+            s3_client: BoundedClient::from_config(config)?,
         })
     }
 
@@ -128,12 +113,7 @@ where
 
         let ciphertext = self
             .s3_client
-            .retrieve_verified_ciphertext(
-                handle,
-                &consensus.material,
-                &winning_buckets,
-                self.s3_ciphertext_retrieval_attempts,
-            )
+            .retrieve_verified_ciphertext(handle, &consensus.material, &winning_buckets)
             .await?;
 
         Ok(ResolvedHandle {
@@ -158,12 +138,10 @@ where
     ) -> anyhow::Result<ResolvedConsensus> {
         let mut fetch_attestation_tasks = JoinSet::new();
         for (tx_sender, bucket) in registry.tx_sender_to_bucket.iter() {
-            let (s3_client, head_timeout) = (self.s3_client.clone(), self.head_timeout);
+            let s3_client = self.s3_client.clone();
             let (bucket, tx_sender) = (bucket.clone(), *tx_sender);
             fetch_attestation_tasks.spawn(async move {
-                let result = s3_client
-                    .fetch_single_attestation(&bucket, handle, head_timeout)
-                    .await;
+                let result = s3_client.fetch_single_attestation(&bucket, handle).await;
                 (tx_sender, result)
             });
         }
@@ -285,17 +263,10 @@ where
     P: Provider + Clone + 'static,
 {
     /// Test constructor: an empty registry and default config.
-    pub fn for_test(provider: P, client: Client) -> Self {
-        let config = Config::default();
+    pub fn for_test(provider: P) -> Self {
         Self {
             registry: CoprocessorRegistry::empty(provider),
-            s3_client: BoundedClient::new(
-                client,
-                config.s3_max_concurrent_heads_per_bucket,
-                config.s3_max_concurrent_gets,
-            ),
-            head_timeout: config.s3_head_timeout,
-            s3_ciphertext_retrieval_attempts: config.s3_ciphertext_retrieval_attempts,
+            s3_client: BoundedClient::from_config(&Config::default()).expect("S3 client"),
         }
     }
 }
@@ -365,14 +336,19 @@ mod tests {
             .connect_mocked_client(Asserter::new());
 
         // Single permit manager with an unreachable bucket
-        let mut manager = CiphertextManager::for_test(provider, Client::new());
+        let mut manager = CiphertextManager::for_test(provider);
         let snapshot = CoprocessorRegistrySnapshot::new(
             HashSet::from([Address::ZERO]),
             HashMap::from([(Address::ZERO, BUCKET.to_string())]),
             NonZeroUsize::MIN,
         );
         manager.registry = manager.registry.with_snapshot(snapshot);
-        manager.s3_client = BoundedClient::new(Client::new(), NonZeroUsize::MIN, NonZeroUsize::MIN);
+        manager.s3_client = BoundedClient::from_config(&Config {
+            s3_max_concurrent_heads_per_bucket: NonZeroUsize::MIN,
+            s3_max_concurrent_gets: NonZeroUsize::MIN,
+            ..Default::default()
+        })
+        .unwrap();
 
         let permit = manager.s3_client.acquire_head_for_test(BUCKET).await;
         let gated = tokio::time::timeout(

@@ -4,7 +4,6 @@ use alloy::{
     providers::{Provider, mock::Asserter},
     rpc::types::Transaction,
     sol_types::{SolCall, SolValue},
-    transports::http::reqwest,
 };
 use connector_utils::tests::{
     rand::rand_address,
@@ -52,15 +51,8 @@ pub async fn init_kms_worker<P>(
 where
     P: Provider + Clone + 'static,
 {
-    // The 24h refresh interval (see `TEST_COPRO_REGISTRY_REFRESH`) means the refresh task
-    // never fires during a test, so a throwaway token is fine here.
-    let ciphertext_manager = CiphertextManager::connect(
-        provider.clone(),
-        reqwest::Client::new(),
-        &config,
-        CancellationToken::new(),
-    )
-    .await?;
+    let ciphertext_manager =
+        CiphertextManager::connect(provider.clone(), &config, CancellationToken::new()).await?;
 
     let kms_client = KmsClient::connect(&config).await?;
     let event_picker = DbEventPicker::connect(db.clone(), &config).await?;

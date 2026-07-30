@@ -14,7 +14,6 @@ use crate::{
         metrics::register_event_latency,
     },
 };
-use alloy::transports::http::reqwest;
 use anyhow::anyhow;
 use connector_utils::{
     conn::{DefaultProvider, connect_to_db, connect_to_rpc_node, connect_to_rpc_node_with_bounds},
@@ -153,19 +152,13 @@ impl
 
         let kms_client = KmsClient::connect(&config).await?;
         let kms_health_client = KmsHealthClient::connect(&config.kms_core_endpoints).await?;
-        let s3_client = reqwest::Client::builder()
-            .connect_timeout(config.s3_connect_timeout)
-            .timeout(config.s3_get_timeout)
-            .build()
-            .map_err(|e| anyhow!("Failed to create HTTP client: {}", e))?;
 
         let event_picker = DbEventPicker::connect(db_pool.clone(), &config).await?;
 
         let context_manager =
             DbContextManager::new(db_pool.clone(), &config, ethereum_provider.clone());
         let ciphertext_manager =
-            CiphertextManager::connect(gateway_provider.clone(), s3_client, &config, cancel_token)
-                .await?;
+            CiphertextManager::connect(gateway_provider.clone(), &config, cancel_token).await?;
         let decryption_processor = DecryptionProcessor::new(
             &config,
             context_manager.clone(),
