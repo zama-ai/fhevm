@@ -6,16 +6,6 @@
 # `--override` compose builds compile all coprocessor binaries in ONE cargo
 # pass instead of eight sequential full-workspace compilations (measured:
 # ~41 min of cargo, 71 min run vs 44 min baseline).
-#
-# CACHING (CI): the Rust build is split into cargo-chef stages. A `planner`
-# emits recipe.json (dependency graph only); `builder` COPYs it and runs
-# `cargo chef cook`, compiling every dependency (tfhe-rs dominates) in a layer
-# keyed only on recipe.json (plus the chef layer + CARGO_PROFILE). That cook
-# layer is exported to a registry BuildKit cache by solana-images-publish.yml's
-# workspace-cache job (the WRITER) and read back by solana-e2e's --override
-# compose builds via FHEVM_BUILDCACHE_TAG. This replaces the old
-# `--mount=type=cache` target/registry mounts, which were always empty on the
-# fresh spot runners CI provisions per job.
 # =============================================================================
 # =============================================================================
 # UNIFIED COPROCESSOR DOCKERFILE (LOCAL BUILDS)
@@ -82,106 +72,40 @@ RUN npm ci && \
     DOTENV_CONFIG_PATH=.env.example npx hardhat task:deployAllGatewayContracts
 
 # =============================================================================
-# Stage 1-chef: install cargo-chef (shared base for planner + builder)
+# Stage 1: Build ALL Rust workspace binaries
 # =============================================================================
-FROM ghcr.io/zama-ai/fhevm/gci/rust-glibc:${RUST_IMAGE_VERSION} AS chef
+FROM ghcr.io/zama-ai/fhevm/gci/rust-glibc:${RUST_IMAGE_VERSION} AS builder
+
+ARG CARGO_PROFILE=release
+ARG BUILD_ID=unknown
 
 USER root
 WORKDIR /app
 
-# Keep this exact so writer and reader builds produce the same cook-layer key.
-RUN cargo install cargo-chef --locked --version 0.1.77
-
-# =============================================================================
-# Stage 1-planner: emit the dependency-only cargo-chef recipe
-# =============================================================================
-FROM chef AS planner
-
-# `cargo chef prepare` reads every manifest in the workspace dependency graph.
-COPY listener ./listener
-COPY coprocessor/fhevm-engine ./coprocessor/fhevm-engine
-COPY coprocessor/proto ./coprocessor/proto
-COPY gateway-contracts/rust_bindings ./gateway-contracts/rust_bindings
-COPY gateway-contracts/contracts ./gateway-contracts/contracts
-COPY host-contracts/contracts ./host-contracts/contracts
-COPY solana ./solana
-COPY shared/ciphertext-attestation ./shared/ciphertext-attestation
-
-WORKDIR /app/coprocessor/fhevm-engine
-RUN cargo chef prepare --recipe-path recipe.json
-
-# =============================================================================
-# Stage 1: cook dependencies, then build all Rust workspace binaries
-# =============================================================================
-FROM chef AS builder
-
-ARG CARGO_PROFILE=release
-
-# cargo-chef records workspace members in recipe.json but needs real sources for non-member path
-# dependencies. Keep these copies before `cook` so their contents correctly key the shared layer.
-WORKDIR /app
-COPY coprocessor/fhevm-engine/scheduler ./coprocessor/fhevm-engine/scheduler
-COPY listener ./listener
-COPY gateway-contracts/rust_bindings ./gateway-contracts/rust_bindings
-COPY solana ./solana
-COPY shared/ciphertext-attestation ./shared/ciphertext-attestation
-WORKDIR /app/coprocessor/fhevm-engine
-COPY coprocessor/fhevm-engine/rust-toolchain.toml ./
-COPY --from=planner /app/coprocessor/fhevm-engine/recipe.json recipe.json
-RUN cargo chef cook --locked --profile=${CARGO_PROFILE} --recipe-path recipe.json
-
-# sccache is used only for the final source build, after the credential-independent cook layer.
-ARG SCCACHE_BUCKET
-ARG SCCACHE_REGION=eu-west-3
-ARG SCCACHE_S3_PREFIX
-ARG SCCACHE_VERSION=v0.15.0
-ENV SCCACHE_IDLE_TIMEOUT=0
-ENV SCCACHE_BUCKET=${SCCACHE_BUCKET}
-ENV SCCACHE_REGION=${SCCACHE_REGION}
-ENV SCCACHE_S3_KEY_PREFIX=${SCCACHE_S3_PREFIX}
-ENV AWS_REGION=${SCCACHE_REGION}
-RUN set -eux; \
-    if [ -z "${SCCACHE_BUCKET}" ]; then echo "SCCACHE_BUCKET unset; skipping sccache install"; exit 0; fi; \
-    arch="$(uname -m)"; \
-    case "$arch" in \
-        x86_64)  triple=x86_64-unknown-linux-musl ;; \
-        aarch64) triple=aarch64-unknown-linux-musl ;; \
-        *) echo "unsupported arch: $arch" >&2; exit 1 ;; \
-    esac; \
-    curl -fsSL "https://github.com/mozilla/sccache/releases/download/${SCCACHE_VERSION}/sccache-${SCCACHE_VERSION}-${triple}.tar.gz" \
-        | tar -xz --strip-components=1 -C /usr/local/bin "sccache-${SCCACHE_VERSION}-${triple}/sccache"; \
-    chmod +x /usr/local/bin/sccache; \
-    sccache --version
-
-# Per-commit contract outputs and workspace sources stay after `cook`, preserving dependency cache
-# reuse while replacing cargo-chef's member-source stubs for the final build.
 COPY --from=contract_builder /app/host-contracts/artifacts/contracts /app/host-contracts/artifacts/contracts
 COPY --from=contract_builder /app/gateway-contracts/artifacts/contracts /app/gateway-contracts/artifacts/contracts
-WORKDIR /app
+COPY listener ./listener
 COPY coprocessor/fhevm-engine ./coprocessor/fhevm-engine
 COPY coprocessor/proto ./coprocessor/proto
+COPY gateway-contracts/rust_bindings ./gateway-contracts/rust_bindings
 COPY gateway-contracts/contracts ./gateway-contracts/contracts
 COPY host-contracts/contracts ./host-contracts/contracts
+COPY solana ./solana
+COPY shared/ciphertext-attestation ./shared/ciphertext-attestation
+
 WORKDIR /app/coprocessor/fhevm-engine
 
-ARG BUILD_ID=unknown
 # Compiled stack version; unset => baseline (0.14.0), GCS build passes a newer one.
 ARG BUILD_STACK_VERSION
 
 # Install solc serially through gw-listener before the parallel workspace build. Otherwise the
 # listener build scripts can race while writing the shared svm binary and fail with ETXTBSY.
-RUN --mount=type=secret,id=sccache_aws_access_key_id \
-    --mount=type=secret,id=sccache_aws_secret_access_key \
-    if [ -n "${SCCACHE_BUCKET}" ] && command -v sccache >/dev/null 2>&1; then \
-      export RUSTC_WRAPPER=sccache; \
-      export AWS_ACCESS_KEY_ID="$(cat /run/secrets/sccache_aws_access_key_id)"; \
-      export AWS_SECRET_ACCESS_KEY="$(cat /run/secrets/sccache_aws_secret_access_key)"; \
-    fi && \
+RUN --mount=type=cache,target=/usr/local/cargo/registry,sharing=locked \
+    --mount=type=cache,target=/app/coprocessor/fhevm-engine/target,sharing=locked \
     cargo fetch && \
     FEATURES=""; if [ -n "${BUILD_STACK_VERSION}" ]; then FEATURES="--features fhevm-engine-common/stack-version-override"; export BUILD_STACK_VERSION="${BUILD_STACK_VERSION}"; fi && \
     SQLX_OFFLINE=true cargo build --profile=${CARGO_PROFILE} -p gw-listener && \
     SQLX_OFFLINE=true BUILD_ID=${BUILD_ID} cargo build --profile=${CARGO_PROFILE} --workspace ${FEATURES} && \
-    if [ -n "${SCCACHE_BUCKET}" ] && command -v sccache >/dev/null 2>&1; then sccache --show-stats; fi && \
     mkdir -p /out && \
     cp target/${CARGO_PROFILE}/tfhe_worker /out/ && \
     cp target/${CARGO_PROFILE}/host_listener /out/ && \
@@ -200,45 +124,13 @@ RUN --mount=type=secret,id=sccache_aws_access_key_id \
 # =============================================================================
 FROM ghcr.io/zama-ai/fhevm/gci/rust-glibc:${RUST_IMAGE_VERSION} AS sqlx_builder
 
-ARG SCCACHE_BUCKET
-ARG SCCACHE_REGION=eu-west-3
-ARG SCCACHE_S3_PREFIX
-ARG SCCACHE_VERSION=v0.15.0
-ENV SCCACHE_IDLE_TIMEOUT=0
-ENV SCCACHE_BUCKET=${SCCACHE_BUCKET}
-ENV SCCACHE_REGION=${SCCACHE_REGION}
-ENV SCCACHE_S3_KEY_PREFIX=${SCCACHE_S3_PREFIX}
-ENV AWS_REGION=${SCCACHE_REGION}
-
 USER root
 WORKDIR /app
 
-# TODO(sccache): temporary inline install for testing; remove once sccache
-# ships in the rust-glibc golden image and rely on that instead.
-RUN set -eux; \
-    arch="$(uname -m)"; \
-    case "$arch" in \
-        x86_64)  triple=x86_64-unknown-linux-musl ;; \
-        aarch64) triple=aarch64-unknown-linux-musl ;; \
-        *) echo "unsupported arch: $arch" >&2; exit 1 ;; \
-    esac; \
-    curl -fsSL "https://github.com/mozilla/sccache/releases/download/${SCCACHE_VERSION}/sccache-${SCCACHE_VERSION}-${triple}.tar.gz" \
-        | tar -xz --strip-components=1 -C /usr/local/bin "sccache-${SCCACHE_VERSION}-${triple}/sccache"; \
-    chmod +x /usr/local/bin/sccache; \
-    sccache --version
-
 # Install sqlx-cli
 RUN --mount=type=cache,target=/usr/local/cargo/registry,sharing=locked \
-    --mount=type=secret,id=sccache_aws_access_key_id \
-    --mount=type=secret,id=sccache_aws_secret_access_key \
-    if [ -n "${SCCACHE_BUCKET}" ] && command -v sccache >/dev/null 2>&1; then \
-      export RUSTC_WRAPPER=sccache; \
-      export AWS_ACCESS_KEY_ID="$(cat /run/secrets/sccache_aws_access_key_id)"; \
-      export AWS_SECRET_ACCESS_KEY="$(cat /run/secrets/sccache_aws_secret_access_key)"; \
-    fi && \
     cargo install sqlx-cli --version 0.7.2 \
-    --no-default-features --features postgres,rustls --locked && \
-    if [ -n "${SCCACHE_BUCKET}" ] && command -v sccache >/dev/null 2>&1; then sccache --show-stats; fi
+    --no-default-features --features postgres,rustls --locked
 
 # =============================================================================
 # Stage 2a: tfhe-worker runtime
