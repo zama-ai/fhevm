@@ -9,8 +9,8 @@ type ArchitectureFrame = {
 
 const frames: readonly ArchitectureFrame[] = [
   {
-    title: 'Encrypted request',
-    statement: 'A wallet submits encrypted inputs and receives authorized plaintext results.',
+    title: 'Protocol overview',
+    statement: 'Zama end-to-end flow',
     diagram: String.raw`
 sequenceDiagram
     box User device
