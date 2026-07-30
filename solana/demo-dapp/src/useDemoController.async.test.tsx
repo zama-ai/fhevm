@@ -283,7 +283,7 @@ describe('useDemoController generation safety', () => {
 
     expect(controller.state.deposit).toEqual({
       kind: 'error',
-      message: 'Reveal your cUSDC balance before depositing.',
+      message: 'Decrypt the cUSDC balance before depositing.',
     });
     expect(mocks.fund).not.toHaveBeenCalled();
     expect(mocks.joinDeposit).not.toHaveBeenCalled();

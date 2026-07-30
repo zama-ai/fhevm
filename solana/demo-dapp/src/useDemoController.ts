@@ -454,7 +454,7 @@ export function useDemoController() {
           kind: 'error',
           message:
             revealedSource === null
-              ? 'Reveal your cUSDC balance before depositing.'
+              ? 'Decrypt the cUSDC balance before depositing.'
               : 'Your cUSDC balance is too low for this deposit.',
         },
       });
