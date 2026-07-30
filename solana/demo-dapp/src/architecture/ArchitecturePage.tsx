@@ -25,7 +25,7 @@ flowchart TB
 
     subgraph release["Release"]
         direction LR
-        Authorized{"Who may learn it?"}
+        Authorized{"Decryption scope"}
         Authorized -->|"one user"| User["User decrypt"]
         Authorized -->|"the program"| Public["Certified public decrypt"]
     end
@@ -96,7 +96,7 @@ flowchart TB
     subgraph action["One atomic transaction"]
         direction TB
         Wallet["Wallet approves<br/>Deposit 100 cUSDC"]
-        Batcher["Batcher checks<br/>Can this deposit join?"]
+        Batcher["Batcher validates<br/>deposit eligibility"]
         Token["Confidential token moves<br/>the encrypted amount"]
         Host["Zama host records<br/>the encrypted calculation"]
 
@@ -107,8 +107,8 @@ flowchart TB
 
     subgraph state["Updated accounts"]
         direction TB
-        UserBalance["Your cUSDC balance<br/>encrypted"]
-        JoinedAmount["Your joined deposit<br/>encrypted"]
+        UserBalance["cUSDC balance<br/>encrypted"]
+        JoinedAmount["Joined deposit<br/>encrypted"]
         BatchState["Batch status<br/>public"]
     end
 
