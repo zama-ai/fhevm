@@ -1254,7 +1254,6 @@ mod fhe_eval_acl_tests {
         AllowSubjectsArgs, DecodedInstruction, EncryptedValueSubjectGrant,
         MakeHandlePublicArgs, ENCRYPTED_VALUE_ACCOUNT_INDEX,
     };
-    use zama_host::state::AclSubjectEntry;
 
     fn acct(n: u8) -> [u8; 32] {
         [n; 32]
@@ -1336,10 +1335,10 @@ mod fhe_eval_acl_tests {
     }
 
     /// The durable `Add` output handle the fhe_eval fixtures produce, derived
-    /// exactly as the program does: the base handle, no per-output binding
+    /// exactly as the program does: content-addressed, no per-output binding
     /// (durable == instruction-local, matching EVM). Matches `config()`
     /// (the Solana PoC host chain id, `PREVIOUS_BANK_HASH`), slot 42's clock ts,
-    /// op_index 0, scalar rhs.
+    /// scalar rhs.
     fn derived_add_output_handle() -> [u8; 32] {
         zama_host::state::computed_eval_handle(
             PgmBinaryOpCode::Add,
@@ -1350,8 +1349,6 @@ mod fhe_eval_acl_tests {
             zama_host::SOLANA_POC_CHAIN_ID,
             PREVIOUS_BANK_HASH,
             1_700_000_000,
-            [1; 32],
-            0,
         )
     }
 
@@ -1567,24 +1564,23 @@ mod fhe_eval_acl_tests {
         let expected = derived_add_output_handle();
 
         let plan = FheEvalArgs {
-            context_id: [1; 32],
+            account_count: 1,
+            pool: vec![[3; 32], [1; 32], [8; 32], [9; 32], [10; 32]],
             steps: vec![FheEvalStep::Binary {
                 op: PgmBinaryOpCode::Add,
                 lhs: FheEvalOperand::AllowedDurable {
-                    handle: [3; 32],
+                    handle_index: 0,
                     encrypted_value_index: 0,
                 },
-                rhs: FheEvalOperand::Scalar([1; 32]),
+                rhs: FheEvalOperand::Scalar { value_index: 1 },
                 output_fhe_type: 5,
                 output: FheEvalOutput::AllowedDurable {
                     output_encrypted_value_index: 0,
                     output_app_account_authority_index: None,
-                    output_acl_domain_key:
-                        anchor_lang::prelude::Pubkey::new_from_array([8; 32]),
-                    output_app_account:
-                        anchor_lang::prelude::Pubkey::new_from_array([9; 32]),
-                    output_encrypted_value_label: [10; 32],
-                    output_subjects: vec![],
+                    output_acl_domain_key_index: 2,
+                    output_app_account_index: 3,
+                    output_encrypted_value_label_index: 4,
+                    output_subject_indexes: vec![],
                     previous_handle: Some([8; 32]),
                     previous_subjects: Some(vec![]),
                     make_public: false,
@@ -1636,21 +1632,18 @@ mod fhe_eval_acl_tests {
     #[tokio::test]
     async fn born_public_fhe_eval_output_requests_material() {
         let plan = FheEvalArgs {
-            context_id: [1; 32],
+            account_count: 1,
+            pool: vec![[8; 32], [9; 32], [10; 32], SUBJECT],
             steps: vec![FheEvalStep::TrivialEncrypt {
                 plaintext: [7; 32],
                 fhe_type: 5,
                 output: FheEvalOutput::AllowedDurable {
                     output_encrypted_value_index: 0,
                     output_app_account_authority_index: None,
-                    output_acl_domain_key:
-                        anchor_lang::prelude::Pubkey::new_from_array([8; 32]),
-                    output_app_account:
-                        anchor_lang::prelude::Pubkey::new_from_array([9; 32]),
-                    output_encrypted_value_label: [10; 32],
-                    output_subjects: vec![AclSubjectEntry::user(
-                        anchor_lang::prelude::Pubkey::new_from_array(SUBJECT),
-                    )],
+                    output_acl_domain_key_index: 0,
+                    output_app_account_index: 1,
+                    output_encrypted_value_label_index: 2,
+                    output_subject_indexes: vec![3],
                     // Fresh encrypted value account (create), born publicly decryptable inline.
                     previous_handle: None,
                     previous_subjects: None,
