@@ -89,7 +89,7 @@ impl SolanaAclVerifier {
         if owner != self.host_program_id {
             return Err(SolanaAclVerificationError::InvalidAccountOwner);
         }
-        let value_key = acl.value_key();
+        let value_key = acl.encrypted_value_id();
         let (expected, bump) = encrypted_value_acl_address(self.host_program_id, value_key);
         if account_key != expected {
             return Err(SolanaAclVerificationError::NonCanonicalEncryptedValueAcl);
@@ -114,9 +114,7 @@ impl SolanaAclVerifier {
     ) -> Result<(), SolanaAclVerificationError> {
         let acl = &decoded.acl;
         self.verify_canonical(account_key, owner, acl)?;
-        if !allowed_acl_domain_keys.is_empty()
-            && !allowed_acl_domain_keys.contains(&acl.acl_domain_key)
-        {
+        if !allowed_acl_domain_keys.is_empty() && !allowed_acl_domain_keys.contains(&acl.domain) {
             return Err(SolanaAclVerificationError::DomainNotAllowed);
         }
         authorize_current(acl, handle, subject).map_err(map_acl_error)?;
@@ -135,7 +133,7 @@ impl SolanaAclVerifier {
     ) -> Result<(), SolanaAclVerificationError> {
         self.verify_canonical(target.account_key, target.owner, target.acl)?;
         if !allowed_acl_domain_keys.is_empty()
-            && !allowed_acl_domain_keys.contains(&target.acl.acl_domain_key)
+            && !allowed_acl_domain_keys.contains(&target.acl.domain)
         {
             return Err(SolanaAclVerificationError::DomainNotAllowed);
         }
@@ -172,7 +170,7 @@ impl SolanaAclVerifier {
 mod tests {
     use super::*;
     use zama_solana_acl::{
-        MAX_ENCRYPTED_VALUE_SUBJECTS, derive_value_key, historical_access_leaf_commitment,
+        MAX_ENCRYPTED_VALUE_SUBJECTS, derive_encrypted_value_id, historical_access_leaf_commitment,
         mmr_append, mmr_build_proof, public_decrypt_leaf_commitment,
     };
 
@@ -198,13 +196,13 @@ mod tests {
         handle: HandleBytes,
         subjects: &[SolanaPubkeyBytes],
     ) -> EncryptedValueAccount {
-        let value_key = derive_value_key(DOMAIN, APP, LABEL);
+        let value_key = derive_encrypted_value_id(DOMAIN, APP, LABEL);
         let (account, bump) = encrypted_value_acl_address(HOST, value_key);
         EncryptedValueAccount {
             acl: EncryptedValue {
-                acl_domain_key: DOMAIN,
-                app_account: APP,
-                encrypted_value_label: LABEL,
+                domain: DOMAIN,
+                account: APP,
+                label: LABEL,
                 current_handle: handle,
                 subjects: subjects.to_vec(),
                 leaf_count: 0,

@@ -471,7 +471,7 @@ mod tests {
     };
     use ring::signature::{Ed25519KeyPair, KeyPair};
     use zama_solana_acl::{
-        derive_value_key, historical_access_leaf_commitment, mmr_append, mmr_build_proof,
+        derive_encrypted_value_id, historical_access_leaf_commitment, mmr_append, mmr_build_proof,
         public_decrypt_leaf_commitment,
     };
 
@@ -512,13 +512,13 @@ mod tests {
         handle: HandleBytes,
         subjects: &[SolanaPubkeyBytes],
     ) -> EncryptedValueAccount {
-        let value_key = derive_value_key(DOMAIN, APP, LABEL);
+        let value_key = derive_encrypted_value_id(DOMAIN, APP, LABEL);
         let (account, bump) = encrypted_value_acl_address(HOST, value_key);
         EncryptedValueAccount {
             acl: EncryptedValue {
-                acl_domain_key: DOMAIN,
-                app_account: APP,
-                encrypted_value_label: LABEL,
+                domain: DOMAIN,
+                account: APP,
+                label: LABEL,
                 current_handle: handle,
                 subjects: subjects.to_vec(),
                 leaf_count: 0,
@@ -532,11 +532,7 @@ mod tests {
 
     impl EncryptedValueAccount {
         fn value_key(&self) -> [u8; 32] {
-            derive_value_key(
-                self.acl.acl_domain_key,
-                self.acl.app_account,
-                self.acl.encrypted_value_label,
-            )
+            derive_encrypted_value_id(self.acl.domain, self.acl.account, self.acl.label)
         }
         fn append(&mut self, commitment: [u8; 32]) {
             mmr_append(&mut self.acl.peaks, &mut self.acl.leaf_count, commitment).unwrap();
