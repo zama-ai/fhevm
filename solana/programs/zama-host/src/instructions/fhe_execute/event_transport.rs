@@ -103,7 +103,7 @@ mod tests {
         assert!(instruction.accounts[0].is_signer);
         assert!(!instruction.accounts[0].is_writable);
         // 21 bytes of framing (ix tag + event discriminator + version + vec length) plus
-        // 66 bytes per record (u16 step index + encrypted value key + output handle);
+        // 66 bytes per record (u16 step index + encrypted value account pubkey + output handle);
         // one batch stays far below the 10,240-byte CPI instruction-data cap (DD-038).
         assert_eq!(instruction.data.len(), 21 + MAX_FHE_BATCH_OPS * 66);
         assert_eq!(instruction.data.len(), 2_133);

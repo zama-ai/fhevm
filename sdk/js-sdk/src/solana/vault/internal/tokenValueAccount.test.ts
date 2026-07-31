@@ -19,7 +19,7 @@ const concat = (...parts: Uint8Array[]): Uint8Array => {
 const addr = (fill: number): Address => address(base58.encode(new Uint8Array(32).fill(fill)));
 
 describe('confidentialBalanceValueAccount', () => {
-  it('derives the canonical value key and host PDA for the balance label', async () => {
+  it('derives the canonical encrypted value ID and host PDA for the balance label', async () => {
     const mint = addr(3);
     const tokenAccount = addr(4);
     const expectedKey = sha256(

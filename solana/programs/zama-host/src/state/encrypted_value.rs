@@ -42,7 +42,7 @@ impl EncryptedValue {
         zama_solana_acl::EncryptedValue::account_size(subjects_len, peaks_len) - 8
     }
 
-    /// The encrypted value account's value key — its PDA seed. Derived, never stored.
+    /// The encrypted value account's encrypted value ID — its PDA seed. Derived, never stored.
     pub fn encrypted_value_id(&self) -> [u8; 32] {
         zama_solana_acl::derive_encrypted_value_id(
             self.domain.to_bytes(),
@@ -78,7 +78,7 @@ impl EncryptedValue {
     }
 }
 
-/// Returns the canonical `EncryptedValue` PDA address for a value key.
+/// Returns the canonical `EncryptedValue` PDA address for an encrypted value ID.
 pub fn encrypted_value_address(encrypted_value_id: [u8; 32]) -> (Pubkey, u8) {
     Pubkey::find_program_address(
         &[

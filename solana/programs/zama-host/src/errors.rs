@@ -143,7 +143,7 @@ pub enum ZamaHostError {
     #[msg("attested contract chain id does not match the host chain id")]
     AttestationChainIdMismatch,
     // ---- EncryptedValue ACL model ----
-    /// An `EncryptedValue` account is not the canonical PDA for its value key.
+    /// An `EncryptedValue` account is not the canonical PDA for its encrypted value ID.
     #[msg("encrypted value account does not match the canonical PDA")]
     EncryptedValuePdaMismatch,
     /// An `EncryptedValue` account has an unexpected owner or discriminator.

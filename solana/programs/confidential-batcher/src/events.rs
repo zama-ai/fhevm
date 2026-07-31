@@ -81,7 +81,7 @@ pub struct BatchDispatched {
     pub version: u8,
     /// Batch account.
     pub batch: Pubkey,
-    /// Born-public handle of the burned batch total.
+    /// Created-public handle of the burned batch total.
     pub burned_total_handle: [u8; 32],
 }
 

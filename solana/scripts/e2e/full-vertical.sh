@@ -105,7 +105,7 @@ run_public_decrypt_with_proof() {
 # program ids + deployer pubkey, as bytes32). SID = RFC-021 Solana host chain id.
 SID=9223372036854788153
 CONTRACT=0x0c26992cb06b8c2de7305099da15554866e2373d80cb0b597156b689d293249b
-# Deployer pubkey — the acl_domain_key the compute phase binds under and the user-decrypt authorizes.
+# Deployer pubkey — the domain the compute phase binds under and the user-decrypt authorizes.
 # Derived from the actual deployer keypair (id.json [32:64]) so it matches whichever key is present:
 # the dev's local wallet or the one CI generates. Hardcoding it to the dev's wallet broke CI (the
 # user-decrypt signs with CI's generated key -> "ACL record domain outside the signed auth scope").
@@ -211,7 +211,7 @@ echo "==> [user-decrypt] PURE-SDK: @fhevm/sdk/solana keygen + /v3/user-decrypt (
 # Whole round-trip in fhevm-cli: the public SDK does ML-KEM keygen, the v3 ed25519 request, and
 # de-signcryption to cleartext via deSigncryptSolanaUserDecrypt (vendored Solana TKMS WASM,
 # kms_lib.*-solana). The deployer's default keypair is the user whose ACL grants USE; its
-# pubkey is the sole allowed acl_domain_key (matches the compute phase's TE_ALLOW). No kms-core build.
+# pubkey is the sole allowed domain (matches the compute phase's TE_ALLOW). No kms-core build.
 UD_SK="0x$(python3 -c "import json,os;print(bytes(json.load(open(os.path.expanduser('~/.config/solana/id.json')))[:32]).hex())")"
 UD_CID="0x$(python3 -c "print(int('$CTX').to_bytes(32,'big').hex())")"
 ( cd "$ROOT/test-suite/fhevm" && \
@@ -244,7 +244,7 @@ done
 # supersede tx runs exactly once here; the client retries a transient `503 lagging` internally, so
 # this is not re-invoked on lag.
 hist_proof="$(cd "$ROOT/solana/scripts/e2e/live-client" && \
-  HISTORICAL_STEP=supersede TE_VALUE="$VALUE" \
+  HISTORICAL_STEP=update TE_VALUE="$VALUE" \
   PROOF_SERVICE_URL=http://127.0.0.1:8088 \
   ./target/debug/poc-live-client 2>&1)" || fail "historical supersede/proof command failed: $hist_proof"
 echo "$hist_proof" | grep -E 'HIST H_new|HIST mmrProofBytes' || fail "historical supersede/proof: $hist_proof"
@@ -279,11 +279,11 @@ echo "OK historical-user-decrypt cleartext=$VALUE old=$HIST_H_OLD new=$HIST_H_NE
 
 # Input flow (#1539): compute on the VERIFIED external input itself. One fhe_execute adds $ADD to the
 # attested input in-batch (FheExecuteOperand::VerifiedInput — re-verified on-chain via secp256k1, no
-# scratch PDA) and binds the result to a durable output ACL record under the attested acl_domain_key
+# scratch PDA) and binds the result to a persistent output ACL record under the attested domain
 # ($USER). Reuses the proof captured above ($ih/$isig/$iextra, value $IV), so this proves the result
 # is a function of the encrypted input, not a fresh value.
 EXPECT=$((IV + ADD))
-echo "==> [input-flow] fhe_execute VerifiedInput($IV) + $ADD -> durable @ acl_domain_key -> public-decrypt (expect $EXPECT)"
+echo "==> [input-flow] fhe_execute VerifiedInput($IV) + $ADD -> persistent @ domain -> public-decrypt (expect $EXPECT)"
 eout="$(cd "$ROOT/solana/scripts/e2e/live-client" && \
   FHE_EXECUTE_VERIFIED_INPUT=1 BIND_HANDLE="$ih" BIND_COPRO_SIG="$isig" BIND_USER="$USER" \
   BIND_CONTRACT="$USER" BIND_CHAIN_ID="$SID" BIND_EXTRA="$iextra" TE_ADD="$ADD" TE_ALLOW=1 \
@@ -505,7 +505,7 @@ echo "$relout" | grep -q 'OK make_handle_public' || fail "seal (make_handle_publ
 echo "    burned handle released for public decrypt (make_handle_public)"
 
 # Public-decrypt the burned handle -> cleartext + KMS PublicDecryptVerification cert. This encrypted value account
-# carries TWO public-decrypt leaves for the one handle: the born-public lifecycle leaf at index 0
+# carries TWO public-decrypt leaves for the one handle: the created-public lifecycle leaf at index 0
 # (from the burn's fhe_execute output binding) followed by the explicit make_handle_public re-release at
 # index 1 (make_handle_public has no already-public guard). The semantic endpoint resolves any
 # public-decrypt query for this handle to the EARLIEST such leaf -> index 0. The leaf_count=2

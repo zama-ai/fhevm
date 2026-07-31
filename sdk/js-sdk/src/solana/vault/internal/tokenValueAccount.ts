@@ -33,7 +33,7 @@ const pda = async (programAddress: Address, seeds: Uint8Array[]): Promise<Addres
 export const balanceValueAddress = (mint: Address, tokenAccount: Address): Promise<Address> =>
   encryptedValueAddress(mint, tokenAccount, BALANCE_LABEL);
 
-/** The value key and host account backing a confidential token account's live balance. */
+/** The encrypted value ID and host account backing a confidential token account's live balance. */
 export const confidentialBalanceValueAccount = async (
   mint: Address,
   tokenAccount: Address,

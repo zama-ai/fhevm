@@ -67,7 +67,7 @@ export type Batch = {
   authorityBump: number;
   /** PDA bump for `(batcher, index)`. */
   bump: number;
-  /** Born-public handle of the burned batch total (set at dispatch). */
+  /** Created-public handle of the burned batch total (set at dispatch). */
   burnedTotalHandle: ReadonlyUint8Array;
   /** KMS-certified batch join total (set at settle; public by design). */
   totalJoined: bigint;
@@ -96,7 +96,7 @@ export type BatchArgs = {
   authorityBump: number;
   /** PDA bump for `(batcher, index)`. */
   bump: number;
-  /** Born-public handle of the burned batch total (set at dispatch). */
+  /** Created-public handle of the burned batch total (set at dispatch). */
   burnedTotalHandle: ReadonlyUint8Array;
   /** KMS-certified batch join total (set at settle; public by design). */
   totalJoined: number | bigint;

@@ -15,8 +15,8 @@ HostConfig
   persistent-grant deny-list policy
 
 EncryptedValue
-  PDA("encrypted-value", value_key)
-  value_key = derive_value_key(acl_domain_key, app_account, encrypted_value_label)
+  PDA("encrypted-value", encrypted_value_id)
+  encrypted_value_id = derive_encrypted_value_id(domain, account, label)
   one stable PDA per logical encrypted value, reused across every handle update; stores
   current_handle, inline allowed subjects (up to MAX_ENCRYPTED_VALUE_SUBJECTS=8),
   and an on-account SHA-256 Merkle Mountain Range (peaks + leaf_count) sealing one

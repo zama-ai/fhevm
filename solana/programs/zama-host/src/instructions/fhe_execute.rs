@@ -338,7 +338,7 @@ fn accept_eval_output<'info>(
             previous_state,
             make_public,
         } => {
-            let output_acl_domain_key = dictionary_key(dictionary, *output_domain_index)?;
+            let output_domain = dictionary_key(dictionary, *output_domain_index)?;
             let output_account = dictionary_key(dictionary, *output_account_index)?;
             let output_label = dictionary_bytes(dictionary, *output_label_index)?;
             let output_subjects = resolve_dictionary_subjects(dictionary, output_subject_indexes)?;
@@ -354,7 +354,7 @@ fn accept_eval_output<'info>(
                 u16::from(*output_encrypted_value_index),
                 result,
                 account_authority.key(),
-                output_acl_domain_key,
+                output_domain,
                 output_account,
                 output_label,
                 &output_subjects,
@@ -480,7 +480,7 @@ fn bind_eval_output<'info>(
     output_encrypted_value_index: u16,
     result: [u8; 32],
     account_authority: Pubkey,
-    output_acl_domain_key: Pubkey,
+    output_domain: Pubkey,
     output_account: Pubkey,
     output_label: [u8; 32],
     output_subjects: &[Pubkey],
@@ -490,7 +490,7 @@ fn bind_eval_output<'info>(
     assert_output_acl_metadata(account_authority, output_account, output_subjects)?;
 
     let output_info = table.account(output_encrypted_value_index)?;
-    let output_pda = table.expected_output_pda(output_acl_domain_key, output_account, output_label);
+    let output_pda = table.expected_output_pda(output_domain, output_account, output_label);
     require_keys_eq!(
         output_info.key(),
         output_pda.key,
@@ -520,7 +520,7 @@ fn bind_eval_output<'info>(
         // Seal the outgoing audience into historical leaves first (above), then replace
         // to the new set — every added subject cleared the deny-list check above.
         value.subjects = output_subjects.to_vec();
-        // Born-public opt-in: after the outgoing handle's historical leaves, seal a
+        // Created-public opt-in: after the outgoing handle's historical leaves, seal a
         // public-decrypt leaf for the NEW current handle (leaf order: historical(old)
         // per subject FIRST, then public(new) LAST). Same commitment as
         // `make_handle_public`; the single realloc below covers the extra peak.
@@ -545,7 +545,7 @@ fn bind_eval_output<'info>(
         );
         check_new_grants_not_denied(&ctx.accounts.host_config, table, &[], output_subjects)?;
         let mut value = EncryptedValue {
-            domain: output_acl_domain_key,
+            domain: output_domain,
             account: output_account,
             label: output_label,
             current_handle: result,

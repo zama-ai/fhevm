@@ -75,7 +75,7 @@ pub struct Batch {
     pub authority_bump: u8,
     /// PDA bump for `(batcher, index)`.
     pub bump: u8,
-    /// Born-public handle of the burned batch total (set at dispatch).
+    /// Created-public handle of the burned batch total (set at dispatch).
     pub burned_total_handle: [u8; 32],
     /// KMS-certified batch join total (set at settle; public by design).
     pub total_joined: u64,

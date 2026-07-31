@@ -107,7 +107,7 @@ export async function settleBatch(
 
   const accounts = await deriveSettleAccounts(roots, addresses, burnedTotalHandle as Bytes32);
 
-  // The burned encrypted value account carries the cert's ACL value key; cross-check its derived PDA against the
+  // The burned encrypted value account carries the cert's encrypted value ID; cross-check its derived PDA against the
   // settle account so a roots/derivation mismatch fails here, not at on-chain verify.
   const burned = await burnedAmountValueAccount(roots.joinConfidentialMint, addresses.batchJoinTokenAccount);
   if (burned.encryptedValueAddress !== accounts.batchBurnedAmountValue) {

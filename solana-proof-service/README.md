@@ -30,7 +30,7 @@ had historical access to `handle`" or "prove `handle` is publicly decryptable" �
 resolves `(encrypted value account, handle[, subject], kind) → leaf_index` internally via one indexed lookup. A
 historical-access key maps to a unique leaf by construction (a handle is superseded at most once
 per encrypted value account, sealing one leaf per subject). A public-decrypt key may match several leaves for one
-handle (a born-public output plus later `make_handle_public` re-releases, which have no
+handle (a created-public output plus later `make_handle_public` re-releases, which have no
 already-public guard); the service resolves to the earliest — any public leaf proves publicness,
 and the earliest is deterministic and append-stable. Clients never compute, assume, or supply a
 leaf index; `leaf_index` and `leaf_count` are OUTPUTS they pass through from the response.

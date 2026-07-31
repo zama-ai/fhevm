@@ -249,7 +249,7 @@ mod tests {
         // Empty subjects/peaks: subjects len 0 (4 bytes LE), peaks len 0 (4), bump
         let mut body = Vec::new();
         body.extend_from_slice(&disc);
-        body.extend_from_slice(&[0u8; 32]); // acl_domain_key
+        body.extend_from_slice(&[0u8; 32]); // domain
         body.extend_from_slice(&[0u8; 32]); // app_account
         body.extend_from_slice(&[0u8; 32]); // label
         body.extend_from_slice(&[0u8; 32]); // handle

@@ -44,7 +44,7 @@ SID_U64=9223372036854788153
 SID_I64=-9223372036854763463
 
 # Yellowstone-first ingestion: disable optional host events and feed ordinary computation facts
-# to the coprocessor via gRPC Yellowstone reconstruction. The narrow born-public lifecycle batch
+# to the coprocessor via gRPC Yellowstone reconstruction. The narrow created-public lifecycle batch
 # remains enabled for its non-reconstructible handles. That needs the geyser plugin, so the host is a native
 # solana-test-validator (agave 2.1.21, multi-arch incl. Apple Silicon) loading the external
 # Yellowstone plugin via --geyser-plugin-config (RPC 8899 + gRPC 10000). It binds 0.0.0.0 so the
@@ -142,7 +142,7 @@ done
 solana airdrop 500 -u "$VALIDATOR_RPC" -k "$DEPLOYER_KEYPAIR" >/dev/null 2>&1 || true
 # RECONSTRUCTION-FIRST build: drop optional administrative/config events from zama-host.
 # Yellowstone reconstructs ordinary `fhe_execute` computation facts from instructions; the narrow
-# born-public lifecycle batch remains enabled because its block-entropy handles are not present in
+# created-public lifecycle batch remains enabled because its block-entropy handles are not present in
 # instruction data. anchor build gives per-crate feature control (cargo build-sbf builds the whole
 # workspace, so it can't disable defaults for just one crate). The other programs keep defaults.
 echo "    building reconstruction-first zama_host (--no-default-features) + default-feature deps"

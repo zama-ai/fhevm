@@ -23,7 +23,7 @@ pub(super) struct EvalAccountTable<'a, 'info> {
 }
 
 /// Result of deriving a persistent output's canonical address: the PDA, its bump,
-/// and the value key that seeds it (needed again as a signer seed on create).
+/// and the encrypted value ID that seeds it (needed again as a signer seed on create).
 #[derive(Clone, Copy)]
 pub(super) struct OutputPda {
     pub key: Pubkey,

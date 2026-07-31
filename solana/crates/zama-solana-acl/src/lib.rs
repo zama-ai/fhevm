@@ -83,7 +83,7 @@ pub struct EncryptedValue {
 }
 
 impl EncryptedValue {
-    /// The encrypted value account's value key — its PDA seed. Derived, never stored.
+    /// The encrypted value account's encrypted value ID — its PDA seed. Derived, never stored.
     pub fn encrypted_value_id(&self) -> [u8; 32] {
         derive_encrypted_value_id(self.domain, self.account, self.label)
     }
@@ -149,7 +149,8 @@ pub fn decode_on_chain_account(data: &[u8]) -> Result<EncryptedValue, AclError> 
     Ok(decoded.to_shared())
 }
 
-/// The app-controlled value key for one encrypted field — the encrypted value account's PDA seed.
+/// The app-controlled encrypted value ID for one encrypted field — the encrypted value account's PDA
+/// seed. (The sha256 tag string keeps its historical `value-key` spelling: it is preimage bytes.)
 /// Contains app metadata, not the opaque handle, so the address is predeclarable.
 pub fn derive_encrypted_value_id(domain: [u8; 32], account: [u8; 32], label: [u8; 32]) -> [u8; 32] {
     sha256(&[b"zama-encrypted-value-key-v1", &domain, &account, &label])

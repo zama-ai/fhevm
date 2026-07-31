@@ -61,7 +61,7 @@ export type SolanaUserDecryptParameters = {
     | undefined;
   readonly options?: RelayerUserDecryptOptions | undefined;
   /**
-   * The encrypted value account value key naming the live `EncryptedValue` account for current-handle decrypts.
+   * The encrypted value ID naming the live `EncryptedValue` account for current-handle decrypts.
    * Required when `mmrProof` is omitted; proof requests use `mmrProof.aclValueKey`.
    */
   readonly aclValueKey?: Uint8Array | undefined;
@@ -87,7 +87,7 @@ export type SolanaUserDecryptParameters = {
 export type SolanaUserDecryptMmrProofParameter = {
   /** The encrypted value account's canonical PDA account (`encrypted_value_account` in `proof.ts`). */
   readonly encryptedValueAccount: Uint8Array;
-  /** The encrypted value account value key naming the `EncryptedValue` account (`acl_value_key` on the wire). */
+  /** The encrypted value ID naming the `EncryptedValue` account (`acl_value_key` on the wire). */
   readonly aclValueKey: Uint8Array;
   /** The live MMR peaks fetched from the encrypted value account, used for client-side verification. */
   readonly peaks: readonly Uint8Array[];

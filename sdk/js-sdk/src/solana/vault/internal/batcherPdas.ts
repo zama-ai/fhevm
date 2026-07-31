@@ -31,7 +31,7 @@ function addressBytes(value: Address): Uint8Array {
 
 /**
  * The canonical `EncryptedValue` PDA for one confidential-value encrypted value account
- * (`zama_host::encrypted_value_address(value_key(acl_domain, app_account, label))`). The value key
+ * (`zama_host::encrypted_value_address(derive_encrypted_value_id(domain, account, label))`). The encrypted value ID
  * carries the encrypted value account's app metadata (never the opaque handle), so the address is derivable without
  * reading chain state. All the confidential-token/batcher field encrypted value accounts (balance, total supply,
  * burned amount, batcher pending/claim) are this same derivation under different labels.
@@ -69,7 +69,7 @@ export async function burnRedemptionAddress(mint: Address, burnedHandle: Uint8Ar
   return pda(CONFIDENTIAL_TOKEN_PROGRAM_ADDRESS, [BURN_REDEMPTION_SEED, addressBytes(mint), burnedHandle]);
 }
 
-/** A confidential-value encrypted value account: its value key (naming the value_account) and its canonical `EncryptedValue` PDA. */
+/** A confidential-value encrypted value account: its encrypted value ID and its canonical `EncryptedValue` PDA. */
 export type SolanaEncryptedValueAccount = {
   readonly aclValueKey: Uint8Array;
   readonly encryptedValueAddress: Address;
@@ -77,7 +77,7 @@ export type SolanaEncryptedValueAccount = {
 
 /**
  * The batch's burned-amount encrypted value account on the join mint (acl domain = join mint, app account = the
- * batch's join token account, label = `burned_amount`). Its value key is the certificate's
+ * batch's join token account, label = `burned_amount`). Its encrypted value ID is the certificate's
  * `aclValueKey` and its PDA is both `batchBurnedAmountValue` and the proof-service `encrypted_value`.
  */
 export async function burnedAmountValueAccount(

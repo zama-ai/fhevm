@@ -760,7 +760,7 @@ fn trivial_encrypt_eval_with_label(
     let handle = encrypted_value_account.current_handle;
     let handle_hex = hex(&handle);
     println!("  output ACL record {}", target.encrypted_value);
-    println!("  acl value key 0x{}", hex(&target.encrypted_value_id));
+    println!("  encrypted value id 0x{}", hex(&target.encrypted_value_id));
     println!("  result handle 0x{handle_hex}  (tfhe-worker materializes this ciphertext)");
 
     if std::env::var("TE_ALLOW").is_ok() {
@@ -1211,7 +1211,7 @@ fn fhe_execute_verified_input_add(
         .collect();
     println!("  output ACL record {output_encrypted_value}");
     println!(
-        "  acl value key 0x{}",
+        "  encrypted value id 0x{}",
         hex(&encrypted_value_account.encrypted_value_id())
     );
     println!("  result handle 0x{handle_hex}  (tfhe-worker materializes input + {addend})");

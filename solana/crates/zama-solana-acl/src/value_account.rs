@@ -18,9 +18,6 @@ use crate::{
 /// Why a reconstruction or proof-build could not be trusted against chain state.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum EncryptedValueAccountError {
-    /// No longer emitted by reconstruction; kept so older callers that matched
-    /// this public error variant continue to compile.
-    EmptySupersededSubjects,
     /// The reconstructed `(peaks, leaf_count)` diverge from the on-chain account's.
     /// The record is incomplete, reordered, or carries wrong subject snapshots;
     /// any proof built from it would be rejected by the KMS at verify time.
@@ -212,7 +209,7 @@ mod tests {
         [tag; 32]
     }
 
-    fn replaced(previous_handle: [u8; 32], subjects: &[[u8; 32]]) -> EncryptedValueAccountEvent {
+    fn updated(previous_handle: [u8; 32], subjects: &[[u8; 32]]) -> EncryptedValueAccountEvent {
         EncryptedValueAccountEvent::handle_updated(previous_handle, subjects)
     }
 
@@ -240,7 +237,7 @@ mod tests {
     #[test]
     fn single_update_one_subject() {
         let acct = h(0xAC);
-        let events = [replaced(h(10), &[h(1)])];
+        let events = [updated(h(10), &[h(1)])];
         let encrypted_value_account = reconstruct(acct, &events).unwrap();
         assert_eq!(
             encrypted_value_account.leaves,
@@ -258,7 +255,7 @@ mod tests {
     #[test]
     fn update_two_subjects_keeps_order() {
         let acct = h(0xAC);
-        let events = [replaced(h(10), &[h(1), h(2)])];
+        let events = [updated(h(10), &[h(1), h(2)])];
         let encrypted_value_account = reconstruct(acct, &events).unwrap();
         assert_eq!(
             encrypted_value_account.leaves,
@@ -277,7 +274,7 @@ mod tests {
             ));
         }
         // Subject order is load-bearing: swapping it yields different leaves.
-        let swapped = reconstruct(acct, &[replaced(h(10), &[h(2), h(1)])]).unwrap();
+        let swapped = reconstruct(acct, &[updated(h(10), &[h(2), h(1)])]).unwrap();
         assert_ne!(encrypted_value_account.leaves, swapped.leaves);
     }
 
@@ -304,7 +301,7 @@ mod tests {
         let acct = h(0xAC);
         let events = [
             EncryptedValueAccountEvent::MarkedPublic { handle: h(10) },
-            replaced(h(10), &[h(1), h(2)]),
+            updated(h(10), &[h(1), h(2)]),
             EncryptedValueAccountEvent::MarkedPublic { handle: h(11) },
         ];
         let encrypted_value_account = reconstruct(acct, &events).unwrap();
@@ -337,10 +334,7 @@ mod tests {
     #[test]
     fn two_consecutive_updates_continue_leaf_indices() {
         let acct = h(0xAC);
-        let events = [
-            replaced(h(10), &[h(1)]),
-            replaced(h(11), &[h(1), h(2), h(3)]),
-        ];
+        let events = [updated(h(10), &[h(1)]), updated(h(11), &[h(1), h(2), h(3)])];
         let encrypted_value_account = reconstruct(acct, &events).unwrap();
         assert_eq!(
             encrypted_value_account.leaves,
@@ -377,7 +371,7 @@ mod tests {
         let s1 = h(1);
         let s2 = h(2);
 
-        let correct = reconstruct(acct, &[replaced(h(10), &[s1, s2])]).unwrap();
+        let correct = reconstruct(acct, &[updated(h(10), &[s1, s2])]).unwrap();
         assert_eq!(
             correct.leaves,
             vec![
@@ -390,7 +384,7 @@ mod tests {
 
         // The stale pre-`allow` snapshot omits s2: one leaf instead of two, so the
         // peaks diverge from the chain's and no proof would verify.
-        let stale = reconstruct(acct, &[replaced(h(10), &[s1])]).unwrap();
+        let stale = reconstruct(acct, &[updated(h(10), &[s1])]).unwrap();
         assert_ne!(correct.peaks, stale.peaks);
         assert!(!stale.peaks_match(&peaks, count));
     }
@@ -400,7 +394,7 @@ mod tests {
         let acct = h(0xAC);
         let events = [
             EncryptedValueAccountEvent::MarkedPublic { handle: h(9) },
-            replaced(h(10), &[]),
+            updated(h(10), &[]),
             EncryptedValueAccountEvent::MarkedPublic { handle: h(11) },
         ];
         let encrypted_value_account = reconstruct(acct, &events).unwrap();
@@ -418,7 +412,7 @@ mod tests {
         let acct = h(0xAC);
         let events = [
             EncryptedValueAccountEvent::MarkedPublic { handle: h(10) },
-            replaced(h(10), &[h(1), h(2)]),
+            updated(h(10), &[h(1), h(2)]),
             EncryptedValueAccountEvent::MarkedPublic { handle: h(11) },
         ];
         let encrypted_value_account = reconstruct(acct, &events).unwrap();
@@ -455,7 +449,7 @@ mod tests {
     #[test]
     fn build_verified_proof_guards_divergence() {
         let acct = h(0xAC);
-        let events = [replaced(h(10), &[h(1), h(2)])];
+        let events = [updated(h(10), &[h(1), h(2)])];
         let encrypted_value_account = reconstruct(acct, &events).unwrap();
         let (peaks, count) = peaks_via_append(&encrypted_value_account.leaves);
 
@@ -491,7 +485,7 @@ mod tests {
 
         // One-shot variant catches a divergent record (stale subject snapshot)
         // against real on-chain peaks.
-        let stale = [replaced(h(10), &[h(1)])];
+        let stale = [updated(h(10), &[h(1)])];
         assert_eq!(
             build_verified_proof_from_events(acct, &stale, &peaks, count, 0),
             Err(EncryptedValueAccountError::PeaksDiverged)
@@ -509,7 +503,7 @@ mod tests {
         let subjects: Vec<[u8; 32]> = (0..MAX_ENCRYPTED_VALUE_SUBJECTS as u8)
             .map(|i| h(0x20 + i))
             .collect();
-        let events = [replaced(h(10), &subjects), replaced(h(11), &subjects)];
+        let events = [updated(h(10), &subjects), updated(h(11), &subjects)];
         let encrypted_value_account = reconstruct(acct, &events).unwrap();
         assert_eq!(encrypted_value_account.leaf_count, 16);
         assert_eq!(encrypted_value_account.leaves.len(), 16);
@@ -538,7 +532,7 @@ mod tests {
         // tag is `h(0xAC)`, the update logs the previous subjects for h(10).
         let acct = h(0xAC);
         let owner = h(1);
-        let events = [replaced(h(10), &[owner])];
+        let events = [updated(h(10), &[owner])];
         let encrypted_value_account = reconstruct(acct, &events).unwrap();
 
         // Independent on-chain-style append over the same single leaf.
@@ -567,7 +561,7 @@ mod tests {
         // carrying account 1's peaks. Use a two-subject update so the proof
         // carries a real sibling that differs between accounts (a single-leaf MMR
         // proof is empty and would not distinguish the accounts on its own).
-        let two = [replaced(h(10), &[owner, h(2)])];
+        let two = [updated(h(10), &[owner, h(2)])];
         let lin1 = reconstruct(acct, &two).unwrap();
         let acct2 = h(0xBB);
         let lin2 = reconstruct(acct2, &two).unwrap();

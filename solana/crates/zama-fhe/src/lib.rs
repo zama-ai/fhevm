@@ -59,10 +59,10 @@ pub enum BatchBuildError {
     /// The batch's interned constant dictionary outgrew the host's `u8` wire indices.
     TooManyDictionaryEntries,
     /// An interned dictionary entry is not referenced by any step (host parity:
-    /// `FheExecutePoolEntryUnreferenced`).
+    /// `FheExecuteDictionaryEntryUnreferenced`).
     UnreferencedDictionaryEntry,
     /// A step referenced a dictionary index past the end of the interned dictionary (host
-    /// parity: `FheExecutePoolIndexOutOfBounds`).
+    /// parity: `FheExecuteDictionaryIndexOutOfBounds`).
     DictionaryIndexOutOfBounds,
     /// A transient operand referenced an operation that has not been produced.
     InvalidTransientReference,
@@ -94,7 +94,7 @@ pub enum BatchBuildError {
     TernaryOperandTypeMismatch,
     /// A persistent output subject list would be rejected by the host.
     InvalidSubjects,
-    /// An encrypted-value key contains an app-domain pubkey the host would reject.
+    /// An encrypted value ID component contains an app-domain pubkey the host would reject.
     InvalidEncryptedValueId,
     /// The fixed app authority pubkey is not a valid signer identity.
     InvalidAppAuthority,

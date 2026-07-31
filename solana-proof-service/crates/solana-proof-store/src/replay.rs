@@ -132,7 +132,7 @@ pub fn apply_instruction(
                 subjects: Vec::new(),
             };
             new_state.upsert(subjects);
-            // Born-public on create: the resolved output handle is public
+            // Created-public on create: the resolved output handle is public
             // immediately, so append its public-decrypt leaf. Recording it as
             // `current_handle` also lets a later update reconstruct without
             // needing the slot entropy behind the on-chain handle derivation.

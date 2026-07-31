@@ -175,8 +175,6 @@ fn build_contracts() {
     println!("Ran npx hardhat compile successfully");
 }
 
-/// Collects defined enums and structs referenced by an IDL type (recursing into
-/// `vec` inners and struct fields), classifying each by its IDL `kind`.
 fn main() {
     println!("cargo::warning=build.rs run ...");
     generate_solana_abi_schema_hashes();

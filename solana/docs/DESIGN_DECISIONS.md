@@ -19,10 +19,10 @@ product-open
 
 Status: **replaced** — the keyed-nonce `AclRecord` was replaced by the stable
 `EncryptedValue` + MMR encrypted value account (DD-032), and both handle-binding components (the
-`nonce_sequence` leaf-count and the `value_key`) were **deleted from
+`nonce_sequence` leaf-count and the encrypted value ID) were **deleted from
 persistent-output handle derivation** (DD-015): a persistent output handle is now the
 plain base handle, matching EVM `FHEVMExecutor` (no per-slot/per-caller/per-encrypted value account
-binding). `value_key` survives only as the `EncryptedValue` PDA seed. The
+binding). The encrypted value ID survives only as the `EncryptedValue` PDA seed. The
 description below is retained for historical context only.
 
 Context:
@@ -508,7 +508,7 @@ grind offline for an extreme adversary. Computed handles therefore mix per-block
 digest (`previous_bank_hash` + `clock.unix_timestamp` on Solana). EVM does the identical thing via
 `blockhash(block.number - 1)` (and `block.timestamp`) in `FHEVMExecutor._binaryOp` /
 `_ternaryOp` / `_mulDivOp` / `_naryOp`. Persistent outputs derive **the same base handle** as transient
-outputs — no per-output binding. The former persistent-output binding (the encrypted value account `value_key`, plus an
+outputs — no per-output binding. The former persistent-output binding (the encrypted value account's encrypted value ID, plus an
 even earlier per-update `output_nonce_sequence` = the encrypted value account's MMR `leaf_count` read at execution)
 was **removed** entirely — see "Binding removal" below.
 
@@ -516,7 +516,7 @@ Decision:
 
 Keep the per-block-entropy-seeded derivation. The alternative — widening `bytes32` → `bytes` (full
 hash) to remove the collision concern without entropy — was rejected. Persistent outputs derive the
-plain base handle; do not mix a per-output sequence or a per-encrypted value account `value_key` into the handle.
+plain base handle; do not mix a per-output sequence or a per-encrypted value account encrypted value ID into the handle.
 
 Why:
 
@@ -541,12 +541,12 @@ back to zero entropy (DD-014).
 Binding removal (persistent-output handle binding deleted entirely):
 
 The persistent-output binding once folded two components into the handle hash: `output_nonce_sequence`
-(the encrypted value account's MMR `leaf_count` read at execution) and the `value_key` (the encrypted value account identity). Both
+(the encrypted value account's MMR `leaf_count` read at execution) and the encrypted value ID (the encrypted value account identity). Both
 were vestiges of the retired keyed-nonce `AclRecord` (DD-001) and the root of the off-chain
 reconstruction complexity (leaf-count tracking + "hints"). Both are now **deleted**. A persistent output
 handle is now the plain `base_handle = computed_eval_handle(op, operands, scalar, fhe_type, chain_id,
 previous_bank_hash, unix_timestamp, context_id, op_index)` — byte-identical to the transient (local)
-handle. A Fable analysis confirmed the `value_key` binding was defense-in-depth: strictly *stricter*
+handle. A Fable analysis confirmed the encrypted-value-ID binding was defense-in-depth: strictly *stricter*
 than EVM, never required for collision safety, so removing it makes Solana match EVM's handle shape
 exactly rather than weakening it.
 
@@ -575,18 +575,18 @@ same slot, different txs, same op/operands/ctx   Solana write-lock serializes th
 cross-value_account, same computation, same slot       not a collision: identical op/operands/type/ctx is
                                                  identical ciphertext material, so a shared handle is
                                                  correct (exactly EVM's behavior). The encrypted value accounts are
-                                                 still distinct on-chain accounts (distinct value_key
+                                                 still distinct on-chain accounts (distinct encrypted value ID
                                                  PDA seed); only the handle is shared, as on EVM
 fhe_rand / trivial / ternary outputs             same as above; rand within-slot distinctness comes
                                                  from context_id + op_index + entropy (as it already
                                                  did for transient rand), never from a binding
 ```
 
-Verdict: SAFE-TO-DELETE. Both handle-binding components (the `value_key` and the sequence) are gone;
-the persistent handle is the plain base handle, matching EVM's shape. `value_key` remains only as the
+Verdict: SAFE-TO-DELETE. Both handle-binding components (the encrypted value ID and the sequence) are gone;
+the persistent handle is the plain base handle, matching EVM's shape. The encrypted value ID remains only as the
 `EncryptedValue` PDA seed, so encrypted value accounts are still distinct accounts. The IDL/wire is unchanged — the
 binding was never an instruction argument (the sequence was the on-chain `leaf_count` read at
-execution; the `value_key` is derived from args already present), so `FheExecuteArgs` and the
+execution; the encrypted value ID is derived from args already present), so `FheExecuteArgs` and the
 persistent-output args (including Option-2 `make_public`) are unaffected.
 
 ## DD-016: Confidential Balances Use The Immediate-Available-Balance Profile
@@ -1144,7 +1144,7 @@ record was replaced).
 Decision:
 
 One stable, `zama-host`-owned `EncryptedValue` PDA per logical encrypted value (seeds
-`["encrypted-value", value_key]`), reused across every handle update. A handle update updates the
+`["encrypted-value", encrypted_value_id]`), reused across every handle update. A handle update updates the
 previous handle by sealing one `HistoricalAccessLeaf` per allowed subject into an on-account SHA-256
 Merkle Mountain Range (peaks + leaf count only — the MMR never stores the full leaf history
 on-chain). The MVP ACL is a single allowed-subject set: `EncryptedValue.subjects` is the complete

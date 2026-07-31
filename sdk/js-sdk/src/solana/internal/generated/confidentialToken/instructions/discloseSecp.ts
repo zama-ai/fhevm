@@ -137,7 +137,7 @@ export type DiscloseSecpAsyncInput<
   mint: Address<TAccountMint>;
   /**
    * The `EncryptedValue` encrypted value account the disclosed handle belongs to.
-   * CPI; this handler additionally binds its `acl_domain_key` to `mint`.
+   * CPI; this handler additionally binds its `domain` to `mint`.
    */
   encryptedValue: Address<TAccountEncryptedValue>;
   /** Host config carrying the current KMS context id and gateway EIP-712 domain. */
@@ -259,7 +259,7 @@ export type DiscloseSecpInput<
   mint: Address<TAccountMint>;
   /**
    * The `EncryptedValue` encrypted value account the disclosed handle belongs to.
-   * CPI; this handler additionally binds its `acl_domain_key` to `mint`.
+   * CPI; this handler additionally binds its `domain` to `mint`.
    */
   encryptedValue: Address<TAccountEncryptedValue>;
   /** Host config carrying the current KMS context id and gateway EIP-712 domain. */
@@ -369,7 +369,7 @@ export type ParsedDiscloseSecpInstruction<
     mint: TAccountMetas[0];
     /**
      * The `EncryptedValue` encrypted value account the disclosed handle belongs to.
-     * CPI; this handler additionally binds its `acl_domain_key` to `mint`.
+     * CPI; this handler additionally binds its `domain` to `mint`.
      */
     encryptedValue: TAccountMetas[1];
     /** Host config carrying the current KMS context id and gateway EIP-712 domain. */

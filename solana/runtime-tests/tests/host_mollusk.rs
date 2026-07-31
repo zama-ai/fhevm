@@ -2290,11 +2290,11 @@ fn mollusk_fhe_execute_creates_persistent_output_from_local_binary_add() {
         new_value_account(authority, authority, label("lhs"), lhs, &[authority]);
     let (rhs_address, rhs_value) =
         new_value_account(authority, authority, label("rhs"), rhs, &[authority]);
-    let output_acl_domain_key = authority;
+    let output_domain = authority;
     let output_account = authority;
     let output_label = label("sum");
     let output_encrypted_value_id = zama_solana_acl::derive_encrypted_value_id(
-        output_acl_domain_key.to_bytes(),
+        output_domain.to_bytes(),
         output_account.to_bytes(),
         output_label,
     );
@@ -2315,7 +2315,7 @@ fn mollusk_fhe_execute_creates_persistent_output_from_local_binary_add() {
         output: FheExecuteOutput::AllowedPersistent {
             output_encrypted_value_index: 2,
             output_account_authority_index: None,
-            output_domain_index: dictionary.intern_key(output_acl_domain_key),
+            output_domain_index: dictionary.intern_key(output_domain),
             output_account_index: dictionary.intern_key(output_account),
             output_label_index: dictionary.intern(output_label),
             output_subject_indexes: dictionary.intern_subjects([authority]),
@@ -2622,7 +2622,7 @@ fn mollusk_fhe_execute_batches_multiple_created_public_outputs_in_step_order() {
 /// persistent creates. The Anchor default bump allocator serves a fixed 32KB region (never freed,
 /// and NOT extended by a compute-budget heap-batch request), and 20 creates is the measured
 /// maximum that executes within it (fhevm-internal#1853 W8).
-const MAX_BORN_PUBLIC_CREATES_ON_DEFAULT_HEAP: usize = 20;
+const MAX_CREATED_PUBLIC_CREATES_ON_DEFAULT_HEAP: usize = 20;
 
 #[test]
 fn mollusk_fhe_execute_maximum_created_public_frame_fits_one_cpi() {
@@ -2630,9 +2630,9 @@ fn mollusk_fhe_execute_maximum_created_public_frame_fits_one_cpi() {
     // exactly one batch CPI. (The full MAX_FHE_BATCH_OPS batch serialization is covered by the
     // event-transport unit test; batches with more than the measured create budget cannot
     // execute — see `mollusk_fhe_execute_created_public_heap_boundary`.)
-    let created_public_steps = (0..MAX_BORN_PUBLIC_CREATES_ON_DEFAULT_HEAP).collect::<Vec<_>>();
+    let created_public_steps = (0..MAX_CREATED_PUBLIC_CREATES_ON_DEFAULT_HEAP).collect::<Vec<_>>();
     let batch = created_public_frame(
-        MAX_BORN_PUBLIC_CREATES_ON_DEFAULT_HEAP,
+        MAX_CREATED_PUBLIC_CREATES_ON_DEFAULT_HEAP,
         &created_public_steps,
     );
     let result = mollusk().process_and_validate_instruction(
@@ -2648,7 +2648,7 @@ fn mollusk_fhe_execute_created_public_heap_boundary() {
     // Pins the measured heap boundary behind MAX_FHE_BATCH_OPS (fhevm-internal#1853 W8): one
     // create past the measured budget exhausts the 32KB bump heap and reverts cleanly,
     // committing nothing. Raising this boundary requires a custom allocator, not a larger cap.
-    let over = MAX_BORN_PUBLIC_CREATES_ON_DEFAULT_HEAP + 1;
+    let over = MAX_CREATED_PUBLIC_CREATES_ON_DEFAULT_HEAP + 1;
     let failing = created_public_frame(over, &(0..over).collect::<Vec<_>>());
     let result = mollusk().process_instruction(&failing.instruction, &failing.accounts);
     assert!(result.program_result.is_err());
@@ -5895,7 +5895,7 @@ fn cost_snapshot_verify_public_decrypt() {
 }
 
 #[test]
-fn cost_snapshot_fhe_execute_three_op_frame() {
+fn cost_snapshot_fhe_execute_three_op_batch() {
     // Unrestricted HCU cap, no optional meter/trust accounts: the minimal
     // canonical batch (`EvalFixture::success_steps`) with one persistent
     // output binding.
@@ -5910,11 +5910,11 @@ fn cost_snapshot_fhe_execute_three_op_frame() {
         .context
         .process_and_validate_instruction(&ix, &[Check::success()]);
 
-    cost_snapshot::assert_cost_snapshot("host_mollusk", "fhe_execute/three_op_frame", &ix, &result);
+    cost_snapshot::assert_cost_snapshot("host_mollusk", "fhe_execute/three_op_batch", &ix, &result);
 }
 
 #[test]
-fn cost_snapshot_fhe_execute_max_op_frame() {
+fn cost_snapshot_fhe_execute_max_op_batch() {
     // A batch at MAX_FHE_BATCH_OPS with the same fixture keys, accounts, and
     // persistent-output shape as the three-op profile. The compute-unit delta
     // isolates the extra direct host-side fhe_execute steps; it does not include
@@ -5930,7 +5930,7 @@ fn cost_snapshot_fhe_execute_max_op_frame() {
         .context
         .process_and_validate_instruction(&ix, &[Check::success()]);
 
-    cost_snapshot::assert_cost_snapshot("host_mollusk", "fhe_execute/max_op_frame", &ix, &result);
+    cost_snapshot::assert_cost_snapshot("host_mollusk", "fhe_execute/max_op_batch", &ix, &result);
 }
 
 #[test]
