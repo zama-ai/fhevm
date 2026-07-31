@@ -921,7 +921,7 @@ fn allow_subject_ix(
             system_program: system_program::ID,
         },
         host::instruction::AllowSubjects {
-            subjects: vec![host::instructions::EncryptedValueSubjectGrant { subject }],
+            subjects: vec![subject],
         },
     )
 }

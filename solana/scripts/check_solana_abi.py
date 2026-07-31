@@ -45,7 +45,6 @@ PINNED_SCHEMAS = [
     ("zama_host", "type", "InitializeHostConfigArgs", True),
     ("zama_host", "type", "FheEvalArgs", True),
     ("zama_host", "event", "PublicOutputsProducedEvent", True),
-    ("zama_host", "type", "EncryptedValueSubjectGrant", True),
     ("zama_host", "instruction_args", "initialize_host_config", True),
     ("zama_host", "instruction_args", "fhe_eval", True),
     # EncryptedValue itself is intentionally not an Anchor `Account<'info, T>`

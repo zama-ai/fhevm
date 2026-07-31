@@ -10,12 +10,6 @@ use anchor_lang::solana_program::{program::invoke_signed, system_instruction};
 use super::common::*;
 use crate::{errors::ZamaHostError, state::*};
 
-/// One subject grant: identity to add to the allowed set.
-#[derive(AnchorSerialize, AnchorDeserialize, Clone, Copy, Debug, PartialEq, Eq)]
-pub struct EncryptedValueSubjectGrant {
-    pub subject: Pubkey,
-}
-
 /// Accounts for `allow_subjects`.
 #[derive(Accounts)]
 pub struct AllowEncryptedValueSubjects<'info> {
@@ -35,7 +29,7 @@ pub struct AllowEncryptedValueSubjects<'info> {
 
 pub fn allow_subjects(
     ctx: Context<AllowEncryptedValueSubjects>,
-    subjects: Vec<EncryptedValueSubjectGrant>,
+    subjects: Vec<Pubkey>,
 ) -> Result<()> {
     assert_not_paused(&ctx.accounts.host_config)?;
     assert_valid_new_subjects(&subjects)?;
@@ -53,15 +47,15 @@ pub fn allow_subjects(
         ctx.accounts.deny_subject_record.as_ref(),
     )?;
 
-    for grant in &subjects {
-        if value.has_subject(grant.subject) {
+    for subject in &subjects {
+        if value.has_subject(*subject) {
             continue;
         }
         require!(
             value.subjects.len() < zama_solana_acl::MAX_ENCRYPTED_VALUE_SUBJECTS,
             ZamaHostError::EncryptedValueSubjectCapacityExceeded
         );
-        value.subjects.push(grant.subject);
+        value.subjects.push(*subject);
     }
 
     let space = 8 + EncryptedValue::space(value.subjects.len(), value.peaks.len());
@@ -167,7 +161,7 @@ pub fn make_handle_public(
     Ok(())
 }
 
-fn assert_valid_new_subjects(subjects: &[EncryptedValueSubjectGrant]) -> Result<()> {
+fn assert_valid_new_subjects(subjects: &[Pubkey]) -> Result<()> {
     require!(
         !subjects.is_empty(),
         ZamaHostError::EncryptedValueEmptySubjects
@@ -177,14 +171,12 @@ fn assert_valid_new_subjects(subjects: &[EncryptedValueSubjectGrant]) -> Result<
         ZamaHostError::EncryptedValueSubjectCapacityExceeded
     );
     require!(
-        subjects.iter().all(|s| s.subject != Pubkey::default()),
+        subjects.iter().all(|s| *s != Pubkey::default()),
         ZamaHostError::SubjectNotAllowed
     );
     for (index, s) in subjects.iter().enumerate() {
         require!(
-            !subjects[index + 1..]
-                .iter()
-                .any(|later| later.subject == s.subject),
+            !subjects[index + 1..].iter().any(|later| later == s),
             ZamaHostError::SubjectNotAllowed
         );
     }
@@ -366,11 +358,7 @@ mod tests {
     fn assert_valid_new_subjects_rejects_empty_and_duplicates() {
         assert!(assert_valid_new_subjects(&[]).is_err());
         let dup = Pubkey::new_unique();
-        assert!(assert_valid_new_subjects(&[
-            EncryptedValueSubjectGrant { subject: dup },
-            EncryptedValueSubjectGrant { subject: dup },
-        ])
-        .is_err());
-        assert!(assert_valid_new_subjects(&[EncryptedValueSubjectGrant { subject: dup }]).is_ok());
+        assert!(assert_valid_new_subjects(&[dup, dup]).is_err());
+        assert!(assert_valid_new_subjects(&[dup]).is_ok());
     }
 }

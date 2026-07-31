@@ -278,7 +278,6 @@ pub fn reduce_completed_block(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::decode::SubjectGrant;
     use solana_proof_source::{CanonicalTransaction, RawInstruction};
     use zama_solana_acl::value_account::reconstruct;
 
@@ -377,7 +376,6 @@ mod tests {
         assert!(err
             .to_string()
             .contains("unknown pre-bootstrap encrypted_value_account"));
-        let _ = SubjectGrant { subject: pk(2) };
         let _ = reconstruct(pk(1), &[]);
     }
 }

@@ -562,9 +562,7 @@ fn allow_for_decryption(
             system_program: system_program::ID,
         })
         .args(zama_host::instruction::AllowSubjects {
-            subjects: vec![zama_host::instructions::EncryptedValueSubjectGrant {
-                subject: payer.pubkey(),
-            }],
+            subjects: vec![payer.pubkey()],
         })
         .send()?;
     println!("OK allow_subjects (idempotent membership): {grant_sig}");
@@ -1254,9 +1252,7 @@ fn consume_seal(
             system_program: system_program::ID,
         })
         .args(zama_host::instruction::AllowSubjects {
-            subjects: vec![zama_host::instructions::EncryptedValueSubjectGrant {
-                subject: payer.pubkey(),
-            }],
+            subjects: vec![payer.pubkey()],
         })
         .send()?;
     println!("OK allow_subjects (idempotent membership): {grant_sig}");

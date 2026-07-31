@@ -324,7 +324,7 @@
       "fixture_len": 44,
       "name": "allow_subjects",
       "program": "zama_host",
-      "schema_hash": "90c0125c8507638be8bd62dd63578a806ffb97fffcb9cecf2a90f933726802e1"
+      "schema_hash": "9e080c6b9f31e70948cd4d5c5cfa11a059c042d026b6adbb455e6ec2526db58b"
     },
     {
       "category": "instruction_args",
@@ -469,14 +469,6 @@
       "name": "verify_public_decrypt",
       "program": "zama_host",
       "schema_hash": "b1375cd85c8c9a8151f2d2740f42be9273663fa9d016877ed8545ccd9a8a9f7c"
-    },
-    {
-      "category": "type",
-      "fixture_hex": "0101010101010101010101010101010101010101010101010101010101010101",
-      "fixture_len": 32,
-      "name": "EncryptedValueSubjectGrant",
-      "program": "zama_host",
-      "schema_hash": "361765b1614050eb63d1e3f052e53f9e5a6d131ffdbbb6219dcb618881ea0889"
     },
     {
       "category": "type",

@@ -44,10 +44,10 @@ pub struct EncryptedValueAccountReplayState {
 }
 
 impl EncryptedValueAccountReplayState {
-    fn upsert(&mut self, grants: &[crate::decode::SubjectGrant]) {
-        for grant in grants {
-            if !self.subjects.contains(&grant.subject) {
-                self.subjects.push(grant.subject);
+    fn upsert(&mut self, subjects: &[[u8; 32]]) {
+        for subject in subjects {
+            if !self.subjects.contains(subject) {
+                self.subjects.push(*subject);
             }
         }
     }
@@ -191,7 +191,6 @@ pub fn apply_instruction(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::decode::SubjectGrant;
     use zama_solana_acl::{
         historical_access_leaf_commitment, mmr::mmr_verify, public_decrypt_leaf_commitment,
         value_account::reconstruct,
@@ -231,7 +230,7 @@ mod tests {
         // s2 becomes allowed and must appear in the next update's leaf set.
         let allow = DecodedInstruction::AllowSubjects {
             encrypted_value: ev,
-            subjects: vec![SubjectGrant { subject: s2 }],
+            subjects: vec![s2],
         };
         assert!(apply_instruction(&mut state, &allow).unwrap().is_empty());
 
@@ -259,10 +258,7 @@ mod tests {
         let spender = pk(0x31);
         let create = DecodedInstruction::FheEvalCreateEncryptedValue {
             encrypted_value: ev,
-            subjects: vec![
-                SubjectGrant { subject: owner },
-                SubjectGrant { subject: spender },
-            ],
+            subjects: vec![owner, spender],
             make_public_handle: None,
         };
         let eval_update = DecodedInstruction::FheEvalUpdateEncryptedValue {
@@ -298,7 +294,7 @@ mod tests {
         let owner = pk(0x30);
         let create = DecodedInstruction::FheEvalCreateEncryptedValue {
             encrypted_value: ev,
-            subjects: vec![SubjectGrant { subject: owner }],
+            subjects: vec![owner],
             make_public_handle: None,
         };
         let eval_update = DecodedInstruction::FheEvalUpdateEncryptedValue {
@@ -328,7 +324,7 @@ mod tests {
         let handle = pk(0x44);
         let create = DecodedInstruction::FheEvalCreateEncryptedValue {
             encrypted_value: ev,
-            subjects: vec![SubjectGrant { subject: owner }],
+            subjects: vec![owner],
             make_public_handle: None,
         };
         let make_public = DecodedInstruction::MakeHandlePublic {
@@ -365,7 +361,7 @@ mod tests {
         let owner = pk(0x30);
         let create = DecodedInstruction::FheEvalCreateEncryptedValue {
             encrypted_value: ev,
-            subjects: vec![SubjectGrant { subject: owner }],
+            subjects: vec![owner],
             make_public_handle: None,
         };
         let first_eval_update = DecodedInstruction::FheEvalUpdateEncryptedValue {
@@ -409,10 +405,7 @@ mod tests {
         let removed = pk(0x31);
         let create = DecodedInstruction::FheEvalCreateEncryptedValue {
             encrypted_value: ev,
-            subjects: vec![
-                SubjectGrant { subject: owner },
-                SubjectGrant { subject: removed },
-            ],
+            subjects: vec![owner, removed],
             make_public_handle: None,
         };
         let remove = DecodedInstruction::RemoveSubject {
@@ -447,7 +440,7 @@ mod tests {
         let owner = pk(0x30);
         let create = DecodedInstruction::FheEvalCreateEncryptedValue {
             encrypted_value: ev,
-            subjects: vec![SubjectGrant { subject: owner }],
+            subjects: vec![owner],
             make_public_handle: None,
         };
         let eval_update = DecodedInstruction::FheEvalUpdateEncryptedValue {
@@ -479,7 +472,7 @@ mod tests {
         let spender = pk(0x31);
         let create = DecodedInstruction::FheEvalCreateEncryptedValue {
             encrypted_value: ev,
-            subjects: vec![SubjectGrant { subject: owner }],
+            subjects: vec![owner],
             make_public_handle: None,
         };
         let eval_update = DecodedInstruction::FheEvalUpdateEncryptedValue {

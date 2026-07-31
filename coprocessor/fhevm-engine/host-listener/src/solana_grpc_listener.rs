@@ -1261,8 +1261,8 @@ mod fhe_eval_acl_tests {
     use crate::solana_adapter::SolanaHostEvent;
     use crate::solana_grpc_source::SealedBlock;
     use crate::solana_reconstruct::{
-        AllowSubjectsArgs, DecodedInstruction, EncryptedValueSubjectGrant,
-        MakeHandlePublicArgs, ENCRYPTED_VALUE_ACCOUNT_INDEX,
+        AllowSubjectsArgs, DecodedInstruction, MakeHandlePublicArgs,
+        ENCRYPTED_VALUE_ACCOUNT_INDEX,
     };
 
     fn acct(n: u8) -> [u8; 32] {
@@ -1465,9 +1465,7 @@ mod fhe_eval_acl_tests {
             encode_instruction(
                 "allow_subjects",
                 AllowSubjectsArgs {
-                    subjects: vec![EncryptedValueSubjectGrant {
-                        subject: [7; 32],
-                    }],
+                    subjects: vec![[7; 32]],
                 },
             ),
             encrypted_value_accounts(),
@@ -1495,7 +1493,7 @@ mod fhe_eval_acl_tests {
         let allow_data = encode_instruction(
             "allow_subjects",
             AllowSubjectsArgs {
-                subjects: vec![EncryptedValueSubjectGrant { subject: [7; 32] }],
+                subjects: vec![[7; 32]],
             },
         );
         let instructions =
@@ -1547,7 +1545,7 @@ mod fhe_eval_acl_tests {
         let allow_data = encode_instruction(
             "allow_subjects",
             AllowSubjectsArgs {
-                subjects: vec![EncryptedValueSubjectGrant { subject: [7; 32] }],
+                subjects: vec![[7; 32]],
             },
         );
         let (slot_bank_hash, slot_clock_ts) = slot_context();

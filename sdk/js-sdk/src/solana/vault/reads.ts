@@ -92,15 +92,15 @@ export async function getBatchByIndex(
  * (b) ASSUMED ON-CHAIN LAYOUT (borsh, after the 8-byte account discriminator), mirroring the crate's
  *     `#[derive(BorshDeserialize)]` field order in `solana/crates/zama-solana-acl/src/lib.rs`:
  *       [8-byte discriminator][aclDomainKey: 32][appAccount: 32][encryptedValueLabel: 32]
- *       [currentHandle: 32][subjects: Vec<32-byte grant>][leafCount: u64][peaks: Vec<32>][bump: u8]
+ *       [currentHandle: 32][subjects: Vec<Pubkey>][leafCount: u64][peaks: Vec<32>][bump: u8]
  *     The discriminator is sliced off before this decoder runs; `subjects` is decoded and discarded
  *     (the settle phases never read it — only its length matters, to advance the cursor).
  *
- * (c) FRAGILITY — each `subjects` element is decoded as a bare 32-byte grant. If the crate's
- *     `EncryptedValueSubjectGrant` ever gains a field, its element size stops being 32 and THIS
+ * (c) FRAGILITY — each `subjects` element is decoded as a bare 32-byte pubkey. If the on-chain
+ *     subject entry ever grows past a bare pubkey, its element size stops being 32 and THIS
  *     decoder can misalign everything after it (`leafCount`, `peaks`, `bump`). The structural
  *     checks below reject impossible MMR shapes and non-32-byte trailing capacity. Anyone who
- *     changes that struct MUST still update the decoder here in lockstep. Do not treat 32 as
+ *     changes that layout MUST still update the decoder here in lockstep. Do not treat 32 as
  *     incidental.
  */
 const encryptedValueBodyDecoder = getStructDecoder([

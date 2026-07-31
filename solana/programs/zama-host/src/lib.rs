@@ -146,7 +146,7 @@ pub mod zama_host {
 
     pub fn allow_subjects(
         ctx: Context<AllowEncryptedValueSubjects>,
-        subjects: Vec<EncryptedValueSubjectGrant>,
+        subjects: Vec<Pubkey>,
     ) -> Result<()> {
         instructions::allow_subjects(ctx, subjects)
     }

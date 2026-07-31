@@ -7,9 +7,7 @@ pub mod replay;
 pub mod runner;
 pub mod store;
 
-pub use decode::{
-    decode_program_instructions, DecodeError, DecodedInstruction, RawInstruction, SubjectGrant,
-};
+pub use decode::{decode_program_instructions, DecodeError, DecodedInstruction, RawInstruction};
 pub use reduce::{
     reduce_completed_block, LeafKind, PriorEncryptedValueAccountState, ReduceError,
     StagedBlockReduction, StagedEncryptedValueAccount, StagedLeaf,

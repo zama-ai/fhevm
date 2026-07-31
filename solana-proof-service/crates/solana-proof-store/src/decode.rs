@@ -20,17 +20,11 @@
 //! must also include `stackHeight` for every inner instruction so the batch can
 //! be bound to its immediate enclosing frame.
 
-use borsh::{BorshDeserialize, BorshSerialize};
+use borsh::BorshDeserialize;
 use sha2::{Digest, Sha256};
 use zama_host::state::{FheEvalArgs, FheEvalOutput, FheEvalStep};
 
 pub use solana_proof_source::RawInstruction;
-
-/// One subject grant as carried in `allow_subjects` args.
-#[derive(BorshDeserialize, BorshSerialize, Clone, Copy, Debug, PartialEq, Eq)]
-pub struct SubjectGrant {
-    pub subject: [u8; 32],
-}
 
 /// The zama-host `EncryptedValue` instruction, decoded from one compiled instruction.
 ///
@@ -41,7 +35,7 @@ pub struct SubjectGrant {
 pub enum DecodedInstruction {
     AllowSubjects {
         encrypted_value: [u8; 32],
-        subjects: Vec<SubjectGrant>,
+        subjects: Vec<[u8; 32]>,
     },
     RemoveSubject {
         encrypted_value: [u8; 32],
@@ -49,7 +43,7 @@ pub enum DecodedInstruction {
     },
     FheEvalCreateEncryptedValue {
         encrypted_value: [u8; 32],
-        subjects: Vec<SubjectGrant>,
+        subjects: Vec<[u8; 32]>,
         /// `Some(output_handle)` when the durable output was born public
         /// (`make_public=true`) AND its output handle was resolved from the
         /// lifecycle batch this transaction emitted. `None` otherwise — the output
@@ -195,7 +189,7 @@ pub fn decode_instructions(ix: &RawInstruction) -> Result<Vec<DecodedInstruction
     let (disc, mut body) = ix.data.split_at(8);
 
     if disc == discriminator("allow_subjects") {
-        let subjects = <Vec<SubjectGrant>>::deserialize(&mut body).map_err(borsh_err)?;
+        let subjects = <Vec<[u8; 32]>>::deserialize(&mut body).map_err(borsh_err)?;
         Ok(vec![DecodedInstruction::AllowSubjects {
             encrypted_value: account_at(ix, ENCRYPTED_VALUE_ACCOUNT_INDEX)?,
             subjects,
@@ -304,11 +298,7 @@ fn decode_fhe_eval_durable_outputs(
         match (previous_handle, previous_subjects) {
             (None, None) => out.push(DecodedInstruction::FheEvalCreateEncryptedValue {
                 encrypted_value,
-                subjects: output_subjects
-                    .iter()
-                    .copied()
-                    .map(|subject| SubjectGrant { subject })
-                    .collect(),
+                subjects: output_subjects.clone(),
                 make_public_handle,
             }),
             (Some(previous_handle), Some(previous_subjects)) => {
@@ -868,7 +858,7 @@ mod tests {
             vec![
                 DecodedInstruction::FheEvalCreateEncryptedValue {
                     encrypted_value: ev0,
-                    subjects: vec![SubjectGrant { subject: pk(0x30) }],
+                    subjects: vec![pk(0x30)],
                     make_public_handle: None,
                 },
                 DecodedInstruction::FheEvalUpdateEncryptedValue {
@@ -947,7 +937,7 @@ mod tests {
             vec![
                 DecodedInstruction::FheEvalCreateEncryptedValue {
                     encrypted_value: pk(0xE0),
-                    subjects: vec![SubjectGrant { subject: pk(0x30) }],
+                    subjects: vec![pk(0x30)],
                     make_public_handle: Some(pk(0x50)),
                 },
                 DecodedInstruction::FheEvalUpdateEncryptedValue {

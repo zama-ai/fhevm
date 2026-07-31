@@ -78,11 +78,7 @@
         {
           "name": "subjects",
           "type": {
-            "vec": {
-              "defined": {
-                "name": "EncryptedValueSubjectGrant"
-              }
-            }
+            "vec": "pubkey"
           }
         }
       ]
@@ -2215,21 +2211,6 @@
               "Slot in which this update was applied."
             ],
             "type": "u64"
-          }
-        ]
-      }
-    },
-    {
-      "name": "EncryptedValueSubjectGrant",
-      "docs": [
-        "One subject grant: identity to add to the allowed set."
-      ],
-      "type": {
-        "kind": "struct",
-        "fields": [
-          {
-            "name": "subject",
-            "type": "pubkey"
           }
         ]
       }

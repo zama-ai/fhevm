@@ -84,15 +84,6 @@ fn decode_anchor_args<T: AnchorDeserialize>(payload: &[u8]) -> Option<T> {
 // app program may invoke these via CPI) by Anchor discriminator
 // (`sha256("global:<name>")[..8]`).
 
-/// One subject grant, matching `zama_host::instructions::encrypted_value::
-/// EncryptedValueSubjectGrant`'s wire layout (`Pubkey`, borsh).
-#[derive(
-    AnchorDeserialize, AnchorSerialize, Clone, Copy, Debug, PartialEq, Eq,
-)]
-pub struct EncryptedValueSubjectGrant {
-    pub subject: [u8; 32],
-}
-
 #[derive(AnchorDeserialize, AnchorSerialize, Clone, Debug, PartialEq, Eq)]
 pub struct MakeHandlePublicArgs {
     pub handle: [u8; 32],
@@ -100,7 +91,7 @@ pub struct MakeHandlePublicArgs {
 
 #[derive(AnchorDeserialize, AnchorSerialize, Clone, Debug, PartialEq, Eq)]
 pub struct AllowSubjectsArgs {
-    pub subjects: Vec<EncryptedValueSubjectGrant>,
+    pub subjects: Vec<[u8; 32]>,
 }
 
 #[derive(AnchorDeserialize, AnchorSerialize, Clone, Debug, PartialEq, Eq)]
@@ -778,7 +769,7 @@ mod encrypted_value_decode_tests {
     #[test]
     fn decodes_allow_subjects() {
         let args = AllowSubjectsArgs {
-            subjects: vec![EncryptedValueSubjectGrant { subject: [6; 32] }],
+            subjects: vec![[6; 32]],
         };
         let data = encode(ALLOW_SUBJECTS_DISCRIMINATOR, args.clone());
         let decoded = decode_encrypted_value_instruction(&data)
@@ -817,10 +808,7 @@ mod encrypted_value_decode_tests {
     #[test]
     fn allow_subjects_schedules_no_material() {
         let args = AllowSubjectsArgs {
-            subjects: vec![
-                EncryptedValueSubjectGrant { subject: [6; 32] },
-                EncryptedValueSubjectGrant { subject: [7; 32] },
-            ],
+            subjects: vec![[6; 32], [7; 32]],
         };
         let requests = encrypted_value_material_requests(
             &EncryptedValueInstruction::AllowSubjects(args),
@@ -850,7 +838,7 @@ mod encrypted_value_decode_tests {
         let allow_data = encode(
             ALLOW_SUBJECTS_DISCRIMINATOR,
             AllowSubjectsArgs {
-                subjects: vec![EncryptedValueSubjectGrant { subject: [6; 32] }],
+                subjects: vec![[6; 32]],
             },
         );
         let accounts = accounts_with_encrypted_value_at_index_2();

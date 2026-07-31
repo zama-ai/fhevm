@@ -43,9 +43,8 @@ use solana_sdk::{
 };
 use std::{collections::HashMap, path::PathBuf};
 use zama_host::{
-    self as host, instructions::EncryptedValueSubjectGrant, DenySubjectRecord, EncryptedValue,
-    FheBinaryOpCode, FheEvalArgs, FheEvalOperand, FheEvalOutput, FheEvalStep, FheTernaryOpCode,
-    HostConfig,
+    self as host, DenySubjectRecord, EncryptedValue, FheBinaryOpCode, FheEvalArgs, FheEvalOperand,
+    FheEvalOutput, FheEvalStep, FheTernaryOpCode, HostConfig,
 };
 
 // ---------------------------------------------------------------------------
@@ -423,7 +422,7 @@ fn allow_subjects_ix(
     authority: Pubkey,
     encrypted_value: Pubkey,
     host_config: Pubkey,
-    subjects: Vec<EncryptedValueSubjectGrant>,
+    subjects: Vec<Pubkey>,
 ) -> Instruction {
     allow_subjects_ix_with_deny(
         payer,
@@ -440,7 +439,7 @@ fn allow_subjects_ix_with_deny(
     authority: Pubkey,
     encrypted_value: Pubkey,
     host_config: Pubkey,
-    subjects: Vec<EncryptedValueSubjectGrant>,
+    subjects: Vec<Pubkey>,
     deny_subject_record: Option<Pubkey>,
 ) -> Instruction {
     anchor_ix(
@@ -689,12 +688,7 @@ fn mollusk_allow_subjects_adds_new_subject_and_is_idempotent() {
         owner,
         address,
         host_config,
-        vec![
-            EncryptedValueSubjectGrant {
-                subject: new_subject,
-            },
-            EncryptedValueSubjectGrant { subject: owner },
-        ],
+        vec![new_subject, owner],
     );
     let accounts = vec![
         (system_program::ID, system_program_account()),
@@ -729,9 +723,7 @@ fn mollusk_allow_subjects_rejects_unallowed_authority() {
         outsider,
         address,
         host_config,
-        vec![EncryptedValueSubjectGrant {
-            subject: Pubkey::new_unique(),
-        }],
+        vec![Pubkey::new_unique()],
     );
     let accounts = vec![
         (system_program::ID, system_program_account()),
@@ -780,7 +772,7 @@ fn mollusk_allow_subjects_rejects_ninth_distinct_subject() {
             authority,
             encrypted_value,
             host_config,
-            vec![EncryptedValueSubjectGrant { subject: *subject }],
+            vec![*subject],
         );
         context.process_and_validate_instruction(&allow_ix, &[Check::success()]);
     }
@@ -804,9 +796,7 @@ fn mollusk_allow_subjects_rejects_ninth_distinct_subject() {
         authority,
         encrypted_value,
         host_config,
-        vec![EncryptedValueSubjectGrant {
-            subject: new_subjects[zama_solana_acl::MAX_ENCRYPTED_VALUE_SUBJECTS - 1],
-        }],
+        vec![new_subjects[zama_solana_acl::MAX_ENCRYPTED_VALUE_SUBJECTS - 1]],
     );
     context.process_and_validate_instruction(
         &rejected,
@@ -859,9 +849,7 @@ fn mollusk_remove_subject_removes_current_member_and_blocks_future_authority() {
         removed,
         address,
         host_config,
-        vec![EncryptedValueSubjectGrant {
-            subject: Pubkey::new_unique(),
-        }],
+        vec![Pubkey::new_unique()],
     );
     let accounts = vec![
         (system_program::ID, system_program_account()),
@@ -1445,7 +1433,7 @@ fn mollusk_denied_caller_cannot_mutate_acl_update_or_eval_output() {
         caller,
         allow_address,
         host_config,
-        vec![EncryptedValueSubjectGrant { subject: other }],
+        vec![other],
         Some(deny_record),
     );
     let accounts = vec![
@@ -1665,13 +1653,7 @@ fn mollusk_paused_state_blocks_acl_update_and_eval_output() {
         handle_for_chain(55, 5),
         &[owner],
     );
-    let allow_ix = allow_subjects_ix(
-        authority,
-        owner,
-        allow_address,
-        host_config,
-        vec![EncryptedValueSubjectGrant { subject: other }],
-    );
+    let allow_ix = allow_subjects_ix(authority, owner, allow_address, host_config, vec![other]);
     let accounts = vec![
         (system_program::ID, system_program_account()),
         (authority, funded_system_account()),
