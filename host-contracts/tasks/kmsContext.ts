@@ -44,8 +44,8 @@ function requireProtocolConfigAddress(useInternalProxyAddress: boolean): string 
 }
 
 // Reads the canonical ProtocolConfig and returns the context id the next switch will create
-// (current + 1) — the value the operator sets as the Gateway proposal's KMS_CONTEXT_ID so the host
-// and Gateway proposals stay aligned.
+// (allocation counter + 1). This is the value the operator sets as the Gateway proposal's
+// KMS_CONTEXT_ID so the host and Gateway proposals stay aligned.
 export async function predictNewKmsContextId(
   hre: HardhatRuntimeEnvironment,
   protocolConfigAddress: string,
@@ -54,7 +54,7 @@ export async function predictNewKmsContextId(
     'ProtocolConfig',
     protocolConfigAddress,
   )) as unknown as ProtocolConfig;
-  return (await protocolConfig.getCurrentKmsContextId()) + 1n;
+  return (await protocolConfig.getCurrentKmsContextIdCounter()) + 1n;
 }
 
 interface EncodedCall {
@@ -113,7 +113,7 @@ task(
     const encoded = encodeDefineNewKmsContextAndEpoch(iface);
     const target = resolveProtocolConfigAddress(useInternalProxyAddress);
 
-    // The host derives the new context id on-chain as current + 1. When a ProtocolConfig address is
+    // The host derives the new context id on-chain as the allocation counter + 1. When a ProtocolConfig address is
     // resolvable, surface that id so the operator can set it as the Gateway proposal's
     // KMS_CONTEXT_ID, keeping the two proposals aligned without a dedicated env var.
     const newContextId = target ? (await predictNewKmsContextId(hre, target)).toString() : undefined;

@@ -136,12 +136,37 @@ describe('KMS context tasks', function () {
       expect(decoded[3][0][0]).to.equal('0xaa');
     });
 
-    it('derives the new context id as current + 1 from a live ProtocolConfig', async function () {
+    it('derives the new context id as the allocation counter + 1 from a live ProtocolConfig', async function () {
       const proxyAddress = await deployFreshProtocolConfigProxy(deployer, defaultNodes(), DEFAULT_THRESHOLDS);
       const protocolConfig = (await ethers.getContractAt('ProtocolConfig', proxyAddress)) as unknown as ProtocolConfig;
-      const currentContextId = await protocolConfig.getCurrentKmsContextId();
+      const allocationCounter = await protocolConfig.getCurrentKmsContextIdCounter();
 
-      expect(await predictNewKmsContextId(hre, proxyAddress)).to.equal(currentContextId + 1n);
+      expect(await predictNewKmsContextId(hre, proxyAddress)).to.equal(allocationCounter + 1n);
+    });
+
+    it('predicts from the allocation counter, staying ahead of the activation pointer during an in-flight switch', async function () {
+      const proxyAddress = await deployFreshProtocolConfigProxy(deployer, defaultNodes(), DEFAULT_THRESHOLDS);
+      const protocolConfig = (await ethers.getContractAt('ProtocolConfig', proxyAddress)) as unknown as ProtocolConfig;
+
+      // Define a new context so the allocation counter advances while the activation pointer stays put.
+      // This leaves the switch in-flight (PENDING), so the counter runs ahead of the pointer.
+      const newNodes = [
+        makeNode('0x00000000000000000000000000000000000C1111', '0x00000000000000000000000000000000000C2222', 0),
+        makeNode('0x00000000000000000000000000000000000C3333', '0x00000000000000000000000000000000000C4444', 1),
+      ];
+      setKmsEnv(newNodes, { publicDecryption: 1, userDecryption: 1, kmsGen: 1, mpc: 1 });
+      process.env[PROTOCOL_CONFIG_ENV_VAR] = proxyAddress;
+      await run('task:defineNewKmsContextAndEpoch', {});
+
+      const allocationCounter = await protocolConfig.getCurrentKmsContextIdCounter();
+      const activationPointer = await protocolConfig.getCurrentKmsContextId();
+      expect(allocationCounter).to.be.greaterThan(activationPointer);
+
+      // The prediction must track the allocation counter, not the activation pointer. Reverting the
+      // production fix to the activation pointer makes this assertion fail.
+      const predicted = await predictNewKmsContextId(hre, proxyAddress);
+      expect(predicted).to.equal(allocationCounter + 1n);
+      expect(predicted).to.be.greaterThan(activationPointer + 1n);
     });
 
     it('broadcasts the switch with the deployer key (no-DAO path) leaving a PENDING context', async function () {
