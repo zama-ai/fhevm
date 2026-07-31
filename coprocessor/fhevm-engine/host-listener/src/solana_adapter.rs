@@ -10,11 +10,11 @@ use alloy_primitives::{Address, FixedBytes, Log};
 use sha2::{Digest, Sha256};
 use sqlx::Error as SqlxError;
 
-use crate::generated::{
-    FheBinaryOpCode, FheBinaryOpEvent, FheIsInEvent, FheMulDivEvent,
-    FheRandBoundedEvent, FheRandEvent, FheSumEvent, FheTernaryOpCode,
-    FheTernaryOpEvent, FheUnaryOpCode, FheUnaryOpEvent, TrivialEncryptEvent,
+use zama_host::records::{
+    FheBinaryOp, FheIsIn, FheMulDiv, FheRand, FheRandBounded, FheSum,
+    FheTernaryOp, FheUnaryOp, TrivialEncrypt,
 };
+use zama_host::state::{FheBinaryOpCode, FheTernaryOpCode, FheUnaryOpCode};
 
 use crate::cmd::block_history::BlockSummary;
 use crate::contracts::TfheContract;
@@ -31,15 +31,15 @@ pub struct SolanaMaterialRequest {
 
 #[derive(Clone, Debug)]
 pub enum SolanaHostEvent {
-    FheBinaryOp(FheBinaryOpEvent),
-    FheTernaryOp(FheTernaryOpEvent),
-    TrivialEncrypt(TrivialEncryptEvent),
-    FheRand(FheRandEvent),
-    FheRandBounded(FheRandBoundedEvent),
-    FheUnaryOp(FheUnaryOpEvent),
-    FheSum(FheSumEvent),
-    FheIsIn(FheIsInEvent),
-    FheMulDiv(FheMulDivEvent),
+    FheBinaryOp(FheBinaryOp),
+    FheTernaryOp(FheTernaryOp),
+    TrivialEncrypt(TrivialEncrypt),
+    FheRand(FheRand),
+    FheRandBounded(FheRandBounded),
+    FheUnaryOp(FheUnaryOp),
+    FheSum(FheSum),
+    FheIsIn(FheIsIn),
+    FheMulDiv(FheMulDiv),
     MaterialRequest(SolanaMaterialRequest),
 }
 
@@ -249,7 +249,7 @@ pub fn to_log_tfhe(
 /// `TfheContractEvents`. Keeping this adapter at the typed-event boundary lets
 /// the Solana listener use native Solana decoding while reusing the existing
 /// computation scheduler and worker unchanged.
-pub fn to_tfhe_event(event: FheBinaryOpEvent) -> Log<TfheContractEvents> {
+pub fn to_tfhe_event(event: FheBinaryOp) -> Log<TfheContractEvents> {
     let caller = Address::ZERO;
     let scalar_byte = FixedBytes::<1>::from([u8::from(event.scalar)]);
     let data = match event.op {
@@ -429,9 +429,7 @@ pub fn to_tfhe_event(event: FheBinaryOpEvent) -> Log<TfheContractEvents> {
     }
 }
 
-pub fn to_tfhe_ternary_event(
-    event: FheTernaryOpEvent,
-) -> Log<TfheContractEvents> {
+pub fn to_tfhe_ternary_event(event: FheTernaryOp) -> Log<TfheContractEvents> {
     let caller = Address::ZERO;
     let data = match event.op {
         FheTernaryOpCode::IfThenElse => {
@@ -452,7 +450,7 @@ pub fn to_tfhe_ternary_event(
 }
 
 pub fn to_trivial_encrypt_event(
-    event: TrivialEncryptEvent,
+    event: TrivialEncrypt,
 ) -> Log<TfheContractEvents> {
     let caller = Address::ZERO;
     Log {
@@ -468,7 +466,7 @@ pub fn to_trivial_encrypt_event(
     }
 }
 
-pub fn to_fhe_rand_event(event: FheRandEvent) -> Log<TfheContractEvents> {
+pub fn to_fhe_rand_event(event: FheRand) -> Log<TfheContractEvents> {
     let caller = Address::ZERO;
     Log {
         address: caller,
@@ -482,7 +480,7 @@ pub fn to_fhe_rand_event(event: FheRandEvent) -> Log<TfheContractEvents> {
 }
 
 pub fn to_fhe_rand_bounded_event(
-    event: FheRandBoundedEvent,
+    event: FheRandBounded,
 ) -> Log<TfheContractEvents> {
     let caller = Address::ZERO;
     Log {
@@ -499,7 +497,7 @@ pub fn to_fhe_rand_bounded_event(
     }
 }
 
-pub fn to_fhe_unary_event(event: FheUnaryOpEvent) -> Log<TfheContractEvents> {
+pub fn to_fhe_unary_event(event: FheUnaryOp) -> Log<TfheContractEvents> {
     let caller = Address::ZERO;
     let ct = Handle::from(event.operand);
     let result = Handle::from(event.result);
@@ -531,7 +529,7 @@ pub fn to_fhe_unary_event(event: FheUnaryOpEvent) -> Log<TfheContractEvents> {
     }
 }
 
-pub fn to_fhe_sum_event(event: FheSumEvent) -> Log<TfheContractEvents> {
+pub fn to_fhe_sum_event(event: FheSum) -> Log<TfheContractEvents> {
     let caller = Address::ZERO;
     Log {
         address: caller,
@@ -543,7 +541,7 @@ pub fn to_fhe_sum_event(event: FheSumEvent) -> Log<TfheContractEvents> {
     }
 }
 
-pub fn to_fhe_is_in_event(event: FheIsInEvent) -> Log<TfheContractEvents> {
+pub fn to_fhe_is_in_event(event: FheIsIn) -> Log<TfheContractEvents> {
     let caller = Address::ZERO;
     Log {
         address: caller,
@@ -556,7 +554,7 @@ pub fn to_fhe_is_in_event(event: FheIsInEvent) -> Log<TfheContractEvents> {
     }
 }
 
-pub fn to_fhe_mul_div_event(event: FheMulDivEvent) -> Log<TfheContractEvents> {
+pub fn to_fhe_mul_div_event(event: FheMulDiv) -> Log<TfheContractEvents> {
     let caller = Address::ZERO;
     Log {
         address: caller,
@@ -578,8 +576,8 @@ pub fn to_fhe_mul_div_event(event: FheMulDivEvent) -> Log<TfheContractEvents> {
 mod tests {
     use super::*;
     use crate::database::tfhe_event_propagate::tfhe_inputs_handle;
-    use crate::generated::EVENT_VERSION;
     use time::{Date, Month, PrimitiveDateTime, Time};
+    use zama_host::EVENT_VERSION;
 
     fn handle(byte: u8) -> Handle {
         Handle::from([byte; 32])
@@ -587,7 +585,7 @@ mod tests {
 
     #[test]
     fn maps_binary_add_to_existing_tfhe_event() {
-        let mapped = to_tfhe_event(FheBinaryOpEvent {
+        let mapped = to_tfhe_event(FheBinaryOp {
             version: EVENT_VERSION,
             op: FheBinaryOpCode::Add,
             subject: [0; 32],
@@ -614,7 +612,7 @@ mod tests {
 
     #[test]
     fn maps_binary_ge_to_existing_tfhe_event() {
-        let mapped = to_tfhe_event(FheBinaryOpEvent {
+        let mapped = to_tfhe_event(FheBinaryOp {
             version: EVENT_VERSION,
             op: FheBinaryOpCode::Ge,
             subject: [0; 32],
@@ -641,7 +639,7 @@ mod tests {
 
     #[test]
     fn maps_ternary_if_then_else_to_existing_tfhe_event() {
-        let mapped = to_tfhe_ternary_event(FheTernaryOpEvent {
+        let mapped = to_tfhe_ternary_event(FheTernaryOp {
             version: EVENT_VERSION,
             op: FheTernaryOpCode::IfThenElse,
             subject: [0; 32],
@@ -671,7 +669,7 @@ mod tests {
         let mut plaintext = [0_u8; 32];
         plaintext[31] = 7;
 
-        let mapped = to_trivial_encrypt_event(TrivialEncryptEvent {
+        let mapped = to_trivial_encrypt_event(TrivialEncrypt {
             version: EVENT_VERSION,
             subject: [0; 32],
             plaintext,
@@ -694,7 +692,7 @@ mod tests {
 
     #[test]
     fn maps_random_to_existing_tfhe_event() {
-        let mapped = to_fhe_rand_event(FheRandEvent {
+        let mapped = to_fhe_rand_event(FheRand {
             version: EVENT_VERSION,
             subject: [0; 32],
             seed: [7; 16],
@@ -755,7 +753,7 @@ mod tests {
             Date::from_calendar_date(2026, Month::May, 9).unwrap(),
             Time::MIDNIGHT,
         );
-        let event = to_tfhe_event(FheBinaryOpEvent {
+        let event = to_tfhe_event(FheBinaryOp {
             version: EVENT_VERSION,
             op: FheBinaryOpCode::Sub,
             subject: [0; 32],
@@ -799,7 +797,7 @@ mod tests {
 
         let (tfhe_logs, material_requests) = normalize_solana_events_for_db(
             [
-                SolanaHostEvent::TrivialEncrypt(TrivialEncryptEvent {
+                SolanaHostEvent::TrivialEncrypt(TrivialEncrypt {
                     version: EVENT_VERSION,
                     subject: [0; 32],
                     plaintext: [55; 32],
@@ -869,7 +867,7 @@ mod tests {
 
         let (tfhe_logs, _) = normalize_solana_events_for_db(
             [
-                SolanaHostEvent::TrivialEncrypt(TrivialEncryptEvent {
+                SolanaHostEvent::TrivialEncrypt(TrivialEncrypt {
                     version: EVENT_VERSION,
                     subject: [0; 32],
                     plaintext: [55; 32],
@@ -901,7 +899,7 @@ mod tests {
 
         let (tfhe_logs, material_requests) = normalize_solana_events_for_db(
             [
-                SolanaHostEvent::TrivialEncrypt(TrivialEncryptEvent {
+                SolanaHostEvent::TrivialEncrypt(TrivialEncrypt {
                     version: EVENT_VERSION,
                     subject: [0; 32],
                     plaintext: {
@@ -912,14 +910,14 @@ mod tests {
                     fhe_type: 0,
                     result: [1; 32],
                 }),
-                SolanaHostEvent::FheRand(FheRandEvent {
+                SolanaHostEvent::FheRand(FheRand {
                     version: EVENT_VERSION,
                     subject: [0; 32],
                     seed: [2; 16],
                     fhe_type: 5,
                     result: [2; 32],
                 }),
-                SolanaHostEvent::FheTernaryOp(FheTernaryOpEvent {
+                SolanaHostEvent::FheTernaryOp(FheTernaryOp {
                     version: EVENT_VERSION,
                     op: FheTernaryOpCode::IfThenElse,
                     subject: [0; 32],

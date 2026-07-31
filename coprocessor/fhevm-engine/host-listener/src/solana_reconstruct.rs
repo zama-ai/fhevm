@@ -11,23 +11,21 @@ use zama_host::state::{
     computed_eval_mul_div_handle, computed_eval_sum_handle,
     computed_eval_ternary_handle, computed_eval_trivial_handle,
     computed_eval_unary_handle, computed_rand_bounded_handle,
-    computed_rand_handle, FheBinaryOpCode as PgmBinaryOpCode, FheExecuteArgs,
-    FheExecuteOperand, FheExecuteOutput, FheExecuteStep,
-    FheTernaryOpCode as PgmTernaryOpCode, FheUnaryOpCode as PgmUnaryOpCode,
+    computed_rand_handle, FheExecuteArgs, FheExecuteOperand, FheExecuteOutput,
+    FheExecuteStep,
 };
 use zama_host::{FheExecuteRandomSeed, FheExecuteRandomSeedsEvent};
 
 #[cfg(test)]
 use crate::database::tfhe_event_propagate::Handle;
-use crate::generated::{
-    FheBinaryOpCode, FheBinaryOpEvent, FheIsInEvent, FheMulDivEvent,
-    FheRandBoundedEvent, FheRandEvent, FheSumEvent, FheTernaryOpCode,
-    FheTernaryOpEvent, FheUnaryOpCode, FheUnaryOpEvent, TrivialEncryptEvent,
-    EVENT_VERSION,
-};
 use crate::solana_adapter::{
     material_request, SolanaHostEvent, SolanaMaterialRequest,
 };
+use zama_host::records::{
+    FheBinaryOp, FheIsIn, FheMulDiv, FheRand, FheRandBounded, FheSum,
+    FheTernaryOp, FheUnaryOp, TrivialEncrypt,
+};
+use zama_host::EVENT_VERSION;
 
 /// Block + config context the deterministic handle derivation needs, taken from
 /// the transaction's slot/block (`previous_bank_hash`, `unix_timestamp`) and the
@@ -276,45 +274,6 @@ fn resolve_rhs(
     }
 }
 
-fn map_pgm_binary_op(op: PgmBinaryOpCode) -> FheBinaryOpCode {
-    match op {
-        PgmBinaryOpCode::Add => FheBinaryOpCode::Add,
-        PgmBinaryOpCode::Sub => FheBinaryOpCode::Sub,
-        PgmBinaryOpCode::Mul => FheBinaryOpCode::Mul,
-        PgmBinaryOpCode::Div => FheBinaryOpCode::Div,
-        PgmBinaryOpCode::Rem => FheBinaryOpCode::Rem,
-        PgmBinaryOpCode::And => FheBinaryOpCode::And,
-        PgmBinaryOpCode::Or => FheBinaryOpCode::Or,
-        PgmBinaryOpCode::Xor => FheBinaryOpCode::Xor,
-        PgmBinaryOpCode::Shl => FheBinaryOpCode::Shl,
-        PgmBinaryOpCode::Shr => FheBinaryOpCode::Shr,
-        PgmBinaryOpCode::Rotl => FheBinaryOpCode::Rotl,
-        PgmBinaryOpCode::Rotr => FheBinaryOpCode::Rotr,
-        PgmBinaryOpCode::Eq => FheBinaryOpCode::Eq,
-        PgmBinaryOpCode::Ne => FheBinaryOpCode::Ne,
-        PgmBinaryOpCode::Ge => FheBinaryOpCode::Ge,
-        PgmBinaryOpCode::Gt => FheBinaryOpCode::Gt,
-        PgmBinaryOpCode::Le => FheBinaryOpCode::Le,
-        PgmBinaryOpCode::Lt => FheBinaryOpCode::Lt,
-        PgmBinaryOpCode::Min => FheBinaryOpCode::Min,
-        PgmBinaryOpCode::Max => FheBinaryOpCode::Max,
-    }
-}
-
-fn map_pgm_unary_op(op: PgmUnaryOpCode) -> FheUnaryOpCode {
-    match op {
-        PgmUnaryOpCode::Neg => FheUnaryOpCode::Neg,
-        PgmUnaryOpCode::Not => FheUnaryOpCode::Not,
-        PgmUnaryOpCode::Cast => FheUnaryOpCode::Cast,
-    }
-}
-
-fn map_pgm_ternary_op(op: PgmTernaryOpCode) -> FheTernaryOpCode {
-    match op {
-        PgmTernaryOpCode::IfThenElse => FheTernaryOpCode::IfThenElse,
-    }
-}
-
 /// Reconstructs the per-step compute events a `fhe_execute` batch emits, mirroring
 /// the program's `walk_eval_frame`: walk steps in order, resolve operands
 /// (`Transient` referring to earlier steps' produced handles), recompute each
@@ -385,9 +344,9 @@ pub fn reconstruct_fhe_execute_steps(
                     ctx.unix_timestamp,
                 );
                 produced.push(result);
-                SolanaHostEvent::FheBinaryOp(FheBinaryOpEvent {
+                SolanaHostEvent::FheBinaryOp(FheBinaryOp {
                     version: EVENT_VERSION,
-                    op: map_pgm_binary_op(*op),
+                    op: *op,
                     subject,
                     lhs: lhs_handle,
                     rhs: rhs_handle,
@@ -418,9 +377,9 @@ pub fn reconstruct_fhe_execute_steps(
                     ctx.unix_timestamp,
                 );
                 produced.push(result);
-                SolanaHostEvent::FheTernaryOp(FheTernaryOpEvent {
+                SolanaHostEvent::FheTernaryOp(FheTernaryOp {
                     version: EVENT_VERSION,
-                    op: map_pgm_ternary_op(*op),
+                    op: *op,
                     subject,
                     control: c,
                     if_true: t,
@@ -441,7 +400,7 @@ pub fn reconstruct_fhe_execute_steps(
                     ctx.unix_timestamp,
                 );
                 produced.push(result);
-                SolanaHostEvent::TrivialEncrypt(TrivialEncryptEvent {
+                SolanaHostEvent::TrivialEncrypt(TrivialEncrypt {
                     version: EVENT_VERSION,
                     subject,
                     plaintext: *plaintext,
@@ -457,7 +416,7 @@ pub fn reconstruct_fhe_execute_steps(
                 let result =
                     computed_rand_handle(seed, *fhe_type, ctx.chain_id);
                 produced.push(result);
-                SolanaHostEvent::FheRand(FheRandEvent {
+                SolanaHostEvent::FheRand(FheRand {
                     version: EVENT_VERSION,
                     subject,
                     seed,
@@ -482,9 +441,9 @@ pub fn reconstruct_fhe_execute_steps(
                     ctx.unix_timestamp,
                 );
                 produced.push(result);
-                SolanaHostEvent::FheUnaryOp(FheUnaryOpEvent {
+                SolanaHostEvent::FheUnaryOp(FheUnaryOp {
                     version: EVENT_VERSION,
-                    op: map_pgm_unary_op(*op),
+                    op: *op,
                     subject,
                     operand: operand_handle,
                     result,
@@ -506,7 +465,7 @@ pub fn reconstruct_fhe_execute_steps(
                     ctx.chain_id,
                 );
                 produced.push(result);
-                SolanaHostEvent::FheRandBounded(FheRandBoundedEvent {
+                SolanaHostEvent::FheRandBounded(FheRandBounded {
                     version: EVENT_VERSION,
                     subject,
                     upper_bound: *upper_bound,
@@ -534,7 +493,7 @@ pub fn reconstruct_fhe_execute_steps(
                     ctx.unix_timestamp,
                 );
                 produced.push(result);
-                SolanaHostEvent::FheSum(FheSumEvent {
+                SolanaHostEvent::FheSum(FheSum {
                     version: EVENT_VERSION,
                     subject,
                     operands: operand_handles,
@@ -565,7 +524,7 @@ pub fn reconstruct_fhe_execute_steps(
                     ctx.unix_timestamp,
                 );
                 produced.push(result);
-                SolanaHostEvent::FheIsIn(FheIsInEvent {
+                SolanaHostEvent::FheIsIn(FheIsIn {
                     version: EVENT_VERSION,
                     subject,
                     value: value_handle,
@@ -596,7 +555,7 @@ pub fn reconstruct_fhe_execute_steps(
                     ctx.unix_timestamp,
                 );
                 produced.push(result);
-                SolanaHostEvent::FheMulDiv(FheMulDivEvent {
+                SolanaHostEvent::FheMulDiv(FheMulDiv {
                     version: EVENT_VERSION,
                     subject,
                     factor1: factor1_handle,
@@ -889,6 +848,7 @@ mod encrypted_value_decode_tests {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use zama_host::state::{FheBinaryOpCode, FheUnaryOpCode};
 
     const SUBJECT: [u8; 32] = [1u8; 32];
 
@@ -901,10 +861,10 @@ mod tests {
     }
 
     #[test]
-    fn fhe_execute_plan_round_trips_via_program_type() {
+    fn fhe_execute_batch_round_trips_via_program_type() {
         use anchor_lang::AnchorSerialize;
         use zama_host::state::{
-            FheBinaryOpCode as PgmBinaryOp, FheExecuteArgs, FheExecuteOperand,
+            FheBinaryOpCode, FheExecuteArgs, FheExecuteOperand,
             FheExecuteOutput, FheExecuteStep,
         };
         let batch = FheExecuteArgs {
@@ -917,7 +877,7 @@ mod tests {
                     output: FheExecuteOutput::AllowedLocal,
                 },
                 FheExecuteStep::Binary {
-                    op: PgmBinaryOp::Add,
+                    op: FheBinaryOpCode::Add,
                     lhs: FheExecuteOperand::AllowedLocal { producer_index: 0 },
                     rhs: FheExecuteOperand::Scalar { value_index: 0 },
                     output_fhe_type: 5,
@@ -987,7 +947,7 @@ mod tests {
                     output: FheExecuteOutput::AllowedLocal,
                 },
                 FheExecuteStep::Binary {
-                    op: PgmBinaryOpCode::Add,
+                    op: FheBinaryOpCode::Add,
                     lhs: FheExecuteOperand::AllowedLocal { producer_index: 0 },
                     rhs: FheExecuteOperand::Scalar { value_index: 0 },
                     output_fhe_type: 5,
@@ -1098,7 +1058,7 @@ mod tests {
                     output: FheExecuteOutput::AllowedLocal,
                 },
                 FheExecuteStep::Unary {
-                    op: PgmUnaryOpCode::Neg,
+                    op: FheUnaryOpCode::Neg,
                     operand: FheExecuteOperand::AllowedLocal {
                         producer_index: 0,
                     },
@@ -1179,7 +1139,7 @@ mod tests {
                 assert_eq!(
                     e.result,
                     computed_eval_unary_handle(
-                        PgmUnaryOpCode::Neg,
+                        FheUnaryOpCode::Neg,
                         h0,
                         5,
                         cx.chain_id,
@@ -1271,7 +1231,7 @@ mod tests {
             account_count: 0,
             dictionary: vec![[2u8; 32]],
             steps: vec![FheExecuteStep::Binary {
-                op: PgmBinaryOpCode::Add,
+                op: FheBinaryOpCode::Add,
                 lhs: FheExecuteOperand::AllowedLocal { producer_index: 5 },
                 rhs: FheExecuteOperand::Scalar { value_index: 0 },
                 output_fhe_type: 5,

@@ -1,13 +1,7 @@
-//! Generated Solana protocol event value types.
+//! Generated Solana ABI golden-manifest constants.
 //!
 //! The Rust implementation is emitted by `host-listener/build.rs` into Cargo
-//! `OUT_DIR`, so it is not reachable by rustfmt or Prettier. Ingestion
-//! reconstructs these semantic values from instruction data; no emitted-event
-//! decoder is generated.
-
-pub mod zama_host_events {
-    include!(concat!(env!("OUT_DIR"), "/zama_host_events.rs"));
-}
+//! `OUT_DIR`, so it is not reachable by rustfmt or Prettier.
 
 pub mod solana_abi_schema_hashes {
     include!(concat!(env!("OUT_DIR"), "/solana_abi_schema_hashes.rs"));
@@ -16,30 +10,3 @@ pub mod solana_abi_schema_hashes {
 pub use solana_abi_schema_hashes::{
     SolanaAbiSchema, SOLANA_ABI_SCHEMAS, SOLANA_EVENT_VERSIONS,
 };
-pub use zama_host_events::{
-    FheBinaryOpCode, FheBinaryOpEvent, FheExecuteRandomSeed,
-    FheExecuteRandomSeedsEvent, FheIsInEvent, FheMulDivEvent,
-    FheRandBoundedEvent, FheRandEvent, FheSumEvent, FheTernaryOpCode,
-    FheTernaryOpEvent, FheUnaryOpCode, FheUnaryOpEvent, ProducedPublicOutput,
-    PublicOutputsProducedEvent, TrivialEncryptEvent, EVENT_VERSION,
-};
-
-#[cfg(test)]
-mod tests {
-    use super::{
-        ProducedPublicOutput, PublicOutputsProducedEvent, EVENT_VERSION,
-    };
-
-    #[test]
-    fn generated_public_outputs_produced_event_includes_nested_records() {
-        let event = PublicOutputsProducedEvent {
-            version: EVENT_VERSION,
-            outputs: vec![ProducedPublicOutput {
-                step_index: 2,
-                encrypted_value: [3; 32],
-                output_handle: [4; 32],
-            }],
-        };
-        assert_eq!(event.outputs[0].step_index, 2);
-    }
-}

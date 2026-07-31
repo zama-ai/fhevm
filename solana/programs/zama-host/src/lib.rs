@@ -23,10 +23,12 @@ pub mod decode;
 pub mod eip712;
 /// Program-specific errors returned by ZamaHost instructions.
 pub mod errors;
-/// Event types: emitted protocol events plus the reconstructed per-step compute records.
+/// Emitted protocol events (admin lifecycle plus the two load-bearing compute events).
 pub mod events;
 /// Instruction account contexts and handlers.
 pub mod instructions;
+/// Decoded op records reconstructed off-chain from instruction data; never emitted.
+pub mod records;
 /// Account layouts, PDA helpers, and handle derivation helpers.
 pub mod state;
 
@@ -38,6 +40,8 @@ pub use constants::*;
 pub use errors::*;
 /// Re-export event types for generated clients, listeners, and tests.
 pub use events::*;
+/// Re-export decoded op records for off-chain decoders.
+pub use records::*;
 /// Re-export account layouts and helper functions used by app programs.
 pub use state::*;
 
