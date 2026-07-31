@@ -133,3 +133,11 @@ env:
   - {name: DEPLOYER_PRIVATE_KEY, value: "0x2a871d0798f97d79848a013d4936a73bf4cc922c825d33c1cf7073dff6d409c6"}
   - {name: RELAYER_URL, value: "http://relayer:3000/v2"}
   - {name: RELAYER_SDK_VERSION, value: ""}
+
+  # $ZAMA token + payment contract, needed only by scripts/gen_handles.ts: it mints mocked $ZAMA
+  # and max-approves ProtocolPayment so its own signer can pay the per-request decryption fee.
+  # The e2e suite pays via the relayer's tx sender and ignores these.
+  - name: PROTOCOL_PAYMENT_ADDRESS
+    valueFrom: {configMapKeyRef: {name: gw-sc-addresses, key: protocol_payment.address, optional: true}}
+  - name: ZAMA_OFT_ADDRESS
+    valueFrom: {configMapKeyRef: {name: gw-sc-addresses, key: zama_oft.address, optional: true}}

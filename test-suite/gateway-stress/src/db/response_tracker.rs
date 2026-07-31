@@ -90,11 +90,12 @@ impl ResponseTracker {
 
         let mut responses = Vec::new();
         let public_rows = sqlx::query!(
-                "SELECT decryption_id, created_at FROM public_decryption_responses WHERE decryption_id = ANY($1::bytea[])",
-                ids,
-            )
-            .fetch_all(&self.db_pool)
-            .await?;
+            "SELECT decryption_id, created_at FROM public_decryption_responses
+            WHERE decryption_id = ANY($1::bytea[])",
+            ids,
+        )
+        .fetch_all(&self.db_pool)
+        .await?;
         for row in public_rows {
             responses.push(DecryptionResponseDbMetadata {
                 id: U256::from_le_slice(&row.decryption_id),
@@ -104,11 +105,12 @@ impl ResponseTracker {
         }
 
         let user_rows = sqlx::query!(
-                "SELECT decryption_id, created_at FROM user_decryption_responses WHERE decryption_id = ANY($1::bytea[])",
-                ids,
-            )
-            .fetch_all(&self.db_pool)
-            .await?;
+            "SELECT decryption_id, created_at FROM user_decryption_responses
+            WHERE decryption_id = ANY($1::bytea[])",
+            ids,
+        )
+        .fetch_all(&self.db_pool)
+        .await?;
         for row in user_rows {
             responses.push(DecryptionResponseDbMetadata {
                 id: U256::from_le_slice(&row.decryption_id),
