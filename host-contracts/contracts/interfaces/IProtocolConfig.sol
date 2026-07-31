@@ -607,6 +607,9 @@ interface IProtocolConfig {
 
     /**
      * @notice Returns the kmsGen threshold for a given context.
+     * @dev The other threshold getters require an `Active` context. This one returns a value for any
+     *      live context, whatever its state, so the kmsGen threshold stays readable even before the
+     *      context becomes `Active`.
      * @param kmsContextId The context ID.
      * @return The kmsGen threshold for the context.
      */
