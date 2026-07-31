@@ -51,6 +51,12 @@ pub enum AclError {
 
 /// Current authorization state and compact history for one encrypted value account.
 ///
+/// Authorization is deliberately flat: `subjects` is binary membership with no
+/// roles, and any current subject may allow further subjects, remove others
+/// (not the last), or make the current handle public. Callers that need
+/// owner/spender-style distinctions must enforce them in the app program
+/// before granting (see INVARIANTS.md #11).
+///
 /// One account per encrypted value, reused across every handle update. The on-chain
 /// account is `realloc`-grown and never shrunk, so its byte size tracks the
 /// high-water mark of `peaks` plus `subjects` (`subjects` may rotate rather than

@@ -58,8 +58,9 @@ update, encrypted value ID…).
     subject can enter at creation and persist. (Disclosed in code; fix
     scheduled in fhevm-internal#1859.)
 11. **[ANTI]** No on-chain roles: any current subject may allow further
-    subjects, remove others (not the last), or make the value public. The SDK's
-    role-named constructors are cosmetic.
+    subjects, remove others (not the last), or make the value public.
+    Membership is flat by design; apps that need owner/spender-style
+    distinctions must enforce them in the app program before granting.
 
 ## C. Batch execution
 
