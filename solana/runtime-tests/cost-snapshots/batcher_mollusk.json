@@ -8,7 +8,7 @@
     "max_cpi_instruction_data_bytes": 702
   },
   "dispatch": {
-    "compute_units": 274249,
+    "compute_units": 274252,
     "unique_accounts": 18,
     "instruction_data_bytes": 8,
     "cpi_instructions": 9,
@@ -40,7 +40,7 @@
     "max_cpi_instruction_data_bytes": 702
   },
   "redeem_dispatch": {
-    "compute_units": 221750,
+    "compute_units": 221753,
     "unique_accounts": 18,
     "instruction_data_bytes": 8,
     "cpi_instructions": 9,
