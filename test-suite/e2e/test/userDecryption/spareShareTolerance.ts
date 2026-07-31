@@ -109,13 +109,13 @@ describe('User decryption spare-share tolerance', function () {
     );
 
     // A precondition, not a case: every count below is derived from the spare, so
-    // failing here names the cause instead of silently shifting all of them. The
-    // usual reason is a KMS party not answering, which leaves exactly the quorum —
-    // see the `spare-share-tolerance-kms-down` suite, which covers that state deliberately.
+    // failing here names the cause instead of silently shifting all of them. Note
+    // the quorum alone reconstructs fine — what is missing is a share to corrupt.
+    // A stopped party is the usual cause; spare-share-tolerance-kms-down covers it.
     expect(
       returnedShares,
-      `Relayer returned ${returnedShares} shares; expected more than the ${collectThreshold} needed to ` +
-        `reconstruct. Is every KMS party answering?`,
+      `Got ${returnedShares} shares, need more than the ${collectThreshold} quorum so one can be corrupted ` +
+        `and dropped. Is a KMS party down?`,
     ).to.be.greaterThan(collectThreshold);
   });
 
