@@ -170,15 +170,15 @@ fn collect_eval_random_seeds(
     args.steps
         .iter()
         .enumerate()
-        .filter_map(|(index, step)| {
+        .filter(|(_, step)| {
             matches!(
                 step,
                 FheEvalStep::Rand { .. } | FheEvalStep::RandBounded { .. }
             )
-            .then(|| FheEvalRandomSeed {
-                step_index: index as u16,
-                seed: handle_context.rand_seed(index as u16),
-            })
+        })
+        .map(|(index, _)| FheEvalRandomSeed {
+            step_index: index as u16,
+            seed: handle_context.rand_seed(index as u16),
         })
         .collect()
 }
