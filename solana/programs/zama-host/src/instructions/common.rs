@@ -10,7 +10,7 @@ use crate::{
     errors::ZamaHostError,
     state::{
         assert_handle_for_chain, deny_subject_address, encrypted_value_address,
-        host_config_address, DenySubjectRecord, EncryptedValue, HostConfig, MAX_ACL_SUBJECTS,
+        host_config_address, DenySubjectRecord, EncryptedValue, HostConfig,
     },
 };
 #[cfg(any(feature = "emit-events", test))]
@@ -185,7 +185,7 @@ pub(super) fn assert_output_acl_metadata(
         ZamaHostError::AppAccountAuthorityMismatch
     );
     require!(
-        !subjects.is_empty() && subjects.len() <= MAX_ACL_SUBJECTS,
+        !subjects.is_empty() && subjects.len() <= zama_solana_acl::MAX_ENCRYPTED_VALUE_SUBJECTS,
         ZamaHostError::EncryptedValueSubjectCapacityExceeded
     );
     require!(

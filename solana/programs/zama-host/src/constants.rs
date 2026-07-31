@@ -4,9 +4,6 @@
 pub const EVENT_VERSION: u8 = 1;
 /// Version of the produced-public `fhe_eval` lifecycle batch.
 pub const PUBLIC_OUTPUTS_PRODUCED_EVENT_VERSION: u8 = 1;
-/// Maximum durable subjects on an `EncryptedValue` encrypted value account (mirrors
-/// `zama_solana_acl::MAX_ENCRYPTED_VALUE_SUBJECTS`).
-pub const MAX_ACL_SUBJECTS: usize = zama_solana_acl::MAX_ENCRYPTED_VALUE_SUBJECTS;
 /// RFC-021 reserves the high bit (bit 63) of the u64 chain id as the host
 /// `chain_type` marker: when set, the host chain is Solana rather than an EVM
 /// chain. EVM chain ids keep this bit clear. The remaining 63 bits carry the

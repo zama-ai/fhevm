@@ -2,9 +2,7 @@
 
 use anchor_lang::prelude::Pubkey;
 
-use zama_host::{
-    FheBinaryOpCode, FheEvalOperand, FheEvalOutput, FheEvalStep, FheUnaryOpCode, MAX_ACL_SUBJECTS,
-};
+use zama_host::{FheBinaryOpCode, FheEvalOperand, FheEvalOutput, FheEvalStep, FheUnaryOpCode};
 
 use crate::accounts::{EvalAccountMeta, EvalAppAuthority};
 use crate::acl::EncryptedValueKey;
@@ -521,7 +519,7 @@ pub(crate) fn validate_supported_rand_type(fhe_type: u8) -> Result<()> {
 }
 
 pub(crate) fn validate_subjects(subjects: &[Pubkey]) -> Result<()> {
-    if subjects.is_empty() || subjects.len() > MAX_ACL_SUBJECTS {
+    if subjects.is_empty() || subjects.len() > zama_solana_acl::MAX_ENCRYPTED_VALUE_SUBJECTS {
         return Err(EvalBuildError::InvalidSubjects);
     }
     for (index, subject) in subjects.iter().enumerate() {

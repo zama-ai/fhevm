@@ -761,7 +761,7 @@ mod tests {
         let app_account = Pubkey::new_unique();
         // Empty rotated set is rejected, mirroring remove_subject's last-subject rule.
         assert!(assert_output_acl_metadata(app_account, app_account, &[]).is_err());
-        // A rotated set above MAX_ACL_SUBJECTS (8) is rejected.
+        // A rotated set above MAX_ENCRYPTED_VALUE_SUBJECTS (8) is rejected.
         let over_cap = grants(
             &(0..=zama_solana_acl::MAX_ENCRYPTED_VALUE_SUBJECTS)
                 .map(|_| Pubkey::new_unique())

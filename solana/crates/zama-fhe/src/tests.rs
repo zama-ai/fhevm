@@ -14,7 +14,7 @@ use anchor_lang::prelude::Pubkey;
 use anchor_lang::{prelude::AccountInfo, Key};
 use zama_host::{
     CoprocessorInputAttestation, FheBinaryOpCode, FheEvalOperand, FheEvalOutput, FheEvalStep,
-    FheUnaryOpCode, MAX_ACL_SUBJECTS, MAX_FHE_EVAL_OPS,
+    FheUnaryOpCode, MAX_FHE_EVAL_OPS,
 };
 
 fn handle(tag: u8) -> [u8; 32] {
@@ -1228,7 +1228,7 @@ fn durable_output_validates_raw_subjects() {
     assert_eq!(
         DurableOutput::create(
             key,
-            (0..=MAX_ACL_SUBJECTS)
+            (0..=zama_solana_acl::MAX_ENCRYPTED_VALUE_SUBJECTS)
                 .map(|_| Pubkey::new_unique())
                 .collect(),
         )
