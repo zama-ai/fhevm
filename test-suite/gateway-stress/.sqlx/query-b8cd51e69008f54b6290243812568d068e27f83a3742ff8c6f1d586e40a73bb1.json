@@ -1,6 +1,6 @@
 {
   "db_name": "PostgreSQL",
-  "query": "SELECT decryption_id, created_at FROM user_decryption_responses WHERE decryption_id = ANY($1::bytea[])",
+  "query": "SELECT decryption_id, created_at FROM user_decryption_responses\n            WHERE decryption_id = ANY($1::bytea[])",
   "describe": {
     "columns": [
       {
@@ -11,7 +11,7 @@
       {
         "ordinal": 1,
         "name": "created_at",
-        "type_info": "Timestamp"
+        "type_info": "Timestamptz"
       }
     ],
     "parameters": {
@@ -24,5 +24,5 @@
       false
     ]
   },
-  "hash": "affa510bdee616839e36215c598d07a20ca7af56c37fca94c0c1759dc2eba8ea"
+  "hash": "b8cd51e69008f54b6290243812568d068e27f83a3742ff8c6f1d586e40a73bb1"
 }
