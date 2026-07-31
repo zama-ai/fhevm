@@ -7,7 +7,7 @@
 //! `solana/scripts/check_proof_store_idl.py` (decoded ∪ ignored = all host
 //! instructions; required lifecycle events must stay wired).
 //!
-//! One exception needs sibling context: a born-public (`make_public=true`)
+//! Two event self-CPIs need sibling context: random-seed batches and a born-public (`make_public=true`)
 //! `fhe_eval` durable output commits a public-decrypt leaf to the eval OUTPUT
 //! handle, which is derived on-chain from slot entropy and appears in no
 //! instruction arg. The host therefore emits one narrow lifecycle batch from a
@@ -177,6 +177,16 @@ pub enum DecodeError {
     UnexpectedHostDescendant,
     #[error("born-public lifecycle event has an invalid host self-CPI envelope")]
     InvalidBornPublicEnvelope,
+    #[error("random-seed event has an invalid host self-CPI envelope")]
+    InvalidRandomSeedEnvelope,
+    #[error("unexpected random-seed event")]
+    UnexpectedRandomSeedEvent,
+    #[error("random-seed event has unsupported version {0}")]
+    UnsupportedRandomSeedVersion(u8),
+    #[error("random-seed event is malformed: {0}")]
+    MalformedRandomSeedEvent(String),
+    #[error("random-seed event does not match fhe_eval random steps")]
+    RandomSeedMismatch,
     #[error("born-public lifecycle event has unsupported version {0}")]
     UnsupportedBornPublicVersion(u8),
     #[error("born-public lifecycle event is malformed: {0}")]
@@ -378,6 +388,63 @@ fn is_born_public_event(ix: &RawInstruction, program_id: [u8; 32]) -> bool {
         && ix.data.get(8..16) == Some(event_discriminator("PublicOutputsProducedEvent").as_slice())
 }
 
+fn is_random_seed_event(ix: &RawInstruction, program_id: [u8; 32]) -> bool {
+    ix.program_id == program_id
+        && ix.data.starts_with(&ANCHOR_EVENT_IX_TAG_LE)
+        && ix.data.get(8..16) == Some(event_discriminator("FheEvalRandomSeedsEvent").as_slice())
+}
+
+fn validate_random_seed_event(
+    ix: &RawInstruction,
+    program_id: [u8; 32],
+    expected_step_indexes: &[u16],
+) -> Result<(), DecodeError> {
+    if ix.program_id != program_id
+        || ix.accounts.as_slice() != [zama_host::EVENT_AUTHORITY_AND_BUMP.0.to_bytes()]
+    {
+        return Err(DecodeError::InvalidRandomSeedEnvelope);
+    }
+    let mut body = ix
+        .data
+        .strip_prefix(&ANCHOR_EVENT_IX_TAG_LE)
+        .and_then(|data| data.strip_prefix(&event_discriminator("FheEvalRandomSeedsEvent")))
+        .ok_or(DecodeError::InvalidRandomSeedEnvelope)?;
+    let version = u8::deserialize(&mut body)
+        .map_err(|error| DecodeError::MalformedRandomSeedEvent(error.to_string()))?;
+    if version != zama_host::EVENT_VERSION {
+        return Err(DecodeError::UnsupportedRandomSeedVersion(version));
+    }
+    let seeds = <Vec<zama_host::events::FheEvalRandomSeed>>::deserialize(&mut body)
+        .map_err(|error| DecodeError::MalformedRandomSeedEvent(error.to_string()))?;
+    if !body.is_empty() {
+        return Err(DecodeError::MalformedRandomSeedEvent(
+            "trailing-byte payload".to_string(),
+        ));
+    }
+    if seeds
+        .iter()
+        .map(|seed| seed.step_index)
+        .ne(expected_step_indexes.iter().copied())
+    {
+        return Err(DecodeError::RandomSeedMismatch);
+    }
+    Ok(())
+}
+
+fn expected_random_step_indexes(plan: &FheEvalArgs) -> Vec<u16> {
+    plan.steps
+        .iter()
+        .enumerate()
+        .filter(|(_, step)| {
+            matches!(
+                step,
+                FheEvalStep::Rand { .. } | FheEvalStep::RandBounded { .. }
+            )
+        })
+        .map(|(index, _)| index as u16)
+        .collect()
+}
+
 fn decode_born_public_event(
     ix: &RawInstruction,
     program_id: [u8; 32],
@@ -517,6 +584,9 @@ pub fn decode_program_instructions(
         if is_born_public_event(ix, program_id) {
             return Err(DecodeError::UnexpectedBornPublicEvent);
         }
+        if is_random_seed_event(ix, program_id) {
+            return Err(DecodeError::UnexpectedRandomSeedEvent);
+        }
         if ix.program_id != program_id {
             index += 1;
             continue;
@@ -542,10 +612,32 @@ pub fn decode_program_instructions(
             let event_indexes = (index + 1..frame_end)
                 .filter(|&child| is_born_public_event(&instructions[child], program_id))
                 .collect::<Vec<_>>();
+            let random_event_indexes = (index + 1..frame_end)
+                .filter(|&child| is_random_seed_event(&instructions[child], program_id))
+                .collect::<Vec<_>>();
             if instructions[index + 1..frame_end].iter().any(|child| {
-                child.program_id == program_id && !is_born_public_event(child, program_id)
+                child.program_id == program_id
+                    && !is_born_public_event(child, program_id)
+                    && !is_random_seed_event(child, program_id)
             }) {
                 return Err(DecodeError::UnexpectedHostDescendant);
+            }
+            let expected_random_steps = expected_random_step_indexes(&plan);
+            match (
+                expected_random_steps.is_empty(),
+                random_event_indexes.as_slice(),
+            ) {
+                (true, []) | (false, []) => {}
+                (true, _) | (false, [_, _, ..]) => {
+                    return Err(DecodeError::UnexpectedRandomSeedEvent);
+                }
+                (false, [event_index]) => {
+                    let event_ix = &instructions[*event_index];
+                    if event_ix.stack_height != Some(event_height) {
+                        return Err(DecodeError::InvalidRandomSeedEnvelope);
+                    }
+                    validate_random_seed_event(event_ix, program_id, &expected_random_steps)?;
+                }
             }
             let handles = match (expected.is_empty(), event_indexes.as_slice()) {
                 (true, []) => vec![None; plan.steps.len()],
@@ -729,6 +821,31 @@ mod tests {
             })
             .collect::<Vec<_>>();
         AnchorSerialize::serialize(&records, &mut data).unwrap();
+        RawInstruction {
+            program_id: program_id(),
+            accounts: vec![zama_host::EVENT_AUTHORITY_AND_BUMP.0.to_bytes()],
+            data,
+            top_level_index: 0,
+            stack_height: Some(2),
+        }
+    }
+
+    fn random_seed_event_ix(records: &[(u16, [u8; 16])]) -> RawInstruction {
+        let event = zama_host::events::FheEvalRandomSeedsEvent {
+            version: zama_host::EVENT_VERSION,
+            seeds: records
+                .iter()
+                .map(|(step_index, seed)| zama_host::events::FheEvalRandomSeed {
+                    step_index: *step_index,
+                    seed: *seed,
+                })
+                .collect(),
+        };
+        let data = ANCHOR_EVENT_IX_TAG_LE
+            .iter()
+            .copied()
+            .chain(anchor_lang::Event::data(&event))
+            .collect();
         RawInstruction {
             program_id: program_id(),
             accounts: vec![zama_host::EVENT_AUTHORITY_AND_BUMP.0.to_bytes()],
@@ -1098,6 +1215,32 @@ mod tests {
         assert_eq!(
             decode_program_instructions(program_id(), &[eval, nested_host_instruction, event],),
             Err(DecodeError::UnexpectedHostDescendant)
+        );
+    }
+
+    #[test]
+    fn random_seed_event_is_allowed_only_for_matching_eval_steps() {
+        let encrypted_value = pk(0xE0);
+        let eval = ix_with_anchor_data(
+            fhe_eval_accounts(&[encrypted_value]),
+            "fhe_eval",
+            frame(vec![FheEvalStep::Rand {
+                fhe_type: 5,
+                output: make_public_durable_output(0, &[0x30], None, None),
+            }]),
+        );
+        let event = random_seed_event_ix(&[(0, [7; 16])]);
+        let public_event = born_public_event_ix(&[(0, encrypted_value, pk(0x90))]);
+        assert!(decode_program_instructions(
+            program_id(),
+            &[eval.clone(), event, public_event.clone()]
+        )
+        .is_ok());
+
+        let mismatched = random_seed_event_ix(&[(1, [7; 16])]);
+        assert_eq!(
+            decode_program_instructions(program_id(), &[eval, mismatched, public_event]),
+            Err(DecodeError::RandomSeedMismatch)
         );
     }
 
