@@ -1075,8 +1075,8 @@ contract ProtocolConfigTest is HostContractsDeployerTestUtils {
         uint256 retriedEpochId = EPOCH_COUNTER_BASE + 3;
         vm.prank(owner);
         protocolConfig.defineNewEpochForCurrentKmsContext();
-        _confirmEpoch(contextId, retriedEpochId, kmsPk0, kmsTxSender0);
-        _confirmEpoch(contextId, retriedEpochId, kmsPk1, kmsTxSender1);
+        _confirmEpochActivation(contextId, retriedEpochId, kmsPk0, kmsTxSender0);
+        _confirmEpochActivation(contextId, retriedEpochId, kmsPk1, kmsTxSender1);
         (, uint256 epochFinal) = protocolConfig.getCurrentKmsContextAndEpoch();
         assertEq(epochFinal, retriedEpochId);
     }
@@ -1090,12 +1090,12 @@ contract ProtocolConfigTest is HostContractsDeployerTestUtils {
         protocolConfig.defineNewEpochForCurrentKmsContext();
         (uint256 completedKeyId, uint256 completedCrsId) = _completeKmsGenerationMaterial();
 
-        // Divergent votes: one signer confirms an empty result, the other confirms material.
-        _confirmEpoch(contextId, pendingEpochId, kmsPk0, kmsTxSender0);
-        _confirmEpochWithMaterial(contextId, pendingEpochId, kmsPk1, kmsTxSender1, completedKeyId, completedCrsId);
+        // Divergent votes: the two signers attest to different key ids, so no result reaches quorum.
+        _confirmEpochWithMaterial(contextId, pendingEpochId, kmsPk0, kmsTxSender0, completedKeyId, completedCrsId);
+        _confirmEpochWithMaterial(contextId, pendingEpochId, kmsPk1, kmsTxSender1, completedKeyId + 1, completedCrsId);
 
-        // Confirmations are one-shot per signer: the split vote can never converge.
-        vm.prank(kmsTxSender0);
+        // Confirmations are one-shot per signer, so the split vote can never converge: even coming back
+        // with the other signer's result is rejected.
         vm.expectRevert(
             abi.encodeWithSelector(
                 IProtocolConfig.EpochActivationAlreadyConfirmed.selector,
@@ -1103,11 +1103,7 @@ contract ProtocolConfigTest is HostContractsDeployerTestUtils {
                 pendingEpochId
             )
         );
-        protocolConfig.confirmEpochActivation(
-            pendingEpochId,
-            new IProtocolConfig.EpochKeyResult[](0),
-            new IProtocolConfig.EpochCrsResult[](0)
-        );
+        _confirmEpochWithMaterial(contextId, pendingEpochId, kmsPk0, kmsTxSender0, completedKeyId + 1, completedCrsId);
         (, uint256 epochBefore) = protocolConfig.getCurrentKmsContextAndEpoch();
         assertEq(epochBefore, EPOCH_COUNTER_BASE + 1);
 
