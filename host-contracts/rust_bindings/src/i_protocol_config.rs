@@ -604,8 +604,10 @@ interface IProtocolConfig {
     function defineNewKmsContextAndEpoch(KmsNodeParams[] memory kmsNodeParams, KmsThresholds memory thresholds, string memory softwareVersion, PcrValues[] memory pcrValues) external;
     function destroyKmsContext(uint256 kmsContextId) external;
     function destroyKmsEpoch(uint256 epochId) external;
+    function getContextCreationPreviousTxSenderThreshold(uint256 kmsContextId) external view returns (uint256);
     function getCurrentKmsContextAndEpoch() external view returns (uint256 contextId, uint256 epochId);
     function getCurrentKmsContextId() external view returns (uint256);
+    function getCurrentKmsContextIdCounter() external view returns (uint256);
     function getKmsContextAnchor(uint256 contextId) external view returns (uint256 emissionBlockNumber, bytes32 contextInfoHash);
     function getKmsGenThreshold() external view returns (uint256);
     function getKmsGenThresholdForContext(uint256 kmsContextId) external view returns (uint256);
@@ -623,6 +625,7 @@ interface IProtocolConfig {
     function isKmsSigner(address signer) external view returns (bool);
     function isKmsSignerForContext(uint256 kmsContextId, address signer) external view returns (bool);
     function isKmsTxSenderForContext(uint256 kmsContextId, address txSender) external view returns (bool);
+    function isLiveKmsContext(uint256 kmsContextId) external view returns (bool);
     function isValidEpochForContext(uint256 kmsContextId, uint256 epochId) external view returns (bool);
     function isValidKmsContext(uint256 kmsContextId) external view returns (bool);
     function mirrorKmsContextAndEpoch(uint256 contextId, uint256 epochId, KmsNodeParams[] memory kmsNodeParams, KmsThresholds memory thresholds, string memory softwareVersion, PcrValues[] memory pcrValues) external;
@@ -874,6 +877,25 @@ interface IProtocolConfig {
   },
   {
     "type": "function",
+    "name": "getContextCreationPreviousTxSenderThreshold",
+    "inputs": [
+      {
+        "name": "kmsContextId",
+        "type": "uint256",
+        "internalType": "uint256"
+      }
+    ],
+    "outputs": [
+      {
+        "name": "",
+        "type": "uint256",
+        "internalType": "uint256"
+      }
+    ],
+    "stateMutability": "view"
+  },
+  {
+    "type": "function",
     "name": "getCurrentKmsContextAndEpoch",
     "inputs": [],
     "outputs": [
@@ -893,6 +915,19 @@ interface IProtocolConfig {
   {
     "type": "function",
     "name": "getCurrentKmsContextId",
+    "inputs": [],
+    "outputs": [
+      {
+        "name": "",
+        "type": "uint256",
+        "internalType": "uint256"
+      }
+    ],
+    "stateMutability": "view"
+  },
+  {
+    "type": "function",
+    "name": "getCurrentKmsContextIdCounter",
     "inputs": [],
     "outputs": [
       {
@@ -1243,6 +1278,25 @@ interface IProtocolConfig {
         "name": "txSender",
         "type": "address",
         "internalType": "address"
+      }
+    ],
+    "outputs": [
+      {
+        "name": "",
+        "type": "bool",
+        "internalType": "bool"
+      }
+    ],
+    "stateMutability": "view"
+  },
+  {
+    "type": "function",
+    "name": "isLiveKmsContext",
+    "inputs": [
+      {
+        "name": "kmsContextId",
+        "type": "uint256",
+        "internalType": "uint256"
       }
     ],
     "outputs": [
@@ -9781,6 +9835,169 @@ function destroyKmsEpoch(uint256 epochId) external;
     };
     #[derive(serde::Serialize, serde::Deserialize)]
     #[derive(Default, Debug, PartialEq, Eq, Hash)]
+    /**Function with signature `getContextCreationPreviousTxSenderThreshold(uint256)` and selector `0x3e6316ea`.
+```solidity
+function getContextCreationPreviousTxSenderThreshold(uint256 kmsContextId) external view returns (uint256);
+```*/
+    #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
+    #[derive(Clone)]
+    pub struct getContextCreationPreviousTxSenderThresholdCall {
+        #[allow(missing_docs)]
+        pub kmsContextId: alloy::sol_types::private::primitives::aliases::U256,
+    }
+    #[derive(serde::Serialize, serde::Deserialize)]
+    #[derive(Default, Debug, PartialEq, Eq, Hash)]
+    ///Container type for the return parameters of the [`getContextCreationPreviousTxSenderThreshold(uint256)`](getContextCreationPreviousTxSenderThresholdCall) function.
+    #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
+    #[derive(Clone)]
+    pub struct getContextCreationPreviousTxSenderThresholdReturn {
+        #[allow(missing_docs)]
+        pub _0: alloy::sol_types::private::primitives::aliases::U256,
+    }
+    #[allow(
+        non_camel_case_types,
+        non_snake_case,
+        clippy::pub_underscore_fields,
+        clippy::style
+    )]
+    const _: () = {
+        use alloy::sol_types as alloy_sol_types;
+        {
+            #[doc(hidden)]
+            type UnderlyingSolTuple<'a> = (alloy::sol_types::sol_data::Uint<256>,);
+            #[doc(hidden)]
+            type UnderlyingRustTuple<'a> = (
+                alloy::sol_types::private::primitives::aliases::U256,
+            );
+            #[cfg(test)]
+            #[allow(dead_code, unreachable_patterns)]
+            fn _type_assertion(
+                _t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>,
+            ) {
+                match _t {
+                    alloy_sol_types::private::AssertTypeEq::<
+                        <UnderlyingSolTuple as alloy_sol_types::SolType>::RustType,
+                    >(_) => {}
+                }
+            }
+            #[automatically_derived]
+            #[doc(hidden)]
+            impl ::core::convert::From<getContextCreationPreviousTxSenderThresholdCall>
+            for UnderlyingRustTuple<'_> {
+                fn from(value: getContextCreationPreviousTxSenderThresholdCall) -> Self {
+                    (value.kmsContextId,)
+                }
+            }
+            #[automatically_derived]
+            #[doc(hidden)]
+            impl ::core::convert::From<UnderlyingRustTuple<'_>>
+            for getContextCreationPreviousTxSenderThresholdCall {
+                fn from(tuple: UnderlyingRustTuple<'_>) -> Self {
+                    Self { kmsContextId: tuple.0 }
+                }
+            }
+        }
+        {
+            #[doc(hidden)]
+            type UnderlyingSolTuple<'a> = (alloy::sol_types::sol_data::Uint<256>,);
+            #[doc(hidden)]
+            type UnderlyingRustTuple<'a> = (
+                alloy::sol_types::private::primitives::aliases::U256,
+            );
+            #[cfg(test)]
+            #[allow(dead_code, unreachable_patterns)]
+            fn _type_assertion(
+                _t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>,
+            ) {
+                match _t {
+                    alloy_sol_types::private::AssertTypeEq::<
+                        <UnderlyingSolTuple as alloy_sol_types::SolType>::RustType,
+                    >(_) => {}
+                }
+            }
+            #[automatically_derived]
+            #[doc(hidden)]
+            impl ::core::convert::From<getContextCreationPreviousTxSenderThresholdReturn>
+            for UnderlyingRustTuple<'_> {
+                fn from(
+                    value: getContextCreationPreviousTxSenderThresholdReturn,
+                ) -> Self {
+                    (value._0,)
+                }
+            }
+            #[automatically_derived]
+            #[doc(hidden)]
+            impl ::core::convert::From<UnderlyingRustTuple<'_>>
+            for getContextCreationPreviousTxSenderThresholdReturn {
+                fn from(tuple: UnderlyingRustTuple<'_>) -> Self {
+                    Self { _0: tuple.0 }
+                }
+            }
+        }
+        #[automatically_derived]
+        impl alloy_sol_types::SolCall
+        for getContextCreationPreviousTxSenderThresholdCall {
+            type Parameters<'a> = (alloy::sol_types::sol_data::Uint<256>,);
+            type Token<'a> = <Self::Parameters<
+                'a,
+            > as alloy_sol_types::SolType>::Token<'a>;
+            type Return = alloy::sol_types::private::primitives::aliases::U256;
+            type ReturnTuple<'a> = (alloy::sol_types::sol_data::Uint<256>,);
+            type ReturnToken<'a> = <Self::ReturnTuple<
+                'a,
+            > as alloy_sol_types::SolType>::Token<'a>;
+            const SIGNATURE: &'static str = "getContextCreationPreviousTxSenderThreshold(uint256)";
+            const SELECTOR: [u8; 4] = [62u8, 99u8, 22u8, 234u8];
+            #[inline]
+            fn new<'a>(
+                tuple: <Self::Parameters<'a> as alloy_sol_types::SolType>::RustType,
+            ) -> Self {
+                tuple.into()
+            }
+            #[inline]
+            fn tokenize(&self) -> Self::Token<'_> {
+                (
+                    <alloy::sol_types::sol_data::Uint<
+                        256,
+                    > as alloy_sol_types::SolType>::tokenize(&self.kmsContextId),
+                )
+            }
+            #[inline]
+            fn tokenize_returns(ret: &Self::Return) -> Self::ReturnToken<'_> {
+                (
+                    <alloy::sol_types::sol_data::Uint<
+                        256,
+                    > as alloy_sol_types::SolType>::tokenize(ret),
+                )
+            }
+            #[inline]
+            fn abi_decode_returns(data: &[u8]) -> alloy_sol_types::Result<Self::Return> {
+                <Self::ReturnTuple<
+                    '_,
+                > as alloy_sol_types::SolType>::abi_decode_sequence(data)
+                    .map(|r| {
+                        let r: getContextCreationPreviousTxSenderThresholdReturn = r
+                            .into();
+                        r._0
+                    })
+            }
+            #[inline]
+            fn abi_decode_returns_validate(
+                data: &[u8],
+            ) -> alloy_sol_types::Result<Self::Return> {
+                <Self::ReturnTuple<
+                    '_,
+                > as alloy_sol_types::SolType>::abi_decode_sequence_validate(data)
+                    .map(|r| {
+                        let r: getContextCreationPreviousTxSenderThresholdReturn = r
+                            .into();
+                        r._0
+                    })
+            }
+        }
+    };
+    #[derive(serde::Serialize, serde::Deserialize)]
+    #[derive(Default, Debug, PartialEq, Eq, Hash)]
     /**Function with signature `getCurrentKmsContextAndEpoch()` and selector `0x65b394af`.
 ```solidity
 function getCurrentKmsContextAndEpoch() external view returns (uint256 contextId, uint256 epochId);
@@ -10090,6 +10307,155 @@ function getCurrentKmsContextId() external view returns (uint256);
                 > as alloy_sol_types::SolType>::abi_decode_sequence_validate(data)
                     .map(|r| {
                         let r: getCurrentKmsContextIdReturn = r.into();
+                        r._0
+                    })
+            }
+        }
+    };
+    #[derive(serde::Serialize, serde::Deserialize)]
+    #[derive(Default, Debug, PartialEq, Eq, Hash)]
+    /**Function with signature `getCurrentKmsContextIdCounter()` and selector `0x9d1b1be1`.
+```solidity
+function getCurrentKmsContextIdCounter() external view returns (uint256);
+```*/
+    #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
+    #[derive(Clone)]
+    pub struct getCurrentKmsContextIdCounterCall;
+    #[derive(serde::Serialize, serde::Deserialize)]
+    #[derive(Default, Debug, PartialEq, Eq, Hash)]
+    ///Container type for the return parameters of the [`getCurrentKmsContextIdCounter()`](getCurrentKmsContextIdCounterCall) function.
+    #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
+    #[derive(Clone)]
+    pub struct getCurrentKmsContextIdCounterReturn {
+        #[allow(missing_docs)]
+        pub _0: alloy::sol_types::private::primitives::aliases::U256,
+    }
+    #[allow(
+        non_camel_case_types,
+        non_snake_case,
+        clippy::pub_underscore_fields,
+        clippy::style
+    )]
+    const _: () = {
+        use alloy::sol_types as alloy_sol_types;
+        {
+            #[doc(hidden)]
+            type UnderlyingSolTuple<'a> = ();
+            #[doc(hidden)]
+            type UnderlyingRustTuple<'a> = ();
+            #[cfg(test)]
+            #[allow(dead_code, unreachable_patterns)]
+            fn _type_assertion(
+                _t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>,
+            ) {
+                match _t {
+                    alloy_sol_types::private::AssertTypeEq::<
+                        <UnderlyingSolTuple as alloy_sol_types::SolType>::RustType,
+                    >(_) => {}
+                }
+            }
+            #[automatically_derived]
+            #[doc(hidden)]
+            impl ::core::convert::From<getCurrentKmsContextIdCounterCall>
+            for UnderlyingRustTuple<'_> {
+                fn from(value: getCurrentKmsContextIdCounterCall) -> Self {
+                    ()
+                }
+            }
+            #[automatically_derived]
+            #[doc(hidden)]
+            impl ::core::convert::From<UnderlyingRustTuple<'_>>
+            for getCurrentKmsContextIdCounterCall {
+                fn from(tuple: UnderlyingRustTuple<'_>) -> Self {
+                    Self
+                }
+            }
+        }
+        {
+            #[doc(hidden)]
+            type UnderlyingSolTuple<'a> = (alloy::sol_types::sol_data::Uint<256>,);
+            #[doc(hidden)]
+            type UnderlyingRustTuple<'a> = (
+                alloy::sol_types::private::primitives::aliases::U256,
+            );
+            #[cfg(test)]
+            #[allow(dead_code, unreachable_patterns)]
+            fn _type_assertion(
+                _t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>,
+            ) {
+                match _t {
+                    alloy_sol_types::private::AssertTypeEq::<
+                        <UnderlyingSolTuple as alloy_sol_types::SolType>::RustType,
+                    >(_) => {}
+                }
+            }
+            #[automatically_derived]
+            #[doc(hidden)]
+            impl ::core::convert::From<getCurrentKmsContextIdCounterReturn>
+            for UnderlyingRustTuple<'_> {
+                fn from(value: getCurrentKmsContextIdCounterReturn) -> Self {
+                    (value._0,)
+                }
+            }
+            #[automatically_derived]
+            #[doc(hidden)]
+            impl ::core::convert::From<UnderlyingRustTuple<'_>>
+            for getCurrentKmsContextIdCounterReturn {
+                fn from(tuple: UnderlyingRustTuple<'_>) -> Self {
+                    Self { _0: tuple.0 }
+                }
+            }
+        }
+        #[automatically_derived]
+        impl alloy_sol_types::SolCall for getCurrentKmsContextIdCounterCall {
+            type Parameters<'a> = ();
+            type Token<'a> = <Self::Parameters<
+                'a,
+            > as alloy_sol_types::SolType>::Token<'a>;
+            type Return = alloy::sol_types::private::primitives::aliases::U256;
+            type ReturnTuple<'a> = (alloy::sol_types::sol_data::Uint<256>,);
+            type ReturnToken<'a> = <Self::ReturnTuple<
+                'a,
+            > as alloy_sol_types::SolType>::Token<'a>;
+            const SIGNATURE: &'static str = "getCurrentKmsContextIdCounter()";
+            const SELECTOR: [u8; 4] = [157u8, 27u8, 27u8, 225u8];
+            #[inline]
+            fn new<'a>(
+                tuple: <Self::Parameters<'a> as alloy_sol_types::SolType>::RustType,
+            ) -> Self {
+                tuple.into()
+            }
+            #[inline]
+            fn tokenize(&self) -> Self::Token<'_> {
+                ()
+            }
+            #[inline]
+            fn tokenize_returns(ret: &Self::Return) -> Self::ReturnToken<'_> {
+                (
+                    <alloy::sol_types::sol_data::Uint<
+                        256,
+                    > as alloy_sol_types::SolType>::tokenize(ret),
+                )
+            }
+            #[inline]
+            fn abi_decode_returns(data: &[u8]) -> alloy_sol_types::Result<Self::Return> {
+                <Self::ReturnTuple<
+                    '_,
+                > as alloy_sol_types::SolType>::abi_decode_sequence(data)
+                    .map(|r| {
+                        let r: getCurrentKmsContextIdCounterReturn = r.into();
+                        r._0
+                    })
+            }
+            #[inline]
+            fn abi_decode_returns_validate(
+                data: &[u8],
+            ) -> alloy_sol_types::Result<Self::Return> {
+                <Self::ReturnTuple<
+                    '_,
+                > as alloy_sol_types::SolType>::abi_decode_sequence_validate(data)
+                    .map(|r| {
+                        let r: getCurrentKmsContextIdCounterReturn = r.into();
                         r._0
                     })
             }
@@ -12780,6 +13146,162 @@ function isKmsTxSenderForContext(uint256 kmsContextId, address txSender) externa
     };
     #[derive(serde::Serialize, serde::Deserialize)]
     #[derive(Default, Debug, PartialEq, Eq, Hash)]
+    /**Function with signature `isLiveKmsContext(uint256)` and selector `0xee7d52d1`.
+```solidity
+function isLiveKmsContext(uint256 kmsContextId) external view returns (bool);
+```*/
+    #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
+    #[derive(Clone)]
+    pub struct isLiveKmsContextCall {
+        #[allow(missing_docs)]
+        pub kmsContextId: alloy::sol_types::private::primitives::aliases::U256,
+    }
+    #[derive(serde::Serialize, serde::Deserialize)]
+    #[derive(Default, Debug, PartialEq, Eq, Hash)]
+    ///Container type for the return parameters of the [`isLiveKmsContext(uint256)`](isLiveKmsContextCall) function.
+    #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
+    #[derive(Clone)]
+    pub struct isLiveKmsContextReturn {
+        #[allow(missing_docs)]
+        pub _0: bool,
+    }
+    #[allow(
+        non_camel_case_types,
+        non_snake_case,
+        clippy::pub_underscore_fields,
+        clippy::style
+    )]
+    const _: () = {
+        use alloy::sol_types as alloy_sol_types;
+        {
+            #[doc(hidden)]
+            type UnderlyingSolTuple<'a> = (alloy::sol_types::sol_data::Uint<256>,);
+            #[doc(hidden)]
+            type UnderlyingRustTuple<'a> = (
+                alloy::sol_types::private::primitives::aliases::U256,
+            );
+            #[cfg(test)]
+            #[allow(dead_code, unreachable_patterns)]
+            fn _type_assertion(
+                _t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>,
+            ) {
+                match _t {
+                    alloy_sol_types::private::AssertTypeEq::<
+                        <UnderlyingSolTuple as alloy_sol_types::SolType>::RustType,
+                    >(_) => {}
+                }
+            }
+            #[automatically_derived]
+            #[doc(hidden)]
+            impl ::core::convert::From<isLiveKmsContextCall>
+            for UnderlyingRustTuple<'_> {
+                fn from(value: isLiveKmsContextCall) -> Self {
+                    (value.kmsContextId,)
+                }
+            }
+            #[automatically_derived]
+            #[doc(hidden)]
+            impl ::core::convert::From<UnderlyingRustTuple<'_>>
+            for isLiveKmsContextCall {
+                fn from(tuple: UnderlyingRustTuple<'_>) -> Self {
+                    Self { kmsContextId: tuple.0 }
+                }
+            }
+        }
+        {
+            #[doc(hidden)]
+            type UnderlyingSolTuple<'a> = (alloy::sol_types::sol_data::Bool,);
+            #[doc(hidden)]
+            type UnderlyingRustTuple<'a> = (bool,);
+            #[cfg(test)]
+            #[allow(dead_code, unreachable_patterns)]
+            fn _type_assertion(
+                _t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>,
+            ) {
+                match _t {
+                    alloy_sol_types::private::AssertTypeEq::<
+                        <UnderlyingSolTuple as alloy_sol_types::SolType>::RustType,
+                    >(_) => {}
+                }
+            }
+            #[automatically_derived]
+            #[doc(hidden)]
+            impl ::core::convert::From<isLiveKmsContextReturn>
+            for UnderlyingRustTuple<'_> {
+                fn from(value: isLiveKmsContextReturn) -> Self {
+                    (value._0,)
+                }
+            }
+            #[automatically_derived]
+            #[doc(hidden)]
+            impl ::core::convert::From<UnderlyingRustTuple<'_>>
+            for isLiveKmsContextReturn {
+                fn from(tuple: UnderlyingRustTuple<'_>) -> Self {
+                    Self { _0: tuple.0 }
+                }
+            }
+        }
+        #[automatically_derived]
+        impl alloy_sol_types::SolCall for isLiveKmsContextCall {
+            type Parameters<'a> = (alloy::sol_types::sol_data::Uint<256>,);
+            type Token<'a> = <Self::Parameters<
+                'a,
+            > as alloy_sol_types::SolType>::Token<'a>;
+            type Return = bool;
+            type ReturnTuple<'a> = (alloy::sol_types::sol_data::Bool,);
+            type ReturnToken<'a> = <Self::ReturnTuple<
+                'a,
+            > as alloy_sol_types::SolType>::Token<'a>;
+            const SIGNATURE: &'static str = "isLiveKmsContext(uint256)";
+            const SELECTOR: [u8; 4] = [238u8, 125u8, 82u8, 209u8];
+            #[inline]
+            fn new<'a>(
+                tuple: <Self::Parameters<'a> as alloy_sol_types::SolType>::RustType,
+            ) -> Self {
+                tuple.into()
+            }
+            #[inline]
+            fn tokenize(&self) -> Self::Token<'_> {
+                (
+                    <alloy::sol_types::sol_data::Uint<
+                        256,
+                    > as alloy_sol_types::SolType>::tokenize(&self.kmsContextId),
+                )
+            }
+            #[inline]
+            fn tokenize_returns(ret: &Self::Return) -> Self::ReturnToken<'_> {
+                (
+                    <alloy::sol_types::sol_data::Bool as alloy_sol_types::SolType>::tokenize(
+                        ret,
+                    ),
+                )
+            }
+            #[inline]
+            fn abi_decode_returns(data: &[u8]) -> alloy_sol_types::Result<Self::Return> {
+                <Self::ReturnTuple<
+                    '_,
+                > as alloy_sol_types::SolType>::abi_decode_sequence(data)
+                    .map(|r| {
+                        let r: isLiveKmsContextReturn = r.into();
+                        r._0
+                    })
+            }
+            #[inline]
+            fn abi_decode_returns_validate(
+                data: &[u8],
+            ) -> alloy_sol_types::Result<Self::Return> {
+                <Self::ReturnTuple<
+                    '_,
+                > as alloy_sol_types::SolType>::abi_decode_sequence_validate(data)
+                    .map(|r| {
+                        let r: isLiveKmsContextReturn = r.into();
+                        r._0
+                    })
+            }
+        }
+    };
+    #[derive(serde::Serialize, serde::Deserialize)]
+    #[derive(Default, Debug, PartialEq, Eq, Hash)]
     /**Function with signature `isValidEpochForContext(uint256,uint256)` and selector `0xcceac019`.
 ```solidity
 function isValidEpochForContext(uint256 kmsContextId, uint256 epochId) external view returns (bool);
@@ -14351,9 +14873,15 @@ function updateUserDecryptionThresholdForContext(uint256 kmsContextId, uint256 t
         #[allow(missing_docs)]
         destroyKmsEpoch(destroyKmsEpochCall),
         #[allow(missing_docs)]
+        getContextCreationPreviousTxSenderThreshold(
+            getContextCreationPreviousTxSenderThresholdCall,
+        ),
+        #[allow(missing_docs)]
         getCurrentKmsContextAndEpoch(getCurrentKmsContextAndEpochCall),
         #[allow(missing_docs)]
         getCurrentKmsContextId(getCurrentKmsContextIdCall),
+        #[allow(missing_docs)]
+        getCurrentKmsContextIdCounter(getCurrentKmsContextIdCounterCall),
         #[allow(missing_docs)]
         getKmsContextAnchor(getKmsContextAnchorCall),
         #[allow(missing_docs)]
@@ -14390,6 +14918,8 @@ function updateUserDecryptionThresholdForContext(uint256 kmsContextId, uint256 t
         isKmsSignerForContext(isKmsSignerForContextCall),
         #[allow(missing_docs)]
         isKmsTxSenderForContext(isKmsTxSenderForContextCall),
+        #[allow(missing_docs)]
+        isLiveKmsContext(isLiveKmsContextCall),
         #[allow(missing_docs)]
         isValidEpochForContext(isValidEpochForContextCall),
         #[allow(missing_docs)]
@@ -14430,6 +14960,7 @@ function updateUserDecryptionThresholdForContext(uint256 kmsContextId, uint256 t
             [40u8, 30u8, 139u8, 254u8],
             [42u8, 56u8, 137u8, 152u8],
             [49u8, 255u8, 65u8, 200u8],
+            [62u8, 99u8, 22u8, 234u8],
             [65u8, 173u8, 6u8, 156u8],
             [70u8, 197u8, 187u8, 189u8],
             [71u8, 232u8, 34u8, 149u8],
@@ -14442,6 +14973,7 @@ function updateUserDecryptionThresholdForContext(uint256 kmsContextId, uint256 t
             [148u8, 71u8, 207u8, 212u8],
             [151u8, 108u8, 152u8, 181u8],
             [151u8, 111u8, 62u8, 185u8],
+            [157u8, 27u8, 27u8, 225u8],
             [176u8, 180u8, 97u8, 196u8],
             [177u8, 129u8, 205u8, 167u8],
             [180u8, 114u8, 43u8, 196u8],
@@ -14455,6 +14987,7 @@ function updateUserDecryptionThresholdForContext(uint256 kmsContextId, uint256 t
             [204u8, 191u8, 129u8, 153u8],
             [204u8, 234u8, 192u8, 25u8],
             [217u8, 190u8, 45u8, 228u8],
+            [238u8, 125u8, 82u8, 209u8],
             [249u8, 198u8, 112u8, 195u8],
         ];
     }
@@ -14462,7 +14995,7 @@ function updateUserDecryptionThresholdForContext(uint256 kmsContextId, uint256 t
     impl alloy_sol_types::SolInterface for IProtocolConfigCalls {
         const NAME: &'static str = "IProtocolConfigCalls";
         const MIN_DATA_LENGTH: usize = 0usize;
-        const COUNT: usize = 34usize;
+        const COUNT: usize = 37usize;
         #[inline]
         fn selector(&self) -> [u8; 4] {
             match self {
@@ -14484,11 +15017,17 @@ function updateUserDecryptionThresholdForContext(uint256 kmsContextId, uint256 t
                 Self::destroyKmsEpoch(_) => {
                     <destroyKmsEpochCall as alloy_sol_types::SolCall>::SELECTOR
                 }
+                Self::getContextCreationPreviousTxSenderThreshold(_) => {
+                    <getContextCreationPreviousTxSenderThresholdCall as alloy_sol_types::SolCall>::SELECTOR
+                }
                 Self::getCurrentKmsContextAndEpoch(_) => {
                     <getCurrentKmsContextAndEpochCall as alloy_sol_types::SolCall>::SELECTOR
                 }
                 Self::getCurrentKmsContextId(_) => {
                     <getCurrentKmsContextIdCall as alloy_sol_types::SolCall>::SELECTOR
+                }
+                Self::getCurrentKmsContextIdCounter(_) => {
+                    <getCurrentKmsContextIdCounterCall as alloy_sol_types::SolCall>::SELECTOR
                 }
                 Self::getKmsContextAnchor(_) => {
                     <getKmsContextAnchorCall as alloy_sol_types::SolCall>::SELECTOR
@@ -14540,6 +15079,9 @@ function updateUserDecryptionThresholdForContext(uint256 kmsContextId, uint256 t
                 }
                 Self::isKmsTxSenderForContext(_) => {
                     <isKmsTxSenderForContextCall as alloy_sol_types::SolCall>::SELECTOR
+                }
+                Self::isLiveKmsContext(_) => {
+                    <isLiveKmsContextCall as alloy_sol_types::SolCall>::SELECTOR
                 }
                 Self::isValidEpochForContext(_) => {
                     <isValidEpochForContextCall as alloy_sol_types::SolCall>::SELECTOR
@@ -14682,6 +15224,19 @@ function updateUserDecryptionThresholdForContext(uint256 kmsContextId, uint256 t
                     getKmsNodeForContext
                 },
                 {
+                    fn getContextCreationPreviousTxSenderThreshold(
+                        data: &[u8],
+                    ) -> alloy_sol_types::Result<IProtocolConfigCalls> {
+                        <getContextCreationPreviousTxSenderThresholdCall as alloy_sol_types::SolCall>::abi_decode_raw(
+                                data,
+                            )
+                            .map(
+                                IProtocolConfigCalls::getContextCreationPreviousTxSenderThreshold,
+                            )
+                    }
+                    getContextCreationPreviousTxSenderThreshold
+                },
+                {
                     fn getKmsGenThresholdForContext(
                         data: &[u8],
                     ) -> alloy_sol_types::Result<IProtocolConfigCalls> {
@@ -14812,6 +15367,17 @@ function updateUserDecryptionThresholdForContext(uint256 kmsContextId, uint256 t
                             .map(IProtocolConfigCalls::getCurrentKmsContextId)
                     }
                     getCurrentKmsContextId
+                },
+                {
+                    fn getCurrentKmsContextIdCounter(
+                        data: &[u8],
+                    ) -> alloy_sol_types::Result<IProtocolConfigCalls> {
+                        <getCurrentKmsContextIdCounterCall as alloy_sol_types::SolCall>::abi_decode_raw(
+                                data,
+                            )
+                            .map(IProtocolConfigCalls::getCurrentKmsContextIdCounter)
+                    }
+                    getCurrentKmsContextIdCounter
                 },
                 {
                     fn updateKmsGenThresholdForContext(
@@ -14961,6 +15527,17 @@ function updateUserDecryptionThresholdForContext(uint256 kmsContextId, uint256 t
                     confirmKmsContextCreation
                 },
                 {
+                    fn isLiveKmsContext(
+                        data: &[u8],
+                    ) -> alloy_sol_types::Result<IProtocolConfigCalls> {
+                        <isLiveKmsContextCall as alloy_sol_types::SolCall>::abi_decode_raw(
+                                data,
+                            )
+                            .map(IProtocolConfigCalls::isLiveKmsContext)
+                    }
+                    isLiveKmsContext
+                },
+                {
                     fn getKmsNodesForContext(
                         data: &[u8],
                     ) -> alloy_sol_types::Result<IProtocolConfigCalls> {
@@ -15084,6 +15661,19 @@ function updateUserDecryptionThresholdForContext(uint256 kmsContextId, uint256 t
                             .map(IProtocolConfigCalls::getKmsNodeForContext)
                     }
                     getKmsNodeForContext
+                },
+                {
+                    fn getContextCreationPreviousTxSenderThreshold(
+                        data: &[u8],
+                    ) -> alloy_sol_types::Result<IProtocolConfigCalls> {
+                        <getContextCreationPreviousTxSenderThresholdCall as alloy_sol_types::SolCall>::abi_decode_raw_validate(
+                                data,
+                            )
+                            .map(
+                                IProtocolConfigCalls::getContextCreationPreviousTxSenderThreshold,
+                            )
+                    }
+                    getContextCreationPreviousTxSenderThreshold
                 },
                 {
                     fn getKmsGenThresholdForContext(
@@ -15216,6 +15806,17 @@ function updateUserDecryptionThresholdForContext(uint256 kmsContextId, uint256 t
                             .map(IProtocolConfigCalls::getCurrentKmsContextId)
                     }
                     getCurrentKmsContextId
+                },
+                {
+                    fn getCurrentKmsContextIdCounter(
+                        data: &[u8],
+                    ) -> alloy_sol_types::Result<IProtocolConfigCalls> {
+                        <getCurrentKmsContextIdCounterCall as alloy_sol_types::SolCall>::abi_decode_raw_validate(
+                                data,
+                            )
+                            .map(IProtocolConfigCalls::getCurrentKmsContextIdCounter)
+                    }
+                    getCurrentKmsContextIdCounter
                 },
                 {
                     fn updateKmsGenThresholdForContext(
@@ -15365,6 +15966,17 @@ function updateUserDecryptionThresholdForContext(uint256 kmsContextId, uint256 t
                     confirmKmsContextCreation
                 },
                 {
+                    fn isLiveKmsContext(
+                        data: &[u8],
+                    ) -> alloy_sol_types::Result<IProtocolConfigCalls> {
+                        <isLiveKmsContextCall as alloy_sol_types::SolCall>::abi_decode_raw_validate(
+                                data,
+                            )
+                            .map(IProtocolConfigCalls::isLiveKmsContext)
+                    }
+                    isLiveKmsContext
+                },
+                {
                     fn getKmsNodesForContext(
                         data: &[u8],
                     ) -> alloy_sol_types::Result<IProtocolConfigCalls> {
@@ -15419,6 +16031,11 @@ function updateUserDecryptionThresholdForContext(uint256 kmsContextId, uint256 t
                         inner,
                     )
                 }
+                Self::getContextCreationPreviousTxSenderThreshold(inner) => {
+                    <getContextCreationPreviousTxSenderThresholdCall as alloy_sol_types::SolCall>::abi_encoded_size(
+                        inner,
+                    )
+                }
                 Self::getCurrentKmsContextAndEpoch(inner) => {
                     <getCurrentKmsContextAndEpochCall as alloy_sol_types::SolCall>::abi_encoded_size(
                         inner,
@@ -15426,6 +16043,11 @@ function updateUserDecryptionThresholdForContext(uint256 kmsContextId, uint256 t
                 }
                 Self::getCurrentKmsContextId(inner) => {
                     <getCurrentKmsContextIdCall as alloy_sol_types::SolCall>::abi_encoded_size(
+                        inner,
+                    )
+                }
+                Self::getCurrentKmsContextIdCounter(inner) => {
+                    <getCurrentKmsContextIdCounterCall as alloy_sol_types::SolCall>::abi_encoded_size(
                         inner,
                     )
                 }
@@ -15509,6 +16131,11 @@ function updateUserDecryptionThresholdForContext(uint256 kmsContextId, uint256 t
                 }
                 Self::isKmsTxSenderForContext(inner) => {
                     <isKmsTxSenderForContextCall as alloy_sol_types::SolCall>::abi_encoded_size(
+                        inner,
+                    )
+                }
+                Self::isLiveKmsContext(inner) => {
+                    <isLiveKmsContextCall as alloy_sol_types::SolCall>::abi_encoded_size(
                         inner,
                     )
                 }
@@ -15598,6 +16225,12 @@ function updateUserDecryptionThresholdForContext(uint256 kmsContextId, uint256 t
                         out,
                     )
                 }
+                Self::getContextCreationPreviousTxSenderThreshold(inner) => {
+                    <getContextCreationPreviousTxSenderThresholdCall as alloy_sol_types::SolCall>::abi_encode_raw(
+                        inner,
+                        out,
+                    )
+                }
                 Self::getCurrentKmsContextAndEpoch(inner) => {
                     <getCurrentKmsContextAndEpochCall as alloy_sol_types::SolCall>::abi_encode_raw(
                         inner,
@@ -15606,6 +16239,12 @@ function updateUserDecryptionThresholdForContext(uint256 kmsContextId, uint256 t
                 }
                 Self::getCurrentKmsContextId(inner) => {
                     <getCurrentKmsContextIdCall as alloy_sol_types::SolCall>::abi_encode_raw(
+                        inner,
+                        out,
+                    )
+                }
+                Self::getCurrentKmsContextIdCounter(inner) => {
+                    <getCurrentKmsContextIdCounterCall as alloy_sol_types::SolCall>::abi_encode_raw(
                         inner,
                         out,
                     )
@@ -15708,6 +16347,12 @@ function updateUserDecryptionThresholdForContext(uint256 kmsContextId, uint256 t
                 }
                 Self::isKmsTxSenderForContext(inner) => {
                     <isKmsTxSenderForContextCall as alloy_sol_types::SolCall>::abi_encode_raw(
+                        inner,
+                        out,
+                    )
+                }
+                Self::isLiveKmsContext(inner) => {
+                    <isLiveKmsContextCall as alloy_sol_types::SolCall>::abi_encode_raw(
                         inner,
                         out,
                     )
@@ -17628,6 +18273,21 @@ the bytecode concatenated with the constructor's ABI-encoded arguments.*/
         ) -> alloy_contract::SolCallBuilder<&P, destroyKmsEpochCall, N> {
             self.call_builder(&destroyKmsEpochCall { epochId })
         }
+        ///Creates a new call builder for the [`getContextCreationPreviousTxSenderThreshold`] function.
+        pub fn getContextCreationPreviousTxSenderThreshold(
+            &self,
+            kmsContextId: alloy::sol_types::private::primitives::aliases::U256,
+        ) -> alloy_contract::SolCallBuilder<
+            &P,
+            getContextCreationPreviousTxSenderThresholdCall,
+            N,
+        > {
+            self.call_builder(
+                &getContextCreationPreviousTxSenderThresholdCall {
+                    kmsContextId,
+                },
+            )
+        }
         ///Creates a new call builder for the [`getCurrentKmsContextAndEpoch`] function.
         pub fn getCurrentKmsContextAndEpoch(
             &self,
@@ -17639,6 +18299,12 @@ the bytecode concatenated with the constructor's ABI-encoded arguments.*/
             &self,
         ) -> alloy_contract::SolCallBuilder<&P, getCurrentKmsContextIdCall, N> {
             self.call_builder(&getCurrentKmsContextIdCall)
+        }
+        ///Creates a new call builder for the [`getCurrentKmsContextIdCounter`] function.
+        pub fn getCurrentKmsContextIdCounter(
+            &self,
+        ) -> alloy_contract::SolCallBuilder<&P, getCurrentKmsContextIdCounterCall, N> {
+            self.call_builder(&getCurrentKmsContextIdCounterCall)
         }
         ///Creates a new call builder for the [`getKmsContextAnchor`] function.
         pub fn getKmsContextAnchor(
@@ -17804,6 +18470,17 @@ the bytecode concatenated with the constructor's ABI-encoded arguments.*/
                 &isKmsTxSenderForContextCall {
                     kmsContextId,
                     txSender,
+                },
+            )
+        }
+        ///Creates a new call builder for the [`isLiveKmsContext`] function.
+        pub fn isLiveKmsContext(
+            &self,
+            kmsContextId: alloy::sol_types::private::primitives::aliases::U256,
+        ) -> alloy_contract::SolCallBuilder<&P, isLiveKmsContextCall, N> {
+            self.call_builder(
+                &isLiveKmsContextCall {
+                    kmsContextId,
                 },
             )
         }

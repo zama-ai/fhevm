@@ -531,11 +531,38 @@ interface IProtocolConfig {
     function getCurrentKmsContextId() external view returns (uint256);
 
     /**
+     * @notice Returns the KMS context ID allocation counter: the latest issued context ID.
+     * @dev This is the allocation frontier, always `>= getCurrentKmsContextId()`. It differs from the
+     *      active context ID while a context is Pending or Created (an in-flight context switch).
+     * @return The latest issued context ID.
+     */
+    function getCurrentKmsContextIdCounter() external view returns (uint256);
+
+    /**
      * @notice Checks whether a KMS context ID is valid (exists, is not destroyed, and is active).
      * @param kmsContextId The context ID to check.
      * @return True if the context is valid.
      */
     function isValidKmsContext(uint256 kmsContextId) external view returns (bool);
+
+    /**
+     * @notice Checks whether a KMS context exists and has not been destroyed.
+     * @dev Unlike `isValidKmsContext`, this returns true for a Pending or Created context, so it
+     *      distinguishes an in-flight context switch from a destroyed or never-issued context.
+     * @param kmsContextId The context ID to check.
+     * @return True if the context exists and is not destroyed.
+     */
+    function isLiveKmsContext(uint256 kmsContextId) external view returns (bool);
+
+    /**
+     * @notice Returns the previous-committee confirmation quorum cached for a context at define time.
+     * @dev The `(n - t)` target that `confirmKmsContextCreation` requires from the previous committee.
+     *      Returns 0 for a context that was never a switch target or whose bookkeeping was cleared on
+     *      destruction.
+     * @param kmsContextId The context ID.
+     * @return The cached previous-committee confirmation target.
+     */
+    function getContextCreationPreviousTxSenderThreshold(uint256 kmsContextId) external view returns (uint256);
 
     /**
      * @notice Returns the signer addresses for the current active context.
