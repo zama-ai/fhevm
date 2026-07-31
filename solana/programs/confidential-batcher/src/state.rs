@@ -158,29 +158,29 @@ pub fn claim_amount_label(user: Pubkey) -> [u8; 32] {
 }
 
 /// Returns the canonical `EncryptedValue` PDA for a batcher encrypted value account. Batcher
-/// encrypted value accounts live in the batch's own ACL domain: `acl_domain_key = batch`,
-/// `app_account = batch_authority`, per-user label.
+/// encrypted value accounts live in the batch's own ACL domain: `domain = batch`,
+/// `account = batch_authority`, per-user label.
 pub fn batcher_encrypted_value_address(
     batch: Pubkey,
     batch_authority: Pubkey,
     label: [u8; 32],
 ) -> (Pubkey, u8) {
-    zama_host::encrypted_value_address(zama_solana_acl_value_key(batch, batch_authority, label))
+    zama_host::encrypted_value_address(zama_solana_acl_encrypted_value_id(
+        batch,
+        batch_authority,
+        label,
+    ))
 }
 
-fn zama_solana_acl_value_key(
-    acl_domain_key: Pubkey,
-    app_account: Pubkey,
+fn zama_solana_acl_encrypted_value_id(
+    domain: Pubkey,
+    account: Pubkey,
     label: [u8; 32],
 ) -> [u8; 32] {
-    // Delegate to the shared derivation through zama-fhe's EncryptedValueKey so the
+    // Delegate to the shared derivation through zama-fhe's EncryptedValueId so the
     // batcher and host agree exactly.
-    zama_fhe::EncryptedValueKey::new(
-        acl_domain_key,
-        app_account,
-        zama_fhe::PersistentLabel::new(label),
-    )
-    .value_key()
+    zama_fhe::EncryptedValueId::new(domain, account, zama_fhe::PersistentLabel::new(label))
+        .encrypted_value_id()
 }
 
 /// Computes the informational payout rate of a settled batch, rounded DOWN

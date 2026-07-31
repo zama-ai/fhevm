@@ -44,8 +44,8 @@ fn account_info(pubkey: Pubkey, is_writable: bool) -> AccountInfo<'static> {
     AccountInfo::new(key, false, is_writable, lamports, data, owner, false)
 }
 
-fn encrypted_value_key(account: Pubkey, label_tag: u8) -> EncryptedValueKey {
-    EncryptedValueKey::new(
+fn encrypted_value_id(account: Pubkey, label_tag: u8) -> EncryptedValueId {
+    EncryptedValueId::new(
         Pubkey::new_unique(),
         account,
         PersistentLabel::new(handle(label_tag)),
@@ -78,7 +78,7 @@ fn cpi_accounts(app_authority: Pubkey) -> EvalCpiAccounts<'static, 'static> {
     EvalCpiAccounts {
         payer: account_info(Pubkey::new_unique(), true),
         compute_subject: account_info(Pubkey::new_unique(), false),
-        app_account_authority: account_info(app_authority, false),
+        account_authority: account_info(app_authority, false),
         host_config: account_info(Pubkey::new_unique(), false),
         deny_subject_records: &[],
         system_program: account_info(Pubkey::new_unique(), false),
@@ -92,9 +92,9 @@ fn cpi_accounts(app_authority: Pubkey) -> EvalCpiAccounts<'static, 'static> {
 #[test]
 fn eval_plan_build_runs_closure_and_finishes_plan() {
     let primary_authority = Pubkey::new_unique();
-    let input_key = encrypted_value_key(primary_authority, 1);
+    let input_key = encrypted_value_id(primary_authority, 1);
     let input_acl = input_key.address();
-    let output_key = encrypted_value_key(primary_authority, 7);
+    let output_key = encrypted_value_id(primary_authority, 7);
     let output_acl = output_key.address();
     let balance = Uint64Handle::persistent(balance_handle(1), input_key).unwrap();
 
@@ -122,10 +122,10 @@ fn eval_plan_build_runs_closure_and_finishes_plan() {
             assert_eq!(*lhs, FheEvalOperand::AllowedLocal { producer_index: 0 });
             match output {
                 FheEvalOutput::AllowedPersistent {
-                    output_app_account_authority_index,
+                    output_account_authority_index,
                     ..
                 } => {
-                    assert_eq!(*output_app_account_authority_index, None);
+                    assert_eq!(*output_account_authority_index, None);
                 }
                 other => panic!("unexpected output: {other:?}"),
             }
@@ -137,7 +137,7 @@ fn eval_plan_build_runs_closure_and_finishes_plan() {
 #[test]
 fn builder_rejects_post_write_persistent_alias() {
     let authority = Pubkey::new_unique();
-    let key = encrypted_value_key(authority, 7);
+    let key = encrypted_value_id(authority, 7);
     let mut builder = EvalBuilder::new(app_authority(authority));
     builder
         .trivial_encrypt_u64(7, Output::persistent(key.clone(), subjects(authority)))
@@ -158,7 +158,7 @@ fn builder_rejects_post_write_persistent_alias() {
 #[test]
 fn eval_plan_build_lowers_verified_input_operand() {
     let primary_authority = Pubkey::new_unique();
-    let output_key = encrypted_value_key(primary_authority, 7);
+    let output_key = encrypted_value_id(primary_authority, 7);
     let output_acl = output_key.address();
     let input_handle = balance_handle(2);
     let attestation = dummy_attestation(input_handle, primary_authority);
@@ -284,7 +284,7 @@ fn finish_preflights_lowered_transient_order_and_account_uniqueness() {
         EvalBuildError::InvalidTransientReference
     );
 
-    let input_key = encrypted_value_key(primary_authority, 1);
+    let input_key = encrypted_value_id(primary_authority, 1);
     let input_acl = input_key.address();
     let balance = Uint64Handle::persistent(balance_handle(1), input_key).unwrap();
     let mut builder = EvalBuilder::new(app_authority(primary_authority));
@@ -363,9 +363,9 @@ fn invoke_eval_signed_with_builder_reports_build_errors_before_resolution() {
 #[test]
 fn invoke_eval_signed_with_builder_adds_fixed_authority_before_resolution() {
     let primary_authority = Pubkey::new_unique();
-    let input_key = encrypted_value_key(primary_authority, 1);
+    let input_key = encrypted_value_id(primary_authority, 1);
     let input_acl = input_key.address();
-    let output_key = encrypted_value_key(primary_authority, 7);
+    let output_key = encrypted_value_id(primary_authority, 7);
     let output_acl = output_key.address();
     let balance = Uint64Handle::persistent(balance_handle(1), input_key).unwrap();
 
@@ -398,9 +398,9 @@ fn invoke_eval_signed_with_builder_adds_fixed_authority_before_resolution() {
 fn invoke_eval_signed_with_builder_requires_additional_output_authorities() {
     let primary_authority = Pubkey::new_unique();
     let extra_authority = Pubkey::new_unique();
-    let input_key = encrypted_value_key(primary_authority, 1);
+    let input_key = encrypted_value_id(primary_authority, 1);
     let input_acl = input_key.address();
-    let output_key = encrypted_value_key(extra_authority, 7);
+    let output_key = encrypted_value_id(extra_authority, 7);
     let output_acl = output_key.address();
     let balance = Uint64Handle::persistent(balance_handle(1), input_key).unwrap();
 
@@ -434,11 +434,11 @@ fn invoke_eval_signed_with_builder_requires_additional_output_authorities() {
 #[test]
 fn lowers_mixed_eval_to_stable_remaining_account_indices() {
     let primary_authority = Pubkey::new_unique();
-    let balance_key = encrypted_value_key(primary_authority, 1);
-    let amount_key = encrypted_value_key(primary_authority, 2);
+    let balance_key = encrypted_value_id(primary_authority, 1);
+    let amount_key = encrypted_value_id(primary_authority, 2);
     let balance_acl = balance_key.address();
     let amount_acl = amount_key.address();
-    let output_key = encrypted_value_key(primary_authority, 7);
+    let output_key = encrypted_value_id(primary_authority, 7);
     let output_acl = output_key.address();
     let balance = Uint64Handle::persistent(balance_handle(1), balance_key).unwrap();
     let amount = Uint64Handle::persistent(balance_handle(2), amount_key).unwrap();
@@ -509,10 +509,10 @@ fn lowers_mixed_eval_to_stable_remaining_account_indices() {
 #[test]
 fn dynamic_account_requirements_expose_order_roles_and_purposes() {
     let primary_authority = Pubkey::new_unique();
-    let input_key = encrypted_value_key(primary_authority, 1);
+    let input_key = encrypted_value_id(primary_authority, 1);
     let input_acl = input_key.address();
     let extra_authority = Pubkey::new_unique();
-    let output_key = encrypted_value_key(extra_authority, 7);
+    let output_key = encrypted_value_id(extra_authority, 7);
     let output_acl = output_key.address();
     let input = Uint64Handle::persistent(balance_handle(1), input_key).unwrap();
 
@@ -554,10 +554,10 @@ fn dynamic_account_requirements_expose_order_roles_and_purposes() {
 #[test]
 fn lowers_explicit_output_authority_witness() {
     let primary_authority = Pubkey::new_unique();
-    let input_key = encrypted_value_key(primary_authority, 1);
+    let input_key = encrypted_value_id(primary_authority, 1);
     let acl_record = input_key.address();
     let authority = Pubkey::new_unique();
-    let output_key = encrypted_value_key(authority, 7);
+    let output_key = encrypted_value_id(authority, 7);
     let output_acl = output_key.address();
     let balance = Uint64Handle::persistent(balance_handle(1), input_key).unwrap();
     let mut builder = EvalBuilder::new(app_authority(primary_authority));
@@ -604,11 +604,11 @@ fn lowers_explicit_output_authority_witness() {
         FheEvalStep::Binary { output, .. } => match output {
             FheEvalOutput::AllowedPersistent {
                 output_encrypted_value_index,
-                output_app_account_authority_index,
+                output_account_authority_index,
                 ..
             } => {
                 assert_eq!(*output_encrypted_value_index, 1);
-                assert_eq!(*output_app_account_authority_index, Some(2));
+                assert_eq!(*output_account_authority_index, Some(2));
             }
             other => panic!("unexpected output: {other:?}"),
         },
@@ -620,10 +620,10 @@ fn lowers_explicit_output_authority_witness() {
 #[test]
 fn resolve_accounts_orders_and_validates_plan_requirements() {
     let primary_authority = Pubkey::new_unique();
-    let input_key = encrypted_value_key(primary_authority, 1);
+    let input_key = encrypted_value_id(primary_authority, 1);
     let input_acl = input_key.address();
     let extra_authority = Pubkey::new_unique();
-    let output_key = encrypted_value_key(extra_authority, 7);
+    let output_key = encrypted_value_id(extra_authority, 7);
     let output_acl = output_key.address();
     let input = Uint64Handle::persistent(balance_handle(1), input_key).unwrap();
     let mut builder = EvalBuilder::new(app_authority(primary_authority));
@@ -783,10 +783,10 @@ fn resolve_accounts_orders_and_validates_plan_requirements() {
 #[test]
 fn resolve_accounts_rejects_known_accounts_in_wrong_bucket() {
     let primary_authority = Pubkey::new_unique();
-    let input_key = encrypted_value_key(primary_authority, 1);
+    let input_key = encrypted_value_id(primary_authority, 1);
     let input_acl = input_key.address();
     let extra_authority = Pubkey::new_unique();
-    let output_key = encrypted_value_key(extra_authority, 7);
+    let output_key = encrypted_value_id(extra_authority, 7);
     let output_acl = output_key.address();
     let input = Uint64Handle::persistent(balance_handle(1), input_key).unwrap();
     let mut builder = EvalBuilder::new(app_authority(primary_authority));
@@ -859,7 +859,7 @@ fn resolve_accounts_rejects_known_accounts_in_wrong_bucket() {
 #[test]
 fn lowers_birth_steps() {
     let primary_authority = Pubkey::new_unique();
-    let output_key = encrypted_value_key(primary_authority, 7);
+    let output_key = encrypted_value_id(primary_authority, 7);
     let output_acl = output_key.address();
     let mut builder = EvalBuilder::new(app_authority(primary_authority));
     let trivial = builder.trivial_encrypt_u64(1, Output::transient()).unwrap();
@@ -912,7 +912,7 @@ fn rejects_invalid_references_and_types() {
         .unwrap_err();
     assert_eq!(error, EvalBuildError::UnsupportedBinaryOutputType);
 
-    let input_key = encrypted_value_key(primary_authority, 1);
+    let input_key = encrypted_value_id(primary_authority, 1);
     let input = Uint64Handle::persistent(balance_handle(1), input_key).unwrap();
     let mut builder = EvalBuilder::new(app_authority(primary_authority));
     builder.trivial_encrypt_u64(1, Output::transient()).unwrap();
@@ -953,7 +953,7 @@ fn rejects_invalid_references_and_types() {
 #[test]
 fn rejects_transients_from_another_builder() {
     let primary_authority = Pubkey::new_unique();
-    let input_key = encrypted_value_key(primary_authority, 1);
+    let input_key = encrypted_value_id(primary_authority, 1);
     let balance = Uint64Handle::persistent(balance_handle(1), input_key).unwrap();
 
     let mut first = EvalBuilder::new(app_authority(primary_authority));
@@ -980,36 +980,36 @@ fn validates_app_authority_and_persistent_account_pubkeys() {
     };
     assert_eq!(error, EvalBuildError::InvalidAppAuthority);
 
-    let invalid_namespace_key = EncryptedValueKey::new(
+    let invalid_namespace_key = EncryptedValueId::new(
         Pubkey::default(),
         Pubkey::new_unique(),
         PersistentLabel::new(handle(5)),
     );
     assert_eq!(
         Uint64Handle::persistent(balance_handle(1), invalid_namespace_key.clone()).unwrap_err(),
-        EvalBuildError::InvalidEncryptedValueKey
+        EvalBuildError::InvalidEncryptedValueId
     );
     assert_eq!(
         PersistentOutput::create(invalid_namespace_key, subjects(Pubkey::new_unique()))
             .binding()
             .unwrap_err(),
-        EvalBuildError::InvalidEncryptedValueKey
+        EvalBuildError::InvalidEncryptedValueId
     );
 
-    let invalid_account_key = EncryptedValueKey::new(
+    let invalid_account_key = EncryptedValueId::new(
         Pubkey::new_unique(),
         Pubkey::default(),
         PersistentLabel::new(handle(5)),
     );
     assert_eq!(
         Uint64Handle::persistent(balance_handle(1), invalid_account_key.clone()).unwrap_err(),
-        EvalBuildError::InvalidEncryptedValueKey
+        EvalBuildError::InvalidEncryptedValueId
     );
     assert_eq!(
         PersistentOutput::create(invalid_account_key, subjects(Pubkey::new_unique()))
             .binding()
             .unwrap_err(),
-        EvalBuildError::InvalidEncryptedValueKey
+        EvalBuildError::InvalidEncryptedValueId
     );
 }
 
@@ -1137,7 +1137,7 @@ fn mul_div_rejects_zero_divisor() {
     let primary_authority = Pubkey::new_unique();
     let mut builder = EvalBuilder::new(app_authority(primary_authority));
     let balance =
-        Uint64Handle::persistent(balance_handle(1), encrypted_value_key(primary_authority, 1))
+        Uint64Handle::persistent(balance_handle(1), encrypted_value_id(primary_authority, 1))
             .unwrap();
     assert_eq!(
         builder
@@ -1157,9 +1157,9 @@ fn div_rem_require_nonzero_scalar_divisor() {
     let auth = Pubkey::new_unique();
     let mut builder = EvalBuilder::new(app_authority(auth));
     // Encrypted divisor is rejected — division is scalar-only (EVM `IsNotScalar`).
-    let lhs = Uint64Handle::persistent(balance_handle(1), encrypted_value_key(auth, 1)).unwrap();
+    let lhs = Uint64Handle::persistent(balance_handle(1), encrypted_value_id(auth, 1)).unwrap();
     let enc_divisor =
-        Uint64Handle::persistent(balance_handle(2), encrypted_value_key(auth, 2)).unwrap();
+        Uint64Handle::persistent(balance_handle(2), encrypted_value_id(auth, 2)).unwrap();
     assert_eq!(
         builder
             .div(lhs, enc_divisor, Output::transient())
@@ -1167,7 +1167,7 @@ fn div_rem_require_nonzero_scalar_divisor() {
         EvalBuildError::DivisorMustBeScalar
     );
     // A zero scalar divisor is rejected.
-    let lhs2 = Uint64Handle::persistent(balance_handle(1), encrypted_value_key(auth, 1)).unwrap();
+    let lhs2 = Uint64Handle::persistent(balance_handle(1), encrypted_value_id(auth, 1)).unwrap();
     assert_eq!(
         builder
             .rem(lhs2, Scalar::<Uint<64>>::u64(0), Output::transient())
@@ -1175,7 +1175,7 @@ fn div_rem_require_nonzero_scalar_divisor() {
         EvalBuildError::DivisionByZero
     );
     // A non-zero scalar divisor is accepted.
-    let lhs3 = Uint64Handle::persistent(balance_handle(1), encrypted_value_key(auth, 1)).unwrap();
+    let lhs3 = Uint64Handle::persistent(balance_handle(1), encrypted_value_id(auth, 1)).unwrap();
     assert!(builder
         .div(lhs3, Scalar::<Uint<64>>::u64(3), Output::transient())
         .is_ok());
@@ -1189,55 +1189,55 @@ fn builder_exposes_the_host_operator_type_surface() {
 
     let bool_a = Encrypted::<Bool>::persistent(
         typed_handle(1, FheType::BOOL.byte()),
-        encrypted_value_key(auth, 1),
+        encrypted_value_id(auth, 1),
     )
     .unwrap();
     let bool_b = Encrypted::<Bool>::persistent(
         typed_handle(2, FheType::BOOL.byte()),
-        encrypted_value_key(auth, 2),
+        encrypted_value_id(auth, 2),
     )
     .unwrap();
     assert!(builder.and(bool_a, bool_b, Output::transient()).is_ok());
 
     let u256_a = Encrypted::<Bytes256>::persistent(
         typed_handle(3, FheType::BYTES256.byte()),
-        encrypted_value_key(auth, 3),
+        encrypted_value_id(auth, 3),
     )
     .unwrap();
     let u256_b = Encrypted::<Bytes256>::persistent(
         typed_handle(4, FheType::BYTES256.byte()),
-        encrypted_value_key(auth, 4),
+        encrypted_value_id(auth, 4),
     )
     .unwrap();
     assert!(builder.xor(u256_a, u256_b, Output::transient()).is_ok());
 
     let u256_c = Encrypted::<Bytes256>::persistent(
         typed_handle(5, FheType::BYTES256.byte()),
-        encrypted_value_key(auth, 5),
+        encrypted_value_id(auth, 5),
     )
     .unwrap();
     assert!(builder.neg(u256_c, Output::transient()).is_ok());
 
     let bool_c = Encrypted::<Bool>::persistent(
         typed_handle(6, FheType::BOOL.byte()),
-        encrypted_value_key(auth, 6),
+        encrypted_value_id(auth, 6),
     )
     .unwrap();
     let bool_d = Encrypted::<Bool>::persistent(
         typed_handle(7, FheType::BOOL.byte()),
-        encrypted_value_key(auth, 7),
+        encrypted_value_id(auth, 7),
     )
     .unwrap();
     assert!(builder.eq(bool_c, bool_d, Output::transient()).is_ok());
 
     let addr_v = Encrypted::<Address>::persistent(
         typed_handle(8, FheType::ADDRESS.byte()),
-        encrypted_value_key(auth, 8),
+        encrypted_value_id(auth, 8),
     )
     .unwrap();
     let addr_s = Encrypted::<Address>::persistent(
         typed_handle(9, FheType::ADDRESS.byte()),
-        encrypted_value_key(auth, 9),
+        encrypted_value_id(auth, 9),
     )
     .unwrap();
     assert!(builder.is_in(addr_v, [addr_s], Output::transient()).is_ok());
@@ -1245,7 +1245,7 @@ fn builder_exposes_the_host_operator_type_surface() {
 
 #[test]
 fn persistent_output_validates_raw_subjects() {
-    let key = encrypted_value_key(Pubkey::new_unique(), 1);
+    let key = encrypted_value_id(Pubkey::new_unique(), 1);
     assert_eq!(
         PersistentOutput::create(key.clone(), vec![])
             .binding()
@@ -1282,14 +1282,14 @@ fn persistent_output_validates_raw_subjects() {
 fn persistent_output_birth_matches_eval_lowering() {
     let primary_authority = Pubkey::new_unique();
     let subject = Pubkey::new_unique();
-    let output_key = encrypted_value_key(primary_authority, 42);
+    let output_key = encrypted_value_id(primary_authority, 42);
     let output = PersistentOutput::create(output_key.clone(), subjects(subject));
     let binding = output.binding().unwrap();
 
     assert_eq!(binding.encrypted_value(), output_key.address());
-    assert_eq!(binding.acl_domain_key(), output_key.namespace());
-    assert_eq!(binding.app_account(), output_key.account());
-    assert_eq!(binding.encrypted_value_label(), output_key.label().bytes());
+    assert_eq!(binding.domain(), output_key.domain());
+    assert_eq!(binding.account(), output_key.account());
+    assert_eq!(binding.label(), output_key.label().bytes());
     assert_eq!(binding.subjects(), subjects(subject));
     assert_eq!(binding.previous_handle(), None);
     assert_eq!(binding.previous_subjects(), None);
@@ -1304,9 +1304,9 @@ fn persistent_output_birth_matches_eval_lowering() {
             output:
                 FheEvalOutput::AllowedPersistent {
                     output_encrypted_value_index,
-                    output_acl_domain_key_index,
-                    output_app_account_index,
-                    output_encrypted_value_label_index,
+                    output_domain_index,
+                    output_account_index,
+                    output_label_index,
                     output_subject_indexes,
                     previous_handle,
                     previous_subjects,
@@ -1318,20 +1318,16 @@ fn persistent_output_birth_matches_eval_lowering() {
                 plan.remaining_accounts[*output_encrypted_value_index as usize].pubkey;
             assert_eq!(output_encrypted_value, binding.encrypted_value());
             assert_eq!(
-                plan.args
-                    .dictionary_key(*output_acl_domain_key_index)
-                    .unwrap(),
-                binding.acl_domain_key()
+                plan.args.dictionary_key(*output_domain_index).unwrap(),
+                binding.domain()
             );
             assert_eq!(
-                plan.args.dictionary_key(*output_app_account_index).unwrap(),
-                binding.app_account()
+                plan.args.dictionary_key(*output_account_index).unwrap(),
+                binding.account()
             );
             assert_eq!(
-                plan.args
-                    .dictionary_bytes(*output_encrypted_value_label_index)
-                    .unwrap(),
-                binding.encrypted_value_label()
+                plan.args.dictionary_bytes(*output_label_index).unwrap(),
+                binding.label()
             );
             let output_subjects: Vec<Pubkey> = output_subject_indexes
                 .iter()
@@ -1349,13 +1345,13 @@ fn persistent_output_birth_matches_eval_lowering() {
 fn persistent_output_update_carries_current_state() {
     let primary_authority = Pubkey::new_unique();
     let subject = Pubkey::new_unique();
-    let output_key = encrypted_value_key(primary_authority, 42);
+    let output_key = encrypted_value_id(primary_authority, 42);
     let previous_handle = balance_handle(1);
     let previous_subjects = vec![subject];
     let current = zama_host::EncryptedValue {
-        acl_domain_key: primary_authority,
-        app_account: Pubkey::new_unique(),
-        encrypted_value_label: [42; 32],
+        domain: primary_authority,
+        account: Pubkey::new_unique(),
+        label: [42; 32],
         current_handle: previous_handle,
         subjects: previous_subjects.clone(),
         leaf_count: 7,
@@ -1375,7 +1371,7 @@ fn persistent_output_update_carries_current_state() {
 #[test]
 fn rejects_transients_from_another_frame() {
     let primary_authority = Pubkey::new_unique();
-    let input_key = encrypted_value_key(primary_authority, 1);
+    let input_key = encrypted_value_id(primary_authority, 1);
     let balance = Uint64Handle::persistent(balance_handle(1), input_key).unwrap();
 
     let mut first = EvalBuilder::new(app_authority(primary_authority));
@@ -1396,7 +1392,7 @@ fn rejects_transients_from_another_frame() {
 fn typed_handle_constructor_rejects_mismatched_handle_tag() {
     let error = Uint64Handle::persistent(
         typed_handle(1, FheType::UINT32.byte()),
-        encrypted_value_key(Pubkey::new_unique(), 7),
+        encrypted_value_id(Pubkey::new_unique(), 7),
     )
     .unwrap_err();
     assert_eq!(error, EvalBuildError::UnsupportedFheType);
@@ -1423,7 +1419,7 @@ fn finish_rejects_empty_steps() {
 #[test]
 fn rejects_more_than_max_ops() {
     let primary_authority = Pubkey::new_unique();
-    let input_key = encrypted_value_key(primary_authority, 1);
+    let input_key = encrypted_value_id(primary_authority, 1);
     let balance = Uint64Handle::persistent(balance_handle(1), input_key).unwrap();
     let mut builder = EvalBuilder::new(app_authority(primary_authority));
     for index in 0..MAX_FHE_EVAL_OPS {

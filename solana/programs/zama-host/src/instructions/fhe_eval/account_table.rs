@@ -28,7 +28,7 @@ pub(super) struct EvalAccountTable<'a, 'info> {
 pub(super) struct OutputPda {
     pub key: Pubkey,
     pub bump: u8,
-    pub value_key: [u8; 32],
+    pub encrypted_value_id: [u8; 32],
 }
 
 impl<'a, 'info> EvalAccountTable<'a, 'info> {
@@ -111,20 +111,20 @@ impl<'a, 'info> EvalAccountTable<'a, 'info> {
     /// one place output-PDA derivation lives.
     pub(super) fn expected_output_pda(
         &self,
-        acl_domain_key: Pubkey,
-        app_account: Pubkey,
+        domain: Pubkey,
+        account: Pubkey,
         label: [u8; 32],
     ) -> OutputPda {
-        let value_key = zama_solana_acl::derive_value_key(
-            acl_domain_key.to_bytes(),
-            app_account.to_bytes(),
+        let encrypted_value_id = zama_solana_acl::derive_encrypted_value_id(
+            domain.to_bytes(),
+            account.to_bytes(),
             label,
         );
-        let (key, bump) = encrypted_value_address(value_key);
+        let (key, bump) = encrypted_value_address(encrypted_value_id);
         OutputPda {
             key,
             bump,
-            value_key,
+            encrypted_value_id,
         }
     }
 

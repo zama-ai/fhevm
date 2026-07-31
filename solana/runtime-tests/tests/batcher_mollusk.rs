@@ -198,23 +198,23 @@ impl CleartextLedger {
                 .expect("every emitted FHE plan must be valid in cleartext");
             for (step, value) in args.steps.iter().zip(outputs) {
                 let host::FheEvalOutput::AllowedPersistent {
-                    output_acl_domain_key_index,
-                    output_app_account_index,
-                    output_encrypted_value_label_index,
+                    output_domain_index,
+                    output_account_index,
+                    output_label_index,
                     ..
                 } = eval_step_output(step)
                 else {
                     continue;
                 };
-                let value_key = zama_solana_acl::derive_value_key(
-                    args.dictionary_bytes(*output_acl_domain_key_index)
+                let encrypted_value_id = zama_solana_acl::derive_encrypted_value_id(
+                    args.dictionary_bytes(*output_domain_index)
                         .expect("valid dictionary index"),
-                    args.dictionary_bytes(*output_app_account_index)
+                    args.dictionary_bytes(*output_account_index)
                         .expect("valid dictionary index"),
-                    args.dictionary_bytes(*output_encrypted_value_label_index)
+                    args.dictionary_bytes(*output_label_index)
                         .expect("valid dictionary index"),
                 );
-                let address = host::encrypted_value_address(value_key).0;
+                let address = host::encrypted_value_address(encrypted_value_id).0;
                 let persisted = read_encrypted_value(context, address);
                 self.values.insert(persisted.current_handle, value);
             }
@@ -288,22 +288,19 @@ fn ensure_system_accounts(context: &Ctx, addresses: &[Pubkey]) {
 }
 
 fn new_encrypted_value(
-    acl_domain_key: Pubkey,
-    app_account: Pubkey,
-    encrypted_value_label: [u8; 32],
+    domain: Pubkey,
+    account: Pubkey,
+    label: [u8; 32],
     handle: [u8; 32],
     subjects: &[Pubkey],
 ) -> (Pubkey, host::EncryptedValue) {
-    let value_key = zama_solana_acl::derive_value_key(
-        acl_domain_key.to_bytes(),
-        app_account.to_bytes(),
-        encrypted_value_label,
-    );
-    let (address, bump) = host::encrypted_value_address(value_key);
+    let encrypted_value_id =
+        zama_solana_acl::derive_encrypted_value_id(domain.to_bytes(), account.to_bytes(), label);
+    let (address, bump) = host::encrypted_value_address(encrypted_value_id);
     let value = host::EncryptedValue {
-        acl_domain_key,
-        app_account,
-        encrypted_value_label,
+        domain,
+        account,
+        label,
         current_handle: handle,
         subjects: subjects.to_vec(),
         leaf_count: 0,
@@ -487,7 +484,7 @@ impl ConfidentialMintKeys {
             lamports: 1_000_000_000,
             data: serialized_account(token::ConfidentialMint {
                 authority,
-                acl_domain_key: self.mint,
+                domain: self.mint,
                 compute_signer: self.compute_signer,
                 underlying_mint: self.underlying_mint,
                 decimals: DECIMALS,

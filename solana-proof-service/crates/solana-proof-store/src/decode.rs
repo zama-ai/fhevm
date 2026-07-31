@@ -105,7 +105,7 @@ struct CreatedPublicOutput {
 const ENCRYPTED_VALUE_ACCOUNT_INDEX: usize = 2;
 const REMOVE_SUBJECT_ACCOUNT_INDEX: usize = 1;
 /// `remaining_accounts` follow the 9 named `fhe_eval` accounts — payer,
-/// compute_subject, app_account_authority, host_config, system_program,
+/// compute_subject, account_authority, host_config, system_program,
 /// hcu_block_meter, hcu_trusted_app_record, then `#[event_cpi]`'s
 /// event_authority + program (see `FheEval` in fhe_eval.rs). The two optional HCU
 /// accounts are always present as program-id placeholders when `None`, so the base
@@ -672,7 +672,7 @@ mod tests {
     }
 
     /// The 9 named `fhe_eval` accounts (payer, compute_subject,
-    /// app_account_authority, host_config, system_program, hcu_block_meter,
+    /// account_authority, host_config, system_program, hcu_block_meter,
     /// hcu_trusted_app_record, event_authority, program) followed by
     /// `remaining_accounts` — matching the real anchor account layout so the
     /// persistent output resolves at `FHE_EVAL_REMAINING_BASE`.
@@ -680,7 +680,7 @@ mod tests {
         let mut accounts = vec![
             pk(0xA0),     // 0 payer
             pk(0xA1),     // 1 compute_subject
-            pk(0xA2),     // 2 app_account_authority
+            pk(0xA2),     // 2 account_authority
             pk(0xA3),     // 3 host_config
             pk(0xA4),     // 4 system_program
             program_id(), // 5 hcu_block_meter (None placeholder)
@@ -728,10 +728,10 @@ mod tests {
     ) -> FheEvalOutput {
         FheEvalOutput::AllowedPersistent {
             output_encrypted_value_index,
-            output_app_account_authority_index: None,
-            output_acl_domain_key_index: intern(pk(0x40)),
-            output_app_account_index: intern(pk(0x41)),
-            output_encrypted_value_label_index: intern(pk(0x42)),
+            output_account_authority_index: None,
+            output_domain_index: intern(pk(0x40)),
+            output_account_index: intern(pk(0x41)),
+            output_label_index: intern(pk(0x42)),
             output_subject_indexes: subject_tags.iter().map(|tag| intern(pk(*tag))).collect(),
             previous_handle,
             previous_subjects: previous_subject_tags

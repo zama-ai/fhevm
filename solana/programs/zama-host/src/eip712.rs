@@ -360,7 +360,7 @@ mod tests {
         let mut v3 = vec![3u8];
         v3.extend_from_slice(&[0u8; 24]);
         v3.extend_from_slice(&42u64.to_be_bytes());
-        v3.extend_from_slice(&[0xABu8; 40]); // trailing acl_value_key/proof_slot/mmr bytes, ignored
+        v3.extend_from_slice(&[0xABu8; 40]); // trailing encrypted_value_id/proof_slot/mmr bytes, ignored
         assert_eq!(extract_kms_context_id(&v3, 7), Some(42));
         // Version 2 is RFC-005 context+epoch on the EVM side, not a Solana certificate shape.
         let mut v2 = vec![2u8];

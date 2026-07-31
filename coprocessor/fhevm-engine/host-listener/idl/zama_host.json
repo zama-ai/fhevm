@@ -271,7 +271,7 @@
           "type": "pubkey"
         },
         {
-          "name": "app_account",
+          "name": "account",
           "type": "pubkey"
         },
         {
@@ -397,7 +397,7 @@
           "signer": true
         },
         {
-          "name": "app_account_authority",
+          "name": "account_authority",
           "docs": [
             "App account signer authorizing any persistent output ACL metadata."
           ],
@@ -2523,11 +2523,11 @@
                 "type": "u8"
               },
               {
-                "name": "output_app_account_authority_index",
+                "name": "output_account_authority_index",
                 "docs": [
                   "Optional index into `remaining_accounts` for the app account authority signer.",
                   "",
-                  "`None` uses the fixed `app_account_authority` account in the eval",
+                  "`None` uses the fixed `account_authority` account in the eval",
                   "context. `Some(index)` requires that remaining account to be a signer",
                   "and to match the output app account."
                 ],
@@ -2536,21 +2536,21 @@
                 }
               },
               {
-                "name": "output_acl_domain_key_index",
+                "name": "output_domain_index",
                 "docs": [
                   "Dictionary index of the ACL domain key for the output encrypted value account."
                 ],
                 "type": "u8"
               },
               {
-                "name": "output_app_account_index",
+                "name": "output_account_index",
                 "docs": [
                   "Dictionary index of the app account authorized to bind the output encrypted value account."
                 ],
                 "type": "u8"
               },
               {
-                "name": "output_encrypted_value_label_index",
+                "name": "output_label_index",
                 "docs": [
                   "Dictionary index of the encrypted value label for the output encrypted value account."
                 ],
@@ -4390,7 +4390,7 @@
             "type": "pubkey"
           },
           {
-            "name": "app_account",
+            "name": "account",
             "docs": [
               "App context for the delegation."
             ],
@@ -4464,7 +4464,7 @@
             "type": "pubkey"
           },
           {
-            "name": "app_account",
+            "name": "account",
             "docs": [
               "App context for the delegation."
             ],

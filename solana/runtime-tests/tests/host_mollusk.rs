@@ -248,22 +248,19 @@ fn encrypted_value_account(value: &EncryptedValue) -> Account {
 }
 
 fn new_value_account(
-    acl_domain_key: Pubkey,
-    app_account: Pubkey,
-    encrypted_value_label: [u8; 32],
+    domain: Pubkey,
+    account: Pubkey,
+    label: [u8; 32],
     handle: [u8; 32],
     subjects: &[Pubkey],
 ) -> (Pubkey, EncryptedValue) {
-    let value_key = zama_solana_acl::derive_value_key(
-        acl_domain_key.to_bytes(),
-        app_account.to_bytes(),
-        encrypted_value_label,
-    );
-    let (address, bump) = host::encrypted_value_address(value_key);
+    let encrypted_value_id =
+        zama_solana_acl::derive_encrypted_value_id(domain.to_bytes(), account.to_bytes(), label);
+    let (address, bump) = host::encrypted_value_address(encrypted_value_id);
     let value = EncryptedValue {
-        acl_domain_key,
-        app_account,
-        encrypted_value_label,
+        domain,
+        account,
+        label,
         current_handle: handle,
         subjects: subjects.to_vec(),
         leaf_count: 0,
@@ -316,10 +313,10 @@ fn update_with_fhe_eval(
         fhe_type: 5,
         output: FheEvalOutput::AllowedPersistent {
             output_encrypted_value_index: 0,
-            output_app_account_authority_index: None,
-            output_acl_domain_key_index: dictionary.intern_key(value.acl_domain_key),
-            output_app_account_index: dictionary.intern_key(value.app_account),
-            output_encrypted_value_label_index: dictionary.intern(value.encrypted_value_label),
+            output_account_authority_index: None,
+            output_domain_index: dictionary.intern_key(value.domain),
+            output_account_index: dictionary.intern_key(value.account),
+            output_label_index: dictionary.intern(value.label),
             output_subject_indexes: dictionary.intern_subjects(value.subjects.iter().copied()),
             previous_handle: Some(value.current_handle),
             previous_subjects: Some(value.subjects.clone()),
@@ -334,7 +331,7 @@ fn update_with_fhe_eval(
     let ix = fhe_eval_ix(
         payer,
         compute_subject,
-        value.app_account,
+        value.account,
         host_config,
         args,
         vec![writable(address)],
@@ -343,7 +340,7 @@ fn update_with_fhe_eval(
         (system_program::ID, system_program_account()),
         (payer, funded_system_account()),
         (compute_subject, funded_system_account()),
-        (value.app_account, funded_system_account()),
+        (value.account, funded_system_account()),
         (address, encrypted_value_account(value)),
         (host_config, host_config_account),
         (event_authority(host::id()), Account::default()),
@@ -372,10 +369,10 @@ fn expect_fhe_eval_update_error(
         fhe_type: 5,
         output: FheEvalOutput::AllowedPersistent {
             output_encrypted_value_index: 0,
-            output_app_account_authority_index: None,
-            output_acl_domain_key_index: dictionary.intern_key(value.acl_domain_key),
-            output_app_account_index: dictionary.intern_key(value.app_account),
-            output_encrypted_value_label_index: dictionary.intern(value.encrypted_value_label),
+            output_account_authority_index: None,
+            output_domain_index: dictionary.intern_key(value.domain),
+            output_account_index: dictionary.intern_key(value.account),
+            output_label_index: dictionary.intern(value.label),
             output_subject_indexes: dictionary.intern_subjects(output_subjects),
             previous_handle: Some(previous_handle),
             previous_subjects: Some(previous_subjects),
@@ -390,7 +387,7 @@ fn expect_fhe_eval_update_error(
     let ix = fhe_eval_ix(
         payer,
         compute_subject,
-        value.app_account,
+        value.account,
         host_config,
         args,
         vec![writable(address)],
@@ -399,7 +396,7 @@ fn expect_fhe_eval_update_error(
         (system_program::ID, system_program_account()),
         (payer, funded_system_account()),
         (compute_subject, funded_system_account()),
-        (value.app_account, funded_system_account()),
+        (value.account, funded_system_account()),
         (address, encrypted_value_account(value)),
         (host_config, host_config_account),
         (event_authority(host::id()), Account::default()),
@@ -544,7 +541,7 @@ fn make_handle_public_ix_with_deny(
 fn fhe_eval_ix(
     payer: Pubkey,
     compute_subject: Pubkey,
-    app_account_authority: Pubkey,
+    account_authority: Pubkey,
     host_config: Pubkey,
     args: FheEvalArgs,
     remaining: Vec<AccountMeta>,
@@ -552,7 +549,7 @@ fn fhe_eval_ix(
     fhe_eval_ix_with_deny_records(
         payer,
         compute_subject,
-        app_account_authority,
+        account_authority,
         host_config,
         args,
         remaining,
@@ -563,7 +560,7 @@ fn fhe_eval_ix(
 fn fhe_eval_ix_with_deny(
     payer: Pubkey,
     compute_subject: Pubkey,
-    app_account_authority: Pubkey,
+    account_authority: Pubkey,
     host_config: Pubkey,
     args: FheEvalArgs,
     remaining: Vec<AccountMeta>,
@@ -572,7 +569,7 @@ fn fhe_eval_ix_with_deny(
     fhe_eval_ix_with_deny_records(
         payer,
         compute_subject,
-        app_account_authority,
+        account_authority,
         host_config,
         args,
         remaining,
@@ -583,7 +580,7 @@ fn fhe_eval_ix_with_deny(
 fn fhe_eval_ix_with_deny_records(
     payer: Pubkey,
     compute_subject: Pubkey,
-    app_account_authority: Pubkey,
+    account_authority: Pubkey,
     host_config: Pubkey,
     mut args: FheEvalArgs,
     remaining: Vec<AccountMeta>,
@@ -598,7 +595,7 @@ fn fhe_eval_ix_with_deny_records(
         host::accounts::FheEval {
             payer,
             compute_subject,
-            app_account_authority,
+            account_authority,
             host_config,
             system_program: system_program::ID,
             // Unrestricted block cap (u64::MAX) in every existing fixture: block_cap
@@ -647,10 +644,10 @@ fn mollusk_fhe_eval_fails_closed_without_previous_bank_hash() {
         fhe_type: 5,
         output: FheEvalOutput::AllowedPersistent {
             output_encrypted_value_index: 0,
-            output_app_account_authority_index: None,
-            output_acl_domain_key_index: dictionary.intern_key(Pubkey::new_unique()),
-            output_app_account_index: dictionary.intern_key(authority),
-            output_encrypted_value_label_index: dictionary.intern(label("balance")),
+            output_account_authority_index: None,
+            output_domain_index: dictionary.intern_key(Pubkey::new_unique()),
+            output_account_index: dictionary.intern_key(authority),
+            output_label_index: dictionary.intern(label("balance")),
             output_subject_indexes: dictionary.intern_subjects([subject]),
             previous_handle: None,
             previous_subjects: None,
@@ -1152,10 +1149,10 @@ fn mollusk_fhe_eval_update_swaps_subjects_and_seals_the_outgoing_audience() {
         fhe_type: 5,
         output: FheEvalOutput::AllowedPersistent {
             output_encrypted_value_index: 0,
-            output_app_account_authority_index: None,
-            output_acl_domain_key_index: dictionary.intern_key(value.acl_domain_key),
-            output_app_account_index: dictionary.intern_key(value.app_account),
-            output_encrypted_value_label_index: dictionary.intern(value.encrypted_value_label),
+            output_account_authority_index: None,
+            output_domain_index: dictionary.intern_key(value.domain),
+            output_account_index: dictionary.intern_key(value.account),
+            output_label_index: dictionary.intern(value.label),
             // Rotate the audience: drop `old_recipient`, grant `new_recipient`.
             output_subject_indexes: dictionary.intern_subjects([subject_a, new_recipient]),
             previous_handle: Some(old_handle),
@@ -1171,7 +1168,7 @@ fn mollusk_fhe_eval_update_swaps_subjects_and_seals_the_outgoing_audience() {
     let ix = fhe_eval_ix(
         authority,
         subject_a,
-        value.app_account,
+        value.account,
         host_config,
         args,
         vec![writable(address)],
@@ -1180,7 +1177,7 @@ fn mollusk_fhe_eval_update_swaps_subjects_and_seals_the_outgoing_audience() {
         (system_program::ID, system_program_account()),
         (authority, funded_system_account()),
         (subject_a, funded_system_account()),
-        (value.app_account, funded_system_account()),
+        (value.account, funded_system_account()),
         (address, encrypted_value_account(&value)),
         (host_config, host_config_account),
         (event_authority(host::id()), Account::default()),
@@ -1233,10 +1230,10 @@ fn mollusk_fhe_eval_update_shrinks_audience_and_seals_the_outgoing_set() {
         fhe_type: 5,
         output: FheEvalOutput::AllowedPersistent {
             output_encrypted_value_index: 0,
-            output_app_account_authority_index: None,
-            output_acl_domain_key_index: dictionary.intern_key(value.acl_domain_key),
-            output_app_account_index: dictionary.intern_key(value.app_account),
-            output_encrypted_value_label_index: dictionary.intern(value.encrypted_value_label),
+            output_account_authority_index: None,
+            output_domain_index: dictionary.intern_key(value.domain),
+            output_account_index: dictionary.intern_key(value.account),
+            output_label_index: dictionary.intern(value.label),
             output_subject_indexes: dictionary.intern_subjects([subject_a, subject_b]),
             previous_handle: Some(old_handle),
             previous_subjects: Some(value.subjects.clone()),
@@ -1251,7 +1248,7 @@ fn mollusk_fhe_eval_update_shrinks_audience_and_seals_the_outgoing_set() {
     let ix = fhe_eval_ix(
         authority,
         subject_a,
-        value.app_account,
+        value.account,
         host_config,
         args,
         vec![writable(address)],
@@ -1260,7 +1257,7 @@ fn mollusk_fhe_eval_update_shrinks_audience_and_seals_the_outgoing_set() {
         (system_program::ID, system_program_account()),
         (authority, funded_system_account()),
         (subject_a, funded_system_account()),
-        (value.app_account, funded_system_account()),
+        (value.account, funded_system_account()),
         (address, encrypted_value_account(&value)),
         (host_config, host_config_account),
         (event_authority(host::id()), Account::default()),
@@ -1520,19 +1517,22 @@ fn mollusk_denied_caller_cannot_mutate_acl_update_or_eval_output() {
     );
 
     let output_label = label("deny-eval");
-    let output_value_key =
-        zama_solana_acl::derive_value_key(caller.to_bytes(), caller.to_bytes(), output_label);
-    let (output_address, _bump) = host::encrypted_value_address(output_value_key);
+    let output_encrypted_value_id = zama_solana_acl::derive_encrypted_value_id(
+        caller.to_bytes(),
+        caller.to_bytes(),
+        output_label,
+    );
+    let (output_address, _bump) = host::encrypted_value_address(output_encrypted_value_id);
     let mut dictionary = BatchDictionary::default();
     let steps = vec![FheEvalStep::TrivialEncrypt {
         plaintext: [1; 32],
         fhe_type: 5,
         output: FheEvalOutput::AllowedPersistent {
             output_encrypted_value_index: 0,
-            output_app_account_authority_index: None,
-            output_acl_domain_key_index: dictionary.intern_key(caller),
-            output_app_account_index: dictionary.intern_key(caller),
-            output_encrypted_value_label_index: dictionary.intern(output_label),
+            output_account_authority_index: None,
+            output_domain_index: dictionary.intern_key(caller),
+            output_account_index: dictionary.intern_key(caller),
+            output_label_index: dictionary.intern(output_label),
             output_subject_indexes: dictionary.intern_subjects([caller]),
             previous_handle: None,
             previous_subjects: None,
@@ -1639,19 +1639,22 @@ fn mollusk_denied_subject_cannot_enter_via_allow_subjects_or_eval_create() {
     );
 
     let output_label = label("deny-create-subject");
-    let output_value_key =
-        zama_solana_acl::derive_value_key(authority.to_bytes(), authority.to_bytes(), output_label);
-    let (output_address, _bump) = host::encrypted_value_address(output_value_key);
+    let output_encrypted_value_id = zama_solana_acl::derive_encrypted_value_id(
+        authority.to_bytes(),
+        authority.to_bytes(),
+        output_label,
+    );
+    let (output_address, _bump) = host::encrypted_value_address(output_encrypted_value_id);
     let mut dictionary = BatchDictionary::default();
     let steps = vec![FheEvalStep::TrivialEncrypt {
         plaintext: [2; 32],
         fhe_type: 5,
         output: FheEvalOutput::AllowedPersistent {
             output_encrypted_value_index: 0,
-            output_app_account_authority_index: None,
-            output_acl_domain_key_index: dictionary.intern_key(authority),
-            output_app_account_index: dictionary.intern_key(authority),
-            output_encrypted_value_label_index: dictionary.intern(output_label),
+            output_account_authority_index: None,
+            output_domain_index: dictionary.intern_key(authority),
+            output_account_index: dictionary.intern_key(authority),
+            output_label_index: dictionary.intern(output_label),
             output_subject_indexes: dictionary.intern_subjects([authority, denied_subject]),
             previous_handle: None,
             previous_subjects: None,
@@ -1863,13 +1866,13 @@ fn mollusk_fhe_eval_rejects_denied_second_output_authority_in_multi_output_frame
     let (deny_b, deny_b_account) = deny_subject_record_account(authority_b, true);
     let output_a_label = label("multi-deny-a");
     let output_b_label = label("multi-deny-b");
-    let output_a = host::encrypted_value_address(zama_solana_acl::derive_value_key(
+    let output_a = host::encrypted_value_address(zama_solana_acl::derive_encrypted_value_id(
         authority_a.to_bytes(),
         authority_a.to_bytes(),
         output_a_label,
     ))
     .0;
-    let output_b = host::encrypted_value_address(zama_solana_acl::derive_value_key(
+    let output_b = host::encrypted_value_address(zama_solana_acl::derive_encrypted_value_id(
         authority_b.to_bytes(),
         authority_b.to_bytes(),
         output_b_label,
@@ -1882,10 +1885,10 @@ fn mollusk_fhe_eval_rejects_denied_second_output_authority_in_multi_output_frame
             fhe_type: 5,
             output: FheEvalOutput::AllowedPersistent {
                 output_encrypted_value_index: 0,
-                output_app_account_authority_index: None,
-                output_acl_domain_key_index: dictionary.intern_key(authority_a),
-                output_app_account_index: dictionary.intern_key(authority_a),
-                output_encrypted_value_label_index: dictionary.intern(output_a_label),
+                output_account_authority_index: None,
+                output_domain_index: dictionary.intern_key(authority_a),
+                output_account_index: dictionary.intern_key(authority_a),
+                output_label_index: dictionary.intern(output_a_label),
                 output_subject_indexes: dictionary.intern_subjects([authority_a]),
                 previous_handle: None,
                 previous_subjects: None,
@@ -1897,10 +1900,10 @@ fn mollusk_fhe_eval_rejects_denied_second_output_authority_in_multi_output_frame
             fhe_type: 5,
             output: FheEvalOutput::AllowedPersistent {
                 output_encrypted_value_index: 1,
-                output_app_account_authority_index: Some(2),
-                output_acl_domain_key_index: dictionary.intern_key(authority_b),
-                output_app_account_index: dictionary.intern_key(authority_b),
-                output_encrypted_value_label_index: dictionary.intern(output_b_label),
+                output_account_authority_index: Some(2),
+                output_domain_index: dictionary.intern_key(authority_b),
+                output_account_index: dictionary.intern_key(authority_b),
+                output_label_index: dictionary.intern(output_b_label),
                 output_subject_indexes: dictionary.intern_subjects([authority_b]),
                 previous_handle: None,
                 previous_subjects: None,
@@ -1986,19 +1989,22 @@ fn mollusk_paused_state_blocks_acl_update_and_eval_output() {
     );
 
     let output_label = label("pause-eval");
-    let output_value_key =
-        zama_solana_acl::derive_value_key(authority.to_bytes(), authority.to_bytes(), output_label);
-    let (output_address, _bump) = host::encrypted_value_address(output_value_key);
+    let output_encrypted_value_id = zama_solana_acl::derive_encrypted_value_id(
+        authority.to_bytes(),
+        authority.to_bytes(),
+        output_label,
+    );
+    let (output_address, _bump) = host::encrypted_value_address(output_encrypted_value_id);
     let mut dictionary = BatchDictionary::default();
     let steps = vec![FheEvalStep::TrivialEncrypt {
         plaintext: [2; 32],
         fhe_type: 5,
         output: FheEvalOutput::AllowedPersistent {
             output_encrypted_value_index: 0,
-            output_app_account_authority_index: None,
-            output_acl_domain_key_index: dictionary.intern_key(authority),
-            output_app_account_index: dictionary.intern_key(authority),
-            output_encrypted_value_label_index: dictionary.intern(output_label),
+            output_account_authority_index: None,
+            output_domain_index: dictionary.intern_key(authority),
+            output_account_index: dictionary.intern_key(authority),
+            output_label_index: dictionary.intern(output_label),
             output_subject_indexes: dictionary.intern_subjects([owner]),
             previous_handle: None,
             previous_subjects: None,
@@ -2284,14 +2290,14 @@ fn mollusk_fhe_eval_creates_persistent_output_from_local_binary_add() {
     let (rhs_address, rhs_value) =
         new_value_account(authority, authority, label("rhs"), rhs, &[authority]);
     let output_acl_domain_key = authority;
-    let output_app_account = authority;
+    let output_account = authority;
     let output_label = label("sum");
-    let output_value_key = zama_solana_acl::derive_value_key(
+    let output_encrypted_value_id = zama_solana_acl::derive_encrypted_value_id(
         output_acl_domain_key.to_bytes(),
-        output_app_account.to_bytes(),
+        output_account.to_bytes(),
         output_label,
     );
-    let (output_address, _bump) = host::encrypted_value_address(output_value_key);
+    let (output_address, _bump) = host::encrypted_value_address(output_encrypted_value_id);
 
     let mut dictionary = BatchDictionary::default();
     let steps = vec![FheEvalStep::Binary {
@@ -2307,10 +2313,10 @@ fn mollusk_fhe_eval_creates_persistent_output_from_local_binary_add() {
         output_fhe_type: 5,
         output: FheEvalOutput::AllowedPersistent {
             output_encrypted_value_index: 2,
-            output_app_account_authority_index: None,
-            output_acl_domain_key_index: dictionary.intern_key(output_acl_domain_key),
-            output_app_account_index: dictionary.intern_key(output_app_account),
-            output_encrypted_value_label_index: dictionary.intern(output_label),
+            output_account_authority_index: None,
+            output_domain_index: dictionary.intern_key(output_acl_domain_key),
+            output_account_index: dictionary.intern_key(output_account),
+            output_label_index: dictionary.intern(output_label),
             output_subject_indexes: dictionary.intern_subjects([authority]),
             previous_handle: None,
             previous_subjects: None,
@@ -2385,10 +2391,10 @@ fn mollusk_fhe_eval_updates_persistent_output_with_previous_state() {
         output_fhe_type: 5,
         output: FheEvalOutput::AllowedPersistent {
             output_encrypted_value_index: 1,
-            output_app_account_authority_index: None,
-            output_acl_domain_key_index: dictionary.intern_key(authority),
-            output_app_account_index: dictionary.intern_key(authority),
-            output_encrypted_value_label_index: dictionary.intern(label("out")),
+            output_account_authority_index: None,
+            output_domain_index: dictionary.intern_key(authority),
+            output_account_index: dictionary.intern_key(authority),
+            output_label_index: dictionary.intern(label("out")),
             output_subject_indexes: dictionary.intern_subjects([authority]),
             previous_handle: Some(output_handle),
             previous_subjects: Some(previous_subjects),
@@ -2446,22 +2452,22 @@ fn created_public_frame(step_count: usize, created_public_steps: &[usize]) -> Cr
     for step_index in 0..step_count {
         let output = if created_public_steps.contains(&step_index) {
             let output_label = label(&format!("created-public-{step_index}"));
-            let value_key = zama_solana_acl::derive_value_key(
+            let encrypted_value_id = zama_solana_acl::derive_encrypted_value_id(
                 authority.to_bytes(),
                 authority.to_bytes(),
                 output_label,
             );
-            let output_address = host::encrypted_value_address(value_key).0;
+            let output_address = host::encrypted_value_address(encrypted_value_id).0;
             let output_index = u8::try_from(output_metas.len()).unwrap();
             output_metas.push(writable(output_address));
             output_accounts.push((output_address, empty_system_account()));
             outputs.push((step_index as u16, output_address));
             FheEvalOutput::AllowedPersistent {
                 output_encrypted_value_index: output_index,
-                output_app_account_authority_index: None,
-                output_acl_domain_key_index: dictionary.intern_key(authority),
-                output_app_account_index: dictionary.intern_key(authority),
-                output_encrypted_value_label_index: dictionary.intern(output_label),
+                output_account_authority_index: None,
+                output_domain_index: dictionary.intern_key(authority),
+                output_account_index: dictionary.intern_key(authority),
+                output_label_index: dictionary.intern(output_label),
                 output_subject_indexes: dictionary.intern_subjects([authority]),
                 previous_handle: None,
                 previous_subjects: None,
@@ -3742,10 +3748,10 @@ fn mollusk_define_kms_context_rejects_zero_signer() {
 struct EvalFixture {
     program_id: Pubkey,
     authority: Pubkey,
-    app_account: Pubkey,
+    account: Pubkey,
     /// The metered identity: the frame's signed `compute_subject`, which must be a member of the
-    /// persistent input ACL (it authorizes the inputs). Deliberately distinct from `app_account` /
-    /// `app_account_authority` so block-cap tests prove the meter keys on the compute subject and
+    /// persistent input ACL (it authorizes the inputs). Deliberately distinct from `account` /
+    /// `account_authority` so block-cap tests prove the meter keys on the compute subject and
     /// never on the output-ACL authority.
     compute_subject: Pubkey,
     host_config: Pubkey,
@@ -3768,7 +3774,7 @@ impl EvalFixture {
     /// measured compute, so profile addresses must not change between runs.
     fn with_block_cap_keys(cap: u64, authority: Pubkey, compute_subject: Pubkey) -> Self {
         let program_id = host::id();
-        let app_account = authority;
+        let account = authority;
         let (host_config, host_config_account) = host_config_account_with_block_cap(authority, cap);
         let balance_label = label("balance-hcu-fixture");
         let amount_label = label("amount-hcu-fixture");
@@ -3779,24 +3785,24 @@ impl EvalFixture {
         // same identity is what the block cap meters.
         let (balance_value, balance_ev) = new_value_account(
             authority,
-            app_account,
+            account,
             balance_label,
             balance_handle,
             &[compute_subject],
         );
         let (amount_value, amount_ev) = new_value_account(
             authority,
-            app_account,
+            account,
             amount_label,
             amount_handle,
             &[compute_subject],
         );
-        let output_value_key = zama_solana_acl::derive_value_key(
+        let output_encrypted_value_id = zama_solana_acl::derive_encrypted_value_id(
             authority.to_bytes(),
-            app_account.to_bytes(),
+            account.to_bytes(),
             output_label,
         );
-        let (output_value, _bump) = host::encrypted_value_address(output_value_key);
+        let (output_value, _bump) = host::encrypted_value_address(output_encrypted_value_id);
         let context = mollusk_eval_context(
             authority,
             vec![
@@ -3809,7 +3815,7 @@ impl EvalFixture {
         Self {
             program_id,
             authority,
-            app_account,
+            account,
             compute_subject,
             host_config,
             balance_handle,
@@ -3823,7 +3829,7 @@ impl EvalFixture {
     }
 
     /// The identity both HCU PDAs are keyed on: the frame's signed `compute_subject` —
-    /// deliberately NOT `app_account_authority`.
+    /// deliberately NOT `account_authority`.
     fn block_cap_app(&self) -> Pubkey {
         self.compute_subject
     }
@@ -3881,10 +3887,10 @@ impl EvalFixture {
                 output_fhe_type: 5,
                 output: FheEvalOutput::AllowedPersistent {
                     output_encrypted_value_index: 2,
-                    output_app_account_authority_index: None,
-                    output_acl_domain_key_index: dictionary.intern_key(self.authority),
-                    output_app_account_index: dictionary.intern_key(self.app_account),
-                    output_encrypted_value_label_index: dictionary.intern(self.output_label),
+                    output_account_authority_index: None,
+                    output_domain_index: dictionary.intern_key(self.authority),
+                    output_account_index: dictionary.intern_key(self.account),
+                    output_label_index: dictionary.intern(self.output_label),
                     output_subject_indexes: dictionary.intern_subjects([self.authority]),
                     previous_handle: None,
                     previous_subjects: None,
@@ -3907,7 +3913,7 @@ impl EvalFixture {
             host::accounts::FheEval {
                 payer: self.authority,
                 compute_subject: self.compute_subject,
-                app_account_authority: self.app_account,
+                account_authority: self.account,
                 host_config: self.host_config,
                 system_program: system_program::ID,
                 hcu_block_meter: meter,
@@ -3974,10 +3980,10 @@ impl EvalFixture {
             output_fhe_type: 5,
             output: FheEvalOutput::AllowedPersistent {
                 output_encrypted_value_index: 2,
-                output_app_account_authority_index: None,
-                output_acl_domain_key_index: dictionary.intern_key(self.authority),
-                output_app_account_index: dictionary.intern_key(self.app_account),
-                output_encrypted_value_label_index: dictionary.intern(self.output_label),
+                output_account_authority_index: None,
+                output_domain_index: dictionary.intern_key(self.authority),
+                output_account_index: dictionary.intern_key(self.account),
+                output_label_index: dictionary.intern(self.output_label),
                 output_subject_indexes: dictionary.intern_subjects([self.authority]),
                 previous_handle: None,
                 previous_subjects: None,
@@ -3989,7 +3995,7 @@ impl EvalFixture {
             host::accounts::FheEval {
                 payer: self.authority,
                 compute_subject: self.compute_subject,
-                app_account_authority: self.app_account,
+                account_authority: self.account,
                 host_config: self.host_config,
                 system_program: system_program::ID,
                 hcu_block_meter: None,
@@ -4031,7 +4037,7 @@ impl EvalFixture {
             host::accounts::FheEval {
                 payer: self.authority,
                 compute_subject: self.compute_subject,
-                app_account_authority: self.app_account,
+                account_authority: self.account,
                 host_config: self.host_config,
                 system_program: system_program::ID,
                 hcu_block_meter: meter,
@@ -4066,7 +4072,7 @@ impl EvalFixture {
             host::accounts::FheEval {
                 payer: self.authority,
                 compute_subject: self.compute_subject,
-                app_account_authority: self.app_account,
+                account_authority: self.account,
                 host_config: self.host_config,
                 system_program: system_program::ID,
                 hcu_block_meter: meter,
@@ -4093,22 +4099,22 @@ impl EvalFixture {
     /// survives the persist-nothing rejection. Returns the output encrypted value account address and instruction.
     fn input_free_persistent_instruction(&self, meter: Option<Pubkey>) -> (Pubkey, Instruction) {
         let output_label = label("input-free-bootstrap");
-        let output_value_key = zama_solana_acl::derive_value_key(
+        let output_encrypted_value_id = zama_solana_acl::derive_encrypted_value_id(
             self.authority.to_bytes(),
-            self.app_account.to_bytes(),
+            self.account.to_bytes(),
             output_label,
         );
-        let (output_value, _bump) = host::encrypted_value_address(output_value_key);
+        let (output_value, _bump) = host::encrypted_value_address(output_encrypted_value_id);
         let mut dictionary = BatchDictionary::default();
         let steps = vec![FheEvalStep::TrivialEncrypt {
             plaintext: [7; 32],
             fhe_type: 5,
             output: FheEvalOutput::AllowedPersistent {
                 output_encrypted_value_index: 0,
-                output_app_account_authority_index: None,
-                output_acl_domain_key_index: dictionary.intern_key(self.authority),
-                output_app_account_index: dictionary.intern_key(self.app_account),
-                output_encrypted_value_label_index: dictionary.intern(output_label),
+                output_account_authority_index: None,
+                output_domain_index: dictionary.intern_key(self.authority),
+                output_account_index: dictionary.intern_key(self.account),
+                output_label_index: dictionary.intern(output_label),
                 output_subject_indexes: dictionary.intern_subjects([self.authority]),
                 previous_handle: None,
                 previous_subjects: None,
@@ -4120,7 +4126,7 @@ impl EvalFixture {
             host::accounts::FheEval {
                 payer: self.authority,
                 compute_subject: self.compute_subject,
-                app_account_authority: self.app_account,
+                account_authority: self.account,
                 host_config: self.host_config,
                 system_program: system_program::ID,
                 hcu_block_meter: meter,
@@ -4141,7 +4147,7 @@ impl EvalFixture {
     }
 
     /// A persistent-output frame that reuses the fixture's `compute_subject` (and thus its meter) but
-    /// with a caller-chosen `payer` and `app_account_authority`, binding its own fresh output
+    /// with a caller-chosen `payer` and `account_authority`, binding its own fresh output
     /// encrypted value account under that authority. Everything a caller controls is varied except the ACL-bound
     /// compute subject, so this drives the #1708 regression: proving no account rotation yields a
     /// fresh per-slot meter. Returns the output encrypted value account address and the instruction.
@@ -4152,12 +4158,12 @@ impl EvalFixture {
         output_label: [u8; 32],
         meter: Option<Pubkey>,
     ) -> (Pubkey, Instruction) {
-        let output_value_key = zama_solana_acl::derive_value_key(
+        let output_encrypted_value_id = zama_solana_acl::derive_encrypted_value_id(
             app_authority.to_bytes(),
             app_authority.to_bytes(),
             output_label,
         );
-        let (output_value, _bump) = host::encrypted_value_address(output_value_key);
+        let (output_value, _bump) = host::encrypted_value_address(output_encrypted_value_id);
         let mut dictionary = BatchDictionary::default();
         let steps = vec![
             FheEvalStep::Binary {
@@ -4182,10 +4188,10 @@ impl EvalFixture {
                 output_fhe_type: 5,
                 output: FheEvalOutput::AllowedPersistent {
                     output_encrypted_value_index: 2,
-                    output_app_account_authority_index: None,
-                    output_acl_domain_key_index: dictionary.intern_key(app_authority),
-                    output_app_account_index: dictionary.intern_key(app_authority),
-                    output_encrypted_value_label_index: dictionary.intern(output_label),
+                    output_account_authority_index: None,
+                    output_domain_index: dictionary.intern_key(app_authority),
+                    output_account_index: dictionary.intern_key(app_authority),
+                    output_label_index: dictionary.intern(output_label),
                     output_subject_indexes: dictionary.intern_subjects([app_authority]),
                     previous_handle: None,
                     previous_subjects: None,
@@ -4198,7 +4204,7 @@ impl EvalFixture {
             host::accounts::FheEval {
                 payer,
                 compute_subject: self.compute_subject,
-                app_account_authority: app_authority,
+                account_authority: app_authority,
                 host_config: self.host_config,
                 system_program: system_program::ID,
                 hcu_block_meter: meter,
@@ -4689,12 +4695,12 @@ fn mollusk_fhe_eval_clean_first_call_lazy_creates_meter_at_frame_cost() {
         fixture.context.mollusk.sysvars.clock.slot
     );
     read_encrypted_value_from_context(&fixture.context, fixture.output_value);
-    // Metering keys on the compute_subject, never on app_account_authority: the two identities
+    // Metering keys on the compute_subject, never on account_authority: the two identities
     // differ in this fixture and nothing accrued under the latter's key.
-    assert_ne!(fixture.block_cap_app(), fixture.app_account);
+    assert_ne!(fixture.block_cap_app(), fixture.account);
     assert!(read_hcu_block_meter(
         &fixture.context,
-        host::hcu_block_meter_address(fixture.app_account).0
+        host::hcu_block_meter_address(fixture.account).0
     )
     .is_none());
 }
@@ -4735,7 +4741,7 @@ fn mollusk_fhe_eval_same_compute_subject_accumulates_across_varied_accounts_and_
     // #1708 regression: the block cap keys on the ACL-bound `compute_subject`, so a caller cannot
     // mint a fresh per-slot meter by rotating any account it controls. Two frames in the same slot
     // share the SAME compute subject (hence the SAME meter) but vary everything else a caller could
-    // vary — a different payer AND a different app_account_authority, each binding its own fresh
+    // vary — a different payer AND a different account_authority, each binding its own fresh
     // output encrypted value account. The cap fits exactly one frame, so the second frame accumulates onto the same
     // meter and trips the cap rather than getting a fresh budget.
     let fixture = EvalFixture::with_block_cap(FIXTURE_FRAME_HCU);
@@ -4807,7 +4813,7 @@ fn mollusk_fhe_eval_extra_remaining_account_still_rejected_with_block_cap() {
 #[test]
 fn mollusk_fhe_eval_transient_only_frame_is_metered_via_compute_subject() {
     // A transient-only frame (all AllowedLocal outputs) creates no persistent ACL record, so
-    // nothing welds `app_account_authority` on-chain — but the metering identity is the signed
+    // nothing welds `account_authority` on-chain — but the metering identity is the signed
     // `compute_subject`, independent of the frame's output shape, so the frame is still charged
     // in full. (A frame with no persistent output would otherwise escape a per-output-authority
     // meter entirely; this is the regression guard for that gap.)
@@ -5041,7 +5047,7 @@ fn mmr_inclusion_proof(proof: zama_solana_acl::MmrProof) -> host::instructions::
 fn seal_public_leaf(
     admin: Pubkey,
     subject: Pubkey,
-    acl_domain_key: Pubkey,
+    domain: Pubkey,
     host_config: Pubkey,
     host_config_account: &Account,
     handle: [u8; 32],
@@ -5050,8 +5056,7 @@ fn seal_public_leaf(
     EncryptedValue,
     host::instructions::MmrInclusionProof,
 ) {
-    let (address, value) =
-        new_value_account(acl_domain_key, admin, label("balance"), handle, &[subject]);
+    let (address, value) = new_value_account(domain, admin, label("balance"), handle, &[subject]);
     let seal_ix = make_handle_public_ix(admin, subject, address, host_config, handle);
     let seal_accounts = vec![
         (system_program::ID, system_program_account()),
@@ -5846,14 +5851,14 @@ fn cost_snapshot_verify_public_decrypt() {
     // recovery, one MMR inclusion check. Per-consume CU is the price of statelessness (#1704).
     let admin = Pubkey::new_from_array([0x31; 32]);
     let subject = Pubkey::new_from_array([0x32; 32]);
-    let acl_domain_key = Pubkey::new_from_array([0x33; 32]);
+    let domain = Pubkey::new_from_array([0x33; 32]);
     let (host_config, host_config_account) = host_config_with_context(admin, KMS_CONTEXT_ID);
     let (kms_context, kms_context_acct) = kms_context_account(KMS_CONTEXT_ID);
     let handle = handle_for_chain(5, 5);
     let (address, sealed, proof) = seal_public_leaf(
         admin,
         subject,
-        acl_domain_key,
+        domain,
         host_config,
         &host_config_account,
         handle,

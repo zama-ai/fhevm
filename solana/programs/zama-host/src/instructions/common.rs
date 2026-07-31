@@ -175,13 +175,13 @@ pub(super) fn check_hcu_ordering(total: u64, depth: u64) -> Result<()> {
 }
 
 pub(super) fn assert_output_acl_metadata(
-    app_account_authority: Pubkey,
-    app_account: Pubkey,
+    account_authority: Pubkey,
+    account: Pubkey,
     subjects: &[Pubkey],
 ) -> Result<()> {
     require_keys_eq!(
-        app_account_authority,
-        app_account,
+        account_authority,
+        account,
         ZamaHostError::AppAccountAuthorityMismatch
     );
     require!(
@@ -205,7 +205,7 @@ pub(super) fn assert_output_acl_metadata(
 }
 
 /// Decodes an `EncryptedValue` and checks it is program-owned and the
-/// canonical PDA for its stored `(domain, app_account, label)` triple.
+/// canonical PDA for its stored `(domain, account, label)` triple.
 pub(super) fn read_canonical_encrypted_value(info: &AccountInfo) -> Result<EncryptedValue> {
     require_keys_eq!(
         *info.owner,
@@ -215,7 +215,7 @@ pub(super) fn read_canonical_encrypted_value(info: &AccountInfo) -> Result<Encry
     let data = info.try_borrow_data()?;
     let mut slice: &[u8] = &data;
     let value = EncryptedValue::try_deserialize(&mut slice)?;
-    let (expected, expected_bump) = encrypted_value_address(value.value_key());
+    let (expected, expected_bump) = encrypted_value_address(value.encrypted_value_id());
     require_keys_eq!(
         info.key(),
         expected,

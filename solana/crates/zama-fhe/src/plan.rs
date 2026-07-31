@@ -65,7 +65,7 @@ impl EvalPlan {
     /// persistent input ACLs, permission records, transient sessions, and writable
     /// persistent output ACL records. `output_authorities` must contain signer
     /// witnesses for persistent outputs whose app account is not the fixed CPI
-    /// `app_account_authority`.
+    /// `account_authority`.
     pub fn resolve_accounts<'info>(
         &self,
         dynamic_accounts: impl IntoIterator<Item = AccountInfo<'info>>,

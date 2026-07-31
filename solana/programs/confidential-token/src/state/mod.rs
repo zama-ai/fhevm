@@ -57,33 +57,19 @@ pub fn burn_redemption_address(mint: Pubkey, burned_handle: [u8; 32]) -> (Pubkey
 }
 
 /// Returns the canonical `EncryptedValue` PDA for a token balance field.
-pub fn balance_encrypted_value_address(
-    acl_domain_key: Pubkey,
-    app_account: Pubkey,
-) -> (Pubkey, u8) {
-    encrypted_value_address(acl_domain_key, app_account, balance_label())
+pub fn balance_encrypted_value_address(domain: Pubkey, account: Pubkey) -> (Pubkey, u8) {
+    encrypted_value_address(domain, account, balance_label())
 }
 
 /// Returns the canonical `EncryptedValue` PDA for the encrypted total supply field.
-pub fn total_supply_encrypted_value_address(
-    acl_domain_key: Pubkey,
-    app_account: Pubkey,
-) -> (Pubkey, u8) {
-    encrypted_value_address(acl_domain_key, app_account, total_supply_label())
+pub fn total_supply_encrypted_value_address(domain: Pubkey, account: Pubkey) -> (Pubkey, u8) {
+    encrypted_value_address(domain, account, total_supply_label())
 }
 
 /// Returns the canonical `EncryptedValue` PDA for an arbitrary label, delegating
 /// key derivation to ZamaHost so app and host agree exactly.
-pub fn encrypted_value_address(
-    acl_domain_key: Pubkey,
-    app_account: Pubkey,
-    encrypted_value_label: [u8; 32],
-) -> (Pubkey, u8) {
-    zama_host::encrypted_value_address(value_key(
-        acl_domain_key,
-        app_account,
-        encrypted_value_label,
-    ))
+pub fn encrypted_value_address(domain: Pubkey, account: Pubkey, label: [u8; 32]) -> (Pubkey, u8) {
+    zama_host::encrypted_value_address(encrypted_value_id_bytes(domain, account, label))
 }
 
 /// Fixed encrypted value label for confidential balances.
@@ -131,17 +117,9 @@ pub fn transferred_amount_label() -> [u8; 32] {
     *b"transferred_amount______________"
 }
 
-/// Delegates value-key derivation to the shared ACL crate so app and host agree exactly.
-pub fn value_key(
-    acl_domain_key: Pubkey,
-    app_account: Pubkey,
-    encrypted_value_label: [u8; 32],
-) -> [u8; 32] {
-    zama_solana_acl::derive_value_key(
-        acl_domain_key.to_bytes(),
-        app_account.to_bytes(),
-        encrypted_value_label,
-    )
+/// Delegates encrypted-value-ID derivation to the shared ACL crate so app and host agree exactly.
+pub fn encrypted_value_id_bytes(domain: Pubkey, account: Pubkey, label: [u8; 32]) -> [u8; 32] {
+    zama_solana_acl::derive_encrypted_value_id(domain.to_bytes(), account.to_bytes(), label)
 }
 
 #[cfg(test)]

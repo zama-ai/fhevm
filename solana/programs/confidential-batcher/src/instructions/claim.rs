@@ -133,7 +133,7 @@ pub fn claim<'info>(ctx: Context<'info, Claim<'info>>) -> Result<()> {
     let joined = fhe::uint64_operand(&joined_value)?;
     let claim_binding = fhe::PersistentBinding::bind(
         ctx.accounts.claim_amount_value.to_account_info(),
-        zama_fhe::EncryptedValueKey::new(
+        zama_fhe::EncryptedValueId::new(
             batch_key,
             batch_authority,
             zama_fhe::PersistentLabel::new(claim_amount_label(user)),

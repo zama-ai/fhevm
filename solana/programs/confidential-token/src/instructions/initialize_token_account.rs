@@ -66,9 +66,9 @@ pub fn initialize_token_account<'info>(
         token_account.bump = ctx.bumps.token_account;
     }
     require_keys_eq!(
-        ctx.accounts.mint.acl_domain_key,
+        ctx.accounts.mint.domain,
         ctx.accounts.mint.key(),
-        ConfidentialTokenError::AclDomainKeyMismatch
+        ConfidentialTokenError::DomainMismatch
     );
     require_keys_eq!(
         ctx.accounts.compute_signer.key(),
@@ -82,7 +82,7 @@ pub fn initialize_token_account<'info>(
     let balance_encrypted_value = ctx.accounts.balance_encrypted_value.key();
     let balance_output = fhe::PersistentOutput::new(
         ctx.accounts.balance_encrypted_value.to_account_info(),
-        encrypted_value_key(mint_key, token_account_key, balance_label()),
+        encrypted_value_id(mint_key, token_account_key, balance_label()),
         fhe::PersistentAudience::for_owner(owner, compute_signer),
     )?;
     let mut builder =

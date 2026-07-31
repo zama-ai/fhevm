@@ -161,7 +161,7 @@ pub struct UserDecryptionDelegationUpdatedEvent {
     /// Delegate allowed to request user decryption.
     pub delegate: Pubkey,
     /// App context for the delegation.
-    pub app_account: Pubkey,
+    pub account: Pubkey,
     /// Monotonic counter after this update.
     pub delegation_counter: u64,
     /// Expiration slot before this update.

@@ -91,7 +91,7 @@ pub enum ConfidentialAmountKind {
 impl ConfidentialAmountKind {
     // Only reached by the `poc`-gated create_random_amount helpers.
     #[cfg_attr(not(feature = "poc"), allow(dead_code))]
-    pub(crate) fn encrypted_value_label(self) -> [u8; 32] {
+    pub(crate) fn label(self) -> [u8; 32] {
         match self {
             ConfidentialAmountKind::Transfer => transfer_amount_label(),
             ConfidentialAmountKind::Burn => burn_amount_label(),

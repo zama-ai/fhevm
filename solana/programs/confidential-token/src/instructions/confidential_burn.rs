@@ -171,7 +171,7 @@ pub struct ConfidentialBurnFromValue<'info> {
     pub burned_amount_value: UncheckedAccount<'info>,
     /// The existing encrypted amount to burn: a computed or received `euint64` handle. Read-only
     /// persistent operand — never replaced, never consumed. Its address is the canonical PDA of its
-    /// own `(acl_domain_key, app_account, encrypted_value_label)` fields, so an encrypted value account from any app
+    /// own `(domain, account, label)` fields, so an encrypted value account from any app
     /// may be passed here once its owner has granted the mint's compute subject via `allow_subjects`.
     pub amount_value: Box<Account<'info, zama_host::EncryptedValue>>,
     /// CHECK: Anchor event CPI authority for the Zama host program.
@@ -388,7 +388,7 @@ fn execute_burn<'info>(
 
     let balance_output = fhe::PersistentOutput::new(
         accounts.balance_value.clone(),
-        encrypted_value_key(mint_key, token_account_key, balance_label()),
+        encrypted_value_id(mint_key, token_account_key, balance_label()),
         fhe::PersistentAudience::for_owner(owner, compute_signer),
     )?;
     // ERC-7984 `unwrap` parity (`makePubliclyDecryptable(unwrapAmount)`): the burned delta is born
@@ -396,12 +396,12 @@ fn execute_burn<'info>(
     // later burn updates this shared encrypted value account (DD-036 / Vector 2) — with no second make-public CPI.
     let burned_output = fhe::PersistentOutput::new_public(
         accounts.burned_amount_value.clone(),
-        encrypted_value_key(mint_key, token_account_key, burned_amount_label()),
+        encrypted_value_id(mint_key, token_account_key, burned_amount_label()),
         fhe::PersistentAudience::for_owner(owner, compute_signer),
     )?;
     let total_supply_output = fhe::PersistentOutput::new(
         accounts.total_supply_value.clone(),
-        encrypted_value_key(mint_key, total_supply_authority, total_supply_label()),
+        encrypted_value_id(mint_key, total_supply_authority, total_supply_label()),
         fhe::PersistentAudience::compute_only(compute_signer),
     )?;
 
@@ -432,9 +432,9 @@ fn execute_burn<'info>(
             let value = fhe::read_encrypted_value(amount_value)?;
             uint64_from_value(
                 value.current_handle,
-                value.acl_domain_key,
-                value.app_account,
-                value.encrypted_value_label,
+                value.domain,
+                value.account,
+                value.label,
             )?
         }
     };

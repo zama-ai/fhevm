@@ -5,7 +5,7 @@ use anchor_lang::prelude::Pubkey;
 use zama_host::{FheBinaryOpCode, FheEvalOperand, FheEvalOutput, FheEvalStep, FheUnaryOpCode};
 
 use crate::accounts::{EvalAccountMeta, EvalAppAuthority};
-use crate::acl::EncryptedValueKey;
+use crate::acl::EncryptedValueId;
 use crate::operand::{EvalBuilderScope, Operand, OperandKind};
 use crate::{EvalBuildError, Result};
 
@@ -254,20 +254,20 @@ fn validate_lowered_output(
         FheEvalOutput::AllowedLocal => {}
         FheEvalOutput::AllowedPersistent {
             output_encrypted_value_index,
-            output_app_account_authority_index,
-            output_acl_domain_key_index,
-            output_app_account_index,
-            output_encrypted_value_label_index,
+            output_account_authority_index,
+            output_domain_index,
+            output_account_index,
+            output_label_index,
             output_subject_indexes,
             ..
         } => {
             mark_lowered_account(used_accounts, *output_encrypted_value_index)?;
-            if let Some(index) = output_app_account_authority_index {
+            if let Some(index) = output_account_authority_index {
                 mark_lowered_account(used_accounts, *index)?;
             }
-            mark_lowered_dictionary_entry(used_dictionary, *output_acl_domain_key_index)?;
-            mark_lowered_dictionary_entry(used_dictionary, *output_app_account_index)?;
-            mark_lowered_dictionary_entry(used_dictionary, *output_encrypted_value_label_index)?;
+            mark_lowered_dictionary_entry(used_dictionary, *output_domain_index)?;
+            mark_lowered_dictionary_entry(used_dictionary, *output_account_index)?;
+            mark_lowered_dictionary_entry(used_dictionary, *output_label_index)?;
             for index in output_subject_indexes {
                 mark_lowered_dictionary_entry(used_dictionary, *index)?;
             }
@@ -572,9 +572,9 @@ pub(crate) fn validate_subjects(subjects: &[Pubkey]) -> Result<()> {
     Ok(())
 }
 
-pub(crate) fn validate_encrypted_value_key(key: &EncryptedValueKey) -> Result<()> {
-    if key.namespace == Pubkey::default() || key.account == Pubkey::default() {
-        return Err(EvalBuildError::InvalidEncryptedValueKey);
+pub(crate) fn validate_encrypted_value_id(key: &EncryptedValueId) -> Result<()> {
+    if key.domain == Pubkey::default() || key.account == Pubkey::default() {
+        return Err(EvalBuildError::InvalidEncryptedValueId);
     }
     Ok(())
 }

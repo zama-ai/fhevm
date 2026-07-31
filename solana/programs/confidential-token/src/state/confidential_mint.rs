@@ -12,7 +12,7 @@ pub struct ConfidentialMint {
     /// Admin/authority that created the mint.
     pub authority: Pubkey,
     /// ACL domain key, currently equal to the mint pubkey.
-    pub acl_domain_key: Pubkey,
+    pub domain: Pubkey,
     /// Program-controlled compute signer PDA.
     pub compute_signer: Pubkey,
     /// Underlying SPL mint wrapped by this confidential mint.

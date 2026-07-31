@@ -206,26 +206,26 @@ impl CleartextLedger {
         let mut persistent_outputs = 0;
         for (step, value) in eval_args[0].steps.iter().zip(outputs) {
             let host::FheEvalOutput::AllowedPersistent {
-                output_acl_domain_key_index,
-                output_app_account_index,
-                output_encrypted_value_label_index,
+                output_domain_index,
+                output_account_index,
+                output_label_index,
                 ..
             } = eval_step_output(step)
             else {
                 continue;
             };
-            let value_key = zama_solana_acl::derive_value_key(
+            let encrypted_value_id = zama_solana_acl::derive_encrypted_value_id(
                 eval_args[0]
-                    .dictionary_bytes(*output_acl_domain_key_index)
+                    .dictionary_bytes(*output_domain_index)
                     .expect("valid dictionary index"),
                 eval_args[0]
-                    .dictionary_bytes(*output_app_account_index)
+                    .dictionary_bytes(*output_account_index)
                     .expect("valid dictionary index"),
                 eval_args[0]
-                    .dictionary_bytes(*output_encrypted_value_label_index)
+                    .dictionary_bytes(*output_label_index)
                     .expect("valid dictionary index"),
             );
-            let address = host::encrypted_value_address(value_key).0;
+            let address = host::encrypted_value_address(encrypted_value_id).0;
             let persisted = read_encrypted_value(context, address);
             self.values.insert(persisted.current_handle, value);
             persistent_outputs += 1;
@@ -359,22 +359,19 @@ fn deny_subject_record_account(subject: Pubkey, denied: bool) -> (Pubkey, Accoun
 /// Builds a canonical `EncryptedValue` encrypted value account for direct account-map seeding, mirroring
 /// `host_mollusk.rs::new_value_account` for the token program's ACL domain (the mint).
 fn new_encrypted_value(
-    acl_domain_key: Pubkey,
-    app_account: Pubkey,
-    encrypted_value_label: [u8; 32],
+    domain: Pubkey,
+    account: Pubkey,
+    label: [u8; 32],
     handle: [u8; 32],
     subjects: &[Pubkey],
 ) -> (Pubkey, host::EncryptedValue) {
-    let value_key = zama_solana_acl::derive_value_key(
-        acl_domain_key.to_bytes(),
-        app_account.to_bytes(),
-        encrypted_value_label,
-    );
-    let (address, bump) = host::encrypted_value_address(value_key);
+    let encrypted_value_id =
+        zama_solana_acl::derive_encrypted_value_id(domain.to_bytes(), account.to_bytes(), label);
+    let (address, bump) = host::encrypted_value_address(encrypted_value_id);
     let value = host::EncryptedValue {
-        acl_domain_key,
-        app_account,
-        encrypted_value_label,
+        domain,
+        account,
+        label,
         current_handle: handle,
         subjects: subjects.to_vec(),
         leaf_count: 0,
@@ -605,7 +602,7 @@ impl TokenFixture {
             lamports: 1_000_000_000,
             data: serialized_account(token::ConfidentialMint {
                 authority: self.owner,
-                acl_domain_key: self.mint,
+                domain: self.mint,
                 compute_signer: self.compute_signer,
                 underlying_mint: Pubkey::new_unique(),
                 decimals: 6,
@@ -886,17 +883,17 @@ fn confidential_transfer_from_value_ix(
 }
 
 /// Seeds a spendable amount encrypted value account (a stand-in for a computed/received `euint64` handle) at the
-/// canonical PDA `(mint, app_account, label)` with the given subjects and current handle, and
+/// canonical PDA `(mint, account, label)` with the given subjects and current handle, and
 /// returns its address.
 fn seed_amount_value(
     fixture: &TokenFixture,
     accounts: &mut HashMap<Pubkey, Account>,
-    app_account: Pubkey,
+    account: Pubkey,
     label: [u8; 32],
     handle: [u8; 32],
     subjects: &[Pubkey],
 ) -> Pubkey {
-    let (address, value) = new_encrypted_value(fixture.mint, app_account, label, handle, subjects);
+    let (address, value) = new_encrypted_value(fixture.mint, account, label, handle, subjects);
     accounts.insert(address, encrypted_value_account(&value));
     address
 }
@@ -1018,19 +1015,16 @@ fn mollusk_initialize_mint_creates_total_supply_encrypted_value() {
 
     let stored = read_confidential_mint(&context, mint);
     assert_eq!(stored.authority, authority);
-    assert_eq!(stored.acl_domain_key, mint);
+    assert_eq!(stored.domain, mint);
     assert_eq!(stored.compute_signer, compute_signer);
     assert_eq!(
         stored.total_supply_encrypted_value,
         total_supply_encrypted_value
     );
     let supply_value = read_encrypted_value(&context, total_supply_encrypted_value);
-    assert_eq!(supply_value.acl_domain_key, mint);
-    assert_eq!(supply_value.app_account, total_supply_authority);
-    assert_eq!(
-        supply_value.encrypted_value_label,
-        token::total_supply_label()
-    );
+    assert_eq!(supply_value.domain, mint);
+    assert_eq!(supply_value.account, total_supply_authority);
+    assert_eq!(supply_value.label, token::total_supply_label());
     assert!(supply_value.has_subject(compute_signer));
 }
 
@@ -1057,9 +1051,9 @@ fn mollusk_initialize_token_account_creates_initial_balance_encrypted_value() {
     assert_eq!(stored.balance_encrypted_value, balance_encrypted_value);
 
     let balance_value = read_encrypted_value(&context, balance_encrypted_value);
-    assert_eq!(balance_value.acl_domain_key, fixture.mint);
-    assert_eq!(balance_value.app_account, token_account);
-    assert_eq!(balance_value.encrypted_value_label, token::balance_label());
+    assert_eq!(balance_value.domain, fixture.mint);
+    assert_eq!(balance_value.account, token_account);
+    assert_eq!(balance_value.label, token::balance_label());
     assert!(balance_value.has_subject(owner));
     assert!(balance_value.has_subject(fixture.compute_signer));
 
@@ -1252,12 +1246,9 @@ fn mollusk_confidential_transfer_updates_value_accounts_and_cleartext_balances()
 
     // A encrypted value account entry for the transferred amount was created (first bind) at the canonical PDA.
     let transferred = read_encrypted_value(&context, transferred_value_address);
-    assert_eq!(transferred.acl_domain_key, fixture.mint);
-    assert_eq!(transferred.app_account, fixture.alice_token);
-    assert_eq!(
-        transferred.encrypted_value_label,
-        token::transferred_amount_label()
-    );
+    assert_eq!(transferred.domain, fixture.mint);
+    assert_eq!(transferred.account, fixture.alice_token);
+    assert_eq!(transferred.label, token::transferred_amount_label());
     assert!(transferred.has_subject(fixture.owner));
     assert!(transferred.has_subject(fixture.bob_owner));
     assert!(transferred.has_subject(fixture.compute_signer));
@@ -2159,7 +2150,7 @@ fn mollusk_confidential_transfer_rejects_balance_wrong_mint_acl_domain() {
         fixture.alice_initial,
         &[fixture.owner, fixture.compute_signer],
     );
-    wrong_domain_value.acl_domain_key = wrong_mint;
+    wrong_domain_value.domain = wrong_mint;
     accounts.insert(
         fixture.alice_balance_value,
         encrypted_value_account(&wrong_domain_value),
@@ -2185,7 +2176,7 @@ fn mollusk_confidential_transfer_rejects_balance_wrong_mint_acl_domain() {
 
     let alice_balance = read_encrypted_value(&context, fixture.alice_balance_value);
     let bob_balance = read_encrypted_value(&context, fixture.bob_balance_value);
-    assert_eq!(alice_balance.acl_domain_key, wrong_mint);
+    assert_eq!(alice_balance.domain, wrong_mint);
     assert_eq!(alice_balance.current_handle, fixture.alice_initial);
     assert_eq!(bob_balance.current_handle, fixture.bob_initial);
     assert!(account_is_system_owned_and_empty(
@@ -2199,17 +2190,17 @@ fn mollusk_confidential_transfer_rejects_balance_wrong_token_account_app_account
     let fixture = TokenFixture::new();
     let mut accounts = fixture.base_accounts();
     let wrong_token_account = Pubkey::new_unique();
-    let (_, mut wrong_app_account_value) = new_encrypted_value(
+    let (_, mut wrong_account_value) = new_encrypted_value(
         fixture.mint,
         fixture.alice_token,
         token::balance_label(),
         fixture.alice_initial,
         &[fixture.owner, fixture.compute_signer],
     );
-    wrong_app_account_value.app_account = wrong_token_account;
+    wrong_account_value.account = wrong_token_account;
     accounts.insert(
         fixture.alice_balance_value,
-        encrypted_value_account(&wrong_app_account_value),
+        encrypted_value_account(&wrong_account_value),
     );
     let context = mollusk().with_context(accounts);
     let amount_handle = handle_for_chain(35, BALANCE_FHE_TYPE);
@@ -2232,7 +2223,7 @@ fn mollusk_confidential_transfer_rejects_balance_wrong_token_account_app_account
 
     let alice_balance = read_encrypted_value(&context, fixture.alice_balance_value);
     let bob_balance = read_encrypted_value(&context, fixture.bob_balance_value);
-    assert_eq!(alice_balance.app_account, wrong_token_account);
+    assert_eq!(alice_balance.account, wrong_token_account);
     assert_eq!(alice_balance.current_handle, fixture.alice_initial);
     assert_eq!(bob_balance.current_handle, fixture.bob_initial);
     assert!(account_is_system_owned_and_empty(
@@ -2497,7 +2488,7 @@ impl BurnRedeemFixture {
             lamports: 1_000_000_000,
             data: serialized_account(token::ConfidentialMint {
                 authority: self.owner,
-                acl_domain_key: self.mint,
+                domain: self.mint,
                 compute_signer: self.compute_signer,
                 underlying_mint: self.underlying_mint,
                 decimals: 6,
@@ -2651,17 +2642,17 @@ fn confidential_burn_from_value_ix(
 }
 
 /// Seeds a spendable amount encrypted value account (a stand-in for a computed/received `euint64` handle) at the
-/// canonical PDA `(mint, app_account, label)` with the given subjects and current handle into the
+/// canonical PDA `(mint, account, label)` with the given subjects and current handle into the
 /// burn fixture's account map, returning its address.
 fn seed_burn_amount_value(
     fixture: &BurnRedeemFixture,
     accounts: &mut HashMap<Pubkey, Account>,
-    app_account: Pubkey,
+    account: Pubkey,
     label: [u8; 32],
     handle: [u8; 32],
     subjects: &[Pubkey],
 ) -> Pubkey {
-    let (address, value) = new_encrypted_value(fixture.mint, app_account, label, handle, subjects);
+    let (address, value) = new_encrypted_value(fixture.mint, account, label, handle, subjects);
     accounts.insert(address, encrypted_value_account(&value));
     address
 }
@@ -3527,7 +3518,7 @@ impl DiscloseFixture {
             lamports: 1_000_000_000,
             data: serialized_account(token::ConfidentialMint {
                 authority: self.owner,
-                acl_domain_key: self.mint,
+                domain: self.mint,
                 compute_signer: self.compute_signer,
                 underlying_mint: Pubkey::new_unique(),
                 decimals: 6,
@@ -3567,15 +3558,15 @@ impl DiscloseFixture {
 /// handle h2), modeling the pinned handle becoming historical after it was sealed public.
 /// `subjects` must hold at least two entries when updating.
 fn public_leaf_value_account(
+    expected_address: Pubkey,
     account: Pubkey,
-    app_account: Pubkey,
     mint: Pubkey,
     label: [u8; 32],
     subjects: &[Pubkey],
     pinned: [u8; 32],
     update_to: Option<[u8; 32]>,
 ) -> (host::EncryptedValue, host::instructions::MmrInclusionProof) {
-    let acct = account.to_bytes();
+    let acct = expected_address.to_bytes();
     let mut leaves = vec![zama_solana_acl::public_decrypt_leaf_commitment(
         acct, 0, pinned,
     )];
@@ -3598,8 +3589,11 @@ fn public_leaf_value_account(
         }
         None => pinned,
     };
-    let (address, mut value) = new_encrypted_value(mint, app_account, label, current, subjects);
-    assert_eq!(address, account, "encrypted value account address mismatch");
+    let (address, mut value) = new_encrypted_value(mint, account, label, current, subjects);
+    assert_eq!(
+        address, expected_address,
+        "encrypted value account address mismatch"
+    );
     value.leaf_count = leaves.len() as u64;
     value.peaks = zama_solana_acl::mmr_peaks_from_leaves(&leaves);
     let proof = zama_solana_acl::mmr_build_proof(&leaves, 0).expect("proof for leaf 0");
@@ -3878,12 +3872,12 @@ fn mollusk_disclose_secp_rejects_foreign_public_decrypt_proof() {
 #[test]
 fn mollusk_disclose_secp_rejects_foreign_mint_domain() {
     // The disclosed encrypted value account must belong to this mint's ACL domain: the token layer binds
-    // encrypted_value.acl_domain_key to the mint so the emitted event is genuinely token-scoped.
+    // encrypted_value.domain to the mint so the emitted event is genuinely token-scoped.
     // A encrypted value account under a different domain is rejected before the verifier CPI.
     let fixture = DiscloseFixture::new();
     let pinned = handle_for_chain(48, BALANCE_FHE_TYPE);
     let foreign_mint = Pubkey::new_unique();
-    // A public encrypted value account whose acl_domain_key is a different mint, but whose canonical address is
+    // A public encrypted value account whose domain is a different mint, but whose canonical address is
     // computed under that foreign domain so the account still deserializes as a valid EncryptedValue.
     let (foreign_value, proof) = public_leaf_value_account(
         token::encrypted_value_address(
@@ -3922,9 +3916,7 @@ fn mollusk_disclose_secp_rejects_foreign_mint_domain() {
             extra_data,
             proof,
         ),
-        &[token_error(
-            token::ConfidentialTokenError::AclDomainKeyMismatch,
-        )],
+        &[token_error(token::ConfidentialTokenError::DomainMismatch)],
     );
 }
 

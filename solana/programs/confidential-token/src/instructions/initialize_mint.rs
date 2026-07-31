@@ -60,7 +60,7 @@ pub fn initialize_mint<'info>(ctx: Context<'info, InitializeMint<'info>>) -> Res
     let total_supply_encrypted_value = ctx.accounts.total_supply_encrypted_value.key();
     let total_supply_output = fhe::PersistentOutput::new(
         ctx.accounts.total_supply_encrypted_value.to_account_info(),
-        encrypted_value_key(mint_key, total_supply_authority, total_supply_label()),
+        encrypted_value_id(mint_key, total_supply_authority, total_supply_label()),
         fhe::PersistentAudience::compute_only(compute_signer),
     )?;
     let mut builder =
@@ -110,7 +110,7 @@ pub fn initialize_mint<'info>(ctx: Context<'info, InitializeMint<'info>>) -> Res
     let total_supply_handle = total_supply_output.handle()?;
     let mint = &mut ctx.accounts.mint;
     mint.authority = ctx.accounts.authority.key();
-    mint.acl_domain_key = mint_key;
+    mint.domain = mint_key;
     mint.compute_signer = compute_signer;
     mint.underlying_mint = ctx.accounts.underlying_mint.key();
     mint.decimals = ctx.accounts.underlying_mint.decimals;

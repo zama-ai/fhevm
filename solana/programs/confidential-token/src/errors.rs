@@ -43,7 +43,7 @@ pub enum ConfidentialTokenError {
     VaultAccountMismatch,
     /// Confidential mint ACL domain key was not the expected mint key.
     #[msg("Confidential mint ACL domain key is invalid")]
-    AclDomainKeyMismatch,
+    DomainMismatch,
     /// Compute signer PDA did not match the confidential mint metadata.
     #[msg("Compute signer does not match confidential mint")]
     ComputeSignerMismatch,

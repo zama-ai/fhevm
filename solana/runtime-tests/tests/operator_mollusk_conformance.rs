@@ -328,12 +328,12 @@ impl EvalFlow {
 
     fn readonly_persistent_output(&mut self) -> FheEvalOutput {
         let label = [99; 32];
-        let value_key = zama_solana_acl::derive_value_key(
+        let encrypted_value_id = zama_solana_acl::derive_encrypted_value_id(
             self.authority.to_bytes(),
             self.authority.to_bytes(),
             label,
         );
-        let address = host::encrypted_value_address(value_key).0;
+        let address = host::encrypted_value_address(encrypted_value_id).0;
         let output_encrypted_value_index =
             u8::try_from(self.remaining.len()).expect("test accounts fit u8");
         self.remaining
@@ -341,10 +341,10 @@ impl EvalFlow {
         self.accounts.push((address, empty_system_account()));
         FheEvalOutput::AllowedPersistent {
             output_encrypted_value_index,
-            output_app_account_authority_index: None,
-            output_acl_domain_key_index: intern(self.authority.to_bytes()),
-            output_app_account_index: intern(self.authority.to_bytes()),
-            output_encrypted_value_label_index: intern(label),
+            output_account_authority_index: None,
+            output_domain_index: intern(self.authority.to_bytes()),
+            output_account_index: intern(self.authority.to_bytes()),
+            output_label_index: intern(label),
             output_subject_indexes: vec![intern(self.authority.to_bytes())],
             previous_handle: None,
             previous_subjects: None,
@@ -354,12 +354,12 @@ impl EvalFlow {
 
     fn writable_persistent_output(&mut self) -> (FheEvalOutput, Pubkey) {
         let label = [100; 32];
-        let value_key = zama_solana_acl::derive_value_key(
+        let encrypted_value_id = zama_solana_acl::derive_encrypted_value_id(
             self.authority.to_bytes(),
             self.authority.to_bytes(),
             label,
         );
-        let address = host::encrypted_value_address(value_key).0;
+        let address = host::encrypted_value_address(encrypted_value_id).0;
         let output_encrypted_value_index =
             u8::try_from(self.remaining.len()).expect("test accounts fit u8");
         self.remaining.push(AccountMeta::new(address, false));
@@ -367,10 +367,10 @@ impl EvalFlow {
         (
             FheEvalOutput::AllowedPersistent {
                 output_encrypted_value_index,
-                output_app_account_authority_index: None,
-                output_acl_domain_key_index: intern(self.authority.to_bytes()),
-                output_app_account_index: intern(self.authority.to_bytes()),
-                output_encrypted_value_label_index: intern(label),
+                output_account_authority_index: None,
+                output_domain_index: intern(self.authority.to_bytes()),
+                output_account_index: intern(self.authority.to_bytes()),
+                output_label_index: intern(label),
                 output_subject_indexes: vec![intern(self.authority.to_bytes())],
                 previous_handle: None,
                 previous_subjects: None,
@@ -424,7 +424,7 @@ impl EvalFlow {
             host::accounts::FheEval {
                 payer: self.authority,
                 compute_subject: self.authority,
-                app_account_authority: self.authority,
+                account_authority: self.authority,
                 host_config: self.host_config,
                 system_program: system_program::ID,
                 hcu_block_meter: None,
@@ -548,15 +548,18 @@ fn new_value_account(
     label: [u8; 32],
     handle: [u8; 32],
 ) -> (Pubkey, host::EncryptedValue) {
-    let value_key =
-        zama_solana_acl::derive_value_key(authority.to_bytes(), authority.to_bytes(), label);
-    let (address, bump) = host::encrypted_value_address(value_key);
+    let encrypted_value_id = zama_solana_acl::derive_encrypted_value_id(
+        authority.to_bytes(),
+        authority.to_bytes(),
+        label,
+    );
+    let (address, bump) = host::encrypted_value_address(encrypted_value_id);
     (
         address,
         host::EncryptedValue {
-            acl_domain_key: authority,
-            app_account: authority,
-            encrypted_value_label: label,
+            domain: authority,
+            account: authority,
+            label,
             current_handle: handle,
             subjects: vec![authority],
             leaf_count: 0,

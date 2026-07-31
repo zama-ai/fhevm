@@ -88,7 +88,7 @@ impl<'info> PersistentOutput<'info> {
     /// the host will verify.
     pub(crate) fn new(
         encrypted_value: AccountInfo<'info>,
-        key: zama_fhe::EncryptedValueKey,
+        key: zama_fhe::EncryptedValueId,
         audience: PersistentAudience,
     ) -> Result<Self> {
         Self::new_inner(encrypted_value, key, audience, false)
@@ -100,7 +100,7 @@ impl<'info> PersistentOutput<'info> {
     /// delta so every burn stays permanently redeemable with no second CPI.
     pub(crate) fn new_public(
         encrypted_value: AccountInfo<'info>,
-        key: zama_fhe::EncryptedValueKey,
+        key: zama_fhe::EncryptedValueId,
         audience: PersistentAudience,
     ) -> Result<Self> {
         Self::new_inner(encrypted_value, key, audience, true)
@@ -108,7 +108,7 @@ impl<'info> PersistentOutput<'info> {
 
     fn new_inner(
         encrypted_value: AccountInfo<'info>,
-        key: zama_fhe::EncryptedValueKey,
+        key: zama_fhe::EncryptedValueId,
         audience: PersistentAudience,
         make_public: bool,
     ) -> Result<Self> {
@@ -184,7 +184,7 @@ pub(crate) fn read_encrypted_value(info: &AccountInfo) -> Result<EncryptedValue>
 #[derive(Clone)]
 pub(crate) struct ComputeAuthority<'info> {
     account: AccountInfo<'info>,
-    acl_domain_key: Pubkey,
+    domain: Pubkey,
     bump: u8,
 }
 
@@ -206,7 +206,7 @@ impl<'info> ComputeAuthority<'info> {
         );
         Ok(Self {
             account: account.to_account_info(),
-            acl_domain_key: mint,
+            domain: mint,
             bump,
         })
     }
@@ -216,7 +216,7 @@ impl<'info> ComputeAuthority<'info> {
     }
 
     fn signer_seeds<'a>(&'a self, bump: &'a [u8; 1]) -> [&'a [u8]; 3] {
-        [b"fhe-compute", self.acl_domain_key.as_ref(), bump]
+        [b"fhe-compute", self.domain.as_ref(), bump]
     }
 }
 
@@ -513,7 +513,7 @@ pub(crate) fn eval<'info>(request: Eval<'_, 'info>) -> Result<()> {
         zama_fhe::EvalCpiAccounts {
             payer: request.context.payer.to_account_info(),
             compute_subject: request.context.compute_authority.account_info(),
-            app_account_authority: app_authority.account.clone(),
+            account_authority: app_authority.account.clone(),
             host_config: request.context.host_config.to_account_info(),
             deny_subject_records: request.context.deny_subject_records,
             system_program: request.context.system_program.to_account_info(),
@@ -616,7 +616,7 @@ mod tests {
         // A holder audience whose extra owner repeats the compute signer
         // renders a duplicate subject; the persistent output rejects it.
         let output = zama_fhe::PersistentOutput::create(
-            zama_fhe::EncryptedValueKey::new(
+            zama_fhe::EncryptedValueId::new(
                 Pubkey::new_unique(),
                 Pubkey::new_unique(),
                 zama_fhe::PersistentLabel::new([1; 32]),
@@ -653,8 +653,8 @@ mod tests {
         }
     }
 
-    fn encrypted_value_key(account: Pubkey, label_tag: u8) -> zama_fhe::EncryptedValueKey {
-        zama_fhe::EncryptedValueKey::new(
+    fn encrypted_value_id(account: Pubkey, label_tag: u8) -> zama_fhe::EncryptedValueId {
+        zama_fhe::EncryptedValueId::new(
             Pubkey::new_unique(),
             account,
             zama_fhe::PersistentLabel::new(handle(label_tag)),
@@ -667,9 +667,9 @@ mod tests {
 
     fn sample_plan() -> (zama_fhe::EvalPlan, Pubkey, Pubkey, Pubkey) {
         let authority = Pubkey::new_unique();
-        let input_key = encrypted_value_key(authority, 1);
+        let input_key = encrypted_value_id(authority, 1);
         let input_acl = input_key.address();
-        let output_key = encrypted_value_key(authority, 2);
+        let output_key = encrypted_value_id(authority, 2);
         let output_acl = output_key.address();
         let input = zama_fhe::Uint64Handle::persistent(balance_handle(1), input_key).unwrap();
         let mut builder = zama_fhe::EvalBuilder::new(zama_fhe::EvalAppAuthority::new(authority));

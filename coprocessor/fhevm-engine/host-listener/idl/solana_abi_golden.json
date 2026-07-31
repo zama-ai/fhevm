@@ -20,7 +20,7 @@
       "fixture_len": 169,
       "name": "ConfidentialMint",
       "program": "confidential_token",
-      "schema_hash": "adda0300985e06f9d2e944344f91d511a4e07904e289cf63853b3e4283ef5aa8"
+      "schema_hash": "43d6fb586410fe30500fdfa952c62a75bbfcc1bd658e141cd377e20e82551251"
     },
     {
       "category": "account",
@@ -316,7 +316,7 @@
       "fixture_len": 138,
       "name": "UserDecryptionDelegationUpdatedEvent",
       "program": "zama_host",
-      "schema_hash": "b98f6d001691e0ce85d0a0f63d280d8eb7cfa81c42fa3e6ee819e04f4446e749"
+      "schema_hash": "a4e4ace5e5d1d69f386c4cc942647b94de9601ff6a2315501395ca229897bc64"
     },
     {
       "category": "instruction_args",
@@ -340,7 +340,7 @@
       "fixture_len": 80,
       "name": "delegate_for_user_decryption",
       "program": "zama_host",
-      "schema_hash": "8b8752ab947784a48026351ff483ba0ee1e253799cf8c4cb461c4d2bea9007e0"
+      "schema_hash": "9ed388fc651d14b825efe33f5c872004135ec1725587ef9d4564b5f94660b1ab"
     },
     {
       "category": "instruction_args",
@@ -356,7 +356,7 @@
       "fixture_len": 59,
       "name": "fhe_eval",
       "program": "zama_host",
-      "schema_hash": "db061ac2c87ceee3dec03f4cff92cf87ad868fb41211b8bc036800acc9e54498"
+      "schema_hash": "042c7b530e542e970e4c9f1b0b28c0ca33f92325ee937440008160240995e759"
     },
     {
       "category": "instruction_args",

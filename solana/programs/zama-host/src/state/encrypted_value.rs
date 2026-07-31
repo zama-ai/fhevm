@@ -10,19 +10,19 @@ use super::*;
 
 /// Canonical ACL + history state for one encrypted value account.
 ///
-/// PDA: `[ENCRYPTED_VALUE_SEED, value_key]` where `value_key =
-/// zama_solana_acl::derive_value_key(acl_domain_key, app_account, encrypted_value_label)`.
+/// PDA: `[ENCRYPTED_VALUE_SEED, encrypted_value_id]` where `encrypted_value_id =
+/// zama_solana_acl::derive_encrypted_value_id(domain, account, label)`.
 /// The account name must stay exactly `EncryptedValue` — Anchor derives the
 /// discriminator from the type name, and it must match
 /// `zama_solana_acl::encrypted_value_discriminator()`.
 #[account]
 pub struct EncryptedValue {
     /// App-level ACL domain, such as a confidential token mint.
-    pub acl_domain_key: Pubkey,
+    pub domain: Pubkey,
     /// App-owned account whose encrypted field this encrypted value account represents.
-    pub app_account: Pubkey,
-    /// Domain-separated encrypted field label inside `app_account`.
-    pub encrypted_value_label: [u8; 32],
+    pub account: Pubkey,
+    /// Domain-separated encrypted field label inside `account`.
+    pub label: [u8; 32],
     /// Current encrypted value identifier (the live handle).
     pub current_handle: [u8; 32],
     /// Current persistent subjects. Membership in this set is the whole ACL.
@@ -43,11 +43,11 @@ impl EncryptedValue {
     }
 
     /// The encrypted value account's value key — its PDA seed. Derived, never stored.
-    pub fn value_key(&self) -> [u8; 32] {
-        zama_solana_acl::derive_value_key(
-            self.acl_domain_key.to_bytes(),
-            self.app_account.to_bytes(),
-            self.encrypted_value_label,
+    pub fn encrypted_value_id(&self) -> [u8; 32] {
+        zama_solana_acl::derive_encrypted_value_id(
+            self.domain.to_bytes(),
+            self.account.to_bytes(),
+            self.label,
         )
     }
 
@@ -66,9 +66,9 @@ impl EncryptedValue {
     /// Converts to the shared crate's wire type for MMR/authorization helpers.
     pub fn to_shared(&self) -> zama_solana_acl::EncryptedValue {
         zama_solana_acl::EncryptedValue {
-            acl_domain_key: self.acl_domain_key.to_bytes(),
-            app_account: self.app_account.to_bytes(),
-            encrypted_value_label: self.encrypted_value_label,
+            domain: self.domain.to_bytes(),
+            account: self.account.to_bytes(),
+            label: self.label,
             current_handle: self.current_handle,
             subjects: self.subjects.iter().map(|p| p.to_bytes()).collect(),
             leaf_count: self.leaf_count,
@@ -79,9 +79,12 @@ impl EncryptedValue {
 }
 
 /// Returns the canonical `EncryptedValue` PDA address for a value key.
-pub fn encrypted_value_address(value_key: [u8; 32]) -> (Pubkey, u8) {
+pub fn encrypted_value_address(encrypted_value_id: [u8; 32]) -> (Pubkey, u8) {
     Pubkey::find_program_address(
-        &[zama_solana_acl::ENCRYPTED_VALUE_SEED, value_key.as_ref()],
+        &[
+            zama_solana_acl::ENCRYPTED_VALUE_SEED,
+            encrypted_value_id.as_ref(),
+        ],
         &crate::ID,
     )
 }

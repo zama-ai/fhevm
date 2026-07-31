@@ -26,7 +26,7 @@ use crate::{EvalBuildError, Result};
 pub struct EvalCpiAccounts<'a, 'info> {
     pub payer: AccountInfo<'info>,
     pub compute_subject: AccountInfo<'info>,
-    pub app_account_authority: AccountInfo<'info>,
+    pub account_authority: AccountInfo<'info>,
     pub host_config: AccountInfo<'info>,
     pub deny_subject_records: &'a [AccountInfo<'info>],
     pub system_program: AccountInfo<'info>,
@@ -91,7 +91,7 @@ impl From<anchor_lang::error::Error> for EvalInvokeError {
 /// invokes `zama-host::fhe_eval`.
 ///
 /// `dynamic_accounts` and additional `output_authorities` may be in any order.
-/// The fixed CPI `app_account_authority` is included automatically. The SDK
+/// The fixed CPI `account_authority` is included automatically. The SDK
 /// validates the supplied accounts against the plan produced by the closure
 /// before constructing the ordered host account list used by
 /// [`invoke_eval_signed_resolved`].
@@ -109,7 +109,7 @@ where
 {
     let plan = EvalPlan::build(app_authority, build)?;
     let mut output_authorities = output_authorities.into_iter().collect::<Vec<_>>();
-    output_authorities.insert(0, accounts.app_account_authority.clone());
+    output_authorities.insert(0, accounts.account_authority.clone());
     let resolved_accounts = plan.resolve_accounts(dynamic_accounts, output_authorities)?;
     invoke_eval_signed_resolved(&plan, accounts, &resolved_accounts, signer_seeds)?;
     Ok(())
@@ -136,14 +136,14 @@ fn invoke_eval_signed_with_resolver<'a, 'info, R>(
 where
     R: EvalAccountResolver<'info> + ?Sized,
 {
-    if accounts.app_account_authority.key() != plan.app_authority.pubkey() {
+    if accounts.account_authority.key() != plan.app_authority.pubkey() {
         return Err(anchor_lang::error::ErrorCode::ConstraintAddress.into());
     }
     let deny_subject_records = accounts.deny_subject_records;
     let fixed_accounts = zama_host::cpi::accounts::FheEval {
         payer: accounts.payer,
         compute_subject: accounts.compute_subject,
-        app_account_authority: accounts.app_account_authority,
+        account_authority: accounts.account_authority,
         host_config: accounts.host_config,
         system_program: accounts.system_program,
         hcu_block_meter: accounts.hcu_block_meter,

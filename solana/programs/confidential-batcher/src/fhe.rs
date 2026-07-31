@@ -3,7 +3,7 @@
 //! The batcher drives its own ZamaHost evals (join re-materialization, the
 //! quit reset, and the claim MulDiv) with one identity: the per-batch
 //! authority PDA is simultaneously the eval's `compute_subject` (it reads the
-//! deposit encrypted value accounts it is a subject of) and its `app_account_authority` (it
+//! deposit encrypted value accounts it is a subject of) and its `account_authority` (it
 //! authorizes the batcher-owned persistent outputs), both signed through a single
 //! `invoke_signed`.
 
@@ -39,7 +39,7 @@ pub(crate) struct PersistentBinding<'info> {
 impl<'info> PersistentBinding<'info> {
     pub(crate) fn bind(
         account: AccountInfo<'info>,
-        key: zama_fhe::EncryptedValueKey,
+        key: zama_fhe::EncryptedValueId,
         subjects: Vec<Pubkey>,
     ) -> Result<Self> {
         require_keys_eq!(
@@ -115,7 +115,7 @@ pub(crate) fn eval_as_batch_authority<'info, T>(
         zama_fhe::EvalCpiAccounts {
             payer: eval.payer,
             compute_subject: eval.batch_authority.clone(),
-            app_account_authority: eval.batch_authority,
+            account_authority: eval.batch_authority,
             host_config: eval.host_config,
             deny_subject_records: eval.deny_subject_records,
             system_program: eval.system_program,
@@ -150,10 +150,10 @@ pub(crate) fn invalid_eval_plan(error: zama_fhe::EvalBuildError) -> anchor_lang:
 pub(crate) fn uint64_operand(value: &EncryptedValue) -> Result<zama_fhe::Uint64Handle> {
     zama_fhe::Uint64Handle::persistent(
         value.current_handle,
-        zama_fhe::EncryptedValueKey::new(
-            value.acl_domain_key,
-            value.app_account,
-            zama_fhe::PersistentLabel::new(value.encrypted_value_label),
+        zama_fhe::EncryptedValueId::new(
+            value.domain,
+            value.account,
+            zama_fhe::PersistentLabel::new(value.label),
         ),
     )
     .map_err(invalid_eval_plan)

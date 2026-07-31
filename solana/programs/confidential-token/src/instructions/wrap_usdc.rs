@@ -111,12 +111,12 @@ pub fn wrap_usdc<'info>(ctx: Context<'info, WrapUsdc<'info>>, amount: u64) -> Re
     );
     let balance_output = fhe::PersistentOutput::new(
         ctx.accounts.balance_value.to_account_info(),
-        encrypted_value_key(mint_key, token_account.key(), balance_label()),
+        encrypted_value_id(mint_key, token_account.key(), balance_label()),
         fhe::PersistentAudience::for_owner(token_account.owner, compute_signer),
     )?;
     let total_supply_output = fhe::PersistentOutput::new(
         ctx.accounts.total_supply_value.to_account_info(),
-        encrypted_value_key(mint_key, total_supply_authority, total_supply_label()),
+        encrypted_value_id(mint_key, total_supply_authority, total_supply_label()),
         fhe::PersistentAudience::compute_only(compute_signer),
     )?;
 

@@ -12,7 +12,7 @@
 //! apps (trusted still bypass), otherwise the metering band.
 //!
 //! The metered identity is the `compute_subject` — the mandatory signed caller identity already
-//! used for ACL admission (the `msg.sender` analog), never `payer` and never `app_account_authority`
+//! used for ACL admission (the `msg.sender` analog), never `payer` and never `account_authority`
 //! (an output-ACL role that degenerates to a per-user key). Metering the already-signed
 //! `compute_subject` means no caller can rotate a fresh signer to mint a fresh per-slot meter: the
 //! same subject that authorizes the frame's encrypted inputs is the one whose usage accumulates.

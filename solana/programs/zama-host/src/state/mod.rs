@@ -332,16 +332,16 @@ pub enum FheEvalOutput {
         output_encrypted_value_index: u8,
         /// Optional index into `remaining_accounts` for the app account authority signer.
         ///
-        /// `None` uses the fixed `app_account_authority` account in the eval
+        /// `None` uses the fixed `account_authority` account in the eval
         /// context. `Some(index)` requires that remaining account to be a signer
         /// and to match the output app account.
-        output_app_account_authority_index: Option<u8>,
+        output_account_authority_index: Option<u8>,
         /// Dictionary index of the ACL domain key for the output encrypted value account.
-        output_acl_domain_key_index: u8,
+        output_domain_index: u8,
         /// Dictionary index of the app account authorized to bind the output encrypted value account.
-        output_app_account_index: u8,
+        output_account_index: u8,
         /// Dictionary index of the encrypted value label for the output encrypted value account.
-        output_encrypted_value_label_index: u8,
+        output_label_index: u8,
         /// Dictionary indexes of the subjects on the output encrypted value account. On create these
         /// are the initial subjects; on update they become the new audience, which may rotate
         /// away from the stored set (the outgoing audience is sealed into
@@ -807,14 +807,14 @@ pub fn permit_invalidation_address(user: Pubkey) -> (Pubkey, u8) {
 pub fn user_decryption_delegation_address(
     delegator: Pubkey,
     delegate: Pubkey,
-    app_account: Pubkey,
+    account: Pubkey,
 ) -> (Pubkey, u8) {
     Pubkey::find_program_address(
         &[
             DELEGATION_SEED,
             delegator.as_ref(),
             delegate.as_ref(),
-            app_account.as_ref(),
+            account.as_ref(),
         ],
         &crate::ID,
     )

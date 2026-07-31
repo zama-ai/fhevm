@@ -35,7 +35,7 @@ pub fn revoke_delegation_for_user_decryption(
     let (expected, bump) = user_decryption_delegation_address(
         ctx.accounts.delegation_record.delegator,
         ctx.accounts.delegation_record.delegate,
-        ctx.accounts.delegation_record.app_account,
+        ctx.accounts.delegation_record.account,
     );
     require_keys_eq!(
         expected,
@@ -76,7 +76,7 @@ pub fn revoke_delegation_for_user_decryption(
         version: EVENT_VERSION,
         delegator: ctx.accounts.delegation_record.delegator,
         delegate: ctx.accounts.delegation_record.delegate,
-        app_account: ctx.accounts.delegation_record.app_account,
+        account: ctx.accounts.delegation_record.account,
         delegation_counter,
         old_expiration_slot,
         new_expiration_slot: ctx.accounts.delegation_record.expiration_slot,

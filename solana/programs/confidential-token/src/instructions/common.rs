@@ -183,17 +183,17 @@ fn execute_transfer_eval<'info>(
     };
     let from_output = fhe::PersistentOutput::new(
         accounts.from_balance_value.clone(),
-        encrypted_value_key(mint_key, from_key, balance_label()),
+        encrypted_value_id(mint_key, from_key, balance_label()),
         balance_access(from_owner),
     )?;
     let transferred_output = fhe::PersistentOutput::new(
         accounts.transferred_amount_value.clone(),
-        encrypted_value_key(mint_key, from_key, transferred_amount_label()),
+        encrypted_value_id(mint_key, from_key, transferred_amount_label()),
         transferred_access,
     )?;
     let to_output = fhe::PersistentOutput::new(
         accounts.to_balance_value.clone(),
-        encrypted_value_key(mint_key, to_key, balance_label()),
+        encrypted_value_id(mint_key, to_key, balance_label()),
         balance_access(to_owner),
     )?;
     let mut builder = zama_fhe::EvalBuilder::new(zama_fhe::EvalAppAuthority::new(from_key));
@@ -210,9 +210,9 @@ fn execute_transfer_eval<'info>(
             let value = fhe::read_encrypted_value(amount_value)?;
             uint64_from_value(
                 value.current_handle,
-                value.acl_domain_key,
-                value.app_account,
-                value.encrypted_value_label,
+                value.domain,
+                value.account,
+                value.label,
             )?
         }
     };
@@ -301,29 +301,22 @@ pub(crate) fn invalid_eval_plan(error: zama_fhe::EvalBuildError) -> anchor_lang:
     error!(ConfidentialTokenError::InvalidFheEvalPlan)
 }
 
-pub(crate) fn encrypted_value_key(
-    acl_domain_key: Pubkey,
-    app_account: Pubkey,
-    encrypted_value_label: [u8; 32],
-) -> zama_fhe::EncryptedValueKey {
-    zama_fhe::EncryptedValueKey::new(
-        acl_domain_key,
-        app_account,
-        zama_fhe::PersistentLabel::new(encrypted_value_label),
-    )
+pub(crate) fn encrypted_value_id(
+    domain: Pubkey,
+    account: Pubkey,
+    label: [u8; 32],
+) -> zama_fhe::EncryptedValueId {
+    zama_fhe::EncryptedValueId::new(domain, account, zama_fhe::PersistentLabel::new(label))
 }
 
 pub(crate) fn uint64_from_value(
     handle: [u8; 32],
-    acl_domain_key: Pubkey,
-    app_account: Pubkey,
-    encrypted_value_label: [u8; 32],
+    domain: Pubkey,
+    account: Pubkey,
+    label: [u8; 32],
 ) -> Result<zama_fhe::Uint64Handle> {
-    zama_fhe::Uint64Handle::persistent(
-        handle,
-        encrypted_value_key(acl_domain_key, app_account, encrypted_value_label),
-    )
-    .map_err(invalid_eval_plan)
+    zama_fhe::Uint64Handle::persistent(handle, encrypted_value_id(domain, account, label))
+        .map_err(invalid_eval_plan)
 }
 
 /// Validates a coprocessor-attested transfer/burn amount (EVM `fromExternal` parity). The host
@@ -373,17 +366,17 @@ pub(crate) fn assert_burned_amount_value_account(
         ConfidentialTokenError::AmountHandleTypeMismatch
     );
     require_keys_eq!(
-        amount_value.acl_domain_key,
+        amount_value.domain,
         mint,
-        ConfidentialTokenError::AclDomainKeyMismatch
+        ConfidentialTokenError::DomainMismatch
     );
     require_keys_eq!(
-        amount_value.app_account,
+        amount_value.account,
         token_account,
         ConfidentialTokenError::AmountAclMismatch
     );
     require!(
-        amount_value.encrypted_value_label == burned_amount_label(),
+        amount_value.label == burned_amount_label(),
         ConfidentialTokenError::AmountAclMismatch
     );
     require_keys_eq!(
@@ -464,9 +457,9 @@ pub(crate) fn assert_confidential_mint_shape(mint: &Account<ConfidentialMint>) -
         ConfidentialTokenError::MintAccountMismatch
     );
     require_keys_eq!(
-        mint.acl_domain_key,
+        mint.domain,
         mint.key(),
-        ConfidentialTokenError::AclDomainKeyMismatch
+        ConfidentialTokenError::DomainMismatch
     );
     require_keys_eq!(
         mint.compute_signer,

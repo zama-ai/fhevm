@@ -321,7 +321,7 @@
           "docs": [
             "The existing encrypted amount to burn: a computed or received `euint64` handle. Read-only",
             "persistent operand — never replaced, never consumed. Its address is the canonical PDA of its",
-            "own `(acl_domain_key, app_account, encrypted_value_label)` fields, so an encrypted value account from any app",
+            "own `(domain, account, label)` fields, so an encrypted value account from any app",
             "may be passed here once its owner has granted the mint's compute subject via `allow_subjects`."
           ]
         },
@@ -633,7 +633,7 @@
           "docs": [
             "The existing encrypted amount to spend: a computed or received `euint64` handle. Read-only",
             "persistent operand — never replaced, never consumed. Its address is the canonical PDA of its",
-            "own `(acl_domain_key, app_account, encrypted_value_label)` fields, so an encrypted value account from any app",
+            "own `(domain, account, label)` fields, so an encrypted value account from any app",
             "may be passed here once its owner has granted the mint's compute subject via `allow_subjects`."
           ]
         },
@@ -713,7 +713,7 @@
           "name": "encrypted_value",
           "docs": [
             "The `EncryptedValue` encrypted value account the disclosed handle belongs to.",
-            "CPI; this handler additionally binds its `acl_domain_key` to `mint`."
+            "CPI; this handler additionally binds its `domain` to `mint`."
           ]
         },
         {
@@ -1848,7 +1848,7 @@
     },
     {
       "code": 6012,
-      "name": "AclDomainKeyMismatch",
+      "name": "DomainMismatch",
       "msg": "Confidential mint ACL domain key is invalid"
     },
     {
@@ -2350,7 +2350,7 @@
             "type": "pubkey"
           },
           {
-            "name": "acl_domain_key",
+            "name": "domain",
             "docs": [
               "ACL domain key, currently equal to the mint pubkey."
             ],
@@ -2604,8 +2604,8 @@
       "docs": [
         "Canonical ACL + history state for one encrypted value account.",
         "",
-        "PDA: `[ENCRYPTED_VALUE_SEED, value_key]` where `value_key =",
-        "zama_solana_acl::derive_value_key(acl_domain_key, app_account, encrypted_value_label)`.",
+        "PDA: `[ENCRYPTED_VALUE_SEED, encrypted_value_id]` where `encrypted_value_id =",
+        "zama_solana_acl::derive_encrypted_value_id(domain, account, label)`.",
         "The account name must stay exactly `EncryptedValue` — Anchor derives the",
         "discriminator from the type name, and it must match",
         "`zama_solana_acl::encrypted_value_discriminator()`."
@@ -2614,23 +2614,23 @@
         "kind": "struct",
         "fields": [
           {
-            "name": "acl_domain_key",
+            "name": "domain",
             "docs": [
               "App-level ACL domain, such as a confidential token mint."
             ],
             "type": "pubkey"
           },
           {
-            "name": "app_account",
+            "name": "account",
             "docs": [
               "App-owned account whose encrypted field this encrypted value account represents."
             ],
             "type": "pubkey"
           },
           {
-            "name": "encrypted_value_label",
+            "name": "label",
             "docs": [
-              "Domain-separated encrypted field label inside `app_account`."
+              "Domain-separated encrypted field label inside `account`."
             ],
             "type": {
               "array": [

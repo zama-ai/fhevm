@@ -41,7 +41,7 @@ pub struct FheEval<'info> {
     /// Compute subject that must be allowed on persistent encrypted inputs.
     pub compute_subject: Signer<'info>,
     /// App account signer authorizing any persistent output ACL metadata.
-    pub app_account_authority: Signer<'info>,
+    pub account_authority: Signer<'info>,
     /// Singleton config PDA. Read-only: the cap is read from here, but the writable per-slot
     /// counter is the separate `hcu_block_meter`, never this singleton — so the hot path takes no
     /// write lock on the config.
@@ -327,35 +327,34 @@ fn accept_eval_output<'info>(
         FheEvalOutput::AllowedLocal => None,
         FheEvalOutput::AllowedPersistent {
             output_encrypted_value_index,
-            output_app_account_authority_index,
-            output_acl_domain_key_index,
-            output_app_account_index,
-            output_encrypted_value_label_index,
+            output_account_authority_index,
+            output_domain_index,
+            output_account_index,
+            output_label_index,
             output_subject_indexes,
             previous_handle,
             previous_subjects,
             make_public,
         } => {
-            let output_acl_domain_key = dictionary_key(dictionary, *output_acl_domain_key_index)?;
-            let output_app_account = dictionary_key(dictionary, *output_app_account_index)?;
-            let output_encrypted_value_label =
-                dictionary_bytes(dictionary, *output_encrypted_value_label_index)?;
+            let output_acl_domain_key = dictionary_key(dictionary, *output_domain_index)?;
+            let output_account = dictionary_key(dictionary, *output_account_index)?;
+            let output_label = dictionary_bytes(dictionary, *output_label_index)?;
             let output_subjects = resolve_dictionary_subjects(dictionary, output_subject_indexes)?;
-            let app_account_authority = persistent_output_authority(
+            let account_authority = persistent_output_authority(
                 table,
                 ctx,
-                output_app_account_authority_index.map(u16::from),
-                output_app_account,
+                output_account_authority_index.map(u16::from),
+                output_account,
             )?;
             let encrypted_value = bind_eval_output(
                 ctx,
                 table,
                 u16::from(*output_encrypted_value_index),
                 result,
-                app_account_authority.key(),
+                account_authority.key(),
                 output_acl_domain_key,
-                output_app_account,
-                output_encrypted_value_label,
+                output_account,
+                output_label,
                 &output_subjects,
                 previous_handle,
                 previous_subjects,
@@ -398,7 +397,7 @@ fn persistent_output_authority<'info>(
     table: &EvalAccountTable<'_, 'info>,
     ctx: &Context<'info, FheEval<'info>>,
     authority_index: Option<u16>,
-    output_app_account: Pubkey,
+    output_account: Pubkey,
 ) -> Result<AccountInfo<'info>> {
     let authority = match authority_index {
         Some(index) => {
@@ -406,12 +405,12 @@ fn persistent_output_authority<'info>(
             require!(authority.is_signer, ZamaHostError::InvalidFheEvalAccount);
             require_keys_eq!(
                 authority.key(),
-                output_app_account,
+                output_account,
                 ZamaHostError::AppAccountAuthorityMismatch
             );
             authority.clone()
         }
-        None => ctx.accounts.app_account_authority.to_account_info(),
+        None => ctx.accounts.account_authority.to_account_info(),
     };
     let deny_record = table.deny_record(
         ctx.accounts.host_config.grant_deny_list_enabled,
@@ -479,23 +478,19 @@ fn bind_eval_output<'info>(
     table: &mut EvalAccountTable<'_, 'info>,
     output_encrypted_value_index: u16,
     result: [u8; 32],
-    app_account_authority: Pubkey,
+    account_authority: Pubkey,
     output_acl_domain_key: Pubkey,
-    output_app_account: Pubkey,
-    output_encrypted_value_label: [u8; 32],
+    output_account: Pubkey,
+    output_label: [u8; 32],
     output_subjects: &[Pubkey],
     previous_handle: &Option<[u8; 32]>,
     previous_subjects: &Option<Vec<Pubkey>>,
     make_public: bool,
 ) -> Result<Pubkey> {
-    assert_output_acl_metadata(app_account_authority, output_app_account, output_subjects)?;
+    assert_output_acl_metadata(account_authority, output_account, output_subjects)?;
 
     let output_info = table.account(output_encrypted_value_index)?;
-    let output_pda = table.expected_output_pda(
-        output_acl_domain_key,
-        output_app_account,
-        output_encrypted_value_label,
-    );
+    let output_pda = table.expected_output_pda(output_acl_domain_key, output_account, output_label);
     require_keys_eq!(
         output_info.key(),
         output_pda.key,
@@ -550,9 +545,9 @@ fn bind_eval_output<'info>(
         );
         check_new_grants_not_denied(&ctx.accounts.host_config, table, &[], output_subjects)?;
         let mut value = EncryptedValue {
-            acl_domain_key: output_acl_domain_key,
-            app_account: output_app_account,
-            encrypted_value_label: output_encrypted_value_label,
+            domain: output_acl_domain_key,
+            account: output_account,
+            label: output_label,
             current_handle: result,
             subjects: output_subjects.to_vec(),
             leaf_count: 0,
@@ -569,7 +564,7 @@ fn bind_eval_output<'info>(
             8 + EncryptedValue::space(value.subjects.len(), value.peaks.len()),
             &[
                 zama_solana_acl::ENCRYPTED_VALUE_SEED,
-                output_pda.value_key.as_ref(),
+                output_pda.encrypted_value_id.as_ref(),
                 &[output_pda.bump],
             ],
         )?;
@@ -632,9 +627,9 @@ mod tests {
 
     fn encrypted_value_account(handle: [u8; 32], subjects: &[Pubkey]) -> EncryptedValue {
         EncryptedValue {
-            acl_domain_key: Pubkey::default(),
-            app_account: Pubkey::default(),
-            encrypted_value_label: [0; 32],
+            domain: Pubkey::default(),
+            account: Pubkey::default(),
+            label: [0; 32],
             current_handle: handle,
             subjects: subjects.to_vec(),
             leaf_count: 0,
@@ -670,11 +665,11 @@ mod tests {
 
     fn persistent_anchor_at_leaf_count(leaf_count: u64) -> Vec<u8> {
         let mut value = encrypted_value_account([9; 32], &[Pubkey::new_from_array([1; 32])]);
-        value.acl_domain_key = Pubkey::new_from_array([2; 32]);
-        value.app_account = Pubkey::new_from_array([3; 32]);
-        value.encrypted_value_label = [7; 32];
+        value.domain = Pubkey::new_from_array([2; 32]);
+        value.account = Pubkey::new_from_array([3; 32]);
+        value.label = [7; 32];
         value.leaf_count = leaf_count;
-        let (key, bump) = encrypted_value_address(value.value_key());
+        let (key, bump) = encrypted_value_address(value.encrypted_value_id());
         value.bump = bump;
 
         let mut lamports = 1_000_000;
@@ -691,10 +686,10 @@ mod tests {
                 fhe_type: 5,
                 output: FheEvalOutput::AllowedPersistent {
                     output_encrypted_value_index: 0,
-                    output_app_account_authority_index: None,
-                    output_acl_domain_key_index: 0,
-                    output_app_account_index: 0,
-                    output_encrypted_value_label_index: 0,
+                    output_account_authority_index: None,
+                    output_domain_index: 0,
+                    output_account_index: 0,
+                    output_label_index: 0,
                     output_subject_indexes: Vec::new(),
                     previous_handle: Some(value.current_handle),
                     previous_subjects: Some(value.subjects),
@@ -759,16 +754,16 @@ mod tests {
 
     #[test]
     fn assert_output_acl_metadata_rejects_empty_and_over_cap_replacements() {
-        let app_account = Pubkey::new_unique();
+        let account = Pubkey::new_unique();
         // An empty replacement set is rejected, mirroring remove_subject's last-subject rule.
-        assert!(assert_output_acl_metadata(app_account, app_account, &[]).is_err());
+        assert!(assert_output_acl_metadata(account, account, &[]).is_err());
         // A replacement set above MAX_ENCRYPTED_VALUE_SUBJECTS (8) is rejected.
         let over_cap = grants(
             &(0..=zama_solana_acl::MAX_ENCRYPTED_VALUE_SUBJECTS)
                 .map(|_| Pubkey::new_unique())
                 .collect::<Vec<_>>(),
         );
-        assert!(assert_output_acl_metadata(app_account, app_account, &over_cap).is_err());
+        assert!(assert_output_acl_metadata(account, account, &over_cap).is_err());
     }
 
     #[test]

@@ -11,7 +11,7 @@ pub(super) fn preflight_eval_frame<'info>(
     preflight_eval_frame_accounts(
         table,
         args,
-        ctx.accounts.app_account_authority.key(),
+        ctx.accounts.account_authority.key(),
         ctx.accounts.host_config.grant_deny_list_enabled,
     )
 }
@@ -27,7 +27,7 @@ pub(super) fn preflight_eval_frame<'info>(
 /// keypair-churn bypass rode, so it is rejected before compute.
 ///
 /// A persistent OUTPUT is allowed through here, but note it does NOT pin the subject: output binding
-/// authorizes against `app_account_authority`, never `compute_subject`. So a throwaway-encrypted value account
+/// authorizes against `account_authority`, never `compute_subject`. So a throwaway-encrypted value account
 /// create/update still lets a caller swap the subject for a fresh per-slot meter — that vector
 /// remains open, but is rent-bounded (~one `HcuBlockMeter` PDA rent per swap) rather than free,
 /// and closing it fully needs a registered app identity (the issue's Option 2, deferred). The
@@ -145,14 +145,14 @@ fn step_pins_or_persists(step: &FheEvalStep) -> bool {
 fn preflight_eval_frame_accounts(
     table: &mut EvalAccountTable<'_, '_>,
     args: &FheEvalArgs,
-    app_account_authority: Pubkey,
+    account_authority: Pubkey,
     deny_list_enabled: bool,
 ) -> Result<()> {
     let mut preflight = EvalPreflight {
         table,
         dictionary: &args.dictionary,
         dictionary_used: vec![false; args.dictionary.len()],
-        app_account_authority,
+        account_authority,
         deny_list_enabled,
         persistent_outputs_written: Vec::with_capacity(MAX_FHE_EVAL_OPS),
     };
@@ -175,7 +175,7 @@ struct EvalPreflight<'t, 'a, 'info> {
     table: &'t mut EvalAccountTable<'a, 'info>,
     dictionary: &'t [[u8; 32]],
     dictionary_used: Vec<bool>,
-    app_account_authority: Pubkey,
+    account_authority: Pubkey,
     deny_list_enabled: bool,
     /// Persistent accounts written by completed earlier steps. Operands are checked
     /// before the current step's output is recorded, so read-then-update in one
@@ -203,7 +203,7 @@ impl EvalPreflight<'_, '_, '_> {
                 self.table.mark(u16::from(index))?;
                 Ok(authority)
             }
-            None => Ok(self.app_account_authority),
+            None => Ok(self.account_authority),
         }
     }
 
@@ -337,10 +337,10 @@ fn preflight_output(
         FheEvalOutput::AllowedLocal => {}
         FheEvalOutput::AllowedPersistent {
             output_encrypted_value_index,
-            output_app_account_authority_index,
-            output_acl_domain_key_index,
-            output_app_account_index,
-            output_encrypted_value_label_index,
+            output_account_authority_index,
+            output_domain_index,
+            output_account_index,
+            output_label_index,
             output_subject_indexes,
             previous_subjects,
             ..
@@ -352,10 +352,10 @@ fn preflight_output(
             preflight
                 .table
                 .mark(u16::from(*output_encrypted_value_index))?;
-            preflight.mark_dictionary(*output_acl_domain_key_index)?;
-            preflight.mark_dictionary(*output_app_account_index)?;
-            preflight.mark_dictionary(*output_encrypted_value_label_index)?;
-            let authority = preflight.mark_output_authority(*output_app_account_authority_index)?;
+            preflight.mark_dictionary(*output_domain_index)?;
+            preflight.mark_dictionary(*output_account_index)?;
+            preflight.mark_dictionary(*output_label_index)?;
+            let authority = preflight.mark_output_authority(*output_account_authority_index)?;
             preflight.mark_deny_record(authority)?;
             // Every newly granted subject is deny-checked in the bind pass; mark
             // their deny records here so finish() accounts for them. On a update
@@ -482,10 +482,10 @@ mod tests {
     fn persistent_output() -> FheEvalOutput {
         FheEvalOutput::AllowedPersistent {
             output_encrypted_value_index: 0,
-            output_app_account_authority_index: None,
-            output_acl_domain_key_index: 0,
-            output_app_account_index: 0,
-            output_encrypted_value_label_index: 1,
+            output_account_authority_index: None,
+            output_domain_index: 0,
+            output_account_index: 0,
+            output_label_index: 1,
             output_subject_indexes: Vec::new(),
             previous_handle: None,
             previous_subjects: None,

@@ -224,7 +224,7 @@ pub async fn run(
 ///
 /// `remaining_index` (the program's `output_encrypted_value_index`) is relative to
 /// `remaining_accounts`, which follow the 9 named `fhe_eval` accounts — payer,
-/// compute_subject, app_account_authority, host_config, system_program,
+/// compute_subject, account_authority, host_config, system_program,
 /// hcu_block_meter, hcu_trusted_app_record, then `#[event_cpi]`'s event_authority +
 /// program (see `FheEval` in fhe_eval.rs). The two optional HCU accounts are always
 /// present in the account list (as program-id placeholders when `None`): the event_cpi
@@ -1565,10 +1565,10 @@ mod fhe_eval_acl_tests {
                 output_fhe_type: 5,
                 output: FheEvalOutput::AllowedPersistent {
                     output_encrypted_value_index: 0,
-                    output_app_account_authority_index: None,
-                    output_acl_domain_key_index: 2,
-                    output_app_account_index: 3,
-                    output_encrypted_value_label_index: 4,
+                    output_account_authority_index: None,
+                    output_domain_index: 2,
+                    output_account_index: 3,
+                    output_label_index: 4,
                     output_subject_indexes: vec![],
                     previous_handle: Some([8; 32]),
                     previous_subjects: Some(vec![]),
@@ -1626,10 +1626,10 @@ mod fhe_eval_acl_tests {
                 fhe_type: 5,
                 output: FheEvalOutput::AllowedPersistent {
                     output_encrypted_value_index: 0,
-                    output_app_account_authority_index: None,
-                    output_acl_domain_key_index: 0,
-                    output_app_account_index: 1,
-                    output_encrypted_value_label_index: 2,
+                    output_account_authority_index: None,
+                    output_domain_index: 0,
+                    output_account_index: 1,
+                    output_label_index: 2,
                     output_subject_indexes: vec![3],
                     // Fresh encrypted value account (create), created publicly decryptable inline.
                     previous_handle: None,

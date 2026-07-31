@@ -33,7 +33,7 @@ pub use accounts::{
 #[cfg(feature = "cpi")]
 pub use accounts::{EvalAccountResolutionError, ResolvedEvalAccounts};
 pub use acl::{
-    BoundedU64UpperBound, EncryptedValueKey, Output, PersistentLabel, PersistentOutput,
+    BoundedU64UpperBound, EncryptedValueId, Output, PersistentLabel, PersistentOutput,
     PersistentOutputBinding,
 };
 pub use builder::EvalBuilder;
@@ -96,7 +96,7 @@ pub enum EvalBuildError {
     /// A persistent output subject list would be rejected by the host.
     InvalidSubjects,
     /// An encrypted-value key contains an app-domain pubkey the host would reject.
-    InvalidEncryptedValueKey,
+    InvalidEncryptedValueId,
     /// The fixed app authority pubkey is not a valid signer identity.
     InvalidAppAuthority,
     /// A persistent output's declared previous state is inconsistent (one of

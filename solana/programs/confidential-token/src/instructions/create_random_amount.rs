@@ -81,10 +81,10 @@ fn create_random_amount_inner<'info>(
         ConfidentialTokenError::ComputeSignerMismatch
     );
 
-    let encrypted_value_label = amount_kind.encrypted_value_label();
+    let label = amount_kind.label();
     let amount_output = fhe::PersistentOutput::new(
         ctx.accounts.amount_value.to_account_info(),
-        encrypted_value_key(mint_key, owner, encrypted_value_label),
+        encrypted_value_id(mint_key, owner, label),
         fhe::PersistentAudience::compute_only(ctx.accounts.compute_signer.key()),
     )?;
     let mut builder = zama_fhe::EvalBuilder::new(zama_fhe::EvalAppAuthority::new(owner));

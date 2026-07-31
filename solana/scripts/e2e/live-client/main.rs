@@ -31,16 +31,16 @@ type EncryptedValueAccountState = ([u8; 32], Vec<Pubkey>);
 struct PersistentEvalTarget {
     value: u64,
     plaintext: [u8; 32],
-    acl_domain_key: Pubkey,
-    app_account: Pubkey,
-    encrypted_value_label: [u8; 32],
-    value_key: [u8; 32],
+    domain: Pubkey,
+    account: Pubkey,
+    label: [u8; 32],
+    encrypted_value_id: [u8; 32],
     encrypted_value: Pubkey,
 }
 
 struct PersistentEvalResult {
     encrypted_value: Pubkey,
-    value_key: [u8; 32],
+    encrypted_value_id: [u8; 32],
     handle: [u8; 32],
 }
 
@@ -52,7 +52,7 @@ struct TokenBalanceState {
     owner: String,
     token_account: String,
     encrypted_value_account: String,
-    acl_value_key: String,
+    encrypted_value_id: String,
     current_handle: String,
     chain_id: String,
 }
@@ -118,7 +118,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     // FHE_EVAL_VERIFIED_INPUT drives the #1539 input flow in one fhe_eval: a Binary Add of a
     // coprocessor-attested external input (FheEvalOperand::VerifiedInput, re-verified in-frame via
     // secp256k1 with no scratch PDA) and a public scalar, binding the result to a persistent output ACL
-    // record under the attested acl_domain_key. The attestation comes from the same relayer
+    // record under the attested domain. The attestation comes from the same relayer
     // input-proof the BIND_INPUT phase uses (BIND_* env); TE_ADD is the scalar addend (default 2);
     // TE_ALLOW makes the result publicly decryptable. Proves encrypt V -> +2 -> decrypt V+2.
     if std::env::var("FHE_EVAL_VERIFIED_INPUT").is_ok() {
@@ -266,17 +266,10 @@ fn te_value() -> u64 {
         .unwrap_or(42)
 }
 
-fn encrypted_value_address(
-    acl_domain_key: Pubkey,
-    app_account: Pubkey,
-    encrypted_value_label: [u8; 32],
-) -> Pubkey {
-    let value_key = zama_solana_acl::derive_value_key(
-        acl_domain_key.to_bytes(),
-        app_account.to_bytes(),
-        encrypted_value_label,
-    );
-    zama_host::encrypted_value_address(value_key).0
+fn encrypted_value_address(domain: Pubkey, account: Pubkey, label: [u8; 32]) -> Pubkey {
+    let encrypted_value_id =
+        zama_solana_acl::derive_encrypted_value_id(domain.to_bytes(), account.to_bytes(), label);
+    zama_host::encrypted_value_address(encrypted_value_id).0
 }
 
 fn persistent_eval_target(payer: &Rc<Keypair>, label_marker: u8) -> PersistentEvalTarget {
@@ -284,25 +277,21 @@ fn persistent_eval_target(payer: &Rc<Keypair>, label_marker: u8) -> PersistentEv
     let mut plaintext = [0u8; 32];
     plaintext[24..32].copy_from_slice(&value.to_be_bytes());
 
-    let app_account = payer.pubkey();
-    let acl_domain_key = payer.pubkey();
-    let mut encrypted_value_label = [label_marker; 32];
-    encrypted_value_label[24..32].copy_from_slice(&value.to_be_bytes());
-    let value_key = zama_solana_acl::derive_value_key(
-        acl_domain_key.to_bytes(),
-        app_account.to_bytes(),
-        encrypted_value_label,
-    );
-    let encrypted_value =
-        encrypted_value_address(acl_domain_key, app_account, encrypted_value_label);
+    let account = payer.pubkey();
+    let domain = payer.pubkey();
+    let mut label = [label_marker; 32];
+    label[24..32].copy_from_slice(&value.to_be_bytes());
+    let encrypted_value_id =
+        zama_solana_acl::derive_encrypted_value_id(domain.to_bytes(), account.to_bytes(), label);
+    let encrypted_value = encrypted_value_address(domain, account, label);
 
     PersistentEvalTarget {
         value,
         plaintext,
-        acl_domain_key,
-        app_account,
-        encrypted_value_label,
-        value_key,
+        domain,
+        account,
+        label,
+        encrypted_value_id,
         encrypted_value,
     }
 }
@@ -344,19 +333,25 @@ fn token_balance_state(
     }
 
     let label = confidential_token::balance_label();
-    let value_key =
-        zama_solana_acl::derive_value_key(mint.to_bytes(), token_account_key.to_bytes(), label);
-    let (encrypted_value_key, encrypted_value_bump) = zama_host::encrypted_value_address(value_key);
-    if token_account.balance_encrypted_value != encrypted_value_key {
+    let encrypted_value_id = zama_solana_acl::derive_encrypted_value_id(
+        mint.to_bytes(),
+        token_account_key.to_bytes(),
+        label,
+    );
+    let (value_account_address, encrypted_value_bump) =
+        zama_host::encrypted_value_address(encrypted_value_id);
+    if token_account.balance_encrypted_value != value_account_address {
         return Err(
             "token balance pointer does not match the canonical encrypted value PDA".into(),
         );
     }
     // Re-read the pointer, encrypted value account, and HostConfig in one RPC response. Rejecting a changed pointer
     // prevents the probe from combining a token account from one bank state with a newer encrypted value account.
-    let mut accounts =
-        host.rpc()
-            .get_multiple_accounts(&[token_account_key, encrypted_value_key, host_config])?;
+    let mut accounts = host.rpc().get_multiple_accounts(&[
+        token_account_key,
+        value_account_address,
+        host_config,
+    ])?;
     let config_info = accounts
         .pop()
         .flatten()
@@ -382,7 +377,7 @@ fn token_balance_state(
     if token_account.owner != owner
         || token_account.mint != mint
         || token_account.bump != token_account_bump
-        || token_account.balance_encrypted_value != encrypted_value_key
+        || token_account.balance_encrypted_value != value_account_address
     {
         return Err("confidential token account changed during balance-state read".into());
     }
@@ -402,13 +397,16 @@ fn token_balance_state(
     {
         return Err("balance encrypted value account has trailing or truncated data".into());
     }
-    if encrypted_value.acl_domain_key != mint
-        || encrypted_value.app_account != token_account_key
-        || encrypted_value.encrypted_value_label != label
+    if encrypted_value.domain != mint
+        || encrypted_value.account != token_account_key
+        || encrypted_value.label != label
         || encrypted_value.bump != encrypted_value_bump
-        || encrypted_value.value_key() != value_key
+        || encrypted_value.encrypted_value_id() != encrypted_value_id
     {
-        return Err("balance encrypted value body does not match its canonical encrypted value account".into());
+        return Err(
+            "balance encrypted value body does not match its canonical encrypted value account"
+                .into(),
+        );
     }
     let compute_signer = confidential_token::compute_signer_address(mint).0;
     if encrypted_value.subjects != [owner, compute_signer] {
@@ -442,8 +440,8 @@ fn token_balance_state(
             mint: mint.to_string(),
             owner: owner.to_string(),
             token_account: token_account_key.to_string(),
-            encrypted_value_account: encrypted_value_key.to_string(),
-            acl_value_key: format!("0x{}", hex(&value_key)),
+            encrypted_value_account: value_account_address.to_string(),
+            encrypted_value_id: format!("0x{}", hex(&encrypted_value_id)),
             current_handle: format!("0x{}", hex(&handle)),
             chain_id: config.chain_id.to_string(),
         })?
@@ -522,9 +520,9 @@ fn persistent_output(
     dictionary: &mut BatchDictionary,
     encrypted_value: Pubkey,
     index: u8,
-    acl_domain_key: Pubkey,
-    app_account: Pubkey,
-    encrypted_value_label: [u8; 32],
+    domain: Pubkey,
+    account: Pubkey,
+    label: [u8; 32],
     subjects: Vec<Pubkey>,
 ) -> Result<zama_host::FheEvalOutput, Box<dyn std::error::Error>> {
     let (previous_handle, previous_subjects) =
@@ -534,10 +532,10 @@ fn persistent_output(
         };
     Ok(zama_host::FheEvalOutput::AllowedPersistent {
         output_encrypted_value_index: index,
-        output_app_account_authority_index: None,
-        output_acl_domain_key_index: dictionary.intern_key(acl_domain_key),
-        output_app_account_index: dictionary.intern_key(app_account),
-        output_encrypted_value_label_index: dictionary.intern(encrypted_value_label),
+        output_account_authority_index: None,
+        output_domain_index: dictionary.intern_key(domain),
+        output_account_index: dictionary.intern_key(account),
+        output_label_index: dictionary.intern(label),
         output_subject_indexes: dictionary.intern_subjects(subjects),
         previous_handle,
         previous_subjects,
@@ -720,9 +718,9 @@ fn trivial_encrypt_eval_with_label(
         &mut dictionary,
         target.encrypted_value,
         0,
-        target.acl_domain_key,
-        target.app_account,
-        target.encrypted_value_label,
+        target.domain,
+        target.account,
+        target.label,
         subjects,
     )?;
     let args = zama_host::FheEvalArgs {
@@ -742,7 +740,7 @@ fn trivial_encrypt_eval_with_label(
         .accounts(zama_host::accounts::FheEval {
             payer: payer.pubkey(),
             compute_subject: payer.pubkey(),
-            app_account_authority: payer.pubkey(),
+            account_authority: payer.pubkey(),
             host_config,
             system_program: system_program::ID,
             // Block-cap optional accounts: default cap is unrestricted, so existing flows
@@ -765,7 +763,7 @@ fn trivial_encrypt_eval_with_label(
     let handle = encrypted_value_account.current_handle;
     let handle_hex = hex(&handle);
     println!("  output ACL record {}", target.encrypted_value);
-    println!("  acl value key 0x{}", hex(&target.value_key));
+    println!("  acl value key 0x{}", hex(&target.encrypted_value_id));
     println!("  result handle 0x{handle_hex}  (tfhe-worker materializes this ciphertext)");
 
     if std::env::var("TE_ALLOW").is_ok() {
@@ -773,7 +771,7 @@ fn trivial_encrypt_eval_with_label(
     }
     Ok(PersistentEvalResult {
         encrypted_value: target.encrypted_value,
-        value_key: target.value_key,
+        encrypted_value_id: target.encrypted_value_id,
         handle,
     })
 }
@@ -952,7 +950,7 @@ fn public_decrypt_proof_step(
     let handle = bytes32_env("PUB_HANDLE")?;
     let encrypted_value = public_proof_encrypted_value_from_env()?;
     let encrypted_value_account = fetch_encrypted_value(host, encrypted_value)?;
-    let value_key = encrypted_value_account.value_key();
+    let encrypted_value_id = encrypted_value_account.encrypted_value_id();
     // Chain facts (peaks/leaf_count/current handle) come from the live account; the proof itself
     // comes from solana-proof-service, which resolves the public-decrypt leaf from the handle.
     let proof = fetch_public_proof(&encrypted_value, handle)?;
@@ -973,7 +971,7 @@ fn public_decrypt_proof_step(
         "PUB encryptedValueAccountHex 0x{}",
         hex(&encrypted_value.to_bytes())
     );
-    println!("PUB aclValueKey 0x{}", hex(&value_key));
+    println!("PUB aclValueKey 0x{}", hex(&encrypted_value_id));
     println!("PUB peaks {}", hex_csv(&encrypted_value_account.peaks));
     println!("PUB leafCount {}", encrypted_value_account.leaf_count);
     println!("PUB proofSlot {}", encrypted_value_account.leaf_count);
@@ -1016,7 +1014,7 @@ fn historical_update_step(
                 "HIST encryptedValueAccountHex 0x{}",
                 hex(&result.encrypted_value.to_bytes())
             );
-            println!("HIST aclValueKey 0x{}", hex(&result.value_key));
+            println!("HIST aclValueKey 0x{}", hex(&result.encrypted_value_id));
             Ok(())
         }
         "update" => {
@@ -1071,7 +1069,7 @@ fn historical_update_step(
                 "HIST encryptedValueAccountHex 0x{}",
                 hex(&target.encrypted_value.to_bytes())
             );
-            println!("HIST aclValueKey 0x{}", hex(&target.value_key));
+            println!("HIST aclValueKey 0x{}", hex(&target.encrypted_value_id));
             println!("HIST peaks {}", hex_csv(&encrypted_value_account.peaks));
             println!("HIST leafCount {}", encrypted_value_account.leaf_count);
             println!("HIST proofSlot {}", encrypted_value_account.leaf_count);
@@ -1092,7 +1090,7 @@ fn historical_update_step(
 /// Input flow phase (#1539): one fhe_eval that adds a public scalar to a coprocessor-attested external
 /// input and binds the result to a persistent output ACL record. The verified input is resolved in-frame
 /// (FheEvalOperand::VerifiedInput) — its attestation is re-verified on-chain via secp256k1 with no
-/// scratch PDA — and the persistent output is pinned to the attested acl_domain_key (the input's domain;
+/// scratch PDA — and the persistent output is pinned to the attested domain (the input's domain;
 /// the on-chain binding rejects any other). The attestation is supplied via the same BIND_* env vars
 /// the standalone input-verify phase uses; TE_ADD is the scalar addend (default 2). The host-listener
 /// reconstructs the successful frame so the tfhe-worker materializes (input + TE_ADD); TE_ALLOW
@@ -1122,10 +1120,10 @@ fn fhe_eval_verified_input_add(
         .map(|s| hexdec(&s))
         .unwrap_or_else(|_| vec![0u8]);
 
-    // The attested contract IS the input's acl_domain_key; the persistent output must bind that exact
-    // domain (the on-chain VerifiedInput -> persistent binding enforces it). app_account is the signer.
-    let acl_domain_key = Pubkey::new_from_array(contract_address);
-    let app_account = payer.pubkey();
+    // The attested contract IS the input's domain; the persistent output must bind that exact
+    // domain (the on-chain VerifiedInput -> persistent binding enforces it). account is the signer.
+    let domain = Pubkey::new_from_array(contract_address);
+    let account = payer.pubkey();
 
     // Scalar addend (default 2). ClearConst reads big-endian, so place the u64 in the low bytes.
     let addend: u64 = std::env::var("TE_ADD")
@@ -1138,10 +1136,9 @@ fn fhe_eval_verified_input_add(
 
     // Label distinct from the trivial-encrypt phases ([1]/[2] markers) so output PDAs never collide;
     // keyed on the input handle tail so distinct inputs derive distinct output records.
-    let mut encrypted_value_label = [3u8; 32];
-    encrypted_value_label[24..32].copy_from_slice(&input_handle[24..32]);
-    let output_encrypted_value =
-        encrypted_value_address(acl_domain_key, app_account, encrypted_value_label);
+    let mut label = [3u8; 32];
+    label[24..32].copy_from_slice(&input_handle[24..32]);
+    let output_encrypted_value = encrypted_value_address(domain, account, label);
     let (zama_event_authority, _) =
         Pubkey::find_program_address(&[EVENT_AUTHORITY_SEED], &zama_host::ID);
     let subjects = vec![payer.pubkey()];
@@ -1174,9 +1171,9 @@ fn fhe_eval_verified_input_add(
                 &mut dictionary,
                 output_encrypted_value,
                 0,
-                acl_domain_key,
-                app_account,
-                encrypted_value_label,
+                domain,
+                account,
+                label,
                 subjects,
             )?,
         }],
@@ -1190,7 +1187,7 @@ fn fhe_eval_verified_input_add(
         .accounts(zama_host::accounts::FheEval {
             payer: payer.pubkey(),
             compute_subject: payer.pubkey(),
-            app_account_authority: payer.pubkey(),
+            account_authority: payer.pubkey(),
             host_config,
             system_program: system_program::ID,
             // Block-cap optional accounts: default cap is unrestricted, so existing flows
@@ -1216,7 +1213,10 @@ fn fhe_eval_verified_input_add(
         .map(|b| format!("{b:02x}"))
         .collect();
     println!("  output ACL record {output_encrypted_value}");
-    println!("  acl value key 0x{}", hex(&encrypted_value_account.value_key()));
+    println!(
+        "  acl value key 0x{}",
+        hex(&encrypted_value_account.encrypted_value_id())
+    );
     println!("  result handle 0x{handle_hex}  (tfhe-worker materializes input + {addend})");
 
     if std::env::var("TE_ALLOW").is_ok() {
@@ -1806,9 +1806,9 @@ fn create_persistent_public_decrypt_operand(
     use anchor_lang::solana_program::instruction::AccountMeta;
     let mut plaintext = [0u8; 32];
     plaintext[24..32].copy_from_slice(&value.to_be_bytes());
-    let app_account = payer.pubkey();
-    let acl_domain_key = payer.pubkey();
-    let encrypted_value = encrypted_value_address(acl_domain_key, app_account, label);
+    let account = payer.pubkey();
+    let domain = payer.pubkey();
+    let encrypted_value = encrypted_value_address(domain, account, label);
     let (zama_event_authority, _) =
         Pubkey::find_program_address(&[EVENT_AUTHORITY_SEED], &zama_host::ID);
     let subjects = vec![payer.pubkey()];
@@ -1823,8 +1823,8 @@ fn create_persistent_public_decrypt_operand(
                 &mut dictionary,
                 encrypted_value,
                 0,
-                acl_domain_key,
-                app_account,
+                domain,
+                account,
                 label,
                 subjects,
             )?,
@@ -1835,7 +1835,7 @@ fn create_persistent_public_decrypt_operand(
         .accounts(zama_host::accounts::FheEval {
             payer: payer.pubkey(),
             compute_subject: payer.pubkey(),
-            app_account_authority: payer.pubkey(),
+            account_authority: payer.pubkey(),
             host_config,
             system_program: system_program::ID,
             hcu_block_meter: None,
@@ -1881,16 +1881,15 @@ fn fhe_eval_binary(
         .unwrap_or(5);
     let output_fhe_type: u8 = if is_comparison_op(op) { 0 } else { in_fhe_type };
 
-    let app_account = payer.pubkey();
-    let acl_domain_key = payer.pubkey();
-    let mut encrypted_value_label = [7u8; 32];
-    encrypted_value_label[1] = op.as_u8();
-    encrypted_value_label[2] = in_fhe_type;
-    encrypted_value_label[3] = if b_scalar { 1 } else { 0 };
-    encrypted_value_label[8..16].copy_from_slice(&a.to_be_bytes());
-    encrypted_value_label[16..24].copy_from_slice(&b.to_be_bytes());
-    let output_encrypted_value =
-        encrypted_value_address(acl_domain_key, app_account, encrypted_value_label);
+    let account = payer.pubkey();
+    let domain = payer.pubkey();
+    let mut label = [7u8; 32];
+    label[1] = op.as_u8();
+    label[2] = in_fhe_type;
+    label[3] = if b_scalar { 1 } else { 0 };
+    label[8..16].copy_from_slice(&a.to_be_bytes());
+    label[16..24].copy_from_slice(&b.to_be_bytes());
+    let output_encrypted_value = encrypted_value_address(domain, account, label);
     let (zama_event_authority, _) =
         Pubkey::find_program_address(&[EVENT_AUTHORITY_SEED], &zama_host::ID);
     let subjects = vec![payer.pubkey()];
@@ -1954,9 +1953,9 @@ fn fhe_eval_binary(
             &mut dictionary,
             output_encrypted_value,
             output_index,
-            acl_domain_key,
-            app_account,
-            encrypted_value_label,
+            domain,
+            account,
+            label,
             subjects,
         )?,
     }];
@@ -1978,7 +1977,7 @@ fn fhe_eval_binary(
         .accounts(zama_host::accounts::FheEval {
             payer: payer.pubkey(),
             compute_subject: payer.pubkey(),
-            app_account_authority: payer.pubkey(),
+            account_authority: payer.pubkey(),
             host_config,
             system_program: system_program::ID,
             hcu_block_meter: None,
@@ -2040,15 +2039,14 @@ fn fhe_eval_unary(
         .and_then(|s| s.parse().ok())
         .unwrap_or(in_fhe_type);
 
-    let app_account = payer.pubkey();
-    let acl_domain_key = payer.pubkey();
-    let mut encrypted_value_label = [8u8; 32];
-    encrypted_value_label[1] = op.as_u8();
-    encrypted_value_label[2] = in_fhe_type;
-    encrypted_value_label[3] = out_fhe_type;
-    encrypted_value_label[24..32].copy_from_slice(&a.to_be_bytes());
-    let output_encrypted_value =
-        encrypted_value_address(acl_domain_key, app_account, encrypted_value_label);
+    let account = payer.pubkey();
+    let domain = payer.pubkey();
+    let mut label = [8u8; 32];
+    label[1] = op.as_u8();
+    label[2] = in_fhe_type;
+    label[3] = out_fhe_type;
+    label[24..32].copy_from_slice(&a.to_be_bytes());
+    let output_encrypted_value = encrypted_value_address(domain, account, label);
     let (zama_event_authority, _) =
         Pubkey::find_program_address(&[EVENT_AUTHORITY_SEED], &zama_host::ID);
     let subjects = vec![payer.pubkey()];
@@ -2083,9 +2081,9 @@ fn fhe_eval_unary(
                 &mut dictionary,
                 output_encrypted_value,
                 1,
-                acl_domain_key,
-                app_account,
-                encrypted_value_label,
+                domain,
+                account,
+                label,
                 subjects,
             )?,
         }],
@@ -2097,7 +2095,7 @@ fn fhe_eval_unary(
         .accounts(zama_host::accounts::FheEval {
             payer: payer.pubkey(),
             compute_subject: payer.pubkey(),
-            app_account_authority: payer.pubkey(),
+            account_authority: payer.pubkey(),
             host_config,
             system_program: system_program::ID,
             hcu_block_meter: None,
@@ -2159,15 +2157,14 @@ fn fhe_eval_ternary(
         .and_then(|s| s.parse().ok())
         .unwrap_or(5);
 
-    let app_account = payer.pubkey();
-    let acl_domain_key = payer.pubkey();
-    let mut encrypted_value_label = [9u8; 32];
-    encrypted_value_label[1] = ctrl as u8;
-    encrypted_value_label[2] = fhe_type;
-    encrypted_value_label[8..16].copy_from_slice(&if_true.to_be_bytes());
-    encrypted_value_label[16..24].copy_from_slice(&if_false.to_be_bytes());
-    let output_encrypted_value =
-        encrypted_value_address(acl_domain_key, app_account, encrypted_value_label);
+    let account = payer.pubkey();
+    let domain = payer.pubkey();
+    let mut label = [9u8; 32];
+    label[1] = ctrl as u8;
+    label[2] = fhe_type;
+    label[8..16].copy_from_slice(&if_true.to_be_bytes());
+    label[16..24].copy_from_slice(&if_false.to_be_bytes());
+    let output_encrypted_value = encrypted_value_address(domain, account, label);
     let (zama_event_authority, _) =
         Pubkey::find_program_address(&[EVENT_AUTHORITY_SEED], &zama_host::ID);
     let subjects = vec![payer.pubkey()];
@@ -2231,9 +2228,9 @@ fn fhe_eval_ternary(
                 &mut dictionary,
                 output_encrypted_value,
                 3,
-                acl_domain_key,
-                app_account,
-                encrypted_value_label,
+                domain,
+                account,
+                label,
                 subjects,
             )?,
         }],
@@ -2245,7 +2242,7 @@ fn fhe_eval_ternary(
         .accounts(zama_host::accounts::FheEval {
             payer: payer.pubkey(),
             compute_subject: payer.pubkey(),
-            app_account_authority: payer.pubkey(),
+            account_authority: payer.pubkey(),
             host_config,
             system_program: system_program::ID,
             hcu_block_meter: None,
@@ -2300,13 +2297,12 @@ fn fhe_eval_rand_bounded(
         .and_then(|s| s.parse().ok())
         .unwrap_or(5);
 
-    let app_account = payer.pubkey();
-    let acl_domain_key = payer.pubkey();
-    let mut encrypted_value_label = [0x0au8; 32];
-    encrypted_value_label[1] = fhe_type;
-    encrypted_value_label[24..32].copy_from_slice(&upper.to_be_bytes());
-    let output_encrypted_value =
-        encrypted_value_address(acl_domain_key, app_account, encrypted_value_label);
+    let account = payer.pubkey();
+    let domain = payer.pubkey();
+    let mut label = [0x0au8; 32];
+    label[1] = fhe_type;
+    label[24..32].copy_from_slice(&upper.to_be_bytes());
+    let output_encrypted_value = encrypted_value_address(domain, account, label);
     let (zama_event_authority, _) =
         Pubkey::find_program_address(&[EVENT_AUTHORITY_SEED], &zama_host::ID);
     let subjects = vec![payer.pubkey()];
@@ -2325,9 +2321,9 @@ fn fhe_eval_rand_bounded(
                 &mut dictionary,
                 output_encrypted_value,
                 0,
-                acl_domain_key,
-                app_account,
-                encrypted_value_label,
+                domain,
+                account,
+                label,
                 subjects,
             )?,
         }],
@@ -2339,7 +2335,7 @@ fn fhe_eval_rand_bounded(
         .accounts(zama_host::accounts::FheEval {
             payer: payer.pubkey(),
             compute_subject: payer.pubkey(),
-            app_account_authority: payer.pubkey(),
+            account_authority: payer.pubkey(),
             host_config,
             system_program: system_program::ID,
             hcu_block_meter: None,
@@ -2389,13 +2385,12 @@ fn fhe_eval_sum(
         .unwrap_or(20);
     let fhe_type: u8 = 5; // euint64
 
-    let app_account = payer.pubkey();
-    let acl_domain_key = payer.pubkey();
-    let mut encrypted_value_label = [4u8; 32];
-    encrypted_value_label[16..24].copy_from_slice(&a.to_be_bytes());
-    encrypted_value_label[24..32].copy_from_slice(&b.to_be_bytes());
-    let output_encrypted_value =
-        encrypted_value_address(acl_domain_key, app_account, encrypted_value_label);
+    let account = payer.pubkey();
+    let domain = payer.pubkey();
+    let mut label = [4u8; 32];
+    label[16..24].copy_from_slice(&a.to_be_bytes());
+    label[24..32].copy_from_slice(&b.to_be_bytes());
+    let output_encrypted_value = encrypted_value_address(domain, account, label);
     let (zama_event_authority, _) =
         Pubkey::find_program_address(&[EVENT_AUTHORITY_SEED], &zama_host::ID);
     let subjects = vec![payer.pubkey()];
@@ -2435,9 +2430,9 @@ fn fhe_eval_sum(
                 &mut dictionary,
                 output_encrypted_value,
                 2,
-                acl_domain_key,
-                app_account,
-                encrypted_value_label,
+                domain,
+                account,
+                label,
                 subjects,
             )?,
         }],
@@ -2449,7 +2444,7 @@ fn fhe_eval_sum(
         .accounts(zama_host::accounts::FheEval {
             payer: payer.pubkey(),
             compute_subject: payer.pubkey(),
-            app_account_authority: payer.pubkey(),
+            account_authority: payer.pubkey(),
             host_config,
             system_program: system_program::ID,
             hcu_block_meter: None,
@@ -2500,12 +2495,11 @@ fn fhe_eval_is_in(
         .unwrap_or(42);
     let elem_fhe_type: u8 = 5; // euint64
 
-    let app_account = payer.pubkey();
-    let acl_domain_key = payer.pubkey();
-    let mut encrypted_value_label = [5u8; 32];
-    encrypted_value_label[24..32].copy_from_slice(&value.to_be_bytes());
-    let output_encrypted_value =
-        encrypted_value_address(acl_domain_key, app_account, encrypted_value_label);
+    let account = payer.pubkey();
+    let domain = payer.pubkey();
+    let mut label = [5u8; 32];
+    label[24..32].copy_from_slice(&value.to_be_bytes());
+    let output_encrypted_value = encrypted_value_address(domain, account, label);
     let (zama_event_authority, _) =
         Pubkey::find_program_address(&[EVENT_AUTHORITY_SEED], &zama_host::ID);
     let subjects = vec![payer.pubkey()];
@@ -2563,9 +2557,9 @@ fn fhe_eval_is_in(
             &mut dictionary,
             output_encrypted_value,
             output_index,
-            acl_domain_key,
-            app_account,
-            encrypted_value_label,
+            domain,
+            account,
+            label,
             subjects,
         )?,
     }];
@@ -2588,7 +2582,7 @@ fn fhe_eval_is_in(
         .accounts(zama_host::accounts::FheEval {
             payer: payer.pubkey(),
             compute_subject: payer.pubkey(),
-            app_account_authority: payer.pubkey(),
+            account_authority: payer.pubkey(),
             host_config,
             system_program: system_program::ID,
             hcu_block_meter: None,
@@ -2642,14 +2636,13 @@ fn fhe_eval_mul_div(
         .unwrap_or(3);
     let fhe_type: u8 = 5; // euint64
 
-    let app_account = payer.pubkey();
-    let acl_domain_key = payer.pubkey();
-    let mut encrypted_value_label = [6u8; 32];
-    encrypted_value_label[8..16].copy_from_slice(&a.to_be_bytes());
-    encrypted_value_label[16..24].copy_from_slice(&b.to_be_bytes());
-    encrypted_value_label[24..32].copy_from_slice(&d.to_be_bytes());
-    let output_encrypted_value =
-        encrypted_value_address(acl_domain_key, app_account, encrypted_value_label);
+    let account = payer.pubkey();
+    let domain = payer.pubkey();
+    let mut label = [6u8; 32];
+    label[8..16].copy_from_slice(&a.to_be_bytes());
+    label[16..24].copy_from_slice(&b.to_be_bytes());
+    label[24..32].copy_from_slice(&d.to_be_bytes());
+    let output_encrypted_value = encrypted_value_address(domain, account, label);
     let (zama_event_authority, _) =
         Pubkey::find_program_address(&[EVENT_AUTHORITY_SEED], &zama_host::ID);
     let subjects = vec![payer.pubkey()];
@@ -2684,9 +2677,9 @@ fn fhe_eval_mul_div(
                 &mut dictionary,
                 output_encrypted_value,
                 1,
-                acl_domain_key,
-                app_account,
-                encrypted_value_label,
+                domain,
+                account,
+                label,
                 subjects,
             )?,
         }],
@@ -2699,7 +2692,7 @@ fn fhe_eval_mul_div(
         .accounts(zama_host::accounts::FheEval {
             payer: payer.pubkey(),
             compute_subject: payer.pubkey(),
-            app_account_authority: payer.pubkey(),
+            account_authority: payer.pubkey(),
             host_config,
             system_program: system_program::ID,
             hcu_block_meter: None,

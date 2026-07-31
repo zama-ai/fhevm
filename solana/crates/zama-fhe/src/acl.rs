@@ -6,7 +6,7 @@ use anchor_lang::prelude::Pubkey;
 
 use zama_host::encrypted_value_address;
 
-use crate::validate::{validate_encrypted_value_key, validate_subjects};
+use crate::validate::{validate_encrypted_value_id, validate_subjects};
 use crate::{EvalBuildError, Result};
 
 /// App-domain encrypted field label.
@@ -25,30 +25,30 @@ impl PersistentLabel {
 
 /// App-domain key of a stable `EncryptedValue` account.
 ///
-/// Addressing is stable per `(namespace, account, label)` — it does not change
+/// Addressing is stable per `(domain, account, label)` — it does not change
 /// on handle updates, unlike the old nonce-keyed ACL records.
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct EncryptedValueKey {
-    pub(crate) namespace: Pubkey,
+pub struct EncryptedValueId {
+    pub(crate) domain: Pubkey,
     pub(crate) account: Pubkey,
     pub(crate) label: PersistentLabel,
 }
 
-impl EncryptedValueKey {
-    pub fn new(namespace: Pubkey, account: Pubkey, label: PersistentLabel) -> Self {
+impl EncryptedValueId {
+    pub fn new(domain: Pubkey, account: Pubkey, label: PersistentLabel) -> Self {
         Self {
-            namespace,
+            domain,
             account,
             label,
         }
     }
 
     pub fn address(&self) -> Pubkey {
-        encrypted_value_address(self.value_key()).0
+        encrypted_value_address(self.encrypted_value_id()).0
     }
 
-    pub fn namespace(&self) -> Pubkey {
-        self.namespace
+    pub fn domain(&self) -> Pubkey {
+        self.domain
     }
 
     pub fn account(&self) -> Pubkey {
@@ -59,9 +59,9 @@ impl EncryptedValueKey {
         self.label
     }
 
-    pub fn value_key(&self) -> [u8; 32] {
-        zama_solana_acl::derive_value_key(
-            self.namespace.to_bytes(),
+    pub fn encrypted_value_id(&self) -> [u8; 32] {
+        zama_solana_acl::derive_encrypted_value_id(
+            self.domain.to_bytes(),
             self.account.to_bytes(),
             self.label.bytes(),
         )
@@ -79,7 +79,7 @@ struct PreviousEncryptedValueAccountState {
 /// Persistent output descriptor accepted by persistent-only steps such as input bind.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct PersistentOutput {
-    key: EncryptedValueKey,
+    key: EncryptedValueId,
     subjects: Vec<Pubkey>,
     previous: Option<PreviousEncryptedValueAccountState>,
     make_public: bool,
@@ -87,7 +87,7 @@ pub struct PersistentOutput {
 
 impl PersistentOutput {
     /// First bind for an encrypted value account: creates the `EncryptedValue` PDA.
-    pub fn create(key: EncryptedValueKey, subjects: Vec<Pubkey>) -> Self {
+    pub fn create(key: EncryptedValueId, subjects: Vec<Pubkey>) -> Self {
         Self {
             key,
             subjects,
@@ -100,7 +100,7 @@ impl PersistentOutput {
     /// the on-chain account in the same instruction; the host verifies its
     /// handle and subjects exactly.
     pub fn update(
-        key: EncryptedValueKey,
+        key: EncryptedValueId,
         subjects: Vec<Pubkey>,
         current: &zama_host::EncryptedValue,
     ) -> Self {
@@ -124,13 +124,13 @@ impl PersistentOutput {
     }
 
     pub fn binding(&self) -> Result<PersistentOutputBinding> {
-        validate_encrypted_value_key(&self.key)?;
+        validate_encrypted_value_id(&self.key)?;
         validate_subjects(&self.subjects)?;
         Ok(PersistentOutputBinding {
             encrypted_value: self.key.address(),
-            acl_domain_key: self.key.namespace,
-            app_account: self.key.account,
-            encrypted_value_label: self.key.label.bytes(),
+            domain: self.key.domain,
+            account: self.key.account,
+            label: self.key.label.bytes(),
             subjects: self.subjects.clone(),
             previous: self.previous.clone(),
             make_public: self.make_public,
@@ -142,9 +142,9 @@ impl PersistentOutput {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct PersistentOutputBinding {
     encrypted_value: Pubkey,
-    acl_domain_key: Pubkey,
-    app_account: Pubkey,
-    encrypted_value_label: [u8; 32],
+    domain: Pubkey,
+    account: Pubkey,
+    label: [u8; 32],
     subjects: Vec<Pubkey>,
     previous: Option<PreviousEncryptedValueAccountState>,
     make_public: bool,
@@ -155,16 +155,16 @@ impl PersistentOutputBinding {
         self.encrypted_value
     }
 
-    pub fn acl_domain_key(&self) -> Pubkey {
-        self.acl_domain_key
+    pub fn domain(&self) -> Pubkey {
+        self.domain
     }
 
-    pub fn app_account(&self) -> Pubkey {
-        self.app_account
+    pub fn account(&self) -> Pubkey {
+        self.account
     }
 
-    pub fn encrypted_value_label(&self) -> [u8; 32] {
-        self.encrypted_value_label
+    pub fn label(&self) -> [u8; 32] {
+        self.label
     }
 
     pub fn subjects(&self) -> &[Pubkey] {
@@ -252,7 +252,7 @@ impl Output {
     }
 
     /// First bind for an encrypted value account (creates the `EncryptedValue` PDA).
-    pub fn persistent(key: EncryptedValueKey, subjects: Vec<Pubkey>) -> Self {
+    pub fn persistent(key: EncryptedValueId, subjects: Vec<Pubkey>) -> Self {
         Self(OutputKind::Persistent(PersistentOutput::create(
             key, subjects,
         )))

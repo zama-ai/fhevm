@@ -13,7 +13,7 @@ pub struct UserDecryptionDelegation {
     /// Delegate allowed to request user decryption.
     pub delegate: Pubkey,
     /// App context for the delegation.
-    pub app_account: Pubkey,
+    pub account: Pubkey,
     /// Slot after which the delegation is invalid.
     pub expiration_slot: u64,
     /// Monotonic counter incremented on every grant, regrant, and revoke.

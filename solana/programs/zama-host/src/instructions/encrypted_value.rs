@@ -250,9 +250,9 @@ mod tests {
 
     fn value(handle: [u8; 32], subjects: &[Pubkey]) -> EncryptedValue {
         EncryptedValue {
-            acl_domain_key: Pubkey::default(),
-            app_account: Pubkey::default(),
-            encrypted_value_label: [0; 32],
+            domain: Pubkey::default(),
+            account: Pubkey::default(),
+            label: [0; 32],
             current_handle: handle,
             subjects: subjects.to_vec(),
             leaf_count: 0,

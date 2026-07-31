@@ -10,7 +10,7 @@
 //! Deliberately solana-version-agnostic (pure `borsh` + `sha2`, pubkeys as raw
 //! `[u8; 32]`) so the on-chain programs (solana 3.x) and the connector
 //! (solana 2.x) can share it. PDA derivation stays on each side; this crate
-//! provides the seed and the `value_key`.
+//! provides the seed and the `encrypted_value_id`.
 
 #[cfg(not(target_os = "solana"))]
 use sha2::{Digest as _, Sha256};
@@ -27,7 +27,7 @@ pub use mmr::{
     MmrProof, MAX_MMR_PEAKS,
 };
 
-/// PDA seed for an encrypted value account: `[ENCRYPTED_VALUE_SEED, value_key]`.
+/// PDA seed for an encrypted value account: `[ENCRYPTED_VALUE_SEED, encrypted_value_id]`.
 pub const ENCRYPTED_VALUE_SEED: &[u8] = b"encrypted-value";
 /// Upper bound on persistent subjects, for write-side validation.
 pub const MAX_ENCRYPTED_VALUE_SUBJECTS: usize = 8;
@@ -65,11 +65,11 @@ pub enum AclError {
 #[derive(borsh::BorshSerialize, borsh::BorshDeserialize, Clone, Debug, Default, PartialEq, Eq)]
 pub struct EncryptedValue {
     /// App-level ACL domain, such as a confidential token mint.
-    pub acl_domain_key: [u8; 32],
+    pub domain: [u8; 32],
     /// App-owned account whose encrypted field this encrypted value account represents.
-    pub app_account: [u8; 32],
-    /// Domain-separated encrypted field label inside `app_account`.
-    pub encrypted_value_label: [u8; 32],
+    pub account: [u8; 32],
+    /// Domain-separated encrypted field label inside `account`.
+    pub label: [u8; 32],
     /// Current encrypted value identifier (the live handle).
     pub current_handle: [u8; 32],
     /// Current persistent subjects (binary membership; no role flags).
@@ -84,12 +84,8 @@ pub struct EncryptedValue {
 
 impl EncryptedValue {
     /// The encrypted value account's value key — its PDA seed. Derived, never stored.
-    pub fn value_key(&self) -> [u8; 32] {
-        derive_value_key(
-            self.acl_domain_key,
-            self.app_account,
-            self.encrypted_value_label,
-        )
+    pub fn encrypted_value_id(&self) -> [u8; 32] {
+        derive_encrypted_value_id(self.domain, self.account, self.label)
     }
 
     /// Whether `subject` is a current persistent member.
@@ -108,9 +104,9 @@ impl EncryptedValue {
 /// Byte-exact body layout of `zama-host`'s on-chain `EncryptedValue` account.
 #[derive(borsh::BorshSerialize, borsh::BorshDeserialize, Clone, Debug, PartialEq, Eq)]
 struct OnChainEncryptedValue {
-    acl_domain_key: [u8; 32],
-    app_account: [u8; 32],
-    encrypted_value_label: [u8; 32],
+    domain: [u8; 32],
+    account: [u8; 32],
+    label: [u8; 32],
     current_handle: [u8; 32],
     subjects: Vec<[u8; 32]>,
     leaf_count: u64,
@@ -121,9 +117,9 @@ struct OnChainEncryptedValue {
 impl OnChainEncryptedValue {
     fn to_shared(&self) -> EncryptedValue {
         EncryptedValue {
-            acl_domain_key: self.acl_domain_key,
-            app_account: self.app_account,
-            encrypted_value_label: self.encrypted_value_label,
+            domain: self.domain,
+            account: self.account,
+            label: self.label,
             current_handle: self.current_handle,
             subjects: self.subjects.clone(),
             leaf_count: self.leaf_count,
@@ -155,17 +151,8 @@ pub fn decode_on_chain_account(data: &[u8]) -> Result<EncryptedValue, AclError> 
 
 /// The app-controlled value key for one encrypted field — the encrypted value account's PDA seed.
 /// Contains app metadata, not the opaque handle, so the address is predeclarable.
-pub fn derive_value_key(
-    acl_domain_key: [u8; 32],
-    app_account: [u8; 32],
-    encrypted_value_label: [u8; 32],
-) -> [u8; 32] {
-    sha256(&[
-        b"zama-encrypted-value-key-v1",
-        &acl_domain_key,
-        &app_account,
-        &encrypted_value_label,
-    ])
+pub fn derive_encrypted_value_id(domain: [u8; 32], account: [u8; 32], label: [u8; 32]) -> [u8; 32] {
+    sha256(&[b"zama-encrypted-value-key-v1", &domain, &account, &label])
 }
 
 #[cfg(not(target_os = "solana"))]
@@ -424,9 +411,9 @@ mod tests {
 
     fn encode_on_chain(value: &EncryptedValue) -> Vec<u8> {
         let on_chain = OnChainEncryptedValue {
-            acl_domain_key: value.acl_domain_key,
-            app_account: value.app_account,
-            encrypted_value_label: value.encrypted_value_label,
+            domain: value.domain,
+            account: value.account,
+            label: value.label,
             current_handle: value.current_handle,
             subjects: value.subjects.clone(),
             leaf_count: value.leaf_count,

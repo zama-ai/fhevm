@@ -88,18 +88,17 @@ pub(crate) fn lower_output(
                     EvalAccountPurpose::PersistentOutputAcl,
                 ),
             )?;
-            let output_app_account_authority_index =
-                if binding.app_account() == app_authority.pubkey() {
-                    None
-                } else {
-                    Some(account_index(
-                        remaining_accounts,
-                        EvalAccountMeta::readonly_signer(
-                            binding.app_account(),
-                            EvalAccountPurpose::PersistentOutputAuthority,
-                        ),
-                    )?)
-                };
+            let output_account_authority_index = if binding.account() == app_authority.pubkey() {
+                None
+            } else {
+                Some(account_index(
+                    remaining_accounts,
+                    EvalAccountMeta::readonly_signer(
+                        binding.account(),
+                        EvalAccountPurpose::PersistentOutputAuthority,
+                    ),
+                )?)
+            };
             let output_subject_indexes = binding
                 .host_subjects()
                 .into_iter()
@@ -107,19 +106,10 @@ pub(crate) fn lower_output(
                 .collect::<Result<Vec<u8>>>()?;
             let output = FheEvalOutput::AllowedPersistent {
                 output_encrypted_value_index,
-                output_app_account_authority_index,
-                output_acl_domain_key_index: dictionary_index(
-                    dictionary,
-                    binding.acl_domain_key().to_bytes(),
-                )?,
-                output_app_account_index: dictionary_index(
-                    dictionary,
-                    binding.app_account().to_bytes(),
-                )?,
-                output_encrypted_value_label_index: dictionary_index(
-                    dictionary,
-                    binding.encrypted_value_label(),
-                )?,
+                output_account_authority_index,
+                output_domain_index: dictionary_index(dictionary, binding.domain().to_bytes())?,
+                output_account_index: dictionary_index(dictionary, binding.account().to_bytes())?,
+                output_label_index: dictionary_index(dictionary, binding.label())?,
                 output_subject_indexes,
                 previous_handle: binding.previous_handle(),
                 previous_subjects: binding.previous_subjects().map(|s| s.to_vec()),
