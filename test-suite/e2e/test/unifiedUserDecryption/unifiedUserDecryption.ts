@@ -18,6 +18,7 @@ import {
   backdatedStartTimestamp,
   delegatedHandle,
   directHandle,
+  expectGatewayRevert,
   expectRelayerAclRejection,
   expectStuckAtKms,
   requestUnifiedUserDecrypt,
@@ -536,10 +537,12 @@ describe('Unified user decryption', function () {
 
     it('test unified user decrypt rejects extraData with an unknown contextId', async function () {
       this.timeout(negativeWindowMs + TIMEOUT_MARGIN_MS);
-      // Versioned extraData is NOT decorative: the connector validates the
-      // embedded contextId against its context store. A fabricated id passes
-      // the relayer's format check (and the signature covers it), but the KMS
-      // Connector rejects it and the job never succeeds.
+      // Versioned extraData is NOT decorative: the Gateway validates the
+      // embedded contextId at request time, before the decryption fee is
+      // collected (matching the legacy request paths). A fabricated id passes
+      // the relayer's format check (and the signature covers it), but the
+      // request transaction reverts with InvalidKmsContext during the
+      // relayer's simulation — no request is opened and no fee is charged.
       const handle = await aliceContract.xUint64();
       const req: UnifiedDecryptRequest = {
         handles: [directHandle(handle, aliceContractAddress, signers.alice.address)],
@@ -555,7 +558,8 @@ describe('Unified user decryption', function () {
         timeoutMs: negativeWindowMs,
       });
       expect(post.httpStatus, JSON.stringify(post.raw)).to.equal(202);
-      expectStuckAtKms(poll);
+      // InvalidKmsContext(0xdeadbeef) — selector 0x77ddbe81.
+      expectGatewayRevert(poll, /0x77ddbe81.*deadbeef/i);
     });
 
     it('test unified user decrypt rejects a malformed extraData version', async function () {
