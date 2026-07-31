@@ -262,7 +262,7 @@ impl FheIsIn for Uint<128> {}
 impl FheIsIn for Address {}
 impl FheIsIn for Bytes256 {}
 
-/// Typed encrypted eval value.
+/// Typed encrypted batch value.
 ///
 /// Persistent values are constructed from app account state. Transient values are
 /// returned by [`BatchBuilder`] methods and can only be fed to later steps in the
@@ -384,7 +384,7 @@ impl Scalar<Bytes256> {
     }
 }
 
-/// Typed right-hand side accepted by binary eval ops.
+/// Typed right-hand side accepted by binary batch ops.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum BinaryRhs<T> {
     Encrypted(Encrypted<T>),

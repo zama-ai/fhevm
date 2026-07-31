@@ -116,7 +116,7 @@ impl From<&BatchAccountMeta> for BatchAccountRequirement {
     }
 }
 
-/// App authority that signs the fixed ZamaHost eval CPI account.
+/// App authority that signs the fixed ZamaHost fhe_execute CPI account.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub struct BatchAppAuthority(Pubkey);
 

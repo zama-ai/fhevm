@@ -7,8 +7,8 @@
 //! preflights the dynamic account set and [`invoke_batch_signed_resolved`] turns
 //! the batch plus resolved accounts into the exact `zama-host` CPI.
 //!
-//! The builder intentionally targets the current role-aware host eval ABI rather
-//! than the older `execute_frame` prototype. Instruction-local intermediate
+//! The builder intentionally targets the current role-aware host fhe_execute ABI rather
+//! than the older `execute_batch` prototype. Instruction-local intermediate
 //! values are returned by builder methods as typed transient [`Encrypted`] values;
 //! only [`Output::persistent`] creates ACL state. Binary, ternary, trivial-encrypt,
 //! rand, and verified input steps can be composed in one batch.

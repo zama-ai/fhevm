@@ -12,11 +12,11 @@ use crate::accounts::{BatchAccountMeta, BatchAppAuthority};
 use crate::acl::{BoundedU64UpperBound, Output};
 use crate::batch::Batch;
 use crate::lower::{lower_operand, lower_output};
-use crate::operand::{next_eval_builder_scope, BatchBuilderScope, Operand, OperandKind};
+use crate::operand::{next_batch_builder_scope, BatchBuilderScope, Operand, OperandKind};
 use crate::types::{Bool, Encrypted, FheIsIn, FheRandom, FheType, FheTyped, FheUint, Scalar, Uint};
 use crate::validate::{
     max_reduction_operands, operand_fhe_type, scalar_is_zero_for_type, validate_app_authority,
-    validate_binary_step, validate_lowered_eval_plan, validate_rand_steps_anchor_persistent_output,
+    validate_binary_step, validate_lowered_batch, validate_rand_steps_anchor_persistent_output,
     validate_supported_fhe_type, validate_supported_rand_type, validate_ternary_step,
     validate_uint_fhe_type, validate_unary_step,
 };
@@ -45,7 +45,7 @@ pub struct BatchBuilder {
 impl Clone for BatchBuilder {
     fn clone(&self) -> Self {
         Self {
-            scope: next_eval_builder_scope(),
+            scope: next_batch_builder_scope(),
             app_authority: self.app_authority,
             steps: self.steps.clone(),
             produced_types: self.produced_types.clone(),
@@ -60,7 +60,7 @@ impl Clone for BatchBuilder {
 impl BatchBuilder {
     pub fn new(app_authority: BatchAppAuthority) -> Self {
         Self {
-            scope: next_eval_builder_scope(),
+            scope: next_batch_builder_scope(),
             app_authority,
             steps: Vec::new(),
             produced_types: Vec::new(),
@@ -1003,7 +1003,7 @@ impl BatchBuilder {
         if self.steps.len() > MAX_FHE_BATCH_OPS {
             return Err(BatchBuildError::TooManyOps);
         }
-        validate_lowered_eval_plan(&self.steps, &self.remaining_accounts, &self.dictionary)?;
+        validate_lowered_batch(&self.steps, &self.remaining_accounts, &self.dictionary)?;
         validate_rand_steps_anchor_persistent_output(&self.steps)?;
         let account_count = u8::try_from(self.remaining_accounts.len())
             .map_err(|_| BatchBuildError::TooManyRemainingAccounts)?;

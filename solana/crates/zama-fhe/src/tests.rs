@@ -90,7 +90,7 @@ fn cpi_accounts(app_authority: Pubkey) -> BatchCpiAccounts<'static, 'static> {
 }
 
 #[test]
-fn eval_plan_build_runs_closure_and_finishes_plan() {
+fn batch_build_runs_closure_and_finishes_batch() {
     let primary_authority = Pubkey::new_unique();
     let input_key = encrypted_value_id(primary_authority, 1);
     let input_acl = input_key.address();
@@ -156,7 +156,7 @@ fn builder_rejects_post_write_persistent_alias() {
 }
 
 #[test]
-fn eval_plan_build_lowers_verified_input_operand() {
+fn batch_build_lowers_verified_input_operand() {
     let primary_authority = Pubkey::new_unique();
     let output_key = encrypted_value_id(primary_authority, 7);
     let output_acl = output_key.address();
@@ -213,7 +213,7 @@ fn verified_input_rejects_type_mismatch() {
 }
 
 #[test]
-fn eval_plan_build_propagates_closure_and_finish_errors() {
+fn batch_build_propagates_closure_and_finish_errors() {
     let primary_authority = Pubkey::new_unique();
     let error = match Batch::build(app_authority(primary_authority), |builder| {
         builder.binary_op(
@@ -432,7 +432,7 @@ fn invoke_batch_signed_with_builder_requires_additional_output_authorities() {
 }
 
 #[test]
-fn lowers_mixed_eval_to_stable_remaining_account_indices() {
+fn lowers_mixed_batch_to_stable_remaining_account_indices() {
     let primary_authority = Pubkey::new_unique();
     let balance_key = encrypted_value_id(primary_authority, 1);
     let amount_key = encrypted_value_id(primary_authority, 2);
@@ -624,7 +624,7 @@ fn lowers_explicit_output_authority_witness() {
 
 #[cfg(feature = "cpi")]
 #[test]
-fn resolve_accounts_orders_and_validates_plan_requirements() {
+fn resolve_accounts_orders_and_validates_batch_requirements() {
     let primary_authority = Pubkey::new_unique();
     let input_key = encrypted_value_id(primary_authority, 1);
     let input_acl = input_key.address();
@@ -1285,7 +1285,7 @@ fn persistent_output_validates_raw_subjects() {
 }
 
 #[test]
-fn persistent_output_birth_matches_eval_lowering() {
+fn persistent_output_create_matches_batch_lowering() {
     let primary_authority = Pubkey::new_unique();
     let subject = Pubkey::new_unique();
     let output_key = encrypted_value_id(primary_authority, 42);
@@ -1373,7 +1373,7 @@ fn persistent_output_update_carries_current_state() {
 }
 
 #[test]
-fn rejects_transients_from_another_frame() {
+fn rejects_transients_from_another_batch() {
     let primary_authority = Pubkey::new_unique();
     let input_key = encrypted_value_id(primary_authority, 1);
     let balance = Uint64Handle::persistent(balance_handle(1), input_key).unwrap();

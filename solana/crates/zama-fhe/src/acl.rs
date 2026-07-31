@@ -116,7 +116,7 @@ impl PersistentOutput {
     }
 
     /// Opts this output into being created publicly decryptable: the host seals a
-    /// public-decrypt leaf for the newly bound handle inside the same eval CPI
+    /// public-decrypt leaf for the newly bound handle inside the same fhe_execute CPI
     /// (EVM `unwrap`'s `makePubliclyDecryptable` parity; DD-036).
     pub fn with_make_public(mut self, make_public: bool) -> Self {
         self.make_public = make_public;

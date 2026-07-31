@@ -63,7 +63,7 @@ pub(crate) fn validate_rand_steps_anchor_persistent_output(steps: &[FheExecuteSt
     Ok(())
 }
 
-pub(crate) fn validate_lowered_eval_plan(
+pub(crate) fn validate_lowered_batch(
     steps: &[FheExecuteStep],
     remaining_accounts: &[BatchAccountMeta],
     dictionary: &[[u8; 32]],

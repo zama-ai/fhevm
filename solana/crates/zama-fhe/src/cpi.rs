@@ -42,18 +42,18 @@ pub struct BatchCpiAccounts<'a, 'info> {
 }
 
 #[cfg(feature = "cpi")]
-trait EvalAccountResolver<'info> {
-    fn resolve_eval_account(&self, pubkey: Pubkey) -> Option<AccountInfo<'info>>;
+trait BatchAccountResolver<'info> {
+    fn resolve_batch_account(&self, pubkey: Pubkey) -> Option<AccountInfo<'info>>;
 }
 
 #[cfg(feature = "cpi")]
-impl<'info> EvalAccountResolver<'info> for ResolvedBatchAccounts<'info> {
-    fn resolve_eval_account(&self, pubkey: Pubkey) -> Option<AccountInfo<'info>> {
+impl<'info> BatchAccountResolver<'info> for ResolvedBatchAccounts<'info> {
+    fn resolve_batch_account(&self, pubkey: Pubkey) -> Option<AccountInfo<'info>> {
         self.resolve(pubkey)
     }
 }
 
-/// Failure returned by the closure-based CPI eval helper.
+/// Failure returned by the closure-based CPI batch helper.
 #[cfg(feature = "cpi")]
 #[derive(Debug)]
 pub enum BatchInvokeError {
@@ -135,7 +135,7 @@ fn invoke_batch_signed_with_resolver<'a, 'info, R>(
     signer_seeds: &[&[&[u8]]],
 ) -> anchor_lang::prelude::Result<()>
 where
-    R: EvalAccountResolver<'info> + ?Sized,
+    R: BatchAccountResolver<'info> + ?Sized,
 {
     if accounts.account_authority.key() != batch.app_authority.pubkey() {
         return Err(anchor_lang::error::ErrorCode::ConstraintAddress.into());
@@ -156,7 +156,7 @@ where
     let mut account_infos = fixed_accounts.to_account_infos();
     for required in &batch.remaining_accounts {
         let account = resolver
-            .resolve_eval_account(required.pubkey)
+            .resolve_batch_account(required.pubkey)
             .ok_or(anchor_lang::error::ErrorCode::AccountNotEnoughKeys)?;
         let meta = if required.is_writable {
             AccountMeta::new(required.pubkey, required.is_signer)

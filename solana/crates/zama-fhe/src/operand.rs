@@ -66,15 +66,15 @@ impl Operand {
 pub(crate) struct BatchBuilderScope(pub(crate) u64);
 
 #[cfg(not(target_os = "solana"))]
-static NEXT_EVAL_BUILDER_SCOPE: AtomicU64 = AtomicU64::new(1);
+static NEXT_BATCH_BUILDER_SCOPE: AtomicU64 = AtomicU64::new(1);
 
 #[cfg(not(target_os = "solana"))]
-pub(crate) fn next_eval_builder_scope() -> BatchBuilderScope {
-    BatchBuilderScope(NEXT_EVAL_BUILDER_SCOPE.fetch_add(1, Ordering::Relaxed))
+pub(crate) fn next_batch_builder_scope() -> BatchBuilderScope {
+    BatchBuilderScope(NEXT_BATCH_BUILDER_SCOPE.fetch_add(1, Ordering::Relaxed))
 }
 
 #[cfg(target_os = "solana")]
-pub(crate) fn next_eval_builder_scope() -> BatchBuilderScope {
+pub(crate) fn next_batch_builder_scope() -> BatchBuilderScope {
     // SBF forbids writable static data (no `.data`/atomics), so on-chain every builder
     // shares scope 1: mixing operands across two builders created inside one instruction
     // is caught only by the producer-index bounds check there. Off-chain (where batches are
