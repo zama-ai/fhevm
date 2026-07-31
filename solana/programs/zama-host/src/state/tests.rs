@@ -52,9 +52,11 @@ fn eval_handle_derivation_preserves_solana_chain_type_high_bit() {
         [2; 32],
         true,
         3,
-        chain_id,
-        [9; 32],
-        42,
+        &HandleDerivationContext {
+            chain_id,
+            previous_bank_hash: [9; 32],
+            unix_timestamp: 42,
+        },
     );
     assert_canonical_metadata(handle, 3, chain_id);
     assert_eq!(
@@ -92,7 +94,16 @@ fn rand_seed_is_distinct_across_every_uniqueness_axis() {
     let subject = Pubkey::new_unique();
     let anchor: Vec<u8> = [Pubkey::new_unique().to_bytes(), [7; 32]].concat();
     let seed = |subject: Pubkey, anchor: &[u8], op_index: u16, slot_entropy: [u8; 32]| {
-        computed_eval_rand_seed(subject, anchor, op_index, 13, slot_entropy, 42)
+        computed_eval_rand_seed(
+            subject,
+            anchor,
+            op_index,
+            &HandleDerivationContext {
+                chain_id: 13,
+                previous_bank_hash: slot_entropy,
+                unix_timestamp: 42,
+            },
+        )
     };
     let base = seed(subject, &anchor, 0, [9; 32]);
 

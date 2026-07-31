@@ -1358,9 +1358,11 @@ mod fhe_execute_acl_tests {
             [1; 32],
             true,
             5,
-            zama_host::SOLANA_POC_CHAIN_ID,
-            PREVIOUS_BANK_HASH,
-            1_700_000_000,
+            &zama_host::state::HandleDerivationContext {
+                chain_id: zama_host::SOLANA_POC_CHAIN_ID,
+                previous_bank_hash: PREVIOUS_BANK_HASH,
+                unix_timestamp: 1_700_000_000,
+            },
         )
     }
 

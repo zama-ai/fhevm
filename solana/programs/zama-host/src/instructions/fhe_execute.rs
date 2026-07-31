@@ -100,9 +100,11 @@ pub fn fhe_execute<'info>(
     let previous_bank_hash = previous_bank_hash(clock.slot)?;
     let persistent_anchor_bytes = collect_persistent_anchor_bytes(&account_table, &args)?;
     let handle_context = EvalHandleContext {
-        chain_id: ctx.accounts.host_config.chain_id,
-        previous_bank_hash: &previous_bank_hash,
-        unix_timestamp: clock.unix_timestamp,
+        derivation: HandleDerivationContext {
+            chain_id: ctx.accounts.host_config.chain_id,
+            previous_bank_hash,
+            unix_timestamp: clock.unix_timestamp,
+        },
         compute_subject: subject,
         persistent_anchor_bytes: &persistent_anchor_bytes,
     };
@@ -200,7 +202,7 @@ fn execute_eval_frame<'a, 'info>(
         produced: Vec::with_capacity(args.steps.len()),
         created_public_outputs: Vec::new(),
         subject,
-        chain_id: handle_context.chain_id,
+        chain_id: handle_context.derivation.chain_id,
         verifier_params: InputVerifierParams::from_config(&ctx.accounts.host_config),
     };
     walk_eval_frame(&mut execution, ctx, args, handle_context)?;
@@ -253,17 +255,7 @@ impl<'info> EvalExecutionState<'_, '_, 'info> {
         // `resolve_encrypted_operand`; derived outputs are then unconstrained, exactly like EVM.
         // public_decrypt propagates like a public scalar (the app controls decryptability of
         // results via an explicit allow_for_decryption; it is not blocked by the input itself).
-        verify_input_attestation(
-            &self.verifier_params,
-            attestation.input_handle,
-            &attestation.ct_handles,
-            attestation.handle_index,
-            &attestation.user_address,
-            &attestation.contract_address,
-            attestation.contract_chain_id,
-            &attestation.extra_data,
-            &attestation.signatures,
-        )?;
+        verify_input_attestation(&self.verifier_params, attestation)?;
         Ok(ResolvedOperand::encrypted(attestation.input_handle, true))
     }
 

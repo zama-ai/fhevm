@@ -839,6 +839,17 @@ fn finish_computed_handle(result: &mut [u8; 32], chain_id_bytes: &[u8; 8], fhe_t
     result[31] = HANDLE_VERSION;
 }
 
+/// Slot and chain context bound into every content-addressed handle
+/// derivation. Passing it as one value keeps `previous_bank_hash` unswappable
+/// with operand handles — three same-repr `[u8; 32]` values meet at these call
+/// sites otherwise.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct HandleDerivationContext {
+    pub chain_id: u64,
+    pub previous_bank_hash: [u8; 32],
+    pub unix_timestamp: i64,
+}
+
 /// Derives a content-addressed binary eval handle (EVM `FHEVMExecutor` shape):
 /// no salt beyond slot entropy, so an identical computation derives the
 /// identical handle — the same value, by construction.
@@ -848,10 +859,13 @@ pub fn computed_eval_handle(
     rhs: [u8; 32],
     scalar: bool,
     fhe_type: u8,
-    chain_id: u64,
-    previous_bank_hash: [u8; 32],
-    unix_timestamp: i64,
+    ctx: &HandleDerivationContext,
 ) -> [u8; 32] {
+    let HandleDerivationContext {
+        chain_id,
+        previous_bank_hash,
+        unix_timestamp,
+    } = *ctx;
     let op_byte = [op.as_u8()];
     let scalar_byte = [u8::from(scalar)];
     let chain_id_bytes = chain_id.to_be_bytes();
@@ -880,10 +894,13 @@ pub fn computed_eval_ternary_handle(
     if_true: [u8; 32],
     if_false: [u8; 32],
     fhe_type: u8,
-    chain_id: u64,
-    previous_bank_hash: [u8; 32],
-    unix_timestamp: i64,
+    ctx: &HandleDerivationContext,
 ) -> [u8; 32] {
+    let HandleDerivationContext {
+        chain_id,
+        previous_bank_hash,
+        unix_timestamp,
+    } = *ctx;
     let op_byte = [op.as_u8()];
     let chain_id_bytes = chain_id.to_be_bytes();
     let timestamp_bytes = unix_timestamp.to_be_bytes();
@@ -908,10 +925,13 @@ pub fn computed_eval_ternary_handle(
 pub fn computed_eval_trivial_handle(
     plaintext: [u8; 32],
     fhe_type: u8,
-    chain_id: u64,
-    previous_bank_hash: [u8; 32],
-    unix_timestamp: i64,
+    ctx: &HandleDerivationContext,
 ) -> [u8; 32] {
+    let HandleDerivationContext {
+        chain_id,
+        previous_bank_hash,
+        unix_timestamp,
+    } = *ctx;
     let chain_id_bytes = chain_id.to_be_bytes();
     let timestamp_bytes = unix_timestamp.to_be_bytes();
     let fhe_type_bytes = [fhe_type];
@@ -942,10 +962,13 @@ pub fn computed_eval_rand_seed(
     compute_subject: Pubkey,
     persistent_anchor_bytes: &[u8],
     op_index: u16,
-    chain_id: u64,
-    previous_bank_hash: [u8; 32],
-    unix_timestamp: i64,
+    ctx: &HandleDerivationContext,
 ) -> [u8; 16] {
+    let HandleDerivationContext {
+        chain_id,
+        previous_bank_hash,
+        unix_timestamp,
+    } = *ctx;
     let chain_id_bytes = chain_id.to_be_bytes();
     let op_index_bytes = op_index.to_be_bytes();
     let timestamp_bytes = unix_timestamp.to_be_bytes();
@@ -969,10 +992,13 @@ pub fn computed_eval_rand_seed(
 pub fn computed_eval_sum_handle(
     operand_handles: &[[u8; 32]],
     fhe_type: u8,
-    chain_id: u64,
-    previous_bank_hash: [u8; 32],
-    unix_timestamp: i64,
+    ctx: &HandleDerivationContext,
 ) -> [u8; 32] {
+    let HandleDerivationContext {
+        chain_id,
+        previous_bank_hash,
+        unix_timestamp,
+    } = *ctx;
     let chain_id_bytes = chain_id.to_be_bytes();
     let timestamp_bytes = unix_timestamp.to_be_bytes();
     let fhe_type_bytes = [fhe_type];
@@ -994,10 +1020,13 @@ pub fn computed_eval_is_in_handle(
     value_handle: [u8; 32],
     set_handles: &[[u8; 32]],
     fhe_type: u8,
-    chain_id: u64,
-    previous_bank_hash: [u8; 32],
-    unix_timestamp: i64,
+    ctx: &HandleDerivationContext,
 ) -> [u8; 32] {
+    let HandleDerivationContext {
+        chain_id,
+        previous_bank_hash,
+        unix_timestamp,
+    } = *ctx;
     let chain_id_bytes = chain_id.to_be_bytes();
     let timestamp_bytes = unix_timestamp.to_be_bytes();
     let fhe_type_bytes = [fhe_type];
@@ -1021,10 +1050,13 @@ pub fn computed_eval_mul_div_handle(
     divisor: [u8; 32],
     scalar: bool,
     output_fhe_type: u8,
-    chain_id: u64,
-    previous_bank_hash: [u8; 32],
-    unix_timestamp: i64,
+    ctx: &HandleDerivationContext,
 ) -> [u8; 32] {
+    let HandleDerivationContext {
+        chain_id,
+        previous_bank_hash,
+        unix_timestamp,
+    } = *ctx;
     let chain_id_bytes = chain_id.to_be_bytes();
     let timestamp_bytes = unix_timestamp.to_be_bytes();
     let scalar_byte = [u8::from(scalar)];
@@ -1091,10 +1123,13 @@ pub fn computed_eval_unary_handle(
     op: FheUnaryOpCode,
     operand: [u8; 32],
     fhe_type: u8,
-    chain_id: u64,
-    previous_bank_hash: [u8; 32],
-    unix_timestamp: i64,
+    ctx: &HandleDerivationContext,
 ) -> [u8; 32] {
+    let HandleDerivationContext {
+        chain_id,
+        previous_bank_hash,
+        unix_timestamp,
+    } = *ctx;
     let op_byte = [op.as_u8()];
     let type_byte = [fhe_type];
     let chain_id_bytes = chain_id.to_be_bytes();

@@ -10,9 +10,7 @@ use super::*;
 
 /// Per-batch slot entropy, identity, and rand anchor shared by every handle derivation.
 pub(super) struct EvalHandleContext<'a> {
-    pub chain_id: u64,
-    pub previous_bank_hash: &'a [u8; 32],
-    pub unix_timestamp: i64,
+    pub derivation: HandleDerivationContext,
     /// Signed caller identity folded into rand seeds (never into deterministic handles).
     pub compute_subject: Pubkey,
     /// The batch's persistent-write anchor: every persistent output's live account
@@ -34,16 +32,7 @@ impl EvalHandleContext<'_> {
         scalar: bool,
         output_fhe_type: u8,
     ) -> [u8; 32] {
-        computed_eval_handle(
-            op,
-            lhs,
-            rhs,
-            scalar,
-            output_fhe_type,
-            self.chain_id,
-            *self.previous_bank_hash,
-            self.unix_timestamp,
-        )
+        computed_eval_handle(op, lhs, rhs, scalar, output_fhe_type, &self.derivation)
     }
 
     fn ternary_result(
@@ -60,20 +49,12 @@ impl EvalHandleContext<'_> {
             if_true,
             if_false,
             output_fhe_type,
-            self.chain_id,
-            *self.previous_bank_hash,
-            self.unix_timestamp,
+            &self.derivation,
         )
     }
 
     fn trivial_result(&self, plaintext: [u8; 32], fhe_type: u8) -> [u8; 32] {
-        computed_eval_trivial_handle(
-            plaintext,
-            fhe_type,
-            self.chain_id,
-            *self.previous_bank_hash,
-            self.unix_timestamp,
-        )
+        computed_eval_trivial_handle(plaintext, fhe_type, &self.derivation)
     }
 
     pub(super) fn rand_seed(&self, op_index: u16) -> [u8; 16] {
@@ -81,31 +62,16 @@ impl EvalHandleContext<'_> {
             self.compute_subject,
             self.persistent_anchor_bytes,
             op_index,
-            self.chain_id,
-            *self.previous_bank_hash,
-            self.unix_timestamp,
+            &self.derivation,
         )
     }
 
     fn unary_result(&self, op: FheUnaryOpCode, operand: [u8; 32], output_fhe_type: u8) -> [u8; 32] {
-        computed_eval_unary_handle(
-            op,
-            operand,
-            output_fhe_type,
-            self.chain_id,
-            *self.previous_bank_hash,
-            self.unix_timestamp,
-        )
+        computed_eval_unary_handle(op, operand, output_fhe_type, &self.derivation)
     }
 
     fn sum_result(&self, operand_handles: &[[u8; 32]], fhe_type: u8) -> [u8; 32] {
-        computed_eval_sum_handle(
-            operand_handles,
-            fhe_type,
-            self.chain_id,
-            *self.previous_bank_hash,
-            self.unix_timestamp,
-        )
+        computed_eval_sum_handle(operand_handles, fhe_type, &self.derivation)
     }
 
     fn is_in_result(
@@ -114,14 +80,7 @@ impl EvalHandleContext<'_> {
         set_handles: &[[u8; 32]],
         fhe_type: u8,
     ) -> [u8; 32] {
-        computed_eval_is_in_handle(
-            value_handle,
-            set_handles,
-            fhe_type,
-            self.chain_id,
-            *self.previous_bank_hash,
-            self.unix_timestamp,
-        )
+        computed_eval_is_in_handle(value_handle, set_handles, fhe_type, &self.derivation)
     }
 
     fn mul_div_result(
@@ -138,9 +97,7 @@ impl EvalHandleContext<'_> {
             divisor,
             scalar,
             output_fhe_type,
-            self.chain_id,
-            *self.previous_bank_hash,
-            self.unix_timestamp,
+            &self.derivation,
         )
     }
 }
@@ -292,7 +249,8 @@ pub(super) fn walk_eval_frame<'info>(
             FheExecuteStep::Rand { fhe_type, output } => {
                 assert_supported_rand_type(*fhe_type)?;
                 let seed = handle_context.rand_seed(op_index);
-                let result = computed_rand_handle(seed, *fhe_type, handle_context.chain_id);
+                let result =
+                    computed_rand_handle(seed, *fhe_type, handle_context.derivation.chain_id);
                 execution.accept_output(ctx, op_index, result, output, false)?;
             }
             FheExecuteStep::Unary {
@@ -323,7 +281,7 @@ pub(super) fn walk_eval_frame<'info>(
                     *upper_bound,
                     seed,
                     *fhe_type,
-                    handle_context.chain_id,
+                    handle_context.derivation.chain_id,
                 );
                 execution.accept_output(ctx, op_index, result, output, false)?;
             }

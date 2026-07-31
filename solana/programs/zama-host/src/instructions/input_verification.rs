@@ -55,46 +55,44 @@ impl InputVerifierParams {
 /// Verifies the coprocessor's EIP-712 `CiphertextVerification` attestation for an encrypted input:
 /// config sanity, per-handle metadata, selected-handle match, and `secp256k1_recover` of the
 /// signers against the registered coprocessor signer set at the configured threshold. Used by the
-/// `fhe_execute` `VerifiedInput` operand.
+/// `fhe_execute` `VerifiedInput` operand, which carries the whole attestation — taking it as one
+/// value keeps the two 32-byte identities and two slices unswappable at the call site.
 /// The attested `contract_address` is the input's natural ACL domain (EVM parity with the
 /// verifyInput contract); the caller-is-contract gate is enforced by the operand resolver.
-#[allow(clippy::too_many_arguments)]
 pub(crate) fn verify_input_attestation(
     params: &InputVerifierParams,
-    input_handle: [u8; 32],
-    ct_handles: &[[u8; 32]],
-    handle_index: u8,
-    user_address: &[u8; 32],
-    contract_address: &[u8; 32],
-    contract_chain_id: u64,
-    extra_data: &[u8],
-    signatures: &[[u8; 65]],
+    attestation: &CoprocessorInputAttestation,
 ) -> Result<()> {
     require!(
         params.coprocessor_signer_count > 0 && params.input_verification_contract != [0u8; 20],
         ZamaHostError::GatewayVerifierConfigUnset
     );
     require!(
-        !ct_handles.is_empty() && ct_handles.len() <= MAX_INPUT_ATTESTATION_HANDLES,
+        !attestation.ct_handles.is_empty()
+            && attestation.ct_handles.len() <= MAX_INPUT_ATTESTATION_HANDLES,
         ZamaHostError::MalformedInputAttestation
     );
     require!(
-        extra_data.len() <= MAX_INPUT_ATTESTATION_EXTRA_DATA,
+        attestation.extra_data.len() <= MAX_INPUT_ATTESTATION_EXTRA_DATA,
         ZamaHostError::MalformedInputAttestation
     );
     // EVM parity: InputVerifier requires `contractChainId == block.chainid`. The attested
     // `contract_chain_id` is the HOST chain id (not the gateway chain id used for the EIP-712 domain).
     require!(
-        contract_chain_id == params.chain_id,
+        attestation.contract_chain_id == params.chain_id,
         ZamaHostError::AttestationChainIdMismatch
     );
-    for (index, handle) in ct_handles.iter().enumerate() {
+    for (index, handle) in attestation.ct_handles.iter().enumerate() {
         assert_input_handle_metadata(*handle, params.chain_id, index as u8)?;
     }
-    let selected = ct_handles
-        .get(handle_index as usize)
+    let selected = attestation
+        .ct_handles
+        .get(attestation.handle_index as usize)
         .ok_or(ZamaHostError::InvalidInputHandleIndex)?;
-    require!(*selected == input_handle, ZamaHostError::InvalidInputHandle);
+    require!(
+        *selected == attestation.input_handle,
+        ZamaHostError::InvalidInputHandle
+    );
 
     let verifier = Eip712VerifierConfig {
         gateway_chain_id: params.gateway_chain_id,
@@ -105,12 +103,12 @@ pub(crate) fn verify_input_attestation(
     require!(
         verify_coprocessor_attestation(
             &verifier,
-            ct_handles,
-            user_address,
-            contract_address,
-            contract_chain_id,
-            extra_data,
-            signatures,
+            &attestation.ct_handles,
+            &attestation.user_address,
+            &attestation.contract_address,
+            attestation.contract_chain_id,
+            &attestation.extra_data,
+            &attestation.signatures,
         ),
         ZamaHostError::InvalidInputAttestation
     );

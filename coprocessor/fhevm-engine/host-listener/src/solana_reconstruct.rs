@@ -29,13 +29,9 @@ use zama_host::EVENT_VERSION;
 
 /// Block + config context the deterministic handle derivation needs, taken from
 /// the transaction's slot/block (`previous_bank_hash`, `unix_timestamp`) and the
-/// host's on-chain config (`chain_id`).
-#[derive(Clone, Copy, Debug)]
-pub struct ReconstructContext {
-    pub chain_id: u64,
-    pub previous_bank_hash: [u8; 32],
-    pub unix_timestamp: i64,
-}
+/// host's on-chain config (`chain_id`). This IS the program's own derivation
+/// context type — re-exported so reconstruction cannot drift from it.
+pub use zama_host::state::HandleDerivationContext as ReconstructContext;
 
 pub fn is_fhe_execute_instruction(instruction_data: &[u8]) -> bool {
     zama_host::decode::is_fhe_execute_instruction(instruction_data)
@@ -339,9 +335,7 @@ pub fn reconstruct_fhe_execute_steps(
                     rhs_handle,
                     scalar,
                     *output_fhe_type,
-                    ctx.chain_id,
-                    ctx.previous_bank_hash,
-                    ctx.unix_timestamp,
+                    ctx,
                 );
                 produced.push(result);
                 SolanaHostEvent::FheBinaryOp(FheBinaryOp {
@@ -372,9 +366,7 @@ pub fn reconstruct_fhe_execute_steps(
                     t,
                     f,
                     *output_fhe_type,
-                    ctx.chain_id,
-                    ctx.previous_bank_hash,
-                    ctx.unix_timestamp,
+                    ctx,
                 );
                 produced.push(result);
                 SolanaHostEvent::FheTernaryOp(FheTernaryOp {
@@ -392,13 +384,8 @@ pub fn reconstruct_fhe_execute_steps(
                 fhe_type,
                 ..
             } => {
-                let result = computed_eval_trivial_handle(
-                    *plaintext,
-                    *fhe_type,
-                    ctx.chain_id,
-                    ctx.previous_bank_hash,
-                    ctx.unix_timestamp,
-                );
+                let result =
+                    computed_eval_trivial_handle(*plaintext, *fhe_type, ctx);
                 produced.push(result);
                 SolanaHostEvent::TrivialEncrypt(TrivialEncrypt {
                     version: EVENT_VERSION,
@@ -436,9 +423,7 @@ pub fn reconstruct_fhe_execute_steps(
                     *op,
                     operand_handle,
                     *output_fhe_type,
-                    ctx.chain_id,
-                    ctx.previous_bank_hash,
-                    ctx.unix_timestamp,
+                    ctx,
                 );
                 produced.push(result);
                 SolanaHostEvent::FheUnaryOp(FheUnaryOp {
@@ -485,13 +470,8 @@ pub fn reconstruct_fhe_execute_steps(
                         resolve_operand(operand, &batch.dictionary, &produced)
                     })
                     .collect::<Option<_>>()?;
-                let result = computed_eval_sum_handle(
-                    &operand_handles,
-                    *fhe_type,
-                    ctx.chain_id,
-                    ctx.previous_bank_hash,
-                    ctx.unix_timestamp,
-                );
+                let result =
+                    computed_eval_sum_handle(&operand_handles, *fhe_type, ctx);
                 produced.push(result);
                 SolanaHostEvent::FheSum(FheSum {
                     version: EVENT_VERSION,
@@ -519,9 +499,7 @@ pub fn reconstruct_fhe_execute_steps(
                     value_handle,
                     &set_handles,
                     *fhe_type,
-                    ctx.chain_id,
-                    ctx.previous_bank_hash,
-                    ctx.unix_timestamp,
+                    ctx,
                 );
                 produced.push(result);
                 SolanaHostEvent::FheIsIn(FheIsIn {
@@ -550,9 +528,7 @@ pub fn reconstruct_fhe_execute_steps(
                     *divisor,
                     scalar,
                     *output_fhe_type,
-                    ctx.chain_id,
-                    ctx.previous_bank_hash,
-                    ctx.unix_timestamp,
+                    ctx,
                 );
                 produced.push(result);
                 SolanaHostEvent::FheMulDiv(FheMulDiv {
@@ -1136,14 +1112,7 @@ mod tests {
                 assert_eq!(e.operand, h0);
                 assert_eq!(
                     e.result,
-                    computed_eval_unary_handle(
-                        FheUnaryOpCode::Neg,
-                        h0,
-                        5,
-                        cx.chain_id,
-                        cx.previous_bank_hash,
-                        cx.unix_timestamp,
-                    )
+                    computed_eval_unary_handle(FheUnaryOpCode::Neg, h0, 5, &cx,)
                 );
             }
             other => panic!("expected FheUnaryOp, got {other:?}"),
@@ -1153,13 +1122,7 @@ mod tests {
                 assert_eq!(e.operands, vec![h0, h1]);
                 assert_eq!(
                     e.result,
-                    computed_eval_sum_handle(
-                        &[h0, h1],
-                        5,
-                        cx.chain_id,
-                        cx.previous_bank_hash,
-                        cx.unix_timestamp,
-                    )
+                    computed_eval_sum_handle(&[h0, h1], 5, &cx,)
                 );
             }
             other => panic!("expected FheSum, got {other:?}"),
@@ -1170,14 +1133,7 @@ mod tests {
                 assert_eq!(e.set, vec![h1]);
                 assert_eq!(
                     e.result,
-                    computed_eval_is_in_handle(
-                        h0,
-                        &[h1],
-                        5,
-                        cx.chain_id,
-                        cx.previous_bank_hash,
-                        cx.unix_timestamp,
-                    )
+                    computed_eval_is_in_handle(h0, &[h1], 5, &cx,)
                 );
             }
             other => panic!("expected FheIsIn, got {other:?}"),
@@ -1191,14 +1147,7 @@ mod tests {
                 assert_eq!(
                     e.result,
                     computed_eval_mul_div_handle(
-                        h0,
-                        [2u8; 32],
-                        [3u8; 32],
-                        true,
-                        5,
-                        cx.chain_id,
-                        cx.previous_bank_hash,
-                        cx.unix_timestamp,
+                        h0, [2u8; 32], [3u8; 32], true, 5, &cx,
                     )
                 );
             }
