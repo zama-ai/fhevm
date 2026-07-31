@@ -4,9 +4,9 @@ use std::marker::PhantomData;
 
 use anchor_lang::prelude::Pubkey;
 
-use crate::acl::DurableSlot;
+use crate::acl::EncryptedValueKey;
 use crate::operand::Operand;
-use crate::validate::{handle_fhe_type, validate_durable_slot, validate_supported_fhe_type};
+use crate::validate::{handle_fhe_type, validate_encrypted_value_key, validate_supported_fhe_type};
 use crate::{EvalBuildError, Result};
 
 /// Typed FHE handle tag used by the host ABI.
@@ -276,12 +276,12 @@ pub struct Encrypted<T> {
 impl<T: FheTyped> Encrypted<T> {
     /// Builds a durable operand from a stable `EncryptedValue` encrypted value account. `handle`
     /// must be that encrypted value account's current handle; the host re-verifies this on-chain.
-    pub fn durable(handle: [u8; 32], slot: DurableSlot) -> Result<Self> {
-        validate_durable_slot(&slot)?;
+    pub fn durable(handle: [u8; 32], key: EncryptedValueKey) -> Result<Self> {
+        validate_encrypted_value_key(&key)?;
         if handle_fhe_type(handle) != T::FHE_TYPE.byte() {
             return Err(EvalBuildError::UnsupportedFheType);
         }
-        Ok(Self::from_operand(Operand::durable(handle, slot.address())))
+        Ok(Self::from_operand(Operand::durable(handle, key.address())))
     }
 }
 

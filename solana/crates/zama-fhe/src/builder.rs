@@ -29,6 +29,10 @@ pub struct EvalBuilder {
     pub(crate) app_authority: EvalAppAuthority,
     pub(crate) steps: Vec<FheEvalStep>,
     pub(crate) produced_types: Vec<u8>,
+    /// Latest producer for every durable account written by this frame. A later
+    /// durable-shaped reference to the same account is lowered canonically as
+    /// `AllowedLocal`.
+    pub(crate) durable_producers: Vec<(anchor_lang::prelude::Pubkey, u16)>,
     pub(crate) remaining_accounts: Vec<EvalAccountMeta>,
     /// Interned 32-byte constant pool the lowered steps reference by `u8` index
     /// (operand handles, scalars, ACL domain keys, app accounts, labels, subjects).
@@ -45,6 +49,7 @@ impl Clone for EvalBuilder {
             app_authority: self.app_authority,
             steps: self.steps.clone(),
             produced_types: self.produced_types.clone(),
+            durable_producers: self.durable_producers.clone(),
             remaining_accounts: self.remaining_accounts.clone(),
             pool: self.pool.clone(),
             verified_inputs: self.verified_inputs.clone(),
@@ -59,6 +64,7 @@ impl EvalBuilder {
             app_authority,
             steps: Vec::new(),
             produced_types: Vec::new(),
+            durable_producers: Vec::new(),
             remaining_accounts: Vec::new(),
             pool: Vec::new(),
             verified_inputs: Vec::new(),
@@ -143,6 +149,8 @@ impl EvalBuilder {
         output_fhe_type: FheType,
         output: Output,
     ) -> Result<Operand> {
+        let lhs = self.canonicalize_operand(lhs);
+        let rhs = self.canonicalize_operand(rhs);
         let output_fhe_type = output_fhe_type.byte();
         // The host requires the left operand to be an encrypted handle; only the
         // RHS may be a plaintext scalar. Catch this before the CPI.
@@ -169,6 +177,7 @@ impl EvalBuilder {
             &mut pool,
             self.steps.len(),
             self.scope,
+            &self.durable_producers,
             &self.verified_inputs,
             lhs,
         )?;
@@ -177,6 +186,7 @@ impl EvalBuilder {
             &mut pool,
             self.steps.len(),
             self.scope,
+            &self.durable_producers,
             &self.verified_inputs,
             rhs,
         )?;
@@ -184,6 +194,8 @@ impl EvalBuilder {
             &mut remaining_accounts,
             &mut pool,
             self.app_authority,
+            &mut self.durable_producers,
+            op_index,
             output,
         )?;
         self.remaining_accounts = remaining_accounts;
@@ -206,9 +218,9 @@ impl EvalBuilder {
         if_false: Encrypted<T>,
         output: Output,
     ) -> Result<Encrypted<T>> {
-        let control = control.operand();
-        let if_true = if_true.operand();
-        let if_false = if_false.operand();
+        let control = self.canonicalize_operand(control.operand());
+        let if_true = self.canonicalize_operand(if_true.operand());
+        let if_false = self.canonicalize_operand(if_false.operand());
         let output_fhe_type =
             self.encrypted_operand_type(&if_true, EvalBuildError::ScalarEncryptedOperand)?;
         let output_fhe_type = output_fhe_type.byte();
@@ -232,6 +244,7 @@ impl EvalBuilder {
             &mut pool,
             self.steps.len(),
             self.scope,
+            &self.durable_producers,
             &self.verified_inputs,
             control,
         )?;
@@ -240,6 +253,7 @@ impl EvalBuilder {
             &mut pool,
             self.steps.len(),
             self.scope,
+            &self.durable_producers,
             &self.verified_inputs,
             if_true,
         )?;
@@ -248,6 +262,7 @@ impl EvalBuilder {
             &mut pool,
             self.steps.len(),
             self.scope,
+            &self.durable_producers,
             &self.verified_inputs,
             if_false,
         )?;
@@ -255,6 +270,8 @@ impl EvalBuilder {
             &mut remaining_accounts,
             &mut pool,
             self.app_authority,
+            &mut self.durable_producers,
+            step_index,
             output,
         )?;
         self.remaining_accounts = remaining_accounts;
@@ -300,6 +317,8 @@ impl EvalBuilder {
             &mut remaining_accounts,
             &mut pool,
             self.app_authority,
+            &mut self.durable_producers,
+            step_index,
             output,
         )?;
         self.remaining_accounts = remaining_accounts;
@@ -339,6 +358,8 @@ impl EvalBuilder {
             &mut remaining_accounts,
             &mut pool,
             self.app_authority,
+            &mut self.durable_producers,
+            step_index,
             output,
         )?;
         self.remaining_accounts = remaining_accounts;
@@ -368,6 +389,8 @@ impl EvalBuilder {
             &mut remaining_accounts,
             &mut pool,
             self.app_authority,
+            &mut self.durable_producers,
+            step_index,
             output,
         )?;
         self.remaining_accounts = remaining_accounts;
@@ -697,7 +720,10 @@ impl EvalBuilder {
         output: Output,
     ) -> Result<Encrypted<T>> {
         // EVM `fheSum` and the coprocessor enforce no minimum: a zero/single-operand sum is valid.
-        let operand_ops: Vec<Operand> = operands.into_iter().map(|e| e.operand()).collect();
+        let operand_ops: Vec<Operand> = operands
+            .into_iter()
+            .map(|e| self.canonicalize_operand(e.operand()))
+            .collect();
         for op in &operand_ops {
             if matches!(op.0, OperandKind::Scalar(_)) {
                 return Err(EvalBuildError::ScalarEncryptedOperand);
@@ -721,6 +747,7 @@ impl EvalBuilder {
                 &mut pool,
                 self.steps.len(),
                 self.scope,
+                &self.durable_producers,
                 &self.verified_inputs,
                 op,
             )?);
@@ -729,6 +756,8 @@ impl EvalBuilder {
             &mut remaining_accounts,
             &mut pool,
             self.app_authority,
+            &mut self.durable_producers,
+            step_index,
             output,
         )?;
         self.remaining_accounts = remaining_accounts;
@@ -751,8 +780,11 @@ impl EvalBuilder {
         output: Output,
     ) -> Result<Encrypted<Bool>> {
         // EVM `fheIsIn` and the coprocessor enforce no minimum: an empty set is valid (false result).
-        let set_ops: Vec<Operand> = set.into_iter().map(|e| e.operand()).collect();
-        let value_op = value.operand();
+        let set_ops: Vec<Operand> = set
+            .into_iter()
+            .map(|e| self.canonicalize_operand(e.operand()))
+            .collect();
+        let value_op = self.canonicalize_operand(value.operand());
         if matches!(value_op.0, OperandKind::Scalar(_)) {
             return Err(EvalBuildError::ScalarEncryptedOperand);
         }
@@ -777,6 +809,7 @@ impl EvalBuilder {
             &mut pool,
             self.steps.len(),
             self.scope,
+            &self.durable_producers,
             &self.verified_inputs,
             value_op,
         )?;
@@ -787,6 +820,7 @@ impl EvalBuilder {
                 &mut pool,
                 self.steps.len(),
                 self.scope,
+                &self.durable_producers,
                 &self.verified_inputs,
                 op,
             )?);
@@ -795,6 +829,8 @@ impl EvalBuilder {
             &mut remaining_accounts,
             &mut pool,
             self.app_authority,
+            &mut self.durable_producers,
+            step_index,
             output,
         )?;
         self.remaining_accounts = remaining_accounts;
@@ -819,8 +855,8 @@ impl EvalBuilder {
         divisor: Scalar<T>,
         output: Output,
     ) -> Result<Encrypted<T>> {
-        let lhs = factor1.operand();
-        let rhs = binary_rhs_operand(factor2);
+        let lhs = self.canonicalize_operand(factor1.operand());
+        let rhs = self.canonicalize_operand(binary_rhs_operand(factor2));
         if matches!(lhs.0, OperandKind::Scalar(_)) {
             return Err(EvalBuildError::ScalarLhsOperand);
         }
@@ -846,6 +882,7 @@ impl EvalBuilder {
             &mut pool,
             self.steps.len(),
             self.scope,
+            &self.durable_producers,
             &self.verified_inputs,
             lhs,
         )?;
@@ -854,6 +891,7 @@ impl EvalBuilder {
             &mut pool,
             self.steps.len(),
             self.scope,
+            &self.durable_producers,
             &self.verified_inputs,
             rhs,
         )?;
@@ -861,6 +899,8 @@ impl EvalBuilder {
             &mut remaining_accounts,
             &mut pool,
             self.app_authority,
+            &mut self.durable_producers,
+            step_index,
             output,
         )?;
         self.remaining_accounts = remaining_accounts;
@@ -885,6 +925,7 @@ impl EvalBuilder {
         output_fhe_type: FheType,
         output: Output,
     ) -> Result<Operand> {
+        let operand = self.canonicalize_operand(operand);
         let output_fhe_type = output_fhe_type.byte();
         if matches!(operand.0, OperandKind::Scalar(_)) {
             return Err(EvalBuildError::ScalarEncryptedOperand);
@@ -908,6 +949,7 @@ impl EvalBuilder {
             &mut pool,
             self.steps.len(),
             self.scope,
+            &self.durable_producers,
             &self.verified_inputs,
             operand,
         )?;
@@ -915,6 +957,8 @@ impl EvalBuilder {
             &mut remaining_accounts,
             &mut pool,
             self.app_authority,
+            &mut self.durable_producers,
+            step_index,
             output,
         )?;
         self.remaining_accounts = remaining_accounts;
@@ -927,6 +971,18 @@ impl EvalBuilder {
         });
         self.produced_types.push(output_fhe_type);
         Ok(Operand::transient(step_index, self.scope))
+    }
+
+    fn canonicalize_operand(&self, operand: Operand) -> Operand {
+        let OperandKind::Durable(durable) = operand.0 else {
+            return operand;
+        };
+        self.durable_producers
+            .iter()
+            .rev()
+            .find(|(account, _)| *account == durable.encrypted_value)
+            .map(|(_, producer_index)| Operand::transient(*producer_index, self.scope))
+            .unwrap_or(operand)
     }
 
     fn encrypted_operand_type(

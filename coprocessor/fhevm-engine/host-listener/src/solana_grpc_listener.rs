@@ -948,9 +948,9 @@ async fn reconstruct_events_for_insert(
     use crate::solana_adapter::{material_request, SolanaHostEvent};
     use crate::solana_reconstruct::{
         decode_encrypted_value_instruction, decode_fhe_eval_args,
-        encrypted_value_account_index, encrypted_value_material_requests,
-        is_encrypted_value_instruction, is_fhe_eval_instruction,
-        reconstruct_fhe_eval_steps,
+        decode_fhe_eval_random_seeds_event, encrypted_value_account_index,
+        encrypted_value_material_requests, is_encrypted_value_instruction,
+        is_fhe_eval_instruction, reconstruct_fhe_eval_steps,
     };
 
     // compute_subject is the 2nd named fhe_eval account. (Durable EncryptedValue
@@ -997,7 +997,7 @@ async fn reconstruct_events_for_insert(
 
     let mut events = Vec::new();
 
-    for ix in instructions.iter() {
+    for (instruction_index, ix) in instructions.iter().enumerate() {
         if ix.program != config.program_id {
             continue;
         }
@@ -1010,12 +1010,22 @@ async fn reconstruct_events_for_insert(
                 .get(COMPUTE_SUBJECT_INDEX)
                 .copied()
                 .unwrap_or([0u8; 32]);
-            // Output handles recompute from op + operands + block entropy alone:
-            // no encrypted-value-account leaf count, no handle hints.
+            let random_seeds = instructions[instruction_index + 1..]
+                .iter()
+                .take_while(|later| !is_fhe_eval_instruction(&later.data))
+                .filter(|later| later.program == config.program_id)
+                .find_map(|later| {
+                    decode_fhe_eval_random_seeds_event(&later.data)
+                })
+                .map(|event| event.seeds)
+                .unwrap_or_default();
+            // Deterministic output handles are reconstructed from the operation
+            // and operands. Random outputs use the host-signed seed batch.
             let Some(steps) = reconstruct_fhe_eval_steps(
                 &plan,
                 subject,
                 fhe_eval_remaining_accounts(&ix.accounts),
+                &random_seeds,
                 ctx,
             ) else {
                 anyhow::bail!(

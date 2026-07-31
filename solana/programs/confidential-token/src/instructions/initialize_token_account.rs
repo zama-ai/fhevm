@@ -82,7 +82,7 @@ pub fn initialize_token_account<'info>(
     let balance_encrypted_value = ctx.accounts.balance_encrypted_value.key();
     let balance_output = fhe::DurableOutput::new(
         ctx.accounts.balance_encrypted_value.to_account_info(),
-        durable_slot(mint_key, token_account_key, balance_label()),
+        encrypted_value_key(mint_key, token_account_key, balance_label()),
         fhe::DurableAudience::for_owner(owner, compute_signer),
     )?;
     let mut builder =

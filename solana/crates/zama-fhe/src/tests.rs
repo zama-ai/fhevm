@@ -44,16 +44,16 @@ fn account_info(pubkey: Pubkey, is_writable: bool) -> AccountInfo<'static> {
     AccountInfo::new(key, false, is_writable, lamports, data, owner, false)
 }
 
-fn durable_slot(account: Pubkey, label_tag: u8) -> DurableSlot {
-    DurableSlot::new(
+fn encrypted_value_key(account: Pubkey, label_tag: u8) -> EncryptedValueKey {
+    EncryptedValueKey::new(
         Pubkey::new_unique(),
         account,
         DurableLabel::new(handle(label_tag)),
     )
 }
 
-fn access_policy(subject: Pubkey) -> AccessPolicy {
-    AccessPolicy::for_owner(subject).unwrap()
+fn subjects(subject: Pubkey) -> Vec<Pubkey> {
+    vec![subject]
 }
 
 fn scalar_operand_u64(value: u64) -> Operand {
@@ -92,18 +92,18 @@ fn cpi_accounts(app_authority: Pubkey) -> EvalCpiAccounts<'static, 'static> {
 #[test]
 fn eval_plan_build_runs_closure_and_finishes_plan() {
     let primary_authority = Pubkey::new_unique();
-    let input_slot = durable_slot(primary_authority, 1);
-    let input_acl = input_slot.address();
-    let output_slot = durable_slot(primary_authority, 7);
-    let output_acl = output_slot.address();
-    let balance = Uint64Handle::durable(balance_handle(1), input_slot).unwrap();
+    let input_key = encrypted_value_key(primary_authority, 1);
+    let input_acl = input_key.address();
+    let output_key = encrypted_value_key(primary_authority, 7);
+    let output_acl = output_key.address();
+    let balance = Uint64Handle::durable(balance_handle(1), input_key).unwrap();
 
     let plan = EvalPlan::build(app_authority(primary_authority), |builder| {
         let incremented = builder.add(balance, Scalar::<Uint<64>>::u64(1), Output::transient())?;
         builder.add(
             incremented,
             Scalar::<Uint<64>>::u64(2),
-            Output::durable(output_slot, access_policy(primary_authority)),
+            Output::durable(output_key, subjects(primary_authority)),
         )
     })
     .unwrap();
@@ -135,10 +135,37 @@ fn eval_plan_build_runs_closure_and_finishes_plan() {
 }
 
 #[test]
+fn builder_canonicalizes_post_write_durable_alias_as_local() {
+    let authority = Pubkey::new_unique();
+    let key = encrypted_value_key(authority, 7);
+    let mut builder = EvalBuilder::new(app_authority(authority));
+    builder
+        .trivial_encrypt_u64(7, Output::durable(key.clone(), subjects(authority)))
+        .unwrap();
+
+    let reconstructed = Uint64Handle::durable(balance_handle(99), key).unwrap();
+    builder
+        .add(
+            reconstructed,
+            Scalar::<Uint<64>>::u64(1),
+            Output::transient(),
+        )
+        .unwrap();
+    let plan = builder.finish().unwrap();
+
+    match &plan.args.steps[1] {
+        FheEvalStep::Binary { lhs, .. } => {
+            assert_eq!(*lhs, FheEvalOperand::AllowedLocal { producer_index: 0 });
+        }
+        other => panic!("unexpected step: {other:?}"),
+    }
+}
+
+#[test]
 fn eval_plan_build_lowers_verified_input_operand() {
     let primary_authority = Pubkey::new_unique();
-    let output_slot = durable_slot(primary_authority, 7);
-    let output_acl = output_slot.address();
+    let output_key = encrypted_value_key(primary_authority, 7);
+    let output_acl = output_key.address();
     let input_handle = balance_handle(2);
     let attestation = dummy_attestation(input_handle, primary_authority);
 
@@ -147,7 +174,7 @@ fn eval_plan_build_lowers_verified_input_operand() {
         builder.add(
             amount,
             Scalar::<Uint<64>>::u64(1),
-            Output::durable(output_slot, access_policy(primary_authority)),
+            Output::durable(output_key, subjects(primary_authority)),
         )
     })
     .unwrap();
@@ -263,9 +290,9 @@ fn finish_preflights_lowered_transient_order_and_account_uniqueness() {
         EvalBuildError::InvalidTransientReference
     );
 
-    let input_slot = durable_slot(primary_authority, 1);
-    let input_acl = input_slot.address();
-    let balance = Uint64Handle::durable(balance_handle(1), input_slot).unwrap();
+    let input_key = encrypted_value_key(primary_authority, 1);
+    let input_acl = input_key.address();
+    let balance = Uint64Handle::durable(balance_handle(1), input_key).unwrap();
     let mut builder = EvalBuilder::new(app_authority(primary_authority));
     builder
         .add(balance, Scalar::<Uint<64>>::u64(1), Output::transient())
@@ -305,11 +332,11 @@ fn invoke_eval_signed_with_builder_reports_build_errors_before_resolution() {
 #[test]
 fn invoke_eval_signed_with_builder_adds_fixed_authority_before_resolution() {
     let primary_authority = Pubkey::new_unique();
-    let input_slot = durable_slot(primary_authority, 1);
-    let input_acl = input_slot.address();
-    let output_slot = durable_slot(primary_authority, 7);
-    let output_acl = output_slot.address();
-    let balance = Uint64Handle::durable(balance_handle(1), input_slot).unwrap();
+    let input_key = encrypted_value_key(primary_authority, 1);
+    let input_acl = input_key.address();
+    let output_key = encrypted_value_key(primary_authority, 7);
+    let output_acl = output_key.address();
+    let balance = Uint64Handle::durable(balance_handle(1), input_key).unwrap();
 
     let error = invoke_eval_signed_with_builder(
         app_authority(primary_authority),
@@ -321,7 +348,7 @@ fn invoke_eval_signed_with_builder_adds_fixed_authority_before_resolution() {
             builder.add(
                 balance,
                 Scalar::<Uint<64>>::u64(1),
-                Output::durable(output_slot, access_policy(primary_authority)),
+                Output::durable(output_key, subjects(primary_authority)),
             )
         },
     )
@@ -340,11 +367,11 @@ fn invoke_eval_signed_with_builder_adds_fixed_authority_before_resolution() {
 fn invoke_eval_signed_with_builder_requires_additional_output_authorities() {
     let primary_authority = Pubkey::new_unique();
     let extra_authority = Pubkey::new_unique();
-    let input_slot = durable_slot(primary_authority, 1);
-    let input_acl = input_slot.address();
-    let output_slot = durable_slot(extra_authority, 7);
-    let output_acl = output_slot.address();
-    let balance = Uint64Handle::durable(balance_handle(1), input_slot).unwrap();
+    let input_key = encrypted_value_key(primary_authority, 1);
+    let input_acl = input_key.address();
+    let output_key = encrypted_value_key(extra_authority, 7);
+    let output_acl = output_key.address();
+    let balance = Uint64Handle::durable(balance_handle(1), input_key).unwrap();
 
     let error = invoke_eval_signed_with_builder(
         app_authority(primary_authority),
@@ -359,7 +386,7 @@ fn invoke_eval_signed_with_builder_requires_additional_output_authorities() {
             builder.add(
                 balance,
                 Scalar::<Uint<64>>::u64(1),
-                Output::durable(output_slot, access_policy(extra_authority)),
+                Output::durable(output_key, subjects(extra_authority)),
             )
         },
     )
@@ -376,14 +403,14 @@ fn invoke_eval_signed_with_builder_requires_additional_output_authorities() {
 #[test]
 fn lowers_mixed_eval_to_stable_remaining_account_indices() {
     let primary_authority = Pubkey::new_unique();
-    let balance_slot = durable_slot(primary_authority, 1);
-    let amount_slot = durable_slot(primary_authority, 2);
-    let balance_acl = balance_slot.address();
-    let amount_acl = amount_slot.address();
-    let output_slot = durable_slot(primary_authority, 7);
-    let output_acl = output_slot.address();
-    let balance = Uint64Handle::durable(balance_handle(1), balance_slot).unwrap();
-    let amount = Uint64Handle::durable(balance_handle(2), amount_slot).unwrap();
+    let balance_key = encrypted_value_key(primary_authority, 1);
+    let amount_key = encrypted_value_key(primary_authority, 2);
+    let balance_acl = balance_key.address();
+    let amount_acl = amount_key.address();
+    let output_key = encrypted_value_key(primary_authority, 7);
+    let output_acl = output_key.address();
+    let balance = Uint64Handle::durable(balance_handle(1), balance_key).unwrap();
+    let amount = Uint64Handle::durable(balance_handle(2), amount_key).unwrap();
     let mut builder = EvalBuilder::new(app_authority(primary_authority));
     let success = builder.ge(balance, amount, Output::transient()).unwrap();
     let debit_candidate = builder.sub(balance, amount, Output::transient()).unwrap();
@@ -392,7 +419,7 @@ fn lowers_mixed_eval_to_stable_remaining_account_indices() {
             success,
             debit_candidate,
             balance,
-            Output::durable(output_slot, access_policy(primary_authority)),
+            Output::durable(output_key, subjects(primary_authority)),
         )
         .unwrap();
 
@@ -451,18 +478,18 @@ fn lowers_mixed_eval_to_stable_remaining_account_indices() {
 #[test]
 fn dynamic_account_requirements_expose_order_roles_and_purposes() {
     let primary_authority = Pubkey::new_unique();
-    let input_slot = durable_slot(primary_authority, 1);
-    let input_acl = input_slot.address();
+    let input_key = encrypted_value_key(primary_authority, 1);
+    let input_acl = input_key.address();
     let extra_authority = Pubkey::new_unique();
-    let output_slot = durable_slot(extra_authority, 7);
-    let output_acl = output_slot.address();
-    let input = Uint64Handle::durable(balance_handle(1), input_slot).unwrap();
+    let output_key = encrypted_value_key(extra_authority, 7);
+    let output_acl = output_key.address();
+    let input = Uint64Handle::durable(balance_handle(1), input_key).unwrap();
 
     let plan = EvalPlan::build(app_authority(primary_authority), |builder| {
         builder.add(
             input,
             Scalar::<Uint<64>>::u64(2),
-            Output::durable(output_slot, access_policy(extra_authority)),
+            Output::durable(output_key, subjects(extra_authority)),
         )
     })
     .unwrap();
@@ -496,18 +523,18 @@ fn dynamic_account_requirements_expose_order_roles_and_purposes() {
 #[test]
 fn lowers_explicit_output_authority_witness() {
     let primary_authority = Pubkey::new_unique();
-    let input_slot = durable_slot(primary_authority, 1);
-    let acl_record = input_slot.address();
+    let input_key = encrypted_value_key(primary_authority, 1);
+    let acl_record = input_key.address();
     let authority = Pubkey::new_unique();
-    let output_slot = durable_slot(authority, 7);
-    let output_acl = output_slot.address();
-    let balance = Uint64Handle::durable(balance_handle(1), input_slot).unwrap();
+    let output_key = encrypted_value_key(authority, 7);
+    let output_acl = output_key.address();
+    let balance = Uint64Handle::durable(balance_handle(1), input_key).unwrap();
     let mut builder = EvalBuilder::new(app_authority(primary_authority));
     builder
         .add(
             balance,
             Scalar::<Uint<64>>::u64(2),
-            Output::durable(output_slot, access_policy(authority)),
+            Output::durable(output_key, subjects(authority)),
         )
         .unwrap();
 
@@ -559,18 +586,18 @@ fn lowers_explicit_output_authority_witness() {
 #[test]
 fn resolve_accounts_orders_and_validates_plan_requirements() {
     let primary_authority = Pubkey::new_unique();
-    let input_slot = durable_slot(primary_authority, 1);
-    let input_acl = input_slot.address();
+    let input_key = encrypted_value_key(primary_authority, 1);
+    let input_acl = input_key.address();
     let extra_authority = Pubkey::new_unique();
-    let output_slot = durable_slot(extra_authority, 7);
-    let output_acl = output_slot.address();
-    let input = Uint64Handle::durable(balance_handle(1), input_slot).unwrap();
+    let output_key = encrypted_value_key(extra_authority, 7);
+    let output_acl = output_key.address();
+    let input = Uint64Handle::durable(balance_handle(1), input_key).unwrap();
     let mut builder = EvalBuilder::new(app_authority(primary_authority));
     builder
         .add(
             input,
             Scalar::<Uint<64>>::u64(2),
-            Output::durable(output_slot, access_policy(extra_authority)),
+            Output::durable(output_key, subjects(extra_authority)),
         )
         .unwrap();
     let plan = builder.finish().unwrap();
@@ -722,18 +749,18 @@ fn resolve_accounts_orders_and_validates_plan_requirements() {
 #[test]
 fn resolve_accounts_rejects_known_accounts_in_wrong_bucket() {
     let primary_authority = Pubkey::new_unique();
-    let input_slot = durable_slot(primary_authority, 1);
-    let input_acl = input_slot.address();
+    let input_key = encrypted_value_key(primary_authority, 1);
+    let input_acl = input_key.address();
     let extra_authority = Pubkey::new_unique();
-    let output_slot = durable_slot(extra_authority, 7);
-    let output_acl = output_slot.address();
-    let input = Uint64Handle::durable(balance_handle(1), input_slot).unwrap();
+    let output_key = encrypted_value_key(extra_authority, 7);
+    let output_acl = output_key.address();
+    let input = Uint64Handle::durable(balance_handle(1), input_key).unwrap();
     let mut builder = EvalBuilder::new(app_authority(primary_authority));
     builder
         .add(
             input,
             Scalar::<Uint<64>>::u64(2),
-            Output::durable(output_slot, access_policy(extra_authority)),
+            Output::durable(output_key, subjects(extra_authority)),
         )
         .unwrap();
     let plan = builder.finish().unwrap();
@@ -798,15 +825,12 @@ fn resolve_accounts_rejects_known_accounts_in_wrong_bucket() {
 #[test]
 fn lowers_birth_steps() {
     let primary_authority = Pubkey::new_unique();
-    let output_slot = durable_slot(primary_authority, 7);
-    let output_acl = output_slot.address();
+    let output_key = encrypted_value_key(primary_authority, 7);
+    let output_acl = output_key.address();
     let mut builder = EvalBuilder::new(app_authority(primary_authority));
     let trivial = builder.trivial_encrypt_u64(1, Output::transient()).unwrap();
     builder
-        .rand_u64(Output::durable(
-            output_slot,
-            access_policy(primary_authority),
-        ))
+        .rand_u64(Output::durable(output_key, subjects(primary_authority)))
         .unwrap();
     builder
         .add(trivial, Scalar::<Uint<64>>::u64(1), Output::transient())
@@ -854,8 +878,8 @@ fn rejects_invalid_references_and_types() {
         .unwrap_err();
     assert_eq!(error, EvalBuildError::UnsupportedBinaryOutputType);
 
-    let input_slot = durable_slot(primary_authority, 1);
-    let input = Uint64Handle::durable(balance_handle(1), input_slot).unwrap();
+    let input_key = encrypted_value_key(primary_authority, 1);
+    let input = Uint64Handle::durable(balance_handle(1), input_key).unwrap();
     let mut builder = EvalBuilder::new(app_authority(primary_authority));
     builder.trivial_encrypt_u64(1, Output::transient()).unwrap();
     let current_index = builder
@@ -895,8 +919,8 @@ fn rejects_invalid_references_and_types() {
 #[test]
 fn rejects_transients_from_another_builder() {
     let primary_authority = Pubkey::new_unique();
-    let input_slot = durable_slot(primary_authority, 1);
-    let balance = Uint64Handle::durable(balance_handle(1), input_slot).unwrap();
+    let input_key = encrypted_value_key(primary_authority, 1);
+    let balance = Uint64Handle::durable(balance_handle(1), input_key).unwrap();
 
     let mut first = EvalBuilder::new(app_authority(primary_authority));
     let foreign = first
@@ -922,36 +946,36 @@ fn validates_app_authority_and_durable_account_pubkeys() {
     };
     assert_eq!(error, EvalBuildError::InvalidAppAuthority);
 
-    let invalid_namespace_slot = DurableSlot::new(
+    let invalid_namespace_key = EncryptedValueKey::new(
         Pubkey::default(),
         Pubkey::new_unique(),
         DurableLabel::new(handle(5)),
     );
     assert_eq!(
-        Uint64Handle::durable(balance_handle(1), invalid_namespace_slot.clone()).unwrap_err(),
-        EvalBuildError::InvalidDurableSlot
+        Uint64Handle::durable(balance_handle(1), invalid_namespace_key.clone()).unwrap_err(),
+        EvalBuildError::InvalidEncryptedValueKey
     );
     assert_eq!(
-        DurableOutput::create(invalid_namespace_slot, access_policy(Pubkey::new_unique()))
+        DurableOutput::create(invalid_namespace_key, subjects(Pubkey::new_unique()))
             .birth()
             .unwrap_err(),
-        EvalBuildError::InvalidDurableSlot
+        EvalBuildError::InvalidEncryptedValueKey
     );
 
-    let invalid_account_slot = DurableSlot::new(
+    let invalid_account_key = EncryptedValueKey::new(
         Pubkey::new_unique(),
         Pubkey::default(),
         DurableLabel::new(handle(5)),
     );
     assert_eq!(
-        Uint64Handle::durable(balance_handle(1), invalid_account_slot.clone()).unwrap_err(),
-        EvalBuildError::InvalidDurableSlot
+        Uint64Handle::durable(balance_handle(1), invalid_account_key.clone()).unwrap_err(),
+        EvalBuildError::InvalidEncryptedValueKey
     );
     assert_eq!(
-        DurableOutput::create(invalid_account_slot, access_policy(Pubkey::new_unique()))
+        DurableOutput::create(invalid_account_key, subjects(Pubkey::new_unique()))
             .birth()
             .unwrap_err(),
-        EvalBuildError::InvalidDurableSlot
+        EvalBuildError::InvalidEncryptedValueKey
     );
 }
 
@@ -1079,7 +1103,8 @@ fn mul_div_rejects_zero_divisor() {
     let primary_authority = Pubkey::new_unique();
     let mut builder = EvalBuilder::new(app_authority(primary_authority));
     let balance =
-        Uint64Handle::durable(balance_handle(1), durable_slot(primary_authority, 1)).unwrap();
+        Uint64Handle::durable(balance_handle(1), encrypted_value_key(primary_authority, 1))
+            .unwrap();
     assert_eq!(
         builder
             .mul_div(
@@ -1098,8 +1123,9 @@ fn div_rem_require_nonzero_scalar_divisor() {
     let auth = Pubkey::new_unique();
     let mut builder = EvalBuilder::new(app_authority(auth));
     // Encrypted divisor is rejected — division is scalar-only (EVM `IsNotScalar`).
-    let lhs = Uint64Handle::durable(balance_handle(1), durable_slot(auth, 1)).unwrap();
-    let enc_divisor = Uint64Handle::durable(balance_handle(2), durable_slot(auth, 2)).unwrap();
+    let lhs = Uint64Handle::durable(balance_handle(1), encrypted_value_key(auth, 1)).unwrap();
+    let enc_divisor =
+        Uint64Handle::durable(balance_handle(2), encrypted_value_key(auth, 2)).unwrap();
     assert_eq!(
         builder
             .div(lhs, enc_divisor, Output::transient())
@@ -1107,7 +1133,7 @@ fn div_rem_require_nonzero_scalar_divisor() {
         EvalBuildError::DivisorMustBeScalar
     );
     // A zero scalar divisor is rejected.
-    let lhs2 = Uint64Handle::durable(balance_handle(1), durable_slot(auth, 1)).unwrap();
+    let lhs2 = Uint64Handle::durable(balance_handle(1), encrypted_value_key(auth, 1)).unwrap();
     assert_eq!(
         builder
             .rem(lhs2, Scalar::<Uint<64>>::u64(0), Output::transient())
@@ -1115,7 +1141,7 @@ fn div_rem_require_nonzero_scalar_divisor() {
         EvalBuildError::DivisionByZero
     );
     // A non-zero scalar divisor is accepted.
-    let lhs3 = Uint64Handle::durable(balance_handle(1), durable_slot(auth, 1)).unwrap();
+    let lhs3 = Uint64Handle::durable(balance_handle(1), encrypted_value_key(auth, 1)).unwrap();
     assert!(builder
         .div(lhs3, Scalar::<Uint<64>>::u64(3), Output::transient())
         .is_ok());
@@ -1127,81 +1153,94 @@ fn builder_exposes_the_host_operator_type_surface() {
     let auth = Pubkey::new_unique();
     let mut builder = EvalBuilder::new(app_authority(auth));
 
-    let bool_a =
-        Encrypted::<Bool>::durable(typed_handle(1, FheType::BOOL.byte()), durable_slot(auth, 1))
-            .unwrap();
-    let bool_b =
-        Encrypted::<Bool>::durable(typed_handle(2, FheType::BOOL.byte()), durable_slot(auth, 2))
-            .unwrap();
+    let bool_a = Encrypted::<Bool>::durable(
+        typed_handle(1, FheType::BOOL.byte()),
+        encrypted_value_key(auth, 1),
+    )
+    .unwrap();
+    let bool_b = Encrypted::<Bool>::durable(
+        typed_handle(2, FheType::BOOL.byte()),
+        encrypted_value_key(auth, 2),
+    )
+    .unwrap();
     assert!(builder.and(bool_a, bool_b, Output::transient()).is_ok());
 
     let u256_a = Encrypted::<Bytes256>::durable(
         typed_handle(3, FheType::BYTES256.byte()),
-        durable_slot(auth, 3),
+        encrypted_value_key(auth, 3),
     )
     .unwrap();
     let u256_b = Encrypted::<Bytes256>::durable(
         typed_handle(4, FheType::BYTES256.byte()),
-        durable_slot(auth, 4),
+        encrypted_value_key(auth, 4),
     )
     .unwrap();
     assert!(builder.xor(u256_a, u256_b, Output::transient()).is_ok());
 
     let u256_c = Encrypted::<Bytes256>::durable(
         typed_handle(5, FheType::BYTES256.byte()),
-        durable_slot(auth, 5),
+        encrypted_value_key(auth, 5),
     )
     .unwrap();
     assert!(builder.neg(u256_c, Output::transient()).is_ok());
 
-    let bool_c =
-        Encrypted::<Bool>::durable(typed_handle(6, FheType::BOOL.byte()), durable_slot(auth, 6))
-            .unwrap();
-    let bool_d =
-        Encrypted::<Bool>::durable(typed_handle(7, FheType::BOOL.byte()), durable_slot(auth, 7))
-            .unwrap();
+    let bool_c = Encrypted::<Bool>::durable(
+        typed_handle(6, FheType::BOOL.byte()),
+        encrypted_value_key(auth, 6),
+    )
+    .unwrap();
+    let bool_d = Encrypted::<Bool>::durable(
+        typed_handle(7, FheType::BOOL.byte()),
+        encrypted_value_key(auth, 7),
+    )
+    .unwrap();
     assert!(builder.eq(bool_c, bool_d, Output::transient()).is_ok());
 
     let addr_v = Encrypted::<Address>::durable(
         typed_handle(8, FheType::ADDRESS.byte()),
-        durable_slot(auth, 8),
+        encrypted_value_key(auth, 8),
     )
     .unwrap();
     let addr_s = Encrypted::<Address>::durable(
         typed_handle(9, FheType::ADDRESS.byte()),
-        durable_slot(auth, 9),
+        encrypted_value_key(auth, 9),
     )
     .unwrap();
     assert!(builder.is_in(addr_v, [addr_s], Output::transient()).is_ok());
 }
 
 #[test]
-fn access_policy_constructors_validate_immediately() {
+fn durable_output_validates_raw_subjects() {
+    let key = encrypted_value_key(Pubkey::new_unique(), 1);
     assert_eq!(
-        AccessPolicy::for_owner(Pubkey::default()).unwrap_err(),
-        EvalBuildError::InvalidAccessPolicy
-    );
-    let subject = Pubkey::new_unique();
-    assert_eq!(
-        AccessPolicy::for_owner(subject)
-            .unwrap()
-            .with_compute(subject)
+        DurableOutput::create(key.clone(), vec![])
+            .birth()
             .unwrap_err(),
-        EvalBuildError::InvalidAccessPolicy
+        EvalBuildError::InvalidSubjects
     );
-
-    let mut policy = AccessPolicy::for_owner(Pubkey::new_unique()).unwrap();
-    for _ in 1..MAX_ACL_SUBJECTS {
-        policy = policy.with_use_only(Pubkey::new_unique()).unwrap();
-    }
     assert_eq!(
-        policy.with_use_only(Pubkey::new_unique()).unwrap_err(),
-        EvalBuildError::InvalidAccessPolicy
+        DurableOutput::create(key.clone(), vec![Pubkey::default()])
+            .birth()
+            .unwrap_err(),
+        EvalBuildError::InvalidSubjects
     );
-
+    let duplicate = Pubkey::new_unique();
     assert_eq!(
-        AccessPolicy::from_subjects(Vec::<AccessSubject>::new()).unwrap_err(),
-        EvalBuildError::InvalidAccessPolicy
+        DurableOutput::create(key.clone(), vec![duplicate, duplicate])
+            .birth()
+            .unwrap_err(),
+        EvalBuildError::InvalidSubjects
+    );
+    assert_eq!(
+        DurableOutput::create(
+            key,
+            (0..=MAX_ACL_SUBJECTS)
+                .map(|_| Pubkey::new_unique())
+                .collect(),
+        )
+        .birth()
+        .unwrap_err(),
+        EvalBuildError::InvalidSubjects
     );
 }
 
@@ -1209,21 +1248,21 @@ fn access_policy_constructors_validate_immediately() {
 fn durable_output_birth_matches_eval_lowering() {
     let primary_authority = Pubkey::new_unique();
     let subject = Pubkey::new_unique();
-    let output_slot = durable_slot(primary_authority, 42);
-    let output = DurableOutput::create(output_slot.clone(), access_policy(subject));
+    let output_key = encrypted_value_key(primary_authority, 42);
+    let output = DurableOutput::create(output_key.clone(), subjects(subject));
     let birth = output.birth().unwrap();
 
-    assert_eq!(birth.encrypted_value(), output_slot.address());
-    assert_eq!(birth.acl_domain_key(), output_slot.namespace());
-    assert_eq!(birth.app_account(), output_slot.account());
-    assert_eq!(birth.encrypted_value_label(), output_slot.label().bytes());
-    assert_eq!(birth.subjects(), access_policy(subject).subjects());
+    assert_eq!(birth.encrypted_value(), output_key.address());
+    assert_eq!(birth.acl_domain_key(), output_key.namespace());
+    assert_eq!(birth.app_account(), output_key.account());
+    assert_eq!(birth.encrypted_value_label(), output_key.label().bytes());
+    assert_eq!(birth.subjects(), subjects(subject));
     assert_eq!(birth.previous_handle(), None);
     assert_eq!(birth.previous_subjects(), None);
 
     let mut builder = EvalBuilder::new(app_authority(primary_authority));
     builder
-        .trivial_encrypt_u64(7, Output::durable(output_slot, access_policy(subject)))
+        .trivial_encrypt_u64(7, Output::durable(output_key, subjects(subject)))
         .unwrap();
     let plan = builder.finish().unwrap();
     match &plan.args.steps[0] {
@@ -1271,18 +1310,23 @@ fn durable_output_birth_matches_eval_lowering() {
 }
 
 #[test]
-fn durable_output_supersede_carries_previous_state() {
+fn durable_output_update_carries_current_state() {
     let primary_authority = Pubkey::new_unique();
     let subject = Pubkey::new_unique();
-    let output_slot = durable_slot(primary_authority, 42);
+    let output_key = encrypted_value_key(primary_authority, 42);
     let previous_handle = balance_handle(1);
     let previous_subjects = vec![subject];
-    let output = DurableOutput::supersede(
-        output_slot,
-        access_policy(subject),
-        previous_handle,
-        previous_subjects.clone(),
-    );
+    let current = zama_host::EncryptedValue {
+        acl_domain_key: primary_authority,
+        app_account: Pubkey::new_unique(),
+        encrypted_value_label: [42; 32],
+        current_handle: previous_handle,
+        subjects: previous_subjects.clone(),
+        leaf_count: 7,
+        peaks: vec![],
+        bump: 1,
+    };
+    let output = DurableOutput::update(output_key, subjects(subject), &current);
     let birth = output.birth().unwrap();
 
     assert_eq!(birth.previous_handle(), Some(previous_handle));
@@ -1295,8 +1339,8 @@ fn durable_output_supersede_carries_previous_state() {
 #[test]
 fn rejects_transients_from_another_frame() {
     let primary_authority = Pubkey::new_unique();
-    let input_slot = durable_slot(primary_authority, 1);
-    let balance = Uint64Handle::durable(balance_handle(1), input_slot).unwrap();
+    let input_key = encrypted_value_key(primary_authority, 1);
+    let balance = Uint64Handle::durable(balance_handle(1), input_key).unwrap();
 
     let mut first = EvalBuilder::new(app_authority(primary_authority));
     let foreign = first
@@ -1316,7 +1360,7 @@ fn rejects_transients_from_another_frame() {
 fn typed_handle_constructor_rejects_mismatched_handle_tag() {
     let error = Uint64Handle::durable(
         typed_handle(1, FheType::UINT32.byte()),
-        durable_slot(Pubkey::new_unique(), 7),
+        encrypted_value_key(Pubkey::new_unique(), 7),
     )
     .unwrap_err();
     assert_eq!(error, EvalBuildError::UnsupportedFheType);
@@ -1343,8 +1387,8 @@ fn finish_rejects_empty_steps() {
 #[test]
 fn rejects_more_than_max_ops() {
     let primary_authority = Pubkey::new_unique();
-    let input_slot = durable_slot(primary_authority, 1);
-    let balance = Uint64Handle::durable(balance_handle(1), input_slot).unwrap();
+    let input_key = encrypted_value_key(primary_authority, 1);
+    let balance = Uint64Handle::durable(balance_handle(1), input_key).unwrap();
     let mut builder = EvalBuilder::new(app_authority(primary_authority));
     for index in 0..MAX_FHE_EVAL_OPS {
         builder

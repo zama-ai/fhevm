@@ -60,7 +60,7 @@ pub fn initialize_mint<'info>(ctx: Context<'info, InitializeMint<'info>>) -> Res
     let total_supply_encrypted_value = ctx.accounts.total_supply_encrypted_value.key();
     let total_supply_output = fhe::DurableOutput::new(
         ctx.accounts.total_supply_encrypted_value.to_account_info(),
-        durable_slot(mint_key, total_supply_authority, total_supply_label()),
+        encrypted_value_key(mint_key, total_supply_authority, total_supply_label()),
         fhe::DurableAudience::compute_only(compute_signer),
     )?;
     let mut builder =

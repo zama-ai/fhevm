@@ -124,6 +124,10 @@ pub enum ZamaHostError {
     /// An FHE eval instruction referenced a transient output that was not produced earlier.
     #[msg("FHE eval transient operand is missing")]
     FheEvalAllowedLocalMissing,
+    /// An `AllowedDurable` operand referenced an account written by an earlier step.
+    /// In-frame dependencies must use `AllowedLocal`.
+    #[msg("FHE eval durable operand was written earlier in the frame")]
+    FheEvalDurableOperandWrittenEarlier,
     /// An FHE eval instruction produced the same transient handle twice.
     #[msg("FHE eval output handle is duplicated")]
     FheEvalDuplicateHandle,

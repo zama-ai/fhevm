@@ -26,8 +26,8 @@ programs/confidential-batcher   Confidential batcher (DD-042): aggregates encryp
                                 replacement for EVM transfer-and-call callbacks.
 programs/demo-vault             Minimal public share-mint vault (assets in, shares out, price =
                                 assets/shares) the batcher fronts; plain SPL only.
-crates/zama-fhe                 App-facing SDK: typed `EvalBuilder`, `Encrypted<T>`, `DurableSlot`,
-                                `AccessPolicy`, and a `cpi`-feature account resolver for `fhe_eval` plans.
+crates/zama-fhe                 App-facing SDK: typed `EvalBuilder`, `Encrypted<T>`, `EncryptedValueKey`,
+                                and a `cpi`-feature account resolver for `fhe_eval` plans.
 crates/solana-ed25519-instruction  Ed25519 instruction-sysvar helpers.
 runtime-tests                   Fast evaluator/plan contracts plus real-SBF Mollusk host/token
                                 suites; see docs/TESTING.md for the evidence each layer provides.
@@ -79,7 +79,7 @@ An app program drives compute by CPI into `zama-host`, using `crates/zama-fhe`:
   **compute-authority PDA** (in `confidential-token`, `[b"fhe-compute", mint]`) and check the attested
   `user_address` yourself — the host only enforces `attestation.contract_address == compute_subject`.
 - Compose atomic multi-account effects (e.g. debit sender + credit receiver) as one `fhe_eval` frame
-  with per-output authority signer witnesses, using `EvalBuilder` + `DurableSlot`.
+  with per-output authority signer witnesses, using `EvalBuilder` + `EncryptedValueKey`.
 - To receive confidential funds, expose your own instruction that CPIs `confidential_transfer` with
   the user as sole signer (authority propagates through the CPI). See `confidential-batcher::join`.
   There is no receiver-callback / transfer-and-call path — that EVM workaround is not needed on Solana.

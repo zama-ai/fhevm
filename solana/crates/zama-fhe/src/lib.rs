@@ -33,8 +33,8 @@ pub use accounts::{
 #[cfg(feature = "cpi")]
 pub use accounts::{EvalAccountResolutionError, ResolvedEvalAccounts};
 pub use acl::{
-    AccessPolicy, AccessSubject, BoundedU64UpperBound, DurableLabel, DurableOutput,
-    DurableOutputBirth, DurableSlot, Output,
+    BoundedU64UpperBound, DurableLabel, DurableOutput, DurableOutputBirth, EncryptedValueKey,
+    Output,
 };
 pub use builder::EvalBuilder;
 #[cfg(feature = "cpi")]
@@ -83,10 +83,10 @@ pub enum EvalBuildError {
     TernaryOperandTypeMismatch,
     /// The encrypted-input proof does not contain the selected handle.
     InvalidInputProof,
-    /// A durable output ACL policy would be rejected by the host.
-    InvalidAccessPolicy,
-    /// A durable slot contains an app-domain pubkey the host would reject.
-    InvalidDurableSlot,
+    /// A durable output subject list would be rejected by the host.
+    InvalidSubjects,
+    /// An encrypted-value key contains an app-domain pubkey the host would reject.
+    InvalidEncryptedValueKey,
     /// The fixed app authority pubkey is not a valid signer identity.
     InvalidAppAuthority,
     /// A durable output's declared previous state is inconsistent (one of

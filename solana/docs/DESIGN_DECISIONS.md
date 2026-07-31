@@ -648,9 +648,9 @@ useful ergonomic idea — symbolic previous results inside one instruction — i
 `FheEvalOperand::AllowedLocal` in the host ABI and by the app-facing `zama-fhe::EvalBuilder`. The SDK
 builder hides raw producer indices and `remaining_accounts` indices from app code, returns typed
 `Encrypted<T>` values for intermediate results, derives durable output nonce keys / ACL record PDAs
-from `DurableSlot`, stores ACL subjects behind `AccessPolicy`, and returns an opaque `EvalPlan`.
+from `EncryptedValueKey`, accepts ACL subjects directly, and returns an opaque `EvalPlan`.
 The `cpi` feature can resolve that plan through a pubkey-keyed account resolver, so app code does
-not hand-maintain ordered host accounts. Output authority, role-aware ACLs, overflow permissions,
+not hand-maintain ordered host accounts. Output authority, validated subject lists, overflow permissions,
 material commitments, and public-decrypt policy remain enforced by the current host ABI.
 
 `fhe_eval` also owns its replay transport boundary. Frames with at most eight replay events use
@@ -704,8 +704,8 @@ The token transfer path now uses one host `fhe_eval` frame instead of the older 
 sequence. The eval emits `ge` and debit-candidate `sub` as instruction-local transient handles,
 consumes them in a ternary `if_then_else`, persists the sender's new balance plus the transferred
 amount, and then credits the recipient in the same frame using a per-output recipient authority
-witness. The helper crate exposes typed durable handles, scalar helpers, `DurableSlot`,
-`AccessPolicy`, `EvalBuilder`, and plan-driven CPI resolution, so app code assembles this shape
+witness. The helper crate exposes typed durable handles, scalar helpers, `EncryptedValueKey`,
+`EvalBuilder`, and plan-driven CPI resolution, so app code assembles this shape
 without hand-maintaining raw producer indices, raw account indices, signer flags, writable flags,
 nonce keys, ACL record addresses, or repeated output type bytes for common operations. A successful
 direct transfer therefore binds exactly three durable ACL records:
@@ -1890,11 +1890,12 @@ split into exactly two regimes, mirroring `FHEVMExecutor`:
    independently authorized on, and the DAG is public in instruction data regardless).
 2. **Rand / rand-bounded seeds** are compulsorily fresh: `H(domain, compute_subject, the frame's
    durable-write anchor, op_index, program_id, chain_id, previous_bank_hash, unix_timestamp)`.
-   The durable-write anchor is every durable output's `(account key, previous_handle)` pair in
-   wire order (`[0; 32]` for a create). Each pair is verified against live state by the freshness
-   pin and consumed by the frame's own supersede/create, so it can never validly recur: the
-   `EncryptedValue` handle chain plays the role of EVM's `counterRand`, sharded per account and
-   advanced by writes the frame already performs. A frame containing a rand step must therefore
+   The durable-write anchor is every durable output's live `(account key, create/update tag,
+   current_handle, leaf_count)` state in wire order. `leaf_count` is read by the host, not declared
+   by the caller, and advances whenever an outgoing handle is sealed. Therefore an account that
+   cycles back to an earlier content-addressed handle still produces a new seed. The host emits the
+   resolved random seeds through a signed event-CPI batch so the listener does not need caller
+   hints or historical account reads. A frame containing a rand step must therefore
    declare at least one durable output (preflight `FheEvalRandRequiresDurableOutput`); the
    excluded all-transient class is provably useless — no ACL record, no decrypt path, no
    `make_public`, so its randomness is unobservable by everyone including the author.
@@ -1909,12 +1910,11 @@ Load-bearing invariants (must survive refactors):
 - Every declared durable output is always written, and duplicate durable-output accounts within a
   frame are rejected (`EvalAccountTable::claim_durable_output`) — these make the anchor a consumed
   ticket.
-- Two frames presenting the same `(key, previous_handle)` serialize on the account write-lock; the
-  second fails the pin and reverts fully, and a reverted frame's seed never materializes, so its
-  ticket correctly remains valid for retry.
+- Sequential writes to one account advance `leaf_count`, even if the current handle and subjects
+  later return to earlier values; a reverted frame does not advance it or emit a usable seed.
 - No seed-steering: the preimage is fully determined by the caller's own signed frame + slot
   context; front-running the pinned handle makes the frame fail loudly, never compute on an
   attacker-chosen seed.
 - **Standing invariant**: no close/expiry/reopen path exists for `EncryptedValue` (the lifecycle
-  is deliberately sealed). If one is ever added (#1705, #1710), close-then-recreate within one
-  slot lets a `(key, [0; 32])` creation ticket recur, and this argument must be re-derived.
+  is deliberately sealed). If one is ever added (#1705, #1710), close-then-recreate can reset the
+  live version anchor, and this argument must be re-derived.

@@ -15,8 +15,8 @@ pub(super) struct EvalHandleContext<'a> {
     pub unix_timestamp: i64,
     /// Signed caller identity folded into rand seeds (never into deterministic handles).
     pub compute_subject: Pubkey,
-    /// The frame's durable-write anchor: every durable output's
-    /// `(account key, previous_handle)` pair concatenated in wire order
+    /// The frame's durable-write anchor: every durable output's live account
+    /// identity, current handle, and MMR leaf count in wire order
     /// (see [`computed_eval_rand_seed`]).
     pub durable_anchor_bytes: &'a [u8],
 }
@@ -76,7 +76,7 @@ impl EvalHandleContext<'_> {
         )
     }
 
-    fn rand_seed(&self, op_index: u16) -> [u8; 16] {
+    pub(super) fn rand_seed(&self, op_index: u16) -> [u8; 16] {
         computed_eval_rand_seed(
             self.compute_subject,
             self.durable_anchor_bytes,

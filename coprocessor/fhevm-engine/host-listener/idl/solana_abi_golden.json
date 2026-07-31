@@ -193,6 +193,14 @@
     },
     {
       "category": "event",
+      "fixture_hex": "1115dd9dd18e587a01010000001200030405060708090a0b0c0d0e0f101112",
+      "fixture_len": 31,
+      "name": "FheEvalRandomSeedsEvent",
+      "program": "zama_host",
+      "schema_hash": "ff7deebcbe2147bab616622abc9633f03e6d5bd9ee9c63e6622bc4d1d959b337"
+    },
+    {
+      "category": "event",
       "fixture_hex": "67fbf966d3b182670102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f2021030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f202122010000000405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f2021222305060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f202122232425",
       "fixture_len": 142,
       "name": "FheIsInEvent",

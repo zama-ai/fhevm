@@ -12,11 +12,21 @@ pub(crate) fn lower_operand(
     pool: &mut Vec<[u8; 32]>,
     produced_count: usize,
     builder_scope: EvalBuilderScope,
+    durable_producers: &[(anchor_lang::prelude::Pubkey, u16)],
     verified_inputs: &[CoprocessorInputAttestation],
     operand: Operand,
 ) -> Result<FheEvalOperand> {
     match operand.0 {
         OperandKind::Durable(durable) => {
+            if let Some((_, producer_index)) = durable_producers
+                .iter()
+                .rev()
+                .find(|(account, _)| *account == durable.encrypted_value)
+            {
+                let producer_index =
+                    u8::try_from(*producer_index).map_err(|_| EvalBuildError::TooManyOps)?;
+                return Ok(FheEvalOperand::AllowedLocal { producer_index });
+            }
             let handle_index = pool_index(pool, durable.handle)?;
             let encrypted_value_index = account_index(
                 remaining_accounts,
@@ -65,12 +75,15 @@ pub(crate) fn lower_output(
     remaining_accounts: &mut Vec<EvalAccountMeta>,
     pool: &mut Vec<[u8; 32]>,
     app_authority: EvalAppAuthority,
+    durable_producers: &mut Vec<(anchor_lang::prelude::Pubkey, u16)>,
+    producer_index: u16,
     output: Output,
 ) -> Result<FheEvalOutput> {
     match output.0 {
         OutputKind::Transient => Ok(FheEvalOutput::AllowedLocal),
         OutputKind::Durable(output) => {
             let birth = output.birth()?;
+            let encrypted_value = birth.encrypted_value();
             let output_encrypted_value_index = account_index(
                 remaining_accounts,
                 EvalAccountMeta::writable(
@@ -95,7 +108,7 @@ pub(crate) fn lower_output(
                 .into_iter()
                 .map(|subject| pool_index(pool, subject.to_bytes()))
                 .collect::<Result<Vec<u8>>>()?;
-            Ok(FheEvalOutput::AllowedDurable {
+            let output = FheEvalOutput::AllowedDurable {
                 output_encrypted_value_index,
                 output_app_account_authority_index,
                 output_acl_domain_key_index: pool_index(pool, birth.acl_domain_key().to_bytes())?,
@@ -108,7 +121,9 @@ pub(crate) fn lower_output(
                 previous_handle: birth.previous_handle(),
                 previous_subjects: birth.previous_subjects().map(|s| s.to_vec()),
                 make_public: birth.make_public(),
-            })
+            };
+            durable_producers.push((encrypted_value, producer_index));
+            Ok(output)
         }
     }
 }

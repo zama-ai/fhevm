@@ -915,11 +915,9 @@ pub fn computed_eval_trivial_handle(
 /// Derives the compulsorily fresh seed for an instruction-local eval random handle.
 ///
 /// Freshness is anchored, never caller-advised: `durable_anchor_bytes` is the frame's
-/// durable-write anchor — every durable output's `(account key, previous_handle)` pair
-/// concatenated in wire order (`[0u8; 32]` for a create). Each pair is verified against
-/// live state by the freshness pin and consumed by the frame's own supersede/create, so
-/// it can never validly recur: the `EncryptedValue` handle chain plays the role of EVM's
-/// `counterRand`, sharded per account and advanced by writes the frame already performs.
+/// durable-write anchor — every durable output's live account identity and version
+/// concatenated in wire order. The host-observed MMR leaf count prevents a handle cycle
+/// from replaying an earlier anchor.
 /// `compute_subject` separates concurrent frames of different signers in the same slot;
 /// `op_index` separates rand steps within one frame; slot entropy separates slots.
 pub fn computed_eval_rand_seed(

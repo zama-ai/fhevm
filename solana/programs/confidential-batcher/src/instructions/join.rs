@@ -147,7 +147,7 @@ pub fn join<'info>(
     let transferred = fhe::uint64_operand(&transferred_value)?;
     let joined_binding = fhe::DurableBinding::bind(
         ctx.accounts.pending_join_value.to_account_info(),
-        zama_fhe::DurableSlot::new(
+        zama_fhe::EncryptedValueKey::new(
             batch_key,
             batch_authority,
             zama_fhe::DurableLabel::new(pending_join_label(user)),
@@ -155,12 +155,11 @@ pub fn join<'info>(
         // The user decrypts their pending amount; the batch authority computes
         // refunds and claims from it; the join mint's compute signer lets
         // quit's transfer eval read it as the refund amount.
-        zama_fhe::AccessPolicy::from_subjects(vec![
-            zama_fhe::AccessSubject::owner(user),
-            zama_fhe::AccessSubject::compute(batch_authority),
-            zama_fhe::AccessSubject::compute(ctx.accounts.join_confidential_mint.compute_signer),
-        ])
-        .map_err(fhe::invalid_eval_plan)?,
+        vec![
+            user,
+            batch_authority,
+            ctx.accounts.join_confidential_mint.compute_signer,
+        ],
     )?;
     let previous_joined = match joined_binding.previous_handle() {
         Some(_) => Some(fhe::uint64_operand(&fhe::read_encrypted_value(

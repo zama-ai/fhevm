@@ -138,17 +138,16 @@ pub fn quit<'info>(ctx: Context<'info, Quit<'info>>) -> Result<()> {
     // place), so a later re-join of the same batch accumulates from zero.
     let reset_binding = fhe::DurableBinding::bind(
         ctx.accounts.pending_join_value.to_account_info(),
-        zama_fhe::DurableSlot::new(
+        zama_fhe::EncryptedValueKey::new(
             batch_key,
             batch_authority,
             zama_fhe::DurableLabel::new(pending_join_label(user)),
         ),
-        zama_fhe::AccessPolicy::from_subjects(vec![
-            zama_fhe::AccessSubject::owner(user),
-            zama_fhe::AccessSubject::compute(batch_authority),
-            zama_fhe::AccessSubject::compute(ctx.accounts.join_confidential_mint.compute_signer),
-        ])
-        .map_err(fhe::invalid_eval_plan)?,
+        vec![
+            user,
+            batch_authority,
+            ctx.accounts.join_confidential_mint.compute_signer,
+        ],
     )?;
     fhe::eval_as_batch_authority(
         fhe::BatchAuthorityEval {

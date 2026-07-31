@@ -7,7 +7,7 @@ use zama_host::{
 };
 
 use crate::accounts::{EvalAccountMeta, EvalAppAuthority};
-use crate::acl::{AccessSubject, DurableSlot};
+use crate::acl::EncryptedValueKey;
 use crate::operand::{EvalBuilderScope, Operand, OperandKind};
 use crate::{EvalBuildError, Result};
 
@@ -520,27 +520,24 @@ pub(crate) fn validate_supported_rand_type(fhe_type: u8) -> Result<()> {
     }
 }
 
-pub(crate) fn validate_access_policy(subjects: &[AccessSubject]) -> Result<()> {
+pub(crate) fn validate_subjects(subjects: &[Pubkey]) -> Result<()> {
     if subjects.is_empty() || subjects.len() > MAX_ACL_SUBJECTS {
-        return Err(EvalBuildError::InvalidAccessPolicy);
+        return Err(EvalBuildError::InvalidSubjects);
     }
     for (index, subject) in subjects.iter().enumerate() {
-        if subject.pubkey == Pubkey::default() {
-            return Err(EvalBuildError::InvalidAccessPolicy);
+        if *subject == Pubkey::default() {
+            return Err(EvalBuildError::InvalidSubjects);
         }
-        if subjects[..index]
-            .iter()
-            .any(|previous| previous.pubkey == subject.pubkey)
-        {
-            return Err(EvalBuildError::InvalidAccessPolicy);
+        if subjects[..index].contains(subject) {
+            return Err(EvalBuildError::InvalidSubjects);
         }
     }
     Ok(())
 }
 
-pub(crate) fn validate_durable_slot(slot: &DurableSlot) -> Result<()> {
-    if slot.namespace == Pubkey::default() || slot.account == Pubkey::default() {
-        return Err(EvalBuildError::InvalidDurableSlot);
+pub(crate) fn validate_encrypted_value_key(key: &EncryptedValueKey) -> Result<()> {
+    if key.namespace == Pubkey::default() || key.account == Pubkey::default() {
+        return Err(EvalBuildError::InvalidEncryptedValueKey);
     }
     Ok(())
 }

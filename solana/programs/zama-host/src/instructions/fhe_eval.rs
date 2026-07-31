@@ -9,7 +9,10 @@ use super::encrypted_value::{
 use super::input_verification::{verify_input_attestation, InputVerifierParams};
 use crate::{
     errors::ZamaHostError,
-    events::{ProducedPublicOutput, PublicOutputsProducedEvent},
+    events::{
+        FheEvalRandomSeed, FheEvalRandomSeedsEvent, ProducedPublicOutput,
+        PublicOutputsProducedEvent,
+    },
     state::*,
 };
 
@@ -21,7 +24,7 @@ mod preflight;
 mod walk;
 
 use account_table::EvalAccountTable;
-use event_transport::emit_public_outputs_produced;
+use event_transport::{emit_eval_random_seeds, emit_public_outputs_produced};
 use preflight::preflight_eval_frame;
 use walk::{walk_eval_frame, EvalHandleContext};
 
@@ -100,6 +103,7 @@ pub fn fhe_eval<'info>(ctx: Context<'info, FheEval<'info>>, args: FheEvalArgs) -
         compute_subject: subject,
         durable_anchor_bytes: &durable_anchor_bytes,
     };
+    let random_seeds = collect_eval_random_seeds(&args, &handle_context);
     block_cap::charge(&ctx, frame.total, clock.slot)?;
     // Execution is the single walk: it validates each step as it mutates. A failure mid-frame
     // leaves partial writes behind only until the runtime reverts the transaction, which discards
@@ -107,6 +111,7 @@ pub fn fhe_eval<'info>(ctx: Context<'info, FheEval<'info>>, args: FheEvalArgs) -
     // stays last so no event describes state that did not commit.
     let born_public_outputs =
         execute_eval_frame(&mut account_table, &ctx, &args, subject, &handle_context)?;
+    emit_eval_random_seeds(&ctx, random_seeds)?;
     emit_public_outputs_produced(&ctx, born_public_outputs)?;
     Ok(())
 }
@@ -126,31 +131,56 @@ pub(in crate::instructions) fn step_output(step: &FheEvalStep) -> &FheEvalOutput
     }
 }
 
-/// Flattens the frame's durable-write anchor: every durable output's
-/// `(account key, previous_handle)` pair in wire order (`[0u8; 32]` for a create).
-/// Each pair is verified against live state and consumed by the frame's own bind, so
-/// the concatenation can never validly recur — the uniqueness source rand seeds hash
-/// (see [`computed_eval_rand_seed`]).
+/// Flattens the frame's durable-write anchor from live account state. Each entry is
+/// `(account key, create/update tag, current handle, leaf count)` in wire order.
+/// `leaf_count` advances whenever an outgoing handle is sealed, so returning to an
+/// earlier content-addressed handle cannot replay a previous random seed.
 fn collect_durable_anchor_bytes(
     table: &EvalAccountTable<'_, '_>,
     args: &FheEvalArgs,
 ) -> Result<Vec<u8>> {
-    let mut anchor_bytes = Vec::with_capacity(args.steps.len() * 64);
+    let mut anchor_bytes = Vec::with_capacity(args.steps.len() * 73);
     for step in &args.steps {
         if let FheEvalOutput::AllowedDurable {
             output_encrypted_value_index,
-            previous_handle,
             ..
         } = step_output(step)
         {
-            let key = table
-                .account(u16::from(*output_encrypted_value_index))?
-                .key();
-            anchor_bytes.extend_from_slice(key.as_ref());
-            anchor_bytes.extend_from_slice(&previous_handle.unwrap_or([0; 32]));
+            let account = table.account(u16::from(*output_encrypted_value_index))?;
+            anchor_bytes.extend_from_slice(account.key().as_ref());
+            if account.owner == &crate::ID {
+                let value = read_canonical_encrypted_value(account)?;
+                anchor_bytes.push(1);
+                anchor_bytes.extend_from_slice(&value.current_handle);
+                anchor_bytes.extend_from_slice(&value.leaf_count.to_le_bytes());
+            } else {
+                anchor_bytes.push(0);
+                anchor_bytes.extend_from_slice(&[0; 32]);
+                anchor_bytes.extend_from_slice(&0u64.to_le_bytes());
+            }
         }
     }
     Ok(anchor_bytes)
+}
+
+fn collect_eval_random_seeds(
+    args: &FheEvalArgs,
+    handle_context: &EvalHandleContext<'_>,
+) -> Vec<FheEvalRandomSeed> {
+    args.steps
+        .iter()
+        .enumerate()
+        .filter_map(|(index, step)| {
+            matches!(
+                step,
+                FheEvalStep::Rand { .. } | FheEvalStep::RandBounded { .. }
+            )
+            .then(|| FheEvalRandomSeed {
+                step_index: index as u16,
+                seed: handle_context.rand_seed(index as u16),
+            })
+        })
+        .collect()
 }
 
 #[inline(never)]
@@ -169,7 +199,6 @@ fn execute_eval_frame<'a, 'info>(
         subject,
         chain_id: handle_context.chain_id,
         verifier_params: InputVerifierParams::from_config(&ctx.accounts.host_config),
-        superseded_in_frame: Vec::new(),
     };
     walk_eval_frame(&mut execution, ctx, args, handle_context)?;
     Ok(execution.born_public_outputs)
@@ -189,13 +218,6 @@ struct EvalExecutionState<'t, 'a, 'info> {
     subject: Pubkey,
     chain_id: u64,
     verifier_params: InputVerifierParams,
-    /// Handles superseded by this frame's own output bindings, keyed by
-    /// encrypted value account. A later operand may still reference one (EVM parity:
-    /// a handle stays usable as a value within the transaction that rotated
-    /// it); the bind that rotated it validated the frame-entry state, and
-    /// membership is re-checked below, so only the current-handle equality is
-    /// exempted.
-    superseded_in_frame: Vec<(Pubkey, [u8; 32])>,
 }
 
 impl<'info> EvalExecutionState<'_, '_, 'info> {
@@ -213,22 +235,6 @@ impl<'info> EvalExecutionState<'_, '_, 'info> {
         encrypted_value_index: u16,
     ) -> Result<ResolvedOperand> {
         let value_info = self.table.account(encrypted_value_index)?;
-        if self
-            .superseded_in_frame
-            .iter()
-            .any(|(key, superseded)| *key == value_info.key() && *superseded == handle)
-        {
-            // The frame itself rotated this encrypted value account past `handle`; the bind
-            // that rotated it validated the frame-entry state, and supersession
-            // never edits membership, so only the current-handle equality is
-            // exempted here.
-            let value = read_canonical_encrypted_value(value_info)?;
-            require!(
-                value.has_subject(self.subject),
-                ZamaHostError::SubjectNotAllowed
-            );
-            return Ok(ResolvedOperand::encrypted(handle, false));
-        }
         assert_encrypted_value_subject_allowed(value_info, handle, self.chain_id, self.subject)?;
         Ok(ResolvedOperand::encrypted(handle, false))
     }
@@ -279,18 +285,6 @@ impl<'info> EvalExecutionState<'_, '_, 'info> {
         )?;
         if let Some(record) = born_public_output {
             self.born_public_outputs.push(record);
-        }
-        if let FheEvalOutput::AllowedDurable {
-            output_encrypted_value_index,
-            previous_handle: Some(previous_handle),
-            ..
-        } = output
-        {
-            let key = self
-                .table
-                .account(u16::from(*output_encrypted_value_index))?
-                .key();
-            self.superseded_in_frame.push((key, *previous_handle));
         }
         Ok(())
     }
@@ -634,6 +628,7 @@ fn check_rotation_grants_not_denied(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use anchor_lang::AccountSerialize;
 
     fn encrypted_value_account(handle: [u8; 32], subjects: &[Pubkey]) -> EncryptedValue {
         EncryptedValue {
@@ -671,6 +666,51 @@ mod tests {
 
     fn grants(subjects: &[Pubkey]) -> Vec<Pubkey> {
         subjects.to_vec()
+    }
+
+    fn durable_anchor_at_leaf_count(leaf_count: u64) -> Vec<u8> {
+        let mut value = encrypted_value_account([9; 32], &[Pubkey::new_from_array([1; 32])]);
+        value.acl_domain_key = Pubkey::new_from_array([2; 32]);
+        value.app_account = Pubkey::new_from_array([3; 32]);
+        value.encrypted_value_label = [7; 32];
+        value.leaf_count = leaf_count;
+        let (key, bump) = encrypted_value_address(value.value_key());
+        value.bump = bump;
+
+        let mut lamports = 1_000_000;
+        let mut data = vec![0; 8 + EncryptedValue::space(value.subjects.len(), 0)];
+        value.try_serialize(&mut &mut data[..]).unwrap();
+        let owner = crate::ID;
+        let account = AccountInfo::new(&key, false, true, &mut lamports, &mut data, &owner, false);
+        let accounts = [account];
+        let table = EvalAccountTable::new(&accounts).unwrap();
+        let args = FheEvalArgs {
+            account_count: 1,
+            pool: Vec::new(),
+            steps: vec![FheEvalStep::Rand {
+                fhe_type: 5,
+                output: FheEvalOutput::AllowedDurable {
+                    output_encrypted_value_index: 0,
+                    output_app_account_authority_index: None,
+                    output_acl_domain_key_index: 0,
+                    output_app_account_index: 0,
+                    output_encrypted_value_label_index: 0,
+                    output_subject_indexes: Vec::new(),
+                    previous_handle: Some(value.current_handle),
+                    previous_subjects: Some(value.subjects),
+                    make_public: false,
+                },
+            }],
+        };
+        collect_durable_anchor_bytes(&table, &args).unwrap()
+    }
+
+    #[test]
+    fn durable_anchor_changes_when_handle_cycles_to_a_later_leaf_count() {
+        assert_ne!(
+            durable_anchor_at_leaf_count(1),
+            durable_anchor_at_leaf_count(3)
+        );
     }
 
     #[test]

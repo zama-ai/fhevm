@@ -388,7 +388,7 @@ fn execute_burn<'info>(
 
     let balance_output = fhe::DurableOutput::new(
         accounts.balance_value.clone(),
-        durable_slot(mint_key, token_account_key, balance_label()),
+        encrypted_value_key(mint_key, token_account_key, balance_label()),
         fhe::DurableAudience::for_owner(owner, compute_signer),
     )?;
     // ERC-7984 `unwrap` parity (`makePubliclyDecryptable(unwrapAmount)`): the burned delta is born
@@ -396,12 +396,12 @@ fn execute_burn<'info>(
     // later burn supersedes this shared encrypted value account (DD-036 / Vector 2) — with no second make-public CPI.
     let burned_output = fhe::DurableOutput::new_public(
         accounts.burned_amount_value.clone(),
-        durable_slot(mint_key, token_account_key, burned_amount_label()),
+        encrypted_value_key(mint_key, token_account_key, burned_amount_label()),
         fhe::DurableAudience::for_owner(owner, compute_signer),
     )?;
     let total_supply_output = fhe::DurableOutput::new(
         accounts.total_supply_value.clone(),
-        durable_slot(mint_key, total_supply_authority, total_supply_label()),
+        encrypted_value_key(mint_key, total_supply_authority, total_supply_label()),
         fhe::DurableAudience::compute_only(compute_signer),
     )?;
 

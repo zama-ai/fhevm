@@ -39,12 +39,12 @@ pub(crate) struct DurableBinding<'info> {
 impl<'info> DurableBinding<'info> {
     pub(crate) fn bind(
         account: AccountInfo<'info>,
-        slot: zama_fhe::DurableSlot,
-        access: zama_fhe::AccessPolicy,
+        key: zama_fhe::EncryptedValueKey,
+        subjects: Vec<Pubkey>,
     ) -> Result<Self> {
         require_keys_eq!(
             account.key(),
-            slot.address(),
+            key.address(),
             BatcherError::DerivedAccountMismatch
         );
         let (output, previous_handle) = if *account.owner == System::id() {
@@ -52,16 +52,11 @@ impl<'info> DurableBinding<'info> {
                 account.data_is_empty() && !account.executable,
                 BatcherError::EncryptedValueInvalid
             );
-            (zama_fhe::DurableOutput::create(slot, access), None)
+            (zama_fhe::DurableOutput::create(key, subjects), None)
         } else {
             let value = read_encrypted_value(&account)?;
             (
-                zama_fhe::DurableOutput::supersede(
-                    slot,
-                    access,
-                    value.current_handle,
-                    value.subjects.clone(),
-                ),
+                zama_fhe::DurableOutput::update(key, subjects, &value),
                 Some(value.current_handle),
             )
         };
@@ -155,7 +150,7 @@ pub(crate) fn invalid_eval_plan(error: zama_fhe::EvalBuildError) -> anchor_lang:
 pub(crate) fn uint64_operand(value: &EncryptedValue) -> Result<zama_fhe::Uint64Handle> {
     zama_fhe::Uint64Handle::durable(
         value.current_handle,
-        zama_fhe::DurableSlot::new(
+        zama_fhe::EncryptedValueKey::new(
             value.acl_domain_key,
             value.app_account,
             zama_fhe::DurableLabel::new(value.encrypted_value_label),

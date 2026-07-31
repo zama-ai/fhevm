@@ -156,6 +156,7 @@ fn reconstruct_transfer_events(
         &plan,
         fixture.compute_signer.to_bytes(),
         &remaining_accounts,
+        &[],
         &ReconstructContext {
             chain_id: host::SOLANA_POC_CHAIN_ID,
             previous_bank_hash: PREVIOUS_BANK_HASH,

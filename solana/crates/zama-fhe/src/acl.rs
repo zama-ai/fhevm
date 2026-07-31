@@ -6,7 +6,7 @@ use anchor_lang::prelude::Pubkey;
 
 use zama_host::encrypted_value_address;
 
-use crate::validate::{validate_access_policy, validate_durable_slot};
+use crate::validate::{validate_encrypted_value_key, validate_subjects};
 use crate::{EvalBuildError, Result};
 
 /// App-domain encrypted field label.
@@ -23,18 +23,18 @@ impl DurableLabel {
     }
 }
 
-/// App-domain address of a stable `EncryptedValue` encrypted value account.
+/// App-domain key of a stable `EncryptedValue` account.
 ///
 /// Addressing is stable per `(namespace, account, label)` — it does not rotate
 /// on handle updates, unlike the old nonce-keyed ACL records.
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct DurableSlot {
+pub struct EncryptedValueKey {
     pub(crate) namespace: Pubkey,
     pub(crate) account: Pubkey,
     pub(crate) label: DurableLabel,
 }
 
-impl DurableSlot {
+impl EncryptedValueKey {
     pub fn new(namespace: Pubkey, account: Pubkey, label: DurableLabel) -> Self {
         Self {
             namespace,
@@ -68,86 +68,6 @@ impl DurableSlot {
     }
 }
 
-/// Subject granted access to a durable eval output.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub struct AccessSubject {
-    pub(crate) pubkey: Pubkey,
-}
-
-impl AccessSubject {
-    /// Owner subject allowed on the durable value.
-    pub fn owner(pubkey: Pubkey) -> Self {
-        Self { pubkey }
-    }
-
-    pub fn compute(pubkey: Pubkey) -> Self {
-        Self { pubkey }
-    }
-
-    pub fn use_only(pubkey: Pubkey) -> Self {
-        Self { pubkey }
-    }
-
-    pub fn pubkey(self) -> Pubkey {
-        self.pubkey
-    }
-
-    pub fn matches_record_entry(self, pubkey: Pubkey) -> bool {
-        self.pubkey == pubkey
-    }
-}
-
-/// ACL policy for a durable eval output.
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct AccessPolicy {
-    subjects: Vec<AccessSubject>,
-}
-
-impl AccessPolicy {
-    pub fn from_subjects(subjects: Vec<AccessSubject>) -> Result<Self> {
-        validate_access_policy(&subjects)?;
-        Ok(Self { subjects })
-    }
-
-    pub fn for_owner(pubkey: Pubkey) -> Result<Self> {
-        Self::from_subjects(vec![AccessSubject::owner(pubkey)])
-    }
-
-    pub fn for_compute(pubkey: Pubkey) -> Result<Self> {
-        Self::from_subjects(vec![AccessSubject::compute(pubkey)])
-    }
-
-    pub fn for_use_only(pubkey: Pubkey) -> Result<Self> {
-        Self::from_subjects(vec![AccessSubject::use_only(pubkey)])
-    }
-
-    pub fn for_owner_and_compute(owner: Pubkey, compute: Pubkey) -> Result<Self> {
-        Self::for_owner(owner)?.with_compute(compute)
-    }
-
-    pub fn with_owner(self, pubkey: Pubkey) -> Result<Self> {
-        self.with_subject(AccessSubject::owner(pubkey))
-    }
-
-    pub fn with_compute(self, pubkey: Pubkey) -> Result<Self> {
-        self.with_subject(AccessSubject::compute(pubkey))
-    }
-
-    pub fn with_use_only(self, pubkey: Pubkey) -> Result<Self> {
-        self.with_subject(AccessSubject::use_only(pubkey))
-    }
-
-    pub fn subjects(&self) -> &[AccessSubject] {
-        &self.subjects
-    }
-
-    fn with_subject(mut self, subject: AccessSubject) -> Result<Self> {
-        self.subjects.push(subject);
-        validate_access_policy(&self.subjects)?;
-        Ok(self)
-    }
-}
-
 /// Previous on-chain state a durable output supersedes. `None` means this bind
 /// is the encrypted value account's first (the `EncryptedValue` PDA is created).
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -159,38 +79,37 @@ struct PreviousEncryptedValueAccountState {
 /// Durable output descriptor accepted by durable-only steps such as input bind.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct DurableOutput {
-    slot: DurableSlot,
-    access: AccessPolicy,
+    key: EncryptedValueKey,
+    subjects: Vec<Pubkey>,
     previous: Option<PreviousEncryptedValueAccountState>,
     make_public: bool,
 }
 
 impl DurableOutput {
     /// First bind for an encrypted value account: creates the `EncryptedValue` PDA.
-    pub fn create(slot: DurableSlot, access: AccessPolicy) -> Self {
+    pub fn create(key: EncryptedValueKey, subjects: Vec<Pubkey>) -> Self {
         Self {
-            slot,
-            access,
+            key,
+            subjects,
             previous: None,
             make_public: false,
         }
     }
 
-    /// Supersedes an existing encrypted value account. `previous_handle`/`previous_subjects`
-    /// must be read from the on-chain `EncryptedValue` account in the same
-    /// instruction; the host verifies them exactly.
-    pub fn supersede(
-        slot: DurableSlot,
-        access: AccessPolicy,
-        previous_handle: [u8; 32],
-        previous_subjects: Vec<Pubkey>,
+    /// Updates an existing encrypted value account. `current` must be read from
+    /// the on-chain account in the same instruction; the host verifies its
+    /// handle and subjects exactly.
+    pub fn update(
+        key: EncryptedValueKey,
+        subjects: Vec<Pubkey>,
+        current: &zama_host::EncryptedValue,
     ) -> Self {
         Self {
-            slot,
-            access,
+            key,
+            subjects,
             previous: Some(PreviousEncryptedValueAccountState {
-                handle: previous_handle,
-                subjects: previous_subjects,
+                handle: current.current_handle,
+                subjects: current.subjects.clone(),
             }),
             make_public: false,
         }
@@ -205,14 +124,14 @@ impl DurableOutput {
     }
 
     pub fn birth(&self) -> Result<DurableOutputBirth> {
-        validate_durable_slot(&self.slot)?;
-        validate_access_policy(self.access.subjects())?;
+        validate_encrypted_value_key(&self.key)?;
+        validate_subjects(&self.subjects)?;
         Ok(DurableOutputBirth {
-            encrypted_value: self.slot.address(),
-            acl_domain_key: self.slot.namespace,
-            app_account: self.slot.account,
-            encrypted_value_label: self.slot.label.bytes(),
-            subjects: self.access.subjects.clone(),
+            encrypted_value: self.key.address(),
+            acl_domain_key: self.key.namespace,
+            app_account: self.key.account,
+            encrypted_value_label: self.key.label.bytes(),
+            subjects: self.subjects.clone(),
             previous: self.previous.clone(),
             make_public: self.make_public,
         })
@@ -226,7 +145,7 @@ pub struct DurableOutputBirth {
     acl_domain_key: Pubkey,
     app_account: Pubkey,
     encrypted_value_label: [u8; 32],
-    subjects: Vec<AccessSubject>,
+    subjects: Vec<Pubkey>,
     previous: Option<PreviousEncryptedValueAccountState>,
     make_public: bool,
 }
@@ -248,7 +167,7 @@ impl DurableOutputBirth {
         self.encrypted_value_label
     }
 
-    pub fn subjects(&self) -> &[AccessSubject] {
+    pub fn subjects(&self) -> &[Pubkey] {
         &self.subjects
     }
 
@@ -267,10 +186,7 @@ impl DurableOutputBirth {
     }
 
     pub(crate) fn host_subjects(&self) -> Vec<Pubkey> {
-        self.subjects
-            .iter()
-            .map(|subject| subject.pubkey())
-            .collect()
+        self.subjects.clone()
     }
 }
 
@@ -336,8 +252,8 @@ impl Output {
     }
 
     /// First bind for an encrypted value account (creates the `EncryptedValue` PDA).
-    pub fn durable(slot: DurableSlot, access: AccessPolicy) -> Self {
-        Self(OutputKind::Durable(DurableOutput::create(slot, access)))
+    pub fn durable(key: EncryptedValueKey, subjects: Vec<Pubkey>) -> Self {
+        Self(OutputKind::Durable(DurableOutput::create(key, subjects)))
     }
 
     pub fn durable_output(output: DurableOutput) -> Self {

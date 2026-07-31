@@ -22,9 +22,10 @@ pub use solana_abi_schema_hashes::{
     SolanaAbiSchema, SOLANA_ABI_SCHEMAS, SOLANA_EVENT_VERSIONS,
 };
 pub use zama_host_events::{
-    FheBinaryOpCode, FheBinaryOpEvent, FheIsInEvent, FheMulDivEvent,
-    FheRandBoundedEvent, FheRandEvent, FheSumEvent, FheTernaryOpCode,
-    FheTernaryOpEvent, FheUnaryOpCode, FheUnaryOpEvent, ProducedPublicOutput,
+    FheBinaryOpCode, FheBinaryOpEvent, FheEvalRandomSeed,
+    FheEvalRandomSeedsEvent, FheIsInEvent, FheMulDivEvent, FheRandBoundedEvent,
+    FheRandEvent, FheSumEvent, FheTernaryOpCode, FheTernaryOpEvent,
+    FheUnaryOpCode, FheUnaryOpEvent, ProducedPublicOutput,
     PublicOutputsProducedEvent, TrivialEncryptEvent, EVENT_VERSION,
     PUBLIC_OUTPUTS_PRODUCED_EVENT_VERSION,
 };

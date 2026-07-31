@@ -50,8 +50,8 @@ fn assert_frame_pins_or_persists_under_cap(
 
 /// Rejects a frame containing a rand step but no durable output (fhevm-internal#1853 W4).
 ///
-/// Rand seeds are anchored to the frame's durable-write anchor — the `(account key,
-/// previous_handle)` pairs its durable outputs consume — so a rand step needs at least one
+/// Rand seeds are anchored to the frame's durable-write anchor — the live account identity
+/// and version of every durable output — so a rand step needs at least one
 /// durable output for the seed to be compulsorily fresh. The excluded class is provably
 /// useless: an all-transient frame has no ACL records, no decrypt path, and no `make_public`,
 /// so its randomness is unobservable by everyone including the author.
@@ -154,6 +154,7 @@ fn preflight_eval_frame_accounts(
         pool_used: vec![false; args.pool.len()],
         app_account_authority,
         deny_list_enabled,
+        durable_outputs_written: Vec::with_capacity(MAX_FHE_EVAL_OPS),
     };
     for (index, step) in args.steps.iter().enumerate() {
         preflight_eval_step(step, index, &mut preflight)?;
@@ -176,6 +177,10 @@ struct EvalPreflight<'t, 'a, 'info> {
     pool_used: Vec<bool>,
     app_account_authority: Pubkey,
     deny_list_enabled: bool,
+    /// Durable accounts written by completed earlier steps. Operands are checked
+    /// before the current step's output is recorded, so read-then-update in one
+    /// step remains valid.
+    durable_outputs_written: Vec<Pubkey>,
 }
 
 impl EvalPreflight<'_, '_, '_> {
@@ -300,6 +305,14 @@ fn preflight_encrypted_operand(
             encrypted_value_index,
         } => {
             preflight.mark_pool(*handle_index)?;
+            let key = preflight
+                .table
+                .account(u16::from(*encrypted_value_index))?
+                .key();
+            require!(
+                !preflight.durable_outputs_written.contains(&key),
+                ZamaHostError::FheEvalDurableOperandWrittenEarlier
+            );
             preflight.table.mark(u16::from(*encrypted_value_index))?;
         }
         FheEvalOperand::AllowedLocal { producer_index } => {
@@ -332,6 +345,10 @@ fn preflight_output(
             previous_subjects,
             ..
         } => {
+            let output_key = preflight
+                .table
+                .account(u16::from(*output_encrypted_value_index))?
+                .key();
             preflight
                 .table
                 .mark(u16::from(*output_encrypted_value_index))?;
@@ -353,6 +370,7 @@ fn preflight_output(
                     }
                 }
             }
+            preflight.durable_outputs_written.push(output_key);
         }
     }
     Ok(())
@@ -384,6 +402,53 @@ mod tests {
 
         assert!(
             preflight_eval_frame_accounts(&mut table, &args, Pubkey::new_unique(), false).is_err()
+        );
+    }
+
+    #[test]
+    fn durable_operand_cannot_alias_an_account_written_by_an_earlier_step() {
+        let args = frame(vec![
+            FheEvalStep::TrivialEncrypt {
+                plaintext: [0; 32],
+                fhe_type: 5,
+                output: durable_output(),
+            },
+            FheEvalStep::Binary {
+                op: FheBinaryOpCode::Add,
+                lhs: FheEvalOperand::AllowedDurable {
+                    handle_index: 0,
+                    encrypted_value_index: 0,
+                },
+                rhs: FheEvalOperand::Scalar { value_index: 1 },
+                output_fhe_type: 5,
+                output: FheEvalOutput::AllowedLocal,
+            },
+        ]);
+        let accounts = vec![test_account(Pubkey::new_unique())];
+        let mut table = EvalAccountTable::new(&accounts).unwrap();
+
+        assert!(
+            preflight_eval_frame_accounts(&mut table, &args, Pubkey::new_unique(), false).is_err()
+        );
+    }
+
+    #[test]
+    fn durable_operand_may_update_its_account_in_the_same_step() {
+        let args = frame(vec![FheEvalStep::Binary {
+            op: FheBinaryOpCode::Add,
+            lhs: FheEvalOperand::AllowedDurable {
+                handle_index: 0,
+                encrypted_value_index: 0,
+            },
+            rhs: FheEvalOperand::Scalar { value_index: 1 },
+            output_fhe_type: 5,
+            output: durable_output(),
+        }]);
+        let accounts = vec![test_account(Pubkey::new_unique())];
+        let mut table = EvalAccountTable::new(&accounts).unwrap();
+
+        assert!(
+            preflight_eval_frame_accounts(&mut table, &args, Pubkey::new_unique(), false).is_ok()
         );
     }
 

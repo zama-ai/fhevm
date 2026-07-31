@@ -704,8 +704,8 @@ fn expected_is_in_handle(value: [u8; 32], set: &[[u8; 32]], fhe_type: u8) -> [u8
 
 fn expected_rand_seed(compute_subject: Pubkey, output_address: Pubkey) -> [u8; 16] {
     // The frame's durable-write anchor: its single durable output is a create,
-    // so the (account key, previous_handle) pair is (output_address, zero).
-    let anchor: Vec<u8> = [output_address.to_bytes(), [0; 32]].concat();
+    // so the tag, current handle, and leaf count are zero.
+    let anchor: Vec<u8> = [output_address.as_ref(), &[0], &[0; 32], &0u64.to_le_bytes()].concat();
     let hash = keccak_hashv(&[
         b"FHE_eval_seed",
         compute_subject.as_ref(),

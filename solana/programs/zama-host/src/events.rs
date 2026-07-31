@@ -28,6 +28,24 @@ pub struct PublicOutputsProducedEvent {
     pub outputs: Vec<ProducedPublicOutput>,
 }
 
+/// One host-derived random seed used by an `fhe_eval` step.
+#[derive(AnchorSerialize, AnchorDeserialize, Clone, Debug, PartialEq, Eq)]
+pub struct FheEvalRandomSeed {
+    /// Zero-based step index within the frame.
+    pub step_index: u16,
+    /// Seed derived from live durable account state.
+    pub seed: [u8; 16],
+}
+
+/// Emitted once for the random steps in an `fhe_eval` frame.
+#[event]
+pub struct FheEvalRandomSeedsEvent {
+    /// Event schema version.
+    pub version: u8,
+    /// Random seeds in frame step order.
+    pub seeds: Vec<FheEvalRandomSeed>,
+}
+
 /// Emitted when the singleton host config is initialized.
 #[event]
 pub struct HostConfigInitializedEvent {

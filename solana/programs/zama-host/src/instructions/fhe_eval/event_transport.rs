@@ -20,6 +20,20 @@ pub(super) fn emit_public_outputs_produced<'info>(
     Ok(())
 }
 
+pub(super) fn emit_eval_random_seeds<'info>(
+    ctx: &Context<'info, FheEval<'info>>,
+    seeds: Vec<FheEvalRandomSeed>,
+) -> Result<()> {
+    if seeds.is_empty() {
+        return Ok(());
+    }
+    let event = FheEvalRandomSeedsEvent {
+        version: EVENT_VERSION,
+        seeds,
+    };
+    emit_event(ctx, &event)
+}
+
 fn public_outputs_produced_event_instruction(outputs: Vec<ProducedPublicOutput>) -> Instruction {
     let event = PublicOutputsProducedEvent {
         version: PUBLIC_OUTPUTS_PRODUCED_EVENT_VERSION,
@@ -38,6 +52,31 @@ fn public_outputs_produced_event_instruction(outputs: Vec<ProducedPublicOutput>)
             true,
         )],
     )
+}
+
+fn emit_event<'info, T: anchor_lang::Event>(
+    ctx: &Context<'info, FheEval<'info>>,
+    event: &T,
+) -> Result<()> {
+    let data = anchor_lang::event::EVENT_IX_TAG_LE
+        .iter()
+        .copied()
+        .chain(anchor_lang::Event::data(event))
+        .collect::<Vec<_>>();
+    let instruction = Instruction::new_with_bytes(
+        crate::ID,
+        &data,
+        vec![AccountMeta::new_readonly(
+            crate::EVENT_AUTHORITY_AND_BUMP.0,
+            true,
+        )],
+    );
+    invoke_signed(
+        &instruction,
+        &[ctx.accounts.event_authority.to_account_info()],
+        &[&[b"__event_authority", &[crate::EVENT_AUTHORITY_AND_BUMP.1]]],
+    )?;
+    Ok(())
 }
 
 #[cfg(test)]

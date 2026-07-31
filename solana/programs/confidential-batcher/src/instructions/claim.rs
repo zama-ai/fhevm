@@ -133,7 +133,7 @@ pub fn claim<'info>(ctx: Context<'info, Claim<'info>>) -> Result<()> {
     let joined = fhe::uint64_operand(&joined_value)?;
     let claim_binding = fhe::DurableBinding::bind(
         ctx.accounts.claim_amount_value.to_account_info(),
-        zama_fhe::DurableSlot::new(
+        zama_fhe::EncryptedValueKey::new(
             batch_key,
             batch_authority,
             zama_fhe::DurableLabel::new(claim_amount_label(user)),
@@ -141,12 +141,11 @@ pub fn claim<'info>(ctx: Context<'info, Claim<'info>>) -> Result<()> {
         // The user decrypts their claimed amount; the batch authority spends
         // it as the transfer amount; the payout mint's compute signer lets the
         // transfer eval read it.
-        zama_fhe::AccessPolicy::from_subjects(vec![
-            zama_fhe::AccessSubject::owner(user),
-            zama_fhe::AccessSubject::compute(batch_authority),
-            zama_fhe::AccessSubject::compute(ctx.accounts.payout_confidential_mint.compute_signer),
-        ])
-        .map_err(fhe::invalid_eval_plan)?,
+        vec![
+            user,
+            batch_authority,
+            ctx.accounts.payout_confidential_mint.compute_signer,
+        ],
     )?;
     let payout_received = ctx.accounts.batch.payout_received;
     let total_joined = ctx.accounts.batch.total_joined;

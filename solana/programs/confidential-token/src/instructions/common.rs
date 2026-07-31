@@ -183,17 +183,17 @@ fn execute_transfer_eval<'info>(
     };
     let from_output = fhe::DurableOutput::new(
         accounts.from_balance_value.clone(),
-        durable_slot(mint_key, from_key, balance_label()),
+        encrypted_value_key(mint_key, from_key, balance_label()),
         balance_access(from_owner),
     )?;
     let transferred_output = fhe::DurableOutput::new(
         accounts.transferred_amount_value.clone(),
-        durable_slot(mint_key, from_key, transferred_amount_label()),
+        encrypted_value_key(mint_key, from_key, transferred_amount_label()),
         transferred_access,
     )?;
     let to_output = fhe::DurableOutput::new(
         accounts.to_balance_value.clone(),
-        durable_slot(mint_key, to_key, balance_label()),
+        encrypted_value_key(mint_key, to_key, balance_label()),
         balance_access(to_owner),
     )?;
     let mut builder = zama_fhe::EvalBuilder::new(zama_fhe::EvalAppAuthority::new(from_key));
@@ -289,12 +289,12 @@ pub(crate) fn invalid_eval_plan(error: zama_fhe::EvalBuildError) -> anchor_lang:
     error!(ConfidentialTokenError::InvalidFheEvalPlan)
 }
 
-pub(crate) fn durable_slot(
+pub(crate) fn encrypted_value_key(
     acl_domain_key: Pubkey,
     app_account: Pubkey,
     encrypted_value_label: [u8; 32],
-) -> zama_fhe::DurableSlot {
-    zama_fhe::DurableSlot::new(
+) -> zama_fhe::EncryptedValueKey {
+    zama_fhe::EncryptedValueKey::new(
         acl_domain_key,
         app_account,
         zama_fhe::DurableLabel::new(encrypted_value_label),
@@ -309,7 +309,7 @@ pub(crate) fn uint64_from_value(
 ) -> Result<zama_fhe::Uint64Handle> {
     zama_fhe::Uint64Handle::durable(
         handle,
-        durable_slot(acl_domain_key, app_account, encrypted_value_label),
+        encrypted_value_key(acl_domain_key, app_account, encrypted_value_label),
     )
     .map_err(invalid_eval_plan)
 }
