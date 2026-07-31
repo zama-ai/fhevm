@@ -10,8 +10,7 @@ use crate::{
     errors::ZamaHostError,
     state::{
         assert_handle_for_chain, deny_subject_address, encrypted_value_address,
-        host_config_address, AclSubjectEntry, DenySubjectRecord, EncryptedValue, HostConfig,
-        MAX_ACL_SUBJECTS,
+        host_config_address, DenySubjectRecord, EncryptedValue, HostConfig, MAX_ACL_SUBJECTS,
     },
 };
 #[cfg(any(feature = "emit-events", test))]
@@ -178,7 +177,7 @@ pub(super) fn check_hcu_ordering(total: u64, depth: u64) -> Result<()> {
 pub(super) fn assert_output_acl_metadata(
     app_account_authority: Pubkey,
     app_account: Pubkey,
-    subjects: &[AclSubjectEntry],
+    subjects: &[Pubkey],
 ) -> Result<()> {
     require_keys_eq!(
         app_account_authority,
@@ -190,9 +189,7 @@ pub(super) fn assert_output_acl_metadata(
         ZamaHostError::EncryptedValueSubjectCapacityExceeded
     );
     require!(
-        subjects
-            .iter()
-            .all(|subject| subject.pubkey != Pubkey::default()),
+        subjects.iter().all(|subject| *subject != Pubkey::default()),
         ZamaHostError::SubjectNotAllowed
     );
     for (index, subject) in subjects.iter().enumerate() {
@@ -200,7 +197,7 @@ pub(super) fn assert_output_acl_metadata(
             !subjects
                 .iter()
                 .skip(index + 1)
-                .any(|later| later.pubkey == subject.pubkey),
+                .any(|later| later == subject),
             ZamaHostError::SubjectNotAllowed
         );
     }

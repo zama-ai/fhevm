@@ -206,18 +206,24 @@ impl CleartextLedger {
         let mut durable_outputs = 0;
         for (step, value) in eval_args[0].steps.iter().zip(outputs) {
             let host::FheEvalOutput::AllowedDurable {
-                output_acl_domain_key,
-                output_app_account,
-                output_encrypted_value_label,
+                output_acl_domain_key_index,
+                output_app_account_index,
+                output_encrypted_value_label_index,
                 ..
             } = eval_step_output(step)
             else {
                 continue;
             };
             let value_key = zama_solana_acl::derive_value_key(
-                output_acl_domain_key.to_bytes(),
-                output_app_account.to_bytes(),
-                *output_encrypted_value_label,
+                eval_args[0]
+                    .pool_bytes(*output_acl_domain_key_index)
+                    .expect("valid pool index"),
+                eval_args[0]
+                    .pool_bytes(*output_app_account_index)
+                    .expect("valid pool index"),
+                eval_args[0]
+                    .pool_bytes(*output_encrypted_value_label_index)
+                    .expect("valid pool index"),
             );
             let address = host::encrypted_value_address(value_key).0;
             let persisted = read_encrypted_value(context, address);
@@ -3945,9 +3951,9 @@ fn mollusk_disclose_secp_rejects_cleartext_wider_than_u64() {
 
 /// Exact HCU cost of the combined transfer eval frame (`execute_transfer_eval`): `Ge` at ebool
 /// (21_000) + debit `Sub` at euint64 (38_000) + `IfThenElse` at euint64 (45_000) + transferred
-/// `Sub` at euint64 (38_000) + credit `Add` at euint64 (38_000). The `VerifiedInput` amount is an
-/// operand, not a step, so it adds no HCU.
-const TRANSFER_FRAME_HCU: u64 = 21_000 + 38_000 + 45_000 + 38_000 + 38_000; // 180_000
+/// `Sub` at euint64 (38_000) + balance-binding scalar `Add` at euint64 (33_250) + credit `Add`
+/// at euint64 (38_000). The `VerifiedInput` amount is an operand, not a step, so it adds no HCU.
+const TRANSFER_FRAME_HCU: u64 = 21_000 + 38_000 + 45_000 + 38_000 + 33_250 + 38_000; // 213_250
 
 /// The fixture's host config with the per-app block cap overridden to `cap`.
 fn host_config_account_with_block_cap(

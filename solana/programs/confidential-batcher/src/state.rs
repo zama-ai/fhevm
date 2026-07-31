@@ -173,9 +173,9 @@ fn zama_solana_acl_value_key(
     app_account: Pubkey,
     label: [u8; 32],
 ) -> [u8; 32] {
-    // Delegate to the shared derivation through zama-fhe's DurableSlot so the
+    // Delegate to the shared derivation through zama-fhe's EncryptedValueKey so the
     // batcher and host agree exactly.
-    zama_fhe::DurableSlot::new(
+    zama_fhe::EncryptedValueKey::new(
         acl_domain_key,
         app_account,
         zama_fhe::DurableLabel::new(label),

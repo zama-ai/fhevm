@@ -5,17 +5,17 @@
 //! program's own `computed_*` functions, byte-identical to on-chain emission)
 //! and the event-free `EncryptedValue` instruction decode (RFC-024).
 
-use anchor_lang::{AnchorDeserialize, AnchorSerialize};
+use anchor_lang::{AnchorDeserialize, AnchorSerialize, Discriminator};
 use zama_host::state::{
     computed_eval_handle, computed_eval_is_in_handle,
-    computed_eval_mul_div_handle, computed_eval_rand_seed,
-    computed_eval_sum_handle, computed_eval_ternary_handle,
-    computed_eval_trivial_handle, computed_eval_unary_handle,
-    computed_rand_bounded_handle, computed_rand_handle,
-    FheBinaryOpCode as PgmBinaryOpCode, FheEvalArgs, FheEvalOperand,
-    FheEvalOutput, FheEvalStep, FheTernaryOpCode as PgmTernaryOpCode,
-    FheUnaryOpCode as PgmUnaryOpCode,
+    computed_eval_mul_div_handle, computed_eval_sum_handle,
+    computed_eval_ternary_handle, computed_eval_trivial_handle,
+    computed_eval_unary_handle, computed_rand_bounded_handle,
+    computed_rand_handle, FheBinaryOpCode as PgmBinaryOpCode, FheEvalArgs,
+    FheEvalOperand, FheEvalOutput, FheEvalStep,
+    FheTernaryOpCode as PgmTernaryOpCode, FheUnaryOpCode as PgmUnaryOpCode,
 };
+use zama_host::{FheEvalRandomSeed, FheEvalRandomSeedsEvent};
 
 #[cfg(test)]
 use crate::database::tfhe_event_propagate::Handle;
@@ -54,6 +54,19 @@ pub fn is_fhe_eval_instruction(instruction_data: &[u8]) -> bool {
 pub fn decode_fhe_eval_args(instruction_data: &[u8]) -> Option<FheEvalArgs> {
     let payload = instruction_data.strip_prefix(&FHE_EVAL_DISCRIMINATOR)?;
     decode_anchor_args(payload)
+}
+
+pub fn decode_fhe_eval_random_seeds_event(
+    instruction_data: &[u8],
+) -> Option<FheEvalRandomSeedsEvent> {
+    let prefix = anchor_lang::event::EVENT_IX_TAG_LE
+        .iter()
+        .copied()
+        .chain(FheEvalRandomSeedsEvent::DISCRIMINATOR.iter().copied())
+        .collect::<Vec<_>>();
+    let payload = instruction_data.strip_prefix(prefix.as_slice())?;
+    let event: FheEvalRandomSeedsEvent = decode_anchor_args(payload)?;
+    (event.version == zama_host::EVENT_VERSION).then_some(event)
 }
 
 fn decode_anchor_args<T: AnchorDeserialize>(payload: &[u8]) -> Option<T> {
@@ -303,16 +316,20 @@ pub fn parse_host_config(account_data: &[u8]) -> anyhow::Result<u64> {
 }
 
 /// Resolves an eval operand to its handle by reusing already-produced step
-/// results — no on-chain account reads. `Scalar` is only valid as a binary rhs
-/// (handled by [`resolve_rhs`]); seeing it here means a malformed plan.
+/// results and the frame's interned constant pool — no on-chain account reads.
+/// `Scalar` is only valid as a binary rhs (handled by [`resolve_rhs`]); seeing
+/// it here means a malformed plan.
 fn resolve_operand(
     operand: &FheEvalOperand,
+    pool: &[[u8; 32]],
     produced: &[[u8; 32]],
 ) -> Option<[u8; 32]> {
     match operand {
-        FheEvalOperand::AllowedDurable { handle, .. } => Some(*handle),
+        FheEvalOperand::AllowedDurable { handle_index, .. } => {
+            pool.get(usize::from(*handle_index)).copied()
+        }
         FheEvalOperand::AllowedLocal { producer_index } => {
-            produced.get(*producer_index as usize).copied()
+            produced.get(usize::from(*producer_index)).copied()
         }
         // The verified-input handle is known from the operand itself; the
         // program resolves it to `attestation.input_handle` (admission re-verifies
@@ -320,7 +337,7 @@ fn resolve_operand(
         FheEvalOperand::VerifiedInput { attestation } => {
             Some(attestation.input_handle)
         }
-        FheEvalOperand::Scalar(_) => None,
+        FheEvalOperand::Scalar { .. } => None,
     }
 }
 
@@ -328,11 +345,15 @@ fn resolve_operand(
 /// sets `scalar = true` only for a `Scalar` rhs).
 fn resolve_rhs(
     operand: &FheEvalOperand,
+    pool: &[[u8; 32]],
     produced: &[[u8; 32]],
 ) -> Option<([u8; 32], bool)> {
     match operand {
-        FheEvalOperand::Scalar(bytes) => Some((*bytes, true)),
-        other => resolve_operand(other, produced).map(|h| (h, false)),
+        FheEvalOperand::Scalar { value_index } => pool
+            .get(usize::from(*value_index))
+            .copied()
+            .map(|bytes| (bytes, true)),
+        other => resolve_operand(other, pool, produced).map(|h| (h, false)),
     }
 }
 
@@ -382,16 +403,39 @@ fn map_pgm_ternary_op(op: PgmTernaryOpCode) -> FheTernaryOpCode {
 /// per step. Durable and instruction-local outputs derive the identical base
 /// handle — no per-output binding (matches EVM `FHEVMExecutor`).
 ///
-/// Returns `None` on a malformed plan (operand referencing a not-yet-produced
-/// step, or a `Scalar` where only an encrypted operand is valid). `context_id`
-/// comes from the plan; `ctx` supplies chain_id / previous_bank_hash /
-/// unix_timestamp; `subject` is the compute subject.
+/// Returns `None` on a malformed plan (operand or pool reference out of range,
+/// or a `Scalar` where only an encrypted operand is valid). `ctx` supplies
+/// chain_id / previous_bank_hash / unix_timestamp; `subject` is the compute
+/// subject. Random seeds are supplied by the host's signed event-CPI batch
+/// because their anchor includes live durable-account versions that are not
+/// caller-provided instruction data.
 pub fn reconstruct_fhe_eval_steps(
     plan: &FheEvalArgs,
     subject: [u8; 32],
+    _remaining_accounts: &[[u8; 32]],
+    random_seeds: &[FheEvalRandomSeed],
     ctx: &ReconstructContext,
 ) -> Option<Vec<ReconstructedEvalStep>> {
-    let context_id = plan.context_id;
+    let expected_random_steps = plan
+        .steps
+        .iter()
+        .enumerate()
+        .filter_map(|(index, step)| {
+            matches!(
+                step,
+                FheEvalStep::Rand { .. } | FheEvalStep::RandBounded { .. }
+            )
+            .then_some(index as u16)
+        })
+        .collect::<Vec<_>>();
+    if expected_random_steps.len() != random_seeds.len()
+        || expected_random_steps
+            .iter()
+            .zip(random_seeds)
+            .any(|(expected, actual)| *expected != actual.step_index)
+    {
+        return None;
+    }
     let mut produced: Vec<[u8; 32]> = Vec::with_capacity(plan.steps.len());
     let mut steps_out: Vec<ReconstructedEvalStep> =
         Vec::with_capacity(plan.steps.len());
@@ -406,8 +450,9 @@ pub fn reconstruct_fhe_eval_steps(
                 output_fhe_type,
                 ..
             } => {
-                let lhs_handle = resolve_operand(lhs, &produced)?;
-                let (rhs_handle, scalar) = resolve_rhs(rhs, &produced)?;
+                let lhs_handle = resolve_operand(lhs, &plan.pool, &produced)?;
+                let (rhs_handle, scalar) =
+                    resolve_rhs(rhs, &plan.pool, &produced)?;
                 let result = computed_eval_handle(
                     *op,
                     lhs_handle,
@@ -417,8 +462,6 @@ pub fn reconstruct_fhe_eval_steps(
                     ctx.chain_id,
                     ctx.previous_bank_hash,
                     ctx.unix_timestamp,
-                    context_id,
-                    op_index,
                 );
                 produced.push(result);
                 SolanaHostEvent::FheBinaryOp(FheBinaryOpEvent {
@@ -439,9 +482,9 @@ pub fn reconstruct_fhe_eval_steps(
                 output_fhe_type,
                 ..
             } => {
-                let c = resolve_operand(control, &produced)?;
-                let t = resolve_operand(if_true, &produced)?;
-                let f = resolve_operand(if_false, &produced)?;
+                let c = resolve_operand(control, &plan.pool, &produced)?;
+                let t = resolve_operand(if_true, &plan.pool, &produced)?;
+                let f = resolve_operand(if_false, &plan.pool, &produced)?;
                 let result = computed_eval_ternary_handle(
                     *op,
                     c,
@@ -451,8 +494,6 @@ pub fn reconstruct_fhe_eval_steps(
                     ctx.chain_id,
                     ctx.previous_bank_hash,
                     ctx.unix_timestamp,
-                    context_id,
-                    op_index,
                 );
                 produced.push(result);
                 SolanaHostEvent::FheTernaryOp(FheTernaryOpEvent {
@@ -476,8 +517,6 @@ pub fn reconstruct_fhe_eval_steps(
                     ctx.chain_id,
                     ctx.previous_bank_hash,
                     ctx.unix_timestamp,
-                    context_id,
-                    op_index,
                 );
                 produced.push(result);
                 SolanaHostEvent::TrivialEncrypt(TrivialEncryptEvent {
@@ -489,13 +528,10 @@ pub fn reconstruct_fhe_eval_steps(
                 })
             }
             FheEvalStep::Rand { fhe_type, .. } => {
-                let seed = computed_eval_rand_seed(
-                    ctx.chain_id,
-                    ctx.previous_bank_hash,
-                    ctx.unix_timestamp,
-                    context_id,
-                    op_index,
-                );
+                let seed = random_seeds
+                    .iter()
+                    .find(|entry| entry.step_index == op_index)?
+                    .seed;
                 let result =
                     computed_rand_handle(seed, *fhe_type, ctx.chain_id);
                 produced.push(result);
@@ -513,7 +549,8 @@ pub fn reconstruct_fhe_eval_steps(
                 output_fhe_type,
                 output: _,
             } => {
-                let operand_handle = resolve_operand(operand, &produced)?;
+                let operand_handle =
+                    resolve_operand(operand, &plan.pool, &produced)?;
                 let result = computed_eval_unary_handle(
                     *op,
                     operand_handle,
@@ -521,8 +558,6 @@ pub fn reconstruct_fhe_eval_steps(
                     ctx.chain_id,
                     ctx.previous_bank_hash,
                     ctx.unix_timestamp,
-                    context_id,
-                    op_index,
                 );
                 produced.push(result);
                 SolanaHostEvent::FheUnaryOp(FheUnaryOpEvent {
@@ -538,13 +573,10 @@ pub fn reconstruct_fhe_eval_steps(
                 fhe_type,
                 ..
             } => {
-                let seed = computed_eval_rand_seed(
-                    ctx.chain_id,
-                    ctx.previous_bank_hash,
-                    ctx.unix_timestamp,
-                    context_id,
-                    op_index,
-                );
+                let seed = random_seeds
+                    .iter()
+                    .find(|entry| entry.step_index == op_index)?
+                    .seed;
                 let result = computed_rand_bounded_handle(
                     *upper_bound,
                     seed,
@@ -568,7 +600,9 @@ pub fn reconstruct_fhe_eval_steps(
             } => {
                 let operand_handles: Vec<[u8; 32]> = operands
                     .iter()
-                    .map(|operand| resolve_operand(operand, &produced))
+                    .map(|operand| {
+                        resolve_operand(operand, &plan.pool, &produced)
+                    })
                     .collect::<Option<_>>()?;
                 let result = computed_eval_sum_handle(
                     &operand_handles,
@@ -576,8 +610,6 @@ pub fn reconstruct_fhe_eval_steps(
                     ctx.chain_id,
                     ctx.previous_bank_hash,
                     ctx.unix_timestamp,
-                    context_id,
-                    op_index,
                 );
                 produced.push(result);
                 SolanaHostEvent::FheSum(FheSumEvent {
@@ -594,10 +626,13 @@ pub fn reconstruct_fhe_eval_steps(
                 fhe_type,
                 output: _,
             } => {
-                let value_handle = resolve_operand(value, &produced)?;
+                let value_handle =
+                    resolve_operand(value, &plan.pool, &produced)?;
                 let set_handles: Vec<[u8; 32]> = set
                     .iter()
-                    .map(|operand| resolve_operand(operand, &produced))
+                    .map(|operand| {
+                        resolve_operand(operand, &plan.pool, &produced)
+                    })
                     .collect::<Option<_>>()?;
                 let result = computed_eval_is_in_handle(
                     value_handle,
@@ -606,8 +641,6 @@ pub fn reconstruct_fhe_eval_steps(
                     ctx.chain_id,
                     ctx.previous_bank_hash,
                     ctx.unix_timestamp,
-                    context_id,
-                    op_index,
                 );
                 produced.push(result);
                 SolanaHostEvent::FheIsIn(FheIsInEvent {
@@ -626,8 +659,10 @@ pub fn reconstruct_fhe_eval_steps(
                 output_fhe_type,
                 output: _,
             } => {
-                let factor1_handle = resolve_operand(factor1, &produced)?;
-                let (factor2_handle, scalar) = resolve_rhs(factor2, &produced)?;
+                let factor1_handle =
+                    resolve_operand(factor1, &plan.pool, &produced)?;
+                let (factor2_handle, scalar) =
+                    resolve_rhs(factor2, &plan.pool, &produced)?;
                 let result = computed_eval_mul_div_handle(
                     factor1_handle,
                     factor2_handle,
@@ -637,8 +672,6 @@ pub fn reconstruct_fhe_eval_steps(
                     ctx.chain_id,
                     ctx.previous_bank_hash,
                     ctx.unix_timestamp,
-                    context_id,
-                    op_index,
                 );
                 produced.push(result);
                 SolanaHostEvent::FheMulDiv(FheMulDivEvent {
@@ -668,14 +701,14 @@ pub fn reconstruct_fhe_eval_steps(
 /// The transport resolves that index to the durable handle's material request.
 pub struct ReconstructedEvalStep {
     pub event: SolanaHostEvent,
-    pub durable_encrypted_value_index: Option<u16>,
+    pub durable_encrypted_value_index: Option<u8>,
     /// Present when the durable output supersedes an existing encrypted value account. The
     /// transport requests material for the outgoing and reconstructed output
     /// handles.
     pub previous_handle: Option<[u8; 32]>,
 }
 
-pub fn fhe_eval_step_durable_output_index(step: &FheEvalStep) -> Option<u16> {
+pub fn fhe_eval_step_durable_output_index(step: &FheEvalStep) -> Option<u8> {
     match fhe_eval_step_output(step) {
         FheEvalOutput::AllowedDurable {
             output_encrypted_value_index,
@@ -716,13 +749,21 @@ fn fhe_eval_step_output(step: &FheEvalStep) -> &FheEvalOutput {
 pub fn reconstruct_fhe_eval_events(
     plan: &FheEvalArgs,
     subject: [u8; 32],
+    remaining_accounts: &[[u8; 32]],
+    random_seeds: &[FheEvalRandomSeed],
     ctx: &ReconstructContext,
 ) -> Option<Vec<SolanaHostEvent>> {
     Some(
-        reconstruct_fhe_eval_steps(plan, subject, ctx)?
-            .into_iter()
-            .map(|step| step.event)
-            .collect(),
+        reconstruct_fhe_eval_steps(
+            plan,
+            subject,
+            remaining_accounts,
+            random_seeds,
+            ctx,
+        )?
+        .into_iter()
+        .map(|step| step.event)
+        .collect(),
     )
 }
 
@@ -1013,7 +1054,8 @@ mod tests {
             FheEvalOutput, FheEvalStep,
         };
         let plan = FheEvalArgs {
-            context_id: [1u8; 32],
+            account_count: 0,
+            pool: vec![[2u8; 32]],
             steps: vec![
                 FheEvalStep::TrivialEncrypt {
                     plaintext: [7u8; 32],
@@ -1023,7 +1065,7 @@ mod tests {
                 FheEvalStep::Binary {
                     op: PgmBinaryOp::Add,
                     lhs: FheEvalOperand::AllowedLocal { producer_index: 0 },
-                    rhs: FheEvalOperand::Scalar([2u8; 32]),
+                    rhs: FheEvalOperand::Scalar { value_index: 0 },
                     output_fhe_type: 5,
                     output: FheEvalOutput::AllowedLocal,
                 },
@@ -1043,9 +1085,46 @@ mod tests {
     }
 
     #[test]
+    fn decodes_host_derived_random_seed_batch() {
+        let event = FheEvalRandomSeedsEvent {
+            version: zama_host::EVENT_VERSION,
+            seeds: vec![FheEvalRandomSeed {
+                step_index: 3,
+                seed: [7; 16],
+            }],
+        };
+        let data = anchor_lang::event::EVENT_IX_TAG_LE
+            .iter()
+            .copied()
+            .chain(anchor_lang::Event::data(&event))
+            .collect::<Vec<_>>();
+
+        let decoded =
+            decode_fhe_eval_random_seeds_event(&data).expect("decode event");
+        assert_eq!(decoded.version, zama_host::EVENT_VERSION);
+        assert_eq!(decoded.seeds, event.seeds);
+    }
+
+    #[test]
+    fn rejects_unknown_random_seed_event_version() {
+        let event = FheEvalRandomSeedsEvent {
+            version: zama_host::EVENT_VERSION.wrapping_add(1),
+            seeds: vec![],
+        };
+        let data = anchor_lang::event::EVENT_IX_TAG_LE
+            .iter()
+            .copied()
+            .chain(anchor_lang::Event::data(&event))
+            .collect::<Vec<_>>();
+
+        assert!(decode_fhe_eval_random_seeds_event(&data).is_none());
+    }
+
+    #[test]
     fn fhe_eval_walk_chains_transient_handles() {
         let plan = FheEvalArgs {
-            context_id: [1u8; 32],
+            account_count: 0,
+            pool: vec![[2u8; 32]],
             steps: vec![
                 FheEvalStep::TrivialEncrypt {
                     plaintext: [7u8; 32],
@@ -1055,14 +1134,15 @@ mod tests {
                 FheEvalStep::Binary {
                     op: PgmBinaryOpCode::Add,
                     lhs: FheEvalOperand::AllowedLocal { producer_index: 0 },
-                    rhs: FheEvalOperand::Scalar([2u8; 32]),
+                    rhs: FheEvalOperand::Scalar { value_index: 0 },
                     output_fhe_type: 5,
                     output: FheEvalOutput::AllowedLocal,
                 },
             ],
         };
         let events =
-            reconstruct_fhe_eval_events(&plan, SUBJECT, &ctx()).expect("walk");
+            reconstruct_fhe_eval_events(&plan, SUBJECT, &[], &[], &ctx())
+                .expect("walk");
         assert_eq!(events.len(), 2);
         let step0 = match &events[0] {
             SolanaHostEvent::TrivialEncrypt(e) => {
@@ -1090,17 +1170,41 @@ mod tests {
             bytes[31] = 10;
             bytes
         };
+        // On-chain preflight requires a rand frame to anchor at least one durable
+        // output (fhevm-internal#1853 W4), so the fixture binds one.
         let plan = FheEvalArgs {
-            context_id: [1u8; 32],
+            account_count: 1,
+            pool: vec![[0xA1; 32], [0xA2; 32], [0xA3; 32], [0xA4; 32]],
             steps: vec![FheEvalStep::RandBounded {
                 upper_bound,
                 fhe_type: 5,
-                output: FheEvalOutput::AllowedLocal,
+                output: FheEvalOutput::AllowedDurable {
+                    output_encrypted_value_index: 0,
+                    output_app_account_authority_index: None,
+                    output_acl_domain_key_index: 0,
+                    output_app_account_index: 1,
+                    output_encrypted_value_label_index: 2,
+                    output_subject_indexes: vec![3],
+                    previous_handle: None,
+                    previous_subjects: None,
+                    make_public: false,
+                },
             }],
         };
 
-        let events =
-            reconstruct_fhe_eval_events(&plan, SUBJECT, &ctx()).expect("walk");
+        let output_account = [0x55u8; 32];
+        let random_seeds = [FheEvalRandomSeed {
+            step_index: 0,
+            seed: [7; 16],
+        }];
+        let events = reconstruct_fhe_eval_events(
+            &plan,
+            SUBJECT,
+            &[output_account],
+            &random_seeds,
+            &ctx(),
+        )
+        .expect("walk");
         match &events[..] {
             [SolanaHostEvent::FheRandBounded(event)] => {
                 assert_eq!(event.subject, SUBJECT);
@@ -1114,14 +1218,19 @@ mod tests {
     #[test]
     fn fhe_eval_walk_reconstructs_composite_and_unary_ops() {
         let cx = ctx();
-        let context_id = [1u8; 32];
         let ub = {
             let mut b = [0u8; 32];
             b[31] = 128; // power-of-two upper bound
             b
         };
+        // The frame ends in a rand step, so it anchors a durable output
+        // (fhevm-internal#1853 W4); pool entries 1..=4 are its ACL metadata.
+        let output_account = [0x55u8; 32];
         let plan = FheEvalArgs {
-            context_id,
+            account_count: 1,
+            pool: vec![
+                [2u8; 32], [0xA1; 32], [0xA2; 32], [0xA3; 32], [0xA4; 32],
+            ],
             steps: vec![
                 FheEvalStep::TrivialEncrypt {
                     plaintext: [9u8; 32],
@@ -1157,7 +1266,7 @@ mod tests {
                 },
                 FheEvalStep::MulDiv {
                     factor1: FheEvalOperand::AllowedLocal { producer_index: 0 },
-                    factor2: FheEvalOperand::Scalar([2u8; 32]),
+                    factor2: FheEvalOperand::Scalar { value_index: 0 },
                     divisor: [3u8; 32],
                     output_fhe_type: 5,
                     output: FheEvalOutput::AllowedLocal,
@@ -1165,12 +1274,32 @@ mod tests {
                 FheEvalStep::RandBounded {
                     upper_bound: ub,
                     fhe_type: 5,
-                    output: FheEvalOutput::AllowedLocal,
+                    output: FheEvalOutput::AllowedDurable {
+                        output_encrypted_value_index: 0,
+                        output_app_account_authority_index: None,
+                        output_acl_domain_key_index: 1,
+                        output_app_account_index: 2,
+                        output_encrypted_value_label_index: 3,
+                        output_subject_indexes: vec![4],
+                        previous_handle: None,
+                        previous_subjects: None,
+                        make_public: false,
+                    },
                 },
             ],
         };
-        let events =
-            reconstruct_fhe_eval_events(&plan, SUBJECT, &cx).expect("walk");
+        let random_seed = [9; 16];
+        let events = reconstruct_fhe_eval_events(
+            &plan,
+            SUBJECT,
+            &[output_account],
+            &[FheEvalRandomSeed {
+                step_index: 6,
+                seed: random_seed,
+            }],
+            &cx,
+        )
+        .expect("walk");
         assert_eq!(events.len(), 7);
         let h0 = match &events[0] {
             SolanaHostEvent::TrivialEncrypt(e) => e.result,
@@ -1195,8 +1324,6 @@ mod tests {
                         cx.chain_id,
                         cx.previous_bank_hash,
                         cx.unix_timestamp,
-                        context_id,
-                        2,
                     )
                 );
             }
@@ -1213,8 +1340,6 @@ mod tests {
                         cx.chain_id,
                         cx.previous_bank_hash,
                         cx.unix_timestamp,
-                        context_id,
-                        3,
                     )
                 );
             }
@@ -1233,8 +1358,6 @@ mod tests {
                         cx.chain_id,
                         cx.previous_bank_hash,
                         cx.unix_timestamp,
-                        context_id,
-                        4,
                     )
                 );
             }
@@ -1257,8 +1380,6 @@ mod tests {
                         cx.chain_id,
                         cx.previous_bank_hash,
                         cx.unix_timestamp,
-                        context_id,
-                        5,
                     )
                 );
             }
@@ -1267,17 +1388,15 @@ mod tests {
         match &events[6] {
             SolanaHostEvent::FheRandBounded(e) => {
                 assert_eq!(e.upper_bound, ub);
-                let seed = computed_eval_rand_seed(
-                    cx.chain_id,
-                    cx.previous_bank_hash,
-                    cx.unix_timestamp,
-                    context_id,
-                    6,
-                );
-                assert_eq!(e.seed, seed);
+                assert_eq!(e.seed, random_seed);
                 assert_eq!(
                     e.result,
-                    computed_rand_bounded_handle(ub, seed, 5, cx.chain_id)
+                    computed_rand_bounded_handle(
+                        ub,
+                        random_seed,
+                        5,
+                        cx.chain_id
+                    )
                 );
             }
             other => panic!("expected FheRandBounded, got {other:?}"),
@@ -1288,15 +1407,19 @@ mod tests {
     fn fhe_eval_walk_rejects_forward_transient_reference() {
         // A first step referencing a not-yet-produced step -> None.
         let plan = FheEvalArgs {
-            context_id: [1u8; 32],
+            account_count: 0,
+            pool: vec![[2u8; 32]],
             steps: vec![FheEvalStep::Binary {
                 op: PgmBinaryOpCode::Add,
                 lhs: FheEvalOperand::AllowedLocal { producer_index: 5 },
-                rhs: FheEvalOperand::Scalar([2u8; 32]),
+                rhs: FheEvalOperand::Scalar { value_index: 0 },
                 output_fhe_type: 5,
                 output: FheEvalOutput::AllowedLocal,
             }],
         };
-        assert!(reconstruct_fhe_eval_events(&plan, SUBJECT, &ctx()).is_none());
+        assert!(
+            reconstruct_fhe_eval_events(&plan, SUBJECT, &[], &[], &ctx())
+                .is_none()
+        );
     }
 }

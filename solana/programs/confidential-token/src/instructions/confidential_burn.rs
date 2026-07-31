@@ -245,14 +245,12 @@ pub fn confidential_burn_from_value<'info>(
         amount_value.has_subject(ctx.accounts.owner.key()),
         ConfidentialTokenError::AmountSpendSubjectMismatch
     );
-    let amount_handle = amount_value.current_handle;
     let amount_value_info = amount_value.to_account_info();
     let outcome = execute_burn(
         ctx.accounts.as_burn_accounts(ctx.remaining_accounts),
         ctx.bumps.compute_signer,
         BurnAmountSource::ExistingValue {
             amount_value: amount_value_info,
-            amount_handle,
         },
     )?;
     emit_cpi!(ConfidentialBurnEvent {
@@ -298,29 +296,7 @@ enum BurnAmountSource<'info> {
     /// consumed. The token spend gate (signing owner in the value's subject set) and euint64 type
     /// check run in the instruction handler before this reaches the eval builder; the host re-checks
     /// the handle is current and that the mint's compute subject is allowed on the value, in-frame.
-    ExistingValue {
-        amount_value: AccountInfo<'info>,
-        amount_handle: [u8; 32],
-    },
-}
-
-impl BurnAmountSource<'_> {
-    fn amount_handle(&self) -> [u8; 32] {
-        match self {
-            Self::Attested(attestation) => attestation.input_handle,
-            Self::ExistingValue { amount_handle, .. } => *amount_handle,
-        }
-    }
-
-    /// Domain-separates the eval context id per arm so the two amount sources never derive colliding
-    /// handles for the same (mint, token account, amount handle) tuple. The attested arm keeps the
-    /// original `burn-balance` tag so its handle derivation is byte-for-byte unchanged.
-    fn context_tag(&self) -> &'static [u8] {
-        match self {
-            Self::Attested(_) => b"burn-balance",
-            Self::ExistingValue { .. } => b"burn-from-value",
-        }
-    }
+    ExistingValue { amount_value: AccountInfo<'info> },
 }
 
 /// Fixed ZamaHost CPI accounts and burn operands shared by the attested and existing-value arms.
@@ -412,7 +388,7 @@ fn execute_burn<'info>(
 
     let balance_output = fhe::DurableOutput::new(
         accounts.balance_value.clone(),
-        durable_slot(mint_key, token_account_key, balance_label()),
+        encrypted_value_key(mint_key, token_account_key, balance_label()),
         fhe::DurableAudience::for_owner(owner, compute_signer),
     )?;
     // ERC-7984 `unwrap` parity (`makePubliclyDecryptable(unwrapAmount)`): the burned delta is born
@@ -420,12 +396,12 @@ fn execute_burn<'info>(
     // later burn supersedes this shared encrypted value account (DD-036 / Vector 2) — with no second make-public CPI.
     let burned_output = fhe::DurableOutput::new_public(
         accounts.burned_amount_value.clone(),
-        durable_slot(mint_key, token_account_key, burned_amount_label()),
+        encrypted_value_key(mint_key, token_account_key, burned_amount_label()),
         fhe::DurableAudience::for_owner(owner, compute_signer),
     )?;
     let total_supply_output = fhe::DurableOutput::new(
         accounts.total_supply_value.clone(),
-        durable_slot(mint_key, total_supply_authority, total_supply_label()),
+        encrypted_value_key(mint_key, total_supply_authority, total_supply_label()),
         fhe::DurableAudience::compute_only(compute_signer),
     )?;
 
@@ -441,17 +417,8 @@ fn execute_burn<'info>(
         total_supply_authority,
         total_supply_label(),
     )?;
-    let context_id = transfer_eval_context(
-        amount_source.context_tag(),
-        mint_key,
-        token_account_key,
-        token_account_key,
-        amount_source.amount_handle(),
-    )?;
-    let mut builder = zama_fhe::EvalBuilder::new(
-        context_id,
-        zama_fhe::EvalAppAuthority::new(token_account_key),
-    );
+    let mut builder =
+        zama_fhe::EvalBuilder::new(zama_fhe::EvalAppAuthority::new(token_account_key));
     let amount: zama_fhe::Uint64Handle = match &amount_source {
         // fromExternal: the amount is a coprocessor-attested external input, verified in-frame and
         // transient-allowed for this eval (no durable amount handle / ACL account).
@@ -482,11 +449,18 @@ fn execute_burn<'info>(
             burn_success,
             debit_candidate,
             balance,
-            balance_output.output(),
+            zama_fhe::Output::transient(),
         )
         .map_err(invalid_eval_plan)?;
     let burned = builder
         .sub(balance, new_balance, burned_output.output())
+        .map_err(invalid_eval_plan)?;
+    builder
+        .add(
+            new_balance,
+            zama_fhe::Scalar::<zama_fhe::Uint<64>>::u64(0),
+            balance_output.output(),
+        )
         .map_err(invalid_eval_plan)?;
     builder
         .sub(total_supply, burned, total_supply_output.output())

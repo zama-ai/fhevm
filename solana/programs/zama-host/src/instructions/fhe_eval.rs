@@ -9,23 +9,24 @@ use super::encrypted_value::{
 use super::input_verification::{verify_input_attestation, InputVerifierParams};
 use crate::{
     errors::ZamaHostError,
-    events::{ProducedPublicOutput, PublicOutputsProducedEvent},
+    events::{
+        FheEvalRandomSeed, FheEvalRandomSeedsEvent, ProducedPublicOutput,
+        PublicOutputsProducedEvent,
+    },
     state::*,
 };
 
-mod admission;
+mod account_table;
 mod block_cap;
 mod event_transport;
-mod handles;
 mod hcu;
 mod preflight;
 mod walk;
 
-use admission::admit_eval_frame;
-use event_transport::emit_public_outputs_produced;
-use handles::EvalHandleContext;
+use account_table::EvalAccountTable;
+use event_transport::{emit_eval_random_seeds, emit_public_outputs_produced};
 use preflight::preflight_eval_frame;
-use walk::{walk_eval_frame, EvalStepVisitor};
+use walk::{walk_eval_frame, EvalHandleContext};
 
 /// Accounts for composed instruction-local FHE evaluation.
 ///
@@ -66,120 +67,165 @@ pub struct FheEval<'info> {
 pub fn fhe_eval<'info>(ctx: Context<'info, FheEval<'info>>, args: FheEvalArgs) -> Result<()> {
     assert_not_paused(&ctx.accounts.host_config)?;
     require!(
-        args.context_id != [0; 32],
-        ZamaHostError::InvalidFheEvalContext
-    );
-    require!(
         !args.steps.is_empty() && args.steps.len() <= MAX_FHE_EVAL_OPS,
         ZamaHostError::InvalidFheEvalOperationCount
     );
-    preflight_eval_frame(&ctx, &args)?;
+    require!(
+        usize::from(args.account_count) == ctx.remaining_accounts.len(),
+        ZamaHostError::FheEvalAccountCountMismatch
+    );
+    // The account table owns every remaining-accounts invariant for the frame:
+    // duplicate rejection (at construction), the used-account bitmap (marked in
+    // preflight, asserted before execution mutates state), durable-output
+    // claims, and output-PDA derivation.
+    let mut account_table = EvalAccountTable::new(ctx.remaining_accounts)?;
+    preflight_eval_frame(&mut account_table, &ctx, &args)?;
+
+    // HCU metering: one pure pass over the plan, enforcing the per-frame total + in-frame depth
+    // caps against the canonical host_config limits (0 = unlimited). The same total then feeds the
+    // block-cap charge — reused, never independently recomputed — so both caps trip before
+    // execution burns CU or creates any ACL record.
+    let host_config = &ctx.accounts.host_config;
+    let frame = hcu::meter_eval_plan(
+        &args.steps,
+        host_config.max_hcu_per_tx,
+        host_config.max_hcu_depth_per_tx,
+    )?;
 
     let subject = ctx.accounts.compute_subject.key();
     let clock = Clock::get()?;
     let previous_bank_hash = previous_bank_hash(clock.slot)?;
+    let durable_anchor_bytes = collect_durable_anchor_bytes(&account_table, &args)?;
     let handle_context = EvalHandleContext {
         chain_id: ctx.accounts.host_config.chain_id,
         previous_bank_hash: &previous_bank_hash,
         unix_timestamp: clock.unix_timestamp,
-        context_id: &args.context_id,
+        compute_subject: subject,
+        durable_anchor_bytes: &durable_anchor_bytes,
     };
-    let current_slot = clock.slot;
-    // Admission (walk #1) computes the frame's HCU total; the read-only block-cap check then trips
-    // an over-budget frame before execution burns CU or creates any ACL record.
-    let frame_total = admit_eval_frame(&ctx, &args, subject, &handle_context)?;
-    block_cap::check(&ctx, frame_total, current_slot)?;
+    let random_seeds = collect_eval_random_seeds(&args, &handle_context);
+    block_cap::charge(&ctx, frame.total, clock.slot)?;
+    // Execution is the single walk: it validates each step as it mutates. A failure mid-frame
+    // leaves partial writes behind only until the runtime reverts the transaction, which discards
+    // every account write — so no validate-only pre-pass is needed for atomicity. The event CPI
+    // stays last so no event describes state that did not commit.
     let born_public_outputs =
-        execute_eval_frame(&ctx, &args, subject, current_slot, &handle_context)?;
+        execute_eval_frame(&mut account_table, &ctx, &args, subject, &handle_context)?;
+    emit_eval_random_seeds(&ctx, random_seeds)?;
     emit_public_outputs_produced(&ctx, born_public_outputs)?;
     Ok(())
 }
 
+/// The step's declared output, shared by preflight rules and anchor collection.
+pub(in crate::instructions) fn step_output(step: &FheEvalStep) -> &FheEvalOutput {
+    match step {
+        FheEvalStep::Binary { output, .. }
+        | FheEvalStep::Ternary { output, .. }
+        | FheEvalStep::TrivialEncrypt { output, .. }
+        | FheEvalStep::Rand { output, .. }
+        | FheEvalStep::Unary { output, .. }
+        | FheEvalStep::RandBounded { output, .. }
+        | FheEvalStep::Sum { output, .. }
+        | FheEvalStep::IsIn { output, .. }
+        | FheEvalStep::MulDiv { output, .. } => output,
+    }
+}
+
+/// Flattens the frame's durable-write anchor from live account state. Each entry is
+/// `(account key, create/update tag, current handle, leaf count)` in wire order.
+/// `leaf_count` advances whenever an outgoing handle is sealed, so returning to an
+/// earlier content-addressed handle cannot replay a previous random seed.
+fn collect_durable_anchor_bytes(
+    table: &EvalAccountTable<'_, '_>,
+    args: &FheEvalArgs,
+) -> Result<Vec<u8>> {
+    let mut anchor_bytes = Vec::with_capacity(args.steps.len() * 73);
+    for step in &args.steps {
+        if let FheEvalOutput::AllowedDurable {
+            output_encrypted_value_index,
+            ..
+        } = step_output(step)
+        {
+            let account = table.account(u16::from(*output_encrypted_value_index))?;
+            anchor_bytes.extend_from_slice(account.key().as_ref());
+            if account.owner == &crate::ID {
+                let value = read_canonical_encrypted_value(account)?;
+                anchor_bytes.push(1);
+                anchor_bytes.extend_from_slice(&value.current_handle);
+                anchor_bytes.extend_from_slice(&value.leaf_count.to_le_bytes());
+            } else {
+                anchor_bytes.push(0);
+                anchor_bytes.extend_from_slice(&[0; 32]);
+                anchor_bytes.extend_from_slice(&0u64.to_le_bytes());
+            }
+        }
+    }
+    Ok(anchor_bytes)
+}
+
+fn collect_eval_random_seeds(
+    args: &FheEvalArgs,
+    handle_context: &EvalHandleContext<'_>,
+) -> Vec<FheEvalRandomSeed> {
+    args.steps
+        .iter()
+        .enumerate()
+        .filter(|(_, step)| {
+            matches!(
+                step,
+                FheEvalStep::Rand { .. } | FheEvalStep::RandBounded { .. }
+            )
+        })
+        .map(|(index, _)| FheEvalRandomSeed {
+            step_index: index as u16,
+            seed: handle_context.rand_seed(index as u16),
+        })
+        .collect()
+}
+
 #[inline(never)]
-fn execute_eval_frame<'info>(
+fn execute_eval_frame<'a, 'info>(
+    table: &mut EvalAccountTable<'a, 'info>,
     ctx: &Context<'info, FheEval<'info>>,
     args: &FheEvalArgs,
     subject: Pubkey,
-    current_slot: u64,
     handle_context: &EvalHandleContext<'_>,
 ) -> Result<Vec<ProducedPublicOutput>> {
-    let mut execution = EvalExecutionState::new(
-        ctx.remaining_accounts,
-        args.steps.len(),
+    let mut execution = EvalExecutionState {
+        table,
+        pool: &args.pool,
+        produced: Vec::with_capacity(args.steps.len()),
+        born_public_outputs: Vec::new(),
         subject,
-        handle_context.chain_id,
-        InputVerifierParams::from_config(&ctx.accounts.host_config),
-    );
-    // Execution (walk #2) recomputes the same frame total; the block-cap charge is the single meter
-    // write — lazy-create/reset, checked accumulate, cap assert, write once.
-    let frame_total = walk_eval_frame(&mut execution, ctx, args, handle_context)?;
-    block_cap::charge(ctx, frame_total, current_slot)?;
-    execution.finish()
+        chain_id: handle_context.chain_id,
+        verifier_params: InputVerifierParams::from_config(&ctx.accounts.host_config),
+    };
+    walk_eval_frame(&mut execution, ctx, args, handle_context)?;
+    Ok(execution.born_public_outputs)
 }
 
-/// Execution phase: resolves operands while marking the dynamic accounts used,
-/// creates durable output ACL records, and buffers produced-public lifecycle records.
-struct EvalExecutionState<'a, 'info> {
-    remaining_accounts: &'a [AccountInfo<'info>],
-    remaining_accounts_used: Vec<bool>,
+/// The single walk's state: resolves operands through the shared account table
+/// (which preflight already validated for coverage), validates and creates or
+/// supersedes durable outputs, and buffers produced-public lifecycle records.
+/// The operand resolvers driving these methods live with the step match in
+/// [`walk`].
+struct EvalExecutionState<'t, 'a, 'info> {
+    table: &'t mut EvalAccountTable<'a, 'info>,
+    /// The frame's interned constant pool ([`FheEvalArgs::pool`]).
+    pool: &'t [[u8; 32]],
     produced: Vec<ProducedValue>,
     born_public_outputs: Vec<ProducedPublicOutput>,
     subject: Pubkey,
     chain_id: u64,
     verifier_params: InputVerifierParams,
-    /// Handles superseded by this frame's own output bindings, keyed by
-    /// encrypted value account. A later operand may still reference one (EVM parity:
-    /// a handle stays usable as a value within the transaction that rotated
-    /// it); admission already authorized it against frame-entry state.
-    superseded_in_frame: Vec<(Pubkey, [u8; 32])>,
 }
 
-impl<'a, 'info> EvalExecutionState<'a, 'info> {
-    fn new(
-        remaining_accounts: &'a [AccountInfo<'info>],
-        step_count: usize,
-        subject: Pubkey,
-        chain_id: u64,
-        verifier_params: InputVerifierParams,
-    ) -> Self {
-        Self {
-            remaining_accounts,
-            remaining_accounts_used: vec![false; remaining_accounts.len()],
-            produced: Vec::with_capacity(step_count),
-            born_public_outputs: Vec::new(),
-            subject,
-            chain_id,
-            verifier_params,
-            superseded_in_frame: Vec::new(),
-        }
-    }
-
-    fn remaining_account(&mut self, index: u16) -> Result<&'a AccountInfo<'info>> {
-        let account_index = index as usize;
-        let account = self
-            .remaining_accounts
-            .get(account_index)
-            .ok_or_else(|| error!(ZamaHostError::InvalidFheEvalAccount))?;
-        self.remaining_accounts_used[account_index] = true;
-        Ok(account)
-    }
-
-    fn finish(self) -> Result<Vec<ProducedPublicOutput>> {
-        require!(
-            self.remaining_accounts_used.iter().all(|used| *used),
-            ZamaHostError::InvalidFheEvalAccount
-        );
-        Ok(self.born_public_outputs)
-    }
-}
-
-impl EvalStepVisitor for EvalExecutionState<'_, '_> {
-    fn subject(&self) -> Pubkey {
-        self.subject
-    }
-
-    fn produced(&self) -> &[ProducedValue] {
-        &self.produced
+impl<'info> EvalExecutionState<'_, '_, 'info> {
+    fn pool_bytes(&self, index: u8) -> Result<[u8; 32]> {
+        self.pool
+            .get(index as usize)
+            .copied()
+            .ok_or_else(|| error!(ZamaHostError::FheEvalPoolIndexOutOfBounds))
     }
 
     #[inline(never)]
@@ -188,23 +234,7 @@ impl EvalStepVisitor for EvalExecutionState<'_, '_> {
         handle: [u8; 32],
         encrypted_value_index: u16,
     ) -> Result<ResolvedOperand> {
-        let value_info = self.remaining_account(encrypted_value_index)?;
-        if self
-            .superseded_in_frame
-            .iter()
-            .any(|(key, superseded)| *key == value_info.key() && *superseded == handle)
-        {
-            // The frame itself rotated this encrypted value account past `handle`; the operand
-            // was authorized by admission against frame-entry state, and
-            // supersession never edits membership, so only the current-handle
-            // equality is exempted here.
-            let value = read_canonical_encrypted_value(value_info)?;
-            require!(
-                value.has_subject(self.subject),
-                ZamaHostError::SubjectNotAllowed
-            );
-            return Ok(ResolvedOperand::encrypted(handle, false));
-        }
+        let value_info = self.table.account(encrypted_value_index)?;
         assert_encrypted_value_subject_allowed(value_info, handle, self.chain_id, self.subject)?;
         Ok(ResolvedOperand::encrypted(handle, false))
     }
@@ -214,7 +244,7 @@ impl EvalStepVisitor for EvalExecutionState<'_, '_> {
         &mut self,
         attestation: &CoprocessorInputAttestation,
     ) -> Result<ResolvedOperand> {
-        // Authoritative in-frame verification: re-run the coprocessor attestation. No account, no
+        // Authoritative in-frame verification of the coprocessor attestation. No account, no
         // PDA — the "allow" exists only for this instruction's execution (the EVM
         // `allowTransient(input, msg.sender)` analog). The caller-is-contract gate is enforced in
         // `resolve_encrypted_operand`; derived outputs are then unconstrained, exactly like EVM.
@@ -235,7 +265,7 @@ impl EvalStepVisitor for EvalExecutionState<'_, '_> {
     }
 
     #[inline(never)]
-    fn accept_output<'info>(
+    fn accept_output(
         &mut self,
         ctx: &Context<'info, FheEval<'info>>,
         op_index: u16,
@@ -245,7 +275,8 @@ impl EvalStepVisitor for EvalExecutionState<'_, '_> {
     ) -> Result<()> {
         let born_public_output = accept_eval_output(
             ctx,
-            &mut self.remaining_accounts_used,
+            self.table,
+            self.pool,
             &mut self.produced,
             result,
             output,
@@ -254,15 +285,6 @@ impl EvalStepVisitor for EvalExecutionState<'_, '_> {
         )?;
         if let Some(record) = born_public_output {
             self.born_public_outputs.push(record);
-        }
-        if let FheEvalOutput::AllowedDurable {
-            output_encrypted_value_index,
-            previous_handle: Some(previous_handle),
-            ..
-        } = output
-        {
-            let key = self.remaining_account(*output_encrypted_value_index)?.key();
-            self.superseded_in_frame.push((key, *previous_handle));
         }
         Ok(())
     }
@@ -288,7 +310,8 @@ pub fn assert_ternary_operand_types(
 #[inline(never)]
 fn accept_eval_output<'info>(
     ctx: &Context<'info, FheEval<'info>>,
-    remaining_accounts_used: &mut [bool],
+    table: &mut EvalAccountTable<'_, 'info>,
+    pool: &[[u8; 32]],
     produced: &mut Vec<ProducedValue>,
     result: [u8; 32],
     output: &FheEvalOutput,
@@ -305,30 +328,35 @@ fn accept_eval_output<'info>(
         FheEvalOutput::AllowedDurable {
             output_encrypted_value_index,
             output_app_account_authority_index,
-            output_acl_domain_key,
-            output_app_account,
-            output_encrypted_value_label,
-            output_subjects,
+            output_acl_domain_key_index,
+            output_app_account_index,
+            output_encrypted_value_label_index,
+            output_subject_indexes,
             previous_handle,
             previous_subjects,
             make_public,
         } => {
+            let output_acl_domain_key = pool_key(pool, *output_acl_domain_key_index)?;
+            let output_app_account = pool_key(pool, *output_app_account_index)?;
+            let output_encrypted_value_label =
+                pool_bytes(pool, *output_encrypted_value_label_index)?;
+            let output_subjects = resolve_pool_subjects(pool, output_subject_indexes)?;
             let app_account_authority = durable_output_authority(
+                table,
                 ctx,
-                remaining_accounts_used,
-                *output_app_account_authority_index,
-                *output_app_account,
+                output_app_account_authority_index.map(u16::from),
+                output_app_account,
             )?;
             let encrypted_value = bind_eval_output(
                 ctx,
-                remaining_accounts_used,
-                *output_encrypted_value_index,
+                table,
+                u16::from(*output_encrypted_value_index),
                 result,
                 app_account_authority.key(),
-                *output_acl_domain_key,
-                *output_app_account,
-                *output_encrypted_value_label,
-                output_subjects,
+                output_acl_domain_key,
+                output_app_account,
+                output_encrypted_value_label,
+                &output_subjects,
                 previous_handle,
                 previous_subjects,
                 *make_public,
@@ -348,16 +376,29 @@ fn accept_eval_output<'info>(
     Ok(born_public_output)
 }
 
+fn pool_bytes(pool: &[[u8; 32]], index: u8) -> Result<[u8; 32]> {
+    pool.get(index as usize)
+        .copied()
+        .ok_or_else(|| error!(ZamaHostError::FheEvalPoolIndexOutOfBounds))
+}
+
+fn pool_key(pool: &[[u8; 32]], index: u8) -> Result<Pubkey> {
+    Ok(Pubkey::new_from_array(pool_bytes(pool, index)?))
+}
+
+fn resolve_pool_subjects(pool: &[[u8; 32]], indexes: &[u8]) -> Result<Vec<Pubkey>> {
+    indexes.iter().map(|index| pool_key(pool, *index)).collect()
+}
+
 fn durable_output_authority<'info>(
+    table: &EvalAccountTable<'_, 'info>,
     ctx: &Context<'info, FheEval<'info>>,
-    remaining_accounts_used: &mut [bool],
     authority_index: Option<u16>,
     output_app_account: Pubkey,
 ) -> Result<AccountInfo<'info>> {
     let authority = match authority_index {
         Some(index) => {
-            let authority =
-                remaining_account(ctx.remaining_accounts, remaining_accounts_used, index)?;
+            let authority = table.account(index)?;
             require!(authority.is_signer, ZamaHostError::InvalidFheEvalAccount);
             require_keys_eq!(
                 authority.key(),
@@ -368,37 +409,12 @@ fn durable_output_authority<'info>(
         }
         None => ctx.accounts.app_account_authority.to_account_info(),
     };
-    let deny_record = deny_subject_record_for(
-        &ctx.accounts.host_config,
-        ctx.remaining_accounts,
-        Some(remaining_accounts_used),
+    let deny_record = table.deny_record(
+        ctx.accounts.host_config.grant_deny_list_enabled,
         authority.key(),
     )?;
     check_grant_not_denied_info(&ctx.accounts.host_config, authority.key(), deny_record)?;
     Ok(authority)
-}
-
-fn deny_subject_record_for<'a, 'info>(
-    host_config: &HostConfig,
-    remaining_accounts: &'a [AccountInfo<'info>],
-    remaining_accounts_used: Option<&mut [bool]>,
-    subject: Pubkey,
-) -> Result<Option<&'a AccountInfo<'info>>> {
-    if !host_config.grant_deny_list_enabled {
-        return Ok(None);
-    }
-    let (expected, _) = deny_subject_address(subject);
-    let Some((index, record)) = remaining_accounts
-        .iter()
-        .enumerate()
-        .find(|(_, account)| account.key() == expected)
-    else {
-        return Err(error!(ZamaHostError::AclDenyRecordMissing));
-    };
-    if let Some(used) = remaining_accounts_used {
-        used[index] = true;
-    }
-    Ok(Some(record))
 }
 
 #[derive(Clone)]
@@ -456,35 +472,37 @@ fn inputs3_allow_public_decrypt(
 #[allow(clippy::too_many_arguments)]
 fn bind_eval_output<'info>(
     ctx: &Context<'info, FheEval<'info>>,
-    remaining_accounts_used: &mut [bool],
+    table: &mut EvalAccountTable<'_, 'info>,
     output_encrypted_value_index: u16,
     result: [u8; 32],
     app_account_authority: Pubkey,
     output_acl_domain_key: Pubkey,
     output_app_account: Pubkey,
     output_encrypted_value_label: [u8; 32],
-    output_subjects: &[AclSubjectEntry],
+    output_subjects: &[Pubkey],
     previous_handle: &Option<[u8; 32]>,
     previous_subjects: &Option<Vec<Pubkey>>,
     make_public: bool,
 ) -> Result<Pubkey> {
     assert_output_acl_metadata(app_account_authority, output_app_account, output_subjects)?;
 
-    let output_info = remaining_account(
-        ctx.remaining_accounts,
-        remaining_accounts_used,
-        output_encrypted_value_index,
-    )?;
-    let value_key = zama_solana_acl::derive_value_key(
-        output_acl_domain_key.to_bytes(),
-        output_app_account.to_bytes(),
+    let output_info = table.account(output_encrypted_value_index)?;
+    let output_pda = table.expected_output_pda(
+        output_acl_domain_key,
+        output_app_account,
         output_encrypted_value_label,
     );
-    let (expected, bump) = encrypted_value_address(value_key);
     require_keys_eq!(
         output_info.key(),
-        expected,
+        output_pda.key,
         ZamaHostError::EncryptedValuePdaMismatch
+    );
+    // One write per account per frame — load-bearing for the rand seed anchor (#1853 W4).
+    table.claim_durable_output(output_info.key())?;
+    // Explicit on the supersede path; `create_pda_strict` enforces it on create.
+    require!(
+        output_info.is_writable,
+        ZamaHostError::InvalidFheEvalAccount
     );
 
     if output_info.owner == &crate::ID {
@@ -495,15 +513,14 @@ fn bind_eval_output<'info>(
         validate_durable_output_previous_state(&value, previous_handle, previous_subjects)?;
         check_rotation_grants_not_denied(
             &ctx.accounts.host_config,
-            ctx.remaining_accounts,
-            Some(remaining_accounts_used),
+            table,
             &value.subjects,
             output_subjects,
         )?;
         supersede_current_handle(output_info, &mut value, result)?;
         // Seal the outgoing audience into historical leaves first (above), then rotate
         // to the new set — every added subject cleared the deny-list check above.
-        value.subjects = output_subjects.iter().map(|entry| entry.pubkey).collect();
+        value.subjects = output_subjects.to_vec();
         // Born-public opt-in: after the outgoing handle's historical leaves, seal a
         // public-decrypt leaf for the NEW current handle (leaf order: historical(old)
         // per subject FIRST, then public(new) LAST). Same commitment as
@@ -532,10 +549,10 @@ fn bind_eval_output<'info>(
             app_account: output_app_account,
             encrypted_value_label: output_encrypted_value_label,
             current_handle: result,
-            subjects: output_subjects.iter().map(|s| s.pubkey).collect(),
+            subjects: output_subjects.to_vec(),
             leaf_count: 0,
             peaks: Vec::new(),
-            bump,
+            bump: output_pda.bump,
         };
         if make_public {
             append_public_decrypt_leaf(output_info, &mut value, result)?;
@@ -547,8 +564,8 @@ fn bind_eval_output<'info>(
             8 + EncryptedValue::space(value.subjects.len(), value.peaks.len()),
             &[
                 zama_solana_acl::ENCRYPTED_VALUE_SEED,
-                value_key.as_ref(),
-                &[bump],
+                output_pda.value_key.as_ref(),
+                &[output_pda.bump],
             ],
         )?;
         write_account(output_info, &value)?;
@@ -579,53 +596,39 @@ pub(super) fn validate_durable_output_previous_state(
     Ok(())
 }
 
-/// Deny-list gate for a supersede that rotates the audience. Every subject present
+/// Deny-list gate for a supersede that rotates the audience: every subject present
 /// in `output_subjects` but absent from the stored set is a new grant and must
-/// clear the grant deny-list exactly as `allow_subjects` gates added subjects, so
-/// rotation cannot bypass the deny list. Respects `grant_deny_list_enabled` and
-/// (via the shared helpers) pause-independent deny semantics; the deny record for
-/// each added subject is located in `remaining_accounts` by canonical address.
-pub(super) fn check_rotation_grants_not_denied<'info>(
+/// clear the grant deny-list. Respects `grant_deny_list_enabled`; the deny record
+/// for each added subject is located by canonical derived address through the table.
+///
+/// Known boundary (inherited from the pre-cleanup admission path): this is the only
+/// per-subject deny check. The create path writes its initial `output_subjects`
+/// without one, and `allow_subjects` deny-checks the granting authority rather than
+/// each added subject — so a denied subject can still enter via create, and then
+/// persists across supersedes because subjects already stored are exempt here.
+fn check_rotation_grants_not_denied(
     host_config: &HostConfig,
-    remaining_accounts: &[AccountInfo<'info>],
-    mut remaining_accounts_used: Option<&mut [bool]>,
+    table: &EvalAccountTable<'_, '_>,
     stored_subjects: &[Pubkey],
-    output_subjects: &[AclSubjectEntry],
+    output_subjects: &[Pubkey],
 ) -> Result<()> {
     if !host_config.grant_deny_list_enabled {
         return Ok(());
     }
-    for entry in output_subjects {
-        if stored_subjects.contains(&entry.pubkey) {
+    for subject in output_subjects {
+        if stored_subjects.contains(subject) {
             continue;
         }
-        let deny_record = deny_subject_record_for(
-            host_config,
-            remaining_accounts,
-            remaining_accounts_used.as_deref_mut(),
-            entry.pubkey,
-        )?;
-        check_grant_not_denied_info(host_config, entry.pubkey, deny_record)?;
+        let deny_record = table.deny_record(host_config.grant_deny_list_enabled, *subject)?;
+        check_grant_not_denied_info(host_config, *subject, deny_record)?;
     }
     Ok(())
-}
-
-fn remaining_account<'a, 'info>(
-    remaining_accounts: &'a [AccountInfo<'info>],
-    remaining_accounts_used: &mut [bool],
-    index: u16,
-) -> Result<&'a AccountInfo<'info>> {
-    let account_index = index as usize;
-    let account = remaining_accounts
-        .get(account_index)
-        .ok_or_else(|| error!(ZamaHostError::InvalidFheEvalAccount))?;
-    remaining_accounts_used[account_index] = true;
-    Ok(account)
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+    use anchor_lang::AccountSerialize;
 
     fn encrypted_value_account(handle: [u8; 32], subjects: &[Pubkey]) -> EncryptedValue {
         EncryptedValue {
@@ -661,11 +664,53 @@ mod tests {
         }
     }
 
-    fn grants(subjects: &[Pubkey]) -> Vec<AclSubjectEntry> {
-        subjects
-            .iter()
-            .map(|subject| AclSubjectEntry { pubkey: *subject })
-            .collect()
+    fn grants(subjects: &[Pubkey]) -> Vec<Pubkey> {
+        subjects.to_vec()
+    }
+
+    fn durable_anchor_at_leaf_count(leaf_count: u64) -> Vec<u8> {
+        let mut value = encrypted_value_account([9; 32], &[Pubkey::new_from_array([1; 32])]);
+        value.acl_domain_key = Pubkey::new_from_array([2; 32]);
+        value.app_account = Pubkey::new_from_array([3; 32]);
+        value.encrypted_value_label = [7; 32];
+        value.leaf_count = leaf_count;
+        let (key, bump) = encrypted_value_address(value.value_key());
+        value.bump = bump;
+
+        let mut lamports = 1_000_000;
+        let mut data = vec![0; 8 + EncryptedValue::space(value.subjects.len(), 0)];
+        value.try_serialize(&mut &mut data[..]).unwrap();
+        let owner = crate::ID;
+        let account = AccountInfo::new(&key, false, true, &mut lamports, &mut data, &owner, false);
+        let accounts = [account];
+        let table = EvalAccountTable::new(&accounts).unwrap();
+        let args = FheEvalArgs {
+            account_count: 1,
+            pool: Vec::new(),
+            steps: vec![FheEvalStep::Rand {
+                fhe_type: 5,
+                output: FheEvalOutput::AllowedDurable {
+                    output_encrypted_value_index: 0,
+                    output_app_account_authority_index: None,
+                    output_acl_domain_key_index: 0,
+                    output_app_account_index: 0,
+                    output_encrypted_value_label_index: 0,
+                    output_subject_indexes: Vec::new(),
+                    previous_handle: Some(value.current_handle),
+                    previous_subjects: Some(value.subjects),
+                    make_public: false,
+                },
+            }],
+        };
+        collect_durable_anchor_bytes(&table, &args).unwrap()
+    }
+
+    #[test]
+    fn durable_anchor_changes_when_handle_cycles_to_a_later_leaf_count() {
+        assert_ne!(
+            durable_anchor_at_leaf_count(1),
+            durable_anchor_at_leaf_count(3)
+        );
     }
 
     #[test]
@@ -752,13 +797,13 @@ mod tests {
             false,
         );
         let remaining = [record];
+        let table = EvalAccountTable::new(&remaining).unwrap();
 
         let config = deny_enabled_config();
 
         // A stored subject that stays put needs no record; only `added` is checked, and it is denied.
         assert_eq!(
-            check_rotation_grants_not_denied(&config, &remaining, None, &stored, &rotated)
-                .unwrap_err(),
+            check_rotation_grants_not_denied(&config, &table, &stored, &rotated).unwrap_err(),
             error!(ZamaHostError::AclSubjectDenied)
         );
     }

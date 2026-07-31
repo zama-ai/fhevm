@@ -73,7 +73,8 @@ paths remain event-free (`docs/DESIGN_DECISIONS.md` DD-033/DD-038).
 
 Admission invariants for `fhe_eval`:
 
-- `context_id` must be nonzero and the frame must contain 1 to 16 steps.
+- The frame must contain 1 to 16 steps, and a frame with a rand step must declare at least one
+  durable output (the rand seed is anchored to the frame's durable writes).
 - Every dynamic account passed through `remaining_accounts` must be unique and referenced by an
   operand or output, and every referenced account index must be present.
 - The optional instructions sysvar account must be present only for steps that need instruction

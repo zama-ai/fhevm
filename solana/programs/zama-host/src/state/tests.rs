@@ -55,8 +55,6 @@ fn eval_handle_derivation_preserves_solana_chain_type_high_bit() {
         chain_id,
         [9; 32],
         42,
-        [7; 32],
-        0,
     );
     assert_canonical_metadata(handle, 3, chain_id);
     assert_eq!(
@@ -87,6 +85,32 @@ fn handle_derivation_rand_uses_keccak() {
     ]);
     assert_eq!(&handle[..21], &expected_prehandle[..21]);
     assert_canonical_metadata(handle, fhe_type, chain_id);
+}
+
+#[test]
+fn rand_seed_is_distinct_across_every_uniqueness_axis() {
+    let subject = Pubkey::new_unique();
+    let anchor: Vec<u8> = [Pubkey::new_unique().to_bytes(), [7; 32]].concat();
+    let seed = |subject: Pubkey, anchor: &[u8], op_index: u16, slot_entropy: [u8; 32]| {
+        computed_eval_rand_seed(subject, anchor, op_index, 13, slot_entropy, 42)
+    };
+    let base = seed(subject, &anchor, 0, [9; 32]);
+
+    // Cross-subject: two signers in the same slot with the same anchor shape never share a seed.
+    assert_ne!(base, seed(Pubkey::new_unique(), &anchor, 0, [9; 32]));
+    // Same subject, same slot: a different durable-write anchor (the consumed
+    // (key, previous_handle) tickets) gives a fresh seed.
+    let other_anchor: Vec<u8> = [Pubkey::new_unique().to_bytes(), [7; 32]].concat();
+    assert_ne!(base, seed(subject, &other_anchor, 0, [9; 32]));
+    // Sequential supersede of the same account: previous_handle advances, so the anchor differs.
+    let superseded_anchor: Vec<u8> = [anchor[..32].try_into().unwrap(), [8; 32]].concat();
+    assert_ne!(base, seed(subject, &superseded_anchor, 0, [9; 32]));
+    // Two rand steps in one frame differ by op_index.
+    assert_ne!(base, seed(subject, &anchor, 1, [9; 32]));
+    // Cross-slot: slot entropy differs.
+    assert_ne!(base, seed(subject, &anchor, 0, [10; 32]));
+    // Determinism: identical inputs reproduce the seed (DD-033 replay).
+    assert_eq!(base, seed(subject, &anchor, 0, [9; 32]));
 }
 
 /// Builds a handle carrying `fhe_type` in byte 30 (the canonical type nibble read by

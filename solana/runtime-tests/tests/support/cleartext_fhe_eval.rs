@@ -76,7 +76,7 @@ impl ClearValue {
 /// are intentionally ignored.
 pub fn evaluate(args: &FheEvalArgs, inputs: &ClearInputs) -> Result<Vec<TypedClearValue>, String> {
     let mut produced = Vec::<ClearValue>::with_capacity(args.steps.len());
-    let mut random = StdRng::from_seed(args.context_id);
+    let mut random = StdRng::from_seed([7; 32]);
 
     for step in &args.steps {
         let value = match step {
@@ -87,8 +87,9 @@ pub fn evaluate(args: &FheEvalArgs, inputs: &ClearInputs) -> Result<Vec<TypedCle
                 output_fhe_type,
                 ..
             } => eval_binary(
+                &args.pool,
                 *op,
-                resolve_encrypted(lhs, inputs, &produced)?,
+                resolve_encrypted(lhs, &args.pool, inputs, &produced)?,
                 rhs,
                 *output_fhe_type,
                 inputs,
@@ -106,9 +107,9 @@ pub fn evaluate(args: &FheEvalArgs, inputs: &ClearInputs) -> Result<Vec<TypedCle
                     assert_supported_fhe_type(*output_fhe_type),
                     "ternary operation",
                 )?;
-                let control = resolve_encrypted(control, inputs, &produced)?;
-                let if_true = resolve_encrypted(if_true, inputs, &produced)?;
-                let if_false = resolve_encrypted(if_false, inputs, &produced)?;
+                let control = resolve_encrypted(control, &args.pool, inputs, &produced)?;
+                let if_true = resolve_encrypted(if_true, &args.pool, inputs, &produced)?;
+                let if_false = resolve_encrypted(if_false, &args.pool, inputs, &produced)?;
                 // Mirrors `fhe_eval::assert_ternary_operand_types`; keep the malformed-ternary
                 // cases in `operator_conformance.rs::rejected::ternary` aligned with it.
                 if control.fhe_type != 0
@@ -155,7 +156,7 @@ pub fn evaluate(args: &FheEvalArgs, inputs: &ClearInputs) -> Result<Vec<TypedCle
                 ..
             } => eval_unary(
                 *op,
-                resolve_encrypted(operand, inputs, &produced)?,
+                resolve_encrypted(operand, &args.pool, inputs, &produced)?,
                 *output_fhe_type,
             )?,
             FheEvalStep::RandBounded {
@@ -175,7 +176,7 @@ pub fn evaluate(args: &FheEvalArgs, inputs: &ClearInputs) -> Result<Vec<TypedCle
             } => {
                 let values = operands
                     .iter()
-                    .map(|operand| resolve_encrypted(operand, inputs, &produced))
+                    .map(|operand| resolve_encrypted(operand, &args.pool, inputs, &produced))
                     .collect::<Result<Vec<_>, _>>()?;
                 let handles = values
                     .iter()
@@ -190,10 +191,10 @@ pub fn evaluate(args: &FheEvalArgs, inputs: &ClearInputs) -> Result<Vec<TypedCle
                 fhe_type,
                 ..
             } => {
-                let value = resolve_encrypted(value, inputs, &produced)?;
+                let value = resolve_encrypted(value, &args.pool, inputs, &produced)?;
                 let set = set
                     .iter()
-                    .map(|operand| resolve_encrypted(operand, inputs, &produced))
+                    .map(|operand| resolve_encrypted(operand, &args.pool, inputs, &produced))
                     .collect::<Result<Vec<_>, _>>()?;
                 let handles = set
                     .iter()
@@ -215,7 +216,8 @@ pub fn evaluate(args: &FheEvalArgs, inputs: &ClearInputs) -> Result<Vec<TypedCle
                 output_fhe_type,
                 ..
             } => eval_mul_div(
-                resolve_encrypted(factor1, inputs, &produced)?,
+                &args.pool,
+                resolve_encrypted(factor1, &args.pool, inputs, &produced)?,
                 factor2,
                 *divisor,
                 *output_fhe_type,
@@ -230,6 +232,7 @@ pub fn evaluate(args: &FheEvalArgs, inputs: &ClearInputs) -> Result<Vec<TypedCle
 }
 
 fn eval_binary(
+    pool: &[[u8; 32]],
     op: FheBinaryOpCode,
     lhs: ClearValue,
     rhs_operand: &FheEvalOperand,
@@ -237,7 +240,7 @@ fn eval_binary(
     inputs: &ClearInputs,
     produced: &[ClearValue],
 ) -> Result<ClearValue, String> {
-    let (rhs, rhs_handle, scalar) = resolve_rhs(rhs_operand, lhs.fhe_type, inputs, produced)?;
+    let (rhs, rhs_handle, scalar) = resolve_rhs(rhs_operand, pool, lhs.fhe_type, inputs, produced)?;
     canonical(
         assert_binary_operand_types(
             op,
@@ -292,6 +295,7 @@ fn eval_unary(
 }
 
 fn eval_mul_div(
+    pool: &[[u8; 32]],
     factor1: ClearValue,
     factor2_operand: &FheEvalOperand,
     divisor: [u8; 32],
@@ -300,7 +304,7 @@ fn eval_mul_div(
     produced: &[ClearValue],
 ) -> Result<ClearValue, String> {
     let (factor2, factor2_handle, scalar) =
-        resolve_rhs(factor2_operand, factor1.fhe_type, inputs, produced)?;
+        resolve_rhs(factor2_operand, pool, factor1.fhe_type, inputs, produced)?;
     canonical(
         assert_mul_div_operand_types(
             factor1.validation_handle(),
@@ -315,20 +319,30 @@ fn eval_mul_div(
     ClearValue::new(output_fhe_type, (factor1.value * factor2.value) / divisor)
 }
 
+fn resolve_pool_bytes(pool: &[[u8; 32]], index: u8) -> Result<[u8; 32], String> {
+    pool.get(usize::from(index))
+        .copied()
+        .ok_or_else(|| format!("pool index {index} out of bounds"))
+}
+
 fn resolve_rhs(
     operand: &FheEvalOperand,
+    pool: &[[u8; 32]],
     fhe_type: u8,
     inputs: &ClearInputs,
     produced: &[ClearValue],
 ) -> Result<(ClearValue, Handle, bool), String> {
     match operand {
-        FheEvalOperand::Scalar(bytes) => Ok((
-            ClearValue::new(fhe_type, BigUint::from_bytes_be(bytes))?,
-            *bytes,
-            true,
-        )),
+        FheEvalOperand::Scalar { value_index } => {
+            let bytes = resolve_pool_bytes(pool, *value_index)?;
+            Ok((
+                ClearValue::new(fhe_type, BigUint::from_bytes_be(&bytes))?,
+                bytes,
+                true,
+            ))
+        }
         _ => {
-            let value = resolve_encrypted(operand, inputs, produced)?;
+            let value = resolve_encrypted(operand, pool, inputs, produced)?;
             let handle = value.validation_handle();
             Ok((value, handle, false))
         }
@@ -337,11 +351,15 @@ fn resolve_rhs(
 
 fn resolve_encrypted(
     operand: &FheEvalOperand,
+    pool: &[[u8; 32]],
     inputs: &ClearInputs,
     produced: &[ClearValue],
 ) -> Result<ClearValue, String> {
     let (handle, value) = match operand {
-        FheEvalOperand::AllowedDurable { handle, .. } => (*handle, inputs.get(handle)),
+        FheEvalOperand::AllowedDurable { handle_index, .. } => {
+            let handle = resolve_pool_bytes(pool, *handle_index)?;
+            (handle, inputs.get(&handle))
+        }
         FheEvalOperand::VerifiedInput { attestation } => {
             let handle = attestation.input_handle;
             (handle, inputs.get(&handle))
@@ -352,7 +370,7 @@ fn resolve_encrypted(
                 .cloned()
                 .ok_or_else(|| format!("missing earlier local output {producer_index}"));
         }
-        FheEvalOperand::Scalar(_) => {
+        FheEvalOperand::Scalar { .. } => {
             return Err("scalar is not valid in this operand position".into())
         }
     };

@@ -1659,6 +1659,19 @@
       ]
     },
     {
+      "name": "FheEvalRandomSeedsEvent",
+      "discriminator": [
+        17,
+        21,
+        221,
+        157,
+        209,
+        142,
+        88,
+        122
+      ]
+    },
+    {
       "name": "FheIsInEvent",
       "discriminator": [
         103,
@@ -2057,8 +2070,8 @@
     },
     {
       "code": 6040,
-      "name": "InvalidFheEvalContext",
-      "msg": "FHE eval context id is invalid"
+      "name": "FheEvalRandRequiresDurableOutput",
+      "msg": "FHE eval rand step requires a durable output in the frame"
     },
     {
       "code": 6041,
@@ -2269,28 +2282,24 @@
       "code": 6082,
       "name": "ClockBeforeEpoch",
       "msg": "clock is before the unix epoch"
+    },
+    {
+      "code": 6083,
+      "name": "FheEvalPoolIndexOutOfBounds",
+      "msg": "FHE eval pool index out of bounds"
+    },
+    {
+      "code": 6084,
+      "name": "FheEvalAccountCountMismatch",
+      "msg": "FHE eval declared account count mismatch"
+    },
+    {
+      "code": 6085,
+      "name": "FheEvalDurableOperandWrittenEarlier",
+      "msg": "FHE eval durable operand was written earlier in the frame"
     }
   ],
   "types": [
-    {
-      "name": "AclSubjectEntry",
-      "docs": [
-        "Pubkey stored inline as an allowed subject."
-      ],
-      "type": {
-        "kind": "struct",
-        "fields": [
-          {
-            "name": "pubkey",
-            "docs": [
-              "Subject identity. For app users this is usually the owner pubkey; for",
-              "app programs this can be a program-controlled compute signer PDA."
-            ],
-            "type": "pubkey"
-          }
-        ]
-      }
-    },
     {
       "name": "CoprocessorInputAttestation",
       "docs": [
@@ -2613,17 +2622,29 @@
         "kind": "struct",
         "fields": [
           {
-            "name": "context_id",
+            "name": "account_count",
             "docs": [
-              "Caller-chosen domain separator for the instruction-local handles in this eval.",
-              "",
-              "Callers should use a fresh value for each logical eval session."
+              "Declared `remaining_accounts` length, asserted equal to the actual list. Carried in",
+              "instruction data so stateless indexers can validate account references without the",
+              "transaction envelope (DD-033 self-description)."
+            ],
+            "type": "u8"
+          },
+          {
+            "name": "pool",
+            "docs": [
+              "Interned 32-byte constant pool: operand handles, scalar values, ACL domain keys, app",
+              "account keys, encrypted value labels, and output subjects. Steps reference entries by",
+              "`u8` index, so a value repeated across steps is paid for once (the compiled-message /",
+              "constant-pool encoding; fhevm-internal#1853 W7)."
             ],
             "type": {
-              "array": [
-                "u8",
-                32
-              ]
+              "vec": {
+                "array": [
+                  "u8",
+                  32
+                ]
+              }
             }
           },
           {
@@ -2655,23 +2676,18 @@
             "name": "AllowedDurable",
             "fields": [
               {
-                "name": "handle",
+                "name": "handle_index",
                 "docs": [
-                  "Handle expected as the encrypted value's current handle."
+                  "Pool index of the handle expected as the encrypted value's current handle."
                 ],
-                "type": {
-                  "array": [
-                    "u8",
-                    32
-                  ]
-                }
+                "type": "u8"
               },
               {
                 "name": "encrypted_value_index",
                 "docs": [
                   "Index into `remaining_accounts` for the `EncryptedValue` account."
                 ],
-                "type": "u16"
+                "type": "u8"
               }
             ]
           },
@@ -2683,7 +2699,7 @@
                 "docs": [
                   "Producer operation index."
                 ],
-                "type": "u16"
+                "type": "u8"
               }
             ]
           },
@@ -2691,10 +2707,11 @@
             "name": "Scalar",
             "fields": [
               {
-                "array": [
-                  "u8",
-                  32
-                ]
+                "name": "value_index",
+                "docs": [
+                  "Pool index of the scalar value."
+                ],
+                "type": "u8"
               }
             ]
           },
@@ -2736,7 +2753,7 @@
                 "docs": [
                   "Index into `remaining_accounts` for the output `EncryptedValue` PDA."
                 ],
-                "type": "u16"
+                "type": "u8"
               },
               {
                 "name": "output_app_account_authority_index",
@@ -2745,53 +2762,42 @@
                   "",
                   "`None` uses the fixed `app_account_authority` account in the eval",
                   "context. `Some(index)` requires that remaining account to be a signer",
-                  "and to match `output_app_account`."
+                  "and to match the output app account."
                 ],
                 "type": {
-                  "option": "u16"
+                  "option": "u8"
                 }
               },
               {
-                "name": "output_acl_domain_key",
+                "name": "output_acl_domain_key_index",
                 "docs": [
-                  "ACL domain key for the output encrypted value account."
+                  "Pool index of the ACL domain key for the output encrypted value account."
                 ],
-                "type": "pubkey"
+                "type": "u8"
               },
               {
-                "name": "output_app_account",
+                "name": "output_app_account_index",
                 "docs": [
-                  "App account authorized to bind the output encrypted value account."
+                  "Pool index of the app account authorized to bind the output encrypted value account."
                 ],
-                "type": "pubkey"
+                "type": "u8"
               },
               {
-                "name": "output_encrypted_value_label",
+                "name": "output_encrypted_value_label_index",
                 "docs": [
-                  "Encrypted value label for the output encrypted value account."
+                  "Pool index of the encrypted value label for the output encrypted value account."
                 ],
-                "type": {
-                  "array": [
-                    "u8",
-                    32
-                  ]
-                }
+                "type": "u8"
               },
               {
-                "name": "output_subjects",
+                "name": "output_subject_indexes",
                 "docs": [
-                  "Subjects on the output encrypted value account. On create these are the initial",
-                  "subjects; on supersede they become the new audience, which may rotate",
+                  "Pool indexes of the subjects on the output encrypted value account. On create these",
+                  "are the initial subjects; on supersede they become the new audience, which may rotate",
                   "away from the stored set (the outgoing audience is sealed into",
                   "historical leaves first; added subjects pass the grant deny-list)."
                 ],
-                "type": {
-                  "vec": {
-                    "defined": {
-                      "name": "AclSubjectEntry"
-                    }
-                  }
-                }
+                "type": "bytes"
               },
               {
                 "name": "previous_handle",
@@ -2834,6 +2840,67 @@
                 "type": "bool"
               }
             ]
+          }
+        ]
+      }
+    },
+    {
+      "name": "FheEvalRandomSeed",
+      "docs": [
+        "One host-derived random seed used by an `fhe_eval` step."
+      ],
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "step_index",
+            "docs": [
+              "Zero-based step index within the frame."
+            ],
+            "type": "u16"
+          },
+          {
+            "name": "seed",
+            "docs": [
+              "Seed derived from live durable account state."
+            ],
+            "type": {
+              "array": [
+                "u8",
+                16
+              ]
+            }
+          }
+        ]
+      }
+    },
+    {
+      "name": "FheEvalRandomSeedsEvent",
+      "docs": [
+        "Emitted once for the random steps in an `fhe_eval` frame."
+      ],
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "version",
+            "docs": [
+              "Event schema version."
+            ],
+            "type": "u8"
+          },
+          {
+            "name": "seeds",
+            "docs": [
+              "Random seeds in frame step order."
+            ],
+            "type": {
+              "vec": {
+                "defined": {
+                  "name": "FheEvalRandomSeed"
+                }
+              }
+            }
           }
         ]
       }

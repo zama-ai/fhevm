@@ -82,20 +82,11 @@ pub fn initialize_token_account<'info>(
     let balance_encrypted_value = ctx.accounts.balance_encrypted_value.key();
     let balance_output = fhe::DurableOutput::new(
         ctx.accounts.balance_encrypted_value.to_account_info(),
-        durable_slot(mint_key, token_account_key, balance_label()),
+        encrypted_value_key(mint_key, token_account_key, balance_label()),
         fhe::DurableAudience::for_owner(owner, compute_signer),
     )?;
-    let context_id = transfer_eval_context(
-        b"initialize-balance",
-        mint_key,
-        token_account_key,
-        token_account_key,
-        [0; 32],
-    )?;
-    let mut builder = zama_fhe::EvalBuilder::new(
-        context_id,
-        zama_fhe::EvalAppAuthority::new(token_account_key),
-    );
+    let mut builder =
+        zama_fhe::EvalBuilder::new(zama_fhe::EvalAppAuthority::new(token_account_key));
     builder
         .trivial_encrypt_u64(initial_balance, balance_output.output())
         .map_err(invalid_eval_plan)?;

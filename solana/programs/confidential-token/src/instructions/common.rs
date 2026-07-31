@@ -53,28 +53,7 @@ pub(crate) enum TransferAmountSource<'info> {
     /// owner in the value's subject set) and euint64 type check run in the instruction handler
     /// before this reaches the eval builder; the host re-checks the handle is current and that the
     /// mint's compute subject is allowed on the value, in-frame.
-    ExistingValue {
-        amount_value: AccountInfo<'info>,
-        amount_handle: [u8; 32],
-    },
-}
-
-impl TransferAmountSource<'_> {
-    fn amount_handle(&self) -> [u8; 32] {
-        match self {
-            Self::Attested(attestation) => attestation.input_handle,
-            Self::ExistingValue { amount_handle, .. } => *amount_handle,
-        }
-    }
-
-    /// Domain-separates the eval context id per arm so the two amount sources never derive
-    /// colliding handles for the same (mint, from, to, amount handle) tuple.
-    fn context_tag(&self) -> &'static [u8] {
-        match self {
-            Self::Attested(_) => b"combined",
-            Self::ExistingValue { .. } => b"from-value",
-        }
-    }
+    ExistingValue { amount_value: AccountInfo<'info> },
 }
 
 pub(crate) struct TransferOutcome {
@@ -190,13 +169,6 @@ fn execute_transfer_eval<'info>(
     let to_key = accounts.to_account.key();
     let from_owner = accounts.from_account.owner;
     let to_owner = accounts.to_account.owner;
-    let context_id = transfer_eval_context(
-        amount_source.context_tag(),
-        mint_key,
-        from_key,
-        to_key,
-        amount_source.amount_handle(),
-    )?;
     let from_balance = uint64_from_value(old_from_handle, mint_key, from_key, balance_label())?;
     let to_balance = uint64_from_value(old_to_handle, mint_key, to_key, balance_label())?;
     let compute_signer = accounts.compute_signer.key();
@@ -211,21 +183,20 @@ fn execute_transfer_eval<'info>(
     };
     let from_output = fhe::DurableOutput::new(
         accounts.from_balance_value.clone(),
-        durable_slot(mint_key, from_key, balance_label()),
+        encrypted_value_key(mint_key, from_key, balance_label()),
         balance_access(from_owner),
     )?;
     let transferred_output = fhe::DurableOutput::new(
         accounts.transferred_amount_value.clone(),
-        durable_slot(mint_key, from_key, transferred_amount_label()),
+        encrypted_value_key(mint_key, from_key, transferred_amount_label()),
         transferred_access,
     )?;
     let to_output = fhe::DurableOutput::new(
         accounts.to_balance_value.clone(),
-        durable_slot(mint_key, to_key, balance_label()),
+        encrypted_value_key(mint_key, to_key, balance_label()),
         balance_access(to_owner),
     )?;
-    let mut builder =
-        zama_fhe::EvalBuilder::new(context_id, zama_fhe::EvalAppAuthority::new(from_key));
+    let mut builder = zama_fhe::EvalBuilder::new(zama_fhe::EvalAppAuthority::new(from_key));
     let amount: zama_fhe::Uint64Handle = match amount_source {
         // fromExternal: the amount is a coprocessor-attested external input, verified in-frame and
         // transient-allowed for this eval (no durable amount handle / ACL account).
@@ -252,10 +223,22 @@ fn execute_transfer_eval<'info>(
         .sub(from_balance, amount, zama_fhe::Output::transient())
         .map_err(invalid_eval_plan)?;
     let new_from = builder
-        .if_then_else(success, debit_candidate, from_balance, from_output.output())
+        .if_then_else(
+            success,
+            debit_candidate,
+            from_balance,
+            zama_fhe::Output::transient(),
+        )
         .map_err(invalid_eval_plan)?;
     let transferred = builder
         .sub(from_balance, new_from, transferred_output.output())
+        .map_err(invalid_eval_plan)?;
+    builder
+        .add(
+            new_from,
+            zama_fhe::Scalar::<zama_fhe::Uint<64>>::u64(0),
+            from_output.output(),
+        )
         .map_err(invalid_eval_plan)?;
     builder
         .add(to_balance, transferred, to_output.output())
@@ -318,12 +301,12 @@ pub(crate) fn invalid_eval_plan(error: zama_fhe::EvalBuildError) -> anchor_lang:
     error!(ConfidentialTokenError::InvalidFheEvalPlan)
 }
 
-pub(crate) fn durable_slot(
+pub(crate) fn encrypted_value_key(
     acl_domain_key: Pubkey,
     app_account: Pubkey,
     encrypted_value_label: [u8; 32],
-) -> zama_fhe::DurableSlot {
-    zama_fhe::DurableSlot::new(
+) -> zama_fhe::EncryptedValueKey {
+    zama_fhe::EncryptedValueKey::new(
         acl_domain_key,
         app_account,
         zama_fhe::DurableLabel::new(encrypted_value_label),
@@ -338,28 +321,9 @@ pub(crate) fn uint64_from_value(
 ) -> Result<zama_fhe::Uint64Handle> {
     zama_fhe::Uint64Handle::durable(
         handle,
-        durable_slot(acl_domain_key, app_account, encrypted_value_label),
+        encrypted_value_key(acl_domain_key, app_account, encrypted_value_label),
     )
     .map_err(invalid_eval_plan)
-}
-
-pub(crate) fn transfer_eval_context(
-    tag: &[u8],
-    mint: Pubkey,
-    from_token_account: Pubkey,
-    to_token_account: Pubkey,
-    amount_handle: [u8; 32],
-) -> Result<zama_fhe::EvalContextId> {
-    let context_id = solana_sha256_hasher::hashv(&[
-        b"confidential-token-transfer-eval-v1",
-        tag,
-        mint.as_ref(),
-        from_token_account.as_ref(),
-        to_token_account.as_ref(),
-        &amount_handle,
-    ])
-    .to_bytes();
-    zama_fhe::EvalContextId::new(context_id).map_err(invalid_eval_plan)
 }
 
 /// Validates a coprocessor-attested transfer/burn amount (EVM `fromExternal` parity). The host

@@ -21,9 +21,10 @@ this note records the operational model in one place.
 
 ## Handle Derivation
 
-- A durable `fhe_eval` output handle **is the base handle** — identical to the transient handle over
-  `(op / plaintext / rand-seed, operands, fhe_type, chain_id, previous_bank_hash, unix_timestamp,
-  context_id, op_index)`. There is no per-output binding: a durable output and an instruction-local
+- A durable `fhe_eval` output handle **is the base handle** — identical to the transient handle.
+  Deterministic ops are content-addressed over `(op / plaintext, operands, fhe_type, chain_id,
+  previous_bank_hash, unix_timestamp)`; rand seeds alone carry uniqueness (`compute_subject` + the
+  frame's durable-write anchor + `op_index`, see DD-043). There is no per-output binding: a durable output and an instruction-local
   output over the same material derive the same handle. This matches EVM `FHEVMExecutor`, which binds
   no per-slot / per-caller / per-encrypted value account value into a computed handle. `value_key` is still the
   `EncryptedValue` PDA seed (`derive_value_key(acl_domain_key, app_account, encrypted_value_label)`) —
@@ -127,7 +128,7 @@ flowchart LR
 
 ```mermaid
 flowchart TD
-    base["base_handle = H(op / plaintext / rand-seed,<br/>operands, fhe_type, chain_id,<br/>previous_bank_hash, unix_timestamp,<br/>context_id, op_index)"]
+    base["base_handle = H(op / plaintext / rand-seed,<br/>operands, fhe_type, chain_id,<br/>previous_bank_hash, unix_timestamp)<br/>(rand seed alone adds subject +<br/>durable-write anchor + op_index, DD-043)"]
     base -->|"durable output"| dh["durable handle = base_handle"]
     base -->|"transient output"| th["transient handle = base_handle"]
 ```
@@ -172,7 +173,7 @@ sequenceDiagram
 
 ```mermaid
 flowchart TD
-    prog["zama-host fhe_eval"] -->|"emit_cpi! (single batch CPI, ≤16 records;<br/>DD-038; no emit! log fallback)"| ev["op-event (self-CPI inner ix):<br/>carries the block-entropy output handle"]
+    prog["zama-host fhe_eval"] -->|"emit_cpi! (single batch CPI, ≤MAX_FHE_EVAL_OPS records;<br/>DD-038; no emit! log fallback)"| ev["op-event (self-CPI inner ix):<br/>carries the block-entropy output handle"]
     prog -->|"instruction data (args)"| ix["fhe_eval durable-output / make_public args"]
     ev --> proofsvc["solana-proof-service (Yellowstone + Postgres):<br/>resolves born-public handle from op-event,<br/>reconstructs MMR, cross-checks vs confirmed peaks"]
     ix --> listener["host-listener indexer:<br/>Yellowstone gRPC reconstruction-only<br/>(SlotHashes+Clock sysvar streams → block entropy;<br/>never reads events)"]

@@ -648,9 +648,9 @@ useful ergonomic idea — symbolic previous results inside one instruction — i
 `FheEvalOperand::AllowedLocal` in the host ABI and by the app-facing `zama-fhe::EvalBuilder`. The SDK
 builder hides raw producer indices and `remaining_accounts` indices from app code, returns typed
 `Encrypted<T>` values for intermediate results, derives durable output nonce keys / ACL record PDAs
-from `DurableSlot`, stores ACL subjects behind `AccessPolicy`, and returns an opaque `EvalPlan`.
+from `EncryptedValueKey`, accepts ACL subjects directly, and returns an opaque `EvalPlan`.
 The `cpi` feature can resolve that plan through a pubkey-keyed account resolver, so app code does
-not hand-maintain ordered host accounts. Output authority, role-aware ACLs, overflow permissions,
+not hand-maintain ordered host accounts. Output authority, validated subject lists, overflow permissions,
 material commitments, and public-decrypt policy remain enforced by the current host ABI.
 
 `fhe_eval` also owns its replay transport boundary. Frames with at most eight replay events use
@@ -704,8 +704,8 @@ The token transfer path now uses one host `fhe_eval` frame instead of the older 
 sequence. The eval emits `ge` and debit-candidate `sub` as instruction-local transient handles,
 consumes them in a ternary `if_then_else`, persists the sender's new balance plus the transferred
 amount, and then credits the recipient in the same frame using a per-output recipient authority
-witness. The helper crate exposes typed durable handles, scalar helpers, `DurableSlot`,
-`AccessPolicy`, `EvalBuilder`, and plan-driven CPI resolution, so app code assembles this shape
+witness. The helper crate exposes typed durable handles, scalar helpers, `EncryptedValueKey`,
+`EvalBuilder`, and plan-driven CPI resolution, so app code assembles this shape
 without hand-maintaining raw producer indices, raw account indices, signer flags, writable flags,
 nonce keys, ACL record addresses, or repeated output type bytes for common operations. A successful
 direct transfer therefore binds exactly three durable ACL records:
@@ -859,8 +859,12 @@ not 5 — DD-019) while keeping per-output signer-witness authority (DD-017).
 
 Open for debate:
 
-`MAX_FHE_EVAL_OPS = 16` step cap, and the replay-event transport split (CPI ≤ 8 events vs log) — see
-DD-024.
+The step cap `MAX_FHE_EVAL_OPS` is derived from measured instruction-data and compute-unit budgets
+on the interned wire format (fhevm-internal#1853 W8; see the constant's doc in
+`programs/zama-host/src/constants.rs`). The old per-operation replay-event transport split is
+superseded by the single born-public lifecycle batch — see DD-038. (An earlier revision cited
+DD-024 here, which is the coprocessor-side ciphertext-material decision and was never about the
+event transport.)
 
 ## DD-024: Eager Ciphertext-Material Preparation (coprocessor side)
 
@@ -1483,8 +1487,11 @@ zero-based step index, the host-owned `EncryptedValue` account, and the host-der
 a frame with no produced public output emits no lifecycle event.
 
 This narrow batch exists because block-entropy output handles are absent from instruction arguments.
-At the maximum `MAX_FHE_EVAL_OPS` frame, 16 records serialize to one 1,077-byte CPI instruction,
-avoiding the old one-CPI-per-step heap growth. The event is unconditional when optional
+At the maximum `MAX_FHE_EVAL_OPS` frame (32), the records serialize to one 2,133-byte CPI
+instruction — far below the 10,240-byte CPI instruction-data cap — avoiding the old
+one-CPI-per-step heap growth. (Execution, not the batch, bounds the all-born-public frame shape:
+the fixed 32KB Anchor bump heap fits 20 durable creates per frame, measured and pinned by
+`mollusk_fhe_eval_born_public_heap_boundary`.) The event is unconditional when optional
 `emit-events` features are disabled. Consumers must still validate the host program, its canonical
 event-authority PDA, transaction success, record ordering, and one-to-one agreement with durable
 `make_public` outputs; the event grants no authority by itself.
@@ -1868,3 +1875,46 @@ between dispatch and settle in either direction — the deadline-cancel path sta
 token/host CPI passes deny-list records and HCU accounts (`deny_subject_record`,
 `hcu_block_meter`, `hcu_trusted_app_record`) as hardcoded `None` — the program assumes
 `grant_deny_list_enabled = false` and no binding HCU cap, which is how the PoC host fixtures run.
+
+## DD-043: Two Derivation Regimes — Content-Addressed Deterministic Handles, Durable-Write-Anchored Rand Seeds (`context_id` deleted)
+
+Decision (fhevm-internal#1853 W3+W4). Handle derivation is unified on keccak (the recorded
+2026-07-06 team position: EVM-side handle math is keccak, and both are same-price syscalls) and
+split into exactly two regimes, mirroring `FHEVMExecutor`:
+
+1. **Deterministic ops** (binary, ternary, unary, sum, is-in, mul-div, trivial-encrypt) are
+   content-addressed: `H(domain, op, operand handles, fhe_type, program_id, chain_id,
+   previous_bank_hash, unix_timestamp)`. No `context_id`, no `compute_subject`, no `op_index` —
+   an identical computation derives the identical handle, which is the same value by construction
+   (EVM's exact behavior; a second party can only reproduce a result whose inputs it was
+   independently authorized on, and the DAG is public in instruction data regardless).
+2. **Rand / rand-bounded seeds** are compulsorily fresh: `H(domain, compute_subject, the frame's
+   durable-write anchor, op_index, program_id, chain_id, previous_bank_hash, unix_timestamp)`.
+   The durable-write anchor is every durable output's live `(account key, create/update tag,
+   current_handle, leaf_count)` state in wire order. `leaf_count` is read by the host, not declared
+   by the caller, and advances whenever an outgoing handle is sealed. Therefore an account that
+   cycles back to an earlier content-addressed handle still produces a new seed. The host emits the
+   resolved random seeds through a signed event-CPI batch so the listener does not need caller
+   hints or historical account reads. A frame containing a rand step must therefore
+   declare at least one durable output (preflight `FheEvalRandRequiresDurableOutput`); the
+   excluded all-transient class is provably useless — no ACL record, no decrypt path, no
+   `make_public`, so its randomness is unobservable by everyone including the author.
+
+`context_id` is deleted from `FheEvalArgs` (−32 B per frame), `EvalContextId` from the SDK, and
+`transfer_eval_context` from the confidential token. Its two jobs are covered better: handle
+domain separation was never needed for deterministic ops (content addressing), and rand freshness
+was only caller-supplied *advice* (two frames sharing a `context_id` in one slot derived identical
+rand seeds), where the anchor is *enforced*.
+
+Load-bearing invariants (must survive refactors):
+- Every declared durable output is always written, and duplicate durable-output accounts within a
+  frame are rejected (`EvalAccountTable::claim_durable_output`) — these make the anchor a consumed
+  ticket.
+- Sequential writes to one account advance `leaf_count`, even if the current handle and subjects
+  later return to earlier values; a reverted frame does not advance it or emit a usable seed.
+- No seed-steering: the preimage is fully determined by the caller's own signed frame + slot
+  context; front-running the pinned handle makes the frame fail loudly, never compute on an
+  attacker-chosen seed.
+- **Standing invariant**: no close/expiry/reopen path exists for `EncryptedValue` (the lifecycle
+  is deliberately sealed). If one is ever added (#1705, #1710), close-then-recreate can reset the
+  live version anchor, and this argument must be re-derived.

@@ -6,7 +6,6 @@
 
 use anchor_lang::prelude::*;
 use solana_keccak_hasher::hashv as keccak_hashv;
-use solana_sha256_hasher::hashv;
 use solana_sysvar::get_sysvar;
 
 use crate::constants::{COMPUTATION_DOMAIN_SEPARATOR, COMPUTED_HANDLE_MARKER};
@@ -52,31 +51,6 @@ pub struct InitializeHostConfigArgs {
     pub decryption_contract: [u8; 20],
     /// Whether persistent grants must include a deny-list witness.
     pub grant_deny_list_enabled: bool,
-}
-
-/// Pubkey stored inline as an allowed subject.
-#[derive(AnchorSerialize, AnchorDeserialize, Clone, Copy, Debug, PartialEq, Eq)]
-pub struct AclSubjectEntry {
-    /// Subject identity. For app users this is usually the owner pubkey; for
-    /// app programs this can be a program-controlled compute signer PDA.
-    pub pubkey: Pubkey,
-}
-
-impl AclSubjectEntry {
-    /// Builds an owner/user subject.
-    pub fn user(pubkey: Pubkey) -> Self {
-        Self { pubkey }
-    }
-
-    /// Builds a compute subject.
-    pub fn compute(pubkey: Pubkey) -> Self {
-        Self { pubkey }
-    }
-
-    /// Builds an allowed subject.
-    pub fn use_only(pubkey: Pubkey) -> Self {
-        Self { pubkey }
-    }
 }
 
 /// Binary FHE operators currently modeled by the PoC.
@@ -157,13 +131,33 @@ impl FheUnaryOpCode {
 /// Arguments for composed instruction-local FHE evaluation.
 #[derive(AnchorSerialize, AnchorDeserialize, Clone, Debug, PartialEq, Eq)]
 pub struct FheEvalArgs {
-    /// Caller-chosen domain separator for the instruction-local handles in this eval.
-    ///
-    /// Callers should use a fresh value for each logical eval session.
-    pub context_id: [u8; 32],
+    /// Declared `remaining_accounts` length, asserted equal to the actual list. Carried in
+    /// instruction data so stateless indexers can validate account references without the
+    /// transaction envelope (DD-033 self-description).
+    pub account_count: u8,
+    /// Interned 32-byte constant pool: operand handles, scalar values, ACL domain keys, app
+    /// account keys, encrypted value labels, and output subjects. Steps reference entries by
+    /// `u8` index, so a value repeated across steps is paid for once (the compiled-message /
+    /// constant-pool encoding; fhevm-internal#1853 W7).
+    pub pool: Vec<[u8; 32]>,
     /// Ordered step list. Each `AllowedLocal` operand may only reference an output
     /// produced by an earlier index in this vector.
     pub steps: Vec<FheEvalStep>,
+}
+
+impl FheEvalArgs {
+    /// Resolves an interned pool entry; an out-of-range index fails the frame.
+    pub fn pool_bytes(&self, index: u8) -> anchor_lang::Result<[u8; 32]> {
+        self.pool
+            .get(index as usize)
+            .copied()
+            .ok_or_else(|| error!(ZamaHostError::FheEvalPoolIndexOutOfBounds))
+    }
+
+    /// Resolves an interned pool entry as a public key.
+    pub fn pool_key(&self, index: u8) -> anchor_lang::Result<Pubkey> {
+        Ok(Pubkey::new_from_array(self.pool_bytes(index)?))
+    }
 }
 
 /// One step inside a composed FHE eval.
@@ -296,19 +290,22 @@ pub enum FheEvalOperand {
     /// Input allowed through durable ACL state: a canonical `EncryptedValue`
     /// account in `remaining_accounts` whose current handle matches.
     AllowedDurable {
-        /// Handle expected as the encrypted value's current handle.
-        handle: [u8; 32],
+        /// Pool index of the handle expected as the encrypted value's current handle.
+        handle_index: u8,
         /// Index into `remaining_accounts` for the `EncryptedValue` account.
-        encrypted_value_index: u16,
+        encrypted_value_index: u8,
     },
     /// Instruction-local value produced by an earlier operation in this `fhe_eval`; allowed only
     /// inside the current evaluation scope and never stored.
     AllowedLocal {
         /// Producer operation index.
-        producer_index: u16,
+        producer_index: u8,
     },
-    /// Plaintext scalar bytes. Scalar operands are only valid on the RHS.
-    Scalar([u8; 32]),
+    /// Plaintext scalar bytes (pool index). Scalar operands are only valid on the RHS.
+    Scalar {
+        /// Pool index of the scalar value.
+        value_index: u8,
+    },
     /// External encrypted input verified in-frame by re-running the coprocessor attestation.
     /// The "allow" is instruction-local (no ACL record, no session, no PDA): the input is usable
     /// only where it is consumed in the same `fhe_eval`. Valid as an encrypted operand, not a scalar.
@@ -332,24 +329,24 @@ pub enum FheEvalOutput {
     /// is created when absent, or superseded when it exists.
     AllowedDurable {
         /// Index into `remaining_accounts` for the output `EncryptedValue` PDA.
-        output_encrypted_value_index: u16,
+        output_encrypted_value_index: u8,
         /// Optional index into `remaining_accounts` for the app account authority signer.
         ///
         /// `None` uses the fixed `app_account_authority` account in the eval
         /// context. `Some(index)` requires that remaining account to be a signer
-        /// and to match `output_app_account`.
-        output_app_account_authority_index: Option<u16>,
-        /// ACL domain key for the output encrypted value account.
-        output_acl_domain_key: Pubkey,
-        /// App account authorized to bind the output encrypted value account.
-        output_app_account: Pubkey,
-        /// Encrypted value label for the output encrypted value account.
-        output_encrypted_value_label: [u8; 32],
-        /// Subjects on the output encrypted value account. On create these are the initial
-        /// subjects; on supersede they become the new audience, which may rotate
+        /// and to match the output app account.
+        output_app_account_authority_index: Option<u8>,
+        /// Pool index of the ACL domain key for the output encrypted value account.
+        output_acl_domain_key_index: u8,
+        /// Pool index of the app account authorized to bind the output encrypted value account.
+        output_app_account_index: u8,
+        /// Pool index of the encrypted value label for the output encrypted value account.
+        output_encrypted_value_label_index: u8,
+        /// Pool indexes of the subjects on the output encrypted value account. On create these
+        /// are the initial subjects; on supersede they become the new audience, which may rotate
         /// away from the stored set (the outgoing audience is sealed into
         /// historical leaves first; added subjects pass the grant deny-list).
-        output_subjects: Vec<AclSubjectEntry>,
+        output_subject_indexes: Vec<u8>,
         /// Superseded handle: `None` on create, `Some(current_handle)` on update.
         /// Carried in instruction data so indexers can reconstruct the appended
         /// MMR leaves without reading the account; validated against the account.
@@ -823,58 +820,6 @@ pub fn user_decryption_delegation_address(
     )
 }
 
-/// Derives an instruction-local eval handle using the current slot context.
-///
-/// This helper uses [`SOLANA_POC_CHAIN_ID`]. CPI callers that have a
-/// [`HostConfig`] should prefer [`computed_eval_handle_for_current_slot_with_chain_id`].
-pub fn computed_eval_handle_for_current_slot(
-    op: FheBinaryOpCode,
-    lhs: [u8; 32],
-    rhs: [u8; 32],
-    scalar: bool,
-    fhe_type: u8,
-    context_id: [u8; 32],
-    op_index: u16,
-) -> Result<[u8; 32]> {
-    computed_eval_handle_for_current_slot_with_chain_id(
-        op,
-        lhs,
-        rhs,
-        scalar,
-        fhe_type,
-        SOLANA_POC_CHAIN_ID,
-        context_id,
-        op_index,
-    )
-}
-
-/// Derives an instruction-local eval handle using the current slot context and chain id.
-pub fn computed_eval_handle_for_current_slot_with_chain_id(
-    op: FheBinaryOpCode,
-    lhs: [u8; 32],
-    rhs: [u8; 32],
-    scalar: bool,
-    fhe_type: u8,
-    chain_id: u64,
-    context_id: [u8; 32],
-    op_index: u16,
-) -> Result<[u8; 32]> {
-    let clock = Clock::get()?;
-    let previous_bank_hash = previous_bank_hash(clock.slot)?;
-    Ok(computed_eval_handle(
-        op,
-        lhs,
-        rhs,
-        scalar,
-        fhe_type,
-        chain_id,
-        previous_bank_hash,
-        clock.unix_timestamp,
-        context_id,
-        op_index,
-    ))
-}
-
 fn finish_computed_handle(result: &mut [u8; 32], chain_id_bytes: &[u8; 8], fhe_type: u8) {
     result[21..32].fill(0);
     result[21] = COMPUTED_HANDLE_MARKER;
@@ -883,7 +828,9 @@ fn finish_computed_handle(result: &mut [u8; 32], chain_id_bytes: &[u8; 8], fhe_t
     result[31] = HANDLE_VERSION;
 }
 
-/// Derives an instruction-local eval operation handle from explicit slot entropy.
+/// Derives a content-addressed binary eval handle (EVM `FHEVMExecutor` shape):
+/// no salt beyond slot entropy, so an identical computation derives the
+/// identical handle — the same value, by construction.
 pub fn computed_eval_handle(
     op: FheBinaryOpCode,
     lhs: [u8; 32],
@@ -893,18 +840,13 @@ pub fn computed_eval_handle(
     chain_id: u64,
     previous_bank_hash: [u8; 32],
     unix_timestamp: i64,
-    context_id: [u8; 32],
-    op_index: u16,
 ) -> [u8; 32] {
     let op_byte = [op.as_u8()];
     let scalar_byte = [u8::from(scalar)];
     let chain_id_bytes = chain_id.to_be_bytes();
-    let op_index_bytes = op_index.to_be_bytes();
     let timestamp_bytes = unix_timestamp.to_be_bytes();
     let mut result = keccak_hashv(&[
         b"FHE_eval",
-        &context_id,
-        &op_index_bytes,
         &op_byte,
         &lhs,
         &rhs,
@@ -920,8 +862,7 @@ pub fn computed_eval_handle(
     result
 }
 
-/// Derives an instruction-local ternary eval operation handle from explicit slot entropy.
-#[allow(clippy::too_many_arguments)]
+/// Derives a content-addressed ternary eval handle (see [`computed_eval_handle`]).
 pub fn computed_eval_ternary_handle(
     op: FheTernaryOpCode,
     control: [u8; 32],
@@ -931,17 +872,12 @@ pub fn computed_eval_ternary_handle(
     chain_id: u64,
     previous_bank_hash: [u8; 32],
     unix_timestamp: i64,
-    context_id: [u8; 32],
-    op_index: u16,
 ) -> [u8; 32] {
     let op_byte = [op.as_u8()];
     let chain_id_bytes = chain_id.to_be_bytes();
-    let op_index_bytes = op_index.to_be_bytes();
     let timestamp_bytes = unix_timestamp.to_be_bytes();
-    let mut result = hashv(&[
+    let mut result = keccak_hashv(&[
         b"FHE_eval_ternary",
-        &context_id,
-        &op_index_bytes,
         &op_byte,
         &control,
         &if_true,
@@ -957,24 +893,19 @@ pub fn computed_eval_ternary_handle(
     result
 }
 
-/// Derives an instruction-local trivial-encrypt eval handle from explicit slot entropy.
+/// Derives a content-addressed trivial-encrypt eval handle (see [`computed_eval_handle`]).
 pub fn computed_eval_trivial_handle(
     plaintext: [u8; 32],
     fhe_type: u8,
     chain_id: u64,
     previous_bank_hash: [u8; 32],
     unix_timestamp: i64,
-    context_id: [u8; 32],
-    op_index: u16,
 ) -> [u8; 32] {
     let chain_id_bytes = chain_id.to_be_bytes();
-    let op_index_bytes = op_index.to_be_bytes();
     let timestamp_bytes = unix_timestamp.to_be_bytes();
     let fhe_type_bytes = [fhe_type];
-    let mut result = hashv(&[
+    let mut result = keccak_hashv(&[
         b"FHE_eval_trivial",
-        &context_id,
-        &op_index_bytes,
         &plaintext,
         &fhe_type_bytes,
         crate::ID.as_ref(),
@@ -988,20 +919,29 @@ pub fn computed_eval_trivial_handle(
     result
 }
 
-/// Derives the seed emitted for an instruction-local eval random handle.
+/// Derives the compulsorily fresh seed for an instruction-local eval random handle.
+///
+/// Freshness is anchored, never caller-advised: `durable_anchor_bytes` is the frame's
+/// durable-write anchor — every durable output's live account identity and version
+/// concatenated in wire order. The host-observed MMR leaf count prevents a handle cycle
+/// from replaying an earlier anchor.
+/// `compute_subject` separates concurrent frames of different signers in the same slot;
+/// `op_index` separates rand steps within one frame; slot entropy separates slots.
 pub fn computed_eval_rand_seed(
+    compute_subject: Pubkey,
+    durable_anchor_bytes: &[u8],
+    op_index: u16,
     chain_id: u64,
     previous_bank_hash: [u8; 32],
     unix_timestamp: i64,
-    context_id: [u8; 32],
-    op_index: u16,
 ) -> [u8; 16] {
     let chain_id_bytes = chain_id.to_be_bytes();
     let op_index_bytes = op_index.to_be_bytes();
     let timestamp_bytes = unix_timestamp.to_be_bytes();
-    let hash = hashv(&[
+    let hash = keccak_hashv(&[
         b"FHE_eval_seed",
-        &context_id,
+        compute_subject.as_ref(),
+        durable_anchor_bytes,
         &op_index_bytes,
         crate::ID.as_ref(),
         &chain_id_bytes,
@@ -1014,27 +954,18 @@ pub fn computed_eval_rand_seed(
     seed
 }
 
-/// Derives an instruction-local eval sum handle from explicit slot entropy.
-#[allow(clippy::too_many_arguments)]
+/// Derives a content-addressed sum eval handle (see [`computed_eval_handle`]).
 pub fn computed_eval_sum_handle(
     operand_handles: &[[u8; 32]],
     fhe_type: u8,
     chain_id: u64,
     previous_bank_hash: [u8; 32],
     unix_timestamp: i64,
-    context_id: [u8; 32],
-    op_index: u16,
 ) -> [u8; 32] {
     let chain_id_bytes = chain_id.to_be_bytes();
-    let op_index_bytes = op_index.to_be_bytes();
     let timestamp_bytes = unix_timestamp.to_be_bytes();
     let fhe_type_bytes = [fhe_type];
-    let mut preimage: Vec<&[u8]> = vec![
-        b"FHE_eval_sum",
-        &context_id,
-        &op_index_bytes,
-        &fhe_type_bytes,
-    ];
+    let mut preimage: Vec<&[u8]> = vec![b"FHE_eval_sum", &fhe_type_bytes];
     for h in operand_handles {
         preimage.push(h.as_ref());
     }
@@ -1042,13 +973,12 @@ pub fn computed_eval_sum_handle(
     preimage.push(&chain_id_bytes);
     preimage.push(&previous_bank_hash);
     preimage.push(&timestamp_bytes);
-    let mut result = hashv(preimage.as_slice()).to_bytes();
+    let mut result = keccak_hashv(preimage.as_slice()).to_bytes();
     finish_computed_handle(&mut result, &chain_id_bytes, fhe_type);
     result
 }
 
-/// Derives an instruction-local eval is-in handle from explicit slot entropy.
-#[allow(clippy::too_many_arguments)]
+/// Derives a content-addressed is-in eval handle (see [`computed_eval_handle`]).
 pub fn computed_eval_is_in_handle(
     value_handle: [u8; 32],
     set_handles: &[[u8; 32]],
@@ -1056,20 +986,11 @@ pub fn computed_eval_is_in_handle(
     chain_id: u64,
     previous_bank_hash: [u8; 32],
     unix_timestamp: i64,
-    context_id: [u8; 32],
-    op_index: u16,
 ) -> [u8; 32] {
     let chain_id_bytes = chain_id.to_be_bytes();
-    let op_index_bytes = op_index.to_be_bytes();
     let timestamp_bytes = unix_timestamp.to_be_bytes();
     let fhe_type_bytes = [fhe_type];
-    let mut preimage: Vec<&[u8]> = vec![
-        b"FHE_eval_is_in",
-        &context_id,
-        &op_index_bytes,
-        &fhe_type_bytes,
-        &value_handle,
-    ];
+    let mut preimage: Vec<&[u8]> = vec![b"FHE_eval_is_in", &fhe_type_bytes, &value_handle];
     for h in set_handles {
         preimage.push(h.as_ref());
     }
@@ -1077,13 +998,12 @@ pub fn computed_eval_is_in_handle(
     preimage.push(&chain_id_bytes);
     preimage.push(&previous_bank_hash);
     preimage.push(&timestamp_bytes);
-    let mut result = hashv(preimage.as_slice()).to_bytes();
+    let mut result = keccak_hashv(preimage.as_slice()).to_bytes();
     finish_computed_handle(&mut result, &chain_id_bytes, 0 /* ebool */);
     result
 }
 
-/// Derives an instruction-local eval mul-div handle from explicit slot entropy.
-#[allow(clippy::too_many_arguments)]
+/// Derives a content-addressed mul-div eval handle (see [`computed_eval_handle`]).
 pub fn computed_eval_mul_div_handle(
     factor1: [u8; 32],
     factor2: [u8; 32],
@@ -1093,17 +1013,12 @@ pub fn computed_eval_mul_div_handle(
     chain_id: u64,
     previous_bank_hash: [u8; 32],
     unix_timestamp: i64,
-    context_id: [u8; 32],
-    op_index: u16,
 ) -> [u8; 32] {
     let chain_id_bytes = chain_id.to_be_bytes();
-    let op_index_bytes = op_index.to_be_bytes();
     let timestamp_bytes = unix_timestamp.to_be_bytes();
     let scalar_byte = [u8::from(scalar)];
-    let mut result = hashv(&[
+    let mut result = keccak_hashv(&[
         b"FHE_eval_mul_div",
-        &context_id,
-        &op_index_bytes,
         &factor1,
         &factor2,
         &divisor,
@@ -1132,11 +1047,7 @@ pub fn computed_rand_handle(seed: [u8; 16], fhe_type: u8, chain_id: u64) -> [u8;
     ])
     .to_bytes();
 
-    result[21..32].fill(0);
-    result[21] = COMPUTED_HANDLE_MARKER;
-    result[22..30].copy_from_slice(&chain_id_bytes);
-    result[30] = fhe_type;
-    result[31] = HANDLE_VERSION;
+    finish_computed_handle(&mut result, &chain_id_bytes, fhe_type);
     result
 }
 
@@ -1160,16 +1071,12 @@ pub fn computed_rand_bounded_handle(
     ])
     .to_bytes();
 
-    result[21..32].fill(0);
-    result[21] = COMPUTED_HANDLE_MARKER;
-    result[22..30].copy_from_slice(&chain_id_bytes);
-    result[30] = fhe_type;
-    result[31] = HANDLE_VERSION;
+    finish_computed_handle(&mut result, &chain_id_bytes, fhe_type);
     result
 }
 
-/// Derives an unbound unary-op handle from explicit slot entropy.
-pub fn computed_unary_handle(
+/// Derives a content-addressed unary eval handle (see [`computed_eval_handle`]).
+pub fn computed_eval_unary_handle(
     op: FheUnaryOpCode,
     operand: [u8; 32],
     fhe_type: u8,
@@ -1181,8 +1088,8 @@ pub fn computed_unary_handle(
     let type_byte = [fhe_type];
     let chain_id_bytes = chain_id.to_be_bytes();
     let timestamp_bytes = unix_timestamp.to_be_bytes();
-    // Cast binds the target type into the prehandle (EVM `FHEVMExecutor.cast`); Neg/Not derive it from the operand.
-    let mut parts: Vec<&[u8]> = vec![COMPUTATION_DOMAIN_SEPARATOR, &op_byte, &operand];
+    // Cast binds its target type into the prehandle (EVM `FHEVMExecutor.cast`); Neg/Not take it from the operand.
+    let mut parts: Vec<&[u8]> = vec![b"FHE_eval_unary", &op_byte, &operand];
     if matches!(op, FheUnaryOpCode::Cast) {
         parts.push(&type_byte);
     }
@@ -1197,72 +1104,6 @@ pub fn computed_unary_handle(
     result
 }
 
-/// Derives an instruction-local eval unary handle from explicit slot entropy.
-pub fn computed_eval_unary_handle(
-    op: FheUnaryOpCode,
-    operand: [u8; 32],
-    fhe_type: u8,
-    chain_id: u64,
-    previous_bank_hash: [u8; 32],
-    unix_timestamp: i64,
-    context_id: [u8; 32],
-    op_index: u16,
-) -> [u8; 32] {
-    let op_byte = [op.as_u8()];
-    let type_byte = [fhe_type];
-    let chain_id_bytes = chain_id.to_be_bytes();
-    let op_index_bytes = op_index.to_be_bytes();
-    let timestamp_bytes = unix_timestamp.to_be_bytes();
-    // Cast binds its target type into the prehandle (see `computed_unary_handle`); Neg/Not take it from the operand.
-    let mut parts: Vec<&[u8]> = vec![
-        b"FHE_eval_unary",
-        &context_id,
-        &op_index_bytes,
-        &op_byte,
-        &operand,
-    ];
-    if matches!(op, FheUnaryOpCode::Cast) {
-        parts.push(&type_byte);
-    }
-    parts.extend_from_slice(&[
-        crate::ID.as_ref(),
-        &chain_id_bytes,
-        &previous_bank_hash,
-        &timestamp_bytes,
-    ]);
-    let mut result = hashv(&parts).to_bytes();
-    finish_computed_handle(&mut result, &chain_id_bytes, fhe_type);
-    result
-}
-
-/// Derives the seed emitted for an instruction-local eval bounded-random handle.
-pub fn computed_eval_rand_bounded_seed(
-    upper_bound: [u8; 32],
-    chain_id: u64,
-    previous_bank_hash: [u8; 32],
-    unix_timestamp: i64,
-    context_id: [u8; 32],
-    op_index: u16,
-) -> [u8; 16] {
-    let chain_id_bytes = chain_id.to_be_bytes();
-    let op_index_bytes = op_index.to_be_bytes();
-    let timestamp_bytes = unix_timestamp.to_be_bytes();
-    let hash = hashv(&[
-        b"FHE_eval_bounded_seed",
-        &context_id,
-        &op_index_bytes,
-        &upper_bound,
-        crate::ID.as_ref(),
-        &chain_id_bytes,
-        &previous_bank_hash,
-        &timestamp_bytes,
-    ])
-    .to_bytes();
-    let mut seed = [0; 16];
-    seed.copy_from_slice(&hash[..16]);
-    seed
-}
-
 /// Returns the latest prior bank hash.
 ///
 /// Handle derivation must fail closed when the runtime cannot provide the
@@ -1273,42 +1114,30 @@ pub fn previous_bank_hash(current_slot: u64) -> Result<[u8; 32]> {
     if current_slot == 0 {
         return Err(error!(ZamaHostError::PreviousBankHashUnavailable));
     }
-    // `PodSlotHashes::fetch()` (solana-sysvar 3.1.1) allocates an align-1 `Vec<u8>` and then
-    // rejects it with an 8-byte alignment check; the SBF bump allocator does not 8-align
-    // align-1 allocations, so fetch() fails on a real validator (LiteSVM/mollusk mock the
-    // `sol_get_sysvar` syscall and never exercise this allocation). Read the sysvar into an
-    // 8-aligned buffer ourselves via the same syscall, then scan the entries — which are laid
-    // out as `[u64 count][ (u64 slot, [u8;32] hash) ...]` — for the most recent slot below
-    // `current_slot`.
+    // Read the `SlotHashes` sysvar via the `sol_get_sysvar` syscall instead of
+    // `PodSlotHashes::fetch()` (broken as of solana-sysvar <= 4.2.0: it allocates an align-1
+    // buffer, then errors unless the bump allocator happened to leave it 8-aligned). The
+    // syscall copies raw bytes — `[u64 count][ (u64 slot, [u8;32] hash) ...]` — with no
+    // alignment requirement, and entries are parsed with `from_le_bytes`.
     //
-    // `SlotHashes` is ordered newest-first and every entry is a prior slot (slot < the
-    // executing `current_slot`), so the answer is in the first entries. Read only a small
-    // window rather than the full 20_488-byte sysvar: on the SBF bump allocator (default 32KB
-    // heap, never freed) a 20KB buffer per call means a second FHE op in the same instruction
-    // — e.g. wrap_usdc's balance-add then total-supply-add — runs out of heap. A small window
-    // keeps the read well within the default heap.
+    // Entries are ordered newest-first, so the answer is in the first few. Read only a small
+    // window: the full 20_488-byte sysvar would burn 2/3 of the default 32KB bump heap
+    // (never freed) per call.
     const ENTRY_LEN: usize = 40; // u64 slot + 32-byte hash
     const MAX_SCAN_ENTRIES: usize = 16;
 
-    // Read the 8-byte entry count first (8-aligned stack buffer).
-    let mut count_word = [0u64; 1];
-    let count_bytes =
-        unsafe { core::slice::from_raw_parts_mut(count_word.as_mut_ptr() as *mut u8, 8) };
-    get_sysvar(count_bytes, &solana_sysvar::slot_hashes::id(), 0, 8)
+    let mut count_bytes = [0u8; 8];
+    get_sysvar(&mut count_bytes, &solana_sysvar::slot_hashes::id(), 0, 8)
         .map_err(|_| error!(ZamaHostError::PreviousBankHashUnavailable))?;
-    let count = count_word[0] as usize;
+    let count = u64::from_le_bytes(count_bytes) as usize;
     if count == 0 {
         return Err(error!(ZamaHostError::PreviousBankHashUnavailable));
     }
 
     let scan = count.min(MAX_SCAN_ENTRIES);
-    // 8-aligned heap buffer for the scanned entries; ENTRY_LEN (40) is a multiple of 8.
-    let mut aligned = vec![0u64; (scan * ENTRY_LEN) / 8];
-    let data: &mut [u8] = unsafe {
-        core::slice::from_raw_parts_mut(aligned.as_mut_ptr() as *mut u8, scan * ENTRY_LEN)
-    };
+    let mut data = vec![0u8; scan * ENTRY_LEN];
     get_sysvar(
-        data,
+        &mut data,
         &solana_sysvar::slot_hashes::id(),
         8,
         (scan * ENTRY_LEN) as u64,
