@@ -18,7 +18,7 @@ vi.mock('@fhevm/sdk/solana', () => ({
   defineFhevmSolanaChain: vi.fn((chain) => chain),
   setFhevmRuntimeConfig: vi.fn(),
 }));
-vi.mock('@fhevm/sdk/solana/vault', () => ({
+vi.mock('./vault/index.js', () => ({
   confidentialBalanceValueAccount: mocks.confidentialBalanceValueAccount,
   decryptPosition: mocks.decryptPosition,
   getEncryptedValueState: mocks.getEncryptedValueState,

@@ -8,7 +8,7 @@ import {
   getCurrentBatch,
   getExtendLookupTableInstruction,
   openBatchForBatcher,
-} from '@fhevm/sdk/solana/vault';
+} from './vault/index.js';
 
 import type { VaultDirection } from './batchTypes';
 import type { DemoConfig } from './demoConfig';

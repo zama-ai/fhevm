@@ -15,7 +15,7 @@ import {
   getBatcher,
   getJoinRecord,
   settleBatch,
-} from '@fhevm/sdk/solana/vault';
+} from './vault/index.js';
 
 import type { BatchLifecycle, BatchTarget, VaultDirection } from './batchTypes';
 import type { DemoConfig } from './demoConfig';

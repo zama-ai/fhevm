@@ -1,10 +1,13 @@
-// One-shot Node worker for the real Solana SDK transfer seam. The proof object stays in memory
+// One-shot bun worker for the real Solana SDK transfer seam. The proof object stays in memory
 // from build -> submit -> transfer; this process is never retried after submission ambiguity.
+// confidentialTransfer is dapp code (fhevm-internal#1859 §6d) and comes from the demo dapp's
+// vault module; the protocol client surface still comes from the published SDK.
 import fs from 'node:fs/promises';
 
 import { defineFhevmSolanaChain } from '@fhevm/sdk/chains';
 import { createFhevmEncryptClient, setFhevmRuntimeConfig } from '@fhevm/sdk/solana';
 import type { Bytes32Hex } from '@fhevm/sdk/types';
+import { confidentialTransfer } from '@demo-dapp/vault/index.js';
 import {
   address,
   createKeyPairSignerFromBytes,
@@ -62,7 +65,7 @@ const [hostConfig] = await getProgramDerivedAddress({
 });
 const rpc = createSolanaRpc(required('TRANSFER_RPC_URL'));
 const rpcSubscriptions = createSolanaRpcSubscriptions(required('TRANSFER_WS_URL'));
-const signature = await client.confidentialTransfer({
+const signature = await confidentialTransfer({ solanaChain: chain, aclProgramAddress }, {
   rpc,
   rpcSubscriptions,
   inputProof,

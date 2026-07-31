@@ -1,5 +1,5 @@
 import { createSolanaRpc, type TransactionSigner } from "@solana/kit";
-import { buildHarvestInstruction, getVaultMetrics } from "@fhevm/sdk/solana/vault";
+import { buildHarvestInstruction, getVaultMetrics } from "./vault/index.js";
 
 import type { DemoConfig } from "./demoConfig";
 import { sendTransaction } from "./sendTransaction";

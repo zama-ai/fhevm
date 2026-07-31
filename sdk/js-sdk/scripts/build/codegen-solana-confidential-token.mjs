@@ -26,6 +26,12 @@ function idlUrl(name) {
   return fileURLToPath(new URL(`../../../../coprocessor/fhevm-engine/host-listener/idl/${name}`, import.meta.url));
 }
 
+// The demo-only programs' IDLs live with the dapp that consumes their generated clients
+// (synced by solana/scripts/sync-zama-host-idl.sh).
+function demoIdlUrl(name) {
+  return fileURLToPath(new URL(`../../../../solana/demo-dapp/idl/${name}`, import.meta.url));
+}
+
 function snapshot(path) {
   if (!existsSync(path)) return new Map();
   path = realpathSync(path);
@@ -40,14 +46,16 @@ function snapshot(path) {
   );
 }
 
-// One Codama render per target program. The confidential-token client keeps the two app-facing
-// instructions (confidentialTransfer, discloseSecp); the zama-host client keeps only the stateless
-// public-decrypt verifier (verifyPublicDecrypt) so callers can build the raw host instruction
-// without an on-chain token wrapper. Everything else is pruned so the vendored surface stays tiny.
+// One Codama render per target program. Only the zama-host client (the stateless public-decrypt
+// verifier, verifyPublicDecrypt) stays in the SDK; the confidential-token, confidential-batcher,
+// and demo-vault clients are dapp code and render into the demo dapp
+// (solana/demo-dapp/src/vault — fhevm-internal#1859 §6d). The codegen stays here because the
+// committed IDLs, the codama toolchain, and the --check build gate all live with the SDK.
+// Everything else is pruned so the vendored surface stays tiny.
 const targets = [
   {
     idlPath: idlUrl('confidential_token.json'),
-    generatedPath: `${sdkRoot}/src/solana/internal/generated/confidentialToken`,
+    generatedPath: `${sdkRoot}/../../solana/demo-dapp/src/vault/internal/generated/confidentialToken`,
     keep: {
       // The two app-facing instructions plus the four the confidential-vault demo builds directly:
       // confidentialTransferFromValue and wrapUsdc (the on-chain from-value/wrap surface, deferred
@@ -105,14 +113,13 @@ const targets = [
     },
   },
   {
-    // The confidential-batcher client for the confidential-vault demo lives under the isolated
-    // vault module (src/solana/vault), not the shared solana/internal root, so the demo surface
-    // never leaks into the SDK's normal Solana paths. Keeps every batch-lifecycle instruction, the
+    // The confidential-batcher client for the confidential-vault demo dapp
+    // (solana/demo-dapp/src/vault). Keeps every batch-lifecycle instruction, the
     // defined types their args reference, and the Batch/Batcher/JoinRecord account decoders the
     // vault module's on-chain reads use (fhevm-internal#1760 reads.ts — generated decoders, never
     // hand-rolled borsh).
-    idlPath: idlUrl('confidential_batcher.json'),
-    generatedPath: `${sdkRoot}/src/solana/vault/internal/generated/confidentialBatcher`,
+    idlPath: demoIdlUrl('confidential_batcher.json'),
+    generatedPath: `${sdkRoot}/../../solana/demo-dapp/src/vault/internal/generated/confidentialBatcher`,
     keep: {
       instructions: new Set(['initializeBatcher', 'openBatch', 'join', 'quit', 'dispatch', 'settle', 'claim']),
       // Anchor inlines the CoprocessorInputAttestation (join) and MmrInclusionProof (settle) structs
@@ -138,12 +145,12 @@ const targets = [
     },
   },
   {
-    // The demo-vault client, also isolated under the vault module. The confidential-vault demo
+    // The demo-vault client, also rendered into the demo dapp. The confidential-vault demo
     // seeder creates the public share-mint vault and the dApp's demo operator drives harvest to
     // simulate yield. Harvest's underlying-mint and vault-token-account relations resolve from the
     // Vault account, so its generated decoder is kept with the two instructions.
-    idlPath: idlUrl('demo_vault.json'),
-    generatedPath: `${sdkRoot}/src/solana/vault/internal/generated/demoVault`,
+    idlPath: demoIdlUrl('demo_vault.json'),
+    generatedPath: `${sdkRoot}/../../solana/demo-dapp/src/vault/internal/generated/demoVault`,
     keep: {
       instructions: new Set(['initializeVault', 'harvest']),
       definedTypes: new Set(),

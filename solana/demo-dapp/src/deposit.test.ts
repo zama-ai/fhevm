@@ -1,5 +1,5 @@
 import { address } from "@solana/kit";
-import { deriveBatchAddresses } from "@fhevm/sdk/solana/vault";
+import { deriveBatchAddresses } from "./vault/index.js";
 import { beforeEach, describe, expect, test, vi } from "vitest";
 
 import type { DemoConfig } from "./demoConfig";

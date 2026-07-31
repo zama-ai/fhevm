@@ -14,7 +14,7 @@ import {
   getCurrentBatch,
   getJoinRecord,
   joinBatch,
-} from '@fhevm/sdk/solana/vault';
+} from './vault/index.js';
 
 import type { BatchPosition } from './batchTypes';
 import type { DemoSession } from './demoSession';

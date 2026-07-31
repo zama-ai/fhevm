@@ -146,7 +146,7 @@ check "demo script change -> proof service" \
 
 # The SDK-plus-scenario PR shape that used to pay for a full workspace rebuild.
 check "sdk + scenario change -> proof service" \
-  $'sdk/js-sdk/src/solana/vault/index.ts\ntest-suite/fhevm/e2e/scenarios/deposit-arc.scenario.test.ts' \
+  $'sdk/js-sdk/src/solana/index.ts\ntest-suite/fhevm/e2e/scenarios/deposit-arc.scenario.test.ts' \
   "true" \
   "solana-proof-service" \
   "$PINS_GATEWAY $PINS_HOST $PINS_COPRO $PINS_RELAYER $PINS_CONNECTOR"

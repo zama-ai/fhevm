@@ -287,12 +287,8 @@ describe("demo lifecycle collision policy", () => {
     const build = script.indexOf("npm run clean && npm run build:esm && npm run build:types");
     const refresh = script.indexOf("bun install --force --frozen-lockfile");
     const materialize = script.indexOf('solana/scripts/e2e/materialize-test-sdk.sh');
-    const canary = script.indexOf(
-      'node --input-type=module -e "await import(\'@fhevm/sdk/solana\'); await import(\'@fhevm/sdk/solana/vault\')"',
-    );
-    const bunCanary = script.indexOf(
-      'bun -e "await import(\'@fhevm/sdk/solana\'); await import(\'@fhevm/sdk/solana/vault\')"',
-    );
+    const canary = script.indexOf('node --input-type=module -e "await import(\'@fhevm/sdk/solana\')"');
+    const bunCanary = script.indexOf('bun -e "await import(\'@fhevm/sdk/solana\')"');
     expect(install).toBeGreaterThan(-1);
     expect(build).toBeGreaterThan(-1);
     expect(build).toBeGreaterThan(install);
@@ -341,7 +337,9 @@ describe("demo lifecycle collision policy", () => {
     expect(adversarial.match(/\bnode solana-input\.ts/g)).toHaveLength(1);
     expect(workflow.match(/node --input-type=module/g)).toHaveLength(2);
     expect(workflow).toContain("run: bun run demo reseed --direct");
-    expect(twoHolderTransfer).toContain('run(["node", SDK_WORKER]');
+    // bun, not node: the SDK worker imports the demo dapp's vault module (TS sources resolved
+    // through tsconfig paths), which node's type-stripping cannot resolve.
+    expect(twoHolderTransfer).toContain('run(["bun", SDK_WORKER]');
     expect(demoViteConfig).toContain("preserveSymlinks: true");
     expect(fullVertical).not.toContain("--preserve-symlinks");
     expect(adversarial).not.toContain("--preserve-symlinks");

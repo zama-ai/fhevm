@@ -6,9 +6,9 @@
 // validator with the two demo programs deployed (their keypairs are classifier-gated in this
 // environment — see solana/scripts/demo/demo-keypairs/README). It is exercised end-to-end only by the
 // `solana-e2e` workflow's demo phase (per-PR and manual dispatch), which deploys the programs and runs
-// `demo-up.sh` (which calls this) before the smoke. The SDK provisioning surface is reached through
-// the runtime dynamic-import seam (string module specifier) the rest of test-suite uses, because the
-// SDK's generated `_types` are not built at `tsc` check time (see `src/solana/current-user-decrypt.ts`).
+// `demo-up.sh` (which calls this) before the smoke. The vault provisioning surface is the demo
+// dapp's own module (`solana/demo-dapp/src/vault`, fhevm-internal#1859 §6d), imported statically
+// and fully typed.
 //
 // Seeding sequence (writes nothing until every step has produced a real on-chain address):
 //   0. verify the bring-up's kms-context account exists on-chain — the seeder never creates it, it
@@ -65,6 +65,7 @@ import {
   type SolanaDemoConfig,
   type VaultDemoRoots,
 } from "./config";
+import * as vault from "@demo-dapp/vault/index.js";
 
 // Well-known program ids (the same literals `faucet-server.ts` and the SDK's `derive.ts` use).
 const SPL_TOKEN_PROGRAM_ADDRESS = "TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA" as Address;
@@ -108,63 +109,6 @@ const chunk = <T>(items: readonly T[], size: number): T[][] => {
  */
 const signerMeta = (signer: TransactionSigner, role: AccountRole): AccountMeta =>
   ({ address: signer.address, role, signer }) as unknown as AccountMeta;
-
-// Structural view of the provisioning members the seed uses from `@fhevm/sdk/solana/vault`. The
-// import itself is untyped (runtime dynamic-import seam); this interface restates only what the seed
-// calls, so a signature drift on the SDK side surfaces as a local type error here rather than an
-// opaque runtime failure. Keep it in lockstep with the vault subpath exports.
-type BatchDirectionValue = number;
-type OpenBatchResult = {
-  readonly instructions: readonly Instruction[];
-  readonly lookupTableAddress: Address;
-  readonly lookupTableAddresses: readonly Address[];
-};
-type VaultProvisioning = {
-  buildInitializeVaultInstruction(parameters: {
-    payer: TransactionSigner;
-    vault: TransactionSigner;
-    underlyingMint: Address;
-  }): Promise<Instruction>;
-  buildInitializeMintInstruction(parameters: {
-    authority: TransactionSigner;
-    mint: TransactionSigner;
-    underlyingMint: Address;
-    hostConfig: Address;
-  }): Promise<Instruction>;
-  buildInitializeBatcherInstruction(parameters: {
-    payer: TransactionSigner;
-    batcher: TransactionSigner;
-    joinConfidentialMint: Address;
-    payoutConfidentialMint: Address;
-    vault: Address;
-    minBatchAgeSlots: number | bigint;
-    direction: BatchDirectionValue;
-  }): Instruction;
-  BatchDirection: { readonly Deposit: BatchDirectionValue; readonly Redeem: BatchDirectionValue };
-  openBatchForBatcher(parameters: {
-    roots: VaultDemoRoots;
-    batchIndex: bigint;
-    payer: TransactionSigner;
-    recentSlot: bigint;
-    authorityFundingLamports: number | bigint;
-  }): Promise<OpenBatchResult>;
-  getExtendLookupTableInstruction(parameters: {
-    lookupTable: Address;
-    authority: TransactionSigner;
-    payer: TransactionSigner;
-    addresses: readonly Address[];
-  }): Instruction;
-  DEMO_VAULT_PROGRAM_ADDRESS: Address;
-  CONFIDENTIAL_TOKEN_PROGRAM_ADDRESS: Address;
-  ZAMA_HOST_PROGRAM_ADDRESS: Address;
-  CONFIDENTIAL_BATCHER_PROGRAM_ADDRESS: Address;
-};
-
-/** Loads the vault provisioning surface through the runtime dynamic-import seam (untyped by construction). */
-const loadVaultModule = async (): Promise<VaultProvisioning> => {
-  const vaultModule = "@fhevm/sdk/solana/vault";
-  return (await import(vaultModule)) as unknown as VaultProvisioning;
-};
 
 /** ComputeBudget `SetComputeUnitLimit` (tag 2): raises the per-tx CU ceiling for the FHE-heavy CPIs. */
 const setComputeUnitLimitInstruction = (units: number): Instruction => {
@@ -268,8 +212,6 @@ const main = async (): Promise<void> => {
       { description: `airdrop to ${recipient}`, timeoutMs: 30_000 },
     );
   };
-
-  const vault = await loadVaultModule();
 
   // Actors. The deployer wallet pays for and signs all provisioning; the mint authority is the
   // committed key `demo:faucet` mints mock USDC from; the personas are the demo end-users + operator.

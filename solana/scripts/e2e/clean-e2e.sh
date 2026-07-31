@@ -259,8 +259,8 @@ fi
 "$ROOT/solana/scripts/e2e/materialize-test-sdk.sh"
 [ ! -L "$FHEVM/node_modules/@fhevm/sdk/_esm/solana/index.js" ]
 # Prove both runtimes resolve SDK dependencies from the consumer's frozen graph.
-( cd "$FHEVM" && node --input-type=module -e "await import('@fhevm/sdk/solana'); await import('@fhevm/sdk/solana/vault')" )
-( cd "$FHEVM" && bun -e "await import('@fhevm/sdk/solana'); await import('@fhevm/sdk/solana/vault')" )
+( cd "$FHEVM" && node --input-type=module -e "await import('@fhevm/sdk/solana')" )
+( cd "$FHEVM" && bun -e "await import('@fhevm/sdk/solana')" )
 
 trap cleanup_native_rust_builder_aliases EXIT
 ensure_native_rust_builders

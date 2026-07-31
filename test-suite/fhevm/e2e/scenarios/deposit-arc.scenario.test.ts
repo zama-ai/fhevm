@@ -16,9 +16,10 @@
 //
 // STATUS: live-only, UNVERIFIED here. It requires a running demo stack with the two demo programs
 // deployed, `demo:seed` completed, and the `demo:faucet` running (all classifier-gated / blocked in
-// this environment — see solana/scripts/demo/demo-keypairs/README and demo/seed.ts). The SDK is
-// reached through the runtime dynamic-import seam (string module specifier), so the vault and
-// solana modules are untyped here by construction (same reason as
+// this environment — see solana/scripts/demo/demo-keypairs/README and demo/seed.ts). The vault is
+// the demo dapp's own module (`solana/demo-dapp/src/vault`, fhevm-internal#1859 §6d), imported
+// statically and fully typed. The SDK proper is still reached through the runtime dynamic-import
+// seam (string module specifier), untyped by construction (same reason as
 // `src/solana/current-user-decrypt.ts`): the SDK's generated `_types` are not built at tsc time.
 //
 // Assertion map — full deposit arc (deposit direction: join mint = cUSDC, payout mint = cShares):
@@ -115,125 +116,14 @@ const BATCH_STATUS_SETTLED = 2;
 type SolanaInputProof = unknown;
 type SolanaInputProofSubmission = unknown;
 
-/** The vault surface the scenario drives — provisioning, batch phases, claim + decrypt (untyped: runtime dynamic-import seam). */
-type VaultDepositArcSurface = {
-  buildInitializeTokenAccountInstruction(parameters: {
-    payer: TransactionSigner;
-    owner: Address;
-    mint: Address;
-    hostConfig: Address;
-    initialBalance?: number | bigint;
-  }): Promise<Instruction>;
-  buildWrapUsdcInstruction(parameters: {
-    owner: TransactionSigner;
-    mint: Address;
-    underlyingMint: Address;
-    hostConfig: Address;
-    amount: number | bigint;
-  }): Promise<Instruction>;
-  tokenAccountAddress(mint: Address, owner: Address): Promise<Address>;
-  /** The mint's `fhe-compute` compute-signer PDA — the contract identity the input proof binds to. */
-  computeSignerAddress(mint: Address): Promise<Address>;
-  getBatcher(rpc: unknown, batcher: Address): Promise<{ minBatchAgeSlots: bigint }>;
-  getCurrentBatch(
-    rpc: unknown,
-    roots: VaultDemoRoots,
-  ): Promise<{
-    index: bigint;
-    addresses: { batch: Address; batchAuthority: Address; batchJoinTokenAccount: Address };
-    state: {
-      status: number;
-      openedSlot: bigint;
-      joinCount: bigint;
-      burnedTotalHandle: Uint8Array;
-      totalJoined: bigint;
-      payoutReceived: bigint;
-      payoutRate: bigint;
-    };
-  }>;
-  burnedAmountValueAccount(
-    joinMint: Address,
-    batchJoinTokenAccount: Address,
-  ): Promise<{ encryptedValueAddress: Address }>;
-  claimAmountValueAccount(
-    batch: Address,
-    batchAuthority: Address,
-    user: Address,
-  ): Promise<{ aclValueKey: Uint8Array; encryptedValueAddress: Address }>;
-  /** Throws while the value account does not exist; reads at the RPC default commitment. */
-  getEncryptedValueState(rpc: unknown, encryptedValue: Address): Promise<{ currentHandle: Uint8Array }>;
-  deriveJoinRecordAddress(batch: Address, user: Address): Promise<Address>;
-  /** Typed `(batch, user)` join-record read; throws while the record does not exist. */
-  getJoinRecord(
-    rpc: unknown,
-    joinRecord: Address,
-    config?: { commitment?: "processed" | "confirmed" | "finalized" },
-  ): Promise<{ batch: Address; user: Address; claimed: boolean }>;
-  joinBatch(
-    fhevm: { solanaChain: unknown; aclProgramAddress: `0x${string}` },
-    parameters: {
-      rpc: unknown;
-      rpcSubscriptions: unknown;
-      inputProof: SolanaInputProof;
-      inputProofResult: SolanaInputProofSubmission;
-      inputIndex: number;
-      user: TransactionSigner;
-      payer: TransactionSigner;
-      batcher: Address;
-      batch: Address;
-      joinConfidentialMint: Address;
-      hostConfig: Address;
-      computeUnitLimit?: number;
-    },
-  ): Promise<string>;
-  /** Root-taking builders: every validated PDA (authorities, value accounts, event authorities) derives inside the SDK. */
-  buildDispatchBatchInstruction(parameters: {
-    payer: TransactionSigner;
-    batcher: Address;
-    batch: Address;
-    joinConfidentialMint: Address;
-    hostConfig: Address;
-  }): Promise<Instruction>;
-  buildClaimInstruction(parameters: {
-    payer: TransactionSigner;
-    user: Address;
-    batcher: Address;
-    batch: Address;
-    payoutConfidentialMint: Address;
-    hostConfig: Address;
-  }): Promise<Instruction>;
-  /** The vault alias of the SDK's `userDecrypt` action; the context mirrors the decrypt client's own call shape. */
-  decryptPosition(
-    context: { chain: unknown; runtime: unknown; options: unknown },
-    signer: unknown,
-    parameters: {
-      handles: readonly `0x${string}`[];
-      allowedAclDomainKeys: readonly `0x${string}`[];
-      contextId: Uint8Array;
-      aclValueKey: Uint8Array;
-      options?: { timeout?: number };
-    },
-  ): Promise<readonly { value: bigint | number | boolean | string }[]>;
-  settleBatch(
-    chain: unknown,
-    proofConfig: { proofServiceUrl: string },
-    keeper: TransactionSigner,
-    options: {
-      rpc: unknown;
-      rpcSubscriptions: unknown;
-      runtime: unknown;
-      roots: VaultDemoRoots;
-      contextId: Uint8Array;
-      lookupTableAddress: Address;
-      authorityFundingLamports: bigint;
-      computeUnitLimit?: number;
-    },
-  ): Promise<string>;
-  CONFIDENTIAL_TOKEN_PROGRAM_ADDRESS: Address;
-  CONFIDENTIAL_BATCHER_PROGRAM_ADDRESS: Address;
-};
+import * as vault from "@demo-dapp/vault/index.js";
+// Type-only imports (erased at runtime): the vault module is fully typed, so the untyped values
+// produced by the SDK's dynamic-import seam are cast to the vault's expected brands at the
+// seam/vault boundary below.
+import type { FhevmSolanaChain } from "@sdk-src/core/types/fhevmSolanaChain.js";
+import type { Bytes32Hex } from "@sdk-src/core/types/primitives.js";
 
-/** The SDK solana surface the join + decrypt phases drive (untyped: runtime dynamic-import seam). */
+/** The SDK protocol surface the scenario drives (untyped: runtime dynamic-import seam). */
 type SolanaSdkSurface = {
   setFhevmRuntimeConfig(config: { auth: { type: "ApiKeyHeader"; value: string } }): void;
   defineFhevmSolanaChain(definition: {
@@ -262,11 +152,6 @@ type SolanaSdkSurface = {
     options: unknown;
     ready: Promise<unknown>;
   };
-};
-
-const loadVaultModule = async (): Promise<VaultDepositArcSurface> => {
-  const vaultModule = "@fhevm/sdk/solana/vault";
-  return (await import(vaultModule)) as unknown as VaultDepositArcSurface;
 };
 
 const loadSolanaSdkModule = async (): Promise<SolanaSdkSurface> => {
@@ -394,7 +279,6 @@ describe.skipIf(!runsDemoScenarios)("solana deposit-arc scenario", () => {
         await sendAndConfirm(signedTransaction, { commitment: "confirmed" });
       };
 
-      const vault = await loadVaultModule();
 
       // Step 2: create alice's confidential token accounts — cUSDC (join mint) for the wrap, and
       // cShares (payout mint) for the claim phase: claim.rs requires the user's payout account to
@@ -467,7 +351,7 @@ describe.skipIf(!runsDemoScenarios)("solana deposit-arc scenario", () => {
       const chain = solanaSdk.defineFhevmSolanaChain({
         id: BigInt(config.chainId),
         fhevm: { relayerUrl: env.relayerUrl, acl: { domainKeys: [asBytes32Hex(config.mints.joinConfidential)] } },
-      });
+      }) as FhevmSolanaChain;
       const encryptClient = solanaSdk.createFhevmEncryptClient({ chain, aclProgramAddress: config.aclProgram });
       const { batch, batchAuthority, batchJoinTokenAccount } = batchBeforeJoin.addresses;
       const joinMint = config.mints.joinConfidential;
@@ -501,12 +385,12 @@ describe.skipIf(!runsDemoScenarios)("solana deposit-arc scenario", () => {
         // address dump. Alice pays her own join rent.
         console.log(`deposit-arc join: calling joinBatch on batch ${batchBeforeJoin.index} (${batch})...`);
         await vault.joinBatch(
-          { solanaChain: chain, aclProgramAddress: config.aclProgram },
+          { solanaChain: chain, aclProgramAddress: config.aclProgram as Bytes32Hex },
           {
             rpc,
             rpcSubscriptions,
-            inputProof,
-            inputProofResult,
+            inputProof: inputProof as never,
+            inputProofResult: inputProofResult as never,
             inputIndex: 0,
             user: alice,
             payer: alice,
@@ -640,7 +524,7 @@ describe.skipIf(!runsDemoScenarios)("solana deposit-arc scenario", () => {
         {
           rpc,
           rpcSubscriptions,
-          runtime: publicDecryptClient.runtime,
+          runtime: publicDecryptClient.runtime as never,
           roots,
           contextId: asBytes32BigEndian(config.userDecryptContextId),
           lookupTableAddress: config.batchers.deposit.lookupTable,
@@ -728,14 +612,14 @@ describe.skipIf(!runsDemoScenarios)("solana deposit-arc scenario", () => {
       const decryptClient = solanaSdk.createFhevmDecryptClient({ chain, signer: aliceDecryptSigner });
       await decryptClient.ready;
       const clearValues = await vault.decryptPosition(
-        { chain, runtime: decryptClient.runtime, options: decryptClient.options },
-        aliceDecryptSigner,
+        { chain, runtime: decryptClient.runtime, options: decryptClient.options } as never,
+        aliceDecryptSigner as never,
         {
           handles: [`0x${Buffer.from(claimValueState.currentHandle).toString("hex")}` as `0x${string}`],
           // Batcher value accounts live in the BATCH's ACL domain (their PDA seeds hang off the batch
           // address), so the allowed domain key here is the batch — not the chain default (the
           // join mint's domain, which serves the token-account value accounts).
-          allowedAclDomainKeys: [asBytes32Hex(batch)],
+          allowedAclDomainKeys: [asBytes32Hex(batch) as Bytes32Hex],
           contextId: asBytes32BigEndian(config.userDecryptContextId),
           aclValueKey: claimValueAccount.aclValueKey,
           options: { timeout: DECRYPT_ROUNDTRIP_TIMEOUT_MS },

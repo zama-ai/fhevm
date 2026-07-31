@@ -1,3 +1,5 @@
+import { fileURLToPath } from 'node:url';
+
 import { defineConfig } from 'vite';
 
 import { demoServerPlugin } from './demoServerPlugin';
@@ -6,6 +8,12 @@ export default defineConfig(({ mode }) => ({
   resolve: {
     // Bun links local package files; keep the consumer path so SDK dependencies resolve from this lockfile.
     preserveSymlinks: true,
+    alias: {
+      // The vault module (src/vault) reaches into the built SDK for internals the published
+      // package does not export (fhevm-internal#1859 §6d). Resolving inside node_modules keeps
+      // one module instance with the package's own exports. Mirrored in tsconfig.*.json paths.
+      '@sdk-src': fileURLToPath(new URL('./node_modules/@fhevm/sdk/_esm', import.meta.url)),
+    },
   },
   server: {
     host: '127.0.0.1',
