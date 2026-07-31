@@ -1,6 +1,6 @@
 {
   "claim": {
-    "compute_units": 277389,
+    "compute_units": 277391,
     "unique_accounts": 22,
     "instruction_data_bytes": 8,
     "cpi_instructions": 12,
@@ -32,7 +32,7 @@
     "max_cpi_instruction_data_bytes": 242
   },
   "redeem_claim": {
-    "compute_units": 317890,
+    "compute_units": 317892,
     "unique_accounts": 22,
     "instruction_data_bytes": 8,
     "cpi_instructions": 12,
