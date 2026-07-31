@@ -357,17 +357,20 @@ fn preflight_output(
             preflight.mark_pool(*output_encrypted_value_label_index)?;
             let authority = preflight.mark_output_authority(*output_app_account_authority_index)?;
             preflight.mark_deny_record(authority)?;
-            // A supersede that rotates the audience deny-checks each added subject in the bind
-            // pass; mark their deny records here so finish() accounts for them. The added set is
-            // `output_subjects \ previous_subjects` from instruction data alone — a lying
-            // previous_subjects is rejected later with PreviousStateMismatch, so trusting it for
-            // account-marking is safe. `None` previous is a create (no rotation, nothing added).
+            // Every newly granted subject is deny-checked in the bind pass; mark
+            // their deny records here so finish() accounts for them. On a supersede
+            // the new set is `output_subjects \ previous_subjects` from instruction
+            // data alone — a lying previous_subjects is rejected later with
+            // PreviousStateMismatch, so trusting it for account-marking is safe. On
+            // a create (`None` previous) every output subject is a new grant.
             for subject_index in output_subject_indexes {
                 let subject = Pubkey::new_from_array(preflight.mark_pool(*subject_index)?);
-                if let Some(previous_subjects) = previous_subjects {
-                    if !previous_subjects.contains(&subject) {
-                        preflight.mark_deny_record(subject)?;
-                    }
+                let is_new_grant = match previous_subjects {
+                    Some(previous_subjects) => !previous_subjects.contains(&subject),
+                    None => true,
+                };
+                if is_new_grant {
+                    preflight.mark_deny_record(subject)?;
                 }
             }
             preflight.durable_outputs_written.push(output_key);

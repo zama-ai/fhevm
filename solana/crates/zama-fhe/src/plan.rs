@@ -105,17 +105,17 @@ impl EvalPlan {
             .map(|account| account.pubkey)
     }
 
-    /// Subjects this plan grants through a supersede that were not already on the
-    /// stored encrypted value account — `output_subjects \ previous_subjects` for each durable
-    /// output that rotates its audience. The host deny-list-checks each of these
-    /// exactly like `allow_subjects`, so an app forwarding deny-record witnesses
-    /// must cover them alongside the output authorities.
-    pub fn rotation_added_subjects(&self) -> Vec<Pubkey> {
+    /// Subjects this plan newly grants through durable outputs: every output
+    /// subject on a create, and `output_subjects \ previous_subjects` on a
+    /// supersede that rotates its audience. The host deny-list-checks each of
+    /// these exactly like `allow_subjects`, so an app forwarding deny-record
+    /// witnesses must cover them alongside the output authorities.
+    pub fn newly_granted_subjects(&self) -> Vec<Pubkey> {
         let mut added = Vec::new();
         for step in &self.args.steps {
             let FheEvalOutput::AllowedDurable {
                 output_subject_indexes,
-                previous_subjects: Some(previous_subjects),
+                previous_subjects,
                 ..
             } = fhe_eval_step_output(step)
             else {
@@ -126,7 +126,10 @@ impl EvalPlan {
                 let Ok(subject) = self.args.pool_key(*index) else {
                     continue;
                 };
-                if !previous_subjects.contains(&subject) && !added.contains(&subject) {
+                let already_stored = previous_subjects
+                    .as_ref()
+                    .is_some_and(|previous| previous.contains(&subject));
+                if !already_stored && !added.contains(&subject) {
                     added.push(subject);
                 }
             }

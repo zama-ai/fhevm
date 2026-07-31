@@ -456,6 +456,29 @@ fn allow_subjects_ix_with_deny(
     )
 }
 
+fn allow_subjects_ix_with_subject_deny_records(
+    payer: Pubkey,
+    authority: Pubkey,
+    encrypted_value: Pubkey,
+    host_config: Pubkey,
+    subjects: Vec<Pubkey>,
+    authority_deny_record: Option<Pubkey>,
+    subject_deny_records: Vec<Pubkey>,
+) -> Instruction {
+    let mut instruction = allow_subjects_ix_with_deny(
+        payer,
+        authority,
+        encrypted_value,
+        host_config,
+        subjects,
+        authority_deny_record,
+    );
+    instruction
+        .accounts
+        .extend(subject_deny_records.into_iter().map(readonly));
+    instruction
+}
+
 fn remove_subject_ix(
     authority: Pubkey,
     encrypted_value: Pubkey,
@@ -1535,6 +1558,126 @@ fn mollusk_denied_caller_cannot_mutate_acl_update_or_eval_output() {
         (caller, funded_system_account()),
         (host_config, host_config_account),
         (deny_record, deny_record_account),
+        (event_authority(host::id()), Account::default()),
+        (output_address, empty_system_account()),
+    ];
+    mollusk().process_and_validate_instruction(
+        &eval_ix,
+        &accounts,
+        &[custom_error(host::errors::ZamaHostError::AclSubjectDenied)],
+    );
+}
+
+#[test]
+fn mollusk_denied_subject_cannot_enter_via_allow_subjects_or_eval_create() {
+    // The granting authority is clean; the subject being granted is denied. Both
+    // grant entry points (allow_subjects and fhe_eval durable create) must
+    // reject the grant, not just a denied authority.
+    let authority = Pubkey::new_unique();
+    let denied_subject = Pubkey::new_unique();
+    let (host_config, host_config_account) = deny_enabled_host_config_account(authority);
+    let (authority_record, authority_record_account) = (
+        host::deny_subject_address(authority).0,
+        empty_system_account(),
+    );
+    let (subject_record, subject_record_account) =
+        deny_subject_record_account(denied_subject, true);
+
+    let (allow_address, allow_value) = new_value_account(
+        Pubkey::new_unique(),
+        authority,
+        label("deny-added-subject"),
+        handle_for_chain(52, 5),
+        &[authority],
+    );
+    let allow_ix = allow_subjects_ix_with_subject_deny_records(
+        authority,
+        authority,
+        allow_address,
+        host_config,
+        vec![denied_subject],
+        Some(authority_record),
+        vec![subject_record],
+    );
+    let accounts = vec![
+        (system_program::ID, system_program_account()),
+        (authority, funded_system_account()),
+        (allow_address, encrypted_value_account(&allow_value)),
+        (host_config, host_config_account.clone()),
+        (authority_record, authority_record_account.clone()),
+        (subject_record, subject_record_account.clone()),
+    ];
+    mollusk().process_and_validate_instruction(
+        &allow_ix,
+        &accounts,
+        &[custom_error(host::errors::ZamaHostError::AclSubjectDenied)],
+    );
+
+    // Without the denied subject's record in the transaction the grant fails
+    // closed on the missing witness rather than skipping the check.
+    let allow_ix_no_witness = allow_subjects_ix_with_deny(
+        authority,
+        authority,
+        allow_address,
+        host_config,
+        vec![denied_subject],
+        Some(authority_record),
+    );
+    let accounts_no_witness = vec![
+        (system_program::ID, system_program_account()),
+        (authority, funded_system_account()),
+        (allow_address, encrypted_value_account(&allow_value)),
+        (host_config, host_config_account.clone()),
+        (authority_record, authority_record_account.clone()),
+    ];
+    mollusk().process_and_validate_instruction(
+        &allow_ix_no_witness,
+        &accounts_no_witness,
+        &[custom_error(
+            host::errors::ZamaHostError::AclDenyRecordMissing,
+        )],
+    );
+
+    let output_label = label("deny-create-subject");
+    let output_value_key =
+        zama_solana_acl::derive_value_key(authority.to_bytes(), authority.to_bytes(), output_label);
+    let (output_address, _bump) = host::encrypted_value_address(output_value_key);
+    let mut pool = FramePool::default();
+    let steps = vec![FheEvalStep::TrivialEncrypt {
+        plaintext: [2; 32],
+        fhe_type: 5,
+        output: FheEvalOutput::AllowedDurable {
+            output_encrypted_value_index: 0,
+            output_app_account_authority_index: None,
+            output_acl_domain_key_index: pool.intern_key(authority),
+            output_app_account_index: pool.intern_key(authority),
+            output_encrypted_value_label_index: pool.intern(output_label),
+            output_subject_indexes: pool.intern_subjects([authority, denied_subject]),
+            previous_handle: None,
+            previous_subjects: None,
+            make_public: false,
+        },
+    }];
+    let args = FheEvalArgs {
+        account_count: 0,
+        pool: pool.0,
+        steps,
+    };
+    let eval_ix = fhe_eval_ix_with_deny_records(
+        authority,
+        authority,
+        authority,
+        host_config,
+        args,
+        vec![writable(output_address)],
+        vec![authority_record, subject_record],
+    );
+    let accounts = vec![
+        (system_program::ID, system_program_account()),
+        (authority, funded_system_account()),
+        (host_config, host_config_account),
+        (authority_record, authority_record_account),
+        (subject_record, subject_record_account),
         (event_authority(host::id()), Account::default()),
         (output_address, empty_system_account()),
     ];

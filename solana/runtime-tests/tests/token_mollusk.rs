@@ -953,7 +953,15 @@ fn deny_enabled_transfer_accounts(
     };
     accounts.insert(from_deny, from_account);
     accounts.insert(to_deny, to_account);
-    (accounts, vec![from_deny, to_deny])
+    // The transferred-amount create grants [owner, bob_owner, compute_signer];
+    // each newly created subject needs a deny witness too (fhevm-internal#1859 §3-S1).
+    let mut records = vec![from_deny, to_deny];
+    for subject in [fixture.owner, fixture.bob_owner, fixture.compute_signer] {
+        let record = host::deny_subject_address(subject).0;
+        accounts.insert(record, system_account(0));
+        records.push(record);
+    }
+    (accounts, records)
 }
 
 // ---------------------------------------------------------------------------
@@ -1571,13 +1579,25 @@ fn mollusk_confidential_transfer_deny_list_enabled_rotation_to_new_recipient_suc
     let bob_deny = host::deny_subject_address(fixture.bob_token).0;
     let charlie_token_deny = host::deny_subject_address(charlie_token).0;
     let charlie_owner_deny = host::deny_subject_address(charlie_owner).0;
-    for record in [alice_deny, bob_deny, charlie_token_deny, charlie_owner_deny] {
+    let owner_deny = host::deny_subject_address(fixture.owner).0;
+    let bob_owner_deny = host::deny_subject_address(fixture.bob_owner).0;
+    let compute_deny = host::deny_subject_address(fixture.compute_signer).0;
+    for record in [
+        alice_deny,
+        bob_deny,
+        charlie_token_deny,
+        charlie_owner_deny,
+        owner_deny,
+        bob_owner_deny,
+        compute_deny,
+    ] {
         accounts.insert(record, system_account(0));
     }
     let context = mollusk().with_context(accounts);
     let receipt_address = fixture.transferred_amount_value_address(fixture.alice_token);
 
-    // First transfer (create): only the two token-account authorities are deny-checked.
+    // First transfer (create): the two token-account authorities plus every
+    // created subject of the transferred-amount value are deny-checked.
     context.process_and_validate_instruction(
         &confidential_transfer_ix_with_remaining(
             &fixture,
@@ -1590,7 +1610,13 @@ fn mollusk_confidential_transfer_deny_list_enabled_rotation_to_new_recipient_suc
                 fixture.owner,
                 fixture.compute_signer,
             ),
-            vec![alice_deny, bob_deny],
+            vec![
+                alice_deny,
+                bob_deny,
+                owner_deny,
+                bob_owner_deny,
+                compute_deny,
+            ],
         ),
         &[Check::success()],
     );
@@ -1644,9 +1670,19 @@ fn mollusk_confidential_transfer_deny_list_rejects_denied_rotation_added_subject
     let bob_deny = host::deny_subject_address(fixture.bob_token).0;
     let charlie_token_deny = host::deny_subject_address(charlie_token).0;
     let charlie_owner_deny = host::deny_subject_address(charlie_owner).0;
-    accounts.insert(alice_deny, system_account(0));
-    accounts.insert(bob_deny, system_account(0));
-    accounts.insert(charlie_token_deny, system_account(0));
+    let owner_deny = host::deny_subject_address(fixture.owner).0;
+    let bob_owner_deny = host::deny_subject_address(fixture.bob_owner).0;
+    let compute_deny = host::deny_subject_address(fixture.compute_signer).0;
+    for record in [
+        alice_deny,
+        bob_deny,
+        charlie_token_deny,
+        owner_deny,
+        bob_owner_deny,
+        compute_deny,
+    ] {
+        accounts.insert(record, system_account(0));
+    }
     // charlie_owner is denied.
     accounts.insert(
         charlie_owner_deny,
@@ -1667,7 +1703,13 @@ fn mollusk_confidential_transfer_deny_list_rejects_denied_rotation_added_subject
                 fixture.owner,
                 fixture.compute_signer,
             ),
-            vec![alice_deny, bob_deny],
+            vec![
+                alice_deny,
+                bob_deny,
+                owner_deny,
+                bob_owner_deny,
+                compute_deny,
+            ],
         ),
         &[Check::success()],
     );

@@ -511,7 +511,7 @@ fn bind_eval_output<'info>(
         // instruction data alone. `output_subjects` may rotate the audience.
         let mut value = read_canonical_encrypted_value(output_info)?;
         validate_durable_output_previous_state(&value, previous_handle, previous_subjects)?;
-        check_rotation_grants_not_denied(
+        check_new_grants_not_denied(
             &ctx.accounts.host_config,
             table,
             &value.subjects,
@@ -544,6 +544,7 @@ fn bind_eval_output<'info>(
             previous_handle.is_none() && previous_subjects.is_none(),
             ZamaHostError::PreviousStateMismatch
         );
+        check_new_grants_not_denied(&ctx.accounts.host_config, table, &[], output_subjects)?;
         let mut value = EncryptedValue {
             acl_domain_key: output_acl_domain_key,
             app_account: output_app_account,
@@ -579,7 +580,7 @@ fn bind_eval_output<'info>(
 /// audience (`output_subjects`) is NOT constrained to the stored set: a supersede
 /// may explicitly rotate it — the outgoing audience is sealed into historical
 /// leaves before the new set replaces it, and every added subject passes the
-/// grant deny-list via [`check_rotation_grants_not_denied`].
+/// grant deny-list via [`check_new_grants_not_denied`].
 pub(super) fn validate_durable_output_previous_state(
     value: &EncryptedValue,
     previous_handle: &Option<[u8; 32]>,
@@ -596,17 +597,12 @@ pub(super) fn validate_durable_output_previous_state(
     Ok(())
 }
 
-/// Deny-list gate for a supersede that rotates the audience: every subject present
-/// in `output_subjects` but absent from the stored set is a new grant and must
-/// clear the grant deny-list. Respects `grant_deny_list_enabled`; the deny record
-/// for each added subject is located by canonical derived address through the table.
-///
-/// Known boundary (inherited from the pre-cleanup admission path): this is the only
-/// per-subject deny check. The create path writes its initial `output_subjects`
-/// without one, and `allow_subjects` deny-checks the granting authority rather than
-/// each added subject — so a denied subject can still enter via create, and then
-/// persists across supersedes because subjects already stored are exempt here.
-fn check_rotation_grants_not_denied(
+/// Deny-list gate for durable-output subject grants: every subject present in
+/// `output_subjects` but absent from `stored_subjects` is a new grant and must
+/// clear the grant deny-list (pass `&[]` on the create path, where every output
+/// subject is new). Respects `grant_deny_list_enabled`; the deny record for each
+/// added subject is located by canonical derived address through the table.
+fn check_new_grants_not_denied(
     host_config: &HostConfig,
     table: &EvalAccountTable<'_, '_>,
     stored_subjects: &[Pubkey],
@@ -803,7 +799,7 @@ mod tests {
 
         // A stored subject that stays put needs no record; only `added` is checked, and it is denied.
         assert_eq!(
-            check_rotation_grants_not_denied(&config, &table, &stored, &rotated).unwrap_err(),
+            check_new_grants_not_denied(&config, &table, &stored, &rotated).unwrap_err(),
             error!(ZamaHostError::AclSubjectDenied)
         );
     }

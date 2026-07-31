@@ -250,6 +250,26 @@ pub(super) fn assert_encrypted_value_subject_allowed(
     Ok(())
 }
 
+/// Deny-list gate for one newly granted subject outside `fhe_eval`: locates the
+/// subject's canonical deny record among `remaining_accounts` and applies the
+/// same check the durable-output path runs through its account table. With the
+/// deny list disabled no witness is required.
+pub(super) fn check_added_subject_not_denied(
+    config: &HostConfig,
+    subject: Pubkey,
+    remaining_accounts: &[AccountInfo],
+) -> Result<()> {
+    if !config.grant_deny_list_enabled {
+        return Ok(());
+    }
+    let (expected, _) = deny_subject_address(subject);
+    let info = remaining_accounts
+        .iter()
+        .find(|account| account.key() == expected)
+        .ok_or_else(|| error!(ZamaHostError::AclDenyRecordMissing))?;
+    check_grant_not_denied_info(config, subject, Some(info))
+}
+
 pub(super) fn check_grant_not_denied(
     config: &HostConfig,
     subject: Pubkey,

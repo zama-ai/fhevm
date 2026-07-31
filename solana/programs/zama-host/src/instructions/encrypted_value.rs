@@ -51,6 +51,11 @@ pub fn allow_subjects(
         if value.has_subject(*subject) {
             continue;
         }
+        check_added_subject_not_denied(
+            &ctx.accounts.host_config,
+            *subject,
+            ctx.remaining_accounts,
+        )?;
         require!(
             value.subjects.len() < zama_solana_acl::MAX_ENCRYPTED_VALUE_SUBJECTS,
             ZamaHostError::EncryptedValueSubjectCapacityExceeded

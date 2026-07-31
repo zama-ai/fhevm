@@ -505,7 +505,7 @@ pub(crate) fn eval<'info>(request: Eval<'_, 'info>) -> Result<()> {
         request.context.deny_subject_records,
         app_authority.key(),
         &extra_output_authorities,
-        &request.plan.rotation_added_subjects(),
+        &request.plan.newly_granted_subjects(),
     )?;
 
     zama_fhe::invoke_eval_signed_resolved(
@@ -533,7 +533,7 @@ fn validate_deny_subject_records_for_grant_subjects<'info>(
     supplied_records: &[AccountInfo<'info>],
     app_authority: Pubkey,
     extra_output_authorities: &[OutputAuthority<'info>],
-    rotation_added_subjects: &[Pubkey],
+    newly_granted_subjects: &[Pubkey],
 ) -> Result<()> {
     if !deny_list_enabled {
         require!(
@@ -551,14 +551,14 @@ fn validate_deny_subject_records_for_grant_subjects<'info>(
             ConfidentialTokenError::UnexpectedRemainingAccounts
         );
         // A supplied deny record must witness either an output authority or a subject a
-        // supersede grants for the first time (rotation-added) — the host deny-list-checks
-        // both, so both may reach it through remaining accounts.
+        // durable output grants for the first time (created or rotation-added) — the host
+        // deny-list-checks both, so both may reach it through remaining accounts.
         require!(
             is_deny_record_for_authority(supplied.key(), app_authority)
                 || extra_output_authorities
                     .iter()
                     .any(|authority| is_deny_record_for_authority(supplied.key(), authority.key()))
-                || rotation_added_subjects
+                || newly_granted_subjects
                     .iter()
                     .any(|subject| is_deny_record_for_authority(supplied.key(), *subject)),
             ConfidentialTokenError::UnexpectedRemainingAccounts
