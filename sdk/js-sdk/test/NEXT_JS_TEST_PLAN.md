@@ -327,7 +327,7 @@ test/
   and RUNS the TKMS wasm via `generateTransportKeyPair`, and the
   `@fhevm/sdk/viem|ethers/cleartext` mock runtime (encrypt + transport keypair),
   each as its own cell, both libs. Green. ✅
-- **`browser-next/dod.sh`**: data-driven **26-cell** matrix (encrypt, coexist,
+- **`browser-next/run-tests.sh`**: data-driven **26-cell** matrix (encrypt, coexist,
   ssr-node/edge/mixed, wasm-load ×4 modes, module kms/cleartext) over
   viem/ethers × st/mt±coop. Extensive CLI: `--index`, `--spec`, `--lib`,
   `--mt/--st`, `--coop/--no-coop`, `--wasm-load`, `--module`, `--list`, plus
@@ -376,7 +376,7 @@ is pinned to `browser-next`).
 
 - **Chunk 3 — other platforms.** Reuse Chunk 0's platform-agnostic core
   (`test/infra/`); per platform only the bundler/loader/exec wiring differs. Each
-  platform mirrors `browser-next/` (its own app + `dod.sh`), shares `test/infra/`,
+  platform mirrors `browser-next/` (its own app + `run-tests.sh`), shares `test/infra/`,
   and `test/browser-smoke` stays untouched. Recommended order:
   - **`vite`** first — highest-signal contrast to Turbopack (different bundler +
     WASM-asset story: `?url`/`?init`, a `__raw_wasm` middleware), exactly where
