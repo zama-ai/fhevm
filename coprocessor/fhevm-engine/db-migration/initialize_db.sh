@@ -190,6 +190,18 @@ repair_bridge_tables_migration_checksum() {
     \$\$;" || { echo "Failed to repair bridge_tables migration checksum."; exit 1; }
 }
 
+# A green deploy must not migrate `public`: blue is still live on the old schema
+# and none of these migrations can be reverted. The cutover applies the delta.
+# `resolve_gcs_mode` reports false for a fresh install or a matching version.
+is_green_deploy() {
+  local mode
+  if ! mode=$(resolve_gcs_mode); then
+    echo "Failed to resolve gcs mode." >&2
+    exit 1
+  fi
+  [[ "$mode" == "true" ]]
+}
+
 echo "Running migrations..."
 if [ "${RUN_MIGRATIONS_UNTIL_REMOVE_TENANTS:-}" = "true" ]; then
   # Partial migrations — the host_chains table doesn't exist yet on this path,
@@ -200,6 +212,9 @@ elif [ "${RUN_BLOCK_SCOPE_WAVE1_PREREQUISITES:-}" = "true" ]; then
   # live DB before `helm upgrade` applies the rest of the wave1 migrations.
   # Does not run the remaining migrations and does not seed.
   run_block_scope_materialization_wave1_prerequisites
+elif is_green_deploy; then
+  # host_chains is shared, so a new chain would start blue's listeners.
+  echo "Green (GCS) deploy: public migrations and host_chains seeding are deferred to cutover."
 else
   repair_bridge_tables_migration_checksum
   sqlx migrate run --source "$MIGRATION_DIR" || { echo "Failed to run migrations."; exit 1; }

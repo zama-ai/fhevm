@@ -3,10 +3,7 @@ use std::time::Duration;
 use alloy::providers::{ProviderBuilder, WsConnect};
 use alloy::{primitives::Address, transports::http::reqwest::Url};
 use clap::Parser;
-use fhevm_engine_common::database::{
-    apply_gcs_mode_search_path, connect_pool_with_options_and_connect_options,
-    resolve_database_url_from_option,
-};
+use fhevm_engine_common::database::{connect_gcs_pool, resolve_database_url_from_option};
 use fhevm_engine_common::{
     drift_revert::{
         self, RevertRunnerConfig, WatcherTimeouts, DRIFT_REVERT_DB_DOWN_LIMIT,
@@ -269,18 +266,19 @@ async fn main() -> anyhow::Result<()> {
         "Starting HTTP health check server"
     );
 
-    // In --gcs-mode the pool is pinned to `search_path = gcs,public` so
-    // unqualified writes (`verify_proofs`, `gw_listener_last_block`) land in
-    // the `gcs` schema; shared/control-plane tables (drift_revert_signal,
-    // host_chains, upgrade_state, ciphertext_digest, …) still resolve from
-    // `public` via fallback.
-    let (db_pool, _pool_refresh_handle) = connect_pool_with_options_and_connect_options(
+    // In --gcs-mode the pool is pinned to `search_path = gcs,public`, so unqualified
+    // writes land in the `gcs` schema and shared tables fall back to `public`. The
+    // schema must exist first, or the pool is routed to `public` for good.
+    let Some((db_pool, _pool_refresh_handle)) = connect_gcs_pool(
         &config.database_url,
         PgPoolOptions::new().max_connections(config.database_pool_size),
         Some(&cancel_token),
-        apply_gcs_mode_search_path(config.gcs_mode),
+        config.gcs_mode,
     )
-    .await?;
+    .await?
+    else {
+        return Ok(());
+    };
 
     // gw-listener is the revert runner — it runs the revert SQL if pending.
     drift_revert::init(

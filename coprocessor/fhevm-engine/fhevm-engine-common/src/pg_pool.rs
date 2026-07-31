@@ -1,6 +1,4 @@
-use crate::database::{
-    apply_gcs_mode_search_path, connect_pool_with_options_and_connect_options, PoolRefreshHandle,
-};
+use crate::database::{connect_gcs_pool, PoolRefreshHandle};
 use sqlx::postgres::PgPoolOptions;
 use sqlx::Executor;
 use sqlx::{Pool, Postgres};
@@ -69,10 +67,9 @@ impl PostgresPoolManager {
         .await
     }
 
-    /// Same as [`Self::connect_pool`] but, when `gcs_mode = true`, pins
-    /// every connection in the pool to `search_path = gcs,public` so
-    /// unqualified writes resolve to the `gcs` schema (with fallback to
-    /// `public` for shared read-only tables).
+    /// Same as [`Self::connect_pool`] but, when `gcs_mode = true`, waits for the
+    /// GCS schema and pins every connection to `search_path = gcs,public`.
+    /// Pinning before the schema exists would route this pool to `public`.
     #[allow(clippy::too_many_arguments)]
     pub async fn connect_pool_with_gcs_mode(
         cancel_token: CancellationToken,
@@ -91,7 +88,7 @@ impl PostgresPoolManager {
 
             let statement_timeout = std::cmp::max(acquire_timeout, Duration::from_secs(10));
 
-            match connect_pool_with_options_and_connect_options(
+            match connect_gcs_pool(
                 &database_url,
                 PgPoolOptions::new()
                 .max_connections(max_connections)
@@ -123,13 +120,14 @@ impl PostgresPoolManager {
                     })
                 }),
                 Some(&cancel_token),
-                apply_gcs_mode_search_path(gcs_mode),
+                gcs_mode,
             )
             .await
             {
-                Ok((p, refresh_handle)) => {
+                Ok(Some((p, refresh_handle))) => {
                     break (p, Arc::new(refresh_handle));
                 }
+                Ok(None) => return None,
                 Err(err) => {
                     error!( error=%err, "Failed to create initial DB pool; retrying...");
                     sleep(retry_db_conn_interval).await;

@@ -2,7 +2,10 @@ use std::time::Duration;
 
 use clap::Parser;
 use fhevm_engine_common::{
-    database::{connect_pool_with_options, resolve_database_url_from_option},
+    database::{
+        apply_gcs_mode_search_path, connect_pool_with_options_and_connect_options,
+        resolve_database_url_from_option,
+    },
     utils::DatabaseURL,
 };
 use sqlx::postgres::PgPoolOptions;
@@ -88,10 +91,12 @@ async fn main() -> anyhow::Result<()> {
     let cancel = CancellationToken::new();
     install_signal_handlers(cancel.clone())?;
 
-    let (pool, _refresh) = connect_pool_with_options(
+    // In GCS mode the controller drives its FSM rows in its own schema.
+    let (pool, _refresh) = connect_pool_with_options_and_connect_options(
         &config.database_url,
         PgPoolOptions::new().max_connections(config.database_pool_size),
         Some(&cancel),
+        apply_gcs_mode_search_path(gcs_mode),
     )
     .await?;
 

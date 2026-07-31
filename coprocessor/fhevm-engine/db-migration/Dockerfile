@@ -7,6 +7,9 @@ ARG SCCACHE_BUCKET
 ARG SCCACHE_REGION=eu-west-3
 ARG SCCACHE_S3_PREFIX
 ARG SCCACHE_VERSION=v0.15.0
+# Must match the service images: resolve_gcs_mode compares this compiled-in
+# version against the live one.
+ARG BUILD_STACK_VERSION
 ENV SCCACHE_IDLE_TIMEOUT=0
 ENV SCCACHE_BUCKET=${SCCACHE_BUCKET}
 ENV SCCACHE_REGION=${SCCACHE_REGION}
@@ -104,16 +107,20 @@ RUN --mount=type=cache,target=/usr/local/cargo/registry,sharing=locked \
       export AWS_ACCESS_KEY_ID="$(cat /run/secrets/sccache_aws_access_key_id)"; \
       export AWS_SECRET_ACCESS_KEY="$(cat /run/secrets/sccache_aws_secret_access_key)"; \
     fi && \
-    cargo build --release -p fhevm-engine-common --bin resolve_database_url && \
+    FEATURES=""; if [ -n "${BUILD_STACK_VERSION}" ]; then FEATURES="--features fhevm-engine-common/stack-version-override"; export BUILD_STACK_VERSION="${BUILD_STACK_VERSION}"; fi && \
+    cargo build --release -p fhevm-engine-common ${FEATURES} \
+      --bin resolve_database_url --bin resolve_gcs_mode && \
     if [ -n "${SCCACHE_BUCKET}" ] && command -v sccache >/dev/null 2>&1; then sccache --show-stats; fi && \
     mkdir -p /out && \
-    cp target/release/resolve_database_url /out/
+    cp target/release/resolve_database_url /out/ && \
+    cp target/release/resolve_gcs_mode /out/
 
 # Stage 2: Runtime image
 FROM cgr.dev/zama.ai/postgres:17 AS prod
 
 COPY  --from=builder --chown=fhevm:fhevm /usr/local/cargo/bin/sqlx /usr/local/bin/sqlx
 COPY  --from=builder --chown=fhevm:fhevm /out/resolve_database_url /usr/local/bin/resolve_database_url
+COPY  --from=builder --chown=fhevm:fhevm /out/resolve_gcs_mode /usr/local/bin/resolve_gcs_mode
 COPY  --from=builder --chown=fhevm:fhevm /app/initialize_db.sh /initialize_db.sh
 COPY  --from=builder --chown=fhevm:fhevm /app/coprocessor/fhevm-engine/db-migration/prepare_database_url.sh /prepare_database_url.sh
 COPY  --from=builder --chown=fhevm:fhevm /app/migrations /migrations

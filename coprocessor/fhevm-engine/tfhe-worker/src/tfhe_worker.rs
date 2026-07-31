@@ -1,9 +1,6 @@
 use crate::dependence_chain::{self};
 use crate::types::CoprocessorError;
-use fhevm_engine_common::database::{
-    apply_gcs_mode_search_path, connect_pool_with_options,
-    connect_pool_with_options_and_connect_options, resolve_database_url_from_option,
-};
+use fhevm_engine_common::database::{connect_gcs_pool, resolve_database_url_from_option};
 use fhevm_engine_common::db_keys::DbKeyCache;
 use fhevm_engine_common::gcs_activation::{run_gcs_activation_watcher, GCS_NOT_ACTIVATED};
 use fhevm_engine_common::telemetry;
@@ -97,12 +94,16 @@ pub async fn run_tfhe_worker(
         // Long-lived task that mirrors `upgrade_state.start_block` (stack_role
         // = 'GCS') into the atomic, woken by `event_upgrade_activated`. Lives
         // outside the cycle loop so it survives `tfhe_worker_cycle` restarts.
-        let (watcher_pool, _refresh) = connect_pool_with_options(
+        let Some((watcher_pool, _refresh)) = connect_gcs_pool(
             &db_url,
             sqlx::postgres::PgPoolOptions::new().max_connections(2),
             None,
+            true,
         )
-        .await?;
+        .await?
+        else {
+            return Ok(());
+        };
         let watcher_state = start_block_state.clone();
         tokio::spawn(async move {
             loop {
@@ -146,17 +147,18 @@ async fn tfhe_worker_cycle(
 ) -> Result<(), CoprocessorError> {
     let db_url = resolve_database_url_from_option(args.database_url.clone())
         .map_err(|e| CoprocessorError::Other(e.into()))?;
-    // In --gcs-mode, every connection in the data-plane pool is pinned to
-    // `search_path = gcs,public` so unqualified writes land in `gcs.*` and
-    // shared read-only tables (keys, crs, host_chains, upgrade_state, …)
-    // still resolve from `public` via fallback.
-    let (pool, _pool_refresh_handle) = connect_pool_with_options_and_connect_options(
+    // In --gcs-mode every connection is pinned to `search_path = gcs,public`, so
+    // unqualified writes land in `gcs.*` and shared tables fall back to `public`.
+    let Some((pool, _pool_refresh_handle)) = connect_gcs_pool(
         &db_url,
         sqlx::postgres::PgPoolOptions::new().max_connections(args.pg_pool_max_connections),
         None,
-        apply_gcs_mode_search_path(gcs_mode),
+        gcs_mode,
     )
-    .await?;
+    .await?
+    else {
+        return Ok(());
+    };
 
     let db_key_cache =
         DbKeyCache::new(args.key_cache_size).map_err(|e| CoprocessorError::Other(e.into()))?;

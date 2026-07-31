@@ -21,7 +21,14 @@ use tokio_util::sync::CancellationToken;
 use tracing::{debug, error, info, warn, Level};
 
 mod coprocessor_tables;
+pub mod schema_migrations;
 pub use coprocessor_tables::{CoprocessorTable, COPROCESSOR_TABLES};
+
+use fhevm_engine_common::database::GCS_SCHEMA;
+use schema_migrations::apply_migrations;
+
+/// Holds the live data and the only ledger the db-migration Job touches.
+const PUBLIC_SCHEMA: &str = "public";
 
 pub const UPGRADE_ACTIVATED_CHANNEL: &str =
     fhevm_engine_common::gcs_activation::EVENT_UPGRADE_ACTIVATED;
@@ -54,6 +61,10 @@ pub const GW_DRY_RUN_STARTED_CHANNEL: &str =
 /// bump, telling every service to re-evaluate its mode. Re-exported from the
 /// common crate so services and the controller agree on the name.
 pub use fhevm_engine_common::versioning::EVENT_STACK_VERSION_UPGRADED;
+
+/// Lock wait cap for the cutover, applied after the advisory lock so draining BCS
+/// writers is never cut short. A timeout aborts the cutover; `reconcile` retries.
+const CUTOVER_LOCK_TIMEOUT_MS: u64 = 30_000;
 
 /// Number of host-chain blocks below `start_block` whose computations must
 /// also be fully settled before GCS can leave `UpgradeActivated`. Hard-coded
@@ -163,6 +174,9 @@ pub enum Error {
 
     #[error("invalid hex in proposal_id: {0}")]
     Hex(String),
+
+    #[error("schema migration failed: {0}")]
+    Migration(String),
 }
 
 /// Handle an `event_upgrade_activated` notification. The host-listener writes the
@@ -328,54 +342,81 @@ fn spawn_gcs_dry_run_readiness(
     });
 }
 
-/// Create the GCS schema with an empty copy of each duplicated table. Returns
-/// their names.
-async fn create_gcs_tables(tx: &mut Transaction<'_, Postgres>) -> Result<Vec<&'static str>, Error> {
+/// Build the GCS schema from the migration set, then drop the tables green must
+/// not own: a missing table falls through `search_path` to `public`, which is what
+/// the shared tables need. `public` is untouched.
+async fn build_gcs_schema(tx: &mut Transaction<'_, Postgres>) -> Result<(), Error> {
     let create_schema = format!("CREATE SCHEMA IF NOT EXISTS {GCS_SCHEMA_QUOTED}");
     sqlx::query(&create_schema).execute(&mut **tx).await?;
 
-    let duplicated: Vec<&str> = COPROCESSOR_TABLES
+    let applied = apply_migrations(tx, GCS_SCHEMA, None).await?;
+
+    let shared: Vec<&str> = COPROCESSOR_TABLES
         .iter()
-        .filter(|t| t.duplicated)
+        .filter(|t| !t.duplicated)
         .map(|t| t.name)
         .collect();
-
-    for name in &duplicated {
-        let sql = format!(
-            "CREATE TABLE IF NOT EXISTS {GCS_SCHEMA_QUOTED}.{name} \
-             (LIKE public.{name} INCLUDING ALL)"
-        );
+    for name in &shared {
+        let sql = format!("DROP TABLE IF EXISTS {GCS_SCHEMA_QUOTED}.{name} CASCADE");
         sqlx::query(&sql).execute(&mut **tx).await?;
     }
 
-    Ok(duplicated)
-}
-
-/// Idempotently create the versioned GCS schema ([`GCS_SCHEMA_QUOTED`]) and clone every
-/// `duplicated = true` [`COPROCESSOR_TABLES`] table into it with `LIKE public.X INCLUDING ALL`.
-pub async fn create_gcs_schema(pool: &Pool<Postgres>) -> Result<(), Error> {
-    let mut tx = pool.begin().await?;
-    let duplicated = create_gcs_tables(&mut tx).await?;
-    tx.commit().await?;
     info!(
         schema = GCS_SCHEMA_QUOTED,
-        tables = ?duplicated,
-        "GCS schema created with empty table duplicates"
+        migrations = applied.len(),
+        shared_dropped = shared.len(),
+        "GCS schema built from migrations"
     );
     Ok(())
 }
 
-/// Drop the GCS schema and recreate it empty, on `tx` — discards the dry-run's
+/// Idempotently create the GCS schema from this binary's migration set.
+pub async fn create_gcs_schema(pool: &Pool<Postgres>) -> Result<(), Error> {
+    let mut tx = pool.begin().await?;
+    build_gcs_schema(&mut tx).await?;
+    tx.commit().await?;
+    Ok(())
+}
+
+/// Drop the GCS schema and rebuild it empty, on `tx` — discards the dry-run's
 /// writes while leaving the still-tailing GCS listeners a valid write target, so
 /// the upgrade can be rerun without restarting the GCS stack.
+///
+/// `upgrade_state` is carried across: the caller has just marked the rows
+/// PAUSED/failed, and dropping the schema would take that verdict too. Both sides
+/// name their columns so a shape change fails loudly. No columns means no table.
 async fn reset_gcs_schema(tx: &mut Transaction<'_, Postgres>) -> Result<(), Error> {
+    let cols = insertable_columns(tx, GCS_SCHEMA, "upgrade_state").await?;
+    if !cols.is_empty() {
+        let col_list = cols.join(", ");
+        sqlx::query(&format!(
+            "CREATE TEMP TABLE gcs_upgrade_state_carry ON COMMIT DROP AS
+             SELECT {col_list} FROM {GCS_SCHEMA_QUOTED}.upgrade_state"
+        ))
+        .execute(&mut **tx)
+        .await?;
+    }
+
     let drop_sql = format!("DROP SCHEMA IF EXISTS {GCS_SCHEMA_QUOTED} CASCADE");
     sqlx::query(&drop_sql).execute(&mut **tx).await?;
-    let duplicated = create_gcs_tables(tx).await?;
+    build_gcs_schema(tx).await?;
+
+    let mut restored = 0;
+    if !cols.is_empty() {
+        let col_list = cols.join(", ");
+        restored = sqlx::query(&format!(
+            "INSERT INTO {GCS_SCHEMA_QUOTED}.upgrade_state ({col_list})
+             SELECT {col_list} FROM gcs_upgrade_state_carry"
+        ))
+        .execute(&mut **tx)
+        .await?
+        .rows_affected();
+    }
+
     info!(
         schema = GCS_SCHEMA_QUOTED,
-        tables = ?duplicated,
-        "GCS schema dropped and recreated empty (rollback)"
+        upgrade_state_rows = restored,
+        "GCS schema rebuilt empty (rollback)"
     );
     Ok(())
 }
@@ -869,6 +910,29 @@ async fn transition_to_gw_dry_run_started(
     Ok(())
 }
 
+/// Columns of `<schema>.<table>` that can appear in an INSERT column list, in
+/// ordinal order. Generated and identity columns are excluded.
+async fn insertable_columns(
+    tx: &mut Transaction<'_, Postgres>,
+    schema: &str,
+    table: &str,
+) -> Result<Vec<String>, Error> {
+    let cols = sqlx::query_scalar(
+        "SELECT column_name
+           FROM information_schema.columns
+          WHERE table_schema = $1
+            AND table_name = $2
+            AND is_generated = 'NEVER'
+            AND is_identity = 'NO'
+          ORDER BY ordinal_position",
+    )
+    .bind(schema)
+    .bind(table)
+    .fetch_all(&mut **tx)
+    .await?;
+    Ok(cols)
+}
+
 /// Merge every row from `gcs.<table>` into `public.<table>`, letting the GCS
 /// rows win on collisions (`ON CONFLICT (<conflict_cols>) DO UPDATE`) — GCS is
 /// the canonical writer for its dry-run window. Driven by [`execute_cutover`]
@@ -886,18 +950,7 @@ async fn merge_gcs_table(
     table: &str,
     conflict_cols: &[&str],
 ) -> Result<u64, Error> {
-    let cols: Vec<String> = sqlx::query_scalar(
-        "SELECT column_name
-           FROM information_schema.columns
-          WHERE table_schema = 'public'
-            AND table_name = $1
-            AND is_generated = 'NEVER'
-            AND is_identity = 'NO'
-          ORDER BY ordinal_position",
-    )
-    .bind(table)
-    .fetch_all(&mut **tx)
-    .await?;
+    let cols = insertable_columns(tx, PUBLIC_SCHEMA, table).await?;
 
     if cols.is_empty() {
         return Err(Error::Payload(format!(
@@ -947,10 +1000,11 @@ async fn merge_gcs_table(
 ///
 /// Sequence:
 ///   1. Re-read state under the lock; no-op unless `UpgradeAuthorized`, else take its `version`.
-///   2. UPDATE `versioning` to the new stack_version.
-///   3. Merge `gcs.ciphertexts` → `public.ciphertexts`.
-///   4. DROP SCHEMA gcs CASCADE.
-///   5. Mark the GCS row LIVE/completed.
+///   2. Apply the migrations `public` is missing.
+///   3. UPDATE `versioning` to the new stack_version.
+///   4. Merge the GCS-canonical tables → `public`.
+///   5. DROP SCHEMA gcs CASCADE.
+///   6. Mark the GCS row LIVE/completed.
 ///
 /// After commit, any BCS write tx that was waiting on the shared lock
 /// acquires it, re-reads its FSM state, sees `PAUSED`, and exits cleanly.
@@ -968,18 +1022,33 @@ pub async fn execute_cutover(pool: &Pool<Postgres>) -> Result<(), Error> {
         "cutover acquired exclusive advisory lock"
     );
 
+    // Cap lock waits, but only after the advisory lock: draining BCS writers must
+    // stay unbounded. Step 2's DDL needs ACCESS EXCLUSIVE, which a deferred-fence
+    // writer's row locks can block for a whole S3 upload. Aborting is safe, since
+    // `reconcile` retries the cutover.
+    sqlx::query(&format!(
+        "SET LOCAL lock_timeout = '{CUTOVER_LOCK_TIMEOUT_MS}ms'"
+    ))
+    .execute(&mut *tx)
+    .await?;
+
     // Re-read every chain row under a table lock: a concurrent activation or
     // cutover cannot replace only part of the proposal while it is promoted.
-    sqlx::query("LOCK TABLE upgrade_state IN SHARE ROW EXCLUSIVE MODE")
-        .execute(&mut *tx)
-        .await?;
-    let rows: Vec<(String, Option<i64>, Option<String>)> = sqlx::query_as(
+    //
+    // Schemas are named explicitly from here: step 2 repoints `search_path`, so
+    // unqualified names would resolve differently before and after it.
+    sqlx::query(&format!(
+        "LOCK TABLE {GCS_SCHEMA_QUOTED}.upgrade_state IN SHARE ROW EXCLUSIVE MODE"
+    ))
+    .execute(&mut *tx)
+    .await?;
+    let rows: Vec<(String, Option<i64>, Option<String>)> = sqlx::query_as(&format!(
         "SELECT state, start_block, version
-           FROM upgrade_state
+           FROM {GCS_SCHEMA_QUOTED}.upgrade_state
           WHERE stack_role = 'GCS'
           ORDER BY host_chain_id
-          FOR UPDATE",
-    )
+          FOR UPDATE"
+    ))
     .fetch_all(&mut *tx)
     .await?;
     let Some((first_state, _, first_version)) = rows.first() else {
@@ -1008,11 +1077,23 @@ pub async fn execute_cutover(pool: &Pool<Postgres>) -> Result<(), Error> {
     }
     let stack_version = first_version.clone().unwrap_or_default();
 
-    // 2. Promote the new stack version inside the cutover tx. This is the
+    // 2. Bring `public` up to this binary's migration set. Nothing else migrates it
+    //    during the dry-run, so the whole delta lands here. Postgres rolls the DDL
+    //    back with the transaction if anything below fails.
+    let migrated = apply_migrations(&mut tx, PUBLIC_SCHEMA, None).await?;
+    if !migrated.is_empty() {
+        info!(
+            count = migrated.len(),
+            latest = migrated.last(),
+            "cutover migrated public"
+        );
+    }
+
+    // 3. Promote the new stack version inside the cutover tx. This is the
     //    source of truth read by `resolve_gcs_mode` / `reconcile_stack_mode`:
     //    the green stack becomes live and the retired blue stack pauses.
     sqlx::query(
-        "UPDATE versioning
+        "UPDATE public.versioning
          SET stack_version = $1, updated_at = NOW()
          WHERE singleton = TRUE",
     )
@@ -1021,7 +1102,7 @@ pub async fn execute_cutover(pool: &Pool<Postgres>) -> Result<(), Error> {
     .await?;
     info!(stack_version, "versioning row updated");
 
-    // 3. Merge the GCS-canonical tables back into public before dropping the
+    // 4. Merge the GCS-canonical tables back into public before dropping the
     //    schema. Each merge lets the GCS rows win on PK collisions (GCS is the
     //    canonical writer for its dry-run window).
     info!(stack_version, "cutover: merging gcs tables into public");
@@ -1039,9 +1120,9 @@ pub async fn execute_cutover(pool: &Pool<Postgres>) -> Result<(), Error> {
     sqlx::query(&drop_sql).execute(&mut *tx).await?;
     info!(schema = GCS_SCHEMA_QUOTED, "dropped gcs schema");
 
-    // 6. Flip the FSM row.
+    // 6. Flip the FSM row. The merge copied it into public and the gcs schema is gone.
     sqlx::query(
-        "UPDATE upgrade_state
+        "UPDATE public.upgrade_state
          SET state = 'LIVE', status = 'completed', updated_at = NOW()
          WHERE stack_role = 'GCS'",
     )
@@ -1723,10 +1804,84 @@ mod tests {
         assert!(!schema_exists, "cutover should drop the gcs schema");
     }
 
-    async fn test_pool() -> (test_harness::instance::DBInstance, Pool<Postgres>) {
+    /// The controller's ledger rows must match sqlx's, or a later `sqlx migrate run`
+    /// would reapply everything. `public` was migrated by sqlx, the gcs schema by
+    /// [`apply_migrations`].
+    #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+    async fn controller_ledger_matches_sqlx_migrator() {
+        let (_instance, pool) = test_pool().await;
+        create_gcs_schema(&pool).await.expect("create gcs schema");
+
+        let public: Vec<(i64, Vec<u8>)> = sqlx::query_as(
+            "SELECT version, checksum FROM public._sqlx_migrations ORDER BY version",
+        )
+        .fetch_all(&pool)
+        .await
+        .expect("public ledger");
+
+        let gcs: Vec<(i64, Vec<u8>)> = sqlx::query_as(&format!(
+            "SELECT version, checksum FROM {GCS_SCHEMA_QUOTED}._sqlx_migrations ORDER BY version"
+        ))
+        .fetch_all(&pool)
+        .await
+        .expect("gcs ledger");
+
+        assert!(!public.is_empty(), "public ledger should not be empty");
+        assert_eq!(
+            public, gcs,
+            "controller-written ledger diverges from sqlx's; a later `sqlx migrate run` \
+             would reapply migrations"
+        );
+    }
+
+    /// The green schema holds the duplicated tables and not the shared ones: a
+    /// missing table is what makes a write fall through to `public`.
+    #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+    async fn gcs_schema_keeps_duplicated_and_drops_shared() {
+        let (_instance, pool) = test_pool().await;
+        create_gcs_schema(&pool).await.expect("create gcs schema");
+
+        let present: std::collections::BTreeSet<String> = sqlx::query_scalar(
+            "SELECT table_name FROM information_schema.tables
+              WHERE table_schema = $1 AND table_type = 'BASE TABLE'",
+        )
+        .bind(fhevm_engine_common::database::GCS_SCHEMA)
+        .fetch_all(&pool)
+        .await
+        .expect("list gcs tables")
+        .into_iter()
+        .collect();
+
+        for table in COPROCESSOR_TABLES {
+            if table.duplicated {
+                assert!(
+                    present.contains(table.name),
+                    "{} must exist in the gcs schema to isolate green's writes",
+                    table.name
+                );
+            } else {
+                assert!(
+                    !present.contains(table.name),
+                    "{} must NOT exist in the gcs schema — green's writes to it have \
+                     to fall through to public",
+                    table.name
+                );
+            }
+        }
+    }
+
+    /// Held here so the cutover has a real delta. A later migration adds
+    /// `s3_migration_failure_count` to `ciphertext_digest`, asserted below.
+    const OLD_PUBLIC_VERSION: i64 = 20260616120000;
+
+    /// `public` carries live data on the old schema for the whole dry-run; the
+    /// cutover must migrate it, merge green's rows in, and lose nothing.
+    #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+    async fn cutover_migrates_populated_public_and_keeps_its_data() {
         use sqlx::postgres::PgPoolOptions;
         use test_harness::instance::{setup_test_db, ImportMode};
-        let instance = setup_test_db(ImportMode::WithKeysNoSns)
+
+        let instance = setup_test_db(ImportMode::SkipMigrations)
             .await
             .expect("test db");
         let pool = PgPoolOptions::new()
@@ -1734,6 +1889,341 @@ mod tests {
             .connect(instance.db_url())
             .await
             .expect("pool");
+
+        let mut tx = pool.begin().await.expect("begin");
+        apply_migrations(&mut tx, PUBLIC_SCHEMA, Some(OLD_PUBLIC_VERSION))
+            .await
+            .expect("migrate public to the old version");
+        tx.commit().await.expect("commit");
+
+        let blue_handle = vec![0xB1u8; 32];
+        sqlx::query("INSERT INTO public.ciphertext_digest (handle) VALUES ($1)")
+            .bind(&blue_handle)
+            .execute(&pool)
+            .await
+            .expect("seed live blue data");
+
+        assert!(
+            !column_exists(
+                &pool,
+                PUBLIC_SCHEMA,
+                "ciphertext_digest",
+                "s3_migration_failure_count"
+            )
+            .await,
+            "public should still be on the old schema before cutover"
+        );
+
+        create_gcs_schema(&pool).await.expect("create gcs schema");
+
+        // The green schema carries the full set; public must end up here too.
+        let (full_set_head,): (i64,) = sqlx::query_as(&format!(
+            "SELECT MAX(version) FROM {GCS_SCHEMA_QUOTED}._sqlx_migrations"
+        ))
+        .fetch_one(&pool)
+        .await
+        .expect("gcs ledger head");
+        assert!(
+            full_set_head > OLD_PUBLIC_VERSION,
+            "delta should be non-empty"
+        );
+
+        let green_handle = vec![0x6Eu8; 32];
+        let green = gcs_pool(instance.db_url()).await;
+        sqlx::query("INSERT INTO ciphertext_digest (handle) VALUES ($1)")
+            .bind(&green_handle)
+            .execute(&green)
+            .await
+            .expect("seed green dry-run output");
+
+        sqlx::query(&format!(
+            r#"
+            INSERT INTO {GCS_SCHEMA_QUOTED}.upgrade_state (
+                stack_role, state, status, proposal_id, version,
+                start_block, end_block, gw_start_block, host_chain_id, updated_at
+            )
+            VALUES ('GCS', 'UpgradeAuthorized', 'in_progress', $1, 'v0.15',
+                    100, 200, 1, 1, NOW())
+            "#
+        ))
+        .bind(&[0x02u8][..])
+        .execute(&pool)
+        .await
+        .expect("seed green FSM row");
+
+        execute_cutover(&pool).await.expect("cutover succeeds");
+
+        let (ledger_head,): (i64,) =
+            sqlx::query_as("SELECT MAX(version) FROM public._sqlx_migrations")
+                .fetch_one(&pool)
+                .await
+                .expect("public ledger head");
+        assert_eq!(
+            ledger_head, full_set_head,
+            "cutover should bring public to the binary's migration set"
+        );
+        assert!(
+            column_exists(
+                &pool,
+                PUBLIC_SCHEMA,
+                "ciphertext_digest",
+                "s3_migration_failure_count"
+            )
+            .await,
+            "the delta should have added the new column to public"
+        );
+
+        let handles: Vec<Vec<u8>> =
+            sqlx::query_scalar("SELECT handle FROM public.ciphertext_digest ORDER BY handle")
+                .fetch_all(&pool)
+                .await
+                .expect("read merged digests");
+        assert!(
+            handles.contains(&blue_handle),
+            "pre-existing blue data must survive the cutover"
+        );
+        assert!(
+            handles.contains(&green_handle),
+            "green's dry-run rows must be merged into public"
+        );
+
+        let (state, version): (String, Option<String>) = sqlx::query_as(
+            "SELECT state, version FROM public.upgrade_state WHERE stack_role = 'GCS'",
+        )
+        .fetch_one(&pool)
+        .await
+        .expect("merged FSM row");
+        assert_eq!(state, "LIVE", "the GCS row should land in public as LIVE");
+        assert_eq!(version.as_deref(), Some("v0.15"));
+
+        let (stack_version,): (String,) =
+            sqlx::query_as("SELECT stack_version FROM public.versioning WHERE singleton = TRUE")
+                .fetch_one(&pool)
+                .await
+                .expect("versioning row");
+        assert_eq!(stack_version, "v0.15");
+
+        let (schema_exists,): (bool,) = sqlx::query_as(
+            "SELECT EXISTS (SELECT 1 FROM information_schema.schemata WHERE schema_name = $1)",
+        )
+        .bind(fhevm_engine_common::database::GCS_SCHEMA)
+        .fetch_one(&pool)
+        .await
+        .expect("schema lookup");
+        assert!(!schema_exists, "cutover should drop the gcs schema");
+    }
+
+    /// A rolled-back dry-run must leave `public` exactly as it was — no migration
+    /// here can be reverted.
+    #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+    async fn rollback_leaves_public_schema_untouched() {
+        use sqlx::postgres::PgPoolOptions;
+        use test_harness::instance::{setup_test_db, ImportMode};
+
+        let instance = setup_test_db(ImportMode::SkipMigrations)
+            .await
+            .expect("test db");
+        let pool = PgPoolOptions::new()
+            .max_connections(4)
+            .connect(instance.db_url())
+            .await
+            .expect("pool");
+
+        let mut tx = pool.begin().await.expect("begin");
+        apply_migrations(&mut tx, PUBLIC_SCHEMA, Some(OLD_PUBLIC_VERSION))
+            .await
+            .expect("migrate public to the old version");
+        tx.commit().await.expect("commit");
+
+        create_gcs_schema(&pool).await.expect("create gcs schema");
+
+        sqlx::query(&format!(
+            r#"
+            INSERT INTO {GCS_SCHEMA_QUOTED}.upgrade_state (
+                stack_role, state, status, proposal_id, proposal_block, version,
+                start_block, end_block, gw_start_block, host_chain_id, updated_at
+            )
+            VALUES ('GCS', 'DryRunStarted', 'in_progress', $1, 10, 'v0.15',
+                    100, 200, 1, 1, NOW())
+            "#
+        ))
+        .bind(&[0x02u8][..])
+        .execute(&pool)
+        .await
+        .expect("seed green FSM row");
+
+        // Dry-run output, so the reset has something to discard.
+        let green = gcs_pool(instance.db_url()).await;
+        sqlx::query("INSERT INTO ciphertext_digest (handle) VALUES ($1)")
+            .bind(vec![0x6Eu8; 32])
+            .execute(&green)
+            .await
+            .expect("seed green dry-run output");
+
+        handle_unanimity_consensus_timeout(&green, true, &timeout_payload())
+            .await
+            .expect("rollback");
+
+        let (ledger_head,): (i64,) =
+            sqlx::query_as("SELECT MAX(version) FROM public._sqlx_migrations")
+                .fetch_one(&pool)
+                .await
+                .expect("public ledger head");
+        assert_eq!(
+            ledger_head, OLD_PUBLIC_VERSION,
+            "rollback must not migrate public"
+        );
+        assert!(
+            !column_exists(
+                &pool,
+                PUBLIC_SCHEMA,
+                "ciphertext_digest",
+                "s3_migration_failure_count"
+            )
+            .await,
+            "rollback must leave public's schema exactly as it was"
+        );
+
+        // The reset rebuilds the schema holding `upgrade_state`, so the verdict has
+        // to be carried across or nothing records that the attempt failed.
+        let verdict: Vec<(String, String, Option<String>)> = sqlx::query_as(&format!(
+            "SELECT state, status, last_error
+               FROM {GCS_SCHEMA_QUOTED}.upgrade_state
+              WHERE stack_role = 'GCS'"
+        ))
+        .fetch_all(&pool)
+        .await
+        .expect("gcs FSM rows");
+        assert_eq!(
+            verdict.len(),
+            1,
+            "rollback must preserve the GCS row through the schema rebuild"
+        );
+        assert_eq!(
+            (
+                verdict[0].0.as_str(),
+                verdict[0].1.as_str(),
+                verdict[0].2.as_deref()
+            ),
+            ("PAUSED", "failed", Some("unanimity_consensus_timeout")),
+            "the rolled-back attempt's verdict must survive the rebuild"
+        );
+
+        // And the dry-run's output must be gone from that same schema.
+        let (digests,): (i64,) = sqlx::query_as(&format!(
+            "SELECT count(*) FROM {GCS_SCHEMA_QUOTED}.ciphertext_digest"
+        ))
+        .fetch_one(&pool)
+        .await
+        .expect("gcs digest count");
+        assert_eq!(digests, 0, "rollback must discard the dry-run's rows");
+    }
+
+    async fn column_exists(pool: &Pool<Postgres>, schema: &str, table: &str, column: &str) -> bool {
+        let (exists,): (bool,) = sqlx::query_as(
+            "SELECT EXISTS (
+                 SELECT 1 FROM information_schema.columns
+                  WHERE table_schema = $1 AND table_name = $2 AND column_name = $3
+             )",
+        )
+        .bind(schema)
+        .bind(table)
+        .bind(column)
+        .fetch_one(pool)
+        .await
+        .expect("column lookup");
+        exists
+    }
+
+    /// `initialize_db.sh` decides whether to migrate `public` from this call. A wrong
+    /// answer either migrates under live blue or never initializes a fresh install,
+    /// both silently. The e2e pins db-migration to BCS, so it only ever migrates.
+    #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+    async fn resolve_gcs_mode_drives_the_db_migration_gate() {
+        use fhevm_engine_common::versioning::resolve_gcs_mode;
+        use fhevm_engine_common::STACK_VERSION;
+
+        let (instance, pool) = test_pool().await;
+        let url = instance.db_url();
+
+        let set_version = |v: &'static str| {
+            let pool = pool.clone();
+            async move {
+                sqlx::query("UPDATE versioning SET stack_version = $1 WHERE singleton = TRUE")
+                    .bind(v)
+                    .execute(&pool)
+                    .await
+                    .expect("set stack_version");
+            }
+        };
+
+        // Normal deploy: the live stack is this same version, so the Job migrates.
+        set_version(STACK_VERSION).await;
+        assert!(
+            !resolve_gcs_mode(url).await.expect("resolve"),
+            "same version must not be treated as a green deploy"
+        );
+
+        // Green deploy: the live stack is older, so the Job must skip and leave
+        // `public` on the schema the live blue binaries are running against.
+        set_version("0.13.0").await;
+        assert!(
+            resolve_gcs_mode(url).await.expect("resolve"),
+            "a newer binary than the live stack is a green deploy"
+        );
+
+        // Fresh install: no `versioning` table yet, so the Job must migrate rather
+        // than skip, or the database is never initialized at all.
+        sqlx::query("DROP TABLE versioning")
+            .execute(&pool)
+            .await
+            .expect("drop versioning");
+        assert!(
+            !resolve_gcs_mode(url).await.expect("resolve"),
+            "a missing versioning table is a fresh install, not a green deploy"
+        );
+    }
+
+    /// A pool pinned like a green service's. Without the pin, unqualified
+    /// statements hit `public` and the GCS schema's mirror triggers cannot find
+    /// their helper functions.
+    async fn gcs_pool(db_url: &str) -> Pool<Postgres> {
+        use sqlx::postgres::{PgConnectOptions, PgPoolOptions};
+        use std::str::FromStr;
+        let options = PgConnectOptions::from_str(db_url)
+            .expect("connect options")
+            .options([(
+                "search_path",
+                fhevm_engine_common::database::GCS_SEARCH_PATH,
+            )]);
+        PgPoolOptions::new()
+            .max_connections(4)
+            .connect_with(options)
+            .await
+            .expect("gcs pool")
+    }
+
+    async fn test_pool() -> (test_harness::instance::DBInstance, Pool<Postgres>) {
+        use sqlx::postgres::PgPoolOptions;
+        use test_harness::instance::{setup_test_db, ImportMode};
+        let instance = setup_test_db(ImportMode::WithKeysNoSns)
+            .await
+            .expect("test db");
+
+        // Match a real green controller: schema first, then a pinned pool. Without
+        // the pin, unqualified statements hit `public` while the cutover's qualified
+        // reads use the GCS schema, and they disagree about where the FSM lives.
+        let bootstrap = PgPoolOptions::new()
+            .max_connections(2)
+            .connect(instance.db_url())
+            .await
+            .expect("bootstrap pool");
+        create_gcs_schema(&bootstrap)
+            .await
+            .expect("create gcs schema");
+        bootstrap.close().await;
+
+        let pool = gcs_pool(instance.db_url()).await;
         (instance, pool)
     }
 

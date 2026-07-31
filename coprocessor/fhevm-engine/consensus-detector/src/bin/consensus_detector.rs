@@ -6,10 +6,7 @@ use alloy::transports::http::reqwest::Url;
 use clap::Parser;
 use consensus_detector::Config;
 use fhevm_engine_common::{
-    database::{
-        apply_gcs_mode_search_path, connect_pool_with_options_and_connect_options,
-        resolve_database_url_from_option,
-    },
+    database::{connect_gcs_pool, resolve_database_url_from_option},
     utils::DatabaseURL,
 };
 use humantime::parse_duration;
@@ -160,18 +157,20 @@ async fn main() -> anyhow::Result<()> {
         }
     };
 
-    // consensus-detector's data plane lives in the versioned GCS schema
-    // (`"gcs-<stack version>"`, from the hard-coded `STACK_VERSION`). Pin every
-    // pooled connection's search_path to `"gcs-<version>",public` so unqualified
-    // table references resolve to the GCS copies first, falling back to public
-    // for shared tables (e.g. `upgrade_state`, not duplicated into the GCS schema).
-    let (pool, _refresh) = connect_pool_with_options_and_connect_options(
+    // This service's data plane lives in the versioned GCS schema, so every
+    // connection is pinned to `"gcs-<version>",public`: unqualified references hit
+    // the GCS copies, shared tables fall back to public. The schema must exist
+    // first, or the pool is routed to `public` for good.
+    let Some((pool, _refresh)) = connect_gcs_pool(
         &config.database_url,
         PgPoolOptions::new().max_connections(config.database_pool_size),
         Some(&cancel),
-        apply_gcs_mode_search_path(true),
+        true,
     )
-    .await?;
+    .await?
+    else {
+        return Ok(());
+    };
 
     if let Err(e) = consensus_detector::run(config, pool, provider, cancel.clone()).await {
         error!(error = %e, "consensus-detector exited with error");

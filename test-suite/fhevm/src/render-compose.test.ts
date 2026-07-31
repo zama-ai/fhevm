@@ -453,7 +453,7 @@ gcs:
     });
   });
 
-  test("blue-green with bcs.source.mode=registry pins BCS to previous-release images except db-migration", async () => {
+  test("blue-green with bcs.source.mode=registry pins every BCS image, db-migration included", async () => {
     const realUpgradeScenario = resolveBlueGreenScenario(
       path.join("/tmp", "blue-green-real-test.yaml"),
       parseBlueGreenScenario(`
@@ -493,9 +493,10 @@ gcs:
       expect(doc.services["coprocessor-transaction-sender"]?.image).toContain(":v0.13.0");
       // Registry-mode services should NOT carry a build spec.
       expect(doc.services["coprocessor-tfhe-worker"]?.build).toBeUndefined();
-      // db-migration is force-local so GCS gets the v0.14 schema.
-      expect(doc.services["coprocessor-db-migration"]?.build).toBeDefined();
-      expect(doc.services["coprocessor-db-migration"]?.image).not.toContain(":v0.13.0");
+      // db-migration follows BCS's pin, so `public` stays on the previous release's
+      // schema for the dry-run. GCS builds its own; the cutover applies the delta.
+      expect(doc.services["coprocessor-db-migration"]?.build).toBeUndefined();
+      expect(doc.services["coprocessor-db-migration"]?.image).toContain(":v0.13.0");
       expect(doc.services["coprocessor-gcs-tfhe-worker"]?.build).toBeDefined();
       expect(
         doc.services["coprocessor-host-listener"]?.environment

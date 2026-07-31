@@ -24,8 +24,7 @@ use std::sync::LazyLock;
 use std::time::Duration;
 
 use fhevm_engine_common::database::{
-    apply_gcs_mode_search_path, connect_pool_with_options_and_connect_options,
-    resolve_database_url_from_option, EVENT_CIPHERTEXTS_UPLOADED, GCS_SCHEMA,
+    connect_gcs_pool, resolve_database_url_from_option, EVENT_CIPHERTEXTS_UPLOADED, GCS_SCHEMA,
 };
 use fhevm_engine_common::versioning::{begin_write_guarded, GcsRollbackPolicy, WriteGuard};
 use prometheus::{register_int_counter, register_int_gauge, IntCounter, IntGauge};
@@ -69,13 +68,16 @@ pub async fn run_confidential_bridge(
     let db_url = resolve_database_url_from_option(args.database_url.clone())?;
     let gcs_mode = fhevm_engine_common::versioning::resolve_gcs_mode(db_url.as_str()).await?;
     // A single connection suffices: the worker polls and associates sequentially.
-    let (pool, _pool_refresh_handle) = connect_pool_with_options_and_connect_options(
+    let Some((pool, _pool_refresh_handle)) = connect_gcs_pool(
         &db_url,
         PgPoolOptions::new().max_connections(1),
         Some(&cancel_token),
-        apply_gcs_mode_search_path(gcs_mode),
+        gcs_mode,
     )
-    .await?;
+    .await?
+    else {
+        return Ok(());
+    };
 
     let poll_interval = Duration::from_millis(args.bridge_polling_interval_ms);
     info!(

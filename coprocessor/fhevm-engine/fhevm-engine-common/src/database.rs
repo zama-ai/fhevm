@@ -409,10 +409,10 @@ pub const GCS_SCHEMA_QUOTED: &str = concat!("\"gcs-", crate::stack_version!(), "
 /// Default search_path applied by [`apply_gcs_mode_search_path`] when
 /// `gcs_mode = true`: the versioned GCS schema first, then public, e.g.
 /// `"gcs-0.14.0",public`. The fallback to public is what lets shared read-only
-/// tables (keys, crs, host_chains, upgrade_state…) resolve from public without
+/// tables (keys, crs, host_chains, versioning…) resolve from public without
 /// each query having to qualify them. Tables duplicated into the GCS schema
-/// (ciphertexts, computations, state_hash, …) resolve to the GCS copy and
-/// pre-empt the public one.
+/// (ciphertexts, computations, state_hash, upgrade_state, …) resolve to the GCS
+/// copy and pre-empt the public one.
 pub const GCS_SEARCH_PATH: &str = concat!("\"gcs-", crate::stack_version!(), "\",public");
 
 /// Returns a [`PgConnectOptions`] transform that, when `gcs_mode = true`,
@@ -421,9 +421,10 @@ pub const GCS_SEARCH_PATH: &str = concat!("\"gcs-", crate::stack_version!(), "\"
 /// identity transform so callers can keep a single code path.
 ///
 /// Use this for services that own GCS-side data (host-listener, tfhe-worker,
-/// zkproof-worker, sns-worker). The upgrade-controller itself should NOT
-/// use this — it always operates on `public` and explicitly qualifies any
-/// reads/writes against `gcs.*` during activation and cutover.
+/// zkproof-worker, sns-worker) and for the upgrade-controller, which drives its
+/// FSM rows in the GCS copy of `upgrade_state`. The cutover still qualifies every
+/// schema explicitly, because it spans both schemas and repoints `search_path`
+/// partway through.
 pub fn apply_gcs_mode_search_path(gcs_mode: bool) -> fn(PgConnectOptions) -> PgConnectOptions {
     if gcs_mode {
         apply_gcs_search_path
@@ -434,6 +435,105 @@ pub fn apply_gcs_mode_search_path(gcs_mode: bool) -> fn(PgConnectOptions) -> PgC
 
 fn apply_gcs_search_path(options: PgConnectOptions) -> PgConnectOptions {
     options.options([("search_path", GCS_SEARCH_PATH)])
+}
+
+const GCS_SCHEMA_POLL_INTERVAL: Duration = Duration::from_secs(1);
+/// A green service should never wait long; past this the controller is broken.
+const GCS_SCHEMA_WAIT_TIMEOUT: Duration = Duration::from_secs(300);
+
+/// Blocks until [`GCS_SCHEMA`] exists.
+///
+/// A connection that prepares an unqualified statement before the schema exists
+/// resolves it to `public`, and Postgres keeps that cached plan — so the pool
+/// writes `public` for the rest of its life. The schema is built in one
+/// transaction, so its existence means its tables are there.
+///
+/// `Ok(false)` means cancelled. Times out with an error so a service whose schema
+/// never appears exits instead of hanging.
+async fn wait_for_gcs_schema(
+    database_url: &str,
+    cancel: &CancellationToken,
+) -> Result<bool, sqlx::Error> {
+    let started = std::time::Instant::now();
+    let mut logged = false;
+    loop {
+        if cancel.is_cancelled() {
+            return Ok(false);
+        }
+        match gcs_schema_exists(database_url).await {
+            Ok(true) => return Ok(true),
+            Ok(false) => {
+                if !logged {
+                    info!(
+                        schema = GCS_SCHEMA,
+                        timeout = ?GCS_SCHEMA_WAIT_TIMEOUT,
+                        "waiting for the GCS schema before opening a pinned pool"
+                    );
+                    logged = true;
+                }
+            }
+            Err(err) => {
+                warn!(error = %err, schema = GCS_SCHEMA, "GCS schema check failed; retrying")
+            }
+        }
+        if started.elapsed() >= GCS_SCHEMA_WAIT_TIMEOUT {
+            return Err(sqlx::Error::Configuration(
+                format!(
+                    "GCS schema {GCS_SCHEMA} did not appear within {GCS_SCHEMA_WAIT_TIMEOUT:?}; \
+                     the upgrade-controller has not created it"
+                )
+                .into(),
+            ));
+        }
+        tokio::select! {
+            _ = cancel.cancelled() => return Ok(false),
+            _ = tokio::time::sleep(GCS_SCHEMA_POLL_INTERVAL) => {}
+        }
+    }
+}
+
+/// Wait for [`GCS_SCHEMA`], then pin every connection to it. One call, because
+/// pinning before the schema exists routes the pool to `public` for good.
+///
+/// `gcs_mode = false` gives a plain unpinned pool. `Ok(None)` means cancelled.
+/// Every pool a green service opens must come from here, watcher pools included.
+pub async fn connect_gcs_pool(
+    database_url: &DatabaseURL,
+    pool_options: PgPoolOptions,
+    refresh_parent: Option<&CancellationToken>,
+    gcs_mode: bool,
+) -> Result<Option<(Pool<Postgres>, PoolRefreshHandle)>, sqlx::Error> {
+    if gcs_mode {
+        let owned = CancellationToken::new();
+        let cancel = refresh_parent.unwrap_or(&owned);
+        if !wait_for_gcs_schema(database_url.as_str(), cancel).await? {
+            return Ok(None);
+        }
+    }
+    connect_pool_with_options_and_connect_options(
+        database_url,
+        pool_options,
+        refresh_parent,
+        apply_gcs_mode_search_path(gcs_mode),
+    )
+    .await
+    .map(Some)
+}
+
+/// Short-lived connection: works before the service's pinned pool exists.
+async fn gcs_schema_exists(database_url: &str) -> anyhow::Result<bool> {
+    use sqlx::{Connection, PgConnection};
+
+    let runtime_url = resolve_runtime_database_url(&DatabaseURL::from(database_url)).await?;
+    let mut conn = PgConnection::connect(&runtime_url).await?;
+    let exists: bool = sqlx::query_scalar(
+        "SELECT EXISTS (SELECT 1 FROM information_schema.schemata WHERE schema_name = $1)",
+    )
+    .bind(GCS_SCHEMA)
+    .fetch_one(&mut conn)
+    .await?;
+    let _ = conn.close().await;
+    Ok(exists)
 }
 
 fn apply_iam_ssl_settings_to_url(url: &mut Url, ssl_root_cert_path: Option<&str>) {

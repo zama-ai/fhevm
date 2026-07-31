@@ -905,6 +905,19 @@ const runBlueGreenProfile = async (
 
   const gcsStackVersion = state.scenario.gcs.stackVersion;
   const gcsVersionLive = `v${gcsStackVersion}`;
+  // Green drives its FSM rows in its own schema, so pre-cutover assertions look
+  // there; post-cutover they live in `public`. Qualifies the table rather than
+  // using `SET search_path`, because psql echoes a `SET` tag that would prepend
+  // "SET\n" to every scalar result.
+  const gcsQuery = async (database: string, query: string): Promise<string> => {
+    if (!query.includes("FROM upgrade_state")) {
+      throw new Error(`gcsQuery expects an unqualified "FROM upgrade_state": ${query}`);
+    }
+    return psqlQuery(
+      database,
+      query.replaceAll("FROM upgrade_state", `FROM "gcs-${gcsStackVersion}".upgrade_state`),
+    );
+  };
   const opCount = state.scenario.topology.count;
 
   const operatorDatabases: string[] = [];
@@ -923,7 +936,11 @@ const runBlueGreenProfile = async (
     if (version !== "v0.14") {
       throw new Error(`${db}.versioning = "${version}", expected "v0.14" (prior test residue?)`);
     }
-    const rows = await psqlQuery(db, "SELECT count(*) FROM upgrade_state;");
+    const rows = await psqlQuery(
+      db,
+      `SELECT (SELECT count(*) FROM public.upgrade_state)
+            + (SELECT count(*) FROM "gcs-${gcsStackVersion}".upgrade_state);`,
+    );
     if (rows !== "0") {
       throw new Error(`${db}.upgrade_state has ${rows} rows, expected 0 (prior test residue?)`);
     }
@@ -1026,7 +1043,7 @@ const runBlueGreenProfile = async (
       label: `${db}  GCS DryRunStarted`,
       timeoutSecs: 120,
       check: async () =>
-        (await psqlQuery(
+        (await gcsQuery(
           db,
           `SELECT CASE WHEN COUNT(*)=${hostChains.length}
                               AND BOOL_AND(state='DryRunStarted')
@@ -1048,7 +1065,7 @@ const runBlueGreenProfile = async (
       label: `${db}  GCS rolled back to PAUSED/failed`,
       timeoutSecs: 300,
       check: async () =>
-        (await psqlQuery(
+        (await gcsQuery(
           db,
           `SELECT CASE WHEN COUNT(*)=${hostChains.length}
                               AND BOOL_AND(state='PAUSED' AND status='failed')
@@ -1061,7 +1078,7 @@ const runBlueGreenProfile = async (
     });
   }
   for (const db of operatorDatabases) {
-    const flags = await psqlQuery(
+    const flags = await gcsQuery(
       db,
       "SELECT MIN(last_error)||'|'||BOOL_OR(host_consensus_reached)||'|'||" +
         "BOOL_OR(gw_consensus_reached)||'|'||BOOL_OR(gw_dry_run_started)||'|'||" +
@@ -1150,7 +1167,7 @@ const runBlueGreenProfile = async (
       label: `${db}  GCS DryRunStarted`,
       timeoutSecs: 120,
       check: async () =>
-        (await psqlQuery(
+        (await gcsQuery(
           db,
           `SELECT CASE WHEN COUNT(*)=${hostChains.length}
                               AND BOOL_AND(state='DryRunStarted')

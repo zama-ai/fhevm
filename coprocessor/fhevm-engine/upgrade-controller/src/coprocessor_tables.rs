@@ -225,12 +225,14 @@ pub const COPROCESSOR_TABLES: &[CoprocessorTable] = &[
     // and poller-progress tables below deserve an isolation review — see the
     // per-table notes.
     // ---------------------------------------------------------------------
-    // Control plane — the blue-green FSM's own coordination state; MUST stay
-    // shared and single-copy across both stacks.
+    // Control plane. `upgrade_state` is duplicated so each stack drives its own FSM
+    // rows; a shared copy would make green write a table shaped by the previous
+    // release. Merged at cutover. `versioning` must stay shared — it is the live
+    // version both stacks resolve their mode from.
     CoprocessorTable {
         name: "upgrade_state",
-        duplicated: false,
-        conflict_cols: &[],
+        duplicated: true,
+        conflict_cols: &["stack_role", "host_chain_id"],
     },
     CoprocessorTable {
         name: "versioning",
