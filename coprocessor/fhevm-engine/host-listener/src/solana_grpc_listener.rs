@@ -1261,8 +1261,7 @@ mod fhe_eval_acl_tests {
     use crate::solana_adapter::SolanaHostEvent;
     use crate::solana_grpc_source::SealedBlock;
     use crate::solana_reconstruct::{
-        AllowSubjectsArgs, DecodedInstruction, MakeHandlePublicArgs,
-        ENCRYPTED_VALUE_ACCOUNT_INDEX,
+        DecodedInstruction, ENCRYPTED_VALUE_ACCOUNT_INDEX,
     };
 
     fn acct(n: u8) -> [u8; 32] {
@@ -1417,10 +1416,7 @@ mod fhe_eval_acl_tests {
     #[test]
     fn context_requirement_matches_persisted_work() {
         let make_public = decoded_ix(
-            encode_instruction(
-                "make_handle_public",
-                MakeHandlePublicArgs { handle: [4; 32] },
-            ),
+            encode_instruction("make_handle_public", [4u8; 32]),
             encrypted_value_accounts(),
             0,
             false,
@@ -1462,12 +1458,7 @@ mod fhe_eval_acl_tests {
         );
 
         let allow = decoded_ix(
-            encode_instruction(
-                "allow_subjects",
-                AllowSubjectsArgs {
-                    subjects: vec![[7; 32]],
-                },
-            ),
+            encode_instruction("allow_subjects", vec![[7u8; 32]]),
             encrypted_value_accounts(),
             0,
             false,
@@ -1490,12 +1481,7 @@ mod fhe_eval_acl_tests {
 
     #[tokio::test]
     async fn direct_allow_subjects_schedules_no_material() {
-        let allow_data = encode_instruction(
-            "allow_subjects",
-            AllowSubjectsArgs {
-                subjects: vec![[7; 32]],
-            },
-        );
+        let allow_data = encode_instruction("allow_subjects", vec![[7u8; 32]]);
         let instructions =
             vec![decoded_ix(allow_data, encrypted_value_accounts(), 0, false)];
         let events = complete_events(
@@ -1542,12 +1528,7 @@ mod fhe_eval_acl_tests {
 
     #[tokio::test]
     async fn lifecycle_with_missing_accounts_fails_ingest() {
-        let allow_data = encode_instruction(
-            "allow_subjects",
-            AllowSubjectsArgs {
-                subjects: vec![[7; 32]],
-            },
-        );
+        let allow_data = encode_instruction("allow_subjects", vec![[7u8; 32]]);
         let (slot_bank_hash, slot_clock_ts) = slot_context();
         let err = reconstruct_events_for_insert(
             &config(),

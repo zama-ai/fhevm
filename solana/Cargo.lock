@@ -4948,6 +4948,7 @@ dependencies = [
  "anchor-lang",
  "borsh",
  "k256",
+ "sha2 0.10.9",
  "solana-ed25519-instruction",
  "solana-instructions-sysvar",
  "solana-keccak-hasher",

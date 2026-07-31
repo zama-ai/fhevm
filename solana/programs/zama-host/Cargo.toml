@@ -14,6 +14,9 @@ name = "zama_host"
 default = ["emit-events"]
 cpi = ["no-entrypoint"]
 no-entrypoint = []
+# Off-chain instruction/event decoding for indexers (host-listener, proof
+# service). Never enabled for the SBF build.
+decode = []
 no-idl = []
 no-log-ix-name = []
 idl-build = ["anchor-lang/idl-build"]
@@ -35,3 +38,4 @@ borsh = "1"
 
 [dev-dependencies]
 k256 = { version = "0.13.4", features = ["ecdsa"] }
+sha2 = "0.10"

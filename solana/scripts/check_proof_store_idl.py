@@ -1,10 +1,12 @@
 #!/usr/bin/env python3
 """Pin solana-proof-store's ingest surface to the vendored zama-host IDL.
 
-The proof-store hand-decodes a lifecycle subset of zama-host instructions
-(`discriminator("…")` / `event_discriminator("…")` in decode.rs). Path deps keep
-arg types honest; this script keeps the *instruction catalog* and the critical
-`fhe_eval` account layout honest:
+The proof-store decodes a lifecycle subset of zama-host instructions through
+`zama_host::decode` (the program's generated types), and decode.rs's tests
+re-derive every matched discriminator from its Anchor name
+(`discriminator("…")` / `event_discriminator("…")`). Those names are what this
+script scans. Path deps keep arg types honest; this script keeps the
+*instruction catalog* and the critical `fhe_eval` account layout honest:
 
 1. Every name decode.rs matches must exist in the host IDL.
 2. Every host instruction must be either decoded or explicitly ignored here.

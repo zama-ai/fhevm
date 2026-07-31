@@ -9,7 +9,6 @@ description = "Atomic PostgreSQL store and sequential ingest runner for Solana A
 [dependencies]
 borsh = { workspace = true }
 futures = { workspace = true }
-sha2 = { workspace = true }
 solana-proof-source = { path = "../solana-proof-source" }
 sqlx = { workspace = true }
 thiserror = { workspace = true }

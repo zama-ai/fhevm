@@ -1,11 +1,17 @@
 //! Decodes zama-host `EncryptedValue` instructions from raw compiled instruction
 //! data (Anchor discriminator + borsh args), independent of transaction/RPC
-//! shape so it can be unit-tested against synthetic data.
+//! shape so it can be unit-tested against synthetic data. Discriminator
+//! matching and payload decoding go through `zama_host::decode`, built from the
+//! program's generated types, so this module cannot drift from the on-chain
+//! wire layout.
 //!
-//! The instruction/event names matched below are the ingest allowlist. CI keeps
-//! that catalog partitioned against the vendored host IDL via
-//! `solana/scripts/check_proof_store_idl.py` (decoded ∪ ignored = all host
-//! instructions; required lifecycle events must stay wired).
+//! The instruction/event names this module ingests are still the allowlist. CI
+//! keeps that catalog partitioned against the vendored host IDL via
+//! `solana/scripts/check_proof_store_idl.py`, which pins the names referenced
+//! by this file's test fixtures (decoded ∪ ignored = all host instructions;
+//! required lifecycle events must stay wired). The fixtures re-derive every
+//! discriminator from its name via sha256, independently of the generated
+//! consts the production paths use.
 //!
 //! Two event self-CPIs need sibling context: random-seed batches and a born-public (`make_public=true`)
 //! `fhe_eval` durable output commits a public-decrypt leaf to the eval OUTPUT
@@ -21,7 +27,8 @@
 //! be bound to its immediate enclosing frame.
 
 use borsh::BorshDeserialize;
-use sha2::{Digest, Sha256};
+use zama_host::decode::ZamaHostInstruction;
+use zama_host::events::{FheEvalRandomSeedsEvent, PublicOutputsProducedEvent};
 use zama_host::state::{FheEvalArgs, FheEvalOutput, FheEvalStep};
 
 pub use solana_proof_source::RawInstruction;
@@ -87,27 +94,6 @@ impl DecodedInstruction {
         }
     }
 }
-
-/// Anchor-style 8-byte global instruction discriminator: `sha256("global:<name>")[..8]`.
-fn discriminator(name: &str) -> [u8; 8] {
-    let digest = Sha256::digest(format!("global:{name}").as_bytes());
-    let mut out = [0u8; 8];
-    out.copy_from_slice(&digest[..8]);
-    out
-}
-
-/// Anchor-style 8-byte event discriminator: `sha256("event:<name>")[..8]`.
-fn event_discriminator(name: &str) -> [u8; 8] {
-    let digest = Sha256::digest(format!("event:{name}").as_bytes());
-    let mut out = [0u8; 8];
-    out.copy_from_slice(&digest[..8]);
-    out
-}
-
-/// Anchor's `emit_cpi!` self-invocation sentinel prefixing the event bytes in an
-/// inner instruction (little-endian of `0x1d9acb512ea545e4`). Mirrors the
-/// host-listener's `ANCHOR_EVENT_IX_TAG_LE`.
-const ANCHOR_EVENT_IX_TAG_LE: [u8; 8] = 0x1d9acb512ea545e4_u64.to_le_bytes();
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 struct BornPublicOutput {
@@ -186,43 +172,30 @@ pub fn decode_instructions(ix: &RawInstruction) -> Result<Vec<DecodedInstruction
     if ix.data.len() < 8 {
         return Err(DecodeError::DataTooShort);
     }
-    let (disc, mut body) = ix.data.split_at(8);
-
-    if disc == discriminator("allow_subjects") {
-        let subjects = <Vec<[u8; 32]>>::deserialize(&mut body).map_err(borsh_err)?;
-        Ok(vec![DecodedInstruction::AllowSubjects {
-            encrypted_value: account_at(ix, ENCRYPTED_VALUE_ACCOUNT_INDEX)?,
-            subjects,
-        }])
-    } else if disc == discriminator("remove_subject") {
-        let subject = <[u8; 32]>::deserialize(&mut body).map_err(borsh_err)?;
-        Ok(vec![DecodedInstruction::RemoveSubject {
-            encrypted_value: account_at(ix, REMOVE_SUBJECT_ACCOUNT_INDEX)?,
-            subject,
-        }])
-    } else if disc == discriminator("make_handle_public") {
-        let handle = <[u8; 32]>::deserialize(&mut body).map_err(borsh_err)?;
-        Ok(vec![DecodedInstruction::MakeHandlePublic {
-            encrypted_value: account_at(ix, ENCRYPTED_VALUE_ACCOUNT_INDEX)?,
-            handle,
-        }])
-    } else if disc == discriminator("fhe_eval") {
+    match zama_host::decode::decode_instruction(&ix.data).map_err(malformed_err)? {
+        Some(ZamaHostInstruction::AllowSubjects { subjects }) => {
+            Ok(vec![DecodedInstruction::AllowSubjects {
+                encrypted_value: account_at(ix, ENCRYPTED_VALUE_ACCOUNT_INDEX)?,
+                subjects: subjects.iter().map(|subject| subject.to_bytes()).collect(),
+            }])
+        }
+        Some(ZamaHostInstruction::RemoveSubject { subject }) => {
+            Ok(vec![DecodedInstruction::RemoveSubject {
+                encrypted_value: account_at(ix, REMOVE_SUBJECT_ACCOUNT_INDEX)?,
+                subject: subject.to_bytes(),
+            }])
+        }
+        Some(ZamaHostInstruction::MakeHandlePublic { handle }) => {
+            Ok(vec![DecodedInstruction::MakeHandlePublic {
+                encrypted_value: account_at(ix, ENCRYPTED_VALUE_ACCOUNT_INDEX)?,
+                handle,
+            }])
+        }
         // Without the lifecycle batch (single-instruction decode), no born-public
         // output handle can be resolved; those leaves fail closed at proof time.
-        decode_fhe_eval_instruction(ix, &[])
-    } else {
-        Ok(Vec::new())
+        Some(ZamaHostInstruction::FheEval(plan)) => decode_fhe_eval_durable_outputs(ix, &plan, &[]),
+        None => Ok(Vec::new()),
     }
-}
-
-fn decode_fhe_eval_instruction(
-    ix: &RawInstruction,
-    born_public_handles: &[Option<[u8; 32]>],
-) -> Result<Vec<DecodedInstruction>, DecodeError> {
-    let (disc, mut body) = ix.data.split_at(8);
-    debug_assert_eq!(disc, discriminator("fhe_eval"));
-    let plan = FheEvalArgs::deserialize(&mut body).map_err(borsh_err)?;
-    decode_fhe_eval_durable_outputs(ix, &plan, born_public_handles)
 }
 
 /// Back-compat helper for tests and single-output callers. Transaction replay
@@ -234,6 +207,10 @@ pub fn decode_instruction(ix: &RawInstruction) -> Result<Option<DecodedInstructi
 
 fn borsh_err(e: std::io::Error) -> DecodeError {
     DecodeError::Borsh(e.to_string())
+}
+
+fn malformed_err(error: zama_host::decode::MalformedInstruction) -> DecodeError {
+    DecodeError::Borsh(error.message)
 }
 
 fn account_at(ix: &RawInstruction, index: usize) -> Result<[u8; 32], DecodeError> {
@@ -335,14 +312,12 @@ fn fhe_eval_step_output(step: &FheEvalStep) -> &FheEvalOutput {
 
 fn is_born_public_event(ix: &RawInstruction, program_id: [u8; 32]) -> bool {
     ix.program_id == program_id
-        && ix.data.starts_with(&ANCHOR_EVENT_IX_TAG_LE)
-        && ix.data.get(8..16) == Some(event_discriminator("PublicOutputsProducedEvent").as_slice())
+        && zama_host::decode::is_event_cpi::<PublicOutputsProducedEvent>(&ix.data)
 }
 
 fn is_random_seed_event(ix: &RawInstruction, program_id: [u8; 32]) -> bool {
     ix.program_id == program_id
-        && ix.data.starts_with(&ANCHOR_EVENT_IX_TAG_LE)
-        && ix.data.get(8..16) == Some(event_discriminator("FheEvalRandomSeedsEvent").as_slice())
+        && zama_host::decode::is_event_cpi::<FheEvalRandomSeedsEvent>(&ix.data)
 }
 
 fn validate_random_seed_event(
@@ -355,10 +330,7 @@ fn validate_random_seed_event(
     {
         return Err(DecodeError::InvalidRandomSeedEnvelope);
     }
-    let mut body = ix
-        .data
-        .strip_prefix(&ANCHOR_EVENT_IX_TAG_LE)
-        .and_then(|data| data.strip_prefix(&event_discriminator("FheEvalRandomSeedsEvent")))
+    let mut body = zama_host::decode::strip_event_cpi_envelope::<FheEvalRandomSeedsEvent>(&ix.data)
         .ok_or(DecodeError::InvalidRandomSeedEnvelope)?;
     let version = u8::deserialize(&mut body)
         .map_err(|error| DecodeError::MalformedRandomSeedEvent(error.to_string()))?;
@@ -409,11 +381,9 @@ fn decode_born_public_event(
     // Because failed transactions are discarded in `chain`, successful Anchor
     // dispatch with this exact PDA proves the host supplied its signer seeds;
     // #3136 separately pins the on-chain meta as signed and readonly.
-    let mut body = ix
-        .data
-        .strip_prefix(&ANCHOR_EVENT_IX_TAG_LE)
-        .and_then(|data| data.strip_prefix(&event_discriminator("PublicOutputsProducedEvent")))
-        .ok_or(DecodeError::InvalidBornPublicEnvelope)?;
+    let mut body =
+        zama_host::decode::strip_event_cpi_envelope::<PublicOutputsProducedEvent>(&ix.data)
+            .ok_or(DecodeError::InvalidBornPublicEnvelope)?;
     let version = u8::deserialize(&mut body)
         .map_err(|e| DecodeError::MalformedBornPublicEvent(e.to_string()))?;
     if version != zama_host::EVENT_VERSION {
@@ -615,7 +585,7 @@ pub fn decode_program_instructions(
 }
 
 fn is_fhe_eval(ix: &RawInstruction) -> bool {
-    ix.data.len() >= 8 && ix.data[..8] == discriminator("fhe_eval")
+    zama_host::decode::is_fhe_eval_instruction(&ix.data)
 }
 
 #[cfg(test)]
@@ -624,7 +594,35 @@ mod tests {
     use anchor_lang::prelude::Pubkey;
     use anchor_lang::AnchorSerialize;
     use borsh::BorshSerialize;
+    use sha2::{Digest, Sha256};
     use zama_host::state::{FheEvalOutput, FheEvalStep};
+
+    // The fixtures below re-derive every discriminator and the event self-CPI
+    // tag from first principles (sha256 over the Anchor name scheme, hardcoded
+    // tag bytes) while production decodes through zama-host's generated consts,
+    // so a drift in either side breaks these tests. The names passed to
+    // `discriminator`/`event_discriminator` are also what
+    // `solana/scripts/check_proof_store_idl.py` pins against the vendored IDL.
+
+    /// Anchor-style 8-byte global instruction discriminator: `sha256("global:<name>")[..8]`.
+    fn discriminator(name: &str) -> [u8; 8] {
+        let digest = Sha256::digest(format!("global:{name}").as_bytes());
+        let mut out = [0u8; 8];
+        out.copy_from_slice(&digest[..8]);
+        out
+    }
+
+    /// Anchor-style 8-byte event discriminator: `sha256("event:<name>")[..8]`.
+    fn event_discriminator(name: &str) -> [u8; 8] {
+        let digest = Sha256::digest(format!("event:{name}").as_bytes());
+        let mut out = [0u8; 8];
+        out.copy_from_slice(&digest[..8]);
+        out
+    }
+
+    /// Anchor's `emit_cpi!` self-invocation sentinel prefixing the event bytes
+    /// in an inner instruction (little-endian of `0x1d9acb512ea545e4`).
+    const ANCHOR_EVENT_IX_TAG_LE: [u8; 8] = 0x1d9acb512ea545e4_u64.to_le_bytes();
 
     fn program_id() -> [u8; 32] {
         [7u8; 32]
@@ -792,11 +790,9 @@ mod tests {
                 })
                 .collect(),
         };
-        let data = ANCHOR_EVENT_IX_TAG_LE
-            .iter()
-            .copied()
-            .chain(anchor_lang::Event::data(&event))
-            .collect();
+        let mut data = ANCHOR_EVENT_IX_TAG_LE.to_vec();
+        data.extend_from_slice(&event_discriminator("FheEvalRandomSeedsEvent"));
+        AnchorSerialize::serialize(&event, &mut data).unwrap();
         RawInstruction {
             program_id: program_id(),
             accounts: vec![zama_host::EVENT_AUTHORITY_AND_BUMP.0.to_bytes()],
@@ -804,6 +800,39 @@ mod tests {
             top_level_index: 0,
             stack_height: Some(2),
         }
+    }
+
+    /// The full ingest catalog, stated by name: production matches through the
+    /// generated consts, and this test re-derives each one from its Anchor
+    /// name. `check_proof_store_idl.py` reads these names to partition the
+    /// vendored IDL into decoded vs ignored instructions.
+    #[test]
+    fn generated_discriminators_match_name_derivation() {
+        use anchor_lang::Discriminator;
+        assert_eq!(
+            zama_host::instruction::FheEval::DISCRIMINATOR,
+            discriminator("fhe_eval")
+        );
+        assert_eq!(
+            zama_host::instruction::AllowSubjects::DISCRIMINATOR,
+            discriminator("allow_subjects")
+        );
+        assert_eq!(
+            zama_host::instruction::RemoveSubject::DISCRIMINATOR,
+            discriminator("remove_subject")
+        );
+        assert_eq!(
+            zama_host::instruction::MakeHandlePublic::DISCRIMINATOR,
+            discriminator("make_handle_public")
+        );
+        assert_eq!(
+            PublicOutputsProducedEvent::DISCRIMINATOR,
+            event_discriminator("PublicOutputsProducedEvent")
+        );
+        assert_eq!(
+            FheEvalRandomSeedsEvent::DISCRIMINATOR,
+            event_discriminator("FheEvalRandomSeedsEvent")
+        );
     }
 
     #[test]
@@ -817,6 +846,21 @@ mod tests {
             DecodedInstruction::MakeHandlePublic {
                 encrypted_value: ev,
                 handle: pk(0x20),
+            }
+        );
+    }
+
+    #[test]
+    fn decodes_allow_subjects_with_encrypted_value_at_index_2() {
+        let ev = pk(5);
+        let accounts = vec![pk(0xA), pk(0xB), ev, pk(0xC), pk(0xD)];
+        let ix = ix_with_data(accounts, "allow_subjects", vec![pk(0x21), pk(0x22)]);
+        let decoded = decode_instruction(&ix).unwrap().unwrap();
+        assert_eq!(
+            decoded,
+            DecodedInstruction::AllowSubjects {
+                encrypted_value: ev,
+                subjects: vec![pk(0x21), pk(0x22)],
             }
         );
     }

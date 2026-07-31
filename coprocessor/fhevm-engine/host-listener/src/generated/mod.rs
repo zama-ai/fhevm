@@ -13,11 +13,6 @@ pub mod solana_abi_schema_hashes {
     include!(concat!(env!("OUT_DIR"), "/solana_abi_schema_hashes.rs"));
 }
 
-#[allow(dead_code, unused_variables)]
-pub mod zama_host_instructions {
-    include!(concat!(env!("OUT_DIR"), "/zama_host_instructions.rs"));
-}
-
 pub use solana_abi_schema_hashes::{
     SolanaAbiSchema, SOLANA_ABI_SCHEMAS, SOLANA_EVENT_VERSIONS,
 };
@@ -27,9 +22,6 @@ pub use zama_host_events::{
     FheRandEvent, FheSumEvent, FheTernaryOpCode, FheTernaryOpEvent,
     FheUnaryOpCode, FheUnaryOpEvent, ProducedPublicOutput,
     PublicOutputsProducedEvent, TrivialEncryptEvent, EVENT_VERSION,
-};
-pub use zama_host_instructions::{
-    decode_zama_host_instruction, ZamaHostInstruction,
 };
 
 #[cfg(test)]

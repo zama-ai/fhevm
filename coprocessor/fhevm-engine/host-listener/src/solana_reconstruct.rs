@@ -5,7 +5,7 @@
 //! program's own `computed_*` functions, byte-identical to on-chain emission)
 //! and the event-free `EncryptedValue` instruction decode (RFC-024).
 
-use anchor_lang::{AnchorDeserialize, AnchorSerialize, Discriminator};
+use anchor_lang::Discriminator;
 use zama_host::state::{
     computed_eval_handle, computed_eval_is_in_handle,
     computed_eval_mul_div_handle, computed_eval_sum_handle,
@@ -39,39 +39,30 @@ pub struct ReconstructContext {
     pub unix_timestamp: i64,
 }
 
-/// Discriminator for the `fhe_eval` instruction (sha256("global:fhe_eval")[..8]).
-const FHE_EVAL_DISCRIMINATOR: [u8; 8] = [176, 42, 63, 177, 244, 167, 120, 109];
-
 pub fn is_fhe_eval_instruction(instruction_data: &[u8]) -> bool {
-    instruction_data.starts_with(&FHE_EVAL_DISCRIMINATOR)
+    zama_host::decode::is_fhe_eval_instruction(instruction_data)
 }
 
 /// Decodes a `fhe_eval` instruction's data into the program's own `FheEvalArgs`
-/// step plan, reusing the zama-host type (so there is no bespoke decoder to drift
-/// from the on-chain layout). The decoded plan is the input to the eval walk that
-/// reconstructs one compute event per step — a separate pass that recomputes each
-/// step's handle and therefore depends on `previous_bank_hash`.
+/// step plan through `zama_host::decode` (so there is no bespoke decoder to
+/// drift from the on-chain layout). The decoded plan is the input to the eval
+/// walk that reconstructs one compute event per step — a separate pass that
+/// recomputes each step's handle and therefore depends on `previous_bank_hash`.
 pub fn decode_fhe_eval_args(instruction_data: &[u8]) -> Option<FheEvalArgs> {
-    let payload = instruction_data.strip_prefix(&FHE_EVAL_DISCRIMINATOR)?;
-    decode_anchor_args(payload)
+    match zama_host::decode::decode_instruction(instruction_data) {
+        Ok(Some(zama_host::decode::ZamaHostInstruction::FheEval(args))) => {
+            Some(args)
+        }
+        _ => None,
+    }
 }
 
 pub fn decode_fhe_eval_random_seeds_event(
     instruction_data: &[u8],
 ) -> Option<FheEvalRandomSeedsEvent> {
-    let prefix = anchor_lang::event::EVENT_IX_TAG_LE
-        .iter()
-        .copied()
-        .chain(FheEvalRandomSeedsEvent::DISCRIMINATOR.iter().copied())
-        .collect::<Vec<_>>();
-    let payload = instruction_data.strip_prefix(prefix.as_slice())?;
-    let event: FheEvalRandomSeedsEvent = decode_anchor_args(payload)?;
+    let event: FheEvalRandomSeedsEvent =
+        zama_host::decode::decode_event_cpi(instruction_data)?;
     (event.version == zama_host::EVENT_VERSION).then_some(event)
-}
-
-fn decode_anchor_args<T: AnchorDeserialize>(payload: &[u8]) -> Option<T> {
-    // Match Anchor's generated instruction handler, which accepts trailing bytes.
-    T::deserialize(&mut &payload[..]).ok()
 }
 
 // --- RFC-024 `EncryptedValue` instruction decode -----------------------------
@@ -84,47 +75,22 @@ fn decode_anchor_args<T: AnchorDeserialize>(payload: &[u8]) -> Option<T> {
 // app program may invoke these via CPI) by Anchor discriminator
 // (`sha256("global:<name>")[..8]`).
 
-#[derive(AnchorDeserialize, AnchorSerialize, Clone, Debug, PartialEq, Eq)]
-pub struct MakeHandlePublicArgs {
-    pub handle: [u8; 32],
-}
-
-#[derive(AnchorDeserialize, AnchorSerialize, Clone, Debug, PartialEq, Eq)]
-pub struct AllowSubjectsArgs {
-    pub subjects: Vec<[u8; 32]>,
-}
-
-#[derive(AnchorDeserialize, AnchorSerialize, Clone, Debug, PartialEq, Eq)]
-pub struct RemoveSubjectArgs {
-    pub subject: [u8; 32],
-}
-
 /// A decoded `EncryptedValue` instruction, args-only (accounts are resolved by
-/// the caller from the instruction's account list.
+/// the caller from the instruction's account list).
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum EncryptedValueInstruction {
-    MakeHandlePublic(MakeHandlePublicArgs),
-    AllowSubjects(AllowSubjectsArgs),
-    RemoveSubject(RemoveSubjectArgs),
+    MakeHandlePublic { handle: [u8; 32] },
+    AllowSubjects { subjects: Vec<[u8; 32]> },
+    RemoveSubject { subject: [u8; 32] },
 }
-
-/// `sha256("global:make_handle_public")[..8]`.
-const MAKE_HANDLE_PUBLIC_DISCRIMINATOR: [u8; 8] =
-    [66, 199, 252, 247, 244, 172, 42, 118];
-/// `sha256("global:allow_subjects")[..8]`.
-const ALLOW_SUBJECTS_DISCRIMINATOR: [u8; 8] =
-    [186, 205, 31, 20, 183, 17, 5, 26];
-/// `sha256("global:remove_subject")[..8]`.
-const REMOVE_SUBJECT_DISCRIMINATOR: [u8; 8] =
-    [66, 88, 46, 123, 6, 107, 208, 50];
 
 pub fn is_encrypted_value_instruction(data: &[u8]) -> bool {
     let Some(discriminator) = data.get(..8) else {
         return false;
     };
-    discriminator == MAKE_HANDLE_PUBLIC_DISCRIMINATOR
-        || discriminator == ALLOW_SUBJECTS_DISCRIMINATOR
-        || discriminator == REMOVE_SUBJECT_DISCRIMINATOR
+    discriminator == zama_host::instruction::MakeHandlePublic::DISCRIMINATOR
+        || discriminator == zama_host::instruction::AllowSubjects::DISCRIMINATOR
+        || discriminator == zama_host::instruction::RemoveSubject::DISCRIMINATOR
 }
 
 /// `allow_subjects` and `make_handle_public` place `encrypted_value` at this
@@ -135,26 +101,31 @@ pub fn is_encrypted_value_instruction(data: &[u8]) -> bool {
 pub const ENCRYPTED_VALUE_ACCOUNT_INDEX: usize = 2;
 
 /// Decodes one `EncryptedValue` instruction from raw instruction data
-/// (discriminator + borsh args), or `None` if the discriminator doesn't match
-/// any known lifecycle discriminator (i.e. it is not an `EncryptedValue` instruction at all —
-/// the caller tries this decoder against every top-level and inner
-/// instruction of the zama-host program).
+/// (discriminator + borsh args) through `zama_host::decode`, or `None` if the
+/// data is not a well-formed `EncryptedValue` instruction at all — the caller
+/// tries this decoder against every top-level and inner instruction of the
+/// zama-host program.
 pub fn decode_encrypted_value_instruction(
     data: &[u8],
 ) -> Option<EncryptedValueInstruction> {
-    if data.len() < 8 {
-        return None;
-    }
-    let (discriminator, payload) = data.split_at(8);
-    match discriminator {
-        d if d == MAKE_HANDLE_PUBLIC_DISCRIMINATOR => {
-            decode_anchor_args(payload)
-                .map(EncryptedValueInstruction::MakeHandlePublic)
+    use zama_host::decode::ZamaHostInstruction;
+    match zama_host::decode::decode_instruction(data).ok()? {
+        Some(ZamaHostInstruction::MakeHandlePublic { handle }) => {
+            Some(EncryptedValueInstruction::MakeHandlePublic { handle })
         }
-        d if d == ALLOW_SUBJECTS_DISCRIMINATOR => decode_anchor_args(payload)
-            .map(EncryptedValueInstruction::AllowSubjects),
-        d if d == REMOVE_SUBJECT_DISCRIMINATOR => decode_anchor_args(payload)
-            .map(EncryptedValueInstruction::RemoveSubject),
+        Some(ZamaHostInstruction::AllowSubjects { subjects }) => {
+            Some(EncryptedValueInstruction::AllowSubjects {
+                subjects: subjects
+                    .iter()
+                    .map(|subject| subject.to_bytes())
+                    .collect(),
+            })
+        }
+        Some(ZamaHostInstruction::RemoveSubject { subject }) => {
+            Some(EncryptedValueInstruction::RemoveSubject {
+                subject: subject.to_bytes(),
+            })
+        }
         _ => None,
     }
 }
@@ -163,9 +134,9 @@ pub(crate) fn encrypted_value_account_index(
     instruction: &EncryptedValueInstruction,
 ) -> usize {
     match instruction {
-        EncryptedValueInstruction::RemoveSubject(_) => 1,
-        EncryptedValueInstruction::MakeHandlePublic(_)
-        | EncryptedValueInstruction::AllowSubjects(_) => {
+        EncryptedValueInstruction::RemoveSubject { .. } => 1,
+        EncryptedValueInstruction::MakeHandlePublic { .. }
+        | EncryptedValueInstruction::AllowSubjects { .. } => {
             ENCRYPTED_VALUE_ACCOUNT_INDEX
         }
     }
@@ -179,11 +150,11 @@ pub fn encrypted_value_material_requests(
     instruction: &EncryptedValueInstruction,
 ) -> Vec<SolanaMaterialRequest> {
     match instruction {
-        EncryptedValueInstruction::MakeHandlePublic(args) => {
-            vec![material_request(args.handle)]
+        EncryptedValueInstruction::MakeHandlePublic { handle } => {
+            vec![material_request(*handle)]
         }
-        EncryptedValueInstruction::AllowSubjects(_)
-        | EncryptedValueInstruction::RemoveSubject(_) => Vec::new(),
+        EncryptedValueInstruction::AllowSubjects { .. }
+        | EncryptedValueInstruction::RemoveSubject { .. } => Vec::new(),
     }
 }
 
@@ -721,7 +692,7 @@ mod encrypted_value_decode_tests {
 
     type TestInstruction<'a> = (&'a str, &'a [u8], &'a [[u8; 32]]);
 
-    fn encode(discriminator: [u8; 8], args: impl AnchorSerialize) -> Vec<u8> {
+    fn encode(discriminator: &[u8], args: impl AnchorSerialize) -> Vec<u8> {
         let mut bytes = discriminator.to_vec();
         args.serialize(&mut bytes).unwrap();
         bytes
@@ -741,49 +712,68 @@ mod encrypted_value_decode_tests {
 
     #[test]
     fn decodes_make_handle_public_handle_arg() {
-        let args = MakeHandlePublicArgs { handle: [4; 32] };
-        let data = encode(MAKE_HANDLE_PUBLIC_DISCRIMINATOR, args.clone());
+        let data = encode(
+            zama_host::instruction::MakeHandlePublic::DISCRIMINATOR,
+            [4u8; 32],
+        );
         assert_eq!(
             decode_encrypted_value_instruction(&data),
-            Some(EncryptedValueInstruction::MakeHandlePublic(args))
+            Some(EncryptedValueInstruction::MakeHandlePublic {
+                handle: [4; 32]
+            })
         );
     }
 
     #[test]
     fn lifecycle_decode_matches_anchor_trailing_byte_semantics() {
-        let args = MakeHandlePublicArgs { handle: [4; 32] };
-        let mut data = encode(MAKE_HANDLE_PUBLIC_DISCRIMINATOR, args.clone());
+        let mut data = encode(
+            zama_host::instruction::MakeHandlePublic::DISCRIMINATOR,
+            [4u8; 32],
+        );
         data.extend_from_slice(&[0xAA, 0xBB]);
         assert_eq!(
             decode_encrypted_value_instruction(&data),
-            Some(EncryptedValueInstruction::MakeHandlePublic(args))
+            Some(EncryptedValueInstruction::MakeHandlePublic {
+                handle: [4; 32]
+            })
         );
     }
 
     #[test]
     fn make_handle_public_malformed_args_fail_closed() {
-        let data = MAKE_HANDLE_PUBLIC_DISCRIMINATOR.to_vec();
+        let data =
+            zama_host::instruction::MakeHandlePublic::DISCRIMINATOR.to_vec();
         assert_eq!(decode_encrypted_value_instruction(&data), None);
     }
 
     #[test]
     fn decodes_allow_subjects() {
-        let args = AllowSubjectsArgs {
-            subjects: vec![[6; 32]],
-        };
-        let data = encode(ALLOW_SUBJECTS_DISCRIMINATOR, args.clone());
+        let data = encode(
+            zama_host::instruction::AllowSubjects::DISCRIMINATOR,
+            vec![[6u8; 32]],
+        );
         let decoded = decode_encrypted_value_instruction(&data)
             .expect("must decode allow_subjects");
-        assert_eq!(decoded, EncryptedValueInstruction::AllowSubjects(args));
+        assert_eq!(
+            decoded,
+            EncryptedValueInstruction::AllowSubjects {
+                subjects: vec![[6; 32]]
+            }
+        );
     }
 
     #[test]
     fn decodes_remove_subject() {
-        let args = RemoveSubjectArgs { subject: [7; 32] };
-        let data = encode(REMOVE_SUBJECT_DISCRIMINATOR, args.clone());
+        let data = encode(
+            zama_host::instruction::RemoveSubject::DISCRIMINATOR,
+            [7u8; 32],
+        );
         let decoded = decode_encrypted_value_instruction(&data)
             .expect("must decode remove_subject");
-        assert_eq!(decoded, EncryptedValueInstruction::RemoveSubject(args));
+        assert_eq!(
+            decoded,
+            EncryptedValueInstruction::RemoveSubject { subject: [7; 32] }
+        );
     }
 
     #[test]
@@ -794,9 +784,8 @@ mod encrypted_value_decode_tests {
 
     #[test]
     fn make_handle_public_requests_decoded_handle() {
-        let args = MakeHandlePublicArgs { handle: [4; 32] };
         let requests = encrypted_value_material_requests(
-            &EncryptedValueInstruction::MakeHandlePublic(args),
+            &EncryptedValueInstruction::MakeHandlePublic { handle: [4; 32] },
         );
         assert_eq!(requests.len(), 1);
         assert_eq!(
@@ -807,20 +796,18 @@ mod encrypted_value_decode_tests {
 
     #[test]
     fn allow_subjects_schedules_no_material() {
-        let args = AllowSubjectsArgs {
-            subjects: vec![[6; 32], [7; 32]],
-        };
         let requests = encrypted_value_material_requests(
-            &EncryptedValueInstruction::AllowSubjects(args),
+            &EncryptedValueInstruction::AllowSubjects {
+                subjects: vec![[6; 32], [7; 32]],
+            },
         );
         assert!(requests.is_empty());
     }
 
     #[test]
     fn remove_subject_does_not_delete_prepared_material() {
-        let args = RemoveSubjectArgs { subject: [6; 32] };
         let requests = encrypted_value_material_requests(
-            &EncryptedValueInstruction::RemoveSubject(args),
+            &EncryptedValueInstruction::RemoveSubject { subject: [6; 32] },
         );
         assert!(requests.is_empty());
     }
@@ -832,14 +819,12 @@ mod encrypted_value_decode_tests {
         // picked up even though only the second is literally top-level here —
         // the walk must not special-case position, only program id.
         let create_data = encode(
-            MAKE_HANDLE_PUBLIC_DISCRIMINATOR,
-            MakeHandlePublicArgs { handle: [4; 32] },
+            zama_host::instruction::MakeHandlePublic::DISCRIMINATOR,
+            [4u8; 32],
         );
         let allow_data = encode(
-            ALLOW_SUBJECTS_DISCRIMINATOR,
-            AllowSubjectsArgs {
-                subjects: vec![[6; 32]],
-            },
+            zama_host::instruction::AllowSubjects::DISCRIMINATOR,
+            vec![[6u8; 32]],
         );
         let accounts = accounts_with_encrypted_value_at_index_2();
         let app_program = "AppProgram111111111111111111111111111111";
@@ -862,8 +847,8 @@ mod encrypted_value_decode_tests {
     #[test]
     fn transaction_decode_uses_remove_subject_account_index() {
         let remove_data = encode(
-            REMOVE_SUBJECT_DISCRIMINATOR,
-            RemoveSubjectArgs { subject: [6; 32] },
+            zama_host::instruction::RemoveSubject::DISCRIMINATOR,
+            [6u8; 32],
         );
         let accounts = remove_subject_accounts();
         let instructions: Vec<TestInstruction<'_>> =
@@ -876,8 +861,8 @@ mod encrypted_value_decode_tests {
     #[test]
     fn non_zama_host_program_instructions_are_skipped() {
         let data = encode(
-            MAKE_HANDLE_PUBLIC_DISCRIMINATOR,
-            MakeHandlePublicArgs { handle: [4; 32] },
+            zama_host::instruction::MakeHandlePublic::DISCRIMINATOR,
+            [4u8; 32],
         );
         let accounts = accounts_with_encrypted_value_at_index_2();
         let instructions: Vec<TestInstruction<'_>> = vec![(
@@ -931,7 +916,7 @@ mod tests {
             ],
         };
         // Serialize like the on-chain instruction: discriminator + borsh args.
-        let mut bytes = FHE_EVAL_DISCRIMINATOR.to_vec();
+        let mut bytes = zama_host::instruction::FheEval::DISCRIMINATOR.to_vec();
         plan.serialize(&mut bytes).expect("serialize plan");
         let decoded = decode_fhe_eval_args(&bytes).expect("decode plan");
         assert_eq!(decoded, plan);
