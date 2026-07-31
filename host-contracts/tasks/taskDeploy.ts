@@ -1,6 +1,6 @@
 import { HardhatUpgrades } from '@openzeppelin/hardhat-upgrades';
 import dotenv from 'dotenv';
-import { Wallet } from 'ethers';
+import { type TransactionResponse, Wallet } from 'ethers';
 import fs from 'fs';
 import { task, types } from 'hardhat/config';
 import type { HardhatEthersHelpers, HardhatRuntimeEnvironment, TaskArguments } from 'hardhat/types';
@@ -531,7 +531,7 @@ task('task:deployBridge').setAction(async function (_, hre) {
   const newImplem = await ethers.getContractFactory('ConfidentialBridge', deployer);
 
   const proxy = await upgrades.forceImport(proxyAddress, currentImplementation);
-  await upgrades.upgradeProxy(proxy, newImplem, {
+  const receipt = await upgrades.upgradeProxy(proxy, newImplem, {
     constructorArgs: [lzEndpoint],
     // - constructor / state-variable-immutable: LayerZero's `OAppCoreUpgradeable`
     //   stores the endpoint as an immutable in the implementation's constructor.
@@ -541,6 +541,7 @@ task('task:deployBridge').setAction(async function (_, hre) {
     unsafeAllow: ['constructor', 'state-variable-immutable', 'missing-initializer-call'],
     call: { fn: 'initializeFromEmptyProxy', args: [[], []] },
   });
+  await (receipt as unknown as { deployTransaction: TransactionResponse }).deployTransaction.wait();
   // Confirm the endpoint immutable baked into the freshly deployed implementation matches the
   // address we intended, reading it back off the now-upgraded proxy.
   await assertBridgeEndpointImmutable(hre, proxyAddress, lzEndpoint, '[task:deployBridge]');
