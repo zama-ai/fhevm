@@ -326,7 +326,7 @@ pub enum FheEvalOutput {
     /// Output stays allowed only inside the current `fhe_eval` scope; no persistent ACL record.
     AllowedLocal,
     /// Output is bound into persistent ACL state: the `EncryptedValue` encrypted value account PDA
-    /// is created when absent, or superseded when it exists.
+    /// is created when absent, or replaced when it exists.
     AllowedPersistent {
         /// Index into `remaining_accounts` for the output `EncryptedValue` PDA.
         output_encrypted_value_index: u8,
@@ -343,15 +343,15 @@ pub enum FheEvalOutput {
         /// Dictionary index of the encrypted value label for the output encrypted value account.
         output_encrypted_value_label_index: u8,
         /// Dictionary indexes of the subjects on the output encrypted value account. On create these
-        /// are the initial subjects; on supersede they become the new audience, which may rotate
+        /// are the initial subjects; on update they become the new audience, which may rotate
         /// away from the stored set (the outgoing audience is sealed into
         /// historical leaves first; added subjects pass the grant deny-list).
         output_subject_indexes: Vec<u8>,
-        /// Superseded handle: `None` on create, `Some(current_handle)` on update.
+        /// Replaced handle: `None` on create, `Some(current_handle)` on update.
         /// Carried in instruction data so indexers can reconstruct the appended
         /// MMR leaves without reading the account; validated against the account.
         previous_handle: Option<[u8; 32]>,
-        /// Superseded subject set, parallel to `previous_handle` (`None` on create,
+        /// Replaced subject set, parallel to `previous_handle` (`None` on create,
         /// exact stored subjects on update). Same indexer-reconstruction purpose.
         previous_subjects: Option<Vec<Pubkey>>,
         /// When true, the newly bound handle is created publicly decryptable: after

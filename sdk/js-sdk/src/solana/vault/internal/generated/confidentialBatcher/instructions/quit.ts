@@ -176,7 +176,7 @@ export type QuitAsyncInput<
   userTokenAccount: Address<TAccountUserTokenAccount>;
   batchBalanceValue: Address<TAccountBatchBalanceValue>;
   userBalanceValue: Address<TAccountUserBalanceValue>;
-  /** a transfer FROM the batch account); superseded by the token CPI. */
+  /** a transfer FROM the batch account); replaced by the token CPI. */
   batchTransferredValue: Address<TAccountBatchTransferredValue>;
   /** amount, then reset to an encrypted zero by the batcher eval. */
   pendingJoinValue: Address<TAccountPendingJoinValue>;
@@ -441,7 +441,7 @@ export type QuitInput<
   userTokenAccount: Address<TAccountUserTokenAccount>;
   batchBalanceValue: Address<TAccountBatchBalanceValue>;
   userBalanceValue: Address<TAccountUserBalanceValue>;
-  /** a transfer FROM the batch account); superseded by the token CPI. */
+  /** a transfer FROM the batch account); replaced by the token CPI. */
   batchTransferredValue: Address<TAccountBatchTransferredValue>;
   /** amount, then reset to an encrypted zero by the batcher eval. */
   pendingJoinValue: Address<TAccountPendingJoinValue>;
@@ -677,7 +677,7 @@ export type ParsedQuitInstruction<
     userTokenAccount: TAccountMetas[9];
     batchBalanceValue: TAccountMetas[10];
     userBalanceValue: TAccountMetas[11];
-    /** a transfer FROM the batch account); superseded by the token CPI. */
+    /** a transfer FROM the batch account); replaced by the token CPI. */
     batchTransferredValue: TAccountMetas[12];
     /** amount, then reset to an encrypted zero by the batcher eval. */
     pendingJoinValue: TAccountMetas[13];

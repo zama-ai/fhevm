@@ -24,12 +24,12 @@ pub(super) fn preflight_eval_frame<'info>(
 /// losing input access. A frame with neither pinning operand and no persistent output persists nothing
 /// and verifies nothing: `compute_subject` is a free variable AND the frame produces nothing of
 /// value (its transient outputs create no ACL leaf and are undecryptable). That class is what the
-/// keypair-rotation bypass rode, so it is rejected before compute.
+/// keypair-churn bypass rode, so it is rejected before compute.
 ///
 /// A persistent OUTPUT is allowed through here, but note it does NOT pin the subject: output binding
 /// authorizes against `app_account_authority`, never `compute_subject`. So a throwaway-encrypted value account
-/// create/supersede still lets a caller rotate the subject for a fresh per-slot meter — that vector
-/// remains open, but is rent-bounded (~one `HcuBlockMeter` PDA rent per rotation) rather than free,
+/// create/update still lets a caller swap the subject for a fresh per-slot meter — that vector
+/// remains open, but is rent-bounded (~one `HcuBlockMeter` PDA rent per swap) rather than free,
 /// and closing it fully needs a registered app identity (the issue's Option 2, deferred). The
 /// allowance is kept because it is also the legitimate trivial-encrypt/`Rand` -> persistent-output
 /// bootstrap/mint path. The deactivated cap (`u64::MAX`, the ship default) short-circuits, so
@@ -358,7 +358,7 @@ fn preflight_output(
             let authority = preflight.mark_output_authority(*output_app_account_authority_index)?;
             preflight.mark_deny_record(authority)?;
             // Every newly granted subject is deny-checked in the bind pass; mark
-            // their deny records here so finish() accounts for them. On a supersede
+            // their deny records here so finish() accounts for them. On a update
             // the new set is `output_subjects \ previous_subjects` from instruction
             // data alone — a lying previous_subjects is rejected later with
             // PreviousStateMismatch, so trusting it for account-marking is safe. On

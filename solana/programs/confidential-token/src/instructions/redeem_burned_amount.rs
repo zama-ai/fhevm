@@ -136,7 +136,7 @@ pub fn redeem_burned_amount(
     )?;
 
     // ValueAccount binding: the burned handle need not be current. The burn already made it publicly
-    // decryptable (DD-036 / Vector 2), so a historical handle superseded by a later burn stays
+    // decryptable (DD-036 / Vector 2), so a historical handle replaced by a later burn stays
     // redeemable; the exact-handle MMR public-decrypt proof is checked inside the verifier CPI.
     assert_burned_amount_value_account(
         &ctx.accounts.burned_amount_value,

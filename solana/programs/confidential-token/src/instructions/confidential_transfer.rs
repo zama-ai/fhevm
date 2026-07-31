@@ -24,14 +24,14 @@ pub struct ConfidentialTransfer<'info> {
     #[account(seeds = [b"fhe-compute", mint.key().as_ref()], bump)]
     pub compute_signer: UncheckedAccount<'info>,
     /// Sender's stable balance `EncryptedValue` encrypted value account; read for the current
-    /// handle and superseded in place by this eval's CPI.
+    /// handle and replaced in place by this eval's CPI.
     #[account(mut, address = from_account.balance_encrypted_value)]
     pub from_balance_value: Box<Account<'info, zama_host::EncryptedValue>>,
     /// Recipient's stable balance `EncryptedValue` encrypted value account.
     #[account(mut, dup, address = to_account.balance_encrypted_value)]
     pub to_balance_value: Box<Account<'info, zama_host::EncryptedValue>>,
     /// CHECK: stable `transferred_amount` encrypted value account for `from_account`; created on
-    /// the sender's first transfer, superseded thereafter.
+    /// the sender's first transfer, replaced thereafter.
     #[account(mut, address = encrypted_value_address(mint.key(), from_account.key(), transferred_amount_label()).0)]
     pub transferred_amount_value: UncheckedAccount<'info>,
     /// CHECK: Anchor event CPI authority for the Zama host program.
@@ -84,7 +84,7 @@ impl<'info> ConfidentialTransfer<'info> {
     }
 }
 
-/// Transfers an encrypted amount by rotating the sender and recipient balance handles.
+/// Transfers an encrypted amount by updating the sender and recipient balance handles.
 pub fn confidential_transfer<'info>(
     ctx: Context<'info, ConfidentialTransfer<'info>>,
     amount_attestation: zama_host::CoprocessorInputAttestation,
@@ -141,7 +141,7 @@ pub fn confidential_transfer<'info>(
 ///
 /// Identical to [`ConfidentialTransfer`] except the 190-byte attestation argument is gone and one
 /// account is added: `amount_value`, the encrypted amount to spend. It is read-only — the persistent
-/// operand the eval reads — and is never superseded or consumed; only the two balance encrypted value accounts
+/// operand the eval reads — and is never replaced or consumed; only the two balance encrypted value accounts
 /// change through the same `ge -> sub -> select` debit and `add` credit.
 #[derive(Accounts)]
 #[event_cpi]
@@ -164,18 +164,18 @@ pub struct ConfidentialTransferFromValue<'info> {
     #[account(seeds = [b"fhe-compute", mint.key().as_ref()], bump)]
     pub compute_signer: UncheckedAccount<'info>,
     /// Sender's stable balance `EncryptedValue` encrypted value account; read for the current
-    /// handle and superseded in place by this eval's CPI.
+    /// handle and replaced in place by this eval's CPI.
     #[account(mut, address = from_account.balance_encrypted_value)]
     pub from_balance_value: Box<Account<'info, zama_host::EncryptedValue>>,
     /// Recipient's stable balance `EncryptedValue` encrypted value account.
     #[account(mut, dup, address = to_account.balance_encrypted_value)]
     pub to_balance_value: Box<Account<'info, zama_host::EncryptedValue>>,
     /// CHECK: stable `transferred_amount` encrypted value account for `from_account`; created on
-    /// the sender's first transfer, superseded thereafter.
+    /// the sender's first transfer, replaced thereafter.
     #[account(mut, address = encrypted_value_address(mint.key(), from_account.key(), transferred_amount_label()).0)]
     pub transferred_amount_value: UncheckedAccount<'info>,
     /// The existing encrypted amount to spend: a computed or received `euint64` handle. Read-only
-    /// persistent operand — never superseded, never consumed. Its address is the canonical PDA of its
+    /// persistent operand — never replaced, never consumed. Its address is the canonical PDA of its
     /// own `(acl_domain_key, app_account, encrypted_value_label)` fields, so an encrypted value account from any app
     /// may be passed here once its owner has granted the mint's compute subject via `allow_subjects`.
     pub amount_value: Box<Account<'info, zama_host::EncryptedValue>>,
@@ -229,7 +229,7 @@ impl<'info> ConfidentialTransferFromValue<'info> {
     }
 }
 
-/// Transfers an encrypted amount taken from an existing on-chain `EncryptedValue`, rotating the
+/// Transfers an encrypted amount taken from an existing on-chain `EncryptedValue`, updating the
 /// sender and recipient balance handles. The amount value is spent read-only.
 pub fn confidential_transfer_from_value<'info>(
     ctx: Context<'info, ConfidentialTransferFromValue<'info>>,

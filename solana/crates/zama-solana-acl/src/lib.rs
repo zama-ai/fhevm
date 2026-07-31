@@ -59,7 +59,7 @@ pub enum AclError {
 ///
 /// One account per encrypted value, reused across every handle update. The on-chain
 /// account is `realloc`-grown and never shrunk, so its byte size tracks the
-/// high-water mark of `peaks` plus `subjects` (`subjects` may rotate rather than
+/// high-water mark of `peaks` plus `subjects` (`subjects` may be replaced rather than
 /// only grow); a current-only encrypted value account (`leaf_count == 0`) stays tiny and pays
 /// nothing for history.
 #[derive(borsh::BorshSerialize, borsh::BorshDeserialize, Clone, Debug, Default, PartialEq, Eq)]

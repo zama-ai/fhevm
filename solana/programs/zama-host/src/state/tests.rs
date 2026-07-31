@@ -102,9 +102,9 @@ fn rand_seed_is_distinct_across_every_uniqueness_axis() {
     // (key, previous_handle) tickets) gives a fresh seed.
     let other_anchor: Vec<u8> = [Pubkey::new_unique().to_bytes(), [7; 32]].concat();
     assert_ne!(base, seed(subject, &other_anchor, 0, [9; 32]));
-    // Sequential supersede of the same account: previous_handle advances, so the anchor differs.
-    let superseded_anchor: Vec<u8> = [anchor[..32].try_into().unwrap(), [8; 32]].concat();
-    assert_ne!(base, seed(subject, &superseded_anchor, 0, [9; 32]));
+    // Sequential update of the same account: previous_handle advances, so the anchor differs.
+    let replaced_anchor: Vec<u8> = [anchor[..32].try_into().unwrap(), [8; 32]].concat();
+    assert_ne!(base, seed(subject, &replaced_anchor, 0, [9; 32]));
     // Two rand steps in one frame differ by op_index.
     assert_ne!(base, seed(subject, &anchor, 1, [9; 32]));
     // Cross-slot: slot entropy differs.

@@ -301,7 +301,7 @@ fn read_encrypted_value_from_context(
     EncryptedValue::try_deserialize(&mut data).expect("valid EncryptedValue account")
 }
 
-fn supersede_with_fhe_eval(
+fn update_with_fhe_eval(
     payer: Pubkey,
     compute_subject: Pubkey,
     host_config: Pubkey,
@@ -353,7 +353,7 @@ fn supersede_with_fhe_eval(
 }
 
 #[allow(clippy::too_many_arguments)]
-fn expect_fhe_eval_supersede_error(
+fn expect_fhe_eval_update_error(
     payer: Pubkey,
     compute_subject: Pubkey,
     host_config: Pubkey,
@@ -942,7 +942,7 @@ fn mollusk_remove_subject_rejects_last_subject() {
 }
 
 #[test]
-fn mollusk_removed_subject_gets_no_historical_leaf_when_later_superseded() {
+fn mollusk_removed_subject_gets_no_historical_leaf_when_later_updated() {
     let authority = Pubkey::new_unique();
     let (host_config, host_config_account) = host_config_account(authority);
     let owner = Pubkey::new_unique();
@@ -967,7 +967,7 @@ fn mollusk_removed_subject_gets_no_historical_leaf_when_later_superseded() {
     let value_after_remove = read_encrypted_value(&result0, address);
     assert_eq!(value_after_remove.subjects, vec![owner]);
 
-    let updated = supersede_with_fhe_eval(
+    let updated = update_with_fhe_eval(
         authority,
         owner,
         host_config,
@@ -990,7 +990,7 @@ fn mollusk_removed_subject_gets_no_historical_leaf_when_later_superseded() {
     assert_eq!(updated.peaks, expected_peaks);
 
     let events = [
-        zama_solana_acl::value_account::EncryptedValueAccountEvent::handle_superseded(
+        zama_solana_acl::value_account::EncryptedValueAccountEvent::handle_updated(
             handle0,
             &[owner.to_bytes()],
         ),
@@ -1037,7 +1037,7 @@ fn mollusk_subject_retains_historical_access_sealed_before_removal() {
         &[owner, removed],
     );
 
-    let value1 = supersede_with_fhe_eval(
+    let value1 = update_with_fhe_eval(
         authority,
         owner,
         host_config,
@@ -1061,7 +1061,7 @@ fn mollusk_subject_retains_historical_access_sealed_before_removal() {
     assert_eq!(final_value.leaf_count, 2);
 
     let events = [
-        zama_solana_acl::value_account::EncryptedValueAccountEvent::handle_superseded(
+        zama_solana_acl::value_account::EncryptedValueAccountEvent::handle_updated(
             handle0,
             &[owner.to_bytes(), removed.to_bytes()],
         ),
@@ -1085,11 +1085,11 @@ fn mollusk_subject_retains_historical_access_sealed_before_removal() {
 }
 
 // ---------------------------------------------------------------------------
-// Persistent supersession through fhe_eval outputs (item 2c/2d)
+// Persistent update through fhe_eval outputs (item 2c/2d)
 // ---------------------------------------------------------------------------
 
 #[test]
-fn mollusk_fhe_eval_supersedes_and_appends_allowed_subject_leaves() {
+fn mollusk_fhe_eval_updates_and_appends_allowed_subject_leaves() {
     let authority = Pubkey::new_unique();
     let (host_config, host_config_account) = host_config_account(authority);
     let subject_a = Pubkey::new_unique();
@@ -1103,7 +1103,7 @@ fn mollusk_fhe_eval_supersedes_and_appends_allowed_subject_leaves() {
         &[subject_a, subject_b],
     );
 
-    let updated = supersede_with_fhe_eval(
+    let updated = update_with_fhe_eval(
         authority,
         subject_a,
         host_config,
@@ -1131,7 +1131,7 @@ fn mollusk_fhe_eval_supersedes_and_appends_allowed_subject_leaves() {
 }
 
 #[test]
-fn mollusk_fhe_eval_supersede_rotates_subjects_and_seals_the_outgoing_audience() {
+fn mollusk_fhe_eval_update_swaps_subjects_and_seals_the_outgoing_audience() {
     let authority = Pubkey::new_unique();
     let (host_config, host_config_account) = host_config_account(authority);
     let subject_a = Pubkey::new_unique();
@@ -1209,7 +1209,7 @@ fn mollusk_fhe_eval_supersede_rotates_subjects_and_seals_the_outgoing_audience()
 }
 
 #[test]
-fn mollusk_fhe_eval_supersede_shrinks_audience_and_seals_the_outgoing_set() {
+fn mollusk_fhe_eval_update_shrinks_audience_and_seals_the_outgoing_set() {
     // A rotation that removes a subject (3 -> 2): the outgoing 3-subject audience is sealed, the
     // new 2-subject set becomes current membership, and the account never shrinks.
     let authority = Pubkey::new_unique();
@@ -1295,7 +1295,7 @@ fn mollusk_fhe_eval_rejects_stale_previous_subjects() {
         &[subject],
     );
 
-    expect_fhe_eval_supersede_error(
+    expect_fhe_eval_update_error(
         authority,
         subject,
         host_config,
@@ -1323,7 +1323,7 @@ fn mollusk_fhe_eval_rejects_stale_previous_handle() {
         old_handle,
         &[subject],
     );
-    expect_fhe_eval_supersede_error(
+    expect_fhe_eval_update_error(
         authority,
         subject,
         host_config,
@@ -2034,7 +2034,7 @@ fn mollusk_paused_state_blocks_acl_update_and_eval_output() {
 }
 
 // ---------------------------------------------------------------------------
-// Item 2a: supersession encrypted value account end-to-end against zama_solana_acl::value_account::reconstruct
+// Item 2a: update encrypted value account end-to-end against zama_solana_acl::value_account::reconstruct
 // ---------------------------------------------------------------------------
 
 #[test]
@@ -2052,7 +2052,7 @@ fn mollusk_supersession_value_account_matches_offchain_reconstruction() {
         &[subject_a, subject_b],
     );
 
-    let value1 = supersede_with_fhe_eval(
+    let value1 = update_with_fhe_eval(
         authority,
         subject_a,
         host_config,
@@ -2062,7 +2062,7 @@ fn mollusk_supersession_value_account_matches_offchain_reconstruction() {
         11,
     );
 
-    let value2 = supersede_with_fhe_eval(
+    let value2 = update_with_fhe_eval(
         authority,
         subject_a,
         host_config,
@@ -2072,10 +2072,10 @@ fn mollusk_supersession_value_account_matches_offchain_reconstruction() {
         12,
     );
 
-    // Rebuild the HandleSuperseded events purely from the two instructions' own
+    // Rebuild the HandleUpdated events purely from the two instructions' own
     // previous_handle/previous_subjects args, exactly as an off-chain indexer would.
     let events = [
-        zama_solana_acl::value_account::EncryptedValueAccountEvent::handle_superseded(
+        zama_solana_acl::value_account::EncryptedValueAccountEvent::handle_updated(
             handle0,
             &value0
                 .subjects
@@ -2083,7 +2083,7 @@ fn mollusk_supersession_value_account_matches_offchain_reconstruction() {
                 .map(|p| p.to_bytes())
                 .collect::<Vec<_>>(),
         ),
-        zama_solana_acl::value_account::EncryptedValueAccountEvent::handle_superseded(
+        zama_solana_acl::value_account::EncryptedValueAccountEvent::handle_updated(
             value1.current_handle,
             &value1
                 .subjects
@@ -2117,7 +2117,7 @@ fn mollusk_historical_proof_round_trip_after_two_supersessions() {
         &[subject],
     );
 
-    let value1 = supersede_with_fhe_eval(
+    let value1 = update_with_fhe_eval(
         authority,
         subject,
         host_config,
@@ -2127,7 +2127,7 @@ fn mollusk_historical_proof_round_trip_after_two_supersessions() {
         21,
     );
 
-    let value2 = supersede_with_fhe_eval(
+    let value2 = update_with_fhe_eval(
         authority,
         subject,
         host_config,
@@ -2138,7 +2138,7 @@ fn mollusk_historical_proof_round_trip_after_two_supersessions() {
     );
 
     let events = [
-        zama_solana_acl::value_account::EncryptedValueAccountEvent::handle_superseded(
+        zama_solana_acl::value_account::EncryptedValueAccountEvent::handle_updated(
             handle0,
             &value0
                 .subjects
@@ -2146,7 +2146,7 @@ fn mollusk_historical_proof_round_trip_after_two_supersessions() {
                 .map(|p| p.to_bytes())
                 .collect::<Vec<_>>(),
         ),
-        zama_solana_acl::value_account::EncryptedValueAccountEvent::handle_superseded(
+        zama_solana_acl::value_account::EncryptedValueAccountEvent::handle_updated(
             value1.current_handle,
             &value1
                 .subjects
@@ -2223,7 +2223,7 @@ fn mollusk_public_decrypt_proof_has_no_roll_forward() {
     );
     let value_public = read_encrypted_value(&result0, address);
 
-    let final_value = supersede_with_fhe_eval(
+    let final_value = update_with_fhe_eval(
         authority,
         subject,
         host_config,
@@ -2237,7 +2237,7 @@ fn mollusk_public_decrypt_proof_has_no_roll_forward() {
         zama_solana_acl::value_account::EncryptedValueAccountEvent::MarkedPublic {
             handle: handle0,
         },
-        zama_solana_acl::value_account::EncryptedValueAccountEvent::handle_superseded(
+        zama_solana_acl::value_account::EncryptedValueAccountEvent::handle_updated(
             handle0,
             &value_public
                 .subjects
@@ -2270,7 +2270,7 @@ fn mollusk_public_decrypt_proof_has_no_roll_forward() {
 }
 
 // ---------------------------------------------------------------------------
-// fhe_eval: persistent output create + supersede through the real CPI-free path
+// fhe_eval: persistent output create + update through the real CPI-free path
 // ---------------------------------------------------------------------------
 
 #[test]
@@ -2351,7 +2351,7 @@ fn mollusk_fhe_eval_creates_persistent_output_from_local_binary_add() {
 }
 
 #[test]
-fn mollusk_fhe_eval_supersedes_persistent_output_with_previous_state() {
+fn mollusk_fhe_eval_updates_persistent_output_with_previous_state() {
     let authority = Pubkey::new_unique();
     let (host_config, host_config_account) = host_config_account(authority);
     let input_handle = handle_for_chain(42, 5);
@@ -2420,7 +2420,7 @@ fn mollusk_fhe_eval_supersedes_persistent_output_with_previous_state() {
     let result = mollusk().process_and_validate_instruction(&ix, &accounts, &[Check::success()]);
     let updated_output = read_encrypted_value(&result, output_address);
     assert_ne!(updated_output.current_handle, output_handle);
-    // Supersession appends one historical leaf for the sole USE subject.
+    // Update appends one historical leaf for the sole USE subject.
     assert_eq!(updated_output.leaf_count, 1);
 }
 
@@ -5649,8 +5649,8 @@ fn mollusk_verify_public_decrypt_rejects_non_canonical_kms_context() {
 }
 
 #[test]
-fn mollusk_verify_public_decrypt_survives_supersede_after_seal() {
-    // The dust-race claim: a supersede between seal and consume moves the MMR peaks but can neither
+fn mollusk_verify_public_decrypt_survives_update_after_seal() {
+    // The dust-race claim: a update between seal and consume moves the MMR peaks but can neither
     // invalidate nor retarget the sealed leaf. The OLD handle still verifies with a proof rebuilt
     // against the updated peaks.
     let admin = Pubkey::new_unique();
@@ -5667,8 +5667,8 @@ fn mollusk_verify_public_decrypt_survives_supersede_after_seal() {
         handle0,
     );
 
-    // Supersede the encrypted value account (dust transfer analog) after the seal.
-    let final_value = supersede_with_fhe_eval(
+    // Update the encrypted value account (dust transfer analog) after the seal.
+    let final_value = update_with_fhe_eval(
         admin,
         subject,
         host_config,
@@ -5679,12 +5679,12 @@ fn mollusk_verify_public_decrypt_survives_supersede_after_seal() {
     );
     assert_ne!(final_value.current_handle, handle0);
 
-    // Rebuild the proof for the sealed leaf 0 against the post-supersede peaks.
+    // Rebuild the proof for the sealed leaf 0 against the post-update peaks.
     let events = [
         zama_solana_acl::value_account::EncryptedValueAccountEvent::MarkedPublic {
             handle: handle0,
         },
-        zama_solana_acl::value_account::EncryptedValueAccountEvent::handle_superseded(
+        zama_solana_acl::value_account::EncryptedValueAccountEvent::handle_updated(
             handle0,
             &sealed
                 .subjects
@@ -5741,7 +5741,7 @@ fn mollusk_verify_public_decrypt_survives_supersede_after_seal() {
 
 #[test]
 fn mollusk_verify_public_decrypt_rejects_historical_only_leaf() {
-    // Public-vs-historical leaf domain separation: an encrypted value account superseded WITHOUT make_handle_public
+    // Public-vs-historical leaf domain separation: an encrypted value account replaced WITHOUT make_handle_public
     // has only historical-access leaves. A proof for such a leaf must not authorize a public decrypt,
     // even though the leaf genuinely exists — the two use distinct leaf commitments.
     let admin = Pubkey::new_unique();
@@ -5757,8 +5757,8 @@ fn mollusk_verify_public_decrypt_rejects_historical_only_leaf() {
         &[subject],
     );
 
-    // Supersede (persistent output) seals a historical-access leaf for handle0; no public-decrypt leaf.
-    let final_value = supersede_with_fhe_eval(
+    // Update (persistent output) seals a historical-access leaf for handle0; no public-decrypt leaf.
+    let final_value = update_with_fhe_eval(
         admin,
         subject,
         host_config,
@@ -5769,7 +5769,7 @@ fn mollusk_verify_public_decrypt_rejects_historical_only_leaf() {
     );
 
     let events = [
-        zama_solana_acl::value_account::EncryptedValueAccountEvent::handle_superseded(
+        zama_solana_acl::value_account::EncryptedValueAccountEvent::handle_updated(
             handle0,
             &value0
                 .subjects

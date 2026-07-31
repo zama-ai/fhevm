@@ -175,9 +175,9 @@ export type WrapUsdcAsyncInput<
   vaultAuthority?: Address<TAccountVaultAuthority>;
   computeSigner?: Address<TAccountComputeSigner>;
   totalSupplyAuthority?: Address<TAccountTotalSupplyAuthority>;
-  /** Stable balance encrypted value account; read for the current handle and superseded by this eval. */
+  /** Stable balance encrypted value account; read for the current handle and replaced by this eval. */
   balanceValue: Address<TAccountBalanceValue>;
-  /** Stable total-supply encrypted value account; read for the current handle and superseded by this eval. */
+  /** Stable total-supply encrypted value account; read for the current handle and replaced by this eval. */
   totalSupplyValue: Address<TAccountTotalSupplyValue>;
   zamaEventAuthority: Address<TAccountZamaEventAuthority>;
   /** ZamaHost program used for FHE operations. */
@@ -433,9 +433,9 @@ export type WrapUsdcInput<
   vaultAuthority: Address<TAccountVaultAuthority>;
   computeSigner: Address<TAccountComputeSigner>;
   totalSupplyAuthority: Address<TAccountTotalSupplyAuthority>;
-  /** Stable balance encrypted value account; read for the current handle and superseded by this eval. */
+  /** Stable balance encrypted value account; read for the current handle and replaced by this eval. */
   balanceValue: Address<TAccountBalanceValue>;
-  /** Stable total-supply encrypted value account; read for the current handle and superseded by this eval. */
+  /** Stable total-supply encrypted value account; read for the current handle and replaced by this eval. */
   totalSupplyValue: Address<TAccountTotalSupplyValue>;
   zamaEventAuthority: Address<TAccountZamaEventAuthority>;
   /** ZamaHost program used for FHE operations. */
@@ -658,9 +658,9 @@ export type ParsedWrapUsdcInstruction<
     vaultAuthority: TAccountMetas[6];
     computeSigner: TAccountMetas[7];
     totalSupplyAuthority: TAccountMetas[8];
-    /** Stable balance encrypted value account; read for the current handle and superseded by this eval. */
+    /** Stable balance encrypted value account; read for the current handle and replaced by this eval. */
     balanceValue: TAccountMetas[9];
-    /** Stable total-supply encrypted value account; read for the current handle and superseded by this eval. */
+    /** Stable total-supply encrypted value account; read for the current handle and replaced by this eval. */
     totalSupplyValue: TAccountMetas[10];
     zamaEventAuthority: TAccountMetas[11];
     /** ZamaHost program used for FHE operations. */

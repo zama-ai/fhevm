@@ -27,8 +27,8 @@ pub(crate) fn read_encrypted_value(info: &AccountInfo) -> Result<EncryptedValue>
 }
 
 /// A persistent eval output bound to the exact `EncryptedValue` encrypted value account it may
-/// create or supersede, mirroring the confidential-token pattern: create when
-/// the PDA does not exist yet, supersede (pinning the stored previous handle
+/// create or update, mirroring the confidential-token pattern: create when
+/// the PDA does not exist yet, update (pinning the stored previous handle
 /// and subjects) when it does.
 pub(crate) struct PersistentBinding<'info> {
     account: AccountInfo<'info>,

@@ -104,7 +104,7 @@ fn append_events(
     let mut staged = Vec::new();
     for (tx_index, event) in events_with_tx {
         match event {
-            EncryptedValueAccountEvent::HandleSuperseded {
+            EncryptedValueAccountEvent::HandleUpdated {
                 previous_handle,
                 previous_subjects,
             } => {

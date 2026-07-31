@@ -16,7 +16,7 @@ pub struct CreateRandomAmount<'info> {
     /// CHECK: Program-controlled compute signer PDA.
     #[account(seeds = [b"fhe-compute", mint.key().as_ref()], bump)]
     pub compute_signer: UncheckedAccount<'info>,
-    /// CHECK: stable per-owner amount encrypted value account; created on first use, superseded thereafter.
+    /// CHECK: stable per-owner amount encrypted value account; created on first use, replaced thereafter.
     #[account(mut)]
     pub amount_value: UncheckedAccount<'info>,
     /// CHECK: Anchor event CPI authority for the Zama host program.

@@ -102,9 +102,9 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     }
 
     // HISTORICAL_STEP=compute creates the old handle, then the shell waits for SNS materialization.
-    // HISTORICAL_STEP=supersede rotates the same encrypted value account and prints the historical MMR proof.
+    // HISTORICAL_STEP=update rotates the same encrypted value account and prints the historical MMR proof.
     if let Ok(step) = std::env::var("HISTORICAL_STEP") {
-        historical_supersede_step(&host, &payer, host_config, &step)?;
+        historical_update_step(&host, &payer, host_config, &step)?;
         return Ok(());
     }
 
@@ -861,7 +861,7 @@ fn fetch_access_proof(
 /// Retries a bounded number of times while ingestion is still catching up to chain
 /// (`503 lagging`). REQUIRES `verified == true`; every other response, including `500
 /// corrupt_cache` and `404 leaf_not_found`, fails loudly at once. Retrying HERE (not by
-/// re-invoking the client) keeps the caller idempotent — the historical `supersede` step appends
+/// re-invoking the client) keeps the caller idempotent — the historical `update` step appends
 /// on-chain leaves, so re-running it would corrupt the encrypted value account.
 fn fetch_proof_with_retry(
     url: &str,
@@ -987,7 +987,7 @@ fn public_decrypt_proof_step(
     Ok(())
 }
 
-fn historical_supersede_step(
+fn historical_update_step(
     host: &Program<Rc<Keypair>>,
     payer: &Rc<Keypair>,
     host_config: Pubkey,
@@ -1019,13 +1019,13 @@ fn historical_supersede_step(
             println!("HIST aclValueKey 0x{}", hex(&result.value_key));
             Ok(())
         }
-        "supersede" => {
+        "update" => {
             let target = persistent_eval_target(payer, HISTORICAL_LABEL_MARKER);
             let Some((old_handle, _)) = existing_value_account_state(host, target.encrypted_value)?
             else {
                 return Err(std::io::Error::new(
                     std::io::ErrorKind::NotFound,
-                    "HISTORICAL_STEP=supersede requires HISTORICAL_STEP=compute first",
+                    "HISTORICAL_STEP=update requires HISTORICAL_STEP=compute first",
                 )
                 .into());
             };
@@ -1035,7 +1035,7 @@ fn historical_supersede_step(
                 payer,
                 host_config,
                 HISTORICAL_LABEL_MARKER,
-                "historical supersede",
+                "historical update",
             )?;
             let encrypted_value_account = fetch_encrypted_value(host, target.encrypted_value)?;
             let subject = payer.pubkey().to_bytes();
@@ -1083,7 +1083,7 @@ fn historical_supersede_step(
         }
         other => Err(std::io::Error::new(
             std::io::ErrorKind::InvalidInput,
-            format!("unknown HISTORICAL_STEP={other}; expected compute or supersede"),
+            format!("unknown HISTORICAL_STEP={other}; expected compute or update"),
         )
         .into()),
     }
@@ -1548,8 +1548,8 @@ fn consume_burn(
     let hh: String = input_handle.iter().map(|b| format!("{b:02x}")).collect();
     println!("  burn amount (attested external input) handle 0x{hh}");
 
-    // 2. Persistent burn outputs supersede the stable balance/total-supply encrypted value accounts in place and
-    // create or supersede the stable burned-amount encrypted value account for this token account.
+    // 2. Persistent burn outputs update the stable balance/total-supply encrypted value accounts in place and
+    // create or update the stable burned-amount encrypted value account for this token account.
     let (burned_acl, _) = confidential_token::encrypted_value_address(
         mint,
         token_account,

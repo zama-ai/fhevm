@@ -4,7 +4,7 @@ use anchor_lang::prelude::*;
 
 use super::common::*;
 use super::encrypted_value::{
-    append_public_decrypt_leaf, grow_account_if_needed, supersede_current_handle,
+    append_public_decrypt_leaf, grow_account_if_needed, update_encrypted_value,
 };
 use super::input_verification::{verify_input_attestation, InputVerifierParams};
 use crate::{
@@ -206,7 +206,7 @@ fn execute_eval_frame<'a, 'info>(
 
 /// The single walk's state: resolves operands through the shared account table
 /// (which preflight already validated for coverage), validates and creates or
-/// supersedes persistent outputs, and buffers produced-public lifecycle records.
+/// updates persistent outputs, and buffers produced-public lifecycle records.
 /// The operand resolvers driving these methods live with the step match in
 /// [`walk`].
 struct EvalExecutionState<'t, 'a, 'info> {
@@ -503,16 +503,16 @@ fn bind_eval_output<'info>(
     );
     // One write per account per frame — load-bearing for the rand seed anchor (#1853 W4).
     table.claim_persistent_output(output_info.key())?;
-    // Explicit on the supersede path; `create_pda_strict` enforces it on create.
+    // Explicit on the update path; `create_pda_strict` enforces it on create.
     require!(
         output_info.is_writable,
         ZamaHostError::InvalidFheEvalAccount
     );
 
     if output_info.owner == &crate::ID {
-        // Supersede: the plan's previous_* fields must match the stored state
+        // Update: the plan's previous_* fields must match the stored state
         // exactly, so indexers can reconstruct the appended MMR leaves from
-        // instruction data alone. `output_subjects` may rotate the audience.
+        // instruction data alone. `output_subjects` may replace the audience.
         let mut value = read_canonical_encrypted_value(output_info)?;
         validate_persistent_output_previous_state(&value, previous_handle, previous_subjects)?;
         check_new_grants_not_denied(
@@ -521,8 +521,8 @@ fn bind_eval_output<'info>(
             &value.subjects,
             output_subjects,
         )?;
-        supersede_current_handle(output_info, &mut value, result)?;
-        // Seal the outgoing audience into historical leaves first (above), then rotate
+        update_encrypted_value(output_info, &mut value, result)?;
+        // Seal the outgoing audience into historical leaves first (above), then replace
         // to the new set — every added subject cleared the deny-list check above.
         value.subjects = output_subjects.to_vec();
         // Born-public opt-in: after the outgoing handle's historical leaves, seal a
@@ -578,11 +578,11 @@ fn bind_eval_output<'info>(
     Ok(output_info.key())
 }
 
-/// Supersede plan validation against an existing encrypted value account. The plan's
+/// Update plan validation against an existing encrypted value account. The plan's
 /// `previous_handle`/`previous_subjects` must equal the stored state exactly, so
 /// indexers reconstruct the appended MMR leaves from instruction data alone. The
-/// audience (`output_subjects`) is NOT constrained to the stored set: a supersede
-/// may explicitly rotate it — the outgoing audience is sealed into historical
+/// audience (`output_subjects`) is NOT constrained to the stored set: a update
+/// may explicitly replace it — the outgoing audience is sealed into historical
 /// leaves before the new set replaces it, and every added subject passes the
 /// grant deny-list via [`check_new_grants_not_denied`].
 pub(super) fn validate_persistent_output_previous_state(
@@ -741,14 +741,14 @@ mod tests {
             &Some(vec![Pubkey::new_unique()]),
         )
         .is_err());
-        // Missing previous_* on an existing encrypted value account (create shape on supersede).
+        // Missing previous_* on an existing encrypted value account (create shape on update).
         assert!(validate_persistent_output_previous_state(&value, &None, &None).is_err());
     }
 
     #[test]
     fn persistent_output_previous_state_ignores_output_audience() {
         // Validation pins only the outgoing state (previous_handle/previous_subjects); it no
-        // longer constrains the new audience, so a supersede may rotate `output_subjects`.
+        // longer constrains the new audience, so an update may replace `output_subjects`.
         let subjects = vec![Pubkey::new_unique()];
         let value = encrypted_value_account([9; 32], &subjects);
         assert!(
@@ -758,11 +758,11 @@ mod tests {
     }
 
     #[test]
-    fn assert_output_acl_metadata_rejects_empty_and_over_cap_rotations() {
+    fn assert_output_acl_metadata_rejects_empty_and_over_cap_replacements() {
         let app_account = Pubkey::new_unique();
-        // Empty rotated set is rejected, mirroring remove_subject's last-subject rule.
+        // An empty replacement set is rejected, mirroring remove_subject's last-subject rule.
         assert!(assert_output_acl_metadata(app_account, app_account, &[]).is_err());
-        // A rotated set above MAX_ENCRYPTED_VALUE_SUBJECTS (8) is rejected.
+        // A replacement set above MAX_ENCRYPTED_VALUE_SUBJECTS (8) is rejected.
         let over_cap = grants(
             &(0..=zama_solana_acl::MAX_ENCRYPTED_VALUE_SUBJECTS)
                 .map(|_| Pubkey::new_unique())
@@ -772,10 +772,10 @@ mod tests {
     }
 
     #[test]
-    fn rotation_added_denied_subject_is_rejected() {
+    fn update_added_denied_subject_is_rejected() {
         let stored = vec![Pubkey::new_unique()];
         let added = Pubkey::new_unique();
-        let rotated = grants(&[stored[0], added]);
+        let replacement = grants(&[stored[0], added]);
         let (record_key, bump) = deny_subject_address(added);
 
         let mut lamports = 1_000_000u64;
@@ -804,7 +804,7 @@ mod tests {
 
         // A stored subject that stays put needs no record; only `added` is checked, and it is denied.
         assert_eq!(
-            check_new_grants_not_denied(&config, &table, &stored, &rotated).unwrap_err(),
+            check_new_grants_not_denied(&config, &table, &stored, &replacement).unwrap_err(),
             error!(ZamaHostError::AclSubjectDenied)
         );
     }

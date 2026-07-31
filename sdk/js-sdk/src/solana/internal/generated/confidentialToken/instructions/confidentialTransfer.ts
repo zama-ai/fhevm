@@ -177,12 +177,12 @@ export type ConfidentialTransferAsyncInput<
   computeSigner?: Address<TAccountComputeSigner>;
   /**
    * Sender's stable balance `EncryptedValue` encrypted value account; read for the current
-   * handle and superseded in place by this eval's CPI.
+   * handle and replaced in place by this eval's CPI.
    */
   fromBalanceValue: Address<TAccountFromBalanceValue>;
   /** Recipient's stable balance `EncryptedValue` encrypted value account. */
   toBalanceValue: Address<TAccountToBalanceValue>;
-  /** the sender's first transfer, superseded thereafter. */
+  /** the sender's first transfer, replaced thereafter. */
   transferredAmountValue: Address<TAccountTransferredAmountValue>;
   zamaEventAuthority: Address<TAccountZamaEventAuthority>;
   /** ZamaHost program used for FHE operations. */
@@ -395,12 +395,12 @@ export type ConfidentialTransferInput<
   computeSigner: Address<TAccountComputeSigner>;
   /**
    * Sender's stable balance `EncryptedValue` encrypted value account; read for the current
-   * handle and superseded in place by this eval's CPI.
+   * handle and replaced in place by this eval's CPI.
    */
   fromBalanceValue: Address<TAccountFromBalanceValue>;
   /** Recipient's stable balance `EncryptedValue` encrypted value account. */
   toBalanceValue: Address<TAccountToBalanceValue>;
-  /** the sender's first transfer, superseded thereafter. */
+  /** the sender's first transfer, replaced thereafter. */
   transferredAmountValue: Address<TAccountTransferredAmountValue>;
   zamaEventAuthority: Address<TAccountZamaEventAuthority>;
   /** ZamaHost program used for FHE operations. */
@@ -593,12 +593,12 @@ export type ParsedConfidentialTransferInstruction<
     computeSigner: TAccountMetas[5];
     /**
      * Sender's stable balance `EncryptedValue` encrypted value account; read for the current
-     * handle and superseded in place by this eval's CPI.
+     * handle and replaced in place by this eval's CPI.
      */
     fromBalanceValue: TAccountMetas[6];
     /** Recipient's stable balance `EncryptedValue` encrypted value account. */
     toBalanceValue: TAccountMetas[7];
-    /** the sender's first transfer, superseded thereafter. */
+    /** the sender's first transfer, replaced thereafter. */
     transferredAmountValue: TAccountMetas[8];
     zamaEventAuthority: TAccountMetas[9];
     /** ZamaHost program used for FHE operations. */

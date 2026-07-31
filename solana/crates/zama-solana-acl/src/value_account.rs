@@ -33,19 +33,19 @@ pub enum EncryptedValueAccountError {
 ///
 /// Only the two instructions that append MMR leaves appear here;
 /// `allow_subjects` appends none, so it has no leaf to log — its effect on
-/// membership is captured by the next [`EncryptedValueAccountEvent::HandleSuperseded`]'s
-/// `previous_subjects` snapshot. Because persistent-output supersession carries
+/// membership is captured by the next [`EncryptedValueAccountEvent::HandleUpdated`]'s
+/// `previous_subjects` snapshot. Because persistent-output update carries
 /// `previous_handle`/`previous_subjects` as verified instruction args, both
 /// variants are decodable from a single transaction with no prior state.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum EncryptedValueAccountEvent {
-    /// A persistent-output supersession: appends one historical-access leaf per
+    /// A persistent-output update: appends one historical-access leaf per
     /// subject of the outgoing handle, in `previous_subjects` order.
-    HandleSuperseded {
-        /// The handle being superseded (the encrypted value account's handle before this supersession).
+    HandleUpdated {
+        /// The handle being replaced (the encrypted value account's handle before this update).
         previous_handle: [u8; 32],
         /// The exact `subjects` snapshot (order preserved, index 0 first) as it
-        /// stood immediately before this supersession executed, after any prior
+        /// stood immediately before this update executed, after any prior
         /// `allow_subjects`. Callers must NOT sort or dedup it.
         previous_subjects: Vec<[u8; 32]>,
     },
@@ -57,17 +57,17 @@ pub enum EncryptedValueAccountEvent {
 }
 
 impl EncryptedValueAccountEvent {
-    /// Builds a [`EncryptedValueAccountEvent::HandleSuperseded`] from the `subjects` snapshot
-    /// taken immediately before the supersession executed on-chain.
+    /// Builds a [`EncryptedValueAccountEvent::HandleUpdated`] from the `subjects` snapshot
+    /// taken immediately before the update executed on-chain.
     ///
     /// `previous_subjects` is load-bearing and silent to get wrong: it must be
     /// the live `subjects` in insertion order, including every subject added by
     /// prior `allow_subjects` calls. A stale snapshot (e.g. the pre-`allow` set,
-    /// or the post-supersession set) yields leaves that hash differently from the
+    /// or the post-update set) yields leaves that hash differently from the
     /// chain, so the reconstructed peaks silently diverge. When decoding a
-    /// persistent-output supersession, use its verified args directly.
-    pub fn handle_superseded(previous_handle: [u8; 32], previous_subjects: &[[u8; 32]]) -> Self {
-        EncryptedValueAccountEvent::HandleSuperseded {
+    /// persistent-output update, use its verified args directly.
+    pub fn handle_updated(previous_handle: [u8; 32], previous_subjects: &[[u8; 32]]) -> Self {
+        EncryptedValueAccountEvent::HandleUpdated {
             previous_handle,
             previous_subjects: previous_subjects.to_vec(),
         }
@@ -85,9 +85,9 @@ pub struct ReconstructedEncryptedValueAccount {
 /// Rebuilds the full ordered leaf list from an encrypted value account's chronological events.
 ///
 /// Mirrors the host program's append order exactly: each
-/// [`EncryptedValueAccountEvent::HandleSuperseded`] appends one
+/// [`EncryptedValueAccountEvent::HandleUpdated`] appends one
 /// `historical_access_leaf_commitment` per subject in slice order
-/// (persistent-output supersession), each [`EncryptedValueAccountEvent::MarkedPublic`] appends one
+/// (persistent-output update), each [`EncryptedValueAccountEvent::MarkedPublic`] appends one
 /// `public_decrypt_leaf_commitment` (`make_handle_public`). The leaf index bound
 /// into every commitment comes from a single running counter — the
 /// authoritative source, exactly as the on-chain handler uses `leaf_count`
@@ -101,7 +101,7 @@ pub fn reconstruct(
     let mut leaf_count: u64 = 0;
     for event in events {
         match event {
-            EncryptedValueAccountEvent::HandleSuperseded {
+            EncryptedValueAccountEvent::HandleUpdated {
                 previous_handle,
                 previous_subjects,
             } => {
@@ -212,8 +212,8 @@ mod tests {
         [tag; 32]
     }
 
-    fn superseded(previous_handle: [u8; 32], subjects: &[[u8; 32]]) -> EncryptedValueAccountEvent {
-        EncryptedValueAccountEvent::handle_superseded(previous_handle, subjects)
+    fn replaced(previous_handle: [u8; 32], subjects: &[[u8; 32]]) -> EncryptedValueAccountEvent {
+        EncryptedValueAccountEvent::handle_updated(previous_handle, subjects)
     }
 
     /// Recomputes peaks by an independent append loop over the same leaves.
@@ -240,7 +240,7 @@ mod tests {
     #[test]
     fn single_update_one_subject() {
         let acct = h(0xAC);
-        let events = [superseded(h(10), &[h(1)])];
+        let events = [replaced(h(10), &[h(1)])];
         let encrypted_value_account = reconstruct(acct, &events).unwrap();
         assert_eq!(
             encrypted_value_account.leaves,
@@ -258,7 +258,7 @@ mod tests {
     #[test]
     fn update_two_subjects_keeps_order() {
         let acct = h(0xAC);
-        let events = [superseded(h(10), &[h(1), h(2)])];
+        let events = [replaced(h(10), &[h(1), h(2)])];
         let encrypted_value_account = reconstruct(acct, &events).unwrap();
         assert_eq!(
             encrypted_value_account.leaves,
@@ -277,7 +277,7 @@ mod tests {
             ));
         }
         // Subject order is load-bearing: swapping it yields different leaves.
-        let swapped = reconstruct(acct, &[superseded(h(10), &[h(2), h(1)])]).unwrap();
+        let swapped = reconstruct(acct, &[replaced(h(10), &[h(2), h(1)])]).unwrap();
         assert_ne!(encrypted_value_account.leaves, swapped.leaves);
     }
 
@@ -304,7 +304,7 @@ mod tests {
         let acct = h(0xAC);
         let events = [
             EncryptedValueAccountEvent::MarkedPublic { handle: h(10) },
-            superseded(h(10), &[h(1), h(2)]),
+            replaced(h(10), &[h(1), h(2)]),
             EncryptedValueAccountEvent::MarkedPublic { handle: h(11) },
         ];
         let encrypted_value_account = reconstruct(acct, &events).unwrap();
@@ -338,8 +338,8 @@ mod tests {
     fn two_consecutive_updates_continue_leaf_indices() {
         let acct = h(0xAC);
         let events = [
-            superseded(h(10), &[h(1)]),
-            superseded(h(11), &[h(1), h(2), h(3)]),
+            replaced(h(10), &[h(1)]),
+            replaced(h(11), &[h(1), h(2), h(3)]),
         ];
         let encrypted_value_account = reconstruct(acct, &events).unwrap();
         assert_eq!(
@@ -366,7 +366,7 @@ mod tests {
     }
 
     /// On-chain lifecycle persistent creation `[s1]` → `allow_subjects([s2])` →
-    /// persistent supersession: the supersession snapshot must be the post-`allow`
+    /// persistent update: the update snapshot must be the post-`allow`
     /// set `[s1, s2]`, so the chain appends two leaves. Supplying the
     /// stale pre-`allow` set `[s1]` is the most plausible ingestion bug; this
     /// asserts it produces different peaks and the correct snapshot's peaks match
@@ -377,7 +377,7 @@ mod tests {
         let s1 = h(1);
         let s2 = h(2);
 
-        let correct = reconstruct(acct, &[superseded(h(10), &[s1, s2])]).unwrap();
+        let correct = reconstruct(acct, &[replaced(h(10), &[s1, s2])]).unwrap();
         assert_eq!(
             correct.leaves,
             vec![
@@ -390,17 +390,17 @@ mod tests {
 
         // The stale pre-`allow` snapshot omits s2: one leaf instead of two, so the
         // peaks diverge from the chain's and no proof would verify.
-        let stale = reconstruct(acct, &[superseded(h(10), &[s1])]).unwrap();
+        let stale = reconstruct(acct, &[replaced(h(10), &[s1])]).unwrap();
         assert_ne!(correct.peaks, stale.peaks);
         assert!(!stale.peaks_match(&peaks, count));
     }
 
     #[test]
-    fn empty_superseded_subjects_append_no_leaves() {
+    fn empty_previous_subjects_append_no_leaves() {
         let acct = h(0xAC);
         let events = [
             EncryptedValueAccountEvent::MarkedPublic { handle: h(9) },
-            superseded(h(10), &[]),
+            replaced(h(10), &[]),
             EncryptedValueAccountEvent::MarkedPublic { handle: h(11) },
         ];
         let encrypted_value_account = reconstruct(acct, &events).unwrap();
@@ -418,7 +418,7 @@ mod tests {
         let acct = h(0xAC);
         let events = [
             EncryptedValueAccountEvent::MarkedPublic { handle: h(10) },
-            superseded(h(10), &[h(1), h(2)]),
+            replaced(h(10), &[h(1), h(2)]),
             EncryptedValueAccountEvent::MarkedPublic { handle: h(11) },
         ];
         let encrypted_value_account = reconstruct(acct, &events).unwrap();
@@ -455,7 +455,7 @@ mod tests {
     #[test]
     fn build_verified_proof_guards_divergence() {
         let acct = h(0xAC);
-        let events = [superseded(h(10), &[h(1), h(2)])];
+        let events = [replaced(h(10), &[h(1), h(2)])];
         let encrypted_value_account = reconstruct(acct, &events).unwrap();
         let (peaks, count) = peaks_via_append(&encrypted_value_account.leaves);
 
@@ -491,7 +491,7 @@ mod tests {
 
         // One-shot variant catches a divergent record (stale subject snapshot)
         // against real on-chain peaks.
-        let stale = [superseded(h(10), &[h(1)])];
+        let stale = [replaced(h(10), &[h(1)])];
         assert_eq!(
             build_verified_proof_from_events(acct, &stale, &peaks, count, 0),
             Err(EncryptedValueAccountError::PeaksDiverged)
@@ -509,7 +509,7 @@ mod tests {
         let subjects: Vec<[u8; 32]> = (0..MAX_ENCRYPTED_VALUE_SUBJECTS as u8)
             .map(|i| h(0x20 + i))
             .collect();
-        let events = [superseded(h(10), &subjects), superseded(h(11), &subjects)];
+        let events = [replaced(h(10), &subjects), replaced(h(11), &subjects)];
         let encrypted_value_account = reconstruct(acct, &events).unwrap();
         assert_eq!(encrypted_value_account.leaf_count, 16);
         assert_eq!(encrypted_value_account.leaves.len(), 16);
@@ -535,10 +535,10 @@ mod tests {
     #[test]
     fn matches_on_chain_append_and_authorizes() {
         // Mirror `EncryptedValueAccount::new(h(10), &[owner])` then `update(h(11))`: the account
-        // tag is `h(0xAC)`, the supersession logs the previous subjects for h(10).
+        // tag is `h(0xAC)`, the update logs the previous subjects for h(10).
         let acct = h(0xAC);
         let owner = h(1);
-        let events = [superseded(h(10), &[owner])];
+        let events = [replaced(h(10), &[owner])];
         let encrypted_value_account = reconstruct(acct, &events).unwrap();
 
         // Independent on-chain-style append over the same single leaf.
@@ -564,10 +564,10 @@ mod tests {
         // Cross-account isolation: the account key is bound into every leaf
         // commitment, so the same events under a different account yield different
         // peaks, and a proof built under account 2 is rejected by an account
-        // carrying account 1's peaks. Use a two-subject supersession so the proof
+        // carrying account 1's peaks. Use a two-subject update so the proof
         // carries a real sibling that differs between accounts (a single-leaf MMR
         // proof is empty and would not distinguish the accounts on its own).
-        let two = [superseded(h(10), &[owner, h(2)])];
+        let two = [replaced(h(10), &[owner, h(2)])];
         let lin1 = reconstruct(acct, &two).unwrap();
         let acct2 = h(0xBB);
         let lin2 = reconstruct(acct2, &two).unwrap();

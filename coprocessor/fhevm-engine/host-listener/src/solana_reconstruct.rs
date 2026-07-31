@@ -619,7 +619,7 @@ pub fn reconstruct_fhe_eval_steps(
 pub struct ReconstructedEvalStep {
     pub event: SolanaHostEvent,
     pub persistent_encrypted_value_index: Option<u8>,
-    /// Present when the persistent output supersedes an existing encrypted value account. The
+    /// Present when the persistent output updates an existing encrypted value account. The
     /// transport requests material for the outgoing and reconstructed output
     /// handles.
     pub previous_handle: Option<[u8; 32]>,
@@ -635,7 +635,7 @@ pub fn fhe_eval_step_persistent_output_index(step: &FheEvalStep) -> Option<u8> {
     }
 }
 
-/// The outgoing handle when a persistent output supersedes an existing encrypted value account.
+/// The outgoing handle when a persistent output updates an existing encrypted value account.
 pub fn fhe_eval_step_previous_handle(step: &FheEvalStep) -> Option<[u8; 32]> {
     match fhe_eval_step_output(step) {
         FheEvalOutput::AllowedPersistent {

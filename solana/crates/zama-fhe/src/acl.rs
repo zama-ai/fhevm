@@ -25,7 +25,7 @@ impl PersistentLabel {
 
 /// App-domain key of a stable `EncryptedValue` account.
 ///
-/// Addressing is stable per `(namespace, account, label)` — it does not rotate
+/// Addressing is stable per `(namespace, account, label)` — it does not change
 /// on handle updates, unlike the old nonce-keyed ACL records.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct EncryptedValueKey {
@@ -68,7 +68,7 @@ impl EncryptedValueKey {
     }
 }
 
-/// Previous on-chain state a persistent output supersedes. `None` means this bind
+/// Previous on-chain state a persistent output updates. `None` means this bind
 /// is the encrypted value account's first (the `EncryptedValue` PDA is created).
 #[derive(Debug, Clone, PartialEq, Eq)]
 struct PreviousEncryptedValueAccountState {
@@ -138,7 +138,7 @@ impl PersistentOutput {
     }
 }
 
-/// Host-ready metadata for creating or superseding a persistent `EncryptedValue` encrypted value account.
+/// Host-ready metadata for creating or updating a persistent `EncryptedValue` encrypted value account.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct PersistentOutputBinding {
     encrypted_value: Pubkey,

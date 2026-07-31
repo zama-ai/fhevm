@@ -1543,13 +1543,13 @@ mod fhe_eval_acl_tests {
         assert!(err.to_string().contains("account index 2 out of range"));
     }
 
-    /// A superseding persistent `fhe_eval` output recomputes its handle directly
+    /// A updating persistent `fhe_eval` output recomputes its handle directly
     /// from the plan's output material + block entropy (DD-015) — no raw update
     /// handle hint and no encrypted-value-account leaf count. The
     /// reconstructed compute result and current/historical material requests
     /// must all come from the `fhe_eval` instruction itself.
     #[tokio::test]
-    async fn superseding_fhe_eval_derives_output_handle_without_hint() {
+    async fn updating_fhe_eval_derives_output_handle_without_hint() {
         let expected = derived_add_output_handle();
 
         let plan = FheEvalArgs {
@@ -1589,9 +1589,7 @@ mod fhe_eval_acl_tests {
                 &slot_clock_ts,
             )
             .await
-            .expect(
-                "reconstruction should derive the supersede handle directly",
-            ),
+            .expect("reconstruction should derive the update handle directly"),
         );
 
         assert!(events.iter().any(|event| {
@@ -1612,7 +1610,7 @@ mod fhe_eval_acl_tests {
         assert_eq!(
             requested_handles,
             vec![Handle::from(expected), Handle::from([8; 32])],
-            "supersession must request the current and previous handles exactly once"
+            "update must request the current and previous handles exactly once"
         );
     }
 

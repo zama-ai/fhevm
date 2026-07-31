@@ -1611,7 +1611,7 @@ fn mollusk_single_user_batch_reveals_that_users_amount() {
 }
 
 /// Repeated joins accumulate in the joined encrypted value account (the operand-aliases-output
-/// supersede), quit refunds the exact accumulated amount all-or-nothing and
+/// update), quit refunds the exact accumulated amount all-or-nothing and
 /// resets the encrypted value account to zero, and a re-join after quit accumulates from zero.
 #[test]
 fn mollusk_repeat_join_accumulates_and_quit_refunds_exactly() {
@@ -1624,8 +1624,8 @@ fn mollusk_repeat_join_accumulates_and_quit_refunds_exactly() {
     seed_open_batch_balances(&context, &keys, &mut ledger);
 
     // Two joins accumulate: the second join's eval reads the joined encrypted value account
-    // as an operand AND supersedes it as the output (the #3238 aliasing class
-    // for the batcher's own eval — the standard same-slot supersede).
+    // as an operand AND updates it as the output (the #3238 aliasing class
+    // for the batcher's own eval — the standard same-slot update).
     run_join(
         &context,
         &fixture,
@@ -1874,7 +1874,7 @@ fn mollusk_redeem_lifecycle_with_yield_rounds_down() {
 
 /// The redeem twin of the deposit repeat-join/quit/re-join test: repeated
 /// SHARE joins accumulate in the joined encrypted value account (the operand-aliases-output
-/// same-slot supersede — the aliasing class this test exists to pin), quit
+/// same-slot update — the aliasing class this test exists to pin), quit
 /// refunds the exact accumulated shares all-or-nothing and resets the encrypted value account
 /// to zero, and a re-join after quit accumulates from zero.
 #[test]
@@ -1888,7 +1888,7 @@ fn mollusk_redeem_repeat_join_accumulates_and_quit_refunds_exactly() {
     seed_open_batch_balances(&context, &keys, &mut ledger);
 
     // Two joins accumulate: the second join's eval reads the joined encrypted value account
-    // as an operand AND supersedes it as the output.
+    // as an operand AND updates it as the output.
     run_join(
         &context,
         &fixture,

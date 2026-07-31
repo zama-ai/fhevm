@@ -13,7 +13,7 @@
     {
       "name": "confidential_burn",
       "docs": [
-        "Burns an encrypted amount by rotating the account balance and encrypted total supply."
+        "Burns an encrypted amount by updating the account balance and encrypted total supply."
       ],
       "discriminator": [
         4,
@@ -106,24 +106,24 @@
         {
           "name": "balance_value",
           "docs": [
-            "Stable balance encrypted value account; read for the current handle and superseded by this eval."
+            "Stable balance encrypted value account; read for the current handle and replaced by this eval."
           ],
           "writable": true
         },
         {
           "name": "total_supply_value",
           "docs": [
-            "Stable total-supply encrypted value account; read for the current handle and superseded by this eval."
+            "Stable total-supply encrypted value account; read for the current handle and replaced by this eval."
           ],
           "writable": true
         },
         {
           "name": "burned_amount_value",
           "docs": [
-            "account's first burn, superseded in place thereafter to each burn's own",
+            "account's first burn, replaced in place thereafter to each burn's own",
             "delta. Each burn makes its own delta handle publicly decryptable at burn",
             "(ERC-7984 `unwrap` parity), so every burn stays permanently redeemable",
-            "even after a later burn supersedes this encrypted value account (DD-036 / Vector 2 closed)."
+            "even after a later burn updates this encrypted value account (DD-036 / Vector 2 closed)."
           ],
           "writable": true
         },
@@ -296,21 +296,21 @@
         {
           "name": "balance_value",
           "docs": [
-            "Stable balance encrypted value account; read for the current handle and superseded by this eval."
+            "Stable balance encrypted value account; read for the current handle and replaced by this eval."
           ],
           "writable": true
         },
         {
           "name": "total_supply_value",
           "docs": [
-            "Stable total-supply encrypted value account; read for the current handle and superseded by this eval."
+            "Stable total-supply encrypted value account; read for the current handle and replaced by this eval."
           ],
           "writable": true
         },
         {
           "name": "burned_amount_value",
           "docs": [
-            "as in [`ConfidentialBurn`]; created on the account's first burn, superseded in place",
+            "as in [`ConfidentialBurn`]; created on the account's first burn, replaced in place",
             "thereafter to each burn's own delta (DD-036 / Vector 2). This is the same output shape",
             "`redeem_burned_amount` later consumes — only where the amount comes from differs."
           ],
@@ -320,7 +320,7 @@
           "name": "amount_value",
           "docs": [
             "The existing encrypted amount to burn: a computed or received `euint64` handle. Read-only",
-            "persistent operand — never superseded, never consumed. Its address is the canonical PDA of its",
+            "persistent operand — never replaced, never consumed. Its address is the canonical PDA of its",
             "own `(acl_domain_key, app_account, encrypted_value_label)` fields, so an encrypted value account from any app",
             "may be passed here once its owner has granted the mint's compute subject via `allow_subjects`."
           ]
@@ -377,7 +377,7 @@
     {
       "name": "confidential_transfer",
       "docs": [
-        "Transfers an encrypted amount by rotating the sender and recipient balance handles."
+        "Transfers an encrypted amount by updating the sender and recipient balance handles."
       ],
       "discriminator": [
         97,
@@ -453,7 +453,7 @@
           "name": "from_balance_value",
           "docs": [
             "Sender's stable balance `EncryptedValue` encrypted value account; read for the current",
-            "handle and superseded in place by this eval's CPI."
+            "handle and replaced in place by this eval's CPI."
           ],
           "writable": true
         },
@@ -467,7 +467,7 @@
         {
           "name": "transferred_amount_value",
           "docs": [
-            "the sender's first transfer, superseded thereafter."
+            "the sender's first transfer, replaced thereafter."
           ],
           "writable": true
         },
@@ -610,7 +610,7 @@
           "name": "from_balance_value",
           "docs": [
             "Sender's stable balance `EncryptedValue` encrypted value account; read for the current",
-            "handle and superseded in place by this eval's CPI."
+            "handle and replaced in place by this eval's CPI."
           ],
           "writable": true
         },
@@ -624,7 +624,7 @@
         {
           "name": "transferred_amount_value",
           "docs": [
-            "the sender's first transfer, superseded thereafter."
+            "the sender's first transfer, replaced thereafter."
           ],
           "writable": true
         },
@@ -632,7 +632,7 @@
           "name": "amount_value",
           "docs": [
             "The existing encrypted amount to spend: a computed or received `euint64` handle. Read-only",
-            "persistent operand — never superseded, never consumed. Its address is the canonical PDA of its",
+            "persistent operand — never replaced, never consumed. Its address is the canonical PDA of its",
             "own `(acl_domain_key, app_account, encrypted_value_label)` fields, so an encrypted value account from any app",
             "may be passed here once its owner has granted the mint's compute subject via `allow_subjects`."
           ]
@@ -1434,7 +1434,7 @@
     {
       "name": "wrap_usdc",
       "docs": [
-        "Escrows public USDC and rotates the confidential balance by `amount`."
+        "Escrows public USDC and updates the confidential balance by `amount`."
       ],
       "discriminator": [
         88,
@@ -1578,14 +1578,14 @@
         {
           "name": "balance_value",
           "docs": [
-            "Stable balance encrypted value account; read for the current handle and superseded by this eval."
+            "Stable balance encrypted value account; read for the current handle and replaced by this eval."
           ],
           "writable": true
         },
         {
           "name": "total_supply_value",
           "docs": [
-            "Stable total-supply encrypted value account; read for the current handle and superseded by this eval."
+            "Stable total-supply encrypted value account; read for the current handle and replaced by this eval."
           ],
           "writable": true
         },

@@ -107,7 +107,7 @@ impl EvalPlan {
 
     /// Subjects this plan newly grants through persistent outputs: every output
     /// subject on a create, and `output_subjects \ previous_subjects` on a
-    /// supersede that rotates its audience. The host deny-list-checks each of
+    /// update that replaces its audience. The host deny-list-checks each of
     /// these exactly like `allow_subjects`, so an app forwarding deny-record
     /// witnesses must cover them alongside the output authorities.
     pub fn newly_granted_subjects(&self) -> Vec<Pubkey> {

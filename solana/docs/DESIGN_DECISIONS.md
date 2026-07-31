@@ -17,7 +17,7 @@ product-open
 
 ## DD-001: Store Handles In ACL Records, Not PDA Seeds
 
-Status: **superseded** — the keyed-nonce `AclRecord` was replaced by the stable
+Status: **replaced** — the keyed-nonce `AclRecord` was replaced by the stable
 `EncryptedValue` + MMR encrypted value account (DD-032), and both handle-binding components (the
 `nonce_sequence` leaf-count and the `value_key`) were **deleted from
 persistent-output handle derivation** (DD-015): a persistent output handle is now the
@@ -138,11 +138,11 @@ KMS witness decoders, fixture encoders, listener expectations, and docs together
 
 ## DD-005: Public Decrypt Is A Post-Creation Release
 
-Status: **superseded** by DD-032 (`allow_for_decryption` and the `AclRecord.public_decrypt` flag are
+Status: **replaced** by DD-032 (`allow_for_decryption` and the `AclRecord.public_decrypt` flag are
 deleted; public release is now `make_handle_public`, an exact-handle `PublicDecryptLeaf` sealed into
 the `EncryptedValue` MMR)
 
-Status (superseded): adopted
+Status (replaced): adopted
 
 Context:
 
@@ -173,7 +173,7 @@ decryptability state:
 
 ## DD-006: Material Commitment Is Separate From ACL Authorization
 
-Status: **superseded** by DD-031 (`HandleMaterialCommitment` deleted; materiality moved to the
+Status: **replaced** by DD-031 (`HandleMaterialCommitment` deleted; materiality moved to the
 gateway's `CiphertextCommits`)
 
 Context:
@@ -181,24 +181,24 @@ Context:
 An ACL record can prove who may use or decrypt a handle. It does not prove that ciphertext material
 is available, bound to the right key, or ready for KMS release.
 
-Decision (superseded):
+Decision (replaced):
 
 Use host-owned `HandleMaterialCommitment` accounts, committed by the configured material authority
 for supported host-chain handles. Seal the material commitment pubkey, hash, and key id onto the ACL
 record.
 
-Rationale (superseded):
+Rationale (replaced):
 
 This lets KMS verify both authorization and decryptability without trusting app-local state or
 events.
 
-Consequences (superseded):
+Consequences (replaced):
 
 Public decrypt, certified disclosure, and burn redemption must verify the ACL record and material
 commitment agree. Persistent archival and compaction rules for ACL/material evidence remain
 product-open.
 
-Why superseded: see DD-031.
+Why replaced: see DD-031.
 
 ## DD-007: External Inputs Verify Against An On-Chain secp256k1 Coprocessor Attestation (verify, not bind)
 
@@ -269,7 +269,7 @@ What changed:
   the shared verifier `zama_host::eip712::verify_coprocessor_input` (via
   `instructions::input_verification::verify_input_attestation`) is invoked in-frame by `fhe_eval`.
 
-Superseded design (stub): the earlier `verify_input_and_bind` bound inputs with a native Ed25519
+Replaced design (stub): the earlier `verify_input_and_bind` bound inputs with a native Ed25519
 "input verifier set" signing a `SolanaInputBindIntent`. Reversed because it was a Solana-only trust
 root divorced from the EVM coprocessor; the coprocessor attestation is the canonical trust root.
 
@@ -317,7 +317,7 @@ app account, allowed roles) and is born with `public_decrypt = false`.
 
 ## DD-009: Operator Transfer Model Removed
 
-Status: superseded
+Status: replaced
 
 Context:
 
@@ -374,7 +374,7 @@ disclosure. Balance disclosure remains a separate path.
 
 ## DD-011: Transfer-And-Call Removed In Favor Of App-Driven CPI Composition
 
-Status: superseded (issue #1593; supersedes DD-018)
+Status: replaced (issue #1593; updates DD-018)
 
 Was: a ported multi-phase transfer-and-call callback flow (`confidential_transfer` →
 `confidential_call_transfer_receiver` → `confidential_prepare_transfer_callback` →
@@ -439,7 +439,7 @@ The reconciliation initially relaxed EVM input validation unconditionally to adm
 which weakened EVM (CI caught empty-contracts / wrong-sig being accepted). Fixed with the chain-aware
 cross-field validator (DD-027).
 
-Superseded design (stub): the earlier decision kept a Solana-native KMS request/response subsystem
+Replaced design (stub): the earlier decision kept a Solana-native KMS request/response subsystem
 (`native-v0`) out of EVM Gateway routing, on the theory the data models were too different to share.
 Reversed to reuse one decrypt trust model and routing path. Some `native-v0` library/store code still
 exists in the connector but is no longer the chosen path.
@@ -567,7 +567,7 @@ different slot                                   previous_bank_hash (+ unix_time
 same slot, same eval frame, different steps      op_index (+ the FheEvalDuplicateHandle guard)
 same slot, different txs, same op/operands/ctx   Solana write-lock serializes the two mut writes to
                                                  the one EncryptedValue PDA (single-writer-per-value,
-                                                 DD-036); a supersede must match previous_handle, so
+                                                 DD-036); a update must match previous_handle, so
                                                  the 2nd is a distinct state transition. If it does
                                                  recompute byte-identically, the material is identical
                                                  (deterministic) → sharing a handle is correct, not a
@@ -598,14 +598,14 @@ Context:
 `acl_storage_rationale.md` Part 5 describes two Solana token profiles: a staged inbound-credit profile
 (recommended default for public-receivable tokens, where the recipient applies pending funds under
 their own transaction timing) and an immediate available-balance profile (EVM-style, where the sender
-updates the recipient's balance directly). The latter lets a sender force a supersede of the recipient's
+updates the recipient's balance directly). The latter lets a sender force a update of the recipient's
 stable balance `EncryptedValue`, which can invalidate a transaction the recipient already built against
 the prior `current_handle`.
 
 Decision:
 
 The PoC uses the immediate available-balance profile: `execute_transfer` credits the recipient by
-superseding `to.balance_encrypted_value` inside the sender's transaction, with no recipient
+updating `to.balance_encrypted_value` inside the sender's transaction, with no recipient
 participation in the base transfer.
 
 Rationale:
@@ -620,7 +620,7 @@ public-receivable token should evaluate the staged inbound-credit profile (pendi
 recipient timing) or otherwise predeclare/lock the recipient's next balance transition so the
 inbound-write surface is bounded.
 
-## DD-017: Role-Aware `fhe_eval` And Per-Op Bind Instructions Supersede The RFC-024 execute_frame Frame
+## DD-017: Role-Aware `fhe_eval` And Per-Op Bind Instructions Update The RFC-024 execute_frame Frame
 
 Status: adopted
 
@@ -670,15 +670,15 @@ composition with transient/persistent outputs when a single CPI is required.
 
 Consequences:
 
-This supersedes the older RFC-024 `execute_frame` sketch and its "app_account_authority removed"
+This updates the older RFC-024 `execute_frame` sketch and its "app_account_authority removed"
 note. Multi-account atomic effects (e.g. ERC7984 transfer crediting both sender and receiver) are
 expressed as one eval frame with per-output authority witnesses rather than one frame with
 `authorized_app_accounts[]`. Future multi-app eval extensions should keep that signer-witness model
 and should not resurrect unsigned `authorized_app_accounts[]`.
 
-## DD-018: Transfer-And-Call Refund Prepare/Finalize (superseded)
+## DD-018: Transfer-And-Call Refund Prepare/Finalize (replaced)
 
-Status: superseded (with DD-011, issue #1593)
+Status: replaced (with DD-011, issue #1593)
 
 Was: the split refund phases (`confidential_prepare_transfer_callback` /
 `confidential_finalize_transfer_callback`) of the transfer-and-call flow, with a recoverable
@@ -839,7 +839,7 @@ Status: adopted (reconciliation; cross-reference DD-017 / DD-019, do not duplica
 
 Context:
 
-DD-017 set the direction: a batched `fhe_eval` with instruction-local transients superseding the
+DD-017 set the direction: a batched `fhe_eval` with instruction-local transients updating the
 RFC-024 `execute_frame` sketch. The reconciliation realized it end-to-end.
 
 Decision:
@@ -862,7 +862,7 @@ Open for debate:
 The step cap `MAX_FHE_EVAL_OPS` is derived from measured instruction-data and compute-unit budgets
 on the interned wire format (fhevm-internal#1853 W8; see the constant's doc in
 `programs/zama-host/src/constants.rs`). The old per-operation replay-event transport split is
-superseded by the single created-public lifecycle batch — see DD-038. (An earlier revision cited
+replaced by the single created-public lifecycle batch — see DD-038. (An earlier revision cited
 DD-024 here, which is the coprocessor-side ciphertext-material decision and was never about the
 event transport.)
 
@@ -1103,7 +1103,7 @@ EVM-migration lands.
 
 ## DD-031: Materiality Moves To The Gateway's `CiphertextCommits` (DD-006 revision)
 
-Status: adopted — supersedes DD-006
+Status: adopted — updates DD-006
 
 Context:
 
@@ -1131,20 +1131,20 @@ authorization. `HandleMaterialCommitmentWitness` is deleted from the KMS connect
 
 ## DD-032: `EncryptedValue` + MMR Replaces Keyed-Nonce `AclRecord` (RFC-024)
 
-Status: adopted — supersedes DD-005's `AclRecord.public_decrypt` model and the keyed-nonce ACL shape
+Status: adopted — updates DD-005's `AclRecord.public_decrypt` model and the keyed-nonce ACL shape
 referenced throughout DD-004–DD-008
 
 Context:
 
 The original ACL model (RFC-024) minted a fresh, keyed-nonce `AclRecord` PDA per handle creation.
-Superseding a handle meant superseding its ACL record's address, which complicated stable addressing
+Updating a handle meant updating its ACL record's address, which complicated stable addressing
 for indexers, apps, and historical decrypt (an old handle's authorization evidence disappeared once its
-record was superseded).
+record was replaced).
 
 Decision:
 
 One stable, `zama-host`-owned `EncryptedValue` PDA per logical encrypted value (seeds
-`["encrypted-value", value_key]`), reused across every handle update. A handle update supersedes the
+`["encrypted-value", value_key]`), reused across every handle update. A handle update updates the
 previous handle by sealing one `HistoricalAccessLeaf` per allowed subject into an on-account SHA-256
 Merkle Mountain Range (peaks + leaf count only — the MMR never stores the full leaf history
 on-chain). The MVP ACL is a single allowed-subject set: `EncryptedValue.subjects` is the complete
@@ -1181,22 +1181,22 @@ separately in DD-017/DD-023 and is not this decision).
 Consequences:
 
 `fhe_eval` operand/output authorization now targets `EncryptedValue` accounts (canonical PDA +
-`current_handle` + membership in `subjects`) instead of `AclRecord`. Confidential-token's per-rotation
+`current_handle` + membership in `subjects`) instead of `AclRecord`. Confidential-token's per-update
 balance address prediction (nonce counters, `balance_acl_record`) disappears —
 `ConfidentialTokenAccount` now just points at one stable `balance_encrypted_value`.
 
 Membership gates every decrypt-relevant surface consistently: `fhe_eval` operands, current-handle
 user-decrypt authorization in the KMS connector, delegation-mediated user decrypt, subject grants,
 and public leaf creation. Historical authorization is the sealed `HistoricalAccessLeaf` for the
-subject at the time of supersession, not a later live-role lookup.
+subject at the time of update, not a later live-role lookup.
 
 Amendment (fhevm-internal#1741): current membership is immutable by default but not frozen — a
-persistent-output supersede may explicitly rotate the subject set (`output_subjects` need not equal the
+persistent-output update may explicitly replace the subject set (`output_subjects` need not equal the
 stored set). Order is load-bearing: the outgoing audience is sealed into historical leaves first, then
-the new set replaces current membership, so past authorization stays exactly as sealed. Every subject a
-rotation adds passes the grant deny-list exactly as `allow_subjects` does (so rotation is not a
+the new set replaces current membership, so past authorization stays exactly as sealed. Every subject an
+update adds passes the grant deny-list exactly as `allow_subjects` does (so audience replacement is not a
 deny-list bypass); `previous_handle`/`previous_subjects` still pin the outgoing state exactly, keeping
-supersedes stateless-replayable (DD-033). This lets a per-sender encrypted value account (e.g. confidential-token's
+updates stateless-replayable (DD-033). This lets a per-sender encrypted value account (e.g. confidential-token's
 `transferred_amount`) re-target its audience across recipients instead of reverting.
 
 ## DD-033: No ACL-Lifecycle Events — Self-Describing Args + Instruction-Replay Indexing
@@ -1306,12 +1306,12 @@ Status: adopted
 Context:
 
 `burned_amount` is one stable `EncryptedValue` encrypted value account per token account (DD-019/DD-032),
-superseded in place on every burn to that burn's own delta handle. The secp redeem path
+replaced in place on every burn to that burn's own delta handle. The secp redeem path
 (`redeem_burned_amount_secp`) required `current_handle == burned_handle`. That stranded funds: a
 redemption requested against handle `H1` (still `PENDING`, awaiting the off-chain KMS round-trip)
-becomes unredeemable the moment a second burn supersedes the encrypted value account to `H2` — the redeem reverts
+becomes unredeemable the moment a second burn updates the encrypted value account to `H2` — the redeem reverts
 forever even though `H1`'s public-decrypt leaf and KMS cert are still valid. The encrypted value account was reusing
-one shared, in-place-superseded slot as an implicit "pending operation" record.
+one shared, in-place-replaced slot as an implicit "pending operation" record.
 
 Decision:
 
@@ -1319,7 +1319,7 @@ The consume authorizes the *pinned* handle by an MMR public-decrypt proof rather
 equality. `redeem_burned_amount_secp` gains a `proof` argument and calls
 `zama_solana_acl::authorize_public(encrypted_value_account, value, burned_handle, proof)` against the
 encrypted value account's current peaks (the same primitive and leaf commitments the KMS connector re-verifies,
-DD-032/DD-035). A redemption therefore stays valid after later burns supersede the encrypted value account. The
+DD-032/DD-035). A redemption therefore stays valid after later burns update the encrypted value account. The
 `request` path is unchanged — it still requires the live handle, because that is where the
 public-decrypt leaf is appended (while the handle is current). Double-redeem is still prevented by the
 per-handle `burn-redemption` marker PDA (DD-022), independent of the dropped equality check. The proof
@@ -1330,7 +1330,7 @@ Why tactical, not structural: the design-idiomaticity audit confirmed the write 
 single-writer-per-value (Solana's write-lock scheduler serializes `mut` access), so this is a
 sequential cross-transaction TOCTOU, not a race. Per-operation escrow accounts would double-provision
 history for no soundness gain; the MMR is the mechanism this system already built for exactly this
-"prove a past/public state after supersession" need. This is the first on-chain consumer of the
+"prove a past/public state after update" need. This is the first on-chain consumer of the
 `authorize_*` MMR API.
 
 Addendum (Vector 2 closed — created-public eval output):
@@ -1341,13 +1341,13 @@ eval. `FheEvalOutput::AllowedPersistent` gains a `make_public: bool` (carried in
 `previous_handle`/`previous_subjects`, so indexers reconstruct the leaf without reading the account).
 When set, `bind_eval_output` — after writing the new `current_handle` — appends a public-decrypt leaf
 for that NEW handle using the exact same `public_decrypt_leaf_commitment` + `mmr_append` as
-`make_handle_public` (byte-identical). Leaf order on a supersede-with-`make_public`: the outgoing
+`make_handle_public` (byte-identical). Leaf order on a update-with-`make_public`: the outgoing
 handle's historical-access leaves (one per current subject) FIRST, then the new handle's
 public-decrypt leaf LAST; on a create-with-`make_public`, just the new handle's public-decrypt leaf.
 
 This mirrors EVM `unwrap`'s `makePubliclyDecryptable(unwrapAmount)` happening inside the burn's own
 state transition, and — critically — it drops the second CPI that overflowed Solana's fixed 32 KiB
-bump heap on every supersede burn (the production OOM). `confidential_burn` sets `make_public: true`
+bump heap on every update burn (the production OOM). `confidential_burn` sets `make_public: true`
 on the burned-delta output only; balance/total-supply outputs stay `make_public: false`.
 `request_burn_redemption` now pins a (possibly historical) burned handle and appends no leaf — the
 burn owns the public-decrypt leaf. Authorization: the output binder already authorizes the
@@ -1357,7 +1357,7 @@ gated by the same deny-list path as, the rest of the binding. This is the opt-in
 "created encrypted value accounts cannot be created public-decryptable" invariant: it holds for all outputs except those
 that explicitly set `make_public`.
 
-Addendum (disclose consume — now the host verifier; superseded by DD-040):
+Addendum (disclose consume — now the host verifier; replaced by DD-040):
 
 The same live-handle TOCTOU existed on the disclosure consume path. It described the old
 `disclose_amount_secp` / `disclose_balance_secp` instructions authorizing the witness-pinned handle
@@ -1366,11 +1366,11 @@ PR 2 (DD-040): the disclose consume is now the single generic `disclose_secp`, w
 host `verify_public_decrypt` verifier; `authorize_disclosed_handle` is deleted along with the rest of
 the disclosure witness machinery.
 
-The survives-supersession property this addendum secured is preserved — now one layer down, by the
+The survives-update property this addendum secured is preserved — now one layer down, by the
 host verifier itself. The public-decrypt leaf is sealed permanently (via `make_handle_public`) and the
 KMS honors historical public leaves, so `verify_public_decrypt` authorizes the caller-pinned exact
 handle by its MMR public-decrypt inclusion proof plus a KMS cert, never reading the live
-`current_handle`. An OLD sealed handle therefore stays disclosable after its encrypted value account is superseded
+`current_handle`. An OLD sealed handle therefore stays disclosable after its encrypted value account is replaced
 during the off-chain KMS round-trip, matching EVM's permanent public-decryptability. This closes the
 same TOCTOU (including balance mode's third-party griefability) without a witness.
 
@@ -1398,7 +1398,7 @@ in [`FUTURE_DESIGN.md`](./FUTURE_DESIGN.md); this list is the short index.
   low-63-bit allocation for canonical MAINNET/DEVNET Solana host chain ids remains a deployment-config
   decision, tracked separately.
 - Rent/archival policy for the `EncryptedValue` MMR itself (DD-032): the account no longer needs
-  per-supersession PDA closes (one stable PDA is reused for an encrypted value account's whole life), but growth of
+  per-update PDA closes (one stable PDA is reused for an encrypted value account's whole life), but growth of
   `peaks`/`subjects` over a long-lived encrypted value account's history still needs a compaction story if rent becomes
   a product issue.
 - General `HostConfig` config-version rotation semantics beyond the KMS-context pointer.
@@ -1409,7 +1409,7 @@ in [`FUTURE_DESIGN.md`](./FUTURE_DESIGN.md); this list is the short index.
 - Production role and governance names for public-decrypt and grant authority.
 - Reorg unwind is unimplemented on the Solana listener path (DD-028/DD-034); live KMS authorization
   remains the plaintext-release boundary.
-- `fhe_eval` supports `RandBounded`; the superseded standalone bounded-random instructions were
+- `fhe_eval` supports `RandBounded`; the replaced standalone bounded-random instructions were
   removed with the old model (DD-032).
 - The relayer's Solana user-decrypt path does not call the MMR proof service in-process
   (DD-035). Clients fetch proofs from standalone `solana-proof-service` via `PROOF_SERVICE_URL`
@@ -1427,7 +1427,7 @@ in [`FUTURE_DESIGN.md`](./FUTURE_DESIGN.md); this list is the short index.
 
 ## DD-037: `fhe_eval` Events — `emit_cpi!`-Only, No `emit!` Log Fallback (DD-033 addendum)
 
-Status: superseded by DD-038
+Status: replaced by DD-038
 
 Context:
 
@@ -1609,7 +1609,7 @@ The accepted footgun (as on EVM): valid-until-destroyed means a forgotten `destr
 signer set powerful indefinitely. EVM manages this by runbook and we do the same for the PoC; a cheap
 `max_context_lag` in `HostConfig` (accept only contexts within K of current) is the natural guard if we
 ever want one — noted, not in scope. Earlier revisions of this DD verified against the CURRENT context
-only and framed a cert-after-rotation as a hazard to fail closed on; that framing is superseded here —
+only and framed a cert-after-rotation as a hazard to fail closed on; that framing is replaced here —
 rotation is no longer the revocation boundary, `destroy` is.
 
 The verified context id is surfaced in `return_data` (8 little-endian bytes appended after `handle ++
@@ -1625,11 +1625,11 @@ nothing new. If a decrypt-path kill-switch is ever wanted, gate `host_config.pau
 
 Return-data-only to start: today's KMS cleartexts are ≤32 bytes; if larger types are ever revealed the
 fallback is a caller-provided scratch account. The proof-freshness (stale-proof) retry race is the
-known bounded-retry surface (#1687): a supersede between proof generation and consume moves the MMR
+known bounded-retry surface (#1687): a update between proof generation and consume moves the MMR
 peaks and fails the inclusion proof; the victim regenerates the proof and retries. The one wrong app
 pattern is binding consume logic to the live `current_handle` instead of the sealed handle — the
-sealed leaf is append-only, so the OLD sealed handle stays verifiable after a supersede (covered by
-`mollusk_verify_public_decrypt_survives_supersede_after_seal`).
+sealed leaf is append-only, so the OLD sealed handle stays verifiable after a update (covered by
+`mollusk_verify_public_decrypt_survives_update_after_seal`).
 
 Scope: this PR added the host verifier additively. Dissolving the confidential-token `DisclosureRequest`
 lifecycle (`request_disclose_*`, `disclose_*_secp`, `close_*_disclosure_request`,
@@ -1662,7 +1662,7 @@ no per-request PDA, no `kms_context_id` pin, and no `expires_slot`.
 
 Verify against the cert-named context: the cert is verified by the host against the `KmsContext` the
 cert names, for any live context (see "Any live context" above), not a request-time pin. (Originally
-this read "against the CURRENT context, context rotation fails closed"; superseded by
+this read "against the CURRENT context, context rotation fails closed"; replaced by
 fhevm-internal#1765 — `destroy` is now the revocation boundary, not rotation.)
 
 Idempotent by design: act-once is intentionally NOT enforced on-chain. Disclosure is idempotent
@@ -1691,7 +1691,7 @@ burn per DD-036, owner/mint by the value_account), so the witness was pure scaff
 
 The stateless verifier replaces the request-time KMS pin: the cert is verified against the context it
 names inside the verifier, not the witness's pinned `kms_context_id`. (This note originally said the
-verifier used `host_config.current_kms_context_id` and failed closed on rotation; superseded by
+verifier used `host_config.current_kms_context_id` and failed closed on rotation; replaced by
 fhevm-internal#1765, which accepts any live context and makes `destroy_kms_context` the revocation
 lever — see "Any live context" above.)
 
@@ -1782,7 +1782,7 @@ recipient rule already places the receiving account's owner in the `transferred_
 audience, so the batcher PDA gains read admission on the deposit handle **by construction**; the
 batcher re-materializes each deposit into its own batcher-owned encrypted value account in the same join transaction
 (audience `{user, batcher}`) because input admission pins `current_handle` and the user's
-`transferred_amount` encrypted value account is superseded by their next transfer. Each batch gets its **own token
+`transferred_amount` encrypted value account is replaced by their next transfer. Each batch gets its **own token
 account**, so the burned/revealed total is exactly that batch's sum (the EVM code documents the
 inter-batch dust leak this prevents). Lifecycle is Pending -> Dispatched -> Finalized/Canceled with
 permissionless dispatch/settle/claim and an exact-refund `quit` — no operator custody of principal.

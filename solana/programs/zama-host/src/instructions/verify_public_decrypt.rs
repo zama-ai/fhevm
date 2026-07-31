@@ -121,7 +121,7 @@ pub fn verify_public_decrypt(
     );
 
     // Exact-handle public-decrypt proof against the encrypted value account's current peaks (no roll-forward): a
-    // handle sealed public stays provable after later supersedes move the peaks.
+    // handle sealed public stays provable after later updates move the peaks.
     let info = ctx.accounts.encrypted_value.to_account_info();
     let value = read_canonical_encrypted_value(&info)?;
     zama_solana_acl::authorize_public(

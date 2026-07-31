@@ -1,4 +1,4 @@
-//! Burns encrypted token balances and rotates confidential supply state.
+//! Burns encrypted token balances and updates confidential supply state.
 
 use super::*;
 
@@ -21,17 +21,17 @@ pub struct ConfidentialBurn<'info> {
     /// CHECK: Mint-scoped app authority for total-supply handles.
     #[account(seeds = [b"total-supply", mint.key().as_ref()], bump)]
     pub total_supply_authority: UncheckedAccount<'info>,
-    /// Stable balance encrypted value account; read for the current handle and superseded by this eval.
+    /// Stable balance encrypted value account; read for the current handle and replaced by this eval.
     #[account(mut, address = token_account.balance_encrypted_value)]
     pub balance_value: Box<Account<'info, zama_host::EncryptedValue>>,
-    /// Stable total-supply encrypted value account; read for the current handle and superseded by this eval.
+    /// Stable total-supply encrypted value account; read for the current handle and replaced by this eval.
     #[account(mut, address = mint.total_supply_encrypted_value)]
     pub total_supply_value: Box<Account<'info, zama_host::EncryptedValue>>,
     /// CHECK: stable `burned_amount` encrypted value account for `token_account`; created on the
-    /// account's first burn, superseded in place thereafter to each burn's own
+    /// account's first burn, replaced in place thereafter to each burn's own
     /// delta. Each burn makes its own delta handle publicly decryptable at burn
     /// (ERC-7984 `unwrap` parity), so every burn stays permanently redeemable
-    /// even after a later burn supersedes this encrypted value account (DD-036 / Vector 2 closed).
+    /// even after a later burn updates this encrypted value account (DD-036 / Vector 2 closed).
     #[account(mut, address = encrypted_value_address(mint.key(), token_account.key(), burned_amount_label()).0)]
     pub burned_amount_value: UncheckedAccount<'info>,
     /// CHECK: Anchor event CPI authority for the Zama host program.
@@ -85,7 +85,7 @@ impl<'info> ConfidentialBurn<'info> {
     }
 }
 
-/// Burns an encrypted amount by rotating the account balance and encrypted total supply.
+/// Burns an encrypted amount by updating the account balance and encrypted total supply.
 pub fn confidential_burn<'info>(
     ctx: Context<'info, ConfidentialBurn<'info>>,
     amount_attestation: zama_host::CoprocessorInputAttestation,
@@ -131,7 +131,7 @@ pub fn confidential_burn<'info>(
 ///
 /// This is the burn-side analog of [`ConfidentialTransferFromValue`]: the 190-byte attestation
 /// argument is gone and one account is added — `amount_value`, the encrypted amount to burn. It is
-/// read-only (the persistent operand the eval reads) and is never superseded or consumed; only the
+/// read-only (the persistent operand the eval reads) and is never replaced or consumed; only the
 /// balance, total-supply, and burned-amount encrypted value accounts change, exactly as in [`ConfidentialBurn`].
 /// The batcher path uses this to burn a computed batch total (a handle produced by summing joins)
 /// whose owner is a program PDA that authorizes the burn via `invoke_signed`.
@@ -157,20 +157,20 @@ pub struct ConfidentialBurnFromValue<'info> {
     /// CHECK: Mint-scoped app authority for total-supply handles.
     #[account(seeds = [b"total-supply", mint.key().as_ref()], bump)]
     pub total_supply_authority: UncheckedAccount<'info>,
-    /// Stable balance encrypted value account; read for the current handle and superseded by this eval.
+    /// Stable balance encrypted value account; read for the current handle and replaced by this eval.
     #[account(mut, address = token_account.balance_encrypted_value)]
     pub balance_value: Box<Account<'info, zama_host::EncryptedValue>>,
-    /// Stable total-supply encrypted value account; read for the current handle and superseded by this eval.
+    /// Stable total-supply encrypted value account; read for the current handle and replaced by this eval.
     #[account(mut, address = mint.total_supply_encrypted_value)]
     pub total_supply_value: Box<Account<'info, zama_host::EncryptedValue>>,
     /// CHECK: stable `burned_amount` encrypted value account for `token_account`, created publicly decryptable exactly
-    /// as in [`ConfidentialBurn`]; created on the account's first burn, superseded in place
+    /// as in [`ConfidentialBurn`]; created on the account's first burn, replaced in place
     /// thereafter to each burn's own delta (DD-036 / Vector 2). This is the same output shape
     /// `redeem_burned_amount` later consumes — only where the amount comes from differs.
     #[account(mut, address = encrypted_value_address(mint.key(), token_account.key(), burned_amount_label()).0)]
     pub burned_amount_value: UncheckedAccount<'info>,
     /// The existing encrypted amount to burn: a computed or received `euint64` handle. Read-only
-    /// persistent operand — never superseded, never consumed. Its address is the canonical PDA of its
+    /// persistent operand — never replaced, never consumed. Its address is the canonical PDA of its
     /// own `(acl_domain_key, app_account, encrypted_value_label)` fields, so an encrypted value account from any app
     /// may be passed here once its owner has granted the mint's compute subject via `allow_subjects`.
     pub amount_value: Box<Account<'info, zama_host::EncryptedValue>>,
@@ -226,7 +226,7 @@ impl<'info> ConfidentialBurnFromValue<'info> {
 }
 
 /// Burns an encrypted amount taken from an existing on-chain `EncryptedValue` (a computed or
-/// received handle), rotating the account balance and encrypted total supply. The amount value is
+/// received handle), updating the account balance and encrypted total supply. The amount value is
 /// spent read-only, and the burned-amount output is created publicly decryptable exactly as in the
 /// attestation path, so `redeem_burned_amount` consumes it unchanged.
 pub fn confidential_burn_from_value<'info>(
@@ -292,7 +292,7 @@ enum BurnAmountSource<'info> {
     /// in-frame and transient-allowed for this eval (no persistent amount account).
     Attested(zama_host::CoprocessorInputAttestation),
     /// EVM computed/received `euint64` parity: an existing on-chain `EncryptedValue` encrypted value account, spent
-    /// as a read-only persistent operand at its current handle. It is never superseded and never
+    /// as a read-only persistent operand at its current handle. It is never replaced and never
     /// consumed. The token spend gate (signing owner in the value's subject set) and euint64 type
     /// check run in the instruction handler before this reaches the eval builder; the host re-checks
     /// the handle is current and that the mint's compute subject is allowed on the value, in-frame.
@@ -310,11 +310,11 @@ struct BurnAccounts<'a, 'info> {
     token_account: &'a Account<'info, ConfidentialTokenAccount>,
     compute_signer: &'a UncheckedAccount<'info>,
     total_supply_authority: &'a UncheckedAccount<'info>,
-    /// Stable balance encrypted value account: read for the current handle, then superseded in place as the output.
+    /// Stable balance encrypted value account: read for the current handle, then replaced in place as the output.
     balance_value: AccountInfo<'info>,
-    /// Stable total-supply encrypted value account: read for the current handle, then superseded in place.
+    /// Stable total-supply encrypted value account: read for the current handle, then replaced in place.
     total_supply_value: AccountInfo<'info>,
-    /// Stable burned-amount encrypted value account: superseded to this burn's created-public delta.
+    /// Stable burned-amount encrypted value account: replaced to this burn's created-public delta.
     burned_amount_value: AccountInfo<'info>,
     zama_event_authority: &'a UncheckedAccount<'info>,
     zama_program: &'a Program<'info, ZamaHost>,
@@ -393,7 +393,7 @@ fn execute_burn<'info>(
     )?;
     // ERC-7984 `unwrap` parity (`makePubliclyDecryptable(unwrapAmount)`): the burned delta is born
     // publicly decryptable inside this eval CPI, so the burn is permanently redeemable even after a
-    // later burn supersedes this shared encrypted value account (DD-036 / Vector 2) — with no second make-public CPI.
+    // later burn updates this shared encrypted value account (DD-036 / Vector 2) — with no second make-public CPI.
     let burned_output = fhe::PersistentOutput::new_public(
         accounts.burned_amount_value.clone(),
         encrypted_value_key(mint_key, token_account_key, burned_amount_label()),

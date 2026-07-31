@@ -61,7 +61,7 @@ trusted for authorization.
   ID. Handles are stored inside the account and never used as PDA seeds, so
   apps can pre-allocate output accounts before the compute result exists.
 - **MMR-sealed history.** Each value account seals its handle history into an
-  append-only MMR; superseded and public handles stay provable forever inside
+  append-only MMR; replaced and public handles stay provable forever inside
   a fixed-size account (`docs/MMR_ACL_MVP.md`).
 - **The 1,232-byte packet is a design input.** Batch wire data interns
   repeated 32-byte values in a dictionary; the KMS settle transaction requires

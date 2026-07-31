@@ -8,9 +8,9 @@
 //! joined encrypted value account **in the same transaction**. Same-transaction is
 //! load-bearing: the transfer's recipient rule places the batch authority in
 //! the `transferred_amount` output audience by construction, but that encrypted value account
-//! is superseded by the user's next transfer and input admission pins the
+//! is replaced by the user's next transfer and input admission pins the
 //! current handle — so the re-materialization must happen before anything can
-//! supersede it.
+//! update it.
 
 use super::*;
 
@@ -53,17 +53,17 @@ pub struct Join<'info> {
     /// validated by the token CPI and pinned below.
     #[account(mut)]
     pub batch_join_token_account: UncheckedAccount<'info>,
-    /// CHECK: user's stable balance encrypted value account; superseded by the token CPI.
+    /// CHECK: user's stable balance encrypted value account; replaced by the token CPI.
     #[account(mut)]
     pub user_balance_value: UncheckedAccount<'info>,
-    /// CHECK: batch's stable balance encrypted value account; superseded by the token CPI.
+    /// CHECK: batch's stable balance encrypted value account; replaced by the token CPI.
     #[account(mut)]
     pub batch_balance_value: UncheckedAccount<'info>,
-    /// CHECK: user's stable transferred-amount encrypted value account; superseded by the
+    /// CHECK: user's stable transferred-amount encrypted value account; replaced by the
     /// token CPI, then read as the batcher eval's operand.
     #[account(mut)]
     pub user_transferred_value: UncheckedAccount<'info>,
-    /// CHECK: the user's joined encrypted value account; created on first join, superseded
+    /// CHECK: the user's joined encrypted value account; created on first join, replaced
     /// (accumulated) on repeat joins by the batcher eval.
     #[account(mut)]
     pub pending_join_value: UncheckedAccount<'info>,
@@ -141,7 +141,7 @@ pub fn join<'info>(
     // Phase 2: re-materialize the just-transferred amount into the user's joined
     // encrypted value account. The batch authority reads the transferred encrypted value account (it is in its
     // audience as the recipient owner) and accumulates: first join creates
-    // `joined = transferred + 0`, repeats supersede to
+    // `joined = transferred + 0`, repeats update to
     // `joined = joined + transferred`.
     let transferred_value = fhe::read_encrypted_value(&ctx.accounts.user_transferred_value)?;
     let transferred = fhe::uint64_operand(&transferred_value)?;
@@ -170,7 +170,7 @@ pub fn join<'info>(
     // The joined and transferred encrypted value accounts live in different ACL domains (the
     // batch vs the mint), so their PDAs are distinct by construction; the only
     // alias in this frame is the joined encrypted value account as both operand and output on
-    // repeat joins, which is the standard same-slot supersede.
+    // repeat joins, which is the standard same-slot update.
     fhe::eval_as_batch_authority(
         fhe::BatchAuthorityEval {
             batch: batch_key,

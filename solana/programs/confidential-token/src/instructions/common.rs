@@ -21,12 +21,12 @@ pub(crate) struct TransferAccounts<'a, 'info> {
     pub(crate) to_account: &'a Account<'info, ConfidentialTokenAccount>,
     pub(crate) compute_signer: &'a UncheckedAccount<'info>,
     /// Sender's stable balance encrypted value account: read for the current handle, then
-    /// superseded in place as the output.
+    /// replaced in place as the output.
     pub(crate) from_balance_value: AccountInfo<'info>,
     /// Recipient's stable balance encrypted value account: read for the current handle, then
-    /// superseded in place as the output.
+    /// replaced in place as the output.
     pub(crate) to_balance_value: AccountInfo<'info>,
-    /// Sender's stable transferred-amount encrypted value account, superseded every transfer.
+    /// Sender's stable transferred-amount encrypted value account, replaced every transfer.
     pub(crate) transferred_amount_value: AccountInfo<'info>,
     pub(crate) zama_event_authority: &'a UncheckedAccount<'info>,
     pub(crate) zama_program: &'a Program<'info, ZamaHost>,
@@ -48,7 +48,7 @@ pub(crate) enum TransferAmountSource<'info> {
     /// verified in-frame and transient-allowed for this eval (no persistent amount account).
     Attested(zama_host::CoprocessorInputAttestation),
     /// EVM computed/received `euint64` parity: an existing on-chain `EncryptedValue` encrypted value account,
-    /// spent as a read-only persistent operand at its current handle. It is never superseded and
+    /// spent as a read-only persistent operand at its current handle. It is never replaced and
     /// never consumed — only the two balance encrypted value accounts change. The token's spend gate (signing
     /// owner in the value's subject set) and euint64 type check run in the instruction handler
     /// before this reaches the eval builder; the host re-checks the handle is current and that the
@@ -359,7 +359,7 @@ pub(crate) fn assert_amount_attestation_binding(
 /// the redeem path proves the handle's publicness via the exact-handle MMR
 /// public-decrypt proof verified inside the `verify_public_decrypt` CPI, since the
 /// burn already made the handle public (DD-036 / Vector 2). The handle need not be
-/// the live one, so a historical handle superseded by a later burn stays redeemable.
+/// the live one, so a historical handle replaced by a later burn stays redeemable.
 pub(crate) fn assert_burned_amount_value_account(
     amount_value: &Account<zama_host::EncryptedValue>,
     burned_handle: [u8; 32],

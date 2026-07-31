@@ -161,7 +161,7 @@ export type DispatchAsyncInput<
   totalSupplyAuthority: Address<TAccountTotalSupplyAuthority>;
   /** token CPI and pinned below. */
   batchJoinTokenAccount: Address<TAccountBatchJoinTokenAccount>;
-  /** superseded as the burn's balance output (the whole-balance alias). */
+  /** replaced as the burn's balance output (the whole-balance alias). */
   batchBalanceValue: Address<TAccountBatchBalanceValue>;
   totalSupplyValue: Address<TAccountTotalSupplyValue>;
   /** decryptable; created by the token CPI (first and only burn per batch). */
@@ -389,7 +389,7 @@ export type DispatchInput<
   totalSupplyAuthority: Address<TAccountTotalSupplyAuthority>;
   /** token CPI and pinned below. */
   batchJoinTokenAccount: Address<TAccountBatchJoinTokenAccount>;
-  /** superseded as the burn's balance output (the whole-balance alias). */
+  /** replaced as the burn's balance output (the whole-balance alias). */
   batchBalanceValue: Address<TAccountBatchBalanceValue>;
   totalSupplyValue: Address<TAccountTotalSupplyValue>;
   /** decryptable; created by the token CPI (first and only burn per batch). */
@@ -597,7 +597,7 @@ export type ParsedDispatchInstruction<
     totalSupplyAuthority: TAccountMetas[6];
     /** token CPI and pinned below. */
     batchJoinTokenAccount: TAccountMetas[7];
-    /** superseded as the burn's balance output (the whole-balance alias). */
+    /** replaced as the burn's balance output (the whole-balance alias). */
     batchBalanceValue: TAccountMetas[8];
     totalSupplyValue: TAccountMetas[9];
     /** decryptable; created by the token CPI (first and only burn per batch). */

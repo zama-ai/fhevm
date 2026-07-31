@@ -2560,7 +2560,7 @@
                 "name": "output_subject_indexes",
                 "docs": [
                   "Dictionary indexes of the subjects on the output encrypted value account. On create these",
-                  "are the initial subjects; on supersede they become the new audience, which may rotate",
+                  "are the initial subjects; on update they become the new audience, which may rotate",
                   "away from the stored set (the outgoing audience is sealed into",
                   "historical leaves first; added subjects pass the grant deny-list)."
                 ],
@@ -2569,7 +2569,7 @@
               {
                 "name": "previous_handle",
                 "docs": [
-                  "Superseded handle: `None` on create, `Some(current_handle)` on update.",
+                  "Replaced handle: `None` on create, `Some(current_handle)` on update.",
                   "Carried in instruction data so indexers can reconstruct the appended",
                   "MMR leaves without reading the account; validated against the account."
                 ],
@@ -2585,7 +2585,7 @@
               {
                 "name": "previous_subjects",
                 "docs": [
-                  "Superseded subject set, parallel to `previous_handle` (`None` on create,",
+                  "Replaced subject set, parallel to `previous_handle` (`None` on create,",
                   "exact stored subjects on update). Same indexer-reconstruction purpose."
                 ],
                 "type": {

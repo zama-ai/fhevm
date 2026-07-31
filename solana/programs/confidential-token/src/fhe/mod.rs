@@ -74,7 +74,7 @@ impl PersistentAudience {
 }
 
 /// A persistent eval output account bound to the exact `EncryptedValue` encrypted value account
-/// it is allowed to create or supersede.
+/// it is allowed to create or update.
 pub(crate) struct PersistentOutput<'info> {
     encrypted_value: AccountInfo<'info>,
     output: Box<zama_fhe::PersistentOutput>,
@@ -82,7 +82,7 @@ pub(crate) struct PersistentOutput<'info> {
 
 impl<'info> PersistentOutput<'info> {
     /// Binds `encrypted_value` as the output of a persistent eval step: creates the
-    /// encrypted value account's first handle if the PDA does not exist yet, or supersedes it
+    /// encrypted value account's first handle if the PDA does not exist yet, or updates it
     /// (reading `previous_handle`/`previous_subjects` off the on-chain account)
     /// if it does. Either way the eval CPI's attestation matches exactly what
     /// the host will verify.

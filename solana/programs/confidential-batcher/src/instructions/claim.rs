@@ -68,13 +68,13 @@ pub struct Claim<'info> {
     /// token CPI and pinned below.
     #[account(mut)]
     pub user_payout_token_account: UncheckedAccount<'info>,
-    /// CHECK: batch's confidential payout balance encrypted value account; superseded by the token CPI.
+    /// CHECK: batch's confidential payout balance encrypted value account; replaced by the token CPI.
     #[account(mut)]
     pub batch_payout_balance_value: UncheckedAccount<'info>,
-    /// CHECK: user's confidential payout balance encrypted value account; superseded by the token CPI.
+    /// CHECK: user's confidential payout balance encrypted value account; replaced by the token CPI.
     #[account(mut)]
     pub user_payout_balance_value: UncheckedAccount<'info>,
-    /// CHECK: batch payout account's transferred-amount encrypted value account; superseded by
+    /// CHECK: batch payout account's transferred-amount encrypted value account; replaced by
     /// the token CPI.
     #[account(mut)]
     pub batch_payout_transferred_value: UncheckedAccount<'info>,

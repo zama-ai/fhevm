@@ -35,10 +35,10 @@ pub struct Dispatch<'info> {
     #[account(mut)]
     pub batch_join_token_account: UncheckedAccount<'info>,
     /// CHECK: batch's stable balance encrypted value account — read as the burn amount AND
-    /// superseded as the burn's balance output (the whole-balance alias).
+    /// replaced as the burn's balance output (the whole-balance alias).
     #[account(mut)]
     pub batch_balance_value: UncheckedAccount<'info>,
-    /// CHECK: mint's stable total-supply encrypted value account; superseded by the token CPI.
+    /// CHECK: mint's stable total-supply encrypted value account; replaced by the token CPI.
     #[account(mut)]
     pub total_supply_value: UncheckedAccount<'info>,
     /// CHECK: batch account's burned-amount encrypted value account, created publicly

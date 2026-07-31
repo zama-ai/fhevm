@@ -11,8 +11,8 @@ Every decrypt authorizes through exactly one of these, and each has dedicated co
 | Path | On-chain check | Where tested |
 |---|---|---|
 | **current** | `handle == current_handle && subject ∈ subjects` (no proof) | `zama-solana-acl` unit (`authorize_current`); `host_mollusk` current-decrypt cases |
-| **historical** | MMR proof of `HistoricalAccessLeaf(handle, subject)` vs live peaks | `zama-solana-acl` (`authorize_historical`, `mmr_verify`); `host_mollusk` supersede-then-prove; `solana-proof-service` reconstruction |
-| **public** | MMR proof of `PublicDecryptLeaf(handle)` vs live peaks | `zama-solana-acl` (`authorize_public`); `token_mollusk` burn→redeem and `disclose_secp` after-supersession; `host_mollusk` `verify_public_decrypt` negatives (DD-040) |
+| **historical** | MMR proof of `HistoricalAccessLeaf(handle, subject)` vs live peaks | `zama-solana-acl` (`authorize_historical`, `mmr_verify`); `host_mollusk` update-then-prove; `solana-proof-service` reconstruction |
+| **public** | MMR proof of `PublicDecryptLeaf(handle)` vs live peaks | `zama-solana-acl` (`authorize_public`); `token_mollusk` burn→redeem and `disclose_secp` after-update; `host_mollusk` `verify_public_decrypt` negatives (DD-040) |
 
 Negative coverage for each: wrong subject, wrong handle, foreign-encrypted value account proof, invalid/forged proof —
 all fail closed (see the `*_rejects_*` mollusk tests).
@@ -27,11 +27,11 @@ all fail closed (see the `*_rejects_*` mollusk tests).
    **real compiled `.so`** (built `--features poc`) against Mollusk. Covers all three auth paths, the
    full token flows (wrap / transfer / burn→redeem / disclose), the produced-public lifecycle batch
    (zero/one/multiple/max-size/fail-closed), the burn-redemption consume-once replay marker and
-   expired-request rejection, and handle supersession. Token disclosure is now the thin `disclose_secp`
+   expired-request rejection, and handle update. Token disclosure is now the thin `disclose_secp`
    consumer of the host `verify_public_decrypt` verifier (DD-040); `token_mollusk` covers its happy path
-   (amount + balance), after-supersession consume, idempotency / no-replay-marker, foreign-proof
+   (amount + balance), after-update consume, idempotency / no-replay-marker, foreign-proof
    rejection surfaced from the host, and mint-domain binding. The verifier's own negatives (destroyed
-   context, sub-threshold cert, handle/proof mismatch, non-canonical context, survives-supersede) live
+   context, sub-threshold cert, handle/proof mismatch, non-canonical context, survives-update) live
    in `host_mollusk` (#3220). There are no more `request_disclose_*` / `disclose_*_secp` witness-bound
    disclosure tests. The token and batcher Mollusk suites explicitly set `compute_unit_limit = 1_400_000`;
    the host suite uses Mollusk's default per-instruction budget (stricter than 1.4M). In all cases,
@@ -42,7 +42,7 @@ all fail closed (see the `*_rejects_*` mollusk tests).
 4. **Off-chain reconstruction — host-listener** (`coprocessor/fhevm-engine/host-listener`, feature
     `solana-grpc`, which includes reconstruction): reconstructs MMR leaves from instruction data +
     sysvar-streamed block entropy (Yellowstone gRPC), with no dependence on emitted events. Derives
-    supersede/produced-public handles directly; fails closed on incomplete plans.
+    update/produced-public handles directly; fails closed on incomplete plans.
 5. **Off-chain proof service — solana-proof-service** (`solana-proof-service/`): ingest (atomic, gap-free,
    fail-closed), decode (incl. `emit_cpi!` op-event resolution for created-public handles), replay, and
    `build_verified_proof` cross-check against confirmed peaks (a wrong record surfaces as
@@ -55,14 +55,14 @@ all fail closed (see the `*_rejects_*` mollusk tests).
    the narrow produced-public lifecycle batch required by solana-proof-service
    reconstruction. It drives the **decrypt vertical** against a local validator + full coprocessor/KMS
    stack — compute → public-decrypt (solana-proof-service MMR proof) → user-decrypt (current) → historical-user-decrypt
-   (superseded handle + live MMR proof) — exercising all three authorization paths. Operator execution
+   (replaced handle + live MMR proof) — exercising all three authorization paths. Operator execution
    is intentionally representative rather than exhaustive: the live vertical retains one example for
    encrypted/encrypted and encrypted/scalar binary wiring, unary type conversion, ternary selection,
    bounded randomness, and each distinct composite encoding (`Sum`, `IsIn`, `MulDiv`). Exhaustive
    operator contract belongs to pure conformance; Mollusk and direct real-TFHE add representative SBF
    and cryptographic evidence. The live vertical also retains token composition through wrap → burn →
    public release → redeem (witness-bound KMS certificate) and `disclose_secp` (stateless host `verify_public_decrypt`, DD-040). `token_mollusk` owns the
-   broader negative matrix (including after-supersession, redeem consume-once, disclosure idempotency, and foreign-proof rejection).
+   broader negative matrix (including after-update, redeem consume-once, disclosure idempotency, and foreign-proof rejection).
 
 ## Reconstruction parity strategy
 
@@ -93,7 +93,7 @@ re-verifying the proof against live chain state.
 ## Deliberately deferred (filed as follow-ups, not gaps in the merge)
 
 - **Explicit Mollusk CU-trace assertions.** CU fit is currently implicit (Mollusk enforces the budget,
-  so passing = fits) and bounded by the liveness audit's op-count analysis (≤80 SHA-256/supersession,
+  so passing = fits) and bounded by the liveness audit's op-count analysis (≤80 SHA-256/update,
   leaf-count-independent). An explicit `compute_units_consumed` assertion per hot instruction would turn
   the estimate into a measured, regression-guarded number.
 - **Cross-language Rust↔TS vectors.** No TS harness exists yet; a shared fixture set (leaf commitments,

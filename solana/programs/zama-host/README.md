@@ -20,7 +20,7 @@ EncryptedValue
   one stable PDA per logical encrypted value, reused across every handle update; stores
   current_handle, inline allowed subjects (up to MAX_ENCRYPTED_VALUE_SUBJECTS=8),
   and an on-account SHA-256 Merkle Mountain Range (peaks + leaf_count) sealing one
-  HistoricalAccessLeaf per allowed subject on every handle supersession, and a
+  HistoricalAccessLeaf per allowed subject on every handle update, and a
   PublicDecryptLeaf on every make_handle_public call. See
   `solana/crates/zama-solana-acl/src/lib.rs` for the shared MMR/leaf-commitment math and
   `docs/DESIGN_DECISIONS.md` DD-032 for the rationale (replaces the earlier keyed-nonce
@@ -54,8 +54,8 @@ TrivialEncrypt / Rand / RandBounded / Sum / IsIn / MulDiv** (no `Input` step —
 produced earlier in the eval can be referenced as transient operands by later operations.
 Persistent operands must still be authorized by a live or historically-proven `EncryptedValue`. Transient
 outputs create no `EncryptedValue` state at all. Only outputs marked persistent create (first bind) or
-supersede (subsequent binds) an `EncryptedValue`, carrying `previous_handle`/`previous_subjects`
-attestation on supersession so every transaction stays independently interpretable
+update (subsequent binds) an `EncryptedValue`, carrying `previous_handle`/`previous_subjects`
+attestation on update so every transaction stays independently interpretable
 (`docs/DESIGN_DECISIONS.md` DD-032/DD-033).
 
 This is the supported replacement for the older `execute_frame` prototype, not a port of that ABI.
@@ -119,7 +119,7 @@ resolves the operand from `attestation.input_handle`. The shared verifier is
 `eip712::verify_coprocessor_input` (via `instructions::input_verification::verify_input_attestation`);
 the earlier standalone `verify_coprocessor_input`/`verify_input_and_bind`/`mock_input_verified_and_bind`
 instructions and the `InputVerifiedEvent` receipt were removed. The former Ed25519 verifier-set path
-is retained only as the superseded-design stub in DD-007.
+is retained only as the replaced-design stub in DD-007.
 
 ## ACL Model
 
@@ -129,7 +129,7 @@ and call `make_handle_public` for the exact current handle. If a subject is not 
 do any of those actions.
 
 `allow_subjects` is append-only and idempotent for existing subjects. Its authority must already be
-in the allowed set, and deny-list/pause checks still apply. Superseding a handle seals one
+in the allowed set, and deny-list/pause checks still apply. Updating a handle seals one
 `HistoricalAccessLeaf` per allowed subject in current order. Public decryptability is represented
 only by `PublicDecryptLeaf`; it never rolls forward to later handles.
 

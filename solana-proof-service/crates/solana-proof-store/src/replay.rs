@@ -2,13 +2,13 @@
 //! chronological instruction replay, turning `DecodedInstruction`s into the
 //! `zama_solana_acl::value_account::EncryptedValueAccountEvent`s the shared crate's MMR math consumes.
 //!
-//! Encrypted-value-account creation and supersession come from persistent
+//! Encrypted-value-account creation and update come from persistent
 //! `fhe_eval` outputs. `allow_subjects` mutates current subjects but appends
 //! no MMR leaf. `make_handle_public` carries the exact public handle
 //! on-chain, so replay can reconstruct public-decrypt leaves even after
 //! `fhe_eval` output handles whose slot entropy is unavailable to this service.
 //! A created-public `fhe_eval` output resolves that output handle from the op event
-//! `decode` correlated with it, so its supersede emits `HandleSuperseded` (old
+//! `decode` correlated with it, so its update emits `HandleUpdated` (old
 //! handle) followed by `MarkedPublic` (new output handle) — matching the
 //! on-chain leaf append order.
 
@@ -18,7 +18,7 @@ use crate::decode::DecodedInstruction;
 
 #[derive(thiserror::Error, Debug, Clone, PartialEq, Eq)]
 pub enum ReplayError {
-    #[error("supersession previous_handle/previous_subjects do not match tracked state for encrypted_value_account {0:x?}")]
+    #[error("update previous_handle/previous_subjects do not match tracked state for encrypted_value_account {0:x?}")]
     PreviousStateMismatch([u8; 32]),
     #[error("instruction referenced an encrypted_value_account that was never created: {0:x?}")]
     UnknownEncryptedValueAccount([u8; 32]),
@@ -94,7 +94,7 @@ fn validate_previous_state(
 /// `FheEvalCreateEncryptedValue`, looked up by the caller for the others).
 ///
 /// Most instructions produce zero or one event. A created-public `fhe_eval`
-/// supersede produces two: the `HandleSuperseded` for the outgoing handle, then
+/// update produces two: the `HandleUpdated` for the outgoing handle, then
 /// a `MarkedPublic` for the resolved new output handle — mirroring the on-chain
 /// append order (historical-access leaves, then the public-decrypt leaf).
 pub fn apply_instruction(
@@ -134,7 +134,7 @@ pub fn apply_instruction(
             new_state.upsert(subjects);
             // Born-public on create: the resolved output handle is public
             // immediately, so append its public-decrypt leaf. Recording it as
-            // `current_handle` also lets a later supersede reconstruct without
+            // `current_handle` also lets a later update reconstruct without
             // needing the slot entropy behind the on-chain handle derivation.
             let events = match make_public_handle {
                 Some(handle) => {
@@ -159,8 +159,8 @@ pub fn apply_instruction(
             validate_previous_state(state, *encrypted_value, *previous_handle, previous_subjects)?;
             // Historical leaves seal against the pre-rotation audience. On-chain
             // `fhe_eval` may rotate subjects on the persistent output; adopt
-            // `output_subjects` only after emitting the superseded leaf set.
-            let mut events = vec![EncryptedValueAccountEvent::handle_superseded(
+            // `output_subjects` only after emitting the replaced leaf set.
+            let mut events = vec![EncryptedValueAccountEvent::handle_updated(
                 *previous_handle,
                 &state.subjects,
             )];
@@ -244,7 +244,7 @@ mod tests {
         let events = apply_instruction(&mut state, &update).unwrap();
         assert_eq!(
             events,
-            vec![EncryptedValueAccountEvent::handle_superseded(
+            vec![EncryptedValueAccountEvent::handle_updated(
                 pk(0x10),
                 &[s1, s2]
             )]
@@ -273,7 +273,7 @@ mod tests {
 
         assert_eq!(
             eval_events,
-            vec![EncryptedValueAccountEvent::handle_superseded(
+            vec![EncryptedValueAccountEvent::handle_updated(
                 pk(0x10),
                 &[owner, spender]
             )]
@@ -310,7 +310,7 @@ mod tests {
         assert_eq!(state.unwrap().current_handle, None);
         assert_eq!(
             events,
-            vec![EncryptedValueAccountEvent::handle_superseded(
+            vec![EncryptedValueAccountEvent::handle_updated(
                 pk(0x10),
                 &[owner]
             )]
@@ -385,8 +385,8 @@ mod tests {
         assert_eq!(
             events,
             vec![
-                EncryptedValueAccountEvent::handle_superseded(pk(0x10), &[owner]),
-                EncryptedValueAccountEvent::handle_superseded(pk(0x11), &[owner]),
+                EncryptedValueAccountEvent::handle_updated(pk(0x10), &[owner]),
+                EncryptedValueAccountEvent::handle_updated(pk(0x11), &[owner]),
             ]
         );
         assert_eq!(
@@ -487,7 +487,7 @@ mod tests {
 
         assert_eq!(
             events,
-            vec![EncryptedValueAccountEvent::handle_superseded(
+            vec![EncryptedValueAccountEvent::handle_updated(
                 pk(0x10),
                 &[owner]
             )]

@@ -46,14 +46,14 @@ pub struct Quit<'info> {
     /// validated by the token CPI.
     #[account(mut)]
     pub user_token_account: UncheckedAccount<'info>,
-    /// CHECK: batch's stable balance encrypted value account; superseded by the token CPI.
+    /// CHECK: batch's stable balance encrypted value account; replaced by the token CPI.
     #[account(mut)]
     pub batch_balance_value: UncheckedAccount<'info>,
-    /// CHECK: user's stable balance encrypted value account; superseded by the token CPI.
+    /// CHECK: user's stable balance encrypted value account; replaced by the token CPI.
     #[account(mut)]
     pub user_balance_value: UncheckedAccount<'info>,
     /// CHECK: batch account's stable transferred-amount encrypted value account (the refund is
-    /// a transfer FROM the batch account); superseded by the token CPI.
+    /// a transfer FROM the batch account); replaced by the token CPI.
     #[account(mut)]
     pub batch_transferred_value: UncheckedAccount<'info>,
     /// CHECK: the user's joined encrypted value account; spent read-only as the refund
@@ -134,7 +134,7 @@ pub fn quit<'info>(ctx: Context<'info, Quit<'info>>) -> Result<()> {
         &[&authority_seeds],
     ))?;
 
-    // Phase 2: reset the joined encrypted value account to an encrypted zero (supersede in
+    // Phase 2: reset the joined encrypted value account to an encrypted zero (update in
     // place), so a later re-join of the same batch accumulates from zero.
     let reset_binding = fhe::PersistentBinding::bind(
         ctx.accounts.pending_join_value.to_account_info(),

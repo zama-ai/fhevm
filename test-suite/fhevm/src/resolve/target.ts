@@ -193,7 +193,7 @@ export const findPublishedAncestorIndex = (commitShas: string[], publishedTags: 
  *
  * A missing tag is an exceptional state: on every push the docker-build workflows either build a
  * changed component or re-tag the previous image with the new sha, so a gap means one of those
- * jobs failed, has not finished, or was skipped for a superseded branch tip. Each affected
+ * jobs failed, has not finished, or was skipped for a replaced branch tip. Each affected
  * component independently falls back to its newest published tag on the requested sha's
  * ancestry, and the substitution is recorded in `sources`. A fallback deeper than
  * MAX_FALLBACK_COMMIT_DEPTH fails resolution instead — that lag means the component's publishing

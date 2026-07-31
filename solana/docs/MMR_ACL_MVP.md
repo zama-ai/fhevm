@@ -11,10 +11,10 @@ this note records the operational model in one place.
   authority check.
 - `compute_signer` is separate from identity. In confidential-token it is a mint-scoped PDA and must
   be present in the value's allowed-subject set when token compute needs to use that value.
-- Only `fhe_eval` persistent outputs can create or supersede an `EncryptedValue` handle; there is no
+- Only `fhe_eval` persistent outputs can create or update an `EncryptedValue` handle; there is no
   instruction that accepts a caller-chosen handle, because such a handle would carry no proof of
   ciphertext provenance. Being an allowed subject is enough to compute/use, grant, request user decrypt, or make the exact current
-  handle public, but it is not enough to supersede the encrypted value account. Persistent-output supersession checks
+  handle public, but it is not enough to update the encrypted value account. Persistent-output update checks
   `previous_handle` and `previous_subjects` against current account state so stale off-chain state
   cannot rotate a handle.
 
@@ -44,7 +44,7 @@ this note records the operational model in one place.
   instead of relying on implicit vector or arithmetic limits.
 - Subject removal changes only current and future authorization. No new historical leaf is written for
   the removed subject after removal; access sealed before removal remains valid.
-- Audience membership is immutable by default, but a persistent-output supersede may explicitly rotate the
+- Audience membership is immutable by default, but a persistent-output update may explicitly rotate the
   subject set: `output_subjects` need not equal the stored set. The outgoing audience is sealed into
   historical leaves first (below), then the new set replaces current membership, and every subject the
   rotation adds passes the grant deny-list exactly as `allow_subjects` does. `previous_handle` and
@@ -52,14 +52,14 @@ this note records the operational model in one place.
 
 ## History And Decrypt
 
-- Historical authorization is handle-scoped and permanent. When a handle is superseded, the program
+- Historical authorization is handle-scoped and permanent. When a handle is replaced, the program
   seals one `HistoricalAccessLeaf` per then-allowed subject into the value's MMR. Historical reads roll
   forward by proving inclusion against confirmed on-chain peaks.
 - Public decrypt is exact-handle. `make_handle_public` seals a `PublicDecryptLeaf` for the current
   handle only; a later handle update does not inherit public decryptability. An `fhe_eval` persistent
   output may instead be *born* public by setting `make_public` on the output: after the new handle is
   written, the same `PublicDecryptLeaf` is sealed for that NEW handle in the same instruction —
-  byte-identical to `make_handle_public`, appended LAST (after any supersede historical leaves). This
+  byte-identical to `make_handle_public`, appended LAST (after any update historical leaves). This
   is the one exception to "created encrypted value accounts cannot be created public-decryptable" (DD-036).
 - Delegated user decrypt is isolated from the core ACL path. Delegation uses standalone
   `UserDecryptionDelegation` PDAs and does not add subjects or mutate `EncryptedValue`.
@@ -96,8 +96,8 @@ stateDiagram-v2
     [*] --> Live : fhe_eval persistent output<br/>(≥1 subject, leaf_count=0)
     Live --> Live : allow_subjects<br/>(add subject, NO leaf)
     Live --> Live : make_handle_public<br/>(+1 PublicDecryptLeaf for current handle)
-    Live --> Live : fhe_eval persistent output<br/>(supersede: +1 HistoricalAccessLeaf per then-subject,<br/>rewrite current_handle, then optionally rotate subjects<br/>— added subjects pass the grant deny-list)
-    Live --> Live : fhe_eval persistent output with make_public=true<br/>(supersede leaves, rewrite handle,<br/>then +1 PublicDecryptLeaf for the NEW handle — DD-036)
+    Live --> Live : fhe_eval persistent output<br/>(update: +1 HistoricalAccessLeaf per then-subject,<br/>rewrite current_handle, then optionally rotate subjects<br/>— added subjects pass the grant deny-list)
+    Live --> Live : fhe_eval persistent output with make_public=true<br/>(update leaves, rewrite handle,<br/>then +1 PublicDecryptLeaf for the NEW handle — DD-036)
     note right of Live
         Account ≤ 2457 bytes for all time
         (153 + 32·subjects≤8 + 32·peaks≤64).
@@ -107,7 +107,7 @@ stateDiagram-v2
 
 ### MMR leaf types + append order
 
-`fhe_eval` persistent-output supersession appends one
+`fhe_eval` persistent-output update appends one
 `HistoricalAccessLeaf{account, leaf_index, handle, subject}` per then-allowed subject;
 `make_handle_public` (or a created-public output) appends one
 `PublicDecryptLeaf{account, leaf_index, handle}`. A single running `leaf_count` assigns `leaf_index`,
@@ -138,7 +138,7 @@ flowchart TD
 flowchart TD
     req["decrypt request (handle, subject)"] --> kind{authorization kind}
     kind -->|"current"| ac["authorize_current:<br/>handle == current_handle<br/>AND subject ∈ subjects<br/>(no proof)"]
-    kind -->|"historical"| ah["authorize_historical:<br/>MMR proof of HistoricalAccessLeaf(handle, subject)<br/>vs confirmed peaks — survives supersession/removal"]
+    kind -->|"historical"| ah["authorize_historical:<br/>MMR proof of HistoricalAccessLeaf(handle, subject)<br/>vs confirmed peaks — survives update/removal"]
     kind -->|"public"| ap["authorize_public:<br/>MMR proof of PublicDecryptLeaf(handle)<br/>vs confirmed peaks — exact handle, no live flag"]
     ac & ah & ap --> kms["KMS re-verifies against confirmed on-chain state before releasing plaintext"]
 ```
@@ -150,7 +150,7 @@ delta is created public in the burn's `fhe_eval` CPI; redemption is a single `re
 consumes the stateless host `verify_public_decrypt` verifier (the request-witness lifecycle was
 dissolved in fhevm-internal#1763), authorizing by the pinned handle's public-decrypt proof against the
 live KMS context the cert names (any non-destroyed context, fhevm-internal#1765), so it stays valid
-after later burns supersede the encrypted value account.
+after later burns update the encrypted value account.
 
 ```mermaid
 sequenceDiagram
@@ -194,7 +194,7 @@ history length, and every relevant bound is a hard, small constant:
   `subjects ≤ MAX_ENCRYPTED_VALUE_SUBJECTS = 8` and `peaks ≤ MAX_MMR_PEAKS = 64` (an MMR has exactly
   `popcount(leaf_count)` peaks, `leaf_count: u64`). Solana's per-transaction realloc cap is 10240
   bytes, so even growing a fresh encrypted value account to its maximum in one instruction stays ~4× under the wall.
-- **Supersession cost is leaf-count-independent.** An 8-subject supersession appends 8 leaves =
+- **Update cost is leaf-count-independent.** An 8-subject update appends 8 leaves =
   ≤ 8 leaf hashes + ≤ 64 peak-merge hashes = ≤ 80 SHA-256 ops, regardless of how old/large the encrypted value account
   is (binary-counter amortization on peaks). That is ~1–2% of the 1.4M CU budget; the margin does not
   shrink with age. (These are op-count estimates pending a mollusk CU-trace test.)

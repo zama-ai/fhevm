@@ -100,7 +100,7 @@ pub fn allow_subjects(
 /// Appends one historical-access leaf per allowed subject for the outgoing
 /// handle, then overwrites `current_handle`. Used by `fhe_eval`'s persistent
 /// output-binding path.
-pub(super) fn supersede_current_handle(
+pub(super) fn update_encrypted_value(
     info: &AccountInfo,
     value: &mut EncryptedValue,
     new_handle: [u8; 32],
@@ -267,7 +267,7 @@ mod tests {
 
     fn dummy_info(key: &Pubkey) -> AccountInfo<'_> {
         // The handler only reads `info.key()`; lamports/data/owner are unused
-        // by `supersede_current_handle`, so a minimal system-owned stub suffices.
+        // by `update_encrypted_value`, so a minimal system-owned stub suffices.
         static mut LAMPORTS: u64 = 0;
         static OWNER: Pubkey = Pubkey::new_from_array([0; 32]);
         #[allow(static_mut_refs)]
@@ -292,7 +292,7 @@ mod tests {
         let info = dummy_info(&key);
         let previous_handle = v.current_handle;
 
-        supersede_current_handle(&info, &mut v, [11; 32]).unwrap();
+        update_encrypted_value(&info, &mut v, [11; 32]).unwrap();
 
         assert_eq!(v.current_handle, [11; 32]);
         assert_eq!(v.leaf_count, 3);
@@ -335,7 +335,7 @@ mod tests {
         let subjects = vec![Pubkey::new_unique()];
         let v = value([1; 32], &subjects);
 
-        // Persistent-output supersession requires exact equality on both the
+        // Persistent-output update requires exact equality on both the
         // handle and the full subject vector (order-sensitive).
         assert!(v.current_handle == [1; 32] && v.subjects == subjects);
         assert!(!(v.current_handle == [2; 32] && v.subjects == subjects));
@@ -344,11 +344,11 @@ mod tests {
     }
 
     #[test]
-    fn supersede_then_make_public_matches_shared_value_account_reconstruction() {
-        // Two on-chain appends (one supersede over two allowed subjects, one
+    fn update_then_make_public_matches_shared_value_account_reconstruction() {
+        // Two on-chain appends (one update over two allowed subjects, one
         // make-public) must reproduce byte-for-byte the peaks an off-chain
         // indexer would derive from `zama_solana_acl::value_account::reconstruct`
-        // over the equivalent `HandleSuperseded`/`MarkedPublic` event log.
+        // over the equivalent `HandleUpdated`/`MarkedPublic` event log.
         let owner = Pubkey::new_unique();
         let other = Pubkey::new_unique();
         let key = account_key();
@@ -357,7 +357,7 @@ mod tests {
         let previous_handle = v.current_handle;
         let previous_subjects = v.subjects.clone();
 
-        supersede_current_handle(&info, &mut v, [2; 32]).unwrap();
+        update_encrypted_value(&info, &mut v, [2; 32]).unwrap();
         let commitment = zama_solana_acl::public_decrypt_leaf_commitment(
             key.to_bytes(),
             v.leaf_count,
@@ -366,7 +366,7 @@ mod tests {
         zama_solana_acl::mmr_append(&mut v.peaks, &mut v.leaf_count, commitment).unwrap();
 
         let events = [
-            zama_solana_acl::value_account::EncryptedValueAccountEvent::handle_superseded(
+            zama_solana_acl::value_account::EncryptedValueAccountEvent::handle_updated(
                 previous_handle,
                 &previous_subjects
                     .iter()

@@ -51,7 +51,7 @@ fn ix(accounts: Vec<[u8; 32]>, name: &str, args: impl BorshSerialize) -> RawInst
 }
 
 /// Builds an `fhe_eval` instruction with one persistent output on `ev`:
-/// a creation when `previous` is `None`, an update (supersession of
+/// a creation when `previous` is `None`, an update (update of
 /// `previous_handle` over `previous_subjects`) when `Some`. The output
 /// audience equals `subjects`. Mirrors the real anchor account layout:
 /// 9 named accounts, then `ev` as the single remaining account.
@@ -297,7 +297,7 @@ async fn deterministic_leaf_order_and_mmr_reconstruction() {
 }
 
 /// Exercises the semantic columns + `solana_proof_leaves_semantic_idx` resolution at the SQL
-/// layer: a supersede seals a historical-access leaf (old handle + subject) at index 0, then a
+/// layer: a update seals a historical-access leaf (old handle + subject) at index 0, then a
 /// make-public seals a public-decrypt leaf (new handle, no subject) at index 1.
 #[ignore = "requires DATABASE_URL / SOLANA_PROOF_TEST_DATABASE_URL"]
 #[tokio::test]
@@ -359,7 +359,7 @@ async fn semantic_leaf_resolution_maps_handle_and_subject_to_index() {
         .expect("encrypted_value_account ingested");
     assert_eq!(public.leaf_index, Some(1));
 
-    // A public-decrypt query for the historical (superseded) handle finds no leaf: the kinds
+    // A public-decrypt query for the historical (replaced) handle finds no leaf: the kinds
     // never collide on a shared handle, and the subject binding is enforced.
     let miss_kind = store
         .proof_snapshot_for_leaf(

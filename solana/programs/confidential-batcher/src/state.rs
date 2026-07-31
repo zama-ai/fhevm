@@ -208,7 +208,7 @@ mod tests {
         ((joined as u128) * (payout_received as u128) / (total_joined as u128)) as u64
     }
 
-    /// The superseded double-rounding claim math (`joined * rate / RATE_SCALE`
+    /// The replaced double-rounding claim math (`joined * rate / RATE_SCALE`
     /// on a floored rate), kept only to prove the exact division strands less.
     fn claim_payout_via_rate(joined: u64, rate: u64) -> u64 {
         ((joined as u128) * (rate as u128) / (RATE_SCALE as u128)) as u64

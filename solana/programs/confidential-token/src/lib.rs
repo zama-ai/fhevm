@@ -85,12 +85,12 @@ pub mod confidential_token {
         instructions::create_random_bounded_amount(ctx, amount_kind, upper_bound)
     }
 
-    /// Escrows public USDC and rotates the confidential balance by `amount`.
+    /// Escrows public USDC and updates the confidential balance by `amount`.
     pub fn wrap_usdc<'info>(ctx: Context<'info, WrapUsdc<'info>>, amount: u64) -> Result<()> {
         instructions::wrap_usdc(ctx, amount)
     }
 
-    /// Burns an encrypted amount by rotating the account balance and encrypted total supply.
+    /// Burns an encrypted amount by updating the account balance and encrypted total supply.
     pub fn confidential_burn<'info>(
         ctx: Context<'info, ConfidentialBurn<'info>>,
         amount_attestation: zama_host::CoprocessorInputAttestation,
@@ -111,7 +111,7 @@ pub mod confidential_token {
         instructions::confidential_burn_from_value(ctx)
     }
 
-    /// Transfers an encrypted amount by rotating the sender and recipient balance handles.
+    /// Transfers an encrypted amount by updating the sender and recipient balance handles.
     pub fn confidential_transfer<'info>(
         ctx: Context<'info, ConfidentialTransfer<'info>>,
         amount_attestation: zama_host::CoprocessorInputAttestation,

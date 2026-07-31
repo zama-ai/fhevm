@@ -6,17 +6,17 @@
 //! and the single-op `fhe_*` instructions) to the new stateless-indexing `EncryptedValue` encrypted value account:
 //! `ConfidentialTokenAccount`/`ConfidentialMint` now each point at one stable
 //! `EncryptedValue` PDA per encrypted field (`balance_encrypted_value`,
-//! `total_supply_encrypted_value`) that is *superseded in place* on every update instead of
+//! `total_supply_encrypted_value`) that is *replaced in place* on every update instead of
 //! rotating to a new per-nonce account. See `confidential-token/src/fhe.rs`,
 //! `zama-host/src/state/encrypted_value.rs`, and `zama_solana_acl` for the model this exercises.
 //!
 //! Scope note: this migration focuses the suite on the surface that changed with the ACL rewrite
-//! (mint/token-account creation and `confidential_transfer`'s persistent-output supersession), plus
+//! (mint/token-account creation and `confidential_transfer`'s persistent-output update), plus
 //! the token-level end-to-end coverage requested for this pass (stable addressing across a
 //! transfer, a `transferred_amount` encrypted value account entry, and self-transfer no-op). It also covers the
 //! two consume paths that are now thin consumers of the stateless host `verify_public_decrypt`
 //! (DD-040): `redeem_burned_amount` and `disclose_secp` authorize by an MMR public-decrypt proof
-//! against the pinned handle rather than the live encrypted value account handle, so their after-supersession,
+//! against the pinned handle rather than the live encrypted value account handle, so their after-update,
 //! foreign-proof, live/destroyed-context, and (for redeem) deny/marker/destination behaviour is
 //! exercised directly here. The old suite's coverage of `wrap_usdc`, `confidential_burn`,
 //! `request_disclose_balance`/`request_disclose_amount`, and the `poc`-gated `create_random_amount`
@@ -1209,7 +1209,7 @@ fn mollusk_confidential_transfer_updates_value_accounts_and_cleartext_balances()
     );
 
     // Token account addresses and their balance `EncryptedValue` PDAs stay stable across the
-    // transfer: no new balance account is created, the existing encrypted value accounts are superseded in place.
+    // transfer: no new balance account is created, the existing encrypted value accounts are replaced in place.
     let alice_token = read_token_account(&context, fixture.alice_token);
     let bob_token = read_token_account(&context, fixture.bob_token);
     assert_eq!(
@@ -1222,7 +1222,7 @@ fn mollusk_confidential_transfer_updates_value_accounts_and_cleartext_balances()
     let bob_balance = read_encrypted_value(&context, fixture.bob_balance_value);
     assert_ne!(alice_balance.current_handle, fixture.alice_initial);
     assert_ne!(bob_balance.current_handle, fixture.bob_initial);
-    // Supersession appended exactly one historical leaf per allowed subject.
+    // Update appended exactly one historical leaf per allowed subject.
     assert_eq!(alice_balance.leaf_count, 2);
     assert_eq!(bob_balance.leaf_count, 2);
     assert_eq!(
@@ -1261,7 +1261,7 @@ fn mollusk_confidential_transfer_updates_value_accounts_and_cleartext_balances()
     assert!(transferred.has_subject(fixture.owner));
     assert!(transferred.has_subject(fixture.bob_owner));
     assert!(transferred.has_subject(fixture.compute_signer));
-    assert_eq!(transferred.leaf_count, 0); // creation: no supersession yet.
+    assert_eq!(transferred.leaf_count, 0); // creation: no update yet.
 
     let transfer_events: Vec<token::ConfidentialTransferEvent> = result
         .inner_instructions
@@ -1372,7 +1372,7 @@ fn mollusk_confidential_transfer_to_second_recipient_rotates_transferred_value_a
     context.process_and_validate_instruction(&second, &[Check::success()]);
 
     let receipt = read_encrypted_value(&context, transferred_value_address);
-    // Audience rotated to the new recipient, still keeping the sender's owner key and the mint
+    // Audience replaced with the new recipient, still keeping the sender's owner key and the mint
     // compute signer after rotation across two recipients (fhevm-internal#1745).
     assert_eq!(
         receipt.subjects,
@@ -1473,7 +1473,7 @@ fn mollusk_confidential_transfer_rotates_back_to_previous_recipient() {
     );
     let after_bob_again = read_encrypted_value(&context, receipt_address);
 
-    // Audience rotated back to Bob; both prior audiences are sealed in order.
+    // Audience replaced back to Bob; both prior audiences are sealed in order.
     assert_eq!(
         after_bob_again.subjects,
         vec![fixture.owner, fixture.bob_owner, fixture.compute_signer]
@@ -1507,7 +1507,7 @@ fn mollusk_confidential_transfer_rotates_back_to_previous_recipient() {
 #[test]
 fn mollusk_confidential_transfer_self_transfer_after_receipt_is_no_op() {
     // A self-transfer short-circuits before the eval (execute_transfer returns early when
-    // from == to), so it never rotates the receipt. After a real transfer created the receipt,
+    // from == to), so it never updates the receipt. After a real transfer created the receipt,
     // a subsequent A -> A succeeds and leaves that receipt untouched.
     let fixture = TokenFixture::new();
     let context = mollusk().with_context(fixture.base_accounts());
@@ -2252,7 +2252,7 @@ fn mollusk_confidential_transfer_rejects_balance_wrong_token_account_app_account
 //
 // Vector 2 (burn-stranding) fix, unchanged: every burn is created publicly decryptable at the burn
 // instant (ERC-7984 `unwrap` parity, DD-036), so a historical burned handle stays redeemable even
-// after a later burn supersedes the shared `burned_amount` encrypted value account.
+// after a later burn updates the shared `burned_amount` encrypted value account.
 // ---------------------------------------------------------------------------
 
 use anchor_spl::token::spl_token;
@@ -2729,7 +2729,7 @@ fn redeem_burned_amount_ix(
 }
 
 /// Burns `amount_seed`'s attested amount and returns the resulting burned handle
-/// (the encrypted value account's new current handle) read back from the superseded encrypted value account.
+/// (the encrypted value account's new current handle) read back from the replaced encrypted value account.
 fn run_burn(
     context: &mollusk_svm::MolluskContext<HashMap<Pubkey, Account>>,
     fixture: &BurnRedeemFixture,
@@ -2824,12 +2824,12 @@ fn seed_two_burn_value_account(
     accounts.insert(fixture.burned_amount_value, encrypted_value_account(&value));
 }
 
-/// Redeem the historical first-burn handle H1 after a later burn superseded the encrypted value account to H2,
+/// Redeem the historical first-burn handle H1 after a later burn replaced the encrypted value account to H2,
 /// then reject the double-redeem via the permanent per-handle marker PDA. This drives the exact
 /// consumer path the dissolution added: redeem accepting a HISTORICAL handle authorized by the
 /// burn-appended public-decrypt MMR proof through the `verify_public_decrypt` CPI, with no request
 /// witness. (The two real burns overflow the 32 KiB per-tx heap in Mollusk, so the seeded
-/// post-supersession encrypted value account stands in for them; the burn-execution path is the burn test above.)
+/// post-update encrypted value account stands in for them; the burn-execution path is the burn test above.)
 #[test]
 fn mollusk_redeem_historical_burned_handle_after_supersession_then_rejects_double_redeem() {
     let fixture = BurnRedeemFixture::new();
@@ -3474,7 +3474,7 @@ fn mollusk_redeem_rejects_wrong_value_account_label() {
 // asserts the proven handle equals the caller-pinned handle, and emits a
 // token-scoped `HandleDisclosedEvent`. The host verifier's own negatives
 // (destroyed context, sub-threshold cert, handle/proof mismatch, non-canonical
-// context, survives-supersede) are covered directly in `host_mollusk.rs` and are
+// context, survives-update) are covered directly in `host_mollusk.rs` and are
 // deliberately NOT duplicated here — the token tests cover only what the token
 // layer adds: the mint-domain binding, the disclosed event, the pinned-handle
 // pass-through, and the intentional absence of a replay marker (idempotence).
@@ -3562,10 +3562,10 @@ impl DiscloseFixture {
 }
 
 /// Builds an encrypted value account carrying a public-decrypt leaf (leaf 0) for `pinned`, and the inclusion
-/// proof for it. With `supersede_to = Some(h2)` the encrypted value account is grown into a post-supersession
+/// proof for it. With `update_to = Some(h2)` the encrypted value account is grown into a post-update
 /// state (public(pinned)@0, hist(pinned,subj0)@1, hist(pinned,subj1)@2, public(h2)@3, current
 /// handle h2), modeling the pinned handle becoming historical after it was sealed public.
-/// `subjects` must hold at least two entries when superseding.
+/// `subjects` must hold at least two entries when updating.
 fn public_leaf_value_account(
     account: Pubkey,
     app_account: Pubkey,
@@ -3573,13 +3573,13 @@ fn public_leaf_value_account(
     label: [u8; 32],
     subjects: &[Pubkey],
     pinned: [u8; 32],
-    supersede_to: Option<[u8; 32]>,
+    update_to: Option<[u8; 32]>,
 ) -> (host::EncryptedValue, host::instructions::MmrInclusionProof) {
     let acct = account.to_bytes();
     let mut leaves = vec![zama_solana_acl::public_decrypt_leaf_commitment(
         acct, 0, pinned,
     )];
-    let current = match supersede_to {
+    let current = match update_to {
         Some(h2) => {
             leaves.push(zama_solana_acl::historical_access_leaf_commitment(
                 acct,
@@ -3751,12 +3751,12 @@ fn mollusk_disclose_secp_balance_happy_path() {
 #[test]
 fn mollusk_disclose_secp_after_supersession_consumes_with_public_proof() {
     // The griefing case preserved end-to-end: the handle is sealed public while current, then the
-    // encrypted value account is superseded to H2 (e.g. an inbound transfer) before the consume lands. The pinned
+    // encrypted value account is replaced to H2 (e.g. an inbound transfer) before the consume lands. The pinned
     // handle must still disclose, authorized by its permanent public-decrypt leaf, not the live
-    // handle. This is the host verifier's survives-supersede property observed one layer up.
+    // handle. This is the host verifier's survives-update property observed one layer up.
     let fixture = DiscloseFixture::new();
     let pinned = handle_for_chain(41, BALANCE_FHE_TYPE);
-    let superseded = handle_for_chain(42, BALANCE_FHE_TYPE);
+    let replaced = handle_for_chain(42, BALANCE_FHE_TYPE);
     let (value, proof) = public_leaf_value_account(
         fixture.amount_value,
         fixture.token_account,
@@ -3764,7 +3764,7 @@ fn mollusk_disclose_secp_after_supersession_consumes_with_public_proof() {
         token::burned_amount_label(),
         &[fixture.owner, fixture.compute_signer],
         pinned,
-        Some(superseded),
+        Some(replaced),
     );
     assert_ne!(value.current_handle, pinned);
 
@@ -3841,7 +3841,7 @@ fn mollusk_disclose_secp_rejects_foreign_public_decrypt_proof() {
     // proof check through the CPI — the wrong-handle rejection at the token boundary.
     let fixture = DiscloseFixture::new();
     let pinned = handle_for_chain(46, BALANCE_FHE_TYPE);
-    let superseded = handle_for_chain(47, BALANCE_FHE_TYPE);
+    let replaced = handle_for_chain(47, BALANCE_FHE_TYPE);
     let (value, mut proof) = public_leaf_value_account(
         fixture.amount_value,
         fixture.token_account,
@@ -3849,7 +3849,7 @@ fn mollusk_disclose_secp_rejects_foreign_public_decrypt_proof() {
         token::burned_amount_label(),
         &[fixture.owner, fixture.compute_signer],
         pinned,
-        Some(superseded),
+        Some(replaced),
     );
     proof.leaf_index = 3; // H2's public-decrypt leaf, not H1's.
 
@@ -4133,7 +4133,7 @@ fn mollusk_confidential_transfer_metering_band_charges_meter_through_cpi() {
 /// Done-when 1: a transfer spends a computed handle produced under the same mint, with no
 /// attestation attached. Here the amount is an existing encrypted value account carrying the sender + compute
 /// subjects; the balances move through the same `ge -> sub -> select` debit and `add` credit, and
-/// the amount value itself is read-only (never superseded, never consumed).
+/// the amount value itself is read-only (never replaced, never consumed).
 #[test]
 fn mollusk_transfer_from_value_spends_existing_amount() {
     let fixture = TokenFixture::new();
@@ -4594,7 +4594,7 @@ fn cost_snapshot_confidential_transfer_direct() {
 
     // Steady state: the first transfer created the transferred-amount
     // `EncryptedValue` at its canonical per-(mint, source) PDA; later
-    // transfers supersede every touched encrypted value account in place and create no
+    // transfers update every touched encrypted value account in place and create no
     // accounts. Snapshot the second transfer separately.
     //
     // Both profiles share this fixture/context on purpose, so a mismatch on
@@ -4692,7 +4692,7 @@ fn disclose_secp_seven_of_thirteen_verifies_and_bounds_compute() {
     // ~40k + 6 * ~25k; assert a comfortable ceiling.
     let fixture = DiscloseFixture::new();
     let pinned = handle_for_chain(85, BALANCE_FHE_TYPE);
-    let superseded = handle_for_chain(86, BALANCE_FHE_TYPE);
+    let replaced = handle_for_chain(86, BALANCE_FHE_TYPE);
     let (value, proof) = public_leaf_value_account(
         fixture.amount_value,
         fixture.token_account,
@@ -4700,7 +4700,7 @@ fn disclose_secp_seven_of_thirteen_verifies_and_bounds_compute() {
         token::burned_amount_label(),
         &[fixture.owner, fixture.compute_signer],
         pinned,
-        Some(superseded),
+        Some(replaced),
     );
 
     // 13 registered KMS signers, public-decrypt threshold 7; the cert is signed by 7 of them. The
@@ -4756,7 +4756,7 @@ fn disclose_secp_seven_of_thirteen_verifies_and_bounds_compute() {
 /// Happy path: burn part of a balance from an existing computed/received `euint64` handle, no
 /// attestation attached. The burned delta is created publicly decryptable exactly as the attestation
 /// path, the balance and encrypted total supply decrement by the burned amount, and the amount value
-/// itself is read-only (never superseded, never consumed).
+/// itself is read-only (never replaced, never consumed).
 #[test]
 fn mollusk_burn_from_value_burns_existing_amount() {
     let fixture = BurnRedeemFixture::new();
@@ -4855,7 +4855,7 @@ fn mollusk_burn_from_value_whole_balance_alias() {
 
 /// Re-burning the burned-amount encrypted value account (the second alias branch): the second burn spends the
 /// `burned_amount` encrypted value account itself as the amount, so `amount_value` aliases the `burned_amount` output
-/// this frame writes. The eval plan merges the aliased slot (read at the old handle, superseded to
+/// this frame writes. The eval plan merges the aliased slot (read at the old handle, replaced to
 /// the new delta), and the dedup skips pushing the amount a second time — the `amount == burned_amount
 /// encrypted value account` branch. Mirrors `mollusk_transfer_from_value_resends_transferred_amount_that_is_also_this_output`.
 #[test]
