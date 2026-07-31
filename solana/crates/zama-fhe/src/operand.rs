@@ -22,7 +22,7 @@ pub(crate) enum OperandKind {
     Persistent(PersistentOperand),
     Transient {
         producer_index: u16,
-        builder_scope: EvalBuilderScope,
+        builder_scope: BatchBuilderScope,
     },
     /// External input verified in-batch via a coprocessor attestation (EVM `fromExternal`). The
     /// `Vec`-bearing attestation is held by the [`BatchBuilder`] and referenced by index; keeping
@@ -43,7 +43,7 @@ impl Operand {
         }))
     }
 
-    pub(crate) fn transient(producer_index: u16, builder_scope: EvalBuilderScope) -> Self {
+    pub(crate) fn transient(producer_index: u16, builder_scope: BatchBuilderScope) -> Self {
         Self(OperandKind::Transient {
             producer_index,
             builder_scope,
@@ -63,21 +63,21 @@ impl Operand {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub(crate) struct EvalBuilderScope(pub(crate) u64);
+pub(crate) struct BatchBuilderScope(pub(crate) u64);
 
 #[cfg(not(target_os = "solana"))]
 static NEXT_EVAL_BUILDER_SCOPE: AtomicU64 = AtomicU64::new(1);
 
 #[cfg(not(target_os = "solana"))]
-pub(crate) fn next_eval_builder_scope() -> EvalBuilderScope {
-    EvalBuilderScope(NEXT_EVAL_BUILDER_SCOPE.fetch_add(1, Ordering::Relaxed))
+pub(crate) fn next_eval_builder_scope() -> BatchBuilderScope {
+    BatchBuilderScope(NEXT_EVAL_BUILDER_SCOPE.fetch_add(1, Ordering::Relaxed))
 }
 
 #[cfg(target_os = "solana")]
-pub(crate) fn next_eval_builder_scope() -> EvalBuilderScope {
+pub(crate) fn next_eval_builder_scope() -> BatchBuilderScope {
     // SBF forbids writable static data (no `.data`/atomics), so on-chain every builder
     // shares scope 1: mixing operands across two builders created inside one instruction
     // is caught only by the producer-index bounds check there. Off-chain (where batches are
     // normally built and tested) the counter makes cross-builder mixing a hard error.
-    EvalBuilderScope(1)
+    BatchBuilderScope(1)
 }

@@ -388,7 +388,7 @@ fn invoke_batch_signed_with_builder_adds_fixed_authority_before_resolution() {
     assert!(matches!(
         error,
         BatchInvokeError::AccountResolution(
-            EvalAccountResolutionError::MissingDynamicAccount { requirement }
+            BatchAccountResolutionError::MissingDynamicAccount { requirement }
         ) if requirement.pubkey() == output_acl
     ));
 }
@@ -426,7 +426,7 @@ fn invoke_batch_signed_with_builder_requires_additional_output_authorities() {
     assert!(matches!(
         error,
         BatchInvokeError::AccountResolution(
-            EvalAccountResolutionError::MissingOutputAuthority { authority }
+            BatchAccountResolutionError::MissingOutputAuthority { authority }
         ) if authority.pubkey() == extra_authority
     ));
 }
@@ -535,7 +535,7 @@ fn dynamic_account_requirements_expose_order_roles_and_purposes() {
     assert_eq!(
         requirements
             .iter()
-            .map(EvalAccountRequirement::pubkey)
+            .map(BatchAccountRequirement::pubkey)
             .collect::<Vec<_>>(),
         vec![input_acl, output_acl, extra_authority]
     );
@@ -596,11 +596,11 @@ fn lowers_explicit_output_authority_witness() {
     assert_eq!(
         authority_requirements,
         vec![
-            EvalOutputAuthorityRequirement {
+            BatchOutputAuthorityRequirement {
                 pubkey: primary_authority,
                 cpi_account_authority: true,
             },
-            EvalOutputAuthorityRequirement {
+            BatchOutputAuthorityRequirement {
                 pubkey: authority,
                 cpi_account_authority: false,
             },
@@ -677,7 +677,7 @@ fn resolve_accounts_orders_and_validates_plan_requirements() {
         .unwrap_err();
     assert_eq!(
         duplicate,
-        EvalAccountResolutionError::DuplicateDynamicAccount { pubkey: input_acl }
+        BatchAccountResolutionError::DuplicateDynamicAccount { pubkey: input_acl }
     );
 
     let unexpected = batch
@@ -691,7 +691,7 @@ fn resolve_accounts_orders_and_validates_plan_requirements() {
         .unwrap_err();
     assert!(matches!(
         unexpected,
-        EvalAccountResolutionError::UnexpectedDynamicAccount { .. }
+        BatchAccountResolutionError::UnexpectedDynamicAccount { .. }
     ));
 
     let missing = batch
@@ -705,7 +705,7 @@ fn resolve_accounts_orders_and_validates_plan_requirements() {
         .unwrap_err();
     assert!(matches!(
         missing,
-        EvalAccountResolutionError::MissingDynamicAccount { requirement }
+        BatchAccountResolutionError::MissingDynamicAccount { requirement }
             if requirement.pubkey() == input_acl
     ));
 
@@ -723,7 +723,7 @@ fn resolve_accounts_orders_and_validates_plan_requirements() {
         .unwrap_err();
     assert!(matches!(
         readonly,
-        EvalAccountResolutionError::DynamicAccountNotWritable { requirement }
+        BatchAccountResolutionError::DynamicAccountNotWritable { requirement }
             if requirement.pubkey() == output_acl
     ));
 
@@ -742,7 +742,7 @@ fn resolve_accounts_orders_and_validates_plan_requirements() {
         .unwrap_err();
     assert_eq!(
         duplicate_authority,
-        EvalAccountResolutionError::DuplicateOutputAuthority {
+        BatchAccountResolutionError::DuplicateOutputAuthority {
             pubkey: extra_authority
         }
     );
@@ -762,7 +762,7 @@ fn resolve_accounts_orders_and_validates_plan_requirements() {
         .unwrap_err();
     assert!(matches!(
         unexpected_authority,
-        EvalAccountResolutionError::UnexpectedOutputAuthority { .. }
+        BatchAccountResolutionError::UnexpectedOutputAuthority { .. }
     ));
 
     let missing_authority = batch
@@ -776,8 +776,8 @@ fn resolve_accounts_orders_and_validates_plan_requirements() {
         .unwrap_err();
     assert_eq!(
         missing_authority,
-        EvalAccountResolutionError::MissingOutputAuthority {
-            authority: EvalOutputAuthorityRequirement {
+        BatchAccountResolutionError::MissingOutputAuthority {
+            authority: BatchOutputAuthorityRequirement {
                 pubkey: extra_authority,
                 cpi_account_authority: false,
             }
@@ -820,7 +820,7 @@ fn resolve_accounts_rejects_known_accounts_in_wrong_bucket() {
         .unwrap_err();
     assert_eq!(
         authority_in_dynamic_bucket,
-        EvalAccountResolutionError::UnexpectedDynamicAccount {
+        BatchAccountResolutionError::UnexpectedDynamicAccount {
             pubkey: extra_authority
         }
     );
@@ -840,7 +840,7 @@ fn resolve_accounts_rejects_known_accounts_in_wrong_bucket() {
         .unwrap_err();
     assert_eq!(
         input_acl_in_authority_bucket,
-        EvalAccountResolutionError::UnexpectedOutputAuthority { pubkey: input_acl }
+        BatchAccountResolutionError::UnexpectedOutputAuthority { pubkey: input_acl }
     );
 
     let output_acl_in_authority_bucket = batch
@@ -858,7 +858,7 @@ fn resolve_accounts_rejects_known_accounts_in_wrong_bucket() {
         .unwrap_err();
     assert_eq!(
         output_acl_in_authority_bucket,
-        EvalAccountResolutionError::UnexpectedOutputAuthority { pubkey: output_acl }
+        BatchAccountResolutionError::UnexpectedOutputAuthority { pubkey: output_acl }
     );
 }
 

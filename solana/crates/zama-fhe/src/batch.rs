@@ -1,26 +1,28 @@
-//! The validated, lowered eval request handed to the CPI helpers.
+//! The validated, lowered batch request handed to the CPI helpers.
 
 use anchor_lang::prelude::Pubkey;
 
 use zama_host::{FheExecuteArgs, FheExecuteOutput, FheExecuteStep};
 
 #[cfg(feature = "cpi")]
-use crate::accounts::{resolve_eval_accounts, EvalAccountResolutionError, ResolvedEvalAccounts};
+use crate::accounts::{resolve_batch_accounts, BatchAccountResolutionError, ResolvedBatchAccounts};
 use crate::accounts::{
-    BatchAccountMeta, BatchAccountPurpose, BatchAppAuthority, EvalAccountRequirement,
-    EvalOutputAuthorityRequirement,
+    BatchAccountMeta, BatchAccountPurpose, BatchAccountRequirement, BatchAppAuthority,
+    BatchOutputAuthorityRequirement,
 };
 use crate::builder::BatchBuilder;
+#[cfg(feature = "cpi")]
+use crate::cpi::BatchCpiAccounts;
 use crate::Result;
 
 #[cfg(feature = "cpi")]
 use anchor_lang::prelude::AccountInfo;
 
-/// Opaque lowered eval request produced by [`BatchBuilder::finish`] or
+/// Opaque lowered batch request produced by [`BatchBuilder::finish`] or
 /// [`Batch::build`].
 ///
-/// App code passes this to [`invoke_batch_signed_resolved`] instead of editing
-/// raw host args or dynamic account roles.
+/// App code passes this to [`Batch::execute`] instead of editing raw host
+/// args or dynamic account roles.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Batch {
     pub(crate) app_authority: BatchAppAuthority,
@@ -32,7 +34,7 @@ pub struct Batch {
 }
 
 impl Batch {
-    /// Builds and validates an batch through a closure.
+    /// Builds and validates a batch through a closure.
     ///
     /// This keeps transient values scoped to one builder while removing the
     /// need for app code to call [`BatchBuilder::finish`] explicitly.
@@ -51,10 +53,10 @@ impl Batch {
 
     pub fn dynamic_account_requirements(
         &self,
-    ) -> impl ExactSizeIterator<Item = EvalAccountRequirement> + '_ {
+    ) -> impl ExactSizeIterator<Item = BatchAccountRequirement> + '_ {
         self.remaining_accounts
             .iter()
-            .map(EvalAccountRequirement::from)
+            .map(BatchAccountRequirement::from)
     }
 
     #[cfg(feature = "cpi")]
@@ -70,19 +72,19 @@ impl Batch {
         &self,
         dynamic_accounts: impl IntoIterator<Item = AccountInfo<'info>>,
         output_authorities: impl IntoIterator<Item = AccountInfo<'info>>,
-    ) -> std::result::Result<ResolvedEvalAccounts<'info>, EvalAccountResolutionError> {
-        resolve_eval_accounts(self, dynamic_accounts, output_authorities)
+    ) -> std::result::Result<ResolvedBatchAccounts<'info>, BatchAccountResolutionError> {
+        resolve_batch_accounts(self, dynamic_accounts, output_authorities)
     }
 
     pub fn output_authority_requirements(
         &self,
-    ) -> impl Iterator<Item = EvalOutputAuthorityRequirement> + '_ {
-        std::iter::once(EvalOutputAuthorityRequirement {
+    ) -> impl Iterator<Item = BatchOutputAuthorityRequirement> + '_ {
+        std::iter::once(BatchOutputAuthorityRequirement {
             pubkey: self.app_authority.pubkey(),
             cpi_account_authority: true,
         })
         .chain(self.additional_output_authorities().map(|pubkey| {
-            EvalOutputAuthorityRequirement {
+            BatchOutputAuthorityRequirement {
                 pubkey,
                 cpi_account_authority: false,
             }
@@ -103,6 +105,18 @@ impl Batch {
                     .contains(&BatchAccountPurpose::PersistentOutputAuthority)
             })
             .map(|account| account.pubkey)
+    }
+
+    #[cfg(feature = "cpi")]
+    /// Invokes `zama-host::fhe_execute` for this batch with accounts already
+    /// resolved by [`Batch::resolve_accounts`].
+    pub fn execute<'a, 'info>(
+        &self,
+        accounts: BatchCpiAccounts<'a, 'info>,
+        resolved_accounts: &ResolvedBatchAccounts<'info>,
+        signer_seeds: &[&[&[u8]]],
+    ) -> anchor_lang::prelude::Result<()> {
+        crate::cpi::invoke_batch_signed_resolved(self, accounts, resolved_accounts, signer_seeds)
     }
 
     /// Subjects this batch newly grants through persistent outputs: every output
@@ -138,7 +152,7 @@ impl Batch {
     }
 }
 
-/// The output policy of an eval step, independent of step kind.
+/// The output policy of a batch step, independent of step kind.
 pub(crate) fn fhe_execute_step_output(step: &FheExecuteStep) -> &FheExecuteOutput {
     match step {
         FheExecuteStep::Binary { output, .. }

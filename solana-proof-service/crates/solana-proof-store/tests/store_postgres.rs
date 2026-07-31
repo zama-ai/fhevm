@@ -297,7 +297,7 @@ async fn deterministic_leaf_order_and_mmr_reconstruction() {
 }
 
 /// Exercises the semantic columns + `solana_proof_leaves_semantic_idx` resolution at the SQL
-/// layer: a update seals a historical-access leaf (old handle + subject) at index 0, then a
+/// layer: an update seals a historical-access leaf (old handle + subject) at index 0, then a
 /// make-public seals a public-decrypt leaf (new handle, no subject) at index 1.
 #[ignore = "requires DATABASE_URL / SOLANA_PROOF_TEST_DATABASE_URL"]
 #[tokio::test]

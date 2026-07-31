@@ -28,10 +28,11 @@ mod types;
 mod validate;
 
 pub use accounts::{
-    BatchAccountPurpose, BatchAppAuthority, EvalAccountRequirement, EvalOutputAuthorityRequirement,
+    BatchAccountPurpose, BatchAccountRequirement, BatchAppAuthority,
+    BatchOutputAuthorityRequirement,
 };
 #[cfg(feature = "cpi")]
-pub use accounts::{EvalAccountResolutionError, ResolvedEvalAccounts};
+pub use accounts::{BatchAccountResolutionError, ResolvedBatchAccounts};
 pub use acl::{
     BoundedU64UpperBound, EncryptedValueId, Output, PersistentLabel, PersistentOutput,
     PersistentOutputBinding,
@@ -39,10 +40,7 @@ pub use acl::{
 pub use batch::Batch;
 pub use builder::BatchBuilder;
 #[cfg(feature = "cpi")]
-pub use cpi::{
-    invoke_batch_signed_resolved, invoke_batch_signed_with_builder, BatchCpiAccounts,
-    BatchInvokeError,
-};
+pub use cpi::{invoke_batch_signed_with_builder, BatchCpiAccounts, BatchInvokeError};
 pub use types::{
     Address, BinaryRhs, Bool, BoolHandle, Bytes256, Encrypted, FheBitwise, FheEq, FheIsIn, FheNeg,
     FheNot, FheRandom, FheShift, FheType, FheTyped, FheUint, Scalar, Uint, Uint64Handle,

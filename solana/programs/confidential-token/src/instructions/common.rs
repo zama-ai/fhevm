@@ -128,7 +128,7 @@ pub(crate) fn execute_transfer<'info>(
     let old_from_handle = fhe::read_encrypted_value(&accounts.from_balance_value)?.current_handle;
     let old_to_handle = fhe::read_encrypted_value(&accounts.to_balance_value)?.current_handle;
 
-    let (new_from_handle, transferred_handle, new_to_handle) = execute_transfer_eval(
+    let (new_from_handle, transferred_handle, new_to_handle) = execute_transfer_batch(
         &accounts,
         compute_signer_bump,
         &amount_source,
@@ -157,7 +157,7 @@ pub(crate) fn execute_transfer<'info>(
 }
 
 #[allow(clippy::too_many_arguments)]
-fn execute_transfer_eval<'info>(
+fn execute_transfer_batch<'info>(
     accounts: &TransferAccounts<'_, 'info>,
     compute_signer_bump: u8,
     amount_source: &TransferAmountSource<'info>,
@@ -202,7 +202,7 @@ fn execute_transfer_eval<'info>(
         // transient-allowed for this eval (no persistent amount handle / ACL account).
         TransferAmountSource::Attested(amount_attestation) => builder
             .verified_input(amount_attestation.clone())
-            .map_err(invalid_eval_plan)?,
+            .map_err(invalid_batch)?,
         // Existing value: the amount is an on-chain encrypted value account's current handle, read as a persistent
         // operand. The slot is derived from the value's own canonical fields, so its PDA equals the
         // passed account; the host re-checks handle-is-current and compute-subject membership.
@@ -218,10 +218,10 @@ fn execute_transfer_eval<'info>(
     };
     let success = builder
         .ge(from_balance, amount, zama_fhe::Output::transient())
-        .map_err(invalid_eval_plan)?;
+        .map_err(invalid_batch)?;
     let debit_candidate = builder
         .sub(from_balance, amount, zama_fhe::Output::transient())
-        .map_err(invalid_eval_plan)?;
+        .map_err(invalid_batch)?;
     let new_from = builder
         .if_then_else(
             success,
@@ -229,21 +229,21 @@ fn execute_transfer_eval<'info>(
             from_balance,
             zama_fhe::Output::transient(),
         )
-        .map_err(invalid_eval_plan)?;
+        .map_err(invalid_batch)?;
     let transferred = builder
         .sub(from_balance, new_from, transferred_output.output())
-        .map_err(invalid_eval_plan)?;
+        .map_err(invalid_batch)?;
     builder
         .add(
             new_from,
             zama_fhe::Scalar::<zama_fhe::Uint<64>>::u64(0),
             from_output.output(),
         )
-        .map_err(invalid_eval_plan)?;
+        .map_err(invalid_batch)?;
     builder
         .add(to_balance, transferred, to_output.output())
-        .map_err(invalid_eval_plan)?;
-    let batch = builder.finish().map_err(invalid_eval_plan)?;
+        .map_err(invalid_batch)?;
+    let batch = builder.finish().map_err(invalid_batch)?;
     let compute_authority =
         fhe::ComputeAuthority::for_mint(accounts.compute_signer, mint_key, compute_signer_bump)?;
     // Persistent output accounts are the same for both arms; the existing-value arm adds the amount
@@ -264,7 +264,7 @@ fn execute_transfer_eval<'info>(
             dynamic_accounts.push(amount_value.clone());
         }
     }
-    let eval_accounts = fhe::EvalAccountSet::for_plan(
+    let batch_accounts = fhe::BatchAccountSet::for_batch(
         &batch,
         dynamic_accounts,
         [
@@ -273,8 +273,8 @@ fn execute_transfer_eval<'info>(
         ],
     )?;
 
-    fhe::eval(fhe::Eval {
-        context: fhe::EvalContext {
+    fhe::execute(fhe::Execute {
+        context: fhe::ExecuteContext {
             payer: accounts.payer,
             event_authority: accounts.zama_event_authority,
             zama_program: accounts.zama_program,
@@ -285,7 +285,7 @@ fn execute_transfer_eval<'info>(
             hcu_block_meter: accounts.hcu_block_meter.clone(),
             hcu_trusted_app_record: accounts.hcu_trusted_app_record.clone(),
         },
-        accounts: &eval_accounts,
+        accounts: &batch_accounts,
         batch,
     })?;
 
@@ -296,7 +296,7 @@ fn execute_transfer_eval<'info>(
     ))
 }
 
-pub(crate) fn invalid_eval_plan(error: zama_fhe::BatchBuildError) -> anchor_lang::error::Error {
+pub(crate) fn invalid_batch(error: zama_fhe::BatchBuildError) -> anchor_lang::error::Error {
     msg!("invalid FHE batch: {:?}", error);
     error!(ConfidentialTokenError::InvalidFheExecuteBatch)
 }
@@ -316,7 +316,7 @@ pub(crate) fn uint64_from_value(
     label: [u8; 32],
 ) -> Result<zama_fhe::Uint64Handle> {
     zama_fhe::Uint64Handle::persistent(handle, encrypted_value_id(domain, account, label))
-        .map_err(invalid_eval_plan)
+        .map_err(invalid_batch)
 }
 
 /// Validates a coprocessor-attested transfer/burn amount (EVM `fromExternal` parity). The host

@@ -89,22 +89,22 @@ pub fn initialize_token_account<'info>(
         zama_fhe::BatchBuilder::new(zama_fhe::BatchAppAuthority::new(token_account_key));
     builder
         .trivial_encrypt_u64(initial_balance, balance_output.output())
-        .map_err(invalid_eval_plan)?;
-    let batch = builder.finish().map_err(invalid_eval_plan)?;
+        .map_err(invalid_batch)?;
+    let batch = builder.finish().map_err(invalid_batch)?;
     let compute_authority = fhe::ComputeAuthority::for_mint(
         &ctx.accounts.compute_signer,
         mint_key,
         ctx.bumps.compute_signer,
     )?;
-    let eval_accounts = fhe::EvalAccountSet::for_plan(
+    let batch_accounts = fhe::BatchAccountSet::for_batch(
         &batch,
         [balance_output.account_info()],
         [fhe::OutputAuthority::token_account(
             &ctx.accounts.token_account,
         )?],
     )?;
-    fhe::eval(fhe::Eval {
-        context: fhe::EvalContext {
+    fhe::execute(fhe::Execute {
+        context: fhe::ExecuteContext {
             payer: &ctx.accounts.payer,
             event_authority: &ctx.accounts.zama_event_authority,
             zama_program: &ctx.accounts.zama_program,
@@ -123,7 +123,7 @@ pub fn initialize_token_account<'info>(
                 .as_ref()
                 .map(|account| account.to_account_info()),
         },
-        accounts: &eval_accounts,
+        accounts: &batch_accounts,
         batch,
     })?;
     let balance_handle = balance_output.handle()?;

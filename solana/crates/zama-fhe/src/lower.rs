@@ -4,14 +4,14 @@ use zama_host::{CoprocessorInputAttestation, FheExecuteOperand, FheExecuteOutput
 
 use crate::accounts::{BatchAccountMeta, BatchAccountPurpose, BatchAppAuthority};
 use crate::acl::{Output, OutputKind};
-use crate::operand::{EvalBuilderScope, Operand, OperandKind};
+use crate::operand::{BatchBuilderScope, Operand, OperandKind};
 use crate::{BatchBuildError, Result};
 
 pub(crate) fn lower_operand(
     remaining_accounts: &mut Vec<BatchAccountMeta>,
     dictionary: &mut Vec<[u8; 32]>,
     produced_count: usize,
-    builder_scope: EvalBuilderScope,
+    builder_scope: BatchBuilderScope,
     persistent_producers: &[(anchor_lang::prelude::Pubkey, u16)],
     verified_inputs: &[CoprocessorInputAttestation],
     operand: Operand,

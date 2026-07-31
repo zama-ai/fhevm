@@ -12,7 +12,7 @@ use crate::accounts::{BatchAccountMeta, BatchAppAuthority};
 use crate::acl::{BoundedU64UpperBound, Output};
 use crate::batch::Batch;
 use crate::lower::{lower_operand, lower_output};
-use crate::operand::{next_eval_builder_scope, EvalBuilderScope, Operand, OperandKind};
+use crate::operand::{next_eval_builder_scope, BatchBuilderScope, Operand, OperandKind};
 use crate::types::{Bool, Encrypted, FheIsIn, FheRandom, FheType, FheTyped, FheUint, Scalar, Uint};
 use crate::validate::{
     max_reduction_operands, operand_fhe_type, scalar_is_zero_for_type, validate_app_authority,
@@ -25,7 +25,7 @@ use crate::{BatchBuildError, Result};
 /// Pubkey-oriented builder for `FheExecuteArgs`.
 #[derive(Debug)]
 pub struct BatchBuilder {
-    pub(crate) scope: EvalBuilderScope,
+    pub(crate) scope: BatchBuilderScope,
     pub(crate) app_authority: BatchAppAuthority,
     pub(crate) steps: Vec<FheExecuteStep>,
     pub(crate) produced_types: Vec<u8>,

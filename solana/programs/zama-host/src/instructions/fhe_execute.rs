@@ -576,7 +576,7 @@ fn bind_eval_output<'info>(
 /// Update batch validation against an existing encrypted value account. The batch's
 /// declared `previous_state` must equal the stored state exactly, so indexers
 /// reconstruct the appended MMR leaves from instruction data alone. The
-/// audience (`output_subjects`) is NOT constrained to the stored set: a update
+/// audience (`output_subjects`) is NOT constrained to the stored set: an update
 /// may explicitly replace it — the outgoing audience is sealed into historical
 /// leaves before the new set replaces it, and every added subject passes the
 /// grant deny-list via [`check_new_grants_not_denied`].

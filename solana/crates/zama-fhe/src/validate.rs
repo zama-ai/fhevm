@@ -8,7 +8,7 @@ use zama_host::{
 
 use crate::accounts::{BatchAccountMeta, BatchAppAuthority};
 use crate::acl::EncryptedValueId;
-use crate::operand::{EvalBuilderScope, Operand, OperandKind};
+use crate::operand::{BatchBuilderScope, Operand, OperandKind};
 use crate::{BatchBuildError, Result};
 
 /// Mirrors the host preflight rule (fhevm-internal#1853 W4): rand seeds are anchored to
@@ -301,7 +301,7 @@ pub(crate) fn validate_binary_step<F>(
     rhs: &Operand,
     output_fhe_type: u8,
     produced_count: usize,
-    builder_scope: EvalBuilderScope,
+    builder_scope: BatchBuilderScope,
     produced_type: F,
 ) -> Result<()>
 where
@@ -373,7 +373,7 @@ pub(crate) fn validate_unary_step<F>(
     operand: &Operand,
     output_fhe_type: u8,
     produced_count: usize,
-    builder_scope: EvalBuilderScope,
+    builder_scope: BatchBuilderScope,
     produced_type: F,
 ) -> Result<()>
 where
@@ -431,7 +431,7 @@ pub(crate) fn validate_ternary_step<F>(
     output_fhe_type: u8,
     produced_count: usize,
     produced_type: F,
-    builder_scope: EvalBuilderScope,
+    builder_scope: BatchBuilderScope,
 ) -> Result<()>
 where
     F: Fn(u16) -> Option<u8>,
@@ -454,7 +454,7 @@ where
 pub(crate) fn operand_fhe_type<F>(
     operand: &Operand,
     produced_count: usize,
-    builder_scope: EvalBuilderScope,
+    builder_scope: BatchBuilderScope,
     produced_type: &F,
 ) -> Result<Option<u8>>
 where

@@ -149,8 +149,8 @@ pub fn quit<'info>(ctx: Context<'info, Quit<'info>>) -> Result<()> {
             ctx.accounts.join_confidential_mint.compute_signer,
         ],
     )?;
-    fhe::eval_as_batch_authority(
-        fhe::BatchAuthorityEval {
+    fhe::execute_as_batch_authority(
+        fhe::BatchAuthorityExecute {
             batch: batch_key,
             authority_bump: ctx.accounts.batch.authority_bump,
             batch_authority: ctx.accounts.batch_authority.to_account_info(),

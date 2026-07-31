@@ -3985,7 +3985,7 @@ fn mollusk_disclose_secp_rejects_cleartext_wider_than_u64() {
 // on the fixtures ported here.
 // ===========================================================================
 
-/// Exact HCU cost of the combined transfer batch (`execute_transfer_eval`): `Ge` at ebool
+/// Exact HCU cost of the combined transfer batch (`execute_transfer_batch`): `Ge` at ebool
 /// (21_000) + debit `Sub` at euint64 (38_000) + `IfThenElse` at euint64 (45_000) + transferred
 /// `Sub` at euint64 (38_000) + balance-binding scalar `Add` at euint64 (33_250) + credit `Add`
 /// at euint64 (38_000). The `VerifiedInput` amount is an operand, not a step, so it adds no HCU.

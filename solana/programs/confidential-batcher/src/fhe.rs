@@ -60,7 +60,7 @@ impl<'info> PersistentBinding<'info> {
                 Some(value.current_handle),
             )
         };
-        output.binding().map_err(invalid_eval_plan)?;
+        output.binding().map_err(invalid_batch)?;
         Ok(Self {
             account,
             output: Box::new(output),
@@ -83,13 +83,13 @@ impl<'info> PersistentBinding<'info> {
 
     /// Reads the handle the host bound into the encrypted value account. Call only after the
     /// eval CPI carrying this output has executed.
-    pub(crate) fn handle_after_eval(&self) -> Result<[u8; 32]> {
+    pub(crate) fn handle_after_execute(&self) -> Result<[u8; 32]> {
         Ok(read_encrypted_value(&self.account)?.current_handle)
     }
 }
 
 /// Fixed ZamaHost CPI accounts for an eval signed by the batch authority PDA.
-pub(crate) struct BatchAuthorityEval<'a, 'info> {
+pub(crate) struct BatchAuthorityExecute<'a, 'info> {
     pub(crate) batch: Pubkey,
     pub(crate) authority_bump: u8,
     pub(crate) batch_authority: AccountInfo<'info>,
@@ -103,8 +103,8 @@ pub(crate) struct BatchAuthorityEval<'a, 'info> {
 
 /// Builds and invokes one `fhe_execute` batch with the batch authority as both
 /// compute subject and app account authority.
-pub(crate) fn eval_as_batch_authority<'info, T>(
-    eval: BatchAuthorityEval<'_, 'info>,
+pub(crate) fn execute_as_batch_authority<'info, T>(
+    eval: BatchAuthorityExecute<'_, 'info>,
     dynamic_accounts: Vec<AccountInfo<'info>>,
     build: impl FnOnce(&mut zama_fhe::BatchBuilder) -> zama_fhe::Result<T>,
 ) -> Result<()> {
@@ -140,7 +140,7 @@ pub(crate) fn eval_as_batch_authority<'info, T>(
     Ok(())
 }
 
-pub(crate) fn invalid_eval_plan(error: zama_fhe::BatchBuildError) -> anchor_lang::error::Error {
+pub(crate) fn invalid_batch(error: zama_fhe::BatchBuildError) -> anchor_lang::error::Error {
     msg!("invalid FHE batch: {:?}", error);
     error!(BatcherError::InvalidFheExecuteBatch)
 }
@@ -156,5 +156,5 @@ pub(crate) fn uint64_operand(value: &EncryptedValue) -> Result<zama_fhe::Uint64H
             zama_fhe::PersistentLabel::new(value.label),
         ),
     )
-    .map_err(invalid_eval_plan)
+    .map_err(invalid_batch)
 }

@@ -424,7 +424,7 @@ fn execute_burn<'info>(
         // transient-allowed for this eval (no persistent amount handle / ACL account).
         BurnAmountSource::Attested(amount_attestation) => builder
             .verified_input(amount_attestation.clone())
-            .map_err(invalid_eval_plan)?,
+            .map_err(invalid_batch)?,
         // Existing value: the amount is an on-chain encrypted value account's current handle, read as a persistent
         // operand. The slot is derived from the value's own canonical fields, so its PDA equals the
         // passed account; the host re-checks handle-is-current and compute-subject membership.
@@ -440,10 +440,10 @@ fn execute_burn<'info>(
     };
     let burn_success = builder
         .ge(balance, amount, zama_fhe::Output::transient())
-        .map_err(invalid_eval_plan)?;
+        .map_err(invalid_batch)?;
     let debit_candidate = builder
         .sub(balance, amount, zama_fhe::Output::transient())
-        .map_err(invalid_eval_plan)?;
+        .map_err(invalid_batch)?;
     let new_balance = builder
         .if_then_else(
             burn_success,
@@ -451,21 +451,21 @@ fn execute_burn<'info>(
             balance,
             zama_fhe::Output::transient(),
         )
-        .map_err(invalid_eval_plan)?;
+        .map_err(invalid_batch)?;
     let burned = builder
         .sub(balance, new_balance, burned_output.output())
-        .map_err(invalid_eval_plan)?;
+        .map_err(invalid_batch)?;
     builder
         .add(
             new_balance,
             zama_fhe::Scalar::<zama_fhe::Uint<64>>::u64(0),
             balance_output.output(),
         )
-        .map_err(invalid_eval_plan)?;
+        .map_err(invalid_batch)?;
     builder
         .sub(total_supply, burned, total_supply_output.output())
-        .map_err(invalid_eval_plan)?;
-    let batch = builder.finish().map_err(invalid_eval_plan)?;
+        .map_err(invalid_batch)?;
+    let batch = builder.finish().map_err(invalid_batch)?;
     let compute_authority =
         fhe::ComputeAuthority::for_mint(accounts.compute_signer, mint_key, compute_signer_bump)?;
     let total_supply_authority_bump = total_supply_authority_address(mint_key).1;
@@ -488,7 +488,7 @@ fn execute_burn<'info>(
             dynamic_accounts.push(amount_value.clone());
         }
     }
-    let eval_accounts = fhe::EvalAccountSet::for_plan(
+    let batch_accounts = fhe::BatchAccountSet::for_batch(
         &batch,
         dynamic_accounts,
         [
@@ -500,8 +500,8 @@ fn execute_burn<'info>(
             )?,
         ],
     )?;
-    fhe::eval(fhe::Eval {
-        context: fhe::EvalContext {
+    fhe::execute(fhe::Execute {
+        context: fhe::ExecuteContext {
             payer: accounts.payer,
             event_authority: accounts.zama_event_authority,
             zama_program: accounts.zama_program,
@@ -512,7 +512,7 @@ fn execute_burn<'info>(
             hcu_block_meter: accounts.hcu_block_meter.clone(),
             hcu_trusted_app_record: accounts.hcu_trusted_app_record.clone(),
         },
-        accounts: &eval_accounts,
+        accounts: &batch_accounts,
         batch,
     })?;
 

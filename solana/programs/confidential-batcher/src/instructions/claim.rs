@@ -149,8 +149,8 @@ pub fn claim<'info>(ctx: Context<'info, Claim<'info>>) -> Result<()> {
     )?;
     let payout_received = ctx.accounts.batch.payout_received;
     let total_joined = ctx.accounts.batch.total_joined;
-    fhe::eval_as_batch_authority(
-        fhe::BatchAuthorityEval {
+    fhe::execute_as_batch_authority(
+        fhe::BatchAuthorityExecute {
             batch: batch_key,
             authority_bump: ctx.accounts.batch.authority_bump,
             batch_authority: ctx.accounts.batch_authority.to_account_info(),

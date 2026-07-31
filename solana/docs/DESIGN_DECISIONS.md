@@ -567,7 +567,7 @@ different slot                                   previous_bank_hash (+ unix_time
 same slot, same batch, different steps      op_index (+ the FheExecuteDuplicateHandle guard)
 same slot, different txs, same op/operands/ctx   Solana write-lock serializes the two mut writes to
                                                  the one EncryptedValue PDA (single-writer-per-value,
-                                                 DD-036); a update must match previous_handle, so
+                                                 DD-036); an update must match previous_handle, so
                                                  the 2nd is a distinct state transition. If it does
                                                  recompute byte-identically, the material is identical
                                                  (deterministic) → sharing a handle is correct, not a
@@ -598,7 +598,7 @@ Context:
 `acl_storage_rationale.md` Part 5 describes two Solana token profiles: a staged inbound-credit profile
 (recommended default for public-receivable tokens, where the recipient applies pending funds under
 their own transaction timing) and an immediate available-balance profile (EVM-style, where the sender
-updates the recipient's balance directly). The latter lets a sender force a update of the recipient's
+updates the recipient's balance directly). The latter lets a sender force an update of the recipient's
 stable balance `EncryptedValue`, which can invalidate a transaction the recipient already built against
 the prior `current_handle`.
 
@@ -1341,7 +1341,7 @@ eval. `FheExecuteOutput::AllowedPersistent` gains a `make_public: bool` (carried
 `previous_handle`/`previous_subjects`, so indexers reconstruct the leaf without reading the account).
 When set, `bind_eval_output` — after writing the new `current_handle` — appends a public-decrypt leaf
 for that NEW handle using the exact same `public_decrypt_leaf_commitment` + `mmr_append` as
-`make_handle_public` (byte-identical). Leaf order on a update-with-`make_public`: the outgoing
+`make_handle_public` (byte-identical). Leaf order on an update-with-`make_public`: the outgoing
 handle's historical-access leaves (one per current subject) FIRST, then the new handle's
 public-decrypt leaf LAST; on a create-with-`make_public`, just the new handle's public-decrypt leaf.
 
@@ -1625,10 +1625,10 @@ nothing new. If a decrypt-path kill-switch is ever wanted, gate `host_config.pau
 
 Return-data-only to start: today's KMS cleartexts are ≤32 bytes; if larger types are ever revealed the
 fallback is a caller-provided scratch account. The proof-freshness (stale-proof) retry race is the
-known bounded-retry surface (#1687): a update between proof generation and consume moves the MMR
+known bounded-retry surface (#1687): an update between proof generation and consume moves the MMR
 peaks and fails the inclusion proof; the victim regenerates the proof and retries. The one wrong app
 pattern is binding consume logic to the live `current_handle` instead of the sealed handle — the
-sealed leaf is append-only, so the OLD sealed handle stays verifiable after a update (covered by
+sealed leaf is append-only, so the OLD sealed handle stays verifiable after an update (covered by
 `mollusk_verify_public_decrypt_survives_update_after_seal`).
 
 Scope: this PR added the host verifier additively. Dissolving the confidential-token `DisclosureRequest`

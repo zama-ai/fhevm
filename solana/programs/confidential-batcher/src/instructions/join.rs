@@ -171,8 +171,8 @@ pub fn join<'info>(
     // batch vs the mint), so their PDAs are distinct by construction; the only
     // alias in this batch is the joined encrypted value account as both operand and output on
     // repeat joins, which is the standard same-slot update.
-    fhe::eval_as_batch_authority(
-        fhe::BatchAuthorityEval {
+    fhe::execute_as_batch_authority(
+        fhe::BatchAuthorityExecute {
             batch: batch_key,
             authority_bump: ctx.accounts.batch.authority_bump,
             batch_authority: ctx.accounts.batch_authority.to_account_info(),
@@ -197,7 +197,7 @@ pub fn join<'info>(
         },
     )?;
 
-    let joined_handle = joined_binding.handle_after_eval()?;
+    let joined_handle = joined_binding.handle_after_execute()?;
     let record = &mut ctx.accounts.join_record;
     record.batch = batch_key;
     record.user = user;

@@ -14,7 +14,7 @@ use anchor_lang::{
 use anchor_lang::prelude::Pubkey;
 
 #[cfg(feature = "cpi")]
-use crate::accounts::{BatchAppAuthority, EvalAccountResolutionError, ResolvedEvalAccounts};
+use crate::accounts::{BatchAccountResolutionError, BatchAppAuthority, ResolvedBatchAccounts};
 #[cfg(feature = "cpi")]
 use crate::batch::Batch;
 #[cfg(feature = "cpi")]
@@ -47,7 +47,7 @@ trait EvalAccountResolver<'info> {
 }
 
 #[cfg(feature = "cpi")]
-impl<'info> EvalAccountResolver<'info> for ResolvedEvalAccounts<'info> {
+impl<'info> EvalAccountResolver<'info> for ResolvedBatchAccounts<'info> {
     fn resolve_eval_account(&self, pubkey: Pubkey) -> Option<AccountInfo<'info>> {
         self.resolve(pubkey)
     }
@@ -61,7 +61,7 @@ pub enum BatchInvokeError {
     Build(BatchBuildError),
     /// The supplied dynamic accounts or output authority witnesses do not
     /// satisfy the built batch.
-    AccountResolution(EvalAccountResolutionError),
+    AccountResolution(BatchAccountResolutionError),
     /// The host CPI returned an Anchor error.
     Cpi(anchor_lang::error::Error),
 }
@@ -74,8 +74,8 @@ impl From<BatchBuildError> for BatchInvokeError {
 }
 
 #[cfg(feature = "cpi")]
-impl From<EvalAccountResolutionError> for BatchInvokeError {
-    fn from(error: EvalAccountResolutionError) -> Self {
+impl From<BatchAccountResolutionError> for BatchInvokeError {
+    fn from(error: BatchAccountResolutionError) -> Self {
         Self::AccountResolution(error)
     }
 }
@@ -87,14 +87,14 @@ impl From<anchor_lang::error::Error> for BatchInvokeError {
     }
 }
 
-/// Builds an batch with a closure, resolves its dynamic accounts, and
+/// Builds a batch with a closure, resolves its dynamic accounts, and
 /// invokes `zama-host::fhe_execute`.
 ///
 /// `dynamic_accounts` and additional `output_authorities` may be in any order.
 /// The fixed CPI `account_authority` is included automatically. The SDK
 /// validates the supplied accounts against the batch produced by the closure
 /// before constructing the ordered host account list used by
-/// [`invoke_batch_signed_resolved`].
+/// [`Batch::execute`].
 #[cfg(feature = "cpi")]
 pub fn invoke_batch_signed_with_builder<'a, 'info, T, F>(
     app_authority: BatchAppAuthority,
@@ -115,12 +115,13 @@ where
     Ok(())
 }
 
-/// Invokes `zama-host::fhe_execute` with accounts pre-resolved from an [`Batch`].
+/// Invokes `zama-host::fhe_execute` with accounts pre-resolved from a [`Batch`].
+/// App-facing surface: [`Batch::execute`].
 #[cfg(feature = "cpi")]
-pub fn invoke_batch_signed_resolved<'a, 'info>(
+pub(crate) fn invoke_batch_signed_resolved<'a, 'info>(
     batch: &Batch,
     accounts: BatchCpiAccounts<'a, 'info>,
-    resolved_accounts: &ResolvedEvalAccounts<'info>,
+    resolved_accounts: &ResolvedBatchAccounts<'info>,
     signer_seeds: &[&[&[u8]]],
 ) -> anchor_lang::prelude::Result<()> {
     invoke_batch_signed_with_resolver(batch, accounts, resolved_accounts, signer_seeds)

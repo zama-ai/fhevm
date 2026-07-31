@@ -5652,7 +5652,7 @@ fn mollusk_verify_public_decrypt_rejects_non_canonical_kms_context() {
 
 #[test]
 fn mollusk_verify_public_decrypt_survives_update_after_seal() {
-    // The dust-race claim: a update between seal and consume moves the MMR peaks but can neither
+    // The dust-race claim: an update between seal and consume moves the MMR peaks but can neither
     // invalidate nor retarget the sealed leaf. The OLD handle still verifies with a proof rebuilt
     // against the updated peaks.
     let admin = Pubkey::new_unique();

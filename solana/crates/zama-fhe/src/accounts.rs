@@ -8,7 +8,7 @@ use anchor_lang::{prelude::AccountInfo, Key};
 #[cfg(feature = "cpi")]
 use crate::batch::Batch;
 
-/// Why an batch needs a dynamic account.
+/// Why a batch needs a dynamic account.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum BatchAccountPurpose {
     PersistentInputAcl,
@@ -16,16 +16,16 @@ pub enum BatchAccountPurpose {
     PersistentOutputAuthority,
 }
 
-/// Public view of one dynamic account required by an batch.
+/// Public view of one dynamic account required by a batch.
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct EvalAccountRequirement {
+pub struct BatchAccountRequirement {
     pubkey: Pubkey,
     is_writable: bool,
     is_signer: bool,
     purposes: Vec<BatchAccountPurpose>,
 }
 
-impl EvalAccountRequirement {
+impl BatchAccountRequirement {
     pub fn pubkey(&self) -> Pubkey {
         self.pubkey
     }
@@ -57,7 +57,7 @@ impl EvalAccountRequirement {
     }
 }
 
-/// Dynamic account role required by an batch.
+/// Dynamic account role required by a batch.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) struct BatchAccountMeta {
     pub(crate) pubkey: Pubkey,
@@ -105,7 +105,7 @@ impl BatchAccountMeta {
     }
 }
 
-impl From<&BatchAccountMeta> for EvalAccountRequirement {
+impl From<&BatchAccountMeta> for BatchAccountRequirement {
     fn from(meta: &BatchAccountMeta) -> Self {
         Self {
             pubkey: meta.pubkey,
@@ -130,14 +130,14 @@ impl BatchAppAuthority {
     }
 }
 
-/// Output authority required by an batch.
+/// Output authority required by a batch.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub struct EvalOutputAuthorityRequirement {
+pub struct BatchOutputAuthorityRequirement {
     pub(crate) pubkey: Pubkey,
     pub(crate) cpi_account_authority: bool,
 }
 
-impl EvalOutputAuthorityRequirement {
+impl BatchOutputAuthorityRequirement {
     pub fn pubkey(&self) -> Pubkey {
         self.pubkey
     }
@@ -150,28 +150,32 @@ impl EvalOutputAuthorityRequirement {
 /// Account-list resolution failure for an [`Batch`].
 #[cfg(feature = "cpi")]
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub enum EvalAccountResolutionError {
+pub enum BatchAccountResolutionError {
     /// The same dynamic account pubkey was supplied more than once.
     DuplicateDynamicAccount { pubkey: Pubkey },
     /// A supplied dynamic account is not required by this batch's non-authority
     /// remaining-account slots.
     UnexpectedDynamicAccount { pubkey: Pubkey },
     /// A non-authority remaining-account slot could not be resolved.
-    MissingDynamicAccount { requirement: EvalAccountRequirement },
+    MissingDynamicAccount {
+        requirement: BatchAccountRequirement,
+    },
     /// A writable remaining-account slot was supplied as readonly.
-    DynamicAccountNotWritable { requirement: EvalAccountRequirement },
+    DynamicAccountNotWritable {
+        requirement: BatchAccountRequirement,
+    },
     /// The same persistent output authority witness was supplied more than once.
     DuplicateOutputAuthority { pubkey: Pubkey },
     /// A supplied output authority is not required by this batch.
     UnexpectedOutputAuthority { pubkey: Pubkey },
     /// A required persistent output authority witness could not be resolved.
     MissingOutputAuthority {
-        authority: EvalOutputAuthorityRequirement,
+        authority: BatchOutputAuthorityRequirement,
     },
 }
 
 #[cfg(feature = "cpi")]
-impl EvalAccountResolutionError {
+impl BatchAccountResolutionError {
     pub fn pubkey(&self) -> Pubkey {
         match self {
             Self::DuplicateDynamicAccount { pubkey }
@@ -188,12 +192,12 @@ impl EvalAccountResolutionError {
 /// Ordered dynamic accounts resolved from an [`Batch`].
 #[cfg(feature = "cpi")]
 #[derive(Debug)]
-pub struct ResolvedEvalAccounts<'info> {
+pub struct ResolvedBatchAccounts<'info> {
     accounts: Vec<AccountInfo<'info>>,
 }
 
 #[cfg(feature = "cpi")]
-impl<'info> ResolvedEvalAccounts<'info> {
+impl<'info> ResolvedBatchAccounts<'info> {
     pub fn account_infos(&self) -> &[AccountInfo<'info>] {
         &self.accounts
     }
@@ -207,11 +211,11 @@ impl<'info> ResolvedEvalAccounts<'info> {
 }
 
 #[cfg(feature = "cpi")]
-pub(crate) fn resolve_eval_accounts<'info>(
+pub(crate) fn resolve_batch_accounts<'info>(
     batch: &Batch,
     dynamic_accounts: impl IntoIterator<Item = AccountInfo<'info>>,
     output_authorities: impl IntoIterator<Item = AccountInfo<'info>>,
-) -> std::result::Result<ResolvedEvalAccounts<'info>, EvalAccountResolutionError> {
+) -> std::result::Result<ResolvedBatchAccounts<'info>, BatchAccountResolutionError> {
     let dynamic_accounts = dynamic_accounts.into_iter().collect::<Vec<_>>();
     let output_authorities = output_authorities.into_iter().collect::<Vec<_>>();
 
@@ -221,16 +225,16 @@ pub(crate) fn resolve_eval_accounts<'info>(
             .iter()
             .any(|candidate| candidate.key() == pubkey)
         {
-            return Err(EvalAccountResolutionError::DuplicateDynamicAccount { pubkey });
+            return Err(BatchAccountResolutionError::DuplicateDynamicAccount { pubkey });
         }
         let Some(required) = batch
             .dynamic_account_requirements()
             .find(|required| required.pubkey() == pubkey)
         else {
-            return Err(EvalAccountResolutionError::UnexpectedDynamicAccount { pubkey });
+            return Err(BatchAccountResolutionError::UnexpectedDynamicAccount { pubkey });
         };
         if !required.requires_dynamic_account() {
-            return Err(EvalAccountResolutionError::UnexpectedDynamicAccount { pubkey });
+            return Err(BatchAccountResolutionError::UnexpectedDynamicAccount { pubkey });
         }
     }
 
@@ -240,13 +244,13 @@ pub(crate) fn resolve_eval_accounts<'info>(
             .iter()
             .any(|candidate| candidate.key() == pubkey)
         {
-            return Err(EvalAccountResolutionError::DuplicateOutputAuthority { pubkey });
+            return Err(BatchAccountResolutionError::DuplicateOutputAuthority { pubkey });
         }
         if !batch
             .output_authorities()
             .any(|required| required == pubkey)
         {
-            return Err(EvalAccountResolutionError::UnexpectedOutputAuthority { pubkey });
+            return Err(BatchAccountResolutionError::UnexpectedOutputAuthority { pubkey });
         }
     }
 
@@ -255,7 +259,7 @@ pub(crate) fn resolve_eval_accounts<'info>(
             .iter()
             .any(|candidate| candidate.key() == authority.pubkey())
         {
-            return Err(EvalAccountResolutionError::MissingOutputAuthority { authority });
+            return Err(BatchAccountResolutionError::MissingOutputAuthority { authority });
         }
     }
 
@@ -266,8 +270,8 @@ pub(crate) fn resolve_eval_accounts<'info>(
                 .iter()
                 .find(|candidate| candidate.key() == required.pubkey())
                 .cloned()
-                .ok_or(EvalAccountResolutionError::MissingOutputAuthority {
-                    authority: EvalOutputAuthorityRequirement {
+                .ok_or(BatchAccountResolutionError::MissingOutputAuthority {
+                    authority: BatchOutputAuthorityRequirement {
                         pubkey: required.pubkey(),
                         cpi_account_authority: false,
                     },
@@ -277,19 +281,19 @@ pub(crate) fn resolve_eval_accounts<'info>(
                 .iter()
                 .find(|candidate| candidate.key() == required.pubkey())
                 .cloned()
-                .ok_or_else(|| EvalAccountResolutionError::MissingDynamicAccount {
+                .ok_or_else(|| BatchAccountResolutionError::MissingDynamicAccount {
                     requirement: required.clone(),
                 })?
         } else {
             continue;
         };
         if required.is_writable() && !account.is_writable {
-            return Err(EvalAccountResolutionError::DynamicAccountNotWritable {
+            return Err(BatchAccountResolutionError::DynamicAccountNotWritable {
                 requirement: required,
             });
         }
         accounts.push(account);
     }
 
-    Ok(ResolvedEvalAccounts { accounts })
+    Ok(ResolvedBatchAccounts { accounts })
 }

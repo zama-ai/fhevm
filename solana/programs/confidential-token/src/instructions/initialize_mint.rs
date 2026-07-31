@@ -67,15 +67,15 @@ pub fn initialize_mint<'info>(ctx: Context<'info, InitializeMint<'info>>) -> Res
         zama_fhe::BatchBuilder::new(zama_fhe::BatchAppAuthority::new(total_supply_authority));
     builder
         .trivial_encrypt_u64(0, total_supply_output.output())
-        .map_err(invalid_eval_plan)?;
-    let batch = builder.finish().map_err(invalid_eval_plan)?;
+        .map_err(invalid_batch)?;
+    let batch = builder.finish().map_err(invalid_batch)?;
     let compute_authority = fhe::ComputeAuthority::for_mint(
         &ctx.accounts.compute_signer,
         mint_key,
         ctx.bumps.compute_signer,
     )?;
     let total_supply_authority_bump = total_supply_authority_address(mint_key).1;
-    let eval_accounts = fhe::EvalAccountSet::for_plan(
+    let batch_accounts = fhe::BatchAccountSet::for_batch(
         &batch,
         [total_supply_output.account_info()],
         [fhe::OutputAuthority::total_supply(
@@ -84,8 +84,8 @@ pub fn initialize_mint<'info>(ctx: Context<'info, InitializeMint<'info>>) -> Res
             total_supply_authority_bump,
         )?],
     )?;
-    fhe::eval(fhe::Eval {
-        context: fhe::EvalContext {
+    fhe::execute(fhe::Execute {
+        context: fhe::ExecuteContext {
             payer: &ctx.accounts.authority,
             event_authority: &ctx.accounts.zama_event_authority,
             zama_program: &ctx.accounts.zama_program,
@@ -104,7 +104,7 @@ pub fn initialize_mint<'info>(ctx: Context<'info, InitializeMint<'info>>) -> Res
                 .as_ref()
                 .map(|account| account.to_account_info()),
         },
-        accounts: &eval_accounts,
+        accounts: &batch_accounts,
         batch,
     })?;
     let total_supply_handle = total_supply_output.handle()?;

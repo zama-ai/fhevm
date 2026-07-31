@@ -362,7 +362,7 @@ fn preflight_output(
             let authority = preflight.mark_output_authority(*output_account_authority_index)?;
             preflight.mark_deny_record(authority)?;
             // Every newly granted subject is deny-checked in the bind pass; mark
-            // their deny records here so finish() accounts for them. On a update
+            // their deny records here so finish() accounts for them. On an update
             // the new set is `output_subjects \ previous_state.subjects` from
             // instruction data alone — a lying previous state is rejected later
             // with PreviousStateMismatch, so trusting it for account-marking is
