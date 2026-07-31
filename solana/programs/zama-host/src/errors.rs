@@ -130,9 +130,10 @@ pub enum ZamaHostError {
     /// An FHE eval durable output account already exists.
     #[msg("FHE eval durable output ACL record already exists")]
     FheEvalOutputAlreadyInitialized,
-    /// An FHE eval context id must be non-zero.
-    #[msg("FHE eval context id is invalid")]
-    InvalidFheEvalContext,
+    /// A frame containing a rand step must declare at least one durable output,
+    /// which anchors the compulsorily fresh rand seed (fhevm-internal#1853 W4).
+    #[msg("FHE eval rand step requires a durable output in the frame")]
+    FheEvalRandRequiresDurableOutput,
     /// A derived durable output may not be made public-decryptable by a non-authorized subject.
     #[msg("transient capability cannot authorize public decrypt")]
     DerivedOutputPublicDecryptDenied,
@@ -282,7 +283,6 @@ pub enum ZamaHostError {
     /// The KMS signer set contains the zero address, which can never be a valid recovered EVM signer.
     #[msg("KMS signer set contains the zero address")]
     ZeroKmsSigner,
-
     /// The supplied invalidation account is not at the canonical watermark address for
     /// the signing user, or its stored bump is not the canonical one. The watermark is
     /// keyed by the signer precisely so that one user cannot move another user's
@@ -301,4 +301,15 @@ pub enum ZamaHostError {
     /// this fails closed instead.
     #[msg("clock is before the unix epoch")]
     ClockBeforeEpoch,
+
+    /// A step referenced an interned pool index past the end of `FheEvalArgs::pool`.
+    #[msg("FHE eval pool index out of bounds")]
+    FheEvalPoolIndexOutOfBounds,
+    /// `FheEvalArgs::account_count` does not match the actual remaining-accounts length.
+    #[msg("FHE eval declared account count mismatch")]
+    FheEvalAccountCountMismatch,
+    /// An `AllowedDurable` operand referenced an account written by an earlier step.
+    /// In-frame dependencies must use `AllowedLocal`.
+    #[msg("FHE eval durable operand was written earlier in the frame")]
+    FheEvalDurableOperandWrittenEarlier,
 }

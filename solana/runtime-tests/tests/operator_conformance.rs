@@ -39,7 +39,7 @@ fn run_binary(
     let rhs_handle = handle(2, input_type);
     let mut inputs = HashMap::from([(lhs_handle, typed(input_type, lhs))]);
     let rhs = if scalar_rhs {
-        FheEvalOperand::Scalar(be(rhs))
+        scalar(be(rhs))
     } else {
         inputs.insert(rhs_handle, typed(input_type, rhs));
         durable(rhs_handle)
@@ -168,7 +168,7 @@ fn run_mul_div(
     let second_handle = handle(2, fhe_type);
     let mut inputs = HashMap::from([(first_handle, typed(fhe_type, factor1))]);
     let second = if scalar_factor2 {
-        FheEvalOperand::Scalar(be(factor2))
+        scalar(be(factor2))
     } else {
         inputs.insert(second_handle, typed(fhe_type, factor2));
         durable(second_handle)
@@ -240,7 +240,7 @@ mod edges {
         let plan = args(vec![binary(
             FheBinaryOpCode::Add,
             durable(input),
-            FheEvalOperand::Scalar(high_only),
+            scalar(high_only),
             2,
         )]);
         assert_eq!(
@@ -280,7 +280,7 @@ mod edges {
         let plan = args(vec![binary(
             FheBinaryOpCode::Eq,
             durable(encrypted_false),
-            FheEvalOperand::Scalar(high_only),
+            scalar(high_only),
             0,
         )]);
         assert_eq!(
@@ -409,7 +409,7 @@ mod edges {
         let plan = args(vec![binary(
             FheBinaryOpCode::Rotr,
             durable(one),
-            FheEvalOperand::Scalar(be(1)),
+            scalar(be(1)),
             8,
         )]);
         assert_eq!(
@@ -520,7 +520,7 @@ mod rejected {
                 args(vec![binary(
                     FheBinaryOpCode::Rem,
                     durable(lhs),
-                    FheEvalOperand::Scalar(high_only),
+                    scalar(high_only),
                     2,
                 )]),
                 HashMap::from([(lhs, typed(2, 8))]),
@@ -536,7 +536,7 @@ mod rejected {
                 args(vec![binary(
                     FheBinaryOpCode::Div,
                     durable(lhs),
-                    FheEvalOperand::Scalar(high_only),
+                    scalar(high_only),
                     2,
                 )]),
                 HashMap::from([(lhs, typed(2, 8))]),
@@ -685,12 +685,7 @@ mod rejected {
         fn mul_div_u128_output_type() {
             let input = handle(1, 6);
             expect_error(
-                args(vec![mul_div_step(
-                    durable(input),
-                    FheEvalOperand::Scalar(be(2)),
-                    be(1),
-                    6,
-                )]),
+                args(vec![mul_div_step(durable(input), scalar(be(2)), be(1), 6)]),
                 HashMap::from([(input, typed(6, 2))]),
                 "UnsupportedFheType",
             );
@@ -703,7 +698,7 @@ mod rejected {
             expect_error(
                 args(vec![mul_div_step(
                     durable(u8_input),
-                    FheEvalOperand::Scalar(be(2)),
+                    scalar(be(2)),
                     high_only,
                     2,
                 )]),
@@ -780,7 +775,7 @@ mod operand_sources {
         let plan = args(vec![binary(
             FheBinaryOpCode::Add,
             verified(input),
-            FheEvalOperand::Scalar(be(3)),
+            scalar(be(3)),
             2,
         )]);
         assert_eq!(
@@ -792,12 +787,7 @@ mod operand_sources {
     fn local_outputs_can_feed_later_steps() {
         let input = handle(1, 2);
         let plan = args(vec![
-            binary(
-                FheBinaryOpCode::Add,
-                durable(input),
-                FheEvalOperand::Scalar(be(1)),
-                2,
-            ),
+            binary(FheBinaryOpCode::Add, durable(input), scalar(be(1)), 2),
             FheEvalStep::Unary {
                 op: FheUnaryOpCode::Not,
                 operand: FheEvalOperand::AllowedLocal { producer_index: 0 },
@@ -818,7 +808,7 @@ mod operand_sources {
     fn forward_local_is_rejected() {
         reject_local(1);
     }
-    fn reject_local(producer_index: u16) {
+    fn reject_local(producer_index: u8) {
         expect_error(
             args(vec![FheEvalStep::Unary {
                 op: FheUnaryOpCode::Not,
@@ -837,7 +827,7 @@ mod operand_sources {
             args(vec![binary(
                 FheBinaryOpCode::Add,
                 durable(input),
-                FheEvalOperand::Scalar(be(1)),
+                scalar(be(1)),
                 2,
             )]),
             ClearInputs::new(),
@@ -851,7 +841,7 @@ mod operand_sources {
             args(vec![binary(
                 FheBinaryOpCode::Add,
                 verified(input),
-                FheEvalOperand::Scalar(be(1)),
+                scalar(be(1)),
                 2,
             )]),
             ClearInputs::new(),
@@ -863,8 +853,8 @@ mod operand_sources {
         expect_error(
             args(vec![binary(
                 FheBinaryOpCode::Add,
-                FheEvalOperand::Scalar(be(1)),
-                FheEvalOperand::Scalar(be(2)),
+                scalar(be(1)),
+                scalar(be(2)),
                 2,
             )]),
             ClearInputs::new(),
@@ -878,7 +868,7 @@ mod operand_sources {
             args(vec![binary(
                 FheBinaryOpCode::Add,
                 durable(input),
-                FheEvalOperand::Scalar(be(1)),
+                scalar(be(1)),
                 2,
             )]),
             HashMap::from([(input, typed(3, 1))]),
@@ -1024,9 +1014,32 @@ fn bounded_rand_step(upper_bound: [u8; 32], fhe_type: u8) -> FheEvalStep {
     }
 }
 
+// Frame constants (operand handles, scalar values) live in the frame's interned pool
+// and are referenced by `u8` index (fhevm-internal#1853 W7). The helpers below intern
+// through a thread-local pool: `durable`/`scalar` add entries while a test assembles
+// steps, and `args` drains the pool into the finished frame. Each test runs on its own
+// thread, so pools never mix across tests.
+std::thread_local! {
+    static FRAME_POOL: std::cell::RefCell<Vec<[u8; 32]>> =
+        const { std::cell::RefCell::new(Vec::new()) };
+}
+
+fn intern(bytes: [u8; 32]) -> u8 {
+    FRAME_POOL.with(|pool| {
+        let mut pool = pool.borrow_mut();
+        if let Some(index) = pool.iter().position(|entry| *entry == bytes) {
+            return u8::try_from(index).expect("test pool fits u8");
+        }
+        let index = u8::try_from(pool.len()).expect("test pool fits u8");
+        pool.push(bytes);
+        index
+    })
+}
+
 fn args(steps: Vec<FheEvalStep>) -> FheEvalArgs {
     FheEvalArgs {
-        context_id: [7; 32],
+        account_count: 0,
+        pool: FRAME_POOL.with(|pool| pool.take()),
         steps,
     }
 }
@@ -1035,9 +1048,15 @@ fn local_output() -> FheEvalOutput {
     FheEvalOutput::AllowedLocal
 }
 
+fn scalar(value: [u8; 32]) -> FheEvalOperand {
+    FheEvalOperand::Scalar {
+        value_index: intern(value),
+    }
+}
+
 fn durable(handle: Handle) -> FheEvalOperand {
     FheEvalOperand::AllowedDurable {
-        handle,
+        handle_index: intern(handle),
         encrypted_value_index: 0,
     }
 }

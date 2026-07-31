@@ -27,9 +27,9 @@ pub(crate) use verify_public_decrypt::*;
 /// (total supply, freshly minted random amounts) use
 /// [`DurableAudience::compute_only`], the one owner-less path.
 ///
-/// This is the only way token instructions produce durable-output policies:
+/// This is the only way token instructions produce durable-output subjects:
 /// [`DurableOutput::new`]/[`DurableOutput::new_public`] accept a `DurableAudience`
-/// and not a raw [`zama_fhe::AccessPolicy`], so the owner+compute invariant holds
+/// rather than a raw subject vector, so the owner+compute invariant holds
 /// by construction rather than by convention at each call site.
 pub(crate) struct DurableAudience {
     owner: Option<Pubkey>,
@@ -64,16 +64,12 @@ impl DurableAudience {
 
     /// Renders the audience into host output subjects, ordered owner(s) then
     /// compute signer.
-    fn into_policy(self) -> zama_fhe::Result<zama_fhe::AccessPolicy> {
+    fn into_subjects(self) -> Vec<Pubkey> {
         let mut subjects = Vec::with_capacity(2 + self.extra_owners.len());
-        subjects.extend(self.owner.map(zama_fhe::AccessSubject::owner));
-        subjects.extend(
-            self.extra_owners
-                .into_iter()
-                .map(zama_fhe::AccessSubject::owner),
-        );
-        subjects.push(zama_fhe::AccessSubject::compute(self.compute));
-        zama_fhe::AccessPolicy::from_subjects(subjects)
+        subjects.extend(self.owner);
+        subjects.extend(self.extra_owners);
+        subjects.push(self.compute);
+        subjects
     }
 }
 
@@ -92,10 +88,10 @@ impl<'info> DurableOutput<'info> {
     /// the host will verify.
     pub(crate) fn new(
         encrypted_value: AccountInfo<'info>,
-        slot: zama_fhe::DurableSlot,
+        key: zama_fhe::EncryptedValueKey,
         audience: DurableAudience,
     ) -> Result<Self> {
-        Self::new_inner(encrypted_value, slot, audience, false)
+        Self::new_inner(encrypted_value, key, audience, false)
     }
 
     /// Like [`new`], but binds the output born publicly decryptable: the host
@@ -104,41 +100,33 @@ impl<'info> DurableOutput<'info> {
     /// delta so every burn stays permanently redeemable with no second CPI.
     pub(crate) fn new_public(
         encrypted_value: AccountInfo<'info>,
-        slot: zama_fhe::DurableSlot,
+        key: zama_fhe::EncryptedValueKey,
         audience: DurableAudience,
     ) -> Result<Self> {
-        Self::new_inner(encrypted_value, slot, audience, true)
+        Self::new_inner(encrypted_value, key, audience, true)
     }
 
     fn new_inner(
         encrypted_value: AccountInfo<'info>,
-        slot: zama_fhe::DurableSlot,
+        key: zama_fhe::EncryptedValueKey,
         audience: DurableAudience,
         make_public: bool,
     ) -> Result<Self> {
         require_keys_eq!(
             encrypted_value.key(),
-            slot.address(),
+            key.address(),
             ConfidentialTokenError::CurrentEncryptedValueMismatch
         );
-        let access = audience.into_policy().map_err(|error| {
-            msg!("invalid durable FHE output audience: {:?}", error);
-            error!(ConfidentialTokenError::InvalidFheEvalPlan)
-        })?;
+        let subjects = audience.into_subjects();
         let output = if *encrypted_value.owner == System::id() {
             require!(
                 encrypted_value.data_is_empty() && !encrypted_value.executable,
                 ConfidentialTokenError::InvalidFheEvalPlan
             );
-            zama_fhe::DurableOutput::create(slot, access)
+            zama_fhe::DurableOutput::create(key, subjects)
         } else {
             let value = read_encrypted_value(&encrypted_value)?;
-            zama_fhe::DurableOutput::supersede(
-                slot,
-                access,
-                value.current_handle,
-                value.subjects.clone(),
-            )
+            zama_fhe::DurableOutput::update(key, subjects, &value)
         }
         .with_make_public(make_public);
         output.birth().map_err(|error| {
@@ -588,13 +576,7 @@ mod tests {
     use super::*;
 
     fn audience_subjects(audience: DurableAudience) -> Vec<Pubkey> {
-        audience
-            .into_policy()
-            .unwrap()
-            .subjects()
-            .iter()
-            .map(|subject| subject.pubkey())
-            .collect()
+        audience.into_subjects()
     }
 
     #[test]
@@ -631,12 +613,19 @@ mod tests {
     fn duplicate_owner_and_compute_are_rejected() {
         let owner = Pubkey::new_unique();
         let compute = Pubkey::new_unique();
-        // A holder audience whose extra owner repeats the compute signer would
-        // render a duplicate subject; `into_policy` must reject it.
-        assert!(DurableAudience::for_owner(owner, compute)
-            .with_owner(compute)
-            .into_policy()
-            .is_err());
+        // A holder audience whose extra owner repeats the compute signer
+        // renders a duplicate subject; the durable output rejects it.
+        let output = zama_fhe::DurableOutput::create(
+            zama_fhe::EncryptedValueKey::new(
+                Pubkey::new_unique(),
+                Pubkey::new_unique(),
+                zama_fhe::DurableLabel::new([1; 32]),
+            ),
+            DurableAudience::for_owner(owner, compute)
+                .with_owner(compute)
+                .into_subjects(),
+        );
+        assert!(output.birth().is_err());
     }
 
     fn handle(tag: u8) -> [u8; 32] {
@@ -647,10 +636,6 @@ mod tests {
         let mut handle = [tag; 32];
         handle[30] = crate::BALANCE_FHE_TYPE;
         handle
-    }
-
-    fn context_id(tag: u8) -> zama_fhe::EvalContextId {
-        zama_fhe::EvalContextId::new(handle(tag)).unwrap()
     }
 
     fn account_info(pubkey: Pubkey, is_writable: bool) -> AccountInfo<'static> {
@@ -668,32 +653,31 @@ mod tests {
         }
     }
 
-    fn durable_slot(account: Pubkey, label_tag: u8) -> zama_fhe::DurableSlot {
-        zama_fhe::DurableSlot::new(
+    fn encrypted_value_key(account: Pubkey, label_tag: u8) -> zama_fhe::EncryptedValueKey {
+        zama_fhe::EncryptedValueKey::new(
             Pubkey::new_unique(),
             account,
             zama_fhe::DurableLabel::new(handle(label_tag)),
         )
     }
 
-    fn access_policy(subject: Pubkey) -> zama_fhe::AccessPolicy {
-        zama_fhe::AccessPolicy::for_owner(subject).unwrap()
+    fn subjects(subject: Pubkey) -> Vec<Pubkey> {
+        vec![subject]
     }
 
     fn sample_plan() -> (zama_fhe::EvalPlan, Pubkey, Pubkey, Pubkey) {
         let authority = Pubkey::new_unique();
-        let input_slot = durable_slot(authority, 1);
-        let input_acl = input_slot.address();
-        let output_slot = durable_slot(authority, 2);
-        let output_acl = output_slot.address();
-        let input = zama_fhe::Uint64Handle::durable(balance_handle(1), input_slot).unwrap();
-        let mut builder =
-            zama_fhe::EvalBuilder::new(context_id(9), zama_fhe::EvalAppAuthority::new(authority));
+        let input_key = encrypted_value_key(authority, 1);
+        let input_acl = input_key.address();
+        let output_key = encrypted_value_key(authority, 2);
+        let output_acl = output_key.address();
+        let input = zama_fhe::Uint64Handle::durable(balance_handle(1), input_key).unwrap();
+        let mut builder = zama_fhe::EvalBuilder::new(zama_fhe::EvalAppAuthority::new(authority));
         builder
             .add(
                 input,
                 zama_fhe::Scalar::<zama_fhe::Uint<64>>::u64(1),
-                zama_fhe::Output::durable(output_slot, access_policy(authority)),
+                zama_fhe::Output::durable(output_key, subjects(authority)),
             )
             .unwrap();
         (builder.finish().unwrap(), input_acl, output_acl, authority)

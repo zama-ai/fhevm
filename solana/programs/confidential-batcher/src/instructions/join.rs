@@ -147,7 +147,7 @@ pub fn join<'info>(
     let transferred = fhe::uint64_operand(&transferred_value)?;
     let joined_binding = fhe::DurableBinding::bind(
         ctx.accounts.pending_join_value.to_account_info(),
-        zama_fhe::DurableSlot::new(
+        zama_fhe::EncryptedValueKey::new(
             batch_key,
             batch_authority,
             zama_fhe::DurableLabel::new(pending_join_label(user)),
@@ -155,12 +155,11 @@ pub fn join<'info>(
         // The user decrypts their pending amount; the batch authority computes
         // refunds and claims from it; the join mint's compute signer lets
         // quit's transfer eval read it as the refund amount.
-        zama_fhe::AccessPolicy::from_subjects(vec![
-            zama_fhe::AccessSubject::owner(user),
-            zama_fhe::AccessSubject::compute(batch_authority),
-            zama_fhe::AccessSubject::compute(ctx.accounts.join_confidential_mint.compute_signer),
-        ])
-        .map_err(fhe::invalid_eval_plan)?,
+        vec![
+            user,
+            batch_authority,
+            ctx.accounts.join_confidential_mint.compute_signer,
+        ],
     )?;
     let previous_joined = match joined_binding.previous_handle() {
         Some(_) => Some(fhe::uint64_operand(&fhe::read_encrypted_value(
@@ -168,16 +167,6 @@ pub fn join<'info>(
         )?)?),
         None => None,
     };
-    let context_id = zama_fhe::EvalContextId::new(
-        solana_sha256_hasher::hashv(&[
-            b"confidential-batcher-join-v1",
-            batch_key.as_ref(),
-            user.as_ref(),
-            &transferred_value.current_handle,
-        ])
-        .to_bytes(),
-    )
-    .map_err(fhe::invalid_eval_plan)?;
     // The joined and transferred encrypted value accounts live in different ACL domains (the
     // batch vs the mint), so their PDAs are distinct by construction; the only
     // alias in this frame is the joined encrypted value account as both operand and output on
@@ -194,7 +183,6 @@ pub fn join<'info>(
             system_program: ctx.accounts.system_program.to_account_info(),
             deny_subject_records: ctx.remaining_accounts,
         },
-        context_id,
         vec![
             joined_binding.account_info(),
             ctx.accounts.user_transferred_value.to_account_info(),

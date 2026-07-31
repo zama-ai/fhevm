@@ -252,14 +252,12 @@ pub fn confidential_transfer_from_value<'info>(
         amount_value.has_subject(ctx.accounts.owner.key()),
         ConfidentialTokenError::AmountSpendSubjectMismatch
     );
-    let amount_handle = amount_value.current_handle;
     let amount_value_info = amount_value.to_account_info();
     let outcome = execute_transfer(
         ctx.accounts.as_transfer_accounts(ctx.remaining_accounts),
         ctx.bumps.compute_signer,
         TransferAmountSource::ExistingValue {
             amount_value: amount_value_info,
-            amount_handle,
         },
     )?;
     if let Some(outcome) = outcome {

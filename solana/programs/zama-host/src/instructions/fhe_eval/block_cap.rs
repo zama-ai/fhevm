@@ -1,16 +1,12 @@
 //! Stateful per-app, per-slot HCU block cap for [`super::fhe_eval`].
 //!
 //! Unlike the pure per-frame meter in [`super::hcu`], the block cap touches accounts (the per-app
-//! `HcuBlockMeter`) and a sysvar-derived slot, so it lives here and runs from the admission /
-//! execution phases rather than inside the pure walk.
+//! `HcuBlockMeter`) and a sysvar-derived slot, so it lives here rather than inside the pure walk.
 //!
-//! Two passes share one resolution path so they trip identically (single `Clock` slot, reused
-//! `frame_total`, same cap read from the read-only `host_config`):
-//! - [`check`] — read-only, in admission: reads the meter (or treats a not-yet-created meter as
-//!   `0`), asserts `used + frame_total <= cap`. No write, no lazy-create. An over-budget frame
-//!   therefore fails before execution burns CU or creates any ACL record.
-//! - [`charge`] — the single meter write, in execution: lazy-creates or lazy-resets, accumulates
-//!   with checked arithmetic (overflow fails closed), asserts the cap again, and writes once.
+//! [`charge`] is one resolve→assert→(create/reset)→write sequence with a single meter read. It
+//! runs after the pure per-frame meter and before the execution walk: `frame_total` is pure over
+//! the plan, so an over-budget frame is rejected before execution burns CU or creates any ACL
+//! record, and a mid-frame execution failure reverts the meter write along with everything else.
 //!
 //! Cap sentinels: `u64::MAX` = unrestricted (short-circuit, touch nothing), `0` = ban untrusted
 //! apps (trusted still bypass), otherwise the metering band.
@@ -31,8 +27,9 @@ use crate::state::{
     HCU_BLOCK_METER_SEED,
 };
 
-/// Read-only admission pass: no write, no lazy-create.
-pub(super) fn check<'info>(
+/// The single block-cap sequence: resolve trust, read the meter once, assert the cap with checked
+/// arithmetic (overflow fails closed), lazy-create/reset, write once.
+pub(super) fn charge<'info>(
     ctx: &Context<'info, FheEval<'info>>,
     frame_total: u64,
     slot: u64,
@@ -52,37 +49,6 @@ pub(super) fn check<'info>(
         return Err(error!(ZamaHostError::HcuBlockLimitExceeded));
     }
     // Metering band: an untrusted app must supply its meter (fail closed, never silently un-metered).
-    let meter = ctx
-        .accounts
-        .hcu_block_meter
-        .as_ref()
-        .ok_or(ZamaHostError::HcuBlockMeterMissing)?;
-    let (expected, bump) = hcu_block_meter_address(app);
-    let used = meter_used_for_slot(&meter.to_account_info(), app, expected, bump, slot)?;
-    let projected = used
-        .checked_add(frame_total)
-        .ok_or(ZamaHostError::HcuBlockLimitExceeded)?;
-    require!(projected <= cap, ZamaHostError::HcuBlockLimitExceeded);
-    Ok(())
-}
-
-/// Execution pass: the single meter write. Mirrors [`check`]'s resolution, then persists.
-pub(super) fn charge<'info>(
-    ctx: &Context<'info, FheEval<'info>>,
-    frame_total: u64,
-    slot: u64,
-) -> Result<()> {
-    let cap = ctx.accounts.host_config.hcu_block_cap_per_app;
-    if cap == u64::MAX {
-        return Ok(());
-    }
-    let app = ctx.accounts.compute_subject.key();
-    if resolve_trusted(ctx, app)? {
-        return Ok(());
-    }
-    if cap == 0 {
-        return Err(error!(ZamaHostError::HcuBlockLimitExceeded));
-    }
     let meter = ctx
         .accounts
         .hcu_block_meter
@@ -158,10 +124,10 @@ fn resolve_trusted<'info>(ctx: &Context<'info, FheEval<'info>>, app: Pubkey) -> 
 }
 
 /// Effective in-slot usage from a possibly-uninitialized meter. The supplied account must always be
-/// the canonical meter PDA — checked first, so a misaddressed meter is rejected cheaply in the
-/// read-only admission pass rather than only when `charge` tries to create it. A non-program-owned
-/// account (uninitialized / system-owned / squatted) is then treated as `0` — `charge`'s lazy-create
-/// rejects a squatter, and `check` never writes. A program-owned meter is validated
+/// the canonical meter PDA — checked first, so a misaddressed meter is rejected cheaply before
+/// `charge` tries to create it. A non-program-owned account (uninitialized / system-owned /
+/// squatted) is then treated as `0` — `charge`'s lazy-create
+/// rejects a squatter. A program-owned meter is validated
 /// (owner / length / recorded app / bump) before any field is read, then lazy-reset: a
 /// `last_seen_slot` other than the current slot means `0` for this frame.
 fn meter_used_for_slot(

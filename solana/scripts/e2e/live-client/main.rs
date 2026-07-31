@@ -36,7 +36,6 @@ struct DurableEvalTarget {
     encrypted_value_label: [u8; 32],
     value_key: [u8; 32],
     encrypted_value: Pubkey,
-    context_id: [u8; 32],
 }
 
 struct DurableEvalResult {
@@ -297,11 +296,6 @@ fn durable_eval_target(payer: &Rc<Keypair>, label_marker: u8) -> DurableEvalTarg
     let encrypted_value =
         encrypted_value_address(acl_domain_key, app_account, encrypted_value_label);
 
-    let mut context_id = [0u8; 32];
-    context_id[0] = 0xc0;
-    context_id[1] = label_marker;
-    context_id[24..32].copy_from_slice(&value.to_be_bytes());
-
     DurableEvalTarget {
         value,
         plaintext,
@@ -310,7 +304,6 @@ fn durable_eval_target(payer: &Rc<Keypair>, label_marker: u8) -> DurableEvalTarg
         encrypted_value_label,
         value_key,
         encrypted_value,
-        context_id,
     }
 }
 
@@ -496,19 +489,43 @@ fn existing_value_account_state(
     }
 }
 
-fn owner_subject(pubkey: Pubkey) -> zama_host::AclSubjectEntry {
-    zama_host::AclSubjectEntry { pubkey }
+/// Builds the frame's interned 32-byte constant pool while a flow assembles its steps.
+/// Interning deduplicates: repeated constants share one entry.
+#[derive(Default)]
+struct FramePool(Vec<[u8; 32]>);
+
+impl FramePool {
+    fn intern(&mut self, bytes: [u8; 32]) -> u8 {
+        if let Some(index) = self.0.iter().position(|entry| *entry == bytes) {
+            return u8::try_from(index).expect("frame pool fits u8");
+        }
+        let index = u8::try_from(self.0.len()).expect("frame pool fits u8");
+        self.0.push(bytes);
+        index
+    }
+
+    fn intern_key(&mut self, key: Pubkey) -> u8 {
+        self.intern(key.to_bytes())
+    }
+
+    fn intern_subjects(&mut self, subjects: impl IntoIterator<Item = Pubkey>) -> Vec<u8> {
+        subjects
+            .into_iter()
+            .map(|subject| self.intern_key(subject))
+            .collect()
+    }
 }
 
 #[allow(clippy::too_many_arguments)]
 fn durable_output(
     program: &Program<Rc<Keypair>>,
+    pool: &mut FramePool,
     encrypted_value: Pubkey,
-    index: u16,
+    index: u8,
     acl_domain_key: Pubkey,
     app_account: Pubkey,
     encrypted_value_label: [u8; 32],
-    subjects: Vec<zama_host::AclSubjectEntry>,
+    subjects: Vec<Pubkey>,
 ) -> Result<zama_host::FheEvalOutput, Box<dyn std::error::Error>> {
     let (previous_handle, previous_subjects) =
         match existing_value_account_state(program, encrypted_value)? {
@@ -518,10 +535,10 @@ fn durable_output(
     Ok(zama_host::FheEvalOutput::AllowedDurable {
         output_encrypted_value_index: index,
         output_app_account_authority_index: None,
-        output_acl_domain_key: acl_domain_key,
-        output_app_account: app_account,
-        output_encrypted_value_label: encrypted_value_label,
-        output_subjects: subjects,
+        output_acl_domain_key_index: pool.intern_key(acl_domain_key),
+        output_app_account_index: pool.intern_key(app_account),
+        output_encrypted_value_label_index: pool.intern(encrypted_value_label),
+        output_subject_indexes: pool.intern_subjects(subjects),
         previous_handle,
         previous_subjects,
         make_public: false,
@@ -697,10 +714,12 @@ fn trivial_encrypt_eval_with_label(
 
     let (zama_event_authority, _) =
         Pubkey::find_program_address(&[EVENT_AUTHORITY_SEED], &zama_host::ID);
-    let subjects = vec![owner_subject(payer.pubkey())];
+    let subjects = vec![payer.pubkey()];
 
+    let mut pool = FramePool::default();
     let output = durable_output(
         host,
+        &mut pool,
         target.encrypted_value,
         0,
         target.acl_domain_key,
@@ -709,7 +728,8 @@ fn trivial_encrypt_eval_with_label(
         subjects,
     )?;
     let args = zama_host::FheEvalArgs {
-        context_id: target.context_id,
+        account_count: 1,
+        pool: pool.0,
         steps: vec![zama_host::FheEvalStep::TrivialEncrypt {
             plaintext: target.plaintext,
             fhe_type,
@@ -1126,12 +1146,7 @@ fn fhe_eval_verified_input_add(
         encrypted_value_address(acl_domain_key, app_account, encrypted_value_label);
     let (zama_event_authority, _) =
         Pubkey::find_program_address(&[EVENT_AUTHORITY_SEED], &zama_host::ID);
-    let subjects = vec![owner_subject(payer.pubkey())];
-
-    // Non-zero context-id domain separator for this eval's transient handles.
-    let mut context_id = [0u8; 32];
-    context_id[0] = 0xe0;
-    context_id[24..32].copy_from_slice(&input_handle[24..32]);
+    let subjects = vec![payer.pubkey()];
 
     let attestation = zama_host::CoprocessorInputAttestation {
         input_handle,
@@ -1144,17 +1159,21 @@ fn fhe_eval_verified_input_add(
         signatures: vec![signature],
     };
 
+    let mut pool = FramePool::default();
     let args = zama_host::FheEvalArgs {
-        context_id,
+        account_count: 1,
         steps: vec![zama_host::FheEvalStep::Binary {
             op: zama_host::FheBinaryOpCode::Add,
             lhs: zama_host::FheEvalOperand::VerifiedInput {
                 attestation: Box::new(attestation),
             },
-            rhs: zama_host::FheEvalOperand::Scalar(scalar),
+            rhs: zama_host::FheEvalOperand::Scalar {
+                value_index: pool.intern(scalar),
+            },
             output_fhe_type: fhe_type,
             output: durable_output(
                 host,
+                &mut pool,
                 output_encrypted_value,
                 0,
                 acl_domain_key,
@@ -1163,6 +1182,7 @@ fn fhe_eval_verified_input_add(
                 subjects,
             )?,
         }],
+        pool: pool.0,
     };
 
     let input_hex: String = input_handle.iter().map(|b| format!("{b:02x}")).collect();
@@ -1795,17 +1815,16 @@ fn create_durable_public_decrypt_operand(
     let encrypted_value = encrypted_value_address(acl_domain_key, app_account, label);
     let (zama_event_authority, _) =
         Pubkey::find_program_address(&[EVENT_AUTHORITY_SEED], &zama_host::ID);
-    let subjects = vec![zama_host::AclSubjectEntry::user(payer.pubkey())];
-    let mut context_id = [0u8; 32];
-    context_id[0] = 0x0a;
-    context_id[1..9].copy_from_slice(&label[0..8]);
+    let subjects = vec![payer.pubkey()];
+    let mut pool = FramePool::default();
     let args = zama_host::FheEvalArgs {
-        context_id,
+        account_count: 1,
         steps: vec![zama_host::FheEvalStep::TrivialEncrypt {
             plaintext,
             fhe_type,
             output: durable_output(
                 host,
+                &mut pool,
                 encrypted_value,
                 0,
                 acl_domain_key,
@@ -1814,6 +1833,7 @@ fn create_durable_public_decrypt_operand(
                 subjects,
             )?,
         }],
+        pool: pool.0,
     };
     host.request()
         .accounts(zama_host::accounts::FheEval {
@@ -1877,15 +1897,8 @@ fn fhe_eval_binary(
         encrypted_value_address(acl_domain_key, app_account, encrypted_value_label);
     let (zama_event_authority, _) =
         Pubkey::find_program_address(&[EVENT_AUTHORITY_SEED], &zama_host::ID);
-    let subjects = vec![zama_host::AclSubjectEntry::user(payer.pubkey())];
-
-    let mut context_id = [0u8; 32];
-    context_id[0] = 0xb0;
-    context_id[1] = op.as_u8();
-    context_id[2] = in_fhe_type;
-    context_id[3] = if b_scalar { 1 } else { 0 };
-    context_id[8..16].copy_from_slice(&a.to_be_bytes());
-    context_id[16..24].copy_from_slice(&b.to_be_bytes());
+    let subjects = vec![payer.pubkey()];
+    let mut pool = FramePool::default();
 
     // Operand A. Label = marker 0x0a|op|type|pos|value → distinct PDA per operand/op (no collisions).
     let mut operand_label_a = [0x0au8; 32];
@@ -1907,7 +1920,9 @@ fn fhe_eval_binary(
     let rhs_operand = if b_scalar {
         let mut scalar_b = [0u8; 32];
         scalar_b[24..32].copy_from_slice(&b.to_be_bytes());
-        zama_host::FheEvalOperand::Scalar(scalar_b)
+        zama_host::FheEvalOperand::Scalar {
+            value_index: pool.intern(scalar_b),
+        }
     } else {
         let mut operand_label_b = [0x0au8; 32];
         operand_label_b[1] = op.as_u8();
@@ -1924,22 +1939,23 @@ fn fhe_eval_binary(
         )?;
         operand_values.push(encrypted_value_b);
         zama_host::FheEvalOperand::AllowedDurable {
-            handle: handle_b,
+            handle_index: pool.intern(handle_b),
             encrypted_value_index: 1,
         }
     };
 
-    let output_index = operand_values.len() as u16;
+    let output_index = operand_values.len() as u8;
     let steps = vec![zama_host::FheEvalStep::Binary {
         op,
         lhs: zama_host::FheEvalOperand::AllowedDurable {
-            handle: handle_a,
+            handle_index: pool.intern(handle_a),
             encrypted_value_index: 0,
         },
         rhs: rhs_operand,
         output_fhe_type,
         output: durable_output(
             host,
+            &mut pool,
             output_encrypted_value,
             output_index,
             acl_domain_key,
@@ -1976,7 +1992,11 @@ fn fhe_eval_binary(
         })
         .accounts(remaining)
         .args(zama_host::instruction::FheEval {
-            args: zama_host::FheEvalArgs { context_id, steps },
+            args: zama_host::FheEvalArgs {
+                account_count: (operand_values.len() + 1) as u8,
+                pool: pool.0,
+                steps,
+            },
         })
         .send_with_spinner_and_config(anchor_client::RpcSendTransactionConfig {
             skip_preflight: true,
@@ -2035,14 +2055,7 @@ fn fhe_eval_unary(
         encrypted_value_address(acl_domain_key, app_account, encrypted_value_label);
     let (zama_event_authority, _) =
         Pubkey::find_program_address(&[EVENT_AUTHORITY_SEED], &zama_host::ID);
-    let subjects = vec![zama_host::AclSubjectEntry::user(payer.pubkey())];
-
-    let mut context_id = [0u8; 32];
-    context_id[0] = 0xb1;
-    context_id[1] = op.as_u8();
-    context_id[2] = in_fhe_type;
-    context_id[3] = out_fhe_type;
-    context_id[24..32].copy_from_slice(&a.to_be_bytes());
+    let subjects = vec![payer.pubkey()];
 
     // Encrypted operand as a durable public-decrypt handle (propagates to output; AllowedLocal → 6063).
     let mut operand_label_a = [0x0bu8; 32];
@@ -2059,17 +2072,19 @@ fn fhe_eval_unary(
         operand_label_a,
     )?;
 
+    let mut pool = FramePool::default();
     let args = zama_host::FheEvalArgs {
-        context_id,
+        account_count: 2,
         steps: vec![zama_host::FheEvalStep::Unary {
             op,
             operand: zama_host::FheEvalOperand::AllowedDurable {
-                handle: handle_a,
+                handle_index: pool.intern(handle_a),
                 encrypted_value_index: 0,
             },
             output_fhe_type: out_fhe_type,
             output: durable_output(
                 host,
+                &mut pool,
                 output_encrypted_value,
                 1,
                 acl_domain_key,
@@ -2078,6 +2093,7 @@ fn fhe_eval_unary(
                 subjects,
             )?,
         }],
+        pool: pool.0,
     };
 
     let sig = host
@@ -2158,14 +2174,7 @@ fn fhe_eval_ternary(
         encrypted_value_address(acl_domain_key, app_account, encrypted_value_label);
     let (zama_event_authority, _) =
         Pubkey::find_program_address(&[EVENT_AUTHORITY_SEED], &zama_host::ID);
-    let subjects = vec![zama_host::AclSubjectEntry::user(payer.pubkey())];
-
-    let mut context_id = [0u8; 32];
-    context_id[0] = 0xb2;
-    context_id[1] = ctrl as u8;
-    context_id[2] = fhe_type;
-    context_id[8..16].copy_from_slice(&if_true.to_be_bytes());
-    context_id[16..24].copy_from_slice(&if_false.to_be_bytes());
+    let subjects = vec![payer.pubkey()];
 
     let expected = if ctrl != 0 { if_true } else { if_false };
 
@@ -2203,25 +2212,27 @@ fn fhe_eval_ternary(
         label_false,
     )?;
 
+    let mut pool = FramePool::default();
     let args = zama_host::FheEvalArgs {
-        context_id,
+        account_count: 4,
         steps: vec![zama_host::FheEvalStep::Ternary {
             op: zama_host::FheTernaryOpCode::IfThenElse,
             control: zama_host::FheEvalOperand::AllowedDurable {
-                handle: h_ctrl,
+                handle_index: pool.intern(h_ctrl),
                 encrypted_value_index: 0,
             },
             if_true: zama_host::FheEvalOperand::AllowedDurable {
-                handle: h_true,
+                handle_index: pool.intern(h_true),
                 encrypted_value_index: 1,
             },
             if_false: zama_host::FheEvalOperand::AllowedDurable {
-                handle: h_false,
+                handle_index: pool.intern(h_false),
                 encrypted_value_index: 2,
             },
             output_fhe_type: fhe_type,
             output: durable_output(
                 host,
+                &mut pool,
                 output_encrypted_value,
                 3,
                 acl_domain_key,
@@ -2230,6 +2241,7 @@ fn fhe_eval_ternary(
                 subjects,
             )?,
         }],
+        pool: pool.0,
     };
 
     let sig = host
@@ -2301,23 +2313,20 @@ fn fhe_eval_rand_bounded(
         encrypted_value_address(acl_domain_key, app_account, encrypted_value_label);
     let (zama_event_authority, _) =
         Pubkey::find_program_address(&[EVENT_AUTHORITY_SEED], &zama_host::ID);
-    let subjects = vec![zama_host::AclSubjectEntry::user(payer.pubkey())];
-
-    let mut context_id = [0u8; 32];
-    context_id[0] = 0xb3;
-    context_id[1] = fhe_type;
-    context_id[24..32].copy_from_slice(&upper.to_be_bytes());
+    let subjects = vec![payer.pubkey()];
 
     let mut upper_bound = [0u8; 32];
     upper_bound[24..32].copy_from_slice(&upper.to_be_bytes());
 
+    let mut pool = FramePool::default();
     let args = zama_host::FheEvalArgs {
-        context_id,
+        account_count: 1,
         steps: vec![zama_host::FheEvalStep::RandBounded {
             upper_bound,
             fhe_type,
             output: durable_output(
                 host,
+                &mut pool,
                 output_encrypted_value,
                 0,
                 acl_domain_key,
@@ -2326,6 +2335,7 @@ fn fhe_eval_rand_bounded(
                 subjects,
             )?,
         }],
+        pool: pool.0,
     };
 
     let sig = host
@@ -2392,12 +2402,7 @@ fn fhe_eval_sum(
         encrypted_value_address(acl_domain_key, app_account, encrypted_value_label);
     let (zama_event_authority, _) =
         Pubkey::find_program_address(&[EVENT_AUTHORITY_SEED], &zama_host::ID);
-    let subjects = vec![zama_host::AclSubjectEntry::user(payer.pubkey())];
-
-    let mut context_id = [0u8; 32];
-    context_id[0] = 0xa0;
-    context_id[16..24].copy_from_slice(&a.to_be_bytes());
-    context_id[24..32].copy_from_slice(&b.to_be_bytes());
+    let subjects = vec![payer.pubkey()];
 
     // Each addend a durable public-decrypt handle. remaining_accounts: [a, b, output].
     let mut label_a = [0x0du8; 32];
@@ -2414,22 +2419,24 @@ fn fhe_eval_sum(
     let (value_b, h_b) =
         create_durable_public_decrypt_operand(host, payer, host_config, b, fhe_type, label_b)?;
 
+    let mut pool = FramePool::default();
     let args = zama_host::FheEvalArgs {
-        context_id,
+        account_count: 3,
         steps: vec![zama_host::FheEvalStep::Sum {
             operands: vec![
                 zama_host::FheEvalOperand::AllowedDurable {
-                    handle: h_a,
+                    handle_index: pool.intern(h_a),
                     encrypted_value_index: 0,
                 },
                 zama_host::FheEvalOperand::AllowedDurable {
-                    handle: h_b,
+                    handle_index: pool.intern(h_b),
                     encrypted_value_index: 1,
                 },
             ],
             fhe_type,
             output: durable_output(
                 host,
+                &mut pool,
                 output_encrypted_value,
                 2,
                 acl_domain_key,
@@ -2438,6 +2445,7 @@ fn fhe_eval_sum(
                 subjects,
             )?,
         }],
+        pool: pool.0,
     };
 
     let sig = host
@@ -2504,11 +2512,8 @@ fn fhe_eval_is_in(
         encrypted_value_address(acl_domain_key, app_account, encrypted_value_label);
     let (zama_event_authority, _) =
         Pubkey::find_program_address(&[EVENT_AUTHORITY_SEED], &zama_host::ID);
-    let subjects = vec![zama_host::AclSubjectEntry::user(payer.pubkey())];
-
-    let mut context_id = [0u8; 32];
-    context_id[0] = 0xa1;
-    context_id[24..32].copy_from_slice(&value.to_be_bytes());
+    let subjects = vec![payer.pubkey()];
+    let mut pool = FramePool::default();
 
     // value + set as durable public-decrypt handles. remaining_accounts: [value, set.., output].
     let set_values: [u64; 3] = [10, 42, 100];
@@ -2543,22 +2548,23 @@ fn fhe_eval_is_in(
             label,
         )?;
         set_operands.push(zama_host::FheEvalOperand::AllowedDurable {
-            handle,
-            encrypted_value_index: operand_values.len() as u16,
+            handle_index: pool.intern(handle),
+            encrypted_value_index: operand_values.len() as u8,
         });
         operand_values.push(encrypted_value);
     }
-    let output_index = operand_values.len() as u16;
+    let output_index = operand_values.len() as u8;
 
     let steps = vec![zama_host::FheEvalStep::IsIn {
         value: zama_host::FheEvalOperand::AllowedDurable {
-            handle: h_value,
+            handle_index: pool.intern(h_value),
             encrypted_value_index: 0,
         },
         set: set_operands,
         fhe_type: elem_fhe_type,
         output: durable_output(
             host,
+            &mut pool,
             output_encrypted_value,
             output_index,
             acl_domain_key,
@@ -2568,7 +2574,11 @@ fn fhe_eval_is_in(
         )?,
     }];
 
-    let args = zama_host::FheEvalArgs { context_id, steps };
+    let args = zama_host::FheEvalArgs {
+        account_count: (operand_values.len() + 1) as u8,
+        pool: pool.0,
+        steps,
+    };
     let in_set = set_values.contains(&value);
 
     let mut remaining: Vec<AccountMeta> = operand_values
@@ -2646,13 +2656,7 @@ fn fhe_eval_mul_div(
         encrypted_value_address(acl_domain_key, app_account, encrypted_value_label);
     let (zama_event_authority, _) =
         Pubkey::find_program_address(&[EVENT_AUTHORITY_SEED], &zama_host::ID);
-    let subjects = vec![zama_host::AclSubjectEntry::user(payer.pubkey())];
-
-    let mut context_id = [0u8; 32];
-    context_id[0] = 0xa2;
-    context_id[8..16].copy_from_slice(&a.to_be_bytes());
-    context_id[16..24].copy_from_slice(&b.to_be_bytes());
-    context_id[24..32].copy_from_slice(&d.to_be_bytes());
+    let subjects = vec![payer.pubkey()];
 
     let mut scalar_b = [0u8; 32];
     scalar_b[24..32].copy_from_slice(&b.to_be_bytes());
@@ -2666,18 +2670,22 @@ fn fhe_eval_mul_div(
     let (encrypted_value_a, h_a) =
         create_durable_public_decrypt_operand(host, payer, host_config, a, fhe_type, label_a)?;
 
+    let mut pool = FramePool::default();
     let args = zama_host::FheEvalArgs {
-        context_id,
+        account_count: 2,
         steps: vec![zama_host::FheEvalStep::MulDiv {
             factor1: zama_host::FheEvalOperand::AllowedDurable {
-                handle: h_a,
+                handle_index: pool.intern(h_a),
                 encrypted_value_index: 0,
             },
-            factor2: zama_host::FheEvalOperand::Scalar(scalar_b),
+            factor2: zama_host::FheEvalOperand::Scalar {
+                value_index: pool.intern(scalar_b),
+            },
             divisor,
             output_fhe_type: fhe_type,
             output: durable_output(
                 host,
+                &mut pool,
                 output_encrypted_value,
                 1,
                 acl_domain_key,
@@ -2686,6 +2694,7 @@ fn fhe_eval_mul_div(
                 subjects,
             )?,
         }],
+        pool: pool.0,
     };
 
     let expected = a * b / d;

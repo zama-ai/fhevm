@@ -84,18 +84,10 @@ fn create_random_amount_inner<'info>(
     let encrypted_value_label = amount_kind.encrypted_value_label();
     let amount_output = fhe::DurableOutput::new(
         ctx.accounts.amount_value.to_account_info(),
-        durable_slot(mint_key, owner, encrypted_value_label),
+        encrypted_value_key(mint_key, owner, encrypted_value_label),
         fhe::DurableAudience::compute_only(ctx.accounts.compute_signer.key()),
     )?;
-    let context_tag = if upper_bound.is_some() {
-        b"random-bounded-amount".as_slice()
-    } else {
-        b"random-amount".as_slice()
-    };
-    let context_id =
-        transfer_eval_context(context_tag, mint_key, owner, owner, encrypted_value_label)?;
-    let mut builder =
-        zama_fhe::EvalBuilder::new(context_id, zama_fhe::EvalAppAuthority::new(owner));
+    let mut builder = zama_fhe::EvalBuilder::new(zama_fhe::EvalAppAuthority::new(owner));
     match upper_bound {
         Some(upper_bound) => builder
             .rand_bounded_u64(
