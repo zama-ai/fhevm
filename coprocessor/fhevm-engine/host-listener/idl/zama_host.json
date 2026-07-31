@@ -851,6 +851,48 @@
       "args": []
     },
     {
+      "name": "revoke_permits",
+      "docs": [
+        "Revokes every outstanding permit the signer has issued, by raising their",
+        "invalidation watermark to the current clock."
+      ],
+      "discriminator": [
+        51,
+        25,
+        89,
+        125,
+        125,
+        90,
+        200,
+        130
+      ],
+      "accounts": [
+        {
+          "name": "user",
+          "docs": [
+            "The user revoking their permits, and the payer for the watermark account."
+          ],
+          "writable": true,
+          "signer": true
+        },
+        {
+          "name": "invalidation",
+          "docs": [
+            "then created if absent."
+          ],
+          "writable": true
+        },
+        {
+          "name": "system_program",
+          "docs": [
+            "System program, used when the watermark account has to be created."
+          ],
+          "address": "11111111111111111111111111111111"
+        }
+      ],
+      "args": []
+    },
+    {
       "name": "set_coprocessor_signers",
       "docs": [
         "Replaces the registered coprocessor signer set + threshold for input attestations",
@@ -2212,6 +2254,21 @@
       "code": 6079,
       "name": "ZeroKmsSigner",
       "msg": "KMS signer set contains the zero address"
+    },
+    {
+      "code": 6080,
+      "name": "PermitInvalidationPdaMismatch",
+      "msg": "permit invalidation account is not the canonical account for the signer"
+    },
+    {
+      "code": 6081,
+      "name": "PermitInvalidationAccountInvalid",
+      "msg": "permit invalidation account is not a valid watermark record"
+    },
+    {
+      "code": 6082,
+      "name": "ClockBeforeEpoch",
+      "msg": "clock is before the unix epoch"
     }
   ],
   "types": [

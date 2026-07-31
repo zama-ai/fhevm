@@ -29,6 +29,11 @@ extend-exclude = [
     "fhevm-keys/",
     "charts/",
 
+    # Generated permit vectors: the signed texts embed base58 pubkeys, whose
+    # random fragments read as misspelled words. The keys are part of the frozen
+    # canon four implementations consume, so they cannot be reworded.
+    "solana/test-fixtures/permit/permit_v1.json",
+
     # Protocol buffers (generated)
     "proto/",
 
