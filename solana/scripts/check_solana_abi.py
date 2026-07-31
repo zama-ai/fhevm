@@ -66,6 +66,7 @@ PINNED_SCHEMAS = [
     ("zama_host", "instruction_args", "delegate_for_user_decryption", True),
     ("zama_host", "instruction_args", "destroy_kms_context", True),
     ("zama_host", "instruction_args", "revoke_delegation_for_user_decryption", True),
+    ("zama_host", "instruction_args", "revoke_permits", True),
     ("zama_host", "instruction_args", "set_coprocessor_signers", True),
     ("zama_host", "instruction_args", "set_deny_subject", True),
     ("zama_host", "instruction_args", "set_grant_deny_list_enabled", True),

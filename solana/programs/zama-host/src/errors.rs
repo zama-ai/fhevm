@@ -282,4 +282,23 @@ pub enum ZamaHostError {
     /// The KMS signer set contains the zero address, which can never be a valid recovered EVM signer.
     #[msg("KMS signer set contains the zero address")]
     ZeroKmsSigner,
+
+    /// The supplied invalidation account is not at the canonical watermark address for
+    /// the signing user, or its stored bump is not the canonical one. The watermark is
+    /// keyed by the signer precisely so that one user cannot move another user's
+    /// watermark; this is where that is enforced.
+    #[msg("permit invalidation account is not the canonical account for the signer")]
+    PermitInvalidationPdaMismatch,
+    /// The account at the canonical watermark address is not a watermark record this
+    /// program wrote: owned by another program, of the wrong size, carrying another
+    /// record type's discriminator, or naming a different user than the signer. Rejected
+    /// rather than reinterpreted or overwritten.
+    #[msg("permit invalidation account is not a valid watermark record")]
+    PermitInvalidationAccountInvalid,
+    /// The runtime clock reports a time before the unix epoch. The watermark is an
+    /// unsigned number of seconds, and coercing a negative time into it would jump the
+    /// watermark to the far future and kill every permit the user will ever sign — so
+    /// this fails closed instead.
+    #[msg("clock is before the unix epoch")]
+    ClockBeforeEpoch,
 }

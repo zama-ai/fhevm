@@ -1,0 +1,75 @@
+{
+  "schema": "zama-solana-permit-invalidation-account/v1",
+  "description": "One PermitInvalidation account, byte for byte as the Solana host program writes it. The revoke_permits instruction takes this account unchecked, so no generated interface description carries its layout and the KMS Connector decodes the offsets below by hand out of an account snapshot.",
+  "regenerate_with": "bash scripts/update-permit-invalidation-fixture.sh",
+  "program": {
+    "id_base58": "6AtbvED1rfX68aCT1tYgU1aeu4kFksPDxZG9gtB1Fgtu",
+    "id_hex": "4cd3022dff504a675caf2d9b4f4014d0b3dc3ea17ffb97ba355cec5a933a30ee"
+  },
+  "address": {
+    "seeds": [
+      {
+        "name": "permit-invalidation",
+        "kind": "utf8_literal",
+        "hex": "7065726d69742d696e76616c69646174696f6e",
+        "utf8": "permit-invalidation"
+      },
+      {
+        "name": "user",
+        "kind": "pubkey",
+        "hex": "c11a7cf8eb1cdfcb1bcb84b9d8314ddec3bb1410f0a95badd9c4384f643a6427"
+      }
+    ],
+    "address_base58": "3YqHnYQXR35pwBSErYShtp7JdZ73rcjJf6wA6Z9tAkHX",
+    "address_hex": "25defadcdd9175cbb43980b8dfd7610208d181b5d8494e1ccbc3b2e0323060e2",
+    "bump": 254
+  },
+  "produced_by": {
+    "instruction": "revoke_permits",
+    "prior_account_state": "absent — the user's first revocation, so the stored watermark reads as zero and the clock wins",
+    "clock_unix_timestamp": "1767229380"
+  },
+  "account": {
+    "owner_base58": "6AtbvED1rfX68aCT1tYgU1aeu4kFksPDxZG9gtB1Fgtu",
+    "data_len": 49,
+    "data_hex": "ec8bdba9b922e988c11a7cf8eb1cdfcb1bcb84b9d8314ddec3bb1410f0a95badd9c4384f643a6427c4c7556900000000fe",
+    "discriminator_hex": "ec8bdba9b922e988",
+    "discriminator_preimage_utf8": "account:PermitInvalidation",
+    "layout": "discriminator(8) | user(32) | invalidation_watermark(u64 little-endian) | bump(u8)"
+  },
+  "fields": [
+    {
+      "name": "discriminator",
+      "offset": 0,
+      "length": 8,
+      "encoding": "bytes",
+      "value": "ec8bdba9b922e988",
+      "comment": "First eight bytes of sha256(\"account:PermitInvalidation\"). Anything else at this offset is another account type."
+    },
+    {
+      "name": "user",
+      "offset": 8,
+      "length": 32,
+      "encoding": "pubkey",
+      "value": "c11a7cf8eb1cdfcb1bcb84b9d8314ddec3bb1410f0a95badd9c4384f643a6427",
+      "value_base58": "Dzo7VaLffWBjA59P59wUCbRupUFKLts9BjFeTpM8G2EA",
+      "comment": "The user whose permits this watermark governs. Implied by the address, stored so a decoded account can be checked against the key it was fetched under."
+    },
+    {
+      "name": "invalidation_watermark",
+      "offset": 40,
+      "length": 8,
+      "encoding": "u64_le",
+      "value": "1767229380",
+      "comment": "Unix seconds of the user's last revocation, never decreasing. A permit whose validity window starts before this is dead. An absent account reads as zero."
+    },
+    {
+      "name": "bump",
+      "offset": 48,
+      "length": 1,
+      "encoding": "u8",
+      "value": "254",
+      "comment": "The bump the canonical derivation lands on for this user."
+    }
+  ]
+}

@@ -393,6 +393,14 @@
     },
     {
       "category": "instruction_args",
+      "fixture_hex": "3319597d7d5ac882",
+      "fixture_len": 8,
+      "name": "revoke_permits",
+      "program": "zama_host",
+      "schema_hash": "0a83caefd47020112857b9b721617acf1d7b5601e50e9d399c5476b7241f5abf"
+    },
+    {
+      "category": "instruction_args",
       "fixture_hex": "261e3b2ce901c2b1010000000102030405060708090a0b0c0d0e0f101112131402",
       "fixture_len": 33,
       "name": "set_coprocessor_signers",
