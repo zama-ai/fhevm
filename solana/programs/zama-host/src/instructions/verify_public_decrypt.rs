@@ -15,7 +15,10 @@
 //! operator calls `destroyKmsContext(N)`. Rotation for hygiene keeps in-flight work alive;
 //! `destroy_kms_context(N)` is the revocation lever that instantly invalidates every outstanding
 //! N-cert. The verified context id is surfaced via `return_data` so a calling program can layer its
-//! own policy (accept any live context, or demand current-only) on top.
+//! own policy (accept any live context, or demand current-only) on top. A consumer that ignores the
+//! returned context id is thereby choosing the permissive policy — it accepts a certificate from
+//! *any* live context; demanding current-only means comparing the returned id against
+//! `host_config.current_kms_context_id` in the consuming program.
 
 use anchor_lang::prelude::*;
 use anchor_lang::solana_program::program::set_return_data;

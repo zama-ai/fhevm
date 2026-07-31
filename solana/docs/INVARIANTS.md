@@ -156,6 +156,13 @@ update, encrypted value ID…).
     a caller controlling N allowed subjects has N per-slot budgets. The
     multiplier is bounded by grant control — each subject must first be allowed
     on real values (unanchored batches are rejected under a finite cap).
+51. **[HOLDS]** The optional HCU accounts on `fhe_execute` are tri-state, and
+    the third state fails closed: present + program-owned + well-formed ⇒ used
+    (`hcu_trusted_app_record: trusted == true` bypasses the cap;
+    `hcu_block_meter` charges the subject's per-slot budget); absent (`None`) ⇒
+    the untrusted default (a metered subject that omits its meter is rejected,
+    not unmetered); present but malformed or foreign-owned ⇒ the batch is
+    rejected outright.
 
 ## G. Decrypt authorization (gateway, relayer, KMS)
 

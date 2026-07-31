@@ -64,6 +64,10 @@ pub struct SolanaIngestStats {
     pub inserted_rows: usize,
 }
 
+/// The coprocessor schema's 32-byte `transaction_id` for a Solana transaction is
+/// `sha256(signature_bytes)`: Solana's native transaction id is the 64-byte ed25519 signature,
+/// hashed down here to fit the EVM-shaped 32-byte column. Anything joining coprocessor rows back
+/// to a Solana explorer must apply this same mapping.
 pub fn solana_transaction_id(signature_bytes: &[u8]) -> TransactionHash {
     let digest: [u8; 32] = Sha256::digest(signature_bytes).into();
     TransactionHash::from(digest)

@@ -1,4 +1,17 @@
 //! Yellowstone gRPC reconstruction path for the Solana host listener.
+//!
+//! Two operational limits live here, stated in the listener's own docs and not only in the
+//! decisions log (DD-025/DD-028):
+//!
+//! - **No reorg unwind.** Blocks are ingested at confirmed commitment and never rolled back;
+//!   work scheduled from a minority fork is wasted, never reverted. This is safe only because
+//!   scheduling is decoupled from authorization — the KMS re-checks live on-chain state before
+//!   releasing any plaintext (INVARIANTS #31/#32).
+//! - **Version pairing.** Handle re-derivation is byte-identical to the program because the
+//!   listener links the program crate itself (INVARIANTS #28) — which silently assumes the
+//!   deployed program and the running listener were built from the same revision. There is no
+//!   runtime handshake; the operational rule is to deploy both from the same rev
+//!   (INVARIANTS #33).
 
 use std::collections::{HashMap, VecDeque};
 use std::fmt;

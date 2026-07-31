@@ -6,6 +6,14 @@ use super::*;
 ///
 /// Gateway/KMS payloads do not yet carry these records, but the account shape is
 /// present so the final witness format has a concrete Solana state target.
+///
+/// Freshness contract for the future KMS consumer (stated here so the integration
+/// doesn't have to reverse-engineer it): `delegation_counter` is a strictly monotonic
+/// version — of two snapshots of the same record, the higher counter is authoritative —
+/// and `last_update_slot` lets a reader require the witness be at least as fresh as a
+/// slot it has observed. Writes require `last_update_slot < current slot`, so a record
+/// mutates at most once per slot and every `(delegation_counter, last_update_slot)`
+/// pair is unambiguous.
 #[account]
 pub struct UserDecryptionDelegation {
     /// User granting delegated decrypt rights.

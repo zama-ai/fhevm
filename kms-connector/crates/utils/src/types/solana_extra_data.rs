@@ -209,6 +209,10 @@ pub struct SolanaUserDecryptExtraData {
 /// Returns `None` unless the blob is exactly the proof-tail version and its length prefix matches
 /// the full body. Public decrypt uses this strict form because a missing or malformed proof must
 /// fail closed instead of silently routing to a no-proof path.
+///
+/// The client-side encoder is `buildSolanaUserDecryptMmrProofExtraData` in
+/// `sdk/js-sdk/src/core/coprocessor/SolanaUserDecrypt-p.ts` — a hand-mirrored codec across
+/// languages (TypeScript there, Rust here); the two layouts must change together.
 pub fn parse_solana_mmr_proof_extra_data(extra_data: &[u8]) -> Option<SolanaUserDecryptExtraData> {
     if extra_data.len() < 33 || extra_data[0] != SOLANA_EXTRA_DATA_VERSION_MMR_PROOF {
         return None;
