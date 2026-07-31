@@ -35,8 +35,8 @@ async fn test_get_ciphertext_from_s3_rfc023_url_format() -> anyhow::Result<()> {
         .build();
     let s3_client = s3_http_client()?;
 
-    // This bucket only stores the ciphertext under the RFC-023 layout (`{handle}/{context_id}`),
-    // so a successful retrieval cannot have gone through the old-URL fallback.
+    // This bucket only stores the ciphertext under the `ct128/{handle}/{context_id}` RFC-023
+    // layout, so a successful retrieval cannot have gone through the old-URL fallback.
     let bucket_url = format!("{}/{S3_CT_RFC023_BUCKET}", test_instance.s3_url());
     let sns_ct = stored_sns_ct()?;
     let ct = retrieve_s3_ciphertext(&s3_client, &bucket_url, &sns_ct, S3_CT_DIGEST)
@@ -56,7 +56,7 @@ async fn test_get_ciphertext_from_s3_old_url_format() -> anyhow::Result<()> {
         .build();
     let s3_client = s3_http_client()?;
 
-    let bucket_url = format!("{}/ct128", test_instance.s3_url());
+    let bucket_url = format!("{}/copro", test_instance.s3_url());
     let sns_ct = stored_sns_ct()?;
     let ct = retrieve_s3_ciphertext(&s3_client, &bucket_url, &sns_ct, S3_CT_DIGEST)
         .await
@@ -84,7 +84,7 @@ async fn test_get_unstored_s3_ciphertext() -> anyhow::Result<()> {
         .build();
     let s3_client = s3_http_client()?;
 
-    let bucket_url = format!("{}/ct128", test_instance.s3_url());
+    let bucket_url = format!("{}/copro", test_instance.s3_url());
     let sns_ct = SnsCiphertextMaterial {
         ctHandle: rand_u256().into(),
         snsCiphertextDigest: <[u8; 32]>::try_from(hex::decode(S3_CT_UNSTORED)?)

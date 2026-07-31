@@ -162,8 +162,8 @@ services:
       - --work-items-batch-size=20
       - --pg-polling-interval=30
       - --pg-pool-connections=10
-      - --bucket-name-ct64=ct64
-      - --bucket-name-ct128=ct128
+      - --bucket-name-ct64=copro
+      - --bucket-name-ct128=copro
       - --s3-max-concurrent-uploads=100
       - --s3-max-retries-per-upload=100
       - --s3-max-backoff=10s
