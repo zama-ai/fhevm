@@ -14,8 +14,9 @@ use solana_proof_source::{CanonicalTransaction, CompletedBlock, RawInstruction};
 use solana_proof_store::{
     apply_instruction, decode_program_instructions, reduce_completed_block, ApplyOutcome,
     DecodedInstruction, EncryptedValueAccountReplayState, LeafKind,
-    PriorEncryptedValueAccountState, SemanticLeafKey, SqlProofStore, SubjectGrant,
+    PriorEncryptedValueAccountState, SemanticLeafKey, SqlProofStore,
 };
+use zama_host::state::{FheEvalArgs, FheEvalOutput, FheEvalStep};
 use zama_solana_acl::mmr::{mmr_build_proof, mmr_peaks_from_leaves, mmr_verify};
 use zama_solana_acl::public_decrypt_leaf_commitment;
 use zama_solana_acl::value_account::reconstruct;
@@ -49,48 +50,77 @@ fn ix(accounts: Vec<[u8; 32]>, name: &str, args: impl BorshSerialize) -> RawInst
     }
 }
 
-fn create_ix(ev: [u8; 32], handle: [u8; 32], subject: [u8; 32]) -> RawInstruction {
-    #[derive(BorshSerialize)]
-    struct Args {
-        acl_domain_key: [u8; 32],
-        app_account: [u8; 32],
-        label: [u8; 32],
-        handle: [u8; 32],
-        subjects: Vec<SubjectGrant>,
-    }
-    ix(
-        vec![pk(0xA), pk(0xB), ev, pk(0xC), pk(0xD)],
-        "create_encrypted_value",
-        Args {
-            acl_domain_key: pk(0x10),
-            app_account: pk(0x11),
-            label: pk(0x12),
-            handle,
-            subjects: vec![SubjectGrant { subject }],
+/// Builds an `fhe_eval` instruction with one durable output on `ev`:
+/// a creation when `previous` is `None`, an update (supersession of
+/// `previous_handle` over `previous_subjects`) when `Some`. The output
+/// audience equals `subjects`. Mirrors the real anchor account layout:
+/// 9 named accounts, then `ev` as the single remaining account.
+fn fhe_eval_ix(
+    ev: [u8; 32],
+    subjects: &[[u8; 32]],
+    previous: Option<([u8; 32], Vec<[u8; 32]>)>,
+) -> RawInstruction {
+    // Pool layout: [0]=plaintext, [1]=domain, [2]=app account, [3]=label,
+    // [4..]=output subjects.
+    let mut pool = vec![pk(0x70), pk(0x71), pk(0x72), pk(0x73)];
+    let subject_base = pool.len() as u8;
+    pool.extend_from_slice(subjects);
+    let step = FheEvalStep::TrivialEncrypt {
+        plaintext: pk(0x70),
+        fhe_type: 5,
+        output: FheEvalOutput::AllowedDurable {
+            output_encrypted_value_index: 0,
+            output_app_account_authority_index: None,
+            output_acl_domain_key_index: 1,
+            output_app_account_index: 2,
+            output_encrypted_value_label_index: 3,
+            output_subject_indexes: (0..subjects.len() as u8)
+                .map(|i| subject_base + i)
+                .collect(),
+            previous_handle: previous.as_ref().map(|(handle, _)| *handle),
+            previous_subjects: previous.map(|(_, subjects)| {
+                subjects
+                    .into_iter()
+                    .map(anchor_lang::prelude::Pubkey::new_from_array)
+                    .collect()
+            }),
+            make_public: false,
         },
-    )
+    };
+    let args = FheEvalArgs {
+        account_count: 1,
+        pool,
+        steps: vec![step],
+    };
+    let named = vec![
+        pk(0xA0), // payer
+        pk(0xA1), // compute_subject
+        pk(0xA2), // app_account_authority
+        pk(0xA3), // host_config
+        pk(0xA4), // system_program
+        pk(7),    // hcu_block_meter (None placeholder = program id)
+        pk(7),    // hcu_trusted_app_record (None placeholder = program id)
+        pk(0xA8), // event_authority
+        pk(7),    // program (event_cpi)
+    ];
+    let mut accounts = named;
+    accounts.push(ev);
+    ix(accounts, "fhe_eval", args)
+}
+
+fn create_ix(ev: [u8; 32], subject: [u8; 32]) -> RawInstruction {
+    fhe_eval_ix(ev, &[subject], None)
 }
 
 fn update_ix(
     ev: [u8; 32],
-    new_handle: [u8; 32],
     previous_handle: [u8; 32],
     previous_subjects: Vec<[u8; 32]>,
 ) -> RawInstruction {
-    #[derive(BorshSerialize)]
-    struct Args {
-        new_handle: [u8; 32],
-        previous_handle: [u8; 32],
-        previous_subjects: Vec<[u8; 32]>,
-    }
-    ix(
-        vec![pk(0xA), pk(0xB), ev, pk(0xC), pk(0xD)],
-        "update_encrypted_value",
-        Args {
-            new_handle,
-            previous_handle,
-            previous_subjects,
-        },
+    fhe_eval_ix(
+        ev,
+        &previous_subjects.clone(),
+        Some((previous_handle, previous_subjects)),
     )
 }
 
@@ -230,8 +260,8 @@ async fn deterministic_leaf_order_and_mmr_reconstruction() {
     let store = fresh_store().await;
     let ev = pk(0xE1);
     let owner = pk(0x30);
-    let create = create_ix(ev, pk(0x10), owner);
-    let update = update_ix(ev, pk(0x11), pk(0x10), vec![owner]);
+    let create = create_ix(ev, owner);
+    let update = update_ix(ev, pk(0x10), vec![owner]);
     let make_public = make_public_ix(ev, pk(0x11));
     let b = block(
         10,
@@ -277,8 +307,8 @@ async fn semantic_leaf_resolution_maps_handle_and_subject_to_index() {
     let owner = pk(0x30);
     let old_handle = pk(0x10);
     let new_handle = pk(0x11);
-    let create = create_ix(ev, old_handle, owner);
-    let update = update_ix(ev, new_handle, old_handle, vec![owner]);
+    let create = create_ix(ev, owner);
+    let update = update_ix(ev, old_handle, vec![owner]);
     let make_public = make_public_ix(ev, new_handle);
     let b = block(
         10,
@@ -389,7 +419,7 @@ async fn public_decrypt_resolves_duplicate_leaves_to_earliest() {
     // create sets current_handle=handle (no leaf); then two public seals of that SAME handle mirror
     // a born-public lifecycle leaf at index 0 followed by an explicit make_handle_public re-release
     // at index 1 — both append a public-decrypt leaf for the one handle.
-    let create = create_ix(ev, handle, owner);
+    let create = create_ix(ev, owner);
     let seal_born_public = make_public_ix(ev, handle);
     let seal_make_public = make_public_ix(ev, handle);
     let b = block(
@@ -450,8 +480,8 @@ async fn detects_pre_semantic_leaf_rows() {
 
     let ev = pk(0xE8);
     let owner = pk(0x30);
-    let create = create_ix(ev, pk(0x10), owner);
-    let update = update_ix(ev, pk(0x11), pk(0x10), vec![owner]);
+    let create = create_ix(ev, owner);
+    let update = update_ix(ev, pk(0x10), vec![owner]);
     let make_public = make_public_ix(ev, pk(0x11));
     let b = block(
         10,
@@ -586,7 +616,7 @@ async fn proof_snapshot_isolation_sees_complete_old_or_new() {
             index: 0,
             succeeded: true,
             is_vote: false,
-            instructions: vec![create_ix(ev, pk(0x10), owner)],
+            instructions: vec![create_ix(ev, owner)],
         }],
     );
     store.apply_completed_block(&first).await.unwrap();
@@ -604,7 +634,7 @@ async fn proof_snapshot_isolation_sees_complete_old_or_new() {
             index: 0,
             succeeded: true,
             is_vote: false,
-            instructions: vec![update_ix(ev, pk(0x11), pk(0x10), vec![owner])],
+            instructions: vec![update_ix(ev, pk(0x10), vec![owner])],
         }],
     );
 
@@ -840,7 +870,7 @@ async fn incomplete_bootstrap_and_post_bootstrap_birth() {
             index: 0,
             succeeded: true,
             is_vote: false,
-            instructions: vec![create_ix(ev, pk(0x10), pk(0x30))],
+            instructions: vec![create_ix(ev, pk(0x30))],
         }],
     );
     assert_eq!(
@@ -1006,7 +1036,7 @@ async fn reduce_unit_leaf_order_matches_instruction_event_subject_order() {
             index: 3,
             succeeded: true,
             is_vote: false,
-            instructions: vec![update_ix(ev, pk(0x11), pk(0x10), vec![s1, s2])],
+            instructions: vec![update_ix(ev, pk(0x10), vec![s1, s2])],
         }],
     );
     let staged = reduce_completed_block(pk(7), &b, &existing).unwrap();

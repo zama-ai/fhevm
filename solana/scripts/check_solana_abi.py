@@ -57,10 +57,8 @@ PINNED_SCHEMAS = [
     # instead pinned by `zama-host`'s own
     # `state::encrypted_value::tests::discriminator_matches_shared_crate` and
     # `zama-solana-acl`'s codec tests, not by this golden file.
-    ("zama_host", "instruction_args", "create_encrypted_value", True),
     ("zama_host", "instruction_args", "allow_subjects", True),
     ("zama_host", "instruction_args", "remove_subject", True),
-    ("zama_host", "instruction_args", "update_encrypted_value", True),
     ("zama_host", "instruction_args", "make_handle_public", True),
     ("zama_host", "instruction_args", "define_kms_context", True),
     ("zama_host", "instruction_args", "delegate_for_user_decryption", True),

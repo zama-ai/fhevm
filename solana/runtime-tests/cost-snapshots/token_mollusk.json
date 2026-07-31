@@ -1,6 +1,6 @@
 {
   "confidential_burn_from_value/direct": {
-    "compute_units": 218703,
+    "compute_units": 218697,
     "unique_accounts": 15,
     "instruction_data_bytes": 8,
     "cpi_instructions": 8,

@@ -1,8 +1,8 @@
-//! RFC-024 `EncryptedValue` ACL mutation. Raw create/update ABI entries fail
-//! closed because durable handle birth and supersession must come from
-//! `fhe_eval` output provenance. Event-free by design — indexers reconstruct
-//! MMR leaves from instruction data, using the shared `zama_solana_acl` crate,
-//! not from emitted events.
+//! `EncryptedValue` ACL mutation. Persistent handle creation and update happen
+//! only through `fhe_eval` output provenance; the instructions here mutate the
+//! subject set and public status of values that already exist. Event-free by
+//! design — indexers reconstruct MMR leaves from instruction data, using the
+//! shared `zama_solana_acl` crate, not from emitted events.
 
 use anchor_lang::prelude::*;
 use anchor_lang::solana_program::{program::invoke_signed, system_instruction};
@@ -14,36 +14,6 @@ use crate::{errors::ZamaHostError, state::*};
 #[derive(AnchorSerialize, AnchorDeserialize, Clone, Copy, Debug, PartialEq, Eq)]
 pub struct EncryptedValueSubjectGrant {
     pub subject: Pubkey,
-}
-
-/// Accounts for the disabled raw `create_encrypted_value` ABI entry.
-#[derive(Accounts)]
-pub struct CreateEncryptedValue<'info> {
-    /// Pays rent for the new account.
-    #[account(mut)]
-    pub payer: Signer<'info>,
-    /// App account authority; must sign and match `app_account`.
-    pub app_account_authority: Signer<'info>,
-    /// CHECK: PDA existence/address are validated inside the handler.
-    #[account(mut)]
-    pub encrypted_value: UncheckedAccount<'info>,
-    /// Singleton config PDA.
-    #[account(seeds = [HOST_CONFIG_SEED], bump = host_config.bump)]
-    pub host_config: Account<'info, HostConfig>,
-    /// CHECK: required when grant_deny_list_enabled; may be uninitialized.
-    pub deny_subject_record: Option<UncheckedAccount<'info>>,
-    pub system_program: Program<'info, System>,
-}
-
-pub fn create_encrypted_value(
-    _ctx: Context<CreateEncryptedValue>,
-    _acl_domain_key: Pubkey,
-    _app_account: Pubkey,
-    _encrypted_value_label: [u8; 32],
-    _handle: [u8; 32],
-    _subjects: Vec<EncryptedValueSubjectGrant>,
-) -> Result<()> {
-    err!(ZamaHostError::RawEncryptedValueLifecycleDisabled)
 }
 
 /// Accounts for `allow_subjects`.
@@ -103,31 +73,6 @@ pub fn allow_subjects(
     )?;
     write_account(&info, &value)?;
     Ok(())
-}
-
-/// Accounts for the disabled raw `update_encrypted_value` ABI entry.
-#[derive(Accounts)]
-pub struct UpdateEncryptedValue<'info> {
-    #[account(mut)]
-    pub payer: Signer<'info>,
-    /// App account authority; must sign and match the encrypted value account's `app_account`.
-    pub app_account_authority: Signer<'info>,
-    /// CHECK: layout and ownership are validated inside the handler via `read_canonical_encrypted_value`.
-    #[account(mut)]
-    pub encrypted_value: UncheckedAccount<'info>,
-    #[account(seeds = [HOST_CONFIG_SEED], bump = host_config.bump)]
-    pub host_config: Account<'info, HostConfig>,
-    pub deny_subject_record: Option<UncheckedAccount<'info>>,
-    pub system_program: Program<'info, System>,
-}
-
-pub fn update_encrypted_value(
-    _ctx: Context<UpdateEncryptedValue>,
-    _new_handle: [u8; 32],
-    _previous_handle: [u8; 32],
-    _previous_subjects: Vec<Pubkey>,
-) -> Result<()> {
-    err!(ZamaHostError::RawEncryptedValueLifecycleDisabled)
 }
 
 /// Appends one historical-access leaf per allowed subject for the outgoing

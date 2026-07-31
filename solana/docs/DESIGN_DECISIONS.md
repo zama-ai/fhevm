@@ -1153,9 +1153,10 @@ allowed subject can use the current handle in compute, add another subject, requ
 mark the exact current handle public. Public decrypt is an exact-handle `PublicDecryptLeaf`, so
 publicness never survives a handle update (there is no live public flag to leak across updates — see
 the connector-side rationale in the kms-connector/sdk commit message). Active lifecycle changes are
-performed by `fhe_eval` durable outputs, `allow_subjects`, and `make_handle_public`. The raw
-`create_encrypted_value` and `update_encrypted_value` ABI entries are fail-closed stubs because they
-would otherwise accept caller-chosen handles without proving ciphertext provenance. Deleted:
+performed by `fhe_eval` durable outputs, `allow_subjects`, and `make_handle_public`; no instruction
+accepts a caller-chosen handle, because such a handle would carry no proof of ciphertext
+provenance (the former fail-closed `create_encrypted_value` / `update_encrypted_value` ABI stubs
+are deleted). Deleted:
 `AclRecord`/`AclPermission` and their nonce-sequence machinery, the legacy single-op instructions
 (`fhe_binary_op*`, `fhe_ternary_op*`, `fhe_rand*`, `trivial_encrypt_and_bind` — `fhe_eval` is now the
 only compute path), and `allow_for_decryption`.

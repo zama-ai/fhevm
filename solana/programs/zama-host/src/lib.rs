@@ -144,24 +144,6 @@ pub mod zama_host {
 
     // ---- RFC-024 EncryptedValue ACL model ----
 
-    pub fn create_encrypted_value(
-        ctx: Context<CreateEncryptedValue>,
-        acl_domain_key: Pubkey,
-        app_account: Pubkey,
-        encrypted_value_label: [u8; 32],
-        handle: [u8; 32],
-        subjects: Vec<EncryptedValueSubjectGrant>,
-    ) -> Result<()> {
-        instructions::create_encrypted_value(
-            ctx,
-            acl_domain_key,
-            app_account,
-            encrypted_value_label,
-            handle,
-            subjects,
-        )
-    }
-
     pub fn allow_subjects(
         ctx: Context<AllowEncryptedValueSubjects>,
         subjects: Vec<EncryptedValueSubjectGrant>,
@@ -174,15 +156,6 @@ pub mod zama_host {
         subject: Pubkey,
     ) -> Result<()> {
         instructions::remove_subject(ctx, subject)
-    }
-
-    pub fn update_encrypted_value(
-        ctx: Context<UpdateEncryptedValue>,
-        new_handle: [u8; 32],
-        previous_handle: [u8; 32],
-        previous_subjects: Vec<Pubkey>,
-    ) -> Result<()> {
-        instructions::update_encrypted_value(ctx, new_handle, previous_handle, previous_subjects)
     }
 
     pub fn make_handle_public(

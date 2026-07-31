@@ -77,13 +77,11 @@ fn decode_anchor_args<T: AnchorDeserialize>(payload: &[u8]) -> Option<T> {
 // --- RFC-024 `EncryptedValue` instruction decode -----------------------------
 //
 // `EncryptedValue` is event-free by design (see zama-host's
-// `instructions/encrypted_value.rs` module doc): active ACL changes are carried
-// by `fhe_eval` durable outputs, `make_handle_public`, `allow_subjects`, and
-// `remove_subject`; raw create/update ABI stubs are decoded only as legacy
-// historical data if encountered. There is no ACL event to decode — instruction
-// data is the allow signal and must be decoded directly (top-level AND
-// inner/CPI, since an app program may invoke these via CPI) by Anchor
-// discriminator
+// `instructions/encrypted_value.rs` module doc): ACL changes are carried by
+// `fhe_eval` durable outputs, `make_handle_public`, `allow_subjects`, and
+// `remove_subject`. There is no ACL event to decode — instruction data is the
+// allow signal and must be decoded directly (top-level AND inner/CPI, since an
+// app program may invoke these via CPI) by Anchor discriminator
 // (`sha256("global:<name>")[..8]`).
 
 /// One subject grant, matching `zama_host::instructions::encrypted_value::
@@ -93,22 +91,6 @@ fn decode_anchor_args<T: AnchorDeserialize>(payload: &[u8]) -> Option<T> {
 )]
 pub struct EncryptedValueSubjectGrant {
     pub subject: [u8; 32],
-}
-
-#[derive(AnchorDeserialize, AnchorSerialize, Clone, Debug, PartialEq, Eq)]
-pub struct CreateEncryptedValueArgs {
-    pub acl_domain_key: [u8; 32],
-    pub app_account: [u8; 32],
-    pub encrypted_value_label: [u8; 32],
-    pub handle: [u8; 32],
-    pub subjects: Vec<EncryptedValueSubjectGrant>,
-}
-
-#[derive(AnchorDeserialize, AnchorSerialize, Clone, Debug, PartialEq, Eq)]
-pub struct UpdateEncryptedValueArgs {
-    pub new_handle: [u8; 32],
-    pub previous_handle: [u8; 32],
-    pub previous_subjects: Vec<[u8; 32]>,
 }
 
 #[derive(AnchorDeserialize, AnchorSerialize, Clone, Debug, PartialEq, Eq)]
@@ -130,19 +112,11 @@ pub struct RemoveSubjectArgs {
 /// the caller from the instruction's account list.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum EncryptedValueInstruction {
-    Create(CreateEncryptedValueArgs),
-    Update(UpdateEncryptedValueArgs),
     MakeHandlePublic(MakeHandlePublicArgs),
     AllowSubjects(AllowSubjectsArgs),
     RemoveSubject(RemoveSubjectArgs),
 }
 
-/// `sha256("global:create_encrypted_value")[..8]`.
-const CREATE_ENCRYPTED_VALUE_DISCRIMINATOR: [u8; 8] =
-    [16, 78, 219, 132, 226, 111, 211, 78];
-/// `sha256("global:update_encrypted_value")[..8]`.
-const UPDATE_ENCRYPTED_VALUE_DISCRIMINATOR: [u8; 8] =
-    [134, 7, 12, 247, 233, 80, 35, 215];
 /// `sha256("global:make_handle_public")[..8]`.
 const MAKE_HANDLE_PUBLIC_DISCRIMINATOR: [u8; 8] =
     [66, 199, 252, 247, 244, 172, 42, 118];
@@ -157,18 +131,16 @@ pub fn is_encrypted_value_instruction(data: &[u8]) -> bool {
     let Some(discriminator) = data.get(..8) else {
         return false;
     };
-    discriminator == CREATE_ENCRYPTED_VALUE_DISCRIMINATOR
-        || discriminator == UPDATE_ENCRYPTED_VALUE_DISCRIMINATOR
-        || discriminator == MAKE_HANDLE_PUBLIC_DISCRIMINATOR
+    discriminator == MAKE_HANDLE_PUBLIC_DISCRIMINATOR
         || discriminator == ALLOW_SUBJECTS_DISCRIMINATOR
         || discriminator == REMOVE_SUBJECT_DISCRIMINATOR
 }
 
-/// Every pre-`remove_subject` `EncryptedValue` instruction accounts struct places
-/// `encrypted_value` at this index (`payer`, `app_account_authority`/`authority`,
-/// `encrypted_value`, ...) — see `CreateEncryptedValue`,
-/// `AllowEncryptedValueSubjects`, `UpdateEncryptedValue`,
-/// `MakeEncryptedValueHandlePublic` in zama-host's `encrypted_value.rs`.
+/// `allow_subjects` and `make_handle_public` place `encrypted_value` at this
+/// index (`payer`, `authority`, `encrypted_value`, ...) — see
+/// `AllowEncryptedValueSubjects` and `MakeEncryptedValueHandlePublic` in
+/// zama-host's `encrypted_value.rs`. `remove_subject` has no payer and uses
+/// index 1.
 pub const ENCRYPTED_VALUE_ACCOUNT_INDEX: usize = 2;
 
 /// Decodes one `EncryptedValue` instruction from raw instruction data
@@ -184,12 +156,6 @@ pub fn decode_encrypted_value_instruction(
     }
     let (discriminator, payload) = data.split_at(8);
     match discriminator {
-        d if d == CREATE_ENCRYPTED_VALUE_DISCRIMINATOR => {
-            decode_anchor_args(payload).map(EncryptedValueInstruction::Create)
-        }
-        d if d == UPDATE_ENCRYPTED_VALUE_DISCRIMINATOR => {
-            decode_anchor_args(payload).map(EncryptedValueInstruction::Update)
-        }
         d if d == MAKE_HANDLE_PUBLIC_DISCRIMINATOR => {
             decode_anchor_args(payload)
                 .map(EncryptedValueInstruction::MakeHandlePublic)
@@ -207,9 +173,7 @@ pub(crate) fn encrypted_value_account_index(
 ) -> usize {
     match instruction {
         EncryptedValueInstruction::RemoveSubject(_) => 1,
-        EncryptedValueInstruction::Create(_)
-        | EncryptedValueInstruction::Update(_)
-        | EncryptedValueInstruction::MakeHandlePublic(_)
+        EncryptedValueInstruction::MakeHandlePublic(_)
         | EncryptedValueInstruction::AllowSubjects(_) => {
             ENCRYPTED_VALUE_ACCOUNT_INDEX
         }
@@ -220,21 +184,10 @@ pub(crate) fn encrypted_value_account_index(
 /// using only handles carried by the instruction. Subject changes emit no
 /// request: material was already prepared when the current handle was created,
 /// and KMS reads live ACL state when authorizing decrypts.
-///
-/// A raw legacy `update_encrypted_value` instruction's `previous_handle` is
-/// included because it remains decryptable through the encrypted value account's MMR history.
 pub fn encrypted_value_material_requests(
     instruction: &EncryptedValueInstruction,
 ) -> Vec<SolanaMaterialRequest> {
     match instruction {
-        EncryptedValueInstruction::Create(args) => {
-            vec![material_request(args.handle)]
-        }
-        EncryptedValueInstruction::Update(args) => vec![
-            material_request(args.new_handle),
-            // The outgoing handle remains decryptable through MMR history.
-            material_request(args.previous_handle),
-        ],
         EncryptedValueInstruction::MakeHandlePublic(args) => {
             vec![material_request(args.handle)]
         }
@@ -796,34 +749,6 @@ mod encrypted_value_decode_tests {
     }
 
     #[test]
-    fn decodes_create_encrypted_value() {
-        let args = CreateEncryptedValueArgs {
-            acl_domain_key: [1; 32],
-            app_account: [2; 32],
-            encrypted_value_label: [3; 32],
-            handle: [4; 32],
-            subjects: vec![EncryptedValueSubjectGrant { subject: [5; 32] }],
-        };
-        let data = encode(CREATE_ENCRYPTED_VALUE_DISCRIMINATOR, args.clone());
-        let decoded = decode_encrypted_value_instruction(&data)
-            .expect("must decode create_encrypted_value");
-        assert_eq!(decoded, EncryptedValueInstruction::Create(args));
-    }
-
-    #[test]
-    fn decodes_update_encrypted_value() {
-        let args = UpdateEncryptedValueArgs {
-            new_handle: [9; 32],
-            previous_handle: [8; 32],
-            previous_subjects: vec![[7; 32]],
-        };
-        let data = encode(UPDATE_ENCRYPTED_VALUE_DISCRIMINATOR, args.clone());
-        let decoded = decode_encrypted_value_instruction(&data)
-            .expect("must decode update_encrypted_value");
-        assert_eq!(decoded, EncryptedValueInstruction::Update(args));
-    }
-
-    #[test]
     fn decodes_make_handle_public_handle_arg() {
         let args = MakeHandlePublicArgs { handle: [4; 32] };
         let data = encode(MAKE_HANDLE_PUBLIC_DISCRIMINATOR, args.clone());
@@ -877,48 +802,6 @@ mod encrypted_value_decode_tests {
     }
 
     #[test]
-    fn create_requests_material_for_its_handle() {
-        let args = CreateEncryptedValueArgs {
-            acl_domain_key: [1; 32],
-            app_account: [2; 32],
-            encrypted_value_label: [3; 32],
-            handle: [4; 32],
-            subjects: vec![],
-        };
-        let requests = encrypted_value_material_requests(
-            &EncryptedValueInstruction::Create(args),
-        );
-        assert_eq!(requests.len(), 1);
-        assert_eq!(requests[0].handle, Handle::from([4; 32]));
-    }
-
-    #[test]
-    fn update_requests_material_for_both_handles() {
-        let args = UpdateEncryptedValueArgs {
-            new_handle: [9; 32],
-            previous_handle: [8; 32],
-            previous_subjects: vec![],
-        };
-        let requests = encrypted_value_material_requests(
-            &EncryptedValueInstruction::Update(args),
-        );
-        assert_eq!(
-            requests.len(),
-            2,
-            "both the new and the superseded handle must request material"
-        );
-        let handles: Vec<_> =
-            requests.iter().map(|request| request.handle).collect();
-        assert!(handles.contains(
-            &crate::database::tfhe_event_propagate::Handle::from([9; 32])
-        ));
-        assert!(
-            handles.contains(&crate::database::tfhe_event_propagate::Handle::from([8; 32])),
-            "superseded handle must remain fetchable so historical decrypts keep working"
-        );
-    }
-
-    #[test]
     fn make_handle_public_requests_decoded_handle() {
         let args = MakeHandlePublicArgs { handle: [4; 32] };
         let requests = encrypted_value_material_requests(
@@ -957,18 +840,12 @@ mod encrypted_value_decode_tests {
     #[test]
     fn transaction_decode_includes_inner_cpi_instructions() {
         // A top-level instruction from a different (app) program CPIs into
-        // zama_host's create_encrypted_value, then allow_subjects; both must be
+        // zama_host's make_handle_public, then allow_subjects; both must be
         // picked up even though only the second is literally top-level here —
         // the walk must not special-case position, only program id.
         let create_data = encode(
-            CREATE_ENCRYPTED_VALUE_DISCRIMINATOR,
-            CreateEncryptedValueArgs {
-                acl_domain_key: [1; 32],
-                app_account: [2; 32],
-                encrypted_value_label: [3; 32],
-                handle: [4; 32],
-                subjects: vec![],
-            },
+            MAKE_HANDLE_PUBLIC_DISCRIMINATOR,
+            MakeHandlePublicArgs { handle: [4; 32] },
         );
         let allow_data = encode(
             ALLOW_SUBJECTS_DISCRIMINATOR,
@@ -989,7 +866,7 @@ mod encrypted_value_decode_tests {
         assert_eq!(
             requests.len(),
             1,
-            "create requests material while allow_subjects reuses it"
+            "make_handle_public requests material while allow_subjects reuses it"
         );
         assert_eq!(requests[0].handle, Handle::from([4; 32]));
     }
@@ -1011,14 +888,8 @@ mod encrypted_value_decode_tests {
     #[test]
     fn non_zama_host_program_instructions_are_skipped() {
         let data = encode(
-            CREATE_ENCRYPTED_VALUE_DISCRIMINATOR,
-            CreateEncryptedValueArgs {
-                acl_domain_key: [1; 32],
-                app_account: [2; 32],
-                encrypted_value_label: [3; 32],
-                handle: [4; 32],
-                subjects: vec![],
-            },
+            MAKE_HANDLE_PUBLIC_DISCRIMINATOR,
+            MakeHandlePublicArgs { handle: [4; 32] },
         );
         let accounts = accounts_with_encrypted_value_at_index_2();
         let instructions: Vec<TestInstruction<'_>> = vec![(

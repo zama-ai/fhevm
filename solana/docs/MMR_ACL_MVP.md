@@ -11,10 +11,9 @@ this note records the operational model in one place.
   authority check.
 - `compute_signer` is separate from identity. In confidential-token it is a mint-scoped PDA and must
   be present in the value's allowed-subject set when token compute needs to use that value.
-- Only `fhe_eval` durable outputs can create or supersede an `EncryptedValue` handle. The raw
-  `create_encrypted_value` / `update_encrypted_value` instructions remain in the ABI but fail closed:
-  they would otherwise accept caller-chosen handles without proving ciphertext provenance. Being an
-  allowed subject is enough to compute/use, grant, request user decrypt, or make the exact current
+- Only `fhe_eval` durable outputs can create or supersede an `EncryptedValue` handle; there is no
+  instruction that accepts a caller-chosen handle, because such a handle would carry no proof of
+  ciphertext provenance. Being an allowed subject is enough to compute/use, grant, request user decrypt, or make the exact current
   handle public, but it is not enough to supersede the encrypted value account. Durable-output supersession checks
   `previous_handle` and `previous_subjects` against current account state so stale off-chain state
   cannot rotate a handle.

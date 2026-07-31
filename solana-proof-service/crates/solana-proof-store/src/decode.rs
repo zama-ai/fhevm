@@ -26,7 +26,7 @@ use zama_host::state::{FheEvalArgs, FheEvalOutput, FheEvalStep};
 
 pub use solana_proof_source::RawInstruction;
 
-/// One subject grant as carried in `create_encrypted_value`/`allow_subjects` args.
+/// One subject grant as carried in `allow_subjects` args.
 #[derive(BorshDeserialize, BorshSerialize, Clone, Copy, Debug, PartialEq, Eq)]
 pub struct SubjectGrant {
     pub subject: [u8; 32],
@@ -34,25 +34,14 @@ pub struct SubjectGrant {
 
 /// The zama-host `EncryptedValue` instruction, decoded from one compiled instruction.
 ///
-/// Direct create/allow/update/make-public instructions carry `encrypted_value`
-/// at account index 2. `remove_subject` uses index 1, and `fhe_eval` durable
+/// Direct allow/make-public instructions carry `encrypted_value` at account
+/// index 2. `remove_subject` uses index 1, and `fhe_eval` durable
 /// outputs reference `remaining_accounts` by index inside the eval plan.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum DecodedInstruction {
-    CreateEncryptedValue {
-        encrypted_value: [u8; 32],
-        handle: [u8; 32],
-        subjects: Vec<SubjectGrant>,
-    },
     AllowSubjects {
         encrypted_value: [u8; 32],
         subjects: Vec<SubjectGrant>,
-    },
-    UpdateEncryptedValue {
-        encrypted_value: [u8; 32],
-        new_handle: [u8; 32],
-        previous_handle: [u8; 32],
-        previous_subjects: Vec<[u8; 32]>,
     },
     RemoveSubject {
         encrypted_value: [u8; 32],
@@ -86,13 +75,7 @@ pub enum DecodedInstruction {
 impl DecodedInstruction {
     pub fn encrypted_value(&self) -> [u8; 32] {
         match self {
-            DecodedInstruction::CreateEncryptedValue {
-                encrypted_value, ..
-            }
-            | DecodedInstruction::AllowSubjects {
-                encrypted_value, ..
-            }
-            | DecodedInstruction::UpdateEncryptedValue {
+            DecodedInstruction::AllowSubjects {
                 encrypted_value, ..
             }
             | DecodedInstruction::RemoveSubject {
@@ -211,33 +194,11 @@ pub fn decode_instructions(ix: &RawInstruction) -> Result<Vec<DecodedInstruction
     }
     let (disc, mut body) = ix.data.split_at(8);
 
-    if disc == discriminator("create_encrypted_value") {
-        let acl_domain_key = <[u8; 32]>::deserialize(&mut body).map_err(borsh_err)?;
-        let app_account = <[u8; 32]>::deserialize(&mut body).map_err(borsh_err)?;
-        let _ = (acl_domain_key, app_account);
-        let _encrypted_value_label = <[u8; 32]>::deserialize(&mut body).map_err(borsh_err)?;
-        let handle = <[u8; 32]>::deserialize(&mut body).map_err(borsh_err)?;
-        let subjects = <Vec<SubjectGrant>>::deserialize(&mut body).map_err(borsh_err)?;
-        Ok(vec![DecodedInstruction::CreateEncryptedValue {
-            encrypted_value: account_at(ix, ENCRYPTED_VALUE_ACCOUNT_INDEX)?,
-            handle,
-            subjects,
-        }])
-    } else if disc == discriminator("allow_subjects") {
+    if disc == discriminator("allow_subjects") {
         let subjects = <Vec<SubjectGrant>>::deserialize(&mut body).map_err(borsh_err)?;
         Ok(vec![DecodedInstruction::AllowSubjects {
             encrypted_value: account_at(ix, ENCRYPTED_VALUE_ACCOUNT_INDEX)?,
             subjects,
-        }])
-    } else if disc == discriminator("update_encrypted_value") {
-        let new_handle = <[u8; 32]>::deserialize(&mut body).map_err(borsh_err)?;
-        let previous_handle = <[u8; 32]>::deserialize(&mut body).map_err(borsh_err)?;
-        let previous_subjects = <Vec<[u8; 32]>>::deserialize(&mut body).map_err(borsh_err)?;
-        Ok(vec![DecodedInstruction::UpdateEncryptedValue {
-            encrypted_value: account_at(ix, ENCRYPTED_VALUE_ACCOUNT_INDEX)?,
-            new_handle,
-            previous_handle,
-            previous_subjects,
         }])
     } else if disc == discriminator("remove_subject") {
         let subject = <[u8; 32]>::deserialize(&mut body).map_err(borsh_err)?;
@@ -853,65 +814,6 @@ mod tests {
             top_level_index: 0,
             stack_height: Some(2),
         }
-    }
-
-    #[test]
-    fn decodes_create_encrypted_value() {
-        let ev = pk(1);
-        let accounts = vec![pk(0xA), pk(0xB), ev, pk(0xC), pk(0xD)];
-        #[derive(BorshSerialize)]
-        struct Args {
-            acl_domain_key: [u8; 32],
-            app_account: [u8; 32],
-            label: [u8; 32],
-            handle: [u8; 32],
-            subjects: Vec<SubjectGrant>,
-        }
-        let args = Args {
-            acl_domain_key: pk(0x10),
-            app_account: pk(0x11),
-            label: pk(0x12),
-            handle: pk(0x20),
-            subjects: vec![SubjectGrant { subject: pk(0x30) }],
-        };
-        let ix = ix_with_data(accounts, "create_encrypted_value", args);
-        let decoded = decode_instruction(&ix).unwrap().unwrap();
-        assert_eq!(
-            decoded,
-            DecodedInstruction::CreateEncryptedValue {
-                encrypted_value: ev,
-                handle: pk(0x20),
-                subjects: vec![SubjectGrant { subject: pk(0x30) }],
-            }
-        );
-    }
-
-    #[test]
-    fn decodes_update_encrypted_value() {
-        let ev = pk(2);
-        let accounts = vec![pk(0xA), pk(0xB), ev, pk(0xC), pk(0xD)];
-        #[derive(BorshSerialize)]
-        struct Args {
-            new_handle: [u8; 32],
-            previous_handle: [u8; 32],
-            previous_subjects: Vec<[u8; 32]>,
-        }
-        let args = Args {
-            new_handle: pk(0x21),
-            previous_handle: pk(0x20),
-            previous_subjects: vec![pk(0x30), pk(0x31)],
-        };
-        let ix = ix_with_data(accounts, "update_encrypted_value", args);
-        let decoded = decode_instruction(&ix).unwrap().unwrap();
-        assert_eq!(
-            decoded,
-            DecodedInstruction::UpdateEncryptedValue {
-                encrypted_value: ev,
-                new_handle: pk(0x21),
-                previous_handle: pk(0x20),
-                previous_subjects: vec![pk(0x30), pk(0x31)],
-            }
-        );
     }
 
     #[test]

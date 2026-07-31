@@ -2,11 +2,9 @@
 //! chronological instruction replay, turning `DecodedInstruction`s into the
 //! `zama_solana_acl::value_account::EncryptedValueAccountEvent`s the shared crate's MMR math consumes.
 //!
-//! Active encrypted_value_account birth/supersession comes from durable `fhe_eval` outputs.
-//! `allow_subjects` mutates current subjects but appends no MMR leaf. Raw
-//! `create_encrypted_value` / `update_encrypted_value` are retained here only
-//! for already-finalized legacy PoC data; current failed raw transactions are
-//! skipped before replay. `make_handle_public` carries the exact public handle
+//! Encrypted-value-account creation and supersession come from durable
+//! `fhe_eval` outputs. `allow_subjects` mutates current subjects but appends
+//! no MMR leaf. `make_handle_public` carries the exact public handle
 //! on-chain, so replay can reconstruct public-decrypt leaves even after
 //! `fhe_eval` output handles whose slot entropy is unavailable to this service.
 //! A born-public `fhe_eval` output resolves that output handle from the op event
@@ -92,8 +90,8 @@ fn validate_previous_state(
 
 /// Applies one decoded instruction to `state`, returning the `EncryptedValueAccountEvent`s it
 /// produces, in append order. `state` must be the tracked state for the
-/// instruction's `encrypted_value` encrypted_value_account (created on `CreateEncryptedValue`,
-/// looked up by the caller for the others).
+/// instruction's `encrypted_value` account (created on
+/// `FheEvalCreateEncryptedValue`, looked up by the caller for the others).
 ///
 /// Most instructions produce zero or one event. A born-public `fhe_eval`
 /// supersede produces two: the `HandleSuperseded` for the outgoing handle, then
@@ -104,17 +102,6 @@ pub fn apply_instruction(
     instruction: &DecodedInstruction,
 ) -> Result<Vec<EncryptedValueAccountEvent>, ReplayError> {
     match instruction {
-        DecodedInstruction::CreateEncryptedValue {
-            handle, subjects, ..
-        } => {
-            let mut new_state = EncryptedValueAccountReplayState {
-                current_handle: Some(*handle),
-                subjects: Vec::new(),
-            };
-            new_state.upsert(subjects);
-            *state = Some(new_state);
-            Ok(Vec::new())
-        }
         DecodedInstruction::AllowSubjects {
             encrypted_value,
             subjects,
@@ -124,21 +111,6 @@ pub fn apply_instruction(
                 .ok_or(ReplayError::UnknownEncryptedValueAccount(*encrypted_value))?;
             state.upsert(subjects);
             Ok(Vec::new())
-        }
-        DecodedInstruction::UpdateEncryptedValue {
-            encrypted_value,
-            new_handle,
-            previous_handle,
-            previous_subjects,
-        } => {
-            let state = state
-                .as_mut()
-                .ok_or(ReplayError::UnknownEncryptedValueAccount(*encrypted_value))?;
-            validate_previous_state(state, *encrypted_value, *previous_handle, previous_subjects)?;
-            let event =
-                EncryptedValueAccountEvent::handle_superseded(*previous_handle, &state.subjects);
-            state.current_handle = Some(*new_handle);
-            Ok(vec![event])
         }
         DecodedInstruction::RemoveSubject {
             encrypted_value,
@@ -247,47 +219,6 @@ mod tests {
     }
 
     #[test]
-    fn create_then_update_then_make_public_produces_expected_events_and_handles() {
-        let ev = pk(1);
-        let owner = pk(0x30);
-        let mut state: Option<EncryptedValueAccountReplayState> = None;
-
-        let create = DecodedInstruction::CreateEncryptedValue {
-            encrypted_value: ev,
-            handle: pk(0x10),
-            subjects: vec![SubjectGrant { subject: owner }],
-        };
-        assert!(apply_instruction(&mut state, &create).unwrap().is_empty());
-        assert_eq!(state.as_ref().unwrap().current_handle, Some(pk(0x10)));
-
-        let update = DecodedInstruction::UpdateEncryptedValue {
-            encrypted_value: ev,
-            new_handle: pk(0x11),
-            previous_handle: pk(0x10),
-            previous_subjects: vec![owner],
-        };
-        let events = apply_instruction(&mut state, &update).unwrap();
-        assert_eq!(
-            events,
-            vec![EncryptedValueAccountEvent::handle_superseded(
-                pk(0x10),
-                &[owner]
-            )]
-        );
-        assert_eq!(state.as_ref().unwrap().current_handle, Some(pk(0x11)));
-
-        let make_public = DecodedInstruction::MakeHandlePublic {
-            encrypted_value: ev,
-            handle: pk(0x11),
-        };
-        let events = apply_instruction(&mut state, &make_public).unwrap();
-        assert_eq!(
-            events,
-            vec![EncryptedValueAccountEvent::MarkedPublic { handle: pk(0x11) }]
-        );
-    }
-
-    #[test]
     fn allow_subjects_grows_next_update_snapshot_to_all_allowed_subjects() {
         let ev = pk(2);
         let s1 = pk(0x30);
@@ -304,11 +235,12 @@ mod tests {
         };
         assert!(apply_instruction(&mut state, &allow).unwrap().is_empty());
 
-        let update = DecodedInstruction::UpdateEncryptedValue {
+        let update = DecodedInstruction::FheEvalUpdateEncryptedValue {
             encrypted_value: ev,
-            new_handle: pk(0x11),
             previous_handle: pk(0x10),
             previous_subjects: vec![s1, s2],
+            output_subjects: vec![s1, s2],
+            make_public_handle: None,
         };
         let events = apply_instruction(&mut state, &update).unwrap();
         assert_eq!(
@@ -321,23 +253,17 @@ mod tests {
     }
 
     #[test]
-    fn fhe_eval_supersession_reconstructs_same_leaves_as_update_path() {
+    fn fhe_eval_supersession_appends_one_historical_leaf_per_subject() {
         let ev = pk(0x01);
         let owner = pk(0x30);
         let spender = pk(0x31);
-        let create = DecodedInstruction::CreateEncryptedValue {
+        let create = DecodedInstruction::FheEvalCreateEncryptedValue {
             encrypted_value: ev,
-            handle: pk(0x10),
             subjects: vec![
                 SubjectGrant { subject: owner },
                 SubjectGrant { subject: spender },
             ],
-        };
-        let update = DecodedInstruction::UpdateEncryptedValue {
-            encrypted_value: ev,
-            new_handle: pk(0x11),
-            previous_handle: pk(0x10),
-            previous_subjects: vec![owner, spender],
+            make_public_handle: None,
         };
         let eval_update = DecodedInstruction::FheEvalUpdateEncryptedValue {
             encrypted_value: ev,
@@ -347,7 +273,6 @@ mod tests {
             make_public_handle: None,
         };
 
-        let (_, update_events) = replay(&[create.clone(), update]).unwrap();
         let (_, eval_events) = replay(&[create, eval_update]).unwrap();
 
         assert_eq!(
@@ -357,14 +282,7 @@ mod tests {
                 &[owner, spender]
             )]
         );
-        let update_reconstructed = reconstruct(ev, &update_events).unwrap();
         let eval_reconstructed = reconstruct(ev, &eval_events).unwrap();
-        assert_eq!(
-            eval_reconstructed.leaf_count,
-            update_reconstructed.leaf_count
-        );
-        assert_eq!(eval_reconstructed.peaks, update_reconstructed.peaks);
-        assert_eq!(eval_reconstructed.leaves, update_reconstructed.leaves);
         assert_eq!(
             eval_reconstructed.leaves,
             vec![
@@ -445,10 +363,10 @@ mod tests {
     fn multi_output_fhe_eval_appends_historical_leaves_in_instruction_order() {
         let ev = pk(0x02);
         let owner = pk(0x30);
-        let create = DecodedInstruction::CreateEncryptedValue {
+        let create = DecodedInstruction::FheEvalCreateEncryptedValue {
             encrypted_value: ev,
-            handle: pk(0x10),
             subjects: vec![SubjectGrant { subject: owner }],
+            make_public_handle: None,
         };
         let first_eval_update = DecodedInstruction::FheEvalUpdateEncryptedValue {
             encrypted_value: ev,
@@ -489,13 +407,13 @@ mod tests {
         let ev = pk(0x03);
         let owner = pk(0x30);
         let removed = pk(0x31);
-        let create = DecodedInstruction::CreateEncryptedValue {
+        let create = DecodedInstruction::FheEvalCreateEncryptedValue {
             encrypted_value: ev,
-            handle: pk(0x10),
             subjects: vec![
                 SubjectGrant { subject: owner },
                 SubjectGrant { subject: removed },
             ],
+            make_public_handle: None,
         };
         let remove = DecodedInstruction::RemoveSubject {
             encrypted_value: ev,
@@ -527,10 +445,10 @@ mod tests {
     fn eval_driven_historical_leaf_builds_a_verifiable_mmr_proof() {
         let ev = pk(0x04);
         let owner = pk(0x30);
-        let create = DecodedInstruction::CreateEncryptedValue {
+        let create = DecodedInstruction::FheEvalCreateEncryptedValue {
             encrypted_value: ev,
-            handle: pk(0x10),
             subjects: vec![SubjectGrant { subject: owner }],
+            make_public_handle: None,
         };
         let eval_update = DecodedInstruction::FheEvalUpdateEncryptedValue {
             encrypted_value: ev,
@@ -559,10 +477,10 @@ mod tests {
         let ev = pk(0x06);
         let owner = pk(0x30);
         let spender = pk(0x31);
-        let create = DecodedInstruction::CreateEncryptedValue {
+        let create = DecodedInstruction::FheEvalCreateEncryptedValue {
             encrypted_value: ev,
-            handle: pk(0x10),
             subjects: vec![SubjectGrant { subject: owner }],
+            make_public_handle: None,
         };
         let eval_update = DecodedInstruction::FheEvalUpdateEncryptedValue {
             encrypted_value: ev,
@@ -599,11 +517,12 @@ mod tests {
             current_handle: Some(pk(0x10)),
             subjects: vec![pk(0x30)],
         });
-        let update = DecodedInstruction::UpdateEncryptedValue {
+        let update = DecodedInstruction::FheEvalUpdateEncryptedValue {
             encrypted_value: ev,
-            new_handle: pk(0x11),
             previous_handle: pk(0xFF), // wrong
             previous_subjects: vec![pk(0x30)],
+            output_subjects: vec![pk(0x30)],
+            make_public_handle: None,
         };
         assert_eq!(
             apply_instruction(&mut state, &update),
