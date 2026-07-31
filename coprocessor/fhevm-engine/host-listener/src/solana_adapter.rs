@@ -241,6 +241,9 @@ pub fn to_log_tfhe(
         block_number: block.block_number,
         block_hash: FixedBytes::<32>::from(block.block_hash),
         block_timestamp: block.block_timestamp,
+        // Placeholders: overwritten by the shared `dependence_chains()` union-find in
+        // `insert_solana_records` before insertion, exactly like the EVM ingest path's
+        // `Default::default()` placeholders.
         tx_depth_size: 0,
         dependence_chain: transaction_id,
         log_index: Some(log_index),
@@ -254,6 +257,7 @@ pub fn to_log_tfhe(
 /// the Solana listener use native Solana decoding while reusing the existing
 /// computation scheduler and worker unchanged.
 pub fn to_tfhe_event(event: FheBinaryOp) -> Log<TfheContractEvents> {
+    // Not persisted: the DB layer discards `caller` on every chain (INVARIANTS #49).
     let caller = Address::ZERO;
     let scalar_byte = FixedBytes::<1>::from([u8::from(event.scalar)]);
     let data = match event.op {
@@ -434,6 +438,7 @@ pub fn to_tfhe_event(event: FheBinaryOp) -> Log<TfheContractEvents> {
 }
 
 pub fn to_tfhe_ternary_event(event: FheTernaryOp) -> Log<TfheContractEvents> {
+    // Not persisted: the DB layer discards `caller` on every chain (INVARIANTS #49).
     let caller = Address::ZERO;
     let data = match event.op {
         FheTernaryOpCode::IfThenElse => {
@@ -456,6 +461,7 @@ pub fn to_tfhe_ternary_event(event: FheTernaryOp) -> Log<TfheContractEvents> {
 pub fn to_trivial_encrypt_event(
     event: TrivialEncrypt,
 ) -> Log<TfheContractEvents> {
+    // Not persisted: the DB layer discards `caller` on every chain (INVARIANTS #49).
     let caller = Address::ZERO;
     Log {
         address: caller,
@@ -471,6 +477,7 @@ pub fn to_trivial_encrypt_event(
 }
 
 pub fn to_fhe_rand_event(event: FheRand) -> Log<TfheContractEvents> {
+    // Not persisted: the DB layer discards `caller` on every chain (INVARIANTS #49).
     let caller = Address::ZERO;
     Log {
         address: caller,
@@ -486,6 +493,7 @@ pub fn to_fhe_rand_event(event: FheRand) -> Log<TfheContractEvents> {
 pub fn to_fhe_rand_bounded_event(
     event: FheRandBounded,
 ) -> Log<TfheContractEvents> {
+    // Not persisted: the DB layer discards `caller` on every chain (INVARIANTS #49).
     let caller = Address::ZERO;
     Log {
         address: caller,
@@ -502,6 +510,7 @@ pub fn to_fhe_rand_bounded_event(
 }
 
 pub fn to_fhe_unary_event(event: FheUnaryOp) -> Log<TfheContractEvents> {
+    // Not persisted: the DB layer discards `caller` on every chain (INVARIANTS #49).
     let caller = Address::ZERO;
     let ct = Handle::from(event.operand);
     let result = Handle::from(event.result);
@@ -534,6 +543,7 @@ pub fn to_fhe_unary_event(event: FheUnaryOp) -> Log<TfheContractEvents> {
 }
 
 pub fn to_fhe_sum_event(event: FheSum) -> Log<TfheContractEvents> {
+    // Not persisted: the DB layer discards `caller` on every chain (INVARIANTS #49).
     let caller = Address::ZERO;
     Log {
         address: caller,
@@ -546,6 +556,7 @@ pub fn to_fhe_sum_event(event: FheSum) -> Log<TfheContractEvents> {
 }
 
 pub fn to_fhe_is_in_event(event: FheIsIn) -> Log<TfheContractEvents> {
+    // Not persisted: the DB layer discards `caller` on every chain (INVARIANTS #49).
     let caller = Address::ZERO;
     Log {
         address: caller,
@@ -559,6 +570,7 @@ pub fn to_fhe_is_in_event(event: FheIsIn) -> Log<TfheContractEvents> {
 }
 
 pub fn to_fhe_mul_div_event(event: FheMulDiv) -> Log<TfheContractEvents> {
+    // Not persisted: the DB layer discards `caller` on every chain (INVARIANTS #49).
     let caller = Address::ZERO;
     Log {
         address: caller,
