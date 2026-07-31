@@ -235,8 +235,10 @@ jobs:
           key: ${{ runner.os }}-cargo-host-listener-reconstruct-${{ hashFiles('coprocessor/fhevm-engine/Cargo.lock') }}
           restore-keys: ${{ runner.os }}-cargo-host-listener-reconstruct-
 
-      - name: Test host-listener reconstruct path (compiles the feature + pins fhe_eval layout)
+      - name: Test host-listener reconstruct path (compiles the feature + runs its unit tests)
         working-directory: coprocessor/fhevm-engine
         env:
           SQLX_OFFLINE: 'true'
-        run: cargo test -p host-listener --features solana-grpc,solana-reconstruct fhe_eval_acl
+        # Deliberately unfiltered: a test-name filter here went vacuous once (0 tests matched
+        # after a rename and the job kept passing). The whole feature-gated suite runs in seconds.
+        run: cargo test -p host-listener --lib --features solana-grpc,solana-reconstruct
