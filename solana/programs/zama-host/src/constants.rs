@@ -41,7 +41,7 @@ pub const WILDCARD_APP_CONTEXT_BYTES: [u8; 32] = [0xff; 32];
 /// on the 32KB bump heap — a hard boundary, since the Anchor default allocator serves a fixed
 /// 32KB region even when a larger heap frame is requested; such frames revert cleanly beyond it
 /// (measured; pinned by `mollusk_fhe_eval_born_public_heap_boundary`). Wire
-/// indices (`producer_index`, pool and account indices) are `u8`, bounding any future raise
+/// indices (`producer_index`, dictionary and account indices) are `u8`, bounding any future raise
 /// at 256.
 pub const MAX_FHE_EVAL_OPS: usize = 32;
 /// Maximum number of external encrypted-input handles in one signed proof.

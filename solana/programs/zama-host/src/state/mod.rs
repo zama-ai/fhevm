@@ -135,28 +135,28 @@ pub struct FheEvalArgs {
     /// instruction data so stateless indexers can validate account references without the
     /// transaction envelope (DD-033 self-description).
     pub account_count: u8,
-    /// Interned 32-byte constant pool: operand handles, scalar values, ACL domain keys, app
+    /// Interned 32-byte constant dictionary: operand handles, scalar values, ACL domain keys, app
     /// account keys, encrypted value labels, and output subjects. Steps reference entries by
     /// `u8` index, so a value repeated across steps is paid for once (the compiled-message /
-    /// constant-pool encoding; fhevm-internal#1853 W7).
-    pub pool: Vec<[u8; 32]>,
+    /// constant-dictionary encoding; fhevm-internal#1853 W7).
+    pub dictionary: Vec<[u8; 32]>,
     /// Ordered step list. Each `AllowedLocal` operand may only reference an output
     /// produced by an earlier index in this vector.
     pub steps: Vec<FheEvalStep>,
 }
 
 impl FheEvalArgs {
-    /// Resolves an interned pool entry; an out-of-range index fails the frame.
-    pub fn pool_bytes(&self, index: u8) -> anchor_lang::Result<[u8; 32]> {
-        self.pool
+    /// Resolves an interned dictionary entry; an out-of-range index fails the frame.
+    pub fn dictionary_bytes(&self, index: u8) -> anchor_lang::Result<[u8; 32]> {
+        self.dictionary
             .get(index as usize)
             .copied()
-            .ok_or_else(|| error!(ZamaHostError::FheEvalPoolIndexOutOfBounds))
+            .ok_or_else(|| error!(ZamaHostError::FheEvalDictionaryIndexOutOfBounds))
     }
 
-    /// Resolves an interned pool entry as a public key.
-    pub fn pool_key(&self, index: u8) -> anchor_lang::Result<Pubkey> {
-        Ok(Pubkey::new_from_array(self.pool_bytes(index)?))
+    /// Resolves an interned dictionary entry as a public key.
+    pub fn dictionary_key(&self, index: u8) -> anchor_lang::Result<Pubkey> {
+        Ok(Pubkey::new_from_array(self.dictionary_bytes(index)?))
     }
 }
 
@@ -290,7 +290,7 @@ pub enum FheEvalOperand {
     /// Input allowed through durable ACL state: a canonical `EncryptedValue`
     /// account in `remaining_accounts` whose current handle matches.
     AllowedDurable {
-        /// Pool index of the handle expected as the encrypted value's current handle.
+        /// Dictionary index of the handle expected as the encrypted value's current handle.
         handle_index: u8,
         /// Index into `remaining_accounts` for the `EncryptedValue` account.
         encrypted_value_index: u8,
@@ -301,9 +301,9 @@ pub enum FheEvalOperand {
         /// Producer operation index.
         producer_index: u8,
     },
-    /// Plaintext scalar bytes (pool index). Scalar operands are only valid on the RHS.
+    /// Plaintext scalar bytes (dictionary index). Scalar operands are only valid on the RHS.
     Scalar {
-        /// Pool index of the scalar value.
+        /// Dictionary index of the scalar value.
         value_index: u8,
     },
     /// External encrypted input verified in-frame by re-running the coprocessor attestation.
@@ -336,13 +336,13 @@ pub enum FheEvalOutput {
         /// context. `Some(index)` requires that remaining account to be a signer
         /// and to match the output app account.
         output_app_account_authority_index: Option<u8>,
-        /// Pool index of the ACL domain key for the output encrypted value account.
+        /// Dictionary index of the ACL domain key for the output encrypted value account.
         output_acl_domain_key_index: u8,
-        /// Pool index of the app account authorized to bind the output encrypted value account.
+        /// Dictionary index of the app account authorized to bind the output encrypted value account.
         output_app_account_index: u8,
-        /// Pool index of the encrypted value label for the output encrypted value account.
+        /// Dictionary index of the encrypted value label for the output encrypted value account.
         output_encrypted_value_label_index: u8,
-        /// Pool indexes of the subjects on the output encrypted value account. On create these
+        /// Dictionary indexes of the subjects on the output encrypted value account. On create these
         /// are the initial subjects; on supersede they become the new audience, which may rotate
         /// away from the stored set (the outgoing audience is sealed into
         /// historical leaves first; added subjects pass the grant deny-list).

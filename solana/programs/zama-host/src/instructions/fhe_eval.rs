@@ -193,7 +193,7 @@ fn execute_eval_frame<'a, 'info>(
 ) -> Result<Vec<ProducedPublicOutput>> {
     let mut execution = EvalExecutionState {
         table,
-        pool: &args.pool,
+        dictionary: &args.dictionary,
         produced: Vec::with_capacity(args.steps.len()),
         born_public_outputs: Vec::new(),
         subject,
@@ -211,8 +211,8 @@ fn execute_eval_frame<'a, 'info>(
 /// [`walk`].
 struct EvalExecutionState<'t, 'a, 'info> {
     table: &'t mut EvalAccountTable<'a, 'info>,
-    /// The frame's interned constant pool ([`FheEvalArgs::pool`]).
-    pool: &'t [[u8; 32]],
+    /// The frame's interned constant dictionary ([`FheEvalArgs::dictionary`]).
+    dictionary: &'t [[u8; 32]],
     produced: Vec<ProducedValue>,
     born_public_outputs: Vec<ProducedPublicOutput>,
     subject: Pubkey,
@@ -221,11 +221,11 @@ struct EvalExecutionState<'t, 'a, 'info> {
 }
 
 impl<'info> EvalExecutionState<'_, '_, 'info> {
-    fn pool_bytes(&self, index: u8) -> Result<[u8; 32]> {
-        self.pool
+    fn dictionary_bytes(&self, index: u8) -> Result<[u8; 32]> {
+        self.dictionary
             .get(index as usize)
             .copied()
-            .ok_or_else(|| error!(ZamaHostError::FheEvalPoolIndexOutOfBounds))
+            .ok_or_else(|| error!(ZamaHostError::FheEvalDictionaryIndexOutOfBounds))
     }
 
     #[inline(never)]
@@ -276,7 +276,7 @@ impl<'info> EvalExecutionState<'_, '_, 'info> {
         let born_public_output = accept_eval_output(
             ctx,
             self.table,
-            self.pool,
+            self.dictionary,
             &mut self.produced,
             result,
             output,
@@ -311,7 +311,7 @@ pub fn assert_ternary_operand_types(
 fn accept_eval_output<'info>(
     ctx: &Context<'info, FheEval<'info>>,
     table: &mut EvalAccountTable<'_, 'info>,
-    pool: &[[u8; 32]],
+    dictionary: &[[u8; 32]],
     produced: &mut Vec<ProducedValue>,
     result: [u8; 32],
     output: &FheEvalOutput,
@@ -336,11 +336,11 @@ fn accept_eval_output<'info>(
             previous_subjects,
             make_public,
         } => {
-            let output_acl_domain_key = pool_key(pool, *output_acl_domain_key_index)?;
-            let output_app_account = pool_key(pool, *output_app_account_index)?;
+            let output_acl_domain_key = dictionary_key(dictionary, *output_acl_domain_key_index)?;
+            let output_app_account = dictionary_key(dictionary, *output_app_account_index)?;
             let output_encrypted_value_label =
-                pool_bytes(pool, *output_encrypted_value_label_index)?;
-            let output_subjects = resolve_pool_subjects(pool, output_subject_indexes)?;
+                dictionary_bytes(dictionary, *output_encrypted_value_label_index)?;
+            let output_subjects = resolve_dictionary_subjects(dictionary, output_subject_indexes)?;
             let app_account_authority = durable_output_authority(
                 table,
                 ctx,
@@ -376,18 +376,22 @@ fn accept_eval_output<'info>(
     Ok(born_public_output)
 }
 
-fn pool_bytes(pool: &[[u8; 32]], index: u8) -> Result<[u8; 32]> {
-    pool.get(index as usize)
+fn dictionary_bytes(dictionary: &[[u8; 32]], index: u8) -> Result<[u8; 32]> {
+    dictionary
+        .get(index as usize)
         .copied()
-        .ok_or_else(|| error!(ZamaHostError::FheEvalPoolIndexOutOfBounds))
+        .ok_or_else(|| error!(ZamaHostError::FheEvalDictionaryIndexOutOfBounds))
 }
 
-fn pool_key(pool: &[[u8; 32]], index: u8) -> Result<Pubkey> {
-    Ok(Pubkey::new_from_array(pool_bytes(pool, index)?))
+fn dictionary_key(dictionary: &[[u8; 32]], index: u8) -> Result<Pubkey> {
+    Ok(Pubkey::new_from_array(dictionary_bytes(dictionary, index)?))
 }
 
-fn resolve_pool_subjects(pool: &[[u8; 32]], indexes: &[u8]) -> Result<Vec<Pubkey>> {
-    indexes.iter().map(|index| pool_key(pool, *index)).collect()
+fn resolve_dictionary_subjects(dictionary: &[[u8; 32]], indexes: &[u8]) -> Result<Vec<Pubkey>> {
+    indexes
+        .iter()
+        .map(|index| dictionary_key(dictionary, *index))
+        .collect()
 }
 
 fn durable_output_authority<'info>(
@@ -682,7 +686,7 @@ mod tests {
         let table = EvalAccountTable::new(&accounts).unwrap();
         let args = FheEvalArgs {
             account_count: 1,
-            pool: Vec::new(),
+            dictionary: Vec::new(),
             steps: vec![FheEvalStep::Rand {
                 fhe_type: 5,
                 output: FheEvalOutput::AllowedDurable {

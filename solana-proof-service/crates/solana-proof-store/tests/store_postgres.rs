@@ -62,9 +62,9 @@ fn fhe_eval_ix(
 ) -> RawInstruction {
     // Pool layout: [0]=domain, [1]=app account, [2]=label, [3..]=output
     // subjects. TrivialEncrypt's plaintext is inline, not pooled.
-    let mut pool = vec![pk(0x71), pk(0x72), pk(0x73)];
-    let subject_base = pool.len() as u8;
-    pool.extend_from_slice(subjects);
+    let mut dictionary = vec![pk(0x71), pk(0x72), pk(0x73)];
+    let subject_base = dictionary.len() as u8;
+    dictionary.extend_from_slice(subjects);
     let step = FheEvalStep::TrivialEncrypt {
         plaintext: pk(0x70),
         fhe_type: 5,
@@ -89,7 +89,7 @@ fn fhe_eval_ix(
     };
     let args = FheEvalArgs {
         account_count: 1,
-        pool,
+        dictionary,
         steps: vec![step],
     };
     let named = vec![

@@ -2057,8 +2057,8 @@
     },
     {
       "code": 6077,
-      "name": "FheEvalPoolIndexOutOfBounds",
-      "msg": "FHE eval pool index out of bounds"
+      "name": "FheEvalDictionaryIndexOutOfBounds",
+      "msg": "FHE eval dictionary index out of bounds"
     },
     {
       "code": 6078,
@@ -2072,8 +2072,8 @@
     },
     {
       "code": 6080,
-      "name": "FheEvalPoolEntryUnreferenced",
-      "msg": "FHE eval pool entry is not referenced by any step"
+      "name": "FheEvalDictionaryEntryUnreferenced",
+      "msg": "FHE eval dictionary entry is not referenced by any step"
     },
     {
       "code": 6081,
@@ -2398,12 +2398,12 @@
             "type": "u8"
           },
           {
-            "name": "pool",
+            "name": "dictionary",
             "docs": [
-              "Interned 32-byte constant pool: operand handles, scalar values, ACL domain keys, app",
+              "Interned 32-byte constant dictionary: operand handles, scalar values, ACL domain keys, app",
               "account keys, encrypted value labels, and output subjects. Steps reference entries by",
               "`u8` index, so a value repeated across steps is paid for once (the compiled-message /",
-              "constant-pool encoding; fhevm-internal#1853 W7)."
+              "constant-dictionary encoding; fhevm-internal#1853 W7)."
             ],
             "type": {
               "vec": {
@@ -2445,7 +2445,7 @@
               {
                 "name": "handle_index",
                 "docs": [
-                  "Pool index of the handle expected as the encrypted value's current handle."
+                  "Dictionary index of the handle expected as the encrypted value's current handle."
                 ],
                 "type": "u8"
               },
@@ -2476,7 +2476,7 @@
               {
                 "name": "value_index",
                 "docs": [
-                  "Pool index of the scalar value."
+                  "Dictionary index of the scalar value."
                 ],
                 "type": "u8"
               }
@@ -2538,28 +2538,28 @@
               {
                 "name": "output_acl_domain_key_index",
                 "docs": [
-                  "Pool index of the ACL domain key for the output encrypted value account."
+                  "Dictionary index of the ACL domain key for the output encrypted value account."
                 ],
                 "type": "u8"
               },
               {
                 "name": "output_app_account_index",
                 "docs": [
-                  "Pool index of the app account authorized to bind the output encrypted value account."
+                  "Dictionary index of the app account authorized to bind the output encrypted value account."
                 ],
                 "type": "u8"
               },
               {
                 "name": "output_encrypted_value_label_index",
                 "docs": [
-                  "Pool index of the encrypted value label for the output encrypted value account."
+                  "Dictionary index of the encrypted value label for the output encrypted value account."
                 ],
                 "type": "u8"
               },
               {
                 "name": "output_subject_indexes",
                 "docs": [
-                  "Pool indexes of the subjects on the output encrypted value account. On create these",
+                  "Dictionary indexes of the subjects on the output encrypted value account. On create these",
                   "are the initial subjects; on supersede they become the new audience, which may rotate",
                   "away from the stored set (the outgoing audience is sealed into",
                   "historical leaves first; added subjects pass the grant deny-list)."

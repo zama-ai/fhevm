@@ -55,14 +55,14 @@ pub type Result<T> = std::result::Result<T, EvalBuildError>;
 pub enum EvalBuildError {
     /// More accounts were referenced than fit in the host's `u8` wire indices.
     TooManyRemainingAccounts,
-    /// The frame's interned constant pool outgrew the host's `u8` wire indices.
-    TooManyPoolEntries,
-    /// An interned pool entry is not referenced by any step (host parity:
+    /// The frame's interned constant dictionary outgrew the host's `u8` wire indices.
+    TooManyDictionaryEntries,
+    /// An interned dictionary entry is not referenced by any step (host parity:
     /// `FheEvalPoolEntryUnreferenced`).
-    UnreferencedPoolEntry,
-    /// A step referenced a pool index past the end of the interned pool (host
+    UnreferencedDictionaryEntry,
+    /// A step referenced a dictionary index past the end of the interned dictionary (host
     /// parity: `FheEvalPoolIndexOutOfBounds`).
-    PoolIndexOutOfBounds,
+    DictionaryIndexOutOfBounds,
     /// A transient operand referenced an operation that has not been produced.
     InvalidTransientReference,
     /// A durable operand referenced an account written by an earlier step.

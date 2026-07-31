@@ -489,17 +489,17 @@ fn existing_value_account_state(
     }
 }
 
-/// Builds the frame's interned 32-byte constant pool while a flow assembles its steps.
+/// Builds the frame's interned 32-byte constant dictionary while a flow assembles its steps.
 /// Interning deduplicates: repeated constants share one entry.
 #[derive(Default)]
-struct FramePool(Vec<[u8; 32]>);
+struct BatchDictionary(Vec<[u8; 32]>);
 
-impl FramePool {
+impl BatchDictionary {
     fn intern(&mut self, bytes: [u8; 32]) -> u8 {
         if let Some(index) = self.0.iter().position(|entry| *entry == bytes) {
-            return u8::try_from(index).expect("frame pool fits u8");
+            return u8::try_from(index).expect("frame dictionary fits u8");
         }
-        let index = u8::try_from(self.0.len()).expect("frame pool fits u8");
+        let index = u8::try_from(self.0.len()).expect("frame dictionary fits u8");
         self.0.push(bytes);
         index
     }
@@ -519,7 +519,7 @@ impl FramePool {
 #[allow(clippy::too_many_arguments)]
 fn durable_output(
     program: &Program<Rc<Keypair>>,
-    pool: &mut FramePool,
+    dictionary: &mut BatchDictionary,
     encrypted_value: Pubkey,
     index: u8,
     acl_domain_key: Pubkey,
@@ -535,10 +535,10 @@ fn durable_output(
     Ok(zama_host::FheEvalOutput::AllowedDurable {
         output_encrypted_value_index: index,
         output_app_account_authority_index: None,
-        output_acl_domain_key_index: pool.intern_key(acl_domain_key),
-        output_app_account_index: pool.intern_key(app_account),
-        output_encrypted_value_label_index: pool.intern(encrypted_value_label),
-        output_subject_indexes: pool.intern_subjects(subjects),
+        output_acl_domain_key_index: dictionary.intern_key(acl_domain_key),
+        output_app_account_index: dictionary.intern_key(app_account),
+        output_encrypted_value_label_index: dictionary.intern(encrypted_value_label),
+        output_subject_indexes: dictionary.intern_subjects(subjects),
         previous_handle,
         previous_subjects,
         make_public: false,
@@ -714,10 +714,10 @@ fn trivial_encrypt_eval_with_label(
         Pubkey::find_program_address(&[EVENT_AUTHORITY_SEED], &zama_host::ID);
     let subjects = vec![payer.pubkey()];
 
-    let mut pool = FramePool::default();
+    let mut dictionary = BatchDictionary::default();
     let output = durable_output(
         host,
-        &mut pool,
+        &mut dictionary,
         target.encrypted_value,
         0,
         target.acl_domain_key,
@@ -727,7 +727,7 @@ fn trivial_encrypt_eval_with_label(
     )?;
     let args = zama_host::FheEvalArgs {
         account_count: 1,
-        pool: pool.0,
+        dictionary: dictionary.0,
         steps: vec![zama_host::FheEvalStep::TrivialEncrypt {
             plaintext: target.plaintext,
             fhe_type,
@@ -1157,7 +1157,7 @@ fn fhe_eval_verified_input_add(
         signatures: vec![signature],
     };
 
-    let mut pool = FramePool::default();
+    let mut dictionary = BatchDictionary::default();
     let args = zama_host::FheEvalArgs {
         account_count: 1,
         steps: vec![zama_host::FheEvalStep::Binary {
@@ -1166,12 +1166,12 @@ fn fhe_eval_verified_input_add(
                 attestation: Box::new(attestation),
             },
             rhs: zama_host::FheEvalOperand::Scalar {
-                value_index: pool.intern(scalar),
+                value_index: dictionary.intern(scalar),
             },
             output_fhe_type: fhe_type,
             output: durable_output(
                 host,
-                &mut pool,
+                &mut dictionary,
                 output_encrypted_value,
                 0,
                 acl_domain_key,
@@ -1180,7 +1180,7 @@ fn fhe_eval_verified_input_add(
                 subjects,
             )?,
         }],
-        pool: pool.0,
+        dictionary: dictionary.0,
     };
 
     let input_hex: String = input_handle.iter().map(|b| format!("{b:02x}")).collect();
@@ -1812,7 +1812,7 @@ fn create_durable_public_decrypt_operand(
     let (zama_event_authority, _) =
         Pubkey::find_program_address(&[EVENT_AUTHORITY_SEED], &zama_host::ID);
     let subjects = vec![payer.pubkey()];
-    let mut pool = FramePool::default();
+    let mut dictionary = BatchDictionary::default();
     let args = zama_host::FheEvalArgs {
         account_count: 1,
         steps: vec![zama_host::FheEvalStep::TrivialEncrypt {
@@ -1820,7 +1820,7 @@ fn create_durable_public_decrypt_operand(
             fhe_type,
             output: durable_output(
                 host,
-                &mut pool,
+                &mut dictionary,
                 encrypted_value,
                 0,
                 acl_domain_key,
@@ -1829,7 +1829,7 @@ fn create_durable_public_decrypt_operand(
                 subjects,
             )?,
         }],
-        pool: pool.0,
+        dictionary: dictionary.0,
     };
     host.request()
         .accounts(zama_host::accounts::FheEval {
@@ -1894,7 +1894,7 @@ fn fhe_eval_binary(
     let (zama_event_authority, _) =
         Pubkey::find_program_address(&[EVENT_AUTHORITY_SEED], &zama_host::ID);
     let subjects = vec![payer.pubkey()];
-    let mut pool = FramePool::default();
+    let mut dictionary = BatchDictionary::default();
 
     // Operand A. Label = marker 0x0a|op|type|pos|value → distinct PDA per operand/op (no collisions).
     let mut operand_label_a = [0x0au8; 32];
@@ -1917,7 +1917,7 @@ fn fhe_eval_binary(
         let mut scalar_b = [0u8; 32];
         scalar_b[24..32].copy_from_slice(&b.to_be_bytes());
         zama_host::FheEvalOperand::Scalar {
-            value_index: pool.intern(scalar_b),
+            value_index: dictionary.intern(scalar_b),
         }
     } else {
         let mut operand_label_b = [0x0au8; 32];
@@ -1935,7 +1935,7 @@ fn fhe_eval_binary(
         )?;
         operand_values.push(encrypted_value_b);
         zama_host::FheEvalOperand::AllowedDurable {
-            handle_index: pool.intern(handle_b),
+            handle_index: dictionary.intern(handle_b),
             encrypted_value_index: 1,
         }
     };
@@ -1944,14 +1944,14 @@ fn fhe_eval_binary(
     let steps = vec![zama_host::FheEvalStep::Binary {
         op,
         lhs: zama_host::FheEvalOperand::AllowedDurable {
-            handle_index: pool.intern(handle_a),
+            handle_index: dictionary.intern(handle_a),
             encrypted_value_index: 0,
         },
         rhs: rhs_operand,
         output_fhe_type,
         output: durable_output(
             host,
-            &mut pool,
+            &mut dictionary,
             output_encrypted_value,
             output_index,
             acl_domain_key,
@@ -1990,7 +1990,7 @@ fn fhe_eval_binary(
         .args(zama_host::instruction::FheEval {
             args: zama_host::FheEvalArgs {
                 account_count: (operand_values.len() + 1) as u8,
-                pool: pool.0,
+                dictionary: dictionary.0,
                 steps,
             },
         })
@@ -2068,19 +2068,19 @@ fn fhe_eval_unary(
         operand_label_a,
     )?;
 
-    let mut pool = FramePool::default();
+    let mut dictionary = BatchDictionary::default();
     let args = zama_host::FheEvalArgs {
         account_count: 2,
         steps: vec![zama_host::FheEvalStep::Unary {
             op,
             operand: zama_host::FheEvalOperand::AllowedDurable {
-                handle_index: pool.intern(handle_a),
+                handle_index: dictionary.intern(handle_a),
                 encrypted_value_index: 0,
             },
             output_fhe_type: out_fhe_type,
             output: durable_output(
                 host,
-                &mut pool,
+                &mut dictionary,
                 output_encrypted_value,
                 1,
                 acl_domain_key,
@@ -2089,7 +2089,7 @@ fn fhe_eval_unary(
                 subjects,
             )?,
         }],
-        pool: pool.0,
+        dictionary: dictionary.0,
     };
 
     let sig = host
@@ -2208,27 +2208,27 @@ fn fhe_eval_ternary(
         label_false,
     )?;
 
-    let mut pool = FramePool::default();
+    let mut dictionary = BatchDictionary::default();
     let args = zama_host::FheEvalArgs {
         account_count: 4,
         steps: vec![zama_host::FheEvalStep::Ternary {
             op: zama_host::FheTernaryOpCode::IfThenElse,
             control: zama_host::FheEvalOperand::AllowedDurable {
-                handle_index: pool.intern(h_ctrl),
+                handle_index: dictionary.intern(h_ctrl),
                 encrypted_value_index: 0,
             },
             if_true: zama_host::FheEvalOperand::AllowedDurable {
-                handle_index: pool.intern(h_true),
+                handle_index: dictionary.intern(h_true),
                 encrypted_value_index: 1,
             },
             if_false: zama_host::FheEvalOperand::AllowedDurable {
-                handle_index: pool.intern(h_false),
+                handle_index: dictionary.intern(h_false),
                 encrypted_value_index: 2,
             },
             output_fhe_type: fhe_type,
             output: durable_output(
                 host,
-                &mut pool,
+                &mut dictionary,
                 output_encrypted_value,
                 3,
                 acl_domain_key,
@@ -2237,7 +2237,7 @@ fn fhe_eval_ternary(
                 subjects,
             )?,
         }],
-        pool: pool.0,
+        dictionary: dictionary.0,
     };
 
     let sig = host
@@ -2314,7 +2314,7 @@ fn fhe_eval_rand_bounded(
     let mut upper_bound = [0u8; 32];
     upper_bound[24..32].copy_from_slice(&upper.to_be_bytes());
 
-    let mut pool = FramePool::default();
+    let mut dictionary = BatchDictionary::default();
     let args = zama_host::FheEvalArgs {
         account_count: 1,
         steps: vec![zama_host::FheEvalStep::RandBounded {
@@ -2322,7 +2322,7 @@ fn fhe_eval_rand_bounded(
             fhe_type,
             output: durable_output(
                 host,
-                &mut pool,
+                &mut dictionary,
                 output_encrypted_value,
                 0,
                 acl_domain_key,
@@ -2331,7 +2331,7 @@ fn fhe_eval_rand_bounded(
                 subjects,
             )?,
         }],
-        pool: pool.0,
+        dictionary: dictionary.0,
     };
 
     let sig = host
@@ -2415,24 +2415,24 @@ fn fhe_eval_sum(
     let (value_b, h_b) =
         create_durable_public_decrypt_operand(host, payer, host_config, b, fhe_type, label_b)?;
 
-    let mut pool = FramePool::default();
+    let mut dictionary = BatchDictionary::default();
     let args = zama_host::FheEvalArgs {
         account_count: 3,
         steps: vec![zama_host::FheEvalStep::Sum {
             operands: vec![
                 zama_host::FheEvalOperand::AllowedDurable {
-                    handle_index: pool.intern(h_a),
+                    handle_index: dictionary.intern(h_a),
                     encrypted_value_index: 0,
                 },
                 zama_host::FheEvalOperand::AllowedDurable {
-                    handle_index: pool.intern(h_b),
+                    handle_index: dictionary.intern(h_b),
                     encrypted_value_index: 1,
                 },
             ],
             fhe_type,
             output: durable_output(
                 host,
-                &mut pool,
+                &mut dictionary,
                 output_encrypted_value,
                 2,
                 acl_domain_key,
@@ -2441,7 +2441,7 @@ fn fhe_eval_sum(
                 subjects,
             )?,
         }],
-        pool: pool.0,
+        dictionary: dictionary.0,
     };
 
     let sig = host
@@ -2509,7 +2509,7 @@ fn fhe_eval_is_in(
     let (zama_event_authority, _) =
         Pubkey::find_program_address(&[EVENT_AUTHORITY_SEED], &zama_host::ID);
     let subjects = vec![payer.pubkey()];
-    let mut pool = FramePool::default();
+    let mut dictionary = BatchDictionary::default();
 
     // value + set as durable public-decrypt handles. remaining_accounts: [value, set.., output].
     let set_values: [u64; 3] = [10, 42, 100];
@@ -2544,7 +2544,7 @@ fn fhe_eval_is_in(
             label,
         )?;
         set_operands.push(zama_host::FheEvalOperand::AllowedDurable {
-            handle_index: pool.intern(handle),
+            handle_index: dictionary.intern(handle),
             encrypted_value_index: operand_values.len() as u8,
         });
         operand_values.push(encrypted_value);
@@ -2553,14 +2553,14 @@ fn fhe_eval_is_in(
 
     let steps = vec![zama_host::FheEvalStep::IsIn {
         value: zama_host::FheEvalOperand::AllowedDurable {
-            handle_index: pool.intern(h_value),
+            handle_index: dictionary.intern(h_value),
             encrypted_value_index: 0,
         },
         set: set_operands,
         fhe_type: elem_fhe_type,
         output: durable_output(
             host,
-            &mut pool,
+            &mut dictionary,
             output_encrypted_value,
             output_index,
             acl_domain_key,
@@ -2572,7 +2572,7 @@ fn fhe_eval_is_in(
 
     let args = zama_host::FheEvalArgs {
         account_count: (operand_values.len() + 1) as u8,
-        pool: pool.0,
+        dictionary: dictionary.0,
         steps,
     };
     let in_set = set_values.contains(&value);
@@ -2666,22 +2666,22 @@ fn fhe_eval_mul_div(
     let (encrypted_value_a, h_a) =
         create_durable_public_decrypt_operand(host, payer, host_config, a, fhe_type, label_a)?;
 
-    let mut pool = FramePool::default();
+    let mut dictionary = BatchDictionary::default();
     let args = zama_host::FheEvalArgs {
         account_count: 2,
         steps: vec![zama_host::FheEvalStep::MulDiv {
             factor1: zama_host::FheEvalOperand::AllowedDurable {
-                handle_index: pool.intern(h_a),
+                handle_index: dictionary.intern(h_a),
                 encrypted_value_index: 0,
             },
             factor2: zama_host::FheEvalOperand::Scalar {
-                value_index: pool.intern(scalar_b),
+                value_index: dictionary.intern(scalar_b),
             },
             divisor,
             output_fhe_type: fhe_type,
             output: durable_output(
                 host,
-                &mut pool,
+                &mut dictionary,
                 output_encrypted_value,
                 1,
                 acl_domain_key,
@@ -2690,7 +2690,7 @@ fn fhe_eval_mul_div(
                 subjects,
             )?,
         }],
-        pool: pool.0,
+        dictionary: dictionary.0,
     };
 
     let expected = a * b / d;

@@ -122,8 +122,8 @@ impl EvalPlan {
                 continue;
             };
             for index in output_subject_indexes {
-                // `finish` validated every pool index, so resolution cannot fail here.
-                let Ok(subject) = self.args.pool_key(*index) else {
+                // `finish` validated every dictionary index, so resolution cannot fail here.
+                let Ok(subject) = self.args.dictionary_key(*index) else {
                     continue;
                 };
                 let already_stored = previous_subjects

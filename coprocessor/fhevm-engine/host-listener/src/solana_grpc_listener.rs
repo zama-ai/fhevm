@@ -1554,7 +1554,7 @@ mod fhe_eval_acl_tests {
 
         let plan = FheEvalArgs {
             account_count: 1,
-            pool: vec![[3; 32], [1; 32], [8; 32], [9; 32], [10; 32]],
+            dictionary: vec![[3; 32], [1; 32], [8; 32], [9; 32], [10; 32]],
             steps: vec![FheEvalStep::Binary {
                 op: PgmBinaryOpCode::Add,
                 lhs: FheEvalOperand::AllowedDurable {
@@ -1622,7 +1622,7 @@ mod fhe_eval_acl_tests {
     async fn born_public_fhe_eval_output_requests_material() {
         let plan = FheEvalArgs {
             account_count: 1,
-            pool: vec![[8; 32], [9; 32], [10; 32], SUBJECT],
+            dictionary: vec![[8; 32], [9; 32], [10; 32], SUBJECT],
             steps: vec![FheEvalStep::TrivialEncrypt {
                 plaintext: [7; 32],
                 fhe_type: 5,

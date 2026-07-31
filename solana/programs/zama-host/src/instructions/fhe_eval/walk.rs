@@ -156,7 +156,7 @@ impl EvalExecutionState<'_, '_, '_> {
                 handle_index,
                 encrypted_value_index,
             } => {
-                let handle = self.pool_bytes(*handle_index)?;
+                let handle = self.dictionary_bytes(*handle_index)?;
                 self.resolve_durable_operand(handle, u16::from(*encrypted_value_index))
             }
             FheEvalOperand::AllowedLocal { producer_index } => self
@@ -191,9 +191,9 @@ impl EvalExecutionState<'_, '_, '_> {
     /// Resolves a binary right-hand operand, which may be a scalar.
     fn resolve_rhs_operand(&mut self, operand: &FheEvalOperand) -> Result<ResolvedOperand> {
         match operand {
-            FheEvalOperand::Scalar { value_index } => {
-                Ok(ResolvedOperand::scalar(self.pool_bytes(*value_index)?))
-            }
+            FheEvalOperand::Scalar { value_index } => Ok(ResolvedOperand::scalar(
+                self.dictionary_bytes(*value_index)?,
+            )),
             _ => self.resolve_encrypted_operand(operand),
         }
     }

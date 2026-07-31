@@ -64,13 +64,13 @@ pub(crate) fn validate_rand_steps_anchor_durable_output(steps: &[FheEvalStep]) -
 pub(crate) fn validate_lowered_eval_plan(
     steps: &[FheEvalStep],
     remaining_accounts: &[EvalAccountMeta],
-    pool: &[[u8; 32]],
+    dictionary: &[[u8; 32]],
 ) -> Result<()> {
     if u8::try_from(remaining_accounts.len()).is_err() {
         return Err(EvalBuildError::TooManyRemainingAccounts);
     }
-    if u8::try_from(pool.len()).is_err() {
-        return Err(EvalBuildError::TooManyPoolEntries);
+    if u8::try_from(dictionary.len()).is_err() {
+        return Err(EvalBuildError::TooManyDictionaryEntries);
     }
     for (index, account) in remaining_accounts.iter().enumerate() {
         if account.pubkey == Pubkey::default() || account.purposes.is_empty() {
@@ -85,16 +85,16 @@ pub(crate) fn validate_lowered_eval_plan(
     }
 
     let mut used_accounts = vec![false; remaining_accounts.len()];
-    let mut used_pool = vec![false; pool.len()];
+    let mut used_dictionary = vec![false; dictionary.len()];
     for (step_index, step) in steps.iter().enumerate() {
-        validate_lowered_step(step, step_index, &mut used_accounts, &mut used_pool)?;
+        validate_lowered_step(step, step_index, &mut used_accounts, &mut used_dictionary)?;
     }
     if used_accounts.iter().any(|used| !*used) {
         return Err(EvalBuildError::InvalidRemainingAccountReference);
     }
-    // Mirrors the host's whole-frame pool hygiene rule: every interned entry must be referenced.
-    if used_pool.iter().any(|used| !*used) {
-        return Err(EvalBuildError::UnreferencedPoolEntry);
+    // Mirrors the host's whole-frame dictionary hygiene rule: every interned entry must be referenced.
+    if used_dictionary.iter().any(|used| !*used) {
+        return Err(EvalBuildError::UnreferencedDictionaryEntry);
     }
     Ok(())
 }
@@ -103,15 +103,15 @@ fn validate_lowered_step(
     step: &FheEvalStep,
     step_index: usize,
     used_accounts: &mut [bool],
-    used_pool: &mut [bool],
+    used_dictionary: &mut [bool],
 ) -> Result<()> {
     match step {
         FheEvalStep::Binary {
             lhs, rhs, output, ..
         } => {
-            validate_lowered_encrypted_operand(lhs, step_index, used_accounts, used_pool)?;
-            validate_lowered_rhs_operand(rhs, step_index, used_accounts, used_pool)?;
-            validate_lowered_output(output, used_accounts, used_pool)?;
+            validate_lowered_encrypted_operand(lhs, step_index, used_accounts, used_dictionary)?;
+            validate_lowered_rhs_operand(rhs, step_index, used_accounts, used_dictionary)?;
+            validate_lowered_output(output, used_accounts, used_dictionary)?;
         }
         FheEvalStep::Ternary {
             control,
@@ -120,38 +120,68 @@ fn validate_lowered_step(
             output,
             ..
         } => {
-            validate_lowered_encrypted_operand(control, step_index, used_accounts, used_pool)?;
-            validate_lowered_encrypted_operand(if_true, step_index, used_accounts, used_pool)?;
-            validate_lowered_encrypted_operand(if_false, step_index, used_accounts, used_pool)?;
-            validate_lowered_output(output, used_accounts, used_pool)?;
+            validate_lowered_encrypted_operand(
+                control,
+                step_index,
+                used_accounts,
+                used_dictionary,
+            )?;
+            validate_lowered_encrypted_operand(
+                if_true,
+                step_index,
+                used_accounts,
+                used_dictionary,
+            )?;
+            validate_lowered_encrypted_operand(
+                if_false,
+                step_index,
+                used_accounts,
+                used_dictionary,
+            )?;
+            validate_lowered_output(output, used_accounts, used_dictionary)?;
         }
         FheEvalStep::TrivialEncrypt { output, .. }
         | FheEvalStep::Rand { output, .. }
         | FheEvalStep::RandBounded { output, .. } => {
-            validate_lowered_output(output, used_accounts, used_pool)?
+            validate_lowered_output(output, used_accounts, used_dictionary)?
         }
         FheEvalStep::Unary {
             operand, output, ..
         } => {
-            validate_lowered_encrypted_operand(operand, step_index, used_accounts, used_pool)?;
-            validate_lowered_output(output, used_accounts, used_pool)?;
+            validate_lowered_encrypted_operand(
+                operand,
+                step_index,
+                used_accounts,
+                used_dictionary,
+            )?;
+            validate_lowered_output(output, used_accounts, used_dictionary)?;
         }
         FheEvalStep::Sum {
             operands, output, ..
         } => {
             for operand in operands {
-                validate_lowered_encrypted_operand(operand, step_index, used_accounts, used_pool)?;
+                validate_lowered_encrypted_operand(
+                    operand,
+                    step_index,
+                    used_accounts,
+                    used_dictionary,
+                )?;
             }
-            validate_lowered_output(output, used_accounts, used_pool)?;
+            validate_lowered_output(output, used_accounts, used_dictionary)?;
         }
         FheEvalStep::IsIn {
             value, set, output, ..
         } => {
-            validate_lowered_encrypted_operand(value, step_index, used_accounts, used_pool)?;
+            validate_lowered_encrypted_operand(value, step_index, used_accounts, used_dictionary)?;
             for operand in set {
-                validate_lowered_encrypted_operand(operand, step_index, used_accounts, used_pool)?;
+                validate_lowered_encrypted_operand(
+                    operand,
+                    step_index,
+                    used_accounts,
+                    used_dictionary,
+                )?;
             }
-            validate_lowered_output(output, used_accounts, used_pool)?;
+            validate_lowered_output(output, used_accounts, used_dictionary)?;
         }
         FheEvalStep::MulDiv {
             factor1,
@@ -159,9 +189,14 @@ fn validate_lowered_step(
             output,
             ..
         } => {
-            validate_lowered_encrypted_operand(factor1, step_index, used_accounts, used_pool)?;
-            validate_lowered_rhs_operand(factor2, step_index, used_accounts, used_pool)?;
-            validate_lowered_output(output, used_accounts, used_pool)?;
+            validate_lowered_encrypted_operand(
+                factor1,
+                step_index,
+                used_accounts,
+                used_dictionary,
+            )?;
+            validate_lowered_rhs_operand(factor2, step_index, used_accounts, used_dictionary)?;
+            validate_lowered_output(output, used_accounts, used_dictionary)?;
         }
     }
     Ok(())
@@ -171,11 +206,15 @@ fn validate_lowered_rhs_operand(
     operand: &FheEvalOperand,
     step_index: usize,
     used_accounts: &mut [bool],
-    used_pool: &mut [bool],
+    used_dictionary: &mut [bool],
 ) -> Result<()> {
     match operand {
-        FheEvalOperand::Scalar { value_index } => mark_lowered_pool_entry(used_pool, *value_index),
-        _ => validate_lowered_encrypted_operand(operand, step_index, used_accounts, used_pool),
+        FheEvalOperand::Scalar { value_index } => {
+            mark_lowered_dictionary_entry(used_dictionary, *value_index)
+        }
+        _ => {
+            validate_lowered_encrypted_operand(operand, step_index, used_accounts, used_dictionary)
+        }
     }
 }
 
@@ -183,14 +222,14 @@ fn validate_lowered_encrypted_operand(
     operand: &FheEvalOperand,
     step_index: usize,
     used_accounts: &mut [bool],
-    used_pool: &mut [bool],
+    used_dictionary: &mut [bool],
 ) -> Result<()> {
     match operand {
         FheEvalOperand::AllowedDurable {
             handle_index,
             encrypted_value_index,
         } => {
-            mark_lowered_pool_entry(used_pool, *handle_index)?;
+            mark_lowered_dictionary_entry(used_dictionary, *handle_index)?;
             mark_lowered_account(used_accounts, *encrypted_value_index)?;
         }
         FheEvalOperand::AllowedLocal { producer_index } => {
@@ -209,7 +248,7 @@ fn validate_lowered_encrypted_operand(
 fn validate_lowered_output(
     output: &FheEvalOutput,
     used_accounts: &mut [bool],
-    used_pool: &mut [bool],
+    used_dictionary: &mut [bool],
 ) -> Result<()> {
     match output {
         FheEvalOutput::AllowedLocal => {}
@@ -226,11 +265,11 @@ fn validate_lowered_output(
             if let Some(index) = output_app_account_authority_index {
                 mark_lowered_account(used_accounts, *index)?;
             }
-            mark_lowered_pool_entry(used_pool, *output_acl_domain_key_index)?;
-            mark_lowered_pool_entry(used_pool, *output_app_account_index)?;
-            mark_lowered_pool_entry(used_pool, *output_encrypted_value_label_index)?;
+            mark_lowered_dictionary_entry(used_dictionary, *output_acl_domain_key_index)?;
+            mark_lowered_dictionary_entry(used_dictionary, *output_app_account_index)?;
+            mark_lowered_dictionary_entry(used_dictionary, *output_encrypted_value_label_index)?;
             for index in output_subject_indexes {
-                mark_lowered_pool_entry(used_pool, *index)?;
+                mark_lowered_dictionary_entry(used_dictionary, *index)?;
             }
         }
     }
@@ -245,10 +284,10 @@ fn mark_lowered_account(used_accounts: &mut [bool], index: u8) -> Result<()> {
     Ok(())
 }
 
-fn mark_lowered_pool_entry(used_pool: &mut [bool], index: u8) -> Result<()> {
-    let used = used_pool
+fn mark_lowered_dictionary_entry(used_dictionary: &mut [bool], index: u8) -> Result<()> {
+    let used = used_dictionary
         .get_mut(usize::from(index))
-        .ok_or(EvalBuildError::PoolIndexOutOfBounds)?;
+        .ok_or(EvalBuildError::DictionaryIndexOutOfBounds)?;
     *used = true;
     Ok(())
 }

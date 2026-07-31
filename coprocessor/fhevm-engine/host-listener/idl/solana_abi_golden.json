@@ -476,7 +476,7 @@
       "fixture_len": 51,
       "name": "FheEvalArgs",
       "program": "zama_host",
-      "schema_hash": "4c9b77b4539ba372769e0bda93ba2fe9bc02bee5026dfdb80fc2e2b5def6f03d"
+      "schema_hash": "a986ffa70b9818f6a170a51b41294af5d562104a0e056720cf1c5fe6544abb31"
     },
     {
       "category": "type",

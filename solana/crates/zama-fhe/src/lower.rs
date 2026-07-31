@@ -9,7 +9,7 @@ use crate::{EvalBuildError, Result};
 
 pub(crate) fn lower_operand(
     remaining_accounts: &mut Vec<EvalAccountMeta>,
-    pool: &mut Vec<[u8; 32]>,
+    dictionary: &mut Vec<[u8; 32]>,
     produced_count: usize,
     builder_scope: EvalBuilderScope,
     durable_producers: &[(anchor_lang::prelude::Pubkey, u16)],
@@ -24,7 +24,7 @@ pub(crate) fn lower_operand(
             {
                 return Err(EvalBuildError::DurableOperandWrittenEarlier);
             }
-            let handle_index = pool_index(pool, durable.handle)?;
+            let handle_index = dictionary_index(dictionary, durable.handle)?;
             let encrypted_value_index = account_index(
                 remaining_accounts,
                 EvalAccountMeta::readonly(
@@ -63,14 +63,14 @@ pub(crate) fn lower_operand(
             })
         }
         OperandKind::Scalar(value) => Ok(FheEvalOperand::Scalar {
-            value_index: pool_index(pool, value)?,
+            value_index: dictionary_index(dictionary, value)?,
         }),
     }
 }
 
 pub(crate) fn lower_output(
     remaining_accounts: &mut Vec<EvalAccountMeta>,
-    pool: &mut Vec<[u8; 32]>,
+    dictionary: &mut Vec<[u8; 32]>,
     app_authority: EvalAppAuthority,
     durable_producers: &mut Vec<(anchor_lang::prelude::Pubkey, u16)>,
     producer_index: u16,
@@ -103,15 +103,21 @@ pub(crate) fn lower_output(
             let output_subject_indexes = birth
                 .host_subjects()
                 .into_iter()
-                .map(|subject| pool_index(pool, subject.to_bytes()))
+                .map(|subject| dictionary_index(dictionary, subject.to_bytes()))
                 .collect::<Result<Vec<u8>>>()?;
             let output = FheEvalOutput::AllowedDurable {
                 output_encrypted_value_index,
                 output_app_account_authority_index,
-                output_acl_domain_key_index: pool_index(pool, birth.acl_domain_key().to_bytes())?,
-                output_app_account_index: pool_index(pool, birth.app_account().to_bytes())?,
-                output_encrypted_value_label_index: pool_index(
-                    pool,
+                output_acl_domain_key_index: dictionary_index(
+                    dictionary,
+                    birth.acl_domain_key().to_bytes(),
+                )?,
+                output_app_account_index: dictionary_index(
+                    dictionary,
+                    birth.app_account().to_bytes(),
+                )?,
+                output_encrypted_value_label_index: dictionary_index(
+                    dictionary,
                     birth.encrypted_value_label(),
                 )?,
                 output_subject_indexes,
@@ -125,13 +131,14 @@ pub(crate) fn lower_output(
     }
 }
 
-/// Interns a 32-byte constant into the frame pool, reusing an existing entry byte-for-byte.
-fn pool_index(pool: &mut Vec<[u8; 32]>, bytes: [u8; 32]) -> Result<u8> {
-    if let Some(index) = pool.iter().position(|entry| *entry == bytes) {
-        return u8::try_from(index).map_err(|_| EvalBuildError::TooManyPoolEntries);
+/// Interns a 32-byte constant into the frame dictionary, reusing an existing entry byte-for-byte.
+fn dictionary_index(dictionary: &mut Vec<[u8; 32]>, bytes: [u8; 32]) -> Result<u8> {
+    if let Some(index) = dictionary.iter().position(|entry| *entry == bytes) {
+        return u8::try_from(index).map_err(|_| EvalBuildError::TooManyDictionaryEntries);
     }
-    let index = u8::try_from(pool.len()).map_err(|_| EvalBuildError::TooManyPoolEntries)?;
-    pool.push(bytes);
+    let index =
+        u8::try_from(dictionary.len()).map_err(|_| EvalBuildError::TooManyDictionaryEntries)?;
+    dictionary.push(bytes);
     Ok(index)
 }
 

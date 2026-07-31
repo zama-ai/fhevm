@@ -97,17 +97,17 @@ fn label(name: &str) -> [u8; 32] {
     out
 }
 
-/// Builds the frame's interned 32-byte constant pool while fixtures assemble steps
+/// Builds the frame's interned 32-byte constant dictionary while fixtures assemble steps
 /// (fhevm-internal#1853 W7). Interning deduplicates: repeated constants share one entry.
 #[derive(Default)]
-struct FramePool(Vec<[u8; 32]>);
+struct BatchDictionary(Vec<[u8; 32]>);
 
-impl FramePool {
+impl BatchDictionary {
     fn intern(&mut self, bytes: [u8; 32]) -> u8 {
         if let Some(index) = self.0.iter().position(|entry| *entry == bytes) {
-            return u8::try_from(index).expect("fixture pool fits u8");
+            return u8::try_from(index).expect("fixture dictionary fits u8");
         }
-        let index = u8::try_from(self.0.len()).expect("fixture pool fits u8");
+        let index = u8::try_from(self.0.len()).expect("fixture dictionary fits u8");
         self.0.push(bytes);
         index
     }
@@ -310,17 +310,17 @@ fn supersede_with_fhe_eval(
     value: &EncryptedValue,
     plaintext_tag: u8,
 ) -> EncryptedValue {
-    let mut pool = FramePool::default();
+    let mut dictionary = BatchDictionary::default();
     let steps = vec![FheEvalStep::TrivialEncrypt {
         plaintext: [plaintext_tag; 32],
         fhe_type: 5,
         output: FheEvalOutput::AllowedDurable {
             output_encrypted_value_index: 0,
             output_app_account_authority_index: None,
-            output_acl_domain_key_index: pool.intern_key(value.acl_domain_key),
-            output_app_account_index: pool.intern_key(value.app_account),
-            output_encrypted_value_label_index: pool.intern(value.encrypted_value_label),
-            output_subject_indexes: pool.intern_subjects(value.subjects.iter().copied()),
+            output_acl_domain_key_index: dictionary.intern_key(value.acl_domain_key),
+            output_app_account_index: dictionary.intern_key(value.app_account),
+            output_encrypted_value_label_index: dictionary.intern(value.encrypted_value_label),
+            output_subject_indexes: dictionary.intern_subjects(value.subjects.iter().copied()),
             previous_handle: Some(value.current_handle),
             previous_subjects: Some(value.subjects.clone()),
             make_public: false,
@@ -328,7 +328,7 @@ fn supersede_with_fhe_eval(
     }];
     let args = FheEvalArgs {
         account_count: 0,
-        pool: pool.0,
+        dictionary: dictionary.0,
         steps,
     };
     let ix = fhe_eval_ix(
@@ -366,17 +366,17 @@ fn expect_fhe_eval_supersede_error(
     plaintext_tag: u8,
     expected: Check<'static>,
 ) {
-    let mut pool = FramePool::default();
+    let mut dictionary = BatchDictionary::default();
     let steps = vec![FheEvalStep::TrivialEncrypt {
         plaintext: [plaintext_tag; 32],
         fhe_type: 5,
         output: FheEvalOutput::AllowedDurable {
             output_encrypted_value_index: 0,
             output_app_account_authority_index: None,
-            output_acl_domain_key_index: pool.intern_key(value.acl_domain_key),
-            output_app_account_index: pool.intern_key(value.app_account),
-            output_encrypted_value_label_index: pool.intern(value.encrypted_value_label),
-            output_subject_indexes: pool.intern_subjects(output_subjects),
+            output_acl_domain_key_index: dictionary.intern_key(value.acl_domain_key),
+            output_app_account_index: dictionary.intern_key(value.app_account),
+            output_encrypted_value_label_index: dictionary.intern(value.encrypted_value_label),
+            output_subject_indexes: dictionary.intern_subjects(output_subjects),
             previous_handle: Some(previous_handle),
             previous_subjects: Some(previous_subjects),
             make_public: false,
@@ -384,7 +384,7 @@ fn expect_fhe_eval_supersede_error(
     }];
     let args = FheEvalArgs {
         account_count: 0,
-        pool: pool.0,
+        dictionary: dictionary.0,
         steps,
     };
     let ix = fhe_eval_ix(
@@ -641,17 +641,17 @@ fn mollusk_fhe_eval_fails_closed_without_previous_bank_hash() {
         handle_for_chain(1, 5),
         &[subject],
     );
-    let mut pool = FramePool::default();
+    let mut dictionary = BatchDictionary::default();
     let steps = vec![FheEvalStep::TrivialEncrypt {
         plaintext: [1; 32],
         fhe_type: 5,
         output: FheEvalOutput::AllowedDurable {
             output_encrypted_value_index: 0,
             output_app_account_authority_index: None,
-            output_acl_domain_key_index: pool.intern_key(Pubkey::new_unique()),
-            output_app_account_index: pool.intern_key(authority),
-            output_encrypted_value_label_index: pool.intern(label("balance")),
-            output_subject_indexes: pool.intern_subjects([subject]),
+            output_acl_domain_key_index: dictionary.intern_key(Pubkey::new_unique()),
+            output_app_account_index: dictionary.intern_key(authority),
+            output_encrypted_value_label_index: dictionary.intern(label("balance")),
+            output_subject_indexes: dictionary.intern_subjects([subject]),
             previous_handle: None,
             previous_subjects: None,
             make_public: false,
@@ -659,7 +659,7 @@ fn mollusk_fhe_eval_fails_closed_without_previous_bank_hash() {
     }];
     let args = FheEvalArgs {
         account_count: 0,
-        pool: pool.0,
+        dictionary: dictionary.0,
         steps,
     };
     let ix = fhe_eval_ix(
@@ -1146,18 +1146,18 @@ fn mollusk_fhe_eval_supersede_rotates_subjects_and_seals_the_outgoing_audience()
         &[subject_a, old_recipient],
     );
 
-    let mut pool = FramePool::default();
+    let mut dictionary = BatchDictionary::default();
     let steps = vec![FheEvalStep::TrivialEncrypt {
         plaintext: [7; 32],
         fhe_type: 5,
         output: FheEvalOutput::AllowedDurable {
             output_encrypted_value_index: 0,
             output_app_account_authority_index: None,
-            output_acl_domain_key_index: pool.intern_key(value.acl_domain_key),
-            output_app_account_index: pool.intern_key(value.app_account),
-            output_encrypted_value_label_index: pool.intern(value.encrypted_value_label),
+            output_acl_domain_key_index: dictionary.intern_key(value.acl_domain_key),
+            output_app_account_index: dictionary.intern_key(value.app_account),
+            output_encrypted_value_label_index: dictionary.intern(value.encrypted_value_label),
             // Rotate the audience: drop `old_recipient`, grant `new_recipient`.
-            output_subject_indexes: pool.intern_subjects([subject_a, new_recipient]),
+            output_subject_indexes: dictionary.intern_subjects([subject_a, new_recipient]),
             previous_handle: Some(old_handle),
             previous_subjects: Some(value.subjects.clone()),
             make_public: false,
@@ -1165,7 +1165,7 @@ fn mollusk_fhe_eval_supersede_rotates_subjects_and_seals_the_outgoing_audience()
     }];
     let args = FheEvalArgs {
         account_count: 0,
-        pool: pool.0,
+        dictionary: dictionary.0,
         steps,
     };
     let ix = fhe_eval_ix(
@@ -1227,17 +1227,17 @@ fn mollusk_fhe_eval_supersede_shrinks_audience_and_seals_the_outgoing_set() {
     );
     let bytes_before = encrypted_value_account(&value).data.len();
 
-    let mut pool = FramePool::default();
+    let mut dictionary = BatchDictionary::default();
     let steps = vec![FheEvalStep::TrivialEncrypt {
         plaintext: [8; 32],
         fhe_type: 5,
         output: FheEvalOutput::AllowedDurable {
             output_encrypted_value_index: 0,
             output_app_account_authority_index: None,
-            output_acl_domain_key_index: pool.intern_key(value.acl_domain_key),
-            output_app_account_index: pool.intern_key(value.app_account),
-            output_encrypted_value_label_index: pool.intern(value.encrypted_value_label),
-            output_subject_indexes: pool.intern_subjects([subject_a, subject_b]),
+            output_acl_domain_key_index: dictionary.intern_key(value.acl_domain_key),
+            output_app_account_index: dictionary.intern_key(value.app_account),
+            output_encrypted_value_label_index: dictionary.intern(value.encrypted_value_label),
+            output_subject_indexes: dictionary.intern_subjects([subject_a, subject_b]),
             previous_handle: Some(old_handle),
             previous_subjects: Some(value.subjects.clone()),
             make_public: false,
@@ -1245,7 +1245,7 @@ fn mollusk_fhe_eval_supersede_shrinks_audience_and_seals_the_outgoing_set() {
     }];
     let args = FheEvalArgs {
         account_count: 0,
-        pool: pool.0,
+        dictionary: dictionary.0,
         steps,
     };
     let ix = fhe_eval_ix(
@@ -1523,17 +1523,17 @@ fn mollusk_denied_caller_cannot_mutate_acl_update_or_eval_output() {
     let output_value_key =
         zama_solana_acl::derive_value_key(caller.to_bytes(), caller.to_bytes(), output_label);
     let (output_address, _bump) = host::encrypted_value_address(output_value_key);
-    let mut pool = FramePool::default();
+    let mut dictionary = BatchDictionary::default();
     let steps = vec![FheEvalStep::TrivialEncrypt {
         plaintext: [1; 32],
         fhe_type: 5,
         output: FheEvalOutput::AllowedDurable {
             output_encrypted_value_index: 0,
             output_app_account_authority_index: None,
-            output_acl_domain_key_index: pool.intern_key(caller),
-            output_app_account_index: pool.intern_key(caller),
-            output_encrypted_value_label_index: pool.intern(output_label),
-            output_subject_indexes: pool.intern_subjects([caller]),
+            output_acl_domain_key_index: dictionary.intern_key(caller),
+            output_app_account_index: dictionary.intern_key(caller),
+            output_encrypted_value_label_index: dictionary.intern(output_label),
+            output_subject_indexes: dictionary.intern_subjects([caller]),
             previous_handle: None,
             previous_subjects: None,
             make_public: false,
@@ -1541,7 +1541,7 @@ fn mollusk_denied_caller_cannot_mutate_acl_update_or_eval_output() {
     }];
     let args = FheEvalArgs {
         account_count: 0,
-        pool: pool.0,
+        dictionary: dictionary.0,
         steps,
     };
     let eval_ix = fhe_eval_ix_with_deny(
@@ -1642,17 +1642,17 @@ fn mollusk_denied_subject_cannot_enter_via_allow_subjects_or_eval_create() {
     let output_value_key =
         zama_solana_acl::derive_value_key(authority.to_bytes(), authority.to_bytes(), output_label);
     let (output_address, _bump) = host::encrypted_value_address(output_value_key);
-    let mut pool = FramePool::default();
+    let mut dictionary = BatchDictionary::default();
     let steps = vec![FheEvalStep::TrivialEncrypt {
         plaintext: [2; 32],
         fhe_type: 5,
         output: FheEvalOutput::AllowedDurable {
             output_encrypted_value_index: 0,
             output_app_account_authority_index: None,
-            output_acl_domain_key_index: pool.intern_key(authority),
-            output_app_account_index: pool.intern_key(authority),
-            output_encrypted_value_label_index: pool.intern(output_label),
-            output_subject_indexes: pool.intern_subjects([authority, denied_subject]),
+            output_acl_domain_key_index: dictionary.intern_key(authority),
+            output_app_account_index: dictionary.intern_key(authority),
+            output_encrypted_value_label_index: dictionary.intern(output_label),
+            output_subject_indexes: dictionary.intern_subjects([authority, denied_subject]),
             previous_handle: None,
             previous_subjects: None,
             make_public: false,
@@ -1660,7 +1660,7 @@ fn mollusk_denied_subject_cannot_enter_via_allow_subjects_or_eval_create() {
     }];
     let args = FheEvalArgs {
         account_count: 0,
-        pool: pool.0,
+        dictionary: dictionary.0,
         steps,
     };
     let eval_ix = fhe_eval_ix_with_deny_records(
@@ -1875,7 +1875,7 @@ fn mollusk_fhe_eval_rejects_denied_second_output_authority_in_multi_output_frame
         output_b_label,
     ))
     .0;
-    let mut pool = FramePool::default();
+    let mut dictionary = BatchDictionary::default();
     let steps = vec![
         FheEvalStep::TrivialEncrypt {
             plaintext: [3; 32],
@@ -1883,10 +1883,10 @@ fn mollusk_fhe_eval_rejects_denied_second_output_authority_in_multi_output_frame
             output: FheEvalOutput::AllowedDurable {
                 output_encrypted_value_index: 0,
                 output_app_account_authority_index: None,
-                output_acl_domain_key_index: pool.intern_key(authority_a),
-                output_app_account_index: pool.intern_key(authority_a),
-                output_encrypted_value_label_index: pool.intern(output_a_label),
-                output_subject_indexes: pool.intern_subjects([authority_a]),
+                output_acl_domain_key_index: dictionary.intern_key(authority_a),
+                output_app_account_index: dictionary.intern_key(authority_a),
+                output_encrypted_value_label_index: dictionary.intern(output_a_label),
+                output_subject_indexes: dictionary.intern_subjects([authority_a]),
                 previous_handle: None,
                 previous_subjects: None,
                 make_public: false,
@@ -1898,10 +1898,10 @@ fn mollusk_fhe_eval_rejects_denied_second_output_authority_in_multi_output_frame
             output: FheEvalOutput::AllowedDurable {
                 output_encrypted_value_index: 1,
                 output_app_account_authority_index: Some(2),
-                output_acl_domain_key_index: pool.intern_key(authority_b),
-                output_app_account_index: pool.intern_key(authority_b),
-                output_encrypted_value_label_index: pool.intern(output_b_label),
-                output_subject_indexes: pool.intern_subjects([authority_b]),
+                output_acl_domain_key_index: dictionary.intern_key(authority_b),
+                output_app_account_index: dictionary.intern_key(authority_b),
+                output_encrypted_value_label_index: dictionary.intern(output_b_label),
+                output_subject_indexes: dictionary.intern_subjects([authority_b]),
                 previous_handle: None,
                 previous_subjects: None,
                 make_public: false,
@@ -1910,7 +1910,7 @@ fn mollusk_fhe_eval_rejects_denied_second_output_authority_in_multi_output_frame
     ];
     let args = FheEvalArgs {
         account_count: 0,
-        pool: pool.0,
+        dictionary: dictionary.0,
         steps,
     };
     let ix = fhe_eval_ix_with_deny_records(
@@ -1989,17 +1989,17 @@ fn mollusk_paused_state_blocks_acl_update_and_eval_output() {
     let output_value_key =
         zama_solana_acl::derive_value_key(authority.to_bytes(), authority.to_bytes(), output_label);
     let (output_address, _bump) = host::encrypted_value_address(output_value_key);
-    let mut pool = FramePool::default();
+    let mut dictionary = BatchDictionary::default();
     let steps = vec![FheEvalStep::TrivialEncrypt {
         plaintext: [2; 32],
         fhe_type: 5,
         output: FheEvalOutput::AllowedDurable {
             output_encrypted_value_index: 0,
             output_app_account_authority_index: None,
-            output_acl_domain_key_index: pool.intern_key(authority),
-            output_app_account_index: pool.intern_key(authority),
-            output_encrypted_value_label_index: pool.intern(output_label),
-            output_subject_indexes: pool.intern_subjects([owner]),
+            output_acl_domain_key_index: dictionary.intern_key(authority),
+            output_app_account_index: dictionary.intern_key(authority),
+            output_encrypted_value_label_index: dictionary.intern(output_label),
+            output_subject_indexes: dictionary.intern_subjects([owner]),
             previous_handle: None,
             previous_subjects: None,
             make_public: false,
@@ -2007,7 +2007,7 @@ fn mollusk_paused_state_blocks_acl_update_and_eval_output() {
     }];
     let args = FheEvalArgs {
         account_count: 0,
-        pool: pool.0,
+        dictionary: dictionary.0,
         steps,
     };
     let eval_ix = fhe_eval_ix(
@@ -2293,25 +2293,25 @@ fn mollusk_fhe_eval_creates_durable_output_from_local_binary_add() {
     );
     let (output_address, _bump) = host::encrypted_value_address(output_value_key);
 
-    let mut pool = FramePool::default();
+    let mut dictionary = BatchDictionary::default();
     let steps = vec![FheEvalStep::Binary {
         op: FheBinaryOpCode::Add,
         lhs: FheEvalOperand::AllowedDurable {
-            handle_index: pool.intern(lhs),
+            handle_index: dictionary.intern(lhs),
             encrypted_value_index: 0,
         },
         rhs: FheEvalOperand::AllowedDurable {
-            handle_index: pool.intern(rhs),
+            handle_index: dictionary.intern(rhs),
             encrypted_value_index: 1,
         },
         output_fhe_type: 5,
         output: FheEvalOutput::AllowedDurable {
             output_encrypted_value_index: 2,
             output_app_account_authority_index: None,
-            output_acl_domain_key_index: pool.intern_key(output_acl_domain_key),
-            output_app_account_index: pool.intern_key(output_app_account),
-            output_encrypted_value_label_index: pool.intern(output_label),
-            output_subject_indexes: pool.intern_subjects([authority]),
+            output_acl_domain_key_index: dictionary.intern_key(output_acl_domain_key),
+            output_app_account_index: dictionary.intern_key(output_app_account),
+            output_encrypted_value_label_index: dictionary.intern(output_label),
+            output_subject_indexes: dictionary.intern_subjects([authority]),
             previous_handle: None,
             previous_subjects: None,
             make_public: false,
@@ -2319,7 +2319,7 @@ fn mollusk_fhe_eval_creates_durable_output_from_local_binary_add() {
     }];
     let args = FheEvalArgs {
         account_count: 0,
-        pool: pool.0,
+        dictionary: dictionary.0,
         steps,
     };
 
@@ -2372,24 +2372,24 @@ fn mollusk_fhe_eval_supersedes_durable_output_with_previous_state() {
     );
     let previous_subjects = output_value.subjects.clone();
 
-    let mut pool = FramePool::default();
+    let mut dictionary = BatchDictionary::default();
     let steps = vec![FheEvalStep::Binary {
         op: FheBinaryOpCode::Add,
         lhs: FheEvalOperand::AllowedDurable {
-            handle_index: pool.intern(input_handle),
+            handle_index: dictionary.intern(input_handle),
             encrypted_value_index: 0,
         },
         rhs: FheEvalOperand::Scalar {
-            value_index: pool.intern([0; 32]),
+            value_index: dictionary.intern([0; 32]),
         },
         output_fhe_type: 5,
         output: FheEvalOutput::AllowedDurable {
             output_encrypted_value_index: 1,
             output_app_account_authority_index: None,
-            output_acl_domain_key_index: pool.intern_key(authority),
-            output_app_account_index: pool.intern_key(authority),
-            output_encrypted_value_label_index: pool.intern(label("out")),
-            output_subject_indexes: pool.intern_subjects([authority]),
+            output_acl_domain_key_index: dictionary.intern_key(authority),
+            output_app_account_index: dictionary.intern_key(authority),
+            output_encrypted_value_label_index: dictionary.intern(label("out")),
+            output_subject_indexes: dictionary.intern_subjects([authority]),
             previous_handle: Some(output_handle),
             previous_subjects: Some(previous_subjects),
             make_public: false,
@@ -2397,7 +2397,7 @@ fn mollusk_fhe_eval_supersedes_durable_output_with_previous_state() {
     }];
     let args = FheEvalArgs {
         account_count: 0,
-        pool: pool.0,
+        dictionary: dictionary.0,
         steps,
     };
 
@@ -2441,7 +2441,7 @@ fn born_public_frame(step_count: usize, born_public_steps: &[usize]) -> BornPubl
     let mut output_accounts = Vec::new();
     let mut outputs = Vec::new();
     let mut steps = Vec::with_capacity(step_count);
-    let mut pool = FramePool::default();
+    let mut dictionary = BatchDictionary::default();
 
     for step_index in 0..step_count {
         let output = if born_public_steps.contains(&step_index) {
@@ -2459,10 +2459,10 @@ fn born_public_frame(step_count: usize, born_public_steps: &[usize]) -> BornPubl
             FheEvalOutput::AllowedDurable {
                 output_encrypted_value_index: output_index,
                 output_app_account_authority_index: None,
-                output_acl_domain_key_index: pool.intern_key(authority),
-                output_app_account_index: pool.intern_key(authority),
-                output_encrypted_value_label_index: pool.intern(output_label),
-                output_subject_indexes: pool.intern_subjects([authority]),
+                output_acl_domain_key_index: dictionary.intern_key(authority),
+                output_app_account_index: dictionary.intern_key(authority),
+                output_encrypted_value_label_index: dictionary.intern(output_label),
+                output_subject_indexes: dictionary.intern_subjects([authority]),
                 previous_handle: None,
                 previous_subjects: None,
                 make_public: true,
@@ -2484,7 +2484,7 @@ fn born_public_frame(step_count: usize, born_public_steps: &[usize]) -> BornPubl
         host_config,
         FheEvalArgs {
             account_count: 0,
-            pool: pool.0,
+            dictionary: dictionary.0,
             steps,
         },
         output_metas,
@@ -3837,16 +3837,16 @@ impl EvalFixture {
         self.context.account_store.borrow_mut().insert(key, account);
     }
 
-    fn balance_operand(&self, pool: &mut FramePool) -> FheEvalOperand {
+    fn balance_operand(&self, dictionary: &mut BatchDictionary) -> FheEvalOperand {
         FheEvalOperand::AllowedDurable {
-            handle_index: pool.intern(self.balance_handle),
+            handle_index: dictionary.intern(self.balance_handle),
             encrypted_value_index: 0,
         }
     }
 
-    fn amount_operand(&self, pool: &mut FramePool) -> FheEvalOperand {
+    fn amount_operand(&self, dictionary: &mut BatchDictionary) -> FheEvalOperand {
         FheEvalOperand::AllowedDurable {
-            handle_index: pool.intern(self.amount_handle),
+            handle_index: dictionary.intern(self.amount_handle),
             encrypted_value_index: 1,
         }
     }
@@ -3854,19 +3854,19 @@ impl EvalFixture {
     /// `Ge` (ebool) + `Sub` (euint64) + `IfThenElse` (euint64, durable output) — costs exactly
     /// `FIXTURE_FRAME_HCU`.
     fn success_frame(&self) -> FheEvalArgs {
-        let mut pool = FramePool::default();
+        let mut dictionary = BatchDictionary::default();
         let steps = vec![
             FheEvalStep::Binary {
                 op: FheBinaryOpCode::Ge,
-                lhs: self.balance_operand(&mut pool),
-                rhs: self.amount_operand(&mut pool),
+                lhs: self.balance_operand(&mut dictionary),
+                rhs: self.amount_operand(&mut dictionary),
                 output_fhe_type: 0,
                 output: FheEvalOutput::AllowedLocal,
             },
             FheEvalStep::Binary {
                 op: FheBinaryOpCode::Sub,
-                lhs: self.balance_operand(&mut pool),
-                rhs: self.amount_operand(&mut pool),
+                lhs: self.balance_operand(&mut dictionary),
+                rhs: self.amount_operand(&mut dictionary),
                 output_fhe_type: 5,
                 output: FheEvalOutput::AllowedLocal,
             },
@@ -3874,15 +3874,15 @@ impl EvalFixture {
                 op: FheTernaryOpCode::IfThenElse,
                 control: FheEvalOperand::AllowedLocal { producer_index: 0 },
                 if_true: FheEvalOperand::AllowedLocal { producer_index: 1 },
-                if_false: self.balance_operand(&mut pool),
+                if_false: self.balance_operand(&mut dictionary),
                 output_fhe_type: 5,
                 output: FheEvalOutput::AllowedDurable {
                     output_encrypted_value_index: 2,
                     output_app_account_authority_index: None,
-                    output_acl_domain_key_index: pool.intern_key(self.authority),
-                    output_app_account_index: pool.intern_key(self.app_account),
-                    output_encrypted_value_label_index: pool.intern(self.output_label),
-                    output_subject_indexes: pool.intern_subjects([self.authority]),
+                    output_acl_domain_key_index: dictionary.intern_key(self.authority),
+                    output_app_account_index: dictionary.intern_key(self.app_account),
+                    output_encrypted_value_label_index: dictionary.intern(self.output_label),
+                    output_subject_indexes: dictionary.intern_subjects([self.authority]),
                     previous_handle: None,
                     previous_subjects: None,
                     make_public: false,
@@ -3891,7 +3891,7 @@ impl EvalFixture {
         ];
         FheEvalArgs {
             account_count: 3,
-            pool: pool.0,
+            dictionary: dictionary.0,
             steps,
         }
     }
@@ -3927,11 +3927,11 @@ impl EvalFixture {
     /// `block_cap_instruction`, so the compute-unit delta against the three-op profile
     /// isolates the additional host-side FHE eval steps.
     fn max_ops_instruction(&self) -> Instruction {
-        let mut pool = FramePool::default();
+        let mut dictionary = BatchDictionary::default();
         let mut steps = vec![FheEvalStep::Binary {
             op: FheBinaryOpCode::Ge,
-            lhs: self.balance_operand(&mut pool),
-            rhs: self.amount_operand(&mut pool),
+            lhs: self.balance_operand(&mut dictionary),
+            rhs: self.amount_operand(&mut dictionary),
             output_fhe_type: 0,
             output: FheEvalOutput::AllowedLocal,
         }];
@@ -3947,7 +3947,7 @@ impl EvalFixture {
             // ones chain the previous arithmetic output (step 0 is the ebool
             // control and cannot feed an arithmetic operand).
             let lhs = if index == 1 {
-                self.balance_operand(&mut pool)
+                self.balance_operand(&mut dictionary)
             } else {
                 FheEvalOperand::AllowedLocal {
                     producer_index: index - 1,
@@ -3956,7 +3956,7 @@ impl EvalFixture {
             steps.push(FheEvalStep::Binary {
                 op,
                 lhs,
-                rhs: self.amount_operand(&mut pool),
+                rhs: self.amount_operand(&mut dictionary),
                 output_fhe_type: 5,
                 output: FheEvalOutput::AllowedLocal,
             });
@@ -3967,15 +3967,15 @@ impl EvalFixture {
             if_true: FheEvalOperand::AllowedLocal {
                 producer_index: last_transient_index,
             },
-            if_false: self.balance_operand(&mut pool),
+            if_false: self.balance_operand(&mut dictionary),
             output_fhe_type: 5,
             output: FheEvalOutput::AllowedDurable {
                 output_encrypted_value_index: 2,
                 output_app_account_authority_index: None,
-                output_acl_domain_key_index: pool.intern_key(self.authority),
-                output_app_account_index: pool.intern_key(self.app_account),
-                output_encrypted_value_label_index: pool.intern(self.output_label),
-                output_subject_indexes: pool.intern_subjects([self.authority]),
+                output_acl_domain_key_index: dictionary.intern_key(self.authority),
+                output_app_account_index: dictionary.intern_key(self.app_account),
+                output_encrypted_value_label_index: dictionary.intern(self.output_label),
+                output_subject_indexes: dictionary.intern_subjects([self.authority]),
                 previous_handle: None,
                 previous_subjects: None,
                 make_public: false,
@@ -3997,7 +3997,7 @@ impl EvalFixture {
             host::instruction::FheEval {
                 args: FheEvalArgs {
                     account_count: 3,
-                    pool: pool.0,
+                    dictionary: dictionary.0,
                     steps,
                 },
             },
@@ -4015,11 +4015,11 @@ impl EvalFixture {
         meter: Option<Pubkey>,
         trust: Option<Pubkey>,
     ) -> Instruction {
-        let mut pool = FramePool::default();
+        let mut dictionary = BatchDictionary::default();
         let steps = vec![FheEvalStep::Binary {
             op: FheBinaryOpCode::Ge,
-            lhs: self.balance_operand(&mut pool),
-            rhs: self.amount_operand(&mut pool),
+            lhs: self.balance_operand(&mut dictionary),
+            rhs: self.amount_operand(&mut dictionary),
             output_fhe_type: 0,
             output: FheEvalOutput::AllowedLocal,
         }];
@@ -4039,7 +4039,7 @@ impl EvalFixture {
             host::instruction::FheEval {
                 args: FheEvalArgs {
                     account_count: 2,
-                    pool: pool.0,
+                    dictionary: dictionary.0,
                     steps,
                 },
             },
@@ -4074,7 +4074,7 @@ impl EvalFixture {
             host::instruction::FheEval {
                 args: FheEvalArgs {
                     account_count: 0,
-                    pool: Vec::new(),
+                    dictionary: Vec::new(),
                     steps: vec![FheEvalStep::TrivialEncrypt {
                         plaintext: [7; 32],
                         fhe_type: 5,
@@ -4096,17 +4096,17 @@ impl EvalFixture {
             output_label,
         );
         let (output_value, _bump) = host::encrypted_value_address(output_value_key);
-        let mut pool = FramePool::default();
+        let mut dictionary = BatchDictionary::default();
         let steps = vec![FheEvalStep::TrivialEncrypt {
             plaintext: [7; 32],
             fhe_type: 5,
             output: FheEvalOutput::AllowedDurable {
                 output_encrypted_value_index: 0,
                 output_app_account_authority_index: None,
-                output_acl_domain_key_index: pool.intern_key(self.authority),
-                output_app_account_index: pool.intern_key(self.app_account),
-                output_encrypted_value_label_index: pool.intern(output_label),
-                output_subject_indexes: pool.intern_subjects([self.authority]),
+                output_acl_domain_key_index: dictionary.intern_key(self.authority),
+                output_app_account_index: dictionary.intern_key(self.app_account),
+                output_encrypted_value_label_index: dictionary.intern(output_label),
+                output_subject_indexes: dictionary.intern_subjects([self.authority]),
                 previous_handle: None,
                 previous_subjects: None,
                 make_public: false,
@@ -4128,7 +4128,7 @@ impl EvalFixture {
             host::instruction::FheEval {
                 args: FheEvalArgs {
                     account_count: 1,
-                    pool: pool.0,
+                    dictionary: dictionary.0,
                     steps,
                 },
             },
@@ -4155,19 +4155,19 @@ impl EvalFixture {
             output_label,
         );
         let (output_value, _bump) = host::encrypted_value_address(output_value_key);
-        let mut pool = FramePool::default();
+        let mut dictionary = BatchDictionary::default();
         let steps = vec![
             FheEvalStep::Binary {
                 op: FheBinaryOpCode::Ge,
-                lhs: self.balance_operand(&mut pool),
-                rhs: self.amount_operand(&mut pool),
+                lhs: self.balance_operand(&mut dictionary),
+                rhs: self.amount_operand(&mut dictionary),
                 output_fhe_type: 0,
                 output: FheEvalOutput::AllowedLocal,
             },
             FheEvalStep::Binary {
                 op: FheBinaryOpCode::Sub,
-                lhs: self.balance_operand(&mut pool),
-                rhs: self.amount_operand(&mut pool),
+                lhs: self.balance_operand(&mut dictionary),
+                rhs: self.amount_operand(&mut dictionary),
                 output_fhe_type: 5,
                 output: FheEvalOutput::AllowedLocal,
             },
@@ -4175,15 +4175,15 @@ impl EvalFixture {
                 op: FheTernaryOpCode::IfThenElse,
                 control: FheEvalOperand::AllowedLocal { producer_index: 0 },
                 if_true: FheEvalOperand::AllowedLocal { producer_index: 1 },
-                if_false: self.balance_operand(&mut pool),
+                if_false: self.balance_operand(&mut dictionary),
                 output_fhe_type: 5,
                 output: FheEvalOutput::AllowedDurable {
                     output_encrypted_value_index: 2,
                     output_app_account_authority_index: None,
-                    output_acl_domain_key_index: pool.intern_key(app_authority),
-                    output_app_account_index: pool.intern_key(app_authority),
-                    output_encrypted_value_label_index: pool.intern(output_label),
-                    output_subject_indexes: pool.intern_subjects([app_authority]),
+                    output_acl_domain_key_index: dictionary.intern_key(app_authority),
+                    output_app_account_index: dictionary.intern_key(app_authority),
+                    output_encrypted_value_label_index: dictionary.intern(output_label),
+                    output_subject_indexes: dictionary.intern_subjects([app_authority]),
                     previous_handle: None,
                     previous_subjects: None,
                     make_public: false,
@@ -4206,7 +4206,7 @@ impl EvalFixture {
             host::instruction::FheEval {
                 args: FheEvalArgs {
                     account_count: 3,
-                    pool: pool.0,
+                    dictionary: dictionary.0,
                     steps,
                 },
             },
@@ -4832,7 +4832,7 @@ fn mollusk_fhe_eval_rejects_rand_frame_without_durable_output() {
     ix.data = host::instruction::FheEval {
         args: FheEvalArgs {
             account_count: 0,
-            pool: Vec::new(),
+            dictionary: Vec::new(),
             steps: vec![FheEvalStep::Rand {
                 fhe_type: 5,
                 output: FheEvalOutput::AllowedLocal,
@@ -5933,7 +5933,7 @@ fn mollusk_fhe_eval_max_op_transaction_fits_packet() {
     // MAX_FHE_EVAL_OPS is derived from measured budgets (fhevm-internal#1853 W8). This is the
     // byte-budget half: the whole signed transaction for the max-op frame — envelope included —
     // must fit one 1,232-byte packet, with headroom for realistic envelopes (more durable
-    // accounts, more pool entries) so the cap is not set at the packet edge.
+    // accounts, more dictionary entries) so the cap is not set at the packet edge.
     let fixture = EvalFixture::with_block_cap_keys(
         u64::MAX,
         Pubkey::new_from_array([0x21; 32]),

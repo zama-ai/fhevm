@@ -126,8 +126,8 @@ pub enum DecodeError {
     },
     #[error("fhe_eval durable output has mismatched previous_handle/previous_subjects options")]
     InvalidFheEvalPreviousState,
-    #[error("fhe_eval constant pool index {0} out of bounds")]
-    InvalidFheEvalPoolIndex(u8),
+    #[error("fhe_eval constant dictionary index {0} out of bounds")]
+    InvalidFheEvalDictionaryIndex(u8),
     #[error("missing or invalid Solana instruction stack metadata")]
     InvalidStackMetadata,
     #[error("born-public lifecycle event is missing for fhe_eval")]
@@ -264,10 +264,10 @@ fn decode_fhe_eval_durable_outputs(
         let output_subjects = output_subject_indexes
             .iter()
             .map(|index| {
-                plan.pool
+                plan.dictionary
                     .get(usize::from(*index))
                     .copied()
-                    .ok_or(DecodeError::InvalidFheEvalPoolIndex(*index))
+                    .ok_or(DecodeError::InvalidFheEvalDictionaryIndex(*index))
             })
             .collect::<Result<Vec<_>, _>>()?;
         match (previous_handle, previous_subjects) {
@@ -687,8 +687,8 @@ mod tests {
         accounts
     }
 
-    // Frame constants live in the interned pool (fhevm-internal#1853 W7). The
-    // fixtures intern through a thread-local pool while assembling steps and
+    // Frame constants live in the interned dictionary (fhevm-internal#1853 W7). The
+    // fixtures intern through a thread-local dictionary while assembling steps and
     // `frame` drains it into the finished args; each test runs on its own thread.
     std::thread_local! {
         static FRAME_POOL: std::cell::RefCell<Vec<[u8; 32]>> =
@@ -696,13 +696,13 @@ mod tests {
     }
 
     fn intern(bytes: [u8; 32]) -> u8 {
-        FRAME_POOL.with(|pool| {
-            let mut pool = pool.borrow_mut();
-            if let Some(index) = pool.iter().position(|entry| *entry == bytes) {
-                return u8::try_from(index).expect("test pool fits u8");
+        FRAME_POOL.with(|dictionary| {
+            let mut dictionary = dictionary.borrow_mut();
+            if let Some(index) = dictionary.iter().position(|entry| *entry == bytes) {
+                return u8::try_from(index).expect("test dictionary fits u8");
             }
-            let index = u8::try_from(pool.len()).expect("test pool fits u8");
-            pool.push(bytes);
+            let index = u8::try_from(dictionary.len()).expect("test dictionary fits u8");
+            dictionary.push(bytes);
             index
         })
     }
@@ -710,7 +710,7 @@ mod tests {
     fn frame(steps: Vec<FheEvalStep>) -> FheEvalArgs {
         FheEvalArgs {
             account_count: 0,
-            pool: FRAME_POOL.with(|pool| pool.take()),
+            dictionary: FRAME_POOL.with(|dictionary| dictionary.take()),
             steps,
         }
     }

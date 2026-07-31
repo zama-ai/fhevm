@@ -34,9 +34,9 @@ pub struct EvalBuilder {
     /// `AllowedLocal`.
     pub(crate) durable_producers: Vec<(anchor_lang::prelude::Pubkey, u16)>,
     pub(crate) remaining_accounts: Vec<EvalAccountMeta>,
-    /// Interned 32-byte constant pool the lowered steps reference by `u8` index
+    /// Interned 32-byte constant dictionary the lowered steps reference by `u8` index
     /// (operand handles, scalars, ACL domain keys, app accounts, labels, subjects).
-    pub(crate) pool: Vec<[u8; 32]>,
+    pub(crate) dictionary: Vec<[u8; 32]>,
     /// Coprocessor attestations backing `VerifiedInput` operands, referenced by index. Held here
     /// (rather than inline in the operand) so `Operand` stays `Copy`.
     pub(crate) verified_inputs: Vec<CoprocessorInputAttestation>,
@@ -51,7 +51,7 @@ impl Clone for EvalBuilder {
             produced_types: self.produced_types.clone(),
             durable_producers: self.durable_producers.clone(),
             remaining_accounts: self.remaining_accounts.clone(),
-            pool: self.pool.clone(),
+            dictionary: self.dictionary.clone(),
             verified_inputs: self.verified_inputs.clone(),
         }
     }
@@ -66,7 +66,7 @@ impl EvalBuilder {
             produced_types: Vec::new(),
             durable_producers: Vec::new(),
             remaining_accounts: Vec::new(),
-            pool: Vec::new(),
+            dictionary: Vec::new(),
             verified_inputs: Vec::new(),
         }
     }
@@ -169,10 +169,10 @@ impl EvalBuilder {
         )?;
         let op_index = u16::try_from(self.steps.len()).map_err(|_| EvalBuildError::TooManyOps)?;
         let mut remaining_accounts = self.remaining_accounts.clone();
-        let mut pool = self.pool.clone();
+        let mut dictionary = self.dictionary.clone();
         let lhs = lower_operand(
             &mut remaining_accounts,
-            &mut pool,
+            &mut dictionary,
             self.steps.len(),
             self.scope,
             &self.durable_producers,
@@ -181,7 +181,7 @@ impl EvalBuilder {
         )?;
         let rhs = lower_operand(
             &mut remaining_accounts,
-            &mut pool,
+            &mut dictionary,
             self.steps.len(),
             self.scope,
             &self.durable_producers,
@@ -190,14 +190,14 @@ impl EvalBuilder {
         )?;
         let output = lower_output(
             &mut remaining_accounts,
-            &mut pool,
+            &mut dictionary,
             self.app_authority,
             &mut self.durable_producers,
             op_index,
             output,
         )?;
         self.remaining_accounts = remaining_accounts;
-        self.pool = pool;
+        self.dictionary = dictionary;
         self.steps.push(FheEvalStep::Binary {
             op,
             lhs,
@@ -236,10 +236,10 @@ impl EvalBuilder {
         )?;
         let step_index = u16::try_from(self.steps.len()).map_err(|_| EvalBuildError::TooManyOps)?;
         let mut remaining_accounts = self.remaining_accounts.clone();
-        let mut pool = self.pool.clone();
+        let mut dictionary = self.dictionary.clone();
         let control = lower_operand(
             &mut remaining_accounts,
-            &mut pool,
+            &mut dictionary,
             self.steps.len(),
             self.scope,
             &self.durable_producers,
@@ -248,7 +248,7 @@ impl EvalBuilder {
         )?;
         let if_true = lower_operand(
             &mut remaining_accounts,
-            &mut pool,
+            &mut dictionary,
             self.steps.len(),
             self.scope,
             &self.durable_producers,
@@ -257,7 +257,7 @@ impl EvalBuilder {
         )?;
         let if_false = lower_operand(
             &mut remaining_accounts,
-            &mut pool,
+            &mut dictionary,
             self.steps.len(),
             self.scope,
             &self.durable_producers,
@@ -266,14 +266,14 @@ impl EvalBuilder {
         )?;
         let output = lower_output(
             &mut remaining_accounts,
-            &mut pool,
+            &mut dictionary,
             self.app_authority,
             &mut self.durable_producers,
             step_index,
             output,
         )?;
         self.remaining_accounts = remaining_accounts;
-        self.pool = pool;
+        self.dictionary = dictionary;
         self.steps.push(FheEvalStep::Ternary {
             op: FheTernaryOpCode::IfThenElse,
             control,
@@ -310,17 +310,17 @@ impl EvalBuilder {
         validate_supported_fhe_type(fhe_type)?;
         let step_index = u16::try_from(self.steps.len()).map_err(|_| EvalBuildError::TooManyOps)?;
         let mut remaining_accounts = self.remaining_accounts.clone();
-        let mut pool = self.pool.clone();
+        let mut dictionary = self.dictionary.clone();
         let output = lower_output(
             &mut remaining_accounts,
-            &mut pool,
+            &mut dictionary,
             self.app_authority,
             &mut self.durable_producers,
             step_index,
             output,
         )?;
         self.remaining_accounts = remaining_accounts;
-        self.pool = pool;
+        self.dictionary = dictionary;
         self.steps.push(FheEvalStep::TrivialEncrypt {
             plaintext,
             fhe_type,
@@ -351,17 +351,17 @@ impl EvalBuilder {
         validate_supported_rand_type(fhe_type)?;
         let step_index = u16::try_from(self.steps.len()).map_err(|_| EvalBuildError::TooManyOps)?;
         let mut remaining_accounts = self.remaining_accounts.clone();
-        let mut pool = self.pool.clone();
+        let mut dictionary = self.dictionary.clone();
         let output = lower_output(
             &mut remaining_accounts,
-            &mut pool,
+            &mut dictionary,
             self.app_authority,
             &mut self.durable_producers,
             step_index,
             output,
         )?;
         self.remaining_accounts = remaining_accounts;
-        self.pool = pool;
+        self.dictionary = dictionary;
         self.steps.push(FheEvalStep::Rand { fhe_type, output });
         self.produced_types.push(fhe_type);
         Ok(Operand::transient(step_index, self.scope))
@@ -382,17 +382,17 @@ impl EvalBuilder {
         }
         let step_index = u16::try_from(self.steps.len()).map_err(|_| EvalBuildError::TooManyOps)?;
         let mut remaining_accounts = self.remaining_accounts.clone();
-        let mut pool = self.pool.clone();
+        let mut dictionary = self.dictionary.clone();
         let output = lower_output(
             &mut remaining_accounts,
-            &mut pool,
+            &mut dictionary,
             self.app_authority,
             &mut self.durable_producers,
             step_index,
             output,
         )?;
         self.remaining_accounts = remaining_accounts;
-        self.pool = pool;
+        self.dictionary = dictionary;
         self.steps.push(FheEvalStep::RandBounded {
             upper_bound: upper_bound.bytes(),
             fhe_type,
@@ -734,12 +734,12 @@ impl EvalBuilder {
         }
         let step_index = u16::try_from(self.steps.len()).map_err(|_| EvalBuildError::TooManyOps)?;
         let mut remaining_accounts = self.remaining_accounts.clone();
-        let mut pool = self.pool.clone();
+        let mut dictionary = self.dictionary.clone();
         let mut lowered: Vec<FheEvalOperand> = Vec::with_capacity(operand_ops.len());
         for op in operand_ops {
             lowered.push(lower_operand(
                 &mut remaining_accounts,
-                &mut pool,
+                &mut dictionary,
                 self.steps.len(),
                 self.scope,
                 &self.durable_producers,
@@ -749,14 +749,14 @@ impl EvalBuilder {
         }
         let output = lower_output(
             &mut remaining_accounts,
-            &mut pool,
+            &mut dictionary,
             self.app_authority,
             &mut self.durable_producers,
             step_index,
             output,
         )?;
         self.remaining_accounts = remaining_accounts;
-        self.pool = pool;
+        self.dictionary = dictionary;
         self.steps.push(FheEvalStep::Sum {
             operands: lowered,
             fhe_type,
@@ -795,10 +795,10 @@ impl EvalBuilder {
         }
         let step_index = u16::try_from(self.steps.len()).map_err(|_| EvalBuildError::TooManyOps)?;
         let mut remaining_accounts = self.remaining_accounts.clone();
-        let mut pool = self.pool.clone();
+        let mut dictionary = self.dictionary.clone();
         let value_lowered = lower_operand(
             &mut remaining_accounts,
-            &mut pool,
+            &mut dictionary,
             self.steps.len(),
             self.scope,
             &self.durable_producers,
@@ -809,7 +809,7 @@ impl EvalBuilder {
         for op in set_ops {
             set_lowered.push(lower_operand(
                 &mut remaining_accounts,
-                &mut pool,
+                &mut dictionary,
                 self.steps.len(),
                 self.scope,
                 &self.durable_producers,
@@ -819,14 +819,14 @@ impl EvalBuilder {
         }
         let output = lower_output(
             &mut remaining_accounts,
-            &mut pool,
+            &mut dictionary,
             self.app_authority,
             &mut self.durable_producers,
             step_index,
             output,
         )?;
         self.remaining_accounts = remaining_accounts;
-        self.pool = pool;
+        self.dictionary = dictionary;
         let bool_type = FheType::BOOL.byte();
         self.steps.push(FheEvalStep::IsIn {
             value: value_lowered,
@@ -868,10 +868,10 @@ impl EvalBuilder {
         }
         let step_index = u16::try_from(self.steps.len()).map_err(|_| EvalBuildError::TooManyOps)?;
         let mut remaining_accounts = self.remaining_accounts.clone();
-        let mut pool = self.pool.clone();
+        let mut dictionary = self.dictionary.clone();
         let factor1 = lower_operand(
             &mut remaining_accounts,
-            &mut pool,
+            &mut dictionary,
             self.steps.len(),
             self.scope,
             &self.durable_producers,
@@ -880,7 +880,7 @@ impl EvalBuilder {
         )?;
         let factor2 = lower_operand(
             &mut remaining_accounts,
-            &mut pool,
+            &mut dictionary,
             self.steps.len(),
             self.scope,
             &self.durable_producers,
@@ -889,14 +889,14 @@ impl EvalBuilder {
         )?;
         let output = lower_output(
             &mut remaining_accounts,
-            &mut pool,
+            &mut dictionary,
             self.app_authority,
             &mut self.durable_producers,
             step_index,
             output,
         )?;
         self.remaining_accounts = remaining_accounts;
-        self.pool = pool;
+        self.dictionary = dictionary;
         self.steps.push(FheEvalStep::MulDiv {
             factor1,
             factor2,
@@ -934,10 +934,10 @@ impl EvalBuilder {
         )?;
         let step_index = u16::try_from(self.steps.len()).map_err(|_| EvalBuildError::TooManyOps)?;
         let mut remaining_accounts = self.remaining_accounts.clone();
-        let mut pool = self.pool.clone();
+        let mut dictionary = self.dictionary.clone();
         let operand = lower_operand(
             &mut remaining_accounts,
-            &mut pool,
+            &mut dictionary,
             self.steps.len(),
             self.scope,
             &self.durable_producers,
@@ -946,14 +946,14 @@ impl EvalBuilder {
         )?;
         let output = lower_output(
             &mut remaining_accounts,
-            &mut pool,
+            &mut dictionary,
             self.app_authority,
             &mut self.durable_producers,
             step_index,
             output,
         )?;
         self.remaining_accounts = remaining_accounts;
-        self.pool = pool;
+        self.dictionary = dictionary;
         self.steps.push(FheEvalStep::Unary {
             op,
             operand,
@@ -995,7 +995,7 @@ impl EvalBuilder {
         if self.steps.len() > MAX_FHE_EVAL_OPS {
             return Err(EvalBuildError::TooManyOps);
         }
-        validate_lowered_eval_plan(&self.steps, &self.remaining_accounts, &self.pool)?;
+        validate_lowered_eval_plan(&self.steps, &self.remaining_accounts, &self.dictionary)?;
         validate_rand_steps_anchor_durable_output(&self.steps)?;
         let account_count = u8::try_from(self.remaining_accounts.len())
             .map_err(|_| EvalBuildError::TooManyRemainingAccounts)?;
@@ -1003,7 +1003,7 @@ impl EvalBuilder {
             app_authority: self.app_authority,
             args: FheEvalArgs {
                 account_count,
-                pool: self.pool,
+                dictionary: self.dictionary,
                 steps: self.steps,
             },
             remaining_accounts: self.remaining_accounts,

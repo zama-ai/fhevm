@@ -150,8 +150,8 @@ fn preflight_eval_frame_accounts(
 ) -> Result<()> {
     let mut preflight = EvalPreflight {
         table,
-        pool: &args.pool,
-        pool_used: vec![false; args.pool.len()],
+        dictionary: &args.dictionary,
+        dictionary_used: vec![false; args.dictionary.len()],
         app_account_authority,
         deny_list_enabled,
         durable_outputs_written: Vec::with_capacity(MAX_FHE_EVAL_OPS),
@@ -159,11 +159,11 @@ fn preflight_eval_frame_accounts(
     for (index, step) in args.steps.iter().enumerate() {
         preflight_eval_step(step, index, &mut preflight)?;
     }
-    // Whole-frame hygiene, mirroring the account table: every interned pool
+    // Whole-frame hygiene, mirroring the account table: every interned dictionary
     // entry must be referenced by some step, so a frame cannot carry dead bytes.
     require!(
-        preflight.pool_used.iter().all(|used| *used),
-        ZamaHostError::FheEvalPoolEntryUnreferenced
+        preflight.dictionary_used.iter().all(|used| *used),
+        ZamaHostError::FheEvalDictionaryEntryUnreferenced
     );
     preflight.table.assert_all_used()
 }
@@ -173,8 +173,8 @@ fn preflight_eval_frame_accounts(
 /// any pass mutates state.
 struct EvalPreflight<'t, 'a, 'info> {
     table: &'t mut EvalAccountTable<'a, 'info>,
-    pool: &'t [[u8; 32]],
-    pool_used: Vec<bool>,
+    dictionary: &'t [[u8; 32]],
+    dictionary_used: Vec<bool>,
     app_account_authority: Pubkey,
     deny_list_enabled: bool,
     /// Durable accounts written by completed earlier steps. Operands are checked
@@ -184,15 +184,15 @@ struct EvalPreflight<'t, 'a, 'info> {
 }
 
 impl EvalPreflight<'_, '_, '_> {
-    /// Marks a pool reference used and returns its bytes; out-of-range fails the frame here,
+    /// Marks a dictionary reference used and returns its bytes; out-of-range fails the frame here,
     /// before execution resolves anything.
-    fn mark_pool(&mut self, index: u8) -> Result<[u8; 32]> {
+    fn mark_dictionary(&mut self, index: u8) -> Result<[u8; 32]> {
         let entry = self
-            .pool
+            .dictionary
             .get(index as usize)
             .copied()
-            .ok_or_else(|| error!(ZamaHostError::FheEvalPoolIndexOutOfBounds))?;
-        self.pool_used[index as usize] = true;
+            .ok_or_else(|| error!(ZamaHostError::FheEvalDictionaryIndexOutOfBounds))?;
+        self.dictionary_used[index as usize] = true;
         Ok(entry)
     }
 
@@ -287,7 +287,7 @@ fn preflight_rhs_operand(
 ) -> Result<()> {
     match operand {
         FheEvalOperand::Scalar { value_index } => {
-            preflight.mark_pool(*value_index)?;
+            preflight.mark_dictionary(*value_index)?;
             Ok(())
         }
         _ => preflight_encrypted_operand(operand, step_index, preflight),
@@ -304,7 +304,7 @@ fn preflight_encrypted_operand(
             handle_index,
             encrypted_value_index,
         } => {
-            preflight.mark_pool(*handle_index)?;
+            preflight.mark_dictionary(*handle_index)?;
             let key = preflight
                 .table
                 .account(u16::from(*encrypted_value_index))?
@@ -352,9 +352,9 @@ fn preflight_output(
             preflight
                 .table
                 .mark(u16::from(*output_encrypted_value_index))?;
-            preflight.mark_pool(*output_acl_domain_key_index)?;
-            preflight.mark_pool(*output_app_account_index)?;
-            preflight.mark_pool(*output_encrypted_value_label_index)?;
+            preflight.mark_dictionary(*output_acl_domain_key_index)?;
+            preflight.mark_dictionary(*output_app_account_index)?;
+            preflight.mark_dictionary(*output_encrypted_value_label_index)?;
             let authority = preflight.mark_output_authority(*output_app_account_authority_index)?;
             preflight.mark_deny_record(authority)?;
             // Every newly granted subject is deny-checked in the bind pass; mark
@@ -364,7 +364,7 @@ fn preflight_output(
             // PreviousStateMismatch, so trusting it for account-marking is safe. On
             // a create (`None` previous) every output subject is a new grant.
             for subject_index in output_subject_indexes {
-                let subject = Pubkey::new_from_array(preflight.mark_pool(*subject_index)?);
+                let subject = Pubkey::new_from_array(preflight.mark_dictionary(*subject_index)?);
                 let is_new_grant = match previous_subjects {
                     Some(previous_subjects) => !previous_subjects.contains(&subject),
                     None => true,
@@ -466,7 +466,7 @@ mod tests {
     fn frame(steps: Vec<FheEvalStep>) -> FheEvalArgs {
         FheEvalArgs {
             account_count: 0,
-            pool: vec![[1; 32], [2; 32]],
+            dictionary: vec![[1; 32], [2; 32]],
             steps,
         }
     }

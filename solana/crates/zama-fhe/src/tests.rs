@@ -184,7 +184,7 @@ fn eval_plan_build_lowers_verified_input_operand() {
             );
             assert_eq!(*rhs, FheEvalOperand::Scalar { value_index: 0 });
             assert_eq!(
-                plan.args.pool_bytes(0).unwrap(),
+                plan.args.dictionary_bytes(0).unwrap(),
                 Scalar::<Uint<64>>::u64(1).bytes()
             );
         }
@@ -240,8 +240,8 @@ fn eval_plan_build_propagates_closure_and_finish_errors() {
 fn finish_preflights_lowered_remaining_account_indices() {
     let primary_authority = Pubkey::new_unique();
     let mut builder = EvalBuilder::new(app_authority(primary_authority));
-    builder.pool.push(balance_handle(1));
-    builder.pool.push(Scalar::<Uint<64>>::u64(1).bytes());
+    builder.dictionary.push(balance_handle(1));
+    builder.dictionary.push(Scalar::<Uint<64>>::u64(1).bytes());
     builder.steps.push(FheEvalStep::Binary {
         op: FheBinaryOpCode::Add,
         lhs: FheEvalOperand::AllowedDurable {
@@ -269,7 +269,7 @@ fn finish_preflights_lowered_transient_order_and_account_uniqueness() {
         fhe_type: FheType::UINT64.byte(),
         output: FheEvalOutput::AllowedLocal,
     });
-    builder.pool.push(Scalar::<Uint<64>>::u64(1).bytes());
+    builder.dictionary.push(Scalar::<Uint<64>>::u64(1).bytes());
     builder.steps.push(FheEvalStep::Binary {
         op: FheBinaryOpCode::Add,
         lhs: FheEvalOperand::AllowedLocal { producer_index: 1 },
@@ -303,22 +303,22 @@ fn finish_preflights_lowered_transient_order_and_account_uniqueness() {
 }
 
 #[test]
-fn finish_rejects_pool_entry_no_step_references() {
+fn finish_rejects_dictionary_entry_no_step_references() {
     let primary_authority = Pubkey::new_unique();
     let mut builder = EvalBuilder::new(app_authority(primary_authority));
     builder
         .trivial_encrypt(Scalar::<Uint<64>>::u64(1), Output::transient())
         .unwrap();
-    builder.pool.push([0xAA; 32]);
+    builder.dictionary.push([0xAA; 32]);
 
     assert_eq!(
         builder.finish().unwrap_err(),
-        EvalBuildError::UnreferencedPoolEntry
+        EvalBuildError::UnreferencedDictionaryEntry
     );
 }
 
 #[test]
-fn finish_rejects_pool_index_past_pool_end() {
+fn finish_rejects_dictionary_index_past_dictionary_end() {
     let primary_authority = Pubkey::new_unique();
     let mut builder = EvalBuilder::new(app_authority(primary_authority));
     builder
@@ -335,7 +335,7 @@ fn finish_rejects_pool_index_past_pool_end() {
 
     assert_eq!(
         builder.finish().unwrap_err(),
-        EvalBuildError::PoolIndexOutOfBounds
+        EvalBuildError::DictionaryIndexOutOfBounds
     );
 }
 
@@ -1315,22 +1315,24 @@ fn durable_output_birth_matches_eval_lowering() {
                 plan.remaining_accounts[*output_encrypted_value_index as usize].pubkey;
             assert_eq!(output_encrypted_value, birth.encrypted_value());
             assert_eq!(
-                plan.args.pool_key(*output_acl_domain_key_index).unwrap(),
+                plan.args
+                    .dictionary_key(*output_acl_domain_key_index)
+                    .unwrap(),
                 birth.acl_domain_key()
             );
             assert_eq!(
-                plan.args.pool_key(*output_app_account_index).unwrap(),
+                plan.args.dictionary_key(*output_app_account_index).unwrap(),
                 birth.app_account()
             );
             assert_eq!(
                 plan.args
-                    .pool_bytes(*output_encrypted_value_label_index)
+                    .dictionary_bytes(*output_encrypted_value_label_index)
                     .unwrap(),
                 birth.encrypted_value_label()
             );
             let output_subjects: Vec<Pubkey> = output_subject_indexes
                 .iter()
-                .map(|index| plan.args.pool_key(*index).unwrap())
+                .map(|index| plan.args.dictionary_key(*index).unwrap())
                 .collect();
             assert_eq!(output_subjects, birth.host_subjects());
             assert_eq!(*previous_handle, birth.previous_handle());

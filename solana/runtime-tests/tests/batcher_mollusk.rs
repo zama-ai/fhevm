@@ -207,12 +207,12 @@ impl CleartextLedger {
                     continue;
                 };
                 let value_key = zama_solana_acl::derive_value_key(
-                    args.pool_bytes(*output_acl_domain_key_index)
-                        .expect("valid pool index"),
-                    args.pool_bytes(*output_app_account_index)
-                        .expect("valid pool index"),
-                    args.pool_bytes(*output_encrypted_value_label_index)
-                        .expect("valid pool index"),
+                    args.dictionary_bytes(*output_acl_domain_key_index)
+                        .expect("valid dictionary index"),
+                    args.dictionary_bytes(*output_app_account_index)
+                        .expect("valid dictionary index"),
+                    args.dictionary_bytes(*output_encrypted_value_label_index)
+                        .expect("valid dictionary index"),
                 );
                 let address = host::encrypted_value_address(value_key).0;
                 let persisted = read_encrypted_value(context, address);

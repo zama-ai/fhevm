@@ -251,30 +251,30 @@ struct EvalFlow {
 }
 
 // Frame constants (operand handles, scalar values, output ACL metadata) live in the
-// frame's interned pool and are referenced by `u8` index (fhevm-internal#1853 W7). The
-// flow helpers intern through a thread-local pool while a test assembles its single
+// frame's interned dictionary and are referenced by `u8` index (fhevm-internal#1853 W7). The
+// flow helpers intern through a thread-local dictionary while a test assembles its single
 // frame; `instruction` snapshots it into the finished args and byte-mirror helpers keep
 // resolving through it afterwards. Each test runs on its own thread and each flow
-// clears the pool on construction, so pools never mix across tests.
+// clears the dictionary on construction, so pools never mix across tests.
 std::thread_local! {
     static FRAME_POOL: std::cell::RefCell<Vec<[u8; 32]>> =
         const { std::cell::RefCell::new(Vec::new()) };
 }
 
 fn intern(bytes: [u8; 32]) -> u8 {
-    FRAME_POOL.with(|pool| {
-        let mut pool = pool.borrow_mut();
-        if let Some(index) = pool.iter().position(|entry| *entry == bytes) {
-            return u8::try_from(index).expect("test pool fits u8");
+    FRAME_POOL.with(|dictionary| {
+        let mut dictionary = dictionary.borrow_mut();
+        if let Some(index) = dictionary.iter().position(|entry| *entry == bytes) {
+            return u8::try_from(index).expect("test dictionary fits u8");
         }
-        let index = u8::try_from(pool.len()).expect("test pool fits u8");
-        pool.push(bytes);
+        let index = u8::try_from(dictionary.len()).expect("test dictionary fits u8");
+        dictionary.push(bytes);
         index
     })
 }
 
 fn pool_entry(index: u8) -> [u8; 32] {
-    FRAME_POOL.with(|pool| pool.borrow()[usize::from(index)])
+    FRAME_POOL.with(|dictionary| dictionary.borrow()[usize::from(index)])
 }
 
 fn scalar(value: [u8; 32]) -> FheEvalOperand {
@@ -285,7 +285,7 @@ fn scalar(value: [u8; 32]) -> FheEvalOperand {
 
 impl EvalFlow {
     fn new() -> Self {
-        FRAME_POOL.with(|pool| pool.borrow_mut().clear());
+        FRAME_POOL.with(|dictionary| dictionary.borrow_mut().clear());
         let authority = Pubkey::new_unique();
         let (host_config, host_config_account) = host_config_account(authority);
         Self {
@@ -416,7 +416,7 @@ impl EvalFlow {
     fn instruction(&self, step: FheEvalStep) -> (FheEvalArgs, Instruction) {
         let args = FheEvalArgs {
             account_count: u8::try_from(self.remaining.len()).expect("test accounts fit u8"),
-            pool: FRAME_POOL.with(|pool| pool.borrow().clone()),
+            dictionary: FRAME_POOL.with(|dictionary| dictionary.borrow().clone()),
             steps: vec![step],
         };
         let mut instruction = anchor_ix(

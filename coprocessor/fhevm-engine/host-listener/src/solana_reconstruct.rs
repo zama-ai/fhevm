@@ -231,17 +231,17 @@ pub fn parse_host_config(account_data: &[u8]) -> anyhow::Result<u64> {
 }
 
 /// Resolves an eval operand to its handle by reusing already-produced step
-/// results and the frame's interned constant pool — no on-chain account reads.
+/// results and the frame's interned constant dictionary — no on-chain account reads.
 /// `Scalar` is only valid as a binary rhs (handled by [`resolve_rhs`]); seeing
 /// it here means a malformed plan.
 fn resolve_operand(
     operand: &FheEvalOperand,
-    pool: &[[u8; 32]],
+    dictionary: &[[u8; 32]],
     produced: &[[u8; 32]],
 ) -> Option<[u8; 32]> {
     match operand {
         FheEvalOperand::AllowedDurable { handle_index, .. } => {
-            pool.get(usize::from(*handle_index)).copied()
+            dictionary.get(usize::from(*handle_index)).copied()
         }
         FheEvalOperand::AllowedLocal { producer_index } => {
             produced.get(usize::from(*producer_index)).copied()
@@ -260,15 +260,17 @@ fn resolve_operand(
 /// sets `scalar = true` only for a `Scalar` rhs).
 fn resolve_rhs(
     operand: &FheEvalOperand,
-    pool: &[[u8; 32]],
+    dictionary: &[[u8; 32]],
     produced: &[[u8; 32]],
 ) -> Option<([u8; 32], bool)> {
     match operand {
-        FheEvalOperand::Scalar { value_index } => pool
+        FheEvalOperand::Scalar { value_index } => dictionary
             .get(usize::from(*value_index))
             .copied()
             .map(|bytes| (bytes, true)),
-        other => resolve_operand(other, pool, produced).map(|h| (h, false)),
+        other => {
+            resolve_operand(other, dictionary, produced).map(|h| (h, false))
+        }
     }
 }
 
@@ -318,7 +320,7 @@ fn map_pgm_ternary_op(op: PgmTernaryOpCode) -> FheTernaryOpCode {
 /// per step. Durable and instruction-local outputs derive the identical base
 /// handle — no per-output binding (matches EVM `FHEVMExecutor`).
 ///
-/// Returns `None` on a malformed plan (operand or pool reference out of range,
+/// Returns `None` on a malformed plan (operand or dictionary reference out of range,
 /// or a `Scalar` where only an encrypted operand is valid). `ctx` supplies
 /// chain_id / previous_bank_hash / unix_timestamp; `subject` is the compute
 /// subject. Random seeds are supplied by the host's signed event-CPI batch
@@ -365,9 +367,10 @@ pub fn reconstruct_fhe_eval_steps(
                 output_fhe_type,
                 ..
             } => {
-                let lhs_handle = resolve_operand(lhs, &plan.pool, &produced)?;
+                let lhs_handle =
+                    resolve_operand(lhs, &plan.dictionary, &produced)?;
                 let (rhs_handle, scalar) =
-                    resolve_rhs(rhs, &plan.pool, &produced)?;
+                    resolve_rhs(rhs, &plan.dictionary, &produced)?;
                 let result = computed_eval_handle(
                     *op,
                     lhs_handle,
@@ -397,9 +400,9 @@ pub fn reconstruct_fhe_eval_steps(
                 output_fhe_type,
                 ..
             } => {
-                let c = resolve_operand(control, &plan.pool, &produced)?;
-                let t = resolve_operand(if_true, &plan.pool, &produced)?;
-                let f = resolve_operand(if_false, &plan.pool, &produced)?;
+                let c = resolve_operand(control, &plan.dictionary, &produced)?;
+                let t = resolve_operand(if_true, &plan.dictionary, &produced)?;
+                let f = resolve_operand(if_false, &plan.dictionary, &produced)?;
                 let result = computed_eval_ternary_handle(
                     *op,
                     c,
@@ -465,7 +468,7 @@ pub fn reconstruct_fhe_eval_steps(
                 output: _,
             } => {
                 let operand_handle =
-                    resolve_operand(operand, &plan.pool, &produced)?;
+                    resolve_operand(operand, &plan.dictionary, &produced)?;
                 let result = computed_eval_unary_handle(
                     *op,
                     operand_handle,
@@ -516,7 +519,7 @@ pub fn reconstruct_fhe_eval_steps(
                 let operand_handles: Vec<[u8; 32]> = operands
                     .iter()
                     .map(|operand| {
-                        resolve_operand(operand, &plan.pool, &produced)
+                        resolve_operand(operand, &plan.dictionary, &produced)
                     })
                     .collect::<Option<_>>()?;
                 let result = computed_eval_sum_handle(
@@ -542,11 +545,11 @@ pub fn reconstruct_fhe_eval_steps(
                 output: _,
             } => {
                 let value_handle =
-                    resolve_operand(value, &plan.pool, &produced)?;
+                    resolve_operand(value, &plan.dictionary, &produced)?;
                 let set_handles: Vec<[u8; 32]> = set
                     .iter()
                     .map(|operand| {
-                        resolve_operand(operand, &plan.pool, &produced)
+                        resolve_operand(operand, &plan.dictionary, &produced)
                     })
                     .collect::<Option<_>>()?;
                 let result = computed_eval_is_in_handle(
@@ -575,9 +578,9 @@ pub fn reconstruct_fhe_eval_steps(
                 output: _,
             } => {
                 let factor1_handle =
-                    resolve_operand(factor1, &plan.pool, &produced)?;
+                    resolve_operand(factor1, &plan.dictionary, &produced)?;
                 let (factor2_handle, scalar) =
-                    resolve_rhs(factor2, &plan.pool, &produced)?;
+                    resolve_rhs(factor2, &plan.dictionary, &produced)?;
                 let result = computed_eval_mul_div_handle(
                     factor1_handle,
                     factor2_handle,
@@ -899,7 +902,7 @@ mod tests {
         };
         let plan = FheEvalArgs {
             account_count: 0,
-            pool: vec![[2u8; 32]],
+            dictionary: vec![[2u8; 32]],
             steps: vec![
                 FheEvalStep::TrivialEncrypt {
                     plaintext: [7u8; 32],
@@ -968,7 +971,7 @@ mod tests {
     fn fhe_eval_walk_chains_transient_handles() {
         let plan = FheEvalArgs {
             account_count: 0,
-            pool: vec![[2u8; 32]],
+            dictionary: vec![[2u8; 32]],
             steps: vec![
                 FheEvalStep::TrivialEncrypt {
                     plaintext: [7u8; 32],
@@ -1018,7 +1021,7 @@ mod tests {
         // output (fhevm-internal#1853 W4), so the fixture binds one.
         let plan = FheEvalArgs {
             account_count: 1,
-            pool: vec![[0xA1; 32], [0xA2; 32], [0xA3; 32], [0xA4; 32]],
+            dictionary: vec![[0xA1; 32], [0xA2; 32], [0xA3; 32], [0xA4; 32]],
             steps: vec![FheEvalStep::RandBounded {
                 upper_bound,
                 fhe_type: 5,
@@ -1068,11 +1071,11 @@ mod tests {
             b
         };
         // The frame ends in a rand step, so it anchors a durable output
-        // (fhevm-internal#1853 W4); pool entries 1..=4 are its ACL metadata.
+        // (fhevm-internal#1853 W4); dictionary entries 1..=4 are its ACL metadata.
         let output_account = [0x55u8; 32];
         let plan = FheEvalArgs {
             account_count: 1,
-            pool: vec![
+            dictionary: vec![
                 [2u8; 32], [0xA1; 32], [0xA2; 32], [0xA3; 32], [0xA4; 32],
             ],
             steps: vec![
@@ -1252,7 +1255,7 @@ mod tests {
         // A first step referencing a not-yet-produced step -> None.
         let plan = FheEvalArgs {
             account_count: 0,
-            pool: vec![[2u8; 32]],
+            dictionary: vec![[2u8; 32]],
             steps: vec![FheEvalStep::Binary {
                 op: PgmBinaryOpCode::Add,
                 lhs: FheEvalOperand::AllowedLocal { producer_index: 5 },

@@ -282,9 +282,9 @@ pub enum ZamaHostError {
     #[msg("clock is before the unix epoch")]
     ClockBeforeEpoch,
 
-    /// A step referenced an interned pool index past the end of `FheEvalArgs::pool`.
-    #[msg("FHE eval pool index out of bounds")]
-    FheEvalPoolIndexOutOfBounds,
+    /// A step referenced an interned dictionary index past the end of `FheEvalArgs::dictionary`.
+    #[msg("FHE eval dictionary index out of bounds")]
+    FheEvalDictionaryIndexOutOfBounds,
     /// `FheEvalArgs::account_count` does not match the actual remaining-accounts length.
     #[msg("FHE eval declared account count mismatch")]
     FheEvalAccountCountMismatch,
@@ -292,10 +292,10 @@ pub enum ZamaHostError {
     /// In-frame dependencies must use `AllowedLocal`.
     #[msg("FHE eval durable operand was written earlier in the frame")]
     FheEvalDurableOperandWrittenEarlier,
-    /// An interned pool entry was never referenced by any step; a frame must not
+    /// An interned dictionary entry was never referenced by any step; a frame must not
     /// carry dead bytes.
-    #[msg("FHE eval pool entry is not referenced by any step")]
-    FheEvalPoolEntryUnreferenced,
+    #[msg("FHE eval dictionary entry is not referenced by any step")]
+    FheEvalDictionaryEntryUnreferenced,
     /// `0` is not a valid per-tx HCU limit: `u64::MAX` is the single "unlimited"
     /// sentinel across every HCU knob, and a `0` limit would reject every frame.
     #[msg("0 is not a valid HCU limit; use u64::MAX for unlimited")]
