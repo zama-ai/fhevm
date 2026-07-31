@@ -11,10 +11,10 @@ use fhevm_engine_common::{tfhe_ops::current_ciphertext_version, types::Supported
 use host_listener::{
     database::tfhe_event_propagate::Handle,
     solana_adapter::{
-        insert_solana_events, solana_transaction_id, SolanaBlockMeta, SolanaHostEvent,
+        insert_solana_records, solana_transaction_id, SolanaBlockMeta, SolanaHostRecord,
     },
     solana_reconstruct::{
-        decode_fhe_execute_args, reconstruct_fhe_execute_events, ReconstructContext,
+        decode_fhe_execute_args, reconstruct_fhe_execute_records, ReconstructContext,
     },
 };
 use litesvm::{types::TransactionMetadata, LiteSVM};
@@ -84,15 +84,15 @@ async fn confidential_transfer_reconstructs_computes_and_decrypts(
     );
     assert!(matches!(
         &events[2],
-        SolanaHostEvent::FheTernaryOp(event) if event.result == alice_handle
+        SolanaHostRecord::FheTernaryOp(event) if event.result == alice_handle
     ));
     assert!(matches!(
         &events[3],
-        SolanaHostEvent::FheBinaryOp(event) if event.result == transferred_handle
+        SolanaHostRecord::FheBinaryOp(event) if event.result == transferred_handle
     ));
     assert!(matches!(
         &events[4],
-        SolanaHostEvent::FheBinaryOp(event) if event.result == bob_handle
+        SolanaHostRecord::FheBinaryOp(event) if event.result == bob_handle
     ));
 
     let block = SolanaBlockMeta {
@@ -109,7 +109,7 @@ async fn confidential_transfer_reconstructs_computes_and_decrypts(
         .new_transaction()
         .await?
         .expect("new_transaction() returns Some on a live stack");
-    let stats = insert_solana_events(
+    let stats = insert_solana_records(
         &harness.listener_db,
         &mut db_tx,
         events,
@@ -135,7 +135,7 @@ fn reconstruct_transfer_events(
     fixture: &TokenFixture,
     meta: &TransactionMetadata,
     account_keys: &[Pubkey],
-) -> Vec<SolanaHostEvent> {
+) -> Vec<SolanaHostRecord> {
     // fhe_execute has 9 named accounts (incl. event-CPI authority + program); the rest are the
     // batch's remaining accounts, which the dictionary wire format references by index.
     const FHE_EXECUTE_REMAINING_BASE: usize = 9;
@@ -154,7 +154,7 @@ fn reconstruct_transfer_events(
         })
         .expect("confidential transfer must CPI into zama-host fhe_execute");
     let clock = fixture.svm.get_sysvar::<Clock>();
-    reconstruct_fhe_execute_events(
+    reconstruct_fhe_execute_records(
         &batch,
         fixture.compute_signer.to_bytes(),
         &remaining_accounts,

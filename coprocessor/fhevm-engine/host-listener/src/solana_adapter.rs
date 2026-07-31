@@ -30,7 +30,7 @@ pub struct SolanaMaterialRequest {
 }
 
 #[derive(Clone, Debug)]
-pub enum SolanaHostEvent {
+pub enum SolanaHostRecord {
     FheBinaryOp(FheBinaryOp),
     FheTernaryOp(FheTernaryOp),
     TrivialEncrypt(TrivialEncrypt),
@@ -44,7 +44,7 @@ pub enum SolanaHostEvent {
 }
 
 #[derive(Clone, Debug)]
-pub enum SolanaMappedEvent {
+pub enum SolanaMappedRecord {
     Tfhe(Log<TfheContractEvents>),
     MaterialRequest(SolanaMaterialRequest),
 }
@@ -86,37 +86,37 @@ fn dedup_material_requests(requests: &mut Vec<SolanaMaterialRequest>) {
     requests.retain(|request| seen.insert(request.handle));
 }
 
-pub fn map_solana_event(event: SolanaHostEvent) -> SolanaMappedEvent {
-    match event {
-        SolanaHostEvent::FheBinaryOp(event) => {
-            SolanaMappedEvent::Tfhe(to_tfhe_event(event))
+pub fn map_solana_record(record: SolanaHostRecord) -> SolanaMappedRecord {
+    match record {
+        SolanaHostRecord::FheBinaryOp(record) => {
+            SolanaMappedRecord::Tfhe(to_tfhe_event(record))
         }
-        SolanaHostEvent::FheTernaryOp(event) => {
-            SolanaMappedEvent::Tfhe(to_tfhe_ternary_event(event))
+        SolanaHostRecord::FheTernaryOp(record) => {
+            SolanaMappedRecord::Tfhe(to_tfhe_ternary_event(record))
         }
-        SolanaHostEvent::TrivialEncrypt(event) => {
-            SolanaMappedEvent::Tfhe(to_trivial_encrypt_event(event))
+        SolanaHostRecord::TrivialEncrypt(record) => {
+            SolanaMappedRecord::Tfhe(to_trivial_encrypt_event(record))
         }
-        SolanaHostEvent::FheRand(event) => {
-            SolanaMappedEvent::Tfhe(to_fhe_rand_event(event))
+        SolanaHostRecord::FheRand(record) => {
+            SolanaMappedRecord::Tfhe(to_fhe_rand_event(record))
         }
-        SolanaHostEvent::FheRandBounded(event) => {
-            SolanaMappedEvent::Tfhe(to_fhe_rand_bounded_event(event))
+        SolanaHostRecord::FheRandBounded(record) => {
+            SolanaMappedRecord::Tfhe(to_fhe_rand_bounded_event(record))
         }
-        SolanaHostEvent::FheUnaryOp(event) => {
-            SolanaMappedEvent::Tfhe(to_fhe_unary_event(event))
+        SolanaHostRecord::FheUnaryOp(record) => {
+            SolanaMappedRecord::Tfhe(to_fhe_unary_event(record))
         }
-        SolanaHostEvent::FheSum(event) => {
-            SolanaMappedEvent::Tfhe(to_fhe_sum_event(event))
+        SolanaHostRecord::FheSum(record) => {
+            SolanaMappedRecord::Tfhe(to_fhe_sum_event(record))
         }
-        SolanaHostEvent::FheIsIn(event) => {
-            SolanaMappedEvent::Tfhe(to_fhe_is_in_event(event))
+        SolanaHostRecord::FheIsIn(record) => {
+            SolanaMappedRecord::Tfhe(to_fhe_is_in_event(record))
         }
-        SolanaHostEvent::FheMulDiv(event) => {
-            SolanaMappedEvent::Tfhe(to_fhe_mul_div_event(event))
+        SolanaHostRecord::FheMulDiv(record) => {
+            SolanaMappedRecord::Tfhe(to_fhe_mul_div_event(record))
         }
-        SolanaHostEvent::MaterialRequest(request) => {
-            SolanaMappedEvent::MaterialRequest(request)
+        SolanaHostRecord::MaterialRequest(request) => {
+            SolanaMappedRecord::MaterialRequest(request)
         }
     }
 }
@@ -125,19 +125,19 @@ pub fn map_solana_event(event: SolanaHostEvent) -> SolanaMappedEvent {
 // soon as their instruction confirms. The KMS independently validates the live
 // EncryptedValue PDA and any MMR proof before releasing plaintext, so this eager
 // work can waste cycles after a rare rollback but cannot authorize decryption.
-pub fn normalize_solana_events_for_db(
-    events: impl IntoIterator<Item = SolanaHostEvent>,
+pub fn normalize_solana_records_for_db(
+    records: impl IntoIterator<Item = SolanaHostRecord>,
     transaction_id: TransactionHash,
     block: SolanaBlockMeta,
 ) -> (Vec<LogTfhe>, Vec<SolanaMaterialRequest>) {
-    let events = events.into_iter().collect::<Vec<_>>();
+    let records = records.into_iter().collect::<Vec<_>>();
 
     let mut tfhe_logs = Vec::new();
     let mut material_requests = Vec::new();
 
-    for (index, event) in events.into_iter().enumerate() {
-        match map_solana_event(event) {
-            SolanaMappedEvent::Tfhe(event) => {
+    for (index, record) in records.into_iter().enumerate() {
+        match map_solana_record(record) {
+            SolanaMappedRecord::Tfhe(event) => {
                 // Eager: schedulable the moment the compute itself confirms,
                 // independent of any allow/ACL signal. See module note above.
                 tfhe_logs.push(to_log_tfhe(
@@ -148,7 +148,7 @@ pub fn normalize_solana_events_for_db(
                     index as u64,
                 ));
             }
-            SolanaMappedEvent::MaterialRequest(request) => {
+            SolanaMappedRecord::MaterialRequest(request) => {
                 material_requests.push(request);
             }
         }
@@ -158,15 +158,15 @@ pub fn normalize_solana_events_for_db(
     (tfhe_logs, material_requests)
 }
 
-pub async fn insert_solana_events(
+pub async fn insert_solana_records(
     db: &Database,
     tx: &mut Transaction<'_>,
-    events: impl IntoIterator<Item = SolanaHostEvent>,
+    records: impl IntoIterator<Item = SolanaHostRecord>,
     transaction_id: TransactionHash,
     block: SolanaBlockMeta,
 ) -> Result<SolanaIngestStats, SqlxError> {
     let (mut tfhe_logs, material_requests) =
-        normalize_solana_events_for_db(events, transaction_id, block);
+        normalize_solana_records_for_db(records, transaction_id, block);
     let mut inserted_rows = 0;
 
     let chains =
@@ -247,7 +247,7 @@ pub fn to_log_tfhe(
     }
 }
 
-/// Converts IDL-decoded Solana host events into the existing TFHE event model.
+/// Converts decoded Solana host op records into the existing TFHE event model.
 ///
 /// The current coprocessor worker consumes the database rows produced from
 /// `TfheContractEvents`. Keeping this adapter at the typed-event boundary lets
@@ -799,16 +799,16 @@ mod tests {
             Time::MIDNIGHT,
         );
 
-        let (tfhe_logs, material_requests) = normalize_solana_events_for_db(
+        let (tfhe_logs, material_requests) = normalize_solana_records_for_db(
             [
-                SolanaHostEvent::TrivialEncrypt(TrivialEncrypt {
+                SolanaHostRecord::TrivialEncrypt(TrivialEncrypt {
                     version: EVENT_VERSION,
                     subject: [0; 32],
                     plaintext: [55; 32],
                     fhe_type: 5,
                     result: [3; 32],
                 }),
-                SolanaHostEvent::MaterialRequest(material_request([3; 32])),
+                SolanaHostRecord::MaterialRequest(material_request([3; 32])),
             ],
             tx_id,
             SolanaBlockMeta {
@@ -836,10 +836,10 @@ mod tests {
             Time::MIDNIGHT,
         );
 
-        let (_, material_requests) = normalize_solana_events_for_db(
+        let (_, material_requests) = normalize_solana_records_for_db(
             [
-                SolanaHostEvent::MaterialRequest(material_request([1; 32])),
-                SolanaHostEvent::MaterialRequest(material_request([2; 32])),
+                SolanaHostRecord::MaterialRequest(material_request([1; 32])),
+                SolanaHostRecord::MaterialRequest(material_request([2; 32])),
             ],
             tx_id,
             SolanaBlockMeta {
@@ -869,16 +869,16 @@ mod tests {
             Time::MIDNIGHT,
         );
 
-        let (tfhe_logs, _) = normalize_solana_events_for_db(
+        let (tfhe_logs, _) = normalize_solana_records_for_db(
             [
-                SolanaHostEvent::TrivialEncrypt(TrivialEncrypt {
+                SolanaHostRecord::TrivialEncrypt(TrivialEncrypt {
                     version: EVENT_VERSION,
                     subject: [0; 32],
                     plaintext: [55; 32],
                     fhe_type: 5,
                     result: [3; 32],
                 }),
-                SolanaHostEvent::MaterialRequest(material_request([4; 32])),
+                SolanaHostRecord::MaterialRequest(material_request([4; 32])),
             ],
             tx_id,
             SolanaBlockMeta {
@@ -901,9 +901,9 @@ mod tests {
             Time::MIDNIGHT,
         );
 
-        let (tfhe_logs, material_requests) = normalize_solana_events_for_db(
+        let (tfhe_logs, material_requests) = normalize_solana_records_for_db(
             [
-                SolanaHostEvent::TrivialEncrypt(TrivialEncrypt {
+                SolanaHostRecord::TrivialEncrypt(TrivialEncrypt {
                     version: EVENT_VERSION,
                     subject: [0; 32],
                     plaintext: {
@@ -914,14 +914,14 @@ mod tests {
                     fhe_type: 0,
                     result: [1; 32],
                 }),
-                SolanaHostEvent::FheRand(FheRand {
+                SolanaHostRecord::FheRand(FheRand {
                     version: EVENT_VERSION,
                     subject: [0; 32],
                     seed: [2; 16],
                     fhe_type: 5,
                     result: [2; 32],
                 }),
-                SolanaHostEvent::FheTernaryOp(FheTernaryOp {
+                SolanaHostRecord::FheTernaryOp(FheTernaryOp {
                     version: EVENT_VERSION,
                     op: FheTernaryOpCode::IfThenElse,
                     subject: [0; 32],

@@ -38,7 +38,7 @@ use zama_solana_transaction::{
 
 use crate::database::tfhe_event_propagate::Database;
 use crate::solana_adapter::{
-    insert_solana_events, solana_transaction_id, SolanaBlockMeta,
+    insert_solana_records, solana_transaction_id, SolanaBlockMeta,
 };
 use crate::solana_grpc_source::{
     build_subscribe_request, BlockValidator, SealDecision, SealedBlock,
@@ -847,7 +847,7 @@ async fn ingest_transaction(
     )
     .await
     .map_err(|err| {
-        IngestFailure::fatal(err).context("reconstruct Solana host events")
+        IngestFailure::fatal(err).context("reconstruct Solana host records")
     })? {
         ReconstructionOutcome::Complete(events) => events,
         ReconstructionOutcome::NotCovered => Vec::new(),
@@ -881,15 +881,15 @@ async fn ingest_transaction(
     else {
         info!(
             slot = sealed_block.slot,
-            "Cutover completed - skipping Solana host event insert on retired stack"
+            "Cutover completed - skipping Solana host record insert on retired stack"
         );
         return Ok(());
     };
     let stats =
-        insert_solana_events(db, &mut db_tx, events, transaction_id, block)
+        insert_solana_records(db, &mut db_tx, events, transaction_id, block)
             .await
             .map_err(|err| {
-                IngestFailure::retryable(err).context("insert_solana_events")
+                IngestFailure::retryable(err).context("insert_solana_records")
             })?;
     db_tx
         .commit()
@@ -903,7 +903,7 @@ async fn ingest_transaction(
         tfhe_events = stats.tfhe_events,
         material_requests = stats.material_requests,
         inserted_rows = stats.inserted_rows,
-        "ingested Solana host events (gRPC)"
+        "ingested Solana host records (gRPC)"
     );
     Ok(())
 }
@@ -939,12 +939,12 @@ fn reconstruct_context(
 
 #[derive(Debug)]
 enum ReconstructionOutcome {
-    Complete(Vec<crate::solana_adapter::SolanaHostEvent>),
+    Complete(Vec<crate::solana_adapter::SolanaHostRecord>),
     NotCovered,
 }
 
 /// Rebuilds the ingestable event set off-chain from a transaction's instructions. Covers
-/// `fhe_execute`: one compute event per step, plus a material request for each
+/// `fhe_execute`: one op record per step, plus a material request for each
 /// `Persistent` step's result handle.
 ///
 /// `EncryptedValue` lifecycle instructions are decoded separately from the same
@@ -958,7 +958,7 @@ async fn reconstruct_events_for_insert(
     slot_bank_hash: &HashMap<u64, [u8; 32]>,
     slot_clock_ts: &HashMap<u64, i64>,
 ) -> Result<ReconstructionOutcome> {
-    use crate::solana_adapter::{material_request, SolanaHostEvent};
+    use crate::solana_adapter::{material_request, SolanaHostRecord};
     use crate::solana_reconstruct::{
         decode_encrypted_value_instruction, decode_fhe_execute_args,
         decode_fhe_execute_random_seeds_event, encrypted_value_account_index,
@@ -1047,9 +1047,9 @@ async fn reconstruct_events_for_insert(
                 );
             };
             for step in steps {
-                let handle = compute_result_handle(&step.event);
+                let handle = compute_result_handle(&step.record);
                 let previous_handle = step.previous_handle;
-                events.push(step.event);
+                events.push(step.record);
                 if let (Some(index), Some(handle)) =
                     (step.persistent_encrypted_value_index, handle)
                 {
@@ -1059,11 +1059,11 @@ async fn reconstruct_events_for_insert(
                     )
                     .is_some()
                     {
-                        events.push(SolanaHostEvent::MaterialRequest(
+                        events.push(SolanaHostRecord::MaterialRequest(
                             material_request(handle),
                         ));
                         if let Some(previous_handle) = previous_handle {
-                            events.push(SolanaHostEvent::MaterialRequest(
+                            events.push(SolanaHostRecord::MaterialRequest(
                                 material_request(previous_handle),
                             ));
                         }
@@ -1095,7 +1095,7 @@ async fn reconstruct_events_for_insert(
             events.extend(
                 encrypted_value_material_requests(&instruction)
                     .into_iter()
-                    .map(SolanaHostEvent::MaterialRequest),
+                    .map(SolanaHostRecord::MaterialRequest),
             );
         }
     }
@@ -1103,9 +1103,9 @@ async fn reconstruct_events_for_insert(
 }
 
 fn compute_result_handle(
-    event: &crate::solana_adapter::SolanaHostEvent,
+    event: &crate::solana_adapter::SolanaHostRecord,
 ) -> Option<[u8; 32]> {
-    use crate::solana_adapter::SolanaHostEvent as E;
+    use crate::solana_adapter::SolanaHostRecord as E;
     match event {
         E::FheBinaryOp(e) => Some(e.result),
         E::FheTernaryOp(e) => Some(e.result),
@@ -1274,7 +1274,7 @@ mod fhe_execute_acl_tests {
     };
 
     use crate::database::tfhe_event_propagate::Handle;
-    use crate::solana_adapter::SolanaHostEvent;
+    use crate::solana_adapter::SolanaHostRecord;
     use crate::solana_grpc_source::SealedBlock;
     use crate::solana_reconstruct::{
         DecodedInstruction, ENCRYPTED_VALUE_ACCOUNT_INDEX,
@@ -1379,7 +1379,9 @@ mod fhe_execute_acl_tests {
         )
     }
 
-    fn complete_events(outcome: ReconstructionOutcome) -> Vec<SolanaHostEvent> {
+    fn complete_records(
+        outcome: ReconstructionOutcome,
+    ) -> Vec<SolanaHostRecord> {
         match outcome {
             ReconstructionOutcome::Complete(events) => events,
             ReconstructionOutcome::NotCovered => {
@@ -1502,7 +1504,7 @@ mod fhe_execute_acl_tests {
         let allow_data = encode_instruction("allow_subjects", vec![[7u8; 32]]);
         let instructions =
             vec![decoded_ix(allow_data, encrypted_value_accounts(), 0, false)];
-        let events = complete_events(
+        let events = complete_records(
             reconstruct_events_for_insert(
                 &config(),
                 &instructions,
@@ -1604,7 +1606,7 @@ mod fhe_execute_acl_tests {
             false,
         )];
         let (slot_bank_hash, slot_clock_ts) = slot_context();
-        let events = complete_events(
+        let events = complete_records(
             reconstruct_events_for_insert(
                 &config(),
                 &instructions,
@@ -1619,13 +1621,13 @@ mod fhe_execute_acl_tests {
         assert!(events.iter().any(|event| {
             matches!(
                 event,
-                SolanaHostEvent::FheBinaryOp(op) if op.result == expected
+                SolanaHostRecord::FheBinaryOp(op) if op.result == expected
             )
         }));
         let requested_handles = events
             .iter()
             .filter_map(|event| match event {
-                SolanaHostEvent::MaterialRequest(request) => {
+                SolanaHostRecord::MaterialRequest(request) => {
                     Some(request.handle)
                 }
                 _ => None,
@@ -1668,7 +1670,7 @@ mod fhe_execute_acl_tests {
             false,
         )];
         let (slot_bank_hash, slot_clock_ts) = slot_context();
-        let events = complete_events(
+        let events = complete_records(
             reconstruct_events_for_insert(
                 &config(),
                 &instructions,
@@ -1684,24 +1686,24 @@ mod fhe_execute_acl_tests {
         let bound_handle = events
             .iter()
             .find_map(|event| match event {
-                SolanaHostEvent::TrivialEncrypt(e) => Some(e.result),
+                SolanaHostRecord::TrivialEncrypt(e) => Some(e.result),
                 _ => None,
             })
-            .expect("trivial-encrypt compute event with a result handle");
+            .expect("trivial-encrypt op record with a result handle");
 
         let material_request = events
             .iter()
             .find(|event| {
                 matches!(
                     event,
-                    SolanaHostEvent::MaterialRequest(request)
+                    SolanaHostRecord::MaterialRequest(request)
                         if request.handle == Handle::from(bound_handle)
                 )
             })
             .expect("material request for the created-public bound handle");
         assert!(matches!(
             material_request,
-            SolanaHostEvent::MaterialRequest(_)
+            SolanaHostRecord::MaterialRequest(_)
         ));
     }
 }

@@ -1,4 +1,4 @@
-//! Phase 2: reconstruct zama-host compute events from decoded instruction data +
+//! Phase 2: reconstruct zama-host decoded op records from decoded instruction data +
 //! block context, WITHOUT relying on on-chain `emit_cpi!`/`emit!`.
 //!
 //! Covers the `fhe_execute` batch walk (recomputing each step's handle via the
@@ -19,7 +19,7 @@ use zama_host::{FheExecuteRandomSeed, FheExecuteRandomSeedsEvent};
 #[cfg(test)]
 use crate::database::tfhe_event_propagate::Handle;
 use crate::solana_adapter::{
-    material_request, SolanaHostEvent, SolanaMaterialRequest,
+    material_request, SolanaHostRecord, SolanaMaterialRequest,
 };
 use zama_host::records::{
     FheBinaryOp, FheIsIn, FheMulDiv, FheRand, FheRandBounded, FheSum,
@@ -40,7 +40,7 @@ pub fn is_fhe_execute_instruction(instruction_data: &[u8]) -> bool {
 /// Decodes a `fhe_execute` instruction's data into the program's own `FheExecuteArgs`
 /// batch through `zama_host::decode` (so there is no bespoke decoder to
 /// drift from the on-chain layout). The decoded batch is the input to the eval
-/// walk that reconstructs one compute event per step — a separate pass that
+/// walk that reconstructs one op record per step — a separate pass that
 /// recomputes each step's handle and therefore depends on `previous_bank_hash`.
 pub fn decode_fhe_execute_args(
     instruction_data: &[u8],
@@ -187,10 +187,10 @@ pub struct DecodedInstruction {
     pub is_inner: bool,
 }
 
-pub fn decode_encrypted_value_material_request_events(
+pub fn decode_encrypted_value_material_request_records(
     instructions: &[DecodedInstruction],
     zama_host_program_id: &str,
-) -> Vec<SolanaHostEvent> {
+) -> Vec<SolanaHostRecord> {
     decode_encrypted_value_instructions(
         instructions.iter().map(|ix| {
             (
@@ -202,7 +202,7 @@ pub fn decode_encrypted_value_material_request_events(
         zama_host_program_id,
     )
     .into_iter()
-    .map(SolanaHostEvent::MaterialRequest)
+    .map(SolanaHostRecord::MaterialRequest)
     .collect()
 }
 
@@ -270,10 +270,10 @@ fn resolve_rhs(
     }
 }
 
-/// Reconstructs the per-step compute events a `fhe_execute` batch emits, mirroring
+/// Reconstructs the per-step op records a `fhe_execute` batch produces, mirroring
 /// the program's `walk_eval_frame`: walk steps in order, resolve operands
 /// (`Transient` referring to earlier steps' produced handles), recompute each
-/// step's result handle via the program's eval primitives, and record one event
+/// step's result handle via the program's eval primitives, and produce one record
 /// per step. Persistent and instruction-local outputs derive the identical base
 /// handle — no per-output binding (matches EVM `FHEVMExecutor`).
 ///
@@ -289,7 +289,7 @@ pub fn reconstruct_fhe_execute_steps(
     _remaining_accounts: &[[u8; 32]],
     random_seeds: &[FheExecuteRandomSeed],
     ctx: &ReconstructContext,
-) -> Option<Vec<ReconstructedEvalStep>> {
+) -> Option<Vec<ReconstructedBatchStep>> {
     let expected_random_steps = batch
         .steps
         .iter()
@@ -312,12 +312,12 @@ pub fn reconstruct_fhe_execute_steps(
         return None;
     }
     let mut produced: Vec<[u8; 32]> = Vec::with_capacity(batch.steps.len());
-    let mut steps_out: Vec<ReconstructedEvalStep> =
+    let mut steps_out: Vec<ReconstructedBatchStep> =
         Vec::with_capacity(batch.steps.len());
 
     for (index, step) in batch.steps.iter().enumerate() {
         let op_index = index as u16;
-        let event = match step {
+        let record = match step {
             FheExecuteStep::Binary {
                 op,
                 lhs,
@@ -338,7 +338,7 @@ pub fn reconstruct_fhe_execute_steps(
                     ctx,
                 );
                 produced.push(result);
-                SolanaHostEvent::FheBinaryOp(FheBinaryOp {
+                SolanaHostRecord::FheBinaryOp(FheBinaryOp {
                     version: EVENT_VERSION,
                     op: *op,
                     subject,
@@ -369,7 +369,7 @@ pub fn reconstruct_fhe_execute_steps(
                     ctx,
                 );
                 produced.push(result);
-                SolanaHostEvent::FheTernaryOp(FheTernaryOp {
+                SolanaHostRecord::FheTernaryOp(FheTernaryOp {
                     version: EVENT_VERSION,
                     op: *op,
                     subject,
@@ -387,7 +387,7 @@ pub fn reconstruct_fhe_execute_steps(
                 let result =
                     computed_eval_trivial_handle(*plaintext, *fhe_type, ctx);
                 produced.push(result);
-                SolanaHostEvent::TrivialEncrypt(TrivialEncrypt {
+                SolanaHostRecord::TrivialEncrypt(TrivialEncrypt {
                     version: EVENT_VERSION,
                     subject,
                     plaintext: *plaintext,
@@ -403,7 +403,7 @@ pub fn reconstruct_fhe_execute_steps(
                 let result =
                     computed_rand_handle(seed, *fhe_type, ctx.chain_id);
                 produced.push(result);
-                SolanaHostEvent::FheRand(FheRand {
+                SolanaHostRecord::FheRand(FheRand {
                     version: EVENT_VERSION,
                     subject,
                     seed,
@@ -426,7 +426,7 @@ pub fn reconstruct_fhe_execute_steps(
                     ctx,
                 );
                 produced.push(result);
-                SolanaHostEvent::FheUnaryOp(FheUnaryOp {
+                SolanaHostRecord::FheUnaryOp(FheUnaryOp {
                     version: EVENT_VERSION,
                     op: *op,
                     subject,
@@ -450,7 +450,7 @@ pub fn reconstruct_fhe_execute_steps(
                     ctx.chain_id,
                 );
                 produced.push(result);
-                SolanaHostEvent::FheRandBounded(FheRandBounded {
+                SolanaHostRecord::FheRandBounded(FheRandBounded {
                     version: EVENT_VERSION,
                     subject,
                     upper_bound: *upper_bound,
@@ -473,7 +473,7 @@ pub fn reconstruct_fhe_execute_steps(
                 let result =
                     computed_eval_sum_handle(&operand_handles, *fhe_type, ctx);
                 produced.push(result);
-                SolanaHostEvent::FheSum(FheSum {
+                SolanaHostRecord::FheSum(FheSum {
                     version: EVENT_VERSION,
                     subject,
                     operands: operand_handles,
@@ -502,7 +502,7 @@ pub fn reconstruct_fhe_execute_steps(
                     ctx,
                 );
                 produced.push(result);
-                SolanaHostEvent::FheIsIn(FheIsIn {
+                SolanaHostRecord::FheIsIn(FheIsIn {
                     version: EVENT_VERSION,
                     subject,
                     value: value_handle,
@@ -531,7 +531,7 @@ pub fn reconstruct_fhe_execute_steps(
                     ctx,
                 );
                 produced.push(result);
-                SolanaHostEvent::FheMulDiv(FheMulDiv {
+                SolanaHostRecord::FheMulDiv(FheMulDiv {
                     version: EVENT_VERSION,
                     subject,
                     factor1: factor1_handle,
@@ -542,8 +542,8 @@ pub fn reconstruct_fhe_execute_steps(
                 })
             }
         };
-        steps_out.push(ReconstructedEvalStep {
-            event,
+        steps_out.push(ReconstructedBatchStep {
+            record,
             persistent_encrypted_value_index:
                 fhe_execute_step_persistent_output_index(step),
             previous_handle: fhe_execute_step_previous_handle(step),
@@ -552,11 +552,11 @@ pub fn reconstruct_fhe_execute_steps(
     Some(steps_out)
 }
 
-/// One reconstructed `fhe_execute` step: the compute event plus, for a `Persistent`
+/// One reconstructed `fhe_execute` step: the decoded op record plus, for a `Persistent`
 /// output, the `remaining_accounts` index of the output `EncryptedValue` PDA.
 /// The transport resolves that index to the persistent handle's material request.
-pub struct ReconstructedEvalStep {
-    pub event: SolanaHostEvent,
+pub struct ReconstructedBatchStep {
+    pub record: SolanaHostRecord,
     pub persistent_encrypted_value_index: Option<u8>,
     /// Present when the persistent output updates an existing encrypted value account. The
     /// transport requests material for the outgoing and reconstructed output
@@ -603,16 +603,16 @@ fn fhe_execute_step_output(step: &FheExecuteStep) -> &FheExecuteOutput {
     }
 }
 
-/// Reconstructs just the per-step compute events (without ACL-record indices) —
+/// Reconstructs just the per-step op records (without ACL-record indices) —
 /// the shape the shadow-compare consumes. Thin wrapper over
 /// [`reconstruct_fhe_execute_steps`].
-pub fn reconstruct_fhe_execute_events(
+pub fn reconstruct_fhe_execute_records(
     batch: &FheExecuteArgs,
     subject: [u8; 32],
     remaining_accounts: &[[u8; 32]],
     random_seeds: &[FheExecuteRandomSeed],
     ctx: &ReconstructContext,
-) -> Option<Vec<SolanaHostEvent>> {
+) -> Option<Vec<SolanaHostRecord>> {
     Some(
         reconstruct_fhe_execute_steps(
             batch,
@@ -622,7 +622,7 @@ pub fn reconstruct_fhe_execute_events(
             ctx,
         )?
         .into_iter()
-        .map(|step| step.event)
+        .map(|step| step.record)
         .collect(),
     )
 }
@@ -932,18 +932,18 @@ mod tests {
             ],
         };
         let events =
-            reconstruct_fhe_execute_events(&batch, SUBJECT, &[], &[], &ctx())
+            reconstruct_fhe_execute_records(&batch, SUBJECT, &[], &[], &ctx())
                 .expect("walk");
         assert_eq!(events.len(), 2);
         let step0 = match &events[0] {
-            SolanaHostEvent::TrivialEncrypt(e) => {
+            SolanaHostRecord::TrivialEncrypt(e) => {
                 assert_eq!(e.plaintext, [7u8; 32]);
                 e.result
             }
             other => panic!("expected TrivialEncrypt, got {other:?}"),
         };
         match &events[1] {
-            SolanaHostEvent::FheBinaryOp(e) => {
+            SolanaHostRecord::FheBinaryOp(e) => {
                 assert_eq!(e.op, FheBinaryOpCode::Add);
                 assert!(e.scalar);
                 assert_eq!(e.rhs, [2u8; 32]);
@@ -987,7 +987,7 @@ mod tests {
             step_index: 0,
             seed: [7; 16],
         }];
-        let events = reconstruct_fhe_execute_events(
+        let events = reconstruct_fhe_execute_records(
             &batch,
             SUBJECT,
             &[output_account],
@@ -996,7 +996,7 @@ mod tests {
         )
         .expect("walk");
         match &events[..] {
-            [SolanaHostEvent::FheRandBounded(event)] => {
+            [SolanaHostRecord::FheRandBounded(event)] => {
                 assert_eq!(event.subject, SUBJECT);
                 assert_eq!(event.upper_bound, upper_bound);
                 assert_eq!(event.fhe_type, 5);
@@ -1084,7 +1084,7 @@ mod tests {
             ],
         };
         let random_seed = [9; 16];
-        let events = reconstruct_fhe_execute_events(
+        let events = reconstruct_fhe_execute_records(
             &batch,
             SUBJECT,
             &[output_account],
@@ -1097,17 +1097,17 @@ mod tests {
         .expect("walk");
         assert_eq!(events.len(), 7);
         let h0 = match &events[0] {
-            SolanaHostEvent::TrivialEncrypt(e) => e.result,
+            SolanaHostRecord::TrivialEncrypt(e) => e.result,
             other => panic!("expected TrivialEncrypt, got {other:?}"),
         };
         let h1 = match &events[1] {
-            SolanaHostEvent::TrivialEncrypt(e) => e.result,
+            SolanaHostRecord::TrivialEncrypt(e) => e.result,
             other => panic!("expected TrivialEncrypt, got {other:?}"),
         };
         // Each op resolves its transient operands to prior steps' handles and
         // derives the result via the program's own `computed_*` functions.
         match &events[2] {
-            SolanaHostEvent::FheUnaryOp(e) => {
+            SolanaHostRecord::FheUnaryOp(e) => {
                 assert_eq!(e.op, FheUnaryOpCode::Neg);
                 assert_eq!(e.operand, h0);
                 assert_eq!(
@@ -1118,7 +1118,7 @@ mod tests {
             other => panic!("expected FheUnaryOp, got {other:?}"),
         }
         match &events[3] {
-            SolanaHostEvent::FheSum(e) => {
+            SolanaHostRecord::FheSum(e) => {
                 assert_eq!(e.operands, vec![h0, h1]);
                 assert_eq!(
                     e.result,
@@ -1128,7 +1128,7 @@ mod tests {
             other => panic!("expected FheSum, got {other:?}"),
         }
         match &events[4] {
-            SolanaHostEvent::FheIsIn(e) => {
+            SolanaHostRecord::FheIsIn(e) => {
                 assert_eq!(e.value, h0);
                 assert_eq!(e.set, vec![h1]);
                 assert_eq!(
@@ -1139,7 +1139,7 @@ mod tests {
             other => panic!("expected FheIsIn, got {other:?}"),
         }
         match &events[5] {
-            SolanaHostEvent::FheMulDiv(e) => {
+            SolanaHostRecord::FheMulDiv(e) => {
                 assert_eq!(e.factor1, h0);
                 assert_eq!(e.factor2, [2u8; 32]);
                 assert!(e.scalar);
@@ -1154,7 +1154,7 @@ mod tests {
             other => panic!("expected FheMulDiv, got {other:?}"),
         }
         match &events[6] {
-            SolanaHostEvent::FheRandBounded(e) => {
+            SolanaHostRecord::FheRandBounded(e) => {
                 assert_eq!(e.upper_bound, ub);
                 assert_eq!(e.seed, random_seed);
                 assert_eq!(
@@ -1185,7 +1185,7 @@ mod tests {
                 output: FheExecuteOutput::AllowedLocal,
             }],
         };
-        assert!(reconstruct_fhe_execute_events(
+        assert!(reconstruct_fhe_execute_records(
             &batch,
             SUBJECT,
             &[],
