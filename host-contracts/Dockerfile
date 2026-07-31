@@ -22,7 +22,10 @@ RUN apk add --no-cache \
 RUN npm install -g pnpm@9
 ENV FOUNDRY_DIR=/usr/local/foundry
 ENV PATH="${FOUNDRY_DIR}/bin:${PATH}"
-RUN curl -fsSL https://foundry.paradigm.xyz | bash && \
+# `SHELL` is unset in Docker build env; foundryup's install script does
+# `case $SHELL in ... *) exit 1;;` when it can't pick a shell profile to
+# edit. Force bash so the installer completes 0.
+RUN SHELL=/bin/bash curl -fsSL https://foundry.paradigm.xyz | SHELL=/bin/bash bash && \
     ${FOUNDRY_DIR}/bin/foundryup
 
 RUN mkdir -p /app && \
