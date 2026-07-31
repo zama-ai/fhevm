@@ -1,6 +1,6 @@
 {
   "fhe_eval/max_op_frame": {
-    "compute_units": 151604,
+    "compute_units": 151633,
     "unique_accounts": 9,
     "instruction_data_bytes": 450,
     "cpi_instructions": 3,
