@@ -156,20 +156,26 @@ jobs:
             echo '| --- | ---: | ---: |'
             jq -r '
               # Keep this list aligned with non-excluded solana/Cargo.toml workspace members.
+              # A member owns more than one path when it compiles a file from outside its
+              # own tree: the permit vectors schema lives with the fixtures because four
+              # other implementations include the same file from their own test targets.
               def components: [
-                {label: "zama-solana-acl", path: "/crates/zama-solana-acl/"},
-                {label: "zama-solana-transaction", path: "/crates/zama-solana-transaction/"},
-                {label: "solana-ed25519-instruction", path: "/crates/solana-ed25519-instruction/"},
-                {label: "zama-fhe", path: "/crates/zama-fhe/"},
-                {label: "zama-host", path: "/programs/zama-host/"},
-                {label: "confidential-token", path: "/programs/confidential-token/"},
-                {label: "confidential-batcher", path: "/programs/confidential-batcher/"},
-                {label: "demo-vault", path: "/programs/demo-vault/"}
+                {label: "zama-solana-acl", paths: ["/crates/zama-solana-acl/"]},
+                {label: "zama-solana-transaction", paths: ["/crates/zama-solana-transaction/"]},
+                {label: "solana-ed25519-instruction", paths: ["/crates/solana-ed25519-instruction/"]},
+                {label: "zama-fhe", paths: ["/crates/zama-fhe/"]},
+                {label: "zama-solana-permit", paths: ["/crates/zama-solana-permit/", "/test-fixtures/permit/"]},
+                {label: "zama-host", paths: ["/programs/zama-host/"]},
+                {label: "confidential-token", paths: ["/programs/confidential-token/"]},
+                {label: "confidential-batcher", paths: ["/programs/confidential-batcher/"]},
+                {label: "demo-vault", paths: ["/programs/demo-vault/"]}
               ];
-              def line_parts($report; $path):
-                [$report.data[0].files[] | select(.filename | contains($path)) | .summary.lines];
+              def line_parts($report; $paths):
+                [$report.data[0].files[]
+                 | select(.filename as $file | any($paths[]; . as $path | $file | contains($path)))
+                 | .summary.lines];
               def row($report; $component):
-                line_parts($report; $component.path) as $parts
+                line_parts($report; $component.paths) as $parts
                 | ($parts | map(.count) | add) as $total
                 | ($parts | map(.covered) | add) as $covered
                 | if ($total // 0) == 0 then
@@ -179,7 +185,7 @@ jobs:
                   end;
               . as $report
               | components as $components
-              | [$components[] | line_parts($report; .path)[] | .count] as $selected_counts
+              | [$components[] | line_parts($report; .paths)[] | .count] as $selected_counts
               | ($selected_counts | add) as $selected_total
               | $report.data[0].totals.lines.count as $workspace_total
               | if $selected_total != $workspace_total then

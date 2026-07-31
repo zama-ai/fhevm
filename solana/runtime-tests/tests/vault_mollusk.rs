@@ -442,6 +442,73 @@ fn mollusk_deposit_withdraw_round_trip_returns_principal() {
 }
 
 #[test]
+fn mollusk_full_exit_after_yield_resets_next_deposit_to_one_to_one() {
+    let fixture = VaultFixture::new();
+    let owner = Pubkey::new_unique();
+    let owner_underlying = Pubkey::new_unique();
+    let owner_shares = Pubkey::new_unique();
+    let donor = Pubkey::new_unique();
+    let donor_underlying = Pubkey::new_unique();
+    let next_depositor = Pubkey::new_unique();
+    let next_underlying = Pubkey::new_unique();
+    let next_shares = Pubkey::new_unique();
+
+    let mut accounts = fixture.accounts(0, 0);
+    accounts.insert(owner, system_account(1_000_000_000));
+    accounts.insert(
+        owner_underlying,
+        spl_token_account(fixture.underlying_mint, owner, 100_000_000),
+    );
+    accounts.insert(
+        owner_shares,
+        spl_token_account(fixture.share_mint, owner, 0),
+    );
+    accounts.insert(donor, system_account(1_000_000_000));
+    accounts.insert(
+        donor_underlying,
+        spl_token_account(fixture.underlying_mint, donor, 14_490_000),
+    );
+    accounts.insert(next_depositor, system_account(1_000_000_000));
+    accounts.insert(
+        next_underlying,
+        spl_token_account(fixture.underlying_mint, next_depositor, 100_000_000),
+    );
+    accounts.insert(
+        next_shares,
+        spl_token_account(fixture.share_mint, next_depositor, 0),
+    );
+    let context = mollusk().with_context(accounts);
+
+    context.process_and_validate_instruction(
+        &deposit_ix(&fixture, owner, owner_underlying, owner_shares, 100_000_000),
+        &[Check::success()],
+    );
+    context.process_and_validate_instruction(
+        &harvest_ix(&fixture, donor, donor_underlying, 14_490_000),
+        &[Check::success()],
+    );
+    context.process_and_validate_instruction(
+        &withdraw_ix(&fixture, owner, owner_shares, owner_underlying, 100_000_000),
+        &[Check::success()],
+    );
+
+    assert_eq!(read_spl_amount(&context, fixture.vault_token_account), 0);
+    assert_eq!(read_mint_supply(&context, fixture.share_mint), 0);
+
+    context.process_and_validate_instruction(
+        &deposit_ix(
+            &fixture,
+            next_depositor,
+            next_underlying,
+            next_shares,
+            100_000_000,
+        ),
+        &[Check::success()],
+    );
+    assert_eq!(read_spl_amount(&context, next_shares), 100_000_000);
+}
+
+#[test]
 fn mollusk_harvest_raises_price_so_later_depositor_gets_fewer_shares() {
     // Vault already at 1:1 with 1_000 assets and 1_000 shares outstanding.
     let fixture = VaultFixture::new();

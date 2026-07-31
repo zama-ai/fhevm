@@ -52,6 +52,12 @@ pub fn assets_to_shares(assets: u64, total_assets: u64, total_shares: u64) -> Re
 ///
 /// `total_assets` / `total_shares` are the balances *before* this withdraw.
 pub fn shares_to_assets(shares: u64, total_assets: u64, total_shares: u64) -> Result<u64> {
+    // The virtual share owns the rounding remainder while real shares exist. Once the last real
+    // share exits, no holder remains for that remainder: drain the vault so its next lifecycle
+    // starts from the documented empty-vault 1:1 price.
+    if shares == total_shares {
+        return Ok(total_assets);
+    }
     let numerator = (shares as u128)
         .checked_mul((total_assets as u128).saturating_add(VIRTUAL_ASSETS))
         .ok_or(DemoVaultError::MathOverflow)?;
@@ -78,6 +84,14 @@ mod tests {
     }
 
     #[test]
+    fn full_exit_after_yield_returns_every_asset() {
+        assert_eq!(
+            shares_to_assets(100_000_000, 114_490_000, 100_000_000).unwrap(),
+            114_490_000
+        );
+    }
+
+    #[test]
     fn second_depositor_after_yield_gets_fewer_shares() {
         // First depositor: 1_000 assets -> 1_000 shares (1:1).
         let first = assets_to_shares(1_000, 0, 0).unwrap();
@@ -93,8 +107,8 @@ mod tests {
     fn rounding_is_down_on_both_sides() {
         // shares = 5 * (1 + 1) / (2 + 1) = 10 / 3 = 3.33... -> floor 3.
         assert_eq!(assets_to_shares(5, 2, 1).unwrap(), 3);
-        // assets = 1 * (4 + 1) / (1 + 1) = 5 / 2 = 2.5 -> floor 2.
-        assert_eq!(shares_to_assets(1, 4, 1).unwrap(), 2);
+        // assets = 2 * (4 + 1) / (3 + 1) = 10 / 4 = 2.5 -> floor 2.
+        assert_eq!(shares_to_assets(2, 4, 3).unwrap(), 2);
     }
 
     #[test]

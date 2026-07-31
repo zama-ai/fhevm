@@ -6,6 +6,13 @@ import {
   readTransactionEvidence,
   type DecryptionEvidenceRecord,
 } from './evidenceStore';
+import {
+  FHE_BATCH_P95_QUERY,
+  jaegerDecryptUrl,
+  KMS_DECRYPT_P95_QUERY,
+  prometheusQueryUrl,
+  STACK_HEALTH_QUERY,
+} from './observabilityLinks';
 import { readConfidentialBalanceEvidence, type ConfidentialBalanceEvidence } from './revealShares';
 import type { DemoController } from './useDemoController';
 
@@ -211,6 +218,20 @@ export function DeveloperEvidence({ controller }: { readonly controller: DemoCon
             Refresh
           </button>
         </div>
+        <nav className="evidence-observability" aria-label="Local observability">
+          <a href={jaegerDecryptUrl()} target="_blank" rel="noreferrer">
+            User decrypt traces
+          </a>
+          <a href={prometheusQueryUrl(STACK_HEALTH_QUERY)} target="_blank" rel="noreferrer">
+            Stack health
+          </a>
+          <a href={prometheusQueryUrl(KMS_DECRYPT_P95_QUERY)} target="_blank" rel="noreferrer">
+            KMS decrypt p95
+          </a>
+          <a href={prometheusQueryUrl(FHE_BATCH_P95_QUERY)} target="_blank" rel="noreferrer">
+            FHE compute p95
+          </a>
+        </nav>
         <dl>
           <div>
             <dt>RPC</dt>
@@ -231,6 +252,9 @@ export function DeveloperEvidence({ controller }: { readonly controller: DemoCon
                 <dd>
                   <CopyValue label="cShares handle" value={shares.handle} />
                 </dd>
+                <a className="evidence-link" href={jaegerDecryptUrl(shares.handle)} target="_blank" rel="noreferrer">
+                  Trace in Jaeger
+                </a>
               </div>
               <div>
                 <dt>Encrypted-value account</dt>
@@ -246,6 +270,9 @@ export function DeveloperEvidence({ controller }: { readonly controller: DemoCon
               <dd>
                 <CopyValue label="cUSDC handle" value={claimedUsdc.handle} />
               </dd>
+              <a className="evidence-link" href={jaegerDecryptUrl(claimedUsdc.handle)} target="_blank" rel="noreferrer">
+                Trace in Jaeger
+              </a>
             </div>
           )}
         </dl>
@@ -299,6 +326,14 @@ export function DeveloperEvidence({ controller }: { readonly controller: DemoCon
                   <span className="decryption-identifiers">
                     <CopyValue label="decryption handle" value={decryption.handle} />
                     <CopyValue label="decryption job id" value={decryption.jobId} />
+                    <a
+                      className="evidence-link"
+                      href={jaegerDecryptUrl(decryption.handle)}
+                      target="_blank"
+                      rel="noreferrer"
+                    >
+                      Trace in Jaeger
+                    </a>
                   </span>
                   <small>
                     {(decryption.totalElapsedMs / 1_000).toFixed(2)}s wallet→cleartext ·{' '}

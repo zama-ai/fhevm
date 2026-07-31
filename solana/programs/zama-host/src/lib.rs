@@ -132,6 +132,12 @@ pub mod zama_host {
         instructions::revoke_delegation_for_user_decryption(ctx)
     }
 
+    /// Revokes every outstanding permit the signer has issued, by raising their
+    /// invalidation watermark to the current clock.
+    pub fn revoke_permits(ctx: Context<RevokePermits>) -> Result<()> {
+        instructions::revoke_permits(ctx)
+    }
+
     pub fn fhe_eval<'info>(ctx: Context<'info, FheEval<'info>>, args: FheEvalArgs) -> Result<()> {
         instructions::fhe_eval(ctx, args)
     }

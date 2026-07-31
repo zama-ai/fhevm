@@ -17,6 +17,7 @@ pub mod hcu_block_meter;
 pub mod hcu_trusted_app_record;
 pub mod host_config;
 pub mod kms_context;
+pub mod permit_invalidation;
 pub mod user_decryption_delegation;
 
 pub use deny_subject_record::*;
@@ -25,6 +26,7 @@ pub use hcu_block_meter::*;
 pub use hcu_trusted_app_record::*;
 pub use host_config::*;
 pub use kms_context::*;
+pub use permit_invalidation::*;
 pub use user_decryption_delegation::*;
 
 pub use crate::constants::*;
@@ -794,6 +796,11 @@ pub fn hcu_trusted_app_address(app: Pubkey) -> (Pubkey, u8) {
 /// Returns the canonical per-subject HCU block meter address for a compute subject.
 pub fn hcu_block_meter_address(app: Pubkey) -> (Pubkey, u8) {
     Pubkey::find_program_address(&[HCU_BLOCK_METER_SEED, app.as_ref()], &crate::ID)
+}
+
+/// Returns the canonical permit-invalidation watermark address for a user.
+pub fn permit_invalidation_address(user: Pubkey) -> (Pubkey, u8) {
+    Pubkey::find_program_address(&[PERMIT_INVALIDATION_SEED, user.as_ref()], &crate::ID)
 }
 
 /// Returns the canonical user-decryption delegation address.

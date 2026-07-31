@@ -161,7 +161,7 @@ describe('PortfolioOverview', () => {
     ]);
     const reveal = renderer!.root
       .findAllByType('button')
-      .find((button) => button.children.includes('Reveal cUSDC to continue'));
+      .find((button) => button.children.includes('Decrypt cUSDC balance to continue'));
     act(() => reveal!.props.onClick());
     expect(value.actions.revealUsdc).toHaveBeenCalledOnce();
     expect(deposit).not.toHaveBeenCalled();

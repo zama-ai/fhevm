@@ -124,10 +124,6 @@ pub enum ZamaHostError {
     /// An FHE eval instruction referenced a transient output that was not produced earlier.
     #[msg("FHE eval transient operand is missing")]
     FheEvalAllowedLocalMissing,
-    /// An `AllowedDurable` operand referenced an account written by an earlier step.
-    /// In-frame dependencies must use `AllowedLocal`.
-    #[msg("FHE eval durable operand was written earlier in the frame")]
-    FheEvalDurableOperandWrittenEarlier,
     /// An FHE eval instruction produced the same transient handle twice.
     #[msg("FHE eval output handle is duplicated")]
     FheEvalDuplicateHandle,
@@ -287,10 +283,33 @@ pub enum ZamaHostError {
     /// The KMS signer set contains the zero address, which can never be a valid recovered EVM signer.
     #[msg("KMS signer set contains the zero address")]
     ZeroKmsSigner,
+    /// The supplied invalidation account is not at the canonical watermark address for
+    /// the signing user, or its stored bump is not the canonical one. The watermark is
+    /// keyed by the signer precisely so that one user cannot move another user's
+    /// watermark; this is where that is enforced.
+    #[msg("permit invalidation account is not the canonical account for the signer")]
+    PermitInvalidationPdaMismatch,
+    /// The account at the canonical watermark address is not a watermark record this
+    /// program wrote: owned by another program, of the wrong size, carrying another
+    /// record type's discriminator, or naming a different user than the signer. Rejected
+    /// rather than reinterpreted or overwritten.
+    #[msg("permit invalidation account is not a valid watermark record")]
+    PermitInvalidationAccountInvalid,
+    /// The runtime clock reports a time before the unix epoch. The watermark is an
+    /// unsigned number of seconds, and coercing a negative time into it would jump the
+    /// watermark to the far future and kill every permit the user will ever sign — so
+    /// this fails closed instead.
+    #[msg("clock is before the unix epoch")]
+    ClockBeforeEpoch,
+
     /// A step referenced an interned pool index past the end of `FheEvalArgs::pool`.
     #[msg("FHE eval pool index out of bounds")]
     FheEvalPoolIndexOutOfBounds,
     /// `FheEvalArgs::account_count` does not match the actual remaining-accounts length.
     #[msg("FHE eval declared account count mismatch")]
     FheEvalAccountCountMismatch,
+    /// An `AllowedDurable` operand referenced an account written by an earlier step.
+    /// In-frame dependencies must use `AllowedLocal`.
+    #[msg("FHE eval durable operand was written earlier in the frame")]
+    FheEvalDurableOperandWrittenEarlier,
 }

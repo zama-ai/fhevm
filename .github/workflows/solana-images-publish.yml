@@ -2,16 +2,14 @@ name: solana-images-publish
 
 # Publishes branch-scoped images for the five component groups that solana-e2e otherwise builds
 # from source on every PR (#1766 step 3). Each image is built with the SAME Dockerfile, target,
-# build args, and sccache wiring that fhevm-cli's --override compose builds use (the
-# COMPONENT_BUILD_SPECS table in test-suite/fhevm/src/generate/compose.ts), so a pulled image is
-# interchangeable with a source build of the same commit.
+# build args that fhevm-cli's --override compose builds use (the COMPONENT_BUILD_SPECS table in
+# test-suite/fhevm/src/generate/compose.ts), so a pulled image is interchangeable with a source
+# build of the same commit.
 #
 # Tags per image:
 #   ghcr.io/zama-ai/<image>:feature-solana                  floating, tracks the branch tip
 #   ghcr.io/zama-ai/<image>:feature-solana-<full-sha>       immutable, per pushed commit
 #   ghcr.io/zama-ai/<image>:buildcache-feature-solana       BuildKit registry cache manifest
-#                                                           (mode=max; read by solana-e2e's
-#                                                           source builds via FHEVM_BUILDCACHE_TAG)
 #
 # solana-e2e.yml's select-overrides step consumes ONLY the immutable tags: PRs that leave a
 # component group's source untouched pull the base commit's image instead of rebuilding it.
@@ -35,9 +33,7 @@ concurrency:
 jobs:
   publish:
     name: publish/${{ matrix.name }}
-    # extras=s3-cache provisions the sccache S3 bucket access (same as solana-e2e.yml); the Rust
-    # workspace images share main's sccache cache so rebuilds are mostly cache hits.
-    runs-on: runs-on=${{ github.run_id }}/runner=16cpu-linux-x64/volume=100gb/extras=s3-cache
+    runs-on: runs-on=${{ github.run_id }}/runner=16cpu-linux-x64/volume=100gb
     timeout-minutes: 90
     permissions:
       contents: "read" # checkout
@@ -46,8 +42,7 @@ jobs:
       fail-fast: false
       matrix:
         # Mirrors COMPONENT_BUILD_SPECS in test-suite/fhevm/src/generate/compose.ts: same
-        # dockerfile/context/target/args as the --override source builds. `sccache: true` marks
-        # the specs fhevm-cli routes through withSccacheBuild (coprocessor + kms-connector).
+        # dockerfile/context/target/args as the --override source builds.
         include:
           - name: gateway-contracts
             image: fhevm/gateway-contracts
@@ -63,49 +58,42 @@ jobs:
             rust_toolchain: coprocessor/fhevm-engine/rust-toolchain.toml
             context: .
             target: prod
-            sccache: true
           - name: coprocessor-host-listener
             image: fhevm/coprocessor/host-listener
             dockerfile: coprocessor/fhevm-engine/host-listener/Dockerfile
             rust_toolchain: coprocessor/fhevm-engine/rust-toolchain.toml
             context: .
             target: prod
-            sccache: true
           - name: coprocessor-gw-listener
             image: fhevm/coprocessor/gw-listener
             dockerfile: coprocessor/fhevm-engine/gw-listener/Dockerfile
             rust_toolchain: coprocessor/fhevm-engine/rust-toolchain.toml
             context: .
             target: prod
-            sccache: true
           - name: coprocessor-tfhe-worker
             image: fhevm/coprocessor/tfhe-worker
             dockerfile: coprocessor/fhevm-engine/tfhe-worker/Dockerfile
             rust_toolchain: coprocessor/fhevm-engine/rust-toolchain.toml
             context: .
             target: prod
-            sccache: true
           - name: coprocessor-zkproof-worker
             image: fhevm/coprocessor/zkproof-worker
             dockerfile: coprocessor/fhevm-engine/zkproof-worker/Dockerfile
             rust_toolchain: coprocessor/fhevm-engine/rust-toolchain.toml
             context: .
             target: prod
-            sccache: true
           - name: coprocessor-sns-worker
             image: fhevm/coprocessor/sns-worker
             dockerfile: coprocessor/fhevm-engine/sns-worker/Dockerfile
             rust_toolchain: coprocessor/fhevm-engine/rust-toolchain.toml
             context: .
             target: prod
-            sccache: true
           - name: coprocessor-tx-sender
             image: fhevm/coprocessor/tx-sender
             dockerfile: coprocessor/fhevm-engine/transaction-sender/Dockerfile
             rust_toolchain: coprocessor/fhevm-engine/rust-toolchain.toml
             context: .
             target: prod
-            sccache: true
           - name: relayer
             image: fhevm/relayer
             dockerfile: relayer/docker/relayer/Dockerfile
@@ -122,28 +110,24 @@ jobs:
             rust_toolchain: kms-connector/rust-toolchain.toml
             context: .
             target: prod
-            sccache: true
           - name: kms-connector-gw-listener
             image: fhevm/kms-connector/gw-listener
             dockerfile: kms-connector/crates/gw-listener/Dockerfile
             rust_toolchain: kms-connector/rust-toolchain.toml
             context: .
             target: prod
-            sccache: true
           - name: kms-connector-kms-worker
             image: fhevm/kms-connector/kms-worker
             dockerfile: kms-connector/crates/kms-worker/Dockerfile
             rust_toolchain: kms-connector/rust-toolchain.toml
             context: .
             target: prod
-            sccache: true
           - name: kms-connector-tx-sender
             image: fhevm/kms-connector/tx-sender
             dockerfile: kms-connector/crates/tx-sender/Dockerfile
             rust_toolchain: kms-connector/rust-toolchain.toml
             context: .
             target: prod
-            sccache: true
     steps:
       - name: Checkout
         uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
@@ -179,22 +163,8 @@ jobs:
           RUST_TOOLCHAIN: ${{ matrix.rust_toolchain || '' }}
           CONTEXT: ${{ matrix.context }}
           TARGET: ${{ matrix.target || '' }}
-          USE_SCCACHE: ${{ matrix.sccache && 'true' || 'false' }}
-          # Same gating as solana-e2e.yml: activate sccache only when BOTH S3 creds are present,
-          # so a fork/misconfigured run degrades to a plain (slower) build instead of failing.
-          SCCACHE_BUCKET: ${{ secrets.AWS_ACCESS_KEY_S3_USER != '' && secrets.AWS_SECRET_KEY_S3_USER != '' && 'gh-actions-cache-eu-west-3' || '' }} # zizmor: ignore[secrets-outside-env] gates the bucket on both creds being present, same pattern as solana-e2e.yml
-          SCCACHE_REGION: eu-west-3
-          SCCACHE_S3_PREFIX: sccache/fhevm-coprocessor
-          AWS_ACCESS_KEY_S3_USER: ${{ secrets.AWS_ACCESS_KEY_S3_USER }} # zizmor: ignore[secrets-outside-env] sccache S3 creds scoped to this step's env, same pattern as solana-e2e.yml
-          AWS_SECRET_KEY_S3_USER: ${{ secrets.AWS_SECRET_KEY_S3_USER }} # zizmor: ignore[secrets-outside-env] sccache S3 creds scoped to this step's env, same pattern as solana-e2e.yml
           SHA: ${{ github.sha }}
-          # Per-image BuildKit registry cache. This workflow is the only cache WRITER (it has
-          # packages:write and runs only on pushes to the feature branch); solana-e2e's --override
-          # builds READ the same refs via compose `cache_from` when FHEVM_BUILDCACHE_TAG is set.
-          # mode=max exports intermediate (builder-stage) layers, which is the whole point: a PR
-          # whose inputs match the branch tip skips the contract and cargo layers entirely.
-          # image-manifest + oci-mediatypes make the cache manifest ghcr-compatible. A missing
-          # cache ref on the first run is a non-fatal BuildKit warning.
+          # Per-image BuildKit registry cache. This workflow writes and reads its own cache ref.
           BUILDCACHE_TAG: buildcache-feature-solana
         run: |
           set -euo pipefail
@@ -210,16 +180,6 @@ jobs:
             fi
             args+=(--build-arg "RUST_IMAGE_VERSION=$rust_image_version")
           fi
-          if [ "$USE_SCCACHE" = "true" ] && [ -n "$SCCACHE_BUCKET" ]; then
-            # Same build args + BuildKit secret ids as test-suite/fhevm/src/utils/sccache.ts.
-            args+=(
-              --build-arg "SCCACHE_BUCKET=$SCCACHE_BUCKET"
-              --build-arg "SCCACHE_REGION=$SCCACHE_REGION"
-              --build-arg "SCCACHE_S3_PREFIX=$SCCACHE_S3_PREFIX"
-              --secret "id=sccache_aws_access_key_id,env=AWS_ACCESS_KEY_S3_USER"
-              --secret "id=sccache_aws_secret_access_key,env=AWS_SECRET_KEY_S3_USER"
-            )
-          fi
           args+=(
             --cache-from "type=registry,ref=ghcr.io/zama-ai/$IMAGE:$BUILDCACHE_TAG"
             --cache-to "type=registry,ref=ghcr.io/zama-ai/$IMAGE:$BUILDCACHE_TAG,mode=max,image-manifest=true,oci-mediatypes=true"
@@ -228,91 +188,3 @@ jobs:
             --tag "ghcr.io/zama-ai/$IMAGE:feature-solana" \
             --tag "ghcr.io/zama-ai/$IMAGE:feature-solana-$SHA" \
             --push "$CONTEXT"
-
-  # Cache WRITER for the BRANCH-LOCAL coprocessor workspace Dockerfile
-  # (coprocessor/fhevm-engine/Dockerfile.workspace). Separate from the per-image
-  # `publish` job above: that job builds the per-binary Dockerfiles (like main's
-  # release CI); this one builds the single-cargo-pass workspace Dockerfile that
-  # solana-e2e's --override compose builds use, and exports its layers so the
-  # ~28-min cold dependency compile (tfhe-rs dominates) is paid once per branch
-  # tip instead of on every PR run. READERS are solana-e2e's compose builds,
-  # which add the shared cache ref via FHEVM_BUILDCACHE_TAG (see
-  # withRegistryBuildCache + WORKSPACE_BUILDCACHE_IMAGE in test-suite/fhevm). This
-  # job is BRANCH-LOCAL and dies at merge-back to main, alongside the Dockerfile.
-  #
-  # mode=max exports intermediate (builder-stage) layers — the cargo-chef `cook`
-  # layer that holds the compiled dependencies, which is the whole point. The
-  # cook layer is keyed only on recipe.json (+ the chef layer + CARGO_PROFILE),
-  # all of which precede the per-PR-varying source/contract COPYs, so a PR that
-  # touches no Cargo manifest reuses it. A SINGLE `--target db-migration` build
-  # covers everything: db-migration's stage graph COPYs from both `builder`
-  # (/out/resolve_database_url) and `sqlx_builder`, so building it pulls the full
-  # chef -> planner -> builder (cook) chain plus sqlx_builder, and mode=max
-  # exports every one of those layers under the one shared cache ref — which is
-  # what the worker services (target tfhe-worker/host-listener/...) then read.
-  # CARGO_PROFILE is left at the Dockerfile default (release) — fhevm-cli passes
-  # none, so writer and reader must match by both defaulting. No sccache args are
-  # passed: sccache sits AFTER the cook layer in the Dockerfile, so the exported
-  # cook layer is credential-independent and shared with the credential-bearing
-  # e2e reads.
-  workspace-cache:
-    name: publish/coprocessor-workspace-cache
-    # volume=160gb: the workspace target dir plus the exported mode=max layers need headroom.
-    runs-on: runs-on=${{ github.run_id }}/runner=16cpu-linux-x64/volume=160gb/extras=s3-cache
-    timeout-minutes: 90
-    permissions:
-      contents: "read" # checkout
-      packages: "write" # push the cache manifest to ghcr.io
-    steps:
-      - name: Checkout
-        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
-        with:
-          persist-credentials: "false"
-
-      - name: Setup Docker Buildx
-        uses: docker/setup-buildx-action@d70bba72b1f3fd22344832f00baa16ece964efeb # v3.3.0
-
-      - name: Login to ghcr.io
-        # GITHUB_TOKEN with packages:write pushes the repo-owned cache manifest (same pattern as
-        # the publish job above). Also covers pulling the gci base images.
-        uses: zama-ai/ci-templates/.github/actions/retry@542103e14b9ae6a9aea27787b8724b3b35bb3918 # v1.0.9
-        env:
-          GHCR_USERNAME: ${{ github.actor }}
-          GHCR_PASSWORD: ${{ secrets.GITHUB_TOKEN }}
-        with:
-          command: |
-            echo "$GHCR_PASSWORD" | docker login ghcr.io -u "$GHCR_USERNAME" --password-stdin
-
-      - name: Login to cgr.dev
-        # Chainguard base images (glibc-dynamic, postgres, rust) used by the runtime + db stages.
-        uses: docker/login-action@9780b0c442fbb1117ed29e0efdff1e18412f7567 # v3.3.0
-        with:
-          registry: cgr.dev
-          username: ${{ secrets.CGR_USERNAME }} # zizmor: ignore[secrets-outside-env] registry creds, same pattern as solana-e2e.yml
-          password: ${{ secrets.CGR_PASSWORD }} # zizmor: ignore[secrets-outside-env] registry creds, same pattern as solana-e2e.yml
-
-      - name: Build and export workspace cache
-        env:
-          DOCKERFILE: coprocessor/fhevm-engine/Dockerfile.workspace
-          RUST_TOOLCHAIN: coprocessor/fhevm-engine/rust-toolchain.toml
-          # Single shared cache ref for every coprocessor workspace target (they share the builder
-          # stage). Matches WORKSPACE_BUILDCACHE_IMAGE + FHEVM_BUILDCACHE_TAG on the reader side.
-          CACHE_REF: ghcr.io/zama-ai/fhevm/coprocessor/workspace:buildcache-feature-solana
-        run: |
-          set -euo pipefail
-          rust_image_version="$(awk -F '"' '/^[[:space:]]*channel[[:space:]]*=/{print $2; exit}' "$RUST_TOOLCHAIN")"
-          if [ -z "$rust_image_version" ]; then
-            echo "Could not read Rust channel from $RUST_TOOLCHAIN" >&2
-            exit 1
-          fi
-          # db-migration depends on builder + sqlx_builder, so this one build exports the whole
-          # chef -> planner -> builder (cook) chain AND sqlx_builder under the shared ref.
-          # Cache-only: no --tag, no --push. A missing cache ref on the first run is a non-fatal
-          # BuildKit warning.
-          docker buildx build \
-            --file "$DOCKERFILE" \
-            --target db-migration \
-            --build-arg "RUST_IMAGE_VERSION=$rust_image_version" \
-            --cache-from "type=registry,ref=$CACHE_REF" \
-            --cache-to "type=registry,ref=$CACHE_REF,mode=max,image-manifest=true,oci-mediatypes=true" \
-            .

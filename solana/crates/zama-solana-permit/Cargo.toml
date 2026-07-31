@@ -1,0 +1,28 @@
+[package]
+name = "zama-solana-permit"
+version = "0.1.0"
+description = "Canonical Solana user-decrypt permit: typed fields, strict decoding, canonical text, sRFC 38 envelope and Ed25519 verification"
+# Standalone (no workspace inheritance), for the same reason as `zama-solana-acl`:
+# this crate is consumed as a `path` dependency by the relayer and kms-connector
+# Docker builds, whose contexts do not include the solana workspace root.
+authors = ["Zama"]
+edition = "2021"
+license = "BSD-3-Clause-Clear"
+
+[lib]
+name = "zama_solana_permit"
+
+[dependencies]
+# Bitcoin-alphabet base58 for every rendered 32-byte identity.
+bs58 = { version = "0.5.1", default-features = false, features = ["alloc"] }
+# SHAKE-256 for the transport-key fingerprint.
+sha3 = { version = "0.10", default-features = false }
+# Ed25519 verification of the offchain-message envelope. `verify_strict` is the
+# required semantics: every implementation must agree on which signatures are
+# valid, so the permissive path is deliberately not used.
+ed25519-dalek = { version = "2.2", default-features = false, features = ["alloc"] }
+
+[dev-dependencies]
+# Vector runner: reads the shared normative records.
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"

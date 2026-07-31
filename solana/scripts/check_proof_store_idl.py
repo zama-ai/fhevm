@@ -39,6 +39,7 @@ INTENTIONALLY_IGNORED_INSTRUCTIONS = frozenset(
         "destroy_kms_context",
         "initialize_host_config",
         "revoke_delegation_for_user_decryption",
+        "revoke_permits",
         "set_coprocessor_signers",
         "set_deny_subject",
         "set_grant_deny_list_enabled",

@@ -26,6 +26,8 @@ pub const DENY_SUBJECT_SEED: &[u8] = b"deny-subject";
 pub const HCU_TRUSTED_APP_SEED: &[u8] = b"hcu-trusted";
 /// Seed prefix for per-app HCU block meter PDAs.
 pub const HCU_BLOCK_METER_SEED: &[u8] = b"hcu-block-meter";
+/// Seed prefix for per-user permit-invalidation watermark records.
+pub const PERMIT_INVALIDATION_SEED: &[u8] = b"permit-invalidation";
 /// Seed prefix for user-decryption delegation records.
 pub const DELEGATION_SEED: &[u8] = b"user-decryption-delegation";
 /// Reserved app-context sentinel for wildcard user-decryption delegation rows.
