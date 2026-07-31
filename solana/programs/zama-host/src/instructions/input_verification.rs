@@ -24,8 +24,7 @@ pub(crate) struct InputVerifierParams {
     pub gateway_chain_id: u64,
     pub input_verification_contract: [u8; 20],
     /// Registered coprocessor signer set (fixed-cap; only the first `coprocessor_signer_count`
-    /// entries are active). Carried by value so the `fhe_execute` operand resolver, which does not
-    /// hold a `&HostConfig`, can verify attestations against the whole set.
+    /// entries are active).
     pub coprocessor_signers: [[u8; 20]; HostConfig::MAX_COPROCESSOR_SIGNERS],
     pub coprocessor_signer_count: u8,
     pub coprocessor_threshold: u8,

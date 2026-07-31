@@ -3,7 +3,7 @@ import { address, type Address } from '@solana/kit';
 import { base58 } from '@scure/base';
 
 import { fetchSolanaPublicDecryptProof } from './proofService.js';
-import { decodeMmrProofTransportBlob, MMR_MODE_PUBLIC } from '../../proof.js';
+import { decodeMmrProofTransportBlob, MMR_PROOF_MODE_PUBLIC } from '../../proof.js';
 
 const VALUE_ACCOUNT: Address = address(base58.encode(new Uint8Array(32).fill(7)));
 const HANDLE = new Uint8Array(32).fill(0x92);
@@ -42,7 +42,7 @@ describe('fetchSolanaPublicDecryptProof', () => {
     expect(result.leafCount).toBe(1n);
     // The transport blob round-trips through the SDK decoder as a public-decrypt proof.
     const decoded = decodeMmrProofTransportBlob(result.mmrProofBytes);
-    expect(decoded.mode).toBe(MMR_MODE_PUBLIC);
+    expect(decoded.mode).toBe(MMR_PROOF_MODE_PUBLIC);
     expect(decoded.proof).toEqual({ leafIndex: 0n, siblings: [] });
 
     // The request keys on (encrypted_value, handle) — no leaf_index anywhere.

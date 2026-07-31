@@ -146,9 +146,9 @@ export type MmrProof = {
 export const MAX_MMR_SIBLINGS = 64;
 
 /** Transport-blob mode byte for a historical-access MMR proof. */
-export const MMR_MODE_HISTORICAL = 0x01;
+export const MMR_PROOF_MODE_HISTORICAL = 0x01;
 /** Transport-blob mode byte for a public-decrypt MMR proof. */
-export const MMR_MODE_PUBLIC = 0x02;
+export const MMR_PROOF_MODE_PUBLIC = 0x02;
 
 export type MmrProofTransportBlob = {
   readonly mode: number;

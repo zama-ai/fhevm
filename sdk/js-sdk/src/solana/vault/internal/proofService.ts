@@ -2,7 +2,7 @@ import type { Address } from '@solana/kit';
 
 import { bytesToHex, hexToBytes } from '../../../core/base/bytes.js';
 import { removeSuffix } from '../../../core/base/string.js';
-import { MAX_MMR_SIBLINGS, MMR_MODE_PUBLIC, type MmrProof } from '../../proof.js';
+import { MAX_MMR_SIBLINGS, MMR_PROOF_MODE_PUBLIC, type MmrProof } from '../../proof.js';
 
 /**
  * Phase 1 of a settle: fetch the burned encrypted value account's public-decrypt inclusion proof from the standalone
@@ -92,7 +92,7 @@ function isLaggingStatus(body: unknown): boolean {
 function encodeMmrProofTransportBlob(proof: MmrProof): Uint8Array {
   const out = new Uint8Array(1 + 8 + 4 + proof.siblings.length * 32);
   const view = new DataView(out.buffer);
-  out[0] = MMR_MODE_PUBLIC;
+  out[0] = MMR_PROOF_MODE_PUBLIC;
   view.setBigUint64(1, proof.leafIndex, true);
   view.setUint32(9, proof.siblings.length, true);
   proof.siblings.forEach((sibling, i) => {

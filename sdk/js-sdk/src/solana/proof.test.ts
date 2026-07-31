@@ -6,7 +6,7 @@ import {
   hexToBytes,
   historicalAccessLeafCommitment,
   MAX_MMR_SIBLINGS,
-  MMR_MODE_HISTORICAL,
+  MMR_PROOF_MODE_HISTORICAL,
   mmrLeafNode,
   mmrNode,
   mmrVerify,
@@ -82,14 +82,14 @@ describe('decodeMmrProofTransportBlob', () => {
   const sibling = new Uint8Array(32).fill(0x42);
 
   it('decodes a canonical mode-prefixed Borsh MmrProof', () => {
-    const decoded = decodeMmrProofTransportBlob(proofBlob(MMR_MODE_HISTORICAL, 7n, [sibling]));
-    expect(decoded.mode).toBe(MMR_MODE_HISTORICAL);
+    const decoded = decodeMmrProofTransportBlob(proofBlob(MMR_PROOF_MODE_HISTORICAL, 7n, [sibling]));
+    expect(decoded.mode).toBe(MMR_PROOF_MODE_HISTORICAL);
     expect(decoded.proof.leafIndex).toBe(7n);
     expect(decoded.proof.siblings).toEqual([sibling]);
   });
 
   it('rejects trailing bytes after the Borsh MmrProof', () => {
-    const canonical = proofBlob(MMR_MODE_HISTORICAL, 7n, [sibling]);
+    const canonical = proofBlob(MMR_PROOF_MODE_HISTORICAL, 7n, [sibling]);
     const withTrailing = concatBytes(canonical, new Uint8Array([0xde, 0xad]));
     expect(() => decodeMmrProofTransportBlob(withTrailing)).toThrow(/trailing byte/);
   });

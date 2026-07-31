@@ -23,8 +23,8 @@ use solana_keypair::{read_keypair_file, Keypair};
 const EVENT_AUTHORITY_SEED: &[u8] = b"__event_authority";
 const HISTORICAL_LABEL_MARKER: u8 = 3;
 const PROOF_SERVICE_LAGGING_PREFIX: &str = "proof service lagging:";
-const MMR_MODE_HISTORICAL: u8 = 0x01;
-const MMR_MODE_PUBLIC: u8 = 0x02;
+const MMR_PROOF_MODE_HISTORICAL: u8 = 0x01;
+const MMR_PROOF_MODE_PUBLIC: u8 = 0x02;
 
 type EncryptedValueAccountState = ([u8; 32], Vec<Pubkey>);
 
@@ -960,7 +960,7 @@ fn public_decrypt_proof_step(
                 "solana-proof-service public-decrypt proof did not verify against live encrypted value account: {e:?}"
             ))
         })?;
-    let proof_bytes = proof_blob(MMR_MODE_PUBLIC, &proof)?;
+    let proof_bytes = proof_blob(MMR_PROOF_MODE_PUBLIC, &proof)?;
 
     println!("PUB H 0x{}", hex(&handle));
     println!("PUB encryptedValueAccount {encrypted_value}");
@@ -975,7 +975,7 @@ fn public_decrypt_proof_step(
     println!("PUB leafIndex {}", proof.leaf_index);
     println!("PUB siblings {}", hex_csv(&proof.siblings));
     println!("PUB mmrProofBytes 0x{}", hex(&proof_bytes));
-    // Same proof, mode-byte stripped: proof_blob prepends a 1-byte MMR_MODE tag, but the
+    // Same proof, mode-byte stripped: proof_blob prepends a 1-byte MMR proof-mode tag, but the
     // on-chain consume steps (redeem_burned_amount / disclose_secp, PROOF env) borsh-decode
     // a bare MmrInclusionProof, whose wire shape == borsh(MmrProof). So this is proof_bytes[1..].
     println!("PUB mmrInclusionProofBytes 0x{}", hex(&proof_bytes[1..]));
@@ -1057,7 +1057,7 @@ fn historical_update_step(
                 )
                 .into());
             }
-            let proof_bytes = proof_blob(MMR_MODE_HISTORICAL, &proof)?;
+            let proof_bytes = proof_blob(MMR_PROOF_MODE_HISTORICAL, &proof)?;
 
             println!("HIST H_old 0x{}", hex(&old_handle));
             println!("HIST H_new 0x{}", hex(&result.handle));

@@ -20,8 +20,8 @@ import { bytesToClearValueType } from '../../core/handle/FheType.js';
 import { generateSolanaTransportKeyPair, deSigncryptSolanaUserDecrypt } from '../deSigncrypt.js';
 import {
   decodeMmrProofTransportBlob,
-  MMR_MODE_HISTORICAL,
-  MMR_MODE_PUBLIC,
+  MMR_PROOF_MODE_HISTORICAL,
+  MMR_PROOF_MODE_PUBLIC,
   verifyHistoricalAccessProof,
   verifyPublicDecryptProof,
   type MmrProof,
@@ -162,7 +162,7 @@ function modeHex(mode: number): string {
 
 function assertCanonicalMmrProofBytes(mmrProof: SolanaUserDecryptMmrProofParameter): void {
   const decoded = decodeMmrProofTransportBlob(mmrProof.mmrProofBytes);
-  const expectedMode = mmrProof.mode === 'historical' ? MMR_MODE_HISTORICAL : MMR_MODE_PUBLIC;
+  const expectedMode = mmrProof.mode === 'historical' ? MMR_PROOF_MODE_HISTORICAL : MMR_PROOF_MODE_PUBLIC;
   if (decoded.mode !== expectedMode) {
     throw new Error(`MMR proof mode byte mismatch: expected ${modeHex(expectedMode)}, got ${modeHex(decoded.mode)}`);
   }
