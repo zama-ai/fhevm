@@ -1257,7 +1257,7 @@ mod fhe_execute_acl_tests {
     use std::collections::HashMap;
     use zama_host::state::{
         FheBinaryOpCode as PgmBinaryOpCode, FheExecuteArgs, FheExecuteOperand,
-        FheExecuteOutput, FheExecuteStep,
+        FheExecuteOutput, FheExecuteStep, PreviousState,
     };
 
     use crate::database::tfhe_event_propagate::Handle;
@@ -1573,8 +1573,10 @@ mod fhe_execute_acl_tests {
                     output_account_index: 3,
                     output_label_index: 4,
                     output_subject_indexes: vec![],
-                    previous_handle: Some([8; 32]),
-                    previous_subjects: Some(vec![]),
+                    previous_state: Some(PreviousState {
+                        handle: [8; 32],
+                        subjects: vec![],
+                    }),
                     make_public: false,
                 },
             }],
@@ -1639,8 +1641,7 @@ mod fhe_execute_acl_tests {
                     output_label_index: 2,
                     output_subject_indexes: vec![3],
                     // Fresh encrypted value account (create), created publicly decryptable inline.
-                    previous_handle: None,
-                    previous_subjects: None,
+                    previous_state: None,
                     make_public: true,
                 },
             }],

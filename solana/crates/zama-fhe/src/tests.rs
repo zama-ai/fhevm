@@ -1314,8 +1314,7 @@ fn persistent_output_birth_matches_eval_lowering() {
                     output_account_index,
                     output_label_index,
                     output_subject_indexes,
-                    previous_handle,
-                    previous_subjects,
+                    previous_state,
                     ..
                 },
             ..
@@ -1340,8 +1339,7 @@ fn persistent_output_birth_matches_eval_lowering() {
                 .map(|index| batch.args.dictionary_key(*index).unwrap())
                 .collect();
             assert_eq!(output_subjects, binding.host_subjects());
-            assert_eq!(*previous_handle, binding.previous_handle());
-            assert_eq!(previous_subjects.as_deref(), binding.previous_subjects());
+            assert_eq!(*previous_state, binding.previous_state());
         }
         other => panic!("unexpected step: {other:?}"),
     }

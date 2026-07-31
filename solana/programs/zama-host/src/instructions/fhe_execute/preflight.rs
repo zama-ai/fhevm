@@ -346,7 +346,7 @@ fn preflight_output(
             output_account_index,
             output_label_index,
             output_subject_indexes,
-            previous_subjects,
+            previous_state,
             ..
         } => {
             let output_key = preflight
@@ -363,14 +363,14 @@ fn preflight_output(
             preflight.mark_deny_record(authority)?;
             // Every newly granted subject is deny-checked in the bind pass; mark
             // their deny records here so finish() accounts for them. On a update
-            // the new set is `output_subjects \ previous_subjects` from instruction
-            // data alone — a lying previous_subjects is rejected later with
-            // PreviousStateMismatch, so trusting it for account-marking is safe. On
-            // a create (`None` previous) every output subject is a new grant.
+            // the new set is `output_subjects \ previous_state.subjects` from
+            // instruction data alone — a lying previous state is rejected later
+            // with PreviousStateMismatch, so trusting it for account-marking is
+            // safe. On a create (`None` previous) every output subject is a new grant.
             for subject_index in output_subject_indexes {
                 let subject = Pubkey::new_from_array(preflight.mark_dictionary(*subject_index)?);
-                let is_new_grant = match previous_subjects {
-                    Some(previous_subjects) => !previous_subjects.contains(&subject),
+                let is_new_grant = match previous_state {
+                    Some(previous) => !previous.subjects.contains(&subject),
                     None => true,
                 };
                 if is_new_grant {
@@ -491,8 +491,7 @@ mod tests {
             output_account_index: 0,
             output_label_index: 1,
             output_subject_indexes: Vec::new(),
-            previous_handle: None,
-            previous_subjects: None,
+            previous_state: None,
             make_public: false,
         }
     }

@@ -25,7 +25,7 @@ use anchor_lang::prelude::AccountInfo;
 pub struct Batch {
     pub(crate) app_authority: BatchAppAuthority,
     pub(crate) args: FheExecuteArgs,
-    /// Exact dynamic `remaining_accounts` order referenced by the `u16` indices
+    /// Exact dynamic `remaining_accounts` order referenced by the `u8` indices
     /// inside `args`. Keep this coupled to `args`; `finish` validates every
     /// index before constructing the batch.
     pub(crate) remaining_accounts: Vec<BatchAccountMeta>,
@@ -106,7 +106,7 @@ impl Batch {
     }
 
     /// Subjects this batch newly grants through persistent outputs: every output
-    /// subject on a create, and `output_subjects \ previous_subjects` on a
+    /// subject on a create, and `output_subjects \ previous_state.subjects` on a
     /// update that replaces its audience. The host deny-list-checks each of
     /// these exactly like `allow_subjects`, so an app forwarding deny-record
     /// witnesses must cover them alongside the output authorities.
@@ -115,7 +115,7 @@ impl Batch {
         for step in &self.args.steps {
             let FheExecuteOutput::AllowedPersistent {
                 output_subject_indexes,
-                previous_subjects,
+                previous_state,
                 ..
             } = fhe_execute_step_output(step)
             else {
@@ -126,9 +126,9 @@ impl Batch {
                 let Ok(subject) = self.args.dictionary_key(*index) else {
                     continue;
                 };
-                let already_stored = previous_subjects
+                let already_stored = previous_state
                     .as_ref()
-                    .is_some_and(|previous| previous.contains(&subject));
+                    .is_some_and(|previous| previous.subjects.contains(&subject));
                 if !already_stored && !added.contains(&subject) {
                     added.push(subject);
                 }

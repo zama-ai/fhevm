@@ -605,9 +605,9 @@ pub fn fhe_execute_step_previous_handle(
     step: &FheExecuteStep,
 ) -> Option<[u8; 32]> {
     match fhe_execute_step_output(step) {
-        FheExecuteOutput::AllowedPersistent {
-            previous_handle, ..
-        } => *previous_handle,
+        FheExecuteOutput::AllowedPersistent { previous_state, .. } => {
+            previous_state.as_ref().map(|previous| previous.handle)
+        }
         FheExecuteOutput::AllowedLocal => None,
     }
 }
@@ -1000,8 +1000,7 @@ mod tests {
                     output_account_index: 1,
                     output_label_index: 2,
                     output_subject_indexes: vec![3],
-                    previous_handle: None,
-                    previous_subjects: None,
+                    previous_state: None,
                     make_public: false,
                 },
             }],
@@ -1102,8 +1101,7 @@ mod tests {
                         output_account_index: 2,
                         output_label_index: 3,
                         output_subject_indexes: vec![4],
-                        previous_handle: None,
-                        previous_subjects: None,
+                        previous_state: None,
                         make_public: false,
                     },
                 },

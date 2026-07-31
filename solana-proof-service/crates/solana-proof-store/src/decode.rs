@@ -124,10 +124,6 @@ pub enum DecodeError {
         remaining_index: u16,
         absolute_index: usize,
     },
-    #[error(
-        "fhe_execute persistent output has mismatched previous_handle/previous_subjects options"
-    )]
-    InvalidFheExecutePreviousState,
     #[error("fhe_execute constant dictionary index {0} out of bounds")]
     InvalidFheExecuteDictionaryIndex(u8),
     #[error("missing or invalid Solana instruction stack metadata")]
@@ -251,8 +247,7 @@ fn decode_fhe_execute_persistent_outputs(
         let FheExecuteOutput::AllowedPersistent {
             output_encrypted_value_index,
             output_subject_indexes,
-            previous_handle,
-            previous_subjects,
+            previous_state,
             make_public,
             ..
         } = fhe_execute_step_output(step)
@@ -276,17 +271,18 @@ fn decode_fhe_execute_persistent_outputs(
                     .ok_or(DecodeError::InvalidFheExecuteDictionaryIndex(*index))
             })
             .collect::<Result<Vec<_>, _>>()?;
-        match (previous_handle, previous_subjects) {
-            (None, None) => out.push(DecodedInstruction::FheExecuteCreateEncryptedValue {
+        match previous_state {
+            None => out.push(DecodedInstruction::FheExecuteCreateEncryptedValue {
                 encrypted_value,
                 subjects: output_subjects.clone(),
                 make_public_handle,
             }),
-            (Some(previous_handle), Some(previous_subjects)) => {
+            Some(previous) => {
                 out.push(DecodedInstruction::FheExecuteUpdateEncryptedValue {
                     encrypted_value,
-                    previous_handle: *previous_handle,
-                    previous_subjects: previous_subjects
+                    previous_handle: previous.handle,
+                    previous_subjects: previous
+                        .subjects
                         .iter()
                         .map(|subject| subject.to_bytes())
                         .collect(),
@@ -294,7 +290,6 @@ fn decode_fhe_execute_persistent_outputs(
                     make_public_handle,
                 });
             }
-            _ => return Err(DecodeError::InvalidFheExecutePreviousState),
         }
     }
     Ok(out)
@@ -739,9 +734,14 @@ mod tests {
             output_account_index: intern(pk(0x41)),
             output_label_index: intern(pk(0x42)),
             output_subject_indexes: subject_tags.iter().map(|tag| intern(pk(*tag))).collect(),
-            previous_handle,
-            previous_subjects: previous_subject_tags
-                .map(|subjects| subjects.iter().map(|tag| pubkey(*tag)).collect()),
+            previous_state: previous_handle.map(|handle| zama_host::PreviousState {
+                handle,
+                subjects: previous_subject_tags
+                    .unwrap_or_default()
+                    .iter()
+                    .map(|tag| pubkey(*tag))
+                    .collect(),
+            }),
             make_public: false,
         }
     }

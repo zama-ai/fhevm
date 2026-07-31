@@ -111,8 +111,7 @@ pub(crate) fn lower_output(
                 output_account_index: dictionary_index(dictionary, binding.account().to_bytes())?,
                 output_label_index: dictionary_index(dictionary, binding.label())?,
                 output_subject_indexes,
-                previous_handle: binding.previous_handle(),
-                previous_subjects: binding.previous_subjects().map(|s| s.to_vec()),
+                previous_state: binding.previous_state(),
                 make_public: binding.make_public(),
             };
             persistent_producers.push((encrypted_value, producer_index));

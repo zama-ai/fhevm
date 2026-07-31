@@ -77,12 +77,12 @@ fn fhe_execute_ix(
             output_subject_indexes: (0..subjects.len() as u8)
                 .map(|i| subject_base + i)
                 .collect(),
-            previous_handle: previous.as_ref().map(|(handle, _)| *handle),
-            previous_subjects: previous.map(|(_, subjects)| {
-                subjects
+            previous_state: previous.map(|(handle, subjects)| zama_host::PreviousState {
+                handle,
+                subjects: subjects
                     .into_iter()
                     .map(anchor_lang::prelude::Pubkey::new_from_array)
-                    .collect()
+                    .collect(),
             }),
             make_public: false,
         },

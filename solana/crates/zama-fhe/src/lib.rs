@@ -98,9 +98,6 @@ pub enum BatchBuildError {
     InvalidEncryptedValueId,
     /// The fixed app authority pubkey is not a valid signer identity.
     InvalidAppAuthority,
-    /// A persistent output's declared previous state is inconsistent (one of
-    /// `previous_handle`/`previous_subjects` set without the other).
-    InconsistentPreviousState,
     /// A lowered host account index does not match the batch account list.
     InvalidRemainingAccountReference,
     /// A verified-input operand referenced an attestation not registered with the builder.

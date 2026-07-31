@@ -2366,30 +2366,18 @@
                 "type": "bytes"
               },
               {
-                "name": "previous_handle",
+                "name": "previous_state",
                 "docs": [
-                  "Replaced handle: `None` on create, `Some(current_handle)` on update.",
-                  "Carried in instruction data so indexers can reconstruct the appended",
-                  "MMR leaves without reading the account; validated against the account."
+                  "Replaced state: `None` on create, the stored handle and exact stored",
+                  "subject set on update. Carried in instruction data so indexers can",
+                  "reconstruct the appended MMR leaves without reading the account;",
+                  "validated against the account."
                 ],
                 "type": {
                   "option": {
-                    "array": [
-                      "u8",
-                      32
-                    ]
-                  }
-                }
-              },
-              {
-                "name": "previous_subjects",
-                "docs": [
-                  "Replaced subject set, parallel to `previous_handle` (`None` on create,",
-                  "exact stored subjects on update). Same indexer-reconstruction purpose."
-                ],
-                "type": {
-                  "option": {
-                    "vec": "pubkey"
+                    "defined": {
+                      "name": "PreviousState"
+                    }
                   }
                 }
               },
@@ -3519,6 +3507,42 @@
               "User-decrypt signature threshold."
             ],
             "type": "u8"
+          }
+        ]
+      }
+    },
+    {
+      "name": "PreviousState",
+      "docs": [
+        "The replaced state a persistent-output update declares: the stored handle",
+        "and the exact stored subject set, together (making a half-declared previous",
+        "state unrepresentable). Validated against the account, and carried in",
+        "instruction data so indexers reconstruct the appended MMR leaves without",
+        "reading the account."
+      ],
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "handle",
+            "docs": [
+              "The handle being replaced (`current_handle` at the time of the update)."
+            ],
+            "type": {
+              "array": [
+                "u8",
+                32
+              ]
+            }
+          },
+          {
+            "name": "subjects",
+            "docs": [
+              "The exact stored subject set being replaced."
+            ],
+            "type": {
+              "vec": "pubkey"
+            }
           }
         ]
       }

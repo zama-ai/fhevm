@@ -181,6 +181,16 @@ impl PersistentOutputBinding {
             .map(|previous| previous.subjects.as_slice())
     }
 
+    /// The declared previous state in the host's wire shape (`None` on create).
+    pub fn previous_state(&self) -> Option<zama_host::PreviousState> {
+        self.previous
+            .as_ref()
+            .map(|previous| zama_host::PreviousState {
+                handle: previous.handle,
+                subjects: previous.subjects.clone(),
+            })
+    }
+
     pub fn make_public(&self) -> bool {
         self.make_public
     }

@@ -346,8 +346,7 @@ impl EvalFlow {
             output_account_index: intern(self.authority.to_bytes()),
             output_label_index: intern(label),
             output_subject_indexes: vec![intern(self.authority.to_bytes())],
-            previous_handle: None,
-            previous_subjects: None,
+            previous_state: None,
             make_public: false,
         }
     }
@@ -372,8 +371,7 @@ impl EvalFlow {
                 output_account_index: intern(self.authority.to_bytes()),
                 output_label_index: intern(label),
                 output_subject_indexes: vec![intern(self.authority.to_bytes())],
-                previous_handle: None,
-                previous_subjects: None,
+                previous_state: None,
                 make_public: false,
             },
             address,

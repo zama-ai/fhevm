@@ -45,6 +45,7 @@ use std::{collections::HashMap, path::PathBuf};
 use zama_host::{
     self as host, DenySubjectRecord, EncryptedValue, FheBinaryOpCode, FheExecuteArgs,
     FheExecuteOperand, FheExecuteOutput, FheExecuteStep, FheTernaryOpCode, HostConfig,
+    PreviousState,
 };
 
 // ---------------------------------------------------------------------------
@@ -318,8 +319,10 @@ fn update_with_fhe_execute(
             output_account_index: dictionary.intern_key(value.account),
             output_label_index: dictionary.intern(value.label),
             output_subject_indexes: dictionary.intern_subjects(value.subjects.iter().copied()),
-            previous_handle: Some(value.current_handle),
-            previous_subjects: Some(value.subjects.clone()),
+            previous_state: Some(PreviousState {
+                handle: value.current_handle,
+                subjects: value.subjects.clone(),
+            }),
             make_public: false,
         },
     }];
@@ -374,8 +377,10 @@ fn expect_fhe_execute_update_error(
             output_account_index: dictionary.intern_key(value.account),
             output_label_index: dictionary.intern(value.label),
             output_subject_indexes: dictionary.intern_subjects(output_subjects),
-            previous_handle: Some(previous_handle),
-            previous_subjects: Some(previous_subjects),
+            previous_state: Some(PreviousState {
+                handle: previous_handle,
+                subjects: previous_subjects,
+            }),
             make_public: false,
         },
     }];
@@ -649,8 +654,7 @@ fn mollusk_fhe_execute_fails_closed_without_previous_bank_hash() {
             output_account_index: dictionary.intern_key(authority),
             output_label_index: dictionary.intern(label("balance")),
             output_subject_indexes: dictionary.intern_subjects([subject]),
-            previous_handle: None,
-            previous_subjects: None,
+            previous_state: None,
             make_public: false,
         },
     }];
@@ -1155,8 +1159,10 @@ fn mollusk_fhe_execute_update_swaps_subjects_and_seals_the_outgoing_audience() {
             output_label_index: dictionary.intern(value.label),
             // Rotate the audience: drop `old_recipient`, grant `new_recipient`.
             output_subject_indexes: dictionary.intern_subjects([subject_a, new_recipient]),
-            previous_handle: Some(old_handle),
-            previous_subjects: Some(value.subjects.clone()),
+            previous_state: Some(PreviousState {
+                handle: old_handle,
+                subjects: value.subjects.clone(),
+            }),
             make_public: false,
         },
     }];
@@ -1235,8 +1241,10 @@ fn mollusk_fhe_execute_update_shrinks_audience_and_seals_the_outgoing_set() {
             output_account_index: dictionary.intern_key(value.account),
             output_label_index: dictionary.intern(value.label),
             output_subject_indexes: dictionary.intern_subjects([subject_a, subject_b]),
-            previous_handle: Some(old_handle),
-            previous_subjects: Some(value.subjects.clone()),
+            previous_state: Some(PreviousState {
+                handle: old_handle,
+                subjects: value.subjects.clone(),
+            }),
             make_public: false,
         },
     }];
@@ -1534,8 +1542,7 @@ fn mollusk_denied_caller_cannot_mutate_acl_update_or_eval_output() {
             output_account_index: dictionary.intern_key(caller),
             output_label_index: dictionary.intern(output_label),
             output_subject_indexes: dictionary.intern_subjects([caller]),
-            previous_handle: None,
-            previous_subjects: None,
+            previous_state: None,
             make_public: false,
         },
     }];
@@ -1654,8 +1661,7 @@ fn mollusk_denied_subject_cannot_enter_via_allow_subjects_or_eval_create() {
             output_account_index: dictionary.intern_key(authority),
             output_label_index: dictionary.intern(output_label),
             output_subject_indexes: dictionary.intern_subjects([authority, denied_subject]),
-            previous_handle: None,
-            previous_subjects: None,
+            previous_state: None,
             make_public: false,
         },
     }];
@@ -1888,8 +1894,7 @@ fn mollusk_fhe_execute_rejects_denied_second_output_authority_in_multi_output_fr
                 output_account_index: dictionary.intern_key(authority_a),
                 output_label_index: dictionary.intern(output_a_label),
                 output_subject_indexes: dictionary.intern_subjects([authority_a]),
-                previous_handle: None,
-                previous_subjects: None,
+                previous_state: None,
                 make_public: false,
             },
         },
@@ -1903,8 +1908,7 @@ fn mollusk_fhe_execute_rejects_denied_second_output_authority_in_multi_output_fr
                 output_account_index: dictionary.intern_key(authority_b),
                 output_label_index: dictionary.intern(output_b_label),
                 output_subject_indexes: dictionary.intern_subjects([authority_b]),
-                previous_handle: None,
-                previous_subjects: None,
+                previous_state: None,
                 make_public: false,
             },
         },
@@ -2004,8 +2008,7 @@ fn mollusk_paused_state_blocks_acl_update_and_eval_output() {
             output_account_index: dictionary.intern_key(authority),
             output_label_index: dictionary.intern(output_label),
             output_subject_indexes: dictionary.intern_subjects([owner]),
-            previous_handle: None,
-            previous_subjects: None,
+            previous_state: None,
             make_public: false,
         },
     }];
@@ -2316,8 +2319,7 @@ fn mollusk_fhe_execute_creates_persistent_output_from_local_binary_add() {
             output_account_index: dictionary.intern_key(output_account),
             output_label_index: dictionary.intern(output_label),
             output_subject_indexes: dictionary.intern_subjects([authority]),
-            previous_handle: None,
-            previous_subjects: None,
+            previous_state: None,
             make_public: false,
         },
     }];
@@ -2394,8 +2396,10 @@ fn mollusk_fhe_execute_updates_persistent_output_with_previous_state() {
             output_account_index: dictionary.intern_key(authority),
             output_label_index: dictionary.intern(label("out")),
             output_subject_indexes: dictionary.intern_subjects([authority]),
-            previous_handle: Some(output_handle),
-            previous_subjects: Some(previous_subjects),
+            previous_state: Some(PreviousState {
+                handle: output_handle,
+                subjects: previous_subjects,
+            }),
             make_public: false,
         },
     }];
@@ -2467,8 +2471,7 @@ fn created_public_frame(step_count: usize, created_public_steps: &[usize]) -> Cr
                 output_account_index: dictionary.intern_key(authority),
                 output_label_index: dictionary.intern(output_label),
                 output_subject_indexes: dictionary.intern_subjects([authority]),
-                previous_handle: None,
-                previous_subjects: None,
+                previous_state: None,
                 make_public: true,
             }
         } else {
@@ -3890,8 +3893,7 @@ impl EvalFixture {
                     output_account_index: dictionary.intern_key(self.account),
                     output_label_index: dictionary.intern(self.output_label),
                     output_subject_indexes: dictionary.intern_subjects([self.authority]),
-                    previous_handle: None,
-                    previous_subjects: None,
+                    previous_state: None,
                     make_public: false,
                 },
             },
@@ -3983,8 +3985,7 @@ impl EvalFixture {
                 output_account_index: dictionary.intern_key(self.account),
                 output_label_index: dictionary.intern(self.output_label),
                 output_subject_indexes: dictionary.intern_subjects([self.authority]),
-                previous_handle: None,
-                previous_subjects: None,
+                previous_state: None,
                 make_public: false,
             },
         });
@@ -4114,8 +4115,7 @@ impl EvalFixture {
                 output_account_index: dictionary.intern_key(self.account),
                 output_label_index: dictionary.intern(output_label),
                 output_subject_indexes: dictionary.intern_subjects([self.authority]),
-                previous_handle: None,
-                previous_subjects: None,
+                previous_state: None,
                 make_public: false,
             },
         }];
@@ -4191,8 +4191,7 @@ impl EvalFixture {
                     output_account_index: dictionary.intern_key(app_authority),
                     output_label_index: dictionary.intern(output_label),
                     output_subject_indexes: dictionary.intern_subjects([app_authority]),
-                    previous_handle: None,
-                    previous_subjects: None,
+                    previous_state: None,
                     make_public: false,
                 },
             },

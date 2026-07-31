@@ -525,11 +525,9 @@ fn persistent_output(
     label: [u8; 32],
     subjects: Vec<Pubkey>,
 ) -> Result<zama_host::FheExecuteOutput, Box<dyn std::error::Error>> {
-    let (previous_handle, previous_subjects) =
-        match existing_value_account_state(program, encrypted_value)? {
-            Some((handle, subjects)) => (Some(handle), Some(subjects)),
-            None => (None, None),
-        };
+    let previous_state = existing_value_account_state(program, encrypted_value)?.map(
+        |(handle, subjects)| zama_host::PreviousState { handle, subjects },
+    );
     Ok(zama_host::FheExecuteOutput::AllowedPersistent {
         output_encrypted_value_index: index,
         output_account_authority_index: None,
@@ -537,8 +535,7 @@ fn persistent_output(
         output_account_index: dictionary.intern_key(account),
         output_label_index: dictionary.intern(label),
         output_subject_indexes: dictionary.intern_subjects(subjects),
-        previous_handle,
-        previous_subjects,
+        previous_state,
         make_public: false,
     })
 }

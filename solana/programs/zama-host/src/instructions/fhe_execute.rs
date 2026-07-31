@@ -335,8 +335,7 @@ fn accept_eval_output<'info>(
             output_account_index,
             output_label_index,
             output_subject_indexes,
-            previous_handle,
-            previous_subjects,
+            previous_state,
             make_public,
         } => {
             let output_acl_domain_key = dictionary_key(dictionary, *output_domain_index)?;
@@ -359,8 +358,7 @@ fn accept_eval_output<'info>(
                 output_account,
                 output_label,
                 &output_subjects,
-                previous_handle,
-                previous_subjects,
+                previous_state,
                 *make_public,
             )?;
             make_public.then(|| ProducedPublicOutput {
@@ -486,8 +484,7 @@ fn bind_eval_output<'info>(
     output_account: Pubkey,
     output_label: [u8; 32],
     output_subjects: &[Pubkey],
-    previous_handle: &Option<[u8; 32]>,
-    previous_subjects: &Option<Vec<Pubkey>>,
+    previous_state: &Option<PreviousState>,
     make_public: bool,
 ) -> Result<Pubkey> {
     assert_output_acl_metadata(account_authority, output_account, output_subjects)?;
@@ -508,11 +505,11 @@ fn bind_eval_output<'info>(
     );
 
     if output_info.owner == &crate::ID {
-        // Update: the batch's previous_* fields must match the stored state
-        // exactly, so indexers can reconstruct the appended MMR leaves from
-        // instruction data alone. `output_subjects` may replace the audience.
+        // Update: the batch's declared previous state must match the stored
+        // state exactly, so indexers can reconstruct the appended MMR leaves
+        // from instruction data alone. `output_subjects` may replace the audience.
         let mut value = read_canonical_encrypted_value(output_info)?;
-        validate_persistent_output_previous_state(&value, previous_handle, previous_subjects)?;
+        validate_persistent_output_previous_state(&value, previous_state)?;
         check_new_grants_not_denied(
             &ctx.accounts.host_config,
             table,
@@ -543,7 +540,7 @@ fn bind_eval_output<'info>(
         // not created public-decryptable; `make_public` is the documented opt-in relaxation
         // (DD-036), sealing a public-decrypt leaf for the new handle at leaf index 0.
         require!(
-            previous_handle.is_none() && previous_subjects.is_none(),
+            previous_state.is_none(),
             ZamaHostError::PreviousStateMismatch
         );
         check_new_grants_not_denied(&ctx.accounts.host_config, table, &[], output_subjects)?;
@@ -577,23 +574,25 @@ fn bind_eval_output<'info>(
 }
 
 /// Update batch validation against an existing encrypted value account. The batch's
-/// `previous_handle`/`previous_subjects` must equal the stored state exactly, so
-/// indexers reconstruct the appended MMR leaves from instruction data alone. The
+/// declared `previous_state` must equal the stored state exactly, so indexers
+/// reconstruct the appended MMR leaves from instruction data alone. The
 /// audience (`output_subjects`) is NOT constrained to the stored set: a update
 /// may explicitly replace it — the outgoing audience is sealed into historical
 /// leaves before the new set replaces it, and every added subject passes the
 /// grant deny-list via [`check_new_grants_not_denied`].
 pub(super) fn validate_persistent_output_previous_state(
     value: &EncryptedValue,
-    previous_handle: &Option<[u8; 32]>,
-    previous_subjects: &Option<Vec<Pubkey>>,
+    previous_state: &Option<PreviousState>,
 ) -> Result<()> {
+    let Some(previous) = previous_state else {
+        return Err(error!(ZamaHostError::PreviousStateMismatch));
+    };
     require!(
-        *previous_handle == Some(value.current_handle),
+        previous.handle == value.current_handle,
         ZamaHostError::PreviousStateMismatch
     );
     require!(
-        previous_subjects.as_deref() == Some(value.subjects.as_slice()),
+        previous.subjects.as_slice() == value.subjects.as_slice(),
         ZamaHostError::PreviousStateMismatch
     );
     Ok(())
@@ -694,8 +693,10 @@ mod tests {
                     output_account_index: 0,
                     output_label_index: 0,
                     output_subject_indexes: Vec::new(),
-                    previous_handle: Some(value.current_handle),
-                    previous_subjects: Some(value.subjects),
+                    previous_state: Some(PreviousState {
+                        handle: value.current_handle,
+                        subjects: value.subjects,
+                    }),
                     make_public: false,
                 },
             }],
@@ -715,10 +716,14 @@ mod tests {
     fn persistent_output_previous_state_accepts_exact_previous_match() {
         let subjects = vec![Pubkey::new_unique(), Pubkey::new_unique()];
         let value = encrypted_value_account([9; 32], &subjects);
-        assert!(
-            validate_persistent_output_previous_state(&value, &Some([9; 32]), &Some(subjects),)
-                .is_ok()
-        );
+        assert!(validate_persistent_output_previous_state(
+            &value,
+            &Some(PreviousState {
+                handle: [9; 32],
+                subjects,
+            }),
+        )
+        .is_ok());
     }
 
     #[test]
@@ -728,31 +733,39 @@ mod tests {
         // Wrong previous handle.
         assert!(validate_persistent_output_previous_state(
             &value,
-            &Some([8; 32]),
-            &Some(subjects.clone()),
+            &Some(PreviousState {
+                handle: [8; 32],
+                subjects: subjects.clone(),
+            }),
         )
         .is_err());
         // Wrong previous subjects.
         assert!(validate_persistent_output_previous_state(
             &value,
-            &Some([9; 32]),
-            &Some(vec![Pubkey::new_unique()]),
+            &Some(PreviousState {
+                handle: [9; 32],
+                subjects: vec![Pubkey::new_unique()],
+            }),
         )
         .is_err());
-        // Missing previous_* on an existing encrypted value account (create shape on update).
-        assert!(validate_persistent_output_previous_state(&value, &None, &None).is_err());
+        // Missing previous state on an existing encrypted value account (create shape on update).
+        assert!(validate_persistent_output_previous_state(&value, &None).is_err());
     }
 
     #[test]
     fn persistent_output_previous_state_ignores_output_audience() {
-        // Validation pins only the outgoing state (previous_handle/previous_subjects); it no
+        // Validation pins only the outgoing state (`previous_state`); it no
         // longer constrains the new audience, so an update may replace `output_subjects`.
         let subjects = vec![Pubkey::new_unique()];
         let value = encrypted_value_account([9; 32], &subjects);
-        assert!(
-            validate_persistent_output_previous_state(&value, &Some([9; 32]), &Some(subjects))
-                .is_ok()
-        );
+        assert!(validate_persistent_output_previous_state(
+            &value,
+            &Some(PreviousState {
+                handle: [9; 32],
+                subjects,
+            }),
+        )
+        .is_ok());
     }
 
     #[test]

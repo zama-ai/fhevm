@@ -320,6 +320,19 @@ pub enum FheExecuteOperand {
     },
 }
 
+/// The replaced state a persistent-output update declares: the stored handle
+/// and the exact stored subject set, together (making a half-declared previous
+/// state unrepresentable). Validated against the account, and carried in
+/// instruction data so indexers reconstruct the appended MMR leaves without
+/// reading the account.
+#[derive(AnchorSerialize, AnchorDeserialize, Clone, Debug, PartialEq, Eq)]
+pub struct PreviousState {
+    /// The handle being replaced (`current_handle` at the time of the update).
+    pub handle: [u8; 32],
+    /// The exact stored subject set being replaced.
+    pub subjects: Vec<Pubkey>,
+}
+
 /// Output policy for a composed fhe_execute operation.
 #[derive(AnchorSerialize, AnchorDeserialize, Clone, Debug, PartialEq, Eq)]
 pub enum FheExecuteOutput {
@@ -347,13 +360,11 @@ pub enum FheExecuteOutput {
         /// away from the stored set (the outgoing audience is sealed into
         /// historical leaves first; added subjects pass the grant deny-list).
         output_subject_indexes: Vec<u8>,
-        /// Replaced handle: `None` on create, `Some(current_handle)` on update.
-        /// Carried in instruction data so indexers can reconstruct the appended
-        /// MMR leaves without reading the account; validated against the account.
-        previous_handle: Option<[u8; 32]>,
-        /// Replaced subject set, parallel to `previous_handle` (`None` on create,
-        /// exact stored subjects on update). Same indexer-reconstruction purpose.
-        previous_subjects: Option<Vec<Pubkey>>,
+        /// Replaced state: `None` on create, the stored handle and exact stored
+        /// subject set on update. Carried in instruction data so indexers can
+        /// reconstruct the appended MMR leaves without reading the account;
+        /// validated against the account.
+        previous_state: Option<PreviousState>,
         /// When true, the newly bound handle is created publicly decryptable: after
         /// writing it as `current_handle`, a public-decrypt leaf is appended for
         /// the new handle (byte-identical to `make_handle_public`). Carried in
