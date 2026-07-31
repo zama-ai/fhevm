@@ -1035,18 +1035,17 @@ impl UserDecryptRepository {
     }
 
     // GET REQUESTS RESULTS.
-    /// Select in user_decrypt_req by ext_job_id and get all the shares on gw_reference_id.
+    /// Select in user_decrypt_req by ext_job_id and get every share on its gw_reference_id.
     ///
-    /// The share LIMIT uses `COALESCE(resolved_threshold, $2)`: if the dynamic threshold
-    /// was stored at completion time, it takes precedence; otherwise the static fallback
-    /// `$2` is used (backward compatibility for rows created before the migration).
+    /// Returns all collected shares (no `LIMIT`): the optimistic wait window lets the
+    /// client fall back to spare shares when one is corrupted. The GET handler decides
+    /// whether enough shares are present. The join is index-backed
+    /// (`idx_user_decrypt_req_ext_job_id`, and the composite
+    /// `(gw_reference_id, share_index)` index also yields the aggregate order for free).
     pub async fn find_req_and_shares_by_ext_job_id(
         &self,
         ext_job_id: Uuid,
-        fallback_threshold: u32,
     ) -> SqlResult<Option<UserDecryptResponseModel>> {
-        // u32 → i64: safe widening for DB BIGINT column
-        let fallback_threshold = i64::from(fallback_threshold);
         let mut conn = self.pool.get_app_connection().await?;
 
         let query_start = Instant::now();
@@ -1061,9 +1060,8 @@ impl UserDecryptRepository {
                 r.gw_req_tx_hash,
                 r.gw_consensus_tx_hash,
                 r.resolved_threshold,
-                -- Aggregate shares into a JSON List.
-                -- If no shares exist, return an empty JSON array '[]'
-                -- Only select needed fields to avoid BYTEA deserialization issues
+                -- All shares for this job, ordered by share_index; '[]' when none exist yet.
+                -- Only select needed fields to avoid BYTEA deserialization issues.
                 COALESCE(
                     jsonb_agg(
                         jsonb_build_object(
@@ -1077,22 +1075,12 @@ impl UserDecryptRepository {
                     '[]'::jsonb
                 ) as "shares!: Json<Vec<UserDecryptResponseShare>>"
             FROM user_decrypt_req r
-            LEFT JOIN (
-                SELECT * FROM user_decrypt_share
-                WHERE gw_reference_id IN (
-                    SELECT gw_reference_id FROM user_decrypt_req WHERE ext_job_id = $1
-                )
-                ORDER BY created_at ASC, share_index ASC
-                LIMIT COALESCE(
-                    (SELECT resolved_threshold FROM user_decrypt_req WHERE ext_job_id = $1),
-                    $2
-                )
-            ) s ON r.gw_reference_id = s.gw_reference_id
+            LEFT JOIN user_decrypt_share s
+                   ON s.gw_reference_id = r.gw_reference_id
             WHERE r.ext_job_id = $1
             GROUP BY r.id
             "#,
-            ext_job_id,
-            fallback_threshold
+            ext_job_id
         )
         .fetch_optional(&mut *conn)
         .await;

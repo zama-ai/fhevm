@@ -109,6 +109,8 @@ const TEST_PROFILE_DESCRIPTIONS: Partial<Record<(typeof TEST_PROFILE_NAMES)[numb
   "input-proof-compute-decrypt": "Run compute-and-decrypt input proof coverage.",
   "priority-coprocessor": "Run input proof coverage with gateway priority-coprocessor mode enabled.",
   "user-decryption": "Run user decryption coverage.",
+  "spare-share-tolerance":
+    "Prove a corrupted KMS share no longer fails a user decryption: the relayer returns spares beyond the 2t+1 it collects, and reconstruction survives corruption down to the t+1 minimum (threshold-mode KMS).",
   "delegated-user-decryption": "Run delegated user decryption coverage.",
   "erc1271-user-decryption": "Run ERC-1271 smart-account signature verification coverage.",
   "unified-user-decryption": "Run unified EIP-712 user decryption coverage: allowedContracts modes, mixed direct+delegated batches, extraData versions.",
@@ -1491,6 +1493,11 @@ export const test = async (testName: string | undefined, options: TestOptions) =
       ? undefined
       : "multi-chain-isolation requires a multi-chain topology; rerun `fhevm-cli up --scenario multi-chain` first";
 
+  const spareShareToleranceRequirement = (profile: string) =>
+    state.scenario.kms.mode === "threshold"
+      ? undefined
+      : `${profile} requires a threshold-mode KMS cluster (a lone party has no spare share); rerun \`fhevm-cli up --scenario four-party-threshold-kms\` first`;
+
   const priorityCoprocessorRequirement = () => {
     const topology = topologyForState(state);
     return topology.count > 1
@@ -1817,6 +1824,12 @@ export const test = async (testName: string | undefined, options: TestOptions) =
     }
     if (name === "priority-coprocessor") {
       const precondition = priorityCoprocessorRequirement();
+      if (precondition) {
+        throw new PreflightError(precondition);
+      }
+    }
+    if (name === "spare-share-tolerance" || name === "spare-share-tolerance-kms-down") {
+      const precondition = spareShareToleranceRequirement(name);
       if (precondition) {
         throw new PreflightError(precondition);
       }

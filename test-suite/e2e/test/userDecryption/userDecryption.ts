@@ -2,6 +2,7 @@ import { expect } from 'chai';
 import { ethers } from 'hardhat';
 
 import { createInstances } from '../instance';
+import { corruptPayloadFraming, corruptSignature, expectCorruptedShareDecryptToFail } from '../sdk/corruption/interceptShares';
 import { getSigners, initSigners } from '../signers';
 
 describe('User decryption', function () {
@@ -95,6 +96,39 @@ describe('User decryption', function () {
       signer: this.signers.alice,
     });
     expect(decryptedValue).to.equal(74285495974541385002137713624115238327312291047062397922780925695323480915729n);
+  });
+
+  describe('corrupted shares', function () {
+    // Observe how the SDK behaves when the KMS signcrypted shares it receives
+    // are corrupted before client-side reconstruction. The corruption is
+    // injected at the SDK's HTTP input boundary (see interceptShares).
+    // Pins current behaviour, not desired: a framing fault is fatal regardless of
+    // how many shares arrived, because `js_to_resp` decodes the whole response
+    // vector with `?` per response, discarding the good shares along with the bad
+    // one. Known defect, fhevm-internal#1738 — the fix belongs in the KMS wasm, and
+    // this expectation flips when it lands. See spareShareTolerance for the counts
+    // at which a *droppable* fault (bad signature, corrupt body) survives.
+    it('case 1: corrupted payload framing bytes abort the whole user decryption', async function () {
+      const handle = await this.contract.xUint64();
+      await expectCorruptedShareDecryptToFail('direct/payload', corruptPayloadFraming, () =>
+        this.instances.alice.userDecryptSingleHandle({
+          handle,
+          contractAddress: this.contractAddress,
+          signer: this.signers.alice,
+        }),
+      );
+    });
+
+    it('case 2: corrupted signature makes user decryption fail', async function () {
+      const handle = await this.contract.xUint64();
+      await expectCorruptedShareDecryptToFail('direct/signature', corruptSignature, () =>
+        this.instances.alice.userDecryptSingleHandle({
+          handle,
+          contractAddress: this.contractAddress,
+          signer: this.signers.alice,
+        }),
+      );
+    });
   });
 
   describe('negative-acl', function () {
