@@ -5,6 +5,7 @@ USER root
 RUN apk add --no-cache \
     bash \
     curl \
+    git \
     jq \
     kubectl \
     python3 \
