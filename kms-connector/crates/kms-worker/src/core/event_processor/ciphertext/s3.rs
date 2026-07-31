@@ -12,14 +12,13 @@ use crate::{
     monitoring::metrics::{S3_CIPHERTEXT_RETRIEVAL_COUNTER, S3_CIPHERTEXT_RETRIEVAL_ERRORS},
 };
 use alloy::{
-    hex,
     primitives::{B256, FixedBytes},
     transports::http::{Client, reqwest::header::HeaderMap},
 };
 use anyhow::anyhow;
 use ciphertext_attestation::{
     CiphertextAttestation, CiphertextFormat, S3_METADATA_ATTESTATION_HEADER,
-    consensus::ConsensusMaterial,
+    consensus::ConsensusMaterial, s3_ct128_key,
 };
 use connector_utils::types::handle::extract_fhe_type_from_handle;
 use kms_grpc::kms::v1::{CiphertextFormat as GrpcCiphertextFormat, TypedCiphertext};
@@ -33,8 +32,8 @@ use tracing::{debug, warn};
 /// URL of a ciphertext object in a Coprocessor bucket (RFC 023 layout).
 fn rfc023_ciphertext_url(bucket_url: &str, handle: B256) -> String {
     format!(
-        "{bucket_url}/{}/{COPROCESSOR_CONTEXT_ID}",
-        hex::encode(handle)
+        "{bucket_url}/{}",
+        s3_ct128_key(handle.as_slice(), COPROCESSOR_CONTEXT_ID)
     )
 }
 

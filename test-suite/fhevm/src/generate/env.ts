@@ -446,7 +446,9 @@ const buildInstanceEnvs = async (
   }
   for (let index = 0; index < plan.topology.count; index += 1) {
     const wallet = await deriveWallet(mnemonic, COPROCESSOR_WALLET_INDICES[index]);
-    const opBucket = `coproc-${index}-ct128`;
+    // A single bucket per coprocessor holds both its ct128 and ct64 objects,
+    // under their respective key prefixes, as deployed in production.
+    const opBucket = `coproc-${index}`;
     envs["gateway-sc"][`COPROCESSOR_TX_SENDER_ADDRESS_${index}`] = wallet.address;
     envs["gateway-sc"][`COPROCESSOR_SIGNER_ADDRESS_${index}`] = wallet.address;
     envs["gateway-sc"][`COPROCESSOR_S3_BUCKET_URL_${index}`] = `${MINIO_INTERNAL_URL}/${opBucket}`;
@@ -454,7 +456,7 @@ const buildInstanceEnvs = async (
     if (index === 0) {
       envs["coprocessor"].TX_SENDER_PRIVATE_KEY = wallet.privateKey;
       Object.assign(envs["coprocessor"], baseInstance?.env ?? {});
-      envs["coprocessor"].BUCKET_NAME_CT128 = opBucket;
+      envs["coprocessor"].BUCKET_NAME = opBucket;
       continue;
     }
     const next = { ...envs["coprocessor"] };
@@ -462,7 +464,7 @@ const buildInstanceEnvs = async (
     const dbCreds = `${envs.database.POSTGRES_USER}:${envs.database.POSTGRES_PASSWORD}`;
     next.DATABASE_URL = `postgresql://${dbCreds}@${POSTGRES_HOST}/${dbName}`;
     next.TX_SENDER_PRIVATE_KEY = wallet.privateKey;
-    next.BUCKET_NAME_CT128 = opBucket;
+    next.BUCKET_NAME = opBucket;
     const instance = plan.coprocessor.instances.find((item) => item.index === index);
     Object.assign(next, instance?.env ?? {});
     instanceEnvs[`coprocessor.${index}`] = next;
