@@ -6,6 +6,7 @@ import {
   MODERN_RELAYER_IMAGE_REPOSITORY,
   MODERN_RELAYER_MIGRATE_IMAGE_REPOSITORY,
   bootstrapUsesHostKmsGeneration,
+  compatArgPolicyForPinnedTag,
   compatPolicyForState,
   coprocessorUsesHostKmsGeneration,
   kmsConnectorUsesHostKmsGeneration,
@@ -135,6 +136,58 @@ describe("compat", () => {
     });
     expect(policy.coprocessorDropFlags["sns-worker"] ?? []).not.toContain("--signer-type");
     expect(policy.coprocessorDropFlags["sns-worker"] ?? []).not.toContain("--private-key");
+  });
+
+  test("splits the unified bucket flag for legacy sns-worker images", () => {
+    const policy = compatPolicyForState({
+      versions: {
+        target: "latest-supported",
+        lockName: "latest-supported.json",
+        env: {
+          COPROCESSOR_SNS_WORKER_VERSION: "v0.14.0",
+        } as Record<string, string>,
+        sources: [],
+      },
+      overrides: [],
+      scenario: testDefaultScenario(),
+    });
+    expect(policy.coprocessorDropFlags["sns-worker"]).toContain("--bucket-name");
+    expect(policy.coprocessorArgs["sns-worker"]).toContainEqual(["--bucket-name-ct128", { env: "BUCKET_NAME" }]);
+    expect(policy.coprocessorArgs["sns-worker"]).toContainEqual(["--bucket-name-ct64", { env: "BUCKET_NAME" }]);
+  });
+
+  test("keeps the unified bucket flag for sns-worker images from v0.15.0 onward", () => {
+    const policy = compatPolicyForState({
+      versions: {
+        target: "latest-main",
+        lockName: "latest-main.json",
+        env: {
+          COPROCESSOR_SNS_WORKER_VERSION: "v0.15.0-0",
+        } as Record<string, string>,
+        sources: [],
+      },
+      overrides: [],
+      scenario: testDefaultScenario(),
+    });
+    expect(policy.coprocessorDropFlags["sns-worker"] ?? []).not.toContain("--bucket-name");
+    expect(policy.coprocessorArgs["sns-worker"] ?? []).toHaveLength(0);
+  });
+
+  test("shims a registry-pinned fleet from its tag, ignoring the resolved bundle", () => {
+    // Blue-green's BCS fleet pins the previous release while the bundle points at
+    // HEAD, so the tag is the only signal for which flag contract it speaks.
+    const policy = compatArgPolicyForPinnedTag("v0.14.0-7");
+    expect(policy.coprocessorDropFlags["sns-worker"]).toContain("--bucket-name");
+    expect(policy.coprocessorArgs["sns-worker"]).toContainEqual(["--bucket-name-ct128", { env: "BUCKET_NAME" }]);
+    expect(policy.coprocessorArgs["sns-worker"]).toContainEqual(["--bucket-name-ct64", { env: "BUCKET_NAME" }]);
+    // v0.14 already carries the signer flags, so the 0.14.0 shim must not fire.
+    expect(policy.coprocessorDropFlags["sns-worker"]).not.toContain("--signer-type");
+  });
+
+  test("leaves a registry-pinned fleet unshimmed once it reaches the current contract", () => {
+    const policy = compatArgPolicyForPinnedTag("v0.15.0");
+    expect(policy.coprocessorArgs).toEqual({});
+    expect(policy.coprocessorDropFlags).toEqual({});
   });
 
   test("drops kms-generation-address for old host listener images", () => {

@@ -514,4 +514,40 @@ gcs:
       );
     });
   });
+
+  test("blue-green shims the BCS fleet from its pinned tag, not the resolved bundle", async () => {
+    const pinnedBcsScenario = resolveBlueGreenScenario(
+      path.join("/tmp", "blue-green-pinned-bcs.yaml"),
+      parseBlueGreenScenario(`
+version: 1
+kind: blue-green
+bcs:
+  source:
+    mode: registry
+    tag: v0.14.0-7
+gcs:
+  source: { mode: local }
+  stackVersion: "0.15.0"
+`),
+    );
+    const bgState: State = { ...state, scenario: pinnedBcsScenario };
+    await withTempStateDir(async () => {
+      await mkdir(path.dirname(envPath("coprocessor")), { recursive: true });
+      await writeFile(envPath("coprocessor"), "BUCKET_NAME=coproc-0\n");
+      await generateComposeOverrides(bgState, stackSpecForState(bgState));
+      const doc = YAML.parse(await readFile(composePath("coprocessor"), "utf8")) as {
+        services: Record<string, { command?: string[] }>;
+      };
+      // BCS runs the v0.14 image, which predates the unified --bucket-name flag,
+      // even though the resolved bundle points at HEAD.
+      const bcsCommand = doc.services["coprocessor-sns-worker"]?.command ?? [];
+      expect(bcsCommand).toContain("--bucket-name-ct128=coproc-0");
+      expect(bcsCommand).toContain("--bucket-name-ct64=coproc-0");
+      expect(bcsCommand).not.toContain("--bucket-name=coproc-0");
+      // GCS builds from the working tree, so it keeps the modern flag.
+      const gcsCommand = doc.services["coprocessor-gcs-sns-worker"]?.command ?? [];
+      expect(gcsCommand).toContain("--bucket-name=coproc-0");
+      expect(gcsCommand.filter((arg) => arg.startsWith("--bucket-name-"))).toEqual([]);
+    });
+  });
 });
