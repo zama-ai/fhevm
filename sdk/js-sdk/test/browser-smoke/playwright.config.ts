@@ -4,7 +4,7 @@ export default defineConfig({
   testDir: './specs',
   timeout: 300_000,
   webServer: {
-    command: 'npx vite --config test/browser/vite.config.ts',
+    command: 'npx vite --config test/browser-smoke/vite.config.ts',
     port: 3333,
     reuseExistingServer: !process.env.CI,
   },

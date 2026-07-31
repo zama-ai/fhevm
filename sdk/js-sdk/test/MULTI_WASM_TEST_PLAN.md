@@ -218,7 +218,7 @@ Cases:
 
 ### Phase 4 - Lightweight Browser Module Coexistence
 
-Add one lightweight Playwright page under `test/browser`, not `test/multi-wasm`.
+Add one lightweight Playwright page under `test/browser-smoke`, not `test/multi-wasm`.
 
 Reason:
 
@@ -293,7 +293,7 @@ Those tests should not use native SDK objects across the isolation boundary.
 2. Add single-version smoke tests for both deployments.
 3. Add Node two-client coexistence with explicit `numberOfThreads`.
 4. Add cross-version contamination guards.
-5. Add lightweight browser same-realm module coexistence under `test/browser`.
+5. Add lightweight browser same-realm module coexistence under `test/browser-smoke`.
 6. Optionally add memory/resource instrumentation.
 7. Keep isolated restart/terminate/reload testing as a separate future track.
 
@@ -310,7 +310,7 @@ Those tests should not use native SDK objects across the isolation boundary.
 - `src/core/modules/encrypt/module` - TFHE module init and API wrappers.
 - `src/core/modules/decrypt/module` - TKMS module init and API wrappers.
 - `src/wasm/tfhe/*/startWorkers.js` - generated TFHE worker lifecycle.
-- `test/browser` - lightweight browser loader and direct-module coexistence smoke tests.
+- `test/browser-smoke` - lightweight browser loader and direct-module coexistence smoke tests.
 - `test/multi-wasm` - existing browser roundtrip matrix and asset-loading harness.
 - `docs/compatibility.md` - compatibility notes and version mapping.
 
@@ -318,7 +318,7 @@ Those tests should not use native SDK objects across the isolation boundary.
 
 These target the failure and contention surfaces of running multiple WASM instances in
 one realm — concurrency, inter-WASM pollution, cache races, state drift. They extend the
-browser smoke ([`test/browser/scripts/smoke-coexistence.ts`](browser/scripts/smoke-coexistence.ts)),
+browser smoke ([`test/browser-smoke/scripts/smoke-coexistence.ts`](browser-smoke/scripts/smoke-coexistence.ts)),
 which already covers concurrent init of different versions, the
 `(module version × served key format)` compatibility matrix, and **concurrent** execution
 of that whole matrix via `Promise.all` (with deterministic ordered assertion afterward).
