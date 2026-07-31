@@ -626,6 +626,14 @@ mod tests {
     use super::*;
     use anchor_lang::AccountSerialize;
 
+    /// Doc-sync guard (the `resource_bounds_match_liveness_doc` pattern): EVM_PARITY.md's
+    /// FHEVMExecutor row quotes `MAX_FHE_BATCH_OPS=32`; a change here must update that row in
+    /// the same PR.
+    #[test]
+    fn batch_ops_bound_matches_evm_parity_doc() {
+        assert_eq!(MAX_FHE_BATCH_OPS, 32, "EVM_PARITY.md FHEVMExecutor row");
+    }
+
     fn encrypted_value_account(handle: [u8; 32], subjects: &[Pubkey]) -> EncryptedValue {
         EncryptedValue {
             domain: Pubkey::default(),

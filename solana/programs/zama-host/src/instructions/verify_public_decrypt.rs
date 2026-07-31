@@ -161,3 +161,29 @@ pub fn verify_public_decrypt(
     set_return_data(&return_bytes);
     Ok(())
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// Doc-sync guard (the `resource_bounds_match_liveness_doc` pattern): this module's docs and
+    /// DESIGN_DECISIONS.md quote the return_data as exactly 72 bytes laid out
+    /// `handle ‖ cleartext ‖ context_id (LE)`. Borsh of [`PublicDecryptReturnData`] must stay
+    /// byte-identical to that hand-packed layout — CPI consumers parse return_data through the
+    /// struct, and the mollusk suite pins the same bytes end to end.
+    #[test]
+    fn return_data_matches_quoted_layout() {
+        let value = PublicDecryptReturnData {
+            handle: [0xAB; 32],
+            cleartext: [0xCD; 32],
+            context_id: 0x0102_0304_0506_0708,
+        };
+        let mut bytes = Vec::new();
+        value.serialize(&mut bytes).unwrap();
+        let mut expected = vec![0u8; 72];
+        expected[..32].copy_from_slice(&[0xAB; 32]);
+        expected[32..64].copy_from_slice(&[0xCD; 32]);
+        expected[64..].copy_from_slice(&0x0102_0304_0506_0708u64.to_le_bytes());
+        assert_eq!(bytes, expected);
+    }
+}
