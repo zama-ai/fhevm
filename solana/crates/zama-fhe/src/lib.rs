@@ -92,8 +92,6 @@ pub enum BatchBuildError {
     BinaryOperandTypeMismatch,
     /// Ternary operand handle types do not match the selected operator.
     TernaryOperandTypeMismatch,
-    /// The encrypted-input proof does not contain the selected handle.
-    InvalidInputProof,
     /// A persistent output subject list would be rejected by the host.
     InvalidSubjects,
     /// An encrypted-value key contains an app-domain pubkey the host would reject.

@@ -75,12 +75,12 @@ pub(crate) fn verify_input_attestation(
         ZamaHostError::GatewayVerifierConfigUnset
     );
     require!(
-        !ct_handles.is_empty() && ct_handles.len() <= MAX_INPUT_PROOF_HANDLES,
-        ZamaHostError::InvalidInputProof
+        !ct_handles.is_empty() && ct_handles.len() <= MAX_INPUT_ATTESTATION_HANDLES,
+        ZamaHostError::MalformedInputAttestation
     );
     require!(
-        extra_data.len() <= MAX_INPUT_PROOF_EXTRA_DATA,
-        ZamaHostError::InvalidInputProof
+        extra_data.len() <= MAX_INPUT_ATTESTATION_EXTRA_DATA,
+        ZamaHostError::MalformedInputAttestation
     );
     // EVM parity: InputVerifier requires `contractChainId == block.chainid`. The attested
     // `contract_chain_id` is the HOST chain id (not the gateway chain id used for the EIP-712 domain).

@@ -44,10 +44,10 @@ pub const WILDCARD_APP_CONTEXT_BYTES: [u8; 32] = [0xff; 32];
 /// indices (`producer_index`, dictionary and account indices) are `u8`, bounding any future raise
 /// at 256.
 pub const MAX_FHE_BATCH_OPS: usize = 32;
-/// Maximum number of external encrypted-input handles in one signed proof.
-pub const MAX_INPUT_PROOF_HANDLES: usize = 16;
-/// Maximum opaque verifier payload bytes carried in one signed input proof.
-pub const MAX_INPUT_PROOF_EXTRA_DATA: usize = 256;
+/// Maximum number of external encrypted-input handles attested in one coprocessor attestation.
+pub const MAX_INPUT_ATTESTATION_HANDLES: usize = 16;
+/// Maximum opaque verifier payload bytes carried in one coprocessor attestation.
+pub const MAX_INPUT_ATTESTATION_EXTRA_DATA: usize = 256;
 
 pub(crate) const COMPUTATION_DOMAIN_SEPARATOR: &[u8] = b"FHE_comp";
 pub(crate) const COMPUTED_HANDLE_MARKER: u8 = 0xff;

@@ -24,14 +24,14 @@ pub enum ZamaHostError {
     /// The instruction included undeclared trailing account metas.
     #[msg("instruction has unexpected remaining accounts")]
     UnexpectedRemainingAccounts,
-    /// A signed input proof has an invalid handle list, payload, or binding.
-    #[msg("input proof is invalid")]
-    InvalidInputProof,
-    /// The selected input handle index is outside the proof handle list.
-    #[msg("input proof handle index is invalid")]
+    /// The attestation's handle list is empty or oversized, or its extra data exceeds the limit.
+    #[msg("input attestation payload is malformed")]
+    MalformedInputAttestation,
+    /// The selected input handle index is outside the attestation handle list.
+    #[msg("attestation handle index is invalid")]
     InvalidInputHandleIndex,
     /// The selected input handle does not match the requested handle.
-    #[msg("input proof selected handle does not match")]
+    #[msg("attestation selected handle does not match")]
     InvalidInputHandle,
     /// The coprocessor EIP-712 input attestation failed secp256k1 threshold verification.
     #[msg("coprocessor input attestation is invalid")]

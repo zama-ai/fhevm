@@ -1697,18 +1697,18 @@
     },
     {
       "code": 6005,
-      "name": "InvalidInputProof",
-      "msg": "input proof is invalid"
+      "name": "MalformedInputAttestation",
+      "msg": "input attestation payload is malformed"
     },
     {
       "code": 6006,
       "name": "InvalidInputHandleIndex",
-      "msg": "input proof handle index is invalid"
+      "msg": "attestation handle index is invalid"
     },
     {
       "code": 6007,
       "name": "InvalidInputHandle",
-      "msg": "input proof selected handle does not match"
+      "msg": "attestation selected handle does not match"
     },
     {
       "code": 6008,
