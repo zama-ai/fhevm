@@ -47,6 +47,22 @@ impl From<MmrInclusionProof> for zama_solana_acl::MmrProof {
     }
 }
 
+/// Typed layout of the `return_data` written by `verify_public_decrypt`, shared with CPI
+/// consumers so nobody hand-computes byte offsets. Borsh of this struct is byte-identical to the
+/// historical hand-packed 72 bytes (`handle ‖ cleartext ‖ context_id` little-endian) — the
+/// runtime-test suite pins the exact bytes — so introducing it changed nothing on the wire.
+#[derive(AnchorSerialize, AnchorDeserialize, Clone, Debug, PartialEq, Eq)]
+pub struct PublicDecryptReturnData {
+    /// The exact handle proven publicly decryptable.
+    pub handle: [u8; 32],
+    /// The certified 32-byte big-endian `uint256` cleartext.
+    pub cleartext: [u8; 32],
+    /// The verified KMS context id, letting a caller set its own rotation policy — an
+    /// informational consumer accepts any live context, a value-releasing one may demand
+    /// `context_id == host_config.current_kms_context_id`.
+    pub context_id: u64,
+}
+
 /// Accounts for `verify_public_decrypt`. All read-only: a pure verifier reads state and returns a
 /// value, so it takes no payer, no signer, and no system program.
 #[derive(Accounts)]
@@ -135,13 +151,13 @@ pub fn verify_public_decrypt(
     )
     .map_err(|_| error!(ZamaHostError::PublicDecryptProofInvalid))?;
 
-    // `handle ++ cleartext ++ context_id`: the verified context id (8 little-endian bytes) lets a
-    // caller set its own rotation policy — an informational consumer accepts any live context, a
-    // value-releasing one may demand `context_id == current`.
-    let mut return_data = [0u8; 72];
-    return_data[..32].copy_from_slice(&handle);
-    return_data[32..64].copy_from_slice(&cleartext);
-    return_data[64..].copy_from_slice(&cert_context_id.to_le_bytes());
-    set_return_data(&return_data);
+    let return_data = PublicDecryptReturnData {
+        handle,
+        cleartext,
+        context_id: cert_context_id,
+    };
+    let mut return_bytes = Vec::with_capacity(72);
+    return_data.serialize(&mut return_bytes)?;
+    set_return_data(&return_bytes);
     Ok(())
 }
