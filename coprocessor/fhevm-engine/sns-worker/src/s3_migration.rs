@@ -597,14 +597,8 @@ async fn migrate_ct64_object(
     }
 
     let key = current_s3_ct64_key(&material.handle);
-    if object_has_current_attestation(
-        client,
-        &s3.bucket_ct64,
-        &key,
-        CiphertextKind::Ct64,
-        material,
-    )
-    .await?
+    if object_has_current_attestation(client, &s3.bucket, &key, CiphertextKind::Ct64, material)
+        .await?
     {
         return Ok(());
     }
@@ -615,7 +609,7 @@ async fn migrate_ct64_object(
 
     if try_copy_existing_object(
         client,
-        &s3.bucket_ct64,
+        &s3.bucket,
         &source,
         &key,
         "ct64_compressed",
@@ -635,7 +629,7 @@ async fn migrate_ct64_object(
     let bytes = if bytes.is_empty() {
         download_existing_object(
             client,
-            &s3.bucket_ct64,
+            &s3.bucket,
             &[source],
             CiphertextKind::Ct64,
             &material.ct64_digest,
@@ -651,15 +645,7 @@ async fn migrate_ct64_object(
         bytes
     };
 
-    put_object_with_metadata(
-        client,
-        &s3.bucket_ct64,
-        &key,
-        "ct64_compressed",
-        material,
-        bytes,
-    )
-    .await
+    put_object_with_metadata(client, &s3.bucket, &key, "ct64_compressed", material, bytes).await
 }
 
 async fn migrate_ct128_object(
@@ -677,17 +663,12 @@ async fn migrate_ct128_object(
     let digest_key = hex::encode(&material.ct128_digest);
     let ct_format = material.ct128_format.to_string();
 
-    let key_is_current = object_has_current_attestation(
-        client,
-        &s3.bucket_ct128,
-        &key,
-        CiphertextKind::Ct128,
-        material,
-    )
-    .await?;
+    let key_is_current =
+        object_has_current_attestation(client, &s3.bucket, &key, CiphertextKind::Ct128, material)
+            .await?;
     let digest_key_is_current = object_has_current_attestation(
         client,
-        &s3.bucket_ct128,
+        &s3.bucket,
         &digest_key,
         CiphertextKind::Ct128,
         material,
@@ -708,7 +689,7 @@ async fn migrate_ct128_object(
 
         if !try_copy_any_existing_object(
             client,
-            &s3.bucket_ct128,
+            &s3.bucket,
             &sources,
             &key,
             &ct_format,
@@ -728,8 +709,7 @@ async fn migrate_ct128_object(
                         ))
                     })?;
 
-            put_object_with_metadata(client, &s3.bucket_ct128, &key, &ct_format, material, bytes)
-                .await?;
+            put_object_with_metadata(client, &s3.bucket, &key, &ct_format, material, bytes).await?;
         }
     }
 
@@ -737,7 +717,7 @@ async fn migrate_ct128_object(
         let source = CopySourceCandidate { key };
         if !try_copy_existing_object(
             client,
-            &s3.bucket_ct128,
+            &s3.bucket,
             &source,
             &digest_key,
             &ct_format,
@@ -765,7 +745,7 @@ async fn migrated_objects_are_current(
     if material.has_ct64
         && !object_has_current_attestation(
             client,
-            &s3.bucket_ct64,
+            &s3.bucket,
             &current_s3_ct64_key(&material.handle),
             CiphertextKind::Ct64,
             material,
@@ -779,7 +759,7 @@ async fn migrated_objects_are_current(
         let digest_key = hex::encode(&material.ct128_digest);
         let key_is_current = object_has_current_attestation(
             client,
-            &s3.bucket_ct128,
+            &s3.bucket,
             &current_s3_ct128_key(&material.handle),
             CiphertextKind::Ct128,
             material,
@@ -787,7 +767,7 @@ async fn migrated_objects_are_current(
         .await?;
         let digest_key_is_current = object_has_current_attestation(
             client,
-            &s3.bucket_ct128,
+            &s3.bucket,
             &digest_key,
             CiphertextKind::Ct128,
             material,

@@ -170,13 +170,12 @@ async fn run_batch_computations(
     with_compression: bool,
 ) -> anyhow::Result<()> {
     let pool = &test_env.pool;
-    let bucket128 = &test_env.conf.s3.bucket_ct128;
-    let bucket64 = &test_env.conf.s3.bucket_ct64;
+    let bucket = &test_env.conf.s3.bucket;
 
     clean_up(pool).await?;
 
-    assert_ciphertext_s3_object_count(test_env, bucket128, Some(S3_CT128_KEY_PREFIX), 0i64).await;
-    assert_ciphertext_s3_object_count(test_env, bucket64, Some(S3_CT64_KEY_PREFIX), 0i64).await;
+    assert_ciphertext_s3_object_count(test_env, bucket, Some(S3_CT128_KEY_PREFIX), 0i64).await;
+    assert_ciphertext_s3_object_count(test_env, bucket, Some(S3_CT64_KEY_PREFIX), 0i64).await;
 
     info!(batch_size, "Inserting ciphertexts ...");
 
@@ -225,20 +224,20 @@ async fn run_batch_computations(
     // Assert that all ciphertext objects are uploaded to S3
     assert_ciphertext_s3_object_count(
         test_env,
-        bucket128,
+        bucket,
         Some(S3_CT128_KEY_PREFIX),
         batch_size as i64,
     )
     .await;
     assert_ciphertext_s3_object_count(
         test_env,
-        bucket64,
+        bucket,
         Some(S3_CT64_KEY_PREFIX),
         batch_size as i64,
     )
     .await;
     // ct128 and ct64 share a single bucket and nothing else is uploaded there
-    assert_ciphertext_s3_object_count(test_env, bucket128, None, 2 * batch_size as i64).await;
+    assert_ciphertext_s3_object_count(test_env, bucket, None, 2 * batch_size as i64).await;
 
     anyhow::Result::<()>::Ok(())
 }
@@ -681,10 +680,7 @@ async fn setup_localstack(
     let aws_conf = aws_config::load_defaults(BehaviorVersion::latest()).await;
     let client: aws_sdk_s3::Client = aws_sdk_s3::Client::new(&aws_conf);
 
-    recreate_bucket(&client, &conf.s3.bucket_ct128).await?;
-    if conf.s3.bucket_ct64 != conf.s3.bucket_ct128 {
-        recreate_bucket(&client, &conf.s3.bucket_ct64).await?;
-    }
+    recreate_bucket(&client, &conf.s3.bucket).await?;
 
     Ok((localstack, client))
 }
@@ -954,7 +950,7 @@ async fn assert_ciphertext128(
 
         assert_ciphertext_uploaded(
             test_env,
-            &test_env.conf.s3.bucket_ct128,
+            &test_env.conf.s3.bucket,
             &s3_ct128_key(handle, crate::aws_upload::COPROCESSOR_CONTEXT_ID_1),
             handle,
             Some(ct.len() as i64),
@@ -963,7 +959,7 @@ async fn assert_ciphertext128(
         .await?;
         assert_ciphertext_uploaded(
             test_env,
-            &test_env.conf.s3.bucket_ct64,
+            &test_env.conf.s3.bucket,
             &s3_ct64_key(handle, crate::aws_upload::COPROCESSOR_CONTEXT_ID_1),
             handle,
             None,
@@ -1194,8 +1190,7 @@ fn build_test_config(url: DatabaseURL, enable_compression: bool) -> Config {
         s3: S3Config {
             // Single bucket for both ct128 and ct64, as deployed in production.
             // Ensures the tests catch any key collision between the two artifacts.
-            bucket_ct128: "copro".to_owned(),
-            bucket_ct64: "copro".to_owned(),
+            bucket: "copro".to_owned(),
             max_concurrent_uploads: 2000,
             retry_policy: S3RetryPolicy {
                 max_retries_per_upload: 100,

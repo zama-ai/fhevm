@@ -359,7 +359,7 @@ async fn plan_ct64_object(
     let key = current_s3_ct64_key(&material.handle);
     if object_has_current_attestation(
         client,
-        &config.s3.bucket_ct64,
+        &config.s3.bucket,
         &key,
         CiphertextKind::Ct64,
         material,
@@ -376,7 +376,7 @@ async fn plan_ct64_object(
 
     if object_body_matches_expected(
         client,
-        &config.s3.bucket_ct64,
+        &config.s3.bucket,
         &source.key,
         CiphertextKind::Ct64,
         &material.ct64_digest,
@@ -394,7 +394,7 @@ async fn plan_ct64_object(
     if bytes.is_empty() {
         download_existing_object(
             client,
-            &config.s3.bucket_ct64,
+            &config.s3.bucket,
             &[source],
             CiphertextKind::Ct64,
             &material.ct64_digest,
@@ -429,7 +429,7 @@ async fn plan_ct128_object(
 
     let key_is_current = object_has_current_attestation(
         client,
-        &config.s3.bucket_ct128,
+        &config.s3.bucket,
         &key,
         CiphertextKind::Ct128,
         material,
@@ -437,7 +437,7 @@ async fn plan_ct128_object(
     .await?;
     let digest_key_is_current = object_has_current_attestation(
         client,
-        &config.s3.bucket_ct128,
+        &config.s3.bucket,
         &digest_key,
         CiphertextKind::Ct128,
         material,
@@ -459,7 +459,7 @@ async fn plan_ct128_object(
         let sources = [digest_key.clone(), legacy_key];
         if object_source_matches(
             client,
-            &config.s3.bucket_ct128,
+            &config.s3.bucket,
             &sources,
             CiphertextKind::Ct128,
             &material.ct128_digest,

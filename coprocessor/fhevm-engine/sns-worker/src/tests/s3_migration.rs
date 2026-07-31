@@ -168,7 +168,7 @@ async fn test_before_and_quit_migrates_ct64_from_legacy_digest_key() {
     let legacy_digest_key = hex::encode(&ct64_digest);
     s3_client
         .put_object()
-        .bucket(&conf.s3.bucket_ct64)
+        .bucket(&conf.s3.bucket)
         .key(&legacy_digest_key)
         .body(ByteStream::from(ct64_bytes))
         .send()
@@ -176,7 +176,7 @@ async fn test_before_and_quit_migrates_ct64_from_legacy_digest_key() {
         .expect("upload legacy ct64 digest-key object");
 
     let current_key = s3_ct64_key(&handle, crate::aws_upload::COPROCESSOR_CONTEXT_ID_1);
-    let bucket_ct64 = conf.s3.bucket_ct64.clone();
+    let bucket = conf.s3.bucket.clone();
 
     let run_result = timeout(
         Duration::from_secs(15),
@@ -189,7 +189,7 @@ async fn test_before_and_quit_migrates_ct64_from_legacy_digest_key() {
 
     s3_client
         .head_object()
-        .bucket(bucket_ct64)
+        .bucket(&bucket)
         .key(current_key)
         .send()
         .await
@@ -285,7 +285,7 @@ async fn test_before_and_quit_migrates_ct64_and_ct128_from_legacy_digest_keys() 
     let ct64_legacy_digest_key = hex::encode(&ct64_digest);
     s3_client
         .put_object()
-        .bucket(&conf.s3.bucket_ct64)
+        .bucket(&conf.s3.bucket)
         .key(&ct64_legacy_digest_key)
         .body(ByteStream::from(ct64_bytes))
         .send()
@@ -295,7 +295,7 @@ async fn test_before_and_quit_migrates_ct64_and_ct128_from_legacy_digest_keys() 
     let ct128_legacy_digest_key = hex::encode(&ct128_digest);
     s3_client
         .put_object()
-        .bucket(&conf.s3.bucket_ct128)
+        .bucket(&conf.s3.bucket)
         .key(&ct128_legacy_digest_key)
         .body(ByteStream::from(ct128_bytes))
         .send()
@@ -304,8 +304,7 @@ async fn test_before_and_quit_migrates_ct64_and_ct128_from_legacy_digest_keys() 
 
     let current_ct64_key = s3_ct64_key(&handle, crate::aws_upload::COPROCESSOR_CONTEXT_ID_1);
     let current_ct128_key = s3_ct128_key(&handle, crate::aws_upload::COPROCESSOR_CONTEXT_ID_1);
-    let bucket_ct64 = conf.s3.bucket_ct64.clone();
-    let bucket_ct128 = conf.s3.bucket_ct128.clone();
+    let bucket = conf.s3.bucket.clone();
 
     let run_result = timeout(
         Duration::from_secs(15),
@@ -318,7 +317,7 @@ async fn test_before_and_quit_migrates_ct64_and_ct128_from_legacy_digest_keys() 
 
     s3_client
         .head_object()
-        .bucket(bucket_ct64)
+        .bucket(&bucket)
         .key(&current_ct64_key)
         .send()
         .await
@@ -326,7 +325,7 @@ async fn test_before_and_quit_migrates_ct64_and_ct128_from_legacy_digest_keys() 
 
     let current_ct128 = s3_client
         .head_object()
-        .bucket(&bucket_ct128)
+        .bucket(&bucket)
         .key(&current_ct128_key)
         .send()
         .await
@@ -339,7 +338,7 @@ async fn test_before_and_quit_migrates_ct64_and_ct128_from_legacy_digest_keys() 
 
     let digest_key_ct128 = s3_client
         .head_object()
-        .bucket(&bucket_ct128)
+        .bucket(&bucket)
         .key(&ct128_legacy_digest_key)
         .send()
         .await
@@ -400,7 +399,7 @@ async fn test_before_and_quit_records_corrupted_ct64_object_error() {
     insert_legacy_ct64_digest_row(&env.pool, &handle, &ct64_digest).await;
     put_object(
         &env.s3_client,
-        &env.conf.s3.bucket_ct64,
+        &env.conf.s3.bucket,
         &hex::encode(&ct64_digest),
         b"corrupted ct64 bytes".to_vec(),
     )
@@ -418,7 +417,7 @@ async fn test_before_and_quit_records_corrupted_ct64_object_error() {
     assert_recorded_failure(&env.pool, &handle, 1, "missing ct64 object").await;
     assert_object_missing(
         &env.s3_client,
-        &env.conf.s3.bucket_ct64,
+        &env.conf.s3.bucket,
         &s3_ct64_key(&handle, crate::aws_upload::COPROCESSOR_CONTEXT_ID_1),
     )
     .await;
@@ -446,14 +445,14 @@ async fn test_before_and_quit_records_corrupted_ct128_object_error() {
     .await;
     put_object(
         &env.s3_client,
-        &env.conf.s3.bucket_ct64,
+        &env.conf.s3.bucket,
         &hex::encode(&ct64_digest),
         ct64_bytes,
     )
     .await;
     put_object(
         &env.s3_client,
-        &env.conf.s3.bucket_ct128,
+        &env.conf.s3.bucket,
         &hex::encode(&ct128_digest),
         b"corrupted ct128 bytes".to_vec(),
     )
@@ -471,7 +470,7 @@ async fn test_before_and_quit_records_corrupted_ct128_object_error() {
     assert_recorded_failure(&env.pool, &handle, 1, "missing ct128 object").await;
     assert_object_missing(
         &env.s3_client,
-        &env.conf.s3.bucket_ct128,
+        &env.conf.s3.bucket,
         &s3_ct128_key(&handle, crate::aws_upload::COPROCESSOR_CONTEXT_ID_1),
     )
     .await;
@@ -499,7 +498,7 @@ async fn test_before_and_quit_rebuilds_ct64_from_db_when_legacy_object_is_missin
     let current_key = s3_ct64_key(&handle, crate::aws_upload::COPROCESSOR_CONTEXT_ID_1);
     assert_object_body_eq(
         &env.s3_client,
-        &env.conf.s3.bucket_ct64,
+        &env.conf.s3.bucket,
         &current_key,
         &ct64_bytes,
     )
@@ -529,7 +528,7 @@ async fn test_before_and_quit_rebuilds_ct128_from_db_when_legacy_object_is_missi
     .await;
     put_object(
         &env.s3_client,
-        &env.conf.s3.bucket_ct64,
+        &env.conf.s3.bucket,
         &hex::encode(&ct64_digest),
         ct64_bytes,
     )
@@ -545,14 +544,14 @@ async fn test_before_and_quit_rebuilds_ct128_from_db_when_legacy_object_is_missi
     let current_key = s3_ct128_key(&handle, crate::aws_upload::COPROCESSOR_CONTEXT_ID_1);
     assert_object_body_eq(
         &env.s3_client,
-        &env.conf.s3.bucket_ct128,
+        &env.conf.s3.bucket,
         &current_key,
         &ct128_bytes,
     )
     .await;
     assert_object_body_eq(
         &env.s3_client,
-        &env.conf.s3.bucket_ct128,
+        &env.conf.s3.bucket,
         &hex::encode(&ct128_digest),
         &ct128_bytes,
     )
@@ -560,7 +559,7 @@ async fn test_before_and_quit_rebuilds_ct128_from_db_when_legacy_object_is_missi
     let current_ct128 = env
         .s3_client
         .head_object()
-        .bucket(&env.conf.s3.bucket_ct128)
+        .bucket(&env.conf.s3.bucket)
         .key(&current_key)
         .send()
         .await
@@ -598,28 +597,28 @@ async fn test_before_and_quit_rewrites_current_objects_with_stale_metadata() {
     let current_ct128_key = s3_ct128_key(&handle, crate::aws_upload::COPROCESSOR_CONTEXT_ID_1);
     put_object_with_stale_metadata(
         &env.s3_client,
-        &env.conf.s3.bucket_ct64,
+        &env.conf.s3.bucket,
         &current_ct64_key,
         ct64_bytes.clone(),
     )
     .await;
     put_object(
         &env.s3_client,
-        &env.conf.s3.bucket_ct64,
+        &env.conf.s3.bucket,
         &hex::encode(&ct64_digest),
         ct64_bytes.clone(),
     )
     .await;
     put_object_with_stale_metadata(
         &env.s3_client,
-        &env.conf.s3.bucket_ct128,
+        &env.conf.s3.bucket,
         &current_ct128_key,
         ct128_bytes.clone(),
     )
     .await;
     put_object_with_stale_metadata(
         &env.s3_client,
-        &env.conf.s3.bucket_ct128,
+        &env.conf.s3.bucket,
         &hex::encode(&ct128_digest),
         ct128_bytes.clone(),
     )
@@ -634,7 +633,7 @@ async fn test_before_and_quit_rewrites_current_objects_with_stale_metadata() {
     let current_ct64 = env
         .s3_client
         .head_object()
-        .bucket(&env.conf.s3.bucket_ct64)
+        .bucket(&env.conf.s3.bucket)
         .key(&current_ct64_key)
         .send()
         .await
@@ -644,7 +643,7 @@ async fn test_before_and_quit_rewrites_current_objects_with_stale_metadata() {
     let current_ct128 = env
         .s3_client
         .head_object()
-        .bucket(&env.conf.s3.bucket_ct128)
+        .bucket(&env.conf.s3.bucket)
         .key(&current_ct128_key)
         .send()
         .await
@@ -658,7 +657,7 @@ async fn test_before_and_quit_rewrites_current_objects_with_stale_metadata() {
     let digest_ct128 = env
         .s3_client
         .head_object()
-        .bucket(&env.conf.s3.bucket_ct128)
+        .bucket(&env.conf.s3.bucket)
         .key(hex::encode(&ct128_digest))
         .send()
         .await
@@ -671,14 +670,14 @@ async fn test_before_and_quit_rewrites_current_objects_with_stale_metadata() {
 
     assert_object_body_eq(
         &env.s3_client,
-        &env.conf.s3.bucket_ct64,
+        &env.conf.s3.bucket,
         &current_ct64_key,
         &ct64_bytes,
     )
     .await;
     assert_object_body_eq(
         &env.s3_client,
-        &env.conf.s3.bucket_ct128,
+        &env.conf.s3.bucket,
         &current_ct128_key,
         &ct128_bytes,
     )
@@ -738,7 +737,7 @@ async fn test_before_and_quit_records_missing_ct128_object_error() {
     .await;
     put_object(
         &env.s3_client,
-        &env.conf.s3.bucket_ct64,
+        &env.conf.s3.bucket,
         &hex::encode(&ct64_digest),
         ct64_bytes,
     )
@@ -771,7 +770,7 @@ async fn test_before_and_quit_retries_recorded_failure_and_clears_error() {
     record_existing_failure(&env.pool, &handle, "previous missing ct64 object").await;
     put_object(
         &env.s3_client,
-        &env.conf.s3.bucket_ct64,
+        &env.conf.s3.bucket,
         &hex::encode(&ct64_digest),
         ct64_bytes,
     )
@@ -786,7 +785,7 @@ async fn test_before_and_quit_retries_recorded_failure_and_clears_error() {
     let current_key = s3_ct64_key(&handle, crate::aws_upload::COPROCESSOR_CONTEXT_ID_1);
     env.s3_client
         .head_object()
-        .bucket(&env.conf.s3.bucket_ct64)
+        .bucket(&env.conf.s3.bucket)
         .key(current_key)
         .send()
         .await
