@@ -32,7 +32,7 @@ pub struct BatchBuilder {
     /// Latest producer for every persistent account written by this batch. A later
     /// persistent-shaped reference to the same account is lowered canonically as
     /// `AllowedLocal`.
-    pub(crate) persistent_producers: Vec<(anchor_lang::prelude::Pubkey, u16)>,
+    pub(crate) persistent_producers: Vec<(anchor_lang::prelude::Pubkey, u8)>,
     pub(crate) remaining_accounts: Vec<BatchAccountMeta>,
     /// Interned 32-byte constant dictionary the lowered steps reference by `u8` index
     /// (operand handles, scalars, ACL domain keys, app accounts, labels, subjects).
@@ -59,13 +59,13 @@ impl Clone for BatchBuilder {
 
 /// Scratch intern tables for lowering one step — see [`BatchBuilder::commit_step`].
 struct StepLowering<'b> {
-    op_index: u16,
+    op_index: u8,
     steps_len: usize,
     scope: BatchBuilderScope,
     app_authority: BatchAppAuthority,
     remaining_accounts: Vec<BatchAccountMeta>,
     dictionary: Vec<[u8; 32]>,
-    persistent_producers: Vec<(anchor_lang::prelude::Pubkey, u16)>,
+    persistent_producers: Vec<(anchor_lang::prelude::Pubkey, u8)>,
     verified_inputs: &'b [CoprocessorInputAttestation],
 }
 
@@ -105,8 +105,8 @@ impl BatchBuilder {
         &mut self,
         produced_type: u8,
         lower: impl FnOnce(&mut StepLowering<'_>) -> Result<FheExecuteStep>,
-    ) -> Result<u16> {
-        let op_index = u16::try_from(self.steps.len()).map_err(|_| BatchBuildError::TooManyOps)?;
+    ) -> Result<u8> {
+        let op_index = u8::try_from(self.steps.len()).map_err(|_| BatchBuildError::TooManyOps)?;
         let mut scratch = StepLowering {
             op_index,
             steps_len: self.steps.len(),
@@ -160,7 +160,7 @@ impl BatchBuilder {
             return Err(BatchBuildError::UnsupportedFheType);
         }
         let attestation_index =
-            u16::try_from(self.verified_inputs.len()).map_err(|_| BatchBuildError::TooManyOps)?;
+            u8::try_from(self.verified_inputs.len()).map_err(|_| BatchBuildError::TooManyOps)?;
         let input_handle = attestation.input_handle;
         self.verified_inputs.push(attestation);
         Ok(Encrypted::from_operand(Operand::verified_input(

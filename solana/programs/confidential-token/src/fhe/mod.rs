@@ -140,7 +140,7 @@ impl<'info> PersistentOutput<'info> {
     }
 
     pub(crate) fn output(&self) -> zama_fhe::Output {
-        zama_fhe::Output::persistent_output((*self.output).clone())
+        zama_fhe::Output::persistent((*self.output).clone())
     }
 
     /// Reads the handle the host bound into `encrypted_value` by this eval CPI.
@@ -676,7 +676,10 @@ mod tests {
             .add(
                 input,
                 zama_fhe::Scalar::<zama_fhe::Uint<64>>::u64(1),
-                zama_fhe::Output::persistent(output_key, subjects(authority)),
+                zama_fhe::Output::persistent(zama_fhe::PersistentOutput::create(
+                    output_key,
+                    subjects(authority),
+                )),
             )
             .unwrap();
         (builder.finish().unwrap(), input_acl, output_acl, authority)

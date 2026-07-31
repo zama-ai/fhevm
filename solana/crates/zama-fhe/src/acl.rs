@@ -261,14 +261,10 @@ impl Output {
         Self(OutputKind::Transient)
     }
 
-    /// First bind for an encrypted value account (creates the `EncryptedValue` PDA).
-    pub fn persistent(key: EncryptedValueId, subjects: Vec<Pubkey>) -> Self {
-        Self(OutputKind::Persistent(PersistentOutput::create(
-            key, subjects,
-        )))
-    }
-
-    pub fn persistent_output(output: PersistentOutput) -> Self {
+    /// Binds the step output persistently. Whether the output creates or updates its
+    /// `EncryptedValue` PDA is said at the call site through [`PersistentOutput::create`] /
+    /// [`PersistentOutput::update`].
+    pub fn persistent(output: PersistentOutput) -> Self {
         Self(OutputKind::Persistent(output))
     }
 }

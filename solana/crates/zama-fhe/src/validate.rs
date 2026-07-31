@@ -305,7 +305,7 @@ pub(crate) fn validate_binary_step<F>(
     produced_type: F,
 ) -> Result<()>
 where
-    F: Fn(u16) -> Option<u8>,
+    F: Fn(u8) -> Option<u8>,
 {
     validate_supported_binary_output_type(op, output_fhe_type)?;
 
@@ -377,7 +377,7 @@ pub(crate) fn validate_unary_step<F>(
     produced_type: F,
 ) -> Result<()>
 where
-    F: Fn(u16) -> Option<u8>,
+    F: Fn(u8) -> Option<u8>,
 {
     validate_supported_fhe_type(output_fhe_type)?;
     let valid_output = match op {
@@ -434,7 +434,7 @@ pub(crate) fn validate_ternary_step<F>(
     builder_scope: BatchBuilderScope,
 ) -> Result<()>
 where
-    F: Fn(u16) -> Option<u8>,
+    F: Fn(u8) -> Option<u8>,
 {
     validate_supported_fhe_type(output_fhe_type)?;
 
@@ -458,7 +458,7 @@ pub(crate) fn operand_fhe_type<F>(
     produced_type: &F,
 ) -> Result<Option<u8>>
 where
-    F: Fn(u16) -> Option<u8>,
+    F: Fn(u8) -> Option<u8>,
 {
     match &operand.0 {
         OperandKind::Persistent(persistent) => Ok(Some(handle_fhe_type(persistent.handle))),

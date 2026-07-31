@@ -21,7 +21,7 @@ pub(crate) struct Operand(pub(crate) OperandKind);
 pub(crate) enum OperandKind {
     Persistent(PersistentOperand),
     Transient {
-        producer_index: u16,
+        producer_index: u8,
         builder_scope: BatchBuilderScope,
     },
     /// External input verified in-batch via a coprocessor attestation (EVM `fromExternal`). The
@@ -30,7 +30,7 @@ pub(crate) enum OperandKind {
     /// FHE type for operand type-checks without touching the attestation.
     VerifiedInput {
         input_handle: [u8; 32],
-        attestation_index: u16,
+        attestation_index: u8,
     },
     Scalar([u8; 32]),
 }
@@ -43,7 +43,7 @@ impl Operand {
         }))
     }
 
-    pub(crate) fn transient(producer_index: u16, builder_scope: BatchBuilderScope) -> Self {
+    pub(crate) fn transient(producer_index: u8, builder_scope: BatchBuilderScope) -> Self {
         Self(OperandKind::Transient {
             producer_index,
             builder_scope,
@@ -54,7 +54,7 @@ impl Operand {
         Self(OperandKind::Scalar(value))
     }
 
-    pub(crate) fn verified_input(input_handle: [u8; 32], attestation_index: u16) -> Self {
+    pub(crate) fn verified_input(input_handle: [u8; 32], attestation_index: u8) -> Self {
         Self(OperandKind::VerifiedInput {
             input_handle,
             attestation_index,

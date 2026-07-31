@@ -103,7 +103,10 @@ fn batch_build_runs_closure_and_finishes_batch() {
         builder.add(
             incremented,
             Scalar::<Uint<64>>::u64(2),
-            Output::persistent(output_key, subjects(primary_authority)),
+            Output::persistent(PersistentOutput::create(
+                output_key,
+                subjects(primary_authority),
+            )),
         )
     })
     .unwrap();
@@ -140,7 +143,10 @@ fn builder_rejects_post_write_persistent_alias() {
     let key = encrypted_value_id(authority, 7);
     let mut builder = BatchBuilder::new(app_authority(authority));
     builder
-        .trivial_encrypt_u64(7, Output::persistent(key.clone(), subjects(authority)))
+        .trivial_encrypt_u64(
+            7,
+            Output::persistent(PersistentOutput::create(key.clone(), subjects(authority))),
+        )
         .unwrap();
 
     let reconstructed = Uint64Handle::persistent(balance_handle(99), key).unwrap();
@@ -168,7 +174,10 @@ fn batch_build_lowers_verified_input_operand() {
         builder.add(
             amount,
             Scalar::<Uint<64>>::u64(1),
-            Output::persistent(output_key, subjects(primary_authority)),
+            Output::persistent(PersistentOutput::create(
+                output_key,
+                subjects(primary_authority),
+            )),
         )
     })
     .unwrap();
@@ -379,7 +388,10 @@ fn invoke_batch_signed_with_builder_adds_fixed_authority_before_resolution() {
             builder.add(
                 balance,
                 Scalar::<Uint<64>>::u64(1),
-                Output::persistent(output_key, subjects(primary_authority)),
+                Output::persistent(PersistentOutput::create(
+                    output_key,
+                    subjects(primary_authority),
+                )),
             )
         },
     )
@@ -417,7 +429,10 @@ fn invoke_batch_signed_with_builder_requires_additional_output_authorities() {
             builder.add(
                 balance,
                 Scalar::<Uint<64>>::u64(1),
-                Output::persistent(output_key, subjects(extra_authority)),
+                Output::persistent(PersistentOutput::create(
+                    output_key,
+                    subjects(extra_authority),
+                )),
             )
         },
     )
@@ -450,7 +465,10 @@ fn lowers_mixed_batch_to_stable_remaining_account_indices() {
             success,
             debit_candidate,
             balance,
-            Output::persistent(output_key, subjects(primary_authority)),
+            Output::persistent(PersistentOutput::create(
+                output_key,
+                subjects(primary_authority),
+            )),
         )
         .unwrap();
 
@@ -526,7 +544,10 @@ fn dynamic_account_requirements_expose_order_roles_and_purposes() {
         builder.add(
             input,
             Scalar::<Uint<64>>::u64(2),
-            Output::persistent(output_key, subjects(extra_authority)),
+            Output::persistent(PersistentOutput::create(
+                output_key,
+                subjects(extra_authority),
+            )),
         )
     })
     .unwrap();
@@ -571,7 +592,7 @@ fn lowers_explicit_output_authority_witness() {
         .add(
             balance,
             Scalar::<Uint<64>>::u64(2),
-            Output::persistent(output_key, subjects(authority)),
+            Output::persistent(PersistentOutput::create(output_key, subjects(authority))),
         )
         .unwrap();
 
@@ -637,7 +658,10 @@ fn resolve_accounts_orders_and_validates_batch_requirements() {
         .add(
             input,
             Scalar::<Uint<64>>::u64(2),
-            Output::persistent(output_key, subjects(extra_authority)),
+            Output::persistent(PersistentOutput::create(
+                output_key,
+                subjects(extra_authority),
+            )),
         )
         .unwrap();
     let batch = builder.finish().unwrap();
@@ -800,7 +824,10 @@ fn resolve_accounts_rejects_known_accounts_in_wrong_bucket() {
         .add(
             input,
             Scalar::<Uint<64>>::u64(2),
-            Output::persistent(output_key, subjects(extra_authority)),
+            Output::persistent(PersistentOutput::create(
+                output_key,
+                subjects(extra_authority),
+            )),
         )
         .unwrap();
     let batch = builder.finish().unwrap();
@@ -870,7 +897,10 @@ fn lowers_birth_steps() {
     let mut builder = BatchBuilder::new(app_authority(primary_authority));
     let trivial = builder.trivial_encrypt_u64(1, Output::transient()).unwrap();
     builder
-        .rand_u64(Output::persistent(output_key, subjects(primary_authority)))
+        .rand_u64(Output::persistent(PersistentOutput::create(
+            output_key,
+            subjects(primary_authority),
+        )))
         .unwrap();
     builder
         .add(trivial, Scalar::<Uint<64>>::u64(1), Output::transient())
@@ -1302,7 +1332,10 @@ fn persistent_output_create_matches_batch_lowering() {
 
     let mut builder = BatchBuilder::new(app_authority(primary_authority));
     builder
-        .trivial_encrypt_u64(7, Output::persistent(output_key, subjects(subject)))
+        .trivial_encrypt_u64(
+            7,
+            Output::persistent(PersistentOutput::create(output_key, subjects(subject))),
+        )
         .unwrap();
     let batch = builder.finish().unwrap();
     match &batch.args.steps[0] {

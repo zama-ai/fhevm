@@ -69,7 +69,7 @@ impl<'info> PersistentBinding<'info> {
     }
 
     pub(crate) fn output(&self) -> zama_fhe::Output {
-        zama_fhe::Output::persistent_output((*self.output).clone())
+        zama_fhe::Output::persistent((*self.output).clone())
     }
 
     pub(crate) fn account_info(&self) -> AccountInfo<'info> {

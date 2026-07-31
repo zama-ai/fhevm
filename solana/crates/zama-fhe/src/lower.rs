@@ -12,7 +12,7 @@ pub(crate) fn lower_operand(
     dictionary: &mut Vec<[u8; 32]>,
     produced_count: usize,
     builder_scope: BatchBuilderScope,
-    persistent_producers: &[(anchor_lang::prelude::Pubkey, u16)],
+    persistent_producers: &[(anchor_lang::prelude::Pubkey, u8)],
     verified_inputs: &[CoprocessorInputAttestation],
     operand: Operand,
 ) -> Result<FheExecuteOperand> {
@@ -47,8 +47,6 @@ pub(crate) fn lower_operand(
             if producer_index as usize >= produced_count {
                 return Err(BatchBuildError::InvalidTransientReference);
             }
-            let producer_index =
-                u8::try_from(producer_index).map_err(|_| BatchBuildError::TooManyOps)?;
             Ok(FheExecuteOperand::AllowedLocal { producer_index })
         }
         OperandKind::VerifiedInput {
@@ -72,8 +70,8 @@ pub(crate) fn lower_output(
     remaining_accounts: &mut Vec<BatchAccountMeta>,
     dictionary: &mut Vec<[u8; 32]>,
     app_authority: BatchAppAuthority,
-    persistent_producers: &mut Vec<(anchor_lang::prelude::Pubkey, u16)>,
-    producer_index: u16,
+    persistent_producers: &mut Vec<(anchor_lang::prelude::Pubkey, u8)>,
+    producer_index: u8,
     output: Output,
 ) -> Result<FheExecuteOutput> {
     match output.0 {
