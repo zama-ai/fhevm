@@ -1,4 +1,4 @@
-//! Durable-output addressing and ACL policy types.
+//! Persistent-output addressing and ACL policy types.
 
 use crate::types::FheType;
 
@@ -11,9 +11,9 @@ use crate::{EvalBuildError, Result};
 
 /// App-domain encrypted field label.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
-pub struct DurableLabel([u8; 32]);
+pub struct PersistentLabel([u8; 32]);
 
-impl DurableLabel {
+impl PersistentLabel {
     pub const fn new(bytes: [u8; 32]) -> Self {
         Self(bytes)
     }
@@ -31,11 +31,11 @@ impl DurableLabel {
 pub struct EncryptedValueKey {
     pub(crate) namespace: Pubkey,
     pub(crate) account: Pubkey,
-    pub(crate) label: DurableLabel,
+    pub(crate) label: PersistentLabel,
 }
 
 impl EncryptedValueKey {
-    pub fn new(namespace: Pubkey, account: Pubkey, label: DurableLabel) -> Self {
+    pub fn new(namespace: Pubkey, account: Pubkey, label: PersistentLabel) -> Self {
         Self {
             namespace,
             account,
@@ -55,7 +55,7 @@ impl EncryptedValueKey {
         self.account
     }
 
-    pub fn label(&self) -> DurableLabel {
+    pub fn label(&self) -> PersistentLabel {
         self.label
     }
 
@@ -68,7 +68,7 @@ impl EncryptedValueKey {
     }
 }
 
-/// Previous on-chain state a durable output supersedes. `None` means this bind
+/// Previous on-chain state a persistent output supersedes. `None` means this bind
 /// is the encrypted value account's first (the `EncryptedValue` PDA is created).
 #[derive(Debug, Clone, PartialEq, Eq)]
 struct PreviousEncryptedValueAccountState {
@@ -76,16 +76,16 @@ struct PreviousEncryptedValueAccountState {
     subjects: Vec<Pubkey>,
 }
 
-/// Durable output descriptor accepted by durable-only steps such as input bind.
+/// Persistent output descriptor accepted by persistent-only steps such as input bind.
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct DurableOutput {
+pub struct PersistentOutput {
     key: EncryptedValueKey,
     subjects: Vec<Pubkey>,
     previous: Option<PreviousEncryptedValueAccountState>,
     make_public: bool,
 }
 
-impl DurableOutput {
+impl PersistentOutput {
     /// First bind for an encrypted value account: creates the `EncryptedValue` PDA.
     pub fn create(key: EncryptedValueKey, subjects: Vec<Pubkey>) -> Self {
         Self {
@@ -123,10 +123,10 @@ impl DurableOutput {
         self
     }
 
-    pub fn birth(&self) -> Result<DurableOutputBirth> {
+    pub fn birth(&self) -> Result<PersistentOutputBirth> {
         validate_encrypted_value_key(&self.key)?;
         validate_subjects(&self.subjects)?;
-        Ok(DurableOutputBirth {
+        Ok(PersistentOutputBirth {
             encrypted_value: self.key.address(),
             acl_domain_key: self.key.namespace,
             app_account: self.key.account,
@@ -138,9 +138,9 @@ impl DurableOutput {
     }
 }
 
-/// Host-ready metadata for creating or superseding a durable `EncryptedValue` encrypted value account.
+/// Host-ready metadata for creating or superseding a persistent `EncryptedValue` encrypted value account.
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct DurableOutputBirth {
+pub struct PersistentOutputBirth {
     encrypted_value: Pubkey,
     acl_domain_key: Pubkey,
     app_account: Pubkey,
@@ -150,7 +150,7 @@ pub struct DurableOutputBirth {
     make_public: bool,
 }
 
-impl DurableOutputBirth {
+impl PersistentOutputBirth {
     pub fn encrypted_value(&self) -> Pubkey {
         self.encrypted_value
     }
@@ -243,7 +243,7 @@ pub struct Output(pub(crate) OutputKind);
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) enum OutputKind {
     Transient,
-    Durable(DurableOutput),
+    Persistent(PersistentOutput),
 }
 
 impl Output {
@@ -252,11 +252,13 @@ impl Output {
     }
 
     /// First bind for an encrypted value account (creates the `EncryptedValue` PDA).
-    pub fn durable(key: EncryptedValueKey, subjects: Vec<Pubkey>) -> Self {
-        Self(OutputKind::Durable(DurableOutput::create(key, subjects)))
+    pub fn persistent(key: EncryptedValueKey, subjects: Vec<Pubkey>) -> Self {
+        Self(OutputKind::Persistent(PersistentOutput::create(
+            key, subjects,
+        )))
     }
 
-    pub fn durable_output(output: DurableOutput) -> Self {
-        Self(OutputKind::Durable(output))
+    pub fn persistent_output(output: PersistentOutput) -> Self {
+        Self(OutputKind::Persistent(output))
     }
 }

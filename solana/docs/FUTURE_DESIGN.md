@@ -69,7 +69,7 @@ the listener into the EVM block-status substrate (`host_chain_blocks_valid` +
 
 Carried from `DESIGN_DECISIONS.md` "Open Product Decisions":
 
-- Durable archival / compaction policy for ACL, material, delegation, and replay evidence (no
+- Persistent archival / compaction policy for ACL, material, delegation, and replay evidence (no
   `close_acl_record` today).
 - Confidential-balance profile: keep the immediate available-balance profile or move to staged
   inbound-credit (DD-016).

@@ -37,7 +37,7 @@ pub const WILDCARD_APP_CONTEXT_BYTES: [u8; 32] = [0xff; 32];
 /// envelope headroom — asserted by `mollusk_fhe_eval_max_op_transaction_fits_packet`) and ~150k CU
 /// (under the 200k default budget, so no compute-budget instruction is required). 48 ops would
 /// exceed the default CU budget and leave <5% packet headroom for realistic account envelopes.
-/// The heap-heaviest legal frame shape (all steps born-public durable creates) fits 20 creates
+/// The heap-heaviest legal frame shape (all steps born-public persistent creates) fits 20 creates
 /// on the 32KB bump heap — a hard boundary, since the Anchor default allocator serves a fixed
 /// 32KB region even when a larger heap frame is requested; such frames revert cleanly beyond it
 /// (measured; pinned by `mollusk_fhe_eval_born_public_heap_boundary`). Wire

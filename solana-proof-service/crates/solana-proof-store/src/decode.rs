@@ -14,7 +14,7 @@
 //! consts the production paths use.
 //!
 //! Two event self-CPIs need sibling context: random-seed batches and a born-public (`make_public=true`)
-//! `fhe_eval` durable output commits a public-decrypt leaf to the eval OUTPUT
+//! `fhe_eval` persistent output commits a public-decrypt leaf to the eval OUTPUT
 //! handle, which is derived on-chain from slot entropy and appears in no
 //! instruction arg. The host therefore emits one narrow lifecycle batch from a
 //! self-CPI. [`decode_program_instructions`] accepts it only when it exactly
@@ -36,7 +36,7 @@ pub use solana_proof_source::RawInstruction;
 /// The zama-host `EncryptedValue` instruction, decoded from one compiled instruction.
 ///
 /// Direct allow/make-public instructions carry `encrypted_value` at account
-/// index 2. `remove_subject` uses index 1, and `fhe_eval` durable
+/// index 2. `remove_subject` uses index 1, and `fhe_eval` persistent
 /// outputs reference `remaining_accounts` by index inside the eval plan.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum DecodedInstruction {
@@ -51,7 +51,7 @@ pub enum DecodedInstruction {
     FheEvalCreateEncryptedValue {
         encrypted_value: [u8; 32],
         subjects: Vec<[u8; 32]>,
-        /// `Some(output_handle)` when the durable output was born public
+        /// `Some(output_handle)` when the persistent output was born public
         /// (`make_public=true`) AND its output handle was resolved from the
         /// lifecycle batch this transaction emitted. `None` otherwise — the output
         /// handle is derived on-chain from slot entropy and appears in no
@@ -119,12 +119,12 @@ pub enum DecodeError {
     DataTooShort,
     #[error("missing account at index {0} (encrypted_value)")]
     MissingAccount(usize),
-    #[error("missing fhe_eval durable output account at remaining index {remaining_index} (absolute account index {absolute_index})")]
+    #[error("missing fhe_eval persistent output account at remaining index {remaining_index} (absolute account index {absolute_index})")]
     MissingFheEvalOutputAccount {
         remaining_index: u16,
         absolute_index: usize,
     },
-    #[error("fhe_eval durable output has mismatched previous_handle/previous_subjects options")]
+    #[error("fhe_eval persistent output has mismatched previous_handle/previous_subjects options")]
     InvalidFheEvalPreviousState,
     #[error("fhe_eval constant dictionary index {0} out of bounds")]
     InvalidFheEvalDictionaryIndex(u8),
@@ -165,7 +165,7 @@ pub enum DecodeError {
 /// about, and `Err` only for malformed data.
 ///
 /// Most lifecycle instructions produce one decoded instruction. `fhe_eval` can
-/// produce several because one eval frame can bind several durable outputs.
+/// produce several because one eval frame can bind several persistent outputs.
 pub fn decode_instructions(ix: &RawInstruction) -> Result<Vec<DecodedInstruction>, DecodeError> {
     if ix.data.len() < 8 {
         return Err(DecodeError::DataTooShort);
@@ -191,7 +191,9 @@ pub fn decode_instructions(ix: &RawInstruction) -> Result<Vec<DecodedInstruction
         }
         // Without the lifecycle batch (single-instruction decode), no born-public
         // output handle can be resolved; those leaves fail closed at proof time.
-        Some(ZamaHostInstruction::FheEval(plan)) => decode_fhe_eval_durable_outputs(ix, &plan, &[]),
+        Some(ZamaHostInstruction::FheEval(plan)) => {
+            decode_fhe_eval_persistent_outputs(ix, &plan, &[])
+        }
         None => Ok(Vec::new()),
     }
 }
@@ -218,7 +220,7 @@ fn account_at(ix: &RawInstruction, index: usize) -> Result<[u8; 32], DecodeError
         .ok_or(DecodeError::MissingAccount(index))
 }
 
-fn fhe_eval_durable_output_account(
+fn fhe_eval_persistent_output_account(
     ix: &RawInstruction,
     remaining_index: u8,
 ) -> Result<[u8; 32], DecodeError> {
@@ -237,14 +239,14 @@ fn fhe_eval_durable_output_account(
         })
 }
 
-fn decode_fhe_eval_durable_outputs(
+fn decode_fhe_eval_persistent_outputs(
     ix: &RawInstruction,
     plan: &FheEvalArgs,
     born_public_handles: &[Option<[u8; 32]>],
 ) -> Result<Vec<DecodedInstruction>, DecodeError> {
     let mut out = Vec::new();
     for (step_index, step) in plan.steps.iter().enumerate() {
-        let FheEvalOutput::AllowedDurable {
+        let FheEvalOutput::AllowedPersistent {
             output_encrypted_value_index,
             output_subject_indexes,
             previous_handle,
@@ -255,7 +257,8 @@ fn decode_fhe_eval_durable_outputs(
         else {
             continue;
         };
-        let encrypted_value = fhe_eval_durable_output_account(ix, *output_encrypted_value_index)?;
+        let encrypted_value =
+            fhe_eval_persistent_output_account(ix, *output_encrypted_value_index)?;
         let make_public_handle = if *make_public {
             born_public_handles.get(step_index).copied().flatten()
         } else {
@@ -435,7 +438,7 @@ fn expected_born_public_outputs(
         .iter()
         .enumerate()
         .filter_map(|(step_index, step)| {
-            let FheEvalOutput::AllowedDurable {
+            let FheEvalOutput::AllowedPersistent {
                 output_encrypted_value_index,
                 make_public: true,
                 ..
@@ -444,7 +447,7 @@ fn expected_born_public_outputs(
                 return None;
             };
             Some(
-                fhe_eval_durable_output_account(ix, *output_encrypted_value_index)
+                fhe_eval_persistent_output_account(ix, *output_encrypted_value_index)
                     .map(|account| (step_index as u16, account)),
             )
         })
@@ -572,7 +575,7 @@ pub fn decode_program_instructions(
                 }
                 (false, _) => return Err(DecodeError::UnexpectedBornPublicEvent),
             };
-            out.extend(decode_fhe_eval_durable_outputs(ix, &plan, &handles)?);
+            out.extend(decode_fhe_eval_persistent_outputs(ix, &plan, &handles)?);
             index = frame_end;
         } else {
             out.extend(decode_instructions(ix)?);
@@ -670,7 +673,7 @@ mod tests {
     /// app_account_authority, host_config, system_program, hcu_block_meter,
     /// hcu_trusted_app_record, event_authority, program) followed by
     /// `remaining_accounts` — matching the real anchor account layout so the
-    /// durable output resolves at `FHE_EVAL_REMAINING_BASE`.
+    /// persistent output resolves at `FHE_EVAL_REMAINING_BASE`.
     fn fhe_eval_accounts(remaining: &[[u8; 32]]) -> Vec<[u8; 32]> {
         let mut accounts = vec![
             pk(0xA0),     // 0 payer
@@ -715,13 +718,13 @@ mod tests {
         }
     }
 
-    fn durable_output(
+    fn persistent_output(
         output_encrypted_value_index: u8,
         subject_tags: &[u8],
         previous_handle: Option<[u8; 32]>,
         previous_subject_tags: Option<&[u8]>,
     ) -> FheEvalOutput {
-        FheEvalOutput::AllowedDurable {
+        FheEvalOutput::AllowedPersistent {
             output_encrypted_value_index,
             output_app_account_authority_index: None,
             output_acl_domain_key_index: intern(pk(0x40)),
@@ -735,19 +738,19 @@ mod tests {
         }
     }
 
-    fn make_public_durable_output(
+    fn make_public_persistent_output(
         output_encrypted_value_index: u8,
         subject_tags: &[u8],
         previous_handle: Option<[u8; 32]>,
         previous_subject_tags: Option<&[u8]>,
     ) -> FheEvalOutput {
-        let mut output = durable_output(
+        let mut output = persistent_output(
             output_encrypted_value_index,
             subject_tags,
             previous_handle,
             previous_subject_tags,
         );
-        if let FheEvalOutput::AllowedDurable { make_public, .. } = &mut output {
+        if let FheEvalOutput::AllowedPersistent { make_public, .. } = &mut output {
             *make_public = true;
         }
         output
@@ -879,18 +882,18 @@ mod tests {
     }
 
     #[test]
-    fn decodes_fhe_eval_durable_outputs_in_step_order() {
+    fn decodes_fhe_eval_persistent_outputs_in_step_order() {
         let ev0 = pk(0xE0);
         let ev1 = pk(0xE1);
         let plan = frame(vec![
             FheEvalStep::TrivialEncrypt {
                 plaintext: pk(0x10),
                 fhe_type: 5,
-                output: durable_output(0, &[0x30], None, None),
+                output: persistent_output(0, &[0x30], None, None),
             },
             FheEvalStep::Rand {
                 fhe_type: 5,
-                output: durable_output(1, &[0x31, 0x32], Some(pk(0x20)), Some(&[0x31, 0x32])),
+                output: persistent_output(1, &[0x31, 0x32], Some(pk(0x20)), Some(&[0x31, 0x32])),
             },
         ]);
         let ix = ix_with_anchor_data(fhe_eval_accounts(&[ev0, ev1]), "fhe_eval", plan);
@@ -957,12 +960,12 @@ mod tests {
             FheEvalStep::TrivialEncrypt {
                 plaintext: pk(0x02),
                 fhe_type: 5,
-                output: make_public_durable_output(0, &[0x30], None, None),
+                output: make_public_persistent_output(0, &[0x30], None, None),
             },
             FheEvalStep::TrivialEncrypt {
                 plaintext: pk(0x03),
                 fhe_type: 5,
-                output: make_public_durable_output(1, &[0x31], Some(pk(0x20)), Some(&[0x31])),
+                output: make_public_persistent_output(1, &[0x31], Some(pk(0x20)), Some(&[0x31])),
             },
         ]);
         let eval = ix_with_anchor_data(fhe_eval_accounts(&[ev0, ev1]), "fhe_eval", plan);
@@ -971,7 +974,7 @@ mod tests {
     }
 
     #[test]
-    fn exact_born_public_batch_resolves_each_durable_output() {
+    fn exact_born_public_batch_resolves_each_persistent_output() {
         let (eval, event) = two_born_public_outputs();
         let decoded = decode_program_instructions(program_id(), &[eval, event]).unwrap();
         assert_eq!(
@@ -1034,7 +1037,7 @@ mod tests {
         let plan = frame(vec![FheEvalStep::TrivialEncrypt {
             plaintext: pk(0x02),
             fhe_type: 5,
-            output: durable_output(0, &[0x30], None, None),
+            output: persistent_output(0, &[0x30], None, None),
         }]);
         let eval = ix_with_anchor_data(fhe_eval_accounts(&[pk(0xE0)]), "fhe_eval", plan);
         let event = born_public_event_ix(&[(0, pk(0xE0), pk(0x50))]);
@@ -1160,7 +1163,7 @@ mod tests {
             "fhe_eval",
             frame(vec![FheEvalStep::Rand {
                 fhe_type: 5,
-                output: make_public_durable_output(0, &[0x30], None, None),
+                output: make_public_persistent_output(0, &[0x30], None, None),
             }]),
         );
         let event = random_seed_event_ix(&[(0, [7; 16])]);

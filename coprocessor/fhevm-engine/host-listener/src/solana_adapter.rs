@@ -822,7 +822,7 @@ mod tests {
             tfhe_logs[0].is_allowed,
             "eager compute: schedulable independent of the allow signal"
         );
-        // The durable handle is queued directly for material preparation.
+        // The persistent handle is queued directly for material preparation.
         assert_eq!(material_requests.len(), 1);
     }
 

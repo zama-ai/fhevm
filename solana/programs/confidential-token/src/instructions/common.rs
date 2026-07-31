@@ -45,10 +45,10 @@ pub(crate) struct TransferAccounts<'a, 'info> {
 /// the eval frame differs.
 pub(crate) enum TransferAmountSource<'info> {
     /// EVM `FHE.fromExternal` parity: a coprocessor-attested fresh client-side encryption,
-    /// verified in-frame and transient-allowed for this eval (no durable amount account).
+    /// verified in-frame and transient-allowed for this eval (no persistent amount account).
     Attested(zama_host::CoprocessorInputAttestation),
     /// EVM computed/received `euint64` parity: an existing on-chain `EncryptedValue` encrypted value account,
-    /// spent as a read-only durable operand at its current handle. It is never superseded and
+    /// spent as a read-only persistent operand at its current handle. It is never superseded and
     /// never consumed — only the two balance encrypted value accounts change. The token's spend gate (signing
     /// owner in the value's subject set) and euint64 type check run in the instruction handler
     /// before this reaches the eval builder; the host re-checks the handle is current and that the
@@ -172,26 +172,26 @@ fn execute_transfer_eval<'info>(
     let from_balance = uint64_from_value(old_from_handle, mint_key, from_key, balance_label())?;
     let to_balance = uint64_from_value(old_to_handle, mint_key, to_key, balance_label())?;
     let compute_signer = accounts.compute_signer.key();
-    let balance_access = |owner| fhe::DurableAudience::for_owner(owner, compute_signer);
+    let balance_access = |owner| fhe::PersistentAudience::for_owner(owner, compute_signer);
     let transferred_access = {
-        let access = fhe::DurableAudience::for_owner(from_owner, compute_signer);
+        let access = fhe::PersistentAudience::for_owner(from_owner, compute_signer);
         if to_owner != from_owner {
             access.with_owner(to_owner)
         } else {
             access
         }
     };
-    let from_output = fhe::DurableOutput::new(
+    let from_output = fhe::PersistentOutput::new(
         accounts.from_balance_value.clone(),
         encrypted_value_key(mint_key, from_key, balance_label()),
         balance_access(from_owner),
     )?;
-    let transferred_output = fhe::DurableOutput::new(
+    let transferred_output = fhe::PersistentOutput::new(
         accounts.transferred_amount_value.clone(),
         encrypted_value_key(mint_key, from_key, transferred_amount_label()),
         transferred_access,
     )?;
-    let to_output = fhe::DurableOutput::new(
+    let to_output = fhe::PersistentOutput::new(
         accounts.to_balance_value.clone(),
         encrypted_value_key(mint_key, to_key, balance_label()),
         balance_access(to_owner),
@@ -199,11 +199,11 @@ fn execute_transfer_eval<'info>(
     let mut builder = zama_fhe::EvalBuilder::new(zama_fhe::EvalAppAuthority::new(from_key));
     let amount: zama_fhe::Uint64Handle = match amount_source {
         // fromExternal: the amount is a coprocessor-attested external input, verified in-frame and
-        // transient-allowed for this eval (no durable amount handle / ACL account).
+        // transient-allowed for this eval (no persistent amount handle / ACL account).
         TransferAmountSource::Attested(amount_attestation) => builder
             .verified_input(amount_attestation.clone())
             .map_err(invalid_eval_plan)?,
-        // Existing value: the amount is an on-chain encrypted value account's current handle, read as a durable
+        // Existing value: the amount is an on-chain encrypted value account's current handle, read as a persistent
         // operand. The slot is derived from the value's own canonical fields, so its PDA equals the
         // passed account; the host re-checks handle-is-current and compute-subject membership.
         TransferAmountSource::ExistingValue { amount_value, .. } => {
@@ -246,8 +246,8 @@ fn execute_transfer_eval<'info>(
     let plan = builder.finish().map_err(invalid_eval_plan)?;
     let compute_authority =
         fhe::ComputeAuthority::for_mint(accounts.compute_signer, mint_key, compute_signer_bump)?;
-    // Durable output accounts are the same for both arms; the existing-value arm adds the amount
-    // encrypted value account as a read-only durable input operand the plan now requires.
+    // Persistent output accounts are the same for both arms; the existing-value arm adds the amount
+    // encrypted value account as a read-only persistent input operand the plan now requires.
     let mut dynamic_accounts = vec![
         from_output.account_info(),
         transferred_output.account_info(),
@@ -309,7 +309,7 @@ pub(crate) fn encrypted_value_key(
     zama_fhe::EncryptedValueKey::new(
         acl_domain_key,
         app_account,
-        zama_fhe::DurableLabel::new(encrypted_value_label),
+        zama_fhe::PersistentLabel::new(encrypted_value_label),
     )
 }
 
@@ -319,7 +319,7 @@ pub(crate) fn uint64_from_value(
     app_account: Pubkey,
     encrypted_value_label: [u8; 32],
 ) -> Result<zama_fhe::Uint64Handle> {
-    zama_fhe::Uint64Handle::durable(
+    zama_fhe::Uint64Handle::persistent(
         handle,
         encrypted_value_key(acl_domain_key, app_account, encrypted_value_label),
     )

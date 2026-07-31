@@ -178,7 +178,7 @@ fn zama_solana_acl_value_key(
     zama_fhe::EncryptedValueKey::new(
         acl_domain_key,
         app_account,
-        zama_fhe::DurableLabel::new(label),
+        zama_fhe::PersistentLabel::new(label),
     )
     .value_key()
 }

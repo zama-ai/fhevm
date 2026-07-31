@@ -136,12 +136,12 @@ pub fn quit<'info>(ctx: Context<'info, Quit<'info>>) -> Result<()> {
 
     // Phase 2: reset the joined encrypted value account to an encrypted zero (supersede in
     // place), so a later re-join of the same batch accumulates from zero.
-    let reset_binding = fhe::DurableBinding::bind(
+    let reset_binding = fhe::PersistentBinding::bind(
         ctx.accounts.pending_join_value.to_account_info(),
         zama_fhe::EncryptedValueKey::new(
             batch_key,
             batch_authority,
-            zama_fhe::DurableLabel::new(pending_join_label(user)),
+            zama_fhe::PersistentLabel::new(pending_join_label(user)),
         ),
         vec![
             user,

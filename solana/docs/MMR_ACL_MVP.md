@@ -11,19 +11,19 @@ this note records the operational model in one place.
   authority check.
 - `compute_signer` is separate from identity. In confidential-token it is a mint-scoped PDA and must
   be present in the value's allowed-subject set when token compute needs to use that value.
-- Only `fhe_eval` durable outputs can create or supersede an `EncryptedValue` handle; there is no
+- Only `fhe_eval` persistent outputs can create or supersede an `EncryptedValue` handle; there is no
   instruction that accepts a caller-chosen handle, because such a handle would carry no proof of
   ciphertext provenance. Being an allowed subject is enough to compute/use, grant, request user decrypt, or make the exact current
-  handle public, but it is not enough to supersede the encrypted value account. Durable-output supersession checks
+  handle public, but it is not enough to supersede the encrypted value account. Persistent-output supersession checks
   `previous_handle` and `previous_subjects` against current account state so stale off-chain state
   cannot rotate a handle.
 
 ## Handle Derivation
 
-- A durable `fhe_eval` output handle **is the base handle** — identical to the transient handle.
+- A persistent `fhe_eval` output handle **is the base handle** — identical to the transient handle.
   Deterministic ops are content-addressed over `(op / plaintext, operands, fhe_type, chain_id,
   previous_bank_hash, unix_timestamp)`; rand seeds alone carry uniqueness (`compute_subject` + the
-  frame's durable-write anchor + `op_index`, see DD-043). There is no per-output binding: a durable output and an instruction-local
+  frame's persistent-write anchor + `op_index`, see DD-043). There is no per-output binding: a persistent output and an instruction-local
   output over the same material derive the same handle. This matches EVM `FHEVMExecutor`, which binds
   no per-slot / per-caller / per-encrypted value account value into a computed handle. `value_key` is still the
   `EncryptedValue` PDA seed (`derive_value_key(acl_domain_key, app_account, encrypted_value_label)`) —
@@ -31,7 +31,7 @@ this note records the operational model in one place.
 - There is **no per-output sequence and no encrypted value account binding** in the handle (DD-015). Per-block entropy
   plus the operands/op/type already distinguish distinct ciphertexts. An identical recomputation
   yields an identical handle (deterministic, EVM-parity).
-- Off-chain indexers (host-listener, relayer) obtain durable output handles the same way as transient
+- Off-chain indexers (host-listener, relayer) obtain persistent output handles the same way as transient
   ones — the base-handle derivation over instruction args + block entropy, byte-identical to the
   program — with no encrypted value account leaf-count tracking and no handle hints.
 
@@ -39,12 +39,12 @@ this note records the operational model in one place.
 
 - The ACL is one allowed-subject set. There are no role bits in the MVP account layout. Allowed means
   compute/use, grant another subject, request user decrypt, and make the exact current handle public.
-- Durable-output creation requires at least one subject and at most
+- Persistent-output creation requires at least one subject and at most
   `MAX_ENCRYPTED_VALUE_SUBJECTS = 8`. Subject-list overflow and MMR peak overflow fail explicitly
   instead of relying on implicit vector or arithmetic limits.
 - Subject removal changes only current and future authorization. No new historical leaf is written for
   the removed subject after removal; access sealed before removal remains valid.
-- Audience membership is immutable by default, but a durable-output supersede may explicitly rotate the
+- Audience membership is immutable by default, but a persistent-output supersede may explicitly rotate the
   subject set: `output_subjects` need not equal the stored set. The outgoing audience is sealed into
   historical leaves first (below), then the new set replaces current membership, and every subject the
   rotation adds passes the grant deny-list exactly as `allow_subjects` does. `previous_handle` and
@@ -56,7 +56,7 @@ this note records the operational model in one place.
   seals one `HistoricalAccessLeaf` per then-allowed subject into the value's MMR. Historical reads roll
   forward by proving inclusion against confirmed on-chain peaks.
 - Public decrypt is exact-handle. `make_handle_public` seals a `PublicDecryptLeaf` for the current
-  handle only; a later handle update does not inherit public decryptability. An `fhe_eval` durable
+  handle only; a later handle update does not inherit public decryptability. An `fhe_eval` persistent
   output may instead be *born* public by setting `make_public` on the output: after the new handle is
   written, the same `PublicDecryptLeaf` is sealed for that NEW handle in the same instruction —
   byte-identical to `make_handle_public`, appended LAST (after any supersede historical leaves). This
@@ -93,11 +93,11 @@ ever grows (append-only), so historical and public-decrypt authorizations are pe
 
 ```mermaid
 stateDiagram-v2
-    [*] --> Live : fhe_eval durable output<br/>(≥1 subject, leaf_count=0)
+    [*] --> Live : fhe_eval persistent output<br/>(≥1 subject, leaf_count=0)
     Live --> Live : allow_subjects<br/>(add subject, NO leaf)
     Live --> Live : make_handle_public<br/>(+1 PublicDecryptLeaf for current handle)
-    Live --> Live : fhe_eval durable output<br/>(supersede: +1 HistoricalAccessLeaf per then-subject,<br/>rewrite current_handle, then optionally rotate subjects<br/>— added subjects pass the grant deny-list)
-    Live --> Live : fhe_eval durable output with make_public=true<br/>(supersede leaves, rewrite handle,<br/>then +1 PublicDecryptLeaf for the NEW handle — DD-036)
+    Live --> Live : fhe_eval persistent output<br/>(supersede: +1 HistoricalAccessLeaf per then-subject,<br/>rewrite current_handle, then optionally rotate subjects<br/>— added subjects pass the grant deny-list)
+    Live --> Live : fhe_eval persistent output with make_public=true<br/>(supersede leaves, rewrite handle,<br/>then +1 PublicDecryptLeaf for the NEW handle — DD-036)
     note right of Live
         Account ≤ 2457 bytes for all time
         (153 + 32·subjects≤8 + 32·peaks≤64).
@@ -107,7 +107,7 @@ stateDiagram-v2
 
 ### MMR leaf types + append order
 
-`fhe_eval` durable-output supersession appends one
+`fhe_eval` persistent-output supersession appends one
 `HistoricalAccessLeaf{account, leaf_index, handle, subject}` per then-allowed subject;
 `make_handle_public` (or a born-public output) appends one
 `PublicDecryptLeaf{account, leaf_index, handle}`. A single running `leaf_count` assigns `leaf_index`,
@@ -127,8 +127,8 @@ flowchart LR
 
 ```mermaid
 flowchart TD
-    base["base_handle = H(op / plaintext / rand-seed,<br/>operands, fhe_type, chain_id,<br/>previous_bank_hash, unix_timestamp)<br/>(rand seed alone adds subject +<br/>durable-write anchor + op_index, DD-043)"]
-    base -->|"durable output"| dh["durable handle = base_handle"]
+    base["base_handle = H(op / plaintext / rand-seed,<br/>operands, fhe_type, chain_id,<br/>previous_bank_hash, unix_timestamp)<br/>(rand seed alone adds subject +<br/>persistent-write anchor + op_index, DD-043)"]
+    base -->|"persistent output"| dh["persistent handle = base_handle"]
     base -->|"transient output"| th["transient handle = base_handle"]
 ```
 
@@ -159,7 +159,7 @@ sequenceDiagram
     participant ZH as zama-host
     participant KMS as KMS (off-chain)
     U->>CT: confidential_burn(amount)
-    CT->>ZH: fhe_eval sub → durable output make_public=true
+    CT->>ZH: fhe_eval sub → persistent output make_public=true
     ZH-->>ZH: rewrite current_handle,<br/>append PublicDecryptLeaf(new handle)
     KMS-->>KMS: decrypt burned handle (public proof),<br/>sign cleartext cert
     U->>CT: redeem_burned_amount(burned_handle, cleartext, cert, MMR proof)
@@ -173,7 +173,7 @@ sequenceDiagram
 ```mermaid
 flowchart TD
     prog["zama-host fhe_eval"] -->|"emit_cpi! (single batch CPI, ≤MAX_FHE_EVAL_OPS records;<br/>DD-038; no emit! log fallback)"| ev["op-event (self-CPI inner ix):<br/>carries the block-entropy output handle"]
-    prog -->|"instruction data (args)"| ix["fhe_eval durable-output / make_public args"]
+    prog -->|"instruction data (args)"| ix["fhe_eval persistent-output / make_public args"]
     ev --> proofsvc["solana-proof-service (Yellowstone + Postgres):<br/>resolves born-public handle from op-event,<br/>reconstructs MMR, cross-checks vs confirmed peaks"]
     ix --> listener["host-listener indexer:<br/>Yellowstone gRPC reconstruction-only<br/>(SlotHashes+Clock sysvar streams → block entropy;<br/>never reads events)"]
     proofsvc -.->|"migrate to Carbon/Geyser,<br/>then drop op-event ABI"| followup["fhevm-internal#1665"]

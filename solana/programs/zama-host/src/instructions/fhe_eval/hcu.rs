@@ -3,7 +3,7 @@
 //! Pure, account-independent metering over an `fhe_eval` plan. Everything needed is in
 //! [`FheEvalStep`]: a step's cost is a function of its op, result FHE type, and scalar flag; its
 //! critical-path *depth* is a function of the operand *kinds* (an `AllowedLocal` reads the depth of
-//! the producer it points at; durable / verified / scalar operands are zero-depth leaves). No
+//! the producer it points at; persistent / verified / scalar operands are zero-depth leaves). No
 //! sysvars, no accounts — so it runs once in [`super::fhe_eval`], before execution mutates any
 //! account, and its total feeds the block-cap charge unchanged.
 //!
@@ -270,7 +270,7 @@ pub(super) struct FrameMeter {
 }
 
 /// Depth a resolved operand contributes: an `AllowedLocal` carries its producer's cumulative depth;
-/// every other operand kind is a zero-depth leaf (durable resets in-frame; verified input &
+/// every other operand kind is a zero-depth leaf (persistent resets in-frame; verified input &
 /// scalar are intrinsic zero leaves). An out-of-range producer index is treated as `0` here;
 /// the walk's operand resolver rejects it with the precise `FheEvalAllowedLocalMissing`.
 fn operand_depth(operand: &FheEvalOperand, step_depths: &[u64]) -> u64 {
@@ -280,7 +280,7 @@ fn operand_depth(operand: &FheEvalOperand, step_depths: &[u64]) -> u64 {
             .get(*producer_index as usize)
             .copied()
             .unwrap_or(0),
-        FheEvalOperand::AllowedDurable { .. } => 0,
+        FheEvalOperand::AllowedPersistent { .. } => 0,
         FheEvalOperand::VerifiedInput { .. } => 0,
         FheEvalOperand::Scalar { .. } => 0,
     }
@@ -480,13 +480,13 @@ mod tests {
             output: FheEvalOutput::AllowedLocal,
         }
     }
-    fn add_durable(ty: u8, lhs_producer: u8) -> FheEvalStep {
+    fn add_persistent(ty: u8, lhs_producer: u8) -> FheEvalStep {
         FheEvalStep::Binary {
             op: FheBinaryOpCode::Add,
             lhs: FheEvalOperand::AllowedLocal {
                 producer_index: lhs_producer,
             },
-            rhs: FheEvalOperand::AllowedDurable {
+            rhs: FheEvalOperand::AllowedPersistent {
                 handle_index: 0,
                 encrypted_value_index: 0,
             },
@@ -958,7 +958,7 @@ mod tests {
             trivial(EU64),
             add_local(EU64, 0, 0),
             add_scalar(EU64, 1),
-            add_durable(EU64, 2),
+            add_persistent(EU64, 2),
         ];
         let m = meter_eval_plan(&steps, u64::MAX, u64::MAX).unwrap();
         let expected = trivial_encrypt_hcu(EU64).unwrap()
@@ -969,14 +969,14 @@ mod tests {
     }
 
     #[test]
-    fn meter_durable_input_is_zero_depth_leaf() {
-        // A durable operand contributes depth 0 (in-frame reset), so a
-        // chain split across a durable boundary resets depth there rather than carrying it forward.
-        let steps = vec![trivial(EU64), add_durable(EU64, 0)];
+    fn meter_persistent_input_is_zero_depth_leaf() {
+        // A persistent operand contributes depth 0 (in-frame reset), so a
+        // chain split across a persistent boundary resets depth there rather than carrying it forward.
+        let steps = vec![trivial(EU64), add_persistent(EU64, 0)];
         let m = meter_eval_plan(&steps, u64::MAX, u64::MAX).unwrap();
         let t = trivial_encrypt_hcu(EU64).unwrap();
         let add = binary_op_hcu(FheBinaryOpCode::Add, EU64, false).unwrap();
-        assert_eq!(*m.step_depths.last().unwrap(), add + t); // add + max(depth(a)=t, durable=0)
+        assert_eq!(*m.step_depths.last().unwrap(), add + t); // add + max(depth(a)=t, persistent=0)
     }
 
     // ---- disabled at deploy ----

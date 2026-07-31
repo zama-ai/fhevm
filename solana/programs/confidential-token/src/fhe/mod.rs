@@ -15,29 +15,29 @@ use crate::{
 mod verify_public_decrypt;
 pub(crate) use verify_public_decrypt::*;
 
-/// Audience for a confidential-token durable output.
+/// Audience for a confidential-token persistent output.
 ///
 /// Holder-scoped encrypted value accounts (balances, `transferred_amount`, `burned_amount`) must
 /// always grant the holder's owner key and the mint compute-signer PDA: the owner
 /// keeps decrypt access to their own value, and the compute signer gates the next
-/// eval that reads it. [`DurableAudience::for_owner`] takes both as required
+/// eval that reads it. [`PersistentAudience::for_owner`] takes both as required
 /// parameters, so a holder output can never be built missing either; extra owners
 /// (the recipient phase of a `transferred_amount` rotation) are additive via
-/// [`DurableAudience::with_owner`]. Mint-scoped encrypted value accounts with no single holder
+/// [`PersistentAudience::with_owner`]. Mint-scoped encrypted value accounts with no single holder
 /// (total supply, freshly minted random amounts) use
-/// [`DurableAudience::compute_only`], the one owner-less path.
+/// [`PersistentAudience::compute_only`], the one owner-less path.
 ///
-/// This is the only way token instructions produce durable-output subjects:
-/// [`DurableOutput::new`]/[`DurableOutput::new_public`] accept a `DurableAudience`
+/// This is the only way token instructions produce persistent-output subjects:
+/// [`PersistentOutput::new`]/[`PersistentOutput::new_public`] accept a `PersistentAudience`
 /// rather than a raw subject vector, so the owner+compute invariant holds
 /// by construction rather than by convention at each call site.
-pub(crate) struct DurableAudience {
+pub(crate) struct PersistentAudience {
     owner: Option<Pubkey>,
     extra_owners: Vec<Pubkey>,
     compute: Pubkey,
 }
 
-impl DurableAudience {
+impl PersistentAudience {
     /// Holder-scoped audience granting `owner` and the mint `compute` signer.
     pub(crate) fn for_owner(owner: Pubkey, compute: Pubkey) -> Self {
         Self {
@@ -73,15 +73,15 @@ impl DurableAudience {
     }
 }
 
-/// A durable eval output account bound to the exact `EncryptedValue` encrypted value account
+/// A persistent eval output account bound to the exact `EncryptedValue` encrypted value account
 /// it is allowed to create or supersede.
-pub(crate) struct DurableOutput<'info> {
+pub(crate) struct PersistentOutput<'info> {
     encrypted_value: AccountInfo<'info>,
-    output: Box<zama_fhe::DurableOutput>,
+    output: Box<zama_fhe::PersistentOutput>,
 }
 
-impl<'info> DurableOutput<'info> {
-    /// Binds `encrypted_value` as the output of a durable eval step: creates the
+impl<'info> PersistentOutput<'info> {
+    /// Binds `encrypted_value` as the output of a persistent eval step: creates the
     /// encrypted value account's first handle if the PDA does not exist yet, or supersedes it
     /// (reading `previous_handle`/`previous_subjects` off the on-chain account)
     /// if it does. Either way the eval CPI's attestation matches exactly what
@@ -89,7 +89,7 @@ impl<'info> DurableOutput<'info> {
     pub(crate) fn new(
         encrypted_value: AccountInfo<'info>,
         key: zama_fhe::EncryptedValueKey,
-        audience: DurableAudience,
+        audience: PersistentAudience,
     ) -> Result<Self> {
         Self::new_inner(encrypted_value, key, audience, false)
     }
@@ -101,7 +101,7 @@ impl<'info> DurableOutput<'info> {
     pub(crate) fn new_public(
         encrypted_value: AccountInfo<'info>,
         key: zama_fhe::EncryptedValueKey,
-        audience: DurableAudience,
+        audience: PersistentAudience,
     ) -> Result<Self> {
         Self::new_inner(encrypted_value, key, audience, true)
     }
@@ -109,7 +109,7 @@ impl<'info> DurableOutput<'info> {
     fn new_inner(
         encrypted_value: AccountInfo<'info>,
         key: zama_fhe::EncryptedValueKey,
-        audience: DurableAudience,
+        audience: PersistentAudience,
         make_public: bool,
     ) -> Result<Self> {
         require_keys_eq!(
@@ -123,14 +123,14 @@ impl<'info> DurableOutput<'info> {
                 encrypted_value.data_is_empty() && !encrypted_value.executable,
                 ConfidentialTokenError::InvalidFheEvalPlan
             );
-            zama_fhe::DurableOutput::create(key, subjects)
+            zama_fhe::PersistentOutput::create(key, subjects)
         } else {
             let value = read_encrypted_value(&encrypted_value)?;
-            zama_fhe::DurableOutput::update(key, subjects, &value)
+            zama_fhe::PersistentOutput::update(key, subjects, &value)
         }
         .with_make_public(make_public);
         output.birth().map_err(|error| {
-            msg!("invalid durable FHE output: {:?}", error);
+            msg!("invalid persistent FHE output: {:?}", error);
             error!(ConfidentialTokenError::InvalidFheEvalPlan)
         })?;
         Ok(Self {
@@ -140,7 +140,7 @@ impl<'info> DurableOutput<'info> {
     }
 
     pub(crate) fn output(&self) -> zama_fhe::Output {
-        zama_fhe::Output::durable_output((*self.output).clone())
+        zama_fhe::Output::persistent_output((*self.output).clone())
     }
 
     /// Reads the handle the host bound into `encrypted_value` by this eval CPI.
@@ -160,9 +160,9 @@ impl<'info> DurableOutput<'info> {
         self.encrypted_value.clone()
     }
 
-    fn birth(&self) -> Result<zama_fhe::DurableOutputBirth> {
+    fn birth(&self) -> Result<zama_fhe::PersistentOutputBirth> {
         self.output.birth().map_err(|error| {
-            msg!("invalid durable FHE output: {:?}", error);
+            msg!("invalid persistent FHE output: {:?}", error);
             error!(ConfidentialTokenError::InvalidFheEvalPlan)
         })
     }
@@ -220,7 +220,7 @@ impl<'info> ComputeAuthority<'info> {
     }
 }
 
-/// Signer model for a durable output authority required by an eval frame.
+/// Signer model for a persistent output authority required by an eval frame.
 #[derive(Clone)]
 pub(crate) enum OutputAuthoritySigner {
     // Only constructed by the `poc`-gated create_random_amount helpers.
@@ -273,7 +273,7 @@ impl OutputAuthoritySigner {
     }
 }
 
-/// Durable output authority account plus the signer model that authorizes it.
+/// Persistent output authority account plus the signer model that authorizes it.
 #[derive(Clone)]
 pub(crate) struct OutputAuthority<'info> {
     account: AccountInfo<'info>,
@@ -406,7 +406,7 @@ fn map_eval_account_resolution_error(error: zama_fhe::EvalAccountResolutionError
 
 /// Inputs required to evaluate an instruction-local FHE plan.
 pub(crate) struct EvalContext<'a, 'info> {
-    /// Transaction payer and rent payer for any durable output ACL records.
+    /// Transaction payer and rent payer for any persistent output ACL records.
     pub payer: &'a Signer<'info>,
     /// Anchor event CPI authority for ZamaHost.
     pub event_authority: &'a UncheckedAccount<'info>,
@@ -551,7 +551,7 @@ fn validate_deny_subject_records_for_grant_subjects<'info>(
             ConfidentialTokenError::UnexpectedRemainingAccounts
         );
         // A supplied deny record must witness either an output authority or a subject a
-        // durable output grants for the first time (created or rotation-added) — the host
+        // persistent output grants for the first time (created or rotation-added) — the host
         // deny-list-checks both, so both may reach it through remaining accounts.
         require!(
             is_deny_record_for_authority(supplied.key(), app_authority)
@@ -575,7 +575,7 @@ fn is_deny_record_for_authority(record: Pubkey, authority: Pubkey) -> bool {
 mod tests {
     use super::*;
 
-    fn audience_subjects(audience: DurableAudience) -> Vec<Pubkey> {
+    fn audience_subjects(audience: PersistentAudience) -> Vec<Pubkey> {
         audience.into_subjects()
     }
 
@@ -584,7 +584,7 @@ mod tests {
         let owner = Pubkey::new_unique();
         let compute = Pubkey::new_unique();
         assert_eq!(
-            audience_subjects(DurableAudience::for_owner(owner, compute)),
+            audience_subjects(PersistentAudience::for_owner(owner, compute)),
             vec![owner, compute]
         );
     }
@@ -595,7 +595,7 @@ mod tests {
         let recipient = Pubkey::new_unique();
         let compute = Pubkey::new_unique();
         assert_eq!(
-            audience_subjects(DurableAudience::for_owner(owner, compute).with_owner(recipient)),
+            audience_subjects(PersistentAudience::for_owner(owner, compute).with_owner(recipient)),
             vec![owner, recipient, compute]
         );
     }
@@ -604,7 +604,7 @@ mod tests {
     fn compute_only_audience_grants_compute_and_no_owner() {
         let compute = Pubkey::new_unique();
         assert_eq!(
-            audience_subjects(DurableAudience::compute_only(compute)),
+            audience_subjects(PersistentAudience::compute_only(compute)),
             vec![compute]
         );
     }
@@ -614,14 +614,14 @@ mod tests {
         let owner = Pubkey::new_unique();
         let compute = Pubkey::new_unique();
         // A holder audience whose extra owner repeats the compute signer
-        // renders a duplicate subject; the durable output rejects it.
-        let output = zama_fhe::DurableOutput::create(
+        // renders a duplicate subject; the persistent output rejects it.
+        let output = zama_fhe::PersistentOutput::create(
             zama_fhe::EncryptedValueKey::new(
                 Pubkey::new_unique(),
                 Pubkey::new_unique(),
-                zama_fhe::DurableLabel::new([1; 32]),
+                zama_fhe::PersistentLabel::new([1; 32]),
             ),
-            DurableAudience::for_owner(owner, compute)
+            PersistentAudience::for_owner(owner, compute)
                 .with_owner(compute)
                 .into_subjects(),
         );
@@ -657,7 +657,7 @@ mod tests {
         zama_fhe::EncryptedValueKey::new(
             Pubkey::new_unique(),
             account,
-            zama_fhe::DurableLabel::new(handle(label_tag)),
+            zama_fhe::PersistentLabel::new(handle(label_tag)),
         )
     }
 
@@ -671,13 +671,13 @@ mod tests {
         let input_acl = input_key.address();
         let output_key = encrypted_value_key(authority, 2);
         let output_acl = output_key.address();
-        let input = zama_fhe::Uint64Handle::durable(balance_handle(1), input_key).unwrap();
+        let input = zama_fhe::Uint64Handle::persistent(balance_handle(1), input_key).unwrap();
         let mut builder = zama_fhe::EvalBuilder::new(zama_fhe::EvalAppAuthority::new(authority));
         builder
             .add(
                 input,
                 zama_fhe::Scalar::<zama_fhe::Uint<64>>::u64(1),
-                zama_fhe::Output::durable(output_key, subjects(authority)),
+                zama_fhe::Output::persistent(output_key, subjects(authority)),
             )
             .unwrap();
         (builder.finish().unwrap(), input_acl, output_acl, authority)

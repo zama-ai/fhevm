@@ -30,24 +30,24 @@ use walk::{walk_eval_frame, EvalHandleContext};
 
 /// Accounts for composed instruction-local FHE evaluation.
 ///
-/// Durable input and output `EncryptedValue` accounts are supplied in
+/// Persistent input and output `EncryptedValue` accounts are supplied in
 /// `remaining_accounts` and referenced by index from [`FheEvalArgs`].
 #[derive(Accounts)]
 #[event_cpi]
 pub struct FheEval<'info> {
-    /// Pays rent for any durable output ACL records.
+    /// Pays rent for any persistent output ACL records.
     #[account(mut)]
     pub payer: Signer<'info>,
-    /// Compute subject that must be allowed on durable encrypted inputs.
+    /// Compute subject that must be allowed on persistent encrypted inputs.
     pub compute_subject: Signer<'info>,
-    /// App account signer authorizing any durable output ACL metadata.
+    /// App account signer authorizing any persistent output ACL metadata.
     pub app_account_authority: Signer<'info>,
     /// Singleton config PDA. Read-only: the cap is read from here, but the writable per-slot
     /// counter is the separate `hcu_block_meter`, never this singleton — so the hot path takes no
     /// write lock on the config.
     #[account(seeds = [HOST_CONFIG_SEED], bump = host_config.bump)]
     pub host_config: Account<'info, HostConfig>,
-    /// System program used for durable output ACL creation.
+    /// System program used for persistent output ACL creation.
     pub system_program: Program<'info, System>,
     /// Per-`compute_subject` HCU block meter (written once in the execution `charge`). The HCU PDAs
     /// (`hcu_block_meter`, `hcu_trusted_app_record`) key on `compute_subject` — the mandatory signed
@@ -76,7 +76,7 @@ pub fn fhe_eval<'info>(ctx: Context<'info, FheEval<'info>>, args: FheEvalArgs) -
     );
     // The account table owns every remaining-accounts invariant for the frame:
     // duplicate rejection (at construction), the used-account bitmap (marked in
-    // preflight, asserted before execution mutates state), durable-output
+    // preflight, asserted before execution mutates state), persistent-output
     // claims, and output-PDA derivation.
     let mut account_table = EvalAccountTable::new(ctx.remaining_accounts)?;
     preflight_eval_frame(&mut account_table, &ctx, &args)?;
@@ -95,13 +95,13 @@ pub fn fhe_eval<'info>(ctx: Context<'info, FheEval<'info>>, args: FheEvalArgs) -
     let subject = ctx.accounts.compute_subject.key();
     let clock = Clock::get()?;
     let previous_bank_hash = previous_bank_hash(clock.slot)?;
-    let durable_anchor_bytes = collect_durable_anchor_bytes(&account_table, &args)?;
+    let persistent_anchor_bytes = collect_persistent_anchor_bytes(&account_table, &args)?;
     let handle_context = EvalHandleContext {
         chain_id: ctx.accounts.host_config.chain_id,
         previous_bank_hash: &previous_bank_hash,
         unix_timestamp: clock.unix_timestamp,
         compute_subject: subject,
-        durable_anchor_bytes: &durable_anchor_bytes,
+        persistent_anchor_bytes: &persistent_anchor_bytes,
     };
     let random_seeds = collect_eval_random_seeds(&args, &handle_context);
     block_cap::charge(&ctx, frame.total, clock.slot)?;
@@ -131,17 +131,17 @@ pub(in crate::instructions) fn step_output(step: &FheEvalStep) -> &FheEvalOutput
     }
 }
 
-/// Flattens the frame's durable-write anchor from live account state. Each entry is
+/// Flattens the frame's persistent-write anchor from live account state. Each entry is
 /// `(account key, create/update tag, current handle, leaf count)` in wire order.
 /// `leaf_count` advances whenever an outgoing handle is sealed, so returning to an
 /// earlier content-addressed handle cannot replay a previous random seed.
-fn collect_durable_anchor_bytes(
+fn collect_persistent_anchor_bytes(
     table: &EvalAccountTable<'_, '_>,
     args: &FheEvalArgs,
 ) -> Result<Vec<u8>> {
     let mut anchor_bytes = Vec::with_capacity(args.steps.len() * 73);
     for step in &args.steps {
-        if let FheEvalOutput::AllowedDurable {
+        if let FheEvalOutput::AllowedPersistent {
             output_encrypted_value_index,
             ..
         } = step_output(step)
@@ -206,7 +206,7 @@ fn execute_eval_frame<'a, 'info>(
 
 /// The single walk's state: resolves operands through the shared account table
 /// (which preflight already validated for coverage), validates and creates or
-/// supersedes durable outputs, and buffers produced-public lifecycle records.
+/// supersedes persistent outputs, and buffers produced-public lifecycle records.
 /// The operand resolvers driving these methods live with the step match in
 /// [`walk`].
 struct EvalExecutionState<'t, 'a, 'info> {
@@ -229,7 +229,7 @@ impl<'info> EvalExecutionState<'_, '_, 'info> {
     }
 
     #[inline(never)]
-    fn resolve_durable_operand(
+    fn resolve_persistent_operand(
         &mut self,
         handle: [u8; 32],
         encrypted_value_index: u16,
@@ -325,7 +325,7 @@ fn accept_eval_output<'info>(
 
     let born_public_output = match output {
         FheEvalOutput::AllowedLocal => None,
-        FheEvalOutput::AllowedDurable {
+        FheEvalOutput::AllowedPersistent {
             output_encrypted_value_index,
             output_app_account_authority_index,
             output_acl_domain_key_index,
@@ -341,7 +341,7 @@ fn accept_eval_output<'info>(
             let output_encrypted_value_label =
                 dictionary_bytes(dictionary, *output_encrypted_value_label_index)?;
             let output_subjects = resolve_dictionary_subjects(dictionary, output_subject_indexes)?;
-            let app_account_authority = durable_output_authority(
+            let app_account_authority = persistent_output_authority(
                 table,
                 ctx,
                 output_app_account_authority_index.map(u16::from),
@@ -394,7 +394,7 @@ fn resolve_dictionary_subjects(dictionary: &[[u8; 32]], indexes: &[u8]) -> Resul
         .collect()
 }
 
-fn durable_output_authority<'info>(
+fn persistent_output_authority<'info>(
     table: &EvalAccountTable<'_, 'info>,
     ctx: &Context<'info, FheEval<'info>>,
     authority_index: Option<u16>,
@@ -502,7 +502,7 @@ fn bind_eval_output<'info>(
         ZamaHostError::EncryptedValuePdaMismatch
     );
     // One write per account per frame — load-bearing for the rand seed anchor (#1853 W4).
-    table.claim_durable_output(output_info.key())?;
+    table.claim_persistent_output(output_info.key())?;
     // Explicit on the supersede path; `create_pda_strict` enforces it on create.
     require!(
         output_info.is_writable,
@@ -514,7 +514,7 @@ fn bind_eval_output<'info>(
         // exactly, so indexers can reconstruct the appended MMR leaves from
         // instruction data alone. `output_subjects` may rotate the audience.
         let mut value = read_canonical_encrypted_value(output_info)?;
-        validate_durable_output_previous_state(&value, previous_handle, previous_subjects)?;
+        validate_persistent_output_previous_state(&value, previous_handle, previous_subjects)?;
         check_new_grants_not_denied(
             &ctx.accounts.host_config,
             table,
@@ -585,7 +585,7 @@ fn bind_eval_output<'info>(
 /// may explicitly rotate it — the outgoing audience is sealed into historical
 /// leaves before the new set replaces it, and every added subject passes the
 /// grant deny-list via [`check_new_grants_not_denied`].
-pub(super) fn validate_durable_output_previous_state(
+pub(super) fn validate_persistent_output_previous_state(
     value: &EncryptedValue,
     previous_handle: &Option<[u8; 32]>,
     previous_subjects: &Option<Vec<Pubkey>>,
@@ -601,7 +601,7 @@ pub(super) fn validate_durable_output_previous_state(
     Ok(())
 }
 
-/// Deny-list gate for durable-output subject grants: every subject present in
+/// Deny-list gate for persistent-output subject grants: every subject present in
 /// `output_subjects` but absent from `stored_subjects` is a new grant and must
 /// clear the grant deny-list (pass `&[]` on the create path, where every output
 /// subject is new). Respects `grant_deny_list_enabled`; the deny record for each
@@ -668,7 +668,7 @@ mod tests {
         subjects.to_vec()
     }
 
-    fn durable_anchor_at_leaf_count(leaf_count: u64) -> Vec<u8> {
+    fn persistent_anchor_at_leaf_count(leaf_count: u64) -> Vec<u8> {
         let mut value = encrypted_value_account([9; 32], &[Pubkey::new_from_array([1; 32])]);
         value.acl_domain_key = Pubkey::new_from_array([2; 32]);
         value.app_account = Pubkey::new_from_array([3; 32]);
@@ -689,7 +689,7 @@ mod tests {
             dictionary: Vec::new(),
             steps: vec![FheEvalStep::Rand {
                 fhe_type: 5,
-                output: FheEvalOutput::AllowedDurable {
+                output: FheEvalOutput::AllowedPersistent {
                     output_encrypted_value_index: 0,
                     output_app_account_authority_index: None,
                     output_acl_domain_key_index: 0,
@@ -702,57 +702,58 @@ mod tests {
                 },
             }],
         };
-        collect_durable_anchor_bytes(&table, &args).unwrap()
+        collect_persistent_anchor_bytes(&table, &args).unwrap()
     }
 
     #[test]
-    fn durable_anchor_changes_when_handle_cycles_to_a_later_leaf_count() {
+    fn persistent_anchor_changes_when_handle_cycles_to_a_later_leaf_count() {
         assert_ne!(
-            durable_anchor_at_leaf_count(1),
-            durable_anchor_at_leaf_count(3)
+            persistent_anchor_at_leaf_count(1),
+            persistent_anchor_at_leaf_count(3)
         );
     }
 
     #[test]
-    fn durable_output_previous_state_accepts_exact_previous_match() {
+    fn persistent_output_previous_state_accepts_exact_previous_match() {
         let subjects = vec![Pubkey::new_unique(), Pubkey::new_unique()];
         let value = encrypted_value_account([9; 32], &subjects);
         assert!(
-            validate_durable_output_previous_state(&value, &Some([9; 32]), &Some(subjects),)
+            validate_persistent_output_previous_state(&value, &Some([9; 32]), &Some(subjects),)
                 .is_ok()
         );
     }
 
     #[test]
-    fn durable_output_previous_state_rejects_previous_mismatch() {
+    fn persistent_output_previous_state_rejects_previous_mismatch() {
         let subjects = vec![Pubkey::new_unique()];
         let value = encrypted_value_account([9; 32], &subjects);
         // Wrong previous handle.
-        assert!(validate_durable_output_previous_state(
+        assert!(validate_persistent_output_previous_state(
             &value,
             &Some([8; 32]),
             &Some(subjects.clone()),
         )
         .is_err());
         // Wrong previous subjects.
-        assert!(validate_durable_output_previous_state(
+        assert!(validate_persistent_output_previous_state(
             &value,
             &Some([9; 32]),
             &Some(vec![Pubkey::new_unique()]),
         )
         .is_err());
         // Missing previous_* on an existing encrypted value account (create shape on supersede).
-        assert!(validate_durable_output_previous_state(&value, &None, &None).is_err());
+        assert!(validate_persistent_output_previous_state(&value, &None, &None).is_err());
     }
 
     #[test]
-    fn durable_output_previous_state_ignores_output_audience() {
+    fn persistent_output_previous_state_ignores_output_audience() {
         // Validation pins only the outgoing state (previous_handle/previous_subjects); it no
         // longer constrains the new audience, so a supersede may rotate `output_subjects`.
         let subjects = vec![Pubkey::new_unique()];
         let value = encrypted_value_account([9; 32], &subjects);
         assert!(
-            validate_durable_output_previous_state(&value, &Some([9; 32]), &Some(subjects)).is_ok()
+            validate_persistent_output_previous_state(&value, &Some([9; 32]), &Some(subjects))
+                .is_ok()
         );
     }
 

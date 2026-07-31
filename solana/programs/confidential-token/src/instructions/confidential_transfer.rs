@@ -140,7 +140,7 @@ pub fn confidential_transfer<'info>(
 /// amount, instead of a freshly attested client-side encryption.
 ///
 /// Identical to [`ConfidentialTransfer`] except the 190-byte attestation argument is gone and one
-/// account is added: `amount_value`, the encrypted amount to spend. It is read-only — the durable
+/// account is added: `amount_value`, the encrypted amount to spend. It is read-only — the persistent
 /// operand the eval reads — and is never superseded or consumed; only the two balance encrypted value accounts
 /// change through the same `ge -> sub -> select` debit and `add` credit.
 #[derive(Accounts)]
@@ -175,7 +175,7 @@ pub struct ConfidentialTransferFromValue<'info> {
     #[account(mut, address = encrypted_value_address(mint.key(), from_account.key(), transferred_amount_label()).0)]
     pub transferred_amount_value: UncheckedAccount<'info>,
     /// The existing encrypted amount to spend: a computed or received `euint64` handle. Read-only
-    /// durable operand — never superseded, never consumed. Its address is the canonical PDA of its
+    /// persistent operand — never superseded, never consumed. Its address is the canonical PDA of its
     /// own `(acl_domain_key, app_account, encrypted_value_label)` fields, so an encrypted value account from any app
     /// may be passed here once its owner has granted the mint's compute subject via `allow_subjects`.
     pub amount_value: Box<Account<'info, zama_host::EncryptedValue>>,

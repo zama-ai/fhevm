@@ -11,9 +11,9 @@ use crate::plan::EvalPlan;
 /// Why an eval plan needs a dynamic account.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum EvalAccountPurpose {
-    DurableInputAcl,
-    DurableOutputAcl,
-    DurableOutputAuthority,
+    PersistentInputAcl,
+    PersistentOutputAcl,
+    PersistentOutputAuthority,
 }
 
 /// Public view of one dynamic account required by an eval plan.
@@ -49,11 +49,11 @@ impl EvalAccountRequirement {
     pub fn requires_dynamic_account(&self) -> bool {
         self.purposes
             .iter()
-            .any(|purpose| *purpose != EvalAccountPurpose::DurableOutputAuthority)
+            .any(|purpose| *purpose != EvalAccountPurpose::PersistentOutputAuthority)
     }
 
     pub fn requires_output_authority(&self) -> bool {
-        self.has_purpose(EvalAccountPurpose::DurableOutputAuthority)
+        self.has_purpose(EvalAccountPurpose::PersistentOutputAuthority)
     }
 }
 
@@ -160,11 +160,11 @@ pub enum EvalAccountResolutionError {
     MissingDynamicAccount { requirement: EvalAccountRequirement },
     /// A writable remaining-account slot was supplied as readonly.
     DynamicAccountNotWritable { requirement: EvalAccountRequirement },
-    /// The same durable output authority witness was supplied more than once.
+    /// The same persistent output authority witness was supplied more than once.
     DuplicateOutputAuthority { pubkey: Pubkey },
     /// A supplied output authority is not required by this plan.
     UnexpectedOutputAuthority { pubkey: Pubkey },
-    /// A required durable output authority witness could not be resolved.
+    /// A required persistent output authority witness could not be resolved.
     MissingOutputAuthority {
         authority: EvalOutputAuthorityRequirement,
     },

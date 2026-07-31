@@ -114,13 +114,13 @@ pub enum ZamaHostError {
     /// An FHE eval instruction produced the same transient handle twice.
     #[msg("FHE eval output handle is duplicated")]
     FheEvalDuplicateHandle,
-    /// An FHE eval durable output account already exists.
-    #[msg("FHE eval durable output ACL record already exists")]
+    /// An FHE eval persistent output account already exists.
+    #[msg("FHE eval persistent output ACL record already exists")]
     FheEvalOutputAlreadyInitialized,
-    /// A frame containing a rand step must declare at least one durable output,
+    /// A frame containing a rand step must declare at least one persistent output,
     /// which anchors the compulsorily fresh rand seed (fhevm-internal#1853 W4).
-    #[msg("FHE eval rand step requires a durable output in the frame")]
-    FheEvalRandRequiresDurableOutput,
+    #[msg("FHE eval rand step requires a persistent output in the frame")]
+    FheEvalRandRequiresPersistentOutput,
     /// A KMS context was defined with a duplicate signer address.
     #[msg("KMS context signer set contains a duplicate address")]
     DuplicateKmsSigner,
@@ -164,7 +164,7 @@ pub enum ZamaHostError {
     /// The caller subject is not a current member of the encrypted value.
     #[msg("encrypted value subject is not a current member")]
     SubjectNotFound,
-    /// Durable `EncryptedValue` creation was requested with an empty subject list.
+    /// Persistent `EncryptedValue` creation was requested with an empty subject list.
     #[msg("encrypted value must be created with at least one subject")]
     EncryptedValueEmptySubjects,
     /// `remove_subject` would leave the encrypted value with no current subjects.
@@ -215,12 +215,12 @@ pub enum ZamaHostError {
     )]
     InvalidChainTypeBit,
 
-    /// Under a finite `hcu_block_cap_per_app`, a frame that binds no durable input, no verified
-    /// input, and no durable output leaves `compute_subject` a free variable: the caller could
+    /// Under a finite `hcu_block_cap_per_app`, a frame that binds no persistent input, no verified
+    /// input, and no persistent output leaves `compute_subject` a free variable: the caller could
     /// rotate fresh subjects to mint fresh per-slot meters and evade the cap (fhevm-internal#1744).
     /// Such a frame is also value-less — its transient outputs create no ACL leaf and are
     /// undecryptable — so it is rejected outright.
-    #[msg("FHE eval frame anchors no durable/verified binding under a finite HCU block cap")]
+    #[msg("FHE eval frame anchors no persistent/verified binding under a finite HCU block cap")]
     FheEvalUnanchoredUnderBlockCap,
 
     // ---- stateless public-decrypt verifier (verify_public_decrypt, fhevm-internal#1704) ----
@@ -288,10 +288,10 @@ pub enum ZamaHostError {
     /// `FheEvalArgs::account_count` does not match the actual remaining-accounts length.
     #[msg("FHE eval declared account count mismatch")]
     FheEvalAccountCountMismatch,
-    /// An `AllowedDurable` operand referenced an account written by an earlier step.
+    /// An `AllowedPersistent` operand referenced an account written by an earlier step.
     /// In-frame dependencies must use `AllowedLocal`.
-    #[msg("FHE eval durable operand was written earlier in the frame")]
-    FheEvalDurableOperandWrittenEarlier,
+    #[msg("FHE eval persistent operand was written earlier in the frame")]
+    FheEvalPersistentOperandWrittenEarlier,
     /// An interned dictionary entry was never referenced by any step; a frame must not
     /// carry dead bytes.
     #[msg("FHE eval dictionary entry is not referenced by any step")]

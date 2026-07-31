@@ -145,12 +145,12 @@ pub fn join<'info>(
     // `joined = joined + transferred`.
     let transferred_value = fhe::read_encrypted_value(&ctx.accounts.user_transferred_value)?;
     let transferred = fhe::uint64_operand(&transferred_value)?;
-    let joined_binding = fhe::DurableBinding::bind(
+    let joined_binding = fhe::PersistentBinding::bind(
         ctx.accounts.pending_join_value.to_account_info(),
         zama_fhe::EncryptedValueKey::new(
             batch_key,
             batch_authority,
-            zama_fhe::DurableLabel::new(pending_join_label(user)),
+            zama_fhe::PersistentLabel::new(pending_join_label(user)),
         ),
         // The user decrypts their pending amount; the batch authority computes
         // refunds and claims from it; the join mint's compute signer lets

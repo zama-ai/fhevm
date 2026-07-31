@@ -79,7 +79,7 @@ PINNED_SCHEMAS = [
     # (request_burn_redemption + both close_* instructions) was dissolved onto the stateless host
     # verifier (fhevm-internal#1763). Token disclosure is the thin `disclose_secp` consumer and
     # redemption is the thin `redeem_burned_amount` consumer of `verify_public_decrypt`. Only the
-    # permanent per-handle `BurnRedemption` replay marker remains as durable token state.
+    # permanent per-handle `BurnRedemption` replay marker remains as persistent token state.
     ("confidential_token", "account", "BurnRedemption", True),
     ("confidential_token", "instruction_args", "confidential_burn", True),
     ("confidential_token", "instruction_args", "confidential_burn_from_value", True),

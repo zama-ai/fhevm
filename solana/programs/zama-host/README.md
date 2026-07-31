@@ -52,20 +52,20 @@ this handle" — current membership, or an MMR-proven historical/public-decrypt 
 TrivialEncrypt / Rand / RandBounded / Sum / IsIn / MulDiv** (no `Input` step — DD-007/DD-023). Binary scratch results can feed ternary
 `if_then_else`, and trivial-encrypt / random births can participate in the same frame. Outputs
 produced earlier in the eval can be referenced as transient operands by later operations.
-Durable operands must still be authorized by a live or historically-proven `EncryptedValue`. Transient
-outputs create no `EncryptedValue` state at all. Only outputs marked durable create (first bind) or
+Persistent operands must still be authorized by a live or historically-proven `EncryptedValue`. Transient
+outputs create no `EncryptedValue` state at all. Only outputs marked persistent create (first bind) or
 supersede (subsequent binds) an `EncryptedValue`, carrying `previous_handle`/`previous_subjects`
 attestation on supersession so every transaction stays independently interpretable
 (`docs/DESIGN_DECISIONS.md` DD-032/DD-033).
 
 This is the supported replacement for the older `execute_frame` prototype, not a port of that ABI.
-Keeping durable output authority on a signer witness (`app_account_authority` or an explicit
+Keeping persistent output authority on a signer witness (`app_account_authority` or an explicit
 per-output authority account in `remaining_accounts`) preserves the membership-based ACL and
 public-decrypt rules enforced by the current host without reviving unsigned
 `authorized_app_accounts`.
 
-Ordinary compute facts, MMR leaves, and durable-output binds are reconstructed from instruction data;
-the host emits no per-operation replay stream. A frame with born-public durable outputs emits exactly
+Ordinary compute facts, MMR leaves, and persistent-output binds are reconstructed from instruction data;
+the host emits no per-operation replay stream. A frame with born-public persistent outputs emits exactly
 one versioned Anchor CPI lifecycle batch containing their ordered step index, host-owned
 `EncryptedValue` account, and host-derived output handle. A frame without born-public outputs emits
 no lifecycle batch. The bounded 16-output maximum fits one CPI; other `EncryptedValue` lifecycle
@@ -74,7 +74,7 @@ paths remain event-free (`docs/DESIGN_DECISIONS.md` DD-033/DD-038).
 Admission invariants for `fhe_eval`:
 
 - The frame must contain 1 to 16 steps, and a frame with a rand step must declare at least one
-  durable output (the rand seed is anchored to the frame's durable writes).
+  persistent output (the rand seed is anchored to the frame's persistent writes).
 - Every dynamic account passed through `remaining_accounts` must be unique and referenced by an
   operand or output, and every referenced account index must be present.
 - The optional instructions sysvar account must be present only for steps that need instruction
@@ -87,8 +87,8 @@ Admission invariants for `fhe_eval`:
   (the EVM `fromExternal` / `allowTransient(input, msg.sender)` analog). The caller-is-contract gate is
   checked at input consumption (`attestation.contract_address == compute_subject`); derived outputs are
   unconstrained. The redundant standalone `verify_coprocessor_input` instruction was removed (DD-007).
-- Durable outputs are born with an allowed-subject set. Public decrypt is never a live flag or subject
-  attribute; it is granted by `make_handle_public`, or at durable-output birth when `make_public=true`,
+- Persistent outputs are born with an allowed-subject set. Public decrypt is never a live flag or subject
+  attribute; it is granted by `make_handle_public`, or at persistent-output birth when `make_public=true`,
   which appends an exact-handle `PublicDecryptLeaf` to the encrypted value account MMR.
 
 ## External Inputs
@@ -101,8 +101,8 @@ asserts the attested `contract_chain_id` equals the host chain id (EVM's `contra
 block.chainid`), and transient-allows the input for that eval only — no persistent ACL, matching
 `FHEVMExecutor.verifyInput` + `allowTransient(result, msg.sender)`. The "caller is the attested
 contract" check is enforced at consumption (`attestation.contract_address` must equal the eval's
-`compute_subject`, the msg.sender analog); derived durable outputs are **not tainted** by the input —
-any durable output ACL is the app's separate explicit choice, exactly like EVM.
+`compute_subject`, the msg.sender analog); derived persistent outputs are **not tainted** by the input —
+any persistent output ACL is the app's separate explicit choice, exactly like EVM.
 
 The EVM `contractAddress` analog is the consuming program's **compute-authority PDA** — a PDA the
 program signs with via `invoke_signed` (in confidential-token, the `[b"fhe-compute", mint]` compute

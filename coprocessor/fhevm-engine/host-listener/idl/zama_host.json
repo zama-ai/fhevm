@@ -384,7 +384,7 @@
         {
           "name": "payer",
           "docs": [
-            "Pays rent for any durable output ACL records."
+            "Pays rent for any persistent output ACL records."
           ],
           "writable": true,
           "signer": true
@@ -392,14 +392,14 @@
         {
           "name": "compute_subject",
           "docs": [
-            "Compute subject that must be allowed on durable encrypted inputs."
+            "Compute subject that must be allowed on persistent encrypted inputs."
           ],
           "signer": true
         },
         {
           "name": "app_account_authority",
           "docs": [
-            "App account signer authorizing any durable output ACL metadata."
+            "App account signer authorizing any persistent output ACL metadata."
           ],
           "signer": true
         },
@@ -434,7 +434,7 @@
         {
           "name": "system_program",
           "docs": [
-            "System program used for durable output ACL creation."
+            "System program used for persistent output ACL creation."
           ],
           "address": "11111111111111111111111111111111"
         },
@@ -1848,12 +1848,12 @@
     {
       "code": 6035,
       "name": "FheEvalOutputAlreadyInitialized",
-      "msg": "FHE eval durable output ACL record already exists"
+      "msg": "FHE eval persistent output ACL record already exists"
     },
     {
       "code": 6036,
-      "name": "FheEvalRandRequiresDurableOutput",
-      "msg": "FHE eval rand step requires a durable output in the frame"
+      "name": "FheEvalRandRequiresPersistentOutput",
+      "msg": "FHE eval rand step requires a persistent output in the frame"
     },
     {
       "code": 6037,
@@ -1993,7 +1993,7 @@
     {
       "code": 6064,
       "name": "FheEvalUnanchoredUnderBlockCap",
-      "msg": "FHE eval frame anchors no durable/verified binding under a finite HCU block cap"
+      "msg": "FHE eval frame anchors no persistent/verified binding under a finite HCU block cap"
     },
     {
       "code": 6065,
@@ -2067,8 +2067,8 @@
     },
     {
       "code": 6079,
-      "name": "FheEvalDurableOperandWrittenEarlier",
-      "msg": "FHE eval durable operand was written earlier in the frame"
+      "name": "FheEvalPersistentOperandWrittenEarlier",
+      "msg": "FHE eval persistent operand was written earlier in the frame"
     },
     {
       "code": 6080,
@@ -2440,7 +2440,7 @@
         "kind": "enum",
         "variants": [
           {
-            "name": "AllowedDurable",
+            "name": "AllowedPersistent",
             "fields": [
               {
                 "name": "handle_index",
@@ -2513,7 +2513,7 @@
             "name": "AllowedLocal"
           },
           {
-            "name": "AllowedDurable",
+            "name": "AllowedPersistent",
             "fields": [
               {
                 "name": "output_encrypted_value_index",
@@ -2629,7 +2629,7 @@
           {
             "name": "seed",
             "docs": [
-              "Seed derived from live durable account state."
+              "Seed derived from live persistent account state."
             ],
             "type": {
               "array": [
@@ -2726,7 +2726,7 @@
               {
                 "name": "output",
                 "docs": [
-                  "Whether this output remains instruction-local or is bound into durable ACL state."
+                  "Whether this output remains instruction-local or is bound into persistent ACL state."
                 ],
                 "type": {
                   "defined": {
@@ -2793,7 +2793,7 @@
               {
                 "name": "output",
                 "docs": [
-                  "Whether this output remains instruction-local or is bound into durable ACL state."
+                  "Whether this output remains instruction-local or is bound into persistent ACL state."
                 ],
                 "type": {
                   "defined": {
@@ -2828,7 +2828,7 @@
               {
                 "name": "output",
                 "docs": [
-                  "Whether this output remains instruction-local or is bound into durable ACL state."
+                  "Whether this output remains instruction-local or is bound into persistent ACL state."
                 ],
                 "type": {
                   "defined": {
@@ -2851,7 +2851,7 @@
               {
                 "name": "output",
                 "docs": [
-                  "Whether this output remains instruction-local or is bound into durable ACL state."
+                  "Whether this output remains instruction-local or is bound into persistent ACL state."
                 ],
                 "type": {
                   "defined": {
@@ -2896,7 +2896,7 @@
               {
                 "name": "output",
                 "docs": [
-                  "Whether this output remains instruction-local or is bound into durable ACL state."
+                  "Whether this output remains instruction-local or is bound into persistent ACL state."
                 ],
                 "type": {
                   "defined": {
@@ -2931,7 +2931,7 @@
               {
                 "name": "output",
                 "docs": [
-                  "Whether this output remains instruction-local or is bound into durable ACL state."
+                  "Whether this output remains instruction-local or is bound into persistent ACL state."
                 ],
                 "type": {
                   "defined": {
@@ -2967,7 +2967,7 @@
               {
                 "name": "output",
                 "docs": [
-                  "Whether this output remains instruction-local or is bound into durable ACL state."
+                  "Whether this output remains instruction-local or is bound into persistent ACL state."
                 ],
                 "type": {
                   "defined": {
@@ -3014,7 +3014,7 @@
               {
                 "name": "output",
                 "docs": [
-                  "Whether this output remains instruction-local or is bound into durable ACL state."
+                  "Whether this output remains instruction-local or is bound into persistent ACL state."
                 ],
                 "type": {
                   "defined": {
@@ -3071,7 +3071,7 @@
               {
                 "name": "output",
                 "docs": [
-                  "Whether this output remains instruction-local or is bound into durable ACL state."
+                  "Whether this output remains instruction-local or is bound into persistent ACL state."
                 ],
                 "type": {
                   "defined": {
@@ -4238,7 +4238,7 @@
     {
       "name": "ProducedPublicOutput",
       "docs": [
-        "One public durable output produced by an `fhe_eval` frame."
+        "One public persistent output produced by an `fhe_eval` frame."
       ],
       "type": {
         "kind": "struct",
@@ -4253,7 +4253,7 @@
           {
             "name": "encrypted_value",
             "docs": [
-              "Host-owned durable `EncryptedValue` account bound by the step."
+              "Host-owned persistent `EncryptedValue` account bound by the step."
             ],
             "type": "pubkey"
           },

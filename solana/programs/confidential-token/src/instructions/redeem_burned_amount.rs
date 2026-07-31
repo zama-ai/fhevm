@@ -13,7 +13,7 @@
 //! ## Act-once IS enforced here
 //!
 //! Unlike disclosure, redemption moves real value, so it cannot be idempotent: the per-handle
-//! write-once, never-closed `burn-redemption` marker PDA is the single durable "paid out" bit. A
+//! write-once, never-closed `burn-redemption` marker PDA is the single persistent "paid out" bit. A
 //! second redeem of the same burned handle fails when Anchor tries to `init` the already-initialized
 //! marker.
 //!
@@ -62,7 +62,7 @@ pub struct RedeemBurnedAmount<'info> {
     /// account/owner by `assert_burned_amount_value_account`; its canonical PDA, layout, host ownership,
     /// and the exact-handle MMR inclusion proof are validated by the `verify_public_decrypt` CPI.
     pub burned_amount_value: Box<Account<'info, zama_host::EncryptedValue>>,
-    /// Replay marker for this burned handle: write-once, never closed, the sole durable "paid out"
+    /// Replay marker for this burned handle: write-once, never closed, the sole persistent "paid out"
     /// bit for `(mint, burned_handle)`.
     #[account(
         init,

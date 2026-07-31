@@ -32,7 +32,7 @@ pub enum IngestTerminal {
 /// Yellowstone link lifecycle for readiness.
 ///
 /// `Connected` means at least one block was Applied or AlreadyApplied on the
-/// live stream (subscription + durable cursor continuity proven). A bare gRPC
+/// live stream (subscription + persistent cursor continuity proven). A bare gRPC
 /// subscribe is still `Connecting`.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum SourceLinkState {
@@ -118,7 +118,7 @@ impl IngestHealth {
         inner.source_link = SourceLinkState::Connected;
     }
 
-    /// Durable progress from bounded RPC recovery only. Updates the last known
+    /// Persistent progress from bounded RPC recovery only. Updates the last known
     /// slot without claiming Yellowstone continuity.
     pub fn mark_recovered_progress(&self, slot: u64) {
         let mut inner = self.inner.lock().expect("ingest health lock");

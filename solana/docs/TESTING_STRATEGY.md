@@ -86,7 +86,7 @@ A persistent proof-service `corrupt_cache` response means the PostgreSQL store s
 the confirmed on-chain peaks after Yellowstone ingest / bounded RPC recovery. Recovery is operational,
 not an authorization fallback: stop `solana-proof-service`, reset its Postgres volume / DB, and restart
 it so Yellowstone (plus configured `recovery.bootstrap_slot` RPC recovery when needed) rebuilds the
-durable store. Proof HTTP remains read-only against that store and fails closed (`lagging` /
+persistent store. Proof HTTP remains read-only against that store and fails closed (`lagging` /
 `corrupt_cache` / readiness gates) until history is complete; the KMS never trusts the store without
 re-verifying the proof against live chain state.
 

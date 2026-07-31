@@ -264,7 +264,7 @@ impl FheIsIn for Bytes256 {}
 
 /// Typed encrypted eval value.
 ///
-/// Durable values are constructed from app account state. Transient values are
+/// Persistent values are constructed from app account state. Transient values are
 /// returned by [`EvalBuilder`] methods and can only be fed to later steps in the
 /// same builder.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -274,14 +274,17 @@ pub struct Encrypted<T> {
 }
 
 impl<T: FheTyped> Encrypted<T> {
-    /// Builds a durable operand from a stable `EncryptedValue` encrypted value account. `handle`
+    /// Builds a persistent operand from a stable `EncryptedValue` encrypted value account. `handle`
     /// must be that encrypted value account's current handle; the host re-verifies this on-chain.
-    pub fn durable(handle: [u8; 32], key: EncryptedValueKey) -> Result<Self> {
+    pub fn persistent(handle: [u8; 32], key: EncryptedValueKey) -> Result<Self> {
         validate_encrypted_value_key(&key)?;
         if handle_fhe_type(handle) != T::FHE_TYPE.byte() {
             return Err(EvalBuildError::UnsupportedFheType);
         }
-        Ok(Self::from_operand(Operand::durable(handle, key.address())))
+        Ok(Self::from_operand(Operand::persistent(
+            handle,
+            key.address(),
+        )))
     }
 }
 

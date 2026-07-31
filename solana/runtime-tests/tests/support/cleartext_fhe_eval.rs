@@ -363,7 +363,7 @@ fn resolve_encrypted(
     produced: &[ClearValue],
 ) -> Result<ClearValue, String> {
     let (handle, value) = match operand {
-        FheEvalOperand::AllowedDurable { handle_index, .. } => {
+        FheEvalOperand::AllowedPersistent { handle_index, .. } => {
             let handle = resolve_pool_bytes(dictionary, *handle_index)?;
             (handle, inputs.get(&handle))
         }

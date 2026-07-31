@@ -82,10 +82,10 @@ fn create_random_amount_inner<'info>(
     );
 
     let encrypted_value_label = amount_kind.encrypted_value_label();
-    let amount_output = fhe::DurableOutput::new(
+    let amount_output = fhe::PersistentOutput::new(
         ctx.accounts.amount_value.to_account_info(),
         encrypted_value_key(mint_key, owner, encrypted_value_label),
-        fhe::DurableAudience::compute_only(ctx.accounts.compute_signer.key()),
+        fhe::PersistentAudience::compute_only(ctx.accounts.compute_signer.key()),
     )?;
     let mut builder = zama_fhe::EvalBuilder::new(zama_fhe::EvalAppAuthority::new(owner));
     match upper_bound {

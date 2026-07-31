@@ -50,7 +50,7 @@ fn ix(accounts: Vec<[u8; 32]>, name: &str, args: impl BorshSerialize) -> RawInst
     }
 }
 
-/// Builds an `fhe_eval` instruction with one durable output on `ev`:
+/// Builds an `fhe_eval` instruction with one persistent output on `ev`:
 /// a creation when `previous` is `None`, an update (supersession of
 /// `previous_handle` over `previous_subjects`) when `Some`. The output
 /// audience equals `subjects`. Mirrors the real anchor account layout:
@@ -68,7 +68,7 @@ fn fhe_eval_ix(
     let step = FheEvalStep::TrivialEncrypt {
         plaintext: pk(0x70),
         fhe_type: 5,
-        output: FheEvalOutput::AllowedDurable {
+        output: FheEvalOutput::AllowedPersistent {
             output_encrypted_value_index: 0,
             output_app_account_authority_index: None,
             output_acl_domain_key_index: 0,

@@ -23,12 +23,12 @@ use anchor_lang::prelude::*;
 
 use crate::state::{FheBinaryOpCode, FheTernaryOpCode, FheUnaryOpCode};
 
-/// One public durable output produced by an `fhe_eval` frame.
+/// One public persistent output produced by an `fhe_eval` frame.
 #[derive(AnchorSerialize, AnchorDeserialize, Clone, Debug, PartialEq, Eq)]
 pub struct ProducedPublicOutput {
     /// Zero-based step index within the frame.
     pub step_index: u16,
-    /// Host-owned durable `EncryptedValue` account bound by the step.
+    /// Host-owned persistent `EncryptedValue` account bound by the step.
     pub encrypted_value: Pubkey,
     /// Block-entropy-derived output handle written to the account.
     pub output_handle: [u8; 32],
@@ -48,7 +48,7 @@ pub struct PublicOutputsProducedEvent {
 pub struct FheEvalRandomSeed {
     /// Zero-based step index within the frame.
     pub step_index: u16,
-    /// Seed derived from live durable account state.
+    /// Seed derived from live persistent account state.
     pub seed: [u8; 16],
 }
 

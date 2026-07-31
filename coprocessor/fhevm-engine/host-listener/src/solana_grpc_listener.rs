@@ -219,7 +219,7 @@ pub async fn run(
     }
 }
 
-/// Resolve a durable `fhe_eval` step's output `EncryptedValue` PDA from the
+/// Resolve a persistent `fhe_eval` step's output `EncryptedValue` PDA from the
 /// instruction's accounts.
 ///
 /// `remaining_index` (the program's `output_encrypted_value_index`) is relative to
@@ -230,7 +230,7 @@ pub async fn run(
 /// present in the account list (as program-id placeholders when `None`): the event_cpi
 /// pair follows them, so they can never be truncated off the tail. Returns `None` when
 /// the index is out of range; the caller treats that as a hard problem, since the
-/// durable output would otherwise never request ciphertext material.
+/// persistent output would otherwise never request ciphertext material.
 /// The number of named `fhe_eval` accounts before the dynamic tail the frame's
 /// `u8` indices refer to.
 const FHE_EVAL_REMAINING_BASE: usize = 9;
@@ -239,7 +239,7 @@ fn fhe_eval_remaining_accounts(accounts: &[[u8; 32]]) -> &[[u8; 32]] {
     accounts.get(FHE_EVAL_REMAINING_BASE..).unwrap_or(&[])
 }
 
-fn fhe_eval_durable_encrypted_value(
+fn fhe_eval_persistent_encrypted_value(
     accounts: &[[u8; 32]],
     remaining_index: u8,
 ) -> Option<[u8; 32]> {
@@ -932,7 +932,7 @@ enum ReconstructionOutcome {
 
 /// Rebuilds the ingestable event set off-chain from a transaction's instructions. Covers
 /// `fhe_eval`: one compute event per step, plus a material request for each
-/// `Durable` step's result handle.
+/// `Persistent` step's result handle.
 ///
 /// `EncryptedValue` lifecycle instructions are decoded separately from the same
 /// ordered instruction list and appended to the reconstructed event set. Missing
@@ -953,9 +953,9 @@ async fn reconstruct_events_for_insert(
         is_fhe_eval_instruction, reconstruct_fhe_eval_steps,
     };
 
-    // compute_subject is the 2nd named fhe_eval account. (Durable EncryptedValue
+    // compute_subject is the 2nd named fhe_eval account. (Persistent EncryptedValue
     // PDAs live in remaining_accounts; resolved via
-    // fhe_eval_durable_encrypted_value.)
+    // fhe_eval_persistent_encrypted_value.)
     const COMPUTE_SUBJECT_INDEX: usize = 1;
 
     let host_instructions = instructions
@@ -1038,9 +1038,9 @@ async fn reconstruct_events_for_insert(
                 let previous_handle = step.previous_handle;
                 events.push(step.event);
                 if let (Some(index), Some(handle)) =
-                    (step.durable_encrypted_value_index, handle)
+                    (step.persistent_encrypted_value_index, handle)
                 {
-                    if fhe_eval_durable_encrypted_value(&ix.accounts, index)
+                    if fhe_eval_persistent_encrypted_value(&ix.accounts, index)
                         .is_some()
                     {
                         events.push(SolanaHostEvent::MaterialRequest(
@@ -1053,7 +1053,7 @@ async fn reconstruct_events_for_insert(
                         }
                     } else {
                         anyhow::bail!(
-                            "reconstruct: fhe_eval durable bind encrypted_value \
+                            "reconstruct: fhe_eval persistent bind encrypted_value \
                              out of range in slot {slot}; remaining_index={index}, \
                              accounts={}, handle={}",
                             ix.accounts.len(),
@@ -1245,7 +1245,7 @@ mod account_resolution_tests {
 #[cfg(test)]
 mod fhe_eval_acl_tests {
     use super::{
-        fhe_eval_durable_encrypted_value, reconstruct_events_for_insert,
+        fhe_eval_persistent_encrypted_value, reconstruct_events_for_insert,
         sealed_block_timestamp, transaction_context_requirement,
         ContextRequirement, ReconstructionOutcome, SolanaGrpcListenerConfig,
     };
@@ -1318,7 +1318,7 @@ mod fhe_eval_acl_tests {
 
     fn fhe_eval_accounts() -> Vec<[u8; 32]> {
         // 9 named FheEval accounts (0..=8, incl. the two optional HCU accounts and the
-        // event-cpi pair); the durable output EncryptedValue is remaining_accounts[0]
+        // event-cpi pair); the persistent output EncryptedValue is remaining_accounts[0]
         // at absolute index 9 (FHE_EVAL_REMAINING_BASE).
         let mut accounts: Vec<[u8; 32]> = (0..10).map(acct).collect();
         accounts[1] = SUBJECT;
@@ -1328,7 +1328,7 @@ mod fhe_eval_acl_tests {
 
     fn fhe_eval_accounts_with_deny_record() -> Vec<[u8; 32]> {
         // 9 named FheEval accounts plus Anchor event-cpi accounts (0..=8). The
-        // optional deny record is remaining_accounts[0] (index 9), and the durable
+        // optional deny record is remaining_accounts[0] (index 9), and the persistent
         // output is remaining_accounts[1] (index 10).
         let mut accounts: Vec<[u8; 32]> = (0..11).map(acct).collect();
         accounts[1] = SUBJECT;
@@ -1343,9 +1343,9 @@ mod fhe_eval_acl_tests {
         )
     }
 
-    /// The durable `Add` output handle the fhe_eval fixtures produce, derived
+    /// The persistent `Add` output handle the fhe_eval fixtures produce, derived
     /// exactly as the program does: content-addressed, no per-output binding
-    /// (durable == instruction-local, matching EVM). Matches `config()`
+    /// (persistent == instruction-local, matching EVM). Matches `config()`
     /// (the Solana PoC host chain id, `PREVIOUS_BANK_HASH`), slot 42's clock ts,
     /// scalar rhs.
     fn derived_add_output_handle() -> [u8; 32] {
@@ -1371,46 +1371,46 @@ mod fhe_eval_acl_tests {
     }
 
     #[test]
-    fn durable_output_as_sole_remaining_account_resolves() {
+    fn persistent_output_as_sole_remaining_account_resolves() {
         // The trivial-encrypt-eval shape: 9 named accounts (0..=8, including the two
         // optional HCU accounts and the event_cpi pair) + exactly one remaining account,
-        // the durable output EncryptedValue account, at absolute index 9 (remaining_index 0).
+        // the persistent output EncryptedValue account, at absolute index 9 (remaining_index 0).
         // A stale base (7, the pre-HCU count) read accounts.get(7) here — the
-        // trusted-app-record placeholder, not the durable EncryptedValue account. This
+        // trusted-app-record placeholder, not the persistent EncryptedValue account. This
         // pins the base at 9.
         let accounts: Vec<[u8; 32]> = (0..10).map(acct).collect();
         assert_eq!(
-            fhe_eval_durable_encrypted_value(&accounts, 0),
+            fhe_eval_persistent_encrypted_value(&accounts, 0),
             Some(acct(9))
         );
     }
 
     #[test]
     fn output_after_input_acl_records_resolves() {
-        // A durable input EncryptedValue account at 9 and the durable output at 10
+        // A persistent input EncryptedValue account at 9 and the persistent output at 10
         // (remaining_index 1).
         let accounts: Vec<[u8; 32]> = (0..11).map(acct).collect();
         assert_eq!(
-            fhe_eval_durable_encrypted_value(&accounts, 1),
+            fhe_eval_persistent_encrypted_value(&accounts, 1),
             Some(acct(10))
         );
     }
 
     #[test]
-    fn durable_output_after_optional_deny_record_resolves() {
+    fn persistent_output_after_optional_deny_record_resolves() {
         let accounts = fhe_eval_accounts_with_deny_record();
         assert_eq!(
-            fhe_eval_durable_encrypted_value(&accounts, 1),
+            fhe_eval_persistent_encrypted_value(&accounts, 1),
             Some(ENCRYPTED_VALUE)
         );
     }
 
     #[test]
     fn missing_remaining_account_returns_none() {
-        // Only the 9 named accounts, no remaining: a durable bind here is a layout drift
+        // Only the 9 named accounts, no remaining: a persistent bind here is a layout drift
         // the caller must surface, not silently drop.
         let accounts: Vec<[u8; 32]> = (0..9).map(acct).collect();
-        assert_eq!(fhe_eval_durable_encrypted_value(&accounts, 0), None);
+        assert_eq!(fhe_eval_persistent_encrypted_value(&accounts, 0), None);
     }
 
     #[test]
@@ -1543,7 +1543,7 @@ mod fhe_eval_acl_tests {
         assert!(err.to_string().contains("account index 2 out of range"));
     }
 
-    /// A superseding durable `fhe_eval` output recomputes its handle directly
+    /// A superseding persistent `fhe_eval` output recomputes its handle directly
     /// from the plan's output material + block entropy (DD-015) — no raw update
     /// handle hint and no encrypted-value-account leaf count. The
     /// reconstructed compute result and current/historical material requests
@@ -1557,13 +1557,13 @@ mod fhe_eval_acl_tests {
             dictionary: vec![[3; 32], [1; 32], [8; 32], [9; 32], [10; 32]],
             steps: vec![FheEvalStep::Binary {
                 op: PgmBinaryOpCode::Add,
-                lhs: FheEvalOperand::AllowedDurable {
+                lhs: FheEvalOperand::AllowedPersistent {
                     handle_index: 0,
                     encrypted_value_index: 0,
                 },
                 rhs: FheEvalOperand::Scalar { value_index: 1 },
                 output_fhe_type: 5,
-                output: FheEvalOutput::AllowedDurable {
+                output: FheEvalOutput::AllowedPersistent {
                     output_encrypted_value_index: 0,
                     output_app_account_authority_index: None,
                     output_acl_domain_key_index: 2,
@@ -1616,8 +1616,8 @@ mod fhe_eval_acl_tests {
         );
     }
 
-    /// A durable output born public still requests material for its recomputed
-    /// handle. The durable bind and public transition share that request.
+    /// A persistent output born public still requests material for its recomputed
+    /// handle. The persistent bind and public transition share that request.
     #[tokio::test]
     async fn born_public_fhe_eval_output_requests_material() {
         let plan = FheEvalArgs {
@@ -1626,7 +1626,7 @@ mod fhe_eval_acl_tests {
             steps: vec![FheEvalStep::TrivialEncrypt {
                 plaintext: [7; 32],
                 fhe_type: 5,
-                output: FheEvalOutput::AllowedDurable {
+                output: FheEvalOutput::AllowedPersistent {
                     output_encrypted_value_index: 0,
                     output_app_account_authority_index: None,
                     output_acl_domain_key_index: 0,

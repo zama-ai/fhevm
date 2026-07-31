@@ -224,10 +224,10 @@ fn system_owned_encrypted_operand_is_rejected() {
 }
 
 #[test]
-fn readonly_durable_output_is_rejected() {
+fn readonly_persistent_output_is_rejected() {
     let mut flow = EvalFlow::new();
     let lhs = flow.encrypted(5, 40);
-    let output = flow.readonly_durable_output();
+    let output = flow.readonly_persistent_output();
 
     flow.rejects(
         FheEvalStep::Binary {
@@ -316,7 +316,7 @@ impl EvalFlow {
             .push(AccountMeta::new_readonly(address, false));
         self.accounts
             .push((address, encrypted_value_account(&value)));
-        FheEvalOperand::AllowedDurable {
+        FheEvalOperand::AllowedPersistent {
             handle_index: intern(handle),
             encrypted_value_index,
         }
@@ -326,7 +326,7 @@ impl EvalFlow {
         self.accounts.last_mut().unwrap().1.owner = system_program::ID;
     }
 
-    fn readonly_durable_output(&mut self) -> FheEvalOutput {
+    fn readonly_persistent_output(&mut self) -> FheEvalOutput {
         let label = [99; 32];
         let value_key = zama_solana_acl::derive_value_key(
             self.authority.to_bytes(),
@@ -339,7 +339,7 @@ impl EvalFlow {
         self.remaining
             .push(AccountMeta::new_readonly(address, false));
         self.accounts.push((address, empty_system_account()));
-        FheEvalOutput::AllowedDurable {
+        FheEvalOutput::AllowedPersistent {
             output_encrypted_value_index,
             output_app_account_authority_index: None,
             output_acl_domain_key_index: intern(self.authority.to_bytes()),
@@ -352,7 +352,7 @@ impl EvalFlow {
         }
     }
 
-    fn writable_durable_output(&mut self) -> (FheEvalOutput, Pubkey) {
+    fn writable_persistent_output(&mut self) -> (FheEvalOutput, Pubkey) {
         let label = [100; 32];
         let value_key = zama_solana_acl::derive_value_key(
             self.authority.to_bytes(),
@@ -365,7 +365,7 @@ impl EvalFlow {
         self.remaining.push(AccountMeta::new(address, false));
         self.accounts.push((address, empty_system_account()));
         (
-            FheEvalOutput::AllowedDurable {
+            FheEvalOutput::AllowedPersistent {
                 output_encrypted_value_index,
                 output_app_account_authority_index: None,
                 output_acl_domain_key_index: intern(self.authority.to_bytes()),
@@ -381,7 +381,7 @@ impl EvalFlow {
     }
 
     fn execute(mut self, mut step: FheEvalStep) -> EvalOutcome {
-        let (output, output_address) = self.writable_durable_output();
+        let (output, output_address) = self.writable_persistent_output();
         *step_output_mut(&mut step) = output;
         let (args, instruction) = self.instruction(step);
         let result = mollusk().process_and_validate_instruction(
@@ -394,7 +394,7 @@ impl EvalFlow {
         let output_account = result.get_account(&output_address).unwrap();
         let mut output_data: &[u8] = &output_account.data;
         let output_handle = host::EncryptedValue::try_deserialize(&mut output_data)
-            .expect("durable result account")
+            .expect("persistent result account")
             .current_handle;
         EvalOutcome {
             cleartext,
@@ -443,7 +443,7 @@ struct EvalOutcome {
     cleartext: Vec<TypedClearValue>,
     output_handle: [u8; 32],
     /// Rand-seed anchor inputs: the signed compute subject and the frame's single
-    /// durable output (a create, so `previous_handle = [0; 32]`).
+    /// persistent output (a create, so `previous_handle = [0; 32]`).
     compute_subject: Pubkey,
     output_address: Pubkey,
 }
@@ -633,9 +633,9 @@ fn handle_for_chain(seed: u8, fhe_type: u8) -> [u8; 32] {
 
 fn operand_handle(operand: &FheEvalOperand) -> [u8; 32] {
     match operand {
-        FheEvalOperand::AllowedDurable { handle_index, .. } => pool_entry(*handle_index),
+        FheEvalOperand::AllowedPersistent { handle_index, .. } => pool_entry(*handle_index),
         FheEvalOperand::Scalar { value_index } => pool_entry(*value_index),
-        _ => panic!("representative flow uses only durable or scalar operands"),
+        _ => panic!("representative flow uses only persistent or scalar operands"),
     }
 }
 
@@ -703,7 +703,7 @@ fn expected_is_in_handle(value: [u8; 32], set: &[[u8; 32]], fhe_type: u8) -> [u8
 }
 
 fn expected_rand_seed(compute_subject: Pubkey, output_address: Pubkey) -> [u8; 16] {
-    // The frame's durable-write anchor: its single durable output is a create,
+    // The frame's persistent-write anchor: its single persistent output is a create,
     // so the tag, current handle, and leaf count are zero.
     let anchor: Vec<u8> = [output_address.as_ref(), &[0], &[0; 32], &0u64.to_le_bytes()].concat();
     let hash = keccak_hashv(&[

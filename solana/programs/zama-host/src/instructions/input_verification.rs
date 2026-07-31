@@ -5,7 +5,7 @@
 //! distinct signatures from the registered coprocessor signer set (n-of-m, EVM `InputVerifier`
 //! parity). This is the shared verifier used by the `fhe_eval` `VerifiedInput` operand (the Solana
 //! `FHE.fromExternal` analog): verification creates no persistent ACL — the input is transient-
-//! allowed for the consuming `fhe_eval` only, and the caller-is-contract check + any durable output
+//! allowed for the consuming `fhe_eval` only, and the caller-is-contract check + any persistent output
 //! ACL are enforced where the input is consumed.
 
 use anchor_lang::prelude::*;

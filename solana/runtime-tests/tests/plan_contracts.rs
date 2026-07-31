@@ -110,12 +110,12 @@ fn token_idl_removed_operator_surface_and_splits_payer_from_owner() {
         "payer must remain a writable signer because it funds first-bind rent"
     );
     // fromExternal: the transfer amount is a coprocessor-attested instruction argument, not a
-    // durable amount_compute_acl witness account.
+    // persistent amount_compute_acl witness account.
     assert!(
         !transfer_accounts
             .iter()
             .any(|account| account == "amount_compute_acl"),
-        "confidential_transfer amount is an attested external input, not a durable amount_compute_acl account"
+        "confidential_transfer amount is an attested external input, not a persistent amount_compute_acl account"
     );
 
     // There is no per-mint verifier-set rotation surface; redemption verifies a secp256k1 KMS cert
@@ -175,7 +175,7 @@ fn token_idl_removed_operator_surface_and_splits_payer_from_owner() {
         "token IDL must expose the thin `redeem_burned_amount` consumer"
     );
     // The BurnRedemptionRequest witness account is gone; the permanent per-handle replay marker
-    // remains as the sole durable token redemption state.
+    // remains as the sole persistent token redemption state.
     assert!(
         !names(&idl, "accounts")
             .iter()
@@ -222,14 +222,14 @@ fn contains_symbol(source: &str, symbol: &str) -> bool {
 }
 
 #[test]
-fn transient_wrap_does_not_leave_durable_acl_contracts() {
+fn transient_wrap_does_not_leave_persistent_acl_contracts() {
     let idl = parse_idl(TOKEN_IDL);
     let wrap_accounts = instruction_account_names(&idl, "wrap_usdc");
     assert!(
         !wrap_accounts
             .iter()
             .any(|account| account == "amount_compute_acl"),
-        "wrap_usdc must not require a durable amount_compute_acl for public deposit amount"
+        "wrap_usdc must not require a persistent amount_compute_acl for public deposit amount"
     );
     assert!(
         TOKEN_WRAP_USDC.contains("Output::transient()")

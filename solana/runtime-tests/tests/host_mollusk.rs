@@ -3,13 +3,13 @@
 //! Migrated from the old keyed-nonce `AclRecord`/`AclPermission` model (deleted
 //! along with `assert_acl_record`, `allow_acl_subjects`, `commit_handle_material`,
 //! and the single-op `fhe_*` instructions) to the new stateless-indexing
-//! `EncryptedValue` encrypted value account: durable outputs bound through `fhe_eval`,
+//! `EncryptedValue` encrypted value account: persistent outputs bound through `fhe_eval`,
 //! `allow_subjects`, and `make_handle_public`; raw create/update are covered as
 //! fail-closed ABI stubs. See `zama-host/src/state/encrypted_value.rs` and
 //! `zama_solana_acl` for the model this exercises.
 //!
 //! Scope note: this migration focuses the suite on the ACL/MMR surface that
-//! actually changed (`EncryptedValue` lifecycle + `fhe_eval` durable outputs +
+//! actually changed (`EncryptedValue` lifecycle + `fhe_eval` persistent outputs +
 //! encrypted value account reconstruction/proofs). The old suite's coverage of instructions
 //! untouched by the ACL rewrite (KMS context define/destroy, HCU limit
 //! setters, delegation-for-user-decryption, host-admin pause/config,
@@ -314,7 +314,7 @@ fn supersede_with_fhe_eval(
     let steps = vec![FheEvalStep::TrivialEncrypt {
         plaintext: [plaintext_tag; 32],
         fhe_type: 5,
-        output: FheEvalOutput::AllowedDurable {
+        output: FheEvalOutput::AllowedPersistent {
             output_encrypted_value_index: 0,
             output_app_account_authority_index: None,
             output_acl_domain_key_index: dictionary.intern_key(value.acl_domain_key),
@@ -370,7 +370,7 @@ fn expect_fhe_eval_supersede_error(
     let steps = vec![FheEvalStep::TrivialEncrypt {
         plaintext: [plaintext_tag; 32],
         fhe_type: 5,
-        output: FheEvalOutput::AllowedDurable {
+        output: FheEvalOutput::AllowedPersistent {
             output_encrypted_value_index: 0,
             output_app_account_authority_index: None,
             output_acl_domain_key_index: dictionary.intern_key(value.acl_domain_key),
@@ -645,7 +645,7 @@ fn mollusk_fhe_eval_fails_closed_without_previous_bank_hash() {
     let steps = vec![FheEvalStep::TrivialEncrypt {
         plaintext: [1; 32],
         fhe_type: 5,
-        output: FheEvalOutput::AllowedDurable {
+        output: FheEvalOutput::AllowedPersistent {
             output_encrypted_value_index: 0,
             output_app_account_authority_index: None,
             output_acl_domain_key_index: dictionary.intern_key(Pubkey::new_unique()),
@@ -1085,7 +1085,7 @@ fn mollusk_subject_retains_historical_access_sealed_before_removal() {
 }
 
 // ---------------------------------------------------------------------------
-// Durable supersession through fhe_eval outputs (item 2c/2d)
+// Persistent supersession through fhe_eval outputs (item 2c/2d)
 // ---------------------------------------------------------------------------
 
 #[test]
@@ -1150,7 +1150,7 @@ fn mollusk_fhe_eval_supersede_rotates_subjects_and_seals_the_outgoing_audience()
     let steps = vec![FheEvalStep::TrivialEncrypt {
         plaintext: [7; 32],
         fhe_type: 5,
-        output: FheEvalOutput::AllowedDurable {
+        output: FheEvalOutput::AllowedPersistent {
             output_encrypted_value_index: 0,
             output_app_account_authority_index: None,
             output_acl_domain_key_index: dictionary.intern_key(value.acl_domain_key),
@@ -1231,7 +1231,7 @@ fn mollusk_fhe_eval_supersede_shrinks_audience_and_seals_the_outgoing_set() {
     let steps = vec![FheEvalStep::TrivialEncrypt {
         plaintext: [8; 32],
         fhe_type: 5,
-        output: FheEvalOutput::AllowedDurable {
+        output: FheEvalOutput::AllowedPersistent {
             output_encrypted_value_index: 0,
             output_app_account_authority_index: None,
             output_acl_domain_key_index: dictionary.intern_key(value.acl_domain_key),
@@ -1282,7 +1282,7 @@ fn mollusk_fhe_eval_supersede_shrinks_audience_and_seals_the_outgoing_set() {
 
 #[test]
 fn mollusk_fhe_eval_rejects_stale_previous_subjects() {
-    // Item 2c: submitting stale previous_subjects through the real durable-output path.
+    // Item 2c: submitting stale previous_subjects through the real persistent-output path.
     let authority = Pubkey::new_unique();
     let (host_config, host_config_account) = host_config_account(authority);
     let subject = Pubkey::new_unique();
@@ -1527,7 +1527,7 @@ fn mollusk_denied_caller_cannot_mutate_acl_update_or_eval_output() {
     let steps = vec![FheEvalStep::TrivialEncrypt {
         plaintext: [1; 32],
         fhe_type: 5,
-        output: FheEvalOutput::AllowedDurable {
+        output: FheEvalOutput::AllowedPersistent {
             output_encrypted_value_index: 0,
             output_app_account_authority_index: None,
             output_acl_domain_key_index: dictionary.intern_key(caller),
@@ -1571,7 +1571,7 @@ fn mollusk_denied_caller_cannot_mutate_acl_update_or_eval_output() {
 #[test]
 fn mollusk_denied_subject_cannot_enter_via_allow_subjects_or_eval_create() {
     // The granting authority is clean; the subject being granted is denied. Both
-    // grant entry points (allow_subjects and fhe_eval durable create) must
+    // grant entry points (allow_subjects and fhe_eval persistent create) must
     // reject the grant, not just a denied authority.
     let authority = Pubkey::new_unique();
     let denied_subject = Pubkey::new_unique();
@@ -1646,7 +1646,7 @@ fn mollusk_denied_subject_cannot_enter_via_allow_subjects_or_eval_create() {
     let steps = vec![FheEvalStep::TrivialEncrypt {
         plaintext: [2; 32],
         fhe_type: 5,
-        output: FheEvalOutput::AllowedDurable {
+        output: FheEvalOutput::AllowedPersistent {
             output_encrypted_value_index: 0,
             output_app_account_authority_index: None,
             output_acl_domain_key_index: dictionary.intern_key(authority),
@@ -1880,7 +1880,7 @@ fn mollusk_fhe_eval_rejects_denied_second_output_authority_in_multi_output_frame
         FheEvalStep::TrivialEncrypt {
             plaintext: [3; 32],
             fhe_type: 5,
-            output: FheEvalOutput::AllowedDurable {
+            output: FheEvalOutput::AllowedPersistent {
                 output_encrypted_value_index: 0,
                 output_app_account_authority_index: None,
                 output_acl_domain_key_index: dictionary.intern_key(authority_a),
@@ -1895,7 +1895,7 @@ fn mollusk_fhe_eval_rejects_denied_second_output_authority_in_multi_output_frame
         FheEvalStep::TrivialEncrypt {
             plaintext: [4; 32],
             fhe_type: 5,
-            output: FheEvalOutput::AllowedDurable {
+            output: FheEvalOutput::AllowedPersistent {
                 output_encrypted_value_index: 1,
                 output_app_account_authority_index: Some(2),
                 output_acl_domain_key_index: dictionary.intern_key(authority_b),
@@ -1993,7 +1993,7 @@ fn mollusk_paused_state_blocks_acl_update_and_eval_output() {
     let steps = vec![FheEvalStep::TrivialEncrypt {
         plaintext: [2; 32],
         fhe_type: 5,
-        output: FheEvalOutput::AllowedDurable {
+        output: FheEvalOutput::AllowedPersistent {
             output_encrypted_value_index: 0,
             output_app_account_authority_index: None,
             output_acl_domain_key_index: dictionary.intern_key(authority),
@@ -2270,11 +2270,11 @@ fn mollusk_public_decrypt_proof_has_no_roll_forward() {
 }
 
 // ---------------------------------------------------------------------------
-// fhe_eval: durable output create + supersede through the real CPI-free path
+// fhe_eval: persistent output create + supersede through the real CPI-free path
 // ---------------------------------------------------------------------------
 
 #[test]
-fn mollusk_fhe_eval_creates_durable_output_from_local_binary_add() {
+fn mollusk_fhe_eval_creates_persistent_output_from_local_binary_add() {
     let authority = Pubkey::new_unique();
     let (host_config, host_config_account) = host_config_account(authority);
     let lhs = handle_for_chain(40, 5);
@@ -2296,16 +2296,16 @@ fn mollusk_fhe_eval_creates_durable_output_from_local_binary_add() {
     let mut dictionary = BatchDictionary::default();
     let steps = vec![FheEvalStep::Binary {
         op: FheBinaryOpCode::Add,
-        lhs: FheEvalOperand::AllowedDurable {
+        lhs: FheEvalOperand::AllowedPersistent {
             handle_index: dictionary.intern(lhs),
             encrypted_value_index: 0,
         },
-        rhs: FheEvalOperand::AllowedDurable {
+        rhs: FheEvalOperand::AllowedPersistent {
             handle_index: dictionary.intern(rhs),
             encrypted_value_index: 1,
         },
         output_fhe_type: 5,
-        output: FheEvalOutput::AllowedDurable {
+        output: FheEvalOutput::AllowedPersistent {
             output_encrypted_value_index: 2,
             output_app_account_authority_index: None,
             output_acl_domain_key_index: dictionary.intern_key(output_acl_domain_key),
@@ -2351,7 +2351,7 @@ fn mollusk_fhe_eval_creates_durable_output_from_local_binary_add() {
 }
 
 #[test]
-fn mollusk_fhe_eval_supersedes_durable_output_with_previous_state() {
+fn mollusk_fhe_eval_supersedes_persistent_output_with_previous_state() {
     let authority = Pubkey::new_unique();
     let (host_config, host_config_account) = host_config_account(authority);
     let input_handle = handle_for_chain(42, 5);
@@ -2375,7 +2375,7 @@ fn mollusk_fhe_eval_supersedes_durable_output_with_previous_state() {
     let mut dictionary = BatchDictionary::default();
     let steps = vec![FheEvalStep::Binary {
         op: FheBinaryOpCode::Add,
-        lhs: FheEvalOperand::AllowedDurable {
+        lhs: FheEvalOperand::AllowedPersistent {
             handle_index: dictionary.intern(input_handle),
             encrypted_value_index: 0,
         },
@@ -2383,7 +2383,7 @@ fn mollusk_fhe_eval_supersedes_durable_output_with_previous_state() {
             value_index: dictionary.intern([0; 32]),
         },
         output_fhe_type: 5,
-        output: FheEvalOutput::AllowedDurable {
+        output: FheEvalOutput::AllowedPersistent {
             output_encrypted_value_index: 1,
             output_app_account_authority_index: None,
             output_acl_domain_key_index: dictionary.intern_key(authority),
@@ -2456,7 +2456,7 @@ fn born_public_frame(step_count: usize, born_public_steps: &[usize]) -> BornPubl
             output_metas.push(writable(output_address));
             output_accounts.push((output_address, empty_system_account()));
             outputs.push((step_index as u16, output_address));
-            FheEvalOutput::AllowedDurable {
+            FheEvalOutput::AllowedPersistent {
                 output_encrypted_value_index: output_index,
                 output_app_account_authority_index: None,
                 output_acl_domain_key_index: dictionary.intern_key(authority),
@@ -2612,7 +2612,7 @@ fn mollusk_fhe_eval_batches_multiple_born_public_outputs_in_step_order() {
 }
 
 /// The measured heap budget for the heap-heaviest legal frame shape: all steps born-public
-/// durable creates. The Anchor default bump allocator serves a fixed 32KB region (never freed,
+/// persistent creates. The Anchor default bump allocator serves a fixed 32KB region (never freed,
 /// and NOT extended by a compute-budget heap-frame request), and 20 creates is the measured
 /// maximum that executes within it (fhevm-internal#1853 W8).
 const MAX_BORN_PUBLIC_CREATES_ON_DEFAULT_HEAP: usize = 20;
@@ -2691,7 +2691,7 @@ fn mollusk_transaction_later_failure_rolls_back_born_public_output() {
 // trust-registry tests below carry over almost verbatim: they only touch
 // `HostConfig` and the two new HCU state accounts, none of which changed shape
 // in the ACL/MMR rewrite. The `fhe_eval` enforcement tests are rebuilt on a
-// fresh `EvalFixture` using durable `EncryptedValue` inputs/outputs instead of
+// fresh `EvalFixture` using persistent `EncryptedValue` inputs/outputs instead of
 // the old keyed-nonce `AclRecord` the original PR tested against.
 // ===========================================================================
 
@@ -3734,14 +3734,14 @@ fn mollusk_define_kms_context_rejects_zero_signer() {
     );
 }
 
-// ---- EvalFixture: a durable-output frame for block-cap enforcement ----
+// ---- EvalFixture: a persistent-output frame for block-cap enforcement ----
 
 struct EvalFixture {
     program_id: Pubkey,
     authority: Pubkey,
     app_account: Pubkey,
     /// The metered identity: the frame's signed `compute_subject`, which must be a member of the
-    /// durable input ACL (it authorizes the inputs). Deliberately distinct from `app_account` /
+    /// persistent input ACL (it authorizes the inputs). Deliberately distinct from `app_account` /
     /// `app_account_authority` so block-cap tests prove the meter keys on the compute subject and
     /// never on the output-ACL authority.
     compute_subject: Pubkey,
@@ -3772,7 +3772,7 @@ impl EvalFixture {
         let output_label = label("output-hcu-fixture");
         let balance_handle = handle_for_chain(151, 5);
         let amount_handle = handle_for_chain(152, 5);
-        // The compute subject is the durable inputs' allowed member, so admission passes and the
+        // The compute subject is the persistent inputs' allowed member, so admission passes and the
         // same identity is what the block cap meters.
         let (balance_value, balance_ev) = new_value_account(
             authority,
@@ -3838,20 +3838,20 @@ impl EvalFixture {
     }
 
     fn balance_operand(&self, dictionary: &mut BatchDictionary) -> FheEvalOperand {
-        FheEvalOperand::AllowedDurable {
+        FheEvalOperand::AllowedPersistent {
             handle_index: dictionary.intern(self.balance_handle),
             encrypted_value_index: 0,
         }
     }
 
     fn amount_operand(&self, dictionary: &mut BatchDictionary) -> FheEvalOperand {
-        FheEvalOperand::AllowedDurable {
+        FheEvalOperand::AllowedPersistent {
             handle_index: dictionary.intern(self.amount_handle),
             encrypted_value_index: 1,
         }
     }
 
-    /// `Ge` (ebool) + `Sub` (euint64) + `IfThenElse` (euint64, durable output) — costs exactly
+    /// `Ge` (ebool) + `Sub` (euint64) + `IfThenElse` (euint64, persistent output) — costs exactly
     /// `FIXTURE_FRAME_HCU`.
     fn success_frame(&self) -> FheEvalArgs {
         let mut dictionary = BatchDictionary::default();
@@ -3876,7 +3876,7 @@ impl EvalFixture {
                 if_true: FheEvalOperand::AllowedLocal { producer_index: 1 },
                 if_false: self.balance_operand(&mut dictionary),
                 output_fhe_type: 5,
-                output: FheEvalOutput::AllowedDurable {
+                output: FheEvalOutput::AllowedPersistent {
                     output_encrypted_value_index: 2,
                     output_app_account_authority_index: None,
                     output_acl_domain_key_index: dictionary.intern_key(self.authority),
@@ -3896,7 +3896,7 @@ impl EvalFixture {
         }
     }
 
-    /// The standard durable-output frame with the fixture's `compute_subject` signed in,
+    /// The standard persistent-output frame with the fixture's `compute_subject` signed in,
     /// threading the two optional block-cap accounts.
     fn block_cap_instruction(&self, meter: Option<Pubkey>, trust: Option<Pubkey>) -> Instruction {
         let mut ix = anchor_ix(
@@ -3923,7 +3923,7 @@ impl EvalFixture {
     }
 
     /// A frame at `MAX_FHE_EVAL_OPS`: `Ge` control, alternating `Sub`/`Add` transient
-    /// steps, and the durable `IfThenElse` output. Same accounts and output shape as
+    /// steps, and the persistent `IfThenElse` output. Same accounts and output shape as
     /// `block_cap_instruction`, so the compute-unit delta against the three-op profile
     /// isolates the additional host-side FHE eval steps.
     fn max_ops_instruction(&self) -> Instruction {
@@ -3969,7 +3969,7 @@ impl EvalFixture {
             },
             if_false: self.balance_operand(&mut dictionary),
             output_fhe_type: 5,
-            output: FheEvalOutput::AllowedDurable {
+            output: FheEvalOutput::AllowedPersistent {
                 output_encrypted_value_index: 2,
                 output_app_account_authority_index: None,
                 output_acl_domain_key_index: dictionary.intern_key(self.authority),
@@ -4008,7 +4008,7 @@ impl EvalFixture {
         ix
     }
 
-    /// A transient-only frame (single step, `AllowedLocal` output) — produces no durable
+    /// A transient-only frame (single step, `AllowedLocal` output) — produces no persistent
     /// output; the block-cap identity comes solely from the `compute_subject` signer.
     fn transient_only_instruction(
         &self,
@@ -4050,7 +4050,7 @@ impl EvalFixture {
     }
 
     /// A persist-nothing frame: a single `TrivialEncrypt` with an `AllowedLocal` output — no
-    /// durable input, no verified input, no durable output. Binds no metering identity, so under a
+    /// persistent input, no verified input, no persistent output. Binds no metering identity, so under a
     /// finite cap `compute_subject` would be a free variable (fhevm-internal#1744). No
     /// remaining accounts.
     fn persist_nothing_instruction(
@@ -4085,10 +4085,10 @@ impl EvalFixture {
         )
     }
 
-    /// An input-free frame that DOES persist: a single `TrivialEncrypt` bound into a fresh durable
-    /// output encrypted value account — the legitimate bootstrap/mint path. Anchored by its durable output, so it
+    /// An input-free frame that DOES persist: a single `TrivialEncrypt` bound into a fresh persistent
+    /// output encrypted value account — the legitimate bootstrap/mint path. Anchored by its persistent output, so it
     /// survives the persist-nothing rejection. Returns the output encrypted value account address and instruction.
-    fn input_free_durable_instruction(&self, meter: Option<Pubkey>) -> (Pubkey, Instruction) {
+    fn input_free_persistent_instruction(&self, meter: Option<Pubkey>) -> (Pubkey, Instruction) {
         let output_label = label("input-free-bootstrap");
         let output_value_key = zama_solana_acl::derive_value_key(
             self.authority.to_bytes(),
@@ -4100,7 +4100,7 @@ impl EvalFixture {
         let steps = vec![FheEvalStep::TrivialEncrypt {
             plaintext: [7; 32],
             fhe_type: 5,
-            output: FheEvalOutput::AllowedDurable {
+            output: FheEvalOutput::AllowedPersistent {
                 output_encrypted_value_index: 0,
                 output_app_account_authority_index: None,
                 output_acl_domain_key_index: dictionary.intern_key(self.authority),
@@ -4137,7 +4137,7 @@ impl EvalFixture {
         (output_value, ix)
     }
 
-    /// A durable-output frame that reuses the fixture's `compute_subject` (and thus its meter) but
+    /// A persistent-output frame that reuses the fixture's `compute_subject` (and thus its meter) but
     /// with a caller-chosen `payer` and `app_account_authority`, binding its own fresh output
     /// encrypted value account under that authority. Everything a caller controls is varied except the ACL-bound
     /// compute subject, so this drives the #1708 regression: proving no account rotation yields a
@@ -4177,7 +4177,7 @@ impl EvalFixture {
                 if_true: FheEvalOperand::AllowedLocal { producer_index: 1 },
                 if_false: self.balance_operand(&mut dictionary),
                 output_fhe_type: 5,
-                output: FheEvalOutput::AllowedDurable {
+                output: FheEvalOutput::AllowedPersistent {
                     output_encrypted_value_index: 2,
                     output_app_account_authority_index: None,
                     output_acl_domain_key_index: dictionary.intern_key(app_authority),
@@ -4217,7 +4217,7 @@ impl EvalFixture {
         (output_value, ix)
     }
 
-    /// Asserts the durable output was never created, from a returned `InstructionResult`
+    /// Asserts the persistent output was never created, from a returned `InstructionResult`
     /// (works whether or not the output account was ever persisted into `self.context`).
     fn assert_no_output(&self, result: &mollusk_svm::result::InstructionResult) {
         let owner = result
@@ -4238,7 +4238,7 @@ impl EvalFixture {
 #[test]
 fn mollusk_fhe_eval_unrestricted_cap_none_none_succeeds() {
     // The default (u64::MAX) short-circuits: with the mandatory compute_subject signed in but
-    // neither optional account supplied, the frame binds its durable output and no meter is
+    // neither optional account supplied, the frame binds its persistent output and no meter is
     // ever created or touched.
     let fixture = EvalFixture::with_block_cap(u64::MAX);
     fixture.context.process_and_validate_instruction(
@@ -4297,7 +4297,7 @@ fn mollusk_fhe_eval_unrestricted_cap_ignores_supplied_accounts() {
 #[test]
 fn mollusk_fhe_eval_ban_cap_zero_untrusted_no_meter_is_rejected() {
     // cap == 0 bans untrusted apps outright — rejected even with no meter supplied, and no
-    // durable output is created.
+    // persistent output is created.
     let fixture = EvalFixture::with_block_cap(0);
     let result = fixture.context.process_and_validate_instruction(
         &fixture.block_cap_instruction(None, None),
@@ -4546,7 +4546,7 @@ fn mollusk_fhe_eval_overfunded_empty_meter_is_created_preserving_surplus() {
 
 #[test]
 fn mollusk_fhe_eval_prefunded_output_acl_is_created_not_griefed() {
-    // The same anti-griefing property for the durable output-ACL path
+    // The same anti-griefing property for the persistent output-ACL path
     // (`create_pda_strict`): its address is predictable too, so a pre-funded (system-owned,
     // empty) donation at the output PDA must not block the frame. Asserted under the
     // unrestricted cap so the meter path is inert and only the output-ACL creation is
@@ -4581,7 +4581,7 @@ fn mollusk_fhe_eval_trust_pda_supplied_as_meter_is_rejected() {
 
 #[test]
 fn mollusk_fhe_eval_over_cap_trips_in_admission_without_output_or_mutation() {
-    // A frame whose cost exceeds the cap trips in the read-only admission pass: no durable
+    // A frame whose cost exceeds the cap trips in the read-only admission pass: no persistent
     // output is created and the meter is left unchanged (breach before any write).
     let fixture = EvalFixture::with_block_cap(FIXTURE_FRAME_HCU - 1);
     let slot = fixture.context.mollusk.sysvars.clock.slot;
@@ -4803,10 +4803,10 @@ fn mollusk_fhe_eval_extra_remaining_account_still_rejected_with_block_cap() {
 
 #[test]
 fn mollusk_fhe_eval_transient_only_frame_is_metered_via_compute_subject() {
-    // A transient-only frame (all AllowedLocal outputs) creates no durable ACL record, so
+    // A transient-only frame (all AllowedLocal outputs) creates no persistent ACL record, so
     // nothing welds `app_account_authority` on-chain — but the metering identity is the signed
     // `compute_subject`, independent of the frame's output shape, so the frame is still charged
-    // in full. (A frame with no durable output would otherwise escape a per-output-authority
+    // in full. (A frame with no persistent output would otherwise escape a per-output-authority
     // meter entirely; this is the regression guard for that gap.)
     let fixture = EvalFixture::with_block_cap(500_000);
     let meter_pda = fixture.meter_pda();
@@ -4814,7 +4814,7 @@ fn mollusk_fhe_eval_transient_only_frame_is_metered_via_compute_subject() {
         &fixture.transient_only_instruction(Some(meter_pda), None),
         &[Check::success()],
     );
-    // No durable output ACL record was produced...
+    // No persistent output ACL record was produced...
     fixture.assert_no_output(&result);
     // ...yet the frame accrued onto the authority's meter.
     let meter = read_hcu_block_meter(&fixture.context, meter_pda).expect("meter created");
@@ -4823,8 +4823,8 @@ fn mollusk_fhe_eval_transient_only_frame_is_metered_via_compute_subject() {
 }
 
 #[test]
-fn mollusk_fhe_eval_rejects_rand_frame_without_durable_output() {
-    // fhevm-internal#1853 W4: rand seeds are anchored to the frame's durable writes, so an
+fn mollusk_fhe_eval_rejects_rand_frame_without_persistent_output() {
+    // fhevm-internal#1853 W4: rand seeds are anchored to the frame's persistent writes, so an
     // all-transient rand frame has no seed anchor. Rejected unconditionally in preflight —
     // unlike the cap-gated persist-nothing rule, this holds under the unrestricted default cap.
     let fixture = EvalFixture::with_block_cap(u64::MAX);
@@ -4843,15 +4843,15 @@ fn mollusk_fhe_eval_rejects_rand_frame_without_durable_output() {
     fixture.context.process_and_validate_instruction(
         &ix,
         &[custom_error(
-            host::errors::ZamaHostError::FheEvalRandRequiresDurableOutput,
+            host::errors::ZamaHostError::FheEvalRandRequiresPersistentOutput,
         )],
     );
 }
 
 #[test]
 fn mollusk_fhe_eval_finite_cap_rejects_persist_nothing_frame() {
-    // fhevm-internal#1744: under a finite cap, a frame that binds no durable input, no verified
-    // input, and no durable output leaves `compute_subject` a free variable — the caller could
+    // fhevm-internal#1744: under a finite cap, a frame that binds no persistent input, no verified
+    // input, and no persistent output leaves `compute_subject` a free variable — the caller could
     // rotate fresh subjects to mint fresh per-slot meters. Rejected in preflight, before compute,
     // so no meter is created even though one is supplied.
     let fixture = EvalFixture::with_block_cap(500_000);
@@ -4866,17 +4866,17 @@ fn mollusk_fhe_eval_finite_cap_rejects_persist_nothing_frame() {
 }
 
 #[test]
-fn mollusk_fhe_eval_finite_cap_allows_input_free_durable_output_bootstrap() {
-    // The bootstrap/mint path (trivial-encrypt -> durable output) is input-free but persists an
+fn mollusk_fhe_eval_finite_cap_allows_input_free_persistent_output_bootstrap() {
+    // The bootstrap/mint path (trivial-encrypt -> persistent output) is input-free but persists an
     // ACL record, so it anchors the frame and stays legal under a finite cap.
     let fixture = EvalFixture::with_block_cap(500_000);
     let meter_pda = fixture.meter_pda();
-    let (output_value, ix) = fixture.input_free_durable_instruction(Some(meter_pda));
+    let (output_value, ix) = fixture.input_free_persistent_instruction(Some(meter_pda));
     fixture
         .context
         .process_and_validate_instruction(&ix, &[Check::success()]);
     read_encrypted_value_from_context(&fixture.context, output_value);
-    // The durable frame WAS metered onto the compute subject (a single euint64 TrivialEncrypt).
+    // The persistent frame WAS metered onto the compute subject (a single euint64 TrivialEncrypt).
     const TRIVIAL_ENCRYPT_EUINT64_HCU: u64 = 900;
     let meter = read_hcu_block_meter(&fixture.context, meter_pda).expect("meter created");
     assert_eq!(meter.app, fixture.block_cap_app());
@@ -5754,7 +5754,7 @@ fn mollusk_verify_public_decrypt_rejects_historical_only_leaf() {
         &[subject],
     );
 
-    // Supersede (durable output) seals a historical-access leaf for handle0; no public-decrypt leaf.
+    // Supersede (persistent output) seals a historical-access leaf for handle0; no public-decrypt leaf.
     let final_value = supersede_with_fhe_eval(
         admin,
         subject,
@@ -5892,7 +5892,7 @@ fn cost_snapshot_verify_public_decrypt() {
 #[test]
 fn cost_snapshot_fhe_eval_three_op_frame() {
     // Unrestricted HCU cap, no optional meter/trust accounts: the minimal
-    // canonical eval frame (`EvalFixture::success_steps`) with one durable
+    // canonical eval frame (`EvalFixture::success_steps`) with one persistent
     // output binding.
     let fixture = EvalFixture::with_block_cap_keys(
         u64::MAX,
@@ -5911,7 +5911,7 @@ fn cost_snapshot_fhe_eval_three_op_frame() {
 #[test]
 fn cost_snapshot_fhe_eval_max_op_frame() {
     // A frame at MAX_FHE_EVAL_OPS with the same fixture keys, accounts, and
-    // durable-output shape as the three-op profile. The compute-unit delta
+    // persistent-output shape as the three-op profile. The compute-unit delta
     // isolates the extra direct host-side FHE eval steps; it does not include
     // work performed by an application before invoking the host program.
     let fixture = EvalFixture::with_block_cap_keys(
@@ -5932,7 +5932,7 @@ fn cost_snapshot_fhe_eval_max_op_frame() {
 fn mollusk_fhe_eval_max_op_transaction_fits_packet() {
     // MAX_FHE_EVAL_OPS is derived from measured budgets (fhevm-internal#1853 W8). This is the
     // byte-budget half: the whole signed transaction for the max-op frame — envelope included —
-    // must fit one 1,232-byte packet, with headroom for realistic envelopes (more durable
+    // must fit one 1,232-byte packet, with headroom for realistic envelopes (more persistent
     // accounts, more dictionary entries) so the cap is not set at the packet edge.
     let fixture = EvalFixture::with_block_cap_keys(
         u64::MAX,

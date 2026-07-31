@@ -97,7 +97,7 @@ impl std::fmt::Debug for YellowstoneSourceConfig {
 pub enum YellowstoneSourceError {
     #[error("retryable Yellowstone transport failure: {0}")]
     Retryable(String),
-    /// Provider does not support `from_slot` at all. Advancing the durable
+    /// Provider does not support `from_slot` at all. Advancing the persistent
     /// checkpoint cannot fix this; do not RPC-catch-up and resubscribe with
     /// `from_slot` in a loop. Fail closed until a replay-capable geyser is
     /// configured or cursorless staging lands (fhevm-internal #1823).
@@ -145,7 +145,7 @@ impl YellowstoneBlockSource {
 
     /// Opens one confirmed completed-block subscription. The caller owns
     /// cancellation by selecting over this future and later `next_block`
-    /// futures, and owns reconnect from its last durable checkpoint.
+    /// futures, and owns reconnect from its last persistent checkpoint.
     pub async fn subscribe(
         &self,
         cursor: Option<BlockCheckpoint>,
@@ -234,13 +234,13 @@ where
         if !*replay_observed {
             let expected = expected_replay.expect("cursor exists when replay is unobserved");
             if block.slot == expected.slot && block.block_hash == expected.block_hash {
-                // Exact inclusive replay of the durable checkpoint.
+                // Exact inclusive replay of the persistent checkpoint.
                 *replay_observed = true;
             } else if block.parent_slot == expected.slot && block.parent_hash == expected.block_hash
             {
                 // Filtered-stream resume after recovery: empty / non-program
                 // checkpoint blocks are not re-emitted by account_include, but a
-                // contiguous parent link still proves continuity from the durable
+                // contiguous parent link still proves continuity from the persistent
                 // checkpoint. Do not invent a synthetic CompletedBlock.
                 *replay_observed = true;
                 *last_observed = Some(block.clone());

@@ -4,9 +4,9 @@ use anchor_lang::prelude::Pubkey;
 #[cfg(not(target_os = "solana"))]
 use std::sync::atomic::{AtomicU64, Ordering};
 
-/// Durable host operand identified by its `EncryptedValue` PDA.
+/// Persistent host operand identified by its `EncryptedValue` PDA.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub(crate) struct DurableOperand {
+pub(crate) struct PersistentOperand {
     pub(crate) handle: [u8; 32],
     pub(crate) encrypted_value: Pubkey,
 }
@@ -19,7 +19,7 @@ pub(crate) struct Operand(pub(crate) OperandKind);
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum OperandKind {
-    Durable(DurableOperand),
+    Persistent(PersistentOperand),
     Transient {
         producer_index: u16,
         builder_scope: EvalBuilderScope,
@@ -36,8 +36,8 @@ pub(crate) enum OperandKind {
 }
 
 impl Operand {
-    pub(crate) fn durable(handle: [u8; 32], encrypted_value: Pubkey) -> Self {
-        Self(OperandKind::Durable(DurableOperand {
+    pub(crate) fn persistent(handle: [u8; 32], encrypted_value: Pubkey) -> Self {
+        Self(OperandKind::Persistent(PersistentOperand {
             handle,
             encrypted_value,
         }))

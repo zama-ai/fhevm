@@ -25,7 +25,7 @@ pub struct EncryptedValue {
     pub encrypted_value_label: [u8; 32],
     /// Current encrypted value identifier (the live handle).
     pub current_handle: [u8; 32],
-    /// Current durable subjects. Membership in this set is the whole ACL.
+    /// Current persistent subjects. Membership in this set is the whole ACL.
     pub subjects: Vec<Pubkey>,
     /// Number of MMR leaves appended; `0` means no history.
     pub leaf_count: u64,

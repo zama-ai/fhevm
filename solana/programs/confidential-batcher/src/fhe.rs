@@ -4,7 +4,7 @@
 //! quit reset, and the claim MulDiv) with one identity: the per-batch
 //! authority PDA is simultaneously the eval's `compute_subject` (it reads the
 //! deposit encrypted value accounts it is a subject of) and its `app_account_authority` (it
-//! authorizes the batcher-owned durable outputs), both signed through a single
+//! authorizes the batcher-owned persistent outputs), both signed through a single
 //! `invoke_signed`.
 
 use anchor_lang::prelude::*;
@@ -26,17 +26,17 @@ pub(crate) fn read_encrypted_value(info: &AccountInfo) -> Result<EncryptedValue>
         .map_err(|_| BatcherError::EncryptedValueInvalid.into())
 }
 
-/// A durable eval output bound to the exact `EncryptedValue` encrypted value account it may
+/// A persistent eval output bound to the exact `EncryptedValue` encrypted value account it may
 /// create or supersede, mirroring the confidential-token pattern: create when
 /// the PDA does not exist yet, supersede (pinning the stored previous handle
 /// and subjects) when it does.
-pub(crate) struct DurableBinding<'info> {
+pub(crate) struct PersistentBinding<'info> {
     account: AccountInfo<'info>,
-    output: Box<zama_fhe::DurableOutput>,
+    output: Box<zama_fhe::PersistentOutput>,
     previous_handle: Option<[u8; 32]>,
 }
 
-impl<'info> DurableBinding<'info> {
+impl<'info> PersistentBinding<'info> {
     pub(crate) fn bind(
         account: AccountInfo<'info>,
         key: zama_fhe::EncryptedValueKey,
@@ -52,11 +52,11 @@ impl<'info> DurableBinding<'info> {
                 account.data_is_empty() && !account.executable,
                 BatcherError::EncryptedValueInvalid
             );
-            (zama_fhe::DurableOutput::create(key, subjects), None)
+            (zama_fhe::PersistentOutput::create(key, subjects), None)
         } else {
             let value = read_encrypted_value(&account)?;
             (
-                zama_fhe::DurableOutput::update(key, subjects, &value),
+                zama_fhe::PersistentOutput::update(key, subjects, &value),
                 Some(value.current_handle),
             )
         };
@@ -69,7 +69,7 @@ impl<'info> DurableBinding<'info> {
     }
 
     pub(crate) fn output(&self) -> zama_fhe::Output {
-        zama_fhe::Output::durable_output((*self.output).clone())
+        zama_fhe::Output::persistent_output((*self.output).clone())
     }
 
     pub(crate) fn account_info(&self) -> AccountInfo<'info> {
@@ -145,15 +145,15 @@ pub(crate) fn invalid_eval_plan(error: zama_fhe::EvalBuildError) -> anchor_lang:
     error!(BatcherError::InvalidFheEvalPlan)
 }
 
-/// Builds a euint64 durable operand from an encrypted value account's own canonical fields, so
+/// Builds a euint64 persistent operand from an encrypted value account's own canonical fields, so
 /// the operand slot always matches the account the host re-validates.
 pub(crate) fn uint64_operand(value: &EncryptedValue) -> Result<zama_fhe::Uint64Handle> {
-    zama_fhe::Uint64Handle::durable(
+    zama_fhe::Uint64Handle::persistent(
         value.current_handle,
         zama_fhe::EncryptedValueKey::new(
             value.acl_domain_key,
             value.app_account,
-            zama_fhe::DurableLabel::new(value.encrypted_value_label),
+            zama_fhe::PersistentLabel::new(value.encrypted_value_label),
         ),
     )
     .map_err(invalid_eval_plan)

@@ -80,10 +80,10 @@ pub fn initialize_token_account<'info>(
     let compute_signer = ctx.accounts.compute_signer.key();
     let token_account_key = ctx.accounts.token_account.key();
     let balance_encrypted_value = ctx.accounts.balance_encrypted_value.key();
-    let balance_output = fhe::DurableOutput::new(
+    let balance_output = fhe::PersistentOutput::new(
         ctx.accounts.balance_encrypted_value.to_account_info(),
         encrypted_value_key(mint_key, token_account_key, balance_label()),
-        fhe::DurableAudience::for_owner(owner, compute_signer),
+        fhe::PersistentAudience::for_owner(owner, compute_signer),
     )?;
     let mut builder =
         zama_fhe::EvalBuilder::new(zama_fhe::EvalAppAuthority::new(token_account_key));

@@ -131,7 +131,7 @@ pub fn confidential_burn<'info>(
 ///
 /// This is the burn-side analog of [`ConfidentialTransferFromValue`]: the 190-byte attestation
 /// argument is gone and one account is added — `amount_value`, the encrypted amount to burn. It is
-/// read-only (the durable operand the eval reads) and is never superseded or consumed; only the
+/// read-only (the persistent operand the eval reads) and is never superseded or consumed; only the
 /// balance, total-supply, and burned-amount encrypted value accounts change, exactly as in [`ConfidentialBurn`].
 /// The batcher path uses this to burn a computed batch total (a handle produced by summing joins)
 /// whose owner is a program PDA that authorizes the burn via `invoke_signed`.
@@ -170,7 +170,7 @@ pub struct ConfidentialBurnFromValue<'info> {
     #[account(mut, address = encrypted_value_address(mint.key(), token_account.key(), burned_amount_label()).0)]
     pub burned_amount_value: UncheckedAccount<'info>,
     /// The existing encrypted amount to burn: a computed or received `euint64` handle. Read-only
-    /// durable operand — never superseded, never consumed. Its address is the canonical PDA of its
+    /// persistent operand — never superseded, never consumed. Its address is the canonical PDA of its
     /// own `(acl_domain_key, app_account, encrypted_value_label)` fields, so an encrypted value account from any app
     /// may be passed here once its owner has granted the mint's compute subject via `allow_subjects`.
     pub amount_value: Box<Account<'info, zama_host::EncryptedValue>>,
@@ -289,10 +289,10 @@ pub fn confidential_burn_from_value<'info>(
 /// eval frame differs. Mirrors [`TransferAmountSource`].
 enum BurnAmountSource<'info> {
     /// EVM `FHE.fromExternal` parity: a coprocessor-attested fresh client-side encryption, verified
-    /// in-frame and transient-allowed for this eval (no durable amount account).
+    /// in-frame and transient-allowed for this eval (no persistent amount account).
     Attested(zama_host::CoprocessorInputAttestation),
     /// EVM computed/received `euint64` parity: an existing on-chain `EncryptedValue` encrypted value account, spent
-    /// as a read-only durable operand at its current handle. It is never superseded and never
+    /// as a read-only persistent operand at its current handle. It is never superseded and never
     /// consumed. The token spend gate (signing owner in the value's subject set) and euint64 type
     /// check run in the instruction handler before this reaches the eval builder; the host re-checks
     /// the handle is current and that the mint's compute subject is allowed on the value, in-frame.
@@ -386,23 +386,23 @@ fn execute_burn<'info>(
         assert_amount_attestation_binding(amount_attestation, owner, compute_signer)?;
     }
 
-    let balance_output = fhe::DurableOutput::new(
+    let balance_output = fhe::PersistentOutput::new(
         accounts.balance_value.clone(),
         encrypted_value_key(mint_key, token_account_key, balance_label()),
-        fhe::DurableAudience::for_owner(owner, compute_signer),
+        fhe::PersistentAudience::for_owner(owner, compute_signer),
     )?;
     // ERC-7984 `unwrap` parity (`makePubliclyDecryptable(unwrapAmount)`): the burned delta is born
     // publicly decryptable inside this eval CPI, so the burn is permanently redeemable even after a
     // later burn supersedes this shared encrypted value account (DD-036 / Vector 2) — with no second make-public CPI.
-    let burned_output = fhe::DurableOutput::new_public(
+    let burned_output = fhe::PersistentOutput::new_public(
         accounts.burned_amount_value.clone(),
         encrypted_value_key(mint_key, token_account_key, burned_amount_label()),
-        fhe::DurableAudience::for_owner(owner, compute_signer),
+        fhe::PersistentAudience::for_owner(owner, compute_signer),
     )?;
-    let total_supply_output = fhe::DurableOutput::new(
+    let total_supply_output = fhe::PersistentOutput::new(
         accounts.total_supply_value.clone(),
         encrypted_value_key(mint_key, total_supply_authority, total_supply_label()),
-        fhe::DurableAudience::compute_only(compute_signer),
+        fhe::PersistentAudience::compute_only(compute_signer),
     )?;
 
     let balance = uint64_from_value(
@@ -421,11 +421,11 @@ fn execute_burn<'info>(
         zama_fhe::EvalBuilder::new(zama_fhe::EvalAppAuthority::new(token_account_key));
     let amount: zama_fhe::Uint64Handle = match &amount_source {
         // fromExternal: the amount is a coprocessor-attested external input, verified in-frame and
-        // transient-allowed for this eval (no durable amount handle / ACL account).
+        // transient-allowed for this eval (no persistent amount handle / ACL account).
         BurnAmountSource::Attested(amount_attestation) => builder
             .verified_input(amount_attestation.clone())
             .map_err(invalid_eval_plan)?,
-        // Existing value: the amount is an on-chain encrypted value account's current handle, read as a durable
+        // Existing value: the amount is an on-chain encrypted value account's current handle, read as a persistent
         // operand. The slot is derived from the value's own canonical fields, so its PDA equals the
         // passed account; the host re-checks handle-is-current and compute-subject membership.
         BurnAmountSource::ExistingValue { amount_value, .. } => {
@@ -469,8 +469,8 @@ fn execute_burn<'info>(
     let compute_authority =
         fhe::ComputeAuthority::for_mint(accounts.compute_signer, mint_key, compute_signer_bump)?;
     let total_supply_authority_bump = total_supply_authority_address(mint_key).1;
-    // Durable output accounts are the same for both arms; the existing-value arm adds the amount
-    // encrypted value account as a read-only durable input operand the plan now requires.
+    // Persistent output accounts are the same for both arms; the existing-value arm adds the amount
+    // encrypted value account as a read-only persistent input operand the plan now requires.
     let mut dynamic_accounts = vec![
         balance_output.account_info(),
         burned_output.account_info(),

@@ -2,7 +2,7 @@
 //! chronological instruction replay, turning `DecodedInstruction`s into the
 //! `zama_solana_acl::value_account::EncryptedValueAccountEvent`s the shared crate's MMR math consumes.
 //!
-//! Encrypted-value-account creation and supersession come from durable
+//! Encrypted-value-account creation and supersession come from persistent
 //! `fhe_eval` outputs. `allow_subjects` mutates current subjects but appends
 //! no MMR leaf. `make_handle_public` carries the exact public handle
 //! on-chain, so replay can reconstruct public-decrypt leaves even after
@@ -158,7 +158,7 @@ pub fn apply_instruction(
                 .ok_or(ReplayError::UnknownEncryptedValueAccount(*encrypted_value))?;
             validate_previous_state(state, *encrypted_value, *previous_handle, previous_subjects)?;
             // Historical leaves seal against the pre-rotation audience. On-chain
-            // `fhe_eval` may rotate subjects on the durable output; adopt
+            // `fhe_eval` may rotate subjects on the persistent output; adopt
             // `output_subjects` only after emitting the superseded leaf set.
             let mut events = vec![EncryptedValueAccountEvent::handle_superseded(
                 *previous_handle,

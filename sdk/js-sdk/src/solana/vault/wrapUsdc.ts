@@ -30,7 +30,7 @@ export type SolanaVaultWrapUsdcParameters = {
  * Builds `confidential_token::wrap_usdc`: escrows a PUBLIC `amount` of `underlyingMint` from the
  * owner's associated token account and rotates the owner's confidential balance by that amount. The
  * amount is public at the wrap boundary, so — unlike a confidential transfer — this needs NO input
- * proof. The owner's confidential token account, the program's underlying vault, both durable
+ * proof. The owner's confidential token account, the program's underlying vault, both persistent
  * encrypted value accounts, and the two Anchor event authorities are derived here from the mints and owner;
  * the seeder/scenario supplies only semantic roots and assembles/sends the returned instruction.
  */

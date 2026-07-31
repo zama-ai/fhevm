@@ -10,9 +10,9 @@ use crate::operand::{EvalBuilderScope, Operand, OperandKind};
 use crate::{EvalBuildError, Result};
 
 /// Mirrors the host preflight rule (fhevm-internal#1853 W4): rand seeds are anchored to
-/// the frame's durable writes, so a frame with a rand step and no durable output is
-/// rejected here before it fails on-chain with `FheEvalRandRequiresDurableOutput`.
-pub(crate) fn validate_rand_steps_anchor_durable_output(steps: &[FheEvalStep]) -> Result<()> {
+/// the frame's persistent writes, so a frame with a rand step and no persistent output is
+/// rejected here before it fails on-chain with `FheEvalRandRequiresPersistentOutput`.
+pub(crate) fn validate_rand_steps_anchor_persistent_output(steps: &[FheEvalStep]) -> Result<()> {
     let has_rand = steps.iter().any(|step| {
         matches!(
             step,
@@ -26,37 +26,37 @@ pub(crate) fn validate_rand_steps_anchor_durable_output(steps: &[FheEvalStep]) -
         matches!(
             step,
             FheEvalStep::Binary {
-                output: FheEvalOutput::AllowedDurable { .. },
+                output: FheEvalOutput::AllowedPersistent { .. },
                 ..
             } | FheEvalStep::Ternary {
-                output: FheEvalOutput::AllowedDurable { .. },
+                output: FheEvalOutput::AllowedPersistent { .. },
                 ..
             } | FheEvalStep::TrivialEncrypt {
-                output: FheEvalOutput::AllowedDurable { .. },
+                output: FheEvalOutput::AllowedPersistent { .. },
                 ..
             } | FheEvalStep::Rand {
-                output: FheEvalOutput::AllowedDurable { .. },
+                output: FheEvalOutput::AllowedPersistent { .. },
                 ..
             } | FheEvalStep::Unary {
-                output: FheEvalOutput::AllowedDurable { .. },
+                output: FheEvalOutput::AllowedPersistent { .. },
                 ..
             } | FheEvalStep::RandBounded {
-                output: FheEvalOutput::AllowedDurable { .. },
+                output: FheEvalOutput::AllowedPersistent { .. },
                 ..
             } | FheEvalStep::Sum {
-                output: FheEvalOutput::AllowedDurable { .. },
+                output: FheEvalOutput::AllowedPersistent { .. },
                 ..
             } | FheEvalStep::IsIn {
-                output: FheEvalOutput::AllowedDurable { .. },
+                output: FheEvalOutput::AllowedPersistent { .. },
                 ..
             } | FheEvalStep::MulDiv {
-                output: FheEvalOutput::AllowedDurable { .. },
+                output: FheEvalOutput::AllowedPersistent { .. },
                 ..
             }
         )
     });
     if !persists {
-        return Err(EvalBuildError::RandRequiresDurableOutput);
+        return Err(EvalBuildError::RandRequiresPersistentOutput);
     }
     Ok(())
 }
@@ -225,7 +225,7 @@ fn validate_lowered_encrypted_operand(
     used_dictionary: &mut [bool],
 ) -> Result<()> {
     match operand {
-        FheEvalOperand::AllowedDurable {
+        FheEvalOperand::AllowedPersistent {
             handle_index,
             encrypted_value_index,
         } => {
@@ -252,7 +252,7 @@ fn validate_lowered_output(
 ) -> Result<()> {
     match output {
         FheEvalOutput::AllowedLocal => {}
-        FheEvalOutput::AllowedDurable {
+        FheEvalOutput::AllowedPersistent {
             output_encrypted_value_index,
             output_app_account_authority_index,
             output_acl_domain_key_index,
@@ -332,7 +332,7 @@ where
                         return Err(EvalBuildError::DivisionByZero);
                     }
                 }
-                OperandKind::Durable(_)
+                OperandKind::Persistent(_)
                 | OperandKind::Transient { .. }
                 | OperandKind::VerifiedInput { .. } => {
                     return Err(EvalBuildError::DivisorMustBeScalar)
@@ -459,7 +459,7 @@ where
     F: Fn(u16) -> Option<u8>,
 {
     match &operand.0 {
-        OperandKind::Durable(durable) => Ok(Some(handle_fhe_type(durable.handle))),
+        OperandKind::Persistent(persistent) => Ok(Some(handle_fhe_type(persistent.handle))),
         OperandKind::Transient {
             producer_index,
             builder_scope: operand_builder_scope,

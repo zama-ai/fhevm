@@ -34,12 +34,12 @@ pub enum EncryptedValueAccountError {
 /// Only the two instructions that append MMR leaves appear here;
 /// `allow_subjects` appends none, so it has no leaf to log — its effect on
 /// membership is captured by the next [`EncryptedValueAccountEvent::HandleSuperseded`]'s
-/// `previous_subjects` snapshot. Because durable-output supersession carries
+/// `previous_subjects` snapshot. Because persistent-output supersession carries
 /// `previous_handle`/`previous_subjects` as verified instruction args, both
 /// variants are decodable from a single transaction with no prior state.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum EncryptedValueAccountEvent {
-    /// A durable-output supersession: appends one historical-access leaf per
+    /// A persistent-output supersession: appends one historical-access leaf per
     /// subject of the outgoing handle, in `previous_subjects` order.
     HandleSuperseded {
         /// The handle being superseded (the encrypted value account's handle before this supersession).
@@ -65,7 +65,7 @@ impl EncryptedValueAccountEvent {
     /// prior `allow_subjects` calls. A stale snapshot (e.g. the pre-`allow` set,
     /// or the post-supersession set) yields leaves that hash differently from the
     /// chain, so the reconstructed peaks silently diverge. When decoding a
-    /// durable-output supersession, use its verified args directly.
+    /// persistent-output supersession, use its verified args directly.
     pub fn handle_superseded(previous_handle: [u8; 32], previous_subjects: &[[u8; 32]]) -> Self {
         EncryptedValueAccountEvent::HandleSuperseded {
             previous_handle,
@@ -87,7 +87,7 @@ pub struct ReconstructedEncryptedValueAccount {
 /// Mirrors the host program's append order exactly: each
 /// [`EncryptedValueAccountEvent::HandleSuperseded`] appends one
 /// `historical_access_leaf_commitment` per subject in slice order
-/// (durable-output supersession), each [`EncryptedValueAccountEvent::MarkedPublic`] appends one
+/// (persistent-output supersession), each [`EncryptedValueAccountEvent::MarkedPublic`] appends one
 /// `public_decrypt_leaf_commitment` (`make_handle_public`). The leaf index bound
 /// into every commitment comes from a single running counter — the
 /// authoritative source, exactly as the on-chain handler uses `leaf_count`
@@ -365,8 +365,8 @@ mod tests {
         }
     }
 
-    /// On-chain lifecycle durable creation `[s1]` → `allow_subjects([s2])` →
-    /// durable supersession: the supersession snapshot must be the post-`allow`
+    /// On-chain lifecycle persistent creation `[s1]` → `allow_subjects([s2])` →
+    /// persistent supersession: the supersession snapshot must be the post-`allow`
     /// set `[s1, s2]`, so the chain appends two leaves. Supplying the
     /// stale pre-`allow` set `[s1]` is the most plausible ingestion bug; this
     /// asserts it produces different peaks and the correct snapshot's peaks match

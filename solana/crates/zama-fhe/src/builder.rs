@@ -16,7 +16,7 @@ use crate::plan::EvalPlan;
 use crate::types::{Bool, Encrypted, FheIsIn, FheRandom, FheType, FheTyped, FheUint, Scalar, Uint};
 use crate::validate::{
     max_reduction_operands, operand_fhe_type, scalar_is_zero_for_type, validate_app_authority,
-    validate_binary_step, validate_lowered_eval_plan, validate_rand_steps_anchor_durable_output,
+    validate_binary_step, validate_lowered_eval_plan, validate_rand_steps_anchor_persistent_output,
     validate_supported_fhe_type, validate_supported_rand_type, validate_ternary_step,
     validate_uint_fhe_type, validate_unary_step,
 };
@@ -29,10 +29,10 @@ pub struct EvalBuilder {
     pub(crate) app_authority: EvalAppAuthority,
     pub(crate) steps: Vec<FheEvalStep>,
     pub(crate) produced_types: Vec<u8>,
-    /// Latest producer for every durable account written by this frame. A later
-    /// durable-shaped reference to the same account is lowered canonically as
+    /// Latest producer for every persistent account written by this frame. A later
+    /// persistent-shaped reference to the same account is lowered canonically as
     /// `AllowedLocal`.
-    pub(crate) durable_producers: Vec<(anchor_lang::prelude::Pubkey, u16)>,
+    pub(crate) persistent_producers: Vec<(anchor_lang::prelude::Pubkey, u16)>,
     pub(crate) remaining_accounts: Vec<EvalAccountMeta>,
     /// Interned 32-byte constant dictionary the lowered steps reference by `u8` index
     /// (operand handles, scalars, ACL domain keys, app accounts, labels, subjects).
@@ -49,7 +49,7 @@ impl Clone for EvalBuilder {
             app_authority: self.app_authority,
             steps: self.steps.clone(),
             produced_types: self.produced_types.clone(),
-            durable_producers: self.durable_producers.clone(),
+            persistent_producers: self.persistent_producers.clone(),
             remaining_accounts: self.remaining_accounts.clone(),
             dictionary: self.dictionary.clone(),
             verified_inputs: self.verified_inputs.clone(),
@@ -64,7 +64,7 @@ impl EvalBuilder {
             app_authority,
             steps: Vec::new(),
             produced_types: Vec::new(),
-            durable_producers: Vec::new(),
+            persistent_producers: Vec::new(),
             remaining_accounts: Vec::new(),
             dictionary: Vec::new(),
             verified_inputs: Vec::new(),
@@ -175,7 +175,7 @@ impl EvalBuilder {
             &mut dictionary,
             self.steps.len(),
             self.scope,
-            &self.durable_producers,
+            &self.persistent_producers,
             &self.verified_inputs,
             lhs,
         )?;
@@ -184,7 +184,7 @@ impl EvalBuilder {
             &mut dictionary,
             self.steps.len(),
             self.scope,
-            &self.durable_producers,
+            &self.persistent_producers,
             &self.verified_inputs,
             rhs,
         )?;
@@ -192,7 +192,7 @@ impl EvalBuilder {
             &mut remaining_accounts,
             &mut dictionary,
             self.app_authority,
-            &mut self.durable_producers,
+            &mut self.persistent_producers,
             op_index,
             output,
         )?;
@@ -242,7 +242,7 @@ impl EvalBuilder {
             &mut dictionary,
             self.steps.len(),
             self.scope,
-            &self.durable_producers,
+            &self.persistent_producers,
             &self.verified_inputs,
             control,
         )?;
@@ -251,7 +251,7 @@ impl EvalBuilder {
             &mut dictionary,
             self.steps.len(),
             self.scope,
-            &self.durable_producers,
+            &self.persistent_producers,
             &self.verified_inputs,
             if_true,
         )?;
@@ -260,7 +260,7 @@ impl EvalBuilder {
             &mut dictionary,
             self.steps.len(),
             self.scope,
-            &self.durable_producers,
+            &self.persistent_producers,
             &self.verified_inputs,
             if_false,
         )?;
@@ -268,7 +268,7 @@ impl EvalBuilder {
             &mut remaining_accounts,
             &mut dictionary,
             self.app_authority,
-            &mut self.durable_producers,
+            &mut self.persistent_producers,
             step_index,
             output,
         )?;
@@ -315,7 +315,7 @@ impl EvalBuilder {
             &mut remaining_accounts,
             &mut dictionary,
             self.app_authority,
-            &mut self.durable_producers,
+            &mut self.persistent_producers,
             step_index,
             output,
         )?;
@@ -356,7 +356,7 @@ impl EvalBuilder {
             &mut remaining_accounts,
             &mut dictionary,
             self.app_authority,
-            &mut self.durable_producers,
+            &mut self.persistent_producers,
             step_index,
             output,
         )?;
@@ -387,7 +387,7 @@ impl EvalBuilder {
             &mut remaining_accounts,
             &mut dictionary,
             self.app_authority,
-            &mut self.durable_producers,
+            &mut self.persistent_producers,
             step_index,
             output,
         )?;
@@ -742,7 +742,7 @@ impl EvalBuilder {
                 &mut dictionary,
                 self.steps.len(),
                 self.scope,
-                &self.durable_producers,
+                &self.persistent_producers,
                 &self.verified_inputs,
                 op,
             )?);
@@ -751,7 +751,7 @@ impl EvalBuilder {
             &mut remaining_accounts,
             &mut dictionary,
             self.app_authority,
-            &mut self.durable_producers,
+            &mut self.persistent_producers,
             step_index,
             output,
         )?;
@@ -801,7 +801,7 @@ impl EvalBuilder {
             &mut dictionary,
             self.steps.len(),
             self.scope,
-            &self.durable_producers,
+            &self.persistent_producers,
             &self.verified_inputs,
             value_op,
         )?;
@@ -812,7 +812,7 @@ impl EvalBuilder {
                 &mut dictionary,
                 self.steps.len(),
                 self.scope,
-                &self.durable_producers,
+                &self.persistent_producers,
                 &self.verified_inputs,
                 op,
             )?);
@@ -821,7 +821,7 @@ impl EvalBuilder {
             &mut remaining_accounts,
             &mut dictionary,
             self.app_authority,
-            &mut self.durable_producers,
+            &mut self.persistent_producers,
             step_index,
             output,
         )?;
@@ -874,7 +874,7 @@ impl EvalBuilder {
             &mut dictionary,
             self.steps.len(),
             self.scope,
-            &self.durable_producers,
+            &self.persistent_producers,
             &self.verified_inputs,
             lhs,
         )?;
@@ -883,7 +883,7 @@ impl EvalBuilder {
             &mut dictionary,
             self.steps.len(),
             self.scope,
-            &self.durable_producers,
+            &self.persistent_producers,
             &self.verified_inputs,
             rhs,
         )?;
@@ -891,7 +891,7 @@ impl EvalBuilder {
             &mut remaining_accounts,
             &mut dictionary,
             self.app_authority,
-            &mut self.durable_producers,
+            &mut self.persistent_producers,
             step_index,
             output,
         )?;
@@ -940,7 +940,7 @@ impl EvalBuilder {
             &mut dictionary,
             self.steps.len(),
             self.scope,
-            &self.durable_producers,
+            &self.persistent_producers,
             &self.verified_inputs,
             operand,
         )?;
@@ -948,7 +948,7 @@ impl EvalBuilder {
             &mut remaining_accounts,
             &mut dictionary,
             self.app_authority,
-            &mut self.durable_producers,
+            &mut self.persistent_producers,
             step_index,
             output,
         )?;
@@ -979,13 +979,13 @@ impl EvalBuilder {
     /// Validates the accumulated frame and lowers it to an [`EvalPlan`].
     ///
     /// Mirrors the host preflight checks (non-empty steps,
-    /// `steps.len() <= MAX_FHE_EVAL_OPS`, rand steps anchored by a durable
+    /// `steps.len() <= MAX_FHE_EVAL_OPS`, rand steps anchored by a persistent
     /// output) so a malformed frame fails locally instead of on-chain.
     ///
     /// Not mirrored (it depends on the deployed `hcu_block_cap_per_app`, unknown here): under a
-    /// finite block cap the host rejects a persist-nothing frame — one binding no durable input, no
-    /// verified input, and no durable output — with `FheEvalUnanchoredUnderBlockCap`
-    /// (fhevm-internal#1744). Give such a frame a durable output (the bootstrap/mint path) or a
+    /// finite block cap the host rejects a persist-nothing frame — one binding no persistent input, no
+    /// verified input, and no persistent output — with `FheEvalUnanchoredUnderBlockCap`
+    /// (fhevm-internal#1744). Give such a frame a persistent output (the bootstrap/mint path) or a
     /// verified input if it must run under a finite cap.
     pub fn finish(self) -> Result<EvalPlan> {
         validate_app_authority(self.app_authority)?;
@@ -996,7 +996,7 @@ impl EvalBuilder {
             return Err(EvalBuildError::TooManyOps);
         }
         validate_lowered_eval_plan(&self.steps, &self.remaining_accounts, &self.dictionary)?;
-        validate_rand_steps_anchor_durable_output(&self.steps)?;
+        validate_rand_steps_anchor_persistent_output(&self.steps)?;
         let account_count = u8::try_from(self.remaining_accounts.len())
             .map_err(|_| EvalBuildError::TooManyRemainingAccounts)?;
         Ok(EvalPlan {

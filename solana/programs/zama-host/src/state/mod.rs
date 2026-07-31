@@ -173,7 +173,7 @@ pub enum FheEvalStep {
         rhs: FheEvalOperand,
         /// FHE type byte embedded in the output handle.
         output_fhe_type: u8,
-        /// Whether this output remains instruction-local or is bound into durable ACL state.
+        /// Whether this output remains instruction-local or is bound into persistent ACL state.
         output: FheEvalOutput,
     },
     /// Ternary operator step.
@@ -188,7 +188,7 @@ pub enum FheEvalStep {
         if_false: FheEvalOperand,
         /// FHE type byte embedded in the output handle.
         output_fhe_type: u8,
-        /// Whether this output remains instruction-local or is bound into durable ACL state.
+        /// Whether this output remains instruction-local or is bound into persistent ACL state.
         output: FheEvalOutput,
     },
     /// Trivial encryption step.
@@ -197,14 +197,14 @@ pub enum FheEvalStep {
         plaintext: [u8; 32],
         /// FHE type byte embedded in the output handle.
         fhe_type: u8,
-        /// Whether this output remains instruction-local or is bound into durable ACL state.
+        /// Whether this output remains instruction-local or is bound into persistent ACL state.
         output: FheEvalOutput,
     },
     /// Random ciphertext step.
     Rand {
         /// FHE type byte embedded in the output handle.
         fhe_type: u8,
-        /// Whether this output remains instruction-local or is bound into durable ACL state.
+        /// Whether this output remains instruction-local or is bound into persistent ACL state.
         output: FheEvalOutput,
     },
     /// Unary operator step.
@@ -215,7 +215,7 @@ pub enum FheEvalStep {
         operand: FheEvalOperand,
         /// FHE type byte embedded in the output handle.
         output_fhe_type: u8,
-        /// Whether this output remains instruction-local or is bound into durable ACL state.
+        /// Whether this output remains instruction-local or is bound into persistent ACL state.
         output: FheEvalOutput,
     },
     /// Bounded random ciphertext step.
@@ -224,7 +224,7 @@ pub enum FheEvalStep {
         upper_bound: [u8; 32],
         /// FHE type byte embedded in the output handle.
         fhe_type: u8,
-        /// Whether this output remains instruction-local or is bound into durable ACL state.
+        /// Whether this output remains instruction-local or is bound into persistent ACL state.
         output: FheEvalOutput,
     },
     /// Sum step.
@@ -233,7 +233,7 @@ pub enum FheEvalStep {
         operands: Vec<FheEvalOperand>,
         /// FHE type byte embedded in the output handle.
         fhe_type: u8,
-        /// Whether this output remains instruction-local or is bound into durable ACL state.
+        /// Whether this output remains instruction-local or is bound into persistent ACL state.
         output: FheEvalOutput,
     },
     /// Is-in membership test step.
@@ -244,7 +244,7 @@ pub enum FheEvalStep {
         set: Vec<FheEvalOperand>,
         /// FHE type byte of the value and set elements.
         fhe_type: u8,
-        /// Whether this output remains instruction-local or is bound into durable ACL state.
+        /// Whether this output remains instruction-local or is bound into persistent ACL state.
         output: FheEvalOutput,
     },
     /// Multiply-then-divide step.
@@ -257,7 +257,7 @@ pub enum FheEvalStep {
         divisor: [u8; 32],
         /// FHE type byte embedded in the output handle.
         output_fhe_type: u8,
-        /// Whether this output remains instruction-local or is bound into durable ACL state.
+        /// Whether this output remains instruction-local or is bound into persistent ACL state.
         output: FheEvalOutput,
     },
 }
@@ -287,9 +287,9 @@ pub struct CoprocessorInputAttestation {
 /// Operand source for a composed FHE eval operation.
 #[derive(AnchorSerialize, AnchorDeserialize, Clone, Debug, PartialEq, Eq)]
 pub enum FheEvalOperand {
-    /// Input allowed through durable ACL state: a canonical `EncryptedValue`
+    /// Input allowed through persistent ACL state: a canonical `EncryptedValue`
     /// account in `remaining_accounts` whose current handle matches.
-    AllowedDurable {
+    AllowedPersistent {
         /// Dictionary index of the handle expected as the encrypted value's current handle.
         handle_index: u8,
         /// Index into `remaining_accounts` for the `EncryptedValue` account.
@@ -323,11 +323,11 @@ pub enum FheEvalOperand {
 /// Output policy for a composed FHE eval operation.
 #[derive(AnchorSerialize, AnchorDeserialize, Clone, Debug, PartialEq, Eq)]
 pub enum FheEvalOutput {
-    /// Output stays allowed only inside the current `fhe_eval` scope; no durable ACL record.
+    /// Output stays allowed only inside the current `fhe_eval` scope; no persistent ACL record.
     AllowedLocal,
-    /// Output is bound into durable ACL state: the `EncryptedValue` encrypted value account PDA
+    /// Output is bound into persistent ACL state: the `EncryptedValue` encrypted value account PDA
     /// is created when absent, or superseded when it exists.
-    AllowedDurable {
+    AllowedPersistent {
         /// Index into `remaining_accounts` for the output `EncryptedValue` PDA.
         output_encrypted_value_index: u8,
         /// Optional index into `remaining_accounts` for the app account authority signer.
@@ -921,15 +921,15 @@ pub fn computed_eval_trivial_handle(
 
 /// Derives the compulsorily fresh seed for an instruction-local eval random handle.
 ///
-/// Freshness is anchored, never caller-advised: `durable_anchor_bytes` is the frame's
-/// durable-write anchor — every durable output's live account identity and version
+/// Freshness is anchored, never caller-advised: `persistent_anchor_bytes` is the frame's
+/// persistent-write anchor — every persistent output's live account identity and version
 /// concatenated in wire order. The host-observed MMR leaf count prevents a handle cycle
 /// from replaying an earlier anchor.
 /// `compute_subject` separates concurrent frames of different signers in the same slot;
 /// `op_index` separates rand steps within one frame; slot entropy separates slots.
 pub fn computed_eval_rand_seed(
     compute_subject: Pubkey,
-    durable_anchor_bytes: &[u8],
+    persistent_anchor_bytes: &[u8],
     op_index: u16,
     chain_id: u64,
     previous_bank_hash: [u8; 32],
@@ -941,7 +941,7 @@ pub fn computed_eval_rand_seed(
     let hash = keccak_hashv(&[
         b"FHE_eval_seed",
         compute_subject.as_ref(),
-        durable_anchor_bytes,
+        persistent_anchor_bytes,
         &op_index_bytes,
         crate::ID.as_ref(),
         &chain_id_bytes,

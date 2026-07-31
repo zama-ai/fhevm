@@ -55,7 +55,7 @@ update, encrypted value ID…).
 9. **[HOLDS]** `remove_subject` cannot leave a value with zero subjects.
 10. **[HOLDS]** Every subject newly granted membership on an encrypted value
     clears the grant deny-list when it is enabled, on all three membership
-    paths: `fhe_execute` durable create, durable update (added subjects), and
+    paths: `fhe_execute` persistent create, persistent update (added subjects), and
     `allow_subjects`. Subjects already stored are exempt. Scope is value
     membership only: user-decryption delegation is a separate access path
     with no deny check (a denied key can still be delegated to by a clean

@@ -197,7 +197,7 @@ impl CleartextLedger {
             let outputs = evaluate_cleartext(args, &self.values)
                 .expect("every emitted FHE plan must be valid in cleartext");
             for (step, value) in args.steps.iter().zip(outputs) {
-                let host::FheEvalOutput::AllowedDurable {
+                let host::FheEvalOutput::AllowedPersistent {
                     output_acl_domain_key_index,
                     output_app_account_index,
                     output_encrypted_value_label_index,

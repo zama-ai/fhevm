@@ -15,16 +15,16 @@ pub(super) struct EvalHandleContext<'a> {
     pub unix_timestamp: i64,
     /// Signed caller identity folded into rand seeds (never into deterministic handles).
     pub compute_subject: Pubkey,
-    /// The frame's durable-write anchor: every durable output's live account
+    /// The frame's persistent-write anchor: every persistent output's live account
     /// identity, current handle, and MMR leaf count in wire order
     /// (see [`computed_eval_rand_seed`]).
-    pub durable_anchor_bytes: &'a [u8],
+    pub persistent_anchor_bytes: &'a [u8],
 }
 
-// Durable and instruction-local outputs derive the identical handle, and identical
+// Persistent and instruction-local outputs derive the identical handle, and identical
 // computations collide by design: deterministic handles are content-addressed
 // (op/operands/type + slot entropy, no salt), matching EVM `FHEVMExecutor`. Only
-// rand seeds carry uniqueness — signer identity plus the durable-write anchor.
+// rand seeds carry uniqueness — signer identity plus the persistent-write anchor.
 impl EvalHandleContext<'_> {
     fn binary_result(
         &self,
@@ -79,7 +79,7 @@ impl EvalHandleContext<'_> {
     pub(super) fn rand_seed(&self, op_index: u16) -> [u8; 16] {
         computed_eval_rand_seed(
             self.compute_subject,
-            self.durable_anchor_bytes,
+            self.persistent_anchor_bytes,
             op_index,
             self.chain_id,
             *self.previous_bank_hash,
@@ -152,12 +152,12 @@ impl EvalExecutionState<'_, '_, '_> {
     /// Resolves an operand that must be encrypted (rejects scalars).
     fn resolve_encrypted_operand(&mut self, operand: &FheEvalOperand) -> Result<ResolvedOperand> {
         match operand {
-            FheEvalOperand::AllowedDurable {
+            FheEvalOperand::AllowedPersistent {
                 handle_index,
                 encrypted_value_index,
             } => {
                 let handle = self.dictionary_bytes(*handle_index)?;
-                self.resolve_durable_operand(handle, u16::from(*encrypted_value_index))
+                self.resolve_persistent_operand(handle, u16::from(*encrypted_value_index))
             }
             FheEvalOperand::AllowedLocal { producer_index } => self
                 .produced

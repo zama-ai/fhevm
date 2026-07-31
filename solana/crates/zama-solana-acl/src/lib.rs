@@ -29,7 +29,7 @@ pub use mmr::{
 
 /// PDA seed for an encrypted value account: `[ENCRYPTED_VALUE_SEED, value_key]`.
 pub const ENCRYPTED_VALUE_SEED: &[u8] = b"encrypted-value";
-/// Upper bound on durable subjects, for write-side validation.
+/// Upper bound on persistent subjects, for write-side validation.
 pub const MAX_ENCRYPTED_VALUE_SUBJECTS: usize = 8;
 
 const HISTORICAL_ACCESS_LEAF_PREFIX: &[u8] = b"ZAMA_HIST_ACCESS_LEAF_V1";
@@ -72,7 +72,7 @@ pub struct EncryptedValue {
     pub encrypted_value_label: [u8; 32],
     /// Current encrypted value identifier (the live handle).
     pub current_handle: [u8; 32],
-    /// Current durable subjects (binary membership; no role flags).
+    /// Current persistent subjects (binary membership; no role flags).
     pub subjects: Vec<[u8; 32]>,
     /// Number of MMR leaves appended; `0` means no history.
     pub leaf_count: u64,
@@ -92,7 +92,7 @@ impl EncryptedValue {
         )
     }
 
-    /// Whether `subject` is a current durable member.
+    /// Whether `subject` is a current persistent member.
     pub fn is_subject(&self, subject: [u8; 32]) -> bool {
         self.subjects.contains(&subject)
     }
@@ -338,7 +338,7 @@ mod tests {
             self.leaves.push(commitment);
         }
 
-        /// Mirrors durable-output supersession: one historical leaf per current
+        /// Mirrors persistent-output supersession: one historical leaf per current
         /// subject for the outgoing handle, then the overwrite.
         fn update(&mut self, new_handle: [u8; 32]) {
             let previous = self.value.current_handle;

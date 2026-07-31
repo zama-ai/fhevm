@@ -62,9 +62,9 @@ impl EvalPlan {
     /// `remaining_accounts` order for this plan.
     ///
     /// `dynamic_accounts` must contain only non-authority plan accounts such as
-    /// durable input ACLs, permission records, transient sessions, and writable
-    /// durable output ACL records. `output_authorities` must contain signer
-    /// witnesses for durable outputs whose app account is not the fixed CPI
+    /// persistent input ACLs, permission records, transient sessions, and writable
+    /// persistent output ACL records. `output_authorities` must contain signer
+    /// witnesses for persistent outputs whose app account is not the fixed CPI
     /// `app_account_authority`.
     pub fn resolve_accounts<'info>(
         &self,
@@ -100,12 +100,12 @@ impl EvalPlan {
             .filter(|account| {
                 account
                     .purposes
-                    .contains(&EvalAccountPurpose::DurableOutputAuthority)
+                    .contains(&EvalAccountPurpose::PersistentOutputAuthority)
             })
             .map(|account| account.pubkey)
     }
 
-    /// Subjects this plan newly grants through durable outputs: every output
+    /// Subjects this plan newly grants through persistent outputs: every output
     /// subject on a create, and `output_subjects \ previous_subjects` on a
     /// supersede that rotates its audience. The host deny-list-checks each of
     /// these exactly like `allow_subjects`, so an app forwarding deny-record
@@ -113,7 +113,7 @@ impl EvalPlan {
     pub fn newly_granted_subjects(&self) -> Vec<Pubkey> {
         let mut added = Vec::new();
         for step in &self.args.steps {
-            let FheEvalOutput::AllowedDurable {
+            let FheEvalOutput::AllowedPersistent {
                 output_subject_indexes,
                 previous_subjects,
                 ..

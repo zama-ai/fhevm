@@ -1,7 +1,7 @@
 //! App-facing helpers for preparing `zama-host` FHE evaluation requests.
 //!
 //! This crate targets the role-aware host ABI. App code describes encrypted
-//! operands and durable outputs by pubkey; [`EvalBuilder`] validates the frame,
+//! operands and persistent outputs by pubkey; [`EvalBuilder`] validates the frame,
 //! assigns host account indices, and records the signer/writable requirements for
 //! every dynamic account. With the `cpi` feature, [`EvalPlan::resolve_accounts`]
 //! preflights the dynamic account set and [`invoke_eval_signed_resolved`] turns
@@ -10,7 +10,7 @@
 //! The builder intentionally targets the current role-aware host eval ABI rather
 //! than the older `execute_frame` prototype. Instruction-local intermediate
 //! values are returned by builder methods as typed transient [`Encrypted`] values;
-//! only [`Output::durable`] creates ACL state. Binary, ternary, trivial-encrypt,
+//! only [`Output::persistent`] creates ACL state. Binary, ternary, trivial-encrypt,
 //! rand, and verified input steps can be composed in one eval frame.
 
 #![allow(unexpected_cfgs)]
@@ -33,8 +33,8 @@ pub use accounts::{
 #[cfg(feature = "cpi")]
 pub use accounts::{EvalAccountResolutionError, ResolvedEvalAccounts};
 pub use acl::{
-    BoundedU64UpperBound, DurableLabel, DurableOutput, DurableOutputBirth, EncryptedValueKey,
-    Output,
+    BoundedU64UpperBound, EncryptedValueKey, Output, PersistentLabel, PersistentOutput,
+    PersistentOutputBirth,
 };
 pub use builder::EvalBuilder;
 #[cfg(feature = "cpi")]
@@ -65,17 +65,17 @@ pub enum EvalBuildError {
     DictionaryIndexOutOfBounds,
     /// A transient operand referenced an operation that has not been produced.
     InvalidTransientReference,
-    /// A durable operand referenced an account written by an earlier step.
+    /// A persistent operand referenced an account written by an earlier step.
     /// Use the producer returned by that step for the new value, or consume the
-    /// old durable value before writing the account.
-    DurableOperandWrittenEarlier,
+    /// old persistent value before writing the account.
+    PersistentOperandWrittenEarlier,
     /// More ops were added than the host accepts (`MAX_FHE_EVAL_OPS`).
     TooManyOps,
     /// `finish` was called with no ops; the host rejects empty eval frames.
     EmptyOps,
-    /// `finish` was called on a frame with a rand step but no durable output;
-    /// the host anchors rand seeds to durable writes and rejects such frames.
-    RandRequiresDurableOutput,
+    /// `finish` was called on a frame with a rand step but no persistent output;
+    /// the host anchors rand seeds to persistent writes and rejects such frames.
+    RandRequiresPersistentOutput,
     /// A scalar was supplied as the left-hand operand. The host invariant is
     /// scalar-RHS-only: the left operand must be an encrypted handle.
     ScalarLhsOperand,
@@ -93,13 +93,13 @@ pub enum EvalBuildError {
     TernaryOperandTypeMismatch,
     /// The encrypted-input proof does not contain the selected handle.
     InvalidInputProof,
-    /// A durable output subject list would be rejected by the host.
+    /// A persistent output subject list would be rejected by the host.
     InvalidSubjects,
     /// An encrypted-value key contains an app-domain pubkey the host would reject.
     InvalidEncryptedValueKey,
     /// The fixed app authority pubkey is not a valid signer identity.
     InvalidAppAuthority,
-    /// A durable output's declared previous state is inconsistent (one of
+    /// A persistent output's declared previous state is inconsistent (one of
     /// `previous_handle`/`previous_subjects` set without the other).
     InconsistentPreviousState,
     /// A lowered host account index does not match the eval plan account list.

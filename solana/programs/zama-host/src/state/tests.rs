@@ -98,7 +98,7 @@ fn rand_seed_is_distinct_across_every_uniqueness_axis() {
 
     // Cross-subject: two signers in the same slot with the same anchor shape never share a seed.
     assert_ne!(base, seed(Pubkey::new_unique(), &anchor, 0, [9; 32]));
-    // Same subject, same slot: a different durable-write anchor (the consumed
+    // Same subject, same slot: a different persistent-write anchor (the consumed
     // (key, previous_handle) tickets) gives a fresh seed.
     let other_anchor: Vec<u8> = [Pubkey::new_unique().to_bytes(), [7; 32]].concat();
     assert_ne!(base, seed(subject, &other_anchor, 0, [9; 32]));

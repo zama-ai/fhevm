@@ -174,7 +174,7 @@ export type ConfidentialTransferFromValueAsyncInput<
   transferredAmountValue: Address<TAccountTransferredAmountValue>;
   /**
    * The existing encrypted amount to spend: a computed or received `euint64` handle. Read-only
-   * durable operand — never superseded, never consumed. Its address is the canonical PDA of its
+   * persistent operand — never superseded, never consumed. Its address is the canonical PDA of its
    * own `(acl_domain_key, app_account, encrypted_value_label)` fields, so an encrypted value account from any app
    * may be passed here once its owner has granted the mint's compute subject via `allow_subjects`.
    */
@@ -402,7 +402,7 @@ export type ConfidentialTransferFromValueInput<
   transferredAmountValue: Address<TAccountTransferredAmountValue>;
   /**
    * The existing encrypted amount to spend: a computed or received `euint64` handle. Read-only
-   * durable operand — never superseded, never consumed. Its address is the canonical PDA of its
+   * persistent operand — never superseded, never consumed. Its address is the canonical PDA of its
    * own `(acl_domain_key, app_account, encrypted_value_label)` fields, so an encrypted value account from any app
    * may be passed here once its owner has granted the mint's compute subject via `allow_subjects`.
    */
@@ -609,7 +609,7 @@ export type ParsedConfidentialTransferFromValueInstruction<
     transferredAmountValue: TAccountMetas[8];
     /**
      * The existing encrypted amount to spend: a computed or received `euint64` handle. Read-only
-     * durable operand — never superseded, never consumed. Its address is the canonical PDA of its
+     * persistent operand — never superseded, never consumed. Its address is the canonical PDA of its
      * own `(acl_domain_key, app_account, encrypted_value_label)` fields, so an encrypted value account from any app
      * may be passed here once its owner has granted the mint's compute subject via `allow_subjects`.
      */

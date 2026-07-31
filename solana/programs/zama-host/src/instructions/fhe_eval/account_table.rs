@@ -4,7 +4,7 @@
 //! Construction rejects duplicate account keys. Preflight marks every account
 //! the plan references and [`EvalAccountTable::assert_all_used`] rejects
 //! dangling accounts before any pass touches state, so later passes access by
-//! index without their own bookkeeping. Durable-output claims (one write per
+//! index without their own bookkeeping. Persistent-output claims (one write per
 //! account per frame), deny-record location by canonical derived address, and
 //! output-PDA derivation also live here, so the invariants of the frame's
 //! account handling exist in exactly one place.
@@ -14,15 +14,15 @@ use super::*;
 pub(super) struct EvalAccountTable<'a, 'info> {
     accounts: &'a [AccountInfo<'info>],
     used: Vec<bool>,
-    /// Durable output accounts already claimed by an earlier step. Reserved to
+    /// Persistent output accounts already claimed by an earlier step. Reserved to
     /// the op cap up front: the SBF bump allocator never frees, so growth by
     /// doubling would leak, and the born-public maximum frame already runs
     /// close to the 32KB heap ceiling. (For the same reason the table caches
     /// no derived PDAs: the single walk derives each output PDA exactly once.)
-    durable_outputs_claimed: Vec<Pubkey>,
+    persistent_outputs_claimed: Vec<Pubkey>,
 }
 
-/// Result of deriving a durable output's canonical address: the PDA, its bump,
+/// Result of deriving a persistent output's canonical address: the PDA, its bump,
 /// and the value key that seeds it (needed again as a signer seed on create).
 #[derive(Clone, Copy)]
 pub(super) struct OutputPda {
@@ -48,7 +48,7 @@ impl<'a, 'info> EvalAccountTable<'a, 'info> {
         Ok(Self {
             accounts,
             used: vec![false; accounts.len()],
-            durable_outputs_claimed: Vec::with_capacity(MAX_FHE_EVAL_OPS),
+            persistent_outputs_claimed: Vec::with_capacity(MAX_FHE_EVAL_OPS),
         })
     }
 
@@ -107,7 +107,7 @@ impl<'a, 'info> EvalAccountTable<'a, 'info> {
         Ok(())
     }
 
-    /// Derived canonical PDA for a durable output's declaration inputs. The
+    /// Derived canonical PDA for a persistent output's declaration inputs. The
     /// one place output-PDA derivation lives.
     pub(super) fn expected_output_pda(
         &self,
@@ -128,15 +128,15 @@ impl<'a, 'info> EvalAccountTable<'a, 'info> {
         }
     }
 
-    /// Claims a durable output account for this frame; a second claim of the
+    /// Claims a persistent output account for this frame; a second claim of the
     /// same account is rejected (one write per account per frame — load-bearing
     /// for the rand seed anchor, see #1853 W4).
-    pub(super) fn claim_durable_output(&mut self, key: Pubkey) -> Result<()> {
+    pub(super) fn claim_persistent_output(&mut self, key: Pubkey) -> Result<()> {
         require!(
-            !self.durable_outputs_claimed.contains(&key),
+            !self.persistent_outputs_claimed.contains(&key),
             ZamaHostError::FheEvalOutputAlreadyInitialized
         );
-        self.durable_outputs_claimed.push(key);
+        self.persistent_outputs_claimed.push(key);
         Ok(())
     }
 
@@ -188,12 +188,12 @@ mod tests {
     }
 
     #[test]
-    fn second_claim_of_same_durable_output_rejects() {
+    fn second_claim_of_same_persistent_output_rejects() {
         let accounts: Vec<AccountInfo> = Vec::new();
         let mut table = EvalAccountTable::new(&accounts).unwrap();
         let output = Pubkey::new_unique();
-        table.claim_durable_output(output).unwrap();
-        assert!(table.claim_durable_output(output).is_err());
+        table.claim_persistent_output(output).unwrap();
+        assert!(table.claim_persistent_output(output).is_err());
     }
 
     #[test]

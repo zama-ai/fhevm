@@ -11,7 +11,7 @@
 //! `zama-host/src/state/encrypted_value.rs`, and `zama_solana_acl` for the model this exercises.
 //!
 //! Scope note: this migration focuses the suite on the surface that changed with the ACL rewrite
-//! (mint/token-account creation and `confidential_transfer`'s durable-output supersession), plus
+//! (mint/token-account creation and `confidential_transfer`'s persistent-output supersession), plus
 //! the token-level end-to-end coverage requested for this pass (stable addressing across a
 //! transfer, a `transferred_amount` encrypted value account entry, and self-transfer no-op). It also covers the
 //! two consume paths that are now thin consumers of the stateless host `verify_public_decrypt`
@@ -25,7 +25,7 @@
 //! `EncryptedValue` encrypted value account per amount the same way `confidential_transfer` does), and each needs
 //! its own multi-account Mollusk fixture that was not feasible to rebuild faithfully here. Every
 //! dropped test's instruction still compiles and is exercised indirectly by `mollusk_initialize_*`
-//! and `mollusk_confidential_transfer_*` (same durable-output machinery); a follow-up pass should
+//! and `mollusk_confidential_transfer_*` (same persistent-output machinery); a follow-up pass should
 //! port them individually using the patterns established here and in `host_mollusk.rs`.
 //!
 //! Also dropped: the old file's event-shaped, `u128`-limited `support::fhe_runtime` simulator.
@@ -82,7 +82,7 @@ fn mollusk() -> Mollusk {
     mollusk.sysvars.clock.slot = 100;
     mollusk.sysvars.slot_hashes =
         solana_sdk::slot_hashes::SlotHashes::new(&[(99, solana_sdk::hash::Hash::new_unique())]);
-    // A transfer (secp attestation recovery + three durable bindings) exceeds
+    // A transfer (secp attestation recovery + three persistent bindings) exceeds
     // the 200k default; real transactions request a higher limit the same way.
     mollusk.compute_budget.compute_unit_limit = 1_400_000;
     mollusk
@@ -172,7 +172,7 @@ impl CleartextLedger {
             .insert(handle, TypedClearValue::from_u64(BALANCE_FHE_TYPE, value));
     }
 
-    /// Applies the exact FHE plan invoked by the token program and associates each durable
+    /// Applies the exact FHE plan invoked by the token program and associates each persistent
     /// result with the handle persisted in its canonical `EncryptedValue` account.
     fn evaluate_fhe_cpi(
         &mut self,
@@ -203,9 +203,9 @@ impl CleartextLedger {
 
         let outputs = evaluate_cleartext(&eval_args[0], &self.values)
             .expect("the token program must emit a valid cleartext FHE plan");
-        let mut durable_outputs = 0;
+        let mut persistent_outputs = 0;
         for (step, value) in eval_args[0].steps.iter().zip(outputs) {
-            let host::FheEvalOutput::AllowedDurable {
+            let host::FheEvalOutput::AllowedPersistent {
                 output_acl_domain_key_index,
                 output_app_account_index,
                 output_encrypted_value_label_index,
@@ -228,9 +228,9 @@ impl CleartextLedger {
             let address = host::encrypted_value_address(value_key).0;
             let persisted = read_encrypted_value(context, address);
             self.values.insert(persisted.current_handle, value);
-            durable_outputs += 1;
+            persistent_outputs += 1;
         }
-        durable_outputs
+        persistent_outputs
     }
 
     fn balance(
@@ -1198,9 +1198,9 @@ fn mollusk_confidential_transfer_updates_value_accounts_and_cleartext_balances()
     );
 
     let result = context.process_and_validate_instruction(&transfer, &[Check::success()]);
-    let durable_outputs = cleartext.evaluate_fhe_cpi(&context, &result);
+    let persistent_outputs = cleartext.evaluate_fhe_cpi(&context, &result);
 
-    assert_eq!(durable_outputs, 3);
+    assert_eq!(persistent_outputs, 3);
     assert_eq!(cleartext.balance(&context, fixture.alice_token), 600);
     assert_eq!(cleartext.balance(&context, fixture.bob_token), 500);
     assert_eq!(
@@ -3980,7 +3980,7 @@ fn mollusk_disclose_secp_rejects_cleartext_wider_than_u64() {
 // HCU per-app block cap enforced through the confidential-token -> fhe_eval CPI.
 //
 // Ported from PR #2991 ("per-app HCU limit per block"), rewritten against the merged
-// EncryptedValue durable-output model: `confidential_transfer` reaches `fhe_eval` only by CPI,
+// EncryptedValue persistent-output model: `confidential_transfer` reaches `fhe_eval` only by CPI,
 // so these tests prove the block cap (ban / metering-band charge / canonical-authority pinning)
 // survives that CPI boundary — not just direct `fhe_eval` calls (see `host_mollusk.rs`).
 //
@@ -4165,11 +4165,11 @@ fn mollusk_transfer_from_value_spends_existing_amount() {
     );
 
     let result = context.process_and_validate_instruction(&transfer, &[Check::success()]);
-    let durable_outputs = cleartext.evaluate_fhe_cpi(&context, &result);
+    let persistent_outputs = cleartext.evaluate_fhe_cpi(&context, &result);
 
     // Only the two balance encrypted value accounts and the sender's transferred_amount rotate — the amount is not
     // an output.
-    assert_eq!(durable_outputs, 3);
+    assert_eq!(persistent_outputs, 3);
     assert_eq!(cleartext.balance(&context, fixture.alice_token), 750);
     assert_eq!(cleartext.balance(&context, fixture.bob_token), 350);
 
@@ -4247,9 +4247,9 @@ fn mollusk_transfer_from_value_recipient_forwards_received_amount() {
 }
 
 /// Done-when 5: the RFQ settlement shape — an amount computed via a `select(...)` eval producing a
-/// durable output, then transferred — proven end to end. A transfer's `transferred_amount` is
+/// persistent output, then transferred — proven end to end. A transfer's `transferred_amount` is
 /// exactly `sub(from_balance, if_then_else(ge, debit, from_balance))`, i.e. a select-computed
-/// durable `euint64`; spending it is the RFQ `eMoved` settlement move.
+/// persistent `euint64`; spending it is the RFQ `eMoved` settlement move.
 #[test]
 fn mollusk_transfer_from_value_settles_select_computed_amount() {
     let fixture = TokenFixture::new();
@@ -4265,7 +4265,7 @@ fn mollusk_transfer_from_value_settles_select_computed_amount() {
     cleartext.seed_amount(carol_initial, 0);
 
     // Compute the amount: Alice -> Bob transfers 400. The select picks the full 400 (balance
-    // sufficient), yielding a durable transferred_amount = 400.
+    // sufficient), yielding a persistent transferred_amount = 400.
     let alice_amount = handle_for_chain(51, BALANCE_FHE_TYPE);
     cleartext.seed_amount(alice_amount, 400);
     let compute = confidential_transfer_ix(
@@ -4332,7 +4332,7 @@ fn mollusk_transfer_from_value_cross_app_requires_compute_subject_grant() {
         fixture.bob_balance_value,
         amount_value,
     );
-    // Without the grant, the host rejects the durable operand at its compute-read check.
+    // Without the grant, the host rejects the persistent operand at its compute-read check.
     context.process_and_validate_instruction(
         &transfer,
         &[host_error(host::errors::ZamaHostError::SubjectNotFound)],
@@ -4468,9 +4468,9 @@ fn mollusk_transfer_from_value_spends_full_balance_with_balance_value_account_as
         fixture.alice_balance_value,
     );
     let result = context.process_and_validate_instruction(&transfer, &[Check::success()]);
-    let durable_outputs = cleartext.evaluate_fhe_cpi(&context, &result);
+    let persistent_outputs = cleartext.evaluate_fhe_cpi(&context, &result);
 
-    assert_eq!(durable_outputs, 3);
+    assert_eq!(persistent_outputs, 3);
     assert_eq!(cleartext.balance(&context, fixture.alice_token), 0);
     assert_eq!(cleartext.balance(&context, fixture.bob_token), 1_100);
 }
@@ -4748,7 +4748,7 @@ fn disclose_secp_seven_of_thirteen_verifies_and_bounds_compute() {
 // confidential_burn_from_value (burn an existing encrypted amount, fhevm-internal#1755)
 //
 // The burn-side analog of confidential_transfer_from_value (#1680 / #3238): burn an amount given as
-// an existing durable handle the owner may use, instead of a fresh coprocessor attestation. The
+// an existing persistent handle the owner may use, instead of a fresh coprocessor attestation. The
 // burned-amount output shape is byte-identical to the attestation path (born publicly decryptable at
 // its canonical burned_amount encrypted value account), so redeem_burned_amount consumes it unchanged.
 // ---------------------------------------------------------------------------
@@ -4780,10 +4780,10 @@ fn mollusk_burn_from_value_burns_existing_amount() {
     let burn =
         confidential_burn_from_value_ix(&fixture, fixture.owner, fixture.owner, amount_value);
     let result = context.process_and_validate_instruction(&burn, &[Check::success()]);
-    let durable_outputs = cleartext.evaluate_fhe_cpi(&context, &result);
+    let persistent_outputs = cleartext.evaluate_fhe_cpi(&context, &result);
 
-    // Three durable outputs rotate — balance, burned_amount, total_supply — and the amount is not one.
-    assert_eq!(durable_outputs, 3);
+    // Three persistent outputs rotate — balance, burned_amount, total_supply — and the amount is not one.
+    assert_eq!(persistent_outputs, 3);
     assert_eq!(cleartext.balance(&context, fixture.token_account), 750);
     assert_eq!(
         cleartext.u64_at(&context, fixture.total_supply_value),
@@ -4839,9 +4839,9 @@ fn mollusk_burn_from_value_whole_balance_alias() {
         fixture.balance_value,
     );
     let result = context.process_and_validate_instruction(&burn, &[Check::success()]);
-    let durable_outputs = cleartext.evaluate_fhe_cpi(&context, &result);
+    let persistent_outputs = cleartext.evaluate_fhe_cpi(&context, &result);
 
-    assert_eq!(durable_outputs, 3);
+    assert_eq!(persistent_outputs, 3);
     assert_eq!(cleartext.balance(&context, fixture.token_account), 0);
     assert_eq!(
         cleartext.u64_at(&context, fixture.total_supply_value),
@@ -4895,11 +4895,11 @@ fn mollusk_burn_from_value_reburns_burned_amount_that_is_also_this_output() {
         fixture.burned_amount_value,
     );
     let again_result = context.process_and_validate_instruction(&again, &[Check::success()]);
-    let durable_outputs = cleartext.evaluate_fhe_cpi(&context, &again_result);
+    let persistent_outputs = cleartext.evaluate_fhe_cpi(&context, &again_result);
 
     // Conservation: the second burn's amount equals the previous burned delta (250), so the balance
     // and encrypted total supply each drop by another 250, and the new burned delta is again 250.
-    assert_eq!(durable_outputs, 3);
+    assert_eq!(persistent_outputs, 3);
     assert_eq!(cleartext.balance(&context, fixture.token_account), 500);
     assert_eq!(
         cleartext.u64_at(&context, fixture.total_supply_value),
@@ -5143,7 +5143,7 @@ fn mollusk_burn_from_value_cross_app_requires_compute_subject_grant() {
 
     let burn =
         confidential_burn_from_value_ix(&fixture, fixture.owner, fixture.owner, amount_value);
-    // Without the grant, the host rejects the durable operand at its compute-read check.
+    // Without the grant, the host rejects the persistent operand at its compute-read check.
     context.process_and_validate_instruction(
         &burn,
         &[host_error(host::errors::ZamaHostError::SubjectNotFound)],

@@ -147,7 +147,7 @@ describe('joinBatch (attested arm)', () => {
     expect(data.signatures).toHaveLength(1);
   });
 
-  it('does not submit when durable transaction journaling fails', async () => {
+  it('does not submit when persistent transaction journaling fails', async () => {
     const { params } = await sendableParameters(async () => {
       throw new Error('journal unavailable');
     });
@@ -155,7 +155,7 @@ describe('joinBatch (attested arm)', () => {
     expect(sendAndConfirm).not.toHaveBeenCalled();
   });
 
-  it('does not request durable submission after unsigned preflight fails', async () => {
+  it('does not request persistent submission after unsigned preflight fails', async () => {
     const onTransactionSigned = vi.fn();
     const { params, simulate } = await sendableParameters(onTransactionSigned);
     const originalSigner = params.user;

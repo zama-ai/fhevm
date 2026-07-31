@@ -41,7 +41,7 @@ pub struct MmrProofResult {
     pub leaf_count: u64,
     /// Confirmed RPC context slot of the on-chain peak comparison that produced `verified`.
     pub rpc_context_slot: u64,
-    /// Durable ingest slot at which this encrypted_value_account's served leaves were last written
+    /// Persistent ingest slot at which this encrypted_value_account's served leaves were last written
     /// (`solana_proof_encrypted_value_accounts.last_slot`). `None` when no snapshot backed the result.
     pub encrypted_value_account_last_slot: Option<u64>,
     pub verified: bool,
@@ -151,7 +151,7 @@ async fn build_semantic_proof<C: ChainFetcher, S: ProofSnapshotSource>(
         Ok(resolved) => resolved,
         Err(StoreError::SnapshotInconsistent { .. }) => {
             // Fail closed with the same wire envelope as peak divergence. The torn
-            // snapshot never surfaced a durable slot, so there is no checkpoint to report.
+            // snapshot never surfaced a persistent slot, so there is no checkpoint to report.
             return Err(ProofError::CorruptStore {
                 leaf_count: on_chain.leaf_count,
                 rpc_context_slot: on_chain.rpc_context_slot,
@@ -166,7 +166,7 @@ async fn build_semantic_proof<C: ChainFetcher, S: ProofSnapshotSource>(
     }) = resolved
     else {
         // Chain has the encrypted_value_account but the store has not ingested it yet, so this
-        // encrypted_value_account has no durable slot to report.
+        // encrypted_value_account has no persistent slot to report.
         return Err(ProofError::Lagging {
             leaf_count: on_chain.leaf_count,
             rpc_context_slot: on_chain.rpc_context_slot,
@@ -208,7 +208,7 @@ fn try_build_from_snapshot(
     on_chain: &OnChainEncryptedValueAccountState,
     leaf_index: u64,
 ) -> Result<MmrProofResult, ProofError> {
-    // The snapshot is in hand, so its durable slot is the honest checkpoint for
+    // The snapshot is in hand, so its persistent slot is the honest checkpoint for
     // every result (success or divergence) built from it.
     let encrypted_value_account_last_slot = Some(snapshot.last_slot);
     // Internal consistency: recomputed peaks must match the persisted peaks.

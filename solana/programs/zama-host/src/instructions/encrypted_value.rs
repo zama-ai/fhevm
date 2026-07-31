@@ -98,7 +98,7 @@ pub fn allow_subjects(
 }
 
 /// Appends one historical-access leaf per allowed subject for the outgoing
-/// handle, then overwrites `current_handle`. Used by `fhe_eval`'s durable
+/// handle, then overwrites `current_handle`. Used by `fhe_eval`'s persistent
 /// output-binding path.
 pub(super) fn supersede_current_handle(
     info: &AccountInfo,
@@ -335,7 +335,7 @@ mod tests {
         let subjects = vec![Pubkey::new_unique()];
         let v = value([1; 32], &subjects);
 
-        // Durable-output supersession requires exact equality on both the
+        // Persistent-output supersession requires exact equality on both the
         // handle and the full subject vector (order-sensitive).
         assert!(v.current_handle == [1; 32] && v.subjects == subjects);
         assert!(!(v.current_handle == [2; 32] && v.subjects == subjects));

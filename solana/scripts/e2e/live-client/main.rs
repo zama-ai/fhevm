@@ -28,7 +28,7 @@ const MMR_MODE_PUBLIC: u8 = 0x02;
 
 type EncryptedValueAccountState = ([u8; 32], Vec<Pubkey>);
 
-struct DurableEvalTarget {
+struct PersistentEvalTarget {
     value: u64,
     plaintext: [u8; 32],
     acl_domain_key: Pubkey,
@@ -38,7 +38,7 @@ struct DurableEvalTarget {
     encrypted_value: Pubkey,
 }
 
-struct DurableEvalResult {
+struct PersistentEvalResult {
     encrypted_value: Pubkey,
     value_key: [u8; 32],
     handle: [u8; 32],
@@ -93,7 +93,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     }
 
     // TRIVIAL_ENCRYPT_EVAL drives the SAME trivial-encryption through the eval-plan executor
-    // (fhe_eval): a single TrivialEncrypt step with a durable output ACL record. The host computes
+    // (fhe_eval): a single TrivialEncrypt step with a persistent output ACL record. The host computes
     // the result handle on-chain and the host-listener reconstructs the successful frame,
     // exercising the #2755 eval path.
     if std::env::var("TRIVIAL_ENCRYPT_EVAL").is_ok() {
@@ -117,7 +117,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     // FHE_EVAL_VERIFIED_INPUT drives the #1539 input flow in one fhe_eval: a Binary Add of a
     // coprocessor-attested external input (FheEvalOperand::VerifiedInput, re-verified in-frame via
-    // secp256k1 with no scratch PDA) and a public scalar, binding the result to a durable output ACL
+    // secp256k1 with no scratch PDA) and a public scalar, binding the result to a persistent output ACL
     // record under the attested acl_domain_key. The attestation comes from the same relayer
     // input-proof the BIND_INPUT phase uses (BIND_* env); TE_ADD is the scalar addend (default 2);
     // TE_ALLOW makes the result publicly decryptable. Proves encrypt V -> +2 -> decrypt V+2.
@@ -201,7 +201,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     }
 
     // FHE_EVAL_SUM drives a multi-step fhe_eval: two TrivialEncrypt steps (AllowedLocal) followed
-    // by a Sum step (AllowedDurable). SUM_A/SUM_B select the euint64 addends (defaults 10/20);
+    // by a Sum step (AllowedPersistent). SUM_A/SUM_B select the euint64 addends (defaults 10/20);
     // SUM_ALLOW makes the result publicly decryptable. Expected cleartext: SUM_A + SUM_B.
     if std::env::var("FHE_EVAL_SUM").is_ok() {
         fhe_eval_sum(&host, &payer, host_config)?;
@@ -209,7 +209,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     }
 
     // FHE_EVAL_IS_IN drives a multi-step fhe_eval: TrivialEncrypt steps for value and set elements
-    // (all AllowedLocal) followed by an IsIn step (AllowedDurable → ebool). ISIN_VALUE selects the
+    // (all AllowedLocal) followed by an IsIn step (AllowedPersistent → ebool). ISIN_VALUE selects the
     // euint64 value (default 42); the set is hardcoded as [10, 42, 100]. ISIN_ALLOW makes the
     // result publicly decryptable. Expected cleartext: 1 (true) when ISIN_VALUE is in the set.
     if std::env::var("FHE_EVAL_IS_IN").is_ok() {
@@ -218,7 +218,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     }
 
     // FHE_EVAL_MUL_DIV drives a multi-step fhe_eval: TrivialEncrypt(factor1, AllowedLocal) then
-    // MulDiv(factor1, scalar_factor2, divisor, AllowedDurable). MULDIV_A/MULDIV_B/MULDIV_D select
+    // MulDiv(factor1, scalar_factor2, divisor, AllowedPersistent). MULDIV_A/MULDIV_B/MULDIV_D select
     // the euint64 operands (defaults 6/7/3); MULDIV_ALLOW makes the result publicly decryptable.
     // Expected cleartext: MULDIV_A * MULDIV_B / MULDIV_D (integer division).
     if std::env::var("FHE_EVAL_MUL_DIV").is_ok() {
@@ -279,7 +279,7 @@ fn encrypted_value_address(
     zama_host::encrypted_value_address(value_key).0
 }
 
-fn durable_eval_target(payer: &Rc<Keypair>, label_marker: u8) -> DurableEvalTarget {
+fn persistent_eval_target(payer: &Rc<Keypair>, label_marker: u8) -> PersistentEvalTarget {
     let value = te_value();
     let mut plaintext = [0u8; 32];
     plaintext[24..32].copy_from_slice(&value.to_be_bytes());
@@ -296,7 +296,7 @@ fn durable_eval_target(payer: &Rc<Keypair>, label_marker: u8) -> DurableEvalTarg
     let encrypted_value =
         encrypted_value_address(acl_domain_key, app_account, encrypted_value_label);
 
-    DurableEvalTarget {
+    PersistentEvalTarget {
         value,
         plaintext,
         acl_domain_key,
@@ -517,7 +517,7 @@ impl BatchDictionary {
 }
 
 #[allow(clippy::too_many_arguments)]
-fn durable_output(
+fn persistent_output(
     program: &Program<Rc<Keypair>>,
     dictionary: &mut BatchDictionary,
     encrypted_value: Pubkey,
@@ -532,7 +532,7 @@ fn durable_output(
             Some((handle, subjects)) => (Some(handle), Some(subjects)),
             None => (None, None),
         };
-    Ok(zama_host::FheEvalOutput::AllowedDurable {
+    Ok(zama_host::FheEvalOutput::AllowedPersistent {
         output_encrypted_value_index: index,
         output_app_account_authority_index: None,
         output_acl_domain_key_index: dictionary.intern_key(acl_domain_key),
@@ -704,10 +704,10 @@ fn trivial_encrypt_eval_with_label(
     host_config: Pubkey,
     label_marker: u8,
     ok_marker: &str,
-) -> Result<DurableEvalResult, Box<dyn std::error::Error>> {
+) -> Result<PersistentEvalResult, Box<dyn std::error::Error>> {
     use anchor_lang::solana_program::instruction::AccountMeta;
 
-    let target = durable_eval_target(payer, label_marker);
+    let target = persistent_eval_target(payer, label_marker);
     let fhe_type: u8 = 5; // euint64
 
     let (zama_event_authority, _) =
@@ -715,7 +715,7 @@ fn trivial_encrypt_eval_with_label(
     let subjects = vec![payer.pubkey()];
 
     let mut dictionary = BatchDictionary::default();
-    let output = durable_output(
+    let output = persistent_output(
         host,
         &mut dictionary,
         target.encrypted_value,
@@ -771,7 +771,7 @@ fn trivial_encrypt_eval_with_label(
     if std::env::var("TE_ALLOW").is_ok() {
         allow_for_decryption(host, payer, host_config, target.encrypted_value)?;
     }
-    Ok(DurableEvalResult {
+    Ok(PersistentEvalResult {
         encrypted_value: target.encrypted_value,
         value_key: target.value_key,
         handle,
@@ -779,8 +779,8 @@ fn trivial_encrypt_eval_with_label(
 }
 
 /// Eval-based compute phase: drives a single-step fhe_eval plan (one TrivialEncrypt step with a
-/// durable output ACL record). The host runs the eval executor, computes the result handle on-chain,
-/// creates the durable output ACL record
+/// persistent output ACL record). The host runs the eval executor, computes the result handle on-chain,
+/// creates the persistent output ACL record
 /// (passed as the sole remaining_account). The live host-listener reconstructs the successful
 /// frame for the tfhe-worker to materialize. TE_VALUE selects the euint64 plaintext; TE_ALLOW
 /// marks it publicly decryptable afterward.
@@ -995,7 +995,7 @@ fn historical_supersede_step(
 ) -> Result<(), Box<dyn std::error::Error>> {
     match step {
         "compute" => {
-            let target = durable_eval_target(payer, HISTORICAL_LABEL_MARKER);
+            let target = persistent_eval_target(payer, HISTORICAL_LABEL_MARKER);
             if existing_value_account_state(host, target.encrypted_value)?.is_some() {
                 return Err(std::io::Error::new(
                     std::io::ErrorKind::AlreadyExists,
@@ -1020,7 +1020,7 @@ fn historical_supersede_step(
             Ok(())
         }
         "supersede" => {
-            let target = durable_eval_target(payer, HISTORICAL_LABEL_MARKER);
+            let target = persistent_eval_target(payer, HISTORICAL_LABEL_MARKER);
             let Some((old_handle, _)) = existing_value_account_state(host, target.encrypted_value)?
             else {
                 return Err(std::io::Error::new(
@@ -1090,9 +1090,9 @@ fn historical_supersede_step(
 }
 
 /// Input flow phase (#1539): one fhe_eval that adds a public scalar to a coprocessor-attested external
-/// input and binds the result to a durable output ACL record. The verified input is resolved in-frame
+/// input and binds the result to a persistent output ACL record. The verified input is resolved in-frame
 /// (FheEvalOperand::VerifiedInput) — its attestation is re-verified on-chain via secp256k1 with no
-/// scratch PDA — and the durable output is pinned to the attested acl_domain_key (the input's domain;
+/// scratch PDA — and the persistent output is pinned to the attested acl_domain_key (the input's domain;
 /// the on-chain binding rejects any other). The attestation is supplied via the same BIND_* env vars
 /// the standalone input-verify phase uses; TE_ADD is the scalar addend (default 2). The host-listener
 /// reconstructs the successful frame so the tfhe-worker materializes (input + TE_ADD); TE_ALLOW
@@ -1122,8 +1122,8 @@ fn fhe_eval_verified_input_add(
         .map(|s| hexdec(&s))
         .unwrap_or_else(|_| vec![0u8]);
 
-    // The attested contract IS the input's acl_domain_key; the durable output must bind that exact
-    // domain (the on-chain VerifiedInput -> durable binding enforces it). app_account is the signer.
+    // The attested contract IS the input's acl_domain_key; the persistent output must bind that exact
+    // domain (the on-chain VerifiedInput -> persistent binding enforces it). app_account is the signer.
     let acl_domain_key = Pubkey::new_from_array(contract_address);
     let app_account = payer.pubkey();
 
@@ -1169,7 +1169,7 @@ fn fhe_eval_verified_input_add(
                 value_index: dictionary.intern(scalar),
             },
             output_fhe_type: fhe_type,
-            output: durable_output(
+            output: persistent_output(
                 host,
                 &mut dictionary,
                 output_encrypted_value,
@@ -1518,7 +1518,7 @@ fn consume_burn(
     // 1. fromExternal burn amount: a coprocessor-attested external input (BIND_* env from the
     // relayer input-proof), bound to (user = owner, contract = compute_signer PDA). confidential_burn
     // re-verifies the EIP-712 attestation in-frame and transient-allows it for the burn eval — no
-    // durable amount ACL, no create_random_amount. The attested handle must be a euint64.
+    // persistent amount ACL, no create_random_amount. The attested handle must be a euint64.
     let input_handle: [u8; 32] = hexdec(&std::env::var("BIND_HANDLE")?)
         .try_into()
         .expect("BIND_HANDLE must be 32 bytes");
@@ -1548,7 +1548,7 @@ fn consume_burn(
     let hh: String = input_handle.iter().map(|b| format!("{b:02x}")).collect();
     println!("  burn amount (attested external input) handle 0x{hh}");
 
-    // 2. Durable burn outputs supersede the stable balance/total-supply encrypted value accounts in place and
+    // 2. Persistent burn outputs supersede the stable balance/total-supply encrypted value accounts in place and
     // create or supersede the stable burned-amount encrypted value account for this token account.
     let (burned_acl, _) = confidential_token::encrypted_value_address(
         mint,
@@ -1793,9 +1793,9 @@ fn is_comparison_op(op: zama_host::FheBinaryOpCode) -> bool {
     )
 }
 
-/// Creates a durable operand (TrivialEncrypt → AllowedDurable, `user` subject).
+/// Creates a persistent operand (TrivialEncrypt → AllowedPersistent, `user` subject).
 /// Returns (encrypted_value, current_handle).
-fn create_durable_public_decrypt_operand(
+fn create_persistent_public_decrypt_operand(
     host: &Program<Rc<Keypair>>,
     payer: &Rc<Keypair>,
     host_config: Pubkey,
@@ -1818,7 +1818,7 @@ fn create_durable_public_decrypt_operand(
         steps: vec![zama_host::FheEvalStep::TrivialEncrypt {
             plaintext,
             fhe_type,
-            output: durable_output(
+            output: persistent_output(
                 host,
                 &mut dictionary,
                 encrypted_value,
@@ -1853,7 +1853,7 @@ fn create_durable_public_decrypt_operand(
     Ok((encrypted_value, value.current_handle))
 }
 
-/// Generic binary fhe_eval: encrypted operands become durable public-decrypt handles (so
+/// Generic binary fhe_eval: encrypted operands become persistent public-decrypt handles (so
 /// public-decrypt propagates to the output); scalar-RHS ops create only the LHS.
 /// Env: BINARY_OP, BINARY_A, BINARY_B, BINARY_B_SCALAR (flag), BINARY_FHE_TYPE, BINARY_ALLOW.
 /// Comparison ops (Eq/Ne/Ge/Gt/Le/Lt) automatically set output_fhe_type=0 (ebool).
@@ -1902,7 +1902,7 @@ fn fhe_eval_binary(
     operand_label_a[2] = in_fhe_type;
     operand_label_a[3] = 0;
     operand_label_a[8..16].copy_from_slice(&a.to_be_bytes());
-    let (encrypted_value_a, handle_a) = create_durable_public_decrypt_operand(
+    let (encrypted_value_a, handle_a) = create_persistent_public_decrypt_operand(
         host,
         payer,
         host_config,
@@ -1925,7 +1925,7 @@ fn fhe_eval_binary(
         operand_label_b[2] = in_fhe_type;
         operand_label_b[3] = 1;
         operand_label_b[8..16].copy_from_slice(&b.to_be_bytes());
-        let (encrypted_value_b, handle_b) = create_durable_public_decrypt_operand(
+        let (encrypted_value_b, handle_b) = create_persistent_public_decrypt_operand(
             host,
             payer,
             host_config,
@@ -1934,7 +1934,7 @@ fn fhe_eval_binary(
             operand_label_b,
         )?;
         operand_values.push(encrypted_value_b);
-        zama_host::FheEvalOperand::AllowedDurable {
+        zama_host::FheEvalOperand::AllowedPersistent {
             handle_index: dictionary.intern(handle_b),
             encrypted_value_index: 1,
         }
@@ -1943,13 +1943,13 @@ fn fhe_eval_binary(
     let output_index = operand_values.len() as u8;
     let steps = vec![zama_host::FheEvalStep::Binary {
         op,
-        lhs: zama_host::FheEvalOperand::AllowedDurable {
+        lhs: zama_host::FheEvalOperand::AllowedPersistent {
             handle_index: dictionary.intern(handle_a),
             encrypted_value_index: 0,
         },
         rhs: rhs_operand,
         output_fhe_type,
-        output: durable_output(
+        output: persistent_output(
             host,
             &mut dictionary,
             output_encrypted_value,
@@ -2015,7 +2015,7 @@ fn fhe_eval_binary(
     Ok(())
 }
 
-/// Generic unary fhe_eval: TrivialEncrypt(operand) → Unary(op, AllowedDurable).
+/// Generic unary fhe_eval: TrivialEncrypt(operand) → Unary(op, AllowedPersistent).
 /// Env: UNARY_OP (Neg/Not/Cast), UNARY_A, UNARY_IN_FHE_TYPE (default 2=euint8),
 /// UNARY_OUT_FHE_TYPE (default = UNARY_IN_FHE_TYPE), UNARY_ALLOW.
 fn fhe_eval_unary(
@@ -2053,13 +2053,13 @@ fn fhe_eval_unary(
         Pubkey::find_program_address(&[EVENT_AUTHORITY_SEED], &zama_host::ID);
     let subjects = vec![payer.pubkey()];
 
-    // Encrypted operand as a durable public-decrypt handle (propagates to output; AllowedLocal → 6063).
+    // Encrypted operand as a persistent public-decrypt handle (propagates to output; AllowedLocal → 6063).
     let mut operand_label_a = [0x0bu8; 32];
     operand_label_a[1] = op.as_u8();
     operand_label_a[2] = in_fhe_type;
     operand_label_a[3] = out_fhe_type;
     operand_label_a[8..16].copy_from_slice(&a.to_be_bytes());
-    let (encrypted_value_a, handle_a) = create_durable_public_decrypt_operand(
+    let (encrypted_value_a, handle_a) = create_persistent_public_decrypt_operand(
         host,
         payer,
         host_config,
@@ -2073,12 +2073,12 @@ fn fhe_eval_unary(
         account_count: 2,
         steps: vec![zama_host::FheEvalStep::Unary {
             op,
-            operand: zama_host::FheEvalOperand::AllowedDurable {
+            operand: zama_host::FheEvalOperand::AllowedPersistent {
                 handle_index: dictionary.intern(handle_a),
                 encrypted_value_index: 0,
             },
             output_fhe_type: out_fhe_type,
-            output: durable_output(
+            output: persistent_output(
                 host,
                 &mut dictionary,
                 output_encrypted_value,
@@ -2132,7 +2132,7 @@ fn fhe_eval_unary(
 }
 
 /// Ternary fhe_eval: TrivialEncrypt(ctrl as ebool) + TrivialEncrypt(if_true) +
-/// TrivialEncrypt(if_false) → Ternary(IfThenElse, AllowedDurable).
+/// TrivialEncrypt(if_false) → Ternary(IfThenElse, AllowedPersistent).
 /// Env: TERNARY_CTRL (0|1, default 1), TERNARY_TRUE/TERNARY_FALSE (u64 defaults 42/99),
 /// TERNARY_FHE_TYPE (default 5=euint64), TERNARY_ALLOW.
 fn fhe_eval_ternary(
@@ -2174,19 +2174,19 @@ fn fhe_eval_ternary(
 
     let expected = if ctrl != 0 { if_true } else { if_false };
 
-    // Each operand a durable public-decrypt handle. remaining_accounts: [control, if_true, if_false, output].
+    // Each operand a persistent public-decrypt handle. remaining_accounts: [control, if_true, if_false, output].
     let mut label_ctrl = [0x0cu8; 32];
     label_ctrl[1] = ctrl as u8;
     label_ctrl[3] = 0; // control is ebool (type 0)
     label_ctrl[8..16].copy_from_slice(&ctrl.to_be_bytes());
     let (value_ctrl, h_ctrl) =
-        create_durable_public_decrypt_operand(host, payer, host_config, ctrl, 0, label_ctrl)?;
+        create_persistent_public_decrypt_operand(host, payer, host_config, ctrl, 0, label_ctrl)?;
 
     let mut label_true = [0x0cu8; 32];
     label_true[2] = fhe_type;
     label_true[3] = 1;
     label_true[8..16].copy_from_slice(&if_true.to_be_bytes());
-    let (value_true, h_true) = create_durable_public_decrypt_operand(
+    let (value_true, h_true) = create_persistent_public_decrypt_operand(
         host,
         payer,
         host_config,
@@ -2199,7 +2199,7 @@ fn fhe_eval_ternary(
     label_false[2] = fhe_type;
     label_false[3] = 2;
     label_false[8..16].copy_from_slice(&if_false.to_be_bytes());
-    let (value_false, h_false) = create_durable_public_decrypt_operand(
+    let (value_false, h_false) = create_persistent_public_decrypt_operand(
         host,
         payer,
         host_config,
@@ -2213,20 +2213,20 @@ fn fhe_eval_ternary(
         account_count: 4,
         steps: vec![zama_host::FheEvalStep::Ternary {
             op: zama_host::FheTernaryOpCode::IfThenElse,
-            control: zama_host::FheEvalOperand::AllowedDurable {
+            control: zama_host::FheEvalOperand::AllowedPersistent {
                 handle_index: dictionary.intern(h_ctrl),
                 encrypted_value_index: 0,
             },
-            if_true: zama_host::FheEvalOperand::AllowedDurable {
+            if_true: zama_host::FheEvalOperand::AllowedPersistent {
                 handle_index: dictionary.intern(h_true),
                 encrypted_value_index: 1,
             },
-            if_false: zama_host::FheEvalOperand::AllowedDurable {
+            if_false: zama_host::FheEvalOperand::AllowedPersistent {
                 handle_index: dictionary.intern(h_false),
                 encrypted_value_index: 2,
             },
             output_fhe_type: fhe_type,
-            output: durable_output(
+            output: persistent_output(
                 host,
                 &mut dictionary,
                 output_encrypted_value,
@@ -2281,7 +2281,7 @@ fn fhe_eval_ternary(
     Ok(())
 }
 
-/// Bounded random fhe_eval: RandBounded(upper_bound, AllowedDurable).
+/// Bounded random fhe_eval: RandBounded(upper_bound, AllowedPersistent).
 /// Env: RAND_UPPER (u64 exclusive upper bound, default 100), RAND_FHE_TYPE (default 5=euint64),
 /// RAND_ALLOW. Expected: cleartext in [0, RAND_UPPER).
 fn fhe_eval_rand_bounded(
@@ -2320,7 +2320,7 @@ fn fhe_eval_rand_bounded(
         steps: vec![zama_host::FheEvalStep::RandBounded {
             upper_bound,
             fhe_type,
-            output: durable_output(
+            output: persistent_output(
                 host,
                 &mut dictionary,
                 output_encrypted_value,
@@ -2370,7 +2370,7 @@ fn fhe_eval_rand_bounded(
     Ok(())
 }
 
-/// Multi-step fhe_eval Sum: two TrivialEncrypt(AllowedLocal) → Sum(AllowedDurable).
+/// Multi-step fhe_eval Sum: two TrivialEncrypt(AllowedLocal) → Sum(AllowedPersistent).
 /// SUM_A/SUM_B select the euint64 addends (defaults 10/20). Expected result: SUM_A + SUM_B.
 /// SUM_ALLOW marks the output publicly decryptable after the eval.
 fn fhe_eval_sum(
@@ -2400,37 +2400,37 @@ fn fhe_eval_sum(
         Pubkey::find_program_address(&[EVENT_AUTHORITY_SEED], &zama_host::ID);
     let subjects = vec![payer.pubkey()];
 
-    // Each addend a durable public-decrypt handle. remaining_accounts: [a, b, output].
+    // Each addend a persistent public-decrypt handle. remaining_accounts: [a, b, output].
     let mut label_a = [0x0du8; 32];
     label_a[2] = fhe_type;
     label_a[3] = 0;
     label_a[8..16].copy_from_slice(&a.to_be_bytes());
     let (value_a, h_a) =
-        create_durable_public_decrypt_operand(host, payer, host_config, a, fhe_type, label_a)?;
+        create_persistent_public_decrypt_operand(host, payer, host_config, a, fhe_type, label_a)?;
 
     let mut label_b = [0x0du8; 32];
     label_b[2] = fhe_type;
     label_b[3] = 1;
     label_b[8..16].copy_from_slice(&b.to_be_bytes());
     let (value_b, h_b) =
-        create_durable_public_decrypt_operand(host, payer, host_config, b, fhe_type, label_b)?;
+        create_persistent_public_decrypt_operand(host, payer, host_config, b, fhe_type, label_b)?;
 
     let mut dictionary = BatchDictionary::default();
     let args = zama_host::FheEvalArgs {
         account_count: 3,
         steps: vec![zama_host::FheEvalStep::Sum {
             operands: vec![
-                zama_host::FheEvalOperand::AllowedDurable {
+                zama_host::FheEvalOperand::AllowedPersistent {
                     handle_index: dictionary.intern(h_a),
                     encrypted_value_index: 0,
                 },
-                zama_host::FheEvalOperand::AllowedDurable {
+                zama_host::FheEvalOperand::AllowedPersistent {
                     handle_index: dictionary.intern(h_b),
                     encrypted_value_index: 1,
                 },
             ],
             fhe_type,
-            output: durable_output(
+            output: persistent_output(
                 host,
                 &mut dictionary,
                 output_encrypted_value,
@@ -2485,7 +2485,7 @@ fn fhe_eval_sum(
 }
 
 /// Multi-step fhe_eval IsIn: TrivialEncrypt(value) + TrivialEncrypt(set elements) (all AllowedLocal)
-/// → IsIn(AllowedDurable → ebool). ISIN_VALUE selects the euint64 value (default 42); the set is
+/// → IsIn(AllowedPersistent → ebool). ISIN_VALUE selects the euint64 value (default 42); the set is
 /// hardcoded as [10, 42, 100]. ISIN_ALLOW marks the output publicly decryptable. Expected result:
 /// 1 (true) when ISIN_VALUE is in the set, 0 (false) otherwise.
 fn fhe_eval_is_in(
@@ -2511,14 +2511,14 @@ fn fhe_eval_is_in(
     let subjects = vec![payer.pubkey()];
     let mut dictionary = BatchDictionary::default();
 
-    // value + set as durable public-decrypt handles. remaining_accounts: [value, set.., output].
+    // value + set as persistent public-decrypt handles. remaining_accounts: [value, set.., output].
     let set_values: [u64; 3] = [10, 42, 100];
 
     let mut label_value = [0x0eu8; 32];
     label_value[2] = elem_fhe_type;
     label_value[3] = 0;
     label_value[8..16].copy_from_slice(&value.to_be_bytes());
-    let (encrypted_value_input, h_value) = create_durable_public_decrypt_operand(
+    let (encrypted_value_input, h_value) = create_persistent_public_decrypt_operand(
         host,
         payer,
         host_config,
@@ -2535,7 +2535,7 @@ fn fhe_eval_is_in(
         label[3] = (i as u8) + 1;
         label[8..16].copy_from_slice(&v.to_be_bytes());
         label[16..24].copy_from_slice(&value.to_be_bytes());
-        let (encrypted_value, handle) = create_durable_public_decrypt_operand(
+        let (encrypted_value, handle) = create_persistent_public_decrypt_operand(
             host,
             payer,
             host_config,
@@ -2543,7 +2543,7 @@ fn fhe_eval_is_in(
             elem_fhe_type,
             label,
         )?;
-        set_operands.push(zama_host::FheEvalOperand::AllowedDurable {
+        set_operands.push(zama_host::FheEvalOperand::AllowedPersistent {
             handle_index: dictionary.intern(handle),
             encrypted_value_index: operand_values.len() as u8,
         });
@@ -2552,13 +2552,13 @@ fn fhe_eval_is_in(
     let output_index = operand_values.len() as u8;
 
     let steps = vec![zama_host::FheEvalStep::IsIn {
-        value: zama_host::FheEvalOperand::AllowedDurable {
+        value: zama_host::FheEvalOperand::AllowedPersistent {
             handle_index: dictionary.intern(h_value),
             encrypted_value_index: 0,
         },
         set: set_operands,
         fhe_type: elem_fhe_type,
-        output: durable_output(
+        output: persistent_output(
             host,
             &mut dictionary,
             output_encrypted_value,
@@ -2620,7 +2620,7 @@ fn fhe_eval_is_in(
 }
 
 /// Multi-step fhe_eval MulDiv: TrivialEncrypt(factor1, AllowedLocal) → MulDiv(factor1, scalar_b,
-/// divisor, AllowedDurable). MULDIV_A/MULDIV_B/MULDIV_D select the euint64 operands (defaults
+/// divisor, AllowedPersistent). MULDIV_A/MULDIV_B/MULDIV_D select the euint64 operands (defaults
 /// 6/7/3). MULDIV_ALLOW marks the output publicly decryptable. Expected result: A * B / D.
 fn fhe_eval_mul_div(
     host: &Program<Rc<Keypair>>,
@@ -2659,18 +2659,18 @@ fn fhe_eval_mul_div(
     let mut divisor = [0u8; 32];
     divisor[24..32].copy_from_slice(&d.to_be_bytes());
 
-    // factor1 as a durable public-decrypt handle (factor2/divisor are public scalars).
+    // factor1 as a persistent public-decrypt handle (factor2/divisor are public scalars).
     let mut label_a = [0x0fu8; 32];
     label_a[2] = fhe_type;
     label_a[8..16].copy_from_slice(&a.to_be_bytes());
     let (encrypted_value_a, h_a) =
-        create_durable_public_decrypt_operand(host, payer, host_config, a, fhe_type, label_a)?;
+        create_persistent_public_decrypt_operand(host, payer, host_config, a, fhe_type, label_a)?;
 
     let mut dictionary = BatchDictionary::default();
     let args = zama_host::FheEvalArgs {
         account_count: 2,
         steps: vec![zama_host::FheEvalStep::MulDiv {
-            factor1: zama_host::FheEvalOperand::AllowedDurable {
+            factor1: zama_host::FheEvalOperand::AllowedPersistent {
                 handle_index: dictionary.intern(h_a),
                 encrypted_value_index: 0,
             },
@@ -2679,7 +2679,7 @@ fn fhe_eval_mul_div(
             },
             divisor,
             output_fhe_type: fhe_type,
-            output: durable_output(
+            output: persistent_output(
                 host,
                 &mut dictionary,
                 output_encrypted_value,

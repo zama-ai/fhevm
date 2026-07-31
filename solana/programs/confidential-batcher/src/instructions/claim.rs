@@ -131,12 +131,12 @@ pub fn claim<'info>(ctx: Context<'info, Claim<'info>>) -> Result<()> {
     // proportional share of the public aggregate payout.
     let joined_value = fhe::read_encrypted_value(&ctx.accounts.pending_join_value)?;
     let joined = fhe::uint64_operand(&joined_value)?;
-    let claim_binding = fhe::DurableBinding::bind(
+    let claim_binding = fhe::PersistentBinding::bind(
         ctx.accounts.claim_amount_value.to_account_info(),
         zama_fhe::EncryptedValueKey::new(
             batch_key,
             batch_authority,
-            zama_fhe::DurableLabel::new(claim_amount_label(user)),
+            zama_fhe::PersistentLabel::new(claim_amount_label(user)),
         ),
         // The user decrypts their claimed amount; the batch authority spends
         // it as the transfer amount; the payout mint's compute signer lets the

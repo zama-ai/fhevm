@@ -228,7 +228,7 @@ pub(super) fn read_canonical_encrypted_value(info: &AccountInfo) -> Result<Encry
     Ok(value)
 }
 
-/// Durable input authorization: the account must be a canonical program-owned
+/// Persistent input authorization: the account must be a canonical program-owned
 /// `EncryptedValue`, `handle` must be its *current* handle (for this chain),
 /// and `subject` must be a current allowed member.
 pub(super) fn assert_encrypted_value_subject_allowed(
@@ -252,7 +252,7 @@ pub(super) fn assert_encrypted_value_subject_allowed(
 
 /// Deny-list gate for one newly granted subject outside `fhe_eval`: locates the
 /// subject's canonical deny record among `remaining_accounts` and applies the
-/// same check the durable-output path runs through its account table. With the
+/// same check the persistent-output path runs through its account table. With the
 /// deny list disabled no witness is required.
 pub(super) fn check_added_subject_not_denied(
     config: &HostConfig,

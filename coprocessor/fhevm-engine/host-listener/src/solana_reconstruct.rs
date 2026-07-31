@@ -69,7 +69,7 @@ pub fn decode_fhe_eval_random_seeds_event(
 //
 // `EncryptedValue` is event-free by design (see zama-host's
 // `instructions/encrypted_value.rs` module doc): ACL changes are carried by
-// `fhe_eval` durable outputs, `make_handle_public`, `allow_subjects`, and
+// `fhe_eval` persistent outputs, `make_handle_public`, `allow_subjects`, and
 // `remove_subject`. There is no ACL event to decode — instruction data is the
 // allow signal and must be decoded directly (top-level AND inner/CPI, since an
 // app program may invoke these via CPI) by Anchor discriminator
@@ -240,7 +240,7 @@ fn resolve_operand(
     produced: &[[u8; 32]],
 ) -> Option<[u8; 32]> {
     match operand {
-        FheEvalOperand::AllowedDurable { handle_index, .. } => {
+        FheEvalOperand::AllowedPersistent { handle_index, .. } => {
             dictionary.get(usize::from(*handle_index)).copied()
         }
         FheEvalOperand::AllowedLocal { producer_index } => {
@@ -317,14 +317,14 @@ fn map_pgm_ternary_op(op: PgmTernaryOpCode) -> FheTernaryOpCode {
 /// the program's `walk_eval_frame`: walk steps in order, resolve operands
 /// (`Transient` referring to earlier steps' produced handles), recompute each
 /// step's result handle via the program's eval primitives, and record one event
-/// per step. Durable and instruction-local outputs derive the identical base
+/// per step. Persistent and instruction-local outputs derive the identical base
 /// handle — no per-output binding (matches EVM `FHEVMExecutor`).
 ///
 /// Returns `None` on a malformed plan (operand or dictionary reference out of range,
 /// or a `Scalar` where only an encrypted operand is valid). `ctx` supplies
 /// chain_id / previous_bank_hash / unix_timestamp; `subject` is the compute
 /// subject. Random seeds are supplied by the host's signed event-CPI batch
-/// because their anchor includes live durable-account versions that are not
+/// because their anchor includes live persistent-account versions that are not
 /// caller-provided instruction data.
 pub fn reconstruct_fhe_eval_steps(
     plan: &FheEvalArgs,
@@ -605,30 +605,29 @@ pub fn reconstruct_fhe_eval_steps(
         };
         steps_out.push(ReconstructedEvalStep {
             event,
-            durable_encrypted_value_index: fhe_eval_step_durable_output_index(
-                step,
-            ),
+            persistent_encrypted_value_index:
+                fhe_eval_step_persistent_output_index(step),
             previous_handle: fhe_eval_step_previous_handle(step),
         });
     }
     Some(steps_out)
 }
 
-/// One reconstructed `fhe_eval` step: the compute event plus, for a `Durable`
+/// One reconstructed `fhe_eval` step: the compute event plus, for a `Persistent`
 /// output, the `remaining_accounts` index of the output `EncryptedValue` PDA.
-/// The transport resolves that index to the durable handle's material request.
+/// The transport resolves that index to the persistent handle's material request.
 pub struct ReconstructedEvalStep {
     pub event: SolanaHostEvent,
-    pub durable_encrypted_value_index: Option<u8>,
-    /// Present when the durable output supersedes an existing encrypted value account. The
+    pub persistent_encrypted_value_index: Option<u8>,
+    /// Present when the persistent output supersedes an existing encrypted value account. The
     /// transport requests material for the outgoing and reconstructed output
     /// handles.
     pub previous_handle: Option<[u8; 32]>,
 }
 
-pub fn fhe_eval_step_durable_output_index(step: &FheEvalStep) -> Option<u8> {
+pub fn fhe_eval_step_persistent_output_index(step: &FheEvalStep) -> Option<u8> {
     match fhe_eval_step_output(step) {
-        FheEvalOutput::AllowedDurable {
+        FheEvalOutput::AllowedPersistent {
             output_encrypted_value_index,
             ..
         } => Some(*output_encrypted_value_index),
@@ -636,10 +635,10 @@ pub fn fhe_eval_step_durable_output_index(step: &FheEvalStep) -> Option<u8> {
     }
 }
 
-/// The outgoing handle when a durable output supersedes an existing encrypted value account.
+/// The outgoing handle when a persistent output supersedes an existing encrypted value account.
 pub fn fhe_eval_step_previous_handle(step: &FheEvalStep) -> Option<[u8; 32]> {
     match fhe_eval_step_output(step) {
-        FheEvalOutput::AllowedDurable {
+        FheEvalOutput::AllowedPersistent {
             previous_handle, ..
         } => *previous_handle,
         FheEvalOutput::AllowedLocal => None,
@@ -1017,7 +1016,7 @@ mod tests {
             bytes[31] = 10;
             bytes
         };
-        // On-chain preflight requires a rand frame to anchor at least one durable
+        // On-chain preflight requires a rand frame to anchor at least one persistent
         // output (fhevm-internal#1853 W4), so the fixture binds one.
         let plan = FheEvalArgs {
             account_count: 1,
@@ -1025,7 +1024,7 @@ mod tests {
             steps: vec![FheEvalStep::RandBounded {
                 upper_bound,
                 fhe_type: 5,
-                output: FheEvalOutput::AllowedDurable {
+                output: FheEvalOutput::AllowedPersistent {
                     output_encrypted_value_index: 0,
                     output_app_account_authority_index: None,
                     output_acl_domain_key_index: 0,
@@ -1070,7 +1069,7 @@ mod tests {
             b[31] = 128; // power-of-two upper bound
             b
         };
-        // The frame ends in a rand step, so it anchors a durable output
+        // The frame ends in a rand step, so it anchors a persistent output
         // (fhevm-internal#1853 W4); dictionary entries 1..=4 are its ACL metadata.
         let output_account = [0x55u8; 32];
         let plan = FheEvalArgs {
@@ -1121,7 +1120,7 @@ mod tests {
                 FheEvalStep::RandBounded {
                     upper_bound: ub,
                     fhe_type: 5,
-                    output: FheEvalOutput::AllowedDurable {
+                    output: FheEvalOutput::AllowedPersistent {
                         output_encrypted_value_index: 0,
                         output_app_account_authority_index: None,
                         output_acl_domain_key_index: 1,

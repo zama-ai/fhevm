@@ -70,7 +70,7 @@ export type SolanaVaultJoinParameters = {
   readonly joinConfidentialMint: Address;
   readonly hostConfig: Address;
   readonly computeUnitLimit?: number | undefined;
-  /** Called after successful simulation and immediately before submission, for durable recovery journals. */
+  /** Called after successful simulation and immediately before submission, for persistent recovery journals. */
   readonly onTransactionSigned?:
     | ((transaction: {
         readonly signature: Signature;
