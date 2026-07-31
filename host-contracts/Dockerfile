@@ -8,7 +8,9 @@ RUN apk add --no-cache \
     git \
     jq \
     kubectl \
-    libc6-compat \
+    gcompat \
+    libgcc \
+    libstdc++ \
     python3 \
     python3-dev \
     make \
