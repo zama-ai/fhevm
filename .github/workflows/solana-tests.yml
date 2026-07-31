@@ -100,8 +100,14 @@ jobs:
       - name: Run Solana workspace tests
         run: cargo test --workspace
 
+      - name: Run zama-host decode-feature tests
+        run: cargo test -p zama-host --features decode
+
       - name: Run Clippy
         run: cargo clippy --workspace --all-targets -- -D warnings
+
+      - name: Run Clippy on the zama-host decode feature
+        run: cargo clippy -p zama-host --features decode --all-targets -- -D warnings
 
   native-coverage:
     name: solana-tests/native-coverage

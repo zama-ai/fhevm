@@ -1728,7 +1728,7 @@ fn mollusk_allow_subjects_rejects_extraneous_remaining_accounts() {
     );
 
     // With the deny list enabled, every remaining account must be the canonical
-    // deny record of a subject added by this call; a correct witness plus one
+    // deny record of a subject named in this call; a correct witness plus one
     // stray account fails.
     let (host_config, deny_host_config_account) = deny_enabled_host_config_account(authority);
     let (authority_record, authority_record_account) = (
@@ -1762,7 +1762,34 @@ fn mollusk_allow_subjects_rejects_extraneous_remaining_accounts() {
         )],
     );
 
-    // The exact witness set — one record per added subject — still succeeds.
+    // The same witness supplied twice fails: each named subject entitles at
+    // most one witness account.
+    let ix = allow_subjects_ix_with_subject_deny_records(
+        authority,
+        authority,
+        value_address,
+        host_config,
+        vec![new_subject],
+        Some(authority_record),
+        vec![subject_record, subject_record],
+    );
+    let accounts = vec![
+        (system_program::ID, system_program_account()),
+        (authority, funded_system_account()),
+        (value_address, encrypted_value_account(&value)),
+        (host_config, deny_host_config_account.clone()),
+        (authority_record, authority_record_account.clone()),
+        (subject_record, subject_record_account.clone()),
+    ];
+    mollusk().process_and_validate_instruction(
+        &ix,
+        &accounts,
+        &[custom_error(
+            host::errors::ZamaHostError::AclDenyRecordMismatch,
+        )],
+    );
+
+    // The exact witness set — one record per named subject — still succeeds.
     let ix = allow_subjects_ix_with_subject_deny_records(
         authority,
         authority,
@@ -1776,9 +1803,50 @@ fn mollusk_allow_subjects_rejects_extraneous_remaining_accounts() {
         (system_program::ID, system_program_account()),
         (authority, funded_system_account()),
         (value_address, encrypted_value_account(&value)),
+        (host_config, deny_host_config_account.clone()),
+        (authority_record, authority_record_account.clone()),
+        (subject_record, subject_record_account.clone()),
+    ];
+    mollusk().process_and_validate_instruction(&ix, &accounts, &[Check::success()]);
+}
+
+#[test]
+fn mollusk_allow_subjects_reallow_of_existing_subject_succeeds_with_witness() {
+    // Idempotent re-allow: the subject is already a member, so nothing is
+    // added, but the witness set is derived from the subjects named in the
+    // instruction — a retried transaction carrying the same witness must keep
+    // succeeding rather than fail on a now-superfluous account.
+    let authority = Pubkey::new_unique();
+    let member = Pubkey::new_unique();
+    let (host_config, deny_host_config_account) = deny_enabled_host_config_account(authority);
+    let (authority_record, authority_record_account) = (
+        host::deny_subject_address(authority).0,
+        empty_system_account(),
+    );
+    let (member_record, member_record_account) = deny_subject_record_account(member, false);
+    let (value_address, value) = new_value_account(
+        Pubkey::new_unique(),
+        authority,
+        label("witness-reallow"),
+        handle_for_chain(54, 5),
+        &[authority, member],
+    );
+    let ix = allow_subjects_ix_with_subject_deny_records(
+        authority,
+        authority,
+        value_address,
+        host_config,
+        vec![member],
+        Some(authority_record),
+        vec![member_record],
+    );
+    let accounts = vec![
+        (system_program::ID, system_program_account()),
+        (authority, funded_system_account()),
+        (value_address, encrypted_value_account(&value)),
         (host_config, deny_host_config_account),
         (authority_record, authority_record_account),
-        (subject_record, subject_record_account),
+        (member_record, member_record_account),
     ];
     mollusk().process_and_validate_instruction(&ix, &accounts, &[Check::success()]);
 }

@@ -48,7 +48,18 @@ pub fn allow_subjects(
     )?;
 
     let deny_list_enabled = ctx.accounts.host_config.grant_deny_list_enabled;
-    let mut added_deny_addresses: Vec<Pubkey> = Vec::new();
+    // The witness entitlement is derived from instruction data (subjects named
+    // in the call), never from stored state, so a client can build a valid
+    // witness set without reading the account first and an idempotent re-allow
+    // of an existing subject keeps succeeding with its witness supplied.
+    let mut unclaimed_witness_addresses: Vec<Pubkey> = if deny_list_enabled {
+        subjects
+            .iter()
+            .map(|subject| deny_subject_address(*subject).0)
+            .collect()
+    } else {
+        Vec::new()
+    };
     for subject in &subjects {
         if value.has_subject(*subject) {
             continue;
@@ -58,24 +69,21 @@ pub fn allow_subjects(
             *subject,
             ctx.remaining_accounts,
         )?;
-        if deny_list_enabled {
-            added_deny_addresses.push(deny_subject_address(*subject).0);
-        }
         require!(
             value.subjects.len() < zama_solana_acl::MAX_ENCRYPTED_VALUE_SUBJECTS,
             ZamaHostError::EncryptedValueSubjectCapacityExceeded
         );
         value.subjects.push(*subject);
     }
-    // Remaining-accounts hygiene, mirroring `fhe_eval` preflight's
-    // `assert_all_used`: every supplied account must be the canonical deny
-    // record of a subject added by this call, and none may be supplied while
-    // the deny list is disabled.
+    // Remaining-accounts hygiene: each supplied account must be the canonical
+    // deny record of a subject named in this call, at most once per subject,
+    // and none may be supplied while the deny list is disabled.
     for account in ctx.remaining_accounts {
-        require!(
-            added_deny_addresses.contains(&account.key()),
-            ZamaHostError::AclDenyRecordMismatch
-        );
+        let position = unclaimed_witness_addresses
+            .iter()
+            .position(|address| *address == account.key())
+            .ok_or_else(|| error!(ZamaHostError::AclDenyRecordMismatch))?;
+        unclaimed_witness_addresses.swap_remove(position);
     }
 
     let space = 8 + EncryptedValue::space(value.subjects.len(), value.peaks.len());

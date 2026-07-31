@@ -117,8 +117,6 @@ const FHE_EVAL_REMAINING_BASE: usize = 9;
 pub enum DecodeError {
     #[error("instruction data shorter than the 8-byte discriminator")]
     DataTooShort,
-    #[error("unrecognized discriminator (not a zama-host EncryptedValue instruction)")]
-    UnknownDiscriminator,
     #[error("missing account at index {0} (encrypted_value)")]
     MissingAccount(usize),
     #[error("missing fhe_eval durable output account at remaining index {remaining_index} (absolute account index {absolute_index})")]
