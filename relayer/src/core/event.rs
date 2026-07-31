@@ -4,8 +4,12 @@ use crate::http::endpoints::v2::types::DelegatedUserDecryptRequestJson;
 use crate::http::endpoints::v2::types::{
     InputProofRequestJson, PublicDecryptRequestJson, UserDecryptRequestJson,
 };
-use crate::http::endpoints::v3::types::AttestedUserDecryptRequestJson;
-use crate::http::utils::validations::V3_ATTESTATION_TYPE_SOLANA_ED25519_V2;
+use crate::http::endpoints::v3::types::{
+    AttestedUserDecryptRequestJson, Eip712UnifiedUserDecryptPayloadJson,
+};
+use crate::http::utils::validations::{
+    V3_ATTESTATION_TYPE_EIP712_UNIFIED_V1, V3_ATTESTATION_TYPE_SOLANA_ED25519_V2,
+};
 use crate::orchestrator::traits::Event;
 use alloy::primitives::{Address, Bytes, FixedBytes, TxHash, B256};
 use alloy::{primitives::U256, rpc::types::Log};
@@ -810,55 +814,104 @@ impl TryFrom<AttestedUserDecryptRequestJson> for UserDecryptRequest {
         let public_key = Bytes::from_str(&payload_inner.public_key)?;
         let extra_data = Bytes::from_str(&payload_inner.extra_data)?;
 
-        if value.attestation_type == V3_ATTESTATION_TYPE_SOLANA_ED25519_V2 {
-            let user_identity = B256::from_str(payload_inner.solana_user_identity.as_deref().ok_or_else(
-                || anyhow::anyhow!("solanaUserIdentity is required for the Solana ed25519 attestation type"),
-            )?)
-            .map_err(|e| anyhow::anyhow!("Failed to parse solanaUserIdentity: {}", e))?;
-
-            let nonce = B256::from_str(payload_inner.solana_nonce.as_deref().ok_or_else(|| {
-                anyhow::anyhow!("solanaNonce is required for the Solana ed25519 attestation type")
-            })?)
-            .map_err(|e| anyhow::anyhow!("Failed to parse solanaNonce: {}", e))?;
-
-            let allowed_acl_domain_keys = payload_inner
-                .solana_allowed_acl_domain_keys
-                .unwrap_or_default()
-                .iter()
-                .map(|k| B256::from_str(k))
-                .collect::<Result<Vec<_>, _>>()
-                .map_err(|e| {
-                    anyhow::anyhow!("Failed to parse solanaAllowedAclDomainKeys: {}", e)
-                })?;
-
-            return Ok(UserDecryptRequest::SolanaUnifiedV1 {
+        // Exhaustive per-protocol dispatch: an unknown attestation type is rejected HERE, not
+        // only by the HTTP-layer validator — the conversion must never default a request it
+        // doesn't recognize onto the EVM arm (DD-027: validation is per-protocol).
+        match value.attestation_type.as_str() {
+            V3_ATTESTATION_TYPE_SOLANA_ED25519_V2 => solana_unified_v1(
+                payload_inner,
                 handles,
-                user_identity,
-                allowed_acl_domain_keys,
                 request_validity,
-                nonce,
                 signature,
                 public_key,
                 extra_data,
-            });
+            ),
+            V3_ATTESTATION_TYPE_EIP712_UNIFIED_V1 => eip712_unified_v1(
+                payload_inner,
+                handles,
+                request_validity,
+                signature,
+                public_key,
+                extra_data,
+            ),
+            other => Err(anyhow::anyhow!(
+                "Unsupported attestationType {other:?}; expected {V3_ATTESTATION_TYPE_EIP712_UNIFIED_V1:?} or {V3_ATTESTATION_TYPE_SOLANA_ED25519_V2:?}"
+            )),
         }
-
-        let allowed_contracts = payload_inner
-            .allowed_contracts
-            .iter()
-            .map(|addr| Address::from_str(addr))
-            .collect::<Result<Vec<_>, _>>()?;
-
-        Ok(UserDecryptRequest::Eip712UnifiedV1 {
-            handles,
-            user_address: Address::from_str(&payload_inner.user_address)?,
-            allowed_contracts,
-            request_validity,
-            signature,
-            public_key,
-            extra_data,
-        })
     }
+}
+
+/// Builds the Solana ed25519 variant of the unified request. The three `solana*` payload fields
+/// are required by this protocol and only read here; the EVM-shaped `userAddress`,
+/// `allowedContracts`, and per-handle addresses stay untouched wire placeholders (removing them
+/// from the Solana wire shape is a v3 wire change, proposed to the decryption-envelope rework).
+fn solana_unified_v1(
+    payload: Eip712UnifiedUserDecryptPayloadJson,
+    handles: Vec<HandleEntry>,
+    request_validity: RequestValiditySeconds,
+    signature: Bytes,
+    public_key: Bytes,
+    extra_data: Bytes,
+) -> Result<UserDecryptRequest, anyhow::Error> {
+    let user_identity =
+        B256::from_str(payload.solana_user_identity.as_deref().ok_or_else(|| {
+            anyhow::anyhow!(
+                "solanaUserIdentity is required for the Solana ed25519 attestation type"
+            )
+        })?)
+        .map_err(|e| anyhow::anyhow!("Failed to parse solanaUserIdentity: {}", e))?;
+
+    let nonce = B256::from_str(payload.solana_nonce.as_deref().ok_or_else(|| {
+        anyhow::anyhow!("solanaNonce is required for the Solana ed25519 attestation type")
+    })?)
+    .map_err(|e| anyhow::anyhow!("Failed to parse solanaNonce: {}", e))?;
+
+    let allowed_acl_domain_keys = payload
+        .solana_allowed_acl_domain_keys
+        .unwrap_or_default()
+        .iter()
+        .map(|k| B256::from_str(k))
+        .collect::<Result<Vec<_>, _>>()
+        .map_err(|e| anyhow::anyhow!("Failed to parse solanaAllowedAclDomainKeys: {}", e))?;
+
+    Ok(UserDecryptRequest::SolanaUnifiedV1 {
+        handles,
+        user_identity,
+        allowed_acl_domain_keys,
+        request_validity,
+        nonce,
+        signature,
+        public_key,
+        extra_data,
+    })
+}
+
+/// Builds the EVM EIP-712 variant of the unified request. Any `solana*` payload fields are
+/// tolerated and ignored (wire compatibility: they have always been accepted alongside an EVM
+/// attestation type).
+fn eip712_unified_v1(
+    payload: Eip712UnifiedUserDecryptPayloadJson,
+    handles: Vec<HandleEntry>,
+    request_validity: RequestValiditySeconds,
+    signature: Bytes,
+    public_key: Bytes,
+    extra_data: Bytes,
+) -> Result<UserDecryptRequest, anyhow::Error> {
+    let allowed_contracts = payload
+        .allowed_contracts
+        .iter()
+        .map(|addr| Address::from_str(addr))
+        .collect::<Result<Vec<_>, _>>()?;
+
+    Ok(UserDecryptRequest::Eip712UnifiedV1 {
+        handles,
+        user_address: Address::from_str(&payload.user_address)?,
+        allowed_contracts,
+        request_validity,
+        signature,
+        public_key,
+        extra_data,
+    })
 }
 
 impl TryFrom<PublicDecryptRequestJson> for PublicDecryptRequest {
