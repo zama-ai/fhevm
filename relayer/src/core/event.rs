@@ -624,13 +624,16 @@ impl TryFrom<UserDecryptRequestJson> for UserDecryptRequest {
     fn try_from(value: UserDecryptRequestJson) -> Result<Self, Self::Error> {
         info!("Converting UserDecryptRequestJson to UserDecryptRequest");
 
-        // Parse the contract chain ID first: it selects the EVM vs RFC-021 (Solana) identity shapes.
         let contracts_chain_id = parse_chain_id(&value.contracts_chain_id)?;
-        let is_solana = is_solana_host_chain_id(contracts_chain_id);
+        // The DEPRECATED v2 legacy path is EVM-only. No Solana client ever shipped against it
+        // (the Solana SDK action has only ever called `/v3/user-decrypt`), so reject outright
+        // instead of fabricating zeroed EVM address placeholders for Solana requests.
+        if is_solana_host_chain_id(contracts_chain_id) {
+            anyhow::bail!(
+                "Solana user decrypts are served by the v3 endpoint only; the legacy v2 path is EVM-only"
+            );
+        }
 
-        // Parse handle/contract pairs. Handles are 32-byte values on both paths; on Solana the
-        // per-pair contract identity is off-gateway (enforced by the KMS solana_acl), so it is not
-        // an EVM address and is left zero.
         let mut ct_handle_contract_pairs = Vec::new();
         for json_data in &value.handle_contract_pairs {
             let ct_handle = if json_data.handle.starts_with("0x") {
@@ -641,12 +644,8 @@ impl TryFrom<UserDecryptRequestJson> for UserDecryptRequest {
             }
             .map_err(|e| anyhow::anyhow!("Failed to parse ctHandle: {}", e))?;
 
-            let contract_address = if is_solana {
-                Address::ZERO
-            } else {
-                Address::from_str(&json_data.contract_address)
-                    .map_err(|e| anyhow::anyhow!("Failed to parse contractAddress: {}", e))?
-            };
+            let contract_address = Address::from_str(&json_data.contract_address)
+                .map_err(|e| anyhow::anyhow!("Failed to parse contractAddress: {}", e))?;
 
             ct_handle_contract_pairs.push(HandleContractPair {
                 ct_handle,
@@ -673,17 +672,11 @@ impl TryFrom<UserDecryptRequestJson> for UserDecryptRequest {
             duration_days,
         };
 
-        // On Solana the contract identities are off-gateway (enforced by the KMS solana_acl), so
-        // the EVM `contract_addresses` list is empty; on EVM each entry is a 20-byte address.
-        let contract_addresses = if is_solana {
-            Vec::new()
-        } else {
-            value
-                .contract_addresses
-                .iter()
-                .map(|addr| Address::from_str(addr))
-                .collect::<Result<Vec<_>, _>>()?
-        };
+        let contract_addresses = value
+            .contract_addresses
+            .iter()
+            .map(|addr| Address::from_str(addr))
+            .collect::<Result<Vec<_>, _>>()?;
 
         // Parse extraData (validated at HTTP layer)
         let extra_data = Bytes::from_str(&value.extra_data)?;
