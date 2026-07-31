@@ -101,6 +101,11 @@ impl BatchBuilder {
     /// as it was. Rollback is by discarding the scratch clone — the intern tables are not
     /// append-only (resolving an account can promote an existing entry in place), so truncation
     /// would not be enough.
+    ///
+    /// Ordering dependency inside a step: `operand()` reads the scratch's cloned
+    /// `persistent_producers`, which equals the pre-step state only because every op lowers its
+    /// operands before its output. An op that lowered its output first would silently change
+    /// what `PersistentOperandWrittenEarlier` sees for its own operands — keep operands first.
     fn commit_step(
         &mut self,
         produced_type: u8,

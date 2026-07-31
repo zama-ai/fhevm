@@ -156,8 +156,10 @@ pub fn verify_public_decrypt(
         cleartext,
         context_id: cert_context_id,
     };
-    let mut return_bytes = Vec::with_capacity(72);
-    return_data.serialize(&mut return_bytes)?;
+    // Fixed buffer, not a Vec: this verifier sits on the CPI hot path of disclose_secp,
+    // redeem_burned_amount, and (transitively) batcher settle, and heap allocation costs CU.
+    let mut return_bytes = [0u8; 72];
+    return_data.serialize(&mut return_bytes.as_mut_slice())?;
     set_return_data(&return_bytes);
     Ok(())
 }

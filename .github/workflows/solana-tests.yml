@@ -241,4 +241,8 @@ jobs:
           SQLX_OFFLINE: 'true'
         # Deliberately unfiltered: a test-name filter here went vacuous once (0 tests matched
         # after a rename and the job kept passing). The whole feature-gated suite runs in seconds.
-        run: cargo test -p host-listener --lib --features solana-grpc,solana-reconstruct
+        # The second command compiles the integration tests under the same feature flags without
+        # running them (they need a live database), so the feature keeps building everywhere.
+        run: |
+          cargo test -p host-listener --lib --features solana-grpc,solana-reconstruct
+          cargo test -p host-listener --tests --no-run --features solana-grpc,solana-reconstruct

@@ -838,7 +838,7 @@ async fn ingest_transaction(
         .map(|timestamp| HashMap::from([(sealed_block.slot, timestamp)]))
         .unwrap_or_default();
 
-    let events = match reconstruct_events_for_insert(
+    let records = match reconstruct_records_for_insert(
         config,
         &transaction.instructions,
         sealed_block.slot,
@@ -849,11 +849,11 @@ async fn ingest_transaction(
     .map_err(|err| {
         IngestFailure::fatal(err).context("reconstruct Solana host records")
     })? {
-        ReconstructionOutcome::Complete(events) => events,
+        ReconstructionOutcome::Complete(records) => records,
         ReconstructionOutcome::NotCovered => Vec::new(),
     };
 
-    if events.is_empty() {
+    if records.is_empty() {
         return Ok(());
     }
 
@@ -886,7 +886,7 @@ async fn ingest_transaction(
         return Ok(());
     };
     let stats =
-        insert_solana_records(db, &mut db_tx, events, transaction_id, block)
+        insert_solana_records(db, &mut db_tx, records, transaction_id, block)
             .await
             .map_err(|err| {
                 IngestFailure::retryable(err).context("insert_solana_records")
@@ -943,15 +943,15 @@ enum ReconstructionOutcome {
     NotCovered,
 }
 
-/// Rebuilds the ingestable event set off-chain from a transaction's instructions. Covers
+/// Rebuilds the ingestable record set off-chain from a transaction's instructions. Covers
 /// `fhe_execute`: one op record per step, plus a material request for each
 /// `Persistent` step's result handle.
 ///
 /// `EncryptedValue` lifecycle instructions are decoded separately from the same
-/// ordered instruction list and appended to the reconstructed event set. Missing
+/// ordered instruction list and appended to the reconstructed record set. Missing
 /// slot derivation context only suppresses `fhe_execute` recomputation; lifecycle
 /// material requests do not need it.
-async fn reconstruct_events_for_insert(
+async fn reconstruct_records_for_insert(
     config: &SolanaGrpcListenerConfig,
     instructions: &[crate::solana_reconstruct::DecodedInstruction],
     slot: u64,
@@ -1008,7 +1008,7 @@ async fn reconstruct_events_for_insert(
         );
     }
 
-    let mut events = Vec::new();
+    let mut records = Vec::new();
 
     for (instruction_index, ix) in instructions.iter().enumerate() {
         if ix.program != config.program_id {
@@ -1049,7 +1049,7 @@ async fn reconstruct_events_for_insert(
             for step in steps {
                 let handle = compute_result_handle(&step.record);
                 let previous_handle = step.previous_handle;
-                events.push(step.record);
+                records.push(step.record);
                 if let (Some(index), Some(handle)) =
                     (step.persistent_encrypted_value_index, handle)
                 {
@@ -1059,11 +1059,11 @@ async fn reconstruct_events_for_insert(
                     )
                     .is_some()
                     {
-                        events.push(SolanaHostRecord::MaterialRequest(
+                        records.push(SolanaHostRecord::MaterialRequest(
                             material_request(handle),
                         ));
                         if let Some(previous_handle) = previous_handle {
-                            events.push(SolanaHostRecord::MaterialRequest(
+                            records.push(SolanaHostRecord::MaterialRequest(
                                 material_request(previous_handle),
                             ));
                         }
@@ -1092,21 +1092,21 @@ async fn reconstruct_events_for_insert(
                     ix.accounts.len()
                 );
             }
-            events.extend(
+            records.extend(
                 encrypted_value_material_requests(&instruction)
                     .into_iter()
                     .map(SolanaHostRecord::MaterialRequest),
             );
         }
     }
-    Ok(ReconstructionOutcome::Complete(events))
+    Ok(ReconstructionOutcome::Complete(records))
 }
 
 fn compute_result_handle(
-    event: &crate::solana_adapter::SolanaHostRecord,
+    record: &crate::solana_adapter::SolanaHostRecord,
 ) -> Option<[u8; 32]> {
     use crate::solana_adapter::SolanaHostRecord as E;
-    match event {
+    match record {
         E::FheBinaryOp(e) => Some(e.result),
         E::FheTernaryOp(e) => Some(e.result),
         E::TrivialEncrypt(e) => Some(e.result),
@@ -1261,7 +1261,7 @@ mod account_resolution_tests {
 #[cfg(test)]
 mod fhe_execute_acl_tests {
     use super::{
-        fhe_execute_persistent_encrypted_value, reconstruct_events_for_insert,
+        fhe_execute_persistent_encrypted_value, reconstruct_records_for_insert,
         sealed_block_timestamp, transaction_context_requirement,
         ContextRequirement, ReconstructionOutcome, SolanaGrpcListenerConfig,
     };
@@ -1383,7 +1383,7 @@ mod fhe_execute_acl_tests {
         outcome: ReconstructionOutcome,
     ) -> Vec<SolanaHostRecord> {
         match outcome {
-            ReconstructionOutcome::Complete(events) => events,
+            ReconstructionOutcome::Complete(records) => records,
             ReconstructionOutcome::NotCovered => {
                 panic!("expected reconstruction to cover transaction")
             }
@@ -1504,8 +1504,8 @@ mod fhe_execute_acl_tests {
         let allow_data = encode_instruction("allow_subjects", vec![[7u8; 32]]);
         let instructions =
             vec![decoded_ix(allow_data, encrypted_value_accounts(), 0, false)];
-        let events = complete_records(
-            reconstruct_events_for_insert(
+        let records = complete_records(
+            reconstruct_records_for_insert(
                 &config(),
                 &instructions,
                 42,
@@ -1513,10 +1513,10 @@ mod fhe_execute_acl_tests {
                 &HashMap::new(),
             )
             .await
-            .expect("reconstruction should return lifecycle events"),
+            .expect("reconstruction should return lifecycle records"),
         );
 
-        assert!(events.is_empty());
+        assert!(records.is_empty());
     }
 
     #[tokio::test]
@@ -1528,7 +1528,7 @@ mod fhe_execute_acl_tests {
         let (slot_bank_hash, slot_clock_ts) = slot_context();
 
         for data in malformed {
-            let err = reconstruct_events_for_insert(
+            let err = reconstruct_records_for_insert(
                 &config(),
                 &[decoded_ix(data, encrypted_value_accounts(), 0, false)],
                 42,
@@ -1550,7 +1550,7 @@ mod fhe_execute_acl_tests {
     async fn lifecycle_with_missing_accounts_fails_ingest() {
         let allow_data = encode_instruction("allow_subjects", vec![[7u8; 32]]);
         let (slot_bank_hash, slot_clock_ts) = slot_context();
-        let err = reconstruct_events_for_insert(
+        let err = reconstruct_records_for_insert(
             &config(),
             &[decoded_ix(allow_data, vec![[0u8; 32]], 0, false)],
             42,
@@ -1606,8 +1606,8 @@ mod fhe_execute_acl_tests {
             false,
         )];
         let (slot_bank_hash, slot_clock_ts) = slot_context();
-        let events = complete_records(
-            reconstruct_events_for_insert(
+        let records = complete_records(
+            reconstruct_records_for_insert(
                 &config(),
                 &instructions,
                 42,
@@ -1618,15 +1618,15 @@ mod fhe_execute_acl_tests {
             .expect("reconstruction should derive the update handle directly"),
         );
 
-        assert!(events.iter().any(|event| {
+        assert!(records.iter().any(|record| {
             matches!(
-                event,
+                record,
                 SolanaHostRecord::FheBinaryOp(op) if op.result == expected
             )
         }));
-        let requested_handles = events
+        let requested_handles = records
             .iter()
-            .filter_map(|event| match event {
+            .filter_map(|record| match record {
                 SolanaHostRecord::MaterialRequest(request) => {
                     Some(request.handle)
                 }
@@ -1670,8 +1670,8 @@ mod fhe_execute_acl_tests {
             false,
         )];
         let (slot_bank_hash, slot_clock_ts) = slot_context();
-        let events = complete_records(
-            reconstruct_events_for_insert(
+        let records = complete_records(
+            reconstruct_records_for_insert(
                 &config(),
                 &instructions,
                 42,
@@ -1683,19 +1683,19 @@ mod fhe_execute_acl_tests {
         );
 
         // The handle the trivial-encrypt bind recomputed for this output.
-        let bound_handle = events
+        let bound_handle = records
             .iter()
-            .find_map(|event| match event {
+            .find_map(|record| match record {
                 SolanaHostRecord::TrivialEncrypt(e) => Some(e.result),
                 _ => None,
             })
             .expect("trivial-encrypt op record with a result handle");
 
-        let material_request = events
+        let material_request = records
             .iter()
-            .find(|event| {
+            .find(|record| {
                 matches!(
-                    event,
+                    record,
                     SolanaHostRecord::MaterialRequest(request)
                         if request.handle == Handle::from(bound_handle)
                 )

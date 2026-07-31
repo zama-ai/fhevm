@@ -931,18 +931,18 @@ mod tests {
                 },
             ],
         };
-        let events =
+        let records =
             reconstruct_fhe_execute_records(&batch, SUBJECT, &[], &[], &ctx())
                 .expect("walk");
-        assert_eq!(events.len(), 2);
-        let step0 = match &events[0] {
+        assert_eq!(records.len(), 2);
+        let step0 = match &records[0] {
             SolanaHostRecord::TrivialEncrypt(e) => {
                 assert_eq!(e.plaintext, [7u8; 32]);
                 e.result
             }
             other => panic!("expected TrivialEncrypt, got {other:?}"),
         };
-        match &events[1] {
+        match &records[1] {
             SolanaHostRecord::FheBinaryOp(e) => {
                 assert_eq!(e.op, FheBinaryOpCode::Add);
                 assert!(e.scalar);
@@ -987,7 +987,7 @@ mod tests {
             step_index: 0,
             seed: [7; 16],
         }];
-        let events = reconstruct_fhe_execute_records(
+        let records = reconstruct_fhe_execute_records(
             &batch,
             SUBJECT,
             &[output_account],
@@ -995,7 +995,7 @@ mod tests {
             &ctx(),
         )
         .expect("walk");
-        match &events[..] {
+        match &records[..] {
             [SolanaHostRecord::FheRandBounded(event)] => {
                 assert_eq!(event.subject, SUBJECT);
                 assert_eq!(event.upper_bound, upper_bound);
@@ -1084,7 +1084,7 @@ mod tests {
             ],
         };
         let random_seed = [9; 16];
-        let events = reconstruct_fhe_execute_records(
+        let records = reconstruct_fhe_execute_records(
             &batch,
             SUBJECT,
             &[output_account],
@@ -1095,18 +1095,18 @@ mod tests {
             &cx,
         )
         .expect("walk");
-        assert_eq!(events.len(), 7);
-        let h0 = match &events[0] {
+        assert_eq!(records.len(), 7);
+        let h0 = match &records[0] {
             SolanaHostRecord::TrivialEncrypt(e) => e.result,
             other => panic!("expected TrivialEncrypt, got {other:?}"),
         };
-        let h1 = match &events[1] {
+        let h1 = match &records[1] {
             SolanaHostRecord::TrivialEncrypt(e) => e.result,
             other => panic!("expected TrivialEncrypt, got {other:?}"),
         };
         // Each op resolves its transient operands to prior steps' handles and
         // derives the result via the program's own `computed_*` functions.
-        match &events[2] {
+        match &records[2] {
             SolanaHostRecord::FheUnaryOp(e) => {
                 assert_eq!(e.op, FheUnaryOpCode::Neg);
                 assert_eq!(e.operand, h0);
@@ -1117,7 +1117,7 @@ mod tests {
             }
             other => panic!("expected FheUnaryOp, got {other:?}"),
         }
-        match &events[3] {
+        match &records[3] {
             SolanaHostRecord::FheSum(e) => {
                 assert_eq!(e.operands, vec![h0, h1]);
                 assert_eq!(
@@ -1127,7 +1127,7 @@ mod tests {
             }
             other => panic!("expected FheSum, got {other:?}"),
         }
-        match &events[4] {
+        match &records[4] {
             SolanaHostRecord::FheIsIn(e) => {
                 assert_eq!(e.value, h0);
                 assert_eq!(e.set, vec![h1]);
@@ -1138,7 +1138,7 @@ mod tests {
             }
             other => panic!("expected FheIsIn, got {other:?}"),
         }
-        match &events[5] {
+        match &records[5] {
             SolanaHostRecord::FheMulDiv(e) => {
                 assert_eq!(e.factor1, h0);
                 assert_eq!(e.factor2, [2u8; 32]);
@@ -1153,7 +1153,7 @@ mod tests {
             }
             other => panic!("expected FheMulDiv, got {other:?}"),
         }
-        match &events[6] {
+        match &records[6] {
             SolanaHostRecord::FheRandBounded(e) => {
                 assert_eq!(e.upper_bound, ub);
                 assert_eq!(e.seed, random_seed);
