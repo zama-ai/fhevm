@@ -1,5 +1,5 @@
 //! `EncryptedValue` ACL mutation. Persistent handle creation and update happen
-//! only through `fhe_eval` output provenance; the instructions here mutate the
+//! only through `fhe_execute` output provenance; the instructions here mutate the
 //! subject set and public status of values that already exist. Event-free by
 //! design — indexers reconstruct MMR leaves from instruction data, using the
 //! shared `zama_solana_acl` crate, not from emitted events.
@@ -98,7 +98,7 @@ pub fn allow_subjects(
 }
 
 /// Appends one historical-access leaf per allowed subject for the outgoing
-/// handle, then overwrites `current_handle`. Used by `fhe_eval`'s persistent
+/// handle, then overwrites `current_handle`. Used by `fhe_execute`'s persistent
 /// output-binding path.
 pub(super) fn update_encrypted_value(
     info: &AccountInfo,
@@ -123,7 +123,7 @@ pub(super) fn update_encrypted_value(
 }
 
 /// Appends a public-decrypt leaf for `handle` at the encrypted value account's next leaf index.
-/// Shared by `make_handle_public` and by `fhe_eval`'s created-public output binding
+/// Shared by `make_handle_public` and by `fhe_execute`'s created-public output binding
 /// so both produce a byte-identical public-decrypt commitment.
 pub(super) fn append_public_decrypt_leaf(
     info: &AccountInfo,

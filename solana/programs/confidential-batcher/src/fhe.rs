@@ -101,18 +101,18 @@ pub(crate) struct BatchAuthorityEval<'a, 'info> {
     pub(crate) deny_subject_records: &'a [AccountInfo<'info>],
 }
 
-/// Builds and invokes one `fhe_eval` frame with the batch authority as both
+/// Builds and invokes one `fhe_execute` frame with the batch authority as both
 /// compute subject and app account authority.
 pub(crate) fn eval_as_batch_authority<'info, T>(
     eval: BatchAuthorityEval<'_, 'info>,
     dynamic_accounts: Vec<AccountInfo<'info>>,
-    build: impl FnOnce(&mut zama_fhe::EvalBuilder) -> zama_fhe::Result<T>,
+    build: impl FnOnce(&mut zama_fhe::BatchBuilder) -> zama_fhe::Result<T>,
 ) -> Result<()> {
     let bump = [eval.authority_bump];
     let authority_seeds: &[&[u8]] = &[BATCH_AUTHORITY_SEED, eval.batch.as_ref(), &bump];
-    zama_fhe::invoke_eval_signed_with_builder(
-        zama_fhe::EvalAppAuthority::new(eval.batch_authority.key()),
-        zama_fhe::EvalCpiAccounts {
+    zama_fhe::invoke_batch_signed_with_builder(
+        zama_fhe::BatchAppAuthority::new(eval.batch_authority.key()),
+        zama_fhe::BatchCpiAccounts {
             payer: eval.payer,
             compute_subject: eval.batch_authority.clone(),
             account_authority: eval.batch_authority,
@@ -131,18 +131,18 @@ pub(crate) fn eval_as_batch_authority<'info, T>(
     )
     .map_err(|error| match error {
         // Keep host/CPI error codes visible to callers and tests.
-        zama_fhe::EvalInvokeError::Cpi(error) => error,
+        zama_fhe::BatchInvokeError::Cpi(error) => error,
         other => {
             msg!("invalid batcher FHE eval: {:?}", other);
-            error!(BatcherError::InvalidFheEvalPlan)
+            error!(BatcherError::InvalidFheExecutePlan)
         }
     })?;
     Ok(())
 }
 
-pub(crate) fn invalid_eval_plan(error: zama_fhe::EvalBuildError) -> anchor_lang::error::Error {
+pub(crate) fn invalid_eval_plan(error: zama_fhe::BatchBuildError) -> anchor_lang::error::Error {
     msg!("invalid FHE eval plan: {:?}", error);
-    error!(BatcherError::InvalidFheEvalPlan)
+    error!(BatcherError::InvalidFheExecutePlan)
 }
 
 /// Builds a euint64 persistent operand from an encrypted value account's own canonical fields, so

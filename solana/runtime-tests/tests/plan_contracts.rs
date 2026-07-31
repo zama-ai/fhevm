@@ -61,13 +61,13 @@ fn host_idl_drops_verifier_set_and_keeps_secp_kms_context_path() {
             "KmsContext is missing field `{required}`"
         );
     }
-    // Encrypted inputs are verified in-frame by the `fhe_eval` `VerifiedInput` operand
+    // Encrypted inputs are verified in-frame by the `fhe_execute` `VerifiedInput` operand
     // (the fromExternal path); there is no standalone verify_coprocessor_input instruction.
     assert!(
         !instructions
             .iter()
             .any(|name| name == "verify_coprocessor_input"),
-        "standalone verify_coprocessor_input must be removed (input verification is inline in fhe_eval)"
+        "standalone verify_coprocessor_input must be removed (input verification is inline in fhe_execute)"
     );
 }
 

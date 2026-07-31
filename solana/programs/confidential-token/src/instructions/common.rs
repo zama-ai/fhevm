@@ -33,10 +33,10 @@ pub(crate) struct TransferAccounts<'a, 'info> {
     pub(crate) host_config: &'a Account<'info, zama_host::HostConfig>,
     pub(crate) deny_subject_records: &'a [AccountInfo<'info>],
     pub(crate) system_program: &'a Program<'info, System>,
-    /// Per-`compute_subject` HCU block meter forwarded into the host `fhe_eval` CPI (`None` =
+    /// Per-`compute_subject` HCU block meter forwarded into the host `fhe_execute` CPI (`None` =
     /// untrusted, no meter). The host keys the meter on the mint's compute signer PDA.
     pub(crate) hcu_block_meter: Option<AccountInfo<'info>>,
-    /// HCU trust witness forwarded into the host `fhe_eval` CPI (`None` = untrusted).
+    /// HCU trust witness forwarded into the host `fhe_execute` CPI (`None` = untrusted).
     pub(crate) hcu_trusted_app_record: Option<AccountInfo<'info>>,
 }
 
@@ -196,7 +196,7 @@ fn execute_transfer_eval<'info>(
         encrypted_value_id(mint_key, to_key, balance_label()),
         balance_access(to_owner),
     )?;
-    let mut builder = zama_fhe::EvalBuilder::new(zama_fhe::EvalAppAuthority::new(from_key));
+    let mut builder = zama_fhe::BatchBuilder::new(zama_fhe::BatchAppAuthority::new(from_key));
     let amount: zama_fhe::Uint64Handle = match amount_source {
         // fromExternal: the amount is a coprocessor-attested external input, verified in-frame and
         // transient-allowed for this eval (no persistent amount handle / ACL account).
@@ -296,9 +296,9 @@ fn execute_transfer_eval<'info>(
     ))
 }
 
-pub(crate) fn invalid_eval_plan(error: zama_fhe::EvalBuildError) -> anchor_lang::error::Error {
+pub(crate) fn invalid_eval_plan(error: zama_fhe::BatchBuildError) -> anchor_lang::error::Error {
     msg!("invalid FHE eval plan: {:?}", error);
-    error!(ConfidentialTokenError::InvalidFheEvalPlan)
+    error!(ConfidentialTokenError::InvalidFheExecutePlan)
 }
 
 pub(crate) fn encrypted_value_id(

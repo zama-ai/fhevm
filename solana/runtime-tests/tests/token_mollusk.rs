@@ -29,14 +29,14 @@
 //! port them individually using the patterns established here and in `host_mollusk.rs`.
 //!
 //! Also dropped: the old file's event-shaped, `u128`-limited `support::fhe_runtime` simulator.
-//! The confidential-transfer test below instead evaluates the canonical `FheEvalArgs` captured
+//! The confidential-transfer test below instead evaluates the canonical `FheExecuteArgs` captured
 //! from the real token -> host CPI and binds those clear values to the handles emitted by the host.
 
 mod support;
 
 // Deliberate `#[path]` include (not `support::cost_snapshot`): each Mollusk
 // binary compiles its own copy so `host_mollusk` does not pull in
-// `support::cleartext_fhe_eval` via `support/mod.rs`.
+// `support::cleartext_fhe_execute` via `support/mod.rs`.
 #[path = "support/cost_snapshot.rs"]
 mod cost_snapshot;
 
@@ -58,7 +58,9 @@ use solana_sdk::{
 };
 use std::collections::HashMap;
 use std::path::PathBuf;
-use support::cleartext_fhe_eval::{evaluate as evaluate_cleartext, ClearInputs, TypedClearValue};
+use support::cleartext_fhe_execute::{
+    evaluate as evaluate_cleartext, ClearInputs, TypedClearValue,
+};
 use zama_host as host;
 
 const BALANCE_FHE_TYPE: u8 = 5;
@@ -77,7 +79,7 @@ fn mollusk() -> Mollusk {
     }
     let mut mollusk = Mollusk::new(&token::id(), "confidential_token");
     mollusk.add_program(&host::id(), "zama_host");
-    // fhe_eval derives handle entropy from the previous bank hash: run at a
+    // fhe_execute derives handle entropy from the previous bank hash: run at a
     // nonzero slot with a SlotHashes entry below it, like a real validator.
     mollusk.sysvars.clock.slot = 100;
     mollusk.sysvars.slot_hashes =
@@ -142,22 +144,22 @@ where
     T::deserialize(&mut &*payload).ok()
 }
 
-fn decode_fhe_eval_args(data: &[u8]) -> Option<host::FheEvalArgs> {
-    let payload = data.strip_prefix(host::instruction::FheEval::DISCRIMINATOR)?;
-    host::FheEvalArgs::deserialize(&mut &*payload).ok()
+fn decode_fhe_execute_args(data: &[u8]) -> Option<host::FheExecuteArgs> {
+    let payload = data.strip_prefix(host::instruction::FheExecute::DISCRIMINATOR)?;
+    host::FheExecuteArgs::deserialize(&mut &*payload).ok()
 }
 
-fn eval_step_output(step: &host::FheEvalStep) -> &host::FheEvalOutput {
+fn eval_step_output(step: &host::FheExecuteStep) -> &host::FheExecuteOutput {
     match step {
-        host::FheEvalStep::Binary { output, .. }
-        | host::FheEvalStep::Ternary { output, .. }
-        | host::FheEvalStep::TrivialEncrypt { output, .. }
-        | host::FheEvalStep::Rand { output, .. }
-        | host::FheEvalStep::Unary { output, .. }
-        | host::FheEvalStep::RandBounded { output, .. }
-        | host::FheEvalStep::Sum { output, .. }
-        | host::FheEvalStep::IsIn { output, .. }
-        | host::FheEvalStep::MulDiv { output, .. } => output,
+        host::FheExecuteStep::Binary { output, .. }
+        | host::FheExecuteStep::Ternary { output, .. }
+        | host::FheExecuteStep::TrivialEncrypt { output, .. }
+        | host::FheExecuteStep::Rand { output, .. }
+        | host::FheExecuteStep::Unary { output, .. }
+        | host::FheExecuteStep::RandBounded { output, .. }
+        | host::FheExecuteStep::Sum { output, .. }
+        | host::FheExecuteStep::IsIn { output, .. }
+        | host::FheExecuteStep::MulDiv { output, .. } => output,
     }
 }
 
@@ -193,19 +195,19 @@ impl CleartextLedger {
                     .copied()
                     == Some(host::id())
             })
-            .filter_map(|inner| decode_fhe_eval_args(&inner.instruction.data))
+            .filter_map(|inner| decode_fhe_execute_args(&inner.instruction.data))
             .collect::<Vec<_>>();
         assert_eq!(
             eval_args.len(),
             1,
-            "expected one token -> host fhe_eval CPI"
+            "expected one token -> host fhe_execute CPI"
         );
 
         let outputs = evaluate_cleartext(&eval_args[0], &self.values)
             .expect("the token program must emit a valid cleartext FHE plan");
         let mut persistent_outputs = 0;
         for (step, value) in eval_args[0].steps.iter().zip(outputs) {
-            let host::FheEvalOutput::AllowedPersistent {
+            let host::FheExecuteOutput::AllowedPersistent {
                 output_domain_index,
                 output_account_index,
                 output_label_index,
@@ -1641,7 +1643,7 @@ fn mollusk_confidential_transfer_deny_list_enabled_rotation_to_new_recipient_suc
 #[test]
 fn mollusk_confidential_transfer_deny_list_rejects_denied_rotation_added_subject() {
     // Deny-list ENABLED + rotation where the added recipient's owner IS denied: the transfer must
-    // fail with the deny error (not InvalidFheEvalAccount from an unconsumed remaining account).
+    // fail with the deny error (not InvalidFheExecuteAccount from an unconsumed remaining account).
     let fixture = TokenFixture::new();
     let mut accounts = fixture.base_accounts();
     accounts.insert(
@@ -3969,12 +3971,12 @@ fn mollusk_disclose_secp_rejects_cleartext_wider_than_u64() {
 }
 
 // ===========================================================================
-// HCU per-app block cap enforced through the confidential-token -> fhe_eval CPI.
+// HCU per-app block cap enforced through the confidential-token -> fhe_execute CPI.
 //
 // Ported from PR #2991 ("per-app HCU limit per block"), rewritten against the merged
-// EncryptedValue persistent-output model: `confidential_transfer` reaches `fhe_eval` only by CPI,
+// EncryptedValue persistent-output model: `confidential_transfer` reaches `fhe_execute` only by CPI,
 // so these tests prove the block cap (ban / metering-band charge / canonical-authority pinning)
-// survives that CPI boundary — not just direct `fhe_eval` calls (see `host_mollusk.rs`).
+// survives that CPI boundary — not just direct `fhe_execute` calls (see `host_mollusk.rs`).
 //
 // `create_random_amount`'s HCU tests from the same PR are NOT ported here: this file's
 // migration intentionally dropped `create_random_amount` coverage entirely (see the module doc
@@ -4020,9 +4022,9 @@ fn read_hcu_block_meter(
 
 #[test]
 fn mollusk_confidential_transfer_block_cap_ban_is_enforced_through_cpi() {
-    // A confidential transfer reaches fhe_eval only by CPI. With the cap at the ban sentinel
+    // A confidential transfer reaches fhe_execute only by CPI. With the cap at the ban sentinel
     // (0) and no trust witness threaded, the block-cap breach must surface through the CPI and
-    // roll the whole transfer back atomically — exactly as a direct fhe_eval call is rejected.
+    // roll the whole transfer back atomically — exactly as a direct fhe_execute call is rejected.
     let fixture = TokenFixture::new();
     let mut accounts = fixture.base_accounts();
     accounts.insert(
@@ -4068,7 +4070,7 @@ fn mollusk_confidential_transfer_metering_band_charges_meter_through_cpi() {
     // The Some(meter) CPI shape — the production account set once the cap drops below
     // u64::MAX. With a metering-band cap and the meter threaded through ConfidentialTransfer, the
     // transfer must succeed and the meter must be lazy-created and charged with exactly the frame's
-    // HCU, proving the optional accounts survive the token -> zama-fhe -> fhe_eval CPI encoding end
+    // HCU, proving the optional accounts survive the token -> zama-fhe -> fhe_execute CPI encoding end
     // to end. The metering identity is the frame's `compute_subject` — here the mint's
     // ["fhe-compute", mint] compute-signer PDA — one budget per mint, NOT per sender token account,
     // and with no separate HCU authority account.

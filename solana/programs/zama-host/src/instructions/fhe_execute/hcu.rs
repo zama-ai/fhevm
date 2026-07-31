@@ -1,10 +1,10 @@
-//! In-frame HCU (Homomorphic Compute Unit) cost model for [`super::fhe_eval`].
+//! In-frame HCU (Homomorphic Compute Unit) cost model for [`super::fhe_execute`].
 //!
-//! Pure, account-independent metering over an `fhe_eval` plan. Everything needed is in
-//! [`FheEvalStep`]: a step's cost is a function of its op, result FHE type, and scalar flag; its
+//! Pure, account-independent metering over an `fhe_execute` plan. Everything needed is in
+//! [`FheExecuteStep`]: a step's cost is a function of its op, result FHE type, and scalar flag; its
 //! critical-path *depth* is a function of the operand *kinds* (an `AllowedLocal` reads the depth of
 //! the producer it points at; persistent / verified / scalar operands are zero-depth leaves). No
-//! sysvars, no accounts — so it runs once in [`super::fhe_eval`], before execution mutates any
+//! sysvars, no accounts — so it runs once in [`super::fhe_execute`], before execution mutates any
 //! account, and its total feeds the block-cap charge unchanged.
 //!
 //! **Fail-closed:** every op variant is enumerated explicitly (no `_ =>` arm over the op enums), so a
@@ -19,7 +19,7 @@ use anchor_lang::prelude::*;
 
 use crate::errors::ZamaHostError;
 use crate::state::{
-    FheBinaryOpCode, FheEvalOperand, FheEvalStep, FheTernaryOpCode, FheUnaryOpCode,
+    FheBinaryOpCode, FheExecuteOperand, FheExecuteStep, FheTernaryOpCode, FheUnaryOpCode,
 };
 
 /// Cost of a binary op producing `fhe_type`. `scalar` is true when the RHS is a plaintext scalar.
@@ -272,17 +272,17 @@ pub(super) struct FrameMeter {
 /// Depth a resolved operand contributes: an `AllowedLocal` carries its producer's cumulative depth;
 /// every other operand kind is a zero-depth leaf (persistent resets in-frame; verified input &
 /// scalar are intrinsic zero leaves). An out-of-range producer index is treated as `0` here;
-/// the walk's operand resolver rejects it with the precise `FheEvalAllowedLocalMissing`.
-fn operand_depth(operand: &FheEvalOperand, step_depths: &[u64]) -> u64 {
-    // No `_ =>` arm: a new FheEvalOperand variant must break the build here.
+/// the walk's operand resolver rejects it with the precise `FheExecuteAllowedLocalMissing`.
+fn operand_depth(operand: &FheExecuteOperand, step_depths: &[u64]) -> u64 {
+    // No `_ =>` arm: a new FheExecuteOperand variant must break the build here.
     match operand {
-        FheEvalOperand::AllowedLocal { producer_index } => step_depths
+        FheExecuteOperand::AllowedLocal { producer_index } => step_depths
             .get(*producer_index as usize)
             .copied()
             .unwrap_or(0),
-        FheEvalOperand::AllowedPersistent { .. } => 0,
-        FheEvalOperand::VerifiedInput { .. } => 0,
-        FheEvalOperand::Scalar { .. } => 0,
+        FheExecuteOperand::AllowedPersistent { .. } => 0,
+        FheExecuteOperand::VerifiedInput { .. } => 0,
+        FheExecuteOperand::Scalar { .. } => 0,
     }
 }
 
@@ -290,7 +290,7 @@ fn operand_depth(operand: &FheEvalOperand, step_depths: &[u64]) -> u64 {
 /// enforcing both caps after every step (`u64::MAX = unlimited`). Pure over `steps` + the two limits, so
 /// off-chain planners compute exactly what on-chain enforcement trips.
 pub(super) fn meter_eval_plan(
-    steps: &[FheEvalStep],
+    steps: &[FheExecuteStep],
     max_hcu_per_tx: u64,
     max_hcu_depth_per_tx: u64,
 ) -> Result<FrameMeter> {
@@ -299,7 +299,7 @@ pub(super) fn meter_eval_plan(
 
     for step in steps {
         let (op_hcu, max_input_depth) = match step {
-            FheEvalStep::Binary {
+            FheExecuteStep::Binary {
                 op,
                 lhs,
                 rhs,
@@ -309,12 +309,12 @@ pub(super) fn meter_eval_plan(
                 let cost = binary_op_hcu(
                     *op,
                     *output_fhe_type,
-                    matches!(rhs, FheEvalOperand::Scalar { .. }),
+                    matches!(rhs, FheExecuteOperand::Scalar { .. }),
                 )?;
                 let depth = operand_depth(lhs, &step_depths).max(operand_depth(rhs, &step_depths));
                 (cost, depth)
             }
-            FheEvalStep::Ternary {
+            FheExecuteStep::Ternary {
                 op,
                 control,
                 if_true,
@@ -328,9 +328,9 @@ pub(super) fn meter_eval_plan(
                     .max(operand_depth(if_false, &step_depths));
                 (cost, depth)
             }
-            FheEvalStep::TrivialEncrypt { fhe_type, .. } => (trivial_encrypt_hcu(*fhe_type)?, 0),
-            FheEvalStep::Rand { fhe_type, .. } => (rand_hcu(*fhe_type)?, 0),
-            FheEvalStep::Unary {
+            FheExecuteStep::TrivialEncrypt { fhe_type, .. } => (trivial_encrypt_hcu(*fhe_type)?, 0),
+            FheExecuteStep::Rand { fhe_type, .. } => (rand_hcu(*fhe_type)?, 0),
+            FheExecuteStep::Unary {
                 op,
                 operand,
                 output_fhe_type,
@@ -341,8 +341,8 @@ pub(super) fn meter_eval_plan(
                 (cost, depth)
             }
             // Bounded randomness is a fresh creation (no operands), like Rand.
-            FheEvalStep::RandBounded { fhe_type, .. } => (rand_hcu(*fhe_type)?, 0),
-            FheEvalStep::Sum {
+            FheExecuteStep::RandBounded { fhe_type, .. } => (rand_hcu(*fhe_type)?, 0),
+            FheExecuteStep::Sum {
                 operands, fhe_type, ..
             } => {
                 let cost = sum_hcu(*fhe_type, operands.len())?;
@@ -353,7 +353,7 @@ pub(super) fn meter_eval_plan(
                     .unwrap_or(0);
                 (cost, depth)
             }
-            FheEvalStep::IsIn {
+            FheExecuteStep::IsIn {
                 value,
                 set,
                 fhe_type,
@@ -368,7 +368,7 @@ pub(super) fn meter_eval_plan(
                 );
                 (cost, depth)
             }
-            FheEvalStep::MulDiv {
+            FheExecuteStep::MulDiv {
                 factor1,
                 factor2,
                 output_fhe_type,
@@ -376,7 +376,7 @@ pub(super) fn meter_eval_plan(
             } => {
                 let cost = mul_div_hcu(
                     *output_fhe_type,
-                    matches!(factor2, FheEvalOperand::Scalar { .. }),
+                    matches!(factor2, FheExecuteOperand::Scalar { .. }),
                 )?;
                 let depth =
                     operand_depth(factor1, &step_depths).max(operand_depth(factor2, &step_depths));
@@ -410,8 +410,8 @@ pub(super) fn meter_eval_plan(
 mod tests {
     use super::*;
     use crate::state::{
-        CoprocessorInputAttestation, FheBinaryOpCode, FheEvalOperand, FheEvalOutput, FheEvalStep,
-        FheTernaryOpCode,
+        CoprocessorInputAttestation, FheBinaryOpCode, FheExecuteOperand, FheExecuteOutput,
+        FheExecuteStep, FheTernaryOpCode,
     };
 
     // FHE type ids (handle byte 30): 0 = ebool, 2..=6 = euint8..euint128.
@@ -449,49 +449,49 @@ mod tests {
     ];
 
     // ---- plan builders (handles are irrelevant to metering; only operand KIND matters) ----
-    fn trivial(fhe_type: u8) -> FheEvalStep {
-        FheEvalStep::TrivialEncrypt {
+    fn trivial(fhe_type: u8) -> FheExecuteStep {
+        FheExecuteStep::TrivialEncrypt {
             plaintext: [0u8; 32],
             fhe_type,
-            output: FheEvalOutput::AllowedLocal,
+            output: FheExecuteOutput::AllowedLocal,
         }
     }
-    fn add_local(ty: u8, lhs_producer: u8, rhs_producer: u8) -> FheEvalStep {
-        FheEvalStep::Binary {
+    fn add_local(ty: u8, lhs_producer: u8, rhs_producer: u8) -> FheExecuteStep {
+        FheExecuteStep::Binary {
             op: FheBinaryOpCode::Add,
-            lhs: FheEvalOperand::AllowedLocal {
+            lhs: FheExecuteOperand::AllowedLocal {
                 producer_index: lhs_producer,
             },
-            rhs: FheEvalOperand::AllowedLocal {
+            rhs: FheExecuteOperand::AllowedLocal {
                 producer_index: rhs_producer,
             },
             output_fhe_type: ty,
-            output: FheEvalOutput::AllowedLocal,
+            output: FheExecuteOutput::AllowedLocal,
         }
     }
-    fn add_scalar(ty: u8, lhs_producer: u8) -> FheEvalStep {
-        FheEvalStep::Binary {
+    fn add_scalar(ty: u8, lhs_producer: u8) -> FheExecuteStep {
+        FheExecuteStep::Binary {
             op: FheBinaryOpCode::Add,
-            lhs: FheEvalOperand::AllowedLocal {
+            lhs: FheExecuteOperand::AllowedLocal {
                 producer_index: lhs_producer,
             },
-            rhs: FheEvalOperand::Scalar { value_index: 0 },
+            rhs: FheExecuteOperand::Scalar { value_index: 0 },
             output_fhe_type: ty,
-            output: FheEvalOutput::AllowedLocal,
+            output: FheExecuteOutput::AllowedLocal,
         }
     }
-    fn add_persistent(ty: u8, lhs_producer: u8) -> FheEvalStep {
-        FheEvalStep::Binary {
+    fn add_persistent(ty: u8, lhs_producer: u8) -> FheExecuteStep {
+        FheExecuteStep::Binary {
             op: FheBinaryOpCode::Add,
-            lhs: FheEvalOperand::AllowedLocal {
+            lhs: FheExecuteOperand::AllowedLocal {
                 producer_index: lhs_producer,
             },
-            rhs: FheEvalOperand::AllowedPersistent {
+            rhs: FheExecuteOperand::AllowedPersistent {
                 handle_index: 0,
                 encrypted_value_index: 0,
             },
             output_fhe_type: ty,
-            output: FheEvalOutput::AllowedLocal,
+            output: FheExecuteOutput::AllowedLocal,
         }
     }
 
@@ -903,9 +903,9 @@ mod tests {
     #[test]
     fn meter_unknown_cost_propagates() {
         // A Rand of type 7 has no cost row -> the walk surfaces HcuUnknownCost (fail-closed).
-        let steps = vec![FheEvalStep::Rand {
+        let steps = vec![FheExecuteStep::Rand {
             fhe_type: 7,
-            output: FheEvalOutput::AllowedLocal,
+            output: FheExecuteOutput::AllowedLocal,
         }];
         assert_eq!(
             meter_eval_plan(&steps, u64::MAX, u64::MAX).unwrap_err(),
@@ -937,14 +937,14 @@ mod tests {
             extra_data: vec![],
             signatures: vec![],
         };
-        let steps = vec![FheEvalStep::Binary {
+        let steps = vec![FheExecuteStep::Binary {
             op: FheBinaryOpCode::Add,
-            lhs: FheEvalOperand::VerifiedInput {
+            lhs: FheExecuteOperand::VerifiedInput {
                 attestation: Box::new(attestation),
             },
-            rhs: FheEvalOperand::Scalar { value_index: 0 },
+            rhs: FheExecuteOperand::Scalar { value_index: 0 },
             output_fhe_type: EU64,
-            output: FheEvalOutput::AllowedLocal,
+            output: FheExecuteOutput::AllowedLocal,
         }];
         let m = meter_eval_plan(&steps, u64::MAX, u64::MAX).unwrap();
         let add_scalar_cost = binary_op_hcu(FheBinaryOpCode::Add, EU64, true).unwrap();
@@ -983,14 +983,14 @@ mod tests {
 
     #[test]
     fn meter_disabled_limits_accept_costliest_plan() {
-        // MAX_FHE_EVAL_OPS chained EU128 adds with limits off.
-        let cap = u8::try_from(crate::state::MAX_FHE_EVAL_OPS)
-            .expect("MAX_FHE_EVAL_OPS must fit producer indices");
+        // MAX_FHE_BATCH_OPS chained EU128 adds with limits off.
+        let cap = u8::try_from(crate::state::MAX_FHE_BATCH_OPS)
+            .expect("MAX_FHE_BATCH_OPS must fit producer indices");
         let mut steps = vec![trivial(EU128)];
         for i in 1..cap {
             steps.push(add_local(EU128, i - 1, i - 1));
         }
-        assert_eq!(steps.len(), crate::state::MAX_FHE_EVAL_OPS);
+        assert_eq!(steps.len(), crate::state::MAX_FHE_BATCH_OPS);
         assert!(meter_eval_plan(&steps, u64::MAX, u64::MAX).is_ok());
     }
 

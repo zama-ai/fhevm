@@ -354,19 +354,19 @@ fn assert_sum_and_is_in_enforce_coprocessor_max_operand_counts() {
     assert!(assert_sum_operand_types(&narrow(100), 2).is_ok());
     assert_error(
         assert_sum_operand_types(&narrow(101), 2),
-        ZamaHostError::InvalidFheEvalAccount,
+        ZamaHostError::InvalidFheExecuteAccount,
     );
     let wide = |n| vec![typed_handle(1, 5); n];
     assert!(assert_sum_operand_types(&wide(60), 5).is_ok());
     assert_error(
         assert_sum_operand_types(&wide(61), 5),
-        ZamaHostError::InvalidFheEvalAccount,
+        ZamaHostError::InvalidFheExecuteAccount,
     );
     // IsIn caps the set size (excluding the tested value) the same way.
     let value = typed_handle(1, 2);
     assert!(assert_is_in_operand_types(value, &narrow(100), 2).is_ok());
     assert_error(
         assert_is_in_operand_types(value, &narrow(101), 2),
-        ZamaHostError::InvalidFheEvalAccount,
+        ZamaHostError::InvalidFheExecuteAccount,
     );
 }

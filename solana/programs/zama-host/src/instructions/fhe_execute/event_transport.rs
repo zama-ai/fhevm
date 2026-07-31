@@ -5,7 +5,7 @@ use anchor_lang::solana_program::{
 };
 
 pub(super) fn emit_public_outputs_produced<'info>(
-    ctx: &Context<'info, FheEval<'info>>,
+    ctx: &Context<'info, FheExecute<'info>>,
     outputs: Vec<ProducedPublicOutput>,
 ) -> Result<()> {
     if outputs.is_empty() {
@@ -21,13 +21,13 @@ pub(super) fn emit_public_outputs_produced<'info>(
 }
 
 pub(super) fn emit_eval_random_seeds<'info>(
-    ctx: &Context<'info, FheEval<'info>>,
-    seeds: Vec<FheEvalRandomSeed>,
+    ctx: &Context<'info, FheExecute<'info>>,
+    seeds: Vec<FheExecuteRandomSeed>,
 ) -> Result<()> {
     if seeds.is_empty() {
         return Ok(());
     }
-    let event = FheEvalRandomSeedsEvent {
+    let event = FheExecuteRandomSeedsEvent {
         version: EVENT_VERSION,
         seeds,
     };
@@ -55,7 +55,7 @@ fn public_outputs_produced_event_instruction(outputs: Vec<ProducedPublicOutput>)
 }
 
 fn emit_event<'info, T: anchor_lang::Event>(
-    ctx: &Context<'info, FheEval<'info>>,
+    ctx: &Context<'info, FheExecute<'info>>,
     event: &T,
 ) -> Result<()> {
     let data = anchor_lang::event::EVENT_IX_TAG_LE
@@ -85,7 +85,7 @@ mod tests {
 
     #[test]
     fn maximum_batch_has_one_signed_readonly_event_authority_and_fits_cpi_data() {
-        let outputs = (0..MAX_FHE_EVAL_OPS)
+        let outputs = (0..MAX_FHE_BATCH_OPS)
             .map(|index| ProducedPublicOutput {
                 step_index: index as u16,
                 encrypted_value: Pubkey::new_unique(),
@@ -105,7 +105,7 @@ mod tests {
         // 21 bytes of framing (ix tag + event discriminator + version + vec length) plus
         // 66 bytes per record (u16 step index + encrypted value key + output handle);
         // one batch stays far below the 10,240-byte CPI instruction-data cap (DD-038).
-        assert_eq!(instruction.data.len(), 21 + MAX_FHE_EVAL_OPS * 66);
+        assert_eq!(instruction.data.len(), 21 + MAX_FHE_BATCH_OPS * 66);
         assert_eq!(instruction.data.len(), 2_133);
     }
 }

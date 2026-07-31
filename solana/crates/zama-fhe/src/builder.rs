@@ -1,18 +1,18 @@
-//! `EvalBuilder`: accumulates typed steps and lowers them to the wire frame.
+//! `BatchBuilder`: accumulates typed steps and lowers them to the wire frame.
 
 use crate::types::{binary_rhs_operand, BinaryRhs, FheBitwise, FheEq, FheNeg, FheNot, FheShift};
 use crate::validate::handle_fhe_type;
 
 use zama_host::{
-    CoprocessorInputAttestation, FheBinaryOpCode, FheEvalArgs, FheEvalOperand, FheEvalStep,
-    FheTernaryOpCode, FheUnaryOpCode, MAX_FHE_EVAL_OPS,
+    CoprocessorInputAttestation, FheBinaryOpCode, FheExecuteArgs, FheExecuteOperand,
+    FheExecuteStep, FheTernaryOpCode, FheUnaryOpCode, MAX_FHE_BATCH_OPS,
 };
 
-use crate::accounts::{EvalAccountMeta, EvalAppAuthority};
+use crate::accounts::{BatchAccountMeta, BatchAppAuthority};
 use crate::acl::{BoundedU64UpperBound, Output};
 use crate::lower::{lower_operand, lower_output};
 use crate::operand::{next_eval_builder_scope, EvalBuilderScope, Operand, OperandKind};
-use crate::plan::EvalPlan;
+use crate::plan::Batch;
 use crate::types::{Bool, Encrypted, FheIsIn, FheRandom, FheType, FheTyped, FheUint, Scalar, Uint};
 use crate::validate::{
     max_reduction_operands, operand_fhe_type, scalar_is_zero_for_type, validate_app_authority,
@@ -20,20 +20,20 @@ use crate::validate::{
     validate_supported_fhe_type, validate_supported_rand_type, validate_ternary_step,
     validate_uint_fhe_type, validate_unary_step,
 };
-use crate::{EvalBuildError, Result};
+use crate::{BatchBuildError, Result};
 
-/// Pubkey-oriented builder for `FheEvalArgs`.
+/// Pubkey-oriented builder for `FheExecuteArgs`.
 #[derive(Debug)]
-pub struct EvalBuilder {
+pub struct BatchBuilder {
     pub(crate) scope: EvalBuilderScope,
-    pub(crate) app_authority: EvalAppAuthority,
-    pub(crate) steps: Vec<FheEvalStep>,
+    pub(crate) app_authority: BatchAppAuthority,
+    pub(crate) steps: Vec<FheExecuteStep>,
     pub(crate) produced_types: Vec<u8>,
     /// Latest producer for every persistent account written by this frame. A later
     /// persistent-shaped reference to the same account is lowered canonically as
     /// `AllowedLocal`.
     pub(crate) persistent_producers: Vec<(anchor_lang::prelude::Pubkey, u16)>,
-    pub(crate) remaining_accounts: Vec<EvalAccountMeta>,
+    pub(crate) remaining_accounts: Vec<BatchAccountMeta>,
     /// Interned 32-byte constant dictionary the lowered steps reference by `u8` index
     /// (operand handles, scalars, ACL domain keys, app accounts, labels, subjects).
     pub(crate) dictionary: Vec<[u8; 32]>,
@@ -42,7 +42,7 @@ pub struct EvalBuilder {
     pub(crate) verified_inputs: Vec<CoprocessorInputAttestation>,
 }
 
-impl Clone for EvalBuilder {
+impl Clone for BatchBuilder {
     fn clone(&self) -> Self {
         Self {
             scope: next_eval_builder_scope(),
@@ -57,8 +57,8 @@ impl Clone for EvalBuilder {
     }
 }
 
-impl EvalBuilder {
-    pub fn new(app_authority: EvalAppAuthority) -> Self {
+impl BatchBuilder {
+    pub fn new(app_authority: BatchAppAuthority) -> Self {
         Self {
             scope: next_eval_builder_scope(),
             app_authority,
@@ -81,10 +81,10 @@ impl EvalBuilder {
         attestation: CoprocessorInputAttestation,
     ) -> Result<Encrypted<T>> {
         if handle_fhe_type(attestation.input_handle) != T::FHE_TYPE.byte() {
-            return Err(EvalBuildError::UnsupportedFheType);
+            return Err(BatchBuildError::UnsupportedFheType);
         }
         let attestation_index =
-            u16::try_from(self.verified_inputs.len()).map_err(|_| EvalBuildError::TooManyOps)?;
+            u16::try_from(self.verified_inputs.len()).map_err(|_| BatchBuildError::TooManyOps)?;
         let input_handle = attestation.input_handle;
         self.verified_inputs.push(attestation);
         Ok(Encrypted::from_operand(Operand::verified_input(
@@ -153,10 +153,10 @@ impl EvalBuilder {
         // The host requires the left operand to be an encrypted handle; only the
         // RHS may be a plaintext scalar. Catch this before the CPI.
         if matches!(lhs.0, OperandKind::Scalar(_)) {
-            return Err(EvalBuildError::ScalarLhsOperand);
+            return Err(BatchBuildError::ScalarLhsOperand);
         }
-        if self.steps.len() >= MAX_FHE_EVAL_OPS {
-            return Err(EvalBuildError::TooManyOps);
+        if self.steps.len() >= MAX_FHE_BATCH_OPS {
+            return Err(BatchBuildError::TooManyOps);
         }
         validate_binary_step(
             op,
@@ -167,7 +167,7 @@ impl EvalBuilder {
             self.scope,
             |index| self.produced_types.get(index as usize).copied(),
         )?;
-        let op_index = u16::try_from(self.steps.len()).map_err(|_| EvalBuildError::TooManyOps)?;
+        let op_index = u16::try_from(self.steps.len()).map_err(|_| BatchBuildError::TooManyOps)?;
         let mut remaining_accounts = self.remaining_accounts.clone();
         let mut dictionary = self.dictionary.clone();
         let lhs = lower_operand(
@@ -198,7 +198,7 @@ impl EvalBuilder {
         )?;
         self.remaining_accounts = remaining_accounts;
         self.dictionary = dictionary;
-        self.steps.push(FheEvalStep::Binary {
+        self.steps.push(FheExecuteStep::Binary {
             op,
             lhs,
             rhs,
@@ -220,10 +220,10 @@ impl EvalBuilder {
         let if_true = if_true.operand();
         let if_false = if_false.operand();
         let output_fhe_type =
-            self.encrypted_operand_type(&if_true, EvalBuildError::ScalarEncryptedOperand)?;
+            self.encrypted_operand_type(&if_true, BatchBuildError::ScalarEncryptedOperand)?;
         let output_fhe_type = output_fhe_type.byte();
-        if self.steps.len() >= MAX_FHE_EVAL_OPS {
-            return Err(EvalBuildError::TooManyOps);
+        if self.steps.len() >= MAX_FHE_BATCH_OPS {
+            return Err(BatchBuildError::TooManyOps);
         }
         validate_ternary_step(
             &control,
@@ -234,7 +234,8 @@ impl EvalBuilder {
             |index| self.produced_types.get(index as usize).copied(),
             self.scope,
         )?;
-        let step_index = u16::try_from(self.steps.len()).map_err(|_| EvalBuildError::TooManyOps)?;
+        let step_index =
+            u16::try_from(self.steps.len()).map_err(|_| BatchBuildError::TooManyOps)?;
         let mut remaining_accounts = self.remaining_accounts.clone();
         let mut dictionary = self.dictionary.clone();
         let control = lower_operand(
@@ -274,7 +275,7 @@ impl EvalBuilder {
         )?;
         self.remaining_accounts = remaining_accounts;
         self.dictionary = dictionary;
-        self.steps.push(FheEvalStep::Ternary {
+        self.steps.push(FheExecuteStep::Ternary {
             op: FheTernaryOpCode::IfThenElse,
             control,
             if_true,
@@ -304,11 +305,12 @@ impl EvalBuilder {
         output: Output,
     ) -> Result<Operand> {
         let fhe_type = fhe_type.byte();
-        if self.steps.len() >= MAX_FHE_EVAL_OPS {
-            return Err(EvalBuildError::TooManyOps);
+        if self.steps.len() >= MAX_FHE_BATCH_OPS {
+            return Err(BatchBuildError::TooManyOps);
         }
         validate_supported_fhe_type(fhe_type)?;
-        let step_index = u16::try_from(self.steps.len()).map_err(|_| EvalBuildError::TooManyOps)?;
+        let step_index =
+            u16::try_from(self.steps.len()).map_err(|_| BatchBuildError::TooManyOps)?;
         let mut remaining_accounts = self.remaining_accounts.clone();
         let mut dictionary = self.dictionary.clone();
         let output = lower_output(
@@ -321,7 +323,7 @@ impl EvalBuilder {
         )?;
         self.remaining_accounts = remaining_accounts;
         self.dictionary = dictionary;
-        self.steps.push(FheEvalStep::TrivialEncrypt {
+        self.steps.push(FheExecuteStep::TrivialEncrypt {
             plaintext,
             fhe_type,
             output,
@@ -345,11 +347,12 @@ impl EvalBuilder {
 
     pub(crate) fn rand_raw(&mut self, fhe_type: FheType, output: Output) -> Result<Operand> {
         let fhe_type = fhe_type.byte();
-        if self.steps.len() >= MAX_FHE_EVAL_OPS {
-            return Err(EvalBuildError::TooManyOps);
+        if self.steps.len() >= MAX_FHE_BATCH_OPS {
+            return Err(BatchBuildError::TooManyOps);
         }
         validate_supported_rand_type(fhe_type)?;
-        let step_index = u16::try_from(self.steps.len()).map_err(|_| EvalBuildError::TooManyOps)?;
+        let step_index =
+            u16::try_from(self.steps.len()).map_err(|_| BatchBuildError::TooManyOps)?;
         let mut remaining_accounts = self.remaining_accounts.clone();
         let mut dictionary = self.dictionary.clone();
         let output = lower_output(
@@ -362,7 +365,7 @@ impl EvalBuilder {
         )?;
         self.remaining_accounts = remaining_accounts;
         self.dictionary = dictionary;
-        self.steps.push(FheEvalStep::Rand { fhe_type, output });
+        self.steps.push(FheExecuteStep::Rand { fhe_type, output });
         self.produced_types.push(fhe_type);
         Ok(Operand::transient(step_index, self.scope))
     }
@@ -377,10 +380,11 @@ impl EvalBuilder {
         output: Output,
     ) -> Result<Encrypted<Uint<64>>> {
         let fhe_type = FheType::UINT64.byte();
-        if self.steps.len() >= MAX_FHE_EVAL_OPS {
-            return Err(EvalBuildError::TooManyOps);
+        if self.steps.len() >= MAX_FHE_BATCH_OPS {
+            return Err(BatchBuildError::TooManyOps);
         }
-        let step_index = u16::try_from(self.steps.len()).map_err(|_| EvalBuildError::TooManyOps)?;
+        let step_index =
+            u16::try_from(self.steps.len()).map_err(|_| BatchBuildError::TooManyOps)?;
         let mut remaining_accounts = self.remaining_accounts.clone();
         let mut dictionary = self.dictionary.clone();
         let output = lower_output(
@@ -393,7 +397,7 @@ impl EvalBuilder {
         )?;
         self.remaining_accounts = remaining_accounts;
         self.dictionary = dictionary;
-        self.steps.push(FheEvalStep::RandBounded {
+        self.steps.push(FheExecuteStep::RandBounded {
             upper_bound: upper_bound.bytes(),
             fhe_type,
             output,
@@ -721,21 +725,22 @@ impl EvalBuilder {
         let operand_ops: Vec<Operand> = operands.into_iter().map(|e| e.operand()).collect();
         for op in &operand_ops {
             if matches!(op.0, OperandKind::Scalar(_)) {
-                return Err(EvalBuildError::ScalarEncryptedOperand);
+                return Err(BatchBuildError::ScalarEncryptedOperand);
             }
         }
-        if self.steps.len() >= MAX_FHE_EVAL_OPS {
-            return Err(EvalBuildError::TooManyOps);
+        if self.steps.len() >= MAX_FHE_BATCH_OPS {
+            return Err(BatchBuildError::TooManyOps);
         }
         let fhe_type = T::FHE_TYPE.byte();
         validate_uint_fhe_type(fhe_type)?;
         if operand_ops.len() > max_reduction_operands(fhe_type) {
-            return Err(EvalBuildError::TooManyReductionOperands);
+            return Err(BatchBuildError::TooManyReductionOperands);
         }
-        let step_index = u16::try_from(self.steps.len()).map_err(|_| EvalBuildError::TooManyOps)?;
+        let step_index =
+            u16::try_from(self.steps.len()).map_err(|_| BatchBuildError::TooManyOps)?;
         let mut remaining_accounts = self.remaining_accounts.clone();
         let mut dictionary = self.dictionary.clone();
-        let mut lowered: Vec<FheEvalOperand> = Vec::with_capacity(operand_ops.len());
+        let mut lowered: Vec<FheExecuteOperand> = Vec::with_capacity(operand_ops.len());
         for op in operand_ops {
             lowered.push(lower_operand(
                 &mut remaining_accounts,
@@ -757,7 +762,7 @@ impl EvalBuilder {
         )?;
         self.remaining_accounts = remaining_accounts;
         self.dictionary = dictionary;
-        self.steps.push(FheEvalStep::Sum {
+        self.steps.push(FheExecuteStep::Sum {
             operands: lowered,
             fhe_type,
             output,
@@ -778,22 +783,23 @@ impl EvalBuilder {
         let set_ops: Vec<Operand> = set.into_iter().map(|e| e.operand()).collect();
         let value_op = value.operand();
         if matches!(value_op.0, OperandKind::Scalar(_)) {
-            return Err(EvalBuildError::ScalarEncryptedOperand);
+            return Err(BatchBuildError::ScalarEncryptedOperand);
         }
         for op in &set_ops {
             if matches!(op.0, OperandKind::Scalar(_)) {
-                return Err(EvalBuildError::ScalarEncryptedOperand);
+                return Err(BatchBuildError::ScalarEncryptedOperand);
             }
         }
-        if self.steps.len() >= MAX_FHE_EVAL_OPS {
-            return Err(EvalBuildError::TooManyOps);
+        if self.steps.len() >= MAX_FHE_BATCH_OPS {
+            return Err(BatchBuildError::TooManyOps);
         }
         let fhe_type = T::FHE_TYPE.byte();
         validate_supported_fhe_type(fhe_type)?;
         if set_ops.len() > max_reduction_operands(fhe_type) {
-            return Err(EvalBuildError::TooManyReductionOperands);
+            return Err(BatchBuildError::TooManyReductionOperands);
         }
-        let step_index = u16::try_from(self.steps.len()).map_err(|_| EvalBuildError::TooManyOps)?;
+        let step_index =
+            u16::try_from(self.steps.len()).map_err(|_| BatchBuildError::TooManyOps)?;
         let mut remaining_accounts = self.remaining_accounts.clone();
         let mut dictionary = self.dictionary.clone();
         let value_lowered = lower_operand(
@@ -805,7 +811,7 @@ impl EvalBuilder {
             &self.verified_inputs,
             value_op,
         )?;
-        let mut set_lowered: Vec<FheEvalOperand> = Vec::with_capacity(set_ops.len());
+        let mut set_lowered: Vec<FheExecuteOperand> = Vec::with_capacity(set_ops.len());
         for op in set_ops {
             set_lowered.push(lower_operand(
                 &mut remaining_accounts,
@@ -828,7 +834,7 @@ impl EvalBuilder {
         self.remaining_accounts = remaining_accounts;
         self.dictionary = dictionary;
         let bool_type = FheType::BOOL.byte();
-        self.steps.push(FheEvalStep::IsIn {
+        self.steps.push(FheExecuteStep::IsIn {
             value: value_lowered,
             set: set_lowered,
             fhe_type,
@@ -850,23 +856,24 @@ impl EvalBuilder {
         let lhs = factor1.operand();
         let rhs = binary_rhs_operand(factor2);
         if matches!(lhs.0, OperandKind::Scalar(_)) {
-            return Err(EvalBuildError::ScalarLhsOperand);
+            return Err(BatchBuildError::ScalarLhsOperand);
         }
-        if self.steps.len() >= MAX_FHE_EVAL_OPS {
-            return Err(EvalBuildError::TooManyOps);
+        if self.steps.len() >= MAX_FHE_BATCH_OPS {
+            return Err(BatchBuildError::TooManyOps);
         }
         let fhe_type = T::FHE_TYPE.byte();
         validate_uint_fhe_type(fhe_type)?;
         // fheMulDiv factor1 caps at Uint64 (EVM + coprocessor); reject Uint128.
         if !matches!(fhe_type, 2..=5) {
-            return Err(EvalBuildError::UnsupportedFheType);
+            return Err(BatchBuildError::UnsupportedFheType);
         }
         // Divisor must be non-zero once truncated to the operand type (EVM DivisionByZero parity).
         let divisor_bytes = divisor.bytes();
         if scalar_is_zero_for_type(divisor_bytes, fhe_type) {
-            return Err(EvalBuildError::MulDivDivisorZero);
+            return Err(BatchBuildError::MulDivDivisorZero);
         }
-        let step_index = u16::try_from(self.steps.len()).map_err(|_| EvalBuildError::TooManyOps)?;
+        let step_index =
+            u16::try_from(self.steps.len()).map_err(|_| BatchBuildError::TooManyOps)?;
         let mut remaining_accounts = self.remaining_accounts.clone();
         let mut dictionary = self.dictionary.clone();
         let factor1 = lower_operand(
@@ -897,7 +904,7 @@ impl EvalBuilder {
         )?;
         self.remaining_accounts = remaining_accounts;
         self.dictionary = dictionary;
-        self.steps.push(FheEvalStep::MulDiv {
+        self.steps.push(FheExecuteStep::MulDiv {
             factor1,
             factor2,
             divisor: divisor_bytes,
@@ -919,10 +926,10 @@ impl EvalBuilder {
     ) -> Result<Operand> {
         let output_fhe_type = output_fhe_type.byte();
         if matches!(operand.0, OperandKind::Scalar(_)) {
-            return Err(EvalBuildError::ScalarEncryptedOperand);
+            return Err(BatchBuildError::ScalarEncryptedOperand);
         }
-        if self.steps.len() >= MAX_FHE_EVAL_OPS {
-            return Err(EvalBuildError::TooManyOps);
+        if self.steps.len() >= MAX_FHE_BATCH_OPS {
+            return Err(BatchBuildError::TooManyOps);
         }
         validate_unary_step(
             op,
@@ -932,7 +939,8 @@ impl EvalBuilder {
             self.scope,
             |index| self.produced_types.get(index as usize).copied(),
         )?;
-        let step_index = u16::try_from(self.steps.len()).map_err(|_| EvalBuildError::TooManyOps)?;
+        let step_index =
+            u16::try_from(self.steps.len()).map_err(|_| BatchBuildError::TooManyOps)?;
         let mut remaining_accounts = self.remaining_accounts.clone();
         let mut dictionary = self.dictionary.clone();
         let operand = lower_operand(
@@ -954,7 +962,7 @@ impl EvalBuilder {
         )?;
         self.remaining_accounts = remaining_accounts;
         self.dictionary = dictionary;
-        self.steps.push(FheEvalStep::Unary {
+        self.steps.push(FheExecuteStep::Unary {
             op,
             operand,
             output_fhe_type,
@@ -967,7 +975,7 @@ impl EvalBuilder {
     fn encrypted_operand_type(
         &self,
         operand: &Operand,
-        scalar_error: EvalBuildError,
+        scalar_error: BatchBuildError,
     ) -> Result<FheType> {
         let fhe_type = operand_fhe_type(operand, self.steps.len(), self.scope, &|index| {
             self.produced_types.get(index as usize).copied()
@@ -976,32 +984,32 @@ impl EvalBuilder {
         FheType::from_host_byte(fhe_type)
     }
 
-    /// Validates the accumulated frame and lowers it to an [`EvalPlan`].
+    /// Validates the accumulated frame and lowers it to an [`Batch`].
     ///
     /// Mirrors the host preflight checks (non-empty steps,
-    /// `steps.len() <= MAX_FHE_EVAL_OPS`, rand steps anchored by a persistent
+    /// `steps.len() <= MAX_FHE_BATCH_OPS`, rand steps anchored by a persistent
     /// output) so a malformed frame fails locally instead of on-chain.
     ///
     /// Not mirrored (it depends on the deployed `hcu_block_cap_per_app`, unknown here): under a
     /// finite block cap the host rejects a persist-nothing frame — one binding no persistent input, no
-    /// verified input, and no persistent output — with `FheEvalUnanchoredUnderBlockCap`
+    /// verified input, and no persistent output — with `FheExecuteUnanchoredUnderBlockCap`
     /// (fhevm-internal#1744). Give such a frame a persistent output (the bootstrap/mint path) or a
     /// verified input if it must run under a finite cap.
-    pub fn finish(self) -> Result<EvalPlan> {
+    pub fn finish(self) -> Result<Batch> {
         validate_app_authority(self.app_authority)?;
         if self.steps.is_empty() {
-            return Err(EvalBuildError::EmptyOps);
+            return Err(BatchBuildError::EmptyOps);
         }
-        if self.steps.len() > MAX_FHE_EVAL_OPS {
-            return Err(EvalBuildError::TooManyOps);
+        if self.steps.len() > MAX_FHE_BATCH_OPS {
+            return Err(BatchBuildError::TooManyOps);
         }
         validate_lowered_eval_plan(&self.steps, &self.remaining_accounts, &self.dictionary)?;
         validate_rand_steps_anchor_persistent_output(&self.steps)?;
         let account_count = u8::try_from(self.remaining_accounts.len())
-            .map_err(|_| EvalBuildError::TooManyRemainingAccounts)?;
-        Ok(EvalPlan {
+            .map_err(|_| BatchBuildError::TooManyRemainingAccounts)?;
+        Ok(Batch {
             app_authority: self.app_authority,
-            args: FheEvalArgs {
+            args: FheExecuteArgs {
                 account_count,
                 dictionary: self.dictionary,
                 steps: self.steps,

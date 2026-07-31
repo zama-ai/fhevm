@@ -1,7 +1,7 @@
 //! Phase 2: reconstruct zama-host compute events from decoded instruction data +
 //! block context, WITHOUT relying on on-chain `emit_cpi!`/`emit!`.
 //!
-//! Covers the `fhe_eval` step-plan walk (recomputing each step's handle via the
+//! Covers the `fhe_execute` step-plan walk (recomputing each step's handle via the
 //! program's own `computed_*` functions, byte-identical to on-chain emission)
 //! and the event-free `EncryptedValue` instruction decode (RFC-024).
 
@@ -11,11 +11,11 @@ use zama_host::state::{
     computed_eval_mul_div_handle, computed_eval_sum_handle,
     computed_eval_ternary_handle, computed_eval_trivial_handle,
     computed_eval_unary_handle, computed_rand_bounded_handle,
-    computed_rand_handle, FheBinaryOpCode as PgmBinaryOpCode, FheEvalArgs,
-    FheEvalOperand, FheEvalOutput, FheEvalStep,
+    computed_rand_handle, FheBinaryOpCode as PgmBinaryOpCode, FheExecuteArgs,
+    FheExecuteOperand, FheExecuteOutput, FheExecuteStep,
     FheTernaryOpCode as PgmTernaryOpCode, FheUnaryOpCode as PgmUnaryOpCode,
 };
-use zama_host::{FheEvalRandomSeed, FheEvalRandomSeedsEvent};
+use zama_host::{FheExecuteRandomSeed, FheExecuteRandomSeedsEvent};
 
 #[cfg(test)]
 use crate::database::tfhe_event_propagate::Handle;
@@ -39,28 +39,30 @@ pub struct ReconstructContext {
     pub unix_timestamp: i64,
 }
 
-pub fn is_fhe_eval_instruction(instruction_data: &[u8]) -> bool {
-    zama_host::decode::is_fhe_eval_instruction(instruction_data)
+pub fn is_fhe_execute_instruction(instruction_data: &[u8]) -> bool {
+    zama_host::decode::is_fhe_execute_instruction(instruction_data)
 }
 
-/// Decodes a `fhe_eval` instruction's data into the program's own `FheEvalArgs`
+/// Decodes a `fhe_execute` instruction's data into the program's own `FheExecuteArgs`
 /// step plan through `zama_host::decode` (so there is no bespoke decoder to
 /// drift from the on-chain layout). The decoded plan is the input to the eval
 /// walk that reconstructs one compute event per step — a separate pass that
 /// recomputes each step's handle and therefore depends on `previous_bank_hash`.
-pub fn decode_fhe_eval_args(instruction_data: &[u8]) -> Option<FheEvalArgs> {
+pub fn decode_fhe_execute_args(
+    instruction_data: &[u8],
+) -> Option<FheExecuteArgs> {
     match zama_host::decode::decode_instruction(instruction_data) {
-        Ok(Some(zama_host::decode::ZamaHostInstruction::FheEval(args))) => {
+        Ok(Some(zama_host::decode::ZamaHostInstruction::FheExecute(args))) => {
             Some(args)
         }
         _ => None,
     }
 }
 
-pub fn decode_fhe_eval_random_seeds_event(
+pub fn decode_fhe_execute_random_seeds_event(
     instruction_data: &[u8],
-) -> Option<FheEvalRandomSeedsEvent> {
-    let event: FheEvalRandomSeedsEvent =
+) -> Option<FheExecuteRandomSeedsEvent> {
+    let event: FheExecuteRandomSeedsEvent =
         zama_host::decode::decode_event_cpi(instruction_data)?;
     (event.version == zama_host::EVENT_VERSION).then_some(event)
 }
@@ -69,7 +71,7 @@ pub fn decode_fhe_eval_random_seeds_event(
 //
 // `EncryptedValue` is event-free by design (see zama-host's
 // `instructions/encrypted_value.rs` module doc): ACL changes are carried by
-// `fhe_eval` persistent outputs, `make_handle_public`, `allow_subjects`, and
+// `fhe_execute` persistent outputs, `make_handle_public`, `allow_subjects`, and
 // `remove_subject`. There is no ACL event to decode — instruction data is the
 // allow signal and must be decoded directly (top-level AND inner/CPI, since an
 // app program may invoke these via CPI) by Anchor discriminator
@@ -235,36 +237,36 @@ pub fn parse_host_config(account_data: &[u8]) -> anyhow::Result<u64> {
 /// `Scalar` is only valid as a binary rhs (handled by [`resolve_rhs`]); seeing
 /// it here means a malformed plan.
 fn resolve_operand(
-    operand: &FheEvalOperand,
+    operand: &FheExecuteOperand,
     dictionary: &[[u8; 32]],
     produced: &[[u8; 32]],
 ) -> Option<[u8; 32]> {
     match operand {
-        FheEvalOperand::AllowedPersistent { handle_index, .. } => {
+        FheExecuteOperand::AllowedPersistent { handle_index, .. } => {
             dictionary.get(usize::from(*handle_index)).copied()
         }
-        FheEvalOperand::AllowedLocal { producer_index } => {
+        FheExecuteOperand::AllowedLocal { producer_index } => {
             produced.get(usize::from(*producer_index)).copied()
         }
         // The verified-input handle is known from the operand itself; the
         // program resolves it to `attestation.input_handle` (admission re-verifies
         // the attestation authoritatively, but the operand handle is structural).
-        FheEvalOperand::VerifiedInput { attestation } => {
+        FheExecuteOperand::VerifiedInput { attestation } => {
             Some(attestation.input_handle)
         }
-        FheEvalOperand::Scalar { .. } => None,
+        FheExecuteOperand::Scalar { .. } => None,
     }
 }
 
 /// Resolves a binary rhs operand, reporting whether it is a scalar (the program
 /// sets `scalar = true` only for a `Scalar` rhs).
 fn resolve_rhs(
-    operand: &FheEvalOperand,
+    operand: &FheExecuteOperand,
     dictionary: &[[u8; 32]],
     produced: &[[u8; 32]],
 ) -> Option<([u8; 32], bool)> {
     match operand {
-        FheEvalOperand::Scalar { value_index } => dictionary
+        FheExecuteOperand::Scalar { value_index } => dictionary
             .get(usize::from(*value_index))
             .copied()
             .map(|bytes| (bytes, true)),
@@ -313,7 +315,7 @@ fn map_pgm_ternary_op(op: PgmTernaryOpCode) -> FheTernaryOpCode {
     }
 }
 
-/// Reconstructs the per-step compute events a `fhe_eval` plan emits, mirroring
+/// Reconstructs the per-step compute events a `fhe_execute` plan emits, mirroring
 /// the program's `walk_eval_frame`: walk steps in order, resolve operands
 /// (`Transient` referring to earlier steps' produced handles), recompute each
 /// step's result handle via the program's eval primitives, and record one event
@@ -326,11 +328,11 @@ fn map_pgm_ternary_op(op: PgmTernaryOpCode) -> FheTernaryOpCode {
 /// subject. Random seeds are supplied by the host's signed event-CPI batch
 /// because their anchor includes live persistent-account versions that are not
 /// caller-provided instruction data.
-pub fn reconstruct_fhe_eval_steps(
-    plan: &FheEvalArgs,
+pub fn reconstruct_fhe_execute_steps(
+    plan: &FheExecuteArgs,
     subject: [u8; 32],
     _remaining_accounts: &[[u8; 32]],
-    random_seeds: &[FheEvalRandomSeed],
+    random_seeds: &[FheExecuteRandomSeed],
     ctx: &ReconstructContext,
 ) -> Option<Vec<ReconstructedEvalStep>> {
     let expected_random_steps = plan
@@ -340,7 +342,8 @@ pub fn reconstruct_fhe_eval_steps(
         .filter_map(|(index, step)| {
             matches!(
                 step,
-                FheEvalStep::Rand { .. } | FheEvalStep::RandBounded { .. }
+                FheExecuteStep::Rand { .. }
+                    | FheExecuteStep::RandBounded { .. }
             )
             .then_some(index as u16)
         })
@@ -360,7 +363,7 @@ pub fn reconstruct_fhe_eval_steps(
     for (index, step) in plan.steps.iter().enumerate() {
         let op_index = index as u16;
         let event = match step {
-            FheEvalStep::Binary {
+            FheExecuteStep::Binary {
                 op,
                 lhs,
                 rhs,
@@ -392,7 +395,7 @@ pub fn reconstruct_fhe_eval_steps(
                     result,
                 })
             }
-            FheEvalStep::Ternary {
+            FheExecuteStep::Ternary {
                 op,
                 control,
                 if_true,
@@ -424,7 +427,7 @@ pub fn reconstruct_fhe_eval_steps(
                     result,
                 })
             }
-            FheEvalStep::TrivialEncrypt {
+            FheExecuteStep::TrivialEncrypt {
                 plaintext,
                 fhe_type,
                 ..
@@ -445,7 +448,7 @@ pub fn reconstruct_fhe_eval_steps(
                     result,
                 })
             }
-            FheEvalStep::Rand { fhe_type, .. } => {
+            FheExecuteStep::Rand { fhe_type, .. } => {
                 let seed = random_seeds
                     .iter()
                     .find(|entry| entry.step_index == op_index)?
@@ -461,7 +464,7 @@ pub fn reconstruct_fhe_eval_steps(
                     result,
                 })
             }
-            FheEvalStep::Unary {
+            FheExecuteStep::Unary {
                 op,
                 operand,
                 output_fhe_type,
@@ -486,7 +489,7 @@ pub fn reconstruct_fhe_eval_steps(
                     result,
                 })
             }
-            FheEvalStep::RandBounded {
+            FheExecuteStep::RandBounded {
                 upper_bound,
                 fhe_type,
                 ..
@@ -511,7 +514,7 @@ pub fn reconstruct_fhe_eval_steps(
                     result,
                 })
             }
-            FheEvalStep::Sum {
+            FheExecuteStep::Sum {
                 operands,
                 fhe_type,
                 output: _,
@@ -538,7 +541,7 @@ pub fn reconstruct_fhe_eval_steps(
                     result,
                 })
             }
-            FheEvalStep::IsIn {
+            FheExecuteStep::IsIn {
                 value,
                 set,
                 fhe_type,
@@ -570,7 +573,7 @@ pub fn reconstruct_fhe_eval_steps(
                     result,
                 })
             }
-            FheEvalStep::MulDiv {
+            FheExecuteStep::MulDiv {
                 factor1,
                 factor2,
                 divisor,
@@ -606,14 +609,14 @@ pub fn reconstruct_fhe_eval_steps(
         steps_out.push(ReconstructedEvalStep {
             event,
             persistent_encrypted_value_index:
-                fhe_eval_step_persistent_output_index(step),
-            previous_handle: fhe_eval_step_previous_handle(step),
+                fhe_execute_step_persistent_output_index(step),
+            previous_handle: fhe_execute_step_previous_handle(step),
         });
     }
     Some(steps_out)
 }
 
-/// One reconstructed `fhe_eval` step: the compute event plus, for a `Persistent`
+/// One reconstructed `fhe_execute` step: the compute event plus, for a `Persistent`
 /// output, the `remaining_accounts` index of the output `EncryptedValue` PDA.
 /// The transport resolves that index to the persistent handle's material request.
 pub struct ReconstructedEvalStep {
@@ -625,53 +628,57 @@ pub struct ReconstructedEvalStep {
     pub previous_handle: Option<[u8; 32]>,
 }
 
-pub fn fhe_eval_step_persistent_output_index(step: &FheEvalStep) -> Option<u8> {
-    match fhe_eval_step_output(step) {
-        FheEvalOutput::AllowedPersistent {
+pub fn fhe_execute_step_persistent_output_index(
+    step: &FheExecuteStep,
+) -> Option<u8> {
+    match fhe_execute_step_output(step) {
+        FheExecuteOutput::AllowedPersistent {
             output_encrypted_value_index,
             ..
         } => Some(*output_encrypted_value_index),
-        FheEvalOutput::AllowedLocal => None,
+        FheExecuteOutput::AllowedLocal => None,
     }
 }
 
 /// The outgoing handle when a persistent output updates an existing encrypted value account.
-pub fn fhe_eval_step_previous_handle(step: &FheEvalStep) -> Option<[u8; 32]> {
-    match fhe_eval_step_output(step) {
-        FheEvalOutput::AllowedPersistent {
+pub fn fhe_execute_step_previous_handle(
+    step: &FheExecuteStep,
+) -> Option<[u8; 32]> {
+    match fhe_execute_step_output(step) {
+        FheExecuteOutput::AllowedPersistent {
             previous_handle, ..
         } => *previous_handle,
-        FheEvalOutput::AllowedLocal => None,
+        FheExecuteOutput::AllowedLocal => None,
     }
 }
 
 /// The output policy of an eval step, independent of step kind.
-fn fhe_eval_step_output(step: &FheEvalStep) -> &FheEvalOutput {
+fn fhe_execute_step_output(step: &FheExecuteStep) -> &FheExecuteOutput {
     match step {
-        FheEvalStep::Binary { output, .. }
-        | FheEvalStep::Ternary { output, .. }
-        | FheEvalStep::TrivialEncrypt { output, .. }
-        | FheEvalStep::Rand { output, .. }
-        | FheEvalStep::Unary { output, .. }
-        | FheEvalStep::RandBounded { output, .. }
-        | FheEvalStep::Sum { output, .. }
-        | FheEvalStep::IsIn { output, .. }
-        | FheEvalStep::MulDiv { output, .. } => output,
+        FheExecuteStep::Binary { output, .. }
+        | FheExecuteStep::Ternary { output, .. }
+        | FheExecuteStep::TrivialEncrypt { output, .. }
+        | FheExecuteStep::Rand { output, .. }
+        | FheExecuteStep::Unary { output, .. }
+        | FheExecuteStep::RandBounded { output, .. }
+        | FheExecuteStep::Sum { output, .. }
+        | FheExecuteStep::IsIn { output, .. }
+        | FheExecuteStep::MulDiv { output, .. } => output,
     }
 }
 
 /// Reconstructs just the per-step compute events (without ACL-record indices) —
 /// the shape the shadow-compare consumes. Thin wrapper over
-/// [`reconstruct_fhe_eval_steps`].
-pub fn reconstruct_fhe_eval_events(
-    plan: &FheEvalArgs,
+/// [`reconstruct_fhe_execute_steps`].
+pub fn reconstruct_fhe_execute_events(
+    plan: &FheExecuteArgs,
     subject: [u8; 32],
     remaining_accounts: &[[u8; 32]],
-    random_seeds: &[FheEvalRandomSeed],
+    random_seeds: &[FheExecuteRandomSeed],
     ctx: &ReconstructContext,
 ) -> Option<Vec<SolanaHostEvent>> {
     Some(
-        reconstruct_fhe_eval_steps(
+        reconstruct_fhe_execute_steps(
             plan,
             subject,
             remaining_accounts,
@@ -893,48 +900,49 @@ mod tests {
     }
 
     #[test]
-    fn fhe_eval_plan_round_trips_via_program_type() {
+    fn fhe_execute_plan_round_trips_via_program_type() {
         use anchor_lang::AnchorSerialize;
         use zama_host::state::{
-            FheBinaryOpCode as PgmBinaryOp, FheEvalArgs, FheEvalOperand,
-            FheEvalOutput, FheEvalStep,
+            FheBinaryOpCode as PgmBinaryOp, FheExecuteArgs, FheExecuteOperand,
+            FheExecuteOutput, FheExecuteStep,
         };
-        let plan = FheEvalArgs {
+        let plan = FheExecuteArgs {
             account_count: 0,
             dictionary: vec![[2u8; 32]],
             steps: vec![
-                FheEvalStep::TrivialEncrypt {
+                FheExecuteStep::TrivialEncrypt {
                     plaintext: [7u8; 32],
                     fhe_type: 5,
-                    output: FheEvalOutput::AllowedLocal,
+                    output: FheExecuteOutput::AllowedLocal,
                 },
-                FheEvalStep::Binary {
+                FheExecuteStep::Binary {
                     op: PgmBinaryOp::Add,
-                    lhs: FheEvalOperand::AllowedLocal { producer_index: 0 },
-                    rhs: FheEvalOperand::Scalar { value_index: 0 },
+                    lhs: FheExecuteOperand::AllowedLocal { producer_index: 0 },
+                    rhs: FheExecuteOperand::Scalar { value_index: 0 },
                     output_fhe_type: 5,
-                    output: FheEvalOutput::AllowedLocal,
+                    output: FheExecuteOutput::AllowedLocal,
                 },
             ],
         };
         // Serialize like the on-chain instruction: discriminator + borsh args.
-        let mut bytes = zama_host::instruction::FheEval::DISCRIMINATOR.to_vec();
+        let mut bytes =
+            zama_host::instruction::FheExecute::DISCRIMINATOR.to_vec();
         plan.serialize(&mut bytes).expect("serialize plan");
-        let decoded = decode_fhe_eval_args(&bytes).expect("decode plan");
+        let decoded = decode_fhe_execute_args(&bytes).expect("decode plan");
         assert_eq!(decoded, plan);
         assert_eq!(decoded.steps.len(), 2);
         // Wrong/missing discriminator -> None.
-        assert!(decode_fhe_eval_args(&bytes[1..]).is_none());
+        assert!(decode_fhe_execute_args(&bytes[1..]).is_none());
 
         bytes.extend_from_slice(&[0xAA, 0xBB]);
-        assert_eq!(decode_fhe_eval_args(&bytes), Some(plan));
+        assert_eq!(decode_fhe_execute_args(&bytes), Some(plan));
     }
 
     #[test]
     fn decodes_host_derived_random_seed_batch() {
-        let event = FheEvalRandomSeedsEvent {
+        let event = FheExecuteRandomSeedsEvent {
             version: zama_host::EVENT_VERSION,
-            seeds: vec![FheEvalRandomSeed {
+            seeds: vec![FheExecuteRandomSeed {
                 step_index: 3,
                 seed: [7; 16],
             }],
@@ -946,14 +954,14 @@ mod tests {
             .collect::<Vec<_>>();
 
         let decoded =
-            decode_fhe_eval_random_seeds_event(&data).expect("decode event");
+            decode_fhe_execute_random_seeds_event(&data).expect("decode event");
         assert_eq!(decoded.version, zama_host::EVENT_VERSION);
         assert_eq!(decoded.seeds, event.seeds);
     }
 
     #[test]
     fn rejects_unknown_random_seed_event_version() {
-        let event = FheEvalRandomSeedsEvent {
+        let event = FheExecuteRandomSeedsEvent {
             version: zama_host::EVENT_VERSION.wrapping_add(1),
             seeds: vec![],
         };
@@ -963,31 +971,31 @@ mod tests {
             .chain(anchor_lang::Event::data(&event))
             .collect::<Vec<_>>();
 
-        assert!(decode_fhe_eval_random_seeds_event(&data).is_none());
+        assert!(decode_fhe_execute_random_seeds_event(&data).is_none());
     }
 
     #[test]
-    fn fhe_eval_walk_chains_transient_handles() {
-        let plan = FheEvalArgs {
+    fn fhe_execute_walk_chains_transient_handles() {
+        let plan = FheExecuteArgs {
             account_count: 0,
             dictionary: vec![[2u8; 32]],
             steps: vec![
-                FheEvalStep::TrivialEncrypt {
+                FheExecuteStep::TrivialEncrypt {
                     plaintext: [7u8; 32],
                     fhe_type: 5,
-                    output: FheEvalOutput::AllowedLocal,
+                    output: FheExecuteOutput::AllowedLocal,
                 },
-                FheEvalStep::Binary {
+                FheExecuteStep::Binary {
                     op: PgmBinaryOpCode::Add,
-                    lhs: FheEvalOperand::AllowedLocal { producer_index: 0 },
-                    rhs: FheEvalOperand::Scalar { value_index: 0 },
+                    lhs: FheExecuteOperand::AllowedLocal { producer_index: 0 },
+                    rhs: FheExecuteOperand::Scalar { value_index: 0 },
                     output_fhe_type: 5,
-                    output: FheEvalOutput::AllowedLocal,
+                    output: FheExecuteOutput::AllowedLocal,
                 },
             ],
         };
         let events =
-            reconstruct_fhe_eval_events(&plan, SUBJECT, &[], &[], &ctx())
+            reconstruct_fhe_execute_events(&plan, SUBJECT, &[], &[], &ctx())
                 .expect("walk");
         assert_eq!(events.len(), 2);
         let step0 = match &events[0] {
@@ -1010,7 +1018,7 @@ mod tests {
     }
 
     #[test]
-    fn fhe_eval_walk_reconstructs_bounded_rand() {
+    fn fhe_execute_walk_reconstructs_bounded_rand() {
         let upper_bound = {
             let mut bytes = [0u8; 32];
             bytes[31] = 10;
@@ -1018,13 +1026,13 @@ mod tests {
         };
         // On-chain preflight requires a rand frame to anchor at least one persistent
         // output (fhevm-internal#1853 W4), so the fixture binds one.
-        let plan = FheEvalArgs {
+        let plan = FheExecuteArgs {
             account_count: 1,
             dictionary: vec![[0xA1; 32], [0xA2; 32], [0xA3; 32], [0xA4; 32]],
-            steps: vec![FheEvalStep::RandBounded {
+            steps: vec![FheExecuteStep::RandBounded {
                 upper_bound,
                 fhe_type: 5,
-                output: FheEvalOutput::AllowedPersistent {
+                output: FheExecuteOutput::AllowedPersistent {
                     output_encrypted_value_index: 0,
                     output_account_authority_index: None,
                     output_domain_index: 0,
@@ -1039,11 +1047,11 @@ mod tests {
         };
 
         let output_account = [0x55u8; 32];
-        let random_seeds = [FheEvalRandomSeed {
+        let random_seeds = [FheExecuteRandomSeed {
             step_index: 0,
             seed: [7; 16],
         }];
-        let events = reconstruct_fhe_eval_events(
+        let events = reconstruct_fhe_execute_events(
             &plan,
             SUBJECT,
             &[output_account],
@@ -1062,7 +1070,7 @@ mod tests {
     }
 
     #[test]
-    fn fhe_eval_walk_reconstructs_composite_and_unary_ops() {
+    fn fhe_execute_walk_reconstructs_composite_and_unary_ops() {
         let cx = ctx();
         let ub = {
             let mut b = [0u8; 32];
@@ -1072,55 +1080,61 @@ mod tests {
         // The frame ends in a rand step, so it anchors a persistent output
         // (fhevm-internal#1853 W4); dictionary entries 1..=4 are its ACL metadata.
         let output_account = [0x55u8; 32];
-        let plan = FheEvalArgs {
+        let plan = FheExecuteArgs {
             account_count: 1,
             dictionary: vec![
                 [2u8; 32], [0xA1; 32], [0xA2; 32], [0xA3; 32], [0xA4; 32],
             ],
             steps: vec![
-                FheEvalStep::TrivialEncrypt {
+                FheExecuteStep::TrivialEncrypt {
                     plaintext: [9u8; 32],
                     fhe_type: 5,
-                    output: FheEvalOutput::AllowedLocal,
+                    output: FheExecuteOutput::AllowedLocal,
                 },
-                FheEvalStep::TrivialEncrypt {
+                FheExecuteStep::TrivialEncrypt {
                     plaintext: [4u8; 32],
                     fhe_type: 5,
-                    output: FheEvalOutput::AllowedLocal,
+                    output: FheExecuteOutput::AllowedLocal,
                 },
-                FheEvalStep::Unary {
+                FheExecuteStep::Unary {
                     op: PgmUnaryOpCode::Neg,
-                    operand: FheEvalOperand::AllowedLocal { producer_index: 0 },
+                    operand: FheExecuteOperand::AllowedLocal {
+                        producer_index: 0,
+                    },
                     output_fhe_type: 5,
-                    output: FheEvalOutput::AllowedLocal,
+                    output: FheExecuteOutput::AllowedLocal,
                 },
-                FheEvalStep::Sum {
+                FheExecuteStep::Sum {
                     operands: vec![
-                        FheEvalOperand::AllowedLocal { producer_index: 0 },
-                        FheEvalOperand::AllowedLocal { producer_index: 1 },
+                        FheExecuteOperand::AllowedLocal { producer_index: 0 },
+                        FheExecuteOperand::AllowedLocal { producer_index: 1 },
                     ],
                     fhe_type: 5,
-                    output: FheEvalOutput::AllowedLocal,
+                    output: FheExecuteOutput::AllowedLocal,
                 },
-                FheEvalStep::IsIn {
-                    value: FheEvalOperand::AllowedLocal { producer_index: 0 },
-                    set: vec![FheEvalOperand::AllowedLocal {
+                FheExecuteStep::IsIn {
+                    value: FheExecuteOperand::AllowedLocal {
+                        producer_index: 0,
+                    },
+                    set: vec![FheExecuteOperand::AllowedLocal {
                         producer_index: 1,
                     }],
                     fhe_type: 5,
-                    output: FheEvalOutput::AllowedLocal,
+                    output: FheExecuteOutput::AllowedLocal,
                 },
-                FheEvalStep::MulDiv {
-                    factor1: FheEvalOperand::AllowedLocal { producer_index: 0 },
-                    factor2: FheEvalOperand::Scalar { value_index: 0 },
+                FheExecuteStep::MulDiv {
+                    factor1: FheExecuteOperand::AllowedLocal {
+                        producer_index: 0,
+                    },
+                    factor2: FheExecuteOperand::Scalar { value_index: 0 },
                     divisor: [3u8; 32],
                     output_fhe_type: 5,
-                    output: FheEvalOutput::AllowedLocal,
+                    output: FheExecuteOutput::AllowedLocal,
                 },
-                FheEvalStep::RandBounded {
+                FheExecuteStep::RandBounded {
                     upper_bound: ub,
                     fhe_type: 5,
-                    output: FheEvalOutput::AllowedPersistent {
+                    output: FheExecuteOutput::AllowedPersistent {
                         output_encrypted_value_index: 0,
                         output_account_authority_index: None,
                         output_domain_index: 1,
@@ -1135,11 +1149,11 @@ mod tests {
             ],
         };
         let random_seed = [9; 16];
-        let events = reconstruct_fhe_eval_events(
+        let events = reconstruct_fhe_execute_events(
             &plan,
             SUBJECT,
             &[output_account],
-            &[FheEvalRandomSeed {
+            &[FheExecuteRandomSeed {
                 step_index: 6,
                 seed: random_seed,
             }],
@@ -1250,22 +1264,26 @@ mod tests {
     }
 
     #[test]
-    fn fhe_eval_walk_rejects_forward_transient_reference() {
+    fn fhe_execute_walk_rejects_forward_transient_reference() {
         // A first step referencing a not-yet-produced step -> None.
-        let plan = FheEvalArgs {
+        let plan = FheExecuteArgs {
             account_count: 0,
             dictionary: vec![[2u8; 32]],
-            steps: vec![FheEvalStep::Binary {
+            steps: vec![FheExecuteStep::Binary {
                 op: PgmBinaryOpCode::Add,
-                lhs: FheEvalOperand::AllowedLocal { producer_index: 5 },
-                rhs: FheEvalOperand::Scalar { value_index: 0 },
+                lhs: FheExecuteOperand::AllowedLocal { producer_index: 5 },
+                rhs: FheExecuteOperand::Scalar { value_index: 0 },
                 output_fhe_type: 5,
-                output: FheEvalOutput::AllowedLocal,
+                output: FheExecuteOutput::AllowedLocal,
             }],
         };
-        assert!(
-            reconstruct_fhe_eval_events(&plan, SUBJECT, &[], &[], &ctx())
-                .is_none()
-        );
+        assert!(reconstruct_fhe_execute_events(
+            &plan,
+            SUBJECT,
+            &[],
+            &[],
+            &ctx()
+        )
+        .is_none());
     }
 }

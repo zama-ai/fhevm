@@ -3,8 +3,8 @@ use super::*;
 
 pub(super) fn preflight_eval_frame<'info>(
     table: &mut EvalAccountTable<'_, 'info>,
-    ctx: &Context<'info, FheEval<'info>>,
-    args: &FheEvalArgs,
+    ctx: &Context<'info, FheExecute<'info>>,
+    args: &FheExecuteArgs,
 ) -> Result<()> {
     assert_frame_pins_or_persists_under_cap(args, ctx.accounts.host_config.hcu_block_cap_per_app)?;
     assert_rand_steps_anchor_persistent_output(args)?;
@@ -35,7 +35,7 @@ pub(super) fn preflight_eval_frame<'info>(
 /// bootstrap/mint path. The deactivated cap (`u64::MAX`, the ship default) short-circuits, so
 /// behavior is unchanged wherever a finite cap is not deployed.
 fn assert_frame_pins_or_persists_under_cap(
-    args: &FheEvalArgs,
+    args: &FheExecuteArgs,
     hcu_block_cap_per_app: u64,
 ) -> Result<()> {
     if hcu_block_cap_per_app == u64::MAX {
@@ -43,7 +43,7 @@ fn assert_frame_pins_or_persists_under_cap(
     }
     require!(
         args.steps.iter().any(step_pins_or_persists),
-        ZamaHostError::FheEvalUnanchoredUnderBlockCap
+        ZamaHostError::FheExecuteUnanchoredUnderBlockCap
     );
     Ok(())
 }
@@ -55,11 +55,11 @@ fn assert_frame_pins_or_persists_under_cap(
 /// persistent output for the seed to be compulsorily fresh. The excluded class is provably
 /// useless: an all-transient frame has no ACL records, no decrypt path, and no `make_public`,
 /// so its randomness is unobservable by everyone including the author.
-fn assert_rand_steps_anchor_persistent_output(args: &FheEvalArgs) -> Result<()> {
+fn assert_rand_steps_anchor_persistent_output(args: &FheExecuteArgs) -> Result<()> {
     let has_rand = args.steps.iter().any(|step| {
         matches!(
             step,
-            FheEvalStep::Rand { .. } | FheEvalStep::RandBounded { .. }
+            FheExecuteStep::Rand { .. } | FheExecuteStep::RandBounded { .. }
         )
     });
     if !has_rand {
@@ -69,7 +69,7 @@ fn assert_rand_steps_anchor_persistent_output(args: &FheEvalArgs) -> Result<()> 
         args.steps
             .iter()
             .any(|step| output_persists(super::step_output(step))),
-        ZamaHostError::FheEvalRandRequiresPersistentOutput
+        ZamaHostError::FheExecuteRandRequiresPersistentOutput
     );
     Ok(())
 }
@@ -77,32 +77,34 @@ fn assert_rand_steps_anchor_persistent_output(args: &FheEvalArgs) -> Result<()> 
 /// True for an operand that pins `compute_subject`: a persistent ACL input (the subject must be an
 /// allowed subject) or a verified input (the subject must equal the attested contract). Exhaustive
 /// so a future operand variant must classify itself rather than default to "does not pin".
-fn operand_pins_subject(operand: &FheEvalOperand) -> bool {
+fn operand_pins_subject(operand: &FheExecuteOperand) -> bool {
     match operand {
-        FheEvalOperand::AllowedPersistent { .. } | FheEvalOperand::VerifiedInput { .. } => true,
-        FheEvalOperand::AllowedLocal { .. } | FheEvalOperand::Scalar { .. } => false,
+        FheExecuteOperand::AllowedPersistent { .. } | FheExecuteOperand::VerifiedInput { .. } => {
+            true
+        }
+        FheExecuteOperand::AllowedLocal { .. } | FheExecuteOperand::Scalar { .. } => false,
     }
 }
 
 /// True for an output that persists persistent state. Exhaustive so a future output variant must
 /// classify itself rather than default to "does not persist".
-fn output_persists(output: &FheEvalOutput) -> bool {
+fn output_persists(output: &FheExecuteOutput) -> bool {
     match output {
-        FheEvalOutput::AllowedPersistent { .. } => true,
-        FheEvalOutput::AllowedLocal => false,
+        FheExecuteOutput::AllowedPersistent { .. } => true,
+        FheExecuteOutput::AllowedLocal => false,
     }
 }
 
 /// True when a step carries a subject-pinning operand or a persistent output.
-fn step_pins_or_persists(step: &FheEvalStep) -> bool {
+fn step_pins_or_persists(step: &FheExecuteStep) -> bool {
     let (output, operand_pins) = match step {
-        FheEvalStep::Binary {
+        FheExecuteStep::Binary {
             lhs, rhs, output, ..
         } => (
             output,
             operand_pins_subject(lhs) || operand_pins_subject(rhs),
         ),
-        FheEvalStep::Ternary {
+        FheExecuteStep::Ternary {
             control,
             if_true,
             if_false,
@@ -114,22 +116,22 @@ fn step_pins_or_persists(step: &FheEvalStep) -> bool {
                 || operand_pins_subject(if_true)
                 || operand_pins_subject(if_false),
         ),
-        FheEvalStep::TrivialEncrypt { output, .. }
-        | FheEvalStep::Rand { output, .. }
-        | FheEvalStep::RandBounded { output, .. } => (output, false),
-        FheEvalStep::Unary {
+        FheExecuteStep::TrivialEncrypt { output, .. }
+        | FheExecuteStep::Rand { output, .. }
+        | FheExecuteStep::RandBounded { output, .. } => (output, false),
+        FheExecuteStep::Unary {
             operand, output, ..
         } => (output, operand_pins_subject(operand)),
-        FheEvalStep::Sum {
+        FheExecuteStep::Sum {
             operands, output, ..
         } => (output, operands.iter().any(operand_pins_subject)),
-        FheEvalStep::IsIn {
+        FheExecuteStep::IsIn {
             value, set, output, ..
         } => (
             output,
             operand_pins_subject(value) || set.iter().any(operand_pins_subject),
         ),
-        FheEvalStep::MulDiv {
+        FheExecuteStep::MulDiv {
             factor1,
             factor2,
             output,
@@ -144,7 +146,7 @@ fn step_pins_or_persists(step: &FheEvalStep) -> bool {
 
 fn preflight_eval_frame_accounts(
     table: &mut EvalAccountTable<'_, '_>,
-    args: &FheEvalArgs,
+    args: &FheExecuteArgs,
     account_authority: Pubkey,
     deny_list_enabled: bool,
 ) -> Result<()> {
@@ -154,7 +156,7 @@ fn preflight_eval_frame_accounts(
         dictionary_used: vec![false; args.dictionary.len()],
         account_authority,
         deny_list_enabled,
-        persistent_outputs_written: Vec::with_capacity(MAX_FHE_EVAL_OPS),
+        persistent_outputs_written: Vec::with_capacity(MAX_FHE_BATCH_OPS),
     };
     for (index, step) in args.steps.iter().enumerate() {
         preflight_eval_step(step, index, &mut preflight)?;
@@ -163,7 +165,7 @@ fn preflight_eval_frame_accounts(
     // entry must be referenced by some step, so a frame cannot carry dead bytes.
     require!(
         preflight.dictionary_used.iter().all(|used| *used),
-        ZamaHostError::FheEvalDictionaryEntryUnreferenced
+        ZamaHostError::FheExecuteDictionaryEntryUnreferenced
     );
     preflight.table.assert_all_used()
 }
@@ -191,7 +193,7 @@ impl EvalPreflight<'_, '_, '_> {
             .dictionary
             .get(index as usize)
             .copied()
-            .ok_or_else(|| error!(ZamaHostError::FheEvalDictionaryIndexOutOfBounds))?;
+            .ok_or_else(|| error!(ZamaHostError::FheExecuteDictionaryIndexOutOfBounds))?;
         self.dictionary_used[index as usize] = true;
         Ok(entry)
     }
@@ -213,19 +215,19 @@ impl EvalPreflight<'_, '_, '_> {
 }
 
 fn preflight_eval_step(
-    step: &FheEvalStep,
+    step: &FheExecuteStep,
     step_index: usize,
     preflight: &mut EvalPreflight<'_, '_, '_>,
 ) -> Result<()> {
     match step {
-        FheEvalStep::Binary {
+        FheExecuteStep::Binary {
             lhs, rhs, output, ..
         } => {
             preflight_encrypted_operand(lhs, step_index, preflight)?;
             preflight_rhs_operand(rhs, step_index, preflight)?;
             preflight_output(output, preflight)?;
         }
-        FheEvalStep::Ternary {
+        FheExecuteStep::Ternary {
             control,
             if_true,
             if_false,
@@ -237,19 +239,19 @@ fn preflight_eval_step(
             preflight_encrypted_operand(if_false, step_index, preflight)?;
             preflight_output(output, preflight)?;
         }
-        FheEvalStep::TrivialEncrypt { output, .. } | FheEvalStep::Rand { output, .. } => {
+        FheExecuteStep::TrivialEncrypt { output, .. } | FheExecuteStep::Rand { output, .. } => {
             preflight_output(output, preflight)?;
         }
-        FheEvalStep::Unary {
+        FheExecuteStep::Unary {
             operand, output, ..
         } => {
             preflight_encrypted_operand(operand, step_index, preflight)?;
             preflight_output(output, preflight)?;
         }
-        FheEvalStep::RandBounded { output, .. } => {
+        FheExecuteStep::RandBounded { output, .. } => {
             preflight_output(output, preflight)?;
         }
-        FheEvalStep::Sum {
+        FheExecuteStep::Sum {
             operands, output, ..
         } => {
             for operand in operands {
@@ -257,7 +259,7 @@ fn preflight_eval_step(
             }
             preflight_output(output, preflight)?;
         }
-        FheEvalStep::IsIn {
+        FheExecuteStep::IsIn {
             value, set, output, ..
         } => {
             preflight_encrypted_operand(value, step_index, preflight)?;
@@ -266,7 +268,7 @@ fn preflight_eval_step(
             }
             preflight_output(output, preflight)?;
         }
-        FheEvalStep::MulDiv {
+        FheExecuteStep::MulDiv {
             factor1,
             factor2,
             output,
@@ -281,12 +283,12 @@ fn preflight_eval_step(
 }
 
 fn preflight_rhs_operand(
-    operand: &FheEvalOperand,
+    operand: &FheExecuteOperand,
     step_index: usize,
     preflight: &mut EvalPreflight<'_, '_, '_>,
 ) -> Result<()> {
     match operand {
-        FheEvalOperand::Scalar { value_index } => {
+        FheExecuteOperand::Scalar { value_index } => {
             preflight.mark_dictionary(*value_index)?;
             Ok(())
         }
@@ -295,12 +297,12 @@ fn preflight_rhs_operand(
 }
 
 fn preflight_encrypted_operand(
-    operand: &FheEvalOperand,
+    operand: &FheExecuteOperand,
     step_index: usize,
     preflight: &mut EvalPreflight<'_, '_, '_>,
 ) -> Result<()> {
     match operand {
-        FheEvalOperand::AllowedPersistent {
+        FheExecuteOperand::AllowedPersistent {
             handle_index,
             encrypted_value_index,
         } => {
@@ -311,31 +313,33 @@ fn preflight_encrypted_operand(
                 .key();
             require!(
                 !preflight.persistent_outputs_written.contains(&key),
-                ZamaHostError::FheEvalPersistentOperandWrittenEarlier
+                ZamaHostError::FheExecutePersistentOperandWrittenEarlier
             );
             preflight.table.mark(u16::from(*encrypted_value_index))?;
         }
-        FheEvalOperand::AllowedLocal { producer_index } => {
+        FheExecuteOperand::AllowedLocal { producer_index } => {
             require!(
                 (*producer_index as usize) < step_index,
-                ZamaHostError::FheEvalAllowedLocalMissing
+                ZamaHostError::FheExecuteAllowedLocalMissing
             );
         }
-        FheEvalOperand::VerifiedInput { .. } => {
+        FheExecuteOperand::VerifiedInput { .. } => {
             // No remaining account: the attestation is carried inline and verified in-frame.
         }
-        FheEvalOperand::Scalar { .. } => return Err(error!(ZamaHostError::InvalidFheEvalAccount)),
+        FheExecuteOperand::Scalar { .. } => {
+            return Err(error!(ZamaHostError::InvalidFheExecuteAccount))
+        }
     }
     Ok(())
 }
 
 fn preflight_output(
-    output: &FheEvalOutput,
+    output: &FheExecuteOutput,
     preflight: &mut EvalPreflight<'_, '_, '_>,
 ) -> Result<()> {
     match output {
-        FheEvalOutput::AllowedLocal => {}
-        FheEvalOutput::AllowedPersistent {
+        FheExecuteOutput::AllowedLocal => {}
+        FheExecuteOutput::AllowedPersistent {
             output_encrypted_value_index,
             output_account_authority_index,
             output_domain_index,
@@ -387,15 +391,15 @@ mod tests {
     fn unused_remaining_account_fails_preflight() {
         // One persistent operand, two passed accounts: the dangling second account
         // must fail the whole-frame all-used check.
-        let args = frame(vec![FheEvalStep::Binary {
+        let args = frame(vec![FheExecuteStep::Binary {
             op: FheBinaryOpCode::Add,
-            lhs: FheEvalOperand::AllowedPersistent {
+            lhs: FheExecuteOperand::AllowedPersistent {
                 handle_index: 0,
                 encrypted_value_index: 0,
             },
-            rhs: FheEvalOperand::Scalar { value_index: 1 },
+            rhs: FheExecuteOperand::Scalar { value_index: 1 },
             output_fhe_type: 5,
-            output: FheEvalOutput::AllowedLocal,
+            output: FheExecuteOutput::AllowedLocal,
         }]);
         let accounts = vec![
             test_account(Pubkey::new_unique()),
@@ -411,20 +415,20 @@ mod tests {
     #[test]
     fn persistent_operand_cannot_alias_an_account_written_by_an_earlier_step() {
         let args = frame(vec![
-            FheEvalStep::TrivialEncrypt {
+            FheExecuteStep::TrivialEncrypt {
                 plaintext: [0; 32],
                 fhe_type: 5,
                 output: persistent_output(),
             },
-            FheEvalStep::Binary {
+            FheExecuteStep::Binary {
                 op: FheBinaryOpCode::Add,
-                lhs: FheEvalOperand::AllowedPersistent {
+                lhs: FheExecuteOperand::AllowedPersistent {
                     handle_index: 0,
                     encrypted_value_index: 0,
                 },
-                rhs: FheEvalOperand::Scalar { value_index: 1 },
+                rhs: FheExecuteOperand::Scalar { value_index: 1 },
                 output_fhe_type: 5,
-                output: FheEvalOutput::AllowedLocal,
+                output: FheExecuteOutput::AllowedLocal,
             },
         ]);
         let accounts = vec![test_account(Pubkey::new_unique())];
@@ -437,13 +441,13 @@ mod tests {
 
     #[test]
     fn persistent_operand_may_update_its_account_in_the_same_step() {
-        let args = frame(vec![FheEvalStep::Binary {
+        let args = frame(vec![FheExecuteStep::Binary {
             op: FheBinaryOpCode::Add,
-            lhs: FheEvalOperand::AllowedPersistent {
+            lhs: FheExecuteOperand::AllowedPersistent {
                 handle_index: 0,
                 encrypted_value_index: 0,
             },
-            rhs: FheEvalOperand::Scalar { value_index: 1 },
+            rhs: FheExecuteOperand::Scalar { value_index: 1 },
             output_fhe_type: 5,
             output: persistent_output(),
         }]);
@@ -463,24 +467,24 @@ mod tests {
         AccountInfo::new(key, false, false, lamports, data, owner, false)
     }
 
-    fn frame(steps: Vec<FheEvalStep>) -> FheEvalArgs {
-        FheEvalArgs {
+    fn frame(steps: Vec<FheExecuteStep>) -> FheExecuteArgs {
+        FheExecuteArgs {
             account_count: 0,
             dictionary: vec![[1; 32], [2; 32]],
             steps,
         }
     }
 
-    fn trivial_local() -> FheEvalStep {
-        FheEvalStep::TrivialEncrypt {
+    fn trivial_local() -> FheExecuteStep {
+        FheExecuteStep::TrivialEncrypt {
             plaintext: [0; 32],
             fhe_type: 5,
-            output: FheEvalOutput::AllowedLocal,
+            output: FheExecuteOutput::AllowedLocal,
         }
     }
 
-    fn persistent_output() -> FheEvalOutput {
-        FheEvalOutput::AllowedPersistent {
+    fn persistent_output() -> FheExecuteOutput {
+        FheExecuteOutput::AllowedPersistent {
             output_encrypted_value_index: 0,
             output_account_authority_index: None,
             output_domain_index: 0,
@@ -493,8 +497,8 @@ mod tests {
         }
     }
 
-    fn verified_input() -> FheEvalOperand {
-        FheEvalOperand::VerifiedInput {
+    fn verified_input() -> FheExecuteOperand {
+        FheExecuteOperand::VerifiedInput {
             attestation: Box::new(CoprocessorInputAttestation {
                 input_handle: [0; 32],
                 ct_handles: Vec::new(),
@@ -512,9 +516,9 @@ mod tests {
     fn rand_step_without_persistent_output_is_rejected() {
         // Unconditional (unlike the cap-gated persist-nothing rule): the rand seed is anchored
         // to the frame's persistent writes, so an all-transient rand frame has no seed anchor.
-        let args = frame(vec![FheEvalStep::Rand {
+        let args = frame(vec![FheExecuteStep::Rand {
             fhe_type: 5,
-            output: FheEvalOutput::AllowedLocal,
+            output: FheExecuteOutput::AllowedLocal,
         }]);
         assert!(assert_rand_steps_anchor_persistent_output(&args).is_err());
     }
@@ -522,18 +526,18 @@ mod tests {
     #[test]
     fn rand_step_with_persistent_output_anywhere_in_frame_is_accepted() {
         // The persistent output may be the rand step's own or any other step's.
-        let own = frame(vec![FheEvalStep::Rand {
+        let own = frame(vec![FheExecuteStep::Rand {
             fhe_type: 5,
             output: persistent_output(),
         }]);
         assert!(assert_rand_steps_anchor_persistent_output(&own).is_ok());
 
         let elsewhere = frame(vec![
-            FheEvalStep::Rand {
+            FheExecuteStep::Rand {
                 fhe_type: 5,
-                output: FheEvalOutput::AllowedLocal,
+                output: FheExecuteOutput::AllowedLocal,
             },
-            FheEvalStep::TrivialEncrypt {
+            FheExecuteStep::TrivialEncrypt {
                 plaintext: [0; 32],
                 fhe_type: 5,
                 output: persistent_output(),
@@ -569,7 +573,7 @@ mod tests {
     #[test]
     fn finite_cap_accepts_persistent_output_frame() {
         // The trivial-encrypt -> persistent-output bootstrap/mint path stays legal.
-        let step = FheEvalStep::TrivialEncrypt {
+        let step = FheExecuteStep::TrivialEncrypt {
             plaintext: [0; 32],
             fhe_type: 5,
             output: persistent_output(),
@@ -579,15 +583,15 @@ mod tests {
 
     #[test]
     fn finite_cap_accepts_persistent_input_frame() {
-        let step = FheEvalStep::Binary {
+        let step = FheExecuteStep::Binary {
             op: FheBinaryOpCode::Add,
-            lhs: FheEvalOperand::AllowedPersistent {
+            lhs: FheExecuteOperand::AllowedPersistent {
                 handle_index: 0,
                 encrypted_value_index: 0,
             },
-            rhs: FheEvalOperand::Scalar { value_index: 1 },
+            rhs: FheExecuteOperand::Scalar { value_index: 1 },
             output_fhe_type: 5,
-            output: FheEvalOutput::AllowedLocal,
+            output: FheExecuteOutput::AllowedLocal,
         };
         assert!(assert_frame_pins_or_persists_under_cap(&frame(vec![step]), FINITE_CAP).is_ok());
     }
@@ -596,11 +600,11 @@ mod tests {
     fn finite_cap_accepts_verified_input_transient_frame() {
         // A verified input pins the subject (attested contract must equal it), so a transient-output
         // frame that carries one is anchored and not persist-nothing.
-        let step = FheEvalStep::Unary {
+        let step = FheExecuteStep::Unary {
             op: FheUnaryOpCode::Not,
             operand: verified_input(),
             output_fhe_type: 5,
-            output: FheEvalOutput::AllowedLocal,
+            output: FheExecuteOutput::AllowedLocal,
         };
         assert!(assert_frame_pins_or_persists_under_cap(&frame(vec![step]), FINITE_CAP).is_ok());
     }

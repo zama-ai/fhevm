@@ -1,4 +1,4 @@
-//! Fast, test-only semantic/support-matrix conformance for Solana `fhe_eval`.
+//! Fast, test-only semantic/support-matrix conformance for Solana `fhe_execute`.
 //!
 //! Expected support is test-owned rather than derived from production validators. Execution uses
 //! those validators and the shared cleartext evaluator. Mollusk, real TFHE, and full-stack smoke
@@ -12,12 +12,12 @@ mod support;
 use std::collections::HashMap;
 
 use operator_contracts::{binary_contract_tests, composite_contract_tests, unary_contract_tests};
-use support::cleartext_fhe_eval::{evaluate, ClearInputs, TypedClearValue};
-use zama_host::instructions::fhe_eval::assert_ternary_operand_types;
+use support::cleartext_fhe_execute::{evaluate, ClearInputs, TypedClearValue};
+use zama_host::instructions::fhe_execute::assert_ternary_operand_types;
 use zama_host::{
     assert_binary_operand_types, assert_unary_operand_type, CoprocessorInputAttestation,
-    FheBinaryOpCode, FheEvalArgs, FheEvalOperand, FheEvalOutput, FheEvalStep, FheTernaryOpCode,
-    FheUnaryOpCode,
+    FheBinaryOpCode, FheExecuteArgs, FheExecuteOperand, FheExecuteOutput, FheExecuteStep,
+    FheTernaryOpCode, FheUnaryOpCode,
 };
 
 type Handle = [u8; 32];
@@ -44,7 +44,7 @@ fn run_binary(
         inputs.insert(rhs_handle, typed(input_type, rhs));
         persistent(rhs_handle)
     };
-    let plan = args(vec![FheEvalStep::Binary {
+    let plan = args(vec![FheExecuteStep::Binary {
         op,
         lhs: persistent(lhs_handle),
         rhs,
@@ -65,7 +65,7 @@ fn run_unary(
     expected: [u8; 32],
 ) {
     let input_handle = handle(1, input_type);
-    let plan = args(vec![FheEvalStep::Unary {
+    let plan = args(vec![FheExecuteStep::Unary {
         op,
         operand: persistent(input_handle),
         output_fhe_type: output_type,
@@ -85,7 +85,7 @@ fn run_ternary(fhe_type: u8, if_true: u64, if_false: u64, expected: u64) {
     let control = handle(1, 0);
     let true_handle = handle(2, fhe_type);
     let false_handle = handle(3, fhe_type);
-    let plan = args(vec![FheEvalStep::Ternary {
+    let plan = args(vec![FheExecuteStep::Ternary {
         op: FheTernaryOpCode::IfThenElse,
         control: persistent(control),
         if_true: persistent(true_handle),
@@ -105,7 +105,7 @@ fn run_ternary(fhe_type: u8, if_true: u64, if_false: u64, expected: u64) {
 }
 
 fn run_trivial(fhe_type: u8, plaintext: u64, expected: u64) {
-    let plan = args(vec![FheEvalStep::TrivialEncrypt {
+    let plan = args(vec![FheExecuteStep::TrivialEncrypt {
         plaintext: be(plaintext),
         fhe_type,
         output: local_output(),
@@ -186,7 +186,7 @@ fn run_mul_div(
 }
 
 fn run_rand(fhe_type: u8) {
-    let plan = args(vec![FheEvalStep::Rand {
+    let plan = args(vec![FheExecuteStep::Rand {
         fhe_type,
         output: local_output(),
     }]);
@@ -262,7 +262,7 @@ mod edges {
     fn bool_trivial_uses_low_byte_only() {
         let mut high_only = [0; 32];
         high_only[0] = 1;
-        let plan = args(vec![FheEvalStep::TrivialEncrypt {
+        let plan = args(vec![FheExecuteStep::TrivialEncrypt {
             plaintext: high_only,
             fhe_type: 0,
             output: local_output(),
@@ -293,7 +293,7 @@ mod edges {
         let control = handle(1, 0);
         let if_true = handle(2, 2);
         let if_false = handle(3, 2);
-        let plan = args(vec![FheEvalStep::Ternary {
+        let plan = args(vec![FheExecuteStep::Ternary {
             op: FheTernaryOpCode::IfThenElse,
             control: persistent(control),
             if_true: persistent(if_true),
@@ -359,7 +359,7 @@ mod edges {
     #[test]
     fn rand_then_bounded_rand_preserves_deterministic_output_order() {
         let plan = args(vec![
-            FheEvalStep::Rand {
+            FheExecuteStep::Rand {
                 fhe_type: 8,
                 output: local_output(),
             },
@@ -574,7 +574,7 @@ mod rejected {
             let control = handle(1, 0);
             let if_true = handle(2, 2);
             let if_false = handle(3, 3);
-            let plan = args(vec![FheEvalStep::Ternary {
+            let plan = args(vec![FheExecuteStep::Ternary {
                 op: FheTernaryOpCode::IfThenElse,
                 control: persistent(control),
                 if_true: persistent(if_true),
@@ -593,7 +593,7 @@ mod rejected {
         fn if_then_else_rejects_unsupported_output_before_branch_lookup() {
             let control = handle(1, 0);
             let missing_branch = handle(2, 1);
-            let plan = args(vec![FheEvalStep::Ternary {
+            let plan = args(vec![FheExecuteStep::Ternary {
                 op: FheTernaryOpCode::IfThenElse,
                 control: persistent(control),
                 if_true: persistent(missing_branch),
@@ -613,7 +613,7 @@ mod rejected {
         #[test]
         fn trivial_encrypt_unknown_type() {
             expect_error(
-                args(vec![FheEvalStep::TrivialEncrypt {
+                args(vec![FheExecuteStep::TrivialEncrypt {
                     plaintext: be(1),
                     fhe_type: 1,
                     output: local_output(),
@@ -637,7 +637,7 @@ mod rejected {
             expect_error(
                 args(vec![sum_step(vec![persistent(input); 101], 2)]),
                 HashMap::from([(input, typed(2, 1))]),
-                "InvalidFheEvalAccount",
+                "InvalidFheExecuteAccount",
             );
         }
         #[test]
@@ -659,7 +659,7 @@ mod rejected {
                     8,
                 )]),
                 HashMap::from([(input, typed(8, 1))]),
-                "InvalidFheEvalAccount",
+                "InvalidFheExecuteAccount",
             );
         }
         #[test]
@@ -737,7 +737,7 @@ mod rejected {
         #[test]
         fn rand_u160_type() {
             expect_error(
-                args(vec![FheEvalStep::Rand {
+                args(vec![FheExecuteStep::Rand {
                     fhe_type: 7,
                     output: local_output(),
                 }]),
@@ -801,9 +801,9 @@ mod operand_sources {
         let input = handle(1, 2);
         let plan = args(vec![
             binary(FheBinaryOpCode::Add, persistent(input), scalar(be(1)), 2),
-            FheEvalStep::Unary {
+            FheExecuteStep::Unary {
                 op: FheUnaryOpCode::Not,
-                operand: FheEvalOperand::AllowedLocal { producer_index: 0 },
+                operand: FheExecuteOperand::AllowedLocal { producer_index: 0 },
                 output_fhe_type: 2,
                 output: local_output(),
             },
@@ -823,9 +823,9 @@ mod operand_sources {
     }
     fn reject_local(producer_index: u8) {
         expect_error(
-            args(vec![FheEvalStep::Unary {
+            args(vec![FheExecuteStep::Unary {
                 op: FheUnaryOpCode::Not,
-                operand: FheEvalOperand::AllowedLocal { producer_index },
+                operand: FheExecuteOperand::AllowedLocal { producer_index },
                 output_fhe_type: 2,
                 output: local_output(),
             }]),
@@ -964,7 +964,7 @@ fn ternary_is_accepted(
     }
 }
 
-fn expect_error(plan: FheEvalArgs, inputs: ClearInputs, expected: &str) {
+fn expect_error(plan: FheExecuteArgs, inputs: ClearInputs, expected: &str) {
     let error = evaluate(&plan, &inputs).unwrap_err();
     assert!(
         error.contains(expected),
@@ -974,11 +974,11 @@ fn expect_error(plan: FheEvalArgs, inputs: ClearInputs, expected: &str) {
 
 fn binary(
     op: FheBinaryOpCode,
-    lhs: FheEvalOperand,
-    rhs: FheEvalOperand,
+    lhs: FheExecuteOperand,
+    rhs: FheExecuteOperand,
     output_fhe_type: u8,
-) -> FheEvalStep {
-    FheEvalStep::Binary {
+) -> FheExecuteStep {
+    FheExecuteStep::Binary {
         op,
         lhs,
         rhs,
@@ -987,16 +987,20 @@ fn binary(
     }
 }
 
-fn sum_step(operands: Vec<FheEvalOperand>, fhe_type: u8) -> FheEvalStep {
-    FheEvalStep::Sum {
+fn sum_step(operands: Vec<FheExecuteOperand>, fhe_type: u8) -> FheExecuteStep {
+    FheExecuteStep::Sum {
         operands,
         fhe_type,
         output: local_output(),
     }
 }
 
-fn is_in_step(value: FheEvalOperand, set: Vec<FheEvalOperand>, fhe_type: u8) -> FheEvalStep {
-    FheEvalStep::IsIn {
+fn is_in_step(
+    value: FheExecuteOperand,
+    set: Vec<FheExecuteOperand>,
+    fhe_type: u8,
+) -> FheExecuteStep {
+    FheExecuteStep::IsIn {
         value,
         set,
         fhe_type,
@@ -1005,12 +1009,12 @@ fn is_in_step(value: FheEvalOperand, set: Vec<FheEvalOperand>, fhe_type: u8) -> 
 }
 
 fn mul_div_step(
-    factor1: FheEvalOperand,
-    factor2: FheEvalOperand,
+    factor1: FheExecuteOperand,
+    factor2: FheExecuteOperand,
     divisor: [u8; 32],
     output_fhe_type: u8,
-) -> FheEvalStep {
-    FheEvalStep::MulDiv {
+) -> FheExecuteStep {
+    FheExecuteStep::MulDiv {
         factor1,
         factor2,
         divisor,
@@ -1019,8 +1023,8 @@ fn mul_div_step(
     }
 }
 
-fn bounded_rand_step(upper_bound: [u8; 32], fhe_type: u8) -> FheEvalStep {
-    FheEvalStep::RandBounded {
+fn bounded_rand_step(upper_bound: [u8; 32], fhe_type: u8) -> FheExecuteStep {
+    FheExecuteStep::RandBounded {
         upper_bound,
         fhe_type,
         output: local_output(),
@@ -1049,33 +1053,33 @@ fn intern(bytes: [u8; 32]) -> u8 {
     })
 }
 
-fn args(steps: Vec<FheEvalStep>) -> FheEvalArgs {
-    FheEvalArgs {
+fn args(steps: Vec<FheExecuteStep>) -> FheExecuteArgs {
+    FheExecuteArgs {
         account_count: 0,
         dictionary: FRAME_POOL.with(|dictionary| dictionary.take()),
         steps,
     }
 }
 
-fn local_output() -> FheEvalOutput {
-    FheEvalOutput::AllowedLocal
+fn local_output() -> FheExecuteOutput {
+    FheExecuteOutput::AllowedLocal
 }
 
-fn scalar(value: [u8; 32]) -> FheEvalOperand {
-    FheEvalOperand::Scalar {
+fn scalar(value: [u8; 32]) -> FheExecuteOperand {
+    FheExecuteOperand::Scalar {
         value_index: intern(value),
     }
 }
 
-fn persistent(handle: Handle) -> FheEvalOperand {
-    FheEvalOperand::AllowedPersistent {
+fn persistent(handle: Handle) -> FheExecuteOperand {
+    FheExecuteOperand::AllowedPersistent {
         handle_index: intern(handle),
         encrypted_value_index: 0,
     }
 }
 
-fn verified(input_handle: Handle) -> FheEvalOperand {
-    FheEvalOperand::VerifiedInput {
+fn verified(input_handle: Handle) -> FheExecuteOperand {
+    FheExecuteOperand::VerifiedInput {
         attestation: Box::new(CoprocessorInputAttestation {
             input_handle,
             ct_handles: vec![input_handle],

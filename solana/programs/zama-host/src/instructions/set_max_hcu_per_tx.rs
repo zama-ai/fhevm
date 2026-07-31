@@ -1,7 +1,7 @@
-//! Sets the per-`fhe_eval` total HCU limit (mirrors EVM `setMaxHCUPerTx`).
+//! Sets the per-`fhe_execute` total HCU limit (mirrors EVM `setMaxHCUPerTx`).
 //!
 //! Naming note: the field is `max_hcu_per_tx` to match EVM's `setMaxHCUPerTx`, but on Solana the
-//! limit is enforced per `fhe_eval` frame, which can be smaller than a whole transaction (a tx may
+//! limit is enforced per `fhe_execute` frame, which can be smaller than a whole transaction (a tx may
 //! contain several frames). The EVM-aligned name is intentional; the scope difference is by design.
 
 use anchor_lang::prelude::*;

@@ -121,7 +121,7 @@ impl<'info> PersistentOutput<'info> {
         let output = if *encrypted_value.owner == System::id() {
             require!(
                 encrypted_value.data_is_empty() && !encrypted_value.executable,
-                ConfidentialTokenError::InvalidFheEvalPlan
+                ConfidentialTokenError::InvalidFheExecutePlan
             );
             zama_fhe::PersistentOutput::create(key, subjects)
         } else {
@@ -131,7 +131,7 @@ impl<'info> PersistentOutput<'info> {
         .with_make_public(make_public);
         output.binding().map_err(|error| {
             msg!("invalid persistent FHE output: {:?}", error);
-            error!(ConfidentialTokenError::InvalidFheEvalPlan)
+            error!(ConfidentialTokenError::InvalidFheExecutePlan)
         })?;
         Ok(Self {
             encrypted_value,
@@ -163,7 +163,7 @@ impl<'info> PersistentOutput<'info> {
     fn binding(&self) -> Result<zama_fhe::PersistentOutputBinding> {
         self.output.binding().map_err(|error| {
             msg!("invalid persistent FHE output: {:?}", error);
-            error!(ConfidentialTokenError::InvalidFheEvalPlan)
+            error!(ConfidentialTokenError::InvalidFheExecutePlan)
         })
     }
 }
@@ -346,7 +346,7 @@ pub(crate) struct EvalAccountSet<'info> {
 
 impl<'info> EvalAccountSet<'info> {
     pub(crate) fn for_plan(
-        plan: &zama_fhe::EvalPlan,
+        plan: &zama_fhe::Batch,
         available_accounts: impl IntoIterator<Item = AccountInfo<'info>>,
         output_authorities: impl IntoIterator<Item = OutputAuthority<'info>>,
     ) -> Result<Self> {
@@ -381,16 +381,16 @@ fn map_eval_account_resolution_error(error: zama_fhe::EvalAccountResolutionError
     msg!("invalid FHE eval account set: {:?}", error);
     match error {
         zama_fhe::EvalAccountResolutionError::DuplicateDynamicAccount { .. } => {
-            error!(ConfidentialTokenError::DuplicateFheEvalAccount)
+            error!(ConfidentialTokenError::DuplicateFheExecuteAccount)
         }
         zama_fhe::EvalAccountResolutionError::UnexpectedDynamicAccount { .. } => {
-            error!(ConfidentialTokenError::UnexpectedFheEvalAccount)
+            error!(ConfidentialTokenError::UnexpectedFheExecuteAccount)
         }
         zama_fhe::EvalAccountResolutionError::MissingDynamicAccount { .. } => {
-            error!(ConfidentialTokenError::MissingFheEvalAccount)
+            error!(ConfidentialTokenError::MissingFheExecuteAccount)
         }
         zama_fhe::EvalAccountResolutionError::DynamicAccountNotWritable { .. } => {
-            error!(ConfidentialTokenError::FheEvalAccountNotWritable)
+            error!(ConfidentialTokenError::FheExecuteAccountNotWritable)
         }
         zama_fhe::EvalAccountResolutionError::DuplicateOutputAuthority { .. } => {
             error!(ConfidentialTokenError::DuplicateFheOutputAuthority)
@@ -420,12 +420,12 @@ pub(crate) struct EvalContext<'a, 'info> {
     pub compute_authority: ComputeAuthority<'info>,
     /// System program used for output ACL creation.
     pub system_program: &'a Program<'info, System>,
-    /// Per-`compute_subject` HCU block meter forwarded into the host `fhe_eval` CPI (`None` unless
+    /// Per-`compute_subject` HCU block meter forwarded into the host `fhe_execute` CPI (`None` unless
     /// the caller threads it; behavior-neutral while the host cap is unrestricted). The host keys
     /// the meter on `compute_subject` — here the mint's compute signer PDA — so metering stays
     /// per-mint automatically, with no separate HCU authority account.
     pub hcu_block_meter: Option<AccountInfo<'info>>,
-    /// HCU trust witness forwarded into the host `fhe_eval` CPI (`None` unless threaded).
+    /// HCU trust witness forwarded into the host `fhe_execute` CPI (`None` unless threaded).
     pub hcu_trusted_app_record: Option<AccountInfo<'info>>,
 }
 
@@ -436,7 +436,7 @@ pub(crate) struct Eval<'a, 'info> {
     /// Typed resolver for dynamic accounts required by the eval plan.
     pub accounts: &'a EvalAccountSet<'info>,
     /// SDK-built host eval request and dynamic account role plan.
-    pub plan: zama_fhe::EvalPlan,
+    pub plan: zama_fhe::Batch,
 }
 
 /// Evaluates an FHE plan using the current token account authority model.
@@ -508,9 +508,9 @@ pub(crate) fn eval<'info>(request: Eval<'_, 'info>) -> Result<()> {
         &request.plan.newly_granted_subjects(),
     )?;
 
-    zama_fhe::invoke_eval_signed_resolved(
+    zama_fhe::invoke_batch_signed_resolved(
         &request.plan,
-        zama_fhe::EvalCpiAccounts {
+        zama_fhe::BatchCpiAccounts {
             payer: request.context.payer.to_account_info(),
             compute_subject: request.context.compute_authority.account_info(),
             account_authority: app_authority.account.clone(),
@@ -665,14 +665,14 @@ mod tests {
         vec![subject]
     }
 
-    fn sample_plan() -> (zama_fhe::EvalPlan, Pubkey, Pubkey, Pubkey) {
+    fn sample_plan() -> (zama_fhe::Batch, Pubkey, Pubkey, Pubkey) {
         let authority = Pubkey::new_unique();
         let input_key = encrypted_value_id(authority, 1);
         let input_acl = input_key.address();
         let output_key = encrypted_value_id(authority, 2);
         let output_acl = output_key.address();
         let input = zama_fhe::Uint64Handle::persistent(balance_handle(1), input_key).unwrap();
-        let mut builder = zama_fhe::EvalBuilder::new(zama_fhe::EvalAppAuthority::new(authority));
+        let mut builder = zama_fhe::BatchBuilder::new(zama_fhe::BatchAppAuthority::new(authority));
         builder
             .add(
                 input,
@@ -712,7 +712,7 @@ mod tests {
         )
         .err()
         .unwrap();
-        assert_token_error(error, ConfidentialTokenError::DuplicateFheEvalAccount);
+        assert_token_error(error, ConfidentialTokenError::DuplicateFheExecuteAccount);
 
         let error = EvalAccountSet::for_plan(
             &plan,
@@ -725,7 +725,7 @@ mod tests {
         )
         .err()
         .unwrap();
-        assert_token_error(error, ConfidentialTokenError::UnexpectedFheEvalAccount);
+        assert_token_error(error, ConfidentialTokenError::UnexpectedFheExecuteAccount);
 
         let error = EvalAccountSet::for_plan(
             &plan,
@@ -734,7 +734,7 @@ mod tests {
         )
         .err()
         .unwrap();
-        assert_token_error(error, ConfidentialTokenError::MissingFheEvalAccount);
+        assert_token_error(error, ConfidentialTokenError::MissingFheExecuteAccount);
 
         let error = EvalAccountSet::for_plan(
             &plan,
@@ -746,7 +746,7 @@ mod tests {
         )
         .err()
         .unwrap();
-        assert_token_error(error, ConfidentialTokenError::FheEvalAccountNotWritable);
+        assert_token_error(error, ConfidentialTokenError::FheExecuteAccountNotWritable);
     }
 
     #[test]

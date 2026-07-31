@@ -6,11 +6,11 @@ use anchor_lang::prelude::Pubkey;
 use anchor_lang::{prelude::AccountInfo, Key};
 
 #[cfg(feature = "cpi")]
-use crate::plan::EvalPlan;
+use crate::plan::Batch;
 
 /// Why an eval plan needs a dynamic account.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum EvalAccountPurpose {
+pub enum BatchAccountPurpose {
     PersistentInputAcl,
     PersistentOutputAcl,
     PersistentOutputAuthority,
@@ -22,7 +22,7 @@ pub struct EvalAccountRequirement {
     pubkey: Pubkey,
     is_writable: bool,
     is_signer: bool,
-    purposes: Vec<EvalAccountPurpose>,
+    purposes: Vec<BatchAccountPurpose>,
 }
 
 impl EvalAccountRequirement {
@@ -38,36 +38,36 @@ impl EvalAccountRequirement {
         self.is_signer
     }
 
-    pub fn has_purpose(&self, purpose: EvalAccountPurpose) -> bool {
+    pub fn has_purpose(&self, purpose: BatchAccountPurpose) -> bool {
         self.purposes.contains(&purpose)
     }
 
-    pub fn purposes(&self) -> &[EvalAccountPurpose] {
+    pub fn purposes(&self) -> &[BatchAccountPurpose] {
         &self.purposes
     }
 
     pub fn requires_dynamic_account(&self) -> bool {
         self.purposes
             .iter()
-            .any(|purpose| *purpose != EvalAccountPurpose::PersistentOutputAuthority)
+            .any(|purpose| *purpose != BatchAccountPurpose::PersistentOutputAuthority)
     }
 
     pub fn requires_output_authority(&self) -> bool {
-        self.has_purpose(EvalAccountPurpose::PersistentOutputAuthority)
+        self.has_purpose(BatchAccountPurpose::PersistentOutputAuthority)
     }
 }
 
 /// Dynamic account role required by an eval plan.
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub(crate) struct EvalAccountMeta {
+pub(crate) struct BatchAccountMeta {
     pub(crate) pubkey: Pubkey,
     pub(crate) is_writable: bool,
     pub(crate) is_signer: bool,
-    pub(crate) purposes: Vec<EvalAccountPurpose>,
+    pub(crate) purposes: Vec<BatchAccountPurpose>,
 }
 
-impl EvalAccountMeta {
-    pub(crate) fn readonly(pubkey: Pubkey, purpose: EvalAccountPurpose) -> Self {
+impl BatchAccountMeta {
+    pub(crate) fn readonly(pubkey: Pubkey, purpose: BatchAccountPurpose) -> Self {
         Self {
             pubkey,
             is_writable: false,
@@ -76,7 +76,7 @@ impl EvalAccountMeta {
         }
     }
 
-    pub(crate) fn writable(pubkey: Pubkey, purpose: EvalAccountPurpose) -> Self {
+    pub(crate) fn writable(pubkey: Pubkey, purpose: BatchAccountPurpose) -> Self {
         Self {
             pubkey,
             is_writable: true,
@@ -85,7 +85,7 @@ impl EvalAccountMeta {
         }
     }
 
-    pub(crate) fn readonly_signer(pubkey: Pubkey, purpose: EvalAccountPurpose) -> Self {
+    pub(crate) fn readonly_signer(pubkey: Pubkey, purpose: BatchAccountPurpose) -> Self {
         Self {
             pubkey,
             is_writable: false,
@@ -105,8 +105,8 @@ impl EvalAccountMeta {
     }
 }
 
-impl From<&EvalAccountMeta> for EvalAccountRequirement {
-    fn from(meta: &EvalAccountMeta) -> Self {
+impl From<&BatchAccountMeta> for EvalAccountRequirement {
+    fn from(meta: &BatchAccountMeta) -> Self {
         Self {
             pubkey: meta.pubkey,
             is_writable: meta.is_writable,
@@ -118,9 +118,9 @@ impl From<&EvalAccountMeta> for EvalAccountRequirement {
 
 /// App authority that signs the fixed ZamaHost eval CPI account.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
-pub struct EvalAppAuthority(Pubkey);
+pub struct BatchAppAuthority(Pubkey);
 
-impl EvalAppAuthority {
+impl BatchAppAuthority {
     pub fn new(pubkey: Pubkey) -> Self {
         Self(pubkey)
     }
@@ -147,7 +147,7 @@ impl EvalOutputAuthorityRequirement {
     }
 }
 
-/// Account-list resolution failure for an [`EvalPlan`].
+/// Account-list resolution failure for an [`Batch`].
 #[cfg(feature = "cpi")]
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum EvalAccountResolutionError {
@@ -185,7 +185,7 @@ impl EvalAccountResolutionError {
     }
 }
 
-/// Ordered dynamic accounts resolved from an [`EvalPlan`].
+/// Ordered dynamic accounts resolved from an [`Batch`].
 #[cfg(feature = "cpi")]
 #[derive(Debug)]
 pub struct ResolvedEvalAccounts<'info> {
@@ -208,7 +208,7 @@ impl<'info> ResolvedEvalAccounts<'info> {
 
 #[cfg(feature = "cpi")]
 pub(crate) fn resolve_eval_accounts<'info>(
-    plan: &EvalPlan,
+    plan: &Batch,
     dynamic_accounts: impl IntoIterator<Item = AccountInfo<'info>>,
     output_authorities: impl IntoIterator<Item = AccountInfo<'info>>,
 ) -> std::result::Result<ResolvedEvalAccounts<'info>, EvalAccountResolutionError> {

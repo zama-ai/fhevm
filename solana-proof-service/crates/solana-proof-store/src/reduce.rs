@@ -91,7 +91,7 @@ fn hex32(bytes: &[u8; 32]) -> String {
 fn is_encrypted_value_account_birth(instruction: &DecodedInstruction) -> bool {
     matches!(
         instruction,
-        DecodedInstruction::FheEvalCreateEncryptedValue { .. }
+        DecodedInstruction::FheExecuteCreateEncryptedValue { .. }
     )
 }
 

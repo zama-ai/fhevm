@@ -27,12 +27,12 @@ pub struct CreateRandomAmount<'info> {
     pub host_config: Box<Account<'info, zama_host::HostConfig>>,
     /// System program used for encrypted value account creation/growth.
     pub system_program: Program<'info, System>,
-    /// CHECK: forwarded verbatim into the ZamaHost `fhe_eval` CPI, which validates it against the
+    /// CHECK: forwarded verbatim into the ZamaHost `fhe_execute` CPI, which validates it against the
     /// canonical `["hcu-block-meter", compute_signer]` PDA. Supplied by an untrusted mint under a
     /// metering-band cap; omitted when the mint is trusted or the cap is unrestricted.
     #[account(mut)]
     pub hcu_block_meter: Option<UncheckedAccount<'info>>,
-    /// CHECK: forwarded verbatim into the ZamaHost `fhe_eval` CPI, which validates it against the
+    /// CHECK: forwarded verbatim into the ZamaHost `fhe_execute` CPI, which validates it against the
     /// canonical `["hcu-trusted", compute_signer]` PDA. Present + valid bypasses the cap; absent
     /// means the mint is metered.
     pub hcu_trusted_app_record: Option<UncheckedAccount<'info>>,
@@ -87,7 +87,7 @@ fn create_random_amount_inner<'info>(
         encrypted_value_id(mint_key, owner, label),
         fhe::PersistentAudience::compute_only(ctx.accounts.compute_signer.key()),
     )?;
-    let mut builder = zama_fhe::EvalBuilder::new(zama_fhe::EvalAppAuthority::new(owner));
+    let mut builder = zama_fhe::BatchBuilder::new(zama_fhe::BatchAppAuthority::new(owner));
     match upper_bound {
         Some(upper_bound) => builder
             .rand_bounded_u64(

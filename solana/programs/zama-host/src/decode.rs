@@ -11,12 +11,12 @@ use anchor_lang::{AnchorDeserialize, Discriminator};
 pub use anchor_lang::event::EVENT_IX_TAG_LE;
 
 /// One zama-host instruction an off-chain consumer reconstructs state from:
-/// the `fhe_eval` step plan plus the three `EncryptedValue` ACL mutations.
+/// the `fhe_execute` step plan plus the three `EncryptedValue` ACL mutations.
 /// Payloads are decoded through the generated `crate::instruction` structs and
 /// their `Discriminator` consts, so the fields are the handler arguments.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum ZamaHostInstruction {
-    FheEval(crate::state::FheEvalArgs),
+    FheExecute(crate::state::FheExecuteArgs),
     AllowSubjects {
         subjects: Vec<anchor_lang::prelude::Pubkey>,
     },
@@ -63,9 +63,11 @@ pub fn decode_instruction(
             }
         };
     }
-    arm!(FheEval, "fhe_eval", |args: crate::instruction::FheEval| {
-        ZamaHostInstruction::FheEval(args.args)
-    });
+    arm!(
+        FheExecute,
+        "fhe_execute",
+        |args: crate::instruction::FheExecute| { ZamaHostInstruction::FheExecute(args.args) }
+    );
     arm!(
         AllowSubjects,
         "allow_subjects",
@@ -96,11 +98,11 @@ pub fn decode_instruction(
     Ok(None)
 }
 
-/// Whether `instruction_data` carries the `fhe_eval` discriminator. Cheaper
+/// Whether `instruction_data` carries the `fhe_execute` discriminator. Cheaper
 /// than [`decode_instruction`] for callers that only route on the instruction
 /// kind before deciding whether to decode the full step plan.
-pub fn is_fhe_eval_instruction(instruction_data: &[u8]) -> bool {
-    instruction_data.starts_with(crate::instruction::FheEval::DISCRIMINATOR)
+pub fn is_fhe_execute_instruction(instruction_data: &[u8]) -> bool {
+    instruction_data.starts_with(crate::instruction::FheExecute::DISCRIMINATOR)
 }
 
 /// Whether `instruction_data` is the event self-CPI carrying event `T`
@@ -148,8 +150,8 @@ mod tests {
     #[test]
     fn generated_discriminators_match_anchor_derivation() {
         assert_eq!(
-            crate::instruction::FheEval::DISCRIMINATOR,
-            sha256_discriminator("global", "fhe_eval")
+            crate::instruction::FheExecute::DISCRIMINATOR,
+            sha256_discriminator("global", "fhe_execute")
         );
         assert_eq!(
             crate::instruction::AllowSubjects::DISCRIMINATOR,
@@ -168,8 +170,8 @@ mod tests {
             sha256_discriminator("event", "PublicOutputsProducedEvent")
         );
         assert_eq!(
-            crate::events::FheEvalRandomSeedsEvent::DISCRIMINATOR,
-            sha256_discriminator("event", "FheEvalRandomSeedsEvent")
+            crate::events::FheExecuteRandomSeedsEvent::DISCRIMINATOR,
+            sha256_discriminator("event", "FheExecuteRandomSeedsEvent")
         );
     }
 

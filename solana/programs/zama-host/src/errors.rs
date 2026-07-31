@@ -104,33 +104,33 @@ pub enum ZamaHostError {
     PdaCreationMismatch,
     /// An FHE eval instruction exceeded the supported operation count.
     #[msg("FHE eval operation count is invalid")]
-    InvalidFheEvalOperationCount,
+    InvalidFheExecuteOperationCount,
     /// An FHE eval instruction referenced a missing or malformed dynamic account.
     #[msg("FHE eval account reference is invalid")]
-    InvalidFheEvalAccount,
+    InvalidFheExecuteAccount,
     /// An FHE eval instruction referenced a transient output that was not produced earlier.
     #[msg("FHE eval transient operand is missing")]
-    FheEvalAllowedLocalMissing,
+    FheExecuteAllowedLocalMissing,
     /// An FHE eval instruction produced the same transient handle twice.
     #[msg("FHE eval output handle is duplicated")]
-    FheEvalDuplicateHandle,
+    FheExecuteDuplicateHandle,
     /// An FHE eval persistent output account already exists.
     #[msg("FHE eval persistent output ACL record already exists")]
-    FheEvalOutputAlreadyInitialized,
+    FheExecuteOutputAlreadyInitialized,
     /// A frame containing a rand step must declare at least one persistent output,
     /// which anchors the compulsorily fresh rand seed (fhevm-internal#1853 W4).
     #[msg("FHE eval rand step requires a persistent output in the frame")]
-    FheEvalRandRequiresPersistentOutput,
+    FheExecuteRandRequiresPersistentOutput,
     /// A KMS context was defined with a duplicate signer address.
     #[msg("KMS context signer set contains a duplicate address")]
     DuplicateKmsSigner,
-    /// The coprocessor-attested contract does not match the `fhe_eval` compute subject.
+    /// The coprocessor-attested contract does not match the `fhe_execute` compute subject.
     #[msg("attested contract address does not match the output app account")]
     InputBindContractMismatch,
-    /// An `fhe_eval` frame's summed HCU exceeds `max_hcu_per_tx` (or the running sum overflowed).
+    /// An `fhe_execute` frame's summed HCU exceeds `max_hcu_per_tx` (or the running sum overflowed).
     #[msg("FHE op total HCU exceeds the per-transaction limit")]
     HcuTransactionLimitExceeded,
-    /// An `fhe_eval` value's critical-path HCU exceeds `max_hcu_depth_per_tx` (or the depth sum overflowed).
+    /// An `fhe_execute` value's critical-path HCU exceeds `max_hcu_depth_per_tx` (or the depth sum overflowed).
     #[msg("FHE op depth HCU exceeds the per-transaction depth limit")]
     HcuTransactionDepthLimitExceeded,
     /// The HCU cost table has no row for this op / FHE type / scalar combination (fail-closed).
@@ -221,7 +221,7 @@ pub enum ZamaHostError {
     /// Such a frame is also value-less — its transient outputs create no ACL leaf and are
     /// undecryptable — so it is rejected outright.
     #[msg("FHE eval frame anchors no persistent/verified binding under a finite HCU block cap")]
-    FheEvalUnanchoredUnderBlockCap,
+    FheExecuteUnanchoredUnderBlockCap,
 
     // ---- stateless public-decrypt verifier (verify_public_decrypt, fhevm-internal#1704) ----
     /// The supplied KMS context account is destroyed, is not the canonical PDA for the id the
@@ -282,20 +282,20 @@ pub enum ZamaHostError {
     #[msg("clock is before the unix epoch")]
     ClockBeforeEpoch,
 
-    /// A step referenced an interned dictionary index past the end of `FheEvalArgs::dictionary`.
+    /// A step referenced an interned dictionary index past the end of `FheExecuteArgs::dictionary`.
     #[msg("FHE eval dictionary index out of bounds")]
-    FheEvalDictionaryIndexOutOfBounds,
-    /// `FheEvalArgs::account_count` does not match the actual remaining-accounts length.
+    FheExecuteDictionaryIndexOutOfBounds,
+    /// `FheExecuteArgs::account_count` does not match the actual remaining-accounts length.
     #[msg("FHE eval declared account count mismatch")]
-    FheEvalAccountCountMismatch,
+    FheExecuteAccountCountMismatch,
     /// An `AllowedPersistent` operand referenced an account written by an earlier step.
     /// In-frame dependencies must use `AllowedLocal`.
     #[msg("FHE eval persistent operand was written earlier in the frame")]
-    FheEvalPersistentOperandWrittenEarlier,
+    FheExecutePersistentOperandWrittenEarlier,
     /// An interned dictionary entry was never referenced by any step; a frame must not
     /// carry dead bytes.
     #[msg("FHE eval dictionary entry is not referenced by any step")]
-    FheEvalDictionaryEntryUnreferenced,
+    FheExecuteDictionaryEntryUnreferenced,
     /// `0` is not a valid per-tx HCU limit: `u64::MAX` is the single "unlimited"
     /// sentinel across every HCU knob, and a `0` limit would reject every frame.
     #[msg("0 is not a valid HCU limit; use u64::MAX for unlimited")]

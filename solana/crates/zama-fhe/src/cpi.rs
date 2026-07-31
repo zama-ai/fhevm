@@ -1,4 +1,4 @@
-//! CPI assembly: turns an `EvalPlan` plus resolved accounts into the host call.
+//! CPI assembly: turns an `Batch` plus resolved accounts into the host call.
 
 #[cfg(feature = "cpi")]
 use anchor_lang::{
@@ -14,16 +14,16 @@ use anchor_lang::{
 use anchor_lang::prelude::Pubkey;
 
 #[cfg(feature = "cpi")]
-use crate::accounts::{EvalAccountResolutionError, EvalAppAuthority, ResolvedEvalAccounts};
+use crate::accounts::{BatchAppAuthority, EvalAccountResolutionError, ResolvedEvalAccounts};
 #[cfg(feature = "cpi")]
-use crate::builder::EvalBuilder;
+use crate::builder::BatchBuilder;
 #[cfg(feature = "cpi")]
-use crate::plan::EvalPlan;
+use crate::plan::Batch;
 #[cfg(feature = "cpi")]
-use crate::{EvalBuildError, Result};
+use crate::{BatchBuildError, Result};
 
 #[cfg(feature = "cpi")]
-pub struct EvalCpiAccounts<'a, 'info> {
+pub struct BatchCpiAccounts<'a, 'info> {
     pub payer: AccountInfo<'info>,
     pub compute_subject: AccountInfo<'info>,
     pub account_authority: AccountInfo<'info>,
@@ -56,9 +56,9 @@ impl<'info> EvalAccountResolver<'info> for ResolvedEvalAccounts<'info> {
 /// Failure returned by the closure-based CPI eval helper.
 #[cfg(feature = "cpi")]
 #[derive(Debug)]
-pub enum EvalInvokeError {
+pub enum BatchInvokeError {
     /// The closure produced an invalid eval frame.
-    Build(EvalBuildError),
+    Build(BatchBuildError),
     /// The supplied dynamic accounts or output authority witnesses do not
     /// satisfy the built plan.
     AccountResolution(EvalAccountResolutionError),
@@ -67,69 +67,69 @@ pub enum EvalInvokeError {
 }
 
 #[cfg(feature = "cpi")]
-impl From<EvalBuildError> for EvalInvokeError {
-    fn from(error: EvalBuildError) -> Self {
+impl From<BatchBuildError> for BatchInvokeError {
+    fn from(error: BatchBuildError) -> Self {
         Self::Build(error)
     }
 }
 
 #[cfg(feature = "cpi")]
-impl From<EvalAccountResolutionError> for EvalInvokeError {
+impl From<EvalAccountResolutionError> for BatchInvokeError {
     fn from(error: EvalAccountResolutionError) -> Self {
         Self::AccountResolution(error)
     }
 }
 
 #[cfg(feature = "cpi")]
-impl From<anchor_lang::error::Error> for EvalInvokeError {
+impl From<anchor_lang::error::Error> for BatchInvokeError {
     fn from(error: anchor_lang::error::Error) -> Self {
         Self::Cpi(error)
     }
 }
 
 /// Builds an eval plan with a closure, resolves its dynamic accounts, and
-/// invokes `zama-host::fhe_eval`.
+/// invokes `zama-host::fhe_execute`.
 ///
 /// `dynamic_accounts` and additional `output_authorities` may be in any order.
 /// The fixed CPI `account_authority` is included automatically. The SDK
 /// validates the supplied accounts against the plan produced by the closure
 /// before constructing the ordered host account list used by
-/// [`invoke_eval_signed_resolved`].
+/// [`invoke_batch_signed_resolved`].
 #[cfg(feature = "cpi")]
-pub fn invoke_eval_signed_with_builder<'a, 'info, T, F>(
-    app_authority: EvalAppAuthority,
-    accounts: EvalCpiAccounts<'a, 'info>,
+pub fn invoke_batch_signed_with_builder<'a, 'info, T, F>(
+    app_authority: BatchAppAuthority,
+    accounts: BatchCpiAccounts<'a, 'info>,
     dynamic_accounts: impl IntoIterator<Item = AccountInfo<'info>>,
     output_authorities: impl IntoIterator<Item = AccountInfo<'info>>,
     signer_seeds: &[&[&[u8]]],
     build: F,
-) -> std::result::Result<(), EvalInvokeError>
+) -> std::result::Result<(), BatchInvokeError>
 where
-    F: FnOnce(&mut EvalBuilder) -> Result<T>,
+    F: FnOnce(&mut BatchBuilder) -> Result<T>,
 {
-    let plan = EvalPlan::build(app_authority, build)?;
+    let plan = Batch::build(app_authority, build)?;
     let mut output_authorities = output_authorities.into_iter().collect::<Vec<_>>();
     output_authorities.insert(0, accounts.account_authority.clone());
     let resolved_accounts = plan.resolve_accounts(dynamic_accounts, output_authorities)?;
-    invoke_eval_signed_resolved(&plan, accounts, &resolved_accounts, signer_seeds)?;
+    invoke_batch_signed_resolved(&plan, accounts, &resolved_accounts, signer_seeds)?;
     Ok(())
 }
 
-/// Invokes `zama-host::fhe_eval` with accounts pre-resolved from an [`EvalPlan`].
+/// Invokes `zama-host::fhe_execute` with accounts pre-resolved from an [`Batch`].
 #[cfg(feature = "cpi")]
-pub fn invoke_eval_signed_resolved<'a, 'info>(
-    plan: &EvalPlan,
-    accounts: EvalCpiAccounts<'a, 'info>,
+pub fn invoke_batch_signed_resolved<'a, 'info>(
+    plan: &Batch,
+    accounts: BatchCpiAccounts<'a, 'info>,
     resolved_accounts: &ResolvedEvalAccounts<'info>,
     signer_seeds: &[&[&[u8]]],
 ) -> anchor_lang::prelude::Result<()> {
-    invoke_eval_signed_with_resolver(plan, accounts, resolved_accounts, signer_seeds)
+    invoke_batch_signed_with_resolver(plan, accounts, resolved_accounts, signer_seeds)
 }
 
 #[cfg(feature = "cpi")]
-fn invoke_eval_signed_with_resolver<'a, 'info, R>(
-    plan: &EvalPlan,
-    accounts: EvalCpiAccounts<'a, 'info>,
+fn invoke_batch_signed_with_resolver<'a, 'info, R>(
+    plan: &Batch,
+    accounts: BatchCpiAccounts<'a, 'info>,
     resolver: &R,
     signer_seeds: &[&[&[u8]]],
 ) -> anchor_lang::prelude::Result<()>
@@ -140,7 +140,7 @@ where
         return Err(anchor_lang::error::ErrorCode::ConstraintAddress.into());
     }
     let deny_subject_records = accounts.deny_subject_records;
-    let fixed_accounts = zama_host::cpi::accounts::FheEval {
+    let fixed_accounts = zama_host::cpi::accounts::FheExecute {
         payer: accounts.payer,
         compute_subject: accounts.compute_subject,
         account_authority: accounts.account_authority,
@@ -179,7 +179,7 @@ where
     let instruction = Instruction {
         program_id: fixed_accounts.program.key(),
         accounts: account_metas,
-        data: zama_host::instruction::FheEval { args }.data(),
+        data: zama_host::instruction::FheExecute { args }.data(),
     };
 
     invoke_signed(&instruction, &account_infos, signer_seeds)?;

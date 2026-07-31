@@ -6,7 +6,8 @@ use zama_host::{
     assert_binary_operand_types, assert_is_in_operand_types, assert_mul_div_operand_types,
     assert_sum_operand_types, assert_supported_fhe_type, assert_supported_rand_type,
     assert_unary_operand_type, assert_valid_bounded_rand_upper_bound, handle_fhe_type,
-    FheBinaryOpCode, FheEvalArgs, FheEvalOperand, FheEvalStep, FheTernaryOpCode, FheUnaryOpCode,
+    FheBinaryOpCode, FheExecuteArgs, FheExecuteOperand, FheExecuteStep, FheTernaryOpCode,
+    FheUnaryOpCode,
 };
 
 pub type Handle = [u8; 32];
@@ -67,20 +68,23 @@ impl ClearValue {
     }
 }
 
-/// Evaluates step-level cleartext compute from canonical `FheEvalArgs` without Solana or TFHE.
+/// Evaluates step-level cleartext compute from canonical `FheExecuteArgs` without Solana or TFHE.
 ///
 /// Arithmetic follows the canonical host/worker width and type rules. Random steps deliberately
 /// use a deterministic local PRNG: they are mock values, not predictions of TFHE's oblivious PRG.
 /// The returned values are ordered by step index, matching `AllowedLocal::producer_index`.
 /// This is not host preflight: output descriptors, account indices, attestations, and ACL checks
 /// are intentionally ignored.
-pub fn evaluate(args: &FheEvalArgs, inputs: &ClearInputs) -> Result<Vec<TypedClearValue>, String> {
+pub fn evaluate(
+    args: &FheExecuteArgs,
+    inputs: &ClearInputs,
+) -> Result<Vec<TypedClearValue>, String> {
     let mut produced = Vec::<ClearValue>::with_capacity(args.steps.len());
     let mut random = StdRng::from_seed([7; 32]);
 
     for step in &args.steps {
         let value = match step {
-            FheEvalStep::Binary {
+            FheExecuteStep::Binary {
                 op,
                 lhs,
                 rhs,
@@ -95,7 +99,7 @@ pub fn evaluate(args: &FheEvalArgs, inputs: &ClearInputs) -> Result<Vec<TypedCle
                 inputs,
                 &produced,
             )?,
-            FheEvalStep::Ternary {
+            FheExecuteStep::Ternary {
                 op,
                 control,
                 if_true,
@@ -110,7 +114,7 @@ pub fn evaluate(args: &FheEvalArgs, inputs: &ClearInputs) -> Result<Vec<TypedCle
                 let control = resolve_encrypted(control, &args.dictionary, inputs, &produced)?;
                 let if_true = resolve_encrypted(if_true, &args.dictionary, inputs, &produced)?;
                 let if_false = resolve_encrypted(if_false, &args.dictionary, inputs, &produced)?;
-                // Mirrors `fhe_eval::assert_ternary_operand_types`; keep the malformed-ternary
+                // Mirrors `fhe_execute::assert_ternary_operand_types`; keep the malformed-ternary
                 // cases in `operator_conformance.rs::rejected::ternary` aligned with it.
                 if control.fhe_type != 0
                     || if_true.fhe_type != *output_fhe_type
@@ -128,7 +132,7 @@ pub fn evaluate(args: &FheEvalArgs, inputs: &ClearInputs) -> Result<Vec<TypedCle
                     }
                 }
             }
-            FheEvalStep::TrivialEncrypt {
+            FheExecuteStep::TrivialEncrypt {
                 plaintext,
                 fhe_type,
                 ..
@@ -141,7 +145,7 @@ pub fn evaluate(args: &FheEvalArgs, inputs: &ClearInputs) -> Result<Vec<TypedCle
                 };
                 ClearValue::new(*fhe_type, value)?
             }
-            FheEvalStep::Rand { fhe_type, .. } => {
+            FheExecuteStep::Rand { fhe_type, .. } => {
                 canonical(assert_supported_rand_type(*fhe_type), "rand")?;
                 let mut value = random_biguint(&mut random);
                 if *fhe_type == 0 {
@@ -149,7 +153,7 @@ pub fn evaluate(args: &FheEvalArgs, inputs: &ClearInputs) -> Result<Vec<TypedCle
                 }
                 ClearValue::new(*fhe_type, value)?
             }
-            FheEvalStep::Unary {
+            FheExecuteStep::Unary {
                 op,
                 operand,
                 output_fhe_type,
@@ -159,7 +163,7 @@ pub fn evaluate(args: &FheEvalArgs, inputs: &ClearInputs) -> Result<Vec<TypedCle
                 resolve_encrypted(operand, &args.dictionary, inputs, &produced)?,
                 *output_fhe_type,
             )?,
-            FheEvalStep::RandBounded {
+            FheExecuteStep::RandBounded {
                 upper_bound,
                 fhe_type,
                 ..
@@ -171,7 +175,7 @@ pub fn evaluate(args: &FheEvalArgs, inputs: &ClearInputs) -> Result<Vec<TypedCle
                 let bound = BigUint::from_bytes_be(upper_bound);
                 ClearValue::new(*fhe_type, random_biguint(&mut random) % bound)?
             }
-            FheEvalStep::Sum {
+            FheExecuteStep::Sum {
                 operands, fhe_type, ..
             } => {
                 let values = operands
@@ -185,7 +189,7 @@ pub fn evaluate(args: &FheEvalArgs, inputs: &ClearInputs) -> Result<Vec<TypedCle
                 canonical(assert_sum_operand_types(&handles, *fhe_type), "sum")?;
                 ClearValue::new(*fhe_type, values.into_iter().map(|value| value.value).sum())?
             }
-            FheEvalStep::IsIn {
+            FheExecuteStep::IsIn {
                 value,
                 set,
                 fhe_type,
@@ -209,7 +213,7 @@ pub fn evaluate(args: &FheEvalArgs, inputs: &ClearInputs) -> Result<Vec<TypedCle
                     BigUint::from(u8::from(set.iter().any(|item| item.value == value.value))),
                 )?
             }
-            FheEvalStep::MulDiv {
+            FheExecuteStep::MulDiv {
                 factor1,
                 factor2,
                 divisor,
@@ -235,7 +239,7 @@ fn eval_binary(
     dictionary: &[[u8; 32]],
     op: FheBinaryOpCode,
     lhs: ClearValue,
-    rhs_operand: &FheEvalOperand,
+    rhs_operand: &FheExecuteOperand,
     output_fhe_type: u8,
     inputs: &ClearInputs,
     produced: &[ClearValue],
@@ -298,7 +302,7 @@ fn eval_unary(
 fn eval_mul_div(
     dictionary: &[[u8; 32]],
     factor1: ClearValue,
-    factor2_operand: &FheEvalOperand,
+    factor2_operand: &FheExecuteOperand,
     divisor: [u8; 32],
     output_fhe_type: u8,
     inputs: &ClearInputs,
@@ -333,14 +337,14 @@ fn resolve_pool_bytes(dictionary: &[[u8; 32]], index: u8) -> Result<[u8; 32], St
 }
 
 fn resolve_rhs(
-    operand: &FheEvalOperand,
+    operand: &FheExecuteOperand,
     dictionary: &[[u8; 32]],
     fhe_type: u8,
     inputs: &ClearInputs,
     produced: &[ClearValue],
 ) -> Result<(ClearValue, Handle, bool), String> {
     match operand {
-        FheEvalOperand::Scalar { value_index } => {
+        FheExecuteOperand::Scalar { value_index } => {
             let bytes = resolve_pool_bytes(dictionary, *value_index)?;
             Ok((
                 ClearValue::new(fhe_type, BigUint::from_bytes_be(&bytes))?,
@@ -357,27 +361,27 @@ fn resolve_rhs(
 }
 
 fn resolve_encrypted(
-    operand: &FheEvalOperand,
+    operand: &FheExecuteOperand,
     dictionary: &[[u8; 32]],
     inputs: &ClearInputs,
     produced: &[ClearValue],
 ) -> Result<ClearValue, String> {
     let (handle, value) = match operand {
-        FheEvalOperand::AllowedPersistent { handle_index, .. } => {
+        FheExecuteOperand::AllowedPersistent { handle_index, .. } => {
             let handle = resolve_pool_bytes(dictionary, *handle_index)?;
             (handle, inputs.get(&handle))
         }
-        FheEvalOperand::VerifiedInput { attestation } => {
+        FheExecuteOperand::VerifiedInput { attestation } => {
             let handle = attestation.input_handle;
             (handle, inputs.get(&handle))
         }
-        FheEvalOperand::AllowedLocal { producer_index } => {
+        FheExecuteOperand::AllowedLocal { producer_index } => {
             return produced
                 .get(*producer_index as usize)
                 .cloned()
                 .ok_or_else(|| format!("missing earlier local output {producer_index}"));
         }
-        FheEvalOperand::Scalar { .. } => {
+        FheExecuteOperand::Scalar { .. } => {
             return Err("scalar is not valid in this operand position".into())
         }
     };

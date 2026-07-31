@@ -16,7 +16,7 @@ use solana_proof_store::{
     DecodedInstruction, EncryptedValueAccountReplayState, LeafKind,
     PriorEncryptedValueAccountState, SemanticLeafKey, SqlProofStore,
 };
-use zama_host::state::{FheEvalArgs, FheEvalOutput, FheEvalStep};
+use zama_host::state::{FheExecuteArgs, FheExecuteOutput, FheExecuteStep};
 use zama_solana_acl::mmr::{mmr_build_proof, mmr_peaks_from_leaves, mmr_verify};
 use zama_solana_acl::public_decrypt_leaf_commitment;
 use zama_solana_acl::value_account::reconstruct;
@@ -50,12 +50,12 @@ fn ix(accounts: Vec<[u8; 32]>, name: &str, args: impl BorshSerialize) -> RawInst
     }
 }
 
-/// Builds an `fhe_eval` instruction with one persistent output on `ev`:
+/// Builds an `fhe_execute` instruction with one persistent output on `ev`:
 /// a creation when `previous` is `None`, an update (update of
 /// `previous_handle` over `previous_subjects`) when `Some`. The output
 /// audience equals `subjects`. Mirrors the real anchor account layout:
 /// 9 named accounts, then `ev` as the single remaining account.
-fn fhe_eval_ix(
+fn fhe_execute_ix(
     ev: [u8; 32],
     subjects: &[[u8; 32]],
     previous: Option<([u8; 32], Vec<[u8; 32]>)>,
@@ -65,10 +65,10 @@ fn fhe_eval_ix(
     let mut dictionary = vec![pk(0x71), pk(0x72), pk(0x73)];
     let subject_base = dictionary.len() as u8;
     dictionary.extend_from_slice(subjects);
-    let step = FheEvalStep::TrivialEncrypt {
+    let step = FheExecuteStep::TrivialEncrypt {
         plaintext: pk(0x70),
         fhe_type: 5,
-        output: FheEvalOutput::AllowedPersistent {
+        output: FheExecuteOutput::AllowedPersistent {
             output_encrypted_value_index: 0,
             output_account_authority_index: None,
             output_domain_index: 0,
@@ -87,7 +87,7 @@ fn fhe_eval_ix(
             make_public: false,
         },
     };
-    let args = FheEvalArgs {
+    let args = FheExecuteArgs {
         account_count: 1,
         dictionary,
         steps: vec![step],
@@ -105,11 +105,11 @@ fn fhe_eval_ix(
     ];
     let mut accounts = named;
     accounts.push(ev);
-    ix(accounts, "fhe_eval", args)
+    ix(accounts, "fhe_execute", args)
 }
 
 fn create_ix(ev: [u8; 32], subject: [u8; 32]) -> RawInstruction {
-    fhe_eval_ix(ev, &[subject], None)
+    fhe_execute_ix(ev, &[subject], None)
 }
 
 fn update_ix(
@@ -117,7 +117,7 @@ fn update_ix(
     previous_handle: [u8; 32],
     previous_subjects: Vec<[u8; 32]>,
 ) -> RawInstruction {
-    fhe_eval_ix(
+    fhe_execute_ix(
         ev,
         &previous_subjects.clone(),
         Some((previous_handle, previous_subjects)),
@@ -416,7 +416,7 @@ async fn public_decrypt_resolves_duplicate_leaves_to_earliest() {
     let ev = pk(0xE9);
     let owner = pk(0x30);
     let handle = pk(0x10);
-    // create records no handle and no leaf (an fhe_eval output handle is unresolvable without
+    // create records no handle and no leaf (an fhe_execute output handle is unresolvable without
     // slot entropy); the two public seals of the SAME handle then mirror a created-public lifecycle
     // leaf at index 0 followed by an explicit make_handle_public re-release at index 1 — both
     // append a public-decrypt leaf for the one handle.

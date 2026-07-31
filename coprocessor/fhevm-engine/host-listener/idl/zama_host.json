@@ -369,16 +369,16 @@
       ]
     },
     {
-      "name": "fhe_eval",
+      "name": "fhe_execute",
       "discriminator": [
-        176,
-        42,
-        63,
-        177,
-        244,
-        167,
-        120,
-        109
+        96,
+        253,
+        7,
+        139,
+        8,
+        187,
+        108,
+        43
       ],
       "accounts": [
         {
@@ -472,7 +472,7 @@
           "name": "args",
           "type": {
             "defined": {
-              "name": "FheEvalArgs"
+              "name": "FheExecuteArgs"
             }
           }
         }
@@ -1067,7 +1067,7 @@
     {
       "name": "set_hcu_block_cap_per_app",
       "docs": [
-        "Sets the per-app, per-slot HCU block cap enforced in `fhe_eval`."
+        "Sets the per-app, per-slot HCU block cap enforced in `fhe_execute`."
       ],
       "discriminator": [
         54,
@@ -1461,16 +1461,16 @@
       ]
     },
     {
-      "name": "FheEvalRandomSeedsEvent",
+      "name": "FheExecuteRandomSeedsEvent",
       "discriminator": [
-        17,
-        21,
-        221,
-        157,
-        209,
-        142,
-        88,
-        122
+        0,
+        146,
+        84,
+        152,
+        187,
+        240,
+        0,
+        20
       ]
     },
     {
@@ -1827,32 +1827,32 @@
     },
     {
       "code": 6031,
-      "name": "InvalidFheEvalOperationCount",
+      "name": "InvalidFheExecuteOperationCount",
       "msg": "FHE eval operation count is invalid"
     },
     {
       "code": 6032,
-      "name": "InvalidFheEvalAccount",
+      "name": "InvalidFheExecuteAccount",
       "msg": "FHE eval account reference is invalid"
     },
     {
       "code": 6033,
-      "name": "FheEvalAllowedLocalMissing",
+      "name": "FheExecuteAllowedLocalMissing",
       "msg": "FHE eval transient operand is missing"
     },
     {
       "code": 6034,
-      "name": "FheEvalDuplicateHandle",
+      "name": "FheExecuteDuplicateHandle",
       "msg": "FHE eval output handle is duplicated"
     },
     {
       "code": 6035,
-      "name": "FheEvalOutputAlreadyInitialized",
+      "name": "FheExecuteOutputAlreadyInitialized",
       "msg": "FHE eval persistent output ACL record already exists"
     },
     {
       "code": 6036,
-      "name": "FheEvalRandRequiresPersistentOutput",
+      "name": "FheExecuteRandRequiresPersistentOutput",
       "msg": "FHE eval rand step requires a persistent output in the frame"
     },
     {
@@ -1992,7 +1992,7 @@
     },
     {
       "code": 6064,
-      "name": "FheEvalUnanchoredUnderBlockCap",
+      "name": "FheExecuteUnanchoredUnderBlockCap",
       "msg": "FHE eval frame anchors no persistent/verified binding under a finite HCU block cap"
     },
     {
@@ -2057,22 +2057,22 @@
     },
     {
       "code": 6077,
-      "name": "FheEvalDictionaryIndexOutOfBounds",
+      "name": "FheExecuteDictionaryIndexOutOfBounds",
       "msg": "FHE eval dictionary index out of bounds"
     },
     {
       "code": 6078,
-      "name": "FheEvalAccountCountMismatch",
+      "name": "FheExecuteAccountCountMismatch",
       "msg": "FHE eval declared account count mismatch"
     },
     {
       "code": 6079,
-      "name": "FheEvalPersistentOperandWrittenEarlier",
+      "name": "FheExecutePersistentOperandWrittenEarlier",
       "msg": "FHE eval persistent operand was written earlier in the frame"
     },
     {
       "code": 6080,
-      "name": "FheEvalDictionaryEntryUnreferenced",
+      "name": "FheExecuteDictionaryEntryUnreferenced",
       "msg": "FHE eval dictionary entry is not referenced by any step"
     },
     {
@@ -2085,7 +2085,7 @@
     {
       "name": "CoprocessorInputAttestation",
       "docs": [
-        "A coprocessor input attestation carried inline by a [`FheEvalOperand::VerifiedInput`], re-verified",
+        "A coprocessor input attestation carried inline by a [`FheExecuteOperand::VerifiedInput`], re-verified",
         "in-frame (no account, no PDA) — the instruction-local analog of EVM `allowTransient(input, contract)`."
       ],
       "type": {
@@ -2381,7 +2381,7 @@
       }
     },
     {
-      "name": "FheEvalArgs",
+      "name": "FheExecuteArgs",
       "docs": [
         "Arguments for composed instruction-local FHE evaluation."
       ],
@@ -2423,7 +2423,7 @@
             "type": {
               "vec": {
                 "defined": {
-                  "name": "FheEvalStep"
+                  "name": "FheExecuteStep"
                 }
               }
             }
@@ -2432,7 +2432,7 @@
       }
     },
     {
-      "name": "FheEvalOperand",
+      "name": "FheExecuteOperand",
       "docs": [
         "Operand source for a composed FHE eval operation."
       ],
@@ -2502,7 +2502,7 @@
       }
     },
     {
-      "name": "FheEvalOutput",
+      "name": "FheExecuteOutput",
       "docs": [
         "Output policy for a composed FHE eval operation."
       ],
@@ -2612,9 +2612,9 @@
       }
     },
     {
-      "name": "FheEvalRandomSeed",
+      "name": "FheExecuteRandomSeed",
       "docs": [
-        "One host-derived random seed used by an `fhe_eval` step."
+        "One host-derived random seed used by an `fhe_execute` step."
       ],
       "type": {
         "kind": "struct",
@@ -2642,9 +2642,9 @@
       }
     },
     {
-      "name": "FheEvalRandomSeedsEvent",
+      "name": "FheExecuteRandomSeedsEvent",
       "docs": [
-        "Emitted once for the random steps in an `fhe_eval` frame."
+        "Emitted once for the random steps in an `fhe_execute` frame."
       ],
       "type": {
         "kind": "struct",
@@ -2664,7 +2664,7 @@
             "type": {
               "vec": {
                 "defined": {
-                  "name": "FheEvalRandomSeed"
+                  "name": "FheExecuteRandomSeed"
                 }
               }
             }
@@ -2673,7 +2673,7 @@
       }
     },
     {
-      "name": "FheEvalStep",
+      "name": "FheExecuteStep",
       "docs": [
         "One step inside a composed FHE eval."
       ],
@@ -2701,7 +2701,7 @@
                 ],
                 "type": {
                   "defined": {
-                    "name": "FheEvalOperand"
+                    "name": "FheExecuteOperand"
                   }
                 }
               },
@@ -2712,7 +2712,7 @@
                 ],
                 "type": {
                   "defined": {
-                    "name": "FheEvalOperand"
+                    "name": "FheExecuteOperand"
                   }
                 }
               },
@@ -2730,7 +2730,7 @@
                 ],
                 "type": {
                   "defined": {
-                    "name": "FheEvalOutput"
+                    "name": "FheExecuteOutput"
                   }
                 }
               }
@@ -2757,7 +2757,7 @@
                 ],
                 "type": {
                   "defined": {
-                    "name": "FheEvalOperand"
+                    "name": "FheExecuteOperand"
                   }
                 }
               },
@@ -2768,7 +2768,7 @@
                 ],
                 "type": {
                   "defined": {
-                    "name": "FheEvalOperand"
+                    "name": "FheExecuteOperand"
                   }
                 }
               },
@@ -2779,7 +2779,7 @@
                 ],
                 "type": {
                   "defined": {
-                    "name": "FheEvalOperand"
+                    "name": "FheExecuteOperand"
                   }
                 }
               },
@@ -2797,7 +2797,7 @@
                 ],
                 "type": {
                   "defined": {
-                    "name": "FheEvalOutput"
+                    "name": "FheExecuteOutput"
                   }
                 }
               }
@@ -2832,7 +2832,7 @@
                 ],
                 "type": {
                   "defined": {
-                    "name": "FheEvalOutput"
+                    "name": "FheExecuteOutput"
                   }
                 }
               }
@@ -2855,7 +2855,7 @@
                 ],
                 "type": {
                   "defined": {
-                    "name": "FheEvalOutput"
+                    "name": "FheExecuteOutput"
                   }
                 }
               }
@@ -2882,7 +2882,7 @@
                 ],
                 "type": {
                   "defined": {
-                    "name": "FheEvalOperand"
+                    "name": "FheExecuteOperand"
                   }
                 }
               },
@@ -2900,7 +2900,7 @@
                 ],
                 "type": {
                   "defined": {
-                    "name": "FheEvalOutput"
+                    "name": "FheExecuteOutput"
                   }
                 }
               }
@@ -2935,7 +2935,7 @@
                 ],
                 "type": {
                   "defined": {
-                    "name": "FheEvalOutput"
+                    "name": "FheExecuteOutput"
                   }
                 }
               }
@@ -2952,7 +2952,7 @@
                 "type": {
                   "vec": {
                     "defined": {
-                      "name": "FheEvalOperand"
+                      "name": "FheExecuteOperand"
                     }
                   }
                 }
@@ -2971,7 +2971,7 @@
                 ],
                 "type": {
                   "defined": {
-                    "name": "FheEvalOutput"
+                    "name": "FheExecuteOutput"
                   }
                 }
               }
@@ -2987,7 +2987,7 @@
                 ],
                 "type": {
                   "defined": {
-                    "name": "FheEvalOperand"
+                    "name": "FheExecuteOperand"
                   }
                 }
               },
@@ -2999,7 +2999,7 @@
                 "type": {
                   "vec": {
                     "defined": {
-                      "name": "FheEvalOperand"
+                      "name": "FheExecuteOperand"
                     }
                   }
                 }
@@ -3018,7 +3018,7 @@
                 ],
                 "type": {
                   "defined": {
-                    "name": "FheEvalOutput"
+                    "name": "FheExecuteOutput"
                   }
                 }
               }
@@ -3034,7 +3034,7 @@
                 ],
                 "type": {
                   "defined": {
-                    "name": "FheEvalOperand"
+                    "name": "FheExecuteOperand"
                   }
                 }
               },
@@ -3045,7 +3045,7 @@
                 ],
                 "type": {
                   "defined": {
-                    "name": "FheEvalOperand"
+                    "name": "FheExecuteOperand"
                   }
                 }
               },
@@ -3075,7 +3075,7 @@
                 ],
                 "type": {
                   "defined": {
-                    "name": "FheEvalOutput"
+                    "name": "FheExecuteOutput"
                   }
                 }
               }
@@ -3793,7 +3793,7 @@
           {
             "name": "max_hcu_per_tx",
             "docs": [
-              "Max total HCU summed over one `fhe_eval` plan. `u64::MAX` = unlimited",
+              "Max total HCU summed over one `fhe_execute` plan. `u64::MAX` = unlimited",
               "(enforcement off); `0` is rejected at set time."
             ],
             "type": "u64"
@@ -3801,7 +3801,7 @@
           {
             "name": "max_hcu_depth_per_tx",
             "docs": [
-              "Max critical-path (depth) HCU within one `fhe_eval` plan. `u64::MAX` =",
+              "Max critical-path (depth) HCU within one `fhe_execute` plan. `u64::MAX` =",
               "unlimited; `0` is rejected at set time."
             ],
             "type": "u64"
@@ -3809,7 +3809,7 @@
           {
             "name": "hcu_block_cap_per_app",
             "docs": [
-              "Per-app HCU budget per slot, enforced in `fhe_eval`. `u64::MAX` = unrestricted (the ship",
+              "Per-app HCU budget per slot, enforced in `fhe_execute`. `u64::MAX` = unrestricted (the ship",
               "default; short-circuits, touching no meter); `0` = ban untrusted apps (trusted still",
               "bypass) — the one knob where `0` is a real semantic; any other value is the metering band",
               "(must be `>= max_hcu_per_tx` unless that is unlimited)."
@@ -3918,14 +3918,14 @@
           {
             "name": "max_hcu_per_tx",
             "docs": [
-              "Current max total HCU per `fhe_eval` plan (`u64::MAX` = unlimited)."
+              "Current max total HCU per `fhe_execute` plan (`u64::MAX` = unlimited)."
             ],
             "type": "u64"
           },
           {
             "name": "max_hcu_depth_per_tx",
             "docs": [
-              "Current max critical-path HCU per `fhe_eval` plan (`u64::MAX` = unlimited)."
+              "Current max critical-path HCU per `fhe_execute` plan (`u64::MAX` = unlimited)."
             ],
             "type": "u64"
           },
@@ -4238,7 +4238,7 @@
     {
       "name": "ProducedPublicOutput",
       "docs": [
-        "One public persistent output produced by an `fhe_eval` frame."
+        "One public persistent output produced by an `fhe_execute` frame."
       ],
       "type": {
         "kind": "struct",
@@ -4275,7 +4275,7 @@
     {
       "name": "PublicOutputsProducedEvent",
       "docs": [
-        "Emitted once for the public outputs produced by an `fhe_eval` frame."
+        "Emitted once for the public outputs produced by an `fhe_execute` frame."
       ],
       "type": {
         "kind": "struct",

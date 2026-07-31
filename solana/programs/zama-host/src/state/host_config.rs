@@ -37,13 +37,13 @@ pub struct HostConfig {
     pub paused: bool,
     /// Enables deny-list checks for persistent grant authorities.
     pub grant_deny_list_enabled: bool,
-    /// Max total HCU summed over one `fhe_eval` plan. `u64::MAX` = unlimited
+    /// Max total HCU summed over one `fhe_execute` plan. `u64::MAX` = unlimited
     /// (enforcement off); `0` is rejected at set time.
     pub max_hcu_per_tx: u64,
-    /// Max critical-path (depth) HCU within one `fhe_eval` plan. `u64::MAX` =
+    /// Max critical-path (depth) HCU within one `fhe_execute` plan. `u64::MAX` =
     /// unlimited; `0` is rejected at set time.
     pub max_hcu_depth_per_tx: u64,
-    /// Per-app HCU budget per slot, enforced in `fhe_eval`. `u64::MAX` = unrestricted (the ship
+    /// Per-app HCU budget per slot, enforced in `fhe_execute`. `u64::MAX` = unrestricted (the ship
     /// default; short-circuits, touching no meter); `0` = ban untrusted apps (trusted still
     /// bypass) — the one knob where `0` is a real semantic; any other value is the metering band
     /// (must be `>= max_hcu_per_tx` unless that is unlimited).

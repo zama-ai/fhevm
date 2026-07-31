@@ -7,7 +7,7 @@ use anchor_lang::prelude::Pubkey;
 use crate::acl::EncryptedValueId;
 use crate::operand::Operand;
 use crate::validate::{handle_fhe_type, validate_encrypted_value_id, validate_supported_fhe_type};
-use crate::{EvalBuildError, Result};
+use crate::{BatchBuildError, Result};
 
 /// Typed FHE handle tag used by the host ABI.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -265,7 +265,7 @@ impl FheIsIn for Bytes256 {}
 /// Typed encrypted eval value.
 ///
 /// Persistent values are constructed from app account state. Transient values are
-/// returned by [`EvalBuilder`] methods and can only be fed to later steps in the
+/// returned by [`BatchBuilder`] methods and can only be fed to later steps in the
 /// same builder.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct Encrypted<T> {
@@ -279,7 +279,7 @@ impl<T: FheTyped> Encrypted<T> {
     pub fn persistent(handle: [u8; 32], key: EncryptedValueId) -> Result<Self> {
         validate_encrypted_value_id(&key)?;
         if handle_fhe_type(handle) != T::FHE_TYPE.byte() {
-            return Err(EvalBuildError::UnsupportedFheType);
+            return Err(BatchBuildError::UnsupportedFheType);
         }
         Ok(Self::from_operand(Operand::persistent(
             handle,

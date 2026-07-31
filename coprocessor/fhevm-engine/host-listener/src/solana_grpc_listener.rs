@@ -219,27 +219,27 @@ pub async fn run(
     }
 }
 
-/// Resolve a persistent `fhe_eval` step's output `EncryptedValue` PDA from the
+/// Resolve a persistent `fhe_execute` step's output `EncryptedValue` PDA from the
 /// instruction's accounts.
 ///
 /// `remaining_index` (the program's `output_encrypted_value_index`) is relative to
-/// `remaining_accounts`, which follow the 9 named `fhe_eval` accounts — payer,
+/// `remaining_accounts`, which follow the 9 named `fhe_execute` accounts — payer,
 /// compute_subject, account_authority, host_config, system_program,
 /// hcu_block_meter, hcu_trusted_app_record, then `#[event_cpi]`'s event_authority +
-/// program (see `FheEval` in fhe_eval.rs). The two optional HCU accounts are always
+/// program (see `FheExecute` in fhe_execute.rs). The two optional HCU accounts are always
 /// present in the account list (as program-id placeholders when `None`): the event_cpi
 /// pair follows them, so they can never be truncated off the tail. Returns `None` when
 /// the index is out of range; the caller treats that as a hard problem, since the
 /// persistent output would otherwise never request ciphertext material.
-/// The number of named `fhe_eval` accounts before the dynamic tail the frame's
+/// The number of named `fhe_execute` accounts before the dynamic tail the frame's
 /// `u8` indices refer to.
 const FHE_EVAL_REMAINING_BASE: usize = 9;
 
-fn fhe_eval_remaining_accounts(accounts: &[[u8; 32]]) -> &[[u8; 32]] {
+fn fhe_execute_remaining_accounts(accounts: &[[u8; 32]]) -> &[[u8; 32]] {
     accounts.get(FHE_EVAL_REMAINING_BASE..).unwrap_or(&[])
 }
 
-fn fhe_eval_persistent_encrypted_value(
+fn fhe_execute_persistent_encrypted_value(
     accounts: &[[u8; 32]],
     remaining_index: u8,
 ) -> Option<[u8; 32]> {
@@ -566,7 +566,7 @@ fn transaction_context_requirement(
 ) -> ContextRequirement {
     use crate::solana_reconstruct::{
         decode_encrypted_value_instruction, encrypted_value_material_requests,
-        is_fhe_eval_instruction,
+        is_fhe_execute_instruction,
     };
 
     let mut requirement = ContextRequirement::default();
@@ -574,7 +574,7 @@ fn transaction_context_requirement(
         .iter()
         .filter(|instruction| instruction.program == config.program_id)
     {
-        if is_fhe_eval_instruction(&instruction.data) {
+        if is_fhe_execute_instruction(&instruction.data) {
             requirement.slot_hashes = true;
             requirement.clock = true;
         } else if !has_block_time
@@ -931,12 +931,12 @@ enum ReconstructionOutcome {
 }
 
 /// Rebuilds the ingestable event set off-chain from a transaction's instructions. Covers
-/// `fhe_eval`: one compute event per step, plus a material request for each
+/// `fhe_execute`: one compute event per step, plus a material request for each
 /// `Persistent` step's result handle.
 ///
 /// `EncryptedValue` lifecycle instructions are decoded separately from the same
 /// ordered instruction list and appended to the reconstructed event set. Missing
-/// slot derivation context only suppresses `fhe_eval` recomputation; lifecycle
+/// slot derivation context only suppresses `fhe_execute` recomputation; lifecycle
 /// material requests do not need it.
 async fn reconstruct_events_for_insert(
     config: &SolanaGrpcListenerConfig,
@@ -947,15 +947,15 @@ async fn reconstruct_events_for_insert(
 ) -> Result<ReconstructionOutcome> {
     use crate::solana_adapter::{material_request, SolanaHostEvent};
     use crate::solana_reconstruct::{
-        decode_encrypted_value_instruction, decode_fhe_eval_args,
-        decode_fhe_eval_random_seeds_event, encrypted_value_account_index,
+        decode_encrypted_value_instruction, decode_fhe_execute_args,
+        decode_fhe_execute_random_seeds_event, encrypted_value_account_index,
         encrypted_value_material_requests, is_encrypted_value_instruction,
-        is_fhe_eval_instruction, reconstruct_fhe_eval_steps,
+        is_fhe_execute_instruction, reconstruct_fhe_execute_steps,
     };
 
-    // compute_subject is the 2nd named fhe_eval account. (Persistent EncryptedValue
+    // compute_subject is the 2nd named fhe_execute account. (Persistent EncryptedValue
     // PDAs live in remaining_accounts; resolved via
-    // fhe_eval_persistent_encrypted_value.)
+    // fhe_execute_persistent_encrypted_value.)
     const COMPUTE_SUBJECT_INDEX: usize = 1;
 
     let host_instructions = instructions
@@ -963,11 +963,11 @@ async fn reconstruct_events_for_insert(
         .filter(|ix| ix.program == config.program_id)
         .collect::<Vec<_>>();
     for ix in &host_instructions {
-        if is_fhe_eval_instruction(&ix.data)
-            && decode_fhe_eval_args(&ix.data).is_none()
+        if is_fhe_execute_instruction(&ix.data)
+            && decode_fhe_execute_args(&ix.data).is_none()
         {
             anyhow::bail!(
-                "reconstruct: known fhe_eval discriminator has undecodable arguments in slot {slot}"
+                "reconstruct: known fhe_execute discriminator has undecodable arguments in slot {slot}"
             );
         }
         if is_encrypted_value_instruction(&ix.data)
@@ -981,17 +981,17 @@ async fn reconstruct_events_for_insert(
     let has_lifecycle = host_instructions
         .iter()
         .any(|ix| is_encrypted_value_instruction(&ix.data));
-    let has_fhe_eval = host_instructions
+    let has_fhe_execute = host_instructions
         .iter()
-        .any(|ix| is_fhe_eval_instruction(&ix.data));
-    if !has_lifecycle && !has_fhe_eval {
+        .any(|ix| is_fhe_execute_instruction(&ix.data));
+    if !has_lifecycle && !has_fhe_execute {
         return Ok(ReconstructionOutcome::NotCovered);
     }
 
     let ctx = reconstruct_context(config, slot, slot_bank_hash, slot_clock_ts);
-    if has_fhe_eval && ctx.is_none() {
+    if has_fhe_execute && ctx.is_none() {
         anyhow::bail!(
-            "reconstruct: missing slot derivation context for covered fhe_eval in slot {slot}"
+            "reconstruct: missing slot derivation context for covered fhe_execute in slot {slot}"
         );
     }
 
@@ -1001,10 +1001,10 @@ async fn reconstruct_events_for_insert(
         if ix.program != config.program_id {
             continue;
         }
-        if let Some(plan) = decode_fhe_eval_args(&ix.data) {
+        if let Some(plan) = decode_fhe_execute_args(&ix.data) {
             let ctx = ctx
                 .as_ref()
-                .expect("covered fhe_eval requires reconstruction context");
+                .expect("covered fhe_execute requires reconstruction context");
             let subject = ix
                 .accounts
                 .get(COMPUTE_SUBJECT_INDEX)
@@ -1012,24 +1012,24 @@ async fn reconstruct_events_for_insert(
                 .unwrap_or([0u8; 32]);
             let random_seeds = instructions[instruction_index + 1..]
                 .iter()
-                .take_while(|later| !is_fhe_eval_instruction(&later.data))
+                .take_while(|later| !is_fhe_execute_instruction(&later.data))
                 .filter(|later| later.program == config.program_id)
                 .find_map(|later| {
-                    decode_fhe_eval_random_seeds_event(&later.data)
+                    decode_fhe_execute_random_seeds_event(&later.data)
                 })
                 .map(|event| event.seeds)
                 .unwrap_or_default();
             // Deterministic output handles are reconstructed from the operation
             // and operands. Random outputs use the host-signed seed batch.
-            let Some(steps) = reconstruct_fhe_eval_steps(
+            let Some(steps) = reconstruct_fhe_execute_steps(
                 &plan,
                 subject,
-                fhe_eval_remaining_accounts(&ix.accounts),
+                fhe_execute_remaining_accounts(&ix.accounts),
                 &random_seeds,
                 ctx,
             ) else {
                 anyhow::bail!(
-                    "reconstruct: incomplete fhe_eval reconstruction in slot {slot}; \
+                    "reconstruct: incomplete fhe_execute reconstruction in slot {slot}; \
                      malformed plan or missing handle context"
                 );
             };
@@ -1040,8 +1040,11 @@ async fn reconstruct_events_for_insert(
                 if let (Some(index), Some(handle)) =
                     (step.persistent_encrypted_value_index, handle)
                 {
-                    if fhe_eval_persistent_encrypted_value(&ix.accounts, index)
-                        .is_some()
+                    if fhe_execute_persistent_encrypted_value(
+                        &ix.accounts,
+                        index,
+                    )
+                    .is_some()
                     {
                         events.push(SolanaHostEvent::MaterialRequest(
                             material_request(handle),
@@ -1053,7 +1056,7 @@ async fn reconstruct_events_for_insert(
                         }
                     } else {
                         anyhow::bail!(
-                            "reconstruct: fhe_eval persistent bind encrypted_value \
+                            "reconstruct: fhe_execute persistent bind encrypted_value \
                              out of range in slot {slot}; remaining_index={index}, \
                              accounts={}, handle={}",
                             ix.accounts.len(),
@@ -1243,9 +1246,9 @@ mod account_resolution_tests {
 }
 
 #[cfg(test)]
-mod fhe_eval_acl_tests {
+mod fhe_execute_acl_tests {
     use super::{
-        fhe_eval_persistent_encrypted_value, reconstruct_events_for_insert,
+        fhe_execute_persistent_encrypted_value, reconstruct_events_for_insert,
         sealed_block_timestamp, transaction_context_requirement,
         ContextRequirement, ReconstructionOutcome, SolanaGrpcListenerConfig,
     };
@@ -1253,8 +1256,8 @@ mod fhe_eval_acl_tests {
     use sha2::{Digest, Sha256};
     use std::collections::HashMap;
     use zama_host::state::{
-        FheBinaryOpCode as PgmBinaryOpCode, FheEvalArgs, FheEvalOperand,
-        FheEvalOutput, FheEvalStep,
+        FheBinaryOpCode as PgmBinaryOpCode, FheExecuteArgs, FheExecuteOperand,
+        FheExecuteOutput, FheExecuteStep,
     };
 
     use crate::database::tfhe_event_propagate::Handle;
@@ -1316,8 +1319,8 @@ mod fhe_eval_acl_tests {
         accounts
     }
 
-    fn fhe_eval_accounts() -> Vec<[u8; 32]> {
-        // 9 named FheEval accounts (0..=8, incl. the two optional HCU accounts and the
+    fn fhe_execute_accounts() -> Vec<[u8; 32]> {
+        // 9 named FheExecute accounts (0..=8, incl. the two optional HCU accounts and the
         // event-cpi pair); the persistent output EncryptedValue is remaining_accounts[0]
         // at absolute index 9 (FHE_EVAL_REMAINING_BASE).
         let mut accounts: Vec<[u8; 32]> = (0..10).map(acct).collect();
@@ -1326,8 +1329,8 @@ mod fhe_eval_acl_tests {
         accounts
     }
 
-    fn fhe_eval_accounts_with_deny_record() -> Vec<[u8; 32]> {
-        // 9 named FheEval accounts plus Anchor event-cpi accounts (0..=8). The
+    fn fhe_execute_accounts_with_deny_record() -> Vec<[u8; 32]> {
+        // 9 named FheExecute accounts plus Anchor event-cpi accounts (0..=8). The
         // optional deny record is remaining_accounts[0] (index 9), and the persistent
         // output is remaining_accounts[1] (index 10).
         let mut accounts: Vec<[u8; 32]> = (0..11).map(acct).collect();
@@ -1343,7 +1346,7 @@ mod fhe_eval_acl_tests {
         )
     }
 
-    /// The persistent `Add` output handle the fhe_eval fixtures produce, derived
+    /// The persistent `Add` output handle the fhe_execute fixtures produce, derived
     /// exactly as the program does: content-addressed, no per-output binding
     /// (persistent == instruction-local, matching EVM). Matches `config()`
     /// (the Solana PoC host chain id, `PREVIOUS_BANK_HASH`), slot 42's clock ts,
@@ -1380,7 +1383,7 @@ mod fhe_eval_acl_tests {
         // pins the base at 9.
         let accounts: Vec<[u8; 32]> = (0..10).map(acct).collect();
         assert_eq!(
-            fhe_eval_persistent_encrypted_value(&accounts, 0),
+            fhe_execute_persistent_encrypted_value(&accounts, 0),
             Some(acct(9))
         );
     }
@@ -1391,16 +1394,16 @@ mod fhe_eval_acl_tests {
         // (remaining_index 1).
         let accounts: Vec<[u8; 32]> = (0..11).map(acct).collect();
         assert_eq!(
-            fhe_eval_persistent_encrypted_value(&accounts, 1),
+            fhe_execute_persistent_encrypted_value(&accounts, 1),
             Some(acct(10))
         );
     }
 
     #[test]
     fn persistent_output_after_optional_deny_record_resolves() {
-        let accounts = fhe_eval_accounts_with_deny_record();
+        let accounts = fhe_execute_accounts_with_deny_record();
         assert_eq!(
-            fhe_eval_persistent_encrypted_value(&accounts, 1),
+            fhe_execute_persistent_encrypted_value(&accounts, 1),
             Some(ENCRYPTED_VALUE)
         );
     }
@@ -1410,7 +1413,7 @@ mod fhe_eval_acl_tests {
         // Only the 9 named accounts, no remaining: a persistent bind here is a layout drift
         // the caller must surface, not silently drop.
         let accounts: Vec<[u8; 32]> = (0..9).map(acct).collect();
-        assert_eq!(fhe_eval_persistent_encrypted_value(&accounts, 0), None);
+        assert_eq!(fhe_execute_persistent_encrypted_value(&accounts, 0), None);
     }
 
     #[test]
@@ -1468,10 +1471,10 @@ mod fhe_eval_acl_tests {
             ContextRequirement::default()
         );
 
-        let fhe_eval =
-            decoded_ix(discriminator("fhe_eval").to_vec(), vec![], 0, false);
+        let fhe_execute =
+            decoded_ix(discriminator("fhe_execute").to_vec(), vec![], 0, false);
         assert_eq!(
-            transaction_context_requirement(&config(), &[fhe_eval], true),
+            transaction_context_requirement(&config(), &[fhe_execute], true),
             ContextRequirement {
                 slot_hashes: true,
                 clock: true,
@@ -1502,7 +1505,7 @@ mod fhe_eval_acl_tests {
     #[tokio::test]
     async fn known_but_undecodable_instructions_fail_ingest() {
         let malformed = [
-            discriminator("fhe_eval").to_vec(),
+            discriminator("fhe_execute").to_vec(),
             discriminator("make_handle_public").to_vec(),
         ];
         let (slot_bank_hash, slot_clock_ts) = slot_context();
@@ -1543,27 +1546,27 @@ mod fhe_eval_acl_tests {
         assert!(err.to_string().contains("account index 2 out of range"));
     }
 
-    /// A updating persistent `fhe_eval` output recomputes its handle directly
+    /// A updating persistent `fhe_execute` output recomputes its handle directly
     /// from the plan's output material + block entropy (DD-015) — no raw update
     /// handle hint and no encrypted-value-account leaf count. The
     /// reconstructed compute result and current/historical material requests
-    /// must all come from the `fhe_eval` instruction itself.
+    /// must all come from the `fhe_execute` instruction itself.
     #[tokio::test]
-    async fn updating_fhe_eval_derives_output_handle_without_hint() {
+    async fn updating_fhe_execute_derives_output_handle_without_hint() {
         let expected = derived_add_output_handle();
 
-        let plan = FheEvalArgs {
+        let plan = FheExecuteArgs {
             account_count: 1,
             dictionary: vec![[3; 32], [1; 32], [8; 32], [9; 32], [10; 32]],
-            steps: vec![FheEvalStep::Binary {
+            steps: vec![FheExecuteStep::Binary {
                 op: PgmBinaryOpCode::Add,
-                lhs: FheEvalOperand::AllowedPersistent {
+                lhs: FheExecuteOperand::AllowedPersistent {
                     handle_index: 0,
                     encrypted_value_index: 0,
                 },
-                rhs: FheEvalOperand::Scalar { value_index: 1 },
+                rhs: FheExecuteOperand::Scalar { value_index: 1 },
                 output_fhe_type: 5,
-                output: FheEvalOutput::AllowedPersistent {
+                output: FheExecuteOutput::AllowedPersistent {
                     output_encrypted_value_index: 0,
                     output_account_authority_index: None,
                     output_domain_index: 2,
@@ -1576,9 +1579,13 @@ mod fhe_eval_acl_tests {
                 },
             }],
         };
-        let fhe_eval_data = encode_instruction("fhe_eval", plan);
-        let instructions =
-            vec![decoded_ix(fhe_eval_data, fhe_eval_accounts(), 0, false)];
+        let fhe_execute_data = encode_instruction("fhe_execute", plan);
+        let instructions = vec![decoded_ix(
+            fhe_execute_data,
+            fhe_execute_accounts(),
+            0,
+            false,
+        )];
         let (slot_bank_hash, slot_clock_ts) = slot_context();
         let events = complete_events(
             reconstruct_events_for_insert(
@@ -1617,14 +1624,14 @@ mod fhe_eval_acl_tests {
     /// A persistent output created public still requests material for its recomputed
     /// handle. The persistent bind and public transition share that request.
     #[tokio::test]
-    async fn created_public_fhe_eval_output_requests_material() {
-        let plan = FheEvalArgs {
+    async fn created_public_fhe_execute_output_requests_material() {
+        let plan = FheExecuteArgs {
             account_count: 1,
             dictionary: vec![[8; 32], [9; 32], [10; 32], SUBJECT],
-            steps: vec![FheEvalStep::TrivialEncrypt {
+            steps: vec![FheExecuteStep::TrivialEncrypt {
                 plaintext: [7; 32],
                 fhe_type: 5,
-                output: FheEvalOutput::AllowedPersistent {
+                output: FheExecuteOutput::AllowedPersistent {
                     output_encrypted_value_index: 0,
                     output_account_authority_index: None,
                     output_domain_index: 0,
@@ -1639,8 +1646,8 @@ mod fhe_eval_acl_tests {
             }],
         };
         let instructions = vec![decoded_ix(
-            encode_instruction("fhe_eval", plan),
-            fhe_eval_accounts(),
+            encode_instruction("fhe_execute", plan),
+            fhe_execute_accounts(),
             0,
             false,
         )];

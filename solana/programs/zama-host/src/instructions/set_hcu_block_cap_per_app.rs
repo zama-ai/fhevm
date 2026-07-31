@@ -1,4 +1,4 @@
-//! Sets the per-app, per-slot HCU block cap enforced inside `fhe_eval`.
+//! Sets the per-app, per-slot HCU block cap enforced inside `fhe_execute`.
 //!
 //! Sentinels: `u64::MAX` = unrestricted (the ship default; the cap short-circuits and touches
 //! no meter), `0` = a deliberate ban of untrusted apps (trusted apps still bypass), and any

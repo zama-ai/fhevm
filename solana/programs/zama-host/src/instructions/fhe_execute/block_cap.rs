@@ -1,4 +1,4 @@
-//! Stateful per-app, per-slot HCU block cap for [`super::fhe_eval`].
+//! Stateful per-app, per-slot HCU block cap for [`super::fhe_execute`].
 //!
 //! Unlike the pure per-frame meter in [`super::hcu`], the block cap touches accounts (the per-app
 //! `HcuBlockMeter`) and a sysvar-derived slot, so it lives here rather than inside the pure walk.
@@ -20,7 +20,7 @@
 use anchor_lang::prelude::*;
 
 use super::super::common::{create_pda_if_needed, is_uninitialized_pda_account, write_account};
-use super::FheEval;
+use super::FheExecute;
 use crate::errors::ZamaHostError;
 use crate::state::{
     hcu_block_meter_address, hcu_trusted_app_address, HcuBlockMeter, HcuTrustedAppRecord,
@@ -30,7 +30,7 @@ use crate::state::{
 /// The single block-cap sequence: resolve trust, read the meter once, assert the cap with checked
 /// arithmetic (overflow fails closed), lazy-create/reset, write once.
 pub(super) fn charge<'info>(
-    ctx: &Context<'info, FheEval<'info>>,
+    ctx: &Context<'info, FheExecute<'info>>,
     frame_total: u64,
     slot: u64,
 ) -> Result<()> {
@@ -88,7 +88,7 @@ pub(super) fn charge<'info>(
 /// - present, program-owned, canonical PDA, `trusted == true` ⇒ bypass;
 /// - present, program-owned, canonical PDA, `trusted == false` ⇒ untrusted (fall through);
 /// - present but wrong PDA / owner / layout ⇒ `HcuTrustedAppRecordMismatch`.
-fn resolve_trusted<'info>(ctx: &Context<'info, FheEval<'info>>, app: Pubkey) -> Result<bool> {
+fn resolve_trusted<'info>(ctx: &Context<'info, FheExecute<'info>>, app: Pubkey) -> Result<bool> {
     let Some(witness) = ctx.accounts.hcu_trusted_app_record.as_ref() else {
         return Ok(false);
     };

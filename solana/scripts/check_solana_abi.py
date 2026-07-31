@@ -43,10 +43,10 @@ PINNED_SCHEMAS = [
     ("zama_host", "account", "HostConfig", True),
     ("zama_host", "account", "KmsContext", True),
     ("zama_host", "type", "InitializeHostConfigArgs", True),
-    ("zama_host", "type", "FheEvalArgs", True),
+    ("zama_host", "type", "FheExecuteArgs", True),
     ("zama_host", "event", "PublicOutputsProducedEvent", True),
     ("zama_host", "instruction_args", "initialize_host_config", True),
-    ("zama_host", "instruction_args", "fhe_eval", True),
+    ("zama_host", "instruction_args", "fhe_execute", True),
     # EncryptedValue itself is intentionally not an Anchor `Account<'info, T>`
     # (see solana/programs/zama-host/src/instructions/encrypted_value.rs) —
     # every instruction takes it as `UncheckedAccount` and hand-rolls the

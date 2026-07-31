@@ -56,12 +56,12 @@ pub struct WrapUsdc<'info> {
     pub token_program: Program<'info, Token>,
     /// System program used for ACL account creation.
     pub system_program: Program<'info, System>,
-    /// CHECK: forwarded verbatim into the ZamaHost `fhe_eval` CPI, which validates it against the
+    /// CHECK: forwarded verbatim into the ZamaHost `fhe_execute` CPI, which validates it against the
     /// canonical `["hcu-block-meter", compute_signer]` PDA. Supplied by an untrusted mint under a
     /// metering-band cap; omitted when the mint is trusted or the cap is unrestricted.
     #[account(mut)]
     pub hcu_block_meter: Option<UncheckedAccount<'info>>,
-    /// CHECK: forwarded verbatim into the ZamaHost `fhe_eval` CPI, which validates it against the
+    /// CHECK: forwarded verbatim into the ZamaHost `fhe_execute` CPI, which validates it against the
     /// canonical `["hcu-trusted", compute_signer]` PDA. Present + valid bypasses the cap; absent
     /// means the mint is metered.
     pub hcu_trusted_app_record: Option<UncheckedAccount<'info>>,
@@ -149,7 +149,7 @@ pub fn wrap_usdc<'info>(ctx: Context<'info, WrapUsdc<'info>>, amount: u64) -> Re
     let mut amount_context = [0u8; 32];
     amount_context[24..].copy_from_slice(&amount.to_be_bytes());
     let mut builder =
-        zama_fhe::EvalBuilder::new(zama_fhe::EvalAppAuthority::new(token_account.key()));
+        zama_fhe::BatchBuilder::new(zama_fhe::BatchAppAuthority::new(token_account.key()));
     let encrypted_amount = builder
         .trivial_encrypt_u64(amount, zama_fhe::Output::transient())
         .map_err(invalid_eval_plan)?;

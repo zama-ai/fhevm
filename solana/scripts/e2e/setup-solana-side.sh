@@ -141,7 +141,7 @@ until curl -s -m2 "$VALIDATOR_RPC" -X POST -H 'Content-Type: application/json' \
 done
 solana airdrop 500 -u "$VALIDATOR_RPC" -k "$DEPLOYER_KEYPAIR" >/dev/null 2>&1 || true
 # RECONSTRUCTION-FIRST build: drop optional administrative/config events from zama-host.
-# Yellowstone reconstructs ordinary `fhe_eval` computation facts from instructions; the narrow
+# Yellowstone reconstructs ordinary `fhe_execute` computation facts from instructions; the narrow
 # born-public lifecycle batch remains enabled because its block-entropy handles are not present in
 # instruction data. anchor build gives per-crate feature control (cargo build-sbf builds the whole
 # workspace, so it can't disable defaults for just one crate). The other programs keep defaults.

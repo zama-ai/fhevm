@@ -93,7 +93,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     }
 
     // TRIVIAL_ENCRYPT_EVAL drives the SAME trivial-encryption through the eval-plan executor
-    // (fhe_eval): a single TrivialEncrypt step with a persistent output ACL record. The host computes
+    // (fhe_execute): a single TrivialEncrypt step with a persistent output ACL record. The host computes
     // the result handle on-chain and the host-listener reconstructs the successful frame,
     // exercising the #2755 eval path.
     if std::env::var("TRIVIAL_ENCRYPT_EVAL").is_ok() {
@@ -115,14 +115,14 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         return Ok(());
     }
 
-    // FHE_EVAL_VERIFIED_INPUT drives the #1539 input flow in one fhe_eval: a Binary Add of a
-    // coprocessor-attested external input (FheEvalOperand::VerifiedInput, re-verified in-frame via
+    // FHE_EVAL_VERIFIED_INPUT drives the #1539 input flow in one fhe_execute: a Binary Add of a
+    // coprocessor-attested external input (FheExecuteOperand::VerifiedInput, re-verified in-frame via
     // secp256k1 with no scratch PDA) and a public scalar, binding the result to a persistent output ACL
     // record under the attested domain. The attestation comes from the same relayer
     // input-proof the BIND_INPUT phase uses (BIND_* env); TE_ADD is the scalar addend (default 2);
     // TE_ALLOW makes the result publicly decryptable. Proves encrypt V -> +2 -> decrypt V+2.
     if std::env::var("FHE_EVAL_VERIFIED_INPUT").is_ok() {
-        fhe_eval_verified_input_add(&host, &payer, host_config)?;
+        fhe_execute_verified_input_add(&host, &payer, host_config)?;
         return Ok(());
     }
 
@@ -164,65 +164,65 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         return Ok(());
     }
 
-    // FHE_EVAL_BINARY drives a single binary fhe_eval step. BINARY_OP names the op (Sub/Mul/…);
+    // FHE_EVAL_BINARY drives a single binary fhe_execute step. BINARY_OP names the op (Sub/Mul/…);
     // BINARY_A and BINARY_B are the u64 operands (defaults 10/5); BINARY_FHE_TYPE is the input
     // FHE type byte (default 5 = euint64). BINARY_B_SCALAR=1 passes rhs as a plaintext scalar.
     // Output FHE type is auto-derived: 0 (ebool) for comparison ops, else BINARY_FHE_TYPE.
     // BINARY_ALLOW marks the result publicly decryptable.
     if std::env::var("FHE_EVAL_BINARY").is_ok() {
-        fhe_eval_binary(&host, &payer, host_config)?;
+        fhe_execute_binary(&host, &payer, host_config)?;
         return Ok(());
     }
 
-    // FHE_EVAL_UNARY drives a single unary fhe_eval step. UNARY_OP names the op (Neg/Not/Cast);
+    // FHE_EVAL_UNARY drives a single unary fhe_execute step. UNARY_OP names the op (Neg/Not/Cast);
     // UNARY_A is the u64 operand (default 42); UNARY_IN_FHE_TYPE is the input type (default 2 =
     // euint8); UNARY_OUT_FHE_TYPE is the output type (defaults to UNARY_IN_FHE_TYPE). UNARY_ALLOW
     // marks the result publicly decryptable.
     if std::env::var("FHE_EVAL_UNARY").is_ok() {
-        fhe_eval_unary(&host, &payer, host_config)?;
+        fhe_execute_unary(&host, &payer, host_config)?;
         return Ok(());
     }
 
-    // FHE_EVAL_TERNARY drives a ternary IfThenElse fhe_eval step. TERNARY_CTRL (0 or 1, default 1)
+    // FHE_EVAL_TERNARY drives a ternary IfThenElse fhe_execute step. TERNARY_CTRL (0 or 1, default 1)
     // selects the branch; TERNARY_TRUE/TERNARY_FALSE are the euint64 branch values (defaults 42/99);
     // TERNARY_FHE_TYPE selects the branch FHE type (default 5). TERNARY_ALLOW marks the result
     // publicly decryptable.
     if std::env::var("FHE_EVAL_TERNARY").is_ok() {
-        fhe_eval_ternary(&host, &payer, host_config)?;
+        fhe_execute_ternary(&host, &payer, host_config)?;
         return Ok(());
     }
 
-    // FHE_EVAL_RAND_BOUNDED drives a bounded random fhe_eval step. RAND_UPPER is the exclusive
+    // FHE_EVAL_RAND_BOUNDED drives a bounded random fhe_execute step. RAND_UPPER is the exclusive
     // u64 upper bound (default 100); RAND_FHE_TYPE is the output FHE type (default 5 = euint64).
     // RAND_ALLOW marks the result publicly decryptable.
     if std::env::var("FHE_EVAL_RAND_BOUNDED").is_ok() {
-        fhe_eval_rand_bounded(&host, &payer, host_config)?;
+        fhe_execute_rand_bounded(&host, &payer, host_config)?;
         return Ok(());
     }
 
-    // FHE_EVAL_SUM drives a multi-step fhe_eval: two TrivialEncrypt steps (AllowedLocal) followed
+    // FHE_EVAL_SUM drives a multi-step fhe_execute: two TrivialEncrypt steps (AllowedLocal) followed
     // by a Sum step (AllowedPersistent). SUM_A/SUM_B select the euint64 addends (defaults 10/20);
     // SUM_ALLOW makes the result publicly decryptable. Expected cleartext: SUM_A + SUM_B.
     if std::env::var("FHE_EVAL_SUM").is_ok() {
-        fhe_eval_sum(&host, &payer, host_config)?;
+        fhe_execute_sum(&host, &payer, host_config)?;
         return Ok(());
     }
 
-    // FHE_EVAL_IS_IN drives a multi-step fhe_eval: TrivialEncrypt steps for value and set elements
+    // FHE_EVAL_IS_IN drives a multi-step fhe_execute: TrivialEncrypt steps for value and set elements
     // (all AllowedLocal) followed by an IsIn step (AllowedPersistent → ebool). ISIN_VALUE selects the
     // euint64 value (default 42); the set is hardcoded as [10, 42, 100]. ISIN_ALLOW makes the
     // result publicly decryptable. Expected cleartext: 1 (true) when ISIN_VALUE is in the set.
     if std::env::var("FHE_EVAL_IS_IN").is_ok() {
-        fhe_eval_is_in(&host, &payer, host_config)?;
+        fhe_execute_is_in(&host, &payer, host_config)?;
         return Ok(());
     }
 
-    // FHE_EVAL_MUL_DIV drives a multi-step fhe_eval: TrivialEncrypt(factor1, AllowedLocal) then
+    // FHE_EVAL_MUL_DIV drives a multi-step fhe_execute: TrivialEncrypt(factor1, AllowedLocal) then
     // MulDiv(factor1, scalar_factor2, divisor, AllowedPersistent). MULDIV_A/MULDIV_B/MULDIV_D select
     // the euint64 operands (defaults 6/7/3); MULDIV_ALLOW makes the result publicly decryptable.
     // Expected cleartext: MULDIV_A * MULDIV_B / MULDIV_D (integer division).
     if std::env::var("FHE_EVAL_MUL_DIV").is_ok() {
-        fhe_eval_mul_div(&host, &payer, host_config)?;
+        fhe_execute_mul_div(&host, &payer, host_config)?;
         return Ok(());
     }
 
@@ -524,13 +524,13 @@ fn persistent_output(
     account: Pubkey,
     label: [u8; 32],
     subjects: Vec<Pubkey>,
-) -> Result<zama_host::FheEvalOutput, Box<dyn std::error::Error>> {
+) -> Result<zama_host::FheExecuteOutput, Box<dyn std::error::Error>> {
     let (previous_handle, previous_subjects) =
         match existing_value_account_state(program, encrypted_value)? {
             Some((handle, subjects)) => (Some(handle), Some(subjects)),
             None => (None, None),
         };
-    Ok(zama_host::FheEvalOutput::AllowedPersistent {
+    Ok(zama_host::FheExecuteOutput::AllowedPersistent {
         output_encrypted_value_index: index,
         output_account_authority_index: None,
         output_domain_index: dictionary.intern_key(domain),
@@ -723,10 +723,10 @@ fn trivial_encrypt_eval_with_label(
         target.label,
         subjects,
     )?;
-    let args = zama_host::FheEvalArgs {
+    let args = zama_host::FheExecuteArgs {
         account_count: 1,
         dictionary: dictionary.0,
-        steps: vec![zama_host::FheEvalStep::TrivialEncrypt {
+        steps: vec![zama_host::FheExecuteStep::TrivialEncrypt {
             plaintext: target.plaintext,
             fhe_type,
             output,
@@ -737,7 +737,7 @@ fn trivial_encrypt_eval_with_label(
     // real execution but not in RPC preflight simulation, so skip preflight for this op.
     let sig = host
         .request()
-        .accounts(zama_host::accounts::FheEval {
+        .accounts(zama_host::accounts::FheExecute {
             payer: payer.pubkey(),
             compute_subject: payer.pubkey(),
             account_authority: payer.pubkey(),
@@ -752,7 +752,7 @@ fn trivial_encrypt_eval_with_label(
             program: zama_host::ID,
         })
         .accounts(vec![AccountMeta::new(target.encrypted_value, false)])
-        .args(zama_host::instruction::FheEval { args })
+        .args(zama_host::instruction::FheExecute { args })
         .send_with_spinner_and_config(anchor_client::RpcSendTransactionConfig {
             skip_preflight: true,
             ..Default::default()
@@ -776,7 +776,7 @@ fn trivial_encrypt_eval_with_label(
     })
 }
 
-/// Eval-based compute phase: drives a single-step fhe_eval plan (one TrivialEncrypt step with a
+/// Eval-based compute phase: drives a single-step fhe_execute plan (one TrivialEncrypt step with a
 /// persistent output ACL record). The host runs the eval executor, computes the result handle on-chain,
 /// creates the persistent output ACL record
 /// (passed as the sole remaining_account). The live host-listener reconstructs the successful
@@ -787,7 +787,7 @@ fn trivial_encrypt_eval(
     payer: &Rc<Keypair>,
     host_config: Pubkey,
 ) -> Result<(), Box<dyn std::error::Error>> {
-    trivial_encrypt_eval_with_label(host, payer, host_config, 2, "fhe_eval trivial_encrypt")?;
+    trivial_encrypt_eval_with_label(host, payer, host_config, 2, "fhe_execute trivial_encrypt")?;
     Ok(())
 }
 
@@ -1087,15 +1087,15 @@ fn historical_update_step(
     }
 }
 
-/// Input flow phase (#1539): one fhe_eval that adds a public scalar to a coprocessor-attested external
+/// Input flow phase (#1539): one fhe_execute that adds a public scalar to a coprocessor-attested external
 /// input and binds the result to a persistent output ACL record. The verified input is resolved in-frame
-/// (FheEvalOperand::VerifiedInput) — its attestation is re-verified on-chain via secp256k1 with no
+/// (FheExecuteOperand::VerifiedInput) — its attestation is re-verified on-chain via secp256k1 with no
 /// scratch PDA — and the persistent output is pinned to the attested domain (the input's domain;
 /// the on-chain binding rejects any other). The attestation is supplied via the same BIND_* env vars
 /// the standalone input-verify phase uses; TE_ADD is the scalar addend (default 2). The host-listener
 /// reconstructs the successful frame so the tfhe-worker materializes (input + TE_ADD); TE_ALLOW
 /// then makes the result publicly decryptable.
-fn fhe_eval_verified_input_add(
+fn fhe_execute_verified_input_add(
     host: &Program<Rc<Keypair>>,
     payer: &Rc<Keypair>,
     host_config: Pubkey,
@@ -1155,14 +1155,14 @@ fn fhe_eval_verified_input_add(
     };
 
     let mut dictionary = BatchDictionary::default();
-    let args = zama_host::FheEvalArgs {
+    let args = zama_host::FheExecuteArgs {
         account_count: 1,
-        steps: vec![zama_host::FheEvalStep::Binary {
+        steps: vec![zama_host::FheExecuteStep::Binary {
             op: zama_host::FheBinaryOpCode::Add,
-            lhs: zama_host::FheEvalOperand::VerifiedInput {
+            lhs: zama_host::FheExecuteOperand::VerifiedInput {
                 attestation: Box::new(attestation),
             },
-            rhs: zama_host::FheEvalOperand::Scalar {
+            rhs: zama_host::FheExecuteOperand::Scalar {
                 value_index: dictionary.intern(scalar),
             },
             output_fhe_type: fhe_type,
@@ -1181,10 +1181,10 @@ fn fhe_eval_verified_input_add(
     };
 
     let input_hex: String = input_handle.iter().map(|b| format!("{b:02x}")).collect();
-    println!("fhe_eval verified input 0x{input_hex} + {addend} (euint64)");
+    println!("fhe_execute verified input 0x{input_hex} + {addend} (euint64)");
     let sig = host
         .request()
-        .accounts(zama_host::accounts::FheEval {
+        .accounts(zama_host::accounts::FheExecute {
             payer: payer.pubkey(),
             compute_subject: payer.pubkey(),
             account_authority: payer.pubkey(),
@@ -1199,12 +1199,12 @@ fn fhe_eval_verified_input_add(
             program: zama_host::ID,
         })
         .accounts(vec![AccountMeta::new(output_encrypted_value, false)])
-        .args(zama_host::instruction::FheEval { args })
+        .args(zama_host::instruction::FheExecute { args })
         .send_with_spinner_and_config(anchor_client::RpcSendTransactionConfig {
             skip_preflight: true,
             ..Default::default()
         })?;
-    println!("OK fhe_eval verified-input add: {sig}");
+    println!("OK fhe_execute verified-input add: {sig}");
 
     let encrypted_value_account = fetch_encrypted_value(host, output_encrypted_value)?;
     let handle_hex: String = encrypted_value_account
@@ -1813,9 +1813,9 @@ fn create_persistent_public_decrypt_operand(
         Pubkey::find_program_address(&[EVENT_AUTHORITY_SEED], &zama_host::ID);
     let subjects = vec![payer.pubkey()];
     let mut dictionary = BatchDictionary::default();
-    let args = zama_host::FheEvalArgs {
+    let args = zama_host::FheExecuteArgs {
         account_count: 1,
-        steps: vec![zama_host::FheEvalStep::TrivialEncrypt {
+        steps: vec![zama_host::FheExecuteStep::TrivialEncrypt {
             plaintext,
             fhe_type,
             output: persistent_output(
@@ -1832,7 +1832,7 @@ fn create_persistent_public_decrypt_operand(
         dictionary: dictionary.0,
     };
     host.request()
-        .accounts(zama_host::accounts::FheEval {
+        .accounts(zama_host::accounts::FheExecute {
             payer: payer.pubkey(),
             compute_subject: payer.pubkey(),
             account_authority: payer.pubkey(),
@@ -1844,7 +1844,7 @@ fn create_persistent_public_decrypt_operand(
             program: zama_host::ID,
         })
         .accounts(vec![AccountMeta::new(encrypted_value, false)])
-        .args(zama_host::instruction::FheEval { args })
+        .args(zama_host::instruction::FheExecute { args })
         .send_with_spinner_and_config(anchor_client::RpcSendTransactionConfig {
             skip_preflight: true,
             ..Default::default()
@@ -1853,11 +1853,11 @@ fn create_persistent_public_decrypt_operand(
     Ok((encrypted_value, value.current_handle))
 }
 
-/// Generic binary fhe_eval: encrypted operands become persistent public-decrypt handles (so
+/// Generic binary fhe_execute: encrypted operands become persistent public-decrypt handles (so
 /// public-decrypt propagates to the output); scalar-RHS ops create only the LHS.
 /// Env: BINARY_OP, BINARY_A, BINARY_B, BINARY_B_SCALAR (flag), BINARY_FHE_TYPE, BINARY_ALLOW.
 /// Comparison ops (Eq/Ne/Ge/Gt/Le/Lt) automatically set output_fhe_type=0 (ebool).
-fn fhe_eval_binary(
+fn fhe_execute_binary(
     host: &Program<Rc<Keypair>>,
     payer: &Rc<Keypair>,
     host_config: Pubkey,
@@ -1915,7 +1915,7 @@ fn fhe_eval_binary(
     let rhs_operand = if b_scalar {
         let mut scalar_b = [0u8; 32];
         scalar_b[24..32].copy_from_slice(&b.to_be_bytes());
-        zama_host::FheEvalOperand::Scalar {
+        zama_host::FheExecuteOperand::Scalar {
             value_index: dictionary.intern(scalar_b),
         }
     } else {
@@ -1933,16 +1933,16 @@ fn fhe_eval_binary(
             operand_label_b,
         )?;
         operand_values.push(encrypted_value_b);
-        zama_host::FheEvalOperand::AllowedPersistent {
+        zama_host::FheExecuteOperand::AllowedPersistent {
             handle_index: dictionary.intern(handle_b),
             encrypted_value_index: 1,
         }
     };
 
     let output_index = operand_values.len() as u8;
-    let steps = vec![zama_host::FheEvalStep::Binary {
+    let steps = vec![zama_host::FheExecuteStep::Binary {
         op,
-        lhs: zama_host::FheEvalOperand::AllowedPersistent {
+        lhs: zama_host::FheExecuteOperand::AllowedPersistent {
             handle_index: dictionary.intern(handle_a),
             encrypted_value_index: 0,
         },
@@ -1974,7 +1974,7 @@ fn fhe_eval_binary(
     };
     let sig = host
         .request()
-        .accounts(zama_host::accounts::FheEval {
+        .accounts(zama_host::accounts::FheExecute {
             payer: payer.pubkey(),
             compute_subject: payer.pubkey(),
             account_authority: payer.pubkey(),
@@ -1986,8 +1986,8 @@ fn fhe_eval_binary(
             program: zama_host::ID,
         })
         .accounts(remaining)
-        .args(zama_host::instruction::FheEval {
-            args: zama_host::FheEvalArgs {
+        .args(zama_host::instruction::FheExecute {
+            args: zama_host::FheExecuteArgs {
                 account_count: (operand_values.len() + 1) as u8,
                 dictionary: dictionary.0,
                 steps,
@@ -1997,7 +1997,7 @@ fn fhe_eval_binary(
             skip_preflight: true,
             ..Default::default()
         })?;
-    println!("OK fhe_eval binary {op_name}(enc({a}), {b_desc}) fhe_type={in_fhe_type} out_type={output_fhe_type}: {sig}");
+    println!("OK fhe_execute binary {op_name}(enc({a}), {b_desc}) fhe_type={in_fhe_type} out_type={output_fhe_type}: {sig}");
 
     let value = fetch_encrypted_value(host, output_encrypted_value)?;
     let handle_hex: String = value
@@ -2014,10 +2014,10 @@ fn fhe_eval_binary(
     Ok(())
 }
 
-/// Generic unary fhe_eval: TrivialEncrypt(operand) → Unary(op, AllowedPersistent).
+/// Generic unary fhe_execute: TrivialEncrypt(operand) → Unary(op, AllowedPersistent).
 /// Env: UNARY_OP (Neg/Not/Cast), UNARY_A, UNARY_IN_FHE_TYPE (default 2=euint8),
 /// UNARY_OUT_FHE_TYPE (default = UNARY_IN_FHE_TYPE), UNARY_ALLOW.
-fn fhe_eval_unary(
+fn fhe_execute_unary(
     host: &Program<Rc<Keypair>>,
     payer: &Rc<Keypair>,
     host_config: Pubkey,
@@ -2067,11 +2067,11 @@ fn fhe_eval_unary(
     )?;
 
     let mut dictionary = BatchDictionary::default();
-    let args = zama_host::FheEvalArgs {
+    let args = zama_host::FheExecuteArgs {
         account_count: 2,
-        steps: vec![zama_host::FheEvalStep::Unary {
+        steps: vec![zama_host::FheExecuteStep::Unary {
             op,
-            operand: zama_host::FheEvalOperand::AllowedPersistent {
+            operand: zama_host::FheExecuteOperand::AllowedPersistent {
                 handle_index: dictionary.intern(handle_a),
                 encrypted_value_index: 0,
             },
@@ -2092,7 +2092,7 @@ fn fhe_eval_unary(
 
     let sig = host
         .request()
-        .accounts(zama_host::accounts::FheEval {
+        .accounts(zama_host::accounts::FheExecute {
             payer: payer.pubkey(),
             compute_subject: payer.pubkey(),
             account_authority: payer.pubkey(),
@@ -2107,12 +2107,12 @@ fn fhe_eval_unary(
             AccountMeta::new_readonly(encrypted_value_a, false),
             AccountMeta::new(output_encrypted_value, false),
         ])
-        .args(zama_host::instruction::FheEval { args })
+        .args(zama_host::instruction::FheExecute { args })
         .send_with_spinner_and_config(anchor_client::RpcSendTransactionConfig {
             skip_preflight: true,
             ..Default::default()
         })?;
-    println!("OK fhe_eval unary {op_name}(enc({a})) in_type={in_fhe_type} out_type={out_fhe_type}: {sig}");
+    println!("OK fhe_execute unary {op_name}(enc({a})) in_type={in_fhe_type} out_type={out_fhe_type}: {sig}");
 
     let value = fetch_encrypted_value(host, output_encrypted_value)?;
     let handle_hex: String = value
@@ -2129,11 +2129,11 @@ fn fhe_eval_unary(
     Ok(())
 }
 
-/// Ternary fhe_eval: TrivialEncrypt(ctrl as ebool) + TrivialEncrypt(if_true) +
+/// Ternary fhe_execute: TrivialEncrypt(ctrl as ebool) + TrivialEncrypt(if_true) +
 /// TrivialEncrypt(if_false) → Ternary(IfThenElse, AllowedPersistent).
 /// Env: TERNARY_CTRL (0|1, default 1), TERNARY_TRUE/TERNARY_FALSE (u64 defaults 42/99),
 /// TERNARY_FHE_TYPE (default 5=euint64), TERNARY_ALLOW.
-fn fhe_eval_ternary(
+fn fhe_execute_ternary(
     host: &Program<Rc<Keypair>>,
     payer: &Rc<Keypair>,
     host_config: Pubkey,
@@ -2206,19 +2206,19 @@ fn fhe_eval_ternary(
     )?;
 
     let mut dictionary = BatchDictionary::default();
-    let args = zama_host::FheEvalArgs {
+    let args = zama_host::FheExecuteArgs {
         account_count: 4,
-        steps: vec![zama_host::FheEvalStep::Ternary {
+        steps: vec![zama_host::FheExecuteStep::Ternary {
             op: zama_host::FheTernaryOpCode::IfThenElse,
-            control: zama_host::FheEvalOperand::AllowedPersistent {
+            control: zama_host::FheExecuteOperand::AllowedPersistent {
                 handle_index: dictionary.intern(h_ctrl),
                 encrypted_value_index: 0,
             },
-            if_true: zama_host::FheEvalOperand::AllowedPersistent {
+            if_true: zama_host::FheExecuteOperand::AllowedPersistent {
                 handle_index: dictionary.intern(h_true),
                 encrypted_value_index: 1,
             },
-            if_false: zama_host::FheEvalOperand::AllowedPersistent {
+            if_false: zama_host::FheExecuteOperand::AllowedPersistent {
                 handle_index: dictionary.intern(h_false),
                 encrypted_value_index: 2,
             },
@@ -2239,7 +2239,7 @@ fn fhe_eval_ternary(
 
     let sig = host
         .request()
-        .accounts(zama_host::accounts::FheEval {
+        .accounts(zama_host::accounts::FheExecute {
             payer: payer.pubkey(),
             compute_subject: payer.pubkey(),
             account_authority: payer.pubkey(),
@@ -2256,12 +2256,12 @@ fn fhe_eval_ternary(
             AccountMeta::new_readonly(value_false, false),
             AccountMeta::new(output_encrypted_value, false),
         ])
-        .args(zama_host::instruction::FheEval { args })
+        .args(zama_host::instruction::FheExecute { args })
         .send_with_spinner_and_config(anchor_client::RpcSendTransactionConfig {
             skip_preflight: true,
             ..Default::default()
         })?;
-    println!("OK fhe_eval ternary select(ctrl={ctrl}, true={if_true}, false={if_false}) -> {expected}: {sig}");
+    println!("OK fhe_execute ternary select(ctrl={ctrl}, true={if_true}, false={if_false}) -> {expected}: {sig}");
 
     let value = fetch_encrypted_value(host, output_encrypted_value)?;
     let handle_hex: String = value
@@ -2278,10 +2278,10 @@ fn fhe_eval_ternary(
     Ok(())
 }
 
-/// Bounded random fhe_eval: RandBounded(upper_bound, AllowedPersistent).
+/// Bounded random fhe_execute: RandBounded(upper_bound, AllowedPersistent).
 /// Env: RAND_UPPER (u64 exclusive upper bound, default 100), RAND_FHE_TYPE (default 5=euint64),
 /// RAND_ALLOW. Expected: cleartext in [0, RAND_UPPER).
-fn fhe_eval_rand_bounded(
+fn fhe_execute_rand_bounded(
     host: &Program<Rc<Keypair>>,
     payer: &Rc<Keypair>,
     host_config: Pubkey,
@@ -2311,9 +2311,9 @@ fn fhe_eval_rand_bounded(
     upper_bound[24..32].copy_from_slice(&upper.to_be_bytes());
 
     let mut dictionary = BatchDictionary::default();
-    let args = zama_host::FheEvalArgs {
+    let args = zama_host::FheExecuteArgs {
         account_count: 1,
-        steps: vec![zama_host::FheEvalStep::RandBounded {
+        steps: vec![zama_host::FheExecuteStep::RandBounded {
             upper_bound,
             fhe_type,
             output: persistent_output(
@@ -2332,7 +2332,7 @@ fn fhe_eval_rand_bounded(
 
     let sig = host
         .request()
-        .accounts(zama_host::accounts::FheEval {
+        .accounts(zama_host::accounts::FheExecute {
             payer: payer.pubkey(),
             compute_subject: payer.pubkey(),
             account_authority: payer.pubkey(),
@@ -2344,12 +2344,12 @@ fn fhe_eval_rand_bounded(
             program: zama_host::ID,
         })
         .accounts(vec![AccountMeta::new(output_encrypted_value, false)])
-        .args(zama_host::instruction::FheEval { args })
+        .args(zama_host::instruction::FheExecute { args })
         .send_with_spinner_and_config(anchor_client::RpcSendTransactionConfig {
             skip_preflight: true,
             ..Default::default()
         })?;
-    println!("OK fhe_eval rand_bounded(upper={upper}) fhe_type={fhe_type}: {sig}");
+    println!("OK fhe_execute rand_bounded(upper={upper}) fhe_type={fhe_type}: {sig}");
 
     let value = fetch_encrypted_value(host, output_encrypted_value)?;
     let handle_hex: String = value
@@ -2366,10 +2366,10 @@ fn fhe_eval_rand_bounded(
     Ok(())
 }
 
-/// Multi-step fhe_eval Sum: two TrivialEncrypt(AllowedLocal) → Sum(AllowedPersistent).
+/// Multi-step fhe_execute Sum: two TrivialEncrypt(AllowedLocal) → Sum(AllowedPersistent).
 /// SUM_A/SUM_B select the euint64 addends (defaults 10/20). Expected result: SUM_A + SUM_B.
 /// SUM_ALLOW marks the output publicly decryptable after the eval.
-fn fhe_eval_sum(
+fn fhe_execute_sum(
     host: &Program<Rc<Keypair>>,
     payer: &Rc<Keypair>,
     host_config: Pubkey,
@@ -2411,15 +2411,15 @@ fn fhe_eval_sum(
         create_persistent_public_decrypt_operand(host, payer, host_config, b, fhe_type, label_b)?;
 
     let mut dictionary = BatchDictionary::default();
-    let args = zama_host::FheEvalArgs {
+    let args = zama_host::FheExecuteArgs {
         account_count: 3,
-        steps: vec![zama_host::FheEvalStep::Sum {
+        steps: vec![zama_host::FheExecuteStep::Sum {
             operands: vec![
-                zama_host::FheEvalOperand::AllowedPersistent {
+                zama_host::FheExecuteOperand::AllowedPersistent {
                     handle_index: dictionary.intern(h_a),
                     encrypted_value_index: 0,
                 },
-                zama_host::FheEvalOperand::AllowedPersistent {
+                zama_host::FheExecuteOperand::AllowedPersistent {
                     handle_index: dictionary.intern(h_b),
                     encrypted_value_index: 1,
                 },
@@ -2441,7 +2441,7 @@ fn fhe_eval_sum(
 
     let sig = host
         .request()
-        .accounts(zama_host::accounts::FheEval {
+        .accounts(zama_host::accounts::FheExecute {
             payer: payer.pubkey(),
             compute_subject: payer.pubkey(),
             account_authority: payer.pubkey(),
@@ -2457,12 +2457,12 @@ fn fhe_eval_sum(
             AccountMeta::new_readonly(value_b, false),
             AccountMeta::new(output_encrypted_value, false),
         ])
-        .args(zama_host::instruction::FheEval { args })
+        .args(zama_host::instruction::FheExecute { args })
         .send_with_spinner_and_config(anchor_client::RpcSendTransactionConfig {
             skip_preflight: true,
             ..Default::default()
         })?;
-    println!("OK fhe_eval sum({a} + {b} as euint64): {sig}");
+    println!("OK fhe_execute sum({a} + {b} as euint64): {sig}");
 
     let value = fetch_encrypted_value(host, output_encrypted_value)?;
     let handle_hex: String = value
@@ -2479,11 +2479,11 @@ fn fhe_eval_sum(
     Ok(())
 }
 
-/// Multi-step fhe_eval IsIn: TrivialEncrypt(value) + TrivialEncrypt(set elements) (all AllowedLocal)
+/// Multi-step fhe_execute IsIn: TrivialEncrypt(value) + TrivialEncrypt(set elements) (all AllowedLocal)
 /// → IsIn(AllowedPersistent → ebool). ISIN_VALUE selects the euint64 value (default 42); the set is
 /// hardcoded as [10, 42, 100]. ISIN_ALLOW marks the output publicly decryptable. Expected result:
 /// 1 (true) when ISIN_VALUE is in the set, 0 (false) otherwise.
-fn fhe_eval_is_in(
+fn fhe_execute_is_in(
     host: &Program<Rc<Keypair>>,
     payer: &Rc<Keypair>,
     host_config: Pubkey,
@@ -2522,7 +2522,7 @@ fn fhe_eval_is_in(
     )?;
 
     let mut operand_values = vec![encrypted_value_input];
-    let mut set_operands: Vec<zama_host::FheEvalOperand> = Vec::with_capacity(set_values.len());
+    let mut set_operands: Vec<zama_host::FheExecuteOperand> = Vec::with_capacity(set_values.len());
     for (i, &v) in set_values.iter().enumerate() {
         let mut label = [0x0eu8; 32];
         label[2] = elem_fhe_type;
@@ -2537,7 +2537,7 @@ fn fhe_eval_is_in(
             elem_fhe_type,
             label,
         )?;
-        set_operands.push(zama_host::FheEvalOperand::AllowedPersistent {
+        set_operands.push(zama_host::FheExecuteOperand::AllowedPersistent {
             handle_index: dictionary.intern(handle),
             encrypted_value_index: operand_values.len() as u8,
         });
@@ -2545,8 +2545,8 @@ fn fhe_eval_is_in(
     }
     let output_index = operand_values.len() as u8;
 
-    let steps = vec![zama_host::FheEvalStep::IsIn {
-        value: zama_host::FheEvalOperand::AllowedPersistent {
+    let steps = vec![zama_host::FheExecuteStep::IsIn {
+        value: zama_host::FheExecuteOperand::AllowedPersistent {
             handle_index: dictionary.intern(h_value),
             encrypted_value_index: 0,
         },
@@ -2564,7 +2564,7 @@ fn fhe_eval_is_in(
         )?,
     }];
 
-    let args = zama_host::FheEvalArgs {
+    let args = zama_host::FheExecuteArgs {
         account_count: (operand_values.len() + 1) as u8,
         dictionary: dictionary.0,
         steps,
@@ -2579,7 +2579,7 @@ fn fhe_eval_is_in(
 
     let sig = host
         .request()
-        .accounts(zama_host::accounts::FheEval {
+        .accounts(zama_host::accounts::FheExecute {
             payer: payer.pubkey(),
             compute_subject: payer.pubkey(),
             account_authority: payer.pubkey(),
@@ -2591,12 +2591,12 @@ fn fhe_eval_is_in(
             program: zama_host::ID,
         })
         .accounts(remaining)
-        .args(zama_host::instruction::FheEval { args })
+        .args(zama_host::instruction::FheExecute { args })
         .send_with_spinner_and_config(anchor_client::RpcSendTransactionConfig {
             skip_preflight: true,
             ..Default::default()
         })?;
-    println!("OK fhe_eval isIn({value} in {set_values:?} as euint64): {sig}");
+    println!("OK fhe_execute isIn({value} in {set_values:?} as euint64): {sig}");
 
     let encrypted_value_account = fetch_encrypted_value(host, output_encrypted_value)?;
     let handle_hex: String = encrypted_value_account
@@ -2613,10 +2613,10 @@ fn fhe_eval_is_in(
     Ok(())
 }
 
-/// Multi-step fhe_eval MulDiv: TrivialEncrypt(factor1, AllowedLocal) → MulDiv(factor1, scalar_b,
+/// Multi-step fhe_execute MulDiv: TrivialEncrypt(factor1, AllowedLocal) → MulDiv(factor1, scalar_b,
 /// divisor, AllowedPersistent). MULDIV_A/MULDIV_B/MULDIV_D select the euint64 operands (defaults
 /// 6/7/3). MULDIV_ALLOW marks the output publicly decryptable. Expected result: A * B / D.
-fn fhe_eval_mul_div(
+fn fhe_execute_mul_div(
     host: &Program<Rc<Keypair>>,
     payer: &Rc<Keypair>,
     host_config: Pubkey,
@@ -2660,14 +2660,14 @@ fn fhe_eval_mul_div(
         create_persistent_public_decrypt_operand(host, payer, host_config, a, fhe_type, label_a)?;
 
     let mut dictionary = BatchDictionary::default();
-    let args = zama_host::FheEvalArgs {
+    let args = zama_host::FheExecuteArgs {
         account_count: 2,
-        steps: vec![zama_host::FheEvalStep::MulDiv {
-            factor1: zama_host::FheEvalOperand::AllowedPersistent {
+        steps: vec![zama_host::FheExecuteStep::MulDiv {
+            factor1: zama_host::FheExecuteOperand::AllowedPersistent {
                 handle_index: dictionary.intern(h_a),
                 encrypted_value_index: 0,
             },
-            factor2: zama_host::FheEvalOperand::Scalar {
+            factor2: zama_host::FheExecuteOperand::Scalar {
                 value_index: dictionary.intern(scalar_b),
             },
             divisor,
@@ -2689,7 +2689,7 @@ fn fhe_eval_mul_div(
     let expected = a * b / d;
     let sig = host
         .request()
-        .accounts(zama_host::accounts::FheEval {
+        .accounts(zama_host::accounts::FheExecute {
             payer: payer.pubkey(),
             compute_subject: payer.pubkey(),
             account_authority: payer.pubkey(),
@@ -2704,12 +2704,12 @@ fn fhe_eval_mul_div(
             AccountMeta::new_readonly(encrypted_value_a, false),
             AccountMeta::new(output_encrypted_value, false),
         ])
-        .args(zama_host::instruction::FheEval { args })
+        .args(zama_host::instruction::FheExecute { args })
         .send_with_spinner_and_config(anchor_client::RpcSendTransactionConfig {
             skip_preflight: true,
             ..Default::default()
         })?;
-    println!("OK fhe_eval mulDiv({a} * {b} / {d} = {expected} as euint64): {sig}");
+    println!("OK fhe_execute mulDiv({a} * {b} / {d} = {expected} as euint64): {sig}");
 
     let value = fetch_encrypted_value(host, output_encrypted_value)?;
     let handle_hex: String = value

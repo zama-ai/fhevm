@@ -13,7 +13,9 @@ use host_listener::{
     solana_adapter::{
         insert_solana_events, solana_transaction_id, SolanaBlockMeta, SolanaHostEvent,
     },
-    solana_reconstruct::{decode_fhe_eval_args, reconstruct_fhe_eval_events, ReconstructContext},
+    solana_reconstruct::{
+        decode_fhe_execute_args, reconstruct_fhe_execute_events, ReconstructContext,
+    },
 };
 use litesvm::{types::TransactionMetadata, LiteSVM};
 use serial_test::serial;
@@ -134,7 +136,7 @@ fn reconstruct_transfer_events(
     meta: &TransactionMetadata,
     account_keys: &[Pubkey],
 ) -> Vec<SolanaHostEvent> {
-    // fhe_eval has 9 named accounts (incl. event-CPI authority + program); the rest are the
+    // fhe_execute has 9 named accounts (incl. event-CPI authority + program); the rest are the
     // frame's remaining accounts, which the pooled wire format references by index.
     const FHE_EVAL_REMAINING_BASE: usize = 9;
     let (plan, remaining_accounts) = meta
@@ -143,16 +145,16 @@ fn reconstruct_transfer_events(
         .flatten()
         .filter(|inner| *inner.instruction.program_id(account_keys) == fixture.host_program_id)
         .find_map(|inner| {
-            let plan = decode_fhe_eval_args(&inner.instruction.data)?;
+            let plan = decode_fhe_execute_args(&inner.instruction.data)?;
             let remaining = inner.instruction.accounts[FHE_EVAL_REMAINING_BASE..]
                 .iter()
                 .map(|index| account_keys[usize::from(*index)].to_bytes())
                 .collect::<Vec<_>>();
             Some((plan, remaining))
         })
-        .expect("confidential transfer must CPI into zama-host fhe_eval");
+        .expect("confidential transfer must CPI into zama-host fhe_execute");
     let clock = fixture.svm.get_sysvar::<Clock>();
-    reconstruct_fhe_eval_events(
+    reconstruct_fhe_execute_events(
         &plan,
         fixture.compute_signer.to_bytes(),
         &remaining_accounts,
@@ -199,7 +201,7 @@ fn seed_host_config(svm: &mut LiteSVM, program_id: Pubkey, admin: Pubkey) -> Pub
                 admin,
                 chain_id: host::SOLANA_POC_CHAIN_ID,
                 // Coprocessor `fromExternal` verifier: transfers bind the amount via a
-                // secp256k1 EIP-712 attestation that fhe_eval re-verifies in-frame.
+                // secp256k1 EIP-712 attestation that fhe_execute re-verifies in-frame.
                 gateway_chain_id: SECP_GATEWAY_CHAIN_ID,
                 input_verification_contract: INPUT_VERIFICATION_CONTRACT,
                 coprocessor_signers: host::pack_coprocessor_signers(&[secp_evm_address(
@@ -455,7 +457,7 @@ fn transfer_ix(
         .to_account_metas(None),
         data: token::instruction::ConfidentialTransfer {
             // fromExternal: the amount is a coprocessor-signed attestation bound to
-            // (user = owner, contract = mint compute-signer PDA), re-verified in fhe_eval.
+            // (user = owner, contract = mint compute-signer PDA), re-verified in fhe_execute.
             amount_attestation: amount_attestation_for(
                 amount_handle,
                 fixture.alice.pubkey(),

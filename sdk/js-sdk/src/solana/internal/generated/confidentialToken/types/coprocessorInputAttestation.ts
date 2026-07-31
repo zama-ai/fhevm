@@ -31,7 +31,7 @@ import {
 } from '@solana/kit';
 
 /**
- * A coprocessor input attestation carried inline by a [`FheEvalOperand::VerifiedInput`], re-verified
+ * A coprocessor input attestation carried inline by a [`FheExecuteOperand::VerifiedInput`], re-verified
  * in-frame (no account, no PDA) — the instruction-local analog of EVM `allowTransient(input, contract)`.
  */
 export type CoprocessorInputAttestation = {

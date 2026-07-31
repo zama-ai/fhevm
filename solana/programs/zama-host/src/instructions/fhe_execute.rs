@@ -10,7 +10,7 @@ use super::input_verification::{verify_input_attestation, InputVerifierParams};
 use crate::{
     errors::ZamaHostError,
     events::{
-        FheEvalRandomSeed, FheEvalRandomSeedsEvent, ProducedPublicOutput,
+        FheExecuteRandomSeed, FheExecuteRandomSeedsEvent, ProducedPublicOutput,
         PublicOutputsProducedEvent,
     },
     state::*,
@@ -31,10 +31,10 @@ use walk::{walk_eval_frame, EvalHandleContext};
 /// Accounts for composed instruction-local FHE evaluation.
 ///
 /// Persistent input and output `EncryptedValue` accounts are supplied in
-/// `remaining_accounts` and referenced by index from [`FheEvalArgs`].
+/// `remaining_accounts` and referenced by index from [`FheExecuteArgs`].
 #[derive(Accounts)]
 #[event_cpi]
-pub struct FheEval<'info> {
+pub struct FheExecute<'info> {
     /// Pays rent for any persistent output ACL records.
     #[account(mut)]
     pub payer: Signer<'info>,
@@ -64,15 +64,18 @@ pub struct FheEval<'info> {
 }
 
 /// Executes an ordered FHE plan with instruction-local transient outputs.
-pub fn fhe_eval<'info>(ctx: Context<'info, FheEval<'info>>, args: FheEvalArgs) -> Result<()> {
+pub fn fhe_execute<'info>(
+    ctx: Context<'info, FheExecute<'info>>,
+    args: FheExecuteArgs,
+) -> Result<()> {
     assert_not_paused(&ctx.accounts.host_config)?;
     require!(
-        !args.steps.is_empty() && args.steps.len() <= MAX_FHE_EVAL_OPS,
-        ZamaHostError::InvalidFheEvalOperationCount
+        !args.steps.is_empty() && args.steps.len() <= MAX_FHE_BATCH_OPS,
+        ZamaHostError::InvalidFheExecuteOperationCount
     );
     require!(
         usize::from(args.account_count) == ctx.remaining_accounts.len(),
-        ZamaHostError::FheEvalAccountCountMismatch
+        ZamaHostError::FheExecuteAccountCountMismatch
     );
     // The account table owns every remaining-accounts invariant for the frame:
     // duplicate rejection (at construction), the used-account bitmap (marked in
@@ -117,17 +120,17 @@ pub fn fhe_eval<'info>(ctx: Context<'info, FheEval<'info>>, args: FheEvalArgs) -
 }
 
 /// The step's declared output, shared by preflight rules and anchor collection.
-pub(in crate::instructions) fn step_output(step: &FheEvalStep) -> &FheEvalOutput {
+pub(in crate::instructions) fn step_output(step: &FheExecuteStep) -> &FheExecuteOutput {
     match step {
-        FheEvalStep::Binary { output, .. }
-        | FheEvalStep::Ternary { output, .. }
-        | FheEvalStep::TrivialEncrypt { output, .. }
-        | FheEvalStep::Rand { output, .. }
-        | FheEvalStep::Unary { output, .. }
-        | FheEvalStep::RandBounded { output, .. }
-        | FheEvalStep::Sum { output, .. }
-        | FheEvalStep::IsIn { output, .. }
-        | FheEvalStep::MulDiv { output, .. } => output,
+        FheExecuteStep::Binary { output, .. }
+        | FheExecuteStep::Ternary { output, .. }
+        | FheExecuteStep::TrivialEncrypt { output, .. }
+        | FheExecuteStep::Rand { output, .. }
+        | FheExecuteStep::Unary { output, .. }
+        | FheExecuteStep::RandBounded { output, .. }
+        | FheExecuteStep::Sum { output, .. }
+        | FheExecuteStep::IsIn { output, .. }
+        | FheExecuteStep::MulDiv { output, .. } => output,
     }
 }
 
@@ -137,11 +140,11 @@ pub(in crate::instructions) fn step_output(step: &FheEvalStep) -> &FheEvalOutput
 /// earlier content-addressed handle cannot replay a previous random seed.
 fn collect_persistent_anchor_bytes(
     table: &EvalAccountTable<'_, '_>,
-    args: &FheEvalArgs,
+    args: &FheExecuteArgs,
 ) -> Result<Vec<u8>> {
     let mut anchor_bytes = Vec::with_capacity(args.steps.len() * 73);
     for step in &args.steps {
-        if let FheEvalOutput::AllowedPersistent {
+        if let FheExecuteOutput::AllowedPersistent {
             output_encrypted_value_index,
             ..
         } = step_output(step)
@@ -164,19 +167,19 @@ fn collect_persistent_anchor_bytes(
 }
 
 fn collect_eval_random_seeds(
-    args: &FheEvalArgs,
+    args: &FheExecuteArgs,
     handle_context: &EvalHandleContext<'_>,
-) -> Vec<FheEvalRandomSeed> {
+) -> Vec<FheExecuteRandomSeed> {
     args.steps
         .iter()
         .enumerate()
         .filter(|(_, step)| {
             matches!(
                 step,
-                FheEvalStep::Rand { .. } | FheEvalStep::RandBounded { .. }
+                FheExecuteStep::Rand { .. } | FheExecuteStep::RandBounded { .. }
             )
         })
-        .map(|(index, _)| FheEvalRandomSeed {
+        .map(|(index, _)| FheExecuteRandomSeed {
             step_index: index as u16,
             seed: handle_context.rand_seed(index as u16),
         })
@@ -186,8 +189,8 @@ fn collect_eval_random_seeds(
 #[inline(never)]
 fn execute_eval_frame<'a, 'info>(
     table: &mut EvalAccountTable<'a, 'info>,
-    ctx: &Context<'info, FheEval<'info>>,
-    args: &FheEvalArgs,
+    ctx: &Context<'info, FheExecute<'info>>,
+    args: &FheExecuteArgs,
     subject: Pubkey,
     handle_context: &EvalHandleContext<'_>,
 ) -> Result<Vec<ProducedPublicOutput>> {
@@ -211,7 +214,7 @@ fn execute_eval_frame<'a, 'info>(
 /// [`walk`].
 struct EvalExecutionState<'t, 'a, 'info> {
     table: &'t mut EvalAccountTable<'a, 'info>,
-    /// The frame's interned constant dictionary ([`FheEvalArgs::dictionary`]).
+    /// The frame's interned constant dictionary ([`FheExecuteArgs::dictionary`]).
     dictionary: &'t [[u8; 32]],
     produced: Vec<ProducedValue>,
     created_public_outputs: Vec<ProducedPublicOutput>,
@@ -225,7 +228,7 @@ impl<'info> EvalExecutionState<'_, '_, 'info> {
         self.dictionary
             .get(index as usize)
             .copied()
-            .ok_or_else(|| error!(ZamaHostError::FheEvalDictionaryIndexOutOfBounds))
+            .ok_or_else(|| error!(ZamaHostError::FheExecuteDictionaryIndexOutOfBounds))
     }
 
     #[inline(never)]
@@ -267,10 +270,10 @@ impl<'info> EvalExecutionState<'_, '_, 'info> {
     #[inline(never)]
     fn accept_output(
         &mut self,
-        ctx: &Context<'info, FheEval<'info>>,
+        ctx: &Context<'info, FheExecute<'info>>,
         op_index: u16,
         result: [u8; 32],
-        output: &FheEvalOutput,
+        output: &FheExecuteOutput,
         output_public_decrypt_allowed: bool,
     ) -> Result<()> {
         let created_public_output = accept_eval_output(
@@ -309,23 +312,23 @@ pub fn assert_ternary_operand_types(
 
 #[inline(never)]
 fn accept_eval_output<'info>(
-    ctx: &Context<'info, FheEval<'info>>,
+    ctx: &Context<'info, FheExecute<'info>>,
     table: &mut EvalAccountTable<'_, 'info>,
     dictionary: &[[u8; 32]],
     produced: &mut Vec<ProducedValue>,
     result: [u8; 32],
-    output: &FheEvalOutput,
+    output: &FheExecuteOutput,
     output_public_decrypt_allowed: bool,
     op_index: u16,
 ) -> Result<Option<ProducedPublicOutput>> {
     require!(
         !produced.iter().any(|value| value.handle == result),
-        ZamaHostError::FheEvalDuplicateHandle
+        ZamaHostError::FheExecuteDuplicateHandle
     );
 
     let created_public_output = match output {
-        FheEvalOutput::AllowedLocal => None,
-        FheEvalOutput::AllowedPersistent {
+        FheExecuteOutput::AllowedLocal => None,
+        FheExecuteOutput::AllowedPersistent {
             output_encrypted_value_index,
             output_account_authority_index,
             output_domain_index,
@@ -379,7 +382,7 @@ fn dictionary_bytes(dictionary: &[[u8; 32]], index: u8) -> Result<[u8; 32]> {
     dictionary
         .get(index as usize)
         .copied()
-        .ok_or_else(|| error!(ZamaHostError::FheEvalDictionaryIndexOutOfBounds))
+        .ok_or_else(|| error!(ZamaHostError::FheExecuteDictionaryIndexOutOfBounds))
 }
 
 fn dictionary_key(dictionary: &[[u8; 32]], index: u8) -> Result<Pubkey> {
@@ -395,14 +398,14 @@ fn resolve_dictionary_subjects(dictionary: &[[u8; 32]], indexes: &[u8]) -> Resul
 
 fn persistent_output_authority<'info>(
     table: &EvalAccountTable<'_, 'info>,
-    ctx: &Context<'info, FheEval<'info>>,
+    ctx: &Context<'info, FheExecute<'info>>,
     authority_index: Option<u16>,
     output_account: Pubkey,
 ) -> Result<AccountInfo<'info>> {
     let authority = match authority_index {
         Some(index) => {
             let authority = table.account(index)?;
-            require!(authority.is_signer, ZamaHostError::InvalidFheEvalAccount);
+            require!(authority.is_signer, ZamaHostError::InvalidFheExecuteAccount);
             require_keys_eq!(
                 authority.key(),
                 output_account,
@@ -474,7 +477,7 @@ fn inputs3_allow_public_decrypt(
 #[inline(never)]
 #[allow(clippy::too_many_arguments)]
 fn bind_eval_output<'info>(
-    ctx: &Context<'info, FheEval<'info>>,
+    ctx: &Context<'info, FheExecute<'info>>,
     table: &mut EvalAccountTable<'_, 'info>,
     output_encrypted_value_index: u16,
     result: [u8; 32],
@@ -501,7 +504,7 @@ fn bind_eval_output<'info>(
     // Explicit on the update path; `create_pda_strict` enforces it on create.
     require!(
         output_info.is_writable,
-        ZamaHostError::InvalidFheEvalAccount
+        ZamaHostError::InvalidFheExecuteAccount
     );
 
     if output_info.owner == &crate::ID {
@@ -679,12 +682,12 @@ mod tests {
         let account = AccountInfo::new(&key, false, true, &mut lamports, &mut data, &owner, false);
         let accounts = [account];
         let table = EvalAccountTable::new(&accounts).unwrap();
-        let args = FheEvalArgs {
+        let args = FheExecuteArgs {
             account_count: 1,
             dictionary: Vec::new(),
-            steps: vec![FheEvalStep::Rand {
+            steps: vec![FheExecuteStep::Rand {
                 fhe_type: 5,
-                output: FheEvalOutput::AllowedPersistent {
+                output: FheExecuteOutput::AllowedPersistent {
                     output_encrypted_value_index: 0,
                     output_account_authority_index: None,
                     output_domain_index: 0,

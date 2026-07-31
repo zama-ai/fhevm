@@ -5,12 +5,12 @@
 //!   `UserDecryptionDelegationUpdated`) are emitted through `emit!` as
 //!   indexing hints. Authorization always comes from host-owned account
 //!   state, never from event bytes.
-//! - `FheEvalRandomSeedsEvent` and `PublicOutputsProducedEvent` are emitted
+//! - `FheExecuteRandomSeedsEvent` and `PublicOutputsProducedEvent` are emitted
 //!   through the event CPI. They are load-bearing for off-chain consumers:
 //!   they carry the only data an indexer cannot recompute from instruction
 //!   data alone (block-entropy-derived seeds and output handles).
 //! - The per-step compute types (the `Fhe*Event` op records other than
-//!   `FheEvalRandomSeedsEvent`, plus `TrivialEncryptEvent`) are never
+//!   `FheExecuteRandomSeedsEvent`, plus `TrivialEncryptEvent`) are never
 //!   emitted on-chain. They are the record shapes the listener
 //!   reconstructs by replaying instruction data through the same handle
 //!   derivation the program runs (see the listener's `solana_reconstruct`).
@@ -23,7 +23,7 @@ use anchor_lang::prelude::*;
 
 use crate::state::{FheBinaryOpCode, FheTernaryOpCode, FheUnaryOpCode};
 
-/// One public persistent output produced by an `fhe_eval` frame.
+/// One public persistent output produced by an `fhe_execute` frame.
 #[derive(AnchorSerialize, AnchorDeserialize, Clone, Debug, PartialEq, Eq)]
 pub struct ProducedPublicOutput {
     /// Zero-based step index within the frame.
@@ -34,7 +34,7 @@ pub struct ProducedPublicOutput {
     pub output_handle: [u8; 32],
 }
 
-/// Emitted once for the public outputs produced by an `fhe_eval` frame.
+/// Emitted once for the public outputs produced by an `fhe_execute` frame.
 #[event]
 pub struct PublicOutputsProducedEvent {
     /// Event schema version.
@@ -43,22 +43,22 @@ pub struct PublicOutputsProducedEvent {
     pub outputs: Vec<ProducedPublicOutput>,
 }
 
-/// One host-derived random seed used by an `fhe_eval` step.
+/// One host-derived random seed used by an `fhe_execute` step.
 #[derive(AnchorSerialize, AnchorDeserialize, Clone, Debug, PartialEq, Eq)]
-pub struct FheEvalRandomSeed {
+pub struct FheExecuteRandomSeed {
     /// Zero-based step index within the frame.
     pub step_index: u16,
     /// Seed derived from live persistent account state.
     pub seed: [u8; 16],
 }
 
-/// Emitted once for the random steps in an `fhe_eval` frame.
+/// Emitted once for the random steps in an `fhe_execute` frame.
 #[event]
-pub struct FheEvalRandomSeedsEvent {
+pub struct FheExecuteRandomSeedsEvent {
     /// Event schema version.
     pub version: u8,
     /// Random seeds in frame step order.
-    pub seeds: Vec<FheEvalRandomSeed>,
+    pub seeds: Vec<FheExecuteRandomSeed>,
 }
 
 /// Emitted when the singleton host config is initialized.
@@ -87,9 +87,9 @@ pub struct HostConfigUpdatedEvent {
     pub paused: bool,
     /// Current grant deny-list gate.
     pub grant_deny_list_enabled: bool,
-    /// Current max total HCU per `fhe_eval` plan (`u64::MAX` = unlimited).
+    /// Current max total HCU per `fhe_execute` plan (`u64::MAX` = unlimited).
     pub max_hcu_per_tx: u64,
-    /// Current max critical-path HCU per `fhe_eval` plan (`u64::MAX` = unlimited).
+    /// Current max critical-path HCU per `fhe_execute` plan (`u64::MAX` = unlimited).
     pub max_hcu_depth_per_tx: u64,
     /// Current per-app HCU block cap (`u64::MAX` = unrestricted, `0` = ban untrusted apps).
     pub hcu_block_cap_per_app: u64,

@@ -48,7 +48,7 @@ this handle" — current membership, or an MMR-proven historical/public-decrypt 
 
 ## Instruction-Local Transients
 
-`fhe_eval` composes mixed FHE steps in one host instruction: **Binary / Ternary / Unary /
+`fhe_execute` composes mixed FHE steps in one host instruction: **Binary / Ternary / Unary /
 TrivialEncrypt / Rand / RandBounded / Sum / IsIn / MulDiv** (no `Input` step — DD-007/DD-023). Binary scratch results can feed ternary
 `if_then_else`, and trivial-encrypt / random creations can participate in the same frame. Outputs
 produced earlier in the eval can be referenced as transient operands by later operations.
@@ -71,7 +71,7 @@ one versioned Anchor CPI lifecycle batch containing their ordered step index, ho
 no lifecycle batch. The bounded 16-output maximum fits one CPI; other `EncryptedValue` lifecycle
 paths remain event-free (`docs/DESIGN_DECISIONS.md` DD-033/DD-038).
 
-Admission invariants for `fhe_eval`:
+Admission invariants for `fhe_execute`:
 
 - The frame must contain 1 to 16 steps, and a frame with a rand step must declare at least one
   persistent output (the rand seed is anchored to the frame's persistent writes).
@@ -82,7 +82,7 @@ Admission invariants for `fhe_eval`:
 - Transient operands may only reference outputs produced by earlier steps in the same frame.
 - Only the RHS of a binary operation may be scalar; encrypted operands must match the operator's FHE
   type rules.
-- External encrypted inputs enter compute through the `FheEvalOperand::VerifiedInput` operand: the
+- External encrypted inputs enter compute through the `FheExecuteOperand::VerifiedInput` operand: the
   coprocessor attestation is re-verified in-frame and the input is transient-allowed for that eval only
   (the EVM `fromExternal` / `allowTransient(input, msg.sender)` analog). The caller-is-contract gate is
   checked at input consumption (`attestation.contract_address == compute_subject`); derived outputs are
@@ -93,8 +93,8 @@ Admission invariants for `fhe_eval`:
 
 ## External Inputs
 
-The `FheEvalOperand::VerifiedInput` operand is the production encrypted-input path (the Solana
-`FHE.fromExternal` analog). When an `fhe_eval` step consumes it, the host re-verifies the
+The `FheExecuteOperand::VerifiedInput` operand is the production encrypted-input path (the Solana
+`FHE.fromExternal` analog). When an `fhe_execute` step consumes it, the host re-verifies the
 **coprocessor's EIP-712 `CiphertextVerification` attestation on-chain via secp256k1** (recovering the
 EVM coprocessor signers and threshold-checking them against the configured coprocessor signer set),
 asserts the attested `contract_chain_id` equals the host chain id (EVM's `contractChainId ==
@@ -124,7 +124,7 @@ is retained only as the replaced-design stub in DD-007.
 ## ACL Model
 
 `EncryptedValue.subjects` is the complete MVP ACL: if a subject is in the set, it can use the
-current handle in `fhe_eval`, request user decrypt, add another subject through `allow_subjects`,
+current handle in `fhe_execute`, request user decrypt, add another subject through `allow_subjects`,
 and call `make_handle_public` for the exact current handle. If a subject is not in the set, it cannot
 do any of those actions.
 
@@ -139,6 +139,6 @@ The host has no test-only verification or handle-creation path. Tests that creat
 `Clock` and `SlotHashes` sysvars; missing previous-bank entropy fails closed exactly as it does in a
 deployed program (DD-014). Registered-signer threshold policy and real proof/transciphering
 validation are still external/open design items.
-Trivial and random handle creation paths (now `fhe_eval` `TrivialEncrypt`/`Rand`/`RandBounded` steps —
+Trivial and random handle creation paths (now `fhe_execute` `TrivialEncrypt`/`Rand`/`RandBounded` steps —
 the standalone `trivial_encrypt_and_bind`/`fhe_rand*_and_bind` instructions were removed) include
 output entropy in handle derivation before binding the result into an `EncryptedValue`.

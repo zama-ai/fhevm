@@ -1,5 +1,5 @@
 //! Single owner of every remaining-accounts safety invariant for one
-//! `fhe_eval` frame.
+//! `fhe_execute` frame.
 //!
 //! Construction rejects duplicate account keys. Preflight marks every account
 //! the plan references and [`EvalAccountTable::assert_all_used`] rejects
@@ -42,27 +42,27 @@ impl<'a, 'info> EvalAccountTable<'a, 'info> {
                 !accounts[index + 1..]
                     .iter()
                     .any(|later| later.key() == account.key()),
-                ZamaHostError::InvalidFheEvalAccount
+                ZamaHostError::InvalidFheExecuteAccount
             );
         }
         Ok(Self {
             accounts,
             used: vec![false; accounts.len()],
-            persistent_outputs_claimed: Vec::with_capacity(MAX_FHE_EVAL_OPS),
+            persistent_outputs_claimed: Vec::with_capacity(MAX_FHE_BATCH_OPS),
         })
     }
 
     pub(super) fn account(&self, index: u16) -> Result<&'a AccountInfo<'info>> {
         self.accounts
             .get(index as usize)
-            .ok_or_else(|| error!(ZamaHostError::InvalidFheEvalAccount))
+            .ok_or_else(|| error!(ZamaHostError::InvalidFheExecuteAccount))
     }
 
     pub(super) fn mark(&mut self, index: u16) -> Result<()> {
         let used = self
             .used
             .get_mut(index as usize)
-            .ok_or_else(|| error!(ZamaHostError::InvalidFheEvalAccount))?;
+            .ok_or_else(|| error!(ZamaHostError::InvalidFheExecuteAccount))?;
         *used = true;
         Ok(())
     }
@@ -134,7 +134,7 @@ impl<'a, 'info> EvalAccountTable<'a, 'info> {
     pub(super) fn claim_persistent_output(&mut self, key: Pubkey) -> Result<()> {
         require!(
             !self.persistent_outputs_claimed.contains(&key),
-            ZamaHostError::FheEvalOutputAlreadyInitialized
+            ZamaHostError::FheExecuteOutputAlreadyInitialized
         );
         self.persistent_outputs_claimed.push(key);
         Ok(())
@@ -145,7 +145,7 @@ impl<'a, 'info> EvalAccountTable<'a, 'info> {
     pub(super) fn assert_all_used(&self) -> Result<()> {
         require!(
             self.used.iter().all(|used| *used),
-            ZamaHostError::InvalidFheEvalAccount
+            ZamaHostError::InvalidFheExecuteAccount
         );
         Ok(())
     }

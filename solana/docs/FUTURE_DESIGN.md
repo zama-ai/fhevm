@@ -12,7 +12,7 @@ to [`DESIGN_DECISIONS.md`](./DESIGN_DECISIONS.md).
 against it via `eip712::verify_threshold` (the same machinery the KMS cert path uses). The set lives
 inline in `HostConfig` rather than a dedicated context PDA (the decision the earlier version of this
 item flagged as open): a fixed-cap array keeps the singleton layout pinned and adds no account to the
-byte-tight `fhe_eval`. Admin-gated rotation via `set_coprocessor_signers`.
+byte-tight `fhe_execute`. Admin-gated rotation via `set_coprocessor_signers`.
 
 **Remaining forward work** (not the signer-set wiring itself):
 - A gateway-sync authority that mirrors the EVM `GatewayConfig` coprocessor registry into
@@ -26,7 +26,7 @@ byte-tight `fhe_eval`. Admin-gated rotation via `set_coprocessor_signers`.
 
 The host enforces only `attestation.contract_address == compute_subject` (the msg.sender analog).
 The convention that `compute_subject` is an app compute-authority PDA (e.g. `[b"fhe-compute", mint]`)
-is **app policy**, not protocol-enforced. `EvalBuilder` cannot assert it because `compute_subject` is
+is **app policy**, not protocol-enforced. `BatchBuilder` cannot assert it because `compute_subject` is
 only known at eval-execution time.
 
 **Decision needed:** lift the PDA-binding discipline to a protocol-level assertion, or codify it as an

@@ -37,12 +37,12 @@ pub struct InitializeTokenAccount<'info> {
     pub host_config: Account<'info, zama_host::HostConfig>,
     /// System program used for account creation.
     pub system_program: Program<'info, System>,
-    /// CHECK: forwarded verbatim into the ZamaHost `fhe_eval` CPI, which validates it against the
+    /// CHECK: forwarded verbatim into the ZamaHost `fhe_execute` CPI, which validates it against the
     /// canonical `["hcu-block-meter", compute_signer]` PDA. Supplied by an untrusted mint under a
     /// metering-band cap; omitted when the mint is trusted or the cap is unrestricted.
     #[account(mut)]
     pub hcu_block_meter: Option<UncheckedAccount<'info>>,
-    /// CHECK: forwarded verbatim into the ZamaHost `fhe_eval` CPI, which validates it against the
+    /// CHECK: forwarded verbatim into the ZamaHost `fhe_execute` CPI, which validates it against the
     /// canonical `["hcu-trusted", compute_signer]` PDA. Present + valid bypasses the cap; absent
     /// means the mint is metered.
     pub hcu_trusted_app_record: Option<UncheckedAccount<'info>>,
@@ -86,7 +86,7 @@ pub fn initialize_token_account<'info>(
         fhe::PersistentAudience::for_owner(owner, compute_signer),
     )?;
     let mut builder =
-        zama_fhe::EvalBuilder::new(zama_fhe::EvalAppAuthority::new(token_account_key));
+        zama_fhe::BatchBuilder::new(zama_fhe::BatchAppAuthority::new(token_account_key));
     builder
         .trivial_encrypt_u64(initial_balance, balance_output.output())
         .map_err(invalid_eval_plan)?;

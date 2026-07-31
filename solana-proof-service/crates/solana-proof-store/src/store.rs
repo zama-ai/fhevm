@@ -343,7 +343,7 @@ impl SqlProofStore {
         // per encrypted_value_account, and each update seals one leaf per subject.
         //
         // Public-decrypt keys are NOT unique — a handle can carry several public-decrypt leaves
-        // (a created-public `fhe_eval` output seals one, and a later `make_handle_public` re-release
+        // (a created-public `fhe_execute` output seals one, and a later `make_handle_public` re-release
         // seals another; on-chain `make_handle_public` has no already-public guard). Any such leaf
         // is sufficient proof of publicness, so `ORDER BY leaf_index ASC LIMIT 1` resolves to the
         // earliest sealing: it is deterministic and append-stable (the same query returns the same

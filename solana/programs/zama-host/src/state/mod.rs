@@ -130,7 +130,7 @@ impl FheUnaryOpCode {
 
 /// Arguments for composed instruction-local FHE evaluation.
 #[derive(AnchorSerialize, AnchorDeserialize, Clone, Debug, PartialEq, Eq)]
-pub struct FheEvalArgs {
+pub struct FheExecuteArgs {
     /// Declared `remaining_accounts` length, asserted equal to the actual list. Carried in
     /// instruction data so stateless indexers can validate account references without the
     /// transaction envelope (DD-033 self-description).
@@ -142,16 +142,16 @@ pub struct FheEvalArgs {
     pub dictionary: Vec<[u8; 32]>,
     /// Ordered step list. Each `AllowedLocal` operand may only reference an output
     /// produced by an earlier index in this vector.
-    pub steps: Vec<FheEvalStep>,
+    pub steps: Vec<FheExecuteStep>,
 }
 
-impl FheEvalArgs {
+impl FheExecuteArgs {
     /// Resolves an interned dictionary entry; an out-of-range index fails the frame.
     pub fn dictionary_bytes(&self, index: u8) -> anchor_lang::Result<[u8; 32]> {
         self.dictionary
             .get(index as usize)
             .copied()
-            .ok_or_else(|| error!(ZamaHostError::FheEvalDictionaryIndexOutOfBounds))
+            .ok_or_else(|| error!(ZamaHostError::FheExecuteDictionaryIndexOutOfBounds))
     }
 
     /// Resolves an interned dictionary entry as a public key.
@@ -162,34 +162,34 @@ impl FheEvalArgs {
 
 /// One step inside a composed FHE eval.
 #[derive(AnchorSerialize, AnchorDeserialize, Clone, Debug, PartialEq, Eq)]
-pub enum FheEvalStep {
+pub enum FheExecuteStep {
     /// Binary operator step.
     Binary {
         /// Binary operator.
         op: FheBinaryOpCode,
         /// Left-hand encrypted operand.
-        lhs: FheEvalOperand,
+        lhs: FheExecuteOperand,
         /// Right-hand encrypted operand or scalar bytes.
-        rhs: FheEvalOperand,
+        rhs: FheExecuteOperand,
         /// FHE type byte embedded in the output handle.
         output_fhe_type: u8,
         /// Whether this output remains instruction-local or is bound into persistent ACL state.
-        output: FheEvalOutput,
+        output: FheExecuteOutput,
     },
     /// Ternary operator step.
     Ternary {
         /// Ternary operator.
         op: FheTernaryOpCode,
         /// Encrypted bool control operand.
-        control: FheEvalOperand,
+        control: FheExecuteOperand,
         /// Encrypted branch selected when control is true.
-        if_true: FheEvalOperand,
+        if_true: FheExecuteOperand,
         /// Encrypted branch selected when control is false.
-        if_false: FheEvalOperand,
+        if_false: FheExecuteOperand,
         /// FHE type byte embedded in the output handle.
         output_fhe_type: u8,
         /// Whether this output remains instruction-local or is bound into persistent ACL state.
-        output: FheEvalOutput,
+        output: FheExecuteOutput,
     },
     /// Trivial encryption step.
     TrivialEncrypt {
@@ -198,25 +198,25 @@ pub enum FheEvalStep {
         /// FHE type byte embedded in the output handle.
         fhe_type: u8,
         /// Whether this output remains instruction-local or is bound into persistent ACL state.
-        output: FheEvalOutput,
+        output: FheExecuteOutput,
     },
     /// Random ciphertext step.
     Rand {
         /// FHE type byte embedded in the output handle.
         fhe_type: u8,
         /// Whether this output remains instruction-local or is bound into persistent ACL state.
-        output: FheEvalOutput,
+        output: FheExecuteOutput,
     },
     /// Unary operator step.
     Unary {
         /// Unary operator.
         op: FheUnaryOpCode,
         /// Encrypted operand.
-        operand: FheEvalOperand,
+        operand: FheExecuteOperand,
         /// FHE type byte embedded in the output handle.
         output_fhe_type: u8,
         /// Whether this output remains instruction-local or is bound into persistent ACL state.
-        output: FheEvalOutput,
+        output: FheExecuteOutput,
     },
     /// Bounded random ciphertext step.
     RandBounded {
@@ -225,44 +225,44 @@ pub enum FheEvalStep {
         /// FHE type byte embedded in the output handle.
         fhe_type: u8,
         /// Whether this output remains instruction-local or is bound into persistent ACL state.
-        output: FheEvalOutput,
+        output: FheExecuteOutput,
     },
     /// Sum step.
     Sum {
         /// Encrypted operands.
-        operands: Vec<FheEvalOperand>,
+        operands: Vec<FheExecuteOperand>,
         /// FHE type byte embedded in the output handle.
         fhe_type: u8,
         /// Whether this output remains instruction-local or is bound into persistent ACL state.
-        output: FheEvalOutput,
+        output: FheExecuteOutput,
     },
     /// Is-in membership test step.
     IsIn {
         /// Encrypted value to test.
-        value: FheEvalOperand,
+        value: FheExecuteOperand,
         /// Encrypted set operands.
-        set: Vec<FheEvalOperand>,
+        set: Vec<FheExecuteOperand>,
         /// FHE type byte of the value and set elements.
         fhe_type: u8,
         /// Whether this output remains instruction-local or is bound into persistent ACL state.
-        output: FheEvalOutput,
+        output: FheExecuteOutput,
     },
     /// Multiply-then-divide step.
     MulDiv {
         /// Left-hand encrypted factor.
-        factor1: FheEvalOperand,
+        factor1: FheExecuteOperand,
         /// Right-hand factor, encrypted or scalar bytes.
-        factor2: FheEvalOperand,
+        factor2: FheExecuteOperand,
         /// Divisor encoded as a 256-bit big-endian integer.
         divisor: [u8; 32],
         /// FHE type byte embedded in the output handle.
         output_fhe_type: u8,
         /// Whether this output remains instruction-local or is bound into persistent ACL state.
-        output: FheEvalOutput,
+        output: FheExecuteOutput,
     },
 }
 
-/// A coprocessor input attestation carried inline by a [`FheEvalOperand::VerifiedInput`], re-verified
+/// A coprocessor input attestation carried inline by a [`FheExecuteOperand::VerifiedInput`], re-verified
 /// in-frame (no account, no PDA) — the instruction-local analog of EVM `allowTransient(input, contract)`.
 #[derive(AnchorSerialize, AnchorDeserialize, Clone, Debug, PartialEq, Eq)]
 pub struct CoprocessorInputAttestation {
@@ -286,7 +286,7 @@ pub struct CoprocessorInputAttestation {
 
 /// Operand source for a composed FHE eval operation.
 #[derive(AnchorSerialize, AnchorDeserialize, Clone, Debug, PartialEq, Eq)]
-pub enum FheEvalOperand {
+pub enum FheExecuteOperand {
     /// Input allowed through persistent ACL state: a canonical `EncryptedValue`
     /// account in `remaining_accounts` whose current handle matches.
     AllowedPersistent {
@@ -295,7 +295,7 @@ pub enum FheEvalOperand {
         /// Index into `remaining_accounts` for the `EncryptedValue` account.
         encrypted_value_index: u8,
     },
-    /// Instruction-local value produced by an earlier operation in this `fhe_eval`; allowed only
+    /// Instruction-local value produced by an earlier operation in this `fhe_execute`; allowed only
     /// inside the current evaluation scope and never stored.
     AllowedLocal {
         /// Producer operation index.
@@ -308,12 +308,12 @@ pub enum FheEvalOperand {
     },
     /// External encrypted input verified in-frame by re-running the coprocessor attestation.
     /// The "allow" is instruction-local (no ACL record, no session, no PDA): the input is usable
-    /// only where it is consumed in the same `fhe_eval`. Valid as an encrypted operand, not a scalar.
+    /// only where it is consumed in the same `fhe_execute`. Valid as an encrypted operand, not a scalar.
     VerifiedInput {
         /// The inline attestation re-verified to authorize this operand.
         // Boxed so the ~190-byte attestation is paid only by operands that carry one, not
-        // inlined into every `FheEvalOperand` slot of every step (a Rust enum is as large as
-        // its fattest variant, and plans live in `Vec<FheEvalStep>` on the 32KB SBF bump heap
+        // inlined into every `FheExecuteOperand` slot of every step (a Rust enum is as large as
+        // its fattest variant, and plans live in `Vec<FheExecuteStep>` on the 32KB SBF bump heap
         // on both sides of the CPI). `Box<T>` is borsh- and IDL-transparent: the wire format
         // is unchanged.
         attestation: Box<CoprocessorInputAttestation>,
@@ -322,8 +322,8 @@ pub enum FheEvalOperand {
 
 /// Output policy for a composed FHE eval operation.
 #[derive(AnchorSerialize, AnchorDeserialize, Clone, Debug, PartialEq, Eq)]
-pub enum FheEvalOutput {
-    /// Output stays allowed only inside the current `fhe_eval` scope; no persistent ACL record.
+pub enum FheExecuteOutput {
+    /// Output stays allowed only inside the current `fhe_execute` scope; no persistent ACL record.
     AllowedLocal,
     /// Output is bound into persistent ACL state: the `EncryptedValue` encrypted value account PDA
     /// is created when absent, or replaced when it exists.
@@ -651,7 +651,7 @@ pub fn assert_sum_operand_types(operand_handles: &[[u8; 32]], fhe_type: u8) -> R
     // Cap the operand count at the coprocessor's FheSum limit (transient operands use no accounts).
     require!(
         operand_handles.len() <= max_reduction_operands(fhe_type),
-        ZamaHostError::InvalidFheEvalAccount
+        ZamaHostError::InvalidFheExecuteAccount
     );
     for handle in operand_handles {
         require!(
@@ -674,7 +674,7 @@ pub fn assert_is_in_operand_types(
     // Cap the set size at the coprocessor's FheIsIn limit (its `set_size` bound excludes the value).
     require!(
         set_handles.len() <= max_reduction_operands(fhe_type),
-        ZamaHostError::InvalidFheEvalAccount
+        ZamaHostError::InvalidFheExecuteAccount
     );
     require!(
         handle_fhe_type(value_handle) == fhe_type,

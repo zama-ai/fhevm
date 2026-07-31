@@ -12,7 +12,7 @@
 //! test.
 //!
 //! Encrypted state is checked with the cleartext ledger: each instruction's
-//! `fhe_eval` CPIs (there can be several — a token CPI's eval plus the
+//! `fhe_execute` CPIs (there can be several — a token CPI's eval plus the
 //! batcher's own) are decoded from the inner instructions and replayed in
 //! cleartext, binding results to the handles the host persisted.
 //!
@@ -46,7 +46,9 @@ use solana_sdk::{
 };
 use std::collections::HashMap;
 use std::path::PathBuf;
-use support::cleartext_fhe_eval::{evaluate as evaluate_cleartext, ClearInputs, TypedClearValue};
+use support::cleartext_fhe_execute::{
+    evaluate as evaluate_cleartext, ClearInputs, TypedClearValue,
+};
 use support::kms_cert::{cleartext_u256, kms_signing_key, secp_evm_address, secp_sign};
 use zama_host as host;
 
@@ -76,7 +78,7 @@ fn mollusk() -> Mollusk {
     mollusk.add_program(&token::id(), "confidential_token");
     mollusk.add_program(&vault::id(), "demo_vault");
     mollusk_svm_programs_token::token::add_program(&mut mollusk);
-    // fhe_eval derives handle entropy from the previous bank hash: run at a
+    // fhe_execute derives handle entropy from the previous bank hash: run at a
     // nonzero slot with a SlotHashes entry below it, like a real validator.
     mollusk.sysvars.clock.slot = 100;
     mollusk.sysvars.slot_hashes =
@@ -134,22 +136,22 @@ fn batcher_error(error: batcher::BatcherError) -> Check<'static> {
     ))
 }
 
-fn decode_fhe_eval_args(data: &[u8]) -> Option<host::FheEvalArgs> {
-    let payload = data.strip_prefix(host::instruction::FheEval::DISCRIMINATOR)?;
-    host::FheEvalArgs::deserialize(&mut &*payload).ok()
+fn decode_fhe_execute_args(data: &[u8]) -> Option<host::FheExecuteArgs> {
+    let payload = data.strip_prefix(host::instruction::FheExecute::DISCRIMINATOR)?;
+    host::FheExecuteArgs::deserialize(&mut &*payload).ok()
 }
 
-fn eval_step_output(step: &host::FheEvalStep) -> &host::FheEvalOutput {
+fn eval_step_output(step: &host::FheExecuteStep) -> &host::FheExecuteOutput {
     match step {
-        host::FheEvalStep::Binary { output, .. }
-        | host::FheEvalStep::Ternary { output, .. }
-        | host::FheEvalStep::TrivialEncrypt { output, .. }
-        | host::FheEvalStep::Rand { output, .. }
-        | host::FheEvalStep::Unary { output, .. }
-        | host::FheEvalStep::RandBounded { output, .. }
-        | host::FheEvalStep::Sum { output, .. }
-        | host::FheEvalStep::IsIn { output, .. }
-        | host::FheEvalStep::MulDiv { output, .. } => output,
+        host::FheExecuteStep::Binary { output, .. }
+        | host::FheExecuteStep::Ternary { output, .. }
+        | host::FheExecuteStep::TrivialEncrypt { output, .. }
+        | host::FheExecuteStep::Rand { output, .. }
+        | host::FheExecuteStep::Unary { output, .. }
+        | host::FheExecuteStep::RandBounded { output, .. }
+        | host::FheExecuteStep::Sum { output, .. }
+        | host::FheExecuteStep::IsIn { output, .. }
+        | host::FheExecuteStep::MulDiv { output, .. } => output,
     }
 }
 
@@ -165,7 +167,7 @@ impl CleartextLedger {
             .insert(handle, TypedClearValue::from_u64(BALANCE_FHE_TYPE, value));
     }
 
-    /// Replays every `fhe_eval` CPI a batcher instruction issued — in order,
+    /// Replays every `fhe_execute` CPI a batcher instruction issued — in order,
     /// so a later eval can consume an earlier eval's persisted outputs (the
     /// join re-materialization reads the transfer's `transferred_amount`).
     /// Each instruction writes any encrypted value account at most once, so binding results to
@@ -185,11 +187,11 @@ impl CleartextLedger {
                     .copied()
                     == Some(host::id())
             })
-            .filter_map(|inner| decode_fhe_eval_args(&inner.instruction.data))
+            .filter_map(|inner| decode_fhe_execute_args(&inner.instruction.data))
             .collect::<Vec<_>>();
         assert!(
             !eval_args.is_empty(),
-            "expected at least one fhe_eval CPI in this instruction"
+            "expected at least one fhe_execute CPI in this instruction"
         );
 
         let mut evals = 0;
@@ -197,7 +199,7 @@ impl CleartextLedger {
             let outputs = evaluate_cleartext(args, &self.values)
                 .expect("every emitted FHE plan must be valid in cleartext");
             for (step, value) in args.steps.iter().zip(outputs) {
-                let host::FheEvalOutput::AllowedPersistent {
+                let host::FheExecuteOutput::AllowedPersistent {
                     output_domain_index,
                     output_account_index,
                     output_label_index,

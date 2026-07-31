@@ -1,4 +1,4 @@
-//! Representative real-host conformance for Solana `fhe_eval` operator families.
+//! Representative real-host conformance for Solana `fhe_execute` operator families.
 //!
 //! Each test executes one canonical instruction against the compiled `zama_host` program, then
 //! evaluates that exact plan in the test-owned cleartext evaluator. The exhaustive semantic
@@ -19,10 +19,10 @@ use solana_sdk::{
     instruction::{AccountMeta, Instruction},
     pubkey::Pubkey,
 };
-use support::cleartext_fhe_eval::{evaluate, ClearInputs, TypedClearValue};
+use support::cleartext_fhe_execute::{evaluate, ClearInputs, TypedClearValue};
 use zama_host::{
-    self as host, FheBinaryOpCode, FheEvalArgs, FheEvalOperand, FheEvalOutput, FheEvalStep,
-    FheUnaryOpCode,
+    self as host, FheBinaryOpCode, FheExecuteArgs, FheExecuteOperand, FheExecuteOutput,
+    FheExecuteStep, FheUnaryOpCode,
 };
 
 const PREVIOUS_BANK_HASH: [u8; 32] = [0x44; 32];
@@ -33,12 +33,12 @@ fn encrypted_encrypted_add_executes_then_reads_cleartext_outcome() {
     let mut flow = EvalFlow::new();
     let lhs = flow.encrypted(5, 40);
     let rhs = flow.encrypted(5, 2);
-    let outcome = flow.execute(FheEvalStep::Binary {
+    let outcome = flow.execute(FheExecuteStep::Binary {
         op: FheBinaryOpCode::Add,
         lhs: lhs.clone(),
         rhs: rhs.clone(),
         output_fhe_type: 5,
-        output: FheEvalOutput::AllowedLocal,
+        output: FheExecuteOutput::AllowedLocal,
     });
 
     outcome.assert_u64(5, 42);
@@ -56,12 +56,12 @@ fn encrypted_scalar_add_executes_then_reads_cleartext_outcome() {
     let mut flow = EvalFlow::new();
     let lhs = flow.encrypted(5, 40);
     let rhs = scalar(be(2));
-    let outcome = flow.execute(FheEvalStep::Binary {
+    let outcome = flow.execute(FheExecuteStep::Binary {
         op: FheBinaryOpCode::Add,
         lhs: lhs.clone(),
         rhs: rhs.clone(),
         output_fhe_type: 5,
-        output: FheEvalOutput::AllowedLocal,
+        output: FheExecuteOutput::AllowedLocal,
     });
 
     outcome.assert_u64(5, 42);
@@ -79,12 +79,12 @@ fn comparison_executes_then_reads_bool_outcome() {
     let mut flow = EvalFlow::new();
     let lhs = flow.encrypted(5, 42);
     let rhs = flow.encrypted(5, 42);
-    let outcome = flow.execute(FheEvalStep::Binary {
+    let outcome = flow.execute(FheExecuteStep::Binary {
         op: FheBinaryOpCode::Eq,
         lhs: lhs.clone(),
         rhs: rhs.clone(),
         output_fhe_type: 0,
-        output: FheEvalOutput::AllowedLocal,
+        output: FheExecuteOutput::AllowedLocal,
     });
 
     outcome.assert_u64(0, 1);
@@ -101,11 +101,11 @@ fn comparison_executes_then_reads_bool_outcome() {
 fn cast_executes_then_reads_widened_outcome() {
     let mut flow = EvalFlow::new();
     let operand = flow.encrypted(2, 255);
-    let outcome = flow.execute(FheEvalStep::Unary {
+    let outcome = flow.execute(FheExecuteStep::Unary {
         op: FheUnaryOpCode::Cast,
         operand: operand.clone(),
         output_fhe_type: 5,
-        output: FheEvalOutput::AllowedLocal,
+        output: FheExecuteOutput::AllowedLocal,
     });
 
     outcome.assert_u64(5, 255);
@@ -120,11 +120,11 @@ fn cast_executes_then_reads_widened_outcome() {
 fn unary_not_executes_then_reads_width_bounded_outcome() {
     let mut flow = EvalFlow::new();
     let operand = flow.encrypted(2, 0b1010);
-    let outcome = flow.execute(FheEvalStep::Unary {
+    let outcome = flow.execute(FheExecuteStep::Unary {
         op: FheUnaryOpCode::Not,
         operand: operand.clone(),
         output_fhe_type: 2,
-        output: FheEvalOutput::AllowedLocal,
+        output: FheExecuteOutput::AllowedLocal,
     });
 
     outcome.assert_u64(2, 0b1111_0101);
@@ -142,11 +142,11 @@ fn membership_executes_then_reads_present_outcome() {
     let first = flow.encrypted(5, 7);
     let second = flow.encrypted(5, 42);
     let set = vec![first, second];
-    let outcome = flow.execute(FheEvalStep::IsIn {
+    let outcome = flow.execute(FheExecuteStep::IsIn {
         value: value.clone(),
         set: set.clone(),
         fhe_type: 5,
-        output: FheEvalOutput::AllowedLocal,
+        output: FheExecuteOutput::AllowedLocal,
     });
 
     outcome.assert_u64(0, 1);
@@ -159,9 +159,9 @@ fn membership_executes_then_reads_present_outcome() {
 
 #[test]
 fn random_executes_then_binds_seed_and_type() {
-    let outcome = EvalFlow::new().execute(FheEvalStep::Rand {
+    let outcome = EvalFlow::new().execute(FheExecuteStep::Rand {
         fhe_type: 5,
-        output: FheEvalOutput::AllowedLocal,
+        output: FheExecuteOutput::AllowedLocal,
     });
 
     assert_eq!(outcome.only_cleartext().fhe_type, 5);
@@ -173,10 +173,10 @@ fn random_executes_then_binds_seed_and_type() {
 
 #[test]
 fn bounded_random_executes_then_binds_bound_into_result_handle() {
-    let outcome = EvalFlow::new().execute(FheEvalStep::RandBounded {
+    let outcome = EvalFlow::new().execute(FheExecuteStep::RandBounded {
         upper_bound: be(16),
         fhe_type: 5,
-        output: FheEvalOutput::AllowedLocal,
+        output: FheExecuteOutput::AllowedLocal,
     });
 
     assert!(outcome.only_u64() < 16);
@@ -194,12 +194,12 @@ fn mismatched_encrypted_operand_types_are_rejected() {
     let rhs = flow.encrypted(4, 2);
 
     flow.rejects(
-        FheEvalStep::Binary {
+        FheExecuteStep::Binary {
             op: FheBinaryOpCode::Add,
             lhs,
             rhs,
             output_fhe_type: 5,
-            output: FheEvalOutput::AllowedLocal,
+            output: FheExecuteOutput::AllowedLocal,
         },
         host::errors::ZamaHostError::BinaryOperandTypeMismatch,
     );
@@ -212,12 +212,12 @@ fn system_owned_encrypted_operand_is_rejected() {
     flow.make_last_encrypted_account_system_owned();
 
     flow.rejects(
-        FheEvalStep::Binary {
+        FheExecuteStep::Binary {
             op: FheBinaryOpCode::Add,
             lhs,
             rhs: scalar(be(2)),
             output_fhe_type: 5,
-            output: FheEvalOutput::AllowedLocal,
+            output: FheExecuteOutput::AllowedLocal,
         },
         host::errors::ZamaHostError::EncryptedValueAccountInvalid,
     );
@@ -230,14 +230,14 @@ fn readonly_persistent_output_is_rejected() {
     let output = flow.readonly_persistent_output();
 
     flow.rejects(
-        FheEvalStep::Binary {
+        FheExecuteStep::Binary {
             op: FheBinaryOpCode::Add,
             lhs,
             rhs: scalar(be(2)),
             output_fhe_type: 5,
             output,
         },
-        host::errors::ZamaHostError::InvalidFheEvalAccount,
+        host::errors::ZamaHostError::InvalidFheExecuteAccount,
     );
 }
 
@@ -277,8 +277,8 @@ fn pool_entry(index: u8) -> [u8; 32] {
     FRAME_POOL.with(|dictionary| dictionary.borrow()[usize::from(index)])
 }
 
-fn scalar(value: [u8; 32]) -> FheEvalOperand {
-    FheEvalOperand::Scalar {
+fn scalar(value: [u8; 32]) -> FheExecuteOperand {
+    FheExecuteOperand::Scalar {
         value_index: intern(value),
     }
 }
@@ -303,7 +303,7 @@ impl EvalFlow {
         }
     }
 
-    fn encrypted(&mut self, fhe_type: u8, plaintext: u64) -> FheEvalOperand {
+    fn encrypted(&mut self, fhe_type: u8, plaintext: u64) -> FheExecuteOperand {
         let seed = self.next_seed;
         self.next_seed += 1;
         let handle = handle_for_chain(seed, fhe_type);
@@ -316,7 +316,7 @@ impl EvalFlow {
             .push(AccountMeta::new_readonly(address, false));
         self.accounts
             .push((address, encrypted_value_account(&value)));
-        FheEvalOperand::AllowedPersistent {
+        FheExecuteOperand::AllowedPersistent {
             handle_index: intern(handle),
             encrypted_value_index,
         }
@@ -326,7 +326,7 @@ impl EvalFlow {
         self.accounts.last_mut().unwrap().1.owner = system_program::ID;
     }
 
-    fn readonly_persistent_output(&mut self) -> FheEvalOutput {
+    fn readonly_persistent_output(&mut self) -> FheExecuteOutput {
         let label = [99; 32];
         let encrypted_value_id = zama_solana_acl::derive_encrypted_value_id(
             self.authority.to_bytes(),
@@ -339,7 +339,7 @@ impl EvalFlow {
         self.remaining
             .push(AccountMeta::new_readonly(address, false));
         self.accounts.push((address, empty_system_account()));
-        FheEvalOutput::AllowedPersistent {
+        FheExecuteOutput::AllowedPersistent {
             output_encrypted_value_index,
             output_account_authority_index: None,
             output_domain_index: intern(self.authority.to_bytes()),
@@ -352,7 +352,7 @@ impl EvalFlow {
         }
     }
 
-    fn writable_persistent_output(&mut self) -> (FheEvalOutput, Pubkey) {
+    fn writable_persistent_output(&mut self) -> (FheExecuteOutput, Pubkey) {
         let label = [100; 32];
         let encrypted_value_id = zama_solana_acl::derive_encrypted_value_id(
             self.authority.to_bytes(),
@@ -365,7 +365,7 @@ impl EvalFlow {
         self.remaining.push(AccountMeta::new(address, false));
         self.accounts.push((address, empty_system_account()));
         (
-            FheEvalOutput::AllowedPersistent {
+            FheExecuteOutput::AllowedPersistent {
                 output_encrypted_value_index,
                 output_account_authority_index: None,
                 output_domain_index: intern(self.authority.to_bytes()),
@@ -380,7 +380,7 @@ impl EvalFlow {
         )
     }
 
-    fn execute(mut self, mut step: FheEvalStep) -> EvalOutcome {
+    fn execute(mut self, mut step: FheExecuteStep) -> EvalOutcome {
         let (output, output_address) = self.writable_persistent_output();
         *step_output_mut(&mut step) = output;
         let (args, instruction) = self.instruction(step);
@@ -404,7 +404,7 @@ impl EvalFlow {
         }
     }
 
-    fn rejects(self, step: FheEvalStep, error: host::errors::ZamaHostError) {
+    fn rejects(self, step: FheExecuteStep, error: host::errors::ZamaHostError) {
         let (_, instruction) = self.instruction(step);
         mollusk().process_and_validate_instruction(
             &instruction,
@@ -413,15 +413,15 @@ impl EvalFlow {
         );
     }
 
-    fn instruction(&self, step: FheEvalStep) -> (FheEvalArgs, Instruction) {
-        let args = FheEvalArgs {
+    fn instruction(&self, step: FheExecuteStep) -> (FheExecuteArgs, Instruction) {
+        let args = FheExecuteArgs {
             account_count: u8::try_from(self.remaining.len()).expect("test accounts fit u8"),
             dictionary: FRAME_POOL.with(|dictionary| dictionary.borrow().clone()),
             steps: vec![step],
         };
         let mut instruction = anchor_ix(
             host::id(),
-            host::accounts::FheEval {
+            host::accounts::FheExecute {
                 payer: self.authority,
                 compute_subject: self.authority,
                 account_authority: self.authority,
@@ -432,7 +432,7 @@ impl EvalFlow {
                 event_authority: event_authority(host::id()),
                 program: host::id(),
             },
-            host::instruction::FheEval { args: args.clone() },
+            host::instruction::FheExecute { args: args.clone() },
         );
         instruction.accounts.extend(self.remaining.clone());
         (args, instruction)
@@ -470,17 +470,17 @@ impl EvalOutcome {
     }
 }
 
-fn step_output_mut(step: &mut FheEvalStep) -> &mut FheEvalOutput {
+fn step_output_mut(step: &mut FheExecuteStep) -> &mut FheExecuteOutput {
     match step {
-        FheEvalStep::Binary { output, .. }
-        | FheEvalStep::Ternary { output, .. }
-        | FheEvalStep::TrivialEncrypt { output, .. }
-        | FheEvalStep::Rand { output, .. }
-        | FheEvalStep::Unary { output, .. }
-        | FheEvalStep::RandBounded { output, .. }
-        | FheEvalStep::Sum { output, .. }
-        | FheEvalStep::IsIn { output, .. }
-        | FheEvalStep::MulDiv { output, .. } => output,
+        FheExecuteStep::Binary { output, .. }
+        | FheExecuteStep::Ternary { output, .. }
+        | FheExecuteStep::TrivialEncrypt { output, .. }
+        | FheExecuteStep::Rand { output, .. }
+        | FheExecuteStep::Unary { output, .. }
+        | FheExecuteStep::RandBounded { output, .. }
+        | FheExecuteStep::Sum { output, .. }
+        | FheExecuteStep::IsIn { output, .. }
+        | FheExecuteStep::MulDiv { output, .. } => output,
     }
 }
 
@@ -634,15 +634,15 @@ fn handle_for_chain(seed: u8, fhe_type: u8) -> [u8; 32] {
     handle
 }
 
-fn operand_handle(operand: &FheEvalOperand) -> [u8; 32] {
+fn operand_handle(operand: &FheExecuteOperand) -> [u8; 32] {
     match operand {
-        FheEvalOperand::AllowedPersistent { handle_index, .. } => pool_entry(*handle_index),
-        FheEvalOperand::Scalar { value_index } => pool_entry(*value_index),
+        FheExecuteOperand::AllowedPersistent { handle_index, .. } => pool_entry(*handle_index),
+        FheExecuteOperand::Scalar { value_index } => pool_entry(*value_index),
         _ => panic!("representative flow uses only persistent or scalar operands"),
     }
 }
 
-fn operand_handles(operands: &[FheEvalOperand]) -> Vec<[u8; 32]> {
+fn operand_handles(operands: &[FheExecuteOperand]) -> Vec<[u8; 32]> {
     operands.iter().map(operand_handle).collect()
 }
 

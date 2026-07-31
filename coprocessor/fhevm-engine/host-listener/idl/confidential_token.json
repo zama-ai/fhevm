@@ -1933,27 +1933,27 @@
     },
     {
       "code": 6029,
-      "name": "InvalidFheEvalPlan",
+      "name": "InvalidFheExecutePlan",
       "msg": "FHE eval plan is invalid"
     },
     {
       "code": 6030,
-      "name": "DuplicateFheEvalAccount",
+      "name": "DuplicateFheExecuteAccount",
       "msg": "FHE eval account list contains a duplicate account"
     },
     {
       "code": 6031,
-      "name": "UnexpectedFheEvalAccount",
+      "name": "UnexpectedFheExecuteAccount",
       "msg": "FHE eval account list contains an unexpected account"
     },
     {
       "code": 6032,
-      "name": "MissingFheEvalAccount",
+      "name": "MissingFheExecuteAccount",
       "msg": "FHE eval plan is missing a required dynamic account"
     },
     {
       "code": 6033,
-      "name": "FheEvalAccountNotWritable",
+      "name": "FheExecuteAccountNotWritable",
       "msg": "FHE eval dynamic account must be writable"
     },
     {
@@ -2505,7 +2505,7 @@
     {
       "name": "CoprocessorInputAttestation",
       "docs": [
-        "A coprocessor input attestation carried inline by a [`FheEvalOperand::VerifiedInput`], re-verified",
+        "A coprocessor input attestation carried inline by a [`FheExecuteOperand::VerifiedInput`], re-verified",
         "in-frame (no account, no PDA) — the instruction-local analog of EVM `allowTransient(input, contract)`."
       ],
       "type": {
@@ -2865,7 +2865,7 @@
           {
             "name": "max_hcu_per_tx",
             "docs": [
-              "Max total HCU summed over one `fhe_eval` plan. `u64::MAX` = unlimited",
+              "Max total HCU summed over one `fhe_execute` plan. `u64::MAX` = unlimited",
               "(enforcement off); `0` is rejected at set time."
             ],
             "type": "u64"
@@ -2873,7 +2873,7 @@
           {
             "name": "max_hcu_depth_per_tx",
             "docs": [
-              "Max critical-path (depth) HCU within one `fhe_eval` plan. `u64::MAX` =",
+              "Max critical-path (depth) HCU within one `fhe_execute` plan. `u64::MAX` =",
               "unlimited; `0` is rejected at set time."
             ],
             "type": "u64"
@@ -2881,7 +2881,7 @@
           {
             "name": "hcu_block_cap_per_app",
             "docs": [
-              "Per-app HCU budget per slot, enforced in `fhe_eval`. `u64::MAX` = unrestricted (the ship",
+              "Per-app HCU budget per slot, enforced in `fhe_execute`. `u64::MAX` = unrestricted (the ship",
               "default; short-circuits, touching no meter); `0` = ban untrusted apps (trusted still",
               "bypass) — the one knob where `0` is a real semantic; any other value is the metering band",
               "(must be `>= max_hcu_per_tx` unless that is unlimited)."

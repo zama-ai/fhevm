@@ -2,50 +2,50 @@
 
 use anchor_lang::prelude::Pubkey;
 
-use zama_host::{FheEvalArgs, FheEvalOutput, FheEvalStep};
+use zama_host::{FheExecuteArgs, FheExecuteOutput, FheExecuteStep};
 
 #[cfg(feature = "cpi")]
 use crate::accounts::{resolve_eval_accounts, EvalAccountResolutionError, ResolvedEvalAccounts};
 use crate::accounts::{
-    EvalAccountMeta, EvalAccountPurpose, EvalAccountRequirement, EvalAppAuthority,
+    BatchAccountMeta, BatchAccountPurpose, BatchAppAuthority, EvalAccountRequirement,
     EvalOutputAuthorityRequirement,
 };
-use crate::builder::EvalBuilder;
+use crate::builder::BatchBuilder;
 use crate::Result;
 
 #[cfg(feature = "cpi")]
 use anchor_lang::prelude::AccountInfo;
 
-/// Opaque lowered eval request produced by [`EvalBuilder::finish`] or
-/// [`EvalPlan::build`].
+/// Opaque lowered eval request produced by [`BatchBuilder::finish`] or
+/// [`Batch::build`].
 ///
-/// App code passes this to [`invoke_eval_signed_resolved`] instead of editing
+/// App code passes this to [`invoke_batch_signed_resolved`] instead of editing
 /// raw host args or dynamic account roles.
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct EvalPlan {
-    pub(crate) app_authority: EvalAppAuthority,
-    pub(crate) args: FheEvalArgs,
+pub struct Batch {
+    pub(crate) app_authority: BatchAppAuthority,
+    pub(crate) args: FheExecuteArgs,
     /// Exact dynamic `remaining_accounts` order referenced by the `u16` indices
     /// inside `args`. Keep this coupled to `args`; `finish` validates every
     /// index before constructing the plan.
-    pub(crate) remaining_accounts: Vec<EvalAccountMeta>,
+    pub(crate) remaining_accounts: Vec<BatchAccountMeta>,
 }
 
-impl EvalPlan {
+impl Batch {
     /// Builds and validates an eval plan through a closure.
     ///
     /// This keeps transient values scoped to one builder while removing the
-    /// need for app code to call [`EvalBuilder::finish`] explicitly.
-    pub fn build<T, F>(app_authority: EvalAppAuthority, build: F) -> Result<Self>
+    /// need for app code to call [`BatchBuilder::finish`] explicitly.
+    pub fn build<T, F>(app_authority: BatchAppAuthority, build: F) -> Result<Self>
     where
-        F: FnOnce(&mut EvalBuilder) -> Result<T>,
+        F: FnOnce(&mut BatchBuilder) -> Result<T>,
     {
-        let mut builder = EvalBuilder::new(app_authority);
+        let mut builder = BatchBuilder::new(app_authority);
         build(&mut builder)?;
         builder.finish()
     }
 
-    pub fn app_authority(&self) -> EvalAppAuthority {
+    pub fn app_authority(&self) -> BatchAppAuthority {
         self.app_authority
     }
 
@@ -100,7 +100,7 @@ impl EvalPlan {
             .filter(|account| {
                 account
                     .purposes
-                    .contains(&EvalAccountPurpose::PersistentOutputAuthority)
+                    .contains(&BatchAccountPurpose::PersistentOutputAuthority)
             })
             .map(|account| account.pubkey)
     }
@@ -113,11 +113,11 @@ impl EvalPlan {
     pub fn newly_granted_subjects(&self) -> Vec<Pubkey> {
         let mut added = Vec::new();
         for step in &self.args.steps {
-            let FheEvalOutput::AllowedPersistent {
+            let FheExecuteOutput::AllowedPersistent {
                 output_subject_indexes,
                 previous_subjects,
                 ..
-            } = fhe_eval_step_output(step)
+            } = fhe_execute_step_output(step)
             else {
                 continue;
             };
@@ -139,16 +139,16 @@ impl EvalPlan {
 }
 
 /// The output policy of an eval step, independent of step kind.
-pub(crate) fn fhe_eval_step_output(step: &FheEvalStep) -> &FheEvalOutput {
+pub(crate) fn fhe_execute_step_output(step: &FheExecuteStep) -> &FheExecuteOutput {
     match step {
-        FheEvalStep::Binary { output, .. }
-        | FheEvalStep::Ternary { output, .. }
-        | FheEvalStep::TrivialEncrypt { output, .. }
-        | FheEvalStep::Rand { output, .. }
-        | FheEvalStep::Unary { output, .. }
-        | FheEvalStep::RandBounded { output, .. }
-        | FheEvalStep::Sum { output, .. }
-        | FheEvalStep::IsIn { output, .. }
-        | FheEvalStep::MulDiv { output, .. } => output,
+        FheExecuteStep::Binary { output, .. }
+        | FheExecuteStep::Ternary { output, .. }
+        | FheExecuteStep::TrivialEncrypt { output, .. }
+        | FheExecuteStep::Rand { output, .. }
+        | FheExecuteStep::Unary { output, .. }
+        | FheExecuteStep::RandBounded { output, .. }
+        | FheExecuteStep::Sum { output, .. }
+        | FheExecuteStep::IsIn { output, .. }
+        | FheExecuteStep::MulDiv { output, .. } => output,
     }
 }

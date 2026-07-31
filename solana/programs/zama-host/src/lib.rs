@@ -98,7 +98,7 @@ pub mod zama_host {
         instructions::set_max_hcu_depth_per_tx(ctx, value)
     }
 
-    /// Sets the per-app, per-slot HCU block cap enforced in `fhe_eval`.
+    /// Sets the per-app, per-slot HCU block cap enforced in `fhe_execute`.
     pub fn set_hcu_block_cap_per_app(ctx: Context<HostAdmin>, value: u64) -> Result<()> {
         instructions::set_hcu_block_cap_per_app(ctx, value)
     }
@@ -141,8 +141,11 @@ pub mod zama_host {
         instructions::revoke_permits(ctx)
     }
 
-    pub fn fhe_eval<'info>(ctx: Context<'info, FheEval<'info>>, args: FheEvalArgs) -> Result<()> {
-        instructions::fhe_eval(ctx, args)
+    pub fn fhe_execute<'info>(
+        ctx: Context<'info, FheExecute<'info>>,
+        args: FheExecuteArgs,
+    ) -> Result<()> {
+        instructions::fhe_execute(ctx, args)
     }
 
     // ---- RFC-024 EncryptedValue ACL model ----

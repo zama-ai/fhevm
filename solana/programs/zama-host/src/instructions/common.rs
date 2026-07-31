@@ -250,7 +250,7 @@ pub(super) fn assert_encrypted_value_subject_allowed(
     Ok(())
 }
 
-/// Deny-list gate for one newly granted subject outside `fhe_eval`: locates the
+/// Deny-list gate for one newly granted subject outside `fhe_execute`: locates the
 /// subject's canonical deny record among `remaining_accounts` and applies the
 /// same check the persistent-output path runs through its account table. With the
 /// deny list disabled no witness is required.
@@ -418,19 +418,19 @@ pub(super) fn create_pda_strict<'info>(
     space: usize,
     seeds: &[&[u8]],
 ) -> Result<()> {
-    require!(account.is_writable, ZamaHostError::InvalidFheEvalAccount);
+    require!(account.is_writable, ZamaHostError::InvalidFheExecuteAccount);
     require_keys_eq!(
         *account.owner,
         System::id(),
-        ZamaHostError::FheEvalOutputAlreadyInitialized
+        ZamaHostError::FheExecuteOutputAlreadyInitialized
     );
     require!(
         account.data_is_empty(),
-        ZamaHostError::FheEvalOutputAlreadyInitialized
+        ZamaHostError::FheExecuteOutputAlreadyInitialized
     );
     require!(
         !account.executable,
-        ZamaHostError::FheEvalOutputAlreadyInitialized
+        ZamaHostError::FheExecuteOutputAlreadyInitialized
     );
     // Predictable output-ACL addresses are equally pre-fundable, so create tolerant of a donated
     // balance (see `fund_allocate_assign`); a lamport donation is not "initialization", so the
@@ -439,19 +439,19 @@ pub(super) fn create_pda_strict<'info>(
     require_keys_eq!(
         *account.owner,
         crate::ID,
-        ZamaHostError::FheEvalOutputAlreadyInitialized
+        ZamaHostError::FheExecuteOutputAlreadyInitialized
     );
     require!(
         !account.executable,
-        ZamaHostError::FheEvalOutputAlreadyInitialized
+        ZamaHostError::FheExecuteOutputAlreadyInitialized
     );
     require!(
         account.data_len() == space,
-        ZamaHostError::FheEvalOutputAlreadyInitialized
+        ZamaHostError::FheExecuteOutputAlreadyInitialized
     );
     require!(
         account.lamports() >= rent,
-        ZamaHostError::FheEvalOutputAlreadyInitialized
+        ZamaHostError::FheExecuteOutputAlreadyInitialized
     );
     Ok(())
 }

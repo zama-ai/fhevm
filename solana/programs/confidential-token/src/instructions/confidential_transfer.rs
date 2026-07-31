@@ -42,12 +42,12 @@ pub struct ConfidentialTransfer<'info> {
     pub host_config: Box<Account<'info, zama_host::HostConfig>>,
     /// System program used for ACL account creation.
     pub system_program: Program<'info, System>,
-    /// CHECK: forwarded verbatim into the ZamaHost `fhe_eval` CPI, which validates it against the
+    /// CHECK: forwarded verbatim into the ZamaHost `fhe_execute` CPI, which validates it against the
     /// canonical `["hcu-block-meter", compute_signer]` PDA. The per-mint HCU block meter — supplied
     /// by an untrusted mint under a metering-band cap, omitted otherwise.
     #[account(mut)]
     pub hcu_block_meter: Option<UncheckedAccount<'info>>,
-    /// CHECK: forwarded verbatim into the ZamaHost `fhe_eval` CPI, which validates it. The HCU
+    /// CHECK: forwarded verbatim into the ZamaHost `fhe_execute` CPI, which validates it. The HCU
     /// trust witness — present + valid bypasses the cap; absent means untrusted (metered).
     pub hcu_trusted_app_record: Option<UncheckedAccount<'info>>,
 }
@@ -187,12 +187,12 @@ pub struct ConfidentialTransferFromValue<'info> {
     pub host_config: Box<Account<'info, zama_host::HostConfig>>,
     /// System program used for ACL account creation.
     pub system_program: Program<'info, System>,
-    /// CHECK: forwarded verbatim into the ZamaHost `fhe_eval` CPI, which validates it against the
+    /// CHECK: forwarded verbatim into the ZamaHost `fhe_execute` CPI, which validates it against the
     /// canonical `["hcu-block-meter", compute_signer]` PDA. The per-mint HCU block meter — supplied
     /// by an untrusted mint under a metering-band cap, omitted otherwise.
     #[account(mut)]
     pub hcu_block_meter: Option<UncheckedAccount<'info>>,
-    /// CHECK: forwarded verbatim into the ZamaHost `fhe_eval` CPI, which validates it. The HCU
+    /// CHECK: forwarded verbatim into the ZamaHost `fhe_execute` CPI, which validates it. The HCU
     /// trust witness — present + valid bypasses the cap; absent means untrusted (metered).
     pub hcu_trusted_app_record: Option<UncheckedAccount<'info>>,
 }

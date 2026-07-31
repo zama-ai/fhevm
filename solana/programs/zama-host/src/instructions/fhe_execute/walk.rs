@@ -1,4 +1,4 @@
-//! The single walk over an `fhe_eval` plan: resolve operands, assert operand
+//! The single walk over an `fhe_execute` plan: resolve operands, assert operand
 //! types, derive the produced handle, and hand each output to
 //! [`super::EvalExecutionState`], which validates and mutates in one pass.
 //!
@@ -150,21 +150,24 @@ impl EvalHandleContext<'_> {
 /// account-access and mutation halves live with the state in [`super`].
 impl EvalExecutionState<'_, '_, '_> {
     /// Resolves an operand that must be encrypted (rejects scalars).
-    fn resolve_encrypted_operand(&mut self, operand: &FheEvalOperand) -> Result<ResolvedOperand> {
+    fn resolve_encrypted_operand(
+        &mut self,
+        operand: &FheExecuteOperand,
+    ) -> Result<ResolvedOperand> {
         match operand {
-            FheEvalOperand::AllowedPersistent {
+            FheExecuteOperand::AllowedPersistent {
                 handle_index,
                 encrypted_value_index,
             } => {
                 let handle = self.dictionary_bytes(*handle_index)?;
                 self.resolve_persistent_operand(handle, u16::from(*encrypted_value_index))
             }
-            FheEvalOperand::AllowedLocal { producer_index } => self
+            FheExecuteOperand::AllowedLocal { producer_index } => self
                 .produced
                 .get(*producer_index as usize)
                 .map(ResolvedOperand::from_produced)
-                .ok_or_else(|| error!(ZamaHostError::FheEvalAllowedLocalMissing)),
-            FheEvalOperand::VerifiedInput { attestation } => {
+                .ok_or_else(|| error!(ZamaHostError::FheExecuteAllowedLocalMissing)),
+            FheExecuteOperand::VerifiedInput { attestation } => {
                 // EVM `fromExternal` parity: only the attested contract may consume the input.
                 // Enforced here (the `msg.sender` analog) — not by constraining derived outputs.
                 // `subject` is the eval's `compute_subject`; a copied attestation is useless
@@ -176,22 +179,26 @@ impl EvalExecutionState<'_, '_, '_> {
                 );
                 self.resolve_verified_input_operand(attestation)
             }
-            FheEvalOperand::Scalar { .. } => Err(error!(ZamaHostError::InvalidFheEvalAccount)),
+            FheExecuteOperand::Scalar { .. } => {
+                Err(error!(ZamaHostError::InvalidFheExecuteAccount))
+            }
         }
     }
 
     /// Resolves a binary left-hand operand, which may not be a scalar.
-    fn resolve_lhs_operand(&mut self, operand: &FheEvalOperand) -> Result<ResolvedOperand> {
+    fn resolve_lhs_operand(&mut self, operand: &FheExecuteOperand) -> Result<ResolvedOperand> {
         match operand {
-            FheEvalOperand::Scalar { .. } => Err(error!(ZamaHostError::InvalidFheEvalAccount)),
+            FheExecuteOperand::Scalar { .. } => {
+                Err(error!(ZamaHostError::InvalidFheExecuteAccount))
+            }
             _ => self.resolve_encrypted_operand(operand),
         }
     }
 
     /// Resolves a binary right-hand operand, which may be a scalar.
-    fn resolve_rhs_operand(&mut self, operand: &FheEvalOperand) -> Result<ResolvedOperand> {
+    fn resolve_rhs_operand(&mut self, operand: &FheExecuteOperand) -> Result<ResolvedOperand> {
         match operand {
-            FheEvalOperand::Scalar { value_index } => Ok(ResolvedOperand::scalar(
+            FheExecuteOperand::Scalar { value_index } => Ok(ResolvedOperand::scalar(
                 self.dictionary_bytes(*value_index)?,
             )),
             _ => self.resolve_encrypted_operand(operand),
@@ -203,14 +210,14 @@ impl EvalExecutionState<'_, '_, '_> {
 /// operand types, compute the produced handle, and accept the output.
 pub(super) fn walk_eval_frame<'info>(
     execution: &mut EvalExecutionState<'_, '_, 'info>,
-    ctx: &Context<'info, FheEval<'info>>,
-    args: &FheEvalArgs,
+    ctx: &Context<'info, FheExecute<'info>>,
+    args: &FheExecuteArgs,
     handle_context: &EvalHandleContext<'_>,
 ) -> Result<()> {
     for (index, step) in args.steps.iter().enumerate() {
         let op_index = index as u16;
         match step {
-            FheEvalStep::Binary {
+            FheExecuteStep::Binary {
                 op,
                 lhs,
                 rhs,
@@ -241,7 +248,7 @@ pub(super) fn walk_eval_frame<'info>(
                     inputs_allow_public_decrypt(&lhs, &rhs),
                 )?;
             }
-            FheEvalStep::Ternary {
+            FheExecuteStep::Ternary {
                 op,
                 control,
                 if_true,
@@ -273,7 +280,7 @@ pub(super) fn walk_eval_frame<'info>(
                     inputs3_allow_public_decrypt(&control, &if_true, &if_false),
                 )?;
             }
-            FheEvalStep::TrivialEncrypt {
+            FheExecuteStep::TrivialEncrypt {
                 plaintext,
                 fhe_type,
                 output,
@@ -282,13 +289,13 @@ pub(super) fn walk_eval_frame<'info>(
                 let result = handle_context.trivial_result(*plaintext, *fhe_type);
                 execution.accept_output(ctx, op_index, result, output, false)?;
             }
-            FheEvalStep::Rand { fhe_type, output } => {
+            FheExecuteStep::Rand { fhe_type, output } => {
                 assert_supported_rand_type(*fhe_type)?;
                 let seed = handle_context.rand_seed(op_index);
                 let result = computed_rand_handle(seed, *fhe_type, handle_context.chain_id);
                 execution.accept_output(ctx, op_index, result, output, false)?;
             }
-            FheEvalStep::Unary {
+            FheExecuteStep::Unary {
                 op,
                 operand,
                 output_fhe_type,
@@ -305,7 +312,7 @@ pub(super) fn walk_eval_frame<'info>(
                     operand.public_decrypt_allowed,
                 )?;
             }
-            FheEvalStep::RandBounded {
+            FheExecuteStep::RandBounded {
                 upper_bound,
                 fhe_type,
                 output,
@@ -320,7 +327,7 @@ pub(super) fn walk_eval_frame<'info>(
                 );
                 execution.accept_output(ctx, op_index, result, output, false)?;
             }
-            FheEvalStep::Sum {
+            FheExecuteStep::Sum {
                 operands,
                 fhe_type,
                 output,
@@ -335,7 +342,7 @@ pub(super) fn walk_eval_frame<'info>(
                 let result = handle_context.sum_result(&operand_handles, *fhe_type);
                 execution.accept_output(ctx, op_index, result, output, public_decrypt)?;
             }
-            FheEvalStep::IsIn {
+            FheExecuteStep::IsIn {
                 value,
                 set,
                 fhe_type,
@@ -354,7 +361,7 @@ pub(super) fn walk_eval_frame<'info>(
                     handle_context.is_in_result(value_resolved.handle, &set_handles, *fhe_type);
                 execution.accept_output(ctx, op_index, result, output, public_decrypt)?;
             }
-            FheEvalStep::MulDiv {
+            FheExecuteStep::MulDiv {
                 factor1,
                 factor2,
                 divisor,

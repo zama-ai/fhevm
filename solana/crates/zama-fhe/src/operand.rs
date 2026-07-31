@@ -25,7 +25,7 @@ pub(crate) enum OperandKind {
         builder_scope: EvalBuilderScope,
     },
     /// External input verified in-frame via a coprocessor attestation (EVM `fromExternal`). The
-    /// `Vec`-bearing attestation is held by the [`EvalBuilder`] and referenced by index; keeping
+    /// `Vec`-bearing attestation is held by the [`BatchBuilder`] and referenced by index; keeping
     /// only the index + `input_handle` here leaves the operand `Copy`. `input_handle` carries the
     /// FHE type for operand type-checks without touching the attestation.
     VerifiedInput {

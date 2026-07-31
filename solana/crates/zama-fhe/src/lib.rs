@@ -1,10 +1,10 @@
 //! App-facing helpers for preparing `zama-host` FHE evaluation requests.
 //!
 //! This crate targets the role-aware host ABI. App code describes encrypted
-//! operands and persistent outputs by pubkey; [`EvalBuilder`] validates the frame,
+//! operands and persistent outputs by pubkey; [`BatchBuilder`] validates the frame,
 //! assigns host account indices, and records the signer/writable requirements for
-//! every dynamic account. With the `cpi` feature, [`EvalPlan::resolve_accounts`]
-//! preflights the dynamic account set and [`invoke_eval_signed_resolved`] turns
+//! every dynamic account. With the `cpi` feature, [`Batch::resolve_accounts`]
+//! preflights the dynamic account set and [`invoke_batch_signed_resolved`] turns
 //! the plan plus resolved accounts into the exact `zama-host` CPI.
 //!
 //! The builder intentionally targets the current role-aware host eval ABI rather
@@ -28,7 +28,7 @@ mod types;
 mod validate;
 
 pub use accounts::{
-    EvalAccountPurpose, EvalAccountRequirement, EvalAppAuthority, EvalOutputAuthorityRequirement,
+    BatchAccountPurpose, BatchAppAuthority, EvalAccountRequirement, EvalOutputAuthorityRequirement,
 };
 #[cfg(feature = "cpi")]
 pub use accounts::{EvalAccountResolutionError, ResolvedEvalAccounts};
@@ -36,32 +36,33 @@ pub use acl::{
     BoundedU64UpperBound, EncryptedValueId, Output, PersistentLabel, PersistentOutput,
     PersistentOutputBinding,
 };
-pub use builder::EvalBuilder;
+pub use builder::BatchBuilder;
 #[cfg(feature = "cpi")]
 pub use cpi::{
-    invoke_eval_signed_resolved, invoke_eval_signed_with_builder, EvalCpiAccounts, EvalInvokeError,
+    invoke_batch_signed_resolved, invoke_batch_signed_with_builder, BatchCpiAccounts,
+    BatchInvokeError,
 };
-pub use plan::EvalPlan;
+pub use plan::Batch;
 pub use types::{
     Address, BinaryRhs, Bool, BoolHandle, Bytes256, Encrypted, FheBitwise, FheEq, FheIsIn, FheNeg,
     FheNot, FheRandom, FheShift, FheType, FheTyped, FheUint, Scalar, Uint, Uint64Handle,
 };
 
 /// Result type used by the builder helpers.
-pub type Result<T> = std::result::Result<T, EvalBuildError>;
+pub type Result<T> = std::result::Result<T, BatchBuildError>;
 
 /// Builder failures that can be detected before invoking the host program.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum EvalBuildError {
+pub enum BatchBuildError {
     /// More accounts were referenced than fit in the host's `u8` wire indices.
     TooManyRemainingAccounts,
     /// The frame's interned constant dictionary outgrew the host's `u8` wire indices.
     TooManyDictionaryEntries,
     /// An interned dictionary entry is not referenced by any step (host parity:
-    /// `FheEvalPoolEntryUnreferenced`).
+    /// `FheExecutePoolEntryUnreferenced`).
     UnreferencedDictionaryEntry,
     /// A step referenced a dictionary index past the end of the interned dictionary (host
-    /// parity: `FheEvalPoolIndexOutOfBounds`).
+    /// parity: `FheExecutePoolIndexOutOfBounds`).
     DictionaryIndexOutOfBounds,
     /// A transient operand referenced an operation that has not been produced.
     InvalidTransientReference,
@@ -69,7 +70,7 @@ pub enum EvalBuildError {
     /// Use the producer returned by that step for the new value, or consume the
     /// old persistent value before writing the account.
     PersistentOperandWrittenEarlier,
-    /// More ops were added than the host accepts (`MAX_FHE_EVAL_OPS`).
+    /// More ops were added than the host accepts (`MAX_FHE_BATCH_OPS`).
     TooManyOps,
     /// `finish` was called with no ops; the host rejects empty eval frames.
     EmptyOps,

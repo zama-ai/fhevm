@@ -48,7 +48,7 @@ pub enum BatcherError {
     EncryptedValueInvalid,
     /// The batcher produced an invalid FHE eval plan (internal invariant).
     #[msg("invalid FHE eval plan")]
-    InvalidFheEvalPlan,
+    InvalidFheExecutePlan,
     /// The join record's payout was already claimed.
     #[msg("payout already claimed for this join record")]
     AlreadyClaimed,

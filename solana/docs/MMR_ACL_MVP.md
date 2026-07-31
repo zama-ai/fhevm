@@ -11,7 +11,7 @@ this note records the operational model in one place.
   authority check.
 - `compute_signer` is separate from identity. In confidential-token it is a mint-scoped PDA and must
   be present in the value's allowed-subject set when token compute needs to use that value.
-- Only `fhe_eval` persistent outputs can create or update an `EncryptedValue` handle; there is no
+- Only `fhe_execute` persistent outputs can create or update an `EncryptedValue` handle; there is no
   instruction that accepts a caller-chosen handle, because such a handle would carry no proof of
   ciphertext provenance. Being an allowed subject is enough to compute/use, grant, request user decrypt, or make the exact current
   handle public, but it is not enough to update the encrypted value account. Persistent-output update checks
@@ -20,7 +20,7 @@ this note records the operational model in one place.
 
 ## Handle Derivation
 
-- A persistent `fhe_eval` output handle **is the base handle** — identical to the transient handle.
+- A persistent `fhe_execute` output handle **is the base handle** — identical to the transient handle.
   Deterministic ops are content-addressed over `(op / plaintext, operands, fhe_type, chain_id,
   previous_bank_hash, unix_timestamp)`; rand seeds alone carry uniqueness (`compute_subject` + the
   frame's persistent-write anchor + `op_index`, see DD-043). There is no per-output binding: a persistent output and an instruction-local
@@ -56,7 +56,7 @@ this note records the operational model in one place.
   seals one `HistoricalAccessLeaf` per then-allowed subject into the value's MMR. Historical reads roll
   forward by proving inclusion against confirmed on-chain peaks.
 - Public decrypt is exact-handle. `make_handle_public` seals a `PublicDecryptLeaf` for the current
-  handle only; a later handle update does not inherit public decryptability. An `fhe_eval` persistent
+  handle only; a later handle update does not inherit public decryptability. An `fhe_execute` persistent
   output may instead be *born* public by setting `make_public` on the output: after the new handle is
   written, the same `PublicDecryptLeaf` is sealed for that NEW handle in the same instruction —
   byte-identical to `make_handle_public`, appended LAST (after any update historical leaves). This
@@ -66,7 +66,7 @@ this note records the operational model in one place.
 
 ## Gates And Trust Boundary
 
-- Pause gates ACL mutations plus `fhe_eval` output paths. The deny-list gates the acting
+- Pause gates ACL mutations plus `fhe_execute` output paths. The deny-list gates the acting
   caller/authority for grant and eval flows; it blocks new action and is not an erasure mechanism for
   already sealed history.
 - Solana programs enforce authorization. The relayer, proof builder, host-listener ingestion, and
@@ -93,11 +93,11 @@ ever grows (append-only), so historical and public-decrypt authorizations are pe
 
 ```mermaid
 stateDiagram-v2
-    [*] --> Live : fhe_eval persistent output<br/>(≥1 subject, leaf_count=0)
+    [*] --> Live : fhe_execute persistent output<br/>(≥1 subject, leaf_count=0)
     Live --> Live : allow_subjects<br/>(add subject, NO leaf)
     Live --> Live : make_handle_public<br/>(+1 PublicDecryptLeaf for current handle)
-    Live --> Live : fhe_eval persistent output<br/>(update: +1 HistoricalAccessLeaf per then-subject,<br/>rewrite current_handle, then optionally rotate subjects<br/>— added subjects pass the grant deny-list)
-    Live --> Live : fhe_eval persistent output with make_public=true<br/>(update leaves, rewrite handle,<br/>then +1 PublicDecryptLeaf for the NEW handle — DD-036)
+    Live --> Live : fhe_execute persistent output<br/>(update: +1 HistoricalAccessLeaf per then-subject,<br/>rewrite current_handle, then optionally rotate subjects<br/>— added subjects pass the grant deny-list)
+    Live --> Live : fhe_execute persistent output with make_public=true<br/>(update leaves, rewrite handle,<br/>then +1 PublicDecryptLeaf for the NEW handle — DD-036)
     note right of Live
         Account ≤ 2457 bytes for all time
         (153 + 32·subjects≤8 + 32·peaks≤64).
@@ -107,7 +107,7 @@ stateDiagram-v2
 
 ### MMR leaf types + append order
 
-`fhe_eval` persistent-output update appends one
+`fhe_execute` persistent-output update appends one
 `HistoricalAccessLeaf{account, leaf_index, handle, subject}` per then-allowed subject;
 `make_handle_public` (or a created-public output) appends one
 `PublicDecryptLeaf{account, leaf_index, handle}`. A single running `leaf_count` assigns `leaf_index`,
@@ -146,7 +146,7 @@ flowchart TD
 ### Burn → Redeem (Vector-2 closed, DD-036)
 
 Pull-based, mirroring OZ `ConfidentialFungibleTokenERC20Wrapper` unwrap→finalizeUnwrap. The burned
-delta is created public in the burn's `fhe_eval` CPI; redemption is a single `redeem_burned_amount` that
+delta is created public in the burn's `fhe_execute` CPI; redemption is a single `redeem_burned_amount` that
 consumes the stateless host `verify_public_decrypt` verifier (the request-witness lifecycle was
 dissolved in fhevm-internal#1763), authorizing by the pinned handle's public-decrypt proof against the
 live KMS context the cert names (any non-destroyed context, fhevm-internal#1765), so it stays valid
@@ -159,7 +159,7 @@ sequenceDiagram
     participant ZH as zama-host
     participant KMS as KMS (off-chain)
     U->>CT: confidential_burn(amount)
-    CT->>ZH: fhe_eval sub → persistent output make_public=true
+    CT->>ZH: fhe_execute sub → persistent output make_public=true
     ZH-->>ZH: rewrite current_handle,<br/>append PublicDecryptLeaf(new handle)
     KMS-->>KMS: decrypt burned handle (public proof),<br/>sign cleartext cert
     U->>CT: redeem_burned_amount(burned_handle, cleartext, cert, MMR proof)
@@ -172,8 +172,8 @@ sequenceDiagram
 
 ```mermaid
 flowchart TD
-    prog["zama-host fhe_eval"] -->|"emit_cpi! (single batch CPI, ≤MAX_FHE_EVAL_OPS records;<br/>DD-038; no emit! log fallback)"| ev["op-event (self-CPI inner ix):<br/>carries the block-entropy output handle"]
-    prog -->|"instruction data (args)"| ix["fhe_eval persistent-output / make_public args"]
+    prog["zama-host fhe_execute"] -->|"emit_cpi! (single batch CPI, ≤MAX_FHE_BATCH_OPS records;<br/>DD-038; no emit! log fallback)"| ev["op-event (self-CPI inner ix):<br/>carries the block-entropy output handle"]
+    prog -->|"instruction data (args)"| ix["fhe_execute persistent-output / make_public args"]
     ev --> proofsvc["solana-proof-service (Yellowstone + Postgres):<br/>resolves created-public handle from op-event,<br/>reconstructs MMR, cross-checks vs confirmed peaks"]
     ix --> listener["host-listener indexer:<br/>Yellowstone gRPC reconstruction-only<br/>(SlotHashes+Clock sysvar streams → block entropy;<br/>never reads events)"]
     proofsvc -.->|"migrate to Carbon/Geyser,<br/>then drop op-event ABI"| followup["fhevm-internal#1665"]
@@ -218,5 +218,5 @@ to a follow-up.
   chain state.
 - DD-036: burn-redemption consume authorizes by MMR public-decrypt proof (created-public delta), not the
   live handle — closes the Vector-2 fund-stranding window.
-- DD-037: `fhe_eval` events are `emit_cpi!`-only (no `emit!` fallback); created-public outputs are
+- DD-037: `fhe_execute` events are `emit_cpi!`-only (no `emit!` fallback); created-public outputs are
   restricted to CPI-transportable frames so their handles are always recoverable off-chain.

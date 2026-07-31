@@ -193,7 +193,7 @@ fn zama_solana_acl_encrypted_value_id(
 /// display number. `total_joined` must be non-zero (zero-total batches cancel
 /// instead).
 pub fn payout_rate(payout_received: u64, total_joined: u64) -> Result<u64> {
-    require!(total_joined > 0, BatcherError::InvalidFheEvalPlan);
+    require!(total_joined > 0, BatcherError::InvalidFheExecutePlan);
     let rate = (payout_received as u128) * (RATE_SCALE as u128) / (total_joined as u128);
     Ok(u64::try_from(rate).unwrap_or(u64::MAX))
 }
