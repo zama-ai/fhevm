@@ -1,7 +1,7 @@
 import { test, expect } from '@playwright/test';
 
 test("client.init() throws when page CSP omits 'wasm-unsafe-eval'", async ({ page }) => {
-  await page.goto('/test/browser/pages/smoke-csp-block.html');
+  await page.goto('/test/browser-smoke/pages/smoke-csp-block.html');
 
   const result = page.locator('#result');
   await result.waitFor({ timeout: 300_000 });

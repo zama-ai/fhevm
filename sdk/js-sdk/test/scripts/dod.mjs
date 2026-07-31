@@ -39,7 +39,7 @@ const commands = [
   'export BUILD_PROFILE=dev  ; npm run codegen:loaders && npm run build:cjs && npm run build:esm && npm run build:types && npm run build:tests',
   'npm run clean',
   'export BUILD_PROFILE=prod ; npm run codegen:loaders && npm run build:cjs && npm run build:esm && npm run build:types && npm run build:tests',
-  'npm run test:browser',
+  'npm run test:browser-smoke',
   './test/scripts/rebuild_sdk_and_pack.sh --build-profile=skip',
   './test/scripts/localcleartext-run-tests.sh --use-pack --foundry-profile=v12',
   './test/scripts/localcleartext-run-tests.sh --use-pack --foundry-profile=v13',

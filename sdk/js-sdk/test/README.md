@@ -68,7 +68,7 @@ cd <path/to/fhevm>/sdk/js-sdk
 npx playwright install
 
 # Test wasm load in browser using playwright
-npm run test:browser
+npm run test:browser-smoke
 ```
 
 ## Fast Devnet (no encryption)
