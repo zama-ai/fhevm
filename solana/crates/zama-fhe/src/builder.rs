@@ -5,7 +5,7 @@ use crate::validate::handle_fhe_type;
 
 use zama_host::{
     CoprocessorInputAttestation, FheBinaryOpCode, FheExecuteArgs, FheExecuteOperand,
-    FheExecuteStep, FheTernaryOpCode, FheUnaryOpCode, MAX_FHE_BATCH_OPS,
+    FheExecuteOutput, FheExecuteStep, FheTernaryOpCode, FheUnaryOpCode, MAX_FHE_BATCH_OPS,
 };
 
 use crate::accounts::{BatchAccountMeta, BatchAppAuthority};
@@ -54,6 +54,82 @@ impl Clone for BatchBuilder {
             dictionary: self.dictionary.clone(),
             verified_inputs: self.verified_inputs.clone(),
         }
+    }
+}
+
+/// Scratch intern tables for lowering one step — see [`BatchBuilder::commit_step`].
+struct StepLowering<'b> {
+    op_index: u16,
+    steps_len: usize,
+    scope: BatchBuilderScope,
+    app_authority: BatchAppAuthority,
+    remaining_accounts: Vec<BatchAccountMeta>,
+    dictionary: Vec<[u8; 32]>,
+    persistent_producers: Vec<(anchor_lang::prelude::Pubkey, u16)>,
+    verified_inputs: &'b [CoprocessorInputAttestation],
+}
+
+impl StepLowering<'_> {
+    fn operand(&mut self, operand: Operand) -> Result<FheExecuteOperand> {
+        lower_operand(
+            &mut self.remaining_accounts,
+            &mut self.dictionary,
+            self.steps_len,
+            self.scope,
+            &self.persistent_producers,
+            self.verified_inputs,
+            operand,
+        )
+    }
+
+    fn output(&mut self, output: Output) -> Result<FheExecuteOutput> {
+        lower_output(
+            &mut self.remaining_accounts,
+            &mut self.dictionary,
+            self.app_authority,
+            &mut self.persistent_producers,
+            self.op_index,
+            output,
+        )
+    }
+}
+
+impl BatchBuilder {
+    /// The single mutation path for appending a step. Every op method validates first, then
+    /// lowers through this: lowering runs against cloned intern tables and the builder commits
+    /// atomically only when the whole step lowered, so a failed step leaves the builder exactly
+    /// as it was. Rollback is by discarding the scratch clone — the intern tables are not
+    /// append-only (resolving an account can promote an existing entry in place), so truncation
+    /// would not be enough.
+    fn commit_step(
+        &mut self,
+        produced_type: u8,
+        lower: impl FnOnce(&mut StepLowering<'_>) -> Result<FheExecuteStep>,
+    ) -> Result<u16> {
+        let op_index = u16::try_from(self.steps.len()).map_err(|_| BatchBuildError::TooManyOps)?;
+        let mut scratch = StepLowering {
+            op_index,
+            steps_len: self.steps.len(),
+            scope: self.scope,
+            app_authority: self.app_authority,
+            remaining_accounts: self.remaining_accounts.clone(),
+            dictionary: self.dictionary.clone(),
+            persistent_producers: self.persistent_producers.clone(),
+            verified_inputs: &self.verified_inputs,
+        };
+        let step = lower(&mut scratch)?;
+        let StepLowering {
+            remaining_accounts,
+            dictionary,
+            persistent_producers,
+            ..
+        } = scratch;
+        self.remaining_accounts = remaining_accounts;
+        self.dictionary = dictionary;
+        self.persistent_producers = persistent_producers;
+        self.steps.push(step);
+        self.produced_types.push(produced_type);
+        Ok(op_index)
     }
 }
 
@@ -167,45 +243,18 @@ impl BatchBuilder {
             self.scope,
             |index| self.produced_types.get(index as usize).copied(),
         )?;
-        let op_index = u16::try_from(self.steps.len()).map_err(|_| BatchBuildError::TooManyOps)?;
-        let mut remaining_accounts = self.remaining_accounts.clone();
-        let mut dictionary = self.dictionary.clone();
-        let lhs = lower_operand(
-            &mut remaining_accounts,
-            &mut dictionary,
-            self.steps.len(),
-            self.scope,
-            &self.persistent_producers,
-            &self.verified_inputs,
-            lhs,
-        )?;
-        let rhs = lower_operand(
-            &mut remaining_accounts,
-            &mut dictionary,
-            self.steps.len(),
-            self.scope,
-            &self.persistent_producers,
-            &self.verified_inputs,
-            rhs,
-        )?;
-        let output = lower_output(
-            &mut remaining_accounts,
-            &mut dictionary,
-            self.app_authority,
-            &mut self.persistent_producers,
-            op_index,
-            output,
-        )?;
-        self.remaining_accounts = remaining_accounts;
-        self.dictionary = dictionary;
-        self.steps.push(FheExecuteStep::Binary {
-            op,
-            lhs,
-            rhs,
-            output_fhe_type,
-            output,
-        });
-        self.produced_types.push(output_fhe_type);
+        let op_index = self.commit_step(output_fhe_type, |lowering| {
+            let lhs = lowering.operand(lhs)?;
+            let rhs = lowering.operand(rhs)?;
+            let output = lowering.output(output)?;
+            Ok(FheExecuteStep::Binary {
+                op,
+                lhs,
+                rhs,
+                output_fhe_type,
+                output,
+            })
+        })?;
         Ok(Operand::transient(op_index, self.scope))
     }
 
@@ -234,56 +283,20 @@ impl BatchBuilder {
             |index| self.produced_types.get(index as usize).copied(),
             self.scope,
         )?;
-        let step_index =
-            u16::try_from(self.steps.len()).map_err(|_| BatchBuildError::TooManyOps)?;
-        let mut remaining_accounts = self.remaining_accounts.clone();
-        let mut dictionary = self.dictionary.clone();
-        let control = lower_operand(
-            &mut remaining_accounts,
-            &mut dictionary,
-            self.steps.len(),
-            self.scope,
-            &self.persistent_producers,
-            &self.verified_inputs,
-            control,
-        )?;
-        let if_true = lower_operand(
-            &mut remaining_accounts,
-            &mut dictionary,
-            self.steps.len(),
-            self.scope,
-            &self.persistent_producers,
-            &self.verified_inputs,
-            if_true,
-        )?;
-        let if_false = lower_operand(
-            &mut remaining_accounts,
-            &mut dictionary,
-            self.steps.len(),
-            self.scope,
-            &self.persistent_producers,
-            &self.verified_inputs,
-            if_false,
-        )?;
-        let output = lower_output(
-            &mut remaining_accounts,
-            &mut dictionary,
-            self.app_authority,
-            &mut self.persistent_producers,
-            step_index,
-            output,
-        )?;
-        self.remaining_accounts = remaining_accounts;
-        self.dictionary = dictionary;
-        self.steps.push(FheExecuteStep::Ternary {
-            op: FheTernaryOpCode::IfThenElse,
-            control,
-            if_true,
-            if_false,
-            output_fhe_type,
-            output,
-        });
-        self.produced_types.push(output_fhe_type);
+        let step_index = self.commit_step(output_fhe_type, |lowering| {
+            let control = lowering.operand(control)?;
+            let if_true = lowering.operand(if_true)?;
+            let if_false = lowering.operand(if_false)?;
+            let output = lowering.output(output)?;
+            Ok(FheExecuteStep::Ternary {
+                op: FheTernaryOpCode::IfThenElse,
+                control,
+                if_true,
+                if_false,
+                output_fhe_type,
+                output,
+            })
+        })?;
         Ok(Encrypted::from_operand(Operand::transient(
             step_index, self.scope,
         )))
@@ -309,26 +322,14 @@ impl BatchBuilder {
             return Err(BatchBuildError::TooManyOps);
         }
         validate_supported_fhe_type(fhe_type)?;
-        let step_index =
-            u16::try_from(self.steps.len()).map_err(|_| BatchBuildError::TooManyOps)?;
-        let mut remaining_accounts = self.remaining_accounts.clone();
-        let mut dictionary = self.dictionary.clone();
-        let output = lower_output(
-            &mut remaining_accounts,
-            &mut dictionary,
-            self.app_authority,
-            &mut self.persistent_producers,
-            step_index,
-            output,
-        )?;
-        self.remaining_accounts = remaining_accounts;
-        self.dictionary = dictionary;
-        self.steps.push(FheExecuteStep::TrivialEncrypt {
-            plaintext,
-            fhe_type,
-            output,
-        });
-        self.produced_types.push(fhe_type);
+        let step_index = self.commit_step(fhe_type, |lowering| {
+            let output = lowering.output(output)?;
+            Ok(FheExecuteStep::TrivialEncrypt {
+                plaintext,
+                fhe_type,
+                output,
+            })
+        })?;
         Ok(Operand::transient(step_index, self.scope))
     }
 
@@ -351,22 +352,10 @@ impl BatchBuilder {
             return Err(BatchBuildError::TooManyOps);
         }
         validate_supported_rand_type(fhe_type)?;
-        let step_index =
-            u16::try_from(self.steps.len()).map_err(|_| BatchBuildError::TooManyOps)?;
-        let mut remaining_accounts = self.remaining_accounts.clone();
-        let mut dictionary = self.dictionary.clone();
-        let output = lower_output(
-            &mut remaining_accounts,
-            &mut dictionary,
-            self.app_authority,
-            &mut self.persistent_producers,
-            step_index,
-            output,
-        )?;
-        self.remaining_accounts = remaining_accounts;
-        self.dictionary = dictionary;
-        self.steps.push(FheExecuteStep::Rand { fhe_type, output });
-        self.produced_types.push(fhe_type);
+        let step_index = self.commit_step(fhe_type, |lowering| {
+            let output = lowering.output(output)?;
+            Ok(FheExecuteStep::Rand { fhe_type, output })
+        })?;
         Ok(Operand::transient(step_index, self.scope))
     }
 
@@ -383,26 +372,14 @@ impl BatchBuilder {
         if self.steps.len() >= MAX_FHE_BATCH_OPS {
             return Err(BatchBuildError::TooManyOps);
         }
-        let step_index =
-            u16::try_from(self.steps.len()).map_err(|_| BatchBuildError::TooManyOps)?;
-        let mut remaining_accounts = self.remaining_accounts.clone();
-        let mut dictionary = self.dictionary.clone();
-        let output = lower_output(
-            &mut remaining_accounts,
-            &mut dictionary,
-            self.app_authority,
-            &mut self.persistent_producers,
-            step_index,
-            output,
-        )?;
-        self.remaining_accounts = remaining_accounts;
-        self.dictionary = dictionary;
-        self.steps.push(FheExecuteStep::RandBounded {
-            upper_bound: upper_bound.bytes(),
-            fhe_type,
-            output,
-        });
-        self.produced_types.push(fhe_type);
+        let step_index = self.commit_step(fhe_type, |lowering| {
+            let output = lowering.output(output)?;
+            Ok(FheExecuteStep::RandBounded {
+                upper_bound: upper_bound.bytes(),
+                fhe_type,
+                output,
+            })
+        })?;
         Ok(Encrypted::from_operand(Operand::transient(
             step_index, self.scope,
         )))
@@ -736,38 +713,18 @@ impl BatchBuilder {
         if operand_ops.len() > max_reduction_operands(fhe_type) {
             return Err(BatchBuildError::TooManyReductionOperands);
         }
-        let step_index =
-            u16::try_from(self.steps.len()).map_err(|_| BatchBuildError::TooManyOps)?;
-        let mut remaining_accounts = self.remaining_accounts.clone();
-        let mut dictionary = self.dictionary.clone();
-        let mut lowered: Vec<FheExecuteOperand> = Vec::with_capacity(operand_ops.len());
-        for op in operand_ops {
-            lowered.push(lower_operand(
-                &mut remaining_accounts,
-                &mut dictionary,
-                self.steps.len(),
-                self.scope,
-                &self.persistent_producers,
-                &self.verified_inputs,
-                op,
-            )?);
-        }
-        let output = lower_output(
-            &mut remaining_accounts,
-            &mut dictionary,
-            self.app_authority,
-            &mut self.persistent_producers,
-            step_index,
-            output,
-        )?;
-        self.remaining_accounts = remaining_accounts;
-        self.dictionary = dictionary;
-        self.steps.push(FheExecuteStep::Sum {
-            operands: lowered,
-            fhe_type,
-            output,
-        });
-        self.produced_types.push(fhe_type);
+        let step_index = self.commit_step(fhe_type, |lowering| {
+            let mut lowered: Vec<FheExecuteOperand> = Vec::with_capacity(operand_ops.len());
+            for op in operand_ops {
+                lowered.push(lowering.operand(op)?);
+            }
+            let output = lowering.output(output)?;
+            Ok(FheExecuteStep::Sum {
+                operands: lowered,
+                fhe_type,
+                output,
+            })
+        })?;
         Ok(Encrypted::from_operand(Operand::transient(
             step_index, self.scope,
         )))
@@ -798,49 +755,21 @@ impl BatchBuilder {
         if set_ops.len() > max_reduction_operands(fhe_type) {
             return Err(BatchBuildError::TooManyReductionOperands);
         }
-        let step_index =
-            u16::try_from(self.steps.len()).map_err(|_| BatchBuildError::TooManyOps)?;
-        let mut remaining_accounts = self.remaining_accounts.clone();
-        let mut dictionary = self.dictionary.clone();
-        let value_lowered = lower_operand(
-            &mut remaining_accounts,
-            &mut dictionary,
-            self.steps.len(),
-            self.scope,
-            &self.persistent_producers,
-            &self.verified_inputs,
-            value_op,
-        )?;
-        let mut set_lowered: Vec<FheExecuteOperand> = Vec::with_capacity(set_ops.len());
-        for op in set_ops {
-            set_lowered.push(lower_operand(
-                &mut remaining_accounts,
-                &mut dictionary,
-                self.steps.len(),
-                self.scope,
-                &self.persistent_producers,
-                &self.verified_inputs,
-                op,
-            )?);
-        }
-        let output = lower_output(
-            &mut remaining_accounts,
-            &mut dictionary,
-            self.app_authority,
-            &mut self.persistent_producers,
-            step_index,
-            output,
-        )?;
-        self.remaining_accounts = remaining_accounts;
-        self.dictionary = dictionary;
         let bool_type = FheType::BOOL.byte();
-        self.steps.push(FheExecuteStep::IsIn {
-            value: value_lowered,
-            set: set_lowered,
-            fhe_type,
-            output,
-        });
-        self.produced_types.push(bool_type);
+        let step_index = self.commit_step(bool_type, |lowering| {
+            let value = lowering.operand(value_op)?;
+            let mut set_lowered: Vec<FheExecuteOperand> = Vec::with_capacity(set_ops.len());
+            for op in set_ops {
+                set_lowered.push(lowering.operand(op)?);
+            }
+            let output = lowering.output(output)?;
+            Ok(FheExecuteStep::IsIn {
+                value,
+                set: set_lowered,
+                fhe_type,
+                output,
+            })
+        })?;
         Ok(Encrypted::from_operand(Operand::transient(
             step_index, self.scope,
         )))
@@ -872,46 +801,18 @@ impl BatchBuilder {
         if scalar_is_zero_for_type(divisor_bytes, fhe_type) {
             return Err(BatchBuildError::MulDivDivisorZero);
         }
-        let step_index =
-            u16::try_from(self.steps.len()).map_err(|_| BatchBuildError::TooManyOps)?;
-        let mut remaining_accounts = self.remaining_accounts.clone();
-        let mut dictionary = self.dictionary.clone();
-        let factor1 = lower_operand(
-            &mut remaining_accounts,
-            &mut dictionary,
-            self.steps.len(),
-            self.scope,
-            &self.persistent_producers,
-            &self.verified_inputs,
-            lhs,
-        )?;
-        let factor2 = lower_operand(
-            &mut remaining_accounts,
-            &mut dictionary,
-            self.steps.len(),
-            self.scope,
-            &self.persistent_producers,
-            &self.verified_inputs,
-            rhs,
-        )?;
-        let output = lower_output(
-            &mut remaining_accounts,
-            &mut dictionary,
-            self.app_authority,
-            &mut self.persistent_producers,
-            step_index,
-            output,
-        )?;
-        self.remaining_accounts = remaining_accounts;
-        self.dictionary = dictionary;
-        self.steps.push(FheExecuteStep::MulDiv {
-            factor1,
-            factor2,
-            divisor: divisor_bytes,
-            output_fhe_type: fhe_type,
-            output,
-        });
-        self.produced_types.push(fhe_type);
+        let step_index = self.commit_step(fhe_type, |lowering| {
+            let factor1 = lowering.operand(lhs)?;
+            let factor2 = lowering.operand(rhs)?;
+            let output = lowering.output(output)?;
+            Ok(FheExecuteStep::MulDiv {
+                factor1,
+                factor2,
+                divisor: divisor_bytes,
+                output_fhe_type: fhe_type,
+                output,
+            })
+        })?;
         Ok(Encrypted::from_operand(Operand::transient(
             step_index, self.scope,
         )))
@@ -939,36 +840,16 @@ impl BatchBuilder {
             self.scope,
             |index| self.produced_types.get(index as usize).copied(),
         )?;
-        let step_index =
-            u16::try_from(self.steps.len()).map_err(|_| BatchBuildError::TooManyOps)?;
-        let mut remaining_accounts = self.remaining_accounts.clone();
-        let mut dictionary = self.dictionary.clone();
-        let operand = lower_operand(
-            &mut remaining_accounts,
-            &mut dictionary,
-            self.steps.len(),
-            self.scope,
-            &self.persistent_producers,
-            &self.verified_inputs,
-            operand,
-        )?;
-        let output = lower_output(
-            &mut remaining_accounts,
-            &mut dictionary,
-            self.app_authority,
-            &mut self.persistent_producers,
-            step_index,
-            output,
-        )?;
-        self.remaining_accounts = remaining_accounts;
-        self.dictionary = dictionary;
-        self.steps.push(FheExecuteStep::Unary {
-            op,
-            operand,
-            output_fhe_type,
-            output,
-        });
-        self.produced_types.push(output_fhe_type);
+        let step_index = self.commit_step(output_fhe_type, |lowering| {
+            let operand = lowering.operand(operand)?;
+            let output = lowering.output(output)?;
+            Ok(FheExecuteStep::Unary {
+                op,
+                operand,
+                output_fhe_type,
+                output,
+            })
+        })?;
         Ok(Operand::transient(step_index, self.scope))
     }
 
