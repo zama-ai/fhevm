@@ -1,8 +1,22 @@
-//! Anchor events emitted by ZamaHost.
+//! Event types for ZamaHost, in three groups with different transports:
 //!
-//! Events are indexing hints for listeners. Authorization still comes from
-//! host-owned account state, so KMS-style consumers must verify the referenced
-//! ACL records and witnesses instead of trusting event bytes alone.
+//! - Admin and config lifecycle events (`HostConfig*`, `*KmsContext*`,
+//!   `DenySubjectUpdated`, `HcuAppTrustUpdated`,
+//!   `UserDecryptionDelegationUpdated`) are emitted through `emit!` as
+//!   indexing hints. Authorization always comes from host-owned account
+//!   state, never from event bytes.
+//! - `FheEvalRandomSeedsEvent` and `PublicOutputsProducedEvent` are emitted
+//!   through the event CPI. They are load-bearing for off-chain consumers:
+//!   they carry the only data an indexer cannot recompute from instruction
+//!   data alone (block-entropy-derived seeds and output handles).
+//! - The per-step compute types (`Fhe*Event`, `TrivialEncryptEvent`) are
+//!   never emitted on-chain. They are the record shapes the listener
+//!   reconstructs by replaying instruction data through the same handle
+//!   derivation the program runs (see the listener's `solana_reconstruct`).
+//!
+//! `EncryptedValue` ACL mutations emit nothing at all — indexers reconstruct
+//! MMR leaves from instruction data via the shared `zama_solana_acl` crate
+//! (see `instructions/encrypted_value.rs`).
 
 use anchor_lang::prelude::*;
 
@@ -212,14 +226,14 @@ pub struct TrivialEncryptEvent {
     pub result: [u8; 32],
 }
 
-/// Test-shim event for random ciphertext creation.
+/// Record of a random ciphertext creation accepted by the host.
 #[event]
 pub struct FheRandEvent {
     /// Event schema version.
     pub version: u8,
     /// Subject associated with the random handle.
     pub subject: [u8; 32],
-    /// Random seed carried to worker tests.
+    /// Host-derived random seed for this step.
     pub seed: [u8; 16],
     /// FHE type byte.
     pub fhe_type: u8,
@@ -236,7 +250,7 @@ pub struct FheRandBoundedEvent {
     pub subject: [u8; 32],
     /// Exclusive upper bound encoded as a 256-bit big-endian integer.
     pub upper_bound: [u8; 32],
-    /// Random seed carried to worker tests.
+    /// Host-derived random seed for this step.
     pub seed: [u8; 16],
     /// FHE type byte.
     pub fhe_type: u8,

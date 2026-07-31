@@ -3276,7 +3276,7 @@
           {
             "name": "seed",
             "docs": [
-              "Random seed carried to worker tests."
+              "Host-derived random seed for this step."
             ],
             "type": {
               "array": [
@@ -3310,7 +3310,7 @@
     {
       "name": "FheRandEvent",
       "docs": [
-        "Test-shim event for random ciphertext creation."
+        "Record of a random ciphertext creation accepted by the host."
       ],
       "type": {
         "kind": "struct",
@@ -3337,7 +3337,7 @@
           {
             "name": "seed",
             "docs": [
-              "Random seed carried to worker tests."
+              "Host-derived random seed for this step."
             ],
             "type": {
               "array": [

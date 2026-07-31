@@ -20,7 +20,7 @@ pub mod constants;
 pub mod eip712;
 /// Program-specific errors returned by ZamaHost instructions.
 pub mod errors;
-/// Anchor events emitted by protocol and test-shim instructions.
+/// Event types: emitted protocol events plus the reconstructed per-step compute records.
 pub mod events;
 /// Instruction account contexts and handlers.
 pub mod instructions;
