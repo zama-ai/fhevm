@@ -103,7 +103,7 @@ pub fn quit<'info>(ctx: Context<'info, Quit<'info>>) -> Result<()> {
     // Phase 1: exact refund — the joined encrypted value account IS the transfer amount. The
     // batch authority signs via invoke_signed; the token's spend gate accepts
     // it because every joined encrypted value account carries the batch authority in its
-    // audience from birth.
+    // audience from creation.
     let authority = BatchAuthoritySeeds::new(batch_key, ctx.accounts.batch.authority_bump);
     let authority_seeds = authority.seeds();
     ct::cpi::confidential_transfer_from_value(CpiContext::new_with_signer(

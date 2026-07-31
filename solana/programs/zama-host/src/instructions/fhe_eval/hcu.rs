@@ -340,7 +340,7 @@ pub(super) fn meter_eval_plan(
                 let depth = operand_depth(operand, &step_depths);
                 (cost, depth)
             }
-            // Bounded randomness is a fresh birth (no operands), like Rand.
+            // Bounded randomness is a fresh creation (no operands), like Rand.
             FheEvalStep::RandBounded { fhe_type, .. } => (rand_hcu(*fhe_type)?, 0),
             FheEvalStep::Sum {
                 operands, fhe_type, ..

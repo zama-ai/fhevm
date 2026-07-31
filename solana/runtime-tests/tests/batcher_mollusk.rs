@@ -1325,7 +1325,7 @@ fn run_join(
     assert_eq!(ledger.evaluate_fhe_cpis(context, &result), 2);
 }
 
-/// Dispatches the batch and returns the born-public burned handle.
+/// Dispatches the batch and returns the created-public burned handle.
 fn run_dispatch(
     context: &Ctx,
     fixture: &BatcherFixture,
@@ -1459,7 +1459,7 @@ fn mollusk_lifecycle_two_users_deposit_dispatch_settle_claim() {
     assert_eq!(read_batch(&context, keys.batch).join_count, 2);
 
     // Dispatch burns the batch's whole balance; the burned encrypted value account carries the
-    // batch total, born publicly decryptable.
+    // batch total, created publicly decryptable.
     let burned_handle = run_dispatch(&context, &fixture, &keys, &mut ledger);
     assert_eq!(ledger.u64_at(&context, keys.join_balance_value), 0);
     assert_eq!(ledger.u64_at(&context, keys.burned_amount_value), 800);

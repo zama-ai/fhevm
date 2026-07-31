@@ -26,7 +26,7 @@ Design rationale for the divergences below is recorded in
 
 | ERC7984 capability | Semantics | Solana equivalent | Status |
 |---|---|---|---|
-| `confidentialTransfer(to, euint64)` | holder transfers an already-allowed handle; `require isAllowed(amount, sender)` | `confidential_transfer(amount_handle)` — owner-signed; owner-scoped amount ACL; rotates sender/recipient balance handles + births output ACL records | **MET** |
+| `confidentialTransfer(to, euint64)` | holder transfers an already-allowed handle; `require isAllowed(amount, sender)` | `confidential_transfer(amount_handle)` — owner-signed; owner-scoped amount ACL; rotates sender/recipient balance handles + creates output ACL records | **MET** |
 | `confidentialTransfer(to, externalEuint64, inputProof)` | transfer a freshly verified external input | `confidential_transfer(amount_attestation)` — the attestation is consumed inline as the `fhe_eval` `FheEvalOperand::VerifiedInput` operand (the Solana `FHE.fromExternal` analog): verified in-frame, transient-allowed, no persistent input ACL | **MET** (DD-007: verify ≠ allow; caller-is-contract enforced via `attestation.contract_address == compute_subject`) |
 | `confidentialTransferFrom(from,to,euint64)` | operator transfer; `require isOperator` + `isAllowed`; `allowTransient(transferred, sender)` | no Solana production equivalent | **INTENTIONAL GAP** — operator/delegated transfer APIs were removed to simplify authority and reduce attack surface |
 | `confidentialTransferFrom(from,to,externalEuint64,proof)` | operator transfer of external input | no Solana production equivalent | **INTENTIONAL GAP** — the owner-authorized `confidential_transfer(amount_attestation)` fromExternal path is the supported route |
@@ -38,7 +38,7 @@ Design rationale for the divergences below is recorded in
 | `confidentialTotalSupply()` view | encrypted total supply handle | one stable total-supply `EncryptedValue` encrypted value account (born in `initialize_mint`; superseded by `confidential_burn`, DD-032) — read off-chain | **MET** (DIVERGENCE: account read, not a view call) |
 | `confidentialBalanceOf(account)` view | encrypted balance handle | `ConfidentialTokenAccount.balance_encrypted_value` points to the stable `EncryptedValue` encrypted value account whose `current_handle` is read off-chain | **MET** (DIVERGENCE: account read) |
 | `name/symbol/decimals(=6)/contractURI` views | metadata | mint/app config; `wrap_usdc` ties decimals to the underlying SPL mint | **DIVERGENCE** (app config / off-chain reads) |
-| `_mint(to, amount)` | increase total supply + credit | `initialize_mint` (total-supply encrypted value account birth) + `wrap_usdc` (escrow SPL USDC → trivial-encrypt → add to balance) + `initialize_token_account` (zero-balance encrypted value account birth) | **DIVERGENCE** — minting modeled as SPL wrapping (RFC 024 wrap flow; real SPL-token boundary) |
+| `_mint(to, amount)` | increase total supply + credit | `initialize_mint` (total-supply encrypted value account creation) + `wrap_usdc` (escrow SPL USDC → trivial-encrypt → add to balance) + `initialize_token_account` (zero-balance encrypted value account creation) | **DIVERGENCE** — minting modeled as SPL wrapping (RFC 024 wrap flow; real SPL-token boundary) |
 | `_burn(from, amount)` | decrease balance + total supply | `confidential_burn` (supersede balance + total-supply encrypted value accounts) + `redeem_burned_amount` consuming the stateless host `verify_public_decrypt` (release underlying from vault — KMS-cert gated against the live context the cert names, fhevm-internal#1765; public-decrypt gated, permanent replay marker) | **MET** + Solana-only redeem phase (no ERC7984 analogue; wrapper needs underlying release) |
 | `_update` safe-math (`tryIncrease`/`tryDecrease`, `select`, allow/allowThis) | overflow/underflow-safe FHE balance update, conditional transfer of `select(success, amount, 0)` | `confidential-token/src/fhe.rs` + `fhe_eval` Binary/Ternary steps (add/sub/ge/select — the standalone `fhe_binary_op*`/`fhe_ternary_op*` instructions were removed, DD-032) + output binding into `EncryptedValue` | **PARTIAL** — `tryDecrease` reproduced (transfer/burn debit: `ge` → `sub` → `select(success, candidate, balance)`); `tryIncrease` NOT reproduced — the wrap/mint total-supply increase and the recipient credit use a plain `add`. Total-supply overflow is instead bounded by the 1:1 SPL backing (a real `u64` mint), per the `_mint` DIVERGENCE above. Output ACL via authorized producer paths |
 | `FHE.allow / allowThis` | persistent ACL grant to user / contract | output-binding producer paths (create or supersede an `EncryptedValue` with subjects, DD-032) + `allow_subjects` (append) | **MET** |
@@ -111,7 +111,7 @@ fromExternal** — all implemented. The confidential token is therefore **op-com
   `solana_reconstruct.rs`): reconstructs compute rows and handle-only ciphertext-material requests
   from confirmed Yellowstone transaction instructions plus streamed Clock/SlotHashes state. Create,
   update, make-public, and persistent outputs carry the concrete handle(s) to prepare. Subject grants and
-  removals emit no material request because material was prepared at handle birth; KMS checks the live
+  removals emit no material request because material was prepared at handle creation; KMS checks the live
   ACL before plaintext release (DD-025/DD-033/DD-034). `cargo check -p host-listener` → exit 0.
   The adapter maps the merged `fhe_eval` operator surface: binary catalog, ternary select, trivial,
   rand/rand-bounded, unary, sum, isIn, and mulDiv.
@@ -142,7 +142,7 @@ the MMR proof service in-process from the relayer's user-decrypt flow) is PRODUC
 
 **Solid (faithful, often stricter than EVM):** the ACL core (`allow`/`isAllowed`/grant authority/
 append-only/no-generic-bind, now on stable `EncryptedValue` encrypted value accounts with an MMR history, DD-032),
-public-decrypt release gated on a dedicated role and never at birth (an exact-handle proof, not a live
+public-decrypt release gated on a dedicated role and never at creation (an exact-handle proof, not a live
 flag), delegation lifecycle (slot expiry, same-slot guard, wildcard-delegate rejection), one-shot
 transient capabilities with same-tx creation proof, preserved handle byte-layout,
 operand-ACL discipline + scalar-RHS rule, ABI/account-meta exactness (DD-004, extensive negative
@@ -163,7 +163,7 @@ connector's canonical-PDA + MMR-proof verification (DD-032; materiality now live
    gateway-sync authority + the real proof/transciphering service behind the attestation
    (FUTURE_DESIGN §1), not the trust model.
 2. **No host-side test/mock bypass remains.** The former `mock_input_verified_and_bind` input
-   short-circuit, admin toggles, zero birth-entropy fallback, and event-only `test_emit_*`
+   short-circuit, admin toggles, zero creation-entropy fallback, and event-only `test_emit_*`
    instructions were removed entirely (DD-014).
 3. **No *global* per-block HCU plane.** The host enforces a per-app, per-slot HCU block cap
    (`HostConfig::hcu_block_cap_per_app`, DD-039) plus per-plan total and critical-path caps
@@ -187,7 +187,7 @@ connector's canonical-PDA + MMR-proof verification (DD-032; materiality now live
    `solana/scripts/check_solana_abi.py` and `check-zama-host-idl.sh`; `MAX_ENCRYPTED_VALUE_SUBJECTS=8`
    remains a PoC capacity limit mirrored by off-chain decoders (subject-list overflow beyond 8 is
    deferred, DD-032).
-7. **`previous_bank_hash` is fail-closed.** When the prior bank hash is unavailable, handle birth
+7. **`previous_bank_hash` is fail-closed.** When the prior bank hash is unavailable, handle creation
    returns `PreviousBankHashUnavailable`; tests must seed the real `Clock` and `SlotHashes` sysvars.
    Bank-hash + timestamp entropy is the resolved policy (keep per-block entropy, DD-015).
 8. **Materiality is entirely off-chain-Solana now.** The host-owned `HandleMaterialCommitment`

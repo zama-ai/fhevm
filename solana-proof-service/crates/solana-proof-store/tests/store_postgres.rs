@@ -405,7 +405,7 @@ async fn semantic_leaf_resolution_maps_handle_and_subject_to_index() {
         .is_none());
 }
 
-/// Regression (PR #3303): a handle can legitimately carry TWO public-decrypt leaves — a born-public
+/// Regression (PR #3303): a handle can legitimately carry TWO public-decrypt leaves — a created-public
 /// output seals one, and a later `make_handle_public` re-release seals another (on-chain
 /// `make_handle_public` has no already-public guard). The public semantic key must resolve to the
 /// EARLIEST such leaf (index 0) deterministically, and that leaf's proof must verify.
@@ -417,11 +417,11 @@ async fn public_decrypt_resolves_duplicate_leaves_to_earliest() {
     let owner = pk(0x30);
     let handle = pk(0x10);
     // create records no handle and no leaf (an fhe_eval output handle is unresolvable without
-    // slot entropy); the two public seals of the SAME handle then mirror a born-public lifecycle
+    // slot entropy); the two public seals of the SAME handle then mirror a created-public lifecycle
     // leaf at index 0 followed by an explicit make_handle_public re-release at index 1 — both
     // append a public-decrypt leaf for the one handle.
     let create = create_ix(ev, owner);
-    let seal_born_public = make_public_ix(ev, handle);
+    let seal_created_public = make_public_ix(ev, handle);
     let seal_make_public = make_public_ix(ev, handle);
     let b = block(
         10,
@@ -433,7 +433,7 @@ async fn public_decrypt_resolves_duplicate_leaves_to_earliest() {
             index: 1,
             succeeded: true,
             is_vote: false,
-            instructions: vec![create, seal_born_public, seal_make_public],
+            instructions: vec![create, seal_created_public, seal_make_public],
         }],
     );
     assert_eq!(
@@ -861,7 +861,7 @@ async fn incomplete_bootstrap_and_post_bootstrap_birth() {
     assert!(!store.integrity_status().await.unwrap().history_complete);
 
     let ev = pk(0xE3);
-    let birth = block(
+    let creation_block = block(
         11,
         10,
         pk(0xA0),
@@ -875,7 +875,7 @@ async fn incomplete_bootstrap_and_post_bootstrap_birth() {
         }],
     );
     assert_eq!(
-        store.apply_completed_block(&birth).await.unwrap(),
+        store.apply_completed_block(&creation_block).await.unwrap(),
         ApplyOutcome::Applied
     );
     assert!(store.proof_snapshot(ev).await.unwrap().is_some());

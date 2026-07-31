@@ -60,7 +60,7 @@ this note records the operational model in one place.
   output may instead be *born* public by setting `make_public` on the output: after the new handle is
   written, the same `PublicDecryptLeaf` is sealed for that NEW handle in the same instruction —
   byte-identical to `make_handle_public`, appended LAST (after any supersede historical leaves). This
-  is the one exception to "created encrypted value accounts cannot be born public-decryptable" (DD-036).
+  is the one exception to "created encrypted value accounts cannot be created public-decryptable" (DD-036).
 - Delegated user decrypt is isolated from the core ACL path. Delegation uses standalone
   `UserDecryptionDelegation` PDAs and does not add subjects or mutate `EncryptedValue`.
 
@@ -109,7 +109,7 @@ stateDiagram-v2
 
 `fhe_eval` persistent-output supersession appends one
 `HistoricalAccessLeaf{account, leaf_index, handle, subject}` per then-allowed subject;
-`make_handle_public` (or a born-public output) appends one
+`make_handle_public` (or a created-public output) appends one
 `PublicDecryptLeaf{account, leaf_index, handle}`. A single running `leaf_count` assigns `leaf_index`,
 so replay order alone reproduces the leaf list — the reconstruction invariant (DD-033).
 
@@ -117,7 +117,7 @@ so replay order alone reproduces the leaf list — the reconstruction invariant 
 flowchart LR
     subgraph append["append order (leaf_count increments once per leaf)"]
         direction LR
-        H0["HistoricalAccessLeaf<br/>handle=H1, subject=A"] --> H1["HistoricalAccessLeaf<br/>handle=H1, subject=B"] --> P0["PublicDecryptLeaf<br/>handle=H2 (born public)"]
+        H0["HistoricalAccessLeaf<br/>handle=H1, subject=A"] --> H1["HistoricalAccessLeaf<br/>handle=H1, subject=B"] --> P0["PublicDecryptLeaf<br/>handle=H2 (created public)"]
     end
     append --> peaks["on-chain: peaks[] (≤64) + leaf_count"]
     peaks --> verify["off-chain: reconstruct leaves → build MMR proof<br/>→ KMS verifies inclusion vs confirmed peaks"]
@@ -146,7 +146,7 @@ flowchart TD
 ### Burn → Redeem (Vector-2 closed, DD-036)
 
 Pull-based, mirroring OZ `ConfidentialFungibleTokenERC20Wrapper` unwrap→finalizeUnwrap. The burned
-delta is born public in the burn's `fhe_eval` CPI; redemption is a single `redeem_burned_amount` that
+delta is created public in the burn's `fhe_eval` CPI; redemption is a single `redeem_burned_amount` that
 consumes the stateless host `verify_public_decrypt` verifier (the request-witness lifecycle was
 dissolved in fhevm-internal#1763), authorizing by the pinned handle's public-decrypt proof against the
 live KMS context the cert names (any non-destroyed context, fhevm-internal#1765), so it stays valid
@@ -174,7 +174,7 @@ sequenceDiagram
 flowchart TD
     prog["zama-host fhe_eval"] -->|"emit_cpi! (single batch CPI, ≤MAX_FHE_EVAL_OPS records;<br/>DD-038; no emit! log fallback)"| ev["op-event (self-CPI inner ix):<br/>carries the block-entropy output handle"]
     prog -->|"instruction data (args)"| ix["fhe_eval persistent-output / make_public args"]
-    ev --> proofsvc["solana-proof-service (Yellowstone + Postgres):<br/>resolves born-public handle from op-event,<br/>reconstructs MMR, cross-checks vs confirmed peaks"]
+    ev --> proofsvc["solana-proof-service (Yellowstone + Postgres):<br/>resolves created-public handle from op-event,<br/>reconstructs MMR, cross-checks vs confirmed peaks"]
     ix --> listener["host-listener indexer:<br/>Yellowstone gRPC reconstruction-only<br/>(SlotHashes+Clock sysvar streams → block entropy;<br/>never reads events)"]
     proofsvc -.->|"migrate to Carbon/Geyser,<br/>then drop op-event ABI"| followup["fhevm-internal#1665"]
 ```
@@ -216,7 +216,7 @@ to a follow-up.
 - DD-034: Solana compute is scheduled eagerly (`is_allowed` is a scheduling gate, not decrypt auth).
 - DD-035: proof building is a standalone untrusted service; KMS re-verifies proofs against confirmed
   chain state.
-- DD-036: burn-redemption consume authorizes by MMR public-decrypt proof (born-public delta), not the
+- DD-036: burn-redemption consume authorizes by MMR public-decrypt proof (created-public delta), not the
   live handle — closes the Vector-2 fund-stranding window.
-- DD-037: `fhe_eval` events are `emit_cpi!`-only (no `emit!` fallback); born-public outputs are
+- DD-037: `fhe_eval` events are `emit_cpi!`-only (no `emit!` fallback); created-public outputs are
   restricted to CPI-transportable frames so their handles are always recoverable off-chain.

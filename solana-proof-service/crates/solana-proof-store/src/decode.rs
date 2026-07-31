@@ -13,7 +13,7 @@
 //! discriminator from its name via sha256, independently of the generated
 //! consts the production paths use.
 //!
-//! Two event self-CPIs need sibling context: random-seed batches and a born-public (`make_public=true`)
+//! Two event self-CPIs need sibling context: random-seed batches and a created-public (`make_public=true`)
 //! `fhe_eval` persistent output commits a public-decrypt leaf to the eval OUTPUT
 //! handle, which is derived on-chain from slot entropy and appears in no
 //! instruction arg. The host therefore emits one narrow lifecycle batch from a
@@ -51,12 +51,12 @@ pub enum DecodedInstruction {
     FheEvalCreateEncryptedValue {
         encrypted_value: [u8; 32],
         subjects: Vec<[u8; 32]>,
-        /// `Some(output_handle)` when the persistent output was born public
+        /// `Some(output_handle)` when the persistent output was created public
         /// (`make_public=true`) AND its output handle was resolved from the
         /// lifecycle batch this transaction emitted. `None` otherwise — the output
         /// handle is derived on-chain from slot entropy and appears in no
         /// instruction arg, so without the event it stays unresolved and any
-        /// born-public leaf fails closed at proof time rather than serving a wrong result.
+        /// created-public leaf fails closed at proof time rather than serving a wrong result.
         make_public_handle: Option<[u8; 32]>,
     },
     FheEvalUpdateEncryptedValue {
@@ -96,7 +96,7 @@ impl DecodedInstruction {
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
-struct BornPublicOutput {
+struct CreatedPublicOutput {
     step_index: u16,
     encrypted_value: [u8; 32],
     output_handle: [u8; 32],
@@ -130,14 +130,14 @@ pub enum DecodeError {
     InvalidFheEvalDictionaryIndex(u8),
     #[error("missing or invalid Solana instruction stack metadata")]
     InvalidStackMetadata,
-    #[error("born-public lifecycle event is missing for fhe_eval")]
-    MissingBornPublicEvent,
-    #[error("unexpected or unconsumed born-public lifecycle event")]
-    UnexpectedBornPublicEvent,
+    #[error("created-public lifecycle event is missing for fhe_eval")]
+    MissingCreatedPublicEvent,
+    #[error("unexpected or unconsumed created-public lifecycle event")]
+    UnexpectedCreatedPublicEvent,
     #[error("unexpected zama-host descendant inside fhe_eval execution frame")]
     UnexpectedHostDescendant,
-    #[error("born-public lifecycle event has an invalid host self-CPI envelope")]
-    InvalidBornPublicEnvelope,
+    #[error("created-public lifecycle event has an invalid host self-CPI envelope")]
+    InvalidCreatedPublicEnvelope,
     #[error("random-seed event has an invalid host self-CPI envelope")]
     InvalidRandomSeedEnvelope,
     #[error("unexpected random-seed event")]
@@ -148,14 +148,14 @@ pub enum DecodeError {
     MalformedRandomSeedEvent(String),
     #[error("random-seed event does not match fhe_eval random steps")]
     RandomSeedMismatch,
-    #[error("born-public lifecycle event has unsupported version {0}")]
-    UnsupportedBornPublicVersion(u8),
-    #[error("born-public lifecycle event is malformed: {0}")]
-    MalformedBornPublicEvent(String),
-    #[error("born-public lifecycle event does not exactly match fhe_eval outputs")]
-    BornPublicMismatch,
-    #[error("born-public lifecycle event contains duplicate accounts or handles")]
-    DuplicateBornPublicOutput,
+    #[error("created-public lifecycle event has unsupported version {0}")]
+    UnsupportedCreatedPublicVersion(u8),
+    #[error("created-public lifecycle event is malformed: {0}")]
+    MalformedCreatedPublicEvent(String),
+    #[error("created-public lifecycle event does not exactly match fhe_eval outputs")]
+    CreatedPublicMismatch,
+    #[error("created-public lifecycle event contains duplicate accounts or handles")]
+    DuplicateCreatedPublicOutput,
     #[error("borsh decode failed: {0}")]
     Borsh(String),
 }
@@ -189,7 +189,7 @@ pub fn decode_instructions(ix: &RawInstruction) -> Result<Vec<DecodedInstruction
                 handle,
             }])
         }
-        // Without the lifecycle batch (single-instruction decode), no born-public
+        // Without the lifecycle batch (single-instruction decode), no created-public
         // output handle can be resolved; those leaves fail closed at proof time.
         Some(ZamaHostInstruction::FheEval(plan)) => {
             decode_fhe_eval_persistent_outputs(ix, &plan, &[])
@@ -242,7 +242,7 @@ fn fhe_eval_persistent_output_account(
 fn decode_fhe_eval_persistent_outputs(
     ix: &RawInstruction,
     plan: &FheEvalArgs,
-    born_public_handles: &[Option<[u8; 32]>],
+    created_public_handles: &[Option<[u8; 32]>],
 ) -> Result<Vec<DecodedInstruction>, DecodeError> {
     let mut out = Vec::new();
     for (step_index, step) in plan.steps.iter().enumerate() {
@@ -260,7 +260,7 @@ fn decode_fhe_eval_persistent_outputs(
         let encrypted_value =
             fhe_eval_persistent_output_account(ix, *output_encrypted_value_index)?;
         let make_public_handle = if *make_public {
-            born_public_handles.get(step_index).copied().flatten()
+            created_public_handles.get(step_index).copied().flatten()
         } else {
             None
         };
@@ -311,7 +311,7 @@ fn fhe_eval_step_output(step: &FheEvalStep) -> &FheEvalOutput {
     }
 }
 
-fn is_born_public_event(ix: &RawInstruction, program_id: [u8; 32]) -> bool {
+fn is_created_public_event(ix: &RawInstruction, program_id: [u8; 32]) -> bool {
     ix.program_id == program_id
         && zama_host::decode::is_event_cpi::<PublicOutputsProducedEvent>(&ix.data)
 }
@@ -369,14 +369,14 @@ fn expected_random_step_indexes(plan: &FheEvalArgs) -> Vec<u16> {
         .collect()
 }
 
-fn decode_born_public_event(
+fn decode_created_public_event(
     ix: &RawInstruction,
     program_id: [u8; 32],
-) -> Result<Vec<BornPublicOutput>, DecodeError> {
+) -> Result<Vec<CreatedPublicOutput>, DecodeError> {
     if ix.program_id != program_id
         || ix.accounts.as_slice() != [zama_host::EVENT_AUTHORITY_AND_BUMP.0.to_bytes()]
     {
-        return Err(DecodeError::InvalidBornPublicEnvelope);
+        return Err(DecodeError::InvalidCreatedPublicEnvelope);
     }
     // RPC compiled inner instructions do not expose CPI AccountMeta flags.
     // Because failed transactions are discarded in `chain`, successful Anchor
@@ -384,16 +384,18 @@ fn decode_born_public_event(
     // #3136 separately pins the on-chain meta as signed and readonly.
     let mut body =
         zama_host::decode::strip_event_cpi_envelope::<PublicOutputsProducedEvent>(&ix.data)
-            .ok_or(DecodeError::InvalidBornPublicEnvelope)?;
+            .ok_or(DecodeError::InvalidCreatedPublicEnvelope)?;
     let version = u8::deserialize(&mut body)
-        .map_err(|e| DecodeError::MalformedBornPublicEvent(e.to_string()))?;
+        .map_err(|e| DecodeError::MalformedCreatedPublicEvent(e.to_string()))?;
     if version != zama_host::EVENT_VERSION {
-        return Err(DecodeError::UnsupportedBornPublicVersion(version));
+        return Err(DecodeError::UnsupportedCreatedPublicVersion(version));
     }
     const RECORD_BYTES: usize = 66;
     let count_bytes: [u8; 4] = body
         .get(..4)
-        .ok_or_else(|| DecodeError::MalformedBornPublicEvent("missing record count".to_string()))?
+        .ok_or_else(|| {
+            DecodeError::MalformedCreatedPublicEvent("missing record count".to_string())
+        })?
         .try_into()
         .expect("record count slice has fixed length");
     let count = u32::from_le_bytes(count_bytes) as usize;
@@ -401,28 +403,28 @@ fn decode_born_public_event(
         .checked_mul(RECORD_BYTES)
         .and_then(|records| records.checked_add(4))
         .ok_or_else(|| {
-            DecodeError::MalformedBornPublicEvent(
+            DecodeError::MalformedCreatedPublicEvent(
                 "record count overflows encoded length".to_string(),
             )
         })?;
     // The producer emits no event for an empty batch, so an encoded batch must
     // contain at least one record.
     if !(1..=zama_host::MAX_FHE_EVAL_OPS).contains(&count) || body.len() != expected_len {
-        return Err(DecodeError::MalformedBornPublicEvent(format!(
+        return Err(DecodeError::MalformedCreatedPublicEvent(format!(
             "invalid record count or encoded length: count={count}, bytes={}",
             body.len()
         )));
     }
     let outputs = <Vec<zama_host::events::ProducedPublicOutput>>::deserialize(&mut body)
-        .map_err(|e| DecodeError::MalformedBornPublicEvent(e.to_string()))?;
+        .map_err(|e| DecodeError::MalformedCreatedPublicEvent(e.to_string()))?;
     if !body.is_empty() {
-        return Err(DecodeError::MalformedBornPublicEvent(
+        return Err(DecodeError::MalformedCreatedPublicEvent(
             "trailing-byte payload".to_string(),
         ));
     }
     Ok(outputs
         .into_iter()
-        .map(|output| BornPublicOutput {
+        .map(|output| CreatedPublicOutput {
             step_index: output.step_index,
             encrypted_value: output.encrypted_value.to_bytes(),
             output_handle: output.output_handle,
@@ -430,7 +432,7 @@ fn decode_born_public_event(
         .collect())
 }
 
-fn expected_born_public_outputs(
+fn expected_created_public_outputs(
     ix: &RawInstruction,
     plan: &FheEvalArgs,
 ) -> Result<Vec<(u16, [u8; 32])>, DecodeError> {
@@ -454,9 +456,9 @@ fn expected_born_public_outputs(
         .collect()
 }
 
-fn validate_born_public_event(
+fn validate_created_public_event(
     expected: &[(u16, [u8; 32])],
-    actual: Vec<BornPublicOutput>,
+    actual: Vec<CreatedPublicOutput>,
     step_count: usize,
 ) -> Result<Vec<Option<[u8; 32]>>, DecodeError> {
     let mut accounts = std::collections::HashSet::with_capacity(actual.len());
@@ -464,7 +466,7 @@ fn validate_born_public_event(
     if actual.iter().any(|record| {
         !accounts.insert(record.encrypted_value) || !handles.insert(record.output_handle)
     }) {
-        return Err(DecodeError::DuplicateBornPublicOutput);
+        return Err(DecodeError::DuplicateCreatedPublicOutput);
     }
     if actual.len() != expected.len()
         || actual
@@ -474,13 +476,13 @@ fn validate_born_public_event(
                 record.step_index != *step_index || record.encrypted_value != *account
             })
     {
-        return Err(DecodeError::BornPublicMismatch);
+        return Err(DecodeError::CreatedPublicMismatch);
     }
     let mut handles_by_step = vec![None; step_count];
     for record in actual {
         let slot = handles_by_step
             .get_mut(usize::from(record.step_index))
-            .ok_or(DecodeError::BornPublicMismatch)?;
+            .ok_or(DecodeError::CreatedPublicMismatch)?;
         *slot = Some(record.output_handle);
     }
     Ok(handles_by_step)
@@ -503,8 +505,8 @@ pub fn decode_program_instructions(
     let mut index = 0;
     while index < instructions.len() {
         let ix = &instructions[index];
-        if is_born_public_event(ix, program_id) {
-            return Err(DecodeError::UnexpectedBornPublicEvent);
+        if is_created_public_event(ix, program_id) {
+            return Err(DecodeError::UnexpectedCreatedPublicEvent);
         }
         if is_random_seed_event(ix, program_id) {
             return Err(DecodeError::UnexpectedRandomSeedEvent);
@@ -516,7 +518,7 @@ pub fn decode_program_instructions(
         if is_fhe_eval(ix) {
             let mut body = &ix.data[8..];
             let plan = FheEvalArgs::deserialize(&mut body).map_err(borsh_err)?;
-            let expected = expected_born_public_outputs(ix, &plan)?;
+            let expected = expected_created_public_outputs(ix, &plan)?;
             let eval_height = ix.stack_height.ok_or(DecodeError::InvalidStackMetadata)?;
             let event_height = eval_height
                 .checked_add(1)
@@ -532,14 +534,14 @@ pub fn decode_program_instructions(
                 frame_end += 1;
             }
             let event_indexes = (index + 1..frame_end)
-                .filter(|&child| is_born_public_event(&instructions[child], program_id))
+                .filter(|&child| is_created_public_event(&instructions[child], program_id))
                 .collect::<Vec<_>>();
             let random_event_indexes = (index + 1..frame_end)
                 .filter(|&child| is_random_seed_event(&instructions[child], program_id))
                 .collect::<Vec<_>>();
             if instructions[index + 1..frame_end].iter().any(|child| {
                 child.program_id == program_id
-                    && !is_born_public_event(child, program_id)
+                    && !is_created_public_event(child, program_id)
                     && !is_random_seed_event(child, program_id)
             }) {
                 return Err(DecodeError::UnexpectedHostDescendant);
@@ -563,17 +565,17 @@ pub fn decode_program_instructions(
             }
             let handles = match (expected.is_empty(), event_indexes.as_slice()) {
                 (true, []) => vec![None; plan.steps.len()],
-                (true, _) => return Err(DecodeError::UnexpectedBornPublicEvent),
-                (false, []) => return Err(DecodeError::MissingBornPublicEvent),
+                (true, _) => return Err(DecodeError::UnexpectedCreatedPublicEvent),
+                (false, []) => return Err(DecodeError::MissingCreatedPublicEvent),
                 (false, [event_index]) => {
                     let event_ix = &instructions[*event_index];
                     if event_ix.stack_height != Some(event_height) {
-                        return Err(DecodeError::InvalidBornPublicEnvelope);
+                        return Err(DecodeError::InvalidCreatedPublicEnvelope);
                     }
-                    let actual = decode_born_public_event(event_ix, program_id)?;
-                    validate_born_public_event(&expected, actual, plan.steps.len())?
+                    let actual = decode_created_public_event(event_ix, program_id)?;
+                    validate_created_public_event(&expected, actual, plan.steps.len())?
                 }
-                (false, _) => return Err(DecodeError::UnexpectedBornPublicEvent),
+                (false, _) => return Err(DecodeError::UnexpectedCreatedPublicEvent),
             };
             out.extend(decode_fhe_eval_persistent_outputs(ix, &plan, &handles)?);
             index = frame_end;
@@ -756,7 +758,7 @@ mod tests {
         output
     }
 
-    fn born_public_event_ix(records: &[(u16, [u8; 32], [u8; 32])]) -> RawInstruction {
+    fn created_public_event_ix(records: &[(u16, [u8; 32], [u8; 32])]) -> RawInstruction {
         let mut data = ANCHOR_EVENT_IX_TAG_LE.to_vec();
         data.extend_from_slice(&event_discriminator("PublicOutputsProducedEvent"));
         data.push(zama_host::EVENT_VERSION);
@@ -953,7 +955,7 @@ mod tests {
         assert_eq!(decode_instruction(&ix), Err(DecodeError::DataTooShort));
     }
 
-    fn two_born_public_outputs() -> (RawInstruction, RawInstruction) {
+    fn two_created_public_outputs() -> (RawInstruction, RawInstruction) {
         let ev0 = pk(0xE0);
         let ev1 = pk(0xE1);
         let plan = frame(vec![
@@ -969,13 +971,13 @@ mod tests {
             },
         ]);
         let eval = ix_with_anchor_data(fhe_eval_accounts(&[ev0, ev1]), "fhe_eval", plan);
-        let event = born_public_event_ix(&[(0, ev0, pk(0x50)), (1, ev1, pk(0x51))]);
+        let event = created_public_event_ix(&[(0, ev0, pk(0x50)), (1, ev1, pk(0x51))]);
         (eval, event)
     }
 
     #[test]
-    fn exact_born_public_batch_resolves_each_persistent_output() {
-        let (eval, event) = two_born_public_outputs();
+    fn exact_created_public_batch_resolves_each_persistent_output() {
+        let (eval, event) = two_created_public_outputs();
         let decoded = decode_program_instructions(program_id(), &[eval, event]).unwrap();
         assert_eq!(
             decoded,
@@ -998,14 +1000,14 @@ mod tests {
 
     #[test]
     fn batches_are_associated_with_their_enclosing_fhe_eval() {
-        let (mut first_eval, mut first_event) = two_born_public_outputs();
+        let (mut first_eval, mut first_event) = two_created_public_outputs();
         first_eval.stack_height = Some(2);
         first_event.stack_height = Some(3);
-        let (mut second_eval, mut second_event) = two_born_public_outputs();
+        let (mut second_eval, mut second_event) = two_created_public_outputs();
         second_eval.stack_height = Some(2);
         second_event.stack_height = Some(3);
         second_event.data =
-            born_public_event_ix(&[(0, pk(0xE0), pk(0x60)), (1, pk(0xE1), pk(0x61))]).data;
+            created_public_event_ix(&[(0, pk(0xE0), pk(0x60)), (1, pk(0xE1), pk(0x61))]).data;
 
         let decoded = decode_program_instructions(
             program_id(),
@@ -1024,11 +1026,11 @@ mod tests {
     }
 
     #[test]
-    fn missing_born_public_batch_fails_closed() {
-        let (eval, _) = two_born_public_outputs();
+    fn missing_created_public_batch_fails_closed() {
+        let (eval, _) = two_created_public_outputs();
         assert_eq!(
             decode_program_instructions(program_id(), &[eval]),
-            Err(DecodeError::MissingBornPublicEvent)
+            Err(DecodeError::MissingCreatedPublicEvent)
         );
     }
 
@@ -1040,108 +1042,109 @@ mod tests {
             output: persistent_output(0, &[0x30], None, None),
         }]);
         let eval = ix_with_anchor_data(fhe_eval_accounts(&[pk(0xE0)]), "fhe_eval", plan);
-        let event = born_public_event_ix(&[(0, pk(0xE0), pk(0x50))]);
+        let event = created_public_event_ix(&[(0, pk(0xE0), pk(0x50))]);
         assert_eq!(
             decode_program_instructions(program_id(), &[eval, event]),
-            Err(DecodeError::UnexpectedBornPublicEvent)
+            Err(DecodeError::UnexpectedCreatedPublicEvent)
         );
     }
 
     #[test]
-    fn reordered_or_mismatched_born_public_batch_fails_closed() {
-        let (eval, _) = two_born_public_outputs();
-        let reordered = born_public_event_ix(&[(1, pk(0xE1), pk(0x51)), (0, pk(0xE0), pk(0x50))]);
+    fn reordered_or_mismatched_created_public_batch_fails_closed() {
+        let (eval, _) = two_created_public_outputs();
+        let reordered =
+            created_public_event_ix(&[(1, pk(0xE1), pk(0x51)), (0, pk(0xE0), pk(0x50))]);
         assert_eq!(
             decode_program_instructions(program_id(), &[eval, reordered]),
-            Err(DecodeError::BornPublicMismatch)
+            Err(DecodeError::CreatedPublicMismatch)
         );
     }
 
     #[test]
     fn duplicate_accounts_and_handles_fail_closed() {
-        let (eval, _) = two_born_public_outputs();
+        let (eval, _) = two_created_public_outputs();
         let duplicate_account =
-            born_public_event_ix(&[(0, pk(0xE0), pk(0x50)), (1, pk(0xE0), pk(0x51))]);
+            created_public_event_ix(&[(0, pk(0xE0), pk(0x50)), (1, pk(0xE0), pk(0x51))]);
         assert_eq!(
             decode_program_instructions(program_id(), &[eval.clone(), duplicate_account],),
-            Err(DecodeError::DuplicateBornPublicOutput)
+            Err(DecodeError::DuplicateCreatedPublicOutput)
         );
         let duplicate_handle =
-            born_public_event_ix(&[(0, pk(0xE0), pk(0x50)), (1, pk(0xE1), pk(0x50))]);
+            created_public_event_ix(&[(0, pk(0xE0), pk(0x50)), (1, pk(0xE1), pk(0x50))]);
         assert_eq!(
             decode_program_instructions(program_id(), &[eval, duplicate_handle]),
-            Err(DecodeError::DuplicateBornPublicOutput)
+            Err(DecodeError::DuplicateCreatedPublicOutput)
         );
     }
 
     #[test]
     fn malformed_unknown_version_and_wrong_envelope_fail_closed() {
-        let (eval, mut malformed) = two_born_public_outputs();
+        let (eval, mut malformed) = two_created_public_outputs();
         malformed.data.push(0);
         assert!(matches!(
             decode_program_instructions(program_id(), &[eval.clone(), malformed]),
-            Err(DecodeError::MalformedBornPublicEvent(_))
+            Err(DecodeError::MalformedCreatedPublicEvent(_))
         ));
 
-        let (_, mut unknown_version) = two_born_public_outputs();
+        let (_, mut unknown_version) = two_created_public_outputs();
         unknown_version.data[16] = 99;
         assert_eq!(
             decode_program_instructions(program_id(), &[eval.clone(), unknown_version],),
-            Err(DecodeError::UnsupportedBornPublicVersion(99))
+            Err(DecodeError::UnsupportedCreatedPublicVersion(99))
         );
 
-        let (_, mut wrong_envelope) = two_born_public_outputs();
+        let (_, mut wrong_envelope) = two_created_public_outputs();
         wrong_envelope.accounts = vec![pk(0xEE)];
         assert_eq!(
             decode_program_instructions(program_id(), &[eval, wrong_envelope]),
-            Err(DecodeError::InvalidBornPublicEnvelope)
+            Err(DecodeError::InvalidCreatedPublicEnvelope)
         );
     }
 
     #[test]
     fn huge_declared_record_count_fails_before_record_decode() {
-        let (eval, mut event) = two_born_public_outputs();
+        let (eval, mut event) = two_created_public_outputs();
         event.data.truncate(21);
         event.data[17..21].copy_from_slice(&u32::MAX.to_le_bytes());
 
         assert!(matches!(
             decode_program_instructions(program_id(), &[eval, event]),
-            Err(DecodeError::MalformedBornPublicEvent(_))
+            Err(DecodeError::MalformedCreatedPublicEvent(_))
         ));
     }
 
     #[test]
     fn oversized_batch_fails_closed() {
-        let (eval, _) = two_born_public_outputs();
+        let (eval, _) = two_created_public_outputs();
         let records = (0..=zama_host::MAX_FHE_EVAL_OPS)
             .map(|index| (index as u16, [index as u8; 32], [(index + 1) as u8; 32]))
             .collect::<Vec<_>>();
-        let oversized = born_public_event_ix(&records);
+        let oversized = created_public_event_ix(&records);
         assert!(matches!(
             decode_program_instructions(program_id(), &[eval, oversized]),
-            Err(DecodeError::MalformedBornPublicEvent(_))
+            Err(DecodeError::MalformedCreatedPublicEvent(_))
         ));
     }
 
     #[test]
     fn extra_unconsumed_and_wrongly_nested_batches_fail_closed() {
-        let (eval, event) = two_born_public_outputs();
+        let (eval, event) = two_created_public_outputs();
         assert_eq!(
             decode_program_instructions(program_id(), &[event.clone(), eval.clone()]),
-            Err(DecodeError::UnexpectedBornPublicEvent)
+            Err(DecodeError::UnexpectedCreatedPublicEvent)
         );
 
         let mut wrong_nesting = event;
         wrong_nesting.stack_height = Some(3);
         assert_eq!(
             decode_program_instructions(program_id(), &[eval, wrong_nesting]),
-            Err(DecodeError::InvalidBornPublicEnvelope)
+            Err(DecodeError::InvalidCreatedPublicEnvelope)
         );
     }
 
     #[test]
     fn unexpected_host_descendant_inside_eval_frame_fails_closed() {
-        let (eval, event) = two_born_public_outputs();
+        let (eval, event) = two_created_public_outputs();
         let mut nested_host_instruction = ix_with_data(
             vec![pk(0xA), pk(0xB), pk(0xE0)],
             "make_handle_public",
@@ -1167,7 +1170,7 @@ mod tests {
             }]),
         );
         let event = random_seed_event_ix(&[(0, [7; 16])]);
-        let public_event = born_public_event_ix(&[(0, encrypted_value, pk(0x90))]);
+        let public_event = created_public_event_ix(&[(0, encrypted_value, pk(0x90))]);
         assert!(decode_program_instructions(
             program_id(),
             &[eval.clone(), event, public_event.clone()]
@@ -1183,7 +1186,7 @@ mod tests {
 
     #[test]
     fn missing_stack_metadata_fails_closed() {
-        let (eval, mut event) = two_born_public_outputs();
+        let (eval, mut event) = two_created_public_outputs();
         event.stack_height = None;
         assert_eq!(
             decode_program_instructions(program_id(), &[eval, event]),

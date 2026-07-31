@@ -69,7 +69,7 @@ export type SolanaVaultSettleOptions = {
  * Settles a dispatched batch. The caller supplies only the batcher's roots (plus infra handles and
  * the off-chain ALT address); settle resolves everything batch-specific itself:
  *
- * - the batch (its current batch, or `batchIndex` when pinned) and its born-public burned handle,
+ * - the batch (its current batch, or `batchIndex` when pinned) and its created-public burned handle,
  *   read from `Batch`;
  * - the full settle account set, derived from the roots, the batch, and the burned handle; and
  * - the burned encrypted value account's live MMR peaks and leaf count, read from its `EncryptedValue` account.
@@ -89,7 +89,7 @@ export async function settleBatch(
 ): Promise<Signature> {
   const { rpc, roots } = options;
 
-  // Resolve the batch and its born-public burned handle from chain state.
+  // Resolve the batch and its created-public burned handle from chain state.
   let addresses: BatchAddresses;
   let burnedTotalHandle: Uint8Array;
   if (options.batchIndex !== undefined) {
@@ -119,7 +119,7 @@ export async function settleBatch(
   // Read the burned encrypted value account's live MMR state (the peaks the proof is verified against).
   const encryptedValueAccount = await getEncryptedValueState(rpc, accounts.batchBurnedAmountValue);
 
-  // Phase 1: the settle burns to a born-public handle, so its proof is a public-decrypt leaf. The
+  // Phase 1: the settle burns to a created-public handle, so its proof is a public-decrypt leaf. The
   // service resolves the leaf from (encryptedValue, burnedTotalHandle); the SDK never supplies a
   // leaf index, and the resolved index comes back on the proof.
   const proof = await fetchSolanaPublicDecryptProof(proofConfig, burned.encryptedValueAddress, burnedTotalHandle);

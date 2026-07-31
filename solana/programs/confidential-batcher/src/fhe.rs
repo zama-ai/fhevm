@@ -60,7 +60,7 @@ impl<'info> PersistentBinding<'info> {
                 Some(value.current_handle),
             )
         };
-        output.birth().map_err(invalid_eval_plan)?;
+        output.binding().map_err(invalid_eval_plan)?;
         Ok(Self {
             account,
             output: Box::new(output),

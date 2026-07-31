@@ -50,7 +50,7 @@ this handle" — current membership, or an MMR-proven historical/public-decrypt 
 
 `fhe_eval` composes mixed FHE steps in one host instruction: **Binary / Ternary / Unary /
 TrivialEncrypt / Rand / RandBounded / Sum / IsIn / MulDiv** (no `Input` step — DD-007/DD-023). Binary scratch results can feed ternary
-`if_then_else`, and trivial-encrypt / random births can participate in the same frame. Outputs
+`if_then_else`, and trivial-encrypt / random creations can participate in the same frame. Outputs
 produced earlier in the eval can be referenced as transient operands by later operations.
 Persistent operands must still be authorized by a live or historically-proven `EncryptedValue`. Transient
 outputs create no `EncryptedValue` state at all. Only outputs marked persistent create (first bind) or
@@ -65,9 +65,9 @@ public-decrypt rules enforced by the current host without reviving unsigned
 `authorized_app_accounts`.
 
 Ordinary compute facts, MMR leaves, and persistent-output binds are reconstructed from instruction data;
-the host emits no per-operation replay stream. A frame with born-public persistent outputs emits exactly
+the host emits no per-operation replay stream. A frame with created-public persistent outputs emits exactly
 one versioned Anchor CPI lifecycle batch containing their ordered step index, host-owned
-`EncryptedValue` account, and host-derived output handle. A frame without born-public outputs emits
+`EncryptedValue` account, and host-derived output handle. A frame without created-public outputs emits
 no lifecycle batch. The bounded 16-output maximum fits one CPI; other `EncryptedValue` lifecycle
 paths remain event-free (`docs/DESIGN_DECISIONS.md` DD-033/DD-038).
 
@@ -88,7 +88,7 @@ Admission invariants for `fhe_eval`:
   checked at input consumption (`attestation.contract_address == compute_subject`); derived outputs are
   unconstrained. The redundant standalone `verify_coprocessor_input` instruction was removed (DD-007).
 - Persistent outputs are born with an allowed-subject set. Public decrypt is never a live flag or subject
-  attribute; it is granted by `make_handle_public`, or at persistent-output birth when `make_public=true`,
+  attribute; it is granted by `make_handle_public`, or at persistent-output creation when `make_public=true`,
   which appends an exact-handle `PublicDecryptLeaf` to the encrypted value account MMR.
 
 ## External Inputs
@@ -135,10 +135,10 @@ only by `PublicDecryptLeaf`; it never rolls forward to later handles.
 
 ## Test setup
 
-The host has no test-only verification or handle-birth path. Tests that create handles seed the
+The host has no test-only verification or handle-creation path. Tests that create handles seed the
 `Clock` and `SlotHashes` sysvars; missing previous-bank entropy fails closed exactly as it does in a
 deployed program (DD-014). Registered-signer threshold policy and real proof/transciphering
 validation are still external/open design items.
-Trivial and random handle birth paths (now `fhe_eval` `TrivialEncrypt`/`Rand`/`RandBounded` steps —
+Trivial and random handle creation paths (now `fhe_eval` `TrivialEncrypt`/`Rand`/`RandBounded` steps —
 the standalone `trivial_encrypt_and_bind`/`fhe_rand*_and_bind` instructions were removed) include
 output entropy in handle derivation before binding the result into an `EncryptedValue`.

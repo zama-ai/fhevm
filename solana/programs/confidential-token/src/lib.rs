@@ -103,7 +103,7 @@ pub mod confidential_token {
     /// of `confidential_transfer_from_value` (fhevm-internal#1755). The batcher uses this to burn a
     /// batch's computed encrypted total, then requests the KMS burn certificate. The signing owner
     /// must be in the amount value's subject set (the token spend gate); the amount is spent
-    /// read-only, and the burned-amount output is born publicly decryptable exactly as in
+    /// read-only, and the burned-amount output is created publicly decryptable exactly as in
     /// `confidential_burn`, so `redeem_burned_amount` consumes it unchanged.
     pub fn confidential_burn_from_value<'info>(
         ctx: Context<'info, ConfidentialBurnFromValue<'info>>,

@@ -79,28 +79,28 @@ pub(crate) fn lower_output(
     match output.0 {
         OutputKind::Transient => Ok(FheEvalOutput::AllowedLocal),
         OutputKind::Persistent(output) => {
-            let birth = output.birth()?;
-            let encrypted_value = birth.encrypted_value();
+            let binding = output.binding()?;
+            let encrypted_value = binding.encrypted_value();
             let output_encrypted_value_index = account_index(
                 remaining_accounts,
                 EvalAccountMeta::writable(
-                    birth.encrypted_value(),
+                    binding.encrypted_value(),
                     EvalAccountPurpose::PersistentOutputAcl,
                 ),
             )?;
             let output_app_account_authority_index =
-                if birth.app_account() == app_authority.pubkey() {
+                if binding.app_account() == app_authority.pubkey() {
                     None
                 } else {
                     Some(account_index(
                         remaining_accounts,
                         EvalAccountMeta::readonly_signer(
-                            birth.app_account(),
+                            binding.app_account(),
                             EvalAccountPurpose::PersistentOutputAuthority,
                         ),
                     )?)
                 };
-            let output_subject_indexes = birth
+            let output_subject_indexes = binding
                 .host_subjects()
                 .into_iter()
                 .map(|subject| dictionary_index(dictionary, subject.to_bytes()))
@@ -110,20 +110,20 @@ pub(crate) fn lower_output(
                 output_app_account_authority_index,
                 output_acl_domain_key_index: dictionary_index(
                     dictionary,
-                    birth.acl_domain_key().to_bytes(),
+                    binding.acl_domain_key().to_bytes(),
                 )?,
                 output_app_account_index: dictionary_index(
                     dictionary,
-                    birth.app_account().to_bytes(),
+                    binding.app_account().to_bytes(),
                 )?,
                 output_encrypted_value_label_index: dictionary_index(
                     dictionary,
-                    birth.encrypted_value_label(),
+                    binding.encrypted_value_label(),
                 )?,
                 output_subject_indexes,
-                previous_handle: birth.previous_handle(),
-                previous_subjects: birth.previous_subjects().map(|s| s.to_vec()),
-                make_public: birth.make_public(),
+                previous_handle: binding.previous_handle(),
+                previous_subjects: binding.previous_subjects().map(|s| s.to_vec()),
+                make_public: binding.make_public(),
             };
             persistent_producers.push((encrypted_value, producer_index));
             Ok(output)

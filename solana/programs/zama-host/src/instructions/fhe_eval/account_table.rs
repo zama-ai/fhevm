@@ -16,7 +16,7 @@ pub(super) struct EvalAccountTable<'a, 'info> {
     used: Vec<bool>,
     /// Persistent output accounts already claimed by an earlier step. Reserved to
     /// the op cap up front: the SBF bump allocator never frees, so growth by
-    /// doubling would leak, and the born-public maximum frame already runs
+    /// doubling would leak, and the created-public maximum frame already runs
     /// close to the 32KB heap ceiling. (For the same reason the table caches
     /// no derived PDAs: the single walk derives each output PDA exactly once.)
     persistent_outputs_claimed: Vec<Pubkey>,

@@ -54,7 +54,7 @@ INTENTIONALLY_IGNORED_INSTRUCTIONS = frozenset(
     }
 )
 
-# Lifecycle events decode.rs must keep wired (born-public binding).
+# Lifecycle events decode.rs must keep wired (created-public binding).
 REQUIRED_EVENTS = frozenset({"PublicOutputsProducedEvent"})
 
 

@@ -123,7 +123,7 @@ pub(super) fn supersede_current_handle(
 }
 
 /// Appends a public-decrypt leaf for `handle` at the encrypted value account's next leaf index.
-/// Shared by `make_handle_public` and by `fhe_eval`'s born-public output binding
+/// Shared by `make_handle_public` and by `fhe_eval`'s created-public output binding
 /// so both produce a byte-identical public-decrypt commitment.
 pub(super) fn append_public_decrypt_leaf(
     info: &AccountInfo,

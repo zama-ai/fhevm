@@ -4,7 +4,7 @@
 //!
 //! Permissionless after `min_batch_age_slots`. The batch account's own balance
 //! encrypted value account IS the burn amount (`confidential_burn_from_value`'s whole-balance
-//! alias, deduped inside the token program), so the born-public burned handle
+//! alias, deduped inside the token program), so the created-public burned handle
 //! certifies exactly this batch's sum and nothing else.
 
 use super::*;
@@ -41,7 +41,7 @@ pub struct Dispatch<'info> {
     /// CHECK: mint's stable total-supply encrypted value account; superseded by the token CPI.
     #[account(mut)]
     pub total_supply_value: UncheckedAccount<'info>,
-    /// CHECK: batch account's burned-amount encrypted value account, born publicly
+    /// CHECK: batch account's burned-amount encrypted value account, created publicly
     /// decryptable; created by the token CPI (first and only burn per batch).
     #[account(mut)]
     pub batch_burned_amount_value: UncheckedAccount<'info>,

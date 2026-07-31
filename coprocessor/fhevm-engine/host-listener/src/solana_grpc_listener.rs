@@ -1616,10 +1616,10 @@ mod fhe_eval_acl_tests {
         );
     }
 
-    /// A persistent output born public still requests material for its recomputed
+    /// A persistent output created public still requests material for its recomputed
     /// handle. The persistent bind and public transition share that request.
     #[tokio::test]
-    async fn born_public_fhe_eval_output_requests_material() {
+    async fn created_public_fhe_eval_output_requests_material() {
         let plan = FheEvalArgs {
             account_count: 1,
             dictionary: vec![[8; 32], [9; 32], [10; 32], SUBJECT],
@@ -1633,7 +1633,7 @@ mod fhe_eval_acl_tests {
                     output_app_account_index: 1,
                     output_encrypted_value_label_index: 2,
                     output_subject_indexes: vec![3],
-                    // Fresh encrypted value account (create), born publicly decryptable inline.
+                    // Fresh encrypted value account (create), created publicly decryptable inline.
                     previous_handle: None,
                     previous_subjects: None,
                     make_public: true,
@@ -1656,7 +1656,7 @@ mod fhe_eval_acl_tests {
                 &slot_clock_ts,
             )
             .await
-            .expect("born-public create reconstruction should succeed"),
+            .expect("created-public create reconstruction should succeed"),
         );
 
         // The handle the trivial-encrypt bind recomputed for this output.
@@ -1677,7 +1677,7 @@ mod fhe_eval_acl_tests {
                         if request.handle == Handle::from(bound_handle)
                 )
             })
-            .expect("material request for the born-public bound handle");
+            .expect("material request for the created-public bound handle");
         assert!(matches!(
             material_request,
             SolanaHostEvent::MaterialRequest(_)

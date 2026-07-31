@@ -991,7 +991,7 @@ fn validates_app_authority_and_persistent_account_pubkeys() {
     );
     assert_eq!(
         PersistentOutput::create(invalid_namespace_key, subjects(Pubkey::new_unique()))
-            .birth()
+            .binding()
             .unwrap_err(),
         EvalBuildError::InvalidEncryptedValueKey
     );
@@ -1007,7 +1007,7 @@ fn validates_app_authority_and_persistent_account_pubkeys() {
     );
     assert_eq!(
         PersistentOutput::create(invalid_account_key, subjects(Pubkey::new_unique()))
-            .birth()
+            .binding()
             .unwrap_err(),
         EvalBuildError::InvalidEncryptedValueKey
     );
@@ -1248,20 +1248,20 @@ fn persistent_output_validates_raw_subjects() {
     let key = encrypted_value_key(Pubkey::new_unique(), 1);
     assert_eq!(
         PersistentOutput::create(key.clone(), vec![])
-            .birth()
+            .binding()
             .unwrap_err(),
         EvalBuildError::InvalidSubjects
     );
     assert_eq!(
         PersistentOutput::create(key.clone(), vec![Pubkey::default()])
-            .birth()
+            .binding()
             .unwrap_err(),
         EvalBuildError::InvalidSubjects
     );
     let duplicate = Pubkey::new_unique();
     assert_eq!(
         PersistentOutput::create(key.clone(), vec![duplicate, duplicate])
-            .birth()
+            .binding()
             .unwrap_err(),
         EvalBuildError::InvalidSubjects
     );
@@ -1272,7 +1272,7 @@ fn persistent_output_validates_raw_subjects() {
                 .map(|_| Pubkey::new_unique())
                 .collect(),
         )
-        .birth()
+        .binding()
         .unwrap_err(),
         EvalBuildError::InvalidSubjects
     );
@@ -1284,15 +1284,15 @@ fn persistent_output_birth_matches_eval_lowering() {
     let subject = Pubkey::new_unique();
     let output_key = encrypted_value_key(primary_authority, 42);
     let output = PersistentOutput::create(output_key.clone(), subjects(subject));
-    let birth = output.birth().unwrap();
+    let binding = output.binding().unwrap();
 
-    assert_eq!(birth.encrypted_value(), output_key.address());
-    assert_eq!(birth.acl_domain_key(), output_key.namespace());
-    assert_eq!(birth.app_account(), output_key.account());
-    assert_eq!(birth.encrypted_value_label(), output_key.label().bytes());
-    assert_eq!(birth.subjects(), subjects(subject));
-    assert_eq!(birth.previous_handle(), None);
-    assert_eq!(birth.previous_subjects(), None);
+    assert_eq!(binding.encrypted_value(), output_key.address());
+    assert_eq!(binding.acl_domain_key(), output_key.namespace());
+    assert_eq!(binding.app_account(), output_key.account());
+    assert_eq!(binding.encrypted_value_label(), output_key.label().bytes());
+    assert_eq!(binding.subjects(), subjects(subject));
+    assert_eq!(binding.previous_handle(), None);
+    assert_eq!(binding.previous_subjects(), None);
 
     let mut builder = EvalBuilder::new(app_authority(primary_authority));
     builder
@@ -1316,30 +1316,30 @@ fn persistent_output_birth_matches_eval_lowering() {
         } => {
             let output_encrypted_value =
                 plan.remaining_accounts[*output_encrypted_value_index as usize].pubkey;
-            assert_eq!(output_encrypted_value, birth.encrypted_value());
+            assert_eq!(output_encrypted_value, binding.encrypted_value());
             assert_eq!(
                 plan.args
                     .dictionary_key(*output_acl_domain_key_index)
                     .unwrap(),
-                birth.acl_domain_key()
+                binding.acl_domain_key()
             );
             assert_eq!(
                 plan.args.dictionary_key(*output_app_account_index).unwrap(),
-                birth.app_account()
+                binding.app_account()
             );
             assert_eq!(
                 plan.args
                     .dictionary_bytes(*output_encrypted_value_label_index)
                     .unwrap(),
-                birth.encrypted_value_label()
+                binding.encrypted_value_label()
             );
             let output_subjects: Vec<Pubkey> = output_subject_indexes
                 .iter()
                 .map(|index| plan.args.dictionary_key(*index).unwrap())
                 .collect();
-            assert_eq!(output_subjects, birth.host_subjects());
-            assert_eq!(*previous_handle, birth.previous_handle());
-            assert_eq!(previous_subjects.as_deref(), birth.previous_subjects());
+            assert_eq!(output_subjects, binding.host_subjects());
+            assert_eq!(*previous_handle, binding.previous_handle());
+            assert_eq!(previous_subjects.as_deref(), binding.previous_subjects());
         }
         other => panic!("unexpected step: {other:?}"),
     }
@@ -1363,11 +1363,11 @@ fn persistent_output_update_carries_current_state() {
         bump: 1,
     };
     let output = PersistentOutput::update(output_key, subjects(subject), &current);
-    let birth = output.birth().unwrap();
+    let binding = output.binding().unwrap();
 
-    assert_eq!(birth.previous_handle(), Some(previous_handle));
+    assert_eq!(binding.previous_handle(), Some(previous_handle));
     assert_eq!(
-        birth.previous_subjects(),
+        binding.previous_subjects(),
         Some(previous_subjects.as_slice())
     );
 }

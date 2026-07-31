@@ -2597,12 +2597,12 @@
               {
                 "name": "make_public",
                 "docs": [
-                  "When true, the newly bound handle is born publicly decryptable: after",
+                  "When true, the newly bound handle is created publicly decryptable: after",
                   "writing it as `current_handle`, a public-decrypt leaf is appended for",
                   "the new handle (byte-identical to `make_handle_public`). Carried in",
                   "instruction data so indexers reconstruct that leaf without reading the",
                   "account. This is the opt-in relaxation of the \"created encrypted value accounts cannot",
-                  "be born public\" invariant (DD-036)."
+                  "be created public\" invariant (DD-036)."
                 ],
                 "type": "bool"
               }

@@ -34,7 +34,7 @@ pub use accounts::{
 pub use accounts::{EvalAccountResolutionError, ResolvedEvalAccounts};
 pub use acl::{
     BoundedU64UpperBound, EncryptedValueKey, Output, PersistentLabel, PersistentOutput,
-    PersistentOutputBirth,
+    PersistentOutputBinding,
 };
 pub use builder::EvalBuilder;
 #[cfg(feature = "cpi")]

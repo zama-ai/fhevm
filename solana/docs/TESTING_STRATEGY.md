@@ -44,7 +44,7 @@ all fail closed (see the `*_rejects_*` mollusk tests).
     sysvar-streamed block entropy (Yellowstone gRPC), with no dependence on emitted events. Derives
     supersede/produced-public handles directly; fails closed on incomplete plans.
 5. **Off-chain proof service — solana-proof-service** (`solana-proof-service/`): ingest (atomic, gap-free,
-   fail-closed), decode (incl. `emit_cpi!` op-event resolution for born-public handles), replay, and
+   fail-closed), decode (incl. `emit_cpi!` op-event resolution for created-public handles), replay, and
    `build_verified_proof` cross-check against confirmed peaks (a wrong record surfaces as
    `PeaksDiverged`/`CorruptCache`, never a bad proof).
 6. **ABI / IDL golden** (`scripts/check-zama-host-idl.sh`, `plan_contracts.rs`): vendored IDLs and the

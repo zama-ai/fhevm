@@ -109,10 +109,10 @@ pub fn fhe_eval<'info>(ctx: Context<'info, FheEval<'info>>, args: FheEvalArgs) -
     // leaves partial writes behind only until the runtime reverts the transaction, which discards
     // every account write — so no validate-only pre-pass is needed for atomicity. The event CPI
     // stays last so no event describes state that did not commit.
-    let born_public_outputs =
+    let created_public_outputs =
         execute_eval_frame(&mut account_table, &ctx, &args, subject, &handle_context)?;
     emit_eval_random_seeds(&ctx, random_seeds)?;
-    emit_public_outputs_produced(&ctx, born_public_outputs)?;
+    emit_public_outputs_produced(&ctx, created_public_outputs)?;
     Ok(())
 }
 
@@ -195,13 +195,13 @@ fn execute_eval_frame<'a, 'info>(
         table,
         dictionary: &args.dictionary,
         produced: Vec::with_capacity(args.steps.len()),
-        born_public_outputs: Vec::new(),
+        created_public_outputs: Vec::new(),
         subject,
         chain_id: handle_context.chain_id,
         verifier_params: InputVerifierParams::from_config(&ctx.accounts.host_config),
     };
     walk_eval_frame(&mut execution, ctx, args, handle_context)?;
-    Ok(execution.born_public_outputs)
+    Ok(execution.created_public_outputs)
 }
 
 /// The single walk's state: resolves operands through the shared account table
@@ -214,7 +214,7 @@ struct EvalExecutionState<'t, 'a, 'info> {
     /// The frame's interned constant dictionary ([`FheEvalArgs::dictionary`]).
     dictionary: &'t [[u8; 32]],
     produced: Vec<ProducedValue>,
-    born_public_outputs: Vec<ProducedPublicOutput>,
+    created_public_outputs: Vec<ProducedPublicOutput>,
     subject: Pubkey,
     chain_id: u64,
     verifier_params: InputVerifierParams,
@@ -273,7 +273,7 @@ impl<'info> EvalExecutionState<'_, '_, 'info> {
         output: &FheEvalOutput,
         output_public_decrypt_allowed: bool,
     ) -> Result<()> {
-        let born_public_output = accept_eval_output(
+        let created_public_output = accept_eval_output(
             ctx,
             self.table,
             self.dictionary,
@@ -283,8 +283,8 @@ impl<'info> EvalExecutionState<'_, '_, 'info> {
             output_public_decrypt_allowed,
             op_index,
         )?;
-        if let Some(record) = born_public_output {
-            self.born_public_outputs.push(record);
+        if let Some(record) = created_public_output {
+            self.created_public_outputs.push(record);
         }
         Ok(())
     }
@@ -323,7 +323,7 @@ fn accept_eval_output<'info>(
         ZamaHostError::FheEvalDuplicateHandle
     );
 
-    let born_public_output = match output {
+    let created_public_output = match output {
         FheEvalOutput::AllowedLocal => None,
         FheEvalOutput::AllowedPersistent {
             output_encrypted_value_index,
@@ -373,7 +373,7 @@ fn accept_eval_output<'info>(
         handle: result,
         public_decrypt_allowed: output_public_decrypt_allowed,
     });
-    Ok(born_public_output)
+    Ok(created_public_output)
 }
 
 fn dictionary_bytes(dictionary: &[[u8; 32]], index: u8) -> Result<[u8; 32]> {
@@ -542,7 +542,7 @@ fn bind_eval_output<'info>(
         write_account(output_info, &value)?;
     } else {
         // Create: a fresh encrypted value account has no previous state to reconstruct. It is normally
-        // not born public-decryptable; `make_public` is the documented opt-in relaxation
+        // not created public-decryptable; `make_public` is the documented opt-in relaxation
         // (DD-036), sealing a public-decrypt leaf for the new handle at leaf index 0.
         require!(
             previous_handle.is_none() && previous_subjects.is_none(),

@@ -2,7 +2,7 @@
 //! ACL model.
 //!
 //! Migrated from the old keyed-nonce `AclRecord`/`AclPermission` model (deleted along with
-//! `balance_acl_record`/`next_balance_nonce_sequence`-style per-birth PDAs, `assert_acl_record`,
+//! `balance_acl_record`/`next_balance_nonce_sequence`-style per-creation PDAs, `assert_acl_record`,
 //! and the single-op `fhe_*` instructions) to the new stateless-indexing `EncryptedValue` encrypted value account:
 //! `ConfidentialTokenAccount`/`ConfidentialMint` now each point at one stable
 //! `EncryptedValue` PDA per encrypted field (`balance_encrypted_value`,
@@ -1261,7 +1261,7 @@ fn mollusk_confidential_transfer_updates_value_accounts_and_cleartext_balances()
     assert!(transferred.has_subject(fixture.owner));
     assert!(transferred.has_subject(fixture.bob_owner));
     assert!(transferred.has_subject(fixture.compute_signer));
-    assert_eq!(transferred.leaf_count, 0); // birth: no supersession yet.
+    assert_eq!(transferred.leaf_count, 0); // creation: no supersession yet.
 
     let transfer_events: Vec<token::ConfidentialTransferEvent> = result
         .inner_instructions
@@ -1336,7 +1336,7 @@ fn mollusk_confidential_transfer_to_second_recipient_rotates_transferred_value_a
 
     let transferred_value_address = fixture.transferred_amount_value_address(fixture.alice_token);
 
-    // First transfer Alice -> Bob: births the transferred encrypted value account with audience
+    // First transfer Alice -> Bob: creates the transferred encrypted value account with audience
     // {alice_owner, bob_owner, compute_signer}.
     let first_amount = handle_for_chain(21, BALANCE_FHE_TYPE);
     let first = confidential_transfer_ix(
@@ -1507,7 +1507,7 @@ fn mollusk_confidential_transfer_rotates_back_to_previous_recipient() {
 #[test]
 fn mollusk_confidential_transfer_self_transfer_after_receipt_is_no_op() {
     // A self-transfer short-circuits before the eval (execute_transfer returns early when
-    // from == to), so it never rotates the receipt. After a real transfer birthed the receipt,
+    // from == to), so it never rotates the receipt. After a real transfer created the receipt,
     // a subsequent A -> A succeeds and leaves that receipt untouched.
     let fixture = TokenFixture::new();
     let context = mollusk().with_context(fixture.base_accounts());
@@ -2250,7 +2250,7 @@ fn mollusk_confidential_transfer_rejects_balance_wrong_token_account_app_account
 // exact-handle MMR public-decrypt proof, then paying out
 // and writing the permanent per-handle marker.
 //
-// Vector 2 (burn-stranding) fix, unchanged: every burn is born publicly decryptable at the burn
+// Vector 2 (burn-stranding) fix, unchanged: every burn is created publicly decryptable at the burn
 // instant (ERC-7984 `unwrap` parity, DD-036), so a historical burned handle stays redeemable even
 // after a later burn supersedes the shared `burned_amount` encrypted value account.
 // ---------------------------------------------------------------------------
@@ -4592,7 +4592,7 @@ fn cost_snapshot_confidential_transfer_direct() {
         &result,
     );
 
-    // Steady state: the first transfer birthed the transferred-amount
+    // Steady state: the first transfer created the transferred-amount
     // `EncryptedValue` at its canonical per-(mint, source) PDA; later
     // transfers supersede every touched encrypted value account in place and create no
     // accounts. Snapshot the second transfer separately.
@@ -4749,12 +4749,12 @@ fn disclose_secp_seven_of_thirteen_verifies_and_bounds_compute() {
 //
 // The burn-side analog of confidential_transfer_from_value (#1680 / #3238): burn an amount given as
 // an existing persistent handle the owner may use, instead of a fresh coprocessor attestation. The
-// burned-amount output shape is byte-identical to the attestation path (born publicly decryptable at
+// burned-amount output shape is byte-identical to the attestation path (created publicly decryptable at
 // its canonical burned_amount encrypted value account), so redeem_burned_amount consumes it unchanged.
 // ---------------------------------------------------------------------------
 
 /// Happy path: burn part of a balance from an existing computed/received `euint64` handle, no
-/// attestation attached. The burned delta is born publicly decryptable exactly as the attestation
+/// attestation attached. The burned delta is created publicly decryptable exactly as the attestation
 /// path, the balance and encrypted total supply decrement by the burned amount, and the amount value
 /// itself is read-only (never superseded, never consumed).
 #[test]
@@ -4790,7 +4790,7 @@ fn mollusk_burn_from_value_burns_existing_amount() {
         4_750
     );
 
-    // The burned delta is born publicly decryptable: the first burn creates the encrypted value account and appends
+    // The burned delta is created publicly decryptable: the first burn creates the encrypted value account and appends
     // exactly one public-decrypt leaf for the just-bound burned handle (DD-036 / Vector 2), identical
     // to the attestation path.
     let burned = read_encrypted_value(&context, fixture.burned_amount_value);
@@ -4968,7 +4968,7 @@ fn mollusk_burn_from_value_pda_owner_via_invoke_signed() {
 }
 
 /// Downstream compatibility: a burned handle produced by the from-value path feeds
-/// `redeem_burned_amount` unchanged. The burned output shape (born-public, canonical `burned_amount`
+/// `redeem_burned_amount` unchanged. The burned output shape (created-public, canonical `burned_amount`
 /// encrypted value account, audience owner + compute) is identical to the attestation path, so the KMS-cert +
 /// single-leaf public-decrypt-proof redeem consumes it and pays out the vault.
 #[test]
@@ -4986,7 +4986,7 @@ fn mollusk_burn_from_value_burned_handle_redeems() {
     );
     let context = burn_redeem_mollusk().with_context(accounts);
 
-    // Burn 500 from the existing amount handle; the born-public burned handle is the new encrypted value account handle.
+    // Burn 500 from the existing amount handle; the created-public burned handle is the new encrypted value account handle.
     let mut cleartext = CleartextLedger::default();
     cleartext.seed_amount(fixture.initial_balance, 1_000);
     cleartext.seed_amount(fixture.initial_total_supply, 5_000);

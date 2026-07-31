@@ -94,7 +94,7 @@ impl<'info> PersistentOutput<'info> {
         Self::new_inner(encrypted_value, key, audience, false)
     }
 
-    /// Like [`new`], but binds the output born publicly decryptable: the host
+    /// Like [`new`], but binds the output created publicly decryptable: the host
     /// seals a public-decrypt leaf for the new handle inside the same eval CPI
     /// (EVM `unwrap` parity; DD-036). Used by `confidential_burn` for the burned
     /// delta so every burn stays permanently redeemable with no second CPI.
@@ -129,7 +129,7 @@ impl<'info> PersistentOutput<'info> {
             zama_fhe::PersistentOutput::update(key, subjects, &value)
         }
         .with_make_public(make_public);
-        output.birth().map_err(|error| {
+        output.binding().map_err(|error| {
             msg!("invalid persistent FHE output: {:?}", error);
             error!(ConfidentialTokenError::InvalidFheEvalPlan)
         })?;
@@ -146,10 +146,10 @@ impl<'info> PersistentOutput<'info> {
     /// Reads the handle the host bound into `encrypted_value` by this eval CPI.
     /// Call only after the CPI that carries this output has executed.
     pub(crate) fn handle(&self) -> Result<[u8; 32]> {
-        let birth = self.birth()?;
+        let binding = self.binding()?;
         require_keys_eq!(
             self.encrypted_value.key(),
-            birth.encrypted_value(),
+            binding.encrypted_value(),
             ConfidentialTokenError::CurrentEncryptedValueMismatch
         );
         let value = read_encrypted_value(&self.encrypted_value)?;
@@ -160,8 +160,8 @@ impl<'info> PersistentOutput<'info> {
         self.encrypted_value.clone()
     }
 
-    fn birth(&self) -> Result<zama_fhe::PersistentOutputBirth> {
-        self.output.birth().map_err(|error| {
+    fn binding(&self) -> Result<zama_fhe::PersistentOutputBinding> {
+        self.output.binding().map_err(|error| {
             msg!("invalid persistent FHE output: {:?}", error);
             error!(ConfidentialTokenError::InvalidFheEvalPlan)
         })
@@ -625,7 +625,7 @@ mod tests {
                 .with_owner(compute)
                 .into_subjects(),
         );
-        assert!(output.birth().is_err());
+        assert!(output.binding().is_err());
     }
 
     fn handle(tag: u8) -> [u8; 32] {

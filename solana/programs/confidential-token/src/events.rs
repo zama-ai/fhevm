@@ -79,7 +79,7 @@ pub enum TotalSupplyUpdateReason {
     Burn,
 }
 
-/// Token-scoped amount purpose used for amount-handle birth.
+/// Token-scoped amount purpose used for amount-handle creation.
 #[derive(AnchorSerialize, AnchorDeserialize, Clone, Copy, Debug, PartialEq, Eq)]
 pub enum ConfidentialAmountKind {
     /// Amount intended for confidential transfers.

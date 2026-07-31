@@ -354,12 +354,12 @@ pub enum FheEvalOutput {
         /// Superseded subject set, parallel to `previous_handle` (`None` on create,
         /// exact stored subjects on update). Same indexer-reconstruction purpose.
         previous_subjects: Option<Vec<Pubkey>>,
-        /// When true, the newly bound handle is born publicly decryptable: after
+        /// When true, the newly bound handle is created publicly decryptable: after
         /// writing it as `current_handle`, a public-decrypt leaf is appended for
         /// the new handle (byte-identical to `make_handle_public`). Carried in
         /// instruction data so indexers reconstruct that leaf without reading the
         /// account. This is the opt-in relaxation of the "created encrypted value accounts cannot
-        /// be born public" invariant (DD-036).
+        /// be created public" invariant (DD-036).
         make_public: bool,
     },
 }

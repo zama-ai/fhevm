@@ -33,7 +33,7 @@ export type SolanaVaultDispatchParameters = {
 
 /**
  * Builds the permissionless `dispatch` instruction: once a batch is old enough, it burns the batch
- * account's full encrypted balance and records the born-public burned handle the KMS will certify
+ * account's full encrypted balance and records the created-public burned handle the KMS will certify
  * at settle.
  */
 export async function buildDispatchBatchInstruction(parameters: SolanaVaultDispatchParameters): Promise<Instruction> {

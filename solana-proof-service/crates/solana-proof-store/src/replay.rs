@@ -7,7 +7,7 @@
 //! no MMR leaf. `make_handle_public` carries the exact public handle
 //! on-chain, so replay can reconstruct public-decrypt leaves even after
 //! `fhe_eval` output handles whose slot entropy is unavailable to this service.
-//! A born-public `fhe_eval` output resolves that output handle from the op event
+//! A created-public `fhe_eval` output resolves that output handle from the op event
 //! `decode` correlated with it, so its supersede emits `HandleSuperseded` (old
 //! handle) followed by `MarkedPublic` (new output handle) — matching the
 //! on-chain leaf append order.
@@ -93,7 +93,7 @@ fn validate_previous_state(
 /// instruction's `encrypted_value` account (created on
 /// `FheEvalCreateEncryptedValue`, looked up by the caller for the others).
 ///
-/// Most instructions produce zero or one event. A born-public `fhe_eval`
+/// Most instructions produce zero or one event. A created-public `fhe_eval`
 /// supersede produces two: the `HandleSuperseded` for the outgoing handle, then
 /// a `MarkedPublic` for the resolved new output handle — mirroring the on-chain
 /// append order (historical-access leaves, then the public-decrypt leaf).

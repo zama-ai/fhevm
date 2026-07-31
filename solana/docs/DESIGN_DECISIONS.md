@@ -136,7 +136,7 @@ Consequences:
 Negative tests are part of the contract. Changes to account layout must update program checks,
 KMS witness decoders, fixture encoders, listener expectations, and docs together.
 
-## DD-005: Public Decrypt Is A Post-Birth Release
+## DD-005: Public Decrypt Is A Post-Creation Release
 
 Status: **superseded** by DD-032 (`allow_for_decryption` and the `AclRecord.public_decrypt` flag are
 deleted; public release is now `make_handle_public`, an exact-handle `PublicDecryptLeaf` sealed into
@@ -146,13 +146,13 @@ Status (superseded): adopted
 
 Context:
 
-Public decrypt is mutable authorization state. Letting handle-birth instructions create an ACL
+Public decrypt is mutable authorization state. Letting handle-creation instructions create an ACL
 record that is already public-decryptable bypasses the dedicated authority check and release event.
 
 Decision:
 
-Host-owned handle birth paths initialize `public_decrypt = false`. Releasing a handle for public
-decrypt must go through `allow_for_decryption` after ACL birth.
+Host-owned handle creation paths initialize `public_decrypt = false`. Releasing a handle for public
+decrypt must go through `allow_for_decryption` after ACL creation.
 
 Rationale:
 
@@ -471,32 +471,32 @@ Consequences:
 Tests should cover both positive Solana witness acceptance and negative cases where EVM-shaped
 checks are unavailable or inappropriate.
 
-## DD-014: Host Handle Birth Has No Local-PoC Relaxation
+## DD-014: Host Handle Creation Has No Local-PoC Relaxation
 
 Status: adopted
 
 Context:
 
-Earlier local tests used admin-toggled `HostConfig` flags and a zero birth-entropy fallback when the
-Mollusk slot-hash sysvar was empty. That made test setup diverge from the deployed handle-birth path.
+Earlier local tests used admin-toggled `HostConfig` flags and a zero creation-entropy fallback when the
+Mollusk slot-hash sysvar was empty. That made test setup diverge from the deployed handle-creation path.
 
 Decision:
 
-The host `poc` feature, its admin controls, and the zero-entropy fallback are removed. Handle birth
+The host `poc` feature, its admin controls, and the zero-entropy fallback are removed. Handle creation
 always reads the previous bank hash and fails with `PreviousBankHashUnavailable` if the runtime does
 not provide one. Mollusk and LiteSVM tests seed `Clock` and `SlotHashes` as a validator would. The real
 input path remains the in-frame secp256k1 attestation verify (DD-007).
 
 Rationale:
 
-One handle-birth path is easier to reason about and tests the same entropy requirement as deployment.
+One handle-creation path is easier to reason about and tests the same entropy requirement as deployment.
 
 Consequences:
 
 Missing prior-bank entropy fails closed on every chain. The confidential-token demo retains its own
 compile-gated receiver helpers; those do not alter host verification or handle derivation.
 
-## DD-015: Handle Birth Entropy Policy — RESOLVED: Keep The Entropy
+## DD-015: Handle Creation Entropy Policy — RESOLVED: Keep The Entropy
 
 Status: adopted (June 2026 reconciliation — RESOLVED; was product-open)
 
@@ -534,7 +534,7 @@ eager scheduling and leaves reorg unwind as optional resource recovery (DD-025, 
 
 Consequences:
 
-Handle byte layout remains stable; handle birth is not idempotent across slots/blocks. The
+Handle byte layout remains stable; handle creation is not idempotent across slots/blocks. The
 `PreviousBankHashUnavailable` fail-closed surface remains as designed; handle derivation never falls
 back to zero entropy (DD-014).
 
@@ -636,7 +636,7 @@ The host exposes per-handle-class binding instructions — `fhe_binary_op_and_bi
 `fhe_ternary_op_and_bind_output`, `trivial_encrypt_and_bind`, `fhe_rand_and_bind`,
 `fhe_rand_bounded_and_bind` — plus one batched eval instruction for composed plans: `fhe_eval`. The
 eval instruction accepts mixed binary/ternary, trivial-encrypt, rand, and verified-input steps with
-instruction-local transients. It is the practical successor to `execute_frame`. (Input birth is not a
+instruction-local transients. It is the practical successor to `execute_frame`. (Input creation is not a
 separate instruction: external inputs enter through the `fhe_eval` `VerifiedInput` operand, DD-007.) Every persistent-output path takes a signer witness: either the fixed
 `app_account_authority: Signer` account, or an explicit per-output authority account in
 `remaining_accounts` that must be a signer and match `output_app_account`. The host then validates the
@@ -665,7 +665,7 @@ A validated `app_account_authority == output_app_account` signer makes the app a
 persistent ACL output prove control via a Solana signature, rather than trusting an unsigned
 `authorized_app_accounts[]` declaration. Per-output signer witnesses extend the same guarantee to
 multi-app evals without making authorization a free-form unsigned list. Per-class instructions remain
-for compatibility and individually testable handle-birth paths; `fhe_eval` provides batched multi-step
+for compatibility and individually testable handle-creation paths; `fhe_eval` provides batched multi-step
 composition with transient/persistent outputs when a single CPI is required.
 
 Consequences:
@@ -862,7 +862,7 @@ Open for debate:
 The step cap `MAX_FHE_EVAL_OPS` is derived from measured instruction-data and compute-unit budgets
 on the interned wire format (fhevm-internal#1853 W8; see the constant's doc in
 `programs/zama-host/src/constants.rs`). The old per-operation replay-event transport split is
-superseded by the single born-public lifecycle batch — see DD-038. (An earlier revision cited
+superseded by the single created-public lifecycle batch — see DD-038. (An earlier revision cited
 DD-024 here, which is the coprocessor-side ciphertext-material decision and was never about the
 event transport.)
 
@@ -877,7 +877,7 @@ validates the live `EncryptedValue` PDA and any MMR proof before decrypting.
 
 Decision:
 
-Confirmed instruction reconstruction emits concrete material requests at handle birth/update and
+Confirmed instruction reconstruction emits concrete material requests at handle creation/update and
 persistent binding. The listener inserts those handles directly into `pbs_computations`. Subject grants
 may reuse already-prepared material; revocation never deletes it. No account-fetch queue, witness
 store, retry state machine, or coprocessor-owned ACL decision remains.
@@ -1042,7 +1042,7 @@ Status: adopted (reconciliation) — stated so the debate doesn't assume more th
 - **Single local validator** in the harness — real reorgs / finality lag are not exercised end-to-end.
 - **Input proof / transciphering** behind the coprocessor attestation is a PoC shortcut; real ZKPoK +
   transciphering is production work (DD-007).
-- Host handle birth always requires the previous bank hash; local runtime tests seed the real
+- Host handle creation always requires the previous bank hash; local runtime tests seed the real
   `Clock` and `SlotHashes` sysvars (DD-014).
 
 ## DD-029: `drift_revert` ≠ On-Chain Reorg (disambiguation)
@@ -1136,7 +1136,7 @@ referenced throughout DD-004–DD-008
 
 Context:
 
-The original ACL model (RFC-024) minted a fresh, keyed-nonce `AclRecord` PDA per handle birth.
+The original ACL model (RFC-024) minted a fresh, keyed-nonce `AclRecord` PDA per handle creation.
 Superseding a handle meant superseding its ACL record's address, which complicated stable addressing
 for indexers, apps, and historical decrypt (an old handle's authorization evidence disappeared once its
 record was superseded).
@@ -1164,7 +1164,7 @@ only compute path), and `allow_for_decryption`.
 Rationale:
 
 Stable addressing means indexers, apps, and CPI callers reference one PDA for a logical value's whole
-lifetime instead of re-deriving a new one per birth. The MMR gives historical/public decrypt a
+lifetime instead of re-deriving a new one per creation. The MMR gives historical/public decrypt a
 verifiable, compact (peaks-only) proof of past authorization state without keeping every past ACL
 record alive. The `previous_handle`/`previous_subjects` args on persistent `fhe_eval` outputs are
 verified against account state — redundant on-chain, but they make every transaction independently
@@ -1333,7 +1333,7 @@ history for no soundness gain; the MMR is the mechanism this system already buil
 "prove a past/public state after supersession" need. This is the first on-chain consumer of the
 `authorize_*` MMR API.
 
-Addendum (Vector 2 closed — born-public eval output):
+Addendum (Vector 2 closed — created-public eval output):
 
 The second vector is now closed by making the burn's delta *born* publicly decryptable inside the
 same `fhe_eval` CPI that produces it, rather than by a separate `make_handle_public` CPI after the
@@ -1354,7 +1354,7 @@ burn owns the public-decrypt leaf. Authorization: the output binder already auth
 app-account-authority to bind the output; that same authority is what authorizes making it public
 (the binder is *creating* the value), so no separate subject check is required — consistent with, and
 gated by the same deny-list path as, the rest of the binding. This is the opt-in relaxation of the
-"created encrypted value accounts cannot be born public-decryptable" invariant: it holds for all outputs except those
+"created encrypted value accounts cannot be created public-decryptable" invariant: it holds for all outputs except those
 that explicitly set `make_public`.
 
 Addendum (disclose consume — now the host verifier; superseded by DD-040):
@@ -1389,7 +1389,7 @@ in [`FUTURE_DESIGN.md`](./FUTURE_DESIGN.md); this list is the short index.
   proof/transciphering service behind the attestation (FUTURE_DESIGN §1).
 - Whether resource-recovery reorg unwind should be added after confirmed eager scheduling
   (DD-024/DD-025/DD-028).
-- Handle birth entropy/idempotency policy is RESOLVED (keep per-block entropy, DD-015); reorg-unstable
+- Handle creation entropy/idempotency policy is RESOLVED (keep per-block entropy, DD-015); reorg-unstable
   handles are accepted on every chain.
 - Whether confidential balances move to the staged inbound-credit profile (DD-016).
 - The PoC sentinel `chain_id` is RESOLVED (zama-ai/fhevm-internal#1635): `SOLANA_POC_CHAIN_ID` now
@@ -1441,25 +1441,25 @@ Decision:
 
 Delete the `emit!` log-transport half. `fhe_eval` events are emitted **only** via `emit_cpi!`, and a
 frame with more than `MAX_CPI_EVAL_EVENTS` events carries **no** on-chain event at all. To keep this
-safe, a born-public (`make_public`, DD-036) persistent output is **rejected at write time** if its frame
-is too large for CPI transport (`ZamaHostError::FheEvalBornPublicFrameTooLarge`,
-`assert_born_public_frame_transportable`), because a born-public handle is derived from block entropy
+safe, a created-public (`make_public`, DD-036) persistent output is **rejected at write time** if its frame
+is too large for CPI transport (`ZamaHostError::FheEvalCreatedPublicFrameTooLarge`,
+`assert_created_public_frame_transportable`), because a created-public handle is derived from block entropy
 (DD-015) and lives in no instruction argument, so its `emit_cpi!` event is the only way an off-chain
 proof builder can recover it. The host-listener runs reconstruction-only (Yellowstone gRPC, DD-003):
 it never needed these events and derives every handle from instruction data + sysvar-streamed block
 entropy. The `emit_cpi!` path and the proof service's op-event resolution are retained as a
-transitional indexing ABI until Carbon/Geyser indexing fully owns born-public handle recovery
+transitional indexing ABI until Carbon/Geyser indexing fully owns created-public handle recovery
 (fhevm-internal#1665).
 
 Rationale:
 
 No consumer reads `emit!` logs: the proof service / host-listener path reads only inner-instruction `emit_cpi!`
-results, and a `> 8`-step born-public frame already failed closed (its handle was unresolvable). So
+results, and a `> 8`-step created-public frame already failed closed (its handle was unresolvable). So
 the log fallback was dead weight that also hid a latent stranding case; deleting it and adding the
-fail-closed frame guard turns "silently unrecoverable later" into "rejected now." Non-born-public
+fail-closed frame guard turns "silently unrecoverable later" into "rejected now." Non-created-public
 persistent handles are unaffected — they reconstruct from the `fhe_eval` persistent-output arguments and
 need no event. `emit_cpi!` cannot yet be removed entirely: `solana-proof-service` still resolves
-born-public handles from the op-event (block entropy is not recoverable from instruction args alone),
+created-public handles from the op-event (block entropy is not recoverable from instruction args alone),
 so the op event remains its sole source of those handles until #1665's Carbon/Geyser ingestion
 (with SlotHashes+Clock sysvar subscriptions and a historical-bankhash backfill policy) lands.
 
@@ -1467,14 +1467,14 @@ Consequences:
 
 - `event_budget.rs` loses the log-byte budget machinery; it keeps `MAX_CPI_EVAL_EVENTS` (now a hard
   cap, not a transport switch), `eval_event_capacity`, and `should_emit_eval_events_as_cpi`, and gains
-  `assert_born_public_frame_transportable`.
+  `assert_created_public_frame_transportable`.
 - `event_transport.rs` emits `emit_cpi!` only; oversized frames return without emitting.
-- The `FheEvalEventLogBudgetExceeded` error was renamed in place to `FheEvalBornPublicFrameTooLarge`
+- The `FheEvalEventLogBudgetExceeded` error was renamed in place to `FheEvalCreatedPublicFrameTooLarge`
   (same discriminant; no error-code shift). The variant was later deleted with the rest of the
   retired guard (fhevm-internal#1859 §3-D2).
 - No IDL/wire change: `make_public` was already an `AllowedPersistent` field (DD-036); the guard adds a
   validation, not an argument.
-- #1665 must remove the op event only after migrating born-public handle recovery off it — treat the
+- #1665 must remove the op event only after migrating created-public handle recovery off it — treat the
   event as an ABI surface whose last consumer must move first.
 
 ## DD-038: One Host-Owned Born-Public Lifecycle Batch Replaces Per-Operation Events
@@ -1491,9 +1491,9 @@ a frame with no produced public output emits no lifecycle event.
 This narrow batch exists because block-entropy output handles are absent from instruction arguments.
 At the maximum `MAX_FHE_EVAL_OPS` frame (32), the records serialize to one 2,133-byte CPI
 instruction — far below the 10,240-byte CPI instruction-data cap — avoiding the old
-one-CPI-per-step heap growth. (Execution, not the batch, bounds the all-born-public frame shape:
+one-CPI-per-step heap growth. (Execution, not the batch, bounds the all-created-public frame shape:
 the fixed 32KB Anchor bump heap fits 20 persistent creates per frame, measured and pinned by
-`mollusk_fhe_eval_born_public_heap_boundary`.) The event is unconditional when optional
+`mollusk_fhe_eval_created_public_heap_boundary`.) The event is unconditional when optional
 `emit-events` features are disabled. Consumers must still validate the host program, its canonical
 event-authority PDA, transaction success, record ordering, and one-to-one agreement with persistent
 `make_public` outputs; the event grants no authority by itself.
@@ -1686,7 +1686,7 @@ cleartext_amount, signatures, extra_data, proof)` that binds the burned encrypte
 (`assert_burned_amount_value_account`, unchanged), CPIs `zama_host::verify_public_decrypt`, asserts the
 proven handle equals `burned_handle` and the certified cleartext equals `cleartext_amount`, then
 pays out and writes the marker. Every field the witness pinned is carried elsewhere (destination
-integrity by the redeem-time signer check, handle binding by the born-public MMR leaf sealed in the
+integrity by the redeem-time signer check, handle binding by the created-public MMR leaf sealed in the
 burn per DD-036, owner/mint by the value_account), so the witness was pure scaffolding.
 
 The stateless verifier replaces the request-time KMS pin: the cert is verified against the context it
@@ -1814,7 +1814,7 @@ eval `compute_subject` AND `app_account_authority`, and signs every token CPI vi
 `join` moves the amount with the ATTESTED `confidential_transfer` arm (a wallet user's fresh
 encryption is a fromExternal input; `confidential_transfer_from_value` remains the mechanism for
 `quit` refunds and `claim` payouts, whose amounts ARE existing computed handles); deposit/claim
-encrypted value accounts carry the relevant mint's compute signer in their audience from birth, so the token's eval
+encrypted value accounts carry the relevant mint's compute signer in their audience from creation, so the token's eval
 can read them with no `allow_subjects` round trip; "next batch opens immediately" is a
 permissionless `open_batch` gated only on the previous batch no longer being pending, rather than
 being folded into `dispatch` (keeps each instruction inside one transaction envelope); and the rate

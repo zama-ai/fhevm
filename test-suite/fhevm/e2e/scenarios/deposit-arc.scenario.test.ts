@@ -7,7 +7,7 @@
 // confidential cUSDC balance (a PUBLIC-amount escrow that needs no input proof), JOIN the pending
 // deposit batch with a coprocessor-attested amount (a real input proof built by the SDK's local
 // TFHE prover and verified by the relayer), have the keeper DISPATCH the aged batch (burning its
-// encrypted balance to a born-public handle) and SETTLE it (MMR inclusion proof from the
+// encrypted balance to a created-public handle) and SETTLE it (MMR inclusion proof from the
 // solana-proof-service + KMS burn certificate from the relayer + the on-chain settle in one
 // `settleBatch` call), then have alice CLAIM her confidential cShares payout (permissionless pull:
 // one MulDiv eval + a confidential transfer) and DECRYPT her claimed amount through the KMS
@@ -33,7 +33,7 @@
 //      the batch's join count incremented by exactly one.
 //   9. the batch reaches its minimum dispatch age (openedSlot + minBatchAgeSlots) [slot wait].
 //  10. dispatch: the keeper dispatches the aged batch                    [live, SDK, wired below].
-//  11. on-chain assertions: batch status Dispatched and a nonzero born-public burned total handle.
+//  11. on-chain assertions: batch status Dispatched and a nonzero created-public burned total handle.
 //  12. the proof-service serves a verified public-decrypt proof for the burned value account — i.e. the
 //      SNS commit landed. Waited on explicitly here because `settleBatch` itself treats a
 //      not-yet-committed leaf (404) as terminal.
@@ -577,7 +577,7 @@ describe.skipIf(!runsDemoScenarios)("solana deposit-arc scenario", () => {
         DISPATCH_COMPUTE_UNIT_LIMIT,
       );
 
-      // Step 11: on-chain assertions for the dispatch phase. The burn records a born-public burned
+      // Step 11: on-chain assertions for the dispatch phase. The burn records a created-public burned
       // total handle on the batch; settle refuses a zero handle, so assert both the status flip and
       // the nonzero handle here (getCurrentBatch reads at the RPC default `finalized`, hence until).
       console.log("deposit-arc dispatch: asserting batch status Dispatched + burned handle on-chain...");

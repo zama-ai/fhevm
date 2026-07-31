@@ -163,7 +163,7 @@ pub struct ConfidentialBurnFromValue<'info> {
     /// Stable total-supply encrypted value account; read for the current handle and superseded by this eval.
     #[account(mut, address = mint.total_supply_encrypted_value)]
     pub total_supply_value: Box<Account<'info, zama_host::EncryptedValue>>,
-    /// CHECK: stable `burned_amount` encrypted value account for `token_account`, born publicly decryptable exactly
+    /// CHECK: stable `burned_amount` encrypted value account for `token_account`, created publicly decryptable exactly
     /// as in [`ConfidentialBurn`]; created on the account's first burn, superseded in place
     /// thereafter to each burn's own delta (DD-036 / Vector 2). This is the same output shape
     /// `redeem_burned_amount` later consumes — only where the amount comes from differs.
@@ -227,7 +227,7 @@ impl<'info> ConfidentialBurnFromValue<'info> {
 
 /// Burns an encrypted amount taken from an existing on-chain `EncryptedValue` (a computed or
 /// received handle), rotating the account balance and encrypted total supply. The amount value is
-/// spent read-only, and the burned-amount output is born publicly decryptable exactly as in the
+/// spent read-only, and the burned-amount output is created publicly decryptable exactly as in the
 /// attestation path, so `redeem_burned_amount` consumes it unchanged.
 pub fn confidential_burn_from_value<'info>(
     ctx: Context<'info, ConfidentialBurnFromValue<'info>>,
@@ -284,7 +284,7 @@ pub fn confidential_burn_from_value<'info>(
     Ok(())
 }
 
-/// Where a burn's amount comes from. The `ge -> sub -> select` debit, the born-public `burned` delta,
+/// Where a burn's amount comes from. The `ge -> sub -> select` debit, the created-public `burned` delta,
 /// and the total-supply decrement are identical for both arms; only how the amount operand enters the
 /// eval frame differs. Mirrors [`TransferAmountSource`].
 enum BurnAmountSource<'info> {
@@ -314,7 +314,7 @@ struct BurnAccounts<'a, 'info> {
     balance_value: AccountInfo<'info>,
     /// Stable total-supply encrypted value account: read for the current handle, then superseded in place.
     total_supply_value: AccountInfo<'info>,
-    /// Stable burned-amount encrypted value account: superseded to this burn's born-public delta.
+    /// Stable burned-amount encrypted value account: superseded to this burn's created-public delta.
     burned_amount_value: AccountInfo<'info>,
     zama_event_authority: &'a UncheckedAccount<'info>,
     zama_program: &'a Program<'info, ZamaHost>,

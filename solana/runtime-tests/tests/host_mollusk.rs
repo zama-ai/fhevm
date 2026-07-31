@@ -2428,13 +2428,13 @@ fn mollusk_fhe_eval_supersedes_persistent_output_with_previous_state() {
 // fhe_eval: narrow produced-public lifecycle batch
 // ---------------------------------------------------------------------------
 
-struct BornPublicFrame {
+struct CreatedPublicFrame {
     instruction: Instruction,
     accounts: Vec<(Pubkey, Account)>,
     outputs: Vec<(u16, Pubkey)>,
 }
 
-fn born_public_frame(step_count: usize, born_public_steps: &[usize]) -> BornPublicFrame {
+fn created_public_frame(step_count: usize, created_public_steps: &[usize]) -> CreatedPublicFrame {
     let authority = Pubkey::new_unique();
     let (host_config, host_config_account) = host_config_account(authority);
     let mut output_metas = Vec::new();
@@ -2444,8 +2444,8 @@ fn born_public_frame(step_count: usize, born_public_steps: &[usize]) -> BornPubl
     let mut dictionary = BatchDictionary::default();
 
     for step_index in 0..step_count {
-        let output = if born_public_steps.contains(&step_index) {
-            let output_label = label(&format!("born-public-{step_index}"));
+        let output = if created_public_steps.contains(&step_index) {
+            let output_label = label(&format!("created-public-{step_index}"));
             let value_key = zama_solana_acl::derive_value_key(
                 authority.to_bytes(),
                 authority.to_bytes(),
@@ -2496,14 +2496,14 @@ fn born_public_frame(step_count: usize, born_public_steps: &[usize]) -> BornPubl
         (event_authority(host::id()), Account::default()),
     ];
     accounts.extend(output_accounts);
-    BornPublicFrame {
+    CreatedPublicFrame {
         instruction,
         accounts,
         outputs,
     }
 }
 
-fn born_public_events(
+fn created_public_events(
     result: &mollusk_svm::result::InstructionResult,
 ) -> Vec<host::PublicOutputsProducedEvent> {
     let message = result.message.as_ref().expect("compiled Mollusk message");
@@ -2530,11 +2530,11 @@ fn born_public_events(
         .collect()
 }
 
-fn assert_born_public_batch(
+fn assert_created_public_batch(
     result: &mollusk_svm::result::InstructionResult,
     expected_outputs: &[(u16, Pubkey)],
 ) {
-    let events = born_public_events(result);
+    let events = created_public_events(result);
     assert_eq!(events.len(), 1, "expected exactly one lifecycle batch");
     let prefix = anchor_lang::event::EVENT_IX_TAG_LE
         .iter()
@@ -2579,67 +2579,70 @@ fn assert_born_public_batch(
 }
 
 #[test]
-fn mollusk_fhe_eval_without_born_public_output_emits_no_lifecycle_batch() {
-    let frame = born_public_frame(1, &[]);
+fn mollusk_fhe_eval_without_created_public_output_emits_no_lifecycle_batch() {
+    let frame = created_public_frame(1, &[]);
     let result = mollusk().process_and_validate_instruction(
         &frame.instruction,
         &frame.accounts,
         &[Check::success()],
     );
-    assert!(born_public_events(&result).is_empty());
+    assert!(created_public_events(&result).is_empty());
 }
 
 #[test]
-fn mollusk_fhe_eval_emits_one_born_public_lifecycle_batch() {
-    let frame = born_public_frame(1, &[0]);
+fn mollusk_fhe_eval_emits_one_created_public_lifecycle_batch() {
+    let frame = created_public_frame(1, &[0]);
     let result = mollusk().process_and_validate_instruction(
         &frame.instruction,
         &frame.accounts,
         &[Check::success()],
     );
-    assert_born_public_batch(&result, &frame.outputs);
+    assert_created_public_batch(&result, &frame.outputs);
 }
 
 #[test]
-fn mollusk_fhe_eval_batches_multiple_born_public_outputs_in_step_order() {
-    let frame = born_public_frame(3, &[0, 2]);
+fn mollusk_fhe_eval_batches_multiple_created_public_outputs_in_step_order() {
+    let frame = created_public_frame(3, &[0, 2]);
     let result = mollusk().process_and_validate_instruction(
         &frame.instruction,
         &frame.accounts,
         &[Check::success()],
     );
-    assert_born_public_batch(&result, &frame.outputs);
+    assert_created_public_batch(&result, &frame.outputs);
 }
 
-/// The measured heap budget for the heap-heaviest legal frame shape: all steps born-public
+/// The measured heap budget for the heap-heaviest legal frame shape: all steps created-public
 /// persistent creates. The Anchor default bump allocator serves a fixed 32KB region (never freed,
 /// and NOT extended by a compute-budget heap-frame request), and 20 creates is the measured
 /// maximum that executes within it (fhevm-internal#1853 W8).
 const MAX_BORN_PUBLIC_CREATES_ON_DEFAULT_HEAP: usize = 20;
 
 #[test]
-fn mollusk_fhe_eval_maximum_born_public_frame_fits_one_cpi() {
-    // The largest executable all-born-public frame still emits its DD-038 lifecycle records in
+fn mollusk_fhe_eval_maximum_created_public_frame_fits_one_cpi() {
+    // The largest executable all-created-public frame still emits its DD-038 lifecycle records in
     // exactly one batch CPI. (The full MAX_FHE_EVAL_OPS batch serialization is covered by the
     // event-transport unit test; frames with more than the measured create budget cannot
-    // execute — see `mollusk_fhe_eval_born_public_heap_boundary`.)
-    let born_public_steps = (0..MAX_BORN_PUBLIC_CREATES_ON_DEFAULT_HEAP).collect::<Vec<_>>();
-    let frame = born_public_frame(MAX_BORN_PUBLIC_CREATES_ON_DEFAULT_HEAP, &born_public_steps);
+    // execute — see `mollusk_fhe_eval_created_public_heap_boundary`.)
+    let created_public_steps = (0..MAX_BORN_PUBLIC_CREATES_ON_DEFAULT_HEAP).collect::<Vec<_>>();
+    let frame = created_public_frame(
+        MAX_BORN_PUBLIC_CREATES_ON_DEFAULT_HEAP,
+        &created_public_steps,
+    );
     let result = mollusk().process_and_validate_instruction(
         &frame.instruction,
         &frame.accounts,
         &[Check::success()],
     );
-    assert_born_public_batch(&result, &frame.outputs);
+    assert_created_public_batch(&result, &frame.outputs);
 }
 
 #[test]
-fn mollusk_fhe_eval_born_public_heap_boundary() {
+fn mollusk_fhe_eval_created_public_heap_boundary() {
     // Pins the measured heap boundary behind MAX_FHE_EVAL_OPS (fhevm-internal#1853 W8): one
     // create past the measured budget exhausts the 32KB bump heap and reverts cleanly,
     // committing nothing. Raising this boundary requires a custom allocator, not a larger cap.
     let over = MAX_BORN_PUBLIC_CREATES_ON_DEFAULT_HEAP + 1;
-    let failing = born_public_frame(over, &(0..over).collect::<Vec<_>>());
+    let failing = created_public_frame(over, &(0..over).collect::<Vec<_>>());
     let result = mollusk().process_instruction(&failing.instruction, &failing.accounts);
     assert!(result.program_result.is_err());
     for (_, output) in &failing.outputs {
@@ -2650,7 +2653,7 @@ fn mollusk_fhe_eval_born_public_heap_boundary() {
 
 #[test]
 fn mollusk_fhe_eval_wrong_event_authority_fails_without_output() {
-    let mut frame = born_public_frame(1, &[0]);
+    let mut frame = created_public_frame(1, &[0]);
     let wrong_event_authority = Pubkey::new_unique();
     let event_authority_meta = frame
         .instruction
@@ -2665,15 +2668,15 @@ fn mollusk_fhe_eval_wrong_event_authority_fails_without_output() {
 
     let result = mollusk().process_instruction(&frame.instruction, &frame.accounts);
     assert!(result.program_result.is_err());
-    assert!(born_public_events(&result).is_empty());
+    assert!(created_public_events(&result).is_empty());
     let output = result.get_account(&frame.outputs[0].1).unwrap();
     assert_eq!(output.owner, system_program::ID);
     assert!(output.data.is_empty());
 }
 
 #[test]
-fn mollusk_transaction_later_failure_rolls_back_born_public_output() {
-    let frame = born_public_frame(1, &[0]);
+fn mollusk_transaction_later_failure_rolls_back_created_public_output() {
+    let frame = created_public_frame(1, &[0]);
     let transaction = mollusk().process_transaction_instructions(
         &[frame.instruction.clone(), frame.instruction],
         &frame.accounts,

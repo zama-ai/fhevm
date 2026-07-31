@@ -115,7 +115,7 @@ impl PersistentOutput {
         }
     }
 
-    /// Opts this output into being born publicly decryptable: the host seals a
+    /// Opts this output into being created publicly decryptable: the host seals a
     /// public-decrypt leaf for the newly bound handle inside the same eval CPI
     /// (EVM `unwrap`'s `makePubliclyDecryptable` parity; DD-036).
     pub fn with_make_public(mut self, make_public: bool) -> Self {
@@ -123,10 +123,10 @@ impl PersistentOutput {
         self
     }
 
-    pub fn birth(&self) -> Result<PersistentOutputBirth> {
+    pub fn binding(&self) -> Result<PersistentOutputBinding> {
         validate_encrypted_value_key(&self.key)?;
         validate_subjects(&self.subjects)?;
-        Ok(PersistentOutputBirth {
+        Ok(PersistentOutputBinding {
             encrypted_value: self.key.address(),
             acl_domain_key: self.key.namespace,
             app_account: self.key.account,
@@ -140,7 +140,7 @@ impl PersistentOutput {
 
 /// Host-ready metadata for creating or superseding a persistent `EncryptedValue` encrypted value account.
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct PersistentOutputBirth {
+pub struct PersistentOutputBinding {
     encrypted_value: Pubkey,
     acl_domain_key: Pubkey,
     app_account: Pubkey,
@@ -150,7 +150,7 @@ pub struct PersistentOutputBirth {
     make_public: bool,
 }
 
-impl PersistentOutputBirth {
+impl PersistentOutputBinding {
     pub fn encrypted_value(&self) -> Pubkey {
         self.encrypted_value
     }

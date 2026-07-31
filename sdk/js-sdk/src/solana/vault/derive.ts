@@ -109,7 +109,7 @@ export async function deriveJoinRecordAddress(batch: Address, user: Address): Pr
 
 /**
  * The complete account set for one `settle`, derived from the roots, a batch's addresses, and the
- * batch's born-public burned handle. This is exactly the settle instruction's non-signer, non-fixed
+ * batch's created-public burned handle. This is exactly the settle instruction's non-signer, non-fixed
  * accounts — the fee payer and the two event-CPI authorities are the only accounts `settleBatch`
  * still resolves itself. `redemptionRecord` is seeded by the burned handle (which only exists after
  * dispatch), so it is derivable only once the handle is known — hence the `burnedHandle` argument.

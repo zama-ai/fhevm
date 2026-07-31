@@ -2,7 +2,7 @@
 //!
 //! Replaces the keyed-nonce ACL model: one account per encrypted-value
 //! encrypted value account, reused across every handle update, carrying a compact MMR history
-//! instead of a fresh PDA per birth. Field order follows
+//! instead of a fresh PDA per creation. Field order follows
 //! `zama_solana_acl::EncryptedValue`, so the shared crate's discriminator,
 //! size formula, and MMR helpers apply directly.
 
