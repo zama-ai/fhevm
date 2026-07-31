@@ -29,8 +29,6 @@ const THRESHOLD_MIN_SIGNERS = 4;
  *   every share missing from a full `3t+1` committee against a fault budget of `t`
  *   (`num_bots = 3t+1 - accepted`), so it needs `2t+1` *valid* shares, and tolerance
  *   is `returned - (2t+1)`. At exactly `2t+1` returned, tolerance is zero.
- * - `reconstructMin` (`t+1`) is only the floor below which validation gives up
- *   early with a different error; it is not the success criterion.
  */
 const readKmsTopology = async () => {
   const protocolConfig = new ethers.Contract(
@@ -41,7 +39,7 @@ const readKmsTopology = async () => {
   const signers: string[] = await protocolConfig.getKmsSigners();
   const signerCount = signers.length;
   const t = Math.floor((signerCount - 1) / 3);
-  return { signerCount, t, reconstructMin: t + 1, collectThreshold: 2 * t + 1 };
+  return { signerCount, t, collectThreshold: 2 * t + 1 };
 };
 
 /**
@@ -63,7 +61,7 @@ describe('User decryption spare-share tolerance', function () {
   let contractAddress: string;
 
   let t: number;
-  let reconstructMin: number;
+  let signerCount: number;
   let collectThreshold: number;
   /** Shares the relayer returned for an uncorrupted decrypt. */
   let returnedShares: number;
@@ -87,7 +85,7 @@ describe('User decryption spare-share tolerance', function () {
       this.skip();
       return;
     }
-    ({ t, reconstructMin, collectThreshold } = topology);
+    ({ t, signerCount, collectThreshold } = topology);
 
     await initSigners(2);
     signers = await getSigners();
@@ -104,19 +102,22 @@ describe('User decryption spare-share tolerance', function () {
     // eslint-disable-next-line no-console
     console.log(
       `[spare-shares] signers=${topology.signerCount} t=${t} quorum=${collectThreshold} ` +
-        `floor=${reconstructMin} returned=${returnedShares} ` +
-        `tolerated=${returnedShares - collectThreshold} (ceiling ${t})`,
+        `returned=${returnedShares} spares=${returnedShares - collectThreshold} (ceiling ${t})`,
     );
 
-    // Without a spare there is nothing to corrupt and every case below is vacuous.
-    // Skipped rather than failed: the quorum alone reconstructs fine, so this is an
-    // unsuitable cluster, not a defect. Usually a stopped party — which
-    // spare-share-tolerance-kms-down covers on purpose.
+    // No spare means nothing to corrupt. One party absent is an ordinary degraded
+    // cluster, so skip; more missing is a broken stack and should be loud.
+    const missing = signerCount - returnedShares;
     if (returnedShares <= collectThreshold) {
+      expect(
+        missing,
+        `Only ${returnedShares} of ${signerCount} shares arrived, leaving no spare to corrupt — ` +
+          `${missing} KMS parties are not answering`,
+      ).to.be.at.most(1);
       // eslint-disable-next-line no-console
       console.log(
-        `[spare-shares] skipping: got ${returnedShares} shares, need more than the ${collectThreshold} quorum ` +
-          `so one can be corrupted and dropped. Is a KMS party down?`,
+        `[spare-shares] skipping: got ${returnedShares} shares of ${signerCount}, leaving no spare to corrupt. ` +
+          `One KMS party is down — spare-share-tolerance-kms-down covers that case.`,
       );
       this.skip();
       return;
@@ -133,46 +134,37 @@ describe('User decryption spare-share tolerance', function () {
   };
 
   /**
-   * Sweeps 1..returnedShares for a *droppable* fault — one the wasm rejects at
-   * validation rather than choking on while parsing. Tolerance is `returned - (2t+1)`,
-   * which reaches the scheme's ceiling `t` only when every one of the `3t+1` shares
-   * comes back. Past the budget the failure mode splits: while at least
-   * `reconstructMin` good shares remain it is a fault-budget refusal, below that
-   * there is simply too little left to interpolate.
-   *
-   * Shared by the two droppable faults so their equivalence is structural: a bad
-   * signature and a corrupted payload body must behave identically.
+   * Every spare corrupted must still reconstruct; one more must not. Counts come
+   * from the signer set, so it is the same two runs at any committee size. The
+   * failing case is also the positive control: without it a corruptor that stopped
+   * biting would leave the suite green.
    */
-  const sweepDroppableCorruption = async (kind: string, corrupt: ShareCorruptor) => {
-    const tolerated = returnedShares - collectThreshold;
-    const outcomes: string[] = [];
-    for (let corrupted = 1; corrupted <= returnedShares; corrupted += 1) {
-      const label = `spare-shares/${kind}-${corrupted}`;
-      if (corrupted <= tolerated) {
-        const { value, shareCount } = await expectCorruptedShareDecryptToSucceed(label, corrupt, decryptXUint64, {
-          count: corrupted,
-          from: 'tail',
-        });
-        expectSameShareCount(shareCount);
-        expect(value, `${corrupted} corrupted ${kind}(s) should still reconstruct`).to.equal(X_UINT64_CLEARTEXT);
-        outcomes.push(`${corrupted}: reconstructed`);
-        continue;
-      }
-      // Matched on the invariant only; the file:line prefix moves with KMS versions.
-      const expected =
-        returnedShares - corrupted >= reconstructMin
-          ? /num_bots \(\d+\) > threshold \(\d+\)/
-          : /Not enough correct responses/;
-      const { shareCount, message } = await expectCorruptedShareDecryptToFail(label, corrupt, decryptXUint64, {
-        count: corrupted,
-        from: 'tail',
-      });
-      expectSameShareCount(shareCount);
-      expect(message, `${corrupted} corrupted ${kind}(s) failed for an unexpected reason`).to.match(expected);
-      outcomes.push(`${corrupted}: refused (${returnedShares - corrupted} good left)`);
-    }
+  const expectSpareTolerance = async (kind: string, corrupt: ShareCorruptor) => {
+    const spares = returnedShares - collectThreshold;
+
+    const { value, shareCount } = await expectCorruptedShareDecryptToSucceed(
+      `spare-shares/${kind}-${spares}`,
+      corrupt,
+      decryptXUint64,
+      { count: spares, from: 'tail' },
+    );
+    expectSameShareCount(shareCount);
+    expect(value, `${spares} corrupted ${kind}(s) should still reconstruct`).to.equal(X_UINT64_CLEARTEXT);
+
+    const { shareCount: pastBudget, message } = await expectCorruptedShareDecryptToFail(
+      `spare-shares/${kind}-${spares + 1}`,
+      corrupt,
+      decryptXUint64,
+      { count: spares + 1, from: 'tail' },
+    );
+    expectSameShareCount(pastBudget);
+    // Matched on the invariant only; the file:line prefix moves with KMS versions.
+    expect(message, `${spares + 1} corrupted ${kind}(s) failed for an unexpected reason`).to.match(
+      /num_bots \(\d+\) > threshold \(\d+\)/,
+    );
+
     // eslint-disable-next-line no-console
-    console.log(`[spare-shares] ${kind} — tolerated=${tolerated} — ${outcomes.join(' | ')}`);
+    console.log(`[spare-shares] ${kind} — ${spares} corrupted: reconstructed | ${spares + 1}: refused`);
   };
 
   /**
@@ -180,7 +172,7 @@ describe('User decryption spare-share tolerance', function () {
    * so reconstruction can discard it.
    */
   it('corrupted signature bytes fail validation and are dropped, up to the spare count', async function () {
-    await sweepDroppableCorruption('sig', corruptSignature);
+    await expectSpareTolerance('sig', corruptSignature);
   });
 
   /**
@@ -191,7 +183,7 @@ describe('User decryption spare-share tolerance', function () {
    * corruption is not inherently fatal: only *framing* corruption is.
    */
   it('corrupted payload body bytes fail signature validation, exactly like a corrupted signature', async function () {
-    await sweepDroppableCorruption('body', corruptPayloadBody);
+    await expectSpareTolerance('body', corruptPayloadBody);
   });
 
   /**
@@ -249,25 +241,23 @@ describe('User decryption spare-share tolerance', function () {
    *
    * The fix belongs in the KMS wasm (`js_to_resp`), not here or in the SDK — every
    * exclusion decision lives behind that boundary. When it lands, framing corruption
-   * becomes droppable and this case should move to `sweepDroppableCorruption`
+   * becomes droppable and this case should move to `expectSpareTolerance`
    * alongside signatures and payload bodies.
    */
   it('corrupted payload framing bytes break parsing and abort every share (known defect)', async function () {
-    const outcomes: string[] = [];
-    for (let corrupted = 1; corrupted <= returnedShares; corrupted += 1) {
-      const { shareCount, message } = await expectCorruptedShareDecryptToFail(
-        `spare-shares/framing-${corrupted}`,
-        corruptPayloadFraming,
-        decryptXUint64,
-        { count: corrupted, from: 'tail' },
-      );
-      expectSameShareCount(shareCount);
-      expect(message, `${corrupted} malformed payload(s) failed for an unexpected reason`).to.match(
-        /response parsing failed/,
-      );
-      outcomes.push(`${corrupted}: parse aborted`);
-    }
+    // One is enough at any committee size: this fault is not weighed against the
+    // spare allowance, so a single malformed payload is fatal whether t is 1 or 4.
+    const { shareCount, message } = await expectCorruptedShareDecryptToFail(
+      'spare-shares/framing-1',
+      corruptPayloadFraming,
+      decryptXUint64,
+      { count: 1, from: 'tail' },
+    );
+    expectSameShareCount(shareCount);
+    expect(message, 'a malformed payload failed for an unexpected reason').to.match(/response parsing failed/);
     // eslint-disable-next-line no-console
-    console.log(`[spare-shares] framing (known defect, fhevm-internal#1738) — ${outcomes.join(' | ')}`);
+    console.log(
+      `[spare-shares] framing (known defect, fhevm-internal#1738) — 1 corrupted of ${returnedShares}: parse aborted`,
+    );
   });
 });

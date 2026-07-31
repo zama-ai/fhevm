@@ -114,12 +114,16 @@ describe('User decryption with a KMS party down', function () {
     contractAddress = await contract.getAddress();
 
     const measured = await measureReturnedShares(decryptXUint64);
-    if (measured.shareCount > quorum) {
+    // Needs shares down to exactly the quorum, which takes `committee - quorum`
+    // parties stopped: one at 4 parties, four at 13.
+    const spares = measured.shareCount - quorum;
+    if (spares > 0) {
       // Loud, not silent: this suite only means anything against a degraded cluster.
       // eslint-disable-next-line no-console
       console.log(
-        `[degraded-kms] skipping: relayer returned ${measured.shareCount} shares, so every party is answering. ` +
-          `Stop one first (\`${DEGRADE_HINT}\`), rerun, and restart it afterwards.`,
+        `[degraded-kms] skipping: ${measured.shareCount} shares arrived against a quorum of ${quorum}, so ` +
+          `${spares} spare(s) remain. Stop ${spares} more KMS core(s) (e.g. \`${DEGRADE_HINT}\`) and rerun, ` +
+          `restarting them afterwards.`,
       );
       this.skip();
       return;
