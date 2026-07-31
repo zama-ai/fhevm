@@ -135,7 +135,7 @@ fn eval_plan_build_runs_closure_and_finishes_plan() {
 }
 
 #[test]
-fn builder_canonicalizes_post_write_durable_alias_as_local() {
+fn builder_rejects_post_write_durable_alias() {
     let authority = Pubkey::new_unique();
     let key = encrypted_value_key(authority, 7);
     let mut builder = EvalBuilder::new(app_authority(authority));
@@ -144,21 +144,15 @@ fn builder_canonicalizes_post_write_durable_alias_as_local() {
         .unwrap();
 
     let reconstructed = Uint64Handle::durable(balance_handle(99), key).unwrap();
-    builder
+    let error = builder
         .add(
             reconstructed,
             Scalar::<Uint<64>>::u64(1),
             Output::transient(),
         )
-        .unwrap();
-    let plan = builder.finish().unwrap();
+        .unwrap_err();
 
-    match &plan.args.steps[1] {
-        FheEvalStep::Binary { lhs, .. } => {
-            assert_eq!(*lhs, FheEvalOperand::AllowedLocal { producer_index: 0 });
-        }
-        other => panic!("unexpected step: {other:?}"),
-    }
+    assert_eq!(error, EvalBuildError::DurableOperandWrittenEarlier);
 }
 
 #[test]

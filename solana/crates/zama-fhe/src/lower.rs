@@ -18,14 +18,11 @@ pub(crate) fn lower_operand(
 ) -> Result<FheEvalOperand> {
     match operand.0 {
         OperandKind::Durable(durable) => {
-            if let Some((_, producer_index)) = durable_producers
+            if durable_producers
                 .iter()
-                .rev()
-                .find(|(account, _)| *account == durable.encrypted_value)
+                .any(|(account, _)| *account == durable.encrypted_value)
             {
-                let producer_index =
-                    u8::try_from(*producer_index).map_err(|_| EvalBuildError::TooManyOps)?;
-                return Ok(FheEvalOperand::AllowedLocal { producer_index });
+                return Err(EvalBuildError::DurableOperandWrittenEarlier);
             }
             let handle_index = pool_index(pool, durable.handle)?;
             let encrypted_value_index = account_index(

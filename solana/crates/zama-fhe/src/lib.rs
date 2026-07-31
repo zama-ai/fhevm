@@ -59,6 +59,10 @@ pub enum EvalBuildError {
     TooManyPoolEntries,
     /// A transient operand referenced an operation that has not been produced.
     InvalidTransientReference,
+    /// A durable operand referenced an account written by an earlier step.
+    /// Use the producer returned by that step for the new value, or consume the
+    /// old durable value before writing the account.
+    DurableOperandWrittenEarlier,
     /// More ops were added than the host accepts (`MAX_FHE_EVAL_OPS`).
     TooManyOps,
     /// `finish` was called with no ops; the host rejects empty eval frames.

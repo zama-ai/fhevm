@@ -449,11 +449,18 @@ fn execute_burn<'info>(
             burn_success,
             debit_candidate,
             balance,
-            balance_output.output(),
+            zama_fhe::Output::transient(),
         )
         .map_err(invalid_eval_plan)?;
     let burned = builder
         .sub(balance, new_balance, burned_output.output())
+        .map_err(invalid_eval_plan)?;
+    builder
+        .add(
+            new_balance,
+            zama_fhe::Scalar::<zama_fhe::Uint<64>>::u64(0),
+            balance_output.output(),
+        )
         .map_err(invalid_eval_plan)?;
     builder
         .sub(total_supply, burned, total_supply_output.output())

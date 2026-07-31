@@ -223,10 +223,22 @@ fn execute_transfer_eval<'info>(
         .sub(from_balance, amount, zama_fhe::Output::transient())
         .map_err(invalid_eval_plan)?;
     let new_from = builder
-        .if_then_else(success, debit_candidate, from_balance, from_output.output())
+        .if_then_else(
+            success,
+            debit_candidate,
+            from_balance,
+            zama_fhe::Output::transient(),
+        )
         .map_err(invalid_eval_plan)?;
     let transferred = builder
         .sub(from_balance, new_from, transferred_output.output())
+        .map_err(invalid_eval_plan)?;
+    builder
+        .add(
+            new_from,
+            zama_fhe::Scalar::<zama_fhe::Uint<64>>::u64(0),
+            from_output.output(),
+        )
         .map_err(invalid_eval_plan)?;
     builder
         .add(to_balance, transferred, to_output.output())

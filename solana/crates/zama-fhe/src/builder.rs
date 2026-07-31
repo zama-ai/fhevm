@@ -149,8 +149,6 @@ impl EvalBuilder {
         output_fhe_type: FheType,
         output: Output,
     ) -> Result<Operand> {
-        let lhs = self.canonicalize_operand(lhs);
-        let rhs = self.canonicalize_operand(rhs);
         let output_fhe_type = output_fhe_type.byte();
         // The host requires the left operand to be an encrypted handle; only the
         // RHS may be a plaintext scalar. Catch this before the CPI.
@@ -218,9 +216,9 @@ impl EvalBuilder {
         if_false: Encrypted<T>,
         output: Output,
     ) -> Result<Encrypted<T>> {
-        let control = self.canonicalize_operand(control.operand());
-        let if_true = self.canonicalize_operand(if_true.operand());
-        let if_false = self.canonicalize_operand(if_false.operand());
+        let control = control.operand();
+        let if_true = if_true.operand();
+        let if_false = if_false.operand();
         let output_fhe_type =
             self.encrypted_operand_type(&if_true, EvalBuildError::ScalarEncryptedOperand)?;
         let output_fhe_type = output_fhe_type.byte();
@@ -720,10 +718,7 @@ impl EvalBuilder {
         output: Output,
     ) -> Result<Encrypted<T>> {
         // EVM `fheSum` and the coprocessor enforce no minimum: a zero/single-operand sum is valid.
-        let operand_ops: Vec<Operand> = operands
-            .into_iter()
-            .map(|e| self.canonicalize_operand(e.operand()))
-            .collect();
+        let operand_ops: Vec<Operand> = operands.into_iter().map(|e| e.operand()).collect();
         for op in &operand_ops {
             if matches!(op.0, OperandKind::Scalar(_)) {
                 return Err(EvalBuildError::ScalarEncryptedOperand);
@@ -780,11 +775,8 @@ impl EvalBuilder {
         output: Output,
     ) -> Result<Encrypted<Bool>> {
         // EVM `fheIsIn` and the coprocessor enforce no minimum: an empty set is valid (false result).
-        let set_ops: Vec<Operand> = set
-            .into_iter()
-            .map(|e| self.canonicalize_operand(e.operand()))
-            .collect();
-        let value_op = self.canonicalize_operand(value.operand());
+        let set_ops: Vec<Operand> = set.into_iter().map(|e| e.operand()).collect();
+        let value_op = value.operand();
         if matches!(value_op.0, OperandKind::Scalar(_)) {
             return Err(EvalBuildError::ScalarEncryptedOperand);
         }
@@ -855,8 +847,8 @@ impl EvalBuilder {
         divisor: Scalar<T>,
         output: Output,
     ) -> Result<Encrypted<T>> {
-        let lhs = self.canonicalize_operand(factor1.operand());
-        let rhs = self.canonicalize_operand(binary_rhs_operand(factor2));
+        let lhs = factor1.operand();
+        let rhs = binary_rhs_operand(factor2);
         if matches!(lhs.0, OperandKind::Scalar(_)) {
             return Err(EvalBuildError::ScalarLhsOperand);
         }
@@ -925,7 +917,6 @@ impl EvalBuilder {
         output_fhe_type: FheType,
         output: Output,
     ) -> Result<Operand> {
-        let operand = self.canonicalize_operand(operand);
         let output_fhe_type = output_fhe_type.byte();
         if matches!(operand.0, OperandKind::Scalar(_)) {
             return Err(EvalBuildError::ScalarEncryptedOperand);
@@ -971,18 +962,6 @@ impl EvalBuilder {
         });
         self.produced_types.push(output_fhe_type);
         Ok(Operand::transient(step_index, self.scope))
-    }
-
-    fn canonicalize_operand(&self, operand: Operand) -> Operand {
-        let OperandKind::Durable(durable) = operand.0 else {
-            return operand;
-        };
-        self.durable_producers
-            .iter()
-            .rev()
-            .find(|(account, _)| *account == durable.encrypted_value)
-            .map(|(_, producer_index)| Operand::transient(*producer_index, self.scope))
-            .unwrap_or(operand)
     }
 
     fn encrypted_operand_type(

@@ -1,27 +1,27 @@
 {
   "claim": {
-    "compute_units": 271371,
+    "compute_units": 277389,
     "unique_accounts": 22,
     "instruction_data_bytes": 8,
     "cpi_instructions": 12,
-    "total_cpi_instruction_data_bytes": 1810,
-    "max_cpi_instruction_data_bytes": 661
+    "total_cpi_instruction_data_bytes": 1851,
+    "max_cpi_instruction_data_bytes": 702
   },
   "dispatch": {
-    "compute_units": 269756,
+    "compute_units": 274249,
     "unique_accounts": 18,
     "instruction_data_bytes": 8,
     "cpi_instructions": 9,
-    "total_cpi_instruction_data_bytes": 1347,
-    "max_cpi_instruction_data_bytes": 595
+    "total_cpi_instruction_data_bytes": 1388,
+    "max_cpi_instruction_data_bytes": 636
   },
   "join": {
-    "compute_units": 326859,
+    "compute_units": 331218,
     "unique_accounts": 20,
     "instruction_data_bytes": 223,
     "cpi_instructions": 14,
-    "total_cpi_instruction_data_bytes": 2452,
-    "max_cpi_instruction_data_bytes": 1055
+    "total_cpi_instruction_data_bytes": 2493,
+    "max_cpi_instruction_data_bytes": 1096
   },
   "open_batch": {
     "compute_units": 215054,
@@ -32,28 +32,28 @@
     "max_cpi_instruction_data_bytes": 242
   },
   "redeem_claim": {
-    "compute_units": 313372,
+    "compute_units": 317890,
     "unique_accounts": 22,
     "instruction_data_bytes": 8,
     "cpi_instructions": 12,
-    "total_cpi_instruction_data_bytes": 1810,
-    "max_cpi_instruction_data_bytes": 661
+    "total_cpi_instruction_data_bytes": 1851,
+    "max_cpi_instruction_data_bytes": 702
   },
   "redeem_dispatch": {
-    "compute_units": 217257,
+    "compute_units": 221750,
     "unique_accounts": 18,
     "instruction_data_bytes": 8,
     "cpi_instructions": 9,
-    "total_cpi_instruction_data_bytes": 1347,
-    "max_cpi_instruction_data_bytes": 595
+    "total_cpi_instruction_data_bytes": 1388,
+    "max_cpi_instruction_data_bytes": 636
   },
   "redeem_join": {
-    "compute_units": 319360,
+    "compute_units": 323719,
     "unique_accounts": 20,
     "instruction_data_bytes": 223,
     "cpi_instructions": 14,
-    "total_cpi_instruction_data_bytes": 2452,
-    "max_cpi_instruction_data_bytes": 1055
+    "total_cpi_instruction_data_bytes": 2493,
+    "max_cpi_instruction_data_bytes": 1096
   },
   "redeem_open_batch": {
     "compute_units": 212055,
