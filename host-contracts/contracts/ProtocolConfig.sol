@@ -667,6 +667,12 @@ contract ProtocolConfig is IProtocolConfig, UUPSUpgradeableEmptyProxy, ACLOwnabl
     }
 
     /// @inheritdoc IProtocolConfig
+    function getCurrentKmsContextIdCounter() external view virtual returns (uint256) {
+        ProtocolConfigStorage storage $ = _getProtocolConfigStorage();
+        return $.currentKmsContextId;
+    }
+
+    /// @inheritdoc IProtocolConfig
     function getCurrentKmsContextAndEpoch() external view virtual returns (uint256 contextId, uint256 epochId) {
         ProtocolConfigStorage storage $ = _getProtocolConfigStorage();
         contextId = $.latestActiveKmsContextId;
@@ -687,6 +693,16 @@ contract ProtocolConfig is IProtocolConfig, UUPSUpgradeableEmptyProxy, ACLOwnabl
     /// @inheritdoc IProtocolConfig
     function isValidKmsContext(uint256 kmsContextId) external view virtual returns (bool) {
         return _isValidKmsContext(kmsContextId);
+    }
+
+    /// @inheritdoc IProtocolConfig
+    function isLiveKmsContext(uint256 kmsContextId) external view virtual returns (bool) {
+        return _isLiveKmsContext(kmsContextId);
+    }
+
+    /// @inheritdoc IProtocolConfig
+    function getContextCreationPreviousTxSenderThreshold(uint256 kmsContextId) external view virtual returns (uint256) {
+        return _getProtocolConfigStorage().contextCreationPreviousTxSenderThreshold[kmsContextId];
     }
 
     /// @inheritdoc IProtocolConfig
