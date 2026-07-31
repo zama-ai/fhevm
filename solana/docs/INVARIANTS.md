@@ -53,11 +53,14 @@ update, encrypted value ID…).
 8. **[HOLDS]** Sealed history (the MMR) is append-only: a handle sealed public
    stays provable after any number of later updates.
 9. **[HOLDS]** `remove_subject` cannot leave a value with zero subjects.
-10. **[HOLDS]** Every newly granted subject clears the grant deny-list when it
-    is enabled, on all three grant paths: `fhe_execute` durable create,
-    durable update (added subjects), and `allow_subjects`. Subjects already
-    stored are exempt. (Closed the former create-path gap;
-    fhevm-internal#1859 §3-S1.)
+10. **[HOLDS]** Every subject newly granted membership on an encrypted value
+    clears the grant deny-list when it is enabled, on all three membership
+    paths: `fhe_execute` durable create, durable update (added subjects), and
+    `allow_subjects`. Subjects already stored are exempt. Scope is value
+    membership only: user-decryption delegation is a separate access path
+    with no deny check (a denied key can still be delegated to by a clean
+    subject) — that boundary belongs to the delegation/permit rework.
+    (Closed the former create-path gap; fhevm-internal#1859 §3-S1.)
 11. **[ANTI]** No on-chain roles: any current subject may allow further
     subjects, remove others (not the last), or make the value public.
     Membership is flat by design; apps that need owner/spender-style

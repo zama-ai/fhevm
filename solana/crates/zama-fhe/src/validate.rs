@@ -248,7 +248,7 @@ fn mark_lowered_account(used_accounts: &mut [bool], index: u8) -> Result<()> {
 fn mark_lowered_pool_entry(used_pool: &mut [bool], index: u8) -> Result<()> {
     let used = used_pool
         .get_mut(usize::from(index))
-        .ok_or(EvalBuildError::TooManyPoolEntries)?;
+        .ok_or(EvalBuildError::PoolIndexOutOfBounds)?;
     *used = true;
     Ok(())
 }

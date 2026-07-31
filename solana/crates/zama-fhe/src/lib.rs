@@ -60,6 +60,9 @@ pub enum EvalBuildError {
     /// An interned pool entry is not referenced by any step (host parity:
     /// `FheEvalPoolEntryUnreferenced`).
     UnreferencedPoolEntry,
+    /// A step referenced a pool index past the end of the interned pool (host
+    /// parity: `FheEvalPoolIndexOutOfBounds`).
+    PoolIndexOutOfBounds,
     /// A transient operand referenced an operation that has not been produced.
     InvalidTransientReference,
     /// A durable operand referenced an account written by an earlier step.

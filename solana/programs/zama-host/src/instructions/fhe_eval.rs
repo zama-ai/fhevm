@@ -82,7 +82,7 @@ pub fn fhe_eval<'info>(ctx: Context<'info, FheEval<'info>>, args: FheEvalArgs) -
     preflight_eval_frame(&mut account_table, &ctx, &args)?;
 
     // HCU metering: one pure pass over the plan, enforcing the per-frame total + in-frame depth
-    // caps against the canonical host_config limits (0 = unlimited). The same total then feeds the
+    // caps against the canonical host_config limits (u64::MAX = unlimited). The same total then feeds the
     // block-cap charge — reused, never independently recomputed — so both caps trip before
     // execution burns CU or creates any ACL record.
     let host_config = &ctx.accounts.host_config;
@@ -652,8 +652,8 @@ mod tests {
             current_kms_context_id: 0,
             paused: false,
             grant_deny_list_enabled: true,
-            max_hcu_per_tx: 0,
-            max_hcu_depth_per_tx: 0,
+            max_hcu_per_tx: u64::MAX,
+            max_hcu_depth_per_tx: u64::MAX,
             hcu_block_cap_per_app: u64::MAX,
             updated_slot: 0,
             bump: 0,

@@ -1689,6 +1689,101 @@ fn mollusk_denied_subject_cannot_enter_via_allow_subjects_or_eval_create() {
 }
 
 #[test]
+fn mollusk_allow_subjects_rejects_extraneous_remaining_accounts() {
+    // With the deny list disabled, remaining accounts have no meaning and any
+    // supplied account is rejected outright.
+    let authority = Pubkey::new_unique();
+    let new_subject = Pubkey::new_unique();
+    let (host_config, plain_host_config_account) = host_config_account(authority);
+    let (value_address, value) = new_value_account(
+        Pubkey::new_unique(),
+        authority,
+        label("witness-hygiene"),
+        handle_for_chain(53, 5),
+        &[authority],
+    );
+    let stray = Pubkey::new_unique();
+    let ix = allow_subjects_ix_with_subject_deny_records(
+        authority,
+        authority,
+        value_address,
+        host_config,
+        vec![new_subject],
+        None,
+        vec![stray],
+    );
+    let accounts = vec![
+        (system_program::ID, system_program_account()),
+        (authority, funded_system_account()),
+        (value_address, encrypted_value_account(&value)),
+        (host_config, plain_host_config_account),
+        (stray, empty_system_account()),
+    ];
+    mollusk().process_and_validate_instruction(
+        &ix,
+        &accounts,
+        &[custom_error(
+            host::errors::ZamaHostError::AclDenyRecordMismatch,
+        )],
+    );
+
+    // With the deny list enabled, every remaining account must be the canonical
+    // deny record of a subject added by this call; a correct witness plus one
+    // stray account fails.
+    let (host_config, deny_host_config_account) = deny_enabled_host_config_account(authority);
+    let (authority_record, authority_record_account) = (
+        host::deny_subject_address(authority).0,
+        empty_system_account(),
+    );
+    let (subject_record, subject_record_account) = deny_subject_record_account(new_subject, false);
+    let ix = allow_subjects_ix_with_subject_deny_records(
+        authority,
+        authority,
+        value_address,
+        host_config,
+        vec![new_subject],
+        Some(authority_record),
+        vec![subject_record, stray],
+    );
+    let accounts = vec![
+        (system_program::ID, system_program_account()),
+        (authority, funded_system_account()),
+        (value_address, encrypted_value_account(&value)),
+        (host_config, deny_host_config_account.clone()),
+        (authority_record, authority_record_account.clone()),
+        (subject_record, subject_record_account.clone()),
+        (stray, empty_system_account()),
+    ];
+    mollusk().process_and_validate_instruction(
+        &ix,
+        &accounts,
+        &[custom_error(
+            host::errors::ZamaHostError::AclDenyRecordMismatch,
+        )],
+    );
+
+    // The exact witness set — one record per added subject — still succeeds.
+    let ix = allow_subjects_ix_with_subject_deny_records(
+        authority,
+        authority,
+        value_address,
+        host_config,
+        vec![new_subject],
+        Some(authority_record),
+        vec![subject_record],
+    );
+    let accounts = vec![
+        (system_program::ID, system_program_account()),
+        (authority, funded_system_account()),
+        (value_address, encrypted_value_account(&value)),
+        (host_config, deny_host_config_account),
+        (authority_record, authority_record_account),
+        (subject_record, subject_record_account),
+    ];
+    mollusk().process_and_validate_instruction(&ix, &accounts, &[Check::success()]);
+}
+
+#[test]
 fn mollusk_fhe_eval_rejects_denied_second_output_authority_in_multi_output_frame() {
     let authority_a = Pubkey::new_unique();
     let authority_b = Pubkey::new_unique();

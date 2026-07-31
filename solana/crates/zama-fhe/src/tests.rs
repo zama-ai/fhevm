@@ -317,6 +317,28 @@ fn finish_rejects_pool_entry_no_step_references() {
     );
 }
 
+#[test]
+fn finish_rejects_pool_index_past_pool_end() {
+    let primary_authority = Pubkey::new_unique();
+    let mut builder = EvalBuilder::new(app_authority(primary_authority));
+    builder
+        .trivial_encrypt(Scalar::<Uint<64>>::u64(1), Output::transient())
+        .unwrap();
+    builder.steps.push(FheEvalStep::Binary {
+        op: FheBinaryOpCode::Add,
+        lhs: FheEvalOperand::AllowedLocal { producer_index: 0 },
+        rhs: FheEvalOperand::Scalar { value_index: 3 },
+        output_fhe_type: FheType::UINT64.byte(),
+        output: FheEvalOutput::AllowedLocal,
+    });
+    builder.produced_types.push(FheType::UINT64.byte());
+
+    assert_eq!(
+        builder.finish().unwrap_err(),
+        EvalBuildError::PoolIndexOutOfBounds
+    );
+}
+
 #[cfg(feature = "cpi")]
 #[test]
 fn invoke_eval_signed_with_builder_reports_build_errors_before_resolution() {

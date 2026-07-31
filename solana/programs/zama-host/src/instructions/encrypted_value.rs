@@ -47,6 +47,8 @@ pub fn allow_subjects(
         ctx.accounts.deny_subject_record.as_ref(),
     )?;
 
+    let deny_list_enabled = ctx.accounts.host_config.grant_deny_list_enabled;
+    let mut added_deny_addresses: Vec<Pubkey> = Vec::new();
     for subject in &subjects {
         if value.has_subject(*subject) {
             continue;
@@ -56,11 +58,24 @@ pub fn allow_subjects(
             *subject,
             ctx.remaining_accounts,
         )?;
+        if deny_list_enabled {
+            added_deny_addresses.push(deny_subject_address(*subject).0);
+        }
         require!(
             value.subjects.len() < zama_solana_acl::MAX_ENCRYPTED_VALUE_SUBJECTS,
             ZamaHostError::EncryptedValueSubjectCapacityExceeded
         );
         value.subjects.push(*subject);
+    }
+    // Remaining-accounts hygiene, mirroring `fhe_eval` preflight's
+    // `assert_all_used`: every supplied account must be the canonical deny
+    // record of a subject added by this call, and none may be supplied while
+    // the deny list is disabled.
+    for account in ctx.remaining_accounts {
+        require!(
+            added_deny_addresses.contains(&account.key()),
+            ZamaHostError::AclDenyRecordMismatch
+        );
     }
 
     let space = 8 + EncryptedValue::space(value.subjects.len(), value.peaks.len());
