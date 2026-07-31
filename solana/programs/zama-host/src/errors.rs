@@ -18,9 +18,6 @@ pub enum ZamaHostError {
     /// The host config account is not the canonical singleton or has invalid shape.
     #[msg("host config account is invalid")]
     HostConfigMismatch,
-    /// The host config initializer supplied zero or unsupported fields.
-    #[msg("host config initialization fields are invalid")]
-    InvalidHostConfig,
     /// The instruction included undeclared trailing account metas.
     #[msg("instruction has unexpected remaining accounts")]
     UnexpectedRemainingAccounts,

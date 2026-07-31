@@ -14,10 +14,10 @@ pub enum ConfidentialTokenError {
     /// Confidential mint account shape or self-domain metadata is invalid.
     #[msg("Confidential mint account is invalid")]
     MintAccountMismatch,
-    /// Confidential mint profile fields are unusable.
+    /// Retired (zero references). Kept so Anchor error ordinals stay stable.
     #[msg("Confidential mint config is invalid")]
     InvalidMintConfig,
-    /// Mint authority did not match signer.
+    /// Retired (zero references). Kept so Anchor error ordinals stay stable.
     #[msg("Confidential mint authority does not match signer")]
     MintAuthorityMismatch,
     /// The instruction included undeclared trailing account metas.
@@ -26,7 +26,7 @@ pub enum ConfidentialTokenError {
     /// Token account was not the canonical owner/mint PDA.
     #[msg("Confidential token account is not canonical")]
     TokenAccountMismatch,
-    /// Balance nonce sequence overflowed.
+    /// Retired (zero references). Kept so Anchor error ordinals stay stable.
     #[msg("ACL nonce overflow")]
     AclNonceOverflow,
     /// Token account initialization cannot mint unbacked confidential supply.
