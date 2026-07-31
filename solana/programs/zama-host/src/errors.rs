@@ -24,9 +24,6 @@ pub enum ZamaHostError {
     /// The instruction included undeclared trailing account metas.
     #[msg("instruction has unexpected remaining accounts")]
     UnexpectedRemainingAccounts,
-    /// The input verifier authority account does not match host config.
-    #[msg("input verifier authority does not match config")]
-    InputVerifierMismatch,
     /// A signed input proof has an invalid handle list, payload, or binding.
     #[msg("input proof is invalid")]
     InvalidInputProof,
@@ -75,15 +72,9 @@ pub enum ZamaHostError {
     /// A bounded random request has an invalid upper bound.
     #[msg("bounded random upper bound is invalid")]
     InvalidRandomUpperBound,
-    /// No matching Ed25519 verifier pre-instruction was found for the input proof.
-    #[msg("input proof Ed25519 signature is missing or malformed")]
-    InputProofSignatureMissing,
-    /// The app account did not sign the ACL birth instruction.
+    /// The authority signing for an output's app account does not match that app account.
     #[msg("ACL app account authority does not match app account")]
     AppAccountAuthorityMismatch,
-    /// Public decrypt release must happen through an explicit make-public instruction, never at birth.
-    #[msg("public decrypt cannot be set at encrypted value birth")]
-    PublicDecryptAtBirthUnsupported,
     /// A deny-list witness is required but was not supplied.
     #[msg("ACL deny-list account is required")]
     AclDenyRecordMissing,
@@ -114,10 +105,6 @@ pub enum ZamaHostError {
     /// An FHE eval instruction exceeded the supported operation count.
     #[msg("FHE eval operation count is invalid")]
     InvalidFheEvalOperationCount,
-    /// Retired error slot retained to preserve later Anchor error discriminants.
-    /// Born-public outputs now use one bounded lifecycle batch per eval frame.
-    #[msg("reserved FHE eval produced-public transport error")]
-    FheEvalBornPublicFrameTooLarge,
     /// An FHE eval instruction referenced a missing or malformed dynamic account.
     #[msg("FHE eval account reference is invalid")]
     InvalidFheEvalAccount,
@@ -134,9 +121,6 @@ pub enum ZamaHostError {
     /// which anchors the compulsorily fresh rand seed (fhevm-internal#1853 W4).
     #[msg("FHE eval rand step requires a durable output in the frame")]
     FheEvalRandRequiresDurableOutput,
-    /// A derived durable output may not be made public-decryptable by a non-authorized subject.
-    #[msg("transient capability cannot authorize public decrypt")]
-    DerivedOutputPublicDecryptDenied,
     /// A KMS context was defined with a duplicate signer address.
     #[msg("KMS context signer set contains a duplicate address")]
     DuplicateKmsSigner,
