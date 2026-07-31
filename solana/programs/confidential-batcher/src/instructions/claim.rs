@@ -2,7 +2,7 @@
 //! the payout mint is confidential shares for deposit batchers, confidential
 //! underlying for redeem batchers.
 //!
-//! One MulDiv eval frame — the exact proportional floor
+//! One MulDiv batch — the exact proportional floor
 //! `encrypted(joined) x payout_received / total_joined` — then a confidential
 //! transfer of the resulting handle from the batch's payout account to the
 //! user. Permissionless pull: anyone can trigger a user's claim; the payout
@@ -127,7 +127,7 @@ pub fn claim<'info>(ctx: Context<'info, Claim<'info>>) -> Result<()> {
         BatcherError::DerivedAccountMismatch
     );
 
-    // Phase 1: the one MulDiv frame — the encrypted joined amount's exact
+    // Phase 1: the one MulDiv batch — the encrypted joined amount's exact
     // proportional share of the public aggregate payout.
     let joined_value = fhe::read_encrypted_value(&ctx.accounts.pending_join_value)?;
     let joined = fhe::uint64_operand(&joined_value)?;

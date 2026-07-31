@@ -23,7 +23,7 @@ this note records the operational model in one place.
 - A persistent `fhe_execute` output handle **is the base handle** — identical to the transient handle.
   Deterministic ops are content-addressed over `(op / plaintext, operands, fhe_type, chain_id,
   previous_bank_hash, unix_timestamp)`; rand seeds alone carry uniqueness (`compute_subject` + the
-  frame's persistent-write anchor + `op_index`, see DD-043). There is no per-output binding: a persistent output and an instruction-local
+  batch's persistent-write anchor + `op_index`, see DD-043). There is no per-output binding: a persistent output and an instruction-local
   output over the same material derive the same handle. This matches EVM `FHEVMExecutor`, which binds
   no per-slot / per-caller / per-encrypted value account value into a computed handle. `value_key` is still the
   `EncryptedValue` PDA seed (`derive_value_key(acl_domain_key, app_account, encrypted_value_label)`) —
@@ -219,4 +219,4 @@ to a follow-up.
 - DD-036: burn-redemption consume authorizes by MMR public-decrypt proof (created-public delta), not the
   live handle — closes the Vector-2 fund-stranding window.
 - DD-037: `fhe_execute` events are `emit_cpi!`-only (no `emit!` fallback); created-public outputs are
-  restricted to CPI-transportable frames so their handles are always recoverable off-chain.
+  restricted to CPI-transportable batches so their handles are always recoverable off-chain.

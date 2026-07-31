@@ -24,7 +24,7 @@ pub(crate) enum OperandKind {
         producer_index: u16,
         builder_scope: EvalBuilderScope,
     },
-    /// External input verified in-frame via a coprocessor attestation (EVM `fromExternal`). The
+    /// External input verified in-batch via a coprocessor attestation (EVM `fromExternal`). The
     /// `Vec`-bearing attestation is held by the [`BatchBuilder`] and referenced by index; keeping
     /// only the index + `input_handle` here leaves the operand `Copy`. `input_handle` carries the
     /// FHE type for operand type-checks without touching the attestation.
@@ -77,7 +77,7 @@ pub(crate) fn next_eval_builder_scope() -> EvalBuilderScope {
 pub(crate) fn next_eval_builder_scope() -> EvalBuilderScope {
     // SBF forbids writable static data (no `.data`/atomics), so on-chain every builder
     // shares scope 1: mixing operands across two builders created inside one instruction
-    // is caught only by the producer-index bounds check there. Off-chain (where plans are
+    // is caught only by the producer-index bounds check there. Off-chain (where batches are
     // normally built and tested) the counter makes cross-builder mixing a hard error.
     EvalBuilderScope(1)
 }

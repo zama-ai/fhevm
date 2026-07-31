@@ -1,4 +1,4 @@
-//! Dynamic-account bookkeeping for lowered eval plans.
+//! Dynamic-account bookkeeping for lowered batches.
 
 use anchor_lang::prelude::Pubkey;
 
@@ -6,9 +6,9 @@ use anchor_lang::prelude::Pubkey;
 use anchor_lang::{prelude::AccountInfo, Key};
 
 #[cfg(feature = "cpi")]
-use crate::plan::Batch;
+use crate::batch::Batch;
 
-/// Why an eval plan needs a dynamic account.
+/// Why an batch needs a dynamic account.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum BatchAccountPurpose {
     PersistentInputAcl,
@@ -16,7 +16,7 @@ pub enum BatchAccountPurpose {
     PersistentOutputAuthority,
 }
 
-/// Public view of one dynamic account required by an eval plan.
+/// Public view of one dynamic account required by an batch.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct EvalAccountRequirement {
     pubkey: Pubkey,
@@ -57,7 +57,7 @@ impl EvalAccountRequirement {
     }
 }
 
-/// Dynamic account role required by an eval plan.
+/// Dynamic account role required by an batch.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) struct BatchAccountMeta {
     pub(crate) pubkey: Pubkey,
@@ -130,7 +130,7 @@ impl BatchAppAuthority {
     }
 }
 
-/// Output authority required by an eval plan.
+/// Output authority required by an batch.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct EvalOutputAuthorityRequirement {
     pub(crate) pubkey: Pubkey,
@@ -153,7 +153,7 @@ impl EvalOutputAuthorityRequirement {
 pub enum EvalAccountResolutionError {
     /// The same dynamic account pubkey was supplied more than once.
     DuplicateDynamicAccount { pubkey: Pubkey },
-    /// A supplied dynamic account is not required by this plan's non-authority
+    /// A supplied dynamic account is not required by this batch's non-authority
     /// remaining-account slots.
     UnexpectedDynamicAccount { pubkey: Pubkey },
     /// A non-authority remaining-account slot could not be resolved.
@@ -162,7 +162,7 @@ pub enum EvalAccountResolutionError {
     DynamicAccountNotWritable { requirement: EvalAccountRequirement },
     /// The same persistent output authority witness was supplied more than once.
     DuplicateOutputAuthority { pubkey: Pubkey },
-    /// A supplied output authority is not required by this plan.
+    /// A supplied output authority is not required by this batch.
     UnexpectedOutputAuthority { pubkey: Pubkey },
     /// A required persistent output authority witness could not be resolved.
     MissingOutputAuthority {
@@ -208,7 +208,7 @@ impl<'info> ResolvedEvalAccounts<'info> {
 
 #[cfg(feature = "cpi")]
 pub(crate) fn resolve_eval_accounts<'info>(
-    plan: &Batch,
+    batch: &Batch,
     dynamic_accounts: impl IntoIterator<Item = AccountInfo<'info>>,
     output_authorities: impl IntoIterator<Item = AccountInfo<'info>>,
 ) -> std::result::Result<ResolvedEvalAccounts<'info>, EvalAccountResolutionError> {
@@ -223,7 +223,7 @@ pub(crate) fn resolve_eval_accounts<'info>(
         {
             return Err(EvalAccountResolutionError::DuplicateDynamicAccount { pubkey });
         }
-        let Some(required) = plan
+        let Some(required) = batch
             .dynamic_account_requirements()
             .find(|required| required.pubkey() == pubkey)
         else {
@@ -242,12 +242,15 @@ pub(crate) fn resolve_eval_accounts<'info>(
         {
             return Err(EvalAccountResolutionError::DuplicateOutputAuthority { pubkey });
         }
-        if !plan.output_authorities().any(|required| required == pubkey) {
+        if !batch
+            .output_authorities()
+            .any(|required| required == pubkey)
+        {
             return Err(EvalAccountResolutionError::UnexpectedOutputAuthority { pubkey });
         }
     }
 
-    for authority in plan.output_authority_requirements() {
+    for authority in batch.output_authority_requirements() {
         if !output_authorities
             .iter()
             .any(|candidate| candidate.key() == authority.pubkey())
@@ -257,7 +260,7 @@ pub(crate) fn resolve_eval_accounts<'info>(
     }
 
     let mut accounts = Vec::new();
-    for required in plan.dynamic_account_requirements() {
+    for required in batch.dynamic_account_requirements() {
         let account = if required.requires_output_authority() {
             output_authorities
                 .iter()

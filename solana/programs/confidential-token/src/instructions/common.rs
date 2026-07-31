@@ -42,17 +42,17 @@ pub(crate) struct TransferAccounts<'a, 'info> {
 
 /// Where a transfer's amount comes from. The `ge -> sub -> select` debit and `add` credit that
 /// move the two balance encrypted value accounts are identical for both arms; only how the amount operand enters
-/// the eval frame differs.
+/// the batch differs.
 pub(crate) enum TransferAmountSource<'info> {
     /// EVM `FHE.fromExternal` parity: a coprocessor-attested fresh client-side encryption,
-    /// verified in-frame and transient-allowed for this eval (no persistent amount account).
+    /// verified in-batch and transient-allowed for this eval (no persistent amount account).
     Attested(zama_host::CoprocessorInputAttestation),
     /// EVM computed/received `euint64` parity: an existing on-chain `EncryptedValue` encrypted value account,
     /// spent as a read-only persistent operand at its current handle. It is never replaced and
     /// never consumed — only the two balance encrypted value accounts change. The token's spend gate (signing
     /// owner in the value's subject set) and euint64 type check run in the instruction handler
     /// before this reaches the eval builder; the host re-checks the handle is current and that the
-    /// mint's compute subject is allowed on the value, in-frame.
+    /// mint's compute subject is allowed on the value, in-batch.
     ExistingValue { amount_value: AccountInfo<'info> },
 }
 
@@ -87,7 +87,7 @@ pub(crate) fn execute_transfer<'info>(
         // EVM `fromExternal` parity for the amount: the attested input must be authored by the
         // sender (user) and bound to this mint's compute-signer PDA (the `msg.sender`/contract
         // analog the host re-checks against `compute_subject`). The coprocessor signature over both
-        // is verified in-frame. The `ExistingValue` arm is gated instead by the token spend gate and
+        // is verified in-batch. The `ExistingValue` arm is gated instead by the token spend gate and
         // euint64 type check in its instruction handler.
         assert_amount_attestation_binding(
             amount_attestation,
@@ -198,7 +198,7 @@ fn execute_transfer_eval<'info>(
     )?;
     let mut builder = zama_fhe::BatchBuilder::new(zama_fhe::BatchAppAuthority::new(from_key));
     let amount: zama_fhe::Uint64Handle = match amount_source {
-        // fromExternal: the amount is a coprocessor-attested external input, verified in-frame and
+        // fromExternal: the amount is a coprocessor-attested external input, verified in-batch and
         // transient-allowed for this eval (no persistent amount handle / ACL account).
         TransferAmountSource::Attested(amount_attestation) => builder
             .verified_input(amount_attestation.clone())
@@ -243,11 +243,11 @@ fn execute_transfer_eval<'info>(
     builder
         .add(to_balance, transferred, to_output.output())
         .map_err(invalid_eval_plan)?;
-    let plan = builder.finish().map_err(invalid_eval_plan)?;
+    let batch = builder.finish().map_err(invalid_eval_plan)?;
     let compute_authority =
         fhe::ComputeAuthority::for_mint(accounts.compute_signer, mint_key, compute_signer_bump)?;
     // Persistent output accounts are the same for both arms; the existing-value arm adds the amount
-    // encrypted value account as a read-only persistent input operand the plan now requires.
+    // encrypted value account as a read-only persistent input operand the batch now requires.
     let mut dynamic_accounts = vec![
         from_output.account_info(),
         transferred_output.account_info(),
@@ -255,7 +255,7 @@ fn execute_transfer_eval<'info>(
     ];
     if let TransferAmountSource::ExistingValue { amount_value, .. } = amount_source {
         // The amount encrypted value account can legitimately alias one of the output accounts (spending the entire
-        // balance, or re-sending a transferred_amount that is also this frame's output). The plan
+        // balance, or re-sending a transferred_amount that is also this batch's output). The batch
         // already merges those into one slot, so only add the amount when it is a distinct account.
         if !dynamic_accounts
             .iter()
@@ -265,7 +265,7 @@ fn execute_transfer_eval<'info>(
         }
     }
     let eval_accounts = fhe::EvalAccountSet::for_plan(
-        &plan,
+        &batch,
         dynamic_accounts,
         [
             fhe::OutputAuthority::token_account(accounts.from_account)?,
@@ -286,7 +286,7 @@ fn execute_transfer_eval<'info>(
             hcu_trusted_app_record: accounts.hcu_trusted_app_record.clone(),
         },
         accounts: &eval_accounts,
-        plan,
+        batch,
     })?;
 
     Ok((
@@ -297,8 +297,8 @@ fn execute_transfer_eval<'info>(
 }
 
 pub(crate) fn invalid_eval_plan(error: zama_fhe::BatchBuildError) -> anchor_lang::error::Error {
-    msg!("invalid FHE eval plan: {:?}", error);
-    error!(ConfidentialTokenError::InvalidFheExecutePlan)
+    msg!("invalid FHE batch: {:?}", error);
+    error!(ConfidentialTokenError::InvalidFheExecuteBatch)
 }
 
 pub(crate) fn encrypted_value_id(
@@ -320,7 +320,7 @@ pub(crate) fn uint64_from_value(
 }
 
 /// Validates a coprocessor-attested transfer/burn amount (EVM `fromExternal` parity). The host
-/// re-verifies the attestation signature and enforces caller == `contract_address` in-frame; the
+/// re-verifies the attestation signature and enforces caller == `contract_address` in-batch; the
 /// program binds the attested identities to this transaction: the input must be authored by
 /// `expected_user` (the sender/burner) and bound to `expected_contract` (the mint compute-signer
 /// PDA the host checks against `compute_subject`). The amount handle must be a confidential balance.

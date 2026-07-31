@@ -1,12 +1,12 @@
 //! Single owner of every remaining-accounts safety invariant for one
-//! `fhe_execute` frame.
+//! `fhe_execute` batch.
 //!
 //! Construction rejects duplicate account keys. Preflight marks every account
-//! the plan references and [`EvalAccountTable::assert_all_used`] rejects
+//! the batch references and [`EvalAccountTable::assert_all_used`] rejects
 //! dangling accounts before any pass touches state, so later passes access by
 //! index without their own bookkeeping. Persistent-output claims (one write per
-//! account per frame), deny-record location by canonical derived address, and
-//! output-PDA derivation also live here, so the invariants of the frame's
+//! account per batch), deny-record location by canonical derived address, and
+//! output-PDA derivation also live here, so the invariants of the batch's
 //! account handling exist in exactly one place.
 
 use super::*;
@@ -16,7 +16,7 @@ pub(super) struct EvalAccountTable<'a, 'info> {
     used: Vec<bool>,
     /// Persistent output accounts already claimed by an earlier step. Reserved to
     /// the op cap up front: the SBF bump allocator never frees, so growth by
-    /// doubling would leak, and the created-public maximum frame already runs
+    /// doubling would leak, and the created-public maximum batch already runs
     /// close to the 32KB heap ceiling. (For the same reason the table caches
     /// no derived PDAs: the single walk derives each output PDA exactly once.)
     persistent_outputs_claimed: Vec<Pubkey>,
@@ -69,7 +69,7 @@ impl<'a, 'info> EvalAccountTable<'a, 'info> {
 
     /// Locates the deny record for `subject` by its canonical derived address
     /// (never by caller-supplied index). `Ok(None)` when the deny list is
-    /// disabled; missing record under an enabled list fails the frame.
+    /// disabled; missing record under an enabled list fails the batch.
     pub(super) fn deny_record(
         &self,
         deny_list_enabled: bool,
@@ -128,8 +128,8 @@ impl<'a, 'info> EvalAccountTable<'a, 'info> {
         }
     }
 
-    /// Claims a persistent output account for this frame; a second claim of the
-    /// same account is rejected (one write per account per frame — load-bearing
+    /// Claims a persistent output account for this batch; a second claim of the
+    /// same account is rejected (one write per account per batch — load-bearing
     /// for the rand seed anchor, see #1853 W4).
     pub(super) fn claim_persistent_output(&mut self, key: Pubkey) -> Result<()> {
         require!(
@@ -140,8 +140,8 @@ impl<'a, 'info> EvalAccountTable<'a, 'info> {
         Ok(())
     }
 
-    /// Whole-frame hygiene: every passed account must have been referenced by
-    /// the plan (as operand, output, authority, or deny record).
+    /// Whole-batch hygiene: every passed account must have been referenced by
+    /// the batch (as operand, output, authority, or deny record).
     pub(super) fn assert_all_used(&self) -> Result<()> {
         require!(
             self.used.iter().all(|used| *used),

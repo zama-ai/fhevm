@@ -50,7 +50,7 @@ this handle" — current membership, or an MMR-proven historical/public-decrypt 
 
 `fhe_execute` composes mixed FHE steps in one host instruction: **Binary / Ternary / Unary /
 TrivialEncrypt / Rand / RandBounded / Sum / IsIn / MulDiv** (no `Input` step — DD-007/DD-023). Binary scratch results can feed ternary
-`if_then_else`, and trivial-encrypt / random creations can participate in the same frame. Outputs
+`if_then_else`, and trivial-encrypt / random creations can participate in the same batch. Outputs
 produced earlier in the eval can be referenced as transient operands by later operations.
 Persistent operands must still be authorized by a live or historically-proven `EncryptedValue`. Transient
 outputs create no `EncryptedValue` state at all. Only outputs marked persistent create (first bind) or
@@ -65,25 +65,25 @@ public-decrypt rules enforced by the current host without reviving unsigned
 `authorized_app_accounts`.
 
 Ordinary compute facts, MMR leaves, and persistent-output binds are reconstructed from instruction data;
-the host emits no per-operation replay stream. A frame with created-public persistent outputs emits exactly
+the host emits no per-operation replay stream. A batch with created-public persistent outputs emits exactly
 one versioned Anchor CPI lifecycle batch containing their ordered step index, host-owned
-`EncryptedValue` account, and host-derived output handle. A frame without created-public outputs emits
+`EncryptedValue` account, and host-derived output handle. A batch without created-public outputs emits
 no lifecycle batch. The bounded 16-output maximum fits one CPI; other `EncryptedValue` lifecycle
 paths remain event-free (`docs/DESIGN_DECISIONS.md` DD-033/DD-038).
 
 Admission invariants for `fhe_execute`:
 
-- The frame must contain 1 to 16 steps, and a frame with a rand step must declare at least one
-  persistent output (the rand seed is anchored to the frame's persistent writes).
+- The batch must contain 1 to 16 steps, and a batch with a rand step must declare at least one
+  persistent output (the rand seed is anchored to the batch's persistent writes).
 - Every dynamic account passed through `remaining_accounts` must be unique and referenced by an
   operand or output, and every referenced account index must be present.
 - The optional instructions sysvar account must be present only for steps that need instruction
   witness checks, and when present its key must be the canonical instructions sysvar id.
-- Transient operands may only reference outputs produced by earlier steps in the same frame.
+- Transient operands may only reference outputs produced by earlier steps in the same batch.
 - Only the RHS of a binary operation may be scalar; encrypted operands must match the operator's FHE
   type rules.
 - External encrypted inputs enter compute through the `FheExecuteOperand::VerifiedInput` operand: the
-  coprocessor attestation is re-verified in-frame and the input is transient-allowed for that eval only
+  coprocessor attestation is re-verified in-batch and the input is transient-allowed for that eval only
   (the EVM `fromExternal` / `allowTransient(input, msg.sender)` analog). The caller-is-contract gate is
   checked at input consumption (`attestation.contract_address == compute_subject`); derived outputs are
   unconstrained. The redundant standalone `verify_coprocessor_input` instruction was removed (DD-007).

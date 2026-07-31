@@ -42,7 +42,7 @@ all fail closed (see the `*_rejects_*` mollusk tests).
 4. **Off-chain reconstruction — host-listener** (`coprocessor/fhevm-engine/host-listener`, feature
     `solana-grpc`, which includes reconstruction): reconstructs MMR leaves from instruction data +
     sysvar-streamed block entropy (Yellowstone gRPC), with no dependence on emitted events. Derives
-    update/produced-public handles directly; fails closed on incomplete plans.
+    update/produced-public handles directly; fails closed on incomplete batches.
 5. **Off-chain proof service — solana-proof-service** (`solana-proof-service/`): ingest (atomic, gap-free,
    fail-closed), decode (incl. `emit_cpi!` op-event resolution for created-public handles), replay, and
    `build_verified_proof` cross-check against confirmed peaks (a wrong record surfaces as

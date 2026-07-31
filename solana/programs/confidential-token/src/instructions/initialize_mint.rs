@@ -68,7 +68,7 @@ pub fn initialize_mint<'info>(ctx: Context<'info, InitializeMint<'info>>) -> Res
     builder
         .trivial_encrypt_u64(0, total_supply_output.output())
         .map_err(invalid_eval_plan)?;
-    let plan = builder.finish().map_err(invalid_eval_plan)?;
+    let batch = builder.finish().map_err(invalid_eval_plan)?;
     let compute_authority = fhe::ComputeAuthority::for_mint(
         &ctx.accounts.compute_signer,
         mint_key,
@@ -76,7 +76,7 @@ pub fn initialize_mint<'info>(ctx: Context<'info, InitializeMint<'info>>) -> Res
     )?;
     let total_supply_authority_bump = total_supply_authority_address(mint_key).1;
     let eval_accounts = fhe::EvalAccountSet::for_plan(
-        &plan,
+        &batch,
         [total_supply_output.account_info()],
         [fhe::OutputAuthority::total_supply(
             &ctx.accounts.total_supply_authority,
@@ -105,7 +105,7 @@ pub fn initialize_mint<'info>(ctx: Context<'info, InitializeMint<'info>>) -> Res
                 .map(|account| account.to_account_info()),
         },
         accounts: &eval_accounts,
-        plan,
+        batch,
     })?;
     let total_supply_handle = total_supply_output.handle()?;
     let mint = &mut ctx.accounts.mint;

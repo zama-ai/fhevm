@@ -1,4 +1,4 @@
-//! Local mirrors of the host preflight rules so malformed frames fail before the CPI.
+//! Local mirrors of the host preflight rules so malformed batches fail before the CPI.
 
 use anchor_lang::prelude::Pubkey;
 
@@ -12,7 +12,7 @@ use crate::operand::{EvalBuilderScope, Operand, OperandKind};
 use crate::{BatchBuildError, Result};
 
 /// Mirrors the host preflight rule (fhevm-internal#1853 W4): rand seeds are anchored to
-/// the frame's persistent writes, so a frame with a rand step and no persistent output is
+/// the batch's persistent writes, so a batch with a rand step and no persistent output is
 /// rejected here before it fails on-chain with `FheExecuteRandRequiresPersistentOutput`.
 pub(crate) fn validate_rand_steps_anchor_persistent_output(steps: &[FheExecuteStep]) -> Result<()> {
     let has_rand = steps.iter().any(|step| {
@@ -94,7 +94,7 @@ pub(crate) fn validate_lowered_eval_plan(
     if used_accounts.iter().any(|used| !*used) {
         return Err(BatchBuildError::InvalidRemainingAccountReference);
     }
-    // Mirrors the host's whole-frame dictionary hygiene rule: every interned entry must be referenced.
+    // Mirrors the host's whole-batch dictionary hygiene rule: every interned entry must be referenced.
     if used_dictionary.iter().any(|used| !*used) {
         return Err(BatchBuildError::UnreferencedDictionaryEntry);
     }
@@ -240,7 +240,7 @@ fn validate_lowered_encrypted_operand(
             }
         }
         FheExecuteOperand::VerifiedInput { .. } => {
-            // No remaining account: the attestation is carried inline and verified in-frame.
+            // No remaining account: the attestation is carried inline and verified in-batch.
         }
         FheExecuteOperand::Scalar { .. } => return Err(BatchBuildError::ScalarEncryptedOperand),
     }

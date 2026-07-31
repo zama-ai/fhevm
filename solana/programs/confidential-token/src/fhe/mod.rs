@@ -1,7 +1,7 @@
 //! Token-local FHE helper functions.
 //!
 //! The confidential token program keeps ZamaHost CPI assembly in this module
-//! so business logic can build typed eval frames and receive host-verified
+//! so business logic can build typed batches and receive host-verified
 //! output handles.
 
 use anchor_lang::{prelude::*, AccountDeserialize};
@@ -121,7 +121,7 @@ impl<'info> PersistentOutput<'info> {
         let output = if *encrypted_value.owner == System::id() {
             require!(
                 encrypted_value.data_is_empty() && !encrypted_value.executable,
-                ConfidentialTokenError::InvalidFheExecutePlan
+                ConfidentialTokenError::InvalidFheExecuteBatch
             );
             zama_fhe::PersistentOutput::create(key, subjects)
         } else {
@@ -131,7 +131,7 @@ impl<'info> PersistentOutput<'info> {
         .with_make_public(make_public);
         output.binding().map_err(|error| {
             msg!("invalid persistent FHE output: {:?}", error);
-            error!(ConfidentialTokenError::InvalidFheExecutePlan)
+            error!(ConfidentialTokenError::InvalidFheExecuteBatch)
         })?;
         Ok(Self {
             encrypted_value,
@@ -163,7 +163,7 @@ impl<'info> PersistentOutput<'info> {
     fn binding(&self) -> Result<zama_fhe::PersistentOutputBinding> {
         self.output.binding().map_err(|error| {
             msg!("invalid persistent FHE output: {:?}", error);
-            error!(ConfidentialTokenError::InvalidFheExecutePlan)
+            error!(ConfidentialTokenError::InvalidFheExecuteBatch)
         })
     }
 }
@@ -220,7 +220,7 @@ impl<'info> ComputeAuthority<'info> {
     }
 }
 
-/// Signer model for a persistent output authority required by an eval frame.
+/// Signer model for a persistent output authority required by an batch.
 #[derive(Clone)]
 pub(crate) enum OutputAuthoritySigner {
     // Only constructed by the `poc`-gated create_random_amount helpers.
@@ -338,7 +338,7 @@ impl<'info> OutputAuthority<'info> {
     }
 }
 
-/// Pubkey-indexed accounts and authorities available to satisfy an eval plan.
+/// Pubkey-indexed accounts and authorities available to satisfy an batch.
 pub(crate) struct EvalAccountSet<'info> {
     accounts: zama_fhe::ResolvedEvalAccounts<'info>,
     output_authorities: Vec<OutputAuthority<'info>>,
@@ -346,7 +346,7 @@ pub(crate) struct EvalAccountSet<'info> {
 
 impl<'info> EvalAccountSet<'info> {
     pub(crate) fn for_plan(
-        plan: &zama_fhe::Batch,
+        batch: &zama_fhe::Batch,
         available_accounts: impl IntoIterator<Item = AccountInfo<'info>>,
         output_authorities: impl IntoIterator<Item = OutputAuthority<'info>>,
     ) -> Result<Self> {
@@ -355,7 +355,7 @@ impl<'info> EvalAccountSet<'info> {
             .iter()
             .map(OutputAuthority::account_info)
             .collect::<Vec<_>>();
-        let accounts = plan
+        let accounts = batch
             .resolve_accounts(available_accounts, output_authority_accounts)
             .map_err(map_eval_account_resolution_error)?;
 
@@ -404,7 +404,7 @@ fn map_eval_account_resolution_error(error: zama_fhe::EvalAccountResolutionError
     }
 }
 
-/// Inputs required to evaluate an instruction-local FHE plan.
+/// Inputs required to evaluate an instruction-local FHE batch.
 pub(crate) struct EvalContext<'a, 'info> {
     /// Transaction payer and rent payer for any persistent output ACL records.
     pub payer: &'a Signer<'info>,
@@ -429,19 +429,19 @@ pub(crate) struct EvalContext<'a, 'info> {
     pub hcu_trusted_app_record: Option<AccountInfo<'info>>,
 }
 
-/// Inputs required to evaluate an instruction-local FHE plan.
+/// Inputs required to evaluate an instruction-local FHE batch.
 pub(crate) struct Eval<'a, 'info> {
     /// Fixed ZamaHost CPI accounts shared by eval requests in this instruction.
     pub context: EvalContext<'a, 'info>,
-    /// Typed resolver for dynamic accounts required by the eval plan.
+    /// Typed resolver for dynamic accounts required by the batch.
     pub accounts: &'a EvalAccountSet<'info>,
-    /// SDK-built host eval request and dynamic account role plan.
-    pub plan: zama_fhe::Batch,
+    /// SDK-built host eval request and dynamic account role batch.
+    pub batch: zama_fhe::Batch,
 }
 
-/// Evaluates an FHE plan using the current token account authority model.
+/// Evaluates an FHE batch using the current token account authority model.
 pub(crate) fn eval<'info>(request: Eval<'_, 'info>) -> Result<()> {
-    let app_authority_key = request.plan.app_authority().pubkey();
+    let app_authority_key = request.batch.app_authority().pubkey();
     let app_authority = request
         .accounts
         .output_authority(app_authority_key)
@@ -460,7 +460,7 @@ pub(crate) fn eval<'info>(request: Eval<'_, 'info>) -> Result<()> {
     let app_authority_seeds: Vec<&[u8]> =
         app_authority_seed_bytes.iter().map(Vec::as_slice).collect();
     let mut additional_authorities = Vec::new();
-    for authority in request.plan.additional_output_authorities() {
+    for authority in request.batch.additional_output_authorities() {
         if authority == app_authority.key() {
             continue;
         }
@@ -505,11 +505,11 @@ pub(crate) fn eval<'info>(request: Eval<'_, 'info>) -> Result<()> {
         request.context.deny_subject_records,
         app_authority.key(),
         &extra_output_authorities,
-        &request.plan.newly_granted_subjects(),
+        &request.batch.newly_granted_subjects(),
     )?;
 
     zama_fhe::invoke_batch_signed_resolved(
-        &request.plan,
+        &request.batch,
         zama_fhe::BatchCpiAccounts {
             payer: request.context.payer.to_account_info(),
             compute_subject: request.context.compute_authority.account_info(),
@@ -699,10 +699,10 @@ mod tests {
 
     #[test]
     fn eval_account_set_maps_dynamic_account_errors() {
-        let (plan, input_acl, output_acl, authority) = sample_plan();
+        let (batch, input_acl, output_acl, authority) = sample_plan();
 
         let error = EvalAccountSet::for_plan(
-            &plan,
+            &batch,
             vec![
                 account_info(input_acl, false),
                 account_info(input_acl, false),
@@ -715,7 +715,7 @@ mod tests {
         assert_token_error(error, ConfidentialTokenError::DuplicateFheExecuteAccount);
 
         let error = EvalAccountSet::for_plan(
-            &plan,
+            &batch,
             vec![
                 account_info(input_acl, false),
                 account_info(output_acl, true),
@@ -728,7 +728,7 @@ mod tests {
         assert_token_error(error, ConfidentialTokenError::UnexpectedFheExecuteAccount);
 
         let error = EvalAccountSet::for_plan(
-            &plan,
+            &batch,
             vec![account_info(output_acl, true)],
             vec![output_authority(authority)],
         )
@@ -737,7 +737,7 @@ mod tests {
         assert_token_error(error, ConfidentialTokenError::MissingFheExecuteAccount);
 
         let error = EvalAccountSet::for_plan(
-            &plan,
+            &batch,
             vec![
                 account_info(input_acl, false),
                 account_info(output_acl, false),
@@ -751,10 +751,10 @@ mod tests {
 
     #[test]
     fn eval_account_set_maps_output_authority_errors() {
-        let (plan, input_acl, output_acl, authority) = sample_plan();
+        let (batch, input_acl, output_acl, authority) = sample_plan();
 
         let error = EvalAccountSet::for_plan(
-            &plan,
+            &batch,
             vec![
                 account_info(input_acl, false),
                 account_info(output_acl, true),
@@ -766,7 +766,7 @@ mod tests {
         assert_token_error(error, ConfidentialTokenError::DuplicateFheOutputAuthority);
 
         let error = EvalAccountSet::for_plan(
-            &plan,
+            &batch,
             vec![
                 account_info(input_acl, false),
                 account_info(output_acl, true),
@@ -781,7 +781,7 @@ mod tests {
         assert_token_error(error, ConfidentialTokenError::UnexpectedFheOutputAuthority);
 
         let error = EvalAccountSet::for_plan(
-            &plan,
+            &batch,
             vec![
                 account_info(input_acl, false),
                 account_info(output_acl, true),

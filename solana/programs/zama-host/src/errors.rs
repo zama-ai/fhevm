@@ -117,9 +117,9 @@ pub enum ZamaHostError {
     /// An FHE eval persistent output account already exists.
     #[msg("FHE eval persistent output ACL record already exists")]
     FheExecuteOutputAlreadyInitialized,
-    /// A frame containing a rand step must declare at least one persistent output,
+    /// A batch containing a rand step must declare at least one persistent output,
     /// which anchors the compulsorily fresh rand seed (fhevm-internal#1853 W4).
-    #[msg("FHE eval rand step requires a persistent output in the frame")]
+    #[msg("FHE eval rand step requires a persistent output in the batch")]
     FheExecuteRandRequiresPersistentOutput,
     /// A KMS context was defined with a duplicate signer address.
     #[msg("KMS context signer set contains a duplicate address")]
@@ -127,7 +127,7 @@ pub enum ZamaHostError {
     /// The coprocessor-attested contract does not match the `fhe_execute` compute subject.
     #[msg("attested contract address does not match the output app account")]
     InputBindContractMismatch,
-    /// An `fhe_execute` frame's summed HCU exceeds `max_hcu_per_tx` (or the running sum overflowed).
+    /// An `fhe_execute` batch's summed HCU exceeds `max_hcu_per_tx` (or the running sum overflowed).
     #[msg("FHE op total HCU exceeds the per-transaction limit")]
     HcuTransactionLimitExceeded,
     /// An `fhe_execute` value's critical-path HCU exceeds `max_hcu_depth_per_tx` (or the depth sum overflowed).
@@ -189,7 +189,7 @@ pub enum ZamaHostError {
     /// A present trust witness is not the canonical PDA / owner (only an absent witness is benign).
     #[msg("HCU trusted-app record does not match the canonical PDA")]
     HcuTrustedAppRecordMismatch,
-    /// A metering-band cap was set below `max_hcu_per_tx`, making a single legal frame impossible.
+    /// A metering-band cap was set below `max_hcu_per_tx`, making a single legal batch impossible.
     /// Analog of EVM `HCUPerBlockBelowMaxPerTx`.
     #[msg("HCU block cap is below max_hcu_per_tx")]
     HcuBlockCapBelowMaxPerTx,
@@ -215,12 +215,12 @@ pub enum ZamaHostError {
     )]
     InvalidChainTypeBit,
 
-    /// Under a finite `hcu_block_cap_per_app`, a frame that binds no persistent input, no verified
+    /// Under a finite `hcu_block_cap_per_app`, a batch that binds no persistent input, no verified
     /// input, and no persistent output leaves `compute_subject` a free variable: the caller could
     /// churn fresh subjects to mint fresh per-slot meters and evade the cap (fhevm-internal#1744).
-    /// Such a frame is also value-less — its transient outputs create no ACL leaf and are
+    /// Such a batch is also value-less — its transient outputs create no ACL leaf and are
     /// undecryptable — so it is rejected outright.
-    #[msg("FHE eval frame anchors no persistent/verified binding under a finite HCU block cap")]
+    #[msg("FHE batch anchors no persistent/verified binding under a finite HCU block cap")]
     FheExecuteUnanchoredUnderBlockCap,
 
     // ---- stateless public-decrypt verifier (verify_public_decrypt, fhevm-internal#1704) ----
@@ -289,15 +289,15 @@ pub enum ZamaHostError {
     #[msg("FHE eval declared account count mismatch")]
     FheExecuteAccountCountMismatch,
     /// An `AllowedPersistent` operand referenced an account written by an earlier step.
-    /// In-frame dependencies must use `AllowedLocal`.
-    #[msg("FHE eval persistent operand was written earlier in the frame")]
+    /// In-batch dependencies must use `AllowedLocal`.
+    #[msg("FHE eval persistent operand was written earlier in the batch")]
     FheExecutePersistentOperandWrittenEarlier,
-    /// An interned dictionary entry was never referenced by any step; a frame must not
+    /// An interned dictionary entry was never referenced by any step; a batch must not
     /// carry dead bytes.
     #[msg("FHE eval dictionary entry is not referenced by any step")]
     FheExecuteDictionaryEntryUnreferenced,
     /// `0` is not a valid per-tx HCU limit: `u64::MAX` is the single "unlimited"
-    /// sentinel across every HCU knob, and a `0` limit would reject every frame.
+    /// sentinel across every HCU knob, and a `0` limit would reject every batch.
     #[msg("0 is not a valid HCU limit; use u64::MAX for unlimited")]
     HcuLimitZeroReserved,
 }

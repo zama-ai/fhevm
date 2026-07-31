@@ -231,12 +231,12 @@ pub async fn run(
 /// pair follows them, so they can never be truncated off the tail. Returns `None` when
 /// the index is out of range; the caller treats that as a hard problem, since the
 /// persistent output would otherwise never request ciphertext material.
-/// The number of named `fhe_execute` accounts before the dynamic tail the frame's
+/// The number of named `fhe_execute` accounts before the dynamic tail the batch's
 /// `u8` indices refer to.
-const FHE_EVAL_REMAINING_BASE: usize = 9;
+const FHE_EXECUTE_REMAINING_BASE: usize = 9;
 
 fn fhe_execute_remaining_accounts(accounts: &[[u8; 32]]) -> &[[u8; 32]] {
-    accounts.get(FHE_EVAL_REMAINING_BASE..).unwrap_or(&[])
+    accounts.get(FHE_EXECUTE_REMAINING_BASE..).unwrap_or(&[])
 }
 
 fn fhe_execute_persistent_encrypted_value(
@@ -244,7 +244,7 @@ fn fhe_execute_persistent_encrypted_value(
     remaining_index: u8,
 ) -> Option<[u8; 32]> {
     accounts
-        .get(FHE_EVAL_REMAINING_BASE + usize::from(remaining_index))
+        .get(FHE_EXECUTE_REMAINING_BASE + usize::from(remaining_index))
         .copied()
 }
 
@@ -1001,7 +1001,7 @@ async fn reconstruct_events_for_insert(
         if ix.program != config.program_id {
             continue;
         }
-        if let Some(plan) = decode_fhe_execute_args(&ix.data) {
+        if let Some(batch) = decode_fhe_execute_args(&ix.data) {
             let ctx = ctx
                 .as_ref()
                 .expect("covered fhe_execute requires reconstruction context");
@@ -1022,7 +1022,7 @@ async fn reconstruct_events_for_insert(
             // Deterministic output handles are reconstructed from the operation
             // and operands. Random outputs use the host-signed seed batch.
             let Some(steps) = reconstruct_fhe_execute_steps(
-                &plan,
+                &batch,
                 subject,
                 fhe_execute_remaining_accounts(&ix.accounts),
                 &random_seeds,
@@ -1030,7 +1030,7 @@ async fn reconstruct_events_for_insert(
             ) else {
                 anyhow::bail!(
                     "reconstruct: incomplete fhe_execute reconstruction in slot {slot}; \
-                     malformed plan or missing handle context"
+                     malformed batch or missing handle context"
                 );
             };
             for step in steps {
@@ -1322,7 +1322,7 @@ mod fhe_execute_acl_tests {
     fn fhe_execute_accounts() -> Vec<[u8; 32]> {
         // 9 named FheExecute accounts (0..=8, incl. the two optional HCU accounts and the
         // event-cpi pair); the persistent output EncryptedValue is remaining_accounts[0]
-        // at absolute index 9 (FHE_EVAL_REMAINING_BASE).
+        // at absolute index 9 (FHE_EXECUTE_REMAINING_BASE).
         let mut accounts: Vec<[u8; 32]> = (0..10).map(acct).collect();
         accounts[1] = SUBJECT;
         accounts[9] = ENCRYPTED_VALUE;
@@ -1547,7 +1547,7 @@ mod fhe_execute_acl_tests {
     }
 
     /// A updating persistent `fhe_execute` output recomputes its handle directly
-    /// from the plan's output material + block entropy (DD-015) — no raw update
+    /// from the batch's output material + block entropy (DD-015) — no raw update
     /// handle hint and no encrypted-value-account leaf count. The
     /// reconstructed compute result and current/historical material requests
     /// must all come from the `fhe_execute` instruction itself.
@@ -1555,7 +1555,7 @@ mod fhe_execute_acl_tests {
     async fn updating_fhe_execute_derives_output_handle_without_hint() {
         let expected = derived_add_output_handle();
 
-        let plan = FheExecuteArgs {
+        let batch = FheExecuteArgs {
             account_count: 1,
             dictionary: vec![[3; 32], [1; 32], [8; 32], [9; 32], [10; 32]],
             steps: vec![FheExecuteStep::Binary {
@@ -1579,7 +1579,7 @@ mod fhe_execute_acl_tests {
                 },
             }],
         };
-        let fhe_execute_data = encode_instruction("fhe_execute", plan);
+        let fhe_execute_data = encode_instruction("fhe_execute", batch);
         let instructions = vec![decoded_ix(
             fhe_execute_data,
             fhe_execute_accounts(),
@@ -1625,7 +1625,7 @@ mod fhe_execute_acl_tests {
     /// handle. The persistent bind and public transition share that request.
     #[tokio::test]
     async fn created_public_fhe_execute_output_requests_material() {
-        let plan = FheExecuteArgs {
+        let batch = FheExecuteArgs {
             account_count: 1,
             dictionary: vec![[8; 32], [9; 32], [10; 32], SUBJECT],
             steps: vec![FheExecuteStep::TrivialEncrypt {
@@ -1646,7 +1646,7 @@ mod fhe_execute_acl_tests {
             }],
         };
         let instructions = vec![decoded_ix(
-            encode_instruction("fhe_execute", plan),
+            encode_instruction("fhe_execute", batch),
             fhe_execute_accounts(),
             0,
             false,

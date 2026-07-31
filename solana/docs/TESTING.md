@@ -11,7 +11,7 @@ been exercised. Commands are run from `solana/` unless a row changes directory.
 | Layer | Exact command | What it proves | What it does **not** prove | Prerequisites / cost |
 | --- | --- | --- | --- | --- |
 | Pure operator conformance | `cargo test -p zama-solana-runtime-tests --test operator_conformance` | The test-owned evaluator agrees with the explicit operator/type contract, including closed-world admission, operand-source rules, and rejected shapes. | SBF execution, account validation, CPIs, TFHE evaluation, randomness, or any production path. | None beyond a Rust toolchain. Warm: about one second for 379 named, filterable cases. |
-| Plan/ABI contracts | `cargo test -p zama-solana-runtime-tests --test plan_contracts` | SDK plan serialization and checked-in IDL/ABI contracts used by these tests have not drifted. | Program execution, account validation, CPIs, or cryptographic behavior. | None beyond a Rust toolchain. Warm: very fast. |
+| Batch/ABI contracts | `cargo test -p zama-solana-runtime-tests --test plan_contracts` | SDK batch serialization and checked-in IDL/ABI contracts used by these tests have not drifted. | Program execution, account validation, CPIs, or cryptographic behavior. | None beyond a Rust toolchain. Warm: very fast. |
 | Representative SBF operator admission | `bash scripts/check-zama-host-idl.sh && cargo test -p zama-solana-runtime-tests --test operator_mollusk_conformance` | The compiled `zama-host` admits representative operator shapes, binds operands, and emits the expected handles and events; a test-owned evaluator makes the resulting computation readable. | Exhaustive operator coverage, real TFHE, database/listener behavior, or the networked stack. | Rebuilds PoC SBF artifacts. Eleven warm tests run in about 0.05 seconds; a cold SBF build is materially slower. |
 | Real SBF host runtime | `bash scripts/check-zama-host-idl.sh && cargo test -p zama-solana-runtime-tests --test host_mollusk -- --nocapture` | `zama-host` SBF behavior through account state, inner CPIs, return data, and rejection paths under Mollusk. | A validator, off-chain listeners/workers, real TFHE, or the networked stack. | Rebuilds PoC SBF artifacts. Warm tests are fast; a cold SBF build is materially slower. |
 | Real SBF token runtime | `bash scripts/check-zama-host-idl.sh && cargo test -p zama-solana-runtime-tests --test token_mollusk -- --nocapture` | Instruction-first confidential-token flows through real host/token/SPL CPIs, with state transitions, events, settlement, and readable domain outcomes asserted under Mollusk. | A validator, relayer/coprocessor/KMS wiring, or real TFHE. | Same SBF prerequisite and cold-build cost as the host suite. |
@@ -119,7 +119,7 @@ files. It sits **on top of** the Mollusk ladder and the full vertical, and owns 
 composition can break (proofs vs live state, KMS round-trips, relayer seams, timing) — never what
 the lower layers already prove.
 
-Runner: `bun:test`, not vitest. The standing plan (#1656) names vitest, but these scenarios reuse
+Runner: `bun:test`, not vitest. The standing batch (#1656) names vitest, but these scenarios reuse
 `test-suite/fhevm/src/solana/*` orchestrators whose `layout.ts` is bun-native (`import.meta.dir`),
 and node-based vitest workers do not provide it; vitest remains the target if/when `layout.ts` is
 ported off bun APIs.

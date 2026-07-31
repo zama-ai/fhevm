@@ -159,7 +159,7 @@ pub fn wrap_usdc<'info>(ctx: Context<'info, WrapUsdc<'info>>, amount: u64) -> Re
     builder
         .add(total_supply, encrypted_amount, total_supply_output.output())
         .map_err(invalid_eval_plan)?;
-    let plan = builder.finish().map_err(invalid_eval_plan)?;
+    let batch = builder.finish().map_err(invalid_eval_plan)?;
     let compute_authority = fhe::ComputeAuthority::for_mint(
         &ctx.accounts.compute_signer,
         mint_key,
@@ -167,7 +167,7 @@ pub fn wrap_usdc<'info>(ctx: Context<'info, WrapUsdc<'info>>, amount: u64) -> Re
     )?;
     let total_supply_authority_bump = total_supply_authority_address(mint_key).1;
     let eval_accounts = fhe::EvalAccountSet::for_plan(
-        &plan,
+        &batch,
         [
             balance_output.account_info(),
             total_supply_output.account_info(),
@@ -202,7 +202,7 @@ pub fn wrap_usdc<'info>(ctx: Context<'info, WrapUsdc<'info>>, amount: u64) -> Re
                 .map(|account| account.to_account_info()),
         },
         accounts: &eval_accounts,
-        plan,
+        batch,
     })?;
     let new_balance_handle = balance_output.handle()?;
     let new_total_supply_handle = total_supply_output.handle()?;

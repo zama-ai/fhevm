@@ -169,7 +169,7 @@ pub fn join<'info>(
     };
     // The joined and transferred encrypted value accounts live in different ACL domains (the
     // batch vs the mint), so their PDAs are distinct by construction; the only
-    // alias in this frame is the joined encrypted value account as both operand and output on
+    // alias in this batch is the joined encrypted value account as both operand and output on
     // repeat joins, which is the standard same-slot update.
     fhe::eval_as_batch_authority(
         fhe::BatchAuthorityEval {

@@ -11,7 +11,7 @@ use anchor_lang::{AnchorDeserialize, Discriminator};
 pub use anchor_lang::event::EVENT_IX_TAG_LE;
 
 /// One zama-host instruction an off-chain consumer reconstructs state from:
-/// the `fhe_execute` step plan plus the three `EncryptedValue` ACL mutations.
+/// the `fhe_execute` batch plus the three `EncryptedValue` ACL mutations.
 /// Payloads are decoded through the generated `crate::instruction` structs and
 /// their `Discriminator` consts, so the fields are the handler arguments.
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -100,7 +100,7 @@ pub fn decode_instruction(
 
 /// Whether `instruction_data` carries the `fhe_execute` discriminator. Cheaper
 /// than [`decode_instruction`] for callers that only route on the instruction
-/// kind before deciding whether to decode the full step plan.
+/// kind before deciding whether to decode the full batch.
 pub fn is_fhe_execute_instruction(instruction_data: &[u8]) -> bool {
     instruction_data.starts_with(crate::instruction::FheExecute::DISCRIMINATOR)
 }

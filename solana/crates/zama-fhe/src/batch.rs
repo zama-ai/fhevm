@@ -27,12 +27,12 @@ pub struct Batch {
     pub(crate) args: FheExecuteArgs,
     /// Exact dynamic `remaining_accounts` order referenced by the `u16` indices
     /// inside `args`. Keep this coupled to `args`; `finish` validates every
-    /// index before constructing the plan.
+    /// index before constructing the batch.
     pub(crate) remaining_accounts: Vec<BatchAccountMeta>,
 }
 
 impl Batch {
-    /// Builds and validates an eval plan through a closure.
+    /// Builds and validates an batch through a closure.
     ///
     /// This keeps transient values scoped to one builder while removing the
     /// need for app code to call [`BatchBuilder::finish`] explicitly.
@@ -59,9 +59,9 @@ impl Batch {
 
     #[cfg(feature = "cpi")]
     /// Resolves unordered app-supplied accounts into the exact host
-    /// `remaining_accounts` order for this plan.
+    /// `remaining_accounts` order for this batch.
     ///
-    /// `dynamic_accounts` must contain only non-authority plan accounts such as
+    /// `dynamic_accounts` must contain only non-authority batch accounts such as
     /// persistent input ACLs, permission records, transient sessions, and writable
     /// persistent output ACL records. `output_authorities` must contain signer
     /// witnesses for persistent outputs whose app account is not the fixed CPI
@@ -105,7 +105,7 @@ impl Batch {
             .map(|account| account.pubkey)
     }
 
-    /// Subjects this plan newly grants through persistent outputs: every output
+    /// Subjects this batch newly grants through persistent outputs: every output
     /// subject on a create, and `output_subjects \ previous_subjects` on a
     /// update that replaces its audience. The host deny-list-checks each of
     /// these exactly like `allow_subjects`, so an app forwarding deny-record

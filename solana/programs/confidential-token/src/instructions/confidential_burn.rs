@@ -286,16 +286,16 @@ pub fn confidential_burn_from_value<'info>(
 
 /// Where a burn's amount comes from. The `ge -> sub -> select` debit, the created-public `burned` delta,
 /// and the total-supply decrement are identical for both arms; only how the amount operand enters the
-/// eval frame differs. Mirrors [`TransferAmountSource`].
+/// batch differs. Mirrors [`TransferAmountSource`].
 enum BurnAmountSource<'info> {
     /// EVM `FHE.fromExternal` parity: a coprocessor-attested fresh client-side encryption, verified
-    /// in-frame and transient-allowed for this eval (no persistent amount account).
+    /// in-batch and transient-allowed for this eval (no persistent amount account).
     Attested(zama_host::CoprocessorInputAttestation),
     /// EVM computed/received `euint64` parity: an existing on-chain `EncryptedValue` encrypted value account, spent
     /// as a read-only persistent operand at its current handle. It is never replaced and never
     /// consumed. The token spend gate (signing owner in the value's subject set) and euint64 type
     /// check run in the instruction handler before this reaches the eval builder; the host re-checks
-    /// the handle is current and that the mint's compute subject is allowed on the value, in-frame.
+    /// the handle is current and that the mint's compute subject is allowed on the value, in-batch.
     ExistingValue { amount_value: AccountInfo<'info> },
 }
 
@@ -420,7 +420,7 @@ fn execute_burn<'info>(
     let mut builder =
         zama_fhe::BatchBuilder::new(zama_fhe::BatchAppAuthority::new(token_account_key));
     let amount: zama_fhe::Uint64Handle = match &amount_source {
-        // fromExternal: the amount is a coprocessor-attested external input, verified in-frame and
+        // fromExternal: the amount is a coprocessor-attested external input, verified in-batch and
         // transient-allowed for this eval (no persistent amount handle / ACL account).
         BurnAmountSource::Attested(amount_attestation) => builder
             .verified_input(amount_attestation.clone())
@@ -465,12 +465,12 @@ fn execute_burn<'info>(
     builder
         .sub(total_supply, burned, total_supply_output.output())
         .map_err(invalid_eval_plan)?;
-    let plan = builder.finish().map_err(invalid_eval_plan)?;
+    let batch = builder.finish().map_err(invalid_eval_plan)?;
     let compute_authority =
         fhe::ComputeAuthority::for_mint(accounts.compute_signer, mint_key, compute_signer_bump)?;
     let total_supply_authority_bump = total_supply_authority_address(mint_key).1;
     // Persistent output accounts are the same for both arms; the existing-value arm adds the amount
-    // encrypted value account as a read-only persistent input operand the plan now requires.
+    // encrypted value account as a read-only persistent input operand the batch now requires.
     let mut dynamic_accounts = vec![
         balance_output.account_info(),
         burned_output.account_info(),
@@ -479,7 +479,7 @@ fn execute_burn<'info>(
     if let BurnAmountSource::ExistingValue { amount_value, .. } = &amount_source {
         // The amount encrypted value account can legitimately alias one of the output accounts (burning the entire
         // balance aliases the balance encrypted value account; re-burning a burned_amount aliases the burned output).
-        // The plan already merges those into one slot, so only add the amount when it is a distinct
+        // The batch already merges those into one slot, so only add the amount when it is a distinct
         // account — pushing a duplicate would trip eval account resolution (the #3238 aliasing class).
         if !dynamic_accounts
             .iter()
@@ -489,7 +489,7 @@ fn execute_burn<'info>(
         }
     }
     let eval_accounts = fhe::EvalAccountSet::for_plan(
-        &plan,
+        &batch,
         dynamic_accounts,
         [
             fhe::OutputAuthority::token_account(token_account)?,
@@ -513,7 +513,7 @@ fn execute_burn<'info>(
             hcu_trusted_app_record: accounts.hcu_trusted_app_record.clone(),
         },
         accounts: &eval_accounts,
-        plan,
+        batch,
     })?;
 
     Ok(BurnOutcome {

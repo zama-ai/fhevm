@@ -92,9 +92,9 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         return Ok(());
     }
 
-    // TRIVIAL_ENCRYPT_EVAL drives the SAME trivial-encryption through the eval-plan executor
+    // TRIVIAL_ENCRYPT_EVAL drives the SAME trivial-encryption through the eval-batch executor
     // (fhe_execute): a single TrivialEncrypt step with a persistent output ACL record. The host computes
-    // the result handle on-chain and the host-listener reconstructs the successful frame,
+    // the result handle on-chain and the host-listener reconstructs the successful batch,
     // exercising the #2755 eval path.
     if std::env::var("TRIVIAL_ENCRYPT_EVAL").is_ok() {
         trivial_encrypt_eval(&host, &payer, host_config)?;
@@ -115,13 +115,13 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         return Ok(());
     }
 
-    // FHE_EVAL_VERIFIED_INPUT drives the #1539 input flow in one fhe_execute: a Binary Add of a
-    // coprocessor-attested external input (FheExecuteOperand::VerifiedInput, re-verified in-frame via
+    // FHE_EXECUTE_VERIFIED_INPUT drives the #1539 input flow in one fhe_execute: a Binary Add of a
+    // coprocessor-attested external input (FheExecuteOperand::VerifiedInput, re-verified in-batch via
     // secp256k1 with no scratch PDA) and a public scalar, binding the result to a persistent output ACL
     // record under the attested domain. The attestation comes from the same relayer
     // input-proof the BIND_INPUT phase uses (BIND_* env); TE_ADD is the scalar addend (default 2);
     // TE_ALLOW makes the result publicly decryptable. Proves encrypt V -> +2 -> decrypt V+2.
-    if std::env::var("FHE_EVAL_VERIFIED_INPUT").is_ok() {
+    if std::env::var("FHE_EXECUTE_VERIFIED_INPUT").is_ok() {
         fhe_execute_verified_input_add(&host, &payer, host_config)?;
         return Ok(());
     }
@@ -164,64 +164,64 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         return Ok(());
     }
 
-    // FHE_EVAL_BINARY drives a single binary fhe_execute step. BINARY_OP names the op (Sub/Mul/…);
+    // FHE_EXECUTE_BINARY drives a single binary fhe_execute step. BINARY_OP names the op (Sub/Mul/…);
     // BINARY_A and BINARY_B are the u64 operands (defaults 10/5); BINARY_FHE_TYPE is the input
     // FHE type byte (default 5 = euint64). BINARY_B_SCALAR=1 passes rhs as a plaintext scalar.
     // Output FHE type is auto-derived: 0 (ebool) for comparison ops, else BINARY_FHE_TYPE.
     // BINARY_ALLOW marks the result publicly decryptable.
-    if std::env::var("FHE_EVAL_BINARY").is_ok() {
+    if std::env::var("FHE_EXECUTE_BINARY").is_ok() {
         fhe_execute_binary(&host, &payer, host_config)?;
         return Ok(());
     }
 
-    // FHE_EVAL_UNARY drives a single unary fhe_execute step. UNARY_OP names the op (Neg/Not/Cast);
+    // FHE_EXECUTE_UNARY drives a single unary fhe_execute step. UNARY_OP names the op (Neg/Not/Cast);
     // UNARY_A is the u64 operand (default 42); UNARY_IN_FHE_TYPE is the input type (default 2 =
     // euint8); UNARY_OUT_FHE_TYPE is the output type (defaults to UNARY_IN_FHE_TYPE). UNARY_ALLOW
     // marks the result publicly decryptable.
-    if std::env::var("FHE_EVAL_UNARY").is_ok() {
+    if std::env::var("FHE_EXECUTE_UNARY").is_ok() {
         fhe_execute_unary(&host, &payer, host_config)?;
         return Ok(());
     }
 
-    // FHE_EVAL_TERNARY drives a ternary IfThenElse fhe_execute step. TERNARY_CTRL (0 or 1, default 1)
+    // FHE_EXECUTE_TERNARY drives a ternary IfThenElse fhe_execute step. TERNARY_CTRL (0 or 1, default 1)
     // selects the branch; TERNARY_TRUE/TERNARY_FALSE are the euint64 branch values (defaults 42/99);
     // TERNARY_FHE_TYPE selects the branch FHE type (default 5). TERNARY_ALLOW marks the result
     // publicly decryptable.
-    if std::env::var("FHE_EVAL_TERNARY").is_ok() {
+    if std::env::var("FHE_EXECUTE_TERNARY").is_ok() {
         fhe_execute_ternary(&host, &payer, host_config)?;
         return Ok(());
     }
 
-    // FHE_EVAL_RAND_BOUNDED drives a bounded random fhe_execute step. RAND_UPPER is the exclusive
+    // FHE_EXECUTE_RAND_BOUNDED drives a bounded random fhe_execute step. RAND_UPPER is the exclusive
     // u64 upper bound (default 100); RAND_FHE_TYPE is the output FHE type (default 5 = euint64).
     // RAND_ALLOW marks the result publicly decryptable.
-    if std::env::var("FHE_EVAL_RAND_BOUNDED").is_ok() {
+    if std::env::var("FHE_EXECUTE_RAND_BOUNDED").is_ok() {
         fhe_execute_rand_bounded(&host, &payer, host_config)?;
         return Ok(());
     }
 
-    // FHE_EVAL_SUM drives a multi-step fhe_execute: two TrivialEncrypt steps (AllowedLocal) followed
+    // FHE_EXECUTE_SUM drives a multi-step fhe_execute: two TrivialEncrypt steps (AllowedLocal) followed
     // by a Sum step (AllowedPersistent). SUM_A/SUM_B select the euint64 addends (defaults 10/20);
     // SUM_ALLOW makes the result publicly decryptable. Expected cleartext: SUM_A + SUM_B.
-    if std::env::var("FHE_EVAL_SUM").is_ok() {
+    if std::env::var("FHE_EXECUTE_SUM").is_ok() {
         fhe_execute_sum(&host, &payer, host_config)?;
         return Ok(());
     }
 
-    // FHE_EVAL_IS_IN drives a multi-step fhe_execute: TrivialEncrypt steps for value and set elements
+    // FHE_EXECUTE_IS_IN drives a multi-step fhe_execute: TrivialEncrypt steps for value and set elements
     // (all AllowedLocal) followed by an IsIn step (AllowedPersistent → ebool). ISIN_VALUE selects the
     // euint64 value (default 42); the set is hardcoded as [10, 42, 100]. ISIN_ALLOW makes the
     // result publicly decryptable. Expected cleartext: 1 (true) when ISIN_VALUE is in the set.
-    if std::env::var("FHE_EVAL_IS_IN").is_ok() {
+    if std::env::var("FHE_EXECUTE_IS_IN").is_ok() {
         fhe_execute_is_in(&host, &payer, host_config)?;
         return Ok(());
     }
 
-    // FHE_EVAL_MUL_DIV drives a multi-step fhe_execute: TrivialEncrypt(factor1, AllowedLocal) then
+    // FHE_EXECUTE_MUL_DIV drives a multi-step fhe_execute: TrivialEncrypt(factor1, AllowedLocal) then
     // MulDiv(factor1, scalar_factor2, divisor, AllowedPersistent). MULDIV_A/MULDIV_B/MULDIV_D select
     // the euint64 operands (defaults 6/7/3); MULDIV_ALLOW makes the result publicly decryptable.
     // Expected cleartext: MULDIV_A * MULDIV_B / MULDIV_D (integer division).
-    if std::env::var("FHE_EVAL_MUL_DIV").is_ok() {
+    if std::env::var("FHE_EXECUTE_MUL_DIV").is_ok() {
         fhe_execute_mul_div(&host, &payer, host_config)?;
         return Ok(());
     }
@@ -487,7 +487,7 @@ fn existing_value_account_state(
     }
 }
 
-/// Builds the frame's interned 32-byte constant dictionary while a flow assembles its steps.
+/// Builds the batch's interned 32-byte constant dictionary while a flow assembles its steps.
 /// Interning deduplicates: repeated constants share one entry.
 #[derive(Default)]
 struct BatchDictionary(Vec<[u8; 32]>);
@@ -495,9 +495,9 @@ struct BatchDictionary(Vec<[u8; 32]>);
 impl BatchDictionary {
     fn intern(&mut self, bytes: [u8; 32]) -> u8 {
         if let Some(index) = self.0.iter().position(|entry| *entry == bytes) {
-            return u8::try_from(index).expect("frame dictionary fits u8");
+            return u8::try_from(index).expect("batch dictionary fits u8");
         }
-        let index = u8::try_from(self.0.len()).expect("frame dictionary fits u8");
+        let index = u8::try_from(self.0.len()).expect("batch dictionary fits u8");
         self.0.push(bytes);
         index
     }
@@ -776,11 +776,11 @@ fn trivial_encrypt_eval_with_label(
     })
 }
 
-/// Eval-based compute phase: drives a single-step fhe_execute plan (one TrivialEncrypt step with a
+/// Eval-based compute phase: drives a single-step fhe_execute batch (one TrivialEncrypt step with a
 /// persistent output ACL record). The host runs the eval executor, computes the result handle on-chain,
 /// creates the persistent output ACL record
 /// (passed as the sole remaining_account). The live host-listener reconstructs the successful
-/// frame for the tfhe-worker to materialize. TE_VALUE selects the euint64 plaintext; TE_ALLOW
+/// batch for the tfhe-worker to materialize. TE_VALUE selects the euint64 plaintext; TE_ALLOW
 /// marks it publicly decryptable afterward.
 fn trivial_encrypt_eval(
     host: &Program<Rc<Keypair>>,
@@ -1088,12 +1088,12 @@ fn historical_update_step(
 }
 
 /// Input flow phase (#1539): one fhe_execute that adds a public scalar to a coprocessor-attested external
-/// input and binds the result to a persistent output ACL record. The verified input is resolved in-frame
+/// input and binds the result to a persistent output ACL record. The verified input is resolved in-batch
 /// (FheExecuteOperand::VerifiedInput) — its attestation is re-verified on-chain via secp256k1 with no
 /// scratch PDA — and the persistent output is pinned to the attested domain (the input's domain;
 /// the on-chain binding rejects any other). The attestation is supplied via the same BIND_* env vars
 /// the standalone input-verify phase uses; TE_ADD is the scalar addend (default 2). The host-listener
-/// reconstructs the successful frame so the tfhe-worker materializes (input + TE_ADD); TE_ALLOW
+/// reconstructs the successful batch so the tfhe-worker materializes (input + TE_ADD); TE_ALLOW
 /// then makes the result publicly decryptable.
 fn fhe_execute_verified_input_add(
     host: &Program<Rc<Keypair>>,
@@ -1371,7 +1371,7 @@ fn consume_wrap(
 
     let mint_state: confidential_token::ConfidentialMint = token.account(mint)?;
     let total_supply_value = mint_state.total_supply_encrypted_value;
-    // The wrap amount is trivial-encrypted as a transient inside wrap_usdc's eval frame.
+    // The wrap amount is trivial-encrypted as a transient inside wrap_usdc's batch.
     let (zama_evt, _) = Pubkey::find_program_address(&[EVENT_AUTHORITY_SEED], &zama_host::ID);
     let (token_evt, _) =
         Pubkey::find_program_address(&[EVENT_AUTHORITY_SEED], &confidential_token::ID);
@@ -1395,7 +1395,7 @@ fn consume_wrap(
     }
 
     // wrap_usdc runs several FHE ops in one instruction and exhausts the default 32KB SBF
-    // heap; request the max heap frame (256KB) and raise the compute-unit limit.
+    // heap; request the max heap batch (256KB) and raise the compute-unit limit.
     let cb_prog = Pubkey::from_str("ComputeBudget111111111111111111111111111111")?;
     let mut heap_data = vec![1u8];
     heap_data.extend_from_slice(&(256u32 * 1024).to_le_bytes());
@@ -1517,7 +1517,7 @@ fn consume_burn(
 
     // 1. fromExternal burn amount: a coprocessor-attested external input (BIND_* env from the
     // relayer input-proof), bound to (user = owner, contract = compute_signer PDA). confidential_burn
-    // re-verifies the EIP-712 attestation in-frame and transient-allows it for the burn eval — no
+    // re-verifies the EIP-712 attestation in-batch and transient-allows it for the burn eval — no
     // persistent amount ACL, no create_random_amount. The attested handle must be a euint64.
     let input_handle: [u8; 32] = hexdec(&std::env::var("BIND_HANDLE")?)
         .try_into()
@@ -1556,7 +1556,7 @@ fn consume_burn(
         confidential_token::burned_amount_label(),
     );
 
-    // 3. confidential_burn — five FHE ops in one instruction; request the max heap frame + a
+    // 3. confidential_burn — five FHE ops in one instruction; request the max heap batch + a
     // raised CU limit like wrap. SlotHashes entropy is only populated in real execution, so skip
     // preflight unless BURN_NO_PREFLIGHT forces an on-chain log capture.
     let cb_prog = Pubkey::from_str("ComputeBudget111111111111111111111111111111")?;

@@ -105,7 +105,7 @@ fn rand_seed_is_distinct_across_every_uniqueness_axis() {
     // Sequential update of the same account: previous_handle advances, so the anchor differs.
     let replaced_anchor: Vec<u8> = [anchor[..32].try_into().unwrap(), [8; 32]].concat();
     assert_ne!(base, seed(subject, &replaced_anchor, 0, [9; 32]));
-    // Two rand steps in one frame differ by op_index.
+    // Two rand steps in one batch differ by op_index.
     assert_ne!(base, seed(subject, &anchor, 1, [9; 32]));
     // Cross-slot: slot entropy differs.
     assert_ne!(base, seed(subject, &anchor, 0, [10; 32]));

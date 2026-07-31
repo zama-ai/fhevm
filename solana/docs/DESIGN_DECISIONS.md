@@ -86,7 +86,7 @@ Status: adopted
 Context:
 
 EVM logs and contract state share one execution model. Solana log delivery is provider-dependent,
-plain `emit!` logs can be truncated, and Anchor `emit_cpi!` adds nested CPI frames.
+plain `emit!` logs can be truncated, and Anchor `emit_cpi!` adds nested CPI batches.
 
 Decision:
 
@@ -97,7 +97,7 @@ material, delegation, and replay witnesses.
 Rationale:
 
 Decrypt authorization cannot depend on whether a provider preserved a log line. It also cannot
-require every production path to spend a self-CPI frame solely for observability.
+require every production path to spend a self-CPI batch solely for observability.
 
 Consequences:
 
@@ -216,13 +216,13 @@ Decision:
 Inputs enter compute through the `FheExecuteOperand::VerifiedInput` operand consumed inside `fhe_execute`
 — the Solana `FHE.fromExternal` analog. The operand carries the coprocessor's EIP-712
 `CiphertextVerification` attestation; the shared `verify_input_attestation` verifier
-(`zama_host::instructions::input_verification`) re-verifies it **in-frame** by recovering the EVM
+(`zama_host::instructions::input_verification`) re-verifies it **in-batch** by recovering the EVM
 coprocessor signer via `secp256k1_recover` and threshold-checking it against the configured signer
 set, and asserts the attested `contract_chain_id` equals the host chain id (EVM's
 `contractChainId == block.chainid`). On success the input is *transient-allowed for that eval only* —
 there is no persistent `AclRecord` for the input, mirroring EVM `FHEVMExecutor.verifyInput` (verify ≠
 allow). Solana has no transient-storage analog (DD-008); the transient allow lives only for the
-duration of the frame.
+duration of the batch.
 
 **Binding model (the `contractAddress` analog).** EVM binds an attestation to a `contractAddress`.
 The Solana equivalent is the consuming program's **compute-authority PDA** — a PDA the program signs
@@ -252,7 +252,7 @@ Why:
 
 Reusing the coprocessor attestation makes Solana input trust identical to EVM input trust — one
 trust root, recovered and threshold-checked on-chain — instead of a parallel verifier-set subsystem
-that could drift. Consuming it as an in-frame eval operand (rather than a standalone verify + persistent
+that could drift. Consuming it as an in-batch eval operand (rather than a standalone verify + persistent
 receipt) restores EVM parity (verify ≠ allow) and removes a persistent ACL account per input — one of
 the "3 ACLs" that inflated per-tx cost — so it is also a cost win.
 
@@ -267,7 +267,7 @@ What changed:
   (`attestation.contract_address == compute_subject`, the msg.sender analog).
 - The `verify_input_and_bind` and standalone `mock_input_verified_and_bind` instructions were removed;
   the shared verifier `zama_host::eip712::verify_coprocessor_input` (via
-  `instructions::input_verification::verify_input_attestation`) is invoked in-frame by `fhe_execute`.
+  `instructions::input_verification::verify_input_attestation`) is invoked in-batch by `fhe_execute`.
 
 Replaced design (stub): the earlier `verify_input_and_bind` bound inputs with a native Ed25519
 "input verifier set" signing a `SolanaInputBindIntent`. Reversed because it was a Solana-only trust
@@ -485,7 +485,7 @@ Decision:
 The host `poc` feature, its admin controls, and the zero-entropy fallback are removed. Handle creation
 always reads the previous bank hash and fails with `PreviousBankHashUnavailable` if the runtime does
 not provide one. Mollusk and LiteSVM tests seed `Clock` and `SlotHashes` as a validator would. The real
-input path remains the in-frame secp256k1 attestation verify (DD-007).
+input path remains the in-batch secp256k1 attestation verify (DD-007).
 
 Rationale:
 
@@ -564,7 +564,7 @@ binary/ternary/trivial/unary/cast; its only counter is the global `counterRand` 
 ```text
 case                                             prevented by
 different slot                                   previous_bank_hash (+ unix_timestamp) block entropy
-same slot, same eval frame, different steps      op_index (+ the FheExecuteDuplicateHandle guard)
+same slot, same batch, different steps      op_index (+ the FheExecuteDuplicateHandle guard)
 same slot, different txs, same op/operands/ctx   Solana write-lock serializes the two mut writes to
                                                  the one EncryptedValue PDA (single-writer-per-value,
                                                  DD-036); a update must match previous_handle, so
@@ -620,7 +620,7 @@ public-receivable token should evaluate the staged inbound-credit profile (pendi
 recipient timing) or otherwise predeclare/lock the recipient's next balance transition so the
 inbound-write surface is bounded.
 
-## DD-017: Role-Aware `fhe_execute` And Per-Op Bind Instructions Update The RFC-024 execute_frame Frame
+## DD-017: Role-Aware `fhe_execute` And Per-Op Bind Instructions Update The RFC-024 execute_frame Batch
 
 Status: adopted
 
@@ -634,7 +634,7 @@ Decision:
 
 The host exposes per-handle-class binding instructions — `fhe_binary_op_and_bind_output`,
 `fhe_ternary_op_and_bind_output`, `trivial_encrypt_and_bind`, `fhe_rand_and_bind`,
-`fhe_rand_bounded_and_bind` — plus one batched eval instruction for composed plans: `fhe_execute`. The
+`fhe_rand_bounded_and_bind` — plus one batched eval instruction for composed batches: `fhe_execute`. The
 eval instruction accepts mixed binary/ternary, trivial-encrypt, rand, and verified-input steps with
 instruction-local transients. It is the practical successor to `execute_frame`. (Input creation is not a
 separate instruction: external inputs enter through the `fhe_execute` `VerifiedInput` operand, DD-007.) Every persistent-output path takes a signer witness: either the fixed
@@ -649,12 +649,12 @@ useful ergonomic idea — symbolic previous results inside one instruction — i
 builder hides raw producer indices and `remaining_accounts` indices from app code, returns typed
 `Encrypted<T>` values for intermediate results, derives persistent output nonce keys / ACL record PDAs
 from `EncryptedValueKey`, accepts ACL subjects directly, and returns an opaque `Batch`.
-The `cpi` feature can resolve that plan through a pubkey-keyed account resolver, so app code does
+The `cpi` feature can resolve that batch through a pubkey-keyed account resolver, so app code does
 not hand-maintain ordered host accounts. Output authority, validated subject lists, overflow permissions,
 material commitments, and public-decrypt policy remain enforced by the current host ABI.
 
-`fhe_execute` also owns its replay transport boundary. Frames with at most eight replay events use
-Anchor event CPI for compatibility with existing event consumers. Larger frames emit the same replay
+`fhe_execute` also owns its replay transport boundary. Batches with at most eight replay events use
+Anchor event CPI for compatibility with existing event consumers. Larger batches emit the same replay
 payloads through Anchor `Program data` logs to avoid self-CPI heap pressure. Persistent ACL metadata
 events remain log-only, and the listener rejects transactions that mix host CPI replay events with
 host log replay events so DB log ordering stays unambiguous.
@@ -672,8 +672,8 @@ Consequences:
 
 This updates the older RFC-024 `execute_frame` sketch and its "app_account_authority removed"
 note. Multi-account atomic effects (e.g. ERC7984 transfer crediting both sender and receiver) are
-expressed as one eval frame with per-output authority witnesses rather than one frame with
-`authorized_app_accounts[]`. Future multi-app eval extensions should keep that signer-witness model
+expressed as one batch with per-output authority witnesses rather than a batch carrying an
+unsigned `authorized_app_accounts[]`. Future multi-app eval extensions should keep that signer-witness model
 and should not resurrect unsigned `authorized_app_accounts[]`.
 
 ## DD-018: Transfer-And-Call Refund Prepare/Finalize (replaced)
@@ -700,12 +700,12 @@ plain transfer create five persistent records, including two pure scratch record
 
 Decision:
 
-The token transfer path now uses one host `fhe_execute` frame instead of the older scratch-account
+The token transfer path now uses one host `fhe_execute` batch instead of the older scratch-account
 sequence. The eval emits `ge` and debit-candidate `sub` as instruction-local transient handles,
 consumes them in a ternary `if_then_else`, persists the sender's new balance plus the transferred
-amount, and then credits the recipient in the same frame using a per-output recipient authority
+amount, and then credits the recipient in the same batch using a per-output recipient authority
 witness. The helper crate exposes typed persistent handles, scalar helpers, `EncryptedValueKey`,
-`BatchBuilder`, and plan-driven CPI resolution, so app code assembles this shape
+`BatchBuilder`, and batch-driven CPI resolution, so app code assembles this shape
 without hand-maintaining raw producer indices, raw account indices, signer flags, writable flags,
 nonce keys, ACL record addresses, or repeated output type bytes for common operations. A successful
 direct transfer therefore binds exactly three persistent ACL records:
@@ -727,7 +727,7 @@ avoids that rent cost without adding a close/refund path, while retaining the va
 
 Consequences:
 
-Indexers replay transfer math from the `fhe_execute` plan and Yellowstone-provided entropy; there is
+Indexers replay transfer math from the `fhe_execute` batch and Yellowstone-provided entropy; there is
 intentionally no ACL permission record for decrypting the scratch success/debit values after the
 transaction. The burn flow still uses its own persistent scratch records today and should be considered
 separately if its rent profile becomes a product issue.
@@ -846,11 +846,11 @@ Decision:
 
 `fhe_execute` is the composed-eval executor with steps **Binary / Ternary / TrivialEncrypt / Rand**.
 External encrypted inputs are not a step type: they enter as the `FheExecuteOperand::VerifiedInput`
-operand of a step and are verified in-frame (DD-007). Intermediate results can be `Output::transient()`
+operand of a step and are verified in-batch (DD-007). Intermediate results can be `Output::transient()`
 (instruction-local, **no persistent ACL record / no `AclAllowedEvent`**) and consumed by later steps; only
 `Output::persistent()` results bind an `EncryptedValue` account and its `current_handle`. The app-facing `zama-fhe` crate
 (`solana/crates/zama-fhe`) exposes a typed `BatchBuilder` DSL returning `Encrypted<T>` for transients,
-hiding raw producer/account indices, with a `cpi`-feature account resolver for plan execution.
+hiding raw producer/account indices, with a `cpi`-feature account resolver for batch execution.
 
 Why:
 
@@ -1219,13 +1219,13 @@ including inner/CPI instructions, since confidential-token and other app program
 `previous_handle`/`previous_subjects` args that are self-describing: verified against account state
 on-chain (redundant there) specifically so every transaction is independently interpretable off-chain,
 letting indexers reconstruct MMR leaves statelessly from instruction data alone, in replay order,
-without reading account state first. Ordinary compute facts are reconstructed from the plan and
+without reading account state first. Ordinary compute facts are reconstructed from the batch and
 Yellowstone sysvars; only produced-public output handles use the narrow lifecycle batch in DD-038.
 
 Rationale:
 
 `DESIGN_DECISIONS.md` (DD-004 context) already notes that plain `emit!` logs can be truncated and
-Anchor `emit_cpi!` adds nested CPI frames; avoiding events for a lifecycle that must survive CPI and be
+Anchor `emit_cpi!` adds nested CPI batches; avoiding events for a lifecycle that must survive CPI and be
 replayed byte-for-byte from cold RPC history (the solana-proof-service recovers from
 `getSignaturesForAddress`/`getTransaction` alone, see DD-035) sidesteps both concerns for this
 particular subsystem. No further code-comment rationale beyond this was found for the CPI-depth angle
@@ -1432,16 +1432,16 @@ Status: replaced by DD-038
 Context:
 
 DD-033 kept compute-step (`fhe_execute`) events while making the ACL lifecycle event-free. Those
-compute events used a size-based transport switch: `emit_cpi!` for frames of `≤ MAX_CPI_EVAL_EVENTS`
-(8) events, falling back to plain `emit!` logs for larger frames (the self-CPI frames would otherwise
+compute events used a size-based transport switch: `emit_cpi!` for batches of `≤ MAX_CPI_EVAL_EVENTS`
+(8) events, falling back to plain `emit!` logs for larger batches (the self-CPI batches would otherwise
 overflow the 32KiB bump heap). Two consumers exist: the host-listener indexer and the standalone MMR
 proof service (DD-035).
 
 Decision:
 
 Delete the `emit!` log-transport half. `fhe_execute` events are emitted **only** via `emit_cpi!`, and a
-frame with more than `MAX_CPI_EVAL_EVENTS` events carries **no** on-chain event at all. To keep this
-safe, a created-public (`make_public`, DD-036) persistent output is **rejected at write time** if its frame
+batch with more than `MAX_CPI_EVAL_EVENTS` events carries **no** on-chain event at all. To keep this
+safe, a created-public (`make_public`, DD-036) persistent output is **rejected at write time** if its batch
 is too large for CPI transport (`ZamaHostError::FheExecuteCreatedPublicFrameTooLarge`,
 `assert_created_public_frame_transportable`), because a created-public handle is derived from block entropy
 (DD-015) and lives in no instruction argument, so its `emit_cpi!` event is the only way an off-chain
@@ -1454,9 +1454,9 @@ transitional indexing ABI until Carbon/Geyser indexing fully owns created-public
 Rationale:
 
 No consumer reads `emit!` logs: the proof service / host-listener path reads only inner-instruction `emit_cpi!`
-results, and a `> 8`-step created-public frame already failed closed (its handle was unresolvable). So
+results, and a `> 8`-step created-public batch already failed closed (its handle was unresolvable). So
 the log fallback was dead weight that also hid a latent stranding case; deleting it and adding the
-fail-closed frame guard turns "silently unrecoverable later" into "rejected now." Non-created-public
+fail-closed batch guard turns "silently unrecoverable later" into "rejected now." Non-created-public
 persistent handles are unaffected — they reconstruct from the `fhe_execute` persistent-output arguments and
 need no event. `emit_cpi!` cannot yet be removed entirely: `solana-proof-service` still resolves
 created-public handles from the op-event (block entropy is not recoverable from instruction args alone),
@@ -1468,7 +1468,7 @@ Consequences:
 - `event_budget.rs` loses the log-byte budget machinery; it keeps `MAX_CPI_EVAL_EVENTS` (now a hard
   cap, not a transport switch), `eval_event_capacity`, and `should_emit_eval_events_as_cpi`, and gains
   `assert_created_public_frame_transportable`.
-- `event_transport.rs` emits `emit_cpi!` only; oversized frames return without emitting.
+- `event_transport.rs` emits `emit_cpi!` only; oversized batches return without emitting.
 - The `FheExecuteEventLogBudgetExceeded` error was renamed in place to `FheExecuteCreatedPublicFrameTooLarge`
   (same discriminant; no error-code shift). The variant was later deleted with the rest of the
   retired guard (fhevm-internal#1859 §3-D2).
@@ -1483,16 +1483,16 @@ Status: adopted
 
 Ordinary `fhe_execute` computation facts remain reconstructed from instruction data plus Yellowstone
 sysvars. The host no longer produces the general per-operation event stream or its eight-event
-transport guard. Instead, a frame with one or more `make_public` persistent outputs emits exactly one
+transport guard. Instead, a batch with one or more `make_public` persistent outputs emits exactly one
 versioned Anchor self-CPI event after successful execution. Its ordered records contain only the
 zero-based step index, the host-owned `EncryptedValue` account, and the host-derived output handle;
-a frame with no produced public output emits no lifecycle event.
+a batch with no produced public output emits no lifecycle event.
 
 This narrow batch exists because block-entropy output handles are absent from instruction arguments.
-At the maximum `MAX_FHE_BATCH_OPS` frame (32), the records serialize to one 2,133-byte CPI
+At the maximum `MAX_FHE_BATCH_OPS` batch (32), the records serialize to one 2,133-byte CPI
 instruction — far below the 10,240-byte CPI instruction-data cap — avoiding the old
-one-CPI-per-step heap growth. (Execution, not the batch, bounds the all-created-public frame shape:
-the fixed 32KB Anchor bump heap fits 20 persistent creates per frame, measured and pinned by
+one-CPI-per-step heap growth. (Execution, not the batch, bounds the all-created-public batch shape:
+the fixed 32KB Anchor bump heap fits 20 persistent creates per batch, measured and pinned by
 `mollusk_fhe_execute_created_public_heap_boundary`.) The event is unconditional when optional
 `emit-events` features are disabled. Consumers must still validate the host program, its canonical
 event-authority PDA, transaction success, record ordering, and one-to-one agreement with persistent
@@ -1503,38 +1503,38 @@ event-authority PDA, transaction success, record ordering, and one-to-one agreem
 Status: adopted
 
 The per-slot HCU block cap keys its meter and trust-registry PDAs (`["hcu-block-meter", subject]`,
-`["hcu-trusted", subject]`) on the frame's `compute_subject` — the mandatory signed caller identity
+`["hcu-trusted", subject]`) on the batch's `compute_subject` — the mandatory signed caller identity
 already used for persistent-input ACL admission (the `msg.sender` analog). The earlier design metered a
 dedicated `hcu_authority` signer supplied alongside `compute_subject`. That extra account bound the
-meter to nothing the frame otherwise required: a direct caller could hand a fresh `hcu_authority`
+meter to nothing the batch otherwise required: a direct caller could hand a fresh `hcu_authority`
 keypair on every call and receive a fresh per-slot meter each time, so any finite
 `hcu_block_cap_per_app` was bypassable by signer rotation. The gap was dormant only because
 `initialize_host_config` ships the cap at `u64::MAX` (unrestricted), which short-circuits before the
 meter is consulted.
 
-Metering the `compute_subject` closes the rotation bypass wherever the frame binds that identity to
+Metering the `compute_subject` closes the rotation bypass wherever the batch binds that identity to
 something the caller cannot freely re-pick:
 
 - The confidential-token program: `compute_subject` is the mint's `["fhe-compute", mint]` PDA, signed
   only via the program's CPI seeds, so a caller cannot swap it for a fresh key — the per-mint meter is
   unforgeable.
-- Any frame consuming a persistent or verified input: the subject must be an allowed member of the input
+- Any batch consuming a persistent or verified input: the subject must be an allowed member of the input
   encrypted value account's ACL (persistent), or match the attestation's bound contract (verified), so substituting an
   unrelated key loses input access. No other account the caller controls (`payer`,
   `app_account_authority`, output authorities) yields a fresh meter.
 
-Metering the `compute_subject` does NOT, by itself, constrain a **persist-nothing frame** — `Rand` /
+Metering the `compute_subject` does NOT, by itself, constrain a **persist-nothing batch** — `Rand` /
 `TrivialEncrypt` / scalar-only work with a transient (non-persistent) output and no verified input —
 submitted by a direct caller: there `compute_subject` is an unconstrained signer, so such a caller
 could still rotate it for a fresh per-slot meter. The value-less part of that residual case
 (fhevm-internal#1744) is now closed: when `hcu_block_cap_per_app` is finite (`!= u64::MAX`),
-`fhe_execute` preflight rejects any frame that binds no `AllowedPersistent` operand, no `VerifiedInput`
-operand, and no `AllowedPersistent` output (`FheExecuteUnanchoredUnderBlockCap`). Such a frame persists
-nothing and verifies nothing — `compute_subject` is a free variable and the frame is also value-less
+`fhe_execute` preflight rejects any batch that binds no `AllowedPersistent` operand, no `VerifiedInput`
+operand, and no `AllowedPersistent` output (`FheExecuteUnanchoredUnderBlockCap`). Such a batch persists
+nothing and verifies nothing — `compute_subject` is a free variable and the batch is also value-less
 (its transient outputs create no ACL leaf and are undecryptable) — so nothing legitimate is
 forbidden. Under the ship default (`u64::MAX`) the check short-circuits, so behavior is unchanged
 where no finite cap is deployed. This never affected the token program, whose compute subject is
-always the mint PDA and whose frames always bind persistent balance inputs.
+always the mint PDA and whose batches always bind persistent balance inputs.
 
 This is #1744's Option 1 broadened by a persistent-output allowance to preserve the legitimate
 trivial-encrypt/`Rand` -> persistent-output bootstrap/mint path. That allowance is not a full close: a
@@ -1543,8 +1543,8 @@ persistent output does NOT pin `compute_subject` (output binding authorizes agai
 throwaway output encrypted value account and get a fresh per-slot meter each time. That vector remains open but is
 now rent-bounded — each rotation costs ~one `HcuBlockMeter` PDA rent rather than being free —
 whereas the persist-nothing rotation was free. Closing it fully requires a host-registered app
-identity an input-free frame must present to be metered (#1708 Option B / #1744 Option 2), still
-deferred as speculative until input-free frames become a real metered workload.
+identity an input-free batch must present to be metered (#1708 Option B / #1744 Option 2), still
+deferred as speculative until input-free batches become a real metered workload.
 
 `hcu_authority` is removed everywhere: the host `fhe_execute` account list (an intended ABI break,
 resynced in the host-listener IDL), the `zama-fhe` CPI account struct, the confidential-token
@@ -1890,32 +1890,32 @@ split into exactly two regimes, mirroring `FHEVMExecutor`:
    an identical computation derives the identical handle, which is the same value by construction
    (EVM's exact behavior; a second party can only reproduce a result whose inputs it was
    independently authorized on, and the DAG is public in instruction data regardless).
-2. **Rand / rand-bounded seeds** are compulsorily fresh: `H(domain, compute_subject, the frame's
+2. **Rand / rand-bounded seeds** are compulsorily fresh: `H(domain, compute_subject, the batch's
    persistent-write anchor, op_index, program_id, chain_id, previous_bank_hash, unix_timestamp)`.
    The persistent-write anchor is every persistent output's live `(account key, create/update tag,
    current_handle, leaf_count)` state in wire order. `leaf_count` is read by the host, not declared
    by the caller, and advances whenever an outgoing handle is sealed. Therefore an account that
    cycles back to an earlier content-addressed handle still produces a new seed. The host emits the
    resolved random seeds through a signed event-CPI batch so the listener does not need caller
-   hints or historical account reads. A frame containing a rand step must therefore
+   hints or historical account reads. A batch containing a rand step must therefore
    declare at least one persistent output (preflight `FheExecuteRandRequiresPersistentOutput`); the
    excluded all-transient class is provably useless — no ACL record, no decrypt path, no
    `make_public`, so its randomness is unobservable by everyone including the author.
 
-`context_id` is deleted from `FheExecuteArgs` (−32 B per frame), `EvalContextId` from the SDK, and
+`context_id` is deleted from `FheExecuteArgs` (−32 B per batch), `EvalContextId` from the SDK, and
 `transfer_eval_context` from the confidential token. Its two jobs are covered better: handle
 domain separation was never needed for deterministic ops (content addressing), and rand freshness
-was only caller-supplied *advice* (two frames sharing a `context_id` in one slot derived identical
+was only caller-supplied *advice* (two batches sharing a `context_id` in one slot derived identical
 rand seeds), where the anchor is *enforced*.
 
 Load-bearing invariants (must survive refactors):
 - Every declared persistent output is always written, and duplicate persistent-output accounts within a
-  frame are rejected (`EvalAccountTable::claim_persistent_output`) — these make the anchor a consumed
+  batch are rejected (`EvalAccountTable::claim_persistent_output`) — these make the anchor a consumed
   ticket.
 - Sequential writes to one account advance `leaf_count`, even if the current handle and subjects
-  later return to earlier values; a reverted frame does not advance it or emit a usable seed.
-- No seed-steering: the preimage is fully determined by the caller's own signed frame + slot
-  context; front-running the pinned handle makes the frame fail loudly, never compute on an
+  later return to earlier values; a reverted batch does not advance it or emit a usable seed.
+- No seed-steering: the preimage is fully determined by the caller's own signed batch + slot
+  context; front-running the pinned handle makes the batch fail loudly, never compute on an
   attacker-chosen seed.
 - **Standing invariant**: no close/expiry/reopen path exists for `EncryptedValue` (the lifecycle
   is deliberately sealed). If one is ever added (#1705, #1710), close-then-recreate can reset the

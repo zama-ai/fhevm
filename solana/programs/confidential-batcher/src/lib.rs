@@ -138,7 +138,7 @@ pub mod confidential_batcher {
     }
 
     /// Claims a user's confidential payout from a settled batch: one MulDiv
-    /// eval frame — the exact proportional floor
+    /// batch — the exact proportional floor
     /// `encrypted(joined) x payout_received / total_joined` — then a
     /// confidential transfer of the resulting handle to the user's payout
     /// account. Permissionless pull — anyone can trigger a user's claim.

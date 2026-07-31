@@ -121,7 +121,7 @@ pub(crate) fn lower_output(
     }
 }
 
-/// Interns a 32-byte constant into the frame dictionary, reusing an existing entry byte-for-byte.
+/// Interns a 32-byte constant into the batch dictionary, reusing an existing entry byte-for-byte.
 fn dictionary_index(dictionary: &mut Vec<[u8; 32]>, bytes: [u8; 32]) -> Result<u8> {
     if let Some(index) = dictionary.iter().position(|entry| *entry == bytes) {
         return u8::try_from(index).map_err(|_| BatchBuildError::TooManyDictionaryEntries);

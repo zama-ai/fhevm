@@ -100,14 +100,14 @@ fn create_random_amount_inner<'info>(
             .rand_u64(amount_output.output())
             .map_err(invalid_eval_plan)?,
     };
-    let plan = builder.finish().map_err(invalid_eval_plan)?;
+    let batch = builder.finish().map_err(invalid_eval_plan)?;
     let compute_authority = fhe::ComputeAuthority::for_mint(
         &ctx.accounts.compute_signer,
         mint_key,
         ctx.bumps.compute_signer,
     )?;
     let eval_accounts = fhe::EvalAccountSet::for_plan(
-        &plan,
+        &batch,
         [amount_output.account_info()],
         [fhe::OutputAuthority::transaction_signer(
             &ctx.accounts.owner,
@@ -134,7 +134,7 @@ fn create_random_amount_inner<'info>(
                 .map(|account| account.to_account_info()),
         },
         accounts: &eval_accounts,
-        plan,
+        batch,
     })?;
     let handle = amount_output.handle()?;
     emit_cpi!(RandomAmountCreatedEvent {

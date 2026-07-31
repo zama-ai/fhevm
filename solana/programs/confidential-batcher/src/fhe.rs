@@ -101,7 +101,7 @@ pub(crate) struct BatchAuthorityEval<'a, 'info> {
     pub(crate) deny_subject_records: &'a [AccountInfo<'info>],
 }
 
-/// Builds and invokes one `fhe_execute` frame with the batch authority as both
+/// Builds and invokes one `fhe_execute` batch with the batch authority as both
 /// compute subject and app account authority.
 pub(crate) fn eval_as_batch_authority<'info, T>(
     eval: BatchAuthorityEval<'_, 'info>,
@@ -134,15 +134,15 @@ pub(crate) fn eval_as_batch_authority<'info, T>(
         zama_fhe::BatchInvokeError::Cpi(error) => error,
         other => {
             msg!("invalid batcher FHE eval: {:?}", other);
-            error!(BatcherError::InvalidFheExecutePlan)
+            error!(BatcherError::InvalidFheExecuteBatch)
         }
     })?;
     Ok(())
 }
 
 pub(crate) fn invalid_eval_plan(error: zama_fhe::BatchBuildError) -> anchor_lang::error::Error {
-    msg!("invalid FHE eval plan: {:?}", error);
-    error!(BatcherError::InvalidFheExecutePlan)
+    msg!("invalid FHE batch: {:?}", error);
+    error!(BatcherError::InvalidFheExecuteBatch)
 }
 
 /// Builds a euint64 persistent operand from an encrypted value account's own canonical fields, so

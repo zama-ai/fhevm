@@ -16,9 +16,9 @@ use anchor_lang::prelude::Pubkey;
 #[cfg(feature = "cpi")]
 use crate::accounts::{BatchAppAuthority, EvalAccountResolutionError, ResolvedEvalAccounts};
 #[cfg(feature = "cpi")]
-use crate::builder::BatchBuilder;
+use crate::batch::Batch;
 #[cfg(feature = "cpi")]
-use crate::plan::Batch;
+use crate::builder::BatchBuilder;
 #[cfg(feature = "cpi")]
 use crate::{BatchBuildError, Result};
 
@@ -57,10 +57,10 @@ impl<'info> EvalAccountResolver<'info> for ResolvedEvalAccounts<'info> {
 #[cfg(feature = "cpi")]
 #[derive(Debug)]
 pub enum BatchInvokeError {
-    /// The closure produced an invalid eval frame.
+    /// The closure produced an invalid batch.
     Build(BatchBuildError),
     /// The supplied dynamic accounts or output authority witnesses do not
-    /// satisfy the built plan.
+    /// satisfy the built batch.
     AccountResolution(EvalAccountResolutionError),
     /// The host CPI returned an Anchor error.
     Cpi(anchor_lang::error::Error),
@@ -87,12 +87,12 @@ impl From<anchor_lang::error::Error> for BatchInvokeError {
     }
 }
 
-/// Builds an eval plan with a closure, resolves its dynamic accounts, and
+/// Builds an batch with a closure, resolves its dynamic accounts, and
 /// invokes `zama-host::fhe_execute`.
 ///
 /// `dynamic_accounts` and additional `output_authorities` may be in any order.
 /// The fixed CPI `account_authority` is included automatically. The SDK
-/// validates the supplied accounts against the plan produced by the closure
+/// validates the supplied accounts against the batch produced by the closure
 /// before constructing the ordered host account list used by
 /// [`invoke_batch_signed_resolved`].
 #[cfg(feature = "cpi")]
@@ -107,28 +107,28 @@ pub fn invoke_batch_signed_with_builder<'a, 'info, T, F>(
 where
     F: FnOnce(&mut BatchBuilder) -> Result<T>,
 {
-    let plan = Batch::build(app_authority, build)?;
+    let batch = Batch::build(app_authority, build)?;
     let mut output_authorities = output_authorities.into_iter().collect::<Vec<_>>();
     output_authorities.insert(0, accounts.account_authority.clone());
-    let resolved_accounts = plan.resolve_accounts(dynamic_accounts, output_authorities)?;
-    invoke_batch_signed_resolved(&plan, accounts, &resolved_accounts, signer_seeds)?;
+    let resolved_accounts = batch.resolve_accounts(dynamic_accounts, output_authorities)?;
+    invoke_batch_signed_resolved(&batch, accounts, &resolved_accounts, signer_seeds)?;
     Ok(())
 }
 
 /// Invokes `zama-host::fhe_execute` with accounts pre-resolved from an [`Batch`].
 #[cfg(feature = "cpi")]
 pub fn invoke_batch_signed_resolved<'a, 'info>(
-    plan: &Batch,
+    batch: &Batch,
     accounts: BatchCpiAccounts<'a, 'info>,
     resolved_accounts: &ResolvedEvalAccounts<'info>,
     signer_seeds: &[&[&[u8]]],
 ) -> anchor_lang::prelude::Result<()> {
-    invoke_batch_signed_with_resolver(plan, accounts, resolved_accounts, signer_seeds)
+    invoke_batch_signed_with_resolver(batch, accounts, resolved_accounts, signer_seeds)
 }
 
 #[cfg(feature = "cpi")]
 fn invoke_batch_signed_with_resolver<'a, 'info, R>(
-    plan: &Batch,
+    batch: &Batch,
     accounts: BatchCpiAccounts<'a, 'info>,
     resolver: &R,
     signer_seeds: &[&[&[u8]]],
@@ -136,7 +136,7 @@ fn invoke_batch_signed_with_resolver<'a, 'info, R>(
 where
     R: EvalAccountResolver<'info> + ?Sized,
 {
-    if accounts.account_authority.key() != plan.app_authority.pubkey() {
+    if accounts.account_authority.key() != batch.app_authority.pubkey() {
         return Err(anchor_lang::error::ErrorCode::ConstraintAddress.into());
     }
     let deny_subject_records = accounts.deny_subject_records;
@@ -153,7 +153,7 @@ where
     };
     let mut account_metas = fixed_accounts.to_account_metas(None);
     let mut account_infos = fixed_accounts.to_account_infos();
-    for required in &plan.remaining_accounts {
+    for required in &batch.remaining_accounts {
         let account = resolver
             .resolve_eval_account(required.pubkey)
             .ok_or(anchor_lang::error::ErrorCode::AccountNotEnoughKeys)?;
@@ -170,10 +170,10 @@ where
         account_infos.push(record);
     }
 
-    // The frame self-describes its `remaining_accounts` length (DD-033). Deny-record
+    // The batch self-describes its `remaining_accounts` length (DD-033). Deny-record
     // witnesses are appended per transaction, so the final count is only known here.
-    let mut args = plan.args.clone();
-    args.account_count = u8::try_from(plan.remaining_accounts.len() + deny_subject_records.len())
+    let mut args = batch.args.clone();
+    args.account_count = u8::try_from(batch.remaining_accounts.len() + deny_subject_records.len())
         .map_err(|_| anchor_lang::error::ErrorCode::AccountNotEnoughKeys)?;
 
     let instruction = Instruction {

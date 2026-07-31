@@ -4,10 +4,10 @@ use super::*;
 
 /// Per-`compute_subject` running HCU total for the current slot.
 ///
-/// One meter per compute subject (keyed by the frame's `compute_subject`), reused across slots via
+/// One meter per compute subject (keyed by the batch's `compute_subject`), reused across slots via
 /// a lazy reset: when `last_seen_slot != clock.slot` the accumulated `used_hcu` is treated as `0`
 /// for the new slot rather than carried over. Program-authority; lazy-created on the first
-/// metered frame; permanent (no close / reclamation in v1, so close+reopen cannot reset the
+/// metered batch; permanent (no close / reclamation in v1, so close+reopen cannot reset the
 /// counter mid-slot).
 #[account]
 pub struct HcuBlockMeter {

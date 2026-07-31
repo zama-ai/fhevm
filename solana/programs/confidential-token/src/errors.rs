@@ -96,29 +96,29 @@ pub enum ConfidentialTokenError {
     /// Kept so Anchor error ordinals stay stable.
     #[msg("handle is not released for public decrypt (retired)")]
     PublicDecryptNotReleased,
-    /// Internal FHE eval plan construction failed before the host CPI.
-    #[msg("FHE eval plan is invalid")]
-    InvalidFheExecutePlan,
+    /// Internal FHE batch construction failed before the host CPI.
+    #[msg("FHE batch is invalid")]
+    InvalidFheExecuteBatch,
     /// The FHE eval candidate account list contains the same account twice.
     #[msg("FHE eval account list contains a duplicate account")]
     DuplicateFheExecuteAccount,
-    /// The FHE eval candidate account list contains an account the plan does not require.
+    /// The FHE eval candidate account list contains an account the batch does not require.
     #[msg("FHE eval account list contains an unexpected account")]
     UnexpectedFheExecuteAccount,
-    /// The FHE eval plan requires a dynamic account that was not provided.
-    #[msg("FHE eval plan is missing a required dynamic account")]
+    /// The FHE batch requires a dynamic account that was not provided.
+    #[msg("FHE batch is missing a required dynamic account")]
     MissingFheExecuteAccount,
-    /// The FHE eval plan requires a writable dynamic account but the provided account is readonly.
+    /// The FHE batch requires a writable dynamic account but the provided account is readonly.
     #[msg("FHE eval dynamic account must be writable")]
     FheExecuteAccountNotWritable,
     /// The FHE eval output authority list contains the same authority twice.
     #[msg("FHE eval output authority list contains a duplicate authority")]
     DuplicateFheOutputAuthority,
-    /// The FHE eval output authority list contains an authority the plan does not require.
+    /// The FHE eval output authority list contains an authority the batch does not require.
     #[msg("FHE eval output authority list contains an unexpected authority")]
     UnexpectedFheOutputAuthority,
-    /// The FHE eval plan requires an output authority that was not provided.
-    #[msg("FHE eval plan is missing a required output authority")]
+    /// The FHE batch requires an output authority that was not provided.
+    #[msg("FHE batch is missing a required output authority")]
     MissingFheOutputAuthority,
     /// The host public-decrypt verifier CPI did not return well-formed `(handle, cleartext)`
     /// data, or the return was not produced by the ZamaHost program.

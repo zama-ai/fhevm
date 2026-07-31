@@ -1933,8 +1933,8 @@
     },
     {
       "code": 6029,
-      "name": "InvalidFheExecutePlan",
-      "msg": "FHE eval plan is invalid"
+      "name": "InvalidFheExecuteBatch",
+      "msg": "FHE batch is invalid"
     },
     {
       "code": 6030,
@@ -1949,7 +1949,7 @@
     {
       "code": 6032,
       "name": "MissingFheExecuteAccount",
-      "msg": "FHE eval plan is missing a required dynamic account"
+      "msg": "FHE batch is missing a required dynamic account"
     },
     {
       "code": 6033,
@@ -1969,7 +1969,7 @@
     {
       "code": 6036,
       "name": "MissingFheOutputAuthority",
-      "msg": "FHE eval plan is missing a required output authority"
+      "msg": "FHE batch is missing a required output authority"
     },
     {
       "code": 6037,
@@ -2506,7 +2506,7 @@
       "name": "CoprocessorInputAttestation",
       "docs": [
         "A coprocessor input attestation carried inline by a [`FheExecuteOperand::VerifiedInput`], re-verified",
-        "in-frame (no account, no PDA) — the instruction-local analog of EVM `allowTransient(input, contract)`."
+        "in-batch (no account, no PDA) — the instruction-local analog of EVM `allowTransient(input, contract)`."
       ],
       "type": {
         "kind": "struct",
@@ -2865,7 +2865,7 @@
           {
             "name": "max_hcu_per_tx",
             "docs": [
-              "Max total HCU summed over one `fhe_execute` plan. `u64::MAX` = unlimited",
+              "Max total HCU summed over one `fhe_execute` batch. `u64::MAX` = unlimited",
               "(enforcement off); `0` is rejected at set time."
             ],
             "type": "u64"
@@ -2873,7 +2873,7 @@
           {
             "name": "max_hcu_depth_per_tx",
             "docs": [
-              "Max critical-path (depth) HCU within one `fhe_execute` plan. `u64::MAX` =",
+              "Max critical-path (depth) HCU within one `fhe_execute` batch. `u64::MAX` =",
               "unlimited; `0` is rejected at set time."
             ],
             "type": "u64"

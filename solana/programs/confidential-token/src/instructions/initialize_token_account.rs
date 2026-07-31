@@ -90,14 +90,14 @@ pub fn initialize_token_account<'info>(
     builder
         .trivial_encrypt_u64(initial_balance, balance_output.output())
         .map_err(invalid_eval_plan)?;
-    let plan = builder.finish().map_err(invalid_eval_plan)?;
+    let batch = builder.finish().map_err(invalid_eval_plan)?;
     let compute_authority = fhe::ComputeAuthority::for_mint(
         &ctx.accounts.compute_signer,
         mint_key,
         ctx.bumps.compute_signer,
     )?;
     let eval_accounts = fhe::EvalAccountSet::for_plan(
-        &plan,
+        &batch,
         [balance_output.account_info()],
         [fhe::OutputAuthority::token_account(
             &ctx.accounts.token_account,
@@ -124,7 +124,7 @@ pub fn initialize_token_account<'info>(
                 .map(|account| account.to_account_info()),
         },
         accounts: &eval_accounts,
-        plan,
+        batch,
     })?;
     let balance_handle = balance_output.handle()?;
     let token_account = &mut ctx.accounts.token_account;

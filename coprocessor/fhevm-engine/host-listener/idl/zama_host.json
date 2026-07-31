@@ -1853,7 +1853,7 @@
     {
       "code": 6036,
       "name": "FheExecuteRandRequiresPersistentOutput",
-      "msg": "FHE eval rand step requires a persistent output in the frame"
+      "msg": "FHE eval rand step requires a persistent output in the batch"
     },
     {
       "code": 6037,
@@ -1993,7 +1993,7 @@
     {
       "code": 6064,
       "name": "FheExecuteUnanchoredUnderBlockCap",
-      "msg": "FHE eval frame anchors no persistent/verified binding under a finite HCU block cap"
+      "msg": "FHE batch anchors no persistent/verified binding under a finite HCU block cap"
     },
     {
       "code": 6065,
@@ -2068,7 +2068,7 @@
     {
       "code": 6079,
       "name": "FheExecutePersistentOperandWrittenEarlier",
-      "msg": "FHE eval persistent operand was written earlier in the frame"
+      "msg": "FHE eval persistent operand was written earlier in the batch"
     },
     {
       "code": 6080,
@@ -2086,7 +2086,7 @@
       "name": "CoprocessorInputAttestation",
       "docs": [
         "A coprocessor input attestation carried inline by a [`FheExecuteOperand::VerifiedInput`], re-verified",
-        "in-frame (no account, no PDA) — the instruction-local analog of EVM `allowTransient(input, contract)`."
+        "in-batch (no account, no PDA) — the instruction-local analog of EVM `allowTransient(input, contract)`."
       ],
       "type": {
         "kind": "struct",
@@ -2622,7 +2622,7 @@
           {
             "name": "step_index",
             "docs": [
-              "Zero-based step index within the frame."
+              "Zero-based step index within the batch."
             ],
             "type": "u16"
           },
@@ -2644,7 +2644,7 @@
     {
       "name": "FheExecuteRandomSeedsEvent",
       "docs": [
-        "Emitted once for the random steps in an `fhe_execute` frame."
+        "Emitted once for the random steps in an `fhe_execute` batch."
       ],
       "type": {
         "kind": "struct",
@@ -2659,7 +2659,7 @@
           {
             "name": "seeds",
             "docs": [
-              "Random seeds in frame step order."
+              "Random seeds in batch step order."
             ],
             "type": {
               "vec": {
@@ -3793,7 +3793,7 @@
           {
             "name": "max_hcu_per_tx",
             "docs": [
-              "Max total HCU summed over one `fhe_execute` plan. `u64::MAX` = unlimited",
+              "Max total HCU summed over one `fhe_execute` batch. `u64::MAX` = unlimited",
               "(enforcement off); `0` is rejected at set time."
             ],
             "type": "u64"
@@ -3801,7 +3801,7 @@
           {
             "name": "max_hcu_depth_per_tx",
             "docs": [
-              "Max critical-path (depth) HCU within one `fhe_execute` plan. `u64::MAX` =",
+              "Max critical-path (depth) HCU within one `fhe_execute` batch. `u64::MAX` =",
               "unlimited; `0` is rejected at set time."
             ],
             "type": "u64"
@@ -3918,14 +3918,14 @@
           {
             "name": "max_hcu_per_tx",
             "docs": [
-              "Current max total HCU per `fhe_execute` plan (`u64::MAX` = unlimited)."
+              "Current max total HCU per `fhe_execute` batch (`u64::MAX` = unlimited)."
             ],
             "type": "u64"
           },
           {
             "name": "max_hcu_depth_per_tx",
             "docs": [
-              "Current max critical-path HCU per `fhe_execute` plan (`u64::MAX` = unlimited)."
+              "Current max critical-path HCU per `fhe_execute` batch (`u64::MAX` = unlimited)."
             ],
             "type": "u64"
           },
@@ -4238,7 +4238,7 @@
     {
       "name": "ProducedPublicOutput",
       "docs": [
-        "One public persistent output produced by an `fhe_execute` frame."
+        "One public persistent output produced by an `fhe_execute` batch."
       ],
       "type": {
         "kind": "struct",
@@ -4246,7 +4246,7 @@
           {
             "name": "step_index",
             "docs": [
-              "Zero-based step index within the frame."
+              "Zero-based step index within the batch."
             ],
             "type": "u16"
           },
@@ -4275,7 +4275,7 @@
     {
       "name": "PublicOutputsProducedEvent",
       "docs": [
-        "Emitted once for the public outputs produced by an `fhe_execute` frame."
+        "Emitted once for the public outputs produced by an `fhe_execute` batch."
       ],
       "type": {
         "kind": "struct",
@@ -4290,7 +4290,7 @@
           {
             "name": "outputs",
             "docs": [
-              "Produced public outputs in frame step order."
+              "Produced public outputs in batch step order."
             ],
             "type": {
               "vec": {

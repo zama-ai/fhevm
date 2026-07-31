@@ -197,7 +197,7 @@ impl CleartextLedger {
         let mut evals = 0;
         for args in &eval_args {
             let outputs = evaluate_cleartext(args, &self.values)
-                .expect("every emitted FHE plan must be valid in cleartext");
+                .expect("every emitted FHE batch must be valid in cleartext");
             for (step, value) in args.steps.iter().zip(outputs) {
                 let host::FheExecuteOutput::AllowedPersistent {
                     output_domain_index,

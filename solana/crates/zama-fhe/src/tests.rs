@@ -2,11 +2,11 @@
 
 use crate::accounts::*;
 use crate::acl::*;
+use crate::batch::*;
 use crate::builder::*;
 #[cfg(feature = "cpi")]
 use crate::cpi::*;
 use crate::operand::*;
-use crate::plan::*;
 use crate::types::*;
 use crate::BatchBuildError;
 use anchor_lang::prelude::Pubkey;
@@ -98,7 +98,7 @@ fn eval_plan_build_runs_closure_and_finishes_plan() {
     let output_acl = output_key.address();
     let balance = Uint64Handle::persistent(balance_handle(1), input_key).unwrap();
 
-    let plan = Batch::build(app_authority(primary_authority), |builder| {
+    let batch = Batch::build(app_authority(primary_authority), |builder| {
         let incremented = builder.add(balance, Scalar::<Uint<64>>::u64(1), Output::transient())?;
         builder.add(
             incremented,
@@ -108,16 +108,16 @@ fn eval_plan_build_runs_closure_and_finishes_plan() {
     })
     .unwrap();
 
-    assert_eq!(plan.app_authority().pubkey(), primary_authority);
+    assert_eq!(batch.app_authority().pubkey(), primary_authority);
     assert_eq!(
-        plan.remaining_accounts,
+        batch.remaining_accounts,
         vec![
             BatchAccountMeta::readonly(input_acl, BatchAccountPurpose::PersistentInputAcl),
             BatchAccountMeta::writable(output_acl, BatchAccountPurpose::PersistentOutputAcl),
         ]
     );
-    assert_eq!(plan.args.steps.len(), 2);
-    match &plan.args.steps[1] {
+    assert_eq!(batch.args.steps.len(), 2);
+    match &batch.args.steps[1] {
         FheExecuteStep::Binary { lhs, output, .. } => {
             assert_eq!(*lhs, FheExecuteOperand::AllowedLocal { producer_index: 0 });
             match output {
@@ -163,7 +163,7 @@ fn eval_plan_build_lowers_verified_input_operand() {
     let input_handle = balance_handle(2);
     let attestation = dummy_attestation(input_handle, primary_authority);
 
-    let plan = Batch::build(app_authority(primary_authority), |builder| {
+    let batch = Batch::build(app_authority(primary_authority), |builder| {
         let amount: Uint64Handle = builder.verified_input(attestation.clone())?;
         builder.add(
             amount,
@@ -173,8 +173,8 @@ fn eval_plan_build_lowers_verified_input_operand() {
     })
     .unwrap();
 
-    assert_eq!(plan.args.steps.len(), 1);
-    match &plan.args.steps[0] {
+    assert_eq!(batch.args.steps.len(), 1);
+    match &batch.args.steps[0] {
         FheExecuteStep::Binary { lhs, rhs, .. } => {
             assert_eq!(
                 *lhs,
@@ -184,7 +184,7 @@ fn eval_plan_build_lowers_verified_input_operand() {
             );
             assert_eq!(*rhs, FheExecuteOperand::Scalar { value_index: 0 });
             assert_eq!(
-                plan.args.dictionary_bytes(0).unwrap(),
+                batch.args.dictionary_bytes(0).unwrap(),
                 Scalar::<Uint<64>>::u64(1).bytes()
             );
         }
@@ -192,7 +192,7 @@ fn eval_plan_build_lowers_verified_input_operand() {
     }
     // A verified input carries no remaining account: the attestation is inline in the operand.
     assert_eq!(
-        plan.remaining_accounts,
+        batch.remaining_accounts,
         vec![BatchAccountMeta::writable(
             output_acl,
             BatchAccountPurpose::PersistentOutputAcl
@@ -224,13 +224,13 @@ fn eval_plan_build_propagates_closure_and_finish_errors() {
             Output::transient(),
         )
     }) {
-        Ok(_) => panic!("invalid frame unexpectedly built"),
+        Ok(_) => panic!("invalid batch unexpectedly built"),
         Err(error) => error,
     };
     assert_eq!(error, BatchBuildError::UnsupportedBinaryOutputType);
 
     let error = match Batch::build(app_authority(primary_authority), |_builder| Ok(())) {
-        Ok(_) => panic!("empty frame unexpectedly built"),
+        Ok(_) => panic!("empty batch unexpectedly built"),
         Err(error) => error,
     };
     assert_eq!(error, BatchBuildError::EmptyOps);
@@ -454,26 +454,26 @@ fn lowers_mixed_eval_to_stable_remaining_account_indices() {
         )
         .unwrap();
 
-    let plan = builder.finish().unwrap();
-    assert_eq!(plan.app_authority().pubkey(), primary_authority);
+    let batch = builder.finish().unwrap();
+    assert_eq!(batch.app_authority().pubkey(), primary_authority);
 
     assert_eq!(
-        plan.remaining_accounts,
+        batch.remaining_accounts,
         vec![
             BatchAccountMeta::readonly(balance_acl, BatchAccountPurpose::PersistentInputAcl),
             BatchAccountMeta::readonly(amount_acl, BatchAccountPurpose::PersistentInputAcl),
             BatchAccountMeta::writable(output_acl, BatchAccountPurpose::PersistentOutputAcl),
         ]
     );
-    assert_eq!(plan.args.steps.len(), 3);
-    match &plan.args.steps[0] {
+    assert_eq!(batch.args.steps.len(), 3);
+    match &batch.args.steps[0] {
         FheExecuteStep::Binary { op, output, .. } => {
             assert_eq!(*op, FheBinaryOpCode::Ge);
             assert_eq!(*output, FheExecuteOutput::AllowedLocal);
         }
         other => panic!("unexpected step: {other:?}"),
     }
-    match &plan.args.steps[2] {
+    match &batch.args.steps[2] {
         FheExecuteStep::Ternary {
             control,
             if_true,
@@ -522,7 +522,7 @@ fn dynamic_account_requirements_expose_order_roles_and_purposes() {
     let output_acl = output_key.address();
     let input = Uint64Handle::persistent(balance_handle(1), input_key).unwrap();
 
-    let plan = Batch::build(app_authority(primary_authority), |builder| {
+    let batch = Batch::build(app_authority(primary_authority), |builder| {
         builder.add(
             input,
             Scalar::<Uint<64>>::u64(2),
@@ -531,7 +531,7 @@ fn dynamic_account_requirements_expose_order_roles_and_purposes() {
     })
     .unwrap();
 
-    let requirements = plan.dynamic_account_requirements().collect::<Vec<_>>();
+    let requirements = batch.dynamic_account_requirements().collect::<Vec<_>>();
     assert_eq!(
         requirements
             .iter()
@@ -575,10 +575,10 @@ fn lowers_explicit_output_authority_witness() {
         )
         .unwrap();
 
-    let plan = builder.finish().unwrap();
-    assert_eq!(plan.app_authority().pubkey(), primary_authority);
+    let batch = builder.finish().unwrap();
+    assert_eq!(batch.app_authority().pubkey(), primary_authority);
     assert_eq!(
-        plan.remaining_accounts,
+        batch.remaining_accounts,
         vec![
             BatchAccountMeta::readonly(acl_record, BatchAccountPurpose::PersistentInputAcl),
             BatchAccountMeta::writable(output_acl, BatchAccountPurpose::PersistentOutputAcl),
@@ -589,10 +589,10 @@ fn lowers_explicit_output_authority_witness() {
         ]
     );
     assert_eq!(
-        plan.additional_output_authorities().collect::<Vec<_>>(),
+        batch.additional_output_authorities().collect::<Vec<_>>(),
         vec![authority]
     );
-    let authority_requirements = plan.output_authority_requirements().collect::<Vec<_>>();
+    let authority_requirements = batch.output_authority_requirements().collect::<Vec<_>>();
     assert_eq!(
         authority_requirements,
         vec![
@@ -606,7 +606,7 @@ fn lowers_explicit_output_authority_witness() {
             },
         ]
     );
-    match &plan.args.steps[0] {
+    match &batch.args.steps[0] {
         FheExecuteStep::Binary { output, .. } => match output {
             FheExecuteOutput::AllowedPersistent {
                 output_encrypted_value_index,
@@ -640,9 +640,9 @@ fn resolve_accounts_orders_and_validates_plan_requirements() {
             Output::persistent(output_key, subjects(extra_authority)),
         )
         .unwrap();
-    let plan = builder.finish().unwrap();
+    let batch = builder.finish().unwrap();
 
-    let resolved = plan
+    let resolved = batch
         .resolve_accounts(
             vec![
                 account_info(output_acl, true),
@@ -663,7 +663,7 @@ fn resolve_accounts_orders_and_validates_plan_requirements() {
         vec![input_acl, output_acl, extra_authority]
     );
 
-    let duplicate = plan
+    let duplicate = batch
         .resolve_accounts(
             vec![
                 account_info(input_acl, false),
@@ -680,7 +680,7 @@ fn resolve_accounts_orders_and_validates_plan_requirements() {
         EvalAccountResolutionError::DuplicateDynamicAccount { pubkey: input_acl }
     );
 
-    let unexpected = plan
+    let unexpected = batch
         .resolve_accounts(
             vec![account_info(Pubkey::new_unique(), false)],
             vec![
@@ -694,7 +694,7 @@ fn resolve_accounts_orders_and_validates_plan_requirements() {
         EvalAccountResolutionError::UnexpectedDynamicAccount { .. }
     ));
 
-    let missing = plan
+    let missing = batch
         .resolve_accounts(
             vec![account_info(output_acl, true)],
             vec![
@@ -709,7 +709,7 @@ fn resolve_accounts_orders_and_validates_plan_requirements() {
             if requirement.pubkey() == input_acl
     ));
 
-    let readonly = plan
+    let readonly = batch
         .resolve_accounts(
             vec![
                 account_info(input_acl, false),
@@ -727,7 +727,7 @@ fn resolve_accounts_orders_and_validates_plan_requirements() {
             if requirement.pubkey() == output_acl
     ));
 
-    let duplicate_authority = plan
+    let duplicate_authority = batch
         .resolve_accounts(
             vec![
                 account_info(input_acl, false),
@@ -747,7 +747,7 @@ fn resolve_accounts_orders_and_validates_plan_requirements() {
         }
     );
 
-    let unexpected_authority = plan
+    let unexpected_authority = batch
         .resolve_accounts(
             vec![
                 account_info(input_acl, false),
@@ -765,7 +765,7 @@ fn resolve_accounts_orders_and_validates_plan_requirements() {
         EvalAccountResolutionError::UnexpectedOutputAuthority { .. }
     ));
 
-    let missing_authority = plan
+    let missing_authority = batch
         .resolve_accounts(
             vec![
                 account_info(input_acl, false),
@@ -803,9 +803,9 @@ fn resolve_accounts_rejects_known_accounts_in_wrong_bucket() {
             Output::persistent(output_key, subjects(extra_authority)),
         )
         .unwrap();
-    let plan = builder.finish().unwrap();
+    let batch = builder.finish().unwrap();
 
-    let authority_in_dynamic_bucket = plan
+    let authority_in_dynamic_bucket = batch
         .resolve_accounts(
             vec![
                 account_info(input_acl, false),
@@ -825,7 +825,7 @@ fn resolve_accounts_rejects_known_accounts_in_wrong_bucket() {
         }
     );
 
-    let input_acl_in_authority_bucket = plan
+    let input_acl_in_authority_bucket = batch
         .resolve_accounts(
             vec![
                 account_info(input_acl, false),
@@ -843,7 +843,7 @@ fn resolve_accounts_rejects_known_accounts_in_wrong_bucket() {
         EvalAccountResolutionError::UnexpectedOutputAuthority { pubkey: input_acl }
     );
 
-    let output_acl_in_authority_bucket = plan
+    let output_acl_in_authority_bucket = batch
         .resolve_accounts(
             vec![
                 account_info(input_acl, false),
@@ -876,19 +876,19 @@ fn lowers_birth_steps() {
         .add(trivial, Scalar::<Uint<64>>::u64(1), Output::transient())
         .unwrap();
 
-    let plan = builder.finish().unwrap();
+    let batch = builder.finish().unwrap();
     assert_eq!(
-        plan.remaining_accounts,
+        batch.remaining_accounts,
         vec![BatchAccountMeta::writable(
             output_acl,
             BatchAccountPurpose::PersistentOutputAcl
         )]
     );
     assert!(matches!(
-        plan.args.steps[0],
+        batch.args.steps[0],
         FheExecuteStep::TrivialEncrypt { .. }
     ));
-    assert!(matches!(plan.args.steps[1], FheExecuteStep::Rand { .. }));
+    assert!(matches!(batch.args.steps[1], FheExecuteStep::Rand { .. }));
 }
 
 #[test]
@@ -1304,8 +1304,8 @@ fn persistent_output_birth_matches_eval_lowering() {
     builder
         .trivial_encrypt_u64(7, Output::persistent(output_key, subjects(subject)))
         .unwrap();
-    let plan = builder.finish().unwrap();
-    match &plan.args.steps[0] {
+    let batch = builder.finish().unwrap();
+    match &batch.args.steps[0] {
         FheExecuteStep::TrivialEncrypt {
             output:
                 FheExecuteOutput::AllowedPersistent {
@@ -1321,23 +1321,23 @@ fn persistent_output_birth_matches_eval_lowering() {
             ..
         } => {
             let output_encrypted_value =
-                plan.remaining_accounts[*output_encrypted_value_index as usize].pubkey;
+                batch.remaining_accounts[*output_encrypted_value_index as usize].pubkey;
             assert_eq!(output_encrypted_value, binding.encrypted_value());
             assert_eq!(
-                plan.args.dictionary_key(*output_domain_index).unwrap(),
+                batch.args.dictionary_key(*output_domain_index).unwrap(),
                 binding.domain()
             );
             assert_eq!(
-                plan.args.dictionary_key(*output_account_index).unwrap(),
+                batch.args.dictionary_key(*output_account_index).unwrap(),
                 binding.account()
             );
             assert_eq!(
-                plan.args.dictionary_bytes(*output_label_index).unwrap(),
+                batch.args.dictionary_bytes(*output_label_index).unwrap(),
                 binding.label()
             );
             let output_subjects: Vec<Pubkey> = output_subject_indexes
                 .iter()
-                .map(|index| plan.args.dictionary_key(*index).unwrap())
+                .map(|index| batch.args.dictionary_key(*index).unwrap())
                 .collect();
             assert_eq!(output_subjects, binding.host_subjects());
             assert_eq!(*previous_handle, binding.previous_handle());

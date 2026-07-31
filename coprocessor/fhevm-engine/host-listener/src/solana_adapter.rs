@@ -787,7 +787,7 @@ mod tests {
 
     #[test]
     fn compute_is_eager_regardless_of_same_tx_allow_signal() {
-        // Historically, the eval frame's compute would only be marked
+        // Historically, the batch's compute would only be marked
         // materializable when an allow for its result landed in the same tx.
         // Under eager compute (RFC-024 Q11), it is unconditionally scheduled;
         // KMS independently gates plaintext release against Solana ACL state.

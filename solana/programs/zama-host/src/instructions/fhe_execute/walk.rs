@@ -1,21 +1,21 @@
-//! The single walk over an `fhe_execute` plan: resolve operands, assert operand
+//! The single walk over an `fhe_execute` batch: resolve operands, assert operand
 //! types, derive the produced handle, and hand each output to
 //! [`super::EvalExecutionState`], which validates and mutates in one pass.
 //!
-//! A step that fails mid-frame reverts the whole transaction — the Solana
+//! A step that fails mid-batch reverts the whole transaction — the Solana
 //! runtime discards every account write on error — so validating while
 //! mutating needs no separate validate-only pass to stay atomic.
 
 use super::*;
 
-/// Per-frame slot entropy, identity, and rand anchor shared by every handle derivation.
+/// Per-batch slot entropy, identity, and rand anchor shared by every handle derivation.
 pub(super) struct EvalHandleContext<'a> {
     pub chain_id: u64,
     pub previous_bank_hash: &'a [u8; 32],
     pub unix_timestamp: i64,
     /// Signed caller identity folded into rand seeds (never into deterministic handles).
     pub compute_subject: Pubkey,
-    /// The frame's persistent-write anchor: every persistent output's live account
+    /// The batch's persistent-write anchor: every persistent output's live account
     /// identity, current handle, and MMR leaf count in wire order
     /// (see [`computed_eval_rand_seed`]).
     pub persistent_anchor_bytes: &'a [u8],
@@ -206,7 +206,7 @@ impl EvalExecutionState<'_, '_, '_> {
     }
 }
 
-/// Drives the execution state over every plan step: resolve operands, assert
+/// Drives the execution state over every batch step: resolve operands, assert
 /// operand types, compute the produced handle, and accept the output.
 pub(super) fn walk_eval_frame<'info>(
     execution: &mut EvalExecutionState<'_, '_, 'info>,

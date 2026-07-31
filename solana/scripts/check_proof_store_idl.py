@@ -11,7 +11,7 @@ script scans. Path deps keep arg types honest; this script keeps the
 1. Every name decode.rs matches must exist in the host IDL.
 2. Every host instruction must be either decoded or explicitly ignored here.
 3. Required lifecycle events must be referenced from decode.rs.
-4. `FHE_EVAL_REMAINING_BASE` in proof-store and host-listener must equal the
+4. `FHE_EXECUTE_REMAINING_BASE` in proof-store and host-listener must equal the
    IDL named-account count for `fhe_execute` (remaining accounts follow that base).
 
 When the host adds an instruction or renames/reorders `fhe_execute` accounts, CI
@@ -28,8 +28,8 @@ import sys
 
 DISC_RE = re.compile(r'discriminator\("([a-z0-9_]+)"\)')
 EVENT_DISC_RE = re.compile(r'event_discriminator\("([A-Za-z0-9_]+)"\)')
-FHE_EVAL_BASE_RE = re.compile(
-    r"const\s+FHE_EVAL_REMAINING_BASE\s*:\s*usize\s*=\s*(\d+)\s*;"
+FHE_EXECUTE_BASE_RE = re.compile(
+    r"const\s+FHE_EXECUTE_REMAINING_BASE\s*:\s*usize\s*=\s*(\d+)\s*;"
 )
 
 # Host instructions the proof-store does not ingest. New host IDL instructions
@@ -59,13 +59,13 @@ REQUIRED_EVENTS = frozenset({"PublicOutputsProducedEvent"})
 
 
 def _parse_bases(source: str, label: str, errors: list[str]) -> int | None:
-    matches = FHE_EVAL_BASE_RE.findall(source)
+    matches = FHE_EXECUTE_BASE_RE.findall(source)
     if not matches:
-        errors.append(f"{label}: missing `const FHE_EVAL_REMAINING_BASE: usize = …;`")
+        errors.append(f"{label}: missing `const FHE_EXECUTE_REMAINING_BASE: usize = …;`")
         return None
     if len(matches) != 1:
         errors.append(
-            f"{label}: expected exactly one FHE_EVAL_REMAINING_BASE, found {len(matches)}"
+            f"{label}: expected exactly one FHE_EXECUTE_REMAINING_BASE, found {len(matches)}"
         )
         return None
     return int(matches[0])
@@ -195,7 +195,7 @@ def main() -> int:
 
     if idl_named_count is not None and proof_base is not None and proof_base != idl_named_count:
         errors.append(
-            "FHE_EVAL_REMAINING_BASE drift: proof-store decode.rs="
+            "FHE_EXECUTE_REMAINING_BASE drift: proof-store decode.rs="
             f"{proof_base} vs zama_host IDL named fhe_execute accounts={idl_named_count}"
         )
     if (
@@ -204,12 +204,12 @@ def main() -> int:
         and listener_base != idl_named_count
     ):
         errors.append(
-            "FHE_EVAL_REMAINING_BASE drift: host-listener="
+            "FHE_EXECUTE_REMAINING_BASE drift: host-listener="
             f"{listener_base} vs zama_host IDL named fhe_execute accounts={idl_named_count}"
         )
     if proof_base is not None and listener_base is not None and proof_base != listener_base:
         errors.append(
-            "FHE_EVAL_REMAINING_BASE mismatch between proof-store "
+            "FHE_EXECUTE_REMAINING_BASE mismatch between proof-store "
             f"({proof_base}) and host-listener ({listener_base})"
         )
 

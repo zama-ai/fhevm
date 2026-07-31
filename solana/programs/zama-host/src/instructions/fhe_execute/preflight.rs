@@ -16,13 +16,13 @@ pub(super) fn preflight_eval_frame<'info>(
     )
 }
 
-/// Rejects the value-less persist-nothing frame class under a finite block cap (fhevm-internal#1744).
+/// Rejects the value-less persist-nothing batch class under a finite block cap (fhevm-internal#1744).
 ///
 /// The per-slot HCU meter keys on the signed `compute_subject`. A persistent input requires the
 /// subject to be an allowed ACL subject, and a verified input requires it to equal the attested
 /// contract, so either operand pins the subject — the caller cannot swap in a fresh key without
-/// losing input access. A frame with neither pinning operand and no persistent output persists nothing
-/// and verifies nothing: `compute_subject` is a free variable AND the frame produces nothing of
+/// losing input access. A batch with neither pinning operand and no persistent output persists nothing
+/// and verifies nothing: `compute_subject` is a free variable AND the batch produces nothing of
 /// value (its transient outputs create no ACL leaf and are undecryptable). That class is what the
 /// keypair-churn bypass rode, so it is rejected before compute.
 ///
@@ -48,12 +48,12 @@ fn assert_frame_pins_or_persists_under_cap(
     Ok(())
 }
 
-/// Rejects a frame containing a rand step but no persistent output (fhevm-internal#1853 W4).
+/// Rejects a batch containing a rand step but no persistent output (fhevm-internal#1853 W4).
 ///
-/// Rand seeds are anchored to the frame's persistent-write anchor — the live account identity
+/// Rand seeds are anchored to the batch's persistent-write anchor — the live account identity
 /// and version of every persistent output — so a rand step needs at least one
 /// persistent output for the seed to be compulsorily fresh. The excluded class is provably
-/// useless: an all-transient frame has no ACL records, no decrypt path, and no `make_public`,
+/// useless: an all-transient batch has no ACL records, no decrypt path, and no `make_public`,
 /// so its randomness is unobservable by everyone including the author.
 fn assert_rand_steps_anchor_persistent_output(args: &FheExecuteArgs) -> Result<()> {
     let has_rand = args.steps.iter().any(|step| {
@@ -161,8 +161,8 @@ fn preflight_eval_frame_accounts(
     for (index, step) in args.steps.iter().enumerate() {
         preflight_eval_step(step, index, &mut preflight)?;
     }
-    // Whole-frame hygiene, mirroring the account table: every interned dictionary
-    // entry must be referenced by some step, so a frame cannot carry dead bytes.
+    // Whole-batch hygiene, mirroring the account table: every interned dictionary
+    // entry must be referenced by some step, so a batch cannot carry dead bytes.
     require!(
         preflight.dictionary_used.iter().all(|used| *used),
         ZamaHostError::FheExecuteDictionaryEntryUnreferenced
@@ -170,7 +170,7 @@ fn preflight_eval_frame_accounts(
     preflight.table.assert_all_used()
 }
 
-/// Marks every account the plan references into the shared table so
+/// Marks every account the batch references into the shared table so
 /// [`EvalAccountTable::assert_all_used`] can reject dangling accounts before
 /// any pass mutates state.
 struct EvalPreflight<'t, 'a, 'info> {
@@ -186,7 +186,7 @@ struct EvalPreflight<'t, 'a, 'info> {
 }
 
 impl EvalPreflight<'_, '_, '_> {
-    /// Marks a dictionary reference used and returns its bytes; out-of-range fails the frame here,
+    /// Marks a dictionary reference used and returns its bytes; out-of-range fails the batch here,
     /// before execution resolves anything.
     fn mark_dictionary(&mut self, index: u8) -> Result<[u8; 32]> {
         let entry = self
@@ -324,7 +324,7 @@ fn preflight_encrypted_operand(
             );
         }
         FheExecuteOperand::VerifiedInput { .. } => {
-            // No remaining account: the attestation is carried inline and verified in-frame.
+            // No remaining account: the attestation is carried inline and verified in-batch.
         }
         FheExecuteOperand::Scalar { .. } => {
             return Err(error!(ZamaHostError::InvalidFheExecuteAccount))
@@ -390,8 +390,8 @@ mod tests {
     #[test]
     fn unused_remaining_account_fails_preflight() {
         // One persistent operand, two passed accounts: the dangling second account
-        // must fail the whole-frame all-used check.
-        let args = frame(vec![FheExecuteStep::Binary {
+        // must fail the whole-batch all-used check.
+        let args = batch(vec![FheExecuteStep::Binary {
             op: FheBinaryOpCode::Add,
             lhs: FheExecuteOperand::AllowedPersistent {
                 handle_index: 0,
@@ -414,7 +414,7 @@ mod tests {
 
     #[test]
     fn persistent_operand_cannot_alias_an_account_written_by_an_earlier_step() {
-        let args = frame(vec![
+        let args = batch(vec![
             FheExecuteStep::TrivialEncrypt {
                 plaintext: [0; 32],
                 fhe_type: 5,
@@ -441,7 +441,7 @@ mod tests {
 
     #[test]
     fn persistent_operand_may_update_its_account_in_the_same_step() {
-        let args = frame(vec![FheExecuteStep::Binary {
+        let args = batch(vec![FheExecuteStep::Binary {
             op: FheBinaryOpCode::Add,
             lhs: FheExecuteOperand::AllowedPersistent {
                 handle_index: 0,
@@ -467,7 +467,7 @@ mod tests {
         AccountInfo::new(key, false, false, lamports, data, owner, false)
     }
 
-    fn frame(steps: Vec<FheExecuteStep>) -> FheExecuteArgs {
+    fn batch(steps: Vec<FheExecuteStep>) -> FheExecuteArgs {
         FheExecuteArgs {
             account_count: 0,
             dictionary: vec![[1; 32], [2; 32]],
@@ -515,8 +515,8 @@ mod tests {
     #[test]
     fn rand_step_without_persistent_output_is_rejected() {
         // Unconditional (unlike the cap-gated persist-nothing rule): the rand seed is anchored
-        // to the frame's persistent writes, so an all-transient rand frame has no seed anchor.
-        let args = frame(vec![FheExecuteStep::Rand {
+        // to the batch's persistent writes, so an all-transient rand batch has no seed anchor.
+        let args = batch(vec![FheExecuteStep::Rand {
             fhe_type: 5,
             output: FheExecuteOutput::AllowedLocal,
         }]);
@@ -526,13 +526,13 @@ mod tests {
     #[test]
     fn rand_step_with_persistent_output_anywhere_in_frame_is_accepted() {
         // The persistent output may be the rand step's own or any other step's.
-        let own = frame(vec![FheExecuteStep::Rand {
+        let own = batch(vec![FheExecuteStep::Rand {
             fhe_type: 5,
             output: persistent_output(),
         }]);
         assert!(assert_rand_steps_anchor_persistent_output(&own).is_ok());
 
-        let elsewhere = frame(vec![
+        let elsewhere = batch(vec![
             FheExecuteStep::Rand {
                 fhe_type: 5,
                 output: FheExecuteOutput::AllowedLocal,
@@ -548,7 +548,7 @@ mod tests {
 
     #[test]
     fn frame_without_rand_needs_no_persistent_output() {
-        assert!(assert_rand_steps_anchor_persistent_output(&frame(vec![trivial_local()])).is_ok());
+        assert!(assert_rand_steps_anchor_persistent_output(&batch(vec![trivial_local()])).is_ok());
     }
 
     const FINITE_CAP: u64 = 500_000;
@@ -557,7 +557,7 @@ mod tests {
     fn deactivated_cap_never_rejects_persist_nothing_frame() {
         // u64::MAX (ship default) short-circuits: behavior is unchanged where the cap is not deployed.
         assert!(
-            assert_frame_pins_or_persists_under_cap(&frame(vec![trivial_local()]), u64::MAX)
+            assert_frame_pins_or_persists_under_cap(&batch(vec![trivial_local()]), u64::MAX)
                 .is_ok()
         );
     }
@@ -565,7 +565,7 @@ mod tests {
     #[test]
     fn finite_cap_rejects_persist_nothing_frame() {
         assert!(
-            assert_frame_pins_or_persists_under_cap(&frame(vec![trivial_local()]), FINITE_CAP)
+            assert_frame_pins_or_persists_under_cap(&batch(vec![trivial_local()]), FINITE_CAP)
                 .is_err()
         );
     }
@@ -578,7 +578,7 @@ mod tests {
             fhe_type: 5,
             output: persistent_output(),
         };
-        assert!(assert_frame_pins_or_persists_under_cap(&frame(vec![step]), FINITE_CAP).is_ok());
+        assert!(assert_frame_pins_or_persists_under_cap(&batch(vec![step]), FINITE_CAP).is_ok());
     }
 
     #[test]
@@ -593,19 +593,19 @@ mod tests {
             output_fhe_type: 5,
             output: FheExecuteOutput::AllowedLocal,
         };
-        assert!(assert_frame_pins_or_persists_under_cap(&frame(vec![step]), FINITE_CAP).is_ok());
+        assert!(assert_frame_pins_or_persists_under_cap(&batch(vec![step]), FINITE_CAP).is_ok());
     }
 
     #[test]
     fn finite_cap_accepts_verified_input_transient_frame() {
         // A verified input pins the subject (attested contract must equal it), so a transient-output
-        // frame that carries one is anchored and not persist-nothing.
+        // batch that carries one is anchored and not persist-nothing.
         let step = FheExecuteStep::Unary {
             op: FheUnaryOpCode::Not,
             operand: verified_input(),
             output_fhe_type: 5,
             output: FheExecuteOutput::AllowedLocal,
         };
-        assert!(assert_frame_pins_or_persists_under_cap(&frame(vec![step]), FINITE_CAP).is_ok());
+        assert!(assert_frame_pins_or_persists_under_cap(&batch(vec![step]), FINITE_CAP).is_ok());
     }
 }

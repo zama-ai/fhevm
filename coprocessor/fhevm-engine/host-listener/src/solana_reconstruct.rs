@@ -1,7 +1,7 @@
 //! Phase 2: reconstruct zama-host compute events from decoded instruction data +
 //! block context, WITHOUT relying on on-chain `emit_cpi!`/`emit!`.
 //!
-//! Covers the `fhe_execute` step-plan walk (recomputing each step's handle via the
+//! Covers the `fhe_execute` batch walk (recomputing each step's handle via the
 //! program's own `computed_*` functions, byte-identical to on-chain emission)
 //! and the event-free `EncryptedValue` instruction decode (RFC-024).
 
@@ -44,8 +44,8 @@ pub fn is_fhe_execute_instruction(instruction_data: &[u8]) -> bool {
 }
 
 /// Decodes a `fhe_execute` instruction's data into the program's own `FheExecuteArgs`
-/// step plan through `zama_host::decode` (so there is no bespoke decoder to
-/// drift from the on-chain layout). The decoded plan is the input to the eval
+/// batch through `zama_host::decode` (so there is no bespoke decoder to
+/// drift from the on-chain layout). The decoded batch is the input to the eval
 /// walk that reconstructs one compute event per step — a separate pass that
 /// recomputes each step's handle and therefore depends on `previous_bank_hash`.
 pub fn decode_fhe_execute_args(
@@ -233,9 +233,9 @@ pub fn parse_host_config(account_data: &[u8]) -> anyhow::Result<u64> {
 }
 
 /// Resolves an eval operand to its handle by reusing already-produced step
-/// results and the frame's interned constant dictionary — no on-chain account reads.
+/// results and the batch's interned dictionary — no on-chain account reads.
 /// `Scalar` is only valid as a binary rhs (handled by [`resolve_rhs`]); seeing
-/// it here means a malformed plan.
+/// it here means a malformed batch.
 fn resolve_operand(
     operand: &FheExecuteOperand,
     dictionary: &[[u8; 32]],
@@ -315,27 +315,27 @@ fn map_pgm_ternary_op(op: PgmTernaryOpCode) -> FheTernaryOpCode {
     }
 }
 
-/// Reconstructs the per-step compute events a `fhe_execute` plan emits, mirroring
+/// Reconstructs the per-step compute events a `fhe_execute` batch emits, mirroring
 /// the program's `walk_eval_frame`: walk steps in order, resolve operands
 /// (`Transient` referring to earlier steps' produced handles), recompute each
 /// step's result handle via the program's eval primitives, and record one event
 /// per step. Persistent and instruction-local outputs derive the identical base
 /// handle — no per-output binding (matches EVM `FHEVMExecutor`).
 ///
-/// Returns `None` on a malformed plan (operand or dictionary reference out of range,
+/// Returns `None` on a malformed batch (operand or dictionary reference out of range,
 /// or a `Scalar` where only an encrypted operand is valid). `ctx` supplies
 /// chain_id / previous_bank_hash / unix_timestamp; `subject` is the compute
 /// subject. Random seeds are supplied by the host's signed event-CPI batch
 /// because their anchor includes live persistent-account versions that are not
 /// caller-provided instruction data.
 pub fn reconstruct_fhe_execute_steps(
-    plan: &FheExecuteArgs,
+    batch: &FheExecuteArgs,
     subject: [u8; 32],
     _remaining_accounts: &[[u8; 32]],
     random_seeds: &[FheExecuteRandomSeed],
     ctx: &ReconstructContext,
 ) -> Option<Vec<ReconstructedEvalStep>> {
-    let expected_random_steps = plan
+    let expected_random_steps = batch
         .steps
         .iter()
         .enumerate()
@@ -356,11 +356,11 @@ pub fn reconstruct_fhe_execute_steps(
     {
         return None;
     }
-    let mut produced: Vec<[u8; 32]> = Vec::with_capacity(plan.steps.len());
+    let mut produced: Vec<[u8; 32]> = Vec::with_capacity(batch.steps.len());
     let mut steps_out: Vec<ReconstructedEvalStep> =
-        Vec::with_capacity(plan.steps.len());
+        Vec::with_capacity(batch.steps.len());
 
-    for (index, step) in plan.steps.iter().enumerate() {
+    for (index, step) in batch.steps.iter().enumerate() {
         let op_index = index as u16;
         let event = match step {
             FheExecuteStep::Binary {
@@ -371,9 +371,9 @@ pub fn reconstruct_fhe_execute_steps(
                 ..
             } => {
                 let lhs_handle =
-                    resolve_operand(lhs, &plan.dictionary, &produced)?;
+                    resolve_operand(lhs, &batch.dictionary, &produced)?;
                 let (rhs_handle, scalar) =
-                    resolve_rhs(rhs, &plan.dictionary, &produced)?;
+                    resolve_rhs(rhs, &batch.dictionary, &produced)?;
                 let result = computed_eval_handle(
                     *op,
                     lhs_handle,
@@ -403,9 +403,10 @@ pub fn reconstruct_fhe_execute_steps(
                 output_fhe_type,
                 ..
             } => {
-                let c = resolve_operand(control, &plan.dictionary, &produced)?;
-                let t = resolve_operand(if_true, &plan.dictionary, &produced)?;
-                let f = resolve_operand(if_false, &plan.dictionary, &produced)?;
+                let c = resolve_operand(control, &batch.dictionary, &produced)?;
+                let t = resolve_operand(if_true, &batch.dictionary, &produced)?;
+                let f =
+                    resolve_operand(if_false, &batch.dictionary, &produced)?;
                 let result = computed_eval_ternary_handle(
                     *op,
                     c,
@@ -471,7 +472,7 @@ pub fn reconstruct_fhe_execute_steps(
                 output: _,
             } => {
                 let operand_handle =
-                    resolve_operand(operand, &plan.dictionary, &produced)?;
+                    resolve_operand(operand, &batch.dictionary, &produced)?;
                 let result = computed_eval_unary_handle(
                     *op,
                     operand_handle,
@@ -522,7 +523,7 @@ pub fn reconstruct_fhe_execute_steps(
                 let operand_handles: Vec<[u8; 32]> = operands
                     .iter()
                     .map(|operand| {
-                        resolve_operand(operand, &plan.dictionary, &produced)
+                        resolve_operand(operand, &batch.dictionary, &produced)
                     })
                     .collect::<Option<_>>()?;
                 let result = computed_eval_sum_handle(
@@ -548,11 +549,11 @@ pub fn reconstruct_fhe_execute_steps(
                 output: _,
             } => {
                 let value_handle =
-                    resolve_operand(value, &plan.dictionary, &produced)?;
+                    resolve_operand(value, &batch.dictionary, &produced)?;
                 let set_handles: Vec<[u8; 32]> = set
                     .iter()
                     .map(|operand| {
-                        resolve_operand(operand, &plan.dictionary, &produced)
+                        resolve_operand(operand, &batch.dictionary, &produced)
                     })
                     .collect::<Option<_>>()?;
                 let result = computed_eval_is_in_handle(
@@ -581,9 +582,9 @@ pub fn reconstruct_fhe_execute_steps(
                 output: _,
             } => {
                 let factor1_handle =
-                    resolve_operand(factor1, &plan.dictionary, &produced)?;
+                    resolve_operand(factor1, &batch.dictionary, &produced)?;
                 let (factor2_handle, scalar) =
-                    resolve_rhs(factor2, &plan.dictionary, &produced)?;
+                    resolve_rhs(factor2, &batch.dictionary, &produced)?;
                 let result = computed_eval_mul_div_handle(
                     factor1_handle,
                     factor2_handle,
@@ -671,7 +672,7 @@ fn fhe_execute_step_output(step: &FheExecuteStep) -> &FheExecuteOutput {
 /// the shape the shadow-compare consumes. Thin wrapper over
 /// [`reconstruct_fhe_execute_steps`].
 pub fn reconstruct_fhe_execute_events(
-    plan: &FheExecuteArgs,
+    batch: &FheExecuteArgs,
     subject: [u8; 32],
     remaining_accounts: &[[u8; 32]],
     random_seeds: &[FheExecuteRandomSeed],
@@ -679,7 +680,7 @@ pub fn reconstruct_fhe_execute_events(
 ) -> Option<Vec<SolanaHostEvent>> {
     Some(
         reconstruct_fhe_execute_steps(
-            plan,
+            batch,
             subject,
             remaining_accounts,
             random_seeds,
@@ -906,7 +907,7 @@ mod tests {
             FheBinaryOpCode as PgmBinaryOp, FheExecuteArgs, FheExecuteOperand,
             FheExecuteOutput, FheExecuteStep,
         };
-        let plan = FheExecuteArgs {
+        let batch = FheExecuteArgs {
             account_count: 0,
             dictionary: vec![[2u8; 32]],
             steps: vec![
@@ -927,15 +928,15 @@ mod tests {
         // Serialize like the on-chain instruction: discriminator + borsh args.
         let mut bytes =
             zama_host::instruction::FheExecute::DISCRIMINATOR.to_vec();
-        plan.serialize(&mut bytes).expect("serialize plan");
-        let decoded = decode_fhe_execute_args(&bytes).expect("decode plan");
-        assert_eq!(decoded, plan);
+        batch.serialize(&mut bytes).expect("serialize batch");
+        let decoded = decode_fhe_execute_args(&bytes).expect("decode batch");
+        assert_eq!(decoded, batch);
         assert_eq!(decoded.steps.len(), 2);
         // Wrong/missing discriminator -> None.
         assert!(decode_fhe_execute_args(&bytes[1..]).is_none());
 
         bytes.extend_from_slice(&[0xAA, 0xBB]);
-        assert_eq!(decode_fhe_execute_args(&bytes), Some(plan));
+        assert_eq!(decode_fhe_execute_args(&bytes), Some(batch));
     }
 
     #[test]
@@ -976,7 +977,7 @@ mod tests {
 
     #[test]
     fn fhe_execute_walk_chains_transient_handles() {
-        let plan = FheExecuteArgs {
+        let batch = FheExecuteArgs {
             account_count: 0,
             dictionary: vec![[2u8; 32]],
             steps: vec![
@@ -995,7 +996,7 @@ mod tests {
             ],
         };
         let events =
-            reconstruct_fhe_execute_events(&plan, SUBJECT, &[], &[], &ctx())
+            reconstruct_fhe_execute_events(&batch, SUBJECT, &[], &[], &ctx())
                 .expect("walk");
         assert_eq!(events.len(), 2);
         let step0 = match &events[0] {
@@ -1024,9 +1025,9 @@ mod tests {
             bytes[31] = 10;
             bytes
         };
-        // On-chain preflight requires a rand frame to anchor at least one persistent
+        // On-chain preflight requires a rand batch to anchor at least one persistent
         // output (fhevm-internal#1853 W4), so the fixture binds one.
-        let plan = FheExecuteArgs {
+        let batch = FheExecuteArgs {
             account_count: 1,
             dictionary: vec![[0xA1; 32], [0xA2; 32], [0xA3; 32], [0xA4; 32]],
             steps: vec![FheExecuteStep::RandBounded {
@@ -1052,7 +1053,7 @@ mod tests {
             seed: [7; 16],
         }];
         let events = reconstruct_fhe_execute_events(
-            &plan,
+            &batch,
             SUBJECT,
             &[output_account],
             &random_seeds,
@@ -1077,10 +1078,10 @@ mod tests {
             b[31] = 128; // power-of-two upper bound
             b
         };
-        // The frame ends in a rand step, so it anchors a persistent output
+        // The batch ends in a rand step, so it anchors a persistent output
         // (fhevm-internal#1853 W4); dictionary entries 1..=4 are its ACL metadata.
         let output_account = [0x55u8; 32];
-        let plan = FheExecuteArgs {
+        let batch = FheExecuteArgs {
             account_count: 1,
             dictionary: vec![
                 [2u8; 32], [0xA1; 32], [0xA2; 32], [0xA3; 32], [0xA4; 32],
@@ -1150,7 +1151,7 @@ mod tests {
         };
         let random_seed = [9; 16];
         let events = reconstruct_fhe_execute_events(
-            &plan,
+            &batch,
             SUBJECT,
             &[output_account],
             &[FheExecuteRandomSeed {
@@ -1266,7 +1267,7 @@ mod tests {
     #[test]
     fn fhe_execute_walk_rejects_forward_transient_reference() {
         // A first step referencing a not-yet-produced step -> None.
-        let plan = FheExecuteArgs {
+        let batch = FheExecuteArgs {
             account_count: 0,
             dictionary: vec![[2u8; 32]],
             steps: vec![FheExecuteStep::Binary {
@@ -1278,7 +1279,7 @@ mod tests {
             }],
         };
         assert!(reconstruct_fhe_execute_events(
-            &plan,
+            &batch,
             SUBJECT,
             &[],
             &[],

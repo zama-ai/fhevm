@@ -1,4 +1,4 @@
-//! `BatchBuilder`: accumulates typed steps and lowers them to the wire frame.
+//! `BatchBuilder`: accumulates typed steps and lowers them to the wire batch.
 
 use crate::types::{binary_rhs_operand, BinaryRhs, FheBitwise, FheEq, FheNeg, FheNot, FheShift};
 use crate::validate::handle_fhe_type;
@@ -10,9 +10,9 @@ use zama_host::{
 
 use crate::accounts::{BatchAccountMeta, BatchAppAuthority};
 use crate::acl::{BoundedU64UpperBound, Output};
+use crate::batch::Batch;
 use crate::lower::{lower_operand, lower_output};
 use crate::operand::{next_eval_builder_scope, EvalBuilderScope, Operand, OperandKind};
-use crate::plan::Batch;
 use crate::types::{Bool, Encrypted, FheIsIn, FheRandom, FheType, FheTyped, FheUint, Scalar, Uint};
 use crate::validate::{
     max_reduction_operands, operand_fhe_type, scalar_is_zero_for_type, validate_app_authority,
@@ -29,7 +29,7 @@ pub struct BatchBuilder {
     pub(crate) app_authority: BatchAppAuthority,
     pub(crate) steps: Vec<FheExecuteStep>,
     pub(crate) produced_types: Vec<u8>,
-    /// Latest producer for every persistent account written by this frame. A later
+    /// Latest producer for every persistent account written by this batch. A later
     /// persistent-shaped reference to the same account is lowered canonically as
     /// `AllowedLocal`.
     pub(crate) persistent_producers: Vec<(anchor_lang::prelude::Pubkey, u16)>,
@@ -72,7 +72,7 @@ impl BatchBuilder {
     }
 
     /// Introduces a coprocessor-attested external input as a transient operand — the Solana analog
-    /// of EVM `FHE.fromExternal`. The host re-verifies the attestation in-frame and requires the
+    /// of EVM `FHE.fromExternal`. The host re-verifies the attestation in-batch and requires the
     /// caller to be the attested contract (`compute_subject == contract_address`); derived outputs
     /// are then unconstrained, exactly like EVM `allowTransient(input, msg.sender)`. The returned
     /// value is an operand usable only in later steps of this builder.
@@ -984,16 +984,16 @@ impl BatchBuilder {
         FheType::from_host_byte(fhe_type)
     }
 
-    /// Validates the accumulated frame and lowers it to an [`Batch`].
+    /// Validates the accumulated batch and lowers it to an [`Batch`].
     ///
     /// Mirrors the host preflight checks (non-empty steps,
     /// `steps.len() <= MAX_FHE_BATCH_OPS`, rand steps anchored by a persistent
-    /// output) so a malformed frame fails locally instead of on-chain.
+    /// output) so a malformed batch fails locally instead of on-chain.
     ///
     /// Not mirrored (it depends on the deployed `hcu_block_cap_per_app`, unknown here): under a
-    /// finite block cap the host rejects a persist-nothing frame — one binding no persistent input, no
+    /// finite block cap the host rejects a persist-nothing batch — one binding no persistent input, no
     /// verified input, and no persistent output — with `FheExecuteUnanchoredUnderBlockCap`
-    /// (fhevm-internal#1744). Give such a frame a persistent output (the bootstrap/mint path) or a
+    /// (fhevm-internal#1744). Give such a batch a persistent output (the bootstrap/mint path) or a
     /// verified input if it must run under a finite cap.
     pub fn finish(self) -> Result<Batch> {
         validate_app_authority(self.app_authority)?;
