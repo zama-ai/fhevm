@@ -1,0 +1,22 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        SELECT MIN(finalized_block_number) AS \"block_number?\"\n         FROM branch_cleanup_jobs\n         WHERE chain_id = $1\n           AND status IN ('pending', 'quarantined')\n        ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "block_number?",
+        "type_info": "Int8"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Int8"
+      ]
+    },
+    "nullable": [
+      null
+    ]
+  },
+  "hash": "8e4349993d732c50a4605ffa78adfa6374cb4a3dfa870c2ac9336711a43e5729"
+}

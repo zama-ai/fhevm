@@ -92,7 +92,9 @@ gateway:
         retry_interval_ms: 1000
     gw_ciphertext_check:
       retry:
-        max_attempts: 45
+        # Allow block-scoped computation and gateway ciphertext readiness
+        # to drain under sharded CI load without terminally failing the job.
+        max_attempts: 150
         retry_interval_ms: 2000
     public_decrypt:
       max_concurrency: 250

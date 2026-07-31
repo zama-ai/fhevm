@@ -78,9 +78,28 @@ pub fn release_memory_on_gpu(amount: u64, idx: usize) {
     let _ = gpu_mem_reservation[idx].fetch_sub(amount, std::sync::atomic::Ordering::SeqCst);
 }
 
+/// Releases reservation accounting even when a TFHE/CUDA call unwinds.
+pub struct GpuMemoryReservation {
+    amount: u64,
+    idx: usize,
+}
+
+impl GpuMemoryReservation {
+    pub fn new(amount: u64, idx: usize) -> Self {
+        reserve_memory_on_gpu(amount, idx);
+        Self { amount, idx }
+    }
+}
+
+impl Drop for GpuMemoryReservation {
+    fn drop(&mut self) {
+        release_memory_on_gpu(self.amount, self.idx);
+    }
+}
+
 fn get_fhe_sum_size_on_gpu(
     _fhe_operation: i16,
-    input_operands: &[SupportedFheCiphertexts],
+    input_operands: &CiphertextOperands<'_>,
 ) -> Result<u64, FhevmError> {
     if input_operands.is_empty() {
         return Ok(0);
@@ -103,7 +122,7 @@ fn get_fhe_sum_size_on_gpu(
 
 fn get_fhe_is_in_size_on_gpu(
     _fhe_operation: i16,
-    input_operands: &[SupportedFheCiphertexts],
+    input_operands: &CiphertextOperands<'_>,
 ) -> Result<u64, FhevmError> {
     if input_operands.is_empty() {
         return Ok(0);
@@ -127,7 +146,7 @@ fn get_fhe_is_in_size_on_gpu(
 
 pub fn get_op_size_on_gpu(
     fhe_operation_int: i16,
-    input_operands: &[SupportedFheCiphertexts],
+    input_operands: &CiphertextOperands<'_>,
     // for deterministic randomness functions
 ) -> Result<u64, FhevmError> {
     let fhe_operation: SupportedFheOperations =

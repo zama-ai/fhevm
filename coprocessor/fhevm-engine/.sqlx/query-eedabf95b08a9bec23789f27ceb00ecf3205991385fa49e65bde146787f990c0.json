@@ -1,0 +1,15 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n            UPDATE branch_cleanup_jobs\n               SET status = 'completed',\n                   locked_at = NULL,\n                   last_error = NULL,\n                   updated_at = NOW()\n             WHERE chain_id = $1\n               AND finalized_block_hash = $2\n            ",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Int8",
+        "Bytea"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "eedabf95b08a9bec23789f27ceb00ecf3205991385fa49e65bde146787f990c0"
+}

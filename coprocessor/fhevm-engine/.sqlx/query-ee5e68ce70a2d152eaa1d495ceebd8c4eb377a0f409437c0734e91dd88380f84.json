@@ -1,0 +1,22 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n            SELECT settled_height AS \"settled_height!\"\n             FROM coprocessor_settlement\n             WHERE chain_id = $1\n            ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "settled_height!",
+        "type_info": "Int8"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Int8"
+      ]
+    },
+    "nullable": [
+      false
+    ]
+  },
+  "hash": "ee5e68ce70a2d152eaa1d495ceebd8c4eb377a0f409437c0734e91dd88380f84"
+}

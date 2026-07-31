@@ -1,0 +1,36 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n            SELECT block_hash, parent_hash, block_number\n            FROM host_chain_blocks_valid\n            WHERE chain_id = $1\n            AND block_number <= $2\n            AND block_number >= $3\n            AND block_status <> 'orphaned'\n        ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "block_hash",
+        "type_info": "Bytea"
+      },
+      {
+        "ordinal": 1,
+        "name": "parent_hash",
+        "type_info": "Bytea"
+      },
+      {
+        "ordinal": 2,
+        "name": "block_number",
+        "type_info": "Int8"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Int8",
+        "Int8",
+        "Int8"
+      ]
+    },
+    "nullable": [
+      false,
+      true,
+      false
+    ]
+  },
+  "hash": "7829317b819c1015229f88573ce4fecfc46e1fe9af97e8a07ac20a089aa93ca3"
+}

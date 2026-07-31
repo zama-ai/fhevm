@@ -1,0 +1,24 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n            UPDATE host_chain_blocks_valid\n            SET block_status = 'orphaned'\n            WHERE block_number = $2\n              AND chain_id = $1\n              AND block_hash <> $3\n              AND block_status <> 'orphaned'\n            RETURNING block_hash\n            ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "block_hash",
+        "type_info": "Bytea"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Int8",
+        "Int8",
+        "Bytea"
+      ]
+    },
+    "nullable": [
+      false
+    ]
+  },
+  "hash": "994f4fc9c9e2f9ee86ebd790bfeb895d4660874c74c85e807a6c754b9c29264c"
+}

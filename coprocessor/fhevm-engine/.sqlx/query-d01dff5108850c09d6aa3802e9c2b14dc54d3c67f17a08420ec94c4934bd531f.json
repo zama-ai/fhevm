@@ -1,0 +1,17 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n                INSERT INTO ciphertexts128_branch (\n                    handle,\n                    producer_block_hash,\n                    block_number,\n                    ciphertext\n                )\n                VALUES ($1, $2, $3, $4)\n                ON CONFLICT (handle, producer_block_hash)\n                DO UPDATE SET\n                    ciphertext = EXCLUDED.ciphertext,\n                    block_number = COALESCE(ciphertexts128_branch.block_number, EXCLUDED.block_number)\n                ",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Bytea",
+        "Bytea",
+        "Int8",
+        "Bytea"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "d01dff5108850c09d6aa3802e9c2b14dc54d3c67f17a08420ec94c4934bd531f"
+}

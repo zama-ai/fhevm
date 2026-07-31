@@ -1,0 +1,23 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n                SELECT ciphertext AS \"ciphertext!\"\n                  FROM ciphertexts128_branch\n                 WHERE handle = $1\n                   AND producer_block_hash = $2\n                   AND ciphertext IS NOT NULL\n                ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "ciphertext!",
+        "type_info": "Bytea"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Bytea",
+        "Bytea"
+      ]
+    },
+    "nullable": [
+      true
+    ]
+  },
+  "hash": "ad6f40b09d9bce09fd73937e2cf73d5d5bc40f4b7a8e117460fad7c41560d771"
+}

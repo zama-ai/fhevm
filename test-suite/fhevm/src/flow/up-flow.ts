@@ -44,6 +44,7 @@ import {
   COMPONENTS,
   COPROCESSOR_DB_CONTAINER,
   DEFAULT_CHAIN_ID,
+  DEFAULT_EXTRA_HOST_RPC_PORT,
   CRSGEN_ID_SELECTOR,
   DEFAULT_GATEWAY_RPC_PORT,
   DEFAULT_HOST_RPC_PORT,
@@ -210,6 +211,51 @@ export const assertDockerMemory = async (scenario: State["scenario"]) => {
   );
 };
 const NETWORK_TARGETS: ReadonlySet<string> = new Set(["devnet", "testnet", "mainnet"]);
+
+/** Whether the scenario routes a coprocessor to the managed secondary Anvil. */
+export const scenarioUsesForkAnvil = (scenario: State["scenario"]) =>
+  scenario.kind === "coprocessor-consensus" &&
+  scenario.instances.some((instance) =>
+    [instance.env.RPC_HTTP_URL, instance.env.RPC_WS_URL].some((value) => {
+      if (!value) return false;
+      try {
+        return new URL(value).hostname === "fork-anvil";
+      } catch {
+        return false;
+      }
+    }),
+  );
+
+/** Starts the managed fork from the canonical tip, paused until the fork test creates divergence. */
+const initializeManagedForkAnvil = async (state: State, canonicalRpcUrl: string) => {
+  await stepComposeUp("fork-anvil", state);
+  const forkRpcUrl = `http://localhost:${DEFAULT_EXTRA_HOST_RPC_PORT}`;
+  await waitForRpc(forkRpcUrl);
+
+  const anvilRpc = async <T>(url: string, method: string, params: unknown[] = []): Promise<T> => {
+    const response = await fetch(url, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ jsonrpc: "2.0", id: 1, method, params }),
+    });
+    if (!response.ok) {
+      throw new PreflightError(`${method} failed: ${response.status} ${response.statusText}`);
+    }
+    const payload = (await response.json()) as { result?: T; error?: { message?: string } };
+    if (payload.error || payload.result === undefined) {
+      throw new PreflightError(`${method} failed: ${payload.error?.message ?? "missing result"}`);
+    }
+    return payload.result;
+  };
+
+  const stateDump = await anvilRpc<string>(canonicalRpcUrl, "anvil_dumpState");
+  if (!stateDump) {
+    throw new PreflightError("Canonical Anvil returned an empty state dump while initializing fork-anvil");
+  }
+  if (!(await anvilRpc<boolean>(forkRpcUrl, "anvil_loadState", [stateDump]))) {
+    throw new PreflightError("fork-anvil rejected the canonical state dump");
+  }
+};
 
 const postgresExecOptions = () => ({
   user: process.env.POSTGRES_USER ?? DEFAULT_POSTGRES_USER,
@@ -828,6 +874,13 @@ export const runStep = async (state: State, step: StepName) => {
       await waitForContainer("listener-publisher-for-anvil", "running");
       break;
     case "coprocessor": {
+      if (scenarioUsesForkAnvil(state.scenario)) {
+        const defaultChain = defaultHostChain(state);
+        if (!defaultChain) {
+          throw new PreflightError("Missing default host chain");
+        }
+        await initializeManagedForkAnvil(state, `http://localhost:${defaultChain.rpcPort}`);
+      }
       const skipMigration = await coprocessorDbsSeeded(state);
       if (skipMigration) {
         await stepComposeUp("coprocessor", state, coprocessorHealthContainers(state), { noDeps: true });

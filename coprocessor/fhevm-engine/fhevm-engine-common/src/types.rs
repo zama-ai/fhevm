@@ -598,16 +598,14 @@ impl SupportedFheCiphertexts {
 
     #[cfg(feature = "gpu")]
     pub fn decompress(ct_type: i16, list: &[u8], gpu_idx: usize) -> Result<Self> {
-        use crate::gpu_memory::{release_memory_on_gpu, reserve_memory_on_gpu};
+        use crate::gpu_memory::GpuMemoryReservation;
         let ctlist: CompressedCiphertextList = safe_deserialize(list)?;
         let mut reserved_mem = 0;
         if let Ok(Some(decomp_size)) = ctlist.get_decompression_size_on_gpu(gpu_idx) {
             reserved_mem = decomp_size;
         };
-        reserve_memory_on_gpu(reserved_mem, gpu_idx);
-        let res = Self::decompress_impl(ct_type, &ctlist);
-        release_memory_on_gpu(reserved_mem, gpu_idx);
-        res
+        let _reservation = GpuMemoryReservation::new(reserved_mem, gpu_idx);
+        Self::decompress_impl(ct_type, &ctlist)
     }
 
     #[cfg(not(feature = "gpu"))]

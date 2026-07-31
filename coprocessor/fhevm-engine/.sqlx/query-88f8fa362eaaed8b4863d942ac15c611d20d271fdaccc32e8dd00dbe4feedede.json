@@ -1,0 +1,36 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n            SELECT\n                e.status AS \"status!\",\n                k.pks_key AS \"pks_key!\",\n                k.sks_key AS \"sks_key!\"\n            FROM kms_key_activation_events e\n            INNER JOIN keys k\n                ON k.chain_id = e.chain_id\n                AND k.block_hash = e.block_hash\n                AND k.key_id_gw = e.key_id\n            WHERE e.chain_id = $1 AND e.block_hash = $2 AND e.key_id = $3\n            ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "status!",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 1,
+        "name": "pks_key!",
+        "type_info": "Bytea"
+      },
+      {
+        "ordinal": 2,
+        "name": "sks_key!",
+        "type_info": "Bytea"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Int8",
+        "Bytea",
+        "Bytea"
+      ]
+    },
+    "nullable": [
+      false,
+      false,
+      false
+    ]
+  },
+  "hash": "88f8fa362eaaed8b4863d942ac15c611d20d271fdaccc32e8dd00dbe4feedede"
+}

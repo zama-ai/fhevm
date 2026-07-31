@@ -1,0 +1,15 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "DELETE FROM ciphertext_digest_branch\n                     WHERE handle = ANY($1::bytea[])\n                       AND host_chain_id = $2\n                       AND producer_block_hash = ''::bytea\n                       AND block_hash = ''::bytea",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "ByteaArray",
+        "Int8"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "d256e8be4f7c3559a49e86bb925d01b6992fa382b20c856ea95aa60fba611771"
+}

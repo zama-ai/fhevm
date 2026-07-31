@@ -62,6 +62,7 @@ export class ConsensusWatchdog {
   // must be ignored, since the contract only emits one consensus event per handle.
   private resolvedHandles = new Set<string>();
   private resolvedProofs = new Set<string>();
+  private ignoredCiphertextHandles = new Set<string>();
   private resolvedHandleCount = 0;
   private resolvedProofCount = 0;
   private divergences: string[] = [];
@@ -91,12 +92,48 @@ export class ConsensusWatchdog {
     this.provider.destroy();
   }
 
+  /** Ignore one expected divergent ciphertext handle without disabling health checks globally. */
+  ignoreCiphertextHandle(ctHandle: string): void {
+    this.ignoredCiphertextHandles.add(ctHandle);
+    this.pendingHandles.delete(ctHandle);
+    this.resolvedHandles.add(ctHandle);
+    this.divergences = this.divergences.filter((msg) => !msg.includes(`for handle ${ctHandle}`));
+    for (const key of [...this.divergenceKeys]) {
+      if (key.startsWith(`ct:${ctHandle}:`)) {
+        this.divergenceKeys.delete(key);
+      }
+    }
+  }
+
   /** Force a poll cycle — used by Mocha hooks to catch events before checking health. */
   async flush(): Promise<void> {
     if (this.pollInFlight) {
       await this.pollInFlight;
     }
     return this.poll();
+  }
+
+  /**
+   * Give blocking input-proof submissions one bounded final drain window.
+   * Time spent running the suite is not a reliable stall deadline under
+   * sharded CI load.
+   */
+  async waitForBlockingDrain(
+    consensusTimeoutMs = CONSENSUS_TIMEOUT_MS,
+    pollIntervalMs = POLL_INTERVAL_MS,
+  ): Promise<void> {
+    const deadline = Date.now() + consensusTimeoutMs;
+    while (this.divergences.length === 0) {
+      await this.flush();
+      // Ciphertext publication consensus is diagnostic only now that S3 is the
+      // source of truth. Input-proof consensus remains a blocking contract path.
+      if (this.pendingProofs.size === 0) return;
+
+      const remainingMs = deadline - Date.now();
+      if (remainingMs <= 0) return;
+
+      await new Promise((resolve) => setTimeout(resolve, Math.min(pollIntervalMs, remainingMs)));
+    }
   }
 
   private async poll(): Promise<void> {
@@ -128,6 +165,7 @@ export class ConsensusWatchdog {
             }),
       ]);
 
+      this.applyIgnoredCiphertextHandles(ciphertextResult);
       this.pendingHandles = ciphertextResult.pendingHandles;
       this.pendingProofs = proofResult.pendingProofs;
       this.resolvedHandles = ciphertextResult.resolvedHandles;
@@ -145,11 +183,7 @@ export class ConsensusWatchdog {
 
   private async pollCiphertextEvents(fromBlock: number, toBlock: number): Promise<CiphertextPollResult> {
     const [submissions, consensuses] = await Promise.all([
-      this.ciphertextCommits.queryFilter(
-        this.ciphertextCommits.filters.AddCiphertextMaterial(),
-        fromBlock,
-        toBlock,
-      ),
+      this.ciphertextCommits.queryFilter(this.ciphertextCommits.filters.AddCiphertextMaterial(), fromBlock, toBlock),
       this.ciphertextCommits.queryFilter(
         this.ciphertextCommits.filters.AddCiphertextMaterialConsensus(),
         fromBlock,
@@ -171,6 +205,7 @@ export class ConsensusWatchdog {
       const snsCiphertextDigest = log.args[3] as string;
       const coprocessor = log.args[4] as string;
 
+      if (this.ignoredCiphertextHandles.has(ctHandle)) continue;
       if (resolvedHandles.has(ctHandle)) continue;
 
       if (!pendingHandles.has(ctHandle)) {
@@ -190,6 +225,7 @@ export class ConsensusWatchdog {
     for (const event of consensuses) {
       const log = event as ethers.EventLog;
       const ctHandle = log.args[0] as string;
+      if (this.ignoredCiphertextHandles.has(ctHandle)) continue;
       resolvedHandles.add(ctHandle);
       if (pendingHandles.delete(ctHandle)) {
         resolvedHandleDelta++;
@@ -199,6 +235,21 @@ export class ConsensusWatchdog {
     return { pendingHandles, resolvedHandles, resolvedHandleDelta, divergences, divergenceKeys };
   }
 
+  private applyIgnoredCiphertextHandles(result: CiphertextPollResult): void {
+    for (const ctHandle of this.ignoredCiphertextHandles) {
+      result.pendingHandles.delete(ctHandle);
+      result.resolvedHandles.add(ctHandle);
+    }
+    result.divergences = result.divergences.filter(
+      (msg) => ![...this.ignoredCiphertextHandles].some((ctHandle) => msg.includes(`for handle ${ctHandle}`)),
+    );
+    for (const key of [...result.divergenceKeys]) {
+      if ([...this.ignoredCiphertextHandles].some((ctHandle) => key.startsWith(`ct:${ctHandle}:`))) {
+        result.divergenceKeys.delete(key);
+      }
+    }
+  }
+
   private async pollInputVerificationEvents(fromBlock: number, toBlock: number): Promise<ProofPollResult> {
     const [responses, consensuses] = await Promise.all([
       this.inputVerification!.queryFilter(
@@ -206,11 +257,7 @@ export class ConsensusWatchdog {
         fromBlock,
         toBlock,
       ),
-      this.inputVerification!.queryFilter(
-        this.inputVerification!.filters.VerifyProofResponse(),
-        fromBlock,
-        toBlock,
-      ),
+      this.inputVerification!.queryFilter(this.inputVerification!.filters.VerifyProofResponse(), fromBlock, toBlock),
     ]);
 
     const pendingProofs = this.clonePendingProofs();
@@ -316,7 +363,10 @@ export class ConsensusWatchdog {
         proofId,
         {
           firstSeenAt: pending.firstSeenAt,
-          submissions: pending.submissions.map((submission) => ({ ...submission, ctHandles: [...submission.ctHandles] })),
+          submissions: pending.submissions.map((submission) => ({
+            ...submission,
+            ctHandles: [...submission.ctHandles],
+          })),
         },
       ]),
     );
@@ -334,33 +384,14 @@ export class ConsensusWatchdog {
   }
 
   /**
-   * Check for divergences (instant) and stalls (3-minute timeout).
-   * Called in afterEach to fail the current test if consensus is broken.
+   * Check for divergences immediately and for input-proof consensus older than
+   * the normal timeout. Ciphertext publication stalls are diagnostic because
+   * S3, rather than addCiphertext, is the release's source of truth.
    */
   checkHealth(): void {
-    // Force a sync check of divergences accumulated since last poll.
-    if (this.divergences.length > 0) {
-      const msg = this.divergences.join('\n\n');
-      this.divergences = [];
-      this.divergenceKeys.clear();
-      throw new Error(`Consensus divergence detected:\n\n${msg}`);
-    }
+    this.checkDivergence();
 
-    // Check for stalls: handles that received a first submission but no consensus within timeout.
     const now = Date.now();
-
-    for (const [ctHandle, pending] of this.pendingHandles) {
-      const elapsed = now - pending.firstSeenAt;
-      if (elapsed > CONSENSUS_TIMEOUT_MS) {
-        const coprocessors = pending.submissions.map((s) => s.coprocessor).join(', ');
-        this.pendingHandles.delete(ctHandle);
-        throw new Error(
-          `Consensus stall for ciphertext handle ${ctHandle}: ` +
-            `only ${pending.submissions.length} coprocessor(s) submitted after ${Math.round(elapsed / 1000)}s ` +
-            `(submitters: ${coprocessors})`,
-        );
-      }
-    }
 
     for (const [zkProofId, pending] of this.pendingProofs) {
       const elapsed = now - pending.firstSeenAt;
@@ -373,6 +404,15 @@ export class ConsensusWatchdog {
             `(submitters: ${coprocessors})`,
         );
       }
+    }
+  }
+
+  checkDivergence(): void {
+    if (this.divergences.length > 0) {
+      const msg = this.divergences.join('\n\n');
+      this.divergences = [];
+      this.divergenceKeys.clear();
+      throw new Error(`Consensus divergence detected:\n\n${msg}`);
     }
   }
 
@@ -399,10 +439,27 @@ export class ConsensusWatchdog {
 
     return lines.join('\n');
   }
+
+  assertNoBlockingIssues(): void {
+    const failures: string[] = [];
+    if (this.divergences.length > 0) {
+      failures.push(`Consensus divergence detected:\n\n${this.divergences.join('\n\n')}`);
+    }
+    if (this.pendingProofs.size > 0) {
+      failures.push(`${this.pendingProofs.size} proof(s) never reached consensus`);
+    }
+    if (failures.length > 0) {
+      throw new Error(failures.join('\n'));
+    }
+  }
 }
 
 // Singleton — shared across all tests in a Mocha run.
 let watchdog: ConsensusWatchdog | null = null;
+
+export function ignoreWatchdogCiphertextHandle(ctHandle: string): void {
+  watchdog?.ignoreCiphertextHandle(ctHandle);
+}
 
 function isEnabled(): boolean {
   return !!(process.env.GATEWAY_RPC_URL && process.env.CIPHERTEXT_COMMITS_ADDRESS);
@@ -420,7 +477,9 @@ export const mochaHooks = {
       console.warn('[consensus-watchdog] INPUT_VERIFICATION_ADDRESS not set, skipping proof monitoring');
     }
 
-    console.log(`[consensus-watchdog] Starting — gateway=${gatewayRpcUrl} ciphertextCommits=${ciphertextCommitsAddress}`);
+    console.log(
+      `[consensus-watchdog] Starting — gateway=${gatewayRpcUrl} ciphertextCommits=${ciphertextCommitsAddress}`,
+    );
     watchdog = new ConsensusWatchdog(gatewayRpcUrl, ciphertextCommitsAddress, inputVerificationAddress);
     await watchdog.start();
   },
@@ -430,18 +489,24 @@ export const mochaHooks = {
 
     // Force one last poll before checking health so we catch recent events.
     await watchdog.flush();
-    watchdog.checkHealth();
+    // Tests that intentionally inject divergence must explicitly ignore only
+    // their expected handle with ignoreWatchdogCiphertextHandle().
+    watchdog.checkDivergence();
   },
 
   async afterAll(this: Mocha.Context) {
     if (!watchdog) return;
 
-    // Final poll + summary.
-    await watchdog.flush();
-    const summary = watchdog.summary();
-    if (summary) console.log(summary);
-
-    await watchdog.stop();
-    watchdog = null;
+    try {
+      // Input-proof submissions get one bounded drain window at suite end.
+      // Ciphertext publication stalls remain visible in the summary only.
+      await watchdog.waitForBlockingDrain();
+      const summary = watchdog.summary();
+      if (summary) console.log(summary);
+      watchdog.assertNoBlockingIssues();
+    } finally {
+      await watchdog.stop();
+      watchdog = null;
+    }
   },
 };

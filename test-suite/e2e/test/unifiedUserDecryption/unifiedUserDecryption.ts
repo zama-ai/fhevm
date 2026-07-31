@@ -26,7 +26,10 @@ import {
 } from '../sdk/unified/unifiedUserDecrypt';
 
 const DURATION_SECONDS = 7 * 24 * 60 * 60;
-const POSITIVE_TIMEOUT_MS = 3 * 60 * 1000;
+// Block-scoped materialization batches a full host block before the
+// ciphertext is converted, uploaded and committed on the gateway. Allow the
+// client poll to cover the relayer's bounded gateway-readiness window.
+const POSITIVE_TIMEOUT_MS = 6 * 60 * 1000;
 // Mocha timeout margin on top of the poll window (pre-poll on-chain work + POST).
 const TIMEOUT_MARGIN_MS = 60 * 1000;
 // Floor for the bounded observation window used by async negatives. Ownership/

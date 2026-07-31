@@ -14,6 +14,47 @@ use tfhe::{
     FheUint2048, FheUint256, FheUint32, FheUint4, FheUint512, FheUint64, FheUint8, Seed,
 };
 
+/// Borrowed view over operation inputs. Its `Index` implementation exposes
+/// ciphertexts directly, allowing scheduler fan-out to share ciphertexts
+/// without cloning them into a contiguous owned vector.
+pub struct CiphertextOperands<'a> {
+    operands: Vec<&'a SupportedFheCiphertexts>,
+}
+
+impl<'a> CiphertextOperands<'a> {
+    pub fn from_owned(operands: &'a [SupportedFheCiphertexts]) -> Self {
+        Self {
+            operands: operands.iter().collect(),
+        }
+    }
+
+    pub fn from_refs(operands: &[&'a SupportedFheCiphertexts]) -> Self {
+        Self {
+            operands: operands.to_vec(),
+        }
+    }
+
+    pub fn len(&self) -> usize {
+        self.operands.len()
+    }
+
+    pub fn is_empty(&self) -> bool {
+        self.operands.is_empty()
+    }
+
+    pub fn iter(&self) -> impl Iterator<Item = &'a SupportedFheCiphertexts> + '_ {
+        self.operands.iter().copied()
+    }
+}
+
+impl std::ops::Index<usize> for CiphertextOperands<'_> {
+    type Output = SupportedFheCiphertexts;
+
+    fn index(&self, index: usize) -> &Self::Output {
+        self.operands[index]
+    }
+}
+
 pub fn deserialize_fhe_ciphertext(
     input_type: i16,
     input_bytes: &[u8],
@@ -424,6 +465,33 @@ fn mul_div_factor1_width_bytes(
     }
 }
 
+fn scalar_width_bytes(ciphertext_type: i16) -> Option<usize> {
+    match ciphertext_type {
+        0..=2 => Some(1), // Bool, Uint4, Uint8
+        3 => Some(2),
+        4 => Some(4),
+        5 => Some(8),
+        6 => Some(16),
+        7 => Some(20),
+        8 => Some(32),
+        _ => None,
+    }
+}
+
+fn scalar_is_zero_after_cast(ciphertext_type: i16, scalar: &[u8]) -> bool {
+    let low_byte = scalar.last().copied().unwrap_or_default();
+    match ciphertext_type {
+        0 => low_byte & 0b1 == 0,
+        1 => low_byte & 0x0f == 0,
+        _ => {
+            let width = scalar_width_bytes(ciphertext_type)
+                .unwrap_or(scalar.len())
+                .min(scalar.len());
+            scalar[scalar.len() - width..].iter().all(|byte| *byte == 0)
+        }
+    }
+}
+
 // return output ciphertext type
 pub fn check_fhe_operand_types(
     fhe_operation: i32,
@@ -492,10 +560,18 @@ pub fn check_fhe_operand_types(
                 });
             }
 
-            // special case for div operation, rhs for scalar must not be zero
-            if is_scalar && fhe_op == SupportedFheOperations::FheDiv {
-                let all_zeroes = input_handles[1].iter().all(|i| *i == 0u8);
-                if all_zeroes {
+            // TFHE truncates scalar divisors to the encrypted operand's
+            // width. Reject a value whose retained low bytes are zero before
+            // execution, so deterministic division/remainder-by-zero never
+            // reaches the panic containment path.
+            if is_scalar
+                && matches!(
+                    fhe_op,
+                    SupportedFheOperations::FheDiv | SupportedFheOperations::FheRem
+                )
+            {
+                let ciphertext_type = get_ct_type(&input_handles[0])?;
+                if scalar_is_zero_after_cast(ciphertext_type, &input_handles[1]) {
                     return Err(FhevmError::FheOperationScalarDivisionByZero {
                         lhs_handle: format!("0x{}", hex::encode(&input_handles[0])),
                         rhs_value: format!("0x{}", hex::encode(&input_handles[1])),
@@ -891,7 +967,19 @@ pub fn perform_fhe_operation(
     _: usize,
     output_type: i16,
 ) -> Result<SupportedFheCiphertexts, FhevmError> {
-    perform_fhe_operation_impl(fhe_operation_int, input_operands, output_type)
+    let operands = CiphertextOperands::from_owned(input_operands);
+    perform_fhe_operation_impl(fhe_operation_int, &operands, output_type)
+}
+
+#[cfg(not(feature = "gpu"))]
+pub fn perform_fhe_operation_refs(
+    fhe_operation_int: i16,
+    input_operands: &[&SupportedFheCiphertexts],
+    _: usize,
+    output_type: i16,
+) -> Result<SupportedFheCiphertexts, FhevmError> {
+    let operands = CiphertextOperands::from_refs(input_operands);
+    perform_fhe_operation_impl(fhe_operation_int, &operands, output_type)
 }
 
 #[cfg(feature = "gpu")]
@@ -901,21 +989,38 @@ pub fn perform_fhe_operation(
     gpu_idx: usize,
     output_type: i16,
 ) -> Result<SupportedFheCiphertexts, FhevmError> {
-    use crate::gpu_memory::{get_op_size_on_gpu, release_memory_on_gpu, reserve_memory_on_gpu};
+    use crate::gpu_memory::{get_op_size_on_gpu, GpuMemoryReservation};
 
-    let mut gpu_mem_res = get_op_size_on_gpu(fhe_operation_int, input_operands)?;
-    input_operands
+    let operands = CiphertextOperands::from_owned(input_operands);
+    let mut gpu_mem_res = get_op_size_on_gpu(fhe_operation_int, &operands)?;
+    operands
         .iter()
         .for_each(|i| gpu_mem_res += i.get_size_on_gpu());
-    reserve_memory_on_gpu(gpu_mem_res, gpu_idx);
-    let res = perform_fhe_operation_impl(fhe_operation_int, input_operands, output_type);
-    release_memory_on_gpu(gpu_mem_res, gpu_idx);
-    res
+    let _reservation = GpuMemoryReservation::new(gpu_mem_res, gpu_idx);
+    perform_fhe_operation_impl(fhe_operation_int, &operands, output_type)
+}
+
+#[cfg(feature = "gpu")]
+pub fn perform_fhe_operation_refs(
+    fhe_operation_int: i16,
+    input_operands: &[&SupportedFheCiphertexts],
+    gpu_idx: usize,
+    output_type: i16,
+) -> Result<SupportedFheCiphertexts, FhevmError> {
+    use crate::gpu_memory::{get_op_size_on_gpu, GpuMemoryReservation};
+
+    let operands = CiphertextOperands::from_refs(input_operands);
+    let mut gpu_mem_res = get_op_size_on_gpu(fhe_operation_int, &operands)?;
+    operands
+        .iter()
+        .for_each(|input| gpu_mem_res += input.get_size_on_gpu());
+    let _reservation = GpuMemoryReservation::new(gpu_mem_res, gpu_idx);
+    perform_fhe_operation_impl(fhe_operation_int, &operands, output_type)
 }
 
 fn collect_operands_as<'a, T>(
     fhe_operation: &SupportedFheOperations,
-    operands: &'a [SupportedFheCiphertexts],
+    operands: &'a CiphertextOperands<'a>,
     extract: impl Fn(&'a SupportedFheCiphertexts) -> Option<&'a T>,
 ) -> Result<Vec<&'a T>, FhevmError> {
     operands
@@ -931,7 +1036,7 @@ fn collect_operands_as<'a, T>(
 
 pub fn perform_fhe_operation_impl(
     fhe_operation_int: i16,
-    input_operands: &[SupportedFheCiphertexts],
+    input_operands: &CiphertextOperands<'_>,
     output_type: i16,
 ) -> Result<SupportedFheCiphertexts, FhevmError> {
     let fhe_operation: SupportedFheOperations = fhe_operation_int.try_into()?;
@@ -3440,8 +3545,9 @@ pub fn perform_fhe_operation_impl(
             };
             match &input_operands[0] {
                 SupportedFheCiphertexts::FheUint8(value) => {
-                    let set = input_operands[1..]
+                    let set = input_operands
                         .iter()
+                        .skip(1)
                         .map(|op| match op {
                             SupportedFheCiphertexts::FheUint8(ct) => Ok(ct.clone()),
                             _ => Err(type_err()),
@@ -3452,8 +3558,9 @@ pub fn perform_fhe_operation_impl(
                     )))
                 }
                 SupportedFheCiphertexts::FheUint16(value) => {
-                    let set = input_operands[1..]
+                    let set = input_operands
                         .iter()
+                        .skip(1)
                         .map(|op| match op {
                             SupportedFheCiphertexts::FheUint16(ct) => Ok(ct.clone()),
                             _ => Err(type_err()),
@@ -3464,8 +3571,9 @@ pub fn perform_fhe_operation_impl(
                     )))
                 }
                 SupportedFheCiphertexts::FheUint32(value) => {
-                    let set = input_operands[1..]
+                    let set = input_operands
                         .iter()
+                        .skip(1)
                         .map(|op| match op {
                             SupportedFheCiphertexts::FheUint32(ct) => Ok(ct.clone()),
                             _ => Err(type_err()),
@@ -3476,8 +3584,9 @@ pub fn perform_fhe_operation_impl(
                     )))
                 }
                 SupportedFheCiphertexts::FheUint64(value) => {
-                    let set = input_operands[1..]
+                    let set = input_operands
                         .iter()
+                        .skip(1)
                         .map(|op| match op {
                             SupportedFheCiphertexts::FheUint64(ct) => Ok(ct.clone()),
                             _ => Err(type_err()),
@@ -3488,8 +3597,9 @@ pub fn perform_fhe_operation_impl(
                     )))
                 }
                 SupportedFheCiphertexts::FheUint128(value) => {
-                    let set = input_operands[1..]
+                    let set = input_operands
                         .iter()
+                        .skip(1)
                         .map(|op| match op {
                             SupportedFheCiphertexts::FheUint128(ct) => Ok(ct.clone()),
                             _ => Err(type_err()),
@@ -3500,8 +3610,9 @@ pub fn perform_fhe_operation_impl(
                     )))
                 }
                 SupportedFheCiphertexts::FheUint160(value) => {
-                    let set = input_operands[1..]
+                    let set = input_operands
                         .iter()
+                        .skip(1)
                         .map(|op| match op {
                             SupportedFheCiphertexts::FheUint160(ct) => Ok(ct.clone()),
                             _ => Err(type_err()),
@@ -3512,8 +3623,9 @@ pub fn perform_fhe_operation_impl(
                     )))
                 }
                 SupportedFheCiphertexts::FheUint256(value) => {
-                    let set = input_operands[1..]
+                    let set = input_operands
                         .iter()
+                        .skip(1)
                         .map(|op| match op {
                             SupportedFheCiphertexts::FheUint256(ct) => Ok(ct.clone()),
                             _ => Err(type_err()),
@@ -4183,5 +4295,164 @@ mod fhe_mul_div_tests {
         let lhs = handle_with_type(2);
         let rhs = handle_with_type(2);
         assert!(check_fhe_operand_types(OP, &[lhs, rhs], &[false, false]).is_err());
+    }
+}
+
+#[cfg(test)]
+mod scalar_zero_divisor_tests {
+    use super::{check_fhe_operand_types, SupportedFheOperations};
+
+    fn handle_with_type(type_byte: u8) -> Vec<u8> {
+        let mut handle = vec![0u8; 32];
+        handle[30] = type_byte;
+        handle
+    }
+
+    #[test]
+    fn div_and_rem_reject_scalars_that_truncate_to_zero() {
+        let lhs = handle_with_type(2); // Uint8
+        let mut rhs = vec![0u8; 32];
+        rhs[30] = 1; // 0x0100 truncates to zero at Uint8 width.
+
+        for operation in [
+            SupportedFheOperations::FheDiv,
+            SupportedFheOperations::FheRem,
+        ] {
+            assert!(
+                check_fhe_operand_types(
+                    operation as i32,
+                    &[lhs.clone(), rhs.clone()],
+                    &[false, true],
+                )
+                .is_err(),
+                "{operation:?} must reject a zero retained divisor"
+            );
+        }
+    }
+
+    #[test]
+    fn div_and_rem_reject_uint4_scalars_with_a_zero_low_nibble() {
+        let lhs = handle_with_type(1); // Uint4
+        let mut rhs = vec![0u8; 32];
+        rhs[31] = 0x10;
+
+        for operation in [
+            SupportedFheOperations::FheDiv,
+            SupportedFheOperations::FheRem,
+        ] {
+            assert!(check_fhe_operand_types(
+                operation as i32,
+                &[lhs.clone(), rhs.clone()],
+                &[false, true],
+            )
+            .is_err());
+        }
+    }
+
+    #[test]
+    fn div_and_rem_accept_nonzero_retained_scalar_bytes() {
+        let lhs = handle_with_type(2); // Uint8
+        let mut rhs = vec![0u8; 32];
+        rhs[31] = 1;
+
+        for operation in [
+            SupportedFheOperations::FheDiv,
+            SupportedFheOperations::FheRem,
+        ] {
+            assert!(check_fhe_operand_types(
+                operation as i32,
+                &[lhs.clone(), rhs.clone()],
+                &[false, true],
+            )
+            .is_ok());
+        }
+    }
+}
+
+#[cfg(test)]
+mod scalar_is_zero_after_cast_tests {
+    use super::scalar_is_zero_after_cast;
+
+    fn scalar32(set: &[(usize, u8)]) -> Vec<u8> {
+        let mut s = vec![0u8; 32];
+        for &(i, v) in set {
+            s[i] = v;
+        }
+        s
+    }
+
+    #[test]
+    fn bool_type_checks_only_the_low_bit() {
+        // 0x10 has bit0 clear -> zero-after-cast for Bool.
+        assert!(scalar_is_zero_after_cast(0, &scalar32(&[(31, 0x10)])));
+        // 0x01 has bit0 set -> not zero-after-cast.
+        assert!(!scalar_is_zero_after_cast(0, &scalar32(&[(31, 0x01)])));
+    }
+
+    #[test]
+    fn uint4_type_checks_only_the_low_nibble() {
+        // 0x10's low nibble is 0 -> zero-after-cast for Uint4.
+        assert!(scalar_is_zero_after_cast(1, &scalar32(&[(31, 0x10)])));
+        // 0x01's low nibble is 1 -> not zero-after-cast.
+        assert!(!scalar_is_zero_after_cast(1, &scalar32(&[(31, 0x01)])));
+    }
+
+    #[test]
+    fn uint8_type_checks_the_full_low_byte() {
+        assert!(scalar_is_zero_after_cast(2, &scalar32(&[])));
+        assert!(!scalar_is_zero_after_cast(2, &scalar32(&[(31, 0x01)])));
+        // Unlike Uint4, the high nibble is part of the retained byte, so a
+        // high-nibble-only value is NOT zero-after-cast at Uint8 width.
+        assert!(!scalar_is_zero_after_cast(2, &scalar32(&[(31, 0x10)])));
+    }
+
+    #[test]
+    fn uint16_type_checks_two_low_bytes() {
+        assert!(scalar_is_zero_after_cast(3, &scalar32(&[])));
+        // A nonzero byte outside the 2-byte window doesn't count.
+        assert!(scalar_is_zero_after_cast(3, &scalar32(&[(29, 0xff)])));
+        assert!(!scalar_is_zero_after_cast(3, &scalar32(&[(30, 0x01)])));
+        assert!(!scalar_is_zero_after_cast(3, &scalar32(&[(31, 0x01)])));
+    }
+
+    #[test]
+    fn wide_type_uint128_checks_16_low_bytes() {
+        assert!(scalar_is_zero_after_cast(6, &scalar32(&[])));
+        // Byte 15 sits just outside the 16-byte low window.
+        assert!(scalar_is_zero_after_cast(6, &scalar32(&[(15, 0xff)])));
+        assert!(!scalar_is_zero_after_cast(6, &scalar32(&[(16, 0x01)])));
+        assert!(!scalar_is_zero_after_cast(6, &scalar32(&[(31, 0x01)])));
+    }
+
+    #[test]
+    fn wide_type_uint160_checks_20_low_bytes() {
+        assert!(scalar_is_zero_after_cast(7, &scalar32(&[])));
+        // Byte 11 sits just outside the 20-byte low window.
+        assert!(scalar_is_zero_after_cast(7, &scalar32(&[(11, 0xff)])));
+        assert!(!scalar_is_zero_after_cast(7, &scalar32(&[(12, 0x01)])));
+        assert!(!scalar_is_zero_after_cast(7, &scalar32(&[(31, 0x01)])));
+    }
+
+    #[test]
+    fn wide_type_uint256_checks_all_32_bytes() {
+        assert!(scalar_is_zero_after_cast(8, &scalar32(&[])));
+        assert!(!scalar_is_zero_after_cast(8, &scalar32(&[(0, 0x01)])));
+    }
+
+    #[test]
+    fn unknown_type_falls_back_to_the_whole_scalar_length() {
+        // scalar_width_bytes(99) is None, so the width falls back to
+        // scalar.len(): the whole buffer must be checked.
+        assert!(scalar_is_zero_after_cast(99, &scalar32(&[])));
+        assert!(!scalar_is_zero_after_cast(99, &scalar32(&[(0, 0x01)])));
+    }
+
+    #[test]
+    fn empty_scalar_is_zero_after_cast_for_every_type() {
+        // scalar.last() is None -> low_byte defaults to 0, and the wide-type
+        // window over an empty slice is vacuously all-zero.
+        for ciphertext_type in [0i16, 1, 2, 3, 4, 5, 6, 7, 8, 99] {
+            assert!(scalar_is_zero_after_cast(ciphertext_type, &[]));
+        }
     }
 }

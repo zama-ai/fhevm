@@ -1,0 +1,12 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "ROLLBACK TO SAVEPOINT savepoint_upload_ciphertexts_task",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": []
+    },
+    "nullable": []
+  },
+  "hash": "f35947ac9f2c2c41c7e41b34777db58a187dfb9f7996ab80ba4961debbab9b40"
+}

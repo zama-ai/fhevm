@@ -1,0 +1,42 @@
+## Secondary Anvil node for fork/equivocation testing.
+##
+## This service runs alongside the primary host-node and serves a
+## divergent chain history to coprocessor instances that are configured
+## to observe the forked branch (via per-instance RPC_HTTP_URL / RPC_WS_URL
+## overrides in the scenario YAML).
+##
+## Both Anvil instances share the same chain ID and mnemonic (same genesis
+## state) but receive different transactions at the fork point, producing
+## different block hashes and computation results for the same handles.
+## Attach to the fhevm stack's default network so coprocessor containers
+## can resolve "fork-anvil" by container name.
+## Managed automatically by fhevm-cli for scenarios that route a coprocessor
+## to the `fork-anvil` hostname. It starts paused; fhevm-cli initializes it
+## from the canonical tip before starting the coprocessors, and the fork tests
+## resume mining only while exercising a divergent branch.
+networks:
+  default:
+    name: fhevm_default
+    external: true
+
+services:
+  fork-anvil:
+    container_name: fork-anvil
+    image: ghcr.io/foundry-rs/foundry:v1.3.5
+    env_file:
+      - ${FHEVM_STATE_DIR:-../../../.fhevm}/runtime/env/host-node.env
+    entrypoint:
+      - /bin/sh
+      - -ec
+      - |
+        exec anvil \
+          --no-mining \
+          --host 0.0.0.0 \
+          --port 8546 \
+          --chain-id "$${HOST_NODE_CHAIN_ID:-12345}" \
+          --accounts 120 \
+          --mnemonic "$${MNEMONIC:?MNEMONIC must be set by host-node.env}"
+    ports:
+      # 8546 is already used by gateway-node on the host. Keep the in-network
+      # fork endpoint at fork-anvil:8546 and expose host access on 8547.
+      - "8547:8546"

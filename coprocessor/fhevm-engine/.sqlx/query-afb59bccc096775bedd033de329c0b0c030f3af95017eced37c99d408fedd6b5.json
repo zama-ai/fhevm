@@ -1,0 +1,15 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n            INSERT INTO ciphertext_digest_branch (\n                tenant_id,\n                handle,\n                ciphertext,\n                ciphertext128,\n                txn_is_sent,\n                txn_limited_retries_count,\n                txn_last_error,\n                txn_last_error_at,\n                txn_unlimited_retries_count,\n                ciphertext128_format,\n                txn_hash,\n                txn_block_number,\n                transaction_id,\n                created_at,\n                host_chain_id,\n                key_id_gw,\n                s3_format_version,\n                producer_block_hash,\n                block_number,\n                block_hash\n            )\n            SELECT\n                d.tenant_id,\n                d.handle,\n                d.ciphertext,\n                d.ciphertext128,\n                d.txn_is_sent,\n                d.txn_limited_retries_count,\n                d.txn_last_error,\n                d.txn_last_error_at,\n                d.txn_unlimited_retries_count,\n                d.ciphertext128_format,\n                d.txn_hash,\n                d.txn_block_number,\n                d.transaction_id,\n                d.created_at,\n                d.host_chain_id,\n                d.key_id_gw,\n                d.s3_format_version,\n                ''::BYTEA,\n                NULL::BIGINT,\n                ''::BYTEA\n            FROM ciphertext_digest d\n            WHERE d.txn_is_sent = false\n              AND d.ciphertext IS NOT NULL\n              AND d.ciphertext128 IS NOT NULL\n              AND d.txn_limited_retries_count < $1\n              AND NOT EXISTS (\n                  SELECT 1\n                  FROM ciphertext_digest_branch b\n                  WHERE b.host_chain_id = d.host_chain_id\n                    AND b.handle = d.handle\n              )\n            ORDER BY d.created_at ASC\n            LIMIT $2\n            ON CONFLICT (handle, producer_block_hash, block_hash) DO NOTHING\n            ",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Int4",
+        "Int8"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "afb59bccc096775bedd033de329c0b0c030f3af95017eced37c99d408fedd6b5"
+}

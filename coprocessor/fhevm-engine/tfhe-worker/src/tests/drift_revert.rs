@@ -59,6 +59,22 @@ async fn setup_chain_and_computation(pool: &PgPool, chain_id: i64, block_number:
     .await
     .expect("insert computation");
 
+    // Production dual-writes below the cutover; on_drift_detected derives
+    // the offending block from computations_branch, so seed both shapes.
+    sqlx::query(
+        "INSERT INTO computations_branch (output_handle, dependencies, fhe_operation, is_scalar, \
+         transaction_id, host_chain_id, block_number, producer_block_hash) \
+         VALUES ($1, ARRAY[]::bytea[], 1, false, $2, $3, $4, $5)",
+    )
+    .bind(&handle)
+    .bind(&txn_id)
+    .bind(chain_id)
+    .bind(block_number)
+    .bind(vec![0xB0u8; 32])
+    .execute(pool)
+    .await
+    .expect("insert branch computation");
+
     handle
 }
 
@@ -178,6 +194,19 @@ async fn on_drift_detected_picks_earliest_block_for_duplicate_handle() {
     .execute(&pool)
     .await
     .expect("insert duplicate computation");
+    sqlx::query(
+        "INSERT INTO computations_branch (output_handle, dependencies, fhe_operation, is_scalar, \
+         transaction_id, host_chain_id, block_number, producer_block_hash) \
+         VALUES ($1, ARRAY[]::bytea[], 1, false, $2, $3, $4, $5)",
+    )
+    .bind(&handle)
+    .bind(&dup_txn_id)
+    .bind(CHAIN_A)
+    .bind(earliest)
+    .bind(vec![0xB1u8; 32])
+    .execute(&pool)
+    .await
+    .expect("insert duplicate branch computation");
 
     drift_revert::on_drift_detected(&pool, &handle, CHAIN_A).await;
 

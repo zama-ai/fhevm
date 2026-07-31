@@ -1,0 +1,15 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "UPDATE dependence_chain SET worker_id = $2 WHERE dependence_chain_id = $1",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Bytea",
+        "Uuid"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "6c78b15ae6408731ecf860de24d95e563016e5b1094cb1c87a66d9b9fe61ef88"
+}

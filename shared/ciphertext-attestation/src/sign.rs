@@ -111,7 +111,7 @@ fn keccak_b256(bytes: &[u8]) -> B256 {
 mod tests {
     use super::*;
     use crate::CiphertextFormat;
-    use alloy_primitives::{b256, uint};
+    use alloy_primitives::{address, b256, uint};
     use alloy_signer_local::PrivateKeySigner;
 
     const VERSION: Version = Version::V1;
@@ -144,6 +144,25 @@ mod tests {
         let signer = PrivateKeySigner::random();
         let att = signed(&signer).await;
         assert_eq!(att.signer, signer.address());
+        att.verify(HANDLE, CTX).unwrap();
+    }
+
+    #[tokio::test]
+    async fn fixed_key_signature_vector_is_pinned() {
+        let signer: PrivateKeySigner =
+            "0000000000000000000000000000000000000000000000000000000000000001"
+                .parse()
+                .unwrap();
+        let att = signed(&signer).await;
+
+        assert_eq!(
+            att.signer,
+            address!("7e5f4552091a69125d5dfcb7b8c2659029395bdf")
+        );
+        assert_eq!(
+            hex::encode(&att.signature),
+            "47c7923968439491f88d9e80997e07c22fd7e8c454da87b25933f0ff522d49792513dd8fe4c5851af5a8dfb12c9d00cd140f9937094e591d53ede75ae6adbf0a1c"
+        );
         att.verify(HANDLE, CTX).unwrap();
     }
 

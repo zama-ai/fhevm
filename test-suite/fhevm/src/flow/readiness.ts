@@ -506,4 +506,18 @@ export const waitForKmsConnector = async (state: State) => {
 };
 
 /** Waits for the e2e test-suite container to reach running state. */
-export const waitForTestSuite = async () => waitForContainer(TEST_SUITE_CONTAINER, "running");
+export const waitForTestSuite = async () => {
+  await waitForContainer(TEST_SUITE_CONTAINER, "running");
+  for (let attempt = 0; attempt <= 90; attempt += 1) {
+    const result = await run(["docker", "exec", TEST_SUITE_CONTAINER, "sh", "-lc", "docker ps >/dev/null"], {
+      allowFailure: true,
+    });
+    if (result.code === 0) {
+      return;
+    }
+    if (attempt === 90) {
+      throw new ProbeTimeout(`${TEST_SUITE_CONTAINER} docker access`, 180);
+    }
+    await Bun.sleep(2_000);
+  }
+};

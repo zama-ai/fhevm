@@ -1,0 +1,18 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n            UPDATE ciphertext_digest_branch\n             SET txn_unlimited_retries_count = txn_unlimited_retries_count + 1,\n                 txn_last_error = $1,\n                 txn_last_error_at = NOW()\n             WHERE host_chain_id = $2\n               AND handle = $3\n               AND producer_block_hash = $4\n               AND block_hash = $5\n            ",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Text",
+        "Int8",
+        "Bytea",
+        "Bytea",
+        "Bytea"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "85f03256cf4d797fa1384dc9844e9d5667e19bc9545ebb93523e842c715b8b15"
+}

@@ -1,0 +1,23 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        SELECT status\n        FROM branch_cleanup_jobs\n        WHERE chain_id = $1 AND finalized_block_hash = $2\n        ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "status",
+        "type_info": "Text"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Int8",
+        "Bytea"
+      ]
+    },
+    "nullable": [
+      false
+    ]
+  },
+  "hash": "4045f30115df0db3d3ed609f3b3c78f214e83ed964e104d8a569447f9b6a4336"
+}

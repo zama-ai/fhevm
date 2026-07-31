@@ -103,6 +103,43 @@ describe("compat", () => {
     ]);
   });
 
+  test("drops drift tuning flags for pre-v0.14 gateway listener images", () => {
+    const policy = compatPolicyForState({
+      versions: {
+        target: "devnet",
+        lockName: "v0.13.0.json",
+        env: {
+          COPROCESSOR_GW_LISTENER_VERSION: "v0.13.0-2",
+        } as Record<string, string>,
+        sources: [],
+      },
+      overrides: [],
+      scenario: testDefaultScenario(),
+    });
+    expect(policy.coprocessorDropFlags["gw-listener"]).toEqual([
+      "--drift-no-consensus-timeout",
+      "--drift-post-consensus-grace",
+      "--drift-auto-revert-max-recent-attempts",
+      "--drift-auto-revert-recent-attempts-window",
+    ]);
+  });
+
+  test("keeps drift tuning flags for v0.14 gateway listener prereleases", () => {
+    const policy = compatPolicyForState({
+      versions: {
+        target: "devnet",
+        lockName: "v0.14.0.json",
+        env: {
+          COPROCESSOR_GW_LISTENER_VERSION: "v0.14.0-1",
+        } as Record<string, string>,
+        sources: [],
+      },
+      overrides: [],
+      scenario: testDefaultScenario(),
+    });
+    expect(policy.coprocessorDropFlags["gw-listener"]).toBeUndefined();
+  });
+
   test("drops signer flags for legacy sns-worker images", () => {
     const policy = compatPolicyForState({
       versions: {

@@ -8,6 +8,7 @@ import {
   preflightPorts,
   resumeRepairStep,
   runtimeArtifactPaths,
+  scenarioUsesForkAnvil,
   shouldShowResumeHint,
 } from "./flow/up-flow";
 import { envPath, hostChainAddressesPath, kmsCoreConfigPath } from "./layout";
@@ -379,6 +380,33 @@ describe("resumeRepairStep", () => {
 });
 
 describe("runtime helpers", () => {
+  test("detects scenarios that require the managed fork Anvil", () => {
+    const defaultScenario = completeState().scenario;
+    expect(scenarioUsesForkAnvil(defaultScenario)).toBe(false);
+
+    expect(
+      scenarioUsesForkAnvil({
+        version: 1,
+        kind: "blue-green",
+        origin: "file",
+        hostChains: defaultScenario.hostChains,
+        topology: defaultScenario.topology,
+        bcs: { source: { mode: "inherit" }, env: {}, args: {} },
+        gcs: { source: { mode: "local" }, stackVersion: "test", env: {}, args: {} },
+        kms: defaultScenario.kms,
+      }),
+    ).toBe(false);
+
+    const forkScenario = completeState().scenario;
+    forkScenario.instances.push({
+      index: 1,
+      source: { mode: "inherit" },
+      env: { RPC_HTTP_URL: "http://fork-anvil:8546", RPC_WS_URL: "ws://fork-anvil:8546" },
+      args: {},
+    });
+    expect(scenarioUsesForkAnvil(forkScenario)).toBe(true);
+  });
+
   test("contract tasks reject missing persisted state", () => {
     expect(() => assertContractTaskStackRunning(false, 0)).toThrow("Stack is not running; run `fhevm-cli up` first");
   });

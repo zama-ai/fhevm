@@ -10,7 +10,8 @@ use sqlx::types::time::PrimitiveDateTime;
 
 use crate::tests::utils::{
     decrypt_ciphertexts, default_dependence_cache_size, setup_test_app,
-    wait_until_all_allowed_handles_computed, DecryptionResult, TestInstance,
+    setup_test_app_with_worker_config, wait_until_all_allowed_handles_computed, DecryptionResult,
+    TestInstance,
 };
 
 pub const TEST_CHAIN_ID: u64 = 42;
@@ -22,7 +23,22 @@ pub struct EventHarness {
 }
 
 pub async fn setup_event_harness() -> Result<EventHarness, Box<dyn std::error::Error>> {
-    let app = setup_test_app().await?;
+    setup_event_harness_with_app(setup_test_app().await?).await
+}
+
+pub async fn setup_event_harness_with_worker_config(
+    branch_cutover_block: i64,
+    pg_pool_max_connections: u32,
+) -> Result<EventHarness, Box<dyn std::error::Error>> {
+    setup_event_harness_with_app(
+        setup_test_app_with_worker_config(branch_cutover_block, pg_pool_max_connections).await?,
+    )
+    .await
+}
+
+async fn setup_event_harness_with_app(
+    app: TestInstance,
+) -> Result<EventHarness, Box<dyn std::error::Error>> {
     let pool = sqlx::postgres::PgPoolOptions::new()
         .max_connections(2)
         .connect(app.db_url())
@@ -46,8 +62,11 @@ pub fn next_handle() -> Handle {
     let v = count.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
     let mut out = [0_u8; 32];
     // Keep generated test handles in a namespace disjoint from scalar-encoded handles.
+    // The protocol reserves byte 30 for the FHE type, so keep the uniqueness
+    // counter entirely outside that byte. This also prevents typed handles
+    // whose counters differ only at byte 30 from colliding after the type is set.
     out[0] = 0x80;
-    out[24..].copy_from_slice(&v.to_be_bytes());
+    out[22..30].copy_from_slice(&v.to_be_bytes());
     Handle::from(out)
 }
 
@@ -111,10 +130,54 @@ pub fn log_with_tx(
     }
 }
 
-pub async fn insert_event(
+/// Marks a dependence chain schedulable, standing in for the row the
+/// block-ingest step (`Database::update_dependence_chain`) creates in
+/// production. Tests insert events through the listener DB API directly and
+/// skip ingest, so without this row the worker (whose work query is
+/// DCID-driven) never schedules them. Unlike `mark_test_dcid_ready` in the
+/// block-scoped tests, the conflict arm does not steal a live worker's lock.
+/// Pass the event transaction as the executor to keep scheduling atomic with
+/// the inserts; standalone callers can pass the pool.
+pub async fn upsert_test_dcid<'e>(
+    executor: impl sqlx::PgExecutor<'e>,
+    dependence_chain_id: &[u8],
+    block_number: u64,
+    block_hash: &[u8],
+) -> Result<(), sqlx::Error> {
+    sqlx::query(
+        r#"INSERT INTO dependence_chain (
+              dependence_chain_id, status, last_updated_at, dependency_count,
+              block_hash, block_height, schedule_priority
+           ) VALUES ($1, 'updated', NOW(), 0, $2, $3, 0)
+           ON CONFLICT (dependence_chain_id) DO UPDATE
+           SET status = 'updated'"#,
+    )
+    .bind(dependence_chain_id)
+    .bind(block_hash)
+    .bind(block_number as i64)
+    .execute(executor)
+    .await?;
+    Ok(())
+}
+
+/// Inserts an event into the helper's single implicit block (number 0, zero
+/// hash) under an explicit dependence chain, and marks that chain
+/// schedulable in the same transaction.
+///
+/// Ingestion assigns dependence chains as same-block connected components,
+/// so transactions that consume another transaction's output in this
+/// implicit block should pass the producing transaction's chain to mirror
+/// production state; self-contained transactions use `insert_event`, which
+/// keys the chain by the transaction id. (The worker's cross-lane batch
+/// closure also tolerates split lanes as a defense — covered by
+/// `test_cross_chain_same_block_closure` — but shared chains are the shape
+/// ingestion actually produces.) The worker only sees block-0 events when
+/// the harness runs with the default cutover block 0.
+pub async fn insert_event_in_chain(
     listener_db: &ListenerDatabase,
     tx: &mut Transaction<'_>,
     tx_id: Handle,
+    dependence_chain: Handle,
     event: TfheContractEvents,
     is_allowed: bool,
 ) -> Result<(), sqlx::Error> {
@@ -126,12 +189,29 @@ pub async fn insert_event(
         block_number: 0,
         block_hash: Handle::ZERO,
         block_timestamp: PrimitiveDateTime::MAX,
-        dependence_chain: tx_id,
+        dependence_chain,
         tx_depth_size: 0,
         log_index: log.log_index,
     };
     listener_db.insert_tfhe_event(tx, &event).await?;
+    upsert_test_dcid(
+        tx.as_mut(),
+        dependence_chain.as_slice(),
+        0,
+        Handle::ZERO.as_slice(),
+    )
+    .await?;
     Ok(())
+}
+
+pub async fn insert_event(
+    listener_db: &ListenerDatabase,
+    tx: &mut Transaction<'_>,
+    tx_id: Handle,
+    event: TfheContractEvents,
+    is_allowed: bool,
+) -> Result<(), sqlx::Error> {
+    insert_event_in_chain(listener_db, tx, tx_id, tx_id, event, is_allowed).await
 }
 
 pub async fn insert_trivial_encrypt(
@@ -197,9 +277,11 @@ pub async fn wait_for_error(
     let mut last_error = None;
     for _ in 0..240 {
         tokio::time::sleep(tokio::time::Duration::from_millis(250)).await;
+        // The block-scoped worker executes and error-marks the branch rows;
+        // errors are not mirrored to the legacy `computations` table.
         let row = sqlx::query_as::<_, (bool, bool, Option<String>)>(
             r#"SELECT is_error, is_completed, error_message
-               FROM computations
+               FROM computations_branch
                WHERE output_handle = $1 AND transaction_id = $2"#,
         )
         .bind(output_handle)

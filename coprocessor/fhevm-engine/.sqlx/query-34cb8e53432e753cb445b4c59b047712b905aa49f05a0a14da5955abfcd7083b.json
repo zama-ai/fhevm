@@ -1,0 +1,17 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        UPDATE computations_branch\n        SET is_error = TRUE,\n            error_message = $1,\n            error_root_output_handle = NULL,\n            error_root_transaction_id = NULL,\n            error_root_producer_block_hash = NULL\n        WHERE output_handle = $2\n          AND transaction_id = $3\n          AND producer_block_hash = $4\n          AND is_completed = FALSE\n        ",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Text",
+        "Bytea",
+        "Bytea",
+        "Bytea"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "34cb8e53432e753cb445b4c59b047712b905aa49f05a0a14da5955abfcd7083b"
+}

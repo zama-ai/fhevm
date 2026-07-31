@@ -71,6 +71,9 @@ COPY --from=builder /usr/bin /usr/bin
 COPY --from=builder /usr/lib/ /usr/lib/
 COPY --from=builder /etc/group /etc/group
 COPY --from=builder /etc/passwd /etc/passwd
+
+RUN apk add --no-cache bash docker-cli
+
 COPY --from=builder --chown=fhevm:fhevm /home/fhevm /home/fhevm
 COPY --from=builder --chown=fhevm:fhevm /app /app
 
