@@ -55,8 +55,8 @@ pub fn initialize_host_config(
     config.paused = false;
     config.grant_deny_list_enabled = args.grant_deny_list_enabled;
     // Ship HCU enforcement disabled (0 = unlimited); an admin enables it post-calibration.
-    config.max_hcu_per_tx = 0;
-    config.max_hcu_depth_per_tx = 0;
+    config.max_hcu_per_tx = u64::MAX;
+    config.max_hcu_depth_per_tx = u64::MAX;
     // Ship the per-app block cap unrestricted (u64::MAX): the neutral state that short-circuits
     // the cap and touches no meter. A `0` default would instead ban every untrusted app on deploy.
     config.hcu_block_cap_per_app = u64::MAX;

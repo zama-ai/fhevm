@@ -193,8 +193,8 @@ fn host_config_account_with_flags(
                 current_kms_context_id: 0,
                 paused,
                 grant_deny_list_enabled,
-                max_hcu_per_tx: 0,
-                max_hcu_depth_per_tx: 0,
+                max_hcu_per_tx: u64::MAX,
+                max_hcu_depth_per_tx: u64::MAX,
                 hcu_block_cap_per_app: u64::MAX,
                 updated_slot: 0,
                 bump,
@@ -2650,6 +2650,19 @@ fn set_max_hcu_per_tx_ix(
     )
 }
 
+fn set_max_hcu_depth_per_tx_ix(
+    program_id: Pubkey,
+    admin: Pubkey,
+    host_config: Pubkey,
+    value: u64,
+) -> Instruction {
+    anchor_ix(
+        program_id,
+        host::accounts::HostAdmin { admin, host_config },
+        host::instruction::SetMaxHcuDepthPerTx { value },
+    )
+}
+
 fn set_hcu_block_cap_per_app_ix(
     program_id: Pubkey,
     admin: Pubkey,
@@ -2826,7 +2839,7 @@ fn mollusk_set_max_hcu_per_tx_rejects_above_block_cap_band() {
         )],
     );
     let config = read_host_config(&context, host_config).expect("config");
-    assert_eq!(config.max_hcu_per_tx, 0);
+    assert_eq!(config.max_hcu_per_tx, u64::MAX);
     assert_eq!(config.hcu_block_cap_per_app, 500_000);
 
     // At the boundary (== cap) the guard is silent: a total equal to the band cap is accepted.
@@ -2863,6 +2876,33 @@ fn mollusk_set_max_hcu_per_tx_unrestricted_block_cap_accepts_any_total() {
     );
 }
 
+#[test]
+fn mollusk_set_max_hcu_setters_reject_zero() {
+    // u64::MAX is the single "unlimited" sentinel across every HCU knob; 0 is
+    // rejected at set time on the per-tx knobs (it would reject every frame),
+    // and stays meaningful only on the block cap (ban untrusted apps).
+    let program_id = host::id();
+    let admin = Pubkey::new_unique();
+    let (host_config, account) = host_config_account(admin);
+    let context = mollusk_eval_context(admin, vec![(host_config, account)]);
+
+    context.process_and_validate_instruction(
+        &set_max_hcu_per_tx_ix(program_id, admin, host_config, 0),
+        &[custom_error(
+            host::errors::ZamaHostError::HcuLimitZeroReserved,
+        )],
+    );
+    context.process_and_validate_instruction(
+        &set_max_hcu_depth_per_tx_ix(program_id, admin, host_config, 0),
+        &[custom_error(
+            host::errors::ZamaHostError::HcuLimitZeroReserved,
+        )],
+    );
+    let config = read_host_config(&context, host_config).expect("config");
+    assert_eq!(config.max_hcu_per_tx, u64::MAX);
+    assert_eq!(config.max_hcu_depth_per_tx, u64::MAX);
+}
+
 // ---- set_hcu_block_cap_per_app (admin cap setter) ----
 
 #[test]
@@ -2889,7 +2929,7 @@ fn mollusk_set_hcu_block_cap_at_max_per_tx_boundary_is_accepted() {
     // accepted so a single max-cost frame stays possible on a fresh meter.
     let program_id = host::id();
     let admin = Pubkey::new_unique();
-    let (host_config, account) = host_config_account_with_hcu_limits(admin, 20_000_000, 0);
+    let (host_config, account) = host_config_account_with_hcu_limits(admin, 20_000_000, u64::MAX);
     let context = mollusk_eval_context(admin, vec![(host_config, account)]);
 
     context.process_and_validate_instruction(
@@ -2910,7 +2950,7 @@ fn mollusk_set_hcu_block_cap_below_max_per_tx_is_rejected() {
     // structurally impossible (other than the deliberate ban); reject without mutation.
     let program_id = host::id();
     let admin = Pubkey::new_unique();
-    let (host_config, account) = host_config_account_with_hcu_limits(admin, 20_000_000, 0);
+    let (host_config, account) = host_config_account_with_hcu_limits(admin, 20_000_000, u64::MAX);
     let context = mollusk_eval_context(admin, vec![(host_config, account)]);
 
     context.process_and_validate_instruction(
@@ -2929,8 +2969,8 @@ fn mollusk_set_hcu_block_cap_below_max_per_tx_is_rejected() {
 
 #[test]
 fn mollusk_set_hcu_block_cap_with_max_per_tx_unlimited_accepts_any_band_value() {
-    // max_hcu_per_tx == 0 means the per-frame cap is unlimited, so the ordering guard is
-    // vacuous and even a tiny band value is accepted.
+    // max_hcu_per_tx == u64::MAX means the per-frame cap is unlimited, so the ordering guard
+    // is vacuous and even a tiny band value is accepted.
     let program_id = host::id();
     let admin = Pubkey::new_unique();
     let (host_config, account) = host_config_account(admin);
@@ -2954,7 +2994,7 @@ fn mollusk_set_hcu_block_cap_ban_and_unrestricted_sentinels_bypass_ordering() {
     // accepted, even below max_hcu_per_tx, because neither is a metering-band value.
     let program_id = host::id();
     let admin = Pubkey::new_unique();
-    let (host_config, account) = host_config_account_with_hcu_limits(admin, 20_000_000, 0);
+    let (host_config, account) = host_config_account_with_hcu_limits(admin, 20_000_000, u64::MAX);
     let context = mollusk_eval_context(admin, vec![(host_config, account)]);
 
     context.process_and_validate_instruction(
@@ -4746,8 +4786,8 @@ fn host_config_with_context(admin: Pubkey, context_id: u64) -> (Pubkey, Account)
                 current_kms_context_id: context_id,
                 paused: false,
                 grant_deny_list_enabled: false,
-                max_hcu_per_tx: 0,
-                max_hcu_depth_per_tx: 0,
+                max_hcu_per_tx: u64::MAX,
+                max_hcu_depth_per_tx: u64::MAX,
                 hcu_block_cap_per_app: u64::MAX,
                 updated_slot: 0,
                 bump,

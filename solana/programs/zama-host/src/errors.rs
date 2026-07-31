@@ -296,4 +296,8 @@ pub enum ZamaHostError {
     /// carry dead bytes.
     #[msg("FHE eval pool entry is not referenced by any step")]
     FheEvalPoolEntryUnreferenced,
+    /// `0` is not a valid per-tx HCU limit: `u64::MAX` is the single "unlimited"
+    /// sentinel across every HCU knob, and a `0` limit would reject every frame.
+    #[msg("0 is not a valid HCU limit; use u64::MAX for unlimited")]
+    HcuLimitZeroReserved,
 }

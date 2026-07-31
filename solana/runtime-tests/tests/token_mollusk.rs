@@ -321,8 +321,8 @@ fn host_config_account_with_flags(
             current_kms_context_id,
             paused: false,
             grant_deny_list_enabled,
-            max_hcu_per_tx: 0,
-            max_hcu_depth_per_tx: 0,
+            max_hcu_per_tx: u64::MAX,
+            max_hcu_depth_per_tx: u64::MAX,
             // Ships unrestricted; existing flows are unaffected by the block cap.
             hcu_block_cap_per_app: u64::MAX,
             updated_slot: 0,

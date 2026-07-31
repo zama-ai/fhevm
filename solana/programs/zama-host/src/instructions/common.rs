@@ -152,23 +152,23 @@ pub(super) fn emit_config_updated(_: &HostConfig, _: Pubkey) {}
 /// Enforces the per-app block-cap ordering guard: a metering-band cap (`0 < value < u64::MAX`)
 /// must be at least `max_hcu_per_tx`, so a single legal max-per-tx frame always fits on a fresh
 /// meter. The two sentinels are exempt: `value == u64::MAX` (unrestricted) and `value == 0`
-/// (deliberate ban of untrusted apps). `max_hcu_per_tx == 0` means the per-frame cap is unlimited,
-/// so the guard is vacuous.
+/// (deliberate ban of untrusted apps). `max_hcu_per_tx == u64::MAX` means the per-frame cap is
+/// unlimited, so the guard is vacuous.
 pub(super) fn check_block_cap_ordering(value: u64, max_hcu_per_tx: u64) -> Result<()> {
     require!(
-        value == 0 || value == u64::MAX || max_hcu_per_tx == 0 || value >= max_hcu_per_tx,
+        value == 0 || value == u64::MAX || max_hcu_per_tx == u64::MAX || value >= max_hcu_per_tx,
         ZamaHostError::HcuBlockCapBelowMaxPerTx
     );
     Ok(())
 }
 
-/// Enforces the HCU limit ordering invariant `max_hcu_per_tx >= max_hcu_depth_per_tx`, treating `0`
-/// as unlimited on either side. Both setters reuse this in `(total, depth)` terms:
+/// Enforces the HCU limit ordering invariant `max_hcu_per_tx >= max_hcu_depth_per_tx`, treating
+/// `u64::MAX` as unlimited on either side. Both setters reuse this in `(total, depth)` terms:
 /// `set_max_hcu_per_tx(v)` calls `check_hcu_ordering(v, cfg.max_hcu_depth_per_tx)`;
 /// `set_max_hcu_depth_per_tx(v)` calls `check_hcu_ordering(cfg.max_hcu_per_tx, v)`.
 pub(super) fn check_hcu_ordering(total: u64, depth: u64) -> Result<()> {
     require!(
-        total == 0 || depth == 0 || total >= depth,
+        depth == u64::MAX || total >= depth,
         ZamaHostError::HcuLimitOrderingInvalid
     );
     Ok(())
@@ -525,23 +525,25 @@ mod tests {
     }
 
     #[test]
-    fn check_hcu_ordering_zero_is_unlimited() {
-        // 0 = +inf on either side (the unlimited sentinel); both 0 is the deploy default.
-        assert!(check_hcu_ordering(0, 5_000_000).is_ok());
-        assert!(check_hcu_ordering(4_000_000, 0).is_ok());
-        assert!(check_hcu_ordering(0, 0).is_ok());
+    fn check_hcu_ordering_max_is_unlimited() {
+        // u64::MAX = +inf on either side (the unlimited sentinel); both MAX is the deploy default.
+        assert!(check_hcu_ordering(u64::MAX, 5_000_000).is_ok());
+        assert!(check_hcu_ordering(4_000_000, u64::MAX).is_ok());
+        assert!(check_hcu_ordering(u64::MAX, u64::MAX).is_ok());
     }
 
     #[test]
     fn hcu_ordering_unreachable_under_setter_sequences() {
-        // No ordered setter sequence can reach 0 < total < depth. Simulate both setters as
-        // guarded mutations over a small value space; the bad state must never be reachable.
-        let values = [0u64, 1, 5, 10, 20];
+        // No ordered setter sequence can reach total < depth with both limits finite.
+        // Simulate both setters as guarded mutations over a small value space; the
+        // bad state must never be reachable.
+        let values = [u64::MAX, 1, 5, 10, 20];
         for &a in &values {
             for &b in &values {
                 for &c in &values {
-                    let (mut total, mut depth) = (0u64, 0u64); // init state (both disabled)
-                                                               // sequence: set_total(a), set_depth(b), set_total(c)
+                    // init state (both unlimited)
+                    let (mut total, mut depth) = (u64::MAX, u64::MAX);
+                    // sequence: set_total(a), set_depth(b), set_total(c)
                     if check_hcu_ordering(a, depth).is_ok() {
                         total = a;
                     }
@@ -551,8 +553,11 @@ mod tests {
                     if check_hcu_ordering(c, depth).is_ok() {
                         total = c;
                     }
-                    let bad = total != 0 && depth != 0 && total < depth;
-                    assert!(!bad, "reached 0<total<depth: total={total} depth={depth}");
+                    let bad = total != u64::MAX && depth != u64::MAX && total < depth;
+                    assert!(
+                        !bad,
+                        "reached finite total<depth: total={total} depth={depth}"
+                    );
                 }
             }
         }
@@ -599,7 +604,7 @@ mod tests {
 
     #[test]
     fn check_block_cap_ordering_unlimited_per_tx_is_vacuous() {
-        // max_hcu_per_tx == 0 (per-frame cap off) accepts even a tiny band value.
-        assert!(check_block_cap_ordering(1, 0).is_ok());
+        // max_hcu_per_tx == u64::MAX (per-frame cap off) accepts even a tiny band value.
+        assert!(check_block_cap_ordering(1, u64::MAX).is_ok());
     }
 }

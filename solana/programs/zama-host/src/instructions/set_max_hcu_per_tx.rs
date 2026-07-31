@@ -9,12 +9,13 @@ use anchor_lang::prelude::*;
 use super::common::*;
 use super::set_host_pause::HostAdmin;
 
-/// Sets `max_hcu_per_tx`. Admin-gated. `0` = unlimited (enforcement off).
+/// Sets `max_hcu_per_tx`. Admin-gated. `u64::MAX` = unlimited (enforcement off); `0` is
+/// rejected so "off" has exactly one spelling across every HCU knob.
 ///
 /// Enforced guarantees:
 /// - The admin must sign and match `host_config.admin` (`assert_admin`).
 /// - Rejects any trailing accounts (`assert_no_remaining_accounts`).
-/// - Preserves the `max_hcu_per_tx >= max_hcu_depth_per_tx` ordering, with `0` = unlimited
+/// - Preserves the `max_hcu_per_tx >= max_hcu_depth_per_tx` ordering, with `u64::MAX` = unlimited
 ///   (`check_hcu_ordering`).
 /// - Preserves the block-cap ordering from the other side: a metering-band
 ///   `hcu_block_cap_per_app` must stay at or above the new total, so raising the per-frame
@@ -24,12 +25,16 @@ use super::set_host_pause::HostAdmin;
 pub fn set_max_hcu_per_tx(ctx: Context<HostAdmin>, value: u64) -> Result<()> {
     assert_no_remaining_accounts(ctx.remaining_accounts)?;
     assert_admin(&ctx.accounts.host_config, ctx.accounts.admin.key())?;
+    require!(
+        value != 0,
+        crate::errors::ZamaHostError::HcuLimitZeroReserved
+    );
     if ctx.accounts.host_config.max_hcu_per_tx == value {
         return Ok(());
     }
     let admin = ctx.accounts.admin.key();
     let config = &mut ctx.accounts.host_config;
-    // The new total must not fall below the current depth limit (0 = unlimited on either side).
+    // The new total must not fall below the current depth limit (u64::MAX = unlimited).
     check_hcu_ordering(value, config.max_hcu_depth_per_tx)?;
     // And a metering-band block cap must not fall below the new total (sentinels exempt).
     check_block_cap_ordering(config.hcu_block_cap_per_app, value)?;

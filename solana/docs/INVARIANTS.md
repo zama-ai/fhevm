@@ -137,7 +137,9 @@ update, encrypted value ID…).
     stamps `updated_slot` and emits a config event.
 36. **[HOLDS]** Pause blocks all production-shaped instructions.
 37. **[HOLDS]** HCU enforcement ships disabled (unrestricted defaults) and is
-    opt-in per knob; when finite, the ordering invariant
+    opt-in per knob; `u64::MAX` is the single "unlimited" sentinel on every
+    knob (`0` is rejected on the per-tx limits and means "ban untrusted apps"
+    only on the block cap). When finite, the ordering invariant
     `block cap ≥ max per tx ≥ max depth` is enforced at set time.
 38. **[ASSUMPTION]** The host admin key is a single trusted key (POC posture;
     no multisig, no timelock).

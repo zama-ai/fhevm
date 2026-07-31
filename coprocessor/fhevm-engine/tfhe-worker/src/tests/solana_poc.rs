@@ -211,8 +211,8 @@ fn seed_host_config(svm: &mut LiteSVM, program_id: Pubkey, admin: Pubkey) -> Pub
                 current_kms_context_id: 0,
                 paused: false,
                 grant_deny_list_enabled: false,
-                max_hcu_per_tx: 0,
-                max_hcu_depth_per_tx: 0,
+                max_hcu_per_tx: u64::MAX,
+                max_hcu_depth_per_tx: u64::MAX,
                 // Unrestricted (the ship default): the block cap short-circuits without
                 // requiring the optional meter/trust accounts.
                 hcu_block_cap_per_app: u64::MAX,

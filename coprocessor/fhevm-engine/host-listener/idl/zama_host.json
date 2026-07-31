@@ -2074,6 +2074,11 @@
       "code": 6080,
       "name": "FheEvalPoolEntryUnreferenced",
       "msg": "FHE eval pool entry is not referenced by any step"
+    },
+    {
+      "code": 6081,
+      "name": "HcuLimitZeroReserved",
+      "msg": "0 is not a valid HCU limit; use u64::MAX for unlimited"
     }
   ],
   "types": [
@@ -3788,14 +3793,16 @@
           {
             "name": "max_hcu_per_tx",
             "docs": [
-              "Max total HCU summed over one `fhe_eval` plan. `0` = unlimited (enforcement off)."
+              "Max total HCU summed over one `fhe_eval` plan. `u64::MAX` = unlimited",
+              "(enforcement off); `0` is rejected at set time."
             ],
             "type": "u64"
           },
           {
             "name": "max_hcu_depth_per_tx",
             "docs": [
-              "Max critical-path (depth) HCU within one `fhe_eval` plan. `0` = unlimited."
+              "Max critical-path (depth) HCU within one `fhe_eval` plan. `u64::MAX` =",
+              "unlimited; `0` is rejected at set time."
             ],
             "type": "u64"
           },
@@ -3803,8 +3810,9 @@
             "name": "hcu_block_cap_per_app",
             "docs": [
               "Per-app HCU budget per slot, enforced in `fhe_eval`. `u64::MAX` = unrestricted (the ship",
-              "default; short-circuits, touching no meter); `0` = ban untrusted apps (trusted still bypass);",
-              "any other value is the metering band (must be `>= max_hcu_per_tx` unless that is `0`)."
+              "default; short-circuits, touching no meter); `0` = ban untrusted apps (trusted still",
+              "bypass) — the one knob where `0` is a real semantic; any other value is the metering band",
+              "(must be `>= max_hcu_per_tx` unless that is unlimited)."
             ],
             "type": "u64"
           },
@@ -3910,14 +3918,14 @@
           {
             "name": "max_hcu_per_tx",
             "docs": [
-              "Current max total HCU per `fhe_eval` plan (`0` = unlimited)."
+              "Current max total HCU per `fhe_eval` plan (`u64::MAX` = unlimited)."
             ],
             "type": "u64"
           },
           {
             "name": "max_hcu_depth_per_tx",
             "docs": [
-              "Current max critical-path HCU per `fhe_eval` plan (`0` = unlimited)."
+              "Current max critical-path HCU per `fhe_eval` plan (`u64::MAX` = unlimited)."
             ],
             "type": "u64"
           },
