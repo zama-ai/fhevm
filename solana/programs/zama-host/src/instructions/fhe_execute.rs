@@ -28,7 +28,7 @@ use event_transport::{emit_eval_random_seeds, emit_public_outputs_produced};
 use preflight::preflight_eval_frame;
 use walk::{walk_eval_frame, EvalHandleContext};
 
-/// Accounts for composed instruction-local FHE evaluation.
+/// Accounts for a composed instruction-local fhe_execute batch.
 ///
 /// Persistent input and output `EncryptedValue` accounts are supplied in
 /// `remaining_accounts` and referenced by index from [`FheExecuteArgs`].
@@ -803,7 +803,7 @@ mod tests {
         // A stored subject that stays put needs no record; only `added` is checked, and it is denied.
         assert_eq!(
             check_new_grants_not_denied(&config, &table, &stored, &replacement).unwrap_err(),
-            error!(ZamaHostError::AclSubjectDenied)
+            error!(ZamaHostError::SubjectDenied)
         );
     }
 }

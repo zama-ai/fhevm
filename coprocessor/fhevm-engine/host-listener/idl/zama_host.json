@@ -1661,22 +1661,22 @@
     {
       "code": 6021,
       "name": "AppAccountAuthorityMismatch",
-      "msg": "ACL app account authority does not match app account"
+      "msg": "app account authority does not match app account"
     },
     {
       "code": 6022,
-      "name": "AclDenyRecordMissing",
-      "msg": "ACL deny-list account is required"
+      "name": "DenyRecordMissing",
+      "msg": "deny-list witness account is required"
     },
     {
       "code": 6023,
-      "name": "AclDenyRecordMismatch",
-      "msg": "ACL deny-list account does not match the canonical PDA"
+      "name": "DenyRecordMismatch",
+      "msg": "deny-list account does not match the canonical PDA"
     },
     {
       "code": 6024,
-      "name": "AclSubjectDenied",
-      "msg": "ACL authority subject is deny-listed"
+      "name": "SubjectDenied",
+      "msg": "grant authority subject is deny-listed"
     },
     {
       "code": 6025,
@@ -1711,32 +1711,32 @@
     {
       "code": 6031,
       "name": "InvalidFheExecuteOperationCount",
-      "msg": "FHE eval operation count is invalid"
+      "msg": "fhe_execute operation count is invalid"
     },
     {
       "code": 6032,
       "name": "InvalidFheExecuteAccount",
-      "msg": "FHE eval account reference is invalid"
+      "msg": "fhe_execute account reference is invalid"
     },
     {
       "code": 6033,
       "name": "FheExecuteAllowedLocalMissing",
-      "msg": "FHE eval transient operand is missing"
+      "msg": "fhe_execute transient operand is missing"
     },
     {
       "code": 6034,
       "name": "FheExecuteDuplicateHandle",
-      "msg": "FHE eval output handle is duplicated"
+      "msg": "fhe_execute output handle is duplicated"
     },
     {
       "code": 6035,
       "name": "FheExecuteOutputAlreadyInitialized",
-      "msg": "FHE eval persistent output ACL record already exists"
+      "msg": "fhe_execute persistent output ACL record already exists"
     },
     {
       "code": 6036,
       "name": "FheExecuteRandRequiresPersistentOutput",
-      "msg": "FHE eval rand step requires a persistent output in the batch"
+      "msg": "fhe_execute rand step requires a persistent output in the batch"
     },
     {
       "code": 6037,
@@ -1941,22 +1941,22 @@
     {
       "code": 6077,
       "name": "FheExecuteDictionaryIndexOutOfBounds",
-      "msg": "FHE eval dictionary index out of bounds"
+      "msg": "fhe_execute dictionary index out of bounds"
     },
     {
       "code": 6078,
       "name": "FheExecuteAccountCountMismatch",
-      "msg": "FHE eval declared account count mismatch"
+      "msg": "fhe_execute declared account count mismatch"
     },
     {
       "code": 6079,
       "name": "FheExecutePersistentOperandWrittenEarlier",
-      "msg": "FHE eval persistent operand was written earlier in the batch"
+      "msg": "fhe_execute persistent operand was written earlier in the batch"
     },
     {
       "code": 6080,
       "name": "FheExecuteDictionaryEntryUnreferenced",
-      "msg": "FHE eval dictionary entry is not referenced by any step"
+      "msg": "fhe_execute dictionary entry is not referenced by any step"
     },
     {
       "code": 6081,
@@ -2182,7 +2182,7 @@
     {
       "name": "FheExecuteArgs",
       "docs": [
-        "Arguments for composed instruction-local FHE evaluation."
+        "Arguments for a composed instruction-local fhe_execute batch."
       ],
       "type": {
         "kind": "struct",
@@ -2233,7 +2233,7 @@
     {
       "name": "FheExecuteOperand",
       "docs": [
-        "Operand source for a composed FHE eval operation."
+        "Operand source for a composed fhe_execute operation."
       ],
       "type": {
         "kind": "enum",
@@ -2303,7 +2303,7 @@
     {
       "name": "FheExecuteOutput",
       "docs": [
-        "Output policy for a composed FHE eval operation."
+        "Output policy for a composed fhe_execute operation."
       ],
       "type": {
         "kind": "enum",
@@ -2474,7 +2474,7 @@
     {
       "name": "FheExecuteStep",
       "docs": [
-        "One step inside a composed FHE eval."
+        "One step inside a composed fhe_execute batch."
       ],
       "type": {
         "kind": "enum",

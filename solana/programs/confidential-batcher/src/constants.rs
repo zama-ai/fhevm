@@ -24,7 +24,7 @@ pub const RATE_SCALE: u64 = 1_000_000_000;
 pub const BATCH_SEED: &[u8] = b"batch";
 
 /// PDA seed for the per-batch authority that owns the batch's confidential and
-/// SPL token accounts, signs its FHE evals, and authorizes its token CPIs.
+/// SPL token accounts, signs its fhe_execute batches, and authorizes its token CPIs.
 pub const BATCH_AUTHORITY_SEED: &[u8] = b"batch-authority";
 
 /// PDA seed for a user's per-batch join record.

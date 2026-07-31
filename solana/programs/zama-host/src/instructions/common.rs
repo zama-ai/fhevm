@@ -266,7 +266,7 @@ pub(super) fn check_added_subject_not_denied(
     let info = remaining_accounts
         .iter()
         .find(|account| account.key() == expected)
-        .ok_or_else(|| error!(ZamaHostError::AclDenyRecordMissing))?;
+        .ok_or_else(|| error!(ZamaHostError::DenyRecordMissing))?;
     check_grant_not_denied_info(config, subject, Some(info))
 }
 
@@ -285,39 +285,35 @@ pub(super) fn check_grant_not_denied_info(
     deny_record: Option<&AccountInfo>,
 ) -> Result<()> {
     if !config.grant_deny_list_enabled {
-        require!(deny_record.is_none(), ZamaHostError::AclDenyRecordMismatch);
+        require!(deny_record.is_none(), ZamaHostError::DenyRecordMismatch);
         return Ok(());
     }
-    let info = deny_record.ok_or_else(|| error!(ZamaHostError::AclDenyRecordMissing))?;
+    let info = deny_record.ok_or_else(|| error!(ZamaHostError::DenyRecordMissing))?;
     let (expected, expected_bump) = deny_subject_address(subject);
-    require_keys_eq!(info.key(), expected, ZamaHostError::AclDenyRecordMismatch);
+    require_keys_eq!(info.key(), expected, ZamaHostError::DenyRecordMismatch);
 
     if is_absent_deny_record(info)? {
         return Ok(());
     }
-    require_keys_eq!(*info.owner, crate::ID, ZamaHostError::AclDenyRecordMismatch);
+    require_keys_eq!(*info.owner, crate::ID, ZamaHostError::DenyRecordMismatch);
     require!(
         info.data_len() == 8 + DenySubjectRecord::SPACE,
-        ZamaHostError::AclDenyRecordMismatch
+        ZamaHostError::DenyRecordMismatch
     );
     let mut data: &[u8] = &info.try_borrow_data()?;
     let record = DenySubjectRecord::try_deserialize(&mut data)?;
     require!(
         record.bump == expected_bump,
-        ZamaHostError::AclDenyRecordMismatch
+        ZamaHostError::DenyRecordMismatch
     );
-    require_keys_eq!(
-        record.subject,
-        subject,
-        ZamaHostError::AclDenyRecordMismatch
-    );
-    require!(!record.denied, ZamaHostError::AclSubjectDenied);
+    require_keys_eq!(record.subject, subject, ZamaHostError::DenyRecordMismatch);
+    require!(!record.denied, ZamaHostError::SubjectDenied);
     Ok(())
 }
 
 pub(super) fn is_absent_deny_record(info: &AccountInfo) -> Result<bool> {
     if info.owner == &System::id() && info.data_is_empty() {
-        require!(!info.executable, ZamaHostError::AclDenyRecordMismatch);
+        require!(!info.executable, ZamaHostError::DenyRecordMismatch);
         return Ok(true);
     }
     Ok(false)
@@ -488,7 +484,7 @@ mod tests {
 
         assert_eq!(
             is_absent_deny_record(&info).unwrap_err(),
-            error!(ZamaHostError::AclDenyRecordMismatch)
+            error!(ZamaHostError::DenyRecordMismatch)
         );
     }
 

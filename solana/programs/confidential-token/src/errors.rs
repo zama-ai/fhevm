@@ -99,23 +99,23 @@ pub enum ConfidentialTokenError {
     /// Internal FHE batch construction failed before the host CPI.
     #[msg("FHE batch is invalid")]
     InvalidFheExecuteBatch,
-    /// The FHE eval candidate account list contains the same account twice.
-    #[msg("FHE eval account list contains a duplicate account")]
+    /// The fhe_execute candidate account list contains the same account twice.
+    #[msg("fhe_execute account list contains a duplicate account")]
     DuplicateFheExecuteAccount,
-    /// The FHE eval candidate account list contains an account the batch does not require.
-    #[msg("FHE eval account list contains an unexpected account")]
+    /// The fhe_execute candidate account list contains an account the batch does not require.
+    #[msg("fhe_execute account list contains an unexpected account")]
     UnexpectedFheExecuteAccount,
     /// The FHE batch requires a dynamic account that was not provided.
     #[msg("FHE batch is missing a required dynamic account")]
     MissingFheExecuteAccount,
     /// The FHE batch requires a writable dynamic account but the provided account is readonly.
-    #[msg("FHE eval dynamic account must be writable")]
+    #[msg("fhe_execute dynamic account must be writable")]
     FheExecuteAccountNotWritable,
-    /// The FHE eval output authority list contains the same authority twice.
-    #[msg("FHE eval output authority list contains a duplicate authority")]
+    /// The fhe_execute output authority list contains the same authority twice.
+    #[msg("fhe_execute output authority list contains a duplicate authority")]
     DuplicateFheOutputAuthority,
-    /// The FHE eval output authority list contains an authority the batch does not require.
-    #[msg("FHE eval output authority list contains an unexpected authority")]
+    /// The fhe_execute output authority list contains an authority the batch does not require.
+    #[msg("fhe_execute output authority list contains an unexpected authority")]
     UnexpectedFheOutputAuthority,
     /// The FHE batch requires an output authority that was not provided.
     #[msg("FHE batch is missing a required output authority")]

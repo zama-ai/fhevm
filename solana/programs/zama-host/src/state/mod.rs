@@ -128,7 +128,7 @@ impl FheUnaryOpCode {
     }
 }
 
-/// Arguments for composed instruction-local FHE evaluation.
+/// Arguments for a composed instruction-local fhe_execute batch.
 #[derive(AnchorSerialize, AnchorDeserialize, Clone, Debug, PartialEq, Eq)]
 pub struct FheExecuteArgs {
     /// Declared `remaining_accounts` length, asserted equal to the actual list. Carried in
@@ -160,7 +160,7 @@ impl FheExecuteArgs {
     }
 }
 
-/// One step inside a composed FHE eval.
+/// One step inside a composed fhe_execute batch.
 #[derive(AnchorSerialize, AnchorDeserialize, Clone, Debug, PartialEq, Eq)]
 pub enum FheExecuteStep {
     /// Binary operator step.
@@ -284,7 +284,7 @@ pub struct CoprocessorInputAttestation {
     pub signatures: Vec<[u8; 65]>,
 }
 
-/// Operand source for a composed FHE eval operation.
+/// Operand source for a composed fhe_execute operation.
 #[derive(AnchorSerialize, AnchorDeserialize, Clone, Debug, PartialEq, Eq)]
 pub enum FheExecuteOperand {
     /// Input allowed through persistent ACL state: a canonical `EncryptedValue`
@@ -320,7 +320,7 @@ pub enum FheExecuteOperand {
     },
 }
 
-/// Output policy for a composed FHE eval operation.
+/// Output policy for a composed fhe_execute operation.
 #[derive(AnchorSerialize, AnchorDeserialize, Clone, Debug, PartialEq, Eq)]
 pub enum FheExecuteOutput {
     /// Output stays allowed only inside the current `fhe_execute` scope; no persistent ACL record.

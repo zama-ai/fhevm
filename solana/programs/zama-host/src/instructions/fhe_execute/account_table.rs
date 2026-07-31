@@ -83,7 +83,7 @@ impl<'a, 'info> EvalAccountTable<'a, 'info> {
             .iter()
             .find(|account| account.key() == expected)
             .map(Some)
-            .ok_or_else(|| error!(ZamaHostError::AclDenyRecordMissing))
+            .ok_or_else(|| error!(ZamaHostError::DenyRecordMissing))
     }
 
     /// Preflight marking twin of [`Self::deny_record`].
@@ -101,7 +101,7 @@ impl<'a, 'info> EvalAccountTable<'a, 'info> {
             .iter()
             .position(|account| account.key() == expected)
         else {
-            return Err(error!(ZamaHostError::AclDenyRecordMissing));
+            return Err(error!(ZamaHostError::DenyRecordMissing));
         };
         self.used[index] = true;
         Ok(())

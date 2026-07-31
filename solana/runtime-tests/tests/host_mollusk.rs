@@ -1466,7 +1466,7 @@ fn mollusk_denied_caller_cannot_mutate_acl_update_or_eval_output() {
     mollusk().process_and_validate_instruction(
         &allow_ix,
         &accounts,
-        &[custom_error(host::errors::ZamaHostError::AclSubjectDenied)],
+        &[custom_error(host::errors::ZamaHostError::SubjectDenied)],
     );
 
     let make_public_ix = make_handle_public_ix_with_deny(
@@ -1487,7 +1487,7 @@ fn mollusk_denied_caller_cannot_mutate_acl_update_or_eval_output() {
     mollusk().process_and_validate_instruction(
         &make_public_ix,
         &accounts,
-        &[custom_error(host::errors::ZamaHostError::AclSubjectDenied)],
+        &[custom_error(host::errors::ZamaHostError::SubjectDenied)],
     );
 
     let (remove_address, remove_value) = new_value_account(
@@ -1513,7 +1513,7 @@ fn mollusk_denied_caller_cannot_mutate_acl_update_or_eval_output() {
     mollusk().process_and_validate_instruction(
         &remove_ix,
         &accounts,
-        &[custom_error(host::errors::ZamaHostError::AclSubjectDenied)],
+        &[custom_error(host::errors::ZamaHostError::SubjectDenied)],
     );
 
     let output_label = label("deny-eval");
@@ -1564,7 +1564,7 @@ fn mollusk_denied_caller_cannot_mutate_acl_update_or_eval_output() {
     mollusk().process_and_validate_instruction(
         &eval_ix,
         &accounts,
-        &[custom_error(host::errors::ZamaHostError::AclSubjectDenied)],
+        &[custom_error(host::errors::ZamaHostError::SubjectDenied)],
     );
 }
 
@@ -1610,7 +1610,7 @@ fn mollusk_denied_subject_cannot_enter_via_allow_subjects_or_eval_create() {
     mollusk().process_and_validate_instruction(
         &allow_ix,
         &accounts,
-        &[custom_error(host::errors::ZamaHostError::AclSubjectDenied)],
+        &[custom_error(host::errors::ZamaHostError::SubjectDenied)],
     );
 
     // Without the denied subject's record in the transaction the grant fails
@@ -1633,9 +1633,7 @@ fn mollusk_denied_subject_cannot_enter_via_allow_subjects_or_eval_create() {
     mollusk().process_and_validate_instruction(
         &allow_ix_no_witness,
         &accounts_no_witness,
-        &[custom_error(
-            host::errors::ZamaHostError::AclDenyRecordMissing,
-        )],
+        &[custom_error(host::errors::ZamaHostError::DenyRecordMissing)],
     );
 
     let output_label = label("deny-create-subject");
@@ -1687,7 +1685,7 @@ fn mollusk_denied_subject_cannot_enter_via_allow_subjects_or_eval_create() {
     mollusk().process_and_validate_instruction(
         &eval_ix,
         &accounts,
-        &[custom_error(host::errors::ZamaHostError::AclSubjectDenied)],
+        &[custom_error(host::errors::ZamaHostError::SubjectDenied)],
     );
 }
 
@@ -1726,7 +1724,7 @@ fn mollusk_allow_subjects_rejects_extraneous_remaining_accounts() {
         &ix,
         &accounts,
         &[custom_error(
-            host::errors::ZamaHostError::AclDenyRecordMismatch,
+            host::errors::ZamaHostError::DenyRecordMismatch,
         )],
     );
 
@@ -1761,7 +1759,7 @@ fn mollusk_allow_subjects_rejects_extraneous_remaining_accounts() {
         &ix,
         &accounts,
         &[custom_error(
-            host::errors::ZamaHostError::AclDenyRecordMismatch,
+            host::errors::ZamaHostError::DenyRecordMismatch,
         )],
     );
 
@@ -1788,7 +1786,7 @@ fn mollusk_allow_subjects_rejects_extraneous_remaining_accounts() {
         &ix,
         &accounts,
         &[custom_error(
-            host::errors::ZamaHostError::AclDenyRecordMismatch,
+            host::errors::ZamaHostError::DenyRecordMismatch,
         )],
     );
 
@@ -1944,7 +1942,7 @@ fn mollusk_fhe_execute_rejects_denied_second_output_authority_in_multi_output_fr
     mollusk().process_and_validate_instruction(
         &ix,
         &accounts,
-        &[custom_error(host::errors::ZamaHostError::AclSubjectDenied)],
+        &[custom_error(host::errors::ZamaHostError::SubjectDenied)],
     );
 }
 
@@ -3934,7 +3932,7 @@ impl EvalFixture {
     /// A batch at `MAX_FHE_BATCH_OPS`: `Ge` control, alternating `Sub`/`Add` transient
     /// steps, and the persistent `IfThenElse` output. Same accounts and output shape as
     /// `block_cap_instruction`, so the compute-unit delta against the three-op profile
-    /// isolates the additional host-side FHE eval steps.
+    /// isolates the additional host-side fhe_execute steps.
     fn max_ops_instruction(&self) -> Instruction {
         let mut dictionary = BatchDictionary::default();
         let mut steps = vec![FheExecuteStep::Binary {
@@ -5920,7 +5918,7 @@ fn cost_snapshot_fhe_execute_three_op_frame() {
 fn cost_snapshot_fhe_execute_max_op_frame() {
     // A batch at MAX_FHE_BATCH_OPS with the same fixture keys, accounts, and
     // persistent-output shape as the three-op profile. The compute-unit delta
-    // isolates the extra direct host-side FHE eval steps; it does not include
+    // isolates the extra direct host-side fhe_execute steps; it does not include
     // work performed by an application before invoking the host program.
     let fixture = EvalFixture::with_block_cap_keys(
         u64::MAX,

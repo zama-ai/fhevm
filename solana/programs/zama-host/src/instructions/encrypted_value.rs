@@ -82,7 +82,7 @@ pub fn allow_subjects(
         let position = unclaimed_witness_addresses
             .iter()
             .position(|address| *address == account.key())
-            .ok_or_else(|| error!(ZamaHostError::AclDenyRecordMismatch))?;
+            .ok_or_else(|| error!(ZamaHostError::DenyRecordMismatch))?;
         unclaimed_witness_addresses.swap_remove(position);
     }
 

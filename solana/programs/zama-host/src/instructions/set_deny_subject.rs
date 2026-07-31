@@ -33,7 +33,7 @@ pub fn set_deny_subject(ctx: Context<SetDenySubject>, subject: Pubkey, denied: b
     require_keys_eq!(
         expected,
         ctx.accounts.deny_subject_record.key(),
-        ZamaHostError::AclDenyRecordMismatch
+        ZamaHostError::DenyRecordMismatch
     );
 
     let info = ctx.accounts.deny_subject_record.to_account_info();
@@ -73,19 +73,15 @@ fn current_deny_status(info: &AccountInfo, subject: Pubkey, bump: u8) -> Result<
     if is_absent_deny_record(info)? {
         return Ok(None);
     }
-    require_keys_eq!(*info.owner, crate::ID, ZamaHostError::AclDenyRecordMismatch);
+    require_keys_eq!(*info.owner, crate::ID, ZamaHostError::DenyRecordMismatch);
     require!(
         info.data_len() == 8 + DenySubjectRecord::SPACE,
-        ZamaHostError::AclDenyRecordMismatch
+        ZamaHostError::DenyRecordMismatch
     );
     let data = info.try_borrow_data()?;
     let mut data_slice: &[u8] = &data;
     let record = DenySubjectRecord::try_deserialize(&mut data_slice)?;
-    require_keys_eq!(
-        record.subject,
-        subject,
-        ZamaHostError::AclDenyRecordMismatch
-    );
-    require!(record.bump == bump, ZamaHostError::AclDenyRecordMismatch);
+    require_keys_eq!(record.subject, subject, ZamaHostError::DenyRecordMismatch);
+    require!(record.bump == bump, ZamaHostError::DenyRecordMismatch);
     Ok(Some(record.denied))
 }

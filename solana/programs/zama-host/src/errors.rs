@@ -73,17 +73,17 @@ pub enum ZamaHostError {
     #[msg("bounded random upper bound is invalid")]
     InvalidRandomUpperBound,
     /// The authority signing for an output's app account does not match that app account.
-    #[msg("ACL app account authority does not match app account")]
+    #[msg("app account authority does not match app account")]
     AppAccountAuthorityMismatch,
     /// A deny-list witness is required but was not supplied.
-    #[msg("ACL deny-list account is required")]
-    AclDenyRecordMissing,
+    #[msg("deny-list witness account is required")]
+    DenyRecordMissing,
     /// A deny-list witness is not canonical or has invalid contents.
-    #[msg("ACL deny-list account does not match the canonical PDA")]
-    AclDenyRecordMismatch,
+    #[msg("deny-list account does not match the canonical PDA")]
+    DenyRecordMismatch,
     /// The grant authority is denied by the configured deny-list.
-    #[msg("ACL authority subject is deny-listed")]
-    AclSubjectDenied,
+    #[msg("grant authority subject is deny-listed")]
+    SubjectDenied,
     /// A delegation account is not the canonical PDA for its tuple.
     #[msg("delegation record does not match the canonical PDA")]
     DelegationPdaMismatch,
@@ -102,24 +102,24 @@ pub enum ZamaHostError {
     /// A PDA account was not fresh or canonical after creation.
     #[msg("PDA creation target is invalid")]
     PdaCreationMismatch,
-    /// An FHE eval instruction exceeded the supported operation count.
-    #[msg("FHE eval operation count is invalid")]
+    /// An fhe_execute instruction exceeded the supported operation count.
+    #[msg("fhe_execute operation count is invalid")]
     InvalidFheExecuteOperationCount,
-    /// An FHE eval instruction referenced a missing or malformed dynamic account.
-    #[msg("FHE eval account reference is invalid")]
+    /// An fhe_execute instruction referenced a missing or malformed dynamic account.
+    #[msg("fhe_execute account reference is invalid")]
     InvalidFheExecuteAccount,
-    /// An FHE eval instruction referenced a transient output that was not produced earlier.
-    #[msg("FHE eval transient operand is missing")]
+    /// An fhe_execute instruction referenced a transient output that was not produced earlier.
+    #[msg("fhe_execute transient operand is missing")]
     FheExecuteAllowedLocalMissing,
-    /// An FHE eval instruction produced the same transient handle twice.
-    #[msg("FHE eval output handle is duplicated")]
+    /// An fhe_execute instruction produced the same transient handle twice.
+    #[msg("fhe_execute output handle is duplicated")]
     FheExecuteDuplicateHandle,
-    /// An FHE eval persistent output account already exists.
-    #[msg("FHE eval persistent output ACL record already exists")]
+    /// An fhe_execute persistent output account already exists.
+    #[msg("fhe_execute persistent output ACL record already exists")]
     FheExecuteOutputAlreadyInitialized,
     /// A batch containing a rand step must declare at least one persistent output,
     /// which anchors the compulsorily fresh rand seed (fhevm-internal#1853 W4).
-    #[msg("FHE eval rand step requires a persistent output in the batch")]
+    #[msg("fhe_execute rand step requires a persistent output in the batch")]
     FheExecuteRandRequiresPersistentOutput,
     /// A KMS context was defined with a duplicate signer address.
     #[msg("KMS context signer set contains a duplicate address")]
@@ -142,7 +142,7 @@ pub enum ZamaHostError {
     /// The attested `contract_chain_id` does not match the host chain id (EVM `contractChainId == block.chainid`).
     #[msg("attested contract chain id does not match the host chain id")]
     AttestationChainIdMismatch,
-    // ---- RFC-024 EncryptedValue ACL model ----
+    // ---- EncryptedValue ACL model ----
     /// An `EncryptedValue` account is not the canonical PDA for its value key.
     #[msg("encrypted value account does not match the canonical PDA")]
     EncryptedValuePdaMismatch,
@@ -283,18 +283,18 @@ pub enum ZamaHostError {
     ClockBeforeEpoch,
 
     /// A step referenced an interned dictionary index past the end of `FheExecuteArgs::dictionary`.
-    #[msg("FHE eval dictionary index out of bounds")]
+    #[msg("fhe_execute dictionary index out of bounds")]
     FheExecuteDictionaryIndexOutOfBounds,
     /// `FheExecuteArgs::account_count` does not match the actual remaining-accounts length.
-    #[msg("FHE eval declared account count mismatch")]
+    #[msg("fhe_execute declared account count mismatch")]
     FheExecuteAccountCountMismatch,
     /// An `AllowedPersistent` operand referenced an account written by an earlier step.
     /// In-batch dependencies must use `AllowedLocal`.
-    #[msg("FHE eval persistent operand was written earlier in the batch")]
+    #[msg("fhe_execute persistent operand was written earlier in the batch")]
     FheExecutePersistentOperandWrittenEarlier,
     /// An interned dictionary entry was never referenced by any step; a batch must not
     /// carry dead bytes.
-    #[msg("FHE eval dictionary entry is not referenced by any step")]
+    #[msg("fhe_execute dictionary entry is not referenced by any step")]
     FheExecuteDictionaryEntryUnreferenced,
     /// `0` is not a valid per-tx HCU limit: `u64::MAX` is the single "unlimited"
     /// sentinel across every HCU knob, and a `0` limit would reject every batch.

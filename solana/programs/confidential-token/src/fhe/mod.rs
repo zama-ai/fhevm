@@ -378,7 +378,7 @@ impl<'info> EvalAccountSet<'info> {
 }
 
 fn map_eval_account_resolution_error(error: zama_fhe::EvalAccountResolutionError) -> Error {
-    msg!("invalid FHE eval account set: {:?}", error);
+    msg!("invalid fhe_execute account set: {:?}", error);
     match error {
         zama_fhe::EvalAccountResolutionError::DuplicateDynamicAccount { .. } => {
             error!(ConfidentialTokenError::DuplicateFheExecuteAccount)

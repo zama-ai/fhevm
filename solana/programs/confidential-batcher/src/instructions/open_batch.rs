@@ -33,7 +33,7 @@ pub struct OpenBatch<'info> {
     )]
     pub batch: Box<Account<'info, Batch>>,
     /// CHECK: per-batch authority PDA; owns every batch token account, signs
-    /// the batch's FHE evals and token CPIs, and pays owner-charged rent from
+    /// the batch's fhe_execute CPIs and token CPIs, and pays owner-charged rent from
     /// the funding it receives here.
     #[account(mut, seeds = [BATCH_AUTHORITY_SEED, batch.key().as_ref()], bump)]
     pub batch_authority: UncheckedAccount<'info>,

@@ -1,4 +1,4 @@
-//! App-facing helpers for preparing `zama-host` FHE evaluation requests.
+//! App-facing helpers for preparing `zama-host` fhe_execute batch requests.
 //!
 //! This crate targets the role-aware host ABI. App code describes encrypted
 //! operands and persistent outputs by pubkey; [`BatchBuilder`] validates the batch,

@@ -133,7 +133,7 @@ pub(crate) fn eval_as_batch_authority<'info, T>(
         // Keep host/CPI error codes visible to callers and tests.
         zama_fhe::BatchInvokeError::Cpi(error) => error,
         other => {
-            msg!("invalid batcher FHE eval: {:?}", other);
+            msg!("invalid batcher fhe_execute batch: {:?}", other);
             error!(BatcherError::InvalidFheExecuteBatch)
         }
     })?;

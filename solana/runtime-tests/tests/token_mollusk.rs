@@ -1721,7 +1721,7 @@ fn mollusk_confidential_transfer_deny_list_rejects_denied_rotation_added_subject
             ),
             vec![alice_deny, charlie_token_deny, charlie_owner_deny],
         ),
-        &[host_error(host::errors::ZamaHostError::AclSubjectDenied)],
+        &[host_error(host::errors::ZamaHostError::SubjectDenied)],
     );
 
     // The denied rotation left the receipt at its first-transfer audience.
@@ -1781,7 +1781,7 @@ fn mollusk_confidential_transfer_with_deny_list_rejects_denied_from_authority() 
 
     context.process_and_validate_instruction(
         &ix,
-        &[host_error(host::errors::ZamaHostError::AclSubjectDenied)],
+        &[host_error(host::errors::ZamaHostError::SubjectDenied)],
     );
 
     let alice_balance = read_encrypted_value(&context, fixture.alice_balance_value);
@@ -1814,7 +1814,7 @@ fn mollusk_confidential_transfer_with_deny_list_rejects_denied_to_authority() {
 
     context.process_and_validate_instruction(
         &ix,
-        &[host_error(host::errors::ZamaHostError::AclSubjectDenied)],
+        &[host_error(host::errors::ZamaHostError::SubjectDenied)],
     );
 
     let alice_balance = read_encrypted_value(&context, fixture.alice_balance_value);

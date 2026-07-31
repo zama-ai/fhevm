@@ -1,7 +1,7 @@
 //! Anchor program for the Solana FHEVM host PoC.
 //!
 //! `zama-host` owns the protocol-facing parts of the PoC: the append-only
-//! `EncryptedValue` ACL/MMR model, handle derivation, FHE eval, public-decrypt
+//! `EncryptedValue` ACL/MMR model, handle derivation, fhe_execute, public-decrypt
 //! state and the small set of account witnesses that a future
 //! Gateway/KMS request must verify.
 //!
@@ -152,7 +152,7 @@ pub mod zama_host {
         instructions::fhe_execute(ctx, args)
     }
 
-    // ---- RFC-024 EncryptedValue ACL model ----
+    // ---- EncryptedValue ACL model ----
 
     pub fn allow_subjects(
         ctx: Context<AllowEncryptedValueSubjects>,

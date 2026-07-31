@@ -1939,12 +1939,12 @@
     {
       "code": 6030,
       "name": "DuplicateFheExecuteAccount",
-      "msg": "FHE eval account list contains a duplicate account"
+      "msg": "fhe_execute account list contains a duplicate account"
     },
     {
       "code": 6031,
       "name": "UnexpectedFheExecuteAccount",
-      "msg": "FHE eval account list contains an unexpected account"
+      "msg": "fhe_execute account list contains an unexpected account"
     },
     {
       "code": 6032,
@@ -1954,17 +1954,17 @@
     {
       "code": 6033,
       "name": "FheExecuteAccountNotWritable",
-      "msg": "FHE eval dynamic account must be writable"
+      "msg": "fhe_execute dynamic account must be writable"
     },
     {
       "code": 6034,
       "name": "DuplicateFheOutputAuthority",
-      "msg": "FHE eval output authority list contains a duplicate authority"
+      "msg": "fhe_execute output authority list contains a duplicate authority"
     },
     {
       "code": 6035,
       "name": "UnexpectedFheOutputAuthority",
-      "msg": "FHE eval output authority list contains an unexpected authority"
+      "msg": "fhe_execute output authority list contains an unexpected authority"
     },
     {
       "code": 6036,
