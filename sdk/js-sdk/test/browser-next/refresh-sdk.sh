@@ -5,7 +5,7 @@
 # browser-next keeps whatever @fhevm/sdk was last extracted (the stale-tarball trap).
 #
 # Guarantees:
-#   1. No stale Next dev server bound to :3334 (mirrors dod.sh's per-cell free_next,
+#   1. No stale Next dev server bound to :3334 (mirrors run-tests.sh's per-cell free_next,
 #      applied once up front so a wrong-env/wedged server can't be reused).
 #   2. browser-next's node_modules/@fhevm/sdk is re-extracted from the current tarball.
 set -euo pipefail

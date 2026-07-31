@@ -7,7 +7,7 @@ set -uo pipefail
 # thread mode, etc. — instead of the full (slow) suite. Runs all matching cells even
 # if one fails; exits non-zero if any failed.
 #
-#   ./dod.sh --help
+#   ./run-tests.sh --help
 #
 # Requires foundry (anvil/cast/forge) on PATH.
 
@@ -66,7 +66,7 @@ NO_UP=0
 
 usage() {
   cat <<EOF
-Usage: ./dod.sh [filters] [options]
+Usage: ./run-tests.sh [filters] [options]
 
 Runs the browser-next definition-of-done cells (currently $N). With no filters, runs
 them all. Filters combine with AND so you can test precisely without the slow full run.
@@ -99,22 +99,22 @@ Options:
   -h, --help              Show this help.
 
 Examples:
-  ./dod.sh                                 # full suite (all $N cells)
-  ./dod.sh --index 18                      # only cell 18
-  ./dod.sh --index 15-22                   # only the wasm-load cells
-  ./dod.sh --spec wasm-load --mt           # all multi-threaded wasm-load cells
-  ./dod.sh --spec encrypt --lib ethers     # ethers encrypt cells
-  ./dod.sh --module kms                    # the TKMS keygen cells
-  ./dod.sh --mt --no-coop                  # MT cells with COOP off
-  ./dod.sh --index 4 --all-browsers        # cell 4 on chromium + firefox + webkit
-  ./dod.sh --spec encrypt --firefox        # encrypt cells on chromium + firefox
-  ./dod.sh --list                          # show every cell's index + config
-  ./dod.sh --list --spec ssr               # list just the ssr cells
+  ./run-tests.sh                              # full suite (all $N cells)
+  ./run-tests.sh --index 18                   # only cell 18
+  ./run-tests.sh --index 15-22                # only the wasm-load cells
+  ./run-tests.sh --spec wasm-load --mt        # all multi-threaded wasm-load cells
+  ./run-tests.sh --spec encrypt --lib ethers  # ethers encrypt cells
+  ./run-tests.sh --module kms                 # the TKMS keygen cells
+  ./run-tests.sh --mt --no-coop               # MT cells with COOP off
+  ./run-tests.sh --index 4 --all-browsers     # cell 4 on chromium + firefox + webkit
+  ./run-tests.sh --spec encrypt --firefox     # encrypt cells on chromium + firefox
+  ./run-tests.sh --list                       # show every cell's index + config
+  ./run-tests.sh --list --spec ssr            # list just the ssr cells
 
   # Fast iteration — bring infra up once, then re-run single cells with --no-up:
   ../infra/up.sh -d
-  ./dod.sh --index 18 --no-up
-  ./dod.sh --module cleartext --no-up
+  ./run-tests.sh --index 18 --no-up
+  ./run-tests.sh --module cleartext --no-up
   ../infra/down.sh
 EOF
 }
@@ -176,7 +176,7 @@ while [[ $# -gt 0 ]]; do
       ;;
     *)
       echo "Unknown option: $1" >&2
-      echo "Run './dod.sh --help' for usage." >&2
+      echo "Run './run-tests.sh --help' for usage." >&2
       exit 2
       ;;
   esac
