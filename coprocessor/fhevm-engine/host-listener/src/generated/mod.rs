@@ -27,7 +27,6 @@ pub use zama_host_events::{
     FheRandEvent, FheSumEvent, FheTernaryOpCode, FheTernaryOpEvent,
     FheUnaryOpCode, FheUnaryOpEvent, ProducedPublicOutput,
     PublicOutputsProducedEvent, TrivialEncryptEvent, EVENT_VERSION,
-    PUBLIC_OUTPUTS_PRODUCED_EVENT_VERSION,
 };
 pub use zama_host_instructions::{
     decode_zama_host_instruction, ZamaHostInstruction,
@@ -36,14 +35,13 @@ pub use zama_host_instructions::{
 #[cfg(test)]
 mod tests {
     use super::{
-        ProducedPublicOutput, PublicOutputsProducedEvent,
-        PUBLIC_OUTPUTS_PRODUCED_EVENT_VERSION,
+        ProducedPublicOutput, PublicOutputsProducedEvent, EVENT_VERSION,
     };
 
     #[test]
     fn generated_public_outputs_produced_event_includes_nested_records() {
         let event = PublicOutputsProducedEvent {
-            version: PUBLIC_OUTPUTS_PRODUCED_EVENT_VERSION,
+            version: EVENT_VERSION,
             outputs: vec![ProducedPublicOutput {
                 step_index: 2,
                 encrypted_value: [3; 32],

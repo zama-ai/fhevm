@@ -2,8 +2,7 @@
   "description": "Pinned Solana Anchor schema hashes and deterministic Borsh golden fixtures for off-chain listener/KMS layout mirrors.",
   "event_versions": {
     "confidential_token": 1,
-    "zama_host": 1,
-    "zama_host_public_outputs_produced": 1
+    "zama_host": 1
   },
   "pending_schemas": [],
   "schemas": [

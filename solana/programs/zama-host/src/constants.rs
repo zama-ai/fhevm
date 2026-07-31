@@ -1,9 +1,7 @@
 //! Shared constants, PDA seeds, and protocol domain separators.
 
-/// Version byte written to host protocol events.
+/// Version byte written to every host protocol event.
 pub const EVENT_VERSION: u8 = 1;
-/// Version of the produced-public `fhe_eval` lifecycle batch.
-pub const PUBLIC_OUTPUTS_PRODUCED_EVENT_VERSION: u8 = 1;
 /// RFC-021 reserves the high bit (bit 63) of the u64 chain id as the host
 /// `chain_type` marker: when set, the host chain is Solana rather than an EVM
 /// chain. EVM chain ids keep this bit clear. The remaining 63 bits carry the

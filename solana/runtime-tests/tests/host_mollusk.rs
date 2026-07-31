@@ -2277,7 +2277,7 @@ fn assert_born_public_batch(
         Some(&event_authority(host::id()))
     );
     let event = &events[0];
-    assert_eq!(event.version, host::PUBLIC_OUTPUTS_PRODUCED_EVENT_VERSION);
+    assert_eq!(event.version, host::EVENT_VERSION);
     assert_eq!(event.outputs.len(), expected_outputs.len());
     for (record, (step_index, encrypted_value)) in event.outputs.iter().zip(expected_outputs.iter())
     {

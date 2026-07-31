@@ -36,7 +36,7 @@ pub(super) fn emit_eval_random_seeds<'info>(
 
 fn public_outputs_produced_event_instruction(outputs: Vec<ProducedPublicOutput>) -> Instruction {
     let event = PublicOutputsProducedEvent {
-        version: PUBLIC_OUTPUTS_PRODUCED_EVENT_VERSION,
+        version: EVENT_VERSION,
         outputs,
     };
     let data = anchor_lang::event::EVENT_IX_TAG_LE

@@ -51,7 +51,6 @@ fn generate_anchor_event_types(idl_file: &str, output_file: &str) {
 // Do not edit by hand.
 
 pub const EVENT_VERSION: u8 = 1;
-pub const PUBLIC_OUTPUTS_PRODUCED_EVENT_VERSION: u8 = 1;
 
 "#,
     );

@@ -426,7 +426,7 @@ fn decode_born_public_event(
         .ok_or(DecodeError::InvalidBornPublicEnvelope)?;
     let version = u8::deserialize(&mut body)
         .map_err(|e| DecodeError::MalformedBornPublicEvent(e.to_string()))?;
-    if version != zama_host::PUBLIC_OUTPUTS_PRODUCED_EVENT_VERSION {
+    if version != zama_host::EVENT_VERSION {
         return Err(DecodeError::UnsupportedBornPublicVersion(version));
     }
     const RECORD_BYTES: usize = 66;
@@ -770,7 +770,7 @@ mod tests {
     fn born_public_event_ix(records: &[(u16, [u8; 32], [u8; 32])]) -> RawInstruction {
         let mut data = ANCHOR_EVENT_IX_TAG_LE.to_vec();
         data.extend_from_slice(&event_discriminator("PublicOutputsProducedEvent"));
-        data.push(zama_host::PUBLIC_OUTPUTS_PRODUCED_EVENT_VERSION);
+        data.push(zama_host::EVENT_VERSION);
         let records = records
             .iter()
             .map(|(step_index, encrypted_value, output_handle)| {

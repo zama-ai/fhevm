@@ -27,7 +27,6 @@ PROGRAMS = {
         "constants": "programs/zama-host/src/constants.rs",
         "event_version_consts": {
             "zama_host": "EVENT_VERSION",
-            "zama_host_public_outputs_produced": "PUBLIC_OUTPUTS_PRODUCED_EVENT_VERSION",
         },
     },
     "confidential_token": {
