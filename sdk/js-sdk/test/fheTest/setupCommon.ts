@@ -187,19 +187,34 @@ export function getFheEncryptionKeyTfheVersion(chainName: FheTestChainName): str
 // createLogger
 // ---------------------------------------------------------------------------
 
+/** Formats a `Date` as `YYYY-MM-DD HH:mm:ss.SSS` in local time. */
+function formatLogTimestamp(date: Date): string {
+  const pad = (n: number, len = 2): string => String(n).padStart(len, '0');
+  const datePart = `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}`;
+  const timePart = `${pad(date.getHours())}:${pad(date.getMinutes())}:${pad(date.getSeconds())}.${pad(date.getMilliseconds(), 3)}`;
+  return `${datePart} ${timePart}`;
+}
+
+const ANSI_GRAY = '\x1b[90m';
+const ANSI_YELLOW = '\x1b[33m';
+const ANSI_RED = '\x1b[31m';
+const ANSI_RESET = '\x1b[0m';
+
 export function createLogger(log: (msg: string) => void, chainName?: string): Logger {
   // Prefix every line with the chain under test so interleaved multi-chain /
   // multi-suite output stays attributable. Defaults to the CHAIN env var
   // (e.g. `[testnet]`); pass `config.chainName` for exact per-config tagging.
   const chain = chainName ?? process.env.CHAIN ?? 'sepolia';
-  const prefix = `[${chain}]`;
   return {
-    debug: (message: string) => log(`${prefix}[debug] ${message}`),
-    warn: (message: string) => log(`${prefix}[warn] ${message}`),
+    debug: (message: string) =>
+      log(`${ANSI_GRAY}${formatLogTimestamp(new Date())} DBG [${chain}] ${message}${ANSI_RESET}`),
+    warn: (message: string) =>
+      log(`${ANSI_YELLOW}${formatLogTimestamp(new Date())} WRN [${chain}] ${message}${ANSI_RESET}`),
     error: (message: string, cause: unknown) => {
-      log(`${prefix}[error] ${message}`);
+      const timestamp = formatLogTimestamp(new Date());
+      log(`${ANSI_RED}${timestamp} ERR [${chain}] ${message}${ANSI_RESET}`);
       if (cause !== undefined) {
-        log(`${prefix}[error] ${String(cause)}`);
+        log(`${ANSI_RED}${timestamp} ERR [${chain}] ${String(cause)}${ANSI_RESET}`);
       }
     },
   };
