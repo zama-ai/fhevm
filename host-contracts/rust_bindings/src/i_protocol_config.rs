@@ -554,6 +554,7 @@ interface IProtocolConfig {
 
     error DuplicateChainId(uint64 chainId);
     error EmptyChainUpgradeWindows();
+    error EmptyEpochActivationAttestation(uint256 epochId);
     error EmptyKmsNodes();
     error EmptySoftwareVersion();
     error EpochActivationAlreadyConfirmed(address signer, uint256 epochId);
@@ -2168,6 +2169,17 @@ interface IProtocolConfig {
     "type": "error",
     "name": "EmptyChainUpgradeWindows",
     "inputs": []
+  },
+  {
+    "type": "error",
+    "name": "EmptyEpochActivationAttestation",
+    "inputs": [
+      {
+        "name": "epochId",
+        "type": "uint256",
+        "internalType": "uint256"
+      }
+    ]
   },
   {
     "type": "error",
@@ -4581,6 +4593,90 @@ error EmptyChainUpgradeWindows();
             #[inline]
             fn tokenize(&self) -> Self::Token<'_> {
                 ()
+            }
+            #[inline]
+            fn abi_decode_raw_validate(data: &[u8]) -> alloy_sol_types::Result<Self> {
+                <Self::Parameters<
+                    '_,
+                > as alloy_sol_types::SolType>::abi_decode_sequence_validate(data)
+                    .map(Self::new)
+            }
+        }
+    };
+    #[derive(serde::Serialize, serde::Deserialize)]
+    #[derive(Default, Debug, PartialEq, Eq, Hash)]
+    /**Custom error with signature `EmptyEpochActivationAttestation(uint256)` and selector `0xce9440df`.
+```solidity
+error EmptyEpochActivationAttestation(uint256 epochId);
+```*/
+    #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
+    #[derive(Clone)]
+    pub struct EmptyEpochActivationAttestation {
+        #[allow(missing_docs)]
+        pub epochId: alloy::sol_types::private::primitives::aliases::U256,
+    }
+    #[allow(
+        non_camel_case_types,
+        non_snake_case,
+        clippy::pub_underscore_fields,
+        clippy::style
+    )]
+    const _: () = {
+        use alloy::sol_types as alloy_sol_types;
+        #[doc(hidden)]
+        type UnderlyingSolTuple<'a> = (alloy::sol_types::sol_data::Uint<256>,);
+        #[doc(hidden)]
+        type UnderlyingRustTuple<'a> = (
+            alloy::sol_types::private::primitives::aliases::U256,
+        );
+        #[cfg(test)]
+        #[allow(dead_code, unreachable_patterns)]
+        fn _type_assertion(
+            _t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>,
+        ) {
+            match _t {
+                alloy_sol_types::private::AssertTypeEq::<
+                    <UnderlyingSolTuple as alloy_sol_types::SolType>::RustType,
+                >(_) => {}
+            }
+        }
+        #[automatically_derived]
+        #[doc(hidden)]
+        impl ::core::convert::From<EmptyEpochActivationAttestation>
+        for UnderlyingRustTuple<'_> {
+            fn from(value: EmptyEpochActivationAttestation) -> Self {
+                (value.epochId,)
+            }
+        }
+        #[automatically_derived]
+        #[doc(hidden)]
+        impl ::core::convert::From<UnderlyingRustTuple<'_>>
+        for EmptyEpochActivationAttestation {
+            fn from(tuple: UnderlyingRustTuple<'_>) -> Self {
+                Self { epochId: tuple.0 }
+            }
+        }
+        #[automatically_derived]
+        impl alloy_sol_types::SolError for EmptyEpochActivationAttestation {
+            type Parameters<'a> = UnderlyingSolTuple<'a>;
+            type Token<'a> = <Self::Parameters<
+                'a,
+            > as alloy_sol_types::SolType>::Token<'a>;
+            const SIGNATURE: &'static str = "EmptyEpochActivationAttestation(uint256)";
+            const SELECTOR: [u8; 4] = [206u8, 148u8, 64u8, 223u8];
+            #[inline]
+            fn new<'a>(
+                tuple: <Self::Parameters<'a> as alloy_sol_types::SolType>::RustType,
+            ) -> Self {
+                tuple.into()
+            }
+            #[inline]
+            fn tokenize(&self) -> Self::Token<'_> {
+                (
+                    <alloy::sol_types::sol_data::Uint<
+                        256,
+                    > as alloy_sol_types::SolType>::tokenize(&self.epochId),
+                )
             }
             #[inline]
             fn abi_decode_raw_validate(data: &[u8]) -> alloy_sol_types::Result<Self> {
@@ -15682,6 +15778,8 @@ function updateUserDecryptionThresholdForContext(uint256 kmsContextId, uint256 t
         #[allow(missing_docs)]
         EmptyChainUpgradeWindows(EmptyChainUpgradeWindows),
         #[allow(missing_docs)]
+        EmptyEpochActivationAttestation(EmptyEpochActivationAttestation),
+        #[allow(missing_docs)]
         EmptyKmsNodes(EmptyKmsNodes),
         #[allow(missing_docs)]
         EmptySoftwareVersion(EmptySoftwareVersion),
@@ -15769,6 +15867,7 @@ function updateUserDecryptionThresholdForContext(uint256 kmsContextId, uint256 t
             [190u8, 80u8, 80u8, 68u8],
             [200u8, 72u8, 133u8, 212u8],
             [202u8, 168u8, 20u8, 163u8],
+            [206u8, 148u8, 64u8, 223u8],
             [209u8, 140u8, 79u8, 240u8],
             [232u8, 18u8, 31u8, 81u8],
             [239u8, 213u8, 95u8, 103u8],
@@ -15782,7 +15881,7 @@ function updateUserDecryptionThresholdForContext(uint256 kmsContextId, uint256 t
     impl alloy_sol_types::SolInterface for IProtocolConfigErrors {
         const NAME: &'static str = "IProtocolConfigErrors";
         const MIN_DATA_LENGTH: usize = 0usize;
-        const COUNT: usize = 29usize;
+        const COUNT: usize = 30usize;
         #[inline]
         fn selector(&self) -> [u8; 4] {
             match self {
@@ -15791,6 +15890,9 @@ function updateUserDecryptionThresholdForContext(uint256 kmsContextId, uint256 t
                 }
                 Self::EmptyChainUpgradeWindows(_) => {
                     <EmptyChainUpgradeWindows as alloy_sol_types::SolError>::SELECTOR
+                }
+                Self::EmptyEpochActivationAttestation(_) => {
+                    <EmptyEpochActivationAttestation as alloy_sol_types::SolError>::SELECTOR
                 }
                 Self::EmptyKmsNodes(_) => {
                     <EmptyKmsNodes as alloy_sol_types::SolError>::SELECTOR
@@ -16137,6 +16239,17 @@ function updateUserDecryptionThresholdForContext(uint256 kmsContextId, uint256 t
                             .map(IProtocolConfigErrors::InvalidHighThreshold)
                     }
                     InvalidHighThreshold
+                },
+                {
+                    fn EmptyEpochActivationAttestation(
+                        data: &[u8],
+                    ) -> alloy_sol_types::Result<IProtocolConfigErrors> {
+                        <EmptyEpochActivationAttestation as alloy_sol_types::SolError>::abi_decode_raw(
+                                data,
+                            )
+                            .map(IProtocolConfigErrors::EmptyEpochActivationAttestation)
+                    }
+                    EmptyEpochActivationAttestation
                 },
                 {
                     fn KmsTxSenderAlreadyRegistered(
@@ -16488,6 +16601,17 @@ function updateUserDecryptionThresholdForContext(uint256 kmsContextId, uint256 t
                     InvalidHighThreshold
                 },
                 {
+                    fn EmptyEpochActivationAttestation(
+                        data: &[u8],
+                    ) -> alloy_sol_types::Result<IProtocolConfigErrors> {
+                        <EmptyEpochActivationAttestation as alloy_sol_types::SolError>::abi_decode_raw_validate(
+                                data,
+                            )
+                            .map(IProtocolConfigErrors::EmptyEpochActivationAttestation)
+                    }
+                    EmptyEpochActivationAttestation
+                },
+                {
                     fn KmsTxSenderAlreadyRegistered(
                         data: &[u8],
                     ) -> alloy_sol_types::Result<IProtocolConfigErrors> {
@@ -16589,6 +16713,11 @@ function updateUserDecryptionThresholdForContext(uint256 kmsContextId, uint256 t
                 }
                 Self::EmptyChainUpgradeWindows(inner) => {
                     <EmptyChainUpgradeWindows as alloy_sol_types::SolError>::abi_encoded_size(
+                        inner,
+                    )
+                }
+                Self::EmptyEpochActivationAttestation(inner) => {
+                    <EmptyEpochActivationAttestation as alloy_sol_types::SolError>::abi_encoded_size(
                         inner,
                     )
                 }
@@ -16736,6 +16865,12 @@ function updateUserDecryptionThresholdForContext(uint256 kmsContextId, uint256 t
                 }
                 Self::EmptyChainUpgradeWindows(inner) => {
                     <EmptyChainUpgradeWindows as alloy_sol_types::SolError>::abi_encode_raw(
+                        inner,
+                        out,
+                    )
+                }
+                Self::EmptyEpochActivationAttestation(inner) => {
+                    <EmptyEpochActivationAttestation as alloy_sol_types::SolError>::abi_encode_raw(
                         inner,
                         out,
                     )
