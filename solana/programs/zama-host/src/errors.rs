@@ -292,4 +292,8 @@ pub enum ZamaHostError {
     /// In-frame dependencies must use `AllowedLocal`.
     #[msg("FHE eval durable operand was written earlier in the frame")]
     FheEvalDurableOperandWrittenEarlier,
+    /// An interned pool entry was never referenced by any step; a frame must not
+    /// carry dead bytes.
+    #[msg("FHE eval pool entry is not referenced by any step")]
+    FheEvalPoolEntryUnreferenced,
 }

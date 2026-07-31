@@ -2069,6 +2069,11 @@
       "code": 6079,
       "name": "FheEvalDurableOperandWrittenEarlier",
       "msg": "FHE eval durable operand was written earlier in the frame"
+    },
+    {
+      "code": 6080,
+      "name": "FheEvalPoolEntryUnreferenced",
+      "msg": "FHE eval pool entry is not referenced by any step"
     }
   ],
   "types": [

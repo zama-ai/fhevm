@@ -302,6 +302,21 @@ fn finish_preflights_lowered_transient_order_and_account_uniqueness() {
     );
 }
 
+#[test]
+fn finish_rejects_pool_entry_no_step_references() {
+    let primary_authority = Pubkey::new_unique();
+    let mut builder = EvalBuilder::new(app_authority(primary_authority));
+    builder
+        .trivial_encrypt(Scalar::<Uint<64>>::u64(1), Output::transient())
+        .unwrap();
+    builder.pool.push([0xAA; 32]);
+
+    assert_eq!(
+        builder.finish().unwrap_err(),
+        EvalBuildError::UnreferencedPoolEntry
+    );
+}
+
 #[cfg(feature = "cpi")]
 #[test]
 fn invoke_eval_signed_with_builder_reports_build_errors_before_resolution() {

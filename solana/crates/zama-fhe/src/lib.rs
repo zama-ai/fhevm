@@ -57,6 +57,9 @@ pub enum EvalBuildError {
     TooManyRemainingAccounts,
     /// The frame's interned constant pool outgrew the host's `u8` wire indices.
     TooManyPoolEntries,
+    /// An interned pool entry is not referenced by any step (host parity:
+    /// `FheEvalPoolEntryUnreferenced`).
+    UnreferencedPoolEntry,
     /// A transient operand referenced an operation that has not been produced.
     InvalidTransientReference,
     /// A durable operand referenced an account written by an earlier step.

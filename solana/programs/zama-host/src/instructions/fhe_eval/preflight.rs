@@ -163,7 +163,7 @@ fn preflight_eval_frame_accounts(
     // entry must be referenced by some step, so a frame cannot carry dead bytes.
     require!(
         preflight.pool_used.iter().all(|used| *used),
-        ZamaHostError::FheEvalPoolIndexOutOfBounds
+        ZamaHostError::FheEvalPoolEntryUnreferenced
     );
     preflight.table.assert_all_used()
 }

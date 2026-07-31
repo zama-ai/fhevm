@@ -94,7 +94,7 @@ pub(crate) fn validate_lowered_eval_plan(
     }
     // Mirrors the host's whole-frame pool hygiene rule: every interned entry must be referenced.
     if used_pool.iter().any(|used| !*used) {
-        return Err(EvalBuildError::TooManyPoolEntries);
+        return Err(EvalBuildError::UnreferencedPoolEntry);
     }
     Ok(())
 }
