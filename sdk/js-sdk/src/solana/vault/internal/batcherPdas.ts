@@ -2,7 +2,7 @@ import { getProgramDerivedAddress, getU64Encoder, type Address } from '@solana/k
 import { base58 } from '@scure/base';
 import { sha256 } from '@noble/hashes/sha2.js';
 
-import { deriveValueKey } from '../../proof.js';
+import { deriveEncryptedValueId } from '../../proof.js';
 import { CONFIDENTIAL_TOKEN_PROGRAM_ADDRESS } from '../../internal/generated/confidentialToken/programAddress.js';
 import { ZAMA_HOST_PROGRAM_ADDRESS } from '../../internal/generated/zamaHost/programAddress.js';
 import { CONFIDENTIAL_BATCHER_PROGRAM_ADDRESS } from './generated/confidentialBatcher/programAddress.js';
@@ -37,12 +37,12 @@ function addressBytes(value: Address): Uint8Array {
  * burned amount, batcher pending/claim) are this same derivation under different labels.
  */
 export async function encryptedValueAddress(
-  aclDomain: Address,
-  appAccount: Address,
+  domain: Address,
+  account: Address,
   label: Uint8Array,
 ): Promise<Address> {
-  const valueKey = deriveValueKey(addressBytes(aclDomain), addressBytes(appAccount), label);
-  return pda(ZAMA_HOST_PROGRAM_ADDRESS, [ENCRYPTED_VALUE_SEED, valueKey]);
+  const encryptedValueId = deriveEncryptedValueId(addressBytes(domain), addressBytes(account), label);
+  return pda(ZAMA_HOST_PROGRAM_ADDRESS, [ENCRYPTED_VALUE_SEED, encryptedValueId]);
 }
 
 /** The batch PDA for a batcher config and zero-based index (`batch_address`). */
@@ -84,7 +84,7 @@ export async function burnedAmountValueAccount(
   joinMint: Address,
   batchJoinTokenAccount: Address,
 ): Promise<SolanaEncryptedValueAccount> {
-  const aclValueKey = deriveValueKey(addressBytes(joinMint), addressBytes(batchJoinTokenAccount), BURNED_AMOUNT_LABEL);
+  const aclValueKey = deriveEncryptedValueId(addressBytes(joinMint), addressBytes(batchJoinTokenAccount), BURNED_AMOUNT_LABEL);
   return {
     aclValueKey,
     encryptedValueAddress: await pda(ZAMA_HOST_PROGRAM_ADDRESS, [ENCRYPTED_VALUE_SEED, aclValueKey]),
@@ -114,7 +114,7 @@ async function batcherValueAccount(
   user: Address,
 ): Promise<SolanaEncryptedValueAccount> {
   const label = sha256(concatBytes(encoder.encode(purposePrefix), addressBytes(user)));
-  const aclValueKey = deriveValueKey(addressBytes(batch), addressBytes(batchAuthority), label);
+  const aclValueKey = deriveEncryptedValueId(addressBytes(batch), addressBytes(batchAuthority), label);
   return {
     aclValueKey,
     encryptedValueAddress: await pda(ZAMA_HOST_PROGRAM_ADDRESS, [ENCRYPTED_VALUE_SEED, aclValueKey]),

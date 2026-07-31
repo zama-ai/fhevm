@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 import {
   bytesToHex,
   decodeMmrProofTransportBlob,
-  deriveValueKey,
+  deriveEncryptedValueId,
   hexToBytes,
   historicalAccessLeafCommitment,
   MAX_MMR_SIBLINGS,
@@ -95,10 +95,10 @@ describe('decodeMmrProofTransportBlob', () => {
   });
 });
 
-describe('deriveValueKey', () => {
+describe('deriveEncryptedValueId', () => {
   it('matches the Rust crate vector', () => {
-    const valueKey = deriveValueKey(domain, app, label);
-    expect(bytesToHex(valueKey)).toBe('0xcb421159e2c7709e401334c46b4bcee90093cb616d040fca9c1dc9a14ad77820');
+    const encryptedValueId = deriveEncryptedValueId(domain, app, label);
+    expect(bytesToHex(encryptedValueId)).toBe('0xcb421159e2c7709e401334c46b4bcee90093cb616d040fca9c1dc9a14ad77820');
   });
 });
 

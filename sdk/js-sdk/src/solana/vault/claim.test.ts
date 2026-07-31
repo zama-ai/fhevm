@@ -33,12 +33,12 @@ const concat = (...parts: Uint8Array[]): Uint8Array => {
   }
   return out;
 };
-// sha256("zama-encrypted-value-key-v1" || aclDomain || appAccount || label), then
-// PDA(zamaHost, ["encrypted-value", valueKey]) — zama_solana_acl::derive_value_key.
-const valueAccountPda = (aclDomain: Address, appAccount: Address, label: Uint8Array): Promise<Address> =>
+// sha256("zama-encrypted-value-key-v1" || domain || account || label), then
+// PDA(zamaHost, ["encrypted-value", encryptedValueId]) — zama_solana_acl::derive_encrypted_value_id.
+const valueAccountPda = (domain: Address, account: Address, label: Uint8Array): Promise<Address> =>
   pda(ZAMA_HOST_PROGRAM_ADDRESS, [
     utf8('encrypted-value'),
-    sha256(concat(utf8('zama-encrypted-value-key-v1'), base58.decode(aclDomain), base58.decode(appAccount), label)),
+    sha256(concat(utf8('zama-encrypted-value-key-v1'), base58.decode(domain), base58.decode(account), label)),
   ]);
 // Batcher per-user labels: sha256(purpose_prefix || user) — pending_join_label / claim_amount_label.
 const userLabel = (purposePrefix: string, user: Address): Uint8Array =>

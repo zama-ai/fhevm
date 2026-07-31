@@ -1,6 +1,6 @@
 import { getAddressEncoder, getProgramDerivedAddress, type Address } from '@solana/kit';
 
-import { deriveValueKey } from '../../proof.js';
+import { deriveEncryptedValueId } from '../../proof.js';
 import {
   CONFIDENTIAL_TOKEN_PROGRAM_ADDRESS,
   ZAMA_HOST_PROGRAM_ADDRESS,
@@ -8,7 +8,7 @@ import {
 import { findComputeSignerPda } from '../../internal/generated/confidentialToken/pdas/computeSigner.js';
 import { findTotalSupplyAuthorityPda } from '../../internal/generated/confidentialToken/pdas/totalSupplyAuthority.js';
 // The `__event_authority` seed and the canonical `EncryptedValue` derivation are owned by
-// batcherPdas (its `encryptedValueAddress(aclDomain, appAccount, label)`); import them rather than
+// batcherPdas (its `encryptedValueAddress(domain, account, label)`); import them rather than
 // re-declaring the seed / re-implementing the derivation here.
 import { EVENT_AUTHORITY_SEED, encryptedValueAddress } from './batcherPdas.js';
 
@@ -38,7 +38,7 @@ export const confidentialBalanceValueAccount = async (
   mint: Address,
   tokenAccount: Address,
 ): Promise<{ readonly aclValueKey: Uint8Array; readonly encryptedValueAddress: Address }> => {
-  const aclValueKey = deriveValueKey(encodeAddress(mint), encodeAddress(tokenAccount), BALANCE_LABEL);
+  const aclValueKey = deriveEncryptedValueId(encodeAddress(mint), encodeAddress(tokenAccount), BALANCE_LABEL);
   return {
     aclValueKey,
     encryptedValueAddress: await encryptedValueAddress(mint, tokenAccount, BALANCE_LABEL),

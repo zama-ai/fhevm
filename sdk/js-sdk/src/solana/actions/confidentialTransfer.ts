@@ -31,7 +31,7 @@ import type { SolanaZkProof } from '../../core/types/zkProof-p.js';
 import type { FhevmSolanaChain } from '../../core/types/fhevmSolanaChain.js';
 import type { Bytes32Hex } from '../../core/types/primitives.js';
 import type { SolanaSubmitInputProofResult } from './submitInputProof.js';
-import { deriveValueKey } from '../proof.js';
+import { deriveEncryptedValueId } from '../proof.js';
 import { getConfidentialTransferInstructionAsync } from '../internal/generated/confidentialToken/instructions/confidentialTransfer.js';
 import { findComputeSignerPda } from '../internal/generated/confidentialToken/pdas/computeSigner.js';
 import {
@@ -71,8 +71,8 @@ async function transferredAmountValue(
   mint: Address,
   fromAccount: Address,
 ): Promise<Address> {
-  const valueKey = deriveValueKey(base58.decode(mint), base58.decode(fromAccount), TRANSFERRED_AMOUNT_LABEL);
-  return pda(zamaHostProgramAddress, [ENCRYPTED_VALUE_SEED, valueKey]);
+  const encryptedValueId = deriveEncryptedValueId(base58.decode(mint), base58.decode(fromAccount), TRANSFERRED_AMOUNT_LABEL);
+  return pda(zamaHostProgramAddress, [ENCRYPTED_VALUE_SEED, encryptedValueId]);
 }
 
 /** Builds, simulates, sends, and confirms one confidential-token transfer. */

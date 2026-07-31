@@ -23,7 +23,7 @@ const LEAF_PREFIX = utf8('ZAMA_MMR_LEAF_V1');
 const NODE_PREFIX = utf8('ZAMA_MMR_NODE_V1');
 const HISTORICAL_ACCESS_LEAF_PREFIX = utf8('ZAMA_HIST_ACCESS_LEAF_V1');
 const PUBLIC_DECRYPT_LEAF_PREFIX = utf8('ZAMA_PUBLIC_DECRYPT_LEAF_V1');
-const VALUE_KEY_PREFIX = utf8('zama-encrypted-value-key-v1');
+const ENCRYPTED_VALUE_ID_PREFIX = utf8('zama-encrypted-value-key-v1');
 
 function utf8(s: string): Uint8Array {
   return new TextEncoder().encode(s);
@@ -81,16 +81,16 @@ export function hexToBytes(hex: string): Uint8Array {
   return out;
 }
 
-/** The encrypted value account's PDA seed / identity. Matches `zama_solana_acl::derive_value_key`. */
-export function deriveValueKey(
-  aclDomainKey: Uint8Array,
-  appAccount: Uint8Array,
-  encryptedValueLabel: Uint8Array,
+/** The encrypted value account's PDA seed / identity. Matches `zama_solana_acl::derive_encrypted_value_id`. */
+export function deriveEncryptedValueId(
+  domain: Uint8Array,
+  account: Uint8Array,
+  label: Uint8Array,
 ): Uint8Array {
-  assertLen(aclDomainKey, 32, 'aclDomainKey');
-  assertLen(appAccount, 32, 'appAccount');
-  assertLen(encryptedValueLabel, 32, 'encryptedValueLabel');
-  return sha256Parts(VALUE_KEY_PREFIX, aclDomainKey, appAccount, encryptedValueLabel);
+  assertLen(domain, 32, 'domain');
+  assertLen(account, 32, 'account');
+  assertLen(label, 32, 'label');
+  return sha256Parts(ENCRYPTED_VALUE_ID_PREFIX, domain, account, label);
 }
 
 /** Matches `zama_solana_acl::mmr::mmr_leaf_node`. */
