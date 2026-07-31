@@ -3,7 +3,6 @@ import type { Fhevm } from '../../types/coreFhevmClient.js';
 import type { FhevmChain } from '../../types/fhevmChain.js';
 import { initPublicAction } from '../../runtime/CoreFhevm-p.js';
 import { ensureRelayerFeatures } from '../../relayerFeatures/ensureRelayerFeatures-p.js';
-//import { SDK_PROTOCOL_API_MAJOR_VERSION, SDK_PROTOCOL_API_MINOR_VERSION } from '../../runtime/sdkProtocolApiVersion.js';
 
 ////////////////////////////////////////////////////////////////////////////////
 

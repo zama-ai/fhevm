@@ -15,7 +15,6 @@ import {
 } from '../kms/kmsExtraData-p.js';
 import { getKmsContextSignersAndThresholdFromExtraData } from './getKmsContextSignersAndThresholdFromExtraData-p.js';
 import { getKmsSignersAndThreshold } from './getKmsContextSignersAndThreshold-p.js';
-import { SDK_PROTOCOL_API_MAJOR_VERSION, SDK_PROTOCOL_API_MINOR_VERSION } from '../runtime/sdkProtocolApiVersion.js';
 
 ////////////////////////////////////////////////////////////////////////////////
 
@@ -42,15 +41,6 @@ type ReturnType = KmsSignersContext;
 //
 // Invariant — a KmsSignersContext carries the key it was indexed by.
 //
-// CRITICAL RULE — a v13-capped SDK must NEVER produce extraData v2.
-// The extraData version the SDK emits is gated by the RELAYER, not by the host
-// contracts: a v13 relayer rejects an unknown v2 `extraData` in its request
-// validation (HTTP 400 `validation_failed`), so the request never reaches the KMS.
-// This matters most during a v13 -> v14 rollout: the host contracts can already
-// support v2 while the relayer is still v13, so "the chain accepts v2" is NOT
-// sufficient — the SDK stays at v1 until the relayer is known to accept v2.
-// Hence the per-version cap enforced below.
-//
 ////////////////////////////////////////////////////////////////////////////////
 
 /**
@@ -58,25 +48,20 @@ type ReturnType = KmsSignersContext;
  * indexed on the **best `extraData` this SDK can produce** for that context.
  *
  * This is the read used when *creating* a permit: the returned context's `extraData`
- * is what the permit embeds and the user signs. So "best" is bounded by **two**
- * limits, not one:
- *   - the on-chain KMSVerifier version (which encodings the contract supports), and
- *   - this SDK's protocol-API cap ({@link SDK_PROTOCOL_API_MINOR_VERSION}) — the most
- *     recent `extraData` version the SDK knows how to build and sign.
+ * is what the permit embeds and the user signs. "Best" is bounded by the on-chain
+ * KMSVerifier version — which encodings the contract supports.
  *
- * The returned encoding is therefore `min(chain capability, SDK capability)`:
+ * The returned encoding:
  *   - v11 (KMSVerifier < 0.2.0)                         → v0 (no context concept)
- *   - >= 0.2.0 but a v13-capped SDK, or KMSVerifier < 0.4.0,
+ *   - >= 0.2.0 but KMSVerifier < 0.4.0,
  *     or no `protocolConfigAddress`                     → v1 (`contextId` only)
  *   - v14 chain (KMSVerifier >= 0.4.0, `protocolConfigAddress`
- *     set) **and** a v14-capable SDK                    → v2 (`contextId` + `epochId`)
+ *     set)                                              → v2 (`contextId` + `epochId`)
  *
- * NOTE — the meaning is subtly different from a plain "read the current context at
- * full chain precision": a v13-capped SDK deliberately returns a **v1** context on a
- * **v14** chain (dropping the epoch), because it must produce a v1 permit. It also
- * differs from {@link readKmsSignersContextFromPermitExtraData}, which resolves an
- * *already-chosen* permit `extraData` to the most precise context available — here we
- * instead choose the most precise encoding we are *allowed to produce*.
+ * NOTE — this differs from {@link readKmsSignersContextFromPermitExtraData}, which
+ * resolves an *already-chosen* permit `extraData` to the most precise context
+ * available — here we instead choose the most precise encoding we are *allowed to
+ * produce*.
  */
 export async function readCurrentKmsSignersContext(context: Context, parameters: Parameters): Promise<ReturnType> {
   // This version comes from the frozen context — a snapshot, NOT necessarily the
@@ -92,16 +77,6 @@ export async function readCurrentKmsSignersContext(context: Context, parameters:
     // -> KmsSignersContext.extraData.version == 0
     return _readCurrentKmsSignersContext_ProtocolApi_11(context, parameters);
   }
-
-  // If SDK is restricted to protocol API v13 then the best extraData
-  // we can get it must be v1
-  // KMSVerifier.version >= 0.2.0, it supports at least API Protocol 13
-  if (SDK_PROTOCOL_API_MAJOR_VERSION === 0 && SDK_PROTOCOL_API_MINOR_VERSION <= 13) {
-    // -> KmsSignersContext.extraData.version == 1
-    return _readCurrentKmsSignersContext_ProtocolApi_12_13(context, parameters);
-  }
-
-  // API Protocol 14+
 
   // KMSVerifier.version < 0.4.0, use only Protocol API v13
   if (
@@ -203,17 +178,6 @@ async function _readCurrentKmsSignersContext_ProtocolApi_14_or_higher(
   context: Context,
   parameters: Parameters,
 ): Promise<ReturnType> {
-  // Defense-in-depth for the CRITICAL RULE above: this is the only function that
-  // MINTS an extraData v2. It must never run under a v13-capped SDK. The caller
-  // (readCurrentKmsSignersContext) already gates on SDK_PROTOCOL_API_MINOR_VERSION,
-  // so reaching here with a capped SDK means that gate was bypassed/refactored away
-  // — fail loudly rather than silently emit a v2 the relayer would reject.
-  if (SDK_PROTOCOL_API_MAJOR_VERSION === 0 && SDK_PROTOCOL_API_MINOR_VERSION <= 13) {
-    throw new Error(
-      `Refusing to produce extraData v2: this SDK is capped at protocol API v0.${SDK_PROTOCOL_API_MINOR_VERSION} and must only emit extraData v1 (a v13 relayer rejects v2).`,
-    );
-  }
-
   if (parameters.protocolConfigAddress === undefined) {
     throw new Error('protocolConfigAddress is required on protocol v0.14.0+');
   }
