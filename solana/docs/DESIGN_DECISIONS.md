@@ -1470,7 +1470,8 @@ Consequences:
   `assert_born_public_frame_transportable`.
 - `event_transport.rs` emits `emit_cpi!` only; oversized frames return without emitting.
 - The `FheEvalEventLogBudgetExceeded` error was renamed in place to `FheEvalBornPublicFrameTooLarge`
-  (same discriminant; no error-code shift).
+  (same discriminant; no error-code shift). The variant was later deleted with the rest of the
+  retired guard (fhevm-internal#1859 §3-D2).
 - No IDL/wire change: `make_public` was already an `AllowedDurable` field (DD-036); the guard adds a
   validation, not an argument.
 - #1665 must remove the op event only after migrating born-public handle recovery off it — treat the

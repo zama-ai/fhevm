@@ -1299,7 +1299,7 @@ fn mollusk_confidential_transfer_updates_value_accounts_and_cleartext_balances()
 fn mollusk_confidential_transfer_to_second_recipient_rotates_transferred_value_account_subjects() {
     // Regression: a sender's second transfer to a DIFFERENT recipient must succeed. The
     // per-sender transferred-amount encrypted value account rotates its audience to the new recipient, sealing
-    // the first receipt's audience into historical leaves (previously reverted 6053).
+    // the first receipt's audience into historical leaves (previously reverted with PreviousStateMismatch).
     let fixture = TokenFixture::new();
     let charlie_owner = Pubkey::new_unique();
     let charlie_token = token::token_account_address(fixture.mint, charlie_owner).0;

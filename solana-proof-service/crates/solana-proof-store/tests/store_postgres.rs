@@ -60,9 +60,9 @@ fn fhe_eval_ix(
     subjects: &[[u8; 32]],
     previous: Option<([u8; 32], Vec<[u8; 32]>)>,
 ) -> RawInstruction {
-    // Pool layout: [0]=plaintext, [1]=domain, [2]=app account, [3]=label,
-    // [4..]=output subjects.
-    let mut pool = vec![pk(0x70), pk(0x71), pk(0x72), pk(0x73)];
+    // Pool layout: [0]=domain, [1]=app account, [2]=label, [3..]=output
+    // subjects. TrivialEncrypt's plaintext is inline, not pooled.
+    let mut pool = vec![pk(0x71), pk(0x72), pk(0x73)];
     let subject_base = pool.len() as u8;
     pool.extend_from_slice(subjects);
     let step = FheEvalStep::TrivialEncrypt {
@@ -71,9 +71,9 @@ fn fhe_eval_ix(
         output: FheEvalOutput::AllowedDurable {
             output_encrypted_value_index: 0,
             output_app_account_authority_index: None,
-            output_acl_domain_key_index: 1,
-            output_app_account_index: 2,
-            output_encrypted_value_label_index: 3,
+            output_acl_domain_key_index: 0,
+            output_app_account_index: 1,
+            output_encrypted_value_label_index: 2,
             output_subject_indexes: (0..subjects.len() as u8)
                 .map(|i| subject_base + i)
                 .collect(),
@@ -416,9 +416,10 @@ async fn public_decrypt_resolves_duplicate_leaves_to_earliest() {
     let ev = pk(0xE9);
     let owner = pk(0x30);
     let handle = pk(0x10);
-    // create sets current_handle=handle (no leaf); then two public seals of that SAME handle mirror
-    // a born-public lifecycle leaf at index 0 followed by an explicit make_handle_public re-release
-    // at index 1 — both append a public-decrypt leaf for the one handle.
+    // create records no handle and no leaf (an fhe_eval output handle is unresolvable without
+    // slot entropy); the two public seals of the SAME handle then mirror a born-public lifecycle
+    // leaf at index 0 followed by an explicit make_handle_public re-release at index 1 — both
+    // append a public-decrypt leaf for the one handle.
     let create = create_ix(ev, owner);
     let seal_born_public = make_public_ix(ev, handle);
     let seal_make_public = make_public_ix(ev, handle);

@@ -186,8 +186,9 @@ balance-state reads used by the transfer arc's setup likewise still run through 
   compute facts from instruction data. If a generated event value type changes, regenerate the
   vendored IDL and validate reconstruction explicitly; there is no emitted-event decoder fallback.
 - **The connector ABI is hand-mirrored and version-pinned.** `kms-worker` re-declares the byte
-  layout of host accounts (`EncryptedValue`, …), the PDA seeds, the hash
-  domains, and `EVENT_VERSION`/`MAX_ACL_SUBJECTS` — with **no compile-time link** to `zama-host`.
+  layout of host accounts (`EncryptedValue`, …), the PDA seeds, and the hash
+  domains — with **no compile-time link** to `zama-host` (the subject cap is the exception:
+  it comes from the shared `zama_solana_acl` crate).
   Change a field order, a `SPACE` constant, a seed, or a hash-domain string in the host and you must
   update the connector decoders (and the coprocessor IDL) by hand, or witness decoding breaks at
   runtime, not at build time. Lengths are checked; a same-length field reorder would *not* be caught.

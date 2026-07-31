@@ -9,8 +9,9 @@
 //!   through the event CPI. They are load-bearing for off-chain consumers:
 //!   they carry the only data an indexer cannot recompute from instruction
 //!   data alone (block-entropy-derived seeds and output handles).
-//! - The per-step compute types (`Fhe*Event`, `TrivialEncryptEvent`) are
-//!   never emitted on-chain. They are the record shapes the listener
+//! - The per-step compute types (the `Fhe*Event` op records other than
+//!   `FheEvalRandomSeedsEvent`, plus `TrivialEncryptEvent`) are never
+//!   emitted on-chain. They are the record shapes the listener
 //!   reconstructs by replaying instruction data through the same handle
 //!   derivation the program runs (see the listener's `solana_reconstruct`).
 //!
