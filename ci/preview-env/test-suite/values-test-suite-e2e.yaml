@@ -133,3 +133,6 @@ env:
   - {name: DEPLOYER_PRIVATE_KEY, value: "0x2a871d0798f97d79848a013d4936a73bf4cc922c825d33c1cf7073dff6d409c6"}
   - {name: RELAYER_URL, value: "http://relayer:3000/v2"}
   - {name: RELAYER_SDK_VERSION, value: ""}
+  # fhevm-sdk CLI (in real/long-lived environments these should come from Secrets via secretKeyRef)
+  - {name: PRIVATE_KEY, value: "0x2a871d0798f97d79848a013d4936a73bf4cc922c825d33c1cf7073dff6d409c6"}
+  - {name: SEPOLIA_RPC_URL, value: "http://anvil-host-anvil-node:8545"}
