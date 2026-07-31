@@ -46,9 +46,11 @@ const commands = [
   //'node test/multi-wasm/run.mjs',
 ];
 
+// prettier-ignore
 const netCommands = [
   'npm run test:full:testnet',
   'npm run test:full:devnet',
+  'npm run test:browser-next:full',
 ];
 
 const localstackCommands = [
