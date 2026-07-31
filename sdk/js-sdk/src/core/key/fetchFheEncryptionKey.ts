@@ -19,12 +19,28 @@ export async function fetchFheEncryptionKeyWasm(
 ): Promise<FheEncryptionKeyWasm> {
   const relayerUrl = context.chain.fhevm.relayerUrl;
   const runtime = context.runtime;
+  const logger = runtime.config.logger;
 
   // Ensure a bytes fetch is in-flight
   globalFheEncryptionKeyCache.ensureBytes({
     owner: runtime,
     relayerUrl,
-    fetcher: () => runtime.relayer.fetchFheEncryptionKeyBytes({ relayerUrl, chainId: context.chain.id }, parameters),
+    fetcher: async () => {
+      logger?.debug?.(
+        `Fetching FHE encryption key/CRS bytes from relayer "${relayerUrl}" (chainId=${context.chain.id}).`,
+      );
+      try {
+        const bytes = await runtime.relayer.fetchFheEncryptionKeyBytes(
+          { relayerUrl, chainId: context.chain.id },
+          parameters,
+        );
+        logger?.debug?.(`Fetched FHE encryption key/CRS bytes from relayer "${relayerUrl}".`);
+        return bytes;
+      } catch (e) {
+        logger?.error?.(`Failed to fetch FHE encryption key/CRS bytes from relayer "${relayerUrl}".`, e);
+        throw e;
+      }
+    },
     metadata: { chainId: context.chain.id, relayerUrl },
   });
 

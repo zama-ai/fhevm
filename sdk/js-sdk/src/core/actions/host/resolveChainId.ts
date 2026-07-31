@@ -38,7 +38,9 @@ export async function resolveChainId(
   const chainId = asUint64BigInt(await fhevm.runtime.ethereum.getChainId(trustedClient));
 
   if (resolvedId !== chainId) {
-    throw new Error(`Chain id mismatch: connected to chain ${chainId}, but expected chain ${resolvedId}`);
+    const message = `Chain id mismatch: connected to chain ${chainId}, but expected chain ${resolvedId}`;
+    fhevm.runtime.config.logger?.error?.(message, undefined);
+    throw new Error(message);
   }
 
   return resolvedId;

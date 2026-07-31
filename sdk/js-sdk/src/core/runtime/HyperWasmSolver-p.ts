@@ -396,6 +396,7 @@ function _handleModuleVersionCompatibilityPolicy(
   const resolvedCheckCompatibility = _resolveModuleVersionCompatibilityCheck(checkCompatibility);
   switch (resolvedCheckCompatibility) {
     case 'throw':
+      logger?.error?.(message, undefined);
       throw new Error(message);
     case 'warn':
       logger?.warn?.(message);
