@@ -44,7 +44,7 @@ pub use acl::{
     PersistentOutputBinding,
 };
 pub use batch::Batch;
-pub use builder::BatchBuilder;
+pub use builder::{BatchBuilder, MAX_ON_CHAIN_BATCH_OPS};
 #[cfg(feature = "cpi")]
 pub use cpi::BatchCpiAccounts;
 pub use types::{
@@ -77,6 +77,12 @@ pub enum BatchBuildError {
     PersistentOperandWrittenEarlier,
     /// More ops were added than the host accepts (`MAX_FHE_BATCH_OPS`).
     TooManyOps,
+    /// More ops were added than a program can build and invoke on Anchor's default 32 KB heap
+    /// (`MAX_ON_CHAIN_BATCH_OPS`). Only ever returned on-chain: the build and the packet come out of
+    /// one bump region that is never freed, so past this count the allocator aborts the instruction
+    /// with no error of its own. Build such a batch off-chain, or install a larger heap and enable
+    /// the crate's `raised-heap` feature.
+    TooManyOpsForDefaultHeap,
     /// `finish` was called with no ops; the host rejects empty batches.
     EmptyOps,
     /// `finish` was called on a batch with a rand step but no persistent output;

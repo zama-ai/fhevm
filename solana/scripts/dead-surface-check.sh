@@ -465,6 +465,40 @@ while IFS= read -r decl; do
     "$(echo "$decl" | grep -oE 'function [A-Za-z_][A-Za-z_0-9]*' | awk '{print $2}')"
 done <<< "$ts_pub_decls"
 
+echo "== 7. every swept root is a CI trigger for this script =="
+# The script only protects a tree if a change to that tree runs it. It used to run inside
+# build-and-test, gated on `solana`, so an edit to the proof service, the listener, the
+# kms-connector, the SDK's Solana surface, or the test suite could add a retired name with the sweep
+# never executing. The dedicated `dead-surface` job fixed that, and this check keeps the two lists in
+# step: every root swept below must be covered by a path in the job's paths-filter.
+TRIGGER_WORKFLOW='.github/workflows/solana-tests.yml'
+# The `dead-surface:` filter block: its own indented list, ending at the next filter name.
+trigger_paths=$(awk '
+  /^            dead-surface:$/ { inside = 1; next }
+  inside && /^            [a-z-]+:$/ { inside = 0 }
+  inside && /^              - / { sub(/^              - /, ""); print }
+' "$TRIGGER_WORKFLOW")
+
+root_is_triggered() {
+  local root="$1" path
+  while IFS= read -r path; do
+    [ -n "$path" ] || continue
+    path="${path%/\*\*}"
+    case "$root/" in
+      "$path"/*) return 0 ;;
+    esac
+    [ "$root" = "$path" ] && return 0
+  done <<< "$trigger_paths"
+  return 1
+}
+
+for root in "${ALL_ROOTS[@]}" kms-connector/crates ${DEAD_SURFACE_EXTRA_ROOT:-}; do
+  if ! root_is_triggered "$root"; then
+    echo "UNTRIGGERED ROOT: ${root} is swept by this script but no path in ${TRIGGER_WORKFLOW}'s dead-surface filter matches it — a change there would not run this check"
+    fail=1
+  fi
+done
+
 if [ "$SELF_TEST" -eq 1 ]; then
   echo "== self-test: every check must fire on a fixture that violates it =="
   fixture_dir=$(mktemp -d)
@@ -495,6 +529,9 @@ if [ "$SELF_TEST" -eq 1 ]; then
   printf 'pub fn dead_surface_selftest_never_called() {}\n' > "$fixture"
   expect_fires "uncalled-export sweep" bash "$0"
   rm -f "$fixture"
+  # Check 7: a swept root outside every triggering path. Driven through the environment rather than
+  # a fixture file, since the thing under test is the root list itself.
+  expect_fires "untriggered-root sweep" env DEAD_SURFACE_EXTRA_ROOT=coprocessor/fhevm-engine/tfhe-worker bash "$0"
   if [ "$self_test_fail" -ne 0 ]; then
     echo "dead-surface-check: SELF-TEST FAILED (a check is vacuous)"
     exit 1

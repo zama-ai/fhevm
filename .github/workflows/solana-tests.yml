@@ -27,6 +27,7 @@ jobs:
       changes-demo-dapp: ${{ steps.filter.outputs.demo-dapp }}
       changes-host-listener: ${{ steps.filter.outputs.host-listener }}
       changes-dead-surface-check: ${{ steps.filter.outputs.dead-surface-check }}
+      changes-dead-surface: ${{ steps.filter.outputs.dead-surface }}
     steps:
       - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
         with:
@@ -57,10 +58,52 @@ jobs:
               - coprocessor/fhevm-engine/rust-toolchain.toml
             dead-surface-check:
               - solana/scripts/dead-surface-check.sh
+            # Every tree dead-surface-check.sh sweeps. The check used to run only inside
+            # build-and-test, which is gated on `solana`, so an edit to the proof service, the
+            # listener, the kms-connector, the SDK, or the test suite could introduce a retired name
+            # or a dead export without it ever running. Keep this list and the script's own
+            # RUST_ROOTS/TS_ROOTS/SCRIPT_ROOTS in step.
+            dead-surface:
+              - .github/workflows/solana-tests.yml
+              - .github/workflows/solana-e2e.yml
+              - solana/**
+              - solana-proof-service/**
+              - coprocessor/fhevm-engine/host-listener/src/**
+              - kms-connector/crates/**
+              - sdk/js-sdk/src/solana/**
+              - test-suite/fhevm/**
             demo-dapp:
               - .github/workflows/solana-tests.yml
               - solana/demo-dapp/**
               - sdk/js-sdk/**
+
+  # Pure grep/sed, no toolchain, half a minute: its own job so it runs for every tree it sweeps,
+  # not only the ones that trigger the SBF builds. See fhevm-internal#1859 §7.
+  dead-surface:
+    name: solana-tests/dead-surface
+    needs: check-changes
+    if: ${{ github.event_name == 'workflow_dispatch' || needs.check-changes.outputs.changes-dead-surface == 'true' }}
+    permissions:
+      contents: 'read'
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: solana
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          persist-credentials: 'false'
+
+      - name: Check for dead surface and rejected vocabulary
+        run: bash scripts/dead-surface-check.sh
+
+      # The self-test re-runs every check against a fixture that must fail it, which costs a few
+      # minutes because it re-runs the whole script per fixture. Every one of these greps has been
+      # silently vacuous at least once, so it runs whenever the script itself changes — the only
+      # commit that can make a check stop firing.
+      - name: Self-test the dead-surface checks
+        if: ${{ needs.check-changes.outputs.changes-dead-surface-check == 'true' }}
+        run: bash scripts/dead-surface-check.sh --self-test
 
   # The vault module (batch provisioning, settle composition, the address-lookup-table lifecycle)
   # lives in the demo dapp, and its unit tests run nowhere else: js-sdk-tests is scoped to PRs
@@ -118,20 +161,6 @@ jobs:
       - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
         with:
           persist-credentials: 'false'
-
-      # Pure grep/sed, no toolchain: run it before the ~20 minutes of builds below so a dead
-      # error variant, a never-emitted event, a rejected glossary alias, or an unjustified
-      # retrofit sentinel fails in half a minute. See fhevm-internal#1859 §7.
-      - name: Check for dead surface and rejected vocabulary
-        run: bash scripts/dead-surface-check.sh
-
-      # The self-test re-runs every check against a fixture that must fail it, which costs a few
-      # minutes because it re-runs the whole script per fixture. Every one of these greps has been
-      # silently vacuous at least once, so it runs whenever the script itself changes — the only
-      # commit that can make a check stop firing.
-      - name: Self-test the dead-surface checks
-        if: ${{ needs.check-changes.outputs.changes-dead-surface-check == 'true' }}
-        run: bash scripts/dead-surface-check.sh --self-test
 
       - name: Setup Rust toolchain file
         run: cp rust-toolchain.toml ..

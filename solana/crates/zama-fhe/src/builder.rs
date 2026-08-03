@@ -12,7 +12,9 @@
 //! persistent output, far past anything in this repo (the largest is five). 24 still fits with 610
 //! bytes to spare, but nothing is left there for account resolution, and a batch near
 //! `MAX_FHE_BATCH_OPS` has to be built off-chain or by a program bringing its own allocator.
-//! `heap_budget.rs` measures all of it.
+//! `heap_budget.rs` measures all of it, and [`MAX_ON_CHAIN_BATCH_OPS`] enforces it: a program that
+//! keeps adding steps past the budget is told so, instead of being aborted by the allocator with no
+//! error of its own.
 
 use crate::types::{binary_rhs_operand, BinaryRhs, FheBitwise, FheEq, FheNeg, FheNot, FheShift};
 use crate::validate::handle_fhe_type;
@@ -88,6 +90,31 @@ impl StepLowering<'_> {
     }
 }
 
+/// Steps a program can build *and* invoke inside Anchor's default 32 KB bump heap, measured in
+/// `heap_budget.rs`. The host itself accepts up to `MAX_FHE_BATCH_OPS`; this is the smaller limit
+/// the runtime imposes on a program that has not raised its heap.
+pub const MAX_ON_CHAIN_BATCH_OPS: usize = 16;
+
+/// The ceiling only means something while it is stricter than the host's.
+const _: () = assert!(MAX_ON_CHAIN_BATCH_OPS < MAX_FHE_BATCH_OPS);
+
+/// The step ceiling in force for this build of the crate.
+///
+/// Only a program running under SBF pays the 32 KB budget, so off-chain builders — clients, tests,
+/// the e2e live client — keep the host's full `MAX_FHE_BATCH_OPS`. A program that installs its own
+/// allocator opts back out with the `raised-heap` feature.
+///
+/// The `cfg` itself is not exercised by a host test: proving the on-chain branch would need an SBF
+/// fixture program built only to overflow it, which is the same reason `heap_budget.rs` counts bytes
+/// on the host. What is tested is the limit this returns and the rejection it drives.
+pub(crate) const fn step_limit() -> usize {
+    if cfg!(all(target_os = "solana", not(feature = "raised-heap"))) {
+        MAX_ON_CHAIN_BATCH_OPS
+    } else {
+        MAX_FHE_BATCH_OPS
+    }
+}
+
 impl<'brand> BatchBuilder<'brand> {
     /// The single mutation path for appending a step. Every op method validates first, then lowers
     /// through this: lowering interns into the builder's own tables and, when any part of the step
@@ -105,6 +132,15 @@ impl<'brand> BatchBuilder<'brand> {
         produced_type: u8,
         lower: impl FnOnce(&mut StepLowering<'_>) -> Result<FheExecuteStep>,
     ) -> Result<u8> {
+        // Checked before the step interns anything: past the limit the allocator, not this crate,
+        // would be what ends the instruction.
+        if self.steps.len() >= step_limit() {
+            return Err(if step_limit() == MAX_FHE_BATCH_OPS {
+                BatchBuildError::TooManyOps
+            } else {
+                BatchBuildError::TooManyOpsForDefaultHeap
+            });
+        }
         let op_index = u8::try_from(self.steps.len()).map_err(|_| BatchBuildError::TooManyOps)?;
         let Self {
             app_authority,

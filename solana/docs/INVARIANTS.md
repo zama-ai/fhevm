@@ -264,8 +264,12 @@ or tooling decisions, not with the threat model.
     28 do not fit, and the maximum 32-step batch (41,726) has to be built
     off-chain or by a program with its own allocator. Account resolution and
     Anchor's own account deserialization are on top of those figures, which is
-    why the budget is 16 rather than 24. Pinned by
-    `solana/crates/zama-fhe/src/heap_budget.rs`.
+    why the budget is 16 rather than 24. The SDK enforces that budget on-chain
+    (`MAX_ON_CHAIN_BATCH_OPS`, lifted by the `raised-heap` feature for a program
+    that installs its own allocator) so a program past it gets
+    `TooManyOpsForDefaultHeap` instead of an allocator abort with no error of
+    its own. Pinned by `solana/crates/zama-fhe/src/heap_budget.rs`, which takes
+    its step count from that constant.
 
 ## N. Roadmap
 

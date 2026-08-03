@@ -133,7 +133,7 @@ beforeEach(() => {
   vi.clearAllMocks();
   mocks.getSlotSend.mockResolvedValue(10_000n);
   mocks.sendTransaction.mockResolvedValue('signature');
-  mocks.readFile.mockRejectedValue(new Error('no registry yet'));
+  mocks.readFile.mockRejectedValue(Object.assign(new Error('no registry yet'), { code: 'ENOENT' }));
   mocks.writeFile.mockResolvedValue(undefined);
   mocks.rename.mockResolvedValue(undefined);
 });
@@ -312,5 +312,63 @@ describe('a pending batch needs no open transaction', () => {
     expect(mocks.sendTransaction.mock.calls.flatMap((call) => call[2] as { kind: string }[])).not.toContainEqual({
       kind: 'open',
     });
+  });
+});
+
+describe('an unreadable registry stops provisioning instead of orphaning tables', () => {
+  /** Every case here would previously have been read as "no tables recorded". */
+  const prepareBatchOne = async () => {
+    mocks.getCurrentBatch.mockResolvedValue({
+      index: 0n,
+      addresses: { batch: 'batch-0' },
+      state: { status: BATCH_SETTLED },
+    });
+    mocks.openBatchForBatcher.mockResolvedValue({
+      lookupTableAddress: 'table-fresh',
+      lookupTableAddresses: [],
+      instructions: [{ kind: 'open' }, { kind: 'create' }],
+    });
+    mocks.getAccountInfoSend.mockResolvedValue({ value: null });
+    return prepareNextBatch(config, keeper, 'deposit', REGISTRY_PATH);
+  };
+
+  test('a read error that is not a missing file refuses to write', async () => {
+    mocks.readFile.mockRejectedValue(Object.assign(new Error('denied'), { code: 'EACCES' }));
+
+    await expect(prepareBatchOne()).rejects.toThrow(/Cannot read the batch lookup registry/);
+    expect(mocks.writeFile).not.toHaveBeenCalled();
+  });
+
+  test('a truncated file refuses to write', async () => {
+    mocks.readFile.mockResolvedValue('{"42:batcher-1:0:batch-0": {"table": "table-0"');
+
+    await expect(prepareBatchOne()).rejects.toThrow(/is not valid JSON/);
+    expect(mocks.writeFile).not.toHaveBeenCalled();
+  });
+
+  test('a registry that is not an object refuses to write', async () => {
+    setRegistryFile(['table-0']);
+
+    await expect(prepareBatchOne()).rejects.toThrow(/is not a JSON object/);
+    expect(mocks.writeFile).not.toHaveBeenCalled();
+  });
+
+  test('one unreadable entry refuses to write, so the readable ones survive on disk', async () => {
+    setRegistryFile({
+      '42:batcher-1:0:batch-0': 'table-0',
+      '42:batcher-1:1:batch-1': { table: 'table-1', retired: ['table-old', 7] },
+    });
+
+    await expect(prepareBatchOne()).rejects.toThrow(/unreadable entry for 42:batcher-1:1:batch-1/);
+    expect(mocks.writeFile).not.toHaveBeenCalled();
+  });
+
+  test('a missing file is still an empty registry', async () => {
+    mocks.readFile.mockRejectedValue(Object.assign(new Error('nothing yet'), { code: 'ENOENT' }));
+
+    const prepared = await prepareBatchOne();
+
+    expect(prepared.batchIndex).toBe(1n);
+    expect(writtenRegistry(0)['42:batcher-1:1:batch-0']).toEqual({ table: 'table-fresh' });
   });
 });

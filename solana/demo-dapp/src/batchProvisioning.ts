@@ -84,25 +84,52 @@ const normalizeEntry = (value: unknown): BatchLookupEntry | null => {
   if (typeof value !== 'object' || value === null || Array.isArray(value)) return null;
   const candidate = value as { table?: unknown; retired?: unknown };
   if (typeof candidate.table !== 'string') return null;
-  const retired = Array.isArray(candidate.retired)
-    ? candidate.retired.filter((entry): entry is string => typeof entry === 'string')
-    : [];
+  if (candidate.retired !== undefined) {
+    if (!Array.isArray(candidate.retired) || candidate.retired.some((entry) => typeof entry !== 'string')) {
+      return null;
+    }
+  }
+  const retired = (candidate.retired ?? []) as readonly string[];
   return retired.length === 0 ? { table: candidate.table } : { table: candidate.table, retired };
 };
 
+/**
+ * Reads the registry, treating only "the file does not exist yet" as an empty one.
+ *
+ * Every other failure throws, because the caller writes what this returns straight back: a
+ * permission error, a truncated file, or one unreadable entry read as "no tables recorded" would be
+ * persisted over the record of every table this direction still owns. Those tables are rent-bearing
+ * and their addresses are derived from a slot that has already passed, so nothing else can name them
+ * afterwards — the leak the crank exists to prevent. Refusing to provision is the recoverable
+ * outcome: the file is still there to be repaired.
+ */
 const readRegistry = async (registryPath: string): Promise<BatchLookupRegistry> => {
+  const fs = await import('node:fs/promises');
+  let contents: string;
   try {
-    const parsed = JSON.parse(await (await import('node:fs/promises')).readFile(registryPath, 'utf8')) as unknown;
-    if (typeof parsed !== 'object' || parsed === null || Array.isArray(parsed)) return {};
-    const entries: [string, BatchLookupEntry][] = [];
-    for (const [key, value] of Object.entries(parsed)) {
-      const entry = normalizeEntry(value);
-      if (entry !== null) entries.push([key, entry]);
-    }
-    return Object.fromEntries(entries);
-  } catch {
-    return {};
+    contents = await fs.readFile(registryPath, 'utf8');
+  } catch (error) {
+    if ((error as { code?: unknown }).code === 'ENOENT') return {};
+    throw new Error(`Cannot read the batch lookup registry at ${registryPath}: ${String(error)}`);
   }
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(contents) as unknown;
+  } catch (error) {
+    throw new Error(`The batch lookup registry at ${registryPath} is not valid JSON: ${String(error)}`);
+  }
+  if (typeof parsed !== 'object' || parsed === null || Array.isArray(parsed)) {
+    throw new Error(`The batch lookup registry at ${registryPath} is not a JSON object`);
+  }
+  const entries: [string, BatchLookupEntry][] = [];
+  for (const [key, value] of Object.entries(parsed)) {
+    const entry = normalizeEntry(value);
+    if (entry === null) {
+      throw new Error(`The batch lookup registry at ${registryPath} has an unreadable entry for ${key}`);
+    }
+    entries.push([key, entry]);
+  }
+  return Object.fromEntries(entries);
 };
 
 const writeRegistry = async (registryPath: string, registry: BatchLookupRegistry): Promise<void> => {

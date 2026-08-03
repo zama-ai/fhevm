@@ -33,7 +33,7 @@ use zama_host::MAX_FHE_BATCH_OPS;
 
 use crate::{
     Batch, BatchAppAuthority, Domain, Encrypted, EncryptedValueId, Output, PersistentLabel,
-    PersistentOutput, Scalar, Uint, Uint64Handle,
+    PersistentOutput, Scalar, Uint, Uint64Handle, MAX_ON_CHAIN_BATCH_OPS,
 };
 
 thread_local! {
@@ -78,13 +78,13 @@ static ALLOCATOR: CountingAllocator = CountingAllocator;
 /// The region Anchor's default bump allocator serves one instruction from.
 const DEFAULT_HEAP_BYTES: usize = 32 * 1024;
 
-/// Steps an app program can count on building *and* invoking inside that region: 16, measured at
-/// 19,454 bytes. The hard ceiling is 24 (32,158 bytes, clearing the region by 610 bytes) and 28 is
-/// over, but 24 leaves nothing for the costs below, so it is not a number to build a program on.
-/// For scale, the clone-per-step rollback this replaced asked for 270 KB across a full batch and
-/// exhausted the heap at the 10th step of the build alone. `print_measurement_table` re-derives all
-/// of these.
-const RELIABLE_STEPS: usize = 16;
+/// The ceiling the builder enforces on-chain — measured here, so the number a program is stopped at
+/// is the number this test proves fits. At 16 steps the instruction requests 19,454 bytes. The hard
+/// ceiling is 24 (32,158 bytes, clearing the region by 610 bytes) and 28 is over, but 24 leaves
+/// nothing for the costs below, so it is not a number to build a program on. For scale, the
+/// clone-per-step rollback this replaced asked for 270 KB across a full batch and exhausted the heap
+/// at the 10th step of the build alone. `print_measurement_table` re-derives all of these.
+const RELIABLE_STEPS: usize = MAX_ON_CHAIN_BATCH_OPS;
 
 /// Headroom left for what this test cannot count: `resolve_accounts`'s meta and info vectors, and
 /// Anchor's deserialization of the instruction's own accounts, which for a batch this size means 30+
