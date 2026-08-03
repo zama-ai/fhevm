@@ -167,17 +167,6 @@ jobs:
         if: github.event_name == 'pull_request'
         run: bash solana/scripts/e2e/select-overrides.sh "$(git rev-parse HEAD^1)"
 
-      # The deposit-arc scenario drives the demo dapp's vault module from bun, and the vault reaches
-      # into SDK *sources* (`@sdk-src`) for internals the published package deliberately does not
-      # export (fhevm-internal#1859 §6d). Source resolution starts at sdk/js-sdk/, so the SDK's own
-      # runtime dependencies have to be installed there or at the repo root — the frozen consumer
-      # graph under test-suite/fhevm only serves the *built* package, which is why the scenario suite
-      # failed on `Cannot find module '@noble/hashes/sha2.js'` while `import('@fhevm/sdk/solana')`
-      # passed. Same command clean-e2e.sh and the demo-dapp job use, in the same position: before the
-      # bring-up that builds the SDK and refreshes each consumer graph on top.
-      - name: Install the SDK's own dependency graph (bun resolves SDK sources)
-        run: npm ci --workspace=@fhevm/sdk-dev --workspace=@fhevm/sdk --include-workspace-root=false
-
       - name: Bring up fresh lifecycle-owned stack + demo
         env:
           # Override selection computed above (empty on workflow_dispatch or if the step was
@@ -204,6 +193,20 @@ jobs:
 
       - name: Drive the Solana decrypt vertical (full-vertical.sh)
         run: bash solana/scripts/e2e/full-vertical.sh
+
+      # The deposit-arc scenario drives the demo dapp's vault module from bun, and the vault reaches
+      # into SDK *sources* (`@sdk-src`) for internals the published package deliberately does not
+      # export (fhevm-internal#1859 §6d). Source resolution starts at sdk/js-sdk/, so the SDK's own
+      # runtime dependencies have to exist there or at the repo root — the frozen consumer graph
+      # under test-suite/fhevm only serves the *built* package, which is why the suite below failed on
+      # `Cannot find module '@noble/hashes/sha2.js'` while the import check above passed.
+      #
+      # After the bring-up, not before: with no node_modules anywhere, bun installs test-suite/fhevm's
+      # own graph on demand, and creating a root tree first suppresses that — an earlier attempt at
+      # this position broke `bun run demo up` on `Cannot find module '@solana/kit'`. The lifecycle's
+      # consumer graphs live in their own directories and are not touched by this root install.
+      - name: Install the SDK's own dependency graph (bun resolves SDK sources)
+        run: npm ci --workspace=@fhevm/sdk-dev --workspace=@fhevm/sdk --include-workspace-root=false
 
       - name: Run the Solana e2e scenario suite (SDK-driven, against the up stack)
         # The lifecycle-owned stack is still up. These bun:test scenarios drive product arcs through
