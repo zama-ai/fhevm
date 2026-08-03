@@ -110,8 +110,21 @@ pub(crate) fn execute_as_batch_authority<'info, T>(
 ) -> Result<()> {
     let bump = [eval.authority_bump];
     let authority_seeds: &[&[u8]] = &[BATCH_AUTHORITY_SEED, eval.batch.as_ref(), &bump];
-    zama_fhe::invoke_batch_signed_with_builder(
+    let batch = zama_fhe::Batch::build(
         zama_fhe::BatchAppAuthority::new(eval.batch_authority.key()),
+        build,
+    )
+    .map_err(invalid_batch)?;
+    // Every persistent output of a batcher eval is authorized by the batch authority itself, so it
+    // is the only output authority witness the batch can require.
+    let resolved_accounts = batch
+        .resolve_accounts(dynamic_accounts, [eval.batch_authority.clone()])
+        .map_err(|error| {
+            msg!("invalid batcher fhe_execute accounts: {:?}", error);
+            error!(BatcherError::InvalidFheExecuteBatch)
+        })?;
+    // Host/CPI errors propagate unchanged so callers and tests keep seeing the host's error code.
+    batch.execute(
         zama_fhe::BatchCpiAccounts {
             payer: eval.payer,
             compute_subject: eval.batch_authority.clone(),
@@ -124,20 +137,9 @@ pub(crate) fn execute_as_batch_authority<'info, T>(
             event_authority: eval.zama_event_authority,
             program: eval.zama_program,
         },
-        dynamic_accounts,
-        [],
+        &resolved_accounts,
         &[authority_seeds],
-        build,
     )
-    .map_err(|error| match error {
-        // Keep host/CPI error codes visible to callers and tests.
-        zama_fhe::BatchInvokeError::Cpi(error) => error,
-        other => {
-            msg!("invalid batcher fhe_execute batch: {:?}", other);
-            error!(BatcherError::InvalidFheExecuteBatch)
-        }
-    })?;
-    Ok(())
 }
 
 pub(crate) fn invalid_batch(error: zama_fhe::BatchBuildError) -> anchor_lang::error::Error {

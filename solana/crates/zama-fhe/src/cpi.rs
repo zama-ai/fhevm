@@ -14,13 +14,9 @@ use anchor_lang::{
 use anchor_lang::prelude::Pubkey;
 
 #[cfg(feature = "cpi")]
-use crate::accounts::{BatchAccountResolutionError, BatchAppAuthority, ResolvedBatchAccounts};
+use crate::accounts::ResolvedBatchAccounts;
 #[cfg(feature = "cpi")]
 use crate::batch::Batch;
-#[cfg(feature = "cpi")]
-use crate::builder::BatchBuilder;
-#[cfg(feature = "cpi")]
-use crate::{BatchBuildError, Result};
 
 #[cfg(feature = "cpi")]
 pub struct BatchCpiAccounts<'a, 'info> {
@@ -51,68 +47,6 @@ impl<'info> BatchAccountResolver<'info> for ResolvedBatchAccounts<'info> {
     fn resolve_batch_account(&self, pubkey: Pubkey) -> Option<AccountInfo<'info>> {
         self.resolve(pubkey)
     }
-}
-
-/// Failure returned by the closure-based CPI batch helper.
-#[cfg(feature = "cpi")]
-#[derive(Debug)]
-pub enum BatchInvokeError {
-    /// The closure produced an invalid batch.
-    Build(BatchBuildError),
-    /// The supplied dynamic accounts or output authority witnesses do not
-    /// satisfy the built batch.
-    AccountResolution(BatchAccountResolutionError),
-    /// The host CPI returned an Anchor error.
-    Cpi(anchor_lang::error::Error),
-}
-
-#[cfg(feature = "cpi")]
-impl From<BatchBuildError> for BatchInvokeError {
-    fn from(error: BatchBuildError) -> Self {
-        Self::Build(error)
-    }
-}
-
-#[cfg(feature = "cpi")]
-impl From<BatchAccountResolutionError> for BatchInvokeError {
-    fn from(error: BatchAccountResolutionError) -> Self {
-        Self::AccountResolution(error)
-    }
-}
-
-#[cfg(feature = "cpi")]
-impl From<anchor_lang::error::Error> for BatchInvokeError {
-    fn from(error: anchor_lang::error::Error) -> Self {
-        Self::Cpi(error)
-    }
-}
-
-/// Builds a batch with a closure, resolves its dynamic accounts, and
-/// invokes `zama-host::fhe_execute`.
-///
-/// `dynamic_accounts` and additional `output_authorities` may be in any order.
-/// The fixed CPI `account_authority` is included automatically. The SDK
-/// validates the supplied accounts against the batch produced by the closure
-/// before constructing the ordered host account list used by
-/// [`Batch::execute`].
-#[cfg(feature = "cpi")]
-pub fn invoke_batch_signed_with_builder<'a, 'info, T, F>(
-    app_authority: BatchAppAuthority,
-    accounts: BatchCpiAccounts<'a, 'info>,
-    dynamic_accounts: impl IntoIterator<Item = AccountInfo<'info>>,
-    output_authorities: impl IntoIterator<Item = AccountInfo<'info>>,
-    signer_seeds: &[&[&[u8]]],
-    build: F,
-) -> std::result::Result<(), BatchInvokeError>
-where
-    F: FnOnce(&mut BatchBuilder) -> Result<T>,
-{
-    let batch = Batch::build(app_authority, build)?;
-    let mut output_authorities = output_authorities.into_iter().collect::<Vec<_>>();
-    output_authorities.insert(0, accounts.account_authority.clone());
-    let resolved_accounts = batch.resolve_accounts(dynamic_accounts, output_authorities)?;
-    invoke_batch_signed_resolved(&batch, accounts, &resolved_accounts, signer_seeds)?;
-    Ok(())
 }
 
 /// Invokes `zama-host::fhe_execute` with accounts pre-resolved from a [`Batch`].

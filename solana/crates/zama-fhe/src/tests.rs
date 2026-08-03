@@ -4,8 +4,6 @@ use crate::accounts::*;
 use crate::acl::*;
 use crate::batch::*;
 use crate::builder::*;
-#[cfg(feature = "cpi")]
-use crate::cpi::*;
 use crate::lower::StepTables;
 use crate::operand::*;
 use crate::types::*;
@@ -71,22 +69,6 @@ fn dummy_attestation(input_handle: [u8; 32], contract: Pubkey) -> CoprocessorInp
         contract_chain_id: 1,
         extra_data: vec![],
         signatures: vec![[0u8; 65]],
-    }
-}
-
-#[cfg(feature = "cpi")]
-fn cpi_accounts(app_authority: Pubkey) -> BatchCpiAccounts<'static, 'static> {
-    BatchCpiAccounts {
-        payer: account_info(Pubkey::new_unique(), true),
-        compute_subject: account_info(Pubkey::new_unique(), false),
-        account_authority: account_info(app_authority, false),
-        host_config: account_info(Pubkey::new_unique(), false),
-        deny_subject_records: &[],
-        system_program: account_info(Pubkey::new_unique(), false),
-        hcu_block_meter: None,
-        hcu_trusted_app_record: None,
-        event_authority: account_info(Pubkey::new_unique(), false),
-        program: account_info(Pubkey::new_unique(), false),
     }
 }
 
@@ -351,100 +333,56 @@ fn finish_rejects_dictionary_index_past_dictionary_end() {
 
 #[cfg(feature = "cpi")]
 #[test]
-fn invoke_batch_signed_with_builder_reports_build_errors_before_resolution() {
-    let primary_authority = Pubkey::new_unique();
-    let error = invoke_batch_signed_with_builder(
-        app_authority(primary_authority),
-        cpi_accounts(primary_authority),
-        Vec::<AccountInfo<'static>>::new(),
-        Vec::<AccountInfo<'static>>::new(),
-        &[],
-        |_builder| Ok(()),
-    )
-    .unwrap_err();
-
-    assert!(matches!(
-        error,
-        BatchInvokeError::Build(BatchBuildError::EmptyOps)
-    ));
-}
-
-#[cfg(feature = "cpi")]
-#[test]
-fn invoke_batch_signed_with_builder_adds_fixed_authority_before_resolution() {
+fn resolve_accounts_requires_the_cpi_authority_witness() {
     let primary_authority = Pubkey::new_unique();
     let input_key = encrypted_value_id(primary_authority, 1);
     let input_acl = input_key.address();
     let output_key = encrypted_value_id(primary_authority, 7);
     let output_acl = output_key.address();
     let balance = Uint64Handle::persistent(balance_handle(1), input_key).unwrap();
+    let mut builder = BatchBuilder::new(app_authority(primary_authority));
+    builder
+        .add(
+            balance,
+            Scalar::<Uint<64>>::u64(1),
+            Output::persistent(PersistentOutput::create(
+                output_key,
+                subjects(primary_authority),
+            )),
+        )
+        .unwrap();
+    let batch = builder.finish().unwrap();
 
-    let error = invoke_batch_signed_with_builder(
-        app_authority(primary_authority),
-        cpi_accounts(primary_authority),
-        vec![account_info(input_acl, false)],
-        Vec::<AccountInfo<'static>>::new(),
-        &[],
-        |builder| {
-            builder.add(
-                balance,
-                Scalar::<Uint<64>>::u64(1),
-                Output::persistent(PersistentOutput::create(
-                    output_key,
-                    subjects(primary_authority),
-                )),
-            )
-        },
-    )
-    .unwrap_err();
+    // The batch's own app authority is an output authority like any other: the caller passes its
+    // account info, and leaving it out is an error rather than something the SDK fills in.
+    let missing = batch
+        .resolve_accounts(
+            vec![
+                account_info(input_acl, false),
+                account_info(output_acl, true),
+            ],
+            Vec::<AccountInfo<'static>>::new(),
+        )
+        .unwrap_err();
+    assert_eq!(
+        missing,
+        BatchAccountResolutionError::MissingOutputAuthority {
+            authority: BatchOutputAuthorityRequirement {
+                pubkey: primary_authority,
+                cpi_account_authority: true,
+            }
+        }
+    );
 
-    assert!(matches!(
-        error,
-        BatchInvokeError::AccountResolution(
-            BatchAccountResolutionError::MissingDynamicAccount { requirement }
-        ) if requirement.pubkey() == output_acl
-    ));
-}
-
-#[cfg(feature = "cpi")]
-#[test]
-fn invoke_batch_signed_with_builder_requires_additional_output_authorities() {
-    let primary_authority = Pubkey::new_unique();
-    let extra_authority = Pubkey::new_unique();
-    let input_key = encrypted_value_id(primary_authority, 1);
-    let input_acl = input_key.address();
-    let output_key = encrypted_value_id(extra_authority, 7);
-    let output_acl = output_key.address();
-    let balance = Uint64Handle::persistent(balance_handle(1), input_key).unwrap();
-
-    let error = invoke_batch_signed_with_builder(
-        app_authority(primary_authority),
-        cpi_accounts(primary_authority),
-        vec![
-            account_info(input_acl, false),
-            account_info(output_acl, true),
-        ],
-        Vec::<AccountInfo<'static>>::new(),
-        &[],
-        |builder| {
-            builder.add(
-                balance,
-                Scalar::<Uint<64>>::u64(1),
-                Output::persistent(PersistentOutput::create(
-                    output_key,
-                    subjects(extra_authority),
-                )),
-            )
-        },
-    )
-    .unwrap_err();
-
-    assert!(matches!(
-        error,
-        BatchInvokeError::AccountResolution(
-            BatchAccountResolutionError::MissingOutputAuthority { authority }
-        ) if authority.pubkey() == extra_authority
-    ));
+    batch
+        .resolve_accounts(
+            vec![
+                account_info(input_acl, false),
+                account_info(output_acl, true),
+            ],
+            vec![account_info(primary_authority, false)],
+        )
+        .expect("resolves once the authority witness is supplied");
 }
 
 #[test]

@@ -4,8 +4,12 @@
 //! operands and persistent outputs by pubkey; [`BatchBuilder`] validates the batch,
 //! assigns host account indices, and records the signer/writable requirements for
 //! every dynamic account. With the `cpi` feature, [`Batch::resolve_accounts`]
-//! preflights the dynamic account set and [`invoke_batch_signed_resolved`] turns
-//! the batch plus resolved accounts into the exact `zama-host` CPI.
+//! preflights the dynamic account set and [`Batch::execute`] turns the batch plus
+//! those resolved accounts into the exact `zama-host` CPI. That build, resolve,
+//! execute sequence is the only way the SDK invokes a batch: an app program that
+//! knows its signer set up front can write it in three calls, and one that has to
+//! read the built batch first — for its output authorities, or for the subjects it
+//! newly grants — needs the batch in hand anyway.
 //!
 //! The builder intentionally targets the current role-aware host fhe_execute ABI rather
 //! than the older `execute_frame` prototype (RFC-024's name for that sketch). Instruction-local intermediate
@@ -40,7 +44,7 @@ pub use acl::{
 pub use batch::Batch;
 pub use builder::BatchBuilder;
 #[cfg(feature = "cpi")]
-pub use cpi::{invoke_batch_signed_with_builder, BatchCpiAccounts, BatchInvokeError};
+pub use cpi::BatchCpiAccounts;
 pub use types::{
     Address, BinaryRhs, Bool, BoolHandle, Bytes256, Encrypted, FheBitwise, FheEq, FheIsIn, FheNeg,
     FheNot, FheRandom, FheShift, FheType, FheTyped, FheUint, Scalar, Uint, Uint64Handle,
