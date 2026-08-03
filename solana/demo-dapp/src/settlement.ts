@@ -18,15 +18,19 @@ import {
   settleBatch,
 } from './vault/index.js';
 
-import type { BatchLifecycle, BatchTarget, VaultDirection } from './batchTypes';
+import {
+  BATCH_CANCELED,
+  BATCH_DISPATCHED,
+  BATCH_PENDING,
+  BATCH_SETTLED,
+  type BatchLifecycle,
+  type BatchTarget,
+  type VaultDirection,
+} from './batchTypes';
 import type { DemoConfig } from './demoConfig';
 import { sendTransaction } from './sendTransaction';
 import { vaultRoots } from './vaultRoots';
 
-const BATCH_PENDING = 0;
-const BATCH_DISPATCHED = 1;
-const BATCH_SETTLED = 2;
-const BATCH_CANCELED = 3;
 const DISPATCH_COMPUTE_UNIT_LIMIT = 600_000;
 const DEACTIVATE_LOOKUP_TABLE_COMPUTE_UNIT_LIMIT = 50_000;
 
@@ -213,8 +217,10 @@ export const settleVaultBatch = async (
     certificateOptions: { timeout: 60_000 },
   });
   // The batch is settled, so its per-batch table has served its one purpose: deactivate it now and
-  // the close crank in prepareNextBatch reclaims the rent once the cooldown has elapsed. A failed
-  // deactivation is a rent-hygiene miss, never a settlement failure.
+  // the crank in prepareNextBatch reclaims the rent once the cooldown has elapsed. A failed
+  // deactivation is a rent-hygiene miss, never a settlement failure — and no longer a permanent
+  // one either: the crank deactivates any table whose batch is settled or canceled, so this eager
+  // attempt is a shortcut on the happy path rather than the only chance the table gets.
   try {
     await sendTransaction(
       session.config,
