@@ -13,6 +13,11 @@ import {E2ECoprocessorConfig} from "../E2ECoprocessorConfigLocal.sol";
 ///         the userAddress IS the contract holding the handle — a shape the
 ///         raw-envelope protocol suite can still exercise via permissive
 ///         `allowedContracts: []`, which the SDK does not expose.
+///
+///         Also backs the real-Safe multisig scenarios in BOTH suites: a Safe
+///         proxy has no FHE coprocessor config and cannot hold encrypted
+///         state, so each Safe is paired with a holder granting it decrypt
+///         access via `FHE.allow(value, safe)`.
 contract EncryptedValueHolder is E2ECoprocessorConfig {
     euint64 public value;
 
