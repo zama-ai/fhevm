@@ -139,6 +139,15 @@ pub struct FheExecuteArgs {
     /// account keys, encrypted value labels, and output subjects. Steps reference entries by
     /// `u8` index, so a value repeated across steps is paid for once (the compiled-message /
     /// constant-dictionary encoding; fhevm-internal#1853 W7).
+    ///
+    /// The entries stay raw `[u8; 32]` on purpose, and must not become an enum of typed
+    /// variants. Interning is what makes the encoding small, and it only works across roles:
+    /// the same 32 bytes can be an operand handle in one step and an output subject in
+    /// another, and both steps then share one entry. A typed dictionary would need one entry
+    /// per role, which grows the packet and buys nothing — the step that reads an index
+    /// already knows which role it is asking for, and `dictionary_key` /
+    /// `dictionary_bytes` are where that reading happens. Types belong at the ends of the
+    /// wire, not in the middle of it (fhevm-internal#1859 §2).
     pub dictionary: Vec<[u8; 32]>,
     /// Ordered step list. Each `AllowedLocal` operand may only reference an output
     /// produced by an earlier index in this vector.

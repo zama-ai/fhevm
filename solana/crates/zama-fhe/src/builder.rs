@@ -35,7 +35,9 @@ pub struct BatchBuilder {
     pub(crate) persistent_producers: Vec<(anchor_lang::prelude::Pubkey, u8)>,
     pub(crate) remaining_accounts: Vec<BatchAccountMeta>,
     /// Interned 32-byte constant dictionary the lowered steps reference by `u8` index
-    /// (operand handles, scalars, ACL domain keys, app accounts, labels, subjects).
+    /// (operand handles, scalars, ACL domain keys, app accounts, labels, subjects). The
+    /// entries are deliberately untyped so one entry can serve several roles; see
+    /// `FheExecuteArgs::dictionary` in zama-host for why typing them would cost packet bytes.
     pub(crate) dictionary: Vec<[u8; 32]>,
     /// Coprocessor attestations backing `VerifiedInput` operands, referenced by index. Held here
     /// (rather than inline in the operand) so `Operand` stays `Copy`.
