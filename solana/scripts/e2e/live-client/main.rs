@@ -2048,7 +2048,8 @@ fn fhe_execute_unary(
         Pubkey::find_program_address(&[EVENT_AUTHORITY_SEED], &zama_host::ID);
     let subjects = vec![payer.pubkey()];
 
-    // Encrypted operand as a persistent public-decrypt handle (propagates to output; AllowedLocal → 6063).
+    // Encrypted operand as a persistent public-decrypt handle (propagates to output; an
+    // `AllowedLocal` operand here would fail `FheExecuteAllowedLocalMissing`, error code 6032).
     let mut operand_label_a = [0x0bu8; 32];
     operand_label_a[1] = op.as_u8();
     operand_label_a[2] = in_fhe_type;
