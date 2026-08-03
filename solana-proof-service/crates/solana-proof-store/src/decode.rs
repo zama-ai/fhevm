@@ -578,7 +578,9 @@ pub fn decode_program_instructions(
                 }
                 (false, _) => return Err(DecodeError::UnexpectedCreatedPublicEvent),
             };
-            out.extend(decode_fhe_execute_persistent_outputs(ix, &execution, &handles)?);
+            out.extend(decode_fhe_execute_persistent_outputs(
+                ix, &execution, &handles,
+            )?);
             index = batch_end;
         } else {
             out.extend(decode_instructions(ix)?);
