@@ -11,18 +11,19 @@ nothing inside `VAR="$(...)"` aborts the script with status 1 and no message; an
 takes ~45 minutes of bring-up to reach the phase where it happens, so a red run says almost nothing
 about which rename broke it.
 
-This check runs in seconds instead. For every `grep -E`/`grep -oE` pattern in the e2e scripts it
-takes the pattern's literal prefix — the part before the first regex metacharacter — and requires
-some producer to contain that text: a live client, a script's own `echo`, or the test SDK. A label
-that no longer exists anywhere is reported with the file and line that still expects it.
+This check runs in seconds instead. For every `grep` pattern in the e2e scripts it takes the
+pattern's literal prefix — the part before the first regex metacharacter — and requires some producer
+to contain that text: a live client, a script's own `echo`, or the test SDK. A label that no longer
+exists anywhere is reported with the file and line that still expects it.
 
-Patterns matching output this repo does not produce (`psql`, `docker`, relayer JSON) are listed in
-EXTERNAL_PATTERNS with the reason, so the check stays exhaustive by default.
+Patterns matching output this repo does not produce (the Solana runtime's error text, the gateway
+container) are listed in EXTERNAL_PATTERNS with the reason, so the check stays exhaustive by default.
 """
 
 from __future__ import annotations
 
 import re
+import subprocess
 import sys
 import tempfile
 from pathlib import Path
@@ -30,25 +31,25 @@ from pathlib import Path
 REPO_ROOT = Path(__file__).resolve().parents[2]
 SCRIPT_DIR = REPO_ROOT / "solana" / "scripts" / "e2e"
 
-# Where a printed label can legitimately come from.
-PRODUCER_GLOBS = (
-    "solana/scripts/e2e/**/*.rs",
-    "solana/scripts/e2e/**/*.sh",
-    "solana/scripts/e2e/**/*.ts",
-    "solana/scripts/*.sh",
-    "test-suite/fhevm/**/*.ts",
-    "test-suite/fhevm/**/*.sh",
-    "test-suite/fhevm/fhevm-cli",
+# Where a printed label can legitimately come from. Enumerated through `git ls-files`, so build
+# output and dependencies are structurally out of reach: a first version globbed the working tree and
+# passed locally on `@types/node`'s prose and a vendored `zstd.h`, while CI — with no target/ and no
+# node_modules — reported the miss. A haystack that grows arbitrary English silently stops checking.
+PRODUCER_PATHSPECS = (
+    "solana/scripts",
+    "test-suite/fhevm",
 )
+PRODUCER_SUFFIXES = (".rs", ".sh", ".ts")
+# Extensionless executables that print labels the scripts read.
+PRODUCER_NAMES = ("fhevm-cli",)
 
 # Literal prefixes whose producer is outside this repository. Each entry says which one, so an
 # unexplained miss cannot hide behind a blanket skip.
 EXTERNAL_PATTERNS = {
-    "ERROR": "any tool's error output",
-    "error": "any tool's error output",
-    "Error": "any tool's error output",
     "custom program error": "the Solana runtime's transaction error text",
     "insufficient funds": "the Solana runtime's transaction error text",
+    "error occurred": "the gateway addHostChain container (hardhat/ethers)",
+    "reverted": "the gateway addHostChain container (hardhat/ethers)",
 }
 
 # A prefix this short is not a label; matching it proves nothing.
@@ -57,7 +58,10 @@ MIN_LITERAL = 6
 # The pattern is a POSIX ERE; everything from the first of these onward is not literal text.
 METACHARACTERS = re.compile(r"[\\\[\](){}.*+?^$|]")
 
-GREP_CALL = re.compile(r"grep\s+(?:-[A-Za-z]*E[A-Za-z]*\s+)'([^']*)'")
+# Captures the flags too, so a `-i` pattern is matched case-insensitively here as well. Fixed-string
+# and basic-regexp greps are read the same way as EREs: reducing to the literal prefix is
+# conservative for every dialect, since none of them treat plain text as a metacharacter.
+GREP_CALL = re.compile(r"grep\s+(-[A-Za-z]+)\s+'([^']*)'")
 
 
 def literal_prefix(pattern: str) -> str:
@@ -65,39 +69,56 @@ def literal_prefix(pattern: str) -> str:
     return (pattern if match is None else pattern[: match.start()]).strip()
 
 
-def producer_text(exclude: Path) -> str:
+def producer_text(files: list[Path], exclude: Path) -> str:
     """Everything that could print a grepped label, minus the script doing the grepping.
 
     A script is excluded from its own haystack because the line that greps for a label is usually
     followed by a `fail "no <label>: $out"` that repeats it, and that error message would vouch for
     the very pattern under test. Labels printed by a *different* script still count.
     """
-    chunks = []
-    for glob in PRODUCER_GLOBS:
-        for path in sorted(REPO_ROOT.glob(glob)):
-            if path.is_file() and path != exclude:
-                chunks.append(path.read_text(errors="replace"))
-    return "\n".join(chunks)
+    return "\n".join(path.read_text(errors="replace") for path in files if path != exclude)
+
+
+def producer_files() -> list[Path]:
+    """Tracked source files only — see PRODUCER_PATHSPECS for why that matters."""
+    listed = subprocess.run(
+        ["git", "ls-files", "-z", "--", *PRODUCER_PATHSPECS],
+        cwd=REPO_ROOT,
+        capture_output=True,
+        text=True,
+        check=True,
+    ).stdout
+    files = []
+    for name in filter(None, listed.split("\0")):
+        path = REPO_ROOT / name
+        if (path.suffix in PRODUCER_SUFFIXES or path.name in PRODUCER_NAMES) and path.is_file():
+            files.append(path)
+    return files
 
 
 def scan(script_dir: Path) -> tuple[list[str], int, int]:
     """Returns the misses, how many labels were checked, and how many scripts were read."""
     scripts = sorted(script_dir.glob("*.sh"))
+    files = producer_files()
     failures = []
     checked = 0
     for script in scripts:
-        haystack = producer_text(exclude=script)
+        haystack = producer_text(files, exclude=script)
         if not haystack:
             raise SystemExit("check-e2e-greps: found no producer files to read")
+        lowered = haystack.lower()
         for number, line in enumerate(script.read_text().splitlines(), start=1):
-            for pattern in GREP_CALL.findall(line):
+            for flags, pattern in GREP_CALL.findall(line):
                 # An alternation greps for several labels at once; each branch is its own claim.
                 for branch in pattern.split("|"):
                     literal = literal_prefix(branch)
                     if len(literal) < MIN_LITERAL or literal in EXTERNAL_PATTERNS:
                         continue
                     checked += 1
-                    if literal not in haystack:
+                    found = (
+                        literal.lower() in lowered if "i" in flags else literal in haystack
+                    )
+                    if not found:
                         failures.append(
                             f"{script}:{number}: nothing prints "
                             f"{literal!r} (pattern {branch!r})"
