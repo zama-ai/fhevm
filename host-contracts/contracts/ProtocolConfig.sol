@@ -416,6 +416,12 @@ contract ProtocolConfig is IProtocolConfig, UUPSUpgradeableEmptyProxy, ACLOwnabl
             revert InvalidKmsContext(contextId);
         }
 
+        // Activation requires one key and one CRS attestation from the signer. An empty array skips its loop
+        // below, so the vote would be recorded without checking that attestation.
+        if (keys.length == 0 || crsList.length == 0) {
+            revert EmptyEpochActivationAttestation(epochId);
+        }
+
         address signer = $.kmsNodeByTxSenderForContext[contextId][msg.sender].signerAddress;
         bytes32 dataHash;
         {
