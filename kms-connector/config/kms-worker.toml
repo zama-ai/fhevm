@@ -90,6 +90,12 @@ database_url = "postgres://postgres:postgres@localhost/kms-connector"
 # ENV: KMS_CONNECTOR_S3_MAX_CONCURRENT_GETS
 # s3_max_concurrent_gets = 16
 
+# Maximum size of a single ciphertext body, in bytes (optional, defaults to 67108864, 64MiB)
+# Mainnet serves ~96KiB compressed_on_cpu ciphertexts, but the uncompressed formats may reach ~32MiB,
+# and a ceiling below a legitimate ciphertext would have every bucket turn it down.
+# ENV: KMS_CONNECTOR_S3_MAX_CIPHERTEXT_SIZE
+# s3_max_ciphertext_size = 67108864
+
 # Refresh interval of the Coprocessor registry read from the GatewayConfig contract (optional, defaults to 60s)
 # ENV: KMS_CONNECTOR_COPRO_REGISTRY_REFRESH (format: https://docs.rs/humantime/latest/humantime/)
 # copro_registry_refresh = "60s"
