@@ -1,39 +1,28 @@
-//! Wraps public USDC into a confidential token balance.
+//! Recovers a tip-only pending burn by FHE-crediting the burned amount back onto confidential
+//! balance and encrypted total supply.
+//!
+//! Alternate close path for a `PendingBurn` lane (fhevm-internal#1862 Wave 2): while the burned
+//! handle is still the shared `burned_amount` EncryptedValue's `current_handle`, the owner can
+//! undo the burn's encrypted effects (balance + supply) without a KMS certificate. Superseded
+//! (historical) burns cannot recover this way — claim via `redeem_burned_amount` remains the path.
+//!
+//! Rent note: `open_pending_burn` may be paid by a permissionless `payer` (e.g. batcher dispatch),
+//! while claim/recover always close to `owner`. That is intentional crank subsidy, not theft.
 
 use super::*;
 
-/// Accounts for wrapping public USDC into a confidential balance.
+/// Accounts for recovering a pending burn into confidential balance and total supply.
 #[derive(Accounts)]
 #[event_cpi]
-pub struct WrapUsdc<'info> {
-    /// Token owner and transfer authority.
+pub struct RecoverPendingBurn<'info> {
+    /// Token owner, recover authority, and rent destination for the closed pending-burn lane.
     #[account(mut)]
     pub owner: Signer<'info>,
-    /// Confidential mint.
-    #[account(mut)]
+    /// Confidential mint whose compute signer authorizes the balance/supply updates.
     pub mint: Box<Account<'info, ConfidentialMint>>,
-    /// Confidential token account whose balance is increased.
+    /// Token account whose balance is re-credited.
     #[account(mut)]
     pub token_account: Box<Account<'info, ConfidentialTokenAccount>>,
-    /// Underlying SPL mint.
-    pub underlying_mint: Box<Account<'info, SplMint>>,
-    /// Owner's source USDC token account.
-    #[account(
-        mut,
-        constraint = user_usdc.mint == underlying_mint.key() @ ConfidentialTokenError::UnderlyingMintMismatch,
-        constraint = user_usdc.owner == owner.key() @ ConfidentialTokenError::OwnerMismatch
-    )]
-    pub user_usdc: Box<Account<'info, TokenAccount>>,
-    /// Program vault USDC token account.
-    #[account(
-        mut,
-        constraint = vault_usdc.mint == underlying_mint.key() @ ConfidentialTokenError::UnderlyingMintMismatch,
-        constraint = vault_usdc.owner == vault_authority.key() @ ConfidentialTokenError::VaultAuthorityMismatch
-    )]
-    pub vault_usdc: Box<Account<'info, TokenAccount>>,
-    /// CHECK: PDA authority for the underlying-token vault.
-    #[account(seeds = [b"vault-authority", mint.key().as_ref()], bump)]
-    pub vault_authority: UncheckedAccount<'info>,
     /// CHECK: Program-controlled compute signer PDA.
     #[account(seeds = [b"fhe-compute", mint.key().as_ref()], bump)]
     pub compute_signer: UncheckedAccount<'info>,
@@ -46,10 +35,22 @@ pub struct WrapUsdc<'info> {
     /// Stable total-supply encrypted value account; read for the current handle and replaced by this eval.
     #[account(mut, address = mint.total_supply_encrypted_value)]
     pub total_supply_value: Box<Account<'info, zama_host::EncryptedValue>>,
-    /// CHECK: Anchor event CPI authority for the Zama host program.
-    pub zama_event_authority: UncheckedAccount<'info>,
-    /// ZamaHost program used for FHE operations.
-    pub zama_program: Program<'info, ZamaHost>,
+    /// Shared `burned_amount` encrypted value account; read as a persistent operand (left unchanged).
+    #[account(mut, address = encrypted_value_address(mint.key(), token_account.key(), burned_amount_label()).0)]
+    pub burned_amount_value: Box<Account<'info, zama_host::EncryptedValue>>,
+    /// Pending-burn lane for the tip burned handle; closed on successful recover.
+    #[account(
+        mut,
+        close = owner,
+        seeds = [
+            b"pending-burn",
+            mint.key().as_ref(),
+            token_account.key().as_ref(),
+            pending_burn.burn_id.as_ref()
+        ],
+        bump = pending_burn.bump,
+    )]
+    pub pending_burn: Account<'info, PendingBurn>,
     /// ZamaHost config used for handle derivation.
     #[account(
         seeds = [zama_host::HOST_CONFIG_SEED],
@@ -57,9 +58,11 @@ pub struct WrapUsdc<'info> {
         bump = host_config.bump,
     )]
     pub host_config: Box<Account<'info, zama_host::HostConfig>>,
-    /// SPL token program.
-    pub token_program: Program<'info, Token>,
-    /// System program used for ACL account creation.
+    /// CHECK: Anchor event CPI authority for the Zama host program.
+    pub zama_event_authority: UncheckedAccount<'info>,
+    /// ZamaHost program used for FHE operations.
+    pub zama_program: Program<'info, ZamaHost>,
+    /// System program used for ACL account creation on the balance/supply update path.
     pub system_program: Program<'info, System>,
     /// CHECK: forwarded verbatim into the ZamaHost `fhe_execute` CPI, which validates it against the
     /// canonical `["hcu-block-meter", compute_signer]` PDA. Supplied by an untrusted mint under a
@@ -72,20 +75,20 @@ pub struct WrapUsdc<'info> {
     pub hcu_trusted_app_record: Option<UncheckedAccount<'info>>,
 }
 
-/// Escrows public USDC and updates the confidential balance by `amount`.
-pub fn wrap_usdc<'info>(ctx: Context<'info, WrapUsdc<'info>>, amount: u64) -> Result<()> {
+/// Re-credits the tip burned amount onto the owner's confidential balance and encrypted total
+/// supply, then closes the lane.
+pub fn recover_pending_burn<'info>(ctx: Context<'info, RecoverPendingBurn<'info>>) -> Result<()> {
     assert_confidential_mint_shape(&ctx.accounts.mint)?;
     let mint_key = ctx.accounts.mint.key();
-    let mint_domain = zama_fhe::Domain::new(mint_key);
-    let decimals = ctx.accounts.mint.decimals;
     let compute_signer = ctx.accounts.mint.compute_signer;
     let total_supply_authority = ctx.accounts.total_supply_authority.key();
-    let old_total_supply_handle = ctx.accounts.total_supply_value.current_handle;
     let token_account = ctx.accounts.token_account.as_ref();
-    let old_balance_handle = ctx.accounts.balance_value.current_handle;
+    let owner = token_account.owner;
+    let token_account_key = token_account.key();
+    let pending = &ctx.accounts.pending_burn;
 
     require_keys_eq!(
-        token_account.owner,
+        owner,
         ctx.accounts.owner.key(),
         ConfidentialTokenError::OwnerMismatch
     );
@@ -94,17 +97,7 @@ pub fn wrap_usdc<'info>(ctx: Context<'info, WrapUsdc<'info>>, amount: u64) -> Re
         mint_key,
         ConfidentialTokenError::MintMismatch
     );
-    assert_confidential_token_account_shape(token_account, mint_key, ctx.accounts.owner.key())?;
-    require_keys_eq!(
-        ctx.accounts.mint.underlying_mint,
-        ctx.accounts.underlying_mint.key(),
-        ConfidentialTokenError::UnderlyingMintMismatch
-    );
-    assert_canonical_vault_token_account(
-        ctx.accounts.vault_usdc.key(),
-        ctx.accounts.vault_authority.key(),
-        ctx.accounts.underlying_mint.key(),
-    )?;
+    assert_confidential_token_account_shape(token_account, mint_key, owner)?;
     require_keys_eq!(
         ctx.accounts.compute_signer.key(),
         compute_signer,
@@ -115,71 +108,87 @@ pub fn wrap_usdc<'info>(ctx: Context<'info, WrapUsdc<'info>>, amount: u64) -> Re
         total_supply_authority_address(mint_key).0,
         ConfidentialTokenError::TotalSupplyAuthorityMismatch
     );
+
+    require_keys_eq!(
+        pending.owner,
+        owner,
+        ConfidentialTokenError::PendingBurnMismatch
+    );
+    require_keys_eq!(
+        pending.mint,
+        mint_key,
+        ConfidentialTokenError::PendingBurnMismatch
+    );
+    require_keys_eq!(
+        pending.token_account,
+        token_account_key,
+        ConfidentialTokenError::PendingBurnMismatch
+    );
+    require_keys_eq!(
+        pending.burned_encrypted_value,
+        ctx.accounts.burned_amount_value.key(),
+        ConfidentialTokenError::PendingBurnMismatch
+    );
+
+    let burned_value = fhe::read_encrypted_value(&ctx.accounts.burned_amount_value.to_account_info())?;
+    require!(
+        pending.burned_handle == burned_value.current_handle,
+        ConfidentialTokenError::PendingBurnHandleNotCurrent
+    );
+
+    let mint_domain = zama_fhe::Domain::new(mint_key);
+    let old_balance_handle = ctx.accounts.balance_value.current_handle;
+    let old_total_supply_handle = ctx.accounts.total_supply_value.current_handle;
     let balance_output = fhe::PersistentOutput::new(
         ctx.accounts.balance_value.to_account_info(),
-        encrypted_value_id(mint_domain, token_account.key(), encrypted_balance_label()),
-        fhe::PersistentAudience::for_owner(token_account.owner, compute_signer),
+        encrypted_value_id(mint_domain, token_account_key, balance_label()),
+        fhe::PersistentAudience::for_owner(owner, compute_signer),
     )?;
     let total_supply_output = fhe::PersistentOutput::new(
         ctx.accounts.total_supply_value.to_account_info(),
-        encrypted_value_id(
-            mint_domain,
-            total_supply_authority,
-            encrypted_total_supply_label(),
-        ),
+        encrypted_value_id(mint_domain, total_supply_authority, total_supply_label()),
         fhe::PersistentAudience::compute_only(compute_signer),
     )?;
-
-    spl_token::transfer_checked(
-        CpiContext::new(
-            ctx.accounts.token_program.key(),
-            TransferChecked {
-                from: ctx.accounts.user_usdc.to_account_info(),
-                mint: ctx.accounts.underlying_mint.to_account_info(),
-                to: ctx.accounts.vault_usdc.to_account_info(),
-                authority: ctx.accounts.owner.to_account_info(),
-            },
-        ),
-        amount,
-        decimals,
-    )?;
-
     let balance = uint64_from_value(
         old_balance_handle,
         mint_domain,
-        token_account.key(),
-        encrypted_balance_label(),
+        token_account_key,
+        balance_label(),
     )?;
     let total_supply = uint64_from_value(
         old_total_supply_handle,
         mint_domain,
         total_supply_authority,
-        encrypted_total_supply_label(),
+        total_supply_label(),
     )?;
-    let mut amount_context = [0u8; 32];
-    amount_context[24..].copy_from_slice(&amount.to_be_bytes());
-    let execution = zama_fhe::FheExecution::build(
-        zama_fhe::ExecutionEncryptedValueAccountAuthority::new(token_account.key()),
+    let burned_amount = uint64_from_value(
+        burned_value.current_handle,
+        zama_fhe::Domain::new(burned_value.domain),
+        burned_value.account,
+        burned_value.label,
+    )?;
+
+    let batch = zama_fhe::Batch::build(
+        zama_fhe::BatchAppAuthority::new(token_account_key),
         |builder| {
-            let encrypted_amount =
-                builder.trivial_encrypt_u64(amount, zama_fhe::Output::transient())?;
-            builder.add(balance, encrypted_amount, balance_output.output())?;
-            builder.add(total_supply, encrypted_amount, total_supply_output.output())?;
+            builder.add(balance, burned_amount, balance_output.output())?;
+            builder.add(total_supply, burned_amount, total_supply_output.output())?;
             Ok(())
         },
     )
-    .map_err(invalid_execution)?;
+    .map_err(invalid_batch)?;
     let compute_authority = fhe::ComputeAuthority::for_mint(
         &ctx.accounts.compute_signer,
         mint_key,
         ctx.bumps.compute_signer,
     )?;
     let total_supply_authority_bump = total_supply_authority_address(mint_key).1;
-    let execution_accounts = fhe::ExecutionAccountSet::for_execution(
-        &execution,
+    let batch_accounts = fhe::BatchAccountSet::for_batch(
+        &batch,
         [
             balance_output.account_info(),
             total_supply_output.account_info(),
+            ctx.accounts.burned_amount_value.to_account_info(),
         ],
         [
             fhe::OutputAuthority::token_account(&ctx.accounts.token_account)?,
@@ -210,14 +219,13 @@ pub fn wrap_usdc<'info>(ctx: Context<'info, WrapUsdc<'info>>, amount: u64) -> Re
                 .as_ref()
                 .map(|account| account.to_account_info()),
         },
-        accounts: &execution_accounts,
-        execution,
+        accounts: &batch_accounts,
+        batch,
     })?;
+
     let new_balance_handle = balance_output.handle()?;
     let new_total_supply_handle = total_supply_output.handle()?;
 
-    let token_account_key = ctx.accounts.token_account.key();
-    let owner = ctx.accounts.token_account.owner;
     emit_cpi!(BalanceHandleUpdatedEvent {
         version: APP_EVENT_VERSION,
         mint: mint_key,
@@ -227,7 +235,7 @@ pub fn wrap_usdc<'info>(ctx: Context<'info, WrapUsdc<'info>>, amount: u64) -> Re
         old_encrypted_value: ctx.accounts.balance_value.key(),
         new_handle: new_balance_handle,
         new_encrypted_value: ctx.accounts.balance_value.key(),
-        reason: BalanceHandleUpdateReason::Wrap,
+        reason: BalanceHandleUpdateReason::Recover,
     });
     emit_cpi!(TotalSupplyHandleUpdatedEvent {
         version: APP_EVENT_VERSION,
@@ -236,7 +244,16 @@ pub fn wrap_usdc<'info>(ctx: Context<'info, WrapUsdc<'info>>, amount: u64) -> Re
         old_encrypted_value: ctx.accounts.total_supply_value.key(),
         new_handle: new_total_supply_handle,
         new_encrypted_value: ctx.accounts.total_supply_value.key(),
-        reason: TotalSupplyUpdateReason::Wrap,
+        reason: TotalSupplyUpdateReason::Recover,
+    });
+    emit_cpi!(PendingBurnRecoveredEvent {
+        version: APP_EVENT_VERSION,
+        mint: mint_key,
+        owner,
+        token_account: token_account_key,
+        burn_id: pending.burn_id,
+        burned_handle: pending.burned_handle,
+        burned_encrypted_value: ctx.accounts.burned_amount_value.key(),
     });
     Ok(())
 }

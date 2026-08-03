@@ -13,7 +13,6 @@ import {
 } from '@solana/kit';
 import { base58 } from '@scure/base';
 
-import type { Bytes32 } from '@sdk-src/core/types/primitives.js';
 import { bytesToHex, hexToBytes } from '@sdk-src/core/base/bytes.js';
 import type { FhevmSolanaChain } from '@sdk-src/core/types/fhevmSolanaChain.js';
 import type { FhevmRuntime } from '@sdk-src/core/types/coreFhevmRuntime.js';
@@ -79,7 +78,8 @@ export type SolanaVaultSettleOptions = {
  * the relayer, requested with that proof. The certified cleartext is a 32-byte `uint256`; settle's
  * on-chain argument is a `u64`, so its low 8 bytes are taken big-endian and its high 24 asserted zero
  * ({@link settleTotalFromCleartext}). The instruction is sent as an ALT-aware v0 transaction — 34
- * accounts overflow a legacy packet — keeping the fee payer and `redemption_record` static.
+ * accounts overflow a legacy packet — keeping only the fee payer (and program/event authorities
+ * outside the ALT address list) static.
  */
 export async function settleBatch(
   chain: FhevmSolanaChain,
@@ -105,7 +105,7 @@ export async function settleBatch(
     throw new Error(`batch ${addresses.batch} has no burned total handle yet; dispatch it before settling`);
   }
 
-  const accounts = await deriveSettleAccounts(roots, addresses, burnedTotalHandle as Bytes32);
+  const accounts = await deriveSettleAccounts(roots, addresses);
 
   // The burned encrypted value account carries the cert's encrypted value ID; cross-check its derived PDA against the
   // settle account so a roots/derivation mismatch fails here, not at on-chain verify.
@@ -152,13 +152,13 @@ export async function settleBatch(
     return bytes;
   });
 
-  // The ALT holds every settle account except the fee payer and redemption_record. redemption_record
-  // is seeded by the burned handle and only exists after dispatch, so it cannot live in a table
-  // frozen at open_batch — assert it against the derived set rather than trusting the caller.
+  // The ALT holds every settle account except the fee payer (and program/event authorities the
+  // builder resolves separately). `pendingBurn` seeds on `batch.key()`, so it is provisioned at
+  // open_batch with the rest of the table.
   const lookupTableAddresses = settleAccountsToLookupTableAddresses(accounts);
-  if (lookupTableAddresses.includes(accounts.redemptionRecord)) {
+  if (!lookupTableAddresses.includes(accounts.pendingBurn)) {
     throw new Error(
-      `settle lookup table must not contain redemption_record (${accounts.redemptionRecord}); it must remain a static account`,
+      `settle lookup table must contain pending_burn (${accounts.pendingBurn}); it is known at open_batch`,
     );
   }
 
@@ -181,7 +181,7 @@ export async function settleBatch(
     joinMintVaultUnderlying: accounts.joinMintVaultUnderlying,
     joinMintVaultAuthority: accounts.joinMintVaultAuthority,
     batchBurnedAmountValue: accounts.batchBurnedAmountValue,
-    redemptionRecord: accounts.redemptionRecord,
+    pendingBurn: accounts.pendingBurn,
     hostConfig: accounts.hostConfig,
     kmsContext: accounts.kmsContext,
     vault: accounts.vault,

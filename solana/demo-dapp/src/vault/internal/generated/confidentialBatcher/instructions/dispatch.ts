@@ -59,6 +59,7 @@ export type DispatchInstruction<
   TAccountBatchBalanceValue extends string | AccountMeta<string> = string,
   TAccountTotalSupplyValue extends string | AccountMeta<string> = string,
   TAccountBatchBurnedAmountValue extends string | AccountMeta<string> = string,
+  TAccountPendingBurn extends string | AccountMeta<string> = string,
   TAccountZamaEventAuthority extends string | AccountMeta<string> = string,
   TAccountZamaProgram extends string | AccountMeta<string> = '6AtbvED1rfX68aCT1tYgU1aeu4kFksPDxZG9gtB1Fgtu',
   TAccountHostConfig extends string | AccountMeta<string> = string,
@@ -91,6 +92,7 @@ export type DispatchInstruction<
       TAccountBatchBurnedAmountValue extends string
         ? WritableAccount<TAccountBatchBurnedAmountValue>
         : TAccountBatchBurnedAmountValue,
+      TAccountPendingBurn extends string ? WritableAccount<TAccountPendingBurn> : TAccountPendingBurn,
       TAccountZamaEventAuthority extends string
         ? ReadonlyAccount<TAccountZamaEventAuthority>
         : TAccountZamaEventAuthority,
@@ -141,6 +143,7 @@ export type DispatchAsyncInput<
   TAccountBatchBalanceValue extends string = string,
   TAccountTotalSupplyValue extends string = string,
   TAccountBatchBurnedAmountValue extends string = string,
+  TAccountPendingBurn extends string = string,
   TAccountZamaEventAuthority extends string = string,
   TAccountZamaProgram extends string = string,
   TAccountHostConfig extends string = string,
@@ -166,6 +169,11 @@ export type DispatchAsyncInput<
   totalSupplyValue: Address<TAccountTotalSupplyValue>;
   /** decryptable; created by the token CPI (first and only burn per batch). */
   batchBurnedAmountValue: Address<TAccountBatchBurnedAmountValue>;
+  /**
+   * Caller must pass `pending_burn_address(join_mint, batch_join_token_account, batch.key())`
+   * (`burn_id = batch.key().to_bytes()`, known before the burn).
+   */
+  pendingBurn: Address<TAccountPendingBurn>;
   zamaEventAuthority: Address<TAccountZamaEventAuthority>;
   /** ZamaHost program (FHE compute + ACL). */
   zamaProgram?: Address<TAccountZamaProgram>;
@@ -189,6 +197,7 @@ export async function getDispatchInstructionAsync<
   TAccountBatchBalanceValue extends string,
   TAccountTotalSupplyValue extends string,
   TAccountBatchBurnedAmountValue extends string,
+  TAccountPendingBurn extends string,
   TAccountZamaEventAuthority extends string,
   TAccountZamaProgram extends string,
   TAccountHostConfig extends string,
@@ -209,6 +218,7 @@ export async function getDispatchInstructionAsync<
     TAccountBatchBalanceValue,
     TAccountTotalSupplyValue,
     TAccountBatchBurnedAmountValue,
+    TAccountPendingBurn,
     TAccountZamaEventAuthority,
     TAccountZamaProgram,
     TAccountHostConfig,
@@ -231,6 +241,7 @@ export async function getDispatchInstructionAsync<
     TAccountBatchBalanceValue,
     TAccountTotalSupplyValue,
     TAccountBatchBurnedAmountValue,
+    TAccountPendingBurn,
     TAccountZamaEventAuthority,
     TAccountZamaProgram,
     TAccountHostConfig,
@@ -276,6 +287,7 @@ export async function getDispatchInstructionAsync<
       value: input.batchBurnedAmountValue ?? null,
       isWritable: true,
     },
+    pendingBurn: { value: input.pendingBurn ?? null, isWritable: true },
     zamaEventAuthority: {
       value: input.zamaEventAuthority ?? null,
       isWritable: false,
@@ -326,6 +338,7 @@ export async function getDispatchInstructionAsync<
       getAccountMeta('batchBalanceValue', accounts.batchBalanceValue),
       getAccountMeta('totalSupplyValue', accounts.totalSupplyValue),
       getAccountMeta('batchBurnedAmountValue', accounts.batchBurnedAmountValue),
+      getAccountMeta('pendingBurn', accounts.pendingBurn),
       getAccountMeta('zamaEventAuthority', accounts.zamaEventAuthority),
       getAccountMeta('zamaProgram', accounts.zamaProgram),
       getAccountMeta('hostConfig', accounts.hostConfig),
@@ -348,6 +361,7 @@ export async function getDispatchInstructionAsync<
     TAccountBatchBalanceValue,
     TAccountTotalSupplyValue,
     TAccountBatchBurnedAmountValue,
+    TAccountPendingBurn,
     TAccountZamaEventAuthority,
     TAccountZamaProgram,
     TAccountHostConfig,
@@ -369,6 +383,7 @@ export type DispatchInput<
   TAccountBatchBalanceValue extends string = string,
   TAccountTotalSupplyValue extends string = string,
   TAccountBatchBurnedAmountValue extends string = string,
+  TAccountPendingBurn extends string = string,
   TAccountZamaEventAuthority extends string = string,
   TAccountZamaProgram extends string = string,
   TAccountHostConfig extends string = string,
@@ -394,6 +409,11 @@ export type DispatchInput<
   totalSupplyValue: Address<TAccountTotalSupplyValue>;
   /** decryptable; created by the token CPI (first and only burn per batch). */
   batchBurnedAmountValue: Address<TAccountBatchBurnedAmountValue>;
+  /**
+   * Caller must pass `pending_burn_address(join_mint, batch_join_token_account, batch.key())`
+   * (`burn_id = batch.key().to_bytes()`, known before the burn).
+   */
+  pendingBurn: Address<TAccountPendingBurn>;
   zamaEventAuthority: Address<TAccountZamaEventAuthority>;
   /** ZamaHost program (FHE compute + ACL). */
   zamaProgram?: Address<TAccountZamaProgram>;
@@ -417,6 +437,7 @@ export function getDispatchInstruction<
   TAccountBatchBalanceValue extends string,
   TAccountTotalSupplyValue extends string,
   TAccountBatchBurnedAmountValue extends string,
+  TAccountPendingBurn extends string,
   TAccountZamaEventAuthority extends string,
   TAccountZamaProgram extends string,
   TAccountHostConfig extends string,
@@ -437,6 +458,7 @@ export function getDispatchInstruction<
     TAccountBatchBalanceValue,
     TAccountTotalSupplyValue,
     TAccountBatchBurnedAmountValue,
+    TAccountPendingBurn,
     TAccountZamaEventAuthority,
     TAccountZamaProgram,
     TAccountHostConfig,
@@ -458,6 +480,7 @@ export function getDispatchInstruction<
   TAccountBatchBalanceValue,
   TAccountTotalSupplyValue,
   TAccountBatchBurnedAmountValue,
+  TAccountPendingBurn,
   TAccountZamaEventAuthority,
   TAccountZamaProgram,
   TAccountHostConfig,
@@ -502,6 +525,7 @@ export function getDispatchInstruction<
       value: input.batchBurnedAmountValue ?? null,
       isWritable: true,
     },
+    pendingBurn: { value: input.pendingBurn ?? null, isWritable: true },
     zamaEventAuthority: {
       value: input.zamaEventAuthority ?? null,
       isWritable: false,
@@ -547,6 +571,7 @@ export function getDispatchInstruction<
       getAccountMeta('batchBalanceValue', accounts.batchBalanceValue),
       getAccountMeta('totalSupplyValue', accounts.totalSupplyValue),
       getAccountMeta('batchBurnedAmountValue', accounts.batchBurnedAmountValue),
+      getAccountMeta('pendingBurn', accounts.pendingBurn),
       getAccountMeta('zamaEventAuthority', accounts.zamaEventAuthority),
       getAccountMeta('zamaProgram', accounts.zamaProgram),
       getAccountMeta('hostConfig', accounts.hostConfig),
@@ -569,6 +594,7 @@ export function getDispatchInstruction<
     TAccountBatchBalanceValue,
     TAccountTotalSupplyValue,
     TAccountBatchBurnedAmountValue,
+    TAccountPendingBurn,
     TAccountZamaEventAuthority,
     TAccountZamaProgram,
     TAccountHostConfig,
@@ -602,15 +628,20 @@ export type ParsedDispatchInstruction<
     totalSupplyValue: TAccountMetas[9];
     /** decryptable; created by the token CPI (first and only burn per batch). */
     batchBurnedAmountValue: TAccountMetas[10];
-    zamaEventAuthority: TAccountMetas[11];
+    /**
+     * Caller must pass `pending_burn_address(join_mint, batch_join_token_account, batch.key())`
+     * (`burn_id = batch.key().to_bytes()`, known before the burn).
+     */
+    pendingBurn: TAccountMetas[11];
+    zamaEventAuthority: TAccountMetas[12];
     /** ZamaHost program (FHE compute + ACL). */
-    zamaProgram: TAccountMetas[12];
-    hostConfig: TAccountMetas[13];
-    confidentialTokenEventAuthority: TAccountMetas[14];
+    zamaProgram: TAccountMetas[13];
+    hostConfig: TAccountMetas[14];
+    confidentialTokenEventAuthority: TAccountMetas[15];
     /** confidential-token program composed via CPI. */
-    confidentialTokenProgram: TAccountMetas[15];
+    confidentialTokenProgram: TAccountMetas[16];
     /** System program used for ACL account creation. */
-    systemProgram: TAccountMetas[16];
+    systemProgram: TAccountMetas[17];
   };
   data: DispatchInstructionData;
 };
@@ -618,10 +649,10 @@ export type ParsedDispatchInstruction<
 export function parseDispatchInstruction<TProgram extends string, TAccountMetas extends readonly AccountMeta[]>(
   instruction: Instruction<TProgram> & InstructionWithAccounts<TAccountMetas> & InstructionWithData<ReadonlyUint8Array>,
 ): ParsedDispatchInstruction<TProgram, TAccountMetas> {
-  if (instruction.accounts.length < 17) {
+  if (instruction.accounts.length < 18) {
     throw new SolanaError(SOLANA_ERROR__PROGRAM_CLIENTS__INSUFFICIENT_ACCOUNT_METAS, {
       actualAccountMetas: instruction.accounts.length,
-      expectedAccountMetas: 17,
+      expectedAccountMetas: 18,
     });
   }
   let accountIndex = 0;
@@ -644,6 +675,7 @@ export function parseDispatchInstruction<TProgram extends string, TAccountMetas 
       batchBalanceValue: getNextAccount(),
       totalSupplyValue: getNextAccount(),
       batchBurnedAmountValue: getNextAccount(),
+      pendingBurn: getNextAccount(),
       zamaEventAuthority: getNextAccount(),
       zamaProgram: getNextAccount(),
       hostConfig: getNextAccount(),

@@ -1,6 +1,6 @@
 import type { Address } from '@solana/kit';
+import { base58 } from '@scure/base';
 
-import type { Bytes32 } from '@sdk-src/core/types/primitives.js';
 import { findComputeSignerPda } from './internal/generated/confidentialToken/pdas/computeSigner.js';
 import { findTotalSupplyAuthorityPda } from './internal/generated/confidentialToken/pdas/totalSupplyAuthority.js';
 import { findVaultAuthorityPda as findMintVaultAuthorityPda } from './internal/generated/confidentialToken/pdas/vaultAuthority.js';
@@ -16,8 +16,8 @@ import {
 } from './internal/generated/confidentialBatcher/pdas/index.js';
 import {
   batchAddress,
-  burnRedemptionAddress,
   encryptedValueAddress,
+  pendingBurnAddress,
   tokenAccountAddress,
 } from './internal/batcherPdas.js';
 // Confidential-field encrypted value accounts and the SPL associated-token derivation are owned by tokenValueAccount;
@@ -108,11 +108,10 @@ export async function deriveJoinRecordAddress(batch: Address, user: Address): Pr
 }
 
 /**
- * The complete account set for one `settle`, derived from the roots, a batch's addresses, and the
- * batch's created-public burned handle. This is exactly the settle instruction's non-signer, non-fixed
- * accounts — the fee payer and the two event-CPI authorities are the only accounts `settleBatch`
- * still resolves itself. `redemptionRecord` is seeded by the burned handle (which only exists after
- * dispatch), so it is derivable only once the handle is known — hence the `burnedHandle` argument.
+ * The complete account set for one `settle`, derived from the roots and a batch's addresses. This is
+ * exactly the settle instruction's non-signer, non-fixed accounts — the fee payer and the two
+ * event-CPI authorities are the only accounts `settleBatch` still resolves itself. `pendingBurn` is
+ * seeded by `batch.key()` as `burn_id`, so it is known at `open_batch` and rides in the settle ALT.
  */
 export interface SolanaVaultSettleAccounts {
   readonly batcher: Address;
@@ -123,8 +122,8 @@ export interface SolanaVaultSettleAccounts {
   readonly joinMintVaultUnderlying: Address;
   readonly joinMintVaultAuthority: Address;
   readonly batchBurnedAmountValue: Address;
-  /** Per-handle redemption replay marker; created at settle, so it must stay a static account. */
-  readonly redemptionRecord: Address;
+  /** Per-burn PendingBurn lane; `burn_id = batch.key()`, so known before dispatch. */
+  readonly pendingBurn: Address;
   readonly hostConfig: Address;
   readonly kmsContext: Address;
   readonly vault: Address;
@@ -143,18 +142,15 @@ export interface SolanaVaultSettleAccounts {
 
 /**
  * The ordered address set the settle Address Lookup Table holds — every settle account derivable at
- * `open_batch`, i.e. the full settle set except the fee payer (always static) and `redemption_record`
- * (seeded by a post-dispatch handle, so absent when the table is frozen). The demo seeder creates the
- * on-chain ALT from this exact ordered list and `settleBatch` compresses against the same list, so the
- * two agree by construction — the v0 message's table indices line up with the on-chain entries. The
- * `burnedHandle` here only feeds `redemptionRecord`, which is then dropped, so any 32 zero-bytes work;
- * callers that lack a handle (the seeder at open_batch) pass zeros.
+ * `open_batch`, i.e. the full settle set except the fee payer (always static). The demo seeder creates
+ * the on-chain ALT from this exact ordered list and `settleBatch` compresses against the same list, so
+ * the two agree by construction — the v0 message's table indices line up with the on-chain entries.
  */
 export async function deriveSettleLookupTableAddresses(
   roots: VaultDemoRoots,
   batch: BatchAddresses,
 ): Promise<Address[]> {
-  const accounts = await deriveSettleAccounts(roots, batch, new Uint8Array(32) as Bytes32);
+  const accounts = await deriveSettleAccounts(roots, batch);
   return settleAccountsToLookupTableAddresses(accounts);
 }
 
@@ -163,8 +159,8 @@ export async function deriveSettleLookupTableAddresses(
  * This tuple — not the runtime key order of a `SolanaVaultSettleAccounts` object — is the single
  * source of truth the on-chain table and the `settleBatch` compression both index against, so a field
  * reorder in the interface can never silently shift the table without also editing this list (which
- * the golden test in `derive.test.ts` pins). It is every settle account except `redemptionRecord`
- * (seeded post-dispatch, so absent when the table is frozen), in the on-chain table's exact order.
+ * the golden test in `derive.test.ts` pins). It is every settle account in the on-chain table's exact
+ * order.
  */
 export const SETTLE_ALT_FIELD_ORDER = [
   'batcher',
@@ -175,6 +171,7 @@ export const SETTLE_ALT_FIELD_ORDER = [
   'joinMintVaultUnderlying',
   'joinMintVaultAuthority',
   'batchBurnedAmountValue',
+  'pendingBurn',
   'hostConfig',
   'kmsContext',
   'vault',
@@ -189,9 +186,9 @@ export const SETTLE_ALT_FIELD_ORDER = [
   'payoutTotalSupplyAuthority',
   'batchPayoutBalanceValue',
   'payoutTotalSupplyValue',
-] as const satisfies ReadonlyArray<Exclude<keyof SolanaVaultSettleAccounts, 'redemptionRecord'>>;
+] as const satisfies ReadonlyArray<keyof SolanaVaultSettleAccounts>;
 
-/** Flattens a settle account set into its ALT ordering (every field except `redemptionRecord`). */
+/** Flattens a settle account set into its ALT ordering. */
 export function settleAccountsToLookupTableAddresses(accounts: SolanaVaultSettleAccounts): Address[] {
   return SETTLE_ALT_FIELD_ORDER.map((name) => accounts[name]);
 }
@@ -199,7 +196,6 @@ export function settleAccountsToLookupTableAddresses(accounts: SolanaVaultSettle
 export async function deriveSettleAccounts(
   roots: VaultDemoRoots,
   batch: BatchAddresses,
-  burnedHandle: Bytes32,
 ): Promise<SolanaVaultSettleAccounts> {
   const [joinMintVaultAuthority] = await findMintVaultAuthorityPda({ mint: roots.joinConfidentialMint });
   const [payoutMintVaultAuthority] = await findMintVaultAuthorityPda({ mint: roots.payoutConfidentialMint });
@@ -216,7 +212,12 @@ export async function deriveSettleAccounts(
     joinMintVaultUnderlying: await associatedTokenAddress(joinMintVaultAuthority, roots.joinUnderlyingMint),
     joinMintVaultAuthority,
     batchBurnedAmountValue: batch.batchBurnedAmountValue,
-    redemptionRecord: await burnRedemptionAddress(roots.joinConfidentialMint, burnedHandle),
+    // Batcher burn_id is the batch account pubkey bytes — known at open_batch.
+    pendingBurn: await pendingBurnAddress(
+      roots.joinConfidentialMint,
+      batch.batchJoinTokenAccount,
+      base58.decode(batch.batch),
+    ),
     hostConfig: roots.hostConfig,
     kmsContext: roots.kmsContext,
     vault: roots.vault,

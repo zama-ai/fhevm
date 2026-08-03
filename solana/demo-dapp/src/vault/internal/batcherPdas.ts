@@ -10,7 +10,7 @@ import { CONFIDENTIAL_BATCHER_PROGRAM_ADDRESS } from './generated/confidentialBa
 const encoder = new TextEncoder();
 const BATCH_SEED = encoder.encode('batch');
 const TOKEN_ACCOUNT_SEED = encoder.encode('token-account');
-const BURN_REDEMPTION_SEED = encoder.encode('burn-redemption');
+const PENDING_BURN_SEED = encoder.encode('pending-burn');
 const ENCRYPTED_VALUE_SEED = encoder.encode('encrypted-value');
 /** Fixed confidential-token label for the all-or-zero burned amount (`encrypted_burned_amount_label`). */
 const ENCRYPTED_BURNED_AMOUNT_LABEL = encoder.encode('burned_amount___________________');
@@ -60,13 +60,22 @@ export async function tokenAccountAddress(mint: Address, owner: Address): Promis
 }
 
 /**
- * The per-handle redemption replay marker for a settle (`burn_redemption_address`). Seeded by the
- * burned handle, it only exists after dispatch — this is why it cannot ride in the settle ALT
- * frozen at open_batch and must stay a static account in the v0 message.
+ * The per-burn PendingBurn lane (`pending_burn_address`). Seeded by a client-known `burn_id` (the
+ * batcher uses `batch.key()` bytes), so the PDA is derivable before `fhe_execute` and can ride in
+ * the settle ALT frozen at `open_batch`.
  */
-export async function burnRedemptionAddress(mint: Address, burnedHandle: Uint8Array): Promise<Address> {
-  if (burnedHandle.length !== 32) throw new Error(`burned handle must be 32 bytes, got ${burnedHandle.length}`);
-  return pda(CONFIDENTIAL_TOKEN_PROGRAM_ADDRESS, [BURN_REDEMPTION_SEED, addressBytes(mint), burnedHandle]);
+export async function pendingBurnAddress(
+  mint: Address,
+  tokenAccount: Address,
+  burnId: Uint8Array,
+): Promise<Address> {
+  if (burnId.length !== 32) throw new Error(`burn_id must be 32 bytes, got ${burnId.length}`);
+  return pda(CONFIDENTIAL_TOKEN_PROGRAM_ADDRESS, [
+    PENDING_BURN_SEED,
+    addressBytes(mint),
+    addressBytes(tokenAccount),
+    burnId,
+  ]);
 }
 
 /** A confidential-value encrypted value account: its encrypted value ID and its canonical `EncryptedValue` PDA. */

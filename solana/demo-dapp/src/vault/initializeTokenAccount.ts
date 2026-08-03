@@ -18,13 +18,11 @@ export type SolanaVaultInitializeTokenAccountParameters = {
   readonly mint: Address;
   /** zama-host config PDA used for handle derivation. */
   readonly hostConfig: Address;
-  /** Initial (public) balance to seed the account with. Defaults to 0. */
-  readonly initialBalance?: number | bigint;
 };
 
 /**
  * Builds `confidential_token::initialize_token_account`: creates the owner's confidential token
- * account PDA for `mint` and its initial balance handle. The account PDA, its balance value_account, and
+ * account PDA for `mint` and its zero balance handle. The account PDA, its balance value_account, and
  * the two Anchor event authorities are derived here from `(mint, owner)`. The seeder assembles and
  * sends the returned instruction.
  */
@@ -42,6 +40,5 @@ export async function buildInitializeTokenAccountInstruction(
     hostConfig: parameters.hostConfig,
     eventAuthority: await tokenEventAuthorityAddress(),
     program: CONFIDENTIAL_TOKEN_PROGRAM_ADDRESS,
-    initialBalance: parameters.initialBalance ?? 0,
   });
 }

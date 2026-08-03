@@ -34,7 +34,7 @@
   "initialize_token_account": {
     "compute_units": 61984,
     "unique_accounts": 11,
-    "instruction_data_bytes": 16,
+    "instruction_data_bytes": 8,
     "cpi_instructions": 6,
     "total_cpi_instruction_data_bytes": 579,
     "max_cpi_instruction_data_bytes": 242

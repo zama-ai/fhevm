@@ -64,8 +64,8 @@ pub struct Settle<'info> {
     pub batch: Box<Account<'info, Batch>>,
     /// CHECK: per-batch authority PDA; redemption recipient, vault
     /// depositor/withdrawer, and wrap owner via invoke_signed. Receives
-    /// funding for the rent the redeem marker and wrap eval charge to the
-    /// owner.
+    /// funding for the rent the wrap eval (and any other owner-charged CPIs)
+    /// charge to the owner; claim closes an already-open pending-burn lane.
     #[account(mut, seeds = [BATCH_AUTHORITY_SEED, batch.key().as_ref()], bump = batch.authority_bump)]
     pub batch_authority: UncheckedAccount<'info>,
 
@@ -90,9 +90,10 @@ pub struct Settle<'info> {
     pub batch_join_underlying: Box<Account<'info, TokenAccount>>,
     /// CHECK: batch's burned-amount encrypted value account; validated by the token CPI.
     pub batch_burned_amount_value: UncheckedAccount<'info>,
-    /// CHECK: per-handle redemption replay marker; created by the token CPI.
+    /// CHECK: pending-burn lane PDA for this batch's dispatch burn; closed by the token redeem CPI.
+    /// Address is `pending_burn_address(join_mint, batch_join_token_account, batch.key())`.
     #[account(mut)]
-    pub redemption_record: UncheckedAccount<'info>,
+    pub pending_burn: UncheckedAccount<'info>,
     /// CHECK: ZamaHost config PDA; validated by host/token CPIs.
     pub host_config: UncheckedAccount<'info>,
     /// CHECK: KMS context for the host's current context id; validated by the
@@ -207,7 +208,18 @@ pub fn settle(
 
     // Phase 1: on-chain KMS certificate verification + plain token release. The
     // token program asserts the certified cleartext equals `cleartext_total`
-    // and writes the permanent per-handle redemption marker.
+    // and closes the pending-burn lane opened at dispatch (`burn_id = batch.key()`).
+    let burn_id = batch_key.to_bytes();
+    require_keys_eq!(
+        ctx.accounts.pending_burn.key(),
+        ct::pending_burn_address(
+            ctx.accounts.join_confidential_mint.key(),
+            ctx.accounts.batch_join_token_account.key(),
+            burn_id,
+        )
+        .0,
+        BatcherError::DerivedAccountMismatch
+    );
     let authority = BatchAuthoritySeeds::new(batch_key, ctx.accounts.batch.authority_bump);
     let authority_seeds = authority.seeds();
     ct::cpi::redeem_burned_amount(
@@ -222,7 +234,7 @@ pub fn settle(
                 destination_usdc: ctx.accounts.batch_join_underlying.to_account_info(),
                 vault_authority: ctx.accounts.join_mint_vault_authority.to_account_info(),
                 burned_amount_value: ctx.accounts.batch_burned_amount_value.to_account_info(),
-                redemption_record: ctx.accounts.redemption_record.to_account_info(),
+                pending_burn: ctx.accounts.pending_burn.to_account_info(),
                 host_config: ctx.accounts.host_config.to_account_info(),
                 kms_context: ctx.accounts.kms_context.to_account_info(),
                 deny_subject_record: None,
@@ -237,6 +249,7 @@ pub fn settle(
             },
             &[&authority_seeds],
         ),
+        burn_id,
         burned_total_handle,
         cleartext_total,
         signatures,

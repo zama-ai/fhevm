@@ -87,7 +87,7 @@ export {
 export {
   batchAddress,
   tokenAccountAddress,
-  burnRedemptionAddress,
+  pendingBurnAddress,
   burnedAmountValueAccount,
   pendingJoinValueAccount,
   claimAmountValueAccount,

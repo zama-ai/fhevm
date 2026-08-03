@@ -2,7 +2,6 @@ import { describe, expect, it } from 'vitest';
 import { address, type Address } from '@solana/kit';
 import { base58 } from '@scure/base';
 
-import type { Bytes32 } from '@sdk-src/core/types/primitives.js';
 import {
   deriveBatchAddresses,
   deriveJoinRecordAddress,
@@ -34,8 +33,6 @@ function roots(): VaultDemoRoots {
   };
 }
 
-const BURNED_HANDLE = new Uint8Array(32).fill(0x92) as Bytes32;
-
 describe('deriveBatchAddresses', () => {
   it('is deterministic and index-sensitive', async () => {
     const r = roots();
@@ -60,32 +57,28 @@ describe('deriveJoinRecordAddress', () => {
 });
 
 describe('settle lookup-table addresses', () => {
-  it('exclude redemption_record and match the open_batch / settleBatch shared ordering', async () => {
+  it('include pending_burn and match the open_batch / settleBatch shared ordering', async () => {
     const r = roots();
     const batch = await deriveBatchAddresses(r, 0n);
-    const accounts = await deriveSettleAccounts(r, batch, BURNED_HANDLE);
+    const accounts = await deriveSettleAccounts(r, batch);
 
     const fromAccounts = settleAccountsToLookupTableAddresses(accounts);
     const fromDerive = await deriveSettleLookupTableAddresses(r, batch);
 
-    // The two producers (settleBatch's real accounts vs open_batch's zero-handle derivation) agree
-    // exactly — the invariant that keeps the on-chain ALT indices lined up with the v0 message.
+    // The two producers (settleBatch's real accounts vs open_batch's derivation) agree exactly —
+    // the invariant that keeps the on-chain ALT indices lined up with the v0 message.
     expect(fromAccounts).toEqual(fromDerive);
-    // redemption_record is the only field left out.
-    expect(fromAccounts).not.toContain(accounts.redemptionRecord);
+    // pending_burn is known at open_batch (`burn_id = batch.key()`) and rides in the ALT.
+    expect(fromAccounts).toContain(accounts.pendingBurn);
     expect(fromAccounts).toContain(accounts.batchBurnedAmountValue);
-    expect(fromAccounts.length).toBe(Object.keys(accounts).length - 1);
+    expect(fromAccounts.length).toBe(Object.keys(accounts).length);
 
     // The ALT ordering is driven by the explicit SETTLE_ALT_FIELD_ORDER tuple, not by object-key
-    // insertion order. Pin that the tuple is exactly the settle account keys minus redemptionRecord,
-    // so a field added to the struct without being placed in the tuple fails here rather than
-    // silently dropping out of the table.
-    expect(SETTLE_ALT_FIELD_ORDER).not.toContain('redemptionRecord');
-    expect([...SETTLE_ALT_FIELD_ORDER].sort()).toEqual(
-      Object.keys(accounts)
-        .filter((name) => name !== 'redemptionRecord')
-        .sort(),
-    );
+    // insertion order. Pin that the tuple is exactly the settle account keys, so a field added to
+    // the struct without being placed in the tuple fails here rather than silently dropping out of
+    // the table.
+    expect(SETTLE_ALT_FIELD_ORDER).toContain('pendingBurn');
+    expect([...SETTLE_ALT_FIELD_ORDER].sort()).toEqual(Object.keys(accounts).sort());
   });
 
   // CONSENSUS-CRITICAL GOLDEN. The settle v0 message compresses its accounts against the on-chain
@@ -99,12 +92,11 @@ describe('settle lookup-table addresses', () => {
   it('matches the golden ordered ALT list + golden PDA derivations (fixed roots fixture)', async () => {
     const r = roots();
     const batch = await deriveBatchAddresses(r, 0n);
-    const accounts = await deriveSettleAccounts(r, batch, BURNED_HANDLE);
+    const accounts = await deriveSettleAccounts(r, batch);
 
-    // The exact ordered ALT address list. Order mirrors the `SolanaVaultSettleAccounts` field order
-    // with `redemptionRecord` (position 9) removed:
+    // The exact ordered ALT address list mirrors `SETTLE_ALT_FIELD_ORDER` / SolanaVaultSettleAccounts:
     //   batcher, batch, joinConfidentialMint, batchJoinTokenAccount, joinUnderlyingMint,
-    //   joinMintVaultUnderlying, joinMintVaultAuthority, batchBurnedAmountValue,
+    //   joinMintVaultUnderlying, joinMintVaultAuthority, batchBurnedAmountValue, pendingBurn,
     //   hostConfig, kmsContext, vault, vaultAuthority, vaultTokenAccount, payoutConfidentialMint,
     //   payoutUnderlyingMint, batchPayoutTokenAccount, payoutMintVaultUnderlying,
     //   payoutMintVaultAuthority, payoutComputeSigner, payoutTotalSupplyAuthority,
@@ -118,6 +110,7 @@ describe('settle lookup-table addresses', () => {
       '8u7FMwPBNrQreRM2x2BM8rcxaKTSWKhf1zT7BcTjZfUs',
       '2zVia6PtH7dX6JPRMkykuv2V8ZXRWwBn1vzYtfUMKLD2',
       '6h6FYkmzQeZ2XBGNPjgHSp3i2ktPqc6xsgpBL4xGpLMK',
+      'Ee85KQQtLgoNVebfBLvkKjTJ3i8nDaihvFEz25JNLRxS',
       'YMN9Qj5jPNp7j14VPcML1B6xGgcPWVZUGLFU3Mnyfaf',
       'cGfHiC6Kgg3FpFZvgwGcswsCRtp4aBP2fzuXRQPizuN',
       'gBxS1f6uyyGPuW5MzGBukidSb71jdsCb5fZaoSzULE5',
@@ -139,6 +132,7 @@ describe('settle lookup-table addresses', () => {
     // order) is caught with a named field rather than only as a list diff.
     expect(batch.batch).toBe('Dm6gzuvv47gSSeMyV72nVs9N79AQA7sczD5GBw3XwXHX');
     expect(accounts.batchBurnedAmountValue).toBe('6h6FYkmzQeZ2XBGNPjgHSp3i2ktPqc6xsgpBL4xGpLMK');
+    expect(accounts.pendingBurn).toBe('Ee85KQQtLgoNVebfBLvkKjTJ3i8nDaihvFEz25JNLRxS');
     expect(accounts.payoutTotalSupplyValue).toBe('D1kRDX4FNzfiFqnJCjX443t7ZgN3jCk2NLtNk93eH8pt');
   });
 });

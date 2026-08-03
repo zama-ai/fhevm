@@ -45,6 +45,11 @@ pub struct Dispatch<'info> {
     /// decryptable; created by the token CPI (first and only burn per batch).
     #[account(mut)]
     pub batch_burned_amount_value: UncheckedAccount<'info>,
+    /// CHECK: pending-burn lane PDA for this dispatch; created by the token CPI.
+    /// Caller must pass `pending_burn_address(join_mint, batch_join_token_account, batch.key())`
+    /// (`burn_id = batch.key().to_bytes()`, known before the burn).
+    #[account(mut)]
+    pub pending_burn: UncheckedAccount<'info>,
     /// CHECK: ZamaHost event-CPI authority; validated by the host program.
     pub zama_event_authority: UncheckedAccount<'info>,
     /// ZamaHost program (FHE compute + ACL).
@@ -90,34 +95,41 @@ pub fn dispatch(ctx: Context<Dispatch>) -> Result<()> {
 
     let authority = BatchAuthoritySeeds::new(batch_key, ctx.accounts.batch.authority_bump);
     let authority_seeds = authority.seeds();
-    ct::cpi::confidential_burn_from_value(CpiContext::new_with_signer(
-        ctx.accounts.confidential_token_program.key(),
-        ct::cpi::accounts::ConfidentialBurnFromValue {
-            owner: ctx.accounts.batch_authority.to_account_info(),
-            payer: ctx.accounts.payer.to_account_info(),
-            mint: ctx.accounts.join_confidential_mint.to_account_info(),
-            token_account: ctx.accounts.batch_join_token_account.to_account_info(),
-            compute_signer: ctx.accounts.join_compute_signer.to_account_info(),
-            total_supply_authority: ctx.accounts.total_supply_authority.to_account_info(),
-            balance_value: ctx.accounts.batch_balance_value.to_account_info(),
-            total_supply_value: ctx.accounts.total_supply_value.to_account_info(),
-            burned_amount_value: ctx.accounts.batch_burned_amount_value.to_account_info(),
-            // Whole-balance burn: the balance encrypted value account is also the amount.
-            amount_value: ctx.accounts.batch_balance_value.to_account_info(),
-            zama_event_authority: ctx.accounts.zama_event_authority.to_account_info(),
-            zama_program: ctx.accounts.zama_program.to_account_info(),
-            host_config: ctx.accounts.host_config.to_account_info(),
-            system_program: ctx.accounts.system_program.to_account_info(),
-            hcu_block_meter: None,
-            hcu_trusted_app_record: None,
-            event_authority: ctx
-                .accounts
-                .confidential_token_event_authority
-                .to_account_info(),
-            program: ctx.accounts.confidential_token_program.to_account_info(),
-        },
-        &[&authority_seeds],
-    ))?;
+    // Deterministic burn_id known before the burn tx: the batch pubkey bytes. Pending-burn address
+    // is therefore known at open_batch / dispatch account-meta construction time.
+    let burn_id = batch_key.to_bytes();
+    ct::cpi::confidential_burn_from_value(
+        CpiContext::new_with_signer(
+            ctx.accounts.confidential_token_program.key(),
+            ct::cpi::accounts::ConfidentialBurnFromValue {
+                owner: ctx.accounts.batch_authority.to_account_info(),
+                payer: ctx.accounts.payer.to_account_info(),
+                mint: ctx.accounts.join_confidential_mint.to_account_info(),
+                token_account: ctx.accounts.batch_join_token_account.to_account_info(),
+                compute_signer: ctx.accounts.join_compute_signer.to_account_info(),
+                total_supply_authority: ctx.accounts.total_supply_authority.to_account_info(),
+                balance_value: ctx.accounts.batch_balance_value.to_account_info(),
+                total_supply_value: ctx.accounts.total_supply_value.to_account_info(),
+                burned_amount_value: ctx.accounts.batch_burned_amount_value.to_account_info(),
+                pending_burn: ctx.accounts.pending_burn.to_account_info(),
+                // Whole-balance burn: the balance encrypted value account is also the amount.
+                amount_value: ctx.accounts.batch_balance_value.to_account_info(),
+                zama_event_authority: ctx.accounts.zama_event_authority.to_account_info(),
+                zama_program: ctx.accounts.zama_program.to_account_info(),
+                host_config: ctx.accounts.host_config.to_account_info(),
+                system_program: ctx.accounts.system_program.to_account_info(),
+                hcu_block_meter: None,
+                hcu_trusted_app_record: None,
+                event_authority: ctx
+                    .accounts
+                    .confidential_token_event_authority
+                    .to_account_info(),
+                program: ctx.accounts.confidential_token_program.to_account_info(),
+            },
+            &[&authority_seeds],
+        ),
+        burn_id,
+    )?;
 
     let burned_total_handle =
         fhe::read_encrypted_value(&ctx.accounts.batch_burned_amount_value)?.current_handle;

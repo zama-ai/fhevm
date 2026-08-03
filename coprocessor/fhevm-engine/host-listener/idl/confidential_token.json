@@ -11,9 +11,175 @@
   ],
   "instructions": [
     {
+      "name": "allow_token_account_subjects",
+      "docs": [
+        "Grants subjects on a token-account-scoped encrypted value by CPI to host",
+        "`allow_subjects`, signing as the token-account PDA (`EncryptedValue.account`).",
+        "Owner-authorized; auditors remain decrypt-only subjects (fhevm-internal#1862 #13)."
+      ],
+      "discriminator": [
+        57,
+        89,
+        32,
+        224,
+        131,
+        12,
+        115,
+        223
+      ],
+      "accounts": [
+        {
+          "name": "payer",
+          "docs": [
+            "Pays for EncryptedValue realloc growth on the host."
+          ],
+          "writable": true,
+          "signer": true
+        },
+        {
+          "name": "owner",
+          "docs": [
+            "Token account owner authorizing the grant."
+          ],
+          "signer": true,
+          "relations": [
+            "token_account"
+          ]
+        },
+        {
+          "name": "mint",
+          "relations": [
+            "token_account"
+          ]
+        },
+        {
+          "name": "token_account",
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  116,
+                  111,
+                  107,
+                  101,
+                  110,
+                  45,
+                  97,
+                  99,
+                  99,
+                  111,
+                  117,
+                  110,
+                  116
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "mint"
+              },
+              {
+                "kind": "account",
+                "path": "owner"
+              }
+            ]
+          }
+        },
+        {
+          "name": "encrypted_value",
+          "docs": [
+            "Encrypted value whose `account` field must equal `token_account`."
+          ],
+          "writable": true
+        },
+        {
+          "name": "host_config",
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  104,
+                  111,
+                  115,
+                  116,
+                  45,
+                  99,
+                  111,
+                  110,
+                  102,
+                  105,
+                  103
+                ]
+              }
+            ],
+            "program": {
+              "kind": "const",
+              "value": [
+                76,
+                211,
+                2,
+                45,
+                255,
+                80,
+                74,
+                103,
+                92,
+                175,
+                45,
+                155,
+                79,
+                64,
+                20,
+                208,
+                179,
+                220,
+                62,
+                161,
+                127,
+                251,
+                151,
+                186,
+                53,
+                92,
+                236,
+                90,
+                147,
+                58,
+                48,
+                238
+              ]
+            }
+          }
+        },
+        {
+          "name": "deny_subject_record",
+          "optional": true
+        },
+        {
+          "name": "zama_program",
+          "address": "6AtbvED1rfX68aCT1tYgU1aeu4kFksPDxZG9gtB1Fgtu"
+        },
+        {
+          "name": "system_program",
+          "address": "11111111111111111111111111111111"
+        }
+      ],
+      "args": [
+        {
+          "name": "subjects",
+          "type": {
+            "vec": "pubkey"
+          }
+        }
+      ]
+    },
+    {
       "name": "confidential_burn",
       "docs": [
-        "Burns an encrypted amount by updating the account balance and encrypted total supply."
+        "Burns an encrypted amount by updating the account balance and encrypted total supply.",
+        "`burn_id` is a client-supplied unique id known before the tx; it seeds the `PendingBurn` lane",
+        "PDA so the account can appear in metas before `fhe_execute` derives `burned_handle`."
       ],
       "discriminator": [
         4,
@@ -128,6 +294,14 @@
           "writable": true
         },
         {
+          "name": "pending_burn",
+          "docs": [
+            "`fhe_execute`. Caller must pass the canonical",
+            "`pending_burn_address(mint, token_account, burn_id)` (known before the tx)."
+          ],
+          "writable": true
+        },
+        {
           "name": "zama_event_authority"
         },
         {
@@ -141,12 +315,69 @@
           "name": "host_config",
           "docs": [
             "ZamaHost config used for handle derivation."
-          ]
+          ],
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  104,
+                  111,
+                  115,
+                  116,
+                  45,
+                  99,
+                  111,
+                  110,
+                  102,
+                  105,
+                  103
+                ]
+              }
+            ],
+            "program": {
+              "kind": "const",
+              "value": [
+                76,
+                211,
+                2,
+                45,
+                255,
+                80,
+                74,
+                103,
+                92,
+                175,
+                45,
+                155,
+                79,
+                64,
+                20,
+                208,
+                179,
+                220,
+                62,
+                161,
+                127,
+                251,
+                151,
+                186,
+                53,
+                92,
+                236,
+                90,
+                147,
+                58,
+                48,
+                238
+              ]
+            }
+          }
         },
         {
           "name": "system_program",
           "docs": [
-            "System program used for ACL account creation."
+            "System program used for ACL account creation and the pending-burn PDA."
           ],
           "address": "11111111111111111111111111111111"
         },
@@ -182,6 +413,15 @@
               "name": "CoprocessorInputAttestation"
             }
           }
+        },
+        {
+          "name": "burn_id",
+          "type": {
+            "array": [
+              "u8",
+              32
+            ]
+          }
         }
       ]
     },
@@ -189,12 +429,13 @@
       "name": "confidential_burn_from_value",
       "docs": [
         "Burns an encrypted amount taken from an existing on-chain `EncryptedValue` (a computed or",
-        "received handle) instead of a freshly attested client-side encryption — the burn-side analog",
+        "received handle) instead of a freshly attested client-side encryption \u2014 the burn-side analog",
         "of `confidential_transfer_from_value` (fhevm-internal#1755). The batcher uses this to burn a",
         "execution's computed encrypted total, then requests the KMS burn certificate. The signing owner",
         "must be in the amount value's subject set (the token spend gate); the amount is spent",
         "read-only, and the burned-amount output is created publicly decryptable exactly as in",
-        "`confidential_burn`, so `redeem_burned_amount` consumes it unchanged."
+        "`confidential_burn`, so `redeem_burned_amount` consumes it unchanged. `burn_id` seeds the",
+        "pending-burn lane (batcher passes `batch.key().to_bytes()`)."
       ],
       "discriminator": [
         28,
@@ -312,7 +553,15 @@
           "docs": [
             "as in [`ConfidentialBurn`]; created on the account's first burn, replaced in place",
             "thereafter to each burn's own delta (DD-036 / Vector 2). This is the same output shape",
-            "`redeem_burned_amount` later consumes — only where the amount comes from differs."
+            "`redeem_burned_amount` later consumes \u2014 only where the amount comes from differs."
+          ],
+          "writable": true
+        },
+        {
+          "name": "pending_burn",
+          "docs": [
+            "`fhe_execute`. Caller must pass the canonical",
+            "`pending_burn_address(mint, token_account, burn_id)`."
           ],
           "writable": true
         },
@@ -320,9 +569,10 @@
           "name": "amount_value",
           "docs": [
             "The existing encrypted amount to burn: a computed or received `euint64` handle. Read-only",
-            "persistent operand — never replaced, never consumed. Its address is the canonical PDA of its",
+            "persistent operand \u2014 never replaced, never consumed. Its address is the canonical PDA of its",
             "own `(domain, authority, label)` fields, so an encrypted value account from any app",
-            "may be passed here once its owner has granted the mint's compute subject via `allow_subjects`."
+            "may be passed here once its owner has granted the mint's compute subject via",
+            "`allow_token_account_subjects` (host `allow_subjects` signed as the token-account PDA)."
           ]
         },
         {
@@ -339,12 +589,69 @@
           "name": "host_config",
           "docs": [
             "ZamaHost config used for handle derivation."
-          ]
+          ],
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  104,
+                  111,
+                  115,
+                  116,
+                  45,
+                  99,
+                  111,
+                  110,
+                  102,
+                  105,
+                  103
+                ]
+              }
+            ],
+            "program": {
+              "kind": "const",
+              "value": [
+                76,
+                211,
+                2,
+                45,
+                255,
+                80,
+                74,
+                103,
+                92,
+                175,
+                45,
+                155,
+                79,
+                64,
+                20,
+                208,
+                179,
+                220,
+                62,
+                161,
+                127,
+                251,
+                151,
+                186,
+                53,
+                92,
+                236,
+                90,
+                147,
+                58,
+                48,
+                238
+              ]
+            }
+          }
         },
         {
           "name": "system_program",
           "docs": [
-            "System program used for ACL account creation."
+            "System program used for ACL account creation and the pending-burn PDA."
           ],
           "address": "11111111111111111111111111111111"
         },
@@ -372,7 +679,17 @@
           "name": "program"
         }
       ],
-      "args": []
+      "args": [
+        {
+          "name": "burn_id",
+          "type": {
+            "array": [
+              "u8",
+              32
+            ]
+          }
+        }
+      ]
     },
     {
       "name": "confidential_transfer",
@@ -485,7 +802,64 @@
           "name": "host_config",
           "docs": [
             "ZamaHost config used for handle derivation."
-          ]
+          ],
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  104,
+                  111,
+                  115,
+                  116,
+                  45,
+                  99,
+                  111,
+                  110,
+                  102,
+                  105,
+                  103
+                ]
+              }
+            ],
+            "program": {
+              "kind": "const",
+              "value": [
+                76,
+                211,
+                2,
+                45,
+                255,
+                80,
+                74,
+                103,
+                92,
+                175,
+                45,
+                155,
+                79,
+                64,
+                20,
+                208,
+                179,
+                220,
+                62,
+                161,
+                127,
+                251,
+                151,
+                186,
+                53,
+                92,
+                236,
+                90,
+                147,
+                58,
+                48,
+                238
+              ]
+            }
+          }
         },
         {
           "name": "system_program",
@@ -497,7 +871,7 @@
         {
           "name": "hcu_block_meter",
           "docs": [
-            "canonical `[\"hcu-block-meter\", compute_signer]` PDA. The per-mint HCU block meter — supplied",
+            "canonical `[\"hcu-block-meter\", compute_signer]` PDA. The per-mint HCU block meter \u2014 supplied",
             "by an untrusted mint under a metering-band cap, omitted otherwise."
           ],
           "writable": true,
@@ -506,7 +880,7 @@
         {
           "name": "hcu_trusted_app_record",
           "docs": [
-            "trust witness — present + valid bypasses the cap; absent means untrusted (metered)."
+            "trust witness \u2014 present + valid bypasses the cap; absent means untrusted (metered)."
           ],
           "optional": true
         },
@@ -532,7 +906,7 @@
       "name": "confidential_transfer_from_value",
       "docs": [
         "Transfers an encrypted amount taken from an existing on-chain `EncryptedValue` (a computed or",
-        "received handle) instead of a freshly attested client-side encryption — the path that lets a",
+        "received handle) instead of a freshly attested client-side encryption \u2014 the path that lets a",
         "contract be the sender of a computed amount (fhevm-internal#1680). The signing owner must be",
         "in the amount value's subject set (the token spend gate); the amount is spent read-only."
       ],
@@ -632,9 +1006,10 @@
           "name": "amount_value",
           "docs": [
             "The existing encrypted amount to spend: a computed or received `euint64` handle. Read-only",
-            "persistent operand — never replaced, never consumed. Its address is the canonical PDA of its",
+            "persistent operand \u2014 never replaced, never consumed. Its address is the canonical PDA of its",
             "own `(domain, authority, label)` fields, so an encrypted value account from any app",
-            "may be passed here once its owner has granted the mint's compute subject via `allow_subjects`."
+            "may be passed here once its owner has granted the mint's compute subject via",
+            "`allow_token_account_subjects` (host `allow_subjects` signed as the token-account PDA)."
           ]
         },
         {
@@ -651,7 +1026,64 @@
           "name": "host_config",
           "docs": [
             "ZamaHost config used for handle derivation."
-          ]
+          ],
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  104,
+                  111,
+                  115,
+                  116,
+                  45,
+                  99,
+                  111,
+                  110,
+                  102,
+                  105,
+                  103
+                ]
+              }
+            ],
+            "program": {
+              "kind": "const",
+              "value": [
+                76,
+                211,
+                2,
+                45,
+                255,
+                80,
+                74,
+                103,
+                92,
+                175,
+                45,
+                155,
+                79,
+                64,
+                20,
+                208,
+                179,
+                220,
+                62,
+                161,
+                127,
+                251,
+                151,
+                186,
+                53,
+                92,
+                236,
+                90,
+                147,
+                58,
+                48,
+                238
+              ]
+            }
+          }
         },
         {
           "name": "system_program",
@@ -663,7 +1095,7 @@
         {
           "name": "hcu_block_meter",
           "docs": [
-            "canonical `[\"hcu-block-meter\", compute_signer]` PDA. The per-mint HCU block meter — supplied",
+            "canonical `[\"hcu-block-meter\", compute_signer]` PDA. The per-mint HCU block meter \u2014 supplied",
             "by an untrusted mint under a metering-band cap, omitted otherwise."
           ],
           "writable": true,
@@ -672,7 +1104,7 @@
         {
           "name": "hcu_trusted_app_record",
           "docs": [
-            "trust witness — present + valid bypasses the cap; absent means untrusted (metered)."
+            "trust witness \u2014 present + valid bypasses the cap; absent means untrusted (metered)."
           ],
           "optional": true
         },
@@ -690,7 +1122,7 @@
       "docs": [
         "Consumes a KMS public-decrypt certificate through the stateless host verifier and emits a",
         "token-scoped disclosed event. See `instructions::disclose_secp` for the act-once semantics",
-        "(idempotent by design — no on-chain replay marker)."
+        "(idempotent by design \u2014 no on-chain replay marker)."
       ],
       "discriminator": [
         151,
@@ -955,7 +1387,64 @@
           "name": "host_config",
           "docs": [
             "ZamaHost config used for handle derivation."
-          ]
+          ],
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  104,
+                  111,
+                  115,
+                  116,
+                  45,
+                  99,
+                  111,
+                  110,
+                  102,
+                  105,
+                  103
+                ]
+              }
+            ],
+            "program": {
+              "kind": "const",
+              "value": [
+                76,
+                211,
+                2,
+                45,
+                255,
+                80,
+                74,
+                103,
+                92,
+                175,
+                45,
+                155,
+                79,
+                64,
+                20,
+                208,
+                179,
+                220,
+                62,
+                161,
+                127,
+                251,
+                151,
+                186,
+                53,
+                92,
+                236,
+                90,
+                147,
+                58,
+                48,
+                238
+              ]
+            }
+          }
         },
         {
           "name": "system_program",
@@ -993,7 +1482,7 @@
     {
       "name": "initialize_token_account",
       "docs": [
-        "Initializes a token account and creates its initial confidential balance handle."
+        "Initializes a token account and creates its zero confidential balance handle."
       ],
       "discriminator": [
         150,
@@ -1106,7 +1595,64 @@
           "name": "host_config",
           "docs": [
             "ZamaHost config used for handle derivation."
-          ]
+          ],
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  104,
+                  111,
+                  115,
+                  116,
+                  45,
+                  99,
+                  111,
+                  110,
+                  102,
+                  105,
+                  103
+                ]
+              }
+            ],
+            "program": {
+              "kind": "const",
+              "value": [
+                76,
+                211,
+                2,
+                45,
+                255,
+                80,
+                74,
+                103,
+                92,
+                175,
+                45,
+                155,
+                79,
+                64,
+                20,
+                208,
+                179,
+                220,
+                62,
+                161,
+                127,
+                251,
+                151,
+                186,
+                53,
+                92,
+                236,
+                90,
+                147,
+                58,
+                48,
+                238
+              ]
+            }
+          }
         },
         {
           "name": "system_program",
@@ -1139,12 +1685,270 @@
           "name": "program"
         }
       ],
-      "args": [
+      "args": []
+    },
+    {
+      "name": "recover_pending_burn",
+      "docs": [
+        "Recovers a tip-only pending burn by FHE-crediting the burned amount back onto confidential",
+        "balance and encrypted total supply, then closing the `PendingBurn` lane. Requires the burned",
+        "handle to still be the shared `burned_amount` EncryptedValue's `current_handle`; superseded",
+        "burns must claim via `redeem_burned_amount` instead. See `instructions::recover_pending_burn`."
+      ],
+      "discriminator": [
+        169,
+        121,
+        8,
+        89,
+        18,
+        80,
+        30,
+        241
+      ],
+      "accounts": [
         {
-          "name": "initial_balance",
-          "type": "u64"
+          "name": "owner",
+          "docs": [
+            "Token owner, recover authority, and rent destination for the closed pending-burn lane."
+          ],
+          "writable": true,
+          "signer": true
+        },
+        {
+          "name": "mint",
+          "docs": [
+            "Confidential mint whose compute signer authorizes the balance/supply updates."
+          ]
+        },
+        {
+          "name": "token_account",
+          "docs": [
+            "Token account whose balance is re-credited."
+          ],
+          "writable": true
+        },
+        {
+          "name": "compute_signer",
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  102,
+                  104,
+                  101,
+                  45,
+                  99,
+                  111,
+                  109,
+                  112,
+                  117,
+                  116,
+                  101
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "mint"
+              }
+            ]
+          }
+        },
+        {
+          "name": "total_supply_authority",
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  116,
+                  111,
+                  116,
+                  97,
+                  108,
+                  45,
+                  115,
+                  117,
+                  112,
+                  112,
+                  108,
+                  121
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "mint"
+              }
+            ]
+          }
+        },
+        {
+          "name": "balance_value",
+          "docs": [
+            "Stable balance encrypted value account; read for the current handle and replaced by this eval."
+          ],
+          "writable": true
+        },
+        {
+          "name": "total_supply_value",
+          "docs": [
+            "Stable total-supply encrypted value account; read for the current handle and replaced by this eval."
+          ],
+          "writable": true
+        },
+        {
+          "name": "burned_amount_value",
+          "docs": [
+            "Shared `burned_amount` encrypted value account; read as a persistent operand (left unchanged)."
+          ],
+          "writable": true
+        },
+        {
+          "name": "pending_burn",
+          "docs": [
+            "Pending-burn lane for the tip burned handle; closed on successful recover."
+          ],
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  112,
+                  101,
+                  110,
+                  100,
+                  105,
+                  110,
+                  103,
+                  45,
+                  98,
+                  117,
+                  114,
+                  110
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "mint"
+              },
+              {
+                "kind": "account",
+                "path": "token_account"
+              },
+              {
+                "kind": "account",
+                "path": "pending_burn.burn_id",
+                "account": "PendingBurn"
+              }
+            ]
+          }
+        },
+        {
+          "name": "host_config",
+          "docs": [
+            "ZamaHost config used for handle derivation."
+          ],
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  104,
+                  111,
+                  115,
+                  116,
+                  45,
+                  99,
+                  111,
+                  110,
+                  102,
+                  105,
+                  103
+                ]
+              }
+            ],
+            "program": {
+              "kind": "const",
+              "value": [
+                76,
+                211,
+                2,
+                45,
+                255,
+                80,
+                74,
+                103,
+                92,
+                175,
+                45,
+                155,
+                79,
+                64,
+                20,
+                208,
+                179,
+                220,
+                62,
+                161,
+                127,
+                251,
+                151,
+                186,
+                53,
+                92,
+                236,
+                90,
+                147,
+                58,
+                48,
+                238
+              ]
+            }
+          }
+        },
+        {
+          "name": "zama_event_authority"
+        },
+        {
+          "name": "zama_program",
+          "docs": [
+            "ZamaHost program used for FHE operations."
+          ],
+          "address": "6AtbvED1rfX68aCT1tYgU1aeu4kFksPDxZG9gtB1Fgtu"
+        },
+        {
+          "name": "system_program",
+          "docs": [
+            "System program used for ACL account creation on the balance/supply update path."
+          ],
+          "address": "11111111111111111111111111111111"
+        },
+        {
+          "name": "hcu_block_meter",
+          "docs": [
+            "canonical `[\"hcu-block-meter\", compute_signer]` PDA. Supplied by an untrusted mint under a",
+            "metering-band cap; omitted when the mint is trusted or the cap is unrestricted."
+          ],
+          "writable": true,
+          "optional": true
+        },
+        {
+          "name": "hcu_trusted_app_record",
+          "docs": [
+            "canonical `[\"hcu-trusted\", compute_signer]` PDA. Present + valid bypasses the cap; absent",
+            "means the mint is metered."
+          ],
+          "optional": true
+        },
+        {
+          "name": "event_authority"
+        },
+        {
+          "name": "program"
         }
-      ]
+      ],
+      "args": []
     },
     {
       "name": "redeem_burned_amount",
@@ -1152,8 +1956,8 @@
         "Redeems a KMS-certified burned amount from the SPL vault through the stateless host verifier.",
         "Verifies the KMS `PublicDecryptVerification` certificate against the context the cert names",
         "(any live, non-destroyed context, EVM-parity rotation grace) plus an exact-handle MMR",
-        "public-decrypt proof, then pays out `cleartext_amount` and writes the",
-        "permanent per-handle `BurnRedemption` marker. See `instructions::redeem_burned_amount`."
+        "public-decrypt proof, then pays out `cleartext_amount` and closes the per-`burn_id`",
+        "`PendingBurn` lane opened at burn time. See `instructions::redeem_burned_amount`."
       ],
       "discriminator": [
         75,
@@ -1169,7 +1973,7 @@
         {
           "name": "owner",
           "docs": [
-            "Token owner, redemption recipient, and payer for the replay marker."
+            "Token owner, redemption recipient, and rent destination for the closed pending-burn lane."
           ],
           "writable": true,
           "signer": true
@@ -1247,10 +2051,9 @@
           ]
         },
         {
-          "name": "redemption_record",
+          "name": "pending_burn",
           "docs": [
-            "Replay marker for this burned handle: write-once, never closed, the sole persistent \"paid out\"",
-            "bit for `(mint, burned_handle)`."
+            "Pending-burn lane opened at burn time for this `burn_id`; closed on successful claim."
           ],
           "writable": true,
           "pda": {
@@ -1258,20 +2061,17 @@
               {
                 "kind": "const",
                 "value": [
+                  112,
+                  101,
+                  110,
+                  100,
+                  105,
+                  110,
+                  103,
+                  45,
                   98,
                   117,
                   114,
-                  110,
-                  45,
-                  114,
-                  101,
-                  100,
-                  101,
-                  109,
-                  112,
-                  116,
-                  105,
-                  111,
                   110
                 ]
               },
@@ -1280,8 +2080,12 @@
                 "path": "mint"
               },
               {
+                "kind": "account",
+                "path": "token_account"
+              },
+              {
                 "kind": "arg",
-                "path": "burned_handle"
+                "path": "burn_id"
               }
             ]
           }
@@ -1381,7 +2185,7 @@
         {
           "name": "system_program",
           "docs": [
-            "System program used for the replay marker."
+            "System program (kept for CPI/client compatibility; claim closes rather than inits)."
           ],
           "address": "11111111111111111111111111111111"
         },
@@ -1393,6 +2197,15 @@
         }
       ],
       "args": [
+        {
+          "name": "burn_id",
+          "type": {
+            "array": [
+              "u8",
+              32
+            ]
+          }
+        },
         {
           "name": "burned_handle",
           "type": {
@@ -1428,6 +2241,152 @@
               "name": "MmrInclusionProof"
             }
           }
+        }
+      ]
+    },
+    {
+      "name": "remove_token_account_subject",
+      "docs": [
+        "Removes one subject from a token-account-scoped encrypted value by CPI to host",
+        "`remove_subject`, signing as the token-account PDA (`EncryptedValue.account`)."
+      ],
+      "discriminator": [
+        135,
+        46,
+        109,
+        207,
+        38,
+        36,
+        26,
+        243
+      ],
+      "accounts": [
+        {
+          "name": "owner",
+          "signer": true,
+          "relations": [
+            "token_account"
+          ]
+        },
+        {
+          "name": "mint",
+          "relations": [
+            "token_account"
+          ]
+        },
+        {
+          "name": "token_account",
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  116,
+                  111,
+                  107,
+                  101,
+                  110,
+                  45,
+                  97,
+                  99,
+                  99,
+                  111,
+                  117,
+                  110,
+                  116
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "mint"
+              },
+              {
+                "kind": "account",
+                "path": "owner"
+              }
+            ]
+          }
+        },
+        {
+          "name": "encrypted_value",
+          "docs": [
+            "Encrypted value whose `account` field must equal `token_account`."
+          ],
+          "writable": true
+        },
+        {
+          "name": "host_config",
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  104,
+                  111,
+                  115,
+                  116,
+                  45,
+                  99,
+                  111,
+                  110,
+                  102,
+                  105,
+                  103
+                ]
+              }
+            ],
+            "program": {
+              "kind": "const",
+              "value": [
+                76,
+                211,
+                2,
+                45,
+                255,
+                80,
+                74,
+                103,
+                92,
+                175,
+                45,
+                155,
+                79,
+                64,
+                20,
+                208,
+                179,
+                220,
+                62,
+                161,
+                127,
+                251,
+                151,
+                186,
+                53,
+                92,
+                236,
+                90,
+                147,
+                58,
+                48,
+                238
+              ]
+            }
+          }
+        },
+        {
+          "name": "deny_subject_record",
+          "optional": true
+        },
+        {
+          "name": "zama_program",
+          "address": "6AtbvED1rfX68aCT1tYgU1aeu4kFksPDxZG9gtB1Fgtu"
+        }
+      ],
+      "args": [
+        {
+          "name": "subject",
+          "type": "pubkey"
         }
       ]
     },
@@ -1603,7 +2562,64 @@
           "name": "host_config",
           "docs": [
             "ZamaHost config used for handle derivation."
-          ]
+          ],
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  104,
+                  111,
+                  115,
+                  116,
+                  45,
+                  99,
+                  111,
+                  110,
+                  102,
+                  105,
+                  103
+                ]
+              }
+            ],
+            "program": {
+              "kind": "const",
+              "value": [
+                76,
+                211,
+                2,
+                45,
+                255,
+                80,
+                74,
+                103,
+                92,
+                175,
+                45,
+                155,
+                79,
+                64,
+                20,
+                208,
+                179,
+                220,
+                62,
+                161,
+                127,
+                251,
+                151,
+                186,
+                53,
+                92,
+                236,
+                90,
+                147,
+                58,
+                48,
+                238
+              ]
+            }
+          }
         },
         {
           "name": "token_program",
@@ -1653,19 +2669,6 @@
   ],
   "accounts": [
     {
-      "name": "BurnRedemption",
-      "discriminator": [
-        98,
-        115,
-        13,
-        164,
-        230,
-        159,
-        128,
-        195
-      ]
-    },
-    {
       "name": "ConfidentialMint",
       "discriminator": [
         63,
@@ -1689,6 +2692,19 @@
         132,
         103,
         199
+      ]
+    },
+    {
+      "name": "PendingBurn",
+      "discriminator": [
+        203,
+        79,
+        129,
+        4,
+        87,
+        94,
+        246,
+        250
       ]
     }
   ],
@@ -1756,6 +2772,19 @@
         120,
         122,
         51
+      ]
+    },
+    {
+      "name": "PendingBurnRecoveredEvent",
+      "discriminator": [
+        241,
+        251,
+        95,
+        199,
+        237,
+        27,
+        7,
+        108
       ]
     },
     {
@@ -1982,6 +3011,31 @@
       "code": 6041,
       "name": "CleartextExceedsEuint64",
       "msg": "certified cleartext exceeds euint64 width"
+    },
+    {
+      "code": 6042,
+      "name": "InvalidBurnId",
+      "msg": "burn_id must be nonzero"
+    },
+    {
+      "code": 6043,
+      "name": "PendingBurnAddressMismatch",
+      "msg": "pending burn address does not match"
+    },
+    {
+      "code": 6044,
+      "name": "PendingBurnAlreadyInitialized",
+      "msg": "pending burn is already initialized"
+    },
+    {
+      "code": 6045,
+      "name": "PendingBurnHandleNotCurrent",
+      "msg": "pending burn handle is not the burned amount current handle"
+    },
+    {
+      "code": 6046,
+      "name": "PendingBurnMismatch",
+      "msg": "pending burn fields do not match"
     }
   ],
   "types": [
@@ -2007,6 +3061,9 @@
           },
           {
             "name": "BurnDebit"
+          },
+          {
+            "name": "Recover"
           }
         ]
       }
@@ -2143,6 +3200,18 @@
             "type": "pubkey"
           },
           {
+            "name": "burn_id",
+            "docs": [
+              "Client-supplied burn id that seeded the closed pending-burn lane."
+            ],
+            "type": {
+              "array": [
+                "u8",
+                32
+              ]
+            }
+          },
+          {
             "name": "burned_handle",
             "docs": [
               "Burned amount handle proven by KMS."
@@ -2179,66 +3248,18 @@
       }
     },
     {
-      "name": "BurnRedemption",
+      "name": "ConfidentialAmountKind",
       "docs": [
-        "Replay marker for a redeemed burned amount handle."
+        "Token-scoped amount purpose used for amount-handle creation."
       ],
       "type": {
-        "kind": "struct",
-        "fields": [
+        "kind": "enum",
+        "variants": [
           {
-            "name": "mint",
-            "docs": [
-              "Confidential mint whose vault paid the redemption."
-            ],
-            "type": "pubkey"
+            "name": "Transfer"
           },
           {
-            "name": "owner",
-            "docs": [
-              "Token owner that redeemed the burned amount."
-            ],
-            "type": "pubkey"
-          },
-          {
-            "name": "token_account",
-            "docs": [
-              "Token account that produced the burned amount."
-            ],
-            "type": "pubkey"
-          },
-          {
-            "name": "burned_handle",
-            "docs": [
-              "Burned amount handle proven by KMS."
-            ],
-            "type": {
-              "array": [
-                "u8",
-                32
-              ]
-            }
-          },
-          {
-            "name": "burned_encrypted_value",
-            "docs": [
-              "`EncryptedValue` encrypted value account for `burned_handle`."
-            ],
-            "type": "pubkey"
-          },
-          {
-            "name": "cleartext_amount",
-            "docs": [
-              "KMS-certified cleartext amount released from the vault."
-            ],
-            "type": "u64"
-          },
-          {
-            "name": "bump",
-            "docs": [
-              "PDA bump for `(mint, burned_handle)`."
-            ],
-            "type": "u8"
+            "name": "Burn"
           }
         ]
       }
@@ -2278,6 +3299,18 @@
               "Token account whose balance was debited."
             ],
             "type": "pubkey"
+          },
+          {
+            "name": "burn_id",
+            "docs": [
+              "Client-supplied burn id that seeds the pending-burn lane PDA."
+            ],
+            "type": {
+              "array": [
+                "u8",
+                32
+              ]
+            }
           },
           {
             "name": "burned_handle",
@@ -2363,7 +3396,7 @@
         "Confidential token account state.",
         "",
         "The balance's current handle and access encrypted value account live in the",
-        "`EncryptedValue` account at `balance_encrypted_value`, not here — addressing",
+        "`EncryptedValue` account at `balance_encrypted_value`, not here \u2014 addressing",
         "is stable per token account, so no nonce/sequence bookkeeping is needed."
       ],
       "type": {
@@ -2476,7 +3509,7 @@
       "name": "CoprocessorInputAttestation",
       "docs": [
         "A coprocessor input attestation carried inline by a [`FheExecuteOperand::VerifiedInput`], re-verified",
-        "in-execution (no account, no PDA) — the instruction-local analog of EVM `allowTransient(input, contract)`."
+        "in-execution (no account, no PDA) \u2014 the instruction-local analog of EVM `allowTransient(input, contract)`."
       ],
       "type": {
         "kind": "struct",
@@ -2529,7 +3562,7 @@
           {
             "name": "contract_address",
             "docs": [
-              "Attested contract identity — the input's ACL domain key (bytes32)."
+              "Attested contract identity \u2014 the input's ACL domain key (bytes32)."
             ],
             "type": {
               "array": [
@@ -2576,7 +3609,7 @@
         "",
         "PDA: `[ENCRYPTED_VALUE_SEED, encrypted_value_id]` where `encrypted_value_id =",
         "zama_solana_acl::derive_encrypted_value_id(domain, encrypted_value_account_authority, label)`.",
-        "The account name must stay exactly `EncryptedValue` — Anchor derives the",
+        "The account name must stay exactly `EncryptedValue` \u2014 Anchor derives the",
         "discriminator from the type name, and it must match",
         "`zama_solana_acl::encrypted_value_discriminator()`."
       ],
@@ -2595,11 +3628,11 @@
             "docs": [
               "The account that controls this encrypted value: it must sign to create it, update its",
               "handle, or replace its subject list. Enforced by address rather than by comparing this",
-              "field — the signer must equal the authority declared in the execution",
+              "field \u2014 the signer must equal the authority declared in the execution",
               "(`assert_output_acl_metadata`) and the account written to must be the PDA rederived from",
               "that declared triple, which is what ties the signer to the stored value on update. For a",
               "token balance this is the token account itself. It is not the sole controller of the",
-              "audience — any current subject may also add or remove subjects through `allow_subjects` /",
+              "audience \u2014 any current subject may also add or remove subjects through `allow_subjects` /",
               "`remove_subject`."
             ],
             "type": "pubkey"
@@ -2676,7 +3709,7 @@
         "",
         "This is the single app-level disclosure event after the `DisclosureRequest` lifecycle was",
         "dissolved (fhevm-internal#1704): it covers both former balance and amount disclosures. It carries",
-        "no request witness or `request_hash` — there is no per-request PDA anymore. The request side is",
+        "no request witness or `request_hash` \u2014 there is no per-request PDA anymore. The request side is",
         "the owner sealing a public-decrypt leaf via the host `make_handle_public` instruction directly."
       ],
       "type": {
@@ -2861,7 +3894,7 @@
             "docs": [
               "Per-app HCU budget per slot, enforced in `fhe_execute`. `u64::MAX` = unrestricted (the ship",
               "default; short-circuits, touching no meter); `0` = ban untrusted apps (trusted still",
-              "bypass) — the one knob where `0` is a real semantic; any other value is the metering band",
+              "bypass) \u2014 the one knob where `0` is a real semantic; any other value is the metering band",
               "(must be `>= max_hcu_per_tx` unless that is unlimited)."
             ],
             "type": "u64"
@@ -3015,6 +4048,215 @@
       }
     },
     {
+      "name": "PendingBurn",
+      "docs": [
+        "Open burn lane awaiting claim (USDC) or recover (confidential)."
+      ],
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "mint",
+            "docs": [
+              "Confidential mint whose vault backs a claim."
+            ],
+            "type": "pubkey"
+          },
+          {
+            "name": "owner",
+            "docs": [
+              "Token account owner (rent destination on close)."
+            ],
+            "type": "pubkey"
+          },
+          {
+            "name": "token_account",
+            "docs": [
+              "Token account that produced the burned amount."
+            ],
+            "type": "pubkey"
+          },
+          {
+            "name": "burn_id",
+            "docs": [
+              "Client-supplied unique id (also in PDA seeds); known before the burn tx."
+            ],
+            "type": {
+              "array": [
+                "u8",
+                32
+              ]
+            }
+          },
+          {
+            "name": "burned_handle",
+            "docs": [
+              "Burned amount handle produced by the burn eval (stored for claim matching)."
+            ],
+            "type": {
+              "array": [
+                "u8",
+                32
+              ]
+            }
+          },
+          {
+            "name": "burned_encrypted_value",
+            "docs": [
+              "Shared `burned_amount` EncryptedValue account for this token account."
+            ],
+            "type": "pubkey"
+          },
+          {
+            "name": "bump",
+            "docs": [
+              "PDA bump for `(mint, token_account, burn_id)`."
+            ],
+            "type": "u8"
+          }
+        ]
+      }
+    },
+    {
+      "name": "PendingBurnRecoveredEvent",
+      "docs": [
+        "Emitted when `recover_pending_burn` re-credits a tip-only burned amount into confidential balance."
+      ],
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "version",
+            "docs": [
+              "Event schema version."
+            ],
+            "type": "u8"
+          },
+          {
+            "name": "mint",
+            "docs": [
+              "Confidential mint."
+            ],
+            "type": "pubkey"
+          },
+          {
+            "name": "owner",
+            "docs": [
+              "Token account owner (rent destination of the closed lane)."
+            ],
+            "type": "pubkey"
+          },
+          {
+            "name": "token_account",
+            "docs": [
+              "Confidential token account that produced the burned amount."
+            ],
+            "type": "pubkey"
+          },
+          {
+            "name": "burn_id",
+            "docs": [
+              "Client-supplied burn id that seeded the closed pending-burn lane."
+            ],
+            "type": {
+              "array": [
+                "u8",
+                32
+              ]
+            }
+          },
+          {
+            "name": "burned_handle",
+            "docs": [
+              "Burned amount handle that was recovered (must have been tip/`current_handle`)."
+            ],
+            "type": {
+              "array": [
+                "u8",
+                32
+              ]
+            }
+          },
+          {
+            "name": "burned_encrypted_value",
+            "docs": [
+              "Shared `burned_amount` EncryptedValue account for the token account."
+            ],
+            "type": "pubkey"
+          }
+        ]
+      }
+    },
+    {
+      "name": "RandomAmountCreatedEvent",
+      "docs": [
+        "Emitted when the token program creates a token-scoped random amount."
+      ],
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "version",
+            "docs": [
+              "Event schema version."
+            ],
+            "type": "u8"
+          },
+          {
+            "name": "mint",
+            "docs": [
+              "Confidential mint."
+            ],
+            "type": "pubkey"
+          },
+          {
+            "name": "owner",
+            "docs": [
+              "Token account owner."
+            ],
+            "type": "pubkey"
+          },
+          {
+            "name": "token_account",
+            "docs": [
+              "Confidential token account."
+            ],
+            "type": "pubkey"
+          },
+          {
+            "name": "amount_kind",
+            "docs": [
+              "Whether this amount is intended for transfer or burn."
+            ],
+            "type": {
+              "defined": {
+                "name": "ConfidentialAmountKind"
+              }
+            }
+          },
+          {
+            "name": "handle",
+            "docs": [
+              "Newly created amount handle."
+            ],
+            "type": {
+              "array": [
+                "u8",
+                32
+              ]
+            }
+          },
+          {
+            "name": "encrypted_value",
+            "docs": [
+              "ZamaHost ACL record initialized for the amount."
+            ],
+            "type": "pubkey"
+          }
+        ]
+      }
+    },
+    {
       "name": "TotalSupplyHandleUpdatedEvent",
       "docs": [
         "App-local total-supply history event.",
@@ -3108,6 +4350,9 @@
           },
           {
             "name": "Burn"
+          },
+          {
+            "name": "Recover"
           }
         ]
       }

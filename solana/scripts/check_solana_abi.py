@@ -78,9 +78,10 @@ PINNED_SCHEMAS = [
     # dissolved (fhevm-internal#1704), and the BurnRedemptionRequest witness lifecycle
     # (request_burn_redemption + both close_* instructions) was dissolved onto the stateless host
     # verifier (fhevm-internal#1763). Token disclosure is the thin `disclose_secp` consumer and
-    # redemption is the thin `redeem_burned_amount` consumer of `verify_public_decrypt`. Only the
-    # permanent per-handle `BurnRedemption` replay marker remains as persistent token state.
-    ("confidential_token", "account", "BurnRedemption", True),
+    # redemption is the thin `redeem_burned_amount` consumer of `verify_public_decrypt`. Act-once
+    # for burns is open-at-burn / close-at-claim-or-recover via the per-handle `PendingBurn` lane
+    # (fhevm-internal#1862 Wave 2); recover is tip-only while the burned handle is still current.
+    ("confidential_token", "account", "PendingBurn", True),
     ("confidential_token", "instruction_args", "confidential_burn", True),
     ("confidential_token", "instruction_args", "confidential_burn_from_value", True),
     ("confidential_token", "instruction_args", "confidential_transfer", True),
@@ -88,7 +89,10 @@ PINNED_SCHEMAS = [
     ("confidential_token", "instruction_args", "disclose_secp", True),
     ("confidential_token", "instruction_args", "initialize_mint", True),
     ("confidential_token", "instruction_args", "initialize_token_account", True),
+    ("confidential_token", "instruction_args", "allow_token_account_subjects", True),
+    ("confidential_token", "instruction_args", "remove_token_account_subject", True),
     ("confidential_token", "instruction_args", "redeem_burned_amount", True),
+    ("confidential_token", "instruction_args", "recover_pending_burn", True),
     ("confidential_token", "instruction_args", "wrap_usdc", True),
 ]
 

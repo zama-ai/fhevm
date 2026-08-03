@@ -316,6 +316,14 @@
           "writable": true
         },
         {
+          "name": "pending_burn",
+          "docs": [
+            "Caller must pass `pending_burn_address(join_mint, batch_join_token_account, batch.key())`",
+            "(`burn_id = batch.key().to_bytes()`, known before the burn)."
+          ],
+          "writable": true
+        },
+        {
           "name": "zama_event_authority"
         },
         {
@@ -1160,8 +1168,8 @@
           "name": "batch_authority",
           "docs": [
             "depositor/withdrawer, and wrap owner via invoke_signed. Receives",
-            "funding for the rent the redeem marker and wrap eval charge to the",
-            "owner."
+            "funding for the rent the wrap eval (and any other owner-charged CPIs)",
+            "charge to the owner; claim closes an already-open pending-burn lane."
           ],
           "writable": true,
           "pda": {
@@ -1266,7 +1274,10 @@
           "name": "batch_burned_amount_value"
         },
         {
-          "name": "redemption_record",
+          "name": "pending_burn",
+          "docs": [
+            "Address is `pending_burn_address(join_mint, batch_join_token_account, batch.key())`."
+          ],
           "writable": true
         },
         {

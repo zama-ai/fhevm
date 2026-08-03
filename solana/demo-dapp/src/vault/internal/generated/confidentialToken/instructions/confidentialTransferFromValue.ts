@@ -12,6 +12,7 @@ import {
   fixEncoderSize,
   getBytesDecoder,
   getBytesEncoder,
+  getProgramDerivedAddress,
   getStructDecoder,
   getStructEncoder,
   SOLANA_ERROR__PROGRAM_CLIENTS__INSUFFICIENT_ACCOUNT_METAS,
@@ -176,14 +177,15 @@ export type ConfidentialTransferFromValueAsyncInput<
    * The existing encrypted amount to spend: a computed or received `euint64` handle. Read-only
    * persistent operand — never replaced, never consumed. Its address is the canonical PDA of its
    * own `(domain, account, label)` fields, so an encrypted value account from any app
-   * may be passed here once its owner has granted the mint's compute subject via `allow_subjects`.
+   * may be passed here once its owner has granted the mint's compute subject via
+   * `allow_token_account_subjects` (host `allow_subjects` signed as the token-account PDA).
    */
   amountValue: Address<TAccountAmountValue>;
   zamaEventAuthority: Address<TAccountZamaEventAuthority>;
   /** ZamaHost program used for FHE operations. */
   zamaProgram?: Address<TAccountZamaProgram>;
   /** ZamaHost config used for handle derivation. */
-  hostConfig: Address<TAccountHostConfig>;
+  hostConfig?: Address<TAccountHostConfig>;
   /** System program used for ACL account creation. */
   systemProgram?: Address<TAccountSystemProgram>;
   /**
@@ -310,6 +312,13 @@ export async function getConfidentialTransferFromValueInstructionAsync<
     accounts.zamaProgram.value =
       '6AtbvED1rfX68aCT1tYgU1aeu4kFksPDxZG9gtB1Fgtu' as Address<'6AtbvED1rfX68aCT1tYgU1aeu4kFksPDxZG9gtB1Fgtu'>;
   }
+  if (!accounts.hostConfig.value) {
+    accounts.hostConfig.value = await getProgramDerivedAddress({
+      programAddress:
+        '6AtbvED1rfX68aCT1tYgU1aeu4kFksPDxZG9gtB1Fgtu' as Address<'6AtbvED1rfX68aCT1tYgU1aeu4kFksPDxZG9gtB1Fgtu'>,
+      seeds: [getBytesEncoder().encode(new Uint8Array([104, 111, 115, 116, 45, 99, 111, 110, 102, 105, 103]))],
+    });
+  }
   if (!accounts.systemProgram.value) {
     accounts.systemProgram.value = '11111111111111111111111111111111' as Address<'11111111111111111111111111111111'>;
   }
@@ -404,7 +413,8 @@ export type ConfidentialTransferFromValueInput<
    * The existing encrypted amount to spend: a computed or received `euint64` handle. Read-only
    * persistent operand — never replaced, never consumed. Its address is the canonical PDA of its
    * own `(domain, account, label)` fields, so an encrypted value account from any app
-   * may be passed here once its owner has granted the mint's compute subject via `allow_subjects`.
+   * may be passed here once its owner has granted the mint's compute subject via
+   * `allow_token_account_subjects` (host `allow_subjects` signed as the token-account PDA).
    */
   amountValue: Address<TAccountAmountValue>;
   zamaEventAuthority: Address<TAccountZamaEventAuthority>;
@@ -611,7 +621,8 @@ export type ParsedConfidentialTransferFromValueInstruction<
      * The existing encrypted amount to spend: a computed or received `euint64` handle. Read-only
      * persistent operand — never replaced, never consumed. Its address is the canonical PDA of its
      * own `(domain, account, label)` fields, so an encrypted value account from any app
-     * may be passed here once its owner has granted the mint's compute subject via `allow_subjects`.
+     * may be passed here once its owner has granted the mint's compute subject via
+     * `allow_token_account_subjects` (host `allow_subjects` signed as the token-account PDA).
      */
     amountValue: TAccountMetas[9];
     zamaEventAuthority: TAccountMetas[10];

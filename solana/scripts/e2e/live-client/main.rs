@@ -546,11 +546,24 @@ fn allow_for_decryption(
     host_config: Pubkey,
     encrypted_value: Pubkey,
 ) -> Result<(), Box<dyn std::error::Error>> {
+    let encrypted_value_account = fetch_encrypted_value(host, encrypted_value)?;
+    // Host allow_subjects / remove_subject require signer == EncryptedValue.account
+    // (fhevm-internal#1862 #13). Host-demo values bind `account` to the payer wallet;
+    // token-scoped values must go through confidential-token's PDA-signed CPI wrappers.
+    let account = encrypted_value_account.account;
+    if account != payer.pubkey() {
+        return Err(format!(
+            "allow_subjects authority must be EncryptedValue.account ({account}); \
+             payer is {}. For token-scoped values use allow_token_account_subjects.",
+            payer.pubkey()
+        )
+        .into());
+    }
     let grant_sig = host
         .request()
         .accounts(zama_host::accounts::AllowEncryptedValueSubjects {
             payer: payer.pubkey(),
-            authority: payer.pubkey(),
+            authority: account,
             encrypted_value,
             host_config,
             deny_subject_record: None,
@@ -562,12 +575,7 @@ fn allow_for_decryption(
         .send()?;
     println!("OK allow_subjects (idempotent membership): {grant_sig}");
 
-    let (handle, _) = existing_value_account_state(host, encrypted_value)?.ok_or_else(|| {
-        std::io::Error::new(
-            std::io::ErrorKind::NotFound,
-            "encrypted value account missing before make_handle_public",
-        )
-    })?;
+    let handle = encrypted_value_account.current_handle;
     let public_sig = host
         .request()
         .accounts(zama_host::accounts::MakeEncryptedValueHandlePublic {
@@ -1233,8 +1241,10 @@ fn fhe_execute_verified_input_add(
 /// Consume step 1: seal a token amount's current handle publicly decryptable by calling the host
 /// `make_handle_public` instruction directly (fhevm-internal#1704 / DD-040). The DisclosureRequest
 /// witness is gone: the sealed public-decrypt leaf IS the request, there is no per-request PDA, no
-/// KMS-context pin, and no expiry. The caller is re-added idempotently first so it is a currently
-/// allowed subject (make_handle_public requires that). Inputs via env: TS_ACL, TS_HANDLE.
+/// KMS-context pin, and no expiry. `make_handle_public` still requires the caller to be a current
+/// subject; subject-list mutation is `EncryptedValue.account`-gated (fhevm-internal#1862 #13), so
+/// this path no longer re-grants via host `allow_subjects` (use `allow_token_account_subjects` when
+/// membership must change). Inputs via env: TS_ACL, TS_HANDLE.
 fn consume_seal(
     host: &Program<Rc<Keypair>>,
     _token: &Program<Rc<Keypair>>,
@@ -1246,21 +1256,14 @@ fn consume_seal(
         .try_into()
         .expect("TS_HANDLE");
 
-    let grant_sig = host
-        .request()
-        .accounts(zama_host::accounts::AllowEncryptedValueSubjects {
-            payer: payer.pubkey(),
-            authority: payer.pubkey(),
-            encrypted_value: ts_acl,
-            host_config,
-            deny_subject_record: None,
-            system_program: system_program::ID,
-        })
-        .args(zama_host::instruction::AllowSubjects {
-            subjects: vec![payer.pubkey()],
-        })
-        .send()?;
-    println!("OK allow_subjects (idempotent membership): {grant_sig}");
+    let encrypted_value_account = fetch_encrypted_value(host, ts_acl)?;
+    if !encrypted_value_account.has_subject(payer.pubkey()) {
+        return Err(format!(
+            "payer {} is not a subject on {ts_acl}; grant via allow_token_account_subjects first              (host allow_subjects requires EncryptedValue.account signer)",
+            payer.pubkey()
+        )
+        .into());
+    }
 
     let sig2 = host
         .request()
@@ -1274,7 +1277,7 @@ fn consume_seal(
         })
         .args(zama_host::instruction::MakeHandlePublic { handle })
         .send()?;
-    println!("OK make_handle_public: {sig2}  (handle released for public decrypt)");
+    println!("OK make_handle_public: {sig2}  (ciphertext released for public decrypt)");
     Ok(())
 }
 
@@ -1494,7 +1497,7 @@ fn initialize_token_account_if_missing(
             event_authority,
             program: confidential_token::ID,
         })
-        .args(confidential_token::instruction::InitializeTokenAccount { initial_balance: 0 })
+        .args(confidential_token::instruction::InitializeTokenAccount {})
         .send()?;
     println!("OK initialize_token_account: {signature}");
     Ok((token_account, balance_value))
@@ -1632,7 +1635,7 @@ fn consume_burn(
 /// certified cleartext equals the claimed amount, consults the deny-list at payout, writes the
 /// permanent per-handle replay marker, and releases the cleartext amount of underlying USDC to the
 /// owner. No request witness (fhevm-internal#1763). Inputs via env: MINT, UNDERLYING_MINT,
-/// BURNED_ACL, BURNED_HANDLE, CLEARTEXT, KMS_SIG, EXTRA, PROOF (borsh MmrInclusionProof for the
+/// BURNED_ACL, BURN_ID, BURNED_HANDLE, CLEARTEXT, KMS_SIG, EXTRA, PROOF (borsh MmrInclusionProof for the
 /// burned handle's public-decrypt leaf), optional KMS_CTX_ID (default 1).
 fn consume_redeem(
     token: &Program<Rc<Keypair>>,
@@ -1672,10 +1675,10 @@ fn consume_redeem(
         &[owner.as_ref(), spl_token_id.as_ref(), underlying.as_ref()],
         &ata_prog,
     );
-    let (redemption_record, _) = Pubkey::find_program_address(
-        &[b"burn-redemption", mint.as_ref(), burned_handle.as_ref()],
-        &confidential_token::ID,
-    );
+    let burn_id: [u8; 32] = hexdec(&std::env::var("BURN_ID")?)
+        .try_into()
+        .expect("BURN_ID");
+    let (pending_burn, _) = confidential_token::pending_burn_address(mint, token_account, burn_id);
     let (kms_context, _) = Pubkey::find_program_address(
         &[zama_host::KMS_CONTEXT_SEED, &ctx_id.to_le_bytes()],
         &zama_host::ID,
@@ -1700,7 +1703,7 @@ fn consume_redeem(
             destination_usdc,
             vault_authority,
             burned_amount_value: burned_acl,
-            redemption_record,
+            pending_burn,
             host_config,
             kms_context,
             deny_subject_record,
@@ -1711,6 +1714,7 @@ fn consume_redeem(
             program: confidential_token::ID,
         })
         .args(confidential_token::instruction::RedeemBurnedAmount {
+            burn_id,
             burned_handle,
             cleartext_amount: cleartext,
             signatures: vec![kms_sig],

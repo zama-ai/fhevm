@@ -174,8 +174,8 @@ fn token_idl_removed_operator_surface_and_splits_payer_from_owner() {
             .any(|name| name == "redeem_burned_amount"),
         "token IDL must expose the thin `redeem_burned_amount` consumer"
     );
-    // The BurnRedemptionRequest witness account is gone; the permanent per-handle replay marker
-    // remains as the sole persistent token redemption state.
+    // The BurnRedemptionRequest witness account is gone; PendingBurn is the sole persistent
+    // token redemption lane state (open-at-burn, close-at-claim/recover).
     assert!(
         !names(&idl, "accounts")
             .iter()
@@ -186,10 +186,19 @@ fn token_idl_removed_operator_surface_and_splits_payer_from_owner() {
         "BurnRedemptionRequest account must be removed from the token IDL"
     );
     assert!(
+        !names(&idl, "accounts")
+            .iter()
+            .any(|name| name == "BurnRedemption")
+            && !names(&idl, "types")
+                .iter()
+                .any(|name| name == "BurnRedemption"),
+        "BurnRedemption replay marker must be removed from the token IDL"
+    );
+    assert!(
         names(&idl, "accounts")
             .iter()
-            .any(|name| name == "BurnRedemption"),
-        "token IDL must retain the permanent BurnRedemption replay marker"
+            .any(|name| name == "PendingBurn"),
+        "token IDL must expose the PendingBurn lane account"
     );
 
     let source = format!("{TOKEN_LIB}\n{TOKEN_COMMON}");
@@ -273,14 +282,14 @@ fn token_redeem_consumes_stateless_verifier_with_value_account_and_deny_binding(
     // The BurnRedemptionRequest witness lifecycle was dissolved (fhevm-internal#1763): redeem is now
     // a single thin consumer that binds the burned encrypted value account (`assert_burned_amount_value_account`), CPIs the
     // stateless host `verify_public_decrypt` against the live KMS context the cert names, asserts the certified
-    // cleartext equals the claimed amount, consults the deny-list explicitly at payout, and writes
-    // the permanent per-handle replay marker.
+    // cleartext equals the claimed amount, consults the deny-list explicitly at payout, and closes the
+    // per-`burn_id` `PendingBurn` lane opened at burn time.
     for required in [
         "assert_burned_amount_value_account",
         "fhe::verify_public_decrypt",
         "assert_redeem_subject_not_denied",
         "kms_decrypted_result_bytes(cleartext_amount)",
-        "b\"burn-redemption\"",
+        "b\"pending-burn\"",
         "transfer_checked",
     ] {
         assert!(
@@ -409,7 +418,7 @@ fn abi_golden_drift_checks_cover_host_token_listener_and_kms_layouts() {
         .get("schemas")
         .and_then(Value::as_array)
         .expect("ABI golden schemas should be an array");
-    for required in ["KmsContext", "BurnRedemption"] {
+    for required in ["KmsContext", "PendingBurn"] {
         assert!(
             schemas
                 .iter()
@@ -433,6 +442,8 @@ fn abi_golden_drift_checks_cover_host_token_listener_and_kms_layouts() {
         // Dissolved by fhevm-internal#1763 (BurnRedemptionRequest lifecycle -> thin host verifier).
         "BurnRedemptionRequest",
         "BurnRedemptionRequestedEvent",
+        // Replaced by PendingBurn lanes (fhevm-internal#1862).
+        "BurnRedemption",
     ] {
         assert!(
             !schemas

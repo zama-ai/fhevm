@@ -29,7 +29,9 @@ pub enum ConfidentialTokenError {
     /// Retired (zero references). Kept so Anchor error ordinals stay stable.
     #[msg("ACL nonce overflow")]
     AclNonceOverflow,
-    /// Token account initialization cannot mint unbacked confidential supply.
+    /// Retired (zero references): token accounts now always initialize with a hardcoded
+    /// zero balance, so the nonzero-rejection check no longer exists to trip. Kept so Anchor
+    /// error ordinals stay stable.
     #[msg("nonzero initial confidential balances are unsupported")]
     NonZeroInitialBalanceUnsupported,
     /// Underlying SPL mint did not match the confidential mint metadata.
@@ -137,4 +139,19 @@ pub enum ConfidentialTokenError {
     /// The certified `uint256` cleartext does not fit the token's euint64 width (nonzero high bytes).
     #[msg("certified cleartext exceeds euint64 width")]
     CleartextExceedsEuint64,
+    /// The client-supplied `burn_id` is the all-zero sentinel (reserved / invalid).
+    #[msg("burn_id must be nonzero")]
+    InvalidBurnId,
+    /// The supplied pending-burn account is not the canonical PDA for `(mint, token_account, burn_id)`.
+    #[msg("pending burn address does not match")]
+    PendingBurnAddressMismatch,
+    /// The pending-burn PDA is already initialized (or is not a fresh system-owned empty account).
+    #[msg("pending burn is already initialized")]
+    PendingBurnAlreadyInitialized,
+    /// Recover requires the burned handle to still be the shared `burned_amount` EV's `current_handle`.
+    #[msg("pending burn handle is not the burned amount current handle")]
+    PendingBurnHandleNotCurrent,
+    /// Pending-burn account fields do not match the redeem/recover accounts.
+    #[msg("pending burn fields do not match")]
+    PendingBurnMismatch,
 }

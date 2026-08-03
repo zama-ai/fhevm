@@ -8,13 +8,13 @@
 //! `transfer_success` and `debit_candidate` labels were deleted once DD-019 stopped creating the
 //! scratch PDAs they named.
 
-pub mod burn_redemption;
 pub mod confidential_mint;
 pub mod confidential_token_account;
+pub mod pending_burn;
 
-pub use burn_redemption::*;
 pub use confidential_mint::*;
 pub use confidential_token_account::*;
+pub use pending_burn::*;
 
 pub use crate::constants::*;
 
@@ -56,10 +56,22 @@ pub fn vault_token_account_address(mint: Pubkey, underlying_mint: Pubkey) -> Pub
     )
 }
 
-/// Returns the replay-marker PDA for a redeemed burned amount handle.
-pub fn burn_redemption_address(mint: Pubkey, burned_handle: [u8; 32]) -> (Pubkey, u8) {
+/// Returns the pending-burn lane PDA for one client-supplied `burn_id` on a token account.
+///
+/// `burn_id` must be known before the burn transaction so the PDA can appear in account metas
+/// before `fhe_execute` derives `burned_handle`.
+pub fn pending_burn_address(
+    mint: Pubkey,
+    token_account: Pubkey,
+    burn_id: [u8; 32],
+) -> (Pubkey, u8) {
     Pubkey::find_program_address(
-        &[b"burn-redemption", mint.as_ref(), burned_handle.as_ref()],
+        &[
+            b"pending-burn",
+            mint.as_ref(),
+            token_account.as_ref(),
+            burn_id.as_ref(),
+        ],
         &crate::ID,
     )
 }
@@ -124,7 +136,7 @@ mod space_invariants {
     /// of corrupting account layouts in production.
     #[test]
     fn manual_space_matches_derived_init_space() {
-        assert_eq!(BurnRedemption::SPACE, BurnRedemption::INIT_SPACE);
+        assert_eq!(PendingBurn::SPACE, PendingBurn::INIT_SPACE);
         assert_eq!(ConfidentialMint::SPACE, ConfidentialMint::INIT_SPACE);
         assert_eq!(
             ConfidentialTokenAccount::SPACE,

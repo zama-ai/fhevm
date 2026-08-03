@@ -86,7 +86,7 @@ describe('vault provisioning builders', () => {
     expect(Array.from(decoded.discriminator)).toEqual(Array.from(INITIALIZE_MINT_DISCRIMINATOR));
   });
 
-  it('initialize_token_account: right program + discriminator + initial balance', async () => {
+  it('initialize_token_account: right program + discriminator (always zero balance)', async () => {
     const payer = signer(addr(1));
     const owner = addr(2);
     const instruction = await buildInitializeTokenAccountInstruction({
@@ -94,14 +94,12 @@ describe('vault provisioning builders', () => {
       owner,
       mint: addr(3),
       hostConfig: HOST_CONFIG,
-      initialBalance: 0,
     });
     expect(instruction.programAddress).toBe(CONFIDENTIAL_TOKEN_PROGRAM_ADDRESS);
     expect(instruction.accounts?.[0]?.address).toBe(payer.address);
     expect(instruction.accounts?.[1]?.address).toBe(owner);
     const decoded = getInitializeTokenAccountInstructionDataDecoder().decode(instruction.data!);
     expect(Array.from(decoded.discriminator)).toEqual(Array.from(INITIALIZE_TOKEN_ACCOUNT_DISCRIMINATOR));
-    expect(decoded.initialBalance).toBe(0n);
   });
 
   it('wrap_usdc: public amount, no proof; encodes the u64 amount', async () => {
@@ -140,12 +138,12 @@ describe('vault provisioning builders', () => {
       recentSlot: 100n,
       authorityFundingLamports: 100_000_000n,
     });
-    // open_batch + create_lookup_table + the wire-limit-chunked extends (32 addresses -> 20 + 12),
+    // open_batch + create_lookup_table + the wire-limit-chunked extends (23 addresses -> 20 + 3),
     // in submission order.
     expect(result.instructions).toHaveLength(4);
     // The first (open_batch) targets the batcher program; the ALT pair targets the ALT program.
     expect(result.instructions[0]!.programAddress).toBe(CONFIDENTIAL_BATCHER_PROGRAM_ADDRESS);
-    // Every settle-table entry is derived (no fee payer, no post-dispatch redemption record).
-    expect(result.lookupTableAddresses.length).toBeGreaterThan(0);
+    // Every settle-table entry is derived (no fee payer); pending_burn is included (`burn_id = batch.key()`).
+    expect(result.lookupTableAddresses.length).toBe(23);
   });
 });

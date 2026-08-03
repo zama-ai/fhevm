@@ -28,6 +28,11 @@ pub struct InitializeMint<'info> {
     /// ZamaHost program used to create the initial total-supply handle.
     pub zama_program: Program<'info, ZamaHost>,
     /// ZamaHost config used for handle derivation.
+    #[account(
+        seeds = [zama_host::HOST_CONFIG_SEED],
+        seeds::program = zama_host::ID,
+        bump = host_config.bump,
+    )]
     pub host_config: Box<Account<'info, zama_host::HostConfig>>,
     /// System program used for account creation.
     pub system_program: Program<'info, System>,

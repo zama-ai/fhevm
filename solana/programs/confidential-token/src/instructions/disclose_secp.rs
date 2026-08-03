@@ -20,11 +20,17 @@
 //! Public disclosure is idempotent information release: once a handle's cleartext is KMS-certified
 //! and its public-decrypt leaf is sealed, the value is public forever, so re-running this instruction
 //! only re-emits the same event with the same cleartext — it reveals nothing new and moves no funds.
-//! There is therefore no replay marker by design (contrast `redeem_burned_amount`, which guards
-//! a vault transfer with a per-handle `burn-redemption` marker PDA). An app that needs consume-once
-//! semantics (e.g. gating a one-time state transition on the reveal) tracks a settled flag in its own
-//! account, exactly as an EVM app tracks its decryption callback. The rule this instruction is
-//! applying is stated once, at `zama_host::instructions::verify_public_decrypt` (INVARIANTS #24).
+//! There is therefore no replay marker by design (contrast `redeem_burned_amount`, which closes a
+//! per-burn `PendingBurn` lane). An app that needs consume-once semantics (e.g. gating a one-time
+//! state transition on the reveal) tracks a settled flag in its own account, exactly as an EVM app
+//! tracks its decryption callback. The rule this instruction is applying is stated once, at
+//! `zama_host::instructions::verify_public_decrypt` (INVARIANTS #24).
+//!
+//! ## Indexer note (fhevm-internal#1862 #14)
+//!
+//! Trust `HandleDisclosedEvent` only together with the domain-bound `encrypted_value` account meta
+//! (this instruction requires `encrypted_value.domain == mint`). Label-scoped request PDAs are gone
+//! (DD-040); the mint-domain bind is the remaining binding surface.
 
 use super::*;
 

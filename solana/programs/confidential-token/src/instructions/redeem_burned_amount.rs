@@ -12,12 +12,13 @@
 //!
 //! ## Act-once IS enforced here
 //!
-//! Unlike disclosure, redemption moves real value, so it cannot be idempotent: the per-handle
-//! write-once, never-closed `burn-redemption` marker PDA is the single persistent "paid out" bit. A
-//! second redeem of the same burned handle fails when Anchor tries to `init` the already-initialized
-//! marker. This is the reference shape for the act-once rule stated at
-//! `zama_host::instructions::verify_public_decrypt` (INVARIANTS #24); the marker is never closed,
-//! because closing it would make the payout replayable.
+//! Unlike disclosure, redemption moves real value, so it cannot be idempotent. Act-once is
+//! **open-at-burn + close-at-claim/recover**: each burn opens a per-`burn_id` `PendingBurn` lane;
+//! claim (`redeem_burned_amount`) closes that lane after paying USDC (rent to the owner). A second
+//! claim of the same burn fails because the lane account is gone (or was never opened for that
+//! `burn_id`). Recover (`recover_pending_burn`) is the alternate close path while the burned handle
+//! is still tip/`current_handle`. This is the reference shape for the act-once rule stated at
+//! `zama_host::instructions::verify_public_decrypt` (INVARIANTS #24).
 //!
 //! ## Deny check at payout
 //!
@@ -30,10 +31,10 @@ use super::*;
 
 /// Accounts for redeeming a KMS-certified burned amount via the stateless host verifier.
 #[derive(Accounts)]
-#[instruction(burned_handle: [u8; 32], cleartext_amount: u64)]
+#[instruction(burn_id: [u8; 32], burned_handle: [u8; 32], cleartext_amount: u64)]
 #[event_cpi]
 pub struct RedeemBurnedAmount<'info> {
-    /// Token owner, redemption recipient, and payer for the replay marker.
+    /// Token owner, redemption recipient, and rent destination for the closed pending-burn lane.
     #[account(mut)]
     pub owner: Signer<'info>,
     /// Confidential mint whose vault backs the redeemed burned amount.
@@ -64,16 +65,19 @@ pub struct RedeemBurnedAmount<'info> {
     /// account/owner by `assert_burned_amount_value_account`; its canonical PDA, layout, host ownership,
     /// and the exact-handle MMR inclusion proof are validated by the `verify_public_decrypt` CPI.
     pub burned_amount_value: Box<Account<'info, zama_host::EncryptedValue>>,
-    /// Replay marker for this burned handle: write-once, never closed, the sole persistent "paid out"
-    /// bit for `(mint, burned_handle)`.
+    /// Pending-burn lane opened at burn time for this `burn_id`; closed on successful claim.
     #[account(
-        init,
-        payer = owner,
-        space = 8 + BurnRedemption::SPACE,
-        seeds = [b"burn-redemption", mint.key().as_ref(), burned_handle.as_ref()],
-        bump
+        mut,
+        close = owner,
+        seeds = [
+            b"pending-burn",
+            mint.key().as_ref(),
+            token_account.key().as_ref(),
+            burn_id.as_ref()
+        ],
+        bump = pending_burn.bump,
     )]
-    pub redemption_record: Account<'info, BurnRedemption>,
+    pub pending_burn: Account<'info, PendingBurn>,
     /// Host config carrying the current KMS context id and gateway EIP-712 domain.
     #[account(
         seeds = [zama_host::HOST_CONFIG_SEED],
@@ -92,7 +96,7 @@ pub struct RedeemBurnedAmount<'info> {
     pub zama_program: Program<'info, ZamaHost>,
     /// SPL token program.
     pub token_program: Program<'info, Token>,
-    /// System program used for the replay marker.
+    /// System program (kept for CPI/client compatibility; claim closes rather than inits).
     pub system_program: Program<'info, System>,
 }
 
@@ -100,6 +104,7 @@ pub struct RedeemBurnedAmount<'info> {
 /// verifier certifies the burned handle's cleartext against the live KMS context the cert names.
 pub fn redeem_burned_amount(
     ctx: Context<RedeemBurnedAmount>,
+    burn_id: [u8; 32],
     burned_handle: [u8; 32],
     cleartext_amount: u64,
     signatures: Vec<[u8; 65]>,
@@ -136,6 +141,36 @@ pub fn redeem_burned_amount(
         mint_key,
         ctx.accounts.owner.key(),
     )?;
+
+    let pending = &ctx.accounts.pending_burn;
+    require_keys_eq!(
+        pending.owner,
+        ctx.accounts.owner.key(),
+        ConfidentialTokenError::PendingBurnMismatch
+    );
+    require_keys_eq!(
+        pending.mint,
+        mint_key,
+        ConfidentialTokenError::PendingBurnMismatch
+    );
+    require_keys_eq!(
+        pending.token_account,
+        token_account_key,
+        ConfidentialTokenError::PendingBurnMismatch
+    );
+    require!(
+        pending.burn_id == burn_id,
+        ConfidentialTokenError::PendingBurnMismatch
+    );
+    require!(
+        pending.burned_handle == burned_handle,
+        ConfidentialTokenError::PendingBurnMismatch
+    );
+    require_keys_eq!(
+        pending.burned_encrypted_value,
+        ctx.accounts.burned_amount_value.key(),
+        ConfidentialTokenError::PendingBurnMismatch
+    );
 
     // ValueAccount binding: the burned handle need not be current. The burn already made it publicly
     // decryptable (DD-036 / Vector 2), so a historical handle replaced by a later burn stays
@@ -194,20 +229,14 @@ pub fn redeem_burned_amount(
         ctx.accounts.mint.decimals,
     )?;
 
-    let redemption = &mut ctx.accounts.redemption_record;
-    redemption.mint = mint_key;
-    redemption.owner = ctx.accounts.owner.key();
-    redemption.token_account = token_account_key;
-    redemption.burned_handle = burned_handle;
-    redemption.burned_encrypted_value = ctx.accounts.burned_amount_value.key();
-    redemption.cleartext_amount = cleartext_amount;
-    redemption.bump = ctx.bumps.redemption_record;
+    // Lane closes via Anchor `close = owner` — no redemption fields to write.
 
     emit_cpi!(BurnRedeemedEvent {
         version: APP_EVENT_VERSION,
         mint: mint_key,
         owner: ctx.accounts.owner.key(),
         token_account: token_account_key,
+        burn_id,
         burned_handle,
         burned_encrypted_value: ctx.accounts.burned_amount_value.key(),
         destination_usdc: ctx.accounts.destination_usdc.key(),

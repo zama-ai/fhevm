@@ -617,6 +617,11 @@ impl BatchKeys {
         }
     }
 
+    /// Pending-burn lane for this batch's dispatch burn (`burn_id = batch.key()`).
+    fn pending_burn(&self, join_mint: Pubkey) -> Pubkey {
+        token::pending_burn_address(join_mint, self.join_token_account, self.batch.to_bytes()).0
+    }
+
     fn pending_join_value(&self, user: Pubkey) -> Pubkey {
         batcher::batcher_encrypted_value_address(
             self.batch,
@@ -1150,6 +1155,7 @@ fn dispatch_ix(fixture: &BatcherFixture, keys: &BatchKeys) -> Instruction {
             batch_balance_value: keys.join_balance_value,
             total_supply_value: fixture.join_mint().total_supply_value,
             batch_burned_amount_value: keys.burned_amount_value,
+            pending_burn: keys.pending_burn(fixture.join_mint().mint),
             zama_event_authority: event_authority(host::id()),
             zama_program: host::id(),
             host_config: fixture.host_config,
@@ -1168,7 +1174,7 @@ fn settle_ix(
     signatures: Vec<[u8; 65]>,
     extra_data: Vec<u8>,
     proof: host::instructions::MmrInclusionProof,
-    redemption_record: Pubkey,
+    pending_burn: Pubkey,
 ) -> Instruction {
     anchor_ix(
         batcher::id(),
@@ -1184,7 +1190,7 @@ fn settle_ix(
             join_mint_vault_authority: fixture.join_mint().vault_authority,
             batch_join_underlying: keys.join_underlying,
             batch_burned_amount_value: keys.burned_amount_value,
-            redemption_record,
+            pending_burn,
             host_config: fixture.host_config,
             kms_context: fixture.kms_context,
             vault: fixture.vault,
@@ -1334,7 +1340,13 @@ fn run_dispatch(
     keys: &BatchKeys,
     ledger: &mut CleartextLedger,
 ) -> [u8; 32] {
-    ensure_system_accounts(context, &[keys.burned_amount_value]);
+    ensure_system_accounts(
+        context,
+        &[
+            keys.burned_amount_value,
+            keys.pending_burn(fixture.join_mint().mint),
+        ],
+    );
     let ix = dispatch_ix(fixture, keys);
     let result = context.process_and_validate_instruction(&ix, &[Check::success()]);
     assert_eq!(ledger.evaluate_fhe_cpis(context, &result), 1);
@@ -1355,9 +1367,7 @@ fn run_settle(
 ) -> u64 {
     let (signatures, extra_data) = kms_public_decrypt_cert(burned_handle, total);
     let proof = single_burn_public_decrypt_proof(keys.burned_amount_value, burned_handle);
-    let redemption_record =
-        token::burn_redemption_address(fixture.join_mint().mint, burned_handle).0;
-    ensure_system_accounts(context, &[redemption_record]);
+    let pending_burn = keys.pending_burn(fixture.join_mint().mint);
     let ix = settle_ix(
         fixture,
         keys,
@@ -1365,7 +1375,7 @@ fn run_settle(
         signatures,
         extra_data,
         proof,
-        redemption_record,
+        pending_burn,
     );
     let result = context.process_and_validate_instruction(&ix, &[Check::success()]);
     if total > 0 {
@@ -2333,7 +2343,13 @@ fn mollusk_dispatch_before_min_batch_age_rejects() {
     let context = mollusk().with_context(fixture.accounts(0, 0));
     // Batch opens at slot 100 and must age 1_000 slots.
     let keys = initialize_and_open_first_batch(&context, &fixture, 1_000);
-    ensure_system_accounts(&context, &[keys.burned_amount_value]);
+    ensure_system_accounts(
+        &context,
+        &[
+            keys.burned_amount_value,
+            keys.pending_burn(fixture.join_mint().mint),
+        ],
+    );
     context.process_and_validate_instruction(
         &dispatch_ix(&fixture, &keys),
         &[batcher_error(batcher::BatcherError::BatchTooYoung)],
@@ -2556,7 +2572,13 @@ fn snapshot_lifecycle(
     ledger.evaluate_fhe_cpis(context, &join_result);
     assert_batcher_cost(&format!("{prefix}join"), &join, &join_result);
 
-    ensure_system_accounts(context, &[keys.burned_amount_value]);
+    ensure_system_accounts(
+        context,
+        &[
+            keys.burned_amount_value,
+            keys.pending_burn(fixture.join_mint().mint),
+        ],
+    );
     let dispatch = dispatch_ix(fixture, &keys);
     let dispatch_result = context.process_and_validate_instruction(&dispatch, &[Check::success()]);
     ledger.evaluate_fhe_cpis(context, &dispatch_result);
@@ -2652,9 +2674,7 @@ fn mollusk_dust_total_settle_reverts_and_batch_stays_dispatched() {
 
     let (signatures, extra_data) = kms_public_decrypt_cert(burned_handle, 100);
     let proof = single_burn_public_decrypt_proof(keys.burned_amount_value, burned_handle);
-    let redemption_record =
-        token::burn_redemption_address(fixture.join_mint().mint, burned_handle).0;
-    ensure_system_accounts(&context, &[redemption_record]);
+    let pending_burn = keys.pending_burn(fixture.join_mint().mint);
     let ix = settle_ix(
         &fixture,
         &keys,
@@ -2662,7 +2682,7 @@ fn mollusk_dust_total_settle_reverts_and_batch_stays_dispatched() {
         signatures,
         extra_data,
         proof,
-        redemption_record,
+        pending_burn,
     );
     context.process_and_validate_instruction(
         &ix,
@@ -2698,9 +2718,7 @@ fn mollusk_dust_total_settle_reverts_and_batch_stays_dispatched() {
 /// out-of-domain bound where even v0+ALT would need a split settle.
 fn assert_settle_wire_sizes(fixture: &BatcherFixture) {
     let keys = BatchKeys::new(fixture, 0);
-    let burned_handle = handle_for_chain(0x92, BALANCE_FHE_TYPE);
-    let redemption_record =
-        token::burn_redemption_address(fixture.join_mint().mint, burned_handle).0;
+    let pending_burn = keys.pending_burn(fixture.join_mint().mint);
 
     let settle_with = |threshold: usize, proof_depth: usize| -> Instruction {
         settle_ix(
@@ -2713,7 +2731,7 @@ fn assert_settle_wire_sizes(fixture: &BatcherFixture) {
                 leaf_index: 0,
                 siblings: vec![[0u8; 32]; proof_depth],
             },
-            redemption_record,
+            pending_burn,
         )
     };
 

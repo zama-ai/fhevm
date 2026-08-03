@@ -12,6 +12,7 @@ import {
   fixEncoderSize,
   getBytesDecoder,
   getBytesEncoder,
+  getProgramDerivedAddress,
   getStructDecoder,
   getStructEncoder,
   getU64Decoder,
@@ -183,7 +184,7 @@ export type WrapUsdcAsyncInput<
   /** ZamaHost program used for FHE operations. */
   zamaProgram?: Address<TAccountZamaProgram>;
   /** ZamaHost config used for handle derivation. */
-  hostConfig: Address<TAccountHostConfig>;
+  hostConfig?: Address<TAccountHostConfig>;
   /** SPL token program. */
   tokenProgram?: Address<TAccountTokenProgram>;
   /** System program used for ACL account creation. */
@@ -336,6 +337,13 @@ export async function getWrapUsdcInstructionAsync<
   if (!accounts.zamaProgram.value) {
     accounts.zamaProgram.value =
       '6AtbvED1rfX68aCT1tYgU1aeu4kFksPDxZG9gtB1Fgtu' as Address<'6AtbvED1rfX68aCT1tYgU1aeu4kFksPDxZG9gtB1Fgtu'>;
+  }
+  if (!accounts.hostConfig.value) {
+    accounts.hostConfig.value = await getProgramDerivedAddress({
+      programAddress:
+        '6AtbvED1rfX68aCT1tYgU1aeu4kFksPDxZG9gtB1Fgtu' as Address<'6AtbvED1rfX68aCT1tYgU1aeu4kFksPDxZG9gtB1Fgtu'>,
+      seeds: [getBytesEncoder().encode(new Uint8Array([104, 111, 115, 116, 45, 99, 111, 110, 102, 105, 103]))],
+    });
   }
   if (!accounts.tokenProgram.value) {
     accounts.tokenProgram.value =

@@ -55,11 +55,13 @@ pub enum AclError {
 
 /// Current authorization state and compact history for one encrypted value account.
 ///
-/// Authorization is deliberately flat: `subjects` is binary membership with no
-/// roles, and any current subject may allow further subjects, remove others
-/// (not the last), or make the current handle public. Callers that need
-/// owner/spender-style distinctions must enforce them in the app program
-/// before granting (see INVARIANTS.md #11).
+/// Authorization membership is flat (`subjects` is binary membership with no
+/// roles). Subject-list mutation (`allow_subjects` / `remove_subject`) requires
+/// the signer to equal `EncryptedValue.account` — the same app-account gate as
+/// persistent create/update. Decrypt subjects are not co-admins; apps that store
+/// a PDA in `account` rotate auditors by CPI + `invoke_signed` as that PDA
+/// (confidential-token Wave 1: token-account wrappers only; total-supply follow-up).
+/// `make_handle_public` remains subject-gated (see INVARIANTS.md #11 / #11b).
 ///
 /// One account per encrypted value, reused across every handle update. The on-chain
 /// account is `realloc`-grown and never shrunk, so its byte size tracks the

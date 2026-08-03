@@ -704,29 +704,31 @@ fn mollusk_fhe_execute_fails_closed_without_previous_bank_hash() {
 
 #[test]
 fn mollusk_allow_subjects_adds_new_subject_and_is_idempotent() {
-    let authority = Pubkey::new_unique();
-    let (host_config, host_config_account) = host_config_account(authority);
+    let payer = Pubkey::new_unique();
+    let account = Pubkey::new_unique();
+    let (host_config, host_config_account) = host_config_account(payer);
     let owner = Pubkey::new_unique();
     let new_subject = Pubkey::new_unique();
     let (address, value) = new_encrypted_value_account(
         Pubkey::new_unique(),
-        authority,
+        account,
         label("balance"),
         handle_for_chain(2, 5),
         &[owner],
     );
 
+    // Membership is gated on EncryptedValue.account, not on current subjects.
     let ix = allow_subjects_ix(
-        authority,
-        owner,
+        payer,
+        account,
         address,
         host_config,
         vec![new_subject, owner],
     );
     let accounts = vec![
         (system_program::ID, system_program_account()),
-        (authority, funded_system_account()),
-        (owner, funded_system_account()),
+        (payer, funded_system_account()),
+        (account, funded_system_account()),
         (address, encrypted_value_account(&value)),
         (host_config, host_config_account),
     ];
@@ -740,35 +742,68 @@ fn mollusk_allow_subjects_adds_new_subject_and_is_idempotent() {
 
 #[test]
 fn mollusk_allow_subjects_rejects_unallowed_authority() {
-    let authority = Pubkey::new_unique();
-    let (host_config, host_config_account) = host_config_account(authority);
-    let outsider = Pubkey::new_unique();
-    let allowed = Pubkey::new_unique();
+    let payer = Pubkey::new_unique();
+    let account = Pubkey::new_unique();
+    let (host_config, host_config_account) = host_config_account(payer);
+    let subject = Pubkey::new_unique();
     let (address, value) = new_encrypted_value_account(
         Pubkey::new_unique(),
-        authority,
+        account,
         label("balance"),
         handle_for_chain(2, 5),
-        &[allowed],
+        &[subject],
     );
+    // A current subject is not a valid allow_subjects authority — only EncryptedValue.account is.
     let ix = allow_subjects_ix(
-        authority,
-        outsider,
+        payer,
+        subject,
         address,
         host_config,
         vec![Pubkey::new_unique()],
     );
     let accounts = vec![
         (system_program::ID, system_program_account()),
-        (authority, funded_system_account()),
-        (outsider, funded_system_account()),
+        (payer, funded_system_account()),
+        (subject, funded_system_account()),
         (address, encrypted_value_account(&value)),
         (host_config, host_config_account),
     ];
     mollusk().process_and_validate_instruction(
         &ix,
         &accounts,
-        &[custom_error(host::errors::ZamaHostError::SubjectNotAllowed)],
+        &[custom_error(
+            host::errors::ZamaHostError::EncryptedValueAccountAuthorityMismatch,
+        )],
+    );
+}
+
+#[test]
+fn mollusk_remove_subject_rejects_peer_subject_authority() {
+    let payer = Pubkey::new_unique();
+    let account = Pubkey::new_unique();
+    let (host_config, host_config_account) = host_config_account(payer);
+    let peer = Pubkey::new_unique();
+    let other = Pubkey::new_unique();
+    let (address, value) = new_encrypted_value_account(
+        Pubkey::new_unique(),
+        account,
+        label("balance"),
+        handle_for_chain(2, 5),
+        &[peer, other],
+    );
+    // A current subject cannot remove peers — only EncryptedValue.account may.
+    let ix = remove_subject_ix(peer, address, host_config, other);
+    let accounts = vec![
+        (peer, funded_system_account()),
+        (address, encrypted_value_account(&value)),
+        (host_config, host_config_account),
+    ];
+    mollusk().process_and_validate_instruction(
+        &ix,
+        &accounts,
+        &[custom_error(
+            host::errors::ZamaHostError::EncryptedValueAccountAuthorityMismatch,
+        )],
     );
 }
 
@@ -851,21 +886,23 @@ fn mollusk_allow_subjects_rejects_ninth_distinct_subject() {
 
 #[test]
 fn mollusk_remove_subject_removes_current_member_and_blocks_future_authority() {
-    let authority = Pubkey::new_unique();
-    let (host_config, host_config_account) = host_config_account(authority);
+    // remove_subject succeeds when EncryptedValue.account signs. A removed subject still
+    // cannot call allow_subjects afterward — allow is account-gated, not subject-gated.
+    let account = Pubkey::new_unique();
+    let (host_config, host_config_account) = host_config_account(account);
     let owner = Pubkey::new_unique();
     let removed = Pubkey::new_unique();
     let (address, value) = new_encrypted_value_account(
         Pubkey::new_unique(),
-        authority,
+        account,
         label("balance"),
         handle_for_chain(6, 5),
         &[owner, removed],
     );
 
-    let ix = remove_subject_ix(owner, address, host_config, removed);
+    let ix = remove_subject_ix(account, address, host_config, removed);
     let accounts = vec![
-        (owner, funded_system_account()),
+        (account, funded_system_account()),
         (address, encrypted_value_account(&value)),
         (host_config, host_config_account.clone()),
     ];
@@ -877,8 +914,9 @@ fn mollusk_remove_subject_removes_current_member_and_blocks_future_authority() {
     assert_eq!(updated.leaf_count, 0);
     assert!(updated.peaks.is_empty());
 
+    let payer = Pubkey::new_unique();
     let rejected = allow_subjects_ix(
-        authority,
+        payer,
         removed,
         address,
         host_config,
@@ -886,7 +924,7 @@ fn mollusk_remove_subject_removes_current_member_and_blocks_future_authority() {
     );
     let accounts = vec![
         (system_program::ID, system_program_account()),
-        (authority, funded_system_account()),
+        (payer, funded_system_account()),
         (removed, funded_system_account()),
         (address, encrypted_value_account(&updated)),
         (host_config, host_config_account),
@@ -894,26 +932,28 @@ fn mollusk_remove_subject_removes_current_member_and_blocks_future_authority() {
     mollusk().process_and_validate_instruction(
         &rejected,
         &accounts,
-        &[custom_error(host::errors::ZamaHostError::SubjectNotAllowed)],
+        &[custom_error(
+            host::errors::ZamaHostError::EncryptedValueAccountAuthorityMismatch,
+        )],
     );
 }
 
 #[test]
 fn mollusk_remove_subject_rejects_absent_subject() {
-    let authority = Pubkey::new_unique();
-    let (host_config, host_config_account) = host_config_account(authority);
+    let account = Pubkey::new_unique();
+    let (host_config, host_config_account) = host_config_account(account);
     let owner = Pubkey::new_unique();
     let other = Pubkey::new_unique();
     let (address, value) = new_encrypted_value_account(
         Pubkey::new_unique(),
-        authority,
+        account,
         label("balance"),
         handle_for_chain(6, 5),
         &[owner],
     );
-    let ix = remove_subject_ix(owner, address, host_config, other);
+    let ix = remove_subject_ix(account, address, host_config, other);
     let accounts = vec![
-        (owner, funded_system_account()),
+        (account, funded_system_account()),
         (address, encrypted_value_account(&value)),
         (host_config, host_config_account),
     ];
@@ -926,19 +966,19 @@ fn mollusk_remove_subject_rejects_absent_subject() {
 
 #[test]
 fn mollusk_remove_subject_rejects_last_subject() {
-    let authority = Pubkey::new_unique();
-    let (host_config, host_config_account) = host_config_account(authority);
+    let account = Pubkey::new_unique();
+    let (host_config, host_config_account) = host_config_account(account);
     let owner = Pubkey::new_unique();
     let (address, value) = new_encrypted_value_account(
         Pubkey::new_unique(),
-        authority,
+        account,
         label("balance"),
         handle_for_chain(6, 5),
         &[owner],
     );
-    let ix = remove_subject_ix(owner, address, host_config, owner);
+    let ix = remove_subject_ix(account, address, host_config, owner);
     let accounts = vec![
-        (owner, funded_system_account()),
+        (account, funded_system_account()),
         (address, encrypted_value_account(&value)),
         (host_config, host_config_account),
     ];
@@ -953,22 +993,22 @@ fn mollusk_remove_subject_rejects_last_subject() {
 
 #[test]
 fn mollusk_removed_subject_gets_no_historical_leaf_when_later_updated() {
-    let authority = Pubkey::new_unique();
-    let (host_config, host_config_account) = host_config_account(authority);
+    let account = Pubkey::new_unique();
+    let (host_config, host_config_account) = host_config_account(account);
     let owner = Pubkey::new_unique();
     let removed = Pubkey::new_unique();
     let handle0 = handle_for_chain(7, 5);
     let (address, value0) = new_encrypted_value_account(
         Pubkey::new_unique(),
-        authority,
+        account,
         label("balance"),
         handle0,
         &[owner, removed],
     );
 
-    let remove_ix = remove_subject_ix(owner, address, host_config, removed);
+    let remove_ix = remove_subject_ix(account, address, host_config, removed);
     let accounts0 = vec![
-        (owner, funded_system_account()),
+        (account, funded_system_account()),
         (address, encrypted_value_account(&value0)),
         (host_config, host_config_account.clone()),
     ];
@@ -978,7 +1018,7 @@ fn mollusk_removed_subject_gets_no_historical_leaf_when_later_updated() {
     assert_eq!(value_after_remove.subjects, vec![owner]);
 
     let updated = update_with_fhe_execute(
-        authority,
+        account,
         owner,
         host_config,
         host_config_account,
@@ -1034,21 +1074,21 @@ fn mollusk_removed_subject_gets_no_historical_leaf_when_later_updated() {
 
 #[test]
 fn mollusk_subject_retains_historical_access_sealed_before_removal() {
-    let authority = Pubkey::new_unique();
-    let (host_config, host_config_account) = host_config_account(authority);
+    let account = Pubkey::new_unique();
+    let (host_config, host_config_account) = host_config_account(account);
     let owner = Pubkey::new_unique();
     let removed = Pubkey::new_unique();
     let handle0 = handle_for_chain(9, 5);
     let (address, value0) = new_encrypted_value_account(
         Pubkey::new_unique(),
-        authority,
+        account,
         label("balance"),
         handle0,
         &[owner, removed],
     );
 
     let value1 = update_with_fhe_execute(
-        authority,
+        account,
         owner,
         host_config,
         host_config_account.clone(),
@@ -1058,9 +1098,9 @@ fn mollusk_subject_retains_historical_access_sealed_before_removal() {
     );
     assert_eq!(value1.leaf_count, 2);
 
-    let remove_ix = remove_subject_ix(owner, address, host_config, removed);
+    let remove_ix = remove_subject_ix(account, address, host_config, removed);
     let accounts1 = vec![
-        (owner, funded_system_account()),
+        (account, funded_system_account()),
         (address, encrypted_value_account(&value1)),
         (host_config, host_config_account),
     ];
@@ -2046,11 +2086,11 @@ fn mollusk_paused_state_blocks_acl_update_and_eval_output() {
         handle_for_chain(55, 5),
         &[owner],
     );
-    let allow_ix = allow_subjects_ix(authority, owner, allow_address, host_config, vec![other]);
+    let allow_ix =
+        allow_subjects_ix(authority, authority, allow_address, host_config, vec![other]);
     let accounts = vec![
         (system_program::ID, system_program_account()),
         (authority, funded_system_account()),
-        (owner, funded_system_account()),
         (allow_address, encrypted_value_account(&allow_value)),
         (host_config, host_config_account.clone()),
     ];
@@ -2060,9 +2100,9 @@ fn mollusk_paused_state_blocks_acl_update_and_eval_output() {
         &[custom_error(host::errors::ZamaHostError::HostConfigPaused)],
     );
 
-    let remove_ix = remove_subject_ix(owner, allow_address, host_config, other);
+    let remove_ix = remove_subject_ix(authority, allow_address, host_config, other);
     let accounts = vec![
-        (owner, funded_system_account()),
+        (authority, funded_system_account()),
         (allow_address, encrypted_value_account(&allow_value)),
         (host_config, host_config_account.clone()),
     ];

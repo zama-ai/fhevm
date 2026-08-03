@@ -39,6 +39,11 @@ pub struct ConfidentialTransfer<'info> {
     /// ZamaHost program used for FHE operations.
     pub zama_program: Program<'info, ZamaHost>,
     /// ZamaHost config used for handle derivation.
+    #[account(
+        seeds = [zama_host::HOST_CONFIG_SEED],
+        seeds::program = zama_host::ID,
+        bump = host_config.bump,
+    )]
     pub host_config: Box<Account<'info, zama_host::HostConfig>>,
     /// System program used for ACL account creation.
     pub system_program: Program<'info, System>,
@@ -177,13 +182,19 @@ pub struct ConfidentialTransferFromValue<'info> {
     /// The existing encrypted amount to spend: a computed or received `euint64` handle. Read-only
     /// persistent operand — never replaced, never consumed. Its address is the canonical PDA of its
     /// own `(domain, authority, label)` fields, so an encrypted value account from any app
-    /// may be passed here once its owner has granted the mint's compute subject via `allow_subjects`.
+    /// may be passed here once its owner has granted the mint's compute subject via
+    /// `allow_token_account_subjects` (host `allow_subjects` signed as the token-account PDA).
     pub amount_value: Box<Account<'info, zama_host::EncryptedValue>>,
     /// CHECK: Anchor event CPI authority for the Zama host program.
     pub zama_event_authority: UncheckedAccount<'info>,
     /// ZamaHost program used for FHE operations.
     pub zama_program: Program<'info, ZamaHost>,
     /// ZamaHost config used for handle derivation.
+    #[account(
+        seeds = [zama_host::HOST_CONFIG_SEED],
+        seeds::program = zama_host::ID,
+        bump = host_config.bump,
+    )]
     pub host_config: Box<Account<'info, zama_host::HostConfig>>,
     /// System program used for ACL account creation.
     pub system_program: Program<'info, System>,

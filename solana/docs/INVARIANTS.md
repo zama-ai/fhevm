@@ -63,10 +63,39 @@ update, encrypted value ID…).
     with no deny check (a denied key can still be delegated to by a clean
     subject) — that boundary belongs to the delegation/permit rework.
     (Closed the former create-path gap; fhevm-internal#1859 §3-S1.)
-11. **[ANTI]** No on-chain roles: any current subject may allow further
-    subjects, remove others (not the last), or make the value public.
-    Membership is flat by design; apps that need owner/spender-style
-    distinctions must enforce them in the app program before granting.
+11. **[HOLDS]** Subject-list mutation is gated like persistent create/update:
+    `allow_subjects` and `remove_subject` require the signer to equal
+    `EncryptedValue.account` (the app-owned account identity). Decrypt subjects
+    are not co-admins. Confidential-token ships owner-gated CPI wrappers that
+    `invoke_signed` as the **token-account** PDA (`allow_token_account_subjects` /
+    `remove_token_account_subject`). Total-supply PDA rotation is a follow-up
+    (no wrapper in this wave). (Closed the former flat-admin ANTI;
+    fhevm-internal#1862 #13.)
+11b. **[ANTI]** `make_handle_public` is still gated by current subject membership
+    (plus grant deny on that subject), not by `EncryptedValue.account`. Apps that
+    need app-only public sealing must enforce it before calling or CPI as the
+    account. (Split from former flat-admin ANTI-11; fhevm-internal#1862.)
+11c. **[HOLDS]** Each confidential burn opens a per-burn `PendingBurn` lane at
+    seeds `["pending-burn", mint, token_account, burn_id]` (`burn_id` is a
+    client-supplied unique id known before the burn tx — required so the PDA
+    can appear in account metas before `fhe_execute` derives `burned_handle`).
+    The lane stores `burned_handle`. Claim (`redeem_burned_amount`) or recover
+    (`recover_pending_burn`) closes the lane and returns rent to the owner.
+    Concurrent burns = concurrent `burn_id`s. (fhevm-internal#1862; seeds use
+    `burn_id` rather than `burned_handle` for Solana account-meta ordering.)
+11d. **[ANTI]** `recover_pending_burn` requires the burned handle to still be the
+    shared `burned_amount` EncryptedValue's `current_handle`. Superseded burns
+    must claim via KMS (historical public leaf still redeemable). (fhevm-internal#1862.)
+11e. **[HOLDS]** `recover_pending_burn` restores both confidential balance and
+    encrypted `total_supply` (mirrors wrap's dual add; undoes burn's dual sub).
+    Claim does not restore encrypted supply — it exits via underlying payout.
+    (fhevm-internal#1862 review P1.)
+11f. **[HOLDS]** Host pause (`HostConfig.paused`) gates token cash-out /
+    disclose paths that call `assert_host_config_allows_token_response`
+    (redeem, disclose). Opening a burn / recovering a tip still requires a live
+    FHE path through the host; there is no separate token-level pause. No
+    registry / observer / on-chain gov surface in this PoC (out of scope;
+    zama-ai/fhevm-internal#1634).
 
 ## C. Execution
 

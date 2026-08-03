@@ -6,6 +6,8 @@
       "name": "@fhevm/solana-demo-dapp",
       "dependencies": {
         "@fhevm/sdk": "file:../../sdk/js-sdk/src",
+        "@noble/hashes": "^2.0.1",
+        "@scure/base": "^1.2.6",
         "@solana/kit": "6.10.0",
         "@solana/wallet-account-signer": "6.10.0",
         "@wallet-standard/react": "1.0.3",

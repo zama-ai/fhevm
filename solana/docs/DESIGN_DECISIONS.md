@@ -1151,8 +1151,15 @@ previous handle by sealing one `HistoricalAccessLeaf` per allowed subject into a
 Merkle Mountain Range (peaks + leaf count only — the MMR never stores the full leaf history
 on-chain). The MVP ACL is a single allowed-subject set: `EncryptedValue.subjects` is the complete
 authorization set, and the former parallel role byte vector is not part of the account layout. Any
-allowed subject can use the current handle in compute, add another subject, request user decrypt, and
-mark the exact current handle public. Public decrypt is an exact-handle `PublicDecryptLeaf`, so
+allowed subject can use the current handle in compute, request user decrypt, and
+mark the exact current handle public. Subject-list mutation (`allow_subjects` /
+`remove_subject`) is gated like persistent create/update: the signer must equal
+`EncryptedValue.account` (the app-owned account identity). Decrypt subjects are
+not co-admins — apps that store a PDA in `account` rotate auditors by CPI +
+`invoke_signed` as that PDA. Confidential-token Wave 1 (#1862) covers
+token-account-scoped values via `allow_token_account_subjects` /
+`remove_token_account_subject`; total-supply PDA rotation is deferred.
+Public decrypt is an exact-handle `PublicDecryptLeaf`, so
 publicness never survives a handle update (there is no live public flag to leak across updates — see
 the connector-side rationale in the kms-connector/sdk commit message). Active lifecycle changes are
 performed by `fhe_execute` persistent outputs, `allow_subjects`, and `make_handle_public`; no instruction
@@ -1212,8 +1219,8 @@ events do, or stay event-free and let consumers decode instruction data instead.
 
 Decision:
 
-State-changing `EncryptedValue` lifecycle paths (`fhe_execute` persistent outputs, `allow_subjects`, and
-`make_handle_public`) emit no ACL lifecycle Anchor events by design. The host-listener reconstructs
+State-changing `EncryptedValue` lifecycle paths (`fhe_execute` persistent outputs, `allow_subjects`,
+`remove_subject`, and `make_handle_public`) emit no ACL lifecycle Anchor events by design. The host-listener reconstructs
 compute and material requests from confirmed Yellowstone transaction instructions plus streamed
 Clock/SlotHashes state. The solana-proof-service decodes lifecycle changes from instruction data —
 including inner/CPI instructions, since confidential-token and other app programs invoke them via CPI
@@ -1426,6 +1433,18 @@ in [`FUTURE_DESIGN.md`](./FUTURE_DESIGN.md); this list is the short index.
   it.
 - Subject-list overflow beyond `MAX_ENCRYPTED_VALUE_SUBJECTS` (8 subjects per `EncryptedValue`) is
   deferred; there is no overflow/paging account yet.
+- **Mint-as-PDA authority consolidation (fhevm-internal#1862 Wave 3) — DEFERRED / not necessary.**
+  Evaluated collapsing `ConfidentialMint` into a PDA and folding `fhe-compute` + `total-supply`
+  authorities into the mint. Kept the current shape: mint stays a non-PDA keypair account; compute
+  signer and total-supply write authority remain separate mint-scoped PDAs; vault-authority and
+  per-owner token-account PDAs unchanged. Consolidation would touch every CPI and vault path without
+  reducing attack surface enough to justify the churn.
+- **Compliance / freeze / TokenInterface (fhevm-internal#1862 Wave 4) — LONG-TERM.** Product stance:
+  no token-owned sanctions list; host deny remains grant-path only; compliance for underlying exit
+  is the SPL freeze authority on the wrapped mint (mockUSDC OK in PoC). Confidential transfers are
+  not freeze-gated today. ATA-like UX is intentional (`token_account_address(mint, owner)` +
+  create-for / separate payer; demo get-or-create in `demo-dapp`). `TokenInterface` + fail-closed
+  unsupported Token-2022 extensions are deferred until a real freeze/blacklist test surface exists.
 
 ## DD-037: `fhe_execute` Events — `emit_cpi!`-Only, No `emit!` Log Fallback (DD-033 addendum)
 
@@ -1613,6 +1632,18 @@ signer set powerful indefinitely. EVM manages this by runbook and we do the same
 ever want one — noted, not in scope. Earlier revisions of this DD verified against the CURRENT context
 only and framed a cert-after-rotation as a hazard to fail closed on; that framing is replaced here —
 rotation is no longer the revocation boundary, `destroy` is.
+
+### Ops runbook: KMS context rotation (fhevm-internal#1862 #15)
+
+1. **Rotate for hygiene:** `define_kms_context(N+1)` (new signer set becomes current). In-flight certs
+   that name live context `N` remain verifiable — do **not** treat rotation alone as revocation.
+2. **Revoke old set:** after grace (or immediately on compromise), `destroy_kms_context(N)`. That
+   flips `destroyed` and fails every outstanding `N`-named cert at `verify_public_decrypt`.
+3. **Compromise path:** `define` the replacement, then `destroy` the compromised context in the same
+   ops window. Forgotten destroy = old signers stay powerful indefinitely (same as EVM).
+4. **Token policy:** confidential-token `disclose_secp` / `redeem_burned_amount` accept any
+   non-destroyed context the cert names (default). Apps that need current-only can compare
+   `return_data`'s context id to `host_config.current_kms_context_id` — not wired in the token today.
 
 The verified context id is surfaced in `return_data` (8 little-endian bytes appended after `handle ++
 cleartext`, so 72 bytes total) precisely so a calling program can pick its own policy: an

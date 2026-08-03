@@ -150,7 +150,7 @@ describe('settleBatch', () => {
   });
   afterEach(() => vi.unstubAllGlobals());
 
-  it('resolves the current batch and builds an ALT-aware v0 settle keeping redemption_record and the fee payer static', async () => {
+  it('resolves the current batch and builds an ALT-aware v0 settle with pending_burn in the table', async () => {
     certificate.mockResolvedValue(claim(cleartextHex(800n)));
     const { chain, proofConfig, keeper, opts } = await options();
     await expect(settleBatch(chain, proofConfig, keeper, opts)).resolves.toEqual(expect.any(String));
@@ -193,18 +193,18 @@ describe('settleBatch', () => {
     expect(Math.max(...usedIndexes)).toBeLessThan(provisioned.length);
     expect(new Set(usedIndexes.map((index) => provisioned[index]!))).toEqual(new Set(provisioned));
 
-    // redemption_record (derived from the burned handle) and the fee payer stay STATIC.
-    const accounts = await deriveSettleAccounts(opts.roots, batchAddresses, BURNED_HANDLE as never);
+    // pending_burn rides in the ALT (`burn_id = batch.key()`); only the fee payer (plus program /
+    // event authorities outside the provisioned list) stays static.
+    const accounts = await deriveSettleAccounts(opts.roots, batchAddresses);
     const staticAccounts = compiled.staticAccounts as readonly Address[];
     expect(staticAccounts[0]).toBe(keeper.address); // fee payer is always static account 0
-    expect(staticAccounts).toContain(accounts.redemptionRecord);
-    // The static set is closed at 14: the fee payer, redemption_record, the program ids settle
-    // passes as accounts (system, SPL token, the CPI targets) and the event-CPI authorities. This
-    // is the direction the membership assertion above cannot see — a settle account that never
-    // reaches SETTLE_ALT_FIELD_ORDER stays static, so both sets still match while the wire grows.
-    // Pinning the count makes that growth a deliberate edit with a fresh look at the 1232-byte
-    // budget (the 14-sibling test below is what that budget costs today).
-    expect(staticAccounts).toHaveLength(14);
+    expect(staticAccounts).not.toContain(accounts.pendingBurn);
+    expect(provisioned).toContain(accounts.pendingBurn);
+    // The static set is closed at 13: the fee payer, the program ids settle passes as accounts
+    // (system, SPL token, the CPI targets) and the event-CPI authorities. Pinning the count makes
+    // growth a deliberate edit with a fresh look at the 1232-byte budget (the sibling-depth test
+    // below is what that budget costs today).
+    expect(staticAccounts).toHaveLength(13);
     // And nothing is paid for twice: an address provisioned into the table must not also sit in
     // the static set.
     expect(staticAccounts.filter((address) => provisioned.includes(address))).toEqual([]);
@@ -225,15 +225,11 @@ describe('settleBatch', () => {
     // that left the tx too full to absorb a real proof. This re-asserts the size bound with a deep
     // proof.
     //
-    // 14 is the MEASURED ceiling for the current ALT design: the settle v0 message keeps four
-    // accounts static (fee payer, redemption_record, and the two event-CPI authorities) plus the
-    // invoked program ids; at 14 siblings the wire is ~1212 bytes and 15 overflows 1232. This is far
-    // above any realistic depth here — the burned_amount encrypted value account is a PER-BATCH EncryptedValue whose
-    // MMR gains ~one leaf per batch (depth ~0-1), so 14 is generous headroom, not a live expectation.
-    // Raising the ceiling would mean moving the two derivable event authorities out of the static set
-    // and into the ALT (the only movable accounts; the fee payer, redemption_record and invoked
-    // programs cannot move) — that buys ~2 more levels and is a deliberate ALT-membership change, not
-    // made here.
+    // 14 is the MEASURED ceiling for the current ALT design: the settle v0 message keeps the fee
+    // payer and the two event-CPI authorities static plus the invoked program ids; pending_burn is
+    // in the ALT. At 14 siblings the wire stays under 1232. This is far above any realistic depth
+    // here — the burned_amount encrypted value account is a PER-BATCH EncryptedValue whose MMR
+    // gains ~one leaf per batch (depth ~0-1), so 14 is generous headroom, not a live expectation.
     const siblings = Array.from({ length: 14 }, (_, level) => new Uint8Array(32).fill(0xa0 + level));
     certificate.mockResolvedValue(claim(cleartextHex(800n), siblings));
     const { chain, proofConfig, keeper, opts } = await options();

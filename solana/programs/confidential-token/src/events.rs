@@ -41,6 +41,8 @@ pub enum BalanceHandleUpdateReason {
     TransferCredit,
     /// Confidential burn debit from this account.
     BurnDebit,
+    /// Tip-only pending burn recovered back onto this account.
+    Recover,
 }
 
 /// App-local total-supply history event.
@@ -75,6 +77,8 @@ pub enum TotalSupplyUpdateReason {
     Wrap,
     /// Confidential supply was burned.
     Burn,
+    /// Tip-only pending burn recovered back onto confidential supply.
+    Recover,
 }
 
 /// Emitted when `disclose_secp` publishes a KMS-certified cleartext for a token-scoped handle.
@@ -112,6 +116,8 @@ pub struct BurnRedeemedEvent {
     pub owner: Pubkey,
     /// Confidential token account that produced the burned amount.
     pub token_account: Pubkey,
+    /// Client-supplied burn id that seeded the closed pending-burn lane.
+    pub burn_id: [u8; 32],
     /// Burned amount handle proven by KMS.
     pub burned_handle: [u8; 32],
     /// ACL record for `burned_handle`.
@@ -120,6 +126,25 @@ pub struct BurnRedeemedEvent {
     pub destination_usdc: Pubkey,
     /// KMS-certified cleartext amount released from the vault.
     pub cleartext_amount: u64,
+}
+
+/// Emitted when `recover_pending_burn` re-credits a tip-only burned amount into confidential balance.
+#[event]
+pub struct PendingBurnRecoveredEvent {
+    /// Event schema version.
+    pub version: u8,
+    /// Confidential mint.
+    pub mint: Pubkey,
+    /// Token account owner (rent destination of the closed lane).
+    pub owner: Pubkey,
+    /// Confidential token account that produced the burned amount.
+    pub token_account: Pubkey,
+    /// Client-supplied burn id that seeded the closed pending-burn lane.
+    pub burn_id: [u8; 32],
+    /// Burned amount handle that was recovered (must have been tip/`current_handle`).
+    pub burned_handle: [u8; 32],
+    /// Shared `burned_amount` EncryptedValue account for the token account.
+    pub burned_encrypted_value: Pubkey,
 }
 
 /// Emitted when a confidential burn computes the all-or-zero burned amount.
@@ -133,6 +158,8 @@ pub struct ConfidentialBurnEvent {
     pub owner: Pubkey,
     /// Token account whose balance was debited.
     pub token_account: Pubkey,
+    /// Client-supplied burn id that seeds the pending-burn lane PDA.
+    pub burn_id: [u8; 32],
     /// Encrypted amount actually burned.
     pub burned_handle: [u8; 32],
     /// ZamaHost ACL record for `burned_handle`.
