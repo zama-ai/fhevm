@@ -2,40 +2,34 @@
 //!
 //! A permit carries no handle at signing time, so it cannot derive its environment from one
 //! — the deployment is signed explicitly as `(verifying_program_id, chain_id)`. The
-//! Connector compares that pair against its **own** identity: the program id from
-//! configuration, and a chain id derived from its cluster's genesis hash.
+//! Connector compares that pair against its **own** identity, and both halves of it come from
+//! configuration: the program id, and the chain id of the cluster this Connector serves.
 //!
-//! The chain id is derived, never configured. A configured constant is identical across
-//! environments, which is precisely what makes a signature for one deployment verify
-//! against another. A local validator's genesis hash changes on every reset, and that is
-//! correct behaviour: the reset cluster is a different deployment and its old permits are
-//! rejected.
+//! The chain id is configured rather than computed here on purpose. It is not a free constant: it
+//! is the same u64 the host program's `HostConfig` was initialized with and that every handle of
+//! the cluster embeds in bytes `[22..30]`, and the rule that turns a cluster into that number is a
+//! deployment-time rule stated in the protocol specification, applied once per cluster. Recomputing
+//! it here — from a genesis hash fetched at startup, say — would put a second implementation of
+//! that rule in this process, and a second implementation is a second answer.
 //!
-//! The derivation itself sits behind [`ChainIdDerivation`] because its algorithm and width
-//! are still an open protocol question. What this module fixes is the contract — derived,
-//! cross-checked against any pin, and equal to both the signed and the handle-embedded value
-//! — not the arithmetic.
+//! What protects a deployment is therefore not the provenance of the value but its uniqueness per
+//! cluster, and [`check_deployment`] is where that is spent: a permit signed for another cluster
+//! names another chain id, and so do the handles it lists. A Connector configured with the wrong
+//! cluster's chain id does not quietly accept foreign permits — it rejects everything, loudly, from
+//! the first request.
+//!
+//! One thing about the value is still checked here, because it is cheap and because handles cannot
+//! route without it: the chain-kind high bit.
 
 use crate::core::solana_acl::SolanaPubkeyBytes;
 
 /// The chain-kind high bit: set for a Solana host chain, clear for an EVM one.
 pub use crate::core::config::SOLANA_CHAIN_TYPE_BIT;
 
-/// Derives a cluster's chain id from its genesis hash.
-///
-/// Behind a trait on purpose: the algorithm, the hash choice and the width are unsettled,
-/// and everything else in this module tree only needs the value to exist and to be the same
-/// u64 the handles embed.
-pub trait ChainIdDerivation: Send + Sync {
-    /// The chain id of the cluster whose genesis hash this is.
-    fn derive_chain_id(&self, genesis_hash: &[u8; 32]) -> u64;
-}
-
 /// The Connector's own deployment identity.
 ///
-/// No public constructor: the only way to obtain one is [`DeploymentIdentity::resolve`],
-/// which derives the chain id. That is what keeps a configured chain id from re-entering
-/// through a struct literal.
+/// No public constructor: the only way to obtain one is [`DeploymentIdentity::resolve`], so a
+/// chain id that never passed the chain-kind check cannot enter through a struct literal.
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 pub struct DeploymentIdentity {
     program_id: SolanaPubkeyBytes,
@@ -43,38 +37,18 @@ pub struct DeploymentIdentity {
 }
 
 impl DeploymentIdentity {
-    /// Resolves the identity at startup: derive the chain id from the cluster's genesis
-    /// hash, and cross-check it against a configured pin when one is present.
+    /// Resolves the identity at startup from configuration.
     ///
-    /// A pin that disagrees with the derivation is a startup failure, not a request-time
-    /// rejection: the process would otherwise run with an identity nothing on its cluster
-    /// agrees with, and every permit would fail deployment matching for a reason no log line
-    /// explains.
+    /// The one rejection is a chain id without the chain-kind bit, and it stops the process rather
+    /// than each request: handles embed the chain id and routing reads the bit out of it, so an
+    /// identity missing it matches no handle of any Solana cluster and every rejection downstream
+    /// would look like a user error.
     pub fn resolve(
         program_id: SolanaPubkeyBytes,
-        genesis_hash: &[u8; 32],
-        pinned_chain_id: Option<u64>,
-        derivation: &dyn ChainIdDerivation,
+        chain_id: u64,
     ) -> Result<Self, DeploymentIdentityError> {
-        let chain_id = derivation.derive_chain_id(genesis_hash);
-
-        // Whether the derived value is usable at all comes first: handles embed it and routing
-        // reads the chain-kind bit out of it, so a derivation that loses the bit produces an
-        // identity no handle of this cluster can match.
         if chain_id & SOLANA_CHAIN_TYPE_BIT == 0 {
             return Err(DeploymentIdentityError::ChainKindBitMissing { chain_id });
-        }
-
-        // A pin is an operational convenience and is cross-checked, never preferred: choosing
-        // either side of a disagreement would run a Connector whose idea of its own cluster
-        // matches nothing on that cluster.
-        if let Some(pinned) = pinned_chain_id
-            && pinned != chain_id
-        {
-            return Err(DeploymentIdentityError::PinnedChainIdMismatch {
-                pinned,
-                derived: chain_id,
-            });
         }
 
         Ok(Self {
@@ -98,7 +72,7 @@ impl DeploymentIdentity {
 /// identity.
 ///
 /// One equality, three values: the signed `chain_id`, the u64 every handle embeds, and this
-/// Connector's derived value. There is no "first handle as source of truth" — a batch mixing
+/// Connector's configured value. There is no "first handle as source of truth" — a batch mixing
 /// clusters is a rejection, not a majority vote.
 pub fn check_deployment(
     request: &super::request::SolanaUserDecryptRequest,
@@ -168,20 +142,11 @@ pub fn embedded_chain_id(handle: &[u8; 32]) -> u64 {
 /// Why an identity could not be resolved at startup.
 #[derive(Clone, PartialEq, Eq, Debug, thiserror::Error)]
 pub enum DeploymentIdentityError {
-    /// The configured chain id disagrees with the one derived from the cluster's genesis
-    /// hash.
-    #[error("configured chain id {pinned} disagrees with the derived {derived}")]
-    PinnedChainIdMismatch {
-        /// The configured value.
-        pinned: u64,
-        /// The derived value.
-        derived: u64,
-    },
-    /// The derived chain id does not carry the Solana chain-kind bit, so handles of this
+    /// The configured chain id does not carry the Solana chain-kind bit, so handles of this
     /// cluster could not route.
-    #[error("derived chain id {chain_id} does not carry the Solana chain-kind bit")]
+    #[error("configured chain id {chain_id} does not carry the Solana chain-kind bit")]
     ChainKindBitMissing {
-        /// The derived value.
+        /// The configured value.
         chain_id: u64,
     },
 }

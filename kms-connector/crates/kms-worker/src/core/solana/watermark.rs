@@ -29,6 +29,8 @@ const INVALIDATION_BODY_LEN: usize = 32 + 8 + 1;
 const USER_RANGE: std::ops::Range<usize> = DISCRIMINATOR_LEN..DISCRIMINATOR_LEN + 32;
 /// Where the watermark sits.
 const WATERMARK_RANGE: std::ops::Range<usize> = USER_RANGE.end..USER_RANGE.end + 8;
+/// Where the PDA bump sits.
+const BUMP_INDEX: usize = WATERMARK_RANGE.end;
 
 /// The canonical invalidation-record address for a user under this deployment.
 pub fn permit_invalidation_address(
@@ -44,22 +46,37 @@ pub fn permit_invalidation_address(
 
 /// Reads the watermark of `user` from the snapshot; absent record reads as `0`.
 ///
+/// "Absent" covers two observations, because a third party decides which one a never-revoked user
+/// presents. The address is derivable by anyone, so anyone can transfer lamports to it and leave a
+/// System-program-owned empty account where there was nothing at all. Both say the same thing —
+/// the host program has never written a watermark here — and reading only the first as zero would
+/// hand any sender a terminal denial of every future request of any user, for the price of one
+/// transfer. The host program treats the two the same way when it reads this record.
+///
 /// The record's contents are checked against its address rather than trusted: the discriminator
 /// must be the invalidation record's, and the `user` field must be the user whose address was
 /// derived. An account that is host-owned but is something else is a rejection, not a zero —
-/// reading zero from a foreign layout would silently resurrect every revoked permit.
+/// reading zero from a foreign layout would silently resurrect every revoked permit. That includes
+/// a System-owned account that does carry data: the donation case is the empty one, and anything
+/// else at this address is a layout this function is not reading.
 pub fn read_watermark(
     snapshot: &HostSnapshot,
     program_id: SolanaPubkeyBytes,
     user: SolanaPubkeyBytes,
 ) -> Result<u64, WatermarkFailure> {
-    let (account_key, _) = permit_invalidation_address(program_id, user);
+    let (account_key, canonical_bump) = permit_invalidation_address(program_id, user);
 
     let Some(account) = snapshot.account(&account_key)? else {
         // A user who never revoked has revoked at time zero: there is no migration and no
         // "not yet initialised" state to distinguish.
         return Ok(0);
     };
+
+    // A pre-funded address is the same "never written" observation as no account at all, and it is
+    // not the reader's choice which of the two a never-revoked user is presented as.
+    if account.is_uninitialized_pda() {
+        return Ok(0);
+    }
 
     if account.owner != program_id {
         return Err(WatermarkFailure::ForeignOwner {
@@ -92,6 +109,14 @@ pub fn read_watermark(
         return Err(WatermarkFailure::RecordNamesAnotherUser { account_key });
     }
 
+    // The stored bump has to be the canonical one for this address. Not an attacker check — these
+    // bytes can only be written by the owning program, and the address was derived here — but a
+    // record whose bump is not the one this derivation produces is not the record this reader
+    // reads, and reading a watermark out of it would be reading a layout nobody promised.
+    if data.get(BUMP_INDEX) != Some(&canonical_bump) {
+        return Err(not_a_record());
+    }
+
     let watermark = data
         .get(WATERMARK_RANGE)
         .and_then(|bytes| <[u8; 8]>::try_from(bytes).ok())
@@ -113,11 +138,14 @@ pub fn check_not_invalidated(start_timestamp: u64, watermark: u64) -> Result<(),
     Ok(())
 }
 
-/// The validity window, evaluated against the Connector's own wall clock.
+/// The validity window `[start, start + duration]`, evaluated against the Connector's own wall
+/// clock.
 ///
 /// This is the second of two lines: the Gateway checks the same window against its chain's
 /// block timestamp when the request is submitted. This check is self-sufficient and also
-/// covers a permit that expires between Gateway acceptance and event processing.
+/// covers a permit that expires between Gateway acceptance and event processing. Both bounds are
+/// inclusive on both sides of that pair, so the two lines agree second for second rather than
+/// leaving one second where only the Connector rejects.
 pub fn check_window(
     start_timestamp: u64,
     duration_seconds: u64,
@@ -131,11 +159,16 @@ pub fn check_window(
             now: now_unix_seconds,
         });
     }
-    // Closed at the end second. Saturating rather than checked because both operands are capped
-    // by the permit's own typed rules, and a saturated end can only close the window earlier —
-    // never open it wider, which is the direction that would matter.
+    // Open at the end second too: the window is the closed interval `[start, start + duration]`,
+    // which is the boundary the Gateway applies on chain (`start + duration < now` rejects, so the
+    // end second is still inside). One rule, five implementations — a Connector that closed a
+    // second early would reject a request the Gateway accepted and charged for.
+    //
+    // Saturating rather than checked because both operands are capped by the permit's own typed
+    // rules, and a saturated end can only close the window earlier — never open it wider, which is
+    // the direction that would matter.
     let end = start_timestamp.saturating_add(duration_seconds);
-    if now_unix_seconds >= end {
+    if now_unix_seconds > end {
         return Err(WindowFailure::Expired {
             end,
             now: now_unix_seconds,
@@ -155,7 +188,8 @@ pub enum WatermarkFailure {
         /// The watermark observed in the snapshot.
         watermark: u64,
     },
-    /// The invalidation address holds an account that is not an invalidation record.
+    /// The invalidation address holds an account that is not an invalidation record: wrong length,
+    /// wrong discriminator, or a bump other than the canonical one for its address.
     #[error("account {account_key:?} is not a decodable invalidation record")]
     NotAnInvalidationRecord {
         /// The address that was read.
@@ -194,7 +228,7 @@ pub enum WindowFailure {
         /// The evaluation time.
         now: u64,
     },
-    /// The window has closed.
+    /// The window has closed: `now` is past the end second, which is itself still inside.
     #[error("permit expired at {end}, now {now}")]
     Expired {
         /// End of the window.

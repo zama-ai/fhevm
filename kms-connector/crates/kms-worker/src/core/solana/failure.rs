@@ -216,9 +216,12 @@ impl SnapshotError {
     /// and answering "try again" would hide it behind ordinary commitment lag forever.
     pub fn class(&self) -> FailureClass {
         match self {
-            Self::Unavailable { .. } | Self::ResponseLengthMismatch { .. } => {
-                FailureClass::Transient
-            }
+            // A read that went backwards is transient for the same reason: the request is fine and
+            // a retry that lands on a node which has caught up authorizes it. Rejecting it as
+            // terminal would let one lagging endpoint decide the request.
+            Self::Unavailable { .. }
+            | Self::ResponseLengthMismatch { .. }
+            | Self::DecidingReadOlderThanDiscovery { .. } => FailureClass::Transient,
             Self::KeyNotInSnapshot { .. } => FailureClass::Terminal,
         }
     }
@@ -286,6 +289,14 @@ impl DelegationFailure {
             | Self::Revoked
             | Self::Expired { .. }
             | Self::NewerThanObservation { .. } => FailureClass::Terminal,
+            // The class of a pair is the more forgiving of its halves: if either row could still
+            // authorize a repeat, that is the advice to give. Derived from the halves rather than
+            // stated as terminal, so a future row-level outcome that is not terminal cannot be
+            // swallowed by the pair that carries it.
+            Self::NoLiveGrant { exact, wildcard } => match (exact.class(), wildcard.class()) {
+                (FailureClass::Terminal, wildcard) => wildcard,
+                (exact, _) => exact,
+            },
             Self::Snapshot(source) => source.class(),
         }
     }
@@ -305,9 +316,7 @@ impl DeploymentIdentityError {
     /// Startup failures are terminal by construction: the process must not run.
     pub fn class(&self) -> FailureClass {
         match self {
-            Self::PinnedChainIdMismatch { .. } | Self::ChainKindBitMissing { .. } => {
-                FailureClass::Terminal
-            }
+            Self::ChainKindBitMissing { .. } => FailureClass::Terminal,
         }
     }
 }

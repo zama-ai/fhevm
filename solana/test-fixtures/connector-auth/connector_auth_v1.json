@@ -8,7 +8,7 @@
     "chain_id_decimal": "9305357566071262703",
     "chain_id_hex": "0x8123456789abcdef",
     "chain_id_be_bytes": "8123456789abcdef",
-    "chain_id_derivation": "stand-in: the real derivation from the genesis hash is an open protocol item, and this set is regenerated once it is settled"
+    "chain_id_derivation": "deployment-time rule: chain_id = 0x8000000000000000 | (be_u64(SHA-256(\"zama-solana-chain-id-v1\" || genesis_hash)[0..8]) & 0x7fffffffffffffff), applied once per cluster and configured everywhere. Nothing in the authorization path recomputes it, so this set's pair is a synthetic cluster: the chain id below is not the rule applied to the genesis hash below, and no check reads the genesis hash at all. Vectors for the rule itself live with the permit fixtures."
   },
   "transport_keys": {
     "reference-transport-key": "a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5"
@@ -107,6 +107,57 @@
             "pubkey": "ae46e3635a184b29ae039bbaa8cc879aba91403035fbe91d0fb646c8503ee20e",
             "owner": "0707070707070707070707070707070707070707070707070707070707070707",
             "data": "9b03953a8467c8a10101010101010101010101010101010101010101010101010101010101010101020202020202020202020202020202020202020202020202020202020202020262616c616e63655f5f5f5f5f5f5f5f5f5f5f5f5f5f5f5f5f5f5f5f5f5f5f5f5f202020202020202020202020202020202020202020208123456789abcdef0500010000008139770ea87d175f56a35466c34c7ecccb8d8a91b4ee37a25df60f5b8fc9b394000000000000000000000000fc"
+          }
+        ]
+      }
+    },
+    {
+      "name": "delegated-via-wildcard-row",
+      "comment": "A delegator grants across every one of their apps with one row carrying the reserved app-context sentinel instead of an app account. It authorizes a lineage that has no app-specific row, exactly as the EVM ACL's wildcard delegation does. The consequence is part of the rule: revoking the app-specific row does not stop a delegate who holds this one.",
+      "result": "valid",
+      "request": {
+        "permit": {
+          "user_pubkey": "8a88e3dd7409f195fd52db2d3cba5d72ca6709bf1d94121bf3748801b40f6f5c",
+          "transport_key": "reference-transport-key",
+          "allowed_acl_domain_keys": [
+            "0101010101010101010101010101010101010101010101010101010101010101"
+          ],
+          "start_timestamp": "1700000000",
+          "duration_seconds": "3600",
+          "verifying_program_id": "0707070707070707070707070707070707070707070707070707070707070707",
+          "chain_id": "9305357566071262703",
+          "extra_data": "0211111111111111111111111111111111111111111111111111111111111111111212121212121212121212121212121212121212121212121212121212121212"
+        },
+        "signature": "64da768c25b04561a81f868876ca78518de9ed26ddccbe37126d8e67b947b8a0b3c26ee26fbad5ee38714e628fced1826db0ac807601f16749ffb01b79b9230c",
+        "handles": [
+          {
+            "handle": "202020202020202020202020202020202020202020208123456789abcdef0500",
+            "owner": "8139770ea87d175f56a35466c34c7ecccb8d8a91b4ee37a25df60f5b8fc9b394",
+            "value_key": "92b54122acc53a2a4b9b85a851263afc331b7941ea63ed4e963e4cbde0506b65",
+            "proof_leaf_count": "0",
+            "access_proof": ""
+          }
+        ]
+      },
+      "observation": {
+        "observed_slot": "500",
+        "now_unix_seconds": "1700000060",
+        "kms_pair_status": "servable",
+        "accounts": [
+          {
+            "pubkey": "6828b67f2e63863ebcd119bdd81b2b1895615d8810fdd49de3d7b124cbeaf031",
+            "owner": "0707070707070707070707070707070707070707070707070707070707070707",
+            "data": "ec8bdba9b922e9888a88e3dd7409f195fd52db2d3cba5d72ca6709bf1d94121bf3748801b40f6f5c0000000000000000ff"
+          },
+          {
+            "pubkey": "ae46e3635a184b29ae039bbaa8cc879aba91403035fbe91d0fb646c8503ee20e",
+            "owner": "0707070707070707070707070707070707070707070707070707070707070707",
+            "data": "9b03953a8467c8a10101010101010101010101010101010101010101010101010101010101010101020202020202020202020202020202020202020202020202020202020202020262616c616e63655f5f5f5f5f5f5f5f5f5f5f5f5f5f5f5f5f5f5f5f5f5f5f5f5f202020202020202020202020202020202020202020208123456789abcdef0500010000008139770ea87d175f56a35466c34c7ecccb8d8a91b4ee37a25df60f5b8fc9b394000000000000000000000000fc"
+          },
+          {
+            "pubkey": "ceb5ff5b90457adf418bcf712fff101de8f262d57eec8f09021264037186874b",
+            "owner": "0707070707070707070707070707070707070707070707070707070707070707",
+            "data": "25058b21493501f88139770ea87d175f56a35466c34c7ecccb8d8a91b4ee37a25df60f5b8fc9b3948a88e3dd7409f195fd52db2d3cba5d72ca6709bf1d94121bf3748801b40f6f5cffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff58020000000000000100000000000000f30100000000000000fe"
           }
         ]
       }
@@ -831,6 +882,52 @@
         "now_unix_seconds": "1700000060",
         "kms_pair_status": "servable",
         "accounts": [
+          {
+            "pubkey": "ae46e3635a184b29ae039bbaa8cc879aba91403035fbe91d0fb646c8503ee20e",
+            "owner": "0707070707070707070707070707070707070707070707070707070707070707",
+            "data": "9b03953a8467c8a10101010101010101010101010101010101010101010101010101010101010101020202020202020202020202020202020202020202020202020202020202020262616c616e63655f5f5f5f5f5f5f5f5f5f5f5f5f5f5f5f5f5f5f5f5f5f5f5f5f101010101010101010101010101010101010101010108123456789abcdef0500010000008a88e3dd7409f195fd52db2d3cba5d72ca6709bf1d94121bf3748801b40f6f5c000000000000000000000000fc"
+          }
+        ]
+      }
+    },
+    {
+      "name": "prefunded-invalidation-address",
+      "comment": "The invalidation address of a user who has never revoked, holding the account a bare transfer leaves behind: System-program-owned and empty. Every address in this path is derivable by anyone, so this is the same \"the host program never wrote here\" observation as no account at all, and it is not the user's choice which of the two they are presented as. An implementation that reads it any other way sells a terminal denial of a user's every request for the price of one transfer.",
+      "result": "valid",
+      "request": {
+        "permit": {
+          "user_pubkey": "8a88e3dd7409f195fd52db2d3cba5d72ca6709bf1d94121bf3748801b40f6f5c",
+          "transport_key": "reference-transport-key",
+          "allowed_acl_domain_keys": [
+            "0101010101010101010101010101010101010101010101010101010101010101"
+          ],
+          "start_timestamp": "1700000000",
+          "duration_seconds": "3600",
+          "verifying_program_id": "0707070707070707070707070707070707070707070707070707070707070707",
+          "chain_id": "9305357566071262703",
+          "extra_data": "0211111111111111111111111111111111111111111111111111111111111111111212121212121212121212121212121212121212121212121212121212121212"
+        },
+        "signature": "64da768c25b04561a81f868876ca78518de9ed26ddccbe37126d8e67b947b8a0b3c26ee26fbad5ee38714e628fced1826db0ac807601f16749ffb01b79b9230c",
+        "handles": [
+          {
+            "handle": "101010101010101010101010101010101010101010108123456789abcdef0500",
+            "owner": "8a88e3dd7409f195fd52db2d3cba5d72ca6709bf1d94121bf3748801b40f6f5c",
+            "value_key": "92b54122acc53a2a4b9b85a851263afc331b7941ea63ed4e963e4cbde0506b65",
+            "proof_leaf_count": "0",
+            "access_proof": ""
+          }
+        ]
+      },
+      "observation": {
+        "observed_slot": "500",
+        "now_unix_seconds": "1700000060",
+        "kms_pair_status": "servable",
+        "accounts": [
+          {
+            "pubkey": "6828b67f2e63863ebcd119bdd81b2b1895615d8810fdd49de3d7b124cbeaf031",
+            "owner": "0000000000000000000000000000000000000000000000000000000000000000",
+            "data": ""
+          },
           {
             "pubkey": "ae46e3635a184b29ae039bbaa8cc879aba91403035fbe91d0fb646c8503ee20e",
             "owner": "0707070707070707070707070707070707070707070707070707070707070707",
@@ -2805,6 +2902,66 @@
             "pubkey": "ae46e3635a184b29ae039bbaa8cc879aba91403035fbe91d0fb646c8503ee20e",
             "owner": "0707070707070707070707070707070707070707070707070707070707070707",
             "data": "9b03953a8467c8a10101010101010101010101010101010101010101010101010101010101010101020202020202020202020202020202020202020202020202020202020202020262616c616e63655f5f5f5f5f5f5f5f5f5f5f5f5f5f5f5f5f5f5f5f5f5f5f5f5f202020202020202020202020202020202020202020208123456789abcdef0500010000008139770ea87d175f56a35466c34c7ecccb8d8a91b4ee37a25df60f5b8fc9b394000000000000000000000000fc"
+          }
+        ]
+      }
+    },
+    {
+      "name": "no-live-delegation-row",
+      "comment": "The delegator holds both an app-specific row and a wildcard row, and both are revoked. The rejection names both reasons: either row could have authorized this entry on its own, so naming one of them would describe half of the state the delegate has to fix.",
+      "result": "invalid",
+      "rule": "delegation-no-live-grant",
+      "class": "terminal",
+      "derived_from": "delegated-current",
+      "mutation": "both the app-specific and the wildcard delegation rows are marked revoked",
+      "request": {
+        "permit": {
+          "user_pubkey": "8a88e3dd7409f195fd52db2d3cba5d72ca6709bf1d94121bf3748801b40f6f5c",
+          "transport_key": "reference-transport-key",
+          "allowed_acl_domain_keys": [
+            "0101010101010101010101010101010101010101010101010101010101010101"
+          ],
+          "start_timestamp": "1700000000",
+          "duration_seconds": "3600",
+          "verifying_program_id": "0707070707070707070707070707070707070707070707070707070707070707",
+          "chain_id": "9305357566071262703",
+          "extra_data": "0211111111111111111111111111111111111111111111111111111111111111111212121212121212121212121212121212121212121212121212121212121212"
+        },
+        "signature": "64da768c25b04561a81f868876ca78518de9ed26ddccbe37126d8e67b947b8a0b3c26ee26fbad5ee38714e628fced1826db0ac807601f16749ffb01b79b9230c",
+        "handles": [
+          {
+            "handle": "202020202020202020202020202020202020202020208123456789abcdef0500",
+            "owner": "8139770ea87d175f56a35466c34c7ecccb8d8a91b4ee37a25df60f5b8fc9b394",
+            "value_key": "92b54122acc53a2a4b9b85a851263afc331b7941ea63ed4e963e4cbde0506b65",
+            "proof_leaf_count": "0",
+            "access_proof": ""
+          }
+        ]
+      },
+      "observation": {
+        "observed_slot": "500",
+        "now_unix_seconds": "1700000060",
+        "kms_pair_status": "servable",
+        "accounts": [
+          {
+            "pubkey": "51db03013d82a7534c90dcb09e98d66c085e34bdf7c5b9d6ac92b45e4585a083",
+            "owner": "0707070707070707070707070707070707070707070707070707070707070707",
+            "data": "25058b21493501f88139770ea87d175f56a35466c34c7ecccb8d8a91b4ee37a25df60f5b8fc9b3948a88e3dd7409f195fd52db2d3cba5d72ca6709bf1d94121bf3748801b40f6f5c020202020202020202020202020202020202020202020202020202020202020258020000000000000100000000000000f30100000000000001fa"
+          },
+          {
+            "pubkey": "6828b67f2e63863ebcd119bdd81b2b1895615d8810fdd49de3d7b124cbeaf031",
+            "owner": "0707070707070707070707070707070707070707070707070707070707070707",
+            "data": "ec8bdba9b922e9888a88e3dd7409f195fd52db2d3cba5d72ca6709bf1d94121bf3748801b40f6f5c0000000000000000ff"
+          },
+          {
+            "pubkey": "ae46e3635a184b29ae039bbaa8cc879aba91403035fbe91d0fb646c8503ee20e",
+            "owner": "0707070707070707070707070707070707070707070707070707070707070707",
+            "data": "9b03953a8467c8a10101010101010101010101010101010101010101010101010101010101010101020202020202020202020202020202020202020202020202020202020202020262616c616e63655f5f5f5f5f5f5f5f5f5f5f5f5f5f5f5f5f5f5f5f5f5f5f5f5f202020202020202020202020202020202020202020208123456789abcdef0500010000008139770ea87d175f56a35466c34c7ecccb8d8a91b4ee37a25df60f5b8fc9b394000000000000000000000000fc"
+          },
+          {
+            "pubkey": "ceb5ff5b90457adf418bcf712fff101de8f262d57eec8f09021264037186874b",
+            "owner": "0707070707070707070707070707070707070707070707070707070707070707",
+            "data": "25058b21493501f88139770ea87d175f56a35466c34c7ecccb8d8a91b4ee37a25df60f5b8fc9b3948a88e3dd7409f195fd52db2d3cba5d72ca6709bf1d94121bf3748801b40f6f5cffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff58020000000000000100000000000000f30100000000000001fe"
           }
         ]
       }

@@ -22,7 +22,7 @@ mod solana_support;
 use kms_worker::core::solana::{
     failure::{AuthorizationFailure, FailureClass},
     pipeline::{AuthorizationContext, authorize_request},
-    snapshot::{SnapshotAccount, SnapshotKeys},
+    snapshot::{SYSTEM_PROGRAM_ID, SnapshotAccount, SnapshotKeys},
     watermark::{
         WatermarkFailure, WindowFailure, check_not_invalidated, check_window,
         permit_invalidation_address, read_watermark,
@@ -68,21 +68,26 @@ fn the_window_is_open_at_its_exact_start() {
         .expect("the start second is inside the window");
 }
 
-/// The window is closed at its exact end. The end is `start + duration`, and it is not inside:
-/// a one-second permit is usable for exactly one second.
+/// The window is open at its exact end and closed one second later: `[start, start + duration]`
+/// is the closed interval the Gateway applies on chain (`start + duration < now` rejects), and
+/// this second line has to agree with it second for second.
 #[test]
-fn the_window_is_closed_at_its_exact_end() {
+fn the_window_is_open_at_its_exact_end() {
     let end = DEFAULT_START + DEFAULT_DURATION;
 
-    let failure = check_window(DEFAULT_START, DEFAULT_DURATION, end)
-        .expect_err("the end second is outside the window");
+    check_window(DEFAULT_START, DEFAULT_DURATION, end)
+        .expect("the end second is inside the window");
+
+    let failure = check_window(DEFAULT_START, DEFAULT_DURATION, end + 1)
+        .expect_err("the second after the end is outside the window");
 
     assert!(matches!(
         failure,
-        WindowFailure::Expired { end: e, now } if e == end && now == end
+        WindowFailure::Expired { end: e, now } if e == end && now == end + 1
     ));
-    check_window(DEFAULT_START, 1, DEFAULT_START).expect("a one-second permit has one second");
-    assert!(check_window(DEFAULT_START, 1, DEFAULT_START + 1).is_err());
+    check_window(DEFAULT_START, 1, DEFAULT_START + 1)
+        .expect("a one-second permit is usable at the second it names as its end");
+    assert!(check_window(DEFAULT_START, 1, DEFAULT_START + 2).is_err());
 }
 
 /// An expired permit is terminal: no later observation makes it younger.
@@ -137,6 +142,38 @@ fn an_absent_invalidation_record_reads_as_zero() {
     let watermark = watermark_in(&World::at_slot(1), user).expect("an absent record is a zero");
 
     assert_eq!(watermark, 0);
+}
+
+/// A never-revoked user whose address someone else pre-funded reads as zero too. The two
+/// observations say the same thing — the host program has never written here — and which of them a
+/// user is presented as is not the user's choice: the address is derivable by anyone. Reading the
+/// pre-funded one as a failure would sell a terminal denial of every request of any user for the
+/// price of one transfer.
+#[test]
+fn a_prefunded_invalidation_address_reads_as_zero() {
+    let user = Wallet::new(1).pubkey();
+    let (key, _) = permit_invalidation_address(PROGRAM_ID, user);
+    let world = World::at_slot(1).with_account(key, prefunded_account());
+
+    let watermark = watermark_in(&world, user).expect("a pre-funded address is a zero");
+
+    assert_eq!(watermark, 0);
+}
+
+/// The exception is the empty account, not the System program: an account it owns that does carry
+/// data is a layout this reader is not reading, and stays a rejection.
+#[test]
+fn a_system_owned_invalidation_account_carrying_data_is_rejected() {
+    let user = Wallet::new(1).pubkey();
+    let (key, _) = permit_invalidation_address(PROGRAM_ID, user);
+    let mut impostor = invalidation_account(user, DEFAULT_START + 5);
+    impostor.owner = SYSTEM_PROGRAM_ID;
+    let world = World::at_slot(1).with_account(key, impostor);
+
+    let failure =
+        watermark_in(&world, user).expect_err("only an empty account reads as never written");
+
+    assert!(matches!(failure, WatermarkFailure::ForeignOwner { .. }));
 }
 
 /// A stored watermark is read as written.
@@ -229,6 +266,31 @@ fn an_invalidation_record_owned_by_another_program_is_rejected() {
     let failure = watermark_in(&world, user).expect_err("a foreign program cannot set a watermark");
 
     assert!(matches!(failure, WatermarkFailure::ForeignOwner { .. }));
+}
+
+/// A record storing a bump other than the canonical one for its address is not the record this
+/// reader reads. Nothing an attacker can arrange — only the host program writes these bytes — but a
+/// record the program wrote under another derivation is a layout nobody promised, and reading a
+/// watermark out of it would be a guess.
+#[test]
+fn an_invalidation_record_storing_a_non_canonical_bump_is_rejected() {
+    let user = Wallet::new(1).pubkey();
+    let (key, canonical_bump) = permit_invalidation_address(PROGRAM_ID, user);
+    let mut wrong_bump = invalidation_account(user, DEFAULT_START);
+    let last = wrong_bump.data.len() - 1;
+    assert_eq!(
+        wrong_bump.data[last], canonical_bump,
+        "the fixture writes the canonical bump, or this test proves nothing"
+    );
+    wrong_bump.data[last] = canonical_bump.wrapping_sub(1);
+    let world = World::at_slot(1).with_account(key, wrong_bump);
+
+    let failure = watermark_in(&world, user).expect_err("a non-canonical bump is not this record");
+
+    assert!(matches!(
+        failure,
+        WatermarkFailure::NotAnInvalidationRecord { account_key } if account_key == key
+    ));
 }
 
 /// A record too short to hold the layout is a rejection rather than a partial read.
@@ -328,6 +390,35 @@ async fn a_revocation_by_the_signer_stops_a_delegated_request() {
         failure,
         AuthorizationFailure::Watermark(WatermarkFailure::Invalidated { .. })
     ));
+}
+
+/// End to end: pre-funding a user's invalidation address does not deny them service. The whole
+/// attack is one transfer to an address anyone can derive, so the request has to survive it — and
+/// it has to survive it in the pipeline, not only in the reader, because the watermark is the one
+/// rule where an absent account is the permissive reading.
+#[tokio::test]
+async fn a_prefunded_invalidation_address_does_not_deny_service() {
+    let wallet = Wallet::new(1);
+    let live = handle(0x23, FHE_TYPE_UINT64);
+    let lineage = LineageFixture::new(live, &[wallet.pubkey()]);
+    let request = RequestBuilder::new(&wallet)
+        .direct_current(&lineage, live)
+        .typed();
+    let (key, _) = permit_invalidation_address(PROGRAM_ID, wallet.pubkey());
+    let world = World::at_slot(100)
+        .with_lineage(&lineage)
+        .with_account(key, prefunded_account());
+    let reader = ScriptedReader::constant(world);
+    let deployment = deployment();
+
+    authorize_request(
+        &reader,
+        &ServableKmsPair,
+        context_at(&deployment, NOW_INSIDE_WINDOW),
+        &request,
+    )
+    .await
+    .expect("a donated lamport is not a revocation");
 }
 
 /// The window is evaluated against the time handed to authorization, so a permit that expired

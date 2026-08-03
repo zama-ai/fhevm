@@ -30,6 +30,16 @@
 //! the wrong record therefore surfaces as a key the deciding snapshot never read, reported as
 //! the key-planning defect it is.
 //!
+//! One thing is asked of the pair, and it is not agreement: order. The deciding read must not be
+//! older than the discovery read ([`HostSnapshot::deciding_after`]). A read that goes backwards is
+//! not a fresher view of the chain — behind a load balancer it is a second node that has fallen
+//! behind — and taking it as the deciding observation turns a grant that demonstrably exists into a
+//! terminal rejection: a delegation record written between the two reads reads as absent from the
+//! older one, and a record the discovery read already saw reads as newer than the observation.
+//! Both of those are terminal, so one lagging node would kill a valid request for good. Ordering
+//! costs one comparison and still compares no values: the chain advancing between the reads
+//! remains fine, which is the case that actually happens.
+//!
 //! Reads number exactly one for a direct-only request, exactly two when any entry is
 //! delegated, and never three: nothing after the deciding snapshot reads state at all.
 //!
@@ -50,6 +60,10 @@ use url::Url;
 /// The commitment level of every authorization read.
 pub use crate::core::solana_v2_fetcher::SOLANA_COMMITMENT_CONFIRMED;
 
+/// The System program's id, which is the all-zero pubkey. The owner every account has before a
+/// program takes it over, and the one this module reads as "nothing has been written here yet".
+pub const SYSTEM_PROGRAM_ID: SolanaPubkeyBytes = [0; 32];
+
 /// One account as the snapshot saw it.
 #[derive(Clone, PartialEq, Eq, Debug)]
 pub struct SnapshotAccount {
@@ -58,6 +72,24 @@ pub struct SnapshotAccount {
     /// The account data, verbatim — including any bytes beyond the decoded body, which are
     /// legal for a realloc-grown account.
     pub data: Vec<u8>,
+}
+
+impl SnapshotAccount {
+    /// Whether this is an address the host program has never written to, despite an account
+    /// existing there: System-program-owned and empty.
+    ///
+    /// Every PDA address in this path is derivable by anyone, and a bare transfer to one creates
+    /// exactly this account. So an account in this state carries no claim about host state — the
+    /// only party who could have put data there is the program, and it has not.
+    ///
+    /// The host program applies the same rule when it reads an invalidation record it may have to
+    /// create. It additionally refuses the System-owned-and-empty-but-executable combination; that
+    /// is unreachable rather than unchecked here, because an executable account is owned by a
+    /// loader and carries its program's bytes, and turning a PDA back into an empty System-owned
+    /// account needs the PDA's own signature, which only its program can produce.
+    pub fn is_uninitialized_pda(&self) -> bool {
+        self.owner == SYSTEM_PROGRAM_ID && self.data.is_empty()
+    }
 }
 
 /// An ordered, duplicate-free set of account keys to read.
@@ -156,6 +188,25 @@ impl HostSnapshot {
     /// The keys this snapshot covers, in sorted order.
     pub fn keys(&self) -> Vec<SolanaPubkeyBytes> {
         self.accounts.keys().copied().collect()
+    }
+
+    /// Takes this read as the deciding observation, given the discovery read that preceded it.
+    ///
+    /// The only condition is order: a deciding read older than the discovery read is a node that
+    /// has fallen behind rather than a later view of the chain, and judging a request on it would
+    /// terminally reject grants the discovery read already saw. Advancing is fine and expected;
+    /// no value of either read is compared.
+    ///
+    /// Consuming `self` is the point: the deciding snapshot is obtained by passing this gate, so
+    /// the sequence cannot be assembled without stating which read decides.
+    pub fn deciding_after(self, discovery: &HostSnapshot) -> Result<Self, SnapshotError> {
+        if self.observed_slot < discovery.observed_slot() {
+            return Err(SnapshotError::DecidingReadOlderThanDiscovery {
+                discovery_slot: discovery.observed_slot(),
+                deciding_slot: self.observed_slot,
+            });
+        }
+        Ok(self)
     }
 }
 
@@ -351,7 +402,8 @@ impl HostStateReader for RpcHostStateReader {
 /// Why a snapshot could not be taken.
 ///
 /// There is no variant for "the two reads disagreed": the rules are evaluated against the last
-/// read alone, so two reads are never compared and never combined.
+/// read alone, so two reads are never compared and never combined. The one thing asked of the
+/// pair is their order, and that is the variant below.
 #[derive(Clone, PartialEq, Eq, Debug, thiserror::Error)]
 pub enum SnapshotError {
     /// The RPC could not be reached, or answered with an error or an unparsable body.
@@ -374,5 +426,16 @@ pub enum SnapshotError {
     KeyNotInSnapshot {
         /// The key that was asked for.
         key: SolanaPubkeyBytes,
+    },
+    /// The deciding read observed an earlier slot than the discovery read that preceded it, so it
+    /// is a node that has fallen behind rather than a later state.
+    #[error(
+        "the deciding read observed slot {deciding_slot}, older than the discovery read's {discovery_slot}"
+    )]
+    DecidingReadOlderThanDiscovery {
+        /// Where the discovery read landed.
+        discovery_slot: u64,
+        /// Where the deciding read landed.
+        deciding_slot: u64,
     },
 }

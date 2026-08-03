@@ -152,6 +152,67 @@ async fn the_second_read_carries_over_every_key_of_the_first() {
     );
 }
 
+/// A delegated entry plans both rows that could carry its grant — the lineage's app account and the
+/// delegator's wildcard row — in the same read. Fetching the wildcard row only when the app-specific
+/// one is missing would be a third read, and nothing in this pipeline reads state after the deciding
+/// observation.
+///
+/// Two entries in two apps under one delegator show how the two kinds of row scale: an app row per
+/// app, and one wildcard row however many apps there are, because its address does not mention an
+/// app at all. The batch is also mixed by construction — the first entry is authorized by its app
+/// row, the second only by the wildcard row.
+#[tokio::test]
+async fn a_delegated_entry_plans_both_of_its_delegation_rows() {
+    let signer = Wallet::new(1);
+    let delegator = Wallet::new(2);
+    let first_handle = handle(0x27, FHE_TYPE_UINT64);
+    let second_handle = handle(0x28, FHE_TYPE_UINT64);
+    let other_app: SolanaPubkeyBytes = [0x5a; 32];
+    let mut other_label = LABEL;
+    other_label[0] = b'a';
+    let first_lineage = LineageFixture::new(first_handle, &[delegator.pubkey()]);
+    let second_lineage = LineageFixture::in_domain(
+        DOMAIN,
+        other_app,
+        other_label,
+        second_handle,
+        &[delegator.pubkey()],
+    );
+    let app_row = DelegationFixture::live(delegator.pubkey(), signer.pubkey(), 100);
+    let wildcard_row = DelegationFixture::live_wildcard(delegator.pubkey(), signer.pubkey(), 100);
+    let request = RequestBuilder::new(&signer)
+        .delegated_current(&first_lineage, first_handle, delegator.pubkey())
+        .delegated_current(&second_lineage, second_handle, delegator.pubkey())
+        .typed();
+    let world = World::at_slot(100)
+        .with_lineage(&first_lineage)
+        .with_lineage(&second_lineage)
+        .with_watermark(signer.pubkey(), 0)
+        .with_delegation(&app_row)
+        .with_delegation(&wildcard_row);
+    let reader = ScriptedReader::constant(world);
+    let deployment = deployment();
+
+    authorize_request(&reader, &ServableKmsPair, context(&deployment), &request)
+        .await
+        .expect("one entry stands on its app row, the other on the wildcard row");
+
+    let second = reader.call(1);
+    let (app_key, _) = app_row.address();
+    let (wildcard_key, _) = wildcard_row.address();
+    assert!(
+        second.contains(&app_key) && second.contains(&wildcard_key),
+        "both rows that could authorize an entry have to be in the deciding read"
+    );
+    assert_eq!(
+        second.len(),
+        // the invalidation record, two lineages, one app row per app, one wildcard row for both
+        1 + 2 + 2 + 1,
+        "the wildcard row is per delegator, so a second app adds an app row and no second wildcard"
+    );
+    assert_eq!(reader.call_count(), 2, "still two reads, never a third");
+}
+
 /// There is no scan in the authorization path: the first read's key set is a pure function of
 /// the request and the deployment, which is what "known before the first read" means
 /// operationally. The set is exactly the signer's invalidation record plus one lineage per
@@ -237,6 +298,108 @@ async fn a_slot_change_between_the_two_reads_does_not_fail_the_request() {
         101,
         "the recorded observation point is the read the rules were evaluated against"
     );
+}
+
+/// The chain going *backwards* between the two reads is a failure, and a transient one. Behind a
+/// load balancer this is a second node that has fallen behind, not a later state: judging the
+/// request on it would report the delegation the discovery read just saw as absent, which is
+/// terminal. A retry that lands on a node which has caught up authorizes the same request.
+#[tokio::test]
+async fn a_deciding_read_older_than_the_discovery_read_is_refused_transiently() {
+    let signer = Wallet::new(1);
+    let delegator = Wallet::new(2);
+    let handle = handle(0x25, FHE_TYPE_UINT64);
+    let lineage = LineageFixture::new(handle, &[delegator.pubkey()]);
+    let delegation = DelegationFixture::live(delegator.pubkey(), signer.pubkey(), 100);
+    let request = RequestBuilder::new(&signer)
+        .delegated_current(&lineage, handle, delegator.pubkey())
+        .typed();
+    // The same state throughout: the only difference between the reads is which node answered.
+    let world = World::at_slot(100)
+        .with_lineage(&lineage)
+        .with_watermark(signer.pubkey(), 0)
+        .with_delegation(&delegation);
+    let reader = ScriptedReader::scripted(vec![world.clone(), world.at(99)]);
+    let deployment = deployment();
+
+    let failure = authorize_request(&reader, &ServableKmsPair, context(&deployment), &request)
+        .await
+        .expect_err("a deciding read behind the discovery read decides nothing");
+
+    assert!(
+        matches!(
+            failure,
+            AuthorizationFailure::Snapshot(SnapshotError::DecidingReadOlderThanDiscovery {
+                discovery_slot: 100,
+                deciding_slot: 99,
+            })
+        ),
+        "expected the ordering failure, got {failure}"
+    );
+    assert_eq!(failure.class(), FailureClass::Transient);
+}
+
+/// Equal slots are not a regression: two reads of one slot are the ordinary case when the chain
+/// has not advanced between the round trips, and the second is still the deciding one.
+#[tokio::test]
+async fn two_reads_at_the_same_slot_authorize() {
+    let signer = Wallet::new(1);
+    let delegator = Wallet::new(2);
+    let handle = handle(0x26, FHE_TYPE_UINT64);
+    let lineage = LineageFixture::new(handle, &[delegator.pubkey()]);
+    let delegation = DelegationFixture::live(delegator.pubkey(), signer.pubkey(), 100);
+    let request = RequestBuilder::new(&signer)
+        .delegated_current(&lineage, handle, delegator.pubkey())
+        .typed();
+    let world = World::at_slot(100)
+        .with_lineage(&lineage)
+        .with_watermark(signer.pubkey(), 0)
+        .with_delegation(&delegation);
+    let deployment = deployment();
+
+    let authorized = authorize_request(
+        &ScriptedReader::constant(world),
+        &ServableKmsPair,
+        context(&deployment),
+        &request,
+    )
+    .await
+    .expect("ordering is not agreement: one slot twice is in order");
+
+    assert_eq!(authorized.observed_slot(), 100);
+}
+
+/// The gate is on the pair of reads, not on any absolute slot: a direct request reads once, so
+/// there is no earlier read for its observation to be older than.
+#[test]
+fn the_ordering_gate_compares_the_two_reads_and_nothing_else() {
+    let keys = SnapshotKeys::new([[7; 32]]);
+    let discovery = World::at_slot(100).read(&keys).expect("the world reads");
+    let ahead = World::at_slot(101).read(&keys).expect("the world reads");
+    let level = World::at_slot(100).read(&keys).expect("the world reads");
+    let behind = World::at_slot(99).read(&keys).expect("the world reads");
+
+    assert_eq!(
+        ahead
+            .deciding_after(&discovery)
+            .expect("advancing is the expected case")
+            .observed_slot(),
+        101
+    );
+    assert_eq!(
+        level
+            .deciding_after(&discovery)
+            .expect("the same slot is in order")
+            .observed_slot(),
+        100
+    );
+    assert!(matches!(
+        behind.deciding_after(&discovery),
+        Err(SnapshotError::DecidingReadOlderThanDiscovery {
+            discovery_slot: 100,
+            deciding_slot: 99,
+        })
+    ));
 }
 
 /// The state a delegated request is judged against is the deciding read's, not the discovery

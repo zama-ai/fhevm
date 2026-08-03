@@ -19,6 +19,11 @@
 //! no part in it. That absence is deliberate: pinning the counter in the request would let any
 //! unrelated update to any delegation record invalidate requests already in flight, and would
 //! make a mixed-delegator batch impossible to build.
+//!
+//! Two rows can carry one grant — the lineage's app account, and the delegator's wildcard row — and
+//! the last section pins that rule from both sides: either row alone authorizes, neither vetoes the
+//! other, and revoking one leaves the other standing. That last property is the price of wildcard
+//! scope and is asserted deliberately, not tolerated.
 
 mod solana_support;
 
@@ -322,6 +327,169 @@ async fn a_delegation_written_at_the_observation_is_live() {
         .expect("a record written in the observed slot is observed");
 }
 
+// ---------------------------------------------------------------------------
+// Wildcard scope
+// ---------------------------------------------------------------------------
+
+/// The same delegated scenario, parameterised by which rows the world holds.
+async fn authorize_delegated_with_rows(
+    rows: &[DelegationFixture],
+) -> Result<AuthorizedRequest, AuthorizationFailure> {
+    let signer = Wallet::new(1);
+    let delegator = Wallet::new(2);
+    let live = handle(0x31, FHE_TYPE_UINT64);
+    let lineage = LineageFixture::new(live, &[delegator.pubkey()]);
+    let request = RequestBuilder::new(&signer)
+        .delegated_current(&lineage, live, delegator.pubkey())
+        .typed();
+    let mut world = world_with(&lineage, signer.pubkey());
+    for row in rows {
+        world = world.with_delegation(row);
+    }
+    authorize_in(world, &request).await.0
+}
+
+/// The wildcard row of the same pair, live at the observed slot.
+fn live_wildcard() -> DelegationFixture {
+    DelegationFixture::live_wildcard(
+        Wallet::new(2).pubkey(),
+        Wallet::new(1).pubkey(),
+        OBSERVED_SLOT,
+    )
+}
+
+/// A wildcard row covers a lineage that has no row of its own — the EVM ACL's wildcard delegation,
+/// with the sentinel standing where an app account would.
+#[tokio::test]
+async fn a_wildcard_row_authorizes_a_lineage_with_no_app_specific_row() {
+    let authorized = authorize_delegated_with_rows(&[live_wildcard()])
+        .await
+        .expect("a wildcard row covers every app of its delegator");
+
+    assert_eq!(
+        authorized.entries()[0].subject,
+        Wallet::new(2).pubkey(),
+        "the wildcard row changes which record authorizes, not whose access is proven"
+    );
+}
+
+/// The app-specific row is tried first, so a dead wildcard row beside it changes nothing.
+#[tokio::test]
+async fn an_app_specific_row_authorizes_while_the_wildcard_row_is_dead() {
+    let mut dead_wildcard = live_wildcard();
+    dead_wildcard.revoked = true;
+
+    authorize_delegated_with_rows(&[live_delegation(), dead_wildcard])
+        .await
+        .expect("one live row is the whole requirement");
+}
+
+/// The consequence of the rule, stated as a test rather than left to be discovered: revoking the
+/// app-specific row does not stop a delegate who also holds a wildcard row. Scope-by-app is a
+/// property of a row, so narrowing one app takes revoking both rows — two transactions, because the
+/// host program's revocation instruction takes one record per call.
+#[tokio::test]
+async fn revoking_the_app_specific_row_does_not_stop_a_wildcard_delegate() {
+    let mut revoked = live_delegation();
+    revoked.revoked = true;
+
+    authorize_delegated_with_rows(&[revoked, live_wildcard()])
+        .await
+        .expect("the wildcard row still authorizes, which is what wildcard means");
+}
+
+/// Neither row can veto the other. An app-specific row written after the observation is not part of
+/// the state this authorization saw — and that says nothing about the wildcard row, which is.
+#[tokio::test]
+async fn an_app_specific_row_newer_than_the_observation_does_not_veto_the_wildcard_row() {
+    let mut from_the_future = live_delegation();
+    from_the_future.last_update_slot = OBSERVED_SLOT + 1;
+
+    authorize_delegated_with_rows(&[from_the_future, live_wildcard()])
+        .await
+        .expect("a row outside the observation cannot invalidate one inside it");
+}
+
+/// The mirror: a wildcard row from the future does not reach a live app-specific row.
+#[tokio::test]
+async fn a_wildcard_row_newer_than_the_observation_does_not_veto_the_app_specific_row() {
+    let mut from_the_future = live_wildcard();
+    from_the_future.last_update_slot = OBSERVED_SLOT + 1;
+
+    authorize_delegated_with_rows(&[live_delegation(), from_the_future])
+        .await
+        .expect("a row outside the observation cannot invalidate one inside it");
+}
+
+/// When both rows exist and neither is live, both reasons are reported. Naming one would send the
+/// delegate to fix a row that was not the only thing standing in the way.
+#[tokio::test]
+async fn two_dead_rows_report_both_reasons() {
+    let mut revoked = live_delegation();
+    revoked.revoked = true;
+    let mut expired_wildcard = live_wildcard();
+    expired_wildcard.expiration_slot = OBSERVED_SLOT - 1;
+
+    let failure = authorize_delegated_with_rows(&[revoked, expired_wildcard])
+        .await
+        .expect_err("two dead rows authorize nothing");
+
+    match &failure {
+        AuthorizationFailure::Delegation {
+            index: 0,
+            source: DelegationFailure::NoLiveGrant { exact, wildcard },
+        } => {
+            assert!(matches!(**exact, DelegationFailure::Revoked));
+            assert!(matches!(**wildcard, DelegationFailure::Expired { .. }));
+        }
+        other => panic!("expected both reasons, got {other}"),
+    }
+    assert_eq!(failure.class(), FailureClass::Terminal);
+}
+
+/// Holding no wildcard row is the ordinary case, and in it the app-specific reason is reported as
+/// itself: the rule gained a second row, not a second sentence in every diagnostic.
+#[tokio::test]
+async fn without_a_wildcard_row_the_app_specific_reason_is_reported_alone() {
+    let mut revoked = live_delegation();
+    revoked.revoked = true;
+
+    let failure = authorize_delegated_with_rows(&[revoked])
+        .await
+        .expect_err("a revoked row authorizes nothing");
+
+    assert!(matches!(
+        failure,
+        AuthorizationFailure::Delegation {
+            index: 0,
+            source: DelegationFailure::Revoked
+        }
+    ));
+}
+
+/// A wildcard row is per delegator: somebody else's covers nothing here, because its address is
+/// derived from the delegator this entry names.
+#[tokio::test]
+async fn a_wildcard_row_of_another_delegator_authorizes_nothing() {
+    let stranger = DelegationFixture::live_wildcard(
+        Wallet::new(9).pubkey(),
+        Wallet::new(1).pubkey(),
+        OBSERVED_SLOT,
+    );
+
+    let failure = authorize_delegated_with_rows(&[stranger])
+        .await
+        .expect_err("a wildcard row of another delegator is not at this entry's address");
+
+    assert!(matches!(
+        failure,
+        AuthorizationFailure::Delegation {
+            index: 0,
+            source: DelegationFailure::Absent { .. }
+        }
+    ));
+}
+
 /// The counter is decoded and ignored. Two records that differ only in it behave identically —
 /// which is what makes a permit reusable across unrelated delegation updates.
 #[tokio::test]
@@ -427,6 +595,45 @@ async fn a_delegation_record_naming_another_tuple_is_rejected() {
         AuthorizationFailure::Delegation {
             index: 0,
             source: DelegationFailure::TupleMismatch { .. }
+        }
+    ));
+}
+
+/// A record storing a bump other than the canonical one for its address is not the record this
+/// reader reads. Nothing an attacker can arrange — only the host program writes program-owned bytes,
+/// and the address was derived here — but a record written under another derivation is caught where
+/// it is one comparison instead of surfacing later as a rule that stopped matching.
+#[tokio::test]
+async fn a_delegation_record_storing_a_non_canonical_bump_is_rejected() {
+    let signer = Wallet::new(1);
+    let delegator = Wallet::new(2);
+    let live = handle(0x34, FHE_TYPE_UINT64);
+    let lineage = LineageFixture::new(live, &[delegator.pubkey()]);
+    let delegation = DelegationFixture::live(delegator.pubkey(), signer.pubkey(), OBSERVED_SLOT);
+    let (key, canonical_bump) = delegation.address();
+    let mut wrong_bump = delegation.account();
+    let last = wrong_bump.data.len() - 1;
+    assert_eq!(
+        wrong_bump.data[last], canonical_bump,
+        "the fixture writes the canonical bump, or this test proves nothing"
+    );
+    wrong_bump.data[last] = canonical_bump.wrapping_sub(1);
+    let request = RequestBuilder::new(&signer)
+        .delegated_current(&lineage, live, delegator.pubkey())
+        .typed();
+
+    let (outcome, _) = authorize_in(
+        world_with(&lineage, signer.pubkey()).with_account(key, wrong_bump),
+        &request,
+    )
+    .await;
+
+    let failure = outcome.expect_err("a non-canonical bump is not this record");
+    assert!(matches!(
+        failure,
+        AuthorizationFailure::Delegation {
+            index: 0,
+            source: DelegationFailure::NotADelegationRecord { .. }
         }
     ));
 }

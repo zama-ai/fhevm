@@ -2,117 +2,62 @@
 //! permit, the handles and this Connector together.
 //!
 //! A permit signs its deployment explicitly because it carries no handle at signing time and
-//! so cannot derive its environment from one. The Connector's side of that comparison is its
-//! own identity, and the load-bearing decision is that the chain id is *derived* from the
-//! cluster's genesis hash rather than configured. A configured constant is identical across
-//! environments, which is exactly the condition under which a signature for one deployment
-//! verifies against another.
+//! so cannot derive its environment from one. The Connector's side of that comparison is its own
+//! identity, and both halves of it are configuration: the program id, and the chain id of the
+//! cluster it serves. That chain id is not computed here — the rule mapping a cluster to its number
+//! is a deployment-time rule of the protocol, applied once per cluster and pinned in the host
+//! program's own config, which every handle then embeds.
 //!
-//! Two failure surfaces follow, and they are deliberately different in kind. A configured pin
-//! that disagrees with the derivation is a startup failure: the process must not run, because
-//! every request would fail deployment matching for a reason no log line would explain. A
-//! permit naming another deployment is an ordinary request rejection.
+//! What protects a deployment is that the number is unique per cluster, not where this process read
+//! it from. A permit signed for another cluster names another chain id, and so do its handles; a
+//! Connector configured with the wrong cluster's number does not accept foreign permits, it rejects
+//! everything from the first request.
 //!
 //! The chain-id agreement itself is one equality over three values — signed, embedded in every
-//! handle, derived here. There is no first-handle-wins and no majority: a batch that mixes
+//! handle, configured here. There is no first-handle-wins and no majority: a batch that mixes
 //! clusters is refused.
 
 mod solana_support;
 
 use kms_worker::core::solana::{
     deployment::{
-        ChainIdDerivation, DeploymentFailure, DeploymentIdentity, DeploymentIdentityError,
-        SOLANA_CHAIN_TYPE_BIT, check_deployment, embedded_chain_id,
+        DeploymentFailure, DeploymentIdentity, DeploymentIdentityError, SOLANA_CHAIN_TYPE_BIT,
+        check_deployment, embedded_chain_id,
     },
     failure::FailureClass,
 };
 use solana_support::*;
 
-/// A derivation that returns whatever it was told to, so a test can describe a cluster whose
-/// derived chain id is inconvenient.
-struct FixedDerivation(u64);
-
-impl ChainIdDerivation for FixedDerivation {
-    fn derive_chain_id(&self, _genesis_hash: &[u8; 32]) -> u64 {
-        self.0
-    }
-}
-
 // ---------------------------------------------------------------------------
 // Resolving this Connector's own identity
 // ---------------------------------------------------------------------------
 
-/// With no pin in configuration, the chain id is whatever the cluster's genesis hash derives.
-/// Nothing about it is configurable, which is the property that makes a devnet permit useless
-/// against mainnet.
+/// The identity is the configured pair, taken as given.
 #[test]
-fn the_chain_id_is_derived_from_the_genesis_hash() {
-    let identity = DeploymentIdentity::resolve(PROGRAM_ID, &GENESIS_HASH, None, &StandInDerivation)
-        .expect("a cluster with a genesis hash has a chain id");
+fn the_identity_is_the_configured_program_and_chain_id() {
+    let identity = DeploymentIdentity::resolve(PROGRAM_ID, CHAIN_ID)
+        .expect("a Solana chain id and a program id are an identity");
 
     assert_eq!(identity.chain_id(), CHAIN_ID);
     assert_eq!(identity.program_id(), PROGRAM_ID);
 }
 
-/// A pin is allowed as an operational convenience, and it is cross-checked. Agreeing changes
-/// nothing.
+/// The one thing checked about the configured value: handles embed it and routing reads the
+/// chain-kind bit out of it, so a chain id without the bit matches no handle of any Solana cluster.
+/// Caught at startup, where it is one log line, rather than per request, where it would look like a
+/// user error every time.
 #[test]
-fn a_configured_chain_id_that_agrees_with_the_derivation_is_accepted() {
-    let identity = DeploymentIdentity::resolve(
-        PROGRAM_ID,
-        &GENESIS_HASH,
-        Some(CHAIN_ID),
-        &StandInDerivation,
-    )
-    .expect("a pin equal to the derivation is redundant, not wrong");
-
-    assert_eq!(identity.chain_id(), CHAIN_ID);
-}
-
-/// A pin that disagrees stops the process. The alternative — preferring one of the two values —
-/// would run a Connector whose idea of its own cluster matches nothing on that cluster, and
-/// every rejection downstream would look like a user error.
-#[test]
-fn a_configured_chain_id_that_disagrees_with_the_derivation_fails_at_startup() {
-    let wrong_pin = CHAIN_ID ^ 1;
-
-    let error = DeploymentIdentity::resolve(
-        PROGRAM_ID,
-        &GENESIS_HASH,
-        Some(wrong_pin),
-        &StandInDerivation,
-    )
-    .expect_err("a pin disagreeing with the cluster is a misconfiguration, not a request problem");
-
-    assert!(matches!(
-        error,
-        DeploymentIdentityError::PinnedChainIdMismatch {
-            pinned,
-            derived
-        } if pinned == wrong_pin && derived == CHAIN_ID
-    ));
-    assert_eq!(error.class(), FailureClass::Terminal);
-}
-
-/// The derived value has to be usable as a host chain id: handles embed it, and routing reads
-/// the chain-kind bit out of it. A derivation that loses the bit is caught where it is cheap to
-/// notice rather than per request.
-#[test]
-fn a_derived_chain_id_without_the_chain_kind_bit_fails_at_startup() {
+fn a_configured_chain_id_without_the_chain_kind_bit_fails_at_startup() {
     let without_bit = CHAIN_ID & !SOLANA_CHAIN_TYPE_BIT;
 
-    let error = DeploymentIdentity::resolve(
-        PROGRAM_ID,
-        &GENESIS_HASH,
-        None,
-        &FixedDerivation(without_bit),
-    )
-    .expect_err("a Solana chain id carries the chain-kind bit");
+    let error = DeploymentIdentity::resolve(PROGRAM_ID, without_bit)
+        .expect_err("a Solana chain id carries the chain-kind bit");
 
     assert!(matches!(
         error,
         DeploymentIdentityError::ChainKindBitMissing { chain_id } if chain_id == without_bit
     ));
+    assert_eq!(error.class(), FailureClass::Terminal);
 }
 
 // ---------------------------------------------------------------------------

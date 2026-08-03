@@ -25,7 +25,8 @@
 //! Every rule below the reads takes the *deciding* snapshot: the last read, whole and on its
 //! own. A delegated request reads twice because a delegation address is not computable before
 //! a lineage has been read, and the earlier read is a discovery step whose values decide
-//! nothing (see [`super::snapshot`]).
+//! nothing (see [`super::snapshot`]). The two are held to their order and nothing else: a
+//! deciding read older than the discovery read is refused as the lagging node it is, transiently.
 //!
 //! Once a request is accepted nothing re-reads state for it. Later supersession, subject
 //! rotation or delegation revocation do not affect it: the normalized request, its linker and
@@ -34,7 +35,7 @@
 //! authorized from scratch against its own observation, so a revoked delegation stops the
 //! next request immediately.
 
-use super::delegation::{check_delegation, delegation_address};
+use super::delegation::{check_delegation, delegation_address, wildcard_delegation_address};
 use super::deployment::{DeploymentIdentity, check_deployment};
 use super::failure::AuthorizationFailure;
 use super::handle_binding::{
@@ -176,7 +177,11 @@ where
         first
     } else {
         let second_keys = plan_second_read(&first_keys, delegation_keys);
-        reader.read_accounts(&second_keys).await?
+        let second = reader.read_accounts(&second_keys).await?;
+        // The one condition on the pair of reads, and it is ordering rather than agreement: a
+        // deciding read behind the discovery read would report grants the discovery read saw as
+        // absent, terminally.
+        second.deciding_after(&first)?
     };
 
     // Everything below is evaluated against that one observation, and nothing below reads state.
@@ -228,6 +233,12 @@ where
 /// purpose: every rule, including the resolution of this same lineage, is applied again against
 /// the deciding observation.
 ///
+/// Two addresses per delegated entry, because two rows can carry the grant: the lineage's app
+/// account and the delegator's wildcard row. Both are planned unconditionally rather than the
+/// wildcard being fetched only when the app-specific row is missing — that would be a third read,
+/// and a rule that reads state after the deciding observation is the thing this pipeline does not
+/// do. Repeats collapse in the key set, so a batch under one delegator costs one wildcard key.
+///
 /// Empty for a direct-only request, which is what makes that request cost one read.
 fn discover_delegation_keys(
     first: &HostSnapshot,
@@ -246,6 +257,8 @@ fn discover_delegation_keys(
         let (account_key, _) =
             delegation_address(program_id, delegator, signer, lineage.app_account());
         keys.push(account_key);
+        let (wildcard_key, _) = wildcard_delegation_address(program_id, delegator, signer);
+        keys.push(wildcard_key);
     }
     Ok(keys)
 }

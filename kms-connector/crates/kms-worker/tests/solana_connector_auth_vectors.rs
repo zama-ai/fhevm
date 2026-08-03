@@ -245,6 +245,35 @@ fn accepting_scenarios() -> Vec<Scenario> {
         world,
     ));
 
+    // The same request, authorized by the delegator's wildcard row instead: no row exists for this
+    // lineage's app account at all.
+    let (wildcard_signer, wildcard_delegator, wildcard_lineage, wildcard_live, _, _, _) =
+        reference_delegated();
+    let wildcard_row = DelegationFixture::live_wildcard(
+        wildcard_delegator.pubkey(),
+        wildcard_signer.pubkey(),
+        OBSERVED_SLOT,
+    );
+    out.push(Scenario::accepted(
+        "delegated-via-wildcard-row",
+        "A delegator grants across every one of their apps with one row carrying the reserved \
+         app-context sentinel instead of an app account. It authorizes a lineage that has no \
+         app-specific row, exactly as the EVM ACL's wildcard delegation does. The consequence is \
+         part of the rule: revoking the app-specific row does not stop a delegate who holds this \
+         one.",
+        RequestBuilder::new(&wildcard_signer)
+            .delegated_current(
+                &wildcard_lineage,
+                wildcard_live,
+                wildcard_delegator.pubkey(),
+            )
+            .wire(),
+        World::at_slot(OBSERVED_SLOT)
+            .with_lineage(&wildcard_lineage)
+            .with_watermark(wildcard_signer.pubkey(), 0)
+            .with_delegation(&wildcard_row),
+    ));
+
     let (lineage, sealed, proof) = superseded_lineage(0x30, wallet.pubkey());
     out.push(Scenario::accepted(
         "historical-after-supersession",
@@ -412,6 +441,22 @@ fn accepting_scenarios() -> Vec<Scenario> {
         World::at_slot(OBSERVED_SLOT).with_lineage(&absent_lineage),
     ));
     let _ = absent_wallet;
+
+    let (prefunded_wallet, prefunded_lineage, _, prefunded_request, _) = reference_direct();
+    let (prefunded_key, _) = invalidation_address(prefunded_wallet.pubkey());
+    out.push(Scenario::accepted(
+        "prefunded-invalidation-address",
+        "The invalidation address of a user who has never revoked, holding the account a bare \
+         transfer leaves behind: System-program-owned and empty. Every address in this path is \
+         derivable by anyone, so this is the same \"the host program never wrote here\" observation \
+         as no account at all, and it is not the user's choice which of the two they are presented \
+         as. An implementation that reads it any other way sells a terminal denial of a user's \
+         every request for the price of one transfer.",
+        prefunded_request,
+        World::at_slot(OBSERVED_SLOT)
+            .with_lineage(&prefunded_lineage)
+            .with_account(prefunded_key, prefunded_account()),
+    ));
 
     // The recorded weakness: a permit pre-signed with a start later than a revocation survives it.
     let (weak_wallet, weak_lineage, weak_live, _, _) = reference_direct();
@@ -1164,6 +1209,26 @@ fn delegation_scenarios() -> Vec<Scenario> {
         base_world().with_account(expected_key, lineage.account()),
     ));
 
+    // Both rows exist and neither is live. The app-specific row alone would report "revoked", which
+    // would send the delegator to a row that was not the only thing standing in the way.
+    let mut revoked_wildcard =
+        DelegationFixture::live_wildcard(delegator.pubkey(), signer.pubkey(), OBSERVED_SLOT);
+    revoked_wildcard.revoked = true;
+    out.push(Scenario::rejected(
+        "no-live-delegation-row",
+        "The delegator holds both an app-specific row and a wildcard row, and both are revoked. The \
+         rejection names both reasons: either row could have authorized this entry on its own, so \
+         naming one of them would describe half of the state the delegate has to fix.",
+        "delegated-current",
+        "both the app-specific and the wildcard delegation rows are marked revoked",
+        rule::DELEGATION_NO_LIVE_GRANT,
+        FailureClass::Terminal,
+        request.clone(),
+        base_world()
+            .with_delegation(&revoked)
+            .with_delegation(&revoked_wildcard),
+    ));
+
     let _ = (delegator, live, world);
     out
 }
@@ -1264,8 +1329,14 @@ fn build_file() -> ConnectorAuthVectorFile {
             chain_id_decimal: CHAIN_ID.to_string(),
             chain_id_hex: format!("{CHAIN_ID:#018x}"),
             chain_id_be_bytes: to_hex(&CHAIN_ID.to_be_bytes()),
-            chain_id_derivation: "stand-in: the real derivation from the genesis hash is an open \
-                                  protocol item, and this set is regenerated once it is settled"
+            chain_id_derivation: "deployment-time rule: chain_id = 0x8000000000000000 | \
+                                  (be_u64(SHA-256(\"zama-solana-chain-id-v1\" || genesis_hash)[0..8]) \
+                                  & 0x7fffffffffffffff), applied once per cluster and configured \
+                                  everywhere. Nothing in the authorization path recomputes it, so \
+                                  this set's pair is a synthetic cluster: the chain id below is not \
+                                  the rule applied to the genesis hash below, and no check reads \
+                                  the genesis hash at all. Vectors for the rule itself live with \
+                                  the permit fixtures."
                 .to_owned(),
         },
         transport_keys: BTreeMap::from([(TRANSPORT_KEY_NAME.to_owned(), to_hex(&transport_key))]),
@@ -1380,6 +1451,7 @@ fn rule_name(failure: &AuthorizationFailure) -> &'static str {
             DelegationFailure::TupleMismatch { .. } => rule::DELEGATION_TUPLE_MISMATCH,
             DelegationFailure::ForeignOwner { .. } => rule::DELEGATION_FOREIGN_OWNER,
             DelegationFailure::NotADelegationRecord { .. } => rule::DELEGATION_WRONG_ACCOUNT_TYPE,
+            DelegationFailure::NoLiveGrant { .. } => rule::DELEGATION_NO_LIVE_GRANT,
             DelegationFailure::Snapshot(_) => panic!("a record carries one observation"),
         },
     }

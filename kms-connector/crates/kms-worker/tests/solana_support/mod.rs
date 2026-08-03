@@ -14,10 +14,14 @@
 #![allow(dead_code)]
 
 use kms_worker::core::solana::{
-    deployment::{ChainIdDerivation, DeploymentIdentity, SOLANA_CHAIN_TYPE_BIT},
+    delegation::WILDCARD_APP_CONTEXT,
+    deployment::{DeploymentIdentity, SOLANA_CHAIN_TYPE_BIT},
     kms_pair::{KmsPairFailure, KmsPairValidator},
     request::{SolanaHandleEntryWire, SolanaUserDecryptRequest, SolanaUserDecryptRequestWire},
-    snapshot::{HostSnapshot, HostStateReader, SnapshotAccount, SnapshotError, SnapshotKeys},
+    snapshot::{
+        HostSnapshot, HostStateReader, SYSTEM_PROGRAM_ID, SnapshotAccount, SnapshotError,
+        SnapshotKeys,
+    },
 };
 use kms_worker::core::solana_acl::SolanaPubkeyBytes;
 use kms_worker::core::solana_encrypted_value_acl::encrypted_value_acl_address;
@@ -37,10 +41,12 @@ use zama_solana_permit::{
 
 /// The deployment every fixture is built against.
 pub const PROGRAM_ID: SolanaPubkeyBytes = [7; 32];
-/// The cluster genesis hash the chain id is derived from.
+/// The genesis hash of the cluster these fixtures stand for. Provenance only: it names which
+/// cluster [`CHAIN_ID`] belongs to, and no check in the authorization path reads it — the rule that
+/// ties a cluster to its chain id is applied once per cluster at deployment, not per request.
 pub const GENESIS_HASH: [u8; 32] = [9; 32];
-/// The chain id the stand-in derivation produces for [`GENESIS_HASH`], carrying the
-/// chain-kind high bit as every Solana host chain id must.
+/// The chain id of the fixture cluster, carrying the chain-kind high bit as every Solana host
+/// chain id must.
 pub const CHAIN_ID: u64 = SOLANA_CHAIN_TYPE_BIT | 0x0123_4567_89ab_cdef;
 
 /// The ACL domain of the default lineage.
@@ -87,25 +93,9 @@ pub fn user_decryption_delegation_discriminator() -> [u8; 8] {
 // Deployment identity
 // ---------------------------------------------------------------------------
 
-/// A stand-in chain-id derivation: the real algorithm and width are an open protocol
-/// question, and nothing in the authorization path depends on which one wins — only on the
-/// value being derived from the genesis hash rather than configured.
-pub struct StandInDerivation;
-
-impl ChainIdDerivation for StandInDerivation {
-    fn derive_chain_id(&self, genesis_hash: &[u8; 32]) -> u64 {
-        assert_eq!(
-            genesis_hash, &GENESIS_HASH,
-            "fixtures derive the chain id of one cluster only"
-        );
-        CHAIN_ID
-    }
-}
-
 /// The deployment identity of the fixture cluster.
 pub fn deployment() -> DeploymentIdentity {
-    DeploymentIdentity::resolve(PROGRAM_ID, &GENESIS_HASH, None, &StandInDerivation)
-        .expect("fixture deployment resolves")
+    DeploymentIdentity::resolve(PROGRAM_ID, CHAIN_ID).expect("fixture deployment resolves")
 }
 
 // ---------------------------------------------------------------------------
@@ -498,6 +488,19 @@ impl DelegationFixture {
         }
     }
 
+    /// A live wildcard row: the same grant with the reserved app-context sentinel in place of an
+    /// app account, which is how a delegator covers every one of their apps at once.
+    pub fn live_wildcard(
+        delegator: SolanaPubkeyBytes,
+        delegate: SolanaPubkeyBytes,
+        observed_slot: u64,
+    ) -> Self {
+        Self {
+            app_account: WILDCARD_APP_CONTEXT,
+            ..Self::live(delegator, delegate, observed_slot)
+        }
+    }
+
     /// Its canonical address and bump.
     pub fn address(&self) -> (SolanaPubkeyBytes, u8) {
         kms_worker::core::solana::delegation::delegation_address(
@@ -547,6 +550,16 @@ pub fn invalidation_account(user: SolanaPubkeyBytes, watermark: u64) -> Snapshot
     SnapshotAccount {
         owner: PROGRAM_ID,
         data,
+    }
+}
+
+/// The account a bare transfer to a not-yet-created PDA leaves behind: System-program-owned, no
+/// data. Every address in this path is derivable by anyone, so any sender can produce this at any
+/// of them, for any user.
+pub fn prefunded_account() -> SnapshotAccount {
+    SnapshotAccount {
+        owner: SYSTEM_PROGRAM_ID,
+        data: Vec::new(),
     }
 }
 
