@@ -285,8 +285,8 @@ export function safeContractOwnerPart(contractOwnerAddress: string, dynamicOffse
  * signature from a nested inner Safe, alongside plain ECDSA parts from
  * `eoaOwners`. The inner Safe's owners sign the inner SafeMessage wrap of
  * the OUTER Safe's preimage bytes — the second full ERC-1271 round trip.
- * `dynamicOffsetOverride` deliberately mis-points the dynamic tail for
- * offset-validation negatives (GS021).
+ * `dynamicOffsetOverride` deliberately points the dynamic tail at a wrong
+ * offset for offset-validation negatives (GS021).
  */
 export async function buildSafeNestedMultisigSignature(
   outer: SafeAccount,
