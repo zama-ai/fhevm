@@ -12,8 +12,9 @@
 //! combination without a ported row returns [`ZamaHostError::HcuUnknownCost`].
 //!
 //! **Numbers are representative, EVM-ordered placeholders** (scalar ≤ ciphertext; monotonic in width;
-//! select ≥ comparison). Solana-fleet calibration is deferred; because limits ship at `0` (disabled),
-//! placeholder costs cannot reject anything pre-calibration.
+//! select ≥ comparison). Solana-fleet calibration is deferred; because the limits ship at
+//! `u64::MAX` (unlimited) and `0` is rejected by the setters, placeholder costs cannot reject
+//! anything pre-calibration.
 
 use anchor_lang::prelude::*;
 
@@ -264,7 +265,7 @@ pub(super) fn step_depth(step_hcu: u64, max_input_depth: u64) -> Result<u64> {
 /// for unit tests, so the fields are read only under `#[cfg(test)]`.
 #[derive(Debug)]
 #[cfg_attr(not(test), allow(dead_code))]
-pub(super) struct FrameMeter {
+pub(super) struct BatchMeter {
     pub total: u64,
     pub step_depths: Vec<u64>,
 }
@@ -293,7 +294,7 @@ pub(super) fn meter_batch(
     steps: &[FheExecuteStep],
     max_hcu_per_tx: u64,
     max_hcu_depth_per_tx: u64,
-) -> Result<FrameMeter> {
+) -> Result<BatchMeter> {
     let mut total: u64 = 0;
     let mut step_depths: Vec<u64> = Vec::with_capacity(steps.len());
 
@@ -403,7 +404,7 @@ pub(super) fn meter_batch(
         step_depths.push(depth);
     }
 
-    Ok(FrameMeter { total, step_depths })
+    Ok(BatchMeter { total, step_depths })
 }
 
 #[cfg(test)]
@@ -1008,7 +1009,7 @@ mod tests {
     // ---- Documentation test for the deferred cross-batch gap (NOT an invariant guard) ----
 
     #[test]
-    fn doc_cross_frame_total_not_metered() {
+    fn doc_cross_batch_total_not_metered() {
         // the total is per-batch. Two separate batches, each under the per-batch
         // total, BOTH succeed even though their combined cost exceeds the limit. A future reviewer
         // must not "fix" this into a false cross-batch coverage claim.

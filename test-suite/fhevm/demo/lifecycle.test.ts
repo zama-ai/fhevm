@@ -344,10 +344,15 @@ describe("demo lifecycle collision policy", () => {
     // while the workflow imported `@fhevm/sdk/solana/vault` — a subpath deleted when the vault
     // module moved into the demo dapp, which fails the e2e job only after the whole stack is up.
     const exportedSubpaths = Object.keys(sdkPackage.exports);
+    // Matches every spelling a canary can use — dynamic `import(...)` with or without a space,
+    // `require(...)`, a static `import '...'`, and `from '...'` — so rewording a canary cannot
+    // silently drop it out of this guard's sight.
     const canaryImports = (source: string): string[] =>
-      [...source.matchAll(/import\(['"]@fhevm\/sdk(\/[^'"]*)?['"]\)/g)].map(
-        (match) => `.${match[1] ?? ""}`,
-      );
+      [
+        ...source.matchAll(
+          /(?:\bimport\s*\(|\brequire\s*\(|\bfrom\s+|\bimport\s+)['"]@fhevm\/sdk(\/[^'"]*)?['"]/g,
+        ),
+      ].map((match) => `.${match[1] ?? ""}`);
     for (const [name, source] of [
       ["solana-e2e.yml", workflow],
       ["clean-e2e.sh", cleanE2e],
