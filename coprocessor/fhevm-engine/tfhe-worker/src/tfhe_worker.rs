@@ -249,7 +249,7 @@ async fn tfhe_worker_cycle(
         };
 
         // Query for transactions to execute
-        let (mut transactions, earliest_computation, has_more_work) = query_for_work(
+        let (mut transactions, _, has_more_work) = query_for_work(
             args,
             &health_check,
             &mut trx,
@@ -325,14 +325,11 @@ async fn tfhe_worker_cycle(
         } else {
             no_progress_cycles += 1;
             if no_progress_cycles >= args.dcid_max_no_progress_cycles {
-                // If we're not making progress on this dependence
-                // chain, update the last_updated_at field and
-                // release the lock so we can try to execute
-                // another chain.
-                info!(target: "tfhe_worker", "no progress on dependence chain, releasing");
-                dcid_mngr
-                    .release_current_lock(false, Some(earliest_computation))
-                    .await?;
+                // Stop extending this chain's lock so another chain can run.
+                // The parked chain remains pending and can be work-stolen
+                // after its existing lock TTL expires.
+                info!(target: "tfhe_worker", "no progress on dependence chain, parking until lock expiry");
+                dcid_mngr.park_current_lock();
             }
         }
         trx.commit().await?;
