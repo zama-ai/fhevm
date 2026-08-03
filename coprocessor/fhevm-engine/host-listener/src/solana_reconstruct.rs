@@ -271,7 +271,7 @@ fn resolve_rhs(
 }
 
 /// Reconstructs the per-step op records a `fhe_execute` batch produces, mirroring
-/// the program's `walk_eval_frame`: walk steps in order, resolve operands
+/// the program's `walk_batch`: walk steps in order, resolve operands
 /// (`Transient` referring to earlier steps' produced handles), recompute each
 /// step's result handle via the program's eval primitives, and produce one record
 /// per step. Persistent and instruction-local outputs derive the identical base

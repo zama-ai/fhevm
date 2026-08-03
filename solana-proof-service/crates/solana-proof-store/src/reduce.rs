@@ -88,7 +88,7 @@ fn hex32(bytes: &[u8; 32]) -> String {
     bytes.iter().map(|b| format!("{b:02x}")).collect()
 }
 
-fn is_encrypted_value_account_birth(instruction: &DecodedInstruction) -> bool {
+fn is_encrypted_value_account_create(instruction: &DecodedInstruction) -> bool {
     matches!(
         instruction,
         DecodedInstruction::FheExecuteCreateEncryptedValue { .. }
@@ -190,7 +190,7 @@ pub fn reduce_completed_block(
         for instruction in &decoded {
             let encrypted_value_account = instruction.encrypted_value();
             let had_state = working_replay.contains_key(&encrypted_value_account);
-            if !had_state && !is_encrypted_value_account_birth(instruction) {
+            if !had_state && !is_encrypted_value_account_create(instruction) {
                 return Err(ReduceError::UnknownPreBootstrapEncryptedValueAccount {
                     encrypted_value_account: hex32(&encrypted_value_account),
                 });

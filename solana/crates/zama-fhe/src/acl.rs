@@ -1,4 +1,8 @@
 //! Persistent-output addressing and ACL policy types.
+//!
+//! Public API surface: app programs. The bounded-randomness constructors and the audience types
+//! are how an app declares who may read a persistent output, so they are exported for callers
+//! outside this repository.
 
 use crate::types::FheType;
 
@@ -214,17 +218,6 @@ impl BoundedU64UpperBound {
         let mut bytes = [0u8; 32];
         bytes[24..].copy_from_slice(&value.to_be_bytes());
         Self::from_be_bytes(bytes)
-    }
-
-    pub fn full_width() -> Self {
-        let mut value = [0u8; 32];
-        value[23] = 1;
-        debug_assert!(zama_host::assert_valid_bounded_rand_upper_bound(
-            value,
-            FheType::UINT64.byte()
-        )
-        .is_ok());
-        Self { value }
     }
 
     pub fn from_be_bytes(value: [u8; 32]) -> Result<Self> {

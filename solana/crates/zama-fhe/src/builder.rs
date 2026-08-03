@@ -1,4 +1,9 @@
 //! `BatchBuilder`: accumulates typed steps and lowers them to the wire batch.
+//!
+//! Public API surface: app programs. The op methods mirror the host's op set one-for-one on
+//! purpose — an app author who can call `add` must be able to call `mul`, `shl`, or `is_in` — so
+//! the surface is complete by design and is not trimmed to whatever the demo programs happen to
+//! use. The host-side cost table and the operand validation are what keep it honest.
 
 use crate::types::{binary_rhs_operand, BinaryRhs, FheBitwise, FheEq, FheNeg, FheNot, FheShift};
 use crate::validate::handle_fhe_type;

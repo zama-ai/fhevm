@@ -11,6 +11,10 @@
 //! `[u8; 32]`) so the on-chain programs (solana 3.x) and the connector
 //! (solana 2.x) can share it. PDA derivation stays on each side; this crate
 //! provides the seed and the `encrypted_value_id`.
+//!
+//! Public API surface: the verifier side. The KMS connector, the proof service, and any
+//! third-party verifier reconstruct and check `EncryptedValue` state through these exports, so a
+//! predicate with no caller in this repository is still load-bearing for them.
 
 #[cfg(not(target_os = "solana"))]
 use sha2::{Digest as _, Sha256};

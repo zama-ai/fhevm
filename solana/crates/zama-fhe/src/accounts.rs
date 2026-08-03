@@ -1,4 +1,8 @@
 //! Dynamic-account bookkeeping for lowered batches.
+//!
+//! Public API surface: app programs. An app that assembles its own account list reads these
+//! predicates to decide which accounts a lowered batch still needs, so they stay exported even
+//! where this repository's own programs let the CPI helper do it.
 
 use anchor_lang::prelude::Pubkey;
 
@@ -140,10 +144,6 @@ pub struct BatchOutputAuthorityRequirement {
 impl BatchOutputAuthorityRequirement {
     pub fn pubkey(&self) -> Pubkey {
         self.pubkey
-    }
-
-    pub fn signs_cpi_account(&self) -> bool {
-        self.cpi_account_authority
     }
 }
 

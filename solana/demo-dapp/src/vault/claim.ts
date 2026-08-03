@@ -44,7 +44,7 @@ export type SolanaVaultClaimParameters = {
 
 /**
  * Builds the permissionless `claim` instruction: computes the user's exact proportional payout
- * (`encrypted(joined) * payout_received / total_joined`, one MulDiv frame) and transfers it to the
+ * (`encrypted(joined) * payout_received / total_joined`, one MulDiv batch) and transfers it to the
  * user.
  */
 export async function buildClaimInstruction(parameters: SolanaVaultClaimParameters): Promise<Instruction> {

@@ -31,9 +31,9 @@ mod preflight;
 mod walk;
 
 use account_table::EvalAccountTable;
-use event_transport::{emit_eval_random_seeds, emit_public_outputs_produced};
-use preflight::preflight_eval_frame;
-use walk::{walk_eval_frame, EvalHandleContext};
+use event_transport::{emit_batch_random_seeds, emit_public_outputs_produced};
+use preflight::preflight_batch;
+use walk::{walk_batch, EvalHandleContext};
 
 /// Accounts for a composed instruction-local fhe_execute batch.
 ///
@@ -89,7 +89,7 @@ pub fn fhe_execute<'info>(
     // preflight, asserted before execution mutates state), persistent-output
     // claims, and output-PDA derivation.
     let mut account_table = EvalAccountTable::new(ctx.remaining_accounts)?;
-    preflight_eval_frame(&mut account_table, &ctx, &args)?;
+    preflight_batch(&mut account_table, &ctx, &args)?;
 
     // HCU metering: one pure pass over the batch, enforcing the per-batch total + in-batch depth
     // caps against the canonical host_config limits (u64::MAX = unlimited). The same total then feeds the
@@ -115,15 +115,15 @@ pub fn fhe_execute<'info>(
         compute_subject: subject,
         persistent_anchor_bytes: &persistent_anchor_bytes,
     };
-    let random_seeds = collect_eval_random_seeds(&args, &handle_context);
+    let random_seeds = collect_batch_random_seeds(&args, &handle_context);
     block_cap::charge(&ctx, batch.total, clock.slot)?;
     // Execution is the single walk: it validates each step as it mutates. A failure mid-batch
     // leaves partial writes behind only until the runtime reverts the transaction, which discards
     // every account write — so no validate-only pre-pass is needed for atomicity. The event CPI
     // stays last so no event describes state that did not commit.
     let created_public_outputs =
-        execute_eval_frame(&mut account_table, &ctx, &args, subject, &handle_context)?;
-    emit_eval_random_seeds(&ctx, random_seeds)?;
+        execute_batch(&mut account_table, &ctx, &args, subject, &handle_context)?;
+    emit_batch_random_seeds(&ctx, random_seeds)?;
     emit_public_outputs_produced(&ctx, created_public_outputs)?;
     Ok(())
 }
@@ -175,7 +175,7 @@ fn collect_persistent_anchor_bytes(
     Ok(anchor_bytes)
 }
 
-fn collect_eval_random_seeds(
+fn collect_batch_random_seeds(
     args: &FheExecuteArgs,
     handle_context: &EvalHandleContext<'_>,
 ) -> Vec<FheExecuteRandomSeed> {
@@ -196,7 +196,7 @@ fn collect_eval_random_seeds(
 }
 
 #[inline(never)]
-fn execute_eval_frame<'a, 'info>(
+fn execute_batch<'a, 'info>(
     table: &mut EvalAccountTable<'a, 'info>,
     ctx: &Context<'info, FheExecute<'info>>,
     args: &FheExecuteArgs,
@@ -212,7 +212,7 @@ fn execute_eval_frame<'a, 'info>(
         chain_id: handle_context.derivation.chain_id,
         verifier_params: InputVerifierParams::from_config(&ctx.accounts.host_config),
     };
-    walk_eval_frame(&mut execution, ctx, args, handle_context)?;
+    walk_batch(&mut execution, ctx, args, handle_context)?;
     Ok(execution.created_public_outputs)
 }
 
@@ -275,7 +275,7 @@ impl<'info> EvalExecutionState<'_, '_, 'info> {
         output: &FheExecuteOutput,
         output_public_decrypt_allowed: bool,
     ) -> Result<()> {
-        let created_public_output = accept_eval_output(
+        let created_public_output = accept_batch_output(
             ctx,
             self.table,
             self.dictionary,
@@ -310,7 +310,7 @@ pub fn assert_ternary_operand_types(
 }
 
 #[inline(never)]
-fn accept_eval_output<'info>(
+fn accept_batch_output<'info>(
     ctx: &Context<'info, FheExecute<'info>>,
     table: &mut EvalAccountTable<'_, 'info>,
     dictionary: &[[u8; 32]],
@@ -347,7 +347,7 @@ fn accept_eval_output<'info>(
                 output_account_authority_index.map(u16::from),
                 output_account,
             )?;
-            let encrypted_value = bind_eval_output(
+            let encrypted_value = bind_batch_output(
                 ctx,
                 table,
                 u16::from(*output_encrypted_value_index),
@@ -473,7 +473,7 @@ fn inputs3_allow_public_decrypt(
 
 #[inline(never)]
 #[allow(clippy::too_many_arguments)]
-fn bind_eval_output<'info>(
+fn bind_batch_output<'info>(
     ctx: &Context<'info, FheExecute<'info>>,
     table: &mut EvalAccountTable<'_, 'info>,
     output_encrypted_value_index: u16,

@@ -22,7 +22,7 @@ pub(crate) use verify_public_decrypt::*;
 /// keeps decrypt access to their own value, and the compute signer gates the next
 /// eval that reads it. [`PersistentAudience::for_owner`] takes both as required
 /// parameters, so a holder output can never be built missing either; extra owners
-/// (the recipient phase of a `transferred_amount` rotation) are additive via
+/// (the recipient phase of a `transferred_amount` update) are additive via
 /// [`PersistentAudience::with_owner`]. Mint-scoped encrypted value accounts with no single holder
 /// (total supply, freshly minted random amounts) use
 /// [`PersistentAudience::compute_only`], the one owner-less path.
@@ -550,7 +550,7 @@ fn validate_deny_subject_records_for_grant_subjects<'info>(
             ConfidentialTokenError::UnexpectedRemainingAccounts
         );
         // A supplied deny record must witness either an output authority or a subject a
-        // persistent output grants for the first time (created or rotation-added) — the host
+        // persistent output grants for the first time (created or update-added) — the host
         // deny-list-checks both, so both may reach it through remaining accounts.
         require!(
             is_deny_record_for_authority(supplied.key(), app_authority)

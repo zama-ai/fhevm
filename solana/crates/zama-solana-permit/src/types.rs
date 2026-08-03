@@ -5,6 +5,9 @@
 //! `PermitWireFields` (see [`crate::validate`]). Everything downstream — the
 //! canonical text, the envelope, verification — takes the validated type, which is
 //! why "render a permit that was never validated" is not expressible.
+//!
+//! Public API surface: wallets and relayers. The transport conversions exist for the clients that
+//! carry a permit over the wire, which is why some have no caller inside this repository.
 
 use crate::error::PermitError;
 

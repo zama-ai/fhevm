@@ -2042,7 +2042,7 @@ fn mollusk_confidential_transfer_rejects_attestation_user_mismatch() {
     let context = mollusk().with_context(fixture.base_accounts());
     let amount_handle = handle_for_chain(31, BALANCE_FHE_TYPE);
     // fromExternal binding: an attestation authored by someone other than the transfer authority
-    // (owner) must be rejected before any balance rotation.
+    // (owner) must be rejected before any balance update.
     let attestation =
         amount_attestation_for(amount_handle, fixture.bob_owner, fixture.compute_signer);
     let ix = confidential_transfer_ix(
@@ -2077,7 +2077,7 @@ fn mollusk_confidential_transfer_rejects_attestation_contract_mismatch() {
     let context = mollusk().with_context(fixture.base_accounts());
     let amount_handle = handle_for_chain(32, BALANCE_FHE_TYPE);
     // fromExternal binding: an attestation bound to a contract other than the mint compute-signer
-    // PDA must be rejected before any balance rotation.
+    // PDA must be rejected before any balance update.
     let attestation = amount_attestation_for(amount_handle, fixture.owner, Pubkey::new_unique());
     let ix = confidential_transfer_ix(
         &fixture,
@@ -3989,7 +3989,7 @@ fn mollusk_disclose_secp_rejects_cleartext_wider_than_u64() {
 /// (21_000) + debit `Sub` at euint64 (38_000) + `IfThenElse` at euint64 (45_000) + transferred
 /// `Sub` at euint64 (38_000) + balance-binding scalar `Add` at euint64 (33_250) + credit `Add`
 /// at euint64 (38_000). The `VerifiedInput` amount is an operand, not a step, so it adds no HCU.
-const TRANSFER_FRAME_HCU: u64 = 21_000 + 38_000 + 45_000 + 38_000 + 33_250 + 38_000; // 213_250
+const TRANSFER_BATCH_HCU: u64 = 21_000 + 38_000 + 45_000 + 38_000 + 33_250 + 38_000; // 213_250
 
 /// The fixture's host config with the per-app block cap overridden to `cap`.
 fn host_config_account_with_block_cap(
@@ -4109,7 +4109,7 @@ fn mollusk_confidential_transfer_metering_band_charges_meter_through_cpi() {
     // charged exactly the transfer batch's HCU at the current slot.
     let meter = read_hcu_block_meter(&context, meter_pda).expect("meter created through CPI");
     assert_eq!(meter.app, fixture.compute_signer);
-    assert_eq!(meter.used_hcu, TRANSFER_FRAME_HCU);
+    assert_eq!(meter.used_hcu, TRANSFER_BATCH_HCU);
     assert_eq!(meter.last_seen_slot, context.mollusk.sysvars.clock.slot);
     // Regression guard on the metering granularity: nothing accrues to the sender token
     // account's key — a sybil minting fresh token accounts gets no fresh budget.
@@ -4161,7 +4161,7 @@ fn mollusk_transfer_from_value_spends_existing_amount() {
     let result = context.process_and_validate_instruction(&transfer, &[Check::success()]);
     let persistent_outputs = cleartext.evaluate_fhe_cpi(&context, &result);
 
-    // Only the two balance encrypted value accounts and the sender's transferred_amount rotate — the amount is not
+    // Only the two balance encrypted value accounts and the sender's transferred_amount are updated — the amount is not
     // an output.
     assert_eq!(persistent_outputs, 3);
     assert_eq!(cleartext.balance(&context, fixture.alice_token), 750);
@@ -4776,7 +4776,7 @@ fn mollusk_burn_from_value_burns_existing_amount() {
     let result = context.process_and_validate_instruction(&burn, &[Check::success()]);
     let persistent_outputs = cleartext.evaluate_fhe_cpi(&context, &result);
 
-    // Three persistent outputs rotate — balance, burned_amount, total_supply — and the amount is not one.
+    // Three persistent outputs are updated — balance, burned_amount, total_supply — and the amount is not one.
     assert_eq!(persistent_outputs, 3);
     assert_eq!(cleartext.balance(&context, fixture.token_account), 750);
     assert_eq!(

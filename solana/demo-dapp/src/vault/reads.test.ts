@@ -49,8 +49,8 @@ function encryptedValueAccount(input: {
   return concat(
     new Uint8Array(8).fill(0xaa), // discriminator (skipped by the reader)
     new Uint8Array(32).fill(0x01), // domain
-    new Uint8Array(32).fill(0x02), // app_account
-    new Uint8Array(32).fill(0x03), // encrypted_value_label
+    new Uint8Array(32).fill(0x02), // account
+    new Uint8Array(32).fill(0x03), // label
     input.currentHandle,
     u32le(input.subjects.length),
     ...input.subjects,

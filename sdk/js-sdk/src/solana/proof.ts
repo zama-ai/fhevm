@@ -10,6 +10,10 @@ import { sha256 } from '@noble/hashes/sha2.js';
  * user to sign a decrypt request, so a malformed or stale proof is caught client-side
  * instead of silently failing (or worse, being blindly trusted) downstream.
  *
+ * Public API surface: SDK consumers verifying a proof themselves. A dapp that fetches an MMR
+ * proof from a relayer or indexer calls these directly, which is why the leaf/node primitives are
+ * exported and not only used by `verifyPublicDecrypt`.
+ *
  * Domain-separation prefixes and encodings are pinned 1:1 to the Rust crate:
  * - `ZAMA_MMR_LEAF_V1` / `ZAMA_MMR_NODE_V1`     — MMR leaf/internal node hashing (`mmr.rs`).
  * - `ZAMA_HIST_ACCESS_LEAF_V1`                  — historical-access leaf commitment.

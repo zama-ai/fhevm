@@ -28,7 +28,7 @@ pub const DELEGATION_SEED: &[u8] = b"user-decryption-delegation";
 /// Reserved app-context sentinel for wildcard user-decryption delegation rows.
 pub const WILDCARD_APP_CONTEXT_BYTES: [u8; 32] = [0xff; 32];
 
-/// Maximum number of FHE operations accepted by one composed eval.
+/// Maximum number of FHE operations accepted by one composed batch.
 ///
 /// Derived from measured budgets on the interned wire format (fhevm-internal#1853 W8), not chosen
 /// a priori. Measured on the max-op cost-snapshot batch: a marginal chained step costs ~9 bytes of

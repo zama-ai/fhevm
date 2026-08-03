@@ -250,7 +250,7 @@ mod tests {
         let mut body = Vec::new();
         body.extend_from_slice(&disc);
         body.extend_from_slice(&[0u8; 32]); // domain
-        body.extend_from_slice(&[0u8; 32]); // app_account
+        body.extend_from_slice(&[0u8; 32]); // account
         body.extend_from_slice(&[0u8; 32]); // label
         body.extend_from_slice(&[0u8; 32]); // handle
         body.extend_from_slice(&0u32.to_le_bytes()); // subjects len

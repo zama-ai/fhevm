@@ -165,7 +165,7 @@ impl EvalExecutionState<'_, '_, '_> {
 
 /// Drives the execution state over every batch step: resolve operands, assert
 /// operand types, compute the produced handle, and accept the output.
-pub(super) fn walk_eval_frame<'info>(
+pub(super) fn walk_batch<'info>(
     execution: &mut EvalExecutionState<'_, '_, 'info>,
     ctx: &Context<'info, FheExecute<'info>>,
     args: &FheExecuteArgs,

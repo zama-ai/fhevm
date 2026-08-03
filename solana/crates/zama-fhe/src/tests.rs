@@ -890,7 +890,7 @@ fn resolve_accounts_rejects_known_accounts_in_wrong_bucket() {
 }
 
 #[test]
-fn lowers_birth_steps() {
+fn lowers_create_steps() {
     let primary_authority = Pubkey::new_unique();
     let output_key = encrypted_value_id(primary_authority, 7);
     let output_acl = output_key.address();
@@ -1016,17 +1016,18 @@ fn validates_app_authority_and_persistent_account_pubkeys() {
     };
     assert_eq!(error, BatchBuildError::InvalidAppAuthority);
 
-    let invalid_namespace_key = EncryptedValueId::new(
+    let invalid_encrypted_value_id = EncryptedValueId::new(
         Pubkey::default(),
         Pubkey::new_unique(),
         PersistentLabel::new(handle(5)),
     );
     assert_eq!(
-        Uint64Handle::persistent(balance_handle(1), invalid_namespace_key.clone()).unwrap_err(),
+        Uint64Handle::persistent(balance_handle(1), invalid_encrypted_value_id.clone())
+            .unwrap_err(),
         BatchBuildError::InvalidEncryptedValueId
     );
     assert_eq!(
-        PersistentOutput::create(invalid_namespace_key, subjects(Pubkey::new_unique()))
+        PersistentOutput::create(invalid_encrypted_value_id, subjects(Pubkey::new_unique()))
             .binding()
             .unwrap_err(),
         BatchBuildError::InvalidEncryptedValueId

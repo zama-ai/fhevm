@@ -222,7 +222,7 @@ UD_CID="0x$(python3 -c "print(int('$CTX').to_bytes(32,'big').hex())")"
   || fail "pure-SDK user-decrypt failed"
 echo "    user-decrypt cleartext=$VALUE OK (PURE-SDK: ed25519 v3 + in-SDK de-signcryption, no kms checkout)"
 
-echo "==> [historical-user-decrypt] superseded handle via live MMR proof + /v3/user-decrypt"
+echo "==> [historical-user-decrypt] updated handle via live MMR proof + /v3/user-decrypt"
 hist_compute="$(cd "$ROOT/solana/scripts/e2e/live-client" && HISTORICAL_STEP=compute TE_VALUE="$VALUE" ./target/debug/poc-live-client 2>&1)"
 echo "$hist_compute" | grep -E 'HIST H_old|result handle' || fail "historical compute: $hist_compute"
 HIST_H_OLD="$(hist_field "$hist_compute" H_old)"
@@ -230,7 +230,7 @@ HIST_ACL_VALUE_KEY_COMPUTE="$(hist_field "$hist_compute" aclValueKey)"
 [ -n "$HIST_H_OLD" ] && [ -n "$HIST_ACL_VALUE_KEY_COMPUTE" ] || fail "historical compute missing fields: $hist_compute"
 echo "    historical old handle=$HIST_H_OLD"
 
-echo "==> [historical-user-decrypt] wait for old-handle SNS commit before supersede"
+echo "==> [historical-user-decrypt] wait for old-handle SNS commit before the update"
 HIST_HH="${HIST_H_OLD#0x}"
 for i in $(seq 1 30); do
   row="$(docker exec coprocessor-and-kms-db psql -U postgres -d coprocessor -tAc \
@@ -241,13 +241,13 @@ done
 
 # Sole-sourced from solana-proof-service via PROOF_SERVICE_URL: the service resolves the
 # historical-access leaf from (old handle, subject) — the client supplies no leaf index. The
-# supersede tx runs exactly once here; the client retries a transient `503 lagging` internally, so
+# the update tx runs exactly once here; the client retries a transient `503 lagging` internally, so
 # this is not re-invoked on lag.
 hist_proof="$(cd "$ROOT/solana/scripts/e2e/live-client" && \
   HISTORICAL_STEP=update TE_VALUE="$VALUE" \
   PROOF_SERVICE_URL=http://127.0.0.1:8088 \
-  ./target/debug/poc-live-client 2>&1)" || fail "historical supersede/proof command failed: $hist_proof"
-echo "$hist_proof" | grep -E 'HIST H_new|HIST mmrProofBytes' || fail "historical supersede/proof: $hist_proof"
+  ./target/debug/poc-live-client 2>&1)" || fail "historical update/proof command failed: $hist_proof"
+echo "$hist_proof" | grep -E 'HIST H_new|HIST mmrProofBytes' || fail "historical update/proof: $hist_proof"
 HIST_H_OLD2="$(hist_field "$hist_proof" H_old)"
 HIST_H_NEW="$(hist_field "$hist_proof" H_new)"
 HIST_ENCRYPTED_VALUE_ACCOUNT="$(hist_field "$hist_proof" encryptedValueAccountHex)"

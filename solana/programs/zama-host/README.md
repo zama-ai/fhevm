@@ -59,10 +59,10 @@ attestation on update so every transaction stays independently interpretable
 (`docs/DESIGN_DECISIONS.md` DD-032/DD-033).
 
 This is the supported replacement for the older `execute_frame` prototype, not a port of that ABI.
-Keeping persistent output authority on a signer witness (`app_account_authority` or an explicit
-per-output authority account in `remaining_accounts`) preserves the membership-based ACL and
-public-decrypt rules enforced by the current host without reviving unsigned
-`authorized_app_accounts`.
+Keeping persistent output authority on a signer witness (the `account_authority` signer, or an
+explicit per-output authority account in `remaining_accounts`) preserves the membership-based ACL
+and public-decrypt rules enforced by the current host. The prototype's unsigned list of authorized
+app accounts is deliberately not revived.
 
 Ordinary compute facts, MMR leaves, and persistent-output binds are reconstructed from instruction data;
 the host emits no per-operation replay stream. A batch with created-public persistent outputs emits exactly

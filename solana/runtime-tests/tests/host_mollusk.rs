@@ -1859,7 +1859,7 @@ fn mollusk_allow_subjects_reallow_of_existing_subject_succeeds_with_witness() {
 }
 
 #[test]
-fn mollusk_fhe_execute_rejects_denied_second_output_authority_in_multi_output_frame() {
+fn mollusk_fhe_execute_rejects_denied_second_output_authority_in_multi_output_batch() {
     let authority_a = Pubkey::new_unique();
     let authority_b = Pubkey::new_unique();
     let (host_config, host_config_account) = deny_enabled_host_config_account(authority_a);
@@ -2436,13 +2436,13 @@ fn mollusk_fhe_execute_updates_persistent_output_with_previous_state() {
 // fhe_execute: narrow produced-public lifecycle batch
 // ---------------------------------------------------------------------------
 
-struct CreatedPublicFrame {
+struct CreatedPublicBatch {
     instruction: Instruction,
     accounts: Vec<(Pubkey, Account)>,
     outputs: Vec<(u16, Pubkey)>,
 }
 
-fn created_public_frame(step_count: usize, created_public_steps: &[usize]) -> CreatedPublicFrame {
+fn created_public_batch(step_count: usize, created_public_steps: &[usize]) -> CreatedPublicBatch {
     let authority = Pubkey::new_unique();
     let (host_config, host_config_account) = host_config_account(authority);
     let mut output_metas = Vec::new();
@@ -2503,7 +2503,7 @@ fn created_public_frame(step_count: usize, created_public_steps: &[usize]) -> Cr
         (event_authority(host::id()), Account::default()),
     ];
     accounts.extend(output_accounts);
-    CreatedPublicFrame {
+    CreatedPublicBatch {
         instruction,
         accounts,
         outputs,
@@ -2587,7 +2587,7 @@ fn assert_created_public_batch(
 
 #[test]
 fn mollusk_fhe_execute_without_created_public_output_emits_no_lifecycle_batch() {
-    let batch = created_public_frame(1, &[]);
+    let batch = created_public_batch(1, &[]);
     let result = mollusk().process_and_validate_instruction(
         &batch.instruction,
         &batch.accounts,
@@ -2598,7 +2598,7 @@ fn mollusk_fhe_execute_without_created_public_output_emits_no_lifecycle_batch() 
 
 #[test]
 fn mollusk_fhe_execute_emits_one_created_public_lifecycle_batch() {
-    let batch = created_public_frame(1, &[0]);
+    let batch = created_public_batch(1, &[0]);
     let result = mollusk().process_and_validate_instruction(
         &batch.instruction,
         &batch.accounts,
@@ -2609,7 +2609,7 @@ fn mollusk_fhe_execute_emits_one_created_public_lifecycle_batch() {
 
 #[test]
 fn mollusk_fhe_execute_batches_multiple_created_public_outputs_in_step_order() {
-    let batch = created_public_frame(3, &[0, 2]);
+    let batch = created_public_batch(3, &[0, 2]);
     let result = mollusk().process_and_validate_instruction(
         &batch.instruction,
         &batch.accounts,
@@ -2625,13 +2625,13 @@ fn mollusk_fhe_execute_batches_multiple_created_public_outputs_in_step_order() {
 const MAX_CREATED_PUBLIC_CREATES_ON_DEFAULT_HEAP: usize = 20;
 
 #[test]
-fn mollusk_fhe_execute_maximum_created_public_frame_fits_one_cpi() {
+fn mollusk_fhe_execute_maximum_created_public_batch_fits_one_cpi() {
     // The largest executable all-created-public batch still emits its DD-038 lifecycle records in
     // exactly one batch CPI. (The full MAX_FHE_BATCH_OPS batch serialization is covered by the
     // event-transport unit test; batches with more than the measured create budget cannot
     // execute — see `mollusk_fhe_execute_created_public_heap_boundary`.)
     let created_public_steps = (0..MAX_CREATED_PUBLIC_CREATES_ON_DEFAULT_HEAP).collect::<Vec<_>>();
-    let batch = created_public_frame(
+    let batch = created_public_batch(
         MAX_CREATED_PUBLIC_CREATES_ON_DEFAULT_HEAP,
         &created_public_steps,
     );
@@ -2649,7 +2649,7 @@ fn mollusk_fhe_execute_created_public_heap_boundary() {
     // create past the measured budget exhausts the 32KB bump heap and reverts cleanly,
     // committing nothing. Raising this boundary requires a custom allocator, not a larger cap.
     let over = MAX_CREATED_PUBLIC_CREATES_ON_DEFAULT_HEAP + 1;
-    let failing = created_public_frame(over, &(0..over).collect::<Vec<_>>());
+    let failing = created_public_batch(over, &(0..over).collect::<Vec<_>>());
     let result = mollusk().process_instruction(&failing.instruction, &failing.accounts);
     assert!(result.program_result.is_err());
     for (_, output) in &failing.outputs {
@@ -2660,7 +2660,7 @@ fn mollusk_fhe_execute_created_public_heap_boundary() {
 
 #[test]
 fn mollusk_fhe_execute_wrong_event_authority_fails_without_output() {
-    let mut batch = created_public_frame(1, &[0]);
+    let mut batch = created_public_batch(1, &[0]);
     let wrong_event_authority = Pubkey::new_unique();
     let event_authority_meta = batch
         .instruction
@@ -2683,7 +2683,7 @@ fn mollusk_fhe_execute_wrong_event_authority_fails_without_output() {
 
 #[test]
 fn mollusk_transaction_later_failure_rolls_back_created_public_output() {
-    let batch = created_public_frame(1, &[0]);
+    let batch = created_public_batch(1, &[0]);
     let transaction = mollusk().process_transaction_instructions(
         &[batch.instruction.clone(), batch.instruction],
         &batch.accounts,
@@ -2707,10 +2707,10 @@ fn mollusk_transaction_later_failure_rolls_back_created_public_output() {
 
 /// Exact HCU cost of `EvalFixture::success_steps`: `Ge` at ebool (21_000) + `Sub` at
 /// euint64 (38_000) + `IfThenElse` at euint64 (45_000). See `zama-host/src/instructions/fhe_execute/hcu.rs`.
-const FIXTURE_FRAME_HCU: u64 = 21_000 + 38_000 + 45_000; // 104_000
+const FIXTURE_BATCH_HCU: u64 = 21_000 + 38_000 + 45_000; // 104_000
 
 /// Exact HCU cost of the fixture's transient-only batch: a single `Ge` at ebool.
-const TRANSIENT_FRAME_HCU: u64 = 21_000;
+const TRANSIENT_BATCH_HCU: u64 = 21_000;
 
 fn system_account(lamports: u64) -> Account {
     Account {
@@ -3862,8 +3862,8 @@ impl EvalFixture {
     }
 
     /// `Ge` (ebool) + `Sub` (euint64) + `IfThenElse` (euint64, persistent output) — costs exactly
-    /// `FIXTURE_FRAME_HCU`.
-    fn success_frame(&self) -> FheExecuteArgs {
+    /// `FIXTURE_BATCH_HCU`.
+    fn success_batch(&self) -> FheExecuteArgs {
         let mut dictionary = BatchDictionary::default();
         let steps = vec![
             FheExecuteStep::Binary {
@@ -3922,7 +3922,7 @@ impl EvalFixture {
                 program: self.program_id,
             },
             host::instruction::FheExecute {
-                args: self.success_frame(),
+                args: self.success_batch(),
             },
         );
         ix.accounts.push(writable(self.balance_value));
@@ -4149,7 +4149,7 @@ impl EvalFixture {
     /// encrypted value account under that authority. Everything a caller controls is varied except the ACL-bound
     /// compute subject, so this drives the #1708 regression: proving no account rotation yields a
     /// fresh per-slot meter. Returns the output encrypted value account address and the instruction.
-    fn frame_for_authority(
+    fn batch_for_authority(
         &self,
         payer: Pubkey,
         app_authority: Pubkey,
@@ -4507,7 +4507,7 @@ fn mollusk_fhe_execute_prefunded_empty_meter_is_created_not_griefed() {
     );
     let meter = read_hcu_block_meter(&fixture.context, meter_pda).expect("meter created");
     assert_eq!(meter.app, fixture.block_cap_app());
-    assert_eq!(meter.used_hcu, FIXTURE_FRAME_HCU);
+    assert_eq!(meter.used_hcu, FIXTURE_BATCH_HCU);
     // The donated lamport was topped up to at least rent-exempt.
     let lamports = fixture
         .context
@@ -4539,7 +4539,7 @@ fn mollusk_fhe_execute_overfunded_empty_meter_is_created_preserving_surplus() {
         &[Check::success()],
     );
     let meter = read_hcu_block_meter(&fixture.context, meter_pda).expect("meter created");
-    assert_eq!(meter.used_hcu, FIXTURE_FRAME_HCU);
+    assert_eq!(meter.used_hcu, FIXTURE_BATCH_HCU);
     let lamports = fixture
         .context
         .account_store
@@ -4589,7 +4589,7 @@ fn mollusk_fhe_execute_trust_pda_supplied_as_meter_is_rejected() {
 fn mollusk_fhe_execute_over_cap_trips_in_admission_without_output_or_mutation() {
     // A batch whose cost exceeds the cap trips in the read-only admission pass: no persistent
     // output is created and the meter is left unchanged (breach before any write).
-    let fixture = EvalFixture::with_block_cap(FIXTURE_FRAME_HCU - 1);
+    let fixture = EvalFixture::with_block_cap(FIXTURE_BATCH_HCU - 1);
     let slot = fixture.context.mollusk.sysvars.clock.slot;
     let (meter_pda, meter_account) = hcu_block_meter_account(fixture.block_cap_app(), slot, 0);
     fixture.seed_account(meter_pda, meter_account);
@@ -4623,7 +4623,7 @@ fn mollusk_fhe_execute_charge_accumulates_onto_prior_slot_usage() {
         &[Check::success()],
     );
     let meter = read_hcu_block_meter(&fixture.context, meter_pda).expect("meter");
-    assert_eq!(meter.used_hcu, 50_000 + FIXTURE_FRAME_HCU);
+    assert_eq!(meter.used_hcu, 50_000 + FIXTURE_BATCH_HCU);
     assert_eq!(meter.last_seen_slot, slot);
     read_encrypted_value_from_context(&fixture.context, fixture.output_value);
 }
@@ -4669,12 +4669,12 @@ fn mollusk_fhe_execute_lazy_reset_zeroes_prior_slot_usage() {
         &[Check::success()],
     );
     let meter = read_hcu_block_meter(&fixture.context, meter_pda).expect("meter");
-    assert_eq!(meter.used_hcu, FIXTURE_FRAME_HCU);
+    assert_eq!(meter.used_hcu, FIXTURE_BATCH_HCU);
     assert_eq!(meter.last_seen_slot, slot);
 }
 
 #[test]
-fn mollusk_fhe_execute_clean_first_call_lazy_creates_meter_at_frame_cost() {
+fn mollusk_fhe_execute_clean_first_call_lazy_creates_meter_at_batch_cost() {
     // A first metered batch lazy-creates a program-owned meter initialized to exactly the
     // batch's cost, stamped at the current slot and keyed on this app.
     let fixture = EvalFixture::with_block_cap(500_000);
@@ -4686,7 +4686,7 @@ fn mollusk_fhe_execute_clean_first_call_lazy_creates_meter_at_frame_cost() {
     );
     let meter = read_hcu_block_meter(&fixture.context, meter_pda).expect("meter created");
     assert_eq!(meter.app, fixture.block_cap_app());
-    assert_eq!(meter.used_hcu, FIXTURE_FRAME_HCU);
+    assert_eq!(meter.used_hcu, FIXTURE_BATCH_HCU);
     assert_eq!(
         meter.last_seen_slot,
         fixture.context.mollusk.sysvars.clock.slot
@@ -4729,7 +4729,7 @@ fn mollusk_fhe_execute_per_app_meters_are_isolated_under_uniform_cap() {
         read_hcu_block_meter(&fixture.context, meter_pda)
             .expect("meter")
             .used_hcu,
-        FIXTURE_FRAME_HCU
+        FIXTURE_BATCH_HCU
     );
 }
 
@@ -4741,7 +4741,7 @@ fn mollusk_fhe_execute_same_compute_subject_accumulates_across_varied_accounts_a
     // vary — a different payer AND a different account_authority, each binding its own fresh
     // output encrypted value account. The cap fits exactly one batch, so the second batch accumulates onto the same
     // meter and trips the cap rather than getting a fresh budget.
-    let fixture = EvalFixture::with_block_cap(FIXTURE_FRAME_HCU);
+    let fixture = EvalFixture::with_block_cap(FIXTURE_BATCH_HCU);
     let meter_pda = fixture.meter_pda();
 
     // Batch 1: its own payer and output authority.
@@ -4750,7 +4750,7 @@ fn mollusk_fhe_execute_same_compute_subject_accumulates_across_varied_accounts_a
     fixture.seed_account(payer1, funded_system_account());
     fixture.seed_account(authority1, funded_system_account());
     let (_out1, ix1) =
-        fixture.frame_for_authority(payer1, authority1, label("batch-1-out"), Some(meter_pda));
+        fixture.batch_for_authority(payer1, authority1, label("batch-1-out"), Some(meter_pda));
     fixture
         .context
         .process_and_validate_instruction(&ix1, &[Check::success()]);
@@ -4758,7 +4758,7 @@ fn mollusk_fhe_execute_same_compute_subject_accumulates_across_varied_accounts_a
         read_hcu_block_meter(&fixture.context, meter_pda)
             .expect("meter created")
             .used_hcu,
-        FIXTURE_FRAME_HCU
+        FIXTURE_BATCH_HCU
     );
 
     // Batch 2: a different payer and a different output authority, same slot, same compute subject.
@@ -4767,7 +4767,7 @@ fn mollusk_fhe_execute_same_compute_subject_accumulates_across_varied_accounts_a
     fixture.seed_account(payer2, funded_system_account());
     fixture.seed_account(authority2, funded_system_account());
     let (out2, ix2) =
-        fixture.frame_for_authority(payer2, authority2, label("batch-2-out"), Some(meter_pda));
+        fixture.batch_for_authority(payer2, authority2, label("batch-2-out"), Some(meter_pda));
     let result = fixture.context.process_and_validate_instruction(
         &ix2,
         &[custom_error(
@@ -4780,7 +4780,7 @@ fn mollusk_fhe_execute_same_compute_subject_accumulates_across_varied_accounts_a
         read_hcu_block_meter(&fixture.context, meter_pda)
             .expect("meter")
             .used_hcu,
-        FIXTURE_FRAME_HCU
+        FIXTURE_BATCH_HCU
     );
     let out2_owner = result
         .resulting_accounts
@@ -4808,7 +4808,7 @@ fn mollusk_fhe_execute_extra_remaining_account_still_rejected_with_block_cap() {
 }
 
 #[test]
-fn mollusk_fhe_execute_transient_only_frame_is_metered_via_compute_subject() {
+fn mollusk_fhe_execute_transient_only_batch_is_metered_via_compute_subject() {
     // A transient-only batch (all AllowedLocal outputs) creates no persistent ACL record, so
     // nothing welds `account_authority` on-chain — but the metering identity is the signed
     // `compute_subject`, independent of the batch's output shape, so the batch is still charged
@@ -4825,11 +4825,11 @@ fn mollusk_fhe_execute_transient_only_frame_is_metered_via_compute_subject() {
     // ...yet the batch accrued onto the authority's meter.
     let meter = read_hcu_block_meter(&fixture.context, meter_pda).expect("meter created");
     assert_eq!(meter.app, fixture.block_cap_app());
-    assert_eq!(meter.used_hcu, TRANSIENT_FRAME_HCU);
+    assert_eq!(meter.used_hcu, TRANSIENT_BATCH_HCU);
 }
 
 #[test]
-fn mollusk_fhe_execute_rejects_rand_frame_without_persistent_output() {
+fn mollusk_fhe_execute_rejects_rand_batch_without_persistent_output() {
     // fhevm-internal#1853 W4: rand seeds are anchored to the batch's persistent writes, so an
     // all-transient rand batch has no seed anchor. Rejected unconditionally in preflight —
     // unlike the cap-gated persist-nothing rule, this holds under the unrestricted default cap.
@@ -4855,7 +4855,7 @@ fn mollusk_fhe_execute_rejects_rand_frame_without_persistent_output() {
 }
 
 #[test]
-fn mollusk_fhe_execute_finite_cap_rejects_persist_nothing_frame() {
+fn mollusk_fhe_execute_finite_cap_rejects_persist_nothing_batch() {
     // fhevm-internal#1744: under a finite cap, a batch that binds no persistent input, no verified
     // input, and no persistent output leaves `compute_subject` a free variable — the caller could
     // rotate fresh subjects to mint fresh per-slot meters. Rejected in preflight, before compute,
@@ -4890,7 +4890,7 @@ fn mollusk_fhe_execute_finite_cap_allows_input_free_persistent_output_bootstrap(
 }
 
 #[test]
-fn mollusk_fhe_execute_deactivated_cap_allows_persist_nothing_frame() {
+fn mollusk_fhe_execute_deactivated_cap_allows_persist_nothing_batch() {
     // Under the ship default (u64::MAX) the persist-nothing rejection short-circuits, so behavior
     // is unchanged wherever a finite cap is not deployed.
     let fixture = EvalFixture::with_block_cap(u64::MAX);

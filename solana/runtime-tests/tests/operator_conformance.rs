@@ -1035,14 +1035,14 @@ fn bounded_rand_step(upper_bound: [u8; 32], fhe_type: u8) -> FheExecuteStep {
 // and are referenced by `u8` index (fhevm-internal#1853 W7). The helpers below intern
 // through a thread-local dictionary: `persistent`/`scalar` add entries while a test assembles
 // steps, and `args` drains the dictionary into the finished batch. Each test runs on its own
-// thread, so pools never mix across tests.
+// thread, so dictionaries never mix across tests.
 std::thread_local! {
-    static FRAME_POOL: std::cell::RefCell<Vec<[u8; 32]>> =
+    static INTERNED_DICTIONARY: std::cell::RefCell<Vec<[u8; 32]>> =
         const { std::cell::RefCell::new(Vec::new()) };
 }
 
 fn intern(bytes: [u8; 32]) -> u8 {
-    FRAME_POOL.with(|dictionary| {
+    INTERNED_DICTIONARY.with(|dictionary| {
         let mut dictionary = dictionary.borrow_mut();
         if let Some(index) = dictionary.iter().position(|entry| *entry == bytes) {
             return u8::try_from(index).expect("test dictionary fits u8");
@@ -1056,7 +1056,7 @@ fn intern(bytes: [u8; 32]) -> u8 {
 fn args(steps: Vec<FheExecuteStep>) -> FheExecuteArgs {
     FheExecuteArgs {
         account_count: 0,
-        dictionary: FRAME_POOL.with(|dictionary| dictionary.take()),
+        dictionary: INTERNED_DICTIONARY.with(|dictionary| dictionary.take()),
         steps,
     }
 }

@@ -197,7 +197,7 @@ pub fn decode_instructions(ix: &RawInstruction) -> Result<Vec<DecodedInstruction
 }
 
 /// Back-compat helper for tests and single-output callers. Transaction replay
-/// uses [`decode_program_instructions`] so multi-output `fhe_execute` frames and
+/// uses [`decode_program_instructions`] so multi-output `fhe_execute` batches and
 /// their lifecycle batches are validated together.
 pub fn decode_instruction(ix: &RawInstruction) -> Result<Option<DecodedInstruction>, DecodeError> {
     Ok(decode_instructions(ix)?.into_iter().next())
@@ -524,23 +524,23 @@ pub fn decode_program_instructions(
             let event_height = eval_height
                 .checked_add(1)
                 .ok_or(DecodeError::InvalidStackMetadata)?;
-            let mut frame_end = index + 1;
-            while let Some(child) = instructions.get(frame_end) {
+            let mut batch_end = index + 1;
+            while let Some(child) = instructions.get(batch_end) {
                 let child_height = child
                     .stack_height
                     .ok_or(DecodeError::InvalidStackMetadata)?;
                 if child.top_level_index != ix.top_level_index || child_height <= eval_height {
                     break;
                 }
-                frame_end += 1;
+                batch_end += 1;
             }
-            let event_indexes = (index + 1..frame_end)
+            let event_indexes = (index + 1..batch_end)
                 .filter(|&child| is_created_public_event(&instructions[child], program_id))
                 .collect::<Vec<_>>();
-            let random_event_indexes = (index + 1..frame_end)
+            let random_event_indexes = (index + 1..batch_end)
                 .filter(|&child| is_random_seed_event(&instructions[child], program_id))
                 .collect::<Vec<_>>();
-            if instructions[index + 1..frame_end].iter().any(|child| {
+            if instructions[index + 1..batch_end].iter().any(|child| {
                 child.program_id == program_id
                     && !is_created_public_event(child, program_id)
                     && !is_random_seed_event(child, program_id)
@@ -579,7 +579,7 @@ pub fn decode_program_instructions(
                 (false, _) => return Err(DecodeError::UnexpectedCreatedPublicEvent),
             };
             out.extend(decode_fhe_execute_persistent_outputs(ix, &batch, &handles)?);
-            index = frame_end;
+            index = batch_end;
         } else {
             out.extend(decode_instructions(ix)?);
             index += 1;
@@ -693,16 +693,16 @@ mod tests {
         accounts
     }
 
-    // Frame constants live in the interned dictionary (fhevm-internal#1853 W7). The
+    // Batch constants live in the interned dictionary (fhevm-internal#1853 W7). The
     // fixtures intern through a thread-local dictionary while assembling steps and
     // `batch` drains it into the finished args; each test runs on its own thread.
     std::thread_local! {
-        static FRAME_POOL: std::cell::RefCell<Vec<[u8; 32]>> =
+        static INTERNED_DICTIONARY: std::cell::RefCell<Vec<[u8; 32]>> =
             const { std::cell::RefCell::new(Vec::new()) };
     }
 
     fn intern(bytes: [u8; 32]) -> u8 {
-        FRAME_POOL.with(|dictionary| {
+        INTERNED_DICTIONARY.with(|dictionary| {
             let mut dictionary = dictionary.borrow_mut();
             if let Some(index) = dictionary.iter().position(|entry| *entry == bytes) {
                 return u8::try_from(index).expect("test dictionary fits u8");
@@ -716,7 +716,7 @@ mod tests {
     fn batch(steps: Vec<FheExecuteStep>) -> FheExecuteArgs {
         FheExecuteArgs {
             account_count: 0,
-            dictionary: FRAME_POOL.with(|dictionary| dictionary.take()),
+            dictionary: INTERNED_DICTIONARY.with(|dictionary| dictionary.take()),
             steps,
         }
     }
@@ -1043,7 +1043,7 @@ mod tests {
     }
 
     #[test]
-    fn extra_batch_for_non_public_frame_fails_closed() {
+    fn extra_batch_for_non_public_batch_fails_closed() {
         let batch = batch(vec![FheExecuteStep::TrivialEncrypt {
             plaintext: pk(0x02),
             fhe_type: 5,
@@ -1151,7 +1151,7 @@ mod tests {
     }
 
     #[test]
-    fn unexpected_host_descendant_inside_eval_frame_fails_closed() {
+    fn unexpected_host_descendant_inside_batch_fails_closed() {
         let (eval, event) = two_created_public_outputs();
         let mut nested_host_instruction = ix_with_data(
             vec![pk(0xA), pk(0xB), pk(0xE0)],

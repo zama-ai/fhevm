@@ -854,7 +854,7 @@ async fn cross_slot_signature_reuse_halts_as_constraint_conflict() {
 
 #[ignore = "requires DATABASE_URL / SOLANA_PROOF_TEST_DATABASE_URL"]
 #[tokio::test]
-async fn incomplete_bootstrap_and_post_bootstrap_birth() {
+async fn incomplete_bootstrap_and_post_bootstrap_create() {
     let store = fresh_store().await;
     let empty = block(10, 9, pk(0x90), pk(0xA0), Vec::new());
     store.apply_completed_block(&empty).await.unwrap();

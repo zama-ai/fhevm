@@ -28,7 +28,7 @@ vertical. Multi-replica / prod auth remain later slices.
 Both proof endpoints are **semantic**: the caller asks the product question — "prove `subject`
 had historical access to `handle`" or "prove `handle` is publicly decryptable" — and the service
 resolves `(encrypted value account, handle[, subject], kind) → leaf_index` internally via one indexed lookup. A
-historical-access key maps to a unique leaf by construction (a handle is superseded at most once
+historical-access key maps to a unique leaf by construction (a handle is updated at most once
 per encrypted value account, sealing one leaf per subject). A public-decrypt key may match several leaves for one
 handle (a created-public output plus later `make_handle_public` re-releases, which have no
 already-public guard); the service resolves to the earliest — any public leaf proves publicness,

@@ -20,7 +20,7 @@ pub(super) fn emit_public_outputs_produced<'info>(
     Ok(())
 }
 
-pub(super) fn emit_eval_random_seeds<'info>(
+pub(super) fn emit_batch_random_seeds<'info>(
     ctx: &Context<'info, FheExecute<'info>>,
     seeds: Vec<FheExecuteRandomSeed>,
 ) -> Result<()> {

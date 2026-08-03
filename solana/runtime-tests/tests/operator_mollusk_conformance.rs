@@ -255,14 +255,14 @@ struct EvalFlow {
 // flow helpers intern through a thread-local dictionary while a test assembles its single
 // batch; `instruction` snapshots it into the finished args and byte-mirror helpers keep
 // resolving through it afterwards. Each test runs on its own thread and each flow
-// clears the dictionary on construction, so pools never mix across tests.
+// clears the dictionary on construction, so dictionaries never mix across tests.
 std::thread_local! {
-    static FRAME_POOL: std::cell::RefCell<Vec<[u8; 32]>> =
+    static INTERNED_DICTIONARY: std::cell::RefCell<Vec<[u8; 32]>> =
         const { std::cell::RefCell::new(Vec::new()) };
 }
 
 fn intern(bytes: [u8; 32]) -> u8 {
-    FRAME_POOL.with(|dictionary| {
+    INTERNED_DICTIONARY.with(|dictionary| {
         let mut dictionary = dictionary.borrow_mut();
         if let Some(index) = dictionary.iter().position(|entry| *entry == bytes) {
             return u8::try_from(index).expect("test dictionary fits u8");
@@ -274,7 +274,7 @@ fn intern(bytes: [u8; 32]) -> u8 {
 }
 
 fn pool_entry(index: u8) -> [u8; 32] {
-    FRAME_POOL.with(|dictionary| dictionary.borrow()[usize::from(index)])
+    INTERNED_DICTIONARY.with(|dictionary| dictionary.borrow()[usize::from(index)])
 }
 
 fn scalar(value: [u8; 32]) -> FheExecuteOperand {
@@ -285,7 +285,7 @@ fn scalar(value: [u8; 32]) -> FheExecuteOperand {
 
 impl EvalFlow {
     fn new() -> Self {
-        FRAME_POOL.with(|dictionary| dictionary.borrow_mut().clear());
+        INTERNED_DICTIONARY.with(|dictionary| dictionary.borrow_mut().clear());
         let authority = Pubkey::new_unique();
         let (host_config, host_config_account) = host_config_account(authority);
         Self {
@@ -414,7 +414,7 @@ impl EvalFlow {
     fn instruction(&self, step: FheExecuteStep) -> (FheExecuteArgs, Instruction) {
         let args = FheExecuteArgs {
             account_count: u8::try_from(self.remaining.len()).expect("test accounts fit u8"),
-            dictionary: FRAME_POOL.with(|dictionary| dictionary.borrow().clone()),
+            dictionary: INTERNED_DICTIONARY.with(|dictionary| dictionary.borrow().clone()),
             steps: vec![step],
         };
         let mut instruction = anchor_ix(

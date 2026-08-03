@@ -906,7 +906,7 @@ mod tests {
     }
 
     #[test]
-    fn normalizes_interleaved_eval_frame_events_for_worker_replay() {
+    fn normalizes_interleaved_batch_events_for_worker_replay() {
         let tx_id = solana_transaction_id(&[5_u8; 64]);
         let block_timestamp = PrimitiveDateTime::new(
             Date::from_calendar_date(2026, Month::May, 9).unwrap(),

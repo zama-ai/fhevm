@@ -4,7 +4,7 @@
 //! `HcuBlockMeter`) and a sysvar-derived slot, so it lives here rather than inside the pure walk.
 //!
 //! [`charge`] is one resolve→assert→(create/reset)→write sequence with a single meter read. It
-//! runs after the pure per-batch meter and before the execution walk: `frame_total` is pure over
+//! runs after the pure per-batch meter and before the execution walk: `batch_total` is pure over
 //! the batch, so an over-budget batch is rejected before execution burns CU or creates any ACL
 //! record, and a mid-batch execution failure reverts the meter write along with everything else.
 //!
@@ -31,7 +31,7 @@ use crate::state::{
 /// arithmetic (overflow fails closed), lazy-create/reset, write once.
 pub(super) fn charge<'info>(
     ctx: &Context<'info, FheExecute<'info>>,
-    frame_total: u64,
+    batch_total: u64,
     slot: u64,
 ) -> Result<()> {
     let cap = ctx.accounts.host_config.hcu_block_cap_per_app;
@@ -58,7 +58,7 @@ pub(super) fn charge<'info>(
     let (expected, bump) = hcu_block_meter_address(app);
     let used = meter_used_for_slot(&info, app, expected, bump, slot)?;
     let projected = used
-        .checked_add(frame_total)
+        .checked_add(batch_total)
         .ok_or(ZamaHostError::HcuBlockLimitExceeded)?;
     require!(projected <= cap, ZamaHostError::HcuBlockLimitExceeded);
 

@@ -9,6 +9,10 @@
 //!
 //! Pure data transform: no I/O, no async, no chain access. Instruction ingestion
 //! and storage are a separate, later phase; here the caller supplies the events.
+//!
+//! Public API surface: proof builders outside this repository. The proof service and the KMS
+//! connector call these to mint and check inclusion proofs, and the peak/leaf helpers are exported
+//! so a third-party verifier can reproduce the chain's bytes without reimplementing the MMR.
 
 use crate::{
     historical_access_leaf_commitment, mmr_build_proof, mmr_peaks_from_leaves,

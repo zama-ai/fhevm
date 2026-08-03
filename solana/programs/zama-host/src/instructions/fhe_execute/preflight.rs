@@ -1,14 +1,14 @@
 use super::account_table::EvalAccountTable;
 use super::*;
 
-pub(super) fn preflight_eval_frame<'info>(
+pub(super) fn preflight_batch<'info>(
     table: &mut EvalAccountTable<'_, 'info>,
     ctx: &Context<'info, FheExecute<'info>>,
     args: &FheExecuteArgs,
 ) -> Result<()> {
-    assert_frame_pins_or_persists_under_cap(args, ctx.accounts.host_config.hcu_block_cap_per_app)?;
+    assert_batch_pins_or_persists_under_cap(args, ctx.accounts.host_config.hcu_block_cap_per_app)?;
     assert_rand_steps_anchor_persistent_output(args)?;
-    preflight_eval_frame_accounts(
+    preflight_batch_accounts(
         table,
         args,
         ctx.accounts.account_authority.key(),
@@ -34,7 +34,7 @@ pub(super) fn preflight_eval_frame<'info>(
 /// allowance is kept because it is also the legitimate trivial-encrypt/`Rand` -> persistent-output
 /// bootstrap/mint path. The deactivated cap (`u64::MAX`, the ship default) short-circuits, so
 /// behavior is unchanged wherever a finite cap is not deployed.
-fn assert_frame_pins_or_persists_under_cap(
+fn assert_batch_pins_or_persists_under_cap(
     args: &FheExecuteArgs,
     hcu_block_cap_per_app: u64,
 ) -> Result<()> {
@@ -144,7 +144,7 @@ fn step_pins_or_persists(step: &FheExecuteStep) -> bool {
     operand_pins || output_persists(output)
 }
 
-fn preflight_eval_frame_accounts(
+fn preflight_batch_accounts(
     table: &mut EvalAccountTable<'_, '_>,
     args: &FheExecuteArgs,
     account_authority: Pubkey,
@@ -159,7 +159,7 @@ fn preflight_eval_frame_accounts(
         persistent_outputs_written: Vec::with_capacity(MAX_FHE_BATCH_OPS),
     };
     for (index, step) in args.steps.iter().enumerate() {
-        preflight_eval_step(step, index, &mut preflight)?;
+        preflight_step(step, index, &mut preflight)?;
     }
     // Whole-batch hygiene, mirroring the account table: every interned dictionary
     // entry must be referenced by some step, so a batch cannot carry dead bytes.
@@ -214,7 +214,7 @@ impl EvalPreflight<'_, '_, '_> {
     }
 }
 
-fn preflight_eval_step(
+fn preflight_step(
     step: &FheExecuteStep,
     step_index: usize,
     preflight: &mut EvalPreflight<'_, '_, '_>,
@@ -407,9 +407,7 @@ mod tests {
         ];
         let mut table = EvalAccountTable::new(&accounts).unwrap();
 
-        assert!(
-            preflight_eval_frame_accounts(&mut table, &args, Pubkey::new_unique(), false).is_err()
-        );
+        assert!(preflight_batch_accounts(&mut table, &args, Pubkey::new_unique(), false).is_err());
     }
 
     #[test]
@@ -434,9 +432,7 @@ mod tests {
         let accounts = vec![test_account(Pubkey::new_unique())];
         let mut table = EvalAccountTable::new(&accounts).unwrap();
 
-        assert!(
-            preflight_eval_frame_accounts(&mut table, &args, Pubkey::new_unique(), false).is_err()
-        );
+        assert!(preflight_batch_accounts(&mut table, &args, Pubkey::new_unique(), false).is_err());
     }
 
     #[test]
@@ -454,9 +450,7 @@ mod tests {
         let accounts = vec![test_account(Pubkey::new_unique())];
         let mut table = EvalAccountTable::new(&accounts).unwrap();
 
-        assert!(
-            preflight_eval_frame_accounts(&mut table, &args, Pubkey::new_unique(), false).is_ok()
-        );
+        assert!(preflight_batch_accounts(&mut table, &args, Pubkey::new_unique(), false).is_ok());
     }
 
     fn test_account(key: Pubkey) -> AccountInfo<'static> {
@@ -523,7 +517,7 @@ mod tests {
     }
 
     #[test]
-    fn rand_step_with_persistent_output_anywhere_in_frame_is_accepted() {
+    fn rand_step_with_persistent_output_anywhere_in_batch_is_accepted() {
         // The persistent output may be the rand step's own or any other step's.
         let own = batch(vec![FheExecuteStep::Rand {
             fhe_type: 5,
@@ -546,42 +540,42 @@ mod tests {
     }
 
     #[test]
-    fn frame_without_rand_needs_no_persistent_output() {
+    fn batch_without_rand_needs_no_persistent_output() {
         assert!(assert_rand_steps_anchor_persistent_output(&batch(vec![trivial_local()])).is_ok());
     }
 
     const FINITE_CAP: u64 = 500_000;
 
     #[test]
-    fn deactivated_cap_never_rejects_persist_nothing_frame() {
+    fn deactivated_cap_never_rejects_persist_nothing_batch() {
         // u64::MAX (ship default) short-circuits: behavior is unchanged where the cap is not deployed.
         assert!(
-            assert_frame_pins_or_persists_under_cap(&batch(vec![trivial_local()]), u64::MAX)
+            assert_batch_pins_or_persists_under_cap(&batch(vec![trivial_local()]), u64::MAX)
                 .is_ok()
         );
     }
 
     #[test]
-    fn finite_cap_rejects_persist_nothing_frame() {
+    fn finite_cap_rejects_persist_nothing_batch() {
         assert!(
-            assert_frame_pins_or_persists_under_cap(&batch(vec![trivial_local()]), FINITE_CAP)
+            assert_batch_pins_or_persists_under_cap(&batch(vec![trivial_local()]), FINITE_CAP)
                 .is_err()
         );
     }
 
     #[test]
-    fn finite_cap_accepts_persistent_output_frame() {
+    fn finite_cap_accepts_persistent_output_batch() {
         // The trivial-encrypt -> persistent-output bootstrap/mint path stays legal.
         let step = FheExecuteStep::TrivialEncrypt {
             plaintext: [0; 32],
             fhe_type: 5,
             output: persistent_output(),
         };
-        assert!(assert_frame_pins_or_persists_under_cap(&batch(vec![step]), FINITE_CAP).is_ok());
+        assert!(assert_batch_pins_or_persists_under_cap(&batch(vec![step]), FINITE_CAP).is_ok());
     }
 
     #[test]
-    fn finite_cap_accepts_persistent_input_frame() {
+    fn finite_cap_accepts_persistent_input_batch() {
         let step = FheExecuteStep::Binary {
             op: FheBinaryOpCode::Add,
             lhs: FheExecuteOperand::AllowedPersistent {
@@ -592,11 +586,11 @@ mod tests {
             output_fhe_type: 5,
             output: FheExecuteOutput::AllowedLocal,
         };
-        assert!(assert_frame_pins_or_persists_under_cap(&batch(vec![step]), FINITE_CAP).is_ok());
+        assert!(assert_batch_pins_or_persists_under_cap(&batch(vec![step]), FINITE_CAP).is_ok());
     }
 
     #[test]
-    fn finite_cap_accepts_verified_input_transient_frame() {
+    fn finite_cap_accepts_verified_input_transient_batch() {
         // A verified input pins the subject (attested contract must equal it), so a transient-output
         // batch that carries one is anchored and not persist-nothing.
         let step = FheExecuteStep::Unary {
@@ -605,6 +599,6 @@ mod tests {
             output_fhe_type: 5,
             output: FheExecuteOutput::AllowedLocal,
         };
-        assert!(assert_frame_pins_or_persists_under_cap(&batch(vec![step]), FINITE_CAP).is_ok());
+        assert!(assert_batch_pins_or_persists_under_cap(&batch(vec![step]), FINITE_CAP).is_ok());
     }
 }

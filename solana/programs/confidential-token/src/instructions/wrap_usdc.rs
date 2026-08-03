@@ -67,7 +67,7 @@ pub struct WrapUsdc<'info> {
     pub hcu_trusted_app_record: Option<UncheckedAccount<'info>>,
 }
 
-/// Escrows public USDC and rotates the confidential balance by `amount`.
+/// Escrows public USDC and updates the confidential balance by `amount`.
 pub fn wrap_usdc<'info>(ctx: Context<'info, WrapUsdc<'info>>, amount: u64) -> Result<()> {
     assert_confidential_mint_shape(&ctx.accounts.mint)?;
     let mint_key = ctx.accounts.mint.key();

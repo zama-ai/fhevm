@@ -247,7 +247,7 @@ run_logged_background() {
 # gRPC transport + off-chain reconstruction: the listener INGESTS events rebuilt from the tx
 # instructions (the program emits nothing), so this stands in for the whole Yellowstone effort
 # end-to-end. Handle-derivation params are auto-detected from the on-chain HostConfig PDA at
-# startup — no --chain-id / --zero-birth-entropy flags.
+# startup — the listener takes no handle-derivation flags any more.
 ( cd "$ROOT/coprocessor/fhevm-engine" && cargo build -p host-listener --features solana-grpc,solana-reconstruct --bin solana_host_listener >/tmp/solana-host-listener-build.log 2>&1 ) \
   || { echo "[setup] host-listener (grpc,reconstruct) build failed; see /tmp/solana-host-listener-build.log" >&2; tail -20 /tmp/solana-host-listener-build.log >&2; exit 1; }
 run_logged_background "$HOST_LISTENER_LOG" \
