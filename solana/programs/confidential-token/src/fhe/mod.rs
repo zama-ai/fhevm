@@ -616,7 +616,7 @@ mod tests {
         // renders a duplicate subject; the persistent output rejects it.
         let output = zama_fhe::PersistentOutput::create(
             zama_fhe::EncryptedValueId::new(
-                Pubkey::new_unique(),
+                zama_fhe::Domain::new(Pubkey::new_unique()),
                 Pubkey::new_unique(),
                 zama_fhe::PersistentLabel::new([1; 32]),
             ),
@@ -654,7 +654,7 @@ mod tests {
 
     fn encrypted_value_id(account: Pubkey, label_tag: u8) -> zama_fhe::EncryptedValueId {
         zama_fhe::EncryptedValueId::new(
-            Pubkey::new_unique(),
+            zama_fhe::Domain::new(Pubkey::new_unique()),
             account,
             zama_fhe::PersistentLabel::new(handle(label_tag)),
         )

@@ -71,6 +71,7 @@ pub struct WrapUsdc<'info> {
 pub fn wrap_usdc<'info>(ctx: Context<'info, WrapUsdc<'info>>, amount: u64) -> Result<()> {
     assert_confidential_mint_shape(&ctx.accounts.mint)?;
     let mint_key = ctx.accounts.mint.key();
+    let mint_domain = zama_fhe::Domain::new(mint_key);
     let decimals = ctx.accounts.mint.decimals;
     let compute_signer = ctx.accounts.mint.compute_signer;
     let total_supply_authority = ctx.accounts.total_supply_authority.key();
@@ -111,12 +112,12 @@ pub fn wrap_usdc<'info>(ctx: Context<'info, WrapUsdc<'info>>, amount: u64) -> Re
     );
     let balance_output = fhe::PersistentOutput::new(
         ctx.accounts.balance_value.to_account_info(),
-        encrypted_value_id(mint_key, token_account.key(), balance_label()),
+        encrypted_value_id(mint_domain, token_account.key(), balance_label()),
         fhe::PersistentAudience::for_owner(token_account.owner, compute_signer),
     )?;
     let total_supply_output = fhe::PersistentOutput::new(
         ctx.accounts.total_supply_value.to_account_info(),
-        encrypted_value_id(mint_key, total_supply_authority, total_supply_label()),
+        encrypted_value_id(mint_domain, total_supply_authority, total_supply_label()),
         fhe::PersistentAudience::compute_only(compute_signer),
     )?;
 
@@ -136,13 +137,13 @@ pub fn wrap_usdc<'info>(ctx: Context<'info, WrapUsdc<'info>>, amount: u64) -> Re
 
     let balance = uint64_from_value(
         old_balance_handle,
-        mint_key,
+        mint_domain,
         token_account.key(),
         balance_label(),
     )?;
     let total_supply = uint64_from_value(
         old_total_supply_handle,
-        mint_key,
+        mint_domain,
         total_supply_authority,
         total_supply_label(),
     )?;

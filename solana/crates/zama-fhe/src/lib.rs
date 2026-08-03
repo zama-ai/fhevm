@@ -38,7 +38,7 @@ pub use accounts::{
 #[cfg(feature = "cpi")]
 pub use accounts::{BatchAccountResolutionError, ResolvedBatchAccounts};
 pub use acl::{
-    BoundedU64UpperBound, EncryptedValueId, Output, PersistentLabel, PersistentOutput,
+    BoundedU64UpperBound, Domain, EncryptedValueId, Output, PersistentLabel, PersistentOutput,
     PersistentOutputBinding,
 };
 pub use batch::Batch;

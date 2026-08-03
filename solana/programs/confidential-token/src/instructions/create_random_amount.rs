@@ -62,6 +62,7 @@ fn create_random_amount_inner<'info>(
 ) -> Result<()> {
     assert_confidential_mint_shape(&ctx.accounts.mint)?;
     let mint_key = ctx.accounts.mint.key();
+    let mint_domain = zama_fhe::Domain::new(mint_key);
     let owner = ctx.accounts.owner.key();
     let token_account_key = ctx.accounts.token_account.key();
     require_keys_eq!(
@@ -84,7 +85,7 @@ fn create_random_amount_inner<'info>(
     let label = amount_kind.label();
     let amount_output = fhe::PersistentOutput::new(
         ctx.accounts.amount_value.to_account_info(),
-        encrypted_value_id(mint_key, owner, label),
+        encrypted_value_id(mint_domain, owner, label),
         fhe::PersistentAudience::compute_only(ctx.accounts.compute_signer.key()),
     )?;
     let batch = zama_fhe::Batch::build(zama_fhe::BatchAppAuthority::new(owner), |builder| {

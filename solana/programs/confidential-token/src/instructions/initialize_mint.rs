@@ -45,6 +45,7 @@ pub struct InitializeMint<'info> {
 /// Initializes a confidential mint and records its host ACL domain.
 pub fn initialize_mint<'info>(ctx: Context<'info, InitializeMint<'info>>) -> Result<()> {
     let mint_key = ctx.accounts.mint.key();
+    let mint_domain = zama_fhe::Domain::new(mint_key);
     let compute_signer = compute_signer_address(mint_key).0;
     require_keys_eq!(
         ctx.accounts.compute_signer.key(),
@@ -60,7 +61,7 @@ pub fn initialize_mint<'info>(ctx: Context<'info, InitializeMint<'info>>) -> Res
     let total_supply_encrypted_value = ctx.accounts.total_supply_encrypted_value.key();
     let total_supply_output = fhe::PersistentOutput::new(
         ctx.accounts.total_supply_encrypted_value.to_account_info(),
-        encrypted_value_id(mint_key, total_supply_authority, total_supply_label()),
+        encrypted_value_id(mint_domain, total_supply_authority, total_supply_label()),
         fhe::PersistentAudience::compute_only(compute_signer),
     )?;
     let batch = zama_fhe::Batch::build(

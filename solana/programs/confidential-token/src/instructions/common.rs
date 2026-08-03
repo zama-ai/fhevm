@@ -169,8 +169,10 @@ fn execute_transfer_batch<'info>(
     let to_key = accounts.to_account.key();
     let from_owner = accounts.from_account.owner;
     let to_owner = accounts.to_account.owner;
-    let from_balance = uint64_from_value(old_from_handle, mint_key, from_key, balance_label())?;
-    let to_balance = uint64_from_value(old_to_handle, mint_key, to_key, balance_label())?;
+    // The token program's ACL domain is the mint, so every value slot below is derived under it.
+    let mint_domain = zama_fhe::Domain::new(mint_key);
+    let from_balance = uint64_from_value(old_from_handle, mint_domain, from_key, balance_label())?;
+    let to_balance = uint64_from_value(old_to_handle, mint_domain, to_key, balance_label())?;
     let compute_signer = accounts.compute_signer.key();
     let balance_access = |owner| fhe::PersistentAudience::for_owner(owner, compute_signer);
     let transferred_access = {
@@ -183,17 +185,17 @@ fn execute_transfer_batch<'info>(
     };
     let from_output = fhe::PersistentOutput::new(
         accounts.from_balance_value.clone(),
-        encrypted_value_id(mint_key, from_key, balance_label()),
+        encrypted_value_id(mint_domain, from_key, balance_label()),
         balance_access(from_owner),
     )?;
     let transferred_output = fhe::PersistentOutput::new(
         accounts.transferred_amount_value.clone(),
-        encrypted_value_id(mint_key, from_key, transferred_amount_label()),
+        encrypted_value_id(mint_domain, from_key, transferred_amount_label()),
         transferred_access,
     )?;
     let to_output = fhe::PersistentOutput::new(
         accounts.to_balance_value.clone(),
-        encrypted_value_id(mint_key, to_key, balance_label()),
+        encrypted_value_id(mint_domain, to_key, balance_label()),
         balance_access(to_owner),
     )?;
     // Existing value: the amount is an on-chain encrypted value account's current handle, read as a
@@ -207,7 +209,7 @@ fn execute_transfer_batch<'info>(
             let value = fhe::read_encrypted_value(amount_value)?;
             Some(uint64_from_value(
                 value.current_handle,
-                value.domain,
+                zama_fhe::Domain::new(value.domain),
                 value.account,
                 value.label,
             )?)
@@ -301,7 +303,7 @@ pub(crate) fn invalid_batch(error: zama_fhe::BatchBuildError) -> anchor_lang::er
 }
 
 pub(crate) fn encrypted_value_id(
-    domain: Pubkey,
+    domain: zama_fhe::Domain,
     account: Pubkey,
     label: [u8; 32],
 ) -> zama_fhe::EncryptedValueId {
@@ -310,7 +312,7 @@ pub(crate) fn encrypted_value_id(
 
 pub(crate) fn uint64_from_value(
     handle: [u8; 32],
-    domain: Pubkey,
+    domain: zama_fhe::Domain,
     account: Pubkey,
     label: [u8; 32],
 ) -> Result<zama_fhe::Uint64Handle> {

@@ -162,7 +162,8 @@ pub(crate) fn lower_output(
             let output = FheExecuteOutput::StoredValue {
                 output_encrypted_value_index,
                 output_account_authority_index,
-                output_domain_index: tables.dictionary_index(binding.domain().to_bytes())?,
+                output_domain_index: tables
+                    .dictionary_index(binding.domain().pubkey().to_bytes())?,
                 output_account_index: tables.dictionary_index(binding.account().to_bytes())?,
                 output_label_index: tables.dictionary_index(binding.label())?,
                 output_subject_indexes,

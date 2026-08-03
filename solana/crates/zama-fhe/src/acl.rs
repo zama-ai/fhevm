@@ -13,6 +13,27 @@ use zama_host::encrypted_value_address;
 use crate::validate::{validate_encrypted_value_id, validate_subjects};
 use crate::{BatchBuildError, Result};
 
+/// App-level ACL domain of an `EncryptedValue` account, such as a confidential token mint.
+///
+/// A domain and the account it scopes are both plain pubkeys, so the two used to be
+/// interchangeable at every derivation site; this type is what makes swapping them a compile
+/// error instead of a wrong PDA.
+/// `repr(transparent)` so a domain is passed exactly like the pubkey it wraps: the type is a
+/// compile-time distinction only, with no on-chain cost.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+#[repr(transparent)]
+pub struct Domain(Pubkey);
+
+impl Domain {
+    pub const fn new(pubkey: Pubkey) -> Self {
+        Self(pubkey)
+    }
+
+    pub const fn pubkey(self) -> Pubkey {
+        self.0
+    }
+}
+
 /// App-domain encrypted field label.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub struct PersistentLabel([u8; 32]);
@@ -33,13 +54,35 @@ impl PersistentLabel {
 /// on handle updates, unlike the old nonce-keyed ACL records.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct EncryptedValueId {
-    pub(crate) domain: Pubkey,
+    pub(crate) domain: Domain,
     pub(crate) account: Pubkey,
     pub(crate) label: PersistentLabel,
 }
 
 impl EncryptedValueId {
-    pub fn new(domain: Pubkey, account: Pubkey, label: PersistentLabel) -> Self {
+    /// ```
+    /// use anchor_lang::prelude::Pubkey;
+    /// use zama_fhe::{Domain, EncryptedValueId, PersistentLabel};
+    ///
+    /// let mint = Pubkey::new_unique();
+    /// let token_account = Pubkey::new_unique();
+    /// let id = EncryptedValueId::new(Domain::new(mint), token_account, PersistentLabel::new([1; 32]));
+    /// assert_eq!(id.domain().pubkey(), mint);
+    /// assert_eq!(id.account(), token_account);
+    /// ```
+    ///
+    /// Passing the two pubkeys the other way round does not compile, so a swapped pair can no
+    /// longer address a different value account than the app meant:
+    ///
+    /// ```compile_fail
+    /// use anchor_lang::prelude::Pubkey;
+    /// use zama_fhe::{Domain, EncryptedValueId, PersistentLabel};
+    ///
+    /// let mint = Pubkey::new_unique();
+    /// let token_account = Pubkey::new_unique();
+    /// EncryptedValueId::new(token_account, Domain::new(mint), PersistentLabel::new([1; 32]));
+    /// ```
+    pub fn new(domain: Domain, account: Pubkey, label: PersistentLabel) -> Self {
         Self {
             domain,
             account,
@@ -51,7 +94,7 @@ impl EncryptedValueId {
         encrypted_value_address(self.encrypted_value_id()).0
     }
 
-    pub fn domain(&self) -> Pubkey {
+    pub fn domain(&self) -> Domain {
         self.domain
     }
 
@@ -65,7 +108,7 @@ impl EncryptedValueId {
 
     pub fn encrypted_value_id(&self) -> [u8; 32] {
         zama_solana_acl::derive_encrypted_value_id(
-            self.domain.to_bytes(),
+            self.domain.pubkey().to_bytes(),
             self.account.to_bytes(),
             self.label.bytes(),
         )
@@ -146,7 +189,7 @@ impl PersistentOutput {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct PersistentOutputBinding {
     encrypted_value: Pubkey,
-    domain: Pubkey,
+    domain: Domain,
     account: Pubkey,
     label: [u8; 32],
     subjects: Vec<Pubkey>,
@@ -159,7 +202,7 @@ impl PersistentOutputBinding {
         self.encrypted_value
     }
 
-    pub fn domain(&self) -> Pubkey {
+    pub fn domain(&self) -> Domain {
         self.domain
     }
 

@@ -347,6 +347,7 @@ fn execute_burn<'info>(
 ) -> Result<BurnOutcome> {
     assert_confidential_mint_shape(accounts.mint)?;
     let mint_key = accounts.mint.key();
+    let mint_domain = zama_fhe::Domain::new(mint_key);
     let compute_signer = accounts.mint.compute_signer;
     let total_supply_authority = accounts.total_supply_authority.key();
     let token_account = accounts.token_account;
@@ -388,7 +389,7 @@ fn execute_burn<'info>(
 
     let balance_output = fhe::PersistentOutput::new(
         accounts.balance_value.clone(),
-        encrypted_value_id(mint_key, token_account_key, balance_label()),
+        encrypted_value_id(mint_domain, token_account_key, balance_label()),
         fhe::PersistentAudience::for_owner(owner, compute_signer),
     )?;
     // ERC-7984 `unwrap` parity (`makePubliclyDecryptable(unwrapAmount)`): the burned delta is born
@@ -396,24 +397,24 @@ fn execute_burn<'info>(
     // later burn updates this shared encrypted value account (DD-036 / Vector 2) — with no second make-public CPI.
     let burned_output = fhe::PersistentOutput::new_public(
         accounts.burned_amount_value.clone(),
-        encrypted_value_id(mint_key, token_account_key, burned_amount_label()),
+        encrypted_value_id(mint_domain, token_account_key, burned_amount_label()),
         fhe::PersistentAudience::for_owner(owner, compute_signer),
     )?;
     let total_supply_output = fhe::PersistentOutput::new(
         accounts.total_supply_value.clone(),
-        encrypted_value_id(mint_key, total_supply_authority, total_supply_label()),
+        encrypted_value_id(mint_domain, total_supply_authority, total_supply_label()),
         fhe::PersistentAudience::compute_only(compute_signer),
     )?;
 
     let balance = uint64_from_value(
         old_balance_handle,
-        mint_key,
+        mint_domain,
         token_account_key,
         balance_label(),
     )?;
     let total_supply = uint64_from_value(
         old_total_supply_handle,
-        mint_key,
+        mint_domain,
         total_supply_authority,
         total_supply_label(),
     )?;
@@ -428,7 +429,7 @@ fn execute_burn<'info>(
             let value = fhe::read_encrypted_value(amount_value)?;
             Some(uint64_from_value(
                 value.current_handle,
-                value.domain,
+                zama_fhe::Domain::new(value.domain),
                 value.account,
                 value.label,
             )?)

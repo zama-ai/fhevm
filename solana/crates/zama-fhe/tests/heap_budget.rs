@@ -17,7 +17,7 @@ use std::cell::Cell;
 
 use anchor_lang::prelude::Pubkey;
 use zama_fhe::{
-    Batch, BatchAppAuthority, Encrypted, EncryptedValueId, Output, PersistentLabel,
+    Batch, BatchAppAuthority, Domain, Encrypted, EncryptedValueId, Output, PersistentLabel,
     PersistentOutput, Scalar, Uint, Uint64Handle,
 };
 use zama_host::MAX_FHE_BATCH_OPS;
@@ -83,7 +83,7 @@ fn balance_handle(tag: u8) -> [u8; 32] {
 #[test]
 fn building_the_largest_legal_batch_stays_within_the_heap_budget() {
     let authority = Pubkey::new_unique();
-    let domain = Pubkey::new_unique();
+    let domain = Domain::new(Pubkey::new_unique());
     let input = Uint64Handle::persistent(
         balance_handle(1),
         EncryptedValueId::new(domain, authority, PersistentLabel::new([0xfe; 32])),

@@ -13,7 +13,7 @@ stack where one exists.
 | **handle** | 32-byte opaque identifier of one ciphertext, derived on-chain during execution. The high bit of its embedded chain id marks the chain type (Solana = set). | — | `bytes32` handle |
 | **encrypted value ID** | Identity of one persistent encrypted value: recomputed from (domain, account, label). It is the PDA seed of the value account and is never stored. | `value_key` | — |
 | **value account** | The canonical PDA account of one encrypted value ID. Holds the current handle, the subject list, and the MMR of sealed history. | lineage account | ACL storage entry |
-| **domain** | First component of an encrypted value ID: the ACL domain a value belongs to. | `acl_domain_key` | — |
+| **domain** | First component of an encrypted value ID: the ACL domain a value belongs to. Typed as `zama_fhe::Domain` in the SDK, so it cannot be swapped with the account it scopes. | `acl_domain_key` | — |
 | **account** (ID component) | Second component of an encrypted value ID: the app-level account the value is attached to. | `app_account` | — |
 | **label** | Third component of an encrypted value ID: the app-chosen discriminator. | `encrypted_value_label`, SDK `namespace` | — |
 | **subject** | A pubkey granted access on a value account. | — | ACL `account` address |

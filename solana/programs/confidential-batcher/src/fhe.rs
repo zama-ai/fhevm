@@ -153,7 +153,7 @@ pub(crate) fn uint64_operand(value: &EncryptedValue) -> Result<zama_fhe::Uint64H
     zama_fhe::Uint64Handle::persistent(
         value.current_handle,
         zama_fhe::EncryptedValueId::new(
-            value.domain,
+            zama_fhe::Domain::new(value.domain),
             value.account,
             zama_fhe::PersistentLabel::new(value.label),
         ),

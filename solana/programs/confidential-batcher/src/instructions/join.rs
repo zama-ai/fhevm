@@ -148,7 +148,7 @@ pub fn join<'info>(
     let joined_binding = fhe::PersistentBinding::bind(
         ctx.accounts.pending_join_value.to_account_info(),
         zama_fhe::EncryptedValueId::new(
-            batch_key,
+            zama_fhe::Domain::new(batch_key),
             batch_authority,
             zama_fhe::PersistentLabel::new(pending_join_label(user)),
         ),

@@ -166,14 +166,14 @@ pub fn batcher_encrypted_value_address(
     label: [u8; 32],
 ) -> (Pubkey, u8) {
     zama_host::encrypted_value_address(zama_solana_acl_encrypted_value_id(
-        batch,
+        zama_fhe::Domain::new(batch),
         batch_authority,
         label,
     ))
 }
 
 fn zama_solana_acl_encrypted_value_id(
-    domain: Pubkey,
+    domain: zama_fhe::Domain,
     account: Pubkey,
     label: [u8; 32],
 ) -> [u8; 32] {

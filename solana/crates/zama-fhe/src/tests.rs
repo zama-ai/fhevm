@@ -45,7 +45,7 @@ fn account_info(pubkey: Pubkey, is_writable: bool) -> AccountInfo<'static> {
 
 fn encrypted_value_id(account: Pubkey, label_tag: u8) -> EncryptedValueId {
     EncryptedValueId::new(
-        Pubkey::new_unique(),
+        Domain::new(Pubkey::new_unique()),
         account,
         PersistentLabel::new(handle(label_tag)),
     )
@@ -940,7 +940,7 @@ fn validates_app_authority_and_persistent_account_pubkeys() {
     assert_eq!(error, BatchBuildError::InvalidAppAuthority);
 
     let invalid_encrypted_value_id = EncryptedValueId::new(
-        Pubkey::default(),
+        Domain::new(Pubkey::default()),
         Pubkey::new_unique(),
         PersistentLabel::new(handle(5)),
     );
@@ -957,7 +957,7 @@ fn validates_app_authority_and_persistent_account_pubkeys() {
     );
 
     let invalid_account_key = EncryptedValueId::new(
-        Pubkey::new_unique(),
+        Domain::new(Pubkey::new_unique()),
         Pubkey::default(),
         PersistentLabel::new(handle(5)),
     );
@@ -1281,7 +1281,7 @@ fn persistent_output_create_matches_batch_lowering() {
             assert_eq!(output_encrypted_value, binding.encrypted_value());
             assert_eq!(
                 batch.args.dictionary_key(*output_domain_index).unwrap(),
-                binding.domain()
+                binding.domain().pubkey()
             );
             assert_eq!(
                 batch.args.dictionary_key(*output_account_index).unwrap(),

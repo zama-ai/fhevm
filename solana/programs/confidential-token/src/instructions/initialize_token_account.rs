@@ -76,13 +76,14 @@ pub fn initialize_token_account<'info>(
         ConfidentialTokenError::ComputeSignerMismatch
     );
     let mint_key = ctx.accounts.mint.key();
+    let mint_domain = zama_fhe::Domain::new(mint_key);
     let owner = ctx.accounts.owner.key();
     let compute_signer = ctx.accounts.compute_signer.key();
     let token_account_key = ctx.accounts.token_account.key();
     let balance_encrypted_value = ctx.accounts.balance_encrypted_value.key();
     let balance_output = fhe::PersistentOutput::new(
         ctx.accounts.balance_encrypted_value.to_account_info(),
-        encrypted_value_id(mint_key, token_account_key, balance_label()),
+        encrypted_value_id(mint_domain, token_account_key, balance_label()),
         fhe::PersistentAudience::for_owner(owner, compute_signer),
     )?;
     let batch = zama_fhe::Batch::build(
