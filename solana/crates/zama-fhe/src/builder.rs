@@ -106,7 +106,9 @@ const _: () = assert!(MAX_ON_CHAIN_BATCH_OPS < MAX_FHE_BATCH_OPS);
 ///
 /// The `cfg` itself is not exercised by a host test: proving the on-chain branch would need an SBF
 /// fixture program built only to overflow it, which is the same reason `heap_budget.rs` counts bytes
-/// on the host. What is tested is the limit this returns and the rejection it drives.
+/// on the host. What is tested is the limit this returns and the rejection it drives. The predicate
+/// is the same one `zama_solana_acl::sha256` uses to select the on-chain hasher, and the cost
+/// snapshots would show it immediately if that stopped resolving under SBF.
 pub(crate) const fn step_limit() -> usize {
     if cfg!(all(target_os = "solana", not(feature = "raised-heap"))) {
         MAX_ON_CHAIN_BATCH_OPS
