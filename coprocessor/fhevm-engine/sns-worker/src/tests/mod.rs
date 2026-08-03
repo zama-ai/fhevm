@@ -3,7 +3,7 @@ use crate::{
     keyset::fetch_client_key,
     squash_noise::safe_deserialize,
     Config, DBConfig, S3Config, S3MigrationMode, S3RetryPolicy, SchedulePolicy,
-    DEFAULT_S3_MIGRATION_MAX_RETRIES,
+    DEFAULT_S3_MIGRATION_MAX_CONCURRENT_HANDLES, DEFAULT_S3_MIGRATION_MAX_RETRIES,
 };
 use alloy::signers::local::PrivateKeySigner;
 use alloy_primitives::{B256, U256};
@@ -1237,5 +1237,6 @@ fn build_test_config(url: DatabaseURL, enable_compression: bool) -> Config {
         s3_migration: S3MigrationMode::No,
         s3_migration_sleep_duration: Duration::from_mins(5),
         s3_migration_max_retries: DEFAULT_S3_MIGRATION_MAX_RETRIES,
+        s3_migration_max_concurrent_handles: DEFAULT_S3_MIGRATION_MAX_CONCURRENT_HANDLES,
     }
 }
