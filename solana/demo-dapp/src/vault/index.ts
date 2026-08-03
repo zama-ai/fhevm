@@ -97,8 +97,15 @@ export { computeSignerAddress } from './internal/tokenValueAccount.js';
 export { confidentialBalanceValueAccount } from './internal/tokenValueAccount.js';
 export {
   ADDRESS_LOOKUP_TABLE_PROGRAM_ADDRESS,
+  LOOKUP_TABLE_DEACTIVATION_COOLDOWN_SLOTS,
+  LOOKUP_TABLE_STILL_ACTIVE,
+  MAX_EXTEND_ADDRESSES_PER_TRANSACTION,
+  decodeLookupTableDeactivationSlot,
   deriveAddressLookupTableAddress,
   getCreateLookupTableInstruction,
+  getCloseLookupTableInstruction,
+  getDeactivateLookupTableInstruction,
   getExtendLookupTableInstruction,
+  getExtendLookupTableInstructions,
 } from './internal/addressLookupTable.js';
 export { CONFIDENTIAL_BATCHER_PROGRAM_ADDRESS } from './internal/generated/confidentialBatcher/programAddress.js';

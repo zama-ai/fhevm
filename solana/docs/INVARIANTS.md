@@ -221,6 +221,15 @@ or tooling decisions, not with the threat model.
     An unauthorized Solana request is rejected by the KMS connectors, after
     the gateway fee is paid. Authorization is unaffected (#42, #45); the
     fee/spam surface is accepted for the POC.
+52. **[OPERATIONAL]** Every batch gets its own settle address lookup table, and
+    the demo runs the full table lifecycle: create + extend at `open_batch`
+    (chunked so no extend can exceed the transaction wire limit), deactivate
+    immediately after settlement, close once the ~513-slot deactivation
+    cooldown has elapsed, refunding rent to the keeper. Deactivate and close
+    are best-effort rent hygiene — a failure never fails a settlement, and the
+    close crank retries on the next batch preparation. One composition function
+    fills the table and compresses against it, so provisioned and consumed
+    membership cannot diverge (`solana/demo-dapp/src/vault`).
 
 ## N. Roadmap
 

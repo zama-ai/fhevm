@@ -24,7 +24,12 @@ import {
 import { base58 } from '@scure/base';
 
 import { settleBatch, type SolanaVaultSettleOptions } from './settleBatch.js';
-import { deriveBatchAddresses, deriveSettleAccounts, type VaultDemoRoots } from './derive.js';
+import {
+  deriveBatchAddresses,
+  deriveSettleAccounts,
+  deriveSettleLookupTableAddresses,
+  type VaultDemoRoots,
+} from './derive.js';
 import type { FhevmSolanaChain } from '@sdk-src/core/types/fhevmSolanaChain.js';
 import type { SolanaProofServiceConfig } from './internal/proofService.js';
 import { getSettleInstructionDataDecoder } from './internal/generated/confidentialBatcher/instructions/settle.js';
@@ -177,12 +182,19 @@ describe('settleBatch', () => {
     expect(lookups).toHaveLength(1);
     expect(lookups[0]!.lookupTableAddress).toBe(opts.lookupTableAddress);
 
+    // One table composition, bound end to end: the addresses the demo provisions into the table at
+    // open_batch (openBatchForBatcher -> deriveSettleLookupTableAddresses) are exactly the accounts
+    // settle then resolves through it. Both sides call settleAccountsToLookupTableAddresses, and the
+    // v0 message's table indices are checked against that list here, so adding a settle account to
+    // one side without the other fails this test instead of failing live with a missing table entry.
+    const batchAddresses = await deriveBatchAddresses(opts.roots, 0n);
+    const provisioned = await deriveSettleLookupTableAddresses(opts.roots, batchAddresses);
+    const usedIndexes = [...lookups[0]!.writableIndexes, ...lookups[0]!.readonlyIndexes];
+    expect(Math.max(...usedIndexes)).toBeLessThan(provisioned.length);
+    expect(new Set(usedIndexes.map((index) => provisioned[index]!))).toEqual(new Set(provisioned));
+
     // redemption_record (derived from the burned handle) and the fee payer stay STATIC.
-    const accounts = await deriveSettleAccounts(
-      opts.roots,
-      await deriveBatchAddresses(opts.roots, 0n),
-      BURNED_HANDLE as never,
-    );
+    const accounts = await deriveSettleAccounts(opts.roots, batchAddresses, BURNED_HANDLE as never);
     const staticAccounts = compiled.staticAccounts as readonly Address[];
     expect(staticAccounts[0]).toBe(keeper.address); // fee payer is always static account 0
     expect(staticAccounts).toContain(accounts.redemptionRecord);

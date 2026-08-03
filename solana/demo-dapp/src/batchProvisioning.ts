@@ -5,8 +5,12 @@ import {
   type TransactionSigner,
 } from '@solana/kit';
 import {
+  LOOKUP_TABLE_DEACTIVATION_COOLDOWN_SLOTS,
+  LOOKUP_TABLE_STILL_ACTIVE,
+  decodeLookupTableDeactivationSlot,
+  getCloseLookupTableInstruction,
   getCurrentBatch,
-  getExtendLookupTableInstruction,
+  getExtendLookupTableInstructions,
   openBatchForBatcher,
 } from './vault/index.js';
 
@@ -20,16 +24,9 @@ const BATCH_DISPATCHED = 1;
 const PROVISIONING_COMPUTE_UNIT_LIMIT = 800_000;
 const LOOKUP_TABLE_COMPUTE_UNIT_LIMIT = 300_000;
 const LOOKUP_TABLE_HEADER_BYTES = 56;
-const LOOKUP_TABLE_EXTEND_CHUNK_SIZE = 20;
 const LOOKUP_TABLE_PROGRAM = 'AddressLookupTab1e1111111111111111111111111';
 
 const addressEncoder = getAddressEncoder();
-
-const chunk = <T,>(items: readonly T[], size: number): T[][] => {
-  const chunks: T[][] = [];
-  for (let index = 0; index < items.length; index += size) chunks.push(items.slice(index, index + size));
-  return chunks;
-};
 
 const lookupTablePrefixLength = async (
   config: DemoConfig,
@@ -79,6 +76,66 @@ const writeRegistry = async (registryPath: string, registry: BatchLookupRegistry
   const temporaryPath = `${registryPath}.tmp`;
   await fs.writeFile(temporaryPath, `${JSON.stringify(registry, null, 2)}\n`, { mode: 0o600 });
   await fs.rename(temporaryPath, registryPath);
+};
+
+/**
+ * The close half of the table lifecycle (create -> extend -> deactivate -> close):
+ * `settleVaultBatch` deactivates a batch's table right after settlement, and this crank — run on
+ * every `prepareNextBatch` — closes any table of this direction whose deactivation cooldown has
+ * elapsed, refunding the rent to the keeper. Already-closed tables are pruned from the registry.
+ * Every step is best-effort: a close that cannot land yet is simply retried by a later crank.
+ */
+const closeCooledLookupTables = async (
+  config: DemoConfig,
+  keeper: TransactionSigner,
+  direction: VaultDirection,
+  registryPath: string,
+  activeLookupTable: Address,
+): Promise<void> => {
+  const rpc = createSolanaRpc(config.rpcUrl);
+  const registry = await readRegistry(registryPath);
+  const keyPrefix = `${config.chainId}:${config.batchers[direction].batcher}:`;
+  const directionEntries = Object.entries(registry).filter(([key]) => key.startsWith(keyPrefix));
+  const candidates = new Set<string>([
+    // The seed-provisioned batch-0 table lives in the demo-config, not the registry.
+    config.batchers[direction].lookupTable,
+    ...directionEntries.map(([, table]) => table),
+  ]);
+  candidates.delete(activeLookupTable);
+  const currentSlot = await rpc.getSlot({ commitment: 'finalized' }).send();
+  const closed = new Set<string>();
+  for (const table of candidates) {
+    try {
+      const account = await rpc
+        .getAccountInfo(table as Address, { commitment: 'confirmed', encoding: 'base64' })
+        .send();
+      if (account.value === null || account.value.owner !== LOOKUP_TABLE_PROGRAM) {
+        closed.add(table);
+        continue;
+      }
+      const encoded = account.value.data as readonly [string, 'base64'];
+      const deactivationSlot = decodeLookupTableDeactivationSlot(Buffer.from(encoded[0], 'base64'));
+      if (deactivationSlot === LOOKUP_TABLE_STILL_ACTIVE) continue;
+      if (currentSlot <= deactivationSlot + LOOKUP_TABLE_DEACTIVATION_COOLDOWN_SLOTS) continue;
+      await sendTransaction(
+        config,
+        keeper,
+        [getCloseLookupTableInstruction({ lookupTable: table as Address, authority: keeper, recipient: keeper.address })],
+        LOOKUP_TABLE_COMPUTE_UNIT_LIMIT,
+      );
+      closed.add(table);
+    } catch (error) {
+      console.warn(
+        `closing cooled lookup table ${table} failed (a later prepare retries): ${error instanceof Error ? error.message : String(error)}`,
+      );
+    }
+  }
+  if (closed.size > 0) {
+    const pruned = Object.fromEntries(
+      Object.entries(registry).filter(([key, table]) => !(key.startsWith(keyPrefix) && closed.has(table))),
+    );
+    await writeRegistry(registryPath, pruned);
+  }
 };
 
 export type PreparedBatch = {
@@ -131,14 +188,18 @@ export const prepareNextBatch = async (
   const lookupTable = candidatePrefix === null ? prepared.lookupTableAddress : candidateLookupTable;
   const prefixLength = candidatePrefix ?? 0;
   const remaining = prepared.lookupTableAddresses.slice(prefixLength);
-  const chunks = chunk(remaining, LOOKUP_TABLE_EXTEND_CHUNK_SIZE);
-  for (const [index, addresses] of chunks.entries()) {
-    const extend = getExtendLookupTableInstruction({
-      lookupTable,
-      authority: keeper,
-      payer: keeper,
-      addresses,
-    });
+  // The vault builder chunks the extend at the wire limit so no instruction is unsendable; the
+  // table's create (when the table is fresh) rides with the first chunk.
+  const extendInstructions =
+    remaining.length === 0
+      ? []
+      : getExtendLookupTableInstructions({
+          lookupTable,
+          authority: keeper,
+          payer: keeper,
+          addresses: remaining,
+        });
+  for (const [index, extend] of extendInstructions.entries()) {
     const create = candidatePrefix === null && index === 0 ? prepared.instructions[1] : undefined;
     await sendTransaction(
       config,
@@ -151,6 +212,8 @@ export const prepareNextBatch = async (
   const batch = current.state.status === BATCH_PENDING ? current.addresses.batch : (await getCurrentBatch(rpc, roots)).addresses.batch;
   registry[registryKey(config, direction, batchIndex, batch)] = lookupTable;
   await writeRegistry(registryPath, registry);
+  // Rent hygiene: close this direction's cooled-down deactivated tables while we are here.
+  await closeCooledLookupTables(config, keeper, direction, registryPath, lookupTable);
   return {
     batchIndex,
     batch,

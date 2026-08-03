@@ -84,22 +84,8 @@ const BATCH_AUTHORITY_FUNDING_LAMPORTS = 100_000_000n;
 // Host KMS-context id used at bring-up (context 1). The demo runs against this single context; the
 // gateway/user-decrypt context id is a separate value carried in `userDecryptContextId`.
 const BRINGUP_KMS_CONTEXT_ID = 1n;
-// Addresses per ALT extend transaction. The full settle table is 32 addresses; a single extend of
-// all 32 is ~1274 bytes of instruction data alone and overflows the 1232-byte transaction wire
-// limit (even before the create instruction and signatures), so the extend is chunked. 20 keeps the
-// first chunk — which rides in the same transaction as the table create — comfortably under the
-// limit; 32 addresses then split into two chunks (20 + 12).
-const SETTLE_ALT_EXTEND_CHUNK_SIZE = 20;
-
 const addressEncoder = getAddressEncoder();
 const encodeAddress = (value: Address): Uint8Array => new Uint8Array(addressEncoder.encode(value));
-
-/** Splits `items` into consecutive slices of at most `size`, preserving order. */
-const chunk = <T>(items: readonly T[], size: number): T[][] => {
-  const chunks: T[][] = [];
-  for (let index = 0; index < items.length; index += size) chunks.push(items.slice(index, index + size));
-  return chunks;
-};
 
 /**
  * A signer account meta: the `signer` field rides along at runtime so `signTransactionMessageWithSigners`
@@ -382,11 +368,9 @@ const main = async (): Promise<void> => {
   };
 
   // 5. Open the first batch on each batcher and stand up its settle lookup table. open_batch carries
-  // ~24 accounts, so it goes in its own transaction. The table's create then rides with the FIRST
-  // extend chunk; the remaining chunks follow one transaction at a time. The single 32-address extend
-  // the SDK returns is rebuilt here in `SETTLE_ALT_EXTEND_CHUNK_SIZE` chunks because a lone 32-address
-  // extend overflows the 1232-byte wire limit. Each extend is confirmed before the next, so the table
-  // is fully populated before `settle` ever reads it.
+  // ~24 accounts, so it goes in its own transaction. The vault builder returns the extend already
+  // chunked at the wire limit: the table's create rides with the FIRST extend chunk, and each later
+  // chunk is confirmed on its own, so the table is fully populated before `settle` ever reads it.
   const openFirstBatch = async (roots: VaultDemoRoots): Promise<Address> => {
     const recentSlot = await rpc.getSlot({ commitment: "finalized" }).send();
     const opened = await vault.openBatchForBatcher({
@@ -396,19 +380,13 @@ const main = async (): Promise<void> => {
       recentSlot,
       authorityFundingLamports: BATCH_AUTHORITY_FUNDING_LAMPORTS,
     });
-    const [openBatchInstruction, createLookupTable] = opened.instructions;
+    const [openBatchInstruction, createLookupTable, firstExtend, ...laterExtends] = opened.instructions;
     await send(deployer, [openBatchInstruction!]);
-    const extendChunks = chunk(opened.lookupTableAddresses, SETTLE_ALT_EXTEND_CHUNK_SIZE);
-    for (const [chunkIndex, addresses] of extendChunks.entries()) {
-      const extendLookupTable = vault.getExtendLookupTableInstruction({
-        lookupTable: opened.lookupTableAddress,
-        authority: deployer,
-        payer: deployer,
-        addresses,
-      });
-      // The create must land in the same transaction that first extends the table (or immediately
-      // before it); pair it with chunk 0, then send each later chunk on its own.
-      await send(deployer, chunkIndex === 0 ? [createLookupTable!, extendLookupTable] : [extendLookupTable]);
+    // The create must land in the same transaction that first extends the table (or immediately
+    // before it); pair it with the first chunk, then send each later chunk on its own.
+    await send(deployer, [createLookupTable!, firstExtend!]);
+    for (const extendLookupTable of laterExtends) {
+      await send(deployer, [extendLookupTable]);
     }
     return opened.lookupTableAddress;
   };

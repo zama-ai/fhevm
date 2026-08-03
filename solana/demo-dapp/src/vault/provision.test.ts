@@ -118,7 +118,7 @@ describe('vault provisioning builders', () => {
     expect(decoded.amount).toBe(1_000_000n);
   });
 
-  it('openBatchForBatcher: assembles the [open_batch, create_alt, extend_alt] set from roots', async () => {
+  it('openBatchForBatcher: assembles the [open_batch, create_alt, ...extend_alt chunks] set from roots', async () => {
     const roots: VaultDemoRoots = {
       batcherProgram: addr(10),
       tokenProgram: addr(11),
@@ -140,8 +140,9 @@ describe('vault provisioning builders', () => {
       recentSlot: 100n,
       authorityFundingLamports: 100_000_000n,
     });
-    // open_batch + create_lookup_table + extend_lookup_table, in submission order.
-    expect(result.instructions).toHaveLength(3);
+    // open_batch + create_lookup_table + the wire-limit-chunked extends (32 addresses -> 20 + 12),
+    // in submission order.
+    expect(result.instructions).toHaveLength(4);
     // The first (open_batch) targets the batcher program; the ALT pair targets the ALT program.
     expect(result.instructions[0]!.programAddress).toBe(CONFIDENTIAL_BATCHER_PROGRAM_ADDRESS);
     // Every settle-table entry is derived (no fee payer, no post-dispatch redemption record).

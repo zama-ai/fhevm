@@ -4,7 +4,7 @@ import {
   getOpenBatchInstructionAsync,
   type OpenBatchAsyncInput,
 } from './internal/generated/confidentialBatcher/instructions/openBatch.js';
-import { getCreateLookupTableInstruction, getExtendLookupTableInstruction } from './internal/addressLookupTable.js';
+import { getCreateLookupTableInstruction, getExtendLookupTableInstructions } from './internal/addressLookupTable.js';
 
 export type SolanaVaultOpenBatchParameters = {
   /** Accounts + `authorityFundingLamports` for the batcher `open_batch` instruction. */
@@ -24,7 +24,12 @@ export type SolanaVaultOpenBatchParameters = {
 };
 
 export type SolanaVaultOpenBatchResult = {
-  /** `[open_batch, create_lookup_table, extend_lookup_table]`, in submission order. */
+  /**
+   * `[open_batch, create_lookup_table, ...extend chunks]`, in submission order. The extend is
+   * pre-chunked so no instruction can overflow the transaction wire limit: send `open_batch`
+   * alone (it carries ~24 accounts), pair the create with the first extend chunk, then send and
+   * confirm each later chunk on its own.
+   */
   readonly instructions: readonly Instruction[];
   /** The derived settle lookup table address; pass it to {@link settleBatch}. */
   readonly lookupTableAddress: Address;
@@ -33,10 +38,9 @@ export type SolanaVaultOpenBatchResult = {
 };
 
 /**
- * Builds the `open_batch` instruction and the two instructions that stand up the batch's settle
- * address lookup table (create + extend). The batch's `payer` doubles as the lookup table authority.
- * The caller assembles and sends these (create + extend may share one transaction with `open_batch`,
- * or be split if the account list is large); the returned table address + addresses feed `settleBatch`.
+ * Builds the `open_batch` instruction and the instructions that stand up the batch's settle
+ * address lookup table (create + wire-limit-chunked extends). The batch's `payer` doubles as the
+ * lookup table authority. The returned table address + addresses feed `settleBatch`.
  */
 export async function openBatch(parameters: SolanaVaultOpenBatchParameters): Promise<SolanaVaultOpenBatchResult> {
   const payer = parameters.openBatch.payer;
@@ -46,14 +50,14 @@ export async function openBatch(parameters: SolanaVaultOpenBatchParameters): Pro
     payer,
     recentSlot: parameters.recentSlot,
   });
-  const extendInstruction = getExtendLookupTableInstruction({
+  const extendInstructions = getExtendLookupTableInstructions({
     lookupTable: lookupTableAddress,
     authority: payer,
     payer,
     addresses: parameters.settleLookupTableAddresses,
   });
   return {
-    instructions: [openBatchInstruction, createInstruction, extendInstruction],
+    instructions: [openBatchInstruction, createInstruction, ...extendInstructions],
     lookupTableAddress,
     lookupTableAddresses: parameters.settleLookupTableAddresses,
   };
