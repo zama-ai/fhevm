@@ -90,10 +90,10 @@ joining many times with zero — and we say so instead of pretending otherwise.
 
 ## Safety rules carried over from the EVM design
 
-- **Deposit and wait, never react.** No user action ever branches on an
-  encrypted value (no "instant exit if the pool is big enough"). Anything
-  that reacts to encrypted state can be probed until the secret leaks.
-- **Self-serve everything.** Dispatch, settle, and claim are permissionless;
+- **A user deposits and then waits.** No user action ever branches on an
+  encrypted value (no "instant exit if the pool is big enough"), because
+  anything that reacts to encrypted state can be probed until the secret leaks.
+- **Every step is self-serve.** Dispatch, settle, and claim are permissionless;
   `quit` returns your exact deposit from a pending batch. No operator can
   hold user funds hostage.
 - **One batch, one account.** Each batch has its own token account, so the

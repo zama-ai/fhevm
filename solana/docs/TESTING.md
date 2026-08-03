@@ -119,7 +119,7 @@ files. It sits **on top of** the Mollusk ladder and the full vertical, and owns 
 composition can break (proofs vs live state, KMS round-trips, relayer seams, timing) — never what
 the lower layers already prove.
 
-Runner: `bun:test`, not vitest. The standing batch (#1656) names vitest, but these scenarios reuse
+These scenarios run under `bun:test`. The standing batch (#1656) names vitest, but they reuse
 `test-suite/fhevm/src/solana/*` orchestrators whose `layout.ts` is bun-native (`import.meta.dir`),
 and node-based vitest workers do not provide it; vitest remains the target if/when `layout.ts` is
 ported off bun APIs.

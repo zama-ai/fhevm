@@ -52,7 +52,7 @@ stack where one exists.
 |---|---|---|---|
 | **decoded op records** | The typed structs the listener decodes from batch instruction data, one per step, fed to the coprocessor. They are not on-chain events. | `Fhe*Event` structs | `FheAdd`… events |
 | **reconstruction** | The listener's re-derivation of output handles from raw transaction bytes, using the program's own derivation functions. | — | — |
-| **proof service** | The off-chain service that ingests confirmed blocks and serves MMR inclusion proofs. Availability-critical, never authorization-critical. | — | — |
+| **proof service** | The off-chain service that ingests confirmed blocks and serves MMR inclusion proofs. A failure can stall a decrypt, but the KMS re-verifies every proof, so the service cannot authorize one. | — | — |
 
 ## Banned names
 
