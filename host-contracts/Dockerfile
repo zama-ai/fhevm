@@ -8,9 +8,6 @@ RUN apk add --no-cache \
     git \
     jq \
     kubectl \
-    gcompat \
-    libgcc \
-    libstdc++ \
     python3 \
     python3-dev \
     make \
@@ -24,13 +21,16 @@ RUN apk add --no-cache \
 # host-contracts/lz_wiring_from_eoa_owner.sh) — baked in so LayerZero
 # bridge wiring can run without any runtime installs.
 RUN npm install -g pnpm@9
-ENV FOUNDRY_DIR=/usr/local/foundry
-ENV PATH="${FOUNDRY_DIR}/bin:${PATH}"
-# `SHELL` is unset in Docker build env; foundryup's install script does
-# `case $SHELL in ... *) exit 1;;` when it can't pick a shell profile to
-# edit. Force bash so the installer completes 0.
-RUN SHELL=/bin/bash curl -fsSL https://foundry.paradigm.xyz | SHELL=/bin/bash bash && \
-    ${FOUNDRY_DIR}/bin/foundryup
+
+# Foundry publishes native musl/alpine builds; grab the archive directly
+# instead of running foundryup (which downloads the glibc build and then
+# fails to load on Alpine with `Error relocating cast: fcntl64: symbol
+# not found`). Pin FOUNDRY_VERSION explicitly so image builds are
+# reproducible.
+ARG FOUNDRY_VERSION=v1.7.1
+RUN curl -fsSL "https://github.com/foundry-rs/foundry/releases/download/${FOUNDRY_VERSION}/foundry_${FOUNDRY_VERSION}_alpine_amd64.tar.gz" \
+      | tar -xz -C /usr/local/bin forge cast anvil chisel && \
+    chmod +x /usr/local/bin/{forge,cast,anvil,chisel}
 
 RUN mkdir -p /app && \
     chown -R fhevm:fhevm /app &&\
