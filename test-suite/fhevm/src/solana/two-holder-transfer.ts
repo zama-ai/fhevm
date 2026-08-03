@@ -36,7 +36,7 @@ export type BalanceState = {
   owner: string;
   tokenAccount: string;
   encryptedValueAccount: string;
-  aclValueKey: string;
+  encryptedValueId: string;
   currentHandle: string;
   chainId: string;
 };
@@ -93,7 +93,7 @@ export const parseBalanceState = (output: string, expectedMint: string, expected
       "owner",
       "tokenAccount",
       "encryptedValueAccount",
-      "aclValueKey",
+      "encryptedValueId",
       "currentHandle",
       "chainId",
     ]) ||
@@ -108,7 +108,7 @@ export const parseBalanceState = (output: string, expectedMint: string, expected
       throw new Error(`balance-state probe has invalid ${name}`);
     }
   }
-  for (const name of ["aclValueKey", "currentHandle"] as const) {
+  for (const name of ["encryptedValueId", "currentHandle"] as const) {
     if (typeof value[name] !== "string" || !BYTES32.test(value[name])) {
       throw new Error(`balance-state probe has invalid ${name}`);
     }
@@ -122,7 +122,7 @@ export const parseBalanceState = (output: string, expectedMint: string, expected
     owner: value.owner,
     tokenAccount: value.tokenAccount as string,
     encryptedValueAccount: value.encryptedValueAccount as string,
-    aclValueKey: value.aclValueKey as string,
+    encryptedValueId: value.encryptedValueId as string,
     currentHandle: value.currentHandle as string,
     chainId: value.chainId,
   };
@@ -271,7 +271,9 @@ export const createRealTwoHolderDependencies = (config: Partial<TwoHolderConfig>
         UD_SECRET_KEY: holder.secretKey,
         UD_CONTEXT_ID: cfg.userDecryptContext,
         UD_ALLOWED_DOMAIN_KEYS: `0x${Buffer.from(getAddressEncoder().encode(address(scenario.mint))).toString("hex")}`,
-        UD_ACL_VALUE_KEY: state.aclValueKey,
+        // The env var and the v3 request field keep the wire name `aclValueKey`; what the probe
+        // reports is the encrypted value ID it derives.
+        UD_ACL_VALUE_KEY: state.encryptedValueId,
         UD_EXPECTED: expected.toString(),
       }),
     async cleanup() {

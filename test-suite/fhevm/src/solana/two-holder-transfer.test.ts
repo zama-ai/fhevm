@@ -25,7 +25,7 @@ const balance = (owner: string, handleByte: string): BalanceState => ({
   owner,
   tokenAccount: owner === alice.owner ? "5".repeat(32) : "6".repeat(32),
   encryptedValueAccount: owner === alice.owner ? "7".repeat(32) : "8".repeat(32),
-  aclValueKey: hex32("a"),
+  encryptedValueId: hex32("a"),
   currentHandle: hex32(handleByte),
   chainId: "9223372036854788153",
 });

@@ -2,7 +2,7 @@
 """Check that every string the e2e scripts grep for is still printed by something.
 
 The e2e scripts drive the live clients by reading their stdout: a phase runs a client, greps a
-labelled line out of the output, and feeds the captured field to the next phase. Nothing ties the
+labeled line out of the output, and feeds the captured field to the next phase. Nothing ties the
 grep pattern to the `println!` that produces it, so renaming a printed label leaves the script
 grepping for text no producer emits any more.
 
