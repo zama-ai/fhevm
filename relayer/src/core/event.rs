@@ -1314,6 +1314,116 @@ mod tests {
         }
     }
 
+    /// A v3 envelope carrying `attestation_type`, otherwise a well-formed Solana payload. Both
+    /// `solana*` fields are populated so a rejection can only come from the attestation type.
+    fn attested_envelope(attestation_type: &str) -> AttestedUserDecryptRequestJson {
+        use crate::http::endpoints::common::types::{HandleEntryJson, RequestValiditySecondsJson};
+        use crate::http::endpoints::v3::types::Eip712UnifiedUserDecryptPayloadJson;
+
+        let mut extra = vec![0x01u8];
+        extra.extend_from_slice(&[0u8; 32]);
+
+        AttestedUserDecryptRequestJson {
+            attestation_type: attestation_type.to_string(),
+            attested_payload: Eip712UnifiedUserDecryptPayloadJson {
+                version: "2.0".to_string(),
+                r#type: "user_decryption".to_string(),
+                handles: vec![HandleEntryJson {
+                    ct_handle: format!("0x{}", "11".repeat(32)),
+                    contract_address: CONTRACT_ADDRESS.to_string(),
+                    owner_address: USER_ADDRESS.to_string(),
+                }],
+                user_address: USER_ADDRESS.to_string(),
+                allowed_contracts: vec![CONTRACT_ADDRESS.to_string()],
+                request_validity: RequestValiditySecondsJson {
+                    start_timestamp: "1700000000".to_string(),
+                    duration_seconds: "604800".to_string(),
+                },
+                public_key: "0x04b8e5d3".to_string(),
+                extra_data: format!("0x{}", hex::encode(&extra)),
+                solana_user_identity: Some(format!("0x{}", "07".repeat(32))),
+                solana_nonce: Some(format!("0x{}", "09".repeat(32))),
+                solana_allowed_acl_domain_keys: Some(vec![format!("0x{}", "05".repeat(32))]),
+            },
+            signature: format!("0x{}", "ab".repeat(64)),
+        }
+    }
+
+    /// An unrecognized `attestationType` is rejected by the conversion itself, not only by the
+    /// HTTP-layer validator: an unknown protocol must never fall through onto the EVM arm and be
+    /// served with EVM authorization rules (DD-027, validation is per-protocol).
+    #[test]
+    fn attested_user_decrypt_rejects_unknown_attestation_type() {
+        let error =
+            UserDecryptRequest::try_from(attested_envelope("solana-ed25519-user-decrypt-v3"))
+                .expect_err("an unknown attestation type has no arm to route to");
+        let message = error.to_string();
+        assert!(
+            message.contains("Unsupported attestationType"),
+            "unexpected rejection reason: {message}"
+        );
+    }
+
+    /// The other arm of the same dispatch: the EVM attestation type still routes to
+    /// `Eip712UnifiedV1`, so the rejection above is narrow and not a blanket refusal. The
+    /// `solana*` fields present in this fixture are tolerated and ignored on the EVM arm.
+    #[test]
+    fn attested_user_decrypt_routes_evm_attestation_type_to_eip712_unified() {
+        let request =
+            UserDecryptRequest::try_from(attested_envelope(V3_ATTESTATION_TYPE_EIP712_UNIFIED_V1))
+                .expect("the EVM attestation type converts");
+        match request {
+            UserDecryptRequest::Eip712UnifiedV1 {
+                user_address,
+                allowed_contracts,
+                ..
+            } => {
+                assert_eq!(user_address, USER_ADDRESS.parse::<Address>().unwrap());
+                assert_eq!(
+                    allowed_contracts,
+                    vec![CONTRACT_ADDRESS.parse::<Address>().unwrap()]
+                );
+            }
+            other => panic!("expected Eip712UnifiedV1, got {}", other.attestation_kind()),
+        }
+    }
+
+    /// The DEPRECATED v2 user-decrypt path is EVM-only: a Solana host chain id is rejected at
+    /// conversion instead of being converted with zeroed EVM address placeholders. The EVM twin of
+    /// the same fixture must still convert, so the rejection is attributable to the chain id alone
+    /// and not to a malformed fixture.
+    #[test]
+    fn legacy_v2_user_decrypt_rejects_solana_host_chain_id() {
+        use crate::http::endpoints::common::types::{HandleContractPairJson, RequestValidityJson};
+
+        let envelope = |chain_id: &str| UserDecryptRequestJson {
+            handle_contract_pairs: vec![HandleContractPairJson {
+                handle: format!("0x{}", "11".repeat(32)),
+                contract_address: CONTRACT_ADDRESS.to_string(),
+            }],
+            request_validity: RequestValidityJson {
+                start_timestamp: "1700000000".to_string(),
+                duration_days: "1".to_string(),
+            },
+            contracts_chain_id: chain_id.to_string(),
+            contract_addresses: vec![CONTRACT_ADDRESS.to_string()],
+            user_address: USER_ADDRESS.to_string(),
+            signature: "ab".repeat(65),
+            public_key: "04b8e5d3".to_string(),
+            extra_data: EXTRA_DATA.to_string(),
+        };
+
+        UserDecryptRequest::try_from(envelope(CHAIN_ID)).expect("the EVM twin still converts");
+
+        let error = UserDecryptRequest::try_from(envelope(SOLANA_CHAIN_ID_HEX))
+            .expect_err("a Solana host chain id has no legal v2 shape");
+        let message = error.to_string();
+        assert!(
+            message.contains("v3 endpoint only"),
+            "unexpected rejection reason: {message}"
+        );
+    }
+
     /// The Relayer must propagate `extraData` to the Gateway verbatim, without
     /// interpreting or rewriting any of its fields (version, contextId, epochId).
     #[test]
