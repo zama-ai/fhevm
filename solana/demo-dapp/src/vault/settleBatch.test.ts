@@ -198,6 +198,16 @@ describe('settleBatch', () => {
     const staticAccounts = compiled.staticAccounts as readonly Address[];
     expect(staticAccounts[0]).toBe(keeper.address); // fee payer is always static account 0
     expect(staticAccounts).toContain(accounts.redemptionRecord);
+    // The static set is closed at 14: the fee payer, redemption_record, the program ids settle
+    // passes as accounts (system, SPL token, the CPI targets) and the event-CPI authorities. This
+    // is the direction the membership assertion above cannot see — a settle account that never
+    // reaches SETTLE_ALT_FIELD_ORDER stays static, so both sets still match while the wire grows.
+    // Pinning the count makes that growth a deliberate edit with a fresh look at the 1232-byte
+    // budget (the 14-sibling test below is what that budget costs today).
+    expect(staticAccounts).toHaveLength(14);
+    // And nothing is paid for twice: an address provisioned into the table must not also sit in
+    // the static set.
+    expect(staticAccounts.filter((address) => provisioned.includes(address))).toEqual([]);
 
     // The certified 32-byte cleartext was decoded to the u64 settle argument. instructions[0] is the
     // prepended SetComputeUnitLimit; the settle instruction is instructions[1].

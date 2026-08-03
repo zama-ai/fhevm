@@ -180,7 +180,10 @@ export const settleVaultBatch = async (
   session: DemoOperatorSession,
   position: BatchTarget,
   direction: VaultDirection,
-  lookupTableAddress: Address = session.config.batchers[direction].lookupTable,
+  // Required, not defaulted to the config's table: this address also names the table this
+  // function deactivates on success, so falling back to the batch-0 table would retire a table
+  // belonging to a different batch. Callers get it from `lookupTableForBatch`.
+  lookupTableAddress: Address,
 ): Promise<Signature | null> => {
   const roots = vaultRoots(session.config, direction);
   const { rpc, batch } = await currentPinnedBatch(session, position, direction);
