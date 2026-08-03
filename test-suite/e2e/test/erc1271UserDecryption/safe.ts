@@ -21,9 +21,11 @@
 //     returning a non-magic value — an equally definitive rejection for the
 //     relayer, the KMS Connector, and the js-sdk;
 //   - answers through a proxy -> fallback-handler double round trip. Measured
-//     on the canonical bytecode: worst positive shape (3-of-3 ECDSA) needs
-//     ~67k gas including intrinsic — comfortably inside the 100_000
-//     `erc1271_gas_limit` all three verifying layers apply.
+//     on the canonical bytecode (incl. intrinsic, vs the 100_000
+//     `erc1271_gas_limit` all three verifying layers apply): worst flat shape
+//     (3-of-3 ECDSA) ~67k; nested v=0 contract-signature shapes ~83k (inner
+//     1-of-1) and ~91k (inner 2-of-3) — the latter has only ~9% headroom, so
+//     deeper nesting or higher inner thresholds would exceed the default cap.
 import SafeArtifact from '@safe-global/safe-contracts/build/artifacts/contracts/Safe.sol/Safe.json';
 import CompatibilityFallbackHandlerArtifact from '@safe-global/safe-contracts/build/artifacts/contracts/handler/CompatibilityFallbackHandler.sol/CompatibilityFallbackHandler.json';
 import SafeProxyFactoryArtifact from '@safe-global/safe-contracts/build/artifacts/contracts/proxies/SafeProxyFactory.sol/SafeProxyFactory.json';
@@ -247,4 +249,65 @@ export function safeApprovedHashPart(ownerAddress: string): SignaturePart {
  */
 export async function approveSafeHash(safe: SafeAccount, owner: Signer, digest: string): Promise<void> {
   await (await (safe.safe.connect(owner) as Contract).approveHash(safeMessageHashOf(safe, digest))).wait();
+}
+
+/**
+ * The full EIP-712 preimage (`0x1901 || domainSeparator || structHash`) of
+ * the SafeMessage wrap of `digest` — the `data` bytes `checkSignatures`
+ * verifies over. A v=0 CONTRACT owner receives exactly these bytes in the
+ * nested `isValidSignature(bytes,bytes)` call and (if it is itself a Safe)
+ * re-wraps them into ITS OWN SafeMessage.
+ */
+export function safeMessagePreimageOf(safe: SafeAccount, digest: string): string {
+  const { domain, types, message } = safeMessageTypedData(safe.chainId, safe.address, digest);
+  return TypedDataEncoder.encode(domain, types, message);
+}
+
+/**
+ * A v=0 contract-signature STATIC part: `r` = the contract owner's address
+ * (an inner Safe), `s` = the byte offset of the `{length, bytes}` dynamic
+ * tail within the WHOLE signatures blob, `v` = 0. Safe requires the offset
+ * to land past the static `threshold * 65` section (GS021-GS023).
+ */
+export function safeContractOwnerPart(contractOwnerAddress: string, dynamicOffset: number): SignaturePart {
+  return {
+    address: contractOwnerAddress.toLowerCase(),
+    signature:
+      `0x` +
+      contractOwnerAddress.slice(2).toLowerCase().padStart(64, '0') +
+      dynamicOffset.toString(16).padStart(64, '0') +
+      '00',
+  };
+}
+
+/**
+ * Build an outer-Safe multisig blob whose first part is a v=0 CONTRACT
+ * signature from a nested inner Safe, alongside plain ECDSA parts from
+ * `eoaOwners`. The inner Safe's owners sign the inner SafeMessage wrap of
+ * the OUTER Safe's preimage bytes — the second full ERC-1271 round trip.
+ * `dynamicOffsetOverride` deliberately mis-points the dynamic tail for
+ * offset-validation negatives (GS021).
+ */
+export async function buildSafeNestedMultisigSignature(
+  outer: SafeAccount,
+  digest: string,
+  contractOwner: { readonly safe: SafeAccount; readonly owners: readonly Signer[] },
+  eoaOwners: readonly Signer[],
+  opts?: { readonly dynamicOffsetOverride?: number },
+): Promise<string> {
+  const staticLength = (1 + eoaOwners.length) * 65;
+  const offset = opts?.dynamicOffsetOverride ?? staticLength;
+  // The inner signature: inner owners over the inner SafeMessage wrap of the
+  // outer preimage (collectSafeOwnerParts wraps whatever bytes it is given).
+  const innerSignature = concatSignatureParts(
+    sortSignatureParts(
+      await collectSafeOwnerParts(contractOwner.safe, safeMessagePreimageOf(outer, digest), contractOwner.owners),
+    ),
+  );
+  const dynamicTail = ((innerSignature.length - 2) / 2).toString(16).padStart(64, '0') + innerSignature.slice(2);
+  const staticParts = sortSignatureParts([
+    safeContractOwnerPart(contractOwner.safe.address, offset),
+    ...(await collectSafeOwnerParts(outer, digest, eoaOwners)),
+  ]);
+  return concatSignatureParts(staticParts, dynamicTail);
 }

@@ -29,6 +29,7 @@ import {
   SafeAccount,
   approveSafeHash,
   buildSafeMultisigSignature,
+  buildSafeNestedMultisigSignature,
   collectSafeOwnerParts,
   deploySafeAccount,
   deploySafeInfra,
@@ -74,6 +75,12 @@ describe('ERC-1271 user decryption', function () {
   let rejectWalletAddress: string;
   let safe2of3: SafeFixture;
   let safe3of3: SafeFixture;
+  // Nested v=0 contract-signature fixtures: outer 2-of-3 Safes whose first
+  // owner is itself a Safe (1-of-1 dave, and 2-of-3 bob/dave/eve).
+  let innerSafe1of1: SafeAccount;
+  let innerSafe2of3: SafeAccount;
+  let nestedOuter1of1: SafeFixture;
+  let nestedOuter2of3: SafeFixture;
 
   /**
    * A real Safe holds no encrypted state (and has no FHE coprocessor config),
@@ -138,16 +145,27 @@ describe('ERC-1271 user decryption', function () {
     const infra = await deploySafeInfra(signers.alice);
     const multisigOwners = [signers.bob.address, signers.carol.address, signers.dave.address];
     const holderFactory = await ethers.getContractFactory('EncryptedValueHolder');
-    const deploySafeFixture = async (threshold: number): Promise<SafeFixture> => {
-      const safe = await deploySafeAccount(infra, signers.alice, multisigOwners, threshold);
+    const deploySafeFixture = async (owners: readonly string[], threshold: number): Promise<SafeFixture> => {
+      const safe = await deploySafeAccount(infra, signers.alice, owners, threshold);
       const holder = await holderFactory.connect(signers.alice).deploy();
       await holder.waitForDeployment();
       const holderAddress = await holder.getAddress();
       await (await holder.connect(signers.alice).initValueFor(KNOWN_VALUE, safe.address)).wait();
       return { safe, holder, holderAddress };
     };
-    safe2of3 = await deploySafeFixture(2);
-    safe3of3 = await deploySafeFixture(3);
+    safe2of3 = await deploySafeFixture(multisigOwners, 2);
+    safe3of3 = await deploySafeFixture(multisigOwners, 3);
+
+    // Inner Safes acting as CONTRACT owners of outer Safes (v=0 parts).
+    innerSafe1of1 = await deploySafeAccount(infra, signers.alice, [signers.dave.address], 1);
+    innerSafe2of3 = await deploySafeAccount(
+      infra,
+      signers.alice,
+      [signers.bob.address, signers.dave.address, signers.eve.address],
+      2,
+    );
+    nestedOuter1of1 = await deploySafeFixture([innerSafe1of1.address, signers.bob.address, signers.carol.address], 2);
+    nestedOuter2of3 = await deploySafeFixture([innerSafe2of3.address, signers.bob.address, signers.carol.address], 2);
 
     publicKey = (await instances.alice.generateKeypair()).publicKey;
   });
@@ -474,10 +492,10 @@ describe('ERC-1271 user decryption', function () {
   });
 
   // Safe overloads the `v` byte of each 65-byte part as a type selector:
-  // 27/28 plain ECDSA, >30 eth_sign, 1 pre-approved hash — all exercised
-  // below against the real implementation. The dynamic v=0 contract-signature
-  // type (a Safe owned by another contract wallet) remains the one untested
-  // part type.
+  // 27/28 plain ECDSA, >30 eth_sign, 1 pre-approved hash, and 0 for a
+  // CONTRACT signature with a dynamic tail (a nested Safe owner, verified
+  // through a second full ERC-1271 round trip) — all four exercised below
+  // against the real implementation.
 
   it('test erc1271 user decrypt multisig accepts a blob with trailing bytes (length not a multiple of 65)', async function () {
     this.timeout(POSITIVE_TIMEOUT_MS + TIMEOUT_MARGIN_MS);
@@ -540,6 +558,89 @@ describe('ERC-1271 user decryption', function () {
     );
     expect(post.httpStatus, JSON.stringify(post.raw)).to.equal(202);
     expect(poll?.status, JSON.stringify(poll?.raw)).to.equal('succeeded');
+  });
+
+  it('test erc1271 user decrypt multisig accepts a v=0 contract-signature part (nested Safe owner)', async function () {
+    this.timeout(POSITIVE_TIMEOUT_MS + TIMEOUT_MARGIN_MS);
+    const req = await freshMultisigRequest(nestedOuter1of1);
+    const digest = computeUnifiedDigest(cfg, req);
+    // The outer 2-of-3's approvals: a v=0 part from the inner 1-of-1 Safe
+    // (dave signs the inner SafeMessage wrap of the outer preimage) + bob's
+    // plain ECDSA part. 227 bytes: 130 static + 32-byte length + 65 inner.
+    // Measured ~83k gas incl. intrinsic vs the 100k erc1271_gas_limit.
+    const signature = await buildSafeNestedMultisigSignature(
+      nestedOuter1of1.safe,
+      digest,
+      { safe: innerSafe1of1, owners: [signers.dave] },
+      [signers.bob],
+    );
+    expect(signature.length).to.equal(2 + 227 * 2);
+    const { post, poll } = await requestUnifiedUserDecrypt(
+      cfg,
+      req,
+      { kind: 'raw', signature },
+      { waitForTerminal: true, timeoutMs: POSITIVE_TIMEOUT_MS },
+    );
+    expect(post.httpStatus, JSON.stringify(post.raw)).to.equal(202);
+    expect(poll?.status, JSON.stringify(poll?.raw)).to.equal('succeeded');
+  });
+
+  it('test erc1271 user decrypt multisig accepts a v=0 part from a nested 2-of-3 Safe owner', async function () {
+    this.timeout(POSITIVE_TIMEOUT_MS + TIMEOUT_MARGIN_MS);
+    const req = await freshMultisigRequest(nestedOuter2of3);
+    const digest = computeUnifiedDigest(cfg, req);
+    // Same shape with a multisig INNER Safe (bob+dave of a 2-of-3): 292 bytes
+    // = 130 static + 32-byte length + 130 inner. Measured ~91k gas incl.
+    // intrinsic — only ~9% under the default 100k erc1271_gas_limit, so this
+    // positive doubles as the gas-headroom canary: deeper nesting or higher
+    // inner thresholds would exceed the cap and be rejected.
+    const signature = await buildSafeNestedMultisigSignature(
+      nestedOuter2of3.safe,
+      digest,
+      { safe: innerSafe2of3, owners: [signers.bob, signers.dave] },
+      [signers.bob],
+    );
+    expect(signature.length).to.equal(2 + 292 * 2);
+    const { post, poll } = await requestUnifiedUserDecrypt(
+      cfg,
+      req,
+      { kind: 'raw', signature },
+      { waitForTerminal: true, timeoutMs: POSITIVE_TIMEOUT_MS },
+    );
+    expect(post.httpStatus, JSON.stringify(post.raw)).to.equal(202);
+    expect(poll?.status, JSON.stringify(poll?.raw)).to.equal('succeeded');
+  });
+
+  it('test erc1271 user decrypt multisig rejects a v=0 part whose inner signature is from a non-owner', async function () {
+    const req = await freshMultisigRequest(nestedOuter1of1);
+    const digest = computeUnifiedDigest(cfg, req);
+    // eve signs the inner wrap but is not an owner of the inner 1-of-1 Safe:
+    // the nested isValidSignature reverts (inner GS026), which bubbles up
+    // through the outer checkSignatures.
+    const signature = await buildSafeNestedMultisigSignature(
+      nestedOuter1of1.safe,
+      digest,
+      { safe: innerSafe1of1, owners: [signers.eve] },
+      [signers.bob],
+    );
+    const { post } = await submitUnifiedRequest(cfg, req, { kind: 'raw', signature });
+    expect(isSignatureRejection(post), JSON.stringify(post.raw)).to.equal(true);
+  });
+
+  it('test erc1271 user decrypt multisig rejects a v=0 part with a malformed dynamic offset', async function () {
+    const req = await freshMultisigRequest(nestedOuter1of1);
+    const digest = computeUnifiedDigest(cfg, req);
+    // Offset 65 points INSIDE the 130-byte static section — Safe's dynamic
+    // bounds checks (GS021) revert before any nested call happens.
+    const signature = await buildSafeNestedMultisigSignature(
+      nestedOuter1of1.safe,
+      digest,
+      { safe: innerSafe1of1, owners: [signers.dave] },
+      [signers.bob],
+      { dynamicOffsetOverride: 65 },
+    );
+    const { post } = await submitUnifiedRequest(cfg, req, { kind: 'raw', signature });
+    expect(isSignatureRejection(post), JSON.stringify(post.raw)).to.equal(true);
   });
 
   it('test erc1271 user decrypt multisig rejects a 130-byte blob below a threshold of three', async function () {
