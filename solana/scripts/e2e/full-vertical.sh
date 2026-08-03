@@ -188,8 +188,8 @@ H="$(echo "$out" | grep -oE 'result handle 0x[0-9a-f]+' | grep -oE '0x[0-9a-f]+'
 [ -n "$H" ] || fail "no handle"
 H_ACL="$(echo "$out" | grep -oE 'output ACL record [A-Za-z0-9]+' | awk '{print $4}')"
 [ -n "$H_ACL" ] || fail "no output ACL record: $out"
-VK="$(echo "$out" | grep -oE 'acl value key 0x[0-9a-f]+' | awk '{print $4}')"
-[ -n "$VK" ] || fail "no acl value key: $out"
+ENCRYPTED_VALUE_ID="$(echo "$out" | grep -oE 'encrypted value id 0x[0-9a-f]+' | awk '{print $4}')"
+[ -n "$ENCRYPTED_VALUE_ID" ] || fail "no encrypted value id: $out"
 echo "    handle=$H"
 
 echo "==> [compute] wait for SNS commit + S3 upload (coprocessor tfhe/sns-worker)"
@@ -217,7 +217,7 @@ UD_CID="0x$(python3 -c "print(int('$CTX').to_bytes(32,'big').hex())")"
 ( cd "$ROOT/test-suite/fhevm" && \
     UD_RELAYER_URL=http://127.0.0.1:3000 UD_CONTRACTS_CHAIN_ID="$SID" UD_HANDLE="$H" \
     UD_SECRET_KEY="$UD_SK" UD_CONTEXT_ID="$UD_CID" UD_ALLOWED_DOMAIN_KEYS="$USER" \
-    UD_ACL_VALUE_KEY="$VK" UD_EXPECTED="$VALUE" \
+    UD_ACL_VALUE_KEY="$ENCRYPTED_VALUE_ID" UD_EXPECTED="$VALUE" \
     ./fhevm-cli test solana-current-user-decrypt ) \
   || fail "pure-SDK user-decrypt failed"
 echo "    user-decrypt cleartext=$VALUE OK (PURE-SDK: ed25519 v3 + in-SDK de-signcryption, no kms checkout)"

@@ -28,6 +28,7 @@ jobs:
       changes-host-listener: ${{ steps.filter.outputs.host-listener }}
       changes-dead-surface-check: ${{ steps.filter.outputs.dead-surface-check }}
       changes-dead-surface: ${{ steps.filter.outputs.dead-surface }}
+      changes-e2e-greps-check: ${{ steps.filter.outputs.e2e-greps-check }}
     steps:
       - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
         with:
@@ -58,6 +59,8 @@ jobs:
               - coprocessor/fhevm-engine/rust-toolchain.toml
             dead-surface-check:
               - solana/scripts/dead-surface-check.sh
+            e2e-greps-check:
+              - solana/scripts/check-e2e-greps.py
             # Every tree dead-surface-check.sh sweeps. The check used to run only inside
             # build-and-test, which is gated on `solana`, so an edit to the proof service, the
             # listener, the kms-connector, the SDK, or the test suite could introduce a retired name
@@ -104,6 +107,17 @@ jobs:
       - name: Self-test the dead-surface checks
         if: ${{ needs.check-changes.outputs.changes-dead-surface-check == 'true' }}
         run: bash scripts/dead-surface-check.sh --self-test
+
+      # The same class of miss the sweeps above cannot see: the e2e scripts couple to the live
+      # clients through printed labels, which no alias sweep can enumerate. solana-e2e runs this
+      # too, but only for the trees that trigger it — here it also covers, say, a listener-only PR
+      # that renames a label the scripts read.
+      - name: Check the e2e scripts grep for labels the clients still print
+        run: python3 scripts/check-e2e-greps.py
+
+      - name: Self-test the e2e grep check
+        if: ${{ needs.check-changes.outputs.changes-e2e-greps-check == 'true' }}
+        run: python3 scripts/check-e2e-greps.py --self-test
 
   # The vault module (batch provisioning, settle composition, the address-lookup-table lifecycle)
   # lives in the demo dapp, and its unit tests run nowhere else: js-sdk-tests is scoped to PRs

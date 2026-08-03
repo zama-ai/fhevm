@@ -97,6 +97,12 @@ jobs:
           # and whose branch-published images (:feature-solana-<sha>) it uses for untouched groups.
           fetch-depth: 2
 
+      # Seconds, and it guards the phase-to-phase plumbing of the two long scripts below: they read
+      # the live clients' stdout by grepping printed labels, so a renamed label aborts full-vertical.sh
+      # under `bash -e` with no message, ~45 minutes into this job. Fail here instead.
+      - name: Check the e2e scripts grep for labels the clients still print
+        run: python3 solana/scripts/check-e2e-greps.py
+
       - name: Setup Node
         # full-vertical.sh runs the TypeScript @fhevm/sdk clients directly under Node.
         uses: actions/setup-node@395ad3262231945c25e8478fd5baf05154b1d79f # v6.1.0
