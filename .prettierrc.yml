@@ -12,7 +12,16 @@ overrides:
   - files: "*.sol"
     options:
       compiler: "0.8.24"
-      parser: "solidity-parse"
+      # prettier-plugin-solidity v2 renamed its parser from "solidity-parse"
+      # to "slang" (with "antlr" as the legacy fallback) — pinning the old
+      # name breaks every .sol format with `Couldn't resolve parser`.
+      parser: "slang"
+      # Keep the repo's established Solidity style: double quotes and
+      # unspaced import braces (`{FheType}`) — without these pins the
+      # root-level `singleQuote: true` / `bracketSpacing: true` leak into
+      # .sol files and reformat every contract.
+      bracketSpacing: false
+      singleQuote: false
       tabWidth: 4
   - files: ".github/workflows/js-sdk-*.yml"
     options:
