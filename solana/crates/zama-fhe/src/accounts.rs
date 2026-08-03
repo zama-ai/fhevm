@@ -98,7 +98,16 @@ impl BatchAccountMeta {
         }
     }
 
-    pub(crate) fn promote(&mut self, required: Self) {
+    /// Widens this entry so it also satisfies `required`, returning the record that undoes it.
+    /// The record lives next to the mutation on purpose: it is only complete because `promote`
+    /// does exactly two things — OR the flags and append purposes — so anything added here has to
+    /// be added to [`BatchAccountMeta::demote`] in the same edit.
+    pub(crate) fn promote(&mut self, required: Self) -> MetaPromotion {
+        let undo = MetaPromotion {
+            was_writable: self.is_writable,
+            was_signer: self.is_signer,
+            purposes_len: self.purposes.len(),
+        };
         self.is_writable |= required.is_writable;
         self.is_signer |= required.is_signer;
         for purpose in required.purposes {
@@ -106,7 +115,23 @@ impl BatchAccountMeta {
                 self.purposes.push(purpose);
             }
         }
+        undo
     }
+
+    /// Restores the entry to what it was before the [`MetaPromotion`] was taken.
+    pub(crate) fn demote(&mut self, undo: MetaPromotion) {
+        self.is_writable = undo.was_writable;
+        self.is_signer = undo.was_signer;
+        self.purposes.truncate(undo.purposes_len);
+    }
+}
+
+/// What one [`BatchAccountMeta::promote`] changed, small enough to record without allocating.
+#[derive(Debug)]
+pub(crate) struct MetaPromotion {
+    was_writable: bool,
+    was_signer: bool,
+    purposes_len: usize,
 }
 
 impl From<&BatchAccountMeta> for BatchAccountRequirement {

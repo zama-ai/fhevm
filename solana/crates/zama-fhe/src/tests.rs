@@ -6,6 +6,7 @@ use crate::batch::*;
 use crate::builder::*;
 #[cfg(feature = "cpi")]
 use crate::cpi::*;
+use crate::lower::StepTables;
 use crate::operand::*;
 use crate::types::*;
 use crate::BatchBuildError;
@@ -1473,6 +1474,98 @@ fn rejects_more_than_max_ops() {
         .add(balance, Scalar::<Uint<64>>::u64(99), Output::transient())
         .unwrap_err();
     assert_eq!(error, BatchBuildError::TooManyOps);
+}
+
+#[test]
+fn step_tables_rollback_undoes_promotions_and_appends() {
+    let shared = Pubkey::new_unique();
+    let mut remaining_accounts = vec![BatchAccountMeta::readonly(
+        shared,
+        BatchAccountPurpose::PersistentInputAcl,
+    )];
+    let mut dictionary = vec![handle(1)];
+    let mut persistent_producers = vec![(Pubkey::new_unique(), 0u8)];
+    let accounts_before = remaining_accounts.clone();
+    let dictionary_before = dictionary.clone();
+    let producers_before = persistent_producers.clone();
+
+    let mut tables = StepTables::open(
+        &mut remaining_accounts,
+        &mut dictionary,
+        &mut persistent_producers,
+    );
+    // Promote the same entry twice — first writable, then signer — so undoing in the wrong order
+    // would leave the entry with the flags the first promotion set.
+    assert_eq!(
+        tables
+            .account_index(BatchAccountMeta::writable(
+                shared,
+                BatchAccountPurpose::PersistentOutputAcl,
+            ))
+            .unwrap(),
+        0
+    );
+    assert_eq!(
+        tables
+            .account_index(BatchAccountMeta::readonly_signer(
+                shared,
+                BatchAccountPurpose::PersistentOutputAuthority,
+            ))
+            .unwrap(),
+        0
+    );
+    assert_eq!(
+        tables
+            .account_index(BatchAccountMeta::readonly(
+                Pubkey::new_unique(),
+                BatchAccountPurpose::PersistentInputAcl,
+            ))
+            .unwrap(),
+        1
+    );
+    assert_eq!(tables.dictionary_index(handle(2)).unwrap(), 1);
+    assert_eq!(tables.dictionary_index(handle(1)).unwrap(), 0);
+    tables.rollback();
+
+    assert_eq!(remaining_accounts, accounts_before);
+    assert_eq!(dictionary, dictionary_before);
+    assert_eq!(persistent_producers, producers_before);
+}
+
+#[test]
+fn step_that_fails_after_interning_leaves_the_builder_untouched() {
+    let authority = Pubkey::new_unique();
+    let written_key = encrypted_value_id(authority, 7);
+    let mut builder = BatchBuilder::new(app_authority(authority));
+    builder
+        .trivial_encrypt_u64(
+            7,
+            Output::persistent(PersistentOutput::create(
+                written_key.clone(),
+                subjects(authority),
+            )),
+        )
+        .unwrap();
+    let accounts_before = builder.remaining_accounts.clone();
+    let dictionary_before = builder.dictionary.clone();
+    let producers_before = builder.persistent_producers.clone();
+
+    // The left operand interns a fresh handle and a fresh input-ACL account; the right operand then
+    // fails because the step above already wrote its account.
+    let fresh = Uint64Handle::persistent(balance_handle(1), encrypted_value_id(authority, 1))
+        .expect("fresh operand");
+    let written =
+        Uint64Handle::persistent(balance_handle(2), written_key).expect("written operand");
+    let error = builder
+        .add(fresh, written, Output::transient())
+        .unwrap_err();
+
+    assert_eq!(error, BatchBuildError::PersistentOperandWrittenEarlier);
+    assert_eq!(builder.remaining_accounts, accounts_before);
+    assert_eq!(builder.dictionary, dictionary_before);
+    assert_eq!(builder.persistent_producers, producers_before);
+    assert_eq!(builder.steps.len(), 1);
+    assert_eq!(builder.produced_types.len(), 1);
 }
 
 #[test]

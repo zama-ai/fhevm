@@ -4,6 +4,12 @@
 //! purpose — an app author who can call `add` must be able to call `mul`, `shl`, or `is_in` — so
 //! the surface is complete by design and is not trimmed to whatever the demo programs happen to
 //! use. The host-side cost table and the operand validation are what keep it honest.
+//!
+//! Building on-chain: lowering interns into the builder's own tables and never copies them, so a
+//! step costs a few hundred heap bytes. Anchor's default allocator is a 32 KB bump region that is
+//! never freed, which leaves room for at least 24 steps that each write a persistent output
+//! (measured: 31) — far past anything in this repo, but a batch near `MAX_FHE_BATCH_OPS` has to be
+//! built off-chain or by a program bringing its own allocator. `tests/heap_budget.rs` measures it.
 
 use crate::types::{binary_rhs_operand, BinaryRhs, FheBitwise, FheEq, FheNeg, FheNot, FheShift};
 use crate::validate::handle_fhe_type;
@@ -16,7 +22,7 @@ use zama_host::{
 use crate::accounts::{BatchAccountMeta, BatchAppAuthority};
 use crate::acl::{BoundedU64UpperBound, Output};
 use crate::batch::Batch;
-use crate::lower::{lower_operand, lower_output};
+use crate::lower::{lower_operand, lower_output, StepTables};
 use crate::operand::{next_batch_builder_scope, BatchBuilderScope, Operand, OperandKind};
 use crate::types::{Bool, Encrypted, FheIsIn, FheRandom, FheType, FheTyped, FheUint, Scalar, Uint};
 use crate::validate::{
@@ -64,84 +70,79 @@ impl Clone for BatchBuilder {
     }
 }
 
-/// Scratch intern tables for lowering one step — see [`BatchBuilder::commit_step`].
+/// One step's view of the builder — see [`BatchBuilder::commit_step`].
 struct StepLowering<'b> {
     op_index: u8,
     steps_len: usize,
     scope: BatchBuilderScope,
     app_authority: BatchAppAuthority,
-    remaining_accounts: Vec<BatchAccountMeta>,
-    dictionary: Vec<[u8; 32]>,
-    persistent_producers: Vec<(anchor_lang::prelude::Pubkey, u8)>,
+    tables: StepTables<'b>,
     verified_inputs: &'b [CoprocessorInputAttestation],
 }
 
 impl StepLowering<'_> {
     fn operand(&mut self, operand: Operand) -> Result<FheExecuteOperand> {
         lower_operand(
-            &mut self.remaining_accounts,
-            &mut self.dictionary,
+            &mut self.tables,
             self.steps_len,
             self.scope,
-            &self.persistent_producers,
             self.verified_inputs,
             operand,
         )
     }
 
     fn output(&mut self, output: Output) -> Result<FheExecuteOutput> {
-        lower_output(
-            &mut self.remaining_accounts,
-            &mut self.dictionary,
-            self.app_authority,
-            &mut self.persistent_producers,
-            self.op_index,
-            output,
-        )
+        lower_output(&mut self.tables, self.app_authority, self.op_index, output)
     }
 }
 
 impl BatchBuilder {
-    /// The single mutation path for appending a step. Every op method validates first, then
-    /// lowers through this: lowering runs against cloned intern tables and the builder commits
-    /// atomically only when the whole step lowered, so a failed step leaves the builder exactly
-    /// as it was. Rollback is by discarding the scratch clone — the intern tables are not
-    /// append-only (resolving an account can promote an existing entry in place), so truncation
-    /// would not be enough.
+    /// The single mutation path for appending a step. Every op method validates first, then lowers
+    /// through this: lowering interns into the builder's own tables and, when any part of the step
+    /// fails, [`StepTables::rollback`] undoes what it wrote, so a failed step leaves the builder
+    /// exactly as it was. The tables are never copied per step — an app program builds its batch on
+    /// Anchor's default 32 KB bump heap, which is never freed, so a clone-and-swap rollback would
+    /// make the heap cost of a batch grow with the square of its step count.
     ///
-    /// Ordering dependency inside a step: `operand()` reads the scratch's cloned
-    /// `persistent_producers`, which equals the pre-step state only because every op lowers its
-    /// operands before its output. An op that lowered its output first would silently change
-    /// what `PersistentOperandWrittenEarlier` sees for its own operands — keep operands first.
+    /// Ordering dependency inside a step: `operand()` reads `persistent_producers`, which still
+    /// holds the pre-step state only because every op lowers its operands before its output. An op
+    /// that lowered its output first would silently change what `PersistentOperandWrittenEarlier`
+    /// sees for its own operands — keep operands first.
     fn commit_step(
         &mut self,
         produced_type: u8,
         lower: impl FnOnce(&mut StepLowering<'_>) -> Result<FheExecuteStep>,
     ) -> Result<u8> {
         let op_index = u8::try_from(self.steps.len()).map_err(|_| BatchBuildError::TooManyOps)?;
-        let mut scratch = StepLowering {
-            op_index,
-            steps_len: self.steps.len(),
-            scope: self.scope,
-            app_authority: self.app_authority,
-            remaining_accounts: self.remaining_accounts.clone(),
-            dictionary: self.dictionary.clone(),
-            persistent_producers: self.persistent_producers.clone(),
-            verified_inputs: &self.verified_inputs,
-        };
-        let step = lower(&mut scratch)?;
-        let StepLowering {
+        let Self {
+            scope,
+            app_authority,
+            steps,
+            produced_types,
+            persistent_producers,
             remaining_accounts,
             dictionary,
-            persistent_producers,
-            ..
-        } = scratch;
-        self.remaining_accounts = remaining_accounts;
-        self.dictionary = dictionary;
-        self.persistent_producers = persistent_producers;
-        self.steps.push(step);
-        self.produced_types.push(produced_type);
-        Ok(op_index)
+            verified_inputs,
+        } = self;
+        let mut lowering = StepLowering {
+            op_index,
+            steps_len: steps.len(),
+            scope: *scope,
+            app_authority: *app_authority,
+            tables: StepTables::open(remaining_accounts, dictionary, persistent_producers),
+            verified_inputs,
+        };
+        match lower(&mut lowering) {
+            Ok(step) => {
+                steps.push(step);
+                produced_types.push(produced_type);
+                Ok(op_index)
+            }
+            Err(error) => {
+                lowering.tables.rollback();
+                Err(error)
+            }
+        }
     }
 }
 
