@@ -6,6 +6,7 @@ import {
   MODERN_RELAYER_IMAGE_REPOSITORY,
   MODERN_RELAYER_MIGRATE_IMAGE_REPOSITORY,
   bootstrapUsesHostKmsGeneration,
+  canonicalProtocolConfigSeedingUsesEnv,
   compatPolicyForState,
   coprocessorUsesHostKmsGeneration,
   kmsConnectorUsesHostKmsGeneration,
@@ -15,10 +16,12 @@ import {
   requiresLegacyKmsCoreConfig,
   requiresLegacyRelayerUrl,
   requiresModernHostAddressArtifacts,
+  supportsCanonicalProtocolConfigSeeding,
   supportsHostListenerConsumer,
   validateBundleCompatibility,
 } from "./compat/compat";
 import { testDefaultScenario } from "./test-fixtures";
+import type { LocalOverride } from "./types";
 
 describe("compat", () => {
   test("flags relayer v1 vs test-suite v2 incompatibility", () => {
@@ -624,5 +627,44 @@ describe("compat", () => {
     });
     expect(policy.composeEnv.RELAYER_IMAGE_REPOSITORY).toBe(MODERN_RELAYER_IMAGE_REPOSITORY);
     expect(policy.composeEnv.RELAYER_MIGRATE_IMAGE_REPOSITORY).toBe(MODERN_RELAYER_MIGRATE_IMAGE_REPOSITORY);
+  });
+
+  test("keeps canonical ProtocolConfig seeding on flags until the CANONICAL_* env build", () => {
+    const stateFor = (hostVersion: string, overrides: LocalOverride[] = []) => ({
+      versions: {
+        target: "latest-main" as const,
+        lockName: "latest-main.json",
+        env: { HOST_VERSION: hostVersion } as Record<string, string>,
+        sources: [],
+      },
+      overrides,
+      scenario: testDefaultScenario(),
+    });
+
+    // Predates the seeding task entirely, so the harness keeps "fresh" seeding.
+    expect(supportsCanonicalProtocolConfigSeeding(stateFor("v0.13.0"))).toBe(false);
+
+    // Ships the task, but it takes its input as command-line flags.
+    for (const version of ["v0.13.1", "v0.13.3", "v0.14.0-0", "v0.14.0-8"]) {
+      expect(supportsCanonicalProtocolConfigSeeding(stateFor(version))).toBe(true);
+      expect(canonicalProtocolConfigSeedingUsesEnv(stateFor(version))).toBe(false);
+    }
+
+    // A non-numeric suffix is a real prerelease, so it stays below the floor.
+    expect(canonicalProtocolConfigSeedingUsesEnv(stateFor("v0.14.0-rc1"))).toBe(false);
+
+    // The final tag and newer families read the CANONICAL_* env variables.
+    for (const version of ["v0.14.0", "v0.14.1", "v0.15.0"]) {
+      expect(canonicalProtocolConfigSeedingUsesEnv(stateFor(version))).toBe(true);
+    }
+
+    // Builds at or above the build floor read the CANONICAL_* env variables.
+    for (const version of ["v0.14.0-9", "v0.14.0-10"]) {
+      expect(canonicalProtocolConfigSeedingUsesEnv(stateFor(version))).toBe(true);
+    }
+
+    // Sha refs and local host-contracts overrides track the workspace, which is env mode.
+    expect(canonicalProtocolConfigSeedingUsesEnv(stateFor("65cf86e"))).toBe(true);
+    expect(canonicalProtocolConfigSeedingUsesEnv(stateFor("v0.14.0-8", [{ group: "host-contracts" }]))).toBe(true);
   });
 });

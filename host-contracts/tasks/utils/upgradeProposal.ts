@@ -92,6 +92,8 @@ export async function executeUpgradeProposal(hre: HardhatRuntimeEnvironment, pre
   console.log(
     `Executing prepared upgrade on ${prepared.proxyAddress} (implementation ${prepared.newImplementationAddress})...`,
   );
+  // Print the arguments this payload encodes, so an operator sees the state that gets deployed.
+  console.log('decodedArgs:', toJsonString(prepared.decodedArgs));
   const tx = await deployer.sendTransaction({ to: prepared.proxyAddress, data: prepared.outerCalldata });
   await tx.wait();
 }
