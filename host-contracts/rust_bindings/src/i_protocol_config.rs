@@ -566,6 +566,7 @@ interface IProtocolConfig {
     error KmsContextCreationUnauthorized(address caller, uint256 kmsContextId);
     error KmsContextNotCreated(uint256 kmsContextId);
     error KmsContextNotPending(uint256 kmsContextId);
+    error KmsLifecycleOperationInFlight(uint256 kmsContextId, uint256 epochId);
     error KmsNodeNullSigner();
     error KmsNodeNullTxSender();
     error KmsSignerAlreadyRegistered(address signer);
@@ -2353,6 +2354,22 @@ interface IProtocolConfig {
     "inputs": [
       {
         "name": "kmsContextId",
+        "type": "uint256",
+        "internalType": "uint256"
+      }
+    ]
+  },
+  {
+    "type": "error",
+    "name": "KmsLifecycleOperationInFlight",
+    "inputs": [
+      {
+        "name": "kmsContextId",
+        "type": "uint256",
+        "internalType": "uint256"
+      },
+      {
+        "name": "epochId",
         "type": "uint256",
         "internalType": "uint256"
       }
@@ -5908,6 +5925,103 @@ error KmsContextNotPending(uint256 kmsContextId);
                     <alloy::sol_types::sol_data::Uint<
                         256,
                     > as alloy_sol_types::SolType>::tokenize(&self.kmsContextId),
+                )
+            }
+            #[inline]
+            fn abi_decode_raw_validate(data: &[u8]) -> alloy_sol_types::Result<Self> {
+                <Self::Parameters<
+                    '_,
+                > as alloy_sol_types::SolType>::abi_decode_sequence_validate(data)
+                    .map(Self::new)
+            }
+        }
+    };
+    #[derive(serde::Serialize, serde::Deserialize)]
+    #[derive(Default, Debug, PartialEq, Eq, Hash)]
+    /**Custom error with signature `KmsLifecycleOperationInFlight(uint256,uint256)` and selector `0x078020be`.
+```solidity
+error KmsLifecycleOperationInFlight(uint256 kmsContextId, uint256 epochId);
+```*/
+    #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
+    #[derive(Clone)]
+    pub struct KmsLifecycleOperationInFlight {
+        #[allow(missing_docs)]
+        pub kmsContextId: alloy::sol_types::private::primitives::aliases::U256,
+        #[allow(missing_docs)]
+        pub epochId: alloy::sol_types::private::primitives::aliases::U256,
+    }
+    #[allow(
+        non_camel_case_types,
+        non_snake_case,
+        clippy::pub_underscore_fields,
+        clippy::style
+    )]
+    const _: () = {
+        use alloy::sol_types as alloy_sol_types;
+        #[doc(hidden)]
+        #[allow(dead_code)]
+        type UnderlyingSolTuple<'a> = (
+            alloy::sol_types::sol_data::Uint<256>,
+            alloy::sol_types::sol_data::Uint<256>,
+        );
+        #[doc(hidden)]
+        type UnderlyingRustTuple<'a> = (
+            alloy::sol_types::private::primitives::aliases::U256,
+            alloy::sol_types::private::primitives::aliases::U256,
+        );
+        #[cfg(test)]
+        #[allow(dead_code, unreachable_patterns)]
+        fn _type_assertion(
+            _t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>,
+        ) {
+            match _t {
+                alloy_sol_types::private::AssertTypeEq::<
+                    <UnderlyingSolTuple as alloy_sol_types::SolType>::RustType,
+                >(_) => {}
+            }
+        }
+        #[automatically_derived]
+        #[doc(hidden)]
+        impl ::core::convert::From<KmsLifecycleOperationInFlight>
+        for UnderlyingRustTuple<'_> {
+            fn from(value: KmsLifecycleOperationInFlight) -> Self {
+                (value.kmsContextId, value.epochId)
+            }
+        }
+        #[automatically_derived]
+        #[doc(hidden)]
+        impl ::core::convert::From<UnderlyingRustTuple<'_>>
+        for KmsLifecycleOperationInFlight {
+            fn from(tuple: UnderlyingRustTuple<'_>) -> Self {
+                Self {
+                    kmsContextId: tuple.0,
+                    epochId: tuple.1,
+                }
+            }
+        }
+        #[automatically_derived]
+        impl alloy_sol_types::SolError for KmsLifecycleOperationInFlight {
+            type Parameters<'a> = UnderlyingSolTuple<'a>;
+            type Token<'a> = <Self::Parameters<
+                'a,
+            > as alloy_sol_types::SolType>::Token<'a>;
+            const SIGNATURE: &'static str = "KmsLifecycleOperationInFlight(uint256,uint256)";
+            const SELECTOR: [u8; 4] = [7u8, 128u8, 32u8, 190u8];
+            #[inline]
+            fn new<'a>(
+                tuple: <Self::Parameters<'a> as alloy_sol_types::SolType>::RustType,
+            ) -> Self {
+                tuple.into()
+            }
+            #[inline]
+            fn tokenize(&self) -> Self::Token<'_> {
+                (
+                    <alloy::sol_types::sol_data::Uint<
+                        256,
+                    > as alloy_sol_types::SolType>::tokenize(&self.kmsContextId),
+                    <alloy::sol_types::sol_data::Uint<
+                        256,
+                    > as alloy_sol_types::SolType>::tokenize(&self.epochId),
                 )
             }
             #[inline]
@@ -15910,6 +16024,8 @@ function updateUserDecryptionThresholdForContext(uint256 kmsContextId, uint256 t
         #[allow(missing_docs)]
         KmsContextNotPending(KmsContextNotPending),
         #[allow(missing_docs)]
+        KmsLifecycleOperationInFlight(KmsLifecycleOperationInFlight),
+        #[allow(missing_docs)]
         KmsNodeNullSigner(KmsNodeNullSigner),
         #[allow(missing_docs)]
         KmsNodeNullTxSender(KmsNodeNullTxSender),
@@ -15943,6 +16059,7 @@ function updateUserDecryptionThresholdForContext(uint256 kmsContextId, uint256 t
         /// Prefer using `SolInterface` methods instead.
         pub const SELECTORS: &'static [[u8; 4usize]] = &[
             [6u8, 140u8, 141u8, 64u8],
+            [7u8, 128u8, 32u8, 190u8],
             [9u8, 146u8, 247u8, 173u8],
             [22u8, 167u8, 39u8, 120u8],
             [23u8, 211u8, 233u8, 72u8],
@@ -15975,6 +16092,7 @@ function updateUserDecryptionThresholdForContext(uint256 kmsContextId, uint256 t
         /// The names of the variants in the same order as `SELECTORS`.
         pub const VARIANT_NAMES: &'static [&'static str] = &[
             ::core::stringify!(EmptyKmsNodes),
+            ::core::stringify!(KmsLifecycleOperationInFlight),
             ::core::stringify!(InvalidProposalId),
             ::core::stringify!(KmsSignerSetExceedsProofFormatLimit),
             ::core::stringify!(ZeroGwStartBlock),
@@ -16007,6 +16125,7 @@ function updateUserDecryptionThresholdForContext(uint256 kmsContextId, uint256 t
         /// The signatures in the same order as `SELECTORS`.
         pub const SIGNATURES: &'static [&'static str] = &[
             <EmptyKmsNodes as alloy_sol_types::SolError>::SIGNATURE,
+            <KmsLifecycleOperationInFlight as alloy_sol_types::SolError>::SIGNATURE,
             <InvalidProposalId as alloy_sol_types::SolError>::SIGNATURE,
             <KmsSignerSetExceedsProofFormatLimit as alloy_sol_types::SolError>::SIGNATURE,
             <ZeroGwStartBlock as alloy_sol_types::SolError>::SIGNATURE,
@@ -16061,7 +16180,7 @@ function updateUserDecryptionThresholdForContext(uint256 kmsContextId, uint256 t
     impl alloy_sol_types::SolInterface for IProtocolConfigErrors {
         const NAME: &'static str = "IProtocolConfigErrors";
         const MIN_DATA_LENGTH: usize = 0usize;
-        const COUNT: usize = 29usize;
+        const COUNT: usize = 30usize;
         #[inline]
         fn selector(&self) -> [u8; 4] {
             match self {
@@ -16115,6 +16234,9 @@ function updateUserDecryptionThresholdForContext(uint256 kmsContextId, uint256 t
                 }
                 Self::KmsContextNotPending(_) => {
                     <KmsContextNotPending as alloy_sol_types::SolError>::SELECTOR
+                }
+                Self::KmsLifecycleOperationInFlight(_) => {
+                    <KmsLifecycleOperationInFlight as alloy_sol_types::SolError>::SELECTOR
                 }
                 Self::KmsNodeNullSigner(_) => {
                     <KmsNodeNullSigner as alloy_sol_types::SolError>::SELECTOR
@@ -16181,6 +16303,17 @@ function updateUserDecryptionThresholdForContext(uint256 kmsContextId, uint256 t
                             .map(IProtocolConfigErrors::EmptyKmsNodes)
                     }
                     EmptyKmsNodes
+                },
+                {
+                    fn KmsLifecycleOperationInFlight(
+                        data: &[u8],
+                    ) -> alloy_sol_types::Result<IProtocolConfigErrors> {
+                        <KmsLifecycleOperationInFlight as alloy_sol_types::SolError>::abi_decode_raw(
+                                data,
+                            )
+                            .map(IProtocolConfigErrors::KmsLifecycleOperationInFlight)
+                    }
+                    KmsLifecycleOperationInFlight
                 },
                 {
                     fn InvalidProposalId(
@@ -16528,6 +16661,17 @@ function updateUserDecryptionThresholdForContext(uint256 kmsContextId, uint256 t
                             .map(IProtocolConfigErrors::EmptyKmsNodes)
                     }
                     EmptyKmsNodes
+                },
+                {
+                    fn KmsLifecycleOperationInFlight(
+                        data: &[u8],
+                    ) -> alloy_sol_types::Result<IProtocolConfigErrors> {
+                        <KmsLifecycleOperationInFlight as alloy_sol_types::SolError>::abi_decode_raw_validate(
+                                data,
+                            )
+                            .map(IProtocolConfigErrors::KmsLifecycleOperationInFlight)
+                    }
+                    KmsLifecycleOperationInFlight
                 },
                 {
                     fn InvalidProposalId(
@@ -16944,6 +17088,11 @@ function updateUserDecryptionThresholdForContext(uint256 kmsContextId, uint256 t
                         inner,
                     )
                 }
+                Self::KmsLifecycleOperationInFlight(inner) => {
+                    <KmsLifecycleOperationInFlight as alloy_sol_types::SolError>::abi_encoded_size(
+                        inner,
+                    )
+                }
                 Self::KmsNodeNullSigner(inner) => {
                     <KmsNodeNullSigner as alloy_sol_types::SolError>::abi_encoded_size(
                         inner,
@@ -17105,6 +17254,12 @@ function updateUserDecryptionThresholdForContext(uint256 kmsContextId, uint256 t
                 }
                 Self::KmsContextNotPending(inner) => {
                     <KmsContextNotPending as alloy_sol_types::SolError>::abi_encode_raw(
+                        inner,
+                        out,
+                    )
+                }
+                Self::KmsLifecycleOperationInFlight(inner) => {
+                    <KmsLifecycleOperationInFlight as alloy_sol_types::SolError>::abi_encode_raw(
                         inner,
                         out,
                     )
