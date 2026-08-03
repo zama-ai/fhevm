@@ -7,9 +7,12 @@
 //!
 //! Building on-chain: lowering interns into the builder's own tables and never copies them, so a
 //! step costs a few hundred heap bytes. Anchor's default allocator is a 32 KB bump region that is
-//! never freed, which leaves room for at least 24 steps that each write a persistent output
-//! (measured: 31) — far past anything in this repo, but a batch near `MAX_FHE_BATCH_OPS` has to be
-//! built off-chain or by a program bringing its own allocator. `tests/heap_budget.rs` measures it.
+//! never freed, and the instruction pays out of it twice — once building, once serializing the
+//! packet in `Batch::execute` — so the budget belongs to the pair: 16 steps that each write a
+//! persistent output, far past anything in this repo (the largest is five). 24 still fits with 610
+//! bytes to spare, but nothing is left there for account resolution, and a batch near
+//! `MAX_FHE_BATCH_OPS` has to be built off-chain or by a program bringing its own allocator.
+//! `heap_budget.rs` measures all of it.
 
 use crate::types::{binary_rhs_operand, BinaryRhs, FheBitwise, FheEq, FheNeg, FheNot, FheShift};
 use crate::validate::handle_fhe_type;
@@ -47,10 +50,10 @@ pub struct BatchBuilder<'brand> {
     pub(crate) app_authority: BatchAppAuthority,
     pub(crate) steps: Vec<FheExecuteStep>,
     pub(crate) produced_types: Vec<u8>,
-    /// Latest producer for every persistent account written by this batch. A later
-    /// persistent-shaped reference to the same account is lowered canonically as
-    /// `EarlierStep`.
-    pub(crate) persistent_producers: Vec<(anchor_lang::prelude::Pubkey, u8)>,
+    /// Persistent accounts this batch has already written. A later persistent-shaped reference
+    /// to one of them is rejected with `PersistentOperandWrittenEarlier`: the app must feed the
+    /// earlier step's transient value instead, which is the only spelling the host accepts.
+    pub(crate) persistent_producers: Vec<anchor_lang::prelude::Pubkey>,
     pub(crate) remaining_accounts: Vec<BatchAccountMeta>,
     /// Interned 32-byte constant dictionary the lowered steps reference by `u8` index
     /// (operand handles, scalars, ACL domain keys, app accounts, labels, subjects). The
@@ -64,7 +67,6 @@ pub struct BatchBuilder<'brand> {
 
 /// One step's view of the builder — see [`BatchBuilder::commit_step`].
 struct StepLowering<'b> {
-    op_index: u8,
     steps_len: usize,
     app_authority: BatchAppAuthority,
     tables: StepTables<'b>,
@@ -82,7 +84,7 @@ impl StepLowering<'_> {
     }
 
     fn output(&mut self, output: Output) -> Result<FheExecuteOutput> {
-        lower_output(&mut self.tables, self.app_authority, self.op_index, output)
+        lower_output(&mut self.tables, self.app_authority, output)
     }
 }
 
@@ -115,7 +117,6 @@ impl<'brand> BatchBuilder<'brand> {
             brand: _,
         } = self;
         let mut lowering = StepLowering {
-            op_index,
             steps_len: steps.len(),
             app_authority: *app_authority,
             tables: StepTables::open(remaining_accounts, dictionary, persistent_producers),
@@ -868,7 +869,7 @@ impl<'brand> BatchBuilder<'brand> {
     /// verified input, and no persistent output — with `FheExecuteUnanchoredUnderBlockCap`
     /// (fhevm-internal#1744). Give such a batch a persistent output (the bootstrap/mint path) or a
     /// verified input if it must run under a finite cap.
-    pub fn finish(self) -> Result<Batch> {
+    pub(crate) fn finish(self) -> Result<Batch> {
         validate_app_authority(self.app_authority)?;
         if self.steps.is_empty() {
             return Err(BatchBuildError::EmptyOps);

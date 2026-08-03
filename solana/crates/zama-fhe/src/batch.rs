@@ -18,8 +18,7 @@ use crate::Result;
 #[cfg(feature = "cpi")]
 use anchor_lang::prelude::AccountInfo;
 
-/// Opaque lowered batch request produced by [`BatchBuilder::finish`] or
-/// [`Batch::build`].
+/// Opaque lowered batch request produced by [`Batch::build`].
 ///
 /// App code passes this to [`Batch::execute`] instead of editing raw host
 /// args or dynamic account roles.

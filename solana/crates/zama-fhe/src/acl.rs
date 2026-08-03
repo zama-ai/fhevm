@@ -18,8 +18,10 @@ use crate::{BatchBuildError, Result};
 /// A domain and the account it scopes are both plain pubkeys, so the two used to be
 /// interchangeable at every derivation site; this type is what makes swapping them a compile
 /// error instead of a wrong PDA.
-/// `repr(transparent)` so a domain is passed exactly like the pubkey it wraps: the type is a
-/// compile-time distinction only, with no on-chain cost.
+///
+/// `repr(transparent)`, so a domain is passed exactly like the pubkey it wraps. What the wrapper
+/// still costs is the copy its constructor makes: measured across the snapshotted instructions,
+/// between 0 and 16 CU each depending on how the surrounding code inlines it.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 #[repr(transparent)]
 pub struct Domain(Pubkey);

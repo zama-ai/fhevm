@@ -17,7 +17,7 @@ use crate::{BatchBuildError, Result};
 pub(crate) struct StepTables<'b> {
     remaining_accounts: &'b mut Vec<BatchAccountMeta>,
     dictionary: &'b mut Vec<[u8; 32]>,
-    persistent_producers: &'b mut Vec<(anchor_lang::prelude::Pubkey, u8)>,
+    persistent_producers: &'b mut Vec<anchor_lang::prelude::Pubkey>,
     remaining_accounts_len: usize,
     dictionary_len: usize,
     persistent_producers_len: usize,
@@ -28,7 +28,7 @@ impl<'b> StepTables<'b> {
     pub(crate) fn open(
         remaining_accounts: &'b mut Vec<BatchAccountMeta>,
         dictionary: &'b mut Vec<[u8; 32]>,
-        persistent_producers: &'b mut Vec<(anchor_lang::prelude::Pubkey, u8)>,
+        persistent_producers: &'b mut Vec<anchor_lang::prelude::Pubkey>,
     ) -> Self {
         Self {
             remaining_accounts_len: remaining_accounts.len(),
@@ -93,8 +93,7 @@ pub(crate) fn lower_operand(
         OperandKind::Persistent(persistent) => {
             if tables
                 .persistent_producers
-                .iter()
-                .any(|(account, _)| *account == persistent.encrypted_value)
+                .contains(&persistent.encrypted_value)
             {
                 return Err(BatchBuildError::PersistentOperandWrittenEarlier);
             }
@@ -134,7 +133,6 @@ pub(crate) fn lower_operand(
 pub(crate) fn lower_output(
     tables: &mut StepTables<'_>,
     app_authority: BatchAppAuthority,
-    producer_index: u8,
     output: Output,
 ) -> Result<FheExecuteOutput> {
     match output.0 {
@@ -170,9 +168,7 @@ pub(crate) fn lower_output(
                 previous_state: binding.previous_state(),
                 make_public: binding.make_public(),
             };
-            tables
-                .persistent_producers
-                .push((encrypted_value, producer_index));
+            tables.persistent_producers.push(encrypted_value);
             Ok(output)
         }
     }

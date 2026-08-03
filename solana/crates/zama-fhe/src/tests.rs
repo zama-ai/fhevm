@@ -1386,7 +1386,7 @@ fn step_tables_rollback_undoes_promotions_and_appends() {
         BatchAccountPurpose::PersistentInputAcl,
     )];
     let mut dictionary = vec![handle(1)];
-    let mut persistent_producers = vec![(Pubkey::new_unique(), 0u8)];
+    let mut persistent_producers = vec![Pubkey::new_unique()];
     let accounts_before = remaining_accounts.clone();
     let dictionary_before = dictionary.clone();
     let producers_before = persistent_producers.clone();

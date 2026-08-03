@@ -255,11 +255,17 @@ or tooling decisions, not with the threat model.
     accepted or rejected by parity. Pinned by
     `mollusk_make_handle_public_twice_appends_an_equivalent_leaf`.
 54. **[HOLDS]** Lowering a batch never copies the builder's intern tables, so an
-    app program building on-chain pays a few hundred heap bytes per step: at
-    least 24 steps that each write a persistent output fit Anchor's 32 KB
-    default bump heap (measured 31), while the maximum 32-step batch has to be
-    built off-chain or by a program with its own allocator. Pinned by
-    `solana/crates/zama-fhe/tests/heap_budget.rs`.
+    app program pays a few hundred heap bytes per step. What has to fit Anchor's
+    32 KB default bump heap is the whole instruction, not just the build: the
+    region is never freed, and after the build the CPI helper deep-clones
+    `FheExecuteArgs` and borsh-serializes the packet. Measured for steps that
+    each write a persistent output: 16 steps request 19,454 bytes and are the
+    documented budget, 24 request 32,158 and clear the region by only 610 bytes,
+    28 do not fit, and the maximum 32-step batch (41,726) has to be built
+    off-chain or by a program with its own allocator. Account resolution and
+    Anchor's own account deserialization are on top of those figures, which is
+    why the budget is 16 rather than 24. Pinned by
+    `solana/crates/zama-fhe/src/heap_budget.rs`.
 
 ## N. Roadmap
 

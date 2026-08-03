@@ -264,7 +264,7 @@ impl FheIsIn for Bytes256 {}
 
 /// Typed encrypted batch value.
 ///
-/// Persistent values are constructed from app account state. Transient values are returned by
+/// Transient values are returned by
 /// [`BatchBuilder`](crate::BatchBuilder) methods and can only be fed to later steps of the builder
 /// that produced them: `'brand` is that builder's identity, handed out by
 /// [`Batch::build`](crate::Batch::build) as a fresh invariant lifetime, so mixing two builders'

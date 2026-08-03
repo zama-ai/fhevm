@@ -24,6 +24,8 @@ mod acl;
 mod batch;
 mod builder;
 mod cpi;
+#[cfg(test)]
+mod heap_budget;
 mod lower;
 mod operand;
 #[cfg(test)]
