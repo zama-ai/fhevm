@@ -170,6 +170,13 @@ balance-state reads used by the transfer arc's setup likewise still run through 
   `bash scripts/check-zama-host-idl.sh`: it checks the default production IDL/ABI surface, then
   rebuilds the confidential-token artifact with its PoC-only receiver helpers. The host artifact
   has no alternate test feature or entropy path.
+- **A small CU delta after an incremental SBF build is not a code change.** The committed
+  baselines are minted by `scripts/update-cost-snapshots.sh`, which runs `cargo clean` first. An
+  incremental rebuild of the same source can differ by a few CU: a doc-comment-only edit to
+  `zama-host` was measured at −12 CU on the batcher's `open_batch` and `redeem_open_batch` after
+  `sync-zama-host-idl.sh` (incremental), and byte-identical to the baselines after the snapshot
+  script's clean rebuild. So regenerate with the script before believing a delta of this size, and
+  do not attribute it to the edit in front of you.
 - **SPL Token CPIs in token tests.** `token_mollusk` executes real SPL Token CPIs through the
   matching `mollusk-svm-programs-token` program fixture.
 - **`anchor build` vs program ids.** `anchor build` checks that each program's declared id matches
