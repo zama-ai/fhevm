@@ -25,6 +25,8 @@ jobs:
     outputs:
       changes-solana: ${{ steps.filter.outputs.solana }}
       changes-demo-dapp: ${{ steps.filter.outputs.demo-dapp }}
+      changes-host-listener: ${{ steps.filter.outputs.host-listener }}
+      changes-dead-surface-check: ${{ steps.filter.outputs.dead-surface-check }}
     steps:
       - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
         with:
@@ -42,6 +44,19 @@ jobs:
               - coprocessor/fhevm-engine/host-listener/src/solana_reconstruct.rs
               - coprocessor/fhevm-engine/host-listener/src/solana_grpc_listener.rs
               - coprocessor/fhevm-engine/host-listener/src/solana_grpc_source.rs
+            # Everything the reconstruct lane compiles, not just its Solana-named files: that lane
+            # builds the whole crate, so `lib.rs`, the generated modules, the manifest, the
+            # lockfile, and the toolchain pin are all inputs to it. Kept separate from `solana` so
+            # an EVM-only listener edit runs reconstruction without dragging in the SBF builds,
+            # mollusk suites, and the live e2e vertical.
+            host-listener:
+              - .github/workflows/solana-tests.yml
+              - coprocessor/fhevm-engine/host-listener/**
+              - coprocessor/fhevm-engine/Cargo.toml
+              - coprocessor/fhevm-engine/Cargo.lock
+              - coprocessor/fhevm-engine/rust-toolchain.toml
+            dead-surface-check:
+              - solana/scripts/dead-surface-check.sh
             demo-dapp:
               - .github/workflows/solana-tests.yml
               - solana/demo-dapp/**
@@ -106,9 +121,17 @@ jobs:
 
       # Pure grep/sed, no toolchain: run it before the ~20 minutes of builds below so a dead
       # error variant, a never-emitted event, a rejected glossary alias, or an unjustified
-      # retrofit sentinel fails in seconds. See fhevm-internal#1859 §7.
+      # retrofit sentinel fails in half a minute. See fhevm-internal#1859 §7.
       - name: Check for dead surface and rejected vocabulary
         run: bash scripts/dead-surface-check.sh
+
+      # The self-test re-runs every check against a fixture that must fail it, which costs a few
+      # minutes because it re-runs the whole script per fixture. Every one of these greps has been
+      # silently vacuous at least once, so it runs whenever the script itself changes — the only
+      # commit that can make a check stop firing.
+      - name: Self-test the dead-surface checks
+        if: ${{ needs.check-changes.outputs.changes-dead-surface-check == 'true' }}
+        run: bash scripts/dead-surface-check.sh --self-test
 
       - name: Setup Rust toolchain file
         run: cp rust-toolchain.toml ..
@@ -257,11 +280,11 @@ jobs:
 
   # The off-chain reconstruction path (host-listener, solana-reconstruct feature) is otherwise
   # only built/exercised by the full solana-e2e job. Compile it here and run its unit tests so a
-  # break (e.g. the fhe_eval ACL-record account-offset) is caught in minutes, not 40+.
+  # break (e.g. the `fhe_execute` ACL-record account-offset) is caught in minutes, not 40+.
   host-listener-reconstruct:
     name: solana-tests/host-listener-reconstruct
     needs: check-changes
-    if: ${{ github.event_name == 'workflow_dispatch' || needs.check-changes.outputs.changes-solana == 'true' }}
+    if: ${{ github.event_name == 'workflow_dispatch' || needs.check-changes.outputs.changes-solana == 'true' || needs.check-changes.outputs.changes-host-listener == 'true' }}
     permissions:
       contents: 'read'
     runs-on: runs-on=${{ github.run_id }}/runner=16cpu-linux-x64/volume=80gb
