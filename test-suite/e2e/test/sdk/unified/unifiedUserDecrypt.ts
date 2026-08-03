@@ -447,14 +447,27 @@ export function expectRelayerAclRejection(poll: PollResult | undefined, messageP
 
 /**
  * Assert an async rejection enforced ONLY by the KMS Connector
- * (`allowedContracts` semantics, signature invalidation, extraData
- * context/epoch validation): the connector rejects without a relayer-visible
- * response, so the job stays queued for the whole observation window. Requiring
- * exactly `pending` pins the rejection mode — an unintended failure (bad
- * signature, ACL failure) would surface as `400`/`failed` and fail this assert.
+ * (`allowedContracts` semantics, signature invalidation, extraData epoch
+ * validation): the connector rejects without a relayer-visible response, so
+ * the job stays queued for the whole observation window. Requiring exactly
+ * `pending` pins the rejection mode — an unintended failure (bad signature,
+ * ACL failure) would surface as `400`/`failed` and fail this assert.
  */
 export function expectStuckAtKms(poll: PollResult | undefined): void {
   expect(poll?.status, JSON.stringify(poll?.raw)).to.equal('pending');
+}
+
+/**
+ * Assert an async rejection surfaced by the relayer's transaction simulation:
+ * the Gateway reverts the request on-chain, so the job goes terminal `failed`
+ * before any transaction is sent (and before the decryption fee is charged).
+ * The message pattern pins the exact revert so the test cannot pass on an
+ * unrelated simulation failure.
+ */
+export function expectGatewayRevert(poll: PollResult | undefined, messagePattern: RegExp): void {
+  expect(poll?.status, JSON.stringify(poll?.raw)).to.equal('failed');
+  const message = ((poll?.raw as { error?: { message?: string } })?.error?.message ?? '') as string;
+  expect(message, JSON.stringify(poll?.raw)).to.match(messagePattern);
 }
 
 /** Build a direct-access handle entry (`ownerAddress == userAddress`). */

@@ -441,7 +441,7 @@ const buildInstanceEnvs = async (
     const wallet = await deriveWallet(mnemonic, COPROCESSOR_WALLET_INDICES[index]);
     envs["gateway-sc"][`COPROCESSOR_TX_SENDER_ADDRESS_${index}`] = wallet.address;
     envs["gateway-sc"][`COPROCESSOR_SIGNER_ADDRESS_${index}`] = wallet.address;
-    envs["gateway-sc"][`COPROCESSOR_S3_BUCKET_URL_${index}`] = `${MINIO_INTERNAL_URL}/ct128`;
+    envs["gateway-sc"][`COPROCESSOR_S3_BUCKET_URL_${index}`] = `${MINIO_INTERNAL_URL}/copro`;
     envs["host-sc"][`COPROCESSOR_SIGNER_ADDRESS_${index}`] = wallet.address;
     if (index === 0) {
       envs["coprocessor"].TX_SENDER_PRIVATE_KEY = wallet.privateKey;

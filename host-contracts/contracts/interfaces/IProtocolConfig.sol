@@ -19,7 +19,7 @@ interface IProtocolConfig {
      * @param publicDecryption Minimum signatures required for public decryption verification.
      * @param userDecryption Minimum signatures required for user decryption verification.
      * @param kmsGen Minimum signatures required for key/CRS generation consensus.
-     * @param mpc Minimum signatures required for MPC computation quorums.
+     * @param mpc MPC fault threshold `t`: max faulty or malicious MPC nodes tolerated.
      */
     struct KmsThresholds {
         uint256 publicDecryption;
@@ -309,6 +309,10 @@ interface IProtocolConfig {
     /// @param epochId The epoch ID.
     error EpochActivationAlreadyConfirmed(address signer, uint256 epochId);
 
+    /// @notice The epoch activation payload has no keys or no CRS, so a required attestation cannot be verified.
+    /// @param epochId The epoch ID.
+    error EmptyEpochActivationAttestation(uint256 epochId);
+
     /// @notice The structured activation signature does not match the caller's KMS signer.
     /// @param signer The recovered signer.
     /// @param txSender The transaction sender.
@@ -398,6 +402,8 @@ interface IProtocolConfig {
 
     /**
      * @notice Destroy a superseded (non-current) KMS epoch, preventing it from being used.
+     *         Also used to abort a stuck Pending epoch of an Active context — a same-set rotation whose
+     *         one-shot activation confirmations diverged and can no longer reach unanimity.
      * @param epochId The epoch ID to destroy.
      */
     function destroyKmsEpoch(uint256 epochId) external;
@@ -454,6 +460,11 @@ interface IProtocolConfig {
     // these import, so they skip the confirmation flow and land it as Active. Owner-only; the
     // operator must fan each Ethereum rotation out to every replica in order. The strictly-increasing
     // ID checks guard against rollback, not skipped calls.
+    //
+    // The contract does not track deployment mode on-chain. The mirror entry points target a replica
+    // only. The committee and owner entry points target a canonical deployment only. Nothing reverts
+    // when a caller uses the wrong entry points on the wrong deployment. This wrong use is unsupported
+    // operator misuse.
     // -----------------------------------------------------------------------------------------
 
     /**
@@ -498,9 +509,13 @@ interface IProtocolConfig {
 
     /**
      * @notice Returns the context anchor recorded when NewKmsContext was emitted.
+     * @dev Canonical-only. The canonical definition and bootstrap paths record the anchor. The replica
+     *      paths (`initializeFromCanonical` and `mirrorKmsContextAndEpoch`) do not record it. On a
+     *      replica this returns `(0, 0x0)` for every mirrored context. Cross-chain verification tooling
+     *      must not compare the anchor on a replica.
      * @param contextId The context ID.
-     * @return emissionBlockNumber The block where NewKmsContext was emitted.
-     * @return contextInfoHash Hash of the emitted context payload.
+     * @return emissionBlockNumber The block where NewKmsContext was emitted, or 0 on a replica.
+     * @return contextInfoHash Hash of the emitted context payload, or 0x0 on a replica.
      */
     function getKmsContextAnchor(
         uint256 contextId
@@ -521,11 +536,38 @@ interface IProtocolConfig {
     function getCurrentKmsContextId() external view returns (uint256);
 
     /**
+     * @notice Returns the KMS context ID allocation counter: the latest issued context ID.
+     * @dev This is the allocation frontier, always `>= getCurrentKmsContextId()`. It differs from the
+     *      active context ID while a context is Pending or Created (an in-flight context switch).
+     * @return The latest issued context ID.
+     */
+    function getCurrentKmsContextIdCounter() external view returns (uint256);
+
+    /**
      * @notice Checks whether a KMS context ID is valid (exists, is not destroyed, and is active).
      * @param kmsContextId The context ID to check.
      * @return True if the context is valid.
      */
     function isValidKmsContext(uint256 kmsContextId) external view returns (bool);
+
+    /**
+     * @notice Checks whether a KMS context exists and has not been destroyed.
+     * @dev Unlike `isValidKmsContext`, this returns true for a Pending or Created context, so it
+     *      distinguishes an in-flight context switch from a destroyed or never-issued context.
+     * @param kmsContextId The context ID to check.
+     * @return True if the context exists and is not destroyed.
+     */
+    function isLiveKmsContext(uint256 kmsContextId) external view returns (bool);
+
+    /**
+     * @notice Returns the previous-committee confirmation quorum cached for a context at define time.
+     * @dev The `(n - t)` target that `confirmKmsContextCreation` requires from the previous committee.
+     *      Returns 0 for a context that was never a switch target or whose bookkeeping was cleared on
+     *      destruction.
+     * @param kmsContextId The context ID.
+     * @return The cached previous-committee confirmation target.
+     */
+    function getContextCreationPreviousTxSenderThreshold(uint256 kmsContextId) external view returns (uint256);
 
     /**
      * @notice Returns the signer addresses for the current active context.
@@ -612,6 +654,9 @@ interface IProtocolConfig {
 
     /**
      * @notice Returns the kmsGen threshold for a given context.
+     * @dev The other threshold getters require an `Active` context. This one returns a value for any
+     *      live context, whatever its state, so the kmsGen threshold stays readable even before the
+     *      context becomes `Active`.
      * @param kmsContextId The context ID.
      * @return The kmsGen threshold for the context.
      */
