@@ -393,6 +393,8 @@ interface IProtocolConfig {
 
     /**
      * @notice Destroy a superseded (non-current) KMS epoch, preventing it from being used.
+     *         Also used to abort a stuck Pending epoch of an Active context — a same-set rotation whose
+     *         one-shot activation confirmations diverged and can no longer reach unanimity.
      * @param epochId The epoch ID to destroy.
      */
     function destroyKmsEpoch(uint256 epochId) external;
