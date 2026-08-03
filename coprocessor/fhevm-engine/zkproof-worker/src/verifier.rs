@@ -601,9 +601,11 @@ pub(crate) fn verify_proof(
 /// during the conformance check, i.e. *before* any ZK verification runs, which
 /// keeps the attack surface of the proof verifier down to what is strictly needed:
 ///
-/// * Hash config: only `V0_8_0` (tfhe-zk-pok 0.8.0+, produced by tfhe-rs 1.5.0+)
-///   is accepted; the legacy `V0_4_0` (tfhe-rs 0.11.x–1.2.x) and `V0_7_0`
-///   (tfhe-rs 1.3.0–1.4.x) configs are forbidden.
+/// * Hash config: `V0_8_0` (tfhe-zk-pok 0.8.0+, produced by tfhe-rs 1.5.0+) and
+///   `V0_7_0` (tfhe-rs 1.3.0–1.4.x, still emitted by the tfhe wasm pinned in
+///   relayer-sdk 0.4.x) are accepted; the legacy `V0_4_0` (tfhe-rs
+///   0.11.x–1.2.x) config is forbidden. `V0_7_0` must stay accepted until no
+///   deployed client encrypts with a pre-1.5.0 tfhe wasm.
 /// * Compute load: only [`ZkComputeLoad::Verify`] is accepted — the load the
 ///   clients emit — and `ZkComputeLoad::Proof` is forbidden.
 /// * Packing: `allow_unpacked` is left off, so only packed (and therefore
@@ -617,7 +619,6 @@ pub(crate) fn proven_list_conformance_params(
         &crs.crs,
     )
     .forbid_hash_config(ZkPkeV2SupportedHashConfig::V0_4_0)
-    .forbid_hash_config(ZkPkeV2SupportedHashConfig::V0_7_0)
     .forbid_compute_load(ZkComputeLoad::Proof)
 }
 
