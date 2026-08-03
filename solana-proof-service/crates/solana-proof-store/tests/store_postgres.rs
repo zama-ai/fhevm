@@ -68,7 +68,7 @@ fn fhe_execute_ix(
     let step = FheExecuteStep::TrivialEncrypt {
         plaintext: pk(0x70),
         fhe_type: 5,
-        output: FheExecuteOutput::AllowedPersistent {
+        output: FheExecuteOutput::StoredValue {
             output_encrypted_value_index: 0,
             output_account_authority_index: None,
             output_domain_index: 0,

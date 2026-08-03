@@ -104,7 +104,7 @@ pub(crate) fn lower_operand(
                 persistent.encrypted_value,
                 BatchAccountPurpose::PersistentInputAcl,
             ))?;
-            Ok(FheExecuteOperand::AllowedPersistent {
+            Ok(FheExecuteOperand::StoredValue {
                 handle_index,
                 encrypted_value_index,
             })
@@ -119,7 +119,7 @@ pub(crate) fn lower_operand(
             if producer_index as usize >= produced_count {
                 return Err(BatchBuildError::InvalidTransientReference);
             }
-            Ok(FheExecuteOperand::AllowedLocal { producer_index })
+            Ok(FheExecuteOperand::EarlierStep { producer_index })
         }
         OperandKind::VerifiedInput {
             attestation_index, ..
@@ -145,7 +145,7 @@ pub(crate) fn lower_output(
     output: Output,
 ) -> Result<FheExecuteOutput> {
     match output.0 {
-        OutputKind::Transient => Ok(FheExecuteOutput::AllowedLocal),
+        OutputKind::Transient => Ok(FheExecuteOutput::Transient),
         OutputKind::Persistent(output) => {
             let binding = output.binding()?;
             let encrypted_value = binding.encrypted_value();
@@ -166,7 +166,7 @@ pub(crate) fn lower_output(
                 .into_iter()
                 .map(|subject| tables.dictionary_index(subject.to_bytes()))
                 .collect::<Result<Vec<u8>>>()?;
-            let output = FheExecuteOutput::AllowedPersistent {
+            let output = FheExecuteOutput::StoredValue {
                 output_encrypted_value_index,
                 output_account_authority_index,
                 output_domain_index: tables.dictionary_index(binding.domain().to_bytes())?,

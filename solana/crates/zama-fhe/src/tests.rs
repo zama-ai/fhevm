@@ -105,9 +105,9 @@ fn batch_build_runs_closure_and_finishes_batch() {
     assert_eq!(batch.args.steps.len(), 2);
     match &batch.args.steps[1] {
         FheExecuteStep::Binary { lhs, output, .. } => {
-            assert_eq!(*lhs, FheExecuteOperand::AllowedLocal { producer_index: 0 });
+            assert_eq!(*lhs, FheExecuteOperand::EarlierStep { producer_index: 0 });
             match output {
-                FheExecuteOutput::AllowedPersistent {
+                FheExecuteOutput::StoredValue {
                     output_account_authority_index,
                     ..
                 } => {
@@ -236,13 +236,13 @@ fn finish_preflights_lowered_remaining_account_indices() {
     builder.dictionary.push(Scalar::<Uint<64>>::u64(1).bytes());
     builder.steps.push(FheExecuteStep::Binary {
         op: FheBinaryOpCode::Add,
-        lhs: FheExecuteOperand::AllowedPersistent {
+        lhs: FheExecuteOperand::StoredValue {
             handle_index: 0,
             encrypted_value_index: 0,
         },
         rhs: FheExecuteOperand::Scalar { value_index: 1 },
         output_fhe_type: FheType::UINT64.byte(),
-        output: FheExecuteOutput::AllowedLocal,
+        output: FheExecuteOutput::Transient,
     });
     builder.produced_types.push(FheType::UINT64.byte());
 
@@ -259,15 +259,15 @@ fn finish_preflights_lowered_transient_order_and_account_uniqueness() {
     builder.steps.push(FheExecuteStep::TrivialEncrypt {
         plaintext: Scalar::<Uint<64>>::u64(1).bytes(),
         fhe_type: FheType::UINT64.byte(),
-        output: FheExecuteOutput::AllowedLocal,
+        output: FheExecuteOutput::Transient,
     });
     builder.dictionary.push(Scalar::<Uint<64>>::u64(1).bytes());
     builder.steps.push(FheExecuteStep::Binary {
         op: FheBinaryOpCode::Add,
-        lhs: FheExecuteOperand::AllowedLocal { producer_index: 1 },
+        lhs: FheExecuteOperand::EarlierStep { producer_index: 1 },
         rhs: FheExecuteOperand::Scalar { value_index: 0 },
         output_fhe_type: FheType::UINT64.byte(),
-        output: FheExecuteOutput::AllowedLocal,
+        output: FheExecuteOutput::Transient,
     });
     builder.produced_types = vec![FheType::UINT64.byte(), FheType::UINT64.byte()];
 
@@ -318,10 +318,10 @@ fn finish_rejects_dictionary_index_past_dictionary_end() {
         .unwrap();
     builder.steps.push(FheExecuteStep::Binary {
         op: FheBinaryOpCode::Add,
-        lhs: FheExecuteOperand::AllowedLocal { producer_index: 0 },
+        lhs: FheExecuteOperand::EarlierStep { producer_index: 0 },
         rhs: FheExecuteOperand::Scalar { value_index: 3 },
         output_fhe_type: FheType::UINT64.byte(),
-        output: FheExecuteOutput::AllowedLocal,
+        output: FheExecuteOutput::Transient,
     });
     builder.produced_types.push(FheType::UINT64.byte());
 
@@ -426,7 +426,7 @@ fn lowers_mixed_batch_to_stable_remaining_account_indices() {
     match &batch.args.steps[0] {
         FheExecuteStep::Binary { op, output, .. } => {
             assert_eq!(*op, FheBinaryOpCode::Ge);
-            assert_eq!(*output, FheExecuteOutput::AllowedLocal);
+            assert_eq!(*output, FheExecuteOutput::Transient);
         }
         other => panic!("unexpected step: {other:?}"),
     }
@@ -440,14 +440,14 @@ fn lowers_mixed_batch_to_stable_remaining_account_indices() {
         } => {
             assert_eq!(
                 *control,
-                FheExecuteOperand::AllowedLocal { producer_index: 0 }
+                FheExecuteOperand::EarlierStep { producer_index: 0 }
             );
             assert_eq!(
                 *if_true,
-                FheExecuteOperand::AllowedLocal { producer_index: 1 }
+                FheExecuteOperand::EarlierStep { producer_index: 1 }
             );
             match if_false {
-                FheExecuteOperand::AllowedPersistent {
+                FheExecuteOperand::StoredValue {
                     encrypted_value_index,
                     ..
                 } => {
@@ -456,7 +456,7 @@ fn lowers_mixed_batch_to_stable_remaining_account_indices() {
                 other => panic!("unexpected if_false: {other:?}"),
             }
             match output {
-                FheExecuteOutput::AllowedPersistent {
+                FheExecuteOutput::StoredValue {
                     output_encrypted_value_index,
                     ..
                 } => {
@@ -568,7 +568,7 @@ fn lowers_explicit_output_authority_witness() {
     );
     match &batch.args.steps[0] {
         FheExecuteStep::Binary { output, .. } => match output {
-            FheExecuteOutput::AllowedPersistent {
+            FheExecuteOutput::StoredValue {
                 output_encrypted_value_index,
                 output_account_authority_index,
                 ..
@@ -1281,7 +1281,7 @@ fn persistent_output_create_matches_batch_lowering() {
     match &batch.args.steps[0] {
         FheExecuteStep::TrivialEncrypt {
             output:
-                FheExecuteOutput::AllowedPersistent {
+                FheExecuteOutput::StoredValue {
                     output_encrypted_value_index,
                     output_domain_index,
                     output_account_index,

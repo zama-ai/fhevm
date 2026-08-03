@@ -149,7 +149,7 @@ pub struct FheExecuteArgs {
     /// `dictionary_bytes` are where that reading happens. Types belong at the ends of the
     /// wire, not in the middle of it (fhevm-internal#1859 §2).
     pub dictionary: Vec<[u8; 32]>,
-    /// Ordered step list. Each `AllowedLocal` operand may only reference an output
+    /// Ordered step list. Each `EarlierStep` operand may only reference an output
     /// produced by an earlier index in this vector.
     pub steps: Vec<FheExecuteStep>,
 }
@@ -296,17 +296,18 @@ pub struct CoprocessorInputAttestation {
 /// Operand source for a composed fhe_execute operation.
 #[derive(AnchorSerialize, AnchorDeserialize, Clone, Debug, PartialEq, Eq)]
 pub enum FheExecuteOperand {
-    /// Input allowed through persistent ACL state: a canonical `EncryptedValue`
-    /// account in `remaining_accounts` whose current handle matches.
-    AllowedPersistent {
+    /// A value read out of persistent ACL state: a canonical `EncryptedValue` account in
+    /// `remaining_accounts` whose current handle matches the interned one. Admission is the
+    /// caller's subject membership on that account.
+    StoredValue {
         /// Dictionary index of the handle expected as the encrypted value's current handle.
         handle_index: u8,
         /// Index into `remaining_accounts` for the `EncryptedValue` account.
         encrypted_value_index: u8,
     },
-    /// Instruction-local value produced by an earlier operation in this `fhe_execute`; allowed only
-    /// inside the current evaluation scope and never stored.
-    AllowedLocal {
+    /// The output of an earlier step of this same `fhe_execute`: usable only inside the current
+    /// evaluation scope and never stored.
+    EarlierStep {
         /// Producer operation index.
         producer_index: u8,
     },
@@ -345,11 +346,11 @@ pub struct PreviousState {
 /// Output policy for a composed fhe_execute operation.
 #[derive(AnchorSerialize, AnchorDeserialize, Clone, Debug, PartialEq, Eq)]
 pub enum FheExecuteOutput {
-    /// Output stays allowed only inside the current `fhe_execute` scope; no persistent ACL record.
-    AllowedLocal,
-    /// Output is bound into persistent ACL state: the `EncryptedValue` encrypted value account PDA
-    /// is created when absent, or replaced when it exists.
-    AllowedPersistent {
+    /// The result stays inside the current `fhe_execute` scope; no persistent ACL record.
+    Transient,
+    /// The result is bound into persistent ACL state: the `EncryptedValue` account PDA is created
+    /// when absent, or replaced when it exists.
+    StoredValue {
         /// Index into `remaining_accounts` for the output `EncryptedValue` PDA.
         output_encrypted_value_index: u8,
         /// Optional index into `remaining_accounts` for the app account authority signer.

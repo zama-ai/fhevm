@@ -112,18 +112,18 @@ impl EvalExecutionState<'_, '_, '_> {
         operand: &FheExecuteOperand,
     ) -> Result<ResolvedOperand> {
         match operand {
-            FheExecuteOperand::AllowedPersistent {
+            FheExecuteOperand::StoredValue {
                 handle_index,
                 encrypted_value_index,
             } => {
                 let handle = self.dictionary_bytes(*handle_index)?;
                 self.resolve_persistent_operand(handle, u16::from(*encrypted_value_index))
             }
-            FheExecuteOperand::AllowedLocal { producer_index } => self
+            FheExecuteOperand::EarlierStep { producer_index } => self
                 .produced
                 .get(*producer_index as usize)
                 .map(ResolvedOperand::from_produced)
-                .ok_or_else(|| error!(ZamaHostError::FheExecuteAllowedLocalMissing)),
+                .ok_or_else(|| error!(ZamaHostError::FheExecuteEarlierStepMissing)),
             FheExecuteOperand::VerifiedInput { attestation } => {
                 // EVM `fromExternal` parity: only the attested contract may consume the input.
                 // Enforced here (the `msg.sender` analog) — not by constraining derived outputs.

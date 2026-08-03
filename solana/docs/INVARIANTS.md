@@ -101,9 +101,16 @@ update, encrypted value ID…).
 23. **[ASSUMPTION]** The coprocessor and KMS committees are honest at their
     thresholds, and their EVM signing keys are not compromised.
 24. **[ANTI]** `verify_public_decrypt` provides no act-once/replay protection;
-    each consuming app owns its own act-once state machine. A shared helper
-    is tracked in fhevm-internal#1859; until it exists this is a
-    predictable-bug surface for integrators.
+    each consuming app owns its own act-once state machine. The audited rule —
+    who needs a marker, what shape it takes, and why the marker itself cannot
+    ship as shared code (Anchor derives account ownership from the program that
+    declares the type, so the marker must live in the app) — is stated at the
+    verifier instruction and demonstrated by `redeem_burned_amount`'s
+    per-`(mint, handle)` write-once marker. Pinned from both sides by
+    `mollusk_redeem_historical_burned_handle_after_supersession_then_rejects_double_redeem`,
+    `mollusk_two_concurrent_burns_each_redeemable_exactly_once`, and
+    `mollusk_disclose_secp_is_idempotent_no_replay_marker`.
+    (fhevm-internal#1859 §5.)
 25. **[ANTI]** The verifier accepts any *live* context. Demanding the *current*
     context is caller policy, exercised through the returned context id; it is
     not enforced by the verifier.
@@ -230,6 +237,22 @@ or tooling decisions, not with the threat model.
     close crank retries on the next batch preparation. One composition function
     fills the table and compresses against it, so provisioned and consumed
     membership cannot diverge (`solana/demo-dapp/src/vault`).
+53. **[ANTI]** `make_handle_public` is not idempotent. Sealing a handle that is
+    already sealed appends a second leaf committing to the same
+    `(account, handle)` fact: it authorizes nothing the first leaf did not, and
+    its cost is bounded — peaks are one per set bit of `leaf_count`, capped at
+    `MAX_MMR_PEAKS` (64) — and funded by the caller's own payer. Guarding it
+    on-chain would need the account to remember which handle is sealed, which is
+    new `EncryptedValue` state in four consumers; a state-free guard could only
+    read back the last leaf when `leaf_count` is odd, so the same call would be
+    accepted or rejected by parity. Pinned by
+    `mollusk_make_handle_public_twice_appends_an_equivalent_leaf`.
+54. **[HOLDS]** Lowering a batch never copies the builder's intern tables, so an
+    app program building on-chain pays a few hundred heap bytes per step: at
+    least 24 steps that each write a persistent output fit Anchor's 32 KB
+    default bump heap (measured 31), while the maximum 32-step batch has to be
+    built off-chain or by a program with its own allocator. Pinned by
+    `solana/crates/zama-fhe/tests/heap_budget.rs`.
 
 ## N. Roadmap
 

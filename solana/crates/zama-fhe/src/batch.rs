@@ -127,7 +127,7 @@ impl Batch {
     pub fn newly_granted_subjects(&self) -> Vec<Pubkey> {
         let mut added = Vec::new();
         for step in &self.args.steps {
-            let FheExecuteOutput::AllowedPersistent {
+            let FheExecuteOutput::StoredValue {
                 output_subject_indexes,
                 previous_state,
                 ..

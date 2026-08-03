@@ -15,7 +15,9 @@
 //! Unlike disclosure, redemption moves real value, so it cannot be idempotent: the per-handle
 //! write-once, never-closed `burn-redemption` marker PDA is the single persistent "paid out" bit. A
 //! second redeem of the same burned handle fails when Anchor tries to `init` the already-initialized
-//! marker.
+//! marker. This is the reference shape for the act-once rule stated at
+//! `zama_host::instructions::verify_public_decrypt` (INVARIANTS #24); the marker is never closed,
+//! because closing it would make the payout replayable.
 //!
 //! ## Deny check at payout
 //!

@@ -154,6 +154,17 @@ pub struct MakeEncryptedValueHandlePublic<'info> {
     pub system_program: Program<'info, System>,
 }
 
+/// Seals `handle` — the value's current handle — as publicly decryptable by appending a
+/// public-decrypt leaf.
+///
+/// Sealing a handle that is already sealed is accepted, not rejected. The second leaf commits to
+/// the same `(account, handle)` fact as the first, so it authorizes nothing new, and what it costs
+/// is bounded by the MMR shape: peaks are one per set bit of `leaf_count`, capped at
+/// `MAX_MMR_PEAKS`, and the caller's own payer funds every growth step. Rejecting it would need the
+/// account to remember which handle is already sealed — new `EncryptedValue` state in the shared
+/// crate, the listener, the proof service, and the IDL — while a state-free guard could only read
+/// back the last leaf when `leaf_count` is odd, accepting or rejecting the same call by parity.
+/// Recorded as INVARIANTS #53 (fhevm-internal#1859 §6c).
 pub fn make_handle_public(
     ctx: Context<MakeEncryptedValueHandlePublic>,
     handle: [u8; 32],

@@ -244,7 +244,7 @@ fn decode_fhe_execute_persistent_outputs(
 ) -> Result<Vec<DecodedInstruction>, DecodeError> {
     let mut out = Vec::new();
     for (step_index, step) in batch.steps.iter().enumerate() {
-        let FheExecuteOutput::AllowedPersistent {
+        let FheExecuteOutput::StoredValue {
             output_encrypted_value_index,
             output_subject_indexes,
             previous_state,
@@ -441,7 +441,7 @@ fn expected_created_public_outputs(
         .iter()
         .enumerate()
         .filter_map(|(step_index, step)| {
-            let FheExecuteOutput::AllowedPersistent {
+            let FheExecuteOutput::StoredValue {
                 output_encrypted_value_index,
                 make_public: true,
                 ..
@@ -727,7 +727,7 @@ mod tests {
         previous_handle: Option<[u8; 32]>,
         previous_subject_tags: Option<&[u8]>,
     ) -> FheExecuteOutput {
-        FheExecuteOutput::AllowedPersistent {
+        FheExecuteOutput::StoredValue {
             output_encrypted_value_index,
             output_account_authority_index: None,
             output_domain_index: intern(pk(0x40)),
@@ -758,7 +758,7 @@ mod tests {
             previous_handle,
             previous_subject_tags,
         );
-        if let FheExecuteOutput::AllowedPersistent { make_public, .. } = &mut output {
+        if let FheExecuteOutput::StoredValue { make_public, .. } = &mut output {
             *make_public = true;
         }
         output

@@ -2,7 +2,7 @@
 //!
 //! Pure, account-independent metering over an `fhe_execute` batch. Everything needed is in
 //! [`FheExecuteStep`]: a step's cost is a function of its op, result FHE type, and scalar flag; its
-//! critical-path *depth* is a function of the operand *kinds* (an `AllowedLocal` reads the depth of
+//! critical-path *depth* is a function of the operand *kinds* (an `EarlierStep` reads the depth of
 //! the producer it points at; persistent / verified / scalar operands are zero-depth leaves). No
 //! sysvars, no accounts — so it runs once in [`super::fhe_execute`], before execution mutates any
 //! account, and its total feeds the block-cap charge unchanged.
@@ -270,18 +270,18 @@ pub(super) struct BatchMeter {
     pub step_depths: Vec<u64>,
 }
 
-/// Depth a resolved operand contributes: an `AllowedLocal` carries its producer's cumulative depth;
+/// Depth a resolved operand contributes: an `EarlierStep` carries its producer's cumulative depth;
 /// every other operand kind is a zero-depth leaf (persistent resets in-batch; verified input &
 /// scalar are intrinsic zero leaves). An out-of-range producer index is treated as `0` here;
-/// the walk's operand resolver rejects it with the precise `FheExecuteAllowedLocalMissing`.
+/// the walk's operand resolver rejects it with the precise `FheExecuteEarlierStepMissing`.
 fn operand_depth(operand: &FheExecuteOperand, step_depths: &[u64]) -> u64 {
     // No `_ =>` arm: a new FheExecuteOperand variant must break the build here.
     match operand {
-        FheExecuteOperand::AllowedLocal { producer_index } => step_depths
+        FheExecuteOperand::EarlierStep { producer_index } => step_depths
             .get(*producer_index as usize)
             .copied()
             .unwrap_or(0),
-        FheExecuteOperand::AllowedPersistent { .. } => 0,
+        FheExecuteOperand::StoredValue { .. } => 0,
         FheExecuteOperand::VerifiedInput { .. } => 0,
         FheExecuteOperand::Scalar { .. } => 0,
     }
@@ -454,45 +454,45 @@ mod tests {
         FheExecuteStep::TrivialEncrypt {
             plaintext: [0u8; 32],
             fhe_type,
-            output: FheExecuteOutput::AllowedLocal,
+            output: FheExecuteOutput::Transient,
         }
     }
     fn add_local(ty: u8, lhs_producer: u8, rhs_producer: u8) -> FheExecuteStep {
         FheExecuteStep::Binary {
             op: FheBinaryOpCode::Add,
-            lhs: FheExecuteOperand::AllowedLocal {
+            lhs: FheExecuteOperand::EarlierStep {
                 producer_index: lhs_producer,
             },
-            rhs: FheExecuteOperand::AllowedLocal {
+            rhs: FheExecuteOperand::EarlierStep {
                 producer_index: rhs_producer,
             },
             output_fhe_type: ty,
-            output: FheExecuteOutput::AllowedLocal,
+            output: FheExecuteOutput::Transient,
         }
     }
     fn add_scalar(ty: u8, lhs_producer: u8) -> FheExecuteStep {
         FheExecuteStep::Binary {
             op: FheBinaryOpCode::Add,
-            lhs: FheExecuteOperand::AllowedLocal {
+            lhs: FheExecuteOperand::EarlierStep {
                 producer_index: lhs_producer,
             },
             rhs: FheExecuteOperand::Scalar { value_index: 0 },
             output_fhe_type: ty,
-            output: FheExecuteOutput::AllowedLocal,
+            output: FheExecuteOutput::Transient,
         }
     }
     fn add_persistent(ty: u8, lhs_producer: u8) -> FheExecuteStep {
         FheExecuteStep::Binary {
             op: FheBinaryOpCode::Add,
-            lhs: FheExecuteOperand::AllowedLocal {
+            lhs: FheExecuteOperand::EarlierStep {
                 producer_index: lhs_producer,
             },
-            rhs: FheExecuteOperand::AllowedPersistent {
+            rhs: FheExecuteOperand::StoredValue {
                 handle_index: 0,
                 encrypted_value_index: 0,
             },
             output_fhe_type: ty,
-            output: FheExecuteOutput::AllowedLocal,
+            output: FheExecuteOutput::Transient,
         }
     }
 
@@ -906,7 +906,7 @@ mod tests {
         // A Rand of type 7 has no cost row -> the walk surfaces HcuUnknownCost (fail-closed).
         let steps = vec![FheExecuteStep::Rand {
             fhe_type: 7,
-            output: FheExecuteOutput::AllowedLocal,
+            output: FheExecuteOutput::Transient,
         }];
         assert_eq!(
             meter_batch(&steps, u64::MAX, u64::MAX).unwrap_err(),
@@ -945,7 +945,7 @@ mod tests {
             },
             rhs: FheExecuteOperand::Scalar { value_index: 0 },
             output_fhe_type: EU64,
-            output: FheExecuteOutput::AllowedLocal,
+            output: FheExecuteOutput::Transient,
         }];
         let m = meter_batch(&steps, u64::MAX, u64::MAX).unwrap();
         let add_scalar_cost = binary_op_hcu(FheBinaryOpCode::Add, EU64, true).unwrap();

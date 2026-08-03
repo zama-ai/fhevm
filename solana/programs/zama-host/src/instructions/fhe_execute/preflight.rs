@@ -79,10 +79,8 @@ fn assert_rand_steps_anchor_persistent_output(args: &FheExecuteArgs) -> Result<(
 /// so a future operand variant must classify itself rather than default to "does not pin".
 fn operand_pins_subject(operand: &FheExecuteOperand) -> bool {
     match operand {
-        FheExecuteOperand::AllowedPersistent { .. } | FheExecuteOperand::VerifiedInput { .. } => {
-            true
-        }
-        FheExecuteOperand::AllowedLocal { .. } | FheExecuteOperand::Scalar { .. } => false,
+        FheExecuteOperand::StoredValue { .. } | FheExecuteOperand::VerifiedInput { .. } => true,
+        FheExecuteOperand::EarlierStep { .. } | FheExecuteOperand::Scalar { .. } => false,
     }
 }
 
@@ -90,8 +88,8 @@ fn operand_pins_subject(operand: &FheExecuteOperand) -> bool {
 /// classify itself rather than default to "does not persist".
 fn output_persists(output: &FheExecuteOutput) -> bool {
     match output {
-        FheExecuteOutput::AllowedPersistent { .. } => true,
-        FheExecuteOutput::AllowedLocal => false,
+        FheExecuteOutput::StoredValue { .. } => true,
+        FheExecuteOutput::Transient => false,
     }
 }
 
@@ -302,7 +300,7 @@ fn preflight_encrypted_operand(
     preflight: &mut EvalPreflight<'_, '_, '_>,
 ) -> Result<()> {
     match operand {
-        FheExecuteOperand::AllowedPersistent {
+        FheExecuteOperand::StoredValue {
             handle_index,
             encrypted_value_index,
         } => {
@@ -317,10 +315,10 @@ fn preflight_encrypted_operand(
             );
             preflight.table.mark(u16::from(*encrypted_value_index))?;
         }
-        FheExecuteOperand::AllowedLocal { producer_index } => {
+        FheExecuteOperand::EarlierStep { producer_index } => {
             require!(
                 (*producer_index as usize) < step_index,
-                ZamaHostError::FheExecuteAllowedLocalMissing
+                ZamaHostError::FheExecuteEarlierStepMissing
             );
         }
         FheExecuteOperand::VerifiedInput { .. } => {
@@ -338,8 +336,8 @@ fn preflight_output(
     preflight: &mut EvalPreflight<'_, '_, '_>,
 ) -> Result<()> {
     match output {
-        FheExecuteOutput::AllowedLocal => {}
-        FheExecuteOutput::AllowedPersistent {
+        FheExecuteOutput::Transient => {}
+        FheExecuteOutput::StoredValue {
             output_encrypted_value_index,
             output_account_authority_index,
             output_domain_index,
@@ -393,13 +391,13 @@ mod tests {
         // must fail the whole-batch all-used check.
         let args = batch(vec![FheExecuteStep::Binary {
             op: FheBinaryOpCode::Add,
-            lhs: FheExecuteOperand::AllowedPersistent {
+            lhs: FheExecuteOperand::StoredValue {
                 handle_index: 0,
                 encrypted_value_index: 0,
             },
             rhs: FheExecuteOperand::Scalar { value_index: 1 },
             output_fhe_type: 5,
-            output: FheExecuteOutput::AllowedLocal,
+            output: FheExecuteOutput::Transient,
         }]);
         let accounts = vec![
             test_account(Pubkey::new_unique()),
@@ -420,13 +418,13 @@ mod tests {
             },
             FheExecuteStep::Binary {
                 op: FheBinaryOpCode::Add,
-                lhs: FheExecuteOperand::AllowedPersistent {
+                lhs: FheExecuteOperand::StoredValue {
                     handle_index: 0,
                     encrypted_value_index: 0,
                 },
                 rhs: FheExecuteOperand::Scalar { value_index: 1 },
                 output_fhe_type: 5,
-                output: FheExecuteOutput::AllowedLocal,
+                output: FheExecuteOutput::Transient,
             },
         ]);
         let accounts = vec![test_account(Pubkey::new_unique())];
@@ -439,7 +437,7 @@ mod tests {
     fn persistent_operand_may_update_its_account_in_the_same_step() {
         let args = batch(vec![FheExecuteStep::Binary {
             op: FheBinaryOpCode::Add,
-            lhs: FheExecuteOperand::AllowedPersistent {
+            lhs: FheExecuteOperand::StoredValue {
                 handle_index: 0,
                 encrypted_value_index: 0,
             },
@@ -473,12 +471,12 @@ mod tests {
         FheExecuteStep::TrivialEncrypt {
             plaintext: [0; 32],
             fhe_type: 5,
-            output: FheExecuteOutput::AllowedLocal,
+            output: FheExecuteOutput::Transient,
         }
     }
 
     fn persistent_output() -> FheExecuteOutput {
-        FheExecuteOutput::AllowedPersistent {
+        FheExecuteOutput::StoredValue {
             output_encrypted_value_index: 0,
             output_account_authority_index: None,
             output_domain_index: 0,
@@ -511,7 +509,7 @@ mod tests {
         // to the batch's persistent writes, so an all-transient rand batch has no seed anchor.
         let args = batch(vec![FheExecuteStep::Rand {
             fhe_type: 5,
-            output: FheExecuteOutput::AllowedLocal,
+            output: FheExecuteOutput::Transient,
         }]);
         assert!(assert_rand_steps_anchor_persistent_output(&args).is_err());
     }
@@ -528,7 +526,7 @@ mod tests {
         let elsewhere = batch(vec![
             FheExecuteStep::Rand {
                 fhe_type: 5,
-                output: FheExecuteOutput::AllowedLocal,
+                output: FheExecuteOutput::Transient,
             },
             FheExecuteStep::TrivialEncrypt {
                 plaintext: [0; 32],
@@ -578,13 +576,13 @@ mod tests {
     fn finite_cap_accepts_persistent_input_batch() {
         let step = FheExecuteStep::Binary {
             op: FheBinaryOpCode::Add,
-            lhs: FheExecuteOperand::AllowedPersistent {
+            lhs: FheExecuteOperand::StoredValue {
                 handle_index: 0,
                 encrypted_value_index: 0,
             },
             rhs: FheExecuteOperand::Scalar { value_index: 1 },
             output_fhe_type: 5,
-            output: FheExecuteOutput::AllowedLocal,
+            output: FheExecuteOutput::Transient,
         };
         assert!(assert_batch_pins_or_persists_under_cap(&batch(vec![step]), FINITE_CAP).is_ok());
     }
@@ -597,7 +595,7 @@ mod tests {
             op: FheUnaryOpCode::Not,
             operand: verified_input(),
             output_fhe_type: 5,
-            output: FheExecuteOutput::AllowedLocal,
+            output: FheExecuteOutput::Transient,
         };
         assert!(assert_batch_pins_or_persists_under_cap(&batch(vec![step]), FINITE_CAP).is_ok());
     }

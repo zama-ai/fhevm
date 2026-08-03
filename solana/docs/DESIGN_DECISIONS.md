@@ -287,19 +287,21 @@ that a later instruction can read.
 
 Decision:
 
-The lifetime model is `{AllowedLocal, AllowedPersistent}`:
+The lifetime model is `{Transient, StoredValue}` (renamed from `{AllowedLocal, AllowedPersistent}`
+in fhevm-internal#1859 §5b, which took the admission rationale out of the variant names):
 
 ```text
-AllowedLocal   an fhe_execute-local value (FheExecuteOperand::AllowedLocal): produced by an earlier step,
-               consumed by a later step in the same instruction. No AclRecord, no AclAllowedEvent.
-AllowedPersistent a persistent ACL record (Output::persistent()) bound with the nonce-key model (DD-001).
+Transient    an fhe_execute-local value: FheExecuteOutput::Transient when produced, referenced by a
+             later step of the same instruction as FheExecuteOperand::EarlierStep. No persistent
+             record, no ACL event.
+StoredValue  a persistent ACL record (Output::persistent()) bound with the nonce-key model (DD-001).
 ```
 
-EVM `allowTransient(handle, account)` (tx-scoped) maps to `AllowedLocal` **plus CPI signer
+EVM `allowTransient(handle, account)` (tx-scoped) maps to `Transient` **plus CPI signer
 propagation within one instruction's CPI tree**: the compute subject carried through the CPI chain
 authorizes existing allowed inputs. A verified external input is transient-allowed for one eval this
 way (DD-007). There is no mechanism to pass a not-yet-persistent value across separate top-level
-instructions — if a value must persist, it becomes `AllowedPersistent`.
+instructions — if a value must persist, it becomes a `StoredValue` output.
 
 Rationale:
 
@@ -645,7 +647,7 @@ enforces the signer the RFC had removed.
 
 The OpenZeppelin-track `execute_frame` ABI is intentionally not ported as a host instruction. Its
 useful ergonomic idea — symbolic previous results inside one instruction — is represented by
-`FheExecuteOperand::AllowedLocal` in the host ABI and by the app-facing `zama-fhe::BatchBuilder`. The SDK
+`FheExecuteOperand::EarlierStep` in the host ABI and by the app-facing `zama-fhe::BatchBuilder`. The SDK
 builder hides raw producer indices and `remaining_accounts` indices from app code, returns typed
 `Encrypted<T>` values for intermediate results, derives persistent output nonce keys / ACL record PDAs
 from `EncryptedValueKey`, accepts ACL subjects directly, and returns an opaque `Batch`.
@@ -1337,7 +1339,7 @@ Addendum (Vector 2 closed — created-public eval output):
 
 The second vector is now closed by making the burn's delta *born* publicly decryptable inside the
 same `fhe_execute` CPI that produces it, rather than by a separate `make_handle_public` CPI after the
-eval. `FheExecuteOutput::AllowedPersistent` gains a `make_public: bool` (carried in instruction data, like
+eval. `FheExecuteOutput::StoredValue` gains a `make_public: bool` (carried in instruction data, like
 `previous_handle`/`previous_subjects`, so indexers reconstruct the leaf without reading the account).
 When set, `bind_eval_output` — after writing the new `current_handle` — appends a public-decrypt leaf
 for that NEW handle using the exact same `public_decrypt_leaf_commitment` + `mmr_append` as
@@ -1472,7 +1474,7 @@ Consequences:
 - The `FheExecuteEventLogBudgetExceeded` error was renamed in place to `FheExecuteCreatedPublicFrameTooLarge`
   (same discriminant; no error-code shift). The variant was later deleted with the rest of the
   retired guard (fhevm-internal#1859 §3-D2).
-- No IDL/wire change: `make_public` was already an `AllowedPersistent` field (DD-036); the guard adds a
+- No IDL/wire change: `make_public` was already a `StoredValue` output field (DD-036); the guard adds a
   validation, not an argument.
 - #1665 must remove the op event only after migrating created-public handle recovery off it — treat the
   event as an ABI surface whose last consumer must move first.
@@ -1528,8 +1530,8 @@ Metering the `compute_subject` does NOT, by itself, constrain a **persist-nothin
 submitted by a direct caller: there `compute_subject` is an unconstrained signer, so such a caller
 could still rotate it for a fresh per-slot meter. The value-less part of that residual case
 (fhevm-internal#1744) is now closed: when `hcu_block_cap_per_app` is finite (`!= u64::MAX`),
-`fhe_execute` preflight rejects any batch that binds no `AllowedPersistent` operand, no `VerifiedInput`
-operand, and no `AllowedPersistent` output (`FheExecuteUnanchoredUnderBlockCap`). Such a batch persists
+`fhe_execute` preflight rejects any batch that binds no `StoredValue` operand, no `VerifiedInput`
+operand, and no `StoredValue` output (`FheExecuteUnanchoredUnderBlockCap`). Such a batch persists
 nothing and verifies nothing — `compute_subject` is a free variable and the batch is also value-less
 (its transient outputs create no ACL leaf and are undecryptable) — so nothing legitimate is
 forbidden. Under the ship default (`u64::MAX`) the check short-circuits, so behavior is unchanged

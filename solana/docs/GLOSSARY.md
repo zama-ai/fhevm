@@ -30,6 +30,8 @@ stack where one exists.
 | **fhe_execute** | The host instruction that runs a batch. | `fhe_eval` | `FHEVMExecutor` ops |
 | **preflight** | The full-batch validation pass (indexes, accounts, types, costs) that runs before the execution walk. | — | — |
 | **transient** | Usable only inside the carrying batch; leaves no persistent grant. | — | `allowTransient` |
+| **stored value** | Wire name of an operand read from a value account, and of an output written to one: `FheExecuteOperand::StoredValue`, `FheExecuteOutput::StoredValue`. Names what the slot is, not why it was admitted. | `AllowedPersistent` | ACL `persistAllowed` entry |
+| **earlier step** | Wire name of an operand that reads the output of an earlier step of the same batch: `FheExecuteOperand::EarlierStep`. The matching output is `FheExecuteOutput::Transient`. | `AllowedLocal` | `allowTransient` value |
 | **persistent** | Outlives the batch: written to a value account with its own subject list. | durable | ACL `persistAllowed` |
 | **create / created-public** | A batch output binding a new persistent value; created-public seals it publicly decryptable at creation. | birth, born-public | — |
 | **update** | Replacing a persistent value's handle, echoing the exact previous handle and subject list. | supersede, rotation | — |

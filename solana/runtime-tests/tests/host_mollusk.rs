@@ -312,7 +312,7 @@ fn update_with_fhe_execute(
     let steps = vec![FheExecuteStep::TrivialEncrypt {
         plaintext: [plaintext_tag; 32],
         fhe_type: 5,
-        output: FheExecuteOutput::AllowedPersistent {
+        output: FheExecuteOutput::StoredValue {
             output_encrypted_value_index: 0,
             output_account_authority_index: None,
             output_domain_index: dictionary.intern_key(value.domain),
@@ -370,7 +370,7 @@ fn expect_fhe_execute_update_error(
     let steps = vec![FheExecuteStep::TrivialEncrypt {
         plaintext: [plaintext_tag; 32],
         fhe_type: 5,
-        output: FheExecuteOutput::AllowedPersistent {
+        output: FheExecuteOutput::StoredValue {
             output_encrypted_value_index: 0,
             output_account_authority_index: None,
             output_domain_index: dictionary.intern_key(value.domain),
@@ -647,7 +647,7 @@ fn mollusk_fhe_execute_fails_closed_without_previous_bank_hash() {
     let steps = vec![FheExecuteStep::TrivialEncrypt {
         plaintext: [1; 32],
         fhe_type: 5,
-        output: FheExecuteOutput::AllowedPersistent {
+        output: FheExecuteOutput::StoredValue {
             output_encrypted_value_index: 0,
             output_account_authority_index: None,
             output_domain_index: dictionary.intern_key(Pubkey::new_unique()),
@@ -1151,7 +1151,7 @@ fn mollusk_fhe_execute_update_swaps_subjects_and_seals_the_outgoing_audience() {
     let steps = vec![FheExecuteStep::TrivialEncrypt {
         plaintext: [7; 32],
         fhe_type: 5,
-        output: FheExecuteOutput::AllowedPersistent {
+        output: FheExecuteOutput::StoredValue {
             output_encrypted_value_index: 0,
             output_account_authority_index: None,
             output_domain_index: dictionary.intern_key(value.domain),
@@ -1234,7 +1234,7 @@ fn mollusk_fhe_execute_update_shrinks_audience_and_seals_the_outgoing_set() {
     let steps = vec![FheExecuteStep::TrivialEncrypt {
         plaintext: [8; 32],
         fhe_type: 5,
-        output: FheExecuteOutput::AllowedPersistent {
+        output: FheExecuteOutput::StoredValue {
             output_encrypted_value_index: 0,
             output_account_authority_index: None,
             output_domain_index: dictionary.intern_key(value.domain),
@@ -1376,6 +1376,69 @@ fn mollusk_make_handle_public_appends_public_decrypt_leaf() {
     let mut expected_count = 0u64;
     zama_solana_acl::mmr_append(&mut expected_peaks, &mut expected_count, expected).unwrap();
     assert_eq!(updated.peaks, expected_peaks);
+}
+
+#[test]
+fn mollusk_make_handle_public_twice_appends_an_equivalent_leaf() {
+    let authority = Pubkey::new_unique();
+    let (host_config, host_config_account) = host_config_account(authority);
+    let subject = Pubkey::new_unique();
+    let handle = handle_for_chain(5, 5);
+    let (address, value) = new_value_account(
+        Pubkey::new_unique(),
+        authority,
+        label("balance"),
+        handle,
+        &[subject],
+    );
+    let ix = make_handle_public_ix(authority, subject, address, host_config, handle);
+    let accounts = |value: &EncryptedValue| {
+        vec![
+            (system_program::ID, system_program_account()),
+            (authority, funded_system_account()),
+            (subject, funded_system_account()),
+            (address, encrypted_value_account(value)),
+            (host_config, host_config_account.clone()),
+        ]
+    };
+    let sealed = read_encrypted_value(
+        &mollusk().process_and_validate_instruction(&ix, &accounts(&value), &[Check::success()]),
+        address,
+    );
+    // Sealing an already-sealed handle is accepted rather than guarded — INVARIANTS #53.
+    let resealed = read_encrypted_value(
+        &mollusk().process_and_validate_instruction(&ix, &accounts(&sealed), &[Check::success()]),
+        address,
+    );
+
+    assert_eq!(resealed.leaf_count, 2);
+    let events = [
+        zama_solana_acl::value_account::EncryptedValueAccountEvent::MarkedPublic { handle },
+        zama_solana_acl::value_account::EncryptedValueAccountEvent::MarkedPublic { handle },
+    ];
+    let shared = resealed.to_shared();
+    for leaf_index in 0..resealed.leaf_count {
+        let proof = zama_solana_acl::value_account::build_verified_proof_from_events(
+            address.to_bytes(),
+            &events,
+            &resealed.peaks,
+            resealed.leaf_count,
+            leaf_index,
+        )
+        .unwrap();
+        // Both leaves commit to the same (account, handle) fact, so the duplicate authorizes
+        // exactly what the first leaf already did and nothing more.
+        assert!(
+            zama_solana_acl::authorize_public(address.to_bytes(), &shared, handle, &proof).is_ok()
+        );
+    }
+    // What a redundant seal costs is bounded by the MMR shape — one peak per set bit of
+    // leaf_count — so no number of reseals can grow the account past MAX_MMR_PEAKS peaks.
+    assert_eq!(
+        resealed.peaks.len(),
+        resealed.leaf_count.count_ones() as usize
+    );
+    assert!(resealed.peaks.len() <= zama_solana_acl::MAX_MMR_PEAKS);
 }
 
 #[test]
@@ -1535,7 +1598,7 @@ fn mollusk_denied_caller_cannot_mutate_acl_update_or_eval_output() {
     let steps = vec![FheExecuteStep::TrivialEncrypt {
         plaintext: [1; 32],
         fhe_type: 5,
-        output: FheExecuteOutput::AllowedPersistent {
+        output: FheExecuteOutput::StoredValue {
             output_encrypted_value_index: 0,
             output_account_authority_index: None,
             output_domain_index: dictionary.intern_key(caller),
@@ -1654,7 +1717,7 @@ fn mollusk_denied_subject_cannot_enter_via_allow_subjects_or_eval_create() {
     let steps = vec![FheExecuteStep::TrivialEncrypt {
         plaintext: [2; 32],
         fhe_type: 5,
-        output: FheExecuteOutput::AllowedPersistent {
+        output: FheExecuteOutput::StoredValue {
             output_encrypted_value_index: 0,
             output_account_authority_index: None,
             output_domain_index: dictionary.intern_key(authority),
@@ -1887,7 +1950,7 @@ fn mollusk_fhe_execute_rejects_denied_second_output_authority_in_multi_output_ba
         FheExecuteStep::TrivialEncrypt {
             plaintext: [3; 32],
             fhe_type: 5,
-            output: FheExecuteOutput::AllowedPersistent {
+            output: FheExecuteOutput::StoredValue {
                 output_encrypted_value_index: 0,
                 output_account_authority_index: None,
                 output_domain_index: dictionary.intern_key(authority_a),
@@ -1901,7 +1964,7 @@ fn mollusk_fhe_execute_rejects_denied_second_output_authority_in_multi_output_ba
         FheExecuteStep::TrivialEncrypt {
             plaintext: [4; 32],
             fhe_type: 5,
-            output: FheExecuteOutput::AllowedPersistent {
+            output: FheExecuteOutput::StoredValue {
                 output_encrypted_value_index: 1,
                 output_account_authority_index: Some(2),
                 output_domain_index: dictionary.intern_key(authority_b),
@@ -2001,7 +2064,7 @@ fn mollusk_paused_state_blocks_acl_update_and_eval_output() {
     let steps = vec![FheExecuteStep::TrivialEncrypt {
         plaintext: [2; 32],
         fhe_type: 5,
-        output: FheExecuteOutput::AllowedPersistent {
+        output: FheExecuteOutput::StoredValue {
             output_encrypted_value_index: 0,
             output_account_authority_index: None,
             output_domain_index: dictionary.intern_key(authority),
@@ -2303,16 +2366,16 @@ fn mollusk_fhe_execute_creates_persistent_output_from_local_binary_add() {
     let mut dictionary = BatchDictionary::default();
     let steps = vec![FheExecuteStep::Binary {
         op: FheBinaryOpCode::Add,
-        lhs: FheExecuteOperand::AllowedPersistent {
+        lhs: FheExecuteOperand::StoredValue {
             handle_index: dictionary.intern(lhs),
             encrypted_value_index: 0,
         },
-        rhs: FheExecuteOperand::AllowedPersistent {
+        rhs: FheExecuteOperand::StoredValue {
             handle_index: dictionary.intern(rhs),
             encrypted_value_index: 1,
         },
         output_fhe_type: 5,
-        output: FheExecuteOutput::AllowedPersistent {
+        output: FheExecuteOutput::StoredValue {
             output_encrypted_value_index: 2,
             output_account_authority_index: None,
             output_domain_index: dictionary.intern_key(output_domain),
@@ -2381,7 +2444,7 @@ fn mollusk_fhe_execute_updates_persistent_output_with_previous_state() {
     let mut dictionary = BatchDictionary::default();
     let steps = vec![FheExecuteStep::Binary {
         op: FheBinaryOpCode::Add,
-        lhs: FheExecuteOperand::AllowedPersistent {
+        lhs: FheExecuteOperand::StoredValue {
             handle_index: dictionary.intern(input_handle),
             encrypted_value_index: 0,
         },
@@ -2389,7 +2452,7 @@ fn mollusk_fhe_execute_updates_persistent_output_with_previous_state() {
             value_index: dictionary.intern([0; 32]),
         },
         output_fhe_type: 5,
-        output: FheExecuteOutput::AllowedPersistent {
+        output: FheExecuteOutput::StoredValue {
             output_encrypted_value_index: 1,
             output_account_authority_index: None,
             output_domain_index: dictionary.intern_key(authority),
@@ -2464,7 +2527,7 @@ fn created_public_batch(step_count: usize, created_public_steps: &[usize]) -> Cr
             output_metas.push(writable(output_address));
             output_accounts.push((output_address, empty_system_account()));
             outputs.push((step_index as u16, output_address));
-            FheExecuteOutput::AllowedPersistent {
+            FheExecuteOutput::StoredValue {
                 output_encrypted_value_index: output_index,
                 output_account_authority_index: None,
                 output_domain_index: dictionary.intern_key(authority),
@@ -2475,7 +2538,7 @@ fn created_public_batch(step_count: usize, created_public_steps: &[usize]) -> Cr
                 make_public: true,
             }
         } else {
-            FheExecuteOutput::AllowedLocal
+            FheExecuteOutput::Transient
         };
         steps.push(FheExecuteStep::TrivialEncrypt {
             plaintext: [(step_index + 1) as u8; 32],
@@ -3848,14 +3911,14 @@ impl EvalFixture {
     }
 
     fn balance_operand(&self, dictionary: &mut BatchDictionary) -> FheExecuteOperand {
-        FheExecuteOperand::AllowedPersistent {
+        FheExecuteOperand::StoredValue {
             handle_index: dictionary.intern(self.balance_handle),
             encrypted_value_index: 0,
         }
     }
 
     fn amount_operand(&self, dictionary: &mut BatchDictionary) -> FheExecuteOperand {
-        FheExecuteOperand::AllowedPersistent {
+        FheExecuteOperand::StoredValue {
             handle_index: dictionary.intern(self.amount_handle),
             encrypted_value_index: 1,
         }
@@ -3871,22 +3934,22 @@ impl EvalFixture {
                 lhs: self.balance_operand(&mut dictionary),
                 rhs: self.amount_operand(&mut dictionary),
                 output_fhe_type: 0,
-                output: FheExecuteOutput::AllowedLocal,
+                output: FheExecuteOutput::Transient,
             },
             FheExecuteStep::Binary {
                 op: FheBinaryOpCode::Sub,
                 lhs: self.balance_operand(&mut dictionary),
                 rhs: self.amount_operand(&mut dictionary),
                 output_fhe_type: 5,
-                output: FheExecuteOutput::AllowedLocal,
+                output: FheExecuteOutput::Transient,
             },
             FheExecuteStep::Ternary {
                 op: FheTernaryOpCode::IfThenElse,
-                control: FheExecuteOperand::AllowedLocal { producer_index: 0 },
-                if_true: FheExecuteOperand::AllowedLocal { producer_index: 1 },
+                control: FheExecuteOperand::EarlierStep { producer_index: 0 },
+                if_true: FheExecuteOperand::EarlierStep { producer_index: 1 },
                 if_false: self.balance_operand(&mut dictionary),
                 output_fhe_type: 5,
-                output: FheExecuteOutput::AllowedPersistent {
+                output: FheExecuteOutput::StoredValue {
                     output_encrypted_value_index: 2,
                     output_account_authority_index: None,
                     output_domain_index: dictionary.intern_key(self.authority),
@@ -3942,7 +4005,7 @@ impl EvalFixture {
             lhs: self.balance_operand(&mut dictionary),
             rhs: self.amount_operand(&mut dictionary),
             output_fhe_type: 0,
-            output: FheExecuteOutput::AllowedLocal,
+            output: FheExecuteOutput::Transient,
         }];
         let last_transient_index = u8::try_from(host::MAX_FHE_BATCH_OPS - 2)
             .expect("MAX_FHE_BATCH_OPS must fit producer indices");
@@ -3958,7 +4021,7 @@ impl EvalFixture {
             let lhs = if index == 1 {
                 self.balance_operand(&mut dictionary)
             } else {
-                FheExecuteOperand::AllowedLocal {
+                FheExecuteOperand::EarlierStep {
                     producer_index: index - 1,
                 }
             };
@@ -3967,18 +4030,18 @@ impl EvalFixture {
                 lhs,
                 rhs: self.amount_operand(&mut dictionary),
                 output_fhe_type: 5,
-                output: FheExecuteOutput::AllowedLocal,
+                output: FheExecuteOutput::Transient,
             });
         }
         steps.push(FheExecuteStep::Ternary {
             op: FheTernaryOpCode::IfThenElse,
-            control: FheExecuteOperand::AllowedLocal { producer_index: 0 },
-            if_true: FheExecuteOperand::AllowedLocal {
+            control: FheExecuteOperand::EarlierStep { producer_index: 0 },
+            if_true: FheExecuteOperand::EarlierStep {
                 producer_index: last_transient_index,
             },
             if_false: self.balance_operand(&mut dictionary),
             output_fhe_type: 5,
-            output: FheExecuteOutput::AllowedPersistent {
+            output: FheExecuteOutput::StoredValue {
                 output_encrypted_value_index: 2,
                 output_account_authority_index: None,
                 output_domain_index: dictionary.intern_key(self.authority),
@@ -4016,7 +4079,7 @@ impl EvalFixture {
         ix
     }
 
-    /// A transient-only batch (single step, `AllowedLocal` output) — produces no persistent
+    /// A transient-only batch (single step, `Transient` output) — produces no persistent
     /// output; the block-cap identity comes solely from the `compute_subject` signer.
     fn transient_only_instruction(
         &self,
@@ -4029,7 +4092,7 @@ impl EvalFixture {
             lhs: self.balance_operand(&mut dictionary),
             rhs: self.amount_operand(&mut dictionary),
             output_fhe_type: 0,
-            output: FheExecuteOutput::AllowedLocal,
+            output: FheExecuteOutput::Transient,
         }];
         let mut ix = anchor_ix(
             self.program_id,
@@ -4057,7 +4120,7 @@ impl EvalFixture {
         ix
     }
 
-    /// A persist-nothing batch: a single `TrivialEncrypt` with an `AllowedLocal` output — no
+    /// A persist-nothing batch: a single `TrivialEncrypt` with a `Transient` output — no
     /// persistent input, no verified input, no persistent output. Binds no metering identity, so under a
     /// finite cap `compute_subject` would be a free variable (fhevm-internal#1744). No
     /// remaining accounts.
@@ -4086,7 +4149,7 @@ impl EvalFixture {
                     steps: vec![FheExecuteStep::TrivialEncrypt {
                         plaintext: [7; 32],
                         fhe_type: 5,
-                        output: FheExecuteOutput::AllowedLocal,
+                        output: FheExecuteOutput::Transient,
                     }],
                 },
             },
@@ -4108,7 +4171,7 @@ impl EvalFixture {
         let steps = vec![FheExecuteStep::TrivialEncrypt {
             plaintext: [7; 32],
             fhe_type: 5,
-            output: FheExecuteOutput::AllowedPersistent {
+            output: FheExecuteOutput::StoredValue {
                 output_encrypted_value_index: 0,
                 output_account_authority_index: None,
                 output_domain_index: dictionary.intern_key(self.authority),
@@ -4169,22 +4232,22 @@ impl EvalFixture {
                 lhs: self.balance_operand(&mut dictionary),
                 rhs: self.amount_operand(&mut dictionary),
                 output_fhe_type: 0,
-                output: FheExecuteOutput::AllowedLocal,
+                output: FheExecuteOutput::Transient,
             },
             FheExecuteStep::Binary {
                 op: FheBinaryOpCode::Sub,
                 lhs: self.balance_operand(&mut dictionary),
                 rhs: self.amount_operand(&mut dictionary),
                 output_fhe_type: 5,
-                output: FheExecuteOutput::AllowedLocal,
+                output: FheExecuteOutput::Transient,
             },
             FheExecuteStep::Ternary {
                 op: FheTernaryOpCode::IfThenElse,
-                control: FheExecuteOperand::AllowedLocal { producer_index: 0 },
-                if_true: FheExecuteOperand::AllowedLocal { producer_index: 1 },
+                control: FheExecuteOperand::EarlierStep { producer_index: 0 },
+                if_true: FheExecuteOperand::EarlierStep { producer_index: 1 },
                 if_false: self.balance_operand(&mut dictionary),
                 output_fhe_type: 5,
-                output: FheExecuteOutput::AllowedPersistent {
+                output: FheExecuteOutput::StoredValue {
                     output_encrypted_value_index: 2,
                     output_account_authority_index: None,
                     output_domain_index: dictionary.intern_key(app_authority),
@@ -4809,7 +4872,7 @@ fn mollusk_fhe_execute_extra_remaining_account_still_rejected_with_block_cap() {
 
 #[test]
 fn mollusk_fhe_execute_transient_only_batch_is_metered_via_compute_subject() {
-    // A transient-only batch (all AllowedLocal outputs) creates no persistent ACL record, so
+    // A transient-only batch (all Transient outputs) creates no persistent ACL record, so
     // nothing welds `account_authority` on-chain — but the metering identity is the signed
     // `compute_subject`, independent of the batch's output shape, so the batch is still charged
     // in full. (A batch with no persistent output would otherwise escape a per-output-authority
@@ -4841,7 +4904,7 @@ fn mollusk_fhe_execute_rejects_rand_batch_without_persistent_output() {
             dictionary: Vec::new(),
             steps: vec![FheExecuteStep::Rand {
                 fhe_type: 5,
-                output: FheExecuteOutput::AllowedLocal,
+                output: FheExecuteOutput::Transient,
             }],
         },
     }

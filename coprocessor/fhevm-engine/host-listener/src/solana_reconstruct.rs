@@ -236,10 +236,10 @@ fn resolve_operand(
     produced: &[[u8; 32]],
 ) -> Option<[u8; 32]> {
     match operand {
-        FheExecuteOperand::AllowedPersistent { handle_index, .. } => {
+        FheExecuteOperand::StoredValue { handle_index, .. } => {
             dictionary.get(usize::from(*handle_index)).copied()
         }
-        FheExecuteOperand::AllowedLocal { producer_index } => {
+        FheExecuteOperand::EarlierStep { producer_index } => {
             produced.get(usize::from(*producer_index)).copied()
         }
         // The verified-input handle is known from the operand itself; the
@@ -568,11 +568,11 @@ pub fn fhe_execute_step_persistent_output_index(
     step: &FheExecuteStep,
 ) -> Option<u8> {
     match fhe_execute_step_output(step) {
-        FheExecuteOutput::AllowedPersistent {
+        FheExecuteOutput::StoredValue {
             output_encrypted_value_index,
             ..
         } => Some(*output_encrypted_value_index),
-        FheExecuteOutput::AllowedLocal => None,
+        FheExecuteOutput::Transient => None,
     }
 }
 
@@ -581,10 +581,10 @@ pub fn fhe_execute_step_previous_handle(
     step: &FheExecuteStep,
 ) -> Option<[u8; 32]> {
     match fhe_execute_step_output(step) {
-        FheExecuteOutput::AllowedPersistent { previous_state, .. } => {
+        FheExecuteOutput::StoredValue { previous_state, .. } => {
             previous_state.as_ref().map(|previous| previous.handle)
         }
-        FheExecuteOutput::AllowedLocal => None,
+        FheExecuteOutput::Transient => None,
     }
 }
 
@@ -850,14 +850,14 @@ mod tests {
                 FheExecuteStep::TrivialEncrypt {
                     plaintext: [7u8; 32],
                     fhe_type: 5,
-                    output: FheExecuteOutput::AllowedLocal,
+                    output: FheExecuteOutput::Transient,
                 },
                 FheExecuteStep::Binary {
                     op: FheBinaryOpCode::Add,
-                    lhs: FheExecuteOperand::AllowedLocal { producer_index: 0 },
+                    lhs: FheExecuteOperand::EarlierStep { producer_index: 0 },
                     rhs: FheExecuteOperand::Scalar { value_index: 0 },
                     output_fhe_type: 5,
-                    output: FheExecuteOutput::AllowedLocal,
+                    output: FheExecuteOutput::Transient,
                 },
             ],
         };
@@ -920,14 +920,14 @@ mod tests {
                 FheExecuteStep::TrivialEncrypt {
                     plaintext: [7u8; 32],
                     fhe_type: 5,
-                    output: FheExecuteOutput::AllowedLocal,
+                    output: FheExecuteOutput::Transient,
                 },
                 FheExecuteStep::Binary {
                     op: FheBinaryOpCode::Add,
-                    lhs: FheExecuteOperand::AllowedLocal { producer_index: 0 },
+                    lhs: FheExecuteOperand::EarlierStep { producer_index: 0 },
                     rhs: FheExecuteOperand::Scalar { value_index: 0 },
                     output_fhe_type: 5,
-                    output: FheExecuteOutput::AllowedLocal,
+                    output: FheExecuteOutput::Transient,
                 },
             ],
         };
@@ -969,7 +969,7 @@ mod tests {
             steps: vec![FheExecuteStep::RandBounded {
                 upper_bound,
                 fhe_type: 5,
-                output: FheExecuteOutput::AllowedPersistent {
+                output: FheExecuteOutput::StoredValue {
                     output_encrypted_value_index: 0,
                     output_account_authority_index: None,
                     output_domain_index: 0,
@@ -1025,52 +1025,50 @@ mod tests {
                 FheExecuteStep::TrivialEncrypt {
                     plaintext: [9u8; 32],
                     fhe_type: 5,
-                    output: FheExecuteOutput::AllowedLocal,
+                    output: FheExecuteOutput::Transient,
                 },
                 FheExecuteStep::TrivialEncrypt {
                     plaintext: [4u8; 32],
                     fhe_type: 5,
-                    output: FheExecuteOutput::AllowedLocal,
+                    output: FheExecuteOutput::Transient,
                 },
                 FheExecuteStep::Unary {
                     op: FheUnaryOpCode::Neg,
-                    operand: FheExecuteOperand::AllowedLocal {
+                    operand: FheExecuteOperand::EarlierStep {
                         producer_index: 0,
                     },
                     output_fhe_type: 5,
-                    output: FheExecuteOutput::AllowedLocal,
+                    output: FheExecuteOutput::Transient,
                 },
                 FheExecuteStep::Sum {
                     operands: vec![
-                        FheExecuteOperand::AllowedLocal { producer_index: 0 },
-                        FheExecuteOperand::AllowedLocal { producer_index: 1 },
+                        FheExecuteOperand::EarlierStep { producer_index: 0 },
+                        FheExecuteOperand::EarlierStep { producer_index: 1 },
                     ],
                     fhe_type: 5,
-                    output: FheExecuteOutput::AllowedLocal,
+                    output: FheExecuteOutput::Transient,
                 },
                 FheExecuteStep::IsIn {
-                    value: FheExecuteOperand::AllowedLocal {
-                        producer_index: 0,
-                    },
-                    set: vec![FheExecuteOperand::AllowedLocal {
+                    value: FheExecuteOperand::EarlierStep { producer_index: 0 },
+                    set: vec![FheExecuteOperand::EarlierStep {
                         producer_index: 1,
                     }],
                     fhe_type: 5,
-                    output: FheExecuteOutput::AllowedLocal,
+                    output: FheExecuteOutput::Transient,
                 },
                 FheExecuteStep::MulDiv {
-                    factor1: FheExecuteOperand::AllowedLocal {
+                    factor1: FheExecuteOperand::EarlierStep {
                         producer_index: 0,
                     },
                     factor2: FheExecuteOperand::Scalar { value_index: 0 },
                     divisor: [3u8; 32],
                     output_fhe_type: 5,
-                    output: FheExecuteOutput::AllowedLocal,
+                    output: FheExecuteOutput::Transient,
                 },
                 FheExecuteStep::RandBounded {
                     upper_bound: ub,
                     fhe_type: 5,
-                    output: FheExecuteOutput::AllowedPersistent {
+                    output: FheExecuteOutput::StoredValue {
                         output_encrypted_value_index: 0,
                         output_account_authority_index: None,
                         output_domain_index: 1,
@@ -1179,10 +1177,10 @@ mod tests {
             dictionary: vec![[2u8; 32]],
             steps: vec![FheExecuteStep::Binary {
                 op: FheBinaryOpCode::Add,
-                lhs: FheExecuteOperand::AllowedLocal { producer_index: 5 },
+                lhs: FheExecuteOperand::EarlierStep { producer_index: 5 },
                 rhs: FheExecuteOperand::Scalar { value_index: 0 },
                 output_fhe_type: 5,
-                output: FheExecuteOutput::AllowedLocal,
+                output: FheExecuteOutput::Transient,
             }],
         };
         assert!(reconstruct_fhe_execute_records(

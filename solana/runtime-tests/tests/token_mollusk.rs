@@ -207,7 +207,7 @@ impl CleartextLedger {
             .expect("the token program must emit a valid cleartext FHE batch");
         let mut persistent_outputs = 0;
         for (step, value) in eval_args[0].steps.iter().zip(outputs) {
-            let host::FheExecuteOutput::AllowedPersistent {
+            let host::FheExecuteOutput::StoredValue {
                 output_domain_index,
                 output_account_index,
                 output_label_index,

@@ -28,31 +28,31 @@ pub(crate) fn validate_rand_steps_anchor_persistent_output(steps: &[FheExecuteSt
         matches!(
             step,
             FheExecuteStep::Binary {
-                output: FheExecuteOutput::AllowedPersistent { .. },
+                output: FheExecuteOutput::StoredValue { .. },
                 ..
             } | FheExecuteStep::Ternary {
-                output: FheExecuteOutput::AllowedPersistent { .. },
+                output: FheExecuteOutput::StoredValue { .. },
                 ..
             } | FheExecuteStep::TrivialEncrypt {
-                output: FheExecuteOutput::AllowedPersistent { .. },
+                output: FheExecuteOutput::StoredValue { .. },
                 ..
             } | FheExecuteStep::Rand {
-                output: FheExecuteOutput::AllowedPersistent { .. },
+                output: FheExecuteOutput::StoredValue { .. },
                 ..
             } | FheExecuteStep::Unary {
-                output: FheExecuteOutput::AllowedPersistent { .. },
+                output: FheExecuteOutput::StoredValue { .. },
                 ..
             } | FheExecuteStep::RandBounded {
-                output: FheExecuteOutput::AllowedPersistent { .. },
+                output: FheExecuteOutput::StoredValue { .. },
                 ..
             } | FheExecuteStep::Sum {
-                output: FheExecuteOutput::AllowedPersistent { .. },
+                output: FheExecuteOutput::StoredValue { .. },
                 ..
             } | FheExecuteStep::IsIn {
-                output: FheExecuteOutput::AllowedPersistent { .. },
+                output: FheExecuteOutput::StoredValue { .. },
                 ..
             } | FheExecuteStep::MulDiv {
-                output: FheExecuteOutput::AllowedPersistent { .. },
+                output: FheExecuteOutput::StoredValue { .. },
                 ..
             }
         )
@@ -227,14 +227,14 @@ fn validate_lowered_encrypted_operand(
     used_dictionary: &mut [bool],
 ) -> Result<()> {
     match operand {
-        FheExecuteOperand::AllowedPersistent {
+        FheExecuteOperand::StoredValue {
             handle_index,
             encrypted_value_index,
         } => {
             mark_lowered_dictionary_entry(used_dictionary, *handle_index)?;
             mark_lowered_account(used_accounts, *encrypted_value_index)?;
         }
-        FheExecuteOperand::AllowedLocal { producer_index } => {
+        FheExecuteOperand::EarlierStep { producer_index } => {
             if usize::from(*producer_index) >= step_index {
                 return Err(BatchBuildError::InvalidTransientReference);
             }
@@ -253,8 +253,8 @@ fn validate_lowered_output(
     used_dictionary: &mut [bool],
 ) -> Result<()> {
     match output {
-        FheExecuteOutput::AllowedLocal => {}
-        FheExecuteOutput::AllowedPersistent {
+        FheExecuteOutput::Transient => {}
+        FheExecuteOutput::StoredValue {
             output_encrypted_value_index,
             output_account_authority_index,
             output_domain_index,

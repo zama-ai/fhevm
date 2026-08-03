@@ -107,7 +107,7 @@ pub enum ZamaHostError {
     InvalidFheExecuteAccount,
     /// An fhe_execute instruction referenced a transient output that was not produced earlier.
     #[msg("fhe_execute transient operand is missing")]
-    FheExecuteAllowedLocalMissing,
+    FheExecuteEarlierStepMissing,
     /// An fhe_execute instruction produced the same transient handle twice.
     #[msg("fhe_execute output handle is duplicated")]
     FheExecuteDuplicateHandle,
@@ -285,8 +285,8 @@ pub enum ZamaHostError {
     /// `FheExecuteArgs::account_count` does not match the actual remaining-accounts length.
     #[msg("fhe_execute declared account count mismatch")]
     FheExecuteAccountCountMismatch,
-    /// An `AllowedPersistent` operand referenced an account written by an earlier step.
-    /// In-batch dependencies must use `AllowedLocal`.
+    /// A `StoredValue` operand referenced an account written by an earlier step.
+    /// In-batch dependencies must use `EarlierStep`.
     #[msg("fhe_execute persistent operand was written earlier in the batch")]
     FheExecutePersistentOperandWrittenEarlier,
     /// An interned dictionary entry was never referenced by any step; a batch must not

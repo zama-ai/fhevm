@@ -72,7 +72,7 @@ impl ClearValue {
 ///
 /// Arithmetic follows the canonical host/worker width and type rules. Random steps deliberately
 /// use a deterministic local PRNG: they are mock values, not predictions of TFHE's oblivious PRG.
-/// The returned values are ordered by step index, matching `AllowedLocal::producer_index`.
+/// The returned values are ordered by step index, matching `EarlierStep::producer_index`.
 /// This is not host preflight: output descriptors, account indices, attestations, and ACL checks
 /// are intentionally ignored.
 pub fn evaluate(
@@ -367,7 +367,7 @@ fn resolve_encrypted(
     produced: &[ClearValue],
 ) -> Result<ClearValue, String> {
     let (handle, value) = match operand {
-        FheExecuteOperand::AllowedPersistent { handle_index, .. } => {
+        FheExecuteOperand::StoredValue { handle_index, .. } => {
             let handle = resolve_pool_bytes(dictionary, *handle_index)?;
             (handle, inputs.get(&handle))
         }
@@ -375,7 +375,7 @@ fn resolve_encrypted(
             let handle = attestation.input_handle;
             (handle, inputs.get(&handle))
         }
-        FheExecuteOperand::AllowedLocal { producer_index } => {
+        FheExecuteOperand::EarlierStep { producer_index } => {
             return produced
                 .get(*producer_index as usize)
                 .cloned()

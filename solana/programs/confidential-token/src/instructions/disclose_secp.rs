@@ -23,7 +23,8 @@
 //! There is therefore no replay marker by design (contrast `redeem_burned_amount`, which guards
 //! a vault transfer with a per-handle `burn-redemption` marker PDA). An app that needs consume-once
 //! semantics (e.g. gating a one-time state transition on the reveal) tracks a settled flag in its own
-//! account, exactly as an EVM app tracks its decryption callback.
+//! account, exactly as an EVM app tracks its decryption callback. The rule this instruction is
+//! applying is stated once, at `zama_host::instructions::verify_public_decrypt` (INVARIANTS #24).
 
 use super::*;
 

@@ -42,7 +42,7 @@ pub struct BatchBuilder {
     pub(crate) produced_types: Vec<u8>,
     /// Latest producer for every persistent account written by this batch. A later
     /// persistent-shaped reference to the same account is lowered canonically as
-    /// `AllowedLocal`.
+    /// `EarlierStep`.
     pub(crate) persistent_producers: Vec<(anchor_lang::prelude::Pubkey, u8)>,
     pub(crate) remaining_accounts: Vec<BatchAccountMeta>,
     /// Interned 32-byte constant dictionary the lowered steps reference by `u8` index

@@ -1577,13 +1577,13 @@ mod fhe_execute_acl_tests {
             dictionary: vec![[3; 32], [1; 32], [8; 32], [9; 32], [10; 32]],
             steps: vec![FheExecuteStep::Binary {
                 op: PgmBinaryOpCode::Add,
-                lhs: FheExecuteOperand::AllowedPersistent {
+                lhs: FheExecuteOperand::StoredValue {
                     handle_index: 0,
                     encrypted_value_index: 0,
                 },
                 rhs: FheExecuteOperand::Scalar { value_index: 1 },
                 output_fhe_type: 5,
-                output: FheExecuteOutput::AllowedPersistent {
+                output: FheExecuteOutput::StoredValue {
                     output_encrypted_value_index: 0,
                     output_account_authority_index: None,
                     output_domain_index: 2,
@@ -1650,7 +1650,7 @@ mod fhe_execute_acl_tests {
             steps: vec![FheExecuteStep::TrivialEncrypt {
                 plaintext: [7; 32],
                 fhe_type: 5,
-                output: FheExecuteOutput::AllowedPersistent {
+                output: FheExecuteOutput::StoredValue {
                     output_encrypted_value_index: 0,
                     output_account_authority_index: None,
                     output_domain_index: 0,

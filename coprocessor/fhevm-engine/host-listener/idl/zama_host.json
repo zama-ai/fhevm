@@ -1715,7 +1715,7 @@
     },
     {
       "code": 6032,
-      "name": "FheExecuteAllowedLocalMissing",
+      "name": "FheExecuteEarlierStepMissing",
       "msg": "fhe_execute transient operand is missing"
     },
     {
@@ -2220,7 +2220,7 @@
           {
             "name": "steps",
             "docs": [
-              "Ordered step list. Each `AllowedLocal` operand may only reference an output",
+              "Ordered step list. Each `EarlierStep` operand may only reference an output",
               "produced by an earlier index in this vector."
             ],
             "type": {
@@ -2243,7 +2243,7 @@
         "kind": "enum",
         "variants": [
           {
-            "name": "AllowedPersistent",
+            "name": "StoredValue",
             "fields": [
               {
                 "name": "handle_index",
@@ -2262,7 +2262,7 @@
             ]
           },
           {
-            "name": "AllowedLocal",
+            "name": "EarlierStep",
             "fields": [
               {
                 "name": "producer_index",
@@ -2313,10 +2313,10 @@
         "kind": "enum",
         "variants": [
           {
-            "name": "AllowedLocal"
+            "name": "Transient"
           },
           {
-            "name": "AllowedPersistent",
+            "name": "StoredValue",
             "fields": [
               {
                 "name": "output_encrypted_value_index",

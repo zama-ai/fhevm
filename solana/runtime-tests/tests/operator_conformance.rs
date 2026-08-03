@@ -803,7 +803,7 @@ mod operand_sources {
             binary(FheBinaryOpCode::Add, persistent(input), scalar(be(1)), 2),
             FheExecuteStep::Unary {
                 op: FheUnaryOpCode::Not,
-                operand: FheExecuteOperand::AllowedLocal { producer_index: 0 },
+                operand: FheExecuteOperand::EarlierStep { producer_index: 0 },
                 output_fhe_type: 2,
                 output: local_output(),
             },
@@ -825,7 +825,7 @@ mod operand_sources {
         expect_error(
             args(vec![FheExecuteStep::Unary {
                 op: FheUnaryOpCode::Not,
-                operand: FheExecuteOperand::AllowedLocal { producer_index },
+                operand: FheExecuteOperand::EarlierStep { producer_index },
                 output_fhe_type: 2,
                 output: local_output(),
             }]),
@@ -1062,7 +1062,7 @@ fn args(steps: Vec<FheExecuteStep>) -> FheExecuteArgs {
 }
 
 fn local_output() -> FheExecuteOutput {
-    FheExecuteOutput::AllowedLocal
+    FheExecuteOutput::Transient
 }
 
 fn scalar(value: [u8; 32]) -> FheExecuteOperand {
@@ -1072,7 +1072,7 @@ fn scalar(value: [u8; 32]) -> FheExecuteOperand {
 }
 
 fn persistent(handle: Handle) -> FheExecuteOperand {
-    FheExecuteOperand::AllowedPersistent {
+    FheExecuteOperand::StoredValue {
         handle_index: intern(handle),
         encrypted_value_index: 0,
     }

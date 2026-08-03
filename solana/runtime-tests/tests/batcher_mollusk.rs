@@ -199,7 +199,7 @@ impl CleartextLedger {
             let outputs = evaluate_cleartext(args, &self.values)
                 .expect("every emitted FHE batch must be valid in cleartext");
             for (step, value) in args.steps.iter().zip(outputs) {
-                let host::FheExecuteOutput::AllowedPersistent {
+                let host::FheExecuteOutput::StoredValue {
                     output_domain_index,
                     output_account_index,
                     output_label_index,

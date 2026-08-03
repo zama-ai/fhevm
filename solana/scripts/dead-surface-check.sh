@@ -269,6 +269,12 @@ check_alias 'rotation — an updated handle is updated' all '' \
   -iE '(balance|handle|value|amount|output|receipt)s? rotat|rotat[a-z]* the (confidential )?(balance|handle|value|amount)|(balance|handle|value|amount) rotation'
 # value account <- lineage account.
 check_alias 'lineage — renamed to value account' all '' -iE '\blineage\b'
+# The operand/output variants were renamed to say what the slot is rather than why it was admitted:
+# `AllowedPersistent` -> `StoredValue`, and `AllowedLocal` -> `EarlierStep` (operand) or `Transient`
+# (output). Both spellings are gone from the wire names, the IDL, and the prose, so a bare match is
+# the rule. The English word "allowed" is untouched — subject membership really is an allow-list.
+check_alias 'AllowedPersistent / AllowedLocal — renamed to StoredValue / EarlierStep / Transient' all \
+  '' -E '\bAllowedPersistent\b|\bAllowedLocal\b'
 # decoded op records <- `Fhe*Event` structs. The two load-bearing compute events keep their names
 # (they are emitted); the nine per-op value types must not come back as events.
 check_alias 'Fhe*Event — the per-op value types are decoded op records' all \

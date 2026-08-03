@@ -153,7 +153,7 @@ fn collect_persistent_anchor_bytes(
 ) -> Result<Vec<u8>> {
     let mut anchor_bytes = Vec::with_capacity(args.steps.len() * 73);
     for step in &args.steps {
-        if let FheExecuteOutput::AllowedPersistent {
+        if let FheExecuteOutput::StoredValue {
             output_encrypted_value_index,
             ..
         } = step_output(step)
@@ -326,8 +326,8 @@ fn accept_batch_output<'info>(
     );
 
     let created_public_output = match output {
-        FheExecuteOutput::AllowedLocal => None,
-        FheExecuteOutput::AllowedPersistent {
+        FheExecuteOutput::Transient => None,
+        FheExecuteOutput::StoredValue {
             output_encrypted_value_index,
             output_account_authority_index,
             output_domain_index,
@@ -693,7 +693,7 @@ mod tests {
             dictionary: Vec::new(),
             steps: vec![FheExecuteStep::Rand {
                 fhe_type: 5,
-                output: FheExecuteOutput::AllowedPersistent {
+                output: FheExecuteOutput::StoredValue {
                     output_encrypted_value_index: 0,
                     output_account_authority_index: None,
                     output_domain_index: 0,

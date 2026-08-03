@@ -200,8 +200,8 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         return Ok(());
     }
 
-    // FHE_EXECUTE_SUM drives a multi-step fhe_execute: two TrivialEncrypt steps (AllowedLocal) followed
-    // by a Sum step (AllowedPersistent). SUM_A/SUM_B select the euint64 addends (defaults 10/20);
+    // FHE_EXECUTE_SUM drives a multi-step fhe_execute: two TrivialEncrypt steps (Transient) followed
+    // by a Sum step (StoredValue). SUM_A/SUM_B select the euint64 addends (defaults 10/20);
     // SUM_ALLOW makes the result publicly decryptable. Expected cleartext: SUM_A + SUM_B.
     if std::env::var("FHE_EXECUTE_SUM").is_ok() {
         fhe_execute_sum(&host, &payer, host_config)?;
@@ -209,7 +209,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     }
 
     // FHE_EXECUTE_IS_IN drives a multi-step fhe_execute: TrivialEncrypt steps for value and set elements
-    // (all AllowedLocal) followed by an IsIn step (AllowedPersistent → ebool). ISIN_VALUE selects the
+    // (all Transient) followed by an IsIn step (StoredValue → ebool). ISIN_VALUE selects the
     // euint64 value (default 42); the set is hardcoded as [10, 42, 100]. ISIN_ALLOW makes the
     // result publicly decryptable. Expected cleartext: 1 (true) when ISIN_VALUE is in the set.
     if std::env::var("FHE_EXECUTE_IS_IN").is_ok() {
@@ -217,8 +217,8 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         return Ok(());
     }
 
-    // FHE_EXECUTE_MUL_DIV drives a multi-step fhe_execute: TrivialEncrypt(factor1, AllowedLocal) then
-    // MulDiv(factor1, scalar_factor2, divisor, AllowedPersistent). MULDIV_A/MULDIV_B/MULDIV_D select
+    // FHE_EXECUTE_MUL_DIV drives a multi-step fhe_execute: TrivialEncrypt(factor1, Transient) then
+    // MulDiv(factor1, scalar_factor2, divisor, StoredValue). MULDIV_A/MULDIV_B/MULDIV_D select
     // the euint64 operands (defaults 6/7/3); MULDIV_ALLOW makes the result publicly decryptable.
     // Expected cleartext: MULDIV_A * MULDIV_B / MULDIV_D (integer division).
     if std::env::var("FHE_EXECUTE_MUL_DIV").is_ok() {
@@ -528,7 +528,7 @@ fn persistent_output(
     let previous_state = existing_value_account_state(program, encrypted_value)?.map(
         |(handle, subjects)| zama_host::PreviousState { handle, subjects },
     );
-    Ok(zama_host::FheExecuteOutput::AllowedPersistent {
+    Ok(zama_host::FheExecuteOutput::StoredValue {
         output_encrypted_value_index: index,
         output_account_authority_index: None,
         output_domain_index: dictionary.intern_key(domain),
@@ -1790,7 +1790,7 @@ fn is_comparison_op(op: zama_host::FheBinaryOpCode) -> bool {
     )
 }
 
-/// Creates a persistent operand (TrivialEncrypt → AllowedPersistent, `user` subject).
+/// Creates a persistent operand (TrivialEncrypt → StoredValue, `user` subject).
 /// Returns (encrypted_value, current_handle).
 fn create_persistent_public_decrypt_operand(
     host: &Program<Rc<Keypair>>,
@@ -1930,7 +1930,7 @@ fn fhe_execute_binary(
             operand_label_b,
         )?;
         operand_values.push(encrypted_value_b);
-        zama_host::FheExecuteOperand::AllowedPersistent {
+        zama_host::FheExecuteOperand::StoredValue {
             handle_index: dictionary.intern(handle_b),
             encrypted_value_index: 1,
         }
@@ -1939,7 +1939,7 @@ fn fhe_execute_binary(
     let output_index = operand_values.len() as u8;
     let steps = vec![zama_host::FheExecuteStep::Binary {
         op,
-        lhs: zama_host::FheExecuteOperand::AllowedPersistent {
+        lhs: zama_host::FheExecuteOperand::StoredValue {
             handle_index: dictionary.intern(handle_a),
             encrypted_value_index: 0,
         },
@@ -2011,7 +2011,7 @@ fn fhe_execute_binary(
     Ok(())
 }
 
-/// Generic unary fhe_execute: TrivialEncrypt(operand) → Unary(op, AllowedPersistent).
+/// Generic unary fhe_execute: TrivialEncrypt(operand) → Unary(op, StoredValue).
 /// Env: UNARY_OP (Neg/Not/Cast), UNARY_A, UNARY_IN_FHE_TYPE (default 2=euint8),
 /// UNARY_OUT_FHE_TYPE (default = UNARY_IN_FHE_TYPE), UNARY_ALLOW.
 fn fhe_execute_unary(
@@ -2049,7 +2049,7 @@ fn fhe_execute_unary(
     let subjects = vec![payer.pubkey()];
 
     // Encrypted operand as a persistent public-decrypt handle (propagates to output; an
-    // `AllowedLocal` operand here would fail `FheExecuteAllowedLocalMissing`, error code 6032).
+    // `EarlierStep` operand here would fail `FheExecuteEarlierStepMissing`, error code 6032).
     let mut operand_label_a = [0x0bu8; 32];
     operand_label_a[1] = op.as_u8();
     operand_label_a[2] = in_fhe_type;
@@ -2069,7 +2069,7 @@ fn fhe_execute_unary(
         account_count: 2,
         steps: vec![zama_host::FheExecuteStep::Unary {
             op,
-            operand: zama_host::FheExecuteOperand::AllowedPersistent {
+            operand: zama_host::FheExecuteOperand::StoredValue {
                 handle_index: dictionary.intern(handle_a),
                 encrypted_value_index: 0,
             },
@@ -2128,7 +2128,7 @@ fn fhe_execute_unary(
 }
 
 /// Ternary fhe_execute: TrivialEncrypt(ctrl as ebool) + TrivialEncrypt(if_true) +
-/// TrivialEncrypt(if_false) → Ternary(IfThenElse, AllowedPersistent).
+/// TrivialEncrypt(if_false) → Ternary(IfThenElse, StoredValue).
 /// Env: TERNARY_CTRL (0|1, default 1), TERNARY_TRUE/TERNARY_FALSE (u64 defaults 42/99),
 /// TERNARY_FHE_TYPE (default 5=euint64), TERNARY_ALLOW.
 fn fhe_execute_ternary(
@@ -2208,15 +2208,15 @@ fn fhe_execute_ternary(
         account_count: 4,
         steps: vec![zama_host::FheExecuteStep::Ternary {
             op: zama_host::FheTernaryOpCode::IfThenElse,
-            control: zama_host::FheExecuteOperand::AllowedPersistent {
+            control: zama_host::FheExecuteOperand::StoredValue {
                 handle_index: dictionary.intern(h_ctrl),
                 encrypted_value_index: 0,
             },
-            if_true: zama_host::FheExecuteOperand::AllowedPersistent {
+            if_true: zama_host::FheExecuteOperand::StoredValue {
                 handle_index: dictionary.intern(h_true),
                 encrypted_value_index: 1,
             },
-            if_false: zama_host::FheExecuteOperand::AllowedPersistent {
+            if_false: zama_host::FheExecuteOperand::StoredValue {
                 handle_index: dictionary.intern(h_false),
                 encrypted_value_index: 2,
             },
@@ -2276,7 +2276,7 @@ fn fhe_execute_ternary(
     Ok(())
 }
 
-/// Bounded random fhe_execute: RandBounded(upper_bound, AllowedPersistent).
+/// Bounded random fhe_execute: RandBounded(upper_bound, StoredValue).
 /// Env: RAND_UPPER (u64 exclusive upper bound, default 100), RAND_FHE_TYPE (default 5=euint64),
 /// RAND_ALLOW. Expected: cleartext in [0, RAND_UPPER).
 fn fhe_execute_rand_bounded(
@@ -2364,7 +2364,7 @@ fn fhe_execute_rand_bounded(
     Ok(())
 }
 
-/// Multi-step fhe_execute Sum: two TrivialEncrypt(AllowedLocal) → Sum(AllowedPersistent).
+/// Multi-step fhe_execute Sum: two TrivialEncrypt(Transient) → Sum(StoredValue).
 /// SUM_A/SUM_B select the euint64 addends (defaults 10/20). Expected result: SUM_A + SUM_B.
 /// SUM_ALLOW marks the output publicly decryptable after the eval.
 fn fhe_execute_sum(
@@ -2413,11 +2413,11 @@ fn fhe_execute_sum(
         account_count: 3,
         steps: vec![zama_host::FheExecuteStep::Sum {
             operands: vec![
-                zama_host::FheExecuteOperand::AllowedPersistent {
+                zama_host::FheExecuteOperand::StoredValue {
                     handle_index: dictionary.intern(h_a),
                     encrypted_value_index: 0,
                 },
-                zama_host::FheExecuteOperand::AllowedPersistent {
+                zama_host::FheExecuteOperand::StoredValue {
                     handle_index: dictionary.intern(h_b),
                     encrypted_value_index: 1,
                 },
@@ -2477,8 +2477,8 @@ fn fhe_execute_sum(
     Ok(())
 }
 
-/// Multi-step fhe_execute IsIn: TrivialEncrypt(value) + TrivialEncrypt(set elements) (all AllowedLocal)
-/// → IsIn(AllowedPersistent → ebool). ISIN_VALUE selects the euint64 value (default 42); the set is
+/// Multi-step fhe_execute IsIn: TrivialEncrypt(value) + TrivialEncrypt(set elements) (all Transient)
+/// → IsIn(StoredValue → ebool). ISIN_VALUE selects the euint64 value (default 42); the set is
 /// hardcoded as [10, 42, 100]. ISIN_ALLOW marks the output publicly decryptable. Expected result:
 /// 1 (true) when ISIN_VALUE is in the set, 0 (false) otherwise.
 fn fhe_execute_is_in(
@@ -2535,7 +2535,7 @@ fn fhe_execute_is_in(
             elem_fhe_type,
             label,
         )?;
-        set_operands.push(zama_host::FheExecuteOperand::AllowedPersistent {
+        set_operands.push(zama_host::FheExecuteOperand::StoredValue {
             handle_index: dictionary.intern(handle),
             encrypted_value_index: operand_values.len() as u8,
         });
@@ -2544,7 +2544,7 @@ fn fhe_execute_is_in(
     let output_index = operand_values.len() as u8;
 
     let steps = vec![zama_host::FheExecuteStep::IsIn {
-        value: zama_host::FheExecuteOperand::AllowedPersistent {
+        value: zama_host::FheExecuteOperand::StoredValue {
             handle_index: dictionary.intern(h_value),
             encrypted_value_index: 0,
         },
@@ -2611,8 +2611,8 @@ fn fhe_execute_is_in(
     Ok(())
 }
 
-/// Multi-step fhe_execute MulDiv: TrivialEncrypt(factor1, AllowedLocal) → MulDiv(factor1, scalar_b,
-/// divisor, AllowedPersistent). MULDIV_A/MULDIV_B/MULDIV_D select the euint64 operands (defaults
+/// Multi-step fhe_execute MulDiv: TrivialEncrypt(factor1, Transient) → MulDiv(factor1, scalar_b,
+/// divisor, StoredValue). MULDIV_A/MULDIV_B/MULDIV_D select the euint64 operands (defaults
 /// 6/7/3). MULDIV_ALLOW marks the output publicly decryptable. Expected result: A * B / D.
 fn fhe_execute_mul_div(
     host: &Program<Rc<Keypair>>,
@@ -2661,7 +2661,7 @@ fn fhe_execute_mul_div(
     let args = zama_host::FheExecuteArgs {
         account_count: 2,
         steps: vec![zama_host::FheExecuteStep::MulDiv {
-            factor1: zama_host::FheExecuteOperand::AllowedPersistent {
+            factor1: zama_host::FheExecuteOperand::StoredValue {
                 handle_index: dictionary.intern(h_a),
                 encrypted_value_index: 0,
             },

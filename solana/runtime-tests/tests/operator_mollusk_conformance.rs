@@ -38,7 +38,7 @@ fn encrypted_encrypted_add_executes_then_reads_cleartext_outcome() {
         lhs: lhs.clone(),
         rhs: rhs.clone(),
         output_fhe_type: 5,
-        output: FheExecuteOutput::AllowedLocal,
+        output: FheExecuteOutput::Transient,
     });
 
     outcome.assert_u64(5, 42);
@@ -61,7 +61,7 @@ fn encrypted_scalar_add_executes_then_reads_cleartext_outcome() {
         lhs: lhs.clone(),
         rhs: rhs.clone(),
         output_fhe_type: 5,
-        output: FheExecuteOutput::AllowedLocal,
+        output: FheExecuteOutput::Transient,
     });
 
     outcome.assert_u64(5, 42);
@@ -84,7 +84,7 @@ fn comparison_executes_then_reads_bool_outcome() {
         lhs: lhs.clone(),
         rhs: rhs.clone(),
         output_fhe_type: 0,
-        output: FheExecuteOutput::AllowedLocal,
+        output: FheExecuteOutput::Transient,
     });
 
     outcome.assert_u64(0, 1);
@@ -105,7 +105,7 @@ fn cast_executes_then_reads_widened_outcome() {
         op: FheUnaryOpCode::Cast,
         operand: operand.clone(),
         output_fhe_type: 5,
-        output: FheExecuteOutput::AllowedLocal,
+        output: FheExecuteOutput::Transient,
     });
 
     outcome.assert_u64(5, 255);
@@ -124,7 +124,7 @@ fn unary_not_executes_then_reads_width_bounded_outcome() {
         op: FheUnaryOpCode::Not,
         operand: operand.clone(),
         output_fhe_type: 2,
-        output: FheExecuteOutput::AllowedLocal,
+        output: FheExecuteOutput::Transient,
     });
 
     outcome.assert_u64(2, 0b1111_0101);
@@ -146,7 +146,7 @@ fn membership_executes_then_reads_present_outcome() {
         value: value.clone(),
         set: set.clone(),
         fhe_type: 5,
-        output: FheExecuteOutput::AllowedLocal,
+        output: FheExecuteOutput::Transient,
     });
 
     outcome.assert_u64(0, 1);
@@ -161,7 +161,7 @@ fn membership_executes_then_reads_present_outcome() {
 fn random_executes_then_binds_seed_and_type() {
     let outcome = EvalFlow::new().execute(FheExecuteStep::Rand {
         fhe_type: 5,
-        output: FheExecuteOutput::AllowedLocal,
+        output: FheExecuteOutput::Transient,
     });
 
     assert_eq!(outcome.only_cleartext().fhe_type, 5);
@@ -176,7 +176,7 @@ fn bounded_random_executes_then_binds_bound_into_result_handle() {
     let outcome = EvalFlow::new().execute(FheExecuteStep::RandBounded {
         upper_bound: be(16),
         fhe_type: 5,
-        output: FheExecuteOutput::AllowedLocal,
+        output: FheExecuteOutput::Transient,
     });
 
     assert!(outcome.only_u64() < 16);
@@ -199,7 +199,7 @@ fn mismatched_encrypted_operand_types_are_rejected() {
             lhs,
             rhs,
             output_fhe_type: 5,
-            output: FheExecuteOutput::AllowedLocal,
+            output: FheExecuteOutput::Transient,
         },
         host::errors::ZamaHostError::BinaryOperandTypeMismatch,
     );
@@ -217,7 +217,7 @@ fn system_owned_encrypted_operand_is_rejected() {
             lhs,
             rhs: scalar(be(2)),
             output_fhe_type: 5,
-            output: FheExecuteOutput::AllowedLocal,
+            output: FheExecuteOutput::Transient,
         },
         host::errors::ZamaHostError::EncryptedValueAccountInvalid,
     );
@@ -316,7 +316,7 @@ impl EvalFlow {
             .push(AccountMeta::new_readonly(address, false));
         self.accounts
             .push((address, encrypted_value_account(&value)));
-        FheExecuteOperand::AllowedPersistent {
+        FheExecuteOperand::StoredValue {
             handle_index: intern(handle),
             encrypted_value_index,
         }
@@ -339,7 +339,7 @@ impl EvalFlow {
         self.remaining
             .push(AccountMeta::new_readonly(address, false));
         self.accounts.push((address, empty_system_account()));
-        FheExecuteOutput::AllowedPersistent {
+        FheExecuteOutput::StoredValue {
             output_encrypted_value_index,
             output_account_authority_index: None,
             output_domain_index: intern(self.authority.to_bytes()),
@@ -364,7 +364,7 @@ impl EvalFlow {
         self.remaining.push(AccountMeta::new(address, false));
         self.accounts.push((address, empty_system_account()));
         (
-            FheExecuteOutput::AllowedPersistent {
+            FheExecuteOutput::StoredValue {
                 output_encrypted_value_index,
                 output_account_authority_index: None,
                 output_domain_index: intern(self.authority.to_bytes()),
@@ -634,7 +634,7 @@ fn handle_for_chain(seed: u8, fhe_type: u8) -> [u8; 32] {
 
 fn operand_handle(operand: &FheExecuteOperand) -> [u8; 32] {
     match operand {
-        FheExecuteOperand::AllowedPersistent { handle_index, .. } => pool_entry(*handle_index),
+        FheExecuteOperand::StoredValue { handle_index, .. } => pool_entry(*handle_index),
         FheExecuteOperand::Scalar { value_index } => pool_entry(*value_index),
         _ => panic!("representative flow uses only persistent or scalar operands"),
     }
