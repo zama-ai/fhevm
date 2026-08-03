@@ -429,13 +429,13 @@
       "name": "confidential_burn_from_value",
       "docs": [
         "Burns an encrypted amount taken from an existing on-chain `EncryptedValue` (a computed or",
-        "received handle) instead of a freshly attested client-side encryption \u2014 the burn-side analog",
-        "of `confidential_transfer_from_value` (fhevm-internal#1755). The batcher uses this to burn a",
+        "received handle) instead of a freshly attested client-side encryption — the burn-side analog",
+        "of `confidential_transfer_from_value` (fhevm-internal#1755). The batcher uses this to burn an",
         "execution's computed encrypted total, then requests the KMS burn certificate. The signing owner",
         "must be in the amount value's subject set (the token spend gate); the amount is spent",
         "read-only, and the burned-amount output is created publicly decryptable exactly as in",
         "`confidential_burn`, so `redeem_burned_amount` consumes it unchanged. `burn_id` seeds the",
-        "pending-burn lane (batcher passes `batch.key().to_bytes()`)."
+        "pending-burn lane (batcher passes the settlement-round account pubkey bytes)."
       ],
       "discriminator": [
         28,
@@ -553,7 +553,7 @@
           "docs": [
             "as in [`ConfidentialBurn`]; created on the account's first burn, replaced in place",
             "thereafter to each burn's own delta (DD-036 / Vector 2). This is the same output shape",
-            "`redeem_burned_amount` later consumes \u2014 only where the amount comes from differs."
+            "`redeem_burned_amount` later consumes — only where the amount comes from differs."
           ],
           "writable": true
         },
@@ -569,7 +569,7 @@
           "name": "amount_value",
           "docs": [
             "The existing encrypted amount to burn: a computed or received `euint64` handle. Read-only",
-            "persistent operand \u2014 never replaced, never consumed. Its address is the canonical PDA of its",
+            "persistent operand — never replaced, never consumed. Its address is the canonical PDA of its",
             "own `(domain, authority, label)` fields, so an encrypted value account from any app",
             "may be passed here once its owner has granted the mint's compute subject via",
             "`allow_token_account_subjects` (host `allow_subjects` signed as the token-account PDA)."
@@ -871,7 +871,7 @@
         {
           "name": "hcu_block_meter",
           "docs": [
-            "canonical `[\"hcu-block-meter\", compute_signer]` PDA. The per-mint HCU block meter \u2014 supplied",
+            "canonical `[\"hcu-block-meter\", compute_signer]` PDA. The per-mint HCU block meter — supplied",
             "by an untrusted mint under a metering-band cap, omitted otherwise."
           ],
           "writable": true,
@@ -880,7 +880,7 @@
         {
           "name": "hcu_trusted_app_record",
           "docs": [
-            "trust witness \u2014 present + valid bypasses the cap; absent means untrusted (metered)."
+            "trust witness — present + valid bypasses the cap; absent means untrusted (metered)."
           ],
           "optional": true
         },
@@ -906,7 +906,7 @@
       "name": "confidential_transfer_from_value",
       "docs": [
         "Transfers an encrypted amount taken from an existing on-chain `EncryptedValue` (a computed or",
-        "received handle) instead of a freshly attested client-side encryption \u2014 the path that lets a",
+        "received handle) instead of a freshly attested client-side encryption — the path that lets a",
         "contract be the sender of a computed amount (fhevm-internal#1680). The signing owner must be",
         "in the amount value's subject set (the token spend gate); the amount is spent read-only."
       ],
@@ -1006,7 +1006,7 @@
           "name": "amount_value",
           "docs": [
             "The existing encrypted amount to spend: a computed or received `euint64` handle. Read-only",
-            "persistent operand \u2014 never replaced, never consumed. Its address is the canonical PDA of its",
+            "persistent operand — never replaced, never consumed. Its address is the canonical PDA of its",
             "own `(domain, authority, label)` fields, so an encrypted value account from any app",
             "may be passed here once its owner has granted the mint's compute subject via",
             "`allow_token_account_subjects` (host `allow_subjects` signed as the token-account PDA)."
@@ -1095,7 +1095,7 @@
         {
           "name": "hcu_block_meter",
           "docs": [
-            "canonical `[\"hcu-block-meter\", compute_signer]` PDA. The per-mint HCU block meter \u2014 supplied",
+            "canonical `[\"hcu-block-meter\", compute_signer]` PDA. The per-mint HCU block meter — supplied",
             "by an untrusted mint under a metering-band cap, omitted otherwise."
           ],
           "writable": true,
@@ -1104,7 +1104,7 @@
         {
           "name": "hcu_trusted_app_record",
           "docs": [
-            "trust witness \u2014 present + valid bypasses the cap; absent means untrusted (metered)."
+            "trust witness — present + valid bypasses the cap; absent means untrusted (metered)."
           ],
           "optional": true
         },
@@ -1122,7 +1122,7 @@
       "docs": [
         "Consumes a KMS public-decrypt certificate through the stateless host verifier and emits a",
         "token-scoped disclosed event. See `instructions::disclose_secp` for the act-once semantics",
-        "(idempotent by design \u2014 no on-chain replay marker)."
+        "(idempotent by design — no on-chain replay marker)."
       ],
       "discriminator": [
         151,
@@ -1692,7 +1692,7 @@
       "docs": [
         "Recovers a tip-only pending burn by FHE-crediting the burned amount back onto confidential",
         "balance and encrypted total supply, then closing the `PendingBurn` lane. Requires the burned",
-        "handle to still be the shared `burned_amount` EncryptedValue's `current_handle`; superseded",
+        "handle to still be the shared `burned_amount` EncryptedValue's `current_handle`; historical",
         "burns must claim via `redeem_burned_amount` instead. See `instructions::recover_pending_burn`."
       ],
       "discriminator": [
@@ -2788,6 +2788,19 @@
       ]
     },
     {
+      "name": "RandomAmountCreatedEvent",
+      "discriminator": [
+        197,
+        125,
+        32,
+        173,
+        115,
+        70,
+        150,
+        4
+      ]
+    },
+    {
       "name": "TotalSupplyHandleUpdatedEvent",
       "discriminator": [
         140,
@@ -3396,7 +3409,7 @@
         "Confidential token account state.",
         "",
         "The balance's current handle and access encrypted value account live in the",
-        "`EncryptedValue` account at `balance_encrypted_value`, not here \u2014 addressing",
+        "`EncryptedValue` account at `balance_encrypted_value`, not here — addressing",
         "is stable per token account, so no nonce/sequence bookkeeping is needed."
       ],
       "type": {
@@ -3509,7 +3522,7 @@
       "name": "CoprocessorInputAttestation",
       "docs": [
         "A coprocessor input attestation carried inline by a [`FheExecuteOperand::VerifiedInput`], re-verified",
-        "in-execution (no account, no PDA) \u2014 the instruction-local analog of EVM `allowTransient(input, contract)`."
+        "in-execution (no account, no PDA) — the instruction-local analog of EVM `allowTransient(input, contract)`."
       ],
       "type": {
         "kind": "struct",
@@ -3562,7 +3575,7 @@
           {
             "name": "contract_address",
             "docs": [
-              "Attested contract identity \u2014 the input's ACL domain key (bytes32)."
+              "Attested contract identity — the input's ACL domain key (bytes32)."
             ],
             "type": {
               "array": [
@@ -3609,7 +3622,7 @@
         "",
         "PDA: `[ENCRYPTED_VALUE_SEED, encrypted_value_id]` where `encrypted_value_id =",
         "zama_solana_acl::derive_encrypted_value_id(domain, encrypted_value_account_authority, label)`.",
-        "The account name must stay exactly `EncryptedValue` \u2014 Anchor derives the",
+        "The account name must stay exactly `EncryptedValue` — Anchor derives the",
         "discriminator from the type name, and it must match",
         "`zama_solana_acl::encrypted_value_discriminator()`."
       ],
@@ -3628,11 +3641,11 @@
             "docs": [
               "The account that controls this encrypted value: it must sign to create it, update its",
               "handle, or replace its subject list. Enforced by address rather than by comparing this",
-              "field \u2014 the signer must equal the authority declared in the execution",
+              "field — the signer must equal the authority declared in the execution",
               "(`assert_output_acl_metadata`) and the account written to must be the PDA rederived from",
               "that declared triple, which is what ties the signer to the stored value on update. For a",
               "token balance this is the token account itself. It is not the sole controller of the",
-              "audience \u2014 any current subject may also add or remove subjects through `allow_subjects` /",
+              "audience — any current subject may also add or remove subjects through `allow_subjects` /",
               "`remove_subject`."
             ],
             "type": "pubkey"
@@ -3709,7 +3722,7 @@
         "",
         "This is the single app-level disclosure event after the `DisclosureRequest` lifecycle was",
         "dissolved (fhevm-internal#1704): it covers both former balance and amount disclosures. It carries",
-        "no request witness or `request_hash` \u2014 there is no per-request PDA anymore. The request side is",
+        "no request witness or `request_hash` — there is no per-request PDA anymore. The request side is",
         "the owner sealing a public-decrypt leaf via the host `make_handle_public` instruction directly."
       ],
       "type": {
@@ -3894,7 +3907,7 @@
             "docs": [
               "Per-app HCU budget per slot, enforced in `fhe_execute`. `u64::MAX` = unrestricted (the ship",
               "default; short-circuits, touching no meter); `0` = ban untrusted apps (trusted still",
-              "bypass) \u2014 the one knob where `0` is a real semantic; any other value is the metering band",
+              "bypass) — the one knob where `0` is a real semantic; any other value is the metering band",
               "(must be `>= max_hcu_per_tx` unless that is unlimited)."
             ],
             "type": "u64"

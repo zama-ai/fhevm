@@ -2600,7 +2600,6 @@ fn burn_redeem_mollusk() -> Mollusk {
     mollusk
 }
 
-
 fn burn_id_for(tag: u8) -> [u8; 32] {
     let mut id = [0u8; 32];
     id[0] = tag;
@@ -2625,8 +2624,7 @@ fn seed_pending_burn_in_context(
     burn_id: [u8; 32],
     burned_handle: [u8; 32],
 ) -> Pubkey {
-    let (address, bump) =
-        token::pending_burn_address(fixture.mint, fixture.token_account, burn_id);
+    let (address, bump) = token::pending_burn_address(fixture.mint, fixture.token_account, burn_id);
     let pending = token::PendingBurn {
         mint: fixture.mint,
         owner: fixture.owner,
@@ -2649,8 +2647,7 @@ fn prepare_empty_pending_burn(
     tag: u8,
 ) -> ([u8; 32], Pubkey) {
     let burn_id = burn_id_for(tag);
-    let pending_burn =
-        token::pending_burn_address(fixture.mint, fixture.token_account, burn_id).0;
+    let pending_burn = token::pending_burn_address(fixture.mint, fixture.token_account, burn_id).0;
     context
         .account_store
         .borrow_mut()
@@ -2965,8 +2962,7 @@ fn mollusk_redeem_historical_burned_handle_after_supersession_then_rejects_doubl
     let cleartext_amount = 500;
     let (signatures, extra_data) = kms_public_decrypt_cert(first_handle, cleartext_amount);
     let burn_id = burn_id_for(41);
-    let pending_burn =
-        seed_pending_burn_in_context(&context, &fixture, burn_id, first_handle);
+    let pending_burn = seed_pending_burn_in_context(&context, &fixture, burn_id, first_handle);
     context.process_and_validate_instruction(
         &redeem_burned_amount_ix(
             &fixture,
@@ -3031,8 +3027,7 @@ fn mollusk_redeem_rejects_foreign_public_decrypt_proof() {
     let cleartext_amount = 500;
     let (signatures, extra_data) = kms_public_decrypt_cert(first_handle, cleartext_amount);
     let burn_id = burn_id_for(41);
-    let pending_burn =
-        seed_pending_burn_in_context(&context, &fixture, burn_id, first_handle);
+    let pending_burn = seed_pending_burn_in_context(&context, &fixture, burn_id, first_handle);
     context.process_and_validate_instruction(
         &redeem_burned_amount_ix(
             &fixture,
@@ -3083,8 +3078,7 @@ fn mollusk_redeem_accepts_live_rotated_out_kms_context() {
     let (signatures, extra_data) =
         kms_public_decrypt_cert_for_context(first_handle, cleartext_amount, fixture.kms_context_id);
     let burn_id = burn_id_for(41);
-    let pending_burn =
-        seed_pending_burn_in_context(&context, &fixture, burn_id, first_handle);
+    let pending_burn = seed_pending_burn_in_context(&context, &fixture, burn_id, first_handle);
     context.process_and_validate_instruction(
         &redeem_burned_amount_ix(
             &fixture,
@@ -3133,8 +3127,7 @@ fn mollusk_redeem_rejects_destroyed_kms_context() {
     let (signatures, extra_data) =
         kms_public_decrypt_cert_for_context(first_handle, cleartext_amount, fixture.kms_context_id);
     let burn_id = burn_id_for(41);
-    let pending_burn =
-        seed_pending_burn_in_context(&context, &fixture, burn_id, first_handle);
+    let pending_burn = seed_pending_burn_in_context(&context, &fixture, burn_id, first_handle);
     context.process_and_validate_instruction(
         &redeem_burned_amount_ix(
             &fixture,
@@ -3175,8 +3168,7 @@ fn mollusk_redeem_rejects_destination_not_owned_by_signer() {
     let cleartext_amount = 500;
     let (signatures, extra_data) = kms_public_decrypt_cert(first_handle, cleartext_amount);
     let burn_id = burn_id_for(41);
-    let pending_burn =
-        seed_pending_burn_in_context(&context, &fixture, burn_id, first_handle);
+    let pending_burn = seed_pending_burn_in_context(&context, &fixture, burn_id, first_handle);
     context.process_and_validate_instruction(
         &redeem_burned_amount_ix(
             &fixture,
@@ -3226,8 +3218,7 @@ fn mollusk_redeem_rejects_denied_subject() {
     let cleartext_amount = 500;
     let (signatures, extra_data) = kms_public_decrypt_cert(first_handle, cleartext_amount);
     let burn_id = burn_id_for(41);
-    let pending_burn =
-        seed_pending_burn_in_context(&context, &fixture, burn_id, first_handle);
+    let pending_burn = seed_pending_burn_in_context(&context, &fixture, burn_id, first_handle);
     context.process_and_validate_instruction(
         &redeem_burned_amount_ix(
             &fixture,
@@ -3368,8 +3359,7 @@ fn mollusk_redeem_deny_enabled_missing_record_rejected() {
 
     let (signatures, extra_data) = kms_public_decrypt_cert(first_handle, 500);
     let burn_id = burn_id_for(41);
-    let pending_burn =
-        seed_pending_burn_in_context(&context, &fixture, burn_id, first_handle);
+    let pending_burn = seed_pending_burn_in_context(&context, &fixture, burn_id, first_handle);
     context.process_and_validate_instruction(
         &redeem_burned_amount_ix(
             &fixture,
@@ -3409,8 +3399,7 @@ fn mollusk_redeem_deny_disabled_unexpected_record_rejected() {
 
     let (signatures, extra_data) = kms_public_decrypt_cert(first_handle, 500);
     let burn_id = burn_id_for(41);
-    let pending_burn =
-        seed_pending_burn_in_context(&context, &fixture, burn_id, first_handle);
+    let pending_burn = seed_pending_burn_in_context(&context, &fixture, burn_id, first_handle);
     context.process_and_validate_instruction(
         &redeem_burned_amount_ix(
             &fixture,
@@ -3456,8 +3445,7 @@ fn mollusk_redeem_deny_wrong_subject_record_rejected() {
 
     let (signatures, extra_data) = kms_public_decrypt_cert(first_handle, 500);
     let burn_id = burn_id_for(41);
-    let pending_burn =
-        seed_pending_burn_in_context(&context, &fixture, burn_id, first_handle);
+    let pending_burn = seed_pending_burn_in_context(&context, &fixture, burn_id, first_handle);
     context.process_and_validate_instruction(
         &redeem_burned_amount_ix(
             &fixture,
@@ -3495,8 +3483,7 @@ fn mollusk_redeem_rejected_when_host_paused() {
 
     let (signatures, extra_data) = kms_public_decrypt_cert(first_handle, 500);
     let burn_id = burn_id_for(41);
-    let pending_burn =
-        seed_pending_burn_in_context(&context, &fixture, burn_id, first_handle);
+    let pending_burn = seed_pending_burn_in_context(&context, &fixture, burn_id, first_handle);
     context.process_and_validate_instruction(
         &redeem_burned_amount_ix(
             &fixture,
@@ -3535,8 +3522,7 @@ fn mollusk_redeem_rejects_wrong_value_account_label() {
 
     let (signatures, extra_data) = kms_public_decrypt_cert(first_handle, 500);
     let burn_id = burn_id_for(41);
-    let pending_burn =
-        seed_pending_burn_in_context(&context, &fixture, burn_id, first_handle);
+    let pending_burn = seed_pending_burn_in_context(&context, &fixture, burn_id, first_handle);
     // Substitute the balance encrypted value account (balance label) for the burned_amount encrypted value account.
     let mut ix = redeem_burned_amount_ix(
         &fixture,
@@ -3612,8 +3598,14 @@ fn mollusk_recover_pending_burn_credits_tip_balance() {
     cleartext.seed_amount(fixture.initial_total_supply, 5_000);
     cleartext.seed_amount(amount_handle, 250);
 
-    let burn =
-        confidential_burn_from_value_auto(&context, &fixture, fixture.owner, fixture.owner, amount_value, 41);
+    let burn = confidential_burn_from_value_auto(
+        &context,
+        &fixture,
+        fixture.owner,
+        fixture.owner,
+        amount_value,
+        41,
+    );
     let burn_result = context.process_and_validate_instruction(&burn, &[Check::success()]);
     cleartext.evaluate_fhe_cpi(&context, &burn_result);
     assert_eq!(cleartext.balance(&context, fixture.token_account), 750);
@@ -3623,15 +3615,12 @@ fn mollusk_recover_pending_burn_credits_tip_balance() {
     );
 
     let burn_id = burn_id_for(41);
-    let pending_burn =
-        token::pending_burn_address(fixture.mint, fixture.token_account, burn_id).0;
-    assert!(
-        context
-            .account_store
-            .borrow()
-            .get(&pending_burn)
-            .is_some_and(|account| account.owner == token::id() && !account.data.is_empty())
-    );
+    let pending_burn = token::pending_burn_address(fixture.mint, fixture.token_account, burn_id).0;
+    assert!(context
+        .account_store
+        .borrow()
+        .get(&pending_burn)
+        .is_some_and(|account| account.owner == token::id() && !account.data.is_empty()));
 
     let recover = recover_pending_burn_ix(&fixture, pending_burn);
     let recover_result = context.process_and_validate_instruction(&recover, &[Check::success()]);
@@ -3669,13 +3658,11 @@ fn mollusk_recover_pending_burn_rejects_historical_handle() {
         )],
     );
     // The historical (updated-past) lane remains open for KMS claim.
-    assert!(
-        context
-            .account_store
-            .borrow()
-            .get(&pending_burn_1)
-            .is_some_and(|account| account.owner == token::id() && !account.data.is_empty())
-    );
+    assert!(context
+        .account_store
+        .borrow()
+        .get(&pending_burn_1)
+        .is_some_and(|account| account.owner == token::id() && !account.data.is_empty()));
 }
 
 /// All-zero `burn_id` is rejected at burn open (reserved / invalid).
@@ -3695,8 +3682,7 @@ fn mollusk_confidential_burn_rejects_zero_burn_id() {
     let context = burn_redeem_mollusk().with_context(accounts);
 
     let burn_id = [0u8; 32];
-    let pending_burn =
-        token::pending_burn_address(fixture.mint, fixture.token_account, burn_id).0;
+    let pending_burn = token::pending_burn_address(fixture.mint, fixture.token_account, burn_id).0;
     context
         .account_store
         .borrow_mut()
@@ -3900,7 +3886,9 @@ fn mollusk_wrap_usdc_rejects_noncanonical_vault() {
     params.vault_usdc = bogus_vault;
     context.process_and_validate_instruction(
         &params.build(),
-        &[token_error(token::ConfidentialTokenError::VaultAccountMismatch)],
+        &[token_error(
+            token::ConfidentialTokenError::VaultAccountMismatch,
+        )],
     );
     assert_eq!(read_spl_amount(&context, user_usdc), 1_000);
 }
@@ -5248,8 +5236,14 @@ fn mollusk_burn_from_value_burns_existing_amount() {
     cleartext.seed_amount(fixture.initial_total_supply, 5_000);
     cleartext.seed_amount(amount_handle, 250);
 
-    let burn =
-        confidential_burn_from_value_auto(&context, &fixture, fixture.owner, fixture.owner, amount_value, 41);
+    let burn = confidential_burn_from_value_auto(
+        &context,
+        &fixture,
+        fixture.owner,
+        fixture.owner,
+        amount_value,
+        41,
+    );
     let result = context.process_and_validate_instruction(&burn, &[Check::success()]);
     let persistent_outputs = cleartext.evaluate_fhe_cpi(&context, &result);
 
@@ -5303,7 +5297,14 @@ fn mollusk_burn_from_value_whole_balance_alias() {
     cleartext.seed_amount(fixture.initial_total_supply, 5_000);
 
     // Amount aliased to the account's own balance encrypted value account: burn the whole balance.
-    let burn = confidential_burn_from_value_auto(&context, &fixture, fixture.owner, fixture.owner, fixture.balance_value, 41);
+    let burn = confidential_burn_from_value_auto(
+        &context,
+        &fixture,
+        fixture.owner,
+        fixture.owner,
+        fixture.balance_value,
+        41,
+    );
     let result = context.process_and_validate_instruction(&burn, &[Check::success()]);
     let persistent_outputs = cleartext.evaluate_fhe_cpi(&context, &result);
 
@@ -5345,8 +5346,14 @@ fn mollusk_burn_from_value_reburns_burned_amount_that_is_also_this_output() {
     cleartext.seed_amount(amount_handle, 250);
 
     // First burn (250) creates the burned_amount encrypted value account: balance 750, total_supply 4750, burned 250.
-    let first =
-        confidential_burn_from_value_auto(&context, &fixture, fixture.owner, fixture.owner, amount_value, 41);
+    let first = confidential_burn_from_value_auto(
+        &context,
+        &fixture,
+        fixture.owner,
+        fixture.owner,
+        amount_value,
+        41,
+    );
     let first_result = context.process_and_validate_instruction(&first, &[Check::success()]);
     cleartext.evaluate_fhe_cpi(&context, &first_result);
     let first_burned = read_encrypted_value(&context, fixture.burned_amount_value).current_handle;
@@ -5354,7 +5361,14 @@ fn mollusk_burn_from_value_reburns_burned_amount_that_is_also_this_output() {
 
     // Second burn spends the burned_amount encrypted value account itself as the amount — which is also this burn's
     // burned_amount output account (the alias the dedup must merge, not double-push).
-    let again = confidential_burn_from_value_auto(&context, &fixture, fixture.owner, fixture.owner, fixture.burned_amount_value, 42);
+    let again = confidential_burn_from_value_auto(
+        &context,
+        &fixture,
+        fixture.owner,
+        fixture.owner,
+        fixture.burned_amount_value,
+        42,
+    );
     let again_result = context.process_and_validate_instruction(&again, &[Check::success()]);
     let persistent_outputs = cleartext.evaluate_fhe_cpi(&context, &again_result);
 
@@ -5415,7 +5429,8 @@ fn mollusk_burn_from_value_pda_owner_via_invoke_signed() {
     cleartext.seed_amount(fixture.initial_total_supply, 5_000);
     cleartext.seed_amount(amount_handle, 400);
 
-    let burn = confidential_burn_from_value_auto(&context, &fixture, pda_owner, payer, amount_value, 41);
+    let burn =
+        confidential_burn_from_value_auto(&context, &fixture, pda_owner, payer, amount_value, 41);
     let result = context.process_and_validate_instruction(&burn, &[Check::success()]);
     cleartext.evaluate_fhe_cpi(&context, &result);
 
@@ -5452,8 +5467,14 @@ fn mollusk_burn_from_value_burned_handle_redeems() {
     cleartext.seed_amount(fixture.initial_balance, 1_000);
     cleartext.seed_amount(fixture.initial_total_supply, 5_000);
     cleartext.seed_amount(amount_handle, 500);
-    let burn =
-        confidential_burn_from_value_auto(&context, &fixture, fixture.owner, fixture.owner, amount_value, 41);
+    let burn = confidential_burn_from_value_auto(
+        &context,
+        &fixture,
+        fixture.owner,
+        fixture.owner,
+        amount_value,
+        41,
+    );
     let burn_result = context.process_and_validate_instruction(&burn, &[Check::success()]);
     cleartext.evaluate_fhe_cpi(&context, &burn_result);
     let burned_handle = read_encrypted_value(&context, fixture.burned_amount_value).current_handle;
@@ -5463,8 +5484,7 @@ fn mollusk_burn_from_value_burned_handle_redeems() {
     let (signatures, extra_data) = kms_public_decrypt_cert(burned_handle, cleartext_amount);
     let proof = single_burn_public_decrypt_proof(&fixture, burned_handle);
     let burn_id = burn_id_for(41);
-    let pending_burn =
-        seed_pending_burn_in_context(&context, &fixture, burn_id, burned_handle);
+    let pending_burn = seed_pending_burn_in_context(&context, &fixture, burn_id, burned_handle);
     context.process_and_validate_instruction(
         &redeem_burned_amount_ix(
             &fixture,
@@ -5510,8 +5530,14 @@ fn mollusk_burn_from_value_rejects_non_subject_signer() {
     );
     let context = burn_redeem_mollusk().with_context(accounts);
 
-    let burn =
-        confidential_burn_from_value_auto(&context, &fixture, fixture.owner, fixture.owner, amount_value, 41);
+    let burn = confidential_burn_from_value_auto(
+        &context,
+        &fixture,
+        fixture.owner,
+        fixture.owner,
+        amount_value,
+        41,
+    );
     context.process_and_validate_instruction(
         &burn,
         &[token_error(
@@ -5544,8 +5570,14 @@ fn mollusk_burn_from_value_rejects_non_euint64_amount() {
     );
     let context = burn_redeem_mollusk().with_context(accounts);
 
-    let burn =
-        confidential_burn_from_value_auto(&context, &fixture, fixture.owner, fixture.owner, amount_value, 41);
+    let burn = confidential_burn_from_value_auto(
+        &context,
+        &fixture,
+        fixture.owner,
+        fixture.owner,
+        amount_value,
+        41,
+    );
     context.process_and_validate_instruction(
         &burn,
         &[token_error(
@@ -5574,7 +5606,14 @@ fn mollusk_burn_from_value_rejects_owner_not_token_account_owner() {
     );
     let context = burn_redeem_mollusk().with_context(accounts);
 
-    let burn = confidential_burn_from_value_auto(&context, &fixture, wrong_owner, wrong_owner, amount_value, 41);
+    let burn = confidential_burn_from_value_auto(
+        &context,
+        &fixture,
+        wrong_owner,
+        wrong_owner,
+        amount_value,
+        41,
+    );
     context.process_and_validate_instruction(
         &burn,
         &[token_error(token::ConfidentialTokenError::OwnerMismatch)],
@@ -5602,8 +5641,14 @@ fn mollusk_burn_from_value_cross_app_requires_compute_subject_grant() {
     );
     let context = burn_redeem_mollusk().with_context(accounts);
 
-    let burn =
-        confidential_burn_from_value_auto(&context, &fixture, fixture.owner, fixture.owner, amount_value, 60);
+    let burn = confidential_burn_from_value_auto(
+        &context,
+        &fixture,
+        fixture.owner,
+        fixture.owner,
+        amount_value,
+        60,
+    );
     // Without the grant, the host rejects the persistent operand at its compute-read check.
     context.process_and_validate_instruction(
         &burn,
@@ -5627,8 +5672,14 @@ fn mollusk_burn_from_value_cross_app_requires_compute_subject_grant() {
     cleartext.seed_amount(fixture.initial_balance, 1_000);
     cleartext.seed_amount(fixture.initial_total_supply, 5_000);
     cleartext.seed_amount(amount_handle, 300);
-    let burn_again =
-        confidential_burn_from_value_auto(&context, &fixture, fixture.owner, fixture.owner, amount_value, 60);
+    let burn_again = confidential_burn_from_value_auto(
+        &context,
+        &fixture,
+        fixture.owner,
+        fixture.owner,
+        amount_value,
+        60,
+    );
     let result = context.process_and_validate_instruction(&burn_again, &[Check::success()]);
     cleartext.evaluate_fhe_cpi(&context, &result);
     assert_eq!(cleartext.balance(&context, fixture.token_account), 700);
@@ -5642,8 +5693,7 @@ fn burn_from_value_instruction_is_smaller_than_attested_arm() {
     let fixture = BurnRedeemFixture::new();
     let amount_handle = handle_for_chain(70, BALANCE_FHE_TYPE);
     let burn_id = burn_id_for(70);
-    let pending_burn =
-        token::pending_burn_address(fixture.mint, fixture.token_account, burn_id).0;
+    let pending_burn = token::pending_burn_address(fixture.mint, fixture.token_account, burn_id).0;
     let attested = confidential_burn_ix(
         &fixture,
         amount_attestation_for(amount_handle, fixture.owner, fixture.compute_signer),
@@ -5684,8 +5734,14 @@ fn cost_snapshot_confidential_burn_from_value() {
         &[fixture.owner, fixture.compute_signer],
     );
     let context = burn_redeem_mollusk().with_context(accounts);
-    let burn =
-        confidential_burn_from_value_auto(&context, &fixture, fixture.owner, fixture.owner, amount_value, 41);
+    let burn = confidential_burn_from_value_auto(
+        &context,
+        &fixture,
+        fixture.owner,
+        fixture.owner,
+        amount_value,
+        41,
+    );
 
     let result = context.process_and_validate_instruction(&burn, &[Check::success()]);
 

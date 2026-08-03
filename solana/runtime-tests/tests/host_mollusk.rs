@@ -2086,8 +2086,13 @@ fn mollusk_paused_state_blocks_acl_update_and_eval_output() {
         handle_for_chain(55, 5),
         &[owner],
     );
-    let allow_ix =
-        allow_subjects_ix(authority, authority, allow_address, host_config, vec![other]);
+    let allow_ix = allow_subjects_ix(
+        authority,
+        authority,
+        allow_address,
+        host_config,
+        vec![other],
+    );
     let accounts = vec![
         (system_program::ID, system_program_account()),
         (authority, funded_system_account()),
