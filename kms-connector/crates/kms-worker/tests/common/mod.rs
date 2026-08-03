@@ -4,7 +4,6 @@ use alloy::{
     providers::{Provider, mock::Asserter},
     rpc::types::Transaction,
     sol_types::{SolCall, SolValue},
-    transports::http::reqwest,
 };
 use connector_utils::tests::{
     rand::rand_address,
@@ -18,7 +17,7 @@ use fhevm_gateway_bindings::{
 };
 use fhevm_host_bindings::acl::ACL::ACLInstance;
 use kms_worker::core::{
-    Config, CtAttestationConfig, DbEventPicker, DbKmsResponsePublisher, KmsWorker,
+    Config, DbEventPicker, DbKmsResponsePublisher, KmsWorker,
     event_processor::{
         CiphertextManager, DbContextManager, DbEventProcessor, DecryptionProcessor,
         KMSGenerationProcessor, KmsClient, ProtocolConfigProcessor,
@@ -52,15 +51,8 @@ pub async fn init_kms_worker<P>(
 where
     P: Provider + Clone + 'static,
 {
-    // The 24h refresh interval (see `testing_ct_attestation_config`) means the refresh task
-    // never fires during a test, so a throwaway token is fine here.
-    let ciphertext_manager = CiphertextManager::connect(
-        provider.clone(),
-        reqwest::Client::new(),
-        &config,
-        CancellationToken::new(),
-    )
-    .await?;
+    let ciphertext_manager =
+        CiphertextManager::connect(provider.clone(), &config, CancellationToken::new()).await?;
 
     let kms_client = KmsClient::connect(&config).await?;
     let event_picker = DbEventPicker::connect(db.clone(), &config).await?;
@@ -88,12 +80,8 @@ where
     Ok(kms_worker)
 }
 
-pub fn testing_ct_attestation_config() -> CtAttestationConfig {
-    CtAttestationConfig {
-        registry_refresh: Duration::from_hours(24), // Avoid refreshing the registry during test
-        ..Default::default()
-    }
-}
+/// Registry refresh interval used by the tests: long enough that the refresh task never fires.
+pub const TEST_COPRO_REGISTRY_REFRESH: Duration = Duration::from_hours(24);
 
 pub fn create_mock_user_decryption_request_tx(
     tx_hash: FixedBytes<32>,

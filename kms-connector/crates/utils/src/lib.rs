@@ -7,5 +7,5 @@ pub mod signal;
 pub mod tasks;
 pub mod types;
 
-#[cfg(feature = "tests")]
+#[cfg(any(test, feature = "tests"))]
 pub mod tests;
