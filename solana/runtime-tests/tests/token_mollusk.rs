@@ -174,7 +174,7 @@ impl CleartextLedger {
             .insert(handle, TypedClearValue::from_u64(BALANCE_FHE_TYPE, value));
     }
 
-    /// Applies the exact FHE batch invoked by the token program and associates each persistent
+    /// Applies the exact FHE execution invoked by the token program and associates each persistent
     /// result with the handle persisted in its canonical `EncryptedValue` account.
     fn evaluate_fhe_cpi(
         &mut self,
@@ -204,7 +204,7 @@ impl CleartextLedger {
         );
 
         let outputs = evaluate_cleartext(&eval_args[0], &self.values)
-            .expect("the token program must emit a valid cleartext FHE batch");
+            .expect("the token program must emit a valid cleartext FHE execution");
         let mut persistent_outputs = 0;
         for (step, value) in eval_args[0].steps.iter().zip(outputs) {
             let host::FheExecuteOutput::StoredValue {
@@ -501,7 +501,7 @@ fn coprocessor_signing_key_n(seed: u8) -> k256::ecdsa::SigningKey {
 /// Builds a coprocessor-signed `fromExternal` attestation over `amount_handle`, binding it to
 /// (`user`, `contract`), signed by the default single coprocessor key. The token program checks
 /// `user == transfer authority` and `contract == mint compute-signer PDA`; the host re-verifies
-/// the signature(s) in-batch.
+/// the signature(s) in-execution.
 fn amount_attestation_for(
     amount_handle: [u8; 32],
     user: Pubkey,
@@ -3985,7 +3985,7 @@ fn mollusk_disclose_secp_rejects_cleartext_wider_than_u64() {
 // on the fixtures ported here.
 // ===========================================================================
 
-/// Exact HCU cost of the combined transfer batch (`execute_transfer_batch`): `Ge` at ebool
+/// Exact HCU cost of the combined transfer execution (`compute_transfer_handles`): `Ge` at ebool
 /// (21_000) + debit `Sub` at euint64 (38_000) + `IfThenElse` at euint64 (45_000) + transferred
 /// `Sub` at euint64 (38_000) + balance-binding scalar `Add` at euint64 (33_250) + credit `Add`
 /// at euint64 (38_000). The `VerifiedInput` amount is an operand, not a step, so it adds no HCU.
@@ -4069,9 +4069,9 @@ fn mollusk_confidential_transfer_block_cap_ban_is_enforced_through_cpi() {
 fn mollusk_confidential_transfer_metering_band_charges_meter_through_cpi() {
     // The Some(meter) CPI shape — the production account set once the cap drops below
     // u64::MAX. With a metering-band cap and the meter threaded through ConfidentialTransfer, the
-    // transfer must succeed and the meter must be lazy-created and charged with exactly the batch's
+    // transfer must succeed and the meter must be lazy-created and charged with exactly the execution's
     // HCU, proving the optional accounts survive the token -> zama-fhe -> fhe_execute CPI encoding end
-    // to end. The metering identity is the batch's `compute_subject` — here the mint's
+    // to end. The metering identity is the execution's `compute_subject` — here the mint's
     // ["fhe-compute", mint] compute-signer PDA — one budget per mint, NOT per sender token account,
     // and with no separate HCU authority account.
     let fixture = TokenFixture::new();
@@ -4106,7 +4106,7 @@ fn mollusk_confidential_transfer_metering_band_charges_meter_through_cpi() {
     let alice_balance = read_encrypted_value(&context, fixture.alice_balance_value);
     assert_ne!(alice_balance.current_handle, fixture.alice_initial);
     // The meter was lazy-created through the CPI, keyed on the mint's compute signer, and
-    // charged exactly the transfer batch's HCU at the current slot.
+    // charged exactly the transfer execution's HCU at the current slot.
     let meter = read_hcu_block_meter(&context, meter_pda).expect("meter created through CPI");
     assert_eq!(meter.app, fixture.compute_signer);
     assert_eq!(meter.used_hcu, TRANSFER_BATCH_HCU);
@@ -4438,7 +4438,7 @@ fn mollusk_transfer_from_value_rejects_non_euint64_amount() {
 }
 
 /// Spending the entire balance: the amount encrypted value account is the sender's own balance value, so
-/// `amount_value` aliases the `from_balance` output account. The batch merges them into one
+/// `amount_value` aliases the `from_balance` output account. The execution merges them into one
 /// account slot, and the transfer debits the whole balance without tripping duplicate-account
 /// resolution.
 #[test]
@@ -4471,7 +4471,7 @@ fn mollusk_transfer_from_value_spends_full_balance_with_balance_value_account_as
 
 /// Re-sending a received amount: the sender spends their own `transferred_amount` encrypted value account, which is
 /// also this transfer's `transferred_amount` output account. `amount_value` aliases an output the
-/// batch writes, and the merged account slot lets the transfer settle.
+/// execution writes, and the merged account slot lets the transfer settle.
 #[test]
 fn mollusk_transfer_from_value_resends_transferred_amount_that_is_also_this_output() {
     let fixture = TokenFixture::new();
@@ -4813,7 +4813,7 @@ fn mollusk_burn_from_value_burns_existing_amount() {
 
 /// Whole-balance alias regression (the #3238 aliasing class): burning the entire balance uses the
 /// account's own balance encrypted value account AS the amount, so `amount_value` aliases the `balance` output. The
-/// batch merges them into one slot, and the dedup skips pushing the amount a second time, so the
+/// execution merges them into one slot, and the dedup skips pushing the amount a second time, so the
 /// burn settles without tripping duplicate-account resolution.
 #[test]
 fn mollusk_burn_from_value_whole_balance_alias() {
@@ -4849,7 +4849,7 @@ fn mollusk_burn_from_value_whole_balance_alias() {
 
 /// Re-burning the burned-amount encrypted value account (the second alias branch): the second burn spends the
 /// `burned_amount` encrypted value account itself as the amount, so `amount_value` aliases the `burned_amount` output
-/// this batch writes. The batch merges the aliased slot (read at the old handle, replaced to
+/// this execution writes. The execution merges the aliased slot (read at the old handle, replaced to
 /// the new delta), and the dedup skips pushing the amount a second time — the `amount == burned_amount
 /// encrypted value account` branch. Mirrors `mollusk_transfer_from_value_resends_transferred_amount_that_is_also_this_output`.
 #[test]
@@ -5167,7 +5167,7 @@ fn mollusk_burn_from_value_cross_app_requires_compute_subject_grant() {
 }
 
 /// The from-value burn carries no 190-byte attestation, so its instruction data is strictly SMALLER
-/// than the fresh-attested burn's — the measured wire-size win for a contract-driven batch burn.
+/// than the fresh-attested burn's — the measured wire-size win for a contract-driven execution burn.
 #[test]
 fn burn_from_value_instruction_is_smaller_than_attested_arm() {
     let fixture = BurnRedeemFixture::new();

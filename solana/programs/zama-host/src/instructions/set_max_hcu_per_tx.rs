@@ -1,8 +1,8 @@
 //! Sets the per-`fhe_execute` total HCU limit (mirrors EVM `setMaxHCUPerTx`).
 //!
 //! Naming note: the field is `max_hcu_per_tx` to match EVM's `setMaxHCUPerTx`, but on Solana the
-//! limit is enforced per `fhe_execute` batch, which can be smaller than a whole transaction (a tx may
-//! contain several batches). The EVM-aligned name is intentional; the scope difference is by design.
+//! limit is enforced per `fhe_execute` execution, which can be smaller than a whole transaction (a tx may
+//! contain several executions). The EVM-aligned name is intentional; the scope difference is by design.
 
 use anchor_lang::prelude::*;
 
@@ -18,8 +18,8 @@ use super::set_host_pause::HostAdmin;
 /// - Preserves the `max_hcu_per_tx >= max_hcu_depth_per_tx` ordering, with `u64::MAX` = unlimited
 ///   (`check_hcu_ordering`).
 /// - Preserves the block-cap ordering from the other side: a metering-band
-///   `hcu_block_cap_per_app` must stay at or above the new total, so raising the per-batch
-///   limit cannot silently make a single legal batch exceed the block cap
+///   `hcu_block_cap_per_app` must stay at or above the new total, so raising the per-execution
+///   limit cannot silently make a single legal execution exceed the block cap
 ///   (`check_block_cap_ordering`).
 /// - Advances `updated_slot` and emits the config-updated event carrying the new limits.
 pub fn set_max_hcu_per_tx(ctx: Context<HostAdmin>, value: u64) -> Result<()> {

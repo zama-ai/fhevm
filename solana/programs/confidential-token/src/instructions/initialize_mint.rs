@@ -64,22 +64,22 @@ pub fn initialize_mint<'info>(ctx: Context<'info, InitializeMint<'info>>) -> Res
         encrypted_value_id(mint_domain, total_supply_authority, total_supply_label()),
         fhe::PersistentAudience::compute_only(compute_signer),
     )?;
-    let batch = zama_fhe::Batch::build(
-        zama_fhe::BatchAppAuthority::new(total_supply_authority),
+    let execution = zama_fhe::FheExecution::build(
+        zama_fhe::ExecutionAppAuthority::new(total_supply_authority),
         |builder| {
             builder.trivial_encrypt_u64(0, total_supply_output.output())?;
             Ok(())
         },
     )
-    .map_err(invalid_batch)?;
+    .map_err(invalid_execution)?;
     let compute_authority = fhe::ComputeAuthority::for_mint(
         &ctx.accounts.compute_signer,
         mint_key,
         ctx.bumps.compute_signer,
     )?;
     let total_supply_authority_bump = total_supply_authority_address(mint_key).1;
-    let batch_accounts = fhe::BatchAccountSet::for_batch(
-        &batch,
+    let execution_accounts = fhe::ExecutionAccountSet::for_execution(
+        &execution,
         [total_supply_output.account_info()],
         [fhe::OutputAuthority::total_supply(
             &ctx.accounts.total_supply_authority,
@@ -107,8 +107,8 @@ pub fn initialize_mint<'info>(ctx: Context<'info, InitializeMint<'info>>) -> Res
                 .as_ref()
                 .map(|account| account.to_account_info()),
         },
-        accounts: &batch_accounts,
-        batch,
+        accounts: &execution_accounts,
+        execution,
     })?;
     let total_supply_handle = total_supply_output.handle()?;
     let mint = &mut ctx.accounts.mint;

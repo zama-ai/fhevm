@@ -20,7 +20,7 @@ pub(super) fn emit_public_outputs_produced<'info>(
     Ok(())
 }
 
-pub(super) fn emit_batch_random_seeds<'info>(
+pub(super) fn emit_execution_random_seeds<'info>(
     ctx: &Context<'info, FheExecute<'info>>,
     seeds: Vec<FheExecuteRandomSeed>,
 ) -> Result<()> {
@@ -85,7 +85,7 @@ mod tests {
 
     #[test]
     fn maximum_batch_has_one_signed_readonly_event_authority_and_fits_cpi_data() {
-        let outputs = (0..MAX_FHE_BATCH_OPS)
+        let outputs = (0..MAX_FHE_EXECUTION_STEPS)
             .map(|index| ProducedPublicOutput {
                 step_index: index as u16,
                 encrypted_value: Pubkey::new_unique(),
@@ -104,8 +104,8 @@ mod tests {
         assert!(!instruction.accounts[0].is_writable);
         // 21 bytes of framing (ix tag + event discriminator + version + vec length) plus
         // 66 bytes per record (u16 step index + encrypted value account pubkey + output handle);
-        // one batch stays far below the 10,240-byte CPI instruction-data cap (DD-038).
-        assert_eq!(instruction.data.len(), 21 + MAX_FHE_BATCH_OPS * 66);
+        // one execution stays far below the 10,240-byte CPI instruction-data cap (DD-038).
+        assert_eq!(instruction.data.len(), 21 + MAX_FHE_EXECUTION_STEPS * 66);
         assert_eq!(instruction.data.len(), 2_133);
     }
 }

@@ -1,4 +1,4 @@
-//! Evaluates ordered instruction-local FHE batches.
+//! Evaluates ordered instruction-local FHE executions.
 //!
 //! Three signers cover three distinct authorities, and they are only sometimes the same key:
 //! `payer` funds rent for persistent output ACL records; `compute_subject` is the identity that
@@ -31,11 +31,11 @@ mod preflight;
 mod walk;
 
 use account_table::EvalAccountTable;
-use event_transport::{emit_batch_random_seeds, emit_public_outputs_produced};
-use preflight::preflight_batch;
-use walk::{walk_batch, EvalHandleContext};
+use event_transport::{emit_execution_random_seeds, emit_public_outputs_produced};
+use preflight::preflight_execution;
+use walk::{walk_steps, EvalHandleContext};
 
-/// Accounts for a composed instruction-local fhe_execute batch.
+/// Accounts for one composed, instruction-local fhe_execute.
 ///
 /// Persistent input and output `EncryptedValue` accounts are supplied in
 /// `remaining_accounts` and referenced by index from [`FheExecuteArgs`].
@@ -70,33 +70,33 @@ pub struct FheExecute<'info> {
     pub hcu_trusted_app_record: Option<UncheckedAccount<'info>>,
 }
 
-/// Executes an ordered FHE batch with instruction-local transient outputs.
+/// Runs one ordered FHE execution, with instruction-local transient outputs.
 pub fn fhe_execute<'info>(
     ctx: Context<'info, FheExecute<'info>>,
     args: FheExecuteArgs,
 ) -> Result<()> {
     assert_not_paused(&ctx.accounts.host_config)?;
     require!(
-        !args.steps.is_empty() && args.steps.len() <= MAX_FHE_BATCH_OPS,
+        !args.steps.is_empty() && args.steps.len() <= MAX_FHE_EXECUTION_STEPS,
         ZamaHostError::InvalidFheExecuteOperationCount
     );
     require!(
         usize::from(args.account_count) == ctx.remaining_accounts.len(),
         ZamaHostError::FheExecuteAccountCountMismatch
     );
-    // The account table owns every remaining-accounts invariant for the batch:
+    // The account table owns every remaining-accounts invariant for the execution:
     // duplicate rejection (at construction), the used-account bitmap (marked in
     // preflight, asserted before execution mutates state), persistent-output
     // claims, and output-PDA derivation.
     let mut account_table = EvalAccountTable::new(ctx.remaining_accounts)?;
-    preflight_batch(&mut account_table, &ctx, &args)?;
+    preflight_execution(&mut account_table, &ctx, &args)?;
 
-    // HCU metering: one pure pass over the batch, enforcing the per-batch total + in-batch depth
+    // HCU metering: one pure pass over the execution, enforcing the per-execution total + in-execution depth
     // caps against the canonical host_config limits (u64::MAX = unlimited). The same total then feeds the
     // block-cap charge — reused, never independently recomputed — so both caps trip before
     // execution burns CU or creates any ACL record.
     let host_config = &ctx.accounts.host_config;
-    let batch = hcu::meter_batch(
+    let execution = hcu::meter_execution(
         &args.steps,
         host_config.max_hcu_per_tx,
         host_config.max_hcu_depth_per_tx,
@@ -115,15 +115,15 @@ pub fn fhe_execute<'info>(
         compute_subject: subject,
         persistent_anchor_bytes: &persistent_anchor_bytes,
     };
-    let random_seeds = collect_batch_random_seeds(&args, &handle_context);
-    block_cap::charge(&ctx, batch.total, clock.slot)?;
-    // Execution is the single walk: it validates each step as it mutates. A failure mid-batch
+    let random_seeds = collect_execution_random_seeds(&args, &handle_context);
+    block_cap::charge(&ctx, execution.total, clock.slot)?;
+    // Execution is the single walk: it validates each step as it mutates. A failure mid-execution
     // leaves partial writes behind only until the runtime reverts the transaction, which discards
     // every account write — so no validate-only pre-pass is needed for atomicity. The event CPI
     // stays last so no event describes state that did not commit.
     let created_public_outputs =
-        execute_batch(&mut account_table, &ctx, &args, subject, &handle_context)?;
-    emit_batch_random_seeds(&ctx, random_seeds)?;
+        execute_steps(&mut account_table, &ctx, &args, subject, &handle_context)?;
+    emit_execution_random_seeds(&ctx, random_seeds)?;
     emit_public_outputs_produced(&ctx, created_public_outputs)?;
     Ok(())
 }
@@ -143,7 +143,7 @@ pub(in crate::instructions) fn step_output(step: &FheExecuteStep) -> &FheExecute
     }
 }
 
-/// Flattens the batch's persistent-write anchor from live account state. Each entry is
+/// Flattens the execution's persistent-write anchor from live account state. Each entry is
 /// `(account key, create/update tag, current handle, leaf count)` in wire order.
 /// `leaf_count` advances whenever an outgoing handle is sealed, so returning to an
 /// earlier content-addressed handle cannot replay a previous random seed.
@@ -175,7 +175,7 @@ fn collect_persistent_anchor_bytes(
     Ok(anchor_bytes)
 }
 
-fn collect_batch_random_seeds(
+fn collect_execution_random_seeds(
     args: &FheExecuteArgs,
     handle_context: &EvalHandleContext<'_>,
 ) -> Vec<FheExecuteRandomSeed> {
@@ -196,7 +196,7 @@ fn collect_batch_random_seeds(
 }
 
 #[inline(never)]
-fn execute_batch<'a, 'info>(
+fn execute_steps<'a, 'info>(
     table: &mut EvalAccountTable<'a, 'info>,
     ctx: &Context<'info, FheExecute<'info>>,
     args: &FheExecuteArgs,
@@ -212,7 +212,7 @@ fn execute_batch<'a, 'info>(
         chain_id: handle_context.derivation.chain_id,
         verifier_params: InputVerifierParams::from_config(&ctx.accounts.host_config),
     };
-    walk_batch(&mut execution, ctx, args, handle_context)?;
+    walk_steps(&mut execution, ctx, args, handle_context)?;
     Ok(execution.created_public_outputs)
 }
 
@@ -223,7 +223,7 @@ fn execute_batch<'a, 'info>(
 /// [`walk`].
 struct EvalExecutionState<'t, 'a, 'info> {
     table: &'t mut EvalAccountTable<'a, 'info>,
-    /// The batch's interned constant dictionary ([`FheExecuteArgs::dictionary`]).
+    /// The execution's interned constant dictionary ([`FheExecuteArgs::dictionary`]).
     dictionary: &'t [[u8; 32]],
     produced: Vec<ProducedValue>,
     created_public_outputs: Vec<ProducedPublicOutput>,
@@ -256,7 +256,7 @@ impl<'info> EvalExecutionState<'_, '_, 'info> {
         &mut self,
         attestation: &CoprocessorInputAttestation,
     ) -> Result<ResolvedOperand> {
-        // Authoritative in-batch verification of the coprocessor attestation. No account, no
+        // Authoritative in-execution verification of the coprocessor attestation. No account, no
         // PDA — the "allow" exists only for this instruction's execution (the EVM
         // `allowTransient(input, msg.sender)` analog). The caller-is-contract gate is enforced in
         // `resolve_encrypted_operand`; derived outputs are then unconstrained, exactly like EVM.
@@ -275,7 +275,7 @@ impl<'info> EvalExecutionState<'_, '_, 'info> {
         output: &FheExecuteOutput,
         output_public_decrypt_allowed: bool,
     ) -> Result<()> {
-        let created_public_output = accept_batch_output(
+        let created_public_output = accept_execution_output(
             ctx,
             self.table,
             self.dictionary,
@@ -310,7 +310,7 @@ pub fn assert_ternary_operand_types(
 }
 
 #[inline(never)]
-fn accept_batch_output<'info>(
+fn accept_execution_output<'info>(
     ctx: &Context<'info, FheExecute<'info>>,
     table: &mut EvalAccountTable<'_, 'info>,
     dictionary: &[[u8; 32]],
@@ -347,7 +347,7 @@ fn accept_batch_output<'info>(
                 output_account_authority_index.map(u16::from),
                 output_account,
             )?;
-            let encrypted_value = bind_batch_output(
+            let encrypted_value = bind_execution_output(
                 ctx,
                 table,
                 u16::from(*output_encrypted_value_index),
@@ -473,7 +473,7 @@ fn inputs3_allow_public_decrypt(
 
 #[inline(never)]
 #[allow(clippy::too_many_arguments)]
-fn bind_batch_output<'info>(
+fn bind_execution_output<'info>(
     ctx: &Context<'info, FheExecute<'info>>,
     table: &mut EvalAccountTable<'_, 'info>,
     output_encrypted_value_index: u16,
@@ -495,7 +495,7 @@ fn bind_batch_output<'info>(
         output_pda.key,
         ZamaHostError::EncryptedValuePdaMismatch
     );
-    // One write per account per batch — load-bearing for the rand seed anchor (#1853 W4).
+    // One write per account per execution — load-bearing for the rand seed anchor (#1853 W4).
     table.claim_persistent_output(output_info.key())?;
     // Explicit on the update path; `create_pda_strict` enforces it on create.
     require!(
@@ -504,7 +504,7 @@ fn bind_batch_output<'info>(
     );
 
     if output_info.owner == &crate::ID {
-        // Update: the batch's declared previous state must match the stored
+        // Update: the execution's declared previous state must match the stored
         // state exactly, so indexers can reconstruct the appended MMR leaves
         // from instruction data alone. `output_subjects` may replace the audience.
         let mut value = read_canonical_encrypted_value(output_info)?;
@@ -572,7 +572,7 @@ fn bind_batch_output<'info>(
     Ok(output_info.key())
 }
 
-/// Update batch validation against an existing encrypted value account. The batch's
+/// Update execution validation against an existing encrypted value account. The execution's
 /// declared `previous_state` must equal the stored state exactly, so indexers
 /// reconstruct the appended MMR leaves from instruction data alone. The
 /// audience (`output_subjects`) is NOT constrained to the stored set: an update
@@ -627,11 +627,14 @@ mod tests {
     use anchor_lang::AccountSerialize;
 
     /// Doc-sync guard (the `resource_bounds_match_liveness_doc` pattern): EVM_PARITY.md's
-    /// FHEVMExecutor row quotes `MAX_FHE_BATCH_OPS=32`; a change here must update that row in
+    /// FHEVMExecutor row quotes `MAX_FHE_EXECUTION_STEPS=32`; a change here must update that row in
     /// the same PR.
     #[test]
     fn batch_ops_bound_matches_evm_parity_doc() {
-        assert_eq!(MAX_FHE_BATCH_OPS, 32, "EVM_PARITY.md FHEVMExecutor row");
+        assert_eq!(
+            MAX_FHE_EXECUTION_STEPS, 32,
+            "EVM_PARITY.md FHEVMExecutor row"
+        );
     }
 
     fn encrypted_value_account(handle: [u8; 32], subjects: &[Pubkey]) -> EncryptedValue {

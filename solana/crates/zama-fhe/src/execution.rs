@@ -1,40 +1,42 @@
-//! The validated, lowered batch request handed to the CPI helpers.
+//! The validated, lowered execution request handed to the CPI helpers.
 
 use anchor_lang::prelude::Pubkey;
 
 use zama_host::{FheExecuteArgs, FheExecuteOutput, FheExecuteStep};
 
 #[cfg(feature = "cpi")]
-use crate::accounts::{resolve_batch_accounts, BatchAccountResolutionError, ResolvedBatchAccounts};
 use crate::accounts::{
-    BatchAccountMeta, BatchAccountPurpose, BatchAccountRequirement, BatchAppAuthority,
-    BatchOutputAuthorityRequirement,
+    resolve_execution_accounts, ExecutionAccountResolutionError, ResolvedExecutionAccounts,
 };
-use crate::builder::BatchBuilder;
+use crate::accounts::{
+    ExecutionAccountMeta, ExecutionAccountPurpose, ExecutionAccountRequirement,
+    ExecutionAppAuthority, ExecutionOutputAuthorityRequirement,
+};
+use crate::builder::FheExecutionBuilder;
 #[cfg(feature = "cpi")]
-use crate::cpi::BatchCpiAccounts;
+use crate::cpi::ExecutionCpiAccounts;
 use crate::Result;
 
 #[cfg(feature = "cpi")]
 use anchor_lang::prelude::AccountInfo;
 
-/// Opaque lowered batch request produced by [`Batch::build`].
+/// Opaque lowered execution request produced by [`FheExecution::build`].
 ///
-/// App code passes this to [`Batch::execute`] instead of editing raw host
+/// App code passes this to [`FheExecution::invoke`] instead of editing raw host
 /// args or dynamic account roles.
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct Batch {
-    pub(crate) app_authority: BatchAppAuthority,
+pub struct FheExecution {
+    pub(crate) app_authority: ExecutionAppAuthority,
     pub(crate) args: FheExecuteArgs,
     /// Exact dynamic `remaining_accounts` order referenced by the `u8` indices
     /// inside `args`. Keep this coupled to `args`; `finish` validates every
-    /// index before constructing the batch.
-    pub(crate) remaining_accounts: Vec<BatchAccountMeta>,
+    /// index before constructing the execution.
+    pub(crate) remaining_accounts: Vec<ExecutionAccountMeta>,
 }
 
-impl Batch {
-    /// Builds and validates a batch through a closure. This is the only way to get a
-    /// [`BatchBuilder`]: the closure receives it under a fresh `'brand` lifetime that nothing
+impl FheExecution {
+    /// Builds and validates an execution through a closure. This is the only way to get a
+    /// [`FheExecutionBuilder`]: the closure receives it under a fresh `'brand` lifetime that nothing
     /// outside the closure can name, which is what makes a transient value of one builder
     /// unusable in another — the compiler rejects it instead of a runtime tag that on-chain was
     /// the same constant for every builder.
@@ -44,27 +46,27 @@ impl Batch {
     ///
     /// ```
     /// use anchor_lang::prelude::Pubkey;
-    /// use zama_fhe::{Batch, BatchAppAuthority, Output, Scalar, Uint};
+    /// use zama_fhe::{FheExecution, ExecutionAppAuthority, Output, Scalar, Uint};
     ///
-    /// let authority = BatchAppAuthority::new(Pubkey::new_unique());
-    /// let batch = Batch::build(authority, |builder| {
+    /// let authority = ExecutionAppAuthority::new(Pubkey::new_unique());
+    /// let execution = FheExecution::build(authority, |builder| {
     ///     let value = builder.trivial_encrypt_u64(7, Output::transient())?;
     ///     builder.add(value, Scalar::<Uint<64>>::u64(1), Output::transient())?;
     ///     Ok(())
     /// });
-    /// assert!(batch.is_ok());
+    /// assert!(execution.is_ok());
     /// ```
     ///
     /// Feeding one builder's value to another does not compile:
     ///
     /// ```compile_fail
     /// use anchor_lang::prelude::Pubkey;
-    /// use zama_fhe::{Batch, BatchAppAuthority, Output, Scalar, Uint};
+    /// use zama_fhe::{FheExecution, ExecutionAppAuthority, Output, Scalar, Uint};
     ///
-    /// let authority = BatchAppAuthority::new(Pubkey::new_unique());
-    /// Batch::build(authority, |outer| {
+    /// let authority = ExecutionAppAuthority::new(Pubkey::new_unique());
+    /// FheExecution::build(authority, |outer| {
     ///     let borrowed = outer.trivial_encrypt_u64(7, Output::transient())?;
-    ///     Batch::build(authority, |inner| {
+    ///     FheExecution::build(authority, |inner| {
     ///         inner.add(borrowed, Scalar::<Uint<64>>::u64(1), Output::transient())?;
     ///         Ok(())
     ///     })
@@ -73,32 +75,32 @@ impl Batch {
     /// })
     /// .unwrap();
     /// ```
-    pub fn build<F>(app_authority: BatchAppAuthority, build: F) -> Result<Self>
+    pub fn build<F>(app_authority: ExecutionAppAuthority, build: F) -> Result<Self>
     where
-        F: for<'brand> FnOnce(&mut BatchBuilder<'brand>) -> Result<()>,
+        F: for<'brand> FnOnce(&mut FheExecutionBuilder<'brand>) -> Result<()>,
     {
-        let mut builder = BatchBuilder::new(app_authority);
+        let mut builder = FheExecutionBuilder::new(app_authority);
         build(&mut builder)?;
         builder.finish()
     }
 
-    pub fn app_authority(&self) -> BatchAppAuthority {
+    pub fn app_authority(&self) -> ExecutionAppAuthority {
         self.app_authority
     }
 
     pub fn dynamic_account_requirements(
         &self,
-    ) -> impl ExactSizeIterator<Item = BatchAccountRequirement> + '_ {
+    ) -> impl ExactSizeIterator<Item = ExecutionAccountRequirement> + '_ {
         self.remaining_accounts
             .iter()
-            .map(BatchAccountRequirement::from)
+            .map(ExecutionAccountRequirement::from)
     }
 
     #[cfg(feature = "cpi")]
     /// Resolves unordered app-supplied accounts into the exact host
-    /// `remaining_accounts` order for this batch.
+    /// `remaining_accounts` order for this execution.
     ///
-    /// `dynamic_accounts` must contain only non-authority batch accounts such as
+    /// `dynamic_accounts` must contain only non-authority execution accounts such as
     /// persistent input ACLs, permission records, transient sessions, and writable
     /// persistent output ACL records. `output_authorities` must contain signer
     /// witnesses for persistent outputs whose app account is not the fixed CPI
@@ -107,19 +109,20 @@ impl Batch {
         &self,
         dynamic_accounts: impl IntoIterator<Item = AccountInfo<'info>>,
         output_authorities: impl IntoIterator<Item = AccountInfo<'info>>,
-    ) -> std::result::Result<ResolvedBatchAccounts<'info>, BatchAccountResolutionError> {
-        resolve_batch_accounts(self, dynamic_accounts, output_authorities)
+    ) -> std::result::Result<ResolvedExecutionAccounts<'info>, ExecutionAccountResolutionError>
+    {
+        resolve_execution_accounts(self, dynamic_accounts, output_authorities)
     }
 
     pub fn output_authority_requirements(
         &self,
-    ) -> impl Iterator<Item = BatchOutputAuthorityRequirement> + '_ {
-        std::iter::once(BatchOutputAuthorityRequirement {
+    ) -> impl Iterator<Item = ExecutionOutputAuthorityRequirement> + '_ {
+        std::iter::once(ExecutionOutputAuthorityRequirement {
             pubkey: self.app_authority.pubkey(),
             cpi_account_authority: true,
         })
         .chain(self.additional_output_authorities().map(|pubkey| {
-            BatchOutputAuthorityRequirement {
+            ExecutionOutputAuthorityRequirement {
                 pubkey,
                 cpi_account_authority: false,
             }
@@ -137,24 +140,29 @@ impl Batch {
             .filter(|account| {
                 account
                     .purposes
-                    .contains(&BatchAccountPurpose::PersistentOutputAuthority)
+                    .contains(&ExecutionAccountPurpose::PersistentOutputAuthority)
             })
             .map(|account| account.pubkey)
     }
 
     #[cfg(feature = "cpi")]
-    /// Invokes `zama-host::fhe_execute` for this batch with accounts already
-    /// resolved by [`Batch::resolve_accounts`].
-    pub fn execute<'a, 'info>(
+    /// Invokes `zama-host::fhe_execute` for this execution with accounts already
+    /// resolved by [`FheExecution::resolve_accounts`].
+    pub fn invoke<'a, 'info>(
         &self,
-        accounts: BatchCpiAccounts<'a, 'info>,
-        resolved_accounts: &ResolvedBatchAccounts<'info>,
+        accounts: ExecutionCpiAccounts<'a, 'info>,
+        resolved_accounts: &ResolvedExecutionAccounts<'info>,
         signer_seeds: &[&[&[u8]]],
     ) -> anchor_lang::prelude::Result<()> {
-        crate::cpi::invoke_batch_signed_resolved(self, accounts, resolved_accounts, signer_seeds)
+        crate::cpi::invoke_execution_signed_resolved(
+            self,
+            accounts,
+            resolved_accounts,
+            signer_seeds,
+        )
     }
 
-    /// Subjects this batch newly grants through persistent outputs: every output
+    /// Subjects this execution newly grants through persistent outputs: every output
     /// subject on a create, and `output_subjects \ previous_state.subjects` on a
     /// update that replaces its audience. The host deny-list-checks each of
     /// these exactly like `allow_subjects`, so an app forwarding deny-record
@@ -187,7 +195,7 @@ impl Batch {
     }
 }
 
-/// The output policy of a batch step, independent of step kind.
+/// The output policy of an execution step, independent of step kind.
 pub(crate) fn fhe_execute_step_output(step: &FheExecuteStep) -> &FheExecuteOutput {
     match step {
         FheExecuteStep::Binary { output, .. }

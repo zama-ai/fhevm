@@ -96,29 +96,29 @@ pub enum ConfidentialTokenError {
     /// Kept so Anchor error ordinals stay stable.
     #[msg("handle is not released for public decrypt (retired)")]
     PublicDecryptNotReleased,
-    /// Internal FHE batch construction failed before the host CPI.
-    #[msg("FHE batch is invalid")]
-    InvalidFheExecuteBatch,
+    /// Internal FHE execution construction failed before the host CPI.
+    #[msg("FHE execution is invalid")]
+    InvalidFheExecution,
     /// The fhe_execute candidate account list contains the same account twice.
     #[msg("fhe_execute account list contains a duplicate account")]
     DuplicateFheExecuteAccount,
-    /// The fhe_execute candidate account list contains an account the batch does not require.
+    /// The fhe_execute candidate account list contains an account the execution does not require.
     #[msg("fhe_execute account list contains an unexpected account")]
     UnexpectedFheExecuteAccount,
-    /// The FHE batch requires a dynamic account that was not provided.
-    #[msg("FHE batch is missing a required dynamic account")]
+    /// The FHE execution requires a dynamic account that was not provided.
+    #[msg("FHE execution is missing a required dynamic account")]
     MissingFheExecuteAccount,
-    /// The FHE batch requires a writable dynamic account but the provided account is readonly.
+    /// The FHE execution requires a writable dynamic account but the provided account is readonly.
     #[msg("fhe_execute dynamic account must be writable")]
     FheExecuteAccountNotWritable,
     /// The fhe_execute output authority list contains the same authority twice.
     #[msg("fhe_execute output authority list contains a duplicate authority")]
     DuplicateFheOutputAuthority,
-    /// The fhe_execute output authority list contains an authority the batch does not require.
+    /// The fhe_execute output authority list contains an authority the execution does not require.
     #[msg("fhe_execute output authority list contains an unexpected authority")]
     UnexpectedFheOutputAuthority,
-    /// The FHE batch requires an output authority that was not provided.
-    #[msg("FHE batch is missing a required output authority")]
+    /// The FHE execution requires an output authority that was not provided.
+    #[msg("FHE execution is missing a required output authority")]
     MissingFheOutputAuthority,
     /// The host public-decrypt verifier CPI did not return well-formed `(handle, cleartext)`
     /// data, or the return was not produced by the ZamaHost program.

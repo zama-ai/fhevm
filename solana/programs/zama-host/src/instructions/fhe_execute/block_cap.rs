@@ -1,12 +1,12 @@
 //! Stateful per-app, per-slot HCU block cap for [`super::fhe_execute`].
 //!
-//! Unlike the pure per-batch meter in [`super::hcu`], the block cap touches accounts (the per-app
+//! Unlike the pure per-execution meter in [`super::hcu`], the block cap touches accounts (the per-app
 //! `HcuBlockMeter`) and a sysvar-derived slot, so it lives here rather than inside the pure walk.
 //!
 //! [`charge`] is one resolve→assert→(create/reset)→write sequence with a single meter read. It
-//! runs after the pure per-batch meter and before the execution walk: `batch_total` is pure over
-//! the batch, so an over-budget batch is rejected before execution burns CU or creates any ACL
-//! record, and a mid-batch execution failure reverts the meter write along with everything else.
+//! runs after the pure per-execution meter and before the walk: `execution_total` is pure over the
+//! execution, so an over-budget execution is rejected before any step burns CU or creates any ACL
+//! record, and a failure mid-walk reverts the meter write along with everything else.
 //!
 //! Cap sentinels: `u64::MAX` = unrestricted (short-circuit, touch nothing), `0` = ban untrusted
 //! apps (trusted still bypass), otherwise the metering band.
@@ -15,7 +15,7 @@
 //! used for ACL admission (the `msg.sender` analog), never `payer` and never `account_authority`
 //! (an output-ACL role that degenerates to a per-user key). Metering the already-signed
 //! `compute_subject` means no caller can rotate a fresh signer to mint a fresh per-slot meter: the
-//! same subject that authorizes the batch's encrypted inputs is the one whose usage accumulates.
+//! same subject that authorizes the execution's encrypted inputs is the one whose usage accumulates.
 
 use anchor_lang::prelude::*;
 
@@ -31,7 +31,7 @@ use crate::state::{
 /// arithmetic (overflow fails closed), lazy-create/reset, write once.
 pub(super) fn charge<'info>(
     ctx: &Context<'info, FheExecute<'info>>,
-    batch_total: u64,
+    execution_total: u64,
     slot: u64,
 ) -> Result<()> {
     let cap = ctx.accounts.host_config.hcu_block_cap_per_app;
@@ -44,7 +44,7 @@ pub(super) fn charge<'info>(
     if resolve_trusted(ctx, app)? {
         return Ok(());
     }
-    // Ban: every untrusted batch is rejected before the meter is even required.
+    // Ban: every untrusted execution is rejected before the meter is even required.
     if cap == 0 {
         return Err(error!(ZamaHostError::HcuBlockLimitExceeded));
     }
@@ -58,11 +58,11 @@ pub(super) fn charge<'info>(
     let (expected, bump) = hcu_block_meter_address(app);
     let used = meter_used_for_slot(&info, app, expected, bump, slot)?;
     let projected = used
-        .checked_add(batch_total)
+        .checked_add(execution_total)
         .ok_or(ZamaHostError::HcuBlockLimitExceeded)?;
     require!(projected <= cap, ZamaHostError::HcuBlockLimitExceeded);
 
-    // Lazy-create on the first metered batch (noop once program-owned). A pre-squatted, non-empty
+    // Lazy-create on the first metered execution (noop once program-owned). A pre-squatted, non-empty
     // account at the meter PDA fails here rather than being adopted.
     create_pda_if_needed(
         &ctx.accounts.payer.to_account_info(),
@@ -129,7 +129,7 @@ fn resolve_trusted<'info>(ctx: &Context<'info, FheExecute<'info>>, app: Pubkey) 
 /// squatted) is then treated as `0` — `charge`'s lazy-create
 /// rejects a squatter. A program-owned meter is validated
 /// (owner / length / recorded app / bump) before any field is read, then lazy-reset: a
-/// `last_seen_slot` other than the current slot means `0` for this batch.
+/// `last_seen_slot` other than the current slot means `0` for this execution.
 fn meter_used_for_slot(
     info: &AccountInfo,
     app: Pubkey,

@@ -1,6 +1,6 @@
-//! In-batch HCU (Homomorphic Compute Unit) cost model for [`super::fhe_execute`].
+//! In-execution HCU (Homomorphic Compute Unit) cost model for [`super::fhe_execute`].
 //!
-//! Pure, account-independent metering over an `fhe_execute` batch. Everything needed is in
+//! Pure, account-independent metering over an `fhe_execute` execution. Everything needed is in
 //! [`FheExecuteStep`]: a step's cost is a function of its op, result FHE type, and scalar flag; its
 //! critical-path *depth* is a function of the operand *kinds* (an `EarlierStep` reads the depth of
 //! the producer it points at; persistent / verified / scalar operands are zero-depth leaves). No
@@ -245,7 +245,7 @@ pub(super) fn enforce_le(used: u64, limit: u64, err: ZamaHostError) -> Result<()
     Ok(())
 }
 
-/// Running batch total with checked arithmetic; overflow fails closed (never wraps).
+/// Running execution total with checked arithmetic; overflow fails closed (never wraps).
 pub(super) fn accumulate_total(running: u64, step_hcu: u64) -> Result<u64> {
     running
         .checked_add(step_hcu)
@@ -259,19 +259,19 @@ pub(super) fn step_depth(step_hcu: u64, max_input_depth: u64) -> Result<u64> {
         .ok_or_else(|| error!(ZamaHostError::HcuTransactionDepthLimitExceeded))
 }
 
-/// The result of metering one batch: the summed total and the cumulative depth of each produced step.
+/// The result of metering one execution: the summed total and the cumulative depth of each produced step.
 ///
-/// Production only needs the enforcement side-effect of [`meter_batch`]; the returned values exist
+/// Production only needs the enforcement side-effect of [`meter_execution`]; the returned values exist
 /// for unit tests, so the fields are read only under `#[cfg(test)]`.
 #[derive(Debug)]
 #[cfg_attr(not(test), allow(dead_code))]
-pub(super) struct BatchMeter {
+pub(super) struct ExecutionMeter {
     pub total: u64,
     pub step_depths: Vec<u64>,
 }
 
 /// Depth a resolved operand contributes: an `EarlierStep` carries its producer's cumulative depth;
-/// every other operand kind is a zero-depth leaf (persistent resets in-batch; verified input &
+/// every other operand kind is a zero-depth leaf (persistent resets in-execution; verified input &
 /// scalar are intrinsic zero leaves). An out-of-range producer index is treated as `0` here;
 /// the walk's operand resolver rejects it with the precise `FheExecuteEarlierStepMissing`.
 fn operand_depth(operand: &FheExecuteOperand, step_depths: &[u64]) -> u64 {
@@ -287,14 +287,14 @@ fn operand_depth(operand: &FheExecuteOperand, step_depths: &[u64]) -> u64 {
     }
 }
 
-/// Meters a batch: sums per-step costs into a batch total and computes each step's critical-path depth,
+/// Meters an execution: sums per-step costs into an execution total and computes each step's critical-path depth,
 /// enforcing both caps after every step (`u64::MAX = unlimited`). Pure over `steps` + the two limits, so
 /// off-chain planners compute exactly what on-chain enforcement trips.
-pub(super) fn meter_batch(
+pub(super) fn meter_execution(
     steps: &[FheExecuteStep],
     max_hcu_per_tx: u64,
     max_hcu_depth_per_tx: u64,
-) -> Result<BatchMeter> {
+) -> Result<ExecutionMeter> {
     let mut total: u64 = 0;
     let mut step_depths: Vec<u64> = Vec::with_capacity(steps.len());
 
@@ -404,7 +404,7 @@ pub(super) fn meter_batch(
         step_depths.push(depth);
     }
 
-    Ok(BatchMeter { total, step_depths })
+    Ok(ExecutionMeter { total, step_depths })
 }
 
 #[cfg(test)]
@@ -449,7 +449,7 @@ mod tests {
         FheBinaryOpCode::Max,
     ];
 
-    // ---- batch builders (handles are irrelevant to metering; only operand KIND matters) ----
+    // ---- execution builders (handles are irrelevant to metering; only operand KIND matters) ----
     fn trivial(fhe_type: u8) -> FheExecuteStep {
         FheExecuteStep::TrivialEncrypt {
             plaintext: [0u8; 32],
@@ -513,7 +513,7 @@ mod tests {
     #[test]
     fn unary_op_hcu_covers_every_validated_output_type() {
         // Metering must define a cost for every output type the unary validation accepts, or a
-        // validated op fails mid-batch with HcuUnknownCost. Cast accepts the full supported set
+        // validated op fails mid-execution with HcuUnknownCost. Cast accepts the full supported set
         // (is_supported_fhe_type: 0 | 2..=8, including Address=7 and Uint256=8).
         for ty in [EBOOL, EU8, 3, 4, EU64, EU128, 7, 8] {
             assert!(unary_op_hcu(FheUnaryOpCode::Cast, ty).unwrap() > 0);
@@ -831,7 +831,7 @@ mod tests {
     #[test]
     fn meter_single_step_total_and_depth() {
         let steps = vec![trivial(EU64)];
-        let m = meter_batch(&steps, u64::MAX, u64::MAX).unwrap();
+        let m = meter_execution(&steps, u64::MAX, u64::MAX).unwrap();
         let cost = trivial_encrypt_hcu(EU64).unwrap();
         assert_eq!(m.total, cost);
         assert_eq!(m.step_depths, vec![cost]);
@@ -840,7 +840,7 @@ mod tests {
     #[test]
     fn meter_chain_depth_accumulates_along_path() {
         let steps = vec![trivial(EU64), add_local(EU64, 0, 0), add_local(EU64, 1, 1)];
-        let m = meter_batch(&steps, u64::MAX, u64::MAX).unwrap();
+        let m = meter_execution(&steps, u64::MAX, u64::MAX).unwrap();
         let t = trivial_encrypt_hcu(EU64).unwrap();
         let add = binary_op_hcu(FheBinaryOpCode::Add, EU64, false).unwrap();
         assert_eq!(m.step_depths, vec![t, add + t, add + add + t]);
@@ -850,12 +850,15 @@ mod tests {
     #[test]
     fn meter_total_sums_all_steps_depth_le_total() {
         let steps = vec![trivial(EU64), trivial(EU64), add_local(EU64, 0, 1)];
-        let m = meter_batch(&steps, u64::MAX, u64::MAX).unwrap();
+        let m = meter_execution(&steps, u64::MAX, u64::MAX).unwrap();
         let t = trivial_encrypt_hcu(EU64).unwrap();
         let add = binary_op_hcu(FheBinaryOpCode::Add, EU64, false).unwrap();
         assert_eq!(m.total, t + t + add);
         for d in &m.step_depths {
-            assert!(*d <= m.total, "per-value depth never exceeds batch total");
+            assert!(
+                *d <= m.total,
+                "per-value depth never exceeds execution total"
+            );
         }
         assert_eq!(*m.step_depths.last().unwrap(), add + t);
     }
@@ -866,7 +869,7 @@ mod tests {
         let total = trivial_encrypt_hcu(EU64).unwrap()
             + binary_op_hcu(FheBinaryOpCode::Add, EU64, false).unwrap();
         assert_eq!(
-            meter_batch(&steps, total - 1, u64::MAX).unwrap_err(),
+            meter_execution(&steps, total - 1, u64::MAX).unwrap_err(),
             error!(ZamaHostError::HcuTransactionLimitExceeded)
         );
     }
@@ -876,7 +879,7 @@ mod tests {
         let steps = vec![trivial(EU64), add_local(EU64, 0, 0)];
         let total = trivial_encrypt_hcu(EU64).unwrap()
             + binary_op_hcu(FheBinaryOpCode::Add, EU64, false).unwrap();
-        let m = meter_batch(&steps, total, u64::MAX).unwrap();
+        let m = meter_execution(&steps, total, u64::MAX).unwrap();
         assert_eq!(m.total, total);
     }
 
@@ -887,7 +890,7 @@ mod tests {
         let add = binary_op_hcu(FheBinaryOpCode::Add, EU64, false).unwrap();
         let max_depth = add + t; // depth of step c (add+add+t) exceeds this
         assert_eq!(
-            meter_batch(&steps, u64::MAX, max_depth).unwrap_err(),
+            meter_execution(&steps, u64::MAX, max_depth).unwrap_err(),
             error!(ZamaHostError::HcuTransactionDepthLimitExceeded)
         );
     }
@@ -897,7 +900,7 @@ mod tests {
         let steps = vec![trivial(EU64), add_local(EU64, 0, 0)];
         let t = trivial_encrypt_hcu(EU64).unwrap();
         let add = binary_op_hcu(FheBinaryOpCode::Add, EU64, false).unwrap();
-        let m = meter_batch(&steps, u64::MAX, add + t).unwrap();
+        let m = meter_execution(&steps, u64::MAX, add + t).unwrap();
         assert_eq!(*m.step_depths.last().unwrap(), add + t);
     }
 
@@ -909,7 +912,7 @@ mod tests {
             output: FheExecuteOutput::Transient,
         }];
         assert_eq!(
-            meter_batch(&steps, u64::MAX, u64::MAX).unwrap_err(),
+            meter_execution(&steps, u64::MAX, u64::MAX).unwrap_err(),
             error!(ZamaHostError::HcuUnknownCost)
         );
     }
@@ -919,7 +922,7 @@ mod tests {
     #[test]
     fn meter_scalar_is_zero_leaf() {
         let steps = vec![trivial(EU64), add_scalar(EU64, 0)];
-        let m = meter_batch(&steps, u64::MAX, u64::MAX).unwrap();
+        let m = meter_execution(&steps, u64::MAX, u64::MAX).unwrap();
         let t = trivial_encrypt_hcu(EU64).unwrap();
         let add_scalar_cost = binary_op_hcu(FheBinaryOpCode::Add, EU64, true).unwrap();
         assert_eq!(m.total, t + add_scalar_cost);
@@ -947,7 +950,7 @@ mod tests {
             output_fhe_type: EU64,
             output: FheExecuteOutput::Transient,
         }];
-        let m = meter_batch(&steps, u64::MAX, u64::MAX).unwrap();
+        let m = meter_execution(&steps, u64::MAX, u64::MAX).unwrap();
         let add_scalar_cost = binary_op_hcu(FheBinaryOpCode::Add, EU64, true).unwrap();
         assert_eq!(m.total, add_scalar_cost);
         assert_eq!(m.step_depths, vec![add_scalar_cost]);
@@ -961,7 +964,7 @@ mod tests {
             add_scalar(EU64, 1),
             add_persistent(EU64, 2),
         ];
-        let m = meter_batch(&steps, u64::MAX, u64::MAX).unwrap();
+        let m = meter_execution(&steps, u64::MAX, u64::MAX).unwrap();
         let expected = trivial_encrypt_hcu(EU64).unwrap()
             + binary_op_hcu(FheBinaryOpCode::Add, EU64, false).unwrap()
             + binary_op_hcu(FheBinaryOpCode::Add, EU64, true).unwrap()
@@ -971,10 +974,10 @@ mod tests {
 
     #[test]
     fn meter_persistent_input_is_zero_depth_leaf() {
-        // A persistent operand contributes depth 0 (in-batch reset), so a
+        // A persistent operand contributes depth 0 (in-execution reset), so a
         // chain split across a persistent boundary resets depth there rather than carrying it forward.
         let steps = vec![trivial(EU64), add_persistent(EU64, 0)];
-        let m = meter_batch(&steps, u64::MAX, u64::MAX).unwrap();
+        let m = meter_execution(&steps, u64::MAX, u64::MAX).unwrap();
         let t = trivial_encrypt_hcu(EU64).unwrap();
         let add = binary_op_hcu(FheBinaryOpCode::Add, EU64, false).unwrap();
         assert_eq!(*m.step_depths.last().unwrap(), add + t); // add + max(depth(a)=t, persistent=0)
@@ -984,15 +987,15 @@ mod tests {
 
     #[test]
     fn meter_disabled_limits_accept_costliest_plan() {
-        // MAX_FHE_BATCH_OPS chained EU128 adds with limits off.
-        let cap = u8::try_from(crate::state::MAX_FHE_BATCH_OPS)
-            .expect("MAX_FHE_BATCH_OPS must fit producer indices");
+        // MAX_FHE_EXECUTION_STEPS chained EU128 adds with limits off.
+        let cap = u8::try_from(crate::state::MAX_FHE_EXECUTION_STEPS)
+            .expect("MAX_FHE_EXECUTION_STEPS must fit producer indices");
         let mut steps = vec![trivial(EU128)];
         for i in 1..cap {
             steps.push(add_local(EU128, i - 1, i - 1));
         }
-        assert_eq!(steps.len(), crate::state::MAX_FHE_BATCH_OPS);
-        assert!(meter_batch(&steps, u64::MAX, u64::MAX).is_ok());
+        assert_eq!(steps.len(), crate::state::MAX_FHE_EXECUTION_STEPS);
+        assert!(meter_execution(&steps, u64::MAX, u64::MAX).is_ok());
     }
 
     // ---- determinism is the on-chain==off-chain parity basis ----
@@ -1000,23 +1003,25 @@ mod tests {
     #[test]
     fn meter_is_deterministic() {
         let steps = vec![trivial(EU64), add_local(EU64, 0, 0), add_scalar(EU64, 1)];
-        let a = meter_batch(&steps, u64::MAX, u64::MAX).unwrap();
-        let b = meter_batch(&steps, u64::MAX, u64::MAX).unwrap();
+        let a = meter_execution(&steps, u64::MAX, u64::MAX).unwrap();
+        let b = meter_execution(&steps, u64::MAX, u64::MAX).unwrap();
         assert_eq!(a.total, b.total);
         assert_eq!(a.step_depths, b.step_depths);
     }
 
-    // ---- Documentation test for the deferred cross-batch gap (NOT an invariant guard) ----
+    // ---- Documentation test for the deferred cross-execution gap (NOT an invariant guard) ----
 
     #[test]
     fn doc_cross_batch_total_not_metered() {
-        // the total is per-batch. Two separate batches, each under the per-batch
+        // the total is per-execution. Two separate executions, each under the per-execution
         // total, BOTH succeed even though their combined cost exceeds the limit. A future reviewer
-        // must not "fix" this into a false cross-batch coverage claim.
-        let batch = vec![trivial(EU64), add_local(EU64, 0, 0)];
-        let one = meter_batch(&batch, u64::MAX, u64::MAX).unwrap().total;
+        // must not "fix" this into a false cross-execution coverage claim.
+        let execution = vec![trivial(EU64), add_local(EU64, 0, 0)];
+        let one = meter_execution(&execution, u64::MAX, u64::MAX)
+            .unwrap()
+            .total;
         let limit = one + one / 2; // < 2 * one
-        assert!(meter_batch(&batch, limit, u64::MAX).is_ok()); // batch A
-        assert!(meter_batch(&batch, limit, u64::MAX).is_ok()); // batch B — combined exceeds `limit`
+        assert!(meter_execution(&execution, limit, u64::MAX).is_ok()); // execution A
+        assert!(meter_execution(&execution, limit, u64::MAX).is_ok()); // execution B — combined exceeds `limit`
     }
 }

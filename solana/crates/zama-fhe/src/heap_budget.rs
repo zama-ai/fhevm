@@ -1,12 +1,12 @@
 //! Heap budget for one on-chain `fhe_execute` instruction.
 //!
-//! An app program pays for its batch on Anchor's default allocator: a bump allocator over a fixed
+//! An app program pays for its execution on Anchor's default allocator: a bump allocator over a fixed
 //! 32 KB region that never frees, so what decides whether an instruction fits is the *total* number
 //! of bytes it requests, not its peak live set. Two phases share that one region and neither gives
 //! anything back:
 //!
-//! 1. **Building** the batch — lowering interns into the builder's own tables.
-//! 2. **Invoking** it — `invoke_batch_signed_resolved` deep-clones `FheExecuteArgs` to stamp the
+//! 1. **Building** the execution — lowering interns into the builder's own tables.
+//! 2. **Invoking** it — `invoke_execution_signed_resolved` deep-clones `FheExecuteArgs` to stamp the
 //!    final account count, then borsh-serializes the whole packet as the instruction data.
 //!
 //! Measuring only the build is how the first version of this test reported a budget the runtime does
@@ -18,7 +18,7 @@
 //! keeps margin: `resolve_accounts`'s meta and info vectors, and Anchor's own deserialization of the
 //! instruction's accounts before any of this runs.
 //!
-//! Counted on the host rather than under SBF because no program in this repo builds a batch anywhere
+//! Counted on the host rather than under SBF because no program in this repo builds an execution anywhere
 //! near the cap on-chain (the largest is five steps), so an SBF harness would need a fixture program
 //! written only for this measurement, while the quantity that regresses — bytes requested per step —
 //! is the same in both places.
@@ -29,11 +29,11 @@ use std::cell::Cell;
 use anchor_lang::prelude::Pubkey;
 use anchor_lang::InstructionData as _;
 
-use zama_host::MAX_FHE_BATCH_OPS;
+use zama_host::MAX_FHE_EXECUTION_STEPS;
 
 use crate::{
-    Batch, BatchAppAuthority, Domain, Encrypted, EncryptedValueId, Output, PersistentLabel,
-    PersistentOutput, Scalar, Uint, Uint64Handle, MAX_ON_CHAIN_BATCH_OPS,
+    Domain, Encrypted, EncryptedValueId, ExecutionAppAuthority, FheExecution, Output,
+    PersistentLabel, PersistentOutput, Scalar, Uint, Uint64Handle, MAX_ON_CHAIN_EXECUTION_STEPS,
 };
 
 thread_local! {
@@ -82,17 +82,17 @@ const DEFAULT_HEAP_BYTES: usize = 32 * 1024;
 /// is the number this test proves fits. At 16 steps the instruction requests 19,454 bytes. The hard
 /// ceiling is 24 (32,158 bytes, clearing the region by 610 bytes) and 28 is over, but 24 leaves
 /// nothing for the costs below, so it is not a number to build a program on. For scale, the
-/// clone-per-step rollback this replaced asked for 270 KB across a full batch and exhausted the heap
+/// clone-per-step rollback this replaced asked for 270 KB across a full execution and exhausted the heap
 /// at the 10th step of the build alone. `print_measurement_table` re-derives all of these.
-const RELIABLE_STEPS: usize = MAX_ON_CHAIN_BATCH_OPS;
+const RELIABLE_STEPS: usize = MAX_ON_CHAIN_EXECUTION_STEPS;
 
 /// Headroom left for what this test cannot count: `resolve_accounts`'s meta and info vectors, and
-/// Anchor's deserialization of the instruction's own accounts, which for a batch this size means 30+
+/// Anchor's deserialization of the instruction's own accounts, which for an execution this size means 30+
 /// dynamic accounts. An estimate, deliberately generous — the point of a documented step budget is
 /// that a program at the limit still has somewhere to put them.
 const UNCOUNTED_RESERVE_BYTES: usize = 8 * 1024;
 
-/// A regression ceiling on a full-size batch's build plus packet, for the same reason.
+/// A regression ceiling on a full-size execution's build plus packet, for the same reason.
 const BUDGET_BYTES: usize = 64 * 1024;
 
 fn balance_handle(tag: u8) -> [u8; 32] {
@@ -101,8 +101,8 @@ fn balance_handle(tag: u8) -> [u8; 32] {
     handle
 }
 
-/// Builds the heaviest legal batch of `steps` steps — every step also writes a persistent output,
-/// which is the most interning a batch can ask for — and returns the bytes its build requested and
+/// Builds the heaviest legal execution of `steps` steps — every step also writes a persistent output,
+/// which is the most interning an execution can ask for — and returns the bytes its build requested and
 /// the bytes its instruction packet requested.
 fn measure(steps: usize) -> (usize, usize) {
     let authority = Pubkey::new_unique();
@@ -122,9 +122,9 @@ fn measure(steps: usize) -> (usize, usize) {
     let subjects: Vec<Vec<Pubkey>> = (0..steps).map(|_| vec![authority]).collect();
 
     let before_build = counted_bytes();
-    let batch = Batch::build(BatchAppAuthority::new(authority), |builder| {
+    let execution = FheExecution::build(ExecutionAppAuthority::new(authority), |builder| {
         // The first step reads the persistent input; every later step chains on the previous step's
-        // transient, which is what makes this the heaviest legal batch.
+        // transient, which is what makes this the heaviest legal execution.
         let mut value = Encrypted::from(input);
         for (output, subjects) in outputs.into_iter().zip(subjects) {
             value = builder.add(
@@ -135,14 +135,14 @@ fn measure(steps: usize) -> (usize, usize) {
         }
         Ok(())
     })
-    .expect("batch builds");
+    .expect("execution builds");
     let build_bytes = counted_bytes() - before_build;
 
-    // Exactly what `invoke_batch_signed_resolved` does with the built batch: clone the args to stamp
+    // Exactly what `invoke_execution_signed_resolved` does with the built execution: clone the args to stamp
     // the final account count, then serialize the packet.
     let before_packet = counted_bytes();
-    let mut args = batch.args.clone();
-    args.account_count = u8::try_from(batch.remaining_accounts.len()).expect("account count");
+    let mut args = execution.args.clone();
+    args.account_count = u8::try_from(execution.remaining_accounts.len()).expect("account count");
     let data = zama_host::instruction::FheExecute { args }.data();
     let packet_bytes = counted_bytes() - before_packet;
     assert!(!data.is_empty(), "the packet is what gets submitted");
@@ -157,7 +157,7 @@ fn building_and_invoking_a_batch_fits_the_default_heap_up_to_the_documented_step
     let budget = DEFAULT_HEAP_BYTES - UNCOUNTED_RESERVE_BYTES;
     assert!(
         total <= budget,
-        "a {RELIABLE_STEPS}-step batch requested {total} bytes ({build_bytes} building, \
+        "a {RELIABLE_STEPS}-step execution requested {total} bytes ({build_bytes} building, \
          {packet_bytes} for the packet), over the {budget}-byte share of Anchor's \
          {DEFAULT_HEAP_BYTES}-byte default heap this test is allowed to spend — the step count app \
          programs are told to expect no longer holds"
@@ -166,18 +166,18 @@ fn building_and_invoking_a_batch_fits_the_default_heap_up_to_the_documented_step
 
 #[test]
 fn the_largest_legal_batch_stays_within_the_regression_budget() {
-    let (build_bytes, packet_bytes) = measure(MAX_FHE_BATCH_OPS);
+    let (build_bytes, packet_bytes) = measure(MAX_FHE_EXECUTION_STEPS);
     let total = build_bytes + packet_bytes;
     assert!(
         total < BUDGET_BYTES,
-        "a full {MAX_FHE_BATCH_OPS}-step batch requested {total} bytes ({build_bytes} building, \
+        "a full {MAX_FHE_EXECUTION_STEPS}-step execution requested {total} bytes ({build_bytes} building, \
          {packet_bytes} for the packet), over the {BUDGET_BYTES}-byte budget"
     );
-    // The point of the documented limit: the maximum batch does not fit the default heap at all, so
-    // a program near the cap has to raise it or build the batch off-chain.
+    // The point of the documented limit: the maximum execution does not fit the default heap at all, so
+    // a program near the cap has to raise it or build the execution off-chain.
     assert!(
         total > DEFAULT_HEAP_BYTES,
-        "the full-size batch now fits the default heap ({total} bytes) — the builder docs and \
+        "the full-size execution now fits the default heap ({total} bytes) — the builder docs and \
          INVARIANTS #54 tell app programs it does not, and that is the claim to update"
     );
 }
@@ -185,7 +185,7 @@ fn the_largest_legal_batch_stays_within_the_regression_budget() {
 #[test]
 #[ignore = "measurement table, run explicitly with --nocapture"]
 fn print_measurement_table() {
-    for steps in [4, 8, 12, 16, 20, 24, 28, MAX_FHE_BATCH_OPS] {
+    for steps in [4, 8, 12, 16, 20, 24, 28, MAX_FHE_EXECUTION_STEPS] {
         let (build, packet) = measure(steps);
         println!(
             "steps={steps:2} build={build:6} packet={packet:6} total={:6} {}",

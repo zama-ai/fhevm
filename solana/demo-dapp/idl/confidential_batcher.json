@@ -1670,8 +1670,8 @@
     },
     {
       "code": 6013,
-      "name": "InvalidFheExecuteBatch",
-      "msg": "invalid FHE batch"
+      "name": "InvalidFheExecution",
+      "msg": "invalid FHE execution"
     },
     {
       "code": 6014,
@@ -2203,7 +2203,7 @@
       "name": "CoprocessorInputAttestation",
       "docs": [
         "A coprocessor input attestation carried inline by a [`FheExecuteOperand::VerifiedInput`], re-verified",
-        "in-batch (no account, no PDA) — the instruction-local analog of EVM `allowTransient(input, contract)`."
+        "in-execution (no account, no PDA) — the instruction-local analog of EVM `allowTransient(input, contract)`."
       ],
       "type": {
         "kind": "struct",

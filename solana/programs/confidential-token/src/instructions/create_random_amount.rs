@@ -88,24 +88,25 @@ fn create_random_amount_inner<'info>(
         encrypted_value_id(mint_domain, owner, label),
         fhe::PersistentAudience::compute_only(ctx.accounts.compute_signer.key()),
     )?;
-    let batch = zama_fhe::Batch::build(zama_fhe::BatchAppAuthority::new(owner), |builder| {
-        match upper_bound {
-            Some(upper_bound) => builder.rand_bounded_u64(
-                zama_fhe::BoundedU64UpperBound::from_be_bytes(upper_bound)?,
-                amount_output.output(),
-            )?,
-            None => builder.rand_u64(amount_output.output())?,
-        };
-        Ok(())
-    })
-    .map_err(invalid_batch)?;
+    let execution =
+        zama_fhe::FheExecution::build(zama_fhe::ExecutionAppAuthority::new(owner), |builder| {
+            match upper_bound {
+                Some(upper_bound) => builder.rand_bounded_u64(
+                    zama_fhe::BoundedU64UpperBound::from_be_bytes(upper_bound)?,
+                    amount_output.output(),
+                )?,
+                None => builder.rand_u64(amount_output.output())?,
+            };
+            Ok(())
+        })
+        .map_err(invalid_execution)?;
     let compute_authority = fhe::ComputeAuthority::for_mint(
         &ctx.accounts.compute_signer,
         mint_key,
         ctx.bumps.compute_signer,
     )?;
-    let batch_accounts = fhe::BatchAccountSet::for_batch(
-        &batch,
+    let execution_accounts = fhe::ExecutionAccountSet::for_execution(
+        &execution,
         [amount_output.account_info()],
         [fhe::OutputAuthority::transaction_signer(
             &ctx.accounts.owner,
@@ -131,8 +132,8 @@ fn create_random_amount_inner<'info>(
                 .as_ref()
                 .map(|account| account.to_account_info()),
         },
-        accounts: &batch_accounts,
-        batch,
+        accounts: &execution_accounts,
+        execution,
     })?;
     let handle = amount_output.handle()?;
     emit_cpi!(RandomAmountCreatedEvent {

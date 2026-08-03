@@ -1,29 +1,34 @@
-//! App-facing helpers for preparing `zama-host` fhe_execute batch requests.
+//! App-facing helpers for preparing one `zama-host` `fhe_execute` invocation.
+//!
+//! An [`FheExecution`] is that invocation: an ordered walk of dependent steps, its interned
+//! constant dictionary, and the dynamic account list its `u8` indices address, sealed together and
+//! validated once. It is deliberately not a batch — the steps are not independent items processed
+//! together, each one reads what the step before it produced.
 //!
 //! This crate targets the role-aware host ABI. App code describes encrypted
-//! operands and persistent outputs by pubkey; [`BatchBuilder`] validates the batch,
+//! operands and persistent outputs by pubkey; [`FheExecutionBuilder`] validates the execution,
 //! assigns host account indices, and records the signer/writable requirements for
-//! every dynamic account. With the `cpi` feature, [`Batch::resolve_accounts`]
-//! preflights the dynamic account set and [`Batch::execute`] turns the batch plus
+//! every dynamic account. With the `cpi` feature, [`FheExecution::resolve_accounts`]
+//! preflights the dynamic account set and [`FheExecution::invoke`] turns the execution plus
 //! those resolved accounts into the exact `zama-host` CPI. That build, resolve,
-//! execute sequence is the only way the SDK invokes a batch: an app program that
+//! invoke sequence is the only way the SDK reaches the host: an app program that
 //! knows its signer set up front can write it in three calls, and one that has to
-//! read the built batch first — for its output authorities, or for the subjects it
-//! newly grants — needs the batch in hand anyway.
+//! read the built execution first — for its output authorities, or for the subjects it
+//! newly grants — needs the execution in hand anyway.
 //!
 //! The builder intentionally targets the current role-aware host fhe_execute ABI rather
 //! than the older `execute_frame` prototype (RFC-024's name for that sketch). Instruction-local intermediate
 //! values are returned by builder methods as typed transient [`Encrypted`] values;
 //! only [`Output::persistent`] creates ACL state. Binary, ternary, trivial-encrypt,
-//! rand, and verified input steps can be composed in one batch.
+//! rand, and verified input steps can be composed in one execution.
 
 #![allow(unexpected_cfgs)]
 
 mod accounts;
 mod acl;
-mod batch;
 mod builder;
 mod cpi;
+mod execution;
 #[cfg(test)]
 mod heap_budget;
 mod lower;
@@ -34,19 +39,19 @@ mod types;
 mod validate;
 
 pub use accounts::{
-    BatchAccountPurpose, BatchAccountRequirement, BatchAppAuthority,
-    BatchOutputAuthorityRequirement,
+    ExecutionAccountPurpose, ExecutionAccountRequirement, ExecutionAppAuthority,
+    ExecutionOutputAuthorityRequirement,
 };
 #[cfg(feature = "cpi")]
-pub use accounts::{BatchAccountResolutionError, ResolvedBatchAccounts};
+pub use accounts::{ExecutionAccountResolutionError, ResolvedExecutionAccounts};
 pub use acl::{
     BoundedU64UpperBound, Domain, EncryptedValueId, Output, PersistentLabel, PersistentOutput,
     PersistentOutputBinding,
 };
-pub use batch::Batch;
-pub use builder::{BatchBuilder, MAX_ON_CHAIN_BATCH_OPS};
+pub use builder::{FheExecutionBuilder, MAX_ON_CHAIN_EXECUTION_STEPS};
 #[cfg(feature = "cpi")]
-pub use cpi::BatchCpiAccounts;
+pub use cpi::ExecutionCpiAccounts;
+pub use execution::FheExecution;
 pub use types::{
     Address, BinaryRhs, Bool, BoolHandle, Bytes256, Encrypted, FheBitwise, FheEq, FheIsIn, FheNeg,
     FheNot, FheRandom, FheShift, FheType, FheTyped, FheUint, Scalar, StoredValue, Uint,
@@ -54,14 +59,14 @@ pub use types::{
 };
 
 /// Result type used by the builder helpers.
-pub type Result<T> = std::result::Result<T, BatchBuildError>;
+pub type Result<T> = std::result::Result<T, FheExecutionBuildError>;
 
 /// Builder failures that can be detected before invoking the host program.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum BatchBuildError {
+pub enum FheExecutionBuildError {
     /// More accounts were referenced than fit in the host's `u8` wire indices.
     TooManyRemainingAccounts,
-    /// The batch's interned constant dictionary outgrew the host's `u8` wire indices.
+    /// The execution's interned constant dictionary outgrew the host's `u8` wire indices.
     TooManyDictionaryEntries,
     /// An interned dictionary entry is not referenced by any step (host parity:
     /// `FheExecuteDictionaryEntryUnreferenced`).
@@ -75,18 +80,18 @@ pub enum BatchBuildError {
     /// Use the producer returned by that step for the new value, or consume the
     /// old persistent value before writing the account.
     PersistentOperandWrittenEarlier,
-    /// More ops were added than the host accepts (`MAX_FHE_BATCH_OPS`).
-    TooManyOps,
-    /// More ops were added than a program can build and invoke on Anchor's default 32 KB heap
-    /// (`MAX_ON_CHAIN_BATCH_OPS`). Only ever returned on-chain: the build and the packet come out of
+    /// More steps were added than the host accepts (`MAX_FHE_EXECUTION_STEPS`).
+    TooManySteps,
+    /// More steps were added than a program can build and invoke on Anchor's default 32 KB heap
+    /// (`MAX_ON_CHAIN_EXECUTION_STEPS`). Only ever returned on-chain: the build and the packet come out of
     /// one bump region that is never freed, so past this count the allocator aborts the instruction
-    /// with no error of its own. Build such a batch off-chain, or install a larger heap and enable
+    /// with no error of its own. Build such an execution off-chain, or install a larger heap and enable
     /// the crate's `raised-heap` feature.
-    TooManyOpsForDefaultHeap,
-    /// `finish` was called with no ops; the host rejects empty batches.
-    EmptyOps,
-    /// `finish` was called on a batch with a rand step but no persistent output;
-    /// the host anchors rand seeds to persistent writes and rejects such batches.
+    TooManyStepsForDefaultHeap,
+    /// `finish` was called with no steps; the host rejects empty executions.
+    EmptySteps,
+    /// `finish` was called on an execution with a rand step but no persistent output;
+    /// the host anchors rand seeds to persistent writes and rejects such executions.
     RandRequiresPersistentOutput,
     /// A scalar was supplied as the left-hand operand. The host invariant is
     /// scalar-RHS-only: the left operand must be an encrypted handle.
@@ -109,7 +114,7 @@ pub enum BatchBuildError {
     InvalidEncryptedValueId,
     /// The fixed app authority pubkey is not a valid signer identity.
     InvalidAppAuthority,
-    /// A lowered host account index does not match the batch account list.
+    /// A lowered host account index does not match the execution account list.
     InvalidRemainingAccountReference,
     /// A verified-input operand referenced an attestation not registered with the builder.
     MissingVerifiedInput,

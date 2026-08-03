@@ -1,7 +1,7 @@
 //! Phase 2: reconstruct zama-host decoded op records from decoded instruction data +
 //! block context, WITHOUT relying on on-chain `emit_cpi!`/`emit!`.
 //!
-//! Covers the `fhe_execute` batch walk (recomputing each step's handle via the
+//! Covers the `fhe_execute` execution walk (recomputing each step's handle via the
 //! program's own `computed_*` functions, byte-identical to on-chain emission)
 //! and the event-free `EncryptedValue` instruction decode (RFC-024).
 
@@ -38,8 +38,8 @@ pub fn is_fhe_execute_instruction(instruction_data: &[u8]) -> bool {
 }
 
 /// Decodes a `fhe_execute` instruction's data into the program's own `FheExecuteArgs`
-/// batch through `zama_host::decode` (so there is no bespoke decoder to
-/// drift from the on-chain layout). The decoded batch is the input to the eval
+/// execution through `zama_host::decode` (so there is no bespoke decoder to
+/// drift from the on-chain layout). The decoded execution is the input to the eval
 /// walk that reconstructs one op record per step — a separate pass that
 /// recomputes each step's handle and therefore depends on `previous_bank_hash`.
 pub fn decode_fhe_execute_args(
@@ -227,9 +227,9 @@ pub fn parse_host_config(account_data: &[u8]) -> anyhow::Result<u64> {
 }
 
 /// Resolves an eval operand to its handle by reusing already-produced step
-/// results and the batch's interned dictionary — no on-chain account reads.
+/// results and the execution's interned dictionary — no on-chain account reads.
 /// `Scalar` is only valid as a binary rhs (handled by [`resolve_rhs`]); seeing
-/// it here means a malformed batch.
+/// it here means a malformed execution.
 fn resolve_operand(
     operand: &FheExecuteOperand,
     dictionary: &[[u8; 32]],
@@ -270,27 +270,27 @@ fn resolve_rhs(
     }
 }
 
-/// Reconstructs the per-step op records a `fhe_execute` batch produces, mirroring
-/// the program's `walk_batch`: walk steps in order, resolve operands
+/// Reconstructs the per-step op records a `fhe_execute` execution produces, mirroring
+/// the program's `walk_steps`: walk steps in order, resolve operands
 /// (`Transient` referring to earlier steps' produced handles), recompute each
 /// step's result handle via the program's eval primitives, and produce one record
 /// per step. Persistent and instruction-local outputs derive the identical base
 /// handle — no per-output binding (matches EVM `FHEVMExecutor`).
 ///
-/// Returns `None` on a malformed batch (operand or dictionary reference out of range,
+/// Returns `None` on a malformed execution (operand or dictionary reference out of range,
 /// or a `Scalar` where only an encrypted operand is valid). `ctx` supplies
 /// chain_id / previous_bank_hash / unix_timestamp; `subject` is the compute
-/// subject. Random seeds are supplied by the host's signed event-CPI batch
+/// subject. Random seeds are supplied by the host's signed event-CPI execution
 /// because their anchor includes live persistent-account versions that are not
 /// caller-provided instruction data.
 pub fn reconstruct_fhe_execute_steps(
-    batch: &FheExecuteArgs,
+    execution: &FheExecuteArgs,
     subject: [u8; 32],
     _remaining_accounts: &[[u8; 32]],
     random_seeds: &[FheExecuteRandomSeed],
     ctx: &ReconstructContext,
-) -> Option<Vec<ReconstructedBatchStep>> {
-    let expected_random_steps = batch
+) -> Option<Vec<ReconstructedExecutionStep>> {
+    let expected_random_steps = execution
         .steps
         .iter()
         .enumerate()
@@ -311,11 +311,11 @@ pub fn reconstruct_fhe_execute_steps(
     {
         return None;
     }
-    let mut produced: Vec<[u8; 32]> = Vec::with_capacity(batch.steps.len());
-    let mut steps_out: Vec<ReconstructedBatchStep> =
-        Vec::with_capacity(batch.steps.len());
+    let mut produced: Vec<[u8; 32]> = Vec::with_capacity(execution.steps.len());
+    let mut steps_out: Vec<ReconstructedExecutionStep> =
+        Vec::with_capacity(execution.steps.len());
 
-    for (index, step) in batch.steps.iter().enumerate() {
+    for (index, step) in execution.steps.iter().enumerate() {
         let op_index = index as u16;
         let record = match step {
             FheExecuteStep::Binary {
@@ -326,9 +326,9 @@ pub fn reconstruct_fhe_execute_steps(
                 ..
             } => {
                 let lhs_handle =
-                    resolve_operand(lhs, &batch.dictionary, &produced)?;
+                    resolve_operand(lhs, &execution.dictionary, &produced)?;
                 let (rhs_handle, scalar) =
-                    resolve_rhs(rhs, &batch.dictionary, &produced)?;
+                    resolve_rhs(rhs, &execution.dictionary, &produced)?;
                 let result = computed_eval_handle(
                     *op,
                     lhs_handle,
@@ -356,10 +356,15 @@ pub fn reconstruct_fhe_execute_steps(
                 output_fhe_type,
                 ..
             } => {
-                let c = resolve_operand(control, &batch.dictionary, &produced)?;
-                let t = resolve_operand(if_true, &batch.dictionary, &produced)?;
-                let f =
-                    resolve_operand(if_false, &batch.dictionary, &produced)?;
+                let c =
+                    resolve_operand(control, &execution.dictionary, &produced)?;
+                let t =
+                    resolve_operand(if_true, &execution.dictionary, &produced)?;
+                let f = resolve_operand(
+                    if_false,
+                    &execution.dictionary,
+                    &produced,
+                )?;
                 let result = computed_eval_ternary_handle(
                     *op,
                     c,
@@ -418,7 +423,7 @@ pub fn reconstruct_fhe_execute_steps(
                 output: _,
             } => {
                 let operand_handle =
-                    resolve_operand(operand, &batch.dictionary, &produced)?;
+                    resolve_operand(operand, &execution.dictionary, &produced)?;
                 let result = computed_eval_unary_handle(
                     *op,
                     operand_handle,
@@ -467,7 +472,11 @@ pub fn reconstruct_fhe_execute_steps(
                 let operand_handles: Vec<[u8; 32]> = operands
                     .iter()
                     .map(|operand| {
-                        resolve_operand(operand, &batch.dictionary, &produced)
+                        resolve_operand(
+                            operand,
+                            &execution.dictionary,
+                            &produced,
+                        )
                     })
                     .collect::<Option<_>>()?;
                 let result =
@@ -488,11 +497,15 @@ pub fn reconstruct_fhe_execute_steps(
                 output: _,
             } => {
                 let value_handle =
-                    resolve_operand(value, &batch.dictionary, &produced)?;
+                    resolve_operand(value, &execution.dictionary, &produced)?;
                 let set_handles: Vec<[u8; 32]> = set
                     .iter()
                     .map(|operand| {
-                        resolve_operand(operand, &batch.dictionary, &produced)
+                        resolve_operand(
+                            operand,
+                            &execution.dictionary,
+                            &produced,
+                        )
                     })
                     .collect::<Option<_>>()?;
                 let result = computed_eval_is_in_handle(
@@ -519,9 +532,9 @@ pub fn reconstruct_fhe_execute_steps(
                 output: _,
             } => {
                 let factor1_handle =
-                    resolve_operand(factor1, &batch.dictionary, &produced)?;
+                    resolve_operand(factor1, &execution.dictionary, &produced)?;
                 let (factor2_handle, scalar) =
-                    resolve_rhs(factor2, &batch.dictionary, &produced)?;
+                    resolve_rhs(factor2, &execution.dictionary, &produced)?;
                 let result = computed_eval_mul_div_handle(
                     factor1_handle,
                     factor2_handle,
@@ -542,7 +555,7 @@ pub fn reconstruct_fhe_execute_steps(
                 })
             }
         };
-        steps_out.push(ReconstructedBatchStep {
+        steps_out.push(ReconstructedExecutionStep {
             record,
             persistent_encrypted_value_index:
                 fhe_execute_step_persistent_output_index(step),
@@ -555,7 +568,7 @@ pub fn reconstruct_fhe_execute_steps(
 /// One reconstructed `fhe_execute` step: the decoded op record plus, for a `Persistent`
 /// output, the `remaining_accounts` index of the output `EncryptedValue` PDA.
 /// The transport resolves that index to the persistent handle's material request.
-pub struct ReconstructedBatchStep {
+pub struct ReconstructedExecutionStep {
     pub record: SolanaHostRecord,
     pub persistent_encrypted_value_index: Option<u8>,
     /// Present when the persistent output updates an existing encrypted value account. The
@@ -607,7 +620,7 @@ fn fhe_execute_step_output(step: &FheExecuteStep) -> &FheExecuteOutput {
 /// the shape the shadow-compare consumes. Thin wrapper over
 /// [`reconstruct_fhe_execute_steps`].
 pub fn reconstruct_fhe_execute_records(
-    batch: &FheExecuteArgs,
+    execution: &FheExecuteArgs,
     subject: [u8; 32],
     remaining_accounts: &[[u8; 32]],
     random_seeds: &[FheExecuteRandomSeed],
@@ -615,7 +628,7 @@ pub fn reconstruct_fhe_execute_records(
 ) -> Option<Vec<SolanaHostRecord>> {
     Some(
         reconstruct_fhe_execute_steps(
-            batch,
+            execution,
             subject,
             remaining_accounts,
             random_seeds,
@@ -843,7 +856,7 @@ mod tests {
             FheBinaryOpCode, FheExecuteArgs, FheExecuteOperand,
             FheExecuteOutput, FheExecuteStep,
         };
-        let batch = FheExecuteArgs {
+        let execution = FheExecuteArgs {
             account_count: 0,
             dictionary: vec![[2u8; 32]],
             steps: vec![
@@ -864,15 +877,18 @@ mod tests {
         // Serialize like the on-chain instruction: discriminator + borsh args.
         let mut bytes =
             zama_host::instruction::FheExecute::DISCRIMINATOR.to_vec();
-        batch.serialize(&mut bytes).expect("serialize batch");
-        let decoded = decode_fhe_execute_args(&bytes).expect("decode batch");
-        assert_eq!(decoded, batch);
+        execution
+            .serialize(&mut bytes)
+            .expect("serialize execution");
+        let decoded =
+            decode_fhe_execute_args(&bytes).expect("decode execution");
+        assert_eq!(decoded, execution);
         assert_eq!(decoded.steps.len(), 2);
         // Wrong/missing discriminator -> None.
         assert!(decode_fhe_execute_args(&bytes[1..]).is_none());
 
         bytes.extend_from_slice(&[0xAA, 0xBB]);
-        assert_eq!(decode_fhe_execute_args(&bytes), Some(batch));
+        assert_eq!(decode_fhe_execute_args(&bytes), Some(execution));
     }
 
     #[test]
@@ -913,7 +929,7 @@ mod tests {
 
     #[test]
     fn fhe_execute_walk_chains_transient_handles() {
-        let batch = FheExecuteArgs {
+        let execution = FheExecuteArgs {
             account_count: 0,
             dictionary: vec![[2u8; 32]],
             steps: vec![
@@ -931,9 +947,14 @@ mod tests {
                 },
             ],
         };
-        let records =
-            reconstruct_fhe_execute_records(&batch, SUBJECT, &[], &[], &ctx())
-                .expect("walk");
+        let records = reconstruct_fhe_execute_records(
+            &execution,
+            SUBJECT,
+            &[],
+            &[],
+            &ctx(),
+        )
+        .expect("walk");
         assert_eq!(records.len(), 2);
         let step0 = match &records[0] {
             SolanaHostRecord::TrivialEncrypt(e) => {
@@ -961,9 +982,9 @@ mod tests {
             bytes[31] = 10;
             bytes
         };
-        // On-chain preflight requires a rand batch to anchor at least one persistent
+        // On-chain preflight requires a rand execution to anchor at least one persistent
         // output (fhevm-internal#1853 W4), so the fixture binds one.
-        let batch = FheExecuteArgs {
+        let execution = FheExecuteArgs {
             account_count: 1,
             dictionary: vec![[0xA1; 32], [0xA2; 32], [0xA3; 32], [0xA4; 32]],
             steps: vec![FheExecuteStep::RandBounded {
@@ -988,7 +1009,7 @@ mod tests {
             seed: [7; 16],
         }];
         let records = reconstruct_fhe_execute_records(
-            &batch,
+            &execution,
             SUBJECT,
             &[output_account],
             &random_seeds,
@@ -1013,10 +1034,10 @@ mod tests {
             b[31] = 128; // power-of-two upper bound
             b
         };
-        // The batch ends in a rand step, so it anchors a persistent output
+        // The execution ends in a rand step, so it anchors a persistent output
         // (fhevm-internal#1853 W4); dictionary entries 1..=4 are its ACL metadata.
         let output_account = [0x55u8; 32];
-        let batch = FheExecuteArgs {
+        let execution = FheExecuteArgs {
             account_count: 1,
             dictionary: vec![
                 [2u8; 32], [0xA1; 32], [0xA2; 32], [0xA3; 32], [0xA4; 32],
@@ -1083,7 +1104,7 @@ mod tests {
         };
         let random_seed = [9; 16];
         let records = reconstruct_fhe_execute_records(
-            &batch,
+            &execution,
             SUBJECT,
             &[output_account],
             &[FheExecuteRandomSeed {
@@ -1172,7 +1193,7 @@ mod tests {
     #[test]
     fn fhe_execute_walk_rejects_forward_transient_reference() {
         // A first step referencing a not-yet-produced step -> None.
-        let batch = FheExecuteArgs {
+        let execution = FheExecuteArgs {
             account_count: 0,
             dictionary: vec![[2u8; 32]],
             steps: vec![FheExecuteStep::Binary {
@@ -1184,7 +1205,7 @@ mod tests {
             }],
         };
         assert!(reconstruct_fhe_execute_records(
-            &batch,
+            &execution,
             SUBJECT,
             &[],
             &[],

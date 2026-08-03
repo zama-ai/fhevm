@@ -18,7 +18,7 @@ use super::set_host_pause::HostAdmin;
 /// - Rejects any trailing accounts (`assert_no_remaining_accounts`).
 /// - Idempotent: setting the current value is a no-op and does not advance `updated_slot`.
 /// - In the metering band (`0 < value < u64::MAX`), the cap must stay at or above `max_hcu_per_tx`
-///   (unless that is `u64::MAX` = unlimited), so a single legal batch is never structurally
+///   (unless that is `u64::MAX` = unlimited), so a single legal execution is never structurally
 ///   impossible.
 ///   The two sentinels (`0` = ban, `u64::MAX` = unrestricted) are exempt (`check_block_cap_ordering`).
 /// - Advances `updated_slot` and emits the config-updated event carrying the new cap.

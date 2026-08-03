@@ -1,12 +1,12 @@
 //! Single owner of every remaining-accounts safety invariant for one
-//! `fhe_execute` batch.
+//! `fhe_execute` execution.
 //!
 //! Construction rejects duplicate account keys. Preflight marks every account
-//! the batch references and [`EvalAccountTable::assert_all_used`] rejects
+//! the execution references and [`EvalAccountTable::assert_all_used`] rejects
 //! dangling accounts before any pass touches state, so later passes access by
 //! index without their own bookkeeping. Persistent-output claims (one write per
-//! account per batch), deny-record location by canonical derived address, and
-//! output-PDA derivation also live here, so the invariants of the batch's
+//! account per execution), deny-record location by canonical derived address, and
+//! output-PDA derivation also live here, so the invariants of the execution's
 //! account handling exist in exactly one place.
 
 use super::*;
@@ -16,7 +16,7 @@ pub(super) struct EvalAccountTable<'a, 'info> {
     used: Vec<bool>,
     /// Persistent output accounts already claimed by an earlier step. Reserved to
     /// the op cap up front: the SBF bump allocator never frees, so growth by
-    /// doubling would leak, and the created-public maximum batch already runs
+    /// doubling would leak, and the created-public maximum execution already runs
     /// close to the 32KB heap ceiling. (For the same reason the table caches
     /// no derived PDAs: the single walk derives each output PDA exactly once.)
     persistent_outputs_claimed: Vec<Pubkey>,
@@ -48,7 +48,7 @@ impl<'a, 'info> EvalAccountTable<'a, 'info> {
         Ok(Self {
             accounts,
             used: vec![false; accounts.len()],
-            persistent_outputs_claimed: Vec::with_capacity(MAX_FHE_BATCH_OPS),
+            persistent_outputs_claimed: Vec::with_capacity(MAX_FHE_EXECUTION_STEPS),
         })
     }
 
@@ -69,7 +69,7 @@ impl<'a, 'info> EvalAccountTable<'a, 'info> {
 
     /// Locates the deny record for `subject` by its canonical derived address
     /// (never by caller-supplied index). `Ok(None)` when the deny list is
-    /// disabled; missing record under an enabled list fails the batch.
+    /// disabled; missing record under an enabled list fails the execution.
     pub(super) fn deny_record(
         &self,
         deny_list_enabled: bool,
@@ -128,8 +128,8 @@ impl<'a, 'info> EvalAccountTable<'a, 'info> {
         }
     }
 
-    /// Claims a persistent output account for this batch; a second claim of the
-    /// same account is rejected (one write per account per batch — load-bearing
+    /// Claims a persistent output account for this execution; a second claim of the
+    /// same account is rejected (one write per account per execution — load-bearing
     /// for the rand seed anchor, see #1853 W4).
     pub(super) fn claim_persistent_output(&mut self, key: Pubkey) -> Result<()> {
         require!(
@@ -140,8 +140,8 @@ impl<'a, 'info> EvalAccountTable<'a, 'info> {
         Ok(())
     }
 
-    /// Whole-batch hygiene: every passed account must have been referenced by
-    /// the batch (as operand, output, authority, or deny record).
+    /// Whole-execution hygiene: every passed account must have been referenced by
+    /// the execution (as operand, output, authority, or deny record).
     pub(super) fn assert_all_used(&self) -> Result<()> {
         require!(
             self.used.iter().all(|used| *used),

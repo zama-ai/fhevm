@@ -647,10 +647,10 @@ enforces the signer the RFC had removed.
 
 The OpenZeppelin-track `execute_frame` ABI is intentionally not ported as a host instruction. Its
 useful ergonomic idea — symbolic previous results inside one instruction — is represented by
-`FheExecuteOperand::EarlierStep` in the host ABI and by the app-facing `zama-fhe::BatchBuilder`. The SDK
+`FheExecuteOperand::EarlierStep` in the host ABI and by the app-facing `zama-fhe::FheExecutionBuilder`. The SDK
 builder hides raw producer indices and `remaining_accounts` indices from app code, returns typed
 `Encrypted<T>` values for intermediate results, derives persistent output nonce keys / ACL record PDAs
-from `EncryptedValueKey`, accepts ACL subjects directly, and returns an opaque `Batch`.
+from `EncryptedValueKey`, accepts ACL subjects directly, and returns an opaque `FheExecution`.
 The `cpi` feature can resolve that batch through a pubkey-keyed account resolver, so app code does
 not hand-maintain ordered host accounts. Output authority, validated subject lists, overflow permissions,
 material commitments, and public-decrypt policy remain enforced by the current host ABI.
@@ -707,7 +707,7 @@ sequence. The eval emits `ge` and debit-candidate `sub` as instruction-local tra
 consumes them in a ternary `if_then_else`, persists the sender's new balance plus the transferred
 amount, and then credits the recipient in the same batch using a per-output recipient authority
 witness. The helper crate exposes typed persistent handles, scalar helpers, `EncryptedValueKey`,
-`BatchBuilder`, and batch-driven CPI resolution, so app code assembles this shape
+`FheExecutionBuilder`, and batch-driven CPI resolution, so app code assembles this shape
 without hand-maintaining raw producer indices, raw account indices, signer flags, writable flags,
 nonce keys, ACL record addresses, or repeated output type bytes for common operations. A successful
 direct transfer therefore binds exactly three persistent ACL records:
@@ -835,7 +835,7 @@ Open for debate:
 
 Expiry slot policy and request-PDA rent reclamation cadence are PoC-shaped.
 
-## DD-023: `fhe_execute` Composed Executor + Typed `BatchBuilder` DSL (DD-017 realized)
+## DD-023: `fhe_execute` Composed Executor + Typed `FheExecutionBuilder` DSL (DD-017 realized)
 
 Status: adopted (reconciliation; cross-reference DD-017 / DD-019, do not duplicate)
 
@@ -851,7 +851,7 @@ External encrypted inputs are not a step type: they enter as the `FheExecuteOper
 operand of a step and are verified in-batch (DD-007). Intermediate results can be `Output::transient()`
 (instruction-local, **no persistent ACL record / no `AclAllowedEvent`**) and consumed by later steps; only
 `Output::persistent()` results bind an `EncryptedValue` account and its `current_handle`. The app-facing `zama-fhe` crate
-(`solana/crates/zama-fhe`) exposes a typed `BatchBuilder` DSL returning `Encrypted<T>` for transients,
+(`solana/crates/zama-fhe`) exposes a typed `FheExecutionBuilder` DSL returning `Encrypted<T>` for transients,
 hiding raw producer/account indices, with a `cpi`-feature account resolver for batch execution.
 
 Why:
@@ -861,7 +861,7 @@ not 5 — DD-019) while keeping per-output signer-witness authority (DD-017).
 
 Open for debate:
 
-The step cap `MAX_FHE_BATCH_OPS` is derived from measured instruction-data and compute-unit budgets
+The step cap `MAX_FHE_EXECUTION_STEPS` is derived from measured instruction-data and compute-unit budgets
 on the interned wire format (fhevm-internal#1853 W8; see the constant's doc in
 `programs/zama-host/src/constants.rs`). The old per-operation replay-event transport split is
 replaced by the single created-public lifecycle batch — see DD-038. (An earlier revision cited
@@ -1491,7 +1491,7 @@ zero-based step index, the host-owned `EncryptedValue` account, and the host-der
 a batch with no produced public output emits no lifecycle event.
 
 This narrow batch exists because block-entropy output handles are absent from instruction arguments.
-At the maximum `MAX_FHE_BATCH_OPS` batch (32), the records serialize to one 2,133-byte CPI
+At the maximum `MAX_FHE_EXECUTION_STEPS` batch (32), the records serialize to one 2,133-byte CPI
 instruction — far below the 10,240-byte CPI instruction-data cap — avoiding the old
 one-CPI-per-step heap growth. (Execution, not the batch, bounds the all-created-public batch shape:
 the fixed 32KB Anchor bump heap fits 20 persistent creates per batch, measured and pinned by

@@ -133,7 +133,7 @@ pub fn confidential_burn<'info>(
 /// argument is gone and one account is added — `amount_value`, the encrypted amount to burn. It is
 /// read-only (the persistent operand the eval reads) and is never replaced or consumed; only the
 /// balance, total-supply, and burned-amount encrypted value accounts change, exactly as in [`ConfidentialBurn`].
-/// The batcher path uses this to burn a computed batch total (a handle produced by summing joins)
+/// The batcher path uses this to burn a computed execution total (a handle produced by summing joins)
 /// whose owner is a program PDA that authorizes the burn via `invoke_signed`.
 #[derive(Accounts)]
 #[event_cpi]
@@ -286,16 +286,16 @@ pub fn confidential_burn_from_value<'info>(
 
 /// Where a burn's amount comes from. The `ge -> sub -> select` debit, the created-public `burned` delta,
 /// and the total-supply decrement are identical for both arms; only how the amount operand enters the
-/// batch differs. Mirrors [`TransferAmountSource`].
+/// execution differs. Mirrors [`TransferAmountSource`].
 enum BurnAmountSource<'info> {
     /// EVM `FHE.fromExternal` parity: a coprocessor-attested fresh client-side encryption, verified
-    /// in-batch and transient-allowed for this eval (no persistent amount account).
+    /// in-execution and transient-allowed for this eval (no persistent amount account).
     Attested(zama_host::CoprocessorInputAttestation),
     /// EVM computed/received `euint64` parity: an existing on-chain `EncryptedValue` encrypted value account, spent
     /// as a read-only persistent operand at its current handle. It is never replaced and never
     /// consumed. The token spend gate (signing owner in the value's subject set) and euint64 type
     /// check run in the instruction handler before this reaches the eval builder; the host re-checks
-    /// the handle is current and that the mint's compute subject is allowed on the value, in-batch.
+    /// the handle is current and that the mint's compute subject is allowed on the value, in-execution.
     ExistingValue { amount_value: AccountInfo<'info> },
 }
 
@@ -421,7 +421,7 @@ fn execute_burn<'info>(
     // Existing value: the amount is an on-chain encrypted value account's current handle, read as a
     // persistent operand. The slot is derived from the value's own canonical fields, so its PDA
     // equals the passed account; the host re-checks handle-is-current and compute-subject
-    // membership. Read here rather than inside the batch closure: a stored value belongs to no
+    // membership. Read here rather than inside the execution closure: a stored value belongs to no
     // builder, and reading the account is this program's error to report, not the builder's.
     let stored_amount = match &amount_source {
         BurnAmountSource::Attested(_) => None,
@@ -435,12 +435,12 @@ fn execute_burn<'info>(
             )?)
         }
     };
-    let batch = zama_fhe::Batch::build(
-        zama_fhe::BatchAppAuthority::new(token_account_key),
+    let execution = zama_fhe::FheExecution::build(
+        zama_fhe::ExecutionAppAuthority::new(token_account_key),
         |builder| {
             let amount = match (&amount_source, stored_amount) {
                 // fromExternal: the amount is a coprocessor-attested external input, verified
-                // in-batch and transient-allowed for this eval (no persistent amount handle / ACL
+                // in-execution and transient-allowed for this eval (no persistent amount handle / ACL
                 // account).
                 (BurnAmountSource::Attested(amount_attestation), _) => {
                     builder.verified_input(amount_attestation.clone())?
@@ -468,12 +468,12 @@ fn execute_burn<'info>(
             Ok(())
         },
     )
-    .map_err(invalid_batch)?;
+    .map_err(invalid_execution)?;
     let compute_authority =
         fhe::ComputeAuthority::for_mint(accounts.compute_signer, mint_key, compute_signer_bump)?;
     let total_supply_authority_bump = total_supply_authority_address(mint_key).1;
     // Persistent output accounts are the same for both arms; the existing-value arm adds the amount
-    // encrypted value account as a read-only persistent input operand the batch now requires.
+    // encrypted value account as a read-only persistent input operand the execution now requires.
     let mut dynamic_accounts = vec![
         balance_output.account_info(),
         burned_output.account_info(),
@@ -482,7 +482,7 @@ fn execute_burn<'info>(
     if let BurnAmountSource::ExistingValue { amount_value, .. } = &amount_source {
         // The amount encrypted value account can legitimately alias one of the output accounts (burning the entire
         // balance aliases the balance encrypted value account; re-burning a burned_amount aliases the burned output).
-        // The batch already merges those into one slot, so only add the amount when it is a distinct
+        // The execution already merges those into one slot, so only add the amount when it is a distinct
         // account — pushing a duplicate would trip eval account resolution (the #3238 aliasing class).
         if !dynamic_accounts
             .iter()
@@ -491,8 +491,8 @@ fn execute_burn<'info>(
             dynamic_accounts.push(amount_value.clone());
         }
     }
-    let batch_accounts = fhe::BatchAccountSet::for_batch(
-        &batch,
+    let execution_accounts = fhe::ExecutionAccountSet::for_execution(
+        &execution,
         dynamic_accounts,
         [
             fhe::OutputAuthority::token_account(token_account)?,
@@ -515,8 +515,8 @@ fn execute_burn<'info>(
             hcu_block_meter: accounts.hcu_block_meter.clone(),
             hcu_trusted_app_record: accounts.hcu_trusted_app_record.clone(),
         },
-        accounts: &batch_accounts,
-        batch,
+        accounts: &execution_accounts,
+        execution,
     })?;
 
     Ok(BurnOutcome {

@@ -23,7 +23,7 @@
 //!
 //! Relayers must support a lifecycle version before that producer version is
 //! deployed; an unknown version intentionally halts ingestion. RPC responses
-//! must also include `stackHeight` for every inner instruction so the batch can
+//! must also include `stackHeight` for every inner instruction so the execution can
 //! be bound to its immediate enclosing frame.
 
 use borsh::BorshDeserialize;
@@ -37,7 +37,7 @@ pub use solana_proof_source::RawInstruction;
 ///
 /// Direct allow/make-public instructions carry `encrypted_value` at account
 /// index 2. `remove_subject` uses index 1, and `fhe_execute` persistent
-/// outputs reference `remaining_accounts` by index inside the batch.
+/// outputs reference `remaining_accounts` by index inside the execution.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum DecodedInstruction {
     AllowSubjects {
@@ -163,7 +163,7 @@ pub enum DecodeError {
 /// about, and `Err` only for malformed data.
 ///
 /// Most lifecycle instructions produce one decoded instruction. `fhe_execute` can
-/// produce several because one batch can bind several persistent outputs.
+/// produce several because one execution can bind several persistent outputs.
 pub fn decode_instructions(ix: &RawInstruction) -> Result<Vec<DecodedInstruction>, DecodeError> {
     if ix.data.len() < 8 {
         return Err(DecodeError::DataTooShort);
@@ -189,15 +189,15 @@ pub fn decode_instructions(ix: &RawInstruction) -> Result<Vec<DecodedInstruction
         }
         // Without the lifecycle batch (single-instruction decode), no created-public
         // output handle can be resolved; those leaves fail closed at proof time.
-        Some(ZamaHostInstruction::FheExecute(batch)) => {
-            decode_fhe_execute_persistent_outputs(ix, &batch, &[])
+        Some(ZamaHostInstruction::FheExecute(execution)) => {
+            decode_fhe_execute_persistent_outputs(ix, &execution, &[])
         }
         None => Ok(Vec::new()),
     }
 }
 
 /// Back-compat helper for tests and single-output callers. Transaction replay
-/// uses [`decode_program_instructions`] so multi-output `fhe_execute` batches and
+/// uses [`decode_program_instructions`] so multi-output `fhe_execute` executions and
 /// their lifecycle batches are validated together.
 pub fn decode_instruction(ix: &RawInstruction) -> Result<Option<DecodedInstruction>, DecodeError> {
     Ok(decode_instructions(ix)?.into_iter().next())
@@ -222,11 +222,11 @@ fn fhe_execute_persistent_output_account(
     ix: &RawInstruction,
     remaining_index: u8,
 ) -> Result<[u8; 32], DecodeError> {
-    // `remaining_index` is the batch's `output_encrypted_value_index`, relative to
+    // `remaining_index` is the execution's `output_encrypted_value_index`, relative to
     // `remaining_accounts`. Those always start at a fixed offset past the 9 named
     // `fhe_execute` accounts (the optional HCU accounts are program-id placeholders
     // when absent, so the offset never shifts). Any deny record lives inside
-    // `remaining_accounts` and is already accounted for by the batch index.
+    // `remaining_accounts` and is already accounted for by the execution index.
     let absolute_index = FHE_EXECUTE_REMAINING_BASE + usize::from(remaining_index);
     ix.accounts
         .get(absolute_index)
@@ -239,11 +239,11 @@ fn fhe_execute_persistent_output_account(
 
 fn decode_fhe_execute_persistent_outputs(
     ix: &RawInstruction,
-    batch: &FheExecuteArgs,
+    execution: &FheExecuteArgs,
     created_public_handles: &[Option<[u8; 32]>],
 ) -> Result<Vec<DecodedInstruction>, DecodeError> {
     let mut out = Vec::new();
-    for (step_index, step) in batch.steps.iter().enumerate() {
+    for (step_index, step) in execution.steps.iter().enumerate() {
         let FheExecuteOutput::StoredValue {
             output_encrypted_value_index,
             output_subject_indexes,
@@ -264,7 +264,7 @@ fn decode_fhe_execute_persistent_outputs(
         let output_subjects = output_subject_indexes
             .iter()
             .map(|index| {
-                batch
+                execution
                     .dictionary
                     .get(usize::from(*index))
                     .copied()
@@ -354,8 +354,8 @@ fn validate_random_seed_event(
     Ok(())
 }
 
-fn expected_random_step_indexes(batch: &FheExecuteArgs) -> Vec<u16> {
-    batch
+fn expected_random_step_indexes(execution: &FheExecuteArgs) -> Vec<u16> {
+    execution
         .steps
         .iter()
         .enumerate()
@@ -407,9 +407,9 @@ fn decode_created_public_event(
                 "record count overflows encoded length".to_string(),
             )
         })?;
-    // The producer emits no event for an empty batch, so an encoded batch must
+    // The producer emits no event for an empty execution, so an encoded execution must
     // contain at least one record.
-    if !(1..=zama_host::MAX_FHE_BATCH_OPS).contains(&count) || body.len() != expected_len {
+    if !(1..=zama_host::MAX_FHE_EXECUTION_STEPS).contains(&count) || body.len() != expected_len {
         return Err(DecodeError::MalformedCreatedPublicEvent(format!(
             "invalid record count or encoded length: count={count}, bytes={}",
             body.len()
@@ -434,9 +434,9 @@ fn decode_created_public_event(
 
 fn expected_created_public_outputs(
     ix: &RawInstruction,
-    batch: &FheExecuteArgs,
+    execution: &FheExecuteArgs,
 ) -> Result<Vec<(u16, [u8; 32])>, DecodeError> {
-    batch
+    execution
         .steps
         .iter()
         .enumerate()
@@ -518,8 +518,8 @@ pub fn decode_program_instructions(
         }
         if is_fhe_execute(ix) {
             let mut body = &ix.data[8..];
-            let batch = FheExecuteArgs::deserialize(&mut body).map_err(borsh_err)?;
-            let expected = expected_created_public_outputs(ix, &batch)?;
+            let execution = FheExecuteArgs::deserialize(&mut body).map_err(borsh_err)?;
+            let expected = expected_created_public_outputs(ix, &execution)?;
             let eval_height = ix.stack_height.ok_or(DecodeError::InvalidStackMetadata)?;
             let event_height = eval_height
                 .checked_add(1)
@@ -547,7 +547,7 @@ pub fn decode_program_instructions(
             }) {
                 return Err(DecodeError::UnexpectedHostDescendant);
             }
-            let expected_random_steps = expected_random_step_indexes(&batch);
+            let expected_random_steps = expected_random_step_indexes(&execution);
             match (
                 expected_random_steps.is_empty(),
                 random_event_indexes.as_slice(),
@@ -565,7 +565,7 @@ pub fn decode_program_instructions(
                 }
             }
             let handles = match (expected.is_empty(), event_indexes.as_slice()) {
-                (true, []) => vec![None; batch.steps.len()],
+                (true, []) => vec![None; execution.steps.len()],
                 (true, _) => return Err(DecodeError::UnexpectedCreatedPublicEvent),
                 (false, []) => return Err(DecodeError::MissingCreatedPublicEvent),
                 (false, [event_index]) => {
@@ -574,11 +574,11 @@ pub fn decode_program_instructions(
                         return Err(DecodeError::InvalidCreatedPublicEnvelope);
                     }
                     let actual = decode_created_public_event(event_ix, program_id)?;
-                    validate_created_public_event(&expected, actual, batch.steps.len())?
+                    validate_created_public_event(&expected, actual, execution.steps.len())?
                 }
                 (false, _) => return Err(DecodeError::UnexpectedCreatedPublicEvent),
             };
-            out.extend(decode_fhe_execute_persistent_outputs(ix, &batch, &handles)?);
+            out.extend(decode_fhe_execute_persistent_outputs(ix, &execution, &handles)?);
             index = batch_end;
         } else {
             out.extend(decode_instructions(ix)?);
@@ -693,9 +693,9 @@ mod tests {
         accounts
     }
 
-    // Batch constants live in the interned dictionary (fhevm-internal#1853 W7). The
+    // Execution constants live in the interned dictionary (fhevm-internal#1853 W7). The
     // fixtures intern through a thread-local dictionary while assembling steps and
-    // `batch` drains it into the finished args; each test runs on its own thread.
+    // `execution` drains it into the finished args; each test runs on its own thread.
     std::thread_local! {
         static INTERNED_DICTIONARY: std::cell::RefCell<Vec<[u8; 32]>> =
             const { std::cell::RefCell::new(Vec::new()) };
@@ -713,7 +713,7 @@ mod tests {
         })
     }
 
-    fn batch(steps: Vec<FheExecuteStep>) -> FheExecuteArgs {
+    fn execution(steps: Vec<FheExecuteStep>) -> FheExecuteArgs {
         FheExecuteArgs {
             account_count: 0,
             dictionary: INTERNED_DICTIONARY.with(|dictionary| dictionary.take()),
@@ -895,7 +895,7 @@ mod tests {
     fn decodes_fhe_execute_persistent_outputs_in_step_order() {
         let ev0 = pk(0xE0);
         let ev1 = pk(0xE1);
-        let batch = batch(vec![
+        let execution = execution(vec![
             FheExecuteStep::TrivialEncrypt {
                 plaintext: pk(0x10),
                 fhe_type: 5,
@@ -906,7 +906,7 @@ mod tests {
                 output: persistent_output(1, &[0x31, 0x32], Some(pk(0x20)), Some(&[0x31, 0x32])),
             },
         ]);
-        let ix = ix_with_anchor_data(fhe_execute_accounts(&[ev0, ev1]), "fhe_execute", batch);
+        let ix = ix_with_anchor_data(fhe_execute_accounts(&[ev0, ev1]), "fhe_execute", execution);
         let decoded = decode_program_instructions(program_id(), &[ix]).unwrap();
         assert_eq!(
             decoded,
@@ -966,7 +966,7 @@ mod tests {
     fn two_created_public_outputs() -> (RawInstruction, RawInstruction) {
         let ev0 = pk(0xE0);
         let ev1 = pk(0xE1);
-        let batch = batch(vec![
+        let execution = execution(vec![
             FheExecuteStep::TrivialEncrypt {
                 plaintext: pk(0x02),
                 fhe_type: 5,
@@ -978,7 +978,7 @@ mod tests {
                 output: make_public_persistent_output(1, &[0x31], Some(pk(0x20)), Some(&[0x31])),
             },
         ]);
-        let eval = ix_with_anchor_data(fhe_execute_accounts(&[ev0, ev1]), "fhe_execute", batch);
+        let eval = ix_with_anchor_data(fhe_execute_accounts(&[ev0, ev1]), "fhe_execute", execution);
         let event = created_public_event_ix(&[(0, ev0, pk(0x50)), (1, ev1, pk(0x51))]);
         (eval, event)
     }
@@ -1044,12 +1044,12 @@ mod tests {
 
     #[test]
     fn extra_batch_for_non_public_batch_fails_closed() {
-        let batch = batch(vec![FheExecuteStep::TrivialEncrypt {
+        let execution = execution(vec![FheExecuteStep::TrivialEncrypt {
             plaintext: pk(0x02),
             fhe_type: 5,
             output: persistent_output(0, &[0x30], None, None),
         }]);
-        let eval = ix_with_anchor_data(fhe_execute_accounts(&[pk(0xE0)]), "fhe_execute", batch);
+        let eval = ix_with_anchor_data(fhe_execute_accounts(&[pk(0xE0)]), "fhe_execute", execution);
         let event = created_public_event_ix(&[(0, pk(0xE0), pk(0x50))]);
         assert_eq!(
             decode_program_instructions(program_id(), &[eval, event]),
@@ -1124,7 +1124,7 @@ mod tests {
     #[test]
     fn oversized_batch_fails_closed() {
         let (eval, _) = two_created_public_outputs();
-        let records = (0..=zama_host::MAX_FHE_BATCH_OPS)
+        let records = (0..=zama_host::MAX_FHE_EXECUTION_STEPS)
             .map(|index| (index as u16, [index as u8; 32], [(index + 1) as u8; 32]))
             .collect::<Vec<_>>();
         let oversized = created_public_event_ix(&records);
@@ -1172,7 +1172,7 @@ mod tests {
         let eval = ix_with_anchor_data(
             fhe_execute_accounts(&[encrypted_value]),
             "fhe_execute",
-            batch(vec![FheExecuteStep::Rand {
+            execution(vec![FheExecuteStep::Rand {
                 fhe_type: 5,
                 output: make_public_persistent_output(0, &[0x30], None, None),
             }]),

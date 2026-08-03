@@ -1731,7 +1731,7 @@
     {
       "code": 6035,
       "name": "FheExecuteRandRequiresPersistentOutput",
-      "msg": "fhe_execute rand step requires a persistent output in the batch"
+      "msg": "fhe_execute rand step requires a persistent output in the execution"
     },
     {
       "code": 6036,
@@ -1871,7 +1871,7 @@
     {
       "code": 6063,
       "name": "FheExecuteUnanchoredUnderBlockCap",
-      "msg": "FHE batch anchors no persistent/verified binding under a finite HCU block cap"
+      "msg": "FHE execution anchors no persistent/verified binding under a finite HCU block cap"
     },
     {
       "code": 6064,
@@ -1946,7 +1946,7 @@
     {
       "code": 6078,
       "name": "FheExecutePersistentOperandWrittenEarlier",
-      "msg": "fhe_execute persistent operand was written earlier in the batch"
+      "msg": "fhe_execute persistent operand was written earlier in the execution"
     },
     {
       "code": 6079,
@@ -1964,7 +1964,7 @@
       "name": "CoprocessorInputAttestation",
       "docs": [
         "A coprocessor input attestation carried inline by a [`FheExecuteOperand::VerifiedInput`], re-verified",
-        "in-batch (no account, no PDA) — the instruction-local analog of EVM `allowTransient(input, contract)`."
+        "in-execution (no account, no PDA) — the instruction-local analog of EVM `allowTransient(input, contract)`."
       ],
       "type": {
         "kind": "struct",
@@ -2177,7 +2177,7 @@
     {
       "name": "FheExecuteArgs",
       "docs": [
-        "Arguments for a composed instruction-local fhe_execute batch."
+        "Arguments for one composed, instruction-local fhe_execute."
       ],
       "type": {
         "kind": "struct",
@@ -2413,7 +2413,7 @@
           {
             "name": "step_index",
             "docs": [
-              "Zero-based step index within the batch."
+              "Zero-based step index within the execution."
             ],
             "type": "u16"
           },
@@ -2435,7 +2435,7 @@
     {
       "name": "FheExecuteRandomSeedsEvent",
       "docs": [
-        "Emitted once for the random steps in an `fhe_execute` batch."
+        "Emitted once for the random steps in an `fhe_execute` execution."
       ],
       "type": {
         "kind": "struct",
@@ -2450,7 +2450,7 @@
           {
             "name": "seeds",
             "docs": [
-              "Random seeds in batch step order."
+              "Random seeds in execution step order."
             ],
             "type": {
               "vec": {
@@ -2466,7 +2466,7 @@
     {
       "name": "FheExecuteStep",
       "docs": [
-        "One step inside a composed fhe_execute batch."
+        "One step inside a composed fhe_execute."
       ],
       "type": {
         "kind": "enum",
@@ -3073,7 +3073,7 @@
           {
             "name": "max_hcu_per_tx",
             "docs": [
-              "Max total HCU summed over one `fhe_execute` batch. `u64::MAX` = unlimited",
+              "Max total HCU summed over one `fhe_execute` execution. `u64::MAX` = unlimited",
               "(enforcement off); `0` is rejected at set time."
             ],
             "type": "u64"
@@ -3081,7 +3081,7 @@
           {
             "name": "max_hcu_depth_per_tx",
             "docs": [
-              "Max critical-path (depth) HCU within one `fhe_execute` batch. `u64::MAX` =",
+              "Max critical-path (depth) HCU within one `fhe_execute` execution. `u64::MAX` =",
               "unlimited; `0` is rejected at set time."
             ],
             "type": "u64"
@@ -3198,14 +3198,14 @@
           {
             "name": "max_hcu_per_tx",
             "docs": [
-              "Current max total HCU per `fhe_execute` batch (`u64::MAX` = unlimited)."
+              "Current max total HCU per `fhe_execute` execution (`u64::MAX` = unlimited)."
             ],
             "type": "u64"
           },
           {
             "name": "max_hcu_depth_per_tx",
             "docs": [
-              "Current max critical-path HCU per `fhe_execute` batch (`u64::MAX` = unlimited)."
+              "Current max critical-path HCU per `fhe_execute` execution (`u64::MAX` = unlimited)."
             ],
             "type": "u64"
           },
@@ -3554,7 +3554,7 @@
     {
       "name": "ProducedPublicOutput",
       "docs": [
-        "One public persistent output produced by an `fhe_execute` batch."
+        "One public persistent output produced by an `fhe_execute` execution."
       ],
       "type": {
         "kind": "struct",
@@ -3562,7 +3562,7 @@
           {
             "name": "step_index",
             "docs": [
-              "Zero-based step index within the batch."
+              "Zero-based step index within the execution."
             ],
             "type": "u16"
           },
@@ -3591,7 +3591,7 @@
     {
       "name": "PublicOutputsProducedEvent",
       "docs": [
-        "Emitted once for the public outputs produced by an `fhe_execute` batch."
+        "Emitted once for the public outputs produced by an `fhe_execute` execution."
       ],
       "type": {
         "kind": "struct",
@@ -3606,7 +3606,7 @@
           {
             "name": "outputs",
             "docs": [
-              "Produced public outputs in batch step order."
+              "Produced public outputs in execution step order."
             ],
             "type": {
               "vec": {

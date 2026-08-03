@@ -10,7 +10,7 @@ license.workspace = true
 default = []
 cpi = ["zama-host/cpi"]
 # For a program that installs its own allocator: lifts the on-chain step ceiling
-# (`MAX_ON_CHAIN_BATCH_OPS`) back to the host's `MAX_FHE_BATCH_OPS`. Off-chain builds are unaffected
+# (`MAX_ON_CHAIN_EXECUTION_STEPS`) back to the host's `MAX_FHE_EXECUTION_STEPS`. Off-chain builds are unaffected
 # either way.
 raised-heap = []
 

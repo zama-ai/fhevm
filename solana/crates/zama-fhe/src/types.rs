@@ -7,7 +7,7 @@ use anchor_lang::prelude::Pubkey;
 use crate::acl::EncryptedValueId;
 use crate::operand::{BuilderBrand, Operand};
 use crate::validate::{handle_fhe_type, validate_encrypted_value_id, validate_supported_fhe_type};
-use crate::{BatchBuildError, Result};
+use crate::{FheExecutionBuildError, Result};
 
 /// Typed FHE handle tag used by the host ABI.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -262,12 +262,12 @@ impl FheIsIn for Uint<128> {}
 impl FheIsIn for Address {}
 impl FheIsIn for Bytes256 {}
 
-/// Typed encrypted batch value.
+/// Typed encrypted execution value.
 ///
 /// Transient values are returned by
-/// [`BatchBuilder`](crate::BatchBuilder) methods and can only be fed to later steps of the builder
+/// [`FheExecutionBuilder`](crate::FheExecutionBuilder) methods and can only be fed to later steps of the builder
 /// that produced them: `'brand` is that builder's identity, handed out by
-/// [`Batch::build`](crate::Batch::build) as a fresh invariant lifetime, so mixing two builders'
+/// [`FheExecution::build`](crate::FheExecution::build) as a fresh invariant lifetime, so mixing two builders'
 /// values is a type error. A persistent value belongs to no builder and takes whatever brand its
 /// use site needs.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -280,7 +280,7 @@ pub struct Encrypted<'brand, T> {
 /// A persistent value as an operand: its handle plus the value account holding it.
 ///
 /// Brand-free on purpose. A stored value belongs to no builder, so app code can read one out of
-/// account state — with its own error handling — before it opens a batch, and then feed it to
+/// account state — with its own error handling — before it opens an execution, and then feed it to
 /// whichever builder needs it. Only the values a builder hands back are branded ([`Encrypted`]),
 /// because only those are meaningless outside it.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -295,7 +295,7 @@ impl<T: FheTyped> StoredValue<T> {
     pub fn persistent(handle: [u8; 32], key: EncryptedValueId) -> Result<Self> {
         validate_encrypted_value_id(&key)?;
         if handle_fhe_type(handle) != T::FHE_TYPE.byte() {
-            return Err(BatchBuildError::UnsupportedFheType);
+            return Err(FheExecutionBuildError::UnsupportedFheType);
         }
         Ok(Self {
             operand: Operand::persistent(handle, key.address()),
@@ -407,7 +407,7 @@ impl Scalar<Bytes256> {
     }
 }
 
-/// Typed right-hand side accepted by binary batch ops. Carries the builder brand of the encrypted
+/// Typed right-hand side accepted by binary execution ops. Carries the builder brand of the encrypted
 /// arm; a scalar belongs to no builder.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum BinaryRhs<'brand, T> {

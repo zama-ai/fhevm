@@ -2,18 +2,18 @@
 
 use crate::accounts::*;
 use crate::acl::*;
-use crate::batch::*;
 use crate::builder::*;
+use crate::execution::*;
 use crate::lower::StepTables;
 use crate::operand::*;
 use crate::types::*;
-use crate::BatchBuildError;
+use crate::FheExecutionBuildError;
 use anchor_lang::prelude::Pubkey;
 #[cfg(feature = "cpi")]
 use anchor_lang::{prelude::AccountInfo, Key};
 use zama_host::{
     CoprocessorInputAttestation, FheBinaryOpCode, FheExecuteOperand, FheExecuteOutput,
-    FheExecuteStep, FheUnaryOpCode, MAX_FHE_BATCH_OPS,
+    FheExecuteStep, FheUnaryOpCode, MAX_FHE_EXECUTION_STEPS,
 };
 
 fn handle(tag: u8) -> [u8; 32] {
@@ -30,8 +30,8 @@ fn balance_handle(tag: u8) -> [u8; 32] {
     typed_handle(tag, 5)
 }
 
-fn app_authority(pubkey: Pubkey) -> BatchAppAuthority {
-    BatchAppAuthority::new(pubkey)
+fn app_authority(pubkey: Pubkey) -> ExecutionAppAuthority {
+    ExecutionAppAuthority::new(pubkey)
 }
 
 #[cfg(feature = "cpi")]
@@ -81,7 +81,7 @@ fn batch_build_runs_closure_and_finishes_batch() {
     let output_acl = output_key.address();
     let balance = Uint64Handle::persistent(balance_handle(1), input_key).unwrap();
 
-    let batch = Batch::build(app_authority(primary_authority), |builder| {
+    let execution = FheExecution::build(app_authority(primary_authority), |builder| {
         let incremented = builder.add(balance, Scalar::<Uint<64>>::u64(1), Output::transient())?;
         builder.add(
             incremented,
@@ -95,16 +95,19 @@ fn batch_build_runs_closure_and_finishes_batch() {
     })
     .unwrap();
 
-    assert_eq!(batch.app_authority().pubkey(), primary_authority);
+    assert_eq!(execution.app_authority().pubkey(), primary_authority);
     assert_eq!(
-        batch.remaining_accounts,
+        execution.remaining_accounts,
         vec![
-            BatchAccountMeta::readonly(input_acl, BatchAccountPurpose::PersistentInputAcl),
-            BatchAccountMeta::writable(output_acl, BatchAccountPurpose::PersistentOutputAcl),
+            ExecutionAccountMeta::readonly(input_acl, ExecutionAccountPurpose::PersistentInputAcl),
+            ExecutionAccountMeta::writable(
+                output_acl,
+                ExecutionAccountPurpose::PersistentOutputAcl
+            ),
         ]
     );
-    assert_eq!(batch.args.steps.len(), 2);
-    match &batch.args.steps[1] {
+    assert_eq!(execution.args.steps.len(), 2);
+    match &execution.args.steps[1] {
         FheExecuteStep::Binary { lhs, output, .. } => {
             assert_eq!(*lhs, FheExecuteOperand::EarlierStep { producer_index: 0 });
             match output {
@@ -125,7 +128,7 @@ fn batch_build_runs_closure_and_finishes_batch() {
 fn builder_rejects_post_write_persistent_alias() {
     let authority = Pubkey::new_unique();
     let key = encrypted_value_id(authority, 7);
-    let mut builder = BatchBuilder::new(app_authority(authority));
+    let mut builder = FheExecutionBuilder::new(app_authority(authority));
     builder
         .trivial_encrypt_u64(
             7,
@@ -142,7 +145,10 @@ fn builder_rejects_post_write_persistent_alias() {
         )
         .unwrap_err();
 
-    assert_eq!(error, BatchBuildError::PersistentOperandWrittenEarlier);
+    assert_eq!(
+        error,
+        FheExecutionBuildError::PersistentOperandWrittenEarlier
+    );
 }
 
 #[test]
@@ -153,7 +159,7 @@ fn batch_build_lowers_verified_input_operand() {
     let input_handle = balance_handle(2);
     let attestation = dummy_attestation(input_handle, primary_authority);
 
-    let batch = Batch::build(app_authority(primary_authority), |builder| {
+    let execution = FheExecution::build(app_authority(primary_authority), |builder| {
         let amount = builder.verified_input::<Uint<64>>(attestation.clone())?;
         builder.add(
             amount,
@@ -167,8 +173,8 @@ fn batch_build_lowers_verified_input_operand() {
     })
     .unwrap();
 
-    assert_eq!(batch.args.steps.len(), 1);
-    match &batch.args.steps[0] {
+    assert_eq!(execution.args.steps.len(), 1);
+    match &execution.args.steps[0] {
         FheExecuteStep::Binary { lhs, rhs, .. } => {
             assert_eq!(
                 *lhs,
@@ -178,7 +184,7 @@ fn batch_build_lowers_verified_input_operand() {
             );
             assert_eq!(*rhs, FheExecuteOperand::Scalar { value_index: 0 });
             assert_eq!(
-                batch.args.dictionary_bytes(0).unwrap(),
+                execution.args.dictionary_bytes(0).unwrap(),
                 Scalar::<Uint<64>>::u64(1).bytes()
             );
         }
@@ -186,10 +192,10 @@ fn batch_build_lowers_verified_input_operand() {
     }
     // A verified input carries no remaining account: the attestation is inline in the operand.
     assert_eq!(
-        batch.remaining_accounts,
-        vec![BatchAccountMeta::writable(
+        execution.remaining_accounts,
+        vec![ExecutionAccountMeta::writable(
             output_acl,
-            BatchAccountPurpose::PersistentOutputAcl
+            ExecutionAccountPurpose::PersistentOutputAcl
         )]
     );
 }
@@ -199,17 +205,17 @@ fn verified_input_rejects_type_mismatch() {
     let primary_authority = Pubkey::new_unique();
     // Input handle typed as BOOL (0) but requested as Uint64: caught at build time.
     let attestation = dummy_attestation(typed_handle(2, 0), primary_authority);
-    let mut builder = BatchBuilder::new(app_authority(primary_authority));
+    let mut builder = FheExecutionBuilder::new(app_authority(primary_authority));
     assert_eq!(
         builder.verified_input::<Uint<64>>(attestation).unwrap_err(),
-        BatchBuildError::UnsupportedFheType
+        FheExecutionBuildError::UnsupportedFheType
     );
 }
 
 #[test]
 fn batch_build_propagates_closure_and_finish_errors() {
     let primary_authority = Pubkey::new_unique();
-    let error = match Batch::build(app_authority(primary_authority), |builder| {
+    let error = match FheExecution::build(app_authority(primary_authority), |builder| {
         builder.binary_op(
             FheBinaryOpCode::Ge,
             Operand::persistent(balance_handle(1), Pubkey::new_unique()),
@@ -219,22 +225,22 @@ fn batch_build_propagates_closure_and_finish_errors() {
         )?;
         Ok(())
     }) {
-        Ok(_) => panic!("invalid batch unexpectedly built"),
+        Ok(_) => panic!("invalid execution unexpectedly built"),
         Err(error) => error,
     };
-    assert_eq!(error, BatchBuildError::UnsupportedBinaryOutputType);
+    assert_eq!(error, FheExecutionBuildError::UnsupportedBinaryOutputType);
 
-    let error = match Batch::build(app_authority(primary_authority), |_builder| Ok(())) {
-        Ok(_) => panic!("empty batch unexpectedly built"),
+    let error = match FheExecution::build(app_authority(primary_authority), |_builder| Ok(())) {
+        Ok(_) => panic!("empty execution unexpectedly built"),
         Err(error) => error,
     };
-    assert_eq!(error, BatchBuildError::EmptyOps);
+    assert_eq!(error, FheExecutionBuildError::EmptySteps);
 }
 
 #[test]
 fn finish_preflights_lowered_remaining_account_indices() {
     let primary_authority = Pubkey::new_unique();
-    let mut builder = BatchBuilder::new(app_authority(primary_authority));
+    let mut builder = FheExecutionBuilder::new(app_authority(primary_authority));
     builder.dictionary.push(balance_handle(1));
     builder.dictionary.push(Scalar::<Uint<64>>::u64(1).bytes());
     builder.steps.push(FheExecuteStep::Binary {
@@ -251,14 +257,14 @@ fn finish_preflights_lowered_remaining_account_indices() {
 
     assert_eq!(
         builder.finish().unwrap_err(),
-        BatchBuildError::InvalidRemainingAccountReference
+        FheExecutionBuildError::InvalidRemainingAccountReference
     );
 }
 
 #[test]
 fn finish_preflights_lowered_transient_order_and_account_uniqueness() {
     let primary_authority = Pubkey::new_unique();
-    let mut builder = BatchBuilder::new(app_authority(primary_authority));
+    let mut builder = FheExecutionBuilder::new(app_authority(primary_authority));
     builder.steps.push(FheExecuteStep::TrivialEncrypt {
         plaintext: Scalar::<Uint<64>>::u64(1).bytes(),
         fhe_type: FheType::UINT64.byte(),
@@ -276,31 +282,33 @@ fn finish_preflights_lowered_transient_order_and_account_uniqueness() {
 
     assert_eq!(
         builder.finish().unwrap_err(),
-        BatchBuildError::InvalidTransientReference
+        FheExecutionBuildError::InvalidTransientReference
     );
 
     let input_key = encrypted_value_id(primary_authority, 1);
     let input_acl = input_key.address();
     let balance = Uint64Handle::persistent(balance_handle(1), input_key).unwrap();
-    let mut builder = BatchBuilder::new(app_authority(primary_authority));
+    let mut builder = FheExecutionBuilder::new(app_authority(primary_authority));
     builder
         .add(balance, Scalar::<Uint<64>>::u64(1), Output::transient())
         .unwrap();
-    builder.remaining_accounts.push(BatchAccountMeta::readonly(
-        input_acl,
-        BatchAccountPurpose::PersistentInputAcl,
-    ));
+    builder
+        .remaining_accounts
+        .push(ExecutionAccountMeta::readonly(
+            input_acl,
+            ExecutionAccountPurpose::PersistentInputAcl,
+        ));
 
     assert_eq!(
         builder.finish().unwrap_err(),
-        BatchBuildError::InvalidRemainingAccountReference
+        FheExecutionBuildError::InvalidRemainingAccountReference
     );
 }
 
 #[test]
 fn finish_rejects_dictionary_entry_no_step_references() {
     let primary_authority = Pubkey::new_unique();
-    let mut builder = BatchBuilder::new(app_authority(primary_authority));
+    let mut builder = FheExecutionBuilder::new(app_authority(primary_authority));
     builder
         .trivial_encrypt(Scalar::<Uint<64>>::u64(1), Output::transient())
         .unwrap();
@@ -308,14 +316,14 @@ fn finish_rejects_dictionary_entry_no_step_references() {
 
     assert_eq!(
         builder.finish().unwrap_err(),
-        BatchBuildError::UnreferencedDictionaryEntry
+        FheExecutionBuildError::UnreferencedDictionaryEntry
     );
 }
 
 #[test]
 fn finish_rejects_dictionary_index_past_dictionary_end() {
     let primary_authority = Pubkey::new_unique();
-    let mut builder = BatchBuilder::new(app_authority(primary_authority));
+    let mut builder = FheExecutionBuilder::new(app_authority(primary_authority));
     builder
         .trivial_encrypt(Scalar::<Uint<64>>::u64(1), Output::transient())
         .unwrap();
@@ -330,7 +338,7 @@ fn finish_rejects_dictionary_index_past_dictionary_end() {
 
     assert_eq!(
         builder.finish().unwrap_err(),
-        BatchBuildError::DictionaryIndexOutOfBounds
+        FheExecutionBuildError::DictionaryIndexOutOfBounds
     );
 }
 
@@ -343,7 +351,7 @@ fn resolve_accounts_requires_the_cpi_authority_witness() {
     let output_key = encrypted_value_id(primary_authority, 7);
     let output_acl = output_key.address();
     let balance = Uint64Handle::persistent(balance_handle(1), input_key).unwrap();
-    let mut builder = BatchBuilder::new(app_authority(primary_authority));
+    let mut builder = FheExecutionBuilder::new(app_authority(primary_authority));
     builder
         .add(
             balance,
@@ -354,11 +362,11 @@ fn resolve_accounts_requires_the_cpi_authority_witness() {
             )),
         )
         .unwrap();
-    let batch = builder.finish().unwrap();
+    let execution = builder.finish().unwrap();
 
-    // The batch's own app authority is an output authority like any other: the caller passes its
+    // The execution's own app authority is an output authority like any other: the caller passes its
     // account info, and leaving it out is an error rather than something the SDK fills in.
-    let missing = batch
+    let missing = execution
         .resolve_accounts(
             vec![
                 account_info(input_acl, false),
@@ -369,15 +377,15 @@ fn resolve_accounts_requires_the_cpi_authority_witness() {
         .unwrap_err();
     assert_eq!(
         missing,
-        BatchAccountResolutionError::MissingOutputAuthority {
-            authority: BatchOutputAuthorityRequirement {
+        ExecutionAccountResolutionError::MissingOutputAuthority {
+            authority: ExecutionOutputAuthorityRequirement {
                 pubkey: primary_authority,
                 cpi_account_authority: true,
             }
         }
     );
 
-    batch
+    execution
         .resolve_accounts(
             vec![
                 account_info(input_acl, false),
@@ -399,7 +407,7 @@ fn lowers_mixed_batch_to_stable_remaining_account_indices() {
     let output_acl = output_key.address();
     let balance = Uint64Handle::persistent(balance_handle(1), balance_key).unwrap();
     let amount = Uint64Handle::persistent(balance_handle(2), amount_key).unwrap();
-    let mut builder = BatchBuilder::new(app_authority(primary_authority));
+    let mut builder = FheExecutionBuilder::new(app_authority(primary_authority));
     let success = builder.ge(balance, amount, Output::transient()).unwrap();
     let debit_candidate = builder.sub(balance, amount, Output::transient()).unwrap();
     builder
@@ -414,26 +422,32 @@ fn lowers_mixed_batch_to_stable_remaining_account_indices() {
         )
         .unwrap();
 
-    let batch = builder.finish().unwrap();
-    assert_eq!(batch.app_authority().pubkey(), primary_authority);
+    let execution = builder.finish().unwrap();
+    assert_eq!(execution.app_authority().pubkey(), primary_authority);
 
     assert_eq!(
-        batch.remaining_accounts,
+        execution.remaining_accounts,
         vec![
-            BatchAccountMeta::readonly(balance_acl, BatchAccountPurpose::PersistentInputAcl),
-            BatchAccountMeta::readonly(amount_acl, BatchAccountPurpose::PersistentInputAcl),
-            BatchAccountMeta::writable(output_acl, BatchAccountPurpose::PersistentOutputAcl),
+            ExecutionAccountMeta::readonly(
+                balance_acl,
+                ExecutionAccountPurpose::PersistentInputAcl
+            ),
+            ExecutionAccountMeta::readonly(amount_acl, ExecutionAccountPurpose::PersistentInputAcl),
+            ExecutionAccountMeta::writable(
+                output_acl,
+                ExecutionAccountPurpose::PersistentOutputAcl
+            ),
         ]
     );
-    assert_eq!(batch.args.steps.len(), 3);
-    match &batch.args.steps[0] {
+    assert_eq!(execution.args.steps.len(), 3);
+    match &execution.args.steps[0] {
         FheExecuteStep::Binary { op, output, .. } => {
             assert_eq!(*op, FheBinaryOpCode::Ge);
             assert_eq!(*output, FheExecuteOutput::Transient);
         }
         other => panic!("unexpected step: {other:?}"),
     }
-    match &batch.args.steps[2] {
+    match &execution.args.steps[2] {
         FheExecuteStep::Ternary {
             control,
             if_true,
@@ -482,7 +496,7 @@ fn dynamic_account_requirements_expose_order_roles_and_purposes() {
     let output_acl = output_key.address();
     let input = Uint64Handle::persistent(balance_handle(1), input_key).unwrap();
 
-    let batch = Batch::build(app_authority(primary_authority), |builder| {
+    let execution = FheExecution::build(app_authority(primary_authority), |builder| {
         builder.add(
             input,
             Scalar::<Uint<64>>::u64(2),
@@ -495,25 +509,25 @@ fn dynamic_account_requirements_expose_order_roles_and_purposes() {
     })
     .unwrap();
 
-    let requirements = batch.dynamic_account_requirements().collect::<Vec<_>>();
+    let requirements = execution.dynamic_account_requirements().collect::<Vec<_>>();
     assert_eq!(
         requirements
             .iter()
-            .map(BatchAccountRequirement::pubkey)
+            .map(ExecutionAccountRequirement::pubkey)
             .collect::<Vec<_>>(),
         vec![input_acl, output_acl, extra_authority]
     );
     assert_eq!(
         requirements[0].purposes(),
-        &[BatchAccountPurpose::PersistentInputAcl]
+        &[ExecutionAccountPurpose::PersistentInputAcl]
     );
     assert_eq!(
         requirements[1].purposes(),
-        &[BatchAccountPurpose::PersistentOutputAcl]
+        &[ExecutionAccountPurpose::PersistentOutputAcl]
     );
     assert_eq!(
         requirements[2].purposes(),
-        &[BatchAccountPurpose::PersistentOutputAuthority]
+        &[ExecutionAccountPurpose::PersistentOutputAuthority]
     );
     assert!(requirements[1].is_writable());
     assert!(requirements[2].is_signer());
@@ -530,7 +544,7 @@ fn lowers_explicit_output_authority_witness() {
     let output_key = encrypted_value_id(authority, 7);
     let output_acl = output_key.address();
     let balance = Uint64Handle::persistent(balance_handle(1), input_key).unwrap();
-    let mut builder = BatchBuilder::new(app_authority(primary_authority));
+    let mut builder = FheExecutionBuilder::new(app_authority(primary_authority));
     builder
         .add(
             balance,
@@ -539,38 +553,45 @@ fn lowers_explicit_output_authority_witness() {
         )
         .unwrap();
 
-    let batch = builder.finish().unwrap();
-    assert_eq!(batch.app_authority().pubkey(), primary_authority);
+    let execution = builder.finish().unwrap();
+    assert_eq!(execution.app_authority().pubkey(), primary_authority);
     assert_eq!(
-        batch.remaining_accounts,
+        execution.remaining_accounts,
         vec![
-            BatchAccountMeta::readonly(acl_record, BatchAccountPurpose::PersistentInputAcl),
-            BatchAccountMeta::writable(output_acl, BatchAccountPurpose::PersistentOutputAcl),
-            BatchAccountMeta::readonly_signer(
+            ExecutionAccountMeta::readonly(acl_record, ExecutionAccountPurpose::PersistentInputAcl),
+            ExecutionAccountMeta::writable(
+                output_acl,
+                ExecutionAccountPurpose::PersistentOutputAcl
+            ),
+            ExecutionAccountMeta::readonly_signer(
                 authority,
-                BatchAccountPurpose::PersistentOutputAuthority,
+                ExecutionAccountPurpose::PersistentOutputAuthority,
             ),
         ]
     );
     assert_eq!(
-        batch.additional_output_authorities().collect::<Vec<_>>(),
+        execution
+            .additional_output_authorities()
+            .collect::<Vec<_>>(),
         vec![authority]
     );
-    let authority_requirements = batch.output_authority_requirements().collect::<Vec<_>>();
+    let authority_requirements = execution
+        .output_authority_requirements()
+        .collect::<Vec<_>>();
     assert_eq!(
         authority_requirements,
         vec![
-            BatchOutputAuthorityRequirement {
+            ExecutionOutputAuthorityRequirement {
                 pubkey: primary_authority,
                 cpi_account_authority: true,
             },
-            BatchOutputAuthorityRequirement {
+            ExecutionOutputAuthorityRequirement {
                 pubkey: authority,
                 cpi_account_authority: false,
             },
         ]
     );
-    match &batch.args.steps[0] {
+    match &execution.args.steps[0] {
         FheExecuteStep::Binary { output, .. } => match output {
             FheExecuteOutput::StoredValue {
                 output_encrypted_value_index,
@@ -596,7 +617,7 @@ fn resolve_accounts_orders_and_validates_batch_requirements() {
     let output_key = encrypted_value_id(extra_authority, 7);
     let output_acl = output_key.address();
     let input = Uint64Handle::persistent(balance_handle(1), input_key).unwrap();
-    let mut builder = BatchBuilder::new(app_authority(primary_authority));
+    let mut builder = FheExecutionBuilder::new(app_authority(primary_authority));
     builder
         .add(
             input,
@@ -607,9 +628,9 @@ fn resolve_accounts_orders_and_validates_batch_requirements() {
             )),
         )
         .unwrap();
-    let batch = builder.finish().unwrap();
+    let execution = builder.finish().unwrap();
 
-    let resolved = batch
+    let resolved = execution
         .resolve_accounts(
             vec![
                 account_info(output_acl, true),
@@ -630,7 +651,7 @@ fn resolve_accounts_orders_and_validates_batch_requirements() {
         vec![input_acl, output_acl, extra_authority]
     );
 
-    let duplicate = batch
+    let duplicate = execution
         .resolve_accounts(
             vec![
                 account_info(input_acl, false),
@@ -644,10 +665,10 @@ fn resolve_accounts_orders_and_validates_batch_requirements() {
         .unwrap_err();
     assert_eq!(
         duplicate,
-        BatchAccountResolutionError::DuplicateDynamicAccount { pubkey: input_acl }
+        ExecutionAccountResolutionError::DuplicateDynamicAccount { pubkey: input_acl }
     );
 
-    let unexpected = batch
+    let unexpected = execution
         .resolve_accounts(
             vec![account_info(Pubkey::new_unique(), false)],
             vec![
@@ -658,10 +679,10 @@ fn resolve_accounts_orders_and_validates_batch_requirements() {
         .unwrap_err();
     assert!(matches!(
         unexpected,
-        BatchAccountResolutionError::UnexpectedDynamicAccount { .. }
+        ExecutionAccountResolutionError::UnexpectedDynamicAccount { .. }
     ));
 
-    let missing = batch
+    let missing = execution
         .resolve_accounts(
             vec![account_info(output_acl, true)],
             vec![
@@ -672,11 +693,11 @@ fn resolve_accounts_orders_and_validates_batch_requirements() {
         .unwrap_err();
     assert!(matches!(
         missing,
-        BatchAccountResolutionError::MissingDynamicAccount { requirement }
+        ExecutionAccountResolutionError::MissingDynamicAccount { requirement }
             if requirement.pubkey() == input_acl
     ));
 
-    let readonly = batch
+    let readonly = execution
         .resolve_accounts(
             vec![
                 account_info(input_acl, false),
@@ -690,11 +711,11 @@ fn resolve_accounts_orders_and_validates_batch_requirements() {
         .unwrap_err();
     assert!(matches!(
         readonly,
-        BatchAccountResolutionError::DynamicAccountNotWritable { requirement }
+        ExecutionAccountResolutionError::DynamicAccountNotWritable { requirement }
             if requirement.pubkey() == output_acl
     ));
 
-    let duplicate_authority = batch
+    let duplicate_authority = execution
         .resolve_accounts(
             vec![
                 account_info(input_acl, false),
@@ -709,12 +730,12 @@ fn resolve_accounts_orders_and_validates_batch_requirements() {
         .unwrap_err();
     assert_eq!(
         duplicate_authority,
-        BatchAccountResolutionError::DuplicateOutputAuthority {
+        ExecutionAccountResolutionError::DuplicateOutputAuthority {
             pubkey: extra_authority
         }
     );
 
-    let unexpected_authority = batch
+    let unexpected_authority = execution
         .resolve_accounts(
             vec![
                 account_info(input_acl, false),
@@ -729,10 +750,10 @@ fn resolve_accounts_orders_and_validates_batch_requirements() {
         .unwrap_err();
     assert!(matches!(
         unexpected_authority,
-        BatchAccountResolutionError::UnexpectedOutputAuthority { .. }
+        ExecutionAccountResolutionError::UnexpectedOutputAuthority { .. }
     ));
 
-    let missing_authority = batch
+    let missing_authority = execution
         .resolve_accounts(
             vec![
                 account_info(input_acl, false),
@@ -743,8 +764,8 @@ fn resolve_accounts_orders_and_validates_batch_requirements() {
         .unwrap_err();
     assert_eq!(
         missing_authority,
-        BatchAccountResolutionError::MissingOutputAuthority {
-            authority: BatchOutputAuthorityRequirement {
+        ExecutionAccountResolutionError::MissingOutputAuthority {
+            authority: ExecutionOutputAuthorityRequirement {
                 pubkey: extra_authority,
                 cpi_account_authority: false,
             }
@@ -762,7 +783,7 @@ fn resolve_accounts_rejects_known_accounts_in_wrong_bucket() {
     let output_key = encrypted_value_id(extra_authority, 7);
     let output_acl = output_key.address();
     let input = Uint64Handle::persistent(balance_handle(1), input_key).unwrap();
-    let mut builder = BatchBuilder::new(app_authority(primary_authority));
+    let mut builder = FheExecutionBuilder::new(app_authority(primary_authority));
     builder
         .add(
             input,
@@ -773,9 +794,9 @@ fn resolve_accounts_rejects_known_accounts_in_wrong_bucket() {
             )),
         )
         .unwrap();
-    let batch = builder.finish().unwrap();
+    let execution = builder.finish().unwrap();
 
-    let authority_in_dynamic_bucket = batch
+    let authority_in_dynamic_bucket = execution
         .resolve_accounts(
             vec![
                 account_info(input_acl, false),
@@ -790,12 +811,12 @@ fn resolve_accounts_rejects_known_accounts_in_wrong_bucket() {
         .unwrap_err();
     assert_eq!(
         authority_in_dynamic_bucket,
-        BatchAccountResolutionError::UnexpectedDynamicAccount {
+        ExecutionAccountResolutionError::UnexpectedDynamicAccount {
             pubkey: extra_authority
         }
     );
 
-    let input_acl_in_authority_bucket = batch
+    let input_acl_in_authority_bucket = execution
         .resolve_accounts(
             vec![
                 account_info(input_acl, false),
@@ -810,10 +831,10 @@ fn resolve_accounts_rejects_known_accounts_in_wrong_bucket() {
         .unwrap_err();
     assert_eq!(
         input_acl_in_authority_bucket,
-        BatchAccountResolutionError::UnexpectedOutputAuthority { pubkey: input_acl }
+        ExecutionAccountResolutionError::UnexpectedOutputAuthority { pubkey: input_acl }
     );
 
-    let output_acl_in_authority_bucket = batch
+    let output_acl_in_authority_bucket = execution
         .resolve_accounts(
             vec![
                 account_info(input_acl, false),
@@ -828,7 +849,7 @@ fn resolve_accounts_rejects_known_accounts_in_wrong_bucket() {
         .unwrap_err();
     assert_eq!(
         output_acl_in_authority_bucket,
-        BatchAccountResolutionError::UnexpectedOutputAuthority { pubkey: output_acl }
+        ExecutionAccountResolutionError::UnexpectedOutputAuthority { pubkey: output_acl }
     );
 }
 
@@ -837,7 +858,7 @@ fn lowers_create_steps() {
     let primary_authority = Pubkey::new_unique();
     let output_key = encrypted_value_id(primary_authority, 7);
     let output_acl = output_key.address();
-    let mut builder = BatchBuilder::new(app_authority(primary_authority));
+    let mut builder = FheExecutionBuilder::new(app_authority(primary_authority));
     let trivial = builder.trivial_encrypt_u64(1, Output::transient()).unwrap();
     builder
         .rand_u64(Output::persistent(PersistentOutput::create(
@@ -849,25 +870,28 @@ fn lowers_create_steps() {
         .add(trivial, Scalar::<Uint<64>>::u64(1), Output::transient())
         .unwrap();
 
-    let batch = builder.finish().unwrap();
+    let execution = builder.finish().unwrap();
     assert_eq!(
-        batch.remaining_accounts,
-        vec![BatchAccountMeta::writable(
+        execution.remaining_accounts,
+        vec![ExecutionAccountMeta::writable(
             output_acl,
-            BatchAccountPurpose::PersistentOutputAcl
+            ExecutionAccountPurpose::PersistentOutputAcl
         )]
     );
     assert!(matches!(
-        batch.args.steps[0],
+        execution.args.steps[0],
         FheExecuteStep::TrivialEncrypt { .. }
     ));
-    assert!(matches!(batch.args.steps[1], FheExecuteStep::Rand { .. }));
+    assert!(matches!(
+        execution.args.steps[1],
+        FheExecuteStep::Rand { .. }
+    ));
 }
 
 #[test]
 fn rejects_invalid_references_and_types() {
     let primary_authority = Pubkey::new_unique();
-    let mut builder = BatchBuilder::new(app_authority(primary_authority));
+    let mut builder = FheExecutionBuilder::new(app_authority(primary_authority));
     let error = builder
         .binary_op(
             FheBinaryOpCode::Add,
@@ -877,9 +901,9 @@ fn rejects_invalid_references_and_types() {
             Output::transient(),
         )
         .unwrap_err();
-    assert_eq!(error, BatchBuildError::InvalidTransientReference);
+    assert_eq!(error, FheExecutionBuildError::InvalidTransientReference);
 
-    let mut builder = BatchBuilder::new(app_authority(primary_authority));
+    let mut builder = FheExecutionBuilder::new(app_authority(primary_authority));
     let error = builder
         .binary_op(
             FheBinaryOpCode::Ge,
@@ -889,11 +913,11 @@ fn rejects_invalid_references_and_types() {
             Output::transient(),
         )
         .unwrap_err();
-    assert_eq!(error, BatchBuildError::UnsupportedBinaryOutputType);
+    assert_eq!(error, FheExecutionBuildError::UnsupportedBinaryOutputType);
 
     let input_key = encrypted_value_id(primary_authority, 1);
     let input = Uint64Handle::persistent(balance_handle(1), input_key).unwrap();
-    let mut builder = BatchBuilder::new(app_authority(primary_authority));
+    let mut builder = FheExecutionBuilder::new(app_authority(primary_authority));
     builder.trivial_encrypt_u64(1, Output::transient()).unwrap();
     let current_index = builder
         .binary_op(
@@ -904,7 +928,10 @@ fn rejects_invalid_references_and_types() {
             Output::transient(),
         )
         .unwrap_err();
-    assert_eq!(current_index, BatchBuildError::InvalidTransientReference);
+    assert_eq!(
+        current_index,
+        FheExecutionBuildError::InvalidTransientReference
+    );
 
     let future_index = builder
         .binary_op(
@@ -915,7 +942,10 @@ fn rejects_invalid_references_and_types() {
             Output::transient(),
         )
         .unwrap_err();
-    assert_eq!(future_index, BatchBuildError::InvalidTransientReference);
+    assert_eq!(
+        future_index,
+        FheExecutionBuildError::InvalidTransientReference
+    );
 
     let invalid_rhs = builder
         .binary_op(
@@ -926,18 +956,21 @@ fn rejects_invalid_references_and_types() {
             Output::transient(),
         )
         .unwrap_err();
-    assert_eq!(invalid_rhs, BatchBuildError::InvalidTransientReference);
+    assert_eq!(
+        invalid_rhs,
+        FheExecutionBuildError::InvalidTransientReference
+    );
 }
 
 #[test]
 fn validates_app_authority_and_persistent_account_pubkeys() {
-    let mut builder = BatchBuilder::new(app_authority(Pubkey::default()));
+    let mut builder = FheExecutionBuilder::new(app_authority(Pubkey::default()));
     builder.trivial_encrypt_u64(1, Output::transient()).unwrap();
     let error = match builder.finish() {
         Ok(_) => panic!("invalid app authority unexpectedly built"),
         Err(error) => error,
     };
-    assert_eq!(error, BatchBuildError::InvalidAppAuthority);
+    assert_eq!(error, FheExecutionBuildError::InvalidAppAuthority);
 
     let invalid_encrypted_value_id = EncryptedValueId::new(
         Domain::new(Pubkey::default()),
@@ -947,13 +980,13 @@ fn validates_app_authority_and_persistent_account_pubkeys() {
     assert_eq!(
         Uint64Handle::persistent(balance_handle(1), invalid_encrypted_value_id.clone())
             .unwrap_err(),
-        BatchBuildError::InvalidEncryptedValueId
+        FheExecutionBuildError::InvalidEncryptedValueId
     );
     assert_eq!(
         PersistentOutput::create(invalid_encrypted_value_id, subjects(Pubkey::new_unique()))
             .binding()
             .unwrap_err(),
-        BatchBuildError::InvalidEncryptedValueId
+        FheExecutionBuildError::InvalidEncryptedValueId
     );
 
     let invalid_account_key = EncryptedValueId::new(
@@ -963,20 +996,20 @@ fn validates_app_authority_and_persistent_account_pubkeys() {
     );
     assert_eq!(
         Uint64Handle::persistent(balance_handle(1), invalid_account_key.clone()).unwrap_err(),
-        BatchBuildError::InvalidEncryptedValueId
+        FheExecutionBuildError::InvalidEncryptedValueId
     );
     assert_eq!(
         PersistentOutput::create(invalid_account_key, subjects(Pubkey::new_unique()))
             .binding()
             .unwrap_err(),
-        BatchBuildError::InvalidEncryptedValueId
+        FheExecutionBuildError::InvalidEncryptedValueId
     );
 }
 
 #[test]
 fn binary_validation_rejects_host_type_mismatches() {
     let primary_authority = Pubkey::new_unique();
-    let mut builder = BatchBuilder::new(app_authority(primary_authority));
+    let mut builder = FheExecutionBuilder::new(app_authority(primary_authority));
     let bool_lhs = Operand::persistent(typed_handle(1, FheType::BOOL.byte()), Pubkey::new_unique());
     let error = builder
         .binary_op(
@@ -989,9 +1022,9 @@ fn binary_validation_rejects_host_type_mismatches() {
         .unwrap_err();
     // Add gates its output to uint types, and the operand must equal that output type, so a
     // Bool lhs against a Uint64 output is a type mismatch (host + client agree).
-    assert_eq!(error, BatchBuildError::BinaryOperandTypeMismatch);
+    assert_eq!(error, FheExecutionBuildError::BinaryOperandTypeMismatch);
 
-    let mut builder = BatchBuilder::new(app_authority(primary_authority));
+    let mut builder = FheExecutionBuilder::new(app_authority(primary_authority));
     let error = builder
         .binary_op(
             FheBinaryOpCode::Add,
@@ -1004,13 +1037,13 @@ fn binary_validation_rejects_host_type_mismatches() {
             Output::transient(),
         )
         .unwrap_err();
-    assert_eq!(error, BatchBuildError::BinaryOperandTypeMismatch);
+    assert_eq!(error, FheExecutionBuildError::BinaryOperandTypeMismatch);
 }
 
 #[test]
 fn unary_validation_rejects_same_type_cast_and_bad_operand_types() {
     let primary_authority = Pubkey::new_unique();
-    let mut builder = BatchBuilder::new(app_authority(primary_authority));
+    let mut builder = FheExecutionBuilder::new(app_authority(primary_authority));
     // A cast to a different type is accepted.
     assert!(builder
         .unary_op(
@@ -1030,7 +1063,7 @@ fn unary_validation_rejects_same_type_cast_and_bad_operand_types() {
                 Output::transient(),
             )
             .unwrap_err(),
-        BatchBuildError::UnsupportedFheType
+        FheExecutionBuildError::UnsupportedFheType
     );
     // EVM cast type sets: a Bool input casts to a uint (Bool -> Uint32) is accepted...
     assert!(builder
@@ -1051,7 +1084,7 @@ fn unary_validation_rejects_same_type_cast_and_bad_operand_types() {
                 Output::transient(),
             )
             .unwrap_err(),
-        BatchBuildError::UnsupportedFheType
+        FheExecutionBuildError::UnsupportedFheType
     );
     assert_eq!(
         builder
@@ -1062,7 +1095,7 @@ fn unary_validation_rejects_same_type_cast_and_bad_operand_types() {
                 Output::transient(),
             )
             .unwrap_err(),
-        BatchBuildError::UnsupportedFheType
+        FheExecutionBuildError::UnsupportedFheType
     );
     assert_eq!(
         builder
@@ -1076,7 +1109,7 @@ fn unary_validation_rejects_same_type_cast_and_bad_operand_types() {
                 Output::transient(),
             )
             .unwrap_err(),
-        BatchBuildError::UnsupportedFheType
+        FheExecutionBuildError::UnsupportedFheType
     );
     // Neg rejects a Bool operand (EVM fheNeg supportedTypes = Uint8..Uint128 + Uint256).
     assert_eq!(
@@ -1088,14 +1121,14 @@ fn unary_validation_rejects_same_type_cast_and_bad_operand_types() {
                 Output::transient(),
             )
             .unwrap_err(),
-        BatchBuildError::UnsupportedFheType
+        FheExecutionBuildError::UnsupportedFheType
     );
 }
 
 #[test]
 fn mul_div_rejects_zero_divisor() {
     let primary_authority = Pubkey::new_unique();
-    let mut builder = BatchBuilder::new(app_authority(primary_authority));
+    let mut builder = FheExecutionBuilder::new(app_authority(primary_authority));
     let balance =
         Uint64Handle::persistent(balance_handle(1), encrypted_value_id(primary_authority, 1))
             .unwrap();
@@ -1108,14 +1141,14 @@ fn mul_div_rejects_zero_divisor() {
                 Output::transient(),
             )
             .unwrap_err(),
-        BatchBuildError::MulDivDivisorZero
+        FheExecutionBuildError::MulDivDivisorZero
     );
 }
 
 #[test]
 fn div_rem_require_nonzero_scalar_divisor() {
     let auth = Pubkey::new_unique();
-    let mut builder = BatchBuilder::new(app_authority(auth));
+    let mut builder = FheExecutionBuilder::new(app_authority(auth));
     // Encrypted divisor is rejected — division is scalar-only (EVM `IsNotScalar`).
     let lhs = Uint64Handle::persistent(balance_handle(1), encrypted_value_id(auth, 1)).unwrap();
     let enc_divisor =
@@ -1124,7 +1157,7 @@ fn div_rem_require_nonzero_scalar_divisor() {
         builder
             .div(lhs, enc_divisor, Output::transient())
             .unwrap_err(),
-        BatchBuildError::DivisorMustBeScalar
+        FheExecutionBuildError::DivisorMustBeScalar
     );
     // A zero scalar divisor is rejected.
     let lhs2 = Uint64Handle::persistent(balance_handle(1), encrypted_value_id(auth, 1)).unwrap();
@@ -1132,7 +1165,7 @@ fn div_rem_require_nonzero_scalar_divisor() {
         builder
             .rem(lhs2, Scalar::<Uint<64>>::u64(0), Output::transient())
             .unwrap_err(),
-        BatchBuildError::DivisionByZero
+        FheExecutionBuildError::DivisionByZero
     );
     // A non-zero scalar divisor is accepted.
     let lhs3 = Uint64Handle::persistent(balance_handle(1), encrypted_value_id(auth, 1)).unwrap();
@@ -1145,7 +1178,7 @@ fn div_rem_require_nonzero_scalar_divisor() {
 fn builder_exposes_the_host_operator_type_surface() {
     // The typed builder must express the host's type matrix: bitwise on Bool/Uint256, neg on Uint256, eq on Bool, is_in on Uint160.
     let auth = Pubkey::new_unique();
-    let mut builder = BatchBuilder::new(app_authority(auth));
+    let mut builder = FheExecutionBuilder::new(app_authority(auth));
 
     let bool_a = StoredValue::<Bool>::persistent(
         typed_handle(1, FheType::BOOL.byte()),
@@ -1210,20 +1243,20 @@ fn persistent_output_validates_raw_subjects() {
         PersistentOutput::create(key.clone(), vec![])
             .binding()
             .unwrap_err(),
-        BatchBuildError::InvalidSubjects
+        FheExecutionBuildError::InvalidSubjects
     );
     assert_eq!(
         PersistentOutput::create(key.clone(), vec![Pubkey::default()])
             .binding()
             .unwrap_err(),
-        BatchBuildError::InvalidSubjects
+        FheExecutionBuildError::InvalidSubjects
     );
     let duplicate = Pubkey::new_unique();
     assert_eq!(
         PersistentOutput::create(key.clone(), vec![duplicate, duplicate])
             .binding()
             .unwrap_err(),
-        BatchBuildError::InvalidSubjects
+        FheExecutionBuildError::InvalidSubjects
     );
     assert_eq!(
         PersistentOutput::create(
@@ -1234,7 +1267,7 @@ fn persistent_output_validates_raw_subjects() {
         )
         .binding()
         .unwrap_err(),
-        BatchBuildError::InvalidSubjects
+        FheExecutionBuildError::InvalidSubjects
     );
 }
 
@@ -1254,15 +1287,15 @@ fn persistent_output_create_matches_batch_lowering() {
     assert_eq!(binding.previous_handle(), None);
     assert_eq!(binding.previous_subjects(), None);
 
-    let mut builder = BatchBuilder::new(app_authority(primary_authority));
+    let mut builder = FheExecutionBuilder::new(app_authority(primary_authority));
     builder
         .trivial_encrypt_u64(
             7,
             Output::persistent(PersistentOutput::create(output_key, subjects(subject))),
         )
         .unwrap();
-    let batch = builder.finish().unwrap();
-    match &batch.args.steps[0] {
+    let execution = builder.finish().unwrap();
+    match &execution.args.steps[0] {
         FheExecuteStep::TrivialEncrypt {
             output:
                 FheExecuteOutput::StoredValue {
@@ -1277,23 +1310,29 @@ fn persistent_output_create_matches_batch_lowering() {
             ..
         } => {
             let output_encrypted_value =
-                batch.remaining_accounts[*output_encrypted_value_index as usize].pubkey;
+                execution.remaining_accounts[*output_encrypted_value_index as usize].pubkey;
             assert_eq!(output_encrypted_value, binding.encrypted_value());
             assert_eq!(
-                batch.args.dictionary_key(*output_domain_index).unwrap(),
+                execution.args.dictionary_key(*output_domain_index).unwrap(),
                 binding.domain().pubkey()
             );
             assert_eq!(
-                batch.args.dictionary_key(*output_account_index).unwrap(),
+                execution
+                    .args
+                    .dictionary_key(*output_account_index)
+                    .unwrap(),
                 binding.account()
             );
             assert_eq!(
-                batch.args.dictionary_bytes(*output_label_index).unwrap(),
+                execution
+                    .args
+                    .dictionary_bytes(*output_label_index)
+                    .unwrap(),
                 binding.label()
             );
             let output_subjects: Vec<Pubkey> = output_subject_indexes
                 .iter()
-                .map(|index| batch.args.dictionary_key(*index).unwrap())
+                .map(|index| execution.args.dictionary_key(*index).unwrap())
                 .collect();
             assert_eq!(output_subjects, binding.host_subjects());
             assert_eq!(*previous_state, binding.previous_state());
@@ -1336,36 +1375,36 @@ fn typed_handle_constructor_rejects_mismatched_handle_tag() {
         encrypted_value_id(Pubkey::new_unique(), 7),
     )
     .unwrap_err();
-    assert_eq!(error, BatchBuildError::UnsupportedFheType);
+    assert_eq!(error, FheExecutionBuildError::UnsupportedFheType);
 }
 
 #[test]
 fn rand_rejects_address_type_like_host() {
-    let mut builder = BatchBuilder::new(app_authority(Pubkey::new_unique()));
+    let mut builder = FheExecutionBuilder::new(app_authority(Pubkey::new_unique()));
     let error = builder
         .rand_raw(FheType::ADDRESS, Output::transient())
         .unwrap_err();
-    assert_eq!(error, BatchBuildError::UnsupportedFheType);
+    assert_eq!(error, FheExecutionBuildError::UnsupportedFheType);
 }
 
 #[test]
 fn finish_rejects_empty_steps() {
     let primary_authority = Pubkey::new_unique();
     assert!(matches!(
-        BatchBuilder::new(app_authority(primary_authority)).finish(),
-        Err(BatchBuildError::EmptyOps)
+        FheExecutionBuilder::new(app_authority(primary_authority)).finish(),
+        Err(FheExecutionBuildError::EmptySteps)
     ));
 }
 
 /// Off-chain the builder keeps the host's own ceiling: a client, a test, or the e2e live client can
-/// build any batch the host would accept, because none of them runs on Anchor's 32 KB heap. What
+/// build any execution the host would accept, because none of them runs on Anchor's 32 KB heap. What
 /// the on-chain ceiling is worth is measured in `heap_budget.rs`, which derives its step count from
-/// `MAX_ON_CHAIN_BATCH_OPS` so the enforced number and the measured one cannot drift apart.
+/// `MAX_ON_CHAIN_EXECUTION_STEPS` so the enforced number and the measured one cannot drift apart.
 #[test]
 fn off_chain_builds_keep_the_host_step_ceiling() {
     assert_eq!(
         crate::builder::step_limit(),
-        MAX_FHE_BATCH_OPS,
+        MAX_FHE_EXECUTION_STEPS,
         "a host-side build pays no bump-heap budget, so it should not inherit the on-chain ceiling"
     );
 }
@@ -1375,8 +1414,8 @@ fn rejects_more_than_max_ops() {
     let primary_authority = Pubkey::new_unique();
     let input_key = encrypted_value_id(primary_authority, 1);
     let balance = Uint64Handle::persistent(balance_handle(1), input_key).unwrap();
-    let mut builder = BatchBuilder::new(app_authority(primary_authority));
-    for index in 0..MAX_FHE_BATCH_OPS {
+    let mut builder = FheExecutionBuilder::new(app_authority(primary_authority));
+    for index in 0..MAX_FHE_EXECUTION_STEPS {
         builder
             .add(
                 balance,
@@ -1388,15 +1427,15 @@ fn rejects_more_than_max_ops() {
     let error = builder
         .add(balance, Scalar::<Uint<64>>::u64(99), Output::transient())
         .unwrap_err();
-    assert_eq!(error, BatchBuildError::TooManyOps);
+    assert_eq!(error, FheExecutionBuildError::TooManySteps);
 }
 
 #[test]
 fn step_tables_rollback_undoes_promotions_and_appends() {
     let shared = Pubkey::new_unique();
-    let mut remaining_accounts = vec![BatchAccountMeta::readonly(
+    let mut remaining_accounts = vec![ExecutionAccountMeta::readonly(
         shared,
-        BatchAccountPurpose::PersistentInputAcl,
+        ExecutionAccountPurpose::PersistentInputAcl,
     )];
     let mut dictionary = vec![handle(1)];
     let mut persistent_producers = vec![Pubkey::new_unique()];
@@ -1413,27 +1452,27 @@ fn step_tables_rollback_undoes_promotions_and_appends() {
     // would leave the entry with the flags the first promotion set.
     assert_eq!(
         tables
-            .account_index(BatchAccountMeta::writable(
+            .account_index(ExecutionAccountMeta::writable(
                 shared,
-                BatchAccountPurpose::PersistentOutputAcl,
+                ExecutionAccountPurpose::PersistentOutputAcl,
             ))
             .unwrap(),
         0
     );
     assert_eq!(
         tables
-            .account_index(BatchAccountMeta::readonly_signer(
+            .account_index(ExecutionAccountMeta::readonly_signer(
                 shared,
-                BatchAccountPurpose::PersistentOutputAuthority,
+                ExecutionAccountPurpose::PersistentOutputAuthority,
             ))
             .unwrap(),
         0
     );
     assert_eq!(
         tables
-            .account_index(BatchAccountMeta::readonly(
+            .account_index(ExecutionAccountMeta::readonly(
                 Pubkey::new_unique(),
-                BatchAccountPurpose::PersistentInputAcl,
+                ExecutionAccountPurpose::PersistentInputAcl,
             ))
             .unwrap(),
         1
@@ -1451,7 +1490,7 @@ fn step_tables_rollback_undoes_promotions_and_appends() {
 fn step_that_fails_after_interning_leaves_the_builder_untouched() {
     let authority = Pubkey::new_unique();
     let written_key = encrypted_value_id(authority, 7);
-    let mut builder = BatchBuilder::new(app_authority(authority));
+    let mut builder = FheExecutionBuilder::new(app_authority(authority));
     builder
         .trivial_encrypt_u64(
             7,
@@ -1475,7 +1514,10 @@ fn step_that_fails_after_interning_leaves_the_builder_untouched() {
         .add(fresh, written, Output::transient())
         .unwrap_err();
 
-    assert_eq!(error, BatchBuildError::PersistentOperandWrittenEarlier);
+    assert_eq!(
+        error,
+        FheExecutionBuildError::PersistentOperandWrittenEarlier
+    );
     assert_eq!(builder.remaining_accounts, accounts_before);
     assert_eq!(builder.dictionary, dictionary_before);
     assert_eq!(builder.persistent_producers, producers_before);

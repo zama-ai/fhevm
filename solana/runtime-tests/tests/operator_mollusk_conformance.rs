@@ -1,7 +1,7 @@
 //! Representative real-host conformance for Solana `fhe_execute` operator families.
 //!
 //! Each test executes one canonical instruction against the compiled `zama_host` program, then
-//! evaluates that exact batch in the test-owned cleartext evaluator. The exhaustive semantic
+//! evaluates that exact execution in the test-owned cleartext evaluator. The exhaustive semantic
 //! contract stays in `operator_conformance`; this target covers only materially different host
 //! admission and result-binding shapes.
 
@@ -250,10 +250,10 @@ struct EvalFlow {
     next_seed: u8,
 }
 
-// Batch constants (operand handles, scalar values, output ACL metadata) live in the
-// batch's interned dictionary and are referenced by `u8` index (fhevm-internal#1853 W7). The
+// FheExecution constants (operand handles, scalar values, output ACL metadata) live in the
+// execution's interned dictionary and are referenced by `u8` index (fhevm-internal#1853 W7). The
 // flow helpers intern through a thread-local dictionary while a test assembles its single
-// batch; `instruction` snapshots it into the finished args and byte-mirror helpers keep
+// execution; `instruction` snapshots it into the finished args and byte-mirror helpers keep
 // resolving through it afterwards. Each test runs on its own thread and each flow
 // clears the dictionary on construction, so dictionaries never mix across tests.
 std::thread_local! {
@@ -388,7 +388,7 @@ impl EvalFlow {
             &[Check::success()],
         );
         let cleartext = evaluate(&args, &self.cleartext)
-            .expect("accepted host batch must have valid cleartext semantics");
+            .expect("accepted host execution must have valid cleartext semantics");
         let output_account = result.get_account(&output_address).unwrap();
         let mut output_data: &[u8] = &output_account.data;
         let output_handle = host::EncryptedValue::try_deserialize(&mut output_data)
@@ -440,7 +440,7 @@ impl EvalFlow {
 struct EvalOutcome {
     cleartext: Vec<TypedClearValue>,
     output_handle: [u8; 32],
-    /// Rand-seed anchor inputs: the signed compute subject and the batch's single
+    /// Rand-seed anchor inputs: the signed compute subject and the execution's single
     /// persistent output (a create, so `previous_handle = [0; 32]`).
     compute_subject: Pubkey,
     output_address: Pubkey,
@@ -704,7 +704,7 @@ fn expected_is_in_handle(value: [u8; 32], set: &[[u8; 32]], fhe_type: u8) -> [u8
 }
 
 fn expected_rand_seed(compute_subject: Pubkey, output_address: Pubkey) -> [u8; 16] {
-    // The batch's persistent-write anchor: its single persistent output is a create,
+    // The execution's persistent-write anchor: its single persistent output is a create,
     // so the tag, current handle, and leaf count are zero.
     let anchor: Vec<u8> = [output_address.as_ref(), &[0], &[0; 32], &0u64.to_le_bytes()].concat();
     let hash = keccak_hashv(&[

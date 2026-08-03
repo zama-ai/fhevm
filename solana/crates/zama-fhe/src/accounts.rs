@@ -1,7 +1,7 @@
-//! Dynamic-account bookkeeping for lowered batches.
+//! Dynamic-account bookkeeping for lowered executions.
 //!
 //! Public API surface: app programs. An app that assembles its own account list reads these
-//! predicates to decide which accounts a lowered batch still needs, so they stay exported even
+//! predicates to decide which accounts a lowered execution still needs, so they stay exported even
 //! where this repository's own programs let the CPI helper do it.
 
 use anchor_lang::prelude::Pubkey;
@@ -10,26 +10,26 @@ use anchor_lang::prelude::Pubkey;
 use anchor_lang::{prelude::AccountInfo, Key};
 
 #[cfg(feature = "cpi")]
-use crate::batch::Batch;
+use crate::execution::FheExecution;
 
-/// Why a batch needs a dynamic account.
+/// Why an execution needs a dynamic account.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum BatchAccountPurpose {
+pub enum ExecutionAccountPurpose {
     PersistentInputAcl,
     PersistentOutputAcl,
     PersistentOutputAuthority,
 }
 
-/// Public view of one dynamic account required by a batch.
+/// Public view of one dynamic account required by an execution.
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct BatchAccountRequirement {
+pub struct ExecutionAccountRequirement {
     pubkey: Pubkey,
     is_writable: bool,
     is_signer: bool,
-    purposes: Vec<BatchAccountPurpose>,
+    purposes: Vec<ExecutionAccountPurpose>,
 }
 
-impl BatchAccountRequirement {
+impl ExecutionAccountRequirement {
     pub fn pubkey(&self) -> Pubkey {
         self.pubkey
     }
@@ -42,36 +42,36 @@ impl BatchAccountRequirement {
         self.is_signer
     }
 
-    pub fn has_purpose(&self, purpose: BatchAccountPurpose) -> bool {
+    pub fn has_purpose(&self, purpose: ExecutionAccountPurpose) -> bool {
         self.purposes.contains(&purpose)
     }
 
-    pub fn purposes(&self) -> &[BatchAccountPurpose] {
+    pub fn purposes(&self) -> &[ExecutionAccountPurpose] {
         &self.purposes
     }
 
     pub fn requires_dynamic_account(&self) -> bool {
         self.purposes
             .iter()
-            .any(|purpose| *purpose != BatchAccountPurpose::PersistentOutputAuthority)
+            .any(|purpose| *purpose != ExecutionAccountPurpose::PersistentOutputAuthority)
     }
 
     pub fn requires_output_authority(&self) -> bool {
-        self.has_purpose(BatchAccountPurpose::PersistentOutputAuthority)
+        self.has_purpose(ExecutionAccountPurpose::PersistentOutputAuthority)
     }
 }
 
-/// Dynamic account role required by a batch.
+/// Dynamic account role required by an execution.
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub(crate) struct BatchAccountMeta {
+pub(crate) struct ExecutionAccountMeta {
     pub(crate) pubkey: Pubkey,
     pub(crate) is_writable: bool,
     pub(crate) is_signer: bool,
-    pub(crate) purposes: Vec<BatchAccountPurpose>,
+    pub(crate) purposes: Vec<ExecutionAccountPurpose>,
 }
 
-impl BatchAccountMeta {
-    pub(crate) fn readonly(pubkey: Pubkey, purpose: BatchAccountPurpose) -> Self {
+impl ExecutionAccountMeta {
+    pub(crate) fn readonly(pubkey: Pubkey, purpose: ExecutionAccountPurpose) -> Self {
         Self {
             pubkey,
             is_writable: false,
@@ -80,7 +80,7 @@ impl BatchAccountMeta {
         }
     }
 
-    pub(crate) fn writable(pubkey: Pubkey, purpose: BatchAccountPurpose) -> Self {
+    pub(crate) fn writable(pubkey: Pubkey, purpose: ExecutionAccountPurpose) -> Self {
         Self {
             pubkey,
             is_writable: true,
@@ -89,7 +89,7 @@ impl BatchAccountMeta {
         }
     }
 
-    pub(crate) fn readonly_signer(pubkey: Pubkey, purpose: BatchAccountPurpose) -> Self {
+    pub(crate) fn readonly_signer(pubkey: Pubkey, purpose: ExecutionAccountPurpose) -> Self {
         Self {
             pubkey,
             is_writable: false,
@@ -101,7 +101,7 @@ impl BatchAccountMeta {
     /// Widens this entry so it also satisfies `required`, returning the record that undoes it.
     /// The record lives next to the mutation on purpose: it is only complete because `promote`
     /// does exactly two things — OR the flags and append purposes — so anything added here has to
-    /// be added to [`BatchAccountMeta::demote`] in the same edit.
+    /// be added to [`ExecutionAccountMeta::demote`] in the same edit.
     pub(crate) fn promote(&mut self, required: Self) -> MetaPromotion {
         let undo = MetaPromotion {
             was_writable: self.is_writable,
@@ -126,7 +126,7 @@ impl BatchAccountMeta {
     }
 }
 
-/// What one [`BatchAccountMeta::promote`] changed, small enough to record without allocating.
+/// What one [`ExecutionAccountMeta::promote`] changed, small enough to record without allocating.
 #[derive(Debug)]
 pub(crate) struct MetaPromotion {
     was_writable: bool,
@@ -134,8 +134,8 @@ pub(crate) struct MetaPromotion {
     purposes_len: usize,
 }
 
-impl From<&BatchAccountMeta> for BatchAccountRequirement {
-    fn from(meta: &BatchAccountMeta) -> Self {
+impl From<&ExecutionAccountMeta> for ExecutionAccountRequirement {
+    fn from(meta: &ExecutionAccountMeta) -> Self {
         Self {
             pubkey: meta.pubkey,
             is_writable: meta.is_writable,
@@ -147,9 +147,9 @@ impl From<&BatchAccountMeta> for BatchAccountRequirement {
 
 /// App authority that signs the fixed ZamaHost fhe_execute CPI account.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
-pub struct BatchAppAuthority(Pubkey);
+pub struct ExecutionAppAuthority(Pubkey);
 
-impl BatchAppAuthority {
+impl ExecutionAppAuthority {
     pub fn new(pubkey: Pubkey) -> Self {
         Self(pubkey)
     }
@@ -159,48 +159,48 @@ impl BatchAppAuthority {
     }
 }
 
-/// Output authority required by a batch.
+/// Output authority required by an execution.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub struct BatchOutputAuthorityRequirement {
+pub struct ExecutionOutputAuthorityRequirement {
     pub(crate) pubkey: Pubkey,
     pub(crate) cpi_account_authority: bool,
 }
 
-impl BatchOutputAuthorityRequirement {
+impl ExecutionOutputAuthorityRequirement {
     pub fn pubkey(&self) -> Pubkey {
         self.pubkey
     }
 }
 
-/// Account-list resolution failure for an [`Batch`].
+/// Account-list resolution failure for an [`FheExecution`].
 #[cfg(feature = "cpi")]
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub enum BatchAccountResolutionError {
+pub enum ExecutionAccountResolutionError {
     /// The same dynamic account pubkey was supplied more than once.
     DuplicateDynamicAccount { pubkey: Pubkey },
-    /// A supplied dynamic account is not required by this batch's non-authority
+    /// A supplied dynamic account is not required by this execution's non-authority
     /// remaining-account slots.
     UnexpectedDynamicAccount { pubkey: Pubkey },
     /// A non-authority remaining-account slot could not be resolved.
     MissingDynamicAccount {
-        requirement: BatchAccountRequirement,
+        requirement: ExecutionAccountRequirement,
     },
     /// A writable remaining-account slot was supplied as readonly.
     DynamicAccountNotWritable {
-        requirement: BatchAccountRequirement,
+        requirement: ExecutionAccountRequirement,
     },
     /// The same persistent output authority witness was supplied more than once.
     DuplicateOutputAuthority { pubkey: Pubkey },
-    /// A supplied output authority is not required by this batch.
+    /// A supplied output authority is not required by this execution.
     UnexpectedOutputAuthority { pubkey: Pubkey },
     /// A required persistent output authority witness could not be resolved.
     MissingOutputAuthority {
-        authority: BatchOutputAuthorityRequirement,
+        authority: ExecutionOutputAuthorityRequirement,
     },
 }
 
 #[cfg(feature = "cpi")]
-impl BatchAccountResolutionError {
+impl ExecutionAccountResolutionError {
     pub fn pubkey(&self) -> Pubkey {
         match self {
             Self::DuplicateDynamicAccount { pubkey }
@@ -214,15 +214,15 @@ impl BatchAccountResolutionError {
     }
 }
 
-/// Ordered dynamic accounts resolved from an [`Batch`].
+/// Ordered dynamic accounts resolved from an [`FheExecution`].
 #[cfg(feature = "cpi")]
 #[derive(Debug)]
-pub struct ResolvedBatchAccounts<'info> {
+pub struct ResolvedExecutionAccounts<'info> {
     accounts: Vec<AccountInfo<'info>>,
 }
 
 #[cfg(feature = "cpi")]
-impl<'info> ResolvedBatchAccounts<'info> {
+impl<'info> ResolvedExecutionAccounts<'info> {
     pub fn account_infos(&self) -> &[AccountInfo<'info>] {
         &self.accounts
     }
@@ -236,11 +236,11 @@ impl<'info> ResolvedBatchAccounts<'info> {
 }
 
 #[cfg(feature = "cpi")]
-pub(crate) fn resolve_batch_accounts<'info>(
-    batch: &Batch,
+pub(crate) fn resolve_execution_accounts<'info>(
+    execution: &FheExecution,
     dynamic_accounts: impl IntoIterator<Item = AccountInfo<'info>>,
     output_authorities: impl IntoIterator<Item = AccountInfo<'info>>,
-) -> std::result::Result<ResolvedBatchAccounts<'info>, BatchAccountResolutionError> {
+) -> std::result::Result<ResolvedExecutionAccounts<'info>, ExecutionAccountResolutionError> {
     let dynamic_accounts = dynamic_accounts.into_iter().collect::<Vec<_>>();
     let output_authorities = output_authorities.into_iter().collect::<Vec<_>>();
 
@@ -250,16 +250,16 @@ pub(crate) fn resolve_batch_accounts<'info>(
             .iter()
             .any(|candidate| candidate.key() == pubkey)
         {
-            return Err(BatchAccountResolutionError::DuplicateDynamicAccount { pubkey });
+            return Err(ExecutionAccountResolutionError::DuplicateDynamicAccount { pubkey });
         }
-        let Some(required) = batch
+        let Some(required) = execution
             .dynamic_account_requirements()
             .find(|required| required.pubkey() == pubkey)
         else {
-            return Err(BatchAccountResolutionError::UnexpectedDynamicAccount { pubkey });
+            return Err(ExecutionAccountResolutionError::UnexpectedDynamicAccount { pubkey });
         };
         if !required.requires_dynamic_account() {
-            return Err(BatchAccountResolutionError::UnexpectedDynamicAccount { pubkey });
+            return Err(ExecutionAccountResolutionError::UnexpectedDynamicAccount { pubkey });
         }
     }
 
@@ -269,34 +269,34 @@ pub(crate) fn resolve_batch_accounts<'info>(
             .iter()
             .any(|candidate| candidate.key() == pubkey)
         {
-            return Err(BatchAccountResolutionError::DuplicateOutputAuthority { pubkey });
+            return Err(ExecutionAccountResolutionError::DuplicateOutputAuthority { pubkey });
         }
-        if !batch
+        if !execution
             .output_authorities()
             .any(|required| required == pubkey)
         {
-            return Err(BatchAccountResolutionError::UnexpectedOutputAuthority { pubkey });
+            return Err(ExecutionAccountResolutionError::UnexpectedOutputAuthority { pubkey });
         }
     }
 
-    for authority in batch.output_authority_requirements() {
+    for authority in execution.output_authority_requirements() {
         if !output_authorities
             .iter()
             .any(|candidate| candidate.key() == authority.pubkey())
         {
-            return Err(BatchAccountResolutionError::MissingOutputAuthority { authority });
+            return Err(ExecutionAccountResolutionError::MissingOutputAuthority { authority });
         }
     }
 
     let mut accounts = Vec::new();
-    for required in batch.dynamic_account_requirements() {
+    for required in execution.dynamic_account_requirements() {
         let account = if required.requires_output_authority() {
             output_authorities
                 .iter()
                 .find(|candidate| candidate.key() == required.pubkey())
                 .cloned()
-                .ok_or(BatchAccountResolutionError::MissingOutputAuthority {
-                    authority: BatchOutputAuthorityRequirement {
+                .ok_or(ExecutionAccountResolutionError::MissingOutputAuthority {
+                    authority: ExecutionOutputAuthorityRequirement {
                         pubkey: required.pubkey(),
                         cpi_account_authority: false,
                     },
@@ -306,19 +306,19 @@ pub(crate) fn resolve_batch_accounts<'info>(
                 .iter()
                 .find(|candidate| candidate.key() == required.pubkey())
                 .cloned()
-                .ok_or_else(|| BatchAccountResolutionError::MissingDynamicAccount {
+                .ok_or_else(|| ExecutionAccountResolutionError::MissingDynamicAccount {
                     requirement: required.clone(),
                 })?
         } else {
             continue;
         };
         if required.is_writable() && !account.is_writable {
-            return Err(BatchAccountResolutionError::DynamicAccountNotWritable {
+            return Err(ExecutionAccountResolutionError::DynamicAccountNotWritable {
                 requirement: required,
             });
         }
         accounts.push(account);
     }
 
-    Ok(ResolvedBatchAccounts { accounts })
+    Ok(ResolvedExecutionAccounts { accounts })
 }

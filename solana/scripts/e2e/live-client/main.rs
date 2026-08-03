@@ -92,9 +92,9 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         return Ok(());
     }
 
-    // TRIVIAL_ENCRYPT_EVAL drives the SAME trivial-encryption through the eval-batch executor
+    // TRIVIAL_ENCRYPT_EVAL drives the SAME trivial-encryption through the eval-execution executor
     // (fhe_execute): a single TrivialEncrypt step with a persistent output ACL record. The host computes
-    // the result handle on-chain and the host-listener reconstructs the successful batch,
+    // the result handle on-chain and the host-listener reconstructs the successful execution,
     // exercising the #2755 eval path.
     if std::env::var("TRIVIAL_ENCRYPT_EVAL").is_ok() {
         trivial_encrypt_eval(&host, &payer, host_config)?;
@@ -116,7 +116,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     }
 
     // FHE_EXECUTE_VERIFIED_INPUT drives the #1539 input flow in one fhe_execute: a Binary Add of a
-    // coprocessor-attested external input (FheExecuteOperand::VerifiedInput, re-verified in-batch via
+    // coprocessor-attested external input (FheExecuteOperand::VerifiedInput, re-verified in-execution via
     // secp256k1 with no scratch PDA) and a public scalar, binding the result to a persistent output ACL
     // record under the attested domain. The attestation comes from the same relayer
     // input-proof the BIND_INPUT phase uses (BIND_* env); TE_ADD is the scalar addend (default 2);
@@ -487,17 +487,17 @@ fn existing_value_account_state(
     }
 }
 
-/// Builds the batch's interned 32-byte constant dictionary while a flow assembles its steps.
+/// Builds the execution's interned 32-byte constant dictionary while a flow assembles its steps.
 /// Interning deduplicates: repeated constants share one entry.
 #[derive(Default)]
-struct BatchDictionary(Vec<[u8; 32]>);
+struct ExecutionDictionary(Vec<[u8; 32]>);
 
-impl BatchDictionary {
+impl ExecutionDictionary {
     fn intern(&mut self, bytes: [u8; 32]) -> u8 {
         if let Some(index) = self.0.iter().position(|entry| *entry == bytes) {
-            return u8::try_from(index).expect("batch dictionary fits u8");
+            return u8::try_from(index).expect("execution dictionary fits u8");
         }
-        let index = u8::try_from(self.0.len()).expect("batch dictionary fits u8");
+        let index = u8::try_from(self.0.len()).expect("execution dictionary fits u8");
         self.0.push(bytes);
         index
     }
@@ -517,7 +517,7 @@ impl BatchDictionary {
 #[allow(clippy::too_many_arguments)]
 fn persistent_output(
     program: &Program<Rc<Keypair>>,
-    dictionary: &mut BatchDictionary,
+    dictionary: &mut ExecutionDictionary,
     encrypted_value: Pubkey,
     index: u8,
     domain: Pubkey,
@@ -709,7 +709,7 @@ fn trivial_encrypt_eval_with_label(
         Pubkey::find_program_address(&[EVENT_AUTHORITY_SEED], &zama_host::ID);
     let subjects = vec![payer.pubkey()];
 
-    let mut dictionary = BatchDictionary::default();
+    let mut dictionary = ExecutionDictionary::default();
     let output = persistent_output(
         host,
         &mut dictionary,
@@ -773,11 +773,11 @@ fn trivial_encrypt_eval_with_label(
     })
 }
 
-/// Eval-based compute phase: drives a single-step fhe_execute batch (one TrivialEncrypt step with a
+/// Eval-based compute phase: drives a single-step fhe_execute execution (one TrivialEncrypt step with a
 /// persistent output ACL record). The host runs the eval executor, computes the result handle on-chain,
 /// creates the persistent output ACL record
 /// (passed as the sole remaining_account). The live host-listener reconstructs the successful
-/// batch for the tfhe-worker to materialize. TE_VALUE selects the euint64 plaintext; TE_ALLOW
+/// execution for the tfhe-worker to materialize. TE_VALUE selects the euint64 plaintext; TE_ALLOW
 /// marks it publicly decryptable afterward.
 fn trivial_encrypt_eval(
     host: &Program<Rc<Keypair>>,
@@ -1085,12 +1085,12 @@ fn historical_update_step(
 }
 
 /// Input flow phase (#1539): one fhe_execute that adds a public scalar to a coprocessor-attested external
-/// input and binds the result to a persistent output ACL record. The verified input is resolved in-batch
+/// input and binds the result to a persistent output ACL record. The verified input is resolved in-execution
 /// (FheExecuteOperand::VerifiedInput) — its attestation is re-verified on-chain via secp256k1 with no
 /// scratch PDA — and the persistent output is pinned to the attested domain (the input's domain;
 /// the on-chain binding rejects any other). The attestation is supplied via the same BIND_* env vars
 /// the standalone input-verify phase uses; TE_ADD is the scalar addend (default 2). The host-listener
-/// reconstructs the successful batch so the tfhe-worker materializes (input + TE_ADD); TE_ALLOW
+/// reconstructs the successful execution so the tfhe-worker materializes (input + TE_ADD); TE_ALLOW
 /// then makes the result publicly decryptable.
 fn fhe_execute_verified_input_add(
     host: &Program<Rc<Keypair>>,
@@ -1151,7 +1151,7 @@ fn fhe_execute_verified_input_add(
         signatures: vec![signature],
     };
 
-    let mut dictionary = BatchDictionary::default();
+    let mut dictionary = ExecutionDictionary::default();
     let args = zama_host::FheExecuteArgs {
         account_count: 1,
         steps: vec![zama_host::FheExecuteStep::Binary {
@@ -1368,7 +1368,7 @@ fn consume_wrap(
 
     let mint_state: confidential_token::ConfidentialMint = token.account(mint)?;
     let total_supply_value = mint_state.total_supply_encrypted_value;
-    // The wrap amount is trivial-encrypted as a transient inside wrap_usdc's batch.
+    // The wrap amount is trivial-encrypted as a transient inside wrap_usdc's execution.
     let (zama_evt, _) = Pubkey::find_program_address(&[EVENT_AUTHORITY_SEED], &zama_host::ID);
     let (token_evt, _) =
         Pubkey::find_program_address(&[EVENT_AUTHORITY_SEED], &confidential_token::ID);
@@ -1391,8 +1391,13 @@ fn consume_wrap(
         println!("created vault USDC ATA {vault_usdc}");
     }
 
-    // wrap_usdc runs several FHE ops in one instruction and exhausts the default 32KB SBF
-    // heap; request the max heap batch (256KB) and raise the compute-unit limit.
+    // Raise the compute-unit limit: wrap_usdc runs several FHE steps in one instruction.
+    // The 256 KB heap-frame request next to it does nothing for these programs and is kept only
+    // because it is what the deployed demo sends: Anchor's entrypoint installs a bump allocator
+    // fixed at `solana_program_entrypoint::HEAP_LENGTH` (32 KB) unless the program declares
+    // `custom-heap`, which none of ours do, so a larger heap frame is granted and never used. What
+    // actually keeps these instructions inside 32 KB is the step budget — see
+    // `zama_fhe::MAX_ON_CHAIN_EXECUTION_STEPS`.
     let cb_prog = Pubkey::from_str("ComputeBudget111111111111111111111111111111")?;
     let mut heap_data = vec![1u8];
     heap_data.extend_from_slice(&(256u32 * 1024).to_le_bytes());
@@ -1514,7 +1519,7 @@ fn consume_burn(
 
     // 1. fromExternal burn amount: a coprocessor-attested external input (BIND_* env from the
     // relayer input-proof), bound to (user = owner, contract = compute_signer PDA). confidential_burn
-    // re-verifies the EIP-712 attestation in-batch and transient-allows it for the burn eval — no
+    // re-verifies the EIP-712 attestation in-execution and transient-allows it for the burn eval — no
     // persistent amount ACL, no create_random_amount. The attested handle must be a euint64.
     let input_handle: [u8; 32] = hexdec(&std::env::var("BIND_HANDLE")?)
         .try_into()
@@ -1553,8 +1558,8 @@ fn consume_burn(
         confidential_token::burned_amount_label(),
     );
 
-    // 3. confidential_burn — five FHE ops in one instruction; request the max heap batch + a
-    // raised CU limit like wrap. SlotHashes entropy is only populated in real execution, so skip
+    // 3. confidential_burn — five FHE steps in one instruction; same CU raise and same
+    // (inert, see wrap above) heap-frame request as wrap. SlotHashes entropy is only populated in real execution, so skip
     // preflight unless BURN_NO_PREFLIGHT forces an on-chain log capture.
     let cb_prog = Pubkey::from_str("ComputeBudget111111111111111111111111111111")?;
     let mut heap_data = vec![1u8];
@@ -1809,7 +1814,7 @@ fn create_persistent_public_decrypt_operand(
     let (zama_event_authority, _) =
         Pubkey::find_program_address(&[EVENT_AUTHORITY_SEED], &zama_host::ID);
     let subjects = vec![payer.pubkey()];
-    let mut dictionary = BatchDictionary::default();
+    let mut dictionary = ExecutionDictionary::default();
     let args = zama_host::FheExecuteArgs {
         account_count: 1,
         steps: vec![zama_host::FheExecuteStep::TrivialEncrypt {
@@ -1890,7 +1895,7 @@ fn fhe_execute_binary(
     let (zama_event_authority, _) =
         Pubkey::find_program_address(&[EVENT_AUTHORITY_SEED], &zama_host::ID);
     let subjects = vec![payer.pubkey()];
-    let mut dictionary = BatchDictionary::default();
+    let mut dictionary = ExecutionDictionary::default();
 
     // Operand A. Label = marker 0x0a|op|type|pos|value → distinct PDA per operand/op (no collisions).
     let mut operand_label_a = [0x0au8; 32];
@@ -2064,7 +2069,7 @@ fn fhe_execute_unary(
         operand_label_a,
     )?;
 
-    let mut dictionary = BatchDictionary::default();
+    let mut dictionary = ExecutionDictionary::default();
     let args = zama_host::FheExecuteArgs {
         account_count: 2,
         steps: vec![zama_host::FheExecuteStep::Unary {
@@ -2203,7 +2208,7 @@ fn fhe_execute_ternary(
         label_false,
     )?;
 
-    let mut dictionary = BatchDictionary::default();
+    let mut dictionary = ExecutionDictionary::default();
     let args = zama_host::FheExecuteArgs {
         account_count: 4,
         steps: vec![zama_host::FheExecuteStep::Ternary {
@@ -2308,7 +2313,7 @@ fn fhe_execute_rand_bounded(
     let mut upper_bound = [0u8; 32];
     upper_bound[24..32].copy_from_slice(&upper.to_be_bytes());
 
-    let mut dictionary = BatchDictionary::default();
+    let mut dictionary = ExecutionDictionary::default();
     let args = zama_host::FheExecuteArgs {
         account_count: 1,
         steps: vec![zama_host::FheExecuteStep::RandBounded {
@@ -2408,7 +2413,7 @@ fn fhe_execute_sum(
     let (value_b, h_b) =
         create_persistent_public_decrypt_operand(host, payer, host_config, b, fhe_type, label_b)?;
 
-    let mut dictionary = BatchDictionary::default();
+    let mut dictionary = ExecutionDictionary::default();
     let args = zama_host::FheExecuteArgs {
         account_count: 3,
         steps: vec![zama_host::FheExecuteStep::Sum {
@@ -2501,7 +2506,7 @@ fn fhe_execute_is_in(
     let (zama_event_authority, _) =
         Pubkey::find_program_address(&[EVENT_AUTHORITY_SEED], &zama_host::ID);
     let subjects = vec![payer.pubkey()];
-    let mut dictionary = BatchDictionary::default();
+    let mut dictionary = ExecutionDictionary::default();
 
     // value + set as persistent public-decrypt handles. remaining_accounts: [value, set.., output].
     let set_values: [u64; 3] = [10, 42, 100];
@@ -2657,7 +2662,7 @@ fn fhe_execute_mul_div(
     let (encrypted_value_a, h_a) =
         create_persistent_public_decrypt_operand(host, payer, host_config, a, fhe_type, label_a)?;
 
-    let mut dictionary = BatchDictionary::default();
+    let mut dictionary = ExecutionDictionary::default();
     let args = zama_host::FheExecuteArgs {
         account_count: 2,
         steps: vec![zama_host::FheExecuteStep::MulDiv {

@@ -21,7 +21,7 @@ no-idl = []
 no-log-ix-name = []
 idl-build = ["anchor-lang/idl-build"]
 # Emit optional administrative/config events. The narrow created-public `fhe_execute`
-# lifecycle batch is unconditional because its output handles cannot be reconstructed
+# lifecycle execution is unconditional because its output handles cannot be reconstructed
 # from instruction data alone.
 emit-events = []
 

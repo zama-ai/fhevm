@@ -23,17 +23,17 @@ stack where one exists.
 
 | Term | Definition | Replaces | EVM equivalent |
 |---|---|---|---|
-| **batch** | One atomic `fhe_execute` invocation: its steps, dictionary, and outputs, validated as a whole before any state is touched. | frame, plan | one FHEVMExecutor transaction |
-| **step** | One position in a batch's execution walk. | — | — |
+| **execution** | One atomic `fhe_execute` invocation: its steps, dictionary, and outputs, validated as a whole before any state is touched. `zama_fhe::FheExecution` in the SDK. Not called a batch: the steps are not independent items grouped for efficiency, each reads what the one before it produced. | batch, frame, plan | one FHEVMExecutor transaction |
+| **step** | One position in an execution's walk. | — | — |
 | **op** | The FHE operation kind a step performs (add, mul, select…). | — | FHE library op |
-| **dictionary** | The interned list of 32-byte values inside batch wire data; steps reference entries by index. Deliberately an untyped `Vec<[u8;32]>`: entries are interned across roles (handles, cleartexts, pubkeys). | pool | — |
-| **fhe_execute** | The host instruction that runs a batch. | `fhe_eval` | `FHEVMExecutor` ops |
-| **preflight** | The full-batch validation pass (indexes, accounts, types, costs) that runs before the execution walk. | — | — |
-| **transient** | Usable only inside the carrying batch; leaves no persistent grant. | — | `allowTransient` |
+| **dictionary** | The interned list of 32-byte values inside an execution's wire data; steps reference entries by index. Deliberately an untyped `Vec<[u8;32]>`: entries are interned across roles (handles, cleartexts, pubkeys). | pool | — |
+| **fhe_execute** | The host instruction that runs one execution. | `fhe_eval` | `FHEVMExecutor` ops |
+| **preflight** | The whole-execution validation pass (indexes, accounts, types, costs) that runs before the walk. | — | — |
+| **transient** | Usable only inside the carrying execution; leaves no persistent grant. | — | `allowTransient` |
 | **stored value** | Wire name of an operand read from a value account, and of an output written to one: `FheExecuteOperand::StoredValue`, `FheExecuteOutput::StoredValue`. Names what the slot is, not why it was admitted. Also the SDK type `zama_fhe::StoredValue<T>`, which — unlike a builder's transient values — belongs to no builder. | `AllowedPersistent` | ACL `persistAllowed` entry |
-| **earlier step** | Wire name of an operand that reads the output of an earlier step of the same batch: `FheExecuteOperand::EarlierStep`. The matching output is `FheExecuteOutput::Transient`. | `AllowedLocal` | `allowTransient` value |
-| **persistent** | Outlives the batch: written to a value account with its own subject list. | durable | ACL `persistAllowed` |
-| **create / created-public** | A batch output binding a new persistent value; created-public seals it publicly decryptable at creation. | birth, born-public | — |
+| **earlier step** | Wire name of an operand that reads the output of an earlier step of the same execution: `FheExecuteOperand::EarlierStep`. The matching output is `FheExecuteOutput::Transient`. | `AllowedLocal` | `allowTransient` value |
+| **persistent** | Outlives the execution: written to a value account with its own subject list. | durable | ACL `persistAllowed` |
+| **create / created-public** | An execution output binding a new persistent value; created-public seals it publicly decryptable at creation. | birth, born-public | — |
 | **update** | Replacing a persistent value's handle, echoing the exact previous handle and subject list. | supersede, rotation | — |
 | **HCU** | Homomorphic compute unit: the metering unit of FHE work. | — | HCU |
 
@@ -52,7 +52,7 @@ stack where one exists.
 
 | Term | Definition | Replaces | EVM equivalent |
 |---|---|---|---|
-| **decoded op records** | The typed structs the listener decodes from batch instruction data, one per step, fed to the coprocessor. They are not on-chain events. | `Fhe*Event` structs | `FheAdd`… events |
+| **decoded op records** | The typed structs the listener decodes from an execution's instruction data, one per step, fed to the coprocessor. They are not on-chain events. | `Fhe*Event` structs | `FheAdd`… events |
 | **reconstruction** | The listener's re-derivation of output handles from raw transaction bytes, using the program's own derivation functions. | — | — |
 | **proof service** | The off-chain service that ingests confirmed blocks and serves MMR inclusion proofs. A failure can stall a decrypt, but the KMS re-verifies every proof, so the service cannot authorize one. | — | — |
 

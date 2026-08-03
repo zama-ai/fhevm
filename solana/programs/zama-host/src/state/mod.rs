@@ -128,7 +128,7 @@ impl FheUnaryOpCode {
     }
 }
 
-/// Arguments for a composed instruction-local fhe_execute batch.
+/// Arguments for one composed, instruction-local fhe_execute.
 #[derive(AnchorSerialize, AnchorDeserialize, Clone, Debug, PartialEq, Eq)]
 pub struct FheExecuteArgs {
     /// Declared `remaining_accounts` length, asserted equal to the actual list. Carried in
@@ -155,7 +155,7 @@ pub struct FheExecuteArgs {
 }
 
 impl FheExecuteArgs {
-    /// Resolves an interned dictionary entry; an out-of-range index fails the batch.
+    /// Resolves an interned dictionary entry; an out-of-range index fails the execution.
     pub fn dictionary_bytes(&self, index: u8) -> anchor_lang::Result<[u8; 32]> {
         self.dictionary
             .get(index as usize)
@@ -169,7 +169,7 @@ impl FheExecuteArgs {
     }
 }
 
-/// One step inside a composed fhe_execute batch.
+/// One step inside a composed fhe_execute.
 #[derive(AnchorSerialize, AnchorDeserialize, Clone, Debug, PartialEq, Eq)]
 pub enum FheExecuteStep {
     /// Binary operator step.
@@ -272,7 +272,7 @@ pub enum FheExecuteStep {
 }
 
 /// A coprocessor input attestation carried inline by a [`FheExecuteOperand::VerifiedInput`], re-verified
-/// in-batch (no account, no PDA) — the instruction-local analog of EVM `allowTransient(input, contract)`.
+/// in-execution (no account, no PDA) — the instruction-local analog of EVM `allowTransient(input, contract)`.
 #[derive(AnchorSerialize, AnchorDeserialize, Clone, Debug, PartialEq, Eq)]
 pub struct CoprocessorInputAttestation {
     /// The verified input handle used as the operand.
@@ -316,14 +316,14 @@ pub enum FheExecuteOperand {
         /// Dictionary index of the scalar value.
         value_index: u8,
     },
-    /// External encrypted input verified in-batch by re-running the coprocessor attestation.
+    /// External encrypted input verified in-execution by re-running the coprocessor attestation.
     /// The "allow" is instruction-local (no ACL record, no session, no PDA): the input is usable
     /// only where it is consumed in the same `fhe_execute`. Valid as an encrypted operand, not a scalar.
     VerifiedInput {
         /// The inline attestation re-verified to authorize this operand.
         // Boxed so the ~190-byte attestation is paid only by operands that carry one, not
         // inlined into every `FheExecuteOperand` slot of every step (a Rust enum is as large as
-        // its fattest variant, and batches live in `Vec<FheExecuteStep>` on the 32KB SBF bump heap
+        // its fattest variant, and executions live in `Vec<FheExecuteStep>` on the 32KB SBF bump heap
         // on both sides of the CPI). `Box<T>` is borsh- and IDL-transparent: the wire format
         // is unchanged.
         attestation: Box<CoprocessorInputAttestation>,
@@ -962,12 +962,12 @@ pub fn computed_eval_trivial_handle(
 
 /// Derives the compulsorily fresh seed for an instruction-local eval random handle.
 ///
-/// Freshness is anchored, never caller-advised: `persistent_anchor_bytes` is the batch's
+/// Freshness is anchored, never caller-advised: `persistent_anchor_bytes` is the execution's
 /// persistent-write anchor — every persistent output's live account identity and version
 /// concatenated in wire order. The host-observed MMR leaf count prevents a handle cycle
 /// from replaying an earlier anchor.
-/// `compute_subject` separates concurrent batches of different signers in the same slot;
-/// `op_index` separates rand steps within one batch; slot entropy separates slots.
+/// `compute_subject` separates concurrent executions of different signers in the same slot;
+/// `op_index` separates rand steps within one execution; slot entropy separates slots.
 pub fn computed_eval_rand_seed(
     compute_subject: Pubkey,
     persistent_anchor_bytes: &[u8],

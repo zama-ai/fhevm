@@ -61,7 +61,7 @@ fn host_idl_drops_verifier_set_and_keeps_secp_kms_context_path() {
             "KmsContext is missing field `{required}`"
         );
     }
-    // Encrypted inputs are verified in-batch by the `fhe_execute` `VerifiedInput` operand
+    // Encrypted inputs are verified in-execution by the `fhe_execute` `VerifiedInput` operand
     // (the fromExternal path); there is no standalone verify_coprocessor_input instruction.
     assert!(
         !instructions

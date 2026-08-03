@@ -46,9 +46,9 @@ pub enum BatcherError {
     /// An encrypted value account was malformed or not owned by the host.
     #[msg("encrypted value account is invalid")]
     EncryptedValueInvalid,
-    /// The batcher produced an invalid FHE batch (internal invariant).
-    #[msg("invalid FHE batch")]
-    InvalidFheExecuteBatch,
+    /// The batcher produced an invalid FHE execution (internal invariant).
+    #[msg("invalid FHE execution")]
+    InvalidFheExecution,
     /// The join record's payout was already claimed.
     #[msg("payout already claimed for this join record")]
     AlreadyClaimed,

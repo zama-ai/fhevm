@@ -80,6 +80,25 @@ CORE_ROOTS=(
   sdk/js-sdk/src/solana
   solana/demo-dapp/src
 )
+
+# A third, narrower scope for one word: "batch". An fhe_execute invocation is an `execution` (see
+# GLOSSARY), but the confidential batcher's `Batch` account really is a batch — a settlement round
+# of independent deposits — and the listener batches RPC calls and DB writes. Sweeping the word
+# across everything would flag those legitimate uses forever, so it is swept exactly where "batch"
+# can only mean the retired name for one execution: the host, the SDK, the token program, and the
+# live client. The batcher's own program, its mollusk test, the vault dapp and the vault docs speak
+# the settlement sense and are outside this list on purpose.
+FHE_ROOTS=(
+  solana/crates
+  solana/programs/zama-host
+  solana/programs/confidential-token
+  solana/scripts/e2e/live-client
+  solana/runtime-tests/tests/host_mollusk.rs
+  solana/runtime-tests/tests/token_mollusk.rs
+  solana/runtime-tests/tests/operator_conformance.rs
+  solana/runtime-tests/tests/operator_mollusk_conformance.rs
+  solana/runtime-tests/tests/batch_contracts.rs
+)
 ALL_ROOTS=("${RUST_ROOTS[@]}" "${TS_ROOTS[@]}" "${SCRIPT_ROOTS[@]}")
 
 # `target/` holds generated crates (mime_guess ships a word list containing half the dictionary);
@@ -185,12 +204,15 @@ echo "== 3. rejected glossary aliases =="
 # a legitimate unrelated meaning in these trees, the narrow exception that keeps it. An exception
 # is a documented sentence here, never a blanket skip of a file or a directory.
 #
-# `label` -> reported name; `scope` -> core|all; `exceptions` -> an -viE pattern applied to the
+# `label` -> reported name; `scope` -> fhe|core|all; `exceptions` -> an -viE pattern applied to the
 # hits; the rest are grep args.
 check_alias() {
   local label="$1" scope="$2" exceptions="$3"; shift 3
   local hits
-  if [ "$scope" = core ]; then
+  if [ "$scope" = fhe ]; then
+    hits=$( (grep -rniE --include='*.rs' --include='*.ts' --include='*.md' --include='*.py' \
+      --include='*.sh' --include='*.yml' "${EXCLUDES[@]}" "$@" "${FHE_ROOTS[@]}" 2>/dev/null || true) )
+  elif [ "$scope" = core ]; then
     hits=$( (grep -rniE --include='*.rs' --include='*.ts' --include='*.md' --include='*.py' \
       --include='*.sh' --include='*.yml' "${EXCLUDES[@]}" "$@" "${CORE_ROOTS[@]}" 2>/dev/null || true) )
   else
@@ -238,9 +260,14 @@ check_alias 'SDK namespace — renamed to label' core '' -E '\bnamespace\b|\bnam
 # batch <- frame, plan. "frame" survives only in its Solana runtime sense (the CPI/instruction
 # stack frame), and as the proper name of the retired `execute_frame` RFC-024 prototype where the
 # sentence says so. A batch of steps is never a frame.
-check_alias 'frame — a batch of steps is a batch' all \
-  'stack frame|instruction frame|enclosing frame|execution frame|cpi frame|frame it belongs to|older `execute_frame`|framework' \
+check_alias 'frame — a walk of steps is an execution' all \
+  'stack frame|instruction frame|enclosing frame|execution frame|cpi frame|frame it belongs to|older `execute_frame`|framework|heap frame|heap-frame' \
   -E '\bframes?\b|execute_frame|_frame\b|frame_|Frame[A-Z]'
+# One fhe_execute invocation is an `execution`, never a batch: its steps are dependent, each reading
+# what the one before it produced, which is the opposite of what a batch means. Swept in FHE scope
+# only — see FHE_ROOTS for why the batcher and the listener keep the word.
+check_alias 'batch — one fhe_execute invocation is an execution' fhe \
+  'deliberately not a batch' -iE '\bbatch(es|ed|ing)?\b'
 # "plan" is CORE-only: test-suite/fhevm threads a docker-compose `plan: StackSpec` through every
 # generator. Inside the FHE core an fhe_execute batch is the only thing a "plan" could be.
 check_alias 'plan — an fhe_execute batch is a batch' core \
@@ -492,7 +519,7 @@ root_is_triggered() {
   return 1
 }
 
-for root in "${ALL_ROOTS[@]}" kms-connector/crates ${DEAD_SURFACE_EXTRA_ROOT:-}; do
+for root in "${ALL_ROOTS[@]}" "${FHE_ROOTS[@]}" kms-connector/crates ${DEAD_SURFACE_EXTRA_ROOT:-}; do
   if ! root_is_triggered "$root"; then
     echo "UNTRIGGERED ROOT: ${root} is swept by this script but no path in ${TRIGGER_WORKFLOW}'s dead-surface filter matches it — a change there would not run this check"
     fail=1
@@ -520,6 +547,12 @@ if [ "$SELF_TEST" -eq 1 ]; then
     expect_fires "alias sweep on \"${word}\"" bash "$0"
     rm -f "$fixture"
   done
+  # The "batch" sweep runs in FHE scope only, so its fixture has to sit under one of those roots —
+  # a fixture in solana/docs (where the loop above puts its own) would not reach it.
+  fixture="solana/crates/zama-fhe/.dead-surface-selftest.md"
+  printf 'one fhe_execute batch\n' > "$fixture"
+  expect_fires 'alias sweep on "batch" (fhe scope)' bash "$0"
+  rm -f "$fixture"
   # Check 4: an unjustified EVM-shaped zero-fill in a swept file.
   fixture="solana/crates/zama-fhe/src/dead_surface_selftest.rs"
   printf 'pub fn f() { let contract_address = [0u8; 20]; let _ = contract_address; }\n' > "$fixture"

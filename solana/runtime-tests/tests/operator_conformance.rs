@@ -44,7 +44,7 @@ fn run_binary(
         inputs.insert(rhs_handle, typed(input_type, rhs));
         persistent(rhs_handle)
     };
-    let batch = args(vec![FheExecuteStep::Binary {
+    let execution = args(vec![FheExecuteStep::Binary {
         op,
         lhs: persistent(lhs_handle),
         rhs,
@@ -52,7 +52,7 @@ fn run_binary(
         output: local_output(),
     }]);
     assert_eq!(
-        evaluate(&batch, &inputs).unwrap(),
+        evaluate(&execution, &inputs).unwrap(),
         vec![typed(output_type, expected)]
     );
 }
@@ -65,7 +65,7 @@ fn run_unary(
     expected: [u8; 32],
 ) {
     let input_handle = handle(1, input_type);
-    let batch = args(vec![FheExecuteStep::Unary {
+    let execution = args(vec![FheExecuteStep::Unary {
         op,
         operand: persistent(input_handle),
         output_fhe_type: output_type,
@@ -76,7 +76,7 @@ fn run_unary(
         TypedClearValue::from_be_bytes(input_type, input),
     )]);
     assert_eq!(
-        evaluate(&batch, &inputs).unwrap(),
+        evaluate(&execution, &inputs).unwrap(),
         vec![TypedClearValue::from_be_bytes(output_type, expected)]
     );
 }
@@ -85,7 +85,7 @@ fn run_ternary(fhe_type: u8, if_true: u64, if_false: u64, expected: u64) {
     let control = handle(1, 0);
     let true_handle = handle(2, fhe_type);
     let false_handle = handle(3, fhe_type);
-    let batch = args(vec![FheExecuteStep::Ternary {
+    let execution = args(vec![FheExecuteStep::Ternary {
         op: FheTernaryOpCode::IfThenElse,
         control: persistent(control),
         if_true: persistent(true_handle),
@@ -99,19 +99,19 @@ fn run_ternary(fhe_type: u8, if_true: u64, if_false: u64, expected: u64) {
         (false_handle, typed(fhe_type, if_false)),
     ]);
     assert_eq!(
-        evaluate(&batch, &inputs).unwrap(),
+        evaluate(&execution, &inputs).unwrap(),
         vec![typed(fhe_type, expected)]
     );
 }
 
 fn run_trivial(fhe_type: u8, plaintext: u64, expected: u64) {
-    let batch = args(vec![FheExecuteStep::TrivialEncrypt {
+    let execution = args(vec![FheExecuteStep::TrivialEncrypt {
         plaintext: be(plaintext),
         fhe_type,
         output: local_output(),
     }]);
     assert_eq!(
-        evaluate(&batch, &ClearInputs::new()).unwrap(),
+        evaluate(&execution, &ClearInputs::new()).unwrap(),
         vec![typed(fhe_type, expected)]
     );
 }
@@ -119,7 +119,7 @@ fn run_trivial(fhe_type: u8, plaintext: u64, expected: u64) {
 fn run_sum(fhe_type: u8, lhs: u64, rhs: u64, expected: u64) {
     let lhs_handle = handle(1, fhe_type);
     let rhs_handle = handle(2, fhe_type);
-    let batch = args(vec![sum_step(
+    let execution = args(vec![sum_step(
         vec![persistent(lhs_handle), persistent(rhs_handle)],
         fhe_type,
     )]);
@@ -128,15 +128,15 @@ fn run_sum(fhe_type: u8, lhs: u64, rhs: u64, expected: u64) {
         (rhs_handle, typed(fhe_type, rhs)),
     ]);
     assert_eq!(
-        evaluate(&batch, &inputs).unwrap(),
+        evaluate(&execution, &inputs).unwrap(),
         vec![typed(fhe_type, expected)]
     );
 }
 
 fn run_empty_sum(fhe_type: u8) {
-    let batch = args(vec![sum_step(vec![], fhe_type)]);
+    let execution = args(vec![sum_step(vec![], fhe_type)]);
     assert_eq!(
-        evaluate(&batch, &ClearInputs::new()).unwrap(),
+        evaluate(&execution, &ClearInputs::new()).unwrap(),
         vec![typed(fhe_type, 0)]
     );
 }
@@ -148,12 +148,15 @@ fn run_is_in(fhe_type: u8, value: u64, include_set: bool, expected: u64) {
         .then(|| persistent(member_handle))
         .into_iter()
         .collect();
-    let batch = args(vec![is_in_step(persistent(value_handle), set, fhe_type)]);
+    let execution = args(vec![is_in_step(persistent(value_handle), set, fhe_type)]);
     let mut inputs = HashMap::from([(value_handle, typed(fhe_type, value))]);
     if include_set {
         inputs.insert(member_handle, typed(fhe_type, 29));
     }
-    assert_eq!(evaluate(&batch, &inputs).unwrap(), vec![typed(0, expected)]);
+    assert_eq!(
+        evaluate(&execution, &inputs).unwrap(),
+        vec![typed(0, expected)]
+    );
 }
 
 fn run_mul_div(
@@ -173,25 +176,25 @@ fn run_mul_div(
         inputs.insert(second_handle, typed(fhe_type, factor2));
         persistent(second_handle)
     };
-    let batch = args(vec![mul_div_step(
+    let execution = args(vec![mul_div_step(
         persistent(first_handle),
         second,
         be(divisor),
         fhe_type,
     )]);
     assert_eq!(
-        evaluate(&batch, &inputs).unwrap(),
+        evaluate(&execution, &inputs).unwrap(),
         vec![typed(fhe_type, expected)]
     );
 }
 
 fn run_rand(fhe_type: u8) {
-    let batch = args(vec![FheExecuteStep::Rand {
+    let execution = args(vec![FheExecuteStep::Rand {
         fhe_type,
         output: local_output(),
     }]);
-    let first = evaluate(&batch, &ClearInputs::new()).unwrap();
-    let second = evaluate(&batch, &ClearInputs::new()).unwrap();
+    let first = evaluate(&execution, &ClearInputs::new()).unwrap();
+    let second = evaluate(&execution, &ClearInputs::new()).unwrap();
     assert_eq!(first, second, "test random must be repeatable");
     assert_eq!(first[0].fhe_type, fhe_type);
     if fhe_type == 0 {
@@ -201,9 +204,9 @@ fn run_rand(fhe_type: u8) {
 }
 
 fn run_rand_bounded(fhe_type: u8, upper_bound: u64) {
-    let batch = args(vec![bounded_rand_step(be(upper_bound), fhe_type)]);
-    let first = evaluate(&batch, &ClearInputs::new()).unwrap();
-    let second = evaluate(&batch, &ClearInputs::new()).unwrap();
+    let execution = args(vec![bounded_rand_step(be(upper_bound), fhe_type)]);
+    let first = evaluate(&execution, &ClearInputs::new()).unwrap();
+    let second = evaluate(&execution, &ClearInputs::new()).unwrap();
     assert_eq!(first, second, "test bounded random must be repeatable");
     assert_eq!(first[0].fhe_type, fhe_type);
     assert_eq!(first[0].value[..24], [0; 24]);
@@ -237,14 +240,14 @@ mod edges {
         let input = handle(1, 2);
         let mut high_only = [0; 32];
         high_only[0] = 1;
-        let batch = args(vec![binary(
+        let execution = args(vec![binary(
             FheBinaryOpCode::Add,
             persistent(input),
             scalar(high_only),
             2,
         )]);
         assert_eq!(
-            evaluate(&batch, &HashMap::from([(input, typed(2, 7))])).unwrap(),
+            evaluate(&execution, &HashMap::from([(input, typed(2, 7))])).unwrap(),
             vec![typed(2, 7)]
         );
     }
@@ -262,13 +265,13 @@ mod edges {
     fn bool_trivial_uses_low_byte_only() {
         let mut high_only = [0; 32];
         high_only[0] = 1;
-        let batch = args(vec![FheExecuteStep::TrivialEncrypt {
+        let execution = args(vec![FheExecuteStep::TrivialEncrypt {
             plaintext: high_only,
             fhe_type: 0,
             output: local_output(),
         }]);
         assert_eq!(
-            evaluate(&batch, &ClearInputs::new()).unwrap(),
+            evaluate(&execution, &ClearInputs::new()).unwrap(),
             vec![typed(0, 0)]
         );
     }
@@ -277,14 +280,14 @@ mod edges {
         let encrypted_false = handle(1, 0);
         let mut high_only = [0; 32];
         high_only[0] = 1;
-        let batch = args(vec![binary(
+        let execution = args(vec![binary(
             FheBinaryOpCode::Eq,
             persistent(encrypted_false),
             scalar(high_only),
             0,
         )]);
         assert_eq!(
-            evaluate(&batch, &HashMap::from([(encrypted_false, typed(0, 0))])).unwrap(),
+            evaluate(&execution, &HashMap::from([(encrypted_false, typed(0, 0))])).unwrap(),
             vec![typed(0, 0)]
         );
     }
@@ -293,7 +296,7 @@ mod edges {
         let control = handle(1, 0);
         let if_true = handle(2, 2);
         let if_false = handle(3, 2);
-        let batch = args(vec![FheExecuteStep::Ternary {
+        let execution = args(vec![FheExecuteStep::Ternary {
             op: FheTernaryOpCode::IfThenElse,
             control: persistent(control),
             if_true: persistent(if_true),
@@ -306,27 +309,27 @@ mod edges {
             (if_true, typed(2, 11)),
             (if_false, typed(2, 22)),
         ]);
-        assert_eq!(evaluate(&batch, &inputs).unwrap(), vec![typed(2, 22)]);
+        assert_eq!(evaluate(&execution, &inputs).unwrap(), vec![typed(2, 22)]);
     }
     #[test]
     fn sum_u8_accepts_exact_narrow_operand_cap() {
         let narrow = handle(1, 2);
-        let batch = args(vec![sum_step(vec![persistent(narrow); 100], 2)]);
+        let execution = args(vec![sum_step(vec![persistent(narrow); 100], 2)]);
         assert_eq!(
-            evaluate(&batch, &HashMap::from([(narrow, typed(2, 1))])).unwrap(),
+            evaluate(&execution, &HashMap::from([(narrow, typed(2, 1))])).unwrap(),
             vec![typed(2, 100)]
         );
     }
     #[test]
     fn is_in_u256_accepts_exact_wide_set_cap() {
         let wide = handle(1, 8);
-        let batch = args(vec![is_in_step(
+        let execution = args(vec![is_in_step(
             persistent(wide),
             vec![persistent(wide); 60],
             8,
         )]);
         assert_eq!(
-            evaluate(&batch, &HashMap::from([(wide, typed(8, 9))])).unwrap(),
+            evaluate(&execution, &HashMap::from([(wide, typed(8, 9))])).unwrap(),
             vec![typed(0, 1)]
         );
     }
@@ -336,7 +339,7 @@ mod edges {
         let member = handle(2, 7);
         let mut high = [0; 32];
         high[12] = 1;
-        let batch = args(vec![is_in_step(
+        let execution = args(vec![is_in_step(
             persistent(value),
             vec![persistent(member)],
             7,
@@ -345,28 +348,28 @@ mod edges {
             (value, TypedClearValue::from_be_bytes(7, high)),
             (member, TypedClearValue::from_be_bytes(7, high)),
         ]);
-        assert_eq!(evaluate(&batch, &inputs).unwrap(), vec![typed(0, 1)]);
+        assert_eq!(evaluate(&execution, &inputs).unwrap(), vec![typed(0, 1)]);
     }
     #[test]
     fn is_in_u160_high_bit_empty_set_is_false() {
         let value = handle(1, 7);
         let mut high = [0; 32];
         high[12] = 1;
-        let batch = args(vec![is_in_step(persistent(value), vec![], 7)]);
+        let execution = args(vec![is_in_step(persistent(value), vec![], 7)]);
         let inputs = HashMap::from([(value, TypedClearValue::from_be_bytes(7, high))]);
-        assert_eq!(evaluate(&batch, &inputs).unwrap(), vec![typed(0, 0)]);
+        assert_eq!(evaluate(&execution, &inputs).unwrap(), vec![typed(0, 0)]);
     }
     #[test]
     fn rand_then_bounded_rand_preserves_deterministic_output_order() {
-        let batch = args(vec![
+        let execution = args(vec![
             FheExecuteStep::Rand {
                 fhe_type: 8,
                 output: local_output(),
             },
             bounded_rand_step(be(16), 2),
         ]);
-        let first = evaluate(&batch, &ClearInputs::new()).unwrap();
-        let second = evaluate(&batch, &ClearInputs::new()).unwrap();
+        let first = evaluate(&execution, &ClearInputs::new()).unwrap();
+        let second = evaluate(&execution, &ClearInputs::new()).unwrap();
         assert_eq!(first, second);
         assert_eq!([first[0].fhe_type, first[1].fhe_type], [8, 2]);
         assert!(u64::from_be_bytes(first[1].value[24..].try_into().unwrap()) < 16);
@@ -377,7 +380,7 @@ mod edges {
         let zero = handle(2, 7);
         let mut high_value = [0; 32];
         high_value[12] = 0x80;
-        let batch = args(vec![binary(
+        let execution = args(vec![binary(
             FheBinaryOpCode::Eq,
             persistent(high),
             persistent(zero),
@@ -387,7 +390,7 @@ mod edges {
             (high, TypedClearValue::from_be_bytes(7, high_value)),
             (zero, typed(7, 0)),
         ]);
-        assert_eq!(evaluate(&batch, &inputs).unwrap(), vec![typed(0, 0)]);
+        assert_eq!(evaluate(&execution, &inputs).unwrap(), vec![typed(0, 0)]);
     }
     #[test]
     fn binary_ne_u256_distinct_high_bits() {
@@ -397,7 +400,7 @@ mod edges {
         lhs_value[0] = 0x80;
         let mut rhs_value = [0; 32];
         rhs_value[0] = 0x40;
-        let batch = args(vec![binary(
+        let execution = args(vec![binary(
             FheBinaryOpCode::Ne,
             persistent(lhs),
             persistent(rhs),
@@ -407,21 +410,21 @@ mod edges {
             (lhs, TypedClearValue::from_be_bytes(8, lhs_value)),
             (rhs, TypedClearValue::from_be_bytes(8, rhs_value)),
         ]);
-        assert_eq!(evaluate(&batch, &inputs).unwrap(), vec![typed(0, 1)]);
+        assert_eq!(evaluate(&execution, &inputs).unwrap(), vec![typed(0, 1)]);
     }
     #[test]
     fn binary_rotr_u256_moves_low_bit_to_high_bit() {
         let one = handle(1, 8);
         let mut expected = [0; 32];
         expected[0] = 0x80;
-        let batch = args(vec![binary(
+        let execution = args(vec![binary(
             FheBinaryOpCode::Rotr,
             persistent(one),
             scalar(be(1)),
             8,
         )]);
         assert_eq!(
-            evaluate(&batch, &HashMap::from([(one, typed(8, 1))])).unwrap(),
+            evaluate(&execution, &HashMap::from([(one, typed(8, 1))])).unwrap(),
             vec![TypedClearValue::from_be_bytes(8, expected)]
         );
     }
@@ -432,7 +435,7 @@ mod edges {
         let mut pattern = [0; 32];
         pattern[0] = 0x80;
         pattern[31] = 1;
-        let batch = args(vec![binary(
+        let execution = args(vec![binary(
             FheBinaryOpCode::Eq,
             persistent(lhs),
             persistent(rhs),
@@ -442,7 +445,7 @@ mod edges {
             (lhs, TypedClearValue::from_be_bytes(8, pattern)),
             (rhs, TypedClearValue::from_be_bytes(8, pattern)),
         ]);
-        assert_eq!(evaluate(&batch, &inputs).unwrap(), vec![typed(0, 1)]);
+        assert_eq!(evaluate(&execution, &inputs).unwrap(), vec![typed(0, 1)]);
     }
     #[test]
     fn unary_not_u256_patterned_bytes_has_literal_complement() {
@@ -574,7 +577,7 @@ mod rejected {
             let control = handle(1, 0);
             let if_true = handle(2, 2);
             let if_false = handle(3, 3);
-            let batch = args(vec![FheExecuteStep::Ternary {
+            let execution = args(vec![FheExecuteStep::Ternary {
                 op: FheTernaryOpCode::IfThenElse,
                 control: persistent(control),
                 if_true: persistent(if_true),
@@ -587,13 +590,13 @@ mod rejected {
                 (if_true, typed(2, 11)),
                 (if_false, typed(3, 22)),
             ]);
-            expect_error(batch, inputs, "invalid ternary operand types");
+            expect_error(execution, inputs, "invalid ternary operand types");
         }
         #[test]
         fn if_then_else_rejects_unsupported_output_before_branch_lookup() {
             let control = handle(1, 0);
             let missing_branch = handle(2, 1);
-            let batch = args(vec![FheExecuteStep::Ternary {
+            let execution = args(vec![FheExecuteStep::Ternary {
                 op: FheTernaryOpCode::IfThenElse,
                 control: persistent(control),
                 if_true: persistent(missing_branch),
@@ -602,7 +605,7 @@ mod rejected {
                 output: local_output(),
             }]);
             expect_error(
-                batch,
+                execution,
                 HashMap::from([(control, typed(0, 1))]),
                 "UnsupportedFheType",
             );
@@ -785,21 +788,21 @@ mod operand_sources {
     #[test]
     fn verified_input_can_seed_an_operation() {
         let input = handle(1, 2);
-        let batch = args(vec![binary(
+        let execution = args(vec![binary(
             FheBinaryOpCode::Add,
             verified(input),
             scalar(be(3)),
             2,
         )]);
         assert_eq!(
-            evaluate(&batch, &HashMap::from([(input, typed(2, 4))])).unwrap(),
+            evaluate(&execution, &HashMap::from([(input, typed(2, 4))])).unwrap(),
             vec![typed(2, 7)]
         );
     }
     #[test]
     fn local_outputs_can_feed_later_steps() {
         let input = handle(1, 2);
-        let batch = args(vec![
+        let execution = args(vec![
             binary(FheBinaryOpCode::Add, persistent(input), scalar(be(1)), 2),
             FheExecuteStep::Unary {
                 op: FheUnaryOpCode::Not,
@@ -809,7 +812,7 @@ mod operand_sources {
             },
         ]);
         assert_eq!(
-            evaluate(&batch, &HashMap::from([(input, typed(2, 1))])).unwrap(),
+            evaluate(&execution, &HashMap::from([(input, typed(2, 1))])).unwrap(),
             vec![typed(2, 2), typed(2, 253)]
         );
     }
@@ -964,8 +967,8 @@ fn ternary_is_accepted(
     }
 }
 
-fn expect_error(batch: FheExecuteArgs, inputs: ClearInputs, expected: &str) {
-    let error = evaluate(&batch, &inputs).unwrap_err();
+fn expect_error(execution: FheExecuteArgs, inputs: ClearInputs, expected: &str) {
+    let error = evaluate(&execution, &inputs).unwrap_err();
     assert!(
         error.contains(expected),
         "expected error containing {expected:?}, got {error:?}"
@@ -1031,10 +1034,10 @@ fn bounded_rand_step(upper_bound: [u8; 32], fhe_type: u8) -> FheExecuteStep {
     }
 }
 
-// Batch constants (operand handles, scalar values) live in the batch's interned dictionary
+// FheExecution constants (operand handles, scalar values) live in the execution's interned dictionary
 // and are referenced by `u8` index (fhevm-internal#1853 W7). The helpers below intern
 // through a thread-local dictionary: `persistent`/`scalar` add entries while a test assembles
-// steps, and `args` drains the dictionary into the finished batch. Each test runs on its own
+// steps, and `args` drains the dictionary into the finished execution. Each test runs on its own
 // thread, so dictionaries never mix across tests.
 std::thread_local! {
     static INTERNED_DICTIONARY: std::cell::RefCell<Vec<[u8; 32]>> =

@@ -149,8 +149,8 @@ pub fn wrap_usdc<'info>(ctx: Context<'info, WrapUsdc<'info>>, amount: u64) -> Re
     )?;
     let mut amount_context = [0u8; 32];
     amount_context[24..].copy_from_slice(&amount.to_be_bytes());
-    let batch = zama_fhe::Batch::build(
-        zama_fhe::BatchAppAuthority::new(token_account.key()),
+    let execution = zama_fhe::FheExecution::build(
+        zama_fhe::ExecutionAppAuthority::new(token_account.key()),
         |builder| {
             let encrypted_amount =
                 builder.trivial_encrypt_u64(amount, zama_fhe::Output::transient())?;
@@ -159,15 +159,15 @@ pub fn wrap_usdc<'info>(ctx: Context<'info, WrapUsdc<'info>>, amount: u64) -> Re
             Ok(())
         },
     )
-    .map_err(invalid_batch)?;
+    .map_err(invalid_execution)?;
     let compute_authority = fhe::ComputeAuthority::for_mint(
         &ctx.accounts.compute_signer,
         mint_key,
         ctx.bumps.compute_signer,
     )?;
     let total_supply_authority_bump = total_supply_authority_address(mint_key).1;
-    let batch_accounts = fhe::BatchAccountSet::for_batch(
-        &batch,
+    let execution_accounts = fhe::ExecutionAccountSet::for_execution(
+        &execution,
         [
             balance_output.account_info(),
             total_supply_output.account_info(),
@@ -201,8 +201,8 @@ pub fn wrap_usdc<'info>(ctx: Context<'info, WrapUsdc<'info>>, amount: u64) -> Re
                 .as_ref()
                 .map(|account| account.to_account_info()),
         },
-        accounts: &batch_accounts,
-        batch,
+        accounts: &execution_accounts,
+        execution,
     })?;
     let new_balance_handle = balance_output.handle()?;
     let new_total_supply_handle = total_supply_output.handle()?;

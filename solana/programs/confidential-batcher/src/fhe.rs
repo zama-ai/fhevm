@@ -60,7 +60,7 @@ impl<'info> PersistentBinding<'info> {
                 Some(value.current_handle),
             )
         };
-        output.binding().map_err(invalid_batch)?;
+        output.binding().map_err(invalid_execution)?;
         Ok(Self {
             account,
             output: Box::new(output),
@@ -101,31 +101,31 @@ pub(crate) struct BatchAuthorityExecute<'a, 'info> {
     pub(crate) deny_subject_records: &'a [AccountInfo<'info>],
 }
 
-/// Builds and invokes one `fhe_execute` batch with the batch authority as both
+/// Builds and invokes one `fhe_execute` execution with the batch authority as both
 /// compute subject and app account authority.
 pub(crate) fn execute_as_batch_authority<'info>(
     eval: BatchAuthorityExecute<'_, 'info>,
     dynamic_accounts: Vec<AccountInfo<'info>>,
-    build: impl for<'brand> FnOnce(&mut zama_fhe::BatchBuilder<'brand>) -> zama_fhe::Result<()>,
+    build: impl for<'brand> FnOnce(&mut zama_fhe::FheExecutionBuilder<'brand>) -> zama_fhe::Result<()>,
 ) -> Result<()> {
     let bump = [eval.authority_bump];
     let authority_seeds: &[&[u8]] = &[BATCH_AUTHORITY_SEED, eval.batch.as_ref(), &bump];
-    let batch = zama_fhe::Batch::build(
-        zama_fhe::BatchAppAuthority::new(eval.batch_authority.key()),
+    let execution = zama_fhe::FheExecution::build(
+        zama_fhe::ExecutionAppAuthority::new(eval.batch_authority.key()),
         build,
     )
-    .map_err(invalid_batch)?;
+    .map_err(invalid_execution)?;
     // Every persistent output of a batcher eval is authorized by the batch authority itself, so it
-    // is the only output authority witness the batch can require.
-    let resolved_accounts = batch
+    // is the only output authority witness the execution can require.
+    let resolved_accounts = execution
         .resolve_accounts(dynamic_accounts, [eval.batch_authority.clone()])
         .map_err(|error| {
             msg!("invalid batcher fhe_execute accounts: {:?}", error);
-            error!(BatcherError::InvalidFheExecuteBatch)
+            error!(BatcherError::InvalidFheExecution)
         })?;
     // Host/CPI errors propagate unchanged so callers and tests keep seeing the host's error code.
-    batch.execute(
-        zama_fhe::BatchCpiAccounts {
+    execution.invoke(
+        zama_fhe::ExecutionCpiAccounts {
             payer: eval.payer,
             compute_subject: eval.batch_authority.clone(),
             account_authority: eval.batch_authority,
@@ -142,9 +142,11 @@ pub(crate) fn execute_as_batch_authority<'info>(
     )
 }
 
-pub(crate) fn invalid_batch(error: zama_fhe::BatchBuildError) -> anchor_lang::error::Error {
-    msg!("invalid FHE batch: {:?}", error);
-    error!(BatcherError::InvalidFheExecuteBatch)
+pub(crate) fn invalid_execution(
+    error: zama_fhe::FheExecutionBuildError,
+) -> anchor_lang::error::Error {
+    msg!("invalid FHE execution: {:?}", error);
+    error!(BatcherError::InvalidFheExecution)
 }
 
 /// Builds a euint64 persistent operand from an encrypted value account's own canonical fields, so
@@ -158,5 +160,5 @@ pub(crate) fn uint64_operand(value: &EncryptedValue) -> Result<zama_fhe::Uint64H
             zama_fhe::PersistentLabel::new(value.label),
         ),
     )
-    .map_err(invalid_batch)
+    .map_err(invalid_execution)
 }

@@ -1,7 +1,7 @@
 //! Token-local FHE helper functions.
 //!
 //! The confidential token program keeps ZamaHost CPI assembly in this module
-//! so business logic can build typed batches and receive host-verified
+//! so business logic can build typed executions and receive host-verified
 //! output handles.
 
 use anchor_lang::{prelude::*, AccountDeserialize};
@@ -121,7 +121,7 @@ impl<'info> PersistentOutput<'info> {
         let output = if *encrypted_value.owner == System::id() {
             require!(
                 encrypted_value.data_is_empty() && !encrypted_value.executable,
-                ConfidentialTokenError::InvalidFheExecuteBatch
+                ConfidentialTokenError::InvalidFheExecution
             );
             zama_fhe::PersistentOutput::create(key, subjects)
         } else {
@@ -131,7 +131,7 @@ impl<'info> PersistentOutput<'info> {
         .with_make_public(make_public);
         output.binding().map_err(|error| {
             msg!("invalid persistent FHE output: {:?}", error);
-            error!(ConfidentialTokenError::InvalidFheExecuteBatch)
+            error!(ConfidentialTokenError::InvalidFheExecution)
         })?;
         Ok(Self {
             encrypted_value,
@@ -163,7 +163,7 @@ impl<'info> PersistentOutput<'info> {
     fn binding(&self) -> Result<zama_fhe::PersistentOutputBinding> {
         self.output.binding().map_err(|error| {
             msg!("invalid persistent FHE output: {:?}", error);
-            error!(ConfidentialTokenError::InvalidFheExecuteBatch)
+            error!(ConfidentialTokenError::InvalidFheExecution)
         })
     }
 }
@@ -220,7 +220,7 @@ impl<'info> ComputeAuthority<'info> {
     }
 }
 
-/// Signer model for a persistent output authority required by a batch.
+/// Signer model for a persistent output authority required by an execution.
 #[derive(Clone)]
 pub(crate) enum OutputAuthoritySigner {
     // Only constructed by the `poc`-gated create_random_amount helpers.
@@ -338,15 +338,15 @@ impl<'info> OutputAuthority<'info> {
     }
 }
 
-/// Pubkey-indexed accounts and authorities available to satisfy a batch.
-pub(crate) struct BatchAccountSet<'info> {
-    accounts: zama_fhe::ResolvedBatchAccounts<'info>,
+/// Pubkey-indexed accounts and authorities available to satisfy an execution.
+pub(crate) struct ExecutionAccountSet<'info> {
+    accounts: zama_fhe::ResolvedExecutionAccounts<'info>,
     output_authorities: Vec<OutputAuthority<'info>>,
 }
 
-impl<'info> BatchAccountSet<'info> {
-    pub(crate) fn for_batch(
-        batch: &zama_fhe::Batch,
+impl<'info> ExecutionAccountSet<'info> {
+    pub(crate) fn for_execution(
+        execution: &zama_fhe::FheExecution,
         available_accounts: impl IntoIterator<Item = AccountInfo<'info>>,
         output_authorities: impl IntoIterator<Item = OutputAuthority<'info>>,
     ) -> Result<Self> {
@@ -355,9 +355,9 @@ impl<'info> BatchAccountSet<'info> {
             .iter()
             .map(OutputAuthority::account_info)
             .collect::<Vec<_>>();
-        let accounts = batch
+        let accounts = execution
             .resolve_accounts(available_accounts, output_authority_accounts)
-            .map_err(map_batch_account_resolution_error)?;
+            .map_err(map_execution_account_resolution_error)?;
 
         Ok(Self {
             accounts,
@@ -372,39 +372,41 @@ impl<'info> BatchAccountSet<'info> {
             .cloned()
     }
 
-    fn resolved_accounts(&self) -> &zama_fhe::ResolvedBatchAccounts<'info> {
+    fn resolved_accounts(&self) -> &zama_fhe::ResolvedExecutionAccounts<'info> {
         &self.accounts
     }
 }
 
-fn map_batch_account_resolution_error(error: zama_fhe::BatchAccountResolutionError) -> Error {
+fn map_execution_account_resolution_error(
+    error: zama_fhe::ExecutionAccountResolutionError,
+) -> Error {
     msg!("invalid fhe_execute account set: {:?}", error);
     match error {
-        zama_fhe::BatchAccountResolutionError::DuplicateDynamicAccount { .. } => {
+        zama_fhe::ExecutionAccountResolutionError::DuplicateDynamicAccount { .. } => {
             error!(ConfidentialTokenError::DuplicateFheExecuteAccount)
         }
-        zama_fhe::BatchAccountResolutionError::UnexpectedDynamicAccount { .. } => {
+        zama_fhe::ExecutionAccountResolutionError::UnexpectedDynamicAccount { .. } => {
             error!(ConfidentialTokenError::UnexpectedFheExecuteAccount)
         }
-        zama_fhe::BatchAccountResolutionError::MissingDynamicAccount { .. } => {
+        zama_fhe::ExecutionAccountResolutionError::MissingDynamicAccount { .. } => {
             error!(ConfidentialTokenError::MissingFheExecuteAccount)
         }
-        zama_fhe::BatchAccountResolutionError::DynamicAccountNotWritable { .. } => {
+        zama_fhe::ExecutionAccountResolutionError::DynamicAccountNotWritable { .. } => {
             error!(ConfidentialTokenError::FheExecuteAccountNotWritable)
         }
-        zama_fhe::BatchAccountResolutionError::DuplicateOutputAuthority { .. } => {
+        zama_fhe::ExecutionAccountResolutionError::DuplicateOutputAuthority { .. } => {
             error!(ConfidentialTokenError::DuplicateFheOutputAuthority)
         }
-        zama_fhe::BatchAccountResolutionError::UnexpectedOutputAuthority { .. } => {
+        zama_fhe::ExecutionAccountResolutionError::UnexpectedOutputAuthority { .. } => {
             error!(ConfidentialTokenError::UnexpectedFheOutputAuthority)
         }
-        zama_fhe::BatchAccountResolutionError::MissingOutputAuthority { .. } => {
+        zama_fhe::ExecutionAccountResolutionError::MissingOutputAuthority { .. } => {
             error!(ConfidentialTokenError::MissingFheOutputAuthority)
         }
     }
 }
 
-/// Inputs required to evaluate an instruction-local FHE batch.
+/// Inputs required to evaluate an instruction-local FHE execution.
 pub(crate) struct ExecuteContext<'a, 'info> {
     /// Transaction payer and rent payer for any persistent output ACL records.
     pub payer: &'a Signer<'info>,
@@ -429,19 +431,19 @@ pub(crate) struct ExecuteContext<'a, 'info> {
     pub hcu_trusted_app_record: Option<AccountInfo<'info>>,
 }
 
-/// Inputs required to execute an instruction-local FHE batch.
+/// Inputs for one instruction-local FHE execution.
 pub(crate) struct Execute<'a, 'info> {
-    /// Fixed ZamaHost CPI accounts shared by batch requests in this instruction.
+    /// Fixed ZamaHost CPI accounts shared by every execution in this instruction.
     pub context: ExecuteContext<'a, 'info>,
-    /// Typed resolver for dynamic accounts required by the batch.
-    pub accounts: &'a BatchAccountSet<'info>,
-    /// SDK-built host batch request and dynamic account roles.
-    pub batch: zama_fhe::Batch,
+    /// Typed resolver for dynamic accounts required by the execution.
+    pub accounts: &'a ExecutionAccountSet<'info>,
+    /// SDK-built host execution request and dynamic account roles.
+    pub execution: zama_fhe::FheExecution,
 }
 
-/// Executes an FHE batch using the current token account authority model.
+/// Invokes one FHE execution under the current token account authority model.
 pub(crate) fn execute<'info>(request: Execute<'_, 'info>) -> Result<()> {
-    let app_authority_key = request.batch.app_authority().pubkey();
+    let app_authority_key = request.execution.app_authority().pubkey();
     let app_authority = request
         .accounts
         .output_authority(app_authority_key)
@@ -460,7 +462,7 @@ pub(crate) fn execute<'info>(request: Execute<'_, 'info>) -> Result<()> {
     let app_authority_seeds: Vec<&[u8]> =
         app_authority_seed_bytes.iter().map(Vec::as_slice).collect();
     let mut additional_authorities = Vec::new();
-    for authority in request.batch.additional_output_authorities() {
+    for authority in request.execution.additional_output_authorities() {
         if authority == app_authority.key() {
             continue;
         }
@@ -505,11 +507,11 @@ pub(crate) fn execute<'info>(request: Execute<'_, 'info>) -> Result<()> {
         request.context.deny_subject_records,
         app_authority.key(),
         &extra_output_authorities,
-        &request.batch.newly_granted_subjects(),
+        &request.execution.newly_granted_subjects(),
     )?;
 
-    request.batch.execute(
-        zama_fhe::BatchCpiAccounts {
+    request.execution.invoke(
+        zama_fhe::ExecutionCpiAccounts {
             payer: request.context.payer.to_account_info(),
             compute_subject: request.context.compute_authority.account_info(),
             account_authority: app_authority.account.clone(),
@@ -664,15 +666,16 @@ mod tests {
         vec![subject]
     }
 
-    fn sample_plan() -> (zama_fhe::Batch, Pubkey, Pubkey, Pubkey) {
+    fn sample_plan() -> (zama_fhe::FheExecution, Pubkey, Pubkey, Pubkey) {
         let authority = Pubkey::new_unique();
         let input_key = encrypted_value_id(authority, 1);
         let input_acl = input_key.address();
         let output_key = encrypted_value_id(authority, 2);
         let output_acl = output_key.address();
         let input = zama_fhe::Uint64Handle::persistent(balance_handle(1), input_key).unwrap();
-        let batch =
-            zama_fhe::Batch::build(zama_fhe::BatchAppAuthority::new(authority), |builder| {
+        let execution = zama_fhe::FheExecution::build(
+            zama_fhe::ExecutionAppAuthority::new(authority),
+            |builder| {
                 builder.add(
                     input,
                     zama_fhe::Scalar::<zama_fhe::Uint<64>>::u64(1),
@@ -682,9 +685,10 @@ mod tests {
                     )),
                 )?;
                 Ok(())
-            })
-            .unwrap();
-        (batch, input_acl, output_acl, authority)
+            },
+        )
+        .unwrap();
+        (execution, input_acl, output_acl, authority)
     }
 
     fn token_error_number(error: Error) -> u32 {
@@ -703,10 +707,10 @@ mod tests {
 
     #[test]
     fn batch_account_set_maps_dynamic_account_errors() {
-        let (batch, input_acl, output_acl, authority) = sample_plan();
+        let (execution, input_acl, output_acl, authority) = sample_plan();
 
-        let error = BatchAccountSet::for_batch(
-            &batch,
+        let error = ExecutionAccountSet::for_execution(
+            &execution,
             vec![
                 account_info(input_acl, false),
                 account_info(input_acl, false),
@@ -718,8 +722,8 @@ mod tests {
         .unwrap();
         assert_token_error(error, ConfidentialTokenError::DuplicateFheExecuteAccount);
 
-        let error = BatchAccountSet::for_batch(
-            &batch,
+        let error = ExecutionAccountSet::for_execution(
+            &execution,
             vec![
                 account_info(input_acl, false),
                 account_info(output_acl, true),
@@ -731,8 +735,8 @@ mod tests {
         .unwrap();
         assert_token_error(error, ConfidentialTokenError::UnexpectedFheExecuteAccount);
 
-        let error = BatchAccountSet::for_batch(
-            &batch,
+        let error = ExecutionAccountSet::for_execution(
+            &execution,
             vec![account_info(output_acl, true)],
             vec![output_authority(authority)],
         )
@@ -740,8 +744,8 @@ mod tests {
         .unwrap();
         assert_token_error(error, ConfidentialTokenError::MissingFheExecuteAccount);
 
-        let error = BatchAccountSet::for_batch(
-            &batch,
+        let error = ExecutionAccountSet::for_execution(
+            &execution,
             vec![
                 account_info(input_acl, false),
                 account_info(output_acl, false),
@@ -755,10 +759,10 @@ mod tests {
 
     #[test]
     fn batch_account_set_maps_output_authority_errors() {
-        let (batch, input_acl, output_acl, authority) = sample_plan();
+        let (execution, input_acl, output_acl, authority) = sample_plan();
 
-        let error = BatchAccountSet::for_batch(
-            &batch,
+        let error = ExecutionAccountSet::for_execution(
+            &execution,
             vec![
                 account_info(input_acl, false),
                 account_info(output_acl, true),
@@ -769,8 +773,8 @@ mod tests {
         .unwrap();
         assert_token_error(error, ConfidentialTokenError::DuplicateFheOutputAuthority);
 
-        let error = BatchAccountSet::for_batch(
-            &batch,
+        let error = ExecutionAccountSet::for_execution(
+            &execution,
             vec![
                 account_info(input_acl, false),
                 account_info(output_acl, true),
@@ -784,8 +788,8 @@ mod tests {
         .unwrap();
         assert_token_error(error, ConfidentialTokenError::UnexpectedFheOutputAuthority);
 
-        let error = BatchAccountSet::for_batch(
-            &batch,
+        let error = ExecutionAccountSet::for_execution(
+            &execution,
             vec![
                 account_info(input_acl, false),
                 account_info(output_acl, true),

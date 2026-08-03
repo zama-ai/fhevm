@@ -28,22 +28,22 @@ pub const DELEGATION_SEED: &[u8] = b"user-decryption-delegation";
 /// Reserved app-context sentinel for wildcard user-decryption delegation rows.
 pub const WILDCARD_APP_CONTEXT_BYTES: [u8; 32] = [0xff; 32];
 
-/// Maximum number of FHE operations accepted by one composed batch.
+/// Maximum number of FHE operations accepted by one composed execution.
 ///
 /// Derived from measured budgets on the interned wire format (fhevm-internal#1853 W8), not chosen
-/// a priori. Measured on the max-op cost-snapshot batch: a marginal chained step costs ~9 bytes of
-/// instruction data and ~3,700 CU. At 32 ops the maximum batch measures ~450 bytes of instruction
+/// a priori. Measured on the max-op cost-snapshot execution: a marginal chained step costs ~9 bytes of
+/// instruction data and ~3,700 CU. At 32 ops the maximum execution measures ~450 bytes of instruction
 /// data (the whole signed transaction stays under the 1,232-byte packet limit with >=150 bytes of
 /// envelope headroom — asserted by `mollusk_fhe_execute_max_op_transaction_fits_packet`) and ~150k CU
 /// (under the 200k default budget, so no compute-budget instruction is required). 48 ops would
 /// exceed the default CU budget and leave <5% packet headroom for realistic account envelopes.
-/// The heap-heaviest legal batch shape (all steps created-public persistent creates) fits 20 creates
+/// The heap-heaviest legal execution shape (all steps created-public persistent creates) fits 20 creates
 /// on the 32KB bump heap — a hard boundary, since the Anchor default allocator serves a fixed
-/// 32KB region even when a larger heap batch is requested; such batches revert cleanly beyond it
+/// 32KB region even when a larger heap execution is requested; such executions revert cleanly beyond it
 /// (measured; pinned by `mollusk_fhe_execute_created_public_heap_boundary`). Wire
 /// indices (`producer_index`, dictionary and account indices) are `u8`, bounding any future raise
 /// at 256.
-pub const MAX_FHE_BATCH_OPS: usize = 32;
+pub const MAX_FHE_EXECUTION_STEPS: usize = 32;
 /// Maximum number of external encrypted-input handles attested in one coprocessor attestation.
 pub const MAX_INPUT_ATTESTATION_HANDLES: usize = 16;
 /// Maximum opaque verifier payload bytes carried in one coprocessor attestation.

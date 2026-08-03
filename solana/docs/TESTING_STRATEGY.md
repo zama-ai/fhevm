@@ -25,7 +25,7 @@ all fail closed (see the `*_rejects_*` mollusk tests).
    doc-sync guard (keeps `MMR_ACL_MVP.md`'s liveness numbers honest).
 2. **On-chain integration — Mollusk** (`solana/runtime-tests/tests/{host,token}_mollusk.rs`): runs the
    **real compiled `.so`** (built `--features poc`) against Mollusk. Covers all three auth paths, the
-   full token flows (wrap / transfer / burn→redeem / disclose), the produced-public lifecycle batch
+   full token flows (wrap / transfer / burn→redeem / disclose), the produced-public lifecycle execution
    (zero/one/multiple/max-size/fail-closed), the burn-redemption consume-once replay marker and
    expired-request rejection, and handle update. Token disclosure is now the thin `disclose_secp`
    consumer of the host `verify_public_decrypt` verifier (DD-040); `token_mollusk` covers its happy path
@@ -36,13 +36,13 @@ all fail closed (see the `*_rejects_*` mollusk tests).
    disclosure tests. The token and batcher Mollusk suites explicitly set `compute_unit_limit = 1_400_000`;
    the host suite uses Mollusk's default per-instruction budget (stricter than 1.4M). In all cases,
    every passing test is an implicit CU-fits assertion at the configured budget.
-3. **Handle-derivation / lifecycle transport** (`zama-host` lib unit): the maximum 16-record batch's
+3. **Handle-derivation / lifecycle transport** (`zama-host` lib unit): the maximum 16-record execution's
     exact 1,077-byte CPI envelope and signer/readonly event-authority metadata, plus handle-derivation
     determinism.
 4. **Off-chain reconstruction — host-listener** (`coprocessor/fhevm-engine/host-listener`, feature
     `solana-grpc`, which includes reconstruction): reconstructs MMR leaves from instruction data +
     sysvar-streamed block entropy (Yellowstone gRPC), with no dependence on emitted events. Derives
-    update/produced-public handles directly; fails closed on incomplete batches.
+    update/produced-public handles directly; fails closed on incomplete executions.
 5. **Off-chain proof service — solana-proof-service** (`solana-proof-service/`): ingest (atomic, gap-free,
    fail-closed), decode (incl. `emit_cpi!` op-event resolution for created-public handles), replay, and
    `build_verified_proof` cross-check against confirmed peaks (a wrong record surfaces as
@@ -52,7 +52,7 @@ all fail closed (see the `*_rejects_*` mollusk tests).
    zama-host / confidential-token / host-listener is asserted (a mismatch would silently drop events).
 7. **End-to-end** (`.github/workflows/solana-e2e.yml`, `full-vertical.sh`): the Yellowstone-only
    path feeds ordinary computation facts through Yellowstone gRPC reconstruction while retaining only
-   the narrow produced-public lifecycle batch required by solana-proof-service
+   the narrow produced-public lifecycle execution required by solana-proof-service
    reconstruction. It drives the **decrypt vertical** against a local validator + full coprocessor/KMS
    stack — compute → public-decrypt (solana-proof-service MMR proof) → user-decrypt (current) → historical-user-decrypt
    (replaced handle + live MMR proof) — exercising all three authorization paths. Operator execution
@@ -78,7 +78,7 @@ An equal-leaf-count proof mismatch is retried as
 `classification=confirmed_equal_count`; a proof ahead of the KMS view is retried as
 `classification=confirmed_proof_ahead`. Both use the ordinary configured decryption budget
 (`max_decryption_attempts`, default 20) and fast event polling interval (default 3 seconds). Actual
-wall-clock exhaustion also depends on batch load and processing time; there is no separate hidden
+wall-clock exhaustion also depends on execution load and processing time; there is no separate hidden
 fork-retry loop. Deterministic mismatches remain fail-closed, but the classification distinguishes
 them from ordinary proof-ahead catch-up in logs.
 

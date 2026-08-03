@@ -244,7 +244,7 @@ pub async fn run(
 /// pair follows them, so they can never be truncated off the tail. Returns `None` when
 /// the index is out of range; the caller treats that as a hard problem, since the
 /// persistent output would otherwise never request ciphertext material.
-/// The number of named `fhe_execute` accounts before the dynamic tail the batch's
+/// The number of named `fhe_execute` accounts before the dynamic tail the execution's
 /// `u8` indices refer to.
 const FHE_EXECUTE_REMAINING_BASE: usize = 9;
 
@@ -1014,7 +1014,7 @@ async fn reconstruct_records_for_insert(
         if ix.program != config.program_id {
             continue;
         }
-        if let Some(batch) = decode_fhe_execute_args(&ix.data) {
+        if let Some(execution) = decode_fhe_execute_args(&ix.data) {
             let ctx = ctx
                 .as_ref()
                 .expect("covered fhe_execute requires reconstruction context");
@@ -1035,7 +1035,7 @@ async fn reconstruct_records_for_insert(
             // Deterministic output handles are reconstructed from the operation
             // and operands. Random outputs use the host-signed seed batch.
             let Some(steps) = reconstruct_fhe_execute_steps(
-                &batch,
+                &execution,
                 subject,
                 fhe_execute_remaining_accounts(&ix.accounts),
                 &random_seeds,
@@ -1043,7 +1043,7 @@ async fn reconstruct_records_for_insert(
             ) else {
                 anyhow::bail!(
                     "reconstruct: incomplete fhe_execute reconstruction in slot {slot}; \
-                     malformed batch or missing handle context"
+                     malformed execution or missing handle context"
                 );
             };
             for step in steps {
@@ -1564,7 +1564,7 @@ mod fhe_execute_acl_tests {
     }
 
     /// A updating persistent `fhe_execute` output recomputes its handle directly
-    /// from the batch's output material + block entropy (DD-015) — no raw update
+    /// from the execution's output material + block entropy (DD-015) — no raw update
     /// handle hint and no encrypted-value-account leaf count. The
     /// reconstructed compute result and current/historical material requests
     /// must all come from the `fhe_execute` instruction itself.
@@ -1572,7 +1572,7 @@ mod fhe_execute_acl_tests {
     async fn updating_fhe_execute_derives_output_handle_without_hint() {
         let expected = derived_add_output_handle();
 
-        let batch = FheExecuteArgs {
+        let execution = FheExecuteArgs {
             account_count: 1,
             dictionary: vec![[3; 32], [1; 32], [8; 32], [9; 32], [10; 32]],
             steps: vec![FheExecuteStep::Binary {
@@ -1598,7 +1598,7 @@ mod fhe_execute_acl_tests {
                 },
             }],
         };
-        let fhe_execute_data = encode_instruction("fhe_execute", batch);
+        let fhe_execute_data = encode_instruction("fhe_execute", execution);
         let instructions = vec![decoded_ix(
             fhe_execute_data,
             fhe_execute_accounts(),
@@ -1644,7 +1644,7 @@ mod fhe_execute_acl_tests {
     /// handle. The persistent bind and public transition share that request.
     #[tokio::test]
     async fn created_public_fhe_execute_output_requests_material() {
-        let batch = FheExecuteArgs {
+        let execution = FheExecuteArgs {
             account_count: 1,
             dictionary: vec![[8; 32], [9; 32], [10; 32], SUBJECT],
             steps: vec![FheExecuteStep::TrivialEncrypt {
@@ -1664,7 +1664,7 @@ mod fhe_execute_acl_tests {
             }],
         };
         let instructions = vec![decoded_ix(
-            encode_instruction("fhe_execute", batch),
+            encode_instruction("fhe_execute", execution),
             fhe_execute_accounts(),
             0,
             false,

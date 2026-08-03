@@ -23,7 +23,7 @@ this note records the operational model in one place.
 - A persistent `fhe_execute` output handle **is the base handle** — identical to the transient handle.
   Deterministic ops are content-addressed over `(op / plaintext, operands, fhe_type, chain_id,
   previous_bank_hash, unix_timestamp)`; rand seeds alone carry uniqueness (`compute_subject` + the
-  batch's persistent-write anchor + `op_index`, see DD-043). There is no per-output binding: a persistent output and an instruction-local
+  execution's persistent-write anchor + `op_index`, see DD-043). There is no per-output binding: a persistent output and an instruction-local
   output over the same material derive the same handle. This matches EVM `FHEVMExecutor`, which binds
   no per-slot / per-caller / per-encrypted value account value into a computed handle. The encrypted value ID is still the
   `EncryptedValue` PDA seed (`derive_encrypted_value_id(domain, account, label)`) —
@@ -172,7 +172,7 @@ sequenceDiagram
 
 ```mermaid
 flowchart TD
-    prog["zama-host fhe_execute"] -->|"emit_cpi! (single batch CPI, ≤MAX_FHE_BATCH_OPS records;<br/>DD-038; no emit! log fallback)"| ev["op-event (self-CPI inner ix):<br/>carries the block-entropy output handle"]
+    prog["zama-host fhe_execute"] -->|"emit_cpi! (single execution CPI, ≤MAX_FHE_EXECUTION_STEPS records;<br/>DD-038; no emit! log fallback)"| ev["op-event (self-CPI inner ix):<br/>carries the block-entropy output handle"]
     prog -->|"instruction data (args)"| ix["fhe_execute persistent-output / make_public args"]
     ev --> proofsvc["solana-proof-service (Yellowstone + Postgres):<br/>resolves created-public handle from op-event,<br/>reconstructs MMR, cross-checks vs confirmed peaks"]
     ix --> listener["host-listener indexer:<br/>Yellowstone gRPC reconstruction-only<br/>(SlotHashes+Clock sysvar streams → block entropy;<br/>never reads events)"]
@@ -219,4 +219,4 @@ to a follow-up.
 - DD-036: burn-redemption consume authorizes by MMR public-decrypt proof (created-public delta), not the
   live handle — closes the Vector-2 fund-stranding window.
 - DD-037: `fhe_execute` events are `emit_cpi!`-only (no `emit!` fallback); created-public outputs are
-  restricted to CPI-transportable batches so their handles are always recoverable off-chain.
+  restricted to CPI-transportable executions so their handles are always recoverable off-chain.

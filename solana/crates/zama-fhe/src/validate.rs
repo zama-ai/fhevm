@@ -1,4 +1,4 @@
-//! Local mirrors of the host preflight rules so malformed batches fail before the CPI.
+//! Local mirrors of the host preflight rules so malformed executions fail before the CPI.
 
 use anchor_lang::prelude::Pubkey;
 
@@ -6,13 +6,13 @@ use zama_host::{
     FheBinaryOpCode, FheExecuteOperand, FheExecuteOutput, FheExecuteStep, FheUnaryOpCode,
 };
 
-use crate::accounts::{BatchAccountMeta, BatchAppAuthority};
+use crate::accounts::{ExecutionAccountMeta, ExecutionAppAuthority};
 use crate::acl::EncryptedValueId;
 use crate::operand::{Operand, OperandKind};
-use crate::{BatchBuildError, Result};
+use crate::{FheExecutionBuildError, Result};
 
 /// Mirrors the host preflight rule (fhevm-internal#1853 W4): rand seeds are anchored to
-/// the batch's persistent writes, so a batch with a rand step and no persistent output is
+/// the execution's persistent writes, so an execution with a rand step and no persistent output is
 /// rejected here before it fails on-chain with `FheExecuteRandRequiresPersistentOutput`.
 pub(crate) fn validate_rand_steps_anchor_persistent_output(steps: &[FheExecuteStep]) -> Result<()> {
     let has_rand = steps.iter().any(|step| {
@@ -58,31 +58,31 @@ pub(crate) fn validate_rand_steps_anchor_persistent_output(steps: &[FheExecuteSt
         )
     });
     if !persists {
-        return Err(BatchBuildError::RandRequiresPersistentOutput);
+        return Err(FheExecutionBuildError::RandRequiresPersistentOutput);
     }
     Ok(())
 }
 
-pub(crate) fn validate_lowered_batch(
+pub(crate) fn validate_lowered_execution(
     steps: &[FheExecuteStep],
-    remaining_accounts: &[BatchAccountMeta],
+    remaining_accounts: &[ExecutionAccountMeta],
     dictionary: &[[u8; 32]],
 ) -> Result<()> {
     if u8::try_from(remaining_accounts.len()).is_err() {
-        return Err(BatchBuildError::TooManyRemainingAccounts);
+        return Err(FheExecutionBuildError::TooManyRemainingAccounts);
     }
     if u8::try_from(dictionary.len()).is_err() {
-        return Err(BatchBuildError::TooManyDictionaryEntries);
+        return Err(FheExecutionBuildError::TooManyDictionaryEntries);
     }
     for (index, account) in remaining_accounts.iter().enumerate() {
         if account.pubkey == Pubkey::default() || account.purposes.is_empty() {
-            return Err(BatchBuildError::InvalidRemainingAccountReference);
+            return Err(FheExecutionBuildError::InvalidRemainingAccountReference);
         }
         if remaining_accounts[index + 1..]
             .iter()
             .any(|candidate| candidate.pubkey == account.pubkey)
         {
-            return Err(BatchBuildError::InvalidRemainingAccountReference);
+            return Err(FheExecutionBuildError::InvalidRemainingAccountReference);
         }
     }
 
@@ -92,11 +92,11 @@ pub(crate) fn validate_lowered_batch(
         validate_lowered_step(step, step_index, &mut used_accounts, &mut used_dictionary)?;
     }
     if used_accounts.iter().any(|used| !*used) {
-        return Err(BatchBuildError::InvalidRemainingAccountReference);
+        return Err(FheExecutionBuildError::InvalidRemainingAccountReference);
     }
-    // Mirrors the host's whole-batch dictionary hygiene rule: every interned entry must be referenced.
+    // Mirrors the host's whole-execution dictionary hygiene rule: every interned entry must be referenced.
     if used_dictionary.iter().any(|used| !*used) {
-        return Err(BatchBuildError::UnreferencedDictionaryEntry);
+        return Err(FheExecutionBuildError::UnreferencedDictionaryEntry);
     }
     Ok(())
 }
@@ -236,13 +236,15 @@ fn validate_lowered_encrypted_operand(
         }
         FheExecuteOperand::EarlierStep { producer_index } => {
             if usize::from(*producer_index) >= step_index {
-                return Err(BatchBuildError::InvalidTransientReference);
+                return Err(FheExecutionBuildError::InvalidTransientReference);
             }
         }
         FheExecuteOperand::VerifiedInput { .. } => {
-            // No remaining account: the attestation is carried inline and verified in-batch.
+            // No remaining account: the attestation is carried inline and verified in-execution.
         }
-        FheExecuteOperand::Scalar { .. } => return Err(BatchBuildError::ScalarEncryptedOperand),
+        FheExecuteOperand::Scalar { .. } => {
+            return Err(FheExecutionBuildError::ScalarEncryptedOperand)
+        }
     }
     Ok(())
 }
@@ -281,7 +283,7 @@ fn validate_lowered_output(
 fn mark_lowered_account(used_accounts: &mut [bool], index: u8) -> Result<()> {
     let used = used_accounts
         .get_mut(usize::from(index))
-        .ok_or(BatchBuildError::InvalidRemainingAccountReference)?;
+        .ok_or(FheExecutionBuildError::InvalidRemainingAccountReference)?;
     *used = true;
     Ok(())
 }
@@ -289,7 +291,7 @@ fn mark_lowered_account(used_accounts: &mut [bool], index: u8) -> Result<()> {
 fn mark_lowered_dictionary_entry(used_dictionary: &mut [bool], index: u8) -> Result<()> {
     let used = used_dictionary
         .get_mut(usize::from(index))
-        .ok_or(BatchBuildError::DictionaryIndexOutOfBounds)?;
+        .ok_or(FheExecutionBuildError::DictionaryIndexOutOfBounds)?;
     *used = true;
     Ok(())
 }
@@ -309,34 +311,34 @@ where
     validate_supported_binary_output_type(op, output_fhe_type)?;
 
     let lhs_type = operand_fhe_type(lhs, produced_count, &produced_type)?
-        .ok_or(BatchBuildError::ScalarLhsOperand)?;
+        .ok_or(FheExecutionBuildError::ScalarLhsOperand)?;
     match op {
         // Eq/Ne accept the widest operand set (Bool..Uint256); ordered comparisons Uint8..Uint128.
         FheBinaryOpCode::Eq | FheBinaryOpCode::Ne => {
             if !matches!(lhs_type, 0 | 2..=8) {
-                return Err(BatchBuildError::UnsupportedFheType);
+                return Err(FheExecutionBuildError::UnsupportedFheType);
             }
         }
         FheBinaryOpCode::Ge | FheBinaryOpCode::Gt | FheBinaryOpCode::Le | FheBinaryOpCode::Lt => {
             if !matches!(lhs_type, 2..=6) {
-                return Err(BatchBuildError::UnsupportedFheType);
+                return Err(FheExecutionBuildError::UnsupportedFheType);
             }
         }
         // Div/Rem: divisor must be a plaintext scalar (EVM `IsNotScalar`), non-zero after truncation.
         FheBinaryOpCode::Div | FheBinaryOpCode::Rem => {
             if lhs_type != output_fhe_type {
-                return Err(BatchBuildError::BinaryOperandTypeMismatch);
+                return Err(FheExecutionBuildError::BinaryOperandTypeMismatch);
             }
             match &rhs.0 {
                 OperandKind::Scalar(value) => {
                     if scalar_is_zero_for_type(*value, output_fhe_type) {
-                        return Err(BatchBuildError::DivisionByZero);
+                        return Err(FheExecutionBuildError::DivisionByZero);
                     }
                 }
                 OperandKind::Persistent(_)
                 | OperandKind::Transient { .. }
                 | OperandKind::VerifiedInput { .. } => {
-                    return Err(BatchBuildError::DivisorMustBeScalar)
+                    return Err(FheExecutionBuildError::DivisorMustBeScalar)
                 }
             }
         }
@@ -354,13 +356,13 @@ where
         | FheBinaryOpCode::Min
         | FheBinaryOpCode::Max => {
             if lhs_type != output_fhe_type {
-                return Err(BatchBuildError::BinaryOperandTypeMismatch);
+                return Err(FheExecutionBuildError::BinaryOperandTypeMismatch);
             }
         }
     }
     if let Some(rhs_type) = operand_fhe_type(rhs, produced_count, &produced_type)? {
         if rhs_type != lhs_type {
-            return Err(BatchBuildError::BinaryOperandTypeMismatch);
+            return Err(FheExecutionBuildError::BinaryOperandTypeMismatch);
         }
     }
     Ok(())
@@ -385,36 +387,36 @@ where
         FheUnaryOpCode::Cast => matches!(output_fhe_type, 2..=6 | 8),
     };
     if !valid_output {
-        return Err(BatchBuildError::UnsupportedFheType);
+        return Err(FheExecutionBuildError::UnsupportedFheType);
     }
     let operand_type = operand_fhe_type(operand, produced_count, &produced_type)?
-        .ok_or(BatchBuildError::ScalarEncryptedOperand)?;
+        .ok_or(FheExecutionBuildError::ScalarEncryptedOperand)?;
     validate_supported_fhe_type(operand_type)?;
     match op {
         FheUnaryOpCode::Neg => {
             if !matches!(operand_type, 2..=6 | 8) {
-                return Err(BatchBuildError::UnsupportedFheType);
+                return Err(FheExecutionBuildError::UnsupportedFheType);
             }
             if operand_type != output_fhe_type {
-                return Err(BatchBuildError::BinaryOperandTypeMismatch);
+                return Err(FheExecutionBuildError::BinaryOperandTypeMismatch);
             }
         }
         FheUnaryOpCode::Not => {
             if !matches!(operand_type, 0 | 2..=6 | 8) {
-                return Err(BatchBuildError::UnsupportedFheType);
+                return Err(FheExecutionBuildError::UnsupportedFheType);
             }
             if operand_type != output_fhe_type {
-                return Err(BatchBuildError::BinaryOperandTypeMismatch);
+                return Err(FheExecutionBuildError::BinaryOperandTypeMismatch);
             }
         }
         FheUnaryOpCode::Cast => {
             // EVM `cast` input set: Bool | Uint8..Uint128 | Uint256 (no eaddress/Uint160).
             if !matches!(operand_type, 0 | 2..=6 | 8) {
-                return Err(BatchBuildError::UnsupportedFheType);
+                return Err(FheExecutionBuildError::UnsupportedFheType);
             }
             // Same-type cast is rejected (EVM InvalidType parity).
             if operand_type == output_fhe_type {
-                return Err(BatchBuildError::UnsupportedFheType);
+                return Err(FheExecutionBuildError::UnsupportedFheType);
             }
         }
     }
@@ -436,14 +438,14 @@ where
     validate_supported_fhe_type(output_fhe_type)?;
 
     let control_type = operand_fhe_type(control, produced_count, &produced_type)?
-        .ok_or(BatchBuildError::ScalarEncryptedOperand)?;
+        .ok_or(FheExecutionBuildError::ScalarEncryptedOperand)?;
     let true_type = operand_fhe_type(if_true, produced_count, &produced_type)?
-        .ok_or(BatchBuildError::ScalarEncryptedOperand)?;
+        .ok_or(FheExecutionBuildError::ScalarEncryptedOperand)?;
     let false_type = operand_fhe_type(if_false, produced_count, &produced_type)?
-        .ok_or(BatchBuildError::ScalarEncryptedOperand)?;
+        .ok_or(FheExecutionBuildError::ScalarEncryptedOperand)?;
 
     if control_type != 0 || true_type != output_fhe_type || false_type != output_fhe_type {
-        return Err(BatchBuildError::TernaryOperandTypeMismatch);
+        return Err(FheExecutionBuildError::TernaryOperandTypeMismatch);
     }
     Ok(())
 }
@@ -460,11 +462,11 @@ where
         OperandKind::Persistent(persistent) => Ok(Some(handle_fhe_type(persistent.handle))),
         OperandKind::Transient { producer_index } => {
             if *producer_index as usize >= produced_count {
-                return Err(BatchBuildError::InvalidTransientReference);
+                return Err(FheExecutionBuildError::InvalidTransientReference);
             }
             produced_type(*producer_index)
                 .map(Some)
-                .ok_or(BatchBuildError::InvalidTransientReference)
+                .ok_or(FheExecutionBuildError::InvalidTransientReference)
         }
         OperandKind::VerifiedInput { input_handle, .. } => Ok(Some(handle_fhe_type(*input_handle))),
         OperandKind::Scalar(_) => Ok(None),
@@ -499,7 +501,7 @@ pub(crate) fn validate_supported_binary_output_type(
         | FheBinaryOpCode::Lt => output_fhe_type == 0,
     };
     if !valid {
-        return Err(BatchBuildError::UnsupportedBinaryOutputType);
+        return Err(FheExecutionBuildError::UnsupportedBinaryOutputType);
     }
     Ok(())
 }
@@ -508,7 +510,7 @@ pub(crate) fn validate_supported_fhe_type(fhe_type: u8) -> Result<()> {
     if matches!(fhe_type, 0 | 2 | 3 | 4 | 5 | 6 | 7 | 8) {
         Ok(())
     } else {
-        Err(BatchBuildError::UnsupportedFheType)
+        Err(FheExecutionBuildError::UnsupportedFheType)
     }
 }
 
@@ -537,7 +539,7 @@ pub(crate) fn validate_uint_fhe_type(fhe_type: u8) -> Result<()> {
     if matches!(fhe_type, 2..=6) {
         Ok(())
     } else {
-        Err(BatchBuildError::UnsupportedFheType)
+        Err(FheExecutionBuildError::UnsupportedFheType)
     }
 }
 
@@ -545,20 +547,20 @@ pub(crate) fn validate_supported_rand_type(fhe_type: u8) -> Result<()> {
     if matches!(fhe_type, 0 | 2 | 3 | 4 | 5 | 6 | 8) {
         Ok(())
     } else {
-        Err(BatchBuildError::UnsupportedFheType)
+        Err(FheExecutionBuildError::UnsupportedFheType)
     }
 }
 
 pub(crate) fn validate_subjects(subjects: &[Pubkey]) -> Result<()> {
     if subjects.is_empty() || subjects.len() > zama_solana_acl::MAX_ENCRYPTED_VALUE_SUBJECTS {
-        return Err(BatchBuildError::InvalidSubjects);
+        return Err(FheExecutionBuildError::InvalidSubjects);
     }
     for (index, subject) in subjects.iter().enumerate() {
         if *subject == Pubkey::default() {
-            return Err(BatchBuildError::InvalidSubjects);
+            return Err(FheExecutionBuildError::InvalidSubjects);
         }
         if subjects[..index].contains(subject) {
-            return Err(BatchBuildError::InvalidSubjects);
+            return Err(FheExecutionBuildError::InvalidSubjects);
         }
     }
     Ok(())
@@ -566,14 +568,14 @@ pub(crate) fn validate_subjects(subjects: &[Pubkey]) -> Result<()> {
 
 pub(crate) fn validate_encrypted_value_id(key: &EncryptedValueId) -> Result<()> {
     if key.domain.pubkey() == Pubkey::default() || key.account == Pubkey::default() {
-        return Err(BatchBuildError::InvalidEncryptedValueId);
+        return Err(FheExecutionBuildError::InvalidEncryptedValueId);
     }
     Ok(())
 }
 
-pub(crate) fn validate_app_authority(authority: BatchAppAuthority) -> Result<()> {
+pub(crate) fn validate_app_authority(authority: ExecutionAppAuthority) -> Result<()> {
     if authority.pubkey() == Pubkey::default() {
-        return Err(BatchBuildError::InvalidAppAuthority);
+        return Err(FheExecutionBuildError::InvalidAppAuthority);
     }
     Ok(())
 }

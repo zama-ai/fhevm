@@ -11,7 +11,7 @@ use anchor_lang::prelude::Pubkey;
 use zama_host::encrypted_value_address;
 
 use crate::validate::{validate_encrypted_value_id, validate_subjects};
-use crate::{BatchBuildError, Result};
+use crate::{FheExecutionBuildError, Result};
 
 /// App-level ACL domain of an `EncryptedValue` account, such as a confidential token mint.
 ///
@@ -258,7 +258,7 @@ pub struct BoundedU64UpperBound {
 impl BoundedU64UpperBound {
     pub fn power_of_two(value: u64) -> Result<Self> {
         if value == 0 || !value.is_power_of_two() {
-            return Err(BatchBuildError::InvalidRandomUpperBound);
+            return Err(FheExecutionBuildError::InvalidRandomUpperBound);
         }
         let mut bytes = [0u8; 32];
         bytes[24..].copy_from_slice(&value.to_be_bytes());
@@ -267,7 +267,7 @@ impl BoundedU64UpperBound {
 
     pub fn from_be_bytes(value: [u8; 32]) -> Result<Self> {
         zama_host::assert_valid_bounded_rand_upper_bound(value, FheType::UINT64.byte())
-            .map_err(|_| BatchBuildError::InvalidRandomUpperBound)?;
+            .map_err(|_| FheExecutionBuildError::InvalidRandomUpperBound)?;
         Ok(Self { value })
     }
 
@@ -277,7 +277,7 @@ impl BoundedU64UpperBound {
 }
 
 impl TryFrom<u64> for BoundedU64UpperBound {
-    type Error = BatchBuildError;
+    type Error = FheExecutionBuildError;
 
     fn try_from(value: u64) -> Result<Self> {
         Self::power_of_two(value)

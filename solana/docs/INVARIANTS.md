@@ -22,7 +22,7 @@ Numbers are stable across both parts and never reused.
 Scope note: this register covers the **protocol layer** of the Solana feature
 branch — `zama-host`, the `zama-fhe` SDK, the host-listener reconstruction path,
 and the proof service. The app layer (confidential token, batcher) gets its own
-register later. Vocabulary follows GLOSSARY.md (batch, dictionary, persistent,
+register later. Vocabulary follows GLOSSARY.md (execution, dictionary, persistent,
 update, encrypted value ID…).
 
 ---
@@ -34,10 +34,10 @@ update, encrypted value ID…).
 1. **[HOLDS]** Plaintext values never appear on-chain: the chain stores handles
    and access state; ciphertexts live only in the coprocessor.
 2. **[HOLDS]** A failed confidential transfer is indistinguishable on-chain from
-   a successful one (the batch moves an encrypted zero; there is no failure
+   a successful one (the execution moves an encrypted zero; there is no failure
    branch to observe).
 3. **[ANTI]** Participation, timing, touched accounts, instruction shapes, and
-   batch structure are all public.
+   execution structure are all public.
 4. **[ANTI]** Subject lists (who is allowed on a value) are public.
 
 ## B. Handles & access state
@@ -46,7 +46,7 @@ update, encrypted value ID…).
    `fhe_execute` outputs; no instruction accepts a caller-chosen handle into
    persistent state.
 6. **[HOLDS]** Updating a persistent value requires echoing its exact current
-   handle and subject list; a stale echo fails the whole batch (no lost-update).
+   handle and subject list; a stale echo fails the whole execution (no lost-update).
 7. **[HOLDS]** Every value account lives at the canonical PDA of its encrypted
    value ID. The ID is recomputed from the account's seeds rather than stored,
    so an account cannot claim a different identity.
@@ -66,29 +66,29 @@ update, encrypted value ID…).
     Membership is flat by design; apps that need owner/spender-style
     distinctions must enforce them in the app program before granting.
 
-## C. Batch execution
+## C. Execution
 
-12. **[HOLDS]** A batch is atomic: preflight validates the entire batch —
+12. **[HOLDS]** An execution is atomic: preflight validates the whole of it —
     indexes, accounts, types, costs — before any state is touched; a failing
-    batch mutates nothing.
+    execution mutates nothing.
 13. **[HOLDS]** Every dictionary index is bounds-checked by all four consumers
     (program, SDK, proof service, listener); an unreferenced dictionary entry
-    rejects the batch.
+    rejects the execution.
 15. **[HOLDS]** HCU inverse conformance: every op/type combination validation
     admits has a metering cost row — a validated step can never abort on
     unknown cost. (The converse is fail-closed: some priced combinations are
     rejected by validation.)
-16. **[HOLDS]** A batch containing a rand step must bind a persistent output.
+16. **[HOLDS]** An execution containing a rand step must bind a persistent output.
     The bound output anchors a compulsorily fresh seed, so a seed is never
-    reused across batches.
+    reused across executions.
 18. **[HOLDS]** Values from two different builders cannot be mixed into one
-    batch: [`Batch::build`] hands each builder an invariant `'brand` lifetime
+    execution: [`FheExecution::build`] hands each builder an invariant `'brand` lifetime
     that its transient values carry, so a foreign value is a compile error
     rather than a runtime check. It replaced a runtime scope tag that was inert
     on SBF (writable statics are forbidden on-chain, so every builder in a
     program shared one scope number). Persistent operands are deliberately
     brand-free — a stored value belongs to no builder. Pinned by the
-    `compile_fail` doctest on `Batch::build`; the surviving runtime guard is the
+    `compile_fail` doctest on `FheExecution::build`; the surviving runtime guard is the
     producer-index bounds check, which protects the wire against hand-built
     args (fhevm-internal#1859 §4).
 
@@ -97,7 +97,7 @@ update, encrypted value ID…).
 19. **[HOLDS]** A verified input is consumed only with a threshold-valid
     coprocessor attestation that names the calling app and the host chain id.
 20. **[HOLDS]** Verified inputs grant nothing persistent: they are usable only
-    inside the carrying batch; persistence requires an explicit output with its
+    inside the carrying execution; persistence requires an explicit output with its
     own access list.
 21. **[HOLDS]** Public cleartext is accepted on-chain only through
     `verify_public_decrypt`: a KMS threshold certificate **and** an MMR
@@ -169,7 +169,7 @@ update, encrypted value ID…).
 41. **[ANTI]** HCU block budgets are per compute subject, not per organization:
     a caller controlling N allowed subjects has N per-slot budgets. The
     multiplier is bounded by grant control — each subject must first be allowed
-    on real values (unanchored batches are rejected under a finite cap).
+    on real values (unanchored executions are rejected under a finite cap).
 51. **[HOLDS]** The optional HCU accounts on `fhe_execute` are four-state, and
     every state that could grant more budget fails closed: present +
     program-owned + well-formed ⇒ used (`hcu_trusted_app_record: trusted ==
@@ -179,7 +179,7 @@ update, encrypted value ID…).
     but never created (system-owned, empty) ⇒ benign — the subject is simply
     untrusted/unused, and a squatted meter with data is rejected when `charge`
     lazily creates it; present at the wrong PDA, or program-owned but
-    malformed ⇒ the batch is rejected outright.
+    malformed ⇒ the execution is rejected outright.
 
 ## G. Decrypt authorization (gateway, relayer, KMS)
 
@@ -218,10 +218,10 @@ A reader who skips this part misses no trust property. Entries here are
 test-pinned engineering facts and operations notes; they change with sizing
 or tooling decisions, not with the threat model.
 
-14. **[HOLDS]** The maximum batch (32 steps) fits one 1,232-byte packet and the
+14. **[HOLDS]** The maximum execution (32 steps) fits one 1,232-byte packet and the
     default 200k CU budget; both bounds are pinned by tests.
 17. **[HOLDS]** `account_count` declared inside the instruction data must equal
-    the accounts actually delivered (the batch bytes are self-describing).
+    the accounts actually delivered (the execution's bytes are self-describing).
 34. **[OPERATIONAL]** Reconstruction fixtures compile only under
     `--features solana-grpc,solana-reconstruct`; coverage exists only where CI
     passes those flags.
@@ -254,20 +254,20 @@ or tooling decisions, not with the threat model.
     read back the last leaf when `leaf_count` is odd, so the same call would be
     accepted or rejected by parity. Pinned by
     `mollusk_make_handle_public_twice_appends_an_equivalent_leaf`.
-54. **[HOLDS]** Lowering a batch never copies the builder's intern tables, so an
+54. **[HOLDS]** Lowering an execution never copies the builder's intern tables, so an
     app program pays a few hundred heap bytes per step. What has to fit Anchor's
     32 KB default bump heap is the whole instruction, not just the build: the
     region is never freed, and after the build the CPI helper deep-clones
     `FheExecuteArgs` and borsh-serializes the packet. Measured for steps that
     each write a persistent output: 16 steps request 19,454 bytes and are the
     documented budget, 24 request 32,158 and clear the region by only 610 bytes,
-    28 do not fit, and the maximum 32-step batch (41,726) has to be built
+    28 do not fit, and the maximum 32-step execution (41,726) has to be built
     off-chain or by a program with its own allocator. Account resolution and
     Anchor's own account deserialization are on top of those figures, which is
     why the budget is 16 rather than 24. The SDK enforces that budget on-chain
-    (`MAX_ON_CHAIN_BATCH_OPS`, lifted by the `raised-heap` feature for a program
+    (`MAX_ON_CHAIN_EXECUTION_STEPS`, lifted by the `raised-heap` feature for a program
     that installs its own allocator) so a program past it gets
-    `TooManyOpsForDefaultHeap` instead of an allocator abort with no error of
+    `TooManyStepsForDefaultHeap` instead of an allocator abort with no error of
     its own. Pinned by `solana/crates/zama-fhe/src/heap_budget.rs`, which takes
     its step count from that constant.
 

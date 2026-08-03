@@ -2,20 +2,22 @@
 
 use zama_host::{CoprocessorInputAttestation, FheExecuteOperand, FheExecuteOutput};
 
-use crate::accounts::{BatchAccountMeta, BatchAccountPurpose, BatchAppAuthority, MetaPromotion};
+use crate::accounts::{
+    ExecutionAccountMeta, ExecutionAccountPurpose, ExecutionAppAuthority, MetaPromotion,
+};
 use crate::acl::{Output, OutputKind};
 use crate::operand::{Operand, OperandKind};
-use crate::{BatchBuildError, Result};
+use crate::{FheExecutionBuildError, Result};
 
 /// The builder's intern tables for the duration of one step, borrowed in place, plus the undo log
 /// that lets a step that fails half-way leave them exactly as it found them.
 ///
 /// Lowering only ever appends to the three tables, with one exception: an account that is already
-/// interned is widened in place (`BatchAccountMeta::promote`). So an undo is the recorded lengths
-/// plus one small record per promotion — no table is copied, which is what keeps a batch built
+/// interned is widened in place (`ExecutionAccountMeta::promote`). So an undo is the recorded lengths
+/// plus one small record per promotion — no table is copied, which is what keeps an execution built
 /// on-chain inside Anchor's default 32 KB bump heap.
 pub(crate) struct StepTables<'b> {
-    remaining_accounts: &'b mut Vec<BatchAccountMeta>,
+    remaining_accounts: &'b mut Vec<ExecutionAccountMeta>,
     dictionary: &'b mut Vec<[u8; 32]>,
     persistent_producers: &'b mut Vec<anchor_lang::prelude::Pubkey>,
     remaining_accounts_len: usize,
@@ -26,7 +28,7 @@ pub(crate) struct StepTables<'b> {
 
 impl<'b> StepTables<'b> {
     pub(crate) fn open(
-        remaining_accounts: &'b mut Vec<BatchAccountMeta>,
+        remaining_accounts: &'b mut Vec<ExecutionAccountMeta>,
         dictionary: &'b mut Vec<[u8; 32]>,
         persistent_producers: &'b mut Vec<anchor_lang::prelude::Pubkey>,
     ) -> Self {
@@ -54,7 +56,7 @@ impl<'b> StepTables<'b> {
             .truncate(self.persistent_producers_len);
     }
 
-    pub(crate) fn account_index(&mut self, required: BatchAccountMeta) -> Result<u8> {
+    pub(crate) fn account_index(&mut self, required: ExecutionAccountMeta) -> Result<u8> {
         if let Some(index) = self
             .remaining_accounts
             .iter()
@@ -62,22 +64,24 @@ impl<'b> StepTables<'b> {
         {
             let undo = self.remaining_accounts[index].promote(required);
             self.promotions.push((index, undo));
-            return u8::try_from(index).map_err(|_| BatchBuildError::TooManyRemainingAccounts);
+            return u8::try_from(index)
+                .map_err(|_| FheExecutionBuildError::TooManyRemainingAccounts);
         }
         let index = u8::try_from(self.remaining_accounts.len())
-            .map_err(|_| BatchBuildError::TooManyRemainingAccounts)?;
+            .map_err(|_| FheExecutionBuildError::TooManyRemainingAccounts)?;
         self.remaining_accounts.push(required);
         Ok(index)
     }
 
-    /// Interns a 32-byte constant into the batch dictionary, reusing an existing entry
+    /// Interns a 32-byte constant into the execution dictionary, reusing an existing entry
     /// byte-for-byte.
     pub(crate) fn dictionary_index(&mut self, bytes: [u8; 32]) -> Result<u8> {
         if let Some(index) = self.dictionary.iter().position(|entry| *entry == bytes) {
-            return u8::try_from(index).map_err(|_| BatchBuildError::TooManyDictionaryEntries);
+            return u8::try_from(index)
+                .map_err(|_| FheExecutionBuildError::TooManyDictionaryEntries);
         }
         let index = u8::try_from(self.dictionary.len())
-            .map_err(|_| BatchBuildError::TooManyDictionaryEntries)?;
+            .map_err(|_| FheExecutionBuildError::TooManyDictionaryEntries)?;
         self.dictionary.push(bytes);
         Ok(index)
     }
@@ -95,12 +99,12 @@ pub(crate) fn lower_operand(
                 .persistent_producers
                 .contains(&persistent.encrypted_value)
             {
-                return Err(BatchBuildError::PersistentOperandWrittenEarlier);
+                return Err(FheExecutionBuildError::PersistentOperandWrittenEarlier);
             }
             let handle_index = tables.dictionary_index(persistent.handle)?;
-            let encrypted_value_index = tables.account_index(BatchAccountMeta::readonly(
+            let encrypted_value_index = tables.account_index(ExecutionAccountMeta::readonly(
                 persistent.encrypted_value,
-                BatchAccountPurpose::PersistentInputAcl,
+                ExecutionAccountPurpose::PersistentInputAcl,
             ))?;
             Ok(FheExecuteOperand::StoredValue {
                 handle_index,
@@ -109,7 +113,7 @@ pub(crate) fn lower_operand(
         }
         OperandKind::Transient { producer_index } => {
             if producer_index as usize >= produced_count {
-                return Err(BatchBuildError::InvalidTransientReference);
+                return Err(FheExecutionBuildError::InvalidTransientReference);
             }
             Ok(FheExecuteOperand::EarlierStep { producer_index })
         }
@@ -118,7 +122,7 @@ pub(crate) fn lower_operand(
         } => {
             let attestation = verified_inputs
                 .get(attestation_index as usize)
-                .ok_or(BatchBuildError::MissingVerifiedInput)?
+                .ok_or(FheExecutionBuildError::MissingVerifiedInput)?
                 .clone();
             Ok(FheExecuteOperand::VerifiedInput {
                 attestation: Box::new(attestation),
@@ -132,7 +136,7 @@ pub(crate) fn lower_operand(
 
 pub(crate) fn lower_output(
     tables: &mut StepTables<'_>,
-    app_authority: BatchAppAuthority,
+    app_authority: ExecutionAppAuthority,
     output: Output,
 ) -> Result<FheExecuteOutput> {
     match output.0 {
@@ -140,16 +144,17 @@ pub(crate) fn lower_output(
         OutputKind::Persistent(output) => {
             let binding = output.binding()?;
             let encrypted_value = binding.encrypted_value();
-            let output_encrypted_value_index = tables.account_index(BatchAccountMeta::writable(
-                binding.encrypted_value(),
-                BatchAccountPurpose::PersistentOutputAcl,
-            ))?;
+            let output_encrypted_value_index =
+                tables.account_index(ExecutionAccountMeta::writable(
+                    binding.encrypted_value(),
+                    ExecutionAccountPurpose::PersistentOutputAcl,
+                ))?;
             let output_account_authority_index = if binding.account() == app_authority.pubkey() {
                 None
             } else {
-                Some(tables.account_index(BatchAccountMeta::readonly_signer(
+                Some(tables.account_index(ExecutionAccountMeta::readonly_signer(
                     binding.account(),
-                    BatchAccountPurpose::PersistentOutputAuthority,
+                    ExecutionAccountPurpose::PersistentOutputAuthority,
                 ))?)
             };
             let output_subject_indexes = binding

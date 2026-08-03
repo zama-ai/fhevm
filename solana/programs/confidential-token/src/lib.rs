@@ -101,7 +101,7 @@ pub mod confidential_token {
     /// Burns an encrypted amount taken from an existing on-chain `EncryptedValue` (a computed or
     /// received handle) instead of a freshly attested client-side encryption — the burn-side analog
     /// of `confidential_transfer_from_value` (fhevm-internal#1755). The batcher uses this to burn a
-    /// batch's computed encrypted total, then requests the KMS burn certificate. The signing owner
+    /// execution's computed encrypted total, then requests the KMS burn certificate. The signing owner
     /// must be in the amount value's subject set (the token spend gate); the amount is spent
     /// read-only, and the burned-amount output is created publicly decryptable exactly as in
     /// `confidential_burn`, so `redeem_burned_amount` consumes it unchanged.

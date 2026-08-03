@@ -191,7 +191,7 @@
         "Burns an encrypted amount taken from an existing on-chain `EncryptedValue` (a computed or",
         "received handle) instead of a freshly attested client-side encryption — the burn-side analog",
         "of `confidential_transfer_from_value` (fhevm-internal#1755). The batcher uses this to burn a",
-        "batch's computed encrypted total, then requests the KMS burn certificate. The signing owner",
+        "execution's computed encrypted total, then requests the KMS burn certificate. The signing owner",
         "must be in the amount value's subject set (the token spend gate); the amount is spent",
         "read-only, and the burned-amount output is created publicly decryptable exactly as in",
         "`confidential_burn`, so `redeem_burned_amount` consumes it unchanged."
@@ -1933,8 +1933,8 @@
     },
     {
       "code": 6029,
-      "name": "InvalidFheExecuteBatch",
-      "msg": "FHE batch is invalid"
+      "name": "InvalidFheExecution",
+      "msg": "FHE execution is invalid"
     },
     {
       "code": 6030,
@@ -1949,7 +1949,7 @@
     {
       "code": 6032,
       "name": "MissingFheExecuteAccount",
-      "msg": "FHE batch is missing a required dynamic account"
+      "msg": "FHE execution is missing a required dynamic account"
     },
     {
       "code": 6033,
@@ -1969,7 +1969,7 @@
     {
       "code": 6036,
       "name": "MissingFheOutputAuthority",
-      "msg": "FHE batch is missing a required output authority"
+      "msg": "FHE execution is missing a required output authority"
     },
     {
       "code": 6037,
@@ -2506,7 +2506,7 @@
       "name": "CoprocessorInputAttestation",
       "docs": [
         "A coprocessor input attestation carried inline by a [`FheExecuteOperand::VerifiedInput`], re-verified",
-        "in-batch (no account, no PDA) — the instruction-local analog of EVM `allowTransient(input, contract)`."
+        "in-execution (no account, no PDA) — the instruction-local analog of EVM `allowTransient(input, contract)`."
       ],
       "type": {
         "kind": "struct",
@@ -2865,7 +2865,7 @@
           {
             "name": "max_hcu_per_tx",
             "docs": [
-              "Max total HCU summed over one `fhe_execute` batch. `u64::MAX` = unlimited",
+              "Max total HCU summed over one `fhe_execute` execution. `u64::MAX` = unlimited",
               "(enforcement off); `0` is rejected at set time."
             ],
             "type": "u64"
@@ -2873,7 +2873,7 @@
           {
             "name": "max_hcu_depth_per_tx",
             "docs": [
-              "Max critical-path (depth) HCU within one `fhe_execute` batch. `u64::MAX` =",
+              "Max critical-path (depth) HCU within one `fhe_execute` execution. `u64::MAX` =",
               "unlimited; `0` is rejected at set time."
             ],
             "type": "u64"

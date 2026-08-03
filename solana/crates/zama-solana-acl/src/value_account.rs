@@ -170,7 +170,7 @@ impl ReconstructedEncryptedValueAccount {
 /// One-shot reconstruction + proof build for the leaf at `leaf_index`.
 ///
 /// Reconstructs the full leaf list on every call. For several proofs on the same
-/// encrypted value account (e.g. a batch after one update) call [`reconstruct`] once and reuse
+/// encrypted value account (e.g. several leaves after one update) call [`reconstruct`] once and reuse
 /// the returned [`ReconstructedEncryptedValueAccount`] instead. This convenience does NOT
 /// cross-check against chain state; for that use [`build_verified_proof_from_events`].
 pub fn build_proof_from_events(

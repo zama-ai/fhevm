@@ -150,9 +150,9 @@ pub(super) fn emit_config_updated(config: &HostConfig, admin: Pubkey) {
 pub(super) fn emit_config_updated(_: &HostConfig, _: Pubkey) {}
 
 /// Enforces the per-app block-cap ordering guard: a metering-band cap (`0 < value < u64::MAX`)
-/// must be at least `max_hcu_per_tx`, so a single legal max-per-tx batch always fits on a fresh
+/// must be at least `max_hcu_per_tx`, so a single legal max-per-tx execution always fits on a fresh
 /// meter. The two sentinels are exempt: `value == u64::MAX` (unrestricted) and `value == 0`
-/// (deliberate ban of untrusted apps). `max_hcu_per_tx == u64::MAX` means the per-batch cap is
+/// (deliberate ban of untrusted apps). `max_hcu_per_tx == u64::MAX` means the per-execution cap is
 /// unlimited, so the guard is vacuous.
 pub(super) fn check_block_cap_ordering(value: u64, max_hcu_per_tx: u64) -> Result<()> {
     require!(
@@ -600,7 +600,7 @@ mod tests {
 
     #[test]
     fn check_block_cap_ordering_unlimited_per_tx_is_vacuous() {
-        // max_hcu_per_tx == u64::MAX (per-batch cap off) accepts even a tiny band value.
+        // max_hcu_per_tx == u64::MAX (per-execution cap off) accepts even a tiny band value.
         assert!(check_block_cap_ordering(1, u64::MAX).is_ok());
     }
 }

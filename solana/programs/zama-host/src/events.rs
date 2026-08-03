@@ -19,10 +19,10 @@
 
 use anchor_lang::prelude::*;
 
-/// One public persistent output produced by an `fhe_execute` batch.
+/// One public persistent output produced by an `fhe_execute` execution.
 #[derive(AnchorSerialize, AnchorDeserialize, Clone, Debug, PartialEq, Eq)]
 pub struct ProducedPublicOutput {
-    /// Zero-based step index within the batch.
+    /// Zero-based step index within the execution.
     pub step_index: u16,
     /// Host-owned persistent `EncryptedValue` account bound by the step.
     pub encrypted_value: Pubkey,
@@ -30,30 +30,30 @@ pub struct ProducedPublicOutput {
     pub output_handle: [u8; 32],
 }
 
-/// Emitted once for the public outputs produced by an `fhe_execute` batch.
+/// Emitted once for the public outputs produced by an `fhe_execute` execution.
 #[event]
 pub struct PublicOutputsProducedEvent {
     /// Event schema version.
     pub version: u8,
-    /// Produced public outputs in batch step order.
+    /// Produced public outputs in execution step order.
     pub outputs: Vec<ProducedPublicOutput>,
 }
 
 /// One host-derived random seed used by an `fhe_execute` step.
 #[derive(AnchorSerialize, AnchorDeserialize, Clone, Debug, PartialEq, Eq)]
 pub struct FheExecuteRandomSeed {
-    /// Zero-based step index within the batch.
+    /// Zero-based step index within the execution.
     pub step_index: u16,
     /// Seed derived from live persistent account state.
     pub seed: [u8; 16],
 }
 
-/// Emitted once for the random steps in an `fhe_execute` batch.
+/// Emitted once for the random steps in an `fhe_execute` execution.
 #[event]
 pub struct FheExecuteRandomSeedsEvent {
     /// Event schema version.
     pub version: u8,
-    /// Random seeds in batch step order.
+    /// Random seeds in execution step order.
     pub seeds: Vec<FheExecuteRandomSeed>,
 }
 
@@ -83,9 +83,9 @@ pub struct HostConfigUpdatedEvent {
     pub paused: bool,
     /// Current grant deny-list gate.
     pub grant_deny_list_enabled: bool,
-    /// Current max total HCU per `fhe_execute` batch (`u64::MAX` = unlimited).
+    /// Current max total HCU per `fhe_execute` execution (`u64::MAX` = unlimited).
     pub max_hcu_per_tx: u64,
-    /// Current max critical-path HCU per `fhe_execute` batch (`u64::MAX` = unlimited).
+    /// Current max critical-path HCU per `fhe_execute` execution (`u64::MAX` = unlimited).
     pub max_hcu_depth_per_tx: u64,
     /// Current per-app HCU block cap (`u64::MAX` = unrestricted, `0` = ban untrusted apps).
     pub hcu_block_cap_per_app: u64,

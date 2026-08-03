@@ -1,4 +1,4 @@
-//! `BatchBuilder`: accumulates typed steps and lowers them to the wire batch.
+//! `FheExecutionBuilder`: accumulates typed steps and lowers them to the wire execution.
 //!
 //! Public API surface: app programs. The op methods mirror the host's op set one-for-one on
 //! purpose — an app author who can call `add` must be able to call `mul`, `shl`, or `is_in` — so
@@ -8,11 +8,11 @@
 //! Building on-chain: lowering interns into the builder's own tables and never copies them, so a
 //! step costs a few hundred heap bytes. Anchor's default allocator is a 32 KB bump region that is
 //! never freed, and the instruction pays out of it twice — once building, once serializing the
-//! packet in `Batch::execute` — so the budget belongs to the pair: 16 steps that each write a
+//! packet in `FheExecution::invoke` — so the budget belongs to the pair: 16 steps that each write a
 //! persistent output, far past anything in this repo (the largest is five). 24 still fits with 610
-//! bytes to spare, but nothing is left there for account resolution, and a batch near
-//! `MAX_FHE_BATCH_OPS` has to be built off-chain or by a program bringing its own allocator.
-//! `heap_budget.rs` measures all of it, and [`MAX_ON_CHAIN_BATCH_OPS`] enforces it: a program that
+//! bytes to spare, but nothing is left there for account resolution, and an execution near
+//! `MAX_FHE_EXECUTION_STEPS` has to be built off-chain or by a program bringing its own allocator.
+//! `heap_budget.rs` measures all of it, and [`MAX_ON_CHAIN_EXECUTION_STEPS`] enforces it: a program that
 //! keeps adding steps past the budget is told so, instead of being aborted by the allocator with no
 //! error of its own.
 
@@ -21,42 +21,42 @@ use crate::validate::handle_fhe_type;
 
 use zama_host::{
     CoprocessorInputAttestation, FheBinaryOpCode, FheExecuteArgs, FheExecuteOperand,
-    FheExecuteOutput, FheExecuteStep, FheTernaryOpCode, FheUnaryOpCode, MAX_FHE_BATCH_OPS,
+    FheExecuteOutput, FheExecuteStep, FheTernaryOpCode, FheUnaryOpCode, MAX_FHE_EXECUTION_STEPS,
 };
 
-use crate::accounts::{BatchAccountMeta, BatchAppAuthority};
+use crate::accounts::{ExecutionAccountMeta, ExecutionAppAuthority};
 use crate::acl::{BoundedU64UpperBound, Output};
-use crate::batch::Batch;
+use crate::execution::FheExecution;
 use crate::lower::{lower_operand, lower_output, StepTables};
 use crate::operand::{BuilderBrand, Operand, OperandKind};
 use crate::types::{Bool, Encrypted, FheIsIn, FheRandom, FheType, FheTyped, FheUint, Scalar, Uint};
 use crate::validate::{
     max_reduction_operands, operand_fhe_type, scalar_is_zero_for_type, validate_app_authority,
-    validate_binary_step, validate_lowered_batch, validate_rand_steps_anchor_persistent_output,
+    validate_binary_step, validate_lowered_execution, validate_rand_steps_anchor_persistent_output,
     validate_supported_fhe_type, validate_supported_rand_type, validate_ternary_step,
     validate_uint_fhe_type, validate_unary_step,
 };
-use crate::{BatchBuildError, Result};
+use crate::{FheExecutionBuildError, Result};
 
 /// Pubkey-oriented builder for `FheExecuteArgs`.
 ///
-/// `'brand` is this builder's identity: [`Batch::build`] hands every invocation a fresh invariant
+/// `'brand` is this builder's identity: [`FheExecution::build`] hands every invocation a fresh invariant
 /// lifetime, every transient value it returns carries it, and the op methods only accept values of
 /// their own brand — so mixing two builders' values does not compile. That replaces a runtime tag
 /// which SBF could not make unique (writable statics are forbidden on-chain, so every builder in a
 /// program shared one scope number and the check found nothing). It is also why there is no public
 /// constructor and no `Clone`: both would hand out a second builder wearing the same brand.
 #[derive(Debug)]
-pub struct BatchBuilder<'brand> {
+pub struct FheExecutionBuilder<'brand> {
     brand: BuilderBrand<'brand>,
-    pub(crate) app_authority: BatchAppAuthority,
+    pub(crate) app_authority: ExecutionAppAuthority,
     pub(crate) steps: Vec<FheExecuteStep>,
     pub(crate) produced_types: Vec<u8>,
-    /// Persistent accounts this batch has already written. A later persistent-shaped reference
+    /// Persistent accounts this execution has already written. A later persistent-shaped reference
     /// to one of them is rejected with `PersistentOperandWrittenEarlier`: the app must feed the
     /// earlier step's transient value instead, which is the only spelling the host accepts.
     pub(crate) persistent_producers: Vec<anchor_lang::prelude::Pubkey>,
-    pub(crate) remaining_accounts: Vec<BatchAccountMeta>,
+    pub(crate) remaining_accounts: Vec<ExecutionAccountMeta>,
     /// Interned 32-byte constant dictionary the lowered steps reference by `u8` index
     /// (operand handles, scalars, ACL domain keys, app accounts, labels, subjects). The
     /// entries are deliberately untyped so one entry can serve several roles; see
@@ -67,10 +67,10 @@ pub struct BatchBuilder<'brand> {
     pub(crate) verified_inputs: Vec<CoprocessorInputAttestation>,
 }
 
-/// One step's view of the builder — see [`BatchBuilder::commit_step`].
+/// One step's view of the builder — see [`FheExecutionBuilder::commit_step`].
 struct StepLowering<'b> {
     steps_len: usize,
-    app_authority: BatchAppAuthority,
+    app_authority: ExecutionAppAuthority,
     tables: StepTables<'b>,
     verified_inputs: &'b [CoprocessorInputAttestation],
 }
@@ -91,17 +91,17 @@ impl StepLowering<'_> {
 }
 
 /// Steps a program can build *and* invoke inside Anchor's default 32 KB bump heap, measured in
-/// `heap_budget.rs`. The host itself accepts up to `MAX_FHE_BATCH_OPS`; this is the smaller limit
+/// `heap_budget.rs`. The host itself accepts up to `MAX_FHE_EXECUTION_STEPS`; this is the smaller limit
 /// the runtime imposes on a program that has not raised its heap.
-pub const MAX_ON_CHAIN_BATCH_OPS: usize = 16;
+pub const MAX_ON_CHAIN_EXECUTION_STEPS: usize = 16;
 
 /// The ceiling only means something while it is stricter than the host's.
-const _: () = assert!(MAX_ON_CHAIN_BATCH_OPS < MAX_FHE_BATCH_OPS);
+const _: () = assert!(MAX_ON_CHAIN_EXECUTION_STEPS < MAX_FHE_EXECUTION_STEPS);
 
 /// The step ceiling in force for this build of the crate.
 ///
 /// Only a program running under SBF pays the 32 KB budget, so off-chain builders — clients, tests,
-/// the e2e live client — keep the host's full `MAX_FHE_BATCH_OPS`. A program that installs its own
+/// the e2e live client — keep the host's full `MAX_FHE_EXECUTION_STEPS`. A program that installs its own
 /// allocator opts back out with the `raised-heap` feature.
 ///
 /// The `cfg` itself is not exercised by a host test: proving the on-chain branch would need an SBF
@@ -111,19 +111,19 @@ const _: () = assert!(MAX_ON_CHAIN_BATCH_OPS < MAX_FHE_BATCH_OPS);
 /// snapshots would show it immediately if that stopped resolving under SBF.
 pub(crate) const fn step_limit() -> usize {
     if cfg!(all(target_os = "solana", not(feature = "raised-heap"))) {
-        MAX_ON_CHAIN_BATCH_OPS
+        MAX_ON_CHAIN_EXECUTION_STEPS
     } else {
-        MAX_FHE_BATCH_OPS
+        MAX_FHE_EXECUTION_STEPS
     }
 }
 
-impl<'brand> BatchBuilder<'brand> {
+impl<'brand> FheExecutionBuilder<'brand> {
     /// The single mutation path for appending a step. Every op method validates first, then lowers
     /// through this: lowering interns into the builder's own tables and, when any part of the step
     /// fails, [`StepTables::rollback`] undoes what it wrote, so a failed step leaves the builder
-    /// exactly as it was. The tables are never copied per step — an app program builds its batch on
+    /// exactly as it was. The tables are never copied per step — an app program builds its execution on
     /// Anchor's default 32 KB bump heap, which is never freed, so a clone-and-swap rollback would
-    /// make the heap cost of a batch grow with the square of its step count.
+    /// make the heap cost of an execution grow with the square of its step count.
     ///
     /// Ordering dependency inside a step: `operand()` reads `persistent_producers`, which still
     /// holds the pre-step state only because every op lowers its operands before its output. An op
@@ -137,13 +137,14 @@ impl<'brand> BatchBuilder<'brand> {
         // Checked before the step interns anything: past the limit the allocator, not this crate,
         // would be what ends the instruction.
         if self.steps.len() >= step_limit() {
-            return Err(if step_limit() == MAX_FHE_BATCH_OPS {
-                BatchBuildError::TooManyOps
+            return Err(if step_limit() == MAX_FHE_EXECUTION_STEPS {
+                FheExecutionBuildError::TooManySteps
             } else {
-                BatchBuildError::TooManyOpsForDefaultHeap
+                FheExecutionBuildError::TooManyStepsForDefaultHeap
             });
         }
-        let op_index = u8::try_from(self.steps.len()).map_err(|_| BatchBuildError::TooManyOps)?;
+        let op_index =
+            u8::try_from(self.steps.len()).map_err(|_| FheExecutionBuildError::TooManySteps)?;
         let Self {
             app_authority,
             steps,
@@ -174,10 +175,10 @@ impl<'brand> BatchBuilder<'brand> {
     }
 }
 
-impl<'brand> BatchBuilder<'brand> {
+impl<'brand> FheExecutionBuilder<'brand> {
     /// Crate-internal: a public constructor would let two builders share one brand, which is the
-    /// mixing hazard the brand exists to remove. App code gets a builder from [`Batch::build`].
-    pub(crate) fn new(app_authority: BatchAppAuthority) -> Self {
+    /// mixing hazard the brand exists to remove. App code gets a builder from [`FheExecution::build`].
+    pub(crate) fn new(app_authority: ExecutionAppAuthority) -> Self {
         Self {
             brand: std::marker::PhantomData,
             app_authority,
@@ -191,7 +192,7 @@ impl<'brand> BatchBuilder<'brand> {
     }
 
     /// Introduces a coprocessor-attested external input as a transient operand — the Solana analog
-    /// of EVM `FHE.fromExternal`. The host re-verifies the attestation in-batch and requires the
+    /// of EVM `FHE.fromExternal`. The host re-verifies the attestation in-execution and requires the
     /// caller to be the attested contract (`compute_subject == contract_address`); derived outputs
     /// are then unconstrained, exactly like EVM `allowTransient(input, msg.sender)`. The returned
     /// value is an operand usable only in later steps of this builder.
@@ -200,10 +201,10 @@ impl<'brand> BatchBuilder<'brand> {
         attestation: CoprocessorInputAttestation,
     ) -> Result<Encrypted<'brand, T>> {
         if handle_fhe_type(attestation.input_handle) != T::FHE_TYPE.byte() {
-            return Err(BatchBuildError::UnsupportedFheType);
+            return Err(FheExecutionBuildError::UnsupportedFheType);
         }
-        let attestation_index =
-            u8::try_from(self.verified_inputs.len()).map_err(|_| BatchBuildError::TooManyOps)?;
+        let attestation_index = u8::try_from(self.verified_inputs.len())
+            .map_err(|_| FheExecutionBuildError::TooManySteps)?;
         let input_handle = attestation.input_handle;
         self.verified_inputs.push(attestation);
         Ok(Encrypted::from_operand(Operand::verified_input(
@@ -272,10 +273,10 @@ impl<'brand> BatchBuilder<'brand> {
         // The host requires the left operand to be an encrypted handle; only the
         // RHS may be a plaintext scalar. Catch this before the CPI.
         if matches!(lhs.0, OperandKind::Scalar(_)) {
-            return Err(BatchBuildError::ScalarLhsOperand);
+            return Err(FheExecutionBuildError::ScalarLhsOperand);
         }
-        if self.steps.len() >= MAX_FHE_BATCH_OPS {
-            return Err(BatchBuildError::TooManyOps);
+        if self.steps.len() >= MAX_FHE_EXECUTION_STEPS {
+            return Err(FheExecutionBuildError::TooManySteps);
         }
         validate_binary_step(op, &lhs, &rhs, output_fhe_type, self.steps.len(), |index| {
             self.produced_types.get(index as usize).copied()
@@ -306,10 +307,10 @@ impl<'brand> BatchBuilder<'brand> {
         let if_true = if_true.into().operand();
         let if_false = if_false.into().operand();
         let output_fhe_type =
-            self.encrypted_operand_type(&if_true, BatchBuildError::ScalarEncryptedOperand)?;
+            self.encrypted_operand_type(&if_true, FheExecutionBuildError::ScalarEncryptedOperand)?;
         let output_fhe_type = output_fhe_type.byte();
-        if self.steps.len() >= MAX_FHE_BATCH_OPS {
-            return Err(BatchBuildError::TooManyOps);
+        if self.steps.len() >= MAX_FHE_EXECUTION_STEPS {
+            return Err(FheExecutionBuildError::TooManySteps);
         }
         validate_ternary_step(
             &control,
@@ -352,8 +353,8 @@ impl<'brand> BatchBuilder<'brand> {
         output: Output,
     ) -> Result<Operand> {
         let fhe_type = fhe_type.byte();
-        if self.steps.len() >= MAX_FHE_BATCH_OPS {
-            return Err(BatchBuildError::TooManyOps);
+        if self.steps.len() >= MAX_FHE_EXECUTION_STEPS {
+            return Err(FheExecutionBuildError::TooManySteps);
         }
         validate_supported_fhe_type(fhe_type)?;
         let step_index = self.commit_step(fhe_type, |lowering| {
@@ -382,8 +383,8 @@ impl<'brand> BatchBuilder<'brand> {
 
     pub(crate) fn rand_raw(&mut self, fhe_type: FheType, output: Output) -> Result<Operand> {
         let fhe_type = fhe_type.byte();
-        if self.steps.len() >= MAX_FHE_BATCH_OPS {
-            return Err(BatchBuildError::TooManyOps);
+        if self.steps.len() >= MAX_FHE_EXECUTION_STEPS {
+            return Err(FheExecutionBuildError::TooManySteps);
         }
         validate_supported_rand_type(fhe_type)?;
         let step_index = self.commit_step(fhe_type, |lowering| {
@@ -403,8 +404,8 @@ impl<'brand> BatchBuilder<'brand> {
         output: Output,
     ) -> Result<Encrypted<'brand, Uint<64>>> {
         let fhe_type = FheType::UINT64.byte();
-        if self.steps.len() >= MAX_FHE_BATCH_OPS {
-            return Err(BatchBuildError::TooManyOps);
+        if self.steps.len() >= MAX_FHE_EXECUTION_STEPS {
+            return Err(FheExecutionBuildError::TooManySteps);
         }
         let step_index = self.commit_step(fhe_type, |lowering| {
             let output = lowering.output(output)?;
@@ -744,16 +745,16 @@ impl<'brand> BatchBuilder<'brand> {
         let operand_ops: Vec<Operand> = operands.into_iter().map(|e| e.into().operand()).collect();
         for op in &operand_ops {
             if matches!(op.0, OperandKind::Scalar(_)) {
-                return Err(BatchBuildError::ScalarEncryptedOperand);
+                return Err(FheExecutionBuildError::ScalarEncryptedOperand);
             }
         }
-        if self.steps.len() >= MAX_FHE_BATCH_OPS {
-            return Err(BatchBuildError::TooManyOps);
+        if self.steps.len() >= MAX_FHE_EXECUTION_STEPS {
+            return Err(FheExecutionBuildError::TooManySteps);
         }
         let fhe_type = T::FHE_TYPE.byte();
         validate_uint_fhe_type(fhe_type)?;
         if operand_ops.len() > max_reduction_operands(fhe_type) {
-            return Err(BatchBuildError::TooManyReductionOperands);
+            return Err(FheExecutionBuildError::TooManyReductionOperands);
         }
         let step_index = self.commit_step(fhe_type, |lowering| {
             let mut lowered: Vec<FheExecuteOperand> = Vec::with_capacity(operand_ops.len());
@@ -780,20 +781,20 @@ impl<'brand> BatchBuilder<'brand> {
         let set_ops: Vec<Operand> = set.into_iter().map(|e| e.into().operand()).collect();
         let value_op = value.into().operand();
         if matches!(value_op.0, OperandKind::Scalar(_)) {
-            return Err(BatchBuildError::ScalarEncryptedOperand);
+            return Err(FheExecutionBuildError::ScalarEncryptedOperand);
         }
         for op in &set_ops {
             if matches!(op.0, OperandKind::Scalar(_)) {
-                return Err(BatchBuildError::ScalarEncryptedOperand);
+                return Err(FheExecutionBuildError::ScalarEncryptedOperand);
             }
         }
-        if self.steps.len() >= MAX_FHE_BATCH_OPS {
-            return Err(BatchBuildError::TooManyOps);
+        if self.steps.len() >= MAX_FHE_EXECUTION_STEPS {
+            return Err(FheExecutionBuildError::TooManySteps);
         }
         let fhe_type = T::FHE_TYPE.byte();
         validate_supported_fhe_type(fhe_type)?;
         if set_ops.len() > max_reduction_operands(fhe_type) {
-            return Err(BatchBuildError::TooManyReductionOperands);
+            return Err(FheExecutionBuildError::TooManyReductionOperands);
         }
         let bool_type = FheType::BOOL.byte();
         let step_index = self.commit_step(bool_type, |lowering| {
@@ -823,21 +824,21 @@ impl<'brand> BatchBuilder<'brand> {
         let lhs = factor1.into().operand();
         let rhs = binary_rhs_operand(factor2);
         if matches!(lhs.0, OperandKind::Scalar(_)) {
-            return Err(BatchBuildError::ScalarLhsOperand);
+            return Err(FheExecutionBuildError::ScalarLhsOperand);
         }
-        if self.steps.len() >= MAX_FHE_BATCH_OPS {
-            return Err(BatchBuildError::TooManyOps);
+        if self.steps.len() >= MAX_FHE_EXECUTION_STEPS {
+            return Err(FheExecutionBuildError::TooManySteps);
         }
         let fhe_type = T::FHE_TYPE.byte();
         validate_uint_fhe_type(fhe_type)?;
         // fheMulDiv factor1 caps at Uint64 (EVM + coprocessor); reject Uint128.
         if !matches!(fhe_type, 2..=5) {
-            return Err(BatchBuildError::UnsupportedFheType);
+            return Err(FheExecutionBuildError::UnsupportedFheType);
         }
         // Divisor must be non-zero once truncated to the operand type (EVM DivisionByZero parity).
         let divisor_bytes = divisor.bytes();
         if scalar_is_zero_for_type(divisor_bytes, fhe_type) {
-            return Err(BatchBuildError::MulDivDivisorZero);
+            return Err(FheExecutionBuildError::MulDivDivisorZero);
         }
         let step_index = self.commit_step(fhe_type, |lowering| {
             let factor1 = lowering.operand(lhs)?;
@@ -863,10 +864,10 @@ impl<'brand> BatchBuilder<'brand> {
     ) -> Result<Operand> {
         let output_fhe_type = output_fhe_type.byte();
         if matches!(operand.0, OperandKind::Scalar(_)) {
-            return Err(BatchBuildError::ScalarEncryptedOperand);
+            return Err(FheExecutionBuildError::ScalarEncryptedOperand);
         }
-        if self.steps.len() >= MAX_FHE_BATCH_OPS {
-            return Err(BatchBuildError::TooManyOps);
+        if self.steps.len() >= MAX_FHE_EXECUTION_STEPS {
+            return Err(FheExecutionBuildError::TooManySteps);
         }
         validate_unary_step(op, &operand, output_fhe_type, self.steps.len(), |index| {
             self.produced_types.get(index as usize).copied()
@@ -887,7 +888,7 @@ impl<'brand> BatchBuilder<'brand> {
     fn encrypted_operand_type(
         &self,
         operand: &Operand,
-        scalar_error: BatchBuildError,
+        scalar_error: FheExecutionBuildError,
     ) -> Result<FheType> {
         let fhe_type = operand_fhe_type(operand, self.steps.len(), &|index| {
             self.produced_types.get(index as usize).copied()
@@ -896,30 +897,30 @@ impl<'brand> BatchBuilder<'brand> {
         FheType::from_host_byte(fhe_type)
     }
 
-    /// Validates the accumulated batch and lowers it to an [`Batch`].
+    /// Validates the accumulated execution and lowers it to an [`FheExecution`].
     ///
     /// Mirrors the host preflight checks (non-empty steps,
-    /// `steps.len() <= MAX_FHE_BATCH_OPS`, rand steps anchored by a persistent
-    /// output) so a malformed batch fails locally instead of on-chain.
+    /// `steps.len() <= MAX_FHE_EXECUTION_STEPS`, rand steps anchored by a persistent
+    /// output) so a malformed execution fails locally instead of on-chain.
     ///
     /// Not mirrored (it depends on the deployed `hcu_block_cap_per_app`, unknown here): under a
-    /// finite block cap the host rejects a persist-nothing batch — one binding no persistent input, no
+    /// finite block cap the host rejects a persist-nothing execution — one binding no persistent input, no
     /// verified input, and no persistent output — with `FheExecuteUnanchoredUnderBlockCap`
-    /// (fhevm-internal#1744). Give such a batch a persistent output (the bootstrap/mint path) or a
+    /// (fhevm-internal#1744). Give such an execution a persistent output (the bootstrap/mint path) or a
     /// verified input if it must run under a finite cap.
-    pub(crate) fn finish(self) -> Result<Batch> {
+    pub(crate) fn finish(self) -> Result<FheExecution> {
         validate_app_authority(self.app_authority)?;
         if self.steps.is_empty() {
-            return Err(BatchBuildError::EmptyOps);
+            return Err(FheExecutionBuildError::EmptySteps);
         }
-        if self.steps.len() > MAX_FHE_BATCH_OPS {
-            return Err(BatchBuildError::TooManyOps);
+        if self.steps.len() > MAX_FHE_EXECUTION_STEPS {
+            return Err(FheExecutionBuildError::TooManySteps);
         }
-        validate_lowered_batch(&self.steps, &self.remaining_accounts, &self.dictionary)?;
+        validate_lowered_execution(&self.steps, &self.remaining_accounts, &self.dictionary)?;
         validate_rand_steps_anchor_persistent_output(&self.steps)?;
         let account_count = u8::try_from(self.remaining_accounts.len())
-            .map_err(|_| BatchBuildError::TooManyRemainingAccounts)?;
-        Ok(Batch {
+            .map_err(|_| FheExecutionBuildError::TooManyRemainingAccounts)?;
+        Ok(FheExecution {
             app_authority: self.app_authority,
             args: FheExecuteArgs {
                 account_count,
