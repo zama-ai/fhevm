@@ -47,7 +47,8 @@ export async function fetchFeatures(
     // route 404s. We never expect this request to succeed.
     payload: {},
     options,
-    logger: relayerClient.runtime.config.logger,
+    // Do not use a logger here: this is a low-level probe.
+    // logger: relayerClient.runtime.config.logger,
   });
 
   try {
