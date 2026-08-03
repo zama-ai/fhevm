@@ -184,7 +184,7 @@ for event in $event_names; do
   #
   # Two emission paths exist in-tree and both are recognized. The macro path names the event on the
   # macro line (`emit!(Name {` / `emit_cpi!(Name {`). The hand-rolled path — used by the two events
-  # emitted from inside the batch CPI — builds the struct and serializes it behind
+  # emitted from inside the event CPI — builds the struct and serializes it behind
   # `EVENT_IX_TAG_LE`, so a construction counts only in a file that carries that tag.
   emits=$( (grep -E 'emit_cpi!|emit!' "$INDEX" || true) | grep -cE "\b${event}\b" || true)
   if [ "$emits" -eq 0 ]; then
@@ -200,6 +200,13 @@ for event in $event_names; do
 done
 
 echo "== 3. rejected glossary aliases =="
+# SCAFFOLDING, WITH AN EXPIRY. This check exists to stop a retired name being written again while
+# the renames of fhevm-internal#1859 are still fresh in a long-lived branch — it is not a permanent
+# rule the way checks 1, 2 and 6 are. Delete it once the vocabulary has been on `feature/solana`
+# for a release and the old names are gone from the base branch; GLOSSARY.md stays normative either
+# way. Every entry added here also adds an exception list to maintain, which is the cost that makes
+# the expiry worth honouring rather than letting the check ossify.
+#
 # Each entry is a retired alias from GLOSSARY.md's "Replaces" column plus, where the word also has
 # a legitimate unrelated meaning in these trees, the narrow exception that keeps it. An exception
 # is a documented sentence here, never a blanket skip of a file or a directory.
