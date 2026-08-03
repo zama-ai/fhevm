@@ -1,4 +1,5 @@
 use alloy::{primitives::Address, transports::http::reqwest::Url};
+use ciphertext_attestation::MAX_SNS_CIPHERTEXT_SERIALIZED_SIZE;
 use connector_utils::{
     config::{
         ContractConfig, DeserializeConfig,
@@ -235,9 +236,7 @@ fn default_s3_max_concurrent_gets() -> NonZeroUsize {
 }
 
 fn default_s3_max_ciphertext_size() -> NonZeroUsize {
-    // Mainnet serves ~96KiB compressed_on_cpu ciphertexts, but the uncompressed formats may reach ~32MiB,
-    // and a ceiling below a legitimate ciphertext would have every bucket turn it down.
-    NonZeroUsize::new(64 * 1024 * 1024).unwrap()
+    NonZeroUsize::new(MAX_SNS_CIPHERTEXT_SERIALIZED_SIZE as usize).unwrap()
 }
 
 fn default_erc1271_gas_limit() -> u64 {
