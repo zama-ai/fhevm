@@ -170,23 +170,23 @@ pub fn recover_pending_burn<'info>(ctx: Context<'info, RecoverPendingBurn<'info>
         burned_value.label,
     )?;
 
-    let batch = zama_fhe::Batch::build(
-        zama_fhe::BatchAppAuthority::new(token_account_key),
+    let execution = zama_fhe::FheExecution::build(
+        zama_fhe::ExecutionAppAuthority::new(token_account_key),
         |builder| {
             builder.add(balance, burned_amount, balance_output.output())?;
             builder.add(total_supply, burned_amount, total_supply_output.output())?;
             Ok(())
         },
     )
-    .map_err(invalid_batch)?;
+    .map_err(invalid_execution)?;
     let compute_authority = fhe::ComputeAuthority::for_mint(
         &ctx.accounts.compute_signer,
         mint_key,
         ctx.bumps.compute_signer,
     )?;
     let total_supply_authority_bump = total_supply_authority_address(mint_key).1;
-    let batch_accounts = fhe::BatchAccountSet::for_batch(
-        &batch,
+    let execution_accounts = fhe::ExecutionAccountSet::for_execution(
+        &execution,
         [
             balance_output.account_info(),
             total_supply_output.account_info(),
@@ -221,8 +221,8 @@ pub fn recover_pending_burn<'info>(ctx: Context<'info, RecoverPendingBurn<'info>
                 .as_ref()
                 .map(|account| account.to_account_info()),
         },
-        accounts: &batch_accounts,
-        batch,
+        accounts: &execution_accounts,
+        execution,
     })?;
 
     let new_balance_handle = balance_output.handle()?;
