@@ -245,6 +245,17 @@ async fn migrate_s3_format_0_to_1(
             }
         }
 
+        let no_progress_on_failed = already_failed as u64 == total_failed;
+        if new_handles.is_empty() && !retry_handles.is_empty() && no_progress_on_failed {
+            info!(
+                total_failed,
+                total_migrated,
+                "S3 Migration mostly done, only previously failed handles remain, go to sleep"
+            );
+            worked_since_idle_log = false;
+            sleep_with_cancelling(&token, config.sleep_duration).await;
+        }
+
         if new_handles.is_empty() && retry_handles.is_empty() {
             if config.mode != S3MigrationMode::Concurrent {
                 let remaining_failed = count_failed_old_format_handles(pool).await? as u64;
@@ -260,7 +271,7 @@ async fn migrate_s3_format_0_to_1(
                 );
                 worked_since_idle_log = false;
             }
-            tokio::time::sleep(config.sleep_duration).await;
+            sleep_with_cancelling(&token, config.sleep_duration).await;
         }
     }
 
@@ -272,6 +283,13 @@ async fn migrate_s3_format_0_to_1(
     );
 
     Ok(())
+}
+
+async fn sleep_with_cancelling(token: &CancellationToken, duration: Duration) {
+    tokio::select! {
+        _ = token.cancelled() => {},
+        _ = tokio::time::sleep(duration) => {},
+    }
 }
 
 fn migration_failed_error(total_failed: u64, max_retries: i32) -> ExecutionError {
