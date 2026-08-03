@@ -171,7 +171,8 @@ pub fn claim<'info>(ctx: Context<'info, Claim<'info>>) -> Result<()> {
                 zama_fhe::Scalar::<zama_fhe::Uint<64>>::u64(payout_received),
                 zama_fhe::Scalar::<zama_fhe::Uint<64>>::u64(total_joined),
                 claim_binding.output(),
-            )
+            )?;
+            Ok(())
         },
     )?;
 

@@ -81,9 +81,16 @@ update, encrypted value ID…).
 16. **[HOLDS]** A batch containing a rand step must bind a persistent output.
     The bound output anchors a compulsorily fresh seed, so a seed is never
     reused across batches.
-18. **[RISK]** On-chain, values from two different builders mixed into one batch
-    are caught only by index bounds (the builder scope tag is inert on SBF).
-    A compile-time builder brand is planned in the SDK rework.
+18. **[HOLDS]** Values from two different builders cannot be mixed into one
+    batch: [`Batch::build`] hands each builder an invariant `'brand` lifetime
+    that its transient values carry, so a foreign value is a compile error
+    rather than a runtime check. It replaced a runtime scope tag that was inert
+    on SBF (writable statics are forbidden on-chain, so every builder in a
+    program shared one scope number). Persistent operands are deliberately
+    brand-free — a stored value belongs to no builder. Pinned by the
+    `compile_fail` doctest on `Batch::build`; the surviving runtime guard is the
+    producer-index bounds check, which protects the wire against hand-built
+    args (fhevm-internal#1859 §4).
 
 ## D. Entry & exit trust
 

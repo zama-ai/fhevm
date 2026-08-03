@@ -85,12 +85,14 @@ pub fn initialize_token_account<'info>(
         encrypted_value_id(mint_key, token_account_key, balance_label()),
         fhe::PersistentAudience::for_owner(owner, compute_signer),
     )?;
-    let mut builder =
-        zama_fhe::BatchBuilder::new(zama_fhe::BatchAppAuthority::new(token_account_key));
-    builder
-        .trivial_encrypt_u64(initial_balance, balance_output.output())
-        .map_err(invalid_batch)?;
-    let batch = builder.finish().map_err(invalid_batch)?;
+    let batch = zama_fhe::Batch::build(
+        zama_fhe::BatchAppAuthority::new(token_account_key),
+        |builder| {
+            builder.trivial_encrypt_u64(initial_balance, balance_output.output())?;
+            Ok(())
+        },
+    )
+    .map_err(invalid_batch)?;
     let compute_authority = fhe::ComputeAuthority::for_mint(
         &ctx.accounts.compute_signer,
         mint_key,

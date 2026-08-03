@@ -4,7 +4,7 @@ use zama_host::{CoprocessorInputAttestation, FheExecuteOperand, FheExecuteOutput
 
 use crate::accounts::{BatchAccountMeta, BatchAccountPurpose, BatchAppAuthority, MetaPromotion};
 use crate::acl::{Output, OutputKind};
-use crate::operand::{BatchBuilderScope, Operand, OperandKind};
+use crate::operand::{Operand, OperandKind};
 use crate::{BatchBuildError, Result};
 
 /// The builder's intern tables for the duration of one step, borrowed in place, plus the undo log
@@ -86,7 +86,6 @@ impl<'b> StepTables<'b> {
 pub(crate) fn lower_operand(
     tables: &mut StepTables<'_>,
     produced_count: usize,
-    builder_scope: BatchBuilderScope,
     verified_inputs: &[CoprocessorInputAttestation],
     operand: Operand,
 ) -> Result<FheExecuteOperand> {
@@ -109,13 +108,7 @@ pub(crate) fn lower_operand(
                 encrypted_value_index,
             })
         }
-        OperandKind::Transient {
-            producer_index,
-            builder_scope: operand_builder_scope,
-        } => {
-            if operand_builder_scope != builder_scope {
-                return Err(BatchBuildError::InvalidTransientReference);
-            }
+        OperandKind::Transient { producer_index } => {
             if producer_index as usize >= produced_count {
                 return Err(BatchBuildError::InvalidTransientReference);
             }

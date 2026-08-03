@@ -34,13 +34,49 @@ pub struct Batch {
 }
 
 impl Batch {
-    /// Builds and validates a batch through a closure.
+    /// Builds and validates a batch through a closure. This is the only way to get a
+    /// [`BatchBuilder`]: the closure receives it under a fresh `'brand` lifetime that nothing
+    /// outside the closure can name, which is what makes a transient value of one builder
+    /// unusable in another — the compiler rejects it instead of a runtime tag that on-chain was
+    /// the same constant for every builder.
     ///
-    /// This keeps transient values scoped to one builder while removing the
-    /// need for app code to call [`BatchBuilder::finish`] explicitly.
-    pub fn build<T, F>(app_authority: BatchAppAuthority, build: F) -> Result<Self>
+    /// The closure adds steps and returns nothing: its values belong to the builder, so letting one
+    /// out would defeat the brand.
+    ///
+    /// ```
+    /// use anchor_lang::prelude::Pubkey;
+    /// use zama_fhe::{Batch, BatchAppAuthority, Output, Scalar, Uint};
+    ///
+    /// let authority = BatchAppAuthority::new(Pubkey::new_unique());
+    /// let batch = Batch::build(authority, |builder| {
+    ///     let value = builder.trivial_encrypt_u64(7, Output::transient())?;
+    ///     builder.add(value, Scalar::<Uint<64>>::u64(1), Output::transient())?;
+    ///     Ok(())
+    /// });
+    /// assert!(batch.is_ok());
+    /// ```
+    ///
+    /// Feeding one builder's value to another does not compile:
+    ///
+    /// ```compile_fail
+    /// use anchor_lang::prelude::Pubkey;
+    /// use zama_fhe::{Batch, BatchAppAuthority, Output, Scalar, Uint};
+    ///
+    /// let authority = BatchAppAuthority::new(Pubkey::new_unique());
+    /// Batch::build(authority, |outer| {
+    ///     let borrowed = outer.trivial_encrypt_u64(7, Output::transient())?;
+    ///     Batch::build(authority, |inner| {
+    ///         inner.add(borrowed, Scalar::<Uint<64>>::u64(1), Output::transient())?;
+    ///         Ok(())
+    ///     })
+    ///     .unwrap();
+    ///     Ok(())
+    /// })
+    /// .unwrap();
+    /// ```
+    pub fn build<F>(app_authority: BatchAppAuthority, build: F) -> Result<Self>
     where
-        F: FnOnce(&mut BatchBuilder) -> Result<T>,
+        F: for<'brand> FnOnce(&mut BatchBuilder<'brand>) -> Result<()>,
     {
         let mut builder = BatchBuilder::new(app_authority);
         build(&mut builder)?;

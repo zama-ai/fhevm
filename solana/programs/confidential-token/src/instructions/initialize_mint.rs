@@ -63,12 +63,14 @@ pub fn initialize_mint<'info>(ctx: Context<'info, InitializeMint<'info>>) -> Res
         encrypted_value_id(mint_key, total_supply_authority, total_supply_label()),
         fhe::PersistentAudience::compute_only(compute_signer),
     )?;
-    let mut builder =
-        zama_fhe::BatchBuilder::new(zama_fhe::BatchAppAuthority::new(total_supply_authority));
-    builder
-        .trivial_encrypt_u64(0, total_supply_output.output())
-        .map_err(invalid_batch)?;
-    let batch = builder.finish().map_err(invalid_batch)?;
+    let batch = zama_fhe::Batch::build(
+        zama_fhe::BatchAppAuthority::new(total_supply_authority),
+        |builder| {
+            builder.trivial_encrypt_u64(0, total_supply_output.output())?;
+            Ok(())
+        },
+    )
+    .map_err(invalid_batch)?;
     let compute_authority = fhe::ComputeAuthority::for_mint(
         &ctx.accounts.compute_signer,
         mint_key,

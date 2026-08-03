@@ -671,18 +671,20 @@ mod tests {
         let output_key = encrypted_value_id(authority, 2);
         let output_acl = output_key.address();
         let input = zama_fhe::Uint64Handle::persistent(balance_handle(1), input_key).unwrap();
-        let mut builder = zama_fhe::BatchBuilder::new(zama_fhe::BatchAppAuthority::new(authority));
-        builder
-            .add(
-                input,
-                zama_fhe::Scalar::<zama_fhe::Uint<64>>::u64(1),
-                zama_fhe::Output::persistent(zama_fhe::PersistentOutput::create(
-                    output_key,
-                    subjects(authority),
-                )),
-            )
+        let batch =
+            zama_fhe::Batch::build(zama_fhe::BatchAppAuthority::new(authority), |builder| {
+                builder.add(
+                    input,
+                    zama_fhe::Scalar::<zama_fhe::Uint<64>>::u64(1),
+                    zama_fhe::Output::persistent(zama_fhe::PersistentOutput::create(
+                        output_key,
+                        subjects(authority),
+                    )),
+                )?;
+                Ok(())
+            })
             .unwrap();
-        (builder.finish().unwrap(), input_acl, output_acl, authority)
+        (batch, input_acl, output_acl, authority)
     }
 
     fn token_error_number(error: Error) -> u32 {

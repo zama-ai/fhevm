@@ -162,7 +162,10 @@ pub fn quit<'info>(ctx: Context<'info, Quit<'info>>) -> Result<()> {
             deny_subject_records: ctx.remaining_accounts,
         },
         vec![reset_binding.account_info()],
-        |builder| builder.trivial_encrypt_u64(0, reset_binding.output()),
+        |builder| {
+            builder.trivial_encrypt_u64(0, reset_binding.output())?;
+            Ok(())
+        },
     )?;
 
     emit!(QuitBatch {

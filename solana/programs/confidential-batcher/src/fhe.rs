@@ -103,10 +103,10 @@ pub(crate) struct BatchAuthorityExecute<'a, 'info> {
 
 /// Builds and invokes one `fhe_execute` batch with the batch authority as both
 /// compute subject and app account authority.
-pub(crate) fn execute_as_batch_authority<'info, T>(
+pub(crate) fn execute_as_batch_authority<'info>(
     eval: BatchAuthorityExecute<'_, 'info>,
     dynamic_accounts: Vec<AccountInfo<'info>>,
-    build: impl FnOnce(&mut zama_fhe::BatchBuilder) -> zama_fhe::Result<T>,
+    build: impl for<'brand> FnOnce(&mut zama_fhe::BatchBuilder<'brand>) -> zama_fhe::Result<()>,
 ) -> Result<()> {
     let bump = [eval.authority_bump];
     let authority_seeds: &[&[u8]] = &[BATCH_AUTHORITY_SEED, eval.batch.as_ref(), &bump];

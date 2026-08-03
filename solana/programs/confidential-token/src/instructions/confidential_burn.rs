@@ -417,55 +417,57 @@ fn execute_burn<'info>(
         total_supply_authority,
         total_supply_label(),
     )?;
-    let mut builder =
-        zama_fhe::BatchBuilder::new(zama_fhe::BatchAppAuthority::new(token_account_key));
-    let amount: zama_fhe::Uint64Handle = match &amount_source {
-        // fromExternal: the amount is a coprocessor-attested external input, verified in-batch and
-        // transient-allowed for this eval (no persistent amount handle / ACL account).
-        BurnAmountSource::Attested(amount_attestation) => builder
-            .verified_input(amount_attestation.clone())
-            .map_err(invalid_batch)?,
-        // Existing value: the amount is an on-chain encrypted value account's current handle, read as a persistent
-        // operand. The slot is derived from the value's own canonical fields, so its PDA equals the
-        // passed account; the host re-checks handle-is-current and compute-subject membership.
+    // Existing value: the amount is an on-chain encrypted value account's current handle, read as a
+    // persistent operand. The slot is derived from the value's own canonical fields, so its PDA
+    // equals the passed account; the host re-checks handle-is-current and compute-subject
+    // membership. Read here rather than inside the batch closure: a stored value belongs to no
+    // builder, and reading the account is this program's error to report, not the builder's.
+    let stored_amount = match &amount_source {
+        BurnAmountSource::Attested(_) => None,
         BurnAmountSource::ExistingValue { amount_value, .. } => {
             let value = fhe::read_encrypted_value(amount_value)?;
-            uint64_from_value(
+            Some(uint64_from_value(
                 value.current_handle,
                 value.domain,
                 value.account,
                 value.label,
-            )?
+            )?)
         }
     };
-    let burn_success = builder
-        .ge(balance, amount, zama_fhe::Output::transient())
-        .map_err(invalid_batch)?;
-    let debit_candidate = builder
-        .sub(balance, amount, zama_fhe::Output::transient())
-        .map_err(invalid_batch)?;
-    let new_balance = builder
-        .if_then_else(
-            burn_success,
-            debit_candidate,
-            balance,
-            zama_fhe::Output::transient(),
-        )
-        .map_err(invalid_batch)?;
-    let burned = builder
-        .sub(balance, new_balance, burned_output.output())
-        .map_err(invalid_batch)?;
-    builder
-        .add(
-            new_balance,
-            zama_fhe::Scalar::<zama_fhe::Uint<64>>::u64(0),
-            balance_output.output(),
-        )
-        .map_err(invalid_batch)?;
-    builder
-        .sub(total_supply, burned, total_supply_output.output())
-        .map_err(invalid_batch)?;
-    let batch = builder.finish().map_err(invalid_batch)?;
+    let batch = zama_fhe::Batch::build(
+        zama_fhe::BatchAppAuthority::new(token_account_key),
+        |builder| {
+            let amount = match (&amount_source, stored_amount) {
+                // fromExternal: the amount is a coprocessor-attested external input, verified
+                // in-batch and transient-allowed for this eval (no persistent amount handle / ACL
+                // account).
+                (BurnAmountSource::Attested(amount_attestation), _) => {
+                    builder.verified_input(amount_attestation.clone())?
+                }
+                (_, Some(stored)) => stored.into(),
+                (BurnAmountSource::ExistingValue { .. }, None) => {
+                    unreachable!("an existing-value burn always reads its stored amount above")
+                }
+            };
+            let burn_success = builder.ge(balance, amount, zama_fhe::Output::transient())?;
+            let debit_candidate = builder.sub(balance, amount, zama_fhe::Output::transient())?;
+            let new_balance = builder.if_then_else(
+                burn_success,
+                debit_candidate,
+                balance,
+                zama_fhe::Output::transient(),
+            )?;
+            let burned = builder.sub(balance, new_balance, burned_output.output())?;
+            builder.add(
+                new_balance,
+                zama_fhe::Scalar::<zama_fhe::Uint<64>>::u64(0),
+                balance_output.output(),
+            )?;
+            builder.sub(total_supply, burned, total_supply_output.output())?;
+            Ok(())
+        },
+    )
+    .map_err(invalid_batch)?;
     let compute_authority =
         fhe::ComputeAuthority::for_mint(accounts.compute_signer, mint_key, compute_signer_bump)?;
     let total_supply_authority_bump = total_supply_authority_address(mint_key).1;

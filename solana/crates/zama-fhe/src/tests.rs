@@ -90,7 +90,8 @@ fn batch_build_runs_closure_and_finishes_batch() {
                 output_key,
                 subjects(primary_authority),
             )),
-        )
+        )?;
+        Ok(())
     })
     .unwrap();
 
@@ -153,7 +154,7 @@ fn batch_build_lowers_verified_input_operand() {
     let attestation = dummy_attestation(input_handle, primary_authority);
 
     let batch = Batch::build(app_authority(primary_authority), |builder| {
-        let amount: Uint64Handle = builder.verified_input(attestation.clone())?;
+        let amount = builder.verified_input::<Uint<64>>(attestation.clone())?;
         builder.add(
             amount,
             Scalar::<Uint<64>>::u64(1),
@@ -161,7 +162,8 @@ fn batch_build_lowers_verified_input_operand() {
                 output_key,
                 subjects(primary_authority),
             )),
-        )
+        )?;
+        Ok(())
     })
     .unwrap();
 
@@ -214,7 +216,8 @@ fn batch_build_propagates_closure_and_finish_errors() {
             scalar_operand_u64(2),
             FheType::UINT64,
             Output::transient(),
-        )
+        )?;
+        Ok(())
     }) {
         Ok(_) => panic!("invalid batch unexpectedly built"),
         Err(error) => error,
@@ -487,7 +490,8 @@ fn dynamic_account_requirements_expose_order_roles_and_purposes() {
                 output_key,
                 subjects(extra_authority),
             )),
-        )
+        )?;
+        Ok(())
     })
     .unwrap();
 
@@ -867,7 +871,7 @@ fn rejects_invalid_references_and_types() {
     let error = builder
         .binary_op(
             FheBinaryOpCode::Add,
-            Operand::transient(0, builder.scope),
+            Operand::transient(0),
             scalar_operand_u64(1),
             FheType::UINT64,
             Output::transient(),
@@ -894,7 +898,7 @@ fn rejects_invalid_references_and_types() {
     let current_index = builder
         .binary_op(
             FheBinaryOpCode::Add,
-            Operand::transient(1, builder.scope),
+            Operand::transient(1),
             scalar_operand_u64(1),
             FheType::UINT64,
             Output::transient(),
@@ -905,7 +909,7 @@ fn rejects_invalid_references_and_types() {
     let future_index = builder
         .binary_op(
             FheBinaryOpCode::Add,
-            Operand::transient(9, builder.scope),
+            Operand::transient(9),
             scalar_operand_u64(1),
             FheType::UINT64,
             Output::transient(),
@@ -916,33 +920,13 @@ fn rejects_invalid_references_and_types() {
     let invalid_rhs = builder
         .binary_op(
             FheBinaryOpCode::Add,
-            input.operand(),
-            Operand::transient(1, builder.scope),
+            Encrypted::from(input).operand(),
+            Operand::transient(1),
             FheType::UINT64,
             Output::transient(),
         )
         .unwrap_err();
     assert_eq!(invalid_rhs, BatchBuildError::InvalidTransientReference);
-}
-
-#[test]
-fn rejects_transients_from_another_builder() {
-    let primary_authority = Pubkey::new_unique();
-    let input_key = encrypted_value_id(primary_authority, 1);
-    let balance = Uint64Handle::persistent(balance_handle(1), input_key).unwrap();
-
-    let mut first = BatchBuilder::new(app_authority(primary_authority));
-    let foreign = first
-        .add(balance, Scalar::<Uint<64>>::u64(1), Output::transient())
-        .unwrap();
-
-    let mut second = BatchBuilder::new(app_authority(primary_authority));
-    second.trivial_encrypt_u64(1, Output::transient()).unwrap();
-    let error = second
-        .add(foreign, Scalar::<Uint<64>>::u64(1), Output::transient())
-        .unwrap_err();
-
-    assert_eq!(error, BatchBuildError::InvalidTransientReference);
 }
 
 #[test]
@@ -1163,55 +1147,55 @@ fn builder_exposes_the_host_operator_type_surface() {
     let auth = Pubkey::new_unique();
     let mut builder = BatchBuilder::new(app_authority(auth));
 
-    let bool_a = Encrypted::<Bool>::persistent(
+    let bool_a = StoredValue::<Bool>::persistent(
         typed_handle(1, FheType::BOOL.byte()),
         encrypted_value_id(auth, 1),
     )
     .unwrap();
-    let bool_b = Encrypted::<Bool>::persistent(
+    let bool_b = StoredValue::<Bool>::persistent(
         typed_handle(2, FheType::BOOL.byte()),
         encrypted_value_id(auth, 2),
     )
     .unwrap();
     assert!(builder.and(bool_a, bool_b, Output::transient()).is_ok());
 
-    let u256_a = Encrypted::<Bytes256>::persistent(
+    let u256_a = StoredValue::<Bytes256>::persistent(
         typed_handle(3, FheType::BYTES256.byte()),
         encrypted_value_id(auth, 3),
     )
     .unwrap();
-    let u256_b = Encrypted::<Bytes256>::persistent(
+    let u256_b = StoredValue::<Bytes256>::persistent(
         typed_handle(4, FheType::BYTES256.byte()),
         encrypted_value_id(auth, 4),
     )
     .unwrap();
     assert!(builder.xor(u256_a, u256_b, Output::transient()).is_ok());
 
-    let u256_c = Encrypted::<Bytes256>::persistent(
+    let u256_c = StoredValue::<Bytes256>::persistent(
         typed_handle(5, FheType::BYTES256.byte()),
         encrypted_value_id(auth, 5),
     )
     .unwrap();
     assert!(builder.neg(u256_c, Output::transient()).is_ok());
 
-    let bool_c = Encrypted::<Bool>::persistent(
+    let bool_c = StoredValue::<Bool>::persistent(
         typed_handle(6, FheType::BOOL.byte()),
         encrypted_value_id(auth, 6),
     )
     .unwrap();
-    let bool_d = Encrypted::<Bool>::persistent(
+    let bool_d = StoredValue::<Bool>::persistent(
         typed_handle(7, FheType::BOOL.byte()),
         encrypted_value_id(auth, 7),
     )
     .unwrap();
     assert!(builder.eq(bool_c, bool_d, Output::transient()).is_ok());
 
-    let addr_v = Encrypted::<Address>::persistent(
+    let addr_v = StoredValue::<Address>::persistent(
         typed_handle(8, FheType::ADDRESS.byte()),
         encrypted_value_id(auth, 8),
     )
     .unwrap();
-    let addr_s = Encrypted::<Address>::persistent(
+    let addr_s = StoredValue::<Address>::persistent(
         typed_handle(9, FheType::ADDRESS.byte()),
         encrypted_value_id(auth, 9),
     )
@@ -1343,26 +1327,6 @@ fn persistent_output_update_carries_current_state() {
         binding.previous_subjects(),
         Some(previous_subjects.as_slice())
     );
-}
-
-#[test]
-fn rejects_transients_from_another_batch() {
-    let primary_authority = Pubkey::new_unique();
-    let input_key = encrypted_value_id(primary_authority, 1);
-    let balance = Uint64Handle::persistent(balance_handle(1), input_key).unwrap();
-
-    let mut first = BatchBuilder::new(app_authority(primary_authority));
-    let foreign = first
-        .add(balance, Scalar::<Uint<64>>::u64(1), Output::transient())
-        .unwrap();
-
-    let mut second = BatchBuilder::new(app_authority(primary_authority));
-    second.trivial_encrypt_u64(1, Output::transient()).unwrap();
-    let error = second
-        .add(foreign, Scalar::<Uint<64>>::u64(1), Output::transient())
-        .unwrap_err();
-
-    assert_eq!(error, BatchBuildError::InvalidTransientReference);
 }
 
 #[test]

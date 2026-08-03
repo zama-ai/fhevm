@@ -17,8 +17,8 @@ use std::cell::Cell;
 
 use anchor_lang::prelude::Pubkey;
 use zama_fhe::{
-    BatchAppAuthority, BatchBuilder, EncryptedValueId, Output, PersistentLabel, PersistentOutput,
-    Scalar, Uint, Uint64Handle,
+    Batch, BatchAppAuthority, Encrypted, EncryptedValueId, Output, PersistentLabel,
+    PersistentOutput, Scalar, Uint, Uint64Handle,
 };
 use zama_host::MAX_FHE_BATCH_OPS;
 
@@ -99,22 +99,24 @@ fn building_the_largest_legal_batch_stays_within_the_heap_budget() {
     let subjects: Vec<Vec<Pubkey>> = (0..MAX_FHE_BATCH_OPS).map(|_| vec![authority]).collect();
 
     let before = counted_bytes();
-    let mut builder = BatchBuilder::new(BatchAppAuthority::new(authority));
-    let mut value = input;
     let mut steps_within_default_heap = 0;
-    for (index, (output, subjects)) in outputs.into_iter().zip(subjects).enumerate() {
-        value = builder
-            .add(
+    let batch = Batch::build(BatchAppAuthority::new(authority), |builder| {
+        // The first step reads the persistent input; every later step chains on the previous step's
+        // transient, which is what makes this the heaviest legal batch.
+        let mut value = Encrypted::from(input);
+        for (index, (output, subjects)) in outputs.into_iter().zip(subjects).enumerate() {
+            value = builder.add(
                 value,
                 Scalar::<Uint<64>>::u64(index as u64),
                 Output::persistent(PersistentOutput::create(output, subjects)),
-            )
-            .expect("step lowers");
-        if counted_bytes() - before <= DEFAULT_HEAP_BYTES {
-            steps_within_default_heap = index + 1;
+            )?;
+            if counted_bytes() - before <= DEFAULT_HEAP_BYTES {
+                steps_within_default_heap = index + 1;
+            }
         }
-    }
-    let batch = builder.finish().expect("batch finishes");
+        Ok(())
+    })
+    .expect("batch builds");
     let requested = counted_bytes() - before;
 
     assert_eq!(

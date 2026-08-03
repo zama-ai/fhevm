@@ -47,7 +47,8 @@ pub use builder::BatchBuilder;
 pub use cpi::BatchCpiAccounts;
 pub use types::{
     Address, BinaryRhs, Bool, BoolHandle, Bytes256, Encrypted, FheBitwise, FheEq, FheIsIn, FheNeg,
-    FheNot, FheRandom, FheShift, FheType, FheTyped, FheUint, Scalar, Uint, Uint64Handle,
+    FheNot, FheRandom, FheShift, FheType, FheTyped, FheUint, Scalar, StoredValue, Uint,
+    Uint64Handle,
 };
 
 /// Result type used by the builder helpers.

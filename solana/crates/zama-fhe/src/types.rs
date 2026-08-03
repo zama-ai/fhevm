@@ -5,7 +5,7 @@ use std::marker::PhantomData;
 use anchor_lang::prelude::Pubkey;
 
 use crate::acl::EncryptedValueId;
-use crate::operand::Operand;
+use crate::operand::{BuilderBrand, Operand};
 use crate::validate::{handle_fhe_type, validate_encrypted_value_id, validate_supported_fhe_type};
 use crate::{BatchBuildError, Result};
 
@@ -41,8 +41,8 @@ pub struct Bool;
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct Uint<const BITS: u16>;
 
-pub type BoolHandle = Encrypted<Bool>;
-pub type Uint64Handle = Encrypted<Uint<64>>;
+pub type BoolHandle = StoredValue<Bool>;
+pub type Uint64Handle = StoredValue<Uint<64>>;
 
 /// Marker for encrypted address handles.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -264,35 +264,58 @@ impl FheIsIn for Bytes256 {}
 
 /// Typed encrypted batch value.
 ///
-/// Persistent values are constructed from app account state. Transient values are
-/// returned by [`BatchBuilder`] methods and can only be fed to later steps in the
-/// same builder.
+/// Persistent values are constructed from app account state. Transient values are returned by
+/// [`BatchBuilder`](crate::BatchBuilder) methods and can only be fed to later steps of the builder
+/// that produced them: `'brand` is that builder's identity, handed out by
+/// [`Batch::build`](crate::Batch::build) as a fresh invariant lifetime, so mixing two builders'
+/// values is a type error. A persistent value belongs to no builder and takes whatever brand its
+/// use site needs.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub struct Encrypted<T> {
+pub struct Encrypted<'brand, T> {
+    operand: Operand,
+    marker: PhantomData<T>,
+    brand: BuilderBrand<'brand>,
+}
+
+/// A persistent value as an operand: its handle plus the value account holding it.
+///
+/// Brand-free on purpose. A stored value belongs to no builder, so app code can read one out of
+/// account state — with its own error handling — before it opens a batch, and then feed it to
+/// whichever builder needs it. Only the values a builder hands back are branded ([`Encrypted`]),
+/// because only those are meaningless outside it.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct StoredValue<T> {
     operand: Operand,
     marker: PhantomData<T>,
 }
 
-impl<T: FheTyped> Encrypted<T> {
-    /// Builds a persistent operand from a stable `EncryptedValue` encrypted value account. `handle`
-    /// must be that encrypted value account's current handle; the host re-verifies this on-chain.
+impl<T: FheTyped> StoredValue<T> {
+    /// Builds a persistent operand from a stable `EncryptedValue` account. `handle` must be that
+    /// account's current handle; the host re-verifies this on-chain.
     pub fn persistent(handle: [u8; 32], key: EncryptedValueId) -> Result<Self> {
         validate_encrypted_value_id(&key)?;
         if handle_fhe_type(handle) != T::FHE_TYPE.byte() {
             return Err(BatchBuildError::UnsupportedFheType);
         }
-        Ok(Self::from_operand(Operand::persistent(
-            handle,
-            key.address(),
-        )))
+        Ok(Self {
+            operand: Operand::persistent(handle, key.address()),
+            marker: PhantomData,
+        })
     }
 }
 
-impl<T> Encrypted<T> {
+impl<T> From<StoredValue<T>> for Encrypted<'_, T> {
+    fn from(value: StoredValue<T>) -> Self {
+        Self::from_operand(value.operand)
+    }
+}
+
+impl<T> Encrypted<'_, T> {
     pub(crate) fn from_operand(operand: Operand) -> Self {
         Self {
             operand,
             marker: PhantomData,
+            brand: PhantomData,
         }
     }
 
@@ -384,26 +407,33 @@ impl Scalar<Bytes256> {
     }
 }
 
-/// Typed right-hand side accepted by binary batch ops.
+/// Typed right-hand side accepted by binary batch ops. Carries the builder brand of the encrypted
+/// arm; a scalar belongs to no builder.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum BinaryRhs<T> {
-    Encrypted(Encrypted<T>),
+pub enum BinaryRhs<'brand, T> {
+    Encrypted(Encrypted<'brand, T>),
     Scalar(Scalar<T>),
 }
 
-impl<T> From<Encrypted<T>> for BinaryRhs<T> {
-    fn from(value: Encrypted<T>) -> Self {
+impl<'brand, T> From<Encrypted<'brand, T>> for BinaryRhs<'brand, T> {
+    fn from(value: Encrypted<'brand, T>) -> Self {
         Self::Encrypted(value)
     }
 }
 
-impl<T> From<Scalar<T>> for BinaryRhs<T> {
+impl<T> From<Scalar<T>> for BinaryRhs<'_, T> {
     fn from(value: Scalar<T>) -> Self {
         Self::Scalar(value)
     }
 }
 
-pub(crate) fn binary_rhs_operand<T>(rhs: impl Into<BinaryRhs<T>>) -> Operand {
+impl<T> From<StoredValue<T>> for BinaryRhs<'_, T> {
+    fn from(value: StoredValue<T>) -> Self {
+        Self::Encrypted(value.into())
+    }
+}
+
+pub(crate) fn binary_rhs_operand<'brand, T>(rhs: impl Into<BinaryRhs<'brand, T>>) -> Operand {
     match rhs.into() {
         BinaryRhs::Encrypted(value) => value.operand(),
         BinaryRhs::Scalar(value) => Operand::scalar(value.bytes()),

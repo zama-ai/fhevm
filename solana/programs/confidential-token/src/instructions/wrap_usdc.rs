@@ -148,18 +148,17 @@ pub fn wrap_usdc<'info>(ctx: Context<'info, WrapUsdc<'info>>, amount: u64) -> Re
     )?;
     let mut amount_context = [0u8; 32];
     amount_context[24..].copy_from_slice(&amount.to_be_bytes());
-    let mut builder =
-        zama_fhe::BatchBuilder::new(zama_fhe::BatchAppAuthority::new(token_account.key()));
-    let encrypted_amount = builder
-        .trivial_encrypt_u64(amount, zama_fhe::Output::transient())
-        .map_err(invalid_batch)?;
-    builder
-        .add(balance, encrypted_amount, balance_output.output())
-        .map_err(invalid_batch)?;
-    builder
-        .add(total_supply, encrypted_amount, total_supply_output.output())
-        .map_err(invalid_batch)?;
-    let batch = builder.finish().map_err(invalid_batch)?;
+    let batch = zama_fhe::Batch::build(
+        zama_fhe::BatchAppAuthority::new(token_account.key()),
+        |builder| {
+            let encrypted_amount =
+                builder.trivial_encrypt_u64(amount, zama_fhe::Output::transient())?;
+            builder.add(balance, encrypted_amount, balance_output.output())?;
+            builder.add(total_supply, encrypted_amount, total_supply_output.output())?;
+            Ok(())
+        },
+    )
+    .map_err(invalid_batch)?;
     let compute_authority = fhe::ComputeAuthority::for_mint(
         &ctx.accounts.compute_signer,
         mint_key,

@@ -187,13 +187,16 @@ pub fn join<'info>(
             joined_binding.account_info(),
             ctx.accounts.user_transferred_value.to_account_info(),
         ],
-        |builder| match previous_joined {
-            Some(joined) => builder.add(joined, transferred, joined_binding.output()),
-            None => builder.add(
-                transferred,
-                zama_fhe::Scalar::<zama_fhe::Uint<64>>::u64(0),
-                joined_binding.output(),
-            ),
+        |builder| {
+            match previous_joined {
+                Some(joined) => builder.add(joined, transferred, joined_binding.output())?,
+                None => builder.add(
+                    transferred,
+                    zama_fhe::Scalar::<zama_fhe::Uint<64>>::u64(0),
+                    joined_binding.output(),
+                )?,
+            };
+            Ok(())
         },
     )?;
 

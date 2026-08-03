@@ -87,20 +87,17 @@ fn create_random_amount_inner<'info>(
         encrypted_value_id(mint_key, owner, label),
         fhe::PersistentAudience::compute_only(ctx.accounts.compute_signer.key()),
     )?;
-    let mut builder = zama_fhe::BatchBuilder::new(zama_fhe::BatchAppAuthority::new(owner));
-    match upper_bound {
-        Some(upper_bound) => builder
-            .rand_bounded_u64(
-                zama_fhe::BoundedU64UpperBound::from_be_bytes(upper_bound)
-                    .map_err(invalid_batch)?,
+    let batch = zama_fhe::Batch::build(zama_fhe::BatchAppAuthority::new(owner), |builder| {
+        match upper_bound {
+            Some(upper_bound) => builder.rand_bounded_u64(
+                zama_fhe::BoundedU64UpperBound::from_be_bytes(upper_bound)?,
                 amount_output.output(),
-            )
-            .map_err(invalid_batch)?,
-        None => builder
-            .rand_u64(amount_output.output())
-            .map_err(invalid_batch)?,
-    };
-    let batch = builder.finish().map_err(invalid_batch)?;
+            )?,
+            None => builder.rand_u64(amount_output.output())?,
+        };
+        Ok(())
+    })
+    .map_err(invalid_batch)?;
     let compute_authority = fhe::ComputeAuthority::for_mint(
         &ctx.accounts.compute_signer,
         mint_key,

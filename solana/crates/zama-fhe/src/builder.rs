@@ -23,7 +23,7 @@ use crate::accounts::{BatchAccountMeta, BatchAppAuthority};
 use crate::acl::{BoundedU64UpperBound, Output};
 use crate::batch::Batch;
 use crate::lower::{lower_operand, lower_output, StepTables};
-use crate::operand::{next_batch_builder_scope, BatchBuilderScope, Operand, OperandKind};
+use crate::operand::{BuilderBrand, Operand, OperandKind};
 use crate::types::{Bool, Encrypted, FheIsIn, FheRandom, FheType, FheTyped, FheUint, Scalar, Uint};
 use crate::validate::{
     max_reduction_operands, operand_fhe_type, scalar_is_zero_for_type, validate_app_authority,
@@ -34,9 +34,16 @@ use crate::validate::{
 use crate::{BatchBuildError, Result};
 
 /// Pubkey-oriented builder for `FheExecuteArgs`.
+///
+/// `'brand` is this builder's identity: [`Batch::build`] hands every invocation a fresh invariant
+/// lifetime, every transient value it returns carries it, and the op methods only accept values of
+/// their own brand — so mixing two builders' values does not compile. That replaces a runtime tag
+/// which SBF could not make unique (writable statics are forbidden on-chain, so every builder in a
+/// program shared one scope number and the check found nothing). It is also why there is no public
+/// constructor and no `Clone`: both would hand out a second builder wearing the same brand.
 #[derive(Debug)]
-pub struct BatchBuilder {
-    pub(crate) scope: BatchBuilderScope,
+pub struct BatchBuilder<'brand> {
+    brand: BuilderBrand<'brand>,
     pub(crate) app_authority: BatchAppAuthority,
     pub(crate) steps: Vec<FheExecuteStep>,
     pub(crate) produced_types: Vec<u8>,
@@ -55,26 +62,10 @@ pub struct BatchBuilder {
     pub(crate) verified_inputs: Vec<CoprocessorInputAttestation>,
 }
 
-impl Clone for BatchBuilder {
-    fn clone(&self) -> Self {
-        Self {
-            scope: next_batch_builder_scope(),
-            app_authority: self.app_authority,
-            steps: self.steps.clone(),
-            produced_types: self.produced_types.clone(),
-            persistent_producers: self.persistent_producers.clone(),
-            remaining_accounts: self.remaining_accounts.clone(),
-            dictionary: self.dictionary.clone(),
-            verified_inputs: self.verified_inputs.clone(),
-        }
-    }
-}
-
 /// One step's view of the builder — see [`BatchBuilder::commit_step`].
 struct StepLowering<'b> {
     op_index: u8,
     steps_len: usize,
-    scope: BatchBuilderScope,
     app_authority: BatchAppAuthority,
     tables: StepTables<'b>,
     verified_inputs: &'b [CoprocessorInputAttestation],
@@ -85,7 +76,6 @@ impl StepLowering<'_> {
         lower_operand(
             &mut self.tables,
             self.steps_len,
-            self.scope,
             self.verified_inputs,
             operand,
         )
@@ -96,7 +86,7 @@ impl StepLowering<'_> {
     }
 }
 
-impl BatchBuilder {
+impl<'brand> BatchBuilder<'brand> {
     /// The single mutation path for appending a step. Every op method validates first, then lowers
     /// through this: lowering interns into the builder's own tables and, when any part of the step
     /// fails, [`StepTables::rollback`] undoes what it wrote, so a failed step leaves the builder
@@ -115,7 +105,6 @@ impl BatchBuilder {
     ) -> Result<u8> {
         let op_index = u8::try_from(self.steps.len()).map_err(|_| BatchBuildError::TooManyOps)?;
         let Self {
-            scope,
             app_authority,
             steps,
             produced_types,
@@ -123,11 +112,11 @@ impl BatchBuilder {
             remaining_accounts,
             dictionary,
             verified_inputs,
+            brand: _,
         } = self;
         let mut lowering = StepLowering {
             op_index,
             steps_len: steps.len(),
-            scope: *scope,
             app_authority: *app_authority,
             tables: StepTables::open(remaining_accounts, dictionary, persistent_producers),
             verified_inputs,
@@ -146,10 +135,12 @@ impl BatchBuilder {
     }
 }
 
-impl BatchBuilder {
-    pub fn new(app_authority: BatchAppAuthority) -> Self {
+impl<'brand> BatchBuilder<'brand> {
+    /// Crate-internal: a public constructor would let two builders share one brand, which is the
+    /// mixing hazard the brand exists to remove. App code gets a builder from [`Batch::build`].
+    pub(crate) fn new(app_authority: BatchAppAuthority) -> Self {
         Self {
-            scope: next_batch_builder_scope(),
+            brand: std::marker::PhantomData,
             app_authority,
             steps: Vec::new(),
             produced_types: Vec::new(),
@@ -168,7 +159,7 @@ impl BatchBuilder {
     pub fn verified_input<T: FheTyped>(
         &mut self,
         attestation: CoprocessorInputAttestation,
-    ) -> Result<Encrypted<T>> {
+    ) -> Result<Encrypted<'brand, T>> {
         if handle_fhe_type(attestation.input_handle) != T::FHE_TYPE.byte() {
             return Err(BatchBuildError::UnsupportedFheType);
         }
@@ -184,13 +175,13 @@ impl BatchBuilder {
 
     pub fn add<T: FheUint>(
         &mut self,
-        lhs: Encrypted<T>,
-        rhs: impl Into<BinaryRhs<T>>,
+        lhs: impl Into<Encrypted<'brand, T>>,
+        rhs: impl Into<BinaryRhs<'brand, T>>,
         output: Output,
-    ) -> Result<Encrypted<T>> {
+    ) -> Result<Encrypted<'brand, T>> {
         self.binary_op(
             FheBinaryOpCode::Add,
-            lhs.operand(),
+            lhs.into().operand(),
             binary_rhs_operand(rhs),
             T::FHE_TYPE,
             output,
@@ -200,13 +191,13 @@ impl BatchBuilder {
 
     pub fn sub<T: FheUint>(
         &mut self,
-        lhs: Encrypted<T>,
-        rhs: impl Into<BinaryRhs<T>>,
+        lhs: impl Into<Encrypted<'brand, T>>,
+        rhs: impl Into<BinaryRhs<'brand, T>>,
         output: Output,
-    ) -> Result<Encrypted<T>> {
+    ) -> Result<Encrypted<'brand, T>> {
         self.binary_op(
             FheBinaryOpCode::Sub,
-            lhs.operand(),
+            lhs.into().operand(),
             binary_rhs_operand(rhs),
             T::FHE_TYPE,
             output,
@@ -216,13 +207,13 @@ impl BatchBuilder {
 
     pub fn ge<T: FheUint>(
         &mut self,
-        lhs: Encrypted<T>,
-        rhs: impl Into<BinaryRhs<T>>,
+        lhs: impl Into<Encrypted<'brand, T>>,
+        rhs: impl Into<BinaryRhs<'brand, T>>,
         output: Output,
-    ) -> Result<Encrypted<Bool>> {
+    ) -> Result<Encrypted<'brand, Bool>> {
         self.binary_op(
             FheBinaryOpCode::Ge,
-            lhs.operand(),
+            lhs.into().operand(),
             binary_rhs_operand(rhs),
             FheType::BOOL,
             output,
@@ -247,15 +238,9 @@ impl BatchBuilder {
         if self.steps.len() >= MAX_FHE_BATCH_OPS {
             return Err(BatchBuildError::TooManyOps);
         }
-        validate_binary_step(
-            op,
-            &lhs,
-            &rhs,
-            output_fhe_type,
-            self.steps.len(),
-            self.scope,
-            |index| self.produced_types.get(index as usize).copied(),
-        )?;
+        validate_binary_step(op, &lhs, &rhs, output_fhe_type, self.steps.len(), |index| {
+            self.produced_types.get(index as usize).copied()
+        })?;
         let op_index = self.commit_step(output_fhe_type, |lowering| {
             let lhs = lowering.operand(lhs)?;
             let rhs = lowering.operand(rhs)?;
@@ -268,19 +253,19 @@ impl BatchBuilder {
                 output,
             })
         })?;
-        Ok(Operand::transient(op_index, self.scope))
+        Ok(Operand::transient(op_index))
     }
 
     pub fn if_then_else<T: FheTyped>(
         &mut self,
-        control: Encrypted<Bool>,
-        if_true: Encrypted<T>,
-        if_false: Encrypted<T>,
+        control: impl Into<Encrypted<'brand, Bool>>,
+        if_true: impl Into<Encrypted<'brand, T>>,
+        if_false: impl Into<Encrypted<'brand, T>>,
         output: Output,
-    ) -> Result<Encrypted<T>> {
-        let control = control.operand();
-        let if_true = if_true.operand();
-        let if_false = if_false.operand();
+    ) -> Result<Encrypted<'brand, T>> {
+        let control = control.into().operand();
+        let if_true = if_true.into().operand();
+        let if_false = if_false.into().operand();
         let output_fhe_type =
             self.encrypted_operand_type(&if_true, BatchBuildError::ScalarEncryptedOperand)?;
         let output_fhe_type = output_fhe_type.byte();
@@ -294,7 +279,6 @@ impl BatchBuilder {
             output_fhe_type,
             self.steps.len(),
             |index| self.produced_types.get(index as usize).copied(),
-            self.scope,
         )?;
         let step_index = self.commit_step(output_fhe_type, |lowering| {
             let control = lowering.operand(control)?;
@@ -310,16 +294,14 @@ impl BatchBuilder {
                 output,
             })
         })?;
-        Ok(Encrypted::from_operand(Operand::transient(
-            step_index, self.scope,
-        )))
+        Ok(Encrypted::from_operand(Operand::transient(step_index)))
     }
 
     pub fn trivial_encrypt<T: FheTyped>(
         &mut self,
         plaintext: Scalar<T>,
         output: Output,
-    ) -> Result<Encrypted<T>> {
+    ) -> Result<Encrypted<'brand, T>> {
         self.trivial_encrypt_raw(plaintext.bytes(), T::FHE_TYPE, output)
             .map(Encrypted::from_operand)
     }
@@ -343,18 +325,18 @@ impl BatchBuilder {
                 output,
             })
         })?;
-        Ok(Operand::transient(step_index, self.scope))
+        Ok(Operand::transient(step_index))
     }
 
     pub fn trivial_encrypt_u64(
         &mut self,
         plaintext: u64,
         output: Output,
-    ) -> Result<Encrypted<Uint<64>>> {
+    ) -> Result<Encrypted<'brand, Uint<64>>> {
         self.trivial_encrypt(Scalar::<Uint<64>>::u64(plaintext), output)
     }
 
-    pub fn rand<T: FheRandom>(&mut self, output: Output) -> Result<Encrypted<T>> {
+    pub fn rand<T: FheRandom>(&mut self, output: Output) -> Result<Encrypted<'brand, T>> {
         self.rand_raw(T::FHE_TYPE, output)
             .map(Encrypted::from_operand)
     }
@@ -369,10 +351,10 @@ impl BatchBuilder {
             let output = lowering.output(output)?;
             Ok(FheExecuteStep::Rand { fhe_type, output })
         })?;
-        Ok(Operand::transient(step_index, self.scope))
+        Ok(Operand::transient(step_index))
     }
 
-    pub fn rand_u64(&mut self, output: Output) -> Result<Encrypted<Uint<64>>> {
+    pub fn rand_u64(&mut self, output: Output) -> Result<Encrypted<'brand, Uint<64>>> {
         self.rand::<Uint<64>>(output)
     }
 
@@ -380,7 +362,7 @@ impl BatchBuilder {
         &mut self,
         upper_bound: BoundedU64UpperBound,
         output: Output,
-    ) -> Result<Encrypted<Uint<64>>> {
+    ) -> Result<Encrypted<'brand, Uint<64>>> {
         let fhe_type = FheType::UINT64.byte();
         if self.steps.len() >= MAX_FHE_BATCH_OPS {
             return Err(BatchBuildError::TooManyOps);
@@ -393,22 +375,20 @@ impl BatchBuilder {
                 output,
             })
         })?;
-        Ok(Encrypted::from_operand(Operand::transient(
-            step_index, self.scope,
-        )))
+        Ok(Encrypted::from_operand(Operand::transient(step_index)))
     }
 
     // --- Binary ops not yet exposed as named methods ---
 
     pub fn mul<T: FheUint>(
         &mut self,
-        lhs: Encrypted<T>,
-        rhs: impl Into<BinaryRhs<T>>,
+        lhs: impl Into<Encrypted<'brand, T>>,
+        rhs: impl Into<BinaryRhs<'brand, T>>,
         output: Output,
-    ) -> Result<Encrypted<T>> {
+    ) -> Result<Encrypted<'brand, T>> {
         self.binary_op(
             FheBinaryOpCode::Mul,
-            lhs.operand(),
+            lhs.into().operand(),
             binary_rhs_operand(rhs),
             T::FHE_TYPE,
             output,
@@ -418,13 +398,13 @@ impl BatchBuilder {
 
     pub fn div<T: FheUint>(
         &mut self,
-        lhs: Encrypted<T>,
-        rhs: impl Into<BinaryRhs<T>>,
+        lhs: impl Into<Encrypted<'brand, T>>,
+        rhs: impl Into<BinaryRhs<'brand, T>>,
         output: Output,
-    ) -> Result<Encrypted<T>> {
+    ) -> Result<Encrypted<'brand, T>> {
         self.binary_op(
             FheBinaryOpCode::Div,
-            lhs.operand(),
+            lhs.into().operand(),
             binary_rhs_operand(rhs),
             T::FHE_TYPE,
             output,
@@ -434,13 +414,13 @@ impl BatchBuilder {
 
     pub fn rem<T: FheUint>(
         &mut self,
-        lhs: Encrypted<T>,
-        rhs: impl Into<BinaryRhs<T>>,
+        lhs: impl Into<Encrypted<'brand, T>>,
+        rhs: impl Into<BinaryRhs<'brand, T>>,
         output: Output,
-    ) -> Result<Encrypted<T>> {
+    ) -> Result<Encrypted<'brand, T>> {
         self.binary_op(
             FheBinaryOpCode::Rem,
-            lhs.operand(),
+            lhs.into().operand(),
             binary_rhs_operand(rhs),
             T::FHE_TYPE,
             output,
@@ -450,13 +430,13 @@ impl BatchBuilder {
 
     pub fn and<T: FheBitwise>(
         &mut self,
-        lhs: Encrypted<T>,
-        rhs: impl Into<BinaryRhs<T>>,
+        lhs: impl Into<Encrypted<'brand, T>>,
+        rhs: impl Into<BinaryRhs<'brand, T>>,
         output: Output,
-    ) -> Result<Encrypted<T>> {
+    ) -> Result<Encrypted<'brand, T>> {
         self.binary_op(
             FheBinaryOpCode::And,
-            lhs.operand(),
+            lhs.into().operand(),
             binary_rhs_operand(rhs),
             T::FHE_TYPE,
             output,
@@ -466,13 +446,13 @@ impl BatchBuilder {
 
     pub fn or<T: FheBitwise>(
         &mut self,
-        lhs: Encrypted<T>,
-        rhs: impl Into<BinaryRhs<T>>,
+        lhs: impl Into<Encrypted<'brand, T>>,
+        rhs: impl Into<BinaryRhs<'brand, T>>,
         output: Output,
-    ) -> Result<Encrypted<T>> {
+    ) -> Result<Encrypted<'brand, T>> {
         self.binary_op(
             FheBinaryOpCode::Or,
-            lhs.operand(),
+            lhs.into().operand(),
             binary_rhs_operand(rhs),
             T::FHE_TYPE,
             output,
@@ -482,13 +462,13 @@ impl BatchBuilder {
 
     pub fn xor<T: FheBitwise>(
         &mut self,
-        lhs: Encrypted<T>,
-        rhs: impl Into<BinaryRhs<T>>,
+        lhs: impl Into<Encrypted<'brand, T>>,
+        rhs: impl Into<BinaryRhs<'brand, T>>,
         output: Output,
-    ) -> Result<Encrypted<T>> {
+    ) -> Result<Encrypted<'brand, T>> {
         self.binary_op(
             FheBinaryOpCode::Xor,
-            lhs.operand(),
+            lhs.into().operand(),
             binary_rhs_operand(rhs),
             T::FHE_TYPE,
             output,
@@ -498,13 +478,13 @@ impl BatchBuilder {
 
     pub fn shl<T: FheShift>(
         &mut self,
-        lhs: Encrypted<T>,
-        rhs: impl Into<BinaryRhs<T>>,
+        lhs: impl Into<Encrypted<'brand, T>>,
+        rhs: impl Into<BinaryRhs<'brand, T>>,
         output: Output,
-    ) -> Result<Encrypted<T>> {
+    ) -> Result<Encrypted<'brand, T>> {
         self.binary_op(
             FheBinaryOpCode::Shl,
-            lhs.operand(),
+            lhs.into().operand(),
             binary_rhs_operand(rhs),
             T::FHE_TYPE,
             output,
@@ -514,13 +494,13 @@ impl BatchBuilder {
 
     pub fn shr<T: FheShift>(
         &mut self,
-        lhs: Encrypted<T>,
-        rhs: impl Into<BinaryRhs<T>>,
+        lhs: impl Into<Encrypted<'brand, T>>,
+        rhs: impl Into<BinaryRhs<'brand, T>>,
         output: Output,
-    ) -> Result<Encrypted<T>> {
+    ) -> Result<Encrypted<'brand, T>> {
         self.binary_op(
             FheBinaryOpCode::Shr,
-            lhs.operand(),
+            lhs.into().operand(),
             binary_rhs_operand(rhs),
             T::FHE_TYPE,
             output,
@@ -530,13 +510,13 @@ impl BatchBuilder {
 
     pub fn rotl<T: FheShift>(
         &mut self,
-        lhs: Encrypted<T>,
-        rhs: impl Into<BinaryRhs<T>>,
+        lhs: impl Into<Encrypted<'brand, T>>,
+        rhs: impl Into<BinaryRhs<'brand, T>>,
         output: Output,
-    ) -> Result<Encrypted<T>> {
+    ) -> Result<Encrypted<'brand, T>> {
         self.binary_op(
             FheBinaryOpCode::Rotl,
-            lhs.operand(),
+            lhs.into().operand(),
             binary_rhs_operand(rhs),
             T::FHE_TYPE,
             output,
@@ -546,13 +526,13 @@ impl BatchBuilder {
 
     pub fn rotr<T: FheShift>(
         &mut self,
-        lhs: Encrypted<T>,
-        rhs: impl Into<BinaryRhs<T>>,
+        lhs: impl Into<Encrypted<'brand, T>>,
+        rhs: impl Into<BinaryRhs<'brand, T>>,
         output: Output,
-    ) -> Result<Encrypted<T>> {
+    ) -> Result<Encrypted<'brand, T>> {
         self.binary_op(
             FheBinaryOpCode::Rotr,
-            lhs.operand(),
+            lhs.into().operand(),
             binary_rhs_operand(rhs),
             T::FHE_TYPE,
             output,
@@ -562,13 +542,13 @@ impl BatchBuilder {
 
     pub fn eq<T: FheEq>(
         &mut self,
-        lhs: Encrypted<T>,
-        rhs: impl Into<BinaryRhs<T>>,
+        lhs: impl Into<Encrypted<'brand, T>>,
+        rhs: impl Into<BinaryRhs<'brand, T>>,
         output: Output,
-    ) -> Result<Encrypted<Bool>> {
+    ) -> Result<Encrypted<'brand, Bool>> {
         self.binary_op(
             FheBinaryOpCode::Eq,
-            lhs.operand(),
+            lhs.into().operand(),
             binary_rhs_operand(rhs),
             FheType::BOOL,
             output,
@@ -578,13 +558,13 @@ impl BatchBuilder {
 
     pub fn ne<T: FheEq>(
         &mut self,
-        lhs: Encrypted<T>,
-        rhs: impl Into<BinaryRhs<T>>,
+        lhs: impl Into<Encrypted<'brand, T>>,
+        rhs: impl Into<BinaryRhs<'brand, T>>,
         output: Output,
-    ) -> Result<Encrypted<Bool>> {
+    ) -> Result<Encrypted<'brand, Bool>> {
         self.binary_op(
             FheBinaryOpCode::Ne,
-            lhs.operand(),
+            lhs.into().operand(),
             binary_rhs_operand(rhs),
             FheType::BOOL,
             output,
@@ -594,13 +574,13 @@ impl BatchBuilder {
 
     pub fn gt<T: FheUint>(
         &mut self,
-        lhs: Encrypted<T>,
-        rhs: impl Into<BinaryRhs<T>>,
+        lhs: impl Into<Encrypted<'brand, T>>,
+        rhs: impl Into<BinaryRhs<'brand, T>>,
         output: Output,
-    ) -> Result<Encrypted<Bool>> {
+    ) -> Result<Encrypted<'brand, Bool>> {
         self.binary_op(
             FheBinaryOpCode::Gt,
-            lhs.operand(),
+            lhs.into().operand(),
             binary_rhs_operand(rhs),
             FheType::BOOL,
             output,
@@ -610,13 +590,13 @@ impl BatchBuilder {
 
     pub fn le<T: FheUint>(
         &mut self,
-        lhs: Encrypted<T>,
-        rhs: impl Into<BinaryRhs<T>>,
+        lhs: impl Into<Encrypted<'brand, T>>,
+        rhs: impl Into<BinaryRhs<'brand, T>>,
         output: Output,
-    ) -> Result<Encrypted<Bool>> {
+    ) -> Result<Encrypted<'brand, Bool>> {
         self.binary_op(
             FheBinaryOpCode::Le,
-            lhs.operand(),
+            lhs.into().operand(),
             binary_rhs_operand(rhs),
             FheType::BOOL,
             output,
@@ -626,13 +606,13 @@ impl BatchBuilder {
 
     pub fn lt<T: FheUint>(
         &mut self,
-        lhs: Encrypted<T>,
-        rhs: impl Into<BinaryRhs<T>>,
+        lhs: impl Into<Encrypted<'brand, T>>,
+        rhs: impl Into<BinaryRhs<'brand, T>>,
         output: Output,
-    ) -> Result<Encrypted<Bool>> {
+    ) -> Result<Encrypted<'brand, Bool>> {
         self.binary_op(
             FheBinaryOpCode::Lt,
-            lhs.operand(),
+            lhs.into().operand(),
             binary_rhs_operand(rhs),
             FheType::BOOL,
             output,
@@ -642,13 +622,13 @@ impl BatchBuilder {
 
     pub fn min<T: FheUint>(
         &mut self,
-        lhs: Encrypted<T>,
-        rhs: impl Into<BinaryRhs<T>>,
+        lhs: impl Into<Encrypted<'brand, T>>,
+        rhs: impl Into<BinaryRhs<'brand, T>>,
         output: Output,
-    ) -> Result<Encrypted<T>> {
+    ) -> Result<Encrypted<'brand, T>> {
         self.binary_op(
             FheBinaryOpCode::Min,
-            lhs.operand(),
+            lhs.into().operand(),
             binary_rhs_operand(rhs),
             T::FHE_TYPE,
             output,
@@ -658,13 +638,13 @@ impl BatchBuilder {
 
     pub fn max<T: FheUint>(
         &mut self,
-        lhs: Encrypted<T>,
-        rhs: impl Into<BinaryRhs<T>>,
+        lhs: impl Into<Encrypted<'brand, T>>,
+        rhs: impl Into<BinaryRhs<'brand, T>>,
         output: Output,
-    ) -> Result<Encrypted<T>> {
+    ) -> Result<Encrypted<'brand, T>> {
         self.binary_op(
             FheBinaryOpCode::Max,
-            lhs.operand(),
+            lhs.into().operand(),
             binary_rhs_operand(rhs),
             T::FHE_TYPE,
             output,
@@ -676,30 +656,40 @@ impl BatchBuilder {
 
     pub fn neg<T: FheNeg>(
         &mut self,
-        operand: Encrypted<T>,
+        operand: impl Into<Encrypted<'brand, T>>,
         output: Output,
-    ) -> Result<Encrypted<T>> {
-        self.unary_op(FheUnaryOpCode::Neg, operand.operand(), T::FHE_TYPE, output)
-            .map(Encrypted::from_operand)
+    ) -> Result<Encrypted<'brand, T>> {
+        self.unary_op(
+            FheUnaryOpCode::Neg,
+            operand.into().operand(),
+            T::FHE_TYPE,
+            output,
+        )
+        .map(Encrypted::from_operand)
     }
 
     pub fn not<T: FheNot>(
         &mut self,
-        operand: Encrypted<T>,
+        operand: impl Into<Encrypted<'brand, T>>,
         output: Output,
-    ) -> Result<Encrypted<T>> {
-        self.unary_op(FheUnaryOpCode::Not, operand.operand(), T::FHE_TYPE, output)
-            .map(Encrypted::from_operand)
+    ) -> Result<Encrypted<'brand, T>> {
+        self.unary_op(
+            FheUnaryOpCode::Not,
+            operand.into().operand(),
+            T::FHE_TYPE,
+            output,
+        )
+        .map(Encrypted::from_operand)
     }
 
     pub fn cast<FROM: FheTyped, TO: FheTyped>(
         &mut self,
-        operand: Encrypted<FROM>,
+        operand: impl Into<Encrypted<'brand, FROM>>,
         output: Output,
-    ) -> Result<Encrypted<TO>> {
+    ) -> Result<Encrypted<'brand, TO>> {
         self.unary_op(
             FheUnaryOpCode::Cast,
-            operand.operand(),
+            operand.into().operand(),
             TO::FHE_TYPE,
             output,
         )
@@ -708,11 +698,11 @@ impl BatchBuilder {
 
     pub fn sum<T: FheUint>(
         &mut self,
-        operands: impl IntoIterator<Item = Encrypted<T>>,
+        operands: impl IntoIterator<Item = impl Into<Encrypted<'brand, T>>>,
         output: Output,
-    ) -> Result<Encrypted<T>> {
+    ) -> Result<Encrypted<'brand, T>> {
         // EVM `fheSum` and the coprocessor enforce no minimum: a zero/single-operand sum is valid.
-        let operand_ops: Vec<Operand> = operands.into_iter().map(|e| e.operand()).collect();
+        let operand_ops: Vec<Operand> = operands.into_iter().map(|e| e.into().operand()).collect();
         for op in &operand_ops {
             if matches!(op.0, OperandKind::Scalar(_)) {
                 return Err(BatchBuildError::ScalarEncryptedOperand);
@@ -738,20 +728,18 @@ impl BatchBuilder {
                 output,
             })
         })?;
-        Ok(Encrypted::from_operand(Operand::transient(
-            step_index, self.scope,
-        )))
+        Ok(Encrypted::from_operand(Operand::transient(step_index)))
     }
 
     pub fn is_in<T: FheIsIn>(
         &mut self,
-        value: Encrypted<T>,
-        set: impl IntoIterator<Item = Encrypted<T>>,
+        value: impl Into<Encrypted<'brand, T>>,
+        set: impl IntoIterator<Item = impl Into<Encrypted<'brand, T>>>,
         output: Output,
-    ) -> Result<Encrypted<Bool>> {
+    ) -> Result<Encrypted<'brand, Bool>> {
         // EVM `fheIsIn` and the coprocessor enforce no minimum: an empty set is valid (false result).
-        let set_ops: Vec<Operand> = set.into_iter().map(|e| e.operand()).collect();
-        let value_op = value.operand();
+        let set_ops: Vec<Operand> = set.into_iter().map(|e| e.into().operand()).collect();
+        let value_op = value.into().operand();
         if matches!(value_op.0, OperandKind::Scalar(_)) {
             return Err(BatchBuildError::ScalarEncryptedOperand);
         }
@@ -783,19 +771,17 @@ impl BatchBuilder {
                 output,
             })
         })?;
-        Ok(Encrypted::from_operand(Operand::transient(
-            step_index, self.scope,
-        )))
+        Ok(Encrypted::from_operand(Operand::transient(step_index)))
     }
 
     pub fn mul_div<T: FheUint>(
         &mut self,
-        factor1: Encrypted<T>,
-        factor2: impl Into<BinaryRhs<T>>,
+        factor1: impl Into<Encrypted<'brand, T>>,
+        factor2: impl Into<BinaryRhs<'brand, T>>,
         divisor: Scalar<T>,
         output: Output,
-    ) -> Result<Encrypted<T>> {
-        let lhs = factor1.operand();
+    ) -> Result<Encrypted<'brand, T>> {
+        let lhs = factor1.into().operand();
         let rhs = binary_rhs_operand(factor2);
         if matches!(lhs.0, OperandKind::Scalar(_)) {
             return Err(BatchBuildError::ScalarLhsOperand);
@@ -826,9 +812,7 @@ impl BatchBuilder {
                 output,
             })
         })?;
-        Ok(Encrypted::from_operand(Operand::transient(
-            step_index, self.scope,
-        )))
+        Ok(Encrypted::from_operand(Operand::transient(step_index)))
     }
 
     pub(crate) fn unary_op(
@@ -845,14 +829,9 @@ impl BatchBuilder {
         if self.steps.len() >= MAX_FHE_BATCH_OPS {
             return Err(BatchBuildError::TooManyOps);
         }
-        validate_unary_step(
-            op,
-            &operand,
-            output_fhe_type,
-            self.steps.len(),
-            self.scope,
-            |index| self.produced_types.get(index as usize).copied(),
-        )?;
+        validate_unary_step(op, &operand, output_fhe_type, self.steps.len(), |index| {
+            self.produced_types.get(index as usize).copied()
+        })?;
         let step_index = self.commit_step(output_fhe_type, |lowering| {
             let operand = lowering.operand(operand)?;
             let output = lowering.output(output)?;
@@ -863,7 +842,7 @@ impl BatchBuilder {
                 output,
             })
         })?;
-        Ok(Operand::transient(step_index, self.scope))
+        Ok(Operand::transient(step_index))
     }
 
     fn encrypted_operand_type(
@@ -871,7 +850,7 @@ impl BatchBuilder {
         operand: &Operand,
         scalar_error: BatchBuildError,
     ) -> Result<FheType> {
-        let fhe_type = operand_fhe_type(operand, self.steps.len(), self.scope, &|index| {
+        let fhe_type = operand_fhe_type(operand, self.steps.len(), &|index| {
             self.produced_types.get(index as usize).copied()
         })?
         .ok_or(scalar_error)?;

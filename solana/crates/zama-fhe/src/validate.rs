@@ -8,7 +8,7 @@ use zama_host::{
 
 use crate::accounts::{BatchAccountMeta, BatchAppAuthority};
 use crate::acl::EncryptedValueId;
-use crate::operand::{BatchBuilderScope, Operand, OperandKind};
+use crate::operand::{Operand, OperandKind};
 use crate::{BatchBuildError, Result};
 
 /// Mirrors the host preflight rule (fhevm-internal#1853 W4): rand seeds are anchored to
@@ -301,7 +301,6 @@ pub(crate) fn validate_binary_step<F>(
     rhs: &Operand,
     output_fhe_type: u8,
     produced_count: usize,
-    builder_scope: BatchBuilderScope,
     produced_type: F,
 ) -> Result<()>
 where
@@ -309,7 +308,7 @@ where
 {
     validate_supported_binary_output_type(op, output_fhe_type)?;
 
-    let lhs_type = operand_fhe_type(lhs, produced_count, builder_scope, &produced_type)?
+    let lhs_type = operand_fhe_type(lhs, produced_count, &produced_type)?
         .ok_or(BatchBuildError::ScalarLhsOperand)?;
     match op {
         // Eq/Ne accept the widest operand set (Bool..Uint256); ordered comparisons Uint8..Uint128.
@@ -359,7 +358,7 @@ where
             }
         }
     }
-    if let Some(rhs_type) = operand_fhe_type(rhs, produced_count, builder_scope, &produced_type)? {
+    if let Some(rhs_type) = operand_fhe_type(rhs, produced_count, &produced_type)? {
         if rhs_type != lhs_type {
             return Err(BatchBuildError::BinaryOperandTypeMismatch);
         }
@@ -373,7 +372,6 @@ pub(crate) fn validate_unary_step<F>(
     operand: &Operand,
     output_fhe_type: u8,
     produced_count: usize,
-    builder_scope: BatchBuilderScope,
     produced_type: F,
 ) -> Result<()>
 where
@@ -389,7 +387,7 @@ where
     if !valid_output {
         return Err(BatchBuildError::UnsupportedFheType);
     }
-    let operand_type = operand_fhe_type(operand, produced_count, builder_scope, &produced_type)?
+    let operand_type = operand_fhe_type(operand, produced_count, &produced_type)?
         .ok_or(BatchBuildError::ScalarEncryptedOperand)?;
     validate_supported_fhe_type(operand_type)?;
     match op {
@@ -431,18 +429,17 @@ pub(crate) fn validate_ternary_step<F>(
     output_fhe_type: u8,
     produced_count: usize,
     produced_type: F,
-    builder_scope: BatchBuilderScope,
 ) -> Result<()>
 where
     F: Fn(u8) -> Option<u8>,
 {
     validate_supported_fhe_type(output_fhe_type)?;
 
-    let control_type = operand_fhe_type(control, produced_count, builder_scope, &produced_type)?
+    let control_type = operand_fhe_type(control, produced_count, &produced_type)?
         .ok_or(BatchBuildError::ScalarEncryptedOperand)?;
-    let true_type = operand_fhe_type(if_true, produced_count, builder_scope, &produced_type)?
+    let true_type = operand_fhe_type(if_true, produced_count, &produced_type)?
         .ok_or(BatchBuildError::ScalarEncryptedOperand)?;
-    let false_type = operand_fhe_type(if_false, produced_count, builder_scope, &produced_type)?
+    let false_type = operand_fhe_type(if_false, produced_count, &produced_type)?
         .ok_or(BatchBuildError::ScalarEncryptedOperand)?;
 
     if control_type != 0 || true_type != output_fhe_type || false_type != output_fhe_type {
@@ -454,7 +451,6 @@ where
 pub(crate) fn operand_fhe_type<F>(
     operand: &Operand,
     produced_count: usize,
-    builder_scope: BatchBuilderScope,
     produced_type: &F,
 ) -> Result<Option<u8>>
 where
@@ -462,13 +458,7 @@ where
 {
     match &operand.0 {
         OperandKind::Persistent(persistent) => Ok(Some(handle_fhe_type(persistent.handle))),
-        OperandKind::Transient {
-            producer_index,
-            builder_scope: operand_builder_scope,
-        } => {
-            if *operand_builder_scope != builder_scope {
-                return Err(BatchBuildError::InvalidTransientReference);
-            }
+        OperandKind::Transient { producer_index } => {
             if *producer_index as usize >= produced_count {
                 return Err(BatchBuildError::InvalidTransientReference);
             }

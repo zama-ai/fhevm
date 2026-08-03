@@ -1,8 +1,13 @@
 //! Internal operand representation shared by the builder, validators, and lowering.
 
 use anchor_lang::prelude::Pubkey;
-#[cfg(not(target_os = "solana"))]
-use std::sync::atomic::{AtomicU64, Ordering};
+use std::marker::PhantomData;
+
+/// Makes a builder's `'brand` lifetime invariant, so no two builders' brands are subtypes of one
+/// another and a value cannot be coerced from one builder into the next. Zero-sized: the brand
+/// exists only in the type checker, which is the point — the runtime tag it replaced was a
+/// compile-time constant on SBF, so on-chain it never caught anything.
+pub(crate) type BuilderBrand<'brand> = PhantomData<fn(&'brand ()) -> &'brand ()>;
 
 /// Persistent host operand identified by its `EncryptedValue` PDA.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -22,7 +27,6 @@ pub(crate) enum OperandKind {
     Persistent(PersistentOperand),
     Transient {
         producer_index: u8,
-        builder_scope: BatchBuilderScope,
     },
     /// External input verified in-batch via a coprocessor attestation (EVM `fromExternal`). The
     /// `Vec`-bearing attestation is held by the [`BatchBuilder`] and referenced by index; keeping
@@ -43,11 +47,8 @@ impl Operand {
         }))
     }
 
-    pub(crate) fn transient(producer_index: u8, builder_scope: BatchBuilderScope) -> Self {
-        Self(OperandKind::Transient {
-            producer_index,
-            builder_scope,
-        })
+    pub(crate) fn transient(producer_index: u8) -> Self {
+        Self(OperandKind::Transient { producer_index })
     }
 
     pub(crate) fn scalar(value: [u8; 32]) -> Self {
@@ -60,24 +61,4 @@ impl Operand {
             attestation_index,
         })
     }
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub(crate) struct BatchBuilderScope(pub(crate) u64);
-
-#[cfg(not(target_os = "solana"))]
-static NEXT_BATCH_BUILDER_SCOPE: AtomicU64 = AtomicU64::new(1);
-
-#[cfg(not(target_os = "solana"))]
-pub(crate) fn next_batch_builder_scope() -> BatchBuilderScope {
-    BatchBuilderScope(NEXT_BATCH_BUILDER_SCOPE.fetch_add(1, Ordering::Relaxed))
-}
-
-#[cfg(target_os = "solana")]
-pub(crate) fn next_batch_builder_scope() -> BatchBuilderScope {
-    // SBF forbids writable static data (no `.data`/atomics), so on-chain every builder
-    // shares scope 1: mixing operands across two builders created inside one instruction
-    // is caught only by the producer-index bounds check there. Off-chain (where batches are
-    // normally built and tested) the counter makes cross-builder mixing a hard error.
-    BatchBuilderScope(1)
 }
