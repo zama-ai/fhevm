@@ -99,6 +99,44 @@ if [ -n "$alias_hits" ]; then
   fail=1
 fi
 
+echo "== 4. retrofit sentinels without a justification at the site =="
+# fhevm-internal#1859 §8 taxonomy: where Solana meets EVM-shaped infrastructure, a constant
+# stuffed into a field with no Solana meaning is allowed ONLY with a written justification at the
+# site. These are the files that carry such sentinels today; each hit must have a reason within
+# the twelve lines above it (a doc comment on the enclosing constructor counts), so a new
+# zero-fill cannot land silently.
+SENTINEL_FILES=(
+  coprocessor/fhevm-engine/host-listener/src/solana_adapter.rs
+  kms-connector/crates/gw-listener/src/core/publish.rs
+  relayer/src/core/event.rs
+  relayer/src/gateway/arbitrum/transaction_calldata.rs
+  sdk/js-sdk/src/solana/deSigncrypt.ts
+  sdk/js-sdk/src/solana/actions/userDecrypt.ts
+)
+JUSTIFICATION='placeholder|not persisted|unused on the Solana|oblivious|ignores the EVM|reuses the EVM|discard|EVM-shaped columns|EVM-only'
+for file in "${SENTINEL_FILES[@]}"; do
+  [ -f "$file" ] || { echo "MISSING SENTINEL FILE: ${file} (update SENTINEL_FILES)"; fail=1; continue; }
+  # Test modules re-state EVM shapes as fixtures; only production code is swept.
+  test_line=$( (grep -n -m1 -E '#\[cfg\(test\)\]|describe\(' "$file" || true) | cut -d: -f1)
+  sentinels=$( (grep -nE 'Address::ZERO|FixedBytes::ZERO|\[0u8; ?20\]|0x0{40}' "$file" || true) )
+  while IFS= read -r hit; do
+    [ -n "$hit" ] || continue
+    line=${hit%%:*}
+    if [ -n "$test_line" ] && [ "$line" -ge "$test_line" ]; then continue; fi
+    start=$((line > 12 ? line - 12 : 1))
+    # Comment markers stripped and the window joined into one line: justifications are prose and
+    # wrap, so a phrase straddles two comment lines with a `///` in between (the same trap the
+    # tombstone check above hit).
+    context=$(sed -n "${start},${line}p" "$file" \
+      | sed -E -e 's#^[[:space:]]*//+!?[[:space:]]*##' -e 's#^[[:space:]]*\*[[:space:]]*##' \
+      | tr '\n' ' ' | tr -s ' ')
+    if ! echo "$context" | grep -qiE "$JUSTIFICATION"; then
+      echo "UNJUSTIFIED RETROFIT SENTINEL: ${file}:${line}: ${hit#*:}"
+      fail=1
+    fi
+  done <<< "$sentinels"
+done
+
 if [ "$fail" -ne 0 ]; then
   echo "dead-surface-check: FINDINGS ABOVE"
   exit 1
