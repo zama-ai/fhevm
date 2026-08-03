@@ -302,7 +302,7 @@ describe("demo lifecycle collision policy", () => {
   test("local SDK consumers own the materialized package dependency graph", async () => {
     const sdkPackage = JSON.parse(
       await fs.readFile(path.join(import.meta.dir, "../../../sdk/js-sdk/src/package.json"), "utf8"),
-    ) as { dependencies: Record<string, string> };
+    ) as { dependencies: Record<string, string>; exports: Record<string, unknown> };
     const consumerLock = Bun.JSONC.parse(
       await fs.readFile(path.join(import.meta.dir, "../bun.lock"), "utf8"),
     ) as {
@@ -333,9 +333,33 @@ describe("demo lifecycle collision policy", () => {
       path.join(import.meta.dir, "../../../solana/demo-dapp/vite.config.ts"),
       "utf8",
     );
+    const cleanE2e = await fs.readFile(
+      path.join(import.meta.dir, "../../../solana/scripts/e2e/clean-e2e.sh"),
+      "utf8",
+    );
     expect(fullVertical.match(/\bnode solana-input\.ts/g)).toHaveLength(2);
     expect(adversarial.match(/\bnode solana-input\.ts/g)).toHaveLength(1);
-    expect(workflow.match(/node --input-type=module/g)).toHaveLength(2);
+    // Every `@fhevm/sdk` subpath a runtime canary imports must exist in the SDK's exports map.
+    // The guard this replaces counted canaries instead of validating them, so it stayed green
+    // while the workflow imported `@fhevm/sdk/solana/vault` — a subpath deleted when the vault
+    // module moved into the demo dapp, which fails the e2e job only after the whole stack is up.
+    const exportedSubpaths = Object.keys(sdkPackage.exports);
+    const canaryImports = (source: string): string[] =>
+      [...source.matchAll(/import\(['"]@fhevm\/sdk(\/[^'"]*)?['"]\)/g)].map(
+        (match) => `.${match[1] ?? ""}`,
+      );
+    for (const [name, source] of [
+      ["solana-e2e.yml", workflow],
+      ["clean-e2e.sh", cleanE2e],
+    ] as const) {
+      const imports = canaryImports(source);
+      expect(imports.length, `${name} has no @fhevm/sdk runtime canary`).toBeGreaterThan(0);
+      for (const subpath of imports) {
+        expect(exportedSubpaths, `${name} imports unexported subpath ${subpath}`).toContain(
+          subpath,
+        );
+      }
+    }
     expect(workflow).toContain("run: bun run demo reseed --direct");
     // bun, not node: the SDK worker imports the demo dapp's vault module (TS sources resolved
     // through tsconfig paths), which node's type-stripping cannot resolve.

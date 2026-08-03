@@ -175,12 +175,13 @@ jobs:
         run: bun run demo up
 
       - name: Verify @fhevm/sdk runtime deps and demo consumer build
-        # Lifecycle bring-up builds the SDK, then refreshes each frozen consumer graph. Assert both
-        # public entrypoints before spending the remainder of the job on the vertical.
+        # Lifecycle bring-up builds the SDK, then refreshes each frozen consumer graph. Assert the
+        # public Solana entrypoint before spending the remainder of the job on the vertical. The
+        # vault module is no longer an SDK subpath (it lives in the demo dapp), so the dapp build
+        # below is what proves it resolves.
         run: |
           cd "$GITHUB_WORKSPACE/test-suite/fhevm"
           node --input-type=module -e "await import('@fhevm/sdk/solana'); console.log('@fhevm/sdk/solana imports OK')"
-          node --input-type=module -e "await import('@fhevm/sdk/solana/vault'); console.log('@fhevm/sdk/solana/vault imports OK')"
           cd "$GITHUB_WORKSPACE/solana/demo-dapp"
           bun run build
 
