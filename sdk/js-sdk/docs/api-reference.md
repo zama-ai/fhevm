@@ -54,7 +54,7 @@ type FhevmModuleVersions =
   | 'auto'
   | {
       readonly tfhe?: '1.5.3' | '1.6.2' | undefined;
-      readonly kms?: '0.13.10' | '0.13.20-0' | undefined;
+      readonly kms?: '0.13.10' | '0.13.20-0' | '0.14.0-1' | undefined;
       readonly checkCompatibility?: 'throw' | 'warn' | 'off' | undefined;
     };
 ```

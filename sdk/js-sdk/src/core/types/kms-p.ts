@@ -3,7 +3,6 @@ import type { Handle } from './encryptedTypes-p.js';
 import type { KmsEip712Domain } from './kms.js';
 import type { KmsSignersContext } from './kmsSignersContext.js';
 import type {
-  Bytes65Hex,
   Bytes65HexNo0x,
   BytesHex,
   BytesHexNo0x,
@@ -14,8 +13,10 @@ import type {
 
 export interface KmsSigncryptedSharesMetadata {
   readonly kmsSignersContext: KmsSignersContext;
+  readonly eip712ExtraData: BytesHex;
   readonly eip712Domain: KmsEip712Domain;
-  readonly eip712Signature: Bytes65Hex;
+  // Variable length: 65-byte EOA, ERC-1271 blob, or empty `0x`.
+  readonly eip712Signature: BytesHex;
   readonly eip712SignerAddress: ChecksummedAddress;
   readonly handles: readonly Handle[];
   readonly tkmsVersion: TkmsVersion;
@@ -28,8 +29,13 @@ export interface KmsSigncryptedShare {
 }
 
 export interface KmsExtraData {
-  readonly version: Uint8Number;
+  readonly version: Uint8Number | undefined;
   readonly kmsContextId: Uint256BigInt;
   readonly kmsEpochId: Uint256BigInt;
-  toBytesHex(): BytesHex;
+  readonly bytesHex: BytesHex;
+  readonly isFutureVersion: boolean;
+  lt(version: number): boolean;
+  le(version: number): boolean;
+  gt(version: number): boolean;
+  ge(version: number): boolean;
 }

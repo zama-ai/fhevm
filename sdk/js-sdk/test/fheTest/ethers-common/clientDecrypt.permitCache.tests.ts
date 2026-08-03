@@ -48,7 +48,7 @@ export function defineClientDecryptPermitCacheTests(parameters: {
 
     async function signAndSerialize(client: Awaited<ReturnType<typeof createReadyClient>>) {
       const transportKeyPair = await client.generateTransportKeyPair();
-      const signedPermit = await client.signDecryptionPermit({
+      const signedPermit = await client.signLegacyDecryptionPermit({
         transportKeyPair,
         contractAddresses: [config.fheTestAddress],
         durationSeconds: 24 * 3600,
@@ -56,7 +56,7 @@ export function defineClientDecryptPermitCacheTests(parameters: {
         signerAddress: config.wallet.address,
         signer: config.signer,
       });
-      const serialized = client.serializeSignedDecryptionPermit({ signedPermit });
+      const serialized = await client.serializeSignedDecryptionPermit({ signedPermit });
       return { transportKeyPair, signedPermit, serialized };
     }
 
@@ -114,7 +114,7 @@ export function defineClientDecryptPermitCacheTests(parameters: {
       // Full eip712 deep-equality: re-serializing the restored permit must
       // reproduce the original serialized form exactly (domain, types,
       // primaryType, message — nothing lost or reshaped by the JSON round-trip).
-      const reSerialized = client.serializeSignedDecryptionPermit({ signedPermit: restored });
+      const reSerialized = await client.serializeSignedDecryptionPermit({ signedPermit: restored });
       expect(reSerialized).toEqual(serialized);
       expect(JSON.parse(JSON.stringify(reSerialized))).toEqual(revived);
 
@@ -185,7 +185,7 @@ export function defineClientDecryptPermitCacheTests(parameters: {
       // Session 1: sign, serialize both artifacts to JSON strings ("localStorage").
       const clientA = await createReadyClient();
       const { transportKeyPair, serialized } = await signAndSerialize(clientA);
-      const keyPairJson = JSON.stringify(serializeTransportKeyPair(clientA, { transportKeyPair }));
+      const keyPairJson = JSON.stringify(await serializeTransportKeyPair(clientA, { transportKeyPair }));
       const permitJson = JSON.stringify(serialized);
 
       // Session 2 (page reload): a brand new client restores the session.
