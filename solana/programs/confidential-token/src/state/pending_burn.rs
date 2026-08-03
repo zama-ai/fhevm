@@ -6,8 +6,9 @@
 //! - **recover** (`recover_pending_burn`): FHE re-credit to confidential balance while the
 //!   burned handle is still the shared `burned_amount` EV's `current_handle`
 //!
-//! Concurrent burns open concurrent lanes (distinct `burn_id`s). Historical (superseded) burns
-//! cannot recover without KMS — claim remains the path for those handles.
+//! Concurrent burns open concurrent lanes (distinct `burn_id`s). Historical burns — ones a later
+//! burn has updated the `burned_amount` handle past — cannot recover without KMS; claim remains
+//! the path for those handles.
 //!
 //! Seeds use `burn_id` rather than `burned_handle` so the PDA can appear in transaction account
 //! metas before `fhe_execute` derives the burned handle.

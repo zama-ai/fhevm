@@ -168,7 +168,7 @@ pub mod confidential_token {
 
     /// Recovers a tip-only pending burn by FHE-crediting the burned amount back onto confidential
     /// balance and encrypted total supply, then closing the `PendingBurn` lane. Requires the burned
-    /// handle to still be the shared `burned_amount` EncryptedValue's `current_handle`; superseded
+    /// handle to still be the shared `burned_amount` EncryptedValue's `current_handle`; historical
     /// burns must claim via `redeem_burned_amount` instead. See `instructions::recover_pending_burn`.
     pub fn recover_pending_burn<'info>(
         ctx: Context<'info, RecoverPendingBurn<'info>>,

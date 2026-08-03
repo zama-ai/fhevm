@@ -3,8 +3,9 @@
 //!
 //! Alternate close path for a `PendingBurn` lane (fhevm-internal#1862 Wave 2): while the burned
 //! handle is still the shared `burned_amount` EncryptedValue's `current_handle`, the owner can
-//! undo the burn's encrypted effects (balance + supply) without a KMS certificate. Superseded
-//! (historical) burns cannot recover this way — claim via `redeem_burned_amount` remains the path.
+//! undo the burn's encrypted effects (balance + supply) without a KMS certificate. Historical
+//! burns — ones a later burn has already updated the handle past — cannot recover this way; claim
+//! via `redeem_burned_amount` remains the path.
 //!
 //! Rent note: `open_pending_burn` may be paid by a permissionless `payer` (e.g. batcher dispatch),
 //! while claim/recover always close to `owner`. That is intentional crank subsidy, not theft.
@@ -130,7 +131,8 @@ pub fn recover_pending_burn<'info>(ctx: Context<'info, RecoverPendingBurn<'info>
         ConfidentialTokenError::PendingBurnMismatch
     );
 
-    let burned_value = fhe::read_encrypted_value(&ctx.accounts.burned_amount_value.to_account_info())?;
+    let burned_value =
+        fhe::read_encrypted_value(&ctx.accounts.burned_amount_value.to_account_info())?;
     require!(
         pending.burned_handle == burned_value.current_handle,
         ConfidentialTokenError::PendingBurnHandleNotCurrent

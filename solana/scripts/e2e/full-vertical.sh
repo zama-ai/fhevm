@@ -486,10 +486,11 @@ bextra="$(echo "$bproof" | python3 -c "import sys,json;print(json.load(sys.stdin
 echo "    burn amount handle=$bh (attested for compute_signer $CS_HEX)"
 bout="$(lc CONSUME_BURN=1 BIND_HANDLE="$bh" BIND_COPRO_SIG="$bsig" BIND_USER="$USER" \
   BIND_CONTRACT="$CS_HEX" BIND_CHAIN_ID="$SID" BIND_EXTRA="$bextra")" || true
+BURN_ID="$(echo "$bout" | grep -oE 'burn id 0x[0-9a-f]+' | awk '{print $3}')"
 BURNED_ACL="$(echo "$bout" | grep -oE 'burned amount ACL [A-Za-z0-9]+' | awk '{print $4}')"
 BURNED_HANDLE="$(echo "$bout" | grep -oE 'burned handle 0x[0-9a-f]+' | awk '{print $3}')"
-[ -n "$BURNED_HANDLE" ] && [ -n "$BURNED_ACL" ] || fail "confidential_burn: $bout"
-echo "    burned handle=$BURNED_HANDLE  acl=$BURNED_ACL"
+[ -n "$BURN_ID" ] && [ -n "$BURNED_HANDLE" ] && [ -n "$BURNED_ACL" ] || fail "confidential_burn: $bout"
+echo "    burn_id=$BURN_ID  burned handle=$BURNED_HANDLE  acl=$BURNED_ACL"
 
 BHH="${BURNED_HANDLE#0x}"
 for i in $(seq 1 40); do
@@ -524,9 +525,10 @@ echo "    burned amount cleartext=$CLEARTEXT (KMS PublicDecryptVerification cert
 
 # Redeem: the thin token redeem_burned_amount CPIs the stateless host verify_public_decrypt (KMS cert
 # verified against the LIVE KMS context the cert names + the burned handle's MMR public-leaf proof), consults the
-# deny-list at payout, writes the permanent per-handle replay marker, and releases from the SPL vault.
+# deny-list at payout, closes this burn_id's PendingBurn lane (act-once is open-at-burn +
+# close-at-claim/recover, not a forever marker), and releases from the SPL vault.
 # No request witness (fhevm-internal#1763).
-redout="$(lc CONSUME_REDEEM=1 BURNED_ACL="$BURNED_ACL" BURNED_HANDLE="$BURNED_HANDLE" CLEARTEXT="$CLEARTEXT" \
+redout="$(lc CONSUME_REDEEM=1 BURN_ID="$BURN_ID" BURNED_ACL="$BURNED_ACL" BURNED_HANDLE="$BURNED_HANDLE" CLEARTEXT="$CLEARTEXT" \
    KMS_SIG="$KMS_SIG" EXTRA="$CEXTRA" KMS_CTX_ID=1 PROOF="$BURNED_PROOF_BYTES")" || true
 echo "$redout" | grep -q 'OK redeem_burned_amount' || fail "redeem_burned_amount: $(echo "$redout" | tail -3)"
 echo "    redeem_burned_amount OK -- host verify_public_decrypt (live cert-named KMS context) released $CLEARTEXT USDC base units"

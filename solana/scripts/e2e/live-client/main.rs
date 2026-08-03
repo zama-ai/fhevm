@@ -1259,7 +1259,7 @@ fn consume_seal(
     let encrypted_value_account = fetch_encrypted_value(host, ts_acl)?;
     if !encrypted_value_account.has_subject(payer.pubkey()) {
         return Err(format!(
-            "payer {} is not a subject on {ts_acl}; grant via allow_token_account_subjects first              (host allow_subjects requires EncryptedValue.account signer)",
+            "payer {} is not a subject on {ts_acl}; grant via allow_token_account_subjects first (host allow_subjects requires EncryptedValue.account signer)",
             payer.pubkey()
         )
         .into());
@@ -1506,9 +1506,10 @@ fn initialize_token_account_if_missing(
 /// Burns an encrypted amount from the confidential balance (confidential_burn): the heaviest
 /// FHE instruction — ge + sub + select + sub + sub across five zama-host CPIs. Reads the current
 /// balance/total-supply ACLs and next nonce sequences live from chain, takes a coprocessor-attested
-/// burn amount (fromExternal, via the relayer input-proof), then burns it. Produces the
-/// burned-amount handle (and ACL) the redeem path publicly decrypts and releases against the vault.
-/// MINT via env.
+/// burn amount (fromExternal, via the relayer input-proof), then burns it. Opens this burn's own
+/// `PendingBurn` lane at a client-chosen `burn_id` (closed later by redeem or recover). Produces
+/// the burned-amount handle (and ACL) the redeem path publicly decrypts and releases against the
+/// vault. MINT via env.
 fn consume_burn(
     token: &Program<Rc<Keypair>>,
     payer: &Rc<Keypair>,
@@ -1570,6 +1571,15 @@ fn consume_burn(
         confidential_token::encrypted_burned_amount_label(),
     );
 
+    // Client-supplied burn_id opens this burn's own PendingBurn lane (fhevm-internal#1862); it must
+    // be known before the tx so the derived PDA can appear in the account metas. All-zero is
+    // rejected on-chain, so use a fixed nonzero id — this PoC issues at most one burn per run.
+    let mut burn_id = [0u8; 32];
+    burn_id[31] = 1;
+    let (pending_burn, _) = confidential_token::pending_burn_address(mint, token_account, burn_id);
+    let bih: String = burn_id.iter().map(|b| format!("{b:02x}")).collect();
+    println!("  burn id 0x{bih}");
+
     // 3. confidential_burn — five FHE steps in one instruction; same CU raise and same
     // (inert, see wrap above) heap-frame request as wrap. SlotHashes entropy is only populated in real execution, so skip
     // preflight unless BURN_NO_PREFLIGHT forces an on-chain log capture.
@@ -1602,6 +1612,7 @@ fn consume_burn(
             balance_value,
             total_supply_value,
             burned_amount_value: burned_acl,
+            pending_burn,
             zama_event_authority: zama_evt,
             zama_program: zama_host::ID,
             host_config,
@@ -1611,7 +1622,10 @@ fn consume_burn(
             event_authority: token_evt,
             program: confidential_token::ID,
         })
-        .args(confidential_token::instruction::ConfidentialBurn { amount_attestation })
+        .args(confidential_token::instruction::ConfidentialBurn {
+            amount_attestation,
+            burn_id,
+        })
         .send_with_spinner_and_config(anchor_client::RpcSendTransactionConfig {
             skip_preflight: std::env::var("BURN_NO_PREFLIGHT").is_err(),
             ..Default::default()
@@ -1632,11 +1646,12 @@ fn consume_burn(
 /// `redeem_burned_amount`, which CPIs the stateless host `verify_public_decrypt` (KMS
 /// PublicDecryptVerification EIP-712 cert verified against the live cert-named KMS context + an MMR
 /// public-leaf inclusion proof), asserts the proven handle equals the pinned burned handle and the
-/// certified cleartext equals the claimed amount, consults the deny-list at payout, writes the
-/// permanent per-handle replay marker, and releases the cleartext amount of underlying USDC to the
-/// owner. No request witness (fhevm-internal#1763). Inputs via env: MINT, UNDERLYING_MINT,
-/// BURNED_ACL, BURN_ID, BURNED_HANDLE, CLEARTEXT, KMS_SIG, EXTRA, PROOF (borsh MmrInclusionProof for the
-/// burned handle's public-decrypt leaf), optional KMS_CTX_ID (default 1).
+/// certified cleartext equals the claimed amount, consults the deny-list at payout, closes this
+/// `burn_id`'s `PendingBurn` lane (act-once is open-at-burn + close-at-claim/recover, not a forever
+/// marker), and releases the cleartext amount of underlying USDC to the owner. No request witness
+/// (fhevm-internal#1763). Inputs via env: MINT, UNDERLYING_MINT, BURNED_ACL, BURN_ID, BURNED_HANDLE,
+/// CLEARTEXT, KMS_SIG, EXTRA, PROOF (borsh MmrInclusionProof for the burned handle's public-decrypt
+/// leaf), optional KMS_CTX_ID (default 1).
 fn consume_redeem(
     token: &Program<Rc<Keypair>>,
     payer: &Rc<Keypair>,

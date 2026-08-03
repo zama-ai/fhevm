@@ -919,26 +919,33 @@ fn seed_amount_value(
     address
 }
 
-/// Host `allow_subjects` instruction granting `subject` on `encrypted_value`, authorized by a
-/// current subject `authority`. Mirrors the cross-app grant of the mint's compute subject.
-fn allow_subject_ix(
-    payer: Pubkey,
-    authority: Pubkey,
+/// Token `allow_token_account_subjects` instruction: the owner-authorized CPI wrapper that grants
+/// `subject` on a token-account-scoped `encrypted_value` by signing the host `allow_subjects` call
+/// as the `token_account` PDA (`EncryptedValue.account`), since host subject-list mutation requires
+/// the signer to equal `EncryptedValue.account` (fhevm-internal#1862 #13) and wallet owners are
+/// decrypt/compute subjects, not ACL admins.
+fn allow_token_account_subjects_ix(
+    owner: Pubkey,
+    mint: Pubkey,
+    token_account: Pubkey,
     encrypted_value: Pubkey,
     host_config: Pubkey,
     subject: Pubkey,
 ) -> Instruction {
     anchor_ix(
-        host::id(),
-        host::accounts::AllowEncryptedValueSubjects {
-            payer,
-            authority,
+        token::id(),
+        token::accounts::AllowTokenAccountSubjects {
+            payer: owner,
+            owner,
+            mint,
+            token_account,
             encrypted_value,
             host_config,
             deny_subject_record: None,
+            zama_program: host::id(),
             system_program: system_program::ID,
         },
-        host::instruction::AllowSubjects {
+        token::instruction::AllowTokenAccountSubjects {
             subjects: vec![subject],
         },
     )
@@ -3638,9 +3645,9 @@ fn mollusk_recover_pending_burn_credits_tip_balance() {
     assert_pending_burn_closed(&context, pending_burn);
 }
 
-/// After a later burn supersedes the tip handle, recovering the earlier lane fails.
+/// After a later burn updates the tip handle past it, recovering the earlier lane fails.
 #[test]
-fn mollusk_recover_pending_burn_rejects_superseded_handle() {
+fn mollusk_recover_pending_burn_rejects_historical_handle() {
     let fixture = BurnRedeemFixture::new();
     let context = burn_redeem_mollusk().with_context(fixture.accounts(1_000));
 
@@ -3661,7 +3668,7 @@ fn mollusk_recover_pending_burn_rejects_superseded_handle() {
             token::ConfidentialTokenError::PendingBurnHandleNotCurrent,
         )],
     );
-    // Superseded lane remains open for KMS claim.
+    // The historical (updated-past) lane remains open for KMS claim.
     assert!(
         context
             .account_store
@@ -4800,10 +4807,12 @@ fn mollusk_transfer_from_value_cross_app_requires_compute_subject_grant() {
         &[host_error(host::errors::ZamaHostError::SubjectNotFound)],
     );
 
-    // The handle's owner grants the mint's compute subject.
-    let grant = allow_subject_ix(
+    // The handle's owner grants the mint's compute subject via the token CPI wrapper (host
+    // `allow_subjects` requires the signer to equal `EncryptedValue.account`, the token-account PDA).
+    let grant = allow_token_account_subjects_ix(
         fixture.owner,
-        fixture.owner,
+        fixture.mint,
+        fixture.alice_token,
         amount_value,
         fixture.host_config,
         fixture.compute_signer,
@@ -5601,10 +5610,12 @@ fn mollusk_burn_from_value_cross_app_requires_compute_subject_grant() {
         &[host_error(host::errors::ZamaHostError::SubjectNotFound)],
     );
 
-    // The handle's owner grants the mint's compute subject.
-    let grant = allow_subject_ix(
+    // The handle's owner grants the mint's compute subject via the token CPI wrapper (host
+    // `allow_subjects` requires the signer to equal `EncryptedValue.account`, the token-account PDA).
+    let grant = allow_token_account_subjects_ix(
         fixture.owner,
-        fixture.owner,
+        fixture.mint,
+        fixture.token_account,
         amount_value,
         fixture.host_config,
         fixture.compute_signer,

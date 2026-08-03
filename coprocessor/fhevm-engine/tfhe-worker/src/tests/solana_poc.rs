@@ -318,9 +318,6 @@ fn token_fixture() -> TokenFixture {
             token_account: alice_token,
             compute_signer,
             balance_encrypted_value: alice_current_compute_acl,
-            // Program forbids nonzero init balances (funded via wrap); the test injects
-            // the real input ciphertext value (125) into the DB keyed by this handle.
-            initial_balance: 0,
         },
     );
     initialize_token_account(
@@ -335,7 +332,6 @@ fn token_fixture() -> TokenFixture {
             token_account: bob_token,
             compute_signer,
             balance_encrypted_value: bob_current_compute_acl,
-            initial_balance: 0,
         },
     );
     let alice_initial = read_encrypted_value(&svm, alice_current_compute_acl)
@@ -370,7 +366,6 @@ struct TokenAccountInit {
     token_account: Pubkey,
     compute_signer: Pubkey,
     balance_encrypted_value: Pubkey,
-    initial_balance: u64,
 }
 
 fn initialize_token_account(
@@ -401,10 +396,7 @@ fn initialize_token_account(
                 program: init.token_program_id,
             }
             .to_account_metas(None),
-            data: token::instruction::InitializeTokenAccount {
-                initial_balance: init.initial_balance,
-            }
-            .data(),
+            data: token::instruction::InitializeTokenAccount {}.data(),
         },
     );
 }

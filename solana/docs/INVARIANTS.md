@@ -84,7 +84,7 @@ update, encrypted value ID…).
     Concurrent burns = concurrent `burn_id`s. (fhevm-internal#1862; seeds use
     `burn_id` rather than `burned_handle` for Solana account-meta ordering.)
 11d. **[ANTI]** `recover_pending_burn` requires the burned handle to still be the
-    shared `burned_amount` EncryptedValue's `current_handle`. Superseded burns
+    shared `burned_amount` EncryptedValue's `current_handle`. Historical burns
     must claim via KMS (historical public leaf still redeemable). (fhevm-internal#1862.)
 11e. **[HOLDS]** `recover_pending_burn` restores both confidential balance and
     encrypted `total_supply` (mirrors wrap's dual add; undoes burn's dual sub).
@@ -140,16 +140,19 @@ update, encrypted value ID…).
 23. **[ASSUMPTION]** The coprocessor and KMS committees are honest at their
     thresholds, and their EVM signing keys are not compromised.
 24. **[ANTI]** `verify_public_decrypt` provides no act-once/replay protection;
-    each consuming app owns its own act-once state machine. The rule for that —
-    who needs a marker and what shape it takes — is written at the verifier
-    instruction, and `redeem_burned_amount`'s per-`(mint, handle)` write-once
-    marker is the worked example. The marker cannot ship as shared code: Anchor
-    derives account ownership from the program that declares the type, so it has
-    to live in the app. Pinned from both sides by
+    each consuming app owns its own act-once state machine. The audited rule —
+    who needs act-once state, what shape it takes, and why it cannot ship as
+    shared code (Anchor derives account ownership from the program that
+    declares the type, so the state must live in the app) — is stated at the
+    verifier instruction and demonstrated by `redeem_burned_amount`'s
+    open-at-burn/close-at-claim-or-recover `PendingBurn` lane (one per
+    `burn_id`, closed by whichever of claim or recover runs first; rent
+    returns to the owner on close, unlike a forever write-once marker).
+    Pinned from both sides by
     `mollusk_redeem_historical_burned_handle_after_supersession_then_rejects_double_redeem`,
     `mollusk_two_concurrent_burns_each_redeemable_exactly_once`, and
     `mollusk_disclose_secp_is_idempotent_no_replay_marker`.
-    (fhevm-internal#1859 §5.)
+    (fhevm-internal#1859 §5; fhevm-internal#1862 Wave 2.)
 25. **[ANTI]** The verifier accepts any *live* context. Demanding the *current*
     context is caller policy, exercised through the returned context id; it is
     not enforced by the verifier.

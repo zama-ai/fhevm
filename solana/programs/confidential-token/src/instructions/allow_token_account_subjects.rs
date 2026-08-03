@@ -106,12 +106,8 @@ pub fn allow_token_account_subjects<'info>(
     };
     let remaining = ctx.remaining_accounts.to_vec();
     cpi::allow_subjects(
-        CpiContext::new_with_signer(
-            ctx.accounts.zama_program.key(),
-            cpi_accounts,
-            &[seeds],
-        )
-        .with_remaining_accounts(remaining),
+        CpiContext::new_with_signer(ctx.accounts.zama_program.key(), cpi_accounts, &[seeds])
+            .with_remaining_accounts(remaining),
         subjects,
     )
 }
@@ -148,11 +144,7 @@ pub fn remove_token_account_subject(
         deny_subject_record: deny_info,
     };
     cpi::remove_subject(
-        CpiContext::new_with_signer(
-            ctx.accounts.zama_program.key(),
-            cpi_accounts,
-            &[seeds],
-        ),
+        CpiContext::new_with_signer(ctx.accounts.zama_program.key(), cpi_accounts, &[seeds]),
         subject,
     )
 }
