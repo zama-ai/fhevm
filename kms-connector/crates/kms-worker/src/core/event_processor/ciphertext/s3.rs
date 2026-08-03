@@ -239,8 +239,7 @@ impl BoundedClient {
             ));
         }
 
-        // That header is optional, and a bucket is free to lie about it, so the read is capped too.
-        let mut body = Vec::with_capacity(usize::try_from(expected_size).unwrap_or(0));
+        let mut body = Vec::new();
         while let Some(chunk) = response
             .chunk()
             .await
