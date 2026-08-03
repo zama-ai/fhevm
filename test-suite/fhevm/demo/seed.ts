@@ -89,8 +89,8 @@ const encodeAddress = (value: Address): Uint8Array => new Uint8Array(addressEnco
 
 /**
  * A signer account meta: the `signer` field rides along at runtime so `signTransactionMessageWithSigners`
- * produces the signature, while the meta stays typed as a plain `AccountMeta` (same shape the SDK's
- * lookup-table builder uses). Used for the hand-built SPL `CreateAccount`, whose new-account keypair
+ * produces the signature, while the meta stays typed as a plain `AccountMeta` (same shape the demo
+ * dapp's address-lookup-table builder uses). Used for the hand-built SPL `CreateAccount`, whose keypair
  * must sign its own creation.
  */
 const signerMeta = (signer: TransactionSigner, role: AccountRole): AccountMeta =>

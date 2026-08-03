@@ -149,6 +149,12 @@ impl ComputeCalldata {
                 public_key,
                 extra_data,
             } => {
+                // `HandleEntry` carries two EVM addresses per handle that have no Solana meaning:
+                // the ACL scope travels in `allowedAclDomainKeys` and the subject is derived from
+                // `userIdentity`. The SDK fills both with the caller's derived client id so they
+                // parse as 20-byte addresses, and this arm forwards them unchanged — the gateway
+                // ABI is shared with the EVM arm, so dropping the fields is an ABI change
+                // (proposed to the decryption-envelope rework, fhevm-internal#1689).
                 let handle_entries: Vec<Decryption::HandleEntry> = handles
                     .iter()
                     .map(|h| Decryption::HandleEntry {
