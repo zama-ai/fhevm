@@ -69,6 +69,32 @@ cargo fmt --check
 cargo clippy --workspace --all-targets -- -D warnings
 ```
 
+#### Renaming anything shared: the five other workspace roots
+
+`cargo test --workspace` here covers one of the repository's six Cargo workspace
+roots. A rename that reaches a shared crate compiles cleanly under it and still
+breaks the build elsewhere, because the other five are invisible to it:
+
+```bash
+# Its own workspace root — `scripts/e2e/live-client/Cargo.toml` ends with a bare
+# `[workspace]`, so nothing above ever compiles it. Built by setup-solana-side.sh.
+(cd scripts/e2e/live-client && cargo check --all-targets)
+
+# Own workspace, own fmt gate.
+(cd ../solana-proof-service && cargo fmt --all -- --check && cargo clippy --workspace --all-targets -- -D warnings)
+
+# Path-depend on zama-host / confidential-token / zama-solana-acl. `--all-targets`
+# matters: the sites that break are usually `#[cfg(test)]`, so a plain
+# `cargo check` or `cargo build` passes while `cargo test -p …` does not compile.
+(cd ../coprocessor/fhevm-engine && SQLX_OFFLINE=true cargo check --workspace --all-targets)
+(cd ../kms-connector && SQLX_OFFLINE=true cargo check --workspace --all-targets)
+(cd ../listener && cargo check --workspace --all-targets)
+```
+
+Each of those hid a real break at least once. The grep sweeps in
+`scripts/dead-surface-check.sh` read the live client's tree, but grep does not
+typecheck — a root can be swept and still never compiled.
+
 ### Native unit coverage
 
 CI publishes component-level native Rust line coverage. Run the same measurement locally with:

@@ -235,6 +235,15 @@ jobs:
       - name: Run Clippy on the zama-host decode feature
         run: cargo clippy -p zama-host --features decode --all-targets -- -D warnings
 
+      # `scripts/e2e/live-client/Cargo.toml` ends with a bare `[workspace]`, so this crate is its
+      # own workspace root and `cargo test --workspace` above never compiles it. Nothing in CI did:
+      # its only build was inside `setup-solana-side.sh` during solana-e2e, so a rename that broke it
+      # surfaced ~45 minutes in, at "[3/5] bootstrap", and only on PRs that run the vertical at all.
+      # That is exactly how it shipped broken. Half a minute here instead.
+      - name: Check the e2e live client (its own workspace)
+        working-directory: solana/scripts/e2e/live-client
+        run: cargo check --all-targets
+
   native-coverage:
     name: solana-tests/native-coverage
     needs: check-changes
