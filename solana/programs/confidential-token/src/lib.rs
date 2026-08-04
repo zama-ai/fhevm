@@ -65,7 +65,8 @@ pub mod confidential_token {
     }
 
     /// Grants subjects on a token-account-scoped encrypted value by CPI to host
-    /// `allow_subjects`, signing as the token-account PDA (`EncryptedValue.account`).
+    /// `allow_subjects`, signing as the token-account PDA
+    /// (`EncryptedValue.encrypted_value_account_authority`).
     /// Owner-authorized; auditors remain decrypt-only subjects (fhevm-internal#1862 #13).
     pub fn allow_token_account_subjects<'info>(
         ctx: Context<'info, AllowTokenAccountSubjects<'info>>,
@@ -75,7 +76,8 @@ pub mod confidential_token {
     }
 
     /// Removes one subject from a token-account-scoped encrypted value by CPI to host
-    /// `remove_subject`, signing as the token-account PDA (`EncryptedValue.account`).
+    /// `remove_subject`, signing as the token-account PDA
+    /// (`EncryptedValue.encrypted_value_account_authority`).
     pub fn remove_token_account_subject<'info>(
         ctx: Context<'info, RemoveTokenAccountSubject<'info>>,
         subject: Pubkey,

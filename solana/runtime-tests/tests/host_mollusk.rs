@@ -717,7 +717,7 @@ fn mollusk_allow_subjects_adds_new_subject_and_is_idempotent() {
         &[owner],
     );
 
-    // Membership is gated on EncryptedValue.account, not on current subjects.
+    // Membership is gated on EncryptedValue.encrypted_value_account_authority, not on current subjects.
     let ix = allow_subjects_ix(
         payer,
         account,
@@ -753,7 +753,8 @@ fn mollusk_allow_subjects_rejects_unallowed_authority() {
         handle_for_chain(2, 5),
         &[subject],
     );
-    // A current subject is not a valid allow_subjects authority — only EncryptedValue.account is.
+    // A current subject is not a valid allow_subjects authority — only
+    // EncryptedValue.encrypted_value_account_authority is.
     let ix = allow_subjects_ix(
         payer,
         subject,
@@ -791,7 +792,8 @@ fn mollusk_remove_subject_rejects_peer_subject_authority() {
         handle_for_chain(2, 5),
         &[peer, other],
     );
-    // A current subject cannot remove peers — only EncryptedValue.account may.
+    // A current subject cannot remove peers — only
+    // EncryptedValue.encrypted_value_account_authority may.
     let ix = remove_subject_ix(peer, address, host_config, other);
     let accounts = vec![
         (peer, funded_system_account()),
@@ -886,7 +888,8 @@ fn mollusk_allow_subjects_rejects_ninth_distinct_subject() {
 
 #[test]
 fn mollusk_remove_subject_removes_current_member_and_blocks_future_authority() {
-    // remove_subject succeeds when EncryptedValue.account signs. A removed subject still
+    // remove_subject succeeds when EncryptedValue.encrypted_value_account_authority
+    // signs. A removed subject still
     // cannot call allow_subjects afterward — allow is account-gated, not subject-gated.
     let account = Pubkey::new_unique();
     let (host_config, host_config_account) = host_config_account(account);

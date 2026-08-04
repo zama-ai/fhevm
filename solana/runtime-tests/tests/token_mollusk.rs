@@ -921,8 +921,8 @@ fn seed_amount_value(
 
 /// Token `allow_token_account_subjects` instruction: the owner-authorized CPI wrapper that grants
 /// `subject` on a token-account-scoped `encrypted_value` by signing the host `allow_subjects` call
-/// as the `token_account` PDA (`EncryptedValue.account`), since host subject-list mutation requires
-/// the signer to equal `EncryptedValue.account` (fhevm-internal#1862 #13) and wallet owners are
+/// as the `token_account` PDA (`EncryptedValue.encrypted_value_account_authority`), since host subject-list mutation requires
+/// the signer to equal `EncryptedValue.encrypted_value_account_authority` (fhevm-internal#1862 #13) and wallet owners are
 /// decrypt/compute subjects, not ACL admins.
 fn allow_token_account_subjects_ix(
     owner: Pubkey,
@@ -4796,7 +4796,7 @@ fn mollusk_transfer_from_value_cross_app_requires_compute_subject_grant() {
     );
 
     // The handle's owner grants the mint's compute subject via the token CPI wrapper (host
-    // `allow_subjects` requires the signer to equal `EncryptedValue.account`, the token-account PDA).
+    // `allow_subjects` requires the signer to equal `EncryptedValue.encrypted_value_account_authority`, the token-account PDA).
     let grant = allow_token_account_subjects_ix(
         fixture.owner,
         fixture.mint,
@@ -5656,7 +5656,7 @@ fn mollusk_burn_from_value_cross_app_requires_compute_subject_grant() {
     );
 
     // The handle's owner grants the mint's compute subject via the token CPI wrapper (host
-    // `allow_subjects` requires the signer to equal `EncryptedValue.account`, the token-account PDA).
+    // `allow_subjects` requires the signer to equal `EncryptedValue.encrypted_value_account_authority`, the token-account PDA).
     let grant = allow_token_account_subjects_ix(
         fixture.owner,
         fixture.mint,

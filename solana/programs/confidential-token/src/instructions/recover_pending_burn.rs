@@ -37,7 +37,7 @@ pub struct RecoverPendingBurn<'info> {
     #[account(mut, address = mint.total_supply_encrypted_value)]
     pub total_supply_value: Box<Account<'info, zama_host::EncryptedValue>>,
     /// Shared `burned_amount` encrypted value account; read as a persistent operand (left unchanged).
-    #[account(mut, address = encrypted_value_address(mint.key(), token_account.key(), burned_amount_label()).0)]
+    #[account(mut, address = encrypted_value_address(mint.key(), token_account.key(), encrypted_burned_amount_label()).0)]
     pub burned_amount_value: Box<Account<'info, zama_host::EncryptedValue>>,
     /// Pending-burn lane for the tip burned handle; closed on successful recover.
     #[account(
@@ -143,30 +143,34 @@ pub fn recover_pending_burn<'info>(ctx: Context<'info, RecoverPendingBurn<'info>
     let old_total_supply_handle = ctx.accounts.total_supply_value.current_handle;
     let balance_output = fhe::PersistentOutput::new(
         ctx.accounts.balance_value.to_account_info(),
-        encrypted_value_id(mint_domain, token_account_key, balance_label()),
+        encrypted_value_id(mint_domain, token_account_key, encrypted_balance_label()),
         fhe::PersistentAudience::for_owner(owner, compute_signer),
     )?;
     let total_supply_output = fhe::PersistentOutput::new(
         ctx.accounts.total_supply_value.to_account_info(),
-        encrypted_value_id(mint_domain, total_supply_authority, total_supply_label()),
+        encrypted_value_id(
+            mint_domain,
+            total_supply_authority,
+            encrypted_total_supply_label(),
+        ),
         fhe::PersistentAudience::compute_only(compute_signer),
     )?;
     let balance = uint64_from_value(
         old_balance_handle,
         mint_domain,
         token_account_key,
-        balance_label(),
+        encrypted_balance_label(),
     )?;
     let total_supply = uint64_from_value(
         old_total_supply_handle,
         mint_domain,
         total_supply_authority,
-        total_supply_label(),
+        encrypted_total_supply_label(),
     )?;
     let burned_amount = uint64_from_value(
         burned_value.current_handle,
         zama_fhe::Domain::new(burned_value.domain),
-        burned_value.account,
+        burned_value.encrypted_value_account_authority,
         burned_value.label,
     )?;
 

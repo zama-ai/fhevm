@@ -65,16 +65,17 @@ update, encrypted value ID…).
     (Closed the former create-path gap; fhevm-internal#1859 §3-S1.)
 11. **[HOLDS]** Subject-list mutation is gated like persistent create/update:
     `allow_subjects` and `remove_subject` require the signer to equal
-    `EncryptedValue.account` (the app-owned account identity). Decrypt subjects
-    are not co-admins. Confidential-token ships owner-gated CPI wrappers that
-    `invoke_signed` as the **token-account** PDA (`allow_token_account_subjects` /
-    `remove_token_account_subject`). Total-supply PDA rotation is a follow-up
-    (no wrapper in this wave). (Closed the former flat-admin ANTI;
-    fhevm-internal#1862 #13.)
+    `EncryptedValue.encrypted_value_account_authority` (the app-owned account
+    identity). Decrypt subjects are not co-admins. Confidential-token ships
+    owner-gated CPI wrappers that `invoke_signed` as the **token-account** PDA
+    (`allow_token_account_subjects` / `remove_token_account_subject`). Total-supply
+    PDA rotation is a follow-up (no wrapper in this wave). (Closed the former
+    flat-admin ANTI; fhevm-internal#1862 #13.)
 11b. **[ANTI]** `make_handle_public` is still gated by current subject membership
-    (plus grant deny on that subject), not by `EncryptedValue.account`. Apps that
-    need app-only public sealing must enforce it before calling or CPI as the
-    account. (Split from former flat-admin ANTI-11; fhevm-internal#1862.)
+    (plus grant deny on that subject), not by
+    `EncryptedValue.encrypted_value_account_authority`. Apps that need app-only
+    public sealing must enforce it before calling or CPI as the account.
+    (Split from former flat-admin ANTI-11; fhevm-internal#1862.)
 11c. **[HOLDS]** Each confidential burn opens a per-burn `PendingBurn` lane at
     seeds `["pending-burn", mint, token_account, burn_id]` (`burn_id` is a
     client-supplied unique id known before the burn tx — required so the PDA

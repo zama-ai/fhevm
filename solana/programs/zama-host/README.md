@@ -126,14 +126,14 @@ is retained only as the replaced-design stub in DD-007.
 `EncryptedValue.subjects` is the complete MVP ACL for **use**: if a subject is in the set, it can use the
 current handle in `fhe_execute`, request user decrypt, and call `make_handle_public` for the exact
 current handle. Subject-list mutation (`allow_subjects` / `remove_subject`) is **not** subject-admin:
-the signer must equal `EncryptedValue.account` (same gate as persistent create/update;
+the signer must equal `EncryptedValue.encrypted_value_account_authority` (same gate as persistent create/update;
 fhevm-internal#1862 #13). Apps that store a PDA in `account` rotate auditors by CPI + `invoke_signed`
 as that PDA (confidential-token: `allow_token_account_subjects` /
 `remove_token_account_subject` for token-account-scoped values; total-supply follow-up).
 If a subject is not in the set, it cannot use the handle or make it public.
 
 `allow_subjects` is append-only and idempotent for existing subjects. Its authority must equal
-`EncryptedValue.account`, and deny-list/pause checks still apply. Updating a handle seals one
+`EncryptedValue.encrypted_value_account_authority`, and deny-list/pause checks still apply. Updating a handle seals one
 `HistoricalAccessLeaf` per allowed subject in current order. Public decryptability is represented
 only by `PublicDecryptLeaf`; it never rolls forward to later handles.
 

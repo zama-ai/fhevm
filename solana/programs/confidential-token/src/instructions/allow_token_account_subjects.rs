@@ -1,10 +1,12 @@
 //! Owner-authorized host `allow_subjects` / `remove_subject` CPIs signed as the
-//! token-account PDA (`EncryptedValue.account` for balance-scoped values).
+//! token-account PDA (`EncryptedValue.encrypted_value_account_authority` for
+//! balance-scoped values).
 //!
-//! Host subject-list mutation requires the signer to equal `EncryptedValue.account`
-//! (fhevm-internal#1862 #13). Wallet owners are decrypt/compute subjects, not ACL
-//! admins — auditor rotation goes through these instructions so the program can
-//! `invoke_signed` as the token-account PDA.
+//! Host subject-list mutation requires the signer to equal
+//! `EncryptedValue.encrypted_value_account_authority` (fhevm-internal#1862 #13).
+//! Wallet owners are decrypt/compute subjects, not ACL admins — auditor rotation
+//! goes through these instructions so the program can `invoke_signed` as the
+//! token-account PDA.
 
 use super::*;
 use zama_host::cpi;
@@ -154,7 +156,7 @@ fn assert_encrypted_value_account_is_token_account(
     token_account: Pubkey,
 ) -> Result<()> {
     require_keys_eq!(
-        encrypted_value.account,
+        encrypted_value.encrypted_value_account_authority,
         token_account,
         ConfidentialTokenError::CurrentEncryptedValueMismatch
     );

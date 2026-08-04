@@ -8,9 +8,10 @@ use crate::{errors::ZamaHostError, state::*};
 /// Accounts for `remove_subject`.
 #[derive(Accounts)]
 pub struct RemoveEncryptedValueSubject<'info> {
-    /// Must equal `EncryptedValue.account` (same gate as `fhe_execute` persistent
-    /// create/update). Subjects alone cannot remove peers — apps that store a PDA
-    /// in `account` rotate auditors by CPI + `invoke_signed` as that PDA.
+    /// Must equal `EncryptedValue.encrypted_value_account_authority` (same gate as
+    /// `fhe_execute` persistent create/update). Subjects alone cannot remove peers —
+    /// apps that store a PDA in `encrypted_value_account_authority` rotate auditors by
+    /// CPI + `invoke_signed` as that PDA.
     pub authority: Signer<'info>,
     /// CHECK: layout and ownership are validated inside the handler via `read_canonical_encrypted_value`.
     #[account(mut)]
@@ -28,7 +29,7 @@ pub fn remove_subject(ctx: Context<RemoveEncryptedValueSubject>, subject: Pubkey
     let authority = ctx.accounts.authority.key();
     require_keys_eq!(
         authority,
-        value.account,
+        value.encrypted_value_account_authority,
         ZamaHostError::EncryptedValueAccountAuthorityMismatch
     );
     check_grant_not_denied(

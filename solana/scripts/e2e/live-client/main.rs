@@ -547,13 +547,13 @@ fn allow_for_decryption(
     encrypted_value: Pubkey,
 ) -> Result<(), Box<dyn std::error::Error>> {
     let encrypted_value_account = fetch_encrypted_value(host, encrypted_value)?;
-    // Host allow_subjects / remove_subject require signer == EncryptedValue.account
+    // Host allow_subjects / remove_subject require signer == EncryptedValue.encrypted_value_account_authority
     // (fhevm-internal#1862 #13). Host-demo values bind `account` to the payer wallet;
     // token-scoped values must go through confidential-token's PDA-signed CPI wrappers.
     let account = encrypted_value_account.account;
     if account != payer.pubkey() {
         return Err(format!(
-            "allow_subjects authority must be EncryptedValue.account ({account}); \
+            "allow_subjects authority must be EncryptedValue.encrypted_value_account_authority ({account}); \
              payer is {}. For token-scoped values use allow_token_account_subjects.",
             payer.pubkey()
         )
@@ -1242,7 +1242,7 @@ fn fhe_execute_verified_input_add(
 /// `make_handle_public` instruction directly (fhevm-internal#1704 / DD-040). The DisclosureRequest
 /// witness is gone: the sealed public-decrypt leaf IS the request, there is no per-request PDA, no
 /// KMS-context pin, and no expiry. `make_handle_public` still requires the caller to be a current
-/// subject; subject-list mutation is `EncryptedValue.account`-gated (fhevm-internal#1862 #13), so
+/// subject; subject-list mutation is `EncryptedValue.encrypted_value_account_authority`-gated (fhevm-internal#1862 #13), so
 /// this path no longer re-grants via host `allow_subjects` (use `allow_token_account_subjects` when
 /// membership must change). Inputs via env: TS_ACL, TS_HANDLE.
 fn consume_seal(
@@ -1259,7 +1259,7 @@ fn consume_seal(
     let encrypted_value_account = fetch_encrypted_value(host, ts_acl)?;
     if !encrypted_value_account.has_subject(payer.pubkey()) {
         return Err(format!(
-            "payer {} is not a subject on {ts_acl}; grant via allow_token_account_subjects first (host allow_subjects requires EncryptedValue.account signer)",
+            "payer {} is not a subject on {ts_acl}; grant via allow_token_account_subjects first (host allow_subjects requires EncryptedValue.encrypted_value_account_authority signer)",
             payer.pubkey()
         )
         .into());

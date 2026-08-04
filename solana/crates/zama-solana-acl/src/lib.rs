@@ -57,7 +57,7 @@ pub enum AclError {
 ///
 /// Authorization membership is flat (`subjects` is binary membership with no
 /// roles). Subject-list mutation (`allow_subjects` / `remove_subject`) requires
-/// the signer to equal `EncryptedValue.account` — the same app-account gate as
+/// the signer to equal `EncryptedValue.encrypted_value_account_authority` — the same app-account gate as
 /// persistent create/update. Decrypt subjects are not co-admins; apps that store
 /// a PDA in `account` rotate auditors by CPI + `invoke_signed` as that PDA
 /// (confidential-token Wave 1: token-account wrappers only; total-supply follow-up).

@@ -1154,9 +1154,10 @@ authorization set, and the former parallel role byte vector is not part of the a
 allowed subject can use the current handle in compute, request user decrypt, and
 mark the exact current handle public. Subject-list mutation (`allow_subjects` /
 `remove_subject`) is gated like persistent create/update: the signer must equal
-`EncryptedValue.account` (the app-owned account identity). Decrypt subjects are
-not co-admins — apps that store a PDA in `account` rotate auditors by CPI +
-`invoke_signed` as that PDA. Confidential-token Wave 1 (#1862) covers
+`EncryptedValue.encrypted_value_account_authority` (the app-owned account
+identity). Decrypt subjects are not co-admins — apps that store a PDA in
+`encrypted_value_account_authority` rotate auditors by CPI + `invoke_signed` as
+that PDA. Confidential-token Wave 1 (#1862) covers
 token-account-scoped values via `allow_token_account_subjects` /
 `remove_token_account_subject`; total-supply PDA rotation is deferred.
 Public decrypt is an exact-handle `PublicDecryptLeaf`, so

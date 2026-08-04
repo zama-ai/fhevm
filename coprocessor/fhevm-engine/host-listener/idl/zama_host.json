@@ -34,9 +34,10 @@
         {
           "name": "authority",
           "docs": [
-            "Must equal `EncryptedValue.account` (same gate as `fhe_execute` persistent",
-            "create/update). Subjects alone cannot mutate membership — apps that store",
-            "a PDA in `account` rotate auditors by CPI + `invoke_signed` as that PDA."
+            "Must equal `EncryptedValue.encrypted_value_account_authority` (same gate as",
+            "`fhe_execute` persistent create/update). Subjects alone cannot mutate",
+            "membership — apps that store a PDA in `encrypted_value_account_authority`",
+            "rotate auditors by CPI + `invoke_signed` as that PDA."
           ],
           "signer": true
         },
@@ -661,9 +662,10 @@
         {
           "name": "authority",
           "docs": [
-            "Must equal `EncryptedValue.account` (same gate as `fhe_execute` persistent",
-            "create/update). Subjects alone cannot remove peers — apps that store a PDA",
-            "in `account` rotate auditors by CPI + `invoke_signed` as that PDA."
+            "Must equal `EncryptedValue.encrypted_value_account_authority` (same gate as",
+            "`fhe_execute` persistent create/update). Subjects alone cannot remove peers —",
+            "apps that store a PDA in `encrypted_value_account_authority` rotate auditors by",
+            "CPI + `invoke_signed` as that PDA."
           ],
           "signer": true
         },
