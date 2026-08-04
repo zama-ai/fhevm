@@ -26,6 +26,12 @@
 # every one of these checks has been silently vacuous at least once.
 
 set -euo pipefail
+# Resolved before the cd, because after it a relative $0 no longer names this file: invoked from
+# `solana/` as `scripts/dead-surface-check.sh`, the cd lands at the repo root where that path does
+# not exist. The self-test re-runs this script per fixture, and bash's "no such file" is exit 127 —
+# which `expect_fires` reads as "the check did not report", so a cwd typo looked like 25 vacuous
+# checks. Every self-invocation below uses this absolute path.
+SELF="$(cd "$(dirname "$0")" && pwd)/$(basename "$0")"
 cd "$(dirname "$0")/../.."
 
 fail=0
@@ -669,7 +675,7 @@ ${label}"
   while IFS='|' read -r word label; do
     [ -n "$word" ] || continue
     printf '%s\n' "$word" > "$fixture"
-    expect_fires "alias sweep on \"${word}\"" "REJECTED ALIAS (${label})" "$label" bash "$0"
+    expect_fires "alias sweep on \"${word}\"" "REJECTED ALIAS (${label})" "$label" bash "$SELF"
     rm -f "$fixture"
   done <<'FIXTURES'
 fhe_eval|fhe_eval — renamed to fhe_execute
@@ -706,17 +712,17 @@ FIXTURES
   # Check 4: an unjustified EVM-shaped zero-fill in a swept file.
   fixture="solana/crates/zama-fhe/src/dead_surface_selftest.rs"
   printf 'pub fn f() { let contract_address = [0u8; 20]; let _ = contract_address; }\n' > "$fixture"
-  expect_fires "retrofit sentinel sweep" "UNJUSTIFIED RETROFIT SENTINEL" "" bash "$0"
+  expect_fires "retrofit sentinel sweep" "UNJUSTIFIED RETROFIT SENTINEL" "" bash "$SELF"
   rm -f "$fixture"
   # Check 6: an exported function nobody calls.
   printf 'pub fn dead_surface_selftest_never_called() {}\n' > "$fixture"
-  expect_fires "uncalled-export sweep" "dead_surface_selftest_never_called" "" bash "$0"
+  expect_fires "uncalled-export sweep" "dead_surface_selftest_never_called" "" bash "$SELF"
   rm -f "$fixture"
   # Check 7: a swept root outside every triggering path. Driven through the environment rather than
   # a fixture file, since the thing under test is the root list itself.
   expect_fires "untriggered-root sweep" \
     "UNTRIGGERED ROOT: coprocessor/fhevm-engine/tfhe-worker" "" \
-    env DEAD_SURFACE_EXTRA_ROOT=coprocessor/fhevm-engine/tfhe-worker bash "$0"
+    env DEAD_SURFACE_EXTRA_ROOT=coprocessor/fhevm-engine/tfhe-worker bash "$SELF"
   if [ "$self_test_fail" -ne 0 ]; then
     echo "dead-surface-check: SELF-TEST FAILED (a check is vacuous)"
     exit 1
