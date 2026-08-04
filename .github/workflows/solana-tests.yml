@@ -75,6 +75,13 @@ jobs:
               - kms-connector/crates/**
               - sdk/js-sdk/src/solana/**
               - test-suite/fhevm/**
+              # Checks 4 and 5 pin a retrofit and its written justification in these two relayer
+              # files. Neither matched any path above, so deleting the justification prose or the
+              # last retrofit did not run this job at all — the staleness guards could not fire on
+              # the change that invalidated them. Named individually rather than `relayer/**`: only
+              # these two files are inputs to the sweep.
+              - relayer/src/core/event.rs
+              - relayer/src/gateway/arbitrum/transaction_calldata.rs
             demo-dapp:
               - .github/workflows/solana-tests.yml
               - solana/demo-dapp/**

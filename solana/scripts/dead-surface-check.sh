@@ -105,7 +105,7 @@ ALL_ROOTS=("${RUST_ROOTS[@]}" "${TS_ROOTS[@]}" "${SCRIPT_ROOTS[@]}")
 # this script exists to prevent. `batch_contracts.rs` sat in FHE_ROOTS after being renamed to
 # `execution_contracts.rs` and the FHE sweep quietly stopped reading it: grep's error went to
 # /dev/null and the `|| true` swallowed the status. Named roots are asserted instead.
-for root in "${ALL_ROOTS[@]}" "${CORE_ROOTS[@]}" "${FHE_ROOTS[@]}"; do
+for root in "${ALL_ROOTS[@]}" "${CORE_ROOTS[@]}" "${FHE_ROOTS[@]}" kms-connector/crates; do
   [ -e "$root" ] || { echo "dead-surface-check: swept root does not exist: $root" >&2; exit 2; }
 done
 
@@ -124,8 +124,29 @@ EXCLUDES=(
 # Production index: `path:line:code` for every owned Rust/TS source, with test files, test
 # regions, and comments removed. Reference counting reads this, never the raw tree.
 # ---------------------------------------------------------------------------
+# `--self-test` fixtures have to sit inside the swept trees, because that is the only place the
+# sweeps look — a scratch directory outside the repo would never be read. `solana/crates` is in
+# RUST_ROOTS, CORE_ROOTS and FHE_ROOTS at once, so one file there is reachable from every scope.
+SELFTEST_FIXTURES=(
+  solana/crates/zama-fhe/.dead-surface-selftest.md
+  solana/crates/zama-fhe/src/dead_surface_selftest.rs
+)
+# A fixture left behind by an interrupted `--self-test` is indistinguishable from a real violation,
+# so every later run reports a bogus finding — observed once as a phantom `app_account` hit printed
+# alongside "self-test clean". The child runs spawned by the self-test export
+# DEAD_SURFACE_SELFTEST_ACTIVE, so this only trips on a genuinely stray file.
+if [ -z "${DEAD_SURFACE_SELFTEST_ACTIVE:-}" ]; then
+  for fixture in "${SELFTEST_FIXTURES[@]}"; do
+    if [ -e "$fixture" ]; then
+      echo "dead-surface-check: leftover self-test fixture ${fixture} — delete it and rerun" >&2
+      exit 2
+    fi
+  done
+fi
+
 INDEX=$(mktemp)
-trap 'rm -f "$INDEX"' EXIT
+ALIAS_LABELS=$(mktemp)
+trap 'rm -f "$INDEX" "$ALIAS_LABELS"' EXIT
 
 build_index() {
   local files
@@ -223,23 +244,40 @@ echo "== 3. rejected glossary aliases =="
 # hits; the rest are grep args.
 check_alias() {
   local label="$1" scope="$2" exceptions="$3"; shift 3
+  # Every entry records its label so the self-test can prove it has a fixture. Without this the
+  # fixture list and the entry list drift, which is how five entries (including the newest) went
+  # unexercised.
+  printf '%s\n' "$label" >> "$ALIAS_LABELS"
   local hits
-  if [ "$scope" = fhe ]; then
-    hits=$( (grep -rniE --include='*.rs' --include='*.ts' --include='*.md' --include='*.py' \
-      --include='*.sh' --include='*.yml' "${EXCLUDES[@]}" "$@" "${FHE_ROOTS[@]}" 2>/dev/null || true) )
-  elif [ "$scope" = core ]; then
-    hits=$( (grep -rniE --include='*.rs' --include='*.ts' --include='*.md' --include='*.py' \
-      --include='*.sh' --include='*.yml' "${EXCLUDES[@]}" "$@" "${CORE_ROOTS[@]}" 2>/dev/null || true) )
-  else
-    hits=$( (grep -rniE --include='*.rs' --include='*.ts' --include='*.md' --include='*.py' \
-      --include='*.sh' --include='*.yml' "${EXCLUDES[@]}" "$@" "${ALL_ROOTS[@]}" 2>/dev/null || true) )
-  fi
+  local -a roots
+  case "$scope" in
+    fhe)  roots=("${FHE_ROOTS[@]}") ;;
+    core) roots=("${CORE_ROOTS[@]}") ;;
+    all)  roots=("${ALL_ROOTS[@]}") ;;
+    # ALL plus the connector crates, for a word whose only live occurrences are there.
+    kms)  roots=("${ALL_ROOTS[@]}" kms-connector/crates) ;;
+    *) echo "check_alias: unknown scope '${scope}' for '${label}'" >&2; exit 2 ;;
+  esac
+  # `.tsx` and `.json` are swept too: the dapp's React surface is .tsx, and several entries below
+  # claim the retired spelling is gone from "the IDL", which is .json. Without them those claims
+  # were unenforced.
+  hits=$( (grep -rniE --include='*.rs' --include='*.ts' --include='*.tsx' --include='*.md' \
+    --include='*.py' --include='*.sh' --include='*.yml' --include='*.json' \
+    "${EXCLUDES[@]}" "$@" "${roots[@]}" 2>/dev/null || true) )
   hits=$(echo "$hits" \
     | (grep -v 'solana/docs/GLOSSARY.md' || true) \
     | (grep -v 'solana/docs/DESIGN_DECISIONS.md' || true) \
     | (grep -v 'dead-surface-check.sh' || true) )
   if [ -n "$exceptions" ]; then
-    hits=$(echo "$hits" | (grep -viE "$exceptions" || true))
+    # Applied to each hit's CONTENT, never to the `path:line:` prefix. Matching the whole record
+    # let an exception that happened to look like a path blanket-exempt a whole file — the blanket
+    # skip the contract above forbids, and what made the `app_account` entry silently inert.
+    hits=$(printf '%s\n' "$hits" | while IFS= read -r record; do
+      [ -n "$record" ] || continue
+      content=${record#*:}
+      content=${content#*:}
+      printf '%s\n' "$content" | grep -qiE "$exceptions" || printf '%s\n' "$record"
+    done)
   fi
   if [ -n "$hits" ]; then
     echo "REJECTED ALIAS (${label}):"
@@ -267,11 +305,24 @@ check_alias 'value_key identifier — renamed to encrypted_value_id' all \
 # Solana permit (`allowed_acl_domain_keys` in the user-decryption specification) and of the v3 wire,
 # so the permit crate and the connector keep it deliberately.
 #
-# `app_account` survives in one place on purpose and is excepted rather than swept: the
-# `UserDecryptionDelegation` witness in kms-connector names the app a delegation is scoped over,
-# which is a different thing from the ID component, and its bytes are hashed into a preimage.
-check_alias 'app_account — renamed to encrypted_value_account_authority' all \
-  'solana_acl.rs' \
+# `app_account` survives in exactly one file on purpose: the `UserDecryptionDelegation` witness in
+# kms-connector names the app a delegation is scoped over, which is a different object from the ID
+# component (it mirrors the on-chain `UserDecryptionDelegation.account` and is a seed of that
+# delegation's PDA). That file is excluded by name through grep's own `--exclude`, which is visible
+# in the command, rather than by a content exception that silently matched the path.
+#
+# Scope is `kms` because `app_account` has no occurrence anywhere else: under plain `all` this entry
+# could not reach the word it documents, so it passed vacuously and its exception masked nothing.
+#
+# NOT swept, and deliberately so: the SDK's `app_authority` / `ExecutionAppAuthority`
+# (`solana/crates/zama-fhe/src/{execution,builder,lower}.rs`) is the *same key* as
+# `encrypted_value_account_authority` — `lower.rs:153` compares the two directly. It is a second
+# name for one concept and it should be reconciled, but it is public SDK API across ~70 call sites
+# and renaming it is a separate decision from retiring `app_account`. Banning it here would make
+# this entry fire on correct-as-shipped code, so it is recorded as an open item instead of being
+# swept silently. The narrower `app_account_authority` spelling stays banned below.
+check_alias 'app_account — renamed to encrypted_value_account_authority' kms \
+  '' --exclude=solana_acl.rs \
   -E '\bapp_account\b|\bapp_accounts\b|\bapp_account_authority\b|\bauthorized_app_accounts\b|\bappAccount\b'
 # There was a `check_alias 'encrypted_value_label — renamed to label'` here, banning the long name.
 # That decision was reversed: bare "label" says only that the component is 32 bytes, which is true of
@@ -284,8 +335,11 @@ check_alias 'SDK namespace — renamed to label' core '' -E '\bnamespace\b|\bnam
 # batch <- frame, plan. "frame" survives only in its Solana runtime sense (the CPI/instruction
 # stack frame), and as the proper name of the retired `execute_frame` RFC-024 prototype where the
 # sentence says so. A batch of steps is never a frame.
+# The last group is the demo dapp's architecture walkthrough, where a "frame" is a presentation
+# panel — the film sense of the word, with its own CSS classes. Surfaced only once `.tsx` joined the
+# sweep. It is the same kind of unrelated meaning as the stack frame above, not a walk of steps.
 check_alias 'frame — a walk of steps is an execution' all \
-  'stack frame|instruction frame|enclosing frame|execution frame|cpi frame|frame it belongs to|older `execute_frame`|framework|heap frame|heap-frame' \
+  'stack frame|instruction frame|enclosing frame|execution frame|cpi frame|frame it belongs to|older `execute_frame`|framework|heap frame|heap-frame|ArchitectureFrame|architecture-frame|frame-(heading|label|statement|separator)|frameNumber|\bframed\b|frames\.(map|length)|frame\.(diagram|title)' \
   -E '\bframes?\b|execute_frame|_frame\b|frame_|Frame[A-Z]'
 # One fhe_execute invocation is an `execution`, never a batch: its steps are dependent, each reading
 # what the one before it produced, which is the opposite of what a batch means. Swept in FHE scope
@@ -355,6 +409,9 @@ alias_hits=$( (grep -rniE --include='*.rs' --include='*.ts' --include='*.md' "${
   "${RUST_ROOTS[@]}" "${TS_ROOTS[@]}" solana/docs 2>/dev/null || true) \
   | (grep -v 'solana/docs/GLOSSARY.md' || true) \
   | (grep -v 'solana/docs/DESIGN_DECISIONS.md' || true) )
+# Registered like a `check_alias` entry so the self-test's fixture-parity gate covers it too, even
+# though it is spelled out inline rather than going through the helper.
+printf '%s\n' 'lookup table — the interning structure is the dictionary' >> "$ALIAS_LABELS"
 if [ -n "$alias_hits" ]; then
   echo "REJECTED ALIAS (lookup table — the interning structure is the dictionary):"
   echo "$alias_hits"
@@ -395,6 +452,13 @@ SENTINEL_ROOTS=(
   coprocessor/fhevm-engine/host-listener/src/solana_grpc_listener.rs
   coprocessor/fhevm-engine/host-listener/src/solana_grpc_source.rs
 )
+# Same assertion the swept roots get above, for the same reason: these four listener files are named
+# individually and read behind `2>/dev/null || true`, so a rename or a typo in any of them would
+# silently narrow checks 4 and 5 instead of failing. `solana_adapter.rs` alone contributes most of
+# check 4's hits, so its disappearance would look exactly like a clean run.
+for root in "${SENTINEL_ROOTS[@]}"; do
+  [ -e "$root" ] || { echo "dead-surface-check: sentinel root does not exist: $root" >&2; exit 2; }
+done
 retrofit_hits=$( (grep -rnE --include='*.rs' --include='*.ts' "${EXCLUDES[@]}" "$SENTINEL" \
   "${SENTINEL_ROOTS[@]}" "${SENTINEL_FILES[@]}" 2>/dev/null || true) \
   | (grep -E "$EVM_SHAPED_FIELD" || true) \
@@ -557,7 +621,11 @@ root_is_triggered() {
   return 1
 }
 
-for root in "${ALL_ROOTS[@]}" "${FHE_ROOTS[@]}" kms-connector/crates ${DEAD_SURFACE_EXTRA_ROOT:-}; do
+# SENTINEL_ROOTS, SENTINEL_FILES and the retrofit-justification files are included: checks 4 and 5
+# read them, so a path of theirs outside the trigger filter is the same hole as an untriggered sweep
+# root. Both `relayer/` files were exactly that until the filter above learned them.
+for root in "${ALL_ROOTS[@]}" "${FHE_ROOTS[@]}" "${SENTINEL_ROOTS[@]}" "${SENTINEL_FILES[@]}" \
+  "${RETROFIT_JUSTIFICATIONS[@]%%|*}" kms-connector/crates ${DEAD_SURFACE_EXTRA_ROOT:-}; do
   if ! root_is_triggered "$root"; then
     echo "UNTRIGGERED ROOT: ${root} is swept by this script but no path in ${TRIGGER_WORKFLOW}'s dead-surface filter matches it — a change there would not run this check"
     fail=1
@@ -566,43 +634,89 @@ done
 
 if [ "$SELF_TEST" -eq 1 ]; then
   echo "== self-test: every check must fire on a fixture that violates it =="
-  fixture_dir=$(mktemp -d)
-  trap 'rm -f "$INDEX"; rm -rf "$fixture_dir"' EXIT
+  # Children must not refuse to run on the fixtures this block deliberately plants.
+  export DEAD_SURFACE_SELFTEST_ACTIVE=1
+  trap 'rm -f "$INDEX" "$ALIAS_LABELS" "${SELFTEST_FIXTURES[@]}"' EXIT INT TERM
   self_test_fail=0
+  covered_labels=""
+  # Exit status alone is not evidence. Any unrelated finding anywhere in the tree also makes the
+  # child exit 1, so a fixture the sweeps cannot see still reported "ok" — every one of these was
+  # satisfiable by planting one real violation elsewhere. The expected report text is required too,
+  # which ties each fixture to the specific check it is meant to exercise.
   expect_fires() {
-    local what="$1"; shift
-    if "$@" >/dev/null 2>&1; then
+    local what="$1" expect="$2" label="$3"; shift 3
+    local out status
+    out=$("$@" </dev/null 2>&1) && status=0 || status=$?
+    if [ "$status" -eq 0 ]; then
       echo "SELF-TEST HOLE: ${what} did not fire on a violating fixture"
+      self_test_fail=1
+    elif ! printf '%s\n' "$out" | grep -qF "$expect"; then
+      echo "SELF-TEST HOLE: ${what} exited ${status} without reporting: ${expect}"
       self_test_fail=1
     else
       echo "  ok: ${what} fires"
+      if [ -n "$label" ]; then
+        covered_labels="${covered_labels}
+${label}"
+      fi
     fi
   }
-  # Check 3 (aliases): each retired word must be caught in a file under a swept root.
-  fixture="solana/docs/.dead-surface-selftest.md"
-  for word in fhe_eval born-public value_key app_account lineage supersede "the batch's lookup table of handles" "handle rotation" "durable value" "a frame of steps" "the handle pool"; do
-    printf '%s\n' "$word" > "$fixture"
-    expect_fires "alias sweep on \"${word}\"" bash "$0"
-    rm -f "$fixture"
-  done
-  # The "batch" sweep runs in FHE scope only, so its fixture has to sit under one of those roots —
-  # a fixture in solana/docs (where the loop above puts its own) would not reach it.
+  # Check 3 (aliases): each retired word must be caught, and the report must name that entry.
+  # `solana/crates` is in ALL, CORE and FHE scope at once, so one fixture location serves every
+  # entry — the previous split (solana/docs for most, solana/crates for the FHE-scoped one) is why
+  # the core-scoped entries were easy to leave uncovered.
   fixture="solana/crates/zama-fhe/.dead-surface-selftest.md"
-  printf 'one fhe_execute batch\n' > "$fixture"
-  expect_fires 'alias sweep on "batch" (fhe scope)' bash "$0"
-  rm -f "$fixture"
+  while IFS='|' read -r word label; do
+    [ -n "$word" ] || continue
+    printf '%s\n' "$word" > "$fixture"
+    expect_fires "alias sweep on \"${word}\"" "REJECTED ALIAS (${label})" "$label" bash "$0"
+    rm -f "$fixture"
+  done <<'FIXTURES'
+fhe_eval|fhe_eval — renamed to fhe_execute
+born-public|born-public / birth — renamed to created-public / create
+value_key|value_key identifier — renamed to encrypted_value_id
+app_account|app_account — renamed to encrypted_value_account_authority
+namespace|SDK namespace — renamed to label
+a frame of steps|frame — a walk of steps is an execution
+one fhe_execute batch|batch — one fhe_execute invocation is an execution
+a plan of steps|plan — an fhe_execute batch is a batch
+the handle pool|pool — the interning structure is the dictionary
+durable value|durable — a persistent value is persistent
+supersede|supersede — an updated handle is updated
+handle rotation|rotation — an updated handle is updated
+lineage|lineage — renamed to encrypted value account
+the value account holds it|value account — say encrypted value account
+AllowedPersistent|AllowedPersistent / AllowedLocal — renamed to StoredValue / EarlierStep / Transient
+FheAddEvent|Fhe*Event — the per-op value types are decoded op records
+the batch's lookup table of handles|lookup table — the interning structure is the dictionary
+FIXTURES
+  # Nothing kept the fixture list and the entry list in step, so five entries — including the one
+  # added by the commit that introduced this self-test — were never exercised. Every entry now
+  # registers its label as it runs, and an entry with no fixture is a hole.
+  while IFS= read -r label; do
+    [ -n "$label" ] || continue
+    case "$covered_labels" in
+      *"$label"*) ;;
+      *)
+        echo "SELF-TEST HOLE: alias entry '${label}' has no fixture in this block"
+        self_test_fail=1
+        ;;
+    esac
+  done < <(sort -u "$ALIAS_LABELS")
   # Check 4: an unjustified EVM-shaped zero-fill in a swept file.
   fixture="solana/crates/zama-fhe/src/dead_surface_selftest.rs"
   printf 'pub fn f() { let contract_address = [0u8; 20]; let _ = contract_address; }\n' > "$fixture"
-  expect_fires "retrofit sentinel sweep" bash "$0"
+  expect_fires "retrofit sentinel sweep" "UNJUSTIFIED RETROFIT SENTINEL" "" bash "$0"
   rm -f "$fixture"
   # Check 6: an exported function nobody calls.
   printf 'pub fn dead_surface_selftest_never_called() {}\n' > "$fixture"
-  expect_fires "uncalled-export sweep" bash "$0"
+  expect_fires "uncalled-export sweep" "dead_surface_selftest_never_called" "" bash "$0"
   rm -f "$fixture"
   # Check 7: a swept root outside every triggering path. Driven through the environment rather than
   # a fixture file, since the thing under test is the root list itself.
-  expect_fires "untriggered-root sweep" env DEAD_SURFACE_EXTRA_ROOT=coprocessor/fhevm-engine/tfhe-worker bash "$0"
+  expect_fires "untriggered-root sweep" \
+    "UNTRIGGERED ROOT: coprocessor/fhevm-engine/tfhe-worker" "" \
+    env DEAD_SURFACE_EXTRA_ROOT=coprocessor/fhevm-engine/tfhe-worker bash "$0"
   if [ "$self_test_fail" -ne 0 ]; then
     echo "dead-surface-check: SELF-TEST FAILED (a check is vacuous)"
     exit 1
