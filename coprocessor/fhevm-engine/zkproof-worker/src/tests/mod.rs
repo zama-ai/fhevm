@@ -102,7 +102,30 @@ async fn test_quorum_accepted_proof_is_replayed_only_locally() {
         !handles.is_empty(),
         "initial verification should produce handles"
     );
-    let handles = handles.concat();
+    let expected_ciphertext_count = handles.len() as i64;
+    let expected_handles = handles.concat();
+
+    sqlx::query("DELETE FROM ciphertexts_branch WHERE handle = ANY($1::BYTEA[])")
+        .bind(&handles)
+        .execute(&pool)
+        .await
+        .unwrap();
+    sqlx::query("DELETE FROM ciphertexts WHERE handle = ANY($1::BYTEA[])")
+        .bind(&handles)
+        .execute(&pool)
+        .await
+        .unwrap();
+
+    let missing_ciphertexts = sqlx::query_as::<_, (i64, i64)>(
+        "SELECT
+             (SELECT COUNT(*) FROM ciphertexts WHERE handle = ANY($1::BYTEA[])),
+             (SELECT COUNT(*) FROM ciphertexts_branch WHERE handle = ANY($1::BYTEA[]))",
+    )
+    .bind(&handles)
+    .fetch_one(&pool)
+    .await
+    .unwrap();
+    assert_eq!(missing_ciphertexts, (0, 0));
 
     sqlx::query(
         "UPDATE verify_proofs
@@ -114,7 +137,7 @@ async fn test_quorum_accepted_proof_is_replayed_only_locally() {
          WHERE zk_proof_id = $1",
     )
     .bind(request_id)
-    .bind(handles)
+    .bind(expected_handles)
     .execute(&pool)
     .await
     .unwrap();
@@ -132,13 +155,28 @@ async fn test_quorum_accepted_proof_is_replayed_only_locally() {
                 .await
                 .unwrap();
         if remaining == 0 {
-            return;
+            break;
         }
         assert!(
             retry < 999,
             "successful local replay should delete the proof row"
         );
     }
+
+    let restored_ciphertexts = sqlx::query_as::<_, (i64, i64)>(
+        "SELECT
+             (SELECT COUNT(*) FROM ciphertexts WHERE handle = ANY($1::BYTEA[])),
+             (SELECT COUNT(*) FROM ciphertexts_branch WHERE handle = ANY($1::BYTEA[]))",
+    )
+    .bind(&handles)
+    .fetch_one(&pool)
+    .await
+    .unwrap();
+    assert_eq!(
+        restored_ciphertexts,
+        (expected_ciphertext_count, expected_ciphertext_count),
+        "successful local replay should restore every missing ciphertext"
+    );
 }
 
 #[tokio::test]

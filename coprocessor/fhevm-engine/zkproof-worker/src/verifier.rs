@@ -452,6 +452,7 @@ async fn execute_verify_proof_routine(
         info!(
             message = "Process zk-verify request",
             request_id,
+            is_replay,
             %host_chain_id,
             user_address,
             contract_address,
@@ -460,8 +461,12 @@ async fn execute_verify_proof_routine(
 
         let acl_contract_address = host_chain.acl_contract_address.clone();
 
-        let verify_span =
-            tracing::info_span!("verify_task", request_id, txn_id = tracing::field::Empty);
+        let verify_span = tracing::info_span!(
+            "verify_task",
+            request_id,
+            is_replay,
+            txn_id = tracing::field::Empty
+        );
         fhevm_engine_common::telemetry::record_short_hex_if_some(
             &verify_span,
             "txn_id",
@@ -483,6 +488,7 @@ async fn execute_verify_proof_routine(
         let db_insert_span = tracing::info_span!(
             "db_insert",
             request_id,
+            is_replay,
             txn_id = tracing::field::Empty,
             valid = tracing::field::Empty,
             count = tracing::field::Empty
@@ -493,6 +499,7 @@ async fn execute_verify_proof_routine(
             transaction_id.as_deref(),
         );
 
+        let mut replayed_ciphertext_count = None;
         async {
             let mut verified = false;
             let mut handles_bytes = vec![];
@@ -526,16 +533,27 @@ async fn execute_verify_proof_routine(
                             insert_input_handles(&mut txn, cts, bn).await?;
                         }
                         tracing::Span::current().record("count", count);
+                        if is_replay {
+                            replayed_ciphertext_count = Some(count);
+                        }
 
                         info!(message = "Ciphertexts inserted", request_id, count);
                     }
                 }
                 Err(err) => {
-                    error!(
-                        message = "Failed to verify proof",
-                        request_id,
-                        err = err.to_string()
-                    );
+                    if is_replay {
+                        warn!(
+                            message = "Gateway-accepted proof replay failed; retained for retry",
+                            request_id,
+                            err = err.to_string()
+                        );
+                    } else {
+                        error!(
+                            message = "Failed to verify proof",
+                            request_id,
+                            err = err.to_string()
+                        );
+                    }
                     verification_error = Some(err.to_string());
                 }
             }
@@ -598,6 +616,14 @@ async fn execute_verify_proof_routine(
 
         txn.commit().await?;
 
+        if let Some(count) = replayed_ciphertext_count {
+            info!(
+                request_id,
+                ciphertext_count = count,
+                "Gateway-accepted proof replay restored local ciphertexts"
+            );
+        }
+
         if res.is_ok() {
             let elapsed = started_at.elapsed().unwrap_or_default().as_secs_f64();
             if elapsed > 0.0 {
@@ -605,7 +631,7 @@ async fn execute_verify_proof_routine(
             }
         }
 
-        info!(message = "Completed", request_id);
+        info!(message = "Completed", request_id, is_replay);
     }
 
     Ok(())

@@ -235,10 +235,16 @@ impl<P: Provider<Ethereum> + Clone + 'static> GatewayListener<P> {
                                             })?;
                                         }
                                         InputVerification::InputVerificationEvents::VerifyProofResponse(response) => {
-                                            self.verify_proof_accepted(db_pool, response).await?;
+                                            let zk_proof_id = response.zkProofId.to::<i64>();
+                                            self.verify_proof_accepted(db_pool, response).await.inspect_err(|e| {
+                                                error!(zk_proof_id, error = %e, "VerifyProofResponse processing failed");
+                                            })?;
                                         }
                                         InputVerification::InputVerificationEvents::RejectProofResponse(response) => {
-                                            self.verify_proof_rejected(db_pool, response).await?;
+                                            let zk_proof_id = response.zkProofId.to::<i64>();
+                                            self.verify_proof_rejected(db_pool, response).await.inspect_err(|e| {
+                                                error!(zk_proof_id, error = %e, "RejectProofResponse processing failed");
+                                            })?;
                                         }
                                         _ => {
                                             // Per-coprocessor response-call events are expected while
@@ -582,6 +588,11 @@ impl<P: Provider<Ethereum> + Clone + 'static> GatewayListener<P> {
             )
             .execute(tx.as_mut())
             .await?;
+        } else {
+            debug!(
+                zk_proof_id,
+                "Gateway acceptance found no eligible retained proof; replay not scheduled"
+            );
         }
         tx.commit().await?;
         Ok(())
@@ -616,6 +627,11 @@ impl<P: Provider<Ethereum> + Clone + 'static> GatewayListener<P> {
             info!(
                 zk_proof_id,
                 "Gateway rejected proof; discarded retained local proof"
+            );
+        } else {
+            debug!(
+                zk_proof_id,
+                "Gateway rejection found no retained local proof to discard"
             );
         }
         tx.commit().await?;
