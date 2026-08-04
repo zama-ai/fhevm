@@ -569,8 +569,8 @@ mod tests {
 
     #[test]
     fn host_config_updated_event_carries_hcu_limits() {
-        // If the two fields were missing, this would not build. (The updated_slot write + emit! are
-        // exercised end-to-end by the Mollusk setter tests in runtime-tests/tests/host_mollusk.rs.)
+        // If the two fields were missing, this would not build. The emission itself is exercised
+        // end-to-end by the Mollusk setter tests in runtime-tests/tests/host_mollusk.rs.
         let _event = HostConfigUpdatedEvent {
             version: EVENT_VERSION,
             config: Pubkey::new_unique(),

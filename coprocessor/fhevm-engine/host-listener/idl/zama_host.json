@@ -2989,7 +2989,7 @@
           {
             "name": "app",
             "docs": [
-              "The app authority governed by the record."
+              "The compute subject governed by the record."
             ],
             "type": "pubkey"
           },

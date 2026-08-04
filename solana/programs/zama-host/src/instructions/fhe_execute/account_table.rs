@@ -128,9 +128,8 @@ impl<'a, 'info> EvalAccountTable<'a, 'info> {
         }
     }
 
-    /// Claims a persistent output account for this execution; a second claim of the
-    /// same account is rejected (one write per account per execution — this is what anchors
-    /// for the rand seed anchor, see #1853 W4).
+    /// Claims a persistent output account for this execution; a second claim of the same account is
+    /// rejected. One write per account per execution is what makes a rand seed unrepeatable (#1853 W4).
     pub(super) fn claim_persistent_output(&mut self, key: Pubkey) -> Result<()> {
         require!(
             !self.persistent_outputs_claimed.contains(&key),

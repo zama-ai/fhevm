@@ -1,24 +1,21 @@
-//! Event types for ZamaHost. There are only two kinds, and the rule for which one you get is about
-//! who needs the data, not about how interesting it is:
+//! Event types for ZamaHost. An event is either emitted through the event CPI or not emitted at all,
+//! and which one it gets depends on whether an off-chain component has to be able to query it (DD-044).
 //!
-//! - **Emitted, always, through the event CPI** (`crate::event_cpi`). Two groups qualify. The admin
-//!   and config lifecycle — `HostConfig*`, `*KmsContext*`, `DenySubjectUpdated`,
-//!   `HcuAppTrustUpdated` — because an off-chain component that watches the protocol has to be able
-//!   to see an admin change without scanning for it. And `FheExecuteRandomSeedsEvent` plus
+//! - **Emitted, always, through the event CPI** (`crate::event_cpi`). Two groups qualify. The admin and
+//!   config lifecycle — `HostConfig*`, `*KmsContext*`, `DenySubjectUpdated`, `HcuAppTrustUpdated` —
+//!   because an admin change is a protocol-level fact a component must be able to read without
+//!   replaying instruction data to find it. And `FheExecuteRandomSeedsEvent` plus
 //!   `PublicOutputsProducedEvent`, which carry the only data an indexer cannot recompute from
-//!   instruction data at all (seeds derived from block entropy, and output handles). Nothing here
-//!   uses `emit!`: a log can be truncated by the RPC provider a reader goes through, so it is a hint
-//!   rather than a delivery, and a hint is not good enough for either group. Authorization still
-//!   comes from host-owned account state and never from event bytes — reliable delivery is about
-//!   observability, not trust.
-//! - **Not emitted at all.** Everything else, which is most of it: per-step compute shapes (they
-//!   live in `records.rs` as decoded op records), `EncryptedValue` ACL mutations (indexers rebuild
-//!   MMR leaves through the shared `zama_solana_acl` crate), and user-decryption delegation. The
-//!   listener reconstructs these from instruction data over Yellowstone, which is the normal path
-//!   for anything reconstructible. Delegation is the clearest case: nothing off-chain consumes it at
-//!   all yet (INVARIANTS #27), and the consumer being built for it — the KMS connector's
-//!   `verify_delegation` — reads the record at its canonical PDA rather than watching for an event,
-//!   so the event this module used to emit had no reader and no prospective one.
+//!   instruction data at all (seeds derived from block entropy, and output handles). Nothing here uses
+//!   `emit!`: a log can be truncated by the RPC provider a reader goes through, so it delivers a hint
+//!   rather than the event. Authorization still comes from host-owned account state and never from
+//!   event bytes; what the event CPI buys is that a reader sees the change, not that it may trust it.
+//! - **Not emitted at all.** Everything else, which is most of it: per-step compute shapes (they live
+//!   in `records.rs` as decoded op records), `EncryptedValue` ACL mutations (indexers rebuild MMR
+//!   leaves through the shared `zama_solana_acl` crate), and user-decryption delegation. The listener
+//!   reconstructs these from instruction data over Yellowstone, which is the normal path for anything
+//!   reconstructible. Delegating is a user ability rather than administration, which is why its event
+//!   is gone; INVARIANTS #27 records the separate fact that nothing off-chain consumes delegation yet.
 
 use anchor_lang::prelude::*;
 
@@ -142,7 +139,7 @@ pub struct HcuAppTrustUpdatedEvent {
     pub version: u8,
     /// Canonical trust-registry record PDA.
     pub hcu_trusted_app_record: Pubkey,
-    /// The app authority governed by the record.
+    /// The compute subject governed by the record.
     pub app: Pubkey,
     /// Whether the app bypasses the per-app block cap.
     pub trusted: bool,

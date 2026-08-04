@@ -62,7 +62,6 @@ pub fn initialize_host_config(
     config.hcu_block_cap_per_app = u64::MAX;
     config.updated_slot = updated_slot;
     config.bump = ctx.bumps.host_config;
-    // Copied out so the `&mut config` borrow ends before the emit reads `ctx.accounts` again.
     let admin = config.admin;
     let chain_id = config.chain_id;
     emit_event_cpi(

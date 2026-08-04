@@ -15,10 +15,11 @@ entry that dies is retired in place. The tags:
 The register has two parts. **Part I** is what the system promises. An auditor,
 an integrator, or whoever picks this up next can rely on every entry in it, and
 breaking one of them is a security or correctness bug. **Part II** is how the
-system is built and run: sizes, limits, and operational notes. All of it is true
-and covered by tests, but none of it is a promise about safety, so skipping
-Part II costs you nothing you have to trust. Numbers are stable across both
-parts and never reused.
+system is built and run: sizes, limits, and operational notes. All of it is
+true; the sizes and limits are pinned by tests, and the [OPERATIONAL] entries are
+notes about how we run the system rather than properties anything enforces.
+Nothing in Part II is a promise about safety, so you can skip it without skipping
+anything you have to trust. Numbers are stable across both parts and never reused.
 
 Scope note: this register covers the **protocol layer** of the Solana feature
 branch — `zama-host`, the `zama-fhe` SDK, the host-listener reconstruction path,
@@ -80,8 +81,9 @@ update, encrypted value ID…).
     its cost is unknown. It does not work the other way round, deliberately:
     some combinations have a price but are still rejected by validation.
 16. **[HOLDS]** An execution containing a rand step must bind a persistent output.
-    That output is what anchors the seed, and the seed must be fresh, so no two
-    executions can share one.
+    That output can be claimed only once per execution
+    (`EvalAccountTable::claim_persistent_output`), which is what stops two
+    executions from deriving the same seed.
 18. **[HOLDS]** Values from two different builders cannot be mixed into one
     execution: [`FheExecution::build`] hands each builder an invariant `'brand` lifetime
     that its transient values carry, so a foreign value is a compile error
@@ -109,12 +111,12 @@ update, encrypted value ID…).
 23. **[ASSUMPTION]** The coprocessor and KMS committees are honest at their
     thresholds, and their EVM signing keys are not compromised.
 24. **[ANTI]** `verify_public_decrypt` provides no act-once/replay protection;
-    each consuming app owns its own act-once state machine. The audited rule —
-    who needs a marker, what shape it takes, and why the marker itself cannot
-    ship as shared code (Anchor derives account ownership from the program that
-    declares the type, so the marker must live in the app) — is stated at the
-    verifier instruction and demonstrated by `redeem_burned_amount`'s
-    per-`(mint, handle)` write-once marker. Pinned from both sides by
+    each consuming app owns its own act-once state machine. The rule for that —
+    who needs a marker and what shape it takes — is written at the verifier
+    instruction, and `redeem_burned_amount`'s per-`(mint, handle)` write-once
+    marker is the worked example. The marker cannot ship as shared code: Anchor
+    derives account ownership from the program that declares the type, so it has
+    to live in the app. Pinned from both sides by
     `mollusk_redeem_historical_burned_handle_after_supersession_then_rejects_double_redeem`,
     `mollusk_two_concurrent_burns_each_redeemable_exactly_once`, and
     `mollusk_disclose_secp_is_idempotent_no_replay_marker`.
@@ -141,10 +143,10 @@ update, encrypted value ID…).
 29. **[HOLDS]** Every transaction is independently interpretable: replay from
     instruction bytes alone reconstructs full history with zero account reads
     (updates echo the previous handle and subjects).
-30. **[HOLDS]** The proof service can stop a decrypt from happening, but it can
-    never be what allows one: the KMS re-verifies every proof against live
-    confirmed on-chain peaks. A bad or compromised proof service can fail a
-    decrypt; it can never wrongly authorize one.
+30. **[HOLDS]** The proof service can stop a decrypt from happening but can
+    never be what allows one, because the KMS re-verifies every proof against
+    live confirmed on-chain peaks. A compromised proof service fails decrypts;
+    it cannot authorize one.
 31. **[HOLDS]** Coprocessor scheduling is decoupled from authorization: eager
     scheduling can waste compute on a minority fork; it can never release
     plaintext.
@@ -157,10 +159,12 @@ update, encrypted value ID…).
 ## F. Admin, config & custody
 
 35. **[HOLDS]** Only the configured admin can change HostConfig; every change
-    stamps `updated_slot` and emits a config event. That event goes out through
-    the event CPI, always — it is not behind a build flag, and it is not a log
-    that an RPC provider can truncate, because an off-chain component has to be
-    able to see an admin change without scanning for it (DD-044).
+    stamps `updated_slot` and emits a config event. The event always goes out
+    through the event CPI, so it lands in the transaction's inner instructions,
+    which an RPC provider cannot truncate the way it can truncate logs. A reader
+    therefore sees an admin change without replaying instruction data to find
+    one (DD-044). Seeing it is all this buys: authorization still comes from
+    account state, never from event bytes.
 36. **[HOLDS]** Pause blocks all production-shaped instructions.
 37. **[HOLDS]** HCU enforcement ships disabled (unrestricted defaults) and is
     opt-in per knob; `u64::MAX` is the single "unlimited" sentinel on every
@@ -212,7 +216,7 @@ update, encrypted value ID…).
     deliberate and documented at the site (`solana_v2_fetcher.rs` module doc:
     a grant observed on a supermajority-confirmed fork is sufficient
     authorization even if that fork is exceptionally rolled back). This entry
-    blesses it at the protocol level.
+    records that choice as accepted at the protocol level.
 49. **[ASSUMPTION]** The coprocessor's EVM-shaped event rows carry a zeroed
     `caller` for every Solana transaction (the 32-byte compute subject does
     not fit the 20-byte field and is discarded). This is safe if and only if
@@ -237,8 +241,8 @@ not when the threat model changes.
     `--features solana-grpc,solana-reconstruct`; coverage exists only where CI
     passes those flags.
 47. **[OPERATIONAL]** The proof service runs single-replica and
-    unauthenticated in the POC. It is availability-critical but never
-    authorization-critical (#30).
+    unauthenticated in the POC. An outage stalls decrypts; it can never
+    authorize one (#30).
 48. **[HOLDS]** Settle transactions at production KMS thresholds fit one packet
     only as v0 + one address lookup table; a legacy settle never fits. Both
     directions are pinned by tests.
@@ -266,15 +270,16 @@ not when the threat model changes.
     read back the last leaf when `leaf_count` is odd, so the same call would be
     accepted or rejected by parity. Pinned by
     `mollusk_make_handle_public_twice_appends_an_equivalent_leaf`.
-54. **[HOLDS]** Lowering an execution never copies the builder's intern tables, so an
-    app program pays a few hundred heap bytes per step. What has to fit Anchor's
+54. **[HOLDS]** Lowering an execution never copies the builder's intern tables,
+    but a step still costs about a kilobyte of heap. What has to fit Anchor's
     32 KB default bump heap is the whole instruction, not just the build: the
     region is never freed, and after the build the CPI helper deep-clones
     `FheExecuteArgs` and borsh-serializes the packet. Measured for steps that
     each write a persistent output:
-    - **16 steps** — 19,454 bytes. This is the documented budget.
+    - **16 steps** — 19,454 bytes (14,446 building, 5,008 for the packet). This
+      is the documented budget.
     - **24 steps** — 32,158 bytes, which clears the region by only 610 bytes.
-    - **28 steps** — does not fit.
+    - **28 steps** — 34,254 bytes: does not fit.
     - **32 steps** (the largest execution the host accepts) — 41,726 bytes, so it
       has to be built off-chain, or by a program that installs its own allocator.
 
@@ -283,8 +288,12 @@ not when the threat model changes.
     (`MAX_ON_CHAIN_EXECUTION_STEPS`, lifted by the `raised-heap` feature for a program
     that installs its own allocator) so a program past it gets
     `TooManyStepsForDefaultHeap` instead of an allocator abort with no error of
-    its own. Pinned by `solana/crates/zama-fhe/src/heap_budget.rs`, which takes
-    its step count from that constant.
+    its own. Two of these figures are asserted by
+    `solana/crates/zama-fhe/src/heap_budget.rs`, and they are the two that matter:
+    16 steps fit the region with the reserve, and the 32-step maximum does not fit
+    at all. The rest of the table is measurement, printed by that file's
+    `print_measurement_table` (`#[ignore]`d — run it with `--ignored --nocapture`),
+    so read the intermediate rows as the last measurement rather than as a bound.
 
 ## N. Roadmap
 

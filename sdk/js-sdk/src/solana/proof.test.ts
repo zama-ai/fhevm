@@ -188,8 +188,8 @@ describe('mmrVerify against a real 3-leaf MMR (Rust crate vectors)', () => {
   });
 
   it('verifyPublicDecryptProof rejects a historical leaf under the public-decrypt domain', () => {
-    // Same account/leaf_index/handle shape but hashed under the WRONG domain prefix must not
-    // verify — domain separation between historical and public leaves is load-bearing.
+    // Same account/leaf_index/handle shape hashed under the WRONG domain prefix must not verify:
+    // without domain separation, a historical leaf would prove a public decrypt.
     const proof: MmrProof = { leafIndex: 0n, siblings: [] };
     expect(verifyPublicDecryptProof(account, peaks, leafCount, new Uint8Array(32).fill(0), proof)).toBe(false);
   });

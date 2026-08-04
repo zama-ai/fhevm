@@ -82,7 +82,7 @@ KMS_SIGNERS="$(cast call "$GATEWAY_CONFIG_ADDRESS" 'getKmsSigners()(address[])' 
 echo "    gateway_chain_id=$GATEWAY_CHAIN_ID input_verification=$INPUT_VERIFICATION_ADDRESS"
 echo "    decryption=$DECRYPTION_ADDRESS coprocessor_signers=$COPROCESSOR_SIGNERS threshold=$COPROCESSOR_THRESHOLD kms_signers=$KMS_SIGNERS"
 
-echo "==> [2/5] fresh validator (Yellowstone geyser) + reconstruction-first program deploy"
+echo "==> [2/5] fresh validator (Yellowstone geyser) + program deploy"
 # Seed the committed well-known PoC program keypairs so the build reuses them and the deployed
 # program IDs match each `declare_id!` (see scripts/e2e/test-keypairs/README.md). `-n` keeps any
 # pre-existing local keypair; on a fresh checkout it seeds the committed test keys.
@@ -140,16 +140,10 @@ until curl -s -m2 "$VALIDATOR_RPC" -X POST -H 'Content-Type: application/json' \
   sleep 1
 done
 solana airdrop 500 -u "$VALIDATOR_RPC" -k "$DEPLOYER_KEYPAIR" >/dev/null 2>&1 || true
-# Reconstruction stays the normal path for everything the listener can rebuild from instruction
-# data over Yellowstone; what a program emits is no longer a build-time choice. zama_host used to be
-# built here with `--no-default-features` to drop its optional `emit-events` feature, and the two
-# programs had to be built in separate `anchor build` invocations to get per-crate feature control
-# (`cargo build-sbf` builds the whole workspace, so it cannot disable defaults for one crate). That
-# feature is gone: the admin and config events are emitted unconditionally through the event CPI so
-# an off-chain component can observe an admin change without scanning for it, and the events that
-# were only ever hints are not emitted at all. The two `-p` builds stay: they are what produces the
-# two `target/deploy/*.so` the deploy loop below reads, and naming them keeps the e2e from building
-# the batcher and the demo vault it never deploys.
+# Two separate `-p` builds, not one workspace build: these produce exactly the two
+# `target/deploy/*.so` the deploy loop below reads, and naming them keeps the e2e from building the
+# batcher and the demo vault it never deploys. (They used to be separate for a different reason —
+# per-crate feature control for zama_host's `emit-events`, which DD-044 deleted.)
 echo "    building zama_host + confidential_token"
 ( cd "$SOLANA" \
     && anchor build --ignore-keys --no-idl -p zama_host \

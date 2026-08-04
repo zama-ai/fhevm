@@ -321,8 +321,8 @@ trap - EXIT
 
 # 3. Bring the Solana side-stack online against the freshly-deployed live backend.
 #    Reads gateway addresses + KMS/coprocessor signer set live, so it tracks the new signer.
-#    The sole supported path deploys a reconstruction-first zama-host on the geyser-plugin validator and
-#    ingests ordinary computation facts through Yellowstone reconstruction.
+#    Deploys zama-host on the geyser-plugin validator; ordinary computation facts are ingested by
+#    reconstructing them from instruction data over Yellowstone, not from events.
 "$ROOT/solana/scripts/e2e/setup-solana-side.sh"
 
 echo "[clean-e2e] stack ready. Drive the full vertical (input -> compute -> public/user-decrypt ->"

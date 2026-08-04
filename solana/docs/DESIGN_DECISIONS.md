@@ -1934,16 +1934,16 @@ logs and the fallback hid a stranding case. The admin and config events were lef
 with `emit!`, behind a default-on `emit-events` cargo feature, described in the code as "indexing
 hints". That left three problems.
 
-The feature made the shipped IDL untrue. The IDL is generated on the default feature set, so it
-advertised all nine events; the build the e2e deploys is `anchor build -p zama_host --
---no-default-features`, which compiles seven of them out. An indexer reading the IDL would wait forever
-for an event the deployed program cannot emit.
+The feature made the shipped IDL misleading. The event structs were declared unconditionally, so the
+IDL advertised all nine of them under any feature set; what `anchor build -p zama_host --
+--no-default-features` removed — the build the e2e deploys — was the code that emits seven of them. An
+indexer reading the IDL would wait forever for an event the deployed program never sends.
 
 The transport did not match the claim. A log can be truncated by whichever RPC provider a reader goes
 through, so a logged event is a hint rather than a delivery. That is fine for something you can
 reconstruct and not fine for something you cannot, and "indexing hint" did not distinguish the two.
 
-And the grouping was wrong. `UserDecryptionDelegationUpdated` sat with the admin events, but
+And the grouping was wrong. `UserDecryptionDelegationUpdatedEvent` sat with the admin events, but
 `delegate_for_user_decryption` takes a `delegator: Signer` and no admin: any user may delegate their
 own decrypt rights. It is a user action, not administration.
 
@@ -1954,40 +1954,64 @@ CPI, or it is not emitted at all and off-chain readers reconstruct it from instr
 Yellowstone, which is the normal path. `emit!` is not used anywhere in `zama-host`, and the
 `emit-events` feature is deleted.
 
-The six admin and config events — `HostConfigInitialized`, `HostConfigUpdated`, `DenySubjectUpdated`,
-`HcuAppTrustUpdated`, `NewKmsContext`, `KmsContextDestroyed` — take the first option, because a
-protocol component off-chain has to be able to see an admin change without scanning for it. Their
-eleven instructions gain Anchor's `#[event_cpi]` accounts (`event_authority`, `program`), which is a
-visible ABI change: `initialize_host_config` and `define_kms_context` go from four accounts to six,
-`set_deny_subject` and `set_hcu_app_trusted` from five to seven, and the six `HostAdmin` config
-setters from two to four.
+Which option an event gets is decided by whether the instruction is administration, and by nothing
+else. An admin instruction changes a protocol-level setting that off-chain components have to be able
+to query directly, so it emits. Everything else is reconstructed on demand.
 
-`UserDecryptionDelegationUpdated` takes the second option and is deleted. Delegation has no off-chain
-consumer at all yet, which INVARIANTS #27 already records as a known gap: the KMS connector carries a
-`verify_delegation` verifier that reads the record at its canonical PDA, but nothing in the request path
-calls it — its only callers are its own unit tests — and the signed user-decrypt request payload has no
-delegation field. So the event was surface built ahead of a reader. When that reader arrives it will
-read the record, the way the verifier already does, and delegation history reconstructs from
-`delegate_for_user_decryption` instruction data like every other state change.
+The six admin and config events — `HostConfigInitializedEvent`, `HostConfigUpdatedEvent`,
+`DenySubjectUpdatedEvent`, `HcuAppTrustUpdatedEvent`, `NewKmsContextEvent`, `KmsContextDestroyedEvent` —
+take the first option. Their eleven instructions gain Anchor's `#[event_cpi]` accounts
+(`event_authority`, `program`), which is a visible ABI change: `initialize_host_config` and
+`define_kms_context` go from four accounts to six, `destroy_kms_context` from three to five,
+`set_deny_subject` and `set_hcu_app_trusted` from five to seven, and the six `HostAdmin` config setters
+from two to four.
+
+Note that no in-tree component reads any of the six today; the only off-chain reader of host config
+state reads the account, not an event (`host-listener`'s `parse_host_config`). That is deliberate and is
+not an argument against emitting them: the transport exists because the category calls for it, so that
+a component which needs an admin change does not have to replay instruction data to find one. The test
+is the category, not the current existence of a reader — otherwise the rule would flip every time
+somebody wrote or deleted an indexer.
+
+`UserDecryptionDelegationUpdatedEvent` takes the second option and is deleted, for the categorical
+reason above: delegating is a user ability, so it is reconstructed from `delegate_for_user_decryption`
+instruction data like every other user action. Two facts about delegation that are true but are *not*
+the reason, recorded so they are not mistaken for it: nothing in the request path consumes delegation
+at all (INVARIANTS #27 records the gap — the KMS connector's `verify_delegation` checks an
+already-decoded record against its canonical PDA and fetches nothing, its only callers are its own unit
+tests, and the signed user-decrypt payload has no delegation field), and a reader, when it arrives,
+will have to fetch the record and hand it to that checker.
 
 `fhe_execute`'s two compute events are unchanged in behaviour and now share one emitter with the
 admin events (`event_cpi.rs`), instead of keeping their own copy of the expansion.
 
 Rationale:
 
-The rule is about who needs the data, not about how important it looks. Reliable delivery costs an
-account pair on the instruction and a self-CPI per emission, which is nothing on an admin instruction
-that runs when an operator changes configuration, and would be real weight on a per-step compute
-event — which is exactly why the per-step shapes are still not emitted.
+Reliable delivery costs an account pair on the instruction and a self-CPI per emission. That is nothing
+on an admin instruction, which runs when an operator changes configuration, and would be real weight on
+a per-step compute event — which is why the per-step shapes are still not emitted. DD-003 said the same
+thing in weaker terms ("events are indexing hints"); this entry replaces that framing for `zama-host`
+but not its other half, which is that authorization never rests on an event.
 
 Anchor's `emit_cpi!` macro is not used, though the bytes it produces are. It reads a binding named
 `ctx`, and six of the eleven instructions emit through a shared `emit_config_updated` helper that has
-no `ctx`; using the macro would mean copying a ten-field event literal into each of them. One
-hand-written emitter takes the event authority as an argument and serves all thirteen call sites. The
-tag and the payload encoding come from anchor-lang, so they track upstream; only the assembly is ours,
-and each self-CPI re-enters the program through Anchor's generated `__event_dispatch`, which checks the
-tag and the authority signer — so a Mollusk test running any emitting instruction against the real SBF
-artifact fails if the shape drifts.
+no `ctx`; using the macro would mean copying a nine-field event literal into each of them. One
+hand-written emitter takes the event authority as an argument and serves all eight call sites, covering
+thirteen emissions.
+
+The tag and the payload encoding come from anchor-lang, so they track upstream; only the assembly is
+ours. What happens if the assembly itself drifts is worth stating precisely, because it is less than it
+looks. A wrong tag fails the transaction: `dispatch` routes on the tag, and an unrouted instruction hits
+the fallback. Past that, Anchor's generated `__event_dispatch` checks that the *first* account is a
+signer and is the canonical event authority — and nothing else. It never reads the event data, and it
+ignores any account after the first. So an extra account or a changed payload encoding would not be
+caught by the runtime at all. What catches those is two tests, and they are the reason the emitter
+returns an `Instruction` as a value: `event_transport.rs`'s unit test asserts the built instruction's
+program, account count, signer and writable flags, and data length, and `host_mollusk.rs`'s
+`sole_emitted_event` reads an event back out of the inner instructions and asserts one account, the
+canonical authority, and every payload field. Those two cover `PublicOutputsProducedEvent` and
+`NewKmsContextEvent`. Keep it that way: if they ever stop being covered, this becomes an unchecked copy
+of an upstream wire format.
 
 Consequences:
 

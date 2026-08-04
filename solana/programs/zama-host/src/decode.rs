@@ -6,7 +6,7 @@
 
 use anchor_lang::{AnchorDeserialize, Discriminator};
 
-/// Anchor's `emit_cpi!` self-invocation sentinel that prefixes the event bytes
+/// Anchor's event-CPI self-invocation sentinel that prefixes the event bytes
 /// of an event self-CPI's instruction data.
 pub use anchor_lang::event::EVENT_IX_TAG_LE;
 
