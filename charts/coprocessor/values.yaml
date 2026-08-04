@@ -1259,6 +1259,7 @@ snsWorker:
   #     --pg-notify-channel
   #     - event_ciphertext128_computed
   #     --work-items-batch-size=4
+  #     --s3-migration-max-concurrent-handles=16
   #     --pg-polling-interval=60
   #     --pg-pool-connections=10
   #     --pg-timeout=15s
