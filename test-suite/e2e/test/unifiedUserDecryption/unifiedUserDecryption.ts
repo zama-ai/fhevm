@@ -18,6 +18,7 @@ import {
   backdatedStartTimestamp,
   delegatedHandle,
   directHandle,
+  expectGatewayRevert,
   expectRelayerAclRejection,
   expectStuckAtKms,
   isSignatureRejection,
@@ -566,7 +567,8 @@ describe('Unified user decryption', function () {
         timeoutMs: negativeWindowMs,
       });
       expect(post.httpStatus, JSON.stringify(post.raw)).to.equal(202);
-      expectStuckAtKms(poll);
+      // InvalidKmsContext(0xdeadbeef) — selector 0x77ddbe81.
+      expectGatewayRevert(poll, /0x77ddbe81.*deadbeef/i);
     });
 
     it('test unified user decrypt rejects a malformed extraData version', async function () {
