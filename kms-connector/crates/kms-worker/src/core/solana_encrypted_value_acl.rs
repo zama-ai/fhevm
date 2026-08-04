@@ -201,7 +201,7 @@ mod tests {
         EncryptedValueAccount {
             acl: EncryptedValue {
                 domain: DOMAIN,
-                account: APP,
+                encrypted_value_account_authority: APP,
                 label: LABEL,
                 current_handle: handle,
                 subjects: subjects.to_vec(),

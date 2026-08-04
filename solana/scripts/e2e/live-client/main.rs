@@ -398,7 +398,7 @@ fn token_balance_state(
         return Err("balance encrypted value account has trailing or truncated data".into());
     }
     if encrypted_value.domain != mint
-        || encrypted_value.account != token_account_key
+        || encrypted_value.encrypted_value_account_authority != token_account_key
         || encrypted_value.label != label
         || encrypted_value.bump != encrypted_value_bump
         || encrypted_value.encrypted_value_id() != encrypted_value_id
@@ -533,7 +533,7 @@ fn persistent_output(
         output_authority_index: None,
         output_domain_index: dictionary.intern_key(domain),
         output_account_index: dictionary.intern_key(account),
-        output_label_index: dictionary.intern(label),
+        output_label_index: dictionary.intern(encrypted_value_label),
         output_subject_indexes: dictionary.intern_subjects(subjects),
         previous_state,
         make_public: false,
@@ -1810,7 +1810,7 @@ fn create_persistent_public_decrypt_operand(
     plaintext[24..32].copy_from_slice(&value.to_be_bytes());
     let account = payer.pubkey();
     let domain = payer.pubkey();
-    let encrypted_value = encrypted_value_address(domain, account, label);
+    let encrypted_value = encrypted_value_address(domain, account, encrypted_value_label);
     let (zama_event_authority, _) =
         Pubkey::find_program_address(&[EVENT_AUTHORITY_SEED], &zama_host::ID);
     let subjects = vec![payer.pubkey()];
@@ -1827,7 +1827,7 @@ fn create_persistent_public_decrypt_operand(
                 0,
                 domain,
                 account,
-                label,
+                encrypted_value_label,
                 subjects,
             )?,
         }],

@@ -517,7 +517,7 @@ mod tests {
         EncryptedValueAccount {
             acl: EncryptedValue {
                 domain: DOMAIN,
-                account: APP,
+                encrypted_value_account_authority: APP,
                 label: LABEL,
                 current_handle: handle,
                 subjects: subjects.to_vec(),
@@ -532,7 +532,11 @@ mod tests {
 
     impl EncryptedValueAccount {
         fn encrypted_value_id(&self) -> [u8; 32] {
-            derive_encrypted_value_id(self.acl.domain, self.acl.account, self.acl.label)
+            derive_encrypted_value_id(
+                self.acl.domain,
+                self.acl.encrypted_value_account_authority,
+                self.acl.label,
+            )
         }
         fn append(&mut self, commitment: [u8; 32]) {
             mmr_append(&mut self.acl.peaks, &mut self.acl.leaf_count, commitment).unwrap();

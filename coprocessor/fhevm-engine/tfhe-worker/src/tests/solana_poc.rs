@@ -420,7 +420,7 @@ fn transfer_output_accounts(fixture: &TokenFixture) -> TransferOutputAccounts {
         transferred: token::encrypted_value_address(
             fixture.mint.pubkey(),
             fixture.alice_token,
-            token::transferred_amount_label(),
+            token::encrypted_transferred_amount_label(),
         )
         .0,
     }
