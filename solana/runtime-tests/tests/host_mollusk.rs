@@ -1000,12 +1000,12 @@ fn mollusk_removed_subject_gets_no_historical_leaf_when_later_updated() {
     assert_eq!(updated.peaks, expected_peaks);
 
     let events = [
-        zama_solana_acl::value_account::EncryptedValueAccountEvent::handle_updated(
+        zama_solana_acl::encrypted_value_account::EncryptedValueAccountEvent::handle_updated(
             handle0,
             &[owner.to_bytes()],
         ),
     ];
-    let proof = zama_solana_acl::value_account::build_verified_proof_from_events(
+    let proof = zama_solana_acl::encrypted_value_account::build_verified_proof_from_events(
         address.to_bytes(),
         &events,
         &updated.peaks,
@@ -1071,12 +1071,12 @@ fn mollusk_subject_retains_historical_access_sealed_before_removal() {
     assert_eq!(final_value.leaf_count, 2);
 
     let events = [
-        zama_solana_acl::value_account::EncryptedValueAccountEvent::handle_updated(
+        zama_solana_acl::encrypted_value_account::EncryptedValueAccountEvent::handle_updated(
             handle0,
             &[owner.to_bytes(), removed.to_bytes()],
         ),
     ];
-    let proof = zama_solana_acl::value_account::build_verified_proof_from_events(
+    let proof = zama_solana_acl::encrypted_value_account::build_verified_proof_from_events(
         address.to_bytes(),
         &events,
         &final_value.peaks,
@@ -1428,12 +1428,16 @@ fn mollusk_make_handle_public_twice_appends_an_equivalent_leaf() {
 
     assert_eq!(resealed.leaf_count, 2);
     let events = [
-        zama_solana_acl::value_account::EncryptedValueAccountEvent::MarkedPublic { handle },
-        zama_solana_acl::value_account::EncryptedValueAccountEvent::MarkedPublic { handle },
+        zama_solana_acl::encrypted_value_account::EncryptedValueAccountEvent::MarkedPublic {
+            handle,
+        },
+        zama_solana_acl::encrypted_value_account::EncryptedValueAccountEvent::MarkedPublic {
+            handle,
+        },
     ];
     let shared = resealed.to_shared();
     for leaf_index in 0..resealed.leaf_count {
-        let proof = zama_solana_acl::value_account::build_verified_proof_from_events(
+        let proof = zama_solana_acl::encrypted_value_account::build_verified_proof_from_events(
             address.to_bytes(),
             &events,
             &resealed.peaks,
@@ -2119,7 +2123,7 @@ fn mollusk_paused_state_blocks_acl_update_and_eval_output() {
 }
 
 // ---------------------------------------------------------------------------
-// Item 2a: update encrypted value account end-to-end against zama_solana_acl::value_account::reconstruct
+// Item 2a: update encrypted value account end-to-end against zama_solana_acl::encrypted_value_account::reconstruct
 // ---------------------------------------------------------------------------
 
 #[test]
@@ -2160,7 +2164,7 @@ fn mollusk_supersession_value_account_matches_offchain_reconstruction() {
     // Rebuild the HandleUpdated events purely from the two instructions' own
     // previous_handle/previous_subjects args, exactly as an off-chain indexer would.
     let events = [
-        zama_solana_acl::value_account::EncryptedValueAccountEvent::handle_updated(
+        zama_solana_acl::encrypted_value_account::EncryptedValueAccountEvent::handle_updated(
             handle0,
             &value0
                 .subjects
@@ -2168,7 +2172,7 @@ fn mollusk_supersession_value_account_matches_offchain_reconstruction() {
                 .map(|p| p.to_bytes())
                 .collect::<Vec<_>>(),
         ),
-        zama_solana_acl::value_account::EncryptedValueAccountEvent::handle_updated(
+        zama_solana_acl::encrypted_value_account::EncryptedValueAccountEvent::handle_updated(
             value1.current_handle,
             &value1
                 .subjects
@@ -2178,7 +2182,7 @@ fn mollusk_supersession_value_account_matches_offchain_reconstruction() {
         ),
     ];
     let reconstructed =
-        zama_solana_acl::value_account::reconstruct(address.to_bytes(), &events).unwrap();
+        zama_solana_acl::encrypted_value_account::reconstruct(address.to_bytes(), &events).unwrap();
     assert!(reconstructed.peaks_match(&value2.peaks, value2.leaf_count));
     assert_eq!(reconstructed.leaf_count, 4); // 2 subjects x 2 supersessions
 }
@@ -2223,7 +2227,7 @@ fn mollusk_historical_proof_round_trip_after_two_supersessions() {
     );
 
     let events = [
-        zama_solana_acl::value_account::EncryptedValueAccountEvent::handle_updated(
+        zama_solana_acl::encrypted_value_account::EncryptedValueAccountEvent::handle_updated(
             handle0,
             &value0
                 .subjects
@@ -2231,7 +2235,7 @@ fn mollusk_historical_proof_round_trip_after_two_supersessions() {
                 .map(|p| p.to_bytes())
                 .collect::<Vec<_>>(),
         ),
-        zama_solana_acl::value_account::EncryptedValueAccountEvent::handle_updated(
+        zama_solana_acl::encrypted_value_account::EncryptedValueAccountEvent::handle_updated(
             value1.current_handle,
             &value1
                 .subjects
@@ -2242,7 +2246,7 @@ fn mollusk_historical_proof_round_trip_after_two_supersessions() {
     ];
 
     // Leaf 0 authorizes (handle0, subject) historically against the live peaks.
-    let proof0 = zama_solana_acl::value_account::build_verified_proof_from_events(
+    let proof0 = zama_solana_acl::encrypted_value_account::build_verified_proof_from_events(
         address.to_bytes(),
         &events,
         &value2.peaks,
@@ -2319,10 +2323,10 @@ fn mollusk_public_decrypt_proof_has_no_roll_forward() {
     );
 
     let events = [
-        zama_solana_acl::value_account::EncryptedValueAccountEvent::MarkedPublic {
+        zama_solana_acl::encrypted_value_account::EncryptedValueAccountEvent::MarkedPublic {
             handle: handle0,
         },
-        zama_solana_acl::value_account::EncryptedValueAccountEvent::handle_updated(
+        zama_solana_acl::encrypted_value_account::EncryptedValueAccountEvent::handle_updated(
             handle0,
             &value_public
                 .subjects
@@ -2331,7 +2335,7 @@ fn mollusk_public_decrypt_proof_has_no_roll_forward() {
                 .collect::<Vec<_>>(),
         ),
     ];
-    let proof = zama_solana_acl::value_account::build_verified_proof_from_events(
+    let proof = zama_solana_acl::encrypted_value_account::build_verified_proof_from_events(
         address.to_bytes(),
         &events,
         &final_value.peaks,
@@ -3829,9 +3833,9 @@ struct EvalFixture {
     authority: Pubkey,
     account: Pubkey,
     /// The metered identity: the execution's signed `compute_subject`, which must be a member of the
-    /// persistent input ACL (it authorizes the inputs). Deliberately distinct from `account` /
-    /// `encrypted_value_account_authority` so block-cap tests prove the meter keys on the compute subject and
-    /// never on the output-ACL authority.
+    /// persistent input ACL (it authorizes the inputs). Deliberately distinct from `account`, which
+    /// this fixture passes as the `encrypted_value_account_authority`, so block-cap tests prove the
+    /// meter keys on the compute subject and never on the output-ACL authority.
     compute_subject: Pubkey,
     host_config: Pubkey,
     balance_handle: [u8; 32],
@@ -5153,10 +5157,13 @@ fn seal_public_leaf(
         &mollusk().process_and_validate_instruction(&seal_ix, &seal_accounts, &[Check::success()]),
         address,
     );
-    let events =
-        [zama_solana_acl::value_account::EncryptedValueAccountEvent::MarkedPublic { handle }];
+    let events = [
+        zama_solana_acl::encrypted_value_account::EncryptedValueAccountEvent::MarkedPublic {
+            handle,
+        },
+    ];
     let proof = mmr_inclusion_proof(
-        zama_solana_acl::value_account::build_verified_proof_from_events(
+        zama_solana_acl::encrypted_value_account::build_verified_proof_from_events(
             address.to_bytes(),
             &events,
             &sealed.peaks,
@@ -5770,10 +5777,10 @@ fn mollusk_verify_public_decrypt_survives_update_after_seal() {
 
     // Rebuild the proof for the sealed leaf 0 against the post-update peaks.
     let events = [
-        zama_solana_acl::value_account::EncryptedValueAccountEvent::MarkedPublic {
+        zama_solana_acl::encrypted_value_account::EncryptedValueAccountEvent::MarkedPublic {
             handle: handle0,
         },
-        zama_solana_acl::value_account::EncryptedValueAccountEvent::handle_updated(
+        zama_solana_acl::encrypted_value_account::EncryptedValueAccountEvent::handle_updated(
             handle0,
             &sealed
                 .subjects
@@ -5783,7 +5790,7 @@ fn mollusk_verify_public_decrypt_survives_update_after_seal() {
         ),
     ];
     let proof = mmr_inclusion_proof(
-        zama_solana_acl::value_account::build_verified_proof_from_events(
+        zama_solana_acl::encrypted_value_account::build_verified_proof_from_events(
             address.to_bytes(),
             &events,
             &final_value.peaks,
@@ -5858,7 +5865,7 @@ fn mollusk_verify_public_decrypt_rejects_historical_only_leaf() {
     );
 
     let events = [
-        zama_solana_acl::value_account::EncryptedValueAccountEvent::handle_updated(
+        zama_solana_acl::encrypted_value_account::EncryptedValueAccountEvent::handle_updated(
             handle0,
             &value0
                 .subjects
@@ -5867,7 +5874,7 @@ fn mollusk_verify_public_decrypt_rejects_historical_only_leaf() {
                 .collect::<Vec<_>>(),
         ),
     ];
-    let shared_proof = zama_solana_acl::value_account::build_verified_proof_from_events(
+    let shared_proof = zama_solana_acl::encrypted_value_account::build_verified_proof_from_events(
         address.to_bytes(),
         &events,
         &final_value.peaks,

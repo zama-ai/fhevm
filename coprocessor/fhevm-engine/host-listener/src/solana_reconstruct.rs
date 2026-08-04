@@ -1003,7 +1003,7 @@ mod tests {
             }],
         };
 
-        let output_authority = [0x55u8; 32];
+        let output_encrypted_value_account = [0x55u8; 32];
         let random_seeds = [FheExecuteRandomSeed {
             step_index: 0,
             seed: [7; 16],
@@ -1011,7 +1011,7 @@ mod tests {
         let records = reconstruct_fhe_execute_records(
             &execution,
             SUBJECT,
-            &[output_authority],
+            &[output_encrypted_value_account],
             &random_seeds,
             &ctx(),
         )
@@ -1036,7 +1036,7 @@ mod tests {
         };
         // The execution ends in a rand step, so it anchors a persistent output
         // (fhevm-internal#1853 W4); dictionary entries 1..=4 are its ACL metadata.
-        let output_authority = [0x55u8; 32];
+        let output_encrypted_value_account = [0x55u8; 32];
         let execution = FheExecuteArgs {
             account_count: 1,
             dictionary: vec![
@@ -1106,7 +1106,7 @@ mod tests {
         let records = reconstruct_fhe_execute_records(
             &execution,
             SUBJECT,
-            &[output_authority],
+            &[output_encrypted_value_account],
             &[FheExecuteRandomSeed {
                 step_index: 6,
                 seed: random_seed,

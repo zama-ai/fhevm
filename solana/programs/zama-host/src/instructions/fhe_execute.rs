@@ -3,9 +3,9 @@
 //! Three signers cover three distinct authorities, and they are only sometimes the same key:
 //! `payer` funds rent for persistent output ACL records; `compute_subject` is the identity that
 //! must be allowed on every persistent encrypted input, and doubles as the HCU metering key;
-//! `encrypted_value_account_authority` is the app account that authorizes persistent output ACL metadata. A CPI
-//! caller typically signs `compute_subject` and `encrypted_value_account_authority` with its own PDAs while
-//! forwarding a user wallet as `payer`.
+//! `encrypted_value_account_authority` is the account that authorizes persistent output ACL
+//! metadata. A CPI caller typically signs `compute_subject` and
+//! `encrypted_value_account_authority` with its own PDAs while forwarding a user wallet as `payer`.
 
 use anchor_lang::prelude::*;
 

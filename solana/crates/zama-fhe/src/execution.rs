@@ -103,7 +103,7 @@ impl FheExecution {
     /// `dynamic_accounts` must contain only non-authority execution accounts such as
     /// persistent input ACLs, permission records, transient sessions, and writable
     /// persistent output ACL records. `output_authorities` must contain signer
-    /// witnesses for persistent outputs whose app account is not the fixed CPI
+    /// witnesses for persistent outputs whose authority is not the fixed CPI
     /// `encrypted_value_account_authority`.
     pub fn resolve_accounts<'info>(
         &self,

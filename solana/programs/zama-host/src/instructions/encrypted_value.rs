@@ -358,7 +358,7 @@ mod tests {
     fn update_then_make_public_matches_shared_value_account_reconstruction() {
         // Two on-chain appends (one update over two allowed subjects, one
         // make-public) must reproduce byte-for-byte the peaks an off-chain
-        // indexer would derive from `zama_solana_acl::value_account::reconstruct`
+        // indexer would derive from `zama_solana_acl::encrypted_value_account::reconstruct`
         // over the equivalent `HandleUpdated`/`MarkedPublic` event log.
         let owner = Pubkey::new_unique();
         let other = Pubkey::new_unique();
@@ -377,19 +377,19 @@ mod tests {
         zama_solana_acl::mmr_append(&mut v.peaks, &mut v.leaf_count, commitment).unwrap();
 
         let events = [
-            zama_solana_acl::value_account::EncryptedValueAccountEvent::handle_updated(
+            zama_solana_acl::encrypted_value_account::EncryptedValueAccountEvent::handle_updated(
                 previous_handle,
                 &previous_subjects
                     .iter()
                     .map(|p| p.to_bytes())
                     .collect::<Vec<_>>(),
             ),
-            zama_solana_acl::value_account::EncryptedValueAccountEvent::MarkedPublic {
+            zama_solana_acl::encrypted_value_account::EncryptedValueAccountEvent::MarkedPublic {
                 handle: [2; 32],
             },
         ];
         let reconstructed =
-            zama_solana_acl::value_account::reconstruct(key.to_bytes(), &events).unwrap();
+            zama_solana_acl::encrypted_value_account::reconstruct(key.to_bytes(), &events).unwrap();
         assert!(reconstructed.peaks_match(&v.peaks, v.leaf_count));
     }
 

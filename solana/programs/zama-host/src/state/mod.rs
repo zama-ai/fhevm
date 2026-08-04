@@ -353,15 +353,17 @@ pub enum FheExecuteOutput {
     StoredValue {
         /// Index into `remaining_accounts` for the output `EncryptedValue` PDA.
         output_encrypted_value_index: u8,
-        /// Optional index into `remaining_accounts` for the app account authority signer.
+        /// Optional index into `remaining_accounts` for the encrypted value account authority
+        /// signer.
         ///
         /// `None` uses the fixed `encrypted_value_account_authority` account in the eval
         /// context. `Some(index)` requires that remaining account to be a signer
-        /// and to match the output app account.
+        /// and to match the declared output authority.
         output_authority_index: Option<u8>,
         /// Dictionary index of the ACL domain key for the output encrypted value account.
         output_domain_index: u8,
-        /// Dictionary index of the app account authorized to bind the output encrypted value account.
+        /// Dictionary index of the encrypted value account authority declared for the output
+        /// encrypted value account.
         output_account_index: u8,
         /// Dictionary index of the encrypted value label for the output encrypted value account.
         output_label_index: u8,

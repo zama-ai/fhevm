@@ -102,7 +102,7 @@ pub(crate) struct BatchAuthorityExecute<'a, 'info> {
 }
 
 /// Builds and invokes one `fhe_execute` execution with the batch authority as both
-/// compute subject and app account authority.
+/// compute subject and encrypted value account authority.
 pub(crate) fn execute_as_batch_authority<'info>(
     eval: BatchAuthorityExecute<'_, 'info>,
     dynamic_accounts: Vec<AccountInfo<'info>>,

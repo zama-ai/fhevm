@@ -389,8 +389,8 @@ impl EvalFlow {
         );
         let cleartext = evaluate(&args, &self.cleartext)
             .expect("accepted host execution must have valid cleartext semantics");
-        let output_authority = result.get_account(&output_address).unwrap();
-        let mut output_data: &[u8] = &output_authority.data;
+        let output_account = result.get_account(&output_address).unwrap();
+        let mut output_data: &[u8] = &output_account.data;
         let output_handle = host::EncryptedValue::try_deserialize(&mut output_data)
             .expect("persistent result account")
             .current_handle;

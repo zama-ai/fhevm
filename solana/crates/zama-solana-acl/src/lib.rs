@@ -3,7 +3,7 @@
 //! The single source of truth — used identically by the on-chain `zama-host`
 //! program, the standalone `solana-proof-service`, and the off-chain KMS connector — for the
 //! `EncryptedValue` account layout, its Merkle Mountain Range history, the leaf
-//! commitments, the value-key derivation, and the decrypt-authorization rules.
+//! commitments, the encrypted value ID derivation, and the decrypt-authorization rules.
 //! Sharing this crate makes the host↔KMS lockstep type-level instead of a
 //! convention checked by tests.
 //!
@@ -19,8 +19,8 @@
 #[cfg(not(target_os = "solana"))]
 use sha2::{Digest as _, Sha256};
 
-pub mod value_account;
-pub use value_account::{
+pub mod encrypted_value_account;
+pub use encrypted_value_account::{
     build_proof_from_events, build_verified_proof_from_events, reconstruct,
     EncryptedValueAccountError, EncryptedValueAccountEvent, ReconstructedEncryptedValueAccount,
 };
@@ -71,9 +71,12 @@ pub struct EncryptedValue {
     /// App-level ACL domain, such as a confidential token mint.
     pub domain: [u8; 32],
     /// The account that controls this encrypted value: it must sign to create it, update its
-    /// handle, or replace its subjects. For a token balance this is the token account itself.
+    /// handle, or replace its subject list. For a token balance this is the token account itself.
+    /// It is not the sole controller of the audience — any current subject may also add or remove
+    /// subjects through `allow_subjects` / `remove_subject`.
     pub encrypted_value_account_authority: [u8; 32],
-    /// Domain-separated encrypted field label inside `encrypted_value_account_authority`.
+    /// The encrypted value label: the third component of the encrypted value ID, naming which
+    /// encrypted value of the authority this is.
     pub label: [u8; 32],
     /// Current encrypted value identifier (the live handle).
     pub current_handle: [u8; 32],
@@ -105,7 +108,7 @@ impl EncryptedValue {
     /// Full on-chain account size (8-byte discriminator + borsh body) for an encrypted value account
     /// with `subjects_len` subjects and `peaks_len` peaks. Used to `init`/`realloc`.
     pub fn account_size(subjects_len: usize, peaks_len: usize) -> usize {
-        // disc + (domain+app+label+handle) + subjects(vec) + leaf_count + peaks(vec) + bump
+        // disc + (domain+authority+label+handle) + subjects(vec) + leaf_count + peaks(vec) + bump
         8 + (32 * 4) + (4 + 32 * subjects_len) + 8 + (4 + 32 * peaks_len) + 1
     }
 }

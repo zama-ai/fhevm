@@ -7,8 +7,8 @@
 use std::collections::{BTreeMap, BTreeSet};
 
 use solana_proof_source::CompletedBlock;
+use zama_solana_acl::encrypted_value_account::EncryptedValueAccountEvent;
 use zama_solana_acl::mmr::mmr_append;
-use zama_solana_acl::value_account::EncryptedValueAccountEvent;
 use zama_solana_acl::{historical_access_leaf_commitment, public_decrypt_leaf_commitment};
 
 use crate::decode::{decode_program_instructions, DecodeError, DecodedInstruction};
@@ -279,7 +279,7 @@ pub fn reduce_completed_block(
 mod tests {
     use super::*;
     use solana_proof_source::{CanonicalTransaction, RawInstruction};
-    use zama_solana_acl::value_account::reconstruct;
+    use zama_solana_acl::encrypted_value_account::reconstruct;
 
     fn pk(tag: u8) -> [u8; 32] {
         [tag; 32]

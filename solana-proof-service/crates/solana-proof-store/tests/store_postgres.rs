@@ -17,9 +17,9 @@ use solana_proof_store::{
     PriorEncryptedValueAccountState, SemanticLeafKey, SqlProofStore,
 };
 use zama_host::state::{FheExecuteArgs, FheExecuteOutput, FheExecuteStep};
+use zama_solana_acl::encrypted_value_account::reconstruct;
 use zama_solana_acl::mmr::{mmr_build_proof, mmr_peaks_from_leaves, mmr_verify};
 use zama_solana_acl::public_decrypt_leaf_commitment;
-use zama_solana_acl::value_account::reconstruct;
 
 fn database_url() -> String {
     std::env::var("SOLANA_PROOF_TEST_DATABASE_URL")

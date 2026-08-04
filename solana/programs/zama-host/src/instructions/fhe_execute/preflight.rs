@@ -30,8 +30,9 @@ pub(super) fn preflight_execution<'info>(
 /// keypair-churn bypass rode, so it is rejected before compute.
 ///
 /// A persistent OUTPUT is allowed through here, but note it does NOT pin the subject: output binding
-/// authorizes against `encrypted_value_account_authority`, never `compute_subject`. So a throwaway-encrypted value account
-/// create/update still lets a caller swap the subject for a fresh per-slot meter — that vector
+/// authorizes against `encrypted_value_account_authority`, never `compute_subject`. So creating or
+/// updating a throwaway encrypted value account still lets a caller swap the subject for a fresh
+/// per-slot meter — that vector
 /// remains open, but is rent-bounded (~one `HcuBlockMeter` PDA rent per swap) rather than free,
 /// and closing it fully needs a registered app identity (the issue's Option 2, deferred). The
 /// allowance is kept because it is also the legitimate trivial-encrypt/`Rand` -> persistent-output

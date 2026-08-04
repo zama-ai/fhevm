@@ -69,8 +69,9 @@ pub enum ZamaHostError {
     /// A bounded random request has an invalid upper bound.
     #[msg("bounded random upper bound is invalid")]
     InvalidRandomUpperBound,
-    /// The authority signing for an output's app account does not match that app account.
-    #[msg("app account authority does not match app account")]
+    /// The signer for an output does not match the encrypted value account authority the
+    /// execution declared for it.
+    #[msg("signer does not match the declared encrypted value account authority")]
     EncryptedValueAccountAuthorityMismatch,
     /// A deny-list witness is required but was not supplied.
     #[msg("deny-list witness account is required")]

@@ -2624,15 +2624,21 @@
             "name": "encrypted_value_account_authority",
             "docs": [
               "The account that controls this encrypted value: it must sign to create it, update its",
-              "handle, or replace its subjects (`require_keys_eq!` in `assert_output_acl_metadata`). For a",
-              "token balance this is the token account itself."
+              "handle, or replace its subject list. Enforced by address rather than by comparing this",
+              "field — the signer must equal the authority declared in the execution",
+              "(`assert_output_acl_metadata`) and the account written to must be the PDA rederived from",
+              "that declared triple, which is what ties the signer to the stored value on update. For a",
+              "token balance this is the token account itself. It is not the sole controller of the",
+              "audience — any current subject may also add or remove subjects through `allow_subjects` /",
+              "`remove_subject`."
             ],
             "type": "pubkey"
           },
           {
             "name": "label",
             "docs": [
-              "Domain-separated encrypted field label inside `encrypted_value_account_authority`."
+              "The encrypted value label: the third component of the encrypted value ID, naming which",
+              "encrypted value of the authority this is."
             ],
             "type": {
               "array": [

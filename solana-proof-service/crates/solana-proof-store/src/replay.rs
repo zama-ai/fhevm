@@ -1,6 +1,6 @@
 //! Tracks per-encrypted_value_account current state (`current_handle`, subjects) across a
 //! chronological instruction replay, turning `DecodedInstruction`s into the
-//! `zama_solana_acl::value_account::EncryptedValueAccountEvent`s the shared crate's MMR math consumes.
+//! `zama_solana_acl::encrypted_value_account::EncryptedValueAccountEvent`s the shared crate's MMR math consumes.
 //!
 //! Encrypted-value-account creation and update come from persistent
 //! `fhe_execute` outputs. `allow_subjects` mutates current subjects but appends
@@ -12,7 +12,7 @@
 //! handle) followed by `MarkedPublic` (new output handle) — matching the
 //! on-chain leaf append order.
 
-use zama_solana_acl::value_account::EncryptedValueAccountEvent;
+use zama_solana_acl::encrypted_value_account::EncryptedValueAccountEvent;
 
 use crate::decode::DecodedInstruction;
 
@@ -192,8 +192,8 @@ pub fn apply_instruction(
 mod tests {
     use super::*;
     use zama_solana_acl::{
-        historical_access_leaf_commitment, mmr::mmr_verify, public_decrypt_leaf_commitment,
-        value_account::reconstruct,
+        encrypted_value_account::reconstruct, historical_access_leaf_commitment, mmr::mmr_verify,
+        public_decrypt_leaf_commitment,
     };
 
     fn pk(tag: u8) -> [u8; 32] {

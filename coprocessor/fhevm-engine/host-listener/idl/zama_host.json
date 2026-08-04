@@ -1656,7 +1656,7 @@
     {
       "code": 6020,
       "name": "EncryptedValueAccountAuthorityMismatch",
-      "msg": "app account authority does not match app account"
+      "msg": "signer does not match the declared encrypted value account authority"
     },
     {
       "code": 6021,
@@ -2328,11 +2328,12 @@
               {
                 "name": "output_authority_index",
                 "docs": [
-                  "Optional index into `remaining_accounts` for the app account authority signer.",
+                  "Optional index into `remaining_accounts` for the encrypted value account authority",
+                  "signer.",
                   "",
                   "`None` uses the fixed `encrypted_value_account_authority` account in the eval",
                   "context. `Some(index)` requires that remaining account to be a signer",
-                  "and to match the output app account."
+                  "and to match the declared output authority."
                 ],
                 "type": {
                   "option": "u8"
@@ -2348,7 +2349,8 @@
               {
                 "name": "output_account_index",
                 "docs": [
-                  "Dictionary index of the app account authorized to bind the output encrypted value account."
+                  "Dictionary index of the encrypted value account authority declared for the output",
+                  "encrypted value account."
                 ],
                 "type": "u8"
               },
