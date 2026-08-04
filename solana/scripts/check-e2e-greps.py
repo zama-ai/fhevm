@@ -1,5 +1,10 @@
 #!/usr/bin/env python3
-"""Check that every string the e2e scripts grep for is still printed by something.
+"""Check that the e2e scripts and scenarios still read text and JSON that something produces.
+
+Two couplings, both across a language boundary that nothing typechecks:
+
+1. The e2e scripts grep labeled lines out of a live client's stdout (`scan`, below).
+2. The scenario suite requires an *exact* JSON key set from a probe it runs (`probe_key_failures`).
 
 The e2e scripts drive the live clients by reading their stdout: a phase runs a client, greps a
 labeled line out of the output, and feeds the captured field to the next phase. Nothing ties the
@@ -18,6 +23,14 @@ exists anywhere is reported with the file and line that still expects it.
 
 Patterns matching output this repo does not produce (the Solana runtime's error text, the gateway
 container) are listed in EXTERNAL_PATTERNS with the reason, so the check stays exhaustive by default.
+
+The second check exists because the same rename broke the same vertical a second way. The live
+client's balance-state probe prints one JSON object and `two-holder-transfer.ts` requires its key set
+*exactly* — an added, missing or renamed key throws. Renaming the Rust field `acl_value_key` to
+`encrypted_value_id` changed the emitted key to `encryptedValueId` while the consumer still demanded
+`aclValueKey`. The consumer's own unit test passed throughout, because its fixture was updated
+alongside the parser: a hand-written fixture can only agree with the parser it ships with, never with
+the producer. So the key sets are compared to the producer directly, and neither side can move alone.
 """
 
 from __future__ import annotations
@@ -170,7 +183,85 @@ def scan(script_dir: Path) -> tuple[list[str], int, int]:
     return failures, checked, len(scripts)
 
 
+# --- Check 2: the probe JSON key sets -------------------------------------------------------------
+
+# A consumer requiring an exact key set. Only the array literal is read, so a call spread over
+# several lines (the balance-state probe's is eight lines long) is matched the same as a one-liner.
+HAS_EXACT_KEYS = re.compile(r"hasExactKeys\(\s*[A-Za-z_$][\w$]*\s*,\s*\[(.*?)\]", re.S)
+QUOTED = re.compile(r"""['"]([^'"]+)['"]""")
+
+# A Rust producer: a serde struct that renames its fields to camelCase on the way out. The
+# `rename_all` attribute is what makes the mapping mechanical enough to check — a struct with
+# per-field `rename`s would need parsing rather than a case conversion, and none exist here.
+RUST_CAMEL_STRUCT = re.compile(
+    r'#\[serde\(rename_all\s*=\s*"camelCase"\)\]\s*(?:pub\s+)?struct\s+\w+\s*\{(.*?)\n\}', re.S
+)
+RUST_FIELD = re.compile(r"^\s*(?:pub\s+)?([a-z_][a-z_0-9]*)\s*:", re.M)
+
+# A TypeScript producer: one object literal handed to JSON.stringify, no nesting. Shorthand
+# properties count, which is the form the transfer worker uses.
+TS_STRINGIFY = re.compile(r"JSON\.stringify\(\s*\{([^{}]*)\}\s*\)")
+TS_IDENTIFIER = re.compile(r"[A-Za-z_$][\w$]*")
+
+
+def camel(field: str) -> str:
+    head, *rest = field.split("_")
+    return head + "".join(word[:1].upper() + word[1:] for word in rest)
+
+
+def declared_key_sets(files: list[Path]) -> list[frozenset[str]]:
+    """Every JSON key set some producer in `files` emits, from either language."""
+    declared = []
+    for path in files:
+        text = path.read_text(errors="replace")
+        if path.suffix == ".rs":
+            for body in RUST_CAMEL_STRUCT.findall(text):
+                declared.append(frozenset(camel(name) for name in RUST_FIELD.findall(body)))
+        elif path.suffix == ".ts":
+            for body in TS_STRINGIFY.findall(text):
+                keys = set()
+                for part in filter(None, (piece.strip() for piece in body.split(","))):
+                    name = part.split(":")[0].strip()
+                    # A spread, a computed key, or a value containing a comma: not a shape this
+                    # check can read, so it vouches for nothing rather than for the wrong set.
+                    if not TS_IDENTIFIER.fullmatch(name):
+                        keys = None
+                        break
+                    keys.add(name)
+                if keys:
+                    declared.append(frozenset(keys))
+    return declared
+
+
+def probe_key_failures(files: list[Path]) -> tuple[list[str], int]:
+    """Every required key set that no producer emits, and how many were checked."""
+    declared = declared_key_sets(files)
+    failures = []
+    checked = 0
+    for path in files:
+        if path.suffix != ".ts":
+            continue
+        text = path.read_text(errors="replace")
+        for match in HAS_EXACT_KEYS.finditer(text):
+            required = frozenset(QUOTED.findall(match.group(1)))
+            if not required:
+                continue
+            checked += 1
+            if required in declared:
+                continue
+            line = text.count("\n", 0, match.start()) + 1
+            closest = min(
+                declared, key=lambda other: len(other ^ required), default=frozenset()
+            )
+            failures.append(
+                f"{path}:{line}: no probe emits the required key set "
+                f"{sorted(required)}; closest producer emits {sorted(closest)}"
+            )
+    return failures, checked
+
+
 MISSING_LABEL = "label no producer prints"
+MISSING_KEY = "keyNoProbeEmits"
 
 
 def self_test() -> int:
@@ -215,7 +306,45 @@ def self_test() -> int:
             file=sys.stderr,
         )
         return 1
+    if (code := probe_key_self_test()) != 0:
+        return code
     print("check-e2e-greps: self-test OK (a missing label is reported, a live one is not)")
+    return 0
+
+
+def probe_key_self_test() -> int:
+    """Proves the key-set check fires on a renamed key and stays quiet on a matched one.
+
+    Both producer languages are exercised, because each is parsed differently and a silent regression
+    in either one would leave the check reporting "OK" for a coupling it stopped reading.
+    """
+    with tempfile.TemporaryDirectory() as directory:
+        root = Path(directory)
+        (root / "producer.rs").write_text(
+            '#[derive(Serialize)]\n'
+            '#[serde(rename_all = "camelCase")]\n'
+            "struct Probe {\n    version: u8,\n    token_account: String,\n}\n"
+        )
+        (root / "worker.ts").write_text(
+            "process.stdout.write(JSON.stringify({ version: 1, signature }));\n"
+        )
+        (root / "consumer.ts").write_text(
+            'hasExactKeys(value, ["version", "tokenAccount"]);\n'
+            'hasExactKeys(value, ["version", "signature"]);\n'
+            f'hasExactKeys(value, ["version", "{MISSING_KEY}"]);\n'
+        )
+        files = sorted(root.iterdir())
+        failures, checked = probe_key_failures(files)
+    if checked != 3:
+        print(f"self-test: expected 3 checked key sets, got {checked}", file=sys.stderr)
+        return 1
+    if len(failures) != 1 or MISSING_KEY not in failures[0]:
+        print(
+            "self-test: expected exactly one unmatched key set — a Rust struct and a stringified "
+            f"object literal must each vouch for their own consumer. Got {failures}",
+            file=sys.stderr,
+        )
+        return 1
     return 0
 
 
@@ -238,7 +367,25 @@ def main() -> int:
         )
         return 1
 
-    print(f"check-e2e-greps: OK ({checked} grepped labels, {script_count} scripts)")
+    key_failures, key_sets = probe_key_failures(producer_files())
+    if key_sets == 0:
+        print("check-e2e-greps: found no probe key sets to check", file=sys.stderr)
+        return 2
+    if key_failures:
+        print("check-e2e-greps: a scenario requires a JSON key set no probe emits:\n")
+        for failure in key_failures:
+            print(f"  {failure}")
+        print(
+            "\nThe consumer follows the producer. A probe emits its keys either from a Rust serde "
+            "struct with `rename_all = \"camelCase\"` or from one `JSON.stringify({ ... })` object "
+            "literal; if the producer is a shape this check cannot read, it counts as absent."
+        )
+        return 1
+
+    print(
+        f"check-e2e-greps: OK ({checked} grepped labels, {script_count} scripts, "
+        f"{key_sets} probe key sets)"
+    )
     return 0
 
 
