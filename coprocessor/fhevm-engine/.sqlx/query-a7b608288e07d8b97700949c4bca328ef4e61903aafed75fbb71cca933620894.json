@@ -1,0 +1,20 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        UPDATE block_consensus_verification_target\n           SET state = 'pending',\n               gateway_chain_id = $2,\n               gateway_config_address = $3,\n               registry_block_number = $4,\n               registry_block_hash = $5,\n               registered_coprocessor_count = $6,\n               required_quorum = $7,\n               last_error = NULL,\n               updated_at = NOW()\n         WHERE id = $1\n        ",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Int8",
+        "Int8",
+        "Bytea",
+        "Int8",
+        "Bytea",
+        "Int4",
+        "Int4"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "a7b608288e07d8b97700949c4bca328ef4e61903aafed75fbb71cca933620894"
+}

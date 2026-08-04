@@ -1,0 +1,16 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n            UPDATE block_manifest_peer_download\n               SET latest_revision = GREATEST(COALESCE(latest_revision, -1), $3),\n                   last_attempt_at = NOW(),\n                   updated_at = NOW()\n             WHERE task_id = $1\n               AND publisher = $2\n            ",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Int8",
+        "Bytea",
+        "Int8"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "6af7af52094c6bb33b38a8175a7d6c57e0ea4a0d38d53ee668220e738b911d3b"
+}

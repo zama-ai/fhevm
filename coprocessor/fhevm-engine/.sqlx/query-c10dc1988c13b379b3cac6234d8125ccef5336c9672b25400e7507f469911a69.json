@@ -1,0 +1,83 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        WITH selected AS (\n            SELECT id\n              FROM block_manifest_verification_task\n             WHERE required_quorum IS NOT NULL\n               AND next_attempt_at <= NOW()\n               AND (\n                    state = 'pending'\n                    OR (state = 'claimed' AND claim_expires_at <= NOW())\n               )\n             ORDER BY next_attempt_at, id\n             FOR UPDATE SKIP LOCKED\n             LIMIT 1\n        )\n        UPDATE block_manifest_verification_task target\n           SET state = 'claimed',\n               claim_owner = $1,\n               claim_expires_at = NOW() + $2::BIGINT * INTERVAL '1 microsecond',\n               updated_at = NOW()\n          FROM selected, block_manifest manifest\n         WHERE target.id = selected.id\n           AND manifest.id = target.local_manifest_id\n        RETURNING target.id,\n                  target.attempt_count + 1 AS \"attempt!\",\n                  target.required_quorum AS \"required_quorum!\",\n                  manifest.publisher AS \"local_publisher!\",\n                  manifest.version AS \"version!\",\n                  manifest.coprocessor_context_id AS \"coprocessor_context_id!\",\n                  manifest.host_chain_id AS \"host_chain_id!\",\n                  manifest.publication_block_number AS \"publication_block_number!\",\n                  manifest.publication_block_hash AS \"publication_block_hash!\",\n                  manifest.revision AS \"revision!\",\n                  manifest.manifest_digest AS \"local_manifest_digest!\"\n        ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id",
+        "type_info": "Int8"
+      },
+      {
+        "ordinal": 1,
+        "name": "attempt!",
+        "type_info": "Int4"
+      },
+      {
+        "ordinal": 2,
+        "name": "required_quorum!",
+        "type_info": "Int4"
+      },
+      {
+        "ordinal": 3,
+        "name": "local_publisher!",
+        "type_info": "Bytea"
+      },
+      {
+        "ordinal": 4,
+        "name": "version!",
+        "type_info": "Int2"
+      },
+      {
+        "ordinal": 5,
+        "name": "coprocessor_context_id!",
+        "type_info": "Bytea"
+      },
+      {
+        "ordinal": 6,
+        "name": "host_chain_id!",
+        "type_info": "Int8"
+      },
+      {
+        "ordinal": 7,
+        "name": "publication_block_number!",
+        "type_info": "Int8"
+      },
+      {
+        "ordinal": 8,
+        "name": "publication_block_hash!",
+        "type_info": "Bytea"
+      },
+      {
+        "ordinal": 9,
+        "name": "revision!",
+        "type_info": "Int8"
+      },
+      {
+        "ordinal": 10,
+        "name": "local_manifest_digest!",
+        "type_info": "Bytea"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Text",
+        "Int8"
+      ]
+    },
+    "nullable": [
+      false,
+      null,
+      true,
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      false
+    ]
+  },
+  "hash": "c10dc1988c13b379b3cac6234d8125ccef5336c9672b25400e7507f469911a69"
+}

@@ -1,0 +1,12 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "TRUNCATE public.gateway_config_coprocessors",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": []
+    },
+    "nullable": []
+  },
+  "hash": "255516583c11ebfcfff307ff8ec9f198b01079d8299e24dd634e3e37fa7e1e39"
+}

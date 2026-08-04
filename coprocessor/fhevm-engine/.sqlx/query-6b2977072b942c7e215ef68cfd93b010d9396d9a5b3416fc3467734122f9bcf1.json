@@ -1,0 +1,17 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        UPDATE block_consensus\n           SET block_content_digest = $3,\n               descriptor_count = $4,\n               updated_at = NOW()\n         WHERE host_chain_id = $1\n           AND block_hash = $2\n           AND block_content_digest IS NULL\n           AND descriptor_count IS NULL\n        ",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Int8",
+        "Bytea",
+        "Bytea",
+        "Int8"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "6b2977072b942c7e215ef68cfd93b010d9396d9a5b3416fc3467734122f9bcf1"
+}

@@ -1,0 +1,27 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n            SELECT revision\n              FROM block_manifest\n             WHERE publisher = $1\n               AND version = $2\n               AND coprocessor_context_id = $3\n               AND host_chain_id = $4\n               AND publication_block_number = $5\n               AND publication_block_hash = $6\n            ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "revision",
+        "type_info": "Int8"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Bytea",
+        "Int2",
+        "Bytea",
+        "Int8",
+        "Int8",
+        "Bytea"
+      ]
+    },
+    "nullable": [
+      false
+    ]
+  },
+  "hash": "7dbcf508c4e66abe67cfd4ee4f610a70113cacb0d438c26505ebd481007a0a37"
+}

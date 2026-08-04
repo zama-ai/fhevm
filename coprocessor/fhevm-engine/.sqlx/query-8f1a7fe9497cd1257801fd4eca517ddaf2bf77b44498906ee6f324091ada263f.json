@@ -1,0 +1,21 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        UPDATE block_consensus_verification_target\n           SET attempt_count = $3,\n               state = $4,\n               latest_outcome = $5,\n               quorum_scope_count = $6,\n               local_drift_scope_count = $7,\n               last_attempt_at = NOW(),\n               next_attempt_at = CASE\n                   WHEN $4 = 'pending'\n                   THEN NOW() + $8::BIGINT * INTERVAL '1 microsecond'\n                   ELSE NULL\n               END,\n               lease_owner = NULL,\n               lease_expires_at = NULL,\n               last_error = NULL,\n               updated_at = NOW()\n         WHERE id = $1\n           AND lease_owner = $2\n        ",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Int8",
+        "Text",
+        "Int4",
+        "Text",
+        "Text",
+        "Int4",
+        "Int4",
+        "Int8"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "8f1a7fe9497cd1257801fd4eca517ddaf2bf77b44498906ee6f324091ada263f"
+}

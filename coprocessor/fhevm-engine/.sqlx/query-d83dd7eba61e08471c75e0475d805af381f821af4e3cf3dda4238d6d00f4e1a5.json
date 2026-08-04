@@ -1,0 +1,20 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        SELECT id\n          FROM block_manifest_verification_task\n         WHERE state = 'pending'\n           AND next_attempt_at <= NOW()\n         ORDER BY next_attempt_at, id\n         FOR UPDATE SKIP LOCKED\n         LIMIT 1\n        ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id",
+        "type_info": "Int8"
+      }
+    ],
+    "parameters": {
+      "Left": []
+    },
+    "nullable": [
+      false
+    ]
+  },
+  "hash": "d83dd7eba61e08471c75e0475d805af381f821af4e3cf3dda4238d6d00f4e1a5"
+}

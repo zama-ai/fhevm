@@ -74,7 +74,6 @@ fn construct_config() -> Result<Config, fhevm_engine_common::database::DatabaseC
         consensus: ConsensusConfig {
             publish_manifest: args.consensus_publish_manifest,
             verify_others_party_manifests: args.consensus_verify_others_party_manifests,
-            publication_cadence: args.consensus_publication_cadence,
             verification_delay: args.consensus_verification_delay,
             verification_retry_delay: args.consensus_verification_retry_delay,
             verification_retry_count: args.consensus_verification_retry_count,

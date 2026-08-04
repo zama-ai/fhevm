@@ -1,0 +1,58 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        SELECT manifest.publisher AS local_publisher,\n               manifest.version,\n               manifest.coprocessor_context_id,\n               manifest.host_chain_id,\n               manifest.publication_block_number,\n               manifest.publication_block_hash,\n               task.state\n          FROM block_manifest_verification_task task\n          JOIN block_manifest manifest ON manifest.id = task.local_manifest_id\n         WHERE task.id = $1\n         FOR UPDATE\n        ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "local_publisher",
+        "type_info": "Bytea"
+      },
+      {
+        "ordinal": 1,
+        "name": "version",
+        "type_info": "Int2"
+      },
+      {
+        "ordinal": 2,
+        "name": "coprocessor_context_id",
+        "type_info": "Bytea"
+      },
+      {
+        "ordinal": 3,
+        "name": "host_chain_id",
+        "type_info": "Int8"
+      },
+      {
+        "ordinal": 4,
+        "name": "publication_block_number",
+        "type_info": "Int8"
+      },
+      {
+        "ordinal": 5,
+        "name": "publication_block_hash",
+        "type_info": "Bytea"
+      },
+      {
+        "ordinal": 6,
+        "name": "state",
+        "type_info": "Text"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Int8"
+      ]
+    },
+    "nullable": [
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      false
+    ]
+  },
+  "hash": "6ddb904406ac4b134eaaab75515e065339b849d943a90fcaa4d3a9337486e44c"
+}

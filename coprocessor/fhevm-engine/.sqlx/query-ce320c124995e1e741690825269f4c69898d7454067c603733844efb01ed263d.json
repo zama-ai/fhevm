@@ -1,0 +1,23 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        SELECT EXISTS (\n            SELECT 1\n              FROM block_manifest_verification_task\n             WHERE id = $1\n               AND state = 'claimed'\n               AND claim_owner = $2\n               AND claim_expires_at > NOW()\n             FOR UPDATE\n        ) AS \"active!\"\n        ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "active!",
+        "type_info": "Bool"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Int8",
+        "Text"
+      ]
+    },
+    "nullable": [
+      null
+    ]
+  },
+  "hash": "ce320c124995e1e741690825269f4c69898d7454067c603733844efb01ed263d"
+}

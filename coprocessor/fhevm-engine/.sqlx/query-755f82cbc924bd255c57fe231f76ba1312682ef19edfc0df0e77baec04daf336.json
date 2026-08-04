@@ -1,0 +1,20 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        WITH inserted AS (\n            INSERT INTO block_consensus (\n                host_chain_id,\n                block_number,\n                block_hash,\n                parent_block_hash,\n                publication_cadence\n            )\n            SELECT child.chain_id,\n                   child.block_number,\n                   child.block_hash,\n                   child.parent_hash,\n                   parent.publication_cadence\n              FROM block_consensus parent\n              JOIN host_chain_blocks_valid parent_host\n                ON parent_host.chain_id = parent.host_chain_id\n               AND parent_host.block_hash = parent.block_hash\n              JOIN host_chain_blocks_valid child\n                ON child.chain_id = parent.host_chain_id\n               AND child.parent_hash = parent.block_hash\n             WHERE NOT parent.child_block_discovery_closed\n               AND parent_host.block_status <> 'orphaned'\n               AND child.block_status <> 'orphaned'\n               AND OCTET_LENGTH(child.parent_hash) = 32\n            ON CONFLICT (host_chain_id, block_hash) DO NOTHING\n            RETURNING 1\n        ), closed AS (\n            UPDATE block_consensus block\n               SET child_block_discovery_closed = TRUE,\n                   updated_at = NOW()\n              FROM host_chain_blocks_valid host\n             WHERE NOT block.child_block_discovery_closed\n               AND host.chain_id = block.host_chain_id\n               AND host.block_hash = block.block_hash\n               AND host.block_status IN ('finalized', 'orphaned')\n            RETURNING 1\n        )\n        SELECT COUNT(*) AS \"inserted!\" FROM inserted\n        ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "inserted!",
+        "type_info": "Int8"
+      }
+    ],
+    "parameters": {
+      "Left": []
+    },
+    "nullable": [
+      null
+    ]
+  },
+  "hash": "755f82cbc924bd255c57fe231f76ba1312682ef19edfc0df0e77baec04daf336"
+}

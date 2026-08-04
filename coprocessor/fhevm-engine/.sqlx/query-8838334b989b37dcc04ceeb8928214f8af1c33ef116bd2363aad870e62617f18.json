@@ -1,0 +1,19 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        UPDATE block_manifest_verification_task\n           SET attempt_count = $3,\n               state = $4,\n               latest_outcome = $5,\n               last_attempt_at = NOW(),\n               next_attempt_at = CASE\n                   WHEN $4 = 'pending'\n                   THEN NOW() + $6::BIGINT * INTERVAL '1 microsecond'\n                   ELSE NULL\n               END,\n               claim_owner = NULL,\n               claim_expires_at = NULL,\n               last_error = NULL,\n               updated_at = NOW()\n         WHERE id = $1\n           AND claim_owner = $2\n        ",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Int8",
+        "Text",
+        "Int4",
+        "Text",
+        "Text",
+        "Int8"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "8838334b989b37dcc04ceeb8928214f8af1c33ef116bd2363aad870e62617f18"
+}

@@ -1,4 +1,6 @@
-use prometheus::{register_histogram, register_int_counter, Histogram, IntCounter};
+use prometheus::{
+    register_histogram, register_int_counter, register_int_gauge, Histogram, IntCounter, IntGauge,
+};
 use std::sync::LazyLock;
 
 pub(crate) static VERIFY_PROOF_SUCCESS_COUNTER: LazyLock<IntCounter> = LazyLock::new(|| {
@@ -69,6 +71,38 @@ pub(crate) static MISSING_SUBMISSION_COUNTER: LazyLock<IntCounter> = LazyLock::n
     register_int_counter!(
         "coprocessor_gw_listener_missing_submission_counter",
         "Number of handles where consensus was reached but some coprocessors never submitted"
+    )
+    .unwrap()
+});
+
+pub(crate) static REGISTRY_REFRESH_SUCCESS_COUNTER: LazyLock<IntCounter> = LazyLock::new(|| {
+    register_int_counter!(
+        "coprocessor_gw_listener_registry_refresh_success_total",
+        "Number of successfully fetched and validated GatewayConfig registry snapshots"
+    )
+    .unwrap()
+});
+
+pub(crate) static REGISTRY_REFRESH_FAILURE_COUNTER: LazyLock<IntCounter> = LazyLock::new(|| {
+    register_int_counter!(
+        "coprocessor_gw_listener_registry_refresh_failure_total",
+        "Number of failed GatewayConfig registry refreshes"
+    )
+    .unwrap()
+});
+
+pub(crate) static REGISTRY_LAST_SUCCESS_UNIX_SECONDS: LazyLock<IntGauge> = LazyLock::new(|| {
+    register_int_gauge!(
+        "coprocessor_gw_listener_registry_last_success_unixtime",
+        "Unix timestamp of the latest successful GatewayConfig registry refresh"
+    )
+    .unwrap()
+});
+
+pub(crate) static REGISTRY_SNAPSHOT_BLOCK_NUMBER: LazyLock<IntGauge> = LazyLock::new(|| {
+    register_int_gauge!(
+        "coprocessor_gw_listener_registry_snapshot_block_number",
+        "Gateway block number of the latest persisted registry snapshot"
     )
     .unwrap()
 });

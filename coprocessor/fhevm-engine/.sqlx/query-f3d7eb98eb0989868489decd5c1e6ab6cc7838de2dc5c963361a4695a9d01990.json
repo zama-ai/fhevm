@@ -1,0 +1,31 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        WITH source AS (\n            SELECT b.chain_id,\n                   b.block_number,\n                   b.block_hash,\n                   b.parent_hash,\n                   $4::BIGINT AS publication_cadence\n              FROM host_chain_blocks_valid b\n             WHERE b.chain_id = $1\n               AND b.block_number = $2\n               AND b.block_hash = $3\n               AND b.parent_hash IS NOT NULL\n               AND OCTET_LENGTH(b.parent_hash) = 32\n               AND b.block_status <> 'orphaned'\n        ),\n        inserted AS (\n            INSERT INTO block_consensus (\n                host_chain_id,\n                block_number,\n                block_hash,\n                parent_block_hash,\n                publication_cadence\n            )\n            SELECT chain_id,\n                   block_number,\n                   block_hash,\n                   parent_hash,\n                   publication_cadence\n              FROM source\n            ON CONFLICT (host_chain_id, block_hash) DO NOTHING\n            RETURNING 1\n        )\n        SELECT EXISTS(SELECT 1 FROM source) AS \"source_exists!\",\n               EXISTS(SELECT 1 FROM inserted) AS \"inserted!\"\n        ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "source_exists!",
+        "type_info": "Bool"
+      },
+      {
+        "ordinal": 1,
+        "name": "inserted!",
+        "type_info": "Bool"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Int8",
+        "Int8",
+        "Bytea",
+        "Int8"
+      ]
+    },
+    "nullable": [
+      null,
+      null
+    ]
+  },
+  "hash": "f3d7eb98eb0989868489decd5c1e6ab6cc7838de2dc5c963361a4695a9d01990"
+}

@@ -178,10 +178,6 @@ pub struct Args {
     #[arg(long, default_value_t = false)]
     pub consensus_verify_others_party_manifests: bool,
 
-    /// Publish one manifest every N host-chain blocks.
-    #[arg(long, default_value_t = 1, value_parser = clap::value_parser!(u64).range(1..))]
-    pub consensus_publication_cadence: u64,
-
     /// Delay after local publication before the first peer verification attempt.
     #[arg(long, default_value = "5m", value_parser = parse_duration)]
     pub consensus_verification_delay: Duration,

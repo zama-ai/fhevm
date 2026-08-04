@@ -1,0 +1,38 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        SELECT\n            (SELECT COUNT(*)::BIGINT\n               FROM block_consensus\n              WHERE block_content_digest IS NULL\n                 OR (manifest_required AND manifest_published = FALSE)) AS \"pending_work!\",\n            (SELECT COUNT(*)::BIGINT\n               FROM block_consensus_drift_handle\n              WHERE status = 'unresolved') AS \"unresolved_drift!\",\n            COALESCE((\n                SELECT EXTRACT(EPOCH FROM MAX(manifest_published_at))::BIGINT\n                  FROM block_consensus\n                 WHERE manifest_published\n            ), 0) AS \"latest_publication!\",\n            COALESCE((\n                SELECT GREATEST(0, EXTRACT(EPOCH FROM NOW() - MIN(next_attempt_at))::BIGINT)\n                  FROM block_consensus_verification_target\n                 WHERE next_attempt_at <= NOW()\n                   AND state IN ('waiting_registry', 'pending', 'leased')\n            ), 0) AS \"oldest_due_age!\"\n        ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "pending_work!",
+        "type_info": "Int8"
+      },
+      {
+        "ordinal": 1,
+        "name": "unresolved_drift!",
+        "type_info": "Int8"
+      },
+      {
+        "ordinal": 2,
+        "name": "latest_publication!",
+        "type_info": "Int8"
+      },
+      {
+        "ordinal": 3,
+        "name": "oldest_due_age!",
+        "type_info": "Int8"
+      }
+    ],
+    "parameters": {
+      "Left": []
+    },
+    "nullable": [
+      null,
+      null,
+      null,
+      null
+    ]
+  },
+  "hash": "459ee07ce489090076aa932f1445b0cf05e9b4796ac30004dbc263ad911e7cf8"
+}

@@ -22,6 +22,8 @@ use crate::consensus::{
         PendingBlock,
     },
     manifest_archive::{manifest_object_key, store_authenticated_manifest, ManifestSource},
+    metrics::{MANIFEST_PUBLICATION_FAILURE, MANIFEST_PUBLICATION_SUCCESS},
+    verification::peer_downloader::schedule_manifest_verification,
 };
 
 const MANIFEST_POLL_INTERVAL: Duration = Duration::from_secs(5);
@@ -198,6 +200,9 @@ async fn progress_chain(
         match result {
             Ok(PublicationProgress::Advanced) => {
                 trx.commit().await?;
+                if block.block_content_digest.is_some() {
+                    MANIFEST_PUBLICATION_SUCCESS.inc();
+                }
                 return Ok(PublicationProgress::Advanced);
             }
             Ok(PublicationProgress::Waiting) => {
@@ -209,6 +214,9 @@ async fn progress_chain(
             Err(err @ ExecutionError::DbError(_)) => return Err(err),
             Err(err) => {
                 trx.rollback().await?;
+                if block.block_content_digest.is_some() {
+                    MANIFEST_PUBLICATION_FAILURE.inc();
+                }
                 error!(
                     host_chain_id,
                     block_number = block.block_number,
@@ -258,7 +266,7 @@ pub(crate) async fn publish_block_manifest(
     bucket: &str,
     block: &PendingBlock,
     signer: &CoproSigner,
-    _consensus: &ConsensusConfig,
+    consensus: &ConsensusConfig,
 ) -> Result<(), ExecutionError> {
     let prepared = prepare_manifest(trx, block, COPROCESSOR_CONTEXT_ID_1, signer.address()).await?;
     let detailed_range_start = i64::try_from(prepared.payload.detailed_range.first_block_number)
@@ -304,6 +312,16 @@ pub(crate) async fn publish_block_manifest(
         manifest_digest,
     )
     .await?;
+    if consensus.verify_others_party_manifests {
+        schedule_manifest_verification(
+            trx,
+            archived.id,
+            consensus.verification_delay,
+            consensus.verification_retry_delay,
+            consensus.verification_retry_count,
+        )
+        .await?;
+    }
     info!(
         host_chain_id = block.host_chain_id,
         block_number = block.block_number,
