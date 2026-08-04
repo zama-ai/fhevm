@@ -1194,9 +1194,10 @@ snsWorker:
 
   # Component-specific configuration
   config:
-    # S3 bucket name for ciphertext storage (ct64 and ct128). Rendered as the
-    # S3_BUCKET_NAME env var and referenced by --bucket-name-ct64 /
-    # --bucket-name-ct128. Accepts `value` or `valueFrom`
+    # S3 bucket name for ciphertext storage. Both ct64 and ct128 objects live in
+    # this single bucket, under their `ct64/` and `ct128/` key prefixes.
+    # Rendered as the S3_BUCKET_NAME env var and referenced by --bucket-name.
+    # Accepts `value` or `valueFrom`
     # (secretKeyRef/configMapKeyRef). Leave unset to inject nothing.
     # Example:
     #   s3BucketName:

@@ -49,15 +49,10 @@ pub struct Args {
     #[arg(long, env = "OTEL_SERVICE_NAME", default_value = "sns-executor")]
     pub service_name: String,
 
-    /// S3 bucket name for ct128 ciphertexts
+    /// S3 bucket name for ciphertexts.
     /// See also: general purpose buckets naming rules
-    #[arg(long, default_value = "ct128")]
-    pub bucket_name_ct128: String,
-
-    /// S3 bucket name for ct64 ciphertexts
-    /// See also: general purpose buckets naming rules
-    #[arg(long, default_value = "ct64")]
-    pub bucket_name_ct64: String,
+    #[arg(long)]
+    pub bucket_name: String,
 
     /// Maximum number of concurrent uploads to S3
     #[arg(long, default_value_t = 100)]

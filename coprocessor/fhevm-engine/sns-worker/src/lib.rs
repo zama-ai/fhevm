@@ -107,8 +107,7 @@ pub struct SNSMetricsConfig {
 
 #[derive(Clone, Default, Debug)]
 pub struct S3Config {
-    pub bucket_ct128: String,
-    pub bucket_ct64: String,
+    pub bucket: String,
     pub max_concurrent_uploads: u32,
     pub retry_policy: S3RetryPolicy,
     pub verify_sha256_checksum: bool,
@@ -815,7 +814,7 @@ pub async fn run_all(
         max_retries: conf.s3_migration_max_retries,
     };
 
-    let not_ready_error = Err(ExecutionError::BucketNotFound(conf.s3.bucket_ct128.clone()).into());
+    let not_ready_error = Err(ExecutionError::BucketNotFound(conf.s3.bucket.clone()).into());
     let mut concurrent_migration = None;
     match migration_config.mode {
         S3MigrationMode::No => {

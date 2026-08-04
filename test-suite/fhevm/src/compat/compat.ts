@@ -23,6 +23,9 @@ export type CompatPolicy = {
   composeEnv: Record<string, string>;
 };
 
+/** The command-shaping half of a policy — all a coprocessor fleet needs. */
+export type CoprocessorArgPolicy = Pick<CompatPolicy, "coprocessorArgs" | "coprocessorDropFlags">;
+
 export const COMPAT_MATRIX = {
   incompatibilities: [
     {
@@ -80,6 +83,12 @@ export const COMPAT_MATRIX = {
       key: "COPROCESSOR_SNS_WORKER_VERSION",
       below: [0, 14, 0] as CompatSemver,
       profile: "legacy-sns-worker-no-signer-flags",
+      unparsed: "modern" as const,
+    },
+    {
+      key: "COPROCESSOR_SNS_WORKER_VERSION",
+      below: [0, 15, 0] as CompatSemver,
+      profile: "legacy-sns-worker-split-bucket-flags",
       unparsed: "modern" as const,
     },
     {
@@ -183,6 +192,32 @@ const SHIM_PROFILES = {
     coprocessorArgs: {},
     coprocessorDropFlags: {
       "sns-worker": ["--signer-type", "--private-key"],
+    },
+    connectorEnv: {},
+    composeEnv: {},
+  },
+  // v0.15.0 replaced the split --bucket-name-ct64/--bucket-name-ct128 pair with
+  // a single required --bucket-name, since both artifact kinds now live in one
+  // bucket under their own key prefixes (#3372). Legacy images still expect both
+  // flags, and the standalone `ct64`/`ct128` minio buckets are gone, so point
+  // both at the per-coprocessor bucket.
+  //
+  // Collapsing two buckets into one is only safe for images that carry #3372,
+  // i.e. that key ct128/ct64 as `ct128/{handle}/{ctx}` and `ct64/{handle}/{ctx}`.
+  // Before it, BOTH artifacts used the bare `{handle}/{ctx}` key and the separate
+  // buckets were the only thing keeping them apart — sharing a bucket would make
+  // them overwrite each other. On the 0.14 line #3372 first shipped in v0.14.0-7,
+  // which is what the blue-green scenarios pin; earlier 0.14.0-N prereleases must
+  // not be used as a BCS baseline against this stack.
+  "legacy-sns-worker-split-bucket-flags": {
+    coprocessorArgs: {
+      "sns-worker": [
+        ["--bucket-name-ct128", { env: "BUCKET_NAME" }],
+        ["--bucket-name-ct64", { env: "BUCKET_NAME" }],
+      ],
+    },
+    coprocessorDropFlags: {
+      "sns-worker": ["--bucket-name"],
     },
     connectorEnv: {},
     composeEnv: {},
@@ -470,6 +505,49 @@ export const assertSupportedBundleScenario = (state: CompatState) => {
   );
 };
 
+/** Folds one shim profile's coprocessor arg adjustments into an accumulating policy. */
+const mergeShimArgs = (policy: CoprocessorArgPolicy, profile: CompatPolicy) => {
+  for (const [service, args] of Object.entries(profile.coprocessorArgs)) {
+    policy.coprocessorArgs[service as CompatService] = [
+      ...(policy.coprocessorArgs[service as CompatService] ?? []),
+      ...args,
+    ];
+  }
+  for (const [service, flags] of Object.entries(profile.coprocessorDropFlags)) {
+    policy.coprocessorDropFlags[service as CompatService] = [
+      ...(policy.coprocessorDropFlags[service as CompatService] ?? []),
+      ...flags,
+    ];
+  }
+};
+
+/**
+ * Builds the coprocessor arg policy for a fleet pinned to one published image tag.
+ *
+ * `compatPolicyForState` reads the resolved version bundle, i.e. the images the
+ * target/lock picked. A scenario instance with `source.mode: registry` ignores
+ * that bundle and runs the tag it names instead — blue-green's BCS fleet being
+ * the case that matters, since it deliberately runs the *previous* release while
+ * the bundle describes HEAD. Its shims therefore have to be evaluated against
+ * the pinned tag, or those older binaries are handed the modern flag contract.
+ *
+ * Only `COPROCESSOR_*` shims are consulted: a pinned coprocessor image tag says
+ * nothing about the connector or the contracts.
+ */
+export const compatArgPolicyForPinnedTag = (tag: string): CoprocessorArgPolicy => {
+  const policy: CoprocessorArgPolicy = { coprocessorArgs: {}, coprocessorDropFlags: {} };
+  for (const shim of COMPAT_MATRIX.legacyShims) {
+    if (!shim.key.startsWith("COPROCESSOR_")) {
+      continue;
+    }
+    if (!versionBeforeReleaseFamily(tag, shim.below, { unparsed: shim.unparsed })) {
+      continue;
+    }
+    mergeShimArgs(policy, SHIM_PROFILES[shim.profile]);
+  }
+  return policy;
+};
+
 /** Builds the compatibility policy that rendering and runtime should apply. */
 export const compatPolicyForState = (state: CompatState): CompatPolicy => {
   const policy: CompatPolicy = {
@@ -483,18 +561,7 @@ export const compatPolicyForState = (state: CompatState): CompatPolicy => {
       continue;
     }
     const profile = SHIM_PROFILES[shim.profile];
-    for (const [service, args] of Object.entries(profile.coprocessorArgs)) {
-      policy.coprocessorArgs[service as CompatService] = [
-        ...(policy.coprocessorArgs[service as CompatService] ?? []),
-        ...args,
-      ];
-    }
-    for (const [service, flags] of Object.entries(profile.coprocessorDropFlags)) {
-      policy.coprocessorDropFlags[service as CompatService] = [
-        ...(policy.coprocessorDropFlags[service as CompatService] ?? []),
-        ...flags,
-      ];
-    }
+    mergeShimArgs(policy, profile);
     Object.assign(policy.connectorEnv, profile.connectorEnv);
   }
   // Local overrides build the current working tree, which always uses the
