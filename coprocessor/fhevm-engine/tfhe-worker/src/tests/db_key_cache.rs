@@ -1,4 +1,4 @@
-use fhevm_engine_common::db_keys::DbKeyCache;
+use fhevm_engine_common::db_keys::{DbKeyCache, ServerKeyRepresentation};
 use serial_test::serial;
 use sqlx::postgres::PgPoolOptions;
 use test_harness::instance::{setup_test_db, ImportMode};
@@ -98,5 +98,82 @@ async fn test_fetch_latest_refreshes_cache_after_key_rotation(
     assert_eq!(rotated.key_id, new_key_id);
     assert!(rotated.sequence_number > initial.sequence_number);
 
+    Ok(())
+}
+
+#[tokio::test]
+#[serial(db)]
+async fn test_legacy_selection_ignores_compressed_material(
+) -> Result<(), Box<dyn std::error::Error>> {
+    let db = setup_test_db(ImportMode::WithKeysNoSns).await?;
+    let pool = PgPoolOptions::new().connect(db.db_url()).await?;
+    sqlx::query("UPDATE keys SET compressed_xof_keyset = $1")
+        .bind(vec![0_u8])
+        .execute(&pool)
+        .await?;
+
+    DbKeyCache::new_with_representation(1, ServerKeyRepresentation::Legacy)?
+        .fetch_latest_from_pool(&pool)
+        .await?;
+    Ok(())
+}
+
+#[tokio::test]
+#[serial(db)]
+async fn test_auto_preserves_compressed_first_selection() -> Result<(), Box<dyn std::error::Error>>
+{
+    let db = setup_test_db(ImportMode::WithKeysNoSns).await?;
+    let pool = PgPoolOptions::new().connect(db.db_url()).await?;
+    sqlx::query("UPDATE keys SET compressed_xof_keyset = $1")
+        .bind(vec![0_u8])
+        .execute(&pool)
+        .await?;
+
+    let error = match DbKeyCache::new_with_representation(1, ServerKeyRepresentation::Auto)?
+        .fetch_latest_from_pool(&pool)
+        .await
+    {
+        Ok(_) => panic!("auto must prefer present compressed material"),
+        Err(error) => error,
+    };
+    assert!(error.to_string().contains("CompressedXofKeySet"));
+    Ok(())
+}
+
+#[tokio::test]
+#[serial(db)]
+async fn test_auto_falls_back_to_legacy_when_compressed_material_is_missing(
+) -> Result<(), Box<dyn std::error::Error>> {
+    let db = setup_test_db(ImportMode::WithKeysNoSns).await?;
+    let pool = PgPoolOptions::new().connect(db.db_url()).await?;
+    sqlx::query("UPDATE keys SET compressed_xof_keyset = NULL")
+        .execute(&pool)
+        .await?;
+
+    DbKeyCache::new_with_representation(1, ServerKeyRepresentation::Auto)?
+        .fetch_latest_from_pool(&pool)
+        .await?;
+    Ok(())
+}
+
+#[tokio::test]
+#[serial(db)]
+async fn test_compressed_selection_fails_closed_when_material_is_missing(
+) -> Result<(), Box<dyn std::error::Error>> {
+    let db = setup_test_db(ImportMode::WithKeysNoSns).await?;
+    let pool = PgPoolOptions::new().connect(db.db_url()).await?;
+    sqlx::query("UPDATE keys SET compressed_xof_keyset = NULL")
+        .execute(&pool)
+        .await?;
+
+    let error =
+        match DbKeyCache::new_with_representation(1, ServerKeyRepresentation::CompressedXof)?
+            .fetch_latest_from_pool(&pool)
+            .await
+        {
+            Ok(_) => panic!("missing selected representation must fail"),
+            Err(error) => error,
+        };
+    assert!(error.to_string().contains("CompressedXof"));
     Ok(())
 }
