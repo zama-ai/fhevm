@@ -2,8 +2,7 @@
 
 Run from `solana/` unless a path below says otherwise.
 
-`e2e/` is the live full-stack vertical (CI: `solana-e2e`). It is unrelated to
-Cargo `--features poc` (compile-gated test shims).
+`e2e/` is the live full-stack vertical (CI: `solana-e2e`).
 
 ## Entrypoints
 

@@ -24,7 +24,7 @@ all fail closed (see the `*_rejects_*` mollusk tests).
    `authorize_*` functions, encrypted value account reconstruction, and the `resource_bounds_match_liveness_doc`
    doc-sync guard (keeps `MMR_ACL_MVP.md`'s liveness numbers honest).
 2. **On-chain integration — Mollusk** (`solana/runtime-tests/tests/{host,token}_mollusk.rs`): runs the
-   **real compiled `.so`** (built `--features poc`) against Mollusk. Covers all three auth paths, the
+   **real compiled `.so`** against Mollusk. Covers all three auth paths, the
    full token flows (wrap / transfer / burn→redeem / disclose), the produced-public lifecycle execution
    (zero/one/multiple/max-size/fail-closed), the burn-redemption consume-once replay marker and
    expired-request rejection, and handle update. Token disclosure is now the thin `disclose_secp`

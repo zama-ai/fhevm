@@ -138,7 +138,7 @@ From `solana/`:
 
 ```bash
 # Verify the production IDL/ABI snapshot, then rebuild the local SBF artifacts
-# the Mollusk runtime tests need (built with the test-only `poc` feature).
+# the Mollusk runtime tests need.
 bash scripts/check-zama-host-idl.sh
 
 cargo test --workspace

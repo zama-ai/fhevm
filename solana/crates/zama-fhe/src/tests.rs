@@ -1471,6 +1471,24 @@ fn lowers_bounded_rand_step_and_rejects_non_power_of_two_bounds() {
         BoundedU64UpperBound::power_of_two(3).unwrap_err(),
         FheExecutionBuildError::InvalidRandomUpperBound
     );
+
+    // The rule the comment above claims this step inherits. Asserted rather than described: no other
+    // builder-level test covers it for any rand variant, so without this line `validate.rs`'s
+    // persistent-output requirement is only checked on-chain. Note where it fires — adding the step
+    // succeeds, and it is `finish` that rejects the execution, because the requirement is about the
+    // execution as a whole (some later step may be the one that persists).
+    let mut transient_builder =
+        FheExecutionBuilder::new(encrypted_value_account_authority(primary_authority));
+    transient_builder
+        .rand_bounded_u64(
+            BoundedU64UpperBound::power_of_two(1 << 20).unwrap(),
+            Output::transient(),
+        )
+        .unwrap();
+    assert_eq!(
+        transient_builder.finish().unwrap_err(),
+        FheExecutionBuildError::RandRequiresPersistentOutput
+    );
 }
 
 #[test]

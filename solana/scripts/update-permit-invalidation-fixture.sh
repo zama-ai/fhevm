@@ -12,10 +12,9 @@
 #
 # Writes: test-fixtures/permit/permit_invalidation_account_v1.json
 #
-# Needs an existing SBF artifact: the fixture is captured from a real revocation run
-# through Mollusk, so target/deploy/zama_host.so must already be built with the `poc`
-# feature. This script does not rebuild it — rebuilding under an unpinned local toolchain
-# also moves the committed compute-unit snapshots.
+# Needs an existing SBF artifact: the fixture is captured from a real revocation run through
+# Mollusk, so target/deploy/zama_host.so must already exist. This script does not rebuild it —
+# rebuilding under an unpinned local toolchain also moves the committed compute-unit snapshots.
 #
 # After regenerating, review the diff and run the target without the gate, so the
 # committed file is checked rather than rewritten.
@@ -52,7 +51,7 @@ ARTIFACT="$ROOT/target/deploy/zama_host.so"
 OUT="$ROOT/test-fixtures/permit/permit_invalidation_account_v1.json"
 
 [ -f "$ARTIFACT" ] || {
-  echo "error: missing ${ARTIFACT#"$ROOT/"}; build it with the \`poc\` feature first" >&2
+  echo "error: missing ${ARTIFACT#"$ROOT/"}; build it first (bash scripts/check-zama-host-idl.sh)" >&2
   exit 1
 }
 
