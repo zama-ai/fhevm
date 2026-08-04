@@ -506,7 +506,7 @@ fn bind_execution_output<'info>(
         output_pda.key,
         ZamaHostError::EncryptedValuePdaMismatch
     );
-    // One write per account per execution — load-bearing for the rand seed anchor (#1853 W4).
+    // One write per account per execution — this is what anchors the rand seed (#1853 W4).
     table.claim_persistent_output(output_info.key())?;
     // Explicit on the update path; `create_pda_strict` enforces it on create.
     require!(

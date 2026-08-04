@@ -416,7 +416,7 @@ check_alias 'rotation — an updated handle is updated' all '' \
   -iE '(balance|handle|value|amount|output|receipt)s? rotat|rotat[a-z]* the (confidential )?(balance|handle|value|amount)|(balance|handle|value|amount) rotation'
 # encrypted value account <- lineage account.
 check_alias 'lineage — renamed to encrypted value account' all '' -iE '\blineage\b'
-# The adjective is load-bearing: "value account" describes every SPL token account, so dropping
+# The adjective matters: "value account" describes every SPL token account, so dropping
 # "encrypted" turns the one distinguishing fact — that this account holds an *encrypted* value's
 # handle, subject list and MMR — into a generic phrase. The code has always said
 # `EncryptedValueAccount`; only the prose had drifted.
@@ -436,7 +436,7 @@ check_alias 'value account — say encrypted value account' all 'encrypted[ -]va
 # the rule. The English word "allowed" is untouched — subject membership really is an allow-list.
 check_alias 'AllowedPersistent / AllowedLocal — renamed to StoredValue / EarlierStep / Transient' all \
   '' -E '\bAllowedPersistent\b|\bAllowedLocal\b'
-# decoded op records <- `Fhe*Event` structs. The two load-bearing compute events keep their names
+# decoded op records <- `Fhe*Event` structs. The two compute events keep their names
 # (they are emitted); the nine per-op value types must not come back as events.
 check_alias 'Fhe*Event — the per-op value types are decoded op records' all \
   'FheExecuteRandomSeedsEvent|FheExecuteBatchEvent' -E '\bFhe[A-Za-z0-9]*Event\b'

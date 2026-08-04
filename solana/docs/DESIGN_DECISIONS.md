@@ -1194,7 +1194,7 @@ subject at the time of update, not a later live-role lookup.
 
 Amendment (fhevm-internal#1741): current membership is immutable by default but not frozen — a
 persistent-output update may explicitly replace the subject set (`output_subjects` need not equal the
-stored set). Order is load-bearing: the outgoing audience is sealed into historical leaves first, then
+stored set). Order matters: the outgoing audience is sealed into historical leaves first, then
 the new set replaces current membership, so past authorization stays exactly as sealed. Every subject an
 update adds passes the grant deny-list exactly as `allow_subjects` does (so audience replacement is not a
 deny-list bypass); `previous_handle`/`previous_subjects` still pin the outgoing state exactly, keeping
@@ -1779,7 +1779,7 @@ burn-redemption certificate (`confidential_burn` -> KMS-certified `redeem_burned
 current context, DD-040 family; the request-witness lifecycle is dissolved by fhevm-internal#1763) —
 the burn certificate *is* the aggregate decrypt, no separate reveal instruction.
 
-Load-bearing mechanics, all pre-existing host semantics (verified, no host changes): the transfer's
+The mechanics this relies on, all pre-existing host behaviour (verified, no host changes): the transfer's
 recipient rule already places the receiving account's owner in the `transferred_amount` output
 audience, so the batcher PDA gains read admission on the deposit handle **by construction**; the
 batcher re-materializes each deposit into its own batcher-owned encrypted value account in the same join transaction
@@ -1910,7 +1910,7 @@ domain separation was never needed for deterministic ops (content addressing), a
 was only caller-supplied *advice* (two batches sharing a `context_id` in one slot derived identical
 rand seeds), where the anchor is *enforced*.
 
-Load-bearing invariants (must survive refactors):
+Properties that must survive any refactor:
 - Every declared persistent output is always written, and duplicate persistent-output accounts within a
   batch are rejected (`EvalAccountTable::claim_persistent_output`) — these make the anchor a consumed
   ticket.

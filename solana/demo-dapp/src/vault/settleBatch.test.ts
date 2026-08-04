@@ -220,7 +220,7 @@ describe('settleBatch', () => {
 
   it('keeps a realistic-depth settle (14 MMR siblings) within the 1232-byte v0 wire limit', async () => {
     // A live settle carries a real MMR inclusion proof: one 32-byte sibling per mountain level, the
-    // load-bearing growth term in the settle instruction data (`siblings: [...claim.inclusionProof.
+    // term that actually grows in the settle instruction data (`siblings: [...claim.inclusionProof.
     // siblings]`). The happy-path test above used an EMPTY proof, which would not have caught an ALT
     // that left the tx too full to absorb a real proof. This re-asserts the size bound with a deep
     // proof.

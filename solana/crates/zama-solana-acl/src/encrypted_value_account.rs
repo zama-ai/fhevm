@@ -61,7 +61,7 @@ impl EncryptedValueAccountEvent {
     /// Builds a [`EncryptedValueAccountEvent::HandleUpdated`] from the `subjects` snapshot
     /// taken immediately before the update executed on-chain.
     ///
-    /// `previous_subjects` is load-bearing and silent to get wrong: it must be
+    /// `previous_subjects` is easy to get wrong and fails quietly when you do: it must be
     /// the live `subjects` in insertion order, including every subject added by
     /// prior `allow_subjects` calls. A stale snapshot (e.g. the pre-`allow` set,
     /// or the post-update set) yields leaves that hash differently from the
@@ -277,7 +277,7 @@ mod tests {
                 &proof
             ));
         }
-        // Subject order is load-bearing: swapping it yields different leaves.
+        // Subject order matters: swapping it yields different leaves.
         let swapped = reconstruct(acct, &[updated(h(10), &[h(2), h(1)])]).unwrap();
         assert_ne!(encrypted_value_account.leaves, swapped.leaves);
     }

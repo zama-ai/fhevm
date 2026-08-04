@@ -14,7 +14,7 @@
 //!
 //! Public API surface: the verifier side. The KMS connector, the proof service, and any
 //! third-party verifier reconstruct and check `EncryptedValue` state through these exports, so a
-//! predicate with no caller in this repository is still load-bearing for them.
+//! predicate with no caller in this repository is still doing real work for them.
 
 #[cfg(not(target_os = "solana"))]
 use sha2::{Digest as _, Sha256};

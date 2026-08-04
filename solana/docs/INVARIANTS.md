@@ -12,12 +12,13 @@ entry that dies is retired in place. The tags:
 - **[V2]** — planned, not yet built.
 - **[RETIRED]** — withdrawn with the feature it described; number stays.
 
-The register has two parts. **Part I** holds the load-bearing invariants: an
-auditor, integrator, or handover reader must be able to rely on every entry,
-and a violation of any of them is a security or correctness incident.
-**Part II** holds pinned engineering facts and operational posture: true and
-test-pinned, but a reader who skips Part II misses no trust property.
-Numbers are stable across both parts and never reused.
+The register has two parts. **Part I** is what the system promises. An auditor,
+an integrator, or whoever picks this up next can rely on every entry in it, and
+breaking one of them is a security or correctness bug. **Part II** is how the
+system is built and run: sizes, limits, and operational notes. All of it is true
+and covered by tests, but none of it is a promise about safety, so skipping
+Part II costs you nothing you have to trust. Numbers are stable across both
+parts and never reused.
 
 Scope note: this register covers the **protocol layer** of the Solana feature
 branch — `zama-host`, the `zama-fhe` SDK, the host-listener reconstruction path,
@@ -27,7 +28,7 @@ update, encrypted value ID…).
 
 ---
 
-# Part I — Load-bearing invariants
+# Part I — What the system guarantees
 
 ## A. Confidentiality & privacy
 
@@ -74,13 +75,13 @@ update, encrypted value ID…).
 13. **[HOLDS]** Every dictionary index is bounds-checked by all four consumers
     (program, SDK, proof service, listener); an unreferenced dictionary entry
     rejects the execution.
-15. **[HOLDS]** HCU inverse conformance: every op/type combination validation
-    admits has a metering cost row — a validated step can never abort on
-    unknown cost. (The converse is fail-closed: some priced combinations are
-    rejected by validation.)
+15. **[HOLDS]** Every op/type combination that validation accepts also has a
+    metering cost row, so a step that passed validation can never abort because
+    its cost is unknown. It does not work the other way round, deliberately:
+    some combinations have a price but are still rejected by validation.
 16. **[HOLDS]** An execution containing a rand step must bind a persistent output.
-    The bound output anchors a compulsorily fresh seed, so a seed is never
-    reused across executions.
+    That output is what anchors the seed, and the seed must be fresh, so no two
+    executions can share one.
 18. **[HOLDS]** Values from two different builders cannot be mixed into one
     execution: [`FheExecution::build`] hands each builder an invariant `'brand` lifetime
     that its transient values carry, so a foreign value is a compile error
@@ -88,7 +89,7 @@ update, encrypted value ID…).
     on SBF (writable statics are forbidden on-chain, so every builder in a
     program shared one scope number). Persistent operands are deliberately
     brand-free — a stored value belongs to no builder. Pinned by the
-    `compile_fail` doctest on `FheExecution::build`; the surviving runtime guard is the
+    `compile_fail` doctest on `FheExecution::build`. One runtime check remains, the
     producer-index bounds check, which protects the wire against hand-built
     args (fhevm-internal#1859 §4).
 
@@ -129,14 +130,15 @@ update, encrypted value ID…).
 
 ## E. Reconstruction & off-chain services
 
-28. **[HOLDS]** Listener-re-derived handles are byte-identical to on-chain
-    handles, by construction: the listener imports the program's own derivation
-    functions and argument types (pinned further by fixtures and the e2e lane).
+28. **[HOLDS]** Handles the listener re-derives are byte-identical to the
+    on-chain ones, because the listener imports the program's own derivation
+    functions and argument types rather than reimplementing them (fixtures and
+    the e2e lane check this too).
 29. **[HOLDS]** Every transaction is independently interpretable: replay from
     instruction bytes alone reconstructs full history with zero account reads
     (updates echo the previous handle and subjects).
-30. **[HOLDS]** The proof service is availability-critical but never an
-    authorization anchor: the KMS re-verifies every proof against live
+30. **[HOLDS]** The proof service can stop a decrypt from happening, but it can
+    never be what allows one: the KMS re-verifies every proof against live
     confirmed on-chain peaks. A bad or compromised proof service can fail a
     decrypt; it can never wrongly authorize one.
 31. **[HOLDS]** Coprocessor scheduling is decoupled from authorization: eager
@@ -158,8 +160,8 @@ update, encrypted value ID…).
     knob (`0` is rejected on the per-tx limits and means "ban untrusted apps"
     only on the block cap). When finite, the ordering invariant
     `block cap ≥ max per tx ≥ max depth` is enforced at set time.
-38. **[ASSUMPTION]** The host admin key is a single trusted key (POC posture;
-    no multisig, no timelock).
+38. **[ASSUMPTION]** The host admin key is a single trusted key. This is a POC:
+    there is no multisig and no timelock.
 40. **[HOLDS]** A compute subject cannot self-trust: HCU trust records are
     written only by the admin, live at a PDA derived from the subject they
     trust, and a caller can neither point at another subject's record (address
@@ -170,16 +172,18 @@ update, encrypted value ID…).
     a caller controlling N allowed subjects has N per-slot budgets. The
     multiplier is bounded by grant control — each subject must first be allowed
     on real values (unanchored executions are rejected under a finite cap).
-51. **[HOLDS]** The optional HCU accounts on `fhe_execute` are four-state, and
-    every state that could grant more budget fails closed: present +
-    program-owned + well-formed ⇒ used (`hcu_trusted_app_record: trusted ==
-    true` bypasses the cap; `hcu_block_meter` charges the subject's per-slot
-    budget); absent (`None`) ⇒ the untrusted default (a metered subject that
-    omits its meter is rejected, not unmetered); present at the canonical PDA
-    but never created (system-owned, empty) ⇒ benign — the subject is simply
-    untrusted/unused, and a squatted meter with data is rejected when `charge`
-    lazily creates it; present at the wrong PDA, or program-owned but
-    malformed ⇒ the execution is rejected outright.
+51. **[HOLDS]** The optional HCU accounts on `fhe_execute` can arrive in four
+    states, and every state that could hand out more budget fails closed:
+    - **Present, program-owned, well-formed** — used. An
+      `hcu_trusted_app_record` with `trusted == true` bypasses the cap;
+      `hcu_block_meter` charges the subject's per-slot budget.
+    - **Absent (`None`)** — the untrusted default. A subject that is supposed to
+      be metered but omits its meter is rejected, not left unmetered.
+    - **Present at the canonical PDA but never created** (system-owned, empty) —
+      harmless. The subject is simply untrusted or unused. A squatted meter that
+      does hold data is rejected when `charge` lazily creates it.
+    - **Present at the wrong PDA, or program-owned but malformed** — the
+      execution is rejected outright.
 
 ## G. Decrypt authorization (gateway, relayer, KMS)
 
@@ -212,11 +216,11 @@ update, encrypted value ID…).
 
 ---
 
-# Part II — Pinned bounds & operational posture
+# Part II — Sizes, limits, and how it is run
 
-A reader who skips this part misses no trust property. Entries here are
-test-pinned engineering facts and operations notes; they change with sizing
-or tooling decisions, not with the threat model.
+Nothing here is a safety promise. These entries record sizes, limits, and how
+the system is operated. They change when we resize something or swap tooling,
+not when the threat model changes.
 
 14. **[HOLDS]** The maximum execution (32 steps) fits one 1,232-byte packet and the
     default 200k CU budget; both bounds are pinned by tests.
@@ -233,8 +237,9 @@ or tooling decisions, not with the threat model.
     directions are pinned by tests.
 50. **[OPERATIONAL]** The relayer's ACL preflight covers EVM host chains only.
     An unauthorized Solana request is rejected by the KMS connectors, after
-    the gateway fee is paid. Authorization is unaffected (#42, #45); the
-    fee/spam surface is accepted for the POC.
+    the gateway fee is paid. This does not affect authorization (#42, #45); for
+    the POC we accept that a rejected request can still cost a fee, and that
+    this leaves room for spam.
 52. **[OPERATIONAL]** Every batch gets its own settle address lookup table, and
     the demo runs the full table lifecycle: create + extend at `open_batch`
     (chunked so no extend can exceed the transaction wire limit), deactivate
@@ -259,12 +264,15 @@ or tooling decisions, not with the threat model.
     32 KB default bump heap is the whole instruction, not just the build: the
     region is never freed, and after the build the CPI helper deep-clones
     `FheExecuteArgs` and borsh-serializes the packet. Measured for steps that
-    each write a persistent output: 16 steps request 19,454 bytes and are the
-    documented budget, 24 request 32,158 and clear the region by only 610 bytes,
-    28 do not fit, and the maximum 32-step execution (41,726) has to be built
-    off-chain or by a program with its own allocator. Account resolution and
-    Anchor's own account deserialization are on top of those figures, which is
-    why the budget is 16 rather than 24. The SDK enforces that budget on-chain
+    each write a persistent output:
+    - **16 steps** — 19,454 bytes. This is the documented budget.
+    - **24 steps** — 32,158 bytes, which clears the region by only 610 bytes.
+    - **28 steps** — does not fit.
+    - **32 steps** (the largest execution the host accepts) — 41,726 bytes, so it
+      has to be built off-chain, or by a program that installs its own allocator.
+
+    Account resolution and Anchor's own account deserialization sit on top of
+    those figures, which is why the budget is 16 and not 24. The SDK enforces that budget on-chain
     (`MAX_ON_CHAIN_EXECUTION_STEPS`, lifted by the `raised-heap` feature for a program
     that installs its own allocator) so a program past it gets
     `TooManyStepsForDefaultHeap` instead of an allocator abort with no error of

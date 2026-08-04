@@ -6,7 +6,7 @@
 //! `confidential_transfer` CPI into the batch's own token account, and the
 //! batcher's own eval re-materializes the transferred amount into the user's
 //! joined encrypted value account **in the same transaction**. Same-transaction is
-//! load-bearing: the transfer's recipient rule places the batch authority in
+//! what makes this safe: the transfer's recipient rule places the batch authority in
 //! the `transferred_amount` output audience by construction, but that encrypted value account
 //! is replaced by the user's next transfer and input admission pins the
 //! current handle — so the re-materialization must happen before anything can

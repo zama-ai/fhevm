@@ -118,7 +118,7 @@ groups_for_path() {
 }
 
 if [ -z "${CHANGED_FILES+x}" ]; then
-  # --no-renames is load-bearing: with rename detection, a pure move is listed only under its NEW
+  # --no-renames matters here: with rename detection, a pure move is listed only under its NEW
   # path, so moving a file OUT of a mapped tree (e.g. coprocessor/ -> sdk/) would change the image
   # contents without touching a mapped path and the stale published image would test false-green.
   # Disabling detection lists a move as delete(old)+add(new), so both sides hit the map.

@@ -109,7 +109,7 @@ Two cross-cutting notes on the gateway routing above:
   decrypts are single-handle (`require_single_handle` in the connector): a request names one
   `EncryptedValue` account, and an MMR proof, when present, authorizes exactly one handle.
   Batching handles into one Solana request is out of scope for the POC.
-- **Solana-over-EIP-712 is a bridge posture, not a committed end state.** Routing Solana decrypts
+- **Solana-over-EIP-712 is a bridge, not a committed end state.** Routing Solana decrypts
   through the EVM-shaped EIP-712 gateway (DD-012/DD-026) was chosen to reuse the audited
   gateway/KMS stack rather than build a parallel native one. Whether it remains the end state or
   is later replaced by a Solana-native request path is an open product decision; the Solana-side
@@ -147,7 +147,7 @@ Two cross-cutting notes on the gateway routing above:
   upstream connector already reads every EVM host chain over RPC for decrypt authorization
   (per-chain `ACL` instances issuing `isAllowedForDecryption` / `isAllowed` eth_calls against the
   host `ACL.sol`). The Solana branch generalized that per-chain map to
-  `HostChainAclBackend::{Evm, Solana}` — same component, same trust posture (each KMS party
+  `HostChainAclBackend::{Evm, Solana}` — same component, same trust model (each KMS party
   trusts its own RPC endpoint on both chains), different read mechanics (eth_call vs
   `getAccountInfo` at confirmed commitment + local shared-crate decode with PDA/owner
   re-derivation). Nothing new was granted to the KMS; each party's connector always needed read

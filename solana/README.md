@@ -184,7 +184,7 @@ An app program drives compute by CPI into `zama-host`, using
 
 - [`docs/GLOSSARY.md`](docs/GLOSSARY.md) — normative vocabulary.
 - [`docs/INVARIANTS.md`](docs/INVARIANTS.md) — the guarantee register
-  (load-bearing invariants, then pinned bounds and operational posture).
+  (what the system guarantees, then sizes, limits, and how it is run).
 - [`docs/DESIGN_DECISIONS.md`](docs/DESIGN_DECISIONS.md) — numbered decisions
   with status and rationale.
 - [`docs/EVM_PARITY.md`](docs/EVM_PARITY.md) — EVM capability mapping.
