@@ -32,7 +32,7 @@ pub struct ConfidentialTransfer<'info> {
     pub to_balance_value: Box<Account<'info, zama_host::EncryptedValue>>,
     /// CHECK: stable `transferred_amount` encrypted value account for `from_account`; created on
     /// the sender's first transfer, replaced thereafter.
-    #[account(mut, address = encrypted_value_address(mint.key(), from_account.key(), transferred_amount_label()).0)]
+    #[account(mut, address = encrypted_value_address(mint.key(), from_account.key(), encrypted_transferred_amount_label()).0)]
     pub transferred_amount_value: UncheckedAccount<'info>,
     /// CHECK: Anchor event CPI authority for the Zama host program.
     pub zama_event_authority: UncheckedAccount<'info>,
@@ -172,7 +172,7 @@ pub struct ConfidentialTransferFromValue<'info> {
     pub to_balance_value: Box<Account<'info, zama_host::EncryptedValue>>,
     /// CHECK: stable `transferred_amount` encrypted value account for `from_account`; created on
     /// the sender's first transfer, replaced thereafter.
-    #[account(mut, address = encrypted_value_address(mint.key(), from_account.key(), transferred_amount_label()).0)]
+    #[account(mut, address = encrypted_value_address(mint.key(), from_account.key(), encrypted_transferred_amount_label()).0)]
     pub transferred_amount_value: UncheckedAccount<'info>,
     /// The existing encrypted amount to spend: a computed or received `euint64` handle. Read-only
     /// persistent operand — never replaced, never consumed. Its address is the canonical PDA of its

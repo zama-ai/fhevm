@@ -38,9 +38,9 @@ impl Domain {
 
 /// App-domain encrypted field label.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
-pub struct PersistentLabel([u8; 32]);
+pub struct EncryptedValueLabel([u8; 32]);
 
-impl PersistentLabel {
+impl EncryptedValueLabel {
     pub const fn new(bytes: [u8; 32]) -> Self {
         Self(bytes)
     }
@@ -57,20 +57,20 @@ impl PersistentLabel {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct EncryptedValueId {
     pub(crate) domain: Domain,
-    pub(crate) account: Pubkey,
-    pub(crate) label: PersistentLabel,
+    pub(crate) encrypted_value_account_authority: Pubkey,
+    pub(crate) label: EncryptedValueLabel,
 }
 
 impl EncryptedValueId {
     /// ```
     /// use anchor_lang::prelude::Pubkey;
-    /// use zama_fhe::{Domain, EncryptedValueId, PersistentLabel};
+    /// use zama_fhe::{Domain, EncryptedValueId, EncryptedValueLabel};
     ///
     /// let mint = Pubkey::new_unique();
     /// let token_account = Pubkey::new_unique();
-    /// let id = EncryptedValueId::new(Domain::new(mint), token_account, PersistentLabel::new([1; 32]));
+    /// let id = EncryptedValueId::new(Domain::new(mint), token_account, EncryptedValueLabel::new([1; 32]));
     /// assert_eq!(id.domain().pubkey(), mint);
-    /// assert_eq!(id.account(), token_account);
+    /// assert_eq!(id.encrypted_value_account_authority(), token_account);
     /// ```
     ///
     /// Passing the two pubkeys the other way round does not compile, so a swapped pair can no
@@ -78,16 +78,20 @@ impl EncryptedValueId {
     ///
     /// ```compile_fail
     /// use anchor_lang::prelude::Pubkey;
-    /// use zama_fhe::{Domain, EncryptedValueId, PersistentLabel};
+    /// use zama_fhe::{Domain, EncryptedValueId, EncryptedValueLabel};
     ///
     /// let mint = Pubkey::new_unique();
     /// let token_account = Pubkey::new_unique();
-    /// EncryptedValueId::new(token_account, Domain::new(mint), PersistentLabel::new([1; 32]));
+    /// EncryptedValueId::new(token_account, Domain::new(mint), EncryptedValueLabel::new([1; 32]));
     /// ```
-    pub fn new(domain: Domain, account: Pubkey, label: PersistentLabel) -> Self {
+    pub fn new(
+        domain: Domain,
+        encrypted_value_account_authority: Pubkey,
+        label: EncryptedValueLabel,
+    ) -> Self {
         Self {
             domain,
-            account,
+            encrypted_value_account_authority,
             label,
         }
     }
@@ -100,18 +104,18 @@ impl EncryptedValueId {
         self.domain
     }
 
-    pub fn account(&self) -> Pubkey {
-        self.account
+    pub fn encrypted_value_account_authority(&self) -> Pubkey {
+        self.encrypted_value_account_authority
     }
 
-    pub fn label(&self) -> PersistentLabel {
+    pub fn encrypted_value_label(&self) -> EncryptedValueLabel {
         self.label
     }
 
     pub fn encrypted_value_id(&self) -> [u8; 32] {
         zama_solana_acl::derive_encrypted_value_id(
             self.domain.pubkey().to_bytes(),
-            self.account.to_bytes(),
+            self.encrypted_value_account_authority.to_bytes(),
             self.label.bytes(),
         )
     }
@@ -178,7 +182,7 @@ impl PersistentOutput {
         Ok(PersistentOutputBinding {
             encrypted_value: self.key.address(),
             domain: self.key.domain,
-            account: self.key.account,
+            encrypted_value_account_authority: self.key.encrypted_value_account_authority,
             label: self.key.label.bytes(),
             subjects: self.subjects.clone(),
             previous: self.previous.clone(),
@@ -192,7 +196,7 @@ impl PersistentOutput {
 pub struct PersistentOutputBinding {
     encrypted_value: Pubkey,
     domain: Domain,
-    account: Pubkey,
+    encrypted_value_account_authority: Pubkey,
     label: [u8; 32],
     subjects: Vec<Pubkey>,
     previous: Option<PreviousEncryptedValueAccountState>,
@@ -208,11 +212,11 @@ impl PersistentOutputBinding {
         self.domain
     }
 
-    pub fn account(&self) -> Pubkey {
-        self.account
+    pub fn encrypted_value_account_authority(&self) -> Pubkey {
+        self.encrypted_value_account_authority
     }
 
-    pub fn label(&self) -> [u8; 32] {
+    pub fn encrypted_value_label(&self) -> [u8; 32] {
         self.label
     }
 

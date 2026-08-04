@@ -252,7 +252,12 @@ impl CleartextLedger {
     ) -> u64 {
         self.u64_at(
             context,
-            token::encrypted_value_address(mint, from_token, token::transferred_amount_label()).0,
+            token::encrypted_value_address(
+                mint,
+                from_token,
+                token::encrypted_transferred_amount_label(),
+            )
+            .0,
         )
     }
 
@@ -359,24 +364,24 @@ fn deny_subject_record_account(subject: Pubkey, denied: bool) -> (Pubkey, Accoun
 }
 
 /// Builds a canonical `EncryptedValue` encrypted value account for direct account-map seeding, mirroring
-/// `host_mollusk.rs::new_value_account` for the token program's ACL domain (the mint).
+/// `host_mollusk.rs::new_encrypted_value_account` for the token program's ACL domain (the mint).
 fn new_encrypted_value(
     domain: Pubkey,
     encrypted_value_account_authority: Pubkey,
-    label: [u8; 32],
+    encrypted_value_label: [u8; 32],
     handle: [u8; 32],
     subjects: &[Pubkey],
 ) -> (Pubkey, host::EncryptedValue) {
     let encrypted_value_id = zama_solana_acl::derive_encrypted_value_id(
         domain.to_bytes(),
         encrypted_value_account_authority.to_bytes(),
-        label,
+        encrypted_value_label,
     );
     let (address, bump) = host::encrypted_value_address(encrypted_value_id);
     let value = host::EncryptedValue {
         domain,
         encrypted_value_account_authority,
-        label,
+        label: encrypted_value_label,
         current_handle: handle,
         subjects: subjects.to_vec(),
         leaf_count: 0,
@@ -642,7 +647,7 @@ impl TokenFixture {
         let (alice_balance_address, alice_balance_value) = new_encrypted_value(
             self.mint,
             self.alice_token,
-            token::balance_label(),
+            token::encrypted_balance_label(),
             self.alice_initial,
             &[self.owner, self.compute_signer],
         );
@@ -650,7 +655,7 @@ impl TokenFixture {
         let (bob_balance_address, bob_balance_value) = new_encrypted_value(
             self.mint,
             self.bob_token,
-            token::balance_label(),
+            token::encrypted_balance_label(),
             self.bob_initial,
             &[self.bob_owner, self.compute_signer],
         );
@@ -687,7 +692,12 @@ impl TokenFixture {
     }
 
     fn transferred_amount_value_address(&self, from_token: Pubkey) -> Pubkey {
-        token::encrypted_value_address(self.mint, from_token, token::transferred_amount_label()).0
+        token::encrypted_value_address(
+            self.mint,
+            from_token,
+            token::encrypted_transferred_amount_label(),
+        )
+        .0
     }
 }
 
@@ -894,11 +904,17 @@ fn seed_amount_value(
     fixture: &TokenFixture,
     accounts: &mut HashMap<Pubkey, Account>,
     account: Pubkey,
-    label: [u8; 32],
+    encrypted_value_label: [u8; 32],
     handle: [u8; 32],
     subjects: &[Pubkey],
 ) -> Pubkey {
-    let (address, value) = new_encrypted_value(fixture.mint, account, label, handle, subjects);
+    let (address, value) = new_encrypted_value(
+        fixture.mint,
+        account,
+        encrypted_value_label,
+        handle,
+        subjects,
+    );
     accounts.insert(address, encrypted_value_account(&value));
     address
 }
@@ -1032,7 +1048,7 @@ fn mollusk_initialize_mint_creates_total_supply_encrypted_value() {
         supply_value.encrypted_value_account_authority,
         total_supply_authority
     );
-    assert_eq!(supply_value.label, token::total_supply_label());
+    assert_eq!(supply_value.label, token::encrypted_total_supply_label());
     assert!(supply_value.has_subject(compute_signer));
 }
 
@@ -1064,7 +1080,7 @@ fn mollusk_initialize_token_account_creates_initial_balance_encrypted_value() {
         balance_value.encrypted_value_account_authority,
         token_account
     );
-    assert_eq!(balance_value.label, token::balance_label());
+    assert_eq!(balance_value.label, token::encrypted_balance_label());
     assert!(balance_value.has_subject(owner));
     assert!(balance_value.has_subject(fixture.compute_signer));
 
@@ -1262,7 +1278,10 @@ fn mollusk_confidential_transfer_updates_value_accounts_and_cleartext_balances()
         transferred.encrypted_value_account_authority,
         fixture.alice_token
     );
-    assert_eq!(transferred.label, token::transferred_amount_label());
+    assert_eq!(
+        transferred.label,
+        token::encrypted_transferred_amount_label()
+    );
     assert!(transferred.has_subject(fixture.owner));
     assert!(transferred.has_subject(fixture.bob_owner));
     assert!(transferred.has_subject(fixture.compute_signer));
@@ -1329,7 +1348,7 @@ fn mollusk_confidential_transfer_to_second_recipient_rotates_transferred_value_a
     let (_, charlie_value) = new_encrypted_value(
         fixture.mint,
         charlie_token,
-        token::balance_label(),
+        token::encrypted_balance_label(),
         charlie_initial,
         &[charlie_owner, fixture.compute_signer],
     );
@@ -1414,7 +1433,7 @@ fn seed_third_account(
     let (_, charlie_value) = new_encrypted_value(
         fixture.mint,
         charlie_token,
-        token::balance_label(),
+        token::encrypted_balance_label(),
         initial,
         &[charlie_owner, fixture.compute_signer],
     );
@@ -2124,7 +2143,7 @@ fn mollusk_confidential_transfer_rejects_stale_balance_encrypted_value() {
     let (stale_address, stale_value) = new_encrypted_value(
         fixture.mint,
         fixture.alice_token,
-        token::wrap_amount_label(),
+        token::encrypted_wrap_amount_label(),
         fixture.alice_initial,
         &[fixture.owner],
     );
@@ -2160,7 +2179,7 @@ fn mollusk_confidential_transfer_rejects_balance_wrong_mint_acl_domain() {
     let (_, mut wrong_domain_value) = new_encrypted_value(
         fixture.mint,
         fixture.alice_token,
-        token::balance_label(),
+        token::encrypted_balance_label(),
         fixture.alice_initial,
         &[fixture.owner, fixture.compute_signer],
     );
@@ -2207,7 +2226,7 @@ fn mollusk_confidential_transfer_rejects_balance_wrong_token_account_app_account
     let (_, mut wrong_account_value) = new_encrypted_value(
         fixture.mint,
         fixture.alice_token,
-        token::balance_label(),
+        token::encrypted_balance_label(),
         fixture.alice_initial,
         &[fixture.owner, fixture.compute_signer],
     );
@@ -2472,8 +2491,12 @@ impl BurnRedeemFixture {
         let total_supply_authority = token::total_supply_authority_address(mint).0;
         let total_supply_value =
             token::total_supply_encrypted_value_address(mint, total_supply_authority).0;
-        let burned_amount_value =
-            token::encrypted_value_address(mint, token_account, token::burned_amount_label()).0;
+        let burned_amount_value = token::encrypted_value_address(
+            mint,
+            token_account,
+            token::encrypted_burned_amount_label(),
+        )
+        .0;
         let vault_authority = token::vault_authority_address(mint).0;
         let vault_usdc = token::vault_token_account_address(mint, underlying_mint);
         let destination_usdc = Pubkey::new_unique();
@@ -2521,14 +2544,14 @@ impl BurnRedeemFixture {
         let (_, balance_value) = new_encrypted_value(
             self.mint,
             self.token_account,
-            token::balance_label(),
+            token::encrypted_balance_label(),
             self.initial_balance,
             &[self.owner, self.compute_signer],
         );
         let (_, total_supply_value) = new_encrypted_value(
             self.mint,
             self.total_supply_authority,
-            token::total_supply_label(),
+            token::encrypted_total_supply_label(),
             self.initial_total_supply,
             &[self.compute_signer],
         );
@@ -2665,11 +2688,17 @@ fn seed_burn_amount_value(
     fixture: &BurnRedeemFixture,
     accounts: &mut HashMap<Pubkey, Account>,
     account: Pubkey,
-    label: [u8; 32],
+    encrypted_value_label: [u8; 32],
     handle: [u8; 32],
     subjects: &[Pubkey],
 ) -> Pubkey {
-    let (address, value) = new_encrypted_value(fixture.mint, account, label, handle, subjects);
+    let (address, value) = new_encrypted_value(
+        fixture.mint,
+        account,
+        encrypted_value_label,
+        handle,
+        subjects,
+    );
     accounts.insert(address, encrypted_value_account(&value));
     address
 }
@@ -2823,7 +2852,7 @@ fn seed_two_burn_value_account(
     let (_, mut value) = new_encrypted_value(
         fixture.mint,
         fixture.token_account,
-        token::burned_amount_label(),
+        token::encrypted_burned_amount_label(),
         second_handle,
         &[fixture.owner, fixture.compute_signer],
     );
@@ -3513,8 +3542,12 @@ impl DiscloseFixture {
         let token_account = token::token_account_address(mint, owner).0;
         let balance_value = token::balance_encrypted_value_address(mint, token_account).0;
         // Any token-scoped amount encrypted value account discloses the same way; use the burned_amount slot.
-        let amount_value =
-            token::encrypted_value_address(mint, token_account, token::burned_amount_label()).0;
+        let amount_value = token::encrypted_value_address(
+            mint,
+            token_account,
+            token::encrypted_burned_amount_label(),
+        )
+        .0;
         let kms_context_id = 9;
         let kms_context = host::kms_context_address(kms_context_id).0;
         Self {
@@ -3578,7 +3611,7 @@ fn public_leaf_value_account(
     expected_address: Pubkey,
     account: Pubkey,
     mint: Pubkey,
-    label: [u8; 32],
+    encrypted_value_label: [u8; 32],
     subjects: &[Pubkey],
     pinned: [u8; 32],
     update_to: Option<[u8; 32]>,
@@ -3606,7 +3639,8 @@ fn public_leaf_value_account(
         }
         None => pinned,
     };
-    let (address, mut value) = new_encrypted_value(mint, account, label, current, subjects);
+    let (address, mut value) =
+        new_encrypted_value(mint, account, encrypted_value_label, current, subjects);
     assert_eq!(
         address, expected_address,
         "encrypted value account address mismatch"
@@ -3684,7 +3718,7 @@ fn mollusk_disclose_secp_amount_happy_path() {
         fixture.amount_value,
         fixture.token_account,
         fixture.mint,
-        token::burned_amount_label(),
+        token::encrypted_burned_amount_label(),
         &[fixture.owner, fixture.compute_signer],
         pinned,
         None,
@@ -3726,7 +3760,7 @@ fn mollusk_disclose_secp_balance_happy_path() {
         fixture.balance_value,
         fixture.token_account,
         fixture.mint,
-        token::balance_label(),
+        token::encrypted_balance_label(),
         &[fixture.owner, fixture.compute_signer],
         pinned,
         None,
@@ -3772,7 +3806,7 @@ fn mollusk_disclose_secp_after_supersession_consumes_with_public_proof() {
         fixture.amount_value,
         fixture.token_account,
         fixture.mint,
-        token::burned_amount_label(),
+        token::encrypted_burned_amount_label(),
         &[fixture.owner, fixture.compute_signer],
         pinned,
         Some(replaced),
@@ -3818,7 +3852,7 @@ fn mollusk_disclose_secp_is_idempotent_no_replay_marker() {
         fixture.amount_value,
         fixture.token_account,
         fixture.mint,
-        token::burned_amount_label(),
+        token::encrypted_burned_amount_label(),
         &[fixture.owner, fixture.compute_signer],
         pinned,
         None,
@@ -3857,7 +3891,7 @@ fn mollusk_disclose_secp_rejects_foreign_public_decrypt_proof() {
         fixture.amount_value,
         fixture.token_account,
         fixture.mint,
-        token::burned_amount_label(),
+        token::encrypted_burned_amount_label(),
         &[fixture.owner, fixture.compute_signer],
         pinned,
         Some(replaced),
@@ -3900,12 +3934,12 @@ fn mollusk_disclose_secp_rejects_foreign_mint_domain() {
         token::encrypted_value_address(
             foreign_mint,
             fixture.token_account,
-            token::burned_amount_label(),
+            token::encrypted_burned_amount_label(),
         )
         .0,
         fixture.token_account,
         foreign_mint,
-        token::burned_amount_label(),
+        token::encrypted_burned_amount_label(),
         &[fixture.owner, fixture.compute_signer],
         pinned,
         None,
@@ -3913,7 +3947,7 @@ fn mollusk_disclose_secp_rejects_foreign_mint_domain() {
     let foreign_value_addr = token::encrypted_value_address(
         foreign_mint,
         fixture.token_account,
-        token::burned_amount_label(),
+        token::encrypted_burned_amount_label(),
     )
     .0;
 
@@ -3948,7 +3982,7 @@ fn mollusk_disclose_secp_rejects_cleartext_wider_than_u64() {
         fixture.amount_value,
         fixture.token_account,
         fixture.mint,
-        token::burned_amount_label(),
+        token::encrypted_burned_amount_label(),
         &[fixture.owner, fixture.compute_signer],
         pinned,
         None,
@@ -4152,7 +4186,7 @@ fn mollusk_transfer_from_value_spends_existing_amount() {
         &fixture,
         &mut accounts,
         fixture.alice_token,
-        token::transfer_amount_label(),
+        token::encrypted_transfer_amount_label(),
         amount_handle,
         &[fixture.owner, fixture.compute_signer],
     );
@@ -4326,7 +4360,7 @@ fn mollusk_transfer_from_value_cross_app_requires_compute_subject_grant() {
         &fixture,
         &mut accounts,
         fixture.alice_token,
-        token::transfer_amount_label(),
+        token::encrypted_transfer_amount_label(),
         amount_handle,
         &[fixture.owner],
     );
@@ -4390,7 +4424,7 @@ fn mollusk_transfer_from_value_rejects_non_subject_signer() {
         &fixture,
         &mut accounts,
         fixture.alice_token,
-        token::transfer_amount_label(),
+        token::encrypted_transfer_amount_label(),
         amount_handle,
         &[fixture.bob_owner, fixture.compute_signer],
     );
@@ -4429,7 +4463,7 @@ fn mollusk_transfer_from_value_rejects_non_euint64_amount() {
         &fixture,
         &mut accounts,
         fixture.alice_token,
-        token::transfer_amount_label(),
+        token::encrypted_transfer_amount_label(),
         amount_handle,
         &[fixture.owner, fixture.compute_signer],
     );
@@ -4645,7 +4679,7 @@ fn cost_snapshot_confidential_transfer_from_value() {
         &fixture,
         &mut accounts,
         fixture.alice_token,
-        token::transfer_amount_label(),
+        token::encrypted_transfer_amount_label(),
         amount_handle,
         &[fixture.owner, fixture.compute_signer],
     );
@@ -4706,7 +4740,7 @@ fn disclose_secp_seven_of_thirteen_verifies_and_bounds_compute() {
         fixture.amount_value,
         fixture.token_account,
         fixture.mint,
-        token::burned_amount_label(),
+        token::encrypted_burned_amount_label(),
         &[fixture.owner, fixture.compute_signer],
         pinned,
         Some(replaced),
@@ -4775,7 +4809,7 @@ fn mollusk_burn_from_value_burns_existing_amount() {
         &fixture,
         &mut accounts,
         fixture.token_account,
-        token::transfer_amount_label(),
+        token::encrypted_transfer_amount_label(),
         amount_handle,
         &[fixture.owner, fixture.compute_signer],
     );
@@ -4876,7 +4910,7 @@ fn mollusk_burn_from_value_reburns_burned_amount_that_is_also_this_output() {
         &fixture,
         &mut accounts,
         fixture.token_account,
-        token::transfer_amount_label(),
+        token::encrypted_transfer_amount_label(),
         amount_handle,
         &[fixture.owner, fixture.compute_signer],
     );
@@ -4952,7 +4986,7 @@ fn mollusk_burn_from_value_pda_owner_via_invoke_signed() {
         &fixture,
         &mut accounts,
         fixture.token_account,
-        token::transfer_amount_label(),
+        token::encrypted_transfer_amount_label(),
         amount_handle,
         &[pda_owner, fixture.compute_signer],
     );
@@ -4989,7 +5023,7 @@ fn mollusk_burn_from_value_burned_handle_redeems() {
         &fixture,
         &mut accounts,
         fixture.token_account,
-        token::transfer_amount_label(),
+        token::encrypted_transfer_amount_label(),
         amount_handle,
         &[fixture.owner, fixture.compute_signer],
     );
@@ -5053,7 +5087,7 @@ fn mollusk_burn_from_value_rejects_non_subject_signer() {
         &fixture,
         &mut accounts,
         fixture.token_account,
-        token::transfer_amount_label(),
+        token::encrypted_transfer_amount_label(),
         amount_handle,
         &[stranger, fixture.compute_signer],
     );
@@ -5087,7 +5121,7 @@ fn mollusk_burn_from_value_rejects_non_euint64_amount() {
         &fixture,
         &mut accounts,
         fixture.token_account,
-        token::transfer_amount_label(),
+        token::encrypted_transfer_amount_label(),
         amount_handle,
         &[fixture.owner, fixture.compute_signer],
     );
@@ -5117,7 +5151,7 @@ fn mollusk_burn_from_value_rejects_owner_not_token_account_owner() {
         &fixture,
         &mut accounts,
         fixture.token_account,
-        token::transfer_amount_label(),
+        token::encrypted_transfer_amount_label(),
         amount_handle,
         &[wrong_owner, fixture.compute_signer],
     );
@@ -5144,7 +5178,7 @@ fn mollusk_burn_from_value_cross_app_requires_compute_subject_grant() {
         &fixture,
         &mut accounts,
         fixture.token_account,
-        token::transfer_amount_label(),
+        token::encrypted_transfer_amount_label(),
         amount_handle,
         &[fixture.owner],
     );
@@ -5218,7 +5252,7 @@ fn cost_snapshot_confidential_burn_from_value() {
         &fixture,
         &mut accounts,
         fixture.token_account,
-        token::transfer_amount_label(),
+        token::encrypted_transfer_amount_label(),
         amount_handle,
         &[fixture.owner, fixture.compute_signer],
     );

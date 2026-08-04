@@ -148,12 +148,12 @@ pub fn batch_payout_underlying_address(batch: Pubkey) -> (Pubkey, u8) {
 }
 
 /// Encrypted-value label for a user's accumulated joined batch amount.
-pub fn pending_join_label(user: Pubkey) -> [u8; 32] {
+pub fn encrypted_pending_join_label(user: Pubkey) -> [u8; 32] {
     solana_sha256_hasher::hashv(&[b"batcher-pending-join", user.as_ref()]).to_bytes()
 }
 
 /// Encrypted-value label for a user's claimed payout amount.
-pub fn claim_amount_label(user: Pubkey) -> [u8; 32] {
+pub fn encrypted_claim_amount_label(user: Pubkey) -> [u8; 32] {
     solana_sha256_hasher::hashv(&[b"batcher-claim-amount", user.as_ref()]).to_bytes()
 }
 
@@ -163,24 +163,28 @@ pub fn claim_amount_label(user: Pubkey) -> [u8; 32] {
 pub fn batcher_encrypted_value_address(
     batch: Pubkey,
     batch_authority: Pubkey,
-    label: [u8; 32],
+    encrypted_value_label: [u8; 32],
 ) -> (Pubkey, u8) {
     zama_host::encrypted_value_address(zama_solana_acl_encrypted_value_id(
         zama_fhe::Domain::new(batch),
         batch_authority,
-        label,
+        encrypted_value_label,
     ))
 }
 
 fn zama_solana_acl_encrypted_value_id(
     domain: zama_fhe::Domain,
-    account: Pubkey,
-    label: [u8; 32],
+    encrypted_value_account_authority: Pubkey,
+    encrypted_value_label: [u8; 32],
 ) -> [u8; 32] {
     // Delegate to the shared derivation through zama-fhe's EncryptedValueId so the
     // batcher and host agree exactly.
-    zama_fhe::EncryptedValueId::new(domain, account, zama_fhe::PersistentLabel::new(label))
-        .encrypted_value_id()
+    zama_fhe::EncryptedValueId::new(
+        domain,
+        encrypted_value_account_authority,
+        zama_fhe::EncryptedValueLabel::new(encrypted_value_label),
+    )
+    .encrypted_value_id()
 }
 
 /// Computes the informational payout rate of a settled batch, rounded DOWN
@@ -302,7 +306,13 @@ mod tests {
     fn labels_are_distinct_per_user_and_per_purpose() {
         let alice = Pubkey::new_unique();
         let bob = Pubkey::new_unique();
-        assert_ne!(pending_join_label(alice), pending_join_label(bob));
-        assert_ne!(pending_join_label(alice), claim_amount_label(alice));
+        assert_ne!(
+            encrypted_pending_join_label(alice),
+            encrypted_pending_join_label(bob)
+        );
+        assert_ne!(
+            encrypted_pending_join_label(alice),
+            encrypted_claim_amount_label(alice)
+        );
     }
 }

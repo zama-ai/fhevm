@@ -164,13 +164,13 @@ pub fn decode_on_chain_account(data: &[u8]) -> Result<EncryptedValue, AclError> 
 pub fn derive_encrypted_value_id(
     domain: [u8; 32],
     encrypted_value_account_authority: [u8; 32],
-    label: [u8; 32],
+    encrypted_value_label: [u8; 32],
 ) -> [u8; 32] {
     sha256(&[
         b"zama-encrypted-value-key-v1",
         &domain,
         &encrypted_value_account_authority,
-        &label,
+        &encrypted_value_label,
     ])
 }
 

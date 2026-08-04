@@ -136,7 +136,7 @@ pub fn claim<'info>(ctx: Context<'info, Claim<'info>>) -> Result<()> {
         zama_fhe::EncryptedValueId::new(
             zama_fhe::Domain::new(batch_key),
             batch_authority,
-            zama_fhe::PersistentLabel::new(claim_amount_label(user)),
+            zama_fhe::EncryptedValueLabel::new(encrypted_claim_amount_label(user)),
         ),
         // The user decrypts their claimed amount; the batch authority spends
         // it as the transfer amount; the payout mint's compute signer lets the

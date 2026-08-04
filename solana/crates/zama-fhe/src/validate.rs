@@ -567,7 +567,9 @@ pub(crate) fn validate_subjects(subjects: &[Pubkey]) -> Result<()> {
 }
 
 pub(crate) fn validate_encrypted_value_id(key: &EncryptedValueId) -> Result<()> {
-    if key.domain.pubkey() == Pubkey::default() || key.account == Pubkey::default() {
+    if key.domain.pubkey() == Pubkey::default()
+        || key.encrypted_value_account_authority == Pubkey::default()
+    {
         return Err(FheExecutionBuildError::InvalidEncryptedValueId);
     }
     Ok(())

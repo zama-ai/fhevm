@@ -484,7 +484,7 @@ fn bind_execution_output<'info>(
     encrypted_value_account_authority: Pubkey,
     output_domain: Pubkey,
     output_authority: Pubkey,
-    output_label: [u8; 32],
+    output_encrypted_value_label: [u8; 32],
     output_subjects: &[Pubkey],
     previous_state: &Option<PreviousState>,
     make_public: bool,
@@ -496,7 +496,11 @@ fn bind_execution_output<'info>(
     )?;
 
     let output_info = table.account(output_encrypted_value_index)?;
-    let output_pda = table.expected_output_pda(output_domain, output_authority, output_label);
+    let output_pda = table.expected_output_pda(
+        output_domain,
+        output_authority,
+        output_encrypted_value_label,
+    );
     require_keys_eq!(
         output_info.key(),
         output_pda.key,
@@ -553,7 +557,7 @@ fn bind_execution_output<'info>(
         let mut value = EncryptedValue {
             domain: output_domain,
             encrypted_value_account_authority: output_authority,
-            label: output_label,
+            label: output_encrypted_value_label,
             current_handle: result,
             subjects: output_subjects.to_vec(),
             leaf_count: 0,

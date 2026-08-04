@@ -141,7 +141,7 @@ pub fn quit<'info>(ctx: Context<'info, Quit<'info>>) -> Result<()> {
         zama_fhe::EncryptedValueId::new(
             zama_fhe::Domain::new(batch_key),
             batch_authority,
-            zama_fhe::PersistentLabel::new(pending_join_label(user)),
+            zama_fhe::EncryptedValueLabel::new(encrypted_pending_join_label(user)),
         ),
         vec![
             user,

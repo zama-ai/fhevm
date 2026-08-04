@@ -149,14 +149,15 @@ pub(crate) fn lower_output(
                     binding.encrypted_value(),
                     ExecutionAccountPurpose::PersistentOutputAcl,
                 ))?;
-            let output_authority_index = if binding.account() == app_authority.pubkey() {
-                None
-            } else {
-                Some(tables.account_index(ExecutionAccountMeta::readonly_signer(
-                    binding.account(),
-                    ExecutionAccountPurpose::PersistentOutputAuthority,
-                ))?)
-            };
+            let output_authority_index =
+                if binding.encrypted_value_account_authority() == app_authority.pubkey() {
+                    None
+                } else {
+                    Some(tables.account_index(ExecutionAccountMeta::readonly_signer(
+                        binding.encrypted_value_account_authority(),
+                        ExecutionAccountPurpose::PersistentOutputAuthority,
+                    ))?)
+                };
             let output_subject_indexes = binding
                 .host_subjects()
                 .into_iter()
@@ -167,8 +168,9 @@ pub(crate) fn lower_output(
                 output_authority_index,
                 output_domain_index: tables
                     .dictionary_index(binding.domain().pubkey().to_bytes())?,
-                output_account_index: tables.dictionary_index(binding.account().to_bytes())?,
-                output_label_index: tables.dictionary_index(binding.label())?,
+                output_account_index: tables
+                    .dictionary_index(binding.encrypted_value_account_authority().to_bytes())?,
+                output_label_index: tables.dictionary_index(binding.encrypted_value_label())?,
                 output_subject_indexes,
                 previous_state: binding.previous_state(),
                 make_public: binding.make_public(),

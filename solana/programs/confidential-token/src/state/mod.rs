@@ -58,12 +58,12 @@ pub fn burn_redemption_address(mint: Pubkey, burned_handle: [u8; 32]) -> (Pubkey
 
 /// Returns the canonical `EncryptedValue` PDA for a token balance field.
 pub fn balance_encrypted_value_address(domain: Pubkey, account: Pubkey) -> (Pubkey, u8) {
-    encrypted_value_address(domain, account, balance_label())
+    encrypted_value_address(domain, account, encrypted_balance_label())
 }
 
 /// Returns the canonical `EncryptedValue` PDA for the encrypted total supply field.
 pub fn total_supply_encrypted_value_address(domain: Pubkey, account: Pubkey) -> (Pubkey, u8) {
-    encrypted_value_address(domain, account, total_supply_label())
+    encrypted_value_address(domain, account, encrypted_total_supply_label())
 }
 
 /// Returns the canonical `EncryptedValue` PDA for an arbitrary label, delegating
@@ -73,47 +73,47 @@ pub fn encrypted_value_address(domain: Pubkey, account: Pubkey, label: [u8; 32])
 }
 
 /// Fixed encrypted value label for confidential balances.
-pub fn balance_label() -> [u8; 32] {
+pub fn encrypted_balance_label() -> [u8; 32] {
     *b"balance_________________________"
 }
 
 /// Fixed encrypted value label for the encrypted total supply.
-pub fn total_supply_label() -> [u8; 32] {
+pub fn encrypted_total_supply_label() -> [u8; 32] {
     *b"total_supply____________________"
 }
 
 /// Fixed encrypted value label for public wrap amounts.
-pub fn wrap_amount_label() -> [u8; 32] {
+pub fn encrypted_wrap_amount_label() -> [u8; 32] {
     *b"wrap_amount_____________________"
 }
 
 /// Fixed encrypted value label for externally verified burn amounts.
-pub fn burn_amount_label() -> [u8; 32] {
+pub fn encrypted_burn_amount_label() -> [u8; 32] {
     *b"burn_amount_____________________"
 }
 
 /// Fixed encrypted value label for externally verified transfer amounts.
-pub fn transfer_amount_label() -> [u8; 32] {
+pub fn encrypted_transfer_amount_label() -> [u8; 32] {
     *b"transfer_amount_________________"
 }
 
 /// Fixed encrypted value label for transfer success bits.
-pub fn transfer_success_label() -> [u8; 32] {
+pub fn encrypted_transfer_success_label() -> [u8; 32] {
     *b"transfer_success________________"
 }
 
 /// Fixed encrypted value label for unchecked debit candidates.
-pub fn debit_candidate_label() -> [u8; 32] {
+pub fn encrypted_debit_candidate_label() -> [u8; 32] {
     *b"debit_candidate_________________"
 }
 
 /// Fixed encrypted value label for the all-or-zero burned amount.
-pub fn burned_amount_label() -> [u8; 32] {
+pub fn encrypted_burned_amount_label() -> [u8; 32] {
     *b"burned_amount___________________"
 }
 
 /// Fixed encrypted value label for the all-or-zero transferred amount.
-pub fn transferred_amount_label() -> [u8; 32] {
+pub fn encrypted_transferred_amount_label() -> [u8; 32] {
     *b"transferred_amount______________"
 }
 

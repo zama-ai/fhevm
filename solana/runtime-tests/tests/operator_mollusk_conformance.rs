@@ -309,7 +309,7 @@ impl EvalFlow {
         let handle = handle_for_chain(seed, fhe_type);
         self.cleartext
             .insert(handle, TypedClearValue::from_u64(fhe_type, plaintext));
-        let (address, value) = new_value_account(self.authority, [seed; 32], handle);
+        let (address, value) = new_encrypted_value_account(self.authority, [seed; 32], handle);
         let encrypted_value_index =
             u8::try_from(self.remaining.len()).expect("test accounts fit u8");
         self.remaining
@@ -541,15 +541,15 @@ fn host_config_account(admin: Pubkey) -> (Pubkey, Account) {
     )
 }
 
-fn new_value_account(
+fn new_encrypted_value_account(
     authority: Pubkey,
-    label: [u8; 32],
+    encrypted_value_label: [u8; 32],
     handle: [u8; 32],
 ) -> (Pubkey, host::EncryptedValue) {
     let encrypted_value_id = zama_solana_acl::derive_encrypted_value_id(
         authority.to_bytes(),
         authority.to_bytes(),
-        label,
+        encrypted_value_label,
     );
     let (address, bump) = host::encrypted_value_address(encrypted_value_id);
     (
@@ -557,7 +557,7 @@ fn new_value_account(
         host::EncryptedValue {
             domain: authority,
             encrypted_value_account_authority: authority,
-            label,
+            label: encrypted_value_label,
             current_handle: handle,
             subjects: vec![authority],
             leaf_count: 0,

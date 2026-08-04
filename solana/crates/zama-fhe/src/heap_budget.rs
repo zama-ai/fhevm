@@ -32,8 +32,8 @@ use anchor_lang::InstructionData as _;
 use zama_host::MAX_FHE_EXECUTION_STEPS;
 
 use crate::{
-    Domain, Encrypted, EncryptedValueId, ExecutionAppAuthority, FheExecution, Output,
-    PersistentLabel, PersistentOutput, Scalar, Uint, Uint64Handle, MAX_ON_CHAIN_EXECUTION_STEPS,
+    Domain, Encrypted, EncryptedValueId, EncryptedValueLabel, ExecutionAppAuthority, FheExecution,
+    Output, PersistentOutput, Scalar, Uint, Uint64Handle, MAX_ON_CHAIN_EXECUTION_STEPS,
 };
 
 thread_local! {
@@ -109,14 +109,18 @@ fn measure(steps: usize) -> (usize, usize) {
     let domain = Domain::new(Pubkey::new_unique());
     let input = Uint64Handle::persistent(
         balance_handle(1),
-        EncryptedValueId::new(domain, authority, PersistentLabel::new([0xfe; 32])),
+        EncryptedValueId::new(domain, authority, EncryptedValueLabel::new([0xfe; 32])),
     )
     .expect("input handle");
     // Built before the measurement starts: the ids and subject lists are the app's own data, not
     // what the builder allocates on its behalf.
     let outputs: Vec<EncryptedValueId> = (0..steps)
         .map(|index| {
-            EncryptedValueId::new(domain, authority, PersistentLabel::new([index as u8; 32]))
+            EncryptedValueId::new(
+                domain,
+                authority,
+                EncryptedValueLabel::new([index as u8; 32]),
+            )
         })
         .collect();
     let subjects: Vec<Vec<Pubkey>> = (0..steps).map(|_| vec![authority]).collect();

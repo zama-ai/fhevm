@@ -620,7 +620,7 @@ mod tests {
             zama_fhe::EncryptedValueId::new(
                 zama_fhe::Domain::new(Pubkey::new_unique()),
                 Pubkey::new_unique(),
-                zama_fhe::PersistentLabel::new([1; 32]),
+                zama_fhe::EncryptedValueLabel::new([1; 32]),
             ),
             PersistentAudience::for_owner(owner, compute)
                 .with_owner(compute)
@@ -658,7 +658,7 @@ mod tests {
         zama_fhe::EncryptedValueId::new(
             zama_fhe::Domain::new(Pubkey::new_unique()),
             account,
-            zama_fhe::PersistentLabel::new(handle(label_tag)),
+            zama_fhe::EncryptedValueLabel::new(handle(label_tag)),
         )
     }
 

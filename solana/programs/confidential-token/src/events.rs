@@ -2,7 +2,7 @@
 
 use anchor_lang::prelude::*;
 
-use crate::state::{burn_amount_label, transfer_amount_label};
+use crate::state::{encrypted_burn_amount_label, encrypted_transfer_amount_label};
 
 /// App-local balance history event.
 ///
@@ -93,8 +93,8 @@ impl ConfidentialAmountKind {
     #[cfg_attr(not(feature = "poc"), allow(dead_code))]
     pub(crate) fn label(self) -> [u8; 32] {
         match self {
-            ConfidentialAmountKind::Transfer => transfer_amount_label(),
-            ConfidentialAmountKind::Burn => burn_amount_label(),
+            ConfidentialAmountKind::Transfer => encrypted_transfer_amount_label(),
+            ConfidentialAmountKind::Burn => encrypted_burn_amount_label(),
         }
     }
 }

@@ -150,7 +150,7 @@ pub fn join<'info>(
         zama_fhe::EncryptedValueId::new(
             zama_fhe::Domain::new(batch_key),
             batch_authority,
-            zama_fhe::PersistentLabel::new(pending_join_label(user)),
+            zama_fhe::EncryptedValueLabel::new(encrypted_pending_join_label(user)),
         ),
         // The user decrypts their pending amount; the batch authority computes
         // refunds and claims from it; the join mint's compute signer lets

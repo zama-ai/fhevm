@@ -12,8 +12,8 @@ const BATCH_SEED = encoder.encode('batch');
 const TOKEN_ACCOUNT_SEED = encoder.encode('token-account');
 const BURN_REDEMPTION_SEED = encoder.encode('burn-redemption');
 const ENCRYPTED_VALUE_SEED = encoder.encode('encrypted-value');
-/** Fixed confidential-token label for the all-or-zero burned amount (`burned_amount_label`). */
-const BURNED_AMOUNT_LABEL = encoder.encode('burned_amount___________________');
+/** Fixed confidential-token label for the all-or-zero burned amount (`encrypted_burned_amount_label`). */
+const ENCRYPTED_BURNED_AMOUNT_LABEL = encoder.encode('burned_amount___________________');
 /**
  * Anchor event-CPI authority seed (`__event_authority`). Both the zama-host and confidential-token
  * programs derive their event authority from this seed, so the vault builders that emit through
@@ -84,7 +84,7 @@ export async function burnedAmountValueAccount(
   joinMint: Address,
   batchJoinTokenAccount: Address,
 ): Promise<SolanaEncryptedValueAccount> {
-  const aclValueKey = deriveEncryptedValueId(addressBytes(joinMint), addressBytes(batchJoinTokenAccount), BURNED_AMOUNT_LABEL);
+  const aclValueKey = deriveEncryptedValueId(addressBytes(joinMint), addressBytes(batchJoinTokenAccount), ENCRYPTED_BURNED_AMOUNT_LABEL);
   return {
     aclValueKey,
     encryptedValueAddress: await pda(ZAMA_HOST_PROGRAM_ADDRESS, [ENCRYPTED_VALUE_SEED, aclValueKey]),
@@ -121,7 +121,7 @@ async function batcherValueAccount(
   };
 }
 
-/** The user's pending joined-amount encrypted value account for a batch (`pending_join_label`). */
+/** The user's pending joined-amount encrypted value account for a batch (`encrypted_pending_join_label`). */
 export async function pendingJoinValueAccount(
   batch: Address,
   batchAuthority: Address,
@@ -130,7 +130,7 @@ export async function pendingJoinValueAccount(
   return batcherValueAccount(batch, batchAuthority, 'batcher-pending-join', user);
 }
 
-/** The user's claimed-payout encrypted value account for a batch (`claim_amount_label`). */
+/** The user's claimed-payout encrypted value account for a batch (`encrypted_claim_amount_label`). */
 export async function claimAmountValueAccount(
   batch: Address,
   batchAuthority: Address,

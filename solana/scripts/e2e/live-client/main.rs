@@ -332,7 +332,7 @@ fn token_balance_state(
         return Err("confidential token account body does not match its canonical PDA".into());
     }
 
-    let label = confidential_token::balance_label();
+    let label = confidential_token::encrypted_balance_label();
     let encrypted_value_id = zama_solana_acl::derive_encrypted_value_id(
         mint.to_bytes(),
         token_account_key.to_bytes(),
@@ -522,7 +522,7 @@ fn persistent_output(
     index: u8,
     domain: Pubkey,
     account: Pubkey,
-    label: [u8; 32],
+    encrypted_value_label: [u8; 32],
     subjects: Vec<Pubkey>,
 ) -> Result<zama_host::FheExecuteOutput, Box<dyn std::error::Error>> {
     let previous_state = existing_value_account_state(program, encrypted_value)?.map(
@@ -1555,7 +1555,7 @@ fn consume_burn(
     let (burned_acl, _) = confidential_token::encrypted_value_address(
         mint,
         token_account,
-        confidential_token::burned_amount_label(),
+        confidential_token::encrypted_burned_amount_label(),
     );
 
     // 3. confidential_burn — five FHE steps in one instruction; same CU raise and same
@@ -1803,7 +1803,7 @@ fn create_persistent_public_decrypt_operand(
     host_config: Pubkey,
     value: u64,
     fhe_type: u8,
-    label: [u8; 32],
+    encrypted_value_label: [u8; 32],
 ) -> Result<(Pubkey, [u8; 32]), Box<dyn std::error::Error>> {
     use anchor_lang::solana_program::instruction::AccountMeta;
     let mut plaintext = [0u8; 32];

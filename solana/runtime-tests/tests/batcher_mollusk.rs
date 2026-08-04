@@ -292,20 +292,20 @@ fn ensure_system_accounts(context: &Ctx, addresses: &[Pubkey]) {
 fn new_encrypted_value(
     domain: Pubkey,
     encrypted_value_account_authority: Pubkey,
-    label: [u8; 32],
+    encrypted_value_label: [u8; 32],
     handle: [u8; 32],
     subjects: &[Pubkey],
 ) -> (Pubkey, host::EncryptedValue) {
     let encrypted_value_id = zama_solana_acl::derive_encrypted_value_id(
         domain.to_bytes(),
         encrypted_value_account_authority.to_bytes(),
-        label,
+        encrypted_value_label,
     );
     let (address, bump) = host::encrypted_value_address(encrypted_value_id);
     let value = host::EncryptedValue {
         domain,
         encrypted_value_account_authority,
-        label,
+        label: encrypted_value_label,
         current_handle: handle,
         subjects: subjects.to_vec(),
         leaf_count: 0,
@@ -519,7 +519,7 @@ impl UserMintKeys {
             transferred_value: token::encrypted_value_address(
                 mint.mint,
                 token_account,
-                token::transferred_amount_label(),
+                token::encrypted_transferred_amount_label(),
             )
             .0,
             initial_balance: handle_for_chain(seed, BALANCE_FHE_TYPE),
@@ -591,13 +591,13 @@ impl BatchKeys {
             join_transferred_value: token::encrypted_value_address(
                 join_mint.mint,
                 join_token_account,
-                token::transferred_amount_label(),
+                token::encrypted_transferred_amount_label(),
             )
             .0,
             burned_amount_value: token::encrypted_value_address(
                 join_mint.mint,
                 join_token_account,
-                token::burned_amount_label(),
+                token::encrypted_burned_amount_label(),
             )
             .0,
             payout_token_account,
@@ -609,7 +609,7 @@ impl BatchKeys {
             payout_transferred_value: token::encrypted_value_address(
                 payout_mint.mint,
                 payout_token_account,
-                token::transferred_amount_label(),
+                token::encrypted_transferred_amount_label(),
             )
             .0,
             join_underlying: batcher::batch_join_underlying_address(batch).0,
@@ -621,7 +621,7 @@ impl BatchKeys {
         batcher::batcher_encrypted_value_address(
             self.batch,
             self.batch_authority,
-            batcher::pending_join_label(user),
+            batcher::encrypted_pending_join_label(user),
         )
         .0
     }
@@ -630,7 +630,7 @@ impl BatchKeys {
         batcher::batcher_encrypted_value_address(
             self.batch,
             self.batch_authority,
-            batcher::claim_amount_label(user),
+            batcher::encrypted_claim_amount_label(user),
         )
         .0
     }
@@ -950,7 +950,7 @@ impl BatcherFixture {
             let (_, total_supply) = new_encrypted_value(
                 mint.mint,
                 mint.total_supply_authority,
-                token::total_supply_label(),
+                token::encrypted_total_supply_label(),
                 mint.initial_total_supply,
                 &[mint.compute_signer],
             );
@@ -971,7 +971,7 @@ impl BatcherFixture {
                 let (_, balance) = new_encrypted_value(
                     mint.mint,
                     keys.token_account,
-                    token::balance_label(),
+                    token::encrypted_balance_label(),
                     keys.initial_balance,
                     &[user.user, mint.compute_signer],
                 );

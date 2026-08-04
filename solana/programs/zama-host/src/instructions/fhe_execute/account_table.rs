@@ -113,12 +113,12 @@ impl<'a, 'info> EvalAccountTable<'a, 'info> {
         &self,
         domain: Pubkey,
         account: Pubkey,
-        label: [u8; 32],
+        encrypted_value_label: [u8; 32],
     ) -> OutputPda {
         let encrypted_value_id = zama_solana_acl::derive_encrypted_value_id(
             domain.to_bytes(),
             account.to_bytes(),
-            label,
+            encrypted_value_label,
         );
         let (key, bump) = encrypted_value_address(encrypted_value_id);
         OutputPda {

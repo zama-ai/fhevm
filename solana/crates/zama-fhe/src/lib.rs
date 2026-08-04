@@ -45,7 +45,7 @@ pub use accounts::{
 #[cfg(feature = "cpi")]
 pub use accounts::{ExecutionAccountResolutionError, ResolvedExecutionAccounts};
 pub use acl::{
-    BoundedU64UpperBound, Domain, EncryptedValueId, Output, PersistentLabel, PersistentOutput,
+    BoundedU64UpperBound, Domain, EncryptedValueId, EncryptedValueLabel, Output, PersistentOutput,
     PersistentOutputBinding,
 };
 pub use builder::{FheExecutionBuilder, MAX_ON_CHAIN_EXECUTION_STEPS};

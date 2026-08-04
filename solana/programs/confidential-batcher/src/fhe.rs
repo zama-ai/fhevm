@@ -157,7 +157,7 @@ pub(crate) fn uint64_operand(value: &EncryptedValue) -> Result<zama_fhe::Uint64H
         zama_fhe::EncryptedValueId::new(
             zama_fhe::Domain::new(value.domain),
             value.encrypted_value_account_authority,
-            zama_fhe::PersistentLabel::new(value.label),
+            zama_fhe::EncryptedValueLabel::new(value.label),
         ),
     )
     .map_err(invalid_execution)

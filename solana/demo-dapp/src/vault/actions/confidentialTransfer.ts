@@ -41,7 +41,7 @@ import {
 
 const EVENT_AUTHORITY_SEED = new TextEncoder().encode('__event_authority');
 const ENCRYPTED_VALUE_SEED = new TextEncoder().encode('encrypted-value');
-const TRANSFERRED_AMOUNT_LABEL = new TextEncoder().encode('transferred_amount______________');
+const ENCRYPTED_TRANSFERRED_AMOUNT_LABEL = new TextEncoder().encode('transferred_amount______________');
 
 export type SolanaConfidentialTransferParameters = {
   readonly rpc: Rpc<SolanaRpcApi>;
@@ -71,7 +71,7 @@ async function transferredAmountValue(
   mint: Address,
   fromAccount: Address,
 ): Promise<Address> {
-  const encryptedValueId = deriveEncryptedValueId(base58.decode(mint), base58.decode(fromAccount), TRANSFERRED_AMOUNT_LABEL);
+  const encryptedValueId = deriveEncryptedValueId(base58.decode(mint), base58.decode(fromAccount), ENCRYPTED_TRANSFERRED_AMOUNT_LABEL);
   return pda(zamaHostProgramAddress, [ENCRYPTED_VALUE_SEED, encryptedValueId]);
 }
 

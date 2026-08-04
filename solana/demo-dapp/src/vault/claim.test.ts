@@ -40,7 +40,7 @@ const valueAccountPda = (domain: Address, account: Address, label: Uint8Array): 
     utf8('encrypted-value'),
     sha256(concat(utf8('zama-encrypted-value-key-v1'), base58.decode(domain), base58.decode(account), label)),
   ]);
-// Batcher per-user labels: sha256(purpose_prefix || user) — pending_join_label / claim_amount_label.
+// Batcher per-user labels: sha256(purpose_prefix || user) — encrypted_pending_join_label / encrypted_claim_amount_label.
 const userLabel = (purposePrefix: string, user: Address): Uint8Array =>
   sha256(concat(utf8(purposePrefix), base58.decode(user)));
 
@@ -79,7 +79,7 @@ describe('buildClaimInstruction', () => {
       ]);
     const batchPayoutTokenAccount = await tokenAccount(batchAuthority);
     const userPayoutTokenAccount = await tokenAccount(user);
-    const BALANCE_LABEL = utf8('balance_________________________');
+    const ENCRYPTED_BALANCE_LABEL = utf8('balance_________________________');
     const expected: Address[] = [
       payer.address,
       user,
@@ -93,8 +93,8 @@ describe('buildClaimInstruction', () => {
       await pda(CONFIDENTIAL_TOKEN_PROGRAM_ADDRESS, [utf8('fhe-compute'), base58.decode(payoutConfidentialMint)]),
       batchPayoutTokenAccount,
       userPayoutTokenAccount,
-      await valueAccountPda(payoutConfidentialMint, batchPayoutTokenAccount, BALANCE_LABEL),
-      await valueAccountPda(payoutConfidentialMint, userPayoutTokenAccount, BALANCE_LABEL),
+      await valueAccountPda(payoutConfidentialMint, batchPayoutTokenAccount, ENCRYPTED_BALANCE_LABEL),
+      await valueAccountPda(payoutConfidentialMint, userPayoutTokenAccount, ENCRYPTED_BALANCE_LABEL),
       await valueAccountPda(payoutConfidentialMint, batchPayoutTokenAccount, utf8('transferred_amount______________')),
       await pda(ZAMA_HOST_PROGRAM_ADDRESS, [utf8('__event_authority')]),
       ZAMA_HOST_PROGRAM_ADDRESS,

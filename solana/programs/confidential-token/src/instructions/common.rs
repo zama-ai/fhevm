@@ -171,8 +171,18 @@ fn compute_transfer_handles<'info>(
     let to_owner = accounts.to_account.owner;
     // The token program's ACL domain is the mint, so every value slot below is derived under it.
     let mint_domain = zama_fhe::Domain::new(mint_key);
-    let from_balance = uint64_from_value(old_from_handle, mint_domain, from_key, balance_label())?;
-    let to_balance = uint64_from_value(old_to_handle, mint_domain, to_key, balance_label())?;
+    let from_balance = uint64_from_value(
+        old_from_handle,
+        mint_domain,
+        from_key,
+        encrypted_balance_label(),
+    )?;
+    let to_balance = uint64_from_value(
+        old_to_handle,
+        mint_domain,
+        to_key,
+        encrypted_balance_label(),
+    )?;
     let compute_signer = accounts.compute_signer.key();
     let balance_access = |owner| fhe::PersistentAudience::for_owner(owner, compute_signer);
     let transferred_access = {
@@ -185,17 +195,17 @@ fn compute_transfer_handles<'info>(
     };
     let from_output = fhe::PersistentOutput::new(
         accounts.from_balance_value.clone(),
-        encrypted_value_id(mint_domain, from_key, balance_label()),
+        encrypted_value_id(mint_domain, from_key, encrypted_balance_label()),
         balance_access(from_owner),
     )?;
     let transferred_output = fhe::PersistentOutput::new(
         accounts.transferred_amount_value.clone(),
-        encrypted_value_id(mint_domain, from_key, transferred_amount_label()),
+        encrypted_value_id(mint_domain, from_key, encrypted_transferred_amount_label()),
         transferred_access,
     )?;
     let to_output = fhe::PersistentOutput::new(
         accounts.to_balance_value.clone(),
-        encrypted_value_id(mint_domain, to_key, balance_label()),
+        encrypted_value_id(mint_domain, to_key, encrypted_balance_label()),
         balance_access(to_owner),
     )?;
     // Existing value: the amount is an on-chain encrypted value account's current handle, read as a
@@ -308,20 +318,31 @@ pub(crate) fn invalid_execution(
 
 pub(crate) fn encrypted_value_id(
     domain: zama_fhe::Domain,
-    account: Pubkey,
-    label: [u8; 32],
+    encrypted_value_account_authority: Pubkey,
+    encrypted_value_label: [u8; 32],
 ) -> zama_fhe::EncryptedValueId {
-    zama_fhe::EncryptedValueId::new(domain, account, zama_fhe::PersistentLabel::new(label))
+    zama_fhe::EncryptedValueId::new(
+        domain,
+        encrypted_value_account_authority,
+        zama_fhe::EncryptedValueLabel::new(encrypted_value_label),
+    )
 }
 
 pub(crate) fn uint64_from_value(
     handle: [u8; 32],
     domain: zama_fhe::Domain,
-    account: Pubkey,
-    label: [u8; 32],
+    encrypted_value_account_authority: Pubkey,
+    encrypted_value_label: [u8; 32],
 ) -> Result<zama_fhe::Uint64Handle> {
-    zama_fhe::Uint64Handle::persistent(handle, encrypted_value_id(domain, account, label))
-        .map_err(invalid_execution)
+    zama_fhe::Uint64Handle::persistent(
+        handle,
+        encrypted_value_id(
+            domain,
+            encrypted_value_account_authority,
+            encrypted_value_label,
+        ),
+    )
+    .map_err(invalid_execution)
 }
 
 /// Validates a coprocessor-attested transfer/burn amount (EVM `fromExternal` parity). The host
@@ -381,12 +402,12 @@ pub(crate) fn assert_burned_amount_value_account(
         ConfidentialTokenError::AmountAclMismatch
     );
     require!(
-        amount_value.label == burned_amount_label(),
+        amount_value.label == encrypted_burned_amount_label(),
         ConfidentialTokenError::AmountAclMismatch
     );
     require_keys_eq!(
         amount_value.key(),
-        encrypted_value_address(mint, token_account, burned_amount_label()).0,
+        encrypted_value_address(mint, token_account, encrypted_burned_amount_label()).0,
         ConfidentialTokenError::AmountAclMismatch
     );
     require!(

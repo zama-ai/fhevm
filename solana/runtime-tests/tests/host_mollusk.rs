@@ -248,23 +248,23 @@ fn encrypted_value_account(value: &EncryptedValue) -> Account {
     }
 }
 
-fn new_value_account(
+fn new_encrypted_value_account(
     domain: Pubkey,
     encrypted_value_account_authority: Pubkey,
-    label: [u8; 32],
+    encrypted_value_label: [u8; 32],
     handle: [u8; 32],
     subjects: &[Pubkey],
 ) -> (Pubkey, EncryptedValue) {
     let encrypted_value_id = zama_solana_acl::derive_encrypted_value_id(
         domain.to_bytes(),
         encrypted_value_account_authority.to_bytes(),
-        label,
+        encrypted_value_label,
     );
     let (address, bump) = host::encrypted_value_address(encrypted_value_id);
     let value = EncryptedValue {
         domain,
         encrypted_value_account_authority,
-        label,
+        label: encrypted_value_label,
         current_handle: handle,
         subjects: subjects.to_vec(),
         leaf_count: 0,
@@ -645,7 +645,7 @@ fn mollusk_fhe_execute_fails_closed_without_previous_bank_hash() {
     let authority = Pubkey::new_unique();
     let subject = Pubkey::new_unique();
     let (host_config, host_config_account) = host_config_account(authority);
-    let (encrypted_value, _value) = new_value_account(
+    let (encrypted_value, _value) = new_encrypted_value_account(
         Pubkey::new_unique(),
         authority,
         label("balance"),
@@ -708,7 +708,7 @@ fn mollusk_allow_subjects_adds_new_subject_and_is_idempotent() {
     let (host_config, host_config_account) = host_config_account(authority);
     let owner = Pubkey::new_unique();
     let new_subject = Pubkey::new_unique();
-    let (address, value) = new_value_account(
+    let (address, value) = new_encrypted_value_account(
         Pubkey::new_unique(),
         authority,
         label("balance"),
@@ -744,7 +744,7 @@ fn mollusk_allow_subjects_rejects_unallowed_authority() {
     let (host_config, host_config_account) = host_config_account(authority);
     let outsider = Pubkey::new_unique();
     let allowed = Pubkey::new_unique();
-    let (address, value) = new_value_account(
+    let (address, value) = new_encrypted_value_account(
         Pubkey::new_unique(),
         authority,
         label("balance"),
@@ -778,7 +778,7 @@ fn mollusk_allow_subjects_rejects_ninth_distinct_subject() {
     let authority = Pubkey::new_unique();
     let (host_config, host_config_account) = host_config_account(authority);
     let handle = handle_for_chain(2, 5);
-    let (encrypted_value, value) = new_value_account(
+    let (encrypted_value, value) = new_encrypted_value_account(
         Pubkey::new_unique(),
         authority,
         label("balance"),
@@ -855,7 +855,7 @@ fn mollusk_remove_subject_removes_current_member_and_blocks_future_authority() {
     let (host_config, host_config_account) = host_config_account(authority);
     let owner = Pubkey::new_unique();
     let removed = Pubkey::new_unique();
-    let (address, value) = new_value_account(
+    let (address, value) = new_encrypted_value_account(
         Pubkey::new_unique(),
         authority,
         label("balance"),
@@ -904,7 +904,7 @@ fn mollusk_remove_subject_rejects_absent_subject() {
     let (host_config, host_config_account) = host_config_account(authority);
     let owner = Pubkey::new_unique();
     let other = Pubkey::new_unique();
-    let (address, value) = new_value_account(
+    let (address, value) = new_encrypted_value_account(
         Pubkey::new_unique(),
         authority,
         label("balance"),
@@ -929,7 +929,7 @@ fn mollusk_remove_subject_rejects_last_subject() {
     let authority = Pubkey::new_unique();
     let (host_config, host_config_account) = host_config_account(authority);
     let owner = Pubkey::new_unique();
-    let (address, value) = new_value_account(
+    let (address, value) = new_encrypted_value_account(
         Pubkey::new_unique(),
         authority,
         label("balance"),
@@ -958,7 +958,7 @@ fn mollusk_removed_subject_gets_no_historical_leaf_when_later_updated() {
     let owner = Pubkey::new_unique();
     let removed = Pubkey::new_unique();
     let handle0 = handle_for_chain(7, 5);
-    let (address, value0) = new_value_account(
+    let (address, value0) = new_encrypted_value_account(
         Pubkey::new_unique(),
         authority,
         label("balance"),
@@ -1039,7 +1039,7 @@ fn mollusk_subject_retains_historical_access_sealed_before_removal() {
     let owner = Pubkey::new_unique();
     let removed = Pubkey::new_unique();
     let handle0 = handle_for_chain(9, 5);
-    let (address, value0) = new_value_account(
+    let (address, value0) = new_encrypted_value_account(
         Pubkey::new_unique(),
         authority,
         label("balance"),
@@ -1105,7 +1105,7 @@ fn mollusk_fhe_execute_updates_and_appends_allowed_subject_leaves() {
     let subject_a = Pubkey::new_unique();
     let subject_b = Pubkey::new_unique();
     let old_handle = handle_for_chain(3, 5);
-    let (address, value) = new_value_account(
+    let (address, value) = new_encrypted_value_account(
         Pubkey::new_unique(),
         authority,
         label("balance"),
@@ -1148,7 +1148,7 @@ fn mollusk_fhe_execute_update_swaps_subjects_and_seals_the_outgoing_audience() {
     let old_recipient = Pubkey::new_unique();
     let new_recipient = Pubkey::new_unique();
     let old_handle = handle_for_chain(3, 5);
-    let (address, value) = new_value_account(
+    let (address, value) = new_encrypted_value_account(
         Pubkey::new_unique(),
         authority,
         label("balance"),
@@ -1233,7 +1233,7 @@ fn mollusk_fhe_execute_update_shrinks_audience_and_seals_the_outgoing_set() {
     let subject_b = Pubkey::new_unique();
     let subject_c = Pubkey::new_unique();
     let old_handle = handle_for_chain(3, 5);
-    let (address, value) = new_value_account(
+    let (address, value) = new_encrypted_value_account(
         Pubkey::new_unique(),
         authority,
         label("balance"),
@@ -1307,7 +1307,7 @@ fn mollusk_fhe_execute_rejects_stale_previous_subjects() {
     let (host_config, host_config_account) = host_config_account(authority);
     let subject = Pubkey::new_unique();
     let old_handle = handle_for_chain(3, 5);
-    let (address, value) = new_value_account(
+    let (address, value) = new_encrypted_value_account(
         Pubkey::new_unique(),
         authority,
         label("balance"),
@@ -1336,7 +1336,7 @@ fn mollusk_fhe_execute_rejects_stale_previous_handle() {
     let (host_config, host_config_account) = host_config_account(authority);
     let subject = Pubkey::new_unique();
     let old_handle = handle_for_chain(3, 5);
-    let (address, value) = new_value_account(
+    let (address, value) = new_encrypted_value_account(
         Pubkey::new_unique(),
         authority,
         label("balance"),
@@ -1368,7 +1368,7 @@ fn mollusk_make_handle_public_appends_public_decrypt_leaf() {
     let (host_config, host_config_account) = host_config_account(authority);
     let subject = Pubkey::new_unique();
     let handle = handle_for_chain(5, 5);
-    let (address, value) = new_value_account(
+    let (address, value) = new_encrypted_value_account(
         Pubkey::new_unique(),
         authority,
         label("balance"),
@@ -1399,7 +1399,7 @@ fn mollusk_make_handle_public_twice_appends_an_equivalent_leaf() {
     let (host_config, host_config_account) = host_config_account(authority);
     let subject = Pubkey::new_unique();
     let handle = handle_for_chain(5, 5);
-    let (address, value) = new_value_account(
+    let (address, value) = new_encrypted_value_account(
         Pubkey::new_unique(),
         authority,
         label("balance"),
@@ -1463,7 +1463,7 @@ fn mollusk_make_handle_public_rejects_wrong_expected_handle() {
     let subject = Pubkey::new_unique();
     let handle = handle_for_chain(5, 5);
     let wrong_handle = handle_for_chain(6, 5);
-    let (address, value) = new_value_account(
+    let (address, value) = new_encrypted_value_account(
         Pubkey::new_unique(),
         authority,
         label("balance"),
@@ -1494,7 +1494,7 @@ fn mollusk_make_handle_public_rejects_unallowed_subject() {
     let allowed = Pubkey::new_unique();
     let subject = Pubkey::new_unique();
     let handle = handle_for_chain(5, 5);
-    let (address, value) = new_value_account(
+    let (address, value) = new_encrypted_value_account(
         Pubkey::new_unique(),
         authority,
         label("balance"),
@@ -1527,7 +1527,7 @@ fn mollusk_denied_caller_cannot_mutate_acl_update_or_eval_output() {
     let (deny_record, deny_record_account) = deny_subject_record_account(caller, true);
     let other = Pubkey::new_unique();
 
-    let (allow_address, allow_value) = new_value_account(
+    let (allow_address, allow_value) = new_encrypted_value_account(
         Pubkey::new_unique(),
         caller,
         label("deny-allow"),
@@ -1576,7 +1576,7 @@ fn mollusk_denied_caller_cannot_mutate_acl_update_or_eval_output() {
         &[custom_error(host::errors::ZamaHostError::SubjectDenied)],
     );
 
-    let (remove_address, remove_value) = new_value_account(
+    let (remove_address, remove_value) = new_encrypted_value_account(
         Pubkey::new_unique(),
         caller,
         label("deny-remove"),
@@ -1668,7 +1668,7 @@ fn mollusk_denied_subject_cannot_enter_via_allow_subjects_or_eval_create() {
     let (subject_record, subject_record_account) =
         deny_subject_record_account(denied_subject, true);
 
-    let (allow_address, allow_value) = new_value_account(
+    let (allow_address, allow_value) = new_encrypted_value_account(
         Pubkey::new_unique(),
         authority,
         label("deny-added-subject"),
@@ -1780,7 +1780,7 @@ fn mollusk_allow_subjects_rejects_extraneous_remaining_accounts() {
     let authority = Pubkey::new_unique();
     let new_subject = Pubkey::new_unique();
     let (host_config, plain_host_config_account) = host_config_account(authority);
-    let (value_address, value) = new_value_account(
+    let (value_address, value) = new_encrypted_value_account(
         Pubkey::new_unique(),
         authority,
         label("witness-hygiene"),
@@ -1909,7 +1909,7 @@ fn mollusk_allow_subjects_reallow_of_existing_subject_succeeds_with_witness() {
         empty_system_account(),
     );
     let (member_record, member_record_account) = deny_subject_record_account(member, false);
-    let (value_address, value) = new_value_account(
+    let (value_address, value) = new_encrypted_value_account(
         Pubkey::new_unique(),
         authority,
         label("witness-reallow"),
@@ -2035,7 +2035,7 @@ fn mollusk_paused_state_blocks_acl_update_and_eval_output() {
     let owner = Pubkey::new_unique();
     let other = Pubkey::new_unique();
 
-    let (allow_address, allow_value) = new_value_account(
+    let (allow_address, allow_value) = new_encrypted_value_account(
         Pubkey::new_unique(),
         authority,
         label("pause-allow"),
@@ -2129,7 +2129,7 @@ fn mollusk_supersession_value_account_matches_offchain_reconstruction() {
     let subject_a = Pubkey::new_unique();
     let subject_b = Pubkey::new_unique();
     let handle0 = handle_for_chain(10, 5);
-    let (address, value0) = new_value_account(
+    let (address, value0) = new_encrypted_value_account(
         Pubkey::new_unique(),
         authority,
         label("balance"),
@@ -2194,7 +2194,7 @@ fn mollusk_historical_proof_round_trip_after_two_supersessions() {
     let subject = Pubkey::new_unique();
     let other_subject = Pubkey::new_unique();
     let handle0 = handle_for_chain(20, 5);
-    let (address, value0) = new_value_account(
+    let (address, value0) = new_encrypted_value_account(
         Pubkey::new_unique(),
         authority,
         label("balance"),
@@ -2285,7 +2285,7 @@ fn mollusk_public_decrypt_proof_has_no_roll_forward() {
     let (host_config, host_config_account) = host_config_account(authority);
     let subject = Pubkey::new_unique();
     let handle0 = handle_for_chain(30, 5);
-    let (address, value0) = new_value_account(
+    let (address, value0) = new_encrypted_value_account(
         Pubkey::new_unique(),
         authority,
         label("balance"),
@@ -2365,9 +2365,9 @@ fn mollusk_fhe_execute_creates_persistent_output_from_local_binary_add() {
     let lhs = handle_for_chain(40, 5);
     let rhs = handle_for_chain(41, 5);
     let (lhs_address, lhs_value) =
-        new_value_account(authority, authority, label("lhs"), lhs, &[authority]);
+        new_encrypted_value_account(authority, authority, label("lhs"), lhs, &[authority]);
     let (rhs_address, rhs_value) =
-        new_value_account(authority, authority, label("rhs"), rhs, &[authority]);
+        new_encrypted_value_account(authority, authority, label("rhs"), rhs, &[authority]);
     let output_domain = authority;
     let output_authority = authority;
     let output_label = label("sum");
@@ -2439,7 +2439,7 @@ fn mollusk_fhe_execute_updates_persistent_output_with_previous_state() {
     let authority = Pubkey::new_unique();
     let (host_config, host_config_account) = host_config_account(authority);
     let input_handle = handle_for_chain(42, 5);
-    let (input_address, input_value) = new_value_account(
+    let (input_address, input_value) = new_encrypted_value_account(
         authority,
         authority,
         label("in"),
@@ -2447,7 +2447,7 @@ fn mollusk_fhe_execute_updates_persistent_output_with_previous_state() {
         &[authority],
     );
     let output_handle = handle_for_chain(43, 5);
-    let (output_address, output_value) = new_value_account(
+    let (output_address, output_value) = new_encrypted_value_account(
         authority,
         authority,
         label("out"),
@@ -3855,21 +3855,21 @@ impl EvalFixture {
         let program_id = host::id();
         let account = authority;
         let (host_config, host_config_account) = host_config_account_with_block_cap(authority, cap);
-        let balance_label = label("balance-hcu-fixture");
+        let encrypted_balance_label = label("balance-hcu-fixture");
         let amount_label = label("amount-hcu-fixture");
         let output_label = label("output-hcu-fixture");
         let balance_handle = handle_for_chain(151, 5);
         let amount_handle = handle_for_chain(152, 5);
         // The compute subject is the persistent inputs' allowed member, so admission passes and the
         // same identity is what the block cap meters.
-        let (balance_value, balance_ev) = new_value_account(
+        let (balance_value, balance_ev) = new_encrypted_value_account(
             authority,
             account,
-            balance_label,
+            encrypted_balance_label,
             balance_handle,
             &[compute_subject],
         );
-        let (amount_value, amount_ev) = new_value_account(
+        let (amount_value, amount_ev) = new_encrypted_value_account(
             authority,
             account,
             amount_label,
@@ -4231,13 +4231,13 @@ impl EvalFixture {
         &self,
         payer: Pubkey,
         app_authority: Pubkey,
-        output_label: [u8; 32],
+        output_encrypted_value_label: [u8; 32],
         meter: Option<Pubkey>,
     ) -> (Pubkey, Instruction) {
         let output_encrypted_value_id = zama_solana_acl::derive_encrypted_value_id(
             app_authority.to_bytes(),
             app_authority.to_bytes(),
-            output_label,
+            output_encrypted_value_label,
         );
         let (output_value, _bump) = host::encrypted_value_address(output_encrypted_value_id);
         let mut dictionary = ExecutionDictionary::default();
@@ -4267,7 +4267,7 @@ impl EvalFixture {
                     output_authority_index: None,
                     output_domain_index: dictionary.intern_key(app_authority),
                     output_account_index: dictionary.intern_key(app_authority),
-                    output_label_index: dictionary.intern(output_label),
+                    output_label_index: dictionary.intern(output_encrypted_value_label),
                     output_subject_indexes: dictionary.intern_subjects([app_authority]),
                     previous_state: None,
                     make_public: false,
@@ -5139,7 +5139,8 @@ fn seal_public_leaf(
     EncryptedValue,
     host::instructions::MmrInclusionProof,
 ) {
-    let (address, value) = new_value_account(domain, admin, label("balance"), handle, &[subject]);
+    let (address, value) =
+        new_encrypted_value_account(domain, admin, label("balance"), handle, &[subject]);
     let seal_ix = make_handle_public_ix(admin, subject, address, host_config, handle);
     let seal_accounts = vec![
         (system_program::ID, system_program_account()),
@@ -5837,7 +5838,7 @@ fn mollusk_verify_public_decrypt_rejects_historical_only_leaf() {
     let (host_config, host_config_account) = host_config_with_context(admin, KMS_CONTEXT_ID);
     let (kms_context, kms_context_acct) = kms_context_account(KMS_CONTEXT_ID);
     let handle0 = handle_for_chain(40, 5);
-    let (address, value0) = new_value_account(
+    let (address, value0) = new_encrypted_value_account(
         Pubkey::new_unique(),
         admin,
         label("balance"),

@@ -47,7 +47,7 @@ fn encrypted_value_id(account: Pubkey, label_tag: u8) -> EncryptedValueId {
     EncryptedValueId::new(
         Domain::new(Pubkey::new_unique()),
         account,
-        PersistentLabel::new(handle(label_tag)),
+        EncryptedValueLabel::new(handle(label_tag)),
     )
 }
 
@@ -975,7 +975,7 @@ fn validates_app_authority_and_persistent_account_pubkeys() {
     let invalid_encrypted_value_id = EncryptedValueId::new(
         Domain::new(Pubkey::default()),
         Pubkey::new_unique(),
-        PersistentLabel::new(handle(5)),
+        EncryptedValueLabel::new(handle(5)),
     );
     assert_eq!(
         Uint64Handle::persistent(balance_handle(1), invalid_encrypted_value_id.clone())
@@ -992,7 +992,7 @@ fn validates_app_authority_and_persistent_account_pubkeys() {
     let invalid_account_key = EncryptedValueId::new(
         Domain::new(Pubkey::new_unique()),
         Pubkey::default(),
-        PersistentLabel::new(handle(5)),
+        EncryptedValueLabel::new(handle(5)),
     );
     assert_eq!(
         Uint64Handle::persistent(balance_handle(1), invalid_account_key.clone()).unwrap_err(),
@@ -1281,8 +1281,14 @@ fn persistent_output_create_matches_batch_lowering() {
 
     assert_eq!(binding.encrypted_value(), output_key.address());
     assert_eq!(binding.domain(), output_key.domain());
-    assert_eq!(binding.account(), output_key.account());
-    assert_eq!(binding.label(), output_key.label().bytes());
+    assert_eq!(
+        binding.encrypted_value_account_authority(),
+        output_key.encrypted_value_account_authority()
+    );
+    assert_eq!(
+        binding.encrypted_value_label(),
+        output_key.encrypted_value_label().bytes()
+    );
     assert_eq!(binding.subjects(), subjects(subject));
     assert_eq!(binding.previous_handle(), None);
     assert_eq!(binding.previous_subjects(), None);
@@ -1321,14 +1327,14 @@ fn persistent_output_create_matches_batch_lowering() {
                     .args
                     .dictionary_key(*output_account_index)
                     .unwrap(),
-                binding.account()
+                binding.encrypted_value_account_authority()
             );
             assert_eq!(
                 execution
                     .args
                     .dictionary_bytes(*output_label_index)
                     .unwrap(),
-                binding.label()
+                binding.encrypted_value_label()
             );
             let output_subjects: Vec<Pubkey> = output_subject_indexes
                 .iter()

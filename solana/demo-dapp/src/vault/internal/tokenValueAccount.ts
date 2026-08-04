@@ -13,12 +13,12 @@ import { findTotalSupplyAuthorityPda } from './generated/confidentialToken/pdas/
 import { EVENT_AUTHORITY_SEED, encryptedValueAddress } from './batcherPdas.js';
 
 // Fixed 32-byte encrypted-value labels, byte-identical to `confidential_token::state`:
-//   balance_label()            = b"balance_________________________"
-//   transferred_amount_label() = b"transferred_amount______________"
-//   total_supply_label()       = b"total_supply____________________"
-const BALANCE_LABEL = new TextEncoder().encode('balance_________________________');
-const TRANSFERRED_AMOUNT_LABEL = new TextEncoder().encode('transferred_amount______________');
-const TOTAL_SUPPLY_LABEL = new TextEncoder().encode('total_supply____________________');
+//   encrypted_balance_label()            = b"balance_________________________"
+//   encrypted_transferred_amount_label() = b"transferred_amount______________"
+//   encrypted_total_supply_label()       = b"total_supply____________________"
+const ENCRYPTED_BALANCE_LABEL = new TextEncoder().encode('balance_________________________');
+const ENCRYPTED_TRANSFERRED_AMOUNT_LABEL = new TextEncoder().encode('transferred_amount______________');
+const ENCRYPTED_TOTAL_SUPPLY_LABEL = new TextEncoder().encode('total_supply____________________');
 
 const SPL_TOKEN_PROGRAM_ADDRESS = 'TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA' as Address;
 const ASSOCIATED_TOKEN_PROGRAM_ADDRESS = 'ATokenGPvbdGVxr1b2hvZbsiqW5xWH25efTNsLJA8knL' as Address;
@@ -31,27 +31,27 @@ const pda = async (programAddress: Address, seeds: Uint8Array[]): Promise<Addres
 
 /** The confidential balance encrypted value account for `tokenAccount` under `mint` (label `balance`). */
 export const balanceValueAddress = (mint: Address, tokenAccount: Address): Promise<Address> =>
-  encryptedValueAddress(mint, tokenAccount, BALANCE_LABEL);
+  encryptedValueAddress(mint, tokenAccount, ENCRYPTED_BALANCE_LABEL);
 
 /** The encrypted value ID and host account backing a confidential token account's live balance. */
 export const confidentialBalanceValueAccount = async (
   mint: Address,
   tokenAccount: Address,
 ): Promise<{ readonly aclValueKey: Uint8Array; readonly encryptedValueAddress: Address }> => {
-  const aclValueKey = deriveEncryptedValueId(encodeAddress(mint), encodeAddress(tokenAccount), BALANCE_LABEL);
+  const aclValueKey = deriveEncryptedValueId(encodeAddress(mint), encodeAddress(tokenAccount), ENCRYPTED_BALANCE_LABEL);
   return {
     aclValueKey,
-    encryptedValueAddress: await encryptedValueAddress(mint, tokenAccount, BALANCE_LABEL),
+    encryptedValueAddress: await encryptedValueAddress(mint, tokenAccount, ENCRYPTED_BALANCE_LABEL),
   };
 };
 
 /** The transferred-amount encrypted value account for `tokenAccount` under `mint` (label `transferred_amount`). */
 export const transferredAmountValueAddress = (mint: Address, tokenAccount: Address): Promise<Address> =>
-  encryptedValueAddress(mint, tokenAccount, TRANSFERRED_AMOUNT_LABEL);
+  encryptedValueAddress(mint, tokenAccount, ENCRYPTED_TRANSFERRED_AMOUNT_LABEL);
 
 /** The encrypted total-supply encrypted value account for `mint` (app account = its total-supply authority). */
 export const totalSupplyValueAddress = (mint: Address, totalSupplyAuthority: Address): Promise<Address> =>
-  encryptedValueAddress(mint, totalSupplyAuthority, TOTAL_SUPPLY_LABEL);
+  encryptedValueAddress(mint, totalSupplyAuthority, ENCRYPTED_TOTAL_SUPPLY_LABEL);
 
 /** The mint's total-supply authority PDA under the compiled confidential-token program. */
 export const totalSupplyAuthorityAddress = async (mint: Address): Promise<Address> =>

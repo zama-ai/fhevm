@@ -97,9 +97,17 @@ FHE_ROOTS=(
   solana/runtime-tests/tests/token_mollusk.rs
   solana/runtime-tests/tests/operator_conformance.rs
   solana/runtime-tests/tests/operator_mollusk_conformance.rs
-  solana/runtime-tests/tests/batch_contracts.rs
+  solana/runtime-tests/tests/execution_contracts.rs
 )
 ALL_ROOTS=("${RUST_ROOTS[@]}" "${TS_ROOTS[@]}" "${SCRIPT_ROOTS[@]}")
+
+# A root that no longer exists makes every sweep over it silently narrower, which is the failure
+# this script exists to prevent. `batch_contracts.rs` sat in FHE_ROOTS after being renamed to
+# `execution_contracts.rs` and the FHE sweep quietly stopped reading it: grep's error went to
+# /dev/null and the `|| true` swallowed the status. Named roots are asserted instead.
+for root in "${ALL_ROOTS[@]}" "${CORE_ROOTS[@]}" "${FHE_ROOTS[@]}"; do
+  [ -e "$root" ] || { echo "dead-surface-check: swept root does not exist: $root" >&2; exit 2; }
+done
 
 # `target/` holds generated crates (mime_guess ships a word list containing half the dictionary);
 # node_modules and build outputs are other people's vocabulary.
@@ -254,13 +262,22 @@ check_alias 'born-public / birth — renamed to created-public / create' all \
 # `aclValueKey`, and the connector's matching `acl_value_key` field.
 check_alias 'value_key identifier — renamed to encrypted_value_id' all \
   '' -E '\bvalue_key\b' --exclude-dir=utils
-# The encrypted-value ID components were renamed domain / account / label. `acl_domain_key` is NOT
-# swept: it is the normative field name of the signed Solana permit (`allowed_acl_domain_keys` in
-# the user-decryption specification) and of the v3 wire, so the permit crate and the connector
-# keep it deliberately.
-check_alias 'app_account — renamed to the account ID component' all '' \
+# The encrypted-value ID components are domain / encrypted_value_account_authority /
+# encrypted_value_label. `acl_domain_key` is NOT swept: it is the normative field name of the signed
+# Solana permit (`allowed_acl_domain_keys` in the user-decryption specification) and of the v3 wire,
+# so the permit crate and the connector keep it deliberately.
+#
+# `app_account` survives in one place on purpose and is excepted rather than swept: the
+# `UserDecryptionDelegation` witness in kms-connector names the app a delegation is scoped over,
+# which is a different thing from the ID component, and its bytes are hashed into a preimage.
+check_alias 'app_account — renamed to encrypted_value_account_authority' all \
+  'solana_acl.rs' \
   -E '\bapp_account\b|\bapp_accounts\b|\bapp_account_authority\b|\bauthorized_app_accounts\b|\bappAccount\b'
-check_alias 'encrypted_value_label — renamed to label' all '' -E '\bencrypted_value_label\b'
+# There was a `check_alias 'encrypted_value_label — renamed to label'` here, banning the long name.
+# That decision was reversed: bare "label" says only that the component is 32 bytes, which is true of
+# all three, so the long name is now the canonical one and the guard would reject correct code. The
+# reverse cannot be guarded by grep — "label" is a legitimate word for log labels and chart axes —
+# so this one is carried by review and by the GLOSSARY row instead.
 # The SDK's `namespace` became `label`. Swept in CORE only: `namespace` means a Kubernetes
 # namespace in the workflows and a TypeScript namespace in the test-suite tooling.
 check_alias 'SDK namespace — renamed to label' core '' -E '\bnamespace\b|\bnamespaceKey\b'

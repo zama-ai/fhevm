@@ -32,7 +32,7 @@ pub struct ConfidentialBurn<'info> {
     /// delta. Each burn makes its own delta handle publicly decryptable at burn
     /// (ERC-7984 `unwrap` parity), so every burn stays permanently redeemable
     /// even after a later burn updates this encrypted value account (DD-036 / Vector 2 closed).
-    #[account(mut, address = encrypted_value_address(mint.key(), token_account.key(), burned_amount_label()).0)]
+    #[account(mut, address = encrypted_value_address(mint.key(), token_account.key(), encrypted_burned_amount_label()).0)]
     pub burned_amount_value: UncheckedAccount<'info>,
     /// CHECK: Anchor event CPI authority for the Zama host program.
     pub zama_event_authority: UncheckedAccount<'info>,
@@ -167,7 +167,7 @@ pub struct ConfidentialBurnFromValue<'info> {
     /// as in [`ConfidentialBurn`]; created on the account's first burn, replaced in place
     /// thereafter to each burn's own delta (DD-036 / Vector 2). This is the same output shape
     /// `redeem_burned_amount` later consumes — only where the amount comes from differs.
-    #[account(mut, address = encrypted_value_address(mint.key(), token_account.key(), burned_amount_label()).0)]
+    #[account(mut, address = encrypted_value_address(mint.key(), token_account.key(), encrypted_burned_amount_label()).0)]
     pub burned_amount_value: UncheckedAccount<'info>,
     /// The existing encrypted amount to burn: a computed or received `euint64` handle. Read-only
     /// persistent operand — never replaced, never consumed. Its address is the canonical PDA of its
@@ -389,7 +389,7 @@ fn execute_burn<'info>(
 
     let balance_output = fhe::PersistentOutput::new(
         accounts.balance_value.clone(),
-        encrypted_value_id(mint_domain, token_account_key, balance_label()),
+        encrypted_value_id(mint_domain, token_account_key, encrypted_balance_label()),
         fhe::PersistentAudience::for_owner(owner, compute_signer),
     )?;
     // ERC-7984 `unwrap` parity (`makePubliclyDecryptable(unwrapAmount)`): the burned delta is born
@@ -397,12 +397,20 @@ fn execute_burn<'info>(
     // later burn updates this shared encrypted value account (DD-036 / Vector 2) — with no second make-public CPI.
     let burned_output = fhe::PersistentOutput::new_public(
         accounts.burned_amount_value.clone(),
-        encrypted_value_id(mint_domain, token_account_key, burned_amount_label()),
+        encrypted_value_id(
+            mint_domain,
+            token_account_key,
+            encrypted_burned_amount_label(),
+        ),
         fhe::PersistentAudience::for_owner(owner, compute_signer),
     )?;
     let total_supply_output = fhe::PersistentOutput::new(
         accounts.total_supply_value.clone(),
-        encrypted_value_id(mint_domain, total_supply_authority, total_supply_label()),
+        encrypted_value_id(
+            mint_domain,
+            total_supply_authority,
+            encrypted_total_supply_label(),
+        ),
         fhe::PersistentAudience::compute_only(compute_signer),
     )?;
 
@@ -410,13 +418,13 @@ fn execute_burn<'info>(
         old_balance_handle,
         mint_domain,
         token_account_key,
-        balance_label(),
+        encrypted_balance_label(),
     )?;
     let total_supply = uint64_from_value(
         old_total_supply_handle,
         mint_domain,
         total_supply_authority,
-        total_supply_label(),
+        encrypted_total_supply_label(),
     )?;
     // Existing value: the amount is an on-chain encrypted value account's current handle, read as a
     // persistent operand. The slot is derived from the value's own canonical fields, so its PDA

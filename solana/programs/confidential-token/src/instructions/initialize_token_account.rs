@@ -83,7 +83,7 @@ pub fn initialize_token_account<'info>(
     let balance_encrypted_value = ctx.accounts.balance_encrypted_value.key();
     let balance_output = fhe::PersistentOutput::new(
         ctx.accounts.balance_encrypted_value.to_account_info(),
-        encrypted_value_id(mint_domain, token_account_key, balance_label()),
+        encrypted_value_id(mint_domain, token_account_key, encrypted_balance_label()),
         fhe::PersistentAudience::for_owner(owner, compute_signer),
     )?;
     let execution = zama_fhe::FheExecution::build(
