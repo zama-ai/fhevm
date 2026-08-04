@@ -1,5 +1,5 @@
 use crate::core::event_processor::{
-    KmsClient, ProcessingError, RequestCheckError,
+    KmsClient, KmsPollTarget, ProcessingError, RequestCheckError,
     context::ContextManager,
     decryption::{DecryptionProcessor, UserDecryptionExtraData},
     kms::KMSGenerationProcessor,
@@ -8,8 +8,8 @@ use crate::core::event_processor::{
 use alloy::{primitives::B256, providers::Provider};
 use anyhow::anyhow;
 use connector_utils::types::{
-    KmsGrpcRequest, KmsGrpcResponse, KmsResponseKind, ProtocolEvent, ProtocolEventKind,
-    SendResponse, db::invalidate_kms_epoch, u256_to_request_id,
+    KmsGrpcRequest, KmsGrpcResponse, KmsResponseKind, KmsSendResponse, ProtocolEvent,
+    ProtocolEventKind, db::invalidate_kms_epoch, u256_to_request_id,
 };
 use kms_grpc::kms::v1::{DestroyMpcContextRequest, DestroyMpcEpochRequest};
 use sqlx::{Pool, Postgres};
@@ -250,12 +250,12 @@ impl<GP: Provider + Clone + 'static, HP: Provider, C: ContextManager> DbEventPro
         &mut self,
         event: &mut ProtocolEvent,
     ) -> Result<Option<KmsResponseKind>, ProcessingError> {
-        let request = self
-            .prepare_request(event)
-            .await
-            .inspect_err(|_| event.error_counter += 1)?;
-
         if !event.already_sent {
+            let request = self
+                .prepare_request(event)
+                .await
+                .inspect_err(|_| event.error_counter += 1)?;
+
             let (error_count, result) = self.kms_client.send_request(&request).await;
             event.error_counter += error_count;
             let send_response = result?;
@@ -264,7 +264,7 @@ impl<GP: Provider + Clone + 'static, HP: Provider, C: ContextManager> DbEventPro
             // Invalidate epochs associated to destroyed context returned by the KMS Core.
             // A failure must not prevent the event from completing, as retrying would result in an
             // `NotFound` from KMS Core with no epoch IDs.
-            if let SendResponse::DestroyedEpochs(epoch_ids) = send_response {
+            if let KmsSendResponse::DestroyedEpochs(epoch_ids) = send_response {
                 for epoch_id in epoch_ids {
                     if let Err(e) = invalidate_kms_epoch(&self.db_pool, epoch_id).await {
                         warn!("Failed to invalidate destroyed KMS epoch #{epoch_id}: {e}");
@@ -273,7 +273,10 @@ impl<GP: Provider + Clone + 'static, HP: Provider, C: ContextManager> DbEventPro
             }
         }
 
-        let (error_count, grpc_result) = self.kms_client.poll_result(request).await;
+        let (error_count, grpc_result) = self
+            .kms_client
+            .poll_result(KmsPollTarget::from(&event.kind))
+            .await;
         event.error_counter += error_count;
         let grpc_response = grpc_result?;
 
