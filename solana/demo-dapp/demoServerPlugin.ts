@@ -10,7 +10,7 @@ import {
 } from '../../test-suite/fhevm/demo/authorization';
 import type { VaultMetrics } from './src/batchTypes';
 import { parseRuntimeDemoConfig } from './src/demoConfig';
-import { encodeVaultMetrics, parseOperatorRequest } from './src/demoApi';
+import { encodeBatchTarget, encodeVaultMetrics, parseOperatorRequest } from './src/demoApi';
 
 const appDirectory = import.meta.dirname;
 const repoRoot = path.resolve(appDirectory, '../..');
@@ -255,7 +255,7 @@ export const demoServerPlugin = (): Plugin => ({
                     direction,
                     batchRegistryPath,
                   );
-                  return { batchIndex: prepared.batchIndex.toString(), batch: prepared.batch };
+                  return encodeBatchTarget(prepared);
                 }),
             );
             response.statusCode = 200;

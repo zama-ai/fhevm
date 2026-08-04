@@ -4,8 +4,10 @@
 # Checks, each mechanically re-runnable so "nothing on this list can regenerate":
 #   1. Error variants nobody references: a variant declared in a program/crate error enum with
 #      zero `::Variant` references in production code is dead surface.
-#   2. `#[event]` structs never emitted: an Anchor event that no `emit!`/`emit_cpi!` names cannot
-#      be observed and only bloats the IDL. Constructing one is not enough.
+#   2. `#[event]` structs never emitted: an Anchor event that nothing hands to an emission cannot be
+#      observed and only bloats the IDL. Constructing one is not enough. Both emission paths in the
+#      tree count — the `emit!`/`emit_cpi!` macros the app programs use, and zama-host's shared
+#      `emit_event_cpi` helper.
 #   3. Rejected glossary aliases: vocabulary the normative GLOSSARY.md replaced must not reappear
 #      in the Solana workstream sources. Every allowed survival is an explicit, reasoned exception.
 #   4. Retrofit sentinels without a justification at the site (§8 taxonomy): a constant stuffed
@@ -137,6 +139,7 @@ SELFTEST_FIXTURES=(
   solana/crates/zama-fhe/.dead-surface-selftest.md
   solana/crates/zama-fhe/src/dead_surface_selftest.rs
   solana/programs/zama-host/src/dead_surface_selftest.rs
+  solana/demo-dapp/src/deadSurfaceSelftest.ts
 )
 # A fixture left behind by an interrupted `--self-test` is indistinguishable from a real violation,
 # so every later run reports a bogus finding — observed once as a phantom `app_account` hit printed
@@ -166,15 +169,19 @@ build_index() {
       */tests/*|*/tests.rs|*.test.ts|*.test.tsx|*/test_utils/*|*/testing/*) continue ;;
     esac
     awk -v path="$file" '
+      BEGIN {
+        quote = sprintf("%c", 39)
+        char_literal = quote "(\\\\.|[^" quote "\\\\])" quote
+      }
       # Skip the item a `#[cfg(test)]` attaches to — not the rest of the file. This used to `exit` at
       # the first one, on the assumption that a test region is always the trailing `mod tests`. It is
       # not: a file can carry a `#[cfg(test)] use ...;` near the top, and then everything below it
       # vanished from the index. `solana_reconstruct.rs` has one at line 19 of 1216, so 98% of the
       # listener file that actually calls `zama_host::decode::decode_event_cpi` was invisible, and the
-      # export was duly reported as having no production caller. Across the swept trees 63 of the 80
-      # files holding a `#[cfg(test)]` were losing more than a quarter of their production body, which
-      # under-counts every reference this script checks — and under-counting only ever invents
-      # findings, so the failure mode was a gate loud enough to get switched off.
+      # export was duly reported as having no production caller. Ten of the 80 files holding a
+      # `#[cfg(test)]` were losing more than a quarter of their indexed production lines. Under-counting
+      # references only ever invents findings, so the failure mode was a gate loud enough to get
+      # switched off.
       # `#[test]` / `#[tokio::test]` / `#[rstest]` are matched too, for the same reason: a test written
       # at file scope rather than inside a `#[cfg(test)] mod tests` was indexed as production, so a
       # symbol only its assertions touched counted as having a production caller. That direction hides
@@ -183,8 +190,20 @@ build_index() {
         skip_depth = 0
         skip_started = 0
         while ((getline skip_line) > 0) {
-          opens = gsub(/\{/, "&", skip_line)
-          closes = gsub(/\}/, "&", skip_line)
+          # Braces inside a comment, a string, a char literal or a raw string are not structure. A
+          # `}` in a comment used to end the skip early and index test code as production; an unclosed
+          # `{` in a string ran the skip to EOF and dropped every production line below it. Both are
+          # the same bug this rewrite exists to fix, one level down, so strip the quotable forms before
+          # counting rather than counting what happens to be on the line.
+          code = skip_line
+          sub(/\/\/.*$/, "", code)
+          gsub(/r#*"[^"]*"#*/, "STR", code)
+          gsub(/"(\\.|[^"\\])*"/, "STR", code)
+          # A char literal, matched through a dynamic regex so the awk program needs no literal
+          # apostrophe — it lives inside a single-quoted shell string.
+          gsub(char_literal, "CH", code)
+          opens = gsub(/\{/, "&", code)
+          closes = gsub(/\}/, "&", code)
           if (opens > 0) skip_started = 1
           skip_depth += opens - closes
           # A braced item (`mod tests { ... }`) ends when its braces balance; an unbraced one
@@ -192,7 +211,7 @@ build_index() {
           # simply consumed on the way to the item they decorate.
           if (skip_started) {
             if (skip_depth <= 0) break
-          } else if (skip_line ~ /;[[:space:]]*$/) {
+          } else if (code ~ /;[[:space:]]*$/) {
             break
           }
         }
@@ -250,12 +269,17 @@ for event in $event_names; do
   # never handed to an emission is exactly the dead shape this check exists to catch, and the old
   # `emits == 0 && constructions == 0` condition let it pass.
   #
-  # Three emission paths exist in-tree and all are recognized. The macro path names the event on the
-  # macro line (`emit!(Name {` / `emit_cpi!(Name {`) — still used by the app programs. ZamaHost
-  # instead hands every event to the shared `emit_event_cpi` helper, where the struct sits a line or
-  # two below the call, so a construction counts when the call appears just above it. And
-  # `event_cpi.rs` itself assembles the payload behind `EVENT_IX_TAG_LE`, which keeps that file
-  # recognized as an emitter.
+  # Two emission paths exist in-tree. The macro path names the event on the macro line (`emit!(Name {`
+  # / `emit_cpi!(Name {`) and is what the app programs use. ZamaHost instead hands every event to the
+  # shared `emit_event_cpi` helper, where the struct literal sits a line or two below the call, so a
+  # construction counts when that call appears just above it.
+  #
+  # That window is deliberately tight, and it constrains how an emission may be written: hoisting the
+  # literal into a local (`let e = Name { .. }; emit_event_cpi(&auth, &e)?;`) puts the construction out
+  # of range and this check reports the event as never emitted. That is the intended trade. Every
+  # emission in zama-host reads the same way as a result, and the alternative — a window wide enough
+  # for any phrasing — is a window wide enough to vouch for a second event that merely happens to be
+  # constructed nearby.
   emits=$( (grep -E 'emit_cpi!|emit!' "$INDEX" || true) | grep -cE "\b${event}\b" || true)
   if [ "$emits" -eq 0 ]; then
     manual=0
@@ -263,7 +287,6 @@ for event in $event_names; do
       if (grep -A4 'emit_event_cpi(' "$constructing_file" || true) | grep -qE "\b${event}\b"; then
         manual=1
       fi
-      if grep -q 'EVENT_IX_TAG_LE' "$constructing_file"; then manual=1; fi
     done
     if [ "$manual" -eq 0 ]; then
       echo "NEVER-EMITTED EVENT: ${event} (nothing emits it: no emit!/emit_cpi!, and no emit_event_cpi call takes it)"
@@ -444,7 +467,7 @@ check_alias 'AllowedPersistent / AllowedLocal — renamed to StoredValue / Earli
 # decoded op records <- `Fhe*Event` structs. The two compute events keep their names
 # (they are emitted); the nine per-op value types must not come back as events.
 check_alias 'Fhe*Event — the per-op value types are decoded op records' all \
-  'FheExecuteRandomSeedsEvent|FheExecuteBatchEvent' -E '\bFhe[A-Za-z0-9]*Event\b'
+  'FheExecuteRandomSeedsEvent' -E '\bFhe[A-Za-z0-9]*Event\b'
 # "lookup table" is banned for the interning dictionary. The Solana Address Lookup Table keeps its
 # name and is very often written as a bare "lookup table" ("the settle lookup table"), so a bare
 # match cannot be the rule. The old exception list went the other way and waved through any line
@@ -572,7 +595,8 @@ echo "== 6. exported symbols with no audience =="
 #       `Public API surface:` line naming the audience. Then the exports are accounted for in
 #       writing instead of passing silently.
 #
-# Generated clients are exempt as a category: their surface is complete by construction and
+# Generated clients are exempt as a category: their surface is generated whole, so deleting from it
+# would only be undone by the next regeneration, and
 # regenerating them would undo any deletion.
 API_SURFACE_MARKER='Public API surface:'
 
@@ -597,14 +621,29 @@ internal_refs() {
   (grep -nE "\b${name}\b" "$file" || true) | (grep -v -F "$declaration" || true) | wc -l | tr -d ' '
 }
 
+# `same_file_counts` (fourth argument) reports an export as dead only when nothing anywhere uses it,
+# instead of requiring a caller outside its own file. That is the right rule for TypeScript and the
+# wrong one for Rust, because the remedy differs. A Rust `pub fn` used only inside its own file can
+# simply lose its `pub`, and a `#[cfg(test)] mod tests` in that same file still reaches it — so
+# demanding an outside caller is actionable. A TypeScript module has no such inside: a sibling
+# `foo.test.ts` can only import what `foo.ts` exports, so an over-exposed helper cannot be un-exported
+# while its unit test exists. Reporting those would leave 16 findings in the demo dapp whose only
+# available remedy is an audience line vouching for itself. So for TypeScript this check is a deadness
+# check and not an over-exposure one, and TypeScript over-exposure is deliberately unchecked.
 check_export() {
-  local file="$1" kind="$2" name="$3"
+  local file="$1" kind="$2" name="$3" same_file_counts="${4:-}"
   case "$file" in
     */internal/generated/*) return ;;
   esac
   local production external internal
   production=$(index_refs "\b${name}\b" "$file")
   [ "$production" -gt 0 ] && return
+  if [ -n "$same_file_counts" ]; then
+    # Its own file, minus the declaration itself. A helper its module actually calls is alive.
+    local own
+    own=$(grep -cE "\b${name}\b" "$file" 2>/dev/null || echo 0)
+    if [ "$own" -gt 1 ]; then return; fi
+  fi
   external=$(external_refs "$name" "$file")
   if [ "$external" -eq 0 ]; then
     internal=$(internal_refs "$name" "$file" "$kind")
@@ -656,8 +695,21 @@ ts_pub_decls=$(grep -rnE --include='*.ts' --include='*.tsx' "${EXCLUDES[@]}" \
 while IFS= read -r decl; do
   [ -n "$decl" ] || continue
   check_export "${decl%%:*}" "export function" \
-    "$(echo "$decl" | grep -oE 'function [A-Za-z_][A-Za-z_0-9]*' | awk '{print $2}')"
+    "$(echo "$decl" | grep -oE 'function [A-Za-z_][A-Za-z_0-9]*' | awk '{print $2}')" ts
 done <<< "$ts_pub_decls"
+
+# `export const f = () => …` is the same export as `export function f`, and in these two trees it is
+# the more common one — 81 declarations against 273. Matching only the `function` form left roughly a
+# quarter of the TypeScript surface unswept while the check reported on "exported symbols".
+ts_pub_arrows=$(grep -rnE --include='*.ts' --include='*.tsx' "${EXCLUDES[@]}" \
+  '^export const [A-Za-z_][A-Za-z_0-9]* *(:[^=]*)?= *(async *)?(\(|function)' \
+  sdk/js-sdk/src/solana solana/demo-dapp/src | grep -vE '\.test\.tsx?:')
+while IFS= read -r decl; do
+  [ -n "$decl" ] || continue
+  check_export "${decl%%:*}" "export const" \
+    "$(echo "$decl" | grep -oE '^[^:]+:[0-9]+:export const [A-Za-z_][A-Za-z_0-9]*' \
+       | grep -oE '[A-Za-z_][A-Za-z_0-9]*$')" ts
+done <<< "$ts_pub_arrows"
 
 echo "== 7. every swept root is a CI trigger for this script =="
 # The script only protects a tree if a change to that tree runs it. It used to run inside
@@ -788,6 +840,25 @@ FIXTURES
   expect_fires "uncalled-export sweep (program crates)" \
     "program_dead_surface_selftest_never_called" "" bash "$SELF"
   rm -f "$program_fixture"
+  # Check 2: an `#[event]` struct nothing emits. Check 2 is the one this pass reworked — it learned
+  # zama-host's shared emitter — and it was the only reworked check with no fixture, which is the
+  # position every silently-vacuous check in this script started from.
+  printf '#[event]\npub struct DeadSurfaceSelftestNeverEmittedEvent {\n    pub version: u8,\n}\n' \
+    > "$program_fixture"
+  expect_fires "never-emitted event sweep" \
+    "DeadSurfaceSelftestNeverEmittedEvent" "" bash "$SELF"
+  rm -f "$program_fixture"
+  # Check 6, TypeScript half: both fixtures above are Rust, so the TS declaration patterns had never
+  # been shown to fire at all — and one of them (`export const f = () => …`, the more common form in
+  # these two trees) was missing entirely while the check reported on "exported symbols".
+  ts_fixture="solana/demo-dapp/src/deadSurfaceSelftest.ts"
+  printf 'export const deadSurfaceSelftestNeverCalled = (): number => 1;\n' > "$ts_fixture"
+  expect_fires "uncalled-export sweep (TypeScript arrow form)" \
+    "deadSurfaceSelftestNeverCalled" "" bash "$SELF"
+  printf 'export function deadSurfaceSelftestNeverCalledFn(): number {\n  return 1;\n}\n' > "$ts_fixture"
+  expect_fires "uncalled-export sweep (TypeScript function form)" \
+    "deadSurfaceSelftestNeverCalledFn" "" bash "$SELF"
+  rm -f "$ts_fixture"
   # Check 7: a swept root outside every triggering path. Driven through the environment rather than
   # a fixture file, since the thing under test is the root list itself.
   expect_fires "untriggered-root sweep" \
