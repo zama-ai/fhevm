@@ -3587,7 +3587,7 @@ fn mollusk_recover_pending_burn_credits_tip_balance() {
         &fixture,
         &mut accounts,
         fixture.token_account,
-        token::transfer_amount_label(),
+        token::encrypted_transfer_amount_label(),
         amount_handle,
         &[fixture.owner, fixture.compute_signer],
     );
@@ -3675,7 +3675,7 @@ fn mollusk_confidential_burn_rejects_zero_burn_id() {
         &fixture,
         &mut accounts,
         fixture.token_account,
-        token::transfer_amount_label(),
+        token::encrypted_transfer_amount_label(),
         amount_handle,
         &[fixture.owner, fixture.compute_signer],
     );
