@@ -45,7 +45,7 @@ use kms_worker::core::solana::{
     lineage::LineageFailure,
     pipeline::{AuthorizationContext, authorize_request},
     request::{
-        RequestFormError, SolanaHandleEntryWire, SolanaUserDecryptRequest,
+        MAX_REQUEST_HANDLES, RequestFormError, SolanaHandleEntryWire, SolanaUserDecryptRequest,
         SolanaUserDecryptRequestWire,
     },
     snapshot::SnapshotAccount,
@@ -697,6 +697,26 @@ fn request_form_scenarios() -> Vec<Scenario> {
         rule::EMPTY_HANDLES,
         FailureClass::Terminal,
         RequestBuilder::new(&wallet).wire(),
+        world.clone(),
+    ));
+
+    let mut past_cap = RequestBuilder::new(&wallet);
+    for _ in 0..=MAX_REQUEST_HANDLES {
+        past_cap = past_cap.direct_current(&lineage, live);
+    }
+    out.push(Scenario::rejected(
+        "handle-list-past-the-cap",
+        "Every rule is evaluated against one atomic account snapshot, and a standard RPC node \
+         serves at most 100 accounts per call — in the worst case three per entry plus the \
+         signer's invalidation record, so the list is capped at 33. The Gateway refuses a longer \
+         request at admission, before the fee; the Connector rejects it too, so the snapshot's \
+         readability is its own invariant rather than an assumption about the contract upstream. \
+         Duplicates count: the cap is on the list, not on the distinct handles in it.",
+        "direct-current",
+        "the live handle is repeated until the list is one entry past the cap",
+        rule::TOO_MANY_HANDLES,
+        FailureClass::Terminal,
+        past_cap.wire(),
         world.clone(),
     ));
 
@@ -1384,6 +1404,7 @@ fn rule_name(failure: &AuthorizationFailure) -> &'static str {
     match failure {
         AuthorizationFailure::Form(form) => match form {
             RequestFormError::EmptyHandles => rule::EMPTY_HANDLES,
+            RequestFormError::TooManyHandles { .. } => rule::TOO_MANY_HANDLES,
             RequestFormError::AccessProofMalformed { .. } => rule::ACCESS_PROOF_MALFORMED,
             RequestFormError::AccessProofTrailingBytes { .. } => rule::ACCESS_PROOF_TRAILING_BYTES,
             RequestFormError::AccessProofTooManySiblings { .. } => {

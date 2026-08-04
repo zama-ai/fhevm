@@ -8,9 +8,14 @@
 //! does not re-adjudicate either. Neither does this one: a second copy of that table here could
 //! only ever reject, terminally and after the fee was paid, a request the Gateway accepted.
 //!
-//! What the Connector does require is a non-empty list, and that is not a mirror of the Gateway's
-//! rule but a precondition of its own output: a request with no entries would authorize nothing
-//! and still be accepted.
+//! What the Connector does require of the list's size is a non-empty lower bound and a
+//! snapshot-shaped upper bound, and neither is a mirror of the Gateway's bit budget. The empty
+//! list is a precondition of the module's own output: a request with no entries would authorize
+//! nothing and still be accepted. The handle cap is a precondition of its only observation:
+//! every rule is evaluated against one atomic `getMultipleAccounts` snapshot, and a standard RPC
+//! node serves at most 100 accounts per call — three per entry plus the signer's invalidation
+//! record in the worst case. The Gateway enforces the same cap at admission, before the fee, so
+//! the Connector's arm is unreachable through it and exists to keep the invariant local.
 //!
 //! The property this file exists to pin is the one that survives the removal — the list is passed
 //! through verbatim. Nothing here trims, deduplicates or reorders it, because the response binds
@@ -21,7 +26,10 @@ mod solana_support;
 
 use kms_worker::core::solana::{
     pipeline::{AuthorizationContext, authorize_request},
-    request::{RequestFormError, SolanaUserDecryptRequest, SolanaUserDecryptRequestWire},
+    request::{
+        MAX_REQUEST_HANDLES, RequestFormError, SolanaUserDecryptRequest,
+        SolanaUserDecryptRequestWire,
+    },
 };
 use solana_support::*;
 
@@ -58,26 +66,45 @@ fn context<'a>(
 // The list is passed through verbatim
 // ---------------------------------------------------------------------------
 
-/// A long list of distinct handles decodes as itself. The count is deliberately larger than the
-/// on-chain budget admits for this type: this Connector has no opinion about the size, so the
-/// test states that absence rather than a limit.
+/// A list at the handle cap decodes as itself, even though its summed bit width is past the
+/// on-chain budget for this type (33 × 64 bits > 2048): the Connector holds no copy of the
+/// bit-width table, and the test states that absence by decoding what the table would refuse.
 #[test]
-fn a_request_larger_than_the_on_chain_budget_still_decodes_here() {
+fn a_request_larger_than_the_on_chain_bit_budget_still_decodes_here() {
     let wallet = Wallet::new(1);
-    // Well past the budget at this width, and the point is that nothing here notices.
-    let handles: Vec<[u8; 32]> = (0..64)
+    let handles: Vec<[u8; 32]> = (0..MAX_REQUEST_HANDLES as u16)
         .map(|index| distinct_handle(index, FHE_TYPE_UINT64))
         .collect();
     let built = request_naming(&wallet, &handles);
 
     let request = SolanaUserDecryptRequest::decode(&built)
-        .expect("the request budget is enforced on chain, before the request exists");
+        .expect("the bit budget is enforced on chain, before the request exists");
 
     assert_eq!(
         request.handles().len(),
         handles.len(),
-        "the list is neither trimmed nor rejected for its size"
+        "the list is neither trimmed nor rejected for its width"
     );
+}
+
+/// One entry past the cap is rejected at decode: a longer list could never be read in one
+/// atomic snapshot, so no observation could ever authorize it. Terminal — the client's move is
+/// to split the request.
+#[test]
+fn a_request_past_the_handle_cap_is_rejected() {
+    let wallet = Wallet::new(1);
+    let handles: Vec<[u8; 32]> = (0..(MAX_REQUEST_HANDLES as u16 + 1))
+        .map(|index| distinct_handle(index, FHE_TYPE_UINT64))
+        .collect();
+    let built = request_naming(&wallet, &handles);
+
+    let failure = SolanaUserDecryptRequest::decode(&built)
+        .expect_err("a list past the cap cannot be read in one snapshot");
+
+    assert!(matches!(
+        failure,
+        RequestFormError::TooManyHandles { handles } if handles == MAX_REQUEST_HANDLES + 1
+    ));
 }
 
 /// The list is passed through in order, entry for entry. A layer that reordered or deduplicated it
@@ -114,7 +141,7 @@ fn a_handle_of_an_exotic_type_is_not_refused_here() {
 }
 
 /// An empty list is rejected: there is nothing to authorize and nothing for a response to bind.
-/// This is the Connector's own precondition, and it is the one size-shaped rule that stays.
+/// This is the Connector's own precondition, the lower half of its two size-shaped rules.
 #[test]
 fn an_empty_handle_list_is_rejected() {
     let wallet = Wallet::new(1);

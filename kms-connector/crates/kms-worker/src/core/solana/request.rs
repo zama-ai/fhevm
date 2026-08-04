@@ -55,6 +55,17 @@ use zama_solana_permit::{PermitFields, PermitWireFields, Signature};
 /// MMR's `u64` height ceiling. Bounds the decode-time allocation.
 pub const MAX_ACCESS_PROOF_SIBLINGS: usize = 64;
 
+/// Upper bound on handle entries accepted from a request.
+///
+/// Every rule is evaluated against one atomic `getMultipleAccounts` snapshot, and a standard
+/// Solana RPC node serves at most 100 accounts per call. The worst-case request needs three
+/// accounts per entry — the lineage account plus the two delegation rows — and the signer's
+/// invalidation record on top: `3 * N + 1 <= 100` gives 33. The Gateway entry point enforces
+/// the same cap at admission, before the fee, so a request that exists as an event already
+/// satisfies it; this bound keeps the snapshot's readability a property of this module rather
+/// than an assumption about the contract version upstream.
+pub const MAX_REQUEST_HANDLES: usize = 33;
+
 /// The request as it arrives: permit fields, the signature over their envelope, and the
 /// handle entries.
 #[derive(Clone, PartialEq, Eq, Debug, Default)]
@@ -158,16 +169,19 @@ impl SolanaUserDecryptRequest {
     /// What it deliberately does not do: verify the signature, or look at any clock or
     /// account. Those are the authorization layer.
     ///
-    /// It also does not re-check the request's size or the FHE types of its handles. The Gateway
-    /// entry point this request came through sums the per-handle bit widths on chain and reverts
-    /// past the budget or on a type with no width, so a request that exists has already passed
-    /// both — and the EVM path likewise does not re-adjudicate them here. Re-checking would put a
-    /// second copy of that table in this Connector and let it reject, terminally and after the
-    /// fee was paid, a request the Gateway accepted.
+    /// It also does not re-check the request's bit budget or the FHE types of its handles. The
+    /// Gateway entry point this request came through sums the per-handle bit widths on chain and
+    /// reverts past the budget or on a type with no width, so a request that exists has already
+    /// passed both — and the EVM path likewise does not re-adjudicate them here. Re-checking
+    /// would put a second copy of that table in this Connector and let it reject, terminally and
+    /// after the fee was paid, a request the Gateway accepted.
     ///
-    /// The empty list is the one size-shaped rule that stays, and it is not a mirror of the
-    /// Gateway's: it is a precondition of this module's own output, because a request with no
-    /// entries would authorize nothing and still be accepted.
+    /// Two size-shaped rules stay, and neither is a mirror of the Gateway's budget — both are
+    /// preconditions of this module's own operation. The empty list is rejected because a
+    /// request with no entries would authorize nothing and still be accepted. The handle count
+    /// is capped at [`MAX_REQUEST_HANDLES`] because the snapshot every rule reads is one
+    /// `getMultipleAccounts` call; the Gateway enforces the same cap at admission, so this arm
+    /// is unreachable through it and exists to keep the invariant local.
     pub fn decode(wire: &SolanaUserDecryptRequestWire) -> Result<Self, RequestFormError> {
         let permit = PermitFields::decode(&wire.permit)?;
         let signature: [u8; zama_solana_permit::SIGNATURE_LEN] = wire
@@ -179,6 +193,11 @@ impl SolanaUserDecryptRequest {
             })?;
         if wire.handles.is_empty() {
             return Err(RequestFormError::EmptyHandles);
+        }
+        if wire.handles.len() > MAX_REQUEST_HANDLES {
+            return Err(RequestFormError::TooManyHandles {
+                handles: wire.handles.len(),
+            });
         }
         let handles = wire
             .handles
@@ -321,6 +340,12 @@ pub enum RequestFormError {
     /// The handle list was empty.
     #[error("request names no handles")]
     EmptyHandles,
+    /// The handle list exceeds what one atomic account snapshot can cover.
+    #[error("request names {handles} handles, exceeding the {MAX_REQUEST_HANDLES}-handle cap")]
+    TooManyHandles {
+        /// The count that arrived.
+        handles: usize,
+    },
 }
 
 /// Which field of a handle entry carried a wrong width.

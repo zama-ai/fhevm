@@ -151,7 +151,8 @@ impl RequestFormError {
             | Self::AccessProofMalformed { .. }
             | Self::AccessProofTrailingBytes { .. }
             | Self::AccessProofTooManySiblings { .. }
-            | Self::EmptyHandles => FailureClass::Terminal,
+            | Self::EmptyHandles
+            | Self::TooManyHandles { .. } => FailureClass::Terminal,
         }
     }
 }

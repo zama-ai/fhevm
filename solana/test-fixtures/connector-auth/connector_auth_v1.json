@@ -1582,6 +1582,287 @@
       }
     },
     {
+      "name": "handle-list-past-the-cap",
+      "comment": "Every rule is evaluated against one atomic account snapshot, and a standard RPC node serves at most 100 accounts per call — in the worst case three per entry plus the signer's invalidation record, so the list is capped at 33. The Gateway refuses a longer request at admission, before the fee; the Connector rejects it too, so the snapshot's readability is its own invariant rather than an assumption about the contract upstream. Duplicates count: the cap is on the list, not on the distinct handles in it.",
+      "result": "invalid",
+      "rule": "too-many-handles",
+      "class": "terminal",
+      "derived_from": "direct-current",
+      "mutation": "the live handle is repeated until the list is one entry past the cap",
+      "request": {
+        "permit": {
+          "user_pubkey": "8a88e3dd7409f195fd52db2d3cba5d72ca6709bf1d94121bf3748801b40f6f5c",
+          "transport_key": "reference-transport-key",
+          "allowed_acl_domain_keys": [
+            "0101010101010101010101010101010101010101010101010101010101010101"
+          ],
+          "start_timestamp": "1700000000",
+          "duration_seconds": "3600",
+          "verifying_program_id": "0707070707070707070707070707070707070707070707070707070707070707",
+          "chain_id": "9305357566071262703",
+          "extra_data": "0211111111111111111111111111111111111111111111111111111111111111111212121212121212121212121212121212121212121212121212121212121212"
+        },
+        "signature": "64da768c25b04561a81f868876ca78518de9ed26ddccbe37126d8e67b947b8a0b3c26ee26fbad5ee38714e628fced1826db0ac807601f16749ffb01b79b9230c",
+        "handles": [
+          {
+            "handle": "101010101010101010101010101010101010101010108123456789abcdef0500",
+            "owner": "8a88e3dd7409f195fd52db2d3cba5d72ca6709bf1d94121bf3748801b40f6f5c",
+            "value_key": "92b54122acc53a2a4b9b85a851263afc331b7941ea63ed4e963e4cbde0506b65",
+            "proof_leaf_count": "0",
+            "access_proof": ""
+          },
+          {
+            "handle": "101010101010101010101010101010101010101010108123456789abcdef0500",
+            "owner": "8a88e3dd7409f195fd52db2d3cba5d72ca6709bf1d94121bf3748801b40f6f5c",
+            "value_key": "92b54122acc53a2a4b9b85a851263afc331b7941ea63ed4e963e4cbde0506b65",
+            "proof_leaf_count": "0",
+            "access_proof": ""
+          },
+          {
+            "handle": "101010101010101010101010101010101010101010108123456789abcdef0500",
+            "owner": "8a88e3dd7409f195fd52db2d3cba5d72ca6709bf1d94121bf3748801b40f6f5c",
+            "value_key": "92b54122acc53a2a4b9b85a851263afc331b7941ea63ed4e963e4cbde0506b65",
+            "proof_leaf_count": "0",
+            "access_proof": ""
+          },
+          {
+            "handle": "101010101010101010101010101010101010101010108123456789abcdef0500",
+            "owner": "8a88e3dd7409f195fd52db2d3cba5d72ca6709bf1d94121bf3748801b40f6f5c",
+            "value_key": "92b54122acc53a2a4b9b85a851263afc331b7941ea63ed4e963e4cbde0506b65",
+            "proof_leaf_count": "0",
+            "access_proof": ""
+          },
+          {
+            "handle": "101010101010101010101010101010101010101010108123456789abcdef0500",
+            "owner": "8a88e3dd7409f195fd52db2d3cba5d72ca6709bf1d94121bf3748801b40f6f5c",
+            "value_key": "92b54122acc53a2a4b9b85a851263afc331b7941ea63ed4e963e4cbde0506b65",
+            "proof_leaf_count": "0",
+            "access_proof": ""
+          },
+          {
+            "handle": "101010101010101010101010101010101010101010108123456789abcdef0500",
+            "owner": "8a88e3dd7409f195fd52db2d3cba5d72ca6709bf1d94121bf3748801b40f6f5c",
+            "value_key": "92b54122acc53a2a4b9b85a851263afc331b7941ea63ed4e963e4cbde0506b65",
+            "proof_leaf_count": "0",
+            "access_proof": ""
+          },
+          {
+            "handle": "101010101010101010101010101010101010101010108123456789abcdef0500",
+            "owner": "8a88e3dd7409f195fd52db2d3cba5d72ca6709bf1d94121bf3748801b40f6f5c",
+            "value_key": "92b54122acc53a2a4b9b85a851263afc331b7941ea63ed4e963e4cbde0506b65",
+            "proof_leaf_count": "0",
+            "access_proof": ""
+          },
+          {
+            "handle": "101010101010101010101010101010101010101010108123456789abcdef0500",
+            "owner": "8a88e3dd7409f195fd52db2d3cba5d72ca6709bf1d94121bf3748801b40f6f5c",
+            "value_key": "92b54122acc53a2a4b9b85a851263afc331b7941ea63ed4e963e4cbde0506b65",
+            "proof_leaf_count": "0",
+            "access_proof": ""
+          },
+          {
+            "handle": "101010101010101010101010101010101010101010108123456789abcdef0500",
+            "owner": "8a88e3dd7409f195fd52db2d3cba5d72ca6709bf1d94121bf3748801b40f6f5c",
+            "value_key": "92b54122acc53a2a4b9b85a851263afc331b7941ea63ed4e963e4cbde0506b65",
+            "proof_leaf_count": "0",
+            "access_proof": ""
+          },
+          {
+            "handle": "101010101010101010101010101010101010101010108123456789abcdef0500",
+            "owner": "8a88e3dd7409f195fd52db2d3cba5d72ca6709bf1d94121bf3748801b40f6f5c",
+            "value_key": "92b54122acc53a2a4b9b85a851263afc331b7941ea63ed4e963e4cbde0506b65",
+            "proof_leaf_count": "0",
+            "access_proof": ""
+          },
+          {
+            "handle": "101010101010101010101010101010101010101010108123456789abcdef0500",
+            "owner": "8a88e3dd7409f195fd52db2d3cba5d72ca6709bf1d94121bf3748801b40f6f5c",
+            "value_key": "92b54122acc53a2a4b9b85a851263afc331b7941ea63ed4e963e4cbde0506b65",
+            "proof_leaf_count": "0",
+            "access_proof": ""
+          },
+          {
+            "handle": "101010101010101010101010101010101010101010108123456789abcdef0500",
+            "owner": "8a88e3dd7409f195fd52db2d3cba5d72ca6709bf1d94121bf3748801b40f6f5c",
+            "value_key": "92b54122acc53a2a4b9b85a851263afc331b7941ea63ed4e963e4cbde0506b65",
+            "proof_leaf_count": "0",
+            "access_proof": ""
+          },
+          {
+            "handle": "101010101010101010101010101010101010101010108123456789abcdef0500",
+            "owner": "8a88e3dd7409f195fd52db2d3cba5d72ca6709bf1d94121bf3748801b40f6f5c",
+            "value_key": "92b54122acc53a2a4b9b85a851263afc331b7941ea63ed4e963e4cbde0506b65",
+            "proof_leaf_count": "0",
+            "access_proof": ""
+          },
+          {
+            "handle": "101010101010101010101010101010101010101010108123456789abcdef0500",
+            "owner": "8a88e3dd7409f195fd52db2d3cba5d72ca6709bf1d94121bf3748801b40f6f5c",
+            "value_key": "92b54122acc53a2a4b9b85a851263afc331b7941ea63ed4e963e4cbde0506b65",
+            "proof_leaf_count": "0",
+            "access_proof": ""
+          },
+          {
+            "handle": "101010101010101010101010101010101010101010108123456789abcdef0500",
+            "owner": "8a88e3dd7409f195fd52db2d3cba5d72ca6709bf1d94121bf3748801b40f6f5c",
+            "value_key": "92b54122acc53a2a4b9b85a851263afc331b7941ea63ed4e963e4cbde0506b65",
+            "proof_leaf_count": "0",
+            "access_proof": ""
+          },
+          {
+            "handle": "101010101010101010101010101010101010101010108123456789abcdef0500",
+            "owner": "8a88e3dd7409f195fd52db2d3cba5d72ca6709bf1d94121bf3748801b40f6f5c",
+            "value_key": "92b54122acc53a2a4b9b85a851263afc331b7941ea63ed4e963e4cbde0506b65",
+            "proof_leaf_count": "0",
+            "access_proof": ""
+          },
+          {
+            "handle": "101010101010101010101010101010101010101010108123456789abcdef0500",
+            "owner": "8a88e3dd7409f195fd52db2d3cba5d72ca6709bf1d94121bf3748801b40f6f5c",
+            "value_key": "92b54122acc53a2a4b9b85a851263afc331b7941ea63ed4e963e4cbde0506b65",
+            "proof_leaf_count": "0",
+            "access_proof": ""
+          },
+          {
+            "handle": "101010101010101010101010101010101010101010108123456789abcdef0500",
+            "owner": "8a88e3dd7409f195fd52db2d3cba5d72ca6709bf1d94121bf3748801b40f6f5c",
+            "value_key": "92b54122acc53a2a4b9b85a851263afc331b7941ea63ed4e963e4cbde0506b65",
+            "proof_leaf_count": "0",
+            "access_proof": ""
+          },
+          {
+            "handle": "101010101010101010101010101010101010101010108123456789abcdef0500",
+            "owner": "8a88e3dd7409f195fd52db2d3cba5d72ca6709bf1d94121bf3748801b40f6f5c",
+            "value_key": "92b54122acc53a2a4b9b85a851263afc331b7941ea63ed4e963e4cbde0506b65",
+            "proof_leaf_count": "0",
+            "access_proof": ""
+          },
+          {
+            "handle": "101010101010101010101010101010101010101010108123456789abcdef0500",
+            "owner": "8a88e3dd7409f195fd52db2d3cba5d72ca6709bf1d94121bf3748801b40f6f5c",
+            "value_key": "92b54122acc53a2a4b9b85a851263afc331b7941ea63ed4e963e4cbde0506b65",
+            "proof_leaf_count": "0",
+            "access_proof": ""
+          },
+          {
+            "handle": "101010101010101010101010101010101010101010108123456789abcdef0500",
+            "owner": "8a88e3dd7409f195fd52db2d3cba5d72ca6709bf1d94121bf3748801b40f6f5c",
+            "value_key": "92b54122acc53a2a4b9b85a851263afc331b7941ea63ed4e963e4cbde0506b65",
+            "proof_leaf_count": "0",
+            "access_proof": ""
+          },
+          {
+            "handle": "101010101010101010101010101010101010101010108123456789abcdef0500",
+            "owner": "8a88e3dd7409f195fd52db2d3cba5d72ca6709bf1d94121bf3748801b40f6f5c",
+            "value_key": "92b54122acc53a2a4b9b85a851263afc331b7941ea63ed4e963e4cbde0506b65",
+            "proof_leaf_count": "0",
+            "access_proof": ""
+          },
+          {
+            "handle": "101010101010101010101010101010101010101010108123456789abcdef0500",
+            "owner": "8a88e3dd7409f195fd52db2d3cba5d72ca6709bf1d94121bf3748801b40f6f5c",
+            "value_key": "92b54122acc53a2a4b9b85a851263afc331b7941ea63ed4e963e4cbde0506b65",
+            "proof_leaf_count": "0",
+            "access_proof": ""
+          },
+          {
+            "handle": "101010101010101010101010101010101010101010108123456789abcdef0500",
+            "owner": "8a88e3dd7409f195fd52db2d3cba5d72ca6709bf1d94121bf3748801b40f6f5c",
+            "value_key": "92b54122acc53a2a4b9b85a851263afc331b7941ea63ed4e963e4cbde0506b65",
+            "proof_leaf_count": "0",
+            "access_proof": ""
+          },
+          {
+            "handle": "101010101010101010101010101010101010101010108123456789abcdef0500",
+            "owner": "8a88e3dd7409f195fd52db2d3cba5d72ca6709bf1d94121bf3748801b40f6f5c",
+            "value_key": "92b54122acc53a2a4b9b85a851263afc331b7941ea63ed4e963e4cbde0506b65",
+            "proof_leaf_count": "0",
+            "access_proof": ""
+          },
+          {
+            "handle": "101010101010101010101010101010101010101010108123456789abcdef0500",
+            "owner": "8a88e3dd7409f195fd52db2d3cba5d72ca6709bf1d94121bf3748801b40f6f5c",
+            "value_key": "92b54122acc53a2a4b9b85a851263afc331b7941ea63ed4e963e4cbde0506b65",
+            "proof_leaf_count": "0",
+            "access_proof": ""
+          },
+          {
+            "handle": "101010101010101010101010101010101010101010108123456789abcdef0500",
+            "owner": "8a88e3dd7409f195fd52db2d3cba5d72ca6709bf1d94121bf3748801b40f6f5c",
+            "value_key": "92b54122acc53a2a4b9b85a851263afc331b7941ea63ed4e963e4cbde0506b65",
+            "proof_leaf_count": "0",
+            "access_proof": ""
+          },
+          {
+            "handle": "101010101010101010101010101010101010101010108123456789abcdef0500",
+            "owner": "8a88e3dd7409f195fd52db2d3cba5d72ca6709bf1d94121bf3748801b40f6f5c",
+            "value_key": "92b54122acc53a2a4b9b85a851263afc331b7941ea63ed4e963e4cbde0506b65",
+            "proof_leaf_count": "0",
+            "access_proof": ""
+          },
+          {
+            "handle": "101010101010101010101010101010101010101010108123456789abcdef0500",
+            "owner": "8a88e3dd7409f195fd52db2d3cba5d72ca6709bf1d94121bf3748801b40f6f5c",
+            "value_key": "92b54122acc53a2a4b9b85a851263afc331b7941ea63ed4e963e4cbde0506b65",
+            "proof_leaf_count": "0",
+            "access_proof": ""
+          },
+          {
+            "handle": "101010101010101010101010101010101010101010108123456789abcdef0500",
+            "owner": "8a88e3dd7409f195fd52db2d3cba5d72ca6709bf1d94121bf3748801b40f6f5c",
+            "value_key": "92b54122acc53a2a4b9b85a851263afc331b7941ea63ed4e963e4cbde0506b65",
+            "proof_leaf_count": "0",
+            "access_proof": ""
+          },
+          {
+            "handle": "101010101010101010101010101010101010101010108123456789abcdef0500",
+            "owner": "8a88e3dd7409f195fd52db2d3cba5d72ca6709bf1d94121bf3748801b40f6f5c",
+            "value_key": "92b54122acc53a2a4b9b85a851263afc331b7941ea63ed4e963e4cbde0506b65",
+            "proof_leaf_count": "0",
+            "access_proof": ""
+          },
+          {
+            "handle": "101010101010101010101010101010101010101010108123456789abcdef0500",
+            "owner": "8a88e3dd7409f195fd52db2d3cba5d72ca6709bf1d94121bf3748801b40f6f5c",
+            "value_key": "92b54122acc53a2a4b9b85a851263afc331b7941ea63ed4e963e4cbde0506b65",
+            "proof_leaf_count": "0",
+            "access_proof": ""
+          },
+          {
+            "handle": "101010101010101010101010101010101010101010108123456789abcdef0500",
+            "owner": "8a88e3dd7409f195fd52db2d3cba5d72ca6709bf1d94121bf3748801b40f6f5c",
+            "value_key": "92b54122acc53a2a4b9b85a851263afc331b7941ea63ed4e963e4cbde0506b65",
+            "proof_leaf_count": "0",
+            "access_proof": ""
+          },
+          {
+            "handle": "101010101010101010101010101010101010101010108123456789abcdef0500",
+            "owner": "8a88e3dd7409f195fd52db2d3cba5d72ca6709bf1d94121bf3748801b40f6f5c",
+            "value_key": "92b54122acc53a2a4b9b85a851263afc331b7941ea63ed4e963e4cbde0506b65",
+            "proof_leaf_count": "0",
+            "access_proof": ""
+          }
+        ]
+      },
+      "observation": {
+        "observed_slot": "500",
+        "now_unix_seconds": "1700000060",
+        "kms_pair_status": "servable",
+        "accounts": [
+          {
+            "pubkey": "6828b67f2e63863ebcd119bdd81b2b1895615d8810fdd49de3d7b124cbeaf031",
+            "owner": "0707070707070707070707070707070707070707070707070707070707070707",
+            "data": "ec8bdba9b922e9888a88e3dd7409f195fd52db2d3cba5d72ca6709bf1d94121bf3748801b40f6f5c0000000000000000ff"
+          },
+          {
+            "pubkey": "ae46e3635a184b29ae039bbaa8cc879aba91403035fbe91d0fb646c8503ee20e",
+            "owner": "0707070707070707070707070707070707070707070707070707070707070707",
+            "data": "9b03953a8467c8a10101010101010101010101010101010101010101010101010101010101010101020202020202020202020202020202020202020202020202020202020202020262616c616e63655f5f5f5f5f5f5f5f5f5f5f5f5f5f5f5f5f5f5f5f5f5f5f5f5f101010101010101010101010101010101010101010108123456789abcdef0500010000008a88e3dd7409f195fd52db2d3cba5d72ca6709bf1d94121bf3748801b40f6f5c000000000000000000000000fc"
+          }
+        ]
+      }
+    },
+    {
       "name": "access-proof-with-trailing-bytes",
       "comment": "A proof followed by extra bytes is refused — unlike an account followed by extra bytes, which is legal. Two byte strings for one proof would leave two implementations disagreeing about whether they hold the same request.",
       "result": "invalid",

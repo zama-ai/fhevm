@@ -235,7 +235,8 @@ pub mod rule {
     pub const KMS_PAIR_UNSERVABLE: &str = "kms-pair-unservable";
     /// The request names no handles.
     pub const EMPTY_HANDLES: &str = "empty-handles";
-    /// The summed bit width exceeds the budget.
+    /// The request names more handles than one atomic account snapshot can cover.
+    pub const TOO_MANY_HANDLES: &str = "too-many-handles";
     /// An access proof does not decode.
     pub const ACCESS_PROOF_MALFORMED: &str = "access-proof-malformed";
     /// An access proof decoded with bytes left over.
@@ -292,6 +293,7 @@ pub mod rule {
         WATERMARK_RECORD_INVALID,
         KMS_PAIR_UNSERVABLE,
         EMPTY_HANDLES,
+        TOO_MANY_HANDLES,
         ACCESS_PROOF_MALFORMED,
         ACCESS_PROOF_TRAILING_BYTES,
         ACCESS_PROOF_TOO_MANY_SIBLINGS,

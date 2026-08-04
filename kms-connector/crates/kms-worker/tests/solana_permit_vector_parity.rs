@@ -85,7 +85,8 @@ fn rule_name_of_form_error(error: &RequestFormError) -> Option<&'static str> {
         | RequestFormError::AccessProofMalformed { .. }
         | RequestFormError::AccessProofTrailingBytes { .. }
         | RequestFormError::AccessProofTooManySiblings { .. }
-        | RequestFormError::EmptyHandles => None,
+        | RequestFormError::EmptyHandles
+        | RequestFormError::TooManyHandles { .. } => None,
     }
 }
 
