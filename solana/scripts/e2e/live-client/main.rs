@@ -548,9 +548,9 @@ fn allow_for_decryption(
 ) -> Result<(), Box<dyn std::error::Error>> {
     let encrypted_value_account = fetch_encrypted_value(host, encrypted_value)?;
     // Host allow_subjects / remove_subject require signer == EncryptedValue.encrypted_value_account_authority
-    // (fhevm-internal#1862 #13). Host-demo values bind `account` to the payer wallet;
+    // (fhevm-internal#1862 #13). Host-demo values bind that authority to the payer wallet;
     // token-scoped values must go through confidential-token's PDA-signed CPI wrappers.
-    let account = encrypted_value_account.account;
+    let account = encrypted_value_account.encrypted_value_account_authority;
     if account != payer.pubkey() {
         return Err(format!(
             "allow_subjects authority must be EncryptedValue.encrypted_value_account_authority ({account}); \
