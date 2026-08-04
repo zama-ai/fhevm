@@ -171,7 +171,7 @@ pub struct ConfidentialBurnFromValue<'info> {
     pub burned_amount_value: UncheckedAccount<'info>,
     /// The existing encrypted amount to burn: a computed or received `euint64` handle. Read-only
     /// persistent operand — never replaced, never consumed. Its address is the canonical PDA of its
-    /// own `(domain, account, label)` fields, so an encrypted value account from any app
+    /// own `(domain, authority, label)` fields, so an encrypted value account from any app
     /// may be passed here once its owner has granted the mint's compute subject via `allow_subjects`.
     pub amount_value: Box<Account<'info, zama_host::EncryptedValue>>,
     /// CHECK: Anchor event CPI authority for the Zama host program.

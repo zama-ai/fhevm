@@ -36,7 +36,7 @@ impl Domain {
     }
 }
 
-/// App-domain encrypted field label.
+/// The encrypted value label: an encrypted value ID's third component.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub struct EncryptedValueLabel([u8; 32]);
 
@@ -52,7 +52,8 @@ impl EncryptedValueLabel {
 
 /// App-domain key of a stable `EncryptedValue` account.
 ///
-/// Addressing is stable per `(domain, account, label)` — it does not change
+/// Addressing is stable per `(domain, encrypted value account authority, encrypted value
+/// label)` — it does not change
 /// on handle updates, unlike the old nonce-keyed ACL records.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct EncryptedValueId {

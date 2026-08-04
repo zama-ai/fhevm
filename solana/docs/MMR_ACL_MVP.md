@@ -6,8 +6,9 @@ this note records the operational model in one place.
 
 ## Identity And Authority
 
-- `EncryptedValue` identity is `derive_encrypted_value_id(domain, account, label)`.
-  The derived key prevents collisions between app domains, accounts, and labels. It is not an
+- `EncryptedValue` identity is
+  `derive_encrypted_value_id(domain, encrypted_value_account_authority, label)`.
+  The derived key prevents collisions between app domains, authorities, and labels. It is not an
   authority check.
 - `compute_signer` is separate from identity. In confidential-token it is a mint-scoped PDA and must
   be present in the value's allowed-subject set when token compute needs to use that value.
@@ -26,7 +27,8 @@ this note records the operational model in one place.
   execution's persistent-write anchor + `op_index`, see DD-043). There is no per-output binding: a persistent output and an instruction-local
   output over the same material derive the same handle. This matches EVM `FHEVMExecutor`, which binds
   no per-slot / per-caller / per-encrypted value account value into a computed handle. The encrypted value ID is still the
-  `EncryptedValue` PDA seed (`derive_encrypted_value_id(domain, account, label)`) —
+  `EncryptedValue` PDA seed
+  (`derive_encrypted_value_id(domain, encrypted_value_account_authority, label)`) —
   it addresses *which* stored value the result becomes — but it is **not** mixed into the handle.
 - There is **no per-output sequence and no encrypted value account binding** in the handle (DD-015). Per-block entropy
   plus the operands/op/type already distinguish distinct ciphertexts. An identical recomputation

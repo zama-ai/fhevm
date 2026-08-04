@@ -8,7 +8,7 @@ import {
 import { findComputeSignerPda } from './generated/confidentialToken/pdas/computeSigner.js';
 import { findTotalSupplyAuthorityPda } from './generated/confidentialToken/pdas/totalSupplyAuthority.js';
 // The `__event_authority` seed and the canonical `EncryptedValue` derivation are owned by
-// batcherPdas (its `encryptedValueAddress(domain, account, label)`); import them rather than
+// batcherPdas (its `encryptedValueAddress(domain, authority, label)`); import them rather than
 // re-declaring the seed / re-implementing the derivation here.
 import { EVENT_AUTHORITY_SEED, encryptedValueAddress } from './batcherPdas.js';
 

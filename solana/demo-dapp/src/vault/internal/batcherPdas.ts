@@ -31,7 +31,7 @@ function addressBytes(value: Address): Uint8Array {
 
 /**
  * The canonical `EncryptedValue` PDA for one confidential-value encrypted value account
- * (`zama_host::encrypted_value_address(derive_encrypted_value_id(domain, account, label))`). The encrypted value ID
+ * (`zama_host::encrypted_value_address(derive_encrypted_value_id(domain, authority, label))`). The encrypted value ID
  * carries the encrypted value account's app metadata (never the opaque handle), so the address is derivable without
  * reading chain state. All the confidential-token/batcher field encrypted value accounts (balance, total supply,
  * burned amount, batcher pending/claim) are this same derivation under different labels.

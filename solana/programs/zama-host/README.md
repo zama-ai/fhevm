@@ -16,7 +16,7 @@ HostConfig
 
 EncryptedValue
   PDA("encrypted-value", encrypted_value_id)
-  encrypted_value_id = derive_encrypted_value_id(domain, account, label)
+  encrypted_value_id = derive_encrypted_value_id(domain, encrypted_value_account_authority, label)
   one stable PDA per logical encrypted value, reused across every handle update; stores
   current_handle, inline allowed subjects (up to MAX_ENCRYPTED_VALUE_SUBJECTS=8),
   and an on-account SHA-256 Merkle Mountain Range (peaks + leaf_count) sealing one

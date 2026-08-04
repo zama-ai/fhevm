@@ -205,7 +205,7 @@ pub(super) fn assert_output_acl_metadata(
 }
 
 /// Decodes an `EncryptedValue` and checks it is program-owned and the
-/// canonical PDA for its stored `(domain, account, label)` triple.
+/// canonical PDA for its stored `(domain, encrypted_value_account_authority, label)` triple.
 pub(super) fn read_canonical_encrypted_value(info: &AccountInfo) -> Result<EncryptedValue> {
     require_keys_eq!(
         *info.owner,
