@@ -14,6 +14,27 @@ library ZamaConfig {
     /// @notice Returned if the Zama protocol is not supported on the current chain
     error ZamaProtocolUnsupported();
 
+    /**
+     * @notice Returns the Zama coprocessor config for the current chain, routed by `block.chainid`.
+     * @dev    Supports all networks where the Zama protocol is deployed: Ethereum mainnet (chainId = 1),
+     *         Sepolia (chainId = 11155111), Polygon Amoy (chainId = 80002), and the local
+     *         Hardhat/Anvil network (chainId = 31337).
+     *         Reverts with {ZamaProtocolUnsupported} on any other chain.
+     */
+    function getCoprocessorConfig() internal view returns (CoprocessorConfig memory config) {
+        if (block.chainid == 1) {
+            config = _getEthereumConfig();
+        } else if (block.chainid == 11155111) {
+            config = _getSepoliaConfig();
+        } else if (block.chainid == 80002) {
+            config = _getPolygonAmoyConfig();
+        } else if (block.chainid == 31337) {
+            config = _getLocalConfig();
+        } else {
+            revert ZamaProtocolUnsupported();
+        }
+    }
+
     function getEthereumCoprocessorConfig() internal view returns (CoprocessorConfig memory config) {
         if (block.chainid == 1) {
             config = _getEthereumConfig();
@@ -133,6 +154,26 @@ abstract contract ZamaEthereumConfig {
 abstract contract ZamaPolygonConfig {
     constructor() {
         FHE.setCoprocessor(ZamaConfig.getPolygonCoprocessorConfig());
+    }
+
+    function confidentialProtocolId() public view returns (uint256) {
+        return ZamaConfig.getConfidentialProtocolId();
+    }
+}
+
+/**
+ * @title   ZamaMultiChainConfig.
+ * @dev     This contract can be inherited by a contract wishing to use the FHEVM contracts provided by Zama
+ *          on any supported network. The coprocessor configuration is selected automatically from
+ *          `block.chainid` at construction time, so a single implementation can be deployed on the
+ *          Ethereum (mainnet) network (chainId = 1), the Sepolia (testnet) network (chainId = 11155111),
+ *          the Polygon Amoy (testnet) network (chainId = 80002), or a local network (chainId = 31337).
+ *          Other providers may offer similar contracts deployed at different addresses.
+ *          If you wish to use them, you should rely on the instructions from these providers.
+ */
+abstract contract ZamaMultiChainConfig {
+    constructor() {
+        FHE.setCoprocessor(ZamaConfig.getCoprocessorConfig());
     }
 
     function confidentialProtocolId() public view returns (uint256) {
