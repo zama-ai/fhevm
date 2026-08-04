@@ -60,7 +60,6 @@ use crate::{
 };
 
 pub const UPLOAD_QUEUE_SIZE: usize = 20;
-pub const SAFE_SER_LIMIT: u64 = 1024 * 1024 * 66;
 
 pub(crate) const CLEAN_OLD_S3_FORMAT_VERSION: i16 = 0;
 pub(crate) const S3_FORMAT_VERSION_V0: i16 = 0;

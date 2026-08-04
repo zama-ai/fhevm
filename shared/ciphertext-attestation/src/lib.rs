@@ -33,6 +33,9 @@ pub mod sign;
 /// over similar-looking inputs.
 pub const DOMAIN_TAG: [u8; 8] = *b"FHEVMCTA";
 
+/// Ceiling on the serialized size of an SNS ciphertext in bytes.
+pub const MAX_SNS_CIPHERTEXT_SERIALIZED_SIZE: u64 = 66 * 1024 * 1024;
+
 /// S3 user-defined metadata key that carries the JSON-serialized
 /// [`CiphertextAttestation`] on every ciphertext object.
 ///
