@@ -23,9 +23,9 @@ use crate::database::synthetic_ops::{
     SYNTHETIC_BLOCK_OFFSET,
 };
 use crate::database::tfhe_event_propagate::{
-    acl_result_handles, operand_boundary_mask_from_minted, tfhe_result_handle,
-    Chain, ChainHash, Database, Handle as EventHandle, LogTfhe,
-    TransactionHash,
+    acl_result_handles, operand_boundary_mask_from_minted,
+    tfhe_result_handles, Chain, ChainHash, Database, Handle as EventHandle,
+    LogTfhe, TransactionHash,
 };
 use crate::kms_generation::insert_kms_generation_events_tx;
 use crate::kms_generation::metrics::KMS_EVENT_DECODE_FAIL_COUNTER;
@@ -100,7 +100,8 @@ fn refuse_mask_derivation(reason: &'static str) -> sqlx::Error {
 fn populate_operand_boundary_masks(
     logs: &mut [LogTfhe],
 ) -> Result<(), sqlx::Error> {
-    let mask_bearing = |log: &LogTfhe| tfhe_result_handle(&log.event).is_some();
+    let mask_bearing =
+        |log: &LogTfhe| !tfhe_result_handles(&log.event).is_empty();
     for log in logs.iter().filter(|log| mask_bearing(log)) {
         if log.transaction_hash.is_none() {
             return Err(refuse_mask_derivation(
@@ -153,9 +154,7 @@ fn populate_operand_boundary_masks(
         // This happens strictly after the mask above, exactly as the executor
         // computes the preimage before calling `_markMinted`.
         if log.is_executor_minted {
-            if let Some(result) = tfhe_result_handle(&log.event) {
-                minted.insert(result);
-            }
+            minted.extend(tfhe_result_handles(&log.event));
         }
     }
     Ok(())
@@ -616,12 +615,10 @@ pub async fn ingest_block_logs(
         }
     }
     for tfhe_log in tfhe_event_log.iter_mut() {
-        tfhe_log.is_allowed =
-            if let Some(result_handle) = tfhe_result_handle(&tfhe_log.event) {
-                is_allowed.contains(&result_handle.to_vec())
-            } else {
-                false
-            };
+        // For multi-output ops all outputs are produced together, so one allowed handle runs the op.
+        tfhe_log.is_allowed = tfhe_result_handles(&tfhe_log.event)
+            .iter()
+            .any(|h| is_allowed.contains(&h.to_vec()));
     }
 
     // Must happen before dependence grouping and database insertion. The
@@ -1341,7 +1338,9 @@ pub async fn synthesize_finalized_fallback_grants(
     let chains =
         dependence_chains(&mut logs, &db.dependence_chain, false, false).await;
     for log in &logs {
-        let dst_handle = tfhe_result_handle(&log.event)
+        let dst_handle = tfhe_result_handles(&log.event)
+            .into_iter()
+            .next()
             .expect("synthetic TrivialEncrypt has a result handle");
         db.insert_tfhe_event(tx, log).await?;
         db.insert_pbs_computations(
