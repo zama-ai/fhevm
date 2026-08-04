@@ -1075,8 +1075,8 @@ contract ProtocolConfigTest is HostContractsDeployerTestUtils {
         uint256 retriedEpochId = EPOCH_COUNTER_BASE + 3;
         vm.prank(owner);
         protocolConfig.defineNewEpochForCurrentKmsContext();
-        _confirmEpochActivation(contextId, retriedEpochId, kmsPk0, kmsTxSender0, 0, 0);
-        _confirmEpochActivation(contextId, retriedEpochId, kmsPk1, kmsTxSender1, 0, 0);
+        _confirmEpochActivation(contextId, retriedEpochId, kmsPk0, kmsTxSender0);
+        _confirmEpochActivation(contextId, retriedEpochId, kmsPk1, kmsTxSender1);
         (, uint256 epochFinal) = protocolConfig.getCurrentKmsContextAndEpoch();
         assertEq(epochFinal, retriedEpochId);
     }
