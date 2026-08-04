@@ -856,7 +856,7 @@ async fn setup_direct_migration_env() -> DirectMigrationEnv {
 
 async fn run_direct_migration(env: &DirectMigrationEnv) -> Result<(), crate::ExecutionError> {
     let config = S3MigrationConfig {
-        batch_size: env.conf.db.batch_limit.into(),
+        batch_size: env.conf.s3_migration_max_concurrent_handles.into(),
         signer: env.signer.clone(),
         s3: env.conf.s3.clone(),
         mode: env.conf.s3_migration,
