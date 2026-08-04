@@ -123,6 +123,10 @@ struct ComputationBranchRow<'a> {
     is_allowed: bool,
     schedule_order: PrimitiveDateTime,
     producer_block: ProducerBlock,
+    /// `None` for single-output ops; the shared group key otherwise.
+    group_id: Option<Vec<u8>>,
+    /// 0 for single-output ops; 0..N-1 within a multi-output group.
+    output_index: i16,
 }
 
 async fn insert_computation_branch_row(
@@ -144,9 +148,11 @@ async fn insert_computation_branch_row(
             is_completed,
             host_chain_id,
             block_number,
-            producer_block_hash
+            producer_block_hash,
+            group_id,
+            output_index
         )
-        VALUES ($1, $2, $3, $4, $5, $6, $7, NOW(), $8::timestamp, $9, $10, $11, $12)
+        VALUES ($1, $2, $3, $4, $5, $6, $7, NOW(), $8::timestamp, $9, $10, $11, $12, $13, $14)
         ON CONFLICT (output_handle, transaction_id, producer_block_hash) DO NOTHING
         "#,
         row.output_handle,
@@ -161,6 +167,8 @@ async fn insert_computation_branch_row(
         row.chain_id,
         row.producer_block.number as i64,
         row.producer_block.hash,
+        row.group_id,
+        row.output_index,
     )
     .execute(tx.deref_mut())
     .await?;
@@ -668,6 +676,8 @@ impl Database {
             dependencies,
             fhe_operation,
             scalar_byte,
+            None,
+            0,
             log,
         )
         .await
@@ -691,9 +701,62 @@ impl Database {
             dependencies,
             fhe_operation,
             scalar_byte,
+            None,
+            0,
             log,
         )
         .await
+    }
+
+    // N rows sharing `group_id`, with `output_index` 0..N-1.
+    // Infrastructure for future multi-output ops; no callers in this PR.
+    #[allow(clippy::too_many_arguments, dead_code)]
+    async fn insert_multi_output_computation(
+        &self,
+        tx: &mut Transaction<'_>,
+        results: &[&Handle],
+        dependencies: &[&Handle],
+        fhe_operation: FheOperation,
+        scalar_byte: &FixedBytes<1>,
+        log: &LogTfhe,
+    ) -> Result<bool, SqlxError> {
+        let dependencies =
+            dependencies.iter().map(|d| d.to_vec()).collect::<Vec<_>>();
+        let group_id = match results.first() {
+            Some(h) => h.to_vec(),
+            None => {
+                warn!(target: "host_listener",
+                    "multi-output event has no results; skipping event");
+                return Ok(false);
+            }
+        };
+        let mut any_inserted = false;
+        for (idx, result) in results.iter().enumerate() {
+            let output_index = match i16::try_from(idx) {
+                Ok(v) => v,
+                Err(_) => {
+                    // Bounded by `SupportedFheOperations::multi_output_arity` so idx <= u8::MAX = 255 < i16::MAX.
+                    warn!(target: "host_listener",
+                        arity = results.len(),
+                        "multi-output arity exceeds i16::MAX; skipping event");
+                    return Ok(false);
+                }
+            };
+            let inserted = self
+                .insert_computation_inner(
+                    tx,
+                    result,
+                    dependencies.clone(),
+                    fhe_operation,
+                    scalar_byte,
+                    Some(&group_id),
+                    output_index,
+                    log,
+                )
+                .await?;
+            any_inserted = any_inserted || inserted;
+        }
+        Ok(any_inserted)
     }
 
     #[allow(clippy::too_many_arguments)]
@@ -704,10 +767,19 @@ impl Database {
         dependencies: Vec<Vec<u8>>,
         fhe_operation: FheOperation,
         scalar_byte: &FixedBytes<1>,
+        group_id: Option<&[u8]>,
+        output_index: i16,
         log: &LogTfhe,
     ) -> Result<bool, SqlxError> {
         let is_scalar = !scalar_byte.is_zero();
         let output_handle = result.to_vec();
+        // Dependencies live only on the primary row of a multi-output group:
+        // repeating them on all N rows is quadratic in storage for an
+        // N-input/N-output operation. Computed once here so the legacy row and
+        // the branch row cannot disagree.
+        let is_primary = group_id.is_none() || output_index == 0;
+        let deps_for_row: &[Vec<u8>] =
+            if is_primary { &dependencies } else { &[] };
         // Below the fleet-common activation height only legacy state is
         // written: per-node dual-write start times would otherwise key branch
         // rows divergently across operators during a rolling upgrade.
@@ -716,9 +788,11 @@ impl Database {
                 .insert_computation_legacy_row(
                     tx,
                     &output_handle,
-                    &dependencies,
+                    deps_for_row,
                     fhe_operation,
                     is_scalar,
+                    group_id,
+                    output_index,
                     log,
                 )
                 .await;
@@ -731,7 +805,7 @@ impl Database {
             ComputationBranchRow {
                 chain_id: self.chain_id.as_i64(),
                 output_handle: &output_handle,
-                dependencies: &dependencies,
+                dependencies: deps_for_row,
                 fhe_operation: fhe_operation as i16,
                 is_scalar,
                 dependence_chain_id: log.dependence_chain.as_slice(),
@@ -744,6 +818,8 @@ impl Database {
                     hash: log.block_hash.to_vec(),
                     number: log.block_number,
                 },
+                group_id: group_id.map(|g| g.to_vec()),
+                output_index,
             },
         )
         .await?;
@@ -754,15 +830,18 @@ impl Database {
             .insert_computation_legacy_row(
                 tx,
                 &output_handle,
-                &dependencies,
+                deps_for_row,
                 fhe_operation,
                 is_scalar,
+                group_id,
+                output_index,
                 log,
             )
             .await?;
         Ok(inserted || legacy_inserted)
     }
 
+    #[allow(clippy::too_many_arguments)]
     async fn insert_computation_legacy_row(
         &self,
         tx: &mut Transaction<'_>,
@@ -770,11 +849,16 @@ impl Database {
         dependencies: &[Vec<u8>],
         fhe_operation: FheOperation,
         is_scalar: bool,
+        group_id: Option<&[u8]>,
+        output_index: i16,
         log: &LogTfhe,
     ) -> Result<bool, SqlxError> {
         // Schema isolation handles BCS/GCS routing at the connection layer
         // (`search_path = gcs,public` for GCS, default `public` for BCS), so
         // this INSERT references `computations` unqualified.
+        //
+        // `dependencies` is already reduced to the primary row by the caller.
+        let group_id_vec = group_id.map(|g| g.to_vec());
         let query = sqlx::query!(
             r#"
             INSERT INTO computations (
@@ -789,9 +873,11 @@ impl Database {
                 schedule_order,
                 is_completed,
                 host_chain_id,
-                block_number
+                block_number,
+                group_id,
+                output_index
             )
-            VALUES ($1, $2, $3, $4, $5, $6, $7, NOW(), $8::timestamp, $9, $10, $11)
+            VALUES ($1, $2, $3, $4, $5, $6, $7, NOW(), $8::timestamp, $9, $10, $11, $12, $13)
             ON CONFLICT (output_handle, transaction_id) DO NOTHING
             "#,
             output_handle,
@@ -807,7 +893,9 @@ impl Database {
                 )),
             !log.is_allowed,
             self.chain_id.as_i64(),
-            log.block_number as i64
+            log.block_number as i64,
+            group_id_vec,
+            output_index,
         );
         query
             .execute(tx.deref_mut())
@@ -842,6 +930,9 @@ impl Database {
         let insert_computation_bytes = |tx, result, dependencies_handles, dependencies_bytes, scalar_byte| {
             self.insert_computation_bytes(tx, result, dependencies_handles, dependencies_bytes, fhe_operation, scalar_byte, log)
         };
+        // TODO: when adding a multi-output op, define a closure mirroring the two above,
+        // backed by `self.insert_multi_output_computation(...)`, which writes N rows
+        // sharing `group_id`.
 
         // Record the transaction if this is a computation event
         if !matches!(
@@ -2917,7 +3008,7 @@ pub fn event_name(op: &TfheContractEvents) -> &'static str {
     }
 }
 
-pub fn tfhe_result_handle(op: &TfheContractEvents) -> Option<Handle> {
+pub fn tfhe_result_handles(op: &TfheContractEvents) -> Vec<Handle> {
     use TfheContract as C;
     use TfheContractEvents as E;
     match op {
@@ -2950,9 +3041,9 @@ pub fn tfhe_result_handle(op: &TfheContractEvents) -> Option<Handle> {
         | E::TrivialEncrypt(C::TrivialEncrypt { result, .. })
         | E::FheSum(C::FheSum { result, .. })
         | E::FheIsIn(C::FheIsIn { result, .. })
-        | E::FheMulDiv(C::FheMulDiv { result, .. }) => Some(*result),
+        | E::FheMulDiv(C::FheMulDiv { result, .. }) => vec![*result],
 
-        E::Initialized(_) | E::Upgraded(_) | E::VerifyInput(_) => None,
+        E::Initialized(_) | E::Upgraded(_) | E::VerifyInput(_) => vec![],
     }
 }
 
