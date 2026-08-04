@@ -87,7 +87,7 @@ pub fn initialize_token_account<'info>(
         fhe::PersistentAudience::for_owner(owner, compute_signer),
     )?;
     let execution = zama_fhe::FheExecution::build(
-        zama_fhe::ExecutionAppAuthority::new(token_account_key),
+        zama_fhe::ExecutionEncryptedValueAccountAuthority::new(token_account_key),
         |builder| {
             builder.trivial_encrypt_u64(initial_balance, balance_output.output())?;
             Ok(())

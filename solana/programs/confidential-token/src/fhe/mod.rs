@@ -443,14 +443,17 @@ pub(crate) struct Execute<'a, 'info> {
 
 /// Invokes one FHE execution under the current token account authority model.
 pub(crate) fn execute<'info>(request: Execute<'_, 'info>) -> Result<()> {
-    let app_authority_key = request.execution.app_authority().pubkey();
-    let app_authority = request
+    let encrypted_value_account_authority_key = request
+        .execution
+        .encrypted_value_account_authority()
+        .pubkey();
+    let encrypted_value_account_authority = request
         .accounts
-        .output_authority(app_authority_key)
+        .output_authority(encrypted_value_account_authority_key)
         .ok_or_else(|| error!(ConfidentialTokenError::MissingFheOutputAuthority))?;
     require_keys_eq!(
-        app_authority.key(),
-        app_authority_key,
+        encrypted_value_account_authority.key(),
+        encrypted_value_account_authority_key,
         ConfidentialTokenError::MissingFheOutputAuthority
     );
     let compute_bump = [request.context.compute_authority.bump];
@@ -458,12 +461,16 @@ pub(crate) fn execute<'info>(request: Execute<'_, 'info>) -> Result<()> {
         .context
         .compute_authority
         .signer_seeds(&compute_bump);
-    let app_authority_seed_bytes = app_authority.signer.seed_bytes();
-    let app_authority_seeds: Vec<&[u8]> =
-        app_authority_seed_bytes.iter().map(Vec::as_slice).collect();
+    let encrypted_value_account_authority_seed_bytes =
+        encrypted_value_account_authority.signer.seed_bytes();
+    let encrypted_value_account_authority_seeds: Vec<&[u8]> =
+        encrypted_value_account_authority_seed_bytes
+            .iter()
+            .map(Vec::as_slice)
+            .collect();
     let mut additional_authorities = Vec::new();
     for authority in request.execution.additional_output_authorities() {
-        if authority == app_authority.key() {
+        if authority == encrypted_value_account_authority.key() {
             continue;
         }
         if additional_authorities.contains(&authority) {
@@ -496,8 +503,8 @@ pub(crate) fn execute<'info>(request: Execute<'_, 'info>) -> Result<()> {
         .collect();
 
     let mut signer_seed_vec: Vec<&[&[u8]]> = vec![compute_signer_seeds.as_slice()];
-    if !app_authority_seeds.is_empty() {
-        signer_seed_vec.push(app_authority_seeds.as_slice());
+    if !encrypted_value_account_authority_seeds.is_empty() {
+        signer_seed_vec.push(encrypted_value_account_authority_seeds.as_slice());
     }
     for seeds in &extra_output_authority_seeds {
         signer_seed_vec.push(seeds.as_slice());
@@ -505,7 +512,7 @@ pub(crate) fn execute<'info>(request: Execute<'_, 'info>) -> Result<()> {
     validate_deny_subject_records_for_grant_subjects(
         request.context.host_config.grant_deny_list_enabled,
         request.context.deny_subject_records,
-        app_authority.key(),
+        encrypted_value_account_authority.key(),
         &extra_output_authorities,
         &request.execution.newly_granted_subjects(),
     )?;
@@ -514,7 +521,7 @@ pub(crate) fn execute<'info>(request: Execute<'_, 'info>) -> Result<()> {
         zama_fhe::ExecutionCpiAccounts {
             payer: request.context.payer.to_account_info(),
             compute_subject: request.context.compute_authority.account_info(),
-            encrypted_value_account_authority: app_authority.account.clone(),
+            encrypted_value_account_authority: encrypted_value_account_authority.account.clone(),
             host_config: request.context.host_config.to_account_info(),
             deny_subject_records: request.context.deny_subject_records,
             system_program: request.context.system_program.to_account_info(),
@@ -532,7 +539,7 @@ pub(crate) fn execute<'info>(request: Execute<'_, 'info>) -> Result<()> {
 fn validate_deny_subject_records_for_grant_subjects<'info>(
     deny_list_enabled: bool,
     supplied_records: &[AccountInfo<'info>],
-    app_authority: Pubkey,
+    encrypted_value_account_authority: Pubkey,
     extra_output_authorities: &[OutputAuthority<'info>],
     newly_granted_subjects: &[Pubkey],
 ) -> Result<()> {
@@ -555,7 +562,7 @@ fn validate_deny_subject_records_for_grant_subjects<'info>(
         // persistent output grants for the first time (created or update-added) — the host
         // deny-list-checks both, so both may reach it through remaining accounts.
         require!(
-            is_deny_record_for_authority(supplied.key(), app_authority)
+            is_deny_record_for_authority(supplied.key(), encrypted_value_account_authority)
                 || extra_output_authorities
                     .iter()
                     .any(|authority| is_deny_record_for_authority(supplied.key(), authority.key()))
@@ -674,7 +681,7 @@ mod tests {
         let output_acl = output_key.address();
         let input = zama_fhe::Uint64Handle::persistent(balance_handle(1), input_key).unwrap();
         let execution = zama_fhe::FheExecution::build(
-            zama_fhe::ExecutionAppAuthority::new(authority),
+            zama_fhe::ExecutionEncryptedValueAccountAuthority::new(authority),
             |builder| {
                 builder.add(
                     input,

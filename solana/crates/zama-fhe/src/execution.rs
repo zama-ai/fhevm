@@ -10,7 +10,7 @@ use crate::accounts::{
 };
 use crate::accounts::{
     ExecutionAccountMeta, ExecutionAccountPurpose, ExecutionAccountRequirement,
-    ExecutionAppAuthority, ExecutionOutputAuthorityRequirement,
+    ExecutionEncryptedValueAccountAuthority, ExecutionOutputAuthorityRequirement,
 };
 use crate::builder::FheExecutionBuilder;
 #[cfg(feature = "cpi")]
@@ -26,7 +26,7 @@ use anchor_lang::prelude::AccountInfo;
 /// args or dynamic account roles.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct FheExecution {
-    pub(crate) app_authority: ExecutionAppAuthority,
+    pub(crate) encrypted_value_account_authority: ExecutionEncryptedValueAccountAuthority,
     pub(crate) args: FheExecuteArgs,
     /// Exact dynamic `remaining_accounts` order referenced by the `u8` indices
     /// inside `args`. Keep this coupled to `args`; `finish` validates every
@@ -46,9 +46,9 @@ impl FheExecution {
     ///
     /// ```
     /// use anchor_lang::prelude::Pubkey;
-    /// use zama_fhe::{FheExecution, ExecutionAppAuthority, Output, Scalar, Uint};
+    /// use zama_fhe::{FheExecution, ExecutionEncryptedValueAccountAuthority, Output, Scalar, Uint};
     ///
-    /// let authority = ExecutionAppAuthority::new(Pubkey::new_unique());
+    /// let authority = ExecutionEncryptedValueAccountAuthority::new(Pubkey::new_unique());
     /// let execution = FheExecution::build(authority, |builder| {
     ///     let value = builder.trivial_encrypt_u64(7, Output::transient())?;
     ///     builder.add(value, Scalar::<Uint<64>>::u64(1), Output::transient())?;
@@ -61,9 +61,9 @@ impl FheExecution {
     ///
     /// ```compile_fail
     /// use anchor_lang::prelude::Pubkey;
-    /// use zama_fhe::{FheExecution, ExecutionAppAuthority, Output, Scalar, Uint};
+    /// use zama_fhe::{FheExecution, ExecutionEncryptedValueAccountAuthority, Output, Scalar, Uint};
     ///
-    /// let authority = ExecutionAppAuthority::new(Pubkey::new_unique());
+    /// let authority = ExecutionEncryptedValueAccountAuthority::new(Pubkey::new_unique());
     /// FheExecution::build(authority, |outer| {
     ///     let borrowed = outer.trivial_encrypt_u64(7, Output::transient())?;
     ///     FheExecution::build(authority, |inner| {
@@ -75,17 +75,20 @@ impl FheExecution {
     /// })
     /// .unwrap();
     /// ```
-    pub fn build<F>(app_authority: ExecutionAppAuthority, build: F) -> Result<Self>
+    pub fn build<F>(
+        encrypted_value_account_authority: ExecutionEncryptedValueAccountAuthority,
+        build: F,
+    ) -> Result<Self>
     where
         F: for<'brand> FnOnce(&mut FheExecutionBuilder<'brand>) -> Result<()>,
     {
-        let mut builder = FheExecutionBuilder::new(app_authority);
+        let mut builder = FheExecutionBuilder::new(encrypted_value_account_authority);
         build(&mut builder)?;
         builder.finish()
     }
 
-    pub fn app_authority(&self) -> ExecutionAppAuthority {
-        self.app_authority
+    pub fn encrypted_value_account_authority(&self) -> ExecutionEncryptedValueAccountAuthority {
+        self.encrypted_value_account_authority
     }
 
     pub fn dynamic_account_requirements(
@@ -118,15 +121,12 @@ impl FheExecution {
         &self,
     ) -> impl Iterator<Item = ExecutionOutputAuthorityRequirement> + '_ {
         std::iter::once(ExecutionOutputAuthorityRequirement {
-            pubkey: self.app_authority.pubkey(),
-            cpi_account_authority: true,
+            pubkey: self.encrypted_value_account_authority.pubkey(),
         })
-        .chain(self.additional_output_authorities().map(|pubkey| {
-            ExecutionOutputAuthorityRequirement {
-                pubkey,
-                cpi_account_authority: false,
-            }
-        }))
+        .chain(
+            self.additional_output_authorities()
+                .map(|pubkey| ExecutionOutputAuthorityRequirement { pubkey }),
+        )
     }
 
     pub fn output_authorities(&self) -> impl Iterator<Item = Pubkey> + '_ {

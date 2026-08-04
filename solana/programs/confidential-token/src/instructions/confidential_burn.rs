@@ -444,7 +444,7 @@ fn execute_burn<'info>(
         }
     };
     let execution = zama_fhe::FheExecution::build(
-        zama_fhe::ExecutionAppAuthority::new(token_account_key),
+        zama_fhe::ExecutionEncryptedValueAccountAuthority::new(token_account_key),
         |builder| {
             let amount = match (&amount_source, stored_amount) {
                 // fromExternal: the amount is a coprocessor-attested external input, verified

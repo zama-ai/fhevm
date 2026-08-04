@@ -24,17 +24,18 @@ use zama_host::{
     FheExecuteOutput, FheExecuteStep, FheTernaryOpCode, FheUnaryOpCode, MAX_FHE_EXECUTION_STEPS,
 };
 
-use crate::accounts::{ExecutionAccountMeta, ExecutionAppAuthority};
+use crate::accounts::{ExecutionAccountMeta, ExecutionEncryptedValueAccountAuthority};
 use crate::acl::{BoundedU64UpperBound, Output};
 use crate::execution::FheExecution;
 use crate::lower::{lower_operand, lower_output, StepTables};
 use crate::operand::{BuilderBrand, Operand, OperandKind};
 use crate::types::{Bool, Encrypted, FheIsIn, FheRandom, FheType, FheTyped, FheUint, Scalar, Uint};
 use crate::validate::{
-    max_reduction_operands, operand_fhe_type, scalar_is_zero_for_type, validate_app_authority,
-    validate_binary_step, validate_lowered_execution, validate_rand_steps_anchor_persistent_output,
-    validate_supported_fhe_type, validate_supported_rand_type, validate_ternary_step,
-    validate_uint_fhe_type, validate_unary_step,
+    max_reduction_operands, operand_fhe_type, scalar_is_zero_for_type, validate_binary_step,
+    validate_encrypted_value_account_authority, validate_lowered_execution,
+    validate_rand_steps_anchor_persistent_output, validate_supported_fhe_type,
+    validate_supported_rand_type, validate_ternary_step, validate_uint_fhe_type,
+    validate_unary_step,
 };
 use crate::{FheExecutionBuildError, Result};
 
@@ -49,7 +50,7 @@ use crate::{FheExecutionBuildError, Result};
 #[derive(Debug)]
 pub struct FheExecutionBuilder<'brand> {
     brand: BuilderBrand<'brand>,
-    pub(crate) app_authority: ExecutionAppAuthority,
+    pub(crate) encrypted_value_account_authority: ExecutionEncryptedValueAccountAuthority,
     pub(crate) steps: Vec<FheExecuteStep>,
     pub(crate) produced_types: Vec<u8>,
     /// Persistent accounts this execution has already written. A later persistent-shaped reference
@@ -70,7 +71,7 @@ pub struct FheExecutionBuilder<'brand> {
 /// One step's view of the builder — see [`FheExecutionBuilder::commit_step`].
 struct StepLowering<'b> {
     steps_len: usize,
-    app_authority: ExecutionAppAuthority,
+    encrypted_value_account_authority: ExecutionEncryptedValueAccountAuthority,
     tables: StepTables<'b>,
     verified_inputs: &'b [CoprocessorInputAttestation],
 }
@@ -86,7 +87,11 @@ impl StepLowering<'_> {
     }
 
     fn output(&mut self, output: Output) -> Result<FheExecuteOutput> {
-        lower_output(&mut self.tables, self.app_authority, output)
+        lower_output(
+            &mut self.tables,
+            self.encrypted_value_account_authority,
+            output,
+        )
     }
 }
 
@@ -146,7 +151,7 @@ impl<'brand> FheExecutionBuilder<'brand> {
         let op_index =
             u8::try_from(self.steps.len()).map_err(|_| FheExecutionBuildError::TooManySteps)?;
         let Self {
-            app_authority,
+            encrypted_value_account_authority,
             steps,
             produced_types,
             persistent_producers,
@@ -157,7 +162,7 @@ impl<'brand> FheExecutionBuilder<'brand> {
         } = self;
         let mut lowering = StepLowering {
             steps_len: steps.len(),
-            app_authority: *app_authority,
+            encrypted_value_account_authority: *encrypted_value_account_authority,
             tables: StepTables::open(remaining_accounts, dictionary, persistent_producers),
             verified_inputs,
         };
@@ -178,10 +183,12 @@ impl<'brand> FheExecutionBuilder<'brand> {
 impl<'brand> FheExecutionBuilder<'brand> {
     /// Crate-internal: a public constructor would let two builders share one brand, which is the
     /// mixing hazard the brand exists to remove. App code gets a builder from [`FheExecution::build`].
-    pub(crate) fn new(app_authority: ExecutionAppAuthority) -> Self {
+    pub(crate) fn new(
+        encrypted_value_account_authority: ExecutionEncryptedValueAccountAuthority,
+    ) -> Self {
         Self {
             brand: std::marker::PhantomData,
-            app_authority,
+            encrypted_value_account_authority,
             steps: Vec::new(),
             produced_types: Vec::new(),
             persistent_producers: Vec::new(),
@@ -909,7 +916,7 @@ impl<'brand> FheExecutionBuilder<'brand> {
     /// (fhevm-internal#1744). Give such an execution a persistent output (the bootstrap/mint path) or a
     /// verified input if it must run under a finite cap.
     pub(crate) fn finish(self) -> Result<FheExecution> {
-        validate_app_authority(self.app_authority)?;
+        validate_encrypted_value_account_authority(self.encrypted_value_account_authority)?;
         if self.steps.is_empty() {
             return Err(FheExecutionBuildError::EmptySteps);
         }
@@ -921,7 +928,7 @@ impl<'brand> FheExecutionBuilder<'brand> {
         let account_count = u8::try_from(self.remaining_accounts.len())
             .map_err(|_| FheExecutionBuildError::TooManyRemainingAccounts)?;
         Ok(FheExecution {
-            app_authority: self.app_authority,
+            encrypted_value_account_authority: self.encrypted_value_account_authority,
             args: FheExecuteArgs {
                 account_count,
                 dictionary: self.dictionary,

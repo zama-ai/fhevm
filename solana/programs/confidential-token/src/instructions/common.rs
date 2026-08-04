@@ -225,8 +225,9 @@ fn compute_transfer_handles<'info>(
             )?)
         }
     };
-    let execution =
-        zama_fhe::FheExecution::build(zama_fhe::ExecutionAppAuthority::new(from_key), |builder| {
+    let execution = zama_fhe::FheExecution::build(
+        zama_fhe::ExecutionEncryptedValueAccountAuthority::new(from_key),
+        |builder| {
             let amount = match (amount_source, stored_amount) {
                 // fromExternal: the amount is a coprocessor-attested external input, verified in-execution
                 // and transient-allowed for this eval (no persistent amount handle / ACL account).
@@ -255,8 +256,9 @@ fn compute_transfer_handles<'info>(
             )?;
             builder.add(to_balance, transferred, to_output.output())?;
             Ok(())
-        })
-        .map_err(invalid_execution)?;
+        },
+    )
+    .map_err(invalid_execution)?;
     let compute_authority =
         fhe::ComputeAuthority::for_mint(accounts.compute_signer, mint_key, compute_signer_bump)?;
     // Persistent output accounts are the same for both arms; the existing-value arm adds the amount

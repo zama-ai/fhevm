@@ -111,7 +111,7 @@ pub(crate) fn execute_as_batch_authority<'info>(
     let bump = [eval.authority_bump];
     let authority_seeds: &[&[u8]] = &[BATCH_AUTHORITY_SEED, eval.batch.as_ref(), &bump];
     let execution = zama_fhe::FheExecution::build(
-        zama_fhe::ExecutionAppAuthority::new(eval.batch_authority.key()),
+        zama_fhe::ExecutionEncryptedValueAccountAuthority::new(eval.batch_authority.key()),
         build,
     )
     .map_err(invalid_execution)?;

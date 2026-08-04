@@ -3,7 +3,8 @@
 use zama_host::{CoprocessorInputAttestation, FheExecuteOperand, FheExecuteOutput};
 
 use crate::accounts::{
-    ExecutionAccountMeta, ExecutionAccountPurpose, ExecutionAppAuthority, MetaPromotion,
+    ExecutionAccountMeta, ExecutionAccountPurpose, ExecutionEncryptedValueAccountAuthority,
+    MetaPromotion,
 };
 use crate::acl::{Output, OutputKind};
 use crate::operand::{Operand, OperandKind};
@@ -136,7 +137,7 @@ pub(crate) fn lower_operand(
 
 pub(crate) fn lower_output(
     tables: &mut StepTables<'_>,
-    app_authority: ExecutionAppAuthority,
+    encrypted_value_account_authority: ExecutionEncryptedValueAccountAuthority,
     output: Output,
 ) -> Result<FheExecuteOutput> {
     match output.0 {
@@ -149,12 +150,16 @@ pub(crate) fn lower_output(
                     binding.encrypted_value(),
                     ExecutionAccountPurpose::PersistentOutputAcl,
                 ))?;
+            // Both sides are encrypted value account authorities; what differs is the scope. The
+            // local is the one this *output* declares, the parameter is the execution's fixed CPI
+            // signer. Equal means the output rides that signer and needs no extra account.
+            let output_authority = binding.encrypted_value_account_authority();
             let output_authority_index =
-                if binding.encrypted_value_account_authority() == app_authority.pubkey() {
+                if output_authority == encrypted_value_account_authority.pubkey() {
                     None
                 } else {
                     Some(tables.account_index(ExecutionAccountMeta::readonly_signer(
-                        binding.encrypted_value_account_authority(),
+                        output_authority,
                         ExecutionAccountPurpose::PersistentOutputAuthority,
                     ))?)
                 };

@@ -145,11 +145,13 @@ impl From<&ExecutionAccountMeta> for ExecutionAccountRequirement {
     }
 }
 
-/// App authority that signs the fixed ZamaHost fhe_execute CPI account.
+/// The encrypted value account authority that signs the fixed ZamaHost `fhe_execute` CPI account —
+/// the execution-wide one, as opposed to the per-output authority an
+/// [`ExecutionOutputAuthorityRequirement`] names.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
-pub struct ExecutionAppAuthority(Pubkey);
+pub struct ExecutionEncryptedValueAccountAuthority(Pubkey);
 
-impl ExecutionAppAuthority {
+impl ExecutionEncryptedValueAccountAuthority {
     pub fn new(pubkey: Pubkey) -> Self {
         Self(pubkey)
     }
@@ -163,7 +165,6 @@ impl ExecutionAppAuthority {
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct ExecutionOutputAuthorityRequirement {
     pub(crate) pubkey: Pubkey,
-    pub(crate) cpi_account_authority: bool,
 }
 
 impl ExecutionOutputAuthorityRequirement {
@@ -298,7 +299,6 @@ pub(crate) fn resolve_execution_accounts<'info>(
                 .ok_or(ExecutionAccountResolutionError::MissingOutputAuthority {
                     authority: ExecutionOutputAuthorityRequirement {
                         pubkey: required.pubkey(),
-                        cpi_account_authority: false,
                     },
                 })?
         } else if required.requires_dynamic_account() {

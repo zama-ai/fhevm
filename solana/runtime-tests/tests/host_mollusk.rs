@@ -4234,13 +4234,13 @@ impl EvalFixture {
     fn batch_for_authority(
         &self,
         payer: Pubkey,
-        app_authority: Pubkey,
+        encrypted_value_account_authority: Pubkey,
         output_encrypted_value_label: [u8; 32],
         meter: Option<Pubkey>,
     ) -> (Pubkey, Instruction) {
         let output_encrypted_value_id = zama_solana_acl::derive_encrypted_value_id(
-            app_authority.to_bytes(),
-            app_authority.to_bytes(),
+            encrypted_value_account_authority.to_bytes(),
+            encrypted_value_account_authority.to_bytes(),
             output_encrypted_value_label,
         );
         let (output_value, _bump) = host::encrypted_value_address(output_encrypted_value_id);
@@ -4269,10 +4269,11 @@ impl EvalFixture {
                 output: FheExecuteOutput::StoredValue {
                     output_encrypted_value_index: 2,
                     output_authority_index: None,
-                    output_domain_index: dictionary.intern_key(app_authority),
-                    output_account_index: dictionary.intern_key(app_authority),
+                    output_domain_index: dictionary.intern_key(encrypted_value_account_authority),
+                    output_account_index: dictionary.intern_key(encrypted_value_account_authority),
                     output_label_index: dictionary.intern(output_encrypted_value_label),
-                    output_subject_indexes: dictionary.intern_subjects([app_authority]),
+                    output_subject_indexes: dictionary
+                        .intern_subjects([encrypted_value_account_authority]),
                     previous_state: None,
                     make_public: false,
                 },
@@ -4283,7 +4284,7 @@ impl EvalFixture {
             host::accounts::FheExecute {
                 payer,
                 compute_subject: self.compute_subject,
-                encrypted_value_account_authority: app_authority,
+                encrypted_value_account_authority,
                 host_config: self.host_config,
                 system_program: system_program::ID,
                 hcu_block_meter: meter,

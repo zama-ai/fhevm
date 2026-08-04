@@ -32,8 +32,9 @@ use anchor_lang::InstructionData as _;
 use zama_host::MAX_FHE_EXECUTION_STEPS;
 
 use crate::{
-    Domain, Encrypted, EncryptedValueId, EncryptedValueLabel, ExecutionAppAuthority, FheExecution,
-    Output, PersistentOutput, Scalar, Uint, Uint64Handle, MAX_ON_CHAIN_EXECUTION_STEPS,
+    Domain, Encrypted, EncryptedValueId, EncryptedValueLabel,
+    ExecutionEncryptedValueAccountAuthority, FheExecution, Output, PersistentOutput, Scalar, Uint,
+    Uint64Handle, MAX_ON_CHAIN_EXECUTION_STEPS,
 };
 
 thread_local! {
@@ -126,19 +127,22 @@ fn measure(steps: usize) -> (usize, usize) {
     let subjects: Vec<Vec<Pubkey>> = (0..steps).map(|_| vec![authority]).collect();
 
     let before_build = counted_bytes();
-    let execution = FheExecution::build(ExecutionAppAuthority::new(authority), |builder| {
-        // The first step reads the persistent input; every later step chains on the previous step's
-        // transient, which is what makes this the heaviest legal execution.
-        let mut value = Encrypted::from(input);
-        for (output, subjects) in outputs.into_iter().zip(subjects) {
-            value = builder.add(
-                value,
-                Scalar::<Uint<64>>::u64(1),
-                Output::persistent(PersistentOutput::create(output, subjects)),
-            )?;
-        }
-        Ok(())
-    })
+    let execution = FheExecution::build(
+        ExecutionEncryptedValueAccountAuthority::new(authority),
+        |builder| {
+            // The first step reads the persistent input; every later step chains on the previous step's
+            // transient, which is what makes this the heaviest legal execution.
+            let mut value = Encrypted::from(input);
+            for (output, subjects) in outputs.into_iter().zip(subjects) {
+                value = builder.add(
+                    value,
+                    Scalar::<Uint<64>>::u64(1),
+                    Output::persistent(PersistentOutput::create(output, subjects)),
+                )?;
+            }
+            Ok(())
+        },
+    )
     .expect("execution builds");
     let build_bytes = counted_bytes() - before_build;
 

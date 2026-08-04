@@ -154,7 +154,7 @@ pub fn wrap_usdc<'info>(ctx: Context<'info, WrapUsdc<'info>>, amount: u64) -> Re
     let mut amount_context = [0u8; 32];
     amount_context[24..].copy_from_slice(&amount.to_be_bytes());
     let execution = zama_fhe::FheExecution::build(
-        zama_fhe::ExecutionAppAuthority::new(token_account.key()),
+        zama_fhe::ExecutionEncryptedValueAccountAuthority::new(token_account.key()),
         |builder| {
             let encrypted_amount =
                 builder.trivial_encrypt_u64(amount, zama_fhe::Output::transient())?;

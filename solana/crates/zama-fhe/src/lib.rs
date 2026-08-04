@@ -39,7 +39,7 @@ mod types;
 mod validate;
 
 pub use accounts::{
-    ExecutionAccountPurpose, ExecutionAccountRequirement, ExecutionAppAuthority,
+    ExecutionAccountPurpose, ExecutionAccountRequirement, ExecutionEncryptedValueAccountAuthority,
     ExecutionOutputAuthorityRequirement,
 };
 #[cfg(feature = "cpi")]

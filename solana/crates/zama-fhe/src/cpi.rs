@@ -71,7 +71,9 @@ fn invoke_execution_signed_with_resolver<'a, 'info, R>(
 where
     R: ExecutionAccountResolver<'info> + ?Sized,
 {
-    if accounts.encrypted_value_account_authority.key() != execution.app_authority.pubkey() {
+    if accounts.encrypted_value_account_authority.key()
+        != execution.encrypted_value_account_authority.pubkey()
+    {
         return Err(anchor_lang::error::ErrorCode::ConstraintAddress.into());
     }
     let deny_subject_records = accounts.deny_subject_records;

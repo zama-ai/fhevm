@@ -69,7 +69,7 @@ pub fn initialize_mint<'info>(ctx: Context<'info, InitializeMint<'info>>) -> Res
         fhe::PersistentAudience::compute_only(compute_signer),
     )?;
     let execution = zama_fhe::FheExecution::build(
-        zama_fhe::ExecutionAppAuthority::new(total_supply_authority),
+        zama_fhe::ExecutionEncryptedValueAccountAuthority::new(total_supply_authority),
         |builder| {
             builder.trivial_encrypt_u64(0, total_supply_output.output())?;
             Ok(())

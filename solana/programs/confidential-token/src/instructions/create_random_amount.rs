@@ -88,8 +88,9 @@ fn create_random_amount_inner<'info>(
         encrypted_value_id(mint_domain, owner, label),
         fhe::PersistentAudience::compute_only(ctx.accounts.compute_signer.key()),
     )?;
-    let execution =
-        zama_fhe::FheExecution::build(zama_fhe::ExecutionAppAuthority::new(owner), |builder| {
+    let execution = zama_fhe::FheExecution::build(
+        zama_fhe::ExecutionEncryptedValueAccountAuthority::new(owner),
+        |builder| {
             match upper_bound {
                 Some(upper_bound) => builder.rand_bounded_u64(
                     zama_fhe::BoundedU64UpperBound::from_be_bytes(upper_bound)?,
@@ -98,8 +99,9 @@ fn create_random_amount_inner<'info>(
                 None => builder.rand_u64(amount_output.output())?,
             };
             Ok(())
-        })
-        .map_err(invalid_execution)?;
+        },
+    )
+    .map_err(invalid_execution)?;
     let compute_authority = fhe::ComputeAuthority::for_mint(
         &ctx.accounts.compute_signer,
         mint_key,

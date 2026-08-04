@@ -6,7 +6,7 @@ use zama_host::{
     FheBinaryOpCode, FheExecuteOperand, FheExecuteOutput, FheExecuteStep, FheUnaryOpCode,
 };
 
-use crate::accounts::{ExecutionAccountMeta, ExecutionAppAuthority};
+use crate::accounts::{ExecutionAccountMeta, ExecutionEncryptedValueAccountAuthority};
 use crate::acl::EncryptedValueId;
 use crate::operand::{Operand, OperandKind};
 use crate::{FheExecutionBuildError, Result};
@@ -575,7 +575,9 @@ pub(crate) fn validate_encrypted_value_id(key: &EncryptedValueId) -> Result<()> 
     Ok(())
 }
 
-pub(crate) fn validate_app_authority(authority: ExecutionAppAuthority) -> Result<()> {
+pub(crate) fn validate_encrypted_value_account_authority(
+    authority: ExecutionEncryptedValueAccountAuthority,
+) -> Result<()> {
     if authority.pubkey() == Pubkey::default() {
         return Err(FheExecutionBuildError::InvalidAppAuthority);
     }

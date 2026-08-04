@@ -320,16 +320,14 @@ check_alias 'value_key identifier — renamed to encrypted_value_id' all \
 # Scope is `kms` because `app_account` has no occurrence anywhere else: under plain `all` this entry
 # could not reach the word it documents, so it passed vacuously and its exception masked nothing.
 #
-# NOT swept, and deliberately so: the SDK's `app_authority` / `ExecutionAppAuthority`
-# (`solana/crates/zama-fhe/src/{execution,builder,lower}.rs`) is the *same key* as
-# `encrypted_value_account_authority` — `lower.rs:153` compares the two directly. It is a second
-# name for one concept and it should be reconciled, but it is public SDK API across ~70 call sites
-# and renaming it is a separate decision from retiring `app_account`. Banning it here would make
-# this entry fire on correct-as-shipped code, so it is recorded as an open item instead of being
-# swept silently. The narrower `app_account_authority` spelling stays banned below.
-check_alias 'app_account — renamed to encrypted_value_account_authority' kms \
+# `app_authority` / `ExecutionAppAuthority` is banned for the same reason. It was the SDK's public
+# name for this *same key* — `lower.rs` compares an output's declared authority against it directly,
+# so the two spellings named one concept — and it is now `encrypted_value_account_authority` /
+# `ExecutionEncryptedValueAccountAuthority`. That rename touched 102 lines of public SDK surface, so
+# the guard matters: nothing else would stop the short name coming back on the next builder change.
+check_alias 'app_account / app_authority — renamed to encrypted_value_account_authority' kms \
   '' --exclude=solana_acl.rs \
-  -E '\bapp_account\b|\bapp_accounts\b|\bapp_account_authority\b|\bauthorized_app_accounts\b|\bappAccount\b'
+  -E '\bapp_account\b|\bapp_accounts\b|\bapp_account_authority\b|\bauthorized_app_accounts\b|\bappAccount\b|\bapp_authority\b|\bappAuthority\b|\bExecutionAppAuthority\b'
 # There was a `check_alias 'encrypted_value_label — renamed to label'` here, banning the long name.
 # That decision was reversed: bare "label" says only that the component is 32 bytes, which is true of
 # all three, so the long name is now the canonical one and the guard would reject correct code. The
@@ -681,7 +679,8 @@ ${label}"
 fhe_eval|fhe_eval — renamed to fhe_execute
 born-public|born-public / birth — renamed to created-public / create
 value_key|value_key identifier — renamed to encrypted_value_id
-app_account|app_account — renamed to encrypted_value_account_authority
+app_account|app_account / app_authority — renamed to encrypted_value_account_authority
+app_authority|app_account / app_authority — renamed to encrypted_value_account_authority
 namespace|SDK namespace — renamed to label
 a frame of steps|frame — a walk of steps is an execution
 one fhe_execute batch|batch — one fhe_execute invocation is an execution
