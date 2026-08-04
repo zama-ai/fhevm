@@ -73,9 +73,9 @@ pub struct EncryptedValue {
     /// App-level ACL domain, such as a confidential token mint.
     pub domain: [u8; 32],
     /// The account that controls this encrypted value: it must sign to create it, update its
-    /// handle, or replace its subject list. For a token balance this is the token account itself.
-    /// It is not the sole controller of the audience — any current subject may also add or remove
-    /// subjects through `allow_subjects` / `remove_subject`.
+    /// handle, or replace its subject list — including out-of-band `allow_subjects` /
+    /// `remove_subject` (decrypt subjects are not co-admins). For a token balance this is the
+    /// token account itself.
     pub encrypted_value_account_authority: [u8; 32],
     /// The encrypted value label: the third component of the encrypted value ID, naming which
     /// encrypted value of the authority this is.
