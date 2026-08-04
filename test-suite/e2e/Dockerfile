@@ -32,13 +32,20 @@ COPY library-solidity ./library-solidity
 COPY test-suite/e2e ./test-suite/e2e
 COPY sdk/js-sdk ./sdk/js-sdk
 
-# Install dependencies. Normal builds stay locked; rollout hotswap builds first
-# update the e2e workspace manifest in the image, then let npm resolve one
-# coherent dependency graph for that requested SDK version.
+# Install dependencies. Normal builds stay locked; rollout hotswap builds replace
+# the e2e workspace SDK, then verify what Node resolves before producing the image.
+# The uninstall is required: installing over the existing dependency leaves the
+# lockfile's version in place. RELAYER_SDK_VERSION must be an exact version, since
+# the check below compares it to what Node resolves.
 RUN if [ -n "$RELAYER_SDK_VERSION" ]; then \
-      npm pkg set -w test-suite/e2e "dependencies.@zama-fhe/relayer-sdk=${RELAYER_SDK_VERSION}" && \
-      npm install && \
-      npm prune; \
+      npm uninstall -w test-suite/e2e "@zama-fhe/relayer-sdk" && \
+      npm install -w test-suite/e2e --save-exact "@zama-fhe/relayer-sdk@${RELAYER_SDK_VERSION}" && \
+      npm prune && \
+      installed_sdk_version="$(cd test-suite/e2e && node -p "require('@zama-fhe/relayer-sdk/package.json').version")" && \
+      if [ "$installed_sdk_version" != "$RELAYER_SDK_VERSION" ]; then \
+        echo "requested @zama-fhe/relayer-sdk@${RELAYER_SDK_VERSION} but Node resolves ${installed_sdk_version}" >&2; \
+        exit 1; \
+      fi; \
     else \
       npm ci && \
       npm prune; \
