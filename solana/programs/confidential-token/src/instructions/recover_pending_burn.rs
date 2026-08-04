@@ -175,7 +175,7 @@ pub fn recover_pending_burn<'info>(ctx: Context<'info, RecoverPendingBurn<'info>
     )?;
 
     let execution = zama_fhe::FheExecution::build(
-        zama_fhe::ExecutionAppAuthority::new(token_account_key),
+        zama_fhe::ExecutionEncryptedValueAccountAuthority::new(token_account_key),
         |builder| {
             builder.add(balance, burned_amount, balance_output.output())?;
             builder.add(total_supply, burned_amount, total_supply_output.output())?;
