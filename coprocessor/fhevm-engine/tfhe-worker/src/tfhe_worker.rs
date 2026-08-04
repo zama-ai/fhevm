@@ -56,6 +56,11 @@ struct WorkItem {
     /// for rows retained from a fork sibling (`ON CONFLICT .. DO NOTHING`);
     /// such rows are loaded as recompute-only producers, never as work.
     dependence_chain_id: Option<Vec<u8>>,
+    /// `None` for a single-output op; the shared key of a multi-output group
+    /// otherwise. Rows sharing it are one operation.
+    group_id: Option<Vec<u8>>,
+    /// Position of this output within its group; 0 for a single-output op.
+    output_index: i16,
 }
 
 const OPERAND_BOUNDARY_MASK_BYTES: usize = 32;
@@ -1718,7 +1723,9 @@ SELECT
   c.transaction_id,
   c.schedule_order,
   c.operand_boundary_mask,
-  c.dependence_chain_id
+  c.dependence_chain_id,
+  c.group_id,
+  c.output_index
 FROM computations c
 WHERE c.transaction_id IN (
     SELECT DISTINCT
@@ -2000,6 +2007,19 @@ fn prepare_transaction_ops(
         .iter()
         .map(|w| (w.output_handle.as_slice(), w))
         .collect();
+    // A multi-output op is N rows sharing `group_id`, ordered by
+    // `output_index`; a singleton is its own group. Rows are indexed by group
+    // so the walk below emits one op per group rather than one per row.
+    let group_key = |w: &WorkItem| -> Vec<u8> {
+        w.group_id.clone().unwrap_or_else(|| w.output_handle.clone())
+    };
+    let mut rows_by_group: HashMap<Vec<u8>, Vec<&WorkItem>> = HashMap::new();
+    for w in txwork.iter() {
+        rows_by_group.entry(group_key(w)).or_default().push(w);
+    }
+    for rows in rows_by_group.values_mut() {
+        rows.sort_by_key(|w| w.output_index);
+    }
     let row_is_owned = |w: &WorkItem| match locked_dependence_chain_id {
         None => true,
         Some(dcid) => w.dependence_chain_id.as_deref() == Some(dcid),
@@ -2038,7 +2058,19 @@ fn prepare_transaction_ops(
     let mut earliest_owned_allowed: Option<PrimitiveDateTime> = None;
     let mut invalid_rows: Vec<(Vec<u8>, String)> = vec![];
     let mut dead_input_rows: Vec<Vec<u8>> = vec![];
+    let mut emitted_groups: HashSet<Vec<u8>> = HashSet::new();
     while let Some(w) = queue.pop_front() {
+        // One op per group: whichever member the walk reaches first builds it,
+        // and the op-level fields are read from the row carrying output_index 0.
+        let this_group = group_key(w);
+        if !emitted_groups.insert(this_group.clone()) {
+            continue;
+        }
+        let group_rows: &[&WorkItem] = rows_by_group
+            .get(&this_group)
+            .map(|v| v.as_slice())
+            .unwrap_or(std::slice::from_ref(&w));
+        let w = group_rows[0];
         let owned = row_is_owned(w);
         let fhe_op: SupportedFheOperations = match w.fhe_operation.try_into() {
             Ok(op) => op,
@@ -2131,13 +2163,17 @@ fn prepare_transaction_ops(
             continue;
         }
         ops.push(DFGOp {
-            output_handles: vec![w.output_handle.clone()],
+            output_handles: group_rows
+                .iter()
+                .map(|r| r.output_handle.clone())
+                .collect(),
             fhe_op,
             inputs,
             // Foreign rows are recompute-only producers, whatever their own
             // row says: results, persistence and completion belong to the
-            // chain that owns them.
-            is_allowed: owned && w.is_allowed,
+            // chain that owns them. An op runs if any of its outputs is
+            // allowed; per-output permissions arrive with `DFGOutput`.
+            is_allowed: owned && group_rows.iter().any(|r| r.is_allowed),
         });
         if owned && w.is_allowed {
             // Only account for owned allowed rows to avoid the reorg case
