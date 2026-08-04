@@ -710,6 +710,8 @@ pub(crate) fn proven_list_conformance_params(
         &crs.crs,
     )
     .forbid_hash_config(ZkPkeV2SupportedHashConfig::V0_4_0)
+    // TEST FIXTURE: force the mixed-consensus recovery path; do not merge.
+    .forbid_hash_config(ZkPkeV2SupportedHashConfig::V0_7_0)
     .forbid_compute_load(ZkComputeLoad::Proof)
 }
 
