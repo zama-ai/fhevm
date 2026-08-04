@@ -17,6 +17,12 @@
 # -----------------------------------------------------------------------------
 # Shared configuration across all coprocessor components
 commonConfig:
+  # Immutable selection shared by every ciphertext-producing worker.
+  # auto preserves the current compressed-first behavior with legacy fallback.
+  # Production blue-green stacks must set legacy or compressed-xof explicitly.
+  # Valid values: auto, legacy, compressed-xof.
+  serverKeyRepresentation: auto
+
   # Database connection components. Each field accepts either a literal `value` or a
   # `valueFrom` block (secretKeyRef or configMapKeyRef). Leave unset to inject nothing.
   databaseUser: {}

@@ -157,8 +157,8 @@ async fn tfhe_worker_cycle(
     )
     .await?;
 
-    let db_key_cache =
-        DbKeyCache::new(args.key_cache_size).map_err(|e| CoprocessorError::Other(e.into()))?;
+    let db_key_cache = DbKeyCache::new_from_env(args.key_cache_size)
+        .map_err(|e| CoprocessorError::Other(e.into()))?;
     let mut listener = PgListener::connect_with(&pool).await?;
     listener.listen("work_available").await?;
 
