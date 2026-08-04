@@ -372,12 +372,20 @@ export const supportsUpgradeController = (state: Pick<CompatState, "versions">) 
 export const requiresLegacyGatewayKmsGenerationAddress = (state: Pick<CompatState, "versions">) =>
   versionBeforeReleaseFamily(state.versions.env.GATEWAY_VERSION ?? "", [0, 13, 0], { unparsed: "modern" });
 
-/** Detects when contract tasks still expect the legacy internal PauserSet flag name. */
+/** Detects when contract tasks still expect the legacy internal PauserSet flag name.
+ * Host and gateway renamed the param at different releases: `task:addHostPausers` takes
+ * `useInternalProxyAddress` from v0.12.1, while `task:addGatewayPausers` only from v0.13.0. */
 const requiresLegacyHostPauserTaskFlag = (version: string) =>
-  versionBeforeReleaseFamily(version, [0, 13, 0], { unparsed: "modern" });
+  versionBeforeReleaseFamily(version, [0, 12, 1], { unparsed: "modern" });
 
 const requiresLegacyGatewayPauserTaskFlag = (version: string) =>
   versionBeforeReleaseFamily(version, [0, 13, 0], { unparsed: "modern" });
+
+/** Detects KMS cores whose bootstrap preprocessing needs a much larger wait budget.
+ * Pre-v0.13.20 cores can spend more than 20 minutes on two four-party preprocessing
+ * sessions; from v0.13.20 the standard threshold budget is enough. */
+export const requiresLegacyKmsBootstrapBudget = (coreVersion: string) =>
+  versionBeforeReleaseFamily(coreVersion, [0, 13, 20], { unparsed: "modern" });
 
 /** Detects when host address artifacts include ProtocolConfig and KMSGeneration proxy addresses. */
 export const requiresModernHostAddressArtifacts = (state: CompatState) =>

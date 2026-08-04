@@ -4,29 +4,35 @@ import path from "node:path";
 import type { RolloutRunContext } from "./commands/rollout-run";
 import { loadRolloutRunbook } from "./commands/rollout-run";
 import { resolveKmsTopology } from "./scenario/resolve";
-import { from, scenario, to } from "../rollouts/kms-core-progressive/versions";
+import { from, scenario, to } from "../rollouts/v0.13.21-to-v0.13.22-kms-node-by-node/versions";
 
-const RUNBOOK = path.resolve(import.meta.dir, "../rollouts/kms-core-progressive/run.ts");
+const RUNBOOK = path.resolve(
+  import.meta.dir,
+  "../rollouts/v0.13.21-to-v0.13.22-kms-node-by-node/run.ts",
+);
 
-describe("progressive KMS core rollout", () => {
-  test("keeps SDK and connector versions unchanged", () => {
+describe("v0.13.21 to v0.13.22 KMS node-by-node upgrade", () => {
+  // Pinning only CORE_VERSION is what keeps the surrounding stack identical across both
+  // locks; anything else here would be resolved twice and could drift between them.
+  test("pins nothing but the KMS core version", () => {
     expect(scenario).toBe("four-party-threshold-kms");
-    expect("RELAYER_SDK_VERSION" in from).toBe(false);
-    const baseline = from as Record<string, string>;
-    expect(Object.entries(to).filter(([key, value]) => baseline[key] !== value)).toEqual([
-      ["CORE_VERSION", "v0.13.20"],
+    expect(Object.keys(from)).toEqual(["CORE_VERSION"]);
+    expect(Object.entries(to).filter(([key, value]) => from[key as keyof typeof from] !== value)).toEqual([
+      ["CORE_VERSION", "v0.13.22"],
     ]);
   });
 
   test("upgrades every core and requires each upgraded node in a healthy quorum", async () => {
     const calls: string[] = [];
     const context = {
-      async writeVersionLock(name: string, options: { versions: Record<string, string> }) {
+      async resolveVersionLock(name: string, options: { versions: Record<string, string> }) {
         calls.push(`lock:${name}:${options.versions.CORE_VERSION}`);
         return `/tmp/${name}.lock.json`;
       },
-      async up(options: { lockFile: string; scenario?: string }) {
-        calls.push(`up:${options.scenario}:${options.lockFile}`);
+      async up(options: { lockFile: string; overrides?: { group: string }[]; scenario?: string }) {
+        calls.push(
+          `up:${options.scenario}:${options.lockFile}:${options.overrides?.map(({ group }) => group).join(",")}`,
+        );
       },
       async readState() {
         calls.push("state");
@@ -47,9 +53,9 @@ describe("progressive KMS core rollout", () => {
     await (await loadRolloutRunbook(RUNBOOK))(context);
 
     expect(calls).toEqual([
-      "lock:00-kms-core-baseline:v0.13.10",
-      "lock:01-kms-core-target:v0.13.20",
-      "up:four-party-threshold-kms:/tmp/00-kms-core-baseline.lock.json",
+      "lock:00-kms-core-baseline:v0.13.21",
+      "lock:01-kms-core-target:v0.13.22",
+      "up:four-party-threshold-kms:/tmp/00-kms-core-baseline.lock.json:test-suite",
       "test:rollout-standard",
       "state",
       "upgrade:1:/tmp/01-kms-core-target.lock.json",
