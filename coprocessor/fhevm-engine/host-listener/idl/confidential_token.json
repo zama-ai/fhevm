@@ -1759,19 +1759,6 @@
       ]
     },
     {
-      "name": "RandomAmountCreatedEvent",
-      "discriminator": [
-        197,
-        125,
-        32,
-        173,
-        115,
-        70,
-        150,
-        4
-      ]
-    },
-    {
       "name": "TotalSupplyHandleUpdatedEvent",
       "discriminator": [
         140,
@@ -2252,23 +2239,6 @@
               "PDA bump for `(mint, burned_handle)`."
             ],
             "type": "u8"
-          }
-        ]
-      }
-    },
-    {
-      "name": "ConfidentialAmountKind",
-      "docs": [
-        "Token-scoped amount purpose used for amount-handle creation."
-      ],
-      "type": {
-        "kind": "enum",
-        "variants": [
-          {
-            "name": "Transfer"
-          },
-          {
-            "name": "Burn"
           }
         ]
       }
@@ -3040,75 +3010,6 @@
                 ]
               }
             }
-          }
-        ]
-      }
-    },
-    {
-      "name": "RandomAmountCreatedEvent",
-      "docs": [
-        "Emitted when the token program creates a token-scoped random amount."
-      ],
-      "type": {
-        "kind": "struct",
-        "fields": [
-          {
-            "name": "version",
-            "docs": [
-              "Event schema version."
-            ],
-            "type": "u8"
-          },
-          {
-            "name": "mint",
-            "docs": [
-              "Confidential mint."
-            ],
-            "type": "pubkey"
-          },
-          {
-            "name": "owner",
-            "docs": [
-              "Token account owner."
-            ],
-            "type": "pubkey"
-          },
-          {
-            "name": "token_account",
-            "docs": [
-              "Confidential token account."
-            ],
-            "type": "pubkey"
-          },
-          {
-            "name": "amount_kind",
-            "docs": [
-              "Whether this amount is intended for transfer or burn."
-            ],
-            "type": {
-              "defined": {
-                "name": "ConfidentialAmountKind"
-              }
-            }
-          },
-          {
-            "name": "handle",
-            "docs": [
-              "Newly created amount handle."
-            ],
-            "type": {
-              "array": [
-                "u8",
-                32
-              ]
-            }
-          },
-          {
-            "name": "encrypted_value",
-            "docs": [
-              "ZamaHost ACL record initialized for the amount."
-            ],
-            "type": "pubkey"
           }
         ]
       }

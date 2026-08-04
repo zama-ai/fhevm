@@ -19,8 +19,7 @@
 //! against the pinned handle rather than the live encrypted value account handle, so their after-update,
 //! foreign-proof, live/destroyed-context, and (for redeem) deny/marker/destination behaviour is
 //! exercised directly here. The old suite's coverage of `wrap_usdc`, `confidential_burn`,
-//! `request_disclose_balance`/`request_disclose_amount`, and the `poc`-gated `create_random_amount`
-//! was not ported 1:1 for this pass: none
+//! and `request_disclose_balance`/`request_disclose_amount` was not ported 1:1 for this pass: none
 //! of that instruction logic changed shape from the ACL rewrite itself (it still reads/writes one
 //! `EncryptedValue` encrypted value account per amount the same way `confidential_transfer` does), and each needs
 //! its own multi-account Mollusk fixture that was not feasible to rebuild faithfully here. Every
@@ -4027,11 +4026,9 @@ fn mollusk_disclose_secp_rejects_cleartext_wider_than_u64() {
 // so these tests prove the block cap (ban / metering-band charge / canonical-authority pinning)
 // survives that CPI boundary — not just direct `fhe_execute` calls (see `host_mollusk.rs`).
 //
-// `create_random_amount`'s HCU tests from the same PR are NOT ported here: this file's
-// migration intentionally dropped `create_random_amount` coverage entirely (see the module doc
-// comment above — no instruction builder or fixture for it exists in this file), and building
-// one from scratch is a materially larger lift than threading the HCU accounts already present
-// on the fixtures ported here.
+// The `create_random_amount` HCU tests from the same PR are not here because the instruction no
+// longer exists: it was a demo faucet behind a `poc` feature with no caller anywhere, and it was
+// deleted along with the feature.
 // ===========================================================================
 
 /// Exact HCU cost of the combined transfer execution (`compute_transfer_handles`): `Ge` at ebool

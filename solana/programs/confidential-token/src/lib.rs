@@ -30,9 +30,6 @@ pub use constants::*;
 pub use errors::*;
 /// Re-export events and instruction argument enums for generated clients and tests.
 pub use events::*;
-/// The random-amount PoC helper account context (gated behind `poc`, see below).
-#[cfg(feature = "poc")]
-pub use instructions::CreateRandomAmount;
 use instructions::*;
 /// Re-export instruction account contexts for compatibility with existing tests.
 pub use instructions::{
@@ -61,28 +58,6 @@ pub mod confidential_token {
         initial_balance: u64,
     ) -> Result<()> {
         instructions::initialize_token_account(ctx, initial_balance)
-    }
-
-    /// Creates a token-scoped random encrypted amount. Vestigial PoC/demo helper: production
-    /// transfers and burns take a coprocessor-attested external amount (fromExternal), not a random
-    /// handle. Gated behind the `poc` feature so it never ships in the production IDL.
-    #[cfg(feature = "poc")]
-    pub fn create_random_amount<'info>(
-        ctx: Context<'info, CreateRandomAmount<'info>>,
-        amount_kind: ConfidentialAmountKind,
-    ) -> Result<()> {
-        instructions::create_random_amount(ctx, amount_kind)
-    }
-
-    /// Creates a token-scoped bounded random encrypted amount. Vestigial PoC/demo helper gated
-    /// behind the `poc` feature with `create_random_amount`.
-    #[cfg(feature = "poc")]
-    pub fn create_random_bounded_amount<'info>(
-        ctx: Context<'info, CreateRandomAmount<'info>>,
-        amount_kind: ConfidentialAmountKind,
-        upper_bound: [u8; 32],
-    ) -> Result<()> {
-        instructions::create_random_bounded_amount(ctx, amount_kind, upper_bound)
     }
 
     /// Escrows public USDC and updates the confidential balance by `amount`.

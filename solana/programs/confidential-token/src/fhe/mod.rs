@@ -223,9 +223,6 @@ impl<'info> ComputeAuthority<'info> {
 /// Signer model for a persistent output authority required by an execution.
 #[derive(Clone)]
 pub(crate) enum OutputAuthoritySigner {
-    // Only constructed by the `poc`-gated create_random_amount helpers.
-    #[cfg_attr(not(feature = "poc"), allow(dead_code))]
-    Transaction,
     TokenAccount {
         mint: Pubkey,
         owner: Pubkey,
@@ -238,11 +235,6 @@ pub(crate) enum OutputAuthoritySigner {
 }
 
 impl OutputAuthoritySigner {
-    #[cfg_attr(not(feature = "poc"), allow(dead_code))]
-    pub(crate) fn transaction_signer() -> Self {
-        Self::Transaction
-    }
-
     pub(crate) fn token_account(account: &Account<'_, ConfidentialTokenAccount>) -> Self {
         Self::TokenAccount {
             mint: account.mint,
@@ -257,7 +249,6 @@ impl OutputAuthoritySigner {
 
     fn seed_bytes(&self) -> Vec<Vec<u8>> {
         match self {
-            Self::Transaction => Vec::new(),
             Self::TokenAccount { mint, owner, bump } => vec![
                 b"token-account".to_vec(),
                 mint.to_bytes().to_vec(),
@@ -281,14 +272,6 @@ pub(crate) struct OutputAuthority<'info> {
 }
 
 impl<'info> OutputAuthority<'info> {
-    #[cfg_attr(not(feature = "poc"), allow(dead_code))]
-    pub(crate) fn transaction_signer(account: &Signer<'info>) -> Self {
-        Self {
-            account: account.to_account_info(),
-            signer: Box::new(OutputAuthoritySigner::transaction_signer()),
-        }
-    }
-
     pub(crate) fn token_account(
         account: &Account<'info, ConfidentialTokenAccount>,
     ) -> Result<Self> {
@@ -654,10 +637,14 @@ mod tests {
         AccountInfo::new(key, false, is_writable, lamports, data, owner, false)
     }
 
+    // The signer model is irrelevant to these tests — they resolve authorities by address, and the
+    // seeds are only used when actually signing a CPI, which a host unit test never does. Any real
+    // variant serves; `Transaction` used to be chosen because it carried no seeds, and it existed
+    // only for that.
     fn output_authority(pubkey: Pubkey) -> OutputAuthority<'static> {
         OutputAuthority {
             account: account_info(pubkey, false),
-            signer: Box::new(OutputAuthoritySigner::transaction_signer()),
+            signer: Box::new(OutputAuthoritySigner::total_supply(Pubkey::new_unique(), 0)),
         }
     }
 

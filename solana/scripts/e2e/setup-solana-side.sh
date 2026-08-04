@@ -146,11 +146,14 @@ solana airdrop 500 -u "$VALIDATOR_RPC" -k "$DEPLOYER_KEYPAIR" >/dev/null 2>&1 ||
 # instruction data. anchor build gives per-crate feature control (cargo build-sbf builds the whole
 # workspace, so it can't disable defaults for just one crate). The other programs keep defaults.
 echo "    building reconstruction-first zama_host (--no-default-features) + default-feature deps"
-# confidential_token is built with `--features poc`: the e2e drives the create_random_amount
-# demo helper, which is gated out of production builds.
+# confidential_token is built separately so it keeps its defaults while zama_host drops its own.
+# It used to be built with `--features poc` for the create_random_amount demo helper, which no
+# caller had: the burn path takes a coprocessor-attested external amount (see consume_burn in the
+# live client), so the helper and its feature are gone. The build itself has to stay — this is the
+# only thing that produces target/deploy/confidential_token.so for the deploy loop below.
 ( cd "$SOLANA" \
     && anchor build --ignore-keys --no-idl -p zama_host -- --no-default-features \
-    && anchor build --ignore-keys --no-idl -p confidential_token -- --features poc ) \
+    && anchor build --ignore-keys --no-idl -p confidential_token ) \
   || { echo "[setup] reconstruction-first anchor build failed" >&2; exit 1; }
 # --use-rpc: deploy over RPC (8899) since the container doesn't publish the TPU ports.
 for p in zama_host confidential_token; do

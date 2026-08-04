@@ -87,11 +87,6 @@ pub fn encrypted_wrap_amount_label() -> [u8; 32] {
     *b"wrap_amount_____________________"
 }
 
-/// Fixed encrypted value label for externally verified burn amounts.
-pub fn encrypted_burn_amount_label() -> [u8; 32] {
-    *b"burn_amount_____________________"
-}
-
 /// Fixed encrypted value label for externally verified transfer amounts.
 pub fn encrypted_transfer_amount_label() -> [u8; 32] {
     *b"transfer_amount_________________"

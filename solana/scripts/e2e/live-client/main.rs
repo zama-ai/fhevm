@@ -1494,9 +1494,10 @@ fn initialize_token_account_if_missing(
 
 /// Burns an encrypted amount from the confidential balance (confidential_burn): the heaviest
 /// FHE instruction — ge + sub + select + sub + sub across five zama-host CPIs. Reads the current
-/// balance/total-supply ACLs and next nonce sequences live from chain, mints an owner-scoped
-/// random burn amount (create_random_amount Burn kind), then burns it. Produces the burned-amount
-/// handle (and ACL) the redeem path publicly decrypts and releases against the vault. MINT via env.
+/// balance/total-supply ACLs and next nonce sequences live from chain, takes a coprocessor-attested
+/// burn amount (fromExternal, via the relayer input-proof), then burns it. Produces the
+/// burned-amount handle (and ACL) the redeem path publicly decrypts and releases against the vault.
+/// MINT via env.
 fn consume_burn(
     token: &Program<Rc<Keypair>>,
     payer: &Rc<Keypair>,
@@ -1519,8 +1520,8 @@ fn consume_burn(
 
     // 1. fromExternal burn amount: a coprocessor-attested external input (BIND_* env from the
     // relayer input-proof), bound to (user = owner, contract = compute_signer PDA). confidential_burn
-    // re-verifies the EIP-712 attestation in-execution and transient-allows it for the burn eval — no
-    // persistent amount ACL, no create_random_amount. The attested handle must be a euint64.
+    // re-verifies the EIP-712 attestation in-execution and transient-allows it for the burn eval —
+    // no persistent amount ACL. The attested handle must be a euint64.
     let input_handle: [u8; 32] = hexdec(&std::env::var("BIND_HANDLE")?)
         .try_into()
         .expect("BIND_HANDLE must be 32 bytes");

@@ -19,11 +19,11 @@ python3 scripts/check_solana_abi.py --root "$ROOT"
 # hand-decoded host instruction catalog partitioned against the vendored IDL.
 python3 scripts/check_proof_store_idl.py --repo-root "$ROOT/.."
 
-# Runtime Mollusk tests load ignored SBF artifacts from target/deploy. Keep the
-# production IDL/ABI check above on the default feature set, then rebuild the
-# confidential-token artifact with its PoC-only receiver helpers enabled. The
-# host intentionally has no PoC feature or alternate verification path.
-NO_DNA=1 anchor build --ignore-keys --no-idl -p confidential_token -- --features poc
+# Runtime Mollusk tests load ignored SBF artifacts from target/deploy, and the build above already
+# produced them on the default feature set. There used to be a second `anchor build -p
+# confidential_token -- --features poc` here to overwrite that artifact with a PoC-enabled one; the
+# `poc` feature is gone, so Mollusk now runs against the same artifact that ships. Neither program
+# has an alternate verification path.
 
 # Event-version constants are runtime u8s stamped on protocol events. The ABI
 # golden manifest (check_solana_abi.py above) pins both programs' versions from

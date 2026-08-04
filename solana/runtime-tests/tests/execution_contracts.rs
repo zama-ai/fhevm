@@ -315,48 +315,56 @@ fn token_redeem_consumes_stateless_verifier_with_value_account_and_deny_binding(
 }
 
 #[test]
-fn host_poc_shims_are_absent_while_token_demo_helpers_remain_gated() {
-    assert!(
-        !HOST_CARGO
-            .lines()
-            .any(|line| line.trim_start().starts_with("poc =")),
-        "zama-host must not expose a `poc` feature"
-    );
-    assert!(
-        TOKEN_CARGO.contains("poc"),
-        "confidential-token Cargo.toml must define a `poc` feature for receiver test paths"
-    );
-
+fn no_program_ships_non_production_shims_or_a_poc_feature() {
+    // Neither program declares a `poc` feature. The host never had one; the token program's is gone
+    // with the demo faucet it gated, and a default-off feature is the one kind of dead code no lint
+    // or test in a normal build can see — nothing behind it ever compiles — so the feature not coming
+    // back is itself the thing worth asserting.
+    for (program, cargo) in [
+        ("zama-host", HOST_CARGO),
+        ("confidential-token", TOKEN_CARGO),
+    ] {
+        assert!(
+            !cargo
+                .lines()
+                .any(|line| line.trim_start().starts_with("poc =")),
+            "{program} must not expose a `poc` feature"
+        );
+    }
     for symbol in ["set_test_shims_enabled", "set_mock_input_enabled"] {
         assert!(
             !HOST_LIB.contains(symbol),
             "removed host shim `{symbol}` must be absent"
         );
     }
-    assert!(
-        cfg_gated_symbol(TOKEN_LIB, "test_receiver_return_callback")
-            || cfg_gated_symbol(TOKEN_LIB, "TestReceiverReturnCallback"),
-        "`test_receiver_return_callback` must be gated out of production/default token builds"
-    );
-    for symbol in ["create_random_amount", "create_random_bounded_amount"] {
+    // These were the token program's non-production helpers: `create_random_amount` /
+    // `create_random_bounded_amount` a demo faucet behind a `poc` feature, and
+    // `test_receiver_return_callback` a receiver shim. All are deleted, so the assertion is absence
+    // rather than "gated out of default builds". Absence is the stronger property, and the previous
+    // form had stopped proving anything about the receiver shim: it asked whether the symbol was
+    // cfg-gated, and the helper answering that question returns true for a symbol that is not there
+    // at all — which by then was the case.
+    for symbol in [
+        "create_random_amount",
+        "create_random_bounded_amount",
+        "test_receiver_return_callback",
+    ] {
         assert!(
-            cfg_gated_symbol(TOKEN_LIB, symbol) || cfg_gated_symbol(TOKEN_LIB, &camelish(symbol)),
-            "`{symbol}` must be gated out of production/default token builds"
+            !TOKEN_LIB.contains(symbol),
+            "removed token helper `{symbol}` must be absent"
         );
     }
 
     let token_idl = parse_idl(TOKEN_IDL);
     let token_instructions = names(&token_idl, "instructions");
-    assert!(
-        !token_instructions
-            .iter()
-            .any(|name| name == "test_receiver_return_callback"),
-        "production token IDL must not expose test_receiver_return_callback"
-    );
-    for removed in ["create_random_amount", "create_random_bounded_amount"] {
+    for removed in [
+        "create_random_amount",
+        "create_random_bounded_amount",
+        "test_receiver_return_callback",
+    ] {
         assert!(
             !token_instructions.iter().any(|name| name == removed),
-            "production token IDL must not expose `poc`-gated demo helper `{removed}`"
+            "production token IDL must not expose removed helper `{removed}`"
         );
     }
 
@@ -529,28 +537,4 @@ fn type_field_names(idl: &Value, type_name: &str) -> Vec<String> {
         .filter_map(|field| field.get("name").and_then(Value::as_str))
         .map(ToOwned::to_owned)
         .collect()
-}
-
-fn cfg_gated_symbol(source: &str, symbol: &str) -> bool {
-    let Some(index) = source.find(symbol) else {
-        return true;
-    };
-    let prefix_start = index.saturating_sub(256);
-    let prefix = &source[prefix_start..index];
-    prefix.contains("cfg(feature = \"poc\")")
-        || prefix.contains("cfg_attr(feature = \"poc\"")
-        || prefix.contains("feature = \"poc\"")
-}
-
-fn camelish(symbol: &str) -> String {
-    symbol
-        .split('_')
-        .map(|part| {
-            let mut chars = part.chars();
-            match chars.next() {
-                Some(first) => first.to_uppercase().collect::<String>() + chars.as_str(),
-                None => String::new(),
-            }
-        })
-        .collect::<String>()
 }

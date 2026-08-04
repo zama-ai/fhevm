@@ -1434,6 +1434,45 @@ fn rand_rejects_address_type_like_host() {
     assert_eq!(error, FheExecutionBuildError::UnsupportedFheType);
 }
 
+/// `rand_bounded_u64` is the builder's only typed constructor for `FheExecuteStep::RandBounded`, an
+/// operator the host still executes (`operator_conformance.rs` covers evaluation, but it hand-builds
+/// the step rather than going through the builder). Its one in-repo caller used to be the token
+/// program's PoC `create_random_bounded_amount` helper; when that went, this became untested SBF-facing
+/// API — so the step it lowers, and the upper-bound rejection it inherits from the host, are pinned here.
+#[test]
+fn lowers_bounded_rand_step_and_rejects_non_power_of_two_bounds() {
+    let primary_authority = Pubkey::new_unique();
+    let mut builder =
+        FheExecutionBuilder::new(encrypted_value_account_authority(primary_authority));
+    builder
+        .rand_bounded_u64(
+            BoundedU64UpperBound::power_of_two(1 << 20).unwrap(),
+            // Bounded randomness inherits `RandRequiresPersistentOutput`: a transient output would
+            // leave a block-entropy-derived handle with no ACL record to bind it to.
+            Output::persistent(PersistentOutput::create(
+                encrypted_value_id(primary_authority, 7),
+                subjects(primary_authority),
+            )),
+        )
+        .unwrap();
+    let execution = builder.finish().unwrap();
+    let mut expected_bound = [0u8; 32];
+    expected_bound[24..].copy_from_slice(&(1u64 << 20).to_be_bytes());
+    assert!(matches!(
+        execution.args.steps[0],
+        FheExecuteStep::RandBounded {
+            upper_bound,
+            fhe_type,
+            ..
+        } if upper_bound == expected_bound && fhe_type == FheType::UINT64.byte()
+    ));
+
+    assert_eq!(
+        BoundedU64UpperBound::power_of_two(3).unwrap_err(),
+        FheExecutionBuildError::InvalidRandomUpperBound
+    );
+}
+
 #[test]
 fn finish_rejects_empty_steps() {
     let primary_authority = Pubkey::new_unique();
