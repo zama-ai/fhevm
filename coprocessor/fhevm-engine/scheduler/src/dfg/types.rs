@@ -84,6 +84,7 @@ pub enum SchedulerError {
     ReRandomisationError,
     SchedulerError,
     ExecutionPanic(String),
+    MultiOutputFailure(String),
 }
 
 impl std::error::Error for SchedulerError {}
@@ -115,6 +116,7 @@ impl std::fmt::Display for SchedulerError {
             Self::ExecutionPanic(s) => {
                 write!(f, "Panic during execution of operation: {}", s)
             }
+            Self::MultiOutputFailure(s) => write!(f, "{}", s),
         }
     }
 }

@@ -338,7 +338,7 @@ mod operand_boundary_mask_tests {
         let prepared = prepare_transaction_ops(&txwork, dcid.map(|d| vec![d]).as_deref(), &dead)
             .expect("prepared");
         assert_eq!(prepared.ops.len(), 1, "independent op still executes");
-        assert_eq!(prepared.ops[0].output_handle, handle(4));
+        assert_eq!(prepared.ops[0].output_handles, vec![handle(4)]);
         assert_eq!(prepared.invalid_rows.len(), 1);
         assert_eq!(prepared.invalid_rows[0].0, handle(3));
         assert!(prepared.invalid_rows[0].1.contains("dead boundary input"));
@@ -409,7 +409,7 @@ mod operand_boundary_mask_tests {
         let consumer = prepared
             .ops
             .iter()
-            .find(|op| op.output_handle == handle(2))
+            .find(|op| op.output_handles == vec![handle(2)])
             .expect("consumer op");
         // handle(1) is produced by this transaction -> local; handle(9) is
         // not -> canonical persisted form.
@@ -489,7 +489,7 @@ mod operand_boundary_mask_tests {
             prepare_transaction_ops(&txwork, dcid.map(|d| vec![d]).as_deref(), &HashSet::new())
                 .expect("prepared");
         assert_eq!(prepared.ops.len(), 1);
-        assert_eq!(prepared.ops[0].output_handle, handle(4));
+        assert_eq!(prepared.ops[0].output_handles, vec![handle(4)]);
         let mut errored: Vec<Vec<u8>> = prepared
             .invalid_rows
             .iter()
@@ -581,7 +581,7 @@ mod operand_boundary_mask_tests {
         let foreign = prepared
             .ops
             .iter()
-            .find(|op| op.output_handle == handle(1))
+            .find(|op| op.output_handles == vec![handle(1)])
             .expect("foreign producer joined the graph");
         // Recompute-only: never eligible for results or persistence, even
         // though its own row is allowed.
@@ -590,7 +590,7 @@ mod operand_boundary_mask_tests {
         let ours_op = prepared
             .ops
             .iter()
-            .find(|op| op.output_handle == handle(2))
+            .find(|op| op.output_handles == vec![handle(2)])
             .expect("owned consumer");
         assert!(ours_op.is_allowed);
         assert_eq!(input_kinds(ours_op), ["local", "boundary"]);
@@ -626,7 +626,7 @@ mod operand_boundary_mask_tests {
             prepare_transaction_ops(&txwork, Some(std::slice::from_ref(&ours)), &HashSet::new())
                 .expect("prepared");
         assert_eq!(prepared.ops.len(), 1);
-        assert_eq!(prepared.ops[0].output_handle, handle(2));
+        assert_eq!(prepared.ops[0].output_handles, vec![handle(2)]);
     }
 
     async fn seed_computation(
@@ -3836,7 +3836,7 @@ fn prepare_transaction_ops(
             continue;
         }
         ops.push(DFGOp {
-            output_handle: w.output_handle.clone(),
+            output_handles: vec![w.output_handle.clone()],
             fhe_op,
             inputs,
             // Foreign rows are recompute-only producers, whatever their own
@@ -3903,14 +3903,16 @@ fn prepare_transaction_ops(
                 // Ownership derived from the row itself, so no parallel
                 // bookkeeping can drift out of alignment with `ops`.
                 let owned = rows_by_handle
-                    .get(op.output_handle.as_slice())
+                    .get(op.output_handles[0].as_slice())
                     .is_some_and(|row| row_is_owned(row));
-                uncomputable.insert(op.output_handle.clone());
+                uncomputable.extend(op.output_handles.iter().cloned());
                 if owned {
-                    invalid_rows.push((
-                        op.output_handle,
-                        "transaction-local producer is terminally errored".to_string(),
-                    ));
+                    for handle in op.output_handles {
+                        invalid_rows.push((
+                            handle,
+                            "transaction-local producer is terminally errored".to_string(),
+                        ));
+                    }
                 }
                 progressed = true;
             } else {
@@ -4401,6 +4403,15 @@ fn is_terminal_verdict(error: Option<&CoprocessorError>) -> bool {
             | SchedulerError::DataflowGraphError
             | SchedulerError::ReRandomisationError
             | SchedulerError::SchedulerError => false,
+            // Mixed class, so it takes the reversible arm. `validate_results`
+            // raises it for a declared-shape or declared-type mismatch, which
+            // IS a pure function of on-chain data; but `fan_out_error` also
+            // flattens a non-SchedulerError into it, because `FhevmError` is
+            // not Clone and every row of a group must carry the same verdict.
+            // A flattened device fault must not condemn the cone, and a
+            // genuinely deterministic mismatch still reaches terminal through
+            // the retry budget.
+            SchedulerError::MultiOutputFailure(_) => false,
         },
         Some(CoprocessorError::FhevmError(fhevm_error)) => match fhevm_error {
             // Type-check, opcode and scalar-shape rules. Every one is decided
