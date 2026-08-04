@@ -38,6 +38,18 @@ It does **not** answer this stronger question:
 
 For that, targeted runtime QA is still needed.
 
+## Two things consume the compat layer
+
+`compat-smoke` probes one surface: the versions the **resolved bundle** names, i.e. `latest-supported`. There is a second surface it does not see.
+
+A scenario instance with `source.mode: registry` runs the tag it names, not what the bundle resolved. Blue-green does this deliberately: its BCS fleet pins the **previous release** while the bundle describes HEAD. So shims for that fleet are evaluated against `bcs.source.tag` (`compatArgPolicyForPinnedTag`), not against `versions.env`.
+
+Consequences when adding a shim:
+
+- A shim whose floor sits **above** the pinned BCS tag now fires for the BCS fleet too. Check what it does to a previous-release binary, not just to `latest-supported`.
+- `compat-smoke` will not catch a mistake there — it does not render the blue-green scenarios. `render-compose.test.ts` covers the rendering; a real BCS/GCS boot only happens in the blue-green e2e job.
+- A shim that rewrites where data is *stored* (bucket, path, prefix) is not just a startup concern: the two fleets share one operator identity and one bucket, so both must agree on the layout, or the older fleet's artifacts become unreadable to the newer one.
+
 ## What to do when compatibility breaks
 
 When a supported old target breaks, there are only three valid responses:

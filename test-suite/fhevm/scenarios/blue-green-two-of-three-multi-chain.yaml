@@ -25,7 +25,7 @@ hostChains:
 bcs:
   source:
     mode: registry
-    tag: v0.14.0-4
+    tag: v0.14.0-7
 
 gcs:
   source:
