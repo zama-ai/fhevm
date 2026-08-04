@@ -102,7 +102,7 @@ A semantic key that resolves to **no leaf** is classified against chain: while t
 `leaf_count` is still behind the live on-chain `leaf_count`, the miss is a retryable `503`
 `status: "lagging"` (ingest has not caught up to a just-sealed leaf); once the snapshot is at
 parity with chain, the miss is terminal — `404` with `status: "leaf_not_found"` (same proof
-envelope, carrying the chain-context fields, `mmr_proof: null`). A encrypted value account with no on-chain
+envelope, carrying the chain-context fields, `mmr_proof: null`). An encrypted value account with no on-chain
 account at all is `404` `code: encrypted_value_account_not_found` (`ErrorResponse`).
 
 Other client/server failures use the same

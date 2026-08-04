@@ -35,14 +35,14 @@
 //   9. the batch reaches its minimum dispatch age (openedSlot + minBatchAgeSlots) [slot wait].
 //  10. dispatch: the keeper dispatches the aged batch                    [live, SDK, wired below].
 //  11. on-chain assertions: batch status Dispatched and a nonzero created-public burned total handle.
-//  12. the proof-service serves a verified public-decrypt proof for the burned value account — i.e. the
+//  12. the proof-service serves a verified public-decrypt proof for the burned encrypted value account — i.e. the
 //      SNS commit landed. Waited on explicitly here because `settleBatch` itself treats a
 //      not-yet-committed leaf (404) as terminal.
 //  13. settleBatch: MMR proof + KMS burn certificate + on-chain settle, keeper-signed [live, SDK].
 //  14. on-chain assertions: batch status Settled, certified totalJoined equals the joined amount
 //      (a single-join batch's total is public by construction), payoutReceived recorded.
 //  15. claim: alice pulls her payout from the settled batch              [live, SDK, wired below].
-//  16. on-chain assertions: the join record's claimed flag is set, and the claim-amount value account
+//  16. on-chain assertions: the join record's claimed flag is set, and the claim-amount encrypted value account
 //      account exists with a nonzero current handle (the claim eval's created output). The payout
 //      VALUE is encrypted on-chain by design; reading it is the decrypt phase's job.
 //  17. decryptPosition: alice user-decrypts her claimed amount; the cleartext equals the batch's
@@ -380,7 +380,7 @@ describe.skipIf(!runsDemoScenarios)("solana deposit-arc scenario", () => {
         console.log("deposit-arc join: submitting input proof to the relayer...");
         const inputProofResult = await encryptClient.submitInputProof({ inputProof });
 
-        // Step 7: join. joinBatch simulates, sends, and confirms; it derives every value account and
+        // Step 7: join. joinBatch simulates, sends, and confirms; it derives every encrypted value account and
         // authority account internally from the semantic roots passed here — nothing comes from an
         // address dump. Alice pays her own join rent.
         console.log(`deposit-arc join: calling joinBatch on batch ${batchBeforeJoin.index} (${batch})...`);
@@ -444,7 +444,7 @@ describe.skipIf(!runsDemoScenarios)("solana deposit-arc scenario", () => {
 
       // Step 10: dispatch. Permissionless on-chain; the demo has the keeper play it (and pay the
       // burn's output ACL rent). The SDK builder derives every validated account — authorities,
-      // value accounts, event authorities — from these five roots (its unit test pins each derivation
+      // encrypted value accounts, event authorities — from these five roots (its unit test pins each derivation
       // against dispatch.rs), so nothing comes from an address dump.
       console.log(`deposit-arc dispatch: keeper dispatching batch ${batchBeforeJoin.index} (${batch})...`);
       await send(
@@ -477,7 +477,7 @@ describe.skipIf(!runsDemoScenarios)("solana deposit-arc scenario", () => {
       );
       expect(batchAfterDispatch.addresses.batch).toBe(batch);
 
-      // Step 12: wait for the burned value account's public-decrypt proof to become servable — i.e. for
+      // Step 12: wait for the burned encrypted value account's public-decrypt proof to become servable — i.e. for
       // the SNS commit of the burn to land in the proof-service's store. settleBatch itself retries
       // only `lagging` (503) and treats a not-yet-committed leaf (404 leaf_not_found) as terminal,
       // so the readiness wait happens HERE, with a cheap probe of the same endpoint settleBatch
@@ -550,12 +550,12 @@ describe.skipIf(!runsDemoScenarios)("solana deposit-arc scenario", () => {
 
       // Step 15: claim. On-chain claims are permissionless pulls per join record (the payout can
       // only land in the record's user), but the demo has alice play her own: she signs, pays the
-      // claim value account + transfer output rent, and receives the cShares in the account initialized
+      // claim encrypted value account + transfer output rent, and receives the cShares in the account initialized
       // back in step 2. One MulDiv eval computes her exact proportional payout
       // (encrypted(joined) x payoutReceived / totalJoined) and a confidential transfer moves it
       // from the batch's payout account to hers. The SDK builder derives every validated account
       // from these six roots (its unit test pins each derivation against claim.rs), same as
-      // dispatch. The claim value account is still derived here for the decrypt phase: its value key names
+      // dispatch. The claim encrypted value account is still derived here for the decrypt phase: its value key names
       // the handle alice decrypts in step 17.
       const payoutMint = config.mints.payoutConfidential;
       const claimValueAccount = await vault.claimAmountValueAccount(batch, batchAuthority, alice.address);
@@ -576,11 +576,11 @@ describe.skipIf(!runsDemoScenarios)("solana deposit-arc scenario", () => {
       );
 
       // Step 16: on-chain assertions for the claim phase. The join record's claimed flag is the
-      // program's own "this claim executed" marker, and the claim-amount value account is the account the
+      // program's own "this claim executed" marker, and the claim-amount encrypted value account is the account the
       // claim eval created for alice's payout handle. The payout VALUE is encrypted on-chain by
       // design, so existence + the flag are the honest cheap checks here; reading the value is the
       // decrypt phase's job.
-      console.log("deposit-arc claim: asserting claimed flag + claim value account on-chain...");
+      console.log("deposit-arc claim: asserting claimed flag + claim encrypted value account on-chain...");
       // `send` confirmed at `confirmed`; read the record at the same commitment (the RPC default
       // `finalized` lags ~31 slots and would race the fresh claim).
       const joinRecordAfterClaim = await vault.getJoinRecord(
@@ -597,10 +597,10 @@ describe.skipIf(!runsDemoScenarios)("solana deposit-arc scenario", () => {
           const state = await vault.getEncryptedValueState(rpc, claimValueAccount.encryptedValueAddress);
           return state.currentHandle.some((byte) => byte !== 0) ? state : false;
         },
-        { description: "claim-amount value account exists with a nonzero current handle", timeoutMs: 60_000 },
+        { description: "claim-amount encrypted value account exists with a nonzero current handle", timeoutMs: 60_000 },
       );
 
-      // Step 17: decrypt. claim.rs grants `owner(alice)` on the claim-amount value account — "the user
+      // Step 17: decrypt. claim.rs grants `owner(alice)` on the claim-amount encrypted value account — "the user
       // decrypts their claimed amount" — so alice user-decrypts her fresh claim handle through the
       // SDK's KMS path (`decryptPosition`): an ed25519-signed request to the relayer, signcrypted
       // KMS shares back, de-signcrypted in the SDK against a per-request transport key. The TKMS
@@ -616,9 +616,9 @@ describe.skipIf(!runsDemoScenarios)("solana deposit-arc scenario", () => {
         aliceDecryptSigner as never,
         {
           handles: [`0x${Buffer.from(claimValueState.currentHandle).toString("hex")}` as `0x${string}`],
-          // Batcher value accounts live in the BATCH's ACL domain (their PDA seeds hang off the batch
+          // Batcher encrypted value accounts live in the BATCH's ACL domain (their PDA seeds hang off the batch
           // address), so the allowed domain key here is the batch — not the chain default (the
-          // join mint's domain, which serves the token-account value accounts).
+          // join mint's domain, which serves the token-account encrypted value accounts).
           allowedAclDomainKeys: [asBytes32Hex(batch) as Bytes32Hex],
           contextId: asBytes32BigEndian(config.userDecryptContextId),
           aclValueKey: claimValueAccount.aclValueKey,

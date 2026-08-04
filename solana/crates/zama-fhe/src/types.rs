@@ -277,7 +277,7 @@ pub struct Encrypted<'brand, T> {
     brand: BuilderBrand<'brand>,
 }
 
-/// A persistent value as an operand: its handle plus the value account holding it.
+/// A persistent value as an operand: its handle plus the encrypted value account holding it.
 ///
 /// Brand-free on purpose. A stored value belongs to no builder, so app code can read one out of
 /// account state — with its own error handling — before it opens an execution, and then feed it to

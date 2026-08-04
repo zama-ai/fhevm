@@ -18,8 +18,8 @@ import {
 /**
  * Semantic roots for the batcher `claim` instruction. Every other account the on-chain handler
  * validates (`claim.rs`) — the batch authority, the join record, the pending-join and claim-amount
- * value accounts, the payout mint's compute signer, both payout token accounts with their balance /
- * transferred-amount value accounts, and both event authorities — is derived internally from these, so
+ * encrypted value accounts, the payout mint's compute signer, both payout token accounts with their balance /
+ * transferred-amount encrypted value accounts, and both event authorities — is derived internally from these, so
  * callers never hand-build the account map.
  *
  * `user` is not a signer: claim is a permissionless pull, and the payout can only land in the
@@ -28,7 +28,7 @@ import {
  * assign a nonzero balance.
  */
 export type SolanaVaultClaimParameters = {
-  /** Pays the rent for the claim-amount value account and the transfer output. Anyone — claim is a permissionless pull. */
+  /** Pays the rent for the claim-amount encrypted value account and the transfer output. Anyone — claim is a permissionless pull. */
   readonly payer: TransactionSigner;
   /** The user being claimed for (pins the join record). Not a signer. */
   readonly user: Address;

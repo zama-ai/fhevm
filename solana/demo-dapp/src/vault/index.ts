@@ -95,7 +95,7 @@ export {
 } from './internal/batcherPdas.js';
 // The mint's compute-signer PDA — the contract identity an input proof binds to. Exported so demo
 // consumers derive it from the mint root instead of restating the `fhe-compute` seed; the other
-// confidential-token value-account derivations stay internal because every action derives them itself.
+// confidential-token encrypted-value-account derivations stay internal because every action derives them itself.
 export { computeSignerAddress } from './internal/tokenValueAccount.js';
 export { confidentialBalanceValueAccount } from './internal/tokenValueAccount.js';
 export {

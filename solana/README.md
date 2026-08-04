@@ -28,7 +28,7 @@ flowchart LR
     PROOF[proof service] -.->|reads confirmed blocks| HOST
     CLIENT[client / js-sdk] --> RELAYER[relayer] --> GATEWAY[gateway contracts]
     GATEWAY --> CONNECTOR[KMS connectors, one per party]
-    CONNECTOR -.->|reads value accounts| HOST
+    CONNECTOR -.->|reads encrypted value accounts| HOST
     CONNECTOR --> KMS[KMS core]
 ```
 
@@ -43,7 +43,7 @@ Each component owns exactly one kind of trust decision:
 | Coprocessor listener + workers | `coprocessor/fhevm-engine` | Nothing. It reconstructs batches from transaction bytes and schedules FHE compute eagerly; a wrong fork wastes compute but cannot release plaintext (INVARIANTS #31). |
 | Proof service | `solana-proof-service/` | Nothing. It serves MMR inclusion proofs; every proof is re-verified against live on-chain peaks by its consumers (INVARIANTS #30). |
 | Gateway + relayer | `gateway-contracts/`, `relayer/` | Routing, fees, and request-shape conformance only. User requests are signed; neither can alter who asks or for what (INVARIANTS #42). |
-| KMS connector | `kms-connector/` | Decrypt authorization. Each KMS party's connector independently re-verifies the user's ed25519 signature and reads the value account from the host chain, using the same compiled `zama_solana_acl` code the program runs (INVARIANTS #42, #45). |
+| KMS connector | `kms-connector/` | Decrypt authorization. Each KMS party's connector independently re-verifies the user's ed25519 signature and reads the encrypted value account from the host chain, using the same compiled `zama_solana_acl` code the program runs (INVARIANTS #42, #45). |
 | KMS core | `zama-ai/kms` repo | Chain-blind threshold decryption; binds each response to the requester's typed pubkey and encryption key. |
 
 The division worth remembering: the host program is the authorization
@@ -57,10 +57,10 @@ trusted for authorization.
   event-free (DD-033): the listener re-derives every output handle from raw
   transaction bytes with the program's own derivation functions, so replay
   from bytes alone reconstructs full history (INVARIANTS #28, #29).
-- **Account-based ACL.** One canonical PDA value account per encrypted value
+- **Account-based ACL.** One canonical PDA encrypted value account per encrypted value
   ID. Handles are stored inside the account and never used as PDA seeds, so
   apps can pre-allocate output accounts before the compute result exists.
-- **MMR-sealed history.** Each value account seals its handle history into an
+- **MMR-sealed history.** Each encrypted value account seals its handle history into an
   append-only MMR; replaced and public handles stay provable forever inside
   a fixed-size account (`docs/MMR_ACL_MVP.md`).
 - **The 1,232-byte packet is a design input.** Batch wire data interns
@@ -89,7 +89,7 @@ capability to its Solana counterpart.
 Inside this workspace (`solana/`):
 
 ```text
-programs/zama-host              Protocol host program: value accounts, batch execution
+programs/zama-host              Protocol host program: encrypted value accounts, batch execution
                                 (fhe_execute), input attestations, public-decrypt verification,
                                 KMS contexts, HCU metering.
 programs/confidential-token     App program: minimal confidential-token wrapper (ERC-7984 spirit):

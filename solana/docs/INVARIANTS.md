@@ -47,7 +47,7 @@ update, encrypted value ID…).
    persistent state.
 6. **[HOLDS]** Updating a persistent value requires echoing its exact current
    handle and subject list; a stale echo fails the whole execution (no lost-update).
-7. **[HOLDS]** Every value account lives at the canonical PDA of its encrypted
+7. **[HOLDS]** Every encrypted value account lives at the canonical PDA of its encrypted
    value ID. The ID is recomputed from the account's seeds rather than stored,
    so an account cannot claim a different identity.
 8. **[HOLDS]** Sealed history (the MMR) is append-only: a handle sealed public
@@ -192,7 +192,7 @@ update, encrypted value ID…).
     parity).
 44. **[ANTI]** An empty `allowedAclDomainKeys` list means permissive mode: the
     request is not domain-scoped. Scoping is opt-in per request.
-45. **[HOLDS]** The connector authorizes against the canonical value-account
+45. **[HOLDS]** The connector authorizes against the canonical encrypted-value-account
     PDA, program-owned, using the same compiled `zama_solana_acl` code the
     on-chain program runs (decode, MMR verification, all three authorize
     functions).

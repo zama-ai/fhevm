@@ -500,7 +500,7 @@ mod tests {
         [tag; 32]
     }
 
-    /// A encrypted value account whose account bytes and proofs are produced by the shared crate, mirroring the
+    /// An encrypted value account whose account bytes and proofs are produced by the shared crate, mirroring the
     /// helper in `solana_encrypted_value_acl.rs`.
     struct EncryptedValueAccount {
         acl: EncryptedValue,

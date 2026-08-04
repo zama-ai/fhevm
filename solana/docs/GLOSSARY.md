@@ -11,12 +11,12 @@ stack where one exists.
 | Term | Definition | Replaces | EVM equivalent |
 |---|---|---|---|
 | **handle** | 32-byte opaque identifier of one ciphertext, derived on-chain during execution. The high bit of its embedded chain id marks the chain type (Solana = set). | — | `bytes32` handle |
-| **encrypted value ID** | Identity of one persistent encrypted value: recomputed from (domain, account, label). It is the PDA seed of the value account and is never stored. | `value_key` | — |
-| **value account** | The canonical PDA account of one encrypted value ID. Holds the current handle, the subject list, and the MMR of sealed history. | lineage account | ACL storage entry |
+| **encrypted value ID** | Identity of one persistent encrypted value: recomputed from (domain, account, label). It is the PDA seed of the encrypted value account and is never stored. | `value_key` | — |
+| **encrypted value account** | The canonical PDA account of one encrypted value ID. Holds the current handle, the subject list, and the MMR of sealed history. `EncryptedValueAccount` in `zama_solana_acl`. Never shortened by dropping the adjective: an account holding a value describes every SPL token account, and what distinguishes this one is that the value it holds is *encrypted* and carries its own ACL state. | lineage account, value account | ACL storage entry |
 | **domain** | First component of an encrypted value ID: the ACL domain a value belongs to. Typed as `zama_fhe::Domain` in the SDK, so it cannot be swapped with the account it scopes. | `acl_domain_key` | — |
 | **account** (ID component) | Second component of an encrypted value ID: the app-level account the value is attached to. | `app_account` | — |
 | **label** | Third component of an encrypted value ID: the app-chosen discriminator. | `encrypted_value_label`, SDK `namespace` | — |
-| **subject** | A pubkey granted access on a value account. | — | ACL `account` address |
+| **subject** | A pubkey granted access on an encrypted value account. | — | ACL `account` address |
 | **compute subject** | The account that is metered for HCU and named as the caller identity of an execution. | — | `msg.sender` of the dapp |
 
 ## Execution
@@ -30,9 +30,9 @@ stack where one exists.
 | **fhe_execute** | The host instruction that runs one execution. | `fhe_eval` | `FHEVMExecutor` ops |
 | **preflight** | The whole-execution validation pass (indexes, accounts, types, costs) that runs before the walk. | — | — |
 | **transient** | Usable only inside the carrying execution; leaves no persistent grant. | — | `allowTransient` |
-| **stored value** | Wire name of an operand read from a value account, and of an output written to one: `FheExecuteOperand::StoredValue`, `FheExecuteOutput::StoredValue`. Names what the slot is, not why it was admitted. Also the SDK type `zama_fhe::StoredValue<T>`, which — unlike a builder's transient values — belongs to no builder. | `AllowedPersistent` | ACL `persistAllowed` entry |
+| **stored value** | Wire name of an operand read from an encrypted value account, and of an output written to one: `FheExecuteOperand::StoredValue`, `FheExecuteOutput::StoredValue`. Names what the slot is, not why it was admitted. Also the SDK type `zama_fhe::StoredValue<T>`, which — unlike a builder's transient values — belongs to no builder. | `AllowedPersistent` | ACL `persistAllowed` entry |
 | **earlier step** | Wire name of an operand that reads the output of an earlier step of the same execution: `FheExecuteOperand::EarlierStep`. The matching output is `FheExecuteOutput::Transient`. | `AllowedLocal` | `allowTransient` value |
-| **persistent** | Outlives the execution: written to a value account with its own subject list. | durable | ACL `persistAllowed` |
+| **persistent** | Outlives the execution: written to an encrypted value account with its own subject list. | durable | ACL `persistAllowed` |
 | **create / created-public** | An execution output binding a new persistent value; created-public seals it publicly decryptable at creation. | birth, born-public | — |
 | **update** | Replacing a persistent value's handle, echoing the exact previous handle and subject list. | supersede, rotation | — |
 | **HCU** | Homomorphic compute unit: the metering unit of FHE work. | — | HCU |
@@ -46,7 +46,7 @@ stack where one exists.
 | **certificate** | A KMS-threshold-signed statement, e.g. the public-decrypt result binding cleartext to handle and context. | — | KMS signature bundle |
 | **proof** | A cryptographic proof and nothing else (MMR inclusion proof, ZK proof). Never used for signed statements — those are attestations or certificates. | — | — |
 | **KmsContext** | The on-chain account naming one KMS committee's signer set and threshold; certificates bind to the context that issued them. | — | gateway KMS context |
-| **MMR** | The append-only Merkle mountain range inside a value account sealing its handle history; supports inclusion proofs for superseded or public handles. | — | — |
+| **MMR** | The append-only Merkle mountain range inside an encrypted value account sealing its handle history; supports inclusion proofs for superseded or public handles. | — | — |
 
 ## Off-chain
 

@@ -1246,7 +1246,7 @@ fn mollusk_confidential_transfer_updates_value_accounts_and_cleartext_balances()
         )
     );
 
-    // A encrypted value account entry for the transferred amount was created (first bind) at the canonical PDA.
+    // An encrypted value account entry for the transferred amount was created (first bind) at the canonical PDA.
     let transferred = read_encrypted_value(&context, transferred_value_address);
     assert_eq!(transferred.domain, fixture.mint);
     assert_eq!(transferred.account, fixture.alice_token);
@@ -3875,7 +3875,7 @@ fn mollusk_disclose_secp_rejects_foreign_public_decrypt_proof() {
 fn mollusk_disclose_secp_rejects_foreign_mint_domain() {
     // The disclosed encrypted value account must belong to this mint's ACL domain: the token layer binds
     // encrypted_value.domain to the mint so the emitted event is genuinely token-scoped.
-    // A encrypted value account under a different domain is rejected before the verifier CPI.
+    // An encrypted value account under a different domain is rejected before the verifier CPI.
     let fixture = DiscloseFixture::new();
     let pinned = handle_for_chain(48, BALANCE_FHE_TYPE);
     let foreign_mint = Pubkey::new_unique();

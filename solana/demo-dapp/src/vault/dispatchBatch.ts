@@ -14,12 +14,12 @@ import {
 /**
  * Semantic roots for the batcher `dispatch` instruction. Every other account the on-chain handler
  * validates (`dispatch.rs`) — the batch authority, the join mint's compute signer and total-supply
- * authority, the batch's join token account, the balance / total-supply / burned-amount value accounts,
+ * authority, the batch's join token account, the balance / total-supply / burned-amount encrypted value accounts,
  * and both event authorities — is derived internally from these, so callers never hand-build the
  * account map.
  */
 export type SolanaVaultDispatchParameters = {
-  /** Pays the rent for the burn's output value account. Anyone — dispatch is permissionless. */
+  /** Pays the rent for the burn's output encrypted value account. Anyone — dispatch is permissionless. */
   readonly payer: TransactionSigner;
   /** Batcher config account. */
   readonly batcher: Address;

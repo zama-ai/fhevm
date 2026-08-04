@@ -185,7 +185,7 @@ mod tests {
         [tag; 32]
     }
 
-    /// A encrypted value account whose account bytes and proofs are produced by the shared crate.
+    /// An encrypted value account whose account bytes and proofs are produced by the shared crate.
     struct EncryptedValueAccount {
         acl: EncryptedValue,
         account: SolanaPubkeyBytes,

@@ -74,7 +74,7 @@ impl EncryptedValueId {
     /// ```
     ///
     /// Passing the two pubkeys the other way round does not compile, so a swapped pair can no
-    /// longer address a different value account than the app meant:
+    /// longer address a different encrypted value account than the app meant:
     ///
     /// ```compile_fail
     /// use anchor_lang::prelude::Pubkey;

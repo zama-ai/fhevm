@@ -301,8 +301,22 @@ check_alias 'supersede — an updated handle is updated' all '' \
 # itself a rotation — "the balance rotates", "before any balance rotation".
 check_alias 'rotation — an updated handle is updated' all '' \
   -iE '(balance|handle|value|amount|output|receipt)s? rotat|rotat[a-z]* the (confidential )?(balance|handle|value|amount)|(balance|handle|value|amount) rotation'
-# value account <- lineage account.
-check_alias 'lineage — renamed to value account' all '' -iE '\blineage\b'
+# encrypted value account <- lineage account.
+check_alias 'lineage — renamed to encrypted value account' all '' -iE '\blineage\b'
+# The adjective is load-bearing: "value account" describes every SPL token account, so dropping
+# "encrypted" turns the one distinguishing fact — that this account holds an *encrypted* value's
+# handle, subject list and MMR — into a generic phrase. The code has always said
+# `EncryptedValueAccount`; only the prose had drifted.
+#
+# ERE has no negative lookbehind, so the correct phrase is excluded by the line-level exception
+# rather than by the pattern. The known limit: a line carrying both spellings is exempted by its
+# correct one. That is the same trade every other entry here makes, and the sweep that introduced
+# this check already fixed the whole tree, so the check's job from here is catching new prose —
+# where a single line saying it both ways is not a realistic way to reintroduce the alias.
+# (GLOSSARY.md is dropped by check_alias itself: its "Replaces" column has to keep the retired
+# spelling greppable, which is that column's entire purpose.)
+check_alias 'value account — say encrypted value account' all 'encrypted[ -]value[ -]account' \
+  -iE '(^|[^-[:alnum:]_])value[ -]accounts?\b'
 # The operand/output variants were renamed to say what the slot is rather than why it was admitted:
 # `AllowedPersistent` -> `StoredValue`, and `AllowedLocal` -> `EarlierStep` (operand) or `Transient`
 # (output). Both spellings are gone from the wire names, the IDL, and the prose, so a bare match is

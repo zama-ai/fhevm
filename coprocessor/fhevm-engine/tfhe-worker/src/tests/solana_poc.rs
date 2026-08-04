@@ -409,7 +409,7 @@ fn initialize_token_account(
     );
 }
 
-/// Confidential-token `EncryptedValue` value accounts are addressed by stable app-level
+/// Confidential-token `EncryptedValue` encrypted value accounts are addressed by stable app-level
 /// keys (mint, token account, label) rather than a per-transfer nonce sequence
 /// under RFC-024, so the same balance/transferred-amount accounts are reused
 /// across every transfer.
