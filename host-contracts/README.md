@@ -144,8 +144,8 @@ npx hardhat task:exportCanonicalProtocolConfig \
 ```
 
 The artifact holds a single `export` object. That object is the snapshot as a flat `KEY=value` map,
-with bigints serialized as decimal strings. A deployment platform patches those keys into a
-ConfigMap. The ConfigMap then sets the environment variables that the apply tasks in step 3 read.
+with bigints serialized as decimal strings. Each key becomes an environment variable that the apply
+tasks in step 3 read.
 
 **2. Review.** All reads happen at one block, so reviewers (e.g. DAO signers) reproduce the
 artifact byte-for-byte — even after a later `defineNewKmsContextAndEpoch` rotation — by re-running the
