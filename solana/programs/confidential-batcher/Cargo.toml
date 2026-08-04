@@ -14,7 +14,6 @@ name = "confidential_batcher"
 default = []
 cpi = ["no-entrypoint"]
 no-entrypoint = []
-no-idl = []
 no-log-ix-name = []
 idl-build = [
     "anchor-lang/idl-build",
