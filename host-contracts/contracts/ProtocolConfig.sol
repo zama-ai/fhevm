@@ -417,6 +417,12 @@ contract ProtocolConfig is IProtocolConfig, UUPSUpgradeableEmptyProxy, ACLOwnabl
             revert InvalidKmsContext(contextId);
         }
 
+        // Activation requires one key and one CRS attestation from the signer. An empty array skips its loop
+        // below, so the vote would be recorded without checking that attestation.
+        if (keys.length == 0 || crsList.length == 0) {
+            revert EmptyEpochActivationAttestation(epochId);
+        }
+
         address signer = $.kmsNodeByTxSenderForContext[contextId][msg.sender].signerAddress;
         bytes32 dataHash;
         {
@@ -677,6 +683,12 @@ contract ProtocolConfig is IProtocolConfig, UUPSUpgradeableEmptyProxy, ACLOwnabl
     }
 
     /// @inheritdoc IProtocolConfig
+    function getCurrentKmsContextIdCounter() external view virtual returns (uint256) {
+        ProtocolConfigStorage storage $ = _getProtocolConfigStorage();
+        return $.currentKmsContextId;
+    }
+
+    /// @inheritdoc IProtocolConfig
     function getCurrentKmsContextAndEpoch() external view virtual returns (uint256 contextId, uint256 epochId) {
         ProtocolConfigStorage storage $ = _getProtocolConfigStorage();
         contextId = $.latestActiveKmsContextId;
@@ -697,6 +709,16 @@ contract ProtocolConfig is IProtocolConfig, UUPSUpgradeableEmptyProxy, ACLOwnabl
     /// @inheritdoc IProtocolConfig
     function isValidKmsContext(uint256 kmsContextId) external view virtual returns (bool) {
         return _isValidKmsContext(kmsContextId);
+    }
+
+    /// @inheritdoc IProtocolConfig
+    function isLiveKmsContext(uint256 kmsContextId) external view virtual returns (bool) {
+        return _isLiveKmsContext(kmsContextId);
+    }
+
+    /// @inheritdoc IProtocolConfig
+    function getContextCreationPreviousTxSenderThreshold(uint256 kmsContextId) external view virtual returns (uint256) {
+        return _getProtocolConfigStorage().contextCreationPreviousTxSenderThreshold[kmsContextId];
     }
 
     /// @inheritdoc IProtocolConfig

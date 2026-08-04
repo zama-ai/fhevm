@@ -8,7 +8,7 @@
 
 use super::COPROCESSOR_CONTEXT_ID;
 use crate::{
-    core::event_processor::ProcessingError,
+    core::{config::Config, event_processor::ProcessingError},
     monitoring::metrics::{S3_CIPHERTEXT_RETRIEVAL_COUNTER, S3_CIPHERTEXT_RETRIEVAL_ERRORS},
 };
 use alloy::{
@@ -27,8 +27,110 @@ use sha3::{
     Digest, Keccak256,
     digest::{consts::U32, generic_array::GenericArray},
 };
-use std::time::Duration;
+use std::{
+    collections::HashMap,
+    num::NonZeroUsize,
+    sync::{Arc, Mutex},
+    time::Duration,
+};
+use tokio::sync::Semaphore;
 use tracing::{debug, warn};
+
+/// An HTTP client with a ceiling on the requests it may have in flight.
+#[derive(Clone)]
+pub struct BoundedClient {
+    /// The inner HTTP client.
+    client: Client,
+
+    /// The per bucket HEAD request ceiling.
+    head_semaphores: Arc<Mutex<HashMap<String, Arc<Semaphore>>>>,
+
+    /// The maximum number of concurrent HEAD requests per bucket.
+    max_concurrent_heads_per_bucket: NonZeroUsize,
+
+    /// The global `GET` ceiling, as we query a single winning bucket to fetch ciphertexts.
+    /// Kept low: SNS ciphertexts are big, so too many buffered at once would OOM the worker.
+    get_semaphore: Arc<Semaphore>,
+
+    /// Deadline of a single attestation `HEAD`.
+    head_timeout: Duration,
+
+    /// Number of attempts of a ciphertext retrieval, per winning-group bucket.
+    retrieval_attempts: u8,
+}
+
+impl BoundedClient {
+    /// Builds the S3 client with the bounds of `config`.
+    pub fn from_config(config: &Config) -> anyhow::Result<Self> {
+        let client = Client::builder()
+            .connect_timeout(config.s3_connect_timeout)
+            .timeout(config.s3_get_timeout)
+            .build()
+            .map_err(|e| anyhow!("Failed to create S3 HTTP client: {e}"))?;
+
+        Ok(Self {
+            client,
+            head_semaphores: Arc::new(Mutex::new(HashMap::new())),
+            max_concurrent_heads_per_bucket: config.s3_max_concurrent_heads_per_bucket,
+            get_semaphore: Arc::new(Semaphore::new(config.s3_max_concurrent_gets.get())),
+            head_timeout: config.s3_head_timeout,
+            retrieval_attempts: config.s3_ciphertext_retrieval_attempts,
+        })
+    }
+
+    /// Fetches the attestation for a `handle` from the specified bucket, using a `HEAD` request.
+    pub async fn fetch_single_attestation(
+        &self,
+        bucket: &str,
+        handle: B256,
+    ) -> Result<CiphertextAttestation, FetchAttestationError> {
+        let bucket_semaphore = self.bucket_semaphore(bucket);
+        let _permit = bucket_semaphore
+            .acquire()
+            .await
+            .expect("S3 HEAD semaphore closed");
+        fetch_single_attestation(&self.client, bucket, handle, self.head_timeout).await
+    }
+
+    /// The `HEAD` ceiling of `bucket`, created on first use.
+    fn bucket_semaphore(&self, bucket: &str) -> Arc<Semaphore> {
+        let mut semaphores = self
+            .head_semaphores
+            .lock()
+            .unwrap_or_else(|e| e.into_inner());
+
+        if let Some(semaphore) = semaphores.get(bucket) {
+            Arc::clone(semaphore)
+        } else {
+            let semaphore = Arc::new(Semaphore::new(self.max_concurrent_heads_per_bucket.get()));
+            semaphores.insert(bucket.to_string(), Arc::clone(&semaphore));
+            semaphore
+        }
+    }
+
+    /// Retrieves the SNS ciphertext of `handle` from a bucket in the winning consensus group and
+    /// verifies it against the attested digest (RFC 023, authoritative mode).
+    pub async fn retrieve_verified_ciphertext(
+        &self,
+        handle: B256,
+        material: &ConsensusMaterial,
+        winning_buckets: &[String],
+    ) -> Result<TypedCiphertext, ProcessingError> {
+        let _permit = self
+            .get_semaphore
+            .acquire()
+            .await
+            .expect("S3 GET semaphore closed");
+        retrieve_verified_ciphertext(
+            &self.client,
+            handle,
+            material,
+            winning_buckets,
+            self.retrieval_attempts,
+        )
+        .await
+    }
+}
 
 /// URL of a ciphertext object in a Coprocessor bucket (RFC 023 layout).
 fn rfc023_ciphertext_url(bucket_url: &str, handle: B256) -> String {
@@ -40,7 +142,7 @@ fn rfc023_ciphertext_url(bucket_url: &str, handle: B256) -> String {
 
 /// Why a single bucket's HEAD attempt did not yield an attestation.
 #[derive(Debug, thiserror::Error)]
-pub(crate) enum FetchAttestationError {
+pub enum FetchAttestationError {
     #[error("HEAD request timed out")]
     Timeout,
     #[error("HEAD request failed: {0}")]
@@ -51,8 +153,7 @@ pub(crate) enum FetchAttestationError {
     MissingHeader,
 }
 
-/// Fetches the attestation for a `handle` from the specified bucket, using a `HEAD` request.
-pub(crate) async fn fetch_single_attestation(
+async fn fetch_single_attestation(
     client: &Client,
     bucket: &str,
     handle: B256,
@@ -83,9 +184,7 @@ pub(crate) async fn fetch_single_attestation(
     attestation_from_http_headers(response.headers())
 }
 
-/// Retrieves the SNS ciphertext of `handle` from a bucket in the winning consensus group and
-/// verifies it against the attested digest (RFC 023, authoritative mode).
-pub async fn retrieve_verified_ciphertext(
+async fn retrieve_verified_ciphertext(
     client: &Client,
     handle: B256,
     material: &ConsensusMaterial,
@@ -214,8 +313,146 @@ fn attestation_from_http_headers(
 }
 
 #[cfg(test)]
+impl BoundedClient {
+    /// Takes a permit out of `bucket`'s ceiling, to check that its `HEAD`s wait for one.
+    pub(super) async fn acquire_head_for_test(
+        &self,
+        bucket: &str,
+    ) -> tokio::sync::OwnedSemaphorePermit {
+        self.bucket_semaphore(bucket).acquire_owned().await.unwrap()
+    }
+
+    /// Takes a permit out of the global `GET` ceiling, to check that retrievals wait for one.
+    pub(super) async fn acquire_get_for_test(&self) -> tokio::sync::OwnedSemaphorePermit {
+        Arc::clone(&self.get_semaphore)
+            .acquire_owned()
+            .await
+            .unwrap()
+    }
+}
+
+#[cfg(test)]
 mod tests {
     use super::*;
+    use alloy::primitives::U256;
+    use connector_utils::tests::net::black_hole_server;
+
+    /// Two addresses nothing can be listening on: a request to either fails at connection, fast.
+    const UNREACHABLE_BUCKET: &str = "http://127.0.0.1:1";
+    const OTHER_UNREACHABLE_BUCKET: &str = "http://127.0.0.1:2";
+
+    /// A single-permit-per-ceiling client, to make permit starvation observable.
+    fn single_permit_client() -> BoundedClient {
+        BoundedClient::from_config(&Config {
+            s3_max_concurrent_heads_per_bucket: NonZeroUsize::MIN,
+            s3_max_concurrent_gets: NonZeroUsize::MIN,
+            ..Default::default()
+        })
+        .unwrap()
+    }
+
+    fn material() -> ConsensusMaterial {
+        ConsensusMaterial {
+            key_id: U256::ONE,
+            ciphertext_digest: B256::ZERO,
+            sns_ciphertext_digest: B256::ZERO,
+            format: CiphertextFormat::CompressedOnCpu,
+        }
+    }
+
+    /// `HEAD` ceilings are per bucket: a bucket with no permit left must not gate the others,
+    /// otherwise one unresponsive Coprocessor would stall the attestation fan-out of every bucket.
+    #[tokio::test]
+    async fn head_ceilings_are_per_bucket() {
+        let client = single_permit_client();
+        let _saturating = client.acquire_head_for_test(UNREACHABLE_BUCKET).await;
+
+        // The other bucket draws from its own ceiling: its `HEAD` is issued — and fails on the
+        // unreachable address — instead of waiting for the saturated bucket's permit.
+        let issued = tokio::time::timeout(
+            Duration::from_secs(5),
+            client.fetch_single_attestation(OTHER_UNREACHABLE_BUCKET, B256::ZERO),
+        )
+        .await
+        .expect("a HEAD on another bucket should not wait for the saturated one");
+        assert!(matches!(issued, Err(FetchAttestationError::Http(_))));
+
+        // While the saturated bucket does gate its own `HEAD`s.
+        let gated = tokio::time::timeout(
+            Duration::from_millis(200),
+            client.fetch_single_attestation(UNREACHABLE_BUCKET, B256::ZERO),
+        )
+        .await;
+        assert!(gated.is_err(), "the saturated bucket should gate its HEADs");
+    }
+
+    /// The `GET` ceiling is global: one permit gates the retrievals of every handle, rather than
+    /// each handle getting a ceiling of its own.
+    #[tokio::test]
+    async fn get_ceiling_is_shared_across_handles() {
+        let client = single_permit_client();
+        let (material, buckets) = (material(), [UNREACHABLE_BUCKET.to_string()]);
+
+        let permit = client.acquire_get_for_test().await;
+
+        // The only permit is held, so no handle can start retrieving.
+        for handle in [B256::ZERO, B256::repeat_byte(0x02)] {
+            let gated = tokio::time::timeout(
+                Duration::from_millis(200),
+                client.retrieve_verified_ciphertext(handle, &material, &buckets),
+            )
+            .await;
+            assert!(
+                gated.is_err(),
+                "handle {handle} should wait for a GET permit"
+            );
+        }
+
+        drop(permit);
+
+        // The bucket is unreachable, so the retrieval fails: reaching that error is the proof that
+        // the `GET` was issued once the permit freed.
+        let result = tokio::time::timeout(
+            Duration::from_secs(5),
+            client.retrieve_verified_ciphertext(B256::ZERO, &material, &buckets),
+        )
+        .await
+        .expect("retrieval should have resumed");
+        assert!(matches!(result, Err(ProcessingError::Recoverable(_))));
+    }
+
+    /// Every request the client issues carries a deadline — the `HEAD` its own, the `GET` the
+    /// client-wide one: a bucket that accepts the connection then goes silent can hang neither.
+    #[tokio::test]
+    async fn requests_are_bounded_by_their_own_deadline() {
+        let (bucket, accept_loop) = black_hole_server().await;
+        let client = BoundedClient::from_config(&Config {
+            s3_head_timeout: Duration::from_millis(100),
+            s3_get_timeout: Duration::from_millis(300),
+            s3_ciphertext_retrieval_attempts: 1,
+            ..Default::default()
+        })
+        .unwrap();
+
+        let head = tokio::time::timeout(
+            Duration::from_secs(5),
+            client.fetch_single_attestation(&bucket, B256::ZERO),
+        )
+        .await
+        .expect("the HEAD should have ended on its own deadline");
+        assert!(matches!(head, Err(FetchAttestationError::Timeout)));
+
+        // The client-wide deadline covers the whole response body, so the silent bucket trips it.
+        let get = tokio::time::timeout(
+            Duration::from_secs(5),
+            client.retrieve_verified_ciphertext(B256::ZERO, &material(), &[bucket]),
+        )
+        .await
+        .expect("the GET should have ended on its own deadline");
+        assert!(matches!(get, Err(ProcessingError::Recoverable(_))));
+
+        accept_loop.abort();
+    }
 
     #[test]
     fn test_attestation_from_http_headers_missing() {

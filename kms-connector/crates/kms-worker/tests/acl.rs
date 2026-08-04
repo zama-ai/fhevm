@@ -1,8 +1,8 @@
 mod common;
 
 use crate::common::{
-    create_mock_user_decryption_request_tx, init_kms_worker, mock_copro_registry_load,
-    testing_ct_attestation_config,
+    TEST_COPRO_REGISTRY_REFRESH, create_mock_user_decryption_request_tx, init_kms_worker,
+    mock_copro_registry_load,
 };
 use alloy::{
     primitives::U256,
@@ -99,7 +99,7 @@ async fn test_decryption_acl_failure(#[case] event_type: TestEventType) -> anyho
         kms_core_endpoints: vec![kms_mock_server.base_url().unwrap().to_string()],
         max_decryption_attempts: MAX_DECRYPTION_ATTEMPTS,
         db_fast_event_polling: Duration::from_millis(500),
-        ct_attestation: testing_ct_attestation_config(),
+        copro_registry_refresh: TEST_COPRO_REGISTRY_REFRESH,
         ..Default::default()
     };
     let kms_worker = init_kms_worker(
