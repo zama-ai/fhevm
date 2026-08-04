@@ -224,16 +224,27 @@ impl<P: Provider<Ethereum> + Clone + 'static> GatewayListener<P> {
                         match log.address() {
                             a if a == self.input_verification_address => {
                                 if let Ok(event) = InputVerification::InputVerificationEvents::decode_log(&log.inner) {
-                                    // This listener only reacts to proof requests. Other known InputVerification
-                                    // events are expected when multiple coprocessors interact with the gateway.
-                                    if let InputVerification::InputVerificationEvents::VerifyProofRequest(request) = event.data {
-                                        self.verify_proof_request(db_pool, request, log.clone()).await.
-                                            inspect(|_| {
-                                                verify_proof_success += 1;
-                                            }).inspect_err(|e| {
-                                                error!(error = %e, "VerifyProofRequest processing failed");
-                                                VERIFY_PROOF_FAIL_COUNTER.inc();
-                                        })?;
+                                    match event.data {
+                                        InputVerification::InputVerificationEvents::VerifyProofRequest(request) => {
+                                            self.verify_proof_request(db_pool, request, log.clone()).await.
+                                                inspect(|_| {
+                                                    verify_proof_success += 1;
+                                                }).inspect_err(|e| {
+                                                    error!(error = %e, "VerifyProofRequest processing failed");
+                                                    VERIFY_PROOF_FAIL_COUNTER.inc();
+                                            })?;
+                                        }
+                                        InputVerification::InputVerificationEvents::VerifyProofResponse(response) => {
+                                            self.verify_proof_accepted(db_pool, response).await?;
+                                        }
+                                        InputVerification::InputVerificationEvents::RejectProofResponse(response) => {
+                                            self.verify_proof_rejected(db_pool, response).await?;
+                                        }
+                                        _ => {
+                                            // Per-coprocessor response-call events are expected while
+                                            // consensus is still being collected. Only the final events
+                                            // above determine whether a local replay is safe.
+                                        }
                                     }
                                 } else {
                                     error!(log = ?log, "Failed to decode InputVerification event log");
@@ -514,6 +525,99 @@ impl<P: Provider<Ethereum> + Clone + 'static> GatewayListener<P> {
         )
         .execute(tx.as_mut())
         .await?;
+        tx.commit().await?;
+        Ok(())
+    }
+
+    async fn verify_proof_accepted(
+        &self,
+        db_pool: &Pool<Postgres>,
+        response: InputVerification::VerifyProofResponse,
+    ) -> anyhow::Result<()> {
+        let zk_proof_id = response.zkProofId.to::<i64>();
+        let handles = response
+            .ctHandles
+            .iter()
+            .flat_map(|handle| handle.as_slice())
+            .copied()
+            .collect::<Vec<_>>();
+
+        let Some(mut tx) = fhevm_engine_common::versioning::begin_write_guarded(
+            db_pool,
+            self.stack_mode.gcs_mode(),
+        )
+        .await?
+        else {
+            info!(
+                zk_proof_id,
+                "Cutover completed — skipping proof replay scheduling"
+            );
+            return Ok(());
+        };
+        let result = sqlx::query!(
+            "UPDATE verify_proofs
+             SET verified = NULL,
+                 verified_at = NOW(),
+                 handles = $2,
+                 retry_count = 0,
+                 last_error = NULL,
+                 last_retry_at = NULL
+             WHERE zk_proof_id = $1
+               AND verified IS DISTINCT FROM TRUE
+               AND (verified = FALSE OR handles IS NULL)",
+            zk_proof_id,
+            handles,
+        )
+        .execute(tx.as_mut())
+        .await?;
+
+        if result.rows_affected() > 0 {
+            info!(
+                zk_proof_id,
+                "Gateway accepted locally unavailable proof; scheduling local replay"
+            );
+            sqlx::query!(
+                "SELECT pg_notify($1, '')",
+                self.conf.verify_proof_req_db_channel
+            )
+            .execute(tx.as_mut())
+            .await?;
+        }
+        tx.commit().await?;
+        Ok(())
+    }
+
+    async fn verify_proof_rejected(
+        &self,
+        db_pool: &Pool<Postgres>,
+        response: InputVerification::RejectProofResponse,
+    ) -> anyhow::Result<()> {
+        let zk_proof_id = response.zkProofId.to::<i64>();
+        let Some(mut tx) = fhevm_engine_common::versioning::begin_write_guarded(
+            db_pool,
+            self.stack_mode.gcs_mode(),
+        )
+        .await?
+        else {
+            info!(
+                zk_proof_id,
+                "Cutover completed — skipping rejected proof cleanup"
+            );
+            return Ok(());
+        };
+        let result = sqlx::query!(
+            "DELETE FROM verify_proofs WHERE zk_proof_id = $1 AND verified IS DISTINCT FROM TRUE",
+            zk_proof_id,
+        )
+        .execute(tx.as_mut())
+        .await?;
+
+        if result.rows_affected() > 0 {
+            info!(
+                zk_proof_id,
+                "Gateway rejected proof; discarded retained local proof"
+            );
+        }
         tx.commit().await?;
         Ok(())
     }

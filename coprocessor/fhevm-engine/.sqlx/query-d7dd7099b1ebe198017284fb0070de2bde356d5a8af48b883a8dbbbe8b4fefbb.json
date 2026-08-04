@@ -1,0 +1,22 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        SELECT COUNT(*)\n        FROM (\n            SELECT 1\n            FROM verify_proofs\n            WHERE verified IS NULL\n              AND chain_id = ANY($1::bigint[])\n              AND (\n                  verified_at IS NULL\n                  OR (\n                      handles IS NOT NULL\n                      AND verified_at > NOW() - INTERVAL '7 days'\n                      AND (\n                          last_retry_at IS NULL\n                          OR last_retry_at + make_interval(\n                              secs => LEAST(\n                                  86400,\n                                  60 * (1 << LEAST(GREATEST(retry_count - 1, 0), 11))\n                              )\n                          ) <= NOW()\n                      )\n                  )\n              )\n            FOR UPDATE SKIP LOCKED\n        ) AS unlocked_rows;\n        ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "count",
+        "type_info": "Int8"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Int8Array"
+      ]
+    },
+    "nullable": [
+      null
+    ]
+  },
+  "hash": "d7dd7099b1ebe198017284fb0070de2bde356d5a8af48b883a8dbbbe8b4fefbb"
+}
