@@ -106,6 +106,86 @@ async fn test_acquire_next_lock_prefers_fast_lane() {
 
 #[tokio::test]
 #[serial(db)]
+async fn test_parked_chain_yields_until_lock_expiry() {
+    let instance = setup().await;
+    let pool = PgPoolOptions::new()
+        .max_connections(2)
+        .connect(instance.db_url())
+        .await
+        .expect("Failed to connect to the database");
+
+    let stalled_id = vec![1u8];
+    let ready_id = vec![2u8];
+
+    sqlx::query(
+        r#"
+        INSERT INTO dependence_chain
+            (dependence_chain_id, status, last_updated_at, block_timestamp, block_height)
+        VALUES
+            ($1, 'updated', NOW() - INTERVAL '2 minutes', NOW(), 1),
+            ($2, 'updated', NOW() - INTERVAL '1 minute', NOW(), 2)
+        "#,
+    )
+    .bind(stalled_id.clone())
+    .bind(ready_id.clone())
+    .execute(&pool)
+    .await
+    .unwrap();
+
+    let lock_ttl_sec = 5;
+    let mut mgr = LockMngr::new_with_conf(
+        Uuid::new_v4(),
+        pool.clone(),
+        lock_ttl_sec,
+        false,
+        None,
+        None,
+        None,
+    );
+    let (acquired, reason) = mgr.acquire_next_lock().await.unwrap();
+    assert_eq!(acquired, Some(stalled_id.clone()));
+    assert_eq!(reason, LockingReason::UpdatedUnowned);
+
+    let parked_lock = mgr.get_current_lock().unwrap();
+    mgr.park_current_lock();
+    assert!(mgr.get_current_lock().is_none());
+
+    let parked_row: (
+        String,
+        Option<Uuid>,
+        Option<chrono::DateTime<chrono::Utc>>,
+        chrono::DateTime<chrono::Utc>,
+    ) = sqlx::query_as(
+        "SELECT status, worker_id, lock_expires_at, last_updated_at
+         FROM dependence_chain WHERE dependence_chain_id = $1",
+    )
+    .bind(&stalled_id)
+    .fetch_one(&pool)
+    .await
+    .unwrap();
+    assert_eq!(parked_row.0, "processing");
+    assert_eq!(parked_row.1, Some(mgr.worker_id()));
+    assert_eq!(parked_row.2, parked_lock.lock_expires_at);
+    assert_eq!(parked_row.3, parked_lock.last_updated_at);
+
+    let (acquired, reason) = mgr.acquire_next_lock().await.unwrap();
+    assert_eq!(acquired, Some(ready_id));
+    assert_eq!(reason, LockingReason::UpdatedUnowned);
+    mgr.release_current_lock(true, None).await.unwrap();
+
+    assert_eq!(
+        mgr.acquire_next_lock().await.unwrap(),
+        (None, LockingReason::Missing)
+    );
+
+    sleep(Duration::from_secs(lock_ttl_sec as u64 + 1)).await;
+    let (acquired, reason) = mgr.acquire_next_lock().await.unwrap();
+    assert_eq!(acquired, Some(stalled_id));
+    assert_eq!(reason, LockingReason::ExpiredLock);
+}
+
+#[tokio::test]
+#[serial(db)]
 async fn test_acquire_early_lock_ignores_priority() {
     let instance = setup().await;
     let pool = PgPoolOptions::new()

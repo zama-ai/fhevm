@@ -60,12 +60,13 @@ async fn insert_state_hash(
     })
 }
 
-/// GCS path: stamp the GCS `state_hash` for blocks in `[start, end]` that don't
-/// already have an entry. Empty blocks (`fhe_event_count = 0`) get
+/// GCS path: stamp the GCS `state_hash` for one chain's blocks in `[start, end]`
+/// that don't already have an entry. Empty blocks (`fhe_event_count = 0`) get
 /// [`EMPTY_BLOCK_STATE_HASH`]; non-empty blocks get the SHA-256 over their
 /// GCS `ciphertexts`.
 async fn compute_and_insert_gcs(
     tx: &mut Transaction<'_, Postgres>,
+    chain_id: i64,
     start: i64,
     end: i64,
     batch_limit: i64,
@@ -92,17 +93,19 @@ async fn compute_and_insert_gcs(
         SELECT b.chain_id, b.block_number,
                bool_and(b.fhe_event_count = 0) AS is_empty
           FROM {GCS_SCHEMA_QUOTED}.host_chain_blocks_valid b
-         WHERE b.block_number BETWEEN $1 AND $2
+         WHERE b.chain_id = $1
+           AND b.block_number BETWEEN $2 AND $3
            AND b.block_status = 'finalized'
            AND NOT EXISTS (
                SELECT 1 FROM {GCS_SCHEMA_QUOTED}.state_hash sh
                 WHERE sh.chain_id = b.chain_id AND sh.block_number = b.block_number)
          GROUP BY b.chain_id, b.block_number
          ORDER BY b.block_number
-         LIMIT $3
+         LIMIT $4
         "#
     );
     let pending = sqlx::query(&pending_sql)
+        .bind(chain_id)
         .bind(start)
         .bind(end)
         .bind(batch_limit)
@@ -293,7 +296,9 @@ where
 {
     let row: Option<(Option<i64>,)> = sqlx::query_as(
         "SELECT gw_start_block FROM upgrade_state
-          WHERE stack_role = 'GCS' AND status = 'in_progress'",
+          WHERE stack_role = 'GCS' AND status = 'in_progress'
+          ORDER BY host_chain_id
+          LIMIT 1",
     )
     .fetch_optional(executor)
     .await?;
@@ -494,8 +499,10 @@ async fn compute_and_upload_state_hashes(
 
     // GCS hashes are only produced during an active upgrade window; BCS hashes
     // are not produced because they would never be uploaded or consumed.
-    if let Some((_, start, end)) = crate::active_upgrade_window(&mut *tx).await? {
-        compute_and_insert_gcs(&mut tx, start, end, batch_limit).await?;
+    if let Some((_, _, windows)) = crate::active_upgrade_windows(&mut *tx).await? {
+        for (chain_id, start, end) in windows {
+            compute_and_insert_gcs(&mut tx, chain_id, start, end, batch_limit).await?;
+        }
 
         // Gateway-inputs track: only once the GCS gw-listener has a watermark and
         // gw_start_block is set. Bounded to sealed blocks (< gw_tip).

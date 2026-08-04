@@ -18,6 +18,7 @@ import {
   backdatedStartTimestamp,
   delegatedHandle,
   directHandle,
+  expectGatewayRevert,
   expectRelayerAclRejection,
   expectStuckAtKms,
   isSignatureRejection,
@@ -413,6 +414,9 @@ describe('Unified user decryption', function () {
     const taggedHex32 = (tag: number, v: bigint) => tag.toString(16).padStart(2, '0') + v.toString(16).padStart(62, '0');
 
     before(async function () {
+      if (!protocolConfigAddress) {
+        throw new Error('PROTOCOL_CONFIG_CONTRACT_ADDRESS is required');
+      }
       // Fresh re-encryption key: the relayer dedups requests on
       // (handles, userAddress, allowedContracts, publicKey, extraData) — a
       // fresh key guarantees these are real jobs, not cache hits from the
@@ -566,7 +570,8 @@ describe('Unified user decryption', function () {
         timeoutMs: negativeWindowMs,
       });
       expect(post.httpStatus, JSON.stringify(post.raw)).to.equal(202);
-      expectStuckAtKms(poll);
+      // InvalidKmsContext(0xdeadbeef) — selector 0x77ddbe81.
+      expectGatewayRevert(poll, /0x77ddbe81.*deadbeef/i);
     });
 
     it('test unified user decrypt rejects a malformed extraData version', async function () {

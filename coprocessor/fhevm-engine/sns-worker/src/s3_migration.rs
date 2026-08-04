@@ -3,8 +3,8 @@ use std::{collections::HashMap, panic::AssertUnwindSafe, time::Duration, time::I
 use alloy_primitives::{Address, B256, U256};
 use aws_sdk_s3::{error::SdkError, primitives::ByteStream, types::MetadataDirective, Client};
 use ciphertext_attestation::{
-    CiphertextAttestation, CiphertextAttestationPayload, CiphertextFormat, Version,
-    S3_METADATA_ATTESTATION_KEY,
+    s3_ct128_key, s3_ct64_key, CiphertextAttestation, CiphertextAttestationPayload,
+    CiphertextFormat, Version, S3_METADATA_ATTESTATION_KEY,
 };
 use fhevm_engine_common::{types::CoproSigner, utils::to_hex};
 use futures::{stream::FuturesUnordered, FutureExt, StreamExt};
@@ -12,9 +12,7 @@ use sqlx::PgPool;
 use tokio_util::sync::CancellationToken;
 use tracing::{error, info, warn};
 
-use crate::aws_upload::{
-    check_is_ready, compute_digest, s3_ciphertext_key, COPROCESSOR_CONTEXT_ID_1,
-};
+use crate::aws_upload::{check_is_ready, compute_digest, COPROCESSOR_CONTEXT_ID_1};
 use crate::{
     Ciphertext128Format, ExecutionError, S3Config, CLEAN_OLD_S3_FORMAT_VERSION,
     S3_FORMAT_VERSION_V1,
@@ -598,15 +596,9 @@ async fn migrate_ct64_object(
         return Ok(());
     }
 
-    let key = current_s3_ciphertext_key(&material.handle);
-    if object_has_current_attestation(
-        client,
-        &s3.bucket_ct64,
-        &key,
-        CiphertextKind::Ct64,
-        material,
-    )
-    .await?
+    let key = current_s3_ct64_key(&material.handle);
+    if object_has_current_attestation(client, &s3.bucket, &key, CiphertextKind::Ct64, material)
+        .await?
     {
         return Ok(());
     }
@@ -617,7 +609,7 @@ async fn migrate_ct64_object(
 
     if try_copy_existing_object(
         client,
-        &s3.bucket_ct64,
+        &s3.bucket,
         &source,
         &key,
         "ct64_compressed",
@@ -637,7 +629,7 @@ async fn migrate_ct64_object(
     let bytes = if bytes.is_empty() {
         download_existing_object(
             client,
-            &s3.bucket_ct64,
+            &s3.bucket,
             &[source],
             CiphertextKind::Ct64,
             &material.ct64_digest,
@@ -653,15 +645,7 @@ async fn migrate_ct64_object(
         bytes
     };
 
-    put_object_with_metadata(
-        client,
-        &s3.bucket_ct64,
-        &key,
-        "ct64_compressed",
-        material,
-        bytes,
-    )
-    .await
+    put_object_with_metadata(client, &s3.bucket, &key, "ct64_compressed", material, bytes).await
 }
 
 async fn migrate_ct128_object(
@@ -674,22 +658,17 @@ async fn migrate_ct128_object(
         return Ok(());
     }
 
-    let key = current_s3_ciphertext_key(&material.handle);
+    let key = current_s3_ct128_key(&material.handle);
     let legacy_key = legacy_s3_ciphertext_key(&material.ct128_digest);
     let digest_key = hex::encode(&material.ct128_digest);
     let ct_format = material.ct128_format.to_string();
 
-    let key_is_current = object_has_current_attestation(
-        client,
-        &s3.bucket_ct128,
-        &key,
-        CiphertextKind::Ct128,
-        material,
-    )
-    .await?;
+    let key_is_current =
+        object_has_current_attestation(client, &s3.bucket, &key, CiphertextKind::Ct128, material)
+            .await?;
     let digest_key_is_current = object_has_current_attestation(
         client,
-        &s3.bucket_ct128,
+        &s3.bucket,
         &digest_key,
         CiphertextKind::Ct128,
         material,
@@ -710,7 +689,7 @@ async fn migrate_ct128_object(
 
         if !try_copy_any_existing_object(
             client,
-            &s3.bucket_ct128,
+            &s3.bucket,
             &sources,
             &key,
             &ct_format,
@@ -730,8 +709,7 @@ async fn migrate_ct128_object(
                         ))
                     })?;
 
-            put_object_with_metadata(client, &s3.bucket_ct128, &key, &ct_format, material, bytes)
-                .await?;
+            put_object_with_metadata(client, &s3.bucket, &key, &ct_format, material, bytes).await?;
         }
     }
 
@@ -739,7 +717,7 @@ async fn migrate_ct128_object(
         let source = CopySourceCandidate { key };
         if !try_copy_existing_object(
             client,
-            &s3.bucket_ct128,
+            &s3.bucket,
             &source,
             &digest_key,
             &ct_format,
@@ -764,13 +742,11 @@ async fn migrated_objects_are_current(
     s3: &S3Config,
     material: &MigrationMaterial,
 ) -> Result<bool, ExecutionError> {
-    let key = current_s3_ciphertext_key(&material.handle);
-
     if material.has_ct64
         && !object_has_current_attestation(
             client,
-            &s3.bucket_ct64,
-            &key,
+            &s3.bucket,
+            &current_s3_ct64_key(&material.handle),
             CiphertextKind::Ct64,
             material,
         )
@@ -783,15 +759,15 @@ async fn migrated_objects_are_current(
         let digest_key = hex::encode(&material.ct128_digest);
         let key_is_current = object_has_current_attestation(
             client,
-            &s3.bucket_ct128,
-            &key,
+            &s3.bucket,
+            &current_s3_ct128_key(&material.handle),
             CiphertextKind::Ct128,
             material,
         )
         .await?;
         let digest_key_is_current = object_has_current_attestation(
             client,
-            &s3.bucket_ct128,
+            &s3.bucket,
             &digest_key,
             CiphertextKind::Ct128,
             material,
@@ -1234,8 +1210,12 @@ fn attestation_format(format: Ciphertext128Format) -> Result<CiphertextFormat, E
     }
 }
 
-pub(crate) fn current_s3_ciphertext_key(handle: &[u8]) -> String {
-    s3_ciphertext_key(handle, COPROCESSOR_CONTEXT_ID_1)
+pub(crate) fn current_s3_ct128_key(handle: &[u8]) -> String {
+    s3_ct128_key(handle, COPROCESSOR_CONTEXT_ID_1)
+}
+
+pub(crate) fn current_s3_ct64_key(handle: &[u8]) -> String {
+    s3_ct64_key(handle, COPROCESSOR_CONTEXT_ID_1)
 }
 
 pub(crate) fn legacy_s3_ciphertext_key(digest: &[u8]) -> String {

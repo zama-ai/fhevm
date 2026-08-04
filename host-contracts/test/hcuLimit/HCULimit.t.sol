@@ -181,6 +181,16 @@ contract HCULimitTest is Test, SupportedTypesConstants {
         }
     }
 
+    function test_checkHCUForFheMulDivRevertsForIllegalScalarByte(uint8 resultType, bytes1 scalarByte) public {
+        vm.assume(resultType <= uint8(FheType.Int248));
+        vm.assume(_isTypeSupported(FheType(resultType), supportedTypesFheMulDiv));
+        vm.assume(scalarByte != FHE_MUL_DIV_FACTOR2_SCALAR && scalarByte != FHE_MUL_DIV_FACTOR2_ENCRYPTED);
+
+        vm.prank(fhevmExecutor);
+        vm.expectRevert(HCULimit.OnlyScalarOperationsAreSupported.selector);
+        hcuLimit.checkHCUForFheMulDiv(FheType(resultType), scalarByte, mockLHS, mockRHS, mockResult, fhevmExecutor);
+    }
+
     function test_PayFheDivWorksAsExpectedForSupportedTypes(uint8 resultType) public {
         vm.assume(resultType <= uint8(FheType.Int248));
         vm.assume(_isTypeSupported(FheType(resultType), supportedTypesFheDiv));

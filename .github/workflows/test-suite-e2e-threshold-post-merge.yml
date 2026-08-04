@@ -5,8 +5,8 @@ name: test-suite-e2e-threshold-post-merge
 # non-gating but competed with the gating e2e shards for the same `large_ubuntu_32`
 # runner pool (observed adding 25+ min of runner-wait to the merge-critical path).
 # Running them here keeps the same per-merge coverage cadence without blocking the
-# queue. They remain available pre-merge for release branches and PRs labeled
-# `e2e orchestrate test` via test-suite-orchestrate-e2e-tests.yml.
+# queue. They remain available pre-merge for release branches and manual dispatches
+# of test-suite-orchestrate-e2e-tests.yml with `run-threshold-legs: true`.
 #
 # Image freshness: the stack resolves `latest-main`, i.e. the newest published
 # main-tagged bundle. The push-triggered docker builds for this same commit may still

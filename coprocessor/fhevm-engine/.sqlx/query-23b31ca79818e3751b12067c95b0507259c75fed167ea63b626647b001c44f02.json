@@ -1,0 +1,34 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT c.handle, c.ciphertext, c.ciphertext_type\n                 FROM public.ciphertexts c\n                 WHERE c.handle = ANY($1::BYTEA[])\n                   AND NOT EXISTS (\n                       SELECT 1 FROM public.computations comp\n                       JOIN public.upgrade_state us\n                         ON us.stack_role = 'GCS' AND us.host_chain_id = comp.host_chain_id\n                       WHERE comp.output_handle = c.handle\n                         AND comp.block_number >= us.start_block)\n                   AND NOT EXISTS (\n                       SELECT 1 FROM public.input_handles ih\n                       WHERE ih.handle = c.handle\n                         AND ih.block_number >= (\n                             SELECT MIN(gw_start_block) FROM public.upgrade_state WHERE stack_role = 'GCS'))",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "handle",
+        "type_info": "Bytea"
+      },
+      {
+        "ordinal": 1,
+        "name": "ciphertext",
+        "type_info": "Bytea"
+      },
+      {
+        "ordinal": 2,
+        "name": "ciphertext_type",
+        "type_info": "Int2"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "ByteaArray"
+      ]
+    },
+    "nullable": [
+      false,
+      false,
+      false
+    ]
+  },
+  "hash": "23b31ca79818e3751b12067c95b0507259c75fed167ea63b626647b001c44f02"
+}
