@@ -54,6 +54,21 @@ fn public_outputs_produced_event_instruction(outputs: Vec<ProducedPublicOutput>)
     )
 }
 
+/// Hand-rolled `emit_cpi!`. The reference implementation is anchor-attribute-event's `emit_cpi`
+/// macro, and this is a faithful expansion of it: same `EVENT_IX_TAG_LE`, same `Event::data`
+/// payload, same single readonly-signer event authority, same `invoke_signed` seeds. It is expanded
+/// by hand only so the `Instruction` exists as a value a host unit test can assert on — the macro
+/// builds it inline, so the CPI-data-size bound below could not otherwise be checked without a
+/// runtime.
+///
+/// Only the *assembly* is ours; the tag and the payload encoding are taken from anchor-lang, so
+/// they track upstream automatically. What would not track upstream is a change to the shape
+/// itself (an extra account, a different order). That is caught at runtime rather than by the
+/// compiler: the self-CPI re-enters this program through Anchor's generated `__event_dispatch`,
+/// which checks the tag and the authority signer, and `host_mollusk.rs` exercises both emitting
+/// paths (a `make_public: true` output and a `Rand` step) against the real SBF artifact. Keep it
+/// that way — if those two cases ever stop being covered, this becomes an unchecked copy of an
+/// upstream wire format.
 fn emit_event<'info, T: anchor_lang::Event>(
     ctx: &Context<'info, FheExecute<'info>>,
     event: &T,
@@ -103,9 +118,13 @@ mod tests {
         assert!(instruction.accounts[0].is_signer);
         assert!(!instruction.accounts[0].is_writable);
         // 21 bytes of framing (ix tag + event discriminator + version + vec length) plus
-        // 66 bytes per record (u16 step index + encrypted value account pubkey + output handle);
-        // one execution stays far below the 10,240-byte CPI instruction-data cap (DD-038).
+        // 66 bytes per record (u16 step index + encrypted value account pubkey + output handle).
         assert_eq!(instruction.data.len(), 21 + MAX_FHE_EXECUTION_STEPS * 66);
         assert_eq!(instruction.data.len(), 2_133);
+        // The cap itself, asserted rather than left in prose: the two lines above are a
+        // change-detector (raise MAX_FHE_EXECUTION_STEPS and they fail with the new number), but
+        // neither of them says what the number has to be under. DD-038 is the 10,240-byte CPI
+        // instruction-data limit, so this is the assertion that actually encodes the headroom.
+        assert!(instruction.data.len() <= 10_240);
     }
 }
