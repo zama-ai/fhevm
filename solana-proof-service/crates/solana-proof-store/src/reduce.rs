@@ -62,8 +62,6 @@ pub struct StagedEncryptedValueAccount {
     pub subjects: Vec<[u8; 32]>,
     pub leaf_count: u64,
     pub peaks: Vec<[u8; 32]>,
-    /// True when this encrypted_value_account did not exist in the store before this block.
-    pub born_in_block: bool,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -172,7 +170,6 @@ pub fn reduce_completed_block(
             )
         })
         .collect();
-    let mut born: BTreeSet<[u8; 32]> = BTreeSet::new();
     let mut block_events: BTreeMap<[u8; 32], Vec<(u64, EncryptedValueAccountEvent)>> =
         BTreeMap::new();
     let mut touched: BTreeSet<[u8; 32]> = BTreeSet::new();
@@ -210,7 +207,6 @@ pub fn reduce_completed_block(
             let state =
                 state.expect("instruction application leaves encrypted_value_account state");
             if was_absent {
-                born.insert(encrypted_value_account);
                 working_mmr
                     .entry(encrypted_value_account)
                     .or_insert_with(|| (Vec::new(), 0));
@@ -255,7 +251,6 @@ pub fn reduce_completed_block(
             subjects: replay.subjects,
             leaf_count,
             peaks,
-            born_in_block: born.contains(encrypted_value_account),
         });
     }
 
