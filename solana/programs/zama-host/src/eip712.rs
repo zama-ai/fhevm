@@ -10,6 +10,12 @@
 //!
 //! Domains use the GATEWAY chain id + the gateway verifying-contract address
 //! (both configured in `HostConfig`). v0, see zama-ai/fhevm-internal#1494.
+//!
+//! Public API surface: everything that has to produce a digest byte-identical to the one verified
+//! here, rather than verify it — `runtime-tests`' `support/kms_cert.rs` fixtures signing certs the
+//! program will accept, and the coprocessor's `tfhe-worker` Solana input-attestation test. These are
+//! exported so a fixture cannot hand-roll a digest that drifts from the on-chain one; a signed
+//! preimage is exactly the thing two implementations must never disagree about.
 
 use anchor_lang::prelude::*;
 use solana_keccak_hasher::hashv as keccak;

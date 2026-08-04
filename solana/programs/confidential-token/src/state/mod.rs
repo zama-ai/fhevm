@@ -1,4 +1,12 @@
 //! Account layouts, PDA helpers, and token-domain labels.
+//!
+//! Public API surface: off-chain callers that have to derive a token PDA or name an encrypted value
+//! the same way the program does — `runtime-tests`' Mollusk fixtures, and the demo dapp's TypeScript
+//! derivations in `demo-dapp/src/vault/internal/`, which re-declare these labels as byte strings and
+//! quote these function names as the source they must match. Exports here are that contract, so a
+//! label with no on-chain use is not automatically dead — but one with no use anywhere is: the
+//! `transfer_success` and `debit_candidate` labels were deleted once DD-019 stopped creating the
+//! scratch PDAs they named.
 
 pub mod burn_redemption;
 pub mod confidential_mint;
@@ -92,16 +100,6 @@ pub fn encrypted_transfer_amount_label() -> [u8; 32] {
     *b"transfer_amount_________________"
 }
 
-/// Fixed encrypted value label for transfer success bits.
-pub fn encrypted_transfer_success_label() -> [u8; 32] {
-    *b"transfer_success________________"
-}
-
-/// Fixed encrypted value label for unchecked debit candidates.
-pub fn encrypted_debit_candidate_label() -> [u8; 32] {
-    *b"debit_candidate_________________"
-}
-
 /// Fixed encrypted value label for the all-or-zero burned amount.
 pub fn encrypted_burned_amount_label() -> [u8; 32] {
     *b"burned_amount___________________"
@@ -113,7 +111,7 @@ pub fn encrypted_transferred_amount_label() -> [u8; 32] {
 }
 
 /// Delegates encrypted-value-ID derivation to the shared ACL crate so app and host agree exactly.
-pub fn encrypted_value_id_bytes(domain: Pubkey, account: Pubkey, label: [u8; 32]) -> [u8; 32] {
+fn encrypted_value_id_bytes(domain: Pubkey, account: Pubkey, label: [u8; 32]) -> [u8; 32] {
     zama_solana_acl::derive_encrypted_value_id(domain.to_bytes(), account.to_bytes(), label)
 }
 

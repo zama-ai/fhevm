@@ -1,6 +1,6 @@
 {
   "confidential_burn_from_value/direct": {
-    "compute_units": 217211,
+    "compute_units": 217146,
     "unique_accounts": 15,
     "instruction_data_bytes": 8,
     "cpi_instructions": 8,
@@ -8,7 +8,7 @@
     "max_cpi_instruction_data_bytes": 665
   },
   "confidential_transfer/direct": {
-    "compute_units": 298086,
+    "compute_units": 297995,
     "unique_accounts": 14,
     "instruction_data_bytes": 223,
     "cpi_instructions": 7,
@@ -16,7 +16,7 @@
     "max_cpi_instruction_data_bytes": 1093
   },
   "confidential_transfer/steady_state": {
-    "compute_units": 314883,
+    "compute_units": 314792,
     "unique_accounts": 14,
     "instruction_data_bytes": 223,
     "cpi_instructions": 5,
@@ -24,7 +24,7 @@
     "max_cpi_instruction_data_bytes": 1225
   },
   "confidential_transfer_from_value/direct": {
-    "compute_units": 260388,
+    "compute_units": 260323,
     "unique_accounts": 15,
     "instruction_data_bytes": 8,
     "cpi_instructions": 7,

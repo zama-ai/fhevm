@@ -1,4 +1,7 @@
 //! On-chain account data for `HostConfig`.
+//!
+//! Public API surface: `runtime-tests`' `host_mollusk` fixtures, which read the configured signer set
+//! back out of a built `HostConfig` to assert what the program will accept.
 
 use super::*;
 

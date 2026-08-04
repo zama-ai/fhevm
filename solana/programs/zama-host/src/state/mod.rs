@@ -454,7 +454,7 @@ pub fn assert_handle_for_chain(handle: [u8; 32], chain_id: u64) -> Result<()> {
 }
 
 /// Checks that an external encrypted-input handle targets this host chain.
-pub fn assert_input_handle_for_chain(handle: [u8; 32], chain_id: u64) -> Result<()> {
+fn assert_input_handle_for_chain(handle: [u8; 32], chain_id: u64) -> Result<()> {
     assert_handle_for_chain(handle, chain_id)?;
     require!(
         handle[21] != COMPUTED_HANDLE_MARKER,
@@ -486,7 +486,7 @@ pub fn assert_supported_fhe_type(fhe_type: u8) -> Result<()> {
 }
 
 /// Checks that a binary operation's declared result type matches the shipped operator.
-pub fn assert_supported_binary_output_type(op: FheBinaryOpCode, fhe_type: u8) -> Result<()> {
+fn assert_supported_binary_output_type(op: FheBinaryOpCode, fhe_type: u8) -> Result<()> {
     assert_supported_fhe_type(fhe_type)?;
     let valid = match op {
         FheBinaryOpCode::Add
@@ -585,7 +585,7 @@ pub fn assert_supported_rand_type(fhe_type: u8) -> Result<()> {
     Ok(())
 }
 
-pub fn assert_supported_bounded_rand_type(fhe_type: u8) -> Result<()> {
+pub(crate) fn assert_supported_bounded_rand_type(fhe_type: u8) -> Result<()> {
     require!(
         bounded_rand_type_bits(fhe_type).is_some(),
         ZamaHostError::UnsupportedFheType
@@ -606,7 +606,7 @@ pub fn assert_valid_bounded_rand_upper_bound(upper_bound: [u8; 32], fhe_type: u8
     Ok(())
 }
 
-pub fn assert_supported_unary_output_type(op: FheUnaryOpCode, fhe_type: u8) -> Result<()> {
+fn assert_supported_unary_output_type(op: FheUnaryOpCode, fhe_type: u8) -> Result<()> {
     assert_supported_fhe_type(fhe_type)?;
     let valid = match op {
         FheUnaryOpCode::Neg => matches!(fhe_type, 2..=6 | 8),

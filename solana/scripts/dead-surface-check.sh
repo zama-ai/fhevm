@@ -136,6 +136,7 @@ EXCLUDES=(
 SELFTEST_FIXTURES=(
   solana/crates/zama-fhe/.dead-surface-selftest.md
   solana/crates/zama-fhe/src/dead_surface_selftest.rs
+  solana/programs/zama-host/src/dead_surface_selftest.rs
 )
 # A fixture left behind by an interrupted `--self-test` is indistinguishable from a real violation,
 # so every later run reports a bogus finding — observed once as a phantom `app_account` hit printed
@@ -165,8 +166,40 @@ build_index() {
       */tests/*|*/tests.rs|*.test.ts|*.test.tsx|*/test_utils/*|*/testing/*) continue ;;
     esac
     awk -v path="$file" '
-      # Stop at the first test region: everything below it is fixtures.
-      /^[[:space:]]*#\[cfg\(test\)\]/ { exit }
+      # Skip the item a `#[cfg(test)]` attaches to — not the rest of the file. This used to `exit` at
+      # the first one, on the assumption that a test region is always the trailing `mod tests`. It is
+      # not: a file can carry a `#[cfg(test)] use ...;` near the top, and then everything below it
+      # vanished from the index. `solana_reconstruct.rs` has one at line 19 of 1216, so 98% of the
+      # listener file that actually calls `zama_host::decode::decode_event_cpi` was invisible, and the
+      # export was duly reported as having no production caller. Across the swept trees 63 of the 80
+      # files holding a `#[cfg(test)]` were losing more than a quarter of their production body, which
+      # under-counts every reference this script checks — and under-counting only ever invents
+      # findings, so the failure mode was a gate loud enough to get switched off.
+      # `#[test]` / `#[tokio::test]` / `#[rstest]` are matched too, for the same reason: a test written
+      # at file scope rather than inside a `#[cfg(test)] mod tests` was indexed as production, so a
+      # symbol only its assertions touched counted as having a production caller. That direction hides
+      # findings rather than inventing them, which is the worse of the two.
+      /^[[:space:]]*#\[cfg\(test\)\]/ || /^[[:space:]]*#\[(([a-z_]+::)?test|rstest)\]/ {
+        skip_depth = 0
+        skip_started = 0
+        while ((getline skip_line) > 0) {
+          opens = gsub(/\{/, "&", skip_line)
+          closes = gsub(/\}/, "&", skip_line)
+          if (opens > 0) skip_started = 1
+          skip_depth += opens - closes
+          # A braced item (`mod tests { ... }`) ends when its braces balance; an unbraced one
+          # (`use foo::bar;`) ends at its semicolon. Further attribute lines carry neither and are
+          # simply consumed on the way to the item they decorate.
+          if (skip_started) {
+            if (skip_depth <= 0) break
+          } else if (skip_line ~ /;[[:space:]]*$/) {
+            break
+          }
+        }
+        next
+      }
+      # TS keeps the hard stop: `describe(` blocks live in `*.test.ts`, which is dropped whole above,
+      # so a describe reached here is a test region in a file that has no production code below it.
       /^[[:space:]]*describe\(/ { exit }
       {
         line = $0
@@ -582,10 +615,28 @@ check_export() {
   fi
 }
 
-# Anchor's `#[program]` handlers and `#[derive(Accounts)]` plumbing are pub-by-generation, so only
-# the SDK crates are swept — the programs' instruction entry points are called by the runtime.
+# Anchor's `#[program]` handlers and `#[derive(Accounts)]` plumbing are pub-by-generation and the
+# runtime is what calls them, so a zero-reference count means nothing there. That exempts two file
+# shapes, not the program crates as a whole: the file holding the `#[program]` module, and the
+# `instructions/` tree holding the handler bodies with their account contexts. Everything else in a
+# program crate — state, events, errors, constants, the fhe helpers — is ordinary code no macro
+# generates and no runtime calls, so it is swept on the same terms as the SDK crates. Skipping the
+# crates wholesale is what let `encrypted_transfer_success_label` and
+# `encrypted_debit_candidate_label` outlive DD-019, which stopped creating the scratch PDAs they
+# named: nothing referenced either one, and no check was looking. This pass then renamed both of them
+# forward (§4) without noticing, which is the argument for the widened scope in one line.
+program_sweep_files=$(find solana/programs -name '*.rs' \
+  -not -path '*/instructions/*' -not -path '*/target/*' -print0 \
+  | xargs -0 grep -L '#\[program\]' 2>/dev/null || true)
 rust_pub_decls=$(grep -rnE --include='*.rs' "${EXCLUDES[@]}" '^\s*pub fn [a-z_][a-z_0-9]*' solana/crates \
   | grep -vE '(^|/)tests?/|tests\.rs:')
+if [ -n "$program_sweep_files" ]; then
+  # -H because grep omits the filename for a single-file argument, and `${decl%%:*}` needs it.
+  rust_pub_decls="${rust_pub_decls}
+$(echo "$program_sweep_files" | tr '\n' '\0' \
+    | xargs -0 grep -HnE '^\s*pub fn [a-z_][a-z_0-9]*' \
+    | grep -vE '(^|/)tests?/|tests\.rs:')"
+fi
 while IFS= read -r decl; do
   [ -n "$decl" ] || continue
   check_export "${decl%%:*}" "pub fn" \
@@ -723,6 +774,15 @@ FIXTURES
   printf 'pub fn dead_surface_selftest_never_called() {}\n' > "$fixture"
   expect_fires "uncalled-export sweep" "dead_surface_selftest_never_called" "" bash "$SELF"
   rm -f "$fixture"
+  # Check 6 again, in a program crate: the export sweep read only solana/crates until the program
+  # crates were folded in, so a dead `pub fn` in a program's state or events module was unreachable by
+  # construction. This fixture is what keeps that scope from narrowing back — a file no `mod` declares
+  # never reaches rustc, and the sweep is grep-driven, so it needs no wiring to be seen.
+  program_fixture="solana/programs/zama-host/src/dead_surface_selftest.rs"
+  printf 'pub fn program_dead_surface_selftest_never_called() {}\n' > "$program_fixture"
+  expect_fires "uncalled-export sweep (program crates)" \
+    "program_dead_surface_selftest_never_called" "" bash "$SELF"
+  rm -f "$program_fixture"
   # Check 7: a swept root outside every triggering path. Driven through the environment rather than
   # a fixture file, since the thing under test is the root list itself.
   expect_fires "untriggered-root sweep" \
