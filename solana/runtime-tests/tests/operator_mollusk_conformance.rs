@@ -341,7 +341,7 @@ impl EvalFlow {
         self.accounts.push((address, empty_system_account()));
         FheExecuteOutput::StoredValue {
             output_encrypted_value_index,
-            output_account_authority_index: None,
+            output_authority_index: None,
             output_domain_index: intern(self.authority.to_bytes()),
             output_account_index: intern(self.authority.to_bytes()),
             output_label_index: intern(label),
@@ -366,7 +366,7 @@ impl EvalFlow {
         (
             FheExecuteOutput::StoredValue {
                 output_encrypted_value_index,
-                output_account_authority_index: None,
+                output_authority_index: None,
                 output_domain_index: intern(self.authority.to_bytes()),
                 output_account_index: intern(self.authority.to_bytes()),
                 output_label_index: intern(label),
@@ -389,8 +389,8 @@ impl EvalFlow {
         );
         let cleartext = evaluate(&args, &self.cleartext)
             .expect("accepted host execution must have valid cleartext semantics");
-        let output_account = result.get_account(&output_address).unwrap();
-        let mut output_data: &[u8] = &output_account.data;
+        let output_authority = result.get_account(&output_address).unwrap();
+        let mut output_data: &[u8] = &output_authority.data;
         let output_handle = host::EncryptedValue::try_deserialize(&mut output_data)
             .expect("persistent result account")
             .current_handle;
@@ -422,7 +422,7 @@ impl EvalFlow {
             host::accounts::FheExecute {
                 payer: self.authority,
                 compute_subject: self.authority,
-                account_authority: self.authority,
+                encrypted_value_account_authority: self.authority,
                 host_config: self.host_config,
                 system_program: system_program::ID,
                 hcu_block_meter: None,
@@ -556,7 +556,7 @@ fn new_value_account(
         address,
         host::EncryptedValue {
             domain: authority,
-            account: authority,
+            encrypted_value_account_authority: authority,
             label,
             current_handle: handle,
             subjects: vec![authority],

@@ -3,8 +3,8 @@
 //! Three signers cover three distinct authorities, and they are only sometimes the same key:
 //! `payer` funds rent for persistent output ACL records; `compute_subject` is the identity that
 //! must be allowed on every persistent encrypted input, and doubles as the HCU metering key;
-//! `account_authority` is the app account that authorizes persistent output ACL metadata. A CPI
-//! caller typically signs `compute_subject` and `account_authority` with its own PDAs while
+//! `encrypted_value_account_authority` is the app account that authorizes persistent output ACL metadata. A CPI
+//! caller typically signs `compute_subject` and `encrypted_value_account_authority` with its own PDAs while
 //! forwarding a user wallet as `payer`.
 
 use anchor_lang::prelude::*;
@@ -48,7 +48,7 @@ pub struct FheExecute<'info> {
     /// Compute subject that must be allowed on persistent encrypted inputs.
     pub compute_subject: Signer<'info>,
     /// App account signer authorizing any persistent output ACL metadata.
-    pub account_authority: Signer<'info>,
+    pub encrypted_value_account_authority: Signer<'info>,
     /// Singleton config PDA. Read-only: the cap is read from here, but the writable per-slot
     /// counter is the separate `hcu_block_meter`, never this singleton — so the hot path takes no
     /// write lock on the config.
@@ -329,7 +329,7 @@ fn accept_execution_output<'info>(
         FheExecuteOutput::Transient => None,
         FheExecuteOutput::StoredValue {
             output_encrypted_value_index,
-            output_account_authority_index,
+            output_authority_index,
             output_domain_index,
             output_account_index,
             output_label_index,
@@ -338,23 +338,23 @@ fn accept_execution_output<'info>(
             make_public,
         } => {
             let output_domain = dictionary_key(dictionary, *output_domain_index)?;
-            let output_account = dictionary_key(dictionary, *output_account_index)?;
+            let output_authority = dictionary_key(dictionary, *output_account_index)?;
             let output_label = dictionary_bytes(dictionary, *output_label_index)?;
             let output_subjects = resolve_dictionary_subjects(dictionary, output_subject_indexes)?;
-            let account_authority = persistent_output_authority(
+            let encrypted_value_account_authority = persistent_output_authority(
                 table,
                 ctx,
-                output_account_authority_index.map(u16::from),
-                output_account,
+                output_authority_index.map(u16::from),
+                output_authority,
             )?;
             let encrypted_value = bind_execution_output(
                 ctx,
                 table,
                 u16::from(*output_encrypted_value_index),
                 result,
-                account_authority.key(),
+                encrypted_value_account_authority.key(),
                 output_domain,
-                output_account,
+                output_authority,
                 output_label,
                 &output_subjects,
                 previous_state,
@@ -397,7 +397,7 @@ fn persistent_output_authority<'info>(
     table: &EvalAccountTable<'_, 'info>,
     ctx: &Context<'info, FheExecute<'info>>,
     authority_index: Option<u16>,
-    output_account: Pubkey,
+    output_authority: Pubkey,
 ) -> Result<AccountInfo<'info>> {
     let authority = match authority_index {
         Some(index) => {
@@ -405,12 +405,15 @@ fn persistent_output_authority<'info>(
             require!(authority.is_signer, ZamaHostError::InvalidFheExecuteAccount);
             require_keys_eq!(
                 authority.key(),
-                output_account,
-                ZamaHostError::AppAccountAuthorityMismatch
+                output_authority,
+                ZamaHostError::EncryptedValueAccountAuthorityMismatch
             );
             authority.clone()
         }
-        None => ctx.accounts.account_authority.to_account_info(),
+        None => ctx
+            .accounts
+            .encrypted_value_account_authority
+            .to_account_info(),
     };
     let deny_record = table.deny_record(
         ctx.accounts.host_config.grant_deny_list_enabled,
@@ -478,18 +481,22 @@ fn bind_execution_output<'info>(
     table: &mut EvalAccountTable<'_, 'info>,
     output_encrypted_value_index: u16,
     result: [u8; 32],
-    account_authority: Pubkey,
+    encrypted_value_account_authority: Pubkey,
     output_domain: Pubkey,
-    output_account: Pubkey,
+    output_authority: Pubkey,
     output_label: [u8; 32],
     output_subjects: &[Pubkey],
     previous_state: &Option<PreviousState>,
     make_public: bool,
 ) -> Result<Pubkey> {
-    assert_output_acl_metadata(account_authority, output_account, output_subjects)?;
+    assert_output_acl_metadata(
+        encrypted_value_account_authority,
+        output_authority,
+        output_subjects,
+    )?;
 
     let output_info = table.account(output_encrypted_value_index)?;
-    let output_pda = table.expected_output_pda(output_domain, output_account, output_label);
+    let output_pda = table.expected_output_pda(output_domain, output_authority, output_label);
     require_keys_eq!(
         output_info.key(),
         output_pda.key,
@@ -545,7 +552,7 @@ fn bind_execution_output<'info>(
         check_new_grants_not_denied(&ctx.accounts.host_config, table, &[], output_subjects)?;
         let mut value = EncryptedValue {
             domain: output_domain,
-            account: output_account,
+            encrypted_value_account_authority: output_authority,
             label: output_label,
             current_handle: result,
             subjects: output_subjects.to_vec(),
@@ -640,7 +647,7 @@ mod tests {
     fn encrypted_value_account(handle: [u8; 32], subjects: &[Pubkey]) -> EncryptedValue {
         EncryptedValue {
             domain: Pubkey::default(),
-            account: Pubkey::default(),
+            encrypted_value_account_authority: Pubkey::default(),
             label: [0; 32],
             current_handle: handle,
             subjects: subjects.to_vec(),
@@ -678,7 +685,7 @@ mod tests {
     fn persistent_anchor_at_leaf_count(leaf_count: u64) -> Vec<u8> {
         let mut value = encrypted_value_account([9; 32], &[Pubkey::new_from_array([1; 32])]);
         value.domain = Pubkey::new_from_array([2; 32]);
-        value.account = Pubkey::new_from_array([3; 32]);
+        value.encrypted_value_account_authority = Pubkey::new_from_array([3; 32]);
         value.label = [7; 32];
         value.leaf_count = leaf_count;
         let (key, bump) = encrypted_value_address(value.encrypted_value_id());
@@ -698,7 +705,7 @@ mod tests {
                 fhe_type: 5,
                 output: FheExecuteOutput::StoredValue {
                     output_encrypted_value_index: 0,
-                    output_account_authority_index: None,
+                    output_authority_index: None,
                     output_domain_index: 0,
                     output_account_index: 0,
                     output_label_index: 0,

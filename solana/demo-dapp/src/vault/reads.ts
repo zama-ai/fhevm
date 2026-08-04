@@ -91,7 +91,7 @@ export async function getBatchByIndex(
  *
  * (b) ASSUMED ON-CHAIN LAYOUT (borsh, after the 8-byte account discriminator), mirroring the crate's
  *     `#[derive(BorshDeserialize)]` field order in `solana/crates/zama-solana-acl/src/lib.rs`:
- *       [8-byte discriminator][domain: 32][account: 32][label: 32]
+ *       [8-byte discriminator][domain: 32][encryptedValueAccountAuthority: 32][label: 32]
  *       [currentHandle: 32][subjects: Vec<Pubkey>][leafCount: u64][peaks: Vec<32>][bump: u8]
  *     The discriminator is sliced off before this decoder runs; `subjects` is decoded and discarded
  *     (the settle phases never read it — only its length matters, to advance the cursor).
@@ -105,7 +105,7 @@ export async function getBatchByIndex(
  */
 const encryptedValueBodyDecoder = getStructDecoder([
   ['domain', fixDecoderSize(getBytesDecoder(), 32)],
-  ['account', fixDecoderSize(getBytesDecoder(), 32)],
+  ['encryptedValueAccountAuthority', fixDecoderSize(getBytesDecoder(), 32)],
   ['label', fixDecoderSize(getBytesDecoder(), 32)],
   ['currentHandle', fixDecoderSize(getBytesDecoder(), 32)],
   ['subjects', getArrayDecoder(fixDecoderSize(getBytesDecoder(), 32), { size: getU32Decoder() })],

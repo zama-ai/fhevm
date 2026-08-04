@@ -175,14 +175,14 @@ pub(super) fn check_hcu_ordering(total: u64, depth: u64) -> Result<()> {
 }
 
 pub(super) fn assert_output_acl_metadata(
-    account_authority: Pubkey,
+    encrypted_value_account_authority: Pubkey,
     account: Pubkey,
     subjects: &[Pubkey],
 ) -> Result<()> {
     require_keys_eq!(
-        account_authority,
+        encrypted_value_account_authority,
         account,
-        ZamaHostError::AppAccountAuthorityMismatch
+        ZamaHostError::EncryptedValueAccountAuthorityMismatch
     );
     require!(
         !subjects.is_empty() && subjects.len() <= zama_solana_acl::MAX_ENCRYPTED_VALUE_SUBJECTS,

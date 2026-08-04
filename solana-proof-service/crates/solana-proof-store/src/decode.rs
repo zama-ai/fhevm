@@ -105,7 +105,7 @@ struct CreatedPublicOutput {
 const ENCRYPTED_VALUE_ACCOUNT_INDEX: usize = 2;
 const REMOVE_SUBJECT_ACCOUNT_INDEX: usize = 1;
 /// `remaining_accounts` follow the 9 named `fhe_execute` accounts — payer,
-/// compute_subject, account_authority, host_config, system_program,
+/// compute_subject, encrypted_value_account_authority, host_config, system_program,
 /// hcu_block_meter, hcu_trusted_app_record, then `#[event_cpi]`'s
 /// event_authority + program (see `FheExecute` in fhe_execute.rs). The two optional HCU
 /// accounts are always present as program-id placeholders when `None`, so the base
@@ -675,7 +675,7 @@ mod tests {
     }
 
     /// The 9 named `fhe_execute` accounts (payer, compute_subject,
-    /// account_authority, host_config, system_program, hcu_block_meter,
+    /// encrypted_value_account_authority, host_config, system_program, hcu_block_meter,
     /// hcu_trusted_app_record, event_authority, program) followed by
     /// `remaining_accounts` — matching the real anchor account layout so the
     /// persistent output resolves at `FHE_EXECUTE_REMAINING_BASE`.
@@ -683,7 +683,7 @@ mod tests {
         let mut accounts = vec![
             pk(0xA0),     // 0 payer
             pk(0xA1),     // 1 compute_subject
-            pk(0xA2),     // 2 account_authority
+            pk(0xA2),     // 2 encrypted_value_account_authority
             pk(0xA3),     // 3 host_config
             pk(0xA4),     // 4 system_program
             program_id(), // 5 hcu_block_meter (None placeholder)
@@ -731,7 +731,7 @@ mod tests {
     ) -> FheExecuteOutput {
         FheExecuteOutput::StoredValue {
             output_encrypted_value_index,
-            output_account_authority_index: None,
+            output_authority_index: None,
             output_domain_index: intern(pk(0x40)),
             output_account_index: intern(pk(0x41)),
             output_label_index: intern(pk(0x42)),

@@ -258,7 +258,7 @@ fn validate_lowered_output(
         FheExecuteOutput::Transient => {}
         FheExecuteOutput::StoredValue {
             output_encrypted_value_index,
-            output_account_authority_index,
+            output_authority_index,
             output_domain_index,
             output_account_index,
             output_label_index,
@@ -266,7 +266,7 @@ fn validate_lowered_output(
             ..
         } => {
             mark_lowered_account(used_accounts, *output_encrypted_value_index)?;
-            if let Some(index) = output_account_authority_index {
+            if let Some(index) = output_authority_index {
                 mark_lowered_account(used_accounts, *index)?;
             }
             mark_lowered_dictionary_entry(used_dictionary, *output_domain_index)?;

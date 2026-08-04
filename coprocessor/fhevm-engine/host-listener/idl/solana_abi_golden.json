@@ -284,7 +284,7 @@
       "fixture_len": 59,
       "name": "fhe_execute",
       "program": "zama_host",
-      "schema_hash": "199ee8bc3d7a3b5e320e0347e9291fdd46c3b60c1d426fb53bc1a63c679e5737"
+      "schema_hash": "ab98eeff43923cfc9dfc0c71b1e2cc15d9fc2a24dac7ee448342c07bfd6799aa"
     },
     {
       "category": "instruction_args",

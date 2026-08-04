@@ -3,7 +3,7 @@
 //! The batcher drives its own ZamaHost evals (join re-materialization, the
 //! quit reset, and the claim MulDiv) with one identity: the per-batch
 //! authority PDA is simultaneously the eval's `compute_subject` (it reads the
-//! deposit encrypted value accounts it is a subject of) and its `account_authority` (it
+//! deposit encrypted value accounts it is a subject of) and its `encrypted_value_account_authority` (it
 //! authorizes the batcher-owned persistent outputs), both signed through a single
 //! `invoke_signed`.
 
@@ -128,7 +128,7 @@ pub(crate) fn execute_as_batch_authority<'info>(
         zama_fhe::ExecutionCpiAccounts {
             payer: eval.payer,
             compute_subject: eval.batch_authority.clone(),
-            account_authority: eval.batch_authority,
+            encrypted_value_account_authority: eval.batch_authority,
             host_config: eval.host_config,
             deny_subject_records: eval.deny_subject_records,
             system_program: eval.system_program,
@@ -156,7 +156,7 @@ pub(crate) fn uint64_operand(value: &EncryptedValue) -> Result<zama_fhe::Uint64H
         value.current_handle,
         zama_fhe::EncryptedValueId::new(
             zama_fhe::Domain::new(value.domain),
-            value.account,
+            value.encrypted_value_account_authority,
             zama_fhe::PersistentLabel::new(value.label),
         ),
     )

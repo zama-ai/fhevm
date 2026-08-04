@@ -22,7 +22,7 @@ use crate::execution::FheExecution;
 pub struct ExecutionCpiAccounts<'a, 'info> {
     pub payer: AccountInfo<'info>,
     pub compute_subject: AccountInfo<'info>,
-    pub account_authority: AccountInfo<'info>,
+    pub encrypted_value_account_authority: AccountInfo<'info>,
     pub host_config: AccountInfo<'info>,
     pub deny_subject_records: &'a [AccountInfo<'info>],
     pub system_program: AccountInfo<'info>,
@@ -71,14 +71,14 @@ fn invoke_execution_signed_with_resolver<'a, 'info, R>(
 where
     R: ExecutionAccountResolver<'info> + ?Sized,
 {
-    if accounts.account_authority.key() != execution.app_authority.pubkey() {
+    if accounts.encrypted_value_account_authority.key() != execution.app_authority.pubkey() {
         return Err(anchor_lang::error::ErrorCode::ConstraintAddress.into());
     }
     let deny_subject_records = accounts.deny_subject_records;
     let fixed_accounts = zama_host::cpi::accounts::FheExecute {
         payer: accounts.payer,
         compute_subject: accounts.compute_subject,
-        account_authority: accounts.account_authority,
+        encrypted_value_account_authority: accounts.encrypted_value_account_authority,
         host_config: accounts.host_config,
         system_program: accounts.system_program,
         hcu_block_meter: accounts.hcu_block_meter,

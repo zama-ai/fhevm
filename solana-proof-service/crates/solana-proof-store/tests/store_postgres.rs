@@ -70,7 +70,7 @@ fn fhe_execute_ix(
         fhe_type: 5,
         output: FheExecuteOutput::StoredValue {
             output_encrypted_value_index: 0,
-            output_account_authority_index: None,
+            output_authority_index: None,
             output_domain_index: 0,
             output_account_index: 1,
             output_label_index: 2,
@@ -95,7 +95,7 @@ fn fhe_execute_ix(
     let named = vec![
         pk(0xA0), // payer
         pk(0xA1), // compute_subject
-        pk(0xA2), // account_authority
+        pk(0xA2), // encrypted_value_account_authority
         pk(0xA3), // host_config
         pk(0xA4), // system_program
         pk(7),    // hcu_block_meter (None placeholder = program id)

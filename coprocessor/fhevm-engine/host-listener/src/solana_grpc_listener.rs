@@ -237,7 +237,7 @@ pub async fn run(
 ///
 /// `remaining_index` (the program's `output_encrypted_value_index`) is relative to
 /// `remaining_accounts`, which follow the 9 named `fhe_execute` accounts — payer,
-/// compute_subject, account_authority, host_config, system_program,
+/// compute_subject, encrypted_value_account_authority, host_config, system_program,
 /// hcu_block_meter, hcu_trusted_app_record, then `#[event_cpi]`'s event_authority +
 /// program (see `FheExecute` in fhe_execute.rs). The two optional HCU accounts are always
 /// present in the account list (as program-id placeholders when `None`): the event_cpi
@@ -1585,7 +1585,7 @@ mod fhe_execute_acl_tests {
                 output_fhe_type: 5,
                 output: FheExecuteOutput::StoredValue {
                     output_encrypted_value_index: 0,
-                    output_account_authority_index: None,
+                    output_authority_index: None,
                     output_domain_index: 2,
                     output_account_index: 3,
                     output_label_index: 4,
@@ -1652,7 +1652,7 @@ mod fhe_execute_acl_tests {
                 fhe_type: 5,
                 output: FheExecuteOutput::StoredValue {
                     output_encrypted_value_index: 0,
-                    output_account_authority_index: None,
+                    output_authority_index: None,
                     output_domain_index: 0,
                     output_account_index: 1,
                     output_label_index: 2,

@@ -149,7 +149,7 @@ pub(crate) fn lower_output(
                     binding.encrypted_value(),
                     ExecutionAccountPurpose::PersistentOutputAcl,
                 ))?;
-            let output_account_authority_index = if binding.account() == app_authority.pubkey() {
+            let output_authority_index = if binding.account() == app_authority.pubkey() {
                 None
             } else {
                 Some(tables.account_index(ExecutionAccountMeta::readonly_signer(
@@ -164,7 +164,7 @@ pub(crate) fn lower_output(
                 .collect::<Result<Vec<u8>>>()?;
             let output = FheExecuteOutput::StoredValue {
                 output_encrypted_value_index,
-                output_account_authority_index,
+                output_authority_index,
                 output_domain_index: tables
                     .dictionary_index(binding.domain().pubkey().to_bytes())?,
                 output_account_index: tables.dictionary_index(binding.account().to_bytes())?,

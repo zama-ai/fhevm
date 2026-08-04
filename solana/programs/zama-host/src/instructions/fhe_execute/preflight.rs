@@ -14,7 +14,7 @@ pub(super) fn preflight_execution<'info>(
     preflight_execution_accounts(
         table,
         args,
-        ctx.accounts.account_authority.key(),
+        ctx.accounts.encrypted_value_account_authority.key(),
         ctx.accounts.host_config.grant_deny_list_enabled,
     )
 }
@@ -30,7 +30,7 @@ pub(super) fn preflight_execution<'info>(
 /// keypair-churn bypass rode, so it is rejected before compute.
 ///
 /// A persistent OUTPUT is allowed through here, but note it does NOT pin the subject: output binding
-/// authorizes against `account_authority`, never `compute_subject`. So a throwaway-encrypted value account
+/// authorizes against `encrypted_value_account_authority`, never `compute_subject`. So a throwaway-encrypted value account
 /// create/update still lets a caller swap the subject for a fresh per-slot meter — that vector
 /// remains open, but is rent-bounded (~one `HcuBlockMeter` PDA rent per swap) rather than free,
 /// and closing it fully needs a registered app identity (the issue's Option 2, deferred). The
@@ -148,14 +148,14 @@ fn step_pins_or_persists(step: &FheExecuteStep) -> bool {
 fn preflight_execution_accounts(
     table: &mut EvalAccountTable<'_, '_>,
     args: &FheExecuteArgs,
-    account_authority: Pubkey,
+    encrypted_value_account_authority: Pubkey,
     deny_list_enabled: bool,
 ) -> Result<()> {
     let mut preflight = EvalPreflight {
         table,
         dictionary: &args.dictionary,
         dictionary_used: vec![false; args.dictionary.len()],
-        account_authority,
+        encrypted_value_account_authority,
         deny_list_enabled,
         persistent_outputs_written: Vec::with_capacity(MAX_FHE_EXECUTION_STEPS),
     };
@@ -178,7 +178,7 @@ struct EvalPreflight<'t, 'a, 'info> {
     table: &'t mut EvalAccountTable<'a, 'info>,
     dictionary: &'t [[u8; 32]],
     dictionary_used: Vec<bool>,
-    account_authority: Pubkey,
+    encrypted_value_account_authority: Pubkey,
     deny_list_enabled: bool,
     /// Persistent accounts written by completed earlier steps. Operands are checked
     /// before the current step's output is recorded, so read-then-update in one
@@ -206,7 +206,7 @@ impl EvalPreflight<'_, '_, '_> {
                 self.table.mark(u16::from(index))?;
                 Ok(authority)
             }
-            None => Ok(self.account_authority),
+            None => Ok(self.encrypted_value_account_authority),
         }
     }
 
@@ -342,7 +342,7 @@ fn preflight_output(
         FheExecuteOutput::Transient => {}
         FheExecuteOutput::StoredValue {
             output_encrypted_value_index,
-            output_account_authority_index,
+            output_authority_index,
             output_domain_index,
             output_account_index,
             output_label_index,
@@ -360,7 +360,7 @@ fn preflight_output(
             preflight.mark_dictionary(*output_domain_index)?;
             preflight.mark_dictionary(*output_account_index)?;
             preflight.mark_dictionary(*output_label_index)?;
-            let authority = preflight.mark_output_authority(*output_account_authority_index)?;
+            let authority = preflight.mark_output_authority(*output_authority_index)?;
             preflight.mark_deny_record(authority)?;
             // Every newly granted subject is deny-checked in the bind pass; mark
             // their deny records here so finish() accounts for them. On an update
@@ -487,7 +487,7 @@ mod tests {
     fn persistent_output() -> FheExecuteOutput {
         FheExecuteOutput::StoredValue {
             output_encrypted_value_index: 0,
-            output_account_authority_index: None,
+            output_authority_index: None,
             output_domain_index: 0,
             output_account_index: 0,
             output_label_index: 1,

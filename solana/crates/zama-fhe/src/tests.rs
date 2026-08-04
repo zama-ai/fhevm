@@ -112,10 +112,10 @@ fn batch_build_runs_closure_and_finishes_batch() {
             assert_eq!(*lhs, FheExecuteOperand::EarlierStep { producer_index: 0 });
             match output {
                 FheExecuteOutput::StoredValue {
-                    output_account_authority_index,
+                    output_authority_index,
                     ..
                 } => {
-                    assert_eq!(*output_account_authority_index, None);
+                    assert_eq!(*output_authority_index, None);
                 }
                 other => panic!("unexpected output: {other:?}"),
             }
@@ -595,11 +595,11 @@ fn lowers_explicit_output_authority_witness() {
         FheExecuteStep::Binary { output, .. } => match output {
             FheExecuteOutput::StoredValue {
                 output_encrypted_value_index,
-                output_account_authority_index,
+                output_authority_index,
                 ..
             } => {
                 assert_eq!(*output_encrypted_value_index, 1);
-                assert_eq!(*output_account_authority_index, Some(2));
+                assert_eq!(*output_authority_index, Some(2));
             }
             other => panic!("unexpected output: {other:?}"),
         },
@@ -1350,7 +1350,7 @@ fn persistent_output_update_carries_current_state() {
     let previous_subjects = vec![subject];
     let current = zama_host::EncryptedValue {
         domain: primary_authority,
-        account: Pubkey::new_unique(),
+        encrypted_value_account_authority: Pubkey::new_unique(),
         label: [42; 32],
         current_handle: previous_handle,
         subjects: previous_subjects.clone(),

@@ -71,7 +71,7 @@ pub enum ZamaHostError {
     InvalidRandomUpperBound,
     /// The authority signing for an output's app account does not match that app account.
     #[msg("app account authority does not match app account")]
-    AppAccountAuthorityMismatch,
+    EncryptedValueAccountAuthorityMismatch,
     /// A deny-list witness is required but was not supplied.
     #[msg("deny-list witness account is required")]
     DenyRecordMissing,

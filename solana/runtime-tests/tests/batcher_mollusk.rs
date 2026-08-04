@@ -291,17 +291,20 @@ fn ensure_system_accounts(context: &Ctx, addresses: &[Pubkey]) {
 
 fn new_encrypted_value(
     domain: Pubkey,
-    account: Pubkey,
+    encrypted_value_account_authority: Pubkey,
     label: [u8; 32],
     handle: [u8; 32],
     subjects: &[Pubkey],
 ) -> (Pubkey, host::EncryptedValue) {
-    let encrypted_value_id =
-        zama_solana_acl::derive_encrypted_value_id(domain.to_bytes(), account.to_bytes(), label);
+    let encrypted_value_id = zama_solana_acl::derive_encrypted_value_id(
+        domain.to_bytes(),
+        encrypted_value_account_authority.to_bytes(),
+        label,
+    );
     let (address, bump) = host::encrypted_value_address(encrypted_value_id);
     let value = host::EncryptedValue {
         domain,
-        account,
+        encrypted_value_account_authority,
         label,
         current_handle: handle,
         subjects: subjects.to_vec(),

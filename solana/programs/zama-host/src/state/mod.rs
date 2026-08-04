@@ -355,10 +355,10 @@ pub enum FheExecuteOutput {
         output_encrypted_value_index: u8,
         /// Optional index into `remaining_accounts` for the app account authority signer.
         ///
-        /// `None` uses the fixed `account_authority` account in the eval
+        /// `None` uses the fixed `encrypted_value_account_authority` account in the eval
         /// context. `Some(index)` requires that remaining account to be a signer
         /// and to match the output app account.
-        output_account_authority_index: Option<u8>,
+        output_authority_index: Option<u8>,
         /// Dictionary index of the ACL domain key for the output encrypted value account.
         output_domain_index: u8,
         /// Dictionary index of the app account authorized to bind the output encrypted value account.

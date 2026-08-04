@@ -2605,7 +2605,7 @@
         "Canonical ACL + history state for one encrypted value account.",
         "",
         "PDA: `[ENCRYPTED_VALUE_SEED, encrypted_value_id]` where `encrypted_value_id =",
-        "zama_solana_acl::derive_encrypted_value_id(domain, account, label)`.",
+        "zama_solana_acl::derive_encrypted_value_id(domain, encrypted_value_account_authority, label)`.",
         "The account name must stay exactly `EncryptedValue` — Anchor derives the",
         "discriminator from the type name, and it must match",
         "`zama_solana_acl::encrypted_value_discriminator()`."
@@ -2621,16 +2621,18 @@
             "type": "pubkey"
           },
           {
-            "name": "account",
+            "name": "encrypted_value_account_authority",
             "docs": [
-              "App-owned account whose encrypted field this encrypted value account represents."
+              "The account that controls this encrypted value: it must sign to create it, update its",
+              "handle, or replace its subjects (`require_keys_eq!` in `assert_output_acl_metadata`). For a",
+              "token balance this is the token account itself."
             ],
             "type": "pubkey"
           },
           {
             "name": "label",
             "docs": [
-              "Domain-separated encrypted field label inside `account`."
+              "Domain-separated encrypted field label inside `encrypted_value_account_authority`."
             ],
             "type": {
               "array": [

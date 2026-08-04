@@ -430,7 +430,7 @@ fn execute_burn<'info>(
             Some(uint64_from_value(
                 value.current_handle,
                 zama_fhe::Domain::new(value.domain),
-                value.account,
+                value.encrypted_value_account_authority,
                 value.label,
             )?)
         }

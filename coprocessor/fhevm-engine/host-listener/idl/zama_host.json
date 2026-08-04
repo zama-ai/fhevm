@@ -397,7 +397,7 @@
           "signer": true
         },
         {
-          "name": "account_authority",
+          "name": "encrypted_value_account_authority",
           "docs": [
             "App account signer authorizing any persistent output ACL metadata."
           ],
@@ -1655,7 +1655,7 @@
     },
     {
       "code": 6020,
-      "name": "AppAccountAuthorityMismatch",
+      "name": "EncryptedValueAccountAuthorityMismatch",
       "msg": "app account authority does not match app account"
     },
     {
@@ -2326,11 +2326,11 @@
                 "type": "u8"
               },
               {
-                "name": "output_account_authority_index",
+                "name": "output_authority_index",
                 "docs": [
                   "Optional index into `remaining_accounts` for the app account authority signer.",
                   "",
-                  "`None` uses the fixed `account_authority` account in the eval",
+                  "`None` uses the fixed `encrypted_value_account_authority` account in the eval",
                   "context. `Some(index)` requires that remaining account to be a signer",
                   "and to match the output app account."
                 ],

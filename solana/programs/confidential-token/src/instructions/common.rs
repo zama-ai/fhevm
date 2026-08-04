@@ -210,7 +210,7 @@ fn compute_transfer_handles<'info>(
             Some(uint64_from_value(
                 value.current_handle,
                 zama_fhe::Domain::new(value.domain),
-                value.account,
+                value.encrypted_value_account_authority,
                 value.label,
             )?)
         }
@@ -376,7 +376,7 @@ pub(crate) fn assert_burned_amount_value_account(
         ConfidentialTokenError::DomainMismatch
     );
     require_keys_eq!(
-        amount_value.account,
+        amount_value.encrypted_value_account_authority,
         token_account,
         ConfidentialTokenError::AmountAclMismatch
     );

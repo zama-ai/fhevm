@@ -530,7 +530,7 @@ fn persistent_output(
     );
     Ok(zama_host::FheExecuteOutput::StoredValue {
         output_encrypted_value_index: index,
-        output_account_authority_index: None,
+        output_authority_index: None,
         output_domain_index: dictionary.intern_key(domain),
         output_account_index: dictionary.intern_key(account),
         output_label_index: dictionary.intern(label),
@@ -565,7 +565,7 @@ fn allow_for_decryption(
     let (handle, _) = existing_value_account_state(host, encrypted_value)?.ok_or_else(|| {
         std::io::Error::new(
             std::io::ErrorKind::NotFound,
-            "encrypted value encrypted value account missing before make_handle_public",
+            "encrypted value account missing before make_handle_public",
         )
     })?;
     let public_sig = host
@@ -737,7 +737,7 @@ fn trivial_encrypt_eval_with_label(
         .accounts(zama_host::accounts::FheExecute {
             payer: payer.pubkey(),
             compute_subject: payer.pubkey(),
-            account_authority: payer.pubkey(),
+            encrypted_value_account_authority: payer.pubkey(),
             host_config,
             system_program: system_program::ID,
             // Block-cap optional accounts: default cap is unrestricted, so existing flows
@@ -1184,7 +1184,7 @@ fn fhe_execute_verified_input_add(
         .accounts(zama_host::accounts::FheExecute {
             payer: payer.pubkey(),
             compute_subject: payer.pubkey(),
-            account_authority: payer.pubkey(),
+            encrypted_value_account_authority: payer.pubkey(),
             host_config,
             system_program: system_program::ID,
             // Block-cap optional accounts: default cap is unrestricted, so existing flows
@@ -1837,7 +1837,7 @@ fn create_persistent_public_decrypt_operand(
         .accounts(zama_host::accounts::FheExecute {
             payer: payer.pubkey(),
             compute_subject: payer.pubkey(),
-            account_authority: payer.pubkey(),
+            encrypted_value_account_authority: payer.pubkey(),
             host_config,
             system_program: system_program::ID,
             hcu_block_meter: None,
@@ -1979,7 +1979,7 @@ fn fhe_execute_binary(
         .accounts(zama_host::accounts::FheExecute {
             payer: payer.pubkey(),
             compute_subject: payer.pubkey(),
-            account_authority: payer.pubkey(),
+            encrypted_value_account_authority: payer.pubkey(),
             host_config,
             system_program: system_program::ID,
             hcu_block_meter: None,
@@ -2098,7 +2098,7 @@ fn fhe_execute_unary(
         .accounts(zama_host::accounts::FheExecute {
             payer: payer.pubkey(),
             compute_subject: payer.pubkey(),
-            account_authority: payer.pubkey(),
+            encrypted_value_account_authority: payer.pubkey(),
             host_config,
             system_program: system_program::ID,
             hcu_block_meter: None,
@@ -2245,7 +2245,7 @@ fn fhe_execute_ternary(
         .accounts(zama_host::accounts::FheExecute {
             payer: payer.pubkey(),
             compute_subject: payer.pubkey(),
-            account_authority: payer.pubkey(),
+            encrypted_value_account_authority: payer.pubkey(),
             host_config,
             system_program: system_program::ID,
             hcu_block_meter: None,
@@ -2338,7 +2338,7 @@ fn fhe_execute_rand_bounded(
         .accounts(zama_host::accounts::FheExecute {
             payer: payer.pubkey(),
             compute_subject: payer.pubkey(),
-            account_authority: payer.pubkey(),
+            encrypted_value_account_authority: payer.pubkey(),
             host_config,
             system_program: system_program::ID,
             hcu_block_meter: None,
@@ -2447,7 +2447,7 @@ fn fhe_execute_sum(
         .accounts(zama_host::accounts::FheExecute {
             payer: payer.pubkey(),
             compute_subject: payer.pubkey(),
-            account_authority: payer.pubkey(),
+            encrypted_value_account_authority: payer.pubkey(),
             host_config,
             system_program: system_program::ID,
             hcu_block_meter: None,
@@ -2585,7 +2585,7 @@ fn fhe_execute_is_in(
         .accounts(zama_host::accounts::FheExecute {
             payer: payer.pubkey(),
             compute_subject: payer.pubkey(),
-            account_authority: payer.pubkey(),
+            encrypted_value_account_authority: payer.pubkey(),
             host_config,
             system_program: system_program::ID,
             hcu_block_meter: None,
@@ -2695,7 +2695,7 @@ fn fhe_execute_mul_div(
         .accounts(zama_host::accounts::FheExecute {
             payer: payer.pubkey(),
             compute_subject: payer.pubkey(),
-            account_authority: payer.pubkey(),
+            encrypted_value_account_authority: payer.pubkey(),
             host_config,
             system_program: system_program::ID,
             hcu_block_meter: None,

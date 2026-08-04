@@ -70,9 +70,10 @@ pub enum AclError {
 pub struct EncryptedValue {
     /// App-level ACL domain, such as a confidential token mint.
     pub domain: [u8; 32],
-    /// App-owned account whose encrypted field this encrypted value account represents.
-    pub account: [u8; 32],
-    /// Domain-separated encrypted field label inside `account`.
+    /// The account that controls this encrypted value: it must sign to create it, update its
+    /// handle, or replace its subjects. For a token balance this is the token account itself.
+    pub encrypted_value_account_authority: [u8; 32],
+    /// Domain-separated encrypted field label inside `encrypted_value_account_authority`.
     pub label: [u8; 32],
     /// Current encrypted value identifier (the live handle).
     pub current_handle: [u8; 32],
@@ -89,7 +90,11 @@ pub struct EncryptedValue {
 impl EncryptedValue {
     /// The encrypted value account's encrypted value ID — its PDA seed. Derived, never stored.
     pub fn encrypted_value_id(&self) -> [u8; 32] {
-        derive_encrypted_value_id(self.domain, self.account, self.label)
+        derive_encrypted_value_id(
+            self.domain,
+            self.encrypted_value_account_authority,
+            self.label,
+        )
     }
 
     /// Whether `subject` is a current persistent member.
@@ -109,7 +114,7 @@ impl EncryptedValue {
 #[derive(borsh::BorshSerialize, borsh::BorshDeserialize, Clone, Debug, PartialEq, Eq)]
 struct OnChainEncryptedValue {
     domain: [u8; 32],
-    account: [u8; 32],
+    encrypted_value_account_authority: [u8; 32],
     label: [u8; 32],
     current_handle: [u8; 32],
     subjects: Vec<[u8; 32]>,
@@ -122,7 +127,7 @@ impl OnChainEncryptedValue {
     fn to_shared(&self) -> EncryptedValue {
         EncryptedValue {
             domain: self.domain,
-            account: self.account,
+            encrypted_value_account_authority: self.encrypted_value_account_authority,
             label: self.label,
             current_handle: self.current_handle,
             subjects: self.subjects.clone(),
@@ -156,8 +161,17 @@ pub fn decode_on_chain_account(data: &[u8]) -> Result<EncryptedValue, AclError> 
 /// The app-controlled encrypted value ID for one encrypted field — the encrypted value account's PDA
 /// seed. (The sha256 tag string keeps its historical `value-key` spelling: it is preimage bytes.)
 /// Contains app metadata, not the opaque handle, so the address is predeclarable.
-pub fn derive_encrypted_value_id(domain: [u8; 32], account: [u8; 32], label: [u8; 32]) -> [u8; 32] {
-    sha256(&[b"zama-encrypted-value-key-v1", &domain, &account, &label])
+pub fn derive_encrypted_value_id(
+    domain: [u8; 32],
+    encrypted_value_account_authority: [u8; 32],
+    label: [u8; 32],
+) -> [u8; 32] {
+    sha256(&[
+        b"zama-encrypted-value-key-v1",
+        &domain,
+        &encrypted_value_account_authority,
+        &label,
+    ])
 }
 
 #[cfg(not(target_os = "solana"))]
@@ -417,7 +431,7 @@ mod tests {
     fn encode_on_chain(value: &EncryptedValue) -> Vec<u8> {
         let on_chain = OnChainEncryptedValue {
             domain: value.domain,
-            account: value.account,
+            encrypted_value_account_authority: value.encrypted_value_account_authority,
             label: value.label,
             current_handle: value.current_handle,
             subjects: value.subjects.clone(),

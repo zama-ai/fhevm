@@ -362,17 +362,20 @@ fn deny_subject_record_account(subject: Pubkey, denied: bool) -> (Pubkey, Accoun
 /// `host_mollusk.rs::new_value_account` for the token program's ACL domain (the mint).
 fn new_encrypted_value(
     domain: Pubkey,
-    account: Pubkey,
+    encrypted_value_account_authority: Pubkey,
     label: [u8; 32],
     handle: [u8; 32],
     subjects: &[Pubkey],
 ) -> (Pubkey, host::EncryptedValue) {
-    let encrypted_value_id =
-        zama_solana_acl::derive_encrypted_value_id(domain.to_bytes(), account.to_bytes(), label);
+    let encrypted_value_id = zama_solana_acl::derive_encrypted_value_id(
+        domain.to_bytes(),
+        encrypted_value_account_authority.to_bytes(),
+        label,
+    );
     let (address, bump) = host::encrypted_value_address(encrypted_value_id);
     let value = host::EncryptedValue {
         domain,
-        account,
+        encrypted_value_account_authority,
         label,
         current_handle: handle,
         subjects: subjects.to_vec(),
@@ -1025,7 +1028,10 @@ fn mollusk_initialize_mint_creates_total_supply_encrypted_value() {
     );
     let supply_value = read_encrypted_value(&context, total_supply_encrypted_value);
     assert_eq!(supply_value.domain, mint);
-    assert_eq!(supply_value.account, total_supply_authority);
+    assert_eq!(
+        supply_value.encrypted_value_account_authority,
+        total_supply_authority
+    );
     assert_eq!(supply_value.label, token::total_supply_label());
     assert!(supply_value.has_subject(compute_signer));
 }
@@ -1054,7 +1060,10 @@ fn mollusk_initialize_token_account_creates_initial_balance_encrypted_value() {
 
     let balance_value = read_encrypted_value(&context, balance_encrypted_value);
     assert_eq!(balance_value.domain, fixture.mint);
-    assert_eq!(balance_value.account, token_account);
+    assert_eq!(
+        balance_value.encrypted_value_account_authority,
+        token_account
+    );
     assert_eq!(balance_value.label, token::balance_label());
     assert!(balance_value.has_subject(owner));
     assert!(balance_value.has_subject(fixture.compute_signer));
@@ -1249,7 +1258,10 @@ fn mollusk_confidential_transfer_updates_value_accounts_and_cleartext_balances()
     // An encrypted value account entry for the transferred amount was created (first bind) at the canonical PDA.
     let transferred = read_encrypted_value(&context, transferred_value_address);
     assert_eq!(transferred.domain, fixture.mint);
-    assert_eq!(transferred.account, fixture.alice_token);
+    assert_eq!(
+        transferred.encrypted_value_account_authority,
+        fixture.alice_token
+    );
     assert_eq!(transferred.label, token::transferred_amount_label());
     assert!(transferred.has_subject(fixture.owner));
     assert!(transferred.has_subject(fixture.bob_owner));
@@ -2199,7 +2211,7 @@ fn mollusk_confidential_transfer_rejects_balance_wrong_token_account_app_account
         fixture.alice_initial,
         &[fixture.owner, fixture.compute_signer],
     );
-    wrong_account_value.account = wrong_token_account;
+    wrong_account_value.encrypted_value_account_authority = wrong_token_account;
     accounts.insert(
         fixture.alice_balance_value,
         encrypted_value_account(&wrong_account_value),
@@ -2225,7 +2237,10 @@ fn mollusk_confidential_transfer_rejects_balance_wrong_token_account_app_account
 
     let alice_balance = read_encrypted_value(&context, fixture.alice_balance_value);
     let bob_balance = read_encrypted_value(&context, fixture.bob_balance_value);
-    assert_eq!(alice_balance.account, wrong_token_account);
+    assert_eq!(
+        alice_balance.encrypted_value_account_authority,
+        wrong_token_account
+    );
     assert_eq!(alice_balance.current_handle, fixture.alice_initial);
     assert_eq!(bob_balance.current_handle, fixture.bob_initial);
     assert!(account_is_system_owned_and_empty(

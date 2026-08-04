@@ -514,7 +514,7 @@ pub(crate) fn execute<'info>(request: Execute<'_, 'info>) -> Result<()> {
         zama_fhe::ExecutionCpiAccounts {
             payer: request.context.payer.to_account_info(),
             compute_subject: request.context.compute_authority.account_info(),
-            account_authority: app_authority.account.clone(),
+            encrypted_value_account_authority: app_authority.account.clone(),
             host_config: request.context.host_config.to_account_info(),
             deny_subject_records: request.context.deny_subject_records,
             system_program: request.context.system_program.to_account_info(),

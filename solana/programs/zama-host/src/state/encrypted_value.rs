@@ -1,7 +1,7 @@
 //! On-chain account data for `EncryptedValue` (RFC-024).
 //!
-//! Replaces the keyed-nonce ACL model: one account per encrypted-value
-//! encrypted value account, reused across every handle update, carrying a compact MMR history
+//! Replaces the keyed-nonce ACL model: one encrypted value account per encrypted
+//! value, reused across every handle update, carrying a compact MMR history
 //! instead of a fresh PDA per creation. Field order follows
 //! `zama_solana_acl::EncryptedValue`, so the shared crate's discriminator,
 //! size formula, and MMR helpers apply directly.
@@ -11,7 +11,7 @@ use super::*;
 /// Canonical ACL + history state for one encrypted value account.
 ///
 /// PDA: `[ENCRYPTED_VALUE_SEED, encrypted_value_id]` where `encrypted_value_id =
-/// zama_solana_acl::derive_encrypted_value_id(domain, account, label)`.
+/// zama_solana_acl::derive_encrypted_value_id(domain, encrypted_value_account_authority, label)`.
 /// The account name must stay exactly `EncryptedValue` — Anchor derives the
 /// discriminator from the type name, and it must match
 /// `zama_solana_acl::encrypted_value_discriminator()`.
@@ -19,9 +19,11 @@ use super::*;
 pub struct EncryptedValue {
     /// App-level ACL domain, such as a confidential token mint.
     pub domain: Pubkey,
-    /// App-owned account whose encrypted field this encrypted value account represents.
-    pub account: Pubkey,
-    /// Domain-separated encrypted field label inside `account`.
+    /// The account that controls this encrypted value: it must sign to create it, update its
+    /// handle, or replace its subjects (`require_keys_eq!` in `assert_output_acl_metadata`). For a
+    /// token balance this is the token account itself.
+    pub encrypted_value_account_authority: Pubkey,
+    /// Domain-separated encrypted field label inside `encrypted_value_account_authority`.
     pub label: [u8; 32],
     /// Current encrypted value identifier (the live handle).
     pub current_handle: [u8; 32],
@@ -36,7 +38,7 @@ pub struct EncryptedValue {
 }
 
 impl EncryptedValue {
-    /// Anchor account body size (excludes the 8-byte discriminator), for a
+    /// Anchor account body size (excludes the 8-byte discriminator), for an
     /// encrypted value account with `subjects_len` subjects and `peaks_len` peaks.
     pub fn space(subjects_len: usize, peaks_len: usize) -> usize {
         zama_solana_acl::EncryptedValue::account_size(subjects_len, peaks_len) - 8
@@ -46,7 +48,7 @@ impl EncryptedValue {
     pub fn encrypted_value_id(&self) -> [u8; 32] {
         zama_solana_acl::derive_encrypted_value_id(
             self.domain.to_bytes(),
-            self.account.to_bytes(),
+            self.encrypted_value_account_authority.to_bytes(),
             self.label,
         )
     }
@@ -67,7 +69,7 @@ impl EncryptedValue {
     pub fn to_shared(&self) -> zama_solana_acl::EncryptedValue {
         zama_solana_acl::EncryptedValue {
             domain: self.domain.to_bytes(),
-            account: self.account.to_bytes(),
+            encrypted_value_account_authority: self.encrypted_value_account_authority.to_bytes(),
             label: self.label,
             current_handle: self.current_handle,
             subjects: self.subjects.iter().map(|p| p.to_bytes()).collect(),

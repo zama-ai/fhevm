@@ -262,7 +262,7 @@ mod tests {
     fn value(handle: [u8; 32], subjects: &[Pubkey]) -> EncryptedValue {
         EncryptedValue {
             domain: Pubkey::default(),
-            account: Pubkey::default(),
+            encrypted_value_account_authority: Pubkey::default(),
             label: [0; 32],
             current_handle: handle,
             subjects: subjects.to_vec(),
