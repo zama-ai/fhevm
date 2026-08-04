@@ -6,7 +6,10 @@ use fhevm_engine_common::types::SignerType;
 use fhevm_engine_common::utils::DatabaseURL;
 use humantime::parse_duration;
 use sns_worker::metrics::SNS_LATENCY_OP_HISTOGRAM_CONF;
-use sns_worker::{S3MigrationMode, SchedulePolicy, DEFAULT_S3_MIGRATION_MAX_RETRIES};
+use sns_worker::{
+    S3MigrationMode, SchedulePolicy, DEFAULT_S3_MIGRATION_MAX_CONCURRENT_HANDLES,
+    DEFAULT_S3_MIGRATION_MAX_RETRIES,
+};
 use tracing::Level;
 
 #[derive(Parser, Debug, Clone)]
@@ -162,6 +165,10 @@ pub struct Args {
     /// Maximum recorded migration failures per handle before retry selection stops.
     #[arg(long, default_value_t = DEFAULT_S3_MIGRATION_MAX_RETRIES, value_parser = clap::value_parser!(i32).range(1..), env = "S3_MIGRATION_MAX_RETRIES")]
     pub s3_migration_max_retries: i32,
+
+    /// Maximum number of ciphertext handles migrated concurrently.
+    #[arg(long, default_value_t = DEFAULT_S3_MIGRATION_MAX_CONCURRENT_HANDLES, value_parser = clap::value_parser!(u32).range(1..))]
+    pub s3_migration_max_concurrent_handles: u32,
 }
 
 pub fn parse_args() -> Args {

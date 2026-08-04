@@ -21,6 +21,7 @@ use crate::{
 };
 
 pub const DEFAULT_S3_MIGRATION_MAX_RETRIES: i32 = 100;
+pub const DEFAULT_S3_MIGRATION_MAX_CONCURRENT_HANDLES: u32 = 16;
 const NO_SNS_CIPHERTEXT_DIGEST: [u8; 32] = [0; 32];
 
 #[derive(Debug, Clone, Copy)]

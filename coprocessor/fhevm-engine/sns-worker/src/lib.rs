@@ -6,7 +6,9 @@ mod s3_migration_dry_run;
 mod squash_noise;
 
 pub mod metrics;
-pub use crate::s3_migration::{S3MigrationMode, DEFAULT_S3_MIGRATION_MAX_RETRIES};
+pub use crate::s3_migration::{
+    S3MigrationMode, DEFAULT_S3_MIGRATION_MAX_CONCURRENT_HANDLES, DEFAULT_S3_MIGRATION_MAX_RETRIES,
+};
 
 #[cfg(test)]
 mod tests;
@@ -150,6 +152,7 @@ pub struct Config {
     pub s3_migration: S3MigrationMode,
     pub s3_migration_sleep_duration: Duration,
     pub s3_migration_max_retries: i32,
+    pub s3_migration_max_concurrent_handles: u32,
 }
 
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
@@ -807,12 +810,39 @@ pub async fn run_all(
     .await?;
 
     let migration_config = S3MigrationConfig {
-        batch_size: 16,
+        batch_size: conf.s3_migration_max_concurrent_handles.into(),
         signer: signer.clone(),
         s3: conf.s3.clone(),
         mode: conf.s3_migration,
         sleep_duration: conf.s3_migration_sleep_duration,
         max_retries: conf.s3_migration_max_retries,
+    };
+
+    // Migration S3 work must not contend with the normal executor/uploader pool.
+    // Its capacity leaves room for the migration loop's status/failure queries
+    // while handle tasks are querying the DB.
+    let migration_pool_mngr = if matches!(migration_config.mode, S3MigrationMode::No) {
+        None
+    } else {
+        let migration_pool_connections = conf
+            .s3_migration_max_concurrent_handles
+            .checked_add(2)
+            .ok_or_else(|| anyhow::anyhow!("S3 migration max concurrent handles is too large"))?;
+        let Some(pool_mngr) = PostgresPoolManager::connect_pool_with_gcs_mode(
+            token.child_token(),
+            conf.db.url.as_str(),
+            conf.db.timeout,
+            migration_pool_connections,
+            Duration::from_secs(2),
+            conf.pg_auto_explain_with_min_duration,
+            conf.gcs_mode,
+        )
+        .await
+        else {
+            error!("Service was cancelled during S3 migration pool initialization");
+            return Ok(());
+        };
+        Some(pool_mngr)
     };
 
     let not_ready_error = Err(ExecutionError::BucketNotFound(conf.s3.bucket_ct128.clone()).into());
@@ -827,7 +857,10 @@ pub async fn run_all(
                 error!("S3 is not ready, migration cannot be done");
                 return not_ready_error;
             };
-            let db_pool = pool_mngr.pool();
+            let db_pool = migration_pool_mngr
+                .as_ref()
+                .expect("enabled S3 migration has a dedicated DB pool")
+                .pool();
             if matches!(migration_config.mode, S3MigrationMode::DryRun) {
                 run_startup_migration_dry_run(&migration_config, &db_pool, &client).await?;
             } else {
@@ -836,7 +869,10 @@ pub async fn run_all(
         }
         S3MigrationMode::Concurrent => {
             let token = token.clone();
-            let db_pool = pool_mngr.pool();
+            let db_pool = migration_pool_mngr
+                .as_ref()
+                .expect("enabled S3 migration has a dedicated DB pool")
+                .pool();
             let client = client.clone();
             let task = spawn(async move {
                 info!("S3 migration is enabled: {}", conf.s3_migration);
