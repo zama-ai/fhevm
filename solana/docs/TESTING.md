@@ -69,11 +69,24 @@ cargo fmt --check
 cargo clippy --workspace --all-targets -- -D warnings
 ```
 
-#### Renaming anything shared: the five other workspace roots
+#### Renaming anything shared: the four other roots that can see it
 
-`cargo test --workspace` here covers one of the repository's six Cargo workspace
-roots. A rename that reaches a shared crate compiles cleanly under it and still
-breaks the build elsewhere, because the other five are invisible to it:
+`cargo test --workspace` here covers exactly one Cargo workspace root. The
+repository has about fifteen, so the number is not the useful fact — what matters
+is which ones can see a Solana change, and the criterion is a path dependency on
+a crate under `solana/`. Four do: `solana-proof-service`,
+`coprocessor/fhevm-engine` (host-listener, tfhe-worker), `kms-connector`, and
+`solana/scripts/e2e/live-client`. Everything else in the repo — `relayer`,
+`sdk/rust-sdk`, `shared/*`, `test-suite/gateway-stress`, the generated
+`*_bindings` — depends on no Solana crate and cannot break from one.
+
+Do not enumerate these roots by grepping for a `[workspace]` stanza; that misses
+implicit roots (`relayer/Cargo.toml` has no stanza and no parent claims it, so
+cargo treats it as its own). Ask cargo instead:
+`cargo metadata --no-deps --format-version 1 | jq -r .workspace_root`.
+
+A rename that reaches a shared crate compiles cleanly here and still breaks the
+build in those four, because they are invisible to this workspace:
 
 ```bash
 # Its own workspace root — `scripts/e2e/live-client/Cargo.toml` ends with a bare
@@ -88,10 +101,9 @@ breaks the build elsewhere, because the other five are invisible to it:
 # `cargo check` or `cargo build` passes while `cargo test -p …` does not compile.
 (cd ../coprocessor/fhevm-engine && SQLX_OFFLINE=true cargo check --workspace --all-targets)
 (cd ../kms-connector && SQLX_OFFLINE=true cargo check --workspace --all-targets)
-(cd ../listener && cargo check --workspace --all-targets)
 ```
 
-Each of those hid a real break at least once. The grep sweeps in
+Each of those four hid a real break at least once. The grep sweeps in
 `scripts/dead-surface-check.sh` read the live client's tree, but grep does not
 typecheck — a root can be swept and still never compiled.
 
