@@ -913,6 +913,33 @@ pub fn perform_fhe_operation(
     res
 }
 
+#[cfg(not(feature = "gpu"))]
+pub fn perform_multi_output_fhe_operation(
+    fhe_operation_int: i16,
+    input_operands: &[SupportedFheCiphertexts],
+    _: usize,
+) -> Result<Vec<SupportedFheCiphertexts>, FhevmError> {
+    perform_multi_output_fhe_operation_impl(fhe_operation_int, input_operands)
+}
+
+#[cfg(feature = "gpu")]
+pub fn perform_multi_output_fhe_operation(
+    fhe_operation_int: i16,
+    input_operands: &[SupportedFheCiphertexts],
+    gpu_idx: usize,
+) -> Result<Vec<SupportedFheCiphertexts>, FhevmError> {
+    use crate::gpu_memory::{get_op_size_on_gpu, release_memory_on_gpu, reserve_memory_on_gpu};
+
+    let mut gpu_mem_res = get_op_size_on_gpu(fhe_operation_int, input_operands)?;
+    input_operands
+        .iter()
+        .for_each(|i| gpu_mem_res += i.get_size_on_gpu());
+    reserve_memory_on_gpu(gpu_mem_res, gpu_idx);
+    let res = perform_multi_output_fhe_operation_impl(fhe_operation_int, input_operands);
+    release_memory_on_gpu(gpu_mem_res, gpu_idx);
+    res
+}
+
 fn collect_operands_as<'a, T>(
     fhe_operation: &SupportedFheOperations,
     operands: &'a [SupportedFheCiphertexts],
@@ -3530,6 +3557,14 @@ pub fn perform_fhe_operation_impl(
             }
         }
     }
+}
+
+/// Placeholder dispatch for multi-output ops; no ops are wired up yet.
+pub fn perform_multi_output_fhe_operation_impl(
+    fhe_operation_int: i16,
+    _input_operands: &[SupportedFheCiphertexts],
+) -> Result<Vec<SupportedFheCiphertexts>, FhevmError> {
+    Err(FhevmError::UnknownFheOperation(fhe_operation_int as i32))
 }
 
 pub fn to_be_u4_bit(inp: &[u8]) -> u8 {

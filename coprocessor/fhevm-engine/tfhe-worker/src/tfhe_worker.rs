@@ -2131,7 +2131,7 @@ fn prepare_transaction_ops(
             continue;
         }
         ops.push(DFGOp {
-            output_handle: w.output_handle.clone(),
+            output_handles: vec![w.output_handle.clone()],
             fhe_op,
             inputs,
             // Foreign rows are recompute-only producers, whatever their own
@@ -2192,14 +2192,17 @@ fn prepare_transaction_ops(
                 // Ownership derived from the row itself, so no parallel
                 // bookkeeping can drift out of alignment with `ops`.
                 let owned = rows_by_handle
-                    .get(op.output_handle.as_slice())
+                    .get(op.output_handles[0].as_slice())
                     .is_some_and(|row| row_is_owned(row));
-                uncomputable.insert(op.output_handle.clone());
+                uncomputable.extend(op.output_handles.iter().cloned());
                 if owned {
-                    invalid_rows.push((
-                        op.output_handle,
-                        "transaction-local producer is terminally errored".to_string(),
-                    ));
+                    for handle in op.output_handles {
+                        invalid_rows.push((
+                            handle,
+                            "transaction-local producer is terminally errored"
+                                .to_string(),
+                        ));
+                    }
                 }
                 progressed = true;
             } else {
