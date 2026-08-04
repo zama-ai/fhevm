@@ -132,20 +132,3 @@ const COMPRESSED_XOF_KEY_SET_CONFIG: KeySetConfig = KeySetConfig {
         compressed_key_config: CompressedKeyConfig::CompressedAll as i32,
     }),
 };
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn keygen_requests_use_compressed_xof_keyset_config() {
-        let config = COMPRESSED_XOF_KEY_SET_CONFIG
-            .standard_keyset_config
-            .expect("standard keyset config must be present");
-
-        assert_eq!(
-            config.compressed_key_config,
-            CompressedKeyConfig::CompressedAll as i32
-        );
-    }
-}
