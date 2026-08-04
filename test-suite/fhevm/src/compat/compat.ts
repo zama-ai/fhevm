@@ -1,7 +1,6 @@
 /**
  * Encodes legacy runtime shims and incompatibility rules across supported fhevm component version combinations.
  */
-import { PreflightError } from "../errors";
 import { effectiveOverrides } from "../scenario/resolve";
 import type { StackSpec } from "../stack-spec/stack-spec";
 import type { State } from "../types";
@@ -206,6 +205,7 @@ const parseCompatVersion = (version: string) => {
   return {
     parts: [Number(major), Number(minor), Number(patch)] as const,
     prerelease: suffixType === "-" && !/^\d+$/.test(suffix),
+    build: suffixType === "-" && /^\d+$/.test(suffix) ? Number(suffix) : undefined,
   };
 };
 
@@ -368,12 +368,45 @@ export const coprocessorUsesHostKmsGeneration = (state: CompatState) =>
 export const bootstrapUsesHostKmsGeneration = kmsConnectorUsesHostKmsGeneration;
 
 /**
- * Detects when host images ship `task:deployProtocolConfigFromCanonical` (0.13.1+), so non-canonical
+ * Detects when host images ship canonical ProtocolConfig seeding at all (0.13.1+), so non-canonical
  * chains can seed ProtocolConfig from the canonical chain like production instead of "fresh".
+ * This only answers "does the image have the task". Use `canonicalProtocolConfigSeedingUsesEnv` to
+ * pick which input the task accepts.
  */
 export const supportsCanonicalProtocolConfigSeeding = (state: CompatState) =>
   effectiveCompatOverrides(state).some((override) => override.group === "host-contracts") ||
   !versionLt(state.versions.env.HOST_VERSION ?? "", [0, 13, 1], { unparsed: "modern" });
+
+/**
+ * First host build whose canonical seeding tasks read the reviewed snapshot from `CANONICAL_*`
+ * environment variables. Every tag from v0.13.1 through v0.14.0-8 declares `--canonical-rpc-url` /
+ * `--canonical-protocol-config-address` instead. The floor therefore sits inside the v0.14.0 family.
+ * A three-part floor cannot express it. [0, 14, 0] would wrongly claim v0.14.0-0..8 read environment
+ * variables. [0, 14, 1] would wrongly claim the release carrying the migration reads command-line
+ * flags. The separate build floor below closes that gap. Confirm the build number against the tag
+ * that ships the migration when that tag is cut.
+ */
+const CANONICAL_ENV_SEEDING_FLOOR: CompatSemver = [0, 14, 0];
+const CANONICAL_ENV_SEEDING_FLOOR_BUILD = 9;
+
+/**
+ * Detects when the host image's canonical seeding tasks take the exported snapshot as `CANONICAL_*`
+ * environment variables instead of command-line flags. Older images take the same input as
+ * command-line flags. Those images read the canonical chain live over RPC and need no exported
+ * snapshot.
+ */
+export const canonicalProtocolConfigSeedingUsesEnv = (state: CompatState) => {
+  if (effectiveCompatOverrides(state).some((override) => override.group === "host-contracts")) {
+    return true;
+  }
+  const version = state.versions.env.HOST_VERSION ?? "";
+  const parsed = parseCompatVersion(version);
+  // Same base family as the floor, with a numeric `-N` suffix, so compare build numbers.
+  if (parsed?.build !== undefined && sameCompatBase(version, CANONICAL_ENV_SEEDING_FLOOR)) {
+    return parsed.build >= CANONICAL_ENV_SEEDING_FLOOR_BUILD;
+  }
+  return compatVersionGte(version, CANONICAL_ENV_SEEDING_FLOOR, { unparsed: "modern" });
+};
 
 type BundleIncompatibility = { severity: "error"; code: string; message: string };
 
