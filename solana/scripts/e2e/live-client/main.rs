@@ -615,6 +615,8 @@ fn bootstrap(
         .collect();
 
     if host.rpc().get_account(&host_config).is_err() {
+        let (zama_event_authority, _) =
+            Pubkey::find_program_address(&[EVENT_AUTHORITY_SEED], &zama_host::ID);
         let sig = host
             .request()
             .accounts(zama_host::accounts::InitializeHostConfig {
@@ -622,6 +624,8 @@ fn bootstrap(
                 admin: authority,
                 host_config,
                 system_program: system_program::ID,
+                event_authority: zama_event_authority,
+                program: zama_host::ID,
             })
             .args(zama_host::instruction::InitializeHostConfig {
                 args: zama_host::InitializeHostConfigArgs {
@@ -662,6 +666,8 @@ fn bootstrap(
         )
         .into());
     }
+    let (zama_event_authority, _) =
+        Pubkey::find_program_address(&[EVENT_AUTHORITY_SEED], &zama_host::ID);
     let sig = host
         .request()
         .accounts(zama_host::accounts::DefineKmsContext {
@@ -669,6 +675,8 @@ fn bootstrap(
             host_config,
             kms_context,
             system_program: system_program::ID,
+            event_authority: zama_event_authority,
+            program: zama_host::ID,
         })
         .args(zama_host::instruction::DefineKmsContext {
             context_id,
@@ -1725,6 +1733,8 @@ fn ensure_host_config(
         println!("host_config {host_config} already initialized — skipping");
         return Ok(());
     }
+    let (zama_event_authority, _) =
+        Pubkey::find_program_address(&[EVENT_AUTHORITY_SEED], &zama_host::ID);
     let sig = host
         .request()
         .accounts(zama_host::accounts::InitializeHostConfig {
@@ -1732,6 +1742,8 @@ fn ensure_host_config(
             admin: payer.pubkey(),
             host_config,
             system_program: system_program::ID,
+            event_authority: zama_event_authority,
+            program: zama_host::ID,
         })
         .args(zama_host::instruction::InitializeHostConfig {
             args: zama_host::InitializeHostConfigArgs {

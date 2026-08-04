@@ -13,7 +13,6 @@ use crate::{
         host_config_address, DenySubjectRecord, EncryptedValue, HostConfig,
     },
 };
-#[cfg(any(feature = "emit-events", test))]
 use crate::{events::HostConfigUpdatedEvent, state::EVENT_VERSION};
 
 /// Error mapping for the shared EVM signer-address checks used by KMS contexts and the
@@ -131,23 +130,30 @@ pub(super) fn assert_not_paused(config: &Account<HostConfig>) -> Result<()> {
     Ok(())
 }
 
-#[cfg(feature = "emit-events")]
-pub(super) fn emit_config_updated(config: &HostConfig, admin: Pubkey) {
-    emit!(HostConfigUpdatedEvent {
-        version: EVENT_VERSION,
-        config: crate::state::host_config_address().0,
-        admin,
-        paused: config.paused,
-        grant_deny_list_enabled: config.grant_deny_list_enabled,
-        max_hcu_per_tx: config.max_hcu_per_tx,
-        max_hcu_depth_per_tx: config.max_hcu_depth_per_tx,
-        hcu_block_cap_per_app: config.hcu_block_cap_per_app,
-        updated_slot: config.updated_slot,
-    });
+/// Emits the config snapshot after an admin change. Every instruction that touches `HostConfig`
+/// routes through here, which is why the emitter takes the event authority as an argument rather
+/// than using `emit_cpi!`: that macro reads a binding named `ctx`, which a shared helper does not
+/// have.
+pub(super) fn emit_config_updated(
+    config: &HostConfig,
+    admin: Pubkey,
+    event_authority: &AccountInfo<'_>,
+) -> Result<()> {
+    crate::event_cpi::emit_event_cpi(
+        event_authority,
+        &HostConfigUpdatedEvent {
+            version: EVENT_VERSION,
+            config: crate::state::host_config_address().0,
+            admin,
+            paused: config.paused,
+            grant_deny_list_enabled: config.grant_deny_list_enabled,
+            max_hcu_per_tx: config.max_hcu_per_tx,
+            max_hcu_depth_per_tx: config.max_hcu_depth_per_tx,
+            hcu_block_cap_per_app: config.hcu_block_cap_per_app,
+            updated_slot: config.updated_slot,
+        },
+    )
 }
-
-#[cfg(not(feature = "emit-events"))]
-pub(super) fn emit_config_updated(_: &HostConfig, _: Pubkey) {}
 
 /// Enforces the per-app block-cap ordering guard: a metering-band cap (`0 < value < u64::MAX`)
 /// must be at least `max_hcu_per_tx`, so a single legal max-per-tx execution always fits on a fresh

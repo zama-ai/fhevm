@@ -8,12 +8,13 @@
 use anchor_lang::prelude::*;
 
 use super::common::*;
-#[cfg(feature = "emit-events")]
+use crate::event_cpi::emit_event_cpi;
 use crate::events::HcuAppTrustUpdatedEvent;
 use crate::{errors::ZamaHostError, state::*};
 
 /// Accounts for creating or updating an HCU trust-registry record.
 #[derive(Accounts)]
+#[event_cpi]
 pub struct SetHcuAppTrusted<'info> {
     /// Pays rent if the trust-registry PDA must be created.
     #[account(mut)]
@@ -60,14 +61,16 @@ pub fn set_hcu_app_trusted(
     )?;
 
     write_account(&info, &HcuTrustedAppRecord { app, trusted, bump })?;
-    #[cfg(feature = "emit-events")]
-    emit!(HcuAppTrustUpdatedEvent {
-        version: EVENT_VERSION,
-        hcu_trusted_app_record: ctx.accounts.hcu_trusted_app_record.key(),
-        app,
-        trusted,
-        updated_slot: Clock::get()?.slot,
-    });
+    emit_event_cpi(
+        &ctx.accounts.event_authority,
+        &HcuAppTrustUpdatedEvent {
+            version: EVENT_VERSION,
+            hcu_trusted_app_record: ctx.accounts.hcu_trusted_app_record.key(),
+            app,
+            trusted,
+            updated_slot: Clock::get()?.slot,
+        },
+    )?;
     Ok(())
 }
 

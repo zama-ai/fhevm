@@ -231,14 +231,6 @@
       "schema_hash": "6bbe522d3ea9d324d0eef718b45f1c14be10fe66683650f504914ebde96509d4"
     },
     {
-      "category": "event",
-      "fixture_hex": "516fbc88f8aeef9c01020202020202020202020202020202020202020202020202020202020202020203030303030303030303030303030303030303030303030303030303030303030404040404040404040404040404040404040404040404040404040404040404450000000000000046000000000000004700000000000000480000000000000001",
-      "fixture_len": 138,
-      "name": "UserDecryptionDelegationUpdatedEvent",
-      "program": "zama_host",
-      "schema_hash": "a4e4ace5e5d1d69f386c4cc942647b94de9601ff6a2315501395ca229897bc64"
-    },
-    {
       "category": "instruction_args",
       "fixture_hex": "bacd1f14b711051a010000000101010101010101010101010101010101010101010101010101010101010101",
       "fixture_len": 44,
@@ -252,7 +244,7 @@
       "fixture_len": 44,
       "name": "define_kms_context",
       "program": "zama_host",
-      "schema_hash": "8076dd7013b952401ea25d0ce52328a825ec5b4cca97d9d3c2749af854c3f88d"
+      "schema_hash": "cc8a0482562328c29e2061f8ab265e881996322a7fa0a36b9e806d9380f8072e"
     },
     {
       "category": "instruction_args",
@@ -268,7 +260,7 @@
       "fixture_len": 16,
       "name": "destroy_kms_context",
       "program": "zama_host",
-      "schema_hash": "18447ba3d01d021ce89c1f243a4b740b66bca8c28ae8d29de8cad49327616a24"
+      "schema_hash": "7943b3a5d342398e02b4411ffb919afbd24c5cf81be6c74cfedfd5b8d505034b"
     },
     {
       "category": "instruction_args",
@@ -284,7 +276,7 @@
       "fixture_len": 90,
       "name": "initialize_host_config",
       "program": "zama_host",
-      "schema_hash": "e09039a78a6dec2c05a8fc48ee13da3c0569ce1d8453d947aeeb24b8b2a385e6"
+      "schema_hash": "407b5732f1bfda8b6dfd63a68788602ad0c21f05f47aa3f4166c4ad776bb6372"
     },
     {
       "category": "instruction_args",
@@ -324,7 +316,7 @@
       "fixture_len": 33,
       "name": "set_coprocessor_signers",
       "program": "zama_host",
-      "schema_hash": "363dfb6c5951d4abebe64e2a3cf9f1684247940f47e9be1b28ca92c3c15e79a0"
+      "schema_hash": "5cf21828dcdea992366fba783412c9d947d9598b1cad5db3b4b92a000dd9990c"
     },
     {
       "category": "instruction_args",
@@ -332,7 +324,7 @@
       "fixture_len": 41,
       "name": "set_deny_subject",
       "program": "zama_host",
-      "schema_hash": "fd2d92bd1e96bda8efc441ab7cf5f5c6b6565a4391fb9fa76f6d85c5da1c9346"
+      "schema_hash": "ddc2a74840ffcc5eeb2dcb45a7d0981246672811abdb93a9e9225d907e7f7696"
     },
     {
       "category": "instruction_args",
@@ -340,7 +332,7 @@
       "fixture_len": 9,
       "name": "set_grant_deny_list_enabled",
       "program": "zama_host",
-      "schema_hash": "ea88ca1b750d828eaf1a6436b7cff1927a98d9bb5ef28470381538c69d681ae4"
+      "schema_hash": "dc8160bec4586f5f1bdf0f8e6ccd42797465cc2b39a3ccc256181fc9c98a06e0"
     },
     {
       "category": "instruction_args",
@@ -348,7 +340,7 @@
       "fixture_len": 41,
       "name": "set_hcu_app_trusted",
       "program": "zama_host",
-      "schema_hash": "e635ef68bbc3094760ba078a663f336aade556ac3f6818cc67fd6abdf13b14bf"
+      "schema_hash": "e1850b6c12a6951e04948e71fa503b3a4d40a692865b5940a4937f7b55e4c173"
     },
     {
       "category": "instruction_args",
@@ -356,7 +348,7 @@
       "fixture_len": 16,
       "name": "set_hcu_block_cap_per_app",
       "program": "zama_host",
-      "schema_hash": "4c62df1838aaada72fb420dbc25d30bc7459dff34a2f6b708580190936494743"
+      "schema_hash": "b71785805541f6fe4743fde71d6d2e404cd95d01c78fe471bb8afaa15e14f15d"
     },
     {
       "category": "instruction_args",
@@ -364,7 +356,7 @@
       "fixture_len": 9,
       "name": "set_host_pause",
       "program": "zama_host",
-      "schema_hash": "00d019ec36c7282cfc505252517aa3c8391e6c89711683a8deada2d02f5febc0"
+      "schema_hash": "100e731b8b1941af234900380421081f7496095278a5b71a32c3c018fb38f6df"
     },
     {
       "category": "instruction_args",
@@ -372,7 +364,7 @@
       "fixture_len": 16,
       "name": "set_max_hcu_depth_per_tx",
       "program": "zama_host",
-      "schema_hash": "15e4024ae517586e051f1474041cdba04cdd181f97d3ba38e714cf6498a78358"
+      "schema_hash": "3b7d3082871bae26e666825e15907ecfb1037a6241a0b2b5753e09b43348cfe5"
     },
     {
       "category": "instruction_args",
@@ -380,7 +372,7 @@
       "fixture_len": 16,
       "name": "set_max_hcu_per_tx",
       "program": "zama_host",
-      "schema_hash": "2d5d2c8a78afbf325972f3dd5abe964b90eaab618211724e5a26203b2b4a813a"
+      "schema_hash": "9d28530ac9b1e2e3db8be2e4e0f435061e96939cddcb3cd8be8c3b95c0e24fd0"
     },
     {
       "category": "instruction_args",

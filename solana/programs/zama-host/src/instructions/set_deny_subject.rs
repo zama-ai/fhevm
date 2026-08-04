@@ -3,12 +3,13 @@
 use anchor_lang::prelude::*;
 
 use super::common::*;
-#[cfg(feature = "emit-events")]
+use crate::event_cpi::emit_event_cpi;
 use crate::events::DenySubjectUpdatedEvent;
 use crate::{errors::ZamaHostError, state::*};
 
 /// Accounts for creating or updating a deny-list record.
 #[derive(Accounts)]
+#[event_cpi]
 pub struct SetDenySubject<'info> {
     /// Pays rent if the deny-list PDA must be created.
     #[account(mut)]
@@ -58,14 +59,16 @@ pub fn set_deny_subject(ctx: Context<SetDenySubject>, subject: Pubkey, denied: b
             bump,
         },
     )?;
-    #[cfg(feature = "emit-events")]
-    emit!(DenySubjectUpdatedEvent {
-        version: EVENT_VERSION,
-        deny_subject_record: ctx.accounts.deny_subject_record.key(),
-        subject,
-        denied,
-        updated_slot: Clock::get()?.slot,
-    });
+    emit_event_cpi(
+        &ctx.accounts.event_authority,
+        &DenySubjectUpdatedEvent {
+            version: EVENT_VERSION,
+            deny_subject_record: ctx.accounts.deny_subject_record.key(),
+            subject,
+            denied,
+            updated_slot: Clock::get()?.slot,
+        },
+    )?;
     Ok(())
 }
 

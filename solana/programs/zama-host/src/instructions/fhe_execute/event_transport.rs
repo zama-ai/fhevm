@@ -1,8 +1,5 @@
 use super::*;
-use anchor_lang::solana_program::{
-    instruction::{AccountMeta, Instruction},
-    program::invoke_signed,
-};
+use crate::event_cpi::emit_event_cpi;
 
 pub(super) fn emit_public_outputs_produced<'info>(
     ctx: &Context<'info, FheExecute<'info>>,
@@ -11,13 +8,13 @@ pub(super) fn emit_public_outputs_produced<'info>(
     if outputs.is_empty() {
         return Ok(());
     }
-    let instruction = public_outputs_produced_event_instruction(outputs);
-    invoke_signed(
-        &instruction,
-        &[ctx.accounts.event_authority.to_account_info()],
-        &[&[b"__event_authority", &[crate::EVENT_AUTHORITY_AND_BUMP.1]]],
-    )?;
-    Ok(())
+    emit_event_cpi(
+        &ctx.accounts.event_authority,
+        &PublicOutputsProducedEvent {
+            version: EVENT_VERSION,
+            outputs,
+        },
+    )
 }
 
 pub(super) fn emit_execution_random_seeds<'info>(
@@ -27,76 +24,32 @@ pub(super) fn emit_execution_random_seeds<'info>(
     if seeds.is_empty() {
         return Ok(());
     }
-    let event = FheExecuteRandomSeedsEvent {
-        version: EVENT_VERSION,
-        seeds,
-    };
-    emit_event(ctx, &event)
-}
-
-fn public_outputs_produced_event_instruction(outputs: Vec<ProducedPublicOutput>) -> Instruction {
-    let event = PublicOutputsProducedEvent {
-        version: EVENT_VERSION,
-        outputs,
-    };
-    let data = anchor_lang::event::EVENT_IX_TAG_LE
-        .iter()
-        .copied()
-        .chain(anchor_lang::Event::data(&event))
-        .collect::<Vec<_>>();
-    Instruction::new_with_bytes(
-        crate::ID,
-        &data,
-        vec![AccountMeta::new_readonly(
-            crate::EVENT_AUTHORITY_AND_BUMP.0,
-            true,
-        )],
+    emit_event_cpi(
+        &ctx.accounts.event_authority,
+        &FheExecuteRandomSeedsEvent {
+            version: EVENT_VERSION,
+            seeds,
+        },
     )
-}
-
-/// Hand-rolled `emit_cpi!`. The reference implementation is anchor-attribute-event's `emit_cpi`
-/// macro, and this is a faithful expansion of it: same `EVENT_IX_TAG_LE`, same `Event::data`
-/// payload, same single readonly-signer event authority, same `invoke_signed` seeds. It is expanded
-/// by hand only so the `Instruction` exists as a value a host unit test can assert on — the macro
-/// builds it inline, so the CPI-data-size bound below could not otherwise be checked without a
-/// runtime.
-///
-/// Only the *assembly* is ours; the tag and the payload encoding are taken from anchor-lang, so
-/// they track upstream automatically. What would not track upstream is a change to the shape
-/// itself (an extra account, a different order). That is caught at runtime rather than by the
-/// compiler: the self-CPI re-enters this program through Anchor's generated `__event_dispatch`,
-/// which checks the tag and the authority signer, and `host_mollusk.rs` exercises both emitting
-/// paths (a `make_public: true` output and a `Rand` step) against the real SBF artifact. Keep it
-/// that way — if those two cases ever stop being covered, this becomes an unchecked copy of an
-/// upstream wire format.
-fn emit_event<'info, T: anchor_lang::Event>(
-    ctx: &Context<'info, FheExecute<'info>>,
-    event: &T,
-) -> Result<()> {
-    let data = anchor_lang::event::EVENT_IX_TAG_LE
-        .iter()
-        .copied()
-        .chain(anchor_lang::Event::data(event))
-        .collect::<Vec<_>>();
-    let instruction = Instruction::new_with_bytes(
-        crate::ID,
-        &data,
-        vec![AccountMeta::new_readonly(
-            crate::EVENT_AUTHORITY_AND_BUMP.0,
-            true,
-        )],
-    );
-    invoke_signed(
-        &instruction,
-        &[ctx.accounts.event_authority.to_account_info()],
-        &[&[b"__event_authority", &[crate::EVENT_AUTHORITY_AND_BUMP.1]]],
-    )?;
-    Ok(())
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::event_cpi::event_cpi_instruction;
+    use anchor_lang::solana_program::instruction::Instruction;
+
+    /// The instruction a maximum-size `PublicOutputsProducedEvent` emission would carry. Built here
+    /// so the CPI-data bound below can be asserted without a runtime; the emission itself goes
+    /// through `crate::event_cpi`, same as every other event.
+    fn public_outputs_produced_event_instruction(
+        outputs: Vec<ProducedPublicOutput>,
+    ) -> Instruction {
+        event_cpi_instruction(&PublicOutputsProducedEvent {
+            version: EVENT_VERSION,
+            outputs,
+        })
+    }
 
     #[test]
     fn maximum_batch_has_one_signed_readonly_event_authority_and_fits_cpi_data() {

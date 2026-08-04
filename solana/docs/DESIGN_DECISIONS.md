@@ -1495,8 +1495,8 @@ At the maximum `MAX_FHE_EXECUTION_STEPS` batch (32), the records serialize to on
 instruction — far below the 10,240-byte CPI instruction-data cap — avoiding the old
 one-CPI-per-step heap growth. (Execution, not the batch, bounds the all-created-public batch shape:
 the fixed 32KB Anchor bump heap fits 20 persistent creates per batch, measured and pinned by
-`mollusk_fhe_execute_created_public_heap_boundary`.) The event is unconditional when optional
-`emit-events` features are disabled. Consumers must still validate the host program, its canonical
+`mollusk_fhe_execute_created_public_heap_boundary`.) The event is unconditional, as every event this program
+emits now is (DD-044). Consumers must still validate the host program, its canonical
 event-authority PDA, transaction success, record ordering, and one-to-one agreement with persistent
 `make_public` outputs; the event grants no authority by itself.
 
@@ -1922,3 +1922,77 @@ Properties that must survive any refactor:
 - **Standing invariant**: no close/expiry/reopen path exists for `EncryptedValue` (the lifecycle
   is deliberately sealed). If one is ever added (#1705, #1710), close-then-recreate can reset the
   live version anchor, and this argument must be re-derived.
+
+## DD-044: Every Event Goes Through The Event CPI, Or Is Not Emitted At All (`emit-events` deleted)
+
+Status: adopted
+
+Context:
+
+DD-037 deleted the `emit!` log fallback for `fhe_execute` events, on the grounds that no consumer read
+logs and the fallback hid a stranding case. The admin and config events were left as they were: emitted
+with `emit!`, behind a default-on `emit-events` cargo feature, described in the code as "indexing
+hints". That left three problems.
+
+The feature made the shipped IDL untrue. The IDL is generated on the default feature set, so it
+advertised all nine events; the build the e2e deploys is `anchor build -p zama_host --
+--no-default-features`, which compiles seven of them out. An indexer reading the IDL would wait forever
+for an event the deployed program cannot emit.
+
+The transport did not match the claim. A log can be truncated by whichever RPC provider a reader goes
+through, so a logged event is a hint rather than a delivery. That is fine for something you can
+reconstruct and not fine for something you cannot, and "indexing hint" did not distinguish the two.
+
+And the grouping was wrong. `UserDecryptionDelegationUpdated` sat with the admin events, but
+`delegate_for_user_decryption` takes a `delegator: Signer` and no admin: any user may delegate their
+own decrypt rights. It is a user action, not administration.
+
+Decision:
+
+There are two options for an event and no third. Either it is emitted unconditionally through the event
+CPI, or it is not emitted at all and off-chain readers reconstruct it from instruction data over
+Yellowstone, which is the normal path. `emit!` is not used anywhere in `zama-host`, and the
+`emit-events` feature is deleted.
+
+The six admin and config events — `HostConfigInitialized`, `HostConfigUpdated`, `DenySubjectUpdated`,
+`HcuAppTrustUpdated`, `NewKmsContext`, `KmsContextDestroyed` — take the first option, because a
+protocol component off-chain has to be able to see an admin change without scanning for it. Their
+eleven instructions gain Anchor's `#[event_cpi]` accounts (`event_authority`, `program`), which is a
+visible ABI change: `initialize_host_config` and `define_kms_context` go from four accounts to six,
+`set_deny_subject` and `set_hcu_app_trusted` from five to seven, and the six `HostAdmin` config
+setters from two to four.
+
+`UserDecryptionDelegationUpdated` takes the second option and is deleted. Delegation has no off-chain
+consumer at all yet, which INVARIANTS #27 already records as a known gap: the KMS connector carries a
+`verify_delegation` verifier that reads the record at its canonical PDA, but nothing in the request path
+calls it — its only callers are its own unit tests — and the signed user-decrypt request payload has no
+delegation field. So the event was surface built ahead of a reader. When that reader arrives it will
+read the record, the way the verifier already does, and delegation history reconstructs from
+`delegate_for_user_decryption` instruction data like every other state change.
+
+`fhe_execute`'s two compute events are unchanged in behaviour and now share one emitter with the
+admin events (`event_cpi.rs`), instead of keeping their own copy of the expansion.
+
+Rationale:
+
+The rule is about who needs the data, not about how important it looks. Reliable delivery costs an
+account pair on the instruction and a self-CPI per emission, which is nothing on an admin instruction
+that runs when an operator changes configuration, and would be real weight on a per-step compute
+event — which is exactly why the per-step shapes are still not emitted.
+
+Anchor's `emit_cpi!` macro is not used, though the bytes it produces are. It reads a binding named
+`ctx`, and six of the eleven instructions emit through a shared `emit_config_updated` helper that has
+no `ctx`; using the macro would mean copying a ten-field event literal into each of them. One
+hand-written emitter takes the event authority as an argument and serves all thirteen call sites. The
+tag and the payload encoding come from anchor-lang, so they track upstream; only the assembly is ours,
+and each self-CPI re-enters the program through Anchor's generated `__event_dispatch`, which checks the
+tag and the authority signer — so a Mollusk test running any emitting instruction against the real SBF
+artifact fails if the shape drifts.
+
+Consequences:
+
+The `--no-default-features` build in `setup-solana-side.sh` is gone, since zama-host has no features
+left to vary. Callers of the eleven instructions pass two more accounts: the Mollusk fixtures and the
+e2e live client are updated here, and there are no TypeScript callers. `dead-surface-check.sh`'s
+never-emitted-event check learned the shared emitter, without which it would have reported all eight
+surviving events as dead.

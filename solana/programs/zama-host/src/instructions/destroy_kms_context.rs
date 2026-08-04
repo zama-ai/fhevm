@@ -6,12 +6,13 @@
 use anchor_lang::prelude::*;
 
 use super::common::{assert_admin, assert_no_remaining_accounts};
-#[cfg(feature = "emit-events")]
+use crate::event_cpi::emit_event_cpi;
 use crate::events::KmsContextDestroyedEvent;
 use crate::{errors::ZamaHostError, state::*};
 
 /// Accounts for destroying a KMS context.
 #[derive(Accounts)]
+#[event_cpi]
 #[instruction(context_id: u64)]
 pub struct DestroyKmsContext<'info> {
     /// Configured host admin.
@@ -38,10 +39,12 @@ pub fn destroy_kms_context(ctx: Context<DestroyKmsContext>, context_id: u64) -> 
     );
     ctx.accounts.kms_context.destroyed = true;
 
-    #[cfg(feature = "emit-events")]
-    emit!(KmsContextDestroyedEvent {
-        version: EVENT_VERSION,
-        kms_context_id: context_id,
-    });
+    emit_event_cpi(
+        &ctx.accounts.event_authority,
+        &KmsContextDestroyedEvent {
+            version: EVENT_VERSION,
+            kms_context_id: context_id,
+        },
+    )?;
     Ok(())
 }

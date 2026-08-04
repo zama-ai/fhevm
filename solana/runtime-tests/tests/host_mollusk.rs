@@ -2592,20 +2592,25 @@ fn created_public_batch(step_count: usize, created_public_steps: &[usize]) -> Cr
     }
 }
 
-fn created_public_events(
-    result: &mollusk_svm::result::InstructionResult,
-) -> Vec<host::PublicOutputsProducedEvent> {
-    let message = result.message.as_ref().expect("compiled Mollusk message");
-    let account_keys = message.account_keys();
-    let prefix = anchor_lang::event::EVENT_IX_TAG_LE
+/// The bytes an event-CPI inner instruction starts with: Anchor's event-CPI instruction tag, then
+/// the event's own discriminator.
+fn event_cpi_prefix<T: Discriminator>() -> Vec<u8> {
+    anchor_lang::event::EVENT_IX_TAG_LE
         .iter()
         .copied()
-        .chain(
-            host::PublicOutputsProducedEvent::DISCRIMINATOR
-                .iter()
-                .copied(),
-        )
-        .collect::<Vec<_>>();
+        .chain(T::DISCRIMINATOR.iter().copied())
+        .collect()
+}
+
+/// Every `T` the host emitted during `result`, read back out of the inner instructions. Every event
+/// the program emits travels this way and none of them are logged, so one reader serves both the
+/// compute events and the admin ones.
+fn emitted_events<T: Discriminator + AnchorDeserialize>(
+    result: &mollusk_svm::result::InstructionResult,
+) -> Vec<T> {
+    let message = result.message.as_ref().expect("compiled Mollusk message");
+    let account_keys = message.account_keys();
+    let prefix = event_cpi_prefix::<T>();
     result
         .inner_instructions
         .iter()
@@ -2614,46 +2619,50 @@ fn created_public_events(
                 return None;
             }
             let payload = inner.instruction.data.strip_prefix(prefix.as_slice())?;
-            host::PublicOutputsProducedEvent::deserialize(&mut &*payload).ok()
+            T::deserialize(&mut &*payload).ok()
         })
         .collect()
+}
+
+/// Asserts `result` carries exactly one `T`, on an inner instruction addressed to the host with the
+/// event authority as its only account, and returns the decoded event.
+fn sole_emitted_event<T: Discriminator + AnchorDeserialize>(
+    result: &mollusk_svm::result::InstructionResult,
+) -> T {
+    let prefix = event_cpi_prefix::<T>();
+    let message = result.message.as_ref().expect("compiled Mollusk message");
+    let account_keys = message.account_keys();
+    let carriers: Vec<_> = result
+        .inner_instructions
+        .iter()
+        .filter(|inner| {
+            account_keys.get(inner.instruction.program_id_index as usize) == Some(&host::id())
+                && inner.instruction.data.starts_with(&prefix)
+        })
+        .collect();
+    assert_eq!(carriers.len(), 1, "expected exactly one event CPI");
+    let inner = carriers[0];
+    assert_eq!(inner.instruction.accounts.len(), 1);
+    assert_eq!(
+        account_keys.get(inner.instruction.accounts[0] as usize),
+        Some(&event_authority(host::id()))
+    );
+    let mut events = emitted_events::<T>(result);
+    assert_eq!(events.len(), 1);
+    events.remove(0)
+}
+
+fn created_public_events(
+    result: &mollusk_svm::result::InstructionResult,
+) -> Vec<host::PublicOutputsProducedEvent> {
+    emitted_events(result)
 }
 
 fn assert_created_public_batch(
     result: &mollusk_svm::result::InstructionResult,
     expected_outputs: &[(u16, Pubkey)],
 ) {
-    let events = created_public_events(result);
-    assert_eq!(events.len(), 1, "expected exactly one lifecycle execution");
-    let prefix = anchor_lang::event::EVENT_IX_TAG_LE
-        .iter()
-        .copied()
-        .chain(
-            host::PublicOutputsProducedEvent::DISCRIMINATOR
-                .iter()
-                .copied(),
-        )
-        .collect::<Vec<_>>();
-    let message = result.message.as_ref().expect("compiled Mollusk message");
-    let account_keys = message.account_keys();
-    let inner = result
-        .inner_instructions
-        .iter()
-        .find(|inner| {
-            account_keys.get(inner.instruction.program_id_index as usize) == Some(&host::id())
-                && inner.instruction.data.starts_with(&prefix)
-        })
-        .expect("produced-public lifecycle inner instruction");
-    assert_eq!(
-        account_keys.get(inner.instruction.program_id_index as usize),
-        Some(&host::id())
-    );
-    assert_eq!(inner.instruction.accounts.len(), 1);
-    assert_eq!(
-        account_keys.get(inner.instruction.accounts[0] as usize),
-        Some(&event_authority(host::id()))
-    );
-    let event = &events[0];
+    let event = sole_emitted_event::<host::PublicOutputsProducedEvent>(result);
     assert_eq!(event.version, host::EVENT_VERSION);
     assert_eq!(event.outputs.len(), expected_outputs.len());
     for (record, (step_index, encrypted_value)) in event.outputs.iter().zip(expected_outputs.iter())
@@ -2900,7 +2909,12 @@ fn set_max_hcu_per_tx_ix(
 ) -> Instruction {
     anchor_ix(
         program_id,
-        host::accounts::HostAdmin { admin, host_config },
+        host::accounts::HostAdmin {
+            admin,
+            host_config,
+            event_authority: event_authority(host::id()),
+            program: host::id(),
+        },
         host::instruction::SetMaxHcuPerTx { value },
     )
 }
@@ -2913,7 +2927,12 @@ fn set_max_hcu_depth_per_tx_ix(
 ) -> Instruction {
     anchor_ix(
         program_id,
-        host::accounts::HostAdmin { admin, host_config },
+        host::accounts::HostAdmin {
+            admin,
+            host_config,
+            event_authority: event_authority(host::id()),
+            program: host::id(),
+        },
         host::instruction::SetMaxHcuDepthPerTx { value },
     )
 }
@@ -2926,7 +2945,12 @@ fn set_hcu_block_cap_per_app_ix(
 ) -> Instruction {
     anchor_ix(
         program_id,
-        host::accounts::HostAdmin { admin, host_config },
+        host::accounts::HostAdmin {
+            admin,
+            host_config,
+            event_authority: event_authority(host::id()),
+            program: host::id(),
+        },
         host::instruction::SetHcuBlockCapPerApp { value },
     )
 }
@@ -2940,7 +2964,12 @@ fn set_coprocessor_signers_ix(
 ) -> Instruction {
     anchor_ix(
         program_id,
-        host::accounts::HostAdmin { admin, host_config },
+        host::accounts::HostAdmin {
+            admin,
+            host_config,
+            event_authority: event_authority(host::id()),
+            program: host::id(),
+        },
         host::instruction::SetCoprocessorSigners { signers, threshold },
     )
 }
@@ -2961,6 +2990,8 @@ fn define_kms_context_ix(
             host_config,
             kms_context,
             system_program: system_program::ID,
+            event_authority: event_authority(host::id()),
+            program: host::id(),
         },
         host::instruction::DefineKmsContext {
             context_id,
@@ -3013,6 +3044,8 @@ fn set_hcu_app_trusted_ix_with_record(
             host_config,
             hcu_trusted_app_record: record,
             system_program: system_program::ID,
+            event_authority: event_authority(host::id()),
+            program: host::id(),
         },
         host::instruction::SetHcuAppTrusted { app, trusted },
     )
@@ -3032,6 +3065,8 @@ fn initialize_host_config_ix(
             admin,
             host_config,
             system_program: system_program::ID,
+            event_authority: event_authority(host::id()),
+            program: host::id(),
         },
         host::instruction::InitializeHostConfig { args },
     )
@@ -3744,7 +3779,7 @@ fn mollusk_define_kms_context_at_realistic_signer_count() {
         kms_gen: 1,
         mpc: 1,
     };
-    context.process_and_validate_instruction(
+    let result = context.process_and_validate_instruction(
         &define_kms_context_ix(
             program_id,
             admin,
@@ -3759,6 +3794,16 @@ fn mollusk_define_kms_context_at_realistic_signer_count() {
     let stored = read_kms_context(&context, kms_context).expect("kms context");
     assert_eq!(stored.signers, signers);
     assert_eq!(stored.thresholds.public_decryption, 7);
+
+    // The admin half of the event transport, checked against the real SBF artifact: an admin
+    // instruction reaches an off-chain reader through the same event CPI the compute events use, and
+    // the payload survives a round trip at a realistic signer count. Nothing is logged.
+    let event = sole_emitted_event::<host::NewKmsContextEvent>(&result);
+    assert_eq!(event.version, host::EVENT_VERSION);
+    assert_eq!(event.kms_context_id, context_id);
+    assert_eq!(event.signers, signers);
+    assert_eq!(event.public_decryption_threshold, 7);
+    assert_eq!(event.user_decryption_threshold, 7);
 }
 
 fn default_kms_thresholds() -> host::KmsThresholds {
@@ -5251,6 +5296,8 @@ fn rotate_to_next_context(
             host_config,
             kms_context: next_kms_context,
             system_program: system_program::ID,
+            event_authority: event_authority(host::id()),
+            program: host::id(),
         },
         host::instruction::DefineKmsContext {
             context_id: next_context_id,
@@ -5268,6 +5315,7 @@ fn rotate_to_next_context(
         (admin, funded_system_account()),
         (host_config, host_config_account),
         (next_kms_context, empty_system_account()),
+        (event_authority(host::id()), Account::default()),
     ];
     let define_result = mollusk().process_and_validate_instruction(
         &define_ix,
@@ -5375,6 +5423,8 @@ fn mollusk_verify_public_decrypt_rejects_after_destroy() {
             admin,
             host_config,
             kms_context,
+            event_authority: event_authority(host::id()),
+            program: host::id(),
         },
         host::instruction::DestroyKmsContext {
             context_id: KMS_CONTEXT_ID,
@@ -5384,6 +5434,7 @@ fn mollusk_verify_public_decrypt_rejects_after_destroy() {
         (admin, funded_system_account()),
         (host_config, rotated_host_config.clone()),
         (kms_context, kms_context_acct),
+        (event_authority(host::id()), Account::default()),
     ];
     let destroy_result = mollusk().process_and_validate_instruction(
         &destroy_ix,

@@ -171,6 +171,12 @@
             "System program used for account creation."
           ],
           "address": "11111111111111111111111111111111"
+        },
+        {
+          "name": "event_authority"
+        },
+        {
+          "name": "program"
         }
       ],
       "args": [
@@ -359,6 +365,12 @@
               }
             ]
           }
+        },
+        {
+          "name": "event_authority"
+        },
+        {
+          "name": "program"
         }
       ],
       "args": [
@@ -539,6 +551,12 @@
             "System program used for account creation."
           ],
           "address": "11111111111111111111111111111111"
+        },
+        {
+          "name": "event_authority"
+        },
+        {
+          "name": "program"
         }
       ],
       "args": [
@@ -832,6 +850,12 @@
               }
             ]
           }
+        },
+        {
+          "name": "event_authority"
+        },
+        {
+          "name": "program"
         }
       ],
       "args": [
@@ -916,6 +940,12 @@
             "System program used for account creation."
           ],
           "address": "11111111111111111111111111111111"
+        },
+        {
+          "name": "event_authority"
+        },
+        {
+          "name": "program"
         }
       ],
       "args": [
@@ -975,6 +1005,12 @@
               }
             ]
           }
+        },
+        {
+          "name": "event_authority"
+        },
+        {
+          "name": "program"
         }
       ],
       "args": [
@@ -1051,6 +1087,12 @@
             "System program used for account creation."
           ],
           "address": "11111111111111111111111111111111"
+        },
+        {
+          "name": "event_authority"
+        },
+        {
+          "name": "program"
         }
       ],
       "args": [
@@ -1113,6 +1155,12 @@
               }
             ]
           }
+        },
+        {
+          "name": "event_authority"
+        },
+        {
+          "name": "program"
         }
       ],
       "args": [
@@ -1168,6 +1216,12 @@
               }
             ]
           }
+        },
+        {
+          "name": "event_authority"
+        },
+        {
+          "name": "program"
         }
       ],
       "args": [
@@ -1223,6 +1277,12 @@
               }
             ]
           }
+        },
+        {
+          "name": "event_authority"
+        },
+        {
+          "name": "program"
         }
       ],
       "args": [
@@ -1278,6 +1338,12 @@
               }
             ]
           }
+        },
+        {
+          "name": "event_authority"
+        },
+        {
+          "name": "program"
         }
       ],
       "args": [
@@ -1536,19 +1602,6 @@
         54,
         106,
         181
-      ]
-    },
-    {
-      "name": "UserDecryptionDelegationUpdatedEvent",
-      "discriminator": [
-        81,
-        111,
-        188,
-        136,
-        248,
-        174,
-        239,
-        156
       ]
     }
   ],
@@ -3695,80 +3748,6 @@
               "PDA bump for this delegation account."
             ],
             "type": "u8"
-          }
-        ]
-      }
-    },
-    {
-      "name": "UserDecryptionDelegationUpdatedEvent",
-      "docs": [
-        "Emitted when user-decryption delegation state changes."
-      ],
-      "type": {
-        "kind": "struct",
-        "fields": [
-          {
-            "name": "version",
-            "docs": [
-              "Event schema version."
-            ],
-            "type": "u8"
-          },
-          {
-            "name": "delegator",
-            "docs": [
-              "User granting delegated decrypt rights."
-            ],
-            "type": "pubkey"
-          },
-          {
-            "name": "delegate",
-            "docs": [
-              "Delegate allowed to request user decryption."
-            ],
-            "type": "pubkey"
-          },
-          {
-            "name": "account",
-            "docs": [
-              "App context for the delegation."
-            ],
-            "type": "pubkey"
-          },
-          {
-            "name": "delegation_counter",
-            "docs": [
-              "Monotonic counter after this update."
-            ],
-            "type": "u64"
-          },
-          {
-            "name": "old_expiration_slot",
-            "docs": [
-              "Expiration slot before this update."
-            ],
-            "type": "u64"
-          },
-          {
-            "name": "new_expiration_slot",
-            "docs": [
-              "Expiration slot after this update."
-            ],
-            "type": "u64"
-          },
-          {
-            "name": "last_update_slot",
-            "docs": [
-              "Slot in which this update was applied."
-            ],
-            "type": "u64"
-          },
-          {
-            "name": "revoked",
-            "docs": [
-              "Whether the delegation is revoked after this update."
-            ],
-            "type": "bool"
           }
         ]
       }

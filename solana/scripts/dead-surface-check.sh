@@ -250,18 +250,23 @@ for event in $event_names; do
   # never handed to an emission is exactly the dead shape this check exists to catch, and the old
   # `emits == 0 && constructions == 0` condition let it pass.
   #
-  # Two emission paths exist in-tree and both are recognized. The macro path names the event on the
-  # macro line (`emit!(Name {` / `emit_cpi!(Name {`). The hand-rolled path — used by the two events
-  # emitted from inside the event CPI — builds the struct and serializes it behind
-  # `EVENT_IX_TAG_LE`, so a construction counts only in a file that carries that tag.
+  # Three emission paths exist in-tree and all are recognized. The macro path names the event on the
+  # macro line (`emit!(Name {` / `emit_cpi!(Name {`) — still used by the app programs. ZamaHost
+  # instead hands every event to the shared `emit_event_cpi` helper, where the struct sits a line or
+  # two below the call, so a construction counts when the call appears just above it. And
+  # `event_cpi.rs` itself assembles the payload behind `EVENT_IX_TAG_LE`, which keeps that file
+  # recognized as an emitter.
   emits=$( (grep -E 'emit_cpi!|emit!' "$INDEX" || true) | grep -cE "\b${event}\b" || true)
   if [ "$emits" -eq 0 ]; then
     manual=0
     for constructing_file in $( (grep -E "\b${event} \{" "$INDEX" || true) | cut -d: -f1 | sort -u); do
+      if (grep -A4 'emit_event_cpi(' "$constructing_file" || true) | grep -qE "\b${event}\b"; then
+        manual=1
+      fi
       if grep -q 'EVENT_IX_TAG_LE' "$constructing_file"; then manual=1; fi
     done
     if [ "$manual" -eq 0 ]; then
-      echo "NEVER-EMITTED EVENT: ${event} (no emit!/emit_cpi! names it, no hand-rolled emission either)"
+      echo "NEVER-EMITTED EVENT: ${event} (nothing emits it: no emit!/emit_cpi!, and no emit_event_cpi call takes it)"
       fail=1
     fi
   fi

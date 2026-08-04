@@ -11,7 +11,7 @@ crate-type = ["cdylib", "lib"]
 name = "zama_host"
 
 [features]
-default = ["emit-events"]
+default = []
 cpi = ["no-entrypoint"]
 no-entrypoint = []
 # Off-chain instruction/event decoding for indexers (host-listener, proof
@@ -19,10 +19,6 @@ no-entrypoint = []
 decode = []
 no-log-ix-name = []
 idl-build = ["anchor-lang/idl-build"]
-# Emit optional administrative/config events. The narrow created-public `fhe_execute`
-# lifecycle execution is unconditional because its output handles cannot be reconstructed
-# from instruction data alone.
-emit-events = []
 
 [dependencies]
 anchor-lang = { version = "1.0.2", features = ["event-cpi"] }

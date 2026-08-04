@@ -40,6 +40,12 @@ pub fn set_max_hcu_per_tx(ctx: Context<HostAdmin>, value: u64) -> Result<()> {
     check_block_cap_ordering(config.hcu_block_cap_per_app, value)?;
     config.max_hcu_per_tx = value;
     config.updated_slot = Clock::get()?.slot;
-    emit_config_updated(config, admin);
+    // `config` is a `&mut` into `ctx.accounts`, and its last use is the mutation above, so the
+    // immutable re-borrow here is what lets one helper serve all six instructions.
+    emit_config_updated(
+        &ctx.accounts.host_config,
+        admin,
+        &ctx.accounts.event_authority,
+    )?;
     Ok(())
 }

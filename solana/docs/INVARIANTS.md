@@ -127,6 +127,10 @@ update, encrypted value ID…).
     signature, and the return layout together.
 27. **[GAP]** User-decryption delegation records have no consumer yet —
     gateway/KMS payloads do not carry them (stated in the account's own docs).
+    The KMS connector's `verify_delegation` is written and unit-tested but
+    nothing in the request path calls it. The event that used to be emitted on
+    delegation was removed for the same reason (DD-044): the reader being built
+    reads the record, not an event.
 
 ## E. Reconstruction & off-chain services
 
@@ -153,7 +157,10 @@ update, encrypted value ID…).
 ## F. Admin, config & custody
 
 35. **[HOLDS]** Only the configured admin can change HostConfig; every change
-    stamps `updated_slot` and emits a config event.
+    stamps `updated_slot` and emits a config event. That event goes out through
+    the event CPI, always — it is not behind a build flag, and it is not a log
+    that an RPC provider can truncate, because an off-chain component has to be
+    able to see an admin change without scanning for it (DD-044).
 36. **[HOLDS]** Pause blocks all production-shaped instructions.
 37. **[HOLDS]** HCU enforcement ships disabled (unrestricted defaults) and is
     opt-in per knob; `u64::MAX` is the single "unlimited" sentinel on every

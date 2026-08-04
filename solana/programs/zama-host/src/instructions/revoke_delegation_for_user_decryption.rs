@@ -3,8 +3,6 @@
 use anchor_lang::prelude::*;
 
 use super::common::*;
-#[cfg(feature = "emit-events")]
-use crate::events::UserDecryptionDelegationUpdatedEvent;
 use crate::{errors::ZamaHostError, state::*};
 
 /// Accounts for revoking a user-decryption delegation.
@@ -59,8 +57,6 @@ pub fn revoke_delegation_for_user_decryption(
         !ctx.accounts.delegation_record.revoked,
         ZamaHostError::DelegationRevoked
     );
-    #[cfg(feature = "emit-events")]
-    let old_expiration_slot = ctx.accounts.delegation_record.expiration_slot;
     let delegation_counter = ctx
         .accounts
         .delegation_record
@@ -71,17 +67,5 @@ pub fn revoke_delegation_for_user_decryption(
     ctx.accounts.delegation_record.expiration_slot = 0;
     ctx.accounts.delegation_record.delegation_counter = delegation_counter;
     ctx.accounts.delegation_record.last_update_slot = clock.slot;
-    #[cfg(feature = "emit-events")]
-    emit!(UserDecryptionDelegationUpdatedEvent {
-        version: EVENT_VERSION,
-        delegator: ctx.accounts.delegation_record.delegator,
-        delegate: ctx.accounts.delegation_record.delegate,
-        account: ctx.accounts.delegation_record.account,
-        delegation_counter,
-        old_expiration_slot,
-        new_expiration_slot: ctx.accounts.delegation_record.expiration_slot,
-        last_update_slot: clock.slot,
-        revoked: true,
-    });
     Ok(())
 }

@@ -23,7 +23,9 @@ pub mod decode;
 pub mod eip712;
 /// Program-specific errors returned by ZamaHost instructions.
 pub mod errors;
-/// Emitted protocol events (admin lifecycle plus the two load-bearing compute events).
+/// The one event-CPI emitter; every event this program emits goes through it.
+pub(crate) mod event_cpi;
+/// Emitted protocol events (admin and config lifecycle plus the two compute events).
 pub mod events;
 /// Instruction account contexts and handlers.
 pub mod instructions;

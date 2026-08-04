@@ -33,6 +33,12 @@ pub fn set_coprocessor_signers(
     config.coprocessor_signer_count = count;
     config.coprocessor_threshold = threshold;
     config.updated_slot = Clock::get()?.slot;
-    emit_config_updated(config, admin);
+    // `config` is a `&mut` into `ctx.accounts`, and its last use is the mutation above, so the
+    // immutable re-borrow here is what lets one helper serve all six instructions.
+    emit_config_updated(
+        &ctx.accounts.host_config,
+        admin,
+        &ctx.accounts.event_authority,
+    )?;
     Ok(())
 }

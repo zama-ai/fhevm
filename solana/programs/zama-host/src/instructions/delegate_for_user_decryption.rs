@@ -3,8 +3,6 @@
 use anchor_lang::prelude::*;
 
 use super::common::*;
-#[cfg(feature = "emit-events")]
-use crate::events::UserDecryptionDelegationUpdatedEvent;
 use crate::{errors::ZamaHostError, state::*};
 
 /// Accounts for creating or updating a user-decryption delegation.
@@ -60,11 +58,6 @@ pub fn delegate_for_user_decryption(
     );
     let info = ctx.accounts.delegation_record.to_account_info();
     let current = read_existing_delegation(&info, bump)?;
-    #[cfg(feature = "emit-events")]
-    let old_expiration_slot = current
-        .as_ref()
-        .map(|record| record.expiration_slot)
-        .unwrap_or(0);
     create_pda_if_needed(
         &ctx.accounts.payer.to_account_info(),
         &info,
@@ -115,18 +108,6 @@ pub fn delegate_for_user_decryption(
             bump,
         },
     )?;
-    #[cfg(feature = "emit-events")]
-    emit!(UserDecryptionDelegationUpdatedEvent {
-        version: EVENT_VERSION,
-        delegator,
-        delegate,
-        account,
-        delegation_counter,
-        old_expiration_slot,
-        new_expiration_slot: expiration_slot,
-        last_update_slot: clock.slot,
-        revoked: false,
-    });
     Ok(())
 }
 

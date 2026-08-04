@@ -140,21 +140,21 @@ until curl -s -m2 "$VALIDATOR_RPC" -X POST -H 'Content-Type: application/json' \
   sleep 1
 done
 solana airdrop 500 -u "$VALIDATOR_RPC" -k "$DEPLOYER_KEYPAIR" >/dev/null 2>&1 || true
-# RECONSTRUCTION-FIRST build: drop optional administrative/config events from zama-host.
-# Yellowstone reconstructs ordinary `fhe_execute` computation facts from instructions; the narrow
-# created-public lifecycle batch remains enabled because its block-entropy handles are not present in
-# instruction data. anchor build gives per-crate feature control (cargo build-sbf builds the whole
-# workspace, so it can't disable defaults for just one crate). The other programs keep defaults.
-echo "    building reconstruction-first zama_host (--no-default-features) + default-feature deps"
-# confidential_token is built separately so it keeps its defaults while zama_host drops its own.
-# It used to be built with `--features poc` for the create_random_amount demo helper, which no
-# caller had: the burn path takes a coprocessor-attested external amount (see consume_burn in the
-# live client), so the helper and its feature are gone. The build itself has to stay — this is the
-# only thing that produces target/deploy/confidential_token.so for the deploy loop below.
+# Reconstruction stays the normal path for everything the listener can rebuild from instruction
+# data over Yellowstone; what a program emits is no longer a build-time choice. zama_host used to be
+# built here with `--no-default-features` to drop its optional `emit-events` feature, and the two
+# programs had to be built in separate `anchor build` invocations to get per-crate feature control
+# (`cargo build-sbf` builds the whole workspace, so it cannot disable defaults for one crate). That
+# feature is gone: the admin and config events are emitted unconditionally through the event CPI so
+# an off-chain component can observe an admin change without scanning for it, and the events that
+# were only ever hints are not emitted at all. The two `-p` builds stay: they are what produces the
+# two `target/deploy/*.so` the deploy loop below reads, and naming them keeps the e2e from building
+# the batcher and the demo vault it never deploys.
+echo "    building zama_host + confidential_token"
 ( cd "$SOLANA" \
-    && anchor build --ignore-keys --no-idl -p zama_host -- --no-default-features \
+    && anchor build --ignore-keys --no-idl -p zama_host \
     && anchor build --ignore-keys --no-idl -p confidential_token ) \
-  || { echo "[setup] reconstruction-first anchor build failed" >&2; exit 1; }
+  || { echo "[setup] anchor build failed" >&2; exit 1; }
 # --use-rpc: deploy over RPC (8899) since the container doesn't publish the TPU ports.
 for p in zama_host confidential_token; do
   solana program deploy -u "$VALIDATOR_RPC" -k "$DEPLOYER_KEYPAIR" --use-rpc \

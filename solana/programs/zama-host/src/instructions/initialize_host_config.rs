@@ -3,12 +3,13 @@
 use anchor_lang::prelude::*;
 
 use super::common::*;
-#[cfg(feature = "emit-events")]
+use crate::event_cpi::emit_event_cpi;
 use crate::events::HostConfigInitializedEvent;
 use crate::{errors::ZamaHostError, state::*};
 
 /// Accounts for initializing the singleton [`HostConfig`].
 #[derive(Accounts)]
+#[event_cpi]
 pub struct InitializeHostConfig<'info> {
     /// Pays rent for the config account.
     #[account(mut)]
@@ -40,7 +41,6 @@ pub fn initialize_host_config(
         args.coprocessor_threshold,
     )?;
     let updated_slot = Clock::get()?.slot;
-    #[cfg(feature = "emit-events")]
     let config_key = ctx.accounts.host_config.key();
     let config = &mut ctx.accounts.host_config;
     config.admin = ctx.accounts.admin.key();
@@ -62,13 +62,18 @@ pub fn initialize_host_config(
     config.hcu_block_cap_per_app = u64::MAX;
     config.updated_slot = updated_slot;
     config.bump = ctx.bumps.host_config;
-    #[cfg(feature = "emit-events")]
-    emit!(HostConfigInitializedEvent {
-        version: EVENT_VERSION,
-        config: config_key,
-        admin: config.admin,
-        chain_id: config.chain_id,
-    });
+    // Copied out so the `&mut config` borrow ends before the emit reads `ctx.accounts` again.
+    let admin = config.admin;
+    let chain_id = config.chain_id;
+    emit_event_cpi(
+        &ctx.accounts.event_authority,
+        &HostConfigInitializedEvent {
+            version: EVENT_VERSION,
+            config: config_key,
+            admin,
+            chain_id,
+        },
+    )?;
     Ok(())
 }
 

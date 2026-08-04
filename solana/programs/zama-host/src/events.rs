@@ -1,21 +1,24 @@
-//! Event types for ZamaHost, in three groups with different transports:
+//! Event types for ZamaHost. There are only two kinds, and the rule for which one you get is about
+//! who needs the data, not about how interesting it is:
 //!
-//! - Admin and config lifecycle events (`HostConfig*`, `*KmsContext*`,
-//!   `DenySubjectUpdated`, `HcuAppTrustUpdated`,
-//!   `UserDecryptionDelegationUpdated`) are emitted through `emit!` as
-//!   indexing hints. Authorization always comes from host-owned account
-//!   state, never from event bytes.
-//! - `FheExecuteRandomSeedsEvent` and `PublicOutputsProducedEvent` are emitted
-//!   through the event CPI. They are load-bearing for off-chain consumers:
-//!   they carry the only data an indexer cannot recompute from instruction
-//!   data alone (block-entropy-derived seeds and output handles).
-//! - Per-step compute shapes are never emitted on-chain; they live in
-//!   `records.rs` as plain decoded op records the listener reconstructs
-//!   from instruction data (see the listener's `solana_reconstruct`).
-//!
-//! `EncryptedValue` ACL mutations emit nothing at all — indexers reconstruct
-//! MMR leaves from instruction data via the shared `zama_solana_acl` crate
-//! (see `instructions/encrypted_value.rs`).
+//! - **Emitted, always, through the event CPI** (`crate::event_cpi`). Two groups qualify. The admin
+//!   and config lifecycle — `HostConfig*`, `*KmsContext*`, `DenySubjectUpdated`,
+//!   `HcuAppTrustUpdated` — because an off-chain component that watches the protocol has to be able
+//!   to see an admin change without scanning for it. And `FheExecuteRandomSeedsEvent` plus
+//!   `PublicOutputsProducedEvent`, which carry the only data an indexer cannot recompute from
+//!   instruction data at all (seeds derived from block entropy, and output handles). Nothing here
+//!   uses `emit!`: a log can be truncated by the RPC provider a reader goes through, so it is a hint
+//!   rather than a delivery, and a hint is not good enough for either group. Authorization still
+//!   comes from host-owned account state and never from event bytes — reliable delivery is about
+//!   observability, not trust.
+//! - **Not emitted at all.** Everything else, which is most of it: per-step compute shapes (they
+//!   live in `records.rs` as decoded op records), `EncryptedValue` ACL mutations (indexers rebuild
+//!   MMR leaves through the shared `zama_solana_acl` crate), and user-decryption delegation. The
+//!   listener reconstructs these from instruction data over Yellowstone, which is the normal path
+//!   for anything reconstructible. Delegation is the clearest case: nothing off-chain consumes it at
+//!   all yet (INVARIANTS #27), and the consumer being built for it — the KMS connector's
+//!   `verify_delegation` — reads the record at its canonical PDA rather than watching for an event,
+//!   so the event this module used to emit had no reader and no prospective one.
 
 use anchor_lang::prelude::*;
 
@@ -145,27 +148,4 @@ pub struct HcuAppTrustUpdatedEvent {
     pub trusted: bool,
     /// Slot in which this update was applied.
     pub updated_slot: u64,
-}
-
-/// Emitted when user-decryption delegation state changes.
-#[event]
-pub struct UserDecryptionDelegationUpdatedEvent {
-    /// Event schema version.
-    pub version: u8,
-    /// User granting delegated decrypt rights.
-    pub delegator: Pubkey,
-    /// Delegate allowed to request user decryption.
-    pub delegate: Pubkey,
-    /// App context for the delegation.
-    pub account: Pubkey,
-    /// Monotonic counter after this update.
-    pub delegation_counter: u64,
-    /// Expiration slot before this update.
-    pub old_expiration_slot: u64,
-    /// Expiration slot after this update.
-    pub new_expiration_slot: u64,
-    /// Slot in which this update was applied.
-    pub last_update_slot: u64,
-    /// Whether the delegation is revoked after this update.
-    pub revoked: bool,
 }

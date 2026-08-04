@@ -10,6 +10,7 @@ use crate::state::{HostConfig, HOST_CONFIG_SEED};
 /// The generated Anchor account type is intentionally still named `HostAdmin`
 /// because runtime tests and callers already construct that account builder.
 #[derive(Accounts)]
+#[event_cpi]
 pub struct HostAdmin<'info> {
     /// Configured host admin.
     pub admin: Signer<'info>,
@@ -27,6 +28,10 @@ pub fn set_host_pause(ctx: Context<HostAdmin>, paused: bool) -> Result<()> {
     }
     ctx.accounts.host_config.paused = paused;
     ctx.accounts.host_config.updated_slot = Clock::get()?.slot;
-    emit_config_updated(&ctx.accounts.host_config, ctx.accounts.admin.key());
+    emit_config_updated(
+        &ctx.accounts.host_config,
+        ctx.accounts.admin.key(),
+        &ctx.accounts.event_authority,
+    )?;
     Ok(())
 }
