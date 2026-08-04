@@ -14,7 +14,10 @@ use crate::{
 use alloy::{
     hex,
     primitives::{B256, FixedBytes},
-    transports::http::{Client, reqwest::header::HeaderMap},
+    transports::http::{
+        Client,
+        reqwest::{self, header::HeaderMap},
+    },
 };
 use anyhow::anyhow;
 use ciphertext_attestation::{
@@ -52,6 +55,9 @@ pub struct BoundedClient {
     /// Kept low: SNS ciphertexts are big, so too many buffered at once would OOM the worker.
     get_semaphore: Arc<Semaphore>,
 
+    /// Ceiling on the size of a single ciphertext body, in bytes.
+    max_ciphertext_size: NonZeroUsize,
+
     /// Deadline of a single attestation `HEAD`.
     head_timeout: Duration,
 
@@ -73,6 +79,7 @@ impl BoundedClient {
             head_semaphores: Arc::new(Mutex::new(HashMap::new())),
             max_concurrent_heads_per_bucket: config.s3_max_concurrent_heads_per_bucket,
             get_semaphore: Arc::new(Semaphore::new(config.s3_max_concurrent_gets.get())),
+            max_ciphertext_size: config.s3_max_ciphertext_size,
             head_timeout: config.s3_head_timeout,
             retrieval_attempts: config.s3_ciphertext_retrieval_attempts,
         })
@@ -89,7 +96,23 @@ impl BoundedClient {
             .acquire()
             .await
             .expect("S3 HEAD semaphore closed");
-        fetch_single_attestation(&self.client, bucket, handle, self.head_timeout).await
+
+        let url = rfc023_ciphertext_url(bucket, handle);
+        let response = self
+            .client
+            .head(&url)
+            .timeout(self.head_timeout)
+            .send()
+            .await?;
+
+        if !response.status().is_success() {
+            return Err(FetchAttestationError::Http(format!(
+                "status {}",
+                response.status()
+            )));
+        }
+
+        attestation_from_http_headers(response.headers())
     }
 
     /// The `HEAD` ceiling of `bucket`, created on first use.
@@ -116,19 +139,119 @@ impl BoundedClient {
         material: &ConsensusMaterial,
         winning_buckets: &[String],
     ) -> Result<TypedCiphertext, ProcessingError> {
-        let _permit = self
-            .get_semaphore
-            .acquire()
+        // A handle that carries no valid FHE type is malformed; retrying cannot fix it.
+        let fhe_type = extract_fhe_type_from_handle(handle.as_slice()).map_err(|e| {
+            ProcessingError::Irrecoverable(anyhow!(
+                "cannot extract FHE type from handle {handle}: {e}"
+            ))
+        })?;
+        let ct_format = grpc_ciphertext_format(material.format);
+
+        if winning_buckets.is_empty() {
+            return Err(ProcessingError::Recoverable(anyhow!(
+                "no winning-group bucket resolved for handle {handle}"
+            )));
+        }
+
+        let mut last_error = "no retrieval attempt made".to_string();
+        let mut digest_mismatch = false;
+        for attempt in 1..=self.retrieval_attempts {
+            for bucket in winning_buckets {
+                let url = rfc023_ciphertext_url(bucket, handle);
+
+                let _permit = self
+                    .get_semaphore
+                    .acquire()
+                    .await
+                    .expect("S3 GET semaphore closed");
+                let body = match self.retrieve_ciphertext_via_http(&url).await {
+                    Ok(body) => body,
+                    Err(e) => {
+                        S3_CIPHERTEXT_RETRIEVAL_ERRORS.inc();
+                        last_error = format!("bucket {bucket}: {e}");
+                        warn!(attempt, %handle, "Failed to retrieve ciphertext: {last_error}");
+                        continue;
+                    }
+                };
+
+                let calculated_digest = compute_keccak256_digest(&body);
+                if calculated_digest.as_slice() != material.sns_ciphertext_digest.as_slice() {
+                    S3_CIPHERTEXT_RETRIEVAL_ERRORS.inc();
+                    digest_mismatch = true;
+                    last_error = format!(
+                        "bucket {bucket}: digest mismatch (expected {}, got {})",
+                        material.sns_ciphertext_digest,
+                        FixedBytes::<32>::from_slice(&calculated_digest),
+                    );
+                    warn!(attempt, %handle, "Ciphertext digest mismatch: {last_error}");
+                    continue;
+                }
+
+                S3_CIPHERTEXT_RETRIEVAL_COUNTER.inc();
+                debug!(
+                    %handle,
+                    "Ciphertext retrieved and verified: format {}, length {}, FHE type {:?}",
+                    ct_format.as_str_name(),
+                    body.len(),
+                    fhe_type
+                );
+                return Ok(TypedCiphertext {
+                    ciphertext: body,
+                    external_handle: handle.to_vec(),
+                    fhe_type: fhe_type as i32,
+                    ciphertext_format: ct_format.into(),
+                });
+            }
+        }
+
+        if digest_mismatch {
+            warn!(%handle, "All winning-group buckets failed ciphertext digest verification");
+        }
+        Err(ProcessingError::Recoverable(anyhow!(
+            "ciphertext unavailable for handle {handle}: all retrieval attempts failed \
+             (last: {last_error})"
+        )))
+    }
+
+    /// Retrieves a ciphertext body directly via HTTP, holding at most `max_ciphertext_size` of it.
+    async fn retrieve_ciphertext_via_http(&self, url: &str) -> anyhow::Result<Vec<u8>> {
+        debug!("Attempting direct HTTP retrieval from URL: {url}");
+        let max_size = self.max_ciphertext_size.get();
+
+        let mut response = self
+            .client
+            .get(url)
+            .send()
             .await
-            .expect("S3 GET semaphore closed");
-        retrieve_verified_ciphertext(
-            &self.client,
-            handle,
-            material,
-            winning_buckets,
-            self.retrieval_attempts,
-        )
-        .await
+            .map_err(|e| anyhow!("HTTP request failed: {}", e))?;
+
+        if !response.status().is_success() {
+            return Err(anyhow!(
+                "HTTP request failed with status: {}",
+                response.status()
+            ));
+        }
+
+        let expected_size = response.content_length().unwrap_or(0);
+        if expected_size > max_size as u64 {
+            return Err(anyhow!(
+                "announced body of {expected_size} bytes exceeds the ceiling of {max_size}"
+            ));
+        }
+
+        let mut body = Vec::new();
+        while let Some(chunk) = response
+            .chunk()
+            .await
+            .map_err(|e| anyhow!("Failed to read HTTP response body: {e}"))?
+        {
+            if body.len() + chunk.len() > max_size {
+                return Err(anyhow!("body exceeds the ceiling of {max_size} bytes"));
+            }
+            body.extend_from_slice(&chunk);
+        }
+
+        Ok(body)
     }
 }
 
@@ -153,133 +276,14 @@ pub enum FetchAttestationError {
     MissingHeader,
 }
 
-async fn fetch_single_attestation(
-    client: &Client,
-    bucket: &str,
-    handle: B256,
-    head_timeout: Duration,
-) -> Result<CiphertextAttestation, FetchAttestationError> {
-    let url = rfc023_ciphertext_url(bucket, handle);
-
-    let response = client
-        .head(&url)
-        .timeout(head_timeout)
-        .send()
-        .await
-        .map_err(|e| {
-            if e.is_timeout() {
-                FetchAttestationError::Timeout
-            } else {
-                FetchAttestationError::Http(e.to_string())
-            }
-        })?;
-
-    if !response.status().is_success() {
-        return Err(FetchAttestationError::Http(format!(
-            "status {}",
-            response.status()
-        )));
-    }
-
-    attestation_from_http_headers(response.headers())
-}
-
-async fn retrieve_verified_ciphertext(
-    client: &Client,
-    handle: B256,
-    material: &ConsensusMaterial,
-    winning_buckets: &[String],
-    attempts: u8,
-) -> Result<TypedCiphertext, ProcessingError> {
-    // A handle that carries no valid FHE type is malformed; retrying cannot fix it.
-    let fhe_type = extract_fhe_type_from_handle(handle.as_slice()).map_err(|e| {
-        ProcessingError::Irrecoverable(anyhow!("cannot extract FHE type from handle {handle}: {e}"))
-    })?;
-    let ct_format = grpc_ciphertext_format(material.format);
-
-    if winning_buckets.is_empty() {
-        return Err(ProcessingError::Recoverable(anyhow!(
-            "no winning-group bucket resolved for handle {handle}"
-        )));
-    }
-
-    let mut last_error = "no retrieval attempt made".to_string();
-    let mut digest_mismatch = false;
-    for attempt in 1..=attempts {
-        for bucket in winning_buckets {
-            let url = rfc023_ciphertext_url(bucket, handle);
-            let body = match retrieve_ciphertext_via_http(client, &url).await {
-                Ok(body) => body,
-                Err(e) => {
-                    S3_CIPHERTEXT_RETRIEVAL_ERRORS.inc();
-                    last_error = format!("bucket {bucket}: {e}");
-                    warn!(attempt, %handle, "Failed to retrieve ciphertext: {last_error}");
-                    continue;
-                }
-            };
-
-            let calculated_digest = compute_keccak256_digest(&body);
-            if calculated_digest.as_slice() != material.sns_ciphertext_digest.as_slice() {
-                S3_CIPHERTEXT_RETRIEVAL_ERRORS.inc();
-                digest_mismatch = true;
-                last_error = format!(
-                    "bucket {bucket}: digest mismatch (expected {}, got {})",
-                    material.sns_ciphertext_digest,
-                    FixedBytes::<32>::from_slice(&calculated_digest),
-                );
-                warn!(attempt, %handle, "Ciphertext digest mismatch: {last_error}");
-                continue;
-            }
-
-            S3_CIPHERTEXT_RETRIEVAL_COUNTER.inc();
-            debug!(
-                %handle,
-                "Ciphertext retrieved and verified: format {}, length {}, FHE type {:?}",
-                ct_format.as_str_name(),
-                body.len(),
-                fhe_type
-            );
-            return Ok(TypedCiphertext {
-                ciphertext: body,
-                external_handle: handle.to_vec(),
-                fhe_type: fhe_type as i32,
-                ciphertext_format: ct_format.into(),
-            });
+impl From<reqwest::Error> for FetchAttestationError {
+    fn from(err: reqwest::Error) -> Self {
+        if err.is_timeout() {
+            FetchAttestationError::Timeout
+        } else {
+            FetchAttestationError::Http(err.to_string())
         }
     }
-
-    if digest_mismatch {
-        warn!(%handle, "All winning-group buckets failed ciphertext digest verification");
-    }
-    Err(ProcessingError::Recoverable(anyhow!(
-        "ciphertext unavailable for handle {handle}: all retrieval attempts failed \
-         (last: {last_error})"
-    )))
-}
-
-/// Retrieves a ciphertext body directly via HTTP.
-async fn retrieve_ciphertext_via_http(client: &Client, url: &str) -> anyhow::Result<Vec<u8>> {
-    debug!("Attempting direct HTTP retrieval from URL: {url}");
-
-    let response = client
-        .get(url)
-        .send()
-        .await
-        .map_err(|e| anyhow!("HTTP request failed: {}", e))?;
-
-    if !response.status().is_success() {
-        return Err(anyhow!(
-            "HTTP request failed with status: {}",
-            response.status()
-        ));
-    }
-
-    let body = response
-        .bytes()
-        .await
-        .map_err(|e| anyhow!("Failed to read HTTP response body: {}", e))?;
-
-    Ok(body.to_vec())
 }
 
 /// Maps the attested [`CiphertextFormat`] onto the KMS gRPC format.
@@ -336,6 +340,7 @@ mod tests {
     use super::*;
     use alloy::primitives::U256;
     use connector_utils::tests::net::black_hole_server;
+    use tokio::{io::AsyncWriteExt, task::JoinHandle};
 
     /// Two addresses nothing can be listening on: a request to either fails at connection, fast.
     const UNREACHABLE_BUCKET: &str = "http://127.0.0.1:1";
@@ -452,6 +457,66 @@ mod tests {
         assert!(matches!(get, Err(ProcessingError::Recoverable(_))));
 
         accept_loop.abort();
+    }
+
+    /// A bucket serving `body` on any path, its length announced in a `Content-Length` header or
+    /// left for the connection close to frame. Returns its URL, and its accept loop to abort.
+    async fn ciphertext_bucket(body: Vec<u8>, announce_length: bool) -> (String, JoinHandle<()>) {
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let url = format!("http://{}", listener.local_addr().unwrap());
+        let accept_loop = tokio::spawn(async move {
+            while let Ok((mut stream, _)) = listener.accept().await {
+                let framing = if announce_length {
+                    format!("Content-Length: {}", body.len())
+                } else {
+                    "Connection: close".to_string()
+                };
+                let head = format!("HTTP/1.1 200 OK\r\n{framing}\r\n\r\n");
+                let _ = stream.write_all(head.as_bytes()).await;
+                let _ = stream.write_all(&body).await;
+                let _ = stream.shutdown().await;
+            }
+        });
+        (url, accept_loop)
+    }
+
+    /// A body above the ceiling is turned down, announced or not. Every served body here verifies
+    /// against the attested digest, so the ceiling is the only thing that can reject one — and the
+    /// body that fits proves as much.
+    #[tokio::test]
+    async fn oversized_ciphertext_bodies_are_rejected() {
+        const CEILING: usize = 1024;
+
+        for (body_len, announce_length, expected_ok) in [
+            (CEILING, true, true),
+            (4 * CEILING, true, false),
+            (4 * CEILING, false, false),
+        ] {
+            let body = vec![0u8; body_len];
+            let material = ConsensusMaterial {
+                sns_ciphertext_digest: B256::from_slice(&compute_keccak256_digest(&body)),
+                ..material()
+            };
+            let (bucket, accept_loop) = ciphertext_bucket(body, announce_length).await;
+
+            let client = BoundedClient::from_config(&Config {
+                s3_max_ciphertext_size: NonZeroUsize::new(CEILING).unwrap(),
+                s3_ciphertext_retrieval_attempts: 1,
+                ..Default::default()
+            })
+            .unwrap();
+            let result = client
+                .retrieve_verified_ciphertext(B256::ZERO, &material, &[bucket])
+                .await;
+
+            assert_eq!(
+                result.is_ok(),
+                expected_ok,
+                "{body_len} bytes announced as {announce_length}: {result:?}"
+            );
+
+            accept_loop.abort();
+        }
     }
 
     #[test]

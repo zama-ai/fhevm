@@ -44,6 +44,9 @@ pub const S3_METADATA_ATTESTATION_KEY: &str = "ct-attestation";
 /// [`CiphertextAttestation`] on every ciphertext object.
 pub const S3_METADATA_ATTESTATION_HEADER: &str = "x-amz-meta-ct-attestation";
 
+/// Ceiling on the serialized size of an SNS ciphertext in bytes.
+pub const MAX_SNS_CIPHERTEXT_SERIALIZED_SIZE: u64 = 66 * 1024 * 1024;
+
 /// Versioned encoding of the attestation. The version byte is part of the signed
 /// payload, so a stripped or downgraded `version` field flips signature recovery
 /// and is caught at verification time.
