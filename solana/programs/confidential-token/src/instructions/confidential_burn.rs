@@ -392,7 +392,7 @@ fn execute_burn<'info>(
         encrypted_value_id(mint_domain, token_account_key, encrypted_balance_label()),
         fhe::PersistentAudience::for_owner(owner, compute_signer),
     )?;
-    // ERC-7984 `unwrap` parity (`makePubliclyDecryptable(unwrapAmount)`): the burned delta is born
+    // ERC-7984 `unwrap` parity (`makePubliclyDecryptable(unwrapAmount)`): the burned delta is created
     // publicly decryptable inside this eval CPI, so the burn is permanently redeemable even after a
     // later burn updates this shared encrypted value account (DD-036 / Vector 2) — with no second make-public CPI.
     let burned_output = fhe::PersistentOutput::new_public(

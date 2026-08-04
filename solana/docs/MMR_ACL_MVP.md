@@ -59,7 +59,7 @@ this note records the operational model in one place.
   forward by proving inclusion against confirmed on-chain peaks.
 - Public decrypt is exact-handle. `make_handle_public` seals a `PublicDecryptLeaf` for the current
   handle only; a later handle update does not inherit public decryptability. An `fhe_execute` persistent
-  output may instead be *born* public by setting `make_public` on the output: after the new handle is
+  output may instead be created public by setting `make_public` on the output: after the new handle is
   written, the same `PublicDecryptLeaf` is sealed for that NEW handle in the same instruction —
   byte-identical to `make_handle_public`, appended LAST (after any update historical leaves). This
   is the one exception to "created encrypted value accounts cannot be created public-decryptable" (DD-036).

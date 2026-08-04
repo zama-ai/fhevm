@@ -299,8 +299,13 @@ check_alias() {
 # actually does, and that is a recorded decision, not an oversight.
 check_alias 'fhe_eval — renamed to fhe_execute' all \
   'b"FHE_eval' -E '\bfhe_eval\b|\bFheEval\b'
-check_alias 'born-public / birth — renamed to created-public / create' all \
-  'birthday' -iE 'born[-_ ]public|\bbirth\b|_birth\b|birth_'
+# Bare `born`, not just `born[-_ ]public`: the narrow pattern could not match the spellings that
+# actually survived — `*born* public` (asterisks between the two words), "are born with", "born in
+# `initialize_mint`". Prose is where retired vocabulary hides, because a rename sweep looks for
+# identifiers. The English word has no legitimate use in these trees now that all five sites say
+# "created" instead, so the whole family is banned and `birthday` stays exempted.
+check_alias 'born / birth — renamed to created-public / create' all \
+  'birthday' -iE '\bborn\b|\bbirth\b|_birth\b|birth_'
 # `value_key` as an identifier was renamed to encrypted-value-ID vocabulary. The signed/wire
 # spellings stay: the sha256 tag string "...value-key-v1" (preimage bytes), the v3 JSON key
 # `aclValueKey`, and the connector's matching `acl_value_key` field.
@@ -677,7 +682,8 @@ ${label}"
     rm -f "$fixture"
   done <<'FIXTURES'
 fhe_eval|fhe_eval — renamed to fhe_execute
-born-public|born-public / birth — renamed to created-public / create
+born-public|born / birth — renamed to created-public / create
+are born with|born / birth — renamed to created-public / create
 value_key|value_key identifier — renamed to encrypted_value_id
 app_account|app_account / app_authority — renamed to encrypted_value_account_authority
 app_authority|app_account / app_authority — renamed to encrypted_value_account_authority

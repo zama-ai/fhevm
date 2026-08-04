@@ -87,7 +87,7 @@ Admission invariants for `fhe_execute`:
   (the EVM `fromExternal` / `allowTransient(input, msg.sender)` analog). The caller-is-contract gate is
   checked at input consumption (`attestation.contract_address == compute_subject`); derived outputs are
   unconstrained. The redundant standalone `verify_coprocessor_input` instruction was removed (DD-007).
-- Persistent outputs are born with an allowed-subject set. Public decrypt is never a live flag or subject
+- Persistent outputs are created with an allowed-subject set. Public decrypt is never a live flag or subject
   attribute; it is granted by `make_handle_public`, or at persistent-output creation when `make_public=true`,
   which appends an exact-handle `PublicDecryptLeaf` to the encrypted value account MMR.
 

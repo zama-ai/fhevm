@@ -75,7 +75,7 @@ pub enum RecoveryError {
     /// DNS failure, connect/request timeout on `send()`, or a body that dropped
     /// mid-read or exceeded the body timeout. The endpoint may simply not exist
     /// yet (startup bring-up) or be flapping, so callers retry with backoff
-    /// rather than failing closed. Born only from a `reqwest` `send()`/body-read
+    /// rather than failing closed. Arises only from a `reqwest` `send()`/body-read
     /// error — never from a body the endpoint fully returned.
     #[error("RPC transport error: {0}")]
     Transport(String),
