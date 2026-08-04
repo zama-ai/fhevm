@@ -94,15 +94,14 @@ async fn test_processing_request(
         TestEventType::UserDecryption => {
             let tx_hash = rand_digest();
             insert_options = insert_options.with_tx_hash(tx_hash);
-            if !already_sent {
-                let mock_tx = create_mock_user_decryption_request_tx(tx_hash, handle)?;
-                asserter.push_success(&mock_tx);
-            }
+            let mock_tx = create_mock_user_decryption_request_tx(tx_hash, handle)?;
+            asserter.push_success(&mock_tx);
         }
         // The `NewKmsContext` flow makes two RPC calls before going to the Core: an `eth_call`
         // on `getKmsContextAnchor(previousContextId)` and an `eth_getLogs` to fetch the
         // previous-context event. We fabricate a default previous event, hash it the same way
-        // the production code does, and queue both responses on the FIFO asserter.
+        // the production code does, and queue both responses on the FIFO asserter. These calls
+        // belong to request preparation, so they are skipped on `already_sent` retries.
         TestEventType::NewKmsContext if !already_sent => {
             let previous_event = NewKmsContext::default();
             let anchor_hash = compute_anchor_event_hash(&previous_event);
@@ -119,7 +118,8 @@ async fn test_processing_request(
         // The `NewKmsEpoch` flow fetches the previous epoch material from `KMSGeneration` via two
         // `eth_call`s at `materialBlockNumber`: `getCompletedKeyIds()` then `getCompletedCrsIds()`.
         // Returning empty id lists short-circuits the per-key/per-crs `getKeyInfo`/`getCrsMaterials`
-        // follow-ups, so these two responses are all the flow needs.
+        // follow-ups, so these two responses are all the flow needs. These calls belong to
+        // request preparation, so they are skipped on `already_sent` retries.
         TestEventType::NewKmsEpoch if !already_sent => {
             asserter.push_success(&Vec::<U256>::new().abi_encode());
             asserter.push_success(&Vec::<U256>::new().abi_encode());
@@ -141,9 +141,8 @@ async fn test_processing_request(
     //                        (direct ownership path, empty `allowedContracts`). All three fire
     //                        concurrently via `try_join!`, consumed FIFO in poll order thanks
     //                        to the `biased` annotation.
-    // No ACL check should be performed for `already_sent` events.
+    // ACL checks are re-run on every attempt, so `already_sent` events consume them too.
     let acl_responses = match event_type {
-        _ if already_sent => vec![],
         TestEventType::PublicDecryption => vec![true.abi_encode()],
         TestEventType::UserDecryptionV2 => vec![
             erc1271_magic_response(),

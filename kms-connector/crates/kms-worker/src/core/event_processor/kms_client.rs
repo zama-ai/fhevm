@@ -450,17 +450,18 @@ impl KmsClient {
 
     async fn poll_keygen_result(
         &self,
-        request_id: RequestId,
+        key_id: RequestId,
         preproc_id: RequestId,
     ) -> (i16, Result<KmsGrpcResponse, ProcessingError>) {
-        // Poll the shard that ran the keygen (thus using the preproc_id to choose the client)
+        // Poll the shard that ran the keygen, thus using `preproc_id` in `choose_client`.
+        // The result itself is still fetched by `key_id.
         let inner_client = self.choose_client(preproc_id);
 
         let (error_count, grpc_result) = poll_for_result(
             self.grpc_request_retries,
             || {
                 let mut client = inner_client.clone();
-                let request = Request::new(request_id.clone());
+                let request = Request::new(key_id.clone());
                 async move { client.get_key_gen_result(request).await }
             },
             EventType::KeygenRequest,

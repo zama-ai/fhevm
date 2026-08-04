@@ -161,15 +161,15 @@ impl
             CiphertextManager::connect(gateway_provider.clone(), &config, cancel_token).await?;
         let decryption_processor = DecryptionProcessor::new(
             &config,
-            context_manager.clone(),
             gateway_provider.clone(),
             acl_contracts,
             ciphertext_manager,
         );
-        let kms_generation_processor = KMSGenerationProcessor::new(&config, context_manager);
+        let kms_generation_processor = KMSGenerationProcessor::new(&config);
         let protocol_config_processor = ProtocolConfigProcessor::new(&config, ethereum_provider);
         let event_processor = DbEventProcessor::new(
             kms_client.clone(),
+            context_manager,
             decryption_processor,
             kms_generation_processor,
             protocol_config_processor,
