@@ -16,6 +16,8 @@
 #   6. Exported symbols with no audience: a `pub fn` / `export function` with no production caller
 #      outside its own file must either name its audience in a `Public API surface:` line or go.
 #      One that nothing references at all — not a test, not its own module — is simply dead.
+#      This one reads a narrower surface than it counts against: which declarations it collects, and
+#      which trees it deliberately leaves alone, are written out at the check itself.
 #   7. Every tree swept above is a CI trigger for this script: a check that does not run on a change
 #      to the tree it protects is the same hole as a check that does not fire.
 #
@@ -47,6 +49,24 @@ SELF_TEST=0
 # assertions cost twenty full sweeps. A child may be told which check its fixture violates.
 # Unset — every real invocation, including CI's — runs all of them.
 run_check() { [ -z "${DEAD_SURFACE_ONLY_CHECK:-}" ] || [ "${DEAD_SURFACE_ONLY_CHECK}" = "$1" ]; }
+
+# An unrecognised value ran zero checks and printed "clean" with status 0 — a green, entirely vacuous
+# run, and the only tell was the absence of the seven headers, which nothing asserted. A typo, a
+# leftover repo variable, or an earlier job writing GITHUB_ENV would have silenced the whole gate.
+case "${DEAD_SURFACE_ONLY_CHECK:-}" in
+  '' | 1 | 2 | 3 | 4 | 5 | 6 | 7) ;;
+  *)
+    echo "dead-surface-check: DEAD_SURFACE_ONLY_CHECK must be empty or 1-7, got '${DEAD_SURFACE_ONLY_CHECK}'" >&2
+    exit 2
+    ;;
+esac
+# The self-test sets the hook per assertion and needs its own run to cover everything: the alias-label
+# parity gate reads a file only check 3 writes, so a preset hook would leave it empty and an entry
+# without a fixture would stop being a hole while all the assertions still passed.
+if [ "$SELF_TEST" -eq 1 ] && [ -n "${DEAD_SURFACE_ONLY_CHECK:-}" ]; then
+  echo "dead-surface-check: --self-test drives DEAD_SURFACE_ONLY_CHECK itself; refusing to run with it preset" >&2
+  exit 2
+fi
 
 # Everything the Solana workstream owns. GLOSSARY.md is excluded from the alias sweep because its
 # "Replaces" column intentionally quotes the old names, and DESIGN_DECISIONS.md because it is a
@@ -120,11 +140,24 @@ FHE_ROOTS=(
 )
 ALL_ROOTS=("${RUST_ROOTS[@]}" "${TS_ROOTS[@]}" "${SCRIPT_ROOTS[@]}")
 
+# What the `kms` scope adds to ALL: the connector crates, and the connector-auth fixture tree, which is
+# in no other root (the generator lives under kms-worker/tests but the vector constants and the
+# committed JSON do not). Named once here so the existence assertion below and check 7's trigger audit
+# both cover them.
+KMS_EXTRA_ROOTS=(
+  kms-connector/crates
+  solana/test-fixtures
+)
+
 # A root that no longer exists makes every sweep over it silently narrower, which is the failure
 # this script exists to prevent. `batch_contracts.rs` sat in FHE_ROOTS after being renamed to
 # `execution_contracts.rs` and the FHE sweep quietly stopped reading it: grep's error went to
 # /dev/null and the `|| true` swallowed the status. Named roots are asserted instead.
-for root in "${ALL_ROOTS[@]}" "${CORE_ROOTS[@]}" "${FHE_ROOTS[@]}" kms-connector/crates; do
+# `kms-connector/crates` and `solana/test-fixtures` are named here because they are reachable only
+# through the `kms` scope, which builds its root list inline — so neither appeared in any list this
+# loop walked, and a rename of either would have silently narrowed three alias entries behind
+# `check_alias`'s `2>/dev/null || true`.
+for root in "${ALL_ROOTS[@]}" "${CORE_ROOTS[@]}" "${FHE_ROOTS[@]}" "${KMS_EXTRA_ROOTS[@]}"; do
   [ -e "$root" ] || { echo "dead-surface-check: swept root does not exist: $root" >&2; exit 2; }
 done
 
@@ -156,6 +189,12 @@ SENTINEL_FILES=(
   coprocessor/fhevm-engine/host-listener/src/solana_adapter.rs
   relayer/src/core/event.rs
 )
+# The two staleness arms below read a list that lives in code, so the self-test cannot violate them
+# by planting a file. It adds an entry through the environment instead, and one hook drives both: a
+# path that is not there at all, and a path that is there with no retrofit left on it.
+[ -n "${DEAD_SURFACE_EXTRA_SENTINEL_FILE:-}" ] && \
+  SENTINEL_FILES+=("${DEAD_SURFACE_EXTRA_SENTINEL_FILE}")
+
 # Check 5's pinned justification prose, as `file|phrase`.
 RETROFIT_JUSTIFICATIONS=(
   "sdk/js-sdk/src/solana/actions/userDecrypt.ts|reuse the derived"
@@ -296,9 +335,18 @@ if run_check 1 || run_check 2 || run_check 6; then
 fi
 
 # Counts production references to a boundary-anchored pattern, ignoring the declaring file.
+#
+# The pattern is matched against the CODE only. An index record is `path:line:code`, and matching the
+# whole record let a symbol be vouched for by a *path*: `pub fn decode` counted the line numbers of
+# every file under a `decode.rs`, so check 6 exempted it without reading a single reference. Five Rust
+# and twenty-four TypeScript exported names collide with a path word of the indexed tree
+# (`decode`, `encrypted_value`, `extra_data`, `resolve`, `rand`, `userDecrypt`, `App`, …), and the
+# self-test could not see it because its fixtures are named after nothing.
 index_refs() {
   local pattern="$1" declaring_file="$2"
-  (grep -E "$pattern" "$INDEX" || true) | (grep -v -F "${declaring_file}:" || true) | wc -l | tr -d ' '
+  (grep -v -F "${declaring_file}:" "$INDEX" || true) \
+    | sed -E 's/^[^:]*:[0-9]+://' \
+    | (grep -cE "$pattern" || true)
 }
 
 if run_check 1; then
@@ -349,7 +397,12 @@ if run_check 2; then
     if [ "$emits" -eq 0 ]; then
       manual=0
       for constructing_file in $( (grep -E "\b${event} \{" "$INDEX" || true) | cut -d: -f1 | sort -u); do
-        if (grep -A4 'emit_event_cpi(' "$constructing_file" || true) | grep -qE "\b${event}\b"; then
+        # The index, not the raw file: a two-line comment recalling a deleted `emit_event_cpi(&auth,`
+        # call, or a `#[cfg(test)]` module making one, vouched for an event nothing emits — which is
+        # exactly what the header promises cannot happen. The `emit!`/`emit_cpi!` arm above was
+        # already index-based; this arm was not.
+        if (grep -F "${constructing_file}:" "$INDEX" | grep -A4 'emit_event_cpi(' || true) \
+          | grep -qE "\b${event}\b"; then
           manual=1
         fi
       done
@@ -391,7 +444,7 @@ if run_check 3; then
       # ALL plus the connector crates and the connector-auth fixtures, for a word whose only live
       # occurrences are there. The fixture tree is in no other root: the generator lives under
       # kms-worker/tests but the vector constants and the committed JSON do not.
-      kms)  roots=("${ALL_ROOTS[@]}" kms-connector/crates solana/test-fixtures) ;;
+      kms)  roots=("${ALL_ROOTS[@]}" "${KMS_EXTRA_ROOTS[@]}") ;;
       *) echo "check_alias: unknown scope '${scope}' for '${label}'" >&2; exit 2 ;;
     esac
     # `.tsx` and `.json` are swept too: the dapp's React surface is .tsx, and several entries below
@@ -400,10 +453,13 @@ if run_check 3; then
     hits=$( (grep -rniE --include='*.rs' --include='*.ts' --include='*.tsx' --include='*.md' \
       --include='*.py' --include='*.sh' --include='*.yml' --include='*.json' \
       "${EXCLUDES[@]}" "$@" "${roots[@]}" 2>/dev/null || true) )
+    # Anchored to the record's path field, for the reason spelled out for the `exceptions` filter
+    # below: matching the whole record let any *line* that merely names one of these files go unswept
+    # by all eighteen entries. Seven lines in the swept trees mention one of them today.
     hits=$(echo "$hits" \
-      | (grep -v 'solana/docs/GLOSSARY.md' || true) \
-      | (grep -v 'solana/docs/DESIGN_DECISIONS.md' || true) \
-      | (grep -v 'dead-surface-check.sh' || true) )
+      | (grep -v '^solana/docs/GLOSSARY\.md:' || true) \
+      | (grep -v '^solana/docs/DESIGN_DECISIONS\.md:' || true) \
+      | (grep -v '^solana/scripts/dead-surface-check\.sh:' || true) )
     if [ -n "$exceptions" ]; then
       # Applied to each hit's CONTENT, never to the `path:line:` prefix. Matching the whole record
       # let an exception that happened to look like a path blanket-exempt a whole file — the blanket
@@ -479,13 +535,13 @@ if run_check 3; then
   # The SDK's `namespace` became `label`. Swept in CORE only: `namespace` means a Kubernetes
   # namespace in the workflows and a TypeScript namespace in the test-suite tooling.
   check_alias 'SDK namespace — renamed to label' core '' -E '\bnamespace\b|\bnamespaceKey\b'
-  # batch <- frame, plan. "frame" survives only in its Solana runtime sense (the CPI/instruction
-  # stack frame), and as the proper name of the retired `execute_frame` RFC-024 prototype where the
-  # sentence says so. A batch of steps is never a frame.
+  # execution <- batch, frame, plan. "frame" survives only in its Solana runtime sense (the
+  # CPI/instruction stack frame), and as the proper name of the retired `execute_frame` RFC-024
+  # prototype where the sentence says so. A sequence of steps is never a frame.
   # The last group is the demo dapp's architecture walkthrough, where a "frame" is a presentation
   # panel — the film sense of the word, with its own CSS classes. Surfaced only once `.tsx` joined the
-  # sweep. It is the same kind of unrelated meaning as the stack frame above, not a walk of steps.
-  check_alias 'frame — a walk of steps is an execution' all \
+  # sweep. It is the same kind of unrelated meaning as the stack frame above, not a sequence of steps.
+  check_alias 'frame — one fhe_execute invocation is an execution' all \
     'stack frame|instruction frame|enclosing frame|execution frame|cpi frame|frame it belongs to|older `execute_frame`|framework|heap frame|heap-frame|ArchitectureFrame|architecture-frame|frame-(heading|label|statement|separator)|frameNumber|\bframed\b|frames\.(map|length)|frame\.(diagram|title)' \
     -E '\bframes?\b|execute_frame|_frame\b|frame_|Frame[A-Z]'
   # One fhe_execute invocation is an `execution`, never a batch: its steps are dependent, each reading
@@ -494,14 +550,19 @@ if run_check 3; then
   check_alias 'batch — one fhe_execute invocation is an execution' fhe \
     'deliberately not a batch' -iE '\bbatch(es|ed|ing)?\b'
   # "plan" is CORE-only: test-suite/fhevm threads a docker-compose `plan: StackSpec` through every
-  # generator. Inside the FHE core an fhe_execute batch is the only thing a "plan" could be.
-  check_alias 'plan — an fhe_execute batch is a batch' core \
-    'transaction plan|claim plan|instruction plan|const plan|let plan|plan\.|plan =|plan\)|plan,|plan\?|we plan|plans to|plan and stop' \
+  # generator. Inside the FHE core an execution is the only thing a "plan" could be. The one
+  # exception is the demo dapp's claim helper, where a plan is a list of Solana instructions to send
+  # — an unrelated meaning — so the four lines that name it are spelled out rather than exempting
+  # every sentence that happens to end in "plan".
+  check_alias 'plan — one fhe_execute invocation is an execution' core \
+    'const plan = await|plan === null|plan\.instructions|plan\.initializesAccount' \
     -iE '\bplans?\b'
   # dictionary <- pool. CORE-only: the listener and the proof service are full of Postgres connection
-  # pools. Inside the FHE core the only collection that could be called a pool is the dictionary.
+  # pools, and neither is swept here. Inside the FHE core the only collection that could be called a
+  # pool is the dictionary. The single exception is a vault's liquidity pool in the confidential
+  # vaults writeup, which is the finance sense of the word.
   check_alias 'pool — the interning structure is the dictionary' core \
-    'db pool|database pool|connection|pgpool|pool is big enough|vault pool|deposit pool|pool\(\)|poolopt|pool slots|pool capacity|pool size|acquire|max_connections|admission' \
+    'pool is big enough' \
     -iE '\bpools?\b'
   # persistent <- durable. The proof store's durability vocabulary (a durably ingested checkpoint) is
   # a different axis from value persistence, and Solana's durable nonce is a protocol term.
@@ -592,7 +653,13 @@ if run_check 4; then
     line=${rest%%:*}
     # In-file test regions restate EVM shapes as fixtures; only production code is swept. (Dropping
     # whole test *files* is not enough — `hcu.rs` builds EVM-shaped fixtures in its own test module.)
-    test_line=$( (grep -n -m1 -E '#\[cfg\(test\)\]|describe\(' "$file" || true) | cut -d: -f1)
+    # A trailing test module is unindented; both patterns are anchored so that neither a doc comment
+    # mentioning the attribute nor an indented `#[cfg(test)]` helper truncates the sweep. Unanchored,
+    # `hcu.rs` lost 74% of its lines to its own line 265 (`/// … read only under `#[cfg(test)]`.`) —
+    # the very file the comment above cites as the reason in-file test regions must be dropped — and
+    # `solana_grpc_source.rs` lost 62% to an inner `#[cfg(test)] fn` at line 312. A file whose only
+    # `#[cfg(test)]` is indented is now swept whole, which is the safe direction for a guard.
+    test_line=$( (grep -n -m1 -E '^#\[cfg\(test\)\]|^[[:space:]]*describe\(' "$file" || true) | cut -d: -f1)
     if [ -n "$test_line" ] && [ "$line" -ge "$test_line" ]; then continue; fi
     sentinel_seen="${sentinel_seen} ${file}"
     start=$((line > 12 ? line - 12 : 1))
@@ -648,8 +715,19 @@ if run_check 6; then
   #       writing instead of passing silently.
   #
   # Generated clients are exempt as a category: their surface is generated whole, so deleting from it
-  # would only be undone by the next regeneration, and
-  # regenerating them would undo any deletion.
+  # would only be undone by the next regeneration.
+  #
+  # Which declarations get collected: solana/crates, the program files no Anchor macro generates, and
+  # the TypeScript exports of the SDK's Solana surface and the demo dapp. References are counted far
+  # wider than that — every Rust and TypeScript root plus the connector crates — so an export a
+  # service calls still reads as alive.
+  #
+  # Deliberately not collected: solana-proof-service, the host listener's src, and
+  # kms-connector/crates. Widening to them means triaging roughly six hundred more declarations —
+  # audience lines, dropped `pub`s, and deletions — across two services and a tree the EVM stack
+  # shares, which is its own piece of work rather than a side effect of a vocabulary pass. Said out
+  # loud here so the gap is a decision on the record instead of something a reader has to infer from
+  # the root lists.
   API_SURFACE_MARKER='Public API surface:'
 
   # Reference count across everything outside the declaring file, tests included.
@@ -667,10 +745,15 @@ if run_check 6; then
     local name="$1" file="$2" kind="$3"
     local declaration
     case "$kind" in
-      'pub fn') declaration="pub fn ${name}" ;;
-      *) declaration="function ${name}" ;;
+      'pub fn' | 'pub async fn') declaration="pub (async )?fn ${name}" ;;
+      # Both TypeScript declaration forms. Only `function ${name}` was subtracted, so an
+      # `export const f = () => …` counted its own declaration line as an internal reference: the
+      # "zero references anywhere" arm could never fire for an arrow export, the finding was
+      # misdiagnosed as an undeclared audience, and adding the audience line the message asked for
+      # silenced it outright.
+      *) declaration="(function|const) ${name}" ;;
     esac
-    (grep -nE "\b${name}\b" "$file" || true) | (grep -v -F "$declaration" || true) | wc -l | tr -d ' '
+    (grep -nE "\b${name}\b" "$file" || true) | (grep -vE "$declaration" || true) | wc -l | tr -d ' '
   }
 
   # `same_file_counts` (fourth argument) reports an export as dead only when nothing anywhere uses it,
@@ -724,19 +807,30 @@ if run_check 6; then
   program_sweep_files=$(find solana/programs -name '*.rs' \
     -not -path '*/instructions/*' -not -path '*/target/*' -print0 \
     | xargs -0 grep -L '#\[program\]' 2>/dev/null || true)
-  rust_pub_decls=$(grep -rnE --include='*.rs' "${EXCLUDES[@]}" '^\s*pub fn [a-z_][a-z_0-9]*' solana/crates \
+  # `pub async fn` is matched too. The swept trees hold none today, so the narrower pattern cost
+  # nothing yet — but a hole that only opens when someone writes the ordinary form of a declaration is
+  # the shape of every vacuous check above.
+  rust_pub_decls=$(grep -rnE --include='*.rs' "${EXCLUDES[@]}" '^\s*pub (async )?fn [a-z_][a-z_0-9]*' solana/crates \
     | grep -vE '(^|/)tests?/|tests\.rs:')
   if [ -n "$program_sweep_files" ]; then
     # -H because grep omits the filename for a single-file argument, and `${decl%%:*}` needs it.
+    # No indentation before the substitution: two spaces here prefixed the first appended record, so
+    # `${decl%%:*}` yielded a path with leading whitespace, the `grep -v -F "  path:"` that is supposed
+    # to drop the declaration's own line matched nothing, and that one declaration counted itself as a
+    # production reference. Which declaration went unchecked was decided by readdir order.
     rust_pub_decls="${rust_pub_decls}
-  $(echo "$program_sweep_files" | tr '\n' '\0' \
-      | xargs -0 grep -HnE '^\s*pub fn [a-z_][a-z_0-9]*' \
+$(echo "$program_sweep_files" | tr '\n' '\0' \
+      | xargs -0 grep -HnE '^\s*pub (async )?fn [a-z_][a-z_0-9]*' \
       | grep -vE '(^|/)tests?/|tests\.rs:')"
   fi
   while IFS= read -r decl; do
     [ -n "$decl" ] || continue
-    check_export "${decl%%:*}" "pub fn" \
-      "$(echo "$decl" | grep -oE 'pub fn [a-z_][a-z_0-9]*' | awk '{print $3}')"
+    case "$decl" in
+      *'pub async fn '*) kind='pub async fn' ;;
+      *) kind='pub fn' ;;
+    esac
+    check_export "${decl%%:*}" "$kind" \
+      "$(echo "$decl" | grep -oE 'pub (async )?fn [a-z_][a-z_0-9]*' | awk '{print $NF}')"
   done <<< "$rust_pub_decls"
 
   # TypeScript: exported functions in the SDK's Solana surface and the demo dapp. Re-export from an
@@ -796,7 +890,7 @@ if run_check 7; then
   # read them, so a path of theirs outside the trigger filter is the same hole as an untriggered sweep
   # root. Both `relayer/` files were exactly that until the filter above learned them.
   for root in "${ALL_ROOTS[@]}" "${FHE_ROOTS[@]}" "${SENTINEL_ROOTS[@]}" "${SENTINEL_FILES[@]}" \
-    "${RETROFIT_JUSTIFICATIONS[@]%%|*}" kms-connector/crates ${DEAD_SURFACE_EXTRA_ROOT:-}; do
+    "${RETROFIT_JUSTIFICATIONS[@]%%|*}" "${KMS_EXTRA_ROOTS[@]}" ${DEAD_SURFACE_EXTRA_ROOT:-}; do
     if ! root_is_triggered "$root"; then
       echo "UNTRIGGERED ROOT: ${root} is swept by this script but no path in ${TRIGGER_WORKFLOW}'s dead-surface filter matches it — a change there would not run this check"
       fail=1
@@ -808,7 +902,11 @@ if [ "$SELF_TEST" -eq 1 ]; then
   echo "== self-test: every check must fire on a fixture that violates it =="
   # Children must not refuse to run on the fixtures this block deliberately plants.
   export DEAD_SURFACE_SELFTEST_ACTIVE=1
-  trap 'rm -f "$INDEX" "$ALIAS_LABELS" "${SELFTEST_FIXTURES[@]}"' EXIT INT TERM
+  # The signal arms exit. A trapped signal in bash runs the handler and *resumes*, so Ctrl-C used to
+  # delete the fixtures out from under the child reading them — a spurious SELF-TEST HOLE — then carry
+  # on planting more, and could still end with status 0.
+  trap 'rm -f "$INDEX" "$ALIAS_LABELS" "${SELFTEST_FIXTURES[@]}"' EXIT
+  trap 'rm -f "$INDEX" "$ALIAS_LABELS" "${SELFTEST_FIXTURES[@]}"; exit 130' INT TERM
   self_test_fail=0
   covered_labels=""
   # Exit status alone is not evidence. Any unrelated finding anywhere in the tree also makes the
@@ -855,9 +953,9 @@ app_account|app_account / app_authority — renamed to encrypted_value_account_a
 app_authority|app_account / app_authority — renamed to encrypted_value_account_authority
 app context|app context — say encrypted value account authority
 namespace|SDK namespace — renamed to label
-a frame of steps|frame — a walk of steps is an execution
+a frame of steps|frame — one fhe_execute invocation is an execution
 one fhe_execute batch|batch — one fhe_execute invocation is an execution
-a plan of steps|plan — an fhe_execute batch is a batch
+a plan of steps|plan — one fhe_execute invocation is an execution
 the handle pool|pool — the interning structure is the dictionary
 durable value|durable — a persistent value is persistent
 supersede|supersede — an updated handle is updated
@@ -871,24 +969,40 @@ FIXTURES
   # Nothing kept the fixture list and the entry list in step, so five entries — including the one
   # added by the commit that introduced this self-test — were never exercised. Every entry now
   # registers its label as it runs, and an entry with no fixture is a hole.
+  # Matched whole-line, not as a substring: several labels end in the same sentence — three of them
+  # say "is an execution" — so a label that happens to sit inside a longer covered one would report
+  # itself as exercised by another entry's fixture.
   while IFS= read -r label; do
     [ -n "$label" ] || continue
-    case "$covered_labels" in
-      *"$label"*) ;;
-      *)
-        echo "SELF-TEST HOLE: alias entry '${label}' has no fixture in this block"
-        self_test_fail=1
-        ;;
-    esac
+    if ! printf '%s\n' "$covered_labels" | grep -qxF "$label"; then
+      echo "SELF-TEST HOLE: alias entry '${label}' has no fixture in this block"
+      self_test_fail=1
+    fi
   done < <(sort -u "$ALIAS_LABELS")
   # Check 4: an unjustified EVM-shaped zero-fill in a swept file.
   fixture="solana/crates/zama-fhe/src/dead_surface_selftest.rs"
   printf 'pub fn f() { let contract_address = [0u8; 20]; let _ = contract_address; }\n' > "$fixture"
   expect_fires "retrofit sentinel sweep" "UNJUSTIFIED RETROFIT SENTINEL" "" 4 bash "$SELF"
   rm -f "$fixture"
-  # Check 6: an exported function nobody calls.
+  # Check 4's other two arms, the ones that keep SENTINEL_FILES from rotting into fake coverage.
+  # Neither had a fixture, and both are the kind that go quiet without anyone noticing: the list is
+  # short, and a clean run looks the same whether the files still carry a retrofit or the list stopped
+  # naming files that exist.
+  expect_fires "sentinel staleness sweep (missing file)" \
+    "MISSING SENTINEL FILE: solana/does-not-exist.rs" "" 4 \
+    env "DEAD_SURFACE_EXTRA_SENTINEL_FILE=solana/does-not-exist.rs" bash "$SELF"
+  printf 'pub fn dead_surface_selftest_carries_no_retrofit() {}\n' > "$fixture"
+  expect_fires "sentinel staleness sweep (stale entry)" \
+    "STALE SENTINEL ENTRY: ${fixture}" "" 4 \
+    env "DEAD_SURFACE_EXTRA_SENTINEL_FILE=${fixture}" bash "$SELF"
+  rm -f "$fixture"
+  # Check 6: an exported function nobody calls. Every expected text below names the arm as well as the
+  # symbol. Check 6 has two arms that report differently — nothing references it at all, versus only
+  # tests do — and a bare symbol name is printed by both, so these assertions passed whichever arm
+  # fired. Each fixture is built to hit exactly one.
   printf 'pub fn dead_surface_selftest_never_called() {}\n' > "$fixture"
-  expect_fires "uncalled-export sweep" "dead_surface_selftest_never_called" "" 6 bash "$SELF"
+  expect_fires "uncalled-export sweep" \
+    "DEAD EXPORT: ${fixture}: pub fn dead_surface_selftest_never_called" "" 6 bash "$SELF"
   rm -f "$fixture"
   # Check 6 again, in a program crate: the export sweep read only solana/crates until the program
   # crates were folded in, so a dead `pub fn` in a program's state or events module was unreachable by
@@ -897,7 +1011,7 @@ FIXTURES
   program_fixture="solana/programs/zama-host/src/dead_surface_selftest.rs"
   printf 'pub fn program_dead_surface_selftest_never_called() {}\n' > "$program_fixture"
   expect_fires "uncalled-export sweep (program crates)" \
-    "program_dead_surface_selftest_never_called" "" 6 bash "$SELF"
+    "DEAD EXPORT: ${program_fixture}: pub fn program_dead_surface_selftest_never_called" "" 6 bash "$SELF"
   rm -f "$program_fixture"
   # Check 2: an `#[event]` struct nothing emits. Check 2 is the one this pass reworked — it learned
   # zama-host's shared emitter — and it was the only reworked check with no fixture, which is the
@@ -905,7 +1019,7 @@ FIXTURES
   printf '#[event]\npub struct DeadSurfaceSelftestNeverEmittedEvent {\n    pub version: u8,\n}\n' \
     > "$program_fixture"
   expect_fires "never-emitted event sweep" \
-    "DeadSurfaceSelftestNeverEmittedEvent" "" 2 bash "$SELF"
+    "NEVER-EMITTED EVENT: DeadSurfaceSelftestNeverEmittedEvent" "" 2 bash "$SELF"
   rm -f "$program_fixture"
   # Check 6, TypeScript half: both fixtures above are Rust, so the TS declaration patterns had never
   # been shown to fire at all — and one of them (`export const f = () => …`, the more common form in
@@ -913,10 +1027,10 @@ FIXTURES
   ts_fixture="solana/demo-dapp/src/deadSurfaceSelftest.ts"
   printf 'export const deadSurfaceSelftestNeverCalled = (): number => 1;\n' > "$ts_fixture"
   expect_fires "uncalled-export sweep (TypeScript arrow form)" \
-    "deadSurfaceSelftestNeverCalled" "" 6 bash "$SELF"
+    "DEAD EXPORT: ${ts_fixture}: export const deadSurfaceSelftestNeverCalled" "" 6 bash "$SELF"
   printf 'export function deadSurfaceSelftestNeverCalledFn(): number {\n  return 1;\n}\n' > "$ts_fixture"
   expect_fires "uncalled-export sweep (TypeScript function form)" \
-    "deadSurfaceSelftestNeverCalledFn" "" 6 bash "$SELF"
+    "DEAD EXPORT: ${ts_fixture}: export function deadSurfaceSelftestNeverCalledFn" "" 6 bash "$SELF"
   rm -f "$ts_fixture"
   # Check 1: an error variant nothing references. Two things had to be true for this fixture to
   # exercise the check rather than a neighbour: the file must carry `#[error_code]`, which is how

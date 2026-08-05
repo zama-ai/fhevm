@@ -104,14 +104,23 @@ jobs:
         with:
           persist-credentials: 'false'
 
+      # DEAD_SURFACE_ONLY_CHECK narrows the script to a single check; the self-test sets it per
+      # assertion. Cleared here so no repository variable, no earlier step writing GITHUB_ENV, and no
+      # copy of this job in another workflow can leave the gate running one check out of seven. The
+      # script also rejects values it does not recognise, but an inherited "6" is a value it does.
       - name: Check for dead surface and rejected vocabulary
+        env:
+          DEAD_SURFACE_ONLY_CHECK: ''
         run: bash scripts/dead-surface-check.sh
 
-      # The self-test re-runs every check against a fixture that must fail it — about four minutes,
-      # since each assertion runs the script again for the one check its fixture violates. Every one of these greps has been silently vacuous at least once, so it runs
-      # whenever the script itself changes — the only commit that can make a check stop firing.
+      # The self-test re-runs every check against a fixture that must fail it, which takes several
+      # minutes: each assertion runs the script again for the one check its fixture violates. Every
+      # one of these greps has been silently vacuous at least once, so it runs whenever the script
+      # itself changes — the only commit that can make a check stop firing.
       - name: Self-test the dead-surface checks
         if: ${{ needs.check-changes.outputs.changes-dead-surface-check == 'true' }}
+        env:
+          DEAD_SURFACE_ONLY_CHECK: ''
         run: bash scripts/dead-surface-check.sh --self-test
 
       # The same class of miss the sweeps above cannot see: the e2e scripts couple to the live
