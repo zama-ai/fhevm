@@ -134,7 +134,7 @@ update, encrypted value ID…).
     marker is the worked example. The marker cannot ship as shared code: Anchor
     derives account ownership from the program that declares the type, so it has
     to live in the app. Pinned from both sides by
-    `mollusk_redeem_historical_burned_handle_after_supersession_then_rejects_double_redeem`,
+    `mollusk_redeem_historical_burned_handle_after_an_update_then_rejects_double_redeem`,
     `mollusk_two_concurrent_burns_each_redeemable_exactly_once`, and
     `mollusk_disclose_secp_is_idempotent_no_replay_marker`.
     (fhevm-internal#1859 §5.)

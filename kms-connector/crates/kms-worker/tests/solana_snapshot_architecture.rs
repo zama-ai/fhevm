@@ -457,7 +457,7 @@ async fn the_deciding_state_of_a_delegated_request_is_the_second_reads() {
                 source: HandleBindingFailure::NotCurrentHandle { .. }
             }
         ),
-        "expected the deciding read's supersession, got {failure}"
+        "expected the deciding read's update, got {failure}"
     );
     assert_eq!(failure.class(), FailureClass::Terminal);
 }

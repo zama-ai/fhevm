@@ -347,7 +347,7 @@ mod tests {
             self.leaves.push(commitment);
         }
 
-        /// Mirrors persistent-output supersession: one historical leaf per current
+        /// Mirrors a persistent output being updated: one historical leaf per current
         /// subject for the outgoing handle, then the overwrite.
         fn update(&mut self, new_handle: [u8; 32]) {
             let previous = self.value.current_handle;

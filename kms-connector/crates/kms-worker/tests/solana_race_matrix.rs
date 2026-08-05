@@ -65,14 +65,14 @@ fn assert_frozen_at(authorized: &AuthorizedRequest, reads: usize, expected_reads
 }
 
 // ---------------------------------------------------------------------------
-// 1. Current-handle supersession
+// 1. A current handle being updated
 // ---------------------------------------------------------------------------
 
-/// A current-mode entry racing a supersession fails at the later observation, and fails
+/// A current-mode entry racing a handle update fails at the later observation, and fails
 /// terminally: the handle it named will never be current again. What it does not do is return the
 /// value that is current instead.
 #[tokio::test]
-async fn supersession_rejects_a_current_entry_at_the_later_observation() {
+async fn a_handle_update_rejects_a_current_entry_at_the_later_observation() {
     let signer = Wallet::new(1);
     let named = handle(0x10, FHE_TYPE_UINT64);
     let before = EncryptedValueAccountFixture::new(named, &[signer.pubkey()]);
@@ -90,7 +90,7 @@ async fn supersession_rejects_a_current_entry_at_the_later_observation() {
     )
     .await;
     assert_frozen_at(
-        &accepted.expect("before the supersession the handle is current"),
+        &accepted.expect("before the update the handle is current"),
         reads,
         1,
     );
@@ -103,7 +103,7 @@ async fn supersession_rejects_a_current_entry_at_the_later_observation() {
     )
     .await;
 
-    let failure = outcome.expect_err("after the supersession the handle is not current");
+    let failure = outcome.expect_err("after the update the handle is not current");
     assert!(matches!(
         failure,
         AuthorizationFailure::HandleBinding {
@@ -114,11 +114,11 @@ async fn supersession_rejects_a_current_entry_at_the_later_observation() {
     assert_eq!(failure.class(), FailureClass::Terminal);
 }
 
-/// The griefed request is not a dead end. Supersession seals a leaf for the subjects that held the
+/// The griefed request is not a dead end. An update seals a leaf for the subjects that held the
 /// handle, so the same handle is reachable at the later observation as historical access — under
 /// the same permit, with no new signature.
 #[tokio::test]
-async fn supersession_leaves_the_historical_path_open() {
+async fn a_handle_update_leaves_the_historical_path_open() {
     let signer = Wallet::new(1);
     let named = handle(0x12, FHE_TYPE_UINT64);
     let mut after = EncryptedValueAccountFixture::new(named, &[signer.pubkey()]);
@@ -135,7 +135,7 @@ async fn supersession_leaves_the_historical_path_open() {
     )
     .await;
 
-    outcome.expect("the sealed leaf authorizes the same handle after supersession");
+    outcome.expect("the sealed leaf authorizes the same handle after the update");
 }
 
 // ---------------------------------------------------------------------------

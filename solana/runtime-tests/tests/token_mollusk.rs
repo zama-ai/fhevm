@@ -2867,7 +2867,7 @@ fn seed_two_burn_value_account(
 /// witness. (The two real burns overflow the 32 KiB per-tx heap in Mollusk, so the seeded
 /// post-update encrypted value account stands in for them; the burn-execution path is the burn test above.)
 #[test]
-fn mollusk_redeem_historical_burned_handle_after_supersession_then_rejects_double_redeem() {
+fn mollusk_redeem_historical_burned_handle_after_an_update_then_rejects_double_redeem() {
     let fixture = BurnRedeemFixture::new();
     let first_handle = handle_for_chain(41, BALANCE_FHE_TYPE);
     let second_handle = handle_for_chain(42, BALANCE_FHE_TYPE);
@@ -3793,7 +3793,7 @@ fn mollusk_disclose_secp_balance_happy_path() {
 }
 
 #[test]
-fn mollusk_disclose_secp_after_supersession_consumes_with_public_proof() {
+fn mollusk_disclose_secp_after_an_update_consumes_with_public_proof() {
     // The griefing case preserved end-to-end: the handle is sealed public while current, then the
     // encrypted value account is replaced to H2 (e.g. an inbound transfer) before the consume lands. The pinned
     // handle must still disclose, authorized by its permanent public-decrypt leaf, not the live

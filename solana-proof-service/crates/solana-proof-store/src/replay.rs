@@ -252,7 +252,7 @@ mod tests {
     }
 
     #[test]
-    fn fhe_execute_supersession_appends_one_historical_leaf_per_subject() {
+    fn fhe_execute_update_appends_one_historical_leaf_per_subject() {
         let ev = pk(0x01);
         let owner = pk(0x30);
         let spender = pk(0x31);
@@ -289,7 +289,7 @@ mod tests {
     }
 
     #[test]
-    fn fhe_execute_create_initializes_subjects_for_later_execution_supersession() {
+    fn fhe_execute_create_initializes_subjects_for_a_later_update() {
         let ev = pk(0x05);
         let owner = pk(0x30);
         let create = DecodedInstruction::FheExecuteCreateEncryptedValue {

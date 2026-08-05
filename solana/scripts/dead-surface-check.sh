@@ -512,8 +512,14 @@ if run_check 3; then
   # `value_key` as an identifier was renamed to encrypted-value-ID vocabulary. The signed/wire
   # spellings stay: the sha256 tag string "...value-key-v1" (preimage bytes), the v3 JSON key
   # `aclValueKey`, and the connector's matching `acl_value_key` field.
-  check_alias 'value_key identifier — renamed to encrypted_value_id' all \
-    '' -E '\bvalue_key\b' --exclude-dir=utils
+  # Scope is `kms`, not `all`: the connector is where the field actually lived, and its two test
+  # names kept the word for months because no sweep read that tree.
+  # No word boundary in front, which is what the entry needed to work at all: `\bvalue_key\b` can
+  # never match `*_value_key`, because `_` is a word character to grep — so two connector test names
+  # kept the word, and the one exception the entry does need was being granted by accident rather
+  # than stated. `acl_value_key` is that exception, named now.
+  check_alias 'value_key identifier — renamed to encrypted_value_id' kms \
+    'acl_value_key' -iE 'value_key' --exclude-dir=utils
   # The encrypted-value ID components are domain / encrypted_value_account_authority /
   # encrypted_value_label. `acl_domain_key` is NOT swept: it is the normative field name of the signed
   # Solana permit (`allowed_acl_domain_keys` in the user-decryption specification) and of the v3 wire,
@@ -586,9 +592,12 @@ if run_check 3; then
   check_alias 'durable — a persistent value is persistent' all \
     'durable ingest|durable checkpoint|durable tip|durable history_start|durable nonce|durably ingest|observation durably|durably, keyed' \
     -iE '\bdurable\b|\bdurably\b'
-  # update <- supersede, rotation.
-  check_alias 'supersede — an updated handle is updated' all '' \
-    -iE '\bsupersede|\bsuperseded\b|\bsupersedes\b'
+  # update <- supersede, rotation. The noun and the participle are swept too: the verb forms were
+  # the only ones matched, and "supersession" went on naming the thing in about thirty places —
+  # test names, a vector id, and the prose explaining what a sealed leaf survives. Scope is `kms`
+  # for the same reason as the entry above: most of those were in the connector.
+  check_alias 'supersede — an updated handle is updated' kms '' \
+    -iE 'supersede|supersession|superseding'
   # `rotation` is matched in the update sense only, not as a bare word, and that narrowing is the
   # point rather than a concession: four other rotations are real and unrelated. Bit rotations
   # (`Rotl`/`Rotr`) are FHE ops. KMS context rotation and coprocessor signer-set rotation are
@@ -978,6 +987,7 @@ a plan of steps|plan — one fhe_execute invocation is an execution
 the handle pool|pool — the interning structure is the dictionary
 durable value|durable — a persistent value is persistent
 supersede|supersede — an updated handle is updated
+supersession|supersede — an updated handle is updated
 handle rotation|rotation — an updated handle is updated
 lineage|lineage — renamed to encrypted value account
 the value account holds it|value account — say encrypted value account

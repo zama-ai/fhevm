@@ -296,7 +296,7 @@ fn accepting_scenarios() -> Vec<Scenario> {
     let (encrypted_value_account, sealed, proof) =
         replaced_encrypted_value_account(0x30, wallet.pubkey());
     out.push(Scenario::accepted(
-        "historical-after-supersession",
+        "historical-after-handle-update",
         "The handle has been replaced, and the leaf sealed for the signer at that moment proves \
          the access. No new wallet signature is involved: proofs live outside the permit.",
         RequestBuilder::new(&wallet)
@@ -307,7 +307,7 @@ fn accepting_scenarios() -> Vec<Scenario> {
             .with_watermark(wallet.pubkey(), 0),
     ));
 
-    // Two supersessions, a proof of the first leaf, then a third supersession that does not merge
+    // Two handle updates, a proof of the first leaf, then a third update that does not merge
     // the proof's peak.
     let first = handle(0x40, FHE_TYPE_UINT64);
     let mut drifted = EncryptedValueAccountFixture::new(first, &[wallet.pubkey()]);
@@ -784,7 +784,7 @@ fn request_form_scenarios() -> Vec<Scenario> {
         "A proof followed by extra bytes is refused — unlike an account followed by extra bytes, \
          which is legal. Two byte strings for one proof would leave two implementations \
          disagreeing about whether they hold the same request.",
-        "historical-after-supersession",
+        "historical-after-handle-update",
         "two bytes are appended to the entry's access proof",
         rule::ACCESS_PROOF_TRAILING_BYTES,
         FailureClass::Terminal,
@@ -808,7 +808,7 @@ fn request_form_scenarios() -> Vec<Scenario> {
         "access-proof-with-too-many-siblings",
         "The sibling count is bounded by what the tree can produce, so an untrusted request cannot \
          make the decoder allocate an arbitrary list.",
-        "historical-after-supersession",
+        "historical-after-handle-update",
         "the entry's access proof carries one sibling more than the tree's height ceiling",
         rule::ACCESS_PROOF_TOO_MANY_SIBLINGS,
         FailureClass::Terminal,
@@ -827,7 +827,7 @@ fn request_form_scenarios() -> Vec<Scenario> {
     out.push(Scenario::rejected(
         "malformed-access-proof",
         "Bytes that are not a proof at all are refused as a form error, before any state is read.",
-        "historical-after-supersession",
+        "historical-after-handle-update",
         "the entry's access proof is replaced with three arbitrary bytes",
         rule::ACCESS_PROOF_MALFORMED,
         FailureClass::Terminal,
@@ -1018,7 +1018,7 @@ fn handle_binding_scenarios() -> Vec<Scenario> {
          and it is classified like one — by the leaf count the request claims. Here the claim is \
          at or above the observed count, which is what a proof service running ahead of this \
          observation looks like, so the answer is to retry rather than to rebuild.",
-        "historical-after-supersession",
+        "historical-after-handle-update",
         "the proof names a leaf index equal to the observed leaf count",
         rule::INCLUSION_PROOF_DOES_NOT_VERIFY,
         FailureClass::Retryable,
@@ -1085,7 +1085,7 @@ fn handle_binding_scenarios() -> Vec<Scenario> {
         out.push(Scenario::rejected(
             name,
             comment,
-            "historical-after-supersession",
+            "historical-after-handle-update",
             mutation,
             rule::INCLUSION_PROOF_DOES_NOT_VERIFY,
             FailureClass::Retryable,
@@ -1113,7 +1113,7 @@ fn handle_binding_scenarios() -> Vec<Scenario> {
         "public-decrypt-leaf-as-historical-access",
         "Public decryptability is a separate flow with its own leaf domain. Its leaf says nothing \
          about any subject and must not double as evidence that one held the handle.",
-        "historical-after-supersession",
+        "historical-after-handle-update",
         "the proof is of a public-decrypt leaf rather than a historical-access leaf",
         rule::INCLUSION_PROOF_DOES_NOT_VERIFY,
         FailureClass::Retryable,

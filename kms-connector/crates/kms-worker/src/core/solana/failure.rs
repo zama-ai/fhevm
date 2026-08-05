@@ -247,7 +247,7 @@ impl EncryptedValueAccountFailure {
 impl HandleBindingFailure {
     /// The two proof outcomes are retryable because both describe an observation that has not
     /// caught up with the proof: an unverified proof may verify from a later one, and a leaf
-    /// position beyond the observed count may exist at a later one. Supersession and
+    /// position beyond the observed count may exist at a later one. Handle updates and
     /// non-membership are decisions about state that will not un-happen, and an inconsistent
     /// MMR is the host program's own defect.
     ///

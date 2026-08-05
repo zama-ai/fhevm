@@ -79,7 +79,7 @@ fn context<'a>(
 /// The reference case: an account written by the host program at the address its own fields
 /// derive, resolved through the same shared code the program runs.
 #[test]
-fn a_encrypted_value_account_named_by_its_value_key_resolves() {
+fn an_encrypted_value_account_named_by_its_encrypted_value_id_resolves() {
     let owner = Wallet::new(1).pubkey();
     let encrypted_value_account =
         EncryptedValueAccountFixture::new(handle(0x10, FHE_TYPE_UINT64), &[owner]);
@@ -185,7 +185,7 @@ fn a_host_owned_account_of_another_type_is_rejected() {
 /// selection would let a request read the authority and subjects out of somebody else's
 /// encrypted value account.
 #[test]
-fn a_encrypted_value_account_whose_fields_derive_another_value_key_is_rejected() {
+fn an_encrypted_value_account_whose_fields_derive_another_encrypted_value_id_is_rejected() {
     let owner = Wallet::new(1).pubkey();
     let claimed = EncryptedValueAccountFixture::new(handle(0x14, FHE_TYPE_UINT64), &[owner]);
     // An encrypted value account of another app, placed at the claimed encrypted value account's

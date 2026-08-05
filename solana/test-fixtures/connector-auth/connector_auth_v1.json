@@ -163,7 +163,7 @@
       }
     },
     {
-      "name": "historical-after-supersession",
+      "name": "historical-after-handle-update",
       "comment": "The handle has been replaced, and the leaf sealed for the signer at that moment proves the access. No new wallet signature is involved: proofs live outside the permit.",
       "result": "valid",
       "request": {
@@ -1868,7 +1868,7 @@
       "result": "invalid",
       "rule": "access-proof-trailing-bytes",
       "class": "terminal",
-      "derived_from": "historical-after-supersession",
+      "derived_from": "historical-after-handle-update",
       "mutation": "two bytes are appended to the entry's access proof",
       "request": {
         "permit": {
@@ -1918,7 +1918,7 @@
       "result": "invalid",
       "rule": "access-proof-too-many-siblings",
       "class": "terminal",
-      "derived_from": "historical-after-supersession",
+      "derived_from": "historical-after-handle-update",
       "mutation": "the entry's access proof carries one sibling more than the tree's height ceiling",
       "request": {
         "permit": {
@@ -1968,7 +1968,7 @@
       "result": "invalid",
       "rule": "access-proof-malformed",
       "class": "terminal",
-      "derived_from": "historical-after-supersession",
+      "derived_from": "historical-after-handle-update",
       "mutation": "the entry's access proof is replaced with three arbitrary bytes",
       "request": {
         "permit": {
@@ -2413,7 +2413,7 @@
       "result": "invalid",
       "rule": "inclusion-proof-does-not-verify",
       "class": "retryable",
-      "derived_from": "historical-after-supersession",
+      "derived_from": "historical-after-handle-update",
       "mutation": "the proof names a leaf index equal to the observed leaf count",
       "request": {
         "permit": {
@@ -2463,7 +2463,7 @@
       "result": "invalid",
       "rule": "inclusion-proof-does-not-verify",
       "class": "retryable",
-      "derived_from": "historical-after-supersession",
+      "derived_from": "historical-after-handle-update",
       "mutation": "the sealed leaf commits to another encrypted value account",
       "request": {
         "permit": {
@@ -2513,7 +2513,7 @@
       "result": "invalid",
       "rule": "inclusion-proof-does-not-verify",
       "class": "retryable",
-      "derived_from": "historical-after-supersession",
+      "derived_from": "historical-after-handle-update",
       "mutation": "the sealed leaf commits to another subject",
       "request": {
         "permit": {
@@ -2563,7 +2563,7 @@
       "result": "invalid",
       "rule": "inclusion-proof-does-not-verify",
       "class": "retryable",
-      "derived_from": "historical-after-supersession",
+      "derived_from": "historical-after-handle-update",
       "mutation": "the sealed leaf commits to another handle",
       "request": {
         "permit": {
@@ -2613,7 +2613,7 @@
       "result": "invalid",
       "rule": "inclusion-proof-does-not-verify",
       "class": "retryable",
-      "derived_from": "historical-after-supersession",
+      "derived_from": "historical-after-handle-update",
       "mutation": "the sealed leaf commits to leaf index one while occupying index zero",
       "request": {
         "permit": {
@@ -2663,7 +2663,7 @@
       "result": "invalid",
       "rule": "inclusion-proof-does-not-verify",
       "class": "retryable",
-      "derived_from": "historical-after-supersession",
+      "derived_from": "historical-after-handle-update",
       "mutation": "the proof is of a public-decrypt leaf rather than a historical-access leaf",
       "request": {
         "permit": {

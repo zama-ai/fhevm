@@ -28,7 +28,7 @@
 //! nothing (see [`super::snapshot`]). The two are held to their order and nothing else: a
 //! deciding read older than the discovery read is refused as the lagging node it is, transiently.
 //!
-//! Once a request is accepted nothing re-reads state for it. Later supersession, subject
+//! Once a request is accepted nothing re-reads state for it. A later handle update, subject
 //! rotation or delegation revocation do not affect it: the normalized request, its linker and
 //! its response bind exactly the handles resolved at the observation point. There is also no
 //! cache in the other direction — a permit is reusable, but every request under it is

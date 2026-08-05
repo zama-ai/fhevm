@@ -2127,7 +2127,7 @@ fn mollusk_paused_state_blocks_acl_update_and_execution_output() {
 // ---------------------------------------------------------------------------
 
 #[test]
-fn mollusk_supersession_value_account_matches_offchain_reconstruction() {
+fn mollusk_updated_encrypted_value_account_matches_offchain_reconstruction() {
     let authority = Pubkey::new_unique();
     let (host_config, host_config_account) = host_config_account(authority);
     let subject_a = Pubkey::new_unique();
@@ -2184,7 +2184,7 @@ fn mollusk_supersession_value_account_matches_offchain_reconstruction() {
     let reconstructed =
         zama_solana_acl::encrypted_value_account::reconstruct(address.to_bytes(), &events).unwrap();
     assert!(reconstructed.peaks_match(&value2.peaks, value2.leaf_count));
-    assert_eq!(reconstructed.leaf_count, 4); // 2 subjects x 2 supersessions
+    assert_eq!(reconstructed.leaf_count, 4); // 2 subjects x 2 handle updates
 }
 
 // ---------------------------------------------------------------------------
@@ -2192,7 +2192,7 @@ fn mollusk_supersession_value_account_matches_offchain_reconstruction() {
 // ---------------------------------------------------------------------------
 
 #[test]
-fn mollusk_historical_proof_round_trip_after_two_supersessions() {
+fn mollusk_historical_proof_round_trip_after_two_updates() {
     let authority = Pubkey::new_unique();
     let (host_config, host_config_account) = host_config_account(authority);
     let subject = Pubkey::new_unique();

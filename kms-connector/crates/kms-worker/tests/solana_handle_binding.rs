@@ -2,7 +2,7 @@
 //!
 //! Two modes, chosen per entry. Without a proof, the claim is "this handle is the live one and
 //! I am a current member". With a proof, the claim is "this handle was mine when it was live,
-//! and here is the sealed leaf that says so" — a claim that survives both later supersession
+//! and here is the sealed leaf that says so" — a claim that survives both a later update
 //! and later membership changes, because the subject is bound inside the leaf rather than read
 //! from the current set.
 //!
@@ -155,10 +155,10 @@ fn a_non_member_is_rejected_in_current_mode() {
 // Historical access
 // ---------------------------------------------------------------------------
 
-/// Supersession seals a leaf for each subject that held the handle. That leaf is what makes the
+/// An update seals a leaf for each subject that held the handle. That leaf is what makes the
 /// same handle reachable afterwards, under the same permit, with no new signature.
 #[test]
-fn a_sealed_leaf_authorizes_its_subject_after_supersession() {
+fn a_sealed_leaf_authorizes_its_subject_after_an_update() {
     let subject = Wallet::new(1).pubkey();
     let replaced = handle(0x20, FHE_TYPE_UINT64);
     let mut encrypted_value_account = EncryptedValueAccountFixture::new(replaced, &[subject]);
