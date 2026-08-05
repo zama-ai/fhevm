@@ -78,8 +78,10 @@ spec:
             {{- toYaml . | nindent 12 }}
             {{- end }}
           env:
-            - name: SERVER_KEY_REPRESENTATION
-              value: {{ .Values.commonConfig.serverKeyRepresentation | quote }}
+            {{- if .Values.commonConfig.forceLegacyServerKey }}
+            - name: FORCE_LEGACY_SERVER_KEY
+              value: "true"
+            {{- end }}
             {{- with .Values.commonConfig.databaseUser }}
             - name: DATABASE_USER
               {{- if .value }}
