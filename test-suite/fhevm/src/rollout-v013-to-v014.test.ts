@@ -4,6 +4,7 @@ import {
   canonicalFirst,
   gatewayContractUpgradeOrder,
   hostContractUpgradeOrder,
+  hostContractUpgradesForChain,
   phaseOrder,
   resolveRolloutTestMode,
   rolloutPhaseTestProfiles,
@@ -126,6 +127,20 @@ test("migrates the canonical host chain's ProtocolConfig before the others", () 
     { isCanonical: false, key: "chain-c" },
   ]);
   expect(ordered.map((target) => target.key)).toEqual(["host", "chain-b", "chain-c"]);
+});
+
+// KMSGeneration is anchored on the canonical host chain only; the boot flow asserts every other
+// chain's address file has no KMS_GENERATION_CONTRACT_ADDRESS, so upgrading it elsewhere fails
+// resolving that address.
+test("upgrades KMSGeneration on the canonical host chain only", () => {
+  const names = (isCanonical: boolean): string[] =>
+    hostContractUpgradesForChain(isCanonical).map((upgrade) => upgrade.name);
+  expect(names(true)).toContain("KMSGeneration");
+  expect(names(false)).not.toContain("KMSGeneration");
+  // Everything else moves on every chain.
+  for (const name of ["KMSVerifier", "HCULimit", "FHEVMExecutor", "ACL"]) {
+    expect(names(false)).toContain(name);
+  }
 });
 
 test("gates every phase on rollout-standard by default", () => {

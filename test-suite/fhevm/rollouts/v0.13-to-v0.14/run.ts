@@ -116,21 +116,29 @@ const prepareContractMigrationSources = async (
 const GATEWAY_CONTRACT_UPGRADES = [{ task: "task:upgradeDecryption", name: "Decryption" }] as const;
 
 /**
- * The host contracts that move on every host chain, in dependency order.
+ * The host contracts that move on each host chain, in dependency order.
  *
  * All of these bumped their reinitializer in v0.14 (see the note above): KMSVerifier 4 -> 5,
  * KMSGeneration 2 -> 3, HCULimit 4 -> 5, FHEVMExecutor 5 -> 6, ACL 5 -> 6. ProtocolConfig
  * (2 -> 3) moves separately through its own migration below.
+ *
+ * KMSGeneration lives only on the canonical host chain — key and CRS generation is anchored
+ * there and mirrored outward, and the boot flow asserts that every other chain's address file
+ * has no KMS_GENERATION_CONTRACT_ADDRESS. Upgrading it elsewhere fails resolving that address.
  */
 const HOST_CONTRACT_UPGRADES = [
   // KMSVerifier first so it holds the new KMS context before any executor path runs.
-  { task: "task:upgradeKMSVerifier", name: "KMSVerifier" },
-  { task: "task:upgradeKMSGeneration", name: "KMSGeneration" },
+  { task: "task:upgradeKMSVerifier", name: "KMSVerifier", canonicalOnly: false },
+  { task: "task:upgradeKMSGeneration", name: "KMSGeneration", canonicalOnly: true },
   // HCULimit before FHEVMExecutor: new executor ops call the new HCU checks.
-  { task: "task:upgradeHCULimit", name: "HCULimit" },
-  { task: "task:upgradeFHEVMExecutor", name: "FHEVMExecutor" },
-  { task: "task:upgradeACL", name: "ACL" },
+  { task: "task:upgradeHCULimit", name: "HCULimit", canonicalOnly: false },
+  { task: "task:upgradeFHEVMExecutor", name: "FHEVMExecutor", canonicalOnly: false },
+  { task: "task:upgradeACL", name: "ACL", canonicalOnly: false },
 ] as const;
+
+/** The host contract upgrades that apply to a given chain. */
+export const hostContractUpgradesForChain = (isCanonical: boolean) =>
+  HOST_CONTRACT_UPGRADES.filter((upgrade) => isCanonical || !upgrade.canonicalOnly);
 
 type HostChainTarget = {
   key: string;
@@ -219,13 +227,13 @@ export default async function run(ctx: RolloutRunContext) {
   await ctx.refreshDiscovery();
   await testPhase(ctx, "gateway-contracts", testMode);
 
-  logPhase("02 host contracts: ProtocolConfig anchor, mirror onto every other chain, then the rest");
+  logPhase("02 host contracts: ProtocolConfig on every chain, canonical first, then the rest");
   await prepareContractMigrationSources(ctx, "host", hostContractsLock, hostContractKeys);
   const targets = await hostChainTargets(ctx);
   await migrateProtocolConfig(ctx, targets);
-  for (const target of targets) {
+  for (const target of canonicalFirst(targets)) {
     console.log(`[contracts] host chain ${target.key}`);
-    for (const upgrade of HOST_CONTRACT_UPGRADES) {
+    for (const upgrade of hostContractUpgradesForChain(target.isCanonical)) {
       await upgradeContract(target.runTask, upgrade.task, upgrade.name);
     }
   }
