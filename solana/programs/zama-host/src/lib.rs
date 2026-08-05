@@ -129,10 +129,15 @@ pub mod zama_host {
     pub fn delegate_for_user_decryption(
         ctx: Context<DelegateForUserDecryption>,
         delegate: Pubkey,
-        account: Pubkey,
+        encrypted_value_account_authority: Pubkey,
         expiration_slot: u64,
     ) -> Result<()> {
-        instructions::delegate_for_user_decryption(ctx, delegate, account, expiration_slot)
+        instructions::delegate_for_user_decryption(
+            ctx,
+            delegate,
+            encrypted_value_account_authority,
+            expiration_slot,
+        )
     }
 
     pub fn revoke_delegation_for_user_decryption(

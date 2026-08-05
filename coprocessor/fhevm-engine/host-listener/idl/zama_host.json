@@ -277,7 +277,7 @@
           "type": "pubkey"
         },
         {
-          "name": "account",
+          "name": "encrypted_value_account_authority",
           "type": "pubkey"
         },
         {
@@ -3708,9 +3708,10 @@
             "type": "pubkey"
           },
           {
-            "name": "account",
+            "name": "encrypted_value_account_authority",
             "docs": [
-              "App context for the delegation."
+              "The encrypted value account authority the delegation is scoped over. A delegation covers",
+              "every value of that authority in every domain: the domain is not one of the PDA's seeds."
             ],
             "type": "pubkey"
           },

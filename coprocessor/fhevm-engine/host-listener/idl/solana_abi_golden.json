@@ -252,7 +252,7 @@
       "fixture_len": 80,
       "name": "delegate_for_user_decryption",
       "program": "zama_host",
-      "schema_hash": "9ed388fc651d14b825efe33f5c872004135ec1725587ef9d4564b5f94660b1ab"
+      "schema_hash": "bfe49c12a23b01fc1422b732b66cfbd5fd7683b74653150f9b34f9dd12285d13"
     },
     {
       "category": "instruction_args",

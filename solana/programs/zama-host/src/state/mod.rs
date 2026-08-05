@@ -830,14 +830,14 @@ pub fn permit_invalidation_address(user: Pubkey) -> (Pubkey, u8) {
 pub fn user_decryption_delegation_address(
     delegator: Pubkey,
     delegate: Pubkey,
-    account: Pubkey,
+    encrypted_value_account_authority: Pubkey,
 ) -> (Pubkey, u8) {
     Pubkey::find_program_address(
         &[
             DELEGATION_SEED,
             delegator.as_ref(),
             delegate.as_ref(),
-            account.as_ref(),
+            encrypted_value_account_authority.as_ref(),
         ],
         &crate::ID,
     )
