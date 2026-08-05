@@ -557,10 +557,11 @@ fn execute_partition(
                         error!(target: "scheduler", {index = ?nidx.index() }, "Wrong dataflow graph index");
                         continue;
                     };
+                    let producer_handles = node.result_handles.clone();
                     let is_allowed = node.is_allowed;
                     let opcode = node.opcode;
                     match op_result {
-                        Ok(working) => {
+                        Ok(working) if working.len() == producer_handles.len() => {
                             // Each consumer's representation of this output
                             // is pinned on chain: the executor folded a
                             // boundary bit per operand into the consuming
@@ -647,6 +648,20 @@ fn execute_partition(
                                         DFGTaskInput::Value(value.clone());
                                 }
                             }
+                        }
+                        Ok(working) => {
+                            // Nothing is forwarded or published: a wrong count
+                            // means the handles cannot be matched to results,
+                            // so the whole group fails rather than binding
+                            // ciphertexts to the wrong handles.
+                            let error = SchedulerError::MultiOutputFailure(format!(
+                                "multi-output arity mismatch: produced {} ciphertexts for {} handles",
+                                working.len(),
+                                producer_handles.len()
+                            ));
+                            error!(target: "scheduler", { error = %error },
+                                "Multi-output arity mismatch: dispatch returned wrong number of ciphertexts");
+                            fan_out_error(&producer_handles, error.into(), &tid, &mut reported);
                         }
                         Err(e) => {
                             fan_out_error(&producer_handles, e, &tid, &mut reported);
