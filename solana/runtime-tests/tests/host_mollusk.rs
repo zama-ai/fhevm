@@ -6041,7 +6041,7 @@ fn cost_snapshot_verify_public_decrypt() {
 }
 
 #[test]
-fn cost_snapshot_fhe_execute_three_op_batch() {
+fn cost_snapshot_fhe_execute_three_steps() {
     // Unrestricted HCU cap, no optional meter/trust accounts: the minimal
     // canonical execution (`EvalFixture::success_steps`) with one persistent
     // output binding.
@@ -6056,11 +6056,11 @@ fn cost_snapshot_fhe_execute_three_op_batch() {
         .context
         .process_and_validate_instruction(&ix, &[Check::success()]);
 
-    cost_snapshot::assert_cost_snapshot("host_mollusk", "fhe_execute/three_op_batch", &ix, &result);
+    cost_snapshot::assert_cost_snapshot("host_mollusk", "fhe_execute/three_steps", &ix, &result);
 }
 
 #[test]
-fn cost_snapshot_fhe_execute_max_op_batch() {
+fn cost_snapshot_fhe_execute_max_steps() {
     // An execution at MAX_FHE_EXECUTION_STEPS with the same fixture keys, accounts, and
     // persistent-output shape as the three-op profile. The compute-unit delta
     // isolates the extra direct host-side fhe_execute steps; it does not include
@@ -6076,7 +6076,7 @@ fn cost_snapshot_fhe_execute_max_op_batch() {
         .context
         .process_and_validate_instruction(&ix, &[Check::success()]);
 
-    cost_snapshot::assert_cost_snapshot("host_mollusk", "fhe_execute/max_op_batch", &ix, &result);
+    cost_snapshot::assert_cost_snapshot("host_mollusk", "fhe_execute/max_steps", &ix, &result);
 }
 
 #[test]

@@ -2218,7 +2218,7 @@ fn mollusk_confidential_transfer_rejects_balance_wrong_mint_acl_domain() {
 }
 
 #[test]
-fn mollusk_confidential_transfer_rejects_balance_wrong_token_account_app_account() {
+fn mollusk_confidential_transfer_rejects_balance_wrong_token_account_authority() {
     let fixture = TokenFixture::new();
     let mut accounts = fixture.base_accounts();
     let wrong_token_account = Pubkey::new_unique();
