@@ -52,7 +52,7 @@ vi.mock('node:fs/promises', () => ({
 }));
 
 import { prepareNextBatch } from './batchProvisioning';
-import { BATCH_CANCELED, BATCH_DISPATCHED, BATCH_PENDING, BATCH_SETTLED } from './batchTypes';
+import { BatchStatus } from './batchTypes';
 
 const REGISTRY_PATH = '/tmp/registry.json';
 const LOOKUP_TABLE_PROGRAM = 'AddressLookupTab1e1111111111111111111111111';
@@ -106,7 +106,7 @@ const prepare = async (tableAccounts: Record<string, ReturnType<typeof lookupTab
   mocks.getCurrentBatch.mockResolvedValue({
     index: 0n,
     addresses: { batch: 'batch-0' },
-    state: { status: BATCH_SETTLED },
+    state: { status: BatchStatus.Settled },
   });
   mocks.openBatchForBatcher.mockResolvedValue({
     lookupTableAddress: 'table-fresh',
@@ -142,7 +142,7 @@ describe('the lookup-table crank retries what settlement could not finish', () =
   test('deactivates a settled batch table that is still active', async () => {
     // The state a failed post-settlement deactivation leaves behind: batch settled, table live.
     setRegistryFile({ '42:batcher-1:0:batch-0': 'table-batch-0-recorded' });
-    mocks.getBatchByIndex.mockResolvedValue({ state: { status: BATCH_SETTLED } });
+    mocks.getBatchByIndex.mockResolvedValue({ state: { status: BatchStatus.Settled } });
 
     await prepare({
       'table-batch-0-recorded': lookupTableAccount(STILL_ACTIVE),
@@ -156,16 +156,25 @@ describe('the lookup-table crank retries what settlement could not finish', () =
 
   test('deactivates a canceled batch table, which settlement never touches', async () => {
     setRegistryFile({ '42:batcher-1:0:batch-0': 'table-canceled' });
-    mocks.getBatchByIndex.mockResolvedValue({ state: { status: BATCH_CANCELED } });
+    mocks.getBatchByIndex.mockResolvedValue({ state: { status: BatchStatus.Canceled } });
 
     await prepare({ 'table-canceled': lookupTableAccount(STILL_ACTIVE), 'table-fresh': { value: null } });
 
     expect(deactivatedTables()).toContain('table-canceled');
   });
 
+  test('deactivates a refunding batch table after dispatch cancellation', async () => {
+    setRegistryFile({ '42:batcher-1:0:batch-0': 'table-refunding' });
+    mocks.getBatchByIndex.mockResolvedValue({ state: { status: BatchStatus.Refunding } });
+
+    await prepare({ 'table-refunding': lookupTableAccount(STILL_ACTIVE), 'table-fresh': { value: null } });
+
+    expect(deactivatedTables()).toContain('table-refunding');
+  });
+
   test('leaves a dispatched batch table alone — settlement still needs it', async () => {
     setRegistryFile({ '42:batcher-1:0:batch-0': 'table-settling' });
-    mocks.getBatchByIndex.mockResolvedValue({ state: { status: BATCH_DISPATCHED } });
+    mocks.getBatchByIndex.mockResolvedValue({ state: { status: BatchStatus.Dispatched } });
 
     await prepare({ 'table-settling': lookupTableAccount(STILL_ACTIVE), 'table-fresh': { value: null } });
 
@@ -174,7 +183,7 @@ describe('the lookup-table crank retries what settlement could not finish', () =
 
   test('never deactivates twice: an already-deactivated table is only closed once cooled', async () => {
     setRegistryFile({ '42:batcher-1:0:batch-0': 'table-cooled' });
-    mocks.getBatchByIndex.mockResolvedValue({ state: { status: BATCH_SETTLED } });
+    mocks.getBatchByIndex.mockResolvedValue({ state: { status: BatchStatus.Settled } });
 
     await prepare({ 'table-cooled': lookupTableAccount(100n), 'table-fresh': { value: null } });
 
@@ -184,7 +193,7 @@ describe('the lookup-table crank retries what settlement could not finish', () =
 
   test('a deactivation that throws is retried by the next crank, not swallowed into the record', async () => {
     setRegistryFile({ '42:batcher-1:0:batch-0': 'table-stubborn' });
-    mocks.getBatchByIndex.mockResolvedValue({ state: { status: BATCH_SETTLED } });
+    mocks.getBatchByIndex.mockResolvedValue({ state: { status: BatchStatus.Settled } });
     mocks.sendTransaction.mockImplementation((_config: unknown, _keeper: unknown, instructions: { kind: string }[]) => {
       if (instructions.some((instruction) => instruction.kind === 'deactivate')) {
         throw new Error('blockhash expired');
@@ -207,7 +216,7 @@ describe('the table address is recorded before it can exist', () => {
     mocks.getCurrentBatch.mockResolvedValue({
       index: 0n,
       addresses: { batch: 'batch-0' },
-      state: { status: BATCH_SETTLED },
+      state: { status: BatchStatus.Settled },
     });
     mocks.openBatchForBatcher.mockResolvedValue({
       lookupTableAddress: 'table-fresh',
@@ -215,7 +224,7 @@ describe('the table address is recorded before it can exist', () => {
       instructions: [{ kind: 'open' }, { kind: 'create' }],
     });
     mocks.getAccountInfoSend.mockResolvedValue({ value: null });
-    mocks.getBatchByIndex.mockResolvedValue({ state: { status: BATCH_SETTLED } });
+    mocks.getBatchByIndex.mockResolvedValue({ state: { status: BatchStatus.Settled } });
 
     const order: string[] = [];
     mocks.writeFile.mockImplementation(() => {
@@ -242,11 +251,11 @@ describe('the table address is recorded before it can exist', () => {
     // this run needs, so a fresh table is derived from a newer slot. Overwriting the record here is
     // what used to make `table-orphan` unreclaimable.
     setRegistryFile({ '42:batcher-1:1:batch-0': { table: 'table-orphan' } });
-    mocks.getBatchByIndex.mockResolvedValue({ state: { status: BATCH_DISPATCHED } });
+    mocks.getBatchByIndex.mockResolvedValue({ state: { status: BatchStatus.Dispatched } });
     mocks.getCurrentBatch.mockResolvedValue({
       index: 0n,
       addresses: { batch: 'batch-0' },
-      state: { status: BATCH_SETTLED },
+      state: { status: BatchStatus.Settled },
     });
     mocks.openBatchForBatcher.mockResolvedValue({
       lookupTableAddress: 'table-fresh',
@@ -268,11 +277,11 @@ describe('the table address is recorded before it can exist', () => {
 
   test('reads a legacy bare-string record as the batch table', async () => {
     setRegistryFile({ '42:batcher-1:1:batch-0': 'table-legacy' });
-    mocks.getBatchByIndex.mockResolvedValue({ state: { status: BATCH_SETTLED } });
+    mocks.getBatchByIndex.mockResolvedValue({ state: { status: BatchStatus.Settled } });
     mocks.getCurrentBatch.mockResolvedValue({
       index: 0n,
       addresses: { batch: 'batch-0' },
-      state: { status: BATCH_SETTLED },
+      state: { status: BatchStatus.Settled },
     });
     mocks.openBatchForBatcher.mockResolvedValue({
       lookupTableAddress: 'table-fresh',
@@ -295,7 +304,7 @@ describe('a pending batch needs no open transaction', () => {
     mocks.getCurrentBatch.mockResolvedValue({
       index: 3n,
       addresses: { batch: 'batch-3' },
-      state: { status: BATCH_PENDING },
+      state: { status: BatchStatus.Pending },
     });
     mocks.openBatchForBatcher.mockResolvedValue({
       lookupTableAddress: 'table-3',
@@ -303,7 +312,7 @@ describe('a pending batch needs no open transaction', () => {
       instructions: [{ kind: 'open' }, { kind: 'create' }],
     });
     mocks.getAccountInfoSend.mockResolvedValue({ value: null });
-    mocks.getBatchByIndex.mockResolvedValue({ state: { status: BATCH_SETTLED } });
+    mocks.getBatchByIndex.mockResolvedValue({ state: { status: BatchStatus.Settled } });
 
     const prepared = await prepareNextBatch(config, keeper, 'deposit', REGISTRY_PATH);
 
@@ -321,7 +330,7 @@ describe('an unreadable registry stops provisioning instead of orphaning tables'
     mocks.getCurrentBatch.mockResolvedValue({
       index: 0n,
       addresses: { batch: 'batch-0' },
-      state: { status: BATCH_SETTLED },
+      state: { status: BatchStatus.Settled },
     });
     mocks.openBatchForBatcher.mockResolvedValue({
       lookupTableAddress: 'table-fresh',

@@ -1,7 +1,7 @@
 //! Leaves a pending batch: exact refund of the recorded joined amount,
 //! all-or-nothing. Direction-free, and the demo's only exit before claims:
-//! quit-before-dispatch is in scope; a deadline-cancel path for batches stuck
-//! after dispatch is out of scope (tracked in fhevm-internal#1773).
+//! quit-before-dispatch and refunds after `cancel_dispatch` are in scope. A Refunding batch accepts
+//! quits only; it cannot return to Pending or proceed to settlement.
 //!
 //! The batch authority spends the user's joined encrypted value account as the transfer
 //! amount (`confidential_transfer_from_value` back to the user), then resets
@@ -77,8 +77,11 @@ pub struct Quit<'info> {
 /// Refunds the exact recorded amount and resets the joined encrypted value account to zero.
 pub fn quit<'info>(ctx: Context<'info, Quit<'info>>) -> Result<()> {
     require!(
-        ctx.accounts.batch.status == BatchStatus::Pending,
-        BatcherError::BatchNotPending
+        matches!(
+            ctx.accounts.batch.status,
+            BatchStatus::Pending | BatchStatus::Refunding
+        ),
+        BatcherError::BatchNotRefundable
     );
     require_keys_eq!(
         ctx.accounts.join_confidential_mint.key(),

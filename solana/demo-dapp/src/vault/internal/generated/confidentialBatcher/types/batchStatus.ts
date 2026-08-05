@@ -21,6 +21,7 @@ export enum BatchStatus {
   Dispatched,
   Settled,
   Canceled,
+  Refunding,
 }
 
 export type BatchStatusArgs = BatchStatus;

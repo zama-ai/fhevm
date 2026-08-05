@@ -801,10 +801,10 @@ The harness exercises the KMS connector decrypt, not full production KMS-connect
 
 Status: adopted (reconciliation)
 
-Note: the DISCLOSURE half of this DD (the `DisclosureRequest` witness lifecycle described below) is
-SUPERSEDED by DD-040 — it was dissolved in fhevm-internal#1704, PR 2. Token disclosure no longer uses
-a request witness; it is now the generic `disclose_secp` consumer of the stateless host
-`verify_public_decrypt`. The BURN-REDEMPTION witness this DD also describes REMAINS in force.
+Historical decision, fully superseded. The disclosure witness was dissolved by DD-040
+(fhevm-internal#1704), and the burn-redemption witness was dissolved by DD-040's deferral closure
+(fhevm-internal#1763). Token disclosure is now the generic `disclose_secp` consumer of the stateless
+host verifier; burn act-once state is the sequential `PendingBurn` described by DD-045.
 
 Context:
 
@@ -1151,8 +1151,15 @@ previous handle by sealing one `HistoricalAccessLeaf` per allowed subject into a
 Merkle Mountain Range (peaks + leaf count only — the MMR never stores the full leaf history
 on-chain). The MVP ACL is a single allowed-subject set: `EncryptedValue.subjects` is the complete
 authorization set, and the former parallel role byte vector is not part of the account layout. Any
-allowed subject can use the current handle in compute, add another subject, request user decrypt, and
-mark the exact current handle public. Public decrypt is an exact-handle `PublicDecryptLeaf`, so
+allowed subject can use the current handle in compute and request user decrypt. Subject-list
+mutation (`allow_subjects` / `remove_subject`) and exact-handle public sealing are gated like
+persistent create/update: the signer must equal
+`EncryptedValue.encrypted_value_account_authority` (the app-owned account
+identity). Decrypt subjects are not co-admins — apps that store a PDA in
+`encrypted_value_account_authority` rotate auditors by CPI + `invoke_signed` as
+that PDA. Confidential-token Wave 1 (#1862) covers token-account-scoped values through owner
+wrappers and total-supply values through mint-authority wrappers.
+Public decrypt is an exact-handle `PublicDecryptLeaf`, so
 publicness never survives a handle update (there is no live public flag to leak across updates — see
 the connector-side rationale in the kms-connector/sdk commit message). Active lifecycle changes are
 performed by `fhe_execute` persistent outputs, `allow_subjects`, and `make_handle_public`; no instruction
@@ -1212,8 +1219,8 @@ events do, or stay event-free and let consumers decode instruction data instead.
 
 Decision:
 
-State-changing `EncryptedValue` lifecycle paths (`fhe_execute` persistent outputs, `allow_subjects`, and
-`make_handle_public`) emit no ACL lifecycle Anchor events by design. The host-listener reconstructs
+State-changing `EncryptedValue` lifecycle paths (`fhe_execute` persistent outputs, `allow_subjects`,
+`remove_subject`, and `make_handle_public`) emit no ACL lifecycle Anchor events by design. The host-listener reconstructs
 compute and material requests from confirmed Yellowstone transaction instructions plus streamed
 Clock/SlotHashes state. The solana-proof-service decodes lifecycle changes from instruction data —
 including inner/CPI instructions, since confidential-token and other app programs invoke them via CPI
@@ -1328,8 +1335,13 @@ per-handle `burn-redemption` marker PDA (DD-022), independent of the dropped equ
 rides in as `MmrInclusionProof`, an Anchor-native mirror of `zama_solana_acl::MmrProof` (the shared ACL
 crate is deliberately Anchor-free, so it cannot carry Anchor IDL metadata).
 
-Why tactical, not structural: the design-idiomaticity audit confirmed the write model is
-single-writer-per-value (Solana's write-lock scheduler serializes `mut` access), so this is a
+Amendment (2026-08-05, DD-045): the concurrent historical-handle design and permanent marker in the
+paragraph above are superseded. Each token account now has one `PendingBurn`, the burned handle must
+remain current, and redeem or cancel closes that account. This deliberately trades same-account burn
+concurrency for a smaller act-once state machine.
+
+Historical rationale for the superseded concurrent design: the design-idiomaticity audit confirmed
+the write model is single-writer-per-value (Solana's write-lock scheduler serializes `mut` access), so this is a
 sequential cross-transaction TOCTOU, not a race. Per-operation escrow accounts would double-provision
 history for no soundness gain; the MMR is the mechanism this system already built for exactly this
 "prove a past/public state after update" need. This is the first on-chain consumer of the
@@ -1351,9 +1363,9 @@ This mirrors EVM `unwrap`'s `makePubliclyDecryptable(unwrapAmount)` happening in
 state transition, and — critically — it drops the second CPI that overflowed Solana's fixed 32 KiB
 bump heap on every update burn (the production OOM). `confidential_burn` sets `make_public: true`
 on the burned-delta output only; balance/total-supply outputs stay `make_public: false`.
-`request_burn_redemption` now pins a (possibly historical) burned handle and appends no leaf — the
-burn owns the public-decrypt leaf. Authorization: the output binder already authorizes the
-app-account-authority to bind the output; that same authority is what authorizes making it public
+In the superseded request design, `request_burn_redemption` pinned a burned handle and appended no
+leaf — the burn owned the public-decrypt leaf. Authorization: the output binder already authorizes the
+encrypted value account authority to bind the output; that same authority is what authorizes making it public
 (the binder is *creating* the value), so no separate subject check is required — consistent with, and
 gated by the same deny-list path as, the rest of the binding. This is the opt-in relaxation of the
 "created encrypted value accounts cannot be created public-decryptable" invariant: it holds for all outputs except those
@@ -1376,10 +1388,9 @@ handle by its MMR public-decrypt inclusion proof plus a KMS cert, never reading 
 during the off-chain KMS round-trip, matching EVM's permanent public-decryptability. This closes the
 same TOCTOU (including balance mode's third-party griefability) without a witness.
 
-The BURN-REDEMPTION redeem path (`redeem_burned_amount_secp`) described above is UNCHANGED: it keeps
-its `proof: MmrInclusionProof` arg and `authorize_public` against the pinned burned handle, and remains
-on the `BurnRedemptionRequest` witness (its migration onto the verifier is a deferred open decision,
-DD-040).
+The burn-redemption path was later moved to the stateless verifier and then bounded by the sequential
+`PendingBurn` lifecycle in DD-045. The historical description above is retained as decision history,
+not as the current settlement contract.
 
 ## Open Product Decisions
 
@@ -1426,6 +1437,19 @@ in [`FUTURE_DESIGN.md`](./FUTURE_DESIGN.md); this list is the short index.
   it.
 - Subject-list overflow beyond `MAX_ENCRYPTED_VALUE_SUBJECTS` (8 subjects per `EncryptedValue`) is
   deferred; there is no overflow/paging account yet.
+- **Mint-as-PDA authority consolidation (fhevm-internal#1862 Wave 3) — DEFERRED / not necessary.**
+  Evaluated collapsing `ConfidentialMint` into a PDA and folding `fhe-compute` + `total-supply`
+  authorities into the mint. Kept the current shape: mint stays a non-PDA keypair account; compute
+  signer and total-supply write authority remain separate mint-scoped PDAs; vault-authority and
+  per-owner token-account PDAs unchanged. Consolidation would touch every CPI and vault path without
+  reducing attack surface enough to justify the churn.
+- **Compliance / freeze / TokenInterface (fhevm-internal#1862) — PARTIALLY CLOSED by DD-045.** Product stance:
+  no token-owned sanctions list; host deny remains grant-path only; compliance for underlying exit
+  is the SPL freeze authority on the wrapped mint (mockUSDC OK in PoC). Confidential transfers are
+  not freeze-gated today. ATA-like UX is intentional (`token_account_address(mint, owner)` +
+  create-for / separate payer; demo get-or-create in `demo-dapp`). `TokenInterface`, classic Token,
+  extension-free Token-2022, fail-closed extension checks, and frozen wrap/redeem tests are shipped.
+  Confidential-transfer freeze policy remains deferred.
 
 ## DD-037: `fhe_execute` Events — `emit_cpi!`-Only, No `emit!` Log Fallback (DD-033 addendum)
 
@@ -1614,6 +1638,18 @@ ever want one — noted, not in scope. Earlier revisions of this DD verified aga
 only and framed a cert-after-rotation as a hazard to fail closed on; that framing is replaced here —
 rotation is no longer the revocation boundary, `destroy` is.
 
+### Ops runbook: KMS context rotation (fhevm-internal#1862 #15)
+
+1. **Rotate for hygiene:** `define_kms_context(N+1)` (new signer set becomes current). In-flight certs
+   that name live context `N` remain verifiable — do **not** treat rotation alone as revocation.
+2. **Revoke old set:** after grace (or immediately on compromise), `destroy_kms_context(N)`. That
+   flips `destroyed` and fails every outstanding `N`-named cert at `verify_public_decrypt`.
+3. **Compromise path:** `define` the replacement, then `destroy` the compromised context in the same
+   ops window. Forgotten destroy = old signers stay powerful indefinitely (same as EVM).
+4. **Token policy:** confidential-token `disclose_secp` / `redeem_burned_amount` accept any
+   non-destroyed context the cert names (default). Apps that need current-only can compare
+   `return_data`'s context id to `host_config.current_kms_context_id` — not wired in the token today.
+
 The verified context id is surfaced in `return_data` (8 little-endian bytes appended after `handle ++
 cleartext`, so 72 bytes total) precisely so a calling program can pick its own policy: an
 informational consumer accepts any live context, while a value-releasing instruction can compare the
@@ -1652,15 +1688,17 @@ the events `BalanceDisclosureRequestedEvent`, `AmountDisclosureRequestedEvent`, 
 `assert_current_balance_encrypted_value`, plus the now-orphaned `allow_public_decrypt` /
 `assert_token_amount_encrypted_value`.
 
-Added: ONE generic thin instruction `disclose_secp(handle, cleartext, signatures, extra_data, proof)`
+Added: ONE generic thin instruction `disclose_secp(kind, handle, cleartext, signatures, extra_data, proof)`
 (`instructions/disclose_secp.rs`) that CPIs `zama_host::verify_public_decrypt`, reads its return_data
 via `get_return_data` (asserting the program id is `zama_host` and the returned handle equals the
-caller-pinned `handle`), binds the disclosed `EncryptedValue` encrypted value account to the mint's ACL domain, and
-emits ONE new event `HandleDisclosedEvent { version, mint, handle, encrypted_value, cleartext_amount }`.
+caller-pinned `handle`), binds the disclosed encrypted value account to the named token state field's
+mint domain, canonical address, encrypted value account authority, and encrypted value label, and
+emits ONE event carrying that complete binding.
 
-Request side is no longer a token instruction: an allowed subject (balance owner / amount subject)
-seals the public-decrypt leaf by calling the host `make_handle_public` instruction directly. There is
-no per-request PDA, no `kms_context_id` pin, and no `expires_slot`.
+Request side has no request account: a token owner or mint authority calls a confidential-token
+wrapper that validates one exact token state field, then signs the host `make_handle_public` CPI as
+the encrypted value account authority. There is no per-request PDA, no `kms_context_id` pin, and no
+`expires_slot`.
 
 Verify against the cert-named context: the cert is verified by the host against the `KmsContext` the
 cert names, for any live context (see "Any live context" above), not a request-time pin. (Originally
@@ -1671,11 +1709,8 @@ Idempotent by design: act-once is intentionally NOT enforced on-chain. Disclosur
 information release with no replay marker; an app needing consume-once tracks it in its own state
 (the EVM-callback analogy).
 
-Burn-redemption is untouched: `request_burn_redemption`, `redeem_burned_amount_secp`, the
-`close_*_burn_redemption_request` instructions, the `BurnRedemptionRequest` witness and its replay
-marker PDA, and the shared helpers `assert_kms_public_decrypt_cert_for_request` +
-`assert_burn_redemption_request_witness` all remain on the witness pattern. Migrating burn-redemption
-onto the verifier is a DEFERRED open decision, not part of this PR.
+Burn-redemption was subsequently dissolved onto the stateless verifier. Its act-once state is the
+single `PendingBurn` account per token account described by DD-045.
 
 Deferral closed (fhevm-internal#1763):
 
@@ -1697,16 +1732,13 @@ verifier used `host_config.current_kms_context_id` and failed closed on rotation
 fhevm-internal#1765, which accepts any live context and makes `destroy_kms_context` the revocation
 lever — see "Any live context" above.)
 
-Deny check is now explicit at redeem: because redemption moves value, a denied subject cannot cash
-out. The request's no-op `allow_subjects` CPI (which only re-proved the owner allowed) is replaced by
-a read-only `deny_subject_record` consultation at payout, mirroring the host's own
-`check_grant_not_denied` model.
+Deny policy was later narrowed to grants only (DD-045). Redemption and cancellation do not add ACL
+subjects, so a later policy change cannot trap a pending burn.
 
-Marker retained as the sole persistent bit: unlike disclosure (idempotent, no marker), redemption keeps
-the write-once, never-closed per-handle `BurnRedemption` PDA at `["burn-redemption", mint,
-burned_handle]` as the one "paid out" bit; a second redeem of the same handle fails on the `init`.
-This also simplifies the vault batcher (fhevm-internal#1757): dispatch is burn tx → redeem tx, with
-no witness rent fronted per batch and no close obligations.
+Act-once is now the closeable `PendingBurn` PDA at `["pending-burn", mint, token_account]`. Exactly
+one burn may be pending for a token account. Redeem pays underlying tokens and closes it; cancel
+restores confidential balance and encrypted supply and closes it. A second settlement fails because
+the account is gone, and a new burn cannot start until that close has committed.
 
 ## DD-041: Coprocessor Input Trust Is A Registered n-of-m Signer Set In `HostConfig`
 
@@ -1775,8 +1807,9 @@ preserves individual amount privacy at near-zero encrypted-math cost. Ported as 
 mechanics: where the EVM join is a token-side `transferAndCall` hook, Solana inverts control — the
 batcher's `join` CPIs the confidential transfer itself (programs cannot react to incoming
 transfers); where the EVM aggregate reveal is a gateway callback, ours is the existing pull-shaped
-burn-redemption certificate (`confidential_burn` -> KMS-certified `redeem_burned_amount` against the
-current context, DD-040 family; the request-witness lifecycle is dissolved by fhevm-internal#1763) —
+burn-redemption certificate (`confidential_burn` -> KMS-certified `redeem_burned_amount` against any
+live cert-named context, DD-040 family; the request-witness lifecycle is dissolved by
+fhevm-internal#1763) —
 the burn certificate *is* the aggregate decrypt, no separate reveal instruction.
 
 The mechanics this relies on, all pre-existing host behaviour (verified, no host changes): the transfer's
@@ -2020,3 +2053,61 @@ left to vary. Callers of the eleven instructions pass two more accounts: the Mol
 e2e live client are updated here, and there are no TypeScript callers. `dead-surface-check.sh`'s
 never-emitted-event check learned the shared emitter, without which it would have reported all eight
 surviving events as dead.
+
+## DD-045: Keep Burn Settlement Sequential and Keep Wrapper Policy Separate From Host Governance
+
+Status: adopted for the proof of concept (fhevm-internal#1862)
+
+One confidential token account has one pending burn. `PendingBurn` is derived from `(mint,
+token_account)`, not from a caller-selected identifier. A second burn is rejected before FHE work
+until the first is settled by either `redeem_burned_amount` or `cancel_pending_burn`. Redeem pays the
+certified underlying amount and closes the account. Cancel restores encrypted balance and encrypted
+total supply, then closes it. The batcher exposes the same escape path: only the join mint's
+`ConfidentialMint.authority` (the wrapper policy authority, not the Host upgrade authority) may
+cancel a dispatch. Cancellation enters the terminal, refund-only `Refunding` state so participants
+can quit but the batch cannot be reused.
+
+Multiple pending burns for one token account were rejected for this release. They require identifiers,
+ordering rules, and explicit protection against consuming the same burned state twice. No current
+application needs that complexity: it can aggregate a three-way burn into one amount or use separate
+app-owned token accounts. This is a deliberate deferral, not a claim that parallel settlement is
+impossible.
+
+`ConfidentialBurnEvent` intentionally does not duplicate the MMR `leaf_index`. Settlement binds the
+pending account to the burned encrypted value account and handle; the supplied proof carries its own
+leaf index and is checked against live peaks. Clients obtain that proof by handle from the proof
+service, so an event index would be redundant rather than an authorization input.
+
+The Host grant deny-list applies only when subjects are added. It does not block subject removal,
+public sealing, redemption, or cancellation. Applying it to settlement can trap funds after policy
+changes. Public sealing and all subject-list mutation instead require the encrypted value account
+authority; a decrypt subject is not an administrator.
+
+The confidential mint authority is the wrapper policy authority. It can add or remove subjects on the
+encrypted total supply through token wrappers that sign the Host CPI as the total-supply authority
+PDA. It is intentionally separate from the authority that upgrades Zama Host. Governance can later be
+assigned to the mint authority without receiving Host upgrade power. Governance wiring and authority
+rotation are not introduced by this decision.
+
+The wrapper accepts classic Token and extension-free Token-2022 through `TokenInterface`. The
+underlying mint's owner selects the token program, and mint/token-account ownership is revalidated on
+every initialize, wrap, and redeem. Token-2022 mint
+extensions fail closed; token accounts permit only `ImmutableOwner`. Frozen source or destination
+accounts cannot cross the wrapper boundary. Supporting transfer fees, hooks, non-transferable tokens,
+or Token-2022 confidential transfer requires a separate decision because each changes conservation or
+transfer semantics.
+
+Token-facing instructions pass a typed Host config account but do not redundantly derive its PDA at
+the wrapper boundary. Every path immediately invokes a Host instruction that enforces the canonical
+config; redeem/disclose additionally rederive it before their local pause check. This keeps the
+boundary aligned without paying for a second PDA derivation or adding redundant IDL metadata.
+
+Confidential accounts expose ATA-like demo UX: canonical derivation, permissionless create-for, and
+`getOrCreateConfidentialTokenAccountInstruction`, which reads the derived PDA and returns either the
+create instruction or `null` for an already initialized account. This remains demo application code,
+not a claim that the protocol SDK owns the confidential-token program.
+
+Disclosure names a token state kind and validates its entire binding before emitting: mint domain,
+canonical encrypted value account, encrypted value account authority, encrypted value label, and
+handle proof. Domain-only validation was rejected because two fields within the same mint would remain
+interchangeable in downstream events.

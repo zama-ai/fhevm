@@ -16,7 +16,10 @@ pub struct AllowEncryptedValueSubjects<'info> {
     /// Pays for the account's growth, if any.
     #[account(mut)]
     pub payer: Signer<'info>,
-    /// Current allowed subject on the encrypted value account.
+    /// Must equal `EncryptedValue.encrypted_value_account_authority` (same gate as
+    /// `fhe_execute` persistent create/update). Subjects alone cannot mutate
+    /// membership — apps that store a PDA in `encrypted_value_account_authority`
+    /// rotate auditors by CPI + `invoke_signed` as that PDA.
     pub authority: Signer<'info>,
     /// CHECK: layout and ownership are validated inside the handler via `read_canonical_encrypted_value`.
     #[account(mut)]
@@ -37,9 +40,10 @@ pub fn allow_subjects(
     let info = ctx.accounts.encrypted_value.to_account_info();
     let mut value = read_canonical_encrypted_value(&info)?;
     let authority = ctx.accounts.authority.key();
-    require!(
-        value.has_subject(authority),
-        ZamaHostError::SubjectNotAllowed
+    require_keys_eq!(
+        authority,
+        value.encrypted_value_account_authority,
+        ZamaHostError::EncryptedValueAccountAuthorityMismatch
     );
     check_grant_not_denied(
         &ctx.accounts.host_config,
@@ -143,14 +147,14 @@ pub(super) fn append_public_decrypt_leaf(
 pub struct MakeEncryptedValueHandlePublic<'info> {
     #[account(mut)]
     pub payer: Signer<'info>,
-    /// Current allowed subject.
+    /// Must equal `EncryptedValue.encrypted_value_account_authority`; decrypt subjects cannot
+    /// publish a handle.
     pub authority: Signer<'info>,
     /// CHECK: layout and ownership are validated inside the handler via `read_canonical_encrypted_value`.
     #[account(mut)]
     pub encrypted_value: UncheckedAccount<'info>,
     #[account(seeds = [HOST_CONFIG_SEED], bump = host_config.bump)]
     pub host_config: Account<'info, HostConfig>,
-    pub deny_subject_record: Option<UncheckedAccount<'info>>,
     pub system_program: Program<'info, System>,
 }
 
@@ -173,15 +177,11 @@ pub fn make_handle_public(
     let info = ctx.accounts.encrypted_value.to_account_info();
     let mut value = read_canonical_encrypted_value(&info)?;
     let authority = ctx.accounts.authority.key();
-    require!(
-        value.has_subject(authority),
-        ZamaHostError::SubjectNotAllowed
-    );
-    check_grant_not_denied(
-        &ctx.accounts.host_config,
+    require_keys_eq!(
         authority,
-        ctx.accounts.deny_subject_record.as_ref(),
-    )?;
+        value.encrypted_value_account_authority,
+        ZamaHostError::EncryptedValueAccountAuthorityMismatch
+    );
     require!(
         handle == value.current_handle,
         ZamaHostError::EncryptedValuePublicHandleMismatch

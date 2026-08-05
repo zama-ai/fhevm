@@ -16,7 +16,7 @@ import {
   openBatchForBatcher,
 } from './vault/index.js';
 
-import { BATCH_DISPATCHED, BATCH_PENDING, isBatchFinished, type VaultDirection } from './batchTypes';
+import { BatchStatus, isBatchFinished, type VaultDirection } from './batchTypes';
 import type { DemoConfig } from './demoConfig';
 import { sendTransaction } from './sendTransaction';
 import { vaultRoots } from './vaultRoots';
@@ -274,11 +274,11 @@ export const prepareNextBatch = async (
   const rpc = createSolanaRpc(config.rpcUrl);
   const roots = vaultRoots(config, direction);
   const current = await getCurrentBatch(rpc, roots, { commitment: 'confirmed' });
-  if (current.state.status === BATCH_DISPATCHED) {
+  if (current.state.status === BatchStatus.Dispatched) {
     throw new Error(`The current ${direction} batch is still settling`);
   }
 
-  const batchIndex = current.state.status === BATCH_PENDING ? current.index : current.index + 1n;
+  const batchIndex = current.state.status === BatchStatus.Pending ? current.index : current.index + 1n;
   const recentSlot = await rpc.getSlot({ commitment: 'finalized' }).send();
   const prepared = await openBatchForBatcher({
     roots,
@@ -288,13 +288,13 @@ export const prepareNextBatch = async (
     authorityFundingLamports: BigInt(config.authorityFundingLamports),
   });
 
-  if (current.state.status !== BATCH_PENDING) {
+  if (current.state.status !== BatchStatus.Pending) {
     await sendTransaction(config, keeper, [prepared.instructions[0]!], PROVISIONING_COMPUTE_UNIT_LIMIT);
   }
 
   const registry = await readRegistry(registryPath);
   const batch =
-    current.state.status === BATCH_PENDING
+    current.state.status === BatchStatus.Pending
       ? current.addresses.batch
       : (await getCurrentBatch(rpc, roots)).addresses.batch;
   const key = registryKey(config, direction, batchIndex, batch);

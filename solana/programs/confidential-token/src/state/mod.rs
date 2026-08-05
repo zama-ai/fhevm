@@ -8,20 +8,18 @@
 //! `transfer_success` and `debit_candidate` labels were deleted once DD-019 stopped creating the
 //! scratch PDAs they named.
 
-pub mod burn_redemption;
 pub mod confidential_mint;
 pub mod confidential_token_account;
+pub mod pending_burn;
 
-pub use burn_redemption::*;
 pub use confidential_mint::*;
 pub use confidential_token_account::*;
+pub use pending_burn::*;
 
 pub use crate::constants::*;
 
 use anchor_lang::prelude::*;
-use anchor_spl::{
-    associated_token::get_associated_token_address_with_program_id, token as spl_token,
-};
+use anchor_spl::associated_token::get_associated_token_address_with_program_id;
 use zama_host;
 
 /// Returns the compute signer PDA for a confidential mint.
@@ -47,19 +45,23 @@ pub fn vault_authority_address(mint: Pubkey) -> (Pubkey, u8) {
     Pubkey::find_program_address(&[b"vault-authority", mint.as_ref()], &crate::ID)
 }
 
-/// Returns the canonical SPL token account used as the confidential mint's vault.
-pub fn vault_token_account_address(mint: Pubkey, underlying_mint: Pubkey) -> Pubkey {
+/// Returns the canonical token account used as the confidential mint's vault.
+pub fn vault_token_account_address(
+    mint: Pubkey,
+    underlying_mint: Pubkey,
+    token_program: Pubkey,
+) -> Pubkey {
     get_associated_token_address_with_program_id(
         &vault_authority_address(mint).0,
         &underlying_mint,
-        &spl_token::ID,
+        &token_program,
     )
 }
 
-/// Returns the replay-marker PDA for a redeemed burned amount handle.
-pub fn burn_redemption_address(mint: Pubkey, burned_handle: [u8; 32]) -> (Pubkey, u8) {
+/// Returns the single pending-burn PDA for a confidential token account.
+pub fn pending_burn_address(mint: Pubkey, token_account: Pubkey) -> (Pubkey, u8) {
     Pubkey::find_program_address(
-        &[b"burn-redemption", mint.as_ref(), burned_handle.as_ref()],
+        &[PENDING_BURN_SEED, mint.as_ref(), token_account.as_ref()],
         &crate::ID,
     )
 }
@@ -88,11 +90,6 @@ pub fn encrypted_balance_label() -> [u8; 32] {
 /// Fixed encrypted value label for the encrypted total supply.
 pub fn encrypted_total_supply_label() -> [u8; 32] {
     *b"total_supply____________________"
-}
-
-/// Fixed encrypted value label for public wrap amounts.
-pub fn encrypted_wrap_amount_label() -> [u8; 32] {
-    *b"wrap_amount_____________________"
 }
 
 /// Fixed encrypted value label for externally verified transfer amounts.
@@ -124,7 +121,7 @@ mod space_invariants {
     /// of corrupting account layouts in production.
     #[test]
     fn manual_space_matches_derived_init_space() {
-        assert_eq!(BurnRedemption::SPACE, BurnRedemption::INIT_SPACE);
+        assert_eq!(PendingBurn::SPACE, PendingBurn::INIT_SPACE);
         assert_eq!(ConfidentialMint::SPACE, ConfidentialMint::INIT_SPACE);
         assert_eq!(
             ConfidentialTokenAccount::SPACE,

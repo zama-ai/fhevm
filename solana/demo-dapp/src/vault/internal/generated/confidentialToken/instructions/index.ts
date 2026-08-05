@@ -11,4 +11,5 @@ export * from './confidentialTransferFromValue.js';
 export * from './discloseSecp.js';
 export * from './initializeMint.js';
 export * from './initializeTokenAccount.js';
+export * from './makeTokenAccountHandlePublic.js';
 export * from './wrapUsdc.js';

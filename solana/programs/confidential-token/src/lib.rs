@@ -33,9 +33,11 @@ pub use events::*;
 use instructions::*;
 /// Re-export instruction account contexts for compatibility with existing tests.
 pub use instructions::{
-    ConfidentialBurn, ConfidentialBurnFromValue, ConfidentialTransfer,
-    ConfidentialTransferFromValue, DiscloseSecp, InitializeMint, InitializeTokenAccount,
-    RedeemBurnedAmount, WrapUsdc,
+    AllowTokenAccountSubjects, AllowTotalSupplySubjects, CancelPendingBurn, ConfidentialBurn,
+    ConfidentialBurnFromValue, ConfidentialTransfer, ConfidentialTransferFromValue, DiscloseSecp,
+    InitializeMint, InitializeTokenAccount, MakeTokenAccountHandlePublic,
+    MakeTotalSupplyHandlePublic, RedeemBurnedAmount, RemoveTokenAccountSubject,
+    RemoveTotalSupplySubject, WrapUsdc,
 };
 /// Re-export account layouts and helper functions used by clients and tests.
 pub use state::*;
@@ -52,12 +54,11 @@ pub mod confidential_token {
         instructions::initialize_mint(ctx)
     }
 
-    /// Initializes a token account and creates its initial confidential balance handle.
+    /// Initializes a token account and creates its zero confidential balance handle.
     pub fn initialize_token_account<'info>(
         ctx: Context<'info, InitializeTokenAccount<'info>>,
-        initial_balance: u64,
     ) -> Result<()> {
-        instructions::initialize_token_account(ctx, initial_balance)
+        instructions::initialize_token_account(ctx)
     }
 
     /// Escrows public USDC and updates the confidential balance by `amount`.
@@ -65,7 +66,66 @@ pub mod confidential_token {
         instructions::wrap_usdc(ctx, amount)
     }
 
+    /// Grants subjects on a token-account-scoped encrypted value by CPI to host
+    /// `allow_subjects`, signing as the token-account PDA
+    /// (`EncryptedValue.encrypted_value_account_authority`).
+    /// Owner-authorized; auditors remain decrypt-only subjects (fhevm-internal#1862 #13).
+    pub fn allow_token_account_subjects<'info>(
+        ctx: Context<'info, AllowTokenAccountSubjects<'info>>,
+        subjects: Vec<Pubkey>,
+    ) -> Result<()> {
+        instructions::allow_token_account_subjects(ctx, subjects)
+    }
+
+    /// Removes one subject from a token-account-scoped encrypted value by CPI to host
+    /// `remove_subject`, signing as the token-account PDA
+    /// (`EncryptedValue.encrypted_value_account_authority`).
+    pub fn remove_token_account_subject<'info>(
+        ctx: Context<'info, RemoveTokenAccountSubject<'info>>,
+        subject: Pubkey,
+    ) -> Result<()> {
+        instructions::remove_token_account_subject(ctx, subject)
+    }
+
+    /// Grants decrypt subjects on the encrypted total supply. The existing mint authority
+    /// authorizes the operation; the total-supply PDA signs the host CPI.
+    pub fn allow_total_supply_subjects<'info>(
+        ctx: Context<'info, AllowTotalSupplySubjects<'info>>,
+        subjects: Vec<Pubkey>,
+    ) -> Result<()> {
+        instructions::allow_total_supply_subjects(ctx, subjects)
+    }
+
+    /// Removes one decrypt subject from the encrypted total supply. The existing mint authority
+    /// authorizes the operation; the total-supply PDA signs the host CPI.
+    pub fn remove_total_supply_subject(
+        ctx: Context<RemoveTotalSupplySubject>,
+        subject: Pubkey,
+    ) -> Result<()> {
+        instructions::remove_total_supply_subject(ctx, subject)
+    }
+
+    /// Seals one token-account state handle publicly. The owner authorizes the request and the
+    /// token-account PDA signs as encrypted value account authority.
+    pub fn make_token_account_handle_public(
+        ctx: Context<MakeTokenAccountHandlePublic>,
+        kind: DisclosedValueKind,
+        handle: [u8; 32],
+    ) -> Result<()> {
+        instructions::make_token_account_handle_public(ctx, kind, handle)
+    }
+
+    /// Seals encrypted total supply publicly. The mint authority authorizes the request and the
+    /// total-supply PDA signs as encrypted value account authority.
+    pub fn make_total_supply_handle_public(
+        ctx: Context<MakeTotalSupplyHandlePublic>,
+        handle: [u8; 32],
+    ) -> Result<()> {
+        instructions::make_total_supply_handle_public(ctx, handle)
+    }
+
     /// Burns an encrypted amount by updating the account balance and encrypted total supply.
+    /// Exactly one burn may be pending for a token account; redeem or cancel it before burning again.
     pub fn confidential_burn<'info>(
         ctx: Context<'info, ConfidentialBurn<'info>>,
         amount_attestation: zama_host::CoprocessorInputAttestation,
@@ -75,7 +135,7 @@ pub mod confidential_token {
 
     /// Burns an encrypted amount taken from an existing on-chain `EncryptedValue` (a computed or
     /// received handle) instead of a freshly attested client-side encryption — the burn-side analog
-    /// of `confidential_transfer_from_value` (fhevm-internal#1755). The batcher uses this to burn a
+    /// of `confidential_transfer_from_value` (fhevm-internal#1755). The batcher uses this to burn an
     /// execution's computed encrypted total, then requests the KMS burn certificate. The signing owner
     /// must be in the amount value's subject set (the token spend gate); the amount is spent
     /// read-only, and the burned-amount output is created publicly decryptable exactly as in
@@ -109,20 +169,21 @@ pub mod confidential_token {
     /// (idempotent by design — no on-chain replay marker).
     pub fn disclose_secp(
         ctx: Context<DiscloseSecp>,
+        kind: DisclosedValueKind,
         handle: [u8; 32],
         cleartext: [u8; 32],
         signatures: Vec<[u8; 65]>,
         extra_data: Vec<u8>,
         proof: zama_host::instructions::MmrInclusionProof,
     ) -> Result<()> {
-        instructions::disclose_secp(ctx, handle, cleartext, signatures, extra_data, proof)
+        instructions::disclose_secp(ctx, kind, handle, cleartext, signatures, extra_data, proof)
     }
 
     /// Redeems a KMS-certified burned amount from the SPL vault through the stateless host verifier.
     /// Verifies the KMS `PublicDecryptVerification` certificate against the context the cert names
     /// (any live, non-destroyed context, EVM-parity rotation grace) plus an exact-handle MMR
-    /// public-decrypt proof, then pays out `cleartext_amount` and writes the
-    /// permanent per-handle `BurnRedemption` marker. See `instructions::redeem_burned_amount`.
+    /// public-decrypt proof, then pays out `cleartext_amount` and closes the `PendingBurn`
+    /// account opened at burn time. See `instructions::redeem_burned_amount`.
     pub fn redeem_burned_amount(
         ctx: Context<RedeemBurnedAmount>,
         burned_handle: [u8; 32],
@@ -139,5 +200,11 @@ pub mod confidential_token {
             extra_data,
             proof,
         )
+    }
+
+    /// Cancels a pending burn by FHE-crediting the burned amount back onto confidential balance and
+    /// encrypted total supply, then closing the `PendingBurn` account.
+    pub fn cancel_pending_burn<'info>(ctx: Context<'info, CancelPendingBurn<'info>>) -> Result<()> {
+        instructions::cancel_pending_burn(ctx)
     }
 }

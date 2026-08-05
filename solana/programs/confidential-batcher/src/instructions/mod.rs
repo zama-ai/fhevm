@@ -3,6 +3,7 @@
 //! The public Anchor entrypoints in `lib.rs` delegate into these modules so
 //! account contexts, validation, and handler logic stay out of the crate root.
 
+pub mod cancel_dispatch;
 pub mod claim;
 pub mod dispatch;
 pub mod initialize_batcher;
@@ -19,6 +20,7 @@ use zama_host::program::ZamaHost;
 
 use crate::{constants::*, errors::*, events::*, fhe, state::*};
 
+pub use cancel_dispatch::*;
 pub use claim::*;
 pub use dispatch::*;
 pub use initialize_batcher::*;
@@ -29,7 +31,7 @@ pub use settle::*;
 
 /// Moves lamports from the transaction payer to the batch authority PDA, which
 /// pays the rent that token CPIs charge to the account owner (token-account
-/// creation at open, the redemption marker and execution growth at settle).
+/// creation at open, the pending burn at dispatch, and execution growth at settle).
 /// Unspent lamports stay on the PDA and are unrecoverable by design in this
 /// PoC — there is no sweep instruction.
 pub(crate) fn fund_batch_authority<'info>(

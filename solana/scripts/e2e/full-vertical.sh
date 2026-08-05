@@ -497,8 +497,8 @@ for i in $(seq 1 40); do
   [ "$i" = 40 ] && fail "burned-handle SNS commit timed out"; sleep 6
 done
 
-# Seal the burned handle publicly decryptable via the host make_handle_public instruction (owner is
-# an allowed subject in the burned ACL). After fhevm-internal#1704 there is no DisclosureRequest
+# Seal the burned handle publicly decryptable through the token wrapper, which signs the Host CPI as
+# the token-account encrypted value account authority. After fhevm-internal#1704 there is no DisclosureRequest
 # witness: the sealed public-decrypt leaf IS the request.
 relout="$(lc CONSUME_SEAL=1 TS_ACL="$BURNED_ACL" TS_HANDLE="$BURNED_HANDLE")" || true
 echo "$relout" | grep -q 'OK make_handle_public' || fail "seal (make_handle_public): $(echo "$relout" | tail -3)"
@@ -523,8 +523,9 @@ CEXTRA="$(echo "$cr" | python3 -c "import sys,json;print(json.load(sys.stdin)['r
 echo "    burned amount cleartext=$CLEARTEXT (KMS PublicDecryptVerification cert)"
 
 # Redeem: the thin token redeem_burned_amount CPIs the stateless host verify_public_decrypt (KMS cert
-# verified against the LIVE KMS context the cert names + the burned handle's MMR public-leaf proof), consults the
-# deny-list at payout, writes the permanent per-handle replay marker, and releases from the SPL vault.
+# verified against the LIVE KMS context the cert names + the burned handle's MMR public-leaf proof),
+# closes the token account's PendingBurn (act-once is open-at-burn + close-at-redeem-or-cancel),
+# and releases from the SPL vault. The grant deny-list is not a settlement gate.
 # No request witness (fhevm-internal#1763).
 redout="$(lc CONSUME_REDEEM=1 BURNED_ACL="$BURNED_ACL" BURNED_HANDLE="$BURNED_HANDLE" CLEARTEXT="$CLEARTEXT" \
    KMS_SIG="$KMS_SIG" EXTRA="$CEXTRA" KMS_CTX_ID=1 PROOF="$BURNED_PROOF_BYTES")" || true

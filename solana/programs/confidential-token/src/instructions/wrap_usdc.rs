@@ -16,21 +16,21 @@ pub struct WrapUsdc<'info> {
     #[account(mut)]
     pub token_account: Box<Account<'info, ConfidentialTokenAccount>>,
     /// Underlying SPL mint.
-    pub underlying_mint: Box<Account<'info, SplMint>>,
+    pub underlying_mint: Box<InterfaceAccount<'info, SplMint>>,
     /// Owner's source USDC token account.
     #[account(
         mut,
         constraint = user_usdc.mint == underlying_mint.key() @ ConfidentialTokenError::UnderlyingMintMismatch,
         constraint = user_usdc.owner == owner.key() @ ConfidentialTokenError::OwnerMismatch
     )]
-    pub user_usdc: Box<Account<'info, TokenAccount>>,
+    pub user_usdc: Box<InterfaceAccount<'info, TokenAccount>>,
     /// Program vault USDC token account.
     #[account(
         mut,
         constraint = vault_usdc.mint == underlying_mint.key() @ ConfidentialTokenError::UnderlyingMintMismatch,
         constraint = vault_usdc.owner == vault_authority.key() @ ConfidentialTokenError::VaultAuthorityMismatch
     )]
-    pub vault_usdc: Box<Account<'info, TokenAccount>>,
+    pub vault_usdc: Box<InterfaceAccount<'info, TokenAccount>>,
     /// CHECK: PDA authority for the underlying-token vault.
     #[account(seeds = [b"vault-authority", mint.key().as_ref()], bump)]
     pub vault_authority: UncheckedAccount<'info>,
@@ -52,8 +52,8 @@ pub struct WrapUsdc<'info> {
     pub zama_program: Program<'info, ZamaHost>,
     /// ZamaHost config used for handle derivation.
     pub host_config: Box<Account<'info, zama_host::HostConfig>>,
-    /// SPL token program.
-    pub token_program: Program<'info, Token>,
+    /// Classic Token or Token-2022 program owning the underlying mint and token accounts.
+    pub token_program: Interface<'info, TokenInterface>,
     /// System program used for ACL account creation.
     pub system_program: Program<'info, System>,
     /// CHECK: forwarded verbatim into the ZamaHost `fhe_execute` CPI, which validates it against the
@@ -70,6 +70,15 @@ pub struct WrapUsdc<'info> {
 /// Escrows public USDC and updates the confidential balance by `amount`.
 pub fn wrap_usdc<'info>(ctx: Context<'info, WrapUsdc<'info>>, amount: u64) -> Result<()> {
     assert_confidential_mint_shape(&ctx.accounts.mint)?;
+    assert_supported_underlying_mint(&ctx.accounts.underlying_mint, &ctx.accounts.token_program)?;
+    assert_supported_underlying_token_account(
+        &ctx.accounts.user_usdc,
+        &ctx.accounts.token_program,
+    )?;
+    assert_supported_underlying_token_account(
+        &ctx.accounts.vault_usdc,
+        &ctx.accounts.token_program,
+    )?;
     let mint_key = ctx.accounts.mint.key();
     let mint_domain = zama_fhe::Domain::new(mint_key);
     let decimals = ctx.accounts.mint.decimals;
@@ -99,6 +108,7 @@ pub fn wrap_usdc<'info>(ctx: Context<'info, WrapUsdc<'info>>, amount: u64) -> Re
         ctx.accounts.vault_usdc.key(),
         ctx.accounts.vault_authority.key(),
         ctx.accounts.underlying_mint.key(),
+        ctx.accounts.token_program.key(),
     )?;
     require_keys_eq!(
         ctx.accounts.compute_signer.key(),

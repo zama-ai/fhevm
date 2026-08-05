@@ -55,11 +55,13 @@ pub enum AclError {
 
 /// Current authorization state and compact history for one encrypted value account.
 ///
-/// Authorization is deliberately flat: `subjects` is binary membership with no
-/// roles, and any current subject may allow further subjects, remove others
-/// (not the last), or make the current handle public. Callers that need
-/// owner/spender-style distinctions must enforce them in the app program
-/// before granting (see INVARIANTS.md #11).
+/// Authorization membership is flat (`subjects` is binary membership with no
+/// roles). Subject-list mutation (`allow_subjects` / `remove_subject`) requires
+/// the signer to equal `EncryptedValue.encrypted_value_account_authority` — the same authority gate
+/// as persistent create/update. Decrypt subjects are not co-admins; apps that use a PDA as the
+/// encrypted value account authority rotate auditors by CPI + `invoke_signed` as that PDA.
+/// Confidential-token provides wrappers for token-account and total-supply values.
+/// `make_handle_public` is gated by encrypted value account authority (see INVARIANTS.md #11b).
 ///
 /// One account per encrypted value, reused across every handle update. The on-chain
 /// account is `realloc`-grown and never shrunk, so its byte size tracks the
@@ -71,9 +73,9 @@ pub struct EncryptedValue {
     /// App-level ACL domain, such as a confidential token mint.
     pub domain: [u8; 32],
     /// The account that controls this encrypted value: it must sign to create it, update its
-    /// handle, or replace its subject list. For a token balance this is the token account itself.
-    /// It is not the sole controller of the audience — any current subject may also add or remove
-    /// subjects through `allow_subjects` / `remove_subject`.
+    /// handle, or replace its subject list — including out-of-band `allow_subjects` /
+    /// `remove_subject` (decrypt subjects are not co-admins). For a token balance this is the
+    /// token account itself.
     pub encrypted_value_account_authority: [u8; 32],
     /// The encrypted value label: the third component of the encrypted value ID, naming which
     /// encrypted value of the authority this is.

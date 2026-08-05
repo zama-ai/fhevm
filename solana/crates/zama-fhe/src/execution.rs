@@ -166,7 +166,8 @@ impl FheExecution {
     /// subject on a create, and `output_subjects \ previous_state.subjects` on a
     /// update that replaces its audience. The host deny-list-checks each of
     /// these exactly like `allow_subjects`, so an app forwarding deny-record
-    /// witnesses must cover them alongside the output authorities.
+    /// witnesses must cover them alongside the grant authority whenever the
+    /// execution actually adds a subject.
     pub fn newly_granted_subjects(&self) -> Vec<Pubkey> {
         let mut added = Vec::new();
         for step in &self.args.steps {

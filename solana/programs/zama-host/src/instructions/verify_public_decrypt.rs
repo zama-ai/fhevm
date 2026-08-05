@@ -27,16 +27,19 @@
 //!
 //! - Releasing information — emitting the certified cleartext, caching it, displaying it — is
 //!   idempotent. A sealed handle is public forever, so a second run reveals nothing new and needs no
-//!   marker (`confidential-token::disclose_secp`).
-//! - Moving value or advancing a state machine on the certified cleartext is not. Guard it with one
-//!   write-once marker account per `(scope, handle)` — `init`-ed in the same instruction, seeded by
-//!   the scope and the handle, and never closed, because closing it makes the payout replayable.
-//!   Anchor's `init` failing on an existing account *is* the guard
-//!   (`confidential-token::redeem_burned_amount`, seeds `["burn-redemption", mint, burned_handle]`).
+//!   act-once state (`confidential-token::disclose_secp`).
+//! - Moving value or advancing a state machine on the certified cleartext is not. Guard it with an
+//!   account that is *opened* when the value-moving effect is first produced and *closed* exactly
+//!   once when it is finally consumed, so a second consumption attempt fails because the account is
+//!   gone (`confidential-token::redeem_burned_amount`, which closes the `PendingBurn` that
+//!   `confidential_burn` opened at seeds `["pending-burn", mint, token_account]`; the alternate close
+//!   path is `cancel_pending_burn`, while the burned handle is still current). Unlike a forever
+//!   write-once marker, the account's rent returns to the owner on close instead of being locked up
+//!   permanently.
 //!
-//! The marker cannot ship from a shared crate: Anchor derives an account type's owner from the
-//! program that declares it, so a marker declared here would be owned by this program and unusable
-//! as an app's own state. What is shared is this rule, the reference implementation named above, and
+//! The guard account cannot ship from a shared crate: Anchor derives an account type's owner from the
+//! program that declares it, so state declared here would be owned by this program and unusable as
+//! an app's own state. What is shared is this rule, the reference implementation named above, and
 //! the tests that pin both sides of it — see INVARIANTS #24.
 
 use anchor_lang::prelude::*;

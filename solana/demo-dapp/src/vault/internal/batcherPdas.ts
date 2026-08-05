@@ -10,7 +10,7 @@ import { CONFIDENTIAL_BATCHER_PROGRAM_ADDRESS } from './generated/confidentialBa
 const encoder = new TextEncoder();
 const BATCH_SEED = encoder.encode('batch');
 const TOKEN_ACCOUNT_SEED = encoder.encode('token-account');
-const BURN_REDEMPTION_SEED = encoder.encode('burn-redemption');
+const PENDING_BURN_SEED = encoder.encode('pending-burn');
 const ENCRYPTED_VALUE_SEED = encoder.encode('encrypted-value');
 /** Fixed confidential-token label for the all-or-zero burned amount (`encrypted_burned_amount_label`). */
 const ENCRYPTED_BURNED_AMOUNT_LABEL = encoder.encode('burned_amount___________________');
@@ -36,11 +36,7 @@ function addressBytes(value: Address): Uint8Array {
  * reading chain state. All the confidential-token/batcher field encrypted value accounts (balance, total supply,
  * burned amount, batcher pending/claim) are this same derivation under different labels.
  */
-export async function encryptedValueAddress(
-  domain: Address,
-  account: Address,
-  label: Uint8Array,
-): Promise<Address> {
+export async function encryptedValueAddress(domain: Address, account: Address, label: Uint8Array): Promise<Address> {
   const encryptedValueId = deriveEncryptedValueId(addressBytes(domain), addressBytes(account), label);
   return pda(ZAMA_HOST_PROGRAM_ADDRESS, [ENCRYPTED_VALUE_SEED, encryptedValueId]);
 }
@@ -59,14 +55,9 @@ export async function tokenAccountAddress(mint: Address, owner: Address): Promis
   return pda(CONFIDENTIAL_TOKEN_PROGRAM_ADDRESS, [TOKEN_ACCOUNT_SEED, addressBytes(mint), addressBytes(owner)]);
 }
 
-/**
- * The per-handle redemption replay marker for a settle (`burn_redemption_address`). Seeded by the
- * burned handle, it only exists after dispatch — this is why it cannot ride in the settle ALT
- * frozen at open_batch and must stay a static account in the v0 message.
- */
-export async function burnRedemptionAddress(mint: Address, burnedHandle: Uint8Array): Promise<Address> {
-  if (burnedHandle.length !== 32) throw new Error(`burned handle must be 32 bytes, got ${burnedHandle.length}`);
-  return pda(CONFIDENTIAL_TOKEN_PROGRAM_ADDRESS, [BURN_REDEMPTION_SEED, addressBytes(mint), burnedHandle]);
+/** The single PendingBurn for a confidential token account (`pending_burn_address`). */
+export async function pendingBurnAddress(mint: Address, tokenAccount: Address): Promise<Address> {
+  return pda(CONFIDENTIAL_TOKEN_PROGRAM_ADDRESS, [PENDING_BURN_SEED, addressBytes(mint), addressBytes(tokenAccount)]);
 }
 
 /** A confidential-value encrypted value account: its encrypted value ID and its canonical `EncryptedValue` PDA. */
@@ -76,15 +67,20 @@ export type SolanaEncryptedValueAccount = {
 };
 
 /**
- * The batch's burned-amount encrypted value account on the join mint (acl domain = join mint, authority = the
- * batch's join token account, label = `burned_amount`). Its encrypted value ID is the certificate's
+ * The batch's burned-amount encrypted value account on the join mint (domain = join mint,
+ * encrypted value account authority = the batch's join token account, encrypted value label =
+ * `burned_amount`). Its encrypted value ID is the certificate's
  * `aclValueKey` and its PDA is both `batchBurnedAmountValue` and the proof-service `encrypted_value`.
  */
 export async function burnedAmountValueAccount(
   joinMint: Address,
   batchJoinTokenAccount: Address,
 ): Promise<SolanaEncryptedValueAccount> {
-  const aclValueKey = deriveEncryptedValueId(addressBytes(joinMint), addressBytes(batchJoinTokenAccount), ENCRYPTED_BURNED_AMOUNT_LABEL);
+  const aclValueKey = deriveEncryptedValueId(
+    addressBytes(joinMint),
+    addressBytes(batchJoinTokenAccount),
+    ENCRYPTED_BURNED_AMOUNT_LABEL,
+  );
   return {
     aclValueKey,
     encryptedValueAddress: await pda(ZAMA_HOST_PROGRAM_ADDRESS, [ENCRYPTED_VALUE_SEED, aclValueKey]),
@@ -103,7 +99,8 @@ function concatBytes(...parts: Uint8Array[]): Uint8Array {
 
 /**
  * A batcher-owned per-user encrypted value account (`pending_join_value` or `claim_amount_value`). Batcher encrypted value accounts
- * live in the batch's own ACL domain: acl domain = batch, authority = batch authority, label =
+ * live in the batch's own domain: domain = batch, encrypted value account authority = batch
+ * authority, encrypted value label =
  * `sha256(purpose_prefix || user)` (`batcher_encrypted_value_address`). Use the returned
  * `aclValueKey` for a `decryptPosition` call and `encryptedValueAddress` as the account.
  */

@@ -19,10 +19,7 @@ import {
 } from './vault/index.js';
 
 import {
-  BATCH_CANCELED,
-  BATCH_DISPATCHED,
-  BATCH_PENDING,
-  BATCH_SETTLED,
+  BatchStatus,
   type BatchLifecycle,
   type BatchTarget,
   type VaultDirection,
@@ -124,7 +121,7 @@ export const readVaultLifecycle = async (
   direction: VaultDirection,
 ): Promise<BatchLifecycle> => {
   const { rpc, batch } = await currentPinnedBatch(session, position, direction);
-  if (batch.state.status === BATCH_PENDING) {
+  if (batch.state.status === BatchStatus.Pending) {
     const batcher = await getBatcher(rpc, vaultRoots(session.config, direction).batcher, { commitment: 'confirmed' });
     const currentSlot = await rpc.getSlot({ commitment: 'confirmed' }).send();
     const dispatchableAt = batch.state.openedSlot + batcher.minBatchAgeSlots;
@@ -133,10 +130,10 @@ export const readVaultLifecycle = async (
       remainingSlots: currentSlot >= dispatchableAt ? 0n : dispatchableAt - currentSlot,
     };
   }
-  if (batch.state.status === BATCH_DISPATCHED) {
+  if (batch.state.status === BatchStatus.Dispatched) {
     return { kind: 'proving', proofReady: await hasReadyProof(session, batch, direction) };
   }
-  if (batch.state.status === BATCH_SETTLED) {
+  if (batch.state.status === BatchStatus.Settled) {
     const joinRecord = await getJoinRecord(rpc, await deriveJoinRecordAddress(position.batch, session.signer.address), {
       commitment: 'confirmed',
     });
@@ -147,7 +144,8 @@ export const readVaultLifecycle = async (
       claimed: joinRecord.claimed,
     };
   }
-  if (batch.state.status === BATCH_CANCELED) return { kind: 'canceled' };
+  if (batch.state.status === BatchStatus.Canceled) return { kind: 'canceled' };
+  if (batch.state.status === BatchStatus.Refunding) return { kind: 'refunding' };
   throw new Error(`Unsupported batch status ${batch.state.status}`);
 };
 
@@ -158,7 +156,7 @@ export const dispatchVaultBatch = async (
 ): Promise<Signature | null> => {
   const roots = vaultRoots(session.config, direction);
   const { rpc, batch } = await currentPinnedBatch(session, position, direction);
-  if (batch.state.status >= BATCH_DISPATCHED) return null;
+  if (batch.state.status >= BatchStatus.Dispatched) return null;
   const batcher = await getBatcher(rpc, roots.batcher, { commitment: 'confirmed' });
   const currentSlot = await rpc.getSlot({ commitment: 'confirmed' }).send();
   if (currentSlot < batch.state.openedSlot + batcher.minBatchAgeSlots) {
@@ -191,8 +189,13 @@ export const settleVaultBatch = async (
 ): Promise<Signature | null> => {
   const roots = vaultRoots(session.config, direction);
   const { rpc, batch } = await currentPinnedBatch(session, position, direction);
-  if (batch.state.status === BATCH_SETTLED || batch.state.status === BATCH_CANCELED) return null;
-  if (batch.state.status !== BATCH_DISPATCHED) throw new Error('Dispatch the batch before settlement');
+  if (
+    batch.state.status === BatchStatus.Settled ||
+    batch.state.status === BatchStatus.Canceled ||
+    batch.state.status === BatchStatus.Refunding
+  )
+    return null;
+  if (batch.state.status !== BatchStatus.Dispatched) throw new Error('Dispatch the batch before settlement');
   if (!(await hasReadyProof(session, batch, direction))) throw new Error('The private proof is not ready yet');
 
   const rpcSubscriptions = createSolanaRpcSubscriptions(session.config.wsUrl);
