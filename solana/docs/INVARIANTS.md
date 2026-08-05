@@ -85,12 +85,12 @@ update, encrypted value ID…).
     (`EvalAccountTable::claim_persistent_output`), which is what stops two
     executions from deriving the same seed.
 18. **[HOLDS]** Values from two different builders cannot be mixed into one
-    execution: [`FheExecution::build`] hands each builder an invariant `'brand` lifetime
+    execution: [`FheExecution::build`] hands each builder an invariant `'id` lifetime
     that its transient values carry, so a foreign value is a compile error
     rather than a runtime check. It replaced a runtime scope tag that was inert
     on SBF (writable statics are forbidden on-chain, so every builder in a
     program shared one scope number). Persistent operands are deliberately
-    brand-free — a stored value belongs to no builder. Pinned by the
+    identity-free — a stored value belongs to no builder. Pinned by the
     `compile_fail` doctest on `FheExecution::build`. One runtime check remains, the
     producer-index bounds check, which protects the wire against hand-built
     args (fhevm-internal#1859 §4).

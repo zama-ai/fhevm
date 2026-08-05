@@ -28,7 +28,7 @@ use crate::accounts::{ExecutionAccountMeta, ExecutionEncryptedValueAccountAuthor
 use crate::acl::{BoundedU64UpperBound, Output};
 use crate::execution::FheExecution;
 use crate::lower::{lower_operand, lower_output, StepTables};
-use crate::operand::{BuilderBrand, Operand, OperandKind};
+use crate::operand::{BuilderIdentity, Operand, OperandKind};
 use crate::types::{Bool, Encrypted, FheIsIn, FheRandom, FheType, FheTyped, FheUint, Scalar, Uint};
 use crate::validate::{
     max_reduction_operands, operand_fhe_type, scalar_is_zero_for_type, validate_binary_step,
@@ -41,15 +41,15 @@ use crate::{FheExecutionBuildError, Result};
 
 /// Pubkey-oriented builder for `FheExecuteArgs`.
 ///
-/// `'brand` is this builder's identity: [`FheExecution::build`] hands every invocation a fresh invariant
+/// `'id` is this builder's identity: [`FheExecution::build`] hands every invocation a fresh invariant
 /// lifetime, every transient value it returns carries it, and the op methods only accept values of
-/// their own brand — so mixing two builders' values does not compile. That replaces a runtime tag
+/// their own identity — so mixing two builders' values does not compile. That replaces a runtime tag
 /// which SBF could not make unique (writable statics are forbidden on-chain, so every builder in a
 /// program shared one scope number and the check found nothing). It is also why there is no public
-/// constructor and no `Clone`: both would hand out a second builder wearing the same brand.
+/// constructor and no `Clone`: both would hand out a second builder wearing the same identity.
 #[derive(Debug)]
-pub struct FheExecutionBuilder<'brand> {
-    brand: BuilderBrand<'brand>,
+pub struct FheExecutionBuilder<'id> {
+    identity: BuilderIdentity<'id>,
     pub(crate) encrypted_value_account_authority: ExecutionEncryptedValueAccountAuthority,
     pub(crate) steps: Vec<FheExecuteStep>,
     pub(crate) produced_types: Vec<u8>,
@@ -122,7 +122,7 @@ pub(crate) const fn step_limit() -> usize {
     }
 }
 
-impl<'brand> FheExecutionBuilder<'brand> {
+impl<'id> FheExecutionBuilder<'id> {
     /// The single mutation path for appending a step. Every op method validates first, then lowers
     /// through this: lowering interns into the builder's own tables and, when any part of the step
     /// fails, [`StepTables::rollback`] undoes what it wrote, so a failed step leaves the builder
@@ -158,7 +158,7 @@ impl<'brand> FheExecutionBuilder<'brand> {
             remaining_accounts,
             dictionary,
             verified_inputs,
-            brand: _,
+            identity: _,
         } = self;
         let mut lowering = StepLowering {
             steps_len: steps.len(),
@@ -180,14 +180,14 @@ impl<'brand> FheExecutionBuilder<'brand> {
     }
 }
 
-impl<'brand> FheExecutionBuilder<'brand> {
-    /// Crate-internal: a public constructor would let two builders share one brand, which is the
-    /// mixing hazard the brand exists to remove. App code gets a builder from [`FheExecution::build`].
+impl<'id> FheExecutionBuilder<'id> {
+    /// Crate-internal: a public constructor would let two builders share one identity, which is the
+    /// mixing hazard the identity exists to remove. App code gets a builder from [`FheExecution::build`].
     pub(crate) fn new(
         encrypted_value_account_authority: ExecutionEncryptedValueAccountAuthority,
     ) -> Self {
         Self {
-            brand: std::marker::PhantomData,
+            identity: std::marker::PhantomData,
             encrypted_value_account_authority,
             steps: Vec::new(),
             produced_types: Vec::new(),
@@ -206,7 +206,7 @@ impl<'brand> FheExecutionBuilder<'brand> {
     pub fn verified_input<T: FheTyped>(
         &mut self,
         attestation: CoprocessorInputAttestation,
-    ) -> Result<Encrypted<'brand, T>> {
+    ) -> Result<Encrypted<'id, T>> {
         if handle_fhe_type(attestation.input_handle) != T::FHE_TYPE.byte() {
             return Err(FheExecutionBuildError::UnsupportedFheType);
         }
@@ -222,10 +222,10 @@ impl<'brand> FheExecutionBuilder<'brand> {
 
     pub fn add<T: FheUint>(
         &mut self,
-        lhs: impl Into<Encrypted<'brand, T>>,
-        rhs: impl Into<BinaryRhs<'brand, T>>,
+        lhs: impl Into<Encrypted<'id, T>>,
+        rhs: impl Into<BinaryRhs<'id, T>>,
         output: Output,
-    ) -> Result<Encrypted<'brand, T>> {
+    ) -> Result<Encrypted<'id, T>> {
         self.binary_op(
             FheBinaryOpCode::Add,
             lhs.into().operand(),
@@ -238,10 +238,10 @@ impl<'brand> FheExecutionBuilder<'brand> {
 
     pub fn sub<T: FheUint>(
         &mut self,
-        lhs: impl Into<Encrypted<'brand, T>>,
-        rhs: impl Into<BinaryRhs<'brand, T>>,
+        lhs: impl Into<Encrypted<'id, T>>,
+        rhs: impl Into<BinaryRhs<'id, T>>,
         output: Output,
-    ) -> Result<Encrypted<'brand, T>> {
+    ) -> Result<Encrypted<'id, T>> {
         self.binary_op(
             FheBinaryOpCode::Sub,
             lhs.into().operand(),
@@ -254,10 +254,10 @@ impl<'brand> FheExecutionBuilder<'brand> {
 
     pub fn ge<T: FheUint>(
         &mut self,
-        lhs: impl Into<Encrypted<'brand, T>>,
-        rhs: impl Into<BinaryRhs<'brand, T>>,
+        lhs: impl Into<Encrypted<'id, T>>,
+        rhs: impl Into<BinaryRhs<'id, T>>,
         output: Output,
-    ) -> Result<Encrypted<'brand, Bool>> {
+    ) -> Result<Encrypted<'id, Bool>> {
         self.binary_op(
             FheBinaryOpCode::Ge,
             lhs.into().operand(),
@@ -305,11 +305,11 @@ impl<'brand> FheExecutionBuilder<'brand> {
 
     pub fn if_then_else<T: FheTyped>(
         &mut self,
-        control: impl Into<Encrypted<'brand, Bool>>,
-        if_true: impl Into<Encrypted<'brand, T>>,
-        if_false: impl Into<Encrypted<'brand, T>>,
+        control: impl Into<Encrypted<'id, Bool>>,
+        if_true: impl Into<Encrypted<'id, T>>,
+        if_false: impl Into<Encrypted<'id, T>>,
         output: Output,
-    ) -> Result<Encrypted<'brand, T>> {
+    ) -> Result<Encrypted<'id, T>> {
         let control = control.into().operand();
         let if_true = if_true.into().operand();
         let if_false = if_false.into().operand();
@@ -348,7 +348,7 @@ impl<'brand> FheExecutionBuilder<'brand> {
         &mut self,
         plaintext: Scalar<T>,
         output: Output,
-    ) -> Result<Encrypted<'brand, T>> {
+    ) -> Result<Encrypted<'id, T>> {
         self.trivial_encrypt_raw(plaintext.bytes(), T::FHE_TYPE, output)
             .map(Encrypted::from_operand)
     }
@@ -379,11 +379,11 @@ impl<'brand> FheExecutionBuilder<'brand> {
         &mut self,
         plaintext: u64,
         output: Output,
-    ) -> Result<Encrypted<'brand, Uint<64>>> {
+    ) -> Result<Encrypted<'id, Uint<64>>> {
         self.trivial_encrypt(Scalar::<Uint<64>>::u64(plaintext), output)
     }
 
-    pub fn rand<T: FheRandom>(&mut self, output: Output) -> Result<Encrypted<'brand, T>> {
+    pub fn rand<T: FheRandom>(&mut self, output: Output) -> Result<Encrypted<'id, T>> {
         self.rand_raw(T::FHE_TYPE, output)
             .map(Encrypted::from_operand)
     }
@@ -401,7 +401,7 @@ impl<'brand> FheExecutionBuilder<'brand> {
         Ok(Operand::transient(step_index))
     }
 
-    pub fn rand_u64(&mut self, output: Output) -> Result<Encrypted<'brand, Uint<64>>> {
+    pub fn rand_u64(&mut self, output: Output) -> Result<Encrypted<'id, Uint<64>>> {
         self.rand::<Uint<64>>(output)
     }
 
@@ -409,7 +409,7 @@ impl<'brand> FheExecutionBuilder<'brand> {
         &mut self,
         upper_bound: BoundedU64UpperBound,
         output: Output,
-    ) -> Result<Encrypted<'brand, Uint<64>>> {
+    ) -> Result<Encrypted<'id, Uint<64>>> {
         let fhe_type = FheType::UINT64.byte();
         if self.steps.len() >= MAX_FHE_EXECUTION_STEPS {
             return Err(FheExecutionBuildError::TooManySteps);
@@ -429,10 +429,10 @@ impl<'brand> FheExecutionBuilder<'brand> {
 
     pub fn mul<T: FheUint>(
         &mut self,
-        lhs: impl Into<Encrypted<'brand, T>>,
-        rhs: impl Into<BinaryRhs<'brand, T>>,
+        lhs: impl Into<Encrypted<'id, T>>,
+        rhs: impl Into<BinaryRhs<'id, T>>,
         output: Output,
-    ) -> Result<Encrypted<'brand, T>> {
+    ) -> Result<Encrypted<'id, T>> {
         self.binary_op(
             FheBinaryOpCode::Mul,
             lhs.into().operand(),
@@ -445,10 +445,10 @@ impl<'brand> FheExecutionBuilder<'brand> {
 
     pub fn div<T: FheUint>(
         &mut self,
-        lhs: impl Into<Encrypted<'brand, T>>,
-        rhs: impl Into<BinaryRhs<'brand, T>>,
+        lhs: impl Into<Encrypted<'id, T>>,
+        rhs: impl Into<BinaryRhs<'id, T>>,
         output: Output,
-    ) -> Result<Encrypted<'brand, T>> {
+    ) -> Result<Encrypted<'id, T>> {
         self.binary_op(
             FheBinaryOpCode::Div,
             lhs.into().operand(),
@@ -461,10 +461,10 @@ impl<'brand> FheExecutionBuilder<'brand> {
 
     pub fn rem<T: FheUint>(
         &mut self,
-        lhs: impl Into<Encrypted<'brand, T>>,
-        rhs: impl Into<BinaryRhs<'brand, T>>,
+        lhs: impl Into<Encrypted<'id, T>>,
+        rhs: impl Into<BinaryRhs<'id, T>>,
         output: Output,
-    ) -> Result<Encrypted<'brand, T>> {
+    ) -> Result<Encrypted<'id, T>> {
         self.binary_op(
             FheBinaryOpCode::Rem,
             lhs.into().operand(),
@@ -477,10 +477,10 @@ impl<'brand> FheExecutionBuilder<'brand> {
 
     pub fn and<T: FheBitwise>(
         &mut self,
-        lhs: impl Into<Encrypted<'brand, T>>,
-        rhs: impl Into<BinaryRhs<'brand, T>>,
+        lhs: impl Into<Encrypted<'id, T>>,
+        rhs: impl Into<BinaryRhs<'id, T>>,
         output: Output,
-    ) -> Result<Encrypted<'brand, T>> {
+    ) -> Result<Encrypted<'id, T>> {
         self.binary_op(
             FheBinaryOpCode::And,
             lhs.into().operand(),
@@ -493,10 +493,10 @@ impl<'brand> FheExecutionBuilder<'brand> {
 
     pub fn or<T: FheBitwise>(
         &mut self,
-        lhs: impl Into<Encrypted<'brand, T>>,
-        rhs: impl Into<BinaryRhs<'brand, T>>,
+        lhs: impl Into<Encrypted<'id, T>>,
+        rhs: impl Into<BinaryRhs<'id, T>>,
         output: Output,
-    ) -> Result<Encrypted<'brand, T>> {
+    ) -> Result<Encrypted<'id, T>> {
         self.binary_op(
             FheBinaryOpCode::Or,
             lhs.into().operand(),
@@ -509,10 +509,10 @@ impl<'brand> FheExecutionBuilder<'brand> {
 
     pub fn xor<T: FheBitwise>(
         &mut self,
-        lhs: impl Into<Encrypted<'brand, T>>,
-        rhs: impl Into<BinaryRhs<'brand, T>>,
+        lhs: impl Into<Encrypted<'id, T>>,
+        rhs: impl Into<BinaryRhs<'id, T>>,
         output: Output,
-    ) -> Result<Encrypted<'brand, T>> {
+    ) -> Result<Encrypted<'id, T>> {
         self.binary_op(
             FheBinaryOpCode::Xor,
             lhs.into().operand(),
@@ -525,10 +525,10 @@ impl<'brand> FheExecutionBuilder<'brand> {
 
     pub fn shl<T: FheShift>(
         &mut self,
-        lhs: impl Into<Encrypted<'brand, T>>,
-        rhs: impl Into<BinaryRhs<'brand, T>>,
+        lhs: impl Into<Encrypted<'id, T>>,
+        rhs: impl Into<BinaryRhs<'id, T>>,
         output: Output,
-    ) -> Result<Encrypted<'brand, T>> {
+    ) -> Result<Encrypted<'id, T>> {
         self.binary_op(
             FheBinaryOpCode::Shl,
             lhs.into().operand(),
@@ -541,10 +541,10 @@ impl<'brand> FheExecutionBuilder<'brand> {
 
     pub fn shr<T: FheShift>(
         &mut self,
-        lhs: impl Into<Encrypted<'brand, T>>,
-        rhs: impl Into<BinaryRhs<'brand, T>>,
+        lhs: impl Into<Encrypted<'id, T>>,
+        rhs: impl Into<BinaryRhs<'id, T>>,
         output: Output,
-    ) -> Result<Encrypted<'brand, T>> {
+    ) -> Result<Encrypted<'id, T>> {
         self.binary_op(
             FheBinaryOpCode::Shr,
             lhs.into().operand(),
@@ -557,10 +557,10 @@ impl<'brand> FheExecutionBuilder<'brand> {
 
     pub fn rotl<T: FheShift>(
         &mut self,
-        lhs: impl Into<Encrypted<'brand, T>>,
-        rhs: impl Into<BinaryRhs<'brand, T>>,
+        lhs: impl Into<Encrypted<'id, T>>,
+        rhs: impl Into<BinaryRhs<'id, T>>,
         output: Output,
-    ) -> Result<Encrypted<'brand, T>> {
+    ) -> Result<Encrypted<'id, T>> {
         self.binary_op(
             FheBinaryOpCode::Rotl,
             lhs.into().operand(),
@@ -573,10 +573,10 @@ impl<'brand> FheExecutionBuilder<'brand> {
 
     pub fn rotr<T: FheShift>(
         &mut self,
-        lhs: impl Into<Encrypted<'brand, T>>,
-        rhs: impl Into<BinaryRhs<'brand, T>>,
+        lhs: impl Into<Encrypted<'id, T>>,
+        rhs: impl Into<BinaryRhs<'id, T>>,
         output: Output,
-    ) -> Result<Encrypted<'brand, T>> {
+    ) -> Result<Encrypted<'id, T>> {
         self.binary_op(
             FheBinaryOpCode::Rotr,
             lhs.into().operand(),
@@ -589,10 +589,10 @@ impl<'brand> FheExecutionBuilder<'brand> {
 
     pub fn eq<T: FheEq>(
         &mut self,
-        lhs: impl Into<Encrypted<'brand, T>>,
-        rhs: impl Into<BinaryRhs<'brand, T>>,
+        lhs: impl Into<Encrypted<'id, T>>,
+        rhs: impl Into<BinaryRhs<'id, T>>,
         output: Output,
-    ) -> Result<Encrypted<'brand, Bool>> {
+    ) -> Result<Encrypted<'id, Bool>> {
         self.binary_op(
             FheBinaryOpCode::Eq,
             lhs.into().operand(),
@@ -605,10 +605,10 @@ impl<'brand> FheExecutionBuilder<'brand> {
 
     pub fn ne<T: FheEq>(
         &mut self,
-        lhs: impl Into<Encrypted<'brand, T>>,
-        rhs: impl Into<BinaryRhs<'brand, T>>,
+        lhs: impl Into<Encrypted<'id, T>>,
+        rhs: impl Into<BinaryRhs<'id, T>>,
         output: Output,
-    ) -> Result<Encrypted<'brand, Bool>> {
+    ) -> Result<Encrypted<'id, Bool>> {
         self.binary_op(
             FheBinaryOpCode::Ne,
             lhs.into().operand(),
@@ -621,10 +621,10 @@ impl<'brand> FheExecutionBuilder<'brand> {
 
     pub fn gt<T: FheUint>(
         &mut self,
-        lhs: impl Into<Encrypted<'brand, T>>,
-        rhs: impl Into<BinaryRhs<'brand, T>>,
+        lhs: impl Into<Encrypted<'id, T>>,
+        rhs: impl Into<BinaryRhs<'id, T>>,
         output: Output,
-    ) -> Result<Encrypted<'brand, Bool>> {
+    ) -> Result<Encrypted<'id, Bool>> {
         self.binary_op(
             FheBinaryOpCode::Gt,
             lhs.into().operand(),
@@ -637,10 +637,10 @@ impl<'brand> FheExecutionBuilder<'brand> {
 
     pub fn le<T: FheUint>(
         &mut self,
-        lhs: impl Into<Encrypted<'brand, T>>,
-        rhs: impl Into<BinaryRhs<'brand, T>>,
+        lhs: impl Into<Encrypted<'id, T>>,
+        rhs: impl Into<BinaryRhs<'id, T>>,
         output: Output,
-    ) -> Result<Encrypted<'brand, Bool>> {
+    ) -> Result<Encrypted<'id, Bool>> {
         self.binary_op(
             FheBinaryOpCode::Le,
             lhs.into().operand(),
@@ -653,10 +653,10 @@ impl<'brand> FheExecutionBuilder<'brand> {
 
     pub fn lt<T: FheUint>(
         &mut self,
-        lhs: impl Into<Encrypted<'brand, T>>,
-        rhs: impl Into<BinaryRhs<'brand, T>>,
+        lhs: impl Into<Encrypted<'id, T>>,
+        rhs: impl Into<BinaryRhs<'id, T>>,
         output: Output,
-    ) -> Result<Encrypted<'brand, Bool>> {
+    ) -> Result<Encrypted<'id, Bool>> {
         self.binary_op(
             FheBinaryOpCode::Lt,
             lhs.into().operand(),
@@ -669,10 +669,10 @@ impl<'brand> FheExecutionBuilder<'brand> {
 
     pub fn min<T: FheUint>(
         &mut self,
-        lhs: impl Into<Encrypted<'brand, T>>,
-        rhs: impl Into<BinaryRhs<'brand, T>>,
+        lhs: impl Into<Encrypted<'id, T>>,
+        rhs: impl Into<BinaryRhs<'id, T>>,
         output: Output,
-    ) -> Result<Encrypted<'brand, T>> {
+    ) -> Result<Encrypted<'id, T>> {
         self.binary_op(
             FheBinaryOpCode::Min,
             lhs.into().operand(),
@@ -685,10 +685,10 @@ impl<'brand> FheExecutionBuilder<'brand> {
 
     pub fn max<T: FheUint>(
         &mut self,
-        lhs: impl Into<Encrypted<'brand, T>>,
-        rhs: impl Into<BinaryRhs<'brand, T>>,
+        lhs: impl Into<Encrypted<'id, T>>,
+        rhs: impl Into<BinaryRhs<'id, T>>,
         output: Output,
-    ) -> Result<Encrypted<'brand, T>> {
+    ) -> Result<Encrypted<'id, T>> {
         self.binary_op(
             FheBinaryOpCode::Max,
             lhs.into().operand(),
@@ -703,9 +703,9 @@ impl<'brand> FheExecutionBuilder<'brand> {
 
     pub fn neg<T: FheNeg>(
         &mut self,
-        operand: impl Into<Encrypted<'brand, T>>,
+        operand: impl Into<Encrypted<'id, T>>,
         output: Output,
-    ) -> Result<Encrypted<'brand, T>> {
+    ) -> Result<Encrypted<'id, T>> {
         self.unary_op(
             FheUnaryOpCode::Neg,
             operand.into().operand(),
@@ -717,9 +717,9 @@ impl<'brand> FheExecutionBuilder<'brand> {
 
     pub fn not<T: FheNot>(
         &mut self,
-        operand: impl Into<Encrypted<'brand, T>>,
+        operand: impl Into<Encrypted<'id, T>>,
         output: Output,
-    ) -> Result<Encrypted<'brand, T>> {
+    ) -> Result<Encrypted<'id, T>> {
         self.unary_op(
             FheUnaryOpCode::Not,
             operand.into().operand(),
@@ -731,9 +731,9 @@ impl<'brand> FheExecutionBuilder<'brand> {
 
     pub fn cast<FROM: FheTyped, TO: FheTyped>(
         &mut self,
-        operand: impl Into<Encrypted<'brand, FROM>>,
+        operand: impl Into<Encrypted<'id, FROM>>,
         output: Output,
-    ) -> Result<Encrypted<'brand, TO>> {
+    ) -> Result<Encrypted<'id, TO>> {
         self.unary_op(
             FheUnaryOpCode::Cast,
             operand.into().operand(),
@@ -745,9 +745,9 @@ impl<'brand> FheExecutionBuilder<'brand> {
 
     pub fn sum<T: FheUint>(
         &mut self,
-        operands: impl IntoIterator<Item = impl Into<Encrypted<'brand, T>>>,
+        operands: impl IntoIterator<Item = impl Into<Encrypted<'id, T>>>,
         output: Output,
-    ) -> Result<Encrypted<'brand, T>> {
+    ) -> Result<Encrypted<'id, T>> {
         // EVM `fheSum` and the coprocessor enforce no minimum: a zero/single-operand sum is valid.
         let operand_ops: Vec<Operand> = operands.into_iter().map(|e| e.into().operand()).collect();
         for op in &operand_ops {
@@ -780,10 +780,10 @@ impl<'brand> FheExecutionBuilder<'brand> {
 
     pub fn is_in<T: FheIsIn>(
         &mut self,
-        value: impl Into<Encrypted<'brand, T>>,
-        set: impl IntoIterator<Item = impl Into<Encrypted<'brand, T>>>,
+        value: impl Into<Encrypted<'id, T>>,
+        set: impl IntoIterator<Item = impl Into<Encrypted<'id, T>>>,
         output: Output,
-    ) -> Result<Encrypted<'brand, Bool>> {
+    ) -> Result<Encrypted<'id, Bool>> {
         // EVM `fheIsIn` and the coprocessor enforce no minimum: an empty set is valid (false result).
         let set_ops: Vec<Operand> = set.into_iter().map(|e| e.into().operand()).collect();
         let value_op = value.into().operand();
@@ -823,11 +823,11 @@ impl<'brand> FheExecutionBuilder<'brand> {
 
     pub fn mul_div<T: FheUint>(
         &mut self,
-        factor1: impl Into<Encrypted<'brand, T>>,
-        factor2: impl Into<BinaryRhs<'brand, T>>,
+        factor1: impl Into<Encrypted<'id, T>>,
+        factor2: impl Into<BinaryRhs<'id, T>>,
         divisor: Scalar<T>,
         output: Output,
-    ) -> Result<Encrypted<'brand, T>> {
+    ) -> Result<Encrypted<'id, T>> {
         let lhs = factor1.into().operand();
         let rhs = binary_rhs_operand(factor2);
         if matches!(lhs.0, OperandKind::Scalar(_)) {

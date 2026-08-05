@@ -36,13 +36,13 @@ pub struct FheExecution {
 
 impl FheExecution {
     /// Builds and validates an execution through a closure. This is the only way to get a
-    /// [`FheExecutionBuilder`]: the closure receives it under a fresh `'brand` lifetime that nothing
+    /// [`FheExecutionBuilder`]: the closure receives it under a fresh `'id` lifetime that nothing
     /// outside the closure can name, which is what makes a transient value of one builder
     /// unusable in another — the compiler rejects it instead of a runtime tag that on-chain was
     /// the same constant for every builder.
     ///
     /// The closure adds steps and returns nothing: its values belong to the builder, so letting one
-    /// out would defeat the brand.
+    /// out would defeat it.
     ///
     /// ```
     /// use anchor_lang::prelude::Pubkey;
@@ -80,7 +80,7 @@ impl FheExecution {
         build: F,
     ) -> Result<Self>
     where
-        F: for<'brand> FnOnce(&mut FheExecutionBuilder<'brand>) -> Result<()>,
+        F: for<'id> FnOnce(&mut FheExecutionBuilder<'id>) -> Result<()>,
     {
         let mut builder = FheExecutionBuilder::new(encrypted_value_account_authority);
         build(&mut builder)?;

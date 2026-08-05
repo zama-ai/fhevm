@@ -3,11 +3,11 @@
 use anchor_lang::prelude::Pubkey;
 use std::marker::PhantomData;
 
-/// Makes a builder's `'brand` lifetime invariant, so no two builders' brands are subtypes of one
-/// another and a value cannot be coerced from one builder into the next. Zero-sized: the brand
+/// Makes a builder's `'id` lifetime invariant, so no two builders' identities are subtypes of one
+/// another and a value cannot be coerced from one builder into the next. Zero-sized: the identity
 /// exists only in the type checker, which is the point — the runtime tag it replaced was a
 /// compile-time constant on SBF, so on-chain it never caught anything.
-pub(crate) type BuilderBrand<'brand> = PhantomData<fn(&'brand ()) -> &'brand ()>;
+pub(crate) type BuilderIdentity<'id> = PhantomData<fn(&'id ()) -> &'id ()>;
 
 /// Persistent host operand identified by its `EncryptedValue` PDA.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]

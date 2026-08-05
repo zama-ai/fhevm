@@ -106,7 +106,7 @@ pub(crate) struct BatchAuthorityExecute<'a, 'info> {
 pub(crate) fn execute_as_batch_authority<'info>(
     eval: BatchAuthorityExecute<'_, 'info>,
     dynamic_accounts: Vec<AccountInfo<'info>>,
-    build: impl for<'brand> FnOnce(&mut zama_fhe::FheExecutionBuilder<'brand>) -> zama_fhe::Result<()>,
+    build: impl for<'id> FnOnce(&mut zama_fhe::FheExecutionBuilder<'id>) -> zama_fhe::Result<()>,
 ) -> Result<()> {
     let bump = [eval.authority_bump];
     let authority_seeds: &[&[u8]] = &[BATCH_AUTHORITY_SEED, eval.batch.as_ref(), &bump];

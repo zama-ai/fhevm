@@ -5,7 +5,7 @@ use std::marker::PhantomData;
 use anchor_lang::prelude::Pubkey;
 
 use crate::acl::EncryptedValueId;
-use crate::operand::{BuilderBrand, Operand};
+use crate::operand::{BuilderIdentity, Operand};
 use crate::validate::{handle_fhe_type, validate_encrypted_value_id, validate_supported_fhe_type};
 use crate::{FheExecutionBuildError, Result};
 
@@ -266,22 +266,22 @@ impl FheIsIn for Bytes256 {}
 ///
 /// Transient values are returned by
 /// [`FheExecutionBuilder`](crate::FheExecutionBuilder) methods and can only be fed to later steps of the builder
-/// that produced them: `'brand` is that builder's identity, handed out by
+/// that produced them: `'id` is that builder's identity, handed out by
 /// [`FheExecution::build`](crate::FheExecution::build) as a fresh invariant lifetime, so mixing two builders'
-/// values is a type error. A persistent value belongs to no builder and takes whatever brand its
+/// values is a type error. A persistent value belongs to no builder and takes whatever identity its
 /// use site needs.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub struct Encrypted<'brand, T> {
+pub struct Encrypted<'id, T> {
     operand: Operand,
     marker: PhantomData<T>,
-    brand: BuilderBrand<'brand>,
+    identity: BuilderIdentity<'id>,
 }
 
 /// A persistent value as an operand: its handle plus the encrypted value account holding it.
 ///
 /// Brand-free on purpose. A stored value belongs to no builder, so app code can read one out of
 /// account state — with its own error handling — before it opens an execution, and then feed it to
-/// whichever builder needs it. Only the values a builder hands back are branded ([`Encrypted`]),
+/// whichever builder needs it. Only the values a builder hands back carry an identity ([`Encrypted`]),
 /// because only those are meaningless outside it.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct StoredValue<T> {
@@ -315,7 +315,7 @@ impl<T> Encrypted<'_, T> {
         Self {
             operand,
             marker: PhantomData,
-            brand: PhantomData,
+            identity: PhantomData,
         }
     }
 
@@ -407,16 +407,16 @@ impl Scalar<Bytes256> {
     }
 }
 
-/// Typed right-hand side accepted by binary execution ops. Carries the builder brand of the encrypted
+/// Typed right-hand side accepted by binary execution ops. Carries the builder identity of the encrypted
 /// arm; a scalar belongs to no builder.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum BinaryRhs<'brand, T> {
-    Encrypted(Encrypted<'brand, T>),
+pub enum BinaryRhs<'id, T> {
+    Encrypted(Encrypted<'id, T>),
     Scalar(Scalar<T>),
 }
 
-impl<'brand, T> From<Encrypted<'brand, T>> for BinaryRhs<'brand, T> {
-    fn from(value: Encrypted<'brand, T>) -> Self {
+impl<'id, T> From<Encrypted<'id, T>> for BinaryRhs<'id, T> {
+    fn from(value: Encrypted<'id, T>) -> Self {
         Self::Encrypted(value)
     }
 }
@@ -433,7 +433,7 @@ impl<T> From<StoredValue<T>> for BinaryRhs<'_, T> {
     }
 }
 
-pub(crate) fn binary_rhs_operand<'brand, T>(rhs: impl Into<BinaryRhs<'brand, T>>) -> Operand {
+pub(crate) fn binary_rhs_operand<'id, T>(rhs: impl Into<BinaryRhs<'id, T>>) -> Operand {
     match rhs.into() {
         BinaryRhs::Encrypted(value) => value.operand(),
         BinaryRhs::Scalar(value) => Operand::scalar(value.bytes()),
