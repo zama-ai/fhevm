@@ -8,6 +8,7 @@ import { defineClientDecryptPermitCacheTests } from '../viem-common/clientDecryp
 // CHAIN=localstack_v11 npx vitest run --config test/fheTest/vitest.config.ts viem/clientDecrypt.permitCache.test.ts
 // CHAIN=localstack_v12 npx vitest run --config test/fheTest/vitest.config.ts viem/clientDecrypt.permitCache.test.ts
 // CHAIN=localstack     npx vitest run --config test/fheTest/vitest.config.ts viem/clientDecrypt.permitCache.test.ts
+// CHAIN=devnet         npx vitest run --config test/fheTest/vitest.config.ts viem/clientDecrypt.permitCache.test.ts
 //
 ////////////////////////////////////////////////////////////////////////////////
 

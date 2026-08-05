@@ -18,6 +18,7 @@ import { decryptModule } from '../../../src/core/modules/decrypt/module/index.js
 import { defineFhevmChain } from '../../../src/core/chains/utils.js';
 import { createZkProofBuilder } from '../../../src/core/coprocessor/ZkProofBuilder-p.js';
 import { globalFheEncryptionKeyCache } from '../../../src/core/key/FheEncryptionKeyCache-p.js';
+import { createFhevmClientFrozenContext } from '../../../src/core/frozenContext/fhevmClientFrozenContext-p.js';
 
 ////////////////////////////////////////////////////////////////////////////////
 // Versions + resource budget
@@ -321,8 +322,15 @@ export async function buildUint64Proof(
   const builder = createZkProofBuilder();
   builder.addUint64(42n);
   return builder.build(
-    { chain, runtime, tfheVersion },
-    { contractAddress: DUMMY_CONTRACT_ADDRESS, userAddress: DUMMY_USER_ADDRESS, extraData: '0x00' },
+    { chain, runtime },
+    {
+      contractAddress: DUMMY_CONTRACT_ADDRESS,
+      userAddress: DUMMY_USER_ADDRESS,
+      extraData: '0x00',
+      // No real client here — synthesize the frozen version basis carrying the
+      // TFHE version under test; build() reads its tfheVersion from this.
+      fhevmContext: createFhevmClientFrozenContext({ tfheVersion }),
+    },
   );
 }
 
