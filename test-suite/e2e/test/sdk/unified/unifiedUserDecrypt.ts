@@ -109,8 +109,10 @@ export interface UnifiedDecryptRequest {
  *  - `erc1271`: `ownerSigner` (an owner key) signs; `userAddress` is the smart-wallet
  *     address, so the KMS/relayer verify via the wallet's `isValidSignature`.
  *  - `empty`: no signature (`0x`) — the Safe `approveHash` / `signedMessages` flow.
- *  - `raw`: a pre-built signature blob forwarded verbatim — multisig concatenations
- *     (see `buildMultisigSignature`) and deliberately malformed blobs for negatives.
+ *  - `raw`: a pre-built signature blob forwarded verbatim — Safe multisig
+ *     concatenations (see `buildSafeMultisigSignature` in
+ *     test/erc1271UserDecryption/safe.ts) and deliberately malformed blobs for
+ *     negatives.
  */
 export type SignMode =
   | { readonly kind: 'eoa'; readonly signer: Signer }
@@ -230,8 +232,10 @@ function requestChainId(req: UnifiedDecryptRequest): number {
 
 /**
  * Compute the EIP-712 digest that both `ecrecover` and ERC-1271
- * `isValidSignature` receive. Exposed so Safe-style mocks can pre-approve it via
- * `approveHash(digest)` before an empty-signature request.
+ * `isValidSignature` receive. Mock wallets pre-approve it directly via
+ * `approveHash(digest)`; a real Safe verifies over its SafeMessage RE-HASH of
+ * this digest, so Safe owners sign (and Safe approvals target) the wrapped
+ * hash instead — see test/erc1271UserDecryption/safe.ts.
  */
 export function computeUnifiedDigest(cfg: UnifiedConfig, req: UnifiedDecryptRequest): string {
   const chainId = requestChainId(req);
@@ -264,47 +268,6 @@ export function sortSignatureParts(parts: readonly SignaturePart[]): SignaturePa
  */
 export function concatSignatureParts(parts: readonly SignaturePart[], trailingHex = ''): string {
   return `0x${parts.map((p) => p.signature.slice(2)).join('')}${trailingHex}`;
-}
-
-/**
- * Each owner signs the unified EIP-712 struct — one plain ECDSA (v=27/28)
- * part per owner, UNSORTED (callers arrange/sort/concat as the scenario
- * needs; see `sortSignatureParts` / `concatSignatureParts`).
- */
-export async function collectOwnerParts(
-  cfg: UnifiedConfig,
-  req: UnifiedDecryptRequest,
-  owners: readonly Signer[],
-): Promise<SignaturePart[]> {
-  const chainId = requestChainId(req);
-  const domain = domainOf(cfg, chainId);
-  const message = messageOf(req);
-  return Promise.all(
-    owners.map(async (owner) => ({
-      address: (await owner.getAddress()).toLowerCase(),
-      signature: await owner.signTypedData(domain, UNIFIED_USER_DECRYPT_TYPES, message),
-    })),
-  );
-}
-
-/**
- * Build a Safe-style multisig signature: each owner signs the unified EIP-712
- * struct, and the 65-byte parts are concatenated sorted ascending by owner
- * address. Submit the result via SignMode `{kind: 'raw'}`. `order:
- * 'descending'` deliberately reverses the part order for ordering negatives;
- * passing the same signer twice yields a duplicated-part blob.
- */
-export async function buildMultisigSignature(
-  cfg: UnifiedConfig,
-  req: UnifiedDecryptRequest,
-  owners: readonly Signer[],
-  opts?: { readonly order?: 'ascending' | 'descending' },
-): Promise<string> {
-  const parts = sortSignatureParts(await collectOwnerParts(cfg, req, owners));
-  if (opts?.order === 'descending') {
-    parts.reverse();
-  }
-  return concatSignatureParts(parts);
 }
 
 async function signRequest(cfg: UnifiedConfig, req: UnifiedDecryptRequest, mode: SignMode): Promise<string> {
