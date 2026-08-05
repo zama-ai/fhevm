@@ -1,8 +1,5 @@
 use fhevm_engine_common::{
-    db_keys::{
-        read_server_key_by_sequence_number, CompressedXofKeysetEncoding, DbKeyId,
-        ServerKeyRepresentation,
-    },
+    db_keys::{read_server_key_by_sequence_number, CompressedXofKeysetEncoding, DbKeyId},
     utils::safe_deserialize_sns_key,
 };
 use sqlx::PgPool;
@@ -80,14 +77,13 @@ async fn fetch_latest_key_id_gw(pool: &PgPool) -> Result<Option<(DbKeyId, i64)>,
 pub(crate) async fn fetch_latest_keyset(
     cache: &Arc<RwLock<lru::LruCache<DbKeyId, KeySet>>>,
     pool: &PgPool,
-    representation: ServerKeyRepresentation,
+    force_legacy: bool,
 ) -> Result<Option<(DbKeyId, KeySet)>, ExecutionError> {
     let Some((key_id_gw, sequence_number)) = fetch_latest_key_id_gw(pool).await? else {
         return Ok(None);
     };
 
-    let keyset =
-        fetch_keyset_by_id(cache, pool, &key_id_gw, sequence_number, representation).await?;
+    let keyset = fetch_keyset_by_id(cache, pool, &key_id_gw, sequence_number, force_legacy).await?;
     Ok(keyset.map(|keys| (key_id_gw, keys)))
 }
 
@@ -96,7 +92,7 @@ async fn fetch_keyset_by_id(
     pool: &PgPool,
     key_id_gw: &DbKeyId,
     sequence_number: i64,
-    representation: ServerKeyRepresentation,
+    force_legacy: bool,
 ) -> Result<Option<KeySet>, ExecutionError> {
     {
         let mut cache = cache.write().await;
@@ -126,7 +122,7 @@ async fn fetch_keyset_by_id(
         pool,
         sequence_number,
         SKS_KEY_WITH_NOISE_SQUASHING_SIZE,
-        representation,
+        force_legacy,
     )
     .await?;
     info!(

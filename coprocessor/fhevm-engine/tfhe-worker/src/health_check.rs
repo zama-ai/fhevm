@@ -1,7 +1,9 @@
 use std::time::Duration;
 
 use fhevm_engine_common::database::connect_options_for_database_url;
-use fhevm_engine_common::db_keys::{is_server_key_material_available, ServerKeyRepresentation};
+use fhevm_engine_common::db_keys::{
+    force_legacy_server_key_from_env, is_server_key_material_available,
+};
 use fhevm_engine_common::healthz_server::{
     default_get_version, HealthCheckService, HealthStatus, Version,
 };
@@ -16,7 +18,7 @@ pub struct HealthCheck {
     pub database_url: DatabaseURL,
     pub database_heartbeat: HeartBeat,
     pub activity_heartbeat: HeartBeat,
-    server_key_representation: ServerKeyRepresentation,
+    force_legacy_server_key: bool,
 }
 
 impl HealthCheck {
@@ -28,7 +30,7 @@ impl HealthCheck {
             database_url,
             database_heartbeat: HeartBeat::new(),
             activity_heartbeat: HeartBeat::new(),
-            server_key_representation: ServerKeyRepresentation::from_env()?,
+            force_legacy_server_key: force_legacy_server_key_from_env()?,
         })
     }
 
@@ -78,7 +80,7 @@ impl HealthCheckService for HealthCheck {
                     .await
                 {
                     Ok(pool) => {
-                        is_server_key_material_available(&pool, self.server_key_representation)
+                        is_server_key_material_available(&pool, self.force_legacy_server_key)
                             .await
                             .unwrap_or(false)
                     }

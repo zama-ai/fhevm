@@ -1,4 +1,4 @@
-use fhevm_engine_common::db_keys::{DbKeyCache, ServerKeyRepresentation};
+use fhevm_engine_common::db_keys::DbKeyCache;
 use serial_test::serial;
 use sqlx::postgres::PgPoolOptions;
 use test_harness::instance::{setup_test_db, ImportMode};
@@ -104,8 +104,7 @@ async fn test_fetch_latest_refreshes_cache_after_key_rotation(
 #[tokio::test]
 #[serial(db)]
 #[cfg(not(feature = "gpu"))]
-async fn test_legacy_selection_ignores_compressed_material(
-) -> Result<(), Box<dyn std::error::Error>> {
+async fn test_force_legacy_ignores_compressed_material() -> Result<(), Box<dyn std::error::Error>> {
     let db = setup_test_db(ImportMode::WithKeysNoSns).await?;
     let pool = PgPoolOptions::new().connect(db.db_url()).await?;
     sqlx::query("UPDATE keys SET compressed_xof_keyset = $1")
@@ -113,7 +112,7 @@ async fn test_legacy_selection_ignores_compressed_material(
         .execute(&pool)
         .await?;
 
-    DbKeyCache::new_with_representation(1, ServerKeyRepresentation::Legacy)?
+    DbKeyCache::new_with_force_legacy(1, true)?
         .fetch_latest_from_pool(&pool)
         .await?;
     Ok(())
@@ -121,8 +120,8 @@ async fn test_legacy_selection_ignores_compressed_material(
 
 #[test]
 #[cfg(feature = "gpu")]
-fn test_legacy_selection_is_rejected_by_gpu_workers() {
-    let error = match DbKeyCache::new_with_representation(1, ServerKeyRepresentation::Legacy) {
+fn test_force_legacy_is_rejected_by_gpu_workers() {
+    let error = match DbKeyCache::new_with_force_legacy(1, true) {
         Ok(_) => panic!("GPU workers must reject legacy server keys"),
         Err(error) => error,
     };
@@ -131,8 +130,8 @@ fn test_legacy_selection_is_rejected_by_gpu_workers() {
 
 #[tokio::test]
 #[serial(db)]
-async fn test_auto_preserves_compressed_first_selection() -> Result<(), Box<dyn std::error::Error>>
-{
+async fn test_default_preserves_compressed_first_selection(
+) -> Result<(), Box<dyn std::error::Error>> {
     let db = setup_test_db(ImportMode::WithKeysNoSns).await?;
     let pool = PgPoolOptions::new().connect(db.db_url()).await?;
     sqlx::query("UPDATE keys SET compressed_xof_keyset = $1")
@@ -140,11 +139,11 @@ async fn test_auto_preserves_compressed_first_selection() -> Result<(), Box<dyn 
         .execute(&pool)
         .await?;
 
-    let error = match DbKeyCache::new_with_representation(1, ServerKeyRepresentation::Auto)?
+    let error = match DbKeyCache::new_with_force_legacy(1, false)?
         .fetch_latest_from_pool(&pool)
         .await
     {
-        Ok(_) => panic!("auto must prefer present compressed material"),
+        Ok(_) => panic!("the default must prefer present compressed material"),
         Err(error) => error,
     };
     assert!(error.to_string().contains("CompressedXofKeySet"));
@@ -154,7 +153,7 @@ async fn test_auto_preserves_compressed_first_selection() -> Result<(), Box<dyn 
 #[tokio::test]
 #[serial(db)]
 #[cfg(not(feature = "gpu"))]
-async fn test_auto_falls_back_to_legacy_when_compressed_material_is_missing(
+async fn test_default_falls_back_to_legacy_when_compressed_material_is_missing(
 ) -> Result<(), Box<dyn std::error::Error>> {
     let db = setup_test_db(ImportMode::WithKeysNoSns).await?;
     let pool = PgPoolOptions::new().connect(db.db_url()).await?;
@@ -162,7 +161,7 @@ async fn test_auto_falls_back_to_legacy_when_compressed_material_is_missing(
         .execute(&pool)
         .await?;
 
-    DbKeyCache::new_with_representation(1, ServerKeyRepresentation::Auto)?
+    DbKeyCache::new_with_force_legacy(1, false)?
         .fetch_latest_from_pool(&pool)
         .await?;
     Ok(())
@@ -171,14 +170,14 @@ async fn test_auto_falls_back_to_legacy_when_compressed_material_is_missing(
 #[tokio::test]
 #[serial(db)]
 #[cfg(feature = "gpu")]
-async fn test_auto_rejects_legacy_fallback_on_gpu() -> Result<(), Box<dyn std::error::Error>> {
+async fn test_default_rejects_legacy_fallback_on_gpu() -> Result<(), Box<dyn std::error::Error>> {
     let db = setup_test_db(ImportMode::WithKeysNoSns).await?;
     let pool = PgPoolOptions::new().connect(db.db_url()).await?;
     sqlx::query("UPDATE keys SET compressed_xof_keyset = NULL")
         .execute(&pool)
         .await?;
 
-    let error = match DbKeyCache::new_with_representation(1, ServerKeyRepresentation::Auto)?
+    let error = match DbKeyCache::new_with_force_legacy(1, false)?
         .fetch_latest_from_pool(&pool)
         .await
     {
@@ -186,27 +185,5 @@ async fn test_auto_rejects_legacy_fallback_on_gpu() -> Result<(), Box<dyn std::e
         Err(error) => error,
     };
     assert!(error.to_string().contains("compressed_xof_keyset"));
-    Ok(())
-}
-
-#[tokio::test]
-#[serial(db)]
-async fn test_compressed_selection_fails_closed_when_material_is_missing(
-) -> Result<(), Box<dyn std::error::Error>> {
-    let db = setup_test_db(ImportMode::WithKeysNoSns).await?;
-    let pool = PgPoolOptions::new().connect(db.db_url()).await?;
-    sqlx::query("UPDATE keys SET compressed_xof_keyset = NULL")
-        .execute(&pool)
-        .await?;
-
-    let error =
-        match DbKeyCache::new_with_representation(1, ServerKeyRepresentation::CompressedXof)?
-            .fetch_latest_from_pool(&pool)
-            .await
-        {
-            Ok(_) => panic!("missing selected representation must fail"),
-            Err(error) => error,
-        };
-    assert!(error.to_string().contains("CompressedXof"));
     Ok(())
 }
