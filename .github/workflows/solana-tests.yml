@@ -240,7 +240,19 @@ jobs:
           test "$(awk -F'"' '/^anchor_version/ { print $2 }' Anchor.toml)" = "${ANCHOR_VERSION}"
 
       - name: Build Anchor programs and check host-listener IDL sync
+        id: idl-sync
         run: bash scripts/check-zama-host-idl.sh
+
+      # A committed IDL that disagrees with the build is fixed by copying the build's output over
+      # it, never by editing the JSON — and whoever hits this may have no local SBF toolchain.
+      # These are the files sync-zama-host-idl.sh would have written.
+      - name: Upload the freshly built IDLs when the sync check fails
+        if: ${{ failure() && steps.idl-sync.conclusion == 'failure' }}
+        uses: actions/upload-artifact@65c4c4a1ddee5b72f698fdd19549f0f0fb45cf08 # v4.6.0
+        with:
+          name: solana-built-idls
+          path: solana/target/idl/*.json
+          if-no-files-found: error
 
       - name: Check Rust formatting
         run: cargo fmt --check

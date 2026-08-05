@@ -39,6 +39,35 @@ PROGRAMS = {
     },
 }
 
+# The two demo-only programs. Their IDLs are vendored next to the dapp that consumes
+# them (solana/demo-dapp/idl), because the SDK's Codama codegen renders their
+# TypeScript clients from those copies. They stay out of the manifest below on
+# purpose — nothing off-chain mirrors their layouts, so they have no schema hash and
+# no Borsh golden — but the vendored copy still has to be what `anchor build` wrote
+# and not something edited by hand, so it is copied and compared like the two above.
+DEMO_PROGRAMS = {
+    "confidential_batcher": {
+        "target_idl": "target/idl/confidential_batcher.json",
+        "vendored_idl": "demo-dapp/idl/confidential_batcher.json",
+    },
+    "demo_vault": {
+        "target_idl": "target/idl/demo_vault.json",
+        "vendored_idl": "demo-dapp/idl/demo_vault.json",
+    },
+}
+
+
+def vendored_idls() -> dict[str, dict[str, Any]]:
+    """Every IDL whose committed copy must equal the build output.
+
+    One list drives both directions: `--write` copies each of these out of
+    target/idl, and the check compares each one back. Keeping the two directions on
+    separate lists is what left the demo programs' IDLs copied by sync-zama-host-idl.sh
+    and compared by nothing.
+    """
+    return {**PROGRAMS, **DEMO_PROGRAMS}
+
+
 PINNED_SCHEMAS = [
     ("zama_host", "account", "HostConfig", True),
     ("zama_host", "account", "KmsContext", True),
@@ -110,7 +139,7 @@ def main() -> int:
     ).resolve()
 
     if args.write:
-        for spec in PROGRAMS.values():
+        for spec in vendored_idls().values():
             shutil.copyfile(
                 root / spec["target_idl"],
                 (root / spec["vendored_idl"]).resolve(),
@@ -126,16 +155,23 @@ def main() -> int:
         return 0
 
     errors: list[str] = []
-    for program, spec in PROGRAMS.items():
+    for program, spec in vendored_idls().items():
         target = root / spec["target_idl"]
         vendored = (root / spec["vendored_idl"]).resolve()
+        if not target.exists():
+            errors.append(
+                f"{program}: {target} is missing, so its vendored IDL was compared "
+                "with nothing; anchor build must run before this check"
+            )
+            continue
         if not vendored.exists():
             errors.append(f"{program}: missing vendored IDL {vendored}")
             continue
         if load_json(target) != load_json(vendored):
             errors.append(
                 f"{program}: vendored IDL is out of sync with {target}; "
-                "run solana/scripts/sync-zama-host-idl.sh"
+                "run solana/scripts/sync-zama-host-idl.sh to copy the build output "
+                "over it — never edit a vendored IDL by hand"
             )
 
     if not manifest_path.exists():
