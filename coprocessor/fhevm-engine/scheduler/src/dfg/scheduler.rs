@@ -350,55 +350,48 @@ fn execute_partition(
                 error!(target: "scheduler", {index = ?nidx.index() }, "Wrong dataflow graph index");
                 continue;
             };
-            let producer_handles: Vec<Handle> = node.result_handles.clone();
             let result = try_execute_node(node, nidx.index(), tx_inputs, gpu_idx, &tid, &cpk);
             match result {
                 Ok(result) => {
                     let nidx = NodeIndex::new(result.0);
-                    if let Ok(ref vec_res) = result.1 {
-                        // Match consumer dep handle against producer_handles to
-                        // forward the right ciphertext from a multi-output op.
-                        for edge in edges.edges_directed(nidx, Direction::Outgoing) {
-                            let child_index = edge.target();
-                            let input_idx = *edge.weight() as usize;
-                            let Some(child_node) = dfg.graph.node_weight_mut(child_index) else {
-                                error!(target: "scheduler", {index = ?child_index.index() }, "Wrong dataflow graph index");
-                                continue;
-                            };
-                            let dep_handle = match child_node.inputs.get(input_idx) {
-                                Some(DFGTaskInput::Dependence(dh)) => dh.clone(),
-                                _ => continue,
-                            };
-                            let Some(out_idx) =
-                                producer_handles.iter().position(|h| h == &dep_handle)
-                            else {
-                                error!(target: "scheduler",
-                                    { handle = ?hex::encode(&dep_handle) },
-                                    "Consumer dependence handle not found in producer outputs - graph inconsistency");
-                                continue;
-                            };
-                            let Some(ct) = vec_res.get(out_idx) else {
-                                error!(target: "scheduler",
-                                    { out_idx, vec_len = vec_res.len() },
-                                    "Result vector shorter than expected output index");
-                                continue;
-                            };
-                            child_node.inputs[input_idx] = DFGTaskInput::Compressed(ct.clone());
-                        }
-                    }
-                    // Update partition's outputs (allowed handles only)
-                    let Some(node) = dfg.graph.node_weight_mut(nidx) else {
+                    let Some(node) = dfg.graph.node_weight(nidx) else {
                         error!(target: "scheduler", {index = ?nidx.index() }, "Wrong dataflow graph index");
                         continue;
                     };
+                    let producer_handles = node.result_handles.clone();
                     let is_allowed = node.is_allowed;
                     match result.1 {
                         Ok(vec_res) if vec_res.len() == producer_handles.len() => {
-                            for (h, ct) in producer_handles.iter().zip(vec_res.iter()) {
+                            // Route each validated output to the consumers that depend on it.
+                            for edge in edges.edges_directed(nidx, Direction::Outgoing) {
+                                let child_index = edge.target();
+                                let input_idx = *edge.weight() as usize;
+                                let Some(child_node) = dfg.graph.node_weight_mut(child_index)
+                                else {
+                                    error!(target: "scheduler", {index = ?child_index.index() }, "Wrong dataflow graph index");
+                                    continue;
+                                };
+                                let dep_handle = match child_node.inputs.get(input_idx) {
+                                    Some(DFGTaskInput::Dependence(dh)) => dh.clone(),
+                                    _ => continue,
+                                };
+                                let Some(out_idx) =
+                                    producer_handles.iter().position(|h| h == &dep_handle)
+                                else {
+                                    error!(target: "scheduler",
+                                        { handle = ?hex::encode(&dep_handle) },
+                                        "Consumer dependence handle not found in producer outputs - graph inconsistency");
+                                    continue;
+                                };
+                                child_node.inputs[input_idx] =
+                                    DFGTaskInput::Compressed(vec_res[out_idx].clone());
+                            }
+                            // Publish each output under its corresponding handle.
+                            for (h, ct) in producer_handles.into_iter().zip(vec_res) {
                                 res.insert(
-                                    h.clone(),
+                                    h,
                                     Ok(TaskResult {
-                                        compressed_ct: ct.clone(),
+                                        compressed_ct: ct,
                                         is_allowed,
                                         transaction_id: tid.clone(),
                                     }),
@@ -406,20 +399,14 @@ fn execute_partition(
                             }
                         }
                         Ok(vec_res) => {
-                            // Should not happen; fail every handle loudly rather than stall.
-                            error!(target: "scheduler",
-                                { produced = vec_res.len(), expected = producer_handles.len() },
-                                "Multi-output arity mismatch: dispatch returned wrong number of ciphertexts");
-                            let msg = format!(
+                            let error = SchedulerError::MultiOutputFailure(format!(
                                 "multi-output arity mismatch: produced {} ciphertexts for {} handles",
                                 vec_res.len(),
                                 producer_handles.len()
-                            );
-                            fan_out_error(
-                                &producer_handles,
-                                SchedulerError::MultiOutputFailure(msg).into(),
-                                &mut res,
-                            );
+                            ));
+                            error!(target: "scheduler", { error = %error },
+                                "Multi-output arity mismatch: dispatch returned wrong number of ciphertexts");
+                            fan_out_error(&producer_handles, error.into(), &mut res);
                         }
                         Err(e) => fan_out_error(&producer_handles, e, &mut res),
                     }
@@ -430,7 +417,7 @@ fn execute_partition(
                         continue;
                     };
                     if node.is_allowed {
-                        fan_out_error(&producer_handles, e, &mut res);
+                        fan_out_error(&node.result_handles, e, &mut res);
                     }
                 }
             }
