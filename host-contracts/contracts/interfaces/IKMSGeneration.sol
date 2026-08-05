@@ -20,7 +20,9 @@ interface IKMSGeneration {
      */
     enum KeyType {
         Server, // 0
-        Public // 1
+        Public, // 1
+        Reserved, // 2
+        CompressedKeySet // 3
     }
 
     /**
@@ -87,6 +89,14 @@ interface IKMSGeneration {
      * @param keyDigests The digests of the generated keys.
      */
     event ActivateKey(uint256 keyId, string[] kmsNodeStorageUrls, KeyDigest[] keyDigests);
+
+    /**
+     * @notice Emitted when compressed material for an existing key is available.
+     * @param keyId The existing key ID. This event does not activate a new key.
+     * @param kmsNodeStorageUrls The KMS nodes' storage URLs that participated in consensus.
+     * @param keyDigests The digests of the published material.
+     */
+    event CompressedKeyMaterialAdded(uint256 indexed keyId, string[] kmsNodeStorageUrls, KeyDigest[] keyDigests);
 
     /**
      * @notice Emitted to trigger a CRS (Common Reference String) generation.

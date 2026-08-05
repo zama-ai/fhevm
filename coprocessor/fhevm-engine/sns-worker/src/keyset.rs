@@ -127,6 +127,12 @@ async fn fetch_keyset_by_id(
     .await?;
     info!(
         bytes_len = blob.len(),
+        server_key_representation =
+            if matches!(encoding, CompressedXofKeysetEncoding::CompressedXof) {
+                "compressed-xof"
+            } else {
+                "legacy"
+            },
         ?encoding,
         "Fetched server-key bytes"
     );

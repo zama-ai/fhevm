@@ -249,6 +249,12 @@ impl DbKeyCache {
             is_xof,
             cks_key,
         } = row;
+        info!(
+            server_key_representation = if is_xof { "compressed-xof" } else { "legacy" },
+            key_id = hex::encode(&key_id),
+            sequence_number,
+            "Loading server-key material"
+        );
         let pks: tfhe::CompactPublicKey = safe_deserialize_key(&pks_key)?;
         let cks: Option<tfhe::ClientKey> = cks_key
             .as_ref()

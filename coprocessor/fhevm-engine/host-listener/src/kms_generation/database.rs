@@ -25,6 +25,15 @@ pub(crate) struct PendingKeyActivation {
     pub storage_urls: Vec<String>,
 }
 
+#[derive(Debug, Clone, sqlx::FromRow)]
+pub(crate) struct PendingCompressedKeyMaterial {
+    pub chain_id: i64,
+    pub block_hash: Vec<u8>,
+    pub key_id: Vec<u8>,
+    pub key_digest: Vec<u8>,
+    pub storage_urls: Vec<String>,
+}
+
 #[derive(Debug, Clone)]
 pub(crate) struct PendingCrsActivation {
     pub chain_id: ChainId,
@@ -86,6 +95,45 @@ pub(crate) async fn insert_key_activation_event(
     Ok(())
 }
 
+pub(crate) async fn insert_compressed_key_material_event(
+    tx: &mut Transaction<'_, Postgres>,
+    material: KMSGeneration::CompressedKeyMaterialAdded,
+    log: Log,
+    chain_id: ChainId,
+    block_hash: &[u8],
+    block_number: u64,
+) -> anyhow::Result<()> {
+    let digest = material
+        .keyDigests
+        .iter()
+        .find(|digest| digest.keyType == 3)
+        .ok_or_else(|| {
+            anyhow::anyhow!(
+                "compressed key material event has no compressed-XOF digest"
+            )
+        })?;
+    sqlx::query(
+        r#"
+        INSERT INTO kms_compressed_key_material_events (
+            chain_id, block_hash, block_number, transaction_hash,
+            key_id, key_digest, storage_urls
+        )
+        VALUES ($1, $2, $3, $4, $5, $6, $7)
+        ON CONFLICT (chain_id, block_hash, key_id) DO NOTHING
+        "#,
+    )
+    .bind(chain_id.as_i64())
+    .bind(block_hash)
+    .bind(block_number as i64)
+    .bind(log.transaction_hash.map(|hash| hash.to_vec()))
+    .bind(key_id_to_database_bytes(material.keyId))
+    .bind(digest.digest.as_ref())
+    .bind(material.kmsNodeStorageUrls)
+    .execute(tx.deref_mut())
+    .await?;
+    Ok(())
+}
+
 pub(crate) async fn insert_crs_activation_event(
     tx: &mut Transaction<'_, Postgres>,
     activation: KMSGeneration::ActivateCrs,
@@ -137,6 +185,17 @@ pub(crate) async fn count_key_activation_remaining_pending(
     Ok(row.unwrap_or(0) as u64)
 }
 
+pub(crate) async fn count_compressed_key_material_remaining_pending(
+    db_pool: &sqlx::Pool<Postgres>,
+) -> anyhow::Result<u64> {
+    let count = sqlx::query_scalar::<_, i64>(
+        "SELECT COUNT(*) FROM kms_compressed_key_material_events WHERE status IN ('pending', 'ready')",
+    )
+    .fetch_one(db_pool)
+    .await?;
+    Ok(count as u64)
+}
+
 pub(crate) async fn count_crs_activation_remaining_pending(
     db_pool: &sqlx::Pool<Postgres>,
 ) -> anyhow::Result<u64> {
@@ -173,6 +232,83 @@ pub(crate) async fn cancel_orphaned_key_activations(
         info!("Marked {} pending key activations as cancelled due to orphaned blocks", query.rows_affected());
     }
     Ok(query.rows_affected())
+}
+
+pub(crate) async fn cancel_orphaned_compressed_key_materials(
+    tx: &mut Transaction<'_, Postgres>,
+) -> anyhow::Result<u64> {
+    let result = sqlx::query(
+        r#"
+        UPDATE kms_compressed_key_material_events AS e
+        SET status = 'cancelled', last_updated_at = NOW()
+        FROM host_chain_blocks_valid AS b
+        WHERE e.status IN ('pending', 'ready')
+          AND e.chain_id = b.chain_id
+          AND e.block_hash = b.block_hash
+          AND b.block_status = 'orphaned'
+        "#,
+    )
+    .execute(tx.deref_mut())
+    .await?;
+    Ok(result.rows_affected())
+}
+
+pub(crate) async fn apply_ready_compressed_key_materials(
+    tx: &mut Transaction<'_, Postgres>,
+) -> anyhow::Result<u64> {
+    let rows = sqlx::query_as::<_, PendingCompressedKeyMaterial>(
+        r#"
+        SELECT e.chain_id, e.block_hash, e.key_id, e.key_digest, e.storage_urls
+        FROM kms_compressed_key_material_events AS e
+        INNER JOIN host_chain_blocks_valid AS b
+          ON e.chain_id = b.chain_id AND e.block_hash = b.block_hash
+        WHERE e.status = 'ready'
+          AND b.block_status = 'finalized'
+          AND e.key_content IS NOT NULL
+        FOR UPDATE OF e SKIP LOCKED
+        "#,
+    )
+    .fetch_all(tx.deref_mut())
+    .await?;
+
+    let mut applied = 0;
+    for row in rows {
+        let updated = sqlx::query(
+            r#"
+            UPDATE keys
+            SET compressed_xof_keyset = e.key_content
+            FROM kms_compressed_key_material_events AS e
+            WHERE e.chain_id = $1 AND e.block_hash = $2 AND e.key_id = $3
+              AND keys.key_id = e.key_id AND e.key_content IS NOT NULL
+            "#,
+        )
+        .bind(row.chain_id)
+        .bind(&row.block_hash)
+        .bind(&row.key_id)
+        .execute(tx.deref_mut())
+        .await?;
+        if updated.rows_affected() == 0 {
+            anyhow::bail!(
+                "compressed key material references unknown key_id {:?}",
+                row.key_id
+            );
+        }
+
+        sqlx::query(
+            r#"
+            UPDATE kms_compressed_key_material_events
+            SET status = 'applied', last_updated_at = NOW()
+            WHERE chain_id = $1 AND block_hash = $2 AND key_id = $3
+            "#,
+        )
+        .bind(row.chain_id)
+        .bind(&row.block_hash)
+        .bind(&row.key_id)
+        .execute(tx.deref_mut())
+        .await?;
+        applied += 1;
+    }
+    Ok(applied)
 }
 
 pub(crate) async fn cancel_orphaned_crs_activations(
@@ -454,6 +590,21 @@ pub(crate) async fn all_pending_key_activations_to_download(
     Ok(result)
 }
 
+pub(crate) async fn all_pending_compressed_key_materials_to_download(
+    tx: &mut Transaction<'_, Postgres>,
+) -> anyhow::Result<Vec<PendingCompressedKeyMaterial>> {
+    Ok(sqlx::query_as::<_, PendingCompressedKeyMaterial>(
+        r#"
+        SELECT chain_id, block_hash, key_id, key_digest, storage_urls
+        FROM kms_compressed_key_material_events
+        WHERE status = 'pending' AND key_content IS NULL
+        FOR UPDATE SKIP LOCKED
+        "#,
+    )
+    .fetch_all(tx.deref_mut())
+    .await?)
+}
+
 pub(crate) async fn all_pending_crs_activations_to_download(
     tx: &mut Transaction<'_, Postgres>,
 ) -> anyhow::Result<Vec<PendingCrsActivation>> {
@@ -557,6 +708,30 @@ pub(crate) async fn set_ready_key_activation(
     Ok(())
 }
 
+pub(crate) async fn set_ready_compressed_key_material(
+    tx: &mut Transaction<'_, Postgres>,
+    material: &PendingCompressedKeyMaterial,
+    key_content: &[u8],
+) -> anyhow::Result<()> {
+    let result = sqlx::query(
+        r#"
+        UPDATE kms_compressed_key_material_events
+        SET status = 'ready', key_content = $1, last_updated_at = NOW(), last_error = NULL
+        WHERE chain_id = $2 AND block_hash = $3 AND key_id = $4
+        "#,
+    )
+    .bind(key_content)
+    .bind(material.chain_id)
+    .bind(&material.block_hash)
+    .bind(&material.key_id)
+    .execute(tx.deref_mut())
+    .await?;
+    if result.rows_affected() == 0 {
+        anyhow::bail!("compressed key material staging row disappeared")
+    }
+    Ok(())
+}
+
 pub async fn set_ready_crs_activation(
     tx: &mut Transaction<'_, Postgres>,
     activation: &PendingCrsActivation,
@@ -609,6 +784,29 @@ pub async fn mark_key_activation_error(
     // no need to bubble up as we already log the error when we catch it, and this is a best effort to update the error message and counter in the database
 }
 
+pub async fn mark_compressed_key_material_error(
+    tx: &mut Transaction<'_, Postgres>,
+    error_msg: &str,
+    material: &PendingCompressedKeyMaterial,
+) {
+    if let Err(error) = sqlx::query(
+        r#"
+        UPDATE kms_compressed_key_material_events
+        SET last_error = $1, retry_count = retry_count + 1, last_updated_at = NOW()
+        WHERE chain_id = $2 AND block_hash = $3 AND key_id = $4
+        "#,
+    )
+    .bind(error_msg)
+    .bind(material.chain_id)
+    .bind(&material.block_hash)
+    .bind(&material.key_id)
+    .execute(tx.deref_mut())
+    .await
+    {
+        error!(%error, key_id = ?material.key_id, "Failed to update compressed key material error");
+    }
+}
+
 pub async fn mark_crs_activation_error(
     tx: &mut Transaction<'_, Postgres>,
     error_msg: &str,
@@ -637,6 +835,7 @@ pub async fn mark_crs_activation_error(
 mod tests {
     use super::*;
     use fhevm_engine_common::chain_id::ChainId;
+    use sqlx::Row;
     use test_harness::instance::{setup_test_db, ImportMode};
 
     #[tokio::test]
@@ -722,6 +921,80 @@ mod tests {
         assert_eq!(row.key_content_sks_key, existing_sks);
         assert_eq!(row.key_content_public, public_key);
 
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn compressed_material_updates_only_the_compressed_representation(
+    ) -> anyhow::Result<()> {
+        let db = setup_test_db(ImportMode::None)
+            .await
+            .map_err(|err| anyhow::anyhow!("{err}"))?;
+        let pool = sqlx::PgPool::connect(db.db_url()).await?;
+        let chain_id = 12345_i64;
+        let original_block = vec![1_u8; 32];
+        let migration_block = vec![2_u8; 32];
+        let key_id = vec![3_u8; 32];
+        let legacy_public = b"legacy-public".to_vec();
+        let legacy_server = b"legacy-server".to_vec();
+        let compressed = b"compressed-xof".to_vec();
+
+        sqlx::query(
+            "INSERT INTO keys (chain_id, block_hash, key_id_gw, key_id, pks_key, sks_key)
+             VALUES ($1, $2, $3, $3, $4, $5)",
+        )
+        .bind(chain_id)
+        .bind(&original_block)
+        .bind(&key_id)
+        .bind(&legacy_public)
+        .bind(&legacy_server)
+        .execute(&pool)
+        .await?;
+        sqlx::query(
+            "INSERT INTO host_chain_blocks_valid
+             (chain_id, block_hash, block_number, block_status)
+             VALUES ($1, $2, 10, 'finalized')",
+        )
+        .bind(chain_id)
+        .bind(&migration_block)
+        .execute(&pool)
+        .await?;
+        sqlx::query(
+            "INSERT INTO kms_compressed_key_material_events
+             (chain_id, block_hash, block_number, key_id, key_digest, storage_urls, key_content, status)
+             VALUES ($1, $2, 10, $3, $4, ARRAY[]::TEXT[], $5, 'ready')",
+        )
+        .bind(chain_id)
+        .bind(&migration_block)
+        .bind(&key_id)
+        .bind(vec![4_u8; 32])
+        .bind(&compressed)
+        .execute(&pool)
+        .await?;
+
+        let mut tx = pool.begin().await?;
+        assert_eq!(apply_ready_compressed_key_materials(&mut tx).await?, 1);
+        tx.commit().await?;
+
+        let row = sqlx::query(
+            "SELECT pks_key, sks_key, compressed_xof_keyset FROM keys WHERE key_id = $1",
+        )
+        .bind(&key_id)
+        .fetch_one(&pool)
+        .await?;
+        assert_eq!(row.try_get::<Vec<u8>, _>("pks_key")?, legacy_public);
+        assert_eq!(row.try_get::<Vec<u8>, _>("sks_key")?, legacy_server);
+        assert_eq!(
+            row.try_get::<Vec<u8>, _>("compressed_xof_keyset")?,
+            compressed
+        );
+        let status = sqlx::query_scalar::<_, String>(
+            "SELECT status FROM kms_compressed_key_material_events WHERE key_id = $1",
+        )
+        .bind(&key_id)
+        .fetch_one(&pool)
+        .await?;
+        assert_eq!(status, "applied");
         Ok(())
     }
 }
