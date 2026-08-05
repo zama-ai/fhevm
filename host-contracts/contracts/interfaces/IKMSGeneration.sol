@@ -74,6 +74,11 @@ interface IKMSGeneration {
     event KeygenRequest(uint256 prepKeygenId, uint256 keyId, bytes extraData);
 
     /**
+     * @notice Emitted to produce compressed material for an existing key.
+     */
+    event KeyMigrationRequest(uint256 prepKeygenId, uint256 migrationRequestId, uint256 keyId, bytes extraData);
+
+    /**
      * @notice Emitted when a KMS node has responded to a keygen request.
      * @param keyId The ID of the key.
      * @param keyDigests The digests of the generated keys.
@@ -81,6 +86,11 @@ interface IKMSGeneration {
      * @param kmsTxSender The transaction sender of the KMS node that has called the function.
      */
     event KeygenResponse(uint256 keyId, KeyDigest[] keyDigests, bytes signature, address kmsTxSender);
+
+    /**
+     * @notice Emitted when a KMS node responds to a migration request.
+     */
+    event MigrationResponse(uint256 migrationRequestId, KeyDigest[] keyDigests, bytes signature, address kmsTxSender);
 
     /**
      * @notice Emitted when the key is activated.

@@ -242,7 +242,7 @@ pub(crate) async fn cancel_orphaned_compressed_key_materials(
         UPDATE kms_compressed_key_material_events AS e
         SET status = 'cancelled', last_updated_at = NOW()
         FROM host_chain_blocks_valid AS b
-        WHERE e.status IN ('pending', 'ready')
+        WHERE e.status IN ('pending', 'ready', 'applied')
           AND e.chain_id = b.chain_id
           AND e.block_hash = b.block_hash
           AND b.block_status = 'orphaned'
@@ -995,6 +995,25 @@ mod tests {
         .fetch_one(&pool)
         .await?;
         assert_eq!(status, "applied");
+
+        sqlx::query(
+            "UPDATE host_chain_blocks_valid SET block_status = 'orphaned'
+             WHERE chain_id = $1 AND block_hash = $2",
+        )
+        .bind(chain_id)
+        .bind(&migration_block)
+        .execute(&pool)
+        .await?;
+        let mut tx = pool.begin().await?;
+        assert_eq!(cancel_orphaned_compressed_key_materials(&mut tx).await?, 1);
+        tx.commit().await?;
+        let status = sqlx::query_scalar::<_, String>(
+            "SELECT status FROM kms_compressed_key_material_events WHERE key_id = $1",
+        )
+        .bind(&key_id)
+        .fetch_one(&pool)
+        .await?;
+        assert_eq!(status, "cancelled");
         Ok(())
     }
 }
