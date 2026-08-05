@@ -47,7 +47,8 @@
 pub mod delegation;
 /// Deployment identity: which program, which cluster.
 pub mod deployment;
-/// Encrypted value account resolution: presence, ownership, type, identity binding, app context.
+/// Encrypted value account resolution: presence, ownership, type, identity binding, and the
+/// authority and domain the account carries.
 pub mod encrypted_value_account;
 /// Failure taxonomy and the terminal / transient / retryable classification.
 pub mod failure;

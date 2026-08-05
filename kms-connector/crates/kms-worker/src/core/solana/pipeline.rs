@@ -12,7 +12,7 @@
 //!     authority, then READ again with the delegation records added — that read is the
 //!     deciding observation and the first read's values are discarded
 //!   → invalidation watermark
-//!   → per entry: encrypted value account → app context → handle binding → scope
+//!   → per entry: encrypted value account → its authority → handle binding → scope
 //!   → per delegated entry: delegation freshness
 //!   → accepted
 //! ```
@@ -255,7 +255,8 @@ where
 ///
 /// Two addresses per delegated entry, because two rows can carry the grant: the encrypted value
 /// account's authority and the delegator's wildcard row. Both are planned
-/// unconditionally rather than the wildcard being fetched only when the app-specific row is missing
+/// unconditionally rather than the wildcard being fetched only when the authority-specific row is
+/// missing
 /// — that would be a third read, and a rule that reads state after the deciding observation is the
 /// thing this pipeline does not do. Repeats collapse in the key set, so a batch under one delegator
 /// costs one wildcard key.

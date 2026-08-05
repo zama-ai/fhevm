@@ -39,7 +39,7 @@ pub fn delegate_for_user_decryption(
         ZamaHostError::InvalidDelegation
     );
     require!(
-        delegate.to_bytes() != WILDCARD_APP_CONTEXT_BYTES,
+        delegate.to_bytes() != WILDCARD_ENCRYPTED_VALUE_ACCOUNT_AUTHORITY_BYTES,
         ZamaHostError::InvalidDelegation
     );
     require_keys_neq!(delegator, delegate, ZamaHostError::InvalidDelegation);

@@ -7,16 +7,15 @@
 //!
 //! Two absences are deliberate and are the whole of rule h6 on the request side: no
 //! `encrypted_value_account_authority` field and no `acl_domain` field, in either the wire form or the validated
-//! form. The app context of a handle is a property of its encrypted value account, and the only way
-//! to learn it is to read and validate that account. A request cannot name it, so a
-//! substituted app context is not a check that can be forgotten — it is a value that does
-//! not exist.
+//! form. Both are properties of the handle's encrypted value account, and the only way to learn
+//! either is to read and validate that account. A request cannot name them, so a substituted
+//! authority is not a check that can be forgotten — it is a value that does not exist.
 //!
-//! # The app context is not a request field
+//! # The authority is not a request field
 //!
-//! Naming an app context in a request must stay a compile error, because the delegated branch
-//! is looked up by authority: a request that could name one could name an app the signer
-//! does hold a delegation for, against an encrypted value account belonging to somebody else's application.
+//! Naming the authority in a request must stay a compile error, because the delegated branch
+//! is looked up by it: a request that could name one could name an authority the signer does
+//! hold a delegation for, against an encrypted value account belonging to somebody else.
 //!
 //! ```compile_fail
 //! use kms_worker::core::solana::request::SolanaHandleEntryWire;

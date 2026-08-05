@@ -25,8 +25,9 @@ pub const HCU_BLOCK_METER_SEED: &[u8] = b"hcu-block-meter";
 pub const PERMIT_INVALIDATION_SEED: &[u8] = b"permit-invalidation";
 /// Seed prefix for user-decryption delegation records.
 pub const DELEGATION_SEED: &[u8] = b"user-decryption-delegation";
-/// Reserved app-context sentinel for wildcard user-decryption delegation rows.
-pub const WILDCARD_APP_CONTEXT_BYTES: [u8; 32] = [0xff; 32];
+/// Reserved sentinel standing in for any encrypted value account authority, carried by a
+/// wildcard user-decryption delegation row.
+pub const WILDCARD_ENCRYPTED_VALUE_ACCOUNT_AUTHORITY_BYTES: [u8; 32] = [0xff; 32];
 
 /// Maximum number of FHE operations accepted by one composed execution.
 ///

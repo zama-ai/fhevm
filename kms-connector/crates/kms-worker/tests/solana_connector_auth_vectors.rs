@@ -275,11 +275,11 @@ fn accepting_scenarios() -> Vec<Scenario> {
     );
     out.push(Scenario::accepted(
         "delegated-via-wildcard-row",
-        "A delegator grants across every one of their apps with one row carrying the reserved \
-         app-context sentinel instead of an encrypted value account authority. It authorizes an encrypted value account that has no \
-         app-specific row, exactly as the EVM ACL's wildcard delegation does. The consequence is \
-         part of the rule: revoking the app-specific row does not stop a delegate who holds this \
-         one.",
+        "A delegator grants across every authority of theirs with one row carrying the reserved \
+         sentinel instead of an encrypted value account authority. It authorizes an encrypted \
+         value account that has no authority-specific row, exactly as the EVM ACL's wildcard \
+         delegation does. The consequence is part of the rule: revoking the authority-specific \
+         row does not stop a delegate who holds this one.",
         RequestBuilder::new(&wildcard_signer)
             .delegated_current(
                 &wildcard_encrypted_value_account,

@@ -27,7 +27,7 @@ pub type HandleBytes = [u8; 32];
 
 pub const DELEGATION_SEED: &[u8] = b"user-decryption-delegation";
 pub const HOST_CONFIG_SEED: &[u8] = b"host-config";
-pub const WILDCARD_APP_CONTEXT: SolanaPubkeyBytes = [0xff; 32];
+pub const WILDCARD_ENCRYPTED_VALUE_ACCOUNT_AUTHORITY: SolanaPubkeyBytes = [0xff; 32];
 const ANCHOR_DISCRIMINATOR_LEN: usize = 8;
 const USER_DECRYPTION_DELEGATION_SPACE: usize = 32 + 32 + 32 + 8 + 8 + 8 + 1 + 1;
 
@@ -116,7 +116,7 @@ impl SolanaAclVerifier {
         if delegator == [0; 32]
             || delegate == [0; 32]
             || encrypted_value_account_authority == [0; 32]
-            || delegate == WILDCARD_APP_CONTEXT
+            || delegate == WILDCARD_ENCRYPTED_VALUE_ACCOUNT_AUTHORITY
             || delegator == delegate
             || delegator == encrypted_value_account_authority
             || delegate == encrypted_value_account_authority
@@ -371,7 +371,7 @@ mod tests {
         );
 
         let mut wildcard_delegate = delegation();
-        wildcard_delegate.delegate = WILDCARD_APP_CONTEXT;
+        wildcard_delegate.delegate = WILDCARD_ENCRYPTED_VALUE_ACCOUNT_AUTHORITY;
         let (account_key, bump) = user_decryption_delegation_address(
             HOST_PROGRAM_ID,
             wildcard_delegate.delegator,
@@ -384,7 +384,7 @@ mod tests {
             verifier.verify_delegation(
                 &wildcard_delegate,
                 OWNER,
-                WILDCARD_APP_CONTEXT,
+                WILDCARD_ENCRYPTED_VALUE_ACCOUNT_AUTHORITY,
                 AUTHORITY,
                 9,
                 OBSERVED_SLOT

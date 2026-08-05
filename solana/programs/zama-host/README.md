@@ -31,7 +31,7 @@ DenySubjectRecord
   optional grant deny-list witness when HostConfig enables deny-list checks
 
 UserDecryptionDelegation
-  PDA("delegation", delegator, delegate, app_context)
+  PDA("delegation", delegator, delegate, encrypted_value_account_authority)
   PoC delegation state for future Gateway/KMS witness verification; counter-changing updates are
   slot-guarded to reject same-slot regrant/revoke races
 ```

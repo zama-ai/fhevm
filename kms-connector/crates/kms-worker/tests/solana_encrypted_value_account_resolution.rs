@@ -1,5 +1,5 @@
-//! Encrypted value account resolution and the sourcing of app context: what a request may name, and
-//! what it may never name.
+//! Encrypted value account resolution and where an entry's authority comes from: what a request
+//! may name, and what it may never name.
 //!
 //! A handle entry names the encrypted value account that authorizes it. That name is unsigned, so
 //! every value read out of the named account has to be earned: the account must exist under this
@@ -10,9 +10,9 @@
 //! The tests here come in two shapes. The first shape substitutes something for the encrypted value
 //! account and demands a rejection: a foreign program's account, another account type of the same
 //! program, an account whose own fields describe a different encrypted value account. The second
-//! shape asserts the opposite direction — that the app context and the domain of every entry come
+//! shape asserts the opposite direction — that the authority and the domain of every entry come
 //! from *its* encrypted value account, so a batch cannot smuggle a foreign-domain handle past a
-//! narrowly scoped permit, and a request has no field with which to name an app context at all.
+//! narrowly scoped permit, and a request has no field with which to name an authority at all.
 //!
 //! One accept among the rejections deserves its own note: trailing bytes after the encrypted value
 //! account body are legal. The account is grown to its high-water mark and never shrunk, so an
@@ -182,8 +182,8 @@ fn a_host_owned_account_of_another_type_is_rejected() {
 
 /// The identity binding is the backstop of the chain: the account's own fields must reproduce the
 /// encrypted value ID that was claimed. Without it, a bug anywhere in address derivation or account
-/// selection would let a request read app context and subjects out of somebody else's encrypted
-/// value account.
+/// selection would let a request read the authority and subjects out of somebody else's
+/// encrypted value account.
 #[test]
 fn a_encrypted_value_account_whose_fields_derive_another_value_key_is_rejected() {
     let owner = Wallet::new(1).pubkey();
@@ -321,14 +321,14 @@ fn a_encrypted_value_account_account_holding_only_its_discriminator_is_rejected(
 }
 
 // ---------------------------------------------------------------------------
-// App context and scope
+// Authority and scope
 // ---------------------------------------------------------------------------
 
-/// Each entry's app context comes from its own encrypted value account. Two entries of the same
-/// domain and different apps resolve to their own encrypted value account authorities — there is no
-/// request-level app context to share, and no first-entry value to inherit.
+/// Each entry's authority comes from its own encrypted value account. Two entries of the same
+/// domain and different authorities resolve to their own — there is no request-level authority to
+/// share, and no first-entry value to inherit.
 #[test]
-fn each_entry_takes_its_app_context_from_its_own_encrypted_value_account() {
+fn each_entry_takes_its_authority_from_its_own_encrypted_value_account() {
     let owner = Wallet::new(1).pubkey();
     let first = EncryptedValueAccountFixture::in_domain(
         DOMAIN,

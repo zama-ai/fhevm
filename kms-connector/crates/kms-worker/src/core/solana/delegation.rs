@@ -2,8 +2,8 @@
 //!
 //! A delegated entry needs a live delegation record `delegator → signer`. Two records can carry
 //! one: the row for the encrypted value account's own authority, and the delegator's wildcard row —
-//! the same derivation with the reserved app-context sentinel in place of an encrypted value
-//! account authority, which is how a delegator grants across every one of their apps at once.
+//! the same derivation with the reserved sentinel in place of an encrypted value account
+//! authority, which is how a delegator grants across every authority of theirs at once.
 //! Either row being live authorizes the entry, which is the rule the EVM ACL applies to its own
 //! wildcard delegation.
 //!
@@ -11,14 +11,14 @@
 //! observation. The last clause is what keeps a record "from the future" relative to the snapshot
 //! from authorizing anything — it would be a state the rest of the authorization never saw.
 //!
-//! The rows are tried app-specific first, and neither can veto the other: an exact row that is
+//! The rows are tried authority-specific first, and neither can veto the other: an exact row that is
 //! revoked, expired or newer than the observation still leaves a live wildcard row authorizing, and
 //! the same holds the other way around.
 //!
-//! What follows from that is deliberate rather than incidental: revoking the app-specific row does
-//! not stop a delegate who also holds a wildcard row. Scope-by-app is a property of a row, not of
-//! the delegation as a whole, so a delegator narrowing one app has to revoke the wildcard row as
-//! well — and the host program's revocation instruction takes one record per call, so that is two
+//! What follows from that is deliberate rather than incidental: revoking the authority-specific row
+//! does not stop a delegate who also holds a wildcard row. Scope by authority is a property of a
+//! row, not of the delegation as a whole, so a delegator narrowing one authority has to revoke the
+//! wildcard row as well — and the host program's revocation instruction takes one record per call, so that is two
 //! transactions rather than one.
 //!
 //! The record's `delegation_counter` takes no part in any of this. It is not signed and is pinned
@@ -28,16 +28,16 @@
 //! signature commits to it.
 //!
 //! The authority comes from the validated encrypted value account. That is
-//! what makes the delegated branch safe against an attacker naming an app they do hold a delegation
-//! for: they cannot name it at all.
+//! what makes the delegated branch safe against an attacker naming an authority they do hold a
+//! delegation for: they cannot name it at all.
 
 use super::snapshot::{HostSnapshot, SnapshotError};
 use crate::core::solana_acl::{SolanaPubkeyBytes, decode_user_decryption_delegation_witness};
 
-/// The app-context sentinel a wildcard row carries in place of an encrypted value account
-/// authority. Reserved by the host program, which is why no real encrypted value account authority
-/// can collide with it.
-pub use crate::core::solana_acl::WILDCARD_APP_CONTEXT;
+/// The sentinel a wildcard row carries in place of an encrypted value account authority.
+/// Reserved by the host program, which is why no real encrypted value account authority can
+/// collide with it.
+pub use crate::core::solana_acl::WILDCARD_ENCRYPTED_VALUE_ACCOUNT_AUTHORITY;
 
 /// The canonical delegation-record address for a `(delegator, delegate, encrypted_value_account_authority)` tuple.
 pub fn delegation_address(
@@ -64,11 +64,16 @@ pub fn wildcard_delegation_address(
     delegator: SolanaPubkeyBytes,
     delegate: SolanaPubkeyBytes,
 ) -> (SolanaPubkeyBytes, u8) {
-    delegation_address(program_id, delegator, delegate, WILDCARD_APP_CONTEXT)
+    delegation_address(
+        program_id,
+        delegator,
+        delegate,
+        WILDCARD_ENCRYPTED_VALUE_ACCOUNT_AUTHORITY,
+    )
 }
 
 /// Checks that `delegator` has a live delegation to `delegate` covering `encrypted_value_account_authority` at this
-/// observation point: the row for that app, or the delegator's wildcard row.
+/// observation point: the row for that authority, or the delegator's wildcard row.
 ///
 /// Note the parameter list: a snapshot, three identities and a program id. No counter, and no
 /// reader — both records are read from the observation the rest of the authorization used.
@@ -94,7 +99,7 @@ pub fn check_delegation(
         program_id,
         delegator,
         delegate,
-        WILDCARD_APP_CONTEXT,
+        WILDCARD_ENCRYPTED_VALUE_ACCOUNT_AUTHORITY,
     )? {
         RowOutcome::Live => return Ok(()),
         RowOutcome::NotLive(reason) => reason,

@@ -13,7 +13,7 @@
 #![allow(dead_code)]
 
 use kms_worker::core::solana::{
-    delegation::WILDCARD_APP_CONTEXT,
+    delegation::WILDCARD_ENCRYPTED_VALUE_ACCOUNT_AUTHORITY,
     deployment::{DeploymentIdentity, SOLANA_CHAIN_TYPE_BIT},
     kms_pair::{KmsPairFailure, KmsPairValidator},
     request::{SolanaHandleEntryWire, SolanaUserDecryptRequest, SolanaUserDecryptRequestWire},
@@ -514,16 +514,15 @@ impl DelegationFixture {
         }
     }
 
-    /// A live wildcard row: the same grant with the reserved app-context sentinel in place of an
-    /// encrypted value account authority, which is how a delegator covers every one of their apps
-    /// at once.
+    /// A live wildcard row: the same grant with the reserved sentinel in place of an encrypted
+    /// value account authority, which is how a delegator covers every authority of theirs at once.
     pub fn live_wildcard(
         delegator: SolanaPubkeyBytes,
         delegate: SolanaPubkeyBytes,
         observed_slot: u64,
     ) -> Self {
         Self {
-            encrypted_value_account_authority: WILDCARD_APP_CONTEXT,
+            encrypted_value_account_authority: WILDCARD_ENCRYPTED_VALUE_ACCOUNT_AUTHORITY,
             ..Self::live(delegator, delegate, observed_slot)
         }
     }

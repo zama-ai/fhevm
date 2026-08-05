@@ -463,6 +463,14 @@ if run_check 3; then
   check_alias 'app_account / app_authority — renamed to encrypted_value_account_authority' kms \
     '' \
     -E '\bapp_account\b|\bapp_accounts\b|\bapp_account_authority\b|\bauthorized_app_accounts\b|\bappAccount\b|\bapp_authority\b|\bappAuthority\b|\bExecutionAppAuthority\b'
+  # The same object under a third name, and the one the identifier sweep above could not see: prose
+  # and constants called the authority a request may not supply an "app context", including the
+  # reserved wildcard sentinel that stands in the authority's seed position. No spelling of it is
+  # legitimate — the delegation row is keyed by the authority, and where the phrase meant the
+  # authority *and* the domain, both are glossary terms with their own names.
+  check_alias 'app context — say encrypted value account authority' kms \
+    '' \
+    -iE '(^|[^[:alnum:]_])app[ _-]context'
   # There was a `check_alias 'encrypted_value_label — renamed to label'` here, banning the long name.
   # That decision was reversed: bare "label" says only that the component is 32 bytes, which is true of
   # all three, so the long name is now the canonical one and the guard would reject correct code. The
@@ -845,6 +853,7 @@ are born with|born / birth — renamed to created-public / create
 value_key|value_key identifier — renamed to encrypted_value_id
 app_account|app_account / app_authority — renamed to encrypted_value_account_authority
 app_authority|app_account / app_authority — renamed to encrypted_value_account_authority
+app context|app context — say encrypted value account authority
 namespace|SDK namespace — renamed to label
 a frame of steps|frame — a walk of steps is an execution
 one fhe_execute batch|batch — one fhe_execute invocation is an execution
