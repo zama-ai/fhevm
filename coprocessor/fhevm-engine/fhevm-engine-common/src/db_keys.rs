@@ -48,6 +48,35 @@ impl ServerKeyRepresentation {
     }
 }
 
+pub async fn is_server_key_material_available(
+    pool: &PgPool,
+    representation: ServerKeyRepresentation,
+) -> anyhow::Result<bool> {
+    let available = sqlx::query_scalar::<_, bool>(
+        r#"
+        SELECT EXISTS (
+            SELECT 1
+            FROM keys
+            ORDER BY sequence_number DESC
+            LIMIT 1
+        ) AND COALESCE((
+            SELECT CASE $1
+                WHEN 'compressed-xof' THEN compressed_xof_keyset IS NOT NULL
+                WHEN 'legacy' THEN sks_key IS NOT NULL
+                ELSE compressed_xof_keyset IS NOT NULL OR sks_key IS NOT NULL
+            END
+            FROM keys
+            ORDER BY sequence_number DESC
+            LIMIT 1
+        ), FALSE)
+        "#,
+    )
+    .bind(representation.as_str())
+    .fetch_one(pool)
+    .await?;
+    Ok(available)
+}
+
 /// Single row shape for both CPU and GPU builds. The SQL query selects exactly
 /// one representation, so publishing another representation cannot silently
 /// change a running stack's computations.

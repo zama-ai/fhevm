@@ -1,6 +1,7 @@
 use std::time::Duration;
 
 use fhevm_engine_common::database::connect_options_for_database_url;
+use fhevm_engine_common::db_keys::{is_server_key_material_available, ServerKeyRepresentation};
 use fhevm_engine_common::healthz_server::{
     default_get_version, HealthCheckService, HealthStatus, Version,
 };
@@ -15,16 +16,20 @@ pub struct HealthCheck {
     pub database_url: DatabaseURL,
     pub database_heartbeat: HeartBeat,
     pub activity_heartbeat: HeartBeat,
+    server_key_representation: ServerKeyRepresentation,
 }
 
 impl HealthCheck {
-    pub fn new(database_url: DatabaseURL) -> Self {
+    pub fn new(
+        database_url: DatabaseURL,
+    ) -> Result<Self, Box<dyn std::error::Error + Send + Sync>> {
         // A lazy pool is used to avoid blocking the main thread during initialization or bad database URL
-        Self {
+        Ok(Self {
             database_url,
             database_heartbeat: HeartBeat::new(),
             activity_heartbeat: HeartBeat::new(),
-        }
+            server_key_representation: ServerKeyRepresentation::from_env()?,
+        })
     }
 
     pub fn update_db_access(&self) {
@@ -63,6 +68,26 @@ impl HealthCheckService for HealthCheck {
                 }
             }
         };
+
+        let key_material_ready = match connect_options_for_database_url(&self.database_url).await {
+            Ok(connect_options) => {
+                match sqlx::postgres::PgPoolOptions::new()
+                    .acquire_timeout(Duration::from_secs(5))
+                    .max_connections(1)
+                    .connect_with(connect_options)
+                    .await
+                {
+                    Ok(pool) => {
+                        is_server_key_material_available(&pool, self.server_key_representation)
+                            .await
+                            .unwrap_or(false)
+                    }
+                    Err(_) => false,
+                }
+            }
+            Err(_) => false,
+        };
+        status.set_custom_check("server_key_material", key_material_ready, true);
         status
     }
 
