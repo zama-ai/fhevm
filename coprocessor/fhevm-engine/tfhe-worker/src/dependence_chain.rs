@@ -582,6 +582,20 @@ impl LockMngr {
         self.lock.as_ref().map(|(lock, _)| lock.clone())
     }
 
+    /// Stop extending the current lock without modifying its database row.
+    /// The chain becomes eligible for work-stealing after its existing TTL.
+    pub fn park_current_lock(&mut self) {
+        if let Some((lock, _)) = self.lock.take() {
+            info!(
+                dcid = %hex::encode(&lock.dependence_chain_id),
+                expires_at = ?lock.lock_expires_at,
+                "Parked lock until expiration"
+            );
+        } else {
+            debug!("No lock to park");
+        }
+    }
+
     pub fn worker_id(&self) -> Uuid {
         self.worker_id
     }

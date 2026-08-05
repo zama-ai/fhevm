@@ -173,8 +173,7 @@ services:
       - --work-items-batch-size=20
       - --pg-polling-interval=30
       - --pg-pool-connections=10
-      - --bucket-name-ct64=ct64
-      - --bucket-name-ct128=${BUCKET_NAME_CT128}
+      - --bucket-name=${BUCKET_NAME}
       - --s3-max-concurrent-uploads=100
       - --s3-max-retries-per-upload=100
       - --s3-max-backoff=10s
@@ -225,7 +224,7 @@ services:
       - --database-url=${DATABASE_URL}
       - --gw-url=${GATEWAY_WS_URL}
       - --gateway-config-address=${GATEWAY_CONFIG_ADDRESS}
-      - --my-bucket=${BUCKET_NAME_CT128}
+      - --my-bucket=${BUCKET_NAME}
     depends_on:
       coprocessor-db-migration:
         condition: service_completed_successfully

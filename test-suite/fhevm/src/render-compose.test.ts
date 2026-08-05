@@ -149,6 +149,11 @@ describe("render-compose", () => {
     expect(volumes).toContain("fhevm_kms_core_keys:/app/kms/core/service/keys");
   });
 
+  test("keeps localhost MinIO URLs reachable from the e2e container", async () => {
+    const doc = await loadMergedComposeDoc("test-suite");
+    expect(doc.services["test-suite-e2e-debug"]?.network_mode).toBe("container:fhevm-minio");
+  });
+
   test("renders listener-core local override for the publisher only", async () => {
     await withTempStateDir(async () => {
       await mkdir(path.dirname(envPath("coprocessor")), { recursive: true });
@@ -265,12 +270,14 @@ describe("render-compose", () => {
       await writeFile(envPath("coprocessor"), "\n");
       await generateComposeOverrides(gatewayContractsOverrideState, stackSpecForState(gatewayContractsOverrideState));
       const doc = YAML.parse(await readFile(composePath("gateway-sc"), "utf8")) as {
-        services: Record<string, { image?: string; build?: unknown }>;
+        services: Record<string, { image?: string; build?: unknown; command?: string[] }>;
       };
       expect(doc.services["gateway-sc-trigger-keygen"]?.image).toContain(":fhevm-local");
       expect(doc.services["gateway-sc-trigger-keygen"]?.build).toBeTruthy();
+      expect(doc.services["gateway-sc-trigger-keygen"]?.command?.[0]).toContain("${KEYGEN_PARAMS_TYPE:-0}");
       expect(doc.services["gateway-sc-trigger-crsgen"]?.image).toContain(":fhevm-local");
       expect(doc.services["gateway-sc-trigger-crsgen"]?.build).toBeTruthy();
+      expect(doc.services["gateway-sc-trigger-crsgen"]?.command?.[0]).toContain("${KEYGEN_PARAMS_TYPE:-0}");
     });
   });
 
@@ -512,6 +519,42 @@ gcs:
       expect(doc.services["coprocessor-gcs-upgrade-controller"]?.container_name).toBe(
         "coprocessor-gcs-upgrade-controller",
       );
+    });
+  });
+
+  test("blue-green shims the BCS fleet from its pinned tag, not the resolved bundle", async () => {
+    const pinnedBcsScenario = resolveBlueGreenScenario(
+      path.join("/tmp", "blue-green-pinned-bcs.yaml"),
+      parseBlueGreenScenario(`
+version: 1
+kind: blue-green
+bcs:
+  source:
+    mode: registry
+    tag: v0.14.0-7
+gcs:
+  source: { mode: local }
+  stackVersion: "0.15.0"
+`),
+    );
+    const bgState: State = { ...state, scenario: pinnedBcsScenario };
+    await withTempStateDir(async () => {
+      await mkdir(path.dirname(envPath("coprocessor")), { recursive: true });
+      await writeFile(envPath("coprocessor"), "BUCKET_NAME=coproc-0\n");
+      await generateComposeOverrides(bgState, stackSpecForState(bgState));
+      const doc = YAML.parse(await readFile(composePath("coprocessor"), "utf8")) as {
+        services: Record<string, { command?: string[] }>;
+      };
+      // BCS runs the v0.14 image, which predates the unified --bucket-name flag,
+      // even though the resolved bundle points at HEAD.
+      const bcsCommand = doc.services["coprocessor-sns-worker"]?.command ?? [];
+      expect(bcsCommand).toContain("--bucket-name-ct128=coproc-0");
+      expect(bcsCommand).toContain("--bucket-name-ct64=coproc-0");
+      expect(bcsCommand).not.toContain("--bucket-name=coproc-0");
+      // GCS builds from the working tree, so it keeps the modern flag.
+      const gcsCommand = doc.services["coprocessor-gcs-sns-worker"]?.command ?? [];
+      expect(gcsCommand).toContain("--bucket-name=coproc-0");
+      expect(gcsCommand.filter((arg) => arg.startsWith("--bucket-name-"))).toEqual([]);
     });
   });
 });
