@@ -11,7 +11,8 @@ use fhevm_engine_common::database::{
 };
 use fhevm_engine_common::telemetry;
 use fhevm_engine_common::types::{
-    AllowEvents, SchedulePriority, SupportedFheOperations,
+    is_valid_multi_output_arity, AllowEvents, SchedulePriority,
+    SupportedFheOperations, MAX_MULTI_OUTPUT_ARITY,
 };
 use fhevm_engine_common::utils::DatabaseURL;
 use fhevm_engine_common::utils::{to_hex, HeartBeat};
@@ -722,26 +723,17 @@ impl Database {
     ) -> Result<bool, SqlxError> {
         let dependencies =
             dependencies.iter().map(|d| d.to_vec()).collect::<Vec<_>>();
-        let group_id = match results.first() {
-            Some(h) => h.to_vec(),
-            None => {
-                warn!(target: "host_listener",
-                    "multi-output event has no results; skipping event");
-                return Ok(false);
-            }
-        };
+        if !is_valid_multi_output_arity(results.len()) {
+            warn!(target: "host_listener",
+                arity = results.len(),
+                max = MAX_MULTI_OUTPUT_ARITY,
+                "unsupported multi-output arity; skipping event");
+            return Ok(false);
+        }
+        let group_id = results[0].to_vec();
         let mut any_inserted = false;
         for (idx, result) in results.iter().enumerate() {
-            let output_index = match i16::try_from(idx) {
-                Ok(v) => v,
-                Err(_) => {
-                    // Bounded by `SupportedFheOperations::multi_output_arity` so idx <= u8::MAX = 255 < i16::MAX.
-                    warn!(target: "host_listener",
-                        arity = results.len(),
-                        "multi-output arity exceeds i16::MAX; skipping event");
-                    return Ok(false);
-                }
-            };
+            let output_index = idx as i16;
             let inserted = self
                 .insert_computation_inner(
                     tx,
