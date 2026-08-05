@@ -19,7 +19,11 @@ system is built and run: sizes, limits, and operational notes. All of it is
 true; the sizes and limits are pinned by tests, and the [OPERATIONAL] entries are
 notes about how we run the system rather than properties anything enforces.
 Nothing in Part II is a promise about safety, so you can skip it without skipping
-anything you have to trust. Numbers are stable across both parts and never reused.
+anything you have to trust. A [HOLDS] entry can sit in Part II when the thing it
+holds is a size or a limit — #14, #48 and #54 are all of that kind. An [ANTI] never
+can: it is a guarantee explicitly withheld, so a reader who skips it walks away
+assuming the opposite. Numbers are stable across both parts and never reused, so an
+entry that moves between them keeps its number.
 
 Scope note: this register covers the **protocol layer** of the Solana feature
 branch — `zama-host`, the `zama-fhe` SDK, the host-listener reconstruction path,
@@ -68,6 +72,17 @@ update, encrypted value ID…).
     Membership is flat by design; apps that need owner/spender-style
     distinctions must enforce them in the app program before granting.
 
+53. **[ANTI]** `make_handle_public` is not idempotent. Sealing a handle that is
+    already sealed appends a second leaf committing to the same
+    `(account, handle)` fact: it authorizes nothing the first leaf did not, and
+    its cost is bounded — peaks are one per set bit of `leaf_count`, capped at
+    `MAX_MMR_PEAKS` (64) — and funded by the caller's own payer. Guarding it
+    on-chain would need the account to remember which handle is sealed, which is
+    new `EncryptedValue` state in four consumers; a state-free guard could only
+    read back the last leaf when `leaf_count` is odd, so the same call would be
+    accepted or rejected by parity. Pinned by
+    `mollusk_make_handle_public_twice_appends_an_equivalent_leaf`.
+
 ## C. Execution
 
 12. **[HOLDS]** An execution is atomic: preflight validates the whole of it —
@@ -84,6 +99,8 @@ update, encrypted value ID…).
     That output can be claimed only once per execution
     (`EvalAccountTable::claim_persistent_output`), which is what stops two
     executions from deriving the same seed.
+17. **[HOLDS]** `account_count` declared inside the instruction data must equal
+    the accounts actually delivered (the execution's bytes are self-describing).
 18. **[HOLDS]** Values from two different builders cannot be mixed into one
     execution: [`FheExecution::build`] hands each builder an invariant `'id` lifetime
     that its transient values carry, so a foreign value is a compile error
@@ -233,10 +250,10 @@ Nothing here is a safety promise. These entries record sizes, limits, and how
 the system is operated. They change when we resize something or swap tooling,
 not when the threat model changes.
 
+## H. Sizes, limits, and operations
+
 14. **[HOLDS]** The maximum execution (32 steps) fits one 1,232-byte packet and the
     default 200k CU budget; both bounds are pinned by tests.
-17. **[HOLDS]** `account_count` declared inside the instruction data must equal
-    the accounts actually delivered (the execution's bytes are self-describing).
 34. **[OPERATIONAL]** Reconstruction fixtures compile only under
     `--features solana-grpc,solana-reconstruct`; coverage exists only where CI
     passes those flags.
@@ -260,16 +277,6 @@ not when the threat model changes.
     close crank retries on the next batch preparation. One composition function
     fills the table and compresses against it, so provisioned and consumed
     membership cannot diverge (`solana/demo-dapp/src/vault`).
-53. **[ANTI]** `make_handle_public` is not idempotent. Sealing a handle that is
-    already sealed appends a second leaf committing to the same
-    `(account, handle)` fact: it authorizes nothing the first leaf did not, and
-    its cost is bounded — peaks are one per set bit of `leaf_count`, capped at
-    `MAX_MMR_PEAKS` (64) — and funded by the caller's own payer. Guarding it
-    on-chain would need the account to remember which handle is sealed, which is
-    new `EncryptedValue` state in four consumers; a state-free guard could only
-    read back the last leaf when `leaf_count` is odd, so the same call would be
-    accepted or rejected by parity. Pinned by
-    `mollusk_make_handle_public_twice_appends_an_equivalent_leaf`.
 54. **[HOLDS]** Lowering an execution never copies the builder's intern tables,
     but a step still costs about a kilobyte of heap. What has to fit Anchor's
     32 KB default bump heap is the whole instruction, not just the build: the
@@ -295,7 +302,7 @@ not when the threat model changes.
     `print_measurement_table` (`#[ignore]`d — run it with `--ignored --nocapture`),
     so read the intermediate rows as the last measurement rather than as a bound.
 
-## N. Roadmap
+## I. Roadmap
 
 39. **[V2]** App-layer register (confidential token, batcher lifecycle, ALT
     construction) — separate section once the protocol register stabilizes.
