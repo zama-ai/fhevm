@@ -148,7 +148,7 @@ fn decode_fhe_execute_args(data: &[u8]) -> Option<host::FheExecuteArgs> {
     host::FheExecuteArgs::deserialize(&mut &*payload).ok()
 }
 
-fn eval_step_output(step: &host::FheExecuteStep) -> &host::FheExecuteOutput {
+fn execution_step_output(step: &host::FheExecuteStep) -> &host::FheExecuteOutput {
     match step {
         host::FheExecuteStep::Binary { output, .. }
         | host::FheExecuteStep::Ternary { output, .. }
@@ -184,7 +184,7 @@ impl CleartextLedger {
             .message
             .as_ref()
             .expect("Mollusk result must include its compiled message");
-        let eval_args = result
+        let execute_args = result
             .inner_instructions
             .iter()
             .filter(|inner| {
@@ -197,32 +197,32 @@ impl CleartextLedger {
             .filter_map(|inner| decode_fhe_execute_args(&inner.instruction.data))
             .collect::<Vec<_>>();
         assert_eq!(
-            eval_args.len(),
+            execute_args.len(),
             1,
             "expected one token -> host fhe_execute CPI"
         );
 
-        let outputs = evaluate_cleartext(&eval_args[0], &self.values)
+        let outputs = evaluate_cleartext(&execute_args[0], &self.values)
             .expect("the token program must emit a valid cleartext FHE execution");
         let mut persistent_outputs = 0;
-        for (step, value) in eval_args[0].steps.iter().zip(outputs) {
+        for (step, value) in execute_args[0].steps.iter().zip(outputs) {
             let host::FheExecuteOutput::StoredValue {
                 output_domain_index,
                 output_account_index,
                 output_label_index,
                 ..
-            } = eval_step_output(step)
+            } = execution_step_output(step)
             else {
                 continue;
             };
             let encrypted_value_id = zama_solana_acl::derive_encrypted_value_id(
-                eval_args[0]
+                execute_args[0]
                     .dictionary_bytes(*output_domain_index)
                     .expect("valid dictionary index"),
-                eval_args[0]
+                execute_args[0]
                     .dictionary_bytes(*output_account_index)
                     .expect("valid dictionary index"),
-                eval_args[0]
+                execute_args[0]
                     .dictionary_bytes(*output_label_index)
                     .expect("valid dictionary index"),
             );

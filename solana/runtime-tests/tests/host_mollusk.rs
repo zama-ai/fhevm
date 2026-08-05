@@ -1525,7 +1525,7 @@ fn mollusk_make_handle_public_rejects_unallowed_subject() {
 // ---------------------------------------------------------------------------
 
 #[test]
-fn mollusk_denied_caller_cannot_mutate_acl_update_or_eval_output() {
+fn mollusk_denied_caller_cannot_mutate_acl_update_or_execution_output() {
     let caller = Pubkey::new_unique();
     let (host_config, host_config_account) = deny_enabled_host_config_account(caller);
     let (deny_record, deny_record_account) = deny_subject_record_account(caller, true);
@@ -1633,7 +1633,7 @@ fn mollusk_denied_caller_cannot_mutate_acl_update_or_eval_output() {
         dictionary: dictionary.0,
         steps,
     };
-    let eval_ix = fhe_execute_ix_with_deny(
+    let execute_ix = fhe_execute_ix_with_deny(
         caller,
         caller,
         caller,
@@ -1651,14 +1651,14 @@ fn mollusk_denied_caller_cannot_mutate_acl_update_or_eval_output() {
         (output_address, empty_system_account()),
     ];
     mollusk().process_and_validate_instruction(
-        &eval_ix,
+        &execute_ix,
         &accounts,
         &[custom_error(host::errors::ZamaHostError::SubjectDenied)],
     );
 }
 
 #[test]
-fn mollusk_denied_subject_cannot_enter_via_allow_subjects_or_eval_create() {
+fn mollusk_denied_subject_cannot_enter_via_allow_subjects_or_execution_create() {
     // The granting authority is clean; the subject being granted is denied. Both
     // grant entry points (allow_subjects and fhe_execute persistent create) must
     // reject the grant, not just a denied authority.
@@ -1752,7 +1752,7 @@ fn mollusk_denied_subject_cannot_enter_via_allow_subjects_or_eval_create() {
         dictionary: dictionary.0,
         steps,
     };
-    let eval_ix = fhe_execute_ix_with_deny_records(
+    let execute_ix = fhe_execute_ix_with_deny_records(
         authority,
         authority,
         authority,
@@ -1771,7 +1771,7 @@ fn mollusk_denied_subject_cannot_enter_via_allow_subjects_or_eval_create() {
         (output_address, empty_system_account()),
     ];
     mollusk().process_and_validate_instruction(
-        &eval_ix,
+        &execute_ix,
         &accounts,
         &[custom_error(host::errors::ZamaHostError::SubjectDenied)],
     );
@@ -2033,7 +2033,7 @@ fn mollusk_fhe_execute_rejects_denied_second_output_authority_in_multi_output_ba
 }
 
 #[test]
-fn mollusk_paused_state_blocks_acl_update_and_eval_output() {
+fn mollusk_paused_state_blocks_acl_update_and_execution_output() {
     let authority = Pubkey::new_unique();
     let (host_config, host_config_account) = paused_host_config_account(authority);
     let owner = Pubkey::new_unique();
@@ -2099,7 +2099,7 @@ fn mollusk_paused_state_blocks_acl_update_and_eval_output() {
         dictionary: dictionary.0,
         steps,
     };
-    let eval_ix = fhe_execute_ix(
+    let execute_ix = fhe_execute_ix(
         authority,
         owner,
         authority,
@@ -2116,7 +2116,7 @@ fn mollusk_paused_state_blocks_acl_update_and_eval_output() {
         (output_address, empty_system_account()),
     ];
     mollusk().process_and_validate_instruction(
-        &eval_ix,
+        &execute_ix,
         &accounts,
         &[custom_error(host::errors::ZamaHostError::HostConfigPaused)],
     );
@@ -2849,7 +2849,7 @@ fn host_config_account_with_block_cap(admin: Pubkey, cap: u64) -> (Pubkey, Accou
     (key, account)
 }
 
-fn mollusk_eval_context(
+fn mollusk_execute_context(
     payer: Pubkey,
     seeded_accounts: Vec<(Pubkey, Account)>,
 ) -> mollusk_svm::MolluskContext<HashMap<Pubkey, Account>> {
@@ -3120,7 +3120,7 @@ fn mollusk_set_max_hcu_per_tx_rejects_above_block_cap_band() {
     let program_id = host::id();
     let admin = Pubkey::new_unique();
     let (host_config, account) = host_config_account_with_block_cap(admin, 500_000);
-    let context = mollusk_eval_context(admin, vec![(host_config, account)]);
+    let context = mollusk_execute_context(admin, vec![(host_config, account)]);
 
     context.process_and_validate_instruction(
         &set_max_hcu_per_tx_ix(program_id, admin, host_config, 600_000),
@@ -3152,7 +3152,7 @@ fn mollusk_set_max_hcu_per_tx_unrestricted_block_cap_accepts_any_total() {
     let program_id = host::id();
     let admin = Pubkey::new_unique();
     let (host_config, account) = host_config_account(admin);
-    let context = mollusk_eval_context(admin, vec![(host_config, account)]);
+    let context = mollusk_execute_context(admin, vec![(host_config, account)]);
 
     context.process_and_validate_instruction(
         &set_max_hcu_per_tx_ix(program_id, admin, host_config, 20_000_000),
@@ -3174,7 +3174,7 @@ fn mollusk_set_max_hcu_setters_reject_zero() {
     let program_id = host::id();
     let admin = Pubkey::new_unique();
     let (host_config, account) = host_config_account(admin);
-    let context = mollusk_eval_context(admin, vec![(host_config, account)]);
+    let context = mollusk_execute_context(admin, vec![(host_config, account)]);
 
     context.process_and_validate_instruction(
         &set_max_hcu_per_tx_ix(program_id, admin, host_config, 0),
@@ -3202,7 +3202,7 @@ fn mollusk_set_hcu_block_cap_metering_band_persists_and_advances_slot() {
     let program_id = host::id();
     let admin = Pubkey::new_unique();
     let (host_config, account) = host_config_account(admin);
-    let context = mollusk_eval_context(admin, vec![(host_config, account)]);
+    let context = mollusk_execute_context(admin, vec![(host_config, account)]);
 
     context.process_and_validate_instruction(
         &set_hcu_block_cap_per_app_ix(program_id, admin, host_config, 500_000),
@@ -3220,7 +3220,7 @@ fn mollusk_set_hcu_block_cap_at_max_per_tx_boundary_is_accepted() {
     let program_id = host::id();
     let admin = Pubkey::new_unique();
     let (host_config, account) = host_config_account_with_hcu_limits(admin, 20_000_000, u64::MAX);
-    let context = mollusk_eval_context(admin, vec![(host_config, account)]);
+    let context = mollusk_execute_context(admin, vec![(host_config, account)]);
 
     context.process_and_validate_instruction(
         &set_hcu_block_cap_per_app_ix(program_id, admin, host_config, 20_000_000),
@@ -3241,7 +3241,7 @@ fn mollusk_set_hcu_block_cap_below_max_per_tx_is_rejected() {
     let program_id = host::id();
     let admin = Pubkey::new_unique();
     let (host_config, account) = host_config_account_with_hcu_limits(admin, 20_000_000, u64::MAX);
-    let context = mollusk_eval_context(admin, vec![(host_config, account)]);
+    let context = mollusk_execute_context(admin, vec![(host_config, account)]);
 
     context.process_and_validate_instruction(
         &set_hcu_block_cap_per_app_ix(program_id, admin, host_config, 19_000_000),
@@ -3264,7 +3264,7 @@ fn mollusk_set_hcu_block_cap_with_max_per_tx_unlimited_accepts_any_band_value() 
     let program_id = host::id();
     let admin = Pubkey::new_unique();
     let (host_config, account) = host_config_account(admin);
-    let context = mollusk_eval_context(admin, vec![(host_config, account)]);
+    let context = mollusk_execute_context(admin, vec![(host_config, account)]);
 
     context.process_and_validate_instruction(
         &set_hcu_block_cap_per_app_ix(program_id, admin, host_config, 1),
@@ -3285,7 +3285,7 @@ fn mollusk_set_hcu_block_cap_ban_and_unrestricted_sentinels_bypass_ordering() {
     let program_id = host::id();
     let admin = Pubkey::new_unique();
     let (host_config, account) = host_config_account_with_hcu_limits(admin, 20_000_000, u64::MAX);
-    let context = mollusk_eval_context(admin, vec![(host_config, account)]);
+    let context = mollusk_execute_context(admin, vec![(host_config, account)]);
 
     context.process_and_validate_instruction(
         &set_hcu_block_cap_per_app_ix(program_id, admin, host_config, 0),
@@ -3317,7 +3317,7 @@ fn mollusk_set_hcu_block_cap_is_idempotent() {
     let program_id = host::id();
     let admin = Pubkey::new_unique();
     let (host_config, account) = host_config_account_with_block_cap(admin, 750_000);
-    let context = mollusk_eval_context(admin, vec![(host_config, account)]);
+    let context = mollusk_execute_context(admin, vec![(host_config, account)]);
 
     context.process_and_validate_instruction(
         &set_hcu_block_cap_per_app_ix(program_id, admin, host_config, 750_000),
@@ -3335,7 +3335,7 @@ fn mollusk_set_hcu_block_cap_rejects_wrong_admin() {
     let admin = Pubkey::new_unique();
     let wrong_admin = Pubkey::new_unique();
     let (host_config, account) = host_config_account(admin);
-    let context = mollusk_eval_context(
+    let context = mollusk_execute_context(
         admin,
         vec![
             (host_config, account),
@@ -3363,7 +3363,7 @@ fn mollusk_set_hcu_block_cap_rejects_remaining_accounts() {
     let program_id = host::id();
     let admin = Pubkey::new_unique();
     let (host_config, account) = host_config_account(admin);
-    let context = mollusk_eval_context(admin, vec![(host_config, account)]);
+    let context = mollusk_execute_context(admin, vec![(host_config, account)]);
 
     let mut ix = set_hcu_block_cap_per_app_ix(program_id, admin, host_config, 500_000);
     ix.accounts
@@ -3391,7 +3391,7 @@ fn mollusk_set_hcu_app_trusted_creates_trusted_record() {
     let admin = Pubkey::new_unique();
     let app = Pubkey::new_unique();
     let (host_config, account) = host_config_account(admin);
-    let context = mollusk_eval_context(admin, vec![(host_config, account)]);
+    let context = mollusk_execute_context(admin, vec![(host_config, account)]);
 
     context.process_and_validate_instruction(
         &set_hcu_app_trusted_ix(program_id, admin, admin, host_config, app, true),
@@ -3410,7 +3410,7 @@ fn mollusk_set_hcu_app_trusted_writes_untrusted_false_record() {
     let admin = Pubkey::new_unique();
     let app = Pubkey::new_unique();
     let (host_config, account) = host_config_account(admin);
-    let context = mollusk_eval_context(admin, vec![(host_config, account)]);
+    let context = mollusk_execute_context(admin, vec![(host_config, account)]);
 
     // Register trusted, then clear it back to false.
     context.process_and_validate_instruction(
@@ -3433,7 +3433,7 @@ fn mollusk_set_hcu_app_trusted_is_idempotent() {
     let admin = Pubkey::new_unique();
     let app = Pubkey::new_unique();
     let (host_config, account) = host_config_account(admin);
-    let context = mollusk_eval_context(admin, vec![(host_config, account)]);
+    let context = mollusk_execute_context(admin, vec![(host_config, account)]);
 
     context.process_and_validate_instruction(
         &set_hcu_app_trusted_ix(program_id, admin, admin, host_config, app, true),
@@ -3457,7 +3457,7 @@ fn mollusk_set_hcu_app_trusted_rejects_wrong_record_pda() {
     let admin = Pubkey::new_unique();
     let app = Pubkey::new_unique();
     let (host_config, account) = host_config_account(admin);
-    let context = mollusk_eval_context(admin, vec![(host_config, account)]);
+    let context = mollusk_execute_context(admin, vec![(host_config, account)]);
 
     // A record derived for a *different* app is the wrong PDA for `app`.
     let wrong_record = host::hcu_trusted_app_address(Pubkey::new_unique()).0;
@@ -3486,7 +3486,7 @@ fn mollusk_set_hcu_app_trusted_rejects_wrong_admin() {
     let wrong_admin = Pubkey::new_unique();
     let app = Pubkey::new_unique();
     let (host_config, account) = host_config_account(admin);
-    let context = mollusk_eval_context(
+    let context = mollusk_execute_context(
         admin,
         vec![
             (host_config, account),
@@ -3510,7 +3510,7 @@ fn mollusk_set_hcu_app_trusted_rejects_remaining_accounts() {
     let admin = Pubkey::new_unique();
     let app = Pubkey::new_unique();
     let (host_config, account) = host_config_account(admin);
-    let context = mollusk_eval_context(admin, vec![(host_config, account)]);
+    let context = mollusk_execute_context(admin, vec![(host_config, account)]);
 
     let mut ix = set_hcu_app_trusted_ix(program_id, admin, admin, host_config, app, true);
     ix.accounts
@@ -3540,7 +3540,7 @@ fn mollusk_initialize_host_config_defaults_block_cap_to_unrestricted() {
         decryption_contract: [0u8; 20],
         grant_deny_list_enabled: false,
     };
-    let context = mollusk_eval_context(payer, vec![(host_config, system_account(0))]);
+    let context = mollusk_execute_context(payer, vec![(host_config, system_account(0))]);
 
     context.process_and_validate_instruction(
         &initialize_host_config_ix(program_id, payer, admin, host_config, args),
@@ -3583,7 +3583,7 @@ fn mollusk_initialize_host_config_stores_registered_signer_set_and_threshold() {
     let (host_config, _) = host::host_config_address();
     let signers = vec![[0x11u8; 20], [0x22u8; 20], [0x33u8; 20]];
     let args = init_args_with_coprocessor_set(signers.clone(), 2);
-    let context = mollusk_eval_context(payer, vec![(host_config, system_account(0))]);
+    let context = mollusk_execute_context(payer, vec![(host_config, system_account(0))]);
 
     context.process_and_validate_instruction(
         &initialize_host_config_ix(program_id, payer, admin, host_config, args),
@@ -3604,7 +3604,7 @@ fn mollusk_initialize_host_config_rejects_duplicate_coprocessor_signer() {
     let (host_config, _) = host::host_config_address();
     // A duplicate would silently raise the effective quorum (distinct-signer counting).
     let args = init_args_with_coprocessor_set(vec![[0x11u8; 20], [0x11u8; 20]], 1);
-    let context = mollusk_eval_context(payer, vec![(host_config, system_account(0))]);
+    let context = mollusk_execute_context(payer, vec![(host_config, system_account(0))]);
 
     context.process_and_validate_instruction(
         &initialize_host_config_ix(program_id, payer, admin, host_config, args),
@@ -3622,7 +3622,7 @@ fn mollusk_initialize_host_config_rejects_threshold_above_signer_count() {
     let (host_config, _) = host::host_config_address();
     // threshold 3 > 2 signers: unsatisfiable, must be rejected.
     let args = init_args_with_coprocessor_set(vec![[0x11u8; 20], [0x22u8; 20]], 3);
-    let context = mollusk_eval_context(payer, vec![(host_config, system_account(0))]);
+    let context = mollusk_execute_context(payer, vec![(host_config, system_account(0))]);
 
     context.process_and_validate_instruction(
         &initialize_host_config_ix(program_id, payer, admin, host_config, args),
@@ -3639,7 +3639,7 @@ fn mollusk_initialize_host_config_rejects_zero_threshold() {
     let admin = Pubkey::new_unique();
     let (host_config, _) = host::host_config_address();
     let args = init_args_with_coprocessor_set(vec![[0x11u8; 20]], 0);
-    let context = mollusk_eval_context(payer, vec![(host_config, system_account(0))]);
+    let context = mollusk_execute_context(payer, vec![(host_config, system_account(0))]);
 
     context.process_and_validate_instruction(
         &initialize_host_config_ix(program_id, payer, admin, host_config, args),
@@ -3656,7 +3656,7 @@ fn mollusk_initialize_host_config_rejects_empty_coprocessor_set() {
     let admin = Pubkey::new_unique();
     let (host_config, _) = host::host_config_address();
     let args = init_args_with_coprocessor_set(vec![], 1);
-    let context = mollusk_eval_context(payer, vec![(host_config, system_account(0))]);
+    let context = mollusk_execute_context(payer, vec![(host_config, system_account(0))]);
 
     context.process_and_validate_instruction(
         &initialize_host_config_ix(program_id, payer, admin, host_config, args),
@@ -3673,7 +3673,7 @@ fn mollusk_initialize_host_config_rejects_zero_coprocessor_signer() {
     let admin = Pubkey::new_unique();
     let (host_config, _) = host::host_config_address();
     let args = init_args_with_coprocessor_set(vec![[0u8; 20]], 1);
-    let context = mollusk_eval_context(payer, vec![(host_config, system_account(0))]);
+    let context = mollusk_execute_context(payer, vec![(host_config, system_account(0))]);
 
     context.process_and_validate_instruction(
         &initialize_host_config_ix(program_id, payer, admin, host_config, args),
@@ -3691,7 +3691,7 @@ fn mollusk_initialize_host_config_rejects_too_many_coprocessor_signers() {
     let (host_config, _) = host::host_config_address();
     let signers: Vec<[u8; 20]> = (1..=9).map(|i| [i; 20]).collect();
     let args = init_args_with_coprocessor_set(signers, 1);
-    let context = mollusk_eval_context(payer, vec![(host_config, system_account(0))]);
+    let context = mollusk_execute_context(payer, vec![(host_config, system_account(0))]);
 
     context.process_and_validate_instruction(
         &initialize_host_config_ix(program_id, payer, admin, host_config, args),
@@ -3707,7 +3707,7 @@ fn mollusk_set_coprocessor_signers_rotates_the_set_and_threshold() {
     let program_id = host::id();
     let admin = Pubkey::new_unique();
     let (host_config, account) = host_config_account_with_flags(admin, false, false);
-    let context = mollusk_eval_context(admin, vec![(host_config, account)]);
+    let context = mollusk_execute_context(admin, vec![(host_config, account)]);
 
     let signers = vec![[0xAAu8; 20], [0xBBu8; 20], [0xCCu8; 20]];
     context.process_and_validate_instruction(
@@ -3726,7 +3726,7 @@ fn mollusk_set_coprocessor_signers_rejects_non_admin() {
     let admin = Pubkey::new_unique();
     let intruder = Pubkey::new_unique();
     let (host_config, account) = host_config_account_with_flags(admin, false, false);
-    let context = mollusk_eval_context(intruder, vec![(host_config, account)]);
+    let context = mollusk_execute_context(intruder, vec![(host_config, account)]);
 
     context.process_and_validate_instruction(
         &set_coprocessor_signers_ix(program_id, intruder, host_config, vec![[0xAAu8; 20]], 1),
@@ -3742,7 +3742,7 @@ fn mollusk_set_coprocessor_signers_rejects_invalid_set() {
     let program_id = host::id();
     let admin = Pubkey::new_unique();
     let (host_config, account) = host_config_account_with_flags(admin, false, false);
-    let context = mollusk_eval_context(admin, vec![(host_config, account)]);
+    let context = mollusk_execute_context(admin, vec![(host_config, account)]);
 
     context.process_and_validate_instruction(
         &set_coprocessor_signers_ix(
@@ -3767,7 +3767,7 @@ fn mollusk_define_kms_context_at_realistic_signer_count() {
     let (host_config, account) = host_config_account_with_flags(admin, false, false);
     let context_id = 1; // current_kms_context_id starts at 0, so the next context is 1.
     let kms_context = host::kms_context_address(context_id).0;
-    let context = mollusk_eval_context(
+    let context = mollusk_execute_context(
         admin,
         vec![(host_config, account), (kms_context, system_account(0))],
     );
@@ -3821,7 +3821,7 @@ fn run_define_kms_context_expecting(signers: Vec<[u8; 20]>, expected: Check<'sta
     let (host_config, account) = host_config_account_with_flags(admin, false, false);
     let context_id = 1;
     let kms_context = host::kms_context_address(context_id).0;
-    let context = mollusk_eval_context(
+    let context = mollusk_execute_context(
         admin,
         vec![(host_config, account), (kms_context, system_account(0))],
     );
@@ -3931,7 +3931,7 @@ impl FheExecutionFixture {
             output_label,
         );
         let (output_value, _bump) = host::encrypted_value_address(output_encrypted_value_id);
-        let context = mollusk_eval_context(
+        let context = mollusk_execute_context(
             authority,
             vec![
                 (host_config, host_config_account),

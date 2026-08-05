@@ -431,6 +431,12 @@ if run_check 3; then
   # hits; the rest are grep args.
   check_alias() {
     local label="$1" scope="$2" exceptions="$3"; shift 3
+    # Case-insensitive unless the entry asks otherwise, which one entry does: `eval` is told apart
+    # from "evaluate" by the letter after it and from `Eval`-in-CamelCase by the capital after it, and
+    # a case-insensitive pattern can see neither. The `+` guard is for bash 3.2, where expanding an
+    # empty array under `set -u` aborts the script.
+    local -a case_opt=(-i)
+    if [ "${1:-}" = '--case-sensitive' ]; then case_opt=(); shift; fi
     # Every entry records its label so the self-test can prove it has a fixture. Without this the
     # fixture list and the entry list drift, which is how five entries (including the newest) went
     # unexercised.
@@ -449,13 +455,15 @@ if run_check 3; then
     esac
     # `.tsx` and `.json` are swept too: the dapp's React surface is .tsx, and several entries below
     # claim the retired spelling is gone from "the IDL", which is .json. Without them those claims
-    # were unenforced.
-    hits=$( (grep -rniE --include='*.rs' --include='*.ts' --include='*.tsx' --include='*.md' \
-      --include='*.py' --include='*.sh' --include='*.yml' --include='*.json' \
+    # were unenforced. `.toml` joined for the same reason: a crate description is the first sentence
+    # anyone reads about a crate, and zama-fhe's advertised "FHE eval requests" for months.
+    hits=$( (grep -rnE ${case_opt[@]+"${case_opt[@]}"} \
+      --include='*.rs' --include='*.ts' --include='*.tsx' --include='*.md' \
+      --include='*.py' --include='*.sh' --include='*.yml' --include='*.json' --include='*.toml' \
       "${EXCLUDES[@]}" "$@" "${roots[@]}" 2>/dev/null || true) )
     # Anchored to the record's path field, for the reason spelled out for the `exceptions` filter
     # below: matching the whole record let any *line* that merely names one of these files go unswept
-    # by all eighteen entries. Seven lines in the swept trees mention one of them today.
+    # by every entry below. Seven lines in the swept trees mention one of them today.
     hits=$(echo "$hits" \
       | (grep -v '^solana/docs/GLOSSARY\.md:' || true) \
       | (grep -v '^solana/docs/DESIGN_DECISIONS\.md:' || true) \
@@ -485,6 +493,15 @@ if run_check 3; then
   # actually does, and that is a recorded decision, not an oversight.
   check_alias 'fhe_eval — renamed to fhe_execute' all \
     'b"FHE_eval' -E '\bfhe_eval\b|\bFheEval\b'
+  # The bare abbreviation, which the entry above cannot see: it looks for `fhe_eval`, and the
+  # abbreviation had settled in on its own — `eval_args`, `eval_ix`, `mollusk_eval_context`,
+  # `PersistentEvalTarget`, a crate description advertising "FHE eval requests". The pattern stops
+  # before a `u` so that "evaluate" and "evaluation" stay out of it, and it is case-sensitive so the
+  # CamelCase forms are distinguishable at all. Exempt: the frozen tag, the helpers named after it,
+  # and the one test whose subject is the derivation of that tag.
+  check_alias 'eval — say execution; evaluate is the verb' all \
+    'FHE_eval|computed_eval_|eval_handle_derivation' --case-sensitive \
+    -E '(^|[^A-Za-z0-9])eval([^u]|$)|Eval[A-Z]'
   # Bare `born`, not just `born[-_ ]public`: the narrow pattern could not match the spellings that
   # actually survived — `*born* public` (asterisks between the two words), "are born with", "born in
   # `initialize_mint`". Prose is where retired vocabulary hides, because a rename sweep looks for
@@ -946,6 +963,8 @@ ${label}"
     rm -f "$fixture"
   done <<'FIXTURES'
 fhe_eval|fhe_eval — renamed to fhe_execute
+eval_args|eval — say execution; evaluate is the verb
+PersistentEvalTarget|eval — say execution; evaluate is the verb
 born-public|born / birth — renamed to created-public / create
 are born with|born / birth — renamed to created-public / create
 value_key|value_key identifier — renamed to encrypted_value_id

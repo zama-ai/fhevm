@@ -28,7 +28,7 @@ const MMR_PROOF_MODE_PUBLIC: u8 = 0x02;
 
 type EncryptedValueAccountState = ([u8; 32], Vec<Pubkey>);
 
-struct PersistentEvalTarget {
+struct PersistentExecutionTarget {
     value: u64,
     plaintext: [u8; 32],
     domain: Pubkey,
@@ -38,7 +38,7 @@ struct PersistentEvalTarget {
     encrypted_value: Pubkey,
 }
 
-struct PersistentEvalResult {
+struct PersistentExecutionResult {
     encrypted_value: Pubkey,
     encrypted_value_id: [u8; 32],
     handle: [u8; 32],
@@ -97,7 +97,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     // the result handle on-chain and the host-listener reconstructs the successful execution,
     // exercising the #2755 fhe_execute path.
     if std::env::var("TRIVIAL_ENCRYPT_EXECUTE").is_ok() {
-        trivial_encrypt_eval(&host, &payer, host_config)?;
+        execute_trivial_encrypt(&host, &payer, host_config)?;
         return Ok(());
     }
 
@@ -272,7 +272,7 @@ fn encrypted_value_address(domain: Pubkey, account: Pubkey, label: [u8; 32]) -> 
     zama_host::encrypted_value_address(encrypted_value_id).0
 }
 
-fn persistent_eval_target(payer: &Rc<Keypair>, label_marker: u8) -> PersistentEvalTarget {
+fn persistent_execution_target(payer: &Rc<Keypair>, label_marker: u8) -> PersistentExecutionTarget {
     let value = te_value();
     let mut plaintext = [0u8; 32];
     plaintext[24..32].copy_from_slice(&value.to_be_bytes());
@@ -285,7 +285,7 @@ fn persistent_eval_target(payer: &Rc<Keypair>, label_marker: u8) -> PersistentEv
         zama_solana_acl::derive_encrypted_value_id(domain.to_bytes(), account.to_bytes(), label);
     let encrypted_value = encrypted_value_address(domain, account, label);
 
-    PersistentEvalTarget {
+    PersistentExecutionTarget {
         value,
         plaintext,
         domain,
@@ -701,16 +701,16 @@ fn bootstrap(
 }
 
 #[allow(clippy::too_many_arguments)]
-fn trivial_encrypt_eval_with_label(
+fn execute_trivial_encrypt_with_label(
     host: &Program<Rc<Keypair>>,
     payer: &Rc<Keypair>,
     host_config: Pubkey,
     label_marker: u8,
     ok_marker: &str,
-) -> Result<PersistentEvalResult, Box<dyn std::error::Error>> {
+) -> Result<PersistentExecutionResult, Box<dyn std::error::Error>> {
     use anchor_lang::solana_program::instruction::AccountMeta;
 
-    let target = persistent_eval_target(payer, label_marker);
+    let target = persistent_execution_target(payer, label_marker);
     let fhe_type: u8 = 5; // euint64
 
     let (zama_event_authority, _) =
@@ -774,7 +774,7 @@ fn trivial_encrypt_eval_with_label(
     if std::env::var("TE_ALLOW").is_ok() {
         allow_for_decryption(host, payer, host_config, target.encrypted_value)?;
     }
-    Ok(PersistentEvalResult {
+    Ok(PersistentExecutionResult {
         encrypted_value: target.encrypted_value,
         encrypted_value_id: target.encrypted_value_id,
         handle,
@@ -787,12 +787,12 @@ fn trivial_encrypt_eval_with_label(
 /// (passed as the sole remaining_account). The live host-listener reconstructs the successful
 /// execution for the tfhe-worker to materialize. TE_VALUE selects the euint64 plaintext; TE_ALLOW
 /// marks it publicly decryptable afterward.
-fn trivial_encrypt_eval(
+fn execute_trivial_encrypt(
     host: &Program<Rc<Keypair>>,
     payer: &Rc<Keypair>,
     host_config: Pubkey,
 ) -> Result<(), Box<dyn std::error::Error>> {
-    trivial_encrypt_eval_with_label(host, payer, host_config, 2, "fhe_execute trivial_encrypt")?;
+    execute_trivial_encrypt_with_label(host, payer, host_config, 2, "fhe_execute trivial_encrypt")?;
     Ok(())
 }
 
@@ -998,7 +998,7 @@ fn historical_update_step(
 ) -> Result<(), Box<dyn std::error::Error>> {
     match step {
         "compute" => {
-            let target = persistent_eval_target(payer, HISTORICAL_LABEL_MARKER);
+            let target = persistent_execution_target(payer, HISTORICAL_LABEL_MARKER);
             if existing_value_account_state(host, target.encrypted_value)?.is_some() {
                 return Err(std::io::Error::new(
                     std::io::ErrorKind::AlreadyExists,
@@ -1006,7 +1006,7 @@ fn historical_update_step(
                 )
                 .into());
             }
-            let result = trivial_encrypt_eval_with_label(
+            let result = execute_trivial_encrypt_with_label(
                 host,
                 payer,
                 host_config,
@@ -1023,7 +1023,7 @@ fn historical_update_step(
             Ok(())
         }
         "update" => {
-            let target = persistent_eval_target(payer, HISTORICAL_LABEL_MARKER);
+            let target = persistent_execution_target(payer, HISTORICAL_LABEL_MARKER);
             let Some((old_handle, _)) = existing_value_account_state(host, target.encrypted_value)?
             else {
                 return Err(std::io::Error::new(
@@ -1033,7 +1033,7 @@ fn historical_update_step(
                 .into());
             };
 
-            let result = trivial_encrypt_eval_with_label(
+            let result = execute_trivial_encrypt_with_label(
                 host,
                 payer,
                 host_config,

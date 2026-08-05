@@ -862,7 +862,7 @@ pub struct HandleDerivationContext {
     pub unix_timestamp: i64,
 }
 
-/// Derives a content-addressed binary eval handle (EVM `FHEVMExecutor` shape):
+/// Derives a content-addressed binary handle (EVM `FHEVMExecutor` shape):
 /// no salt beyond slot entropy, so an identical computation derives the
 /// identical handle — the same value, by construction.
 pub fn computed_eval_handle(
@@ -899,7 +899,7 @@ pub fn computed_eval_handle(
     result
 }
 
-/// Derives a content-addressed ternary eval handle (see [`computed_eval_handle`]).
+/// Derives a content-addressed ternary handle (see [`computed_eval_handle`]).
 pub fn computed_eval_ternary_handle(
     op: FheTernaryOpCode,
     control: [u8; 32],
@@ -933,7 +933,7 @@ pub fn computed_eval_ternary_handle(
     result
 }
 
-/// Derives a content-addressed trivial-encrypt eval handle (see [`computed_eval_handle`]).
+/// Derives a content-addressed trivial-encrypt handle (see [`computed_eval_handle`]).
 pub fn computed_eval_trivial_handle(
     plaintext: [u8; 32],
     fhe_type: u8,
@@ -1000,7 +1000,7 @@ pub fn computed_eval_rand_seed(
     seed
 }
 
-/// Derives a content-addressed sum eval handle (see [`computed_eval_handle`]).
+/// Derives a content-addressed sum handle (see [`computed_eval_handle`]).
 pub fn computed_eval_sum_handle(
     operand_handles: &[[u8; 32]],
     fhe_type: u8,
@@ -1027,7 +1027,7 @@ pub fn computed_eval_sum_handle(
     result
 }
 
-/// Derives a content-addressed is-in eval handle (see [`computed_eval_handle`]).
+/// Derives a content-addressed is-in handle (see [`computed_eval_handle`]).
 pub fn computed_eval_is_in_handle(
     value_handle: [u8; 32],
     set_handles: &[[u8; 32]],
@@ -1055,7 +1055,7 @@ pub fn computed_eval_is_in_handle(
     result
 }
 
-/// Derives a content-addressed mul-div eval handle (see [`computed_eval_handle`]).
+/// Derives a content-addressed mul-div handle (see [`computed_eval_handle`]).
 pub fn computed_eval_mul_div_handle(
     factor1: [u8; 32],
     factor2: [u8; 32],
@@ -1130,7 +1130,7 @@ pub fn computed_rand_bounded_handle(
     result
 }
 
-/// Derives a content-addressed unary eval handle (see [`computed_eval_handle`]).
+/// Derives a content-addressed unary handle (see [`computed_eval_handle`]).
 pub fn computed_eval_unary_handle(
     op: FheUnaryOpCode,
     operand: [u8; 32],

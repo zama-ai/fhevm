@@ -141,7 +141,7 @@ fn decode_fhe_execute_args(data: &[u8]) -> Option<host::FheExecuteArgs> {
     host::FheExecuteArgs::deserialize(&mut &*payload).ok()
 }
 
-fn eval_step_output(step: &host::FheExecuteStep) -> &host::FheExecuteOutput {
+fn execution_step_output(step: &host::FheExecuteStep) -> &host::FheExecuteOutput {
     match step {
         host::FheExecuteStep::Binary { output, .. }
         | host::FheExecuteStep::Ternary { output, .. }
@@ -177,7 +177,7 @@ impl CleartextLedger {
             .message
             .as_ref()
             .expect("Mollusk result must include its compiled message");
-        let eval_args = result
+        let execute_args = result
             .inner_instructions
             .iter()
             .filter(|inner| {
@@ -190,12 +190,12 @@ impl CleartextLedger {
             .filter_map(|inner| decode_fhe_execute_args(&inner.instruction.data))
             .collect::<Vec<_>>();
         assert!(
-            !eval_args.is_empty(),
+            !execute_args.is_empty(),
             "expected at least one fhe_execute CPI in this instruction"
         );
 
         let mut executions = 0;
-        for args in &eval_args {
+        for args in &execute_args {
             let outputs = evaluate_cleartext(args, &self.values)
                 .expect("every emitted FHE batch must be valid in cleartext");
             for (step, value) in args.steps.iter().zip(outputs) {
@@ -204,7 +204,7 @@ impl CleartextLedger {
                     output_account_index,
                     output_label_index,
                     ..
-                } = eval_step_output(step)
+                } = execution_step_output(step)
                 else {
                     continue;
                 };

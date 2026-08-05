@@ -97,7 +97,7 @@ update, encrypted value ID…).
     some combinations have a price but are still rejected by validation.
 16. **[HOLDS]** An execution containing a rand step must bind a persistent output.
     That output can be claimed only once per execution
-    (`EvalAccountTable::claim_persistent_output`), which is what stops two
+    (`ExecutionAccountTable::claim_persistent_output`), which is what stops two
     executions from deriving the same seed.
 17. **[HOLDS]** `account_count` declared inside the instruction data must equal
     the accounts actually delivered (the execution's bytes are self-describing).

@@ -14,7 +14,7 @@
 //! consts the production paths use.
 //!
 //! Two event self-CPIs need sibling context: random-seed batches and a created-public (`make_public=true`)
-//! `fhe_execute` persistent output commits a public-decrypt leaf to the eval OUTPUT
+//! `fhe_execute` persistent output commits a public-decrypt leaf to the execution's OUTPUT
 //! handle, which is derived on-chain from slot entropy and appears in no
 //! instruction arg. The host therefore emits one narrow lifecycle batch from a
 //! self-CPI. [`decode_program_instructions`] accepts it only when it exactly
@@ -520,8 +520,8 @@ pub fn decode_program_instructions(
             let mut body = &ix.data[8..];
             let execution = FheExecuteArgs::deserialize(&mut body).map_err(borsh_err)?;
             let expected = expected_created_public_outputs(ix, &execution)?;
-            let eval_height = ix.stack_height.ok_or(DecodeError::InvalidStackMetadata)?;
-            let event_height = eval_height
+            let execute_stack_height = ix.stack_height.ok_or(DecodeError::InvalidStackMetadata)?;
+            let event_height = execute_stack_height
                 .checked_add(1)
                 .ok_or(DecodeError::InvalidStackMetadata)?;
             let mut batch_end = index + 1;
@@ -529,7 +529,9 @@ pub fn decode_program_instructions(
                 let child_height = child
                     .stack_height
                     .ok_or(DecodeError::InvalidStackMetadata)?;
-                if child.top_level_index != ix.top_level_index || child_height <= eval_height {
+                if child.top_level_index != ix.top_level_index
+                    || child_height <= execute_stack_height
+                {
                     break;
                 }
                 batch_end += 1;
@@ -980,15 +982,16 @@ mod tests {
                 output: make_public_persistent_output(1, &[0x31], Some(pk(0x20)), Some(&[0x31])),
             },
         ]);
-        let eval = ix_with_anchor_data(fhe_execute_accounts(&[ev0, ev1]), "fhe_execute", execution);
+        let execute_ix =
+            ix_with_anchor_data(fhe_execute_accounts(&[ev0, ev1]), "fhe_execute", execution);
         let event = created_public_event_ix(&[(0, ev0, pk(0x50)), (1, ev1, pk(0x51))]);
-        (eval, event)
+        (execute_ix, event)
     }
 
     #[test]
     fn exact_created_public_batch_resolves_each_persistent_output() {
-        let (eval, event) = two_created_public_outputs();
-        let decoded = decode_program_instructions(program_id(), &[eval, event]).unwrap();
+        let (execute_ix, event) = two_created_public_outputs();
+        let decoded = decode_program_instructions(program_id(), &[execute_ix, event]).unwrap();
         assert_eq!(
             decoded,
             vec![
@@ -1010,18 +1013,23 @@ mod tests {
 
     #[test]
     fn batches_are_associated_with_their_enclosing_fhe_execute() {
-        let (mut first_eval, mut first_event) = two_created_public_outputs();
-        first_eval.stack_height = Some(2);
+        let (mut first_execute_ix, mut first_event) = two_created_public_outputs();
+        first_execute_ix.stack_height = Some(2);
         first_event.stack_height = Some(3);
-        let (mut second_eval, mut second_event) = two_created_public_outputs();
-        second_eval.stack_height = Some(2);
+        let (mut second_execute_ix, mut second_event) = two_created_public_outputs();
+        second_execute_ix.stack_height = Some(2);
         second_event.stack_height = Some(3);
         second_event.data =
             created_public_event_ix(&[(0, pk(0xE0), pk(0x60)), (1, pk(0xE1), pk(0x61))]).data;
 
         let decoded = decode_program_instructions(
             program_id(),
-            &[first_eval, first_event, second_eval, second_event],
+            &[
+                first_execute_ix,
+                first_event,
+                second_execute_ix,
+                second_event,
+            ],
         )
         .unwrap();
 
@@ -1037,9 +1045,9 @@ mod tests {
 
     #[test]
     fn missing_created_public_batch_fails_closed() {
-        let (eval, _) = two_created_public_outputs();
+        let (execute_ix, _) = two_created_public_outputs();
         assert_eq!(
-            decode_program_instructions(program_id(), &[eval]),
+            decode_program_instructions(program_id(), &[execute_ix]),
             Err(DecodeError::MissingCreatedPublicEvent)
         );
     }
@@ -1051,110 +1059,111 @@ mod tests {
             fhe_type: 5,
             output: persistent_output(0, &[0x30], None, None),
         }]);
-        let eval = ix_with_anchor_data(fhe_execute_accounts(&[pk(0xE0)]), "fhe_execute", execution);
+        let execute_ix =
+            ix_with_anchor_data(fhe_execute_accounts(&[pk(0xE0)]), "fhe_execute", execution);
         let event = created_public_event_ix(&[(0, pk(0xE0), pk(0x50))]);
         assert_eq!(
-            decode_program_instructions(program_id(), &[eval, event]),
+            decode_program_instructions(program_id(), &[execute_ix, event]),
             Err(DecodeError::UnexpectedCreatedPublicEvent)
         );
     }
 
     #[test]
     fn reordered_or_mismatched_created_public_batch_fails_closed() {
-        let (eval, _) = two_created_public_outputs();
+        let (execute_ix, _) = two_created_public_outputs();
         let reordered =
             created_public_event_ix(&[(1, pk(0xE1), pk(0x51)), (0, pk(0xE0), pk(0x50))]);
         assert_eq!(
-            decode_program_instructions(program_id(), &[eval, reordered]),
+            decode_program_instructions(program_id(), &[execute_ix, reordered]),
             Err(DecodeError::CreatedPublicMismatch)
         );
     }
 
     #[test]
     fn duplicate_accounts_and_handles_fail_closed() {
-        let (eval, _) = two_created_public_outputs();
+        let (execute_ix, _) = two_created_public_outputs();
         let duplicate_account =
             created_public_event_ix(&[(0, pk(0xE0), pk(0x50)), (1, pk(0xE0), pk(0x51))]);
         assert_eq!(
-            decode_program_instructions(program_id(), &[eval.clone(), duplicate_account],),
+            decode_program_instructions(program_id(), &[execute_ix.clone(), duplicate_account],),
             Err(DecodeError::DuplicateCreatedPublicOutput)
         );
         let duplicate_handle =
             created_public_event_ix(&[(0, pk(0xE0), pk(0x50)), (1, pk(0xE1), pk(0x50))]);
         assert_eq!(
-            decode_program_instructions(program_id(), &[eval, duplicate_handle]),
+            decode_program_instructions(program_id(), &[execute_ix, duplicate_handle]),
             Err(DecodeError::DuplicateCreatedPublicOutput)
         );
     }
 
     #[test]
     fn malformed_unknown_version_and_wrong_envelope_fail_closed() {
-        let (eval, mut malformed) = two_created_public_outputs();
+        let (execute_ix, mut malformed) = two_created_public_outputs();
         malformed.data.push(0);
         assert!(matches!(
-            decode_program_instructions(program_id(), &[eval.clone(), malformed]),
+            decode_program_instructions(program_id(), &[execute_ix.clone(), malformed]),
             Err(DecodeError::MalformedCreatedPublicEvent(_))
         ));
 
         let (_, mut unknown_version) = two_created_public_outputs();
         unknown_version.data[16] = 99;
         assert_eq!(
-            decode_program_instructions(program_id(), &[eval.clone(), unknown_version],),
+            decode_program_instructions(program_id(), &[execute_ix.clone(), unknown_version],),
             Err(DecodeError::UnsupportedCreatedPublicVersion(99))
         );
 
         let (_, mut wrong_envelope) = two_created_public_outputs();
         wrong_envelope.accounts = vec![pk(0xEE)];
         assert_eq!(
-            decode_program_instructions(program_id(), &[eval, wrong_envelope]),
+            decode_program_instructions(program_id(), &[execute_ix, wrong_envelope]),
             Err(DecodeError::InvalidCreatedPublicEnvelope)
         );
     }
 
     #[test]
     fn huge_declared_record_count_fails_before_record_decode() {
-        let (eval, mut event) = two_created_public_outputs();
+        let (execute_ix, mut event) = two_created_public_outputs();
         event.data.truncate(21);
         event.data[17..21].copy_from_slice(&u32::MAX.to_le_bytes());
 
         assert!(matches!(
-            decode_program_instructions(program_id(), &[eval, event]),
+            decode_program_instructions(program_id(), &[execute_ix, event]),
             Err(DecodeError::MalformedCreatedPublicEvent(_))
         ));
     }
 
     #[test]
     fn oversized_batch_fails_closed() {
-        let (eval, _) = two_created_public_outputs();
+        let (execute_ix, _) = two_created_public_outputs();
         let records = (0..=zama_host::MAX_FHE_EXECUTION_STEPS)
             .map(|index| (index as u16, [index as u8; 32], [(index + 1) as u8; 32]))
             .collect::<Vec<_>>();
         let oversized = created_public_event_ix(&records);
         assert!(matches!(
-            decode_program_instructions(program_id(), &[eval, oversized]),
+            decode_program_instructions(program_id(), &[execute_ix, oversized]),
             Err(DecodeError::MalformedCreatedPublicEvent(_))
         ));
     }
 
     #[test]
     fn extra_unconsumed_and_wrongly_nested_batches_fail_closed() {
-        let (eval, event) = two_created_public_outputs();
+        let (execute_ix, event) = two_created_public_outputs();
         assert_eq!(
-            decode_program_instructions(program_id(), &[event.clone(), eval.clone()]),
+            decode_program_instructions(program_id(), &[event.clone(), execute_ix.clone()]),
             Err(DecodeError::UnexpectedCreatedPublicEvent)
         );
 
         let mut wrong_nesting = event;
         wrong_nesting.stack_height = Some(3);
         assert_eq!(
-            decode_program_instructions(program_id(), &[eval, wrong_nesting]),
+            decode_program_instructions(program_id(), &[execute_ix, wrong_nesting]),
             Err(DecodeError::InvalidCreatedPublicEnvelope)
         );
     }
 
     #[test]
     fn unexpected_host_descendant_inside_batch_fails_closed() {
-        let (eval, event) = two_created_public_outputs();
+        let (execute_ix, event) = two_created_public_outputs();
         let mut nested_host_instruction = ix_with_data(
             vec![pk(0xA), pk(0xB), pk(0xE0)],
             "make_handle_public",
@@ -1163,15 +1172,18 @@ mod tests {
         nested_host_instruction.stack_height = Some(2);
 
         assert_eq!(
-            decode_program_instructions(program_id(), &[eval, nested_host_instruction, event],),
+            decode_program_instructions(
+                program_id(),
+                &[execute_ix, nested_host_instruction, event],
+            ),
             Err(DecodeError::UnexpectedHostDescendant)
         );
     }
 
     #[test]
-    fn random_seed_event_is_allowed_only_for_matching_eval_steps() {
+    fn random_seed_event_is_allowed_only_for_matching_execution_steps() {
         let encrypted_value = pk(0xE0);
-        let eval = ix_with_anchor_data(
+        let execute_ix = ix_with_anchor_data(
             fhe_execute_accounts(&[encrypted_value]),
             "fhe_execute",
             execution(vec![FheExecuteStep::Rand {
@@ -1183,23 +1195,23 @@ mod tests {
         let public_event = created_public_event_ix(&[(0, encrypted_value, pk(0x90))]);
         assert!(decode_program_instructions(
             program_id(),
-            &[eval.clone(), event, public_event.clone()]
+            &[execute_ix.clone(), event, public_event.clone()]
         )
         .is_ok());
 
         let mismatched = random_seed_event_ix(&[(1, [7; 16])]);
         assert_eq!(
-            decode_program_instructions(program_id(), &[eval, mismatched, public_event]),
+            decode_program_instructions(program_id(), &[execute_ix, mismatched, public_event]),
             Err(DecodeError::RandomSeedMismatch)
         );
     }
 
     #[test]
     fn missing_stack_metadata_fails_closed() {
-        let (eval, mut event) = two_created_public_outputs();
+        let (execute_ix, mut event) = two_created_public_outputs();
         event.stack_height = None;
         assert_eq!(
-            decode_program_instructions(program_id(), &[eval, event]),
+            decode_program_instructions(program_id(), &[execute_ix, event]),
             Err(DecodeError::InvalidStackMetadata)
         );
     }

@@ -10,7 +10,7 @@
 // encrypted balance to a created-public handle) and SETTLE it (MMR inclusion proof from the
 // solana-proof-service + KMS burn certificate from the relayer + the on-chain settle in one
 // `settleBatch` call), then have alice CLAIM her confidential cShares payout (permissionless pull:
-// one MulDiv eval + a confidential transfer) and DECRYPT her claimed amount through the KMS
+// one MulDiv execution + a confidential transfer) and DECRYPT her claimed amount through the KMS
 // user-decrypt path (`decryptPosition`: ed25519-signed request -> relayer -> signcrypted shares ->
 // in-SDK de-signcryption).
 //
@@ -43,7 +43,7 @@
 //      (a single-join batch's total is public by construction), payoutReceived recorded.
 //  15. claim: alice pulls her payout from the settled batch              [live, SDK, wired below].
 //  16. on-chain assertions: the join record's claimed flag is set, and the claim-amount encrypted value account
-//      account exists with a nonzero current handle (the claim eval's created output). The payout
+//      account exists with a nonzero current handle (the claim execution's created output). The payout
 //      VALUE is encrypted on-chain by design; reading it is the decrypt phase's job.
 //  17. decryptPosition: alice user-decrypts her claimed amount; the cleartext equals the batch's
 //      payoutReceived exactly (sole joiner: floor(joined x payout / total) = payout) [live, SDK].
@@ -551,7 +551,7 @@ describe.skipIf(!runsDemoScenarios)("solana deposit-arc scenario", () => {
       // Step 15: claim. On-chain claims are permissionless pulls per join record (the payout can
       // only land in the record's user), but the demo has alice play her own: she signs, pays the
       // claim encrypted value account + transfer output rent, and receives the cShares in the account initialized
-      // back in step 2. One MulDiv eval computes her exact proportional payout
+      // back in step 2. One MulDiv execution computes her exact proportional payout
       // (encrypted(joined) x payoutReceived / totalJoined) and a confidential transfer moves it
       // from the batch's payout account to hers. The SDK builder derives every validated account
       // from these six roots (its unit test pins each derivation against claim.rs), same as
@@ -577,7 +577,7 @@ describe.skipIf(!runsDemoScenarios)("solana deposit-arc scenario", () => {
 
       // Step 16: on-chain assertions for the claim phase. The join record's claimed flag is the
       // program's own "this claim executed" marker, and the claim-amount encrypted value account is the account the
-      // claim eval created for alice's payout handle. The payout VALUE is encrypted on-chain by
+      // claim execution created for alice's payout handle. The payout VALUE is encrypted on-chain by
       // design, so existence + the flag are the honest cheap checks here; reading the value is the
       // decrypt phase's job.
       console.log("deposit-arc claim: asserting claimed flag + claim encrypted value account on-chain...");

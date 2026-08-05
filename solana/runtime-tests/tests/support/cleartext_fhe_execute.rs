@@ -90,7 +90,7 @@ pub fn evaluate(
                 rhs,
                 output_fhe_type,
                 ..
-            } => eval_binary(
+            } => evaluate_binary(
                 &args.dictionary,
                 *op,
                 resolve_encrypted(lhs, &args.dictionary, inputs, &produced)?,
@@ -158,7 +158,7 @@ pub fn evaluate(
                 operand,
                 output_fhe_type,
                 ..
-            } => eval_unary(
+            } => evaluate_unary(
                 *op,
                 resolve_encrypted(operand, &args.dictionary, inputs, &produced)?,
                 *output_fhe_type,
@@ -219,7 +219,7 @@ pub fn evaluate(
                 divisor,
                 output_fhe_type,
                 ..
-            } => eval_mul_div(
+            } => evaluate_mul_div(
                 &args.dictionary,
                 resolve_encrypted(factor1, &args.dictionary, inputs, &produced)?,
                 factor2,
@@ -235,7 +235,7 @@ pub fn evaluate(
     Ok(produced.iter().map(ClearValue::typed).collect())
 }
 
-fn eval_binary(
+fn evaluate_binary(
     dictionary: &[[u8; 32]],
     op: FheBinaryOpCode,
     lhs: ClearValue,
@@ -282,7 +282,7 @@ fn eval_binary(
     ClearValue::new(output_fhe_type, result)
 }
 
-fn eval_unary(
+fn evaluate_unary(
     op: FheUnaryOpCode,
     operand: ClearValue,
     output_fhe_type: u8,
@@ -299,7 +299,7 @@ fn eval_unary(
     ClearValue::new(output_fhe_type, result)
 }
 
-fn eval_mul_div(
+fn evaluate_mul_div(
     dictionary: &[[u8; 32]],
     factor1: ClearValue,
     factor2_operand: &FheExecuteOperand,

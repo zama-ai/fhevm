@@ -36,7 +36,7 @@ pub enum ReplayError {
 pub struct EncryptedValueAccountReplayState {
     /// `None` means the encrypted_value_account advanced through `fhe_execute` and this proof
     /// service did not have slot entropy to recompute the output handle. That
-    /// is still enough to reconstruct later historical leaves because eval and
+    /// is still enough to reconstruct later historical leaves because execution and
     /// update instructions carry the outgoing `previous_handle`.
     pub current_handle: Option<[u8; 32]>,
     /// Subject insertion order preserved — mirrors the on-chain `subjects` vector.
@@ -261,7 +261,7 @@ mod tests {
             subjects: vec![owner, spender],
             make_public_handle: None,
         };
-        let eval_update = DecodedInstruction::FheExecuteUpdateEncryptedValue {
+        let execute_update = DecodedInstruction::FheExecuteUpdateEncryptedValue {
             encrypted_value: ev,
             previous_handle: pk(0x10),
             previous_subjects: vec![owner, spender],
@@ -269,18 +269,18 @@ mod tests {
             make_public_handle: None,
         };
 
-        let (_, eval_events) = replay(&[create, eval_update]).unwrap();
+        let (_, update_events) = replay(&[create, execute_update]).unwrap();
 
         assert_eq!(
-            eval_events,
+            update_events,
             vec![EncryptedValueAccountEvent::handle_updated(
                 pk(0x10),
                 &[owner, spender]
             )]
         );
-        let eval_reconstructed = reconstruct(ev, &eval_events).unwrap();
+        let reconstructed_after_update = reconstruct(ev, &update_events).unwrap();
         assert_eq!(
-            eval_reconstructed.leaves,
+            reconstructed_after_update.leaves,
             vec![
                 historical_access_leaf_commitment(ev, 0, pk(0x10), owner),
                 historical_access_leaf_commitment(ev, 1, pk(0x10), spender),
@@ -289,7 +289,7 @@ mod tests {
     }
 
     #[test]
-    fn fhe_execute_create_initializes_subjects_for_later_eval_supersession() {
+    fn fhe_execute_create_initializes_subjects_for_later_execution_supersession() {
         let ev = pk(0x05);
         let owner = pk(0x30);
         let create = DecodedInstruction::FheExecuteCreateEncryptedValue {
@@ -297,7 +297,7 @@ mod tests {
             subjects: vec![owner],
             make_public_handle: None,
         };
-        let eval_update = DecodedInstruction::FheExecuteUpdateEncryptedValue {
+        let execute_update = DecodedInstruction::FheExecuteUpdateEncryptedValue {
             encrypted_value: ev,
             previous_handle: pk(0x10),
             previous_subjects: vec![owner],
@@ -305,7 +305,7 @@ mod tests {
             make_public_handle: None,
         };
 
-        let (state, events) = replay(&[create, eval_update]).unwrap();
+        let (state, events) = replay(&[create, execute_update]).unwrap();
 
         assert_eq!(state.unwrap().current_handle, None);
         assert_eq!(
@@ -364,14 +364,14 @@ mod tests {
             subjects: vec![owner],
             make_public_handle: None,
         };
-        let first_eval_update = DecodedInstruction::FheExecuteUpdateEncryptedValue {
+        let first_execute_update = DecodedInstruction::FheExecuteUpdateEncryptedValue {
             encrypted_value: ev,
             previous_handle: pk(0x10),
             previous_subjects: vec![owner],
             output_subjects: vec![owner],
             make_public_handle: None,
         };
-        let second_eval_update = DecodedInstruction::FheExecuteUpdateEncryptedValue {
+        let second_execute_update = DecodedInstruction::FheExecuteUpdateEncryptedValue {
             encrypted_value: ev,
             previous_handle: pk(0x11),
             previous_subjects: vec![owner],
@@ -379,7 +379,7 @@ mod tests {
             make_public_handle: None,
         };
 
-        let (_, events) = replay(&[create, first_eval_update, second_eval_update]).unwrap();
+        let (_, events) = replay(&[create, first_execute_update, second_execute_update]).unwrap();
         let reconstructed = reconstruct(ev, &events).unwrap();
 
         assert_eq!(
@@ -412,7 +412,7 @@ mod tests {
             encrypted_value: ev,
             subject: removed,
         };
-        let eval_update = DecodedInstruction::FheExecuteUpdateEncryptedValue {
+        let execute_update = DecodedInstruction::FheExecuteUpdateEncryptedValue {
             encrypted_value: ev,
             previous_handle: pk(0x10),
             previous_subjects: vec![owner],
@@ -420,7 +420,7 @@ mod tests {
             make_public_handle: None,
         };
 
-        let (_, events) = replay(&[create, remove, eval_update]).unwrap();
+        let (_, events) = replay(&[create, remove, execute_update]).unwrap();
         let reconstructed = reconstruct(ev, &events).unwrap();
 
         assert_eq!(reconstructed.leaf_count, 1);
@@ -435,7 +435,7 @@ mod tests {
     }
 
     #[test]
-    fn eval_driven_historical_leaf_builds_a_verifiable_mmr_proof() {
+    fn execution_driven_historical_leaf_builds_a_verifiable_mmr_proof() {
         let ev = pk(0x04);
         let owner = pk(0x30);
         let create = DecodedInstruction::FheExecuteCreateEncryptedValue {
@@ -443,7 +443,7 @@ mod tests {
             subjects: vec![owner],
             make_public_handle: None,
         };
-        let eval_update = DecodedInstruction::FheExecuteUpdateEncryptedValue {
+        let execute_update = DecodedInstruction::FheExecuteUpdateEncryptedValue {
             encrypted_value: ev,
             previous_handle: pk(0x10),
             previous_subjects: vec![owner],
@@ -451,7 +451,7 @@ mod tests {
             make_public_handle: None,
         };
 
-        let (_, events) = replay(&[create, eval_update]).unwrap();
+        let (_, events) = replay(&[create, execute_update]).unwrap();
         let reconstructed = reconstruct(ev, &events).unwrap();
         let proof = reconstructed
             .build_verified_proof(&reconstructed.peaks, reconstructed.leaf_count, 0)
@@ -475,7 +475,7 @@ mod tests {
             subjects: vec![owner],
             make_public_handle: None,
         };
-        let eval_update = DecodedInstruction::FheExecuteUpdateEncryptedValue {
+        let execute_update = DecodedInstruction::FheExecuteUpdateEncryptedValue {
             encrypted_value: ev,
             previous_handle: pk(0x10),
             previous_subjects: vec![owner],
@@ -483,7 +483,7 @@ mod tests {
             make_public_handle: None,
         };
 
-        let (state, events) = replay(&[create, eval_update]).unwrap();
+        let (state, events) = replay(&[create, execute_update]).unwrap();
 
         assert_eq!(
             events,
