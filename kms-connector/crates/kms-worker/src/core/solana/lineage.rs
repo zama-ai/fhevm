@@ -36,13 +36,13 @@ impl ResolvedLineage {
     /// The app account this lineage belongs to — the app context of every later rule, read
     /// from the account and never from a request field.
     pub fn app_account(&self) -> SolanaPubkeyBytes {
-        self.lineage.app_account
+        self.lineage.encrypted_value_account_authority
     }
 
     /// The ACL domain this lineage belongs to, likewise account-sourced. This is the value
     /// the signed scope is tested against.
     pub fn acl_domain_key(&self) -> SolanaPubkeyBytes {
-        self.lineage.acl_domain_key
+        self.lineage.domain
     }
 
     /// The decoded account, for the handle-binding rules.
@@ -109,7 +109,7 @@ pub fn resolve_lineage(
 
     // h4: the account's own fields reproduce the identity it was named by. The backstop that
     // makes a substituted lineage a rejection rather than a redirection.
-    let derived = lineage.value_key();
+    let derived = lineage.encrypted_value_id();
     if derived != value_key {
         return Err(LineageFailure::ValueKeyMismatch {
             account_key,

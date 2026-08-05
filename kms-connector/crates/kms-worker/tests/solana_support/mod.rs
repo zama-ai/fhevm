@@ -31,7 +31,7 @@ use solana_pubkey::Pubkey;
 use std::collections::BTreeMap;
 use std::sync::Mutex;
 use zama_solana_acl::{
-    EncryptedValue, MmrProof, derive_value_key, encrypted_value_discriminator,
+    EncryptedValue, MmrProof, derive_encrypted_value_id, encrypted_value_discriminator,
     historical_access_leaf_commitment, mmr_append, mmr_build_proof, public_decrypt_leaf_commitment,
 };
 use zama_solana_permit::{
@@ -362,19 +362,19 @@ impl LineageFixture {
 
     /// A lineage in an arbitrary domain, app and label.
     pub fn in_domain(
-        acl_domain_key: SolanaPubkeyBytes,
-        app_account: SolanaPubkeyBytes,
-        encrypted_value_label: [u8; 32],
+        domain: SolanaPubkeyBytes,
+        encrypted_value_account_authority: SolanaPubkeyBytes,
+        label: [u8; 32],
         current_handle: [u8; 32],
         subjects: &[SolanaPubkeyBytes],
     ) -> Self {
-        let value_key = derive_value_key(acl_domain_key, app_account, encrypted_value_label);
+        let value_key = derive_encrypted_value_id(domain, encrypted_value_account_authority, label);
         let (account_key, bump) = encrypted_value_acl_address(PROGRAM_ID, value_key);
         Self {
             lineage: EncryptedValue {
-                acl_domain_key,
-                app_account,
-                encrypted_value_label,
+                domain,
+                encrypted_value_account_authority,
+                label,
                 current_handle,
                 subjects: subjects.to_vec(),
                 leaf_count: 0,
@@ -388,7 +388,7 @@ impl LineageFixture {
 
     /// The lineage identity a request names.
     pub fn value_key(&self) -> [u8; 32] {
-        self.lineage.value_key()
+        self.lineage.encrypted_value_id()
     }
 
     /// Supersedes the current handle, sealing a historical leaf for each current subject —
