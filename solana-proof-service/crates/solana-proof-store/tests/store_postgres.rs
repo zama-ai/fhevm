@@ -60,7 +60,7 @@ fn fhe_execute_ix(
     subjects: &[[u8; 32]],
     previous: Option<([u8; 32], Vec<[u8; 32]>)>,
 ) -> RawInstruction {
-    // Pool layout: [0]=domain, [1]=app account, [2]=label, [3..]=output
+    // Pool layout: [0]=domain, [1]=authority, [2]=label, [3..]=output
     // subjects. TrivialEncrypt's plaintext is inline, not pooled.
     let mut dictionary = vec![pk(0x71), pk(0x72), pk(0x73)];
     let subject_base = dictionary.len() as u8;

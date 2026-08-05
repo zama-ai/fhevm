@@ -23,7 +23,7 @@ import {
 // byte-identical to the Rust implementation the on-chain program and the KMS connector run —
 // not merely internally consistent with itself.
 const domain = new Uint8Array(32).fill(1);
-const app = new Uint8Array(32).fill(2);
+const authority = new Uint8Array(32).fill(2);
 const label = new Uint8Array(32).fill(3);
 const account = new Uint8Array(32).fill(4);
 const handle = new Uint8Array(32).fill(5);
@@ -97,7 +97,7 @@ describe('decodeMmrProofTransportBlob', () => {
 
 describe('deriveEncryptedValueId', () => {
   it('matches the Rust crate vector', () => {
-    const encryptedValueId = deriveEncryptedValueId(domain, app, label);
+    const encryptedValueId = deriveEncryptedValueId(domain, authority, label);
     expect(bytesToHex(encryptedValueId)).toBe('0xcb421159e2c7709e401334c46b4bcee90093cb616d040fca9c1dc9a14ad77820');
   });
 });

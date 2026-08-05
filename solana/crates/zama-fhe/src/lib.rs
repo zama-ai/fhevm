@@ -110,10 +110,11 @@ pub enum FheExecutionBuildError {
     TernaryOperandTypeMismatch,
     /// A persistent output subject list would be rejected by the host.
     InvalidSubjects,
-    /// An encrypted value ID component contains an app-domain pubkey the host would reject.
+    /// The domain or the authority component of an encrypted value ID is the default pubkey, which
+    /// the host rejects.
     InvalidEncryptedValueId,
-    /// The fixed encrypted value account authority pubkey is not a valid signer identity.
-    InvalidAppAuthority,
+    /// The fixed encrypted value account authority is the default pubkey, so it can never sign.
+    InvalidEncryptedValueAccountAuthority,
     /// A lowered host account index does not match the execution account list.
     InvalidRemainingAccountReference,
     /// A verified-input operand referenced an attestation not registered with the builder.

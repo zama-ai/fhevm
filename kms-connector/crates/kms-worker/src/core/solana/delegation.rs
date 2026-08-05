@@ -105,7 +105,7 @@ pub fn check_delegation(
         RowOutcome::NotLive(reason) => reason,
     };
 
-    // Holding no wildcard row at all is the ordinary case, and in it the app-specific row's reason
+    // Holding no wildcard row at all is the ordinary case, and in it the authority-specific row's reason
     // is the whole story — reporting a pair whose second half is always "and you have no wildcard
     // grant either" would say nothing and would rename every existing diagnostic.
     if let DelegationFailure::Absent { .. } = wildcard {
@@ -279,7 +279,7 @@ pub enum DelegationFailure {
     },
     /// Both rows exist and neither authorizes, so both reasons are reported: naming only one would
     /// send a delegator to fix a row that was not the one standing in the way.
-    #[error("no live delegation: app-specific row: {exact}; wildcard row: {wildcard}")]
+    #[error("no live delegation: authority-specific row: {exact}; wildcard row: {wildcard}")]
     NoLiveGrant {
         /// Why the row for the encrypted value account's authority did not authorize.
         exact: Box<DelegationFailure>,

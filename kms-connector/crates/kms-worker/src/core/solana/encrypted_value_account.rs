@@ -1,5 +1,5 @@
-//! Encrypted value account resolution: presence, program ownership, type, identity binding, app
-//! context.
+//! Encrypted value account resolution: presence, program ownership, type, identity binding, and the
+//! authority the account names.
 //!
 //! A handle entry names the object that authorizes it — the encrypted value account, identified by
 //! its encrypted value ID — and the chain of checks here is what turns that unsigned claim into a
@@ -35,8 +35,8 @@ impl ResolvedEncryptedValueAccount {
         self.account_key
     }
 
-    /// The authority this encrypted value account belongs to — the app
-    /// context of every later rule, read from the account and never from a request field.
+    /// The authority this encrypted value account belongs to, which every later rule is read
+    /// against. Taken from the account and never from a request field.
     pub fn encrypted_value_account_authority(&self) -> SolanaPubkeyBytes {
         self.encrypted_value.encrypted_value_account_authority
     }

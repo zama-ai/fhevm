@@ -398,7 +398,7 @@ async fn a_wildcard_row_authorizes_a_encrypted_value_account_with_no_app_specifi
     );
 }
 
-/// The app-specific row is tried first, so a dead wildcard row beside it changes nothing.
+/// The authority-specific row is tried first, so a dead wildcard row beside it changes nothing.
 #[tokio::test]
 async fn an_app_specific_row_authorizes_while_the_wildcard_row_is_dead() {
     let mut dead_wildcard = live_wildcard();
@@ -410,7 +410,7 @@ async fn an_app_specific_row_authorizes_while_the_wildcard_row_is_dead() {
 }
 
 /// The consequence of the rule, stated as a test rather than left to be discovered: revoking the
-/// app-specific row does not stop a delegate who also holds a wildcard row. Scope-by-app is a
+/// authority-specific row does not stop a delegate who also holds a wildcard row. Scope-by-app is a
 /// property of a row, so narrowing one app takes revoking both rows — two transactions, because the
 /// host program's revocation instruction takes one record per call.
 #[tokio::test]
@@ -423,7 +423,7 @@ async fn revoking_the_app_specific_row_does_not_stop_a_wildcard_delegate() {
         .expect("the wildcard row still authorizes, which is what wildcard means");
 }
 
-/// Neither row can veto the other. An app-specific row written after the observation is not part of
+/// Neither row can veto the other. An authority-specific row written after the observation is not part of
 /// the state this authorization saw — and that says nothing about the wildcard row, which is.
 #[tokio::test]
 async fn an_app_specific_row_newer_than_the_observation_does_not_veto_the_wildcard_row() {
@@ -435,7 +435,7 @@ async fn an_app_specific_row_newer_than_the_observation_does_not_veto_the_wildca
         .expect("a row outside the observation cannot invalidate one inside it");
 }
 
-/// The mirror: a wildcard row from the future does not reach a live app-specific row.
+/// The mirror: a wildcard row from the future does not reach a live authority-specific row.
 #[tokio::test]
 async fn a_wildcard_row_newer_than_the_observation_does_not_veto_the_app_specific_row() {
     let mut from_the_future = live_wildcard();
@@ -472,7 +472,7 @@ async fn two_dead_rows_report_both_reasons() {
     assert_eq!(failure.class(), FailureClass::Terminal);
 }
 
-/// Holding no wildcard row is the ordinary case, and in it the app-specific reason is reported as
+/// Holding no wildcard row is the ordinary case, and in it the authority-specific reason is reported as
 /// itself: the rule gained a second row, not a second sentence in every diagnostic.
 #[tokio::test]
 async fn without_a_wildcard_row_the_app_specific_reason_is_reported_alone() {

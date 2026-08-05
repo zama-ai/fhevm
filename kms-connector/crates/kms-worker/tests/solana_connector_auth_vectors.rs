@@ -1298,18 +1298,18 @@ fn delegation_scenarios() -> Vec<Scenario> {
         base_world().with_account(expected_key, encrypted_value_account.account()),
     ));
 
-    // Both rows exist and neither is live. The app-specific row alone would report "revoked", which
+    // Both rows exist and neither is live. The authority-specific row alone would report "revoked", which
     // would send the delegator to a row that was not the only thing standing in the way.
     let mut revoked_wildcard =
         DelegationFixture::live_wildcard(delegator.pubkey(), signer.pubkey(), OBSERVED_SLOT);
     revoked_wildcard.revoked = true;
     out.push(Scenario::rejected(
         "no-live-delegation-row",
-        "The delegator holds both an app-specific row and a wildcard row, and both are revoked. The \
+        "The delegator holds both an authority-specific row and a wildcard row, and both are revoked. The \
          rejection names both reasons: either row could have authorized this entry on its own, so \
          naming one of them would describe half of the state the delegate has to fix.",
         "delegated-current",
-        "both the app-specific and the wildcard delegation rows are marked revoked",
+        "both the authority-specific and the wildcard delegation rows are marked revoked",
         rule::DELEGATION_NO_LIVE_GRANT,
         FailureClass::Terminal,
         request.clone(),

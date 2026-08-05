@@ -3189,12 +3189,12 @@
     },
     {
       "name": "no-live-delegation-row",
-      "comment": "The delegator holds both an app-specific row and a wildcard row, and both are revoked. The rejection names both reasons: either row could have authorized this entry on its own, so naming one of them would describe half of the state the delegate has to fix.",
+      "comment": "The delegator holds both an authority-specific row and a wildcard row, and both are revoked. The rejection names both reasons: either row could have authorized this entry on its own, so naming one of them would describe half of the state the delegate has to fix.",
       "result": "invalid",
       "rule": "delegation-no-live-grant",
       "class": "terminal",
       "derived_from": "delegated-current",
-      "mutation": "both the app-specific and the wildcard delegation rows are marked revoked",
+      "mutation": "both the authority-specific and the wildcard delegation rows are marked revoked",
       "request": {
         "permit": {
           "user_pubkey": "8a88e3dd7409f195fd52db2d3cba5d72ca6709bf1d94121bf3748801b40f6f5c",

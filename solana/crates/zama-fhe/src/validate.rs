@@ -579,7 +579,7 @@ pub(crate) fn validate_encrypted_value_account_authority(
     authority: ExecutionEncryptedValueAccountAuthority,
 ) -> Result<()> {
     if authority.pubkey() == Pubkey::default() {
-        return Err(FheExecutionBuildError::InvalidAppAuthority);
+        return Err(FheExecutionBuildError::InvalidEncryptedValueAccountAuthority);
     }
     Ok(())
 }

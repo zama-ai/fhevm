@@ -1005,7 +1005,10 @@ fn validates_encrypted_value_account_authority_and_persistent_account_pubkeys() 
         Ok(_) => panic!("invalid encrypted value account authority unexpectedly built"),
         Err(error) => error,
     };
-    assert_eq!(error, FheExecutionBuildError::InvalidAppAuthority);
+    assert_eq!(
+        error,
+        FheExecutionBuildError::InvalidEncryptedValueAccountAuthority
+    );
 
     let invalid_encrypted_value_id = EncryptedValueId::new(
         Domain::new(Pubkey::default()),

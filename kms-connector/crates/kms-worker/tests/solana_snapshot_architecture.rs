@@ -157,7 +157,7 @@ async fn the_second_read_carries_over_every_key_of_the_first() {
 
 /// A delegated entry plans both rows that could carry its grant — the encrypted value account's
 /// encrypted value account authority and the delegator's wildcard row — in the same read. Fetching
-/// the wildcard row only when the app-specific one is missing would be a third read, and nothing in
+/// the wildcard row only when the authority-specific one is missing would be a third read, and nothing in
 /// this pipeline reads state after the deciding observation.
 ///
 /// Two entries in two apps under one delegator show how the two kinds of row scale: an app row per

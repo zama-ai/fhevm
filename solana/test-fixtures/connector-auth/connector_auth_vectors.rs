@@ -278,7 +278,7 @@ pub mod rule {
     pub const DELEGATION_FOREIGN_OWNER: &str = "delegation-foreign-owner";
     /// The account at the delegation address is host-owned but is not a delegation record.
     pub const DELEGATION_WRONG_ACCOUNT_TYPE: &str = "delegation-wrong-account-type";
-    /// Both the app-specific row and the delegator's wildcard row exist, and neither is live.
+    /// Both the authority-specific row and the delegator's wildcard row exist, and neither is live.
     pub const DELEGATION_NO_LIVE_GRANT: &str = "delegation-no-live-grant";
 
     /// Every rule name, for coverage checks.
