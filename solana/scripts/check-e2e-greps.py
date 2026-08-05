@@ -133,7 +133,13 @@ def producer_text(files: list[Path], exclude: Path) -> str:
 
 
 def producer_files() -> list[Path]:
-    """Tracked source files only — see PRODUCER_PATHSPECS for why that matters."""
+    """Tracked, non-test source files — see PRODUCER_PATHSPECS for why tracked matters.
+
+    Test files are dropped here rather than at each call site. Check 1 used to read them, so a
+    renamed producer label whose old spelling survived in any `.test.ts` or `.test.sh` still looked
+    present and the rename passed. Filename-level only: a `#[cfg(test)]` module inside a production
+    `.rs` is still part of the haystack.
+    """
     listed = subprocess.run(
         ["git", "ls-files", "-z", "--", *PRODUCER_PATHSPECS],
         cwd=REPO_ROOT,
@@ -144,6 +150,8 @@ def producer_files() -> list[Path]:
     files = []
     for name in filter(None, listed.split("\0")):
         path = REPO_ROOT / name
+        if is_test_file(path):
+            continue
         if (path.suffix in PRODUCER_SUFFIXES or path.name in PRODUCER_NAMES) and path.is_file():
             files.append(path)
     return files

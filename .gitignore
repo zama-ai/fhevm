@@ -97,3 +97,10 @@ mochawesome-report/
 target/
 
 .solana-test-ledger
+
+# dead-surface-check.sh --self-test plants these inside source trees and deletes them on exit.
+# Ignored so an interrupted run cannot be committed, and so a stray one is visible as clean-tree noise.
+solana/crates/zama-fhe/.dead-surface-selftest.md
+solana/crates/zama-fhe/src/dead_surface_selftest.rs
+solana/programs/zama-host/src/dead_surface_selftest.rs
+solana/demo-dapp/src/deadSurfaceSelftest.ts
