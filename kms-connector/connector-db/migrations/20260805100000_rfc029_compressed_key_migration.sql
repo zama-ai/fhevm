@@ -2,4 +2,3 @@
 -- A NULL value identifies an ordinary key generation request.
 ALTER TABLE keygen_requests
     ADD COLUMN migration_key_id BYTEA;
-
