@@ -51,6 +51,7 @@ import {
 const MAX_USER_DECRYPT_DURATION_DAYS = 365;
 const MAX_USER_DECRYPT_CONTRACT_ADDRESSES = 10;
 const MAX_DECRYPTION_REQUEST_BITS = 2048;
+const MAX_SOLANA_USER_DECRYPT_HANDLES = 33;
 
 // Get the current date in seconds. This is needed because Solidity works with seconds, not milliseconds
 // See https://docs.soliditylang.org/en/develop/units-and-global-variables.html#time-units
@@ -3025,6 +3026,43 @@ describe('Decryption', function () {
           payload.extraData,
           payload.signature,
         ]);
+    });
+
+    it('Should accept a Solana request at the handle cap', async function () {
+      const payload = {
+        userIdentity: createBytes32(),
+        publicKey,
+        allowedAclDomainKeys: [createBytes32()],
+        requestValidity,
+        nonce: createBytes32(),
+        extraData: extraDataV0,
+        signature: hre.ethers.hexlify(hre.ethers.randomBytes(64)),
+      };
+      // Duplicates are legal (the gateway performs no deduplication), so the boundary is
+      // exercised without registering 33 distinct ciphertexts.
+      const cappedHandles = Array(MAX_SOLANA_USER_DECRYPT_HANDLES).fill(directHandles[0]);
+
+      await expect(decryption.connect(tokenFundedTxSender).userDecryptionRequestSolana(cappedHandles, payload)).to.emit(
+        decryption,
+        'UserDecryptionRequestSolana',
+      );
+    });
+
+    it('Should revert when a Solana request exceeds the handle cap', async function () {
+      const payload = {
+        userIdentity: createBytes32(),
+        publicKey,
+        allowedAclDomainKeys: [createBytes32()],
+        requestValidity,
+        nonce: createBytes32(),
+        extraData: extraDataV0,
+        signature: hre.ethers.hexlify(hre.ethers.randomBytes(64)),
+      };
+      const oneTooMany = Array(MAX_SOLANA_USER_DECRYPT_HANDLES + 1).fill(directHandles[0]);
+
+      await expect(decryption.connect(tokenFundedTxSender).userDecryptionRequestSolana(oneTooMany, payload))
+        .to.be.revertedWithCustomError(decryption, 'SolanaHandlesMaxLengthExceeded')
+        .withArgs(MAX_SOLANA_USER_DECRYPT_HANDLES, oneTooMany.length);
     });
 
     it('Should accept a mixed batch (some direct, some delegated) without checking delegation on-chain', async function () {
