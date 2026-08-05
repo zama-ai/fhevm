@@ -60,8 +60,8 @@ where
             epoch_id: parsed_extra_data.epoch_id.map(u256_to_request_id),
             context_id: parsed_extra_data.context_id.map(u256_to_request_id),
             extra_data: prep_keygen_request.extraData.to_vec(),
-            // Used to generate other types of key, but not planned to be supported by the Gateway
-            keyset_config: Some(UNCOMPRESSED_KEY_SET_CONFIG),
+            // Explicitly request the compressed XOF keyset layout expected by GPU workers.
+            keyset_config: Some(COMPRESSED_XOF_KEY_SET_CONFIG),
         }))
     }
 
@@ -84,8 +84,8 @@ where
             epoch_id: parsed_extra_data.epoch_id.map(u256_to_request_id),
             context_id: parsed_extra_data.context_id.map(u256_to_request_id),
             extra_data: keygen_request.extraData.to_vec(),
-            // Used to generate other types of key, but not planned to be supported by the Gateway
-            keyset_config: Some(UNCOMPRESSED_KEY_SET_CONFIG),
+            // Explicitly request the compressed XOF keyset layout expected by GPU workers.
+            keyset_config: Some(COMPRESSED_XOF_KEY_SET_CONFIG),
             keyset_added_info: None,
         }))
     }
@@ -124,11 +124,11 @@ where
     }
 }
 
-const UNCOMPRESSED_KEY_SET_CONFIG: KeySetConfig = KeySetConfig {
+const COMPRESSED_XOF_KEY_SET_CONFIG: KeySetConfig = KeySetConfig {
     keyset_type: KeySetType::Standard as i32,
     standard_keyset_config: Some(StandardKeySetConfig {
         compute_key_type: ComputeKeyType::Cpu as i32,
         secret_key_config: KeyGenSecretKeyConfig::GenerateAll as i32,
-        compressed_key_config: CompressedKeyConfig::CompressedNone as i32,
+        compressed_key_config: CompressedKeyConfig::CompressedAll as i32,
     }),
 };
