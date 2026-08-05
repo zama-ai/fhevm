@@ -72,6 +72,7 @@ interface IDecryption {
     error MaxDecryptionRequestBitSizeExceeded(uint256 maxBitSize, uint256 totalBitSize);
     error MaxDurationDaysExceeded(uint256 maxValue, uint256 actualValue);
     error MaxDurationSecondsExceeded(uint256 maxValue, uint256 actualValue);
+    error SolanaHandlesMaxLengthExceeded(uint256 maxLength, uint256 actualLength);
     error StartTimestampInFuture(uint256 currentTimestamp, uint256 startTimestamp);
     error UnsupportedExtraDataVersion(uint8 version);
     error UserAddressInContractAddresses(address userAddress, address[] contractAddresses);
@@ -1599,6 +1600,22 @@ interface IDecryption {
       },
       {
         "name": "actualValue",
+        "type": "uint256",
+        "internalType": "uint256"
+      }
+    ]
+  },
+  {
+    "type": "error",
+    "name": "SolanaHandlesMaxLengthExceeded",
+    "inputs": [
+      {
+        "name": "maxLength",
+        "type": "uint256",
+        "internalType": "uint256"
+      },
+      {
+        "name": "actualLength",
         "type": "uint256",
         "internalType": "uint256"
       }
@@ -5827,6 +5844,103 @@ error MaxDurationSecondsExceeded(uint256 maxValue, uint256 actualValue);
                     <alloy::sol_types::sol_data::Uint<
                         256,
                     > as alloy_sol_types::SolType>::tokenize(&self.actualValue),
+                )
+            }
+            #[inline]
+            fn abi_decode_raw_validate(data: &[u8]) -> alloy_sol_types::Result<Self> {
+                <Self::Parameters<
+                    '_,
+                > as alloy_sol_types::SolType>::abi_decode_sequence_validate(data)
+                    .map(Self::new)
+            }
+        }
+    };
+    #[derive(serde::Serialize, serde::Deserialize)]
+    #[derive(Default, Debug, PartialEq, Eq, Hash)]
+    /**Custom error with signature `SolanaHandlesMaxLengthExceeded(uint256,uint256)` and selector `0xe132670c`.
+```solidity
+error SolanaHandlesMaxLengthExceeded(uint256 maxLength, uint256 actualLength);
+```*/
+    #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
+    #[derive(Clone)]
+    pub struct SolanaHandlesMaxLengthExceeded {
+        #[allow(missing_docs)]
+        pub maxLength: alloy::sol_types::private::primitives::aliases::U256,
+        #[allow(missing_docs)]
+        pub actualLength: alloy::sol_types::private::primitives::aliases::U256,
+    }
+    #[allow(
+        non_camel_case_types,
+        non_snake_case,
+        clippy::pub_underscore_fields,
+        clippy::style
+    )]
+    const _: () = {
+        use alloy::sol_types as alloy_sol_types;
+        #[doc(hidden)]
+        #[allow(dead_code)]
+        type UnderlyingSolTuple<'a> = (
+            alloy::sol_types::sol_data::Uint<256>,
+            alloy::sol_types::sol_data::Uint<256>,
+        );
+        #[doc(hidden)]
+        type UnderlyingRustTuple<'a> = (
+            alloy::sol_types::private::primitives::aliases::U256,
+            alloy::sol_types::private::primitives::aliases::U256,
+        );
+        #[cfg(test)]
+        #[allow(dead_code, unreachable_patterns)]
+        fn _type_assertion(
+            _t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>,
+        ) {
+            match _t {
+                alloy_sol_types::private::AssertTypeEq::<
+                    <UnderlyingSolTuple as alloy_sol_types::SolType>::RustType,
+                >(_) => {}
+            }
+        }
+        #[automatically_derived]
+        #[doc(hidden)]
+        impl ::core::convert::From<SolanaHandlesMaxLengthExceeded>
+        for UnderlyingRustTuple<'_> {
+            fn from(value: SolanaHandlesMaxLengthExceeded) -> Self {
+                (value.maxLength, value.actualLength)
+            }
+        }
+        #[automatically_derived]
+        #[doc(hidden)]
+        impl ::core::convert::From<UnderlyingRustTuple<'_>>
+        for SolanaHandlesMaxLengthExceeded {
+            fn from(tuple: UnderlyingRustTuple<'_>) -> Self {
+                Self {
+                    maxLength: tuple.0,
+                    actualLength: tuple.1,
+                }
+            }
+        }
+        #[automatically_derived]
+        impl alloy_sol_types::SolError for SolanaHandlesMaxLengthExceeded {
+            type Parameters<'a> = UnderlyingSolTuple<'a>;
+            type Token<'a> = <Self::Parameters<
+                'a,
+            > as alloy_sol_types::SolType>::Token<'a>;
+            const SIGNATURE: &'static str = "SolanaHandlesMaxLengthExceeded(uint256,uint256)";
+            const SELECTOR: [u8; 4] = [225u8, 50u8, 103u8, 12u8];
+            #[inline]
+            fn new<'a>(
+                tuple: <Self::Parameters<'a> as alloy_sol_types::SolType>::RustType,
+            ) -> Self {
+                tuple.into()
+            }
+            #[inline]
+            fn tokenize(&self) -> Self::Token<'_> {
+                (
+                    <alloy::sol_types::sol_data::Uint<
+                        256,
+                    > as alloy_sol_types::SolType>::tokenize(&self.maxLength),
+                    <alloy::sol_types::sol_data::Uint<
+                        256,
+                    > as alloy_sol_types::SolType>::tokenize(&self.actualLength),
                 )
             }
             #[inline]
@@ -11327,6 +11441,8 @@ function userDecryptionResponse(uint256 decryptionId, bytes memory userDecrypted
         #[allow(missing_docs)]
         MaxDurationSecondsExceeded(MaxDurationSecondsExceeded),
         #[allow(missing_docs)]
+        SolanaHandlesMaxLengthExceeded(SolanaHandlesMaxLengthExceeded),
+        #[allow(missing_docs)]
         StartTimestampInFuture(StartTimestampInFuture),
         #[allow(missing_docs)]
         UnsupportedExtraDataVersion(UnsupportedExtraDataVersion),
@@ -11368,6 +11484,7 @@ function userDecryptionResponse(uint256 decryptionId, bytes memory userDecrypted
             [212u8, 138u8, 249u8, 66u8],
             [220u8, 77u8, 120u8, 177u8],
             [222u8, 40u8, 89u8, 193u8],
+            [225u8, 50u8, 103u8, 12u8],
             [231u8, 244u8, 137u8, 93u8],
             [242u8, 76u8, 8u8, 135u8],
         ];
@@ -11396,6 +11513,7 @@ function userDecryptionResponse(uint256 decryptionId, bytes memory userDecrypted
             ::core::stringify!(DecryptionNotRequested),
             ::core::stringify!(UserAddressInContractAddresses),
             ::core::stringify!(InvalidNullDurationDays),
+            ::core::stringify!(SolanaHandlesMaxLengthExceeded),
             ::core::stringify!(MaxDecryptionRequestBitSizeExceeded),
             ::core::stringify!(StartTimestampInFuture),
         ];
@@ -11424,6 +11542,7 @@ function userDecryptionResponse(uint256 decryptionId, bytes memory userDecrypted
             <DecryptionNotRequested as alloy_sol_types::SolError>::SIGNATURE,
             <UserAddressInContractAddresses as alloy_sol_types::SolError>::SIGNATURE,
             <InvalidNullDurationDays as alloy_sol_types::SolError>::SIGNATURE,
+            <SolanaHandlesMaxLengthExceeded as alloy_sol_types::SolError>::SIGNATURE,
             <MaxDecryptionRequestBitSizeExceeded as alloy_sol_types::SolError>::SIGNATURE,
             <StartTimestampInFuture as alloy_sol_types::SolError>::SIGNATURE,
         ];
@@ -11452,7 +11571,7 @@ function userDecryptionResponse(uint256 decryptionId, bytes memory userDecrypted
     impl alloy_sol_types::SolInterface for IDecryptionErrors {
         const NAME: &'static str = "IDecryptionErrors";
         const MIN_DATA_LENGTH: usize = 0usize;
-        const COUNT: usize = 25usize;
+        const COUNT: usize = 26usize;
         #[inline]
         fn selector(&self) -> [u8; 4] {
             match self {
@@ -11515,6 +11634,9 @@ function userDecryptionResponse(uint256 decryptionId, bytes memory userDecrypted
                 }
                 Self::MaxDurationSecondsExceeded(_) => {
                     <MaxDurationSecondsExceeded as alloy_sol_types::SolError>::SELECTOR
+                }
+                Self::SolanaHandlesMaxLengthExceeded(_) => {
+                    <SolanaHandlesMaxLengthExceeded as alloy_sol_types::SolError>::SELECTOR
                 }
                 Self::StartTimestampInFuture(_) => {
                     <StartTimestampInFuture as alloy_sol_types::SolError>::SELECTOR
@@ -11802,6 +11924,17 @@ function userDecryptionResponse(uint256 decryptionId, bytes memory userDecrypted
                             .map(IDecryptionErrors::InvalidNullDurationDays)
                     }
                     InvalidNullDurationDays
+                },
+                {
+                    fn SolanaHandlesMaxLengthExceeded(
+                        data: &[u8],
+                    ) -> alloy_sol_types::Result<IDecryptionErrors> {
+                        <SolanaHandlesMaxLengthExceeded as alloy_sol_types::SolError>::abi_decode_raw(
+                                data,
+                            )
+                            .map(IDecryptionErrors::SolanaHandlesMaxLengthExceeded)
+                    }
+                    SolanaHandlesMaxLengthExceeded
                 },
                 {
                     fn MaxDecryptionRequestBitSizeExceeded(
@@ -12101,6 +12234,17 @@ function userDecryptionResponse(uint256 decryptionId, bytes memory userDecrypted
                     InvalidNullDurationDays
                 },
                 {
+                    fn SolanaHandlesMaxLengthExceeded(
+                        data: &[u8],
+                    ) -> alloy_sol_types::Result<IDecryptionErrors> {
+                        <SolanaHandlesMaxLengthExceeded as alloy_sol_types::SolError>::abi_decode_raw_validate(
+                                data,
+                            )
+                            .map(IDecryptionErrors::SolanaHandlesMaxLengthExceeded)
+                    }
+                    SolanaHandlesMaxLengthExceeded
+                },
+                {
                     fn MaxDecryptionRequestBitSizeExceeded(
                         data: &[u8],
                     ) -> alloy_sol_types::Result<IDecryptionErrors> {
@@ -12231,6 +12375,11 @@ function userDecryptionResponse(uint256 decryptionId, bytes memory userDecrypted
                 }
                 Self::MaxDurationSecondsExceeded(inner) => {
                     <MaxDurationSecondsExceeded as alloy_sol_types::SolError>::abi_encoded_size(
+                        inner,
+                    )
+                }
+                Self::SolanaHandlesMaxLengthExceeded(inner) => {
+                    <SolanaHandlesMaxLengthExceeded as alloy_sol_types::SolError>::abi_encoded_size(
                         inner,
                     )
                 }
@@ -12380,6 +12529,12 @@ function userDecryptionResponse(uint256 decryptionId, bytes memory userDecrypted
                 }
                 Self::MaxDurationSecondsExceeded(inner) => {
                     <MaxDurationSecondsExceeded as alloy_sol_types::SolError>::abi_encode_raw(
+                        inner,
+                        out,
+                    )
+                }
+                Self::SolanaHandlesMaxLengthExceeded(inner) => {
+                    <SolanaHandlesMaxLengthExceeded as alloy_sol_types::SolError>::abi_encode_raw(
                         inner,
                         out,
                     )

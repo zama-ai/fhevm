@@ -26,6 +26,7 @@ tfhe = { version = "=1.6.2", default-features = false }
 user-decryption-signature = { path = "../shared/user-decryption-signature", default-features = false }
 ciphertext-attestation = { path = "../shared/ciphertext-attestation" }
 zama-solana-acl = { path = "../solana/crates/zama-solana-acl" }
+zama-solana-permit = { path = "../solana/crates/zama-solana-permit" }
 
 #####################################################################
 #                       External dependencies                       #
