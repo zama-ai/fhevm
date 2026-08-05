@@ -1,7 +1,7 @@
 //! Solana user-decryption authorization: permit reconstruction, deployment identity, the
 //! atomic state snapshot, and the per-handle rules.
 //!
-//! The shape of this module tree is load-bearing rather than organizational. Every check is
+//! The shape of this module tree is part of the contract, not organization. Every check is
 //! a pure function of `(typed request, snapshot, deployment, now)`, and the only place that
 //! reads host state is [`snapshot`]. Two properties follow from that split, and neither
 //! survives if it is blurred:

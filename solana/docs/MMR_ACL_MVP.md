@@ -88,7 +88,7 @@ this note records the operational model in one place.
 
 ## Flow Diagrams
 
-### ValueAccount state + MMR growth
+### Encrypted value account state + MMR growth
 
 One stable `EncryptedValue` PDA per encrypted value account. `current_handle` is overwritten in place; the MMR only
 ever grows (append-only), so historical and public-decrypt authorizations are permanent once sealed.

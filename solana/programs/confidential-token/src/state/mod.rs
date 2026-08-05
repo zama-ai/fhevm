@@ -65,19 +65,19 @@ pub fn burn_redemption_address(mint: Pubkey, burned_handle: [u8; 32]) -> (Pubkey
 }
 
 /// Returns the canonical `EncryptedValue` PDA for a token balance field.
-pub fn balance_encrypted_value_address(domain: Pubkey, account: Pubkey) -> (Pubkey, u8) {
-    encrypted_value_address(domain, account, encrypted_balance_label())
+pub fn balance_encrypted_value_address(domain: Pubkey, authority: Pubkey) -> (Pubkey, u8) {
+    encrypted_value_address(domain, authority, encrypted_balance_label())
 }
 
 /// Returns the canonical `EncryptedValue` PDA for the encrypted total supply field.
-pub fn total_supply_encrypted_value_address(domain: Pubkey, account: Pubkey) -> (Pubkey, u8) {
-    encrypted_value_address(domain, account, encrypted_total_supply_label())
+pub fn total_supply_encrypted_value_address(domain: Pubkey, authority: Pubkey) -> (Pubkey, u8) {
+    encrypted_value_address(domain, authority, encrypted_total_supply_label())
 }
 
 /// Returns the canonical `EncryptedValue` PDA for an arbitrary label, delegating
 /// key derivation to ZamaHost so app and host agree exactly.
-pub fn encrypted_value_address(domain: Pubkey, account: Pubkey, label: [u8; 32]) -> (Pubkey, u8) {
-    zama_host::encrypted_value_address(encrypted_value_id_bytes(domain, account, label))
+pub fn encrypted_value_address(domain: Pubkey, authority: Pubkey, label: [u8; 32]) -> (Pubkey, u8) {
+    zama_host::encrypted_value_address(encrypted_value_id_bytes(domain, authority, label))
 }
 
 /// Fixed encrypted value label for confidential balances.
@@ -111,8 +111,8 @@ pub fn encrypted_transferred_amount_label() -> [u8; 32] {
 }
 
 /// Delegates encrypted-value-ID derivation to the shared ACL crate so app and host agree exactly.
-fn encrypted_value_id_bytes(domain: Pubkey, account: Pubkey, label: [u8; 32]) -> [u8; 32] {
-    zama_solana_acl::derive_encrypted_value_id(domain.to_bytes(), account.to_bytes(), label)
+fn encrypted_value_id_bytes(domain: Pubkey, authority: Pubkey, label: [u8; 32]) -> [u8; 32] {
+    zama_solana_acl::derive_encrypted_value_id(domain.to_bytes(), authority.to_bytes(), label)
 }
 
 #[cfg(test)]

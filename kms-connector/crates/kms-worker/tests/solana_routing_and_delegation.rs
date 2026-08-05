@@ -7,7 +7,7 @@
 //! value account's authority. One request mixes both freely, and different
 //! delegators freely — there is no delegated mode and no delegated route.
 //!
-//! The load-bearing negative test is the substitution of the subject. In the delegated branch it
+//! The negative test that matters most is the substitution of the subject. In the delegated branch it
 //! would be easy, and wrong, to prove access for the signer: the signer is the one asking, and the
 //! delegation record does name them. But the handle belongs to the delegator, and it is the
 //! delegator's standing in the encrypted value account that the delegation extends. Proving the

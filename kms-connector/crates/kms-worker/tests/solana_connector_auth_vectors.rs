@@ -346,7 +346,7 @@ fn accepting_scenarios() -> Vec<Scenario> {
     );
     out.push(Scenario::accepted(
         "permissive-scope-foreign-domain",
-        "An empty signed domain list is permissive: the domain rule is skipped entirely, so a \
+        "An empty signed domain list is permissive: the domain rule is skipped entirely, so an \
          encrypted value account of any domain is in scope. Membership still has to hold.",
         RequestBuilder::new(&wallet)
             .permit(PermitBuilder::new(wallet.pubkey()).permissive())

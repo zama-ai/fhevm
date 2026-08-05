@@ -24,7 +24,7 @@
 //! between two round trips, and a slot is about 400 milliseconds, while proving nothing that a
 //! single deciding snapshot does not already give. Nor can the discarded read smuggle a stale value
 //! in: the delegation address it produced is re-derived from the deciding snapshot's own encrypted
-//! value account inside [`super::delegation::check_delegation`], and a encrypted value account that
+//! value account inside [`super::delegation::check_delegation`], and an encrypted value account that
 //! resolves at a given address has exactly one `encrypted_value_account_authority`, because that
 //! field is part of the encrypted value ID preimage the address is derived from. A discovery read
 //! that named the wrong record therefore surfaces as a key the deciding snapshot never read,
@@ -224,7 +224,7 @@ pub trait HostStateReader: Send + Sync {
 }
 
 /// Plans the first read: the invalidation record of the request signer, plus one encrypted value
-/// account account per entry.
+/// account per entry.
 ///
 /// Pure, and total over any validated request: every key here is derivable from the request and the
 /// deployment alone. There is no scan in the authorization path, so the plan is the complete set of

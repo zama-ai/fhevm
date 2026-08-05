@@ -522,7 +522,7 @@ fn the_observed_slot_is_the_context_slot_of_the_response() {
 }
 
 /// A key that has no account is an absence *inside* the snapshot, not a failure of the read. The
-/// distinction is load-bearing: an absent encrypted value account is a rule outcome that may
+/// distinction decides the outcome: an absent encrypted value account is a rule outcome that may
 /// resolve itself at a later observation, while a failed read tells us nothing about any account.
 #[test]
 fn a_missing_account_is_an_absence_in_the_snapshot_not_a_read_failure() {

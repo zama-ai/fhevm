@@ -436,7 +436,7 @@ mod tests {
         );
     }
 
-    // The new MMR-proof fields are load-bearing in the signed request: changing the proof_slot, the
+    // The new MMR-proof fields are inside the signed request: changing the proof_slot, the
     // proof bytes, or the value_key changes the signed bytes (so a mutated request fails verify).
     #[test]
     fn tail_fields_bind_into_signing_message() {

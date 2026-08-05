@@ -222,7 +222,7 @@ mod tests {
             mmr_append(&mut self.acl.peaks, &mut self.acl.leaf_count, commitment).unwrap();
             self.leaves.push(commitment);
         }
-        fn rotate(&mut self, new_handle: HandleBytes) {
+        fn update_handle(&mut self, new_handle: HandleBytes) {
             let old = self.acl.current_handle;
             for i in 0..self.acl.subjects.len() {
                 let idx = self.acl.leaf_count;
@@ -252,8 +252,8 @@ mod tests {
         SolanaAclVerifier::new(HOST)
     }
 
-    fn decoded(l: &EncryptedValueAccount) -> DecodedEncryptedValueAcl {
-        DecodedEncryptedValueAcl::from_acl(l.acl.clone())
+    fn decoded(held: &EncryptedValueAccount) -> DecodedEncryptedValueAcl {
+        DecodedEncryptedValueAcl::from_acl(held.acl.clone())
     }
 
     /// Encodes an encrypted value account using the on-chain layout exactly as `zama-host` writes it.
@@ -265,29 +265,29 @@ mod tests {
 
     #[test]
     fn current_and_rejections() {
-        let l = encrypted_value_account(h(10), &[OWNER]);
-        let decoded = decoded(&l);
+        let held = encrypted_value_account(h(10), &[OWNER]);
+        let decoded = decoded(&held);
         let v = verifier();
         assert!(
-            v.verify_current_user_decrypt(l.account, HOST, &decoded, h(10), OWNER, &[DOMAIN])
+            v.verify_current_user_decrypt(held.account, HOST, &decoded, h(10), OWNER, &[DOMAIN])
                 .is_ok()
         );
         assert!(
-            v.verify_current_user_decrypt(l.account, HOST, &decoded, h(10), OWNER, &[])
+            v.verify_current_user_decrypt(held.account, HOST, &decoded, h(10), OWNER, &[])
                 .is_ok()
         );
         assert_eq!(
-            v.verify_current_user_decrypt(l.account, HOST, &decoded, h(10), STRANGER, &[])
+            v.verify_current_user_decrypt(held.account, HOST, &decoded, h(10), STRANGER, &[])
                 .unwrap_err(),
             SolanaAclVerificationError::EncryptedValueSubjectMissing
         );
         assert_eq!(
-            v.verify_current_user_decrypt(l.account, HOST, &decoded, h(10), OWNER, &[[9; 32]])
+            v.verify_current_user_decrypt(held.account, HOST, &decoded, h(10), OWNER, &[[9; 32]])
                 .unwrap_err(),
             SolanaAclVerificationError::DomainNotAllowed
         );
         assert_eq!(
-            v.verify_current_user_decrypt(l.account, [7; 32], &decoded, h(10), OWNER, &[DOMAIN])
+            v.verify_current_user_decrypt(held.account, [7; 32], &decoded, h(10), OWNER, &[DOMAIN])
                 .unwrap_err(),
             SolanaAclVerificationError::InvalidAccountOwner
         );
@@ -295,12 +295,12 @@ mod tests {
 
     #[test]
     fn current_requires_membership() {
-        let l = encrypted_value_account(h(10), &[STRANGER]);
-        let decoded_stranger = decoded(&l);
+        let held = encrypted_value_account(h(10), &[STRANGER]);
+        let decoded_stranger = decoded(&held);
         assert_eq!(
             verifier()
                 .verify_current_user_decrypt(
-                    l.account,
+                    held.account,
                     HOST,
                     &decoded_stranger,
                     h(10),
@@ -311,19 +311,19 @@ mod tests {
             SolanaAclVerificationError::EncryptedValueSubjectMissing
         );
 
-        let l = encrypted_value_account(h(10), &[OWNER]);
-        let decoded = decoded(&l);
+        let held = encrypted_value_account(h(10), &[OWNER]);
+        let decoded = decoded(&held);
         verifier()
-            .verify_current_user_decrypt(l.account, HOST, &decoded, h(10), OWNER, &[DOMAIN])
+            .verify_current_user_decrypt(held.account, HOST, &decoded, h(10), OWNER, &[DOMAIN])
             .expect("member subject must decrypt the current handle");
     }
 
     #[test]
     fn rejects_non_canonical_acl_account() {
-        let l = encrypted_value_account(h(10), &[OWNER]);
-        let decoded = decoded(&l);
+        let held = encrypted_value_account(h(10), &[OWNER]);
+        let decoded = decoded(&held);
         let wrong_account: SolanaPubkeyBytes = [0xab; 32];
-        assert_ne!(wrong_account, l.account);
+        assert_ne!(wrong_account, held.account);
         assert_eq!(
             verifier()
                 .verify_current_user_decrypt(wrong_account, HOST, &decoded, h(10), OWNER, &[])
@@ -334,12 +334,12 @@ mod tests {
 
     #[test]
     fn rejects_bump_mismatch() {
-        let mut l = encrypted_value_account(h(10), &[OWNER]);
-        l.acl.bump ^= 1;
-        let decoded = decoded(&l);
+        let mut held = encrypted_value_account(h(10), &[OWNER]);
+        held.acl.bump ^= 1;
+        let decoded = decoded(&held);
         assert_eq!(
             verifier()
-                .verify_current_user_decrypt(l.account, HOST, &decoded, h(10), OWNER, &[DOMAIN])
+                .verify_current_user_decrypt(held.account, HOST, &decoded, h(10), OWNER, &[DOMAIN])
                 .unwrap_err(),
             SolanaAclVerificationError::EncryptedValueAclBumpMismatch
         );
@@ -350,15 +350,15 @@ mod tests {
         let subjects: Vec<SolanaPubkeyBytes> = (0..MAX_ENCRYPTED_VALUE_SUBJECTS as u8)
             .map(|i| [i + 1; 32])
             .collect();
-        let mut l = encrypted_value_account(h(10), &subjects);
-        l.rotate(h(11));
-        assert_eq!(l.acl.leaf_count, MAX_ENCRYPTED_VALUE_SUBJECTS as u64);
+        let mut held = encrypted_value_account(h(10), &subjects);
+        held.update_handle(h(11));
+        assert_eq!(held.acl.leaf_count, MAX_ENCRYPTED_VALUE_SUBJECTS as u64);
 
         let last = MAX_ENCRYPTED_VALUE_SUBJECTS - 1;
         let target = EncryptedValueTarget {
-            account_key: l.account,
+            account_key: held.account,
             owner: HOST,
-            acl: &l.acl,
+            acl: &held.acl,
             encrypted_value: h(10),
         };
         verifier()
@@ -366,27 +366,27 @@ mod tests {
                 target,
                 subjects[last],
                 &[DOMAIN],
-                &l.proof(last as u64),
+                &held.proof(last as u64),
             )
             .expect("historical proof for the cap-th subject must verify");
     }
 
     #[test]
-    fn post_rotation_then_historical_proof() {
-        let mut l = encrypted_value_account(h(10), &[OWNER]);
-        l.rotate(h(11));
+    fn post_update_then_historical_proof() {
+        let mut held = encrypted_value_account(h(10), &[OWNER]);
+        held.update_handle(h(11));
         let v = verifier();
-        let decoded = decoded(&l);
+        let decoded = decoded(&held);
         assert_eq!(
-            v.verify_current_user_decrypt(l.account, HOST, &decoded, h(10), OWNER, &[DOMAIN])
+            v.verify_current_user_decrypt(held.account, HOST, &decoded, h(10), OWNER, &[DOMAIN])
                 .unwrap_err(),
             SolanaAclVerificationError::EncryptedValueHandleMismatch
         );
-        let proof = l.proof(0);
+        let proof = held.proof(0);
         let target = |handle| EncryptedValueTarget {
-            account_key: l.account,
+            account_key: held.account,
             owner: HOST,
-            acl: &l.acl,
+            acl: &held.acl,
             encrypted_value: handle,
         };
         assert!(
@@ -416,41 +416,41 @@ mod tests {
 
     #[test]
     fn historical_proof_path_uses_sealed_subject_not_current_membership() {
-        let mut l = encrypted_value_account(h(10), &[OWNER]);
-        l.rotate(h(11));
-        l.acl.subjects = vec![STRANGER];
-        let data = encode_on_chain(&l.acl);
+        let mut held = encrypted_value_account(h(10), &[OWNER]);
+        held.update_handle(h(11));
+        held.acl.subjects = vec![STRANGER];
+        let data = encode_on_chain(&held.acl);
         let decoded = decode_encrypted_value_acl(&data).unwrap();
 
         assert_eq!(
             verifier()
-                .verify_current_user_decrypt(l.account, HOST, &decoded, h(11), OWNER, &[DOMAIN])
+                .verify_current_user_decrypt(held.account, HOST, &decoded, h(11), OWNER, &[DOMAIN])
                 .unwrap_err(),
             SolanaAclVerificationError::EncryptedValueSubjectMissing
         );
 
         let target = EncryptedValueTarget {
-            account_key: l.account,
+            account_key: held.account,
             owner: HOST,
             acl: &decoded.acl,
             encrypted_value: h(10),
         };
         verifier()
-            .verify_historical_user_decrypt(target, OWNER, &[DOMAIN], &l.proof(0))
+            .verify_historical_user_decrypt(target, OWNER, &[DOMAIN], &held.proof(0))
             .expect("historical proof verification must stay unchanged");
     }
 
     #[test]
     fn exact_public_no_roll_forward() {
-        let mut l = encrypted_value_account(h(10), &[OWNER]);
-        l.mark_public();
-        l.rotate(h(11));
+        let mut held = encrypted_value_account(h(10), &[OWNER]);
+        held.mark_public();
+        held.update_handle(h(11));
         let v = verifier();
-        let proof = l.proof(0);
+        let proof = held.proof(0);
         let target = |handle| EncryptedValueTarget {
-            account_key: l.account,
+            account_key: held.account,
             owner: HOST,
-            acl: &l.acl,
+            acl: &held.acl,
             encrypted_value: handle,
         };
         assert!(v.verify_public_decrypt_exact(target(h(10)), &proof).is_ok());
@@ -461,24 +461,24 @@ mod tests {
         );
     }
 
-    /// The load-bearing test for this module: decoding the real on-chain layout
+    /// The test this module exists for: decoding the real on-chain layout
     /// must recover exactly the same ACL/MMR state as the shared crate's
     /// in-memory value.
     #[test]
     fn decodes_real_on_chain_layout_and_authorizes_end_to_end() {
-        let mut l = encrypted_value_account(h(10), &[OWNER]);
-        l.rotate(h(11));
-        let data = encode_on_chain(&l.acl);
+        let mut held = encrypted_value_account(h(10), &[OWNER]);
+        held.update_handle(h(11));
+        let data = encode_on_chain(&held.acl);
 
         let decoded = decode_encrypted_value_acl(&data).unwrap();
         assert_eq!(
-            decoded.acl, l.acl,
+            decoded.acl, held.acl,
             "decoded ACL/MMR state must match the shared in-memory value"
         );
 
-        let proof = l.proof(0);
+        let proof = held.proof(0);
         let target = EncryptedValueTarget {
-            account_key: l.account,
+            account_key: held.account,
             owner: HOST,
             acl: &decoded.acl,
             encrypted_value: h(10),

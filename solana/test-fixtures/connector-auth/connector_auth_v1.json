@@ -256,7 +256,7 @@
     },
     {
       "name": "permissive-scope-foreign-domain",
-      "comment": "An empty signed domain list is permissive: the domain rule is skipped entirely, so a encrypted value account of any domain is in scope. Membership still has to hold.",
+      "comment": "An empty signed domain list is permissive: the domain rule is skipped entirely, so an encrypted value account of any domain is in scope. Membership still has to hold.",
       "result": "valid",
       "request": {
         "permit": {

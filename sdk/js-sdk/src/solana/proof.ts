@@ -86,11 +86,11 @@ export function hexToBytes(hex: string): Uint8Array {
 }
 
 /** The encrypted value account's PDA seed / identity. Matches `zama_solana_acl::derive_encrypted_value_id`. */
-export function deriveEncryptedValueId(domain: Uint8Array, account: Uint8Array, label: Uint8Array): Uint8Array {
+export function deriveEncryptedValueId(domain: Uint8Array, authority: Uint8Array, label: Uint8Array): Uint8Array {
   assertLen(domain, 32, 'domain');
-  assertLen(account, 32, 'account');
+  assertLen(authority, 32, 'authority');
   assertLen(label, 32, 'label');
-  return sha256Parts(ENCRYPTED_VALUE_ID_PREFIX, domain, account, label);
+  return sha256Parts(ENCRYPTED_VALUE_ID_PREFIX, domain, authority, label);
 }
 
 /** Matches `zama_solana_acl::mmr::mmr_leaf_node`. */

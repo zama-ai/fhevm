@@ -316,7 +316,7 @@ fn a_proof_with_tampered_siblings_is_rejected() {
 
 /// The four substitutions of the leaf commitment. Each seals a leaf that is genuine in every
 /// respect except one, and each must fail: together they are the evidence that the encrypted value
-/// account account, the position, the handle and the subject are all inside the committed preimage.
+/// account, the position, the handle and the subject are all inside the committed preimage.
 #[test]
 fn a_leaf_commitment_for_another_encrypted_value_account_does_not_authorize() {
     let subject = Wallet::new(1).pubkey();
