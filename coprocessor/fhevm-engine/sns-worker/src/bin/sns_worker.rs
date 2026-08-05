@@ -1,4 +1,6 @@
-use sns_worker::{Config, DBConfig, HealthCheckConfig, S3Config, S3RetryPolicy, SNSMetricsConfig};
+use sns_worker::{
+    Config, ConsensusConfig, DBConfig, HealthCheckConfig, S3Config, S3RetryPolicy, SNSMetricsConfig,
+};
 
 use fhevm_engine_common::database::resolve_database_url_from_option;
 use fhevm_engine_common::telemetry;
@@ -69,6 +71,13 @@ fn construct_config() -> Result<Config, fhevm_engine_common::database::DatabaseC
         s3_migration: args.s3_migration,
         s3_migration_sleep_duration: args.s3_migration_sleep_duration,
         s3_migration_max_retries: args.s3_migration_max_retries,
+        consensus: ConsensusConfig {
+            publish_manifest: args.consensus_publish_manifest,
+            verify_others_party_manifests: args.consensus_verify_others_party_manifests,
+            verification_delay: args.consensus_verification_delay,
+            verification_retry_delay: args.consensus_verification_retry_delay,
+            verification_retry_count: args.consensus_verification_retry_count,
+        },
     })
 }
 

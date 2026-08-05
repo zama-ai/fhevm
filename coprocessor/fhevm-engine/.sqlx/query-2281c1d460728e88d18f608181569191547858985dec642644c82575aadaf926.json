@@ -1,0 +1,20 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        UPDATE block_consensus\n           SET detailed_range_start = $3,\n               detailed_range_digest = $4,\n               manifest_digest = $5,\n               last_manifest_publisher = $7,\n               manifest_published = TRUE,\n               manifest_published_at = NOW(),\n               updated_at = NOW()\n         WHERE host_chain_id = $1\n           AND block_hash = $2\n           AND manifest_revision = $6\n           AND manifest_digest IS NULL\n           AND manifest_published = FALSE\n        ",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Int8",
+        "Bytea",
+        "Int8",
+        "Bytea",
+        "Bytea",
+        "Int8",
+        "Bytea"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "2281c1d460728e88d18f608181569191547858985dec642644c82575aadaf926"
+}

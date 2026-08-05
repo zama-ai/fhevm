@@ -1,0 +1,23 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        SELECT EXISTS (\n            SELECT 1\n              FROM block_consensus_verification_target\n             WHERE id = $1\n               AND state = 'leased'\n               AND lease_owner = $2\n               AND lease_expires_at > NOW()\n             FOR UPDATE\n        ) AS \"active!\"\n        ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "active!",
+        "type_info": "Bool"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Int8",
+        "Text"
+      ]
+    },
+    "nullable": [
+      null
+    ]
+  },
+  "hash": "2d52e2a97be0255ff1282902c992af0ab25a658a545047886ee4e78a6ae522d6"
+}

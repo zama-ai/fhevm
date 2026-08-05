@@ -1,0 +1,28 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT max_attempts, retry_delay_micros FROM block_manifest_verification_task WHERE id = $1",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "max_attempts",
+        "type_info": "Int4"
+      },
+      {
+        "ordinal": 1,
+        "name": "retry_delay_micros",
+        "type_info": "Int8"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Int8"
+      ]
+    },
+    "nullable": [
+      false,
+      false
+    ]
+  },
+  "hash": "3192fac70f65a80655200af230b45d8a773762107d8f7b87975d2f7a5d11f937"
+}

@@ -1,0 +1,34 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n            SELECT id, local_manifest_digest\n              FROM block_consensus_verification_target\n             WHERE local_publisher = $1\n               AND version = $2\n               AND coprocessor_context_id = $3\n               AND host_chain_id = $4\n               AND publication_block_number = $5\n               AND publication_block_hash = $6\n               AND revision = $7\n            ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id",
+        "type_info": "Int8"
+      },
+      {
+        "ordinal": 1,
+        "name": "local_manifest_digest",
+        "type_info": "Bytea"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Bytea",
+        "Int2",
+        "Bytea",
+        "Int8",
+        "Int8",
+        "Bytea",
+        "Int8"
+      ]
+    },
+    "nullable": [
+      false,
+      false
+    ]
+  },
+  "hash": "d88ad8e26534ad1fd36c7cda8e780042a75f13b20e98b3bc45b689d2dfd6f61a"
+}

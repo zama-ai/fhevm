@@ -1,0 +1,30 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        WITH block_operations AS MATERIALIZED (\n            SELECT c.output_handle AS handle,\n                   c.is_completed AS operation_completed,\n                   c.is_error AS operation_error,\n                   p.is_completed AS sns_completed,\n                   p.is_error AS sns_error,\n                   d.key_id_gw,\n                   d.ciphertext AS ct64_digest,\n                   d.ciphertext128 AS ct128_digest,\n                   d.ciphertext128_format AS ct128_format\n              FROM computations_branch c\n              LEFT JOIN pbs_computations_branch p\n                ON p.host_chain_id = c.host_chain_id\n               AND p.handle = c.output_handle\n               AND p.producer_block_hash = c.producer_block_hash\n               AND p.block_hash = $3\n              LEFT JOIN ciphertext_digest_branch d\n                ON d.host_chain_id = c.host_chain_id\n               AND d.handle = c.output_handle\n               AND d.producer_block_hash = c.producer_block_hash\n               AND d.block_hash = $3\n             WHERE c.host_chain_id = $1\n               AND c.block_number = $2\n               AND c.producer_block_hash = $3\n               AND c.is_allowed = TRUE\n        )\n        SELECT (\n                   SELECT handle\n                     FROM block_operations\n                    WHERE operation_error\n                       OR sns_error IS TRUE\n                    ORDER BY handle\n                    LIMIT 1\n               ) AS \"error_handle?\",\n               NOT EXISTS (\n                   SELECT 1\n                     FROM block_operations\n                    WHERE NOT operation_completed\n                       OR sns_completed IS DISTINCT FROM TRUE\n                       OR key_id_gw IS NULL\n                       OR ct64_digest IS NULL\n                       OR ct128_digest IS NULL\n                       OR ct128_format IS NULL\n               ) AS \"ready!\"\n        ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "error_handle?",
+        "type_info": "Bytea"
+      },
+      {
+        "ordinal": 1,
+        "name": "ready!",
+        "type_info": "Bool"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Int8",
+        "Int8",
+        "Bytea"
+      ]
+    },
+    "nullable": [
+      null,
+      null
+    ]
+  },
+  "hash": "c0958a3ff88ff72e4e6e534bfb14fed978214f8d1f4ccf6502d0d7891f1a9534"
+}

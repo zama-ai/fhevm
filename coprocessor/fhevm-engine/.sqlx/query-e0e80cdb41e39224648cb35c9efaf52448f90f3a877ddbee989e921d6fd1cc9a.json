@@ -1,0 +1,83 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        WITH selected AS (\n            SELECT id\n              FROM block_consensus_verification_target\n             WHERE required_quorum IS NOT NULL\n               AND next_attempt_at <= NOW()\n               AND (\n                    state = 'pending'\n                    OR (state = 'leased' AND lease_expires_at <= NOW())\n               )\n             ORDER BY next_attempt_at, id\n             FOR UPDATE SKIP LOCKED\n             LIMIT 1\n        )\n        UPDATE block_consensus_verification_target target\n           SET state = 'leased',\n               lease_owner = $1,\n               lease_expires_at = NOW() + $2::BIGINT * INTERVAL '1 microsecond',\n               updated_at = NOW()\n          FROM selected\n         WHERE target.id = selected.id\n        RETURNING target.id,\n                  target.attempt_count + 1 AS \"attempt!\",\n                  target.required_quorum AS \"required_quorum!\",\n                  target.local_publisher,\n                  target.version,\n                  target.coprocessor_context_id,\n                  target.host_chain_id,\n                  target.publication_block_number,\n                  target.publication_block_hash,\n                  target.revision,\n                  target.local_manifest_digest\n        ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id",
+        "type_info": "Int8"
+      },
+      {
+        "ordinal": 1,
+        "name": "attempt!",
+        "type_info": "Int4"
+      },
+      {
+        "ordinal": 2,
+        "name": "required_quorum!",
+        "type_info": "Int4"
+      },
+      {
+        "ordinal": 3,
+        "name": "local_publisher",
+        "type_info": "Bytea"
+      },
+      {
+        "ordinal": 4,
+        "name": "version",
+        "type_info": "Int2"
+      },
+      {
+        "ordinal": 5,
+        "name": "coprocessor_context_id",
+        "type_info": "Bytea"
+      },
+      {
+        "ordinal": 6,
+        "name": "host_chain_id",
+        "type_info": "Int8"
+      },
+      {
+        "ordinal": 7,
+        "name": "publication_block_number",
+        "type_info": "Int8"
+      },
+      {
+        "ordinal": 8,
+        "name": "publication_block_hash",
+        "type_info": "Bytea"
+      },
+      {
+        "ordinal": 9,
+        "name": "revision",
+        "type_info": "Int8"
+      },
+      {
+        "ordinal": 10,
+        "name": "local_manifest_digest",
+        "type_info": "Bytea"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Text",
+        "Int8"
+      ]
+    },
+    "nullable": [
+      false,
+      null,
+      true,
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      false
+    ]
+  },
+  "hash": "e0e80cdb41e39224648cb35c9efaf52448f90f3a877ddbee989e921d6fd1cc9a"
+}

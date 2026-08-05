@@ -1,0 +1,48 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        SELECT c.output_handle AS \"handle!\",\n               d.key_id_gw AS \"key_id_gw?\",\n               d.ciphertext AS \"ct64_digest?\",\n               d.ciphertext128 AS \"ct128_digest?\",\n               d.ciphertext128_format AS \"ct128_format?\"\n          FROM computations_branch c\n          LEFT JOIN ciphertext_digest_branch d\n            ON d.host_chain_id = c.host_chain_id\n           AND d.handle = c.output_handle\n           AND d.producer_block_hash = c.producer_block_hash\n           AND d.block_hash = $3\n         WHERE c.host_chain_id = $1\n           AND c.block_number = $2\n           AND c.producer_block_hash = $3\n           AND c.is_allowed = TRUE\n         ORDER BY c.output_handle, c.transaction_id\n        ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "handle!",
+        "type_info": "Bytea"
+      },
+      {
+        "ordinal": 1,
+        "name": "key_id_gw?",
+        "type_info": "Bytea"
+      },
+      {
+        "ordinal": 2,
+        "name": "ct64_digest?",
+        "type_info": "Bytea"
+      },
+      {
+        "ordinal": 3,
+        "name": "ct128_digest?",
+        "type_info": "Bytea"
+      },
+      {
+        "ordinal": 4,
+        "name": "ct128_format?",
+        "type_info": "Int2"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Int8",
+        "Int8",
+        "Bytea"
+      ]
+    },
+    "nullable": [
+      false,
+      false,
+      true,
+      true,
+      true
+    ]
+  },
+  "hash": "3cbac6b5a174d563618dd1eb0b3499fd320d5cf0758f0d33171a988fb711d4e7"
+}

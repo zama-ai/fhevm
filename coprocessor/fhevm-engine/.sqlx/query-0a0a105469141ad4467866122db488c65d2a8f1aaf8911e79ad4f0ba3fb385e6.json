@@ -1,0 +1,28 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT max_attempts, retry_delay_micros FROM block_consensus_verification_target WHERE id = $1",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "max_attempts",
+        "type_info": "Int4"
+      },
+      {
+        "ordinal": 1,
+        "name": "retry_delay_micros",
+        "type_info": "Int8"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Int8"
+      ]
+    },
+    "nullable": [
+      false,
+      false
+    ]
+  },
+  "hash": "0a0a105469141ad4467866122db488c65d2a8f1aaf8911e79ad4f0ba3fb385e6"
+}

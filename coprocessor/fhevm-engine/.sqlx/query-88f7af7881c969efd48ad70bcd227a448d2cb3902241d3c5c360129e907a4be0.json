@@ -1,0 +1,38 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        SELECT range_start_block_hash,\n               range_start_parent_block_hash,\n               range_digest\n          FROM block_consensus_range\n         WHERE host_chain_id = $1\n           AND range_start = $2\n           AND range_end = $3\n           AND range_end_block_hash = $4\n           AND range_digest = $5\n        ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "range_start_block_hash",
+        "type_info": "Bytea"
+      },
+      {
+        "ordinal": 1,
+        "name": "range_start_parent_block_hash",
+        "type_info": "Bytea"
+      },
+      {
+        "ordinal": 2,
+        "name": "range_digest",
+        "type_info": "Bytea"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Int8",
+        "Int8",
+        "Int8",
+        "Bytea",
+        "Bytea"
+      ]
+    },
+    "nullable": [
+      false,
+      false,
+      false
+    ]
+  },
+  "hash": "88f7af7881c969efd48ad70bcd227a448d2cb3902241d3c5c360129e907a4be0"
+}

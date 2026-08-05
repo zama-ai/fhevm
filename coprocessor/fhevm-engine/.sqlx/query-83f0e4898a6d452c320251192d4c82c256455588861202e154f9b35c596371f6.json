@@ -1,0 +1,26 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT state, COUNT(*)::BIGINT AS \"count!\" FROM block_consensus_verification_target GROUP BY state",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "state",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 1,
+        "name": "count!",
+        "type_info": "Int8"
+      }
+    ],
+    "parameters": {
+      "Left": []
+    },
+    "nullable": [
+      false,
+      null
+    ]
+  },
+  "hash": "83f0e4898a6d452c320251192d4c82c256455588861202e154f9b35c596371f6"
+}

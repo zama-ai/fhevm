@@ -1,0 +1,24 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        WITH RECURSIVE descendants AS (\n            SELECT child.chain_id,\n                   child.block_number,\n                   child.block_hash,\n                   child.parent_hash\n              FROM host_chain_blocks_valid child\n             WHERE child.chain_id = $1\n               AND child.parent_hash = $2\n               AND child.block_status <> 'orphaned'\n            UNION\n            SELECT child.chain_id,\n                   child.block_number,\n                   child.block_hash,\n                   child.parent_hash\n              FROM descendants parent\n              JOIN host_chain_blocks_valid child\n                ON child.chain_id = parent.chain_id\n               AND child.parent_hash = parent.block_hash\n             WHERE child.block_status <> 'orphaned'\n        ), inserted AS (\n            INSERT INTO block_consensus (\n                host_chain_id,\n                block_number,\n                block_hash,\n                parent_block_hash,\n                publication_cadence\n            )\n            SELECT chain_id,\n                   block_number,\n                   block_hash,\n                   parent_hash,\n                   $3\n              FROM descendants\n             WHERE OCTET_LENGTH(parent_hash) = 32\n            ON CONFLICT (host_chain_id, block_hash) DO NOTHING\n            RETURNING 1\n        )\n        SELECT COUNT(*) AS \"inserted!\" FROM inserted\n        ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "inserted!",
+        "type_info": "Int8"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Int8",
+        "Bytea",
+        "Int8"
+      ]
+    },
+    "nullable": [
+      null
+    ]
+  },
+  "hash": "3cd7fe4c4319c844d7a259d7a7425940089e3bb6abec387cc0c61c6ff034cf10"
+}

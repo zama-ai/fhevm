@@ -169,6 +169,26 @@ pub struct Args {
     /// Maximum recorded migration failures per handle before retry selection stops.
     #[arg(long, default_value_t = DEFAULT_S3_MIGRATION_MAX_RETRIES, value_parser = clap::value_parser!(i32).range(1..), env = "S3_MIGRATION_MAX_RETRIES")]
     pub s3_migration_max_retries: i32,
+
+    /// Publish this coprocessor's S3 commitment manifests.
+    #[arg(long, default_value_t = false)]
+    pub consensus_publish_manifest: bool,
+
+    /// Verify commitment manifests published by other coprocessors.
+    #[arg(long, default_value_t = false)]
+    pub consensus_verify_others_party_manifests: bool,
+
+    /// Delay after local publication before the first peer verification attempt.
+    #[arg(long, default_value = "5m", value_parser = parse_duration)]
+    pub consensus_verification_delay: Duration,
+
+    /// Delay between peer verification retries.
+    #[arg(long, default_value = "1m", value_parser = parse_duration)]
+    pub consensus_verification_retry_delay: Duration,
+
+    /// Additional peer verification attempts after the initial attempt.
+    #[arg(long, default_value_t = 5)]
+    pub consensus_verification_retry_count: u32,
 }
 
 pub fn parse_args() -> Args {

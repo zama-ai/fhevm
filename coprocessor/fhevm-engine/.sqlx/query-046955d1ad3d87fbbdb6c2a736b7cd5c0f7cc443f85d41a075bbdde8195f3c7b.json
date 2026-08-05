@@ -1,0 +1,17 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        UPDATE block_consensus_peer_download\n           SET completed_attempt = $3,\n               last_attempt_at = NOW(),\n               last_error = $4,\n               updated_at = NOW()\n         WHERE target_id = $1\n           AND publisher = $2\n        ",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Int8",
+        "Bytea",
+        "Int4",
+        "Text"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "046955d1ad3d87fbbdb6c2a736b7cd5c0f7cc443f85d41a075bbdde8195f3c7b"
+}

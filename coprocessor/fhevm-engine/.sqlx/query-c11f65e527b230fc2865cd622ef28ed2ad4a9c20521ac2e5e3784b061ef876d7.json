@@ -1,0 +1,20 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        SELECT DISTINCT host_chain_id\n          FROM block_consensus\n         WHERE block_content_digest IS NULL\n            OR (manifest_required AND manifest_published = FALSE)\n         ORDER BY host_chain_id\n        ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "host_chain_id",
+        "type_info": "Int8"
+      }
+    ],
+    "parameters": {
+      "Left": []
+    },
+    "nullable": [
+      false
+    ]
+  },
+  "hash": "c11f65e527b230fc2865cd622ef28ed2ad4a9c20521ac2e5e3784b061ef876d7"
+}

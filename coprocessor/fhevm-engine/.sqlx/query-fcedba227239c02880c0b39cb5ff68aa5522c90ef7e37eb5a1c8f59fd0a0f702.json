@@ -1,0 +1,26 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT state, COUNT(*)::BIGINT AS \"count!\" FROM block_manifest_verification_task GROUP BY state",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "state",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 1,
+        "name": "count!",
+        "type_info": "Int8"
+      }
+    ],
+    "parameters": {
+      "Left": []
+    },
+    "nullable": [
+      false,
+      null
+    ]
+  },
+  "hash": "fcedba227239c02880c0b39cb5ff68aa5522c90ef7e37eb5a1c8f59fd0a0f702"
+}
