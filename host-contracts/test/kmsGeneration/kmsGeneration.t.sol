@@ -1436,6 +1436,13 @@ contract KMSGenerationTest is HostContractsDeployerTestUtils {
         return digests;
     }
 
+    function test_compressedKeyMaterialAddedAbiIsFrozen() public pure {
+        assertEq(
+            IKMSGeneration.CompressedKeyMaterialAdded.selector,
+            bytes32(0x80ebc2a4e183000f6837fab1e36970e8bc4a1b19223054c32769db663a4ce346)
+        );
+    }
+
     /// @dev Hash + sign + prank + call migrationResponse with compressed digests
     /// for a migration request (single KMS node).
     function _doMigrationResponse(
