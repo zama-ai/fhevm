@@ -23,7 +23,8 @@
                             "kind": {
                               "Enum": [
                                 "Server",
-                                "Public"
+                                "Public",
+                                "CompressedKeySet"
                               ]
                             }
                           }
