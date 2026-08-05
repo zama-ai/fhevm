@@ -32,7 +32,7 @@ import {
 
 /**
  * A coprocessor input attestation carried inline by a [`FheExecuteOperand::VerifiedInput`], re-verified
- * in-batch (no account, no PDA) — the instruction-local analog of EVM `allowTransient(input, contract)`.
+ * in-execution (no account, no PDA) — the instruction-local analog of EVM `allowTransient(input, contract)`.
  */
 export type CoprocessorInputAttestation = {
   /** The verified input handle used as the operand. */

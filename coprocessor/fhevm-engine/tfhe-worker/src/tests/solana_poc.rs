@@ -201,7 +201,7 @@ fn seed_host_config(svm: &mut LiteSVM, program_id: Pubkey, admin: Pubkey) -> Pub
                 admin,
                 chain_id: host::SOLANA_POC_CHAIN_ID,
                 // Coprocessor `fromExternal` verifier: transfers bind the amount via a
-                // secp256k1 EIP-712 attestation that fhe_execute re-verifies in-batch.
+                // secp256k1 EIP-712 attestation that fhe_execute re-verifies in-execution.
                 gateway_chain_id: SECP_GATEWAY_CHAIN_ID,
                 input_verification_contract: INPUT_VERIFICATION_CONTRACT,
                 coprocessor_signers: host::pack_coprocessor_signers(&[secp_evm_address(
@@ -495,7 +495,7 @@ fn secp_sign(key: &k256::ecdsa::SigningKey, digest: &[u8; 32]) -> [u8; 65] {
 
 /// Builds a coprocessor-signed `fromExternal` attestation over `amount_handle`, binding it to
 /// (`user`, `contract`). The token program checks `user == transfer owner` and
-/// `contract == mint compute-signer PDA`; the host re-verifies this signature in-batch.
+/// `contract == mint compute-signer PDA`; the host re-verifies this signature in-execution.
 fn amount_attestation_for(
     amount_handle: [u8; 32],
     user: Pubkey,

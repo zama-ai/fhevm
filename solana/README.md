@@ -6,7 +6,7 @@ decryption — and re-expresses it in Solana idiom (accounts, PDAs, CPI, signer
 propagation) instead of transliterating Solidity.
 
 It is a proof of concept with one production-shaped vertical: encrypt an
-input, execute FHE ops in an atomic batch, and decrypt the result publicly or
+input, execute FHE ops as one atomic execution, and decrypt the result publicly or
 per-user, end to end against the real coprocessor, gateway, and a threshold
 KMS. The final product shape is deliberately not settled here — see
 [`docs/FUTURE_DESIGN.md`](docs/FUTURE_DESIGN.md).
@@ -40,7 +40,7 @@ Each component owns exactly one kind of trust decision:
 | Component | Where | Decides |
 |---|---|---|
 | `zama-host` program | `solana/programs/zama-host` | All on-chain authorization: who may execute on which values, input attestations (threshold secp256k1, verified on-chain), public-decrypt certificates + MMR proofs, HCU caps. |
-| Coprocessor listener + workers | `coprocessor/fhevm-engine` | Nothing. It reconstructs batches from transaction bytes and schedules FHE compute eagerly; a wrong fork wastes compute but cannot release plaintext (INVARIANTS #31). |
+| Coprocessor listener + workers | `coprocessor/fhevm-engine` | Nothing. It reconstructs executions from transaction bytes and schedules FHE compute eagerly; a wrong fork wastes compute but cannot release plaintext (INVARIANTS #31). |
 | Proof service | `solana-proof-service/` | Nothing. It serves MMR inclusion proofs; every proof is re-verified against live on-chain peaks by its consumers (INVARIANTS #30). |
 | Gateway + relayer | `gateway-contracts/`, `relayer/` | Routing, fees, and request-shape conformance only. User requests are signed; neither can alter who asks or for what (INVARIANTS #42). |
 | KMS connector | `kms-connector/` | Decrypt authorization. Each KMS party's connector independently re-verifies the user's ed25519 signature and reads the encrypted value account from the host chain, using the same compiled `zama_solana_acl` code the program runs (INVARIANTS #42, #45). |
@@ -63,7 +63,7 @@ trusted for authorization.
 - **MMR-sealed history.** Each encrypted value account seals its handle history into an
   append-only MMR; replaced and public handles stay provable forever inside
   a fixed-size account (`docs/MMR_ACL_MVP.md`).
-- **The 1,232-byte packet is a design input.** Batch wire data interns
+- **The 1,232-byte packet is a design input.** Execution wire data interns
   repeated 32-byte values in a dictionary; the KMS settle transaction requires
   a v0 transaction plus one address lookup table. Both bounds are pinned by
   tests, not assumed.
@@ -89,7 +89,7 @@ capability to its Solana counterpart.
 Inside this workspace (`solana/`):
 
 ```text
-programs/zama-host              Protocol host program: encrypted value accounts, batch execution
+programs/zama-host              Protocol host program: encrypted value accounts, execution
                                 (fhe_execute), input attestations, public-decrypt verification,
                                 KMS contexts, HCU metering.
 programs/confidential-token     App program: minimal confidential-token wrapper (ERC-7984 spirit):
@@ -98,7 +98,7 @@ programs/confidential-batcher   App program (DD-042): aggregates encrypted depos
                                 reveals only the KMS-certified batch total to the demo vault, pays
                                 each user an encrypted proportional cut.
 programs/demo-vault             Minimal public share-mint vault the batcher fronts; plain SPL.
-crates/zama-fhe                 Program-facing SDK: typed batch builder, `Encrypted<T>`, account
+crates/zama-fhe                 Program-facing SDK: typed execution builder (`FheExecution`), `Encrypted<T>`, account
                                 resolution for fhe_execute.
 crates/zama-solana-acl          The shared ACL crate: account layout, decode, MMR verification,
                                 authorization functions. Compiled into the program AND the KMS
@@ -168,13 +168,13 @@ An app program drives compute by CPI into `zama-host`, using
 
 - Consume a verified external input as a `VerifiedInput` operand of
   `fhe_execute` (the Solana analog of `FHE.fromExternal`): the host
-  re-verifies the coprocessor attestation inside the batch and allows the
-  input transiently, for that batch only. Bind the attestation to your
+  re-verifies the coprocessor attestation inside the execution and allows the
+  input transiently, for that execution only. Bind the attestation to your
   program's compute-authority PDA and check the attested `user_address`
   yourself — the host only enforces that the attestation names your compute
   subject.
 - Compose atomic multi-account effects (debit sender + credit receiver) as
-  one batch with per-output authority signers, using the batch builder.
+  one execution with per-output authority signers, using `FheExecution::build`.
 - To receive confidential funds, expose your own instruction that CPIs
   `confidential_transfer` with the user as sole signer (authority propagates
   through the CPI); see `confidential-batcher::join`. There is no

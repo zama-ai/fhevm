@@ -41,8 +41,11 @@ SELF_TEST=0
 [ "${1:-}" = "--self-test" ] && SELF_TEST=1
 
 # Everything the Solana workstream owns. GLOSSARY.md is excluded from the alias sweep because its
-# "Replaces" column intentionally quotes the old names, and DESIGN_DECISIONS.md because it is an
-# append-only record whose superseded entries quote the vocabulary of their own time.
+# "Replaces" column intentionally quotes the old names, and DESIGN_DECISIONS.md because it is a
+# historical record: a decision written under the old vocabulary keeps it, so the alias patterns
+# would fire on every entry. Decisions there are only ever appended, but their prose does get
+# reworded, and that is not something this sweep can police — a rename inside those bodies is
+# review's job. It has already gone wrong once: a blanket frame -> batch pass overwrote "CPI frame".
 RUST_ROOTS=(
   solana/programs
   solana/crates
@@ -446,14 +449,16 @@ check_alias 'rotation — an updated handle is updated' all '' \
 check_alias 'lineage — renamed to encrypted value account' all '' -iE '\blineage\b'
 # The adjective matters: "value account" describes every SPL token account, so dropping
 # "encrypted" turns the one distinguishing fact — that this account holds an *encrypted* value's
-# handle, subject list and MMR — into a generic phrase. The code has always said
-# `EncryptedValueAccount`; only the prose had drifted.
+# handle, subject list and MMR — into a generic phrase. The struct is `EncryptedValue`; the
+# adjective is the part that must survive in prose.
 #
 # ERE has no negative lookbehind, so the correct phrase is excluded by the line-level exception
 # rather than by the pattern. The known limit: a line carrying both spellings is exempted by its
-# correct one. That is the same trade every other entry here makes, and the sweep that introduced
-# this check already fixed the whole tree, so the check's job from here is catching new prose —
-# where a single line saying it both ways is not a realistic way to reintroduce the alias.
+# correct one. That is the same trade every other entry here makes, so the check's job is catching
+# new prose — where a single line saying it both ways is not a realistic way to reintroduce the
+# alias. A second limit, bigger than that one: these patterns match whole words, and `_` is a word
+# character to grep, so a retired word inside a compound identifier (`value_account`,
+# `max_op_batch`) is invisible here. Identifier renames are carried by review, not by this sweep.
 # (GLOSSARY.md is dropped by check_alias itself: its "Replaces" column has to keep the retired
 # spelling greppable, which is that column's entire purpose.)
 check_alias 'value account — say encrypted value account' all 'encrypted[ -]value[ -]account' \

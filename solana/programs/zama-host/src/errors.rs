@@ -106,10 +106,10 @@ pub enum ZamaHostError {
     /// An fhe_execute instruction referenced a missing or malformed dynamic account.
     #[msg("fhe_execute account reference is invalid")]
     InvalidFheExecuteAccount,
-    /// An fhe_execute instruction referenced a transient output that was not produced earlier.
+    /// An fhe_execute instruction referenced a step output that no earlier step produced.
     #[msg("fhe_execute transient operand is missing")]
     FheExecuteEarlierStepMissing,
-    /// An fhe_execute instruction produced the same transient handle twice.
+    /// An fhe_execute instruction produced the same handle twice, transient or persistent.
     #[msg("fhe_execute output handle is duplicated")]
     FheExecuteDuplicateHandle,
     /// An fhe_execute persistent output account already exists.

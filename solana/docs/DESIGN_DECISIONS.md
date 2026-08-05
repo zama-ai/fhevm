@@ -86,7 +86,7 @@ Status: adopted
 Context:
 
 EVM logs and contract state share one execution model. Solana log delivery is provider-dependent,
-plain `emit!` logs can be truncated, and Anchor `emit_cpi!` adds nested CPI batches.
+plain `emit!` logs can be truncated, and Anchor `emit_cpi!` adds nested CPI frames.
 
 Decision:
 
@@ -97,7 +97,7 @@ material, delegation, and replay witnesses.
 Rationale:
 
 Decrypt authorization cannot depend on whether a provider preserved a log line. It also cannot
-require every production path to spend a self-CPI batch solely for observability.
+require every production path to spend a self-CPI frame solely for observability.
 
 Consequences:
 
@@ -216,7 +216,7 @@ Decision:
 Inputs enter compute through the `FheExecuteOperand::VerifiedInput` operand consumed inside `fhe_execute`
 — the Solana `FHE.fromExternal` analog. The operand carries the coprocessor's EIP-712
 `CiphertextVerification` attestation; the shared `verify_input_attestation` verifier
-(`zama_host::instructions::input_verification`) re-verifies it **in-batch** by recovering the EVM
+(`zama_host::instructions::input_verification`) re-verifies it **in-execution** by recovering the EVM
 coprocessor signer via `secp256k1_recover` and threshold-checking it against the configured signer
 set, and asserts the attested `contract_chain_id` equals the host chain id (EVM's
 `contractChainId == block.chainid`). On success the input is *transient-allowed for that eval only* —
@@ -252,7 +252,7 @@ Why:
 
 Reusing the coprocessor attestation makes Solana input trust identical to EVM input trust — one
 trust root, recovered and threshold-checked on-chain — instead of a parallel verifier-set subsystem
-that could drift. Consuming it as an in-batch eval operand (rather than a standalone verify + persistent
+that could drift. Consuming it as an in-execution operand (rather than a standalone verify + persistent
 receipt) restores EVM parity (verify ≠ allow) and removes a persistent ACL account per input — one of
 the "3 ACLs" that inflated per-tx cost — so it is also a cost win.
 
@@ -267,7 +267,7 @@ What changed:
   (`attestation.contract_address == compute_subject`, the msg.sender analog).
 - The `verify_input_and_bind` and standalone `mock_input_verified_and_bind` instructions were removed;
   the shared verifier `zama_host::eip712::verify_coprocessor_input` (via
-  `instructions::input_verification::verify_input_attestation`) is invoked in-batch by `fhe_execute`.
+  `instructions::input_verification::verify_input_attestation`) is invoked in-execution by `fhe_execute`.
 
 Replaced design (stub): the earlier `verify_input_and_bind` bound inputs with a native Ed25519
 "input verifier set" signing a `SolanaInputBindIntent`. Reversed because it was a Solana-only trust
@@ -487,7 +487,7 @@ Decision:
 The host `poc` feature, its admin controls, and the zero-entropy fallback are removed. Handle creation
 always reads the previous bank hash and fails with `PreviousBankHashUnavailable` if the runtime does
 not provide one. Mollusk and LiteSVM tests seed `Clock` and `SlotHashes` as a validator would. The real
-input path remains the in-batch secp256k1 attestation verify (DD-007).
+input path remains the in-execution secp256k1 attestation verify (DD-007).
 
 Rationale:
 
@@ -622,7 +622,7 @@ public-receivable token should evaluate the staged inbound-credit profile (pendi
 recipient timing) or otherwise predeclare/lock the recipient's next balance transition so the
 inbound-write surface is bounded.
 
-## DD-017: Role-Aware `fhe_execute` And Per-Op Bind Instructions Update The RFC-024 execute_frame Batch
+## DD-017: Role-Aware `fhe_execute` And Per-Op Bind Instructions Replace The RFC-024 `execute_frame` Prototype
 
 Status: adopted
 
@@ -672,7 +672,7 @@ composition with transient/persistent outputs when a single CPI is required.
 
 Consequences:
 
-This updates the older RFC-024 `execute_frame` sketch and its "app_account_authority removed"
+This replaces the older RFC-024 `execute_frame` sketch and its "app_account_authority removed"
 note. Multi-account atomic effects (e.g. ERC7984 transfer crediting both sender and receiver) are
 expressed as one batch with per-output authority witnesses rather than a batch carrying an
 unsigned `authorized_app_accounts[]`. Future multi-app eval extensions should keep that signer-witness model
@@ -848,7 +848,7 @@ Decision:
 
 `fhe_execute` is the composed-eval executor with steps **Binary / Ternary / TrivialEncrypt / Rand**.
 External encrypted inputs are not a step type: they enter as the `FheExecuteOperand::VerifiedInput`
-operand of a step and are verified in-batch (DD-007). Intermediate results can be `Output::transient()`
+operand of a step and are verified in-execution (DD-007). Intermediate results can be `Output::transient()`
 (instruction-local, **no persistent ACL record / no `AclAllowedEvent`**) and consumed by later steps; only
 `Output::persistent()` results bind an `EncryptedValue` account and its `current_handle`. The app-facing `zama-fhe` crate
 (`solana/crates/zama-fhe`) exposes a typed `FheExecutionBuilder` DSL returning `Encrypted<T>` for transients,
@@ -1227,7 +1227,7 @@ Yellowstone sysvars; only produced-public output handles use the narrow lifecycl
 Rationale:
 
 `DESIGN_DECISIONS.md` (DD-004 context) already notes that plain `emit!` logs can be truncated and
-Anchor `emit_cpi!` adds nested CPI batches; avoiding events for a lifecycle that must survive CPI and be
+Anchor `emit_cpi!` adds nested CPI frames; avoiding events for a lifecycle that must survive CPI and be
 replayed byte-for-byte from cold RPC history (the solana-proof-service recovers from
 `getSignaturesForAddress`/`getTransaction` alone, see DD-035) sidesteps both concerns for this
 particular subsystem. No further code-comment rationale beyond this was found for the CPI-depth angle
@@ -1435,7 +1435,7 @@ Context:
 
 DD-033 kept compute-step (`fhe_execute`) events while making the ACL lifecycle event-free. Those
 compute events used a size-based transport switch: `emit_cpi!` for batches of `≤ MAX_CPI_EVAL_EVENTS`
-(8) events, falling back to plain `emit!` logs for larger batches (the self-CPI batches would otherwise
+(8) events, falling back to plain `emit!` logs for larger frames (the self-CPI frames would otherwise
 overflow the 32KiB bump heap). Two consumers exist: the host-listener indexer and the standalone MMR
 proof service (DD-035).
 
@@ -1898,7 +1898,7 @@ split into exactly two regimes, mirroring `FHEVMExecutor`:
    current_handle, leaf_count)` state in wire order. `leaf_count` is read by the host, not declared
    by the caller, and advances whenever an outgoing handle is sealed. Therefore an account that
    cycles back to an earlier content-addressed handle still produces a new seed. The host emits the
-   resolved random seeds through a signed event-CPI batch so the listener does not need caller
+   resolved random seeds through a signed event-CPI frame so the listener does not need caller
    hints or historical account reads. A batch containing a rand step must therefore
    declare at least one persistent output (preflight `FheExecuteRandRequiresPersistentOutput`); the
    excluded all-transient class is provably useless — no ACL record, no decrypt path, no
