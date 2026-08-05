@@ -47,7 +47,9 @@ pub struct FheExecute<'info> {
     pub payer: Signer<'info>,
     /// Compute subject that must be allowed on persistent encrypted inputs.
     pub compute_subject: Signer<'info>,
-    /// Signs for the authority of every persistent output's encrypted value account.
+    /// Default authority signer: signs for every persistent output that does not name an authority
+    /// of its own. An output that sets `authority_index` points at a remaining account instead, and
+    /// that account must sign and must equal the authority the output declares.
     pub encrypted_value_account_authority: Signer<'info>,
     /// Singleton config PDA. Read-only: the cap is read from here, but the writable per-slot
     /// counter is the separate `hcu_block_meter`, never this singleton — so the hot path takes no

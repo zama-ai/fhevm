@@ -810,7 +810,7 @@ fn proof_service_url() -> String {
 
 /// JSON mirror of `solana_proof_service::http::MmrProofResponse`. Only the fields
 /// this client consumes are declared; the response also carries `rpc_context_slot`,
-/// `value_account_last_slot`, `commitment`, and `proof_format_version` (ignored here).
+/// `encrypted_value_account_last_slot`, `commitment`, and `proof_format_version` (ignored here).
 #[derive(Deserialize)]
 struct ProofServiceMmrProofResponse {
     mmr_proof: Option<ProofServiceMmrProofDto>,

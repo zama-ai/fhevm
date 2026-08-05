@@ -27,7 +27,7 @@ byte-tight `fhe_execute`. Admin-gated rotation via `set_coprocessor_signers`.
 The host enforces only `attestation.contract_address == compute_subject` (the msg.sender analog).
 The convention that `compute_subject` is an app compute-authority PDA (e.g. `[b"fhe-compute", mint]`)
 is **app policy**, not protocol-enforced. `FheExecutionBuilder` cannot assert it because `compute_subject` is
-only known at execution-execution time.
+only known at execution time.
 
 **Decision needed:** lift the PDA-binding discipline to a protocol-level assertion, or codify it as an
 SDK guardrail (documented convention + `zama-fhe` helper), or leave it as app responsibility. If

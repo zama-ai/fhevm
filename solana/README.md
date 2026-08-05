@@ -57,7 +57,7 @@ trusted for authorization.
   event-free (DD-033): the listener re-derives every output handle from raw
   transaction bytes with the program's own derivation functions, so replay
   from bytes alone reconstructs full history (INVARIANTS #28, #29).
-- **Account-based ACL.** One canonical PDAn encrypted value account per encrypted value
+- **Account-based ACL.** One canonical PDA encrypted value account per encrypted value
   ID. Handles are stored inside the account and never used as PDA seeds, so
   apps can pre-allocate output accounts before the compute result exists.
 - **MMR-sealed history.** Each encrypted value account seals its handle history into an

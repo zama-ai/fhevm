@@ -411,7 +411,9 @@
         {
           "name": "encrypted_value_account_authority",
           "docs": [
-            "Signs for the authority of every persistent output's encrypted value account."
+            "Default authority signer: signs for every persistent output that does not name an authority",
+            "of its own. An output that sets `authority_index` points at a remaining account instead, and",
+            "that account must sign and must equal the authority the output declares."
           ],
           "signer": true
         },

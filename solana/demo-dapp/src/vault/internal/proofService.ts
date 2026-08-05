@@ -44,7 +44,7 @@ export type SolanaMmrProofResult = {
 /**
  * The proof-service response shape for the semantic endpoints:
  * `{mmr_proof, leaf_index?, leaf_count, rpc_context_slot?, verified, status, ...}`.
- * Chain-context fields (`rpc_context_slot`, `value_account_last_slot`, `commitment`, `proof_format_version`)
+ * Chain-context fields (`rpc_context_slot`, `encrypted_value_account_last_slot`, `commitment`, `proof_format_version`)
  * are carried on the wire but not consumed here.
  */
 type MmrProofResponseWire = {
@@ -125,7 +125,7 @@ export async function fetchSolanaPublicDecryptProof(
     if (response.ok) return parseMmrProofResponse(body);
 
     // 503 with a `lagging` body is the store catching up to the chain — bounded retry. Every other
-    // status (leaf_not_found / value_account_not_found 404, corrupt cache / integrity 500, 4xx client
+    // status (leaf_not_found / encrypted_value_account_not_found 404, corrupt cache / integrity 500, 4xx client
     // errors) is terminal.
     if (response.status === 503 && isLaggingStatus(body) && attempt < maxRetries) {
       await sleep(retryDelayMs);

@@ -1912,7 +1912,7 @@ rand seeds), where the anchor is *enforced*.
 
 Properties that must survive any refactor:
 - Every declared persistent output is always written, and duplicate persistent-output accounts within a
-  batch are rejected (`EvalAccountTable::claim_persistent_output`) — these make the anchor a consumed
+  batch are rejected (`ExecutionAccountTable::claim_persistent_output`) — these make the anchor a consumed
   ticket.
 - Sequential writes to one account advance `leaf_count`, even if the current handle and subjects
   later return to earlier values; a reverted batch does not advance it or emit a usable seed.
