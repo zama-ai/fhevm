@@ -107,10 +107,10 @@ jobs:
       - name: Check for dead surface and rejected vocabulary
         run: bash scripts/dead-surface-check.sh
 
-      # The self-test re-runs every check against a fixture that must fail it, which costs a few
-      # minutes because it re-runs the whole script per fixture. Every one of these greps has been
-      # silently vacuous at least once, so it runs whenever the script itself changes — the only
-      # commit that can make a check stop firing.
+      # The self-test re-runs every check against a fixture that must fail it — about four minutes,
+      # since each of the thirty assertions runs the script again for the one check its fixture
+      # violates. Every one of these greps has been silently vacuous at least once, so it runs
+      # whenever the script itself changes — the only commit that can make a check stop firing.
       - name: Self-test the dead-surface checks
         if: ${{ needs.check-changes.outputs.changes-dead-surface-check == 'true' }}
         run: bash scripts/dead-surface-check.sh --self-test
