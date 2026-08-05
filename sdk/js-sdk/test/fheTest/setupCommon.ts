@@ -339,12 +339,18 @@ function isLocalAnvilChain(chainName: FheTestChainName): boolean {
   return isLocalCleartextChain(chainName) || chainName.startsWith('localstack');
 }
 
+// `cast` talks to a local Anvil node and should always respond in well under this; capped so a
+// stalled RPC call (or a `cast send` stuck waiting on a receipt) fails fast instead of hanging the
+// whole test run silently.
+const FOUNDRY_CAST_TIMEOUT_MS = 30_000;
+
 function tryFoundryCast(args: readonly string[]): string | undefined {
   try {
     return execFileSync('cast', [...args], {
       encoding: 'utf-8',
       env: foundryCastEnv(),
       stdio: ['ignore', 'pipe', 'ignore'],
+      timeout: FOUNDRY_CAST_TIMEOUT_MS,
     }).trim();
   } catch {
     return undefined;
@@ -357,9 +363,10 @@ function foundryCast(args: readonly string[], errorMessage: string): string {
       encoding: 'utf-8',
       env: foundryCastEnv(),
       stdio: ['ignore', 'pipe', 'pipe'],
+      timeout: FOUNDRY_CAST_TIMEOUT_MS,
     }).trim();
   } catch (error) {
-    const maybeExecError = error as { stderr?: unknown; message?: unknown };
+    const maybeExecError = error as { stderr?: unknown; message?: unknown; signal?: unknown };
     const stderr =
       typeof maybeExecError.stderr === 'string'
         ? maybeExecError.stderr.trim()
@@ -367,7 +374,10 @@ function foundryCast(args: readonly string[], errorMessage: string): string {
           ? maybeExecError.stderr.toString('utf-8').trim()
           : '';
     const message = typeof maybeExecError.message === 'string' ? maybeExecError.message : '';
-    const details = stderr || message;
+    const timedOut = maybeExecError.signal === 'SIGTERM' && !stderr;
+    const details = timedOut
+      ? `\`cast ${args.join(' ')}\` did not respond within ${FOUNDRY_CAST_TIMEOUT_MS}ms (killed).`
+      : stderr || message;
     throw new Error(details ? `${errorMessage}\n${details}` : errorMessage);
   }
 }
