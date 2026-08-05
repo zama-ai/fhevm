@@ -71,6 +71,19 @@ const HOST_ADDRESS_KEYS = [
   "LZ_ENDPOINT_ADDRESS",
 ] as const;
 
+/**
+ * The "no bridge on this chain" address.
+ *
+ * v0.14 host contracts import `confidentialBridgeAdd` unconditionally, and their own deploy path
+ * writes the null address whenever no LayerZero endpoint is configured. A stack booted on pre-v0.14
+ * host contracts discovers no bridge address at all, so an N-1 -> N rollout would render an
+ * addresses file without the constant and fail to compile v0.14 `ACL.sol` with
+ * `DeclarationError: Declaration "confidentialBridgeAdd" not found`. Defaulting here keeps the
+ * generated file compilable against both contract families; the constant is unused by pre-v0.14
+ * sources, and a null bridge simply never takes ACL's bridge bypass.
+ */
+const NO_CONFIDENTIAL_BRIDGE_ADDRESS = "0x0000000000000000000000000000000000000000";
+
 const renderHostChainAddressesEnv = (addresses?: Record<string, string>) =>
   renderEnvFile(HOST_ADDRESS_KEYS.map((key) => [key, addresses?.[key]]));
 
@@ -90,6 +103,8 @@ export const renderHostChainAddressesSolidity = (state: Pick<State, "discovery">
     ["pauserSetAdd", host?.PAUSER_SET_CONTRACT_ADDRESS],
     ["protocolConfigAdd", host?.PROTOCOL_CONFIG_CONTRACT_ADDRESS],
     ["kmsGenerationAdd", host?.KMS_GENERATION_CONTRACT_ADDRESS],
-    ["confidentialBridgeAdd", host?.CONFIDENTIAL_BRIDGE_CONTRACT_ADDRESS],
+    // Only defaulted once the chain has been discovered at all; an undiscovered chain keeps
+    // rendering an empty file rather than a lone bridge constant.
+    ["confidentialBridgeAdd", host ? host.CONFIDENTIAL_BRIDGE_CONTRACT_ADDRESS || NO_CONFIDENTIAL_BRIDGE_ADDRESS : undefined],
   ]);
 };
