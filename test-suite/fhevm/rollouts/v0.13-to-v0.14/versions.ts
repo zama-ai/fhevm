@@ -4,12 +4,12 @@ type Env = Record<string, string>;
 // devnet topology the v0.14 upgrade was rehearsed on (Ethereum + Polygon), and it is the
 // smallest scenario where the canonical ProtocolConfig mirror has a second chain to mirror
 // onto — the "ETH & Polygon anchors match" check from the devnet report.
-export const scenario = 'two-of-three-multi-chain';
+export const scenario = "two-of-three-multi-chain";
 
 // fhevm monorepo tags: latest stable 0.13.x -> latest 0.14.0 pre-release.
 //
 // v0.13.2 publishes an image for every component in this bundle, so the baseline is uniform.
-const fromTag = 'v0.13.2';
+const fromTag = "v0.13.2";
 // The target is NOT uniform. fhevm only builds container images for the components a tag
 // actually touched, so a pre-release tag carries images for some components and not others.
 // v0.14.0-10 published everything except host-contracts and test-suite/e2e, whose newest
@@ -18,9 +18,9 @@ const fromTag = 'v0.13.2';
 //
 // Re-derive after any new 0.14 pre-release, e.g.:
 //   docker manifest inspect ghcr.io/zama-ai/fhevm/host-contracts:<tag>
-export const targetTag = 'v0.14.0-10';
-export const hostContractsTargetTag = 'v0.14.0-9';
-export const testSuiteTargetTag = 'v0.14.0-9';
+export const targetTag = "v0.14.0-10";
+export const hostContractsTargetTag = "v0.14.0-9";
+export const testSuiteTargetTag = "v0.14.0-9";
 
 // kms-core ships on its own tag line (the `zama-ai/kms` repo), so it does not follow the
 // monorepo tags. Release 0.13.0 serves KMS 0.13.20 and release 0.14.0 serves KMS 0.14.0.
@@ -30,9 +30,9 @@ export const testSuiteTargetTag = 'v0.14.0-9';
 // reconstruct shares — it fails user decryption with a Gao decoding error. 0.13.22 is the
 // only version that can serve alongside peers on either side of the hotfix, which makes it
 // the required bridge. Skipping it is what forced the devnet rollback.
-const coreFrom = 'v0.13.20';
-const corePrssBridge = 'v0.13.22';
-const coreTo = 'v0.14.0-1';
+const coreFrom = "v0.13.20";
+const corePrssBridge = "v0.13.22";
+const coreTo = "v0.14.0-1";
 
 export const from = {
   GATEWAY_VERSION: fromTag,
@@ -83,25 +83,25 @@ type EnvKey = keyof typeof from;
 
 // One group per step of the documented component order:
 // Gateway Contracts -> Host Contracts -> Relayer -> KMS -> Coprocessors -> SDK.
-export const gatewayContractKeys = ['GATEWAY_VERSION'] as const satisfies readonly EnvKey[];
-export const hostContractKeys = ['HOST_VERSION'] as const satisfies readonly EnvKey[];
-export const relayerKeys = ['RELAYER_VERSION', 'RELAYER_MIGRATE_VERSION'] as const satisfies readonly EnvKey[];
-export const coreKeys = ['CORE_VERSION'] as const satisfies readonly EnvKey[];
+export const gatewayContractKeys = ["GATEWAY_VERSION"] as const satisfies readonly EnvKey[];
+export const hostContractKeys = ["HOST_VERSION"] as const satisfies readonly EnvKey[];
+export const relayerKeys = ["RELAYER_VERSION", "RELAYER_MIGRATE_VERSION"] as const satisfies readonly EnvKey[];
+export const coreKeys = ["CORE_VERSION"] as const satisfies readonly EnvKey[];
 export const connectorKeys = [
-  'CONNECTOR_DB_MIGRATION_VERSION',
-  'CONNECTOR_GW_LISTENER_VERSION',
-  'CONNECTOR_KMS_WORKER_VERSION',
-  'CONNECTOR_TX_SENDER_VERSION',
+  "CONNECTOR_DB_MIGRATION_VERSION",
+  "CONNECTOR_GW_LISTENER_VERSION",
+  "CONNECTOR_KMS_WORKER_VERSION",
+  "CONNECTOR_TX_SENDER_VERSION",
 ] as const satisfies readonly EnvKey[];
-export const listenerKeys = ['LISTENER_CORE_VERSION'] as const satisfies readonly EnvKey[];
+export const listenerKeys = ["LISTENER_CORE_VERSION"] as const satisfies readonly EnvKey[];
 export const coprocessorKeys = [
-  'COPROCESSOR_DB_MIGRATION_VERSION',
-  'COPROCESSOR_HOST_LISTENER_VERSION',
-  'COPROCESSOR_GW_LISTENER_VERSION',
-  'COPROCESSOR_TX_SENDER_VERSION',
-  'COPROCESSOR_TFHE_WORKER_VERSION',
-  'COPROCESSOR_ZKPROOF_WORKER_VERSION',
-  'COPROCESSOR_SNS_WORKER_VERSION',
+  "COPROCESSOR_DB_MIGRATION_VERSION",
+  "COPROCESSOR_HOST_LISTENER_VERSION",
+  "COPROCESSOR_GW_LISTENER_VERSION",
+  "COPROCESSOR_TX_SENDER_VERSION",
+  "COPROCESSOR_TFHE_WORKER_VERSION",
+  "COPROCESSOR_ZKPROOF_WORKER_VERSION",
+  "COPROCESSOR_SNS_WORKER_VERSION",
 ] as const satisfies readonly EnvKey[];
 
 const withTargetVersions = (...keys: EnvKey[]): Env => ({
@@ -110,14 +110,14 @@ const withTargetVersions = (...keys: EnvKey[]): Env => ({
 });
 
 export type RolloutPhaseKey =
-  | 'baseline'
-  | 'gatewayContracts'
-  | 'hostContracts'
-  | 'relayer'
-  | 'kmsPrssBridge'
-  | 'kms'
-  | 'listenerCore'
-  | 'coprocessor';
+  | "baseline"
+  | "gatewayContracts"
+  | "hostContracts"
+  | "relayer"
+  | "kmsPrssBridge"
+  | "kms"
+  | "listenerCore"
+  | "coprocessor";
 
 /** Every phase lock is cumulative: it carries all earlier phases' target versions. */
 export const phaseVersions: Record<RolloutPhaseKey, Env> = {
@@ -144,7 +144,7 @@ export const phaseVersions: Record<RolloutPhaseKey, Env> = {
 };
 
 export const versionSources = [
-  'rollout=v0.13-to-v0.14',
+  "rollout=v0.13-to-v0.14",
   `from=${fromTag}`,
   `target=${targetTag}`,
   `kms-core=${coreFrom}->${corePrssBridge}->${coreTo}`,
