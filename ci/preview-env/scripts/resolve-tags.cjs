@@ -13,33 +13,42 @@ module.exports = async ({ core, context }) => {
   const shortSha = isDispatch
     ? context.sha.substring(0, 7)
     : context.payload.pull_request.head.sha.substring(0, 7);
+  // PR base = the main commit this PR sits on. fhevm's main CI tags every
+  // component image at each commit (fresh build or re-tag of the prior one), so
+  // this short SHA always resolves to a real image. It is the "latest main"
+  // fallback for components this PR didn't build - so PR previews track main and
+  // never depend on a hardcoded version pin in the workflow.
+  const baseShortSha = isDispatch ? null : context.payload.pull_request.base.sha.substring(0, 7);
 
   // Map a build job's result to the tag to deploy:
-  //   'success'                 -> the freshly built+pushed shortSha
-  //   'skipped' / '' / undefined -> the pinned version. Either this run didn't
-  //     build the component (build_images=false, or build_test_suite_only so the
-  //     other build jobs are skipped -> empty output) or its build path was
-  //     unchanged ('skipped') - falling back to the pin is correct.
+  //   'success'                  -> the freshly built+pushed shortSha
+  //   'skipped' / '' / undefined -> the fallback tag (see `fallback` below).
+  //     Either this run didn't build the component (build_images=false, or
+  //     build_test_suite_only so the other build jobs are skipped -> empty
+  //     output) or its build path was unchanged ('skipped') - falling back is
+  //     correct.
   //   'failure' / 'cancelled' / anything else -> FATAL. A genuinely failed build
-  //     must NOT silently fall back to the stale pinned image and deploy old code
-  //     under a green check; fail resolve-tags so the whole deploy is gated.
-  const pick = (result, pinnedVersion, component) => {
+  //     must NOT silently fall back and deploy old code under a green check; fail
+  //     resolve-tags so the whole deploy is gated.
+  const pick = (result, fallbackTag, component) => {
     if (result === 'success') return shortSha;
-    if (result === undefined || result === '' || result === 'skipped') return pinnedVersion;
+    if (result === undefined || result === '' || result === 'skipped') return fallbackTag;
     throw new Error(
       `build for '${component}' did not succeed (result='${result}'); refusing to fall back to ` +
-        `the pinned image '${pinnedVersion}' and deploy stale code`,
+        `'${fallbackTag}' and deploy stale code`,
     );
   };
 
-  // Pinned version: env on pull_request, matching input on dispatch.
-  const pinned = (envVar, dispatchInput) => (isDispatch ? dispatchInput : envVar);
-  const hostContractsPin = pinned(env.HOST_CONTRACTS_VERSION, inputs.host_contracts_version);
-  const gatewayContractsPin = pinned(env.GATEWAY_CONTRACTS_VERSION, inputs.gateway_contracts_version);
-  const kmsConnectorPin = pinned(env.KMS_CONNECTOR_VERSION, inputs.kms_connector_version);
-  const coprocessorPin = pinned(env.COPROCESSOR_VERSION, inputs.coprocessor_version);
-  const relayerPin = pinned(env.RELAYER_VERSION, inputs.relayer_version);
-  const testSuitePin = pinned(env.TEST_SUITE_VERSION, inputs.test_suite_version);
+  // Fallback tag for a component not built this run:
+  //   - pull_request: the PR base (latest main) image, by short SHA - no pin.
+  //   - workflow_dispatch: the matching *_version input (manual and explicit).
+  const fallback = (dispatchInput) => (isDispatch ? dispatchInput : baseShortSha);
+  const hostContractsPin = fallback(inputs.host_contracts_version);
+  const gatewayContractsPin = fallback(inputs.gateway_contracts_version);
+  const kmsConnectorPin = fallback(inputs.kms_connector_version);
+  const coprocessorPin = fallback(inputs.coprocessor_version);
+  const relayerPin = fallback(inputs.relayer_version);
+  const testSuitePin = fallback(inputs.test_suite_version);
 
   const tags = {
     host_contracts: pick(needs['build-host-contracts'].outputs.build_result, hostContractsPin, 'host-contracts'),
@@ -84,6 +93,16 @@ module.exports = async ({ core, context }) => {
     coprocessor_chart_version: isDispatch ? inputs.coprocessor_chart_version : env.COPROCESSOR_CHART_VERSION,
     coprocessor_infra_chart_version: isDispatch ? inputs.coprocessor_infra_chart_version : env.COPROCESSOR_INFRA_CHART_VERSION,
     kms_connector_chart_version: isDispatch ? inputs.kms_connector_chart_version : env.KMS_CONNECTOR_CHART_VERSION,
+    // Chart REFERENCE for the fhevm-owned charts that render the components
+    // whose images track HEAD on a PR (contracts/coprocessor/kms-connector): use
+    // the in-repo chart (the deploy job checks out fhevm) so chart templates
+    // match the HEAD images, instead of a pinned published OCI release. On
+    // dispatch, keep the pinned OCI chart. helm ignores --version for a local
+    // path, so the *_chart_version flag stays inert on PR and authoritative on
+    // dispatch - the helm commands need no change.
+    contracts_chart: isDispatch ? env.CONTRACTS_CHART : 'charts/contracts',
+    coprocessor_chart: isDispatch ? env.COPROCESSOR_CHART : 'charts/coprocessor',
+    kms_connector_chart: isDispatch ? env.KMS_CONNECTOR_CHART : 'charts/kms-connector',
     // Backs postgres-*/relayer-migrate/relayer/test-suite.
     common_chart_version: isDispatch ? inputs.common_chart_version : env.COMMON_CHART_VERSION,
     relayer_sdk_version: isDispatch ? inputs.relayer_sdk_version : env.RELAYER_SDK_VERSION,
@@ -94,6 +113,7 @@ module.exports = async ({ core, context }) => {
     kms_core_tag: isDispatch ? inputs.kms_core_version : env.KMS_CORE_TAG,
     nb_kms_core: isDispatch ? inputs.nb_kms_core : env.NB_KMS_CORE,
     nb_coprocessor: isDispatch ? inputs.nb_coprocessor : env.NB_COPROCESSOR,
+    deploy_polygon: isDispatch ? inputs.deploy_polygon : env.DEPLOY_POLYGON,
   };
 
   core.info(`Resolved tags: ${JSON.stringify(tags, null, 2)}`);
@@ -117,9 +137,9 @@ module.exports = async ({ core, context }) => {
     .addTable([
       [{ data: 'Component', header: true }, { data: 'Chart', header: true }, { data: 'Version', header: true }],
       ['anvil-node (host + gateway chains)', env.ANVIL_NODE_CHART, env.ANVIL_NODE_CHART_VERSION],
-      ['contracts (host/gateway/keygen)', env.CONTRACTS_CHART, chartVersions.contracts_chart_version],
-      ['coprocessor', env.COPROCESSOR_CHART, chartVersions.coprocessor_chart_version],
-      ['kms-connector', env.KMS_CONNECTOR_CHART, chartVersions.kms_connector_chart_version],
+      ['contracts (host/gateway/keygen)', chartVersions.contracts_chart, isDispatch ? chartVersions.contracts_chart_version : '(in-repo HEAD)'],
+      ['coprocessor', chartVersions.coprocessor_chart, isDispatch ? chartVersions.coprocessor_chart_version : '(in-repo HEAD)'],
+      ['kms-connector', chartVersions.kms_connector_chart, isDispatch ? chartVersions.kms_connector_chart_version : '(in-repo HEAD)'],
       ['coprocessor-infra (Crossplane S3)', env.COPROCESSOR_INFRA_CHART, chartVersions.coprocessor_infra_chart_version],
       ['coprocessor-redis (per-party broker)', env.REDIS_CHART, chartVersions.redis_chart_version],
       ['listener (per-party host-chain producer)', env.LISTENER_CHART, `${chartVersions.listener_chart_version} (image ${chartVersions.listener_version})`],
@@ -132,11 +152,13 @@ module.exports = async ({ core, context }) => {
       ['kms-core image tag', chartVersions.kms_core_tag],
       ['number of parties (kms-core / kms-connector / Postgres, 1:1)', chartVersions.nb_kms_core],
       ['number of coprocessor parties (coprocessor / coprocessor-infra / Postgres, 1:1)', chartVersions.nb_coprocessor],
+      ['second host chain (Polygon Amoy 80002, reuses ETH KMS key)', chartVersions.deploy_polygon === 'true' ? 'yes' : 'no'],
     ])
     .addHeading('Images', 3)
     .addRaw(
       `Short SHA \`${shortSha}\` for components built this run (build_images=\`${needs['check-labels'].outputs.build_images}\`) ` +
-        `and actually changed, otherwise the pinned version shown per component below.\n\n`,
+        `and actually changed; otherwise the fallback tag shown per component below ` +
+        `(on a PR: the base/main image \`${baseShortSha}\`; on manual dispatch: the pinned \`*_version\` input).\n\n`,
     )
     .addTable([
       [{ data: 'Component', header: true }, { data: 'Tag', header: true }],
