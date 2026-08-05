@@ -111,10 +111,6 @@ impl FhevmKeys {
             compact_public_key,
             public_params: Arc::new(crs),
             #[cfg(feature = "gpu")]
-            #[cfg(feature = "latency")]
-            gpu_server_key: vec![compressed_server_key.decompress_to_gpu()],
-            #[cfg(feature = "gpu")]
-            #[cfg(not(feature = "latency"))]
             gpu_server_key: (0..get_number_of_gpus())
                 .map(|i| compressed_server_key.decompress_to_specific_gpu(tfhe::GpuIndex::new(i)))
                 .collect::<Vec<_>>(),
