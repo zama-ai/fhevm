@@ -13,7 +13,7 @@
 //! so every key is computable up front.
 //!
 //! A delegated entry breaks the up-front part. Its delegation record lives at a PDA seeded by
-//! `(delegator, delegate, app_account)`, and the authoritative `app_account` is a field of
+//! `(delegator, delegate, encrypted_value_account_authority)`, and the authoritative `encrypted_value_account_authority` is a field of
 //! the lineage account — a request cannot supply it (see [`super::request`]). So a first read
 //! is needed to learn it. That read is a **discovery read**: it produces addresses, not
 //! decisions, and its account values are discarded. The second read covers the first read's
@@ -25,7 +25,7 @@
 //! nothing that a single deciding snapshot does not already give. Nor can the discarded read
 //! smuggle a stale value in: the delegation address it produced is re-derived from the
 //! deciding snapshot's own lineage inside [`super::delegation::check_delegation`], and a
-//! lineage that resolves at a given address has exactly one `app_account`, because that field
+//! lineage that resolves at a given address has exactly one `encrypted_value_account_authority`, because that field
 //! is part of the `valueKey` preimage the address is derived from. A discovery read that named
 //! the wrong record therefore surfaces as a key the deciding snapshot never read, reported as
 //! the key-planning defect it is.
@@ -237,7 +237,7 @@ pub fn plan_first_read(
     let signer = *request.permit().user_pubkey().as_bytes();
     let (watermark_key, _) = super::watermark::permit_invalidation_address(program_id, signer);
     let lineages = request.handles().iter().map(|entry| {
-        let (account_key, _) = super::lineage::lineage_address(program_id, entry.value_key());
+        let (account_key, _) = super::lineage::lineage_address(program_id, entry.encrypted_value_id());
         account_key
     });
     SnapshotKeys::new(std::iter::once(watermark_key).chain(lineages))

@@ -36,7 +36,7 @@ pub fn check_scope(
     if signed_scope.is_permissive() {
         return Ok(());
     }
-    let domain = lineage.acl_domain_key();
+    let domain = lineage.domain();
     if signed_scope
         .as_slice()
         .iter()

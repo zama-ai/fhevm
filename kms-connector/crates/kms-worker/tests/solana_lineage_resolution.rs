@@ -34,20 +34,20 @@ use solana_support::*;
 use zama_solana_acl::encrypted_value_discriminator;
 
 /// Resolves a lineage from a world holding exactly the account under test.
-fn resolve_from(world: &World, value_key: [u8; 32]) -> Result<ResolvedLineage, LineageFailure> {
+fn resolve_from(world: &World, encrypted_value_id: [u8; 32]) -> Result<ResolvedLineage, LineageFailure> {
     let (account_key, _) =
-        kms_worker::core::solana::lineage::lineage_address(PROGRAM_ID, value_key);
+        kms_worker::core::solana::lineage::lineage_address(PROGRAM_ID, encrypted_value_id);
     let snapshot = world
         .read(&SnapshotKeys::new([account_key]))
         .expect("the world reads");
-    resolve_lineage(&snapshot, PROGRAM_ID, value_key)
+    resolve_lineage(&snapshot, PROGRAM_ID, encrypted_value_id)
 }
 
 /// A lineage placed in a world, resolved.
 fn resolved(lineage: &LineageFixture) -> ResolvedLineage {
     resolve_from(
         &World::at_slot(1).with_lineage(lineage),
-        lineage.value_key(),
+        lineage.encrypted_value_id(),
     )
     .expect("a well-formed lineage resolves")
 }
@@ -74,13 +74,13 @@ fn a_lineage_named_by_its_value_key_resolves() {
 
     let resolved = resolve_from(
         &World::at_slot(1).with_lineage(&lineage),
-        lineage.value_key(),
+        lineage.encrypted_value_id(),
     )
     .expect("a well-formed lineage resolves");
 
     assert_eq!(resolved.account_key(), lineage.account_key);
-    assert_eq!(resolved.app_account(), APP);
-    assert_eq!(resolved.acl_domain_key(), DOMAIN);
+    assert_eq!(resolved.encrypted_value_account_authority(), APP);
+    assert_eq!(resolved.domain(), DOMAIN);
 }
 
 /// An absent lineage is a rejection that may resolve itself: the account may simply not have
@@ -90,7 +90,7 @@ fn a_lineage_named_by_its_value_key_resolves() {
 fn a_lineage_absent_at_the_observation_is_transient() {
     let lineage = LineageFixture::new(handle(0x11, FHE_TYPE_UINT64), &[Wallet::new(1).pubkey()]);
 
-    let failure = resolve_from(&World::at_slot(1), lineage.value_key())
+    let failure = resolve_from(&World::at_slot(1), lineage.encrypted_value_id())
         .expect_err("an account that does not exist authorizes nothing");
 
     assert!(matches!(
@@ -119,7 +119,7 @@ fn a_lineage_account_owned_by_another_program_is_terminal() {
 
     let failure = resolve_from(
         &World::at_slot(1).with_account(lineage.account_key, impostor),
-        lineage.value_key(),
+        lineage.encrypted_value_id(),
     )
     .expect_err("a foreign program's account is not a lineage");
 
@@ -150,7 +150,7 @@ fn a_host_owned_account_of_another_type_is_rejected() {
 
     let failure = resolve_from(
         &World::at_slot(1).with_account(lineage.account_key, delegation.account()),
-        lineage.value_key(),
+        lineage.encrypted_value_id(),
     )
     .expect_err("delegation-record bytes are not a lineage");
 
@@ -175,18 +175,18 @@ fn a_lineage_whose_fields_derive_another_value_key_is_rejected() {
         handle(0x14, FHE_TYPE_UINT64),
         &[owner],
     );
-    assert_ne!(foreign.value_key(), claimed.value_key());
+    assert_ne!(foreign.encrypted_value_id(), claimed.encrypted_value_id());
 
     let failure = resolve_from(
         &World::at_slot(1).with_account(claimed.account_key, foreign.account()),
-        claimed.value_key(),
+        claimed.encrypted_value_id(),
     )
     .expect_err("a lineage must reproduce the identity it was named by");
 
     assert!(matches!(
         failure,
         LineageFailure::ValueKeyMismatch { claimed: c, derived: d, .. }
-            if c == claimed.value_key() && d == foreign.value_key()
+            if c == claimed.encrypted_value_id() && d == foreign.encrypted_value_id()
     ));
 }
 
@@ -207,7 +207,7 @@ fn a_valid_lineage_at_another_address_is_never_consulted() {
 
     let failure = resolve_from(
         &World::at_slot(1).with_lineage(&elsewhere),
-        named.value_key(),
+        named.encrypted_value_id(),
     )
     .expect_err("only the address derived from the claimed identity is read");
 
@@ -227,11 +227,11 @@ fn trailing_bytes_after_the_lineage_body_are_accepted() {
 
     let resolved = resolve_from(
         &World::at_slot(1).with_account(lineage.account_key, grown),
-        lineage.value_key(),
+        lineage.encrypted_value_id(),
     )
     .expect("a realloc-grown account resolves");
 
-    assert_eq!(resolved.app_account(), APP);
+    assert_eq!(resolved.encrypted_value_account_authority(), APP);
     assert_eq!(
         8 + borsh::to_vec(resolved.lineage())
             .expect("the lineage serializes")
@@ -256,7 +256,7 @@ fn a_lineage_with_a_truncated_body_is_rejected() {
 
     let failure = resolve_from(
         &World::at_slot(1).with_account(lineage.account_key, truncated),
-        lineage.value_key(),
+        lineage.encrypted_value_id(),
     )
     .expect_err("a body that does not decode is not a lineage");
 
@@ -276,7 +276,7 @@ fn a_lineage_account_holding_only_its_discriminator_is_rejected() {
 
     let failure = resolve_from(
         &World::at_slot(1).with_account(lineage.account_key, empty),
-        lineage.value_key(),
+        lineage.encrypted_value_id(),
     )
     .expect_err("a discriminator alone is not a lineage");
 
@@ -308,9 +308,9 @@ fn each_entry_takes_its_app_context_from_its_own_lineage() {
         &[owner],
     );
 
-    assert_eq!(resolved(&first).app_account(), [0x51; 32]);
-    assert_eq!(resolved(&second).app_account(), [0x52; 32]);
-    assert_eq!(resolved(&first).acl_domain_key(), DOMAIN);
+    assert_eq!(resolved(&first).encrypted_value_account_authority(), [0x51; 32]);
+    assert_eq!(resolved(&second).encrypted_value_account_authority(), [0x52; 32]);
+    assert_eq!(resolved(&first).domain(), DOMAIN);
 }
 
 /// A scoped permit admits the domains it signed.

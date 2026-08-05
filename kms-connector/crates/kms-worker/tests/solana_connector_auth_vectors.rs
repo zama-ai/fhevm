@@ -536,7 +536,7 @@ fn deployment_and_permit_state_scenarios() -> Vec<Scenario> {
             .entry(
                 handle_on_chain(0x12, FHE_TYPE_UINT64, foreign_chain),
                 wallet.pubkey(),
-                lineage.value_key(),
+                lineage.encrypted_value_id(),
                 0,
                 Vec::new(),
             )
@@ -740,7 +740,7 @@ fn request_form_scenarios() -> Vec<Scenario> {
             .entry(
                 sealed,
                 wallet.pubkey(),
-                proof_lineage.value_key(),
+                proof_lineage.encrypted_value_id(),
                 1,
                 trailing,
             )
@@ -777,7 +777,7 @@ fn request_form_scenarios() -> Vec<Scenario> {
             .entry(
                 sealed,
                 wallet.pubkey(),
-                proof_lineage.value_key(),
+                proof_lineage.encrypted_value_id(),
                 1,
                 vec![0xff, 0xff, 0xff],
             )
@@ -799,7 +799,7 @@ fn lineage_scenarios() -> Vec<Scenario> {
          may simply not have reached the observed commitment yet.",
         "direct-current",
         "the lineage account is removed from the observation",
-        rule::LINEAGE_ABSENT,
+        rule::ENCRYPTED_VALUE_ACCOUNT_ABSENT,
         FailureClass::Transient,
         request.clone(),
         World::at_slot(OBSERVED_SLOT).with_watermark(wallet.pubkey(), 0),
@@ -813,7 +813,7 @@ fn lineage_scenarios() -> Vec<Scenario> {
          another program's ownership proves nothing.",
         "direct-current",
         "the lineage account's owner is replaced with another program",
-        rule::LINEAGE_FOREIGN_OWNER,
+        rule::ENCRYPTED_VALUE_ACCOUNT_FOREIGN_OWNER,
         FailureClass::Terminal,
         request.clone(),
         World::at_slot(OBSERVED_SLOT)
@@ -829,7 +829,7 @@ fn lineage_scenarios() -> Vec<Scenario> {
          its bytes happen to mean when read as a lineage.",
         "direct-current",
         "the lineage address holds a delegation record instead",
-        rule::LINEAGE_WRONG_ACCOUNT_TYPE,
+        rule::ENCRYPTED_VALUE_ACCOUNT_WRONG_TYPE,
         FailureClass::Terminal,
         request.clone(),
         World::at_slot(OBSERVED_SLOT)
@@ -848,7 +848,7 @@ fn lineage_scenarios() -> Vec<Scenario> {
          be read, the second is an account with room to spare.",
         "direct-current",
         "eight bytes are removed from the end of the lineage account",
-        rule::LINEAGE_MALFORMED,
+        rule::ENCRYPTED_VALUE_ACCOUNT_MALFORMED,
         FailureClass::Terminal,
         request.clone(),
         World::at_slot(OBSERVED_SLOT)
@@ -864,7 +864,7 @@ fn lineage_scenarios() -> Vec<Scenario> {
          backstop that makes a substituted lineage a rejection rather than a redirection.",
         "direct-current",
         "the lineage address holds a lineage of another app account",
-        rule::LINEAGE_VALUE_KEY_MISMATCH,
+        rule::ENCRYPTED_VALUE_ID_MISMATCH,
         FailureClass::Terminal,
         request,
         World::at_slot(OBSERVED_SLOT)
@@ -1190,7 +1190,7 @@ fn delegation_scenarios() -> Vec<Scenario> {
     let (expected_key, _) = delegation.address();
     let mut other_tuple =
         DelegationFixture::live(Wallet::new(9).pubkey(), signer.pubkey(), OBSERVED_SLOT);
-    other_tuple.app_account = APP;
+    other_tuple.encrypted_value_account_authority = APP;
     out.push(Scenario::rejected(
         "delegation-record-of-another-tuple",
         "A record sitting at the canonical address while naming a different tuple is refused: the \
@@ -1300,7 +1300,7 @@ fn record_of(scenario: &Scenario) -> ConnectorAuthVector {
                 .map(|entry| WireHandleEntry {
                     handle: to_hex(&entry.handle),
                     owner: to_hex(&entry.owner),
-                    value_key: to_hex(&entry.value_key),
+                    encrypted_value_id: to_hex(&entry.encrypted_value_id),
                     proof_leaf_count: entry.proof_leaf_count.to_string(),
                     access_proof: to_hex(&entry.access_proof),
                 })
@@ -1439,11 +1439,11 @@ fn rule_name(failure: &AuthorizationFailure) -> &'static str {
         AuthorizationFailure::KmsPair(_) => rule::KMS_PAIR_UNSERVABLE,
         AuthorizationFailure::Snapshot(_) => panic!("a record carries one observation"),
         AuthorizationFailure::Lineage { source, .. } => match source {
-            LineageFailure::Absent { .. } => rule::LINEAGE_ABSENT,
-            LineageFailure::ForeignOwner { .. } => rule::LINEAGE_FOREIGN_OWNER,
-            LineageFailure::WrongAccountType { .. } => rule::LINEAGE_WRONG_ACCOUNT_TYPE,
-            LineageFailure::Malformed { .. } => rule::LINEAGE_MALFORMED,
-            LineageFailure::ValueKeyMismatch { .. } => rule::LINEAGE_VALUE_KEY_MISMATCH,
+            LineageFailure::Absent { .. } => rule::ENCRYPTED_VALUE_ACCOUNT_ABSENT,
+            LineageFailure::ForeignOwner { .. } => rule::ENCRYPTED_VALUE_ACCOUNT_FOREIGN_OWNER,
+            LineageFailure::WrongAccountType { .. } => rule::ENCRYPTED_VALUE_ACCOUNT_WRONG_TYPE,
+            LineageFailure::Malformed { .. } => rule::ENCRYPTED_VALUE_ACCOUNT_MALFORMED,
+            LineageFailure::ValueKeyMismatch { .. } => rule::ENCRYPTED_VALUE_ID_MISMATCH,
             LineageFailure::Snapshot(_) => panic!("a record carries one observation"),
         },
         AuthorizationFailure::HandleBinding { source, .. } => match source {
@@ -1515,7 +1515,7 @@ async fn replay(record: &ConnectorAuthVector, file: &ConnectorAuthVectorFile) ->
             .map(|entry| SolanaHandleEntryWire {
                 handle: from_hex(&entry.handle).expect("hex"),
                 owner: from_hex(&entry.owner).expect("hex"),
-                value_key: from_hex(&entry.value_key).expect("hex"),
+                encrypted_value_id: from_hex(&entry.encrypted_value_id).expect("hex"),
                 proof_leaf_count: entry.proof_leaf_count.parse().expect("decimal"),
                 access_proof: from_hex(&entry.access_proof).expect("hex"),
             })

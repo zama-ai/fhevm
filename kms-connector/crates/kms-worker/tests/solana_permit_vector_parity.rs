@@ -116,7 +116,7 @@ impl Wrapper {
         SolanaHandleEntryWire {
             handle: handle(tag, FHE_TYPE_UINT64).to_vec(),
             owner: [owner_tag; 32].to_vec(),
-            value_key: [owner_tag ^ 0xff; 32].to_vec(),
+            encrypted_value_id: [owner_tag ^ 0xff; 32].to_vec(),
             proof_leaf_count: 0,
             access_proof: Vec::new(),
         }

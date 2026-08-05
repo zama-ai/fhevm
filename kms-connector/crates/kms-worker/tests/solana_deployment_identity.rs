@@ -137,7 +137,7 @@ fn handles_embedding_different_chain_ids_are_rejected() {
     let lineage = LineageFixture::new(local, &[wallet.pubkey()]);
     let request = RequestBuilder::new(&wallet)
         .direct_current(&lineage, local)
-        .entry(foreign, wallet.pubkey(), lineage.value_key(), 0, Vec::new())
+        .entry(foreign, wallet.pubkey(), lineage.encrypted_value_id(), 0, Vec::new())
         .typed();
 
     let failure = check_deployment(&request, &deployment()).expect_err("one request, one cluster");

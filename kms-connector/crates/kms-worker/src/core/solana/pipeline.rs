@@ -69,9 +69,9 @@ pub struct AuthorizedEntry {
     /// delegator for a delegated one.
     pub subject: SolanaPubkeyBytes,
     /// The app account, read from the validated lineage.
-    pub app_account: SolanaPubkeyBytes,
+    pub encrypted_value_account_authority: SolanaPubkeyBytes,
     /// The ACL domain, read from the validated lineage.
-    pub acl_domain_key: SolanaPubkeyBytes,
+    pub domain: SolanaPubkeyBytes,
 }
 
 /// An authorized request: the handle set is frozen here and nowhere later.
@@ -191,7 +191,7 @@ where
     let mut entries = Vec::with_capacity(request.handles().len());
     let mut delegated = Vec::new();
     for (index, entry) in request.handles().iter().enumerate() {
-        let lineage = resolve_lineage(&observation, program_id, entry.value_key())
+        let lineage = resolve_lineage(&observation, program_id, entry.encrypted_value_id())
             .map_err(|source| AuthorizationFailure::Lineage { index, source })?;
 
         // The subject is the entry's owner in both branches: the signer for a direct entry, the
@@ -204,18 +204,18 @@ where
             .map_err(|source| AuthorizationFailure::Scope { index, source })?;
 
         if subject != signer {
-            delegated.push((index, subject, lineage.app_account()));
+            delegated.push((index, subject, lineage.encrypted_value_account_authority()));
         }
         entries.push(AuthorizedEntry {
             handle: entry.handle(),
             subject,
-            app_account: lineage.app_account(),
-            acl_domain_key: lineage.acl_domain_key(),
+            encrypted_value_account_authority: lineage.encrypted_value_account_authority(),
+            domain: lineage.domain(),
         });
     }
 
-    for (index, delegator, app_account) in delegated {
-        check_delegation(&observation, program_id, delegator, signer, app_account)
+    for (index, delegator, encrypted_value_account_authority) in delegated {
+        check_delegation(&observation, program_id, delegator, signer, encrypted_value_account_authority)
             .map_err(|source| AuthorizationFailure::Delegation { index, source })?;
     }
 
@@ -252,10 +252,10 @@ fn discover_delegation_keys(
         if delegator == signer {
             continue;
         }
-        let lineage: ResolvedLineage = resolve_lineage(first, program_id, entry.value_key())
+        let lineage: ResolvedLineage = resolve_lineage(first, program_id, entry.encrypted_value_id())
             .map_err(|source| AuthorizationFailure::Lineage { index, source })?;
         let (account_key, _) =
-            delegation_address(program_id, delegator, signer, lineage.app_account());
+            delegation_address(program_id, delegator, signer, lineage.encrypted_value_account_authority());
         keys.push(account_key);
         let (wildcard_key, _) = wildcard_delegation_address(program_id, delegator, signer);
         keys.push(wildcard_key);

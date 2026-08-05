@@ -36,7 +36,7 @@
           {
             "handle": "101010101010101010101010101010101010101010108123456789abcdef0500",
             "owner": "8a88e3dd7409f195fd52db2d3cba5d72ca6709bf1d94121bf3748801b40f6f5c",
-            "value_key": "92b54122acc53a2a4b9b85a851263afc331b7941ea63ed4e963e4cbde0506b65",
+            "encrypted_value_id": "92b54122acc53a2a4b9b85a851263afc331b7941ea63ed4e963e4cbde0506b65",
             "proof_leaf_count": "0",
             "access_proof": ""
           }
@@ -82,7 +82,7 @@
           {
             "handle": "202020202020202020202020202020202020202020208123456789abcdef0500",
             "owner": "8139770ea87d175f56a35466c34c7ecccb8d8a91b4ee37a25df60f5b8fc9b394",
-            "value_key": "92b54122acc53a2a4b9b85a851263afc331b7941ea63ed4e963e4cbde0506b65",
+            "encrypted_value_id": "92b54122acc53a2a4b9b85a851263afc331b7941ea63ed4e963e4cbde0506b65",
             "proof_leaf_count": "0",
             "access_proof": ""
           }
@@ -133,7 +133,7 @@
           {
             "handle": "202020202020202020202020202020202020202020208123456789abcdef0500",
             "owner": "8139770ea87d175f56a35466c34c7ecccb8d8a91b4ee37a25df60f5b8fc9b394",
-            "value_key": "92b54122acc53a2a4b9b85a851263afc331b7941ea63ed4e963e4cbde0506b65",
+            "encrypted_value_id": "92b54122acc53a2a4b9b85a851263afc331b7941ea63ed4e963e4cbde0506b65",
             "proof_leaf_count": "0",
             "access_proof": ""
           }
@@ -184,7 +184,7 @@
           {
             "handle": "303030303030303030303030303030303030303030308123456789abcdef0500",
             "owner": "8a88e3dd7409f195fd52db2d3cba5d72ca6709bf1d94121bf3748801b40f6f5c",
-            "value_key": "92b54122acc53a2a4b9b85a851263afc331b7941ea63ed4e963e4cbde0506b65",
+            "encrypted_value_id": "92b54122acc53a2a4b9b85a851263afc331b7941ea63ed4e963e4cbde0506b65",
             "proof_leaf_count": "1",
             "access_proof": "000000000000000000000000"
           }
@@ -230,7 +230,7 @@
           {
             "handle": "404040404040404040404040404040404040404040408123456789abcdef0500",
             "owner": "8a88e3dd7409f195fd52db2d3cba5d72ca6709bf1d94121bf3748801b40f6f5c",
-            "value_key": "92b54122acc53a2a4b9b85a851263afc331b7941ea63ed4e963e4cbde0506b65",
+            "encrypted_value_id": "92b54122acc53a2a4b9b85a851263afc331b7941ea63ed4e963e4cbde0506b65",
             "proof_leaf_count": "2",
             "access_proof": "0000000000000000010000006d8a22da07c0083c2e3737a699fff73d1b88c9da3438b8ab53d94d7f9ac396b1"
           }
@@ -274,7 +274,7 @@
           {
             "handle": "505050505050505050505050505050505050505050508123456789abcdef0500",
             "owner": "8a88e3dd7409f195fd52db2d3cba5d72ca6709bf1d94121bf3748801b40f6f5c",
-            "value_key": "1b6f670feae822c4fc1c5dfdd06488d957ecf0dba9fd687d15f6a7c406a9b254",
+            "encrypted_value_id": "1b6f670feae822c4fc1c5dfdd06488d957ecf0dba9fd687d15f6a7c406a9b254",
             "proof_leaf_count": "0",
             "access_proof": ""
           }
@@ -320,14 +320,14 @@
           {
             "handle": "606060606060606060606060606060606060606060608123456789abcdef0500",
             "owner": "8a88e3dd7409f195fd52db2d3cba5d72ca6709bf1d94121bf3748801b40f6f5c",
-            "value_key": "92b54122acc53a2a4b9b85a851263afc331b7941ea63ed4e963e4cbde0506b65",
+            "encrypted_value_id": "92b54122acc53a2a4b9b85a851263afc331b7941ea63ed4e963e4cbde0506b65",
             "proof_leaf_count": "0",
             "access_proof": ""
           },
           {
             "handle": "606060606060606060606060606060606060606060608123456789abcdef0500",
             "owner": "8a88e3dd7409f195fd52db2d3cba5d72ca6709bf1d94121bf3748801b40f6f5c",
-            "value_key": "92b54122acc53a2a4b9b85a851263afc331b7941ea63ed4e963e4cbde0506b65",
+            "encrypted_value_id": "92b54122acc53a2a4b9b85a851263afc331b7941ea63ed4e963e4cbde0506b65",
             "proof_leaf_count": "0",
             "access_proof": ""
           }
@@ -373,21 +373,21 @@
           {
             "handle": "707070707070707070707070707070707070707070708123456789abcdef0500",
             "owner": "8a88e3dd7409f195fd52db2d3cba5d72ca6709bf1d94121bf3748801b40f6f5c",
-            "value_key": "92b54122acc53a2a4b9b85a851263afc331b7941ea63ed4e963e4cbde0506b65",
+            "encrypted_value_id": "92b54122acc53a2a4b9b85a851263afc331b7941ea63ed4e963e4cbde0506b65",
             "proof_leaf_count": "0",
             "access_proof": ""
           },
           {
             "handle": "717171717171717171717171717171717171717171718123456789abcdef0500",
             "owner": "8139770ea87d175f56a35466c34c7ecccb8d8a91b4ee37a25df60f5b8fc9b394",
-            "value_key": "0273bc3e010114bca8e7b4dee15cbd52763251a5b3b03ff2b5c3f9fd525e6eb4",
+            "encrypted_value_id": "0273bc3e010114bca8e7b4dee15cbd52763251a5b3b03ff2b5c3f9fd525e6eb4",
             "proof_leaf_count": "0",
             "access_proof": ""
           },
           {
             "handle": "727272727272727272727272727272727272727272728123456789abcdef0500",
             "owner": "ed4928c628d1c2c6eae90338905995612959273a5c63f93636c14614ac8737d1",
-            "value_key": "8b5ce56392a3055208371d700e9f6573bbe4310965d2415739b90f9951d947f6",
+            "encrypted_value_id": "8b5ce56392a3055208371d700e9f6573bbe4310965d2415739b90f9951d947f6",
             "proof_leaf_count": "0",
             "access_proof": ""
           }
@@ -453,224 +453,224 @@
           {
             "handle": "000080808080808080808080808080808080808080808123456789abcdef0500",
             "owner": "8a88e3dd7409f195fd52db2d3cba5d72ca6709bf1d94121bf3748801b40f6f5c",
-            "value_key": "1f608abfa81ae2c6ccac54d40b5cc56b840a60bdf8e5d2b37f0a7878df1d0d9e",
+            "encrypted_value_id": "1f608abfa81ae2c6ccac54d40b5cc56b840a60bdf8e5d2b37f0a7878df1d0d9e",
             "proof_leaf_count": "0",
             "access_proof": ""
           },
           {
             "handle": "000180808080808080808080808080808080808080808123456789abcdef0500",
             "owner": "8a88e3dd7409f195fd52db2d3cba5d72ca6709bf1d94121bf3748801b40f6f5c",
-            "value_key": "33809ba21a4e150b6d4fbab205ae54fe3f4321e0bd7873c105502c44a9a2deb7",
+            "encrypted_value_id": "33809ba21a4e150b6d4fbab205ae54fe3f4321e0bd7873c105502c44a9a2deb7",
             "proof_leaf_count": "0",
             "access_proof": ""
           },
           {
             "handle": "000280808080808080808080808080808080808080808123456789abcdef0500",
             "owner": "8a88e3dd7409f195fd52db2d3cba5d72ca6709bf1d94121bf3748801b40f6f5c",
-            "value_key": "0c17fe930ed7ee6a4d2eb0d530a9a0d6827899764ab290ceb59c71c49a2dde03",
+            "encrypted_value_id": "0c17fe930ed7ee6a4d2eb0d530a9a0d6827899764ab290ceb59c71c49a2dde03",
             "proof_leaf_count": "0",
             "access_proof": ""
           },
           {
             "handle": "000380808080808080808080808080808080808080808123456789abcdef0500",
             "owner": "8a88e3dd7409f195fd52db2d3cba5d72ca6709bf1d94121bf3748801b40f6f5c",
-            "value_key": "b7daaec8ee0216cc174bfc62e325136707a919caf7d3c00ade52b55f07a2c2e9",
+            "encrypted_value_id": "b7daaec8ee0216cc174bfc62e325136707a919caf7d3c00ade52b55f07a2c2e9",
             "proof_leaf_count": "0",
             "access_proof": ""
           },
           {
             "handle": "000480808080808080808080808080808080808080808123456789abcdef0500",
             "owner": "8a88e3dd7409f195fd52db2d3cba5d72ca6709bf1d94121bf3748801b40f6f5c",
-            "value_key": "7c723de39000890fab963197fc57518305d85ff97cd55a56d1041d2eeab3397a",
+            "encrypted_value_id": "7c723de39000890fab963197fc57518305d85ff97cd55a56d1041d2eeab3397a",
             "proof_leaf_count": "0",
             "access_proof": ""
           },
           {
             "handle": "000580808080808080808080808080808080808080808123456789abcdef0500",
             "owner": "8a88e3dd7409f195fd52db2d3cba5d72ca6709bf1d94121bf3748801b40f6f5c",
-            "value_key": "46d4ad9c0be7b8318beecb4ed95fe4d25d465f60d3a8c3d2016d592e2fe6effe",
+            "encrypted_value_id": "46d4ad9c0be7b8318beecb4ed95fe4d25d465f60d3a8c3d2016d592e2fe6effe",
             "proof_leaf_count": "0",
             "access_proof": ""
           },
           {
             "handle": "000680808080808080808080808080808080808080808123456789abcdef0500",
             "owner": "8a88e3dd7409f195fd52db2d3cba5d72ca6709bf1d94121bf3748801b40f6f5c",
-            "value_key": "acf93c311647d281f9c0eaf9d8c5b8f097d260c5830e201b4969339e38fe0809",
+            "encrypted_value_id": "acf93c311647d281f9c0eaf9d8c5b8f097d260c5830e201b4969339e38fe0809",
             "proof_leaf_count": "0",
             "access_proof": ""
           },
           {
             "handle": "000780808080808080808080808080808080808080808123456789abcdef0500",
             "owner": "8a88e3dd7409f195fd52db2d3cba5d72ca6709bf1d94121bf3748801b40f6f5c",
-            "value_key": "45c5912e88bf4ae4a17f5f2dba641ffaf0eece8cda19849e06a673db0652580c",
+            "encrypted_value_id": "45c5912e88bf4ae4a17f5f2dba641ffaf0eece8cda19849e06a673db0652580c",
             "proof_leaf_count": "0",
             "access_proof": ""
           },
           {
             "handle": "000880808080808080808080808080808080808080808123456789abcdef0500",
             "owner": "8a88e3dd7409f195fd52db2d3cba5d72ca6709bf1d94121bf3748801b40f6f5c",
-            "value_key": "6a188878154d78a76d012656b09d959a0094133458c5c855faac70e7db770474",
+            "encrypted_value_id": "6a188878154d78a76d012656b09d959a0094133458c5c855faac70e7db770474",
             "proof_leaf_count": "0",
             "access_proof": ""
           },
           {
             "handle": "000980808080808080808080808080808080808080808123456789abcdef0500",
             "owner": "8a88e3dd7409f195fd52db2d3cba5d72ca6709bf1d94121bf3748801b40f6f5c",
-            "value_key": "05a7869765804a4f813efa0fd4f7521010ddac8b5b4660ab0e72a01cf7bcea23",
+            "encrypted_value_id": "05a7869765804a4f813efa0fd4f7521010ddac8b5b4660ab0e72a01cf7bcea23",
             "proof_leaf_count": "0",
             "access_proof": ""
           },
           {
             "handle": "000a80808080808080808080808080808080808080808123456789abcdef0500",
             "owner": "8a88e3dd7409f195fd52db2d3cba5d72ca6709bf1d94121bf3748801b40f6f5c",
-            "value_key": "10348e4f15f977b9252421f01e188f1be36976454b1d960dbe0d1a9e5c07b190",
+            "encrypted_value_id": "10348e4f15f977b9252421f01e188f1be36976454b1d960dbe0d1a9e5c07b190",
             "proof_leaf_count": "0",
             "access_proof": ""
           },
           {
             "handle": "000b80808080808080808080808080808080808080808123456789abcdef0500",
             "owner": "8a88e3dd7409f195fd52db2d3cba5d72ca6709bf1d94121bf3748801b40f6f5c",
-            "value_key": "c324f8a2ba6029b751fea7953df58b490f26357bef704c30a91dae8c9ca1b583",
+            "encrypted_value_id": "c324f8a2ba6029b751fea7953df58b490f26357bef704c30a91dae8c9ca1b583",
             "proof_leaf_count": "0",
             "access_proof": ""
           },
           {
             "handle": "000c80808080808080808080808080808080808080808123456789abcdef0500",
             "owner": "8a88e3dd7409f195fd52db2d3cba5d72ca6709bf1d94121bf3748801b40f6f5c",
-            "value_key": "62c809b0e76863bdd30fe9e9ee8ba914e18b3f12641f7982ebd6126207b95e44",
+            "encrypted_value_id": "62c809b0e76863bdd30fe9e9ee8ba914e18b3f12641f7982ebd6126207b95e44",
             "proof_leaf_count": "0",
             "access_proof": ""
           },
           {
             "handle": "000d80808080808080808080808080808080808080808123456789abcdef0500",
             "owner": "8a88e3dd7409f195fd52db2d3cba5d72ca6709bf1d94121bf3748801b40f6f5c",
-            "value_key": "a11c54120f6b539a058101cd27606d038a5a82d43fbdda8cf7775d1915c364c6",
+            "encrypted_value_id": "a11c54120f6b539a058101cd27606d038a5a82d43fbdda8cf7775d1915c364c6",
             "proof_leaf_count": "0",
             "access_proof": ""
           },
           {
             "handle": "000e80808080808080808080808080808080808080808123456789abcdef0500",
             "owner": "8a88e3dd7409f195fd52db2d3cba5d72ca6709bf1d94121bf3748801b40f6f5c",
-            "value_key": "b85fbe98e87d97f3deb2ee59995673586918d54bd1744caabb730501f6fc2d29",
+            "encrypted_value_id": "b85fbe98e87d97f3deb2ee59995673586918d54bd1744caabb730501f6fc2d29",
             "proof_leaf_count": "0",
             "access_proof": ""
           },
           {
             "handle": "000f80808080808080808080808080808080808080808123456789abcdef0500",
             "owner": "8a88e3dd7409f195fd52db2d3cba5d72ca6709bf1d94121bf3748801b40f6f5c",
-            "value_key": "71f65467593dbc7271ad9b7cf16eece207ee345db2e1ed175c91e8404969ca84",
+            "encrypted_value_id": "71f65467593dbc7271ad9b7cf16eece207ee345db2e1ed175c91e8404969ca84",
             "proof_leaf_count": "0",
             "access_proof": ""
           },
           {
             "handle": "001080808080808080808080808080808080808080808123456789abcdef0500",
             "owner": "8a88e3dd7409f195fd52db2d3cba5d72ca6709bf1d94121bf3748801b40f6f5c",
-            "value_key": "71447c50285c33414619300bab99ad64836062d30bebdb8bc5e0f9ed9abadda5",
+            "encrypted_value_id": "71447c50285c33414619300bab99ad64836062d30bebdb8bc5e0f9ed9abadda5",
             "proof_leaf_count": "0",
             "access_proof": ""
           },
           {
             "handle": "001180808080808080808080808080808080808080808123456789abcdef0500",
             "owner": "8a88e3dd7409f195fd52db2d3cba5d72ca6709bf1d94121bf3748801b40f6f5c",
-            "value_key": "52c8d2210eb64bd0de8a32f7ce37631b3700b67a3ca305f34685317440a46fce",
+            "encrypted_value_id": "52c8d2210eb64bd0de8a32f7ce37631b3700b67a3ca305f34685317440a46fce",
             "proof_leaf_count": "0",
             "access_proof": ""
           },
           {
             "handle": "001280808080808080808080808080808080808080808123456789abcdef0500",
             "owner": "8a88e3dd7409f195fd52db2d3cba5d72ca6709bf1d94121bf3748801b40f6f5c",
-            "value_key": "1ef5d9992d164be7b1678254c5b91f7863ad7e9816c592765a1f1ffe49e417f4",
+            "encrypted_value_id": "1ef5d9992d164be7b1678254c5b91f7863ad7e9816c592765a1f1ffe49e417f4",
             "proof_leaf_count": "0",
             "access_proof": ""
           },
           {
             "handle": "001380808080808080808080808080808080808080808123456789abcdef0500",
             "owner": "8a88e3dd7409f195fd52db2d3cba5d72ca6709bf1d94121bf3748801b40f6f5c",
-            "value_key": "63db04da28eaf589433ee378f6db46d25a11e3ea99b6c0f45760c5443b51f875",
+            "encrypted_value_id": "63db04da28eaf589433ee378f6db46d25a11e3ea99b6c0f45760c5443b51f875",
             "proof_leaf_count": "0",
             "access_proof": ""
           },
           {
             "handle": "001480808080808080808080808080808080808080808123456789abcdef0500",
             "owner": "8a88e3dd7409f195fd52db2d3cba5d72ca6709bf1d94121bf3748801b40f6f5c",
-            "value_key": "46397377f8bb21479fdeb2fadaf67a4d4e216c85be9b8df3bcbc4546502c4e20",
+            "encrypted_value_id": "46397377f8bb21479fdeb2fadaf67a4d4e216c85be9b8df3bcbc4546502c4e20",
             "proof_leaf_count": "0",
             "access_proof": ""
           },
           {
             "handle": "001580808080808080808080808080808080808080808123456789abcdef0500",
             "owner": "8a88e3dd7409f195fd52db2d3cba5d72ca6709bf1d94121bf3748801b40f6f5c",
-            "value_key": "d1dd8070d200cef60fa266710c811d6e952671e1e3d655927649ecdd40c744ef",
+            "encrypted_value_id": "d1dd8070d200cef60fa266710c811d6e952671e1e3d655927649ecdd40c744ef",
             "proof_leaf_count": "0",
             "access_proof": ""
           },
           {
             "handle": "001680808080808080808080808080808080808080808123456789abcdef0500",
             "owner": "8a88e3dd7409f195fd52db2d3cba5d72ca6709bf1d94121bf3748801b40f6f5c",
-            "value_key": "ffecc7d574c026c5850095b178ffd5b7e4c47f4811bb6b19c815c35fb331ff07",
+            "encrypted_value_id": "ffecc7d574c026c5850095b178ffd5b7e4c47f4811bb6b19c815c35fb331ff07",
             "proof_leaf_count": "0",
             "access_proof": ""
           },
           {
             "handle": "001780808080808080808080808080808080808080808123456789abcdef0500",
             "owner": "8a88e3dd7409f195fd52db2d3cba5d72ca6709bf1d94121bf3748801b40f6f5c",
-            "value_key": "811717dc6a799d481f46aabc49f31e1bb8f5fa859c3f51e21e0b0c5333890234",
+            "encrypted_value_id": "811717dc6a799d481f46aabc49f31e1bb8f5fa859c3f51e21e0b0c5333890234",
             "proof_leaf_count": "0",
             "access_proof": ""
           },
           {
             "handle": "001880808080808080808080808080808080808080808123456789abcdef0500",
             "owner": "8a88e3dd7409f195fd52db2d3cba5d72ca6709bf1d94121bf3748801b40f6f5c",
-            "value_key": "78b41212c6e877d12a8ca1b602556f73a918134fc21c53dc90e6264e94d87dd6",
+            "encrypted_value_id": "78b41212c6e877d12a8ca1b602556f73a918134fc21c53dc90e6264e94d87dd6",
             "proof_leaf_count": "0",
             "access_proof": ""
           },
           {
             "handle": "001980808080808080808080808080808080808080808123456789abcdef0500",
             "owner": "8a88e3dd7409f195fd52db2d3cba5d72ca6709bf1d94121bf3748801b40f6f5c",
-            "value_key": "04e728407a7382eff338faf381e4c7f7156ee3a588f043ceabcccca7b2016f31",
+            "encrypted_value_id": "04e728407a7382eff338faf381e4c7f7156ee3a588f043ceabcccca7b2016f31",
             "proof_leaf_count": "0",
             "access_proof": ""
           },
           {
             "handle": "001a80808080808080808080808080808080808080808123456789abcdef0500",
             "owner": "8a88e3dd7409f195fd52db2d3cba5d72ca6709bf1d94121bf3748801b40f6f5c",
-            "value_key": "49be4a1f3e812824f8af3607e524dd09bd9929ff9896ff7cfe035c1811990622",
+            "encrypted_value_id": "49be4a1f3e812824f8af3607e524dd09bd9929ff9896ff7cfe035c1811990622",
             "proof_leaf_count": "0",
             "access_proof": ""
           },
           {
             "handle": "001b80808080808080808080808080808080808080808123456789abcdef0500",
             "owner": "8a88e3dd7409f195fd52db2d3cba5d72ca6709bf1d94121bf3748801b40f6f5c",
-            "value_key": "40f9e13aaa618de07bb5634e15b5dedad394b1079498f486aafe0d77643d2efd",
+            "encrypted_value_id": "40f9e13aaa618de07bb5634e15b5dedad394b1079498f486aafe0d77643d2efd",
             "proof_leaf_count": "0",
             "access_proof": ""
           },
           {
             "handle": "001c80808080808080808080808080808080808080808123456789abcdef0500",
             "owner": "8a88e3dd7409f195fd52db2d3cba5d72ca6709bf1d94121bf3748801b40f6f5c",
-            "value_key": "d34b0f69c0cf4806af63ff93ec6008ad93aec7f8d4fcd23c19e81623c216bac9",
+            "encrypted_value_id": "d34b0f69c0cf4806af63ff93ec6008ad93aec7f8d4fcd23c19e81623c216bac9",
             "proof_leaf_count": "0",
             "access_proof": ""
           },
           {
             "handle": "001d80808080808080808080808080808080808080808123456789abcdef0500",
             "owner": "8a88e3dd7409f195fd52db2d3cba5d72ca6709bf1d94121bf3748801b40f6f5c",
-            "value_key": "a86b5a4989708705fa187d04d093ab4eab03ef5c5900c012037f6c7bdbcdd37c",
+            "encrypted_value_id": "a86b5a4989708705fa187d04d093ab4eab03ef5c5900c012037f6c7bdbcdd37c",
             "proof_leaf_count": "0",
             "access_proof": ""
           },
           {
             "handle": "001e80808080808080808080808080808080808080808123456789abcdef0500",
             "owner": "8a88e3dd7409f195fd52db2d3cba5d72ca6709bf1d94121bf3748801b40f6f5c",
-            "value_key": "7a370f47395699b399442270ceca917747dec59aa282d45fbd9ad0cf4d9b35ea",
+            "encrypted_value_id": "7a370f47395699b399442270ceca917747dec59aa282d45fbd9ad0cf4d9b35ea",
             "proof_leaf_count": "0",
             "access_proof": ""
           },
           {
             "handle": "001f80808080808080808080808080808080808080808123456789abcdef0500",
             "owner": "8a88e3dd7409f195fd52db2d3cba5d72ca6709bf1d94121bf3748801b40f6f5c",
-            "value_key": "01dab16ca9bc5dab123e1482e1578b97a3519b82615382daec39aaa38e5aeac5",
+            "encrypted_value_id": "01dab16ca9bc5dab123e1482e1578b97a3519b82615382daec39aaa38e5aeac5",
             "proof_leaf_count": "0",
             "access_proof": ""
           }
@@ -871,7 +871,7 @@
           {
             "handle": "101010101010101010101010101010101010101010108123456789abcdef0500",
             "owner": "8a88e3dd7409f195fd52db2d3cba5d72ca6709bf1d94121bf3748801b40f6f5c",
-            "value_key": "92b54122acc53a2a4b9b85a851263afc331b7941ea63ed4e963e4cbde0506b65",
+            "encrypted_value_id": "92b54122acc53a2a4b9b85a851263afc331b7941ea63ed4e963e4cbde0506b65",
             "proof_leaf_count": "0",
             "access_proof": ""
           }
@@ -912,7 +912,7 @@
           {
             "handle": "101010101010101010101010101010101010101010108123456789abcdef0500",
             "owner": "8a88e3dd7409f195fd52db2d3cba5d72ca6709bf1d94121bf3748801b40f6f5c",
-            "value_key": "92b54122acc53a2a4b9b85a851263afc331b7941ea63ed4e963e4cbde0506b65",
+            "encrypted_value_id": "92b54122acc53a2a4b9b85a851263afc331b7941ea63ed4e963e4cbde0506b65",
             "proof_leaf_count": "0",
             "access_proof": ""
           }
@@ -958,7 +958,7 @@
           {
             "handle": "101010101010101010101010101010101010101010108123456789abcdef0500",
             "owner": "8a88e3dd7409f195fd52db2d3cba5d72ca6709bf1d94121bf3748801b40f6f5c",
-            "value_key": "92b54122acc53a2a4b9b85a851263afc331b7941ea63ed4e963e4cbde0506b65",
+            "encrypted_value_id": "92b54122acc53a2a4b9b85a851263afc331b7941ea63ed4e963e4cbde0506b65",
             "proof_leaf_count": "0",
             "access_proof": ""
           }
@@ -1008,7 +1008,7 @@
           {
             "handle": "101010101010101010101010101010101010101010108123456789abcdef0500",
             "owner": "8a88e3dd7409f195fd52db2d3cba5d72ca6709bf1d94121bf3748801b40f6f5c",
-            "value_key": "92b54122acc53a2a4b9b85a851263afc331b7941ea63ed4e963e4cbde0506b65",
+            "encrypted_value_id": "92b54122acc53a2a4b9b85a851263afc331b7941ea63ed4e963e4cbde0506b65",
             "proof_leaf_count": "0",
             "access_proof": ""
           }
@@ -1058,7 +1058,7 @@
           {
             "handle": "1111111111111111111111111111111111111111111180000000deadbeef0500",
             "owner": "8a88e3dd7409f195fd52db2d3cba5d72ca6709bf1d94121bf3748801b40f6f5c",
-            "value_key": "92b54122acc53a2a4b9b85a851263afc331b7941ea63ed4e963e4cbde0506b65",
+            "encrypted_value_id": "92b54122acc53a2a4b9b85a851263afc331b7941ea63ed4e963e4cbde0506b65",
             "proof_leaf_count": "0",
             "access_proof": ""
           }
@@ -1108,14 +1108,14 @@
           {
             "handle": "101010101010101010101010101010101010101010108123456789abcdef0500",
             "owner": "8a88e3dd7409f195fd52db2d3cba5d72ca6709bf1d94121bf3748801b40f6f5c",
-            "value_key": "92b54122acc53a2a4b9b85a851263afc331b7941ea63ed4e963e4cbde0506b65",
+            "encrypted_value_id": "92b54122acc53a2a4b9b85a851263afc331b7941ea63ed4e963e4cbde0506b65",
             "proof_leaf_count": "0",
             "access_proof": ""
           },
           {
             "handle": "1212121212121212121212121212121212121212121280000000000012340500",
             "owner": "8a88e3dd7409f195fd52db2d3cba5d72ca6709bf1d94121bf3748801b40f6f5c",
-            "value_key": "92b54122acc53a2a4b9b85a851263afc331b7941ea63ed4e963e4cbde0506b65",
+            "encrypted_value_id": "92b54122acc53a2a4b9b85a851263afc331b7941ea63ed4e963e4cbde0506b65",
             "proof_leaf_count": "0",
             "access_proof": ""
           }
@@ -1165,7 +1165,7 @@
           {
             "handle": "1313131313131313131313131313131313131313131380000000000012340500",
             "owner": "8a88e3dd7409f195fd52db2d3cba5d72ca6709bf1d94121bf3748801b40f6f5c",
-            "value_key": "92b54122acc53a2a4b9b85a851263afc331b7941ea63ed4e963e4cbde0506b65",
+            "encrypted_value_id": "92b54122acc53a2a4b9b85a851263afc331b7941ea63ed4e963e4cbde0506b65",
             "proof_leaf_count": "0",
             "access_proof": ""
           }
@@ -1215,7 +1215,7 @@
           {
             "handle": "101010101010101010101010101010101010101010108123456789abcdef0500",
             "owner": "8a88e3dd7409f195fd52db2d3cba5d72ca6709bf1d94121bf3748801b40f6f5c",
-            "value_key": "92b54122acc53a2a4b9b85a851263afc331b7941ea63ed4e963e4cbde0506b65",
+            "encrypted_value_id": "92b54122acc53a2a4b9b85a851263afc331b7941ea63ed4e963e4cbde0506b65",
             "proof_leaf_count": "0",
             "access_proof": ""
           }
@@ -1265,7 +1265,7 @@
           {
             "handle": "101010101010101010101010101010101010101010108123456789abcdef0500",
             "owner": "8a88e3dd7409f195fd52db2d3cba5d72ca6709bf1d94121bf3748801b40f6f5c",
-            "value_key": "92b54122acc53a2a4b9b85a851263afc331b7941ea63ed4e963e4cbde0506b65",
+            "encrypted_value_id": "92b54122acc53a2a4b9b85a851263afc331b7941ea63ed4e963e4cbde0506b65",
             "proof_leaf_count": "0",
             "access_proof": ""
           }
@@ -1315,7 +1315,7 @@
           {
             "handle": "101010101010101010101010101010101010101010108123456789abcdef0500",
             "owner": "8a88e3dd7409f195fd52db2d3cba5d72ca6709bf1d94121bf3748801b40f6f5c",
-            "value_key": "92b54122acc53a2a4b9b85a851263afc331b7941ea63ed4e963e4cbde0506b65",
+            "encrypted_value_id": "92b54122acc53a2a4b9b85a851263afc331b7941ea63ed4e963e4cbde0506b65",
             "proof_leaf_count": "0",
             "access_proof": ""
           }
@@ -1365,7 +1365,7 @@
           {
             "handle": "101010101010101010101010101010101010101010108123456789abcdef0500",
             "owner": "8a88e3dd7409f195fd52db2d3cba5d72ca6709bf1d94121bf3748801b40f6f5c",
-            "value_key": "92b54122acc53a2a4b9b85a851263afc331b7941ea63ed4e963e4cbde0506b65",
+            "encrypted_value_id": "92b54122acc53a2a4b9b85a851263afc331b7941ea63ed4e963e4cbde0506b65",
             "proof_leaf_count": "0",
             "access_proof": ""
           }
@@ -1415,7 +1415,7 @@
           {
             "handle": "101010101010101010101010101010101010101010108123456789abcdef0500",
             "owner": "8a88e3dd7409f195fd52db2d3cba5d72ca6709bf1d94121bf3748801b40f6f5c",
-            "value_key": "92b54122acc53a2a4b9b85a851263afc331b7941ea63ed4e963e4cbde0506b65",
+            "encrypted_value_id": "92b54122acc53a2a4b9b85a851263afc331b7941ea63ed4e963e4cbde0506b65",
             "proof_leaf_count": "0",
             "access_proof": ""
           }
@@ -1465,7 +1465,7 @@
           {
             "handle": "101010101010101010101010101010101010101010108123456789abcdef0500",
             "owner": "8a88e3dd7409f195fd52db2d3cba5d72ca6709bf1d94121bf3748801b40f6f5c",
-            "value_key": "92b54122acc53a2a4b9b85a851263afc331b7941ea63ed4e963e4cbde0506b65",
+            "encrypted_value_id": "92b54122acc53a2a4b9b85a851263afc331b7941ea63ed4e963e4cbde0506b65",
             "proof_leaf_count": "0",
             "access_proof": ""
           }
@@ -1515,7 +1515,7 @@
           {
             "handle": "101010101010101010101010101010101010101010108123456789abcdef0500",
             "owner": "8a88e3dd7409f195fd52db2d3cba5d72ca6709bf1d94121bf3748801b40f6f5c",
-            "value_key": "92b54122acc53a2a4b9b85a851263afc331b7941ea63ed4e963e4cbde0506b65",
+            "encrypted_value_id": "92b54122acc53a2a4b9b85a851263afc331b7941ea63ed4e963e4cbde0506b65",
             "proof_leaf_count": "0",
             "access_proof": ""
           }
@@ -1607,238 +1607,238 @@
           {
             "handle": "101010101010101010101010101010101010101010108123456789abcdef0500",
             "owner": "8a88e3dd7409f195fd52db2d3cba5d72ca6709bf1d94121bf3748801b40f6f5c",
-            "value_key": "92b54122acc53a2a4b9b85a851263afc331b7941ea63ed4e963e4cbde0506b65",
+            "encrypted_value_id": "92b54122acc53a2a4b9b85a851263afc331b7941ea63ed4e963e4cbde0506b65",
             "proof_leaf_count": "0",
             "access_proof": ""
           },
           {
             "handle": "101010101010101010101010101010101010101010108123456789abcdef0500",
             "owner": "8a88e3dd7409f195fd52db2d3cba5d72ca6709bf1d94121bf3748801b40f6f5c",
-            "value_key": "92b54122acc53a2a4b9b85a851263afc331b7941ea63ed4e963e4cbde0506b65",
+            "encrypted_value_id": "92b54122acc53a2a4b9b85a851263afc331b7941ea63ed4e963e4cbde0506b65",
             "proof_leaf_count": "0",
             "access_proof": ""
           },
           {
             "handle": "101010101010101010101010101010101010101010108123456789abcdef0500",
             "owner": "8a88e3dd7409f195fd52db2d3cba5d72ca6709bf1d94121bf3748801b40f6f5c",
-            "value_key": "92b54122acc53a2a4b9b85a851263afc331b7941ea63ed4e963e4cbde0506b65",
+            "encrypted_value_id": "92b54122acc53a2a4b9b85a851263afc331b7941ea63ed4e963e4cbde0506b65",
             "proof_leaf_count": "0",
             "access_proof": ""
           },
           {
             "handle": "101010101010101010101010101010101010101010108123456789abcdef0500",
             "owner": "8a88e3dd7409f195fd52db2d3cba5d72ca6709bf1d94121bf3748801b40f6f5c",
-            "value_key": "92b54122acc53a2a4b9b85a851263afc331b7941ea63ed4e963e4cbde0506b65",
+            "encrypted_value_id": "92b54122acc53a2a4b9b85a851263afc331b7941ea63ed4e963e4cbde0506b65",
             "proof_leaf_count": "0",
             "access_proof": ""
           },
           {
             "handle": "101010101010101010101010101010101010101010108123456789abcdef0500",
             "owner": "8a88e3dd7409f195fd52db2d3cba5d72ca6709bf1d94121bf3748801b40f6f5c",
-            "value_key": "92b54122acc53a2a4b9b85a851263afc331b7941ea63ed4e963e4cbde0506b65",
+            "encrypted_value_id": "92b54122acc53a2a4b9b85a851263afc331b7941ea63ed4e963e4cbde0506b65",
             "proof_leaf_count": "0",
             "access_proof": ""
           },
           {
             "handle": "101010101010101010101010101010101010101010108123456789abcdef0500",
             "owner": "8a88e3dd7409f195fd52db2d3cba5d72ca6709bf1d94121bf3748801b40f6f5c",
-            "value_key": "92b54122acc53a2a4b9b85a851263afc331b7941ea63ed4e963e4cbde0506b65",
+            "encrypted_value_id": "92b54122acc53a2a4b9b85a851263afc331b7941ea63ed4e963e4cbde0506b65",
             "proof_leaf_count": "0",
             "access_proof": ""
           },
           {
             "handle": "101010101010101010101010101010101010101010108123456789abcdef0500",
             "owner": "8a88e3dd7409f195fd52db2d3cba5d72ca6709bf1d94121bf3748801b40f6f5c",
-            "value_key": "92b54122acc53a2a4b9b85a851263afc331b7941ea63ed4e963e4cbde0506b65",
+            "encrypted_value_id": "92b54122acc53a2a4b9b85a851263afc331b7941ea63ed4e963e4cbde0506b65",
             "proof_leaf_count": "0",
             "access_proof": ""
           },
           {
             "handle": "101010101010101010101010101010101010101010108123456789abcdef0500",
             "owner": "8a88e3dd7409f195fd52db2d3cba5d72ca6709bf1d94121bf3748801b40f6f5c",
-            "value_key": "92b54122acc53a2a4b9b85a851263afc331b7941ea63ed4e963e4cbde0506b65",
+            "encrypted_value_id": "92b54122acc53a2a4b9b85a851263afc331b7941ea63ed4e963e4cbde0506b65",
             "proof_leaf_count": "0",
             "access_proof": ""
           },
           {
             "handle": "101010101010101010101010101010101010101010108123456789abcdef0500",
             "owner": "8a88e3dd7409f195fd52db2d3cba5d72ca6709bf1d94121bf3748801b40f6f5c",
-            "value_key": "92b54122acc53a2a4b9b85a851263afc331b7941ea63ed4e963e4cbde0506b65",
+            "encrypted_value_id": "92b54122acc53a2a4b9b85a851263afc331b7941ea63ed4e963e4cbde0506b65",
             "proof_leaf_count": "0",
             "access_proof": ""
           },
           {
             "handle": "101010101010101010101010101010101010101010108123456789abcdef0500",
             "owner": "8a88e3dd7409f195fd52db2d3cba5d72ca6709bf1d94121bf3748801b40f6f5c",
-            "value_key": "92b54122acc53a2a4b9b85a851263afc331b7941ea63ed4e963e4cbde0506b65",
+            "encrypted_value_id": "92b54122acc53a2a4b9b85a851263afc331b7941ea63ed4e963e4cbde0506b65",
             "proof_leaf_count": "0",
             "access_proof": ""
           },
           {
             "handle": "101010101010101010101010101010101010101010108123456789abcdef0500",
             "owner": "8a88e3dd7409f195fd52db2d3cba5d72ca6709bf1d94121bf3748801b40f6f5c",
-            "value_key": "92b54122acc53a2a4b9b85a851263afc331b7941ea63ed4e963e4cbde0506b65",
+            "encrypted_value_id": "92b54122acc53a2a4b9b85a851263afc331b7941ea63ed4e963e4cbde0506b65",
             "proof_leaf_count": "0",
             "access_proof": ""
           },
           {
             "handle": "101010101010101010101010101010101010101010108123456789abcdef0500",
             "owner": "8a88e3dd7409f195fd52db2d3cba5d72ca6709bf1d94121bf3748801b40f6f5c",
-            "value_key": "92b54122acc53a2a4b9b85a851263afc331b7941ea63ed4e963e4cbde0506b65",
+            "encrypted_value_id": "92b54122acc53a2a4b9b85a851263afc331b7941ea63ed4e963e4cbde0506b65",
             "proof_leaf_count": "0",
             "access_proof": ""
           },
           {
             "handle": "101010101010101010101010101010101010101010108123456789abcdef0500",
             "owner": "8a88e3dd7409f195fd52db2d3cba5d72ca6709bf1d94121bf3748801b40f6f5c",
-            "value_key": "92b54122acc53a2a4b9b85a851263afc331b7941ea63ed4e963e4cbde0506b65",
+            "encrypted_value_id": "92b54122acc53a2a4b9b85a851263afc331b7941ea63ed4e963e4cbde0506b65",
             "proof_leaf_count": "0",
             "access_proof": ""
           },
           {
             "handle": "101010101010101010101010101010101010101010108123456789abcdef0500",
             "owner": "8a88e3dd7409f195fd52db2d3cba5d72ca6709bf1d94121bf3748801b40f6f5c",
-            "value_key": "92b54122acc53a2a4b9b85a851263afc331b7941ea63ed4e963e4cbde0506b65",
+            "encrypted_value_id": "92b54122acc53a2a4b9b85a851263afc331b7941ea63ed4e963e4cbde0506b65",
             "proof_leaf_count": "0",
             "access_proof": ""
           },
           {
             "handle": "101010101010101010101010101010101010101010108123456789abcdef0500",
             "owner": "8a88e3dd7409f195fd52db2d3cba5d72ca6709bf1d94121bf3748801b40f6f5c",
-            "value_key": "92b54122acc53a2a4b9b85a851263afc331b7941ea63ed4e963e4cbde0506b65",
+            "encrypted_value_id": "92b54122acc53a2a4b9b85a851263afc331b7941ea63ed4e963e4cbde0506b65",
             "proof_leaf_count": "0",
             "access_proof": ""
           },
           {
             "handle": "101010101010101010101010101010101010101010108123456789abcdef0500",
             "owner": "8a88e3dd7409f195fd52db2d3cba5d72ca6709bf1d94121bf3748801b40f6f5c",
-            "value_key": "92b54122acc53a2a4b9b85a851263afc331b7941ea63ed4e963e4cbde0506b65",
+            "encrypted_value_id": "92b54122acc53a2a4b9b85a851263afc331b7941ea63ed4e963e4cbde0506b65",
             "proof_leaf_count": "0",
             "access_proof": ""
           },
           {
             "handle": "101010101010101010101010101010101010101010108123456789abcdef0500",
             "owner": "8a88e3dd7409f195fd52db2d3cba5d72ca6709bf1d94121bf3748801b40f6f5c",
-            "value_key": "92b54122acc53a2a4b9b85a851263afc331b7941ea63ed4e963e4cbde0506b65",
+            "encrypted_value_id": "92b54122acc53a2a4b9b85a851263afc331b7941ea63ed4e963e4cbde0506b65",
             "proof_leaf_count": "0",
             "access_proof": ""
           },
           {
             "handle": "101010101010101010101010101010101010101010108123456789abcdef0500",
             "owner": "8a88e3dd7409f195fd52db2d3cba5d72ca6709bf1d94121bf3748801b40f6f5c",
-            "value_key": "92b54122acc53a2a4b9b85a851263afc331b7941ea63ed4e963e4cbde0506b65",
+            "encrypted_value_id": "92b54122acc53a2a4b9b85a851263afc331b7941ea63ed4e963e4cbde0506b65",
             "proof_leaf_count": "0",
             "access_proof": ""
           },
           {
             "handle": "101010101010101010101010101010101010101010108123456789abcdef0500",
             "owner": "8a88e3dd7409f195fd52db2d3cba5d72ca6709bf1d94121bf3748801b40f6f5c",
-            "value_key": "92b54122acc53a2a4b9b85a851263afc331b7941ea63ed4e963e4cbde0506b65",
+            "encrypted_value_id": "92b54122acc53a2a4b9b85a851263afc331b7941ea63ed4e963e4cbde0506b65",
             "proof_leaf_count": "0",
             "access_proof": ""
           },
           {
             "handle": "101010101010101010101010101010101010101010108123456789abcdef0500",
             "owner": "8a88e3dd7409f195fd52db2d3cba5d72ca6709bf1d94121bf3748801b40f6f5c",
-            "value_key": "92b54122acc53a2a4b9b85a851263afc331b7941ea63ed4e963e4cbde0506b65",
+            "encrypted_value_id": "92b54122acc53a2a4b9b85a851263afc331b7941ea63ed4e963e4cbde0506b65",
             "proof_leaf_count": "0",
             "access_proof": ""
           },
           {
             "handle": "101010101010101010101010101010101010101010108123456789abcdef0500",
             "owner": "8a88e3dd7409f195fd52db2d3cba5d72ca6709bf1d94121bf3748801b40f6f5c",
-            "value_key": "92b54122acc53a2a4b9b85a851263afc331b7941ea63ed4e963e4cbde0506b65",
+            "encrypted_value_id": "92b54122acc53a2a4b9b85a851263afc331b7941ea63ed4e963e4cbde0506b65",
             "proof_leaf_count": "0",
             "access_proof": ""
           },
           {
             "handle": "101010101010101010101010101010101010101010108123456789abcdef0500",
             "owner": "8a88e3dd7409f195fd52db2d3cba5d72ca6709bf1d94121bf3748801b40f6f5c",
-            "value_key": "92b54122acc53a2a4b9b85a851263afc331b7941ea63ed4e963e4cbde0506b65",
+            "encrypted_value_id": "92b54122acc53a2a4b9b85a851263afc331b7941ea63ed4e963e4cbde0506b65",
             "proof_leaf_count": "0",
             "access_proof": ""
           },
           {
             "handle": "101010101010101010101010101010101010101010108123456789abcdef0500",
             "owner": "8a88e3dd7409f195fd52db2d3cba5d72ca6709bf1d94121bf3748801b40f6f5c",
-            "value_key": "92b54122acc53a2a4b9b85a851263afc331b7941ea63ed4e963e4cbde0506b65",
+            "encrypted_value_id": "92b54122acc53a2a4b9b85a851263afc331b7941ea63ed4e963e4cbde0506b65",
             "proof_leaf_count": "0",
             "access_proof": ""
           },
           {
             "handle": "101010101010101010101010101010101010101010108123456789abcdef0500",
             "owner": "8a88e3dd7409f195fd52db2d3cba5d72ca6709bf1d94121bf3748801b40f6f5c",
-            "value_key": "92b54122acc53a2a4b9b85a851263afc331b7941ea63ed4e963e4cbde0506b65",
+            "encrypted_value_id": "92b54122acc53a2a4b9b85a851263afc331b7941ea63ed4e963e4cbde0506b65",
             "proof_leaf_count": "0",
             "access_proof": ""
           },
           {
             "handle": "101010101010101010101010101010101010101010108123456789abcdef0500",
             "owner": "8a88e3dd7409f195fd52db2d3cba5d72ca6709bf1d94121bf3748801b40f6f5c",
-            "value_key": "92b54122acc53a2a4b9b85a851263afc331b7941ea63ed4e963e4cbde0506b65",
+            "encrypted_value_id": "92b54122acc53a2a4b9b85a851263afc331b7941ea63ed4e963e4cbde0506b65",
             "proof_leaf_count": "0",
             "access_proof": ""
           },
           {
             "handle": "101010101010101010101010101010101010101010108123456789abcdef0500",
             "owner": "8a88e3dd7409f195fd52db2d3cba5d72ca6709bf1d94121bf3748801b40f6f5c",
-            "value_key": "92b54122acc53a2a4b9b85a851263afc331b7941ea63ed4e963e4cbde0506b65",
+            "encrypted_value_id": "92b54122acc53a2a4b9b85a851263afc331b7941ea63ed4e963e4cbde0506b65",
             "proof_leaf_count": "0",
             "access_proof": ""
           },
           {
             "handle": "101010101010101010101010101010101010101010108123456789abcdef0500",
             "owner": "8a88e3dd7409f195fd52db2d3cba5d72ca6709bf1d94121bf3748801b40f6f5c",
-            "value_key": "92b54122acc53a2a4b9b85a851263afc331b7941ea63ed4e963e4cbde0506b65",
+            "encrypted_value_id": "92b54122acc53a2a4b9b85a851263afc331b7941ea63ed4e963e4cbde0506b65",
             "proof_leaf_count": "0",
             "access_proof": ""
           },
           {
             "handle": "101010101010101010101010101010101010101010108123456789abcdef0500",
             "owner": "8a88e3dd7409f195fd52db2d3cba5d72ca6709bf1d94121bf3748801b40f6f5c",
-            "value_key": "92b54122acc53a2a4b9b85a851263afc331b7941ea63ed4e963e4cbde0506b65",
+            "encrypted_value_id": "92b54122acc53a2a4b9b85a851263afc331b7941ea63ed4e963e4cbde0506b65",
             "proof_leaf_count": "0",
             "access_proof": ""
           },
           {
             "handle": "101010101010101010101010101010101010101010108123456789abcdef0500",
             "owner": "8a88e3dd7409f195fd52db2d3cba5d72ca6709bf1d94121bf3748801b40f6f5c",
-            "value_key": "92b54122acc53a2a4b9b85a851263afc331b7941ea63ed4e963e4cbde0506b65",
+            "encrypted_value_id": "92b54122acc53a2a4b9b85a851263afc331b7941ea63ed4e963e4cbde0506b65",
             "proof_leaf_count": "0",
             "access_proof": ""
           },
           {
             "handle": "101010101010101010101010101010101010101010108123456789abcdef0500",
             "owner": "8a88e3dd7409f195fd52db2d3cba5d72ca6709bf1d94121bf3748801b40f6f5c",
-            "value_key": "92b54122acc53a2a4b9b85a851263afc331b7941ea63ed4e963e4cbde0506b65",
+            "encrypted_value_id": "92b54122acc53a2a4b9b85a851263afc331b7941ea63ed4e963e4cbde0506b65",
             "proof_leaf_count": "0",
             "access_proof": ""
           },
           {
             "handle": "101010101010101010101010101010101010101010108123456789abcdef0500",
             "owner": "8a88e3dd7409f195fd52db2d3cba5d72ca6709bf1d94121bf3748801b40f6f5c",
-            "value_key": "92b54122acc53a2a4b9b85a851263afc331b7941ea63ed4e963e4cbde0506b65",
+            "encrypted_value_id": "92b54122acc53a2a4b9b85a851263afc331b7941ea63ed4e963e4cbde0506b65",
             "proof_leaf_count": "0",
             "access_proof": ""
           },
           {
             "handle": "101010101010101010101010101010101010101010108123456789abcdef0500",
             "owner": "8a88e3dd7409f195fd52db2d3cba5d72ca6709bf1d94121bf3748801b40f6f5c",
-            "value_key": "92b54122acc53a2a4b9b85a851263afc331b7941ea63ed4e963e4cbde0506b65",
+            "encrypted_value_id": "92b54122acc53a2a4b9b85a851263afc331b7941ea63ed4e963e4cbde0506b65",
             "proof_leaf_count": "0",
             "access_proof": ""
           },
           {
             "handle": "101010101010101010101010101010101010101010108123456789abcdef0500",
             "owner": "8a88e3dd7409f195fd52db2d3cba5d72ca6709bf1d94121bf3748801b40f6f5c",
-            "value_key": "92b54122acc53a2a4b9b85a851263afc331b7941ea63ed4e963e4cbde0506b65",
+            "encrypted_value_id": "92b54122acc53a2a4b9b85a851263afc331b7941ea63ed4e963e4cbde0506b65",
             "proof_leaf_count": "0",
             "access_proof": ""
           },
           {
             "handle": "101010101010101010101010101010101010101010108123456789abcdef0500",
             "owner": "8a88e3dd7409f195fd52db2d3cba5d72ca6709bf1d94121bf3748801b40f6f5c",
-            "value_key": "92b54122acc53a2a4b9b85a851263afc331b7941ea63ed4e963e4cbde0506b65",
+            "encrypted_value_id": "92b54122acc53a2a4b9b85a851263afc331b7941ea63ed4e963e4cbde0506b65",
             "proof_leaf_count": "0",
             "access_proof": ""
           }
@@ -1888,7 +1888,7 @@
           {
             "handle": "909090909090909090909090909090909090909090908123456789abcdef0500",
             "owner": "8a88e3dd7409f195fd52db2d3cba5d72ca6709bf1d94121bf3748801b40f6f5c",
-            "value_key": "92b54122acc53a2a4b9b85a851263afc331b7941ea63ed4e963e4cbde0506b65",
+            "encrypted_value_id": "92b54122acc53a2a4b9b85a851263afc331b7941ea63ed4e963e4cbde0506b65",
             "proof_leaf_count": "1",
             "access_proof": "000000000000000000000000dead"
           }
@@ -1938,7 +1938,7 @@
           {
             "handle": "909090909090909090909090909090909090909090908123456789abcdef0500",
             "owner": "8a88e3dd7409f195fd52db2d3cba5d72ca6709bf1d94121bf3748801b40f6f5c",
-            "value_key": "92b54122acc53a2a4b9b85a851263afc331b7941ea63ed4e963e4cbde0506b65",
+            "encrypted_value_id": "92b54122acc53a2a4b9b85a851263afc331b7941ea63ed4e963e4cbde0506b65",
             "proof_leaf_count": "1",
             "access_proof": "00000000000000004100000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000"
           }
@@ -1988,7 +1988,7 @@
           {
             "handle": "909090909090909090909090909090909090909090908123456789abcdef0500",
             "owner": "8a88e3dd7409f195fd52db2d3cba5d72ca6709bf1d94121bf3748801b40f6f5c",
-            "value_key": "92b54122acc53a2a4b9b85a851263afc331b7941ea63ed4e963e4cbde0506b65",
+            "encrypted_value_id": "92b54122acc53a2a4b9b85a851263afc331b7941ea63ed4e963e4cbde0506b65",
             "proof_leaf_count": "1",
             "access_proof": "ffffff"
           }
@@ -2016,7 +2016,7 @@
       "name": "missing-lineage",
       "comment": "The lineage account does not exist at this observation. Transient by nature: the account may simply not have reached the observed commitment yet.",
       "result": "invalid",
-      "rule": "lineage-absent",
+      "rule": "encrypted-value-account-absent",
       "class": "transient",
       "derived_from": "direct-current",
       "mutation": "the lineage account is removed from the observation",
@@ -2038,7 +2038,7 @@
           {
             "handle": "101010101010101010101010101010101010101010108123456789abcdef0500",
             "owner": "8a88e3dd7409f195fd52db2d3cba5d72ca6709bf1d94121bf3748801b40f6f5c",
-            "value_key": "92b54122acc53a2a4b9b85a851263afc331b7941ea63ed4e963e4cbde0506b65",
+            "encrypted_value_id": "92b54122acc53a2a4b9b85a851263afc331b7941ea63ed4e963e4cbde0506b65",
             "proof_leaf_count": "0",
             "access_proof": ""
           }
@@ -2061,7 +2061,7 @@
       "name": "lineage-owned-by-another-program",
       "comment": "Program ownership is the sole trust anchor: an account with impeccable contents under another program's ownership proves nothing.",
       "result": "invalid",
-      "rule": "lineage-foreign-owner",
+      "rule": "encrypted-value-account-foreign-owner",
       "class": "terminal",
       "derived_from": "direct-current",
       "mutation": "the lineage account's owner is replaced with another program",
@@ -2083,7 +2083,7 @@
           {
             "handle": "101010101010101010101010101010101010101010108123456789abcdef0500",
             "owner": "8a88e3dd7409f195fd52db2d3cba5d72ca6709bf1d94121bf3748801b40f6f5c",
-            "value_key": "92b54122acc53a2a4b9b85a851263afc331b7941ea63ed4e963e4cbde0506b65",
+            "encrypted_value_id": "92b54122acc53a2a4b9b85a851263afc331b7941ea63ed4e963e4cbde0506b65",
             "proof_leaf_count": "0",
             "access_proof": ""
           }
@@ -2111,7 +2111,7 @@
       "name": "delegation-record-as-lineage",
       "comment": "A host-owned account of another type is caught by the discriminator rather than by what its bytes happen to mean when read as a lineage.",
       "result": "invalid",
-      "rule": "lineage-wrong-account-type",
+      "rule": "encrypted-value-account-wrong-type",
       "class": "terminal",
       "derived_from": "direct-current",
       "mutation": "the lineage address holds a delegation record instead",
@@ -2133,7 +2133,7 @@
           {
             "handle": "101010101010101010101010101010101010101010108123456789abcdef0500",
             "owner": "8a88e3dd7409f195fd52db2d3cba5d72ca6709bf1d94121bf3748801b40f6f5c",
-            "value_key": "92b54122acc53a2a4b9b85a851263afc331b7941ea63ed4e963e4cbde0506b65",
+            "encrypted_value_id": "92b54122acc53a2a4b9b85a851263afc331b7941ea63ed4e963e4cbde0506b65",
             "proof_leaf_count": "0",
             "access_proof": ""
           }
@@ -2161,7 +2161,7 @@
       "name": "lineage-with-a-truncated-body",
       "comment": "A body cut short is not the same thing as a body followed by extra bytes: the first cannot be read, the second is an account with room to spare.",
       "result": "invalid",
-      "rule": "lineage-malformed",
+      "rule": "encrypted-value-account-malformed",
       "class": "terminal",
       "derived_from": "direct-current",
       "mutation": "eight bytes are removed from the end of the lineage account",
@@ -2183,7 +2183,7 @@
           {
             "handle": "101010101010101010101010101010101010101010108123456789abcdef0500",
             "owner": "8a88e3dd7409f195fd52db2d3cba5d72ca6709bf1d94121bf3748801b40f6f5c",
-            "value_key": "92b54122acc53a2a4b9b85a851263afc331b7941ea63ed4e963e4cbde0506b65",
+            "encrypted_value_id": "92b54122acc53a2a4b9b85a851263afc331b7941ea63ed4e963e4cbde0506b65",
             "proof_leaf_count": "0",
             "access_proof": ""
           }
@@ -2211,7 +2211,7 @@
       "name": "lineage-deriving-another-value-key",
       "comment": "The account's own fields must reproduce the identity that was claimed. This is the backstop that makes a substituted lineage a rejection rather than a redirection.",
       "result": "invalid",
-      "rule": "lineage-value-key-mismatch",
+      "rule": "encrypted-value-id-mismatch",
       "class": "terminal",
       "derived_from": "direct-current",
       "mutation": "the lineage address holds a lineage of another app account",
@@ -2233,7 +2233,7 @@
           {
             "handle": "101010101010101010101010101010101010101010108123456789abcdef0500",
             "owner": "8a88e3dd7409f195fd52db2d3cba5d72ca6709bf1d94121bf3748801b40f6f5c",
-            "value_key": "92b54122acc53a2a4b9b85a851263afc331b7941ea63ed4e963e4cbde0506b65",
+            "encrypted_value_id": "92b54122acc53a2a4b9b85a851263afc331b7941ea63ed4e963e4cbde0506b65",
             "proof_leaf_count": "0",
             "access_proof": ""
           }
@@ -2283,7 +2283,7 @@
           {
             "handle": "141414141414141414141414141414141414141414148123456789abcdef0500",
             "owner": "8a88e3dd7409f195fd52db2d3cba5d72ca6709bf1d94121bf3748801b40f6f5c",
-            "value_key": "704d83dd159b19de294a3c59cb1df49978a0d1a3de63728690ee908fe7d2bc23",
+            "encrypted_value_id": "704d83dd159b19de294a3c59cb1df49978a0d1a3de63728690ee908fe7d2bc23",
             "proof_leaf_count": "0",
             "access_proof": ""
           }
@@ -2333,7 +2333,7 @@
           {
             "handle": "a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a08123456789abcdef0500",
             "owner": "8a88e3dd7409f195fd52db2d3cba5d72ca6709bf1d94121bf3748801b40f6f5c",
-            "value_key": "92b54122acc53a2a4b9b85a851263afc331b7941ea63ed4e963e4cbde0506b65",
+            "encrypted_value_id": "92b54122acc53a2a4b9b85a851263afc331b7941ea63ed4e963e4cbde0506b65",
             "proof_leaf_count": "0",
             "access_proof": ""
           }
@@ -2383,7 +2383,7 @@
           {
             "handle": "a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a28123456789abcdef0500",
             "owner": "8a88e3dd7409f195fd52db2d3cba5d72ca6709bf1d94121bf3748801b40f6f5c",
-            "value_key": "92b54122acc53a2a4b9b85a851263afc331b7941ea63ed4e963e4cbde0506b65",
+            "encrypted_value_id": "92b54122acc53a2a4b9b85a851263afc331b7941ea63ed4e963e4cbde0506b65",
             "proof_leaf_count": "0",
             "access_proof": ""
           }
@@ -2433,7 +2433,7 @@
           {
             "handle": "b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b08123456789abcdef0500",
             "owner": "8a88e3dd7409f195fd52db2d3cba5d72ca6709bf1d94121bf3748801b40f6f5c",
-            "value_key": "92b54122acc53a2a4b9b85a851263afc331b7941ea63ed4e963e4cbde0506b65",
+            "encrypted_value_id": "92b54122acc53a2a4b9b85a851263afc331b7941ea63ed4e963e4cbde0506b65",
             "proof_leaf_count": "1",
             "access_proof": "010000000000000000000000"
           }
@@ -2483,7 +2483,7 @@
           {
             "handle": "b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b08123456789abcdef0500",
             "owner": "8a88e3dd7409f195fd52db2d3cba5d72ca6709bf1d94121bf3748801b40f6f5c",
-            "value_key": "92b54122acc53a2a4b9b85a851263afc331b7941ea63ed4e963e4cbde0506b65",
+            "encrypted_value_id": "92b54122acc53a2a4b9b85a851263afc331b7941ea63ed4e963e4cbde0506b65",
             "proof_leaf_count": "1",
             "access_proof": "000000000000000000000000"
           }
@@ -2533,7 +2533,7 @@
           {
             "handle": "b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b08123456789abcdef0500",
             "owner": "8a88e3dd7409f195fd52db2d3cba5d72ca6709bf1d94121bf3748801b40f6f5c",
-            "value_key": "92b54122acc53a2a4b9b85a851263afc331b7941ea63ed4e963e4cbde0506b65",
+            "encrypted_value_id": "92b54122acc53a2a4b9b85a851263afc331b7941ea63ed4e963e4cbde0506b65",
             "proof_leaf_count": "1",
             "access_proof": "000000000000000000000000"
           }
@@ -2583,7 +2583,7 @@
           {
             "handle": "b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b08123456789abcdef0500",
             "owner": "8a88e3dd7409f195fd52db2d3cba5d72ca6709bf1d94121bf3748801b40f6f5c",
-            "value_key": "92b54122acc53a2a4b9b85a851263afc331b7941ea63ed4e963e4cbde0506b65",
+            "encrypted_value_id": "92b54122acc53a2a4b9b85a851263afc331b7941ea63ed4e963e4cbde0506b65",
             "proof_leaf_count": "1",
             "access_proof": "000000000000000000000000"
           }
@@ -2633,7 +2633,7 @@
           {
             "handle": "b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b08123456789abcdef0500",
             "owner": "8a88e3dd7409f195fd52db2d3cba5d72ca6709bf1d94121bf3748801b40f6f5c",
-            "value_key": "92b54122acc53a2a4b9b85a851263afc331b7941ea63ed4e963e4cbde0506b65",
+            "encrypted_value_id": "92b54122acc53a2a4b9b85a851263afc331b7941ea63ed4e963e4cbde0506b65",
             "proof_leaf_count": "1",
             "access_proof": "000000000000000000000000"
           }
@@ -2683,7 +2683,7 @@
           {
             "handle": "c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c08123456789abcdef0500",
             "owner": "8a88e3dd7409f195fd52db2d3cba5d72ca6709bf1d94121bf3748801b40f6f5c",
-            "value_key": "92b54122acc53a2a4b9b85a851263afc331b7941ea63ed4e963e4cbde0506b65",
+            "encrypted_value_id": "92b54122acc53a2a4b9b85a851263afc331b7941ea63ed4e963e4cbde0506b65",
             "proof_leaf_count": "2",
             "access_proof": "0000000000000000010000007c134f61535252c57221420504e63a18755aec2fdae0d14cb1f6cf342c297901"
           }
@@ -2733,7 +2733,7 @@
           {
             "handle": "d2d2d2d2d2d2d2d2d2d2d2d2d2d2d2d2d2d2d2d2d2d28123456789abcdef0500",
             "owner": "8a88e3dd7409f195fd52db2d3cba5d72ca6709bf1d94121bf3748801b40f6f5c",
-            "value_key": "92b54122acc53a2a4b9b85a851263afc331b7941ea63ed4e963e4cbde0506b65",
+            "encrypted_value_id": "92b54122acc53a2a4b9b85a851263afc331b7941ea63ed4e963e4cbde0506b65",
             "proof_leaf_count": "3",
             "access_proof": "020000000000000000000000"
           }
@@ -2783,7 +2783,7 @@
           {
             "handle": "e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e28123456789abcdef0500",
             "owner": "8a88e3dd7409f195fd52db2d3cba5d72ca6709bf1d94121bf3748801b40f6f5c",
-            "value_key": "92b54122acc53a2a4b9b85a851263afc331b7941ea63ed4e963e4cbde0506b65",
+            "encrypted_value_id": "92b54122acc53a2a4b9b85a851263afc331b7941ea63ed4e963e4cbde0506b65",
             "proof_leaf_count": "4",
             "access_proof": "010000000000000002000000c83c3d698c1271fbedd90d7b3e1696edc5a136e1491a67b8d9011aad17127496ace0179e769bedb96311f025c5fcc823bc00c54853558f0c6583a2171c9722fc"
           }
@@ -2833,7 +2833,7 @@
           {
             "handle": "202020202020202020202020202020202020202020208123456789abcdef0500",
             "owner": "8139770ea87d175f56a35466c34c7ecccb8d8a91b4ee37a25df60f5b8fc9b394",
-            "value_key": "92b54122acc53a2a4b9b85a851263afc331b7941ea63ed4e963e4cbde0506b65",
+            "encrypted_value_id": "92b54122acc53a2a4b9b85a851263afc331b7941ea63ed4e963e4cbde0506b65",
             "proof_leaf_count": "0",
             "access_proof": ""
           }
@@ -2883,7 +2883,7 @@
           {
             "handle": "202020202020202020202020202020202020202020208123456789abcdef0500",
             "owner": "8139770ea87d175f56a35466c34c7ecccb8d8a91b4ee37a25df60f5b8fc9b394",
-            "value_key": "92b54122acc53a2a4b9b85a851263afc331b7941ea63ed4e963e4cbde0506b65",
+            "encrypted_value_id": "92b54122acc53a2a4b9b85a851263afc331b7941ea63ed4e963e4cbde0506b65",
             "proof_leaf_count": "0",
             "access_proof": ""
           }
@@ -2938,7 +2938,7 @@
           {
             "handle": "202020202020202020202020202020202020202020208123456789abcdef0500",
             "owner": "8139770ea87d175f56a35466c34c7ecccb8d8a91b4ee37a25df60f5b8fc9b394",
-            "value_key": "92b54122acc53a2a4b9b85a851263afc331b7941ea63ed4e963e4cbde0506b65",
+            "encrypted_value_id": "92b54122acc53a2a4b9b85a851263afc331b7941ea63ed4e963e4cbde0506b65",
             "proof_leaf_count": "0",
             "access_proof": ""
           }
@@ -2993,7 +2993,7 @@
           {
             "handle": "202020202020202020202020202020202020202020208123456789abcdef0500",
             "owner": "8139770ea87d175f56a35466c34c7ecccb8d8a91b4ee37a25df60f5b8fc9b394",
-            "value_key": "92b54122acc53a2a4b9b85a851263afc331b7941ea63ed4e963e4cbde0506b65",
+            "encrypted_value_id": "92b54122acc53a2a4b9b85a851263afc331b7941ea63ed4e963e4cbde0506b65",
             "proof_leaf_count": "0",
             "access_proof": ""
           }
@@ -3048,7 +3048,7 @@
           {
             "handle": "202020202020202020202020202020202020202020208123456789abcdef0500",
             "owner": "8139770ea87d175f56a35466c34c7ecccb8d8a91b4ee37a25df60f5b8fc9b394",
-            "value_key": "92b54122acc53a2a4b9b85a851263afc331b7941ea63ed4e963e4cbde0506b65",
+            "encrypted_value_id": "92b54122acc53a2a4b9b85a851263afc331b7941ea63ed4e963e4cbde0506b65",
             "proof_leaf_count": "0",
             "access_proof": ""
           }
@@ -3103,7 +3103,7 @@
           {
             "handle": "202020202020202020202020202020202020202020208123456789abcdef0500",
             "owner": "8139770ea87d175f56a35466c34c7ecccb8d8a91b4ee37a25df60f5b8fc9b394",
-            "value_key": "92b54122acc53a2a4b9b85a851263afc331b7941ea63ed4e963e4cbde0506b65",
+            "encrypted_value_id": "92b54122acc53a2a4b9b85a851263afc331b7941ea63ed4e963e4cbde0506b65",
             "proof_leaf_count": "0",
             "access_proof": ""
           }
@@ -3158,7 +3158,7 @@
           {
             "handle": "202020202020202020202020202020202020202020208123456789abcdef0500",
             "owner": "8139770ea87d175f56a35466c34c7ecccb8d8a91b4ee37a25df60f5b8fc9b394",
-            "value_key": "92b54122acc53a2a4b9b85a851263afc331b7941ea63ed4e963e4cbde0506b65",
+            "encrypted_value_id": "92b54122acc53a2a4b9b85a851263afc331b7941ea63ed4e963e4cbde0506b65",
             "proof_leaf_count": "0",
             "access_proof": ""
           }
@@ -3213,7 +3213,7 @@
           {
             "handle": "202020202020202020202020202020202020202020208123456789abcdef0500",
             "owner": "8139770ea87d175f56a35466c34c7ecccb8d8a91b4ee37a25df60f5b8fc9b394",
-            "value_key": "92b54122acc53a2a4b9b85a851263afc331b7941ea63ed4e963e4cbde0506b65",
+            "encrypted_value_id": "92b54122acc53a2a4b9b85a851263afc331b7941ea63ed4e963e4cbde0506b65",
             "proof_leaf_count": "0",
             "access_proof": ""
           }

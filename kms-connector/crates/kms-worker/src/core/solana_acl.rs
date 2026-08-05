@@ -37,7 +37,7 @@ pub struct UserDecryptionDelegationWitness {
     pub owner: SolanaPubkeyBytes,
     pub delegator: SolanaPubkeyBytes,
     pub delegate: SolanaPubkeyBytes,
-    pub app_account: SolanaPubkeyBytes,
+    pub encrypted_value_account_authority: SolanaPubkeyBytes,
     pub expiration_slot: u64,
     pub delegation_counter: u64,
     pub last_update_slot: u64,
@@ -98,7 +98,7 @@ impl SolanaAclVerifier {
     }
 
     /// Verifies a user-decryption delegation: `delegator` granted `delegate` standing authority
-    /// over `app_account`, active as of `observed_slot`. Untouched by the RFC-024 `EncryptedValue`
+    /// over `encrypted_value_account_authority`, active as of `observed_slot`. Untouched by the RFC-024 `EncryptedValue`
     /// migration — delegation is orthogonal to the encrypted value account ACL check, which the caller runs
     /// separately (with `delegator` as the subject) via [`super::solana_encrypted_value_acl`].
     pub fn verify_delegation(
@@ -106,7 +106,7 @@ impl SolanaAclVerifier {
         delegation: &UserDecryptionDelegationWitness,
         delegator: SolanaPubkeyBytes,
         delegate: SolanaPubkeyBytes,
-        app_account: SolanaPubkeyBytes,
+        encrypted_value_account_authority: SolanaPubkeyBytes,
         expected_delegation_counter: u64,
         observed_slot: u64,
     ) -> Result<(), SolanaAclVerificationError> {
@@ -115,17 +115,17 @@ impl SolanaAclVerifier {
         }
         if delegator == [0; 32]
             || delegate == [0; 32]
-            || app_account == [0; 32]
+            || encrypted_value_account_authority == [0; 32]
             || delegate == WILDCARD_APP_CONTEXT
             || delegator == delegate
-            || delegator == app_account
-            || delegate == app_account
+            || delegator == encrypted_value_account_authority
+            || delegate == encrypted_value_account_authority
         {
             return Err(SolanaAclVerificationError::DelegationMismatch);
         }
         if delegation.delegator != delegator
             || delegation.delegate != delegate
-            || delegation.app_account != app_account
+            || delegation.encrypted_value_account_authority != encrypted_value_account_authority
         {
             return Err(SolanaAclVerificationError::DelegationMismatch);
         }
@@ -145,7 +145,7 @@ impl SolanaAclVerifier {
             self.host_program_id,
             delegator,
             delegate,
-            app_account,
+            encrypted_value_account_authority,
         );
         if delegation.account_key != expected_key {
             return Err(SolanaAclVerificationError::NonCanonicalDelegation);
@@ -173,7 +173,7 @@ pub fn decode_user_decryption_delegation_witness(
         owner,
         delegator: cursor.read_bytes_32()?,
         delegate: cursor.read_bytes_32()?,
-        app_account: cursor.read_bytes_32()?,
+        encrypted_value_account_authority: cursor.read_bytes_32()?,
         expiration_slot: cursor.read_u64()?,
         delegation_counter: cursor.read_u64()?,
         last_update_slot: cursor.read_u64()?,
@@ -192,7 +192,7 @@ pub fn user_decryption_delegation_address(
     host_program_id: SolanaPubkeyBytes,
     delegator: SolanaPubkeyBytes,
     delegate: SolanaPubkeyBytes,
-    app_account: SolanaPubkeyBytes,
+    encrypted_value_account_authority: SolanaPubkeyBytes,
 ) -> (SolanaPubkeyBytes, u8) {
     let host_program_id = Pubkey::new_from_array(host_program_id);
     let (address, bump) = Pubkey::find_program_address(
@@ -200,7 +200,7 @@ pub fn user_decryption_delegation_address(
             DELEGATION_SEED,
             delegator.as_ref(),
             delegate.as_ref(),
-            app_account.as_ref(),
+            encrypted_value_account_authority.as_ref(),
         ],
         &host_program_id,
     );
@@ -291,15 +291,15 @@ mod tests {
     const DELEGATE: SolanaPubkeyBytes = [5; 32];
     const OBSERVED_SLOT: u64 = 500;
 
-    fn delegation_for_app(app_account: SolanaPubkeyBytes) -> UserDecryptionDelegationWitness {
+    fn delegation_for_app(encrypted_value_account_authority: SolanaPubkeyBytes) -> UserDecryptionDelegationWitness {
         let (account_key, bump) =
-            user_decryption_delegation_address(HOST_PROGRAM_ID, OWNER, DELEGATE, app_account);
+            user_decryption_delegation_address(HOST_PROGRAM_ID, OWNER, DELEGATE, encrypted_value_account_authority);
         UserDecryptionDelegationWitness {
             account_key,
             owner: HOST_PROGRAM_ID,
             delegator: OWNER,
             delegate: DELEGATE,
-            app_account,
+            encrypted_value_account_authority,
             expiration_slot: OBSERVED_SLOT + 20,
             delegation_counter: 9,
             last_update_slot: OBSERVED_SLOT - 1,
@@ -316,7 +316,7 @@ mod tests {
         let mut data = anchor_account_discriminator("UserDecryptionDelegation").to_vec();
         data.extend_from_slice(&delegation.delegator);
         data.extend_from_slice(&delegation.delegate);
-        data.extend_from_slice(&delegation.app_account);
+        data.extend_from_slice(&delegation.encrypted_value_account_authority);
         data.extend_from_slice(&delegation.expiration_slot.to_le_bytes());
         data.extend_from_slice(&delegation.delegation_counter.to_le_bytes());
         data.extend_from_slice(&delegation.last_update_slot.to_le_bytes());
@@ -377,7 +377,7 @@ mod tests {
             HOST_PROGRAM_ID,
             wildcard_delegate.delegator,
             wildcard_delegate.delegate,
-            wildcard_delegate.app_account,
+            wildcard_delegate.encrypted_value_account_authority,
         );
         wildcard_delegate.account_key = account_key;
         wildcard_delegate.bump = bump;

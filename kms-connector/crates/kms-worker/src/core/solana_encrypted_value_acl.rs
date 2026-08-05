@@ -32,11 +32,11 @@ impl DecodedEncryptedValueAcl {
 /// Canonical encrypted value account PDA for a value key under `host_program_id`.
 pub fn encrypted_value_acl_address(
     host_program_id: SolanaPubkeyBytes,
-    value_key: [u8; 32],
+    encrypted_value_id: [u8; 32],
 ) -> (SolanaPubkeyBytes, u8) {
     let program_id = Pubkey::new_from_array(host_program_id);
     let (address, bump) =
-        Pubkey::find_program_address(&[ENCRYPTED_VALUE_SEED, value_key.as_ref()], &program_id);
+        Pubkey::find_program_address(&[ENCRYPTED_VALUE_SEED, encrypted_value_id.as_ref()], &program_id);
     (address.to_bytes(), bump)
 }
 
@@ -89,8 +89,8 @@ impl SolanaAclVerifier {
         if owner != self.host_program_id {
             return Err(SolanaAclVerificationError::InvalidAccountOwner);
         }
-        let value_key = acl.encrypted_value_id();
-        let (expected, bump) = encrypted_value_acl_address(self.host_program_id, value_key);
+        let encrypted_value_id = acl.encrypted_value_id();
+        let (expected, bump) = encrypted_value_acl_address(self.host_program_id, encrypted_value_id);
         if account_key != expected {
             return Err(SolanaAclVerificationError::NonCanonicalEncryptedValueAcl);
         }
@@ -196,8 +196,8 @@ mod tests {
         handle: HandleBytes,
         subjects: &[SolanaPubkeyBytes],
     ) -> EncryptedValueAccount {
-        let value_key = derive_encrypted_value_id(DOMAIN, APP, LABEL);
-        let (account, bump) = encrypted_value_acl_address(HOST, value_key);
+        let encrypted_value_id = derive_encrypted_value_id(DOMAIN, APP, LABEL);
+        let (account, bump) = encrypted_value_acl_address(HOST, encrypted_value_id);
         EncryptedValueAccount {
             acl: EncryptedValue {
                 domain: DOMAIN,

@@ -278,7 +278,7 @@ impl<'a> RequestBuilder<'a> {
     /// Adds a direct current-access entry: the signer owns the handle and claims it is live.
     pub fn direct_current(self, lineage: &LineageFixture, handle: [u8; 32]) -> Self {
         let owner = self.wallet.pubkey();
-        self.entry(handle, owner, lineage.value_key(), 0, Vec::new())
+        self.entry(handle, owner, lineage.encrypted_value_id(), 0, Vec::new())
     }
 
     /// Adds a delegated current-access entry: `delegator` owns the handle.
@@ -288,7 +288,7 @@ impl<'a> RequestBuilder<'a> {
         handle: [u8; 32],
         delegator: SolanaPubkeyBytes,
     ) -> Self {
-        self.entry(handle, delegator, lineage.value_key(), 0, Vec::new())
+        self.entry(handle, delegator, lineage.encrypted_value_id(), 0, Vec::new())
     }
 
     /// Adds a historical-access entry carrying a proof.
@@ -301,7 +301,7 @@ impl<'a> RequestBuilder<'a> {
         proof_leaf_count: u64,
     ) -> Self {
         let bytes = borsh::to_vec(proof).expect("a proof serializes");
-        self.entry(handle, owner, lineage.value_key(), proof_leaf_count, bytes)
+        self.entry(handle, owner, lineage.encrypted_value_id(), proof_leaf_count, bytes)
     }
 
     /// Adds an entry verbatim, for the malformed cases.
@@ -309,14 +309,14 @@ impl<'a> RequestBuilder<'a> {
         mut self,
         handle: [u8; 32],
         owner: SolanaPubkeyBytes,
-        value_key: [u8; 32],
+        encrypted_value_id: [u8; 32],
         proof_leaf_count: u64,
         access_proof: Vec<u8>,
     ) -> Self {
         self.entries.push(SolanaHandleEntryWire {
             handle: handle.to_vec(),
             owner: owner.to_vec(),
-            value_key: value_key.to_vec(),
+            encrypted_value_id: encrypted_value_id.to_vec(),
             proof_leaf_count,
             access_proof,
         });
@@ -368,8 +368,8 @@ impl LineageFixture {
         current_handle: [u8; 32],
         subjects: &[SolanaPubkeyBytes],
     ) -> Self {
-        let value_key = derive_encrypted_value_id(domain, encrypted_value_account_authority, label);
-        let (account_key, bump) = encrypted_value_acl_address(PROGRAM_ID, value_key);
+        let encrypted_value_id = derive_encrypted_value_id(domain, encrypted_value_account_authority, label);
+        let (account_key, bump) = encrypted_value_acl_address(PROGRAM_ID, encrypted_value_id);
         Self {
             lineage: EncryptedValue {
                 domain,
@@ -387,7 +387,7 @@ impl LineageFixture {
     }
 
     /// The lineage identity a request names.
-    pub fn value_key(&self) -> [u8; 32] {
+    pub fn encrypted_value_id(&self) -> [u8; 32] {
         self.lineage.encrypted_value_id()
     }
 
@@ -459,7 +459,7 @@ pub struct DelegationFixture {
     /// Who received it.
     pub delegate: SolanaPubkeyBytes,
     /// Which app it covers.
-    pub app_account: SolanaPubkeyBytes,
+    pub encrypted_value_account_authority: SolanaPubkeyBytes,
     /// Last slot it is valid at.
     pub expiration_slot: u64,
     /// The counter no rule reads and no signature commits to.
@@ -480,7 +480,7 @@ impl DelegationFixture {
         Self {
             delegator,
             delegate,
-            app_account: APP,
+            encrypted_value_account_authority: APP,
             expiration_slot: observed_slot + 100,
             delegation_counter: 1,
             last_update_slot: observed_slot.saturating_sub(1),
@@ -496,7 +496,7 @@ impl DelegationFixture {
         observed_slot: u64,
     ) -> Self {
         Self {
-            app_account: WILDCARD_APP_CONTEXT,
+            encrypted_value_account_authority: WILDCARD_APP_CONTEXT,
             ..Self::live(delegator, delegate, observed_slot)
         }
     }
@@ -507,7 +507,7 @@ impl DelegationFixture {
             PROGRAM_ID,
             self.delegator,
             self.delegate,
-            self.app_account,
+            self.encrypted_value_account_authority,
         )
     }
 
@@ -517,7 +517,7 @@ impl DelegationFixture {
         let mut data = user_decryption_delegation_discriminator().to_vec();
         data.extend_from_slice(&self.delegator);
         data.extend_from_slice(&self.delegate);
-        data.extend_from_slice(&self.app_account);
+        data.extend_from_slice(&self.encrypted_value_account_authority);
         data.extend_from_slice(&self.expiration_slot.to_le_bytes());
         data.extend_from_slice(&self.delegation_counter.to_le_bytes());
         data.extend_from_slice(&self.last_update_slot.to_le_bytes());

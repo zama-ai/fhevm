@@ -45,7 +45,7 @@ fn resolved(lineage: &LineageFixture) -> ResolvedLineage {
     let snapshot = world
         .read(&SnapshotKeys::new([lineage.account_key]))
         .expect("the world reads");
-    resolve_lineage(&snapshot, PROGRAM_ID, lineage.value_key())
+    resolve_lineage(&snapshot, PROGRAM_ID, lineage.encrypted_value_id())
         .expect("the fixture lineage resolves")
 }
 
@@ -549,7 +549,7 @@ fn an_access_proof_with_trailing_bytes_is_rejected() {
     let mut bytes = borsh::to_vec(&lineage.proof(0)).expect("a proof serializes");
     bytes.extend_from_slice(&[0xde, 0xad, 0xbe, 0xef]);
     let wire = RequestBuilder::new(&wallet)
-        .entry(superseded, wallet.pubkey(), lineage.value_key(), 1, bytes)
+        .entry(superseded, wallet.pubkey(), lineage.encrypted_value_id(), 1, bytes)
         .wire();
 
     let failure = SolanaUserDecryptRequest::decode(&wire)
@@ -608,7 +608,7 @@ fn a_malformed_access_proof_is_rejected() {
         .entry(
             target,
             wallet.pubkey(),
-            lineage.value_key(),
+            lineage.encrypted_value_id(),
             1,
             vec![0xff, 0xff, 0xff],
         )

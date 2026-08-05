@@ -35,13 +35,13 @@ impl ResolvedLineage {
 
     /// The app account this lineage belongs to — the app context of every later rule, read
     /// from the account and never from a request field.
-    pub fn app_account(&self) -> SolanaPubkeyBytes {
+    pub fn encrypted_value_account_authority(&self) -> SolanaPubkeyBytes {
         self.lineage.encrypted_value_account_authority
     }
 
     /// The ACL domain this lineage belongs to, likewise account-sourced. This is the value
     /// the signed scope is tested against.
-    pub fn acl_domain_key(&self) -> SolanaPubkeyBytes {
+    pub fn domain(&self) -> SolanaPubkeyBytes {
         self.lineage.domain
     }
 
@@ -54,9 +54,9 @@ impl ResolvedLineage {
 /// The canonical lineage account address for a value key under this deployment.
 pub fn lineage_address(
     program_id: SolanaPubkeyBytes,
-    value_key: [u8; 32],
+    encrypted_value_id: [u8; 32],
 ) -> (SolanaPubkeyBytes, u8) {
-    crate::core::solana_encrypted_value_acl::encrypted_value_acl_address(program_id, value_key)
+    crate::core::solana_encrypted_value_acl::encrypted_value_acl_address(program_id, encrypted_value_id)
 }
 
 /// Resolves one entry's lineage against the snapshot.
@@ -69,11 +69,11 @@ pub fn lineage_address(
 pub fn resolve_lineage(
     snapshot: &HostSnapshot,
     program_id: SolanaPubkeyBytes,
-    value_key: [u8; 32],
+    encrypted_value_id: [u8; 32],
 ) -> Result<ResolvedLineage, LineageFailure> {
     // The address is derived from the claimed identity, never supplied: a request naming another
     // account does not redirect the read, it only names a value key whose own account is read.
-    let (account_key, _) = lineage_address(program_id, value_key);
+    let (account_key, _) = lineage_address(program_id, encrypted_value_id);
 
     // h1: present at this observation point.
     let account = snapshot
@@ -110,10 +110,10 @@ pub fn resolve_lineage(
     // h4: the account's own fields reproduce the identity it was named by. The backstop that
     // makes a substituted lineage a rejection rather than a redirection.
     let derived = lineage.encrypted_value_id();
-    if derived != value_key {
+    if derived != encrypted_value_id {
         return Err(LineageFailure::ValueKeyMismatch {
             account_key,
-            claimed: value_key,
+            claimed: encrypted_value_id,
             derived,
         });
     }

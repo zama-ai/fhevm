@@ -178,7 +178,7 @@ pub struct WireHandleEntry {
     /// Ciphertext owner, hex: the signer for a direct entry, the delegator for a delegated one.
     pub owner: String,
     /// Lineage identity, hex.
-    pub value_key: String,
+    pub encrypted_value_id: String,
     /// The leaf count the access proof was built against, decimal string; `"0"` in current mode.
     pub proof_leaf_count: String,
     /// Access proof, hex; empty for current access.
@@ -244,15 +244,15 @@ pub mod rule {
     /// An access proof carries more siblings than the tree can produce.
     pub const ACCESS_PROOF_TOO_MANY_SIBLINGS: &str = "access-proof-too-many-siblings";
     /// The lineage account does not exist at this observation.
-    pub const LINEAGE_ABSENT: &str = "lineage-absent";
+    pub const ENCRYPTED_VALUE_ACCOUNT_ABSENT: &str = "encrypted-value-account-absent";
     /// The lineage account belongs to another program.
-    pub const LINEAGE_FOREIGN_OWNER: &str = "lineage-foreign-owner";
+    pub const ENCRYPTED_VALUE_ACCOUNT_FOREIGN_OWNER: &str = "encrypted-value-account-foreign-owner";
     /// The account is host-owned but is not a lineage.
-    pub const LINEAGE_WRONG_ACCOUNT_TYPE: &str = "lineage-wrong-account-type";
+    pub const ENCRYPTED_VALUE_ACCOUNT_WRONG_TYPE: &str = "encrypted-value-account-wrong-type";
     /// The account carries the lineage type but its body does not decode.
-    pub const LINEAGE_MALFORMED: &str = "lineage-malformed";
+    pub const ENCRYPTED_VALUE_ACCOUNT_MALFORMED: &str = "encrypted-value-account-malformed";
     /// The lineage's own fields derive a different identity than the one claimed.
-    pub const LINEAGE_VALUE_KEY_MISMATCH: &str = "lineage-value-key-mismatch";
+    pub const ENCRYPTED_VALUE_ID_MISMATCH: &str = "encrypted-value-id-mismatch";
     /// The named handle is not the lineage's current handle.
     pub const HANDLE_SUPERSEDED: &str = "handle-superseded";
     /// The subject is not a current member of the lineage.
@@ -297,11 +297,11 @@ pub mod rule {
         ACCESS_PROOF_MALFORMED,
         ACCESS_PROOF_TRAILING_BYTES,
         ACCESS_PROOF_TOO_MANY_SIBLINGS,
-        LINEAGE_ABSENT,
-        LINEAGE_FOREIGN_OWNER,
-        LINEAGE_WRONG_ACCOUNT_TYPE,
-        LINEAGE_MALFORMED,
-        LINEAGE_VALUE_KEY_MISMATCH,
+        ENCRYPTED_VALUE_ACCOUNT_ABSENT,
+        ENCRYPTED_VALUE_ACCOUNT_FOREIGN_OWNER,
+        ENCRYPTED_VALUE_ACCOUNT_WRONG_TYPE,
+        ENCRYPTED_VALUE_ACCOUNT_MALFORMED,
+        ENCRYPTED_VALUE_ID_MISMATCH,
         HANDLE_SUPERSEDED,
         SUBJECT_NOT_A_MEMBER,
         INCLUSION_PROOF_DOES_NOT_VERIFY,

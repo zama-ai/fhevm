@@ -544,7 +544,7 @@ async fn a_delegation_for_another_app_does_not_authorize() {
     let live = handle(0x32, FHE_TYPE_UINT64);
     let lineage = LineageFixture::in_domain(DOMAIN, APP, LABEL, live, &[delegator.pubkey()]);
     let mut elsewhere = DelegationFixture::live(delegator.pubkey(), signer.pubkey(), OBSERVED_SLOT);
-    elsewhere.app_account = other_app;
+    elsewhere.encrypted_value_account_authority = other_app;
     let request = RequestBuilder::new(&signer)
         .delegated_current(&lineage, live, delegator.pubkey())
         .typed();
@@ -578,7 +578,7 @@ async fn a_delegation_record_naming_another_tuple_is_rejected() {
     let (expected_key, _) = expected.address();
     // A record for a different delegator, planted at the address the request will read.
     let mut foreign = DelegationFixture::live(stranger.pubkey(), signer.pubkey(), OBSERVED_SLOT);
-    foreign.app_account = APP;
+    foreign.encrypted_value_account_authority = APP;
     let request = RequestBuilder::new(&signer)
         .delegated_current(&lineage, live, delegator.pubkey())
         .typed();

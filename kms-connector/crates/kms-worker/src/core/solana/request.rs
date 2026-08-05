@@ -6,7 +6,7 @@
 //! with no public constructor, so "authorize a request nobody validated" is not expressible.
 //!
 //! Two absences are deliberate and are the whole of rule h6 on the request side: no
-//! `app_account` field and no `acl_domain` field, in either the wire form or the validated
+//! `encrypted_value_account_authority` field and no `acl_domain` field, in either the wire form or the validated
 //! form. The app context of a handle is a property of its lineage account, and the only way
 //! to learn it is to read and validate that account. A request cannot name it, so a
 //! substituted app context is not a check that can be forgotten — it is a value that does
@@ -24,10 +24,10 @@
 //! let entry = SolanaHandleEntryWire {
 //!     handle: vec![0; 32],
 //!     owner: vec![0; 32],
-//!     value_key: vec![0; 32],
+//!     encrypted_value_id: vec![0; 32],
 //!     proof_leaf_count: 0,
 //!     access_proof: Vec::new(),
-//!     app_account: vec![0; 32],
+//!     encrypted_value_account_authority: vec![0; 32],
 //! };
 //! ```
 //!
@@ -40,7 +40,7 @@
 //! let entry = SolanaHandleEntryWire {
 //!     handle: vec![0; 32],
 //!     owner: vec![0; 32],
-//!     value_key: vec![0; 32],
+//!     encrypted_value_id: vec![0; 32],
 //!     proof_leaf_count: 0,
 //!     access_proof: Vec::new(),
 //! };
@@ -89,7 +89,7 @@ pub struct SolanaHandleEntryWire {
     /// delegated one.
     pub owner: Vec<u8>,
     /// Claimed 32-byte lineage identity.
-    pub value_key: Vec<u8>,
+    pub encrypted_value_id: Vec<u8>,
     /// The `leaf_count` the access proof was built against; 0 in current mode. Diagnostic
     /// only — it classifies an already-failed inclusion check and never decides one.
     pub proof_leaf_count: u64,
@@ -114,7 +114,7 @@ pub enum AccessEvidence {
 pub struct SolanaHandleEntry {
     handle: HandleBytes,
     owner: SolanaPubkeyBytes,
-    value_key: [u8; 32],
+    encrypted_value_id: [u8; 32],
     proof_leaf_count: u64,
     access: AccessEvidence,
 }
@@ -132,8 +132,8 @@ impl SolanaHandleEntry {
     }
 
     /// The lineage this entry qualifies under.
-    pub fn value_key(&self) -> [u8; 32] {
-        self.value_key
+    pub fn encrypted_value_id(&self) -> [u8; 32] {
+        self.encrypted_value_id
     }
 
     /// The leaf count the proof was built against, for failure classification only.
@@ -238,7 +238,7 @@ fn decode_entry(
     Ok(SolanaHandleEntry {
         handle: entry_identity(index, EntryField::Handle, &entry.handle)?,
         owner: entry_identity(index, EntryField::Owner, &entry.owner)?,
-        value_key: entry_identity(index, EntryField::ValueKey, &entry.value_key)?,
+        encrypted_value_id: entry_identity(index, EntryField::EncryptedValueId, &entry.encrypted_value_id)?,
         proof_leaf_count: entry.proof_leaf_count,
         access: decode_access_evidence(index, &entry.access_proof)?,
     })
@@ -356,5 +356,5 @@ pub enum EntryField {
     /// The ciphertext owner.
     Owner,
     /// The lineage identity.
-    ValueKey,
+    EncryptedValueId,
 }
