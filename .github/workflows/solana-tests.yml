@@ -252,6 +252,12 @@ jobs:
         working-directory: solana/scripts/e2e/live-client
         run: cargo check --all-targets
 
+      # Same blind spot, one step over: `cargo fmt --check` above runs in `solana/` and stops at that
+      # workspace boundary, so this crate's formatting was checked by nothing and had drifted.
+      - name: Check the e2e live client's formatting
+        working-directory: solana/scripts/e2e/live-client
+        run: cargo fmt --check
+
   native-coverage:
     name: solana-tests/native-coverage
     needs: check-changes

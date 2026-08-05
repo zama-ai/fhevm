@@ -525,9 +525,8 @@ fn persistent_output(
     encrypted_value_label: [u8; 32],
     subjects: Vec<Pubkey>,
 ) -> Result<zama_host::FheExecuteOutput, Box<dyn std::error::Error>> {
-    let previous_state = existing_value_account_state(program, encrypted_value)?.map(
-        |(handle, subjects)| zama_host::PreviousState { handle, subjects },
-    );
+    let previous_state = existing_value_account_state(program, encrypted_value)?
+        .map(|(handle, subjects)| zama_host::PreviousState { handle, subjects });
     Ok(zama_host::FheExecuteOutput::StoredValue {
         output_encrypted_value_index: index,
         output_authority_index: None,
