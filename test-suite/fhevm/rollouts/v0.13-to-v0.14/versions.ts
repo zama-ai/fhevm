@@ -112,19 +112,28 @@ const withTargetVersions = (...keys: EnvKey[]): Env => ({
 export type RolloutPhaseKey =
   | "baseline"
   | "gatewayContracts"
-  | "hostContracts"
   | "relayer"
+  | "hostContracts"
   | "kmsPrssBridge"
   | "kms"
   | "listenerCore"
   | "coprocessor";
 
-/** Every phase lock is cumulative: it carries all earlier phases' target versions. */
+/**
+ * Every phase lock is cumulative: it carries all earlier phases' target versions.
+ *
+ * The relayer moves before the host contracts, not after. The SDK resolves the protocol version
+ * from the on-chain ACL version and routes user decryption to `/v2/user-decrypt` below protocol
+ * 0.14 and `/v3/user-decrypt` from 0.14 on. Upgrading the host ACL therefore switches every
+ * client to /v3 at once, and the 0.13 relayer only serves /v2 — so contracts-then-relayer breaks
+ * decryption for the whole window between the two. The 0.14 relayer serves both routes, so
+ * relayer-first is backward compatible with the still-0.13 ACL: expand, then migrate.
+ */
 export const phaseVersions: Record<RolloutPhaseKey, Env> = {
   baseline: from,
   gatewayContracts: withTargetVersions(...gatewayContractKeys),
-  hostContracts: withTargetVersions(...gatewayContractKeys, ...hostContractKeys),
-  relayer: withTargetVersions(...gatewayContractKeys, ...hostContractKeys, ...relayerKeys),
+  relayer: withTargetVersions(...gatewayContractKeys, ...relayerKeys),
+  hostContracts: withTargetVersions(...gatewayContractKeys, ...relayerKeys, ...hostContractKeys),
   // kms-core only, and only as far as the PRSS bridge. The connector stays on 0.13 here:
   // this phase exists to prove the bridge version serves a pre-hotfix cluster unchanged.
   kmsPrssBridge: {

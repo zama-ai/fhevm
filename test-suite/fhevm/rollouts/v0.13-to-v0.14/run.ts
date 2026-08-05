@@ -31,8 +31,8 @@ type RolloutTestMode = (typeof rolloutTestModes)[number];
 type RolloutPhase =
   | "baseline"
   | "gateway-contracts"
-  | "host-contracts"
   | "relayer"
+  | "host-contracts"
   | "kms-prss-bridge"
   | "kms"
   | "final";
@@ -206,8 +206,8 @@ export default async function run(ctx: RolloutRunContext) {
   const testMode = resolveRolloutTestMode(process.env.ROLLOUT_TEST_PROFILE);
   const baselineLock = await writePhaseVersionLock(ctx, "00-baseline", phaseVersions.baseline);
   const gatewayContractsLock = await writePhaseVersionLock(ctx, "01-gateway-contracts", phaseVersions.gatewayContracts);
-  const hostContractsLock = await writePhaseVersionLock(ctx, "02-host-contracts", phaseVersions.hostContracts);
-  const relayerLock = await writePhaseVersionLock(ctx, "03-relayer", phaseVersions.relayer);
+  const relayerLock = await writePhaseVersionLock(ctx, "02-relayer", phaseVersions.relayer);
+  const hostContractsLock = await writePhaseVersionLock(ctx, "03-host-contracts", phaseVersions.hostContracts);
   const kmsPrssBridgeLock = await writePhaseVersionLock(ctx, "04-kms-prss-bridge", phaseVersions.kmsPrssBridge);
   const kmsLock = await writePhaseVersionLock(ctx, "05-kms", phaseVersions.kms);
   const listenerCoreLock = await writePhaseVersionLock(ctx, "06-listener-core", phaseVersions.listenerCore);
@@ -217,8 +217,9 @@ export default async function run(ctx: RolloutRunContext) {
   await ctx.up({ lockFile: baselineLock, scenario, overrides: [{ group: "test-suite" }] });
   await testPhase(ctx, "baseline", testMode);
 
-  // The component order below is the documented default:
-  // Gateway Contracts -> Host Contracts -> Relayer -> KMS -> Coprocessors -> SDK.
+  // The component order is the documented default —
+  // Gateway Contracts -> Host Contracts -> Relayer -> KMS -> Coprocessors -> SDK —
+  // with one deliberate departure: the relayer moves before the host contracts.
   logPhase("01 gateway contracts: upgrade the gateway chain first");
   await prepareContractMigrationSources(ctx, "gateway", gatewayContractsLock, gatewayContractKeys);
   for (const upgrade of GATEWAY_CONTRACT_UPGRADES) {
@@ -227,7 +228,17 @@ export default async function run(ctx: RolloutRunContext) {
   await ctx.refreshDiscovery();
   await testPhase(ctx, "gateway-contracts", testMode);
 
-  logPhase("02 host contracts: ProtocolConfig on every chain, canonical first, then the rest");
+  // Before the host contracts, not after. The SDK resolves the protocol version from the on-chain
+  // ACL version and posts user decryption to /v2/user-decrypt below protocol 0.14 and
+  // /v3/user-decrypt from 0.14 on. Upgrading the host ACL switches every client to /v3 at once,
+  // and the 0.13 relayer serves only /v2, so contracts-then-relayer 404s every user decryption
+  // until the relayer catches up. The 0.14 relayer serves both routes, so moving it first is
+  // backward compatible with the still-0.13 ACL: expand, then migrate.
+  logPhase("02 relayer: upgrade before the host ACL flips clients onto the v3 relayer API");
+  await ctx.upgradeRuntimeGroup("relayer", { lockFile: relayerLock });
+  await testPhase(ctx, "relayer", testMode);
+
+  logPhase("03 host contracts: ProtocolConfig on every chain, canonical first, then the rest");
   await prepareContractMigrationSources(ctx, "host", hostContractsLock, hostContractKeys);
   const targets = await hostChainTargets(ctx);
   await migrateProtocolConfig(ctx, targets);
@@ -239,10 +250,6 @@ export default async function run(ctx: RolloutRunContext) {
   }
   await ctx.refreshDiscovery();
   await testPhase(ctx, "host-contracts", testMode);
-
-  logPhase("03 relayer: upgrade relayer after contracts, before the KMS connector moves");
-  await ctx.upgradeRuntimeGroup("relayer", { lockFile: relayerLock });
-  await testPhase(ctx, "relayer", testMode);
 
   // Two KMS phases, not one. 0.13.22 is the only kms-core that serves peers on both sides of
   // the PRSS hotfix, so it is a required stop between 0.13.20 and 0.14. The connector stays on
@@ -273,8 +280,8 @@ export default async function run(ctx: RolloutRunContext) {
 export const phaseOrder = [
   "baseline",
   "gateway-contracts",
-  "host-contracts",
   "relayer",
+  "host-contracts",
   "kms-prss-bridge",
   "kms",
   "final",

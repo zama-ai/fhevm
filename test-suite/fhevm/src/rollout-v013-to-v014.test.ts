@@ -79,8 +79,8 @@ test("keeps every phase lock cumulative", () => {
   const ordered = [
     phaseVersions.baseline,
     phaseVersions.gatewayContracts,
-    phaseVersions.hostContracts,
     phaseVersions.relayer,
+    phaseVersions.hostContracts,
     phaseVersions.kms,
     phaseVersions.listenerCore,
     phaseVersions.coprocessor,
@@ -94,6 +94,21 @@ test("keeps every phase lock cumulative", () => {
       }
     }
   }
+});
+
+// The SDK resolves the protocol version from the on-chain ACL version and posts user decryption
+// to /v2/user-decrypt below protocol 0.14 and /v3/user-decrypt from 0.14 on. Upgrading the host
+// ACL switches every client to /v3 at once, and the 0.13 relayer serves only /v2 — so the relayer
+// has to be on 0.14 before the host contracts move. The 0.14 relayer still serves /v2, which is
+// what makes relayer-first safe against the still-0.13 ACL.
+test("upgrades the relayer before the host contracts", () => {
+  expect(phaseOrder.indexOf("relayer")).toBeLessThan(phaseOrder.indexOf("host-contracts"));
+  // The relayer phase is already on the target relayer while host contracts are still on 0.13.
+  expect(phaseVersions.relayer.RELAYER_VERSION).toBe(to.RELAYER_VERSION);
+  expect(phaseVersions.relayer.HOST_VERSION).toBe(from.HOST_VERSION);
+  // ...and the host-contracts phase keeps the upgraded relayer.
+  expect(phaseVersions.hostContracts.RELAYER_VERSION).toBe(to.RELAYER_VERSION);
+  expect(phaseVersions.hostContracts.HOST_VERSION).toBe(to.HOST_VERSION);
 });
 
 test("ends every phase on the target versions", () => {
