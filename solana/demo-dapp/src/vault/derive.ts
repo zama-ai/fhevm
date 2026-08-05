@@ -89,8 +89,8 @@ export async function deriveBatchAddresses(roots: VaultDemoRoots, batchIndex: bi
     batchPayoutTokenAccount,
     batchJoinUnderlying,
     batchPayoutUnderlying,
-    // Burned amount: acl domain = join mint, app account = batch join token account, label =
-    // `burned_amount`. Payout balance: acl domain = payout mint, app account = batch payout token
+    // Burned amount: acl domain = join mint, authority = batch join token account, label =
+    // `burned_amount`. Payout balance: acl domain = payout mint, authority = batch payout token
     // account, label = `balance`.
     batchBurnedAmountValue: await encryptedValueAddress(
       roots.joinConfidentialMint,
@@ -230,7 +230,7 @@ export async function deriveSettleAccounts(
     payoutComputeSigner,
     payoutTotalSupplyAuthority,
     batchPayoutBalanceValue: batch.batchPayoutBalanceValue,
-    // Total supply: acl domain = payout mint, app account = its total-supply authority, label =
+    // Total supply: acl domain = payout mint, authority = its total-supply authority, label =
     // `total_supply`.
     payoutTotalSupplyValue: await totalSupplyValueAddress(roots.payoutConfidentialMint, payoutTotalSupplyAuthority),
   };

@@ -411,7 +411,7 @@
         {
           "name": "encrypted_value_account_authority",
           "docs": [
-            "App account signer authorizing any persistent output ACL metadata."
+            "Signs for the authority of every persistent output's encrypted value account."
           ],
           "signer": true
         },
@@ -1794,7 +1794,7 @@
     {
       "code": 6037,
       "name": "InputBindContractMismatch",
-      "msg": "attested contract address does not match the output app account"
+      "msg": "attested contract address does not match the fhe_execute compute subject"
     },
     {
       "code": 6038,
@@ -2247,10 +2247,10 @@
           {
             "name": "dictionary",
             "docs": [
-              "Interned 32-byte constant dictionary: operand handles, scalar values, ACL domain keys, app",
-              "account keys, encrypted value labels, and output subjects. Steps reference entries by",
-              "`u8` index, so a value repeated across steps is paid for once (the compiled-message /",
-              "constant-dictionary encoding; fhevm-internal#1853 W7).",
+              "Interned 32-byte constant dictionary: operand handles, scalar values, ACL domain keys,",
+              "encrypted value account authority keys, encrypted value labels, and output subjects. Steps",
+              "reference entries by `u8` index, so a value repeated across steps is paid for once (the",
+              "compiled-message / constant-dictionary encoding; fhevm-internal#1853 W7).",
               "",
               "The entries stay raw `[u8; 32]` on purpose, and must not become an enum of typed",
               "variants. Interning is what makes the encoding small, and it only works across roles:",

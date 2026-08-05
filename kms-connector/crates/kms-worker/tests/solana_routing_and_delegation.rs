@@ -4,8 +4,8 @@
 //! Routing is per entry and decided by one comparison: the entry's owner against the permit's
 //! signer. Equal means the signer is the subject whose access is proven; unequal means the owner is
 //! that subject and, additionally, that the owner has delegated to the signer for the encrypted
-//! value account's app account. One request mixes both freely, and different delegators freely —
-//! there is no delegated mode and no delegated route.
+//! value account's authority. One request mixes both freely, and different
+//! delegators freely — there is no delegated mode and no delegated route.
 //!
 //! The load-bearing negative test is the substitution of the subject. In the delegated branch it
 //! would be easy, and wrong, to prove access for the signer: the signer is the one asking, and the
@@ -21,7 +21,7 @@
 //! unrelated update to any delegation record invalidate requests already in flight, and would make
 //! a mixed-delegator batch impossible to build.
 //!
-//! Two rows can carry one grant — the encrypted value account's app account, and the delegator's
+//! Two rows can carry one grant — the encrypted value account's authority, and the delegator's
 //! wildcard row — and the last section pins that rule from both sides: either row alone authorizes,
 //! neither vetoes the other, and revoking one leaves the other standing. That last property is the
 //! price of wildcard scope and is asserted deliberately, not tolerated.
@@ -383,7 +383,8 @@ fn live_wildcard() -> DelegationFixture {
 }
 
 /// A wildcard row covers an encrypted value account that has no row of its own — the EVM ACL's
-/// wildcard delegation, with the sentinel standing where an app account would.
+/// wildcard delegation, with the sentinel standing where an encrypted value account authority
+/// would.
 #[tokio::test]
 async fn a_wildcard_row_authorizes_a_encrypted_value_account_with_no_app_specific_row() {
     let authorized = authorize_delegated_with_rows(&[live_wildcard()])
@@ -561,9 +562,9 @@ async fn a_missing_delegation_rejects_its_entry() {
     ));
 }
 
-/// A delegation is scoped to an app account, and the app account is the encrypted value account's.
-/// A delegation for another app is simply not the record that gets read — the address derived from
-/// the encrypted value account's app is empty.
+/// A delegation is scoped to an encrypted value account authority, and the encrypted value account
+/// authority is the encrypted value account's. A delegation for another app is simply not the
+/// record that gets read — the address derived from the encrypted value account's app is empty.
 #[tokio::test]
 async fn a_delegation_for_another_app_does_not_authorize() {
     let signer = Wallet::new(1);

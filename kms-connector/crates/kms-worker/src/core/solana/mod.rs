@@ -18,7 +18,7 @@
 //!
 //! What lives above this module: the permit canon itself (the `zama-solana-permit` crate —
 //! typed form, canonical text, envelope, signature) and the ACL model (the
-//! `zama-solana-acl` crate — account layout, value keys, leaf commitments, MMR). Neither
+//! `zama-solana-acl` crate — account layout, encrypted value IDs, leaf commitments, MMR). Neither
 //! is reimplemented here; this module is the host policy that consumes both.
 
 //! # What this module replaces

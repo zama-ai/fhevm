@@ -29,7 +29,7 @@ pub fn compute_signer_address(mint: Pubkey) -> (Pubkey, u8) {
     Pubkey::find_program_address(&[b"fhe-compute", mint.as_ref()], &crate::ID)
 }
 
-/// Returns the mint-scoped app authority PDA for encrypted total supply.
+/// Returns the mint-scoped encrypted value account authority PDA for the encrypted total supply.
 pub fn total_supply_authority_address(mint: Pubkey) -> (Pubkey, u8) {
     Pubkey::find_program_address(&[b"total-supply", mint.as_ref()], &crate::ID)
 }

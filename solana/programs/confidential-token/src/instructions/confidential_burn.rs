@@ -18,7 +18,7 @@ pub struct ConfidentialBurn<'info> {
     /// CHECK: Program-controlled compute signer PDA.
     #[account(seeds = [b"fhe-compute", mint.key().as_ref()], bump)]
     pub compute_signer: UncheckedAccount<'info>,
-    /// CHECK: Mint-scoped app authority for total-supply handles.
+    /// CHECK: Mint-scoped encrypted value account authority for total-supply handles.
     #[account(seeds = [b"total-supply", mint.key().as_ref()], bump)]
     pub total_supply_authority: UncheckedAccount<'info>,
     /// Stable balance encrypted value account; read for the current handle and replaced by this eval.
@@ -154,7 +154,7 @@ pub struct ConfidentialBurnFromValue<'info> {
     /// CHECK: Program-controlled compute signer PDA.
     #[account(seeds = [b"fhe-compute", mint.key().as_ref()], bump)]
     pub compute_signer: UncheckedAccount<'info>,
-    /// CHECK: Mint-scoped app authority for total-supply handles.
+    /// CHECK: Mint-scoped encrypted value account authority for total-supply handles.
     #[account(seeds = [b"total-supply", mint.key().as_ref()], bump)]
     pub total_supply_authority: UncheckedAccount<'info>,
     /// Stable balance encrypted value account; read for the current handle and replaced by this eval.

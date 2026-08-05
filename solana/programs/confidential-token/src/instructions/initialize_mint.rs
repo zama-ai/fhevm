@@ -17,7 +17,7 @@ pub struct InitializeMint<'info> {
     /// CHECK: Program-controlled compute signer PDA.
     #[account(seeds = [b"fhe-compute", mint.key().as_ref()], bump)]
     pub compute_signer: UncheckedAccount<'info>,
-    /// CHECK: Mint-scoped app authority for total-supply handles.
+    /// CHECK: Mint-scoped encrypted value account authority for total-supply handles.
     #[account(seeds = [b"total-supply", mint.key().as_ref()], bump)]
     pub total_supply_authority: UncheckedAccount<'info>,
     /// CHECK: initialized and validated by the Zama host program CPI.

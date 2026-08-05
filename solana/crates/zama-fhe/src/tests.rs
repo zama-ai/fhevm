@@ -387,7 +387,7 @@ fn resolve_accounts_requires_the_cpi_authority_witness() {
         .unwrap();
     let execution = builder.finish().unwrap();
 
-    // The execution's own app authority is an output authority like any other: the caller passes its
+    // The execution's own authority is an output authority like any other: the caller passes its
     // account info, and leaving it out is an error rather than something the SDK fills in.
     let missing = execution
         .resolve_accounts(
@@ -1002,7 +1002,7 @@ fn validates_encrypted_value_account_authority_and_persistent_account_pubkeys() 
         FheExecutionBuilder::new(encrypted_value_account_authority(Pubkey::default()));
     builder.trivial_encrypt_u64(1, Output::transient()).unwrap();
     let error = match builder.finish() {
-        Ok(_) => panic!("invalid app authority unexpectedly built"),
+        Ok(_) => panic!("invalid encrypted value account authority unexpectedly built"),
         Err(error) => error,
     };
     assert_eq!(error, FheExecutionBuildError::InvalidAppAuthority);

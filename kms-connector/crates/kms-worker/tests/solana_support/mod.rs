@@ -50,7 +50,7 @@ pub const CHAIN_ID: u64 = SOLANA_CHAIN_TYPE_BIT | 0x0123_4567_89ab_cdef;
 
 /// The ACL domain of the default encrypted value account.
 pub const DOMAIN: SolanaPubkeyBytes = [1; 32];
-/// The app account of the default encrypted value account.
+/// The encrypted value account authority of the default encrypted value account.
 pub const APP: SolanaPubkeyBytes = [2; 32];
 /// The label of the default encrypted value account.
 pub const LABEL: [u8; 32] = *b"balance_________________________";
@@ -515,7 +515,8 @@ impl DelegationFixture {
     }
 
     /// A live wildcard row: the same grant with the reserved app-context sentinel in place of an
-    /// app account, which is how a delegator covers every one of their apps at once.
+    /// encrypted value account authority, which is how a delegator covers every one of their apps
+    /// at once.
     pub fn live_wildcard(
         delegator: SolanaPubkeyBytes,
         delegate: SolanaPubkeyBytes,

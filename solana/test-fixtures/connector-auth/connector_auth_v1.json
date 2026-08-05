@@ -62,7 +62,7 @@
     },
     {
       "name": "delegated-current",
-      "comment": "A handle owned by a delegator, used by the signer under a live delegation for the encrypted value account's app account. The authorized subject is the delegator.",
+      "comment": "A handle owned by a delegator, used by the signer under a live delegation for the encrypted value account's authority. The authorized subject is the delegator.",
       "result": "valid",
       "request": {
         "permit": {
@@ -113,7 +113,7 @@
     },
     {
       "name": "delegated-via-wildcard-row",
-      "comment": "A delegator grants across every one of their apps with one row carrying the reserved app-context sentinel instead of an app account. It authorizes an encrypted value account that has no app-specific row, exactly as the EVM ACL's wildcard delegation does. The consequence is part of the rule: revoking the app-specific row does not stop a delegate who holds this one.",
+      "comment": "A delegator grants across every one of their apps with one row carrying the reserved app-context sentinel instead of an encrypted value account authority. It authorizes an encrypted value account that has no app-specific row, exactly as the EVM ACL's wildcard delegation does. The consequence is part of the rule: revoking the app-specific row does not stop a delegate who holds this one.",
       "result": "valid",
       "request": {
         "permit": {
@@ -2214,7 +2214,7 @@
       "rule": "encrypted-value-id-mismatch",
       "class": "terminal",
       "derived_from": "direct-current",
-      "mutation": "the encrypted value account address holds an encrypted value account of another app account",
+      "mutation": "the encrypted value account address holds an encrypted value account of another authority",
       "request": {
         "permit": {
           "user_pubkey": "8a88e3dd7409f195fd52db2d3cba5d72ca6709bf1d94121bf3748801b40f6f5c",

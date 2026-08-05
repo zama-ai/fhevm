@@ -163,7 +163,7 @@ export type QuitAsyncInput<
   batcher: Address<TAccountBatcher>;
   /** The pending batch being quit. */
   batch: Address<TAccountBatch>;
-  /** the reset eval's compute subject + app authority. */
+  /** the reset execution's compute subject and encrypted value account authority. */
   batchAuthority?: Address<TAccountBatchAuthority>;
   /** The user's join record for this batch. */
   joinRecord?: Address<TAccountJoinRecord>;
@@ -428,7 +428,7 @@ export type QuitInput<
   batcher: Address<TAccountBatcher>;
   /** The pending batch being quit. */
   batch: Address<TAccountBatch>;
-  /** the reset eval's compute subject + app authority. */
+  /** the reset execution's compute subject and encrypted value account authority. */
   batchAuthority: Address<TAccountBatchAuthority>;
   /** The user's join record for this batch. */
   joinRecord: Address<TAccountJoinRecord>;
@@ -664,7 +664,7 @@ export type ParsedQuitInstruction<
     batcher: TAccountMetas[2];
     /** The pending batch being quit. */
     batch: TAccountMetas[3];
-    /** the reset eval's compute subject + app authority. */
+    /** the reset execution's compute subject and encrypted value account authority. */
     batchAuthority: TAccountMetas[4];
     /** The user's join record for this batch. */
     joinRecord: TAccountMetas[5];

@@ -15,7 +15,7 @@
 //! # The app context is not a request field
 //!
 //! Naming an app context in a request must stay a compile error, because the delegated branch
-//! is looked up by app account: a request that could name one could name an app the signer
+//! is looked up by authority: a request that could name one could name an app the signer
 //! does hold a delegation for, against an encrypted value account belonging to somebody else's application.
 //!
 //! ```compile_fail

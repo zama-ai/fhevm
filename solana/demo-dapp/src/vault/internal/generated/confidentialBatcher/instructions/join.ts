@@ -231,7 +231,7 @@ export type JoinAsyncInput<
   batcher: Address<TAccountBatcher>;
   /** The pending batch being joined. */
   batch: Address<TAccountBatch>;
-  /** batcher eval's compute subject + app authority. */
+  /** batcher execution's compute subject and encrypted value account authority. */
   batchAuthority?: Address<TAccountBatchAuthority>;
   /** The user's join record for this batch; created on first join. */
   joinRecord?: Address<TAccountJoinRecord>;
@@ -510,7 +510,7 @@ export type JoinInput<
   batcher: Address<TAccountBatcher>;
   /** The pending batch being joined. */
   batch: Address<TAccountBatch>;
-  /** batcher eval's compute subject + app authority. */
+  /** batcher execution's compute subject and encrypted value account authority. */
   batchAuthority: Address<TAccountBatchAuthority>;
   /** The user's join record for this batch; created on first join. */
   joinRecord: Address<TAccountJoinRecord>;
@@ -760,7 +760,7 @@ export type ParsedJoinInstruction<
     batcher: TAccountMetas[2];
     /** The pending batch being joined. */
     batch: TAccountMetas[3];
-    /** batcher eval's compute subject + app authority. */
+    /** batcher execution's compute subject and encrypted value account authority. */
     batchAuthority: TAccountMetas[4];
     /** The user's join record for this batch; created on first join. */
     joinRecord: TAccountMetas[5];

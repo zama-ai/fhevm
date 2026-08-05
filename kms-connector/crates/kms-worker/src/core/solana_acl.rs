@@ -55,13 +55,13 @@ pub enum SolanaAclVerificationError {
     #[error("ACL account is not owned by the configured ZamaHost program")]
     InvalidAccountOwner,
     #[error(
-        "delegation account is not the canonical PDA for the delegator, delegate, and app account"
+        "delegation account is not the canonical PDA for the delegator, delegate, and encrypted value account authority"
     )]
     NonCanonicalDelegation,
     #[error("delegation bump does not match the canonical PDA bump")]
     DelegationBumpMismatch,
     #[error(
-        "delegation account data does not match the requested delegator, delegate, or app account"
+        "delegation account data does not match the requested delegator, delegate, or encrypted value account authority"
     )]
     DelegationMismatch,
     #[error("delegation counter does not match the signed request")]
@@ -78,7 +78,7 @@ pub enum SolanaAclVerificationError {
     EncryptedValueHandleMismatch,
     #[error("subject is not a current member of the encrypted value account")]
     EncryptedValueSubjectMissing,
-    #[error("encrypted value account is not the canonical PDA for its value key")]
+    #[error("encrypted value account is not the canonical PDA for its encrypted value ID")]
     NonCanonicalEncryptedValueAcl,
     #[error("encrypted value account bump does not match the canonical PDA bump")]
     EncryptedValueAclBumpMismatch,

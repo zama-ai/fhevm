@@ -135,10 +135,10 @@ pub struct FheExecuteArgs {
     /// instruction data so stateless indexers can validate account references without the
     /// transaction envelope (DD-033 self-description).
     pub account_count: u8,
-    /// Interned 32-byte constant dictionary: operand handles, scalar values, ACL domain keys, app
-    /// account keys, encrypted value labels, and output subjects. Steps reference entries by
-    /// `u8` index, so a value repeated across steps is paid for once (the compiled-message /
-    /// constant-dictionary encoding; fhevm-internal#1853 W7).
+    /// Interned 32-byte constant dictionary: operand handles, scalar values, ACL domain keys,
+    /// encrypted value account authority keys, encrypted value labels, and output subjects. Steps
+    /// reference entries by `u8` index, so a value repeated across steps is paid for once (the
+    /// compiled-message / constant-dictionary encoding; fhevm-internal#1853 W7).
     ///
     /// The entries stay raw `[u8; 32]` on purpose, and must not become an enum of typed
     /// variants. Interning is what makes the encoding small, and it only works across roles:

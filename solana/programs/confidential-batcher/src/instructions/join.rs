@@ -29,7 +29,7 @@ pub struct Join<'info> {
     #[account(mut, constraint = batch.batcher == batcher.key() @ BatcherError::BatchBatcherMismatch)]
     pub batch: Box<Account<'info, Batch>>,
     /// CHECK: per-batch authority PDA; recipient owner of the transfer and the
-    /// batcher eval's compute subject + app authority.
+    /// batcher execution's compute subject and encrypted value account authority.
     #[account(seeds = [BATCH_AUTHORITY_SEED, batch.key().as_ref()], bump = batch.authority_bump)]
     pub batch_authority: UncheckedAccount<'info>,
     /// The user's join record for this batch; created on first join.

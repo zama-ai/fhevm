@@ -123,7 +123,7 @@ pub enum ZamaHostError {
     #[msg("KMS context signer set contains a duplicate address")]
     DuplicateKmsSigner,
     /// The coprocessor-attested contract does not match the `fhe_execute` compute subject.
-    #[msg("attested contract address does not match the output app account")]
+    #[msg("attested contract address does not match the fhe_execute compute subject")]
     InputBindContractMismatch,
     /// An `fhe_execute` execution's summed HCU exceeds `max_hcu_per_tx` (or the running sum overflowed).
     #[msg("FHE op total HCU exceeds the per-transaction limit")]

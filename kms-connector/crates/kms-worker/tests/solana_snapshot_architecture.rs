@@ -81,10 +81,10 @@ async fn authorizing_a_direct_request_reads_host_state_once() {
     );
 }
 
-/// A delegated entry's delegation record lives at a PDA seeded by the app account, and the app
-/// account is a field of the encrypted value account — so its address is not computable until the
-/// encrypted value account has been read. That costs a second read and nothing beyond it: no rule
-/// after the deciding observation reads state at all.
+/// A delegated entry's delegation record lives at a PDA seeded by the encrypted value account
+/// authority, and that authority is a field of the account — so the record's address is not
+/// computable until the encrypted value account has been read. That costs a second read and nothing
+/// beyond it: no rule after the deciding observation reads state at all.
 #[tokio::test]
 async fn authorizing_a_delegated_request_reads_host_state_twice_and_never_more() {
     let signer = Wallet::new(1);
@@ -155,10 +155,10 @@ async fn the_second_read_carries_over_every_key_of_the_first() {
     );
 }
 
-/// A delegated entry plans both rows that could carry its grant — the encrypted value account's app
-/// account and the delegator's wildcard row — in the same read. Fetching the wildcard row only when
-/// the app-specific one is missing would be a third read, and nothing in this pipeline reads state
-/// after the deciding observation.
+/// A delegated entry plans both rows that could carry its grant — the encrypted value account's
+/// encrypted value account authority and the delegator's wildcard row — in the same read. Fetching
+/// the wildcard row only when the app-specific one is missing would be a third read, and nothing in
+/// this pipeline reads state after the deciding observation.
 ///
 /// Two entries in two apps under one delegator show how the two kinds of row scale: an app row per
 /// app, and one wildcard row however many apps there are, because its address does not mention an

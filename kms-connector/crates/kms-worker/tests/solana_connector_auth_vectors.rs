@@ -252,13 +252,13 @@ fn accepting_scenarios() -> Vec<Scenario> {
     out.push(Scenario::accepted(
         "delegated-current",
         "A handle owned by a delegator, used by the signer under a live delegation for the \
-         encrypted value account's app account. The authorized subject is the delegator.",
+         encrypted value account's authority. The authorized subject is the delegator.",
         request,
         world,
     ));
 
     // The same request, authorized by the delegator's wildcard row instead: no row exists for this
-    // encrypted value account's app account at all.
+    // encrypted value account's authority at all.
     let (
         wildcard_signer,
         wildcard_delegator,
@@ -276,7 +276,7 @@ fn accepting_scenarios() -> Vec<Scenario> {
     out.push(Scenario::accepted(
         "delegated-via-wildcard-row",
         "A delegator grants across every one of their apps with one row carrying the reserved \
-         app-context sentinel instead of an app account. It authorizes an encrypted value account that has no \
+         app-context sentinel instead of an encrypted value account authority. It authorizes an encrypted value account that has no \
          app-specific row, exactly as the EVM ACL's wildcard delegation does. The consequence is \
          part of the rule: revoking the app-specific row does not stop a delegate who holds this \
          one.",
@@ -379,10 +379,11 @@ fn accepting_scenarios() -> Vec<Scenario> {
     let second_delegator = Wallet::new(3);
     let own = handle(0x70, FHE_TYPE_UINT64);
     let own_encrypted_value_account = EncryptedValueAccountFixture::new(own, &[signer.pubkey()]);
-    // Distinct labels give distinct value keys and therefore distinct encrypted value accounts.
-    // Note which byte is picked: `LABEL` already begins with `b'b'`, so reaching for that letter
-    // here would silently give this encrypted value account the default one's address, one account
-    // would overwrite the other in the world, and the record would stop being a mixed batch at all.
+    // Distinct labels give distinct encrypted value IDs and therefore distinct encrypted value
+    // accounts. Note which byte is picked: `LABEL` already begins with `b'b'`, so reaching for that
+    // letter here would silently give this encrypted value account the default one's address, one
+    // account would overwrite the other in the world, and the record would stop being a mixed batch
+    // at all.
     let mut label_a = LABEL;
     label_a[0] = b'a';
     let mut label_b = LABEL;
@@ -920,7 +921,7 @@ fn encrypted_value_account_scenarios() -> Vec<Scenario> {
         "The account's own fields must reproduce the identity that was claimed. This is the \
          backstop that makes a substituted encrypted value account a rejection rather than a redirection.",
         "direct-current",
-        "the encrypted value account address holds an encrypted value account of another app account",
+        "the encrypted value account address holds an encrypted value account of another authority",
         rule::ENCRYPTED_VALUE_ID_MISMATCH,
         FailureClass::Terminal,
         request,

@@ -8,8 +8,8 @@
 //! observation.
 //!
 //! For a request whose entries are all direct, that last read is also the only one: the encrypted
-//! value accounts are named by their `valueKey`s and the invalidation record by the signer, so
-//! every key is computable up front.
+//! value accounts are named by their encrypted value IDs and the invalidation record by the signer,
+//! so every key is computable up front.
 //!
 //! A delegated entry breaks the up-front part. Its delegation record lives at a PDA seeded by
 //! `(delegator, delegate, encrypted_value_account_authority)`, and the authoritative
@@ -26,9 +26,9 @@
 //! in: the delegation address it produced is re-derived from the deciding snapshot's own encrypted
 //! value account inside [`super::delegation::check_delegation`], and a encrypted value account that
 //! resolves at a given address has exactly one `encrypted_value_account_authority`, because that
-//! field is part of the `valueKey` preimage the address is derived from. A discovery read that
-//! named the wrong record therefore surfaces as a key the deciding snapshot never read, reported as
-//! the key-planning defect it is.
+//! field is part of the encrypted value ID preimage the address is derived from. A discovery read
+//! that named the wrong record therefore surfaces as a key the deciding snapshot never read,
+//! reported as the key-planning defect it is.
 //!
 //! One thing is asked of the pair, and it is not agreement: order. The deciding read must not be
 //! older than the discovery read ([`HostSnapshot::deciding_after`]). A read that goes backwards is

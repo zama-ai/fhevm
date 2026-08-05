@@ -49,7 +49,7 @@ export const confidentialBalanceValueAccount = async (
 export const transferredAmountValueAddress = (mint: Address, tokenAccount: Address): Promise<Address> =>
   encryptedValueAddress(mint, tokenAccount, ENCRYPTED_TRANSFERRED_AMOUNT_LABEL);
 
-/** The encrypted total-supply encrypted value account for `mint` (app account = its total-supply authority). */
+/** The total-supply encrypted value account for `mint` (authority = its total-supply authority). */
 export const totalSupplyValueAddress = (mint: Address, totalSupplyAuthority: Address): Promise<Address> =>
   encryptedValueAddress(mint, totalSupplyAuthority, ENCRYPTED_TOTAL_SUPPLY_LABEL);
 

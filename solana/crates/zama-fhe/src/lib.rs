@@ -112,7 +112,7 @@ pub enum FheExecutionBuildError {
     InvalidSubjects,
     /// An encrypted value ID component contains an app-domain pubkey the host would reject.
     InvalidEncryptedValueId,
-    /// The fixed app authority pubkey is not a valid signer identity.
+    /// The fixed encrypted value account authority pubkey is not a valid signer identity.
     InvalidAppAuthority,
     /// A lowered host account index does not match the execution account list.
     InvalidRemainingAccountReference,

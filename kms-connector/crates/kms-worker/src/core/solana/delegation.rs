@@ -1,10 +1,11 @@
 //! Delegation freshness.
 //!
 //! A delegated entry needs a live delegation record `delegator → signer`. Two records can carry
-//! one: the row for the encrypted value account's own app account, and the delegator's wildcard row
-//! — the same derivation with the reserved app-context sentinel in place of an app account, which
-//! is how a delegator grants across every one of their apps at once. Either row being live
-//! authorizes the entry, which is the rule the EVM ACL applies to its own wildcard delegation.
+//! one: the row for the encrypted value account's own authority, and the delegator's wildcard row —
+//! the same derivation with the reserved app-context sentinel in place of an encrypted value
+//! account authority, which is how a delegator grants across every one of their apps at once.
+//! Either row being live authorizes the entry, which is the rule the EVM ACL applies to its own
+//! wildcard delegation.
 //!
 //! Live means, against the observed slot: not revoked, not expired, and not written after the
 //! observation. The last clause is what keeps a record "from the future" relative to the snapshot
@@ -26,15 +27,16 @@
 //! still exists in the on-chain layout — decoding walks past it — but no check reads it and no
 //! signature commits to it.
 //!
-//! The app account comes from the validated encrypted value account. That is what makes the
-//! delegated branch safe against an attacker naming an app they do hold a delegation for: they
-//! cannot name it at all.
+//! The authority comes from the validated encrypted value account. That is
+//! what makes the delegated branch safe against an attacker naming an app they do hold a delegation
+//! for: they cannot name it at all.
 
 use super::snapshot::{HostSnapshot, SnapshotError};
 use crate::core::solana_acl::{SolanaPubkeyBytes, decode_user_decryption_delegation_witness};
 
-/// The app-context sentinel a wildcard row carries in place of an app account. Reserved by the
-/// host program, which is why no real app account can collide with it.
+/// The app-context sentinel a wildcard row carries in place of an encrypted value account
+/// authority. Reserved by the host program, which is why no real encrypted value account authority
+/// can collide with it.
 pub use crate::core::solana_acl::WILDCARD_APP_CONTEXT;
 
 /// The canonical delegation-record address for a `(delegator, delegate, encrypted_value_account_authority)` tuple.
@@ -274,7 +276,7 @@ pub enum DelegationFailure {
     /// send a delegator to fix a row that was not the one standing in the way.
     #[error("no live delegation: app-specific row: {exact}; wildcard row: {wildcard}")]
     NoLiveGrant {
-        /// Why the row for the encrypted value account's app account did not authorize.
+        /// Why the row for the encrypted value account's authority did not authorize.
         exact: Box<DelegationFailure>,
         /// Why the delegator's wildcard row did not authorize.
         wildcard: Box<DelegationFailure>,

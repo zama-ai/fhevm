@@ -38,7 +38,7 @@ pub struct Claim<'info> {
     /// The settled batch being claimed from.
     #[account(constraint = batch.batcher == batcher.key() @ BatcherError::BatchBatcherMismatch)]
     pub batch: Box<Account<'info, Batch>>,
-    /// CHECK: per-batch authority PDA; the claim eval's compute subject + app
+    /// CHECK: per-batch authority PDA; the claim eval's compute subject + encrypted value account
     /// authority and the payout transfer's authority via invoke_signed.
     #[account(seeds = [BATCH_AUTHORITY_SEED, batch.key().as_ref()], bump = batch.authority_bump)]
     pub batch_authority: UncheckedAccount<'info>,

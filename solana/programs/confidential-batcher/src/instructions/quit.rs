@@ -25,7 +25,7 @@ pub struct Quit<'info> {
     #[account(constraint = batch.batcher == batcher.key() @ BatcherError::BatchBatcherMismatch)]
     pub batch: Box<Account<'info, Batch>>,
     /// CHECK: per-batch authority PDA; transfer authority for the refund and
-    /// the reset eval's compute subject + app authority.
+    /// the reset execution's compute subject and encrypted value account authority.
     #[account(seeds = [BATCH_AUTHORITY_SEED, batch.key().as_ref()], bump = batch.authority_bump)]
     pub batch_authority: UncheckedAccount<'info>,
     /// The user's join record for this batch.

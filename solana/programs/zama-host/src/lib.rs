@@ -6,7 +6,7 @@
 //! Gateway/KMS request must verify.
 //!
 //! The program intentionally keeps app semantics outside this crate. App
-//! programs, such as `confidential-token`, decide which app accounts and
+//! programs, such as `confidential-token`, decide which encrypted value account authorities and
 //! labels they authorize, then call this program by CPI to create or verify
 //! host-owned ACL state.
 

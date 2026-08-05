@@ -29,7 +29,7 @@ impl DecodedEncryptedValueAcl {
     }
 }
 
-/// Canonical encrypted value account PDA for a value key under `host_program_id`.
+/// Canonical encrypted value account PDA for an encrypted value ID under `host_program_id`.
 pub fn encrypted_value_acl_address(
     host_program_id: SolanaPubkeyBytes,
     encrypted_value_id: [u8; 32],

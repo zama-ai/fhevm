@@ -76,7 +76,7 @@ export type SolanaEncryptedValueAccount = {
 };
 
 /**
- * The batch's burned-amount encrypted value account on the join mint (acl domain = join mint, app account = the
+ * The batch's burned-amount encrypted value account on the join mint (acl domain = join mint, authority = the
  * batch's join token account, label = `burned_amount`). Its encrypted value ID is the certificate's
  * `aclValueKey` and its PDA is both `batchBurnedAmountValue` and the proof-service `encrypted_value`.
  */
@@ -103,7 +103,7 @@ function concatBytes(...parts: Uint8Array[]): Uint8Array {
 
 /**
  * A batcher-owned per-user encrypted value account (`pending_join_value` or `claim_amount_value`). Batcher encrypted value accounts
- * live in the batch's own ACL domain: acl domain = batch, app account = batch authority, label =
+ * live in the batch's own ACL domain: acl domain = batch, authority = batch authority, label =
  * `sha256(purpose_prefix || user)` (`batcher_encrypted_value_address`). Use the returned
  * `aclValueKey` for a `decryptPosition` call and `encryptedValueAddress` as the account.
  */

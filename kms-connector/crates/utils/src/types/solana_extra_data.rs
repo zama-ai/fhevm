@@ -50,7 +50,7 @@
 /// request moved behind the wallet-safe UTF-8 digest envelope. Ed25519 is non-malleable, so an
 /// earlier raw-binary signature can never verify against the `v3` message. The in-worker
 /// re-verification (see `event_processor::solana_user_decrypt`) still binds the MMR proof, the
-/// encrypted value account value key, and the proof slot to the user's identity, so a relayer
+/// encrypted value ID, and the proof slot to the user's identity, so a relayer
 /// cannot substitute any of them after the user signs.
 pub const SOLANA_USER_DECRYPT_DOMAIN_TAG: &[u8] = b"zama-solana-user-decrypt-v3";
 
@@ -91,7 +91,7 @@ pub struct SolanaUserDecryptSigningInput<'a> {
     pub start_timestamp: u64,
     /// Validity window duration (seconds).
     pub duration_seconds: u64,
-    /// The encrypted value account value key for a current/historical/public decrypt; all-zero only when no
+    /// The encrypted value ID for a current/historical/public decrypt; all-zero only when no
     /// encrypted value account is named. Flat `&[u8; 32]` (not a typed key) because this crate has no
     /// `zama-solana-acl` dependency — the kms-worker owns the proof decode.
     pub acl_value_key: &'a [u8; 32],
@@ -194,7 +194,7 @@ pub const SOLANA_EXTRA_DATA_VERSION_MMR_PROOF: u8 = 0x03;
 pub struct SolanaUserDecryptExtraData {
     /// The 32-byte KMS context id (zero when absent).
     pub context_id: [u8; 32],
-    /// The encrypted value account value key for a current or MMR-proof decrypt; all-zero only when omitted.
+    /// The encrypted value ID for a current or MMR-proof decrypt; all-zero only when omitted.
     pub acl_value_key: [u8; 32],
     /// The encrypted value account leaf_count the proof was built against; 0 for a current-ACL request.
     pub proof_slot: u64,

@@ -8,9 +8,9 @@
 //!   → deployment identity and chain-id agreement
 //!   → KMS pair servability
 //!   → READ host state
-//!   → if any entry is delegated: resolve its encrypted value account to learn the app account, then READ
-//!     again with the delegation records added — that read is the deciding observation and
-//!     the first read's values are discarded
+//!   → if any entry is delegated: resolve its encrypted value account to learn its
+//!     authority, then READ again with the delegation records added — that read is the
+//!     deciding observation and the first read's values are discarded
 //!   → invalidation watermark
 //!   → per entry: encrypted value account → app context → handle binding → scope
 //!   → per delegated entry: delegation freshness
@@ -70,7 +70,7 @@ pub struct AuthorizedEntry {
     /// The subject whose access was established: the signer for a direct entry, the
     /// delegator for a delegated one.
     pub subject: SolanaPubkeyBytes,
-    /// The app account, read from the validated encrypted value account.
+    /// The authority, read from the validated encrypted value account.
     pub encrypted_value_account_authority: SolanaPubkeyBytes,
     /// The ACL domain, read from the validated encrypted value account.
     pub domain: SolanaPubkeyBytes,
@@ -171,7 +171,8 @@ where
 
     // The reads. The first covers the signer's invalidation record and one account per named
     // encrypted value account; a delegated entry then needs a second, because its record's address
-    // is a function of an app account only its encrypted value account can supply.
+    // is a function of an authority only its encrypted value account can
+    // supply.
     let first_keys = plan_first_read(request, context.deployment);
     let first = reader.read_accounts(&first_keys).await?;
     let delegation_keys = discover_delegation_keys(&first, program_id, signer, request)?;
@@ -248,16 +249,16 @@ where
 /// Derives the delegation-record addresses a delegated request needs, from the discovery read.
 ///
 /// This is the only use the first read of a delegated request is put to, and it is why the read
-/// happens at all. The encrypted value account is resolved here to learn its app account and for no
-/// other purpose: every rule, including the resolution of this same encrypted value account, is
-/// applied again against the deciding observation.
+/// happens at all. The encrypted value account is resolved here to learn its encrypted value
+/// account authority and for no other purpose: every rule, including the resolution of this same
+/// encrypted value account, is applied again against the deciding observation.
 ///
 /// Two addresses per delegated entry, because two rows can carry the grant: the encrypted value
-/// account's app account and the delegator's wildcard row. Both are planned unconditionally rather
-/// than the wildcard being fetched only when the app-specific row is missing — that would be a
-/// third read, and a rule that reads state after the deciding observation is the thing this
-/// pipeline does not do. Repeats collapse in the key set, so a batch under one delegator costs one
-/// wildcard key.
+/// account's authority and the delegator's wildcard row. Both are planned
+/// unconditionally rather than the wildcard being fetched only when the app-specific row is missing
+/// — that would be a third read, and a rule that reads state after the deciding observation is the
+/// thing this pipeline does not do. Repeats collapse in the key set, so a batch under one delegator
+/// costs one wildcard key.
 ///
 /// Empty for a direct-only request, which is what makes that request cost one read.
 fn discover_delegation_keys(

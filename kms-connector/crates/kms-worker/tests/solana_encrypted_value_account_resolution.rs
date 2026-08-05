@@ -4,8 +4,8 @@
 //! A handle entry names the encrypted value account that authorizes it. That name is unsigned, so
 //! every value read out of the named account has to be earned: the account must exist under this
 //! deployment's program, carry the encrypted value account type, and reproduce the identity that
-//! was claimed. Only then are its fields — the app account, the ACL domain, the current handle, the
-//! subject set — allowed to decide anything.
+//! was claimed. Only then are its fields — the encrypted value account authority, the ACL domain,
+//! the current handle, the subject set — allowed to decide anything.
 //!
 //! The tests here come in two shapes. The first shape substitutes something for the encrypted value
 //! account and demands a rejection: a foreign program's account, another account type of the same
@@ -181,7 +181,7 @@ fn a_host_owned_account_of_another_type_is_rejected() {
 }
 
 /// The identity binding is the backstop of the chain: the account's own fields must reproduce the
-/// `valueKey` that was claimed. Without it, a bug anywhere in address derivation or account
+/// encrypted value ID that was claimed. Without it, a bug anywhere in address derivation or account
 /// selection would let a request read app context and subjects out of somebody else's encrypted
 /// value account.
 #[test]
@@ -325,8 +325,8 @@ fn a_encrypted_value_account_account_holding_only_its_discriminator_is_rejected(
 // ---------------------------------------------------------------------------
 
 /// Each entry's app context comes from its own encrypted value account. Two entries of the same
-/// domain and different apps resolve to their own app accounts — there is no request-level app
-/// context to share, and no first-entry value to inherit.
+/// domain and different apps resolve to their own encrypted value account authorities — there is no
+/// request-level app context to share, and no first-entry value to inherit.
 #[test]
 fn each_entry_takes_its_app_context_from_its_own_encrypted_value_account() {
     let owner = Wallet::new(1).pubkey();

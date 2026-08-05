@@ -374,13 +374,13 @@ pub(crate) fn assert_amount_attestation_binding(
     Ok(())
 }
 
-/// ValueAccount checks for the redeem path: burned-amount handle type, canonical
-/// address, domain/app account, the burned-amount label, and current membership
-/// for the owner and mint compute signer. Does NOT authorize the specific handle:
-/// the redeem path proves the handle's publicness via the exact-handle MMR
-/// public-decrypt proof verified inside the `verify_public_decrypt` CPI, since the
-/// burn already made the handle public (DD-036 / Vector 2). The handle need not be
-/// the live one, so a historical handle replaced by a later burn stays redeemable.
+/// ValueAccount checks for the redeem path: burned-amount handle type, canonical address,
+/// domain/encrypted value account authority, the burned-amount label, and current membership for
+/// the owner and mint compute signer. Does NOT authorize the specific handle: the redeem path
+/// proves the handle's publicness via the exact-handle MMR public-decrypt proof verified inside the
+/// `verify_public_decrypt` CPI, since the burn already made the handle public (DD-036 / Vector 2).
+/// The handle need not be the live one, so a historical handle replaced by a later burn stays
+/// redeemable.
 pub(crate) fn assert_burned_amount_value_account(
     amount_value: &Account<zama_host::EncryptedValue>,
     burned_handle: [u8; 32],

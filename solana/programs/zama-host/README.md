@@ -62,7 +62,7 @@ This is the supported replacement for the older `execute_frame` prototype, not a
 Keeping persistent output authority on a signer witness (the `encrypted_value_account_authority` signer, or an
 explicit per-output authority account in `remaining_accounts`) preserves the membership-based ACL
 and public-decrypt rules enforced by the current host. The prototype's unsigned list of authorized
-app accounts is deliberately not revived.
+encrypted value account authorities is deliberately not revived.
 
 Ordinary compute facts, MMR leaves, and persistent-output binds are reconstructed from instruction data;
 the host emits no per-operation replay stream. An execution with created-public persistent outputs emits exactly
