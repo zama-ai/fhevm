@@ -86,6 +86,11 @@ jobs:
               - .github/workflows/solana-tests.yml
               - solana/demo-dapp/**
               - sdk/js-sdk/**
+              # The confidential-token IDL the dapp's generated client is rendered from. The other
+              # two source IDLs (confidential_batcher, demo_vault) live under solana/demo-dapp/idl
+              # and are already matched above; this one is vendored with the listener, so without
+              # naming it a token IDL change would not run the codegen check that reads it.
+              - coprocessor/fhevm-engine/host-listener/idl/confidential_token.json
 
   # Pure grep/sed, no toolchain, half a minute: its own job so it runs for every tree it sweeps,
   # not only the ones that trigger the SBF builds. See fhevm-internal#1859 §7.
@@ -164,6 +169,15 @@ jobs:
         run: |
           npm ci --workspace=@fhevm/sdk-dev --workspace=@fhevm/sdk --include-workspace-root=false
           ( cd sdk/js-sdk && npm run clean && npm run build:esm && npm run build:types )
+
+      # The dapp does not hand-write the program clients under src/vault/internal/generated: the
+      # SDK's Codama codegen renders them from the committed IDLs. Its `--check` mode ran in no
+      # workflow, so a client could keep describing an instruction, account, or argument the
+      # program no longer has — and the confidential-token client had in fact drifted. The codegen
+      # lives with the SDK, so it runs off the graph the previous step installed.
+      - name: Check the dapp's generated program clients still match the committed IDLs
+        working-directory: sdk/js-sdk
+        run: npm run codegen:solana:check
 
       - name: Install the dapp's frozen dependency graph
         working-directory: solana/demo-dapp
