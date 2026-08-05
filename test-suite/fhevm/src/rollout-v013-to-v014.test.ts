@@ -1,6 +1,7 @@
 import { expect, test } from "bun:test";
 
 import {
+  gatewayContractUpgradeOrder,
   hostContractUpgradeOrder,
   phaseOrder,
   resolveRolloutTestMode,
@@ -102,6 +103,17 @@ test("orders host contract upgrades so verification and limits land before the e
   expect(position("KMSVerifier")).toBeLessThan(position("FHEVMExecutor"));
   expect(position("HCULimit")).toBeLessThan(position("FHEVMExecutor"));
   expect(position("ACL")).toBe(hostContractUpgradeOrder.length - 1);
+});
+
+// Every upgradeable contract guards its reinitializer with `reinitializer(REINITIALIZER_VERSION)`,
+// and a fresh deploy runs `initializeFromEmptyProxy` under the same constant. A contract whose
+// source did not change between the two tags therefore carries an unchanged constant, and
+// upgrading it reverts with OpenZeppelin's `InvalidInitialization()` (0xf92ee8a9). Between
+// v0.13.2 and v0.14.0-10 only Decryption (6 -> 7) changed on the gateway side.
+test("upgrades only the gateway contract whose reinitializer v0.14 bumped", () => {
+  expect(gatewayContractUpgradeOrder).toEqual(["Decryption"]);
+  expect(gatewayContractUpgradeOrder).not.toContain("GatewayConfig");
+  expect(gatewayContractUpgradeOrder).not.toContain("KMSGeneration");
 });
 
 test("gates every phase on rollout-standard by default", () => {

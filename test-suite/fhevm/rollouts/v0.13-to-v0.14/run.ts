@@ -100,7 +100,28 @@ const prepareContractMigrationSources = async (
   });
 };
 
-/** The host contracts that move on every host chain, in dependency order. */
+/**
+ * The gateway contracts that move in this release.
+ *
+ * Only the contracts v0.14 actually changed can be upgraded. Every upgradeable contract here
+ * guards its reinitializer with `reinitializer(REINITIALIZER_VERSION)`, and a fresh deploy runs
+ * `initializeFromEmptyProxy` under that same constant — so a proxy deployed from v0.13.2 already
+ * sits at the v0.13.2 value. Upgrading a contract whose source (and therefore constant) did not
+ * change reverts with OpenZeppelin's `InvalidInitialization()` (`0xf92ee8a9`).
+ *
+ * Between v0.13.2 and v0.14.0-10 the only gateway contract that changed is Decryption (6 -> 7).
+ * GatewayConfig (9), KMSGeneration (6), InputVerification (6) and CiphertextCommits (6) are
+ * byte-identical across the two tags, so they must not be touched.
+ */
+const GATEWAY_CONTRACT_UPGRADES = [{ task: "task:upgradeDecryption", name: "Decryption" }] as const;
+
+/**
+ * The host contracts that move on every host chain, in dependency order.
+ *
+ * All of these bumped their reinitializer in v0.14 (see the note above): KMSVerifier 4 -> 5,
+ * KMSGeneration 2 -> 3, HCULimit 4 -> 5, FHEVMExecutor 5 -> 6, ACL 5 -> 6. ProtocolConfig
+ * (2 -> 3) moves separately through its own migration below.
+ */
 const HOST_CONTRACT_UPGRADES = [
   // KMSVerifier first so it holds the new KMS context before any executor path runs.
   { task: "task:upgradeKMSVerifier", name: "KMSVerifier" },
@@ -201,8 +222,9 @@ export default async function run(ctx: RolloutRunContext) {
   // Gateway Contracts -> Host Contracts -> Relayer -> KMS -> Coprocessors -> SDK.
   logPhase("01 gateway contracts: upgrade the gateway chain first");
   await prepareContractMigrationSources(ctx, "gateway", gatewayContractsLock, gatewayContractKeys);
-  await upgradeContract((command) => ctx.runGatewayContractTask(command), "task:upgradeGatewayConfig", "GatewayConfig");
-  await upgradeContract((command) => ctx.runGatewayContractTask(command), "task:upgradeKMSGeneration", "KMSGeneration");
+  for (const upgrade of GATEWAY_CONTRACT_UPGRADES) {
+    await upgradeContract((command) => ctx.runGatewayContractTask(command), upgrade.task, upgrade.name);
+  }
   await ctx.refreshDiscovery();
   await testPhase(ctx, "gateway-contracts", testMode);
 
@@ -260,3 +282,6 @@ export const phaseOrder = [
 ] as const satisfies readonly RolloutPhase[];
 
 export const hostContractUpgradeOrder: readonly string[] = HOST_CONTRACT_UPGRADES.map((upgrade) => upgrade.name);
+export const gatewayContractUpgradeOrder: readonly string[] = GATEWAY_CONTRACT_UPGRADES.map(
+  (upgrade) => upgrade.name,
+);
