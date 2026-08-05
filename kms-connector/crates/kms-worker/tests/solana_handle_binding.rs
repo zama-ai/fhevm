@@ -81,24 +81,24 @@ fn a_live_handle_authorizes_a_current_member() {
         .expect("a member decrypts the live handle");
 }
 
-/// A handle that has been superseded fails, and is not quietly replaced by whatever is live
+/// A handle that is no longer current fails, and is not quietly swapped for whatever is live
 /// now. Returning the live value would answer a question the requester did not ask, and the
 /// response could no longer be tied back to the request the client built.
 #[test]
-fn a_superseded_handle_is_not_replaced_by_the_live_one() {
+fn a_handle_that_is_no_longer_current_is_not_swapped_for_the_live_one() {
     let subject = Wallet::new(1).pubkey();
-    let superseded = handle(0x11, FHE_TYPE_UINT64);
+    let replaced = handle(0x11, FHE_TYPE_UINT64);
     let live = handle(0x12, FHE_TYPE_UINT64);
-    let mut lineage = LineageFixture::new(superseded, &[subject]);
-    lineage.supersede(live);
+    let mut lineage = LineageFixture::new(replaced, &[subject]);
+    lineage.update(live);
 
-    let failure = check_handle_binding(&resolved(&lineage), superseded, subject, &current())
-        .expect_err("a superseded handle is not current");
+    let failure = check_handle_binding(&resolved(&lineage), replaced, subject, &current())
+        .expect_err("the handle is no longer current");
 
     assert!(matches!(
         failure,
         HandleBindingFailure::NotCurrentHandle { requested, current }
-            if requested == superseded && current == live
+            if requested == replaced && current == live
     ));
     assert_eq!(
         AuthorizationFailure::HandleBinding {
@@ -139,13 +139,13 @@ fn a_non_member_is_rejected_in_current_mode() {
 #[test]
 fn a_sealed_leaf_authorizes_its_subject_after_supersession() {
     let subject = Wallet::new(1).pubkey();
-    let superseded = handle(0x20, FHE_TYPE_UINT64);
-    let mut lineage = LineageFixture::new(superseded, &[subject]);
-    lineage.supersede(handle(0x21, FHE_TYPE_UINT64));
+    let replaced = handle(0x20, FHE_TYPE_UINT64);
+    let mut lineage = LineageFixture::new(replaced, &[subject]);
+    lineage.update(handle(0x21, FHE_TYPE_UINT64));
 
     check_handle_binding(
         &resolved(&lineage),
-        superseded,
+        replaced,
         subject,
         &historical(lineage.proof(0)),
     )
@@ -159,22 +159,22 @@ fn a_sealed_leaf_authorizes_its_subject_after_supersession() {
 fn historical_access_survives_a_membership_rotation() {
     let subject = Wallet::new(1).pubkey();
     let stranger = Wallet::new(2).pubkey();
-    let superseded = handle(0x22, FHE_TYPE_UINT64);
-    let mut lineage = LineageFixture::new(superseded, &[subject]);
-    lineage.supersede(handle(0x23, FHE_TYPE_UINT64));
+    let replaced = handle(0x22, FHE_TYPE_UINT64);
+    let mut lineage = LineageFixture::new(replaced, &[subject]);
+    lineage.update(handle(0x23, FHE_TYPE_UINT64));
     lineage.rotate_subjects(&[stranger]);
     let resolved = resolved(&lineage);
 
     check_handle_binding(
         &resolved,
-        superseded,
+        replaced,
         subject,
         &historical(lineage.proof(0)),
     )
     .expect("a sealed leaf is not revoked by a later rotation");
 
     assert!(
-        check_handle_binding(&resolved, superseded, subject, &current()).is_err(),
+        check_handle_binding(&resolved, replaced, subject, &current()).is_err(),
         "the same subject has no current standing, which is what makes the accept above about \
          the leaf and not about membership"
     );
@@ -188,11 +188,11 @@ fn a_proof_whose_peak_no_later_append_merged_still_verifies() {
     let subject = Wallet::new(1).pubkey();
     let first = handle(0x24, FHE_TYPE_UINT64);
     let mut lineage = LineageFixture::new(first, &[subject]);
-    lineage.supersede(handle(0x25, FHE_TYPE_UINT64));
-    lineage.supersede(handle(0x26, FHE_TYPE_UINT64));
+    lineage.update(handle(0x25, FHE_TYPE_UINT64));
+    lineage.update(handle(0x26, FHE_TYPE_UINT64));
     assert_eq!(lineage.lineage.leaf_count, 2);
     let proof = lineage.proof(0);
-    lineage.supersede(handle(0x27, FHE_TYPE_UINT64));
+    lineage.update(handle(0x27, FHE_TYPE_UINT64));
     assert_eq!(lineage.lineage.leaf_count, 3);
 
     check_handle_binding(&resolved(&lineage), first, subject, &historical(proof))
@@ -206,12 +206,12 @@ fn a_proof_invalidated_by_a_merging_append_no_longer_verifies() {
     let subject = Wallet::new(1).pubkey();
     let third = handle(0x30, FHE_TYPE_UINT64);
     let mut lineage = LineageFixture::new(handle(0x2e, FHE_TYPE_UINT64), &[subject]);
-    lineage.supersede(handle(0x2f, FHE_TYPE_UINT64));
-    lineage.supersede(third);
-    lineage.supersede(handle(0x31, FHE_TYPE_UINT64));
+    lineage.update(handle(0x2f, FHE_TYPE_UINT64));
+    lineage.update(third);
+    lineage.update(handle(0x31, FHE_TYPE_UINT64));
     assert_eq!(lineage.lineage.leaf_count, 3);
     let proof = lineage.proof(2);
-    lineage.supersede(handle(0x32, FHE_TYPE_UINT64));
+    lineage.update(handle(0x32, FHE_TYPE_UINT64));
     assert_eq!(lineage.lineage.leaf_count, 4);
 
     let failure = check_handle_binding(&resolved(&lineage), third, subject, &historical(proof))
@@ -228,9 +228,9 @@ fn a_proof_invalidated_by_a_merging_append_no_longer_verifies() {
 #[test]
 fn a_leaf_index_at_or_above_the_observed_count_is_rejected() {
     let subject = Wallet::new(1).pubkey();
-    let superseded = handle(0x33, FHE_TYPE_UINT64);
-    let mut lineage = LineageFixture::new(superseded, &[subject]);
-    lineage.supersede(handle(0x34, FHE_TYPE_UINT64));
+    let replaced = handle(0x33, FHE_TYPE_UINT64);
+    let mut lineage = LineageFixture::new(replaced, &[subject]);
+    lineage.update(handle(0x34, FHE_TYPE_UINT64));
     let beyond = MmrProof {
         leaf_index: lineage.lineage.leaf_count,
         siblings: Vec::new(),
@@ -238,7 +238,7 @@ fn a_leaf_index_at_or_above_the_observed_count_is_rejected() {
 
     let failure = check_handle_binding(
         &resolved(&lineage),
-        superseded,
+        replaced,
         subject,
         &historical(beyond),
     )
@@ -257,9 +257,9 @@ fn a_leaf_index_at_or_above_the_observed_count_is_rejected() {
 #[test]
 fn a_proof_with_tampered_siblings_is_rejected() {
     let subject = Wallet::new(1).pubkey();
-    let superseded = handle(0x35, FHE_TYPE_UINT64);
-    let mut lineage = LineageFixture::new(superseded, &[subject, Wallet::new(2).pubkey()]);
-    lineage.supersede(handle(0x36, FHE_TYPE_UINT64));
+    let replaced = handle(0x35, FHE_TYPE_UINT64);
+    let mut lineage = LineageFixture::new(replaced, &[subject, Wallet::new(2).pubkey()]);
+    lineage.update(handle(0x36, FHE_TYPE_UINT64));
     let mut proof = lineage.proof(0);
     assert!(
         !proof.siblings.is_empty(),
@@ -268,7 +268,7 @@ fn a_proof_with_tampered_siblings_is_rejected() {
     proof.siblings[0][0] ^= 0xff;
 
     let failure =
-        check_handle_binding(&resolved(&lineage), superseded, subject, &historical(proof))
+        check_handle_binding(&resolved(&lineage), replaced, subject, &historical(proof))
             .expect_err("a tampered path does not verify");
 
     assert!(matches!(
@@ -397,7 +397,7 @@ fn a_public_decrypt_leaf_does_not_authorize_historical_access() {
     let target = handle(0x45, FHE_TYPE_UINT64);
     let mut lineage = LineageFixture::new(target, &[subject]);
     lineage.mark_public();
-    lineage.supersede(handle(0x46, FHE_TYPE_UINT64));
+    lineage.update(handle(0x46, FHE_TYPE_UINT64));
 
     let failure = check_handle_binding(
         &resolved(&lineage),
@@ -458,15 +458,15 @@ fn an_inclusion_failure_at_or_ahead_of_the_observed_count_asks_for_a_retry() {
 #[tokio::test]
 async fn a_verifying_proof_is_accepted_whatever_count_the_request_claims() {
     let wallet = Wallet::new(1);
-    let superseded = handle(0x50, FHE_TYPE_UINT64);
-    let mut lineage = LineageFixture::new(superseded, &[wallet.pubkey()]);
-    lineage.supersede(handle(0x51, FHE_TYPE_UINT64));
+    let replaced = handle(0x50, FHE_TYPE_UINT64);
+    let mut lineage = LineageFixture::new(replaced, &[wallet.pubkey()]);
+    lineage.update(handle(0x51, FHE_TYPE_UINT64));
     let proof = lineage.proof(0);
     let nonsense_count = 9_999;
     let request = RequestBuilder::new(&wallet)
         .historical(
             &lineage,
-            superseded,
+            replaced,
             wallet.pubkey(),
             &proof,
             nonsense_count,
@@ -491,12 +491,12 @@ async fn a_failed_inclusion_is_classified_by_the_claimed_count() {
     let wallet = Wallet::new(1);
     let third = handle(0x60, FHE_TYPE_UINT64);
     let mut lineage = LineageFixture::new(handle(0x5e, FHE_TYPE_UINT64), &[wallet.pubkey()]);
-    lineage.supersede(handle(0x5f, FHE_TYPE_UINT64));
-    lineage.supersede(third);
-    lineage.supersede(handle(0x61, FHE_TYPE_UINT64));
+    lineage.update(handle(0x5f, FHE_TYPE_UINT64));
+    lineage.update(third);
+    lineage.update(handle(0x61, FHE_TYPE_UINT64));
     let stale_proof = lineage.proof(2);
     let claimed_count = lineage.lineage.leaf_count;
-    lineage.supersede(handle(0x62, FHE_TYPE_UINT64));
+    lineage.update(handle(0x62, FHE_TYPE_UINT64));
 
     let request = RequestBuilder::new(&wallet)
         .historical(
@@ -543,13 +543,13 @@ async fn a_failed_inclusion_is_classified_by_the_claimed_count() {
 #[test]
 fn an_access_proof_with_trailing_bytes_is_rejected() {
     let wallet = Wallet::new(1);
-    let superseded = handle(0x70, FHE_TYPE_UINT64);
-    let mut lineage = LineageFixture::new(superseded, &[wallet.pubkey()]);
-    lineage.supersede(handle(0x71, FHE_TYPE_UINT64));
+    let replaced = handle(0x70, FHE_TYPE_UINT64);
+    let mut lineage = LineageFixture::new(replaced, &[wallet.pubkey()]);
+    lineage.update(handle(0x71, FHE_TYPE_UINT64));
     let mut bytes = borsh::to_vec(&lineage.proof(0)).expect("a proof serializes");
     bytes.extend_from_slice(&[0xde, 0xad, 0xbe, 0xef]);
     let wire = RequestBuilder::new(&wallet)
-        .entry(superseded, wallet.pubkey(), lineage.encrypted_value_id(), 1, bytes)
+        .entry(replaced, wallet.pubkey(), lineage.encrypted_value_id(), 1, bytes)
         .wire();
 
     let failure = SolanaUserDecryptRequest::decode(&wire)

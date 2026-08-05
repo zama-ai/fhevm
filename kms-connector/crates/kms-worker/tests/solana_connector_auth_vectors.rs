@@ -215,11 +215,11 @@ fn reference_delegated() -> (
     (signer, delegator, lineage, live, delegation, request, world)
 }
 
-/// A lineage that superseded its handle once, and the proof of the sealed leaf.
-fn superseded_lineage(tag: u8, subject: SolanaPubkeyBytes) -> (LineageFixture, [u8; 32], MmrProof) {
+/// A lineage whose handle was replaced once, and the proof of the sealed leaf.
+fn replaced_lineage(tag: u8, subject: SolanaPubkeyBytes) -> (LineageFixture, [u8; 32], MmrProof) {
     let sealed = handle(tag, FHE_TYPE_UINT64);
     let mut lineage = LineageFixture::new(sealed, &[subject]);
-    lineage.supersede(handle(tag.wrapping_add(1), FHE_TYPE_UINT64));
+    lineage.update(handle(tag.wrapping_add(1), FHE_TYPE_UINT64));
     let proof = lineage.proof(0);
     (lineage, sealed, proof)
 }
@@ -274,10 +274,10 @@ fn accepting_scenarios() -> Vec<Scenario> {
             .with_delegation(&wildcard_row),
     ));
 
-    let (lineage, sealed, proof) = superseded_lineage(0x30, wallet.pubkey());
+    let (lineage, sealed, proof) = replaced_lineage(0x30, wallet.pubkey());
     out.push(Scenario::accepted(
         "historical-after-supersession",
-        "The handle has been superseded, and the leaf sealed for the signer at that moment proves \
+        "The handle has been replaced, and the leaf sealed for the signer at that moment proves \
          the access. No new wallet signature is involved: proofs live outside the permit.",
         RequestBuilder::new(&wallet)
             .historical(&lineage, sealed, wallet.pubkey(), &proof, 1)
@@ -291,11 +291,11 @@ fn accepting_scenarios() -> Vec<Scenario> {
     // the proof's peak.
     let first = handle(0x40, FHE_TYPE_UINT64);
     let mut drifted = LineageFixture::new(first, &[wallet.pubkey()]);
-    drifted.supersede(handle(0x41, FHE_TYPE_UINT64));
-    drifted.supersede(handle(0x42, FHE_TYPE_UINT64));
+    drifted.update(handle(0x41, FHE_TYPE_UINT64));
+    drifted.update(handle(0x42, FHE_TYPE_UINT64));
     let drifted_proof = drifted.proof(0);
     let claimed_before_append = drifted.lineage.leaf_count;
-    drifted.supersede(handle(0x43, FHE_TYPE_UINT64));
+    drifted.update(handle(0x43, FHE_TYPE_UINT64));
     out.push(Scenario::accepted(
         "historical-proof-predating-a-non-merging-append",
         "The proof was built against an earlier leaf count and the append that followed left its \
@@ -720,7 +720,7 @@ fn request_form_scenarios() -> Vec<Scenario> {
         world.clone(),
     ));
 
-    let (proof_lineage, sealed, proof) = superseded_lineage(0x90, wallet.pubkey());
+    let (proof_lineage, sealed, proof) = replaced_lineage(0x90, wallet.pubkey());
     let proof_world = World::at_slot(OBSERVED_SLOT)
         .with_lineage(&proof_lineage)
         .with_watermark(wallet.pubkey(), 0);
@@ -904,19 +904,19 @@ fn handle_binding_scenarios() -> Vec<Scenario> {
     let wallet = Wallet::new(1);
     let stranger = Wallet::new(9);
 
-    let superseded = handle(0xa0, FHE_TYPE_UINT64);
-    let mut moved_on = LineageFixture::new(superseded, &[wallet.pubkey()]);
-    moved_on.supersede(handle(0xa1, FHE_TYPE_UINT64));
+    let replaced = handle(0xa0, FHE_TYPE_UINT64);
+    let mut moved_on = LineageFixture::new(replaced, &[wallet.pubkey()]);
+    moved_on.update(handle(0xa1, FHE_TYPE_UINT64));
     out.push(Scenario::rejected(
-        "superseded-current-handle",
-        "A current-mode entry whose handle has been superseded fails, and is not quietly answered \
+        "replaced-current-handle",
+        "A current-mode entry whose handle is no longer current fails, and is not quietly answered \
          with whatever is current instead. The same handle remains reachable as historical access.",
         "direct-current",
         "the lineage's current handle moves on before the observation",
         rule::HANDLE_NOT_CURRENT,
         FailureClass::Terminal,
         RequestBuilder::new(&wallet)
-            .direct_current(&moved_on, superseded)
+            .direct_current(&moved_on, replaced)
             .wire(),
         World::at_slot(OBSERVED_SLOT)
             .with_lineage(&moved_on)
@@ -941,7 +941,7 @@ fn handle_binding_scenarios() -> Vec<Scenario> {
             .with_watermark(wallet.pubkey(), 0),
     ));
 
-    let (sealed_lineage, sealed, _) = superseded_lineage(0xb0, wallet.pubkey());
+    let (sealed_lineage, sealed, _) = replaced_lineage(0xb0, wallet.pubkey());
     let sealed_world = World::at_slot(OBSERVED_SLOT)
         .with_lineage(&sealed_lineage)
         .with_watermark(wallet.pubkey(), 0);
@@ -1042,7 +1042,7 @@ fn handle_binding_scenarios() -> Vec<Scenario> {
     let public_handle = handle(0xc0, FHE_TYPE_UINT64);
     let mut public_lineage = LineageFixture::new(public_handle, &[wallet.pubkey()]);
     public_lineage.mark_public();
-    public_lineage.supersede(handle(0xc1, FHE_TYPE_UINT64));
+    public_lineage.update(handle(0xc1, FHE_TYPE_UINT64));
     out.push(Scenario::rejected(
         "public-decrypt-leaf-as-historical-access",
         "Public decryptability is a separate flow with its own leaf domain. Its leaf says nothing \
@@ -1068,12 +1068,12 @@ fn handle_binding_scenarios() -> Vec<Scenario> {
     // A proof invalidated by an append that merged its peak: claimed count below the observed one.
     let merged = handle(0xd2, FHE_TYPE_UINT64);
     let mut merging = LineageFixture::new(handle(0xd0, FHE_TYPE_UINT64), &[wallet.pubkey()]);
-    merging.supersede(handle(0xd1, FHE_TYPE_UINT64));
-    merging.supersede(merged);
-    merging.supersede(handle(0xd3, FHE_TYPE_UINT64));
+    merging.update(handle(0xd1, FHE_TYPE_UINT64));
+    merging.update(merged);
+    merging.update(handle(0xd3, FHE_TYPE_UINT64));
     let stale_proof = merging.proof(2);
     let claimed = merging.lineage.leaf_count;
-    merging.supersede(handle(0xd4, FHE_TYPE_UINT64));
+    merging.update(handle(0xd4, FHE_TYPE_UINT64));
     out.push(Scenario::rejected(
         "proof-predating-a-merging-append",
         "The append merged the proof's peak, so the sibling path it carries no longer exists. The \
@@ -1094,11 +1094,11 @@ fn handle_binding_scenarios() -> Vec<Scenario> {
     // The observation behind the proof service: the proof is of state this observation has not seen.
     let ahead_handle = handle(0xe2, FHE_TYPE_UINT64);
     let mut behind = LineageFixture::new(handle(0xe0, FHE_TYPE_UINT64), &[wallet.pubkey()]);
-    behind.supersede(handle(0xe1, FHE_TYPE_UINT64));
-    behind.supersede(ahead_handle);
+    behind.update(handle(0xe1, FHE_TYPE_UINT64));
+    behind.update(ahead_handle);
     let mut ahead = behind.clone();
-    ahead.supersede(handle(0xe3, FHE_TYPE_UINT64));
-    ahead.supersede(handle(0xe4, FHE_TYPE_UINT64));
+    ahead.update(handle(0xe3, FHE_TYPE_UINT64));
+    ahead.update(handle(0xe4, FHE_TYPE_UINT64));
     out.push(Scenario::rejected(
         "proof-ahead-of-the-observation",
         "The proof service observed more state than this observation did. The claimed count is not \

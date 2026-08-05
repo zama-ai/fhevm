@@ -403,7 +403,7 @@ fn the_ordering_gate_compares_the_two_reads_and_nothing_else() {
 }
 
 /// The state a delegated request is judged against is the deciding read's, not the discovery
-/// read's. Here the handle is live in the first read and superseded in the second: the entry
+/// read's. Here the handle is live in the first read and replaced in the second: the entry
 /// claims current access, and it is refused — the earlier, more favorable bytes are gone and
 /// were never a candidate.
 #[tokio::test]
@@ -417,15 +417,15 @@ async fn the_deciding_state_of_a_delegated_request_is_the_second_reads() {
         .delegated_current(&lineage, handle, delegator.pubkey())
         .typed();
 
-    let mut superseded = lineage.clone();
-    superseded.supersede(handle_on_chain(0x24, FHE_TYPE_UINT64, CHAIN_ID));
+    let mut replaced = lineage.clone();
+    replaced.update(handle_on_chain(0x24, FHE_TYPE_UINT64, CHAIN_ID));
 
     let first = World::at_slot(100)
         .with_lineage(&lineage)
         .with_watermark(signer.pubkey(), 0)
         .with_delegation(&delegation);
     let second = World::at_slot(101)
-        .with_lineage(&superseded)
+        .with_lineage(&replaced)
         .with_watermark(signer.pubkey(), 0)
         .with_delegation(&delegation);
     let reader = ScriptedReader::scripted(vec![first, second]);
@@ -433,7 +433,7 @@ async fn the_deciding_state_of_a_delegated_request_is_the_second_reads() {
 
     let failure = authorize_request(&reader, &ServableKmsPair, context(&deployment), &request)
         .await
-        .expect_err("the handle is superseded at the deciding observation");
+        .expect_err("the handle is no longer current at the deciding observation");
 
     assert!(
         matches!(

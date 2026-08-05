@@ -14,7 +14,7 @@
 //!
 //! The rows, in the order the specification lists them:
 //!
-//! 1. the current handle is superseded;
+//! 1. the current handle is replaced;
 //! 2. the subject set rotates and the owner leaves it;
 //! 3. the delegation is revoked;
 //! 4. an append that does not merge the proof's peak;
@@ -77,7 +77,7 @@ async fn supersession_rejects_a_current_entry_at_the_later_observation() {
     let named = handle(0x10, FHE_TYPE_UINT64);
     let before = LineageFixture::new(named, &[signer.pubkey()]);
     let mut after = before.clone();
-    after.supersede(handle(0x11, FHE_TYPE_UINT64));
+    after.update(handle(0x11, FHE_TYPE_UINT64));
     let request = RequestBuilder::new(&signer)
         .direct_current(&before, named)
         .typed();
@@ -122,7 +122,7 @@ async fn supersession_leaves_the_historical_path_open() {
     let signer = Wallet::new(1);
     let named = handle(0x12, FHE_TYPE_UINT64);
     let mut after = LineageFixture::new(named, &[signer.pubkey()]);
-    after.supersede(handle(0x13, FHE_TYPE_UINT64));
+    after.update(handle(0x13, FHE_TYPE_UINT64));
     let retry = RequestBuilder::new(&signer)
         .historical(&after, named, signer.pubkey(), &after.proof(0), 1)
         .typed();
@@ -150,7 +150,7 @@ async fn subject_rotation_rejects_a_current_entry_at_the_later_observation() {
     let stranger = Wallet::new(9);
     let live = handle(0x21, FHE_TYPE_UINT64);
     let mut before = LineageFixture::new(handle(0x20, FHE_TYPE_UINT64), &[signer.pubkey()]);
-    before.supersede(live);
+    before.update(live);
     let mut after = before.clone();
     after.rotate_subjects(&[stranger.pubkey()]);
     let request = RequestBuilder::new(&signer)
@@ -195,7 +195,7 @@ async fn subject_rotation_does_not_reach_leaves_sealed_before_it() {
     let stranger = Wallet::new(9);
     let sealed = handle(0x22, FHE_TYPE_UINT64);
     let mut after = LineageFixture::new(sealed, &[signer.pubkey()]);
-    after.supersede(handle(0x23, FHE_TYPE_UINT64));
+    after.update(handle(0x23, FHE_TYPE_UINT64));
     let proof = after.proof(0);
     after.rotate_subjects(&[stranger.pubkey()]);
     let request = RequestBuilder::new(&signer)
@@ -307,13 +307,13 @@ async fn an_append_that_leaves_the_peak_alone_still_authorizes() {
     let signer = Wallet::new(1);
     let sealed = handle(0x40, FHE_TYPE_UINT64);
     let mut before = LineageFixture::new(sealed, &[signer.pubkey()]);
-    before.supersede(handle(0x41, FHE_TYPE_UINT64));
-    before.supersede(handle(0x42, FHE_TYPE_UINT64));
+    before.update(handle(0x41, FHE_TYPE_UINT64));
+    before.update(handle(0x42, FHE_TYPE_UINT64));
     assert_eq!(before.lineage.leaf_count, 2);
     let proof = before.proof(0);
     let claimed = before.lineage.leaf_count;
     let mut after = before.clone();
-    after.supersede(handle(0x43, FHE_TYPE_UINT64));
+    after.update(handle(0x43, FHE_TYPE_UINT64));
     assert_eq!(after.lineage.leaf_count, 3);
     let request = RequestBuilder::new(&signer)
         .historical(&before, sealed, signer.pubkey(), &proof, claimed)
@@ -355,14 +355,14 @@ async fn an_append_that_merges_the_peak_asks_for_a_rebuilt_proof() {
     let signer = Wallet::new(1);
     let sealed = handle(0x52, FHE_TYPE_UINT64);
     let mut before = LineageFixture::new(handle(0x50, FHE_TYPE_UINT64), &[signer.pubkey()]);
-    before.supersede(handle(0x51, FHE_TYPE_UINT64));
-    before.supersede(sealed);
-    before.supersede(handle(0x53, FHE_TYPE_UINT64));
+    before.update(handle(0x51, FHE_TYPE_UINT64));
+    before.update(sealed);
+    before.update(handle(0x53, FHE_TYPE_UINT64));
     assert_eq!(before.lineage.leaf_count, 3);
     let proof = before.proof(2);
     let claimed = before.lineage.leaf_count;
     let mut after = before.clone();
-    after.supersede(handle(0x54, FHE_TYPE_UINT64));
+    after.update(handle(0x54, FHE_TYPE_UINT64));
     assert_eq!(after.lineage.leaf_count, 4);
     let request = RequestBuilder::new(&signer)
         .historical(&before, sealed, signer.pubkey(), &proof, claimed)
@@ -422,18 +422,18 @@ async fn a_proof_ahead_of_the_observation_is_retryable_and_then_authorized() {
     let signer = Wallet::new(1);
     let sealed = handle(0x62, FHE_TYPE_UINT64);
     let mut behind = LineageFixture::new(handle(0x60, FHE_TYPE_UINT64), &[signer.pubkey()]);
-    behind.supersede(handle(0x61, FHE_TYPE_UINT64));
-    behind.supersede(sealed);
+    behind.update(handle(0x61, FHE_TYPE_UINT64));
+    behind.update(sealed);
     assert_eq!(behind.lineage.leaf_count, 2);
 
     // The state the proof service observed: two more leaves, and a proof of the sealed handle
     // built against that later state.
     let mut caught_up = behind.clone();
-    caught_up.supersede(handle(0x63, FHE_TYPE_UINT64));
-    caught_up.supersede(handle(0x64, FHE_TYPE_UINT64));
+    caught_up.update(handle(0x63, FHE_TYPE_UINT64));
+    caught_up.update(handle(0x64, FHE_TYPE_UINT64));
     assert_eq!(caught_up.lineage.leaf_count, 4);
-    // Leaf 2 is the one that commits `sealed`: superseding a handle seals the *outgoing* one, so
-    // the leaf appended by `supersede(0x63)` is the one naming 0x62.
+    // Leaf 2 is the one that commits `sealed`: replacing a handle seals the *outgoing* one, so
+    // the leaf appended by `update(0x63)` is the one naming 0x62.
     let proof = caught_up.proof(2);
     let claimed = caught_up.lineage.leaf_count;
     let request = RequestBuilder::new(&signer)

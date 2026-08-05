@@ -104,7 +104,7 @@ pub enum AccessEvidence {
     /// No proof: the handle must be the lineage's current handle and the subject a current
     /// member.
     Current,
-    /// An inclusion proof for a superseded handle, verified against the snapshot's live
+    /// An inclusion proof for a replaced handle, verified against the snapshot's live
     /// peaks.
     Historical(MmrProof),
 }

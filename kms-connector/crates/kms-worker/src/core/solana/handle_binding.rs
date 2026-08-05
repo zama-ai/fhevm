@@ -1,4 +1,4 @@
-//! Handle binding: current membership, or an inclusion proof for a superseded handle.
+//! Handle binding: current membership, or an inclusion proof for a replaced handle.
 //!
 //! The mode is chosen per entry by the presence of an access proof, and one request freely
 //! mixes both. In either mode the subject whose access is established is the entry's owner —
@@ -149,7 +149,7 @@ pub enum InclusionAction {
 pub enum HandleBindingFailure {
     /// Current mode: the lineage's current handle is not the one named. The request is not
     /// silently redirected to whatever is live now — the same handle remains reachable as
-    /// historical access, because supersession seals a leaf for the then-subjects.
+    /// historical access, because replacing a handle seals a leaf for the then-subjects.
     #[error("lineage's current handle is not the requested one")]
     NotCurrentHandle {
         /// The handle the request named.

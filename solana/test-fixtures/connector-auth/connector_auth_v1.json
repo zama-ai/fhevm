@@ -164,7 +164,7 @@
     },
     {
       "name": "historical-after-supersession",
-      "comment": "The handle has been superseded, and the leaf sealed for the signer at that moment proves the access. No new wallet signature is involved: proofs live outside the permit.",
+      "comment": "The handle has been replaced, and the leaf sealed for the signer at that moment proves the access. No new wallet signature is involved: proofs live outside the permit.",
       "result": "valid",
       "request": {
         "permit": {
@@ -2308,8 +2308,8 @@
       }
     },
     {
-      "name": "superseded-current-handle",
-      "comment": "A current-mode entry whose handle has been superseded fails, and is not quietly answered with whatever is current instead. The same handle remains reachable as historical access.",
+      "name": "replaced-current-handle",
+      "comment": "A current-mode entry whose handle is no longer current fails, and is not quietly answered with whatever is current instead. The same handle remains reachable as historical access.",
       "result": "invalid",
       "rule": "handle-not-current",
       "class": "terminal",

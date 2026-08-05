@@ -9,7 +9,7 @@
 //!
 //! * **State is part of the record.** Each record carries the account set it was authorized
 //!   against: pubkey, owning program, and raw data. A rule that reads an account cannot be
-//!   pinned by a request alone, and paraphrasing the account ("a superseded lineage") would make
+//!   pinned by a request alone, and paraphrasing the account ("a lineage whose handle moved on") would make
 //!   the record depend on whoever wrote the paraphrase.
 //! * **Every 64-bit number is a decimal string.** A JSON number reaches a TypeScript consumer as
 //!   a double and silently loses precision above 2^53; chain ids and slots both go there.

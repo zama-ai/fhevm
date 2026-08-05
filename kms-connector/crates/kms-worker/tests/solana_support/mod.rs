@@ -391,16 +391,16 @@ impl LineageFixture {
         self.lineage.encrypted_value_id()
     }
 
-    /// Supersedes the current handle, sealing a historical leaf for each current subject —
+    /// Replaces the current handle, sealing a historical leaf for each current subject —
     /// what the host program does on a write.
-    pub fn supersede(&mut self, new_handle: [u8; 32]) {
-        let superseded = self.lineage.current_handle;
+    pub fn update(&mut self, new_handle: [u8; 32]) {
+        let replaced = self.lineage.current_handle;
         for index in 0..self.lineage.subjects.len() {
             let leaf_index = self.lineage.leaf_count;
             let commitment = historical_access_leaf_commitment(
                 self.account_key,
                 leaf_index,
-                superseded,
+                replaced,
                 self.lineage.subjects[index],
             );
             self.append(commitment);
