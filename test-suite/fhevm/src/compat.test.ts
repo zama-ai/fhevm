@@ -17,6 +17,7 @@ import {
   requiresLegacyKmsCoreConfig,
   requiresLegacyRelayerUrl,
   requiresModernHostAddressArtifacts,
+  supportsConfidentialBridge,
   supportsConsensusDetector,
   supportsHostListenerConsumer,
   supportsUpgradeController,
@@ -384,6 +385,23 @@ describe("compat", () => {
     // Unparsed main sha tags are published by CI and count as modern.
     expect(supportsConsensusDetector(stateFor({ COPROCESSOR_CONSENSUS_DETECTOR_VERSION: "02f6cc0" }))).toBe(true);
     expect(supportsUpgradeController(stateFor({ COPROCESSOR_UPGRADE_CONTROLLER_VERSION: "02f6cc0" }))).toBe(true);
+  });
+
+  test("gates the confidential bridge on v0.14+ host contracts", () => {
+    const stateFor = (env: Record<string, string>, overrides: { group: string }[] = []) => ({
+      versions: { target: "sha" as const, lockName: "sha.json", env, sources: [] },
+      overrides: overrides as never,
+      scenario: testDefaultScenario(),
+    });
+    expect(supportsConfidentialBridge(stateFor({ HOST_VERSION: "v0.13.2" }))).toBe(false);
+    expect(supportsConfidentialBridge(stateFor({ HOST_VERSION: "v0.12.5" }))).toBe(false);
+    expect(supportsConfidentialBridge(stateFor({ HOST_VERSION: "v0.14.0-9" }))).toBe(true);
+    expect(supportsConfidentialBridge(stateFor({ HOST_VERSION: "v0.14.0" }))).toBe(true);
+    // Unset/unparsed tags stay modern, matching every other predicate here: main-sha
+    // bundles are the CI default and must keep running bridge-deploy.
+    expect(supportsConfidentialBridge(stateFor({}))).toBe(true);
+    expect(supportsConfidentialBridge(stateFor({ HOST_VERSION: "13a37bc" }))).toBe(true);
+    expect(supportsConfidentialBridge(stateFor({ HOST_VERSION: "v0.13.2" }, [{ group: "host-contracts" }]))).toBe(true);
   });
 
   test("enables host-listener consumer for v0.13 prereleases and newer bundles", () => {

@@ -14,6 +14,7 @@ import {
   requiresMultichainAclAddress,
   requiresModernHostAddressArtifacts,
   supportsCanonicalProtocolConfigSeeding,
+  supportsConfidentialBridge,
   supportsHostListenerConsumer,
   validateBundleCompatibility,
 } from "../compat/compat";
@@ -668,8 +669,9 @@ export const runStep = async (state: State, step: StepName) => {
       }
       // Multi-chain scenarios run the bridge-deploy step (deploys the LZ endpoint + upgrades the
       // bridge). Provision the empty bridge proxy here via PROVISION_BRIDGE_PROXY so the ACL bakes
-      // its deterministic address before that later upgrade.
-      const provisionBridgeProxy = hostChainsForState(state).length >= 2;
+      // its deterministic address before that later upgrade. Pre-v0.14 host contracts have no
+      // bridge at all, so neither the provisioning nor the later deploy applies to them.
+      const provisionBridgeProxy = hostChainsForState(state).length >= 2 && supportsConfidentialBridge(state);
       await stepComposeTask(
         "host-sc",
         state,
@@ -738,6 +740,12 @@ export const runStep = async (state: State, step: StepName) => {
       const chains = hostChainsForState(state);
       if (chains.length < 2) {
         console.log("[bridge-deploy] skipping: confidential bridge needs >= 2 host chains");
+        break;
+      }
+      if (!supportsConfidentialBridge(state)) {
+        console.log(
+          `[bridge-deploy] skipping: host contracts ${state.versions.env.HOST_VERSION ?? "(unset)"} predate the confidential bridge (< v0.14)`,
+        );
         break;
       }
       const discovery = await ensureDiscovery(state);
