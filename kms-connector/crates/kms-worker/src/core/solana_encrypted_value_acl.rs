@@ -179,7 +179,7 @@ mod tests {
 
     const HOST: SolanaPubkeyBytes = [42; 32];
     const DOMAIN: SolanaPubkeyBytes = [1; 32];
-    const APP: SolanaPubkeyBytes = [2; 32];
+    const AUTHORITY: SolanaPubkeyBytes = [2; 32];
     const OWNER: SolanaPubkeyBytes = [3; 32];
     const STRANGER: SolanaPubkeyBytes = [4; 32];
     const LABEL: [u8; 32] = *b"balance_________________________";
@@ -199,12 +199,12 @@ mod tests {
         handle: HandleBytes,
         subjects: &[SolanaPubkeyBytes],
     ) -> EncryptedValueAccount {
-        let encrypted_value_id = derive_encrypted_value_id(DOMAIN, APP, LABEL);
+        let encrypted_value_id = derive_encrypted_value_id(DOMAIN, AUTHORITY, LABEL);
         let (account, bump) = encrypted_value_acl_address(HOST, encrypted_value_id);
         EncryptedValueAccount {
             acl: EncryptedValue {
                 domain: DOMAIN,
-                encrypted_value_account_authority: APP,
+                encrypted_value_account_authority: AUTHORITY,
                 label: LABEL,
                 current_handle: handle,
                 subjects: subjects.to_vec(),

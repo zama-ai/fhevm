@@ -339,7 +339,7 @@ fn accepting_scenarios() -> Vec<Scenario> {
     let permissive_handle = handle(0x50, FHE_TYPE_UINT64);
     let permissive_encrypted_value_account = EncryptedValueAccountFixture::in_domain(
         foreign_domain,
-        APP,
+        AUTHORITY,
         LABEL,
         permissive_handle,
         &[wallet.pubkey()],
@@ -392,14 +392,14 @@ fn accepting_scenarios() -> Vec<Scenario> {
     let handle_b = handle(0x72, FHE_TYPE_UINT64);
     let encrypted_value_account_a = EncryptedValueAccountFixture::in_domain(
         DOMAIN,
-        APP,
+        AUTHORITY,
         label_a,
         handle_a,
         &[first_delegator.pubkey()],
     );
     let encrypted_value_account_b = EncryptedValueAccountFixture::in_domain(
         DOMAIN,
-        APP,
+        AUTHORITY,
         label_b,
         handle_b,
         &[second_delegator.pubkey()],
@@ -456,8 +456,13 @@ fn accepting_scenarios() -> Vec<Scenario> {
         label[0..2].copy_from_slice(&index.to_be_bytes());
         let mut bytes = handle(0x80, FHE_TYPE_UINT64);
         bytes[0..2].copy_from_slice(&index.to_be_bytes());
-        let encrypted_value_account =
-            EncryptedValueAccountFixture::in_domain(DOMAIN, APP, label, bytes, &[wallet.pubkey()]);
+        let encrypted_value_account = EncryptedValueAccountFixture::in_domain(
+            DOMAIN,
+            AUTHORITY,
+            label,
+            bytes,
+            &[wallet.pubkey()],
+        );
         many_builder = many_builder.direct_current(&encrypted_value_account, bytes);
         many_world = many_world.with_encrypted_value_account(&encrypted_value_account);
     }
@@ -933,7 +938,7 @@ fn encrypted_value_account_scenarios() -> Vec<Scenario> {
     let unsigned_domain_handle = handle(0x14, FHE_TYPE_UINT64);
     let unsigned_domain_encrypted_value_account = EncryptedValueAccountFixture::in_domain(
         [0x62; 32],
-        APP,
+        AUTHORITY,
         LABEL,
         unsigned_domain_handle,
         &[wallet.pubkey()],
@@ -1254,7 +1259,7 @@ fn delegation_scenarios() -> Vec<Scenario> {
     let (expected_key, _) = delegation.address();
     let mut other_tuple =
         DelegationFixture::live(Wallet::new(9).pubkey(), signer.pubkey(), OBSERVED_SLOT);
-    other_tuple.encrypted_value_account_authority = APP;
+    other_tuple.encrypted_value_account_authority = AUTHORITY;
     out.push(Scenario::rejected(
         "delegation-record-of-another-tuple",
         "A record sitting at the canonical address while naming a different tuple is refused: the \

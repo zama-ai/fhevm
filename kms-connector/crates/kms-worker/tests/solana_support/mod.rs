@@ -51,7 +51,7 @@ pub const CHAIN_ID: u64 = SOLANA_CHAIN_TYPE_BIT | 0x0123_4567_89ab_cdef;
 /// The ACL domain of the default encrypted value account.
 pub const DOMAIN: SolanaPubkeyBytes = [1; 32];
 /// The encrypted value account authority of the default encrypted value account.
-pub const APP: SolanaPubkeyBytes = [2; 32];
+pub const AUTHORITY: SolanaPubkeyBytes = [2; 32];
 /// The label of the default encrypted value account.
 pub const LABEL: [u8; 32] = *b"balance_________________________";
 
@@ -380,7 +380,7 @@ impl EncryptedValueAccountFixture {
     /// An encrypted value account in the fixture domain and app, holding `current_handle` for
     /// `subjects`.
     pub fn new(current_handle: [u8; 32], subjects: &[SolanaPubkeyBytes]) -> Self {
-        Self::in_domain(DOMAIN, APP, LABEL, current_handle, subjects)
+        Self::in_domain(DOMAIN, AUTHORITY, LABEL, current_handle, subjects)
     }
 
     /// An encrypted value account in an arbitrary domain, app and label.
@@ -506,7 +506,7 @@ impl DelegationFixture {
         Self {
             delegator,
             delegate,
-            encrypted_value_account_authority: APP,
+            encrypted_value_account_authority: AUTHORITY,
             expiration_slot: observed_slot + 100,
             delegation_counter: 1,
             last_update_slot: observed_slot.saturating_sub(1),

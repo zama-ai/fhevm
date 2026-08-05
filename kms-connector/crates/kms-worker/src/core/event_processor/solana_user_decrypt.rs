@@ -479,7 +479,7 @@ mod tests {
     const CHAIN_ID: u64 = crate::core::config::SOLANA_CHAIN_TYPE_BIT | 7777;
     const HOST: SolanaPubkeyBytes = [42u8; 32];
     const DOMAIN: SolanaPubkeyBytes = [1u8; 32];
-    const APP: SolanaPubkeyBytes = [2u8; 32];
+    const AUTHORITY: SolanaPubkeyBytes = [2u8; 32];
     const LABEL: [u8; 32] = *b"balance_________________________";
     /// Wraps a raw ed25519 seed in a minimal PKCS#8 v1 document.
     fn pkcs8_from_seed(seed: &[u8; 32]) -> Vec<u8> {
@@ -512,12 +512,12 @@ mod tests {
         handle: HandleBytes,
         subjects: &[SolanaPubkeyBytes],
     ) -> EncryptedValueAccount {
-        let encrypted_value_id = derive_encrypted_value_id(DOMAIN, APP, LABEL);
+        let encrypted_value_id = derive_encrypted_value_id(DOMAIN, AUTHORITY, LABEL);
         let (account, bump) = encrypted_value_acl_address(HOST, encrypted_value_id);
         EncryptedValueAccount {
             acl: EncryptedValue {
                 domain: DOMAIN,
-                encrypted_value_account_authority: APP,
+                encrypted_value_account_authority: AUTHORITY,
                 label: LABEL,
                 current_handle: handle,
                 subjects: subjects.to_vec(),

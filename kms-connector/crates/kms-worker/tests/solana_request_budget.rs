@@ -49,7 +49,7 @@ fn request_naming(wallet: &Wallet, handles: &[[u8; 32]]) -> SolanaUserDecryptReq
         label[0..2].copy_from_slice(&(index as u16).to_be_bytes());
         let encrypted_value_account = EncryptedValueAccountFixture::in_domain(
             DOMAIN,
-            APP,
+            AUTHORITY,
             label,
             *handle,
             &[wallet.pubkey()],

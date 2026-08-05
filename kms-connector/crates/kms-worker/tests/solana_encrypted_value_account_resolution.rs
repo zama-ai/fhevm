@@ -91,7 +91,7 @@ fn a_encrypted_value_account_named_by_its_value_key_resolves() {
     .expect("a well-formed encrypted value account resolves");
 
     assert_eq!(resolved.account_key(), encrypted_value_account.account_key);
-    assert_eq!(resolved.encrypted_value_account_authority(), APP);
+    assert_eq!(resolved.encrypted_value_account_authority(), AUTHORITY);
     assert_eq!(resolved.domain(), DOMAIN);
 }
 
@@ -221,7 +221,7 @@ fn a_valid_encrypted_value_account_at_another_address_is_never_consulted() {
     let named = EncryptedValueAccountFixture::new(handle(0x15, FHE_TYPE_UINT64), &[owner]);
     let elsewhere = EncryptedValueAccountFixture::in_domain(
         [0x44; 32],
-        APP,
+        AUTHORITY,
         LABEL,
         handle(0x15, FHE_TYPE_UINT64),
         &[owner],
@@ -257,7 +257,7 @@ fn trailing_bytes_after_the_encrypted_value_account_body_are_accepted() {
     )
     .expect("a realloc-grown account resolves");
 
-    assert_eq!(resolved.encrypted_value_account_authority(), APP);
+    assert_eq!(resolved.encrypted_value_account_authority(), AUTHORITY);
     assert_eq!(
         8 + borsh::to_vec(resolved.encrypted_value())
             .expect("the encrypted value account serializes")
@@ -379,7 +379,7 @@ fn a_encrypted_value_account_outside_the_signed_scope_is_rejected() {
     let foreign_domain: SolanaPubkeyBytes = [0x61; 32];
     let encrypted_value_account = EncryptedValueAccountFixture::in_domain(
         foreign_domain,
-        APP,
+        AUTHORITY,
         LABEL,
         handle(0x1c, FHE_TYPE_UINT64),
         &[Wallet::new(1).pubkey()],
@@ -404,7 +404,7 @@ fn a_encrypted_value_account_outside_the_signed_scope_is_rejected() {
 fn a_permissive_permit_admits_a_encrypted_value_account_of_any_domain() {
     let encrypted_value_account = EncryptedValueAccountFixture::in_domain(
         [0x71; 32],
-        APP,
+        AUTHORITY,
         LABEL,
         handle(0x1d, FHE_TYPE_UINT64),
         &[Wallet::new(1).pubkey()],
@@ -434,7 +434,7 @@ async fn a_foreign_domain_handle_later_in_the_batch_rejects_the_whole_request() 
     let in_scope = EncryptedValueAccountFixture::new(in_scope_handle, &[wallet.pubkey()]);
     let out_of_scope = EncryptedValueAccountFixture::in_domain(
         [0x81; 32],
-        APP,
+        AUTHORITY,
         LABEL,
         out_of_scope_handle,
         &[wallet.pubkey()],

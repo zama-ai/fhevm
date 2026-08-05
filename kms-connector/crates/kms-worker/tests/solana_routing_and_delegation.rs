@@ -171,12 +171,12 @@ async fn a_batch_mixes_a_direct_entry_and_two_delegators() {
     let first = handle(0x21, FHE_TYPE_UINT64);
     let second = handle(0x22, FHE_TYPE_UINT64);
     let own_encrypted_value_account =
-        EncryptedValueAccountFixture::in_domain(DOMAIN, APP, LABEL, own, &[signer.pubkey()]);
+        EncryptedValueAccountFixture::in_domain(DOMAIN, AUTHORITY, LABEL, own, &[signer.pubkey()]);
     let mut first_label = LABEL;
     first_label[0] = b'1';
     let first_encrypted_value_account = EncryptedValueAccountFixture::in_domain(
         DOMAIN,
-        APP,
+        AUTHORITY,
         first_label,
         first,
         &[first_delegator.pubkey()],
@@ -185,7 +185,7 @@ async fn a_batch_mixes_a_direct_entry_and_two_delegators() {
     second_label[0] = b'2';
     let second_encrypted_value_account = EncryptedValueAccountFixture::in_domain(
         DOMAIN,
-        APP,
+        AUTHORITY,
         second_label,
         second,
         &[second_delegator.pubkey()],
@@ -571,8 +571,13 @@ async fn a_delegation_for_another_app_does_not_authorize() {
     let delegator = Wallet::new(2);
     let other_app: SolanaPubkeyBytes = [0x77; 32];
     let live = handle(0x32, FHE_TYPE_UINT64);
-    let encrypted_value_account =
-        EncryptedValueAccountFixture::in_domain(DOMAIN, APP, LABEL, live, &[delegator.pubkey()]);
+    let encrypted_value_account = EncryptedValueAccountFixture::in_domain(
+        DOMAIN,
+        AUTHORITY,
+        LABEL,
+        live,
+        &[delegator.pubkey()],
+    );
     let mut elsewhere = DelegationFixture::live(delegator.pubkey(), signer.pubkey(), OBSERVED_SLOT);
     elsewhere.encrypted_value_account_authority = other_app;
     let request = RequestBuilder::new(&signer)
@@ -608,7 +613,7 @@ async fn a_delegation_record_naming_another_tuple_is_rejected() {
     let (expected_key, _) = expected.address();
     // A record for a different delegator, planted at the address the request will read.
     let mut foreign = DelegationFixture::live(stranger.pubkey(), signer.pubkey(), OBSERVED_SLOT);
-    foreign.encrypted_value_account_authority = APP;
+    foreign.encrypted_value_account_authority = AUTHORITY;
     let request = RequestBuilder::new(&signer)
         .delegated_current(&encrypted_value_account, live, delegator.pubkey())
         .typed();
