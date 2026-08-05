@@ -112,6 +112,13 @@ impl DbKeyCache {
         capacity: usize,
         representation: ServerKeyRepresentation,
     ) -> anyhow::Result<Self> {
+        #[cfg(feature = "gpu")]
+        if representation == ServerKeyRepresentation::Legacy {
+            anyhow::bail!(
+                "legacy server-key representation is not supported by GPU workers; \
+                 select compressed-xof"
+            );
+        }
         let capacity = NonZeroUsize::new(capacity)
             .ok_or_else(|| anyhow::anyhow!("Cache capacity must be greater than zero"))?;
         info!(?representation, "Pinned server-key representation");
