@@ -17,18 +17,21 @@ Then, zkproof-worker should notify the **transaction-sender** on the **verify_pr
 
 ### Note on Missed Events
 
-Currently, **gw-listener** uses WebSocket subscriptions via `eth_subscribe` for input proof verification events. If the connection to the node is dropped and then recovered internally in alloy-rs, the subscription of events will start from the head, possibly skipping events. This is acceptable as input proof verification would be retried by the client. Moreover, replaying
-old input verification events is unnecessary as input verification is a synchronous request/response interaction on the client side. Finally, no data on the GW will be left in an inconsistent state.
+**gw-listener** polls the gateway over HTTP JSON-RPC using `get_block_number` and
+`get_logs` for input proof verification events. Processed block progress is
+stored in the database, so after a restart the listener resumes from the last
+stored block instead of relying on an active WebSocket subscription.
 
-A future version of the **gw-listener** could change that behaviour and could replay these events.
-
-For **gw-listener** to work correctly with above in mind, the assumption is that alloy-rs would retry "indefinitely". Namely, that the following configuration options are set to high
-enough values:
+For **gw-listener** to tolerate transient gateway RPC failures, the following
+configuration options should be set to high enough values:
 
 ```rust
-    #[arg(long, default_value = "1000000")]
+    #[arg(long, default_value_t = DEFAULT_GATEWAY_HTTP_MAX_RETRIES)]
     provider_max_retries: u32,
 
     #[arg(long, default_value = "4s", value_parser = parse_duration)]
     provider_retry_interval: Duration,
+
+    #[arg(long, default_value = "70s", value_parser = parse_duration)]
+    health_check_timeout: Duration,
 ```

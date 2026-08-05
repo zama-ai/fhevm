@@ -1,7 +1,7 @@
 mod common;
 
 use alloy::network::TxSigner;
-use alloy::providers::{Provider, ProviderBuilder, WsConnect};
+use alloy::providers::{Provider, ProviderBuilder};
 use alloy::signers::local::PrivateKeySigner;
 use common::{is_coprocessor_config_error, CiphertextCommits, TestEnvironment};
 
@@ -13,8 +13,8 @@ use std::time::Duration;
 use test_harness::db_utils::{insert_ciphertext_digest, insert_random_keys_and_host_chain};
 use tokio::time::sleep;
 use transaction_sender::{
-    is_backend_gone, ConfigSettings, FillersWithoutNonceManagement, NonceManagedProvider,
-    TransactionSender,
+    gateway_http_client, is_gateway_provider_exhausted, ConfigSettings,
+    FillersWithoutNonceManagement, NonceManagedProvider, TransactionSender,
 };
 
 #[rstest]
@@ -28,14 +28,12 @@ async fn add_ciphertext_digests(#[case] signer_type: SignerType) -> anyhow::Resu
     let env = TestEnvironment::new(signer_type).await?;
     let provider_deploy = ProviderBuilder::new()
         .wallet(env.wallet.clone())
-        .connect_ws(WsConnect::new(env.ws_endpoint_url()))
-        .await?;
+        .connect_http(env.http_endpoint_url());
     let provider = NonceManagedProvider::new(
         ProviderBuilder::default()
             .filler(FillersWithoutNonceManagement::default())
             .wallet(env.wallet.clone())
-            .connect_ws(WsConnect::new(env.ws_endpoint_url()))
-            .await?,
+            .connect_http(env.http_endpoint_url()),
         Some(env.wallet.default_signer().address()),
     );
 
@@ -124,14 +122,12 @@ async fn ciphertext_digest_already_added(#[case] signer_type: SignerType) -> any
     let env = TestEnvironment::new(signer_type).await?;
     let provider_deploy = ProviderBuilder::new()
         .wallet(env.wallet.clone())
-        .connect_ws(WsConnect::new(env.ws_endpoint_url()))
-        .await?;
+        .connect_http(env.http_endpoint_url());
     let provider = NonceManagedProvider::new(
         ProviderBuilder::default()
             .filler(FillersWithoutNonceManagement::default())
             .wallet(env.wallet.clone())
-            .connect_ws(WsConnect::new(env.ws_endpoint_url()))
-            .await?,
+            .connect_http(env.http_endpoint_url()),
         Some(env.wallet.default_signer().address()),
     );
 
@@ -218,14 +214,12 @@ async fn recover_from_transport_error(#[case] signer_type: SignerType) -> anyhow
     let mut env = TestEnvironment::new(signer_type).await?;
     let provider_deploy = ProviderBuilder::new()
         .wallet(env.wallet.clone())
-        .connect_ws(WsConnect::new(env.ws_endpoint_url()))
-        .await?;
+        .connect_http(env.http_endpoint_url());
     let provider = NonceManagedProvider::new(
         ProviderBuilder::default()
             .filler(FillersWithoutNonceManagement::default())
             .wallet(env.wallet.clone())
-            .connect_ws(WsConnect::new(env.ws_endpoint_url()))
-            .await?,
+            .connect_http(env.http_endpoint_url()),
         Some(env.wallet.default_signer().address()),
     );
 
@@ -301,7 +295,9 @@ async fn recover_from_transport_error(#[case] signer_type: SignerType) -> anyhow
 #[case::aws_kms(SignerType::AwsKms)]
 #[tokio::test]
 #[serial(db)]
-async fn stop_on_backend_gone(#[case] signer_type: SignerType) -> anyhow::Result<()> {
+async fn stop_on_gateway_provider_exhausted(#[case] signer_type: SignerType) -> anyhow::Result<()> {
+    let http_max_retries = 2;
+    let http_retry_interval = Duration::from_millis(50);
     let conf = ConfigSettings {
         add_ciphertexts_max_retries: 2,
         graceful_shutdown_timeout: Duration::from_secs(2),
@@ -314,24 +310,20 @@ async fn stop_on_backend_gone(#[case] signer_type: SignerType) -> anyhow::Result
             .await?;
     let provider_deploy = ProviderBuilder::new()
         .wallet(env.wallet.clone())
-        .connect_ws(
-            // Reduce the retries count and the interval for alloy's internal retry to make this test faster.
-            WsConnect::new(env.ws_endpoint_url())
-                .with_max_retries(1)
-                .with_retry_interval(Duration::from_millis(200)),
-        )
-        .await?;
+        .connect_client(gateway_http_client(
+            &env.http_endpoint_url(),
+            http_max_retries,
+            http_retry_interval,
+        ));
     let provider = NonceManagedProvider::new(
         ProviderBuilder::default()
             .filler(FillersWithoutNonceManagement::default())
             .wallet(env.wallet.clone())
-            .connect_ws(
-                // Reduce the retries count and the interval for alloy's internal retry to make this test faster.
-                WsConnect::new(env.ws_endpoint_url())
-                    .with_max_retries(1)
-                    .with_retry_interval(Duration::from_millis(200)),
-            )
-            .await?,
+            .connect_client(gateway_http_client(
+                &env.http_endpoint_url(),
+                http_max_retries,
+                http_retry_interval,
+            )),
         Some(env.wallet.default_signer().address()),
     );
 
@@ -397,9 +389,9 @@ async fn stop_on_backend_gone(#[case] signer_type: SignerType) -> anyhow::Result
         sleep(Duration::from_millis(500)).await;
     }
 
-    // Expect that the sender will stop on its own due to BackendGone.
+    // Expect that the sender will stop on its own due to gateway provider exhaustion.
     let err = run_handle.await?.err().unwrap();
-    assert!(is_backend_gone(&err));
+    assert!(is_gateway_provider_exhausted(&err));
     Ok(())
 }
 
@@ -426,8 +418,7 @@ async fn retry_mechanism(#[case] signer_type: SignerType) -> anyhow::Result<()> 
         ProviderBuilder::default()
             .filler(FillersWithoutNonceManagement::default())
             .wallet(wallet)
-            .connect_ws(WsConnect::new(env.ws_endpoint_url()))
-            .await?,
+            .connect_http(env.http_endpoint_url()),
         Some(env.wallet.default_signer().address()),
     );
 
@@ -521,14 +512,12 @@ async fn retry_on_aws_kms_error(#[case] signer_type: SignerType) -> anyhow::Resu
             .await?;
     let provider_deploy = ProviderBuilder::new()
         .wallet(env.wallet.clone())
-        .connect_ws(WsConnect::new(env.ws_endpoint_url()))
-        .await?;
+        .connect_http(env.http_endpoint_url());
     let provider = NonceManagedProvider::new(
         ProviderBuilder::default()
             .filler(FillersWithoutNonceManagement::default())
             .wallet(env.wallet.clone())
-            .connect_ws(WsConnect::new(env.ws_endpoint_url()))
-            .await?,
+            .connect_http(env.http_endpoint_url()),
         Some(env.wallet.default_signer().address()),
     );
 
@@ -617,14 +606,12 @@ async fn stop_retrying_add_ciphertext_on_gw_config_error(
             .await?;
     let provider_deploy = ProviderBuilder::new()
         .wallet(env.wallet.clone())
-        .connect_ws(WsConnect::new(env.ws_endpoint_url()))
-        .await?;
+        .connect_http(env.http_endpoint_url());
     let provider = NonceManagedProvider::new(
         ProviderBuilder::default()
             .filler(FillersWithoutNonceManagement::default())
             .wallet(env.wallet.clone())
-            .connect_ws(WsConnect::new(env.ws_endpoint_url()))
-            .await?,
+            .connect_http(env.http_endpoint_url()),
         Some(env.wallet.default_signer().address()),
     );
 

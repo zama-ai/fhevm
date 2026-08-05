@@ -50,6 +50,12 @@ export const COMPAT_MATRIX = {
       unparsed: "modern" as const,
     },
     {
+      key: "COPROCESSOR_GW_LISTENER_VERSION",
+      below: [0, 13, 0] as CompatSemver,
+      profile: "legacy-gw-listener-gateway-ws-url",
+      unparsed: "modern" as const,
+    },
+    {
       key: "COPROCESSOR_HOST_LISTENER_VERSION",
       below: [0, 14, 0] as CompatSemver,
       profile: "legacy-host-listener-no-protocol-config-address",
@@ -93,6 +99,12 @@ export const COMPAT_MATRIX = {
     },
     {
       key: "COPROCESSOR_TX_SENDER_VERSION",
+      below: [0, 13, 0] as CompatSemver,
+      profile: "legacy-tx-sender-gateway-ws-url",
+      unparsed: "modern" as const,
+    },
+    {
+      key: "COPROCESSOR_TX_SENDER_VERSION",
       below: [0, 12, 0] as CompatSemver,
       profile: "legacy-tx-sender-gateway-flags",
       unparsed: "modern" as const,
@@ -132,6 +144,14 @@ const SHIM_PROFILES = {
   "legacy-gw-listener-kms-generation-address": {
     coprocessorArgs: {
       "gw-listener": [["--kms-generation-address", { env: "KMS_GENERATION_ADDRESS" }]],
+    },
+    coprocessorDropFlags: {},
+    connectorEnv: {},
+    composeEnv: {},
+  },
+  "legacy-gw-listener-gateway-ws-url": {
+    coprocessorArgs: {
+      "gw-listener": [["--gw-url", { env: "GATEWAY_WS_URL" }]],
     },
     coprocessorDropFlags: {},
     connectorEnv: {},
@@ -226,6 +246,14 @@ const SHIM_PROFILES = {
     coprocessorArgs: {},
     coprocessorDropFlags: {},
     connectorEnv: { KMS_CONNECTOR_CHAIN_ID: "KMS_CONNECTOR_GATEWAY_CHAIN_ID" },
+    composeEnv: {},
+  },
+  "legacy-tx-sender-gateway-ws-url": {
+    coprocessorArgs: {
+      "transaction-sender": [["--gateway-url", { env: "GATEWAY_WS_URL" }]],
+    },
+    coprocessorDropFlags: {},
+    connectorEnv: {},
     composeEnv: {},
   },
   "legacy-tx-sender-host-chain-url": {

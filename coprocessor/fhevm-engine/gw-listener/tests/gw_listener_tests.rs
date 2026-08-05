@@ -4,7 +4,7 @@ use alloy::{
     network::EthereumWallet,
     node_bindings::{Anvil, AnvilInstance},
     primitives::U256,
-    providers::{Provider, ProviderBuilder, WsConnect},
+    providers::{Provider, ProviderBuilder},
     signers::local::PrivateKeySigner,
     sol,
 };
@@ -85,8 +85,7 @@ async fn verify_proof_request_inserted_into_db() -> anyhow::Result<()> {
     let env = TestEnvironment::new().await?;
     let provider = ProviderBuilder::new()
         .wallet(env.wallet)
-        .connect_ws(WsConnect::new(env.anvil.ws_endpoint_url()))
-        .await?;
+        .connect_http(env.anvil.endpoint_url());
     let input_verification = InputVerification::deploy(&provider).await?;
     let gw_listener = GatewayListener::new(
         *input_verification.address(),
