@@ -13,12 +13,13 @@ use fhevm_engine_common::utils::to_hex;
 use fhevm_engine_common::versioning::{run_stack_version_listener, StackMode};
 use sqlx::{postgres::PgPoolOptions, Pool, Postgres, Row};
 use tokio_util::sync::CancellationToken;
-use tracing::{debug, error, info};
+use tracing::{debug, error, info, warn};
 
 use crate::drift_detector::{DriftDetector, EventContext};
 use crate::metrics::{
     GET_BLOCK_NUM_FAIL_COUNTER, GET_BLOCK_NUM_SUCCESS_COUNTER, GET_LOGS_FAIL_COUNTER,
-    GET_LOGS_SUCCESS_COUNTER, VERIFY_PROOF_FAIL_COUNTER, VERIFY_PROOF_SUCCESS_COUNTER,
+    GET_LOGS_SUCCESS_COUNTER, VERIFY_PROOF_FAIL_COUNTER, VERIFY_PROOF_REPLAY_COUNTER,
+    VERIFY_PROOF_SUCCESS_COUNTER,
 };
 use crate::ConfigSettings;
 use crate::HealthStatus;
@@ -224,16 +225,33 @@ impl<P: Provider<Ethereum> + Clone + 'static> GatewayListener<P> {
                         match log.address() {
                             a if a == self.input_verification_address => {
                                 if let Ok(event) = InputVerification::InputVerificationEvents::decode_log(&log.inner) {
-                                    // This listener only reacts to proof requests. Other known InputVerification
-                                    // events are expected when multiple coprocessors interact with the gateway.
-                                    if let InputVerification::InputVerificationEvents::VerifyProofRequest(request) = event.data {
-                                        self.verify_proof_request(db_pool, request, log.clone()).await.
-                                            inspect(|_| {
-                                                verify_proof_success += 1;
-                                            }).inspect_err(|e| {
-                                                error!(error = %e, "VerifyProofRequest processing failed");
-                                                VERIFY_PROOF_FAIL_COUNTER.inc();
-                                        })?;
+                                    match event.data {
+                                        InputVerification::InputVerificationEvents::VerifyProofRequest(request) => {
+                                            self.verify_proof_request(db_pool, request, log.clone()).await.
+                                                inspect(|_| {
+                                                    verify_proof_success += 1;
+                                                }).inspect_err(|e| {
+                                                    error!(error = %e, "VerifyProofRequest processing failed");
+                                                    VERIFY_PROOF_FAIL_COUNTER.inc();
+                                            })?;
+                                        }
+                                        InputVerification::InputVerificationEvents::VerifyProofResponse(response) => {
+                                            let zk_proof_id = response.zkProofId.to::<i64>();
+                                            self.verify_proof_accepted(db_pool, response).await.inspect_err(|e| {
+                                                error!(zk_proof_id, error = %e, "VerifyProofResponse processing failed");
+                                            })?;
+                                        }
+                                        InputVerification::InputVerificationEvents::RejectProofResponse(response) => {
+                                            let zk_proof_id = response.zkProofId.to::<i64>();
+                                            self.verify_proof_rejected(db_pool, response).await.inspect_err(|e| {
+                                                error!(zk_proof_id, error = %e, "RejectProofResponse processing failed");
+                                            })?;
+                                        }
+                                        _ => {
+                                            // Per-coprocessor response-call events are expected while
+                                            // consensus is still being collected. Only the final events
+                                            // above determine whether a local replay is safe.
+                                        }
                                     }
                                 } else {
                                     error!(log = ?log, "Failed to decode InputVerification event log");
@@ -514,6 +532,156 @@ impl<P: Provider<Ethereum> + Clone + 'static> GatewayListener<P> {
         )
         .execute(tx.as_mut())
         .await?;
+        tx.commit().await?;
+        Ok(())
+    }
+
+    async fn verify_proof_accepted(
+        &self,
+        db_pool: &Pool<Postgres>,
+        response: InputVerification::VerifyProofResponse,
+    ) -> anyhow::Result<()> {
+        let zk_proof_id = response.zkProofId.to::<i64>();
+        let expected_handles = response
+            .ctHandles
+            .iter()
+            .map(|handle| handle.as_slice().to_vec())
+            .collect::<Vec<_>>();
+        let handles = expected_handles.concat();
+
+        let Some(mut tx) = fhevm_engine_common::versioning::begin_write_guarded(
+            db_pool,
+            self.stack_mode.gcs_mode(),
+        )
+        .await?
+        else {
+            info!(
+                zk_proof_id,
+                "Cutover completed — skipping proof replay scheduling"
+            );
+            return Ok(());
+        };
+        let result = sqlx::query!(
+            "UPDATE verify_proofs
+             SET verified = NULL,
+                 verified_at = NOW(),
+                 handles = $2,
+                 retry_count = 0,
+                 last_error = NULL,
+                 last_retry_at = NULL
+             WHERE zk_proof_id = $1
+               AND verified IS DISTINCT FROM TRUE
+               AND (verified = FALSE OR handles IS NULL)",
+            zk_proof_id,
+            handles,
+        )
+        .execute(tx.as_mut())
+        .await?;
+
+        let missing_ciphertexts = sqlx::query_scalar::<_, i64>(
+            "SELECT COUNT(*)
+             FROM unnest($1::BYTEA[]) AS expected(handle)
+             WHERE NOT EXISTS (
+                 SELECT 1 FROM ciphertexts c
+                 WHERE c.handle = expected.handle AND c.ciphertext IS NOT NULL
+             )",
+        )
+        .bind(&expected_handles)
+        .fetch_one(tx.as_mut())
+        .await?;
+
+        if missing_ciphertexts == 0 {
+            sqlx::query(
+                "DELETE FROM verify_proofs
+                 WHERE zk_proof_id = $1 AND verified IS DISTINCT FROM TRUE",
+            )
+            .bind(zk_proof_id)
+            .execute(tx.as_mut())
+            .await?;
+            debug!(
+                zk_proof_id,
+                "Gateway-accepted input ciphertexts are already available locally"
+            );
+        } else if result.rows_affected() > 0 {
+            warn!(
+                zk_proof_id,
+                missing_ciphertexts,
+                "Gateway accepted locally unavailable proof; scheduling local replay"
+            );
+            VERIFY_PROOF_REPLAY_COUNTER.inc();
+            sqlx::query!(
+                "SELECT pg_notify($1, '')",
+                self.conf.verify_proof_req_db_channel
+            )
+            .execute(tx.as_mut())
+            .await?;
+        } else {
+            let replay_pending = sqlx::query_scalar::<_, bool>(
+                "SELECT EXISTS (
+                     SELECT 1 FROM verify_proofs
+                     WHERE zk_proof_id = $1
+                       AND verified IS NULL
+                       AND handles IS NOT NULL
+                 )",
+            )
+            .bind(zk_proof_id)
+            .fetch_one(tx.as_mut())
+            .await?;
+
+            if replay_pending {
+                debug!(
+                    zk_proof_id,
+                    "Gateway-accepted proof replay is already pending"
+                );
+            } else {
+                error!(
+                    zk_proof_id,
+                    missing_ciphertexts,
+                    "Gateway accepted proof, but local ciphertexts and retained proof are missing"
+                );
+                VERIFY_PROOF_FAIL_COUNTER.inc();
+            }
+        }
+        tx.commit().await?;
+        Ok(())
+    }
+
+    async fn verify_proof_rejected(
+        &self,
+        db_pool: &Pool<Postgres>,
+        response: InputVerification::RejectProofResponse,
+    ) -> anyhow::Result<()> {
+        let zk_proof_id = response.zkProofId.to::<i64>();
+        let Some(mut tx) = fhevm_engine_common::versioning::begin_write_guarded(
+            db_pool,
+            self.stack_mode.gcs_mode(),
+        )
+        .await?
+        else {
+            info!(
+                zk_proof_id,
+                "Cutover completed — skipping rejected proof cleanup"
+            );
+            return Ok(());
+        };
+        let result = sqlx::query!(
+            "DELETE FROM verify_proofs WHERE zk_proof_id = $1 AND verified IS DISTINCT FROM TRUE",
+            zk_proof_id,
+        )
+        .execute(tx.as_mut())
+        .await?;
+
+        if result.rows_affected() > 0 {
+            info!(
+                zk_proof_id,
+                "Gateway rejected proof; discarded retained local proof"
+            );
+        } else {
+            debug!(
+                zk_proof_id,
+                "Gateway rejection found no retained local proof to discard"
+            );
+        }
         tx.commit().await?;
         Ok(())
     }
