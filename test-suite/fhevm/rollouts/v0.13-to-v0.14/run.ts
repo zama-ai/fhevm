@@ -157,44 +157,35 @@ const hostChainTargets = async (ctx: RolloutRunContext): Promise<HostChainTarget
 };
 
 /**
- * v0.14 makes ProtocolConfig the single source of KMS context truth and requires every
- * non-canonical host chain to mirror the canonical chain's context, so the anchors match
- * across chains. The canonical chain upgrades its proxy in place; the others re-seed their
- * proxy from a live read of the canonical one.
+ * Moves every host chain's ProtocolConfig from v0.13 to v0.14, canonical chain first.
  *
- * The non-canonical deploy container's templated env exposes only its own chain's RPC_URL,
- * so the canonical chain's node has to be named explicitly. `host-node` is the default
- * chain's container on the shared compose network.
+ * v0.14 makes ProtocolConfig the single source of KMS context truth and expects every
+ * non-canonical host chain's context to match the canonical chain's. Every chain upgrades its
+ * own proxy in place: `task:upgradeProtocolConfig` calls `reinitializeV2`, which rebuilds the
+ * epoch-lifecycle shape from that proxy's own stored context, so a chain already mirroring
+ * canonical keeps mirroring it.
+ *
+ * The canonical-seeding path (`task:deployProtocolConfigFromCanonical`) is deliberately not
+ * used. It calls `initializeFromCanonical`, guarded by `onlyFromEmptyProxy`, which requires an
+ * initialized version of exactly 1 — it bootstraps a brand-new secondary chain onto a live
+ * canonical one. Every chain in an N-1 -> N rollout already carries an initialized
+ * ProtocolConfig, so that path reverts with `NotInitializingFromEmptyProxy()` (selector
+ * 0x6f4f731f). Seeding from canonical is a boot concern; a rollout upgrades in place.
  */
-const CANONICAL_NODE_RPC_URL = "http://host-node:8545";
+/** Orders host chains canonical-first: it holds the context every other chain must match. */
+export const canonicalFirst = <T extends { isCanonical: boolean }>(targets: readonly T[]): T[] =>
+  [...targets].sort((a, b) => Number(b.isCanonical) - Number(a.isCanonical));
 
 const migrateProtocolConfig = async (ctx: RolloutRunContext, targets: HostChainTarget[]) => {
-  const canonical = targets.find((target) => target.isCanonical);
-  if (!canonical) {
+  if (!targets.some((target) => target.isCanonical)) {
     throw new Error("v0.13-to-v0.14 could not resolve a canonical host chain");
   }
 
-  await upgradeContract(canonical.runTask, "task:upgradeProtocolConfig", "ProtocolConfig");
+  for (const target of canonicalFirst(targets)) {
+    console.log(`[contracts] ProtocolConfig on host chain ${target.key}`);
+    await upgradeContract(target.runTask, "task:upgradeProtocolConfig", "ProtocolConfig");
+  }
   await ctx.refreshDiscovery();
-
-  const state = await ctx.readState();
-  const canonicalAddress = state.discovery?.hosts?.[canonical.key]?.PROTOCOL_CONFIG_CONTRACT_ADDRESS;
-  if (!canonicalAddress) {
-    throw new Error(
-      `host chain "${canonical.key}" has no discovered PROTOCOL_CONFIG_CONTRACT_ADDRESS; the canonical ProtocolConfig must be live before mirroring`,
-    );
-  }
-
-  for (const target of targets.filter((item) => !item.isCanonical)) {
-    console.log(`[contracts] mirror ProtocolConfig onto host chain ${target.key} from ${canonical.key}`);
-    await target.runTask(
-      [
-        "npx hardhat task:deployProtocolConfigFromCanonical",
-        `--canonical-rpc-url ${CANONICAL_NODE_RPC_URL}`,
-        `--canonical-protocol-config-address ${canonicalAddress}`,
-      ].join(" "),
-    );
-  }
 
   // Fails loudly if any chain's ProtocolConfig is missing its KMS context or thresholds,
   // which is the failure the "ETH & Polygon anchors match" devnet check was guarding.

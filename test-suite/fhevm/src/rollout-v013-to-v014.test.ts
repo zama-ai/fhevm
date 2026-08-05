@@ -1,6 +1,7 @@
 import { expect, test } from "bun:test";
 
 import {
+  canonicalFirst,
   gatewayContractUpgradeOrder,
   hostContractUpgradeOrder,
   phaseOrder,
@@ -114,6 +115,17 @@ test("upgrades only the gateway contract whose reinitializer v0.14 bumped", () =
   expect(gatewayContractUpgradeOrder).toEqual(["Decryption"]);
   expect(gatewayContractUpgradeOrder).not.toContain("GatewayConfig");
   expect(gatewayContractUpgradeOrder).not.toContain("KMSGeneration");
+});
+
+// ProtocolConfig is upgraded in place on every chain, canonical first, because canonical holds
+// the KMS context the other chains' stored state must match.
+test("migrates the canonical host chain's ProtocolConfig before the others", () => {
+  const ordered = canonicalFirst([
+    { isCanonical: false, key: "chain-b" },
+    { isCanonical: true, key: "host" },
+    { isCanonical: false, key: "chain-c" },
+  ]);
+  expect(ordered.map((target) => target.key)).toEqual(["host", "chain-b", "chain-c"]);
 });
 
 test("gates every phase on rollout-standard by default", () => {
