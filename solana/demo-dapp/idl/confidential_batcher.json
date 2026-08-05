@@ -457,7 +457,7 @@
         {
           "name": "payer",
           "docs": [
-            "Pays join-record rent, transfer output rent, and the batcher eval's",
+            "Pays join-record rent, transfer output rent, and the batcher execution's",
             "ACL rent."
           ],
           "writable": true,
@@ -579,14 +579,14 @@
         {
           "name": "user_transferred_value",
           "docs": [
-            "token CPI, then read as the batcher eval's operand."
+            "token CPI, then read as the batcher execution's operand."
           ],
           "writable": true
         },
         {
           "name": "pending_join_value",
           "docs": [
-            "(accumulated) on repeat joins by the batcher eval."
+            "(accumulated) on repeat joins by the batcher execution."
           ],
           "writable": true
         },
@@ -951,7 +951,7 @@
         {
           "name": "payer",
           "docs": [
-            "Pays the transfer output rent and the reset eval's ACL rent."
+            "Pays the transfer output rent and the reset execution's ACL rent."
           ],
           "writable": true,
           "signer": true
@@ -1077,7 +1077,7 @@
         {
           "name": "pending_join_value",
           "docs": [
-            "amount, then reset to an encrypted zero by the batcher eval."
+            "amount, then reset to an encrypted zero by the batcher execution."
           ],
           "writable": true
         },
@@ -1160,7 +1160,7 @@
           "name": "batch_authority",
           "docs": [
             "depositor/withdrawer, and wrap owner via invoke_signed. Receives",
-            "funding for the rent the redeem marker and wrap eval charge to the",
+            "funding for the rent the redeem marker and wrap execution charge to the",
             "owner."
           ],
           "writable": true,

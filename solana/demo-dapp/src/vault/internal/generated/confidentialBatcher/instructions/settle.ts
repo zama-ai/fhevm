@@ -273,7 +273,7 @@ export type SettleAsyncInput<
   batch: Address<TAccountBatch>;
   /**
    * depositor/withdrawer, and wrap owner via invoke_signed. Receives
-   * funding for the rent the redeem marker and wrap eval charge to the
+   * funding for the rent the redeem marker and wrap execution charge to the
    * owner.
    */
   batchAuthority?: Address<TAccountBatchAuthority>;
@@ -724,7 +724,7 @@ export type SettleInput<
   batch: Address<TAccountBatch>;
   /**
    * depositor/withdrawer, and wrap owner via invoke_signed. Receives
-   * funding for the rent the redeem marker and wrap eval charge to the
+   * funding for the rent the redeem marker and wrap execution charge to the
    * owner.
    */
   batchAuthority: Address<TAccountBatchAuthority>;
@@ -1128,7 +1128,7 @@ export type ParsedSettleInstruction<
     batch: TAccountMetas[2];
     /**
      * depositor/withdrawer, and wrap owner via invoke_signed. Receives
-     * funding for the rent the redeem marker and wrap eval charge to the
+     * funding for the rent the redeem marker and wrap execution charge to the
      * owner.
      */
     batchAuthority: TAccountMetas[3];

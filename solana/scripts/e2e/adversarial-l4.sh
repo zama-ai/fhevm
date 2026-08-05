@@ -48,8 +48,8 @@ ctdig() { docker exec coprocessor-and-kms-db psql -U postgres -d coprocessor -tA
 # ---------------------------------------------------------------------------
 echo "==> [L4-a] publicKey-substitution / relayer-bypass user-decrypt MUST be rejected"
 
-# Fresh eval-based compute + ACL allow so the handle is granted USE to the user's Solana identity.
-out="$(lc TRIVIAL_ENCRYPT_EVAL=1 TE_VALUE="$VALUE" TE_ALLOW=1)"
+# Fresh execution-based compute + ACL allow so the handle is granted USE to the user's Solana identity.
+out="$(lc TRIVIAL_ENCRYPT_EXECUTE=1 TE_VALUE="$VALUE" TE_ALLOW=1)"
 H="$(echo "$out" | grep -oE 'result handle 0x[0-9a-f]+' | grep -oE '0x[0-9a-f]+')"
 [ -n "$H" ] || fail "(a) could not compute a handle: $out"
 HH="${H#0x}"

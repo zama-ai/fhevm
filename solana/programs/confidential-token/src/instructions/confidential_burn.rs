@@ -21,10 +21,10 @@ pub struct ConfidentialBurn<'info> {
     /// CHECK: Mint-scoped encrypted value account authority for total-supply handles.
     #[account(seeds = [b"total-supply", mint.key().as_ref()], bump)]
     pub total_supply_authority: UncheckedAccount<'info>,
-    /// Stable balance encrypted value account; read for the current handle and replaced by this eval.
+    /// Stable balance encrypted value account; read for the current handle and replaced by this execution.
     #[account(mut, address = token_account.balance_encrypted_value)]
     pub balance_value: Box<Account<'info, zama_host::EncryptedValue>>,
-    /// Stable total-supply encrypted value account; read for the current handle and replaced by this eval.
+    /// Stable total-supply encrypted value account; read for the current handle and replaced by this execution.
     #[account(mut, address = mint.total_supply_encrypted_value)]
     pub total_supply_value: Box<Account<'info, zama_host::EncryptedValue>>,
     /// CHECK: stable `burned_amount` encrypted value account for `token_account`; created on the
@@ -131,7 +131,7 @@ pub fn confidential_burn<'info>(
 ///
 /// This is the burn-side analog of [`ConfidentialTransferFromValue`]: the 190-byte attestation
 /// argument is gone and one account is added — `amount_value`, the encrypted amount to burn. It is
-/// read-only (the persistent operand the eval reads) and is never replaced or consumed; only the
+/// read-only (the persistent operand the execution reads) and is never replaced or consumed; only the
 /// balance, total-supply, and burned-amount encrypted value accounts change, exactly as in [`ConfidentialBurn`].
 /// The batcher path uses this to burn a computed execution total (a handle produced by summing joins)
 /// whose owner is a program PDA that authorizes the burn via `invoke_signed`.
@@ -157,10 +157,10 @@ pub struct ConfidentialBurnFromValue<'info> {
     /// CHECK: Mint-scoped encrypted value account authority for total-supply handles.
     #[account(seeds = [b"total-supply", mint.key().as_ref()], bump)]
     pub total_supply_authority: UncheckedAccount<'info>,
-    /// Stable balance encrypted value account; read for the current handle and replaced by this eval.
+    /// Stable balance encrypted value account; read for the current handle and replaced by this execution.
     #[account(mut, address = token_account.balance_encrypted_value)]
     pub balance_value: Box<Account<'info, zama_host::EncryptedValue>>,
-    /// Stable total-supply encrypted value account; read for the current handle and replaced by this eval.
+    /// Stable total-supply encrypted value account; read for the current handle and replaced by this execution.
     #[account(mut, address = mint.total_supply_encrypted_value)]
     pub total_supply_value: Box<Account<'info, zama_host::EncryptedValue>>,
     /// CHECK: stable `burned_amount` encrypted value account for `token_account`, created publicly decryptable exactly
@@ -233,7 +233,7 @@ pub fn confidential_burn_from_value<'info>(
     ctx: Context<'info, ConfidentialBurnFromValue<'info>>,
 ) -> Result<()> {
     let amount_value = &ctx.accounts.amount_value;
-    // Reject a non-euint64 amount early for a clear error, before the eval builder / host would
+    // Reject a non-euint64 amount early for a clear error, before the execution builder / host would
     // reject the same handle deeper in the CPI (the host's binary type validation still covers it).
     require!(
         zama_host::handle_fhe_type(amount_value.current_handle) == BALANCE_FHE_TYPE,
@@ -289,12 +289,12 @@ pub fn confidential_burn_from_value<'info>(
 /// execution differs. Mirrors [`TransferAmountSource`].
 enum BurnAmountSource<'info> {
     /// EVM `FHE.fromExternal` parity: a coprocessor-attested fresh client-side encryption, verified
-    /// in-execution and transient-allowed for this eval (no persistent amount account).
+    /// in-execution and transient-allowed for this execution (no persistent amount account).
     Attested(zama_host::CoprocessorInputAttestation),
     /// EVM computed/received `euint64` parity: an existing on-chain `EncryptedValue` encrypted value account, spent
     /// as a read-only persistent operand at its current handle. It is never replaced and never
     /// consumed. The token spend gate (signing owner in the value's subject set) and euint64 type
-    /// check run in the instruction handler before this reaches the eval builder; the host re-checks
+    /// check run in the instruction handler before this reaches the execution builder; the host re-checks
     /// the handle is current and that the mint's compute subject is allowed on the value, in-execution.
     ExistingValue { amount_value: AccountInfo<'info> },
 }
@@ -393,7 +393,7 @@ fn execute_burn<'info>(
         fhe::PersistentAudience::for_owner(owner, compute_signer),
     )?;
     // ERC-7984 `unwrap` parity (`makePubliclyDecryptable(unwrapAmount)`): the burned delta is created
-    // publicly decryptable inside this eval CPI, so the burn is permanently redeemable even after a
+    // publicly decryptable inside this execution CPI, so the burn is permanently redeemable even after a
     // later burn updates this shared encrypted value account (DD-036 / Vector 2) — with no second make-public CPI.
     let burned_output = fhe::PersistentOutput::new_public(
         accounts.burned_amount_value.clone(),
@@ -448,7 +448,7 @@ fn execute_burn<'info>(
         |builder| {
             let amount = match (&amount_source, stored_amount) {
                 // fromExternal: the amount is a coprocessor-attested external input, verified
-                // in-execution and transient-allowed for this eval (no persistent amount handle / ACL
+                // in-execution and transient-allowed for this execution (no persistent amount handle / ACL
                 // account).
                 (BurnAmountSource::Attested(amount_attestation), _) => {
                     builder.verified_input(amount_attestation.clone())?
@@ -491,7 +491,7 @@ fn execute_burn<'info>(
         // The amount encrypted value account can legitimately alias one of the output accounts (burning the entire
         // balance aliases the balance encrypted value account; re-burning a burned_amount aliases the burned output).
         // The execution already merges those into one slot, so only add the amount when it is a distinct
-        // account — pushing a duplicate would trip eval account resolution (the #3238 aliasing class).
+        // account — pushing a duplicate would trip execution account resolution (the #3238 aliasing class).
         if !dynamic_accounts
             .iter()
             .any(|account| account.key() == amount_value.key())

@@ -1,8 +1,8 @@
 //! Batcher-local FHE helpers.
 //!
-//! The batcher drives its own ZamaHost evals (join re-materialization, the
+//! The batcher drives its own ZamaHost executions (join re-materialization, the
 //! quit reset, and the claim MulDiv) with one identity: the per-batch
-//! authority PDA is simultaneously the eval's `compute_subject` (it reads the
+//! authority PDA is simultaneously the execution's `compute_subject` (it reads the
 //! deposit encrypted value accounts it is a subject of) and its `encrypted_value_account_authority` (it
 //! authorizes the batcher-owned persistent outputs), both signed through a single
 //! `invoke_signed`.
@@ -26,7 +26,7 @@ pub(crate) fn read_encrypted_value(info: &AccountInfo) -> Result<EncryptedValue>
         .map_err(|_| BatcherError::EncryptedValueInvalid.into())
 }
 
-/// A persistent eval output bound to the exact `EncryptedValue` encrypted value account it may
+/// A persistent execution output bound to the exact `EncryptedValue` encrypted value account it may
 /// create or update, mirroring the confidential-token pattern: create when
 /// the PDA does not exist yet, update (pinning the stored previous handle
 /// and subjects) when it does.
@@ -76,19 +76,19 @@ impl<'info> PersistentBinding<'info> {
         self.account.clone()
     }
 
-    /// The encrypted value account's handle before this eval, when the encrypted value account already existed.
+    /// The encrypted value account's handle before this execution, when the encrypted value account already existed.
     pub(crate) fn previous_handle(&self) -> Option<[u8; 32]> {
         self.previous_handle
     }
 
     /// Reads the handle the host bound into the encrypted value account. Call only after the
-    /// eval CPI carrying this output has executed.
+    /// execution CPI carrying this output has executed.
     pub(crate) fn handle_after_execute(&self) -> Result<[u8; 32]> {
         Ok(read_encrypted_value(&self.account)?.current_handle)
     }
 }
 
-/// Fixed ZamaHost CPI accounts for an eval signed by the batch authority PDA.
+/// Fixed ZamaHost CPI accounts for an execution signed by the batch authority PDA.
 pub(crate) struct BatchAuthorityExecute<'a, 'info> {
     pub(crate) batch: Pubkey,
     pub(crate) authority_bump: u8,
@@ -104,21 +104,21 @@ pub(crate) struct BatchAuthorityExecute<'a, 'info> {
 /// Builds and invokes one `fhe_execute` execution with the batch authority as both
 /// compute subject and encrypted value account authority.
 pub(crate) fn execute_as_batch_authority<'info>(
-    eval: BatchAuthorityExecute<'_, 'info>,
+    accounts: BatchAuthorityExecute<'_, 'info>,
     dynamic_accounts: Vec<AccountInfo<'info>>,
     build: impl for<'id> FnOnce(&mut zama_fhe::FheExecutionBuilder<'id>) -> zama_fhe::Result<()>,
 ) -> Result<()> {
-    let bump = [eval.authority_bump];
-    let authority_seeds: &[&[u8]] = &[BATCH_AUTHORITY_SEED, eval.batch.as_ref(), &bump];
+    let bump = [accounts.authority_bump];
+    let authority_seeds: &[&[u8]] = &[BATCH_AUTHORITY_SEED, accounts.batch.as_ref(), &bump];
     let execution = zama_fhe::FheExecution::build(
-        zama_fhe::ExecutionEncryptedValueAccountAuthority::new(eval.batch_authority.key()),
+        zama_fhe::ExecutionEncryptedValueAccountAuthority::new(accounts.batch_authority.key()),
         build,
     )
     .map_err(invalid_execution)?;
-    // Every persistent output of a batcher eval is authorized by the batch authority itself, so it
-    // is the only output authority witness the execution can require.
+    // Every persistent output of a batcher execution is authorized by the batch authority itself, so
+    // it is the only output authority witness the execution can require.
     let resolved_accounts = execution
-        .resolve_accounts(dynamic_accounts, [eval.batch_authority.clone()])
+        .resolve_accounts(dynamic_accounts, [accounts.batch_authority.clone()])
         .map_err(|error| {
             msg!("invalid batcher fhe_execute accounts: {:?}", error);
             error!(BatcherError::InvalidFheExecution)
@@ -126,16 +126,16 @@ pub(crate) fn execute_as_batch_authority<'info>(
     // Host/CPI errors propagate unchanged so callers and tests keep seeing the host's error code.
     execution.invoke(
         zama_fhe::ExecutionCpiAccounts {
-            payer: eval.payer,
-            compute_subject: eval.batch_authority.clone(),
-            encrypted_value_account_authority: eval.batch_authority,
-            host_config: eval.host_config,
-            deny_subject_records: eval.deny_subject_records,
-            system_program: eval.system_program,
+            payer: accounts.payer,
+            compute_subject: accounts.batch_authority.clone(),
+            encrypted_value_account_authority: accounts.batch_authority,
+            host_config: accounts.host_config,
+            deny_subject_records: accounts.deny_subject_records,
+            system_program: accounts.system_program,
             hcu_block_meter: None,
             hcu_trusted_app_record: None,
-            event_authority: eval.zama_event_authority,
-            program: eval.zama_program,
+            event_authority: accounts.zama_event_authority,
+            program: accounts.zama_program,
         },
         &resolved_accounts,
         &[authority_seeds],

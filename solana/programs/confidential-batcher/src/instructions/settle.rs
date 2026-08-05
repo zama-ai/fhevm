@@ -64,7 +64,7 @@ pub struct Settle<'info> {
     pub batch: Box<Account<'info, Batch>>,
     /// CHECK: per-batch authority PDA; redemption recipient, vault
     /// depositor/withdrawer, and wrap owner via invoke_signed. Receives
-    /// funding for the rent the redeem marker and wrap eval charge to the
+    /// funding for the rent the redeem marker and wrap execution charge to the
     /// owner.
     #[account(mut, seeds = [BATCH_AUTHORITY_SEED, batch.key().as_ref()], bump = batch.authority_bump)]
     pub batch_authority: UncheckedAccount<'info>,

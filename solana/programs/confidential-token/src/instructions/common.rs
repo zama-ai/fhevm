@@ -45,13 +45,13 @@ pub(crate) struct TransferAccounts<'a, 'info> {
 /// the execution differs.
 pub(crate) enum TransferAmountSource<'info> {
     /// EVM `FHE.fromExternal` parity: a coprocessor-attested fresh client-side encryption,
-    /// verified in-execution and transient-allowed for this eval (no persistent amount account).
+    /// verified in-execution and transient-allowed for this execution (no persistent amount account).
     Attested(zama_host::CoprocessorInputAttestation),
     /// EVM computed/received `euint64` parity: an existing on-chain `EncryptedValue` encrypted value account,
     /// spent as a read-only persistent operand at its current handle. It is never replaced and
     /// never consumed — only the two balance encrypted value accounts change. The token's spend gate (signing
     /// owner in the value's subject set) and euint64 type check run in the instruction handler
-    /// before this reaches the eval builder; the host re-checks the handle is current and that the
+    /// before this reaches the execution builder; the host re-checks the handle is current and that the
     /// mint's compute subject is allowed on the value, in-execution.
     ExistingValue { amount_value: AccountInfo<'info> },
 }
@@ -230,7 +230,7 @@ fn compute_transfer_handles<'info>(
         |builder| {
             let amount = match (amount_source, stored_amount) {
                 // fromExternal: the amount is a coprocessor-attested external input, verified in-execution
-                // and transient-allowed for this eval (no persistent amount handle / ACL account).
+                // and transient-allowed for this execution (no persistent amount handle / ACL account).
                 (TransferAmountSource::Attested(amount_attestation), _) => {
                     builder.verified_input(amount_attestation.clone())?
                 }

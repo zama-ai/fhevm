@@ -4,7 +4,7 @@
 //!
 //! One user-signed transaction: the user's signature propagates through the
 //! `confidential_transfer` CPI into the batch's own token account, and the
-//! batcher's own eval re-materializes the transferred amount into the user's
+//! batcher's own execution re-materializes the transferred amount into the user's
 //! joined encrypted value account **in the same transaction**. Same-transaction is
 //! what makes this safe: the transfer's recipient rule places the batch authority in
 //! the `transferred_amount` output audience by construction, but that encrypted value account
@@ -19,7 +19,7 @@ use super::*;
 pub struct Join<'info> {
     /// Joining user; transfer authority over their confidential balance.
     pub user: Signer<'info>,
-    /// Pays join-record rent, transfer output rent, and the batcher eval's
+    /// Pays join-record rent, transfer output rent, and the batcher execution's
     /// ACL rent.
     #[account(mut)]
     pub payer: Signer<'info>,
@@ -60,11 +60,11 @@ pub struct Join<'info> {
     #[account(mut)]
     pub batch_balance_value: UncheckedAccount<'info>,
     /// CHECK: user's stable transferred-amount encrypted value account; replaced by the
-    /// token CPI, then read as the batcher eval's operand.
+    /// token CPI, then read as the batcher execution's operand.
     #[account(mut)]
     pub user_transferred_value: UncheckedAccount<'info>,
     /// CHECK: the user's joined encrypted value account; created on first join, replaced
-    /// (accumulated) on repeat joins by the batcher eval.
+    /// (accumulated) on repeat joins by the batcher execution.
     #[account(mut)]
     pub pending_join_value: UncheckedAccount<'info>,
     /// CHECK: ZamaHost event-CPI authority; validated by the host program.
@@ -154,7 +154,7 @@ pub fn join<'info>(
         ),
         // The user decrypts their pending amount; the batch authority computes
         // refunds and claims from it; the join mint's compute signer lets
-        // quit's transfer eval read it as the refund amount.
+        // quit's transfer execution read it as the refund amount.
         vec![
             user,
             batch_authority,

@@ -165,7 +165,7 @@ export type ConfidentialTransferFromValueAsyncInput<
   computeSigner?: Address<TAccountComputeSigner>;
   /**
    * Sender's stable balance `EncryptedValue` encrypted value account; read for the current
-   * handle and replaced in place by this eval's CPI.
+   * handle and replaced in place by this execution's CPI.
    */
   fromBalanceValue: Address<TAccountFromBalanceValue>;
   /** Recipient's stable balance `EncryptedValue` encrypted value account. */
@@ -393,7 +393,7 @@ export type ConfidentialTransferFromValueInput<
   computeSigner: Address<TAccountComputeSigner>;
   /**
    * Sender's stable balance `EncryptedValue` encrypted value account; read for the current
-   * handle and replaced in place by this eval's CPI.
+   * handle and replaced in place by this execution's CPI.
    */
   fromBalanceValue: Address<TAccountFromBalanceValue>;
   /** Recipient's stable balance `EncryptedValue` encrypted value account. */
@@ -600,7 +600,7 @@ export type ParsedConfidentialTransferFromValueInstruction<
     computeSigner: TAccountMetas[5];
     /**
      * Sender's stable balance `EncryptedValue` encrypted value account; read for the current
-     * handle and replaced in place by this eval's CPI.
+     * handle and replaced in place by this execution's CPI.
      */
     fromBalanceValue: TAccountMetas[6];
     /** Recipient's stable balance `EncryptedValue` encrypted value account. */

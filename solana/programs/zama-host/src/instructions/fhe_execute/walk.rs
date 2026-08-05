@@ -1,6 +1,6 @@
 //! The single walk over an `fhe_execute` execution: resolve operands, assert operand
 //! types, derive the produced handle, and hand each output to
-//! [`super::EvalExecutionState`], which validates and mutates in one pass.
+//! [`super::ExecutionState`], which validates and mutates in one pass.
 //!
 //! A step that fails mid-execution reverts the whole transaction — the Solana
 //! runtime discards every account write on error — so validating while
@@ -9,7 +9,7 @@
 use super::*;
 
 /// Per-execution slot entropy, identity, and rand anchor shared by every handle derivation.
-pub(super) struct EvalHandleContext<'a> {
+pub(super) struct ExecutionHandleContext<'a> {
     pub derivation: HandleDerivationContext,
     /// Signed caller identity folded into rand seeds (never into deterministic handles).
     pub compute_subject: Pubkey,
@@ -23,7 +23,7 @@ pub(super) struct EvalHandleContext<'a> {
 // computations collide by design: deterministic handles are content-addressed
 // (op/operands/type + slot entropy, no salt), matching EVM `FHEVMExecutor`. Only
 // rand seeds carry uniqueness — signer identity plus the persistent-write anchor.
-impl EvalHandleContext<'_> {
+impl ExecutionHandleContext<'_> {
     fn binary_result(
         &self,
         op: FheBinaryOpCode,
@@ -105,7 +105,7 @@ impl EvalHandleContext<'_> {
 /// Operand resolvers shared by every step shape. Defined here so the
 /// match-on-step skeleton and the operand rules read together; the
 /// account-access and mutation halves live with the state in [`super`].
-impl EvalExecutionState<'_, '_, '_> {
+impl ExecutionState<'_, '_, '_> {
     /// Resolves an operand that must be encrypted (rejects scalars).
     fn resolve_encrypted_operand(
         &mut self,
@@ -127,7 +127,7 @@ impl EvalExecutionState<'_, '_, '_> {
             FheExecuteOperand::VerifiedInput { attestation } => {
                 // EVM `fromExternal` parity: only the attested contract may consume the input.
                 // Enforced here (the `msg.sender` analog) — not by constraining derived outputs.
-                // `subject` is the eval's `compute_subject`; a copied attestation is useless
+                // `subject` is the execution's `compute_subject`; a copied attestation is useless
                 // unless the caller can sign as `contract_address`.
                 require_keys_eq!(
                     Pubkey::new_from_array(attestation.contract_address),
@@ -166,10 +166,10 @@ impl EvalExecutionState<'_, '_, '_> {
 /// Drives the execution state over every execution step: resolve operands, assert
 /// operand types, compute the produced handle, and accept the output.
 pub(super) fn walk_steps<'info>(
-    execution: &mut EvalExecutionState<'_, '_, 'info>,
+    execution: &mut ExecutionState<'_, '_, 'info>,
     ctx: &Context<'info, FheExecute<'info>>,
     args: &FheExecuteArgs,
-    handle_context: &EvalHandleContext<'_>,
+    handle_context: &ExecutionHandleContext<'_>,
 ) -> Result<()> {
     for (index, step) in args.steps.iter().enumerate() {
         let op_index = index as u16;

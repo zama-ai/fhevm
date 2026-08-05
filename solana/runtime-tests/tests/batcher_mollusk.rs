@@ -12,7 +12,7 @@
 //! test.
 //!
 //! Encrypted state is checked with the cleartext ledger: each instruction's
-//! `fhe_execute` CPIs (there can be several — a token CPI's eval plus the
+//! `fhe_execute` CPIs (there can be several — a token CPI's execution plus the
 //! batcher's own) are decoded from the inner instructions and replayed in
 //! cleartext, binding results to the handles the host persisted.
 //!
@@ -83,7 +83,7 @@ fn mollusk() -> Mollusk {
     mollusk.sysvars.clock.slot = 100;
     mollusk.sysvars.slot_hashes =
         solana_sdk::slot_hashes::SlotHashes::new(&[(99, solana_sdk::hash::Hash::new_unique())]);
-    // Batcher instructions chain a token eval and the batcher's own eval;
+    // Batcher instructions chain a token execution and the batcher's own execution;
     // real transactions request the same higher limit.
     mollusk.compute_budget.compute_unit_limit = 1_400_000;
     mollusk
@@ -168,7 +168,7 @@ impl CleartextLedger {
     }
 
     /// Replays every `fhe_execute` CPI a batcher instruction issued — in order,
-    /// so a later eval can consume an earlier eval's persisted outputs (the
+    /// so a later execution can consume an earlier execution's persisted outputs (the
     /// join re-materialization reads the transfer's `transferred_amount`).
     /// Each instruction writes any encrypted value account at most once, so binding results to
     /// the end-of-instruction persisted handles is exact.
@@ -194,7 +194,7 @@ impl CleartextLedger {
             "expected at least one fhe_execute CPI in this instruction"
         );
 
-        let mut evals = 0;
+        let mut executions = 0;
         for args in &eval_args {
             let outputs = evaluate_cleartext(args, &self.values)
                 .expect("every emitted FHE batch must be valid in cleartext");
@@ -220,9 +220,9 @@ impl CleartextLedger {
                 let persisted = read_encrypted_value(context, address);
                 self.values.insert(persisted.current_handle, value);
             }
-            evals += 1;
+            executions += 1;
         }
-        evals
+        executions
     }
 
     fn u64_at(&self, context: &Ctx, encrypted_value: Pubkey) -> u64 {
@@ -1323,7 +1323,7 @@ fn run_join(
         amount_attestation_for(amount_handle, user.user, fixture.join_mint().compute_signer);
     let ix = join_ix(fixture, keys, user, attestation);
     let result = context.process_and_validate_instruction(&ix, &[Check::success()]);
-    // The join issues the transfer's eval plus the batcher's re-materialization.
+    // The join issues the transfer's execution plus the batcher's re-materialization.
     assert_eq!(ledger.evaluate_fhe_cpis(context, &result), 2);
 }
 
@@ -1342,7 +1342,7 @@ fn run_dispatch(
 }
 
 /// Settles the batch with a real KMS cert over `total`, replaying the wrap's
-/// eval when the batch is non-zero. Returns settle's consumed compute units so
+/// execution when the batch is non-zero. Returns settle's consumed compute units so
 /// the fixed-key cost lifecycle can bound them; behavior-test callers ignore
 /// the value (the module policy is that behavior tests never depend on cost).
 fn run_settle(
@@ -1369,13 +1369,13 @@ fn run_settle(
     );
     let result = context.process_and_validate_instruction(&ix, &[Check::success()]);
     if total > 0 {
-        // Only the wrap phase drives an eval at settle.
+        // Only the wrap phase drives an execution at settle.
         assert_eq!(ledger.evaluate_fhe_cpis(context, &result), 1);
     }
     result.compute_units_consumed
 }
 
-/// Claims for one user, replaying the MulDiv and transfer evals.
+/// Claims for one user, replaying the MulDiv and transfer executions.
 fn run_claim(
     context: &Ctx,
     fixture: &BatcherFixture,
@@ -1392,7 +1392,7 @@ fn run_claim(
     );
     let ix = claim_ix(fixture, keys, user);
     let result = context.process_and_validate_instruction(&ix, &[Check::success()]);
-    // The claim issues the batcher's MulDiv eval plus the transfer's eval.
+    // The claim issues the batcher's MulDiv execution plus the transfer's execution.
     assert_eq!(ledger.evaluate_fhe_cpis(context, &result), 2);
 }
 
@@ -1625,9 +1625,9 @@ fn mollusk_repeat_join_accumulates_and_quit_refunds_exactly() {
     let keys = initialize_and_open_first_batch(&context, &fixture, 0);
     seed_open_batch_balances(&context, &keys, &mut ledger);
 
-    // Two joins accumulate: the second join's eval reads the joined encrypted value account
+    // Two joins accumulate: the second join's execution reads the joined encrypted value account
     // as an operand AND updates it as the output (the #3238 aliasing class
-    // for the batcher's own eval — the standard same-slot update).
+    // for the batcher's own execution — the standard same-slot update).
     run_join(
         &context,
         &fixture,
@@ -1889,7 +1889,7 @@ fn mollusk_redeem_repeat_join_accumulates_and_quit_refunds_exactly() {
     let keys = initialize_and_open_first_batch(&context, &fixture, 0);
     seed_open_batch_balances(&context, &keys, &mut ledger);
 
-    // Two joins accumulate: the second join's eval reads the joined encrypted value account
+    // Two joins accumulate: the second join's execution reads the joined encrypted value account
     // as an operand AND updates it as the output.
     run_join(
         &context,

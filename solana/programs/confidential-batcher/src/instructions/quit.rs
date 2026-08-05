@@ -16,7 +16,7 @@ use super::*;
 pub struct Quit<'info> {
     /// Quitting user; owner of the refund destination.
     pub user: Signer<'info>,
-    /// Pays the transfer output rent and the reset eval's ACL rent.
+    /// Pays the transfer output rent and the reset execution's ACL rent.
     #[account(mut)]
     pub payer: Signer<'info>,
     /// Batcher config.
@@ -57,7 +57,7 @@ pub struct Quit<'info> {
     #[account(mut)]
     pub batch_transferred_value: UncheckedAccount<'info>,
     /// CHECK: the user's joined encrypted value account; spent read-only as the refund
-    /// amount, then reset to an encrypted zero by the batcher eval.
+    /// amount, then reset to an encrypted zero by the batcher execution.
     #[account(mut)]
     pub pending_join_value: UncheckedAccount<'info>,
     /// CHECK: ZamaHost event-CPI authority; validated by the host program.

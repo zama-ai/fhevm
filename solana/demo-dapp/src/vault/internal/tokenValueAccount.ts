@@ -59,7 +59,7 @@ export const totalSupplyAuthorityAddress = async (mint: Address): Promise<Addres
 
 /**
  * The mint's `fhe-compute` compute-signer PDA — the confidential-token contract identity that
- * input proofs bind to and that FHE evals over the mint's encrypted value accounts run under.
+ * input proofs bind to and that FHE executions over the mint's encrypted value accounts run under.
  */
 export const computeSignerAddress = async (mint: Address): Promise<Address> =>
   (await findComputeSignerPda({ mint }))[0];

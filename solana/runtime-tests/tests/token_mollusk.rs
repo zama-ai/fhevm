@@ -1529,7 +1529,7 @@ fn mollusk_confidential_transfer_rotates_back_to_previous_recipient() {
 
 #[test]
 fn mollusk_confidential_transfer_self_transfer_after_receipt_is_no_op() {
-    // A self-transfer short-circuits before the eval (execute_transfer returns early when
+    // A self-transfer short-circuits before the execution (execute_transfer returns early when
     // from == to), so it never updates the receipt. After a real transfer created the receipt,
     // a subsequent A -> A succeeds and leaves that receipt untouched.
     let fixture = TokenFixture::new();
@@ -4286,7 +4286,7 @@ fn mollusk_transfer_from_value_recipient_forwards_received_amount() {
     assert_eq!(received_after.subjects, received_before.subjects);
 }
 
-/// Done-when 5: the RFQ settlement shape — an amount computed via a `select(...)` eval producing a
+/// Done-when 5: the RFQ settlement shape — an amount computed via a `select(...)` execution producing a
 /// persistent output, then transferred — proven end to end. A transfer's `transferred_amount` is
 /// exactly `sub(from_balance, if_then_else(ge, debit, from_balance))`, i.e. a select-computed
 /// persistent `euint64`; spending it is the RFQ `eMoved` settlement move.

@@ -1392,7 +1392,7 @@ mod fhe_execute_acl_tests {
 
     #[test]
     fn persistent_output_as_sole_remaining_account_resolves() {
-        // The trivial-encrypt-eval shape: 9 named accounts (0..=8, including the two
+        // The trivial-encrypt-execution shape: 9 named accounts (0..=8, including the two
         // optional HCU accounts and the event_cpi pair) + exactly one remaining account,
         // the persistent output EncryptedValue account, at absolute index 9 (remaining_index 0).
         // A stale base (7, the pre-HCU count) read accounts.get(7) here — the

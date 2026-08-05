@@ -30,10 +30,10 @@ mod hcu;
 mod preflight;
 mod walk;
 
-use account_table::EvalAccountTable;
+use account_table::ExecutionAccountTable;
 use event_transport::{emit_execution_random_seeds, emit_public_outputs_produced};
 use preflight::preflight_execution;
-use walk::{walk_steps, EvalHandleContext};
+use walk::{walk_steps, ExecutionHandleContext};
 
 /// Accounts for one composed, instruction-local fhe_execute.
 ///
@@ -88,7 +88,7 @@ pub fn fhe_execute<'info>(
     // duplicate rejection (at construction), the used-account bitmap (marked in
     // preflight, asserted before execution mutates state), persistent-output
     // claims, and output-PDA derivation.
-    let mut account_table = EvalAccountTable::new(ctx.remaining_accounts)?;
+    let mut account_table = ExecutionAccountTable::new(ctx.remaining_accounts)?;
     preflight_execution(&mut account_table, &ctx, &args)?;
 
     // HCU metering: one pure pass over the execution, enforcing the per-execution total + in-execution depth
@@ -106,7 +106,7 @@ pub fn fhe_execute<'info>(
     let clock = Clock::get()?;
     let previous_bank_hash = previous_bank_hash(clock.slot)?;
     let persistent_anchor_bytes = collect_persistent_anchor_bytes(&account_table, &args)?;
-    let handle_context = EvalHandleContext {
+    let handle_context = ExecutionHandleContext {
         derivation: HandleDerivationContext {
             chain_id: ctx.accounts.host_config.chain_id,
             previous_bank_hash,
@@ -148,7 +148,7 @@ pub(in crate::instructions) fn step_output(step: &FheExecuteStep) -> &FheExecute
 /// `leaf_count` advances whenever an outgoing handle is sealed, so returning to an
 /// earlier content-addressed handle cannot replay a previous random seed.
 fn collect_persistent_anchor_bytes(
-    table: &EvalAccountTable<'_, '_>,
+    table: &ExecutionAccountTable<'_, '_>,
     args: &FheExecuteArgs,
 ) -> Result<Vec<u8>> {
     let mut anchor_bytes = Vec::with_capacity(args.steps.len() * 73);
@@ -177,7 +177,7 @@ fn collect_persistent_anchor_bytes(
 
 fn collect_execution_random_seeds(
     args: &FheExecuteArgs,
-    handle_context: &EvalHandleContext<'_>,
+    handle_context: &ExecutionHandleContext<'_>,
 ) -> Vec<FheExecuteRandomSeed> {
     args.steps
         .iter()
@@ -197,13 +197,13 @@ fn collect_execution_random_seeds(
 
 #[inline(never)]
 fn execute_steps<'a, 'info>(
-    table: &mut EvalAccountTable<'a, 'info>,
+    table: &mut ExecutionAccountTable<'a, 'info>,
     ctx: &Context<'info, FheExecute<'info>>,
     args: &FheExecuteArgs,
     subject: Pubkey,
-    handle_context: &EvalHandleContext<'_>,
+    handle_context: &ExecutionHandleContext<'_>,
 ) -> Result<Vec<ProducedPublicOutput>> {
-    let mut execution = EvalExecutionState {
+    let mut execution = ExecutionState {
         table,
         dictionary: &args.dictionary,
         produced: Vec::with_capacity(args.steps.len()),
@@ -221,8 +221,8 @@ fn execute_steps<'a, 'info>(
 /// updates persistent outputs, and buffers produced-public lifecycle records.
 /// The operand resolvers driving these methods live with the step match in
 /// [`walk`].
-struct EvalExecutionState<'t, 'a, 'info> {
-    table: &'t mut EvalAccountTable<'a, 'info>,
+struct ExecutionState<'t, 'a, 'info> {
+    table: &'t mut ExecutionAccountTable<'a, 'info>,
     /// The execution's interned constant dictionary ([`FheExecuteArgs::dictionary`]).
     dictionary: &'t [[u8; 32]],
     produced: Vec<ProducedValue>,
@@ -232,7 +232,7 @@ struct EvalExecutionState<'t, 'a, 'info> {
     verifier_params: InputVerifierParams,
 }
 
-impl<'info> EvalExecutionState<'_, '_, 'info> {
+impl<'info> ExecutionState<'_, '_, 'info> {
     fn dictionary_bytes(&self, index: u8) -> Result<[u8; 32]> {
         self.dictionary
             .get(index as usize)
@@ -312,7 +312,7 @@ pub fn assert_ternary_operand_types(
 #[inline(never)]
 fn accept_execution_output<'info>(
     ctx: &Context<'info, FheExecute<'info>>,
-    table: &mut EvalAccountTable<'_, 'info>,
+    table: &mut ExecutionAccountTable<'_, 'info>,
     dictionary: &[[u8; 32]],
     produced: &mut Vec<ProducedValue>,
     result: [u8; 32],
@@ -394,7 +394,7 @@ fn resolve_dictionary_subjects(dictionary: &[[u8; 32]], indexes: &[u8]) -> Resul
 }
 
 fn persistent_output_authority<'info>(
-    table: &EvalAccountTable<'_, 'info>,
+    table: &ExecutionAccountTable<'_, 'info>,
     ctx: &Context<'info, FheExecute<'info>>,
     authority_index: Option<u16>,
     output_authority: Pubkey,
@@ -478,7 +478,7 @@ fn inputs3_allow_public_decrypt(
 #[allow(clippy::too_many_arguments)]
 fn bind_execution_output<'info>(
     ctx: &Context<'info, FheExecute<'info>>,
-    table: &mut EvalAccountTable<'_, 'info>,
+    table: &mut ExecutionAccountTable<'_, 'info>,
     output_encrypted_value_index: u16,
     result: [u8; 32],
     encrypted_value_account_authority: Pubkey,
@@ -615,7 +615,7 @@ pub(super) fn validate_persistent_output_previous_state(
 /// added subject is located by canonical derived address through the table.
 fn check_new_grants_not_denied(
     host_config: &HostConfig,
-    table: &EvalAccountTable<'_, '_>,
+    table: &ExecutionAccountTable<'_, '_>,
     stored_subjects: &[Pubkey],
     output_subjects: &[Pubkey],
 ) -> Result<()> {
@@ -701,7 +701,7 @@ mod tests {
         let owner = crate::ID;
         let account = AccountInfo::new(&key, false, true, &mut lamports, &mut data, &owner, false);
         let accounts = [account];
-        let table = EvalAccountTable::new(&accounts).unwrap();
+        let table = ExecutionAccountTable::new(&accounts).unwrap();
         let args = FheExecuteArgs {
             account_count: 1,
             dictionary: Vec::new(),
@@ -830,7 +830,7 @@ mod tests {
             false,
         );
         let remaining = [record];
-        let table = EvalAccountTable::new(&remaining).unwrap();
+        let table = ExecutionAccountTable::new(&remaining).unwrap();
 
         let config = deny_enabled_config();
 

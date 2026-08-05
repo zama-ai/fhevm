@@ -1606,7 +1606,7 @@ fn mollusk_denied_caller_cannot_mutate_acl_update_or_eval_output() {
         &[custom_error(host::errors::ZamaHostError::SubjectDenied)],
     );
 
-    let output_label = label("deny-eval");
+    let output_label = label("deny-execution");
     let output_encrypted_value_id = zama_solana_acl::derive_encrypted_value_id(
         caller.to_bytes(),
         caller.to_bytes(),
@@ -2072,7 +2072,7 @@ fn mollusk_paused_state_blocks_acl_update_and_eval_output() {
         &[custom_error(host::errors::ZamaHostError::HostConfigPaused)],
     );
 
-    let output_label = label("pause-eval");
+    let output_label = label("pause-execution");
     let output_encrypted_value_id = zama_solana_acl::derive_encrypted_value_id(
         authority.to_bytes(),
         authority.to_bytes(),
@@ -2792,11 +2792,11 @@ fn mollusk_transaction_later_failure_rolls_back_created_public_output() {
 // trust-registry tests below carry over almost verbatim: they only touch
 // `HostConfig` and the two new HCU state accounts, none of which changed shape
 // in the ACL/MMR rewrite. The `fhe_execute` enforcement tests are rebuilt on a
-// fresh `EvalFixture` using persistent `EncryptedValue` inputs/outputs instead of
+// fresh `FheExecutionFixture` using persistent `EncryptedValue` inputs/outputs instead of
 // the old keyed-nonce `AclRecord` the original PR tested against.
 // ===========================================================================
 
-/// Exact HCU cost of `EvalFixture::success_steps`: `Ge` at ebool (21_000) + `Sub` at
+/// Exact HCU cost of `FheExecutionFixture::success_steps`: `Ge` at ebool (21_000) + `Sub` at
 /// euint64 (38_000) + `IfThenElse` at euint64 (45_000). See `zama-host/src/instructions/fhe_execute/hcu.rs`.
 const FIXTURE_BATCH_HCU: u64 = 21_000 + 38_000 + 45_000; // 104_000
 
@@ -3871,9 +3871,9 @@ fn mollusk_define_kms_context_rejects_zero_signer() {
     );
 }
 
-// ---- EvalFixture: a persistent-output execution for block-cap enforcement ----
+// ---- FheExecutionFixture: a persistent-output execution for block-cap enforcement ----
 
-struct EvalFixture {
+struct FheExecutionFixture {
     program_id: Pubkey,
     authority: Pubkey,
     account: Pubkey,
@@ -3892,7 +3892,7 @@ struct EvalFixture {
     context: mollusk_svm::MolluskContext<HashMap<Pubkey, Account>>,
 }
 
-impl EvalFixture {
+impl FheExecutionFixture {
     /// A fixture whose config carries a per-app block cap; per-execution HCU limits stay off.
     fn with_block_cap(cap: u64) -> Self {
         Self::with_block_cap_keys(cap, Pubkey::new_unique(), Pubkey::new_unique())
@@ -4374,7 +4374,7 @@ fn mollusk_fhe_execute_unrestricted_cap_none_none_succeeds() {
     // The default (u64::MAX) short-circuits: with the mandatory compute_subject signed in but
     // neither optional account supplied, the execution binds its persistent output and no meter is
     // ever created or touched.
-    let fixture = EvalFixture::with_block_cap(u64::MAX);
+    let fixture = FheExecutionFixture::with_block_cap(u64::MAX);
     fixture.context.process_and_validate_instruction(
         &fixture.block_cap_instruction(None, None),
         &[Check::success()],
@@ -4388,7 +4388,7 @@ fn mollusk_fhe_execute_unsigned_compute_subject_is_rejected() {
     // The `compute_subject` must SIGN — it is the mandatory signed caller identity the cap meters.
     // A supplied-but-unsigned subject is rejected by the account layer, so no caller can name a
     // victim's compute subject to drain its in-slot budget without holding its key.
-    let fixture = EvalFixture::with_block_cap(500_000);
+    let fixture = FheExecutionFixture::with_block_cap(500_000);
     let mut ix = fixture.block_cap_instruction(Some(fixture.meter_pda()), None);
     let subject = fixture.compute_subject;
     for meta in ix.accounts.iter_mut() {
@@ -4409,7 +4409,7 @@ fn mollusk_fhe_execute_unsigned_compute_subject_is_rejected() {
 fn mollusk_fhe_execute_unrestricted_cap_ignores_supplied_accounts() {
     // Even when both optional accounts are supplied, the unrestricted short-circuit touches
     // neither: a pre-loaded meter is left byte-for-byte unchanged.
-    let fixture = EvalFixture::with_block_cap(u64::MAX);
+    let fixture = FheExecutionFixture::with_block_cap(u64::MAX);
     let slot = fixture.context.mollusk.sysvars.clock.slot;
     let (meter_pda, meter_account) = hcu_block_meter_account(fixture.block_cap_app(), slot, 999);
     fixture.seed_account(meter_pda, meter_account);
@@ -4432,7 +4432,7 @@ fn mollusk_fhe_execute_unrestricted_cap_ignores_supplied_accounts() {
 fn mollusk_fhe_execute_ban_cap_zero_untrusted_no_meter_is_rejected() {
     // cap == 0 bans untrusted apps outright — rejected even with no meter supplied, and no
     // persistent output is created.
-    let fixture = EvalFixture::with_block_cap(0);
+    let fixture = FheExecutionFixture::with_block_cap(0);
     let result = fixture.context.process_and_validate_instruction(
         &fixture.block_cap_instruction(None, None),
         &[custom_error(
@@ -4445,7 +4445,7 @@ fn mollusk_fhe_execute_ban_cap_zero_untrusted_no_meter_is_rejected() {
 #[test]
 fn mollusk_fhe_execute_ban_cap_zero_untrusted_with_meter_is_rejected_unchanged() {
     // The ban trips before the meter is consulted: a supplied meter is left unchanged.
-    let fixture = EvalFixture::with_block_cap(0);
+    let fixture = FheExecutionFixture::with_block_cap(0);
     let slot = fixture.context.mollusk.sysvars.clock.slot;
     let (meter_pda, meter_account) = hcu_block_meter_account(fixture.block_cap_app(), slot, 0);
     fixture.seed_account(meter_pda, meter_account);
@@ -4469,7 +4469,7 @@ fn mollusk_fhe_execute_ban_cap_zero_untrusted_with_meter_is_rejected_unchanged()
 fn mollusk_fhe_execute_ban_cap_zero_trusted_witness_bypasses() {
     // Trusted apps are never banned: with a valid trust witness the execution succeeds even at
     // cap == 0, without any meter.
-    let fixture = EvalFixture::with_block_cap(0);
+    let fixture = FheExecutionFixture::with_block_cap(0);
     let (trust_pda, trust_account) = hcu_trusted_app_record_account(fixture.block_cap_app(), true);
     fixture.seed_account(trust_pda, trust_account);
 
@@ -4485,7 +4485,7 @@ fn mollusk_fhe_execute_untrusted_missing_meter_fails_closed() {
     // In the metering band, an untrusted app that forwards neither a meter nor a trust
     // witness is rejected — never silently un-metered. (This is also the CPI rollout hazard:
     // a caller that forwards neither account breaks, rather than bypassing the cap.)
-    let fixture = EvalFixture::with_block_cap(500_000);
+    let fixture = FheExecutionFixture::with_block_cap(500_000);
     let result = fixture.context.process_and_validate_instruction(
         &fixture.block_cap_instruction(None, None),
         &[custom_error(
@@ -4499,7 +4499,7 @@ fn mollusk_fhe_execute_untrusted_missing_meter_fails_closed() {
 fn mollusk_fhe_execute_trusted_witness_bypasses_and_creates_no_meter() {
     // A valid trust witness bypasses metering entirely: the execution succeeds with no meter and
     // none is lazily created (contention-free trusted path).
-    let fixture = EvalFixture::with_block_cap(500_000);
+    let fixture = FheExecutionFixture::with_block_cap(500_000);
     let (trust_pda, trust_account) = hcu_trusted_app_record_account(fixture.block_cap_app(), true);
     fixture.seed_account(trust_pda, trust_account);
 
@@ -4515,7 +4515,7 @@ fn mollusk_fhe_execute_trusted_witness_bypasses_and_creates_no_meter() {
 fn mollusk_fhe_execute_untrusted_false_witness_requires_meter() {
     // A well-formed record with trusted == false is not a bypass — it falls through to the
     // metering path, so a missing meter still fails closed.
-    let fixture = EvalFixture::with_block_cap(500_000);
+    let fixture = FheExecutionFixture::with_block_cap(500_000);
     let (trust_pda, trust_account) = hcu_trusted_app_record_account(fixture.block_cap_app(), false);
     fixture.seed_account(trust_pda, trust_account);
 
@@ -4531,7 +4531,7 @@ fn mollusk_fhe_execute_untrusted_false_witness_requires_meter() {
 #[test]
 fn mollusk_fhe_execute_wrong_pda_trust_witness_is_rejected() {
     // A witness for a different app (wrong PDA) cannot bypass this app's cap.
-    let fixture = EvalFixture::with_block_cap(500_000);
+    let fixture = FheExecutionFixture::with_block_cap(500_000);
     let (other_trust_pda, other_trust_account) =
         hcu_trusted_app_record_account(Pubkey::new_unique(), true);
     fixture.seed_account(other_trust_pda, other_trust_account);
@@ -4549,7 +4549,7 @@ fn mollusk_fhe_execute_wrong_pda_trust_witness_is_rejected() {
 fn mollusk_fhe_execute_malformed_trust_witness_is_rejected() {
     // A witness at the canonical PDA but not program-owned (self-made) is rejected — an app
     // cannot forge its own trust. Only an *absent* witness is benign.
-    let fixture = EvalFixture::with_block_cap(500_000);
+    let fixture = FheExecutionFixture::with_block_cap(500_000);
     let trust_pda = fixture.trust_pda();
     fixture.seed_account(
         trust_pda,
@@ -4575,7 +4575,7 @@ fn mollusk_fhe_execute_malformed_trust_witness_is_rejected() {
 fn mollusk_fhe_execute_wrong_app_meter_is_rejected() {
     // A meter that belongs to a different app (wrong PDA / record.app) cannot be charged for
     // this app.
-    let fixture = EvalFixture::with_block_cap(500_000);
+    let fixture = FheExecutionFixture::with_block_cap(500_000);
     let slot = fixture.context.mollusk.sysvars.clock.slot;
     let (other_meter_pda, other_meter_account) =
         hcu_block_meter_account(Pubkey::new_unique(), slot, 0);
@@ -4596,7 +4596,7 @@ fn mollusk_fhe_execute_squatted_meter_with_data_is_rejected() {
     // lazy-creation rather than being adopted as a counter. An attacker cannot actually put
     // data on the PDA (allocate needs the PDA's signature), so this guards against a genuinely
     // malformed account.
-    let fixture = EvalFixture::with_block_cap(500_000);
+    let fixture = FheExecutionFixture::with_block_cap(500_000);
     let meter_pda = fixture.meter_pda();
     fixture.seed_account(
         meter_pda,
@@ -4625,7 +4625,7 @@ fn mollusk_fhe_execute_prefunded_empty_meter_is_created_not_griefed() {
     // execution. The fused `create_account` would abort on any pre-funded target
     // (AccountAlreadyInUse) and wedge every metered execution forever; the
     // fund-shortfall+allocate+assign path absorbs the donation and creates the meter normally.
-    let fixture = EvalFixture::with_block_cap(500_000);
+    let fixture = FheExecutionFixture::with_block_cap(500_000);
     let meter_pda = fixture.meter_pda();
     fixture.seed_account(meter_pda, system_account(1));
 
@@ -4657,7 +4657,7 @@ fn mollusk_fhe_execute_overfunded_empty_meter_is_created_preserving_surplus() {
     // A donation far above rent is equally harmless: no top-up transfer occurs, the meter is
     // created, and the surplus lamports are preserved (the account is simply
     // more-than-rent-exempt).
-    let fixture = EvalFixture::with_block_cap(500_000);
+    let fixture = FheExecutionFixture::with_block_cap(500_000);
     let meter_pda = fixture.meter_pda();
     let donated = 5_000_000_000u64;
     fixture.seed_account(meter_pda, system_account(donated));
@@ -4685,7 +4685,7 @@ fn mollusk_fhe_execute_prefunded_output_acl_is_created_not_griefed() {
     // empty) donation at the output PDA must not block the execution. Asserted under the
     // unrestricted cap so the meter path is inert and only the output-ACL creation is
     // exercised.
-    let fixture = EvalFixture::with_block_cap(u64::MAX);
+    let fixture = FheExecutionFixture::with_block_cap(u64::MAX);
     fixture.seed_account(fixture.output_value, system_account(1));
 
     fixture.context.process_and_validate_instruction(
@@ -4699,7 +4699,7 @@ fn mollusk_fhe_execute_prefunded_output_acl_is_created_not_griefed() {
 fn mollusk_fhe_execute_trust_pda_supplied_as_meter_is_rejected() {
     // Role confusion: the trust record's PDA is not the meter PDA, so passing it in the meter
     // slot fails the meter's PDA check.
-    let fixture = EvalFixture::with_block_cap(500_000);
+    let fixture = FheExecutionFixture::with_block_cap(500_000);
     let trust_pda = fixture.trust_pda();
     let (_, trust_account) = hcu_trusted_app_record_account(fixture.block_cap_app(), true);
     fixture.seed_account(trust_pda, trust_account);
@@ -4717,7 +4717,7 @@ fn mollusk_fhe_execute_trust_pda_supplied_as_meter_is_rejected() {
 fn mollusk_fhe_execute_over_cap_trips_in_admission_without_output_or_mutation() {
     // An execution whose cost exceeds the cap trips in the read-only admission pass: no persistent
     // output is created and the meter is left unchanged (breach before any write).
-    let fixture = EvalFixture::with_block_cap(FIXTURE_BATCH_HCU - 1);
+    let fixture = FheExecutionFixture::with_block_cap(FIXTURE_BATCH_HCU - 1);
     let slot = fixture.context.mollusk.sysvars.clock.slot;
     let (meter_pda, meter_account) = hcu_block_meter_account(fixture.block_cap_app(), slot, 0);
     fixture.seed_account(meter_pda, meter_account);
@@ -4741,7 +4741,7 @@ fn mollusk_fhe_execute_over_cap_trips_in_admission_without_output_or_mutation() 
 fn mollusk_fhe_execute_charge_accumulates_onto_prior_slot_usage() {
     // Within a slot, a successful charge adds the execution cost onto the meter's existing usage
     // (monotonic; the meter is reused, not reset).
-    let fixture = EvalFixture::with_block_cap(500_000);
+    let fixture = FheExecutionFixture::with_block_cap(500_000);
     let slot = fixture.context.mollusk.sysvars.clock.slot;
     let (meter_pda, meter_account) = hcu_block_meter_account(fixture.block_cap_app(), slot, 50_000);
     fixture.seed_account(meter_pda, meter_account);
@@ -4759,7 +4759,7 @@ fn mollusk_fhe_execute_charge_accumulates_onto_prior_slot_usage() {
 #[test]
 fn mollusk_fhe_execute_over_cap_with_prior_usage_is_rejected_unchanged() {
     // Prior in-slot usage plus this execution exceeds the cap -> rejected, meter unchanged.
-    let fixture = EvalFixture::with_block_cap(150_000);
+    let fixture = FheExecutionFixture::with_block_cap(150_000);
     let slot = fixture.context.mollusk.sysvars.clock.slot;
     let (meter_pda, meter_account) =
         hcu_block_meter_account(fixture.block_cap_app(), slot, 100_000);
@@ -4785,7 +4785,7 @@ fn mollusk_fhe_execute_lazy_reset_zeroes_prior_slot_usage() {
     // A meter last written in a different slot is treated as used = 0 for this slot's execution:
     // even a value that would exceed the cap in-slot no longer blocks, and the meter is
     // rewritten at the current slot with just this execution's cost.
-    let fixture = EvalFixture::with_block_cap(150_000);
+    let fixture = FheExecutionFixture::with_block_cap(150_000);
     let slot = fixture.context.mollusk.sysvars.clock.slot;
     // Seed as-of a different slot with usage that would exceed the cap if it carried over.
     let (meter_pda, meter_account) =
@@ -4805,7 +4805,7 @@ fn mollusk_fhe_execute_lazy_reset_zeroes_prior_slot_usage() {
 fn mollusk_fhe_execute_clean_first_call_lazy_creates_meter_at_batch_cost() {
     // A first metered execution lazy-creates a program-owned meter initialized to exactly the
     // execution's cost, stamped at the current slot and keyed on this app.
-    let fixture = EvalFixture::with_block_cap(500_000);
+    let fixture = FheExecutionFixture::with_block_cap(500_000);
     let meter_pda = fixture.meter_pda();
 
     fixture.context.process_and_validate_instruction(
@@ -4834,7 +4834,7 @@ fn mollusk_fhe_execute_clean_first_call_lazy_creates_meter_at_batch_cost() {
 fn mollusk_fhe_execute_per_app_meters_are_isolated_under_uniform_cap() {
     // The cap is uniform, but each compute subject has its own meter: one subject being maxed out
     // this slot does not throttle a different compute subject, and does not draw down its budget.
-    let fixture = EvalFixture::with_block_cap(150_000);
+    let fixture = FheExecutionFixture::with_block_cap(150_000);
     let slot = fixture.context.mollusk.sysvars.clock.slot;
     // A different compute subject is maxed out for the slot.
     let (other_meter_pda, other_meter_account) =
@@ -4869,7 +4869,7 @@ fn mollusk_fhe_execute_same_compute_subject_accumulates_across_varied_accounts_a
     // vary — a different payer AND a different encrypted_value_account_authority, each binding its own fresh
     // output encrypted value account. The cap fits exactly one execution, so the second execution accumulates onto the same
     // meter and trips the cap rather than getting a fresh budget.
-    let fixture = EvalFixture::with_block_cap(FIXTURE_BATCH_HCU);
+    let fixture = FheExecutionFixture::with_block_cap(FIXTURE_BATCH_HCU);
     let meter_pda = fixture.meter_pda();
 
     // FheExecution 1: its own payer and output authority.
@@ -4931,7 +4931,7 @@ fn mollusk_fhe_execute_extra_remaining_account_still_rejected_with_block_cap() {
     // The two block-cap accounts are named context accounts, not remaining_accounts, so a
     // trailing extra account is still rejected — since W7 by the execution's self-described
     // `account_count` (DD-033), before the per-account usage checks.
-    let fixture = EvalFixture::with_block_cap(u64::MAX);
+    let fixture = FheExecutionFixture::with_block_cap(u64::MAX);
     let mut ix = fixture.block_cap_instruction(None, None);
     ix.accounts
         .push(AccountMeta::new_readonly(Pubkey::new_unique(), false));
@@ -4950,7 +4950,7 @@ fn mollusk_fhe_execute_transient_only_batch_is_metered_via_compute_subject() {
     // `compute_subject`, independent of the execution's output shape, so the execution is still charged
     // in full. (An execution with no persistent output would otherwise escape a per-output-authority
     // meter entirely; this is the regression guard for that gap.)
-    let fixture = EvalFixture::with_block_cap(500_000);
+    let fixture = FheExecutionFixture::with_block_cap(500_000);
     let meter_pda = fixture.meter_pda();
     let result = fixture.context.process_and_validate_instruction(
         &fixture.transient_only_instruction(Some(meter_pda), None),
@@ -4969,7 +4969,7 @@ fn mollusk_fhe_execute_rejects_rand_batch_without_persistent_output() {
     // fhevm-internal#1853 W4: rand seeds are anchored to the execution's persistent writes, so an
     // all-transient rand execution has no seed anchor. Rejected unconditionally in preflight —
     // unlike the cap-gated persist-nothing rule, this holds under the unrestricted default cap.
-    let fixture = EvalFixture::with_block_cap(u64::MAX);
+    let fixture = FheExecutionFixture::with_block_cap(u64::MAX);
     let mut ix = fixture.persist_nothing_instruction(None, None);
     ix.data = host::instruction::FheExecute {
         args: FheExecuteArgs {
@@ -4996,7 +4996,7 @@ fn mollusk_fhe_execute_finite_cap_rejects_persist_nothing_batch() {
     // input, and no persistent output leaves `compute_subject` a free variable — the caller could
     // rotate fresh subjects to mint fresh per-slot meters. Rejected in preflight, before compute,
     // so no meter is created even though one is supplied.
-    let fixture = EvalFixture::with_block_cap(500_000);
+    let fixture = FheExecutionFixture::with_block_cap(500_000);
     let meter_pda = fixture.meter_pda();
     fixture.context.process_and_validate_instruction(
         &fixture.persist_nothing_instruction(Some(meter_pda), None),
@@ -5011,7 +5011,7 @@ fn mollusk_fhe_execute_finite_cap_rejects_persist_nothing_batch() {
 fn mollusk_fhe_execute_finite_cap_allows_input_free_persistent_output_bootstrap() {
     // The bootstrap/mint path (trivial-encrypt -> persistent output) is input-free but persists an
     // ACL record, so it anchors the execution and stays legal under a finite cap.
-    let fixture = EvalFixture::with_block_cap(500_000);
+    let fixture = FheExecutionFixture::with_block_cap(500_000);
     let meter_pda = fixture.meter_pda();
     let (output_value, ix) = fixture.input_free_persistent_instruction(Some(meter_pda));
     fixture
@@ -5029,7 +5029,7 @@ fn mollusk_fhe_execute_finite_cap_allows_input_free_persistent_output_bootstrap(
 fn mollusk_fhe_execute_deactivated_cap_allows_persist_nothing_batch() {
     // Under the ship default (u64::MAX) the persist-nothing rejection short-circuits, so behavior
     // is unchanged wherever a finite cap is not deployed.
-    let fixture = EvalFixture::with_block_cap(u64::MAX);
+    let fixture = FheExecutionFixture::with_block_cap(u64::MAX);
     fixture.context.process_and_validate_instruction(
         &fixture.persist_nothing_instruction(None, None),
         &[Check::success()],
@@ -5041,7 +5041,7 @@ fn mollusk_fhe_execute_meter_accumulation_overflow_fails_closed() {
     // Accumulating this execution onto a near-max in-slot usage would overflow u64. The checked
     // add must fail closed (reject, never wrap), and the meter is left unchanged. The cap is a
     // huge band value so it is the overflow — not the cap comparison — that trips.
-    let fixture = EvalFixture::with_block_cap(u64::MAX - 1);
+    let fixture = FheExecutionFixture::with_block_cap(u64::MAX - 1);
     let slot = fixture.context.mollusk.sysvars.clock.slot;
     let (meter_pda, meter_account) =
         hcu_block_meter_account(fixture.block_cap_app(), slot, u64::MAX - 1_000);
@@ -6043,9 +6043,9 @@ fn cost_snapshot_verify_public_decrypt() {
 #[test]
 fn cost_snapshot_fhe_execute_three_steps() {
     // Unrestricted HCU cap, no optional meter/trust accounts: the minimal
-    // canonical execution (`EvalFixture::success_steps`) with one persistent
+    // canonical execution (`FheExecutionFixture::success_steps`) with one persistent
     // output binding.
-    let fixture = EvalFixture::with_block_cap_keys(
+    let fixture = FheExecutionFixture::with_block_cap_keys(
         u64::MAX,
         Pubkey::new_from_array([0x21; 32]),
         Pubkey::new_from_array([0x22; 32]),
@@ -6065,7 +6065,7 @@ fn cost_snapshot_fhe_execute_max_steps() {
     // persistent-output shape as the three-op profile. The compute-unit delta
     // isolates the extra direct host-side fhe_execute steps; it does not include
     // work performed by an application before invoking the host program.
-    let fixture = EvalFixture::with_block_cap_keys(
+    let fixture = FheExecutionFixture::with_block_cap_keys(
         u64::MAX,
         Pubkey::new_from_array([0x21; 32]),
         Pubkey::new_from_array([0x22; 32]),
@@ -6085,7 +6085,7 @@ fn mollusk_fhe_execute_max_op_transaction_fits_packet() {
     // byte-budget half: the whole signed transaction for the max-op execution — envelope included —
     // must fit one 1,232-byte packet, with headroom for realistic envelopes (more persistent
     // accounts, more dictionary entries) so the cap is not set at the packet edge.
-    let fixture = EvalFixture::with_block_cap_keys(
+    let fixture = FheExecutionFixture::with_block_cap_keys(
         u64::MAX,
         Pubkey::new_from_array([0x21; 32]),
         Pubkey::new_from_array([0x22; 32]),

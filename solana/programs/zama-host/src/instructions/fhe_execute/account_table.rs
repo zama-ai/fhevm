@@ -2,7 +2,7 @@
 //! `fhe_execute` execution.
 //!
 //! Construction rejects duplicate account keys. Preflight marks every account
-//! the execution references and [`EvalAccountTable::assert_all_used`] rejects
+//! the execution references and [`ExecutionAccountTable::assert_all_used`] rejects
 //! dangling accounts before any pass touches state, so later passes access by
 //! index without their own bookkeeping. Persistent-output claims (one write per
 //! account per execution), deny-record location by canonical derived address, and
@@ -11,7 +11,7 @@
 
 use super::*;
 
-pub(super) struct EvalAccountTable<'a, 'info> {
+pub(super) struct ExecutionAccountTable<'a, 'info> {
     accounts: &'a [AccountInfo<'info>],
     used: Vec<bool>,
     /// Persistent output accounts already claimed by an earlier step. Reserved to
@@ -31,7 +31,7 @@ pub(super) struct OutputPda {
     pub encrypted_value_id: [u8; 32],
 }
 
-impl<'a, 'info> EvalAccountTable<'a, 'info> {
+impl<'a, 'info> ExecutionAccountTable<'a, 'info> {
     /// Rejects duplicate keys up front so no index-referenced account can be
     /// validated as one role and used as another. The scan is quadratic; the
     /// bound is the transaction account limit (~64 keys today, `u16::MAX`
@@ -166,20 +166,20 @@ mod tests {
     fn construction_rejects_duplicate_keys() {
         let duplicate = Pubkey::new_unique();
         let accounts = vec![test_account(duplicate), test_account(duplicate)];
-        assert!(EvalAccountTable::new(&accounts).is_err());
+        assert!(ExecutionAccountTable::new(&accounts).is_err());
     }
 
     #[test]
     fn unmarked_account_fails_all_used() {
         let accounts = vec![test_account(Pubkey::new_unique())];
-        let table = EvalAccountTable::new(&accounts).unwrap();
+        let table = ExecutionAccountTable::new(&accounts).unwrap();
         assert!(table.assert_all_used().is_err());
     }
 
     #[test]
     fn marked_accounts_pass_all_used_and_out_of_range_rejects() {
         let accounts = vec![test_account(Pubkey::new_unique())];
-        let mut table = EvalAccountTable::new(&accounts).unwrap();
+        let mut table = ExecutionAccountTable::new(&accounts).unwrap();
         assert!(table.mark(1).is_err());
         assert!(table.account(1).is_err());
         table.mark(0).unwrap();
@@ -189,7 +189,7 @@ mod tests {
     #[test]
     fn second_claim_of_same_persistent_output_rejects() {
         let accounts: Vec<AccountInfo> = Vec::new();
-        let mut table = EvalAccountTable::new(&accounts).unwrap();
+        let mut table = ExecutionAccountTable::new(&accounts).unwrap();
         let output = Pubkey::new_unique();
         table.claim_persistent_output(output).unwrap();
         assert!(table.claim_persistent_output(output).is_err());
@@ -198,7 +198,7 @@ mod tests {
     #[test]
     fn output_pda_derivation_is_input_bound() {
         let accounts: Vec<AccountInfo> = Vec::new();
-        let table = EvalAccountTable::new(&accounts).unwrap();
+        let table = ExecutionAccountTable::new(&accounts).unwrap();
         let domain = Pubkey::new_unique();
         let app = Pubkey::new_unique();
         let first = table.expected_output_pda(domain, app, [1; 32]);

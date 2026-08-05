@@ -106,14 +106,14 @@
         {
           "name": "balance_value",
           "docs": [
-            "Stable balance encrypted value account; read for the current handle and replaced by this eval."
+            "Stable balance encrypted value account; read for the current handle and replaced by this execution."
           ],
           "writable": true
         },
         {
           "name": "total_supply_value",
           "docs": [
-            "Stable total-supply encrypted value account; read for the current handle and replaced by this eval."
+            "Stable total-supply encrypted value account; read for the current handle and replaced by this execution."
           ],
           "writable": true
         },
@@ -296,14 +296,14 @@
         {
           "name": "balance_value",
           "docs": [
-            "Stable balance encrypted value account; read for the current handle and replaced by this eval."
+            "Stable balance encrypted value account; read for the current handle and replaced by this execution."
           ],
           "writable": true
         },
         {
           "name": "total_supply_value",
           "docs": [
-            "Stable total-supply encrypted value account; read for the current handle and replaced by this eval."
+            "Stable total-supply encrypted value account; read for the current handle and replaced by this execution."
           ],
           "writable": true
         },
@@ -453,7 +453,7 @@
           "name": "from_balance_value",
           "docs": [
             "Sender's stable balance `EncryptedValue` encrypted value account; read for the current",
-            "handle and replaced in place by this eval's CPI."
+            "handle and replaced in place by this execution's CPI."
           ],
           "writable": true
         },
@@ -610,7 +610,7 @@
           "name": "from_balance_value",
           "docs": [
             "Sender's stable balance `EncryptedValue` encrypted value account; read for the current",
-            "handle and replaced in place by this eval's CPI."
+            "handle and replaced in place by this execution's CPI."
           ],
           "writable": true
         },
@@ -1578,14 +1578,14 @@
         {
           "name": "balance_value",
           "docs": [
-            "Stable balance encrypted value account; read for the current handle and replaced by this eval."
+            "Stable balance encrypted value account; read for the current handle and replaced by this execution."
           ],
           "writable": true
         },
         {
           "name": "total_supply_value",
           "docs": [
-            "Stable total-supply encrypted value account; read for the current handle and replaced by this eval."
+            "Stable total-supply encrypted value account; read for the current handle and replaced by this execution."
           ],
           "writable": true
         },

@@ -1,8 +1,8 @@
-use super::account_table::EvalAccountTable;
+use super::account_table::ExecutionAccountTable;
 use super::*;
 
 pub(super) fn preflight_execution<'info>(
-    table: &mut EvalAccountTable<'_, 'info>,
+    table: &mut ExecutionAccountTable<'_, 'info>,
     ctx: &Context<'info, FheExecute<'info>>,
     args: &FheExecuteArgs,
 ) -> Result<()> {
@@ -147,12 +147,12 @@ fn step_pins_or_persists(step: &FheExecuteStep) -> bool {
 }
 
 fn preflight_execution_accounts(
-    table: &mut EvalAccountTable<'_, '_>,
+    table: &mut ExecutionAccountTable<'_, '_>,
     args: &FheExecuteArgs,
     encrypted_value_account_authority: Pubkey,
     deny_list_enabled: bool,
 ) -> Result<()> {
-    let mut preflight = EvalPreflight {
+    let mut preflight = Preflight {
         table,
         dictionary: &args.dictionary,
         dictionary_used: vec![false; args.dictionary.len()],
@@ -173,10 +173,10 @@ fn preflight_execution_accounts(
 }
 
 /// Marks every account the execution references into the shared table so
-/// [`EvalAccountTable::assert_all_used`] can reject dangling accounts before
+/// [`ExecutionAccountTable::assert_all_used`] can reject dangling accounts before
 /// any pass mutates state.
-struct EvalPreflight<'t, 'a, 'info> {
-    table: &'t mut EvalAccountTable<'a, 'info>,
+struct Preflight<'t, 'a, 'info> {
+    table: &'t mut ExecutionAccountTable<'a, 'info>,
     dictionary: &'t [[u8; 32]],
     dictionary_used: Vec<bool>,
     encrypted_value_account_authority: Pubkey,
@@ -187,7 +187,7 @@ struct EvalPreflight<'t, 'a, 'info> {
     persistent_outputs_written: Vec<Pubkey>,
 }
 
-impl EvalPreflight<'_, '_, '_> {
+impl Preflight<'_, '_, '_> {
     /// Marks a dictionary reference used and returns its bytes; out-of-range fails the execution here,
     /// before execution resolves anything.
     fn mark_dictionary(&mut self, index: u8) -> Result<[u8; 32]> {
@@ -219,7 +219,7 @@ impl EvalPreflight<'_, '_, '_> {
 fn preflight_step(
     step: &FheExecuteStep,
     step_index: usize,
-    preflight: &mut EvalPreflight<'_, '_, '_>,
+    preflight: &mut Preflight<'_, '_, '_>,
 ) -> Result<()> {
     match step {
         FheExecuteStep::Binary {
@@ -287,7 +287,7 @@ fn preflight_step(
 fn preflight_rhs_operand(
     operand: &FheExecuteOperand,
     step_index: usize,
-    preflight: &mut EvalPreflight<'_, '_, '_>,
+    preflight: &mut Preflight<'_, '_, '_>,
 ) -> Result<()> {
     match operand {
         FheExecuteOperand::Scalar { value_index } => {
@@ -301,7 +301,7 @@ fn preflight_rhs_operand(
 fn preflight_encrypted_operand(
     operand: &FheExecuteOperand,
     step_index: usize,
-    preflight: &mut EvalPreflight<'_, '_, '_>,
+    preflight: &mut Preflight<'_, '_, '_>,
 ) -> Result<()> {
     match operand {
         FheExecuteOperand::StoredValue {
@@ -337,7 +337,7 @@ fn preflight_encrypted_operand(
 
 fn preflight_output(
     output: &FheExecuteOutput,
-    preflight: &mut EvalPreflight<'_, '_, '_>,
+    preflight: &mut Preflight<'_, '_, '_>,
 ) -> Result<()> {
     match output {
         FheExecuteOutput::Transient => {}
@@ -407,7 +407,7 @@ mod tests {
             test_account(Pubkey::new_unique()),
             test_account(Pubkey::new_unique()),
         ];
-        let mut table = EvalAccountTable::new(&accounts).unwrap();
+        let mut table = ExecutionAccountTable::new(&accounts).unwrap();
 
         assert!(
             preflight_execution_accounts(&mut table, &args, Pubkey::new_unique(), false).is_err()
@@ -434,7 +434,7 @@ mod tests {
             },
         ]);
         let accounts = vec![test_account(Pubkey::new_unique())];
-        let mut table = EvalAccountTable::new(&accounts).unwrap();
+        let mut table = ExecutionAccountTable::new(&accounts).unwrap();
 
         assert!(
             preflight_execution_accounts(&mut table, &args, Pubkey::new_unique(), false).is_err()
@@ -454,7 +454,7 @@ mod tests {
             output: persistent_output(),
         }]);
         let accounts = vec![test_account(Pubkey::new_unique())];
-        let mut table = EvalAccountTable::new(&accounts).unwrap();
+        let mut table = ExecutionAccountTable::new(&accounts).unwrap();
 
         assert!(
             preflight_execution_accounts(&mut table, &args, Pubkey::new_unique(), false).is_ok()

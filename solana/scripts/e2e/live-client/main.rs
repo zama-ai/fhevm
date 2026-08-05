@@ -92,11 +92,11 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         return Ok(());
     }
 
-    // TRIVIAL_ENCRYPT_EVAL drives the SAME trivial-encryption through the eval-execution executor
+    // TRIVIAL_ENCRYPT_EXECUTE drives the SAME trivial-encryption through the fhe_execute executor
     // (fhe_execute): a single TrivialEncrypt step with a persistent output ACL record. The host computes
     // the result handle on-chain and the host-listener reconstructs the successful execution,
-    // exercising the #2755 eval path.
-    if std::env::var("TRIVIAL_ENCRYPT_EVAL").is_ok() {
+    // exercising the #2755 fhe_execute path.
+    if std::env::var("TRIVIAL_ENCRYPT_EXECUTE").is_ok() {
         trivial_encrypt_eval(&host, &payer, host_config)?;
         return Ok(());
     }
@@ -781,8 +781,8 @@ fn trivial_encrypt_eval_with_label(
     })
 }
 
-/// Eval-based compute phase: drives a single-step fhe_execute execution (one TrivialEncrypt step with a
-/// persistent output ACL record). The host runs the eval executor, computes the result handle on-chain,
+/// Compute phase: drives a single-step fhe_execute execution (one TrivialEncrypt step with a
+/// persistent output ACL record). The host runs the executor, computes the result handle on-chain,
 /// creates the persistent output ACL record
 /// (passed as the sole remaining_account). The live host-listener reconstructs the successful
 /// execution for the tfhe-worker to materialize. TE_VALUE selects the euint64 plaintext; TE_ALLOW
@@ -1528,7 +1528,7 @@ fn consume_burn(
 
     // 1. fromExternal burn amount: a coprocessor-attested external input (BIND_* env from the
     // relayer input-proof), bound to (user = owner, contract = compute_signer PDA). confidential_burn
-    // re-verifies the EIP-712 attestation in-execution and transient-allows it for the burn eval —
+    // re-verifies the EIP-712 attestation in-execution and transient-allows it for the burn execution —
     // no persistent amount ACL. The attested handle must be a euint64.
     let input_handle: [u8; 32] = hexdec(&std::env::var("BIND_HANDLE")?)
         .try_into()
@@ -2384,7 +2384,7 @@ fn fhe_execute_rand_bounded(
 
 /// Multi-step fhe_execute Sum: two TrivialEncrypt(Transient) → Sum(StoredValue).
 /// SUM_A/SUM_B select the euint64 addends (defaults 10/20). Expected result: SUM_A + SUM_B.
-/// SUM_ALLOW marks the output publicly decryptable after the eval.
+/// SUM_ALLOW marks the output publicly decryptable after the execution.
 fn fhe_execute_sum(
     host: &Program<Rc<Keypair>>,
     payer: &Rc<Keypair>,

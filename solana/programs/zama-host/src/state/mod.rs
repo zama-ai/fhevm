@@ -356,7 +356,7 @@ pub enum FheExecuteOutput {
         /// Optional index into `remaining_accounts` for the encrypted value account authority
         /// signer.
         ///
-        /// `None` uses the fixed `encrypted_value_account_authority` account in the eval
+        /// `None` uses the fixed `encrypted_value_account_authority` account in the execution
         /// context. `Some(index)` requires that remaining account to be a signer
         /// and to match the declared output authority.
         output_authority_index: Option<u8>,
@@ -962,7 +962,7 @@ pub fn computed_eval_trivial_handle(
     result
 }
 
-/// Derives the compulsorily fresh seed for an instruction-local eval random handle.
+/// Derives the compulsorily fresh seed for an instruction-local execution random handle.
 ///
 /// Freshness is anchored, never caller-advised: `persistent_anchor_bytes` is the execution's
 /// persistent-write anchor — every persistent output's live account identity and version

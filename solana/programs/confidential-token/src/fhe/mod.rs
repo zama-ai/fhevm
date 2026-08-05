@@ -20,7 +20,7 @@ pub(crate) use verify_public_decrypt::*;
 /// Holder-scoped encrypted value accounts (balances, `transferred_amount`, `burned_amount`) must
 /// always grant the holder's owner key and the mint compute-signer PDA: the owner
 /// keeps decrypt access to their own value, and the compute signer gates the next
-/// eval that reads it. [`PersistentAudience::for_owner`] takes both as required
+/// execution that reads it. [`PersistentAudience::for_owner`] takes both as required
 /// parameters, so a holder output can never be built missing either; extra owners
 /// (the recipient phase of a `transferred_amount` update) are additive via
 /// [`PersistentAudience::with_owner`]. Mint-scoped encrypted value accounts with no single holder
@@ -73,7 +73,7 @@ impl PersistentAudience {
     }
 }
 
-/// A persistent eval output account bound to the exact `EncryptedValue` encrypted value account
+/// A persistent execution output account bound to the exact `EncryptedValue` encrypted value account
 /// it is allowed to create or update.
 pub(crate) struct PersistentOutput<'info> {
     encrypted_value: AccountInfo<'info>,
@@ -81,10 +81,10 @@ pub(crate) struct PersistentOutput<'info> {
 }
 
 impl<'info> PersistentOutput<'info> {
-    /// Binds `encrypted_value` as the output of a persistent eval step: creates the
+    /// Binds `encrypted_value` as the output of a persistent execution step: creates the
     /// encrypted value account's first handle if the PDA does not exist yet, or updates it
     /// (reading `previous_handle`/`previous_subjects` off the on-chain account)
-    /// if it does. Either way the eval CPI's attestation matches exactly what
+    /// if it does. Either way the execution CPI's attestation matches exactly what
     /// the host will verify.
     pub(crate) fn new(
         encrypted_value: AccountInfo<'info>,
@@ -95,7 +95,7 @@ impl<'info> PersistentOutput<'info> {
     }
 
     /// Like [`new`], but binds the output created publicly decryptable: the host
-    /// seals a public-decrypt leaf for the new handle inside the same eval CPI
+    /// seals a public-decrypt leaf for the new handle inside the same execution CPI
     /// (EVM `unwrap` parity; DD-036). Used by `confidential_burn` for the burned
     /// delta so every burn stays permanently redeemable with no second CPI.
     pub(crate) fn new_public(
@@ -143,7 +143,7 @@ impl<'info> PersistentOutput<'info> {
         zama_fhe::Output::persistent((*self.output).clone())
     }
 
-    /// Reads the handle the host bound into `encrypted_value` by this eval CPI.
+    /// Reads the handle the host bound into `encrypted_value` by this execution CPI.
     /// Call only after the CPI that carries this output has executed.
     pub(crate) fn handle(&self) -> Result<[u8; 32]> {
         let binding = self.binding()?;

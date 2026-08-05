@@ -39,7 +39,7 @@ pub fn is_fhe_execute_instruction(instruction_data: &[u8]) -> bool {
 
 /// Decodes a `fhe_execute` instruction's data into the program's own `FheExecuteArgs`
 /// execution through `zama_host::decode` (so there is no bespoke decoder to
-/// drift from the on-chain layout). The decoded execution is the input to the eval
+/// drift from the on-chain layout). The decoded execution is the input to the execution
 /// walk that reconstructs one op record per step — a separate pass that
 /// recomputes each step's handle and therefore depends on `previous_bank_hash`.
 pub fn decode_fhe_execute_args(
@@ -226,7 +226,7 @@ pub fn parse_host_config(account_data: &[u8]) -> anyhow::Result<u64> {
     Ok(config.chain_id)
 }
 
-/// Resolves an eval operand to its handle by reusing already-produced step
+/// Resolves an execution operand to its handle by reusing already-produced step
 /// results and the execution's interned dictionary — no on-chain account reads.
 /// `Scalar` is only valid as a binary rhs (handled by [`resolve_rhs`]); seeing
 /// it here means a malformed execution.
@@ -273,7 +273,7 @@ fn resolve_rhs(
 /// Reconstructs the per-step op records a `fhe_execute` execution produces, mirroring
 /// the program's `walk_steps`: walk steps in order, resolve operands
 /// (`Transient` referring to earlier steps' produced handles), recompute each
-/// step's result handle via the program's eval primitives, and produce one record
+/// step's result handle via the program's execution primitives, and produce one record
 /// per step. Persistent and instruction-local outputs derive the identical base
 /// handle — no per-output binding (matches EVM `FHEVMExecutor`).
 ///
@@ -601,7 +601,7 @@ pub fn fhe_execute_step_previous_handle(
     }
 }
 
-/// The output policy of an eval step, independent of step kind.
+/// The output policy of an execution step, independent of step kind.
 fn fhe_execute_step_output(step: &FheExecuteStep) -> &FheExecuteOutput {
     match step {
         FheExecuteStep::Binary { output, .. }

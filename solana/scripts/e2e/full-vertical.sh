@@ -181,9 +181,9 @@ echo "    input handle=$ih (coprocessor EIP-712 attestation $isig)"
 # (the fromExternal path) — exercised by the FHE_EXECUTE_VERIFIED_INPUT step below. There is no
 # standalone verify_coprocessor_input instruction.
 
-echo "==> [compute] eval-based fhe_execute trivial_encrypt $VALUE on zama-host (#2755 eval executor + ACL allow)"
-out="$(cd "$ROOT/solana/scripts/e2e/live-client" && TRIVIAL_ENCRYPT_EVAL=1 TE_VALUE="$VALUE" TE_ALLOW=1 ./target/debug/poc-live-client 2>&1)"
-echo "$out" | grep -E 'result handle|allow_for_decryption' || fail "trivial-encrypt(eval): $out"
+echo "==> [compute] execution-based fhe_execute trivial_encrypt $VALUE on zama-host (#2755 execution executor + ACL allow)"
+out="$(cd "$ROOT/solana/scripts/e2e/live-client" && TRIVIAL_ENCRYPT_EXECUTE=1 TE_VALUE="$VALUE" TE_ALLOW=1 ./target/debug/poc-live-client 2>&1)"
+echo "$out" | grep -E 'result handle|allow_for_decryption' || fail "trivial-encrypt(execution): $out"
 H="$(echo "$out" | grep -oE 'result handle 0x[0-9a-f]+' | grep -oE '0x[0-9a-f]+')"
 [ -n "$H" ] || fail "no handle"
 H_ACL="$(echo "$out" | grep -oE 'output ACL record [A-Za-z0-9]+' | awk '{print $4}')"
@@ -539,4 +539,4 @@ disout="$(lc CONSUME_DISCLOSE=1 MINT="$MINT" TS_ACL="$BURNED_ACL" TS_HANDLE="$BU
 echo "$disout" | grep -q 'OK disclose_secp' || fail "disclose_secp: $(echo "$disout" | tail -3)"
 echo "    disclose_secp OK -- host verify_public_decrypt verified the KMS cert and emitted cleartext $CLEARTEXT"
 
-echo "==> FULL VERTICAL GREEN: input(ZK+secp bind) -> compute -> public-decrypt($VALUE) + user-decrypt($VALUE) -> input-flow(VerifiedInput $IV+$ADD -> public-decrypt $EXPECT) -> representative eval wiring [binary enc/enc + enc/scalar, unary cast, ternary, bounded randomness, sum, isIn, mulDiv] -> consume redeem($CLEARTEXT)+disclose($CLEARTEXT) [secp256k1 KMS cert]"
+echo "==> FULL VERTICAL GREEN: input(ZK+secp bind) -> compute -> public-decrypt($VALUE) + user-decrypt($VALUE) -> input-flow(VerifiedInput $IV+$ADD -> public-decrypt $EXPECT) -> representative execution wiring [binary enc/enc + enc/scalar, unary cast, ternary, bounded randomness, sum, isIn, mulDiv] -> consume redeem($CLEARTEXT)+disclose($CLEARTEXT) [secp256k1 KMS cert]"

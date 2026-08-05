@@ -223,7 +223,7 @@ export type JoinAsyncInput<
   /** Joining user; transfer authority over their confidential balance. */
   user: TransactionSigner<TAccountUser>;
   /**
-   * Pays join-record rent, transfer output rent, and the batcher eval's
+   * Pays join-record rent, transfer output rent, and the batcher execution's
    * ACL rent.
    */
   payer: TransactionSigner<TAccountPayer>;
@@ -244,9 +244,9 @@ export type JoinAsyncInput<
   batchJoinTokenAccount: Address<TAccountBatchJoinTokenAccount>;
   userBalanceValue: Address<TAccountUserBalanceValue>;
   batchBalanceValue: Address<TAccountBatchBalanceValue>;
-  /** token CPI, then read as the batcher eval's operand. */
+  /** token CPI, then read as the batcher execution's operand. */
   userTransferredValue: Address<TAccountUserTransferredValue>;
-  /** (accumulated) on repeat joins by the batcher eval. */
+  /** (accumulated) on repeat joins by the batcher execution. */
   pendingJoinValue: Address<TAccountPendingJoinValue>;
   zamaEventAuthority: Address<TAccountZamaEventAuthority>;
   /** ZamaHost program (FHE compute + ACL). */
@@ -502,7 +502,7 @@ export type JoinInput<
   /** Joining user; transfer authority over their confidential balance. */
   user: TransactionSigner<TAccountUser>;
   /**
-   * Pays join-record rent, transfer output rent, and the batcher eval's
+   * Pays join-record rent, transfer output rent, and the batcher execution's
    * ACL rent.
    */
   payer: TransactionSigner<TAccountPayer>;
@@ -523,9 +523,9 @@ export type JoinInput<
   batchJoinTokenAccount: Address<TAccountBatchJoinTokenAccount>;
   userBalanceValue: Address<TAccountUserBalanceValue>;
   batchBalanceValue: Address<TAccountBatchBalanceValue>;
-  /** token CPI, then read as the batcher eval's operand. */
+  /** token CPI, then read as the batcher execution's operand. */
   userTransferredValue: Address<TAccountUserTransferredValue>;
-  /** (accumulated) on repeat joins by the batcher eval. */
+  /** (accumulated) on repeat joins by the batcher execution. */
   pendingJoinValue: Address<TAccountPendingJoinValue>;
   zamaEventAuthority: Address<TAccountZamaEventAuthority>;
   /** ZamaHost program (FHE compute + ACL). */
@@ -752,7 +752,7 @@ export type ParsedJoinInstruction<
     /** Joining user; transfer authority over their confidential balance. */
     user: TAccountMetas[0];
     /**
-     * Pays join-record rent, transfer output rent, and the batcher eval's
+     * Pays join-record rent, transfer output rent, and the batcher execution's
      * ACL rent.
      */
     payer: TAccountMetas[1];
@@ -773,9 +773,9 @@ export type ParsedJoinInstruction<
     batchJoinTokenAccount: TAccountMetas[9];
     userBalanceValue: TAccountMetas[10];
     batchBalanceValue: TAccountMetas[11];
-    /** token CPI, then read as the batcher eval's operand. */
+    /** token CPI, then read as the batcher execution's operand. */
     userTransferredValue: TAccountMetas[12];
-    /** (accumulated) on repeat joins by the batcher eval. */
+    /** (accumulated) on repeat joins by the batcher execution. */
     pendingJoinValue: TAccountMetas[13];
     zamaEventAuthority: TAccountMetas[14];
     /** ZamaHost program (FHE compute + ACL). */

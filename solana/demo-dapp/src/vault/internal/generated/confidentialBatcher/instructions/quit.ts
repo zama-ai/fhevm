@@ -157,7 +157,7 @@ export type QuitAsyncInput<
 > = {
   /** Quitting user; owner of the refund destination. */
   user: TransactionSigner<TAccountUser>;
-  /** Pays the transfer output rent and the reset eval's ACL rent. */
+  /** Pays the transfer output rent and the reset execution's ACL rent. */
   payer: TransactionSigner<TAccountPayer>;
   /** Batcher config. */
   batcher: Address<TAccountBatcher>;
@@ -178,7 +178,7 @@ export type QuitAsyncInput<
   userBalanceValue: Address<TAccountUserBalanceValue>;
   /** a transfer FROM the batch account); replaced by the token CPI. */
   batchTransferredValue: Address<TAccountBatchTransferredValue>;
-  /** amount, then reset to an encrypted zero by the batcher eval. */
+  /** amount, then reset to an encrypted zero by the batcher execution. */
   pendingJoinValue: Address<TAccountPendingJoinValue>;
   zamaEventAuthority: Address<TAccountZamaEventAuthority>;
   /** ZamaHost program (FHE compute + ACL). */
@@ -422,7 +422,7 @@ export type QuitInput<
 > = {
   /** Quitting user; owner of the refund destination. */
   user: TransactionSigner<TAccountUser>;
-  /** Pays the transfer output rent and the reset eval's ACL rent. */
+  /** Pays the transfer output rent and the reset execution's ACL rent. */
   payer: TransactionSigner<TAccountPayer>;
   /** Batcher config. */
   batcher: Address<TAccountBatcher>;
@@ -443,7 +443,7 @@ export type QuitInput<
   userBalanceValue: Address<TAccountUserBalanceValue>;
   /** a transfer FROM the batch account); replaced by the token CPI. */
   batchTransferredValue: Address<TAccountBatchTransferredValue>;
-  /** amount, then reset to an encrypted zero by the batcher eval. */
+  /** amount, then reset to an encrypted zero by the batcher execution. */
   pendingJoinValue: Address<TAccountPendingJoinValue>;
   zamaEventAuthority: Address<TAccountZamaEventAuthority>;
   /** ZamaHost program (FHE compute + ACL). */
@@ -658,7 +658,7 @@ export type ParsedQuitInstruction<
   accounts: {
     /** Quitting user; owner of the refund destination. */
     user: TAccountMetas[0];
-    /** Pays the transfer output rent and the reset eval's ACL rent. */
+    /** Pays the transfer output rent and the reset execution's ACL rent. */
     payer: TAccountMetas[1];
     /** Batcher config. */
     batcher: TAccountMetas[2];
@@ -679,7 +679,7 @@ export type ParsedQuitInstruction<
     userBalanceValue: TAccountMetas[11];
     /** a transfer FROM the batch account); replaced by the token CPI. */
     batchTransferredValue: TAccountMetas[12];
-    /** amount, then reset to an encrypted zero by the batcher eval. */
+    /** amount, then reset to an encrypted zero by the batcher execution. */
     pendingJoinValue: TAccountMetas[13];
     zamaEventAuthority: TAccountMetas[14];
     /** ZamaHost program (FHE compute + ACL). */

@@ -24,7 +24,7 @@ pub struct ConfidentialTransfer<'info> {
     #[account(seeds = [b"fhe-compute", mint.key().as_ref()], bump)]
     pub compute_signer: UncheckedAccount<'info>,
     /// Sender's stable balance `EncryptedValue` encrypted value account; read for the current
-    /// handle and replaced in place by this eval's CPI.
+    /// handle and replaced in place by this execution's CPI.
     #[account(mut, address = from_account.balance_encrypted_value)]
     pub from_balance_value: Box<Account<'info, zama_host::EncryptedValue>>,
     /// Recipient's stable balance `EncryptedValue` encrypted value account.
@@ -141,7 +141,7 @@ pub fn confidential_transfer<'info>(
 ///
 /// Identical to [`ConfidentialTransfer`] except the 190-byte attestation argument is gone and one
 /// account is added: `amount_value`, the encrypted amount to spend. It is read-only — the persistent
-/// operand the eval reads — and is never replaced or consumed; only the two balance encrypted value accounts
+/// operand the execution reads — and is never replaced or consumed; only the two balance encrypted value accounts
 /// change through the same `ge -> sub -> select` debit and `add` credit.
 #[derive(Accounts)]
 #[event_cpi]
@@ -164,7 +164,7 @@ pub struct ConfidentialTransferFromValue<'info> {
     #[account(seeds = [b"fhe-compute", mint.key().as_ref()], bump)]
     pub compute_signer: UncheckedAccount<'info>,
     /// Sender's stable balance `EncryptedValue` encrypted value account; read for the current
-    /// handle and replaced in place by this eval's CPI.
+    /// handle and replaced in place by this execution's CPI.
     #[account(mut, address = from_account.balance_encrypted_value)]
     pub from_balance_value: Box<Account<'info, zama_host::EncryptedValue>>,
     /// Recipient's stable balance `EncryptedValue` encrypted value account.
@@ -240,7 +240,7 @@ pub fn confidential_transfer_from_value<'info>(
         ConfidentialTokenError::OwnerMismatch
     );
     let amount_value = &ctx.accounts.amount_value;
-    // Reject a non-euint64 amount early for a clear error, before the eval builder / host would
+    // Reject a non-euint64 amount early for a clear error, before the execution builder / host would
     // reject the same handle deeper in the CPI (the host's binary type validation still covers it).
     require!(
         zama_host::handle_fhe_type(amount_value.current_handle) == BALANCE_FHE_TYPE,

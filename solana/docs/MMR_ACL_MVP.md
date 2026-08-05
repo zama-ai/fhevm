@@ -69,7 +69,7 @@ this note records the operational model in one place.
 ## Gates And Trust Boundary
 
 - Pause gates ACL mutations plus `fhe_execute` output paths. The deny-list gates the acting
-  caller/authority for grant and eval flows; it blocks new action and is not an erasure mechanism for
+  caller/authority for grant and execution flows; it blocks new action and is not an erasure mechanism for
   already sealed history.
 - Solana programs enforce authorization. The relayer, proof builder, host-listener ingestion, and
   coprocessor scheduling are untrusted for authorization. KMS ACL/proof verification reads confirmed

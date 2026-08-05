@@ -17,7 +17,7 @@
 //! coprocessor's widened MulDiv, and the result is at most `payout_received`,
 //! so it fits euint64. `total_joined > 0` because zero-total batches cancel.
 //!
-//! The eval and transfer assume `grant_deny_list_enabled = false` and no
+//! The execution and transfer assume `grant_deny_list_enabled = false` and no
 //! binding HCU cap: `hcu_block_meter` and `hcu_trusted_app_record` are
 //! hardcoded `None` (the PoC host fixtures never enable them), and deny-list
 //! records ride in as the (empty) remaining accounts.
@@ -38,7 +38,7 @@ pub struct Claim<'info> {
     /// The settled batch being claimed from.
     #[account(constraint = batch.batcher == batcher.key() @ BatcherError::BatchBatcherMismatch)]
     pub batch: Box<Account<'info, Batch>>,
-    /// CHECK: per-batch authority PDA; the claim eval's compute subject + encrypted value account
+    /// CHECK: per-batch authority PDA; the claim execution's compute subject + encrypted value account
     /// authority and the payout transfer's authority via invoke_signed.
     #[account(seeds = [BATCH_AUTHORITY_SEED, batch.key().as_ref()], bump = batch.authority_bump)]
     pub batch_authority: UncheckedAccount<'info>,
@@ -51,7 +51,7 @@ pub struct Claim<'info> {
     pub join_record: Box<Account<'info, JoinRecord>>,
     /// CHECK: the user's joined encrypted value account; read as the MulDiv operand.
     pub pending_join_value: UncheckedAccount<'info>,
-    /// CHECK: the user's claim encrypted value account; created by the claim eval and spent as
+    /// CHECK: the user's claim encrypted value account; created by the claim execution and spent as
     /// the transfer amount.
     #[account(mut)]
     pub claim_amount_value: UncheckedAccount<'info>,
@@ -140,7 +140,7 @@ pub fn claim<'info>(ctx: Context<'info, Claim<'info>>) -> Result<()> {
         ),
         // The user decrypts their claimed amount; the batch authority spends
         // it as the transfer amount; the payout mint's compute signer lets the
-        // transfer eval read it.
+        // transfer execution read it.
         vec![
             user,
             batch_authority,

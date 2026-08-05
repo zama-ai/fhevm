@@ -51,7 +51,7 @@ this handle" — current membership, or an MMR-proven historical/public-decrypt 
 `fhe_execute` composes mixed FHE steps in one host instruction: **Binary / Ternary / Unary /
 TrivialEncrypt / Rand / RandBounded / Sum / IsIn / MulDiv** (no `Input` step — DD-007/DD-023). Binary scratch results can feed ternary
 `if_then_else`, and trivial-encrypt / random creations can participate in the same execution. Outputs
-produced earlier in the eval can be referenced as transient operands by later operations.
+produced earlier in the execution can be referenced as transient operands by later operations.
 Persistent operands must still be authorized by a live or historically-proven `EncryptedValue`. Transient
 outputs create no `EncryptedValue` state at all. Only outputs marked persistent create (first bind) or
 update (subsequent binds) an `EncryptedValue`, carrying `previous_handle`/`previous_subjects`
@@ -83,7 +83,7 @@ Admission invariants for `fhe_execute`:
 - Only the RHS of a binary operation may be scalar; encrypted operands must match the operator's FHE
   type rules.
 - External encrypted inputs enter compute through the `FheExecuteOperand::VerifiedInput` operand: the
-  coprocessor attestation is re-verified in-execution and the input is transient-allowed for that eval only
+  coprocessor attestation is re-verified in-execution and the input is transient-allowed for that execution only
   (the EVM `fromExternal` / `allowTransient(input, msg.sender)` analog). The caller-is-contract gate is
   checked at input consumption (`attestation.contract_address == compute_subject`); derived outputs are
   unconstrained. The redundant standalone `verify_coprocessor_input` instruction was removed (DD-007).
@@ -98,9 +98,9 @@ The `FheExecuteOperand::VerifiedInput` operand is the production encrypted-input
 **coprocessor's EIP-712 `CiphertextVerification` attestation on-chain via secp256k1** (recovering the
 EVM coprocessor signers and threshold-checking them against the configured coprocessor signer set),
 asserts the attested `contract_chain_id` equals the host chain id (EVM's `contractChainId ==
-block.chainid`), and transient-allows the input for that eval only — no persistent ACL, matching
+block.chainid`), and transient-allows the input for that execution only — no persistent ACL, matching
 `FHEVMExecutor.verifyInput` + `allowTransient(result, msg.sender)`. The "caller is the attested
-contract" check is enforced at consumption (`attestation.contract_address` must equal the eval's
+contract" check is enforced at consumption (`attestation.contract_address` must equal the execution's
 `compute_subject`, the msg.sender analog); derived persistent outputs are **not tainted** by the input —
 any persistent output ACL is the app's separate explicit choice, exactly like EVM.
 

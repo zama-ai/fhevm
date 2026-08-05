@@ -30,7 +30,7 @@ const UNIX_TIMESTAMP: i64 = 0;
 
 #[test]
 fn encrypted_encrypted_add_executes_then_reads_cleartext_outcome() {
-    let mut flow = EvalFlow::new();
+    let mut flow = ExecutionFlow::new();
     let lhs = flow.encrypted(5, 40);
     let rhs = flow.encrypted(5, 2);
     let outcome = flow.execute(FheExecuteStep::Binary {
@@ -53,7 +53,7 @@ fn encrypted_encrypted_add_executes_then_reads_cleartext_outcome() {
 
 #[test]
 fn encrypted_scalar_add_executes_then_reads_cleartext_outcome() {
-    let mut flow = EvalFlow::new();
+    let mut flow = ExecutionFlow::new();
     let lhs = flow.encrypted(5, 40);
     let rhs = scalar(be(2));
     let outcome = flow.execute(FheExecuteStep::Binary {
@@ -76,7 +76,7 @@ fn encrypted_scalar_add_executes_then_reads_cleartext_outcome() {
 
 #[test]
 fn comparison_executes_then_reads_bool_outcome() {
-    let mut flow = EvalFlow::new();
+    let mut flow = ExecutionFlow::new();
     let lhs = flow.encrypted(5, 42);
     let rhs = flow.encrypted(5, 42);
     let outcome = flow.execute(FheExecuteStep::Binary {
@@ -99,7 +99,7 @@ fn comparison_executes_then_reads_bool_outcome() {
 
 #[test]
 fn cast_executes_then_reads_widened_outcome() {
-    let mut flow = EvalFlow::new();
+    let mut flow = ExecutionFlow::new();
     let operand = flow.encrypted(2, 255);
     let outcome = flow.execute(FheExecuteStep::Unary {
         op: FheUnaryOpCode::Cast,
@@ -118,7 +118,7 @@ fn cast_executes_then_reads_widened_outcome() {
 
 #[test]
 fn unary_not_executes_then_reads_width_bounded_outcome() {
-    let mut flow = EvalFlow::new();
+    let mut flow = ExecutionFlow::new();
     let operand = flow.encrypted(2, 0b1010);
     let outcome = flow.execute(FheExecuteStep::Unary {
         op: FheUnaryOpCode::Not,
@@ -137,7 +137,7 @@ fn unary_not_executes_then_reads_width_bounded_outcome() {
 
 #[test]
 fn membership_executes_then_reads_present_outcome() {
-    let mut flow = EvalFlow::new();
+    let mut flow = ExecutionFlow::new();
     let value = flow.encrypted(5, 42);
     let first = flow.encrypted(5, 7);
     let second = flow.encrypted(5, 42);
@@ -159,7 +159,7 @@ fn membership_executes_then_reads_present_outcome() {
 
 #[test]
 fn random_executes_then_binds_seed_and_type() {
-    let outcome = EvalFlow::new().execute(FheExecuteStep::Rand {
+    let outcome = ExecutionFlow::new().execute(FheExecuteStep::Rand {
         fhe_type: 5,
         output: FheExecuteOutput::Transient,
     });
@@ -173,7 +173,7 @@ fn random_executes_then_binds_seed_and_type() {
 
 #[test]
 fn bounded_random_executes_then_binds_bound_into_result_handle() {
-    let outcome = EvalFlow::new().execute(FheExecuteStep::RandBounded {
+    let outcome = ExecutionFlow::new().execute(FheExecuteStep::RandBounded {
         upper_bound: be(16),
         fhe_type: 5,
         output: FheExecuteOutput::Transient,
@@ -189,7 +189,7 @@ fn bounded_random_executes_then_binds_bound_into_result_handle() {
 
 #[test]
 fn mismatched_encrypted_operand_types_are_rejected() {
-    let mut flow = EvalFlow::new();
+    let mut flow = ExecutionFlow::new();
     let lhs = flow.encrypted(5, 40);
     let rhs = flow.encrypted(4, 2);
 
@@ -207,7 +207,7 @@ fn mismatched_encrypted_operand_types_are_rejected() {
 
 #[test]
 fn system_owned_encrypted_operand_is_rejected() {
-    let mut flow = EvalFlow::new();
+    let mut flow = ExecutionFlow::new();
     let lhs = flow.encrypted(5, 40);
     flow.make_last_encrypted_account_system_owned();
 
@@ -225,7 +225,7 @@ fn system_owned_encrypted_operand_is_rejected() {
 
 #[test]
 fn readonly_persistent_output_is_rejected() {
-    let mut flow = EvalFlow::new();
+    let mut flow = ExecutionFlow::new();
     let lhs = flow.encrypted(5, 40);
     let output = flow.readonly_persistent_output();
 
@@ -241,7 +241,7 @@ fn readonly_persistent_output_is_rejected() {
     );
 }
 
-struct EvalFlow {
+struct ExecutionFlow {
     authority: Pubkey,
     host_config: Pubkey,
     accounts: Vec<(Pubkey, Account)>,
@@ -283,7 +283,7 @@ fn scalar(value: [u8; 32]) -> FheExecuteOperand {
     }
 }
 
-impl EvalFlow {
+impl ExecutionFlow {
     fn new() -> Self {
         INTERNED_DICTIONARY.with(|dictionary| dictionary.borrow_mut().clear());
         let authority = Pubkey::new_unique();
@@ -378,7 +378,7 @@ impl EvalFlow {
         )
     }
 
-    fn execute(mut self, mut step: FheExecuteStep) -> EvalOutcome {
+    fn execute(mut self, mut step: FheExecuteStep) -> ExecutionOutcome {
         let (output, output_address) = self.writable_persistent_output();
         *step_output_mut(&mut step) = output;
         let (args, instruction) = self.instruction(step);
@@ -394,7 +394,7 @@ impl EvalFlow {
         let output_handle = host::EncryptedValue::try_deserialize(&mut output_data)
             .expect("persistent result account")
             .current_handle;
-        EvalOutcome {
+        ExecutionOutcome {
             cleartext,
             output_handle,
             compute_subject: self.authority,
@@ -437,7 +437,7 @@ impl EvalFlow {
     }
 }
 
-struct EvalOutcome {
+struct ExecutionOutcome {
     cleartext: Vec<TypedClearValue>,
     output_handle: [u8; 32],
     /// Rand-seed anchor inputs: the signed compute subject and the execution's single
@@ -446,7 +446,7 @@ struct EvalOutcome {
     output_address: Pubkey,
 }
 
-impl EvalOutcome {
+impl ExecutionOutcome {
     fn only_cleartext(&self) -> TypedClearValue {
         assert_eq!(self.cleartext.len(), 1);
         self.cleartext[0]
