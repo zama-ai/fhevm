@@ -18,6 +18,7 @@ import './tasks/examples/cOFT';
 import './tasks/examples/handlesList';
 import './tasks/generateKmsMaterials';
 import './tasks/kmsContext';
+import './tasks/mirrorKmsContext';
 import './tasks/ownership';
 import './tasks/pauseContracts';
 import './tasks/taskDeploy';
