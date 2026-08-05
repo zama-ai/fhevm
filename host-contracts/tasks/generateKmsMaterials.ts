@@ -33,6 +33,33 @@ task('task:triggerKeygen')
     console.log('Keygen triggering done!');
   });
 
+task('task:migrateToCompressedKeySet')
+  .addParam('keyId', 'The active key ID whose compressed material should be produced.')
+  .addOptionalParam(
+    'useInternalProxyAddress',
+    'If proxy address from the /addresses directory should be used.',
+    false,
+    types.boolean,
+  )
+  .setAction(async function ({ keyId, useInternalProxyAddress }, hre) {
+    await hre.run('compile:specific', { contract: 'contracts' });
+    console.log('Trigger compressed material production in KMSGeneration contract.');
+
+    const deployerPrivateKey = getRequiredEnvVar('DEPLOYER_PRIVATE_KEY');
+    const deployer = new hre.ethers.Wallet(deployerPrivateKey).connect(hre.ethers.provider);
+
+    if (useInternalProxyAddress) {
+      loadHostAddresses();
+    }
+
+    const proxyAddress = getRequiredEnvVar('KMS_GENERATION_CONTRACT_ADDRESS');
+    const kmsGeneration = await hre.ethers.getContractAt('KMSGeneration', proxyAddress, deployer);
+    const migrationTx = await kmsGeneration.migrateToCompressedKeySet(keyId);
+    await migrationTx.wait();
+
+    console.log('Compressed material migration triggering done!');
+  });
+
 task('task:triggerCrsgen')
   .addParam('maxBitLength', 'The maximum bit length for the CRS generation.')
   .addParam('paramsType', 'The type of the parameters to use for the CRS generation.')
