@@ -103,6 +103,7 @@ async fn test_fetch_latest_refreshes_cache_after_key_rotation(
 
 #[tokio::test]
 #[serial(db)]
+#[cfg(not(feature = "gpu"))]
 async fn test_legacy_selection_ignores_compressed_material(
 ) -> Result<(), Box<dyn std::error::Error>> {
     let db = setup_test_db(ImportMode::WithKeysNoSns).await?;
@@ -116,6 +117,16 @@ async fn test_legacy_selection_ignores_compressed_material(
         .fetch_latest_from_pool(&pool)
         .await?;
     Ok(())
+}
+
+#[test]
+#[cfg(feature = "gpu")]
+fn test_legacy_selection_is_rejected_by_gpu_workers() {
+    let error = match DbKeyCache::new_with_representation(1, ServerKeyRepresentation::Legacy) {
+        Ok(_) => panic!("GPU workers must reject legacy server keys"),
+        Err(error) => error,
+    };
+    assert!(error.to_string().contains("not supported by GPU workers"));
 }
 
 #[tokio::test]
@@ -142,6 +153,7 @@ async fn test_auto_preserves_compressed_first_selection() -> Result<(), Box<dyn 
 
 #[tokio::test]
 #[serial(db)]
+#[cfg(not(feature = "gpu"))]
 async fn test_auto_falls_back_to_legacy_when_compressed_material_is_missing(
 ) -> Result<(), Box<dyn std::error::Error>> {
     let db = setup_test_db(ImportMode::WithKeysNoSns).await?;
@@ -153,6 +165,27 @@ async fn test_auto_falls_back_to_legacy_when_compressed_material_is_missing(
     DbKeyCache::new_with_representation(1, ServerKeyRepresentation::Auto)?
         .fetch_latest_from_pool(&pool)
         .await?;
+    Ok(())
+}
+
+#[tokio::test]
+#[serial(db)]
+#[cfg(feature = "gpu")]
+async fn test_auto_rejects_legacy_fallback_on_gpu() -> Result<(), Box<dyn std::error::Error>> {
+    let db = setup_test_db(ImportMode::WithKeysNoSns).await?;
+    let pool = PgPoolOptions::new().connect(db.db_url()).await?;
+    sqlx::query("UPDATE keys SET compressed_xof_keyset = NULL")
+        .execute(&pool)
+        .await?;
+
+    let error = match DbKeyCache::new_with_representation(1, ServerKeyRepresentation::Auto)?
+        .fetch_latest_from_pool(&pool)
+        .await
+    {
+        Ok(_) => panic!("GPU workers must reject legacy server keys"),
+        Err(error) => error,
+    };
+    assert!(error.to_string().contains("compressed_xof_keyset"));
     Ok(())
 }
 
