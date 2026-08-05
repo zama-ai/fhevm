@@ -81,13 +81,11 @@ bcs:
     mode: registry
     tag: ${JSON.stringify(blueTag)}
   env:
-    SERVER_KEY_REPRESENTATION: legacy
+    FORCE_LEGACY_SERVER_KEY: "true"
 gcs:
   source:
     mode: local
   stackVersion: "0.15.0"
-  env:
-    SERVER_KEY_REPRESENTATION: compressed-xof
 kms:
   mode: threshold
   parties: ${CONNECTOR_PARTIES}
@@ -172,27 +170,24 @@ const operatorMaterial = async (operator: number): Promise<OperatorMaterial | un
   };
 };
 
-const selectedRepresentation = async (container: string): Promise<string | undefined> => {
+const forcesLegacyServerKey = async (container: string): Promise<boolean> => {
   const result = await run(["docker", "inspect", "--format", "{{range .Config.Env}}{{println .}}{{end}}", container]);
   return result.stdout
     .split("\n")
-    .find((line) => line.startsWith("SERVER_KEY_REPRESENTATION="))
-    ?.split("=")
-    .slice(1)
-    .join("=");
+    .some((line) => line === "FORCE_LEGACY_SERVER_KEY=true");
 };
 
-const assertFleetSelection = async () => {
+const assertFleetSafeguard = async () => {
   for (let operator = 0; operator < OPERATOR_COUNT; operator += 1) {
     const prefix = operator === 0 ? "coprocessor-" : `coprocessor${operator}-`;
     for (const worker of KEY_WORKERS) {
       const blue = `${prefix}${worker}`;
       const green = `${prefix}gcs-${worker}`;
-      if ((await selectedRepresentation(blue)) !== "legacy") {
-        throw new Error(`${blue} is not pinned to legacy`);
+      if (!(await forcesLegacyServerKey(blue))) {
+        throw new Error(`${blue} is not forced to use legacy material`);
       }
-      if ((await selectedRepresentation(green)) !== "compressed-xof") {
-        throw new Error(`${green} is not pinned to compressed-xof`);
+      if (await forcesLegacyServerKey(green)) {
+        throw new Error(`${green} must not receive the force-legacy safeguard`);
       }
     }
   }
@@ -235,7 +230,7 @@ export default async function runMigration(ctx: RolloutRunContext) {
     scenario,
     overrides: [{ group: "test-suite" }],
   });
-  await assertFleetSelection();
+  await assertFleetSafeguard();
   for (let operator = 0; operator < OPERATOR_COUNT; operator += 1) {
     const state = await sqlScalar(
       coprocessorDatabaseName(operator),
@@ -334,7 +329,7 @@ export default async function runMigration(ctx: RolloutRunContext) {
     }
   });
   assertOperatorMaterialAgreement(materialRows);
-  await assertFleetSelection();
+  await assertFleetSafeguard();
   await run(["docker", "restart", "coprocessor1-gcs-tfhe-worker"]);
   await waitForContainer("coprocessor1-gcs-tfhe-worker", "running");
 

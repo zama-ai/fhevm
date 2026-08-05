@@ -14,10 +14,10 @@ describe("RFC 029 rollout gates", () => {
     expect(migrationVersions({ RFC029_BLUE_HOTFIX_TAG: "v0.14.1-0" }).blueTag).toBe("v0.14.1-0");
   });
 
-  test("pins Blue to legacy and Green to compressed XOF", () => {
+  test("forces Blue to legacy and leaves the safeguard off Green", () => {
     const scenario = parseBlueGreenScenario(migrationScenario("v0.14.1-0"), "generated RFC 029 scenario");
-    expect(scenario.bcs?.env?.SERVER_KEY_REPRESENTATION).toBe("legacy");
-    expect(scenario.gcs.env?.SERVER_KEY_REPRESENTATION).toBe("compressed-xof");
+    expect(scenario.bcs?.env?.FORCE_LEGACY_SERVER_KEY).toBe("true");
+    expect(scenario.gcs.env?.FORCE_LEGACY_SERVER_KEY).toBeUndefined();
     expect(scenario.hostChains).toHaveLength(2);
     expect(scenario.kms).toEqual({ mode: "threshold", parties: 4, threshold: 1, fheParams: "Test" });
   });
