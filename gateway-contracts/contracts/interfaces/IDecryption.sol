@@ -389,6 +389,14 @@ interface IDecryption {
     error EmptyHandles();
 
     /**
+     * @notice Error indicating that a Solana user decryption request names more handle entries
+     * than the KMS Connector can authorize against a single atomic account snapshot.
+     * @param maxLength The maximum number of handle entries allowed.
+     * @param actualLength The actual number of handle entries requested.
+     */
+    error SolanaHandlesMaxLengthExceeded(uint256 maxLength, uint256 actualLength);
+
+    /**
      * @notice Error indicating that the start timestamp of a user decryption request has been set in the future.
      * @param currentTimestamp The block timestamp at which the user decryption request was made.
      * @param startTimestamp The start timestamp of the user decryption request.

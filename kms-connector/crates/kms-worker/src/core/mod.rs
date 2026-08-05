@@ -3,6 +3,7 @@ mod event_picker;
 pub mod event_processor;
 mod kms_response_publisher;
 mod kms_worker;
+pub mod solana;
 pub mod solana_acl;
 pub mod solana_encrypted_value_acl;
 pub mod solana_v2_fetcher;
