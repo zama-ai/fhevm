@@ -27,7 +27,8 @@ use fhevm_gateway_bindings::decryption::{
 };
 use fhevm_host_bindings::{
     kms_generation::KMSGeneration::{
-        AbortCrsgen, AbortKeygen, CrsgenRequest, KeygenRequest, PrepKeygenRequest,
+        AbortCrsgen, AbortKeygen, CrsgenRequest, KeyMigrationRequest, KeygenRequest,
+        PrepKeygenRequest,
     },
     protocol_config::{
         IProtocolConfig::KmsThresholds,
@@ -52,6 +53,7 @@ pub enum TestEventType {
     UserDecryptionV2,
     PrepKeygen,
     Keygen,
+    CompressedKeyMigrationKeygen,
     Crsgen,
     AbortKeygen,
     AbortCrsgen,
@@ -67,7 +69,7 @@ impl TestEventType {
             Self::PublicDecryption => EventType::PublicDecryptionRequest,
             Self::UserDecryption | Self::UserDecryptionV2 => EventType::UserDecryptionRequest,
             Self::PrepKeygen => EventType::PrepKeygenRequest,
-            Self::Keygen => EventType::KeygenRequest,
+            Self::Keygen | Self::CompressedKeyMigrationKeygen => EventType::KeygenRequest,
             Self::Crsgen => EventType::CrsgenRequest,
             Self::AbortKeygen => EventType::AbortKeygenRequest,
             Self::AbortCrsgen => EventType::AbortCrsgenRequest,
@@ -105,6 +107,11 @@ pub async fn insert_rand_request(
             .into(),
         TestEventType::PrepKeygen => insert_rand_prep_keygen_request(db, options).await?.into(),
         TestEventType::Keygen => insert_rand_keygen_request(db, options).await?.into(),
+        TestEventType::CompressedKeyMigrationKeygen => {
+            insert_rand_compressed_key_migration_request(db, options)
+                .await?
+                .into()
+        }
         TestEventType::Crsgen => insert_rand_crsgen_request(db, options).await?.into(),
         TestEventType::AbortKeygen => insert_rand_abort_keygen_request(db, options).await?.into(),
         TestEventType::AbortCrsgen => insert_rand_abort_crsgen_request(db, options).await?.into(),
@@ -347,6 +354,42 @@ pub async fn insert_rand_keygen_request(
     Ok(KeygenRequest {
         prepKeygenId: prep_key_id,
         keyId: key_id,
+        extraData: extra_data.into(),
+    })
+}
+
+pub async fn insert_rand_compressed_key_migration_request(
+    db: &Pool<Postgres>,
+    options: InsertRequestOptions,
+) -> anyhow::Result<KeyMigrationRequest> {
+    let migration_request_id = options.id.unwrap_or_else(rand_u256);
+    let migration_key_id = rand_u256();
+    let prep_key_id = rand_u256();
+    let status = options.status.unwrap_or(OperationStatus::Pending);
+    let extra_data = options.build_extra_data();
+
+    sqlx::query!(
+        "INSERT INTO keygen_requests(
+            prep_keygen_id, key_id, migration_key_id, extra_data, created_at, otlp_context,
+            already_sent, status
+        )
+        VALUES ($1, $2, $3, $4, $5, $6, $7, $8) ON CONFLICT DO NOTHING",
+        prep_key_id.as_le_slice(),
+        migration_request_id.as_le_slice(),
+        migration_key_id.as_le_slice(),
+        extra_data.to_vec() as Vec<u8>,
+        Utc::now(),
+        bc2wrap::serialize(&PropagationContext::empty())?,
+        options.already_sent,
+        status as OperationStatus,
+    )
+    .execute(db)
+    .await?;
+
+    Ok(KeyMigrationRequest {
+        prepKeygenId: prep_key_id,
+        migrationRequestId: migration_request_id,
+        keyId: migration_key_id,
         extraData: extra_data.into(),
     })
 }

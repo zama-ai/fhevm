@@ -71,6 +71,7 @@ pub struct PrepKeygenResponse {
 #[derive(Clone, Debug, PartialEq)]
 pub struct KeygenResponse {
     pub key_id: U256,
+    pub is_migration: bool,
     pub key_digests: Vec<KeyDigestDbItem>,
     pub signature: Vec<u8>,
 }
@@ -317,6 +318,9 @@ pub fn from_keygen_row(row: &PgRow) -> anyhow::Result<KmsResponse> {
         otlp_context: bc2wrap::deserialize_slice(&row.try_get::<Vec<u8>, _>("otlp_context")?)?,
         kind: KmsResponseKind::Keygen(KeygenResponse {
             key_id: U256::from_le_bytes(row.try_get::<[u8; 32], _>("key_id")?),
+            is_migration: row
+                .try_get::<Option<[u8; 32]>, _>("migration_key_id")?
+                .is_some(),
             key_digests: row.try_get("key_digests")?,
             signature: row.try_get("signature")?,
         }),
@@ -463,6 +467,7 @@ impl KeygenResponse {
 
         Ok(KeygenResponse {
             key_id,
+            is_migration: false,
             key_digests,
             signature: grpc_response.external_signature,
         })

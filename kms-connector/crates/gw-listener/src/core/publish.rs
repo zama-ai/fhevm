@@ -18,7 +18,8 @@ use fhevm_gateway_bindings::decryption::Decryption::{
 };
 use fhevm_host_bindings::{
     kms_generation::KMSGeneration::{
-        AbortCrsgen, AbortKeygen, CrsgenRequest, KeygenRequest, PrepKeygenRequest,
+        AbortCrsgen, AbortKeygen, CrsgenRequest, KeyMigrationRequest, KeygenRequest,
+        PrepKeygenRequest,
     },
     protocol_config::ProtocolConfig::{
         KmsContextDestroyed, KmsEpochDestroyed, NewKmsContext, NewKmsEpoch,
@@ -102,6 +103,9 @@ async fn publish_event_inner<'e>(
         }
         ProtocolEventKind::Keygen(e) => {
             publish_keygen_request(executor, e, tx_hash, created_at, otlp_ctx).await
+        }
+        ProtocolEventKind::KeyMigration(e) => {
+            publish_key_migration_request(executor, e, tx_hash, created_at, otlp_ctx).await
         }
         ProtocolEventKind::Crsgen(e) => {
             let params_type: ParamsTypeDb = e.paramsType.try_into()?;
@@ -292,12 +296,57 @@ async fn publish_keygen_request<'e>(
     created_at: DateTime<Utc>,
     otlp_ctx: PropagationContext,
 ) -> anyhow::Result<PgQueryResult> {
-    sqlx::query!(
-        "INSERT INTO keygen_requests(prep_keygen_id, key_id, extra_data, tx_hash, created_at, otlp_context)
-            VALUES ($1, $2, $3, $4, $5, $6) ON CONFLICT DO NOTHING",
-        request.prepKeygenId.as_le_slice(),
-        request.keyId.as_le_slice(),
+    publish_keygen_row(
+        executor,
+        request.prepKeygenId,
+        request.keyId,
+        None,
         request.extraData.as_ref(),
+        tx_hash,
+        created_at,
+        otlp_ctx,
+    )
+    .await
+}
+
+async fn publish_key_migration_request<'e>(
+    executor: impl PgExecutor<'e>,
+    request: KeyMigrationRequest,
+    tx_hash: Option<FixedBytes<32>>,
+    created_at: DateTime<Utc>,
+    otlp_ctx: PropagationContext,
+) -> anyhow::Result<PgQueryResult> {
+    publish_keygen_row(
+        executor,
+        request.prepKeygenId,
+        request.migrationRequestId,
+        Some(request.keyId.to_le_bytes::<32>().to_vec()),
+        request.extraData.as_ref(),
+        tx_hash,
+        created_at,
+        otlp_ctx,
+    )
+    .await
+}
+
+#[allow(clippy::too_many_arguments)]
+async fn publish_keygen_row<'e>(
+    executor: impl PgExecutor<'e>,
+    prep_keygen_id: U256,
+    request_id: U256,
+    migration_key_id: Option<Vec<u8>>,
+    extra_data: &[u8],
+    tx_hash: Option<FixedBytes<32>>,
+    created_at: DateTime<Utc>,
+    otlp_ctx: PropagationContext,
+) -> anyhow::Result<PgQueryResult> {
+    sqlx::query!(
+        "INSERT INTO keygen_requests(prep_keygen_id, key_id, migration_key_id, extra_data, tx_hash, created_at, otlp_context)
+            VALUES ($1, $2, $3, $4, $5, $6, $7) ON CONFLICT DO NOTHING",
+        prep_keygen_id.as_le_slice(),
+        request_id.as_le_slice(),
+        migration_key_id.as_deref(),
+        extra_data,
         tx_hash.map(|h| h.to_vec()),
         created_at,
         bc2wrap::serialize(&otlp_ctx)?,

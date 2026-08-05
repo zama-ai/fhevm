@@ -18,8 +18,8 @@ use fhevm_gateway_bindings::decryption::{
 };
 use fhevm_host_bindings::{
     kms_generation::KMSGeneration::{
-        AbortCrsgen, AbortKeygen, CrsgenRequest, KMSGenerationEvents, KeygenRequest,
-        PrepKeygenRequest,
+        AbortCrsgen, AbortKeygen, CrsgenRequest, KMSGenerationEvents, KeyMigrationRequest,
+        KeygenRequest, PrepKeygenRequest,
     },
     protocol_config::{
         IProtocolConfig::KmsThresholds,
@@ -117,6 +117,9 @@ impl ProtocolEvent {
             ProtocolEventKind::Keygen(e) => {
                 update_keygen_status(db, e.keyId, status, already_sent).await
             }
+            ProtocolEventKind::KeyMigration(e) => {
+                update_keygen_status(db, e.migrationRequestId, status, already_sent).await
+            }
             ProtocolEventKind::Crsgen(e) => {
                 update_crsgen_status(db, e.crsId, status, already_sent).await
             }
@@ -164,6 +167,7 @@ pub enum ProtocolEventKind {
     UserDecryptionV2(UserDecryptionRequestV2),
     PrepKeygen(PrepKeygenRequest),
     Keygen(KeygenRequest),
+    KeyMigration(KeyMigrationRequest),
     Crsgen(CrsgenRequest),
     AbortKeygen(AbortKeygen),
     AbortCrsgen(AbortCrsgen),
@@ -186,6 +190,7 @@ impl std::fmt::Debug for ProtocolEventKind {
                 .finish(),
             Self::PrepKeygen(e) => f.debug_tuple("PrepKeygen").field(e).finish(),
             Self::Keygen(e) => f.debug_tuple("Keygen").field(e).finish(),
+            Self::KeyMigration(e) => f.debug_tuple("KeyMigration").field(e).finish(),
             Self::Crsgen(e) => f.debug_tuple("Crsgen").field(e).finish(),
             Self::AbortKeygen(e) => f.debug_tuple("AbortKeygen").field(e).finish(),
             Self::AbortCrsgen(e) => f.debug_tuple("AbortCrsgen").field(e).finish(),
@@ -214,6 +219,7 @@ impl PartialEq for ProtocolEventKind {
             }
             (Self::PrepKeygen(a), Self::PrepKeygen(b)) => a == b,
             (Self::Keygen(a), Self::Keygen(b)) => a == b,
+            (Self::KeyMigration(a), Self::KeyMigration(b)) => a == b,
             (Self::Crsgen(a), Self::Crsgen(b)) => a == b,
             (Self::AbortKeygen(a), Self::AbortKeygen(b)) => a == b,
             (Self::AbortCrsgen(a), Self::AbortCrsgen(b)) => a == b,
@@ -379,11 +385,24 @@ pub fn from_prep_keygen_row(row: &PgRow) -> anyhow::Result<ProtocolEvent> {
 }
 
 pub fn from_keygen_row(row: &PgRow) -> anyhow::Result<ProtocolEvent> {
-    let kind = ProtocolEventKind::Keygen(KeygenRequest {
-        prepKeygenId: U256::from_le_bytes(row.try_get::<[u8; 32], _>("prep_keygen_id")?),
-        keyId: U256::from_le_bytes(row.try_get::<[u8; 32], _>("key_id")?),
-        extraData: row.try_get::<Vec<u8>, _>("extra_data")?.into(),
-    });
+    let request_id = U256::from_le_bytes(row.try_get::<[u8; 32], _>("key_id")?);
+    let migration_key_id = row.try_get::<Option<[u8; 32]>, _>("migration_key_id")?;
+    let prep_keygen_id = U256::from_le_bytes(row.try_get::<[u8; 32], _>("prep_keygen_id")?);
+    let extra_data = row.try_get::<Vec<u8>, _>("extra_data")?.into();
+    let kind = if let Some(key_id) = migration_key_id {
+        ProtocolEventKind::KeyMigration(KeyMigrationRequest {
+            prepKeygenId: prep_keygen_id,
+            migrationRequestId: request_id,
+            keyId: U256::from_le_bytes(key_id),
+            extraData: extra_data,
+        })
+    } else {
+        ProtocolEventKind::Keygen(KeygenRequest {
+            prepKeygenId: prep_keygen_id,
+            keyId: request_id,
+            extraData: extra_data,
+        })
+    };
     Ok(ProtocolEvent {
         kind,
         tx_hash: tx_hash_from_row(row),
@@ -717,6 +736,9 @@ impl Display for ProtocolEventKind {
             ProtocolEventKind::Keygen(e) => {
                 write!(f, "KeygenRequest #{:#066x}", e.keyId)
             }
+            ProtocolEventKind::KeyMigration(e) => {
+                write!(f, "KeyMigrationRequest #{:#066x}", e.migrationRequestId)
+            }
             ProtocolEventKind::Crsgen(e) => {
                 write!(f, "CrsgenRequest #{:#066x}", e.crsId)
             }
@@ -769,6 +791,12 @@ impl From<PrepKeygenRequest> for ProtocolEventKind {
 impl From<KeygenRequest> for ProtocolEventKind {
     fn from(value: KeygenRequest) -> Self {
         Self::Keygen(value)
+    }
+}
+
+impl From<KeyMigrationRequest> for ProtocolEventKind {
+    fn from(value: KeyMigrationRequest) -> Self {
+        Self::KeyMigration(value)
     }
 }
 
@@ -838,6 +866,7 @@ impl TryFrom<KMSGenerationEvents> for ProtocolEventKind {
         match value {
             KMSGenerationEvents::PrepKeygenRequest(e) => Ok(e.into()),
             KMSGenerationEvents::KeygenRequest(e) => Ok(e.into()),
+            KMSGenerationEvents::KeyMigrationRequest(e) => Ok(e.into()),
             KMSGenerationEvents::CrsgenRequest(e) => Ok(e.into()),
             KMSGenerationEvents::AbortKeygen(e) => Ok(e.into()),
             KMSGenerationEvents::AbortCrsgen(e) => Ok(e.into()),
